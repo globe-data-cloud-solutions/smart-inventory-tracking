@@ -7,11 +7,8 @@ from shared.db.dependencies import get_db_session
 from shared.permissions.middleware import require_permission
 from shared.permissions.registry import PERMISSIONS
 from shared.utils.responses import SuccessResponse
-from services.inventory_service.schemas.inventory import (
-    AdjustmentRequest,
-    AdjustmentResponse,
-)
-from services.inventory_service.services.inventory_service import InventoryService
+from schemas.inventory import AdjustmentRequest, AdjustmentResponse
+from services.inventory_service import InventoryService
 
 router = APIRouter()
 

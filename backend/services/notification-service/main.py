@@ -3,7 +3,7 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 
-from services.notification_service.routers import notifications
+from routers import notifications
 from shared.outbox.worker import app as celery_app, register_handler
 from shared.outbox.schemas import InventoryUpdatedPayload
 

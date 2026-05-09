@@ -3,7 +3,7 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 
-from services.sync_service.routers import sync
+from routers import sync
 
 
 @asynccontextmanager

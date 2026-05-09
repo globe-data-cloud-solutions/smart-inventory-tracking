@@ -1,6 +1,6 @@
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
-from services.logistics_service.routers import fleet
+from routers import fleet
 
 
 @asynccontextmanager

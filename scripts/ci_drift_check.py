@@ -19,7 +19,7 @@ def find_router_files() -> list[Path]:
 
 def check_file(path: Path) -> list[str]:
     errors: list[str] = []
-    source = path.read_text(encoding="utf-8")
+    source = path.read_text(encoding="utf-8-sig")  # utf-8-sig strips BOM if present
     tree = ast.parse(source)
 
     for node in ast.walk(tree):
@@ -63,13 +63,13 @@ def main() -> int:
         all_errors.extend(check_file(f))
 
     if all_errors:
-        print("❌ Permission drift detected:\n")
+        print("FAIL Permission drift detected:\n")
         for err in all_errors:
             print(f"  {err}")
         print(f"\n{len(all_errors)} route(s) without @require_permission. CI blocked.")
         return 1
 
-    print(f"✅ Permission check passed — {len(router_files)} router file(s) scanned, no drift detected.")
+    print(f"PASS Permission check passed -- {len(router_files)} router file(s) scanned, no drift detected.")
     return 0
 
 

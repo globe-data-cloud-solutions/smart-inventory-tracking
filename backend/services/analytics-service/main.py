@@ -3,7 +3,7 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 
-from services.analytics_service.routers import forecasts, reports
+from routers import forecasts, reports
 
 
 @asynccontextmanager

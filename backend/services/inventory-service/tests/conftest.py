@@ -1,7 +1,7 @@
 import pytest
 from httpx import AsyncClient
 
-from services.inventory_service.main import app
+from main import app
 
 
 @pytest.fixture

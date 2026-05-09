@@ -3,7 +3,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from services.tenant_service.routers import tenants, wizard
+from routers import tenants, wizard
 
 
 @asynccontextmanager

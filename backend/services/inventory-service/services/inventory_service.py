@@ -11,8 +11,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from shared.outbox.schemas import AdjustmentAppliedPayload, InventoryUpdatedPayload
 from shared.outbox.writer import write_to_outbox
-from shared.utils.idempotency import DuplicateTransactionError, check_and_register_idempotency_key
-from services.inventory_service.schemas.inventory import (
+from shared.utils.idempotency import check_and_register_idempotency_key
+from schemas.inventory import (
     AdjustmentRequest,
     AdjustmentResponse,
     CountSessionRequest,
@@ -22,7 +22,7 @@ from services.inventory_service.schemas.inventory import (
     TransferOrderRequest,
     TransferOrderResponse,
 )
-from services.inventory_service.services.state_machine import (
+from services.state_machine import (
     ADJUSTMENT_TRANSITIONS,
     TRANSFER_TRANSITIONS,
     validate_transition,

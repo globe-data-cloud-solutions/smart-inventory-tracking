@@ -5,7 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from shared.outbox.schemas import TenantOrgTypeChangedPayload
 from shared.outbox.writer import write_to_outbox
-from services.tenant_service.schemas.tenant import WizardData, WizardResult
+from schemas.tenant import WizardData, WizardResult
 
 FEATURE_FLAG_DEFAULTS: dict[str, dict[str, bool]] = {
     "PRODUCER": {

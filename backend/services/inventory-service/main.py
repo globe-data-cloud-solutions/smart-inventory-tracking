@@ -5,7 +5,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from shared.utils.responses import ErrorResponse, ErrorDetail
-from services.inventory_service.routers import adjust, count, receive, transfer
+from routers import adjust, count, receive, transfer
 
 
 @asynccontextmanager

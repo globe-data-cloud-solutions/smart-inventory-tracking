@@ -7,7 +7,7 @@ from shared.db.dependencies import get_db_session
 from shared.permissions.middleware import require_permission
 from shared.permissions.registry import PERMISSIONS
 from shared.utils.responses import SuccessResponse
-from services.tenant_service.schemas.tenant import TenantCreateRequest, TenantResponse
+from schemas.tenant import TenantCreateRequest, TenantResponse
 
 router = APIRouter()
 

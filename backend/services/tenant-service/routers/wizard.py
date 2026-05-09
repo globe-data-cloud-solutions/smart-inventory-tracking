@@ -7,8 +7,8 @@ from shared.db.dependencies import get_db_session
 from shared.permissions.middleware import require_permission
 from shared.permissions.registry import PERMISSIONS
 from shared.utils.responses import SuccessResponse
-from services.tenant_service.schemas.tenant import WizardData, WizardResult
-from services.tenant_service.services.wizard_service import complete_wizard
+from schemas.tenant import WizardData, WizardResult
+from services.wizard_service import complete_wizard
 
 router = APIRouter()
 
