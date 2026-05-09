@@ -1,11 +1,14 @@
 import type { Metadata } from "next";
+import { Inter } from "next/font/google";
 import "./globals.css";
+
+const inter = Inter({ subsets: ["latin"], display: "swap" });
 
 export const metadata: Metadata = {
   title: "SMART Inventory",
   description: "Multi-tenant inventory management platform",
   manifest: "/manifest.json",
-  themeColor: "#2563eb",
+  themeColor: "#1B4332",
 };
 
 export default function RootLayout({
@@ -18,7 +21,7 @@ export default function RootLayout({
       <head>
         <link rel="manifest" href="/manifest.json" />
       </head>
-      <body className="min-h-screen bg-gray-50 font-sans antialiased">
+      <body className={`${inter.className} min-h-screen bg-gray-50 antialiased`}>
         {children}
         <script
           dangerouslySetInnerHTML={{
