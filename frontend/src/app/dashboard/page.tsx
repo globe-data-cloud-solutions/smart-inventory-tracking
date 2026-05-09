@@ -14,7 +14,6 @@ export default function DashboardPage() {
 
   if (!user) return null;
 
-  // SA sees all tenants; others see their own tenant
   const visibleTenants =
     user.role === "SA"
       ? DEMO_TENANTS
@@ -22,7 +21,6 @@ export default function DashboardPage() {
 
   return (
     <div className="p-6 space-y-8">
-      {/* Welcome */}
       <div>
         <h2 className="text-2xl font-bold text-gray-900">
           Welcome back, {user.name.split(" ")[0]}
@@ -34,7 +32,6 @@ export default function DashboardPage() {
         </p>
       </div>
 
-      {/* Global stat cards (SA only) */}
       {user.role === "SA" && (
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
           {[
@@ -52,7 +49,6 @@ export default function DashboardPage() {
         </div>
       )}
 
-      {/* Tenant cards */}
       {user.role === "SA" && (
         <div>
           <h3 className="text-lg font-semibold text-gray-900 mb-4">Tenants</h3>
@@ -64,7 +60,6 @@ export default function DashboardPage() {
         </div>
       )}
 
-      {/* Tenant-specific view for WM/NM/TA */}
       {user.role !== "SA" && visibleTenants[0] && (
         <TenantFullView tenant={visibleTenants[0]} user={user} />
       )}
@@ -72,18 +67,13 @@ export default function DashboardPage() {
   );
 }
 
-// ── Tenant summary card (SA view) ──────────────────────────────────────────────
-
 function TenantDashCard({ tenant }: { tenant: DemoTenant }) {
-  const totalSKUs = tenant.products.length;
-  const totalWHs = tenant.warehouses.length;
   const lowStock = getLowStockProducts(tenant);
   const totalUnits = tenant.products.reduce((acc, p) => acc + getTotalStock(p), 0);
 
   return (
     <Link href={`/dashboard/tenants/${tenant.slug}`} className="block group">
       <div className="bg-white rounded-xl border border-gray-200 overflow-hidden shadow-sm group-hover:shadow-md group-hover:border-brand-200 transition-all">
-        {/* Header */}
         <div className={`${tenant.bgClass} p-5 flex items-center gap-4`}>
           <span className="text-4xl">{tenant.logo}</span>
           <div>
@@ -95,62 +85,47 @@ function TenantDashCard({ tenant }: { tenant: DemoTenant }) {
           </span>
         </div>
 
-        {/* Stats */}
         <div className="p-5 grid grid-cols-4 gap-4">
           {[
-            { label: "Locations", value: totalWHs },
-            { label: "SKUs", value: totalSKUs },
+            { label: "Locations",   value: tenant.warehouses.length },
+            { label: "SKUs",        value: tenant.products.length },
             { label: "Total Units", value: totalUnits.toLocaleString() },
-            { label: "Low Stock", value: lowStock.length, warn: lowStock.length > 0 },
+            { label: "Low Stock",   value: lowStock.length, warn: lowStock.length > 0 },
           ].map((s) => (
             <div key={s.label} className="text-center">
-              <p className={`text-xl font-bold ${s.warn ? "text-red-500" : "text-gray-900"}`}>
-                {s.value}
-              </p>
+              <p className={`text-xl font-bold ${s.warn ? "text-red-500" : "text-gray-900"}`}>{s.value}</p>
               <p className="text-xs text-gray-500 mt-0.5">{s.label}</p>
             </div>
           ))}
         </div>
 
-        {/* Location pills */}
         <div className="px-5 pb-4 flex flex-wrap gap-1.5">
           {tenant.warehouses.slice(0, 5).map((w) => (
-            <span key={w.id} className="text-xs bg-gray-100 text-gray-600 px-2 py-0.5 rounded-full">
-              {w.name}
-            </span>
+            <span key={w.id} className="text-xs bg-gray-100 text-gray-600 px-2 py-0.5 rounded-full">{w.name}</span>
           ))}
           {tenant.warehouses.length > 5 && (
-            <span className="text-xs bg-gray-100 text-gray-500 px-2 py-0.5 rounded-full">
-              +{tenant.warehouses.length - 5} more
-            </span>
+            <span className="text-xs bg-gray-100 text-gray-500 px-2 py-0.5 rounded-full">+{tenant.warehouses.length - 5} more</span>
           )}
         </div>
-
         <div className="px-5 pb-4">
-          <span className="text-xs font-medium text-brand-600 group-hover:underline">
-            Open tenant dashboard →
-          </span>
+          <span className="text-xs font-medium text-brand-600 group-hover:underline">Open tenant dashboard →</span>
         </div>
       </div>
     </Link>
   );
 }
 
-// ── Full tenant view for non-SA roles ─────────────────────────────────────────
-
 function TenantFullView({ tenant, user }: { tenant: DemoTenant; user: SessionUser }) {
   const myWarehouse = user.warehouseId
     ? tenant.warehouses.find((w) => w.id === user.warehouseId)
     : null;
 
-  const relevantProducts = tenant.products.filter((p) => {
-    if (!user.warehouseId) return true;
-    return (p.stock[user.warehouseId] ?? 0) > 0;
-  });
+  const relevantProducts = tenant.products.filter((p) =>
+    user.warehouseId ? (p.stock[user.warehouseId] ?? 0) > 0 : true
+  );
 
   return (
     <div className="space-y-6">
-      {/* Summary */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         {[
           { label: "Products in scope", value: relevantProducts.length, icon: "📦" },
@@ -166,13 +141,10 @@ function TenantFullView({ tenant, user }: { tenant: DemoTenant; user: SessionUse
         ))}
       </div>
 
-      {/* Product inventory table */}
       <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
         <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between">
           <h3 className="font-semibold text-gray-900">Inventory</h3>
-          {myWarehouse && (
-            <span className="text-sm text-gray-500">📍 {myWarehouse.name}</span>
-          )}
+          {myWarehouse && <span className="text-sm text-gray-500">📍 {myWarehouse.name}</span>}
         </div>
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
@@ -196,15 +168,9 @@ function TenantFullView({ tenant, user }: { tenant: DemoTenant; user: SessionUse
                     <td className="px-6 py-3 font-mono text-xs text-gray-500">{p.sku}</td>
                     <td className="px-6 py-3 font-medium text-gray-900">{p.name}</td>
                     <td className="px-6 py-3 text-gray-500">{p.category}</td>
-                    <td className="px-6 py-3 text-right font-semibold text-gray-900">
-                      {qty.toLocaleString()}
-                    </td>
+                    <td className="px-6 py-3 text-right font-semibold text-gray-900">{qty.toLocaleString()}</td>
                     <td className="px-6 py-3">
-                      <span className={`inline-flex items-center gap-1 text-xs font-medium px-2 py-0.5 rounded-full ${
-                        isLow
-                          ? "bg-red-100 text-red-700"
-                          : "bg-green-100 text-green-700"
-                      }`}>
+                      <span className={`inline-flex items-center gap-1 text-xs font-medium px-2 py-0.5 rounded-full ${isLow ? "bg-red-100 text-red-700" : "bg-green-100 text-green-700"}`}>
                         {isLow ? "⚠️ Low" : "✓ OK"}
                       </span>
                     </td>

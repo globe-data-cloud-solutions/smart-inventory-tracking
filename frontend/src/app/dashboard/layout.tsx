@@ -32,7 +32,6 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     <div className="min-h-screen bg-gray-50 flex">
       <Sidebar user={user} />
       <div className="flex-1 ml-64 flex flex-col min-h-screen">
-        {/* Top bar */}
         <header className="h-16 bg-white border-b border-gray-200 flex items-center justify-between px-6 flex-shrink-0">
           <div>
             <h1 className="text-sm font-semibold text-gray-900">SMART Inventory Tracker</h1>

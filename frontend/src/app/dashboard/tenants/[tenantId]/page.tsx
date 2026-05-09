@@ -24,7 +24,6 @@ export default function TenantPage({ params }: { params: Promise<{ tenantId: str
 
   return (
     <div className="p-6 space-y-8">
-      {/* Header */}
       <div className="flex items-center gap-4">
         <Link href="/dashboard" className="text-gray-400 hover:text-gray-600 transition-colors text-sm">
           ← Dashboard
@@ -38,14 +37,13 @@ export default function TenantPage({ params }: { params: Promise<{ tenantId: str
         </div>
       </div>
 
-      {/* KPI strip */}
       <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
         {[
-          { label: "Locations", value: tenant.warehouses.length, icon: "📍", sub: `${tenant.warehouses.filter(w=>w.type==="PRODUCTION").length} production` },
-          { label: "SKUs", value: tenant.products.length, icon: "📦", sub: `${[...new Set(tenant.products.map(p=>p.category))].length} categories` },
-          { label: "Total Units", value: totalUnits.toLocaleString(), icon: "📊", sub: "across all WH" },
-          { label: "Low Stock", value: lowStock.length, icon: "⚠️", sub: lowStock.length > 0 ? "need restocking" : "all good", warn: lowStock.length > 0 },
-          { label: "Staff Accounts", value: tenant.users.length, icon: "👤", sub: `${tenant.users.filter(u=>u.role==="WM").length} WM, ${tenant.users.filter(u=>u.role==="NM").length} NM` },
+          { label: "Locations",     value: tenant.warehouses.length,    icon: "📍", sub: `${tenant.warehouses.filter(w => w.type === "PRODUCTION").length} production` },
+          { label: "SKUs",          value: tenant.products.length,      icon: "📦", sub: `${[...new Set(tenant.products.map(p => p.category))].length} categories` },
+          { label: "Total Units",   value: totalUnits.toLocaleString(), icon: "📊", sub: "across all WH" },
+          { label: "Low Stock",     value: lowStock.length,             icon: "⚠️", sub: lowStock.length > 0 ? "need restocking" : "all good", warn: lowStock.length > 0 },
+          { label: "Staff Accounts",value: tenant.users.length,         icon: "👤", sub: `${tenant.users.filter(u => u.role === "WM").length} WM, ${tenant.users.filter(u => u.role === "NM").length} NM` },
         ].map((s) => (
           <div key={s.label} className={`bg-white rounded-xl border p-4 ${s.warn ? "border-red-200 bg-red-50" : "border-gray-200"}`}>
             <p className="text-2xl mb-1">{s.icon}</p>
@@ -57,8 +55,7 @@ export default function TenantPage({ params }: { params: Promise<{ tenantId: str
       </div>
 
       <div className="grid lg:grid-cols-3 gap-6">
-        {/* Warehouse tree */}
-        <div className="lg:col-span-1">
+        <div className="lg:col-span-1 space-y-4">
           <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
             <div className="px-5 py-4 border-b border-gray-100">
               <h3 className="font-semibold text-gray-900">Location Hierarchy</h3>
@@ -70,8 +67,7 @@ export default function TenantPage({ params }: { params: Promise<{ tenantId: str
             </div>
           </div>
 
-          {/* Users */}
-          <div className="bg-white rounded-xl border border-gray-200 overflow-hidden mt-4">
+          <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
             <div className="px-5 py-4 border-b border-gray-100">
               <h3 className="font-semibold text-gray-900">User Accounts</h3>
             </div>
@@ -92,9 +88,7 @@ export default function TenantPage({ params }: { params: Promise<{ tenantId: str
           </div>
         </div>
 
-        {/* Product inventory */}
         <div className="lg:col-span-2 space-y-4">
-          {/* Categories */}
           {[...new Set(tenant.products.map((p) => p.category))].map((cat) => (
             <CategoryTable
               key={cat}
@@ -109,30 +103,17 @@ export default function TenantPage({ params }: { params: Promise<{ tenantId: str
   );
 }
 
-// ── Warehouse tree node ────────────────────────────────────────────────────────
-
-function WarehouseNode({
-  warehouse, allWarehouses, tenant, depth,
-}: {
-  warehouse: DemoWarehouse;
-  allWarehouses: DemoWarehouse[];
-  tenant: DemoTenant;
-  depth: number;
+function WarehouseNode({ warehouse, allWarehouses, tenant, depth }: {
+  warehouse: DemoWarehouse; allWarehouses: DemoWarehouse[]; tenant: DemoTenant; depth: number;
 }) {
   const children = getChildren(allWarehouses, warehouse.id);
-  const typeIcons: Record<string, string> = {
-    PRODUCTION: "🏭",
-    WAREHOUSE:  "🏗️",
-    SUBCENTER:  "🔖",
-  };
-
-  // total stock for this warehouse across all products
+  const icons: Record<string, string> = { PRODUCTION: "🏭", WAREHOUSE: "🏗️", SUBCENTER: "🔖" };
   const whStock = tenant.products.reduce((acc, p) => acc + (p.stock[warehouse.id] ?? 0), 0);
 
   return (
     <div style={{ paddingLeft: depth * 16 }}>
       <div className="flex items-start gap-2 py-2 rounded-lg hover:bg-gray-50 px-2 transition-colors">
-        <span className="text-base mt-0.5 flex-shrink-0">{typeIcons[warehouse.type] ?? "📦"}</span>
+        <span className="text-base mt-0.5 flex-shrink-0">{icons[warehouse.type] ?? "📦"}</span>
         <div className="min-w-0 flex-1">
           <p className="text-sm font-medium text-gray-900 truncate">{warehouse.name}</p>
           <p className="text-xs text-gray-400 truncate">{warehouse.location}</p>
@@ -166,9 +147,9 @@ function TypeBadge({ type }: { type: string }) {
 
 function RolePill({ role }: { role: string }) {
   const colors: Record<string, string> = {
-    TA:  "bg-purple-100 text-purple-700",
-    NM:  "bg-blue-100 text-blue-700",
-    WM:  "bg-teal-100 text-teal-700",
+    TA: "bg-purple-100 text-purple-700",
+    NM: "bg-blue-100 text-blue-700",
+    WM: "bg-teal-100 text-teal-700",
   };
   return (
     <span className={`text-xs px-2 py-0.5 rounded-full font-semibold ${colors[role] ?? "bg-gray-100 text-gray-600"}`}>
@@ -177,14 +158,8 @@ function RolePill({ role }: { role: string }) {
   );
 }
 
-// ── Category table ─────────────────────────────────────────────────────────────
-
-function CategoryTable({
-  category, products, warehouses,
-}: {
-  category: string;
-  products: DemoProduct[];
-  warehouses: DemoWarehouse[];
+function CategoryTable({ category, products, warehouses }: {
+  category: string; products: DemoProduct[]; warehouses: DemoWarehouse[];
 }) {
   return (
     <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
@@ -209,8 +184,7 @@ function CategoryTable({
           <tbody className="divide-y divide-gray-50">
             {products.map((p) => {
               const total = getTotalStock(p);
-              const threshold = p.reorderPoint * warehouses.length;
-              const isLow = total < threshold;
+              const isLow = total < p.reorderPoint * warehouses.length;
               return (
                 <tr key={p.id} className="hover:bg-gray-50">
                   <td className="px-4 py-2 font-mono text-gray-400">{p.sku}</td>
@@ -220,13 +194,9 @@ function CategoryTable({
                       {(p.stock[w.id] ?? 0).toLocaleString()}
                     </td>
                   ))}
-                  <td className="px-4 py-2 text-right font-bold text-gray-900">
-                    {total.toLocaleString()}
-                  </td>
+                  <td className="px-4 py-2 text-right font-bold text-gray-900">{total.toLocaleString()}</td>
                   <td className="px-4 py-2">
-                    <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full font-medium ${
-                      isLow ? "bg-red-100 text-red-700" : "bg-green-100 text-green-700"
-                    }`}>
+                    <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full font-medium ${isLow ? "bg-red-100 text-red-700" : "bg-green-100 text-green-700"}`}>
                       {isLow ? "Low" : "OK"}
                     </span>
                   </td>
