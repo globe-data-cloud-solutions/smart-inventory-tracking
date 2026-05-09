@@ -1,0 +1,6 @@
+# Extra review required for security-critical paths
+backend/shared/permissions/  @tech-lead @security-reviewer
+backend/migrations/           @tech-lead @dba-reviewer
+infra/terraform/              @tech-lead @devops-reviewer
+scripts/seed_permissions.py   @tech-lead @security-reviewer
+scripts/ci_drift_check.py     @tech-lead @security-reviewer

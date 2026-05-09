@@ -1,0 +1,66 @@
+{
+  "nav": {
+    "inventory": "ክምችት",
+    "products": "ምርቶች",
+    "orders": "ትዕዛዞች",
+    "logistics": "ሎጂስቲክስ",
+    "analytics": "ትንተና",
+    "reports": "ሪፖርቶች",
+    "settings": "ቅንጅቶች",
+    "audit": "የኦዲት ምዝግብ ማስታወሻ"
+  },
+  "inventory": {
+    "receive": {
+      "title": "ክምችት ተቀበል",
+      "product_id": "የምርት መለያ",
+      "warehouse_id": "መጋዘን",
+      "quantity": "መጠን",
+      "lot_number": "የሎት / ቡድን ቁጥር",
+      "expiry_date": "የጊዜ ማብቂያ ቀን",
+      "submit": "ክምችት ተቀበል",
+      "queue_offline": "ለኋላ ዘግይ (ከመስመር ውጪ)",
+      "success": "ክምችቱ በተሳካ ሁኔታ ተቀብሏል"
+    },
+    "adjust": {
+      "title": "ክምችት አስተካክል",
+      "reason": "የምክንያት ኮድ",
+      "submit": "ማስተካከያ አስገባ"
+    },
+    "transfer": {
+      "title": "የክምችት ዝውውር",
+      "from_warehouse": "ከ መጋዘን",
+      "to_warehouse": "ወደ መጋዘን",
+      "submit": "ዝውውር ፍጠር"
+    },
+    "count": {
+      "title": "ዑደታዊ ቆጠራ",
+      "start_session": "የቆጠራ ክፍለ ጊዜ ጀምር"
+    }
+  },
+  "scanner": {
+    "idle": "ካሜራ አልነቃም",
+    "start": "ስካነር ጀምር",
+    "stop": "ስካነር አቁም",
+    "error": "የካሜራ ስህተት"
+  },
+  "alerts": {
+    "low_stock": "ዝቅተኛ ክምችት ማንቂያ",
+    "expiry_soon": "በቅርቡ ሚያልቅ",
+    "pending_approval": "ፈቃድ በጠበቃ ላይ"
+  },
+  "common": {
+    "save": "አስቀምጥ",
+    "cancel": "ሰርዝ",
+    "confirm": "አረጋግጥ",
+    "loading": "በመጫን ላይ...",
+    "no_data": "ምንም ውሂብ የለም",
+    "search": "ፈልግ",
+    "export": "ላክ"
+  },
+  "errors": {
+    "RBAC_DENIED": "ይህን ድርጊት ለማከናወን ፈቃድ የለዎትም።",
+    "ABAC_DENIED": "መዳረሻ ተከልክሏል — ሀብቱ ከወሰንዎ ውጪ ነው።",
+    "INTERNAL_ERROR": "ያልተጠበቀ ስህተት ተከስቷል። እባክዎ እንደገና ይሞክሩ።",
+    "OFFLINE": "ከመስመር ውጪ ነዎት። ይህ ድርጊት ወደ ጠብቅ ተጨምሯል።"
+  }
+}

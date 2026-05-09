@@ -1,0 +1,67 @@
+{
+  "_note": "Oromifa (Afaan Oromoo) pack — must be reviewed by a native Afaan Oromoo-speaking domain expert before Phase 1 go-live",
+  "nav": {
+    "inventory": "Kuusaa",
+    "products": "Meeshaalee",
+    "orders": "Ajajaalee",
+    "logistics": "Lojistiksi",
+    "analytics": "Xiinxala",
+    "reports": "Gabaasaalee",
+    "settings": "Qindaa'ina",
+    "audit": "Galmee Dhageettii"
+  },
+  "inventory": {
+    "receive": {
+      "title": "Kuusaa Fudhadhu",
+      "product_id": "Eenyummaa Meeshaa",
+      "warehouse_id": "Kuusaa Meeshaa",
+      "quantity": "Baay'ina",
+      "lot_number": "Lakkoofsa Kooraa",
+      "expiry_date": "Guyyaa Dhumaa",
+      "submit": "Kuusaa Fudhadhu",
+      "queue_offline": "Booda Turu (Sarara Alatti)",
+      "success": "Kuusaan milkaa'inaan fudhataame"
+    },
+    "adjust": {
+      "title": "Kuusaa Sirreessi",
+      "reason": "Koodii Sababa",
+      "submit": "Sirreessa Galchi"
+    },
+    "transfer": {
+      "title": "Kuusaa Dabarsuu",
+      "from_warehouse": "Kuusaa Irraa",
+      "to_warehouse": "Kuusaa Gara",
+      "submit": "Dabarsa Uumi"
+    },
+    "count": {
+      "title": "Lakkoofsa Marsaa",
+      "start_session": "Marii Lakkoofsa Jalqabi"
+    }
+  },
+  "scanner": {
+    "idle": "Kaameraan hin socho'u",
+    "start": "Iskaanar Jalqabi",
+    "stop": "Iskaanar Dhaabi",
+    "error": "Dogoggora Kaameera"
+  },
+  "alerts": {
+    "low_stock": "Beeksisa Kuusaa Xiqqaa",
+    "expiry_soon": "Yeroo Dhiyootti Ni Dhumata",
+    "pending_approval": "Hayyama Eegaa Jira"
+  },
+  "common": {
+    "save": "Olkaa'i",
+    "cancel": "Haquu",
+    "confirm": "Mirkaneessi",
+    "loading": "Fe'aa jira...",
+    "no_data": "Deetaa hin jiru",
+    "search": "Barbaadi",
+    "export": "Ergi"
+  },
+  "errors": {
+    "RBAC_DENIED": "Hojii kana raawwachuuf hayyamni hin jiru.",
+    "ABAC_DENIED": "Heeyyama dhorkaame — qabeenya daangaa keessan alatti.",
+    "INTERNAL_ERROR": "Dogoggorri hin eegamne uumame. Maaloo irra deebi'ii yaali.",
+    "OFFLINE": "Sarara alatti jirta. Hojiin kun iddoo eeggaatti galcha."
+  }
+}

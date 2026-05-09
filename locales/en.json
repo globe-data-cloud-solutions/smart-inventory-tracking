@@ -1,0 +1,93 @@
+{
+  "nav": {
+    "inventory": "Inventory",
+    "products": "Products",
+    "orders": "Orders",
+    "logistics": "Logistics",
+    "analytics": "Analytics",
+    "reports": "Reports",
+    "settings": "Settings",
+    "audit": "Audit Log"
+  },
+  "inventory": {
+    "receive": {
+      "title": "Receive Stock",
+      "product_id": "Product ID",
+      "warehouse_id": "Warehouse",
+      "quantity": "Quantity",
+      "lot_number": "Lot / Batch Number",
+      "expiry_date": "Expiry Date",
+      "submit": "Receive Stock",
+      "queue_offline": "Queue for Later (Offline)",
+      "success": "Stock received successfully"
+    },
+    "adjust": {
+      "title": "Adjust Stock",
+      "reason": "Reason Code",
+      "submit": "Submit Adjustment"
+    },
+    "transfer": {
+      "title": "Stock Transfer",
+      "from_warehouse": "From Warehouse",
+      "to_warehouse": "To Warehouse",
+      "submit": "Create Transfer"
+    },
+    "count": {
+      "title": "Cycle Count",
+      "start_session": "Start Count Session"
+    }
+  },
+  "scanner": {
+    "idle": "Camera not active",
+    "start": "Start Scanner",
+    "stop": "Stop Scanner",
+    "error": "Camera error"
+  },
+  "alerts": {
+    "low_stock": "Low Stock Alert",
+    "expiry_soon": "Expiring Soon",
+    "pending_approval": "Pending Approval"
+  },
+  "roles": {
+    "SA": "System Admin",
+    "TA": "Tenant Admin",
+    "NM": "National Manager",
+    "RM": "Regional Manager",
+    "WM": "Warehouse Manager",
+    "LM": "Logistics Manager",
+    "SA_GT": "Sales Agent / Ground Team",
+    "RT": "Retailer",
+    "AU": "Auditor",
+    "SYS": "System"
+  },
+  "status": {
+    "DRAFT": "Draft",
+    "SUBMITTED": "Submitted",
+    "APPROVED": "Approved",
+    "IN_TRANSIT": "In Transit",
+    "RECEIVED": "Received",
+    "CLOSED": "Closed",
+    "REJECTED": "Rejected",
+    "CANCELLED": "Cancelled",
+    "PENDING_APPROVAL": "Pending Approval"
+  },
+  "common": {
+    "save": "Save",
+    "cancel": "Cancel",
+    "confirm": "Confirm",
+    "delete": "Delete",
+    "edit": "Edit",
+    "loading": "Loading...",
+    "no_data": "No data available",
+    "search": "Search",
+    "filter": "Filter",
+    "export": "Export"
+  },
+  "errors": {
+    "RBAC_DENIED": "You do not have permission to perform this action.",
+    "ABAC_DENIED": "Access denied — resource outside your scope.",
+    "INTERNAL_ERROR": "An unexpected error occurred. Please try again.",
+    "OFFLINE": "You are offline. This action has been queued.",
+    "DUPLICATE_TRANSACTION": "This transaction was already submitted."
+  }
+}

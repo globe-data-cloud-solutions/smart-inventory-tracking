@@ -1,0 +1,55 @@
+name: Deploy — Dev
+on:
+  push:
+    branches: [develop]
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  deploy-dev:
+    runs-on: ubuntu-latest
+    environment: dev
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::${{ vars.AWS_ACCOUNT_ID }}:role/smart-github-actions-ci
+          aws-region: us-east-1
+
+      - name: Login to ECR
+        run: |
+          aws ecr get-login-password | docker login --username AWS \
+            --password-stdin ${{ vars.AWS_ACCOUNT_ID }}.dkr.ecr.us-east-1.amazonaws.com
+
+      - name: Build and push images
+        run: |
+          SERVICES="api-gateway auth-service tenant-service product-service inventory-service order-service logistics-service analytics-service notification-service sync-service"
+          for svc in $SERVICES; do
+            docker build -t smart-$svc -f backend/services/$svc/Dockerfile .
+            docker tag smart-$svc:latest \
+              ${{ vars.AWS_ACCOUNT_ID }}.dkr.ecr.us-east-1.amazonaws.com/smart-$svc:dev-${{ github.sha }}
+            docker push ${{ vars.AWS_ACCOUNT_ID }}.dkr.ecr.us-east-1.amazonaws.com/smart-$svc:dev-${{ github.sha }}
+          done
+
+      - name: Run Alembic migrations on dev
+        run: |
+          aws ecs run-task \
+            --cluster smart-dev \
+            --task-definition smart-dev-migration \
+            --overrides '{"containerOverrides":[{"name":"migration","command":["alembic","-c","backend/migrations/alembic.ini","upgrade","head"]}]}' \
+            --launch-type FARGATE \
+            --network-configuration "awsvpcConfiguration={subnets=[${{ vars.PRIVATE_SUBNET_IDS }}],securityGroups=[${{ vars.ECS_SECURITY_GROUP }}]}" \
+            --wait
+
+      - name: Update ECS services
+        run: |
+          SERVICES="api-gateway tenant inventory order logistics analytics notification sync"
+          for svc in $SERVICES; do
+            aws ecs update-service \
+              --cluster smart-dev \
+              --service smart-dev-$svc \
+              --force-new-deployment
+          done

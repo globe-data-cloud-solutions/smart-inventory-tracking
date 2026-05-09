@@ -1,0 +1,89 @@
+from __future__ import annotations
+
+import uuid
+from datetime import date, datetime
+from decimal import Decimal
+from typing import List, Optional
+
+from pydantic import BaseModel, Field
+
+
+class ReceiveStockRequest(BaseModel):
+    product_id: uuid.UUID
+    warehouse_id: uuid.UUID
+    quantity: Decimal = Field(gt=0)
+    unit_cost: Optional[Decimal] = None
+    lot_number: Optional[str] = None
+    expiry_date: Optional[date] = None
+    idempotency_key: str
+    source: str = "WEB"
+
+
+class ReceiveStockResponse(BaseModel):
+    transaction_id: uuid.UUID
+    product_id: uuid.UUID
+    warehouse_id: uuid.UUID
+    quantity: Decimal
+    created_at: datetime
+
+
+class TransferOrderRequest(BaseModel):
+    from_warehouse_id: uuid.UUID
+    to_warehouse_id: uuid.UUID
+    lines: List[TransferLineRequest]
+    notes: Optional[str] = None
+
+
+class TransferLineRequest(BaseModel):
+    product_id: uuid.UUID
+    quantity: Decimal = Field(gt=0)
+    lot_number: Optional[str] = None
+
+
+class TransferOrderResponse(BaseModel):
+    transfer_id: uuid.UUID
+    status: str
+    from_warehouse_id: uuid.UUID
+    to_warehouse_id: uuid.UUID
+    created_at: datetime
+
+
+class TransferActionRequest(BaseModel):
+    notes: Optional[str] = None
+
+
+class AdjustmentRequest(BaseModel):
+    warehouse_id: uuid.UUID
+    product_id: uuid.UUID
+    quantity_delta: Decimal
+    reason_code: str
+    lot_number: Optional[str] = None
+    idempotency_key: str
+    notes: Optional[str] = None
+
+
+class AdjustmentResponse(BaseModel):
+    adjustment_id: uuid.UUID
+    status: str
+    quantity_delta: Decimal
+    created_at: datetime
+
+
+class CountSessionRequest(BaseModel):
+    warehouse_id: uuid.UUID
+    product_ids: Optional[List[uuid.UUID]] = None
+    notes: Optional[str] = None
+
+
+class CountSessionResponse(BaseModel):
+    session_id: uuid.UUID
+    warehouse_id: uuid.UUID
+    status: str
+    created_at: datetime
+
+
+class LotSelection(BaseModel):
+    lot_id: uuid.UUID
+    lot_number: Optional[str]
+    quantity: Decimal
+    strategy_applied: str

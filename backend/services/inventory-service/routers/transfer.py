@@ -1,0 +1,65 @@
+from uuid import UUID
+
+from fastapi import APIRouter, Depends
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from shared.db.dependencies import get_db_session
+from shared.permissions.middleware import require_permission
+from shared.permissions.registry import PERMISSIONS
+from shared.utils.responses import SuccessResponse
+from services.inventory_service.schemas.inventory import (
+    TransferOrderRequest,
+    TransferOrderResponse,
+    TransferActionRequest,
+)
+from services.inventory_service.services.inventory_service import InventoryService
+
+router = APIRouter()
+
+
+@router.post("/", status_code=201, response_model=SuccessResponse[TransferOrderResponse])
+@require_permission(PERMISSIONS.TRANSFER_CREATE)
+async def create_transfer(
+    body: TransferOrderRequest,
+    user=Depends(lambda: None),
+    db: AsyncSession = Depends(get_db_session),
+) -> SuccessResponse[TransferOrderResponse]:
+    svc = InventoryService(db)
+    result = await svc.create_transfer(user, body)
+    return SuccessResponse(data=result)
+
+
+@router.post("/{transfer_id}/submit", response_model=SuccessResponse[TransferOrderResponse])
+@require_permission(PERMISSIONS.TRANSFER_SUBMIT)
+async def submit_transfer(
+    transfer_id: UUID,
+    user=Depends(lambda: None),
+    db: AsyncSession = Depends(get_db_session),
+) -> SuccessResponse[TransferOrderResponse]:
+    svc = InventoryService(db)
+    result = await svc.transition_transfer(user, transfer_id, "SUBMITTED")
+    return SuccessResponse(data=result)
+
+
+@router.post("/{transfer_id}/approve", response_model=SuccessResponse[TransferOrderResponse])
+@require_permission(PERMISSIONS.TRANSFER_APPROVE)
+async def approve_transfer(
+    transfer_id: UUID,
+    user=Depends(lambda: None),
+    db: AsyncSession = Depends(get_db_session),
+) -> SuccessResponse[TransferOrderResponse]:
+    svc = InventoryService(db)
+    result = await svc.transition_transfer(user, transfer_id, "APPROVED")
+    return SuccessResponse(data=result)
+
+
+@router.get("/{transfer_id}", response_model=SuccessResponse[TransferOrderResponse])
+@require_permission(PERMISSIONS.TRANSFER_VIEW)
+async def get_transfer(
+    transfer_id: UUID,
+    user=Depends(lambda: None),
+    db: AsyncSession = Depends(get_db_session),
+) -> SuccessResponse[TransferOrderResponse]:
+    svc = InventoryService(db)
+    result = await svc.get_transfer(user, transfer_id)
+    return SuccessResponse(data=result)
