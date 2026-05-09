@@ -1,3 +1,40 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap');
+
+:root {
+  --eth-dark:   #0B3D2E;
+  --eth-forest: #1B4332;
+  --eth-mid:    #2D6A4F;
+  --eth-bright: #40916C;
+  --eth-gold:   #FCDD09;
+  --eth-red:    #DA121A;
+}
+
+html { scroll-behavior: smooth; }
+
+body {
+  font-family: 'Inter', system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Ethiopian flag 3-stripe divider */
+.eth-stripe {
+  height: 6px;
+  background: linear-gradient(to right,
+    #078930 0% 33.3%,
+    #FCDD09 33.3% 66.6%,
+    #DA121A 66.6% 100%
+  );
+}
+
+/* Wavy wave divider (white wave over green) */
+.wave-white { fill: #ffffff; }
+.wave-mist  { fill: #F0FDF4; }
+.wave-dark  { fill: #0B3D2E; }
+.wave-forest{ fill: #1B4332; }
+
+/* Table hover rows */
+.inv-table tbody tr:hover { background-color: #f0fdf4; }
