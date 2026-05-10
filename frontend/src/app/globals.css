@@ -2,37 +2,82 @@
 @tailwind components;
 @tailwind utilities;
 
-:root {
-  --eth-dark:   #0B3D2E;
-  --eth-forest: #1B4332;
-  --eth-mid:    #2D6A4F;
-  --eth-bright: #40916C;
-  --eth-gold:   #FCDD09;
-  --eth-red:    #DA121A;
-}
-
 html { scroll-behavior: smooth; }
 
 body {
-  font-family: 'Inter', system-ui, sans-serif;
+  font-family: 'Inter', system-ui, -apple-system, sans-serif;
   -webkit-font-smoothing: antialiased;
+  color: #1a1a2e;
 }
 
-/* Ethiopian flag 3-stripe divider */
-.eth-stripe {
-  height: 6px;
-  background: linear-gradient(to right,
-    #078930 0% 33.3%,
-    #FCDD09 33.3% 66.6%,
-    #DA121A 66.6% 100%
+/* ── Animated hero background lines ──────────────────────────────────────── */
+/* Lines sweep left→right or right→left across the hero.
+   A radial gradient mask on the container fades them out at the center
+   (where the title sits) and makes them reappear from the other side. */
+
+@keyframes sweep-right {
+  0%   { transform: translateX(-140vw); }
+  100% { transform: translateX(140vw); }
+}
+@keyframes sweep-left {
+  0%   { transform: translateX(140vw); }
+  100% { transform: translateX(-140vw); }
+}
+
+.hero-lines-mask {
+  -webkit-mask-image: radial-gradient(
+    ellipse 52% 60% at 50% 42%,
+    transparent 0%,
+    transparent 35%,
+    rgba(0,0,0,0.6) 55%,
+    black 75%
+  );
+  mask-image: radial-gradient(
+    ellipse 52% 60% at 50% 42%,
+    transparent 0%,
+    transparent 35%,
+    rgba(0,0,0,0.6) 55%,
+    black 75%
   );
 }
 
-/* Wavy wave divider (white wave over green) */
-.wave-white { fill: #ffffff; }
-.wave-mist  { fill: #F0FDF4; }
-.wave-dark  { fill: #0B3D2E; }
-.wave-forest{ fill: #1B4332; }
+/* ── Ethiopian 3-stripe divider ──────────────────────────────────────────── */
+.eth-stripe {
+  background: linear-gradient(
+    to right,
+    #078930 0% 33.33%,
+    #FCDD09 33.33% 66.66%,
+    #DA121A 66.66% 100%
+  );
+}
 
-/* Table hover rows */
-.inv-table tbody tr:hover { background-color: #f0fdf4; }
+/* ── Feature capability cards ────────────────────────────────────────────── */
+.cap-card {
+  border-right: 1px solid #D1D5DB;
+  border-bottom: 1px solid #D1D5DB;
+  padding: 2rem;
+  background: #fff;
+  transition: background 0.2s;
+}
+.cap-card:hover { background: #F9FAFB; }
+
+/* ── Data table ──────────────────────────────────────────────────────────── */
+.data-table tbody tr:hover { background: #F0FDF4; }
+.data-table th {
+  background: #F9FAFB;
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  font-weight: 700;
+  color: #6B7280;
+  padding: 0.75rem 1.25rem;
+  text-align: left;
+  border-bottom: 2px solid #E5E7EB;
+}
+.data-table td {
+  padding: 0.75rem 1.25rem;
+  font-size: 0.875rem;
+  border-bottom: 1px solid #F3F4F6;
+  color: #374151;
+}
+.data-table tbody tr:last-child td { border-bottom: none; }
