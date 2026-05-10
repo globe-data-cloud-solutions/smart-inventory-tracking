@@ -37,7 +37,10 @@ async function request<T>(
 
   if (!res.ok || !json.success) {
     const err = json as ApiError;
-    throw new Error(err.error?.message ?? `HTTP ${res.status}`);
+    const apiErr = new Error(err.error?.message ?? `HTTP ${res.status}`) as Error & { status: number; code: string };
+    apiErr.status = res.status;
+    apiErr.code   = err.error?.code ?? "";
+    throw apiErr;
   }
 
   return (json as ApiResponse<T>).data;
