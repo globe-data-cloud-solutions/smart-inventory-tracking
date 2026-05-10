@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { getSession, logout, SA_ORG_SLUG, type SessionUser } from "@/lib/demo-auth";
 import { DEMO_TENANTS } from "@/lib/demo-data";
 
@@ -169,6 +170,9 @@ export default function OrgLayout({ children }: { children: React.ReactNode }) {
   const checked  = useRef(false);
   const [user, setUser]   = useState<SessionUser | null>(null);
   const [ready, setReady] = useState(false);
+  const [qc]              = useState(() => new QueryClient({
+    defaultOptions: { queries: { retry: 1, staleTime: 30_000 } },
+  }));
 
   useEffect(() => {
     if (checked.current) return;
@@ -231,6 +235,7 @@ export default function OrgLayout({ children }: { children: React.ReactNode }) {
     : null;
 
   return (
+    <QueryClientProvider client={qc}>
     <div style={{ minHeight: "100vh", background: "#F3F4F6" }}>
 
       {/* ── Top banner ── */}
@@ -316,6 +321,7 @@ export default function OrgLayout({ children }: { children: React.ReactNode }) {
         }
       `}</style>
     </div>
+    </QueryClientProvider>
   );
 }
 
