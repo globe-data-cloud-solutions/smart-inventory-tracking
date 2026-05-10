@@ -132,15 +132,16 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         background: "linear-gradient(to right,#078930 0% 33.33%,#FCDD09 33.33% 66.66%,#DA121A 66.66% 100%)",
       }} />
 
-      {/* Body: sidebar + scrollable main */}
+      {/* Body: sidebar (240px, starts at y=60) + scrollable main */}
       <div style={{ display: "flex", paddingTop: 60 }}>
         <Sidebar user={user} />
         <main style={{
           flex: 1,
-          marginLeft: 256,
+          marginLeft: 240,   /* matches sidebar width */
           minHeight: "calc(100vh - 60px)",
           overflow: "auto",
           padding: 0,
+          background: "#F3F4F6",
         }}>
           {children}
         </main>

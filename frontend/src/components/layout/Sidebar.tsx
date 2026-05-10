@@ -4,110 +4,162 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { logout, type SessionUser } from "@/lib/demo-auth";
 import { DEMO_TENANTS } from "@/lib/demo-data";
-import { cn } from "@/lib/utils";
 
 interface SidebarProps {
   user: SessionUser;
 }
 
+const ROLE_COLORS: Record<string, string> = {
+  SA:  "#DC2626", TA: "#7C3AED", NM: "#2563EB",
+  RM:  "#0D9488", WM: "#059669", LM: "#0891B2",
+  AU:  "#6B7280", SYS:"#D97706",
+};
+
 export function Sidebar({ user }: SidebarProps) {
   const pathname = usePathname();
-  const router = useRouter();
+  const router   = useRouter();
 
-  const handleLogout = () => {
-    logout();
-    router.push("/login");
-  };
+  const handleLogout = () => { logout(); router.push("/login"); };
 
-  const navItems =
-    user.role === "SA"
-      ? SA_NAV
-      : getTenantNav(user.tenantId ?? "");
+  const navItems = user.role === "SA" ? SA_NAV : TENANT_NAV;
 
   return (
-    <aside className="fixed inset-y-0 left-0 w-64 bg-slate-900 flex flex-col z-40">
-      {/* Logo */}
-      <div className="h-16 flex items-center gap-3 px-5 border-b border-white/10">
-        <div className="w-8 h-8 rounded-lg bg-brand-500 flex items-center justify-center flex-shrink-0">
-          <svg viewBox="0 0 24 24" fill="none" className="w-5 h-5 text-white" stroke="currentColor" strokeWidth={2}>
-            <path strokeLinecap="round" strokeLinejoin="round" d="M20 7l-8-4-8 4m16 0v10l-8 4m0-14L4 17m8 4V11" />
-          </svg>
+    /*
+     * Sidebar starts at top: 60px (56px header + 4px Ethiopian stripe).
+     * No logo here — the header already carries the brand mark.
+     * User identity sits at the very top so it's immediately visible.
+     */
+    <aside
+      style={{
+        position: "fixed",
+        top: 60,           /* sits directly below the header + stripe */
+        left: 0,
+        bottom: 0,
+        width: 240,
+        background: "#0f2d1f",
+        display: "flex",
+        flexDirection: "column",
+        zIndex: 40,
+        borderRight: "1px solid rgba(255,255,255,0.06)",
+        overflow: "hidden",
+      }}
+    >
+      {/* ── User identity — top of sidebar, always visible ── */}
+      <div style={{
+        padding: "12px 14px",
+        borderBottom: "1px solid rgba(255,255,255,0.08)",
+        background: "rgba(255,255,255,0.04)",
+        flexShrink: 0,
+      }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          {/* Role badge */}
+          <span style={{
+            fontSize: 10, fontWeight: 800, color: "#fff", letterSpacing: "0.04em",
+            background: ROLE_COLORS[user.role] ?? "#6B7280",
+            padding: "2px 7px", borderRadius: 3, flexShrink: 0,
+          }}>
+            {user.role}
+          </span>
+          <div style={{ minWidth: 0 }}>
+            <p style={{ fontSize: 13, fontWeight: 600, color: "#fff", margin: 0,
+              whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+              {user.name}
+            </p>
+            {user.tenantName && (
+              <p style={{ fontSize: 11, color: "#6ee7b7", margin: 0, marginTop: 1,
+                whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                {user.tenantName}
+                {user.warehouseName && <span style={{ color: "#4ade80" }}> › {user.warehouseName}</span>}
+              </p>
+            )}
+            {user.role === "SA" && (
+              <p style={{ fontSize: 11, color: "#FCDD09", margin: 0, marginTop: 1 }}>
+                All tenants
+              </p>
+            )}
+          </div>
         </div>
-        <span className="text-white font-semibold text-sm truncate">SMART Inventory</span>
       </div>
 
-      {/* User badge */}
-      <div className="mx-3 mt-4 p-3 rounded-lg bg-white/5 border border-white/10">
-        <p className="text-white text-sm font-medium truncate">{user.name}</p>
-        <div className="flex items-center gap-2 mt-1">
-          <RoleBadge role={user.role} />
-          {user.warehouseName && (
-            <p className="text-slate-400 text-xs truncate">📍 {user.warehouseName}</p>
-          )}
-          {user.tenantName && !user.warehouseName && (
-            <p className="text-slate-400 text-xs truncate">{user.tenantName}</p>
-          )}
-        </div>
-      </div>
-
-      {/* Navigation */}
-      <nav className="flex-1 px-3 py-4 space-y-0.5 overflow-y-auto">
-        {navItems.map((item) => {
+      {/* ── Navigation ── */}
+      <nav style={{ flex: 1, overflowY: "auto", padding: "8px 8px" }}>
+        {navItems.map((item, idx) => {
           if (item.type === "section") {
             return (
-              <p key={item.label} className="px-3 pt-4 pb-1 text-xs font-semibold text-slate-500 uppercase tracking-wider">
+              <p key={idx} style={{
+                fontSize: 10, fontWeight: 700, textTransform: "uppercase",
+                letterSpacing: "0.08em", color: "rgba(255,255,255,0.3)",
+                padding: "14px 10px 4px", margin: 0,
+              }}>
                 {item.label}
               </p>
             );
           }
-          const active = pathname === item.href || (item.href !== "/dashboard" && pathname.startsWith(item.href ?? ""));
+          const active = item.href === "/dashboard"
+            ? pathname === "/dashboard"
+            : pathname.startsWith(item.href ?? "NOMATCH");
           return (
-            <Link
-              key={item.label}
-              href={item.href ?? "#"}
-              className={cn(
-                "flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-colors",
-                active
-                  ? "bg-brand-600 text-white"
-                  : "text-slate-300 hover:bg-white/10 hover:text-white"
-              )}
-            >
-              <span className="text-lg leading-none">{item.icon}</span>
+            <Link key={idx} href={item.href ?? "#"} style={{
+              display: "flex", alignItems: "center", gap: 10,
+              padding: "8px 10px", borderRadius: 5,
+              fontSize: 13, fontWeight: 500, textDecoration: "none",
+              marginBottom: 1,
+              background: active ? "rgba(252,221,9,0.12)" : "transparent",
+              color: active ? "#FCDD09" : "rgba(255,255,255,0.65)",
+              borderLeft: active ? "3px solid #FCDD09" : "3px solid transparent",
+              transition: "all 0.12s",
+            }}>
+              <span style={{ fontSize: 15, lineHeight: 1, flexShrink: 0 }}>{item.icon}</span>
               {item.label}
             </Link>
           );
         })}
 
-        {/* Tenant links for SA */}
+        {/* SA-only: tenant quick links */}
         {user.role === "SA" && (
           <>
-            <p className="px-3 pt-4 pb-1 text-xs font-semibold text-slate-500 uppercase tracking-wider">Tenants</p>
-            {DEMO_TENANTS.map((t) => (
-              <Link
-                key={t.id}
-                href={`/dashboard/tenants/${t.slug}`}
-                className={cn(
-                  "flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-colors",
-                  pathname === `/dashboard/tenants/${t.slug}`
-                    ? "bg-brand-600 text-white"
-                    : "text-slate-300 hover:bg-white/10 hover:text-white"
-                )}
-              >
-                <span className="text-lg">{t.logo}</span>
-                {t.name}
-              </Link>
-            ))}
+            <p style={{
+              fontSize: 10, fontWeight: 700, textTransform: "uppercase",
+              letterSpacing: "0.08em", color: "rgba(255,255,255,0.3)",
+              padding: "14px 10px 4px", margin: 0,
+            }}>
+              Tenants
+            </p>
+            {DEMO_TENANTS.map((t) => {
+              const active = pathname === `/dashboard/tenants/${t.slug}`;
+              return (
+                <Link key={t.id} href={`/dashboard/tenants/${t.slug}`} style={{
+                  display: "flex", alignItems: "center", gap: 10,
+                  padding: "8px 10px", borderRadius: 5,
+                  fontSize: 13, fontWeight: 500, textDecoration: "none",
+                  marginBottom: 1,
+                  background: active ? "rgba(252,221,9,0.12)" : "transparent",
+                  color: active ? "#FCDD09" : "rgba(255,255,255,0.65)",
+                  borderLeft: active ? "3px solid #FCDD09" : "3px solid transparent",
+                  transition: "all 0.12s",
+                }}>
+                  <span style={{ fontSize: 15, lineHeight: 1 }}>{t.logo}</span>
+                  {t.name}
+                </Link>
+              );
+            })}
           </>
         )}
       </nav>
 
-      {/* Logout */}
-      <div className="p-3 border-t border-white/10">
+      {/* ── Sign out ── */}
+      <div style={{ padding: "10px 8px", borderTop: "1px solid rgba(255,255,255,0.08)", flexShrink: 0 }}>
         <button
           onClick={handleLogout}
-          className="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm text-slate-400 hover:bg-white/10 hover:text-white transition-colors"
+          style={{
+            width: "100%", display: "flex", alignItems: "center", gap: 10,
+            padding: "8px 10px", borderRadius: 5, border: "none", cursor: "pointer",
+            fontSize: 13, fontWeight: 500, textAlign: "left",
+            background: "transparent", color: "rgba(255,255,255,0.4)",
+            transition: "all 0.12s",
+          }}
         >
-          <span className="text-lg">🚪</span>
+          <span style={{ fontSize: 15 }}>🚪</span>
           Sign out
         </button>
       </div>
@@ -115,48 +167,27 @@ export function Sidebar({ user }: SidebarProps) {
   );
 }
 
-function RoleBadge({ role }: { role: string }) {
-  const colors: Record<string, string> = {
-    SA:  "bg-red-500",
-    TA:  "bg-purple-500",
-    NM:  "bg-blue-500",
-    RM:  "bg-indigo-500",
-    WM:  "bg-teal-500",
-    LM:  "bg-cyan-500",
-    AU:  "bg-gray-500",
-    SYS: "bg-orange-500",
-  };
-  return (
-    <span className={cn("text-xs text-white px-1.5 py-0.5 rounded font-medium", colors[role] ?? "bg-gray-500")}>
-      {role}
-    </span>
-  );
-}
-
 const SA_NAV = [
-  { type: "section",  label: "Overview" },
-  { type: "link", icon: "🏠", label: "Dashboard",     href: "/dashboard" },
-  { type: "link", icon: "📊", label: "All Tenants",   href: "/dashboard" },
-  { type: "section",  label: "System" },
-  { type: "link", icon: "🔐", label: "Permissions",   href: "/dashboard" },
-  { type: "link", icon: "📋", label: "Audit Logs",    href: "/dashboard" },
-  { type: "link", icon: "⚙️", label: "Settings",      href: "/dashboard" },
+  { type: "section", label: "Overview" },
+  { type: "link", icon: "🏠", label: "Dashboard",   href: "/dashboard" },
+  { type: "section", label: "System" },
+  { type: "link", icon: "🔐", label: "Permissions", href: "/dashboard" },
+  { type: "link", icon: "📋", label: "Audit Logs",  href: "/dashboard" },
+  { type: "link", icon: "⚙️", label: "Settings",    href: "/dashboard" },
 ];
 
-function getTenantNav(tenantId: string) {
-  return [
-    { type: "section",  label: "Inventory" },
-    { type: "link", icon: "🏠", label: "Dashboard",     href: "/dashboard" },
-    { type: "link", icon: "📦", label: "Inventory",     href: "/dashboard/inventory" },
-    { type: "link", icon: "🏭", label: "Products",      href: "/dashboard/products" },
-    { type: "link", icon: "🏗️", label: "Warehouses",    href: "/dashboard" },
-    { type: "section",  label: "Operations" },
-    { type: "link", icon: "🔄", label: "Transfers",     href: "/dashboard" },
-    { type: "link", icon: "📋", label: "Adjustments",   href: "/dashboard" },
-    { type: "link", icon: "🔢", label: "Stock Count",   href: "/dashboard" },
-    { type: "section",  label: "Reports" },
-    { type: "link", icon: "📈", label: "Analytics",     href: "/dashboard/analytics" },
-    { type: "link", icon: "📊", label: "Reports",       href: "/dashboard/reports" },
-    { type: "link", icon: "🔍", label: "Audit Log",     href: "/dashboard" },
-  ];
-}
+const TENANT_NAV = [
+  { type: "section", label: "Inventory" },
+  { type: "link", icon: "🏠", label: "Dashboard",   href: "/dashboard" },
+  { type: "link", icon: "📦", label: "Inventory",   href: "/dashboard/inventory" },
+  { type: "link", icon: "🏭", label: "Products",    href: "/dashboard/products" },
+  { type: "link", icon: "🏗️", label: "Warehouses",  href: "/dashboard" },
+  { type: "section", label: "Operations" },
+  { type: "link", icon: "🔄", label: "Transfers",   href: "/dashboard" },
+  { type: "link", icon: "📋", label: "Adjustments", href: "/dashboard" },
+  { type: "link", icon: "🔢", label: "Stock Count", href: "/dashboard" },
+  { type: "section", label: "Reports" },
+  { type: "link", icon: "📈", label: "Analytics",   href: "/dashboard/analytics" },
+  { type: "link", icon: "📊", label: "Reports",     href: "/dashboard/reports" },
+  { type: "link", icon: "🔍", label: "Audit Log",   href: "/dashboard" },
+];
