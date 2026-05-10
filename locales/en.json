@@ -212,6 +212,90 @@
     "role": "Role",
     "grant_type": "Grant"
   },
+  "issue": {
+    "title": "Issue Stock",
+    "reason": "Reason Code",
+    "reasons": {
+      "SALE": "Sale / Dispatch to Customer",
+      "INTERNAL_USE": "Internal Use",
+      "DAMAGE": "Damaged / Write-off",
+      "EXPIRY": "Expired Stock Disposal",
+      "SAMPLE": "Sample / Promotion",
+      "OTHER": "Other"
+    },
+    "submit": "Issue Stock",
+    "success": "Stock issued successfully"
+  },
+  "adjustment": {
+    "title": "Stock Adjustment",
+    "new_btn": "+ New Adjustment",
+    "quantity": "Adjustment Quantity",
+    "quantity_hint": "Positive (+) to add, negative (−) to remove",
+    "reason": "Reason",
+    "reasons": {
+      "DAMAGE": "Damaged / Write-off",
+      "COUNT_VARIANCE": "Stock Count Variance",
+      "EXPIRY": "Expired Stock Disposal",
+      "SUPPLIER_RETURN": "Return to Supplier",
+      "SYSTEM_CORRECTION": "System Correction",
+      "OTHER": "Other"
+    },
+    "submit": "Submit for Approval",
+    "approve": "Approve",
+    "reject": "Reject",
+    "auto_applied": "Auto-approved & applied (below threshold)",
+    "pending_rm": "Awaiting RM approval",
+    "pending_nm": "Awaiting NM approval",
+    "success_applied": "Adjustment applied",
+    "success_submitted": "Submitted for approval"
+  },
+  "transfer_actions": {
+    "submit": "Submit for Approval",
+    "approve": "Approve",
+    "reject": "Reject",
+    "dispatch": "Dispatch",
+    "mark_received": "Mark as Received",
+    "cancel": "Cancel Transfer",
+    "confirm_submit": "Submit this transfer for approval?",
+    "confirm_dispatch": "Confirm goods have been dispatched?",
+    "confirm_receive": "Confirm all goods have been received?"
+  },
+  "dispatch": {
+    "title": "Dispatch Strategy",
+    "subtitle": "Configure FEFO / FIFO / LIFO per product or category",
+    "strategy": "Strategy",
+    "scope": "Scope",
+    "product": "Product",
+    "category": "Category",
+    "auto_fefo": "Auto-FEFO (when batch tracking + expiry date both active)",
+    "override_btn": "FEFO Override",
+    "override_reason": "Override Reason",
+    "override_submit": "Apply Override",
+    "save": "Save Strategy",
+    "success": "Dispatch strategy updated"
+  },
+  "lots": {
+    "title": "Lot Traceability",
+    "subtitle": "Search by lot number — see all locations and transactions",
+    "search_placeholder": "Enter lot / batch number…",
+    "search_btn": "Search",
+    "lot_number": "Lot Number",
+    "product": "Product",
+    "warehouse": "Warehouse",
+    "quantity": "Quantity",
+    "expiry": "Expiry Date",
+    "received": "Received",
+    "status": "Status",
+    "no_results": "No lots found matching that number"
+  },
+  "notifications": {
+    "title": "Alerts",
+    "mark_all_read": "Mark all read",
+    "no_alerts": "No active alerts",
+    "low_stock": "Low Stock",
+    "expiry_soon": "Expiring Soon",
+    "pending_approval": "Pending Approval"
+  },
   "errors": {
     "RBAC_DENIED": "You do not have permission to perform this action.",
     "ABAC_DENIED": "Access denied — resource outside your scope.",

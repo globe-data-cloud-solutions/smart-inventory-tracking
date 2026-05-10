@@ -1,13 +1,72 @@
 "use client";
 
+import { useCallback, useRef, useState } from "react";
 import { useParams } from "next/navigation";
-import { useState } from "react";
 import { SA_ORG_SLUG } from "@/lib/demo-auth";
 import { DEMO_TENANTS, getTotalStock, type DemoProduct } from "@/lib/demo-data";
+import { useScanner } from "@/hooks/useScanner";
 
 const DARK   = "#0f2d1f";
 const FOREST = "#1B4332";
 const GOLD   = "#FCDD09";
+
+/* ── Inline scanner widget for stock count ─────────────────────────────── */
+function ScannerToggle({ products, warehouseId, open, hint, onToggle, onHint, onCount }: {
+  products: DemoProduct[];
+  warehouseId: string;
+  open: boolean; hint: string;
+  onToggle: () => void;
+  onHint: (h: string) => void;
+  onCount: (productId: string, warehouseId: string, qty: number) => void;
+}) {
+  const handleScan = useCallback((code: string) => {
+    const p = products.find((pr) => pr.sku === code || pr.sku.toLowerCase() === code.toLowerCase());
+    if (p) {
+      const expected = warehouseId ? (p.stock[warehouseId] ?? 0) : 0;
+      onCount(p.id, warehouseId, expected);
+      onHint(`✓ ${p.name} — expected ${expected} pre-filled`);
+    } else {
+      onHint(`No product matched SKU: ${code}`);
+    }
+  }, [products, warehouseId, onCount, onHint]);
+
+  const { videoRef, isActive, error: scanErr, start, stop } = useScanner(handleScan);
+
+  function toggle() {
+    if (open) { stop(); onToggle(); }
+    else { onToggle(); void start(); }
+  }
+
+  return (
+    <div style={{ position: "relative" }}>
+      <button
+        onClick={toggle}
+        style={{
+          padding: "8px 14px", borderRadius: 4, cursor: "pointer", fontSize: 12, fontWeight: 700,
+          border: `2px solid ${open ? "#059669" : "#D1D5DB"}`,
+          background: open ? "#F0FDF4" : "#F9FAFB",
+          color: open ? "#059669" : "#374151",
+          display: "flex", alignItems: "center", gap: 6,
+        }}
+      >
+        <span style={{ fontSize: 14 }}>{open ? "■" : "⬛"}</span>
+        {open ? "Stop Scanner" : "Scan to Count"}
+      </button>
+      {open && (
+        <div style={{ position: "absolute", top: "100%", right: 0, zIndex: 50, marginTop: 6, width: 280, borderRadius: 8, overflow: "hidden", boxShadow: "0 8px 24px rgba(0,0,0,0.18)", border: "2px solid #059669" }}>
+          {/* eslint-disable-next-line jsx-a11y/media-has-caption */}
+          <video ref={videoRef} style={{ width: "100%", height: 160, objectFit: "cover", display: "block", background: "#000" }} playsInline muted />
+          {!isActive && <div style={{ position: "absolute", top: 0, left: 0, right: 0, height: 160, display: "flex", alignItems: "center", justifyContent: "center", background: "rgba(0,0,0,0.5)", color: "#fff", fontSize: 13 }}>Starting camera…</div>}
+          {(hint || scanErr) && (
+            <div style={{ padding: "8px 10px", background: "#fff", fontSize: 12, color: hint.startsWith("✓") ? "#059669" : "#DC2626", fontWeight: 600 }}>
+              {hint || scanErr}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
 
 interface CountEntry {
   productId: string;
@@ -28,6 +87,8 @@ export default function StockCountPage() {
   const [submitted, setSubmitted]         = useState(false);
   const [counts, setCounts]               = useState<Record<string, string>>({});
   const [selectedWH, setSelectedWH]       = useState("");
+  const [scannerOpen, setScannerOpen]     = useState(false);
+  const [scanHint, setScanHint]           = useState("");
 
   if (org === SA_ORG_SLUG) {
     return <p style={{ padding: "2rem", color: "#6B7280" }}>Select a tenant to run a stock count.</p>;
@@ -128,8 +189,20 @@ export default function StockCountPage() {
           </p>
         </div>
         <div style={{ display: "flex", gap: 10 }}>
+          <ScannerToggle
+            products={products}
+            warehouseId={selectedWH}
+            open={scannerOpen}
+            hint={scanHint}
+            onToggle={() => setScannerOpen((o) => !o)}
+            onHint={setScanHint}
+            onCount={(pid, wid, qty) => {
+              const k = `${pid}::${wid}`;
+              setCounts((c) => ({ ...c, [k]: String(qty) }));
+            }}
+          />
           <button
-            onClick={() => { setSessionActive(false); setCounts({}); }}
+            onClick={() => { setSessionActive(false); setCounts({}); setScannerOpen(false); setScanHint(""); }}
             style={{ padding: "8px 16px", background: "#F3F4F6", border: "1px solid #E5E7EB", borderRadius: 4, fontSize: 13, fontWeight: 600, cursor: "pointer", color: "#374151" }}
           >
             Cancel

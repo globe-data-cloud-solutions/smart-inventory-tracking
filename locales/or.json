@@ -68,42 +68,42 @@
         "sku_copy": "NEEDS_TRANSLATION: Copy",
         "sku_copied": "NEEDS_TRANSLATION: Copied!",
         "name": "NEEDS_TRANSLATION: Product Name",
-        "name_placeholder": "NEEDS_TRANSLATION: Enter product name",
-        "type_code": "NEEDS_TRANSLATION: Product Type Code",
-        "type_code_placeholder": "NEEDS_TRANSLATION: e.g. WTR, CMT, FLR",
-        "type_code_hint": "NEEDS_TRANSLATION: 2–5 letters · used in SKU",
-        "unit": "NEEDS_TRANSLATION: Unit of Measure",
-        "pack_size": "NEEDS_TRANSLATION: Pack Size"
+        "name_placeholder": "Maqaa meeshaa galchi",
+        "type_code": "Koodii Gosa Meeshaa",
+        "type_code_placeholder": "fkl. WTR, CMT, FLR",
+        "type_code_hint": "Qubee 2–5 · SKU keessatti fayyadama",
+        "unit": "Madaala Safaraa",
+        "pack_size": "Bal'ina Kuusaa"
       },
-      "sku_preview_label": "NEEDS_TRANSLATION: SKU preview",
+      "sku_preview_label": "SKU mul'ata",
       "confirm": {
-        "discard": "NEEDS_TRANSLATION: Discard changes?"
+        "discard": "Jijjiirraa dhiistaa?"
       },
-      "success": "NEEDS_TRANSLATION: Product {{sku}} created successfully",
-      "save": "NEEDS_TRANSLATION: Save Product",
+      "success": "Meeshaan {{sku}} milkaa'inaan uumame",
+      "save": "Meeshaa Olkaa'i",
       "cancel": "Haquu",
-      "loading_sku": "NEEDS_TRANSLATION: Generating…",
+      "loading_sku": "Uumaa jira…",
       "error": {
-        "duplicate_name": "NEEDS_TRANSLATION: A product with this name already exists.",
-        "sku_cap_reached": "NEEDS_TRANSLATION: SKU limit reached.",
+        "duplicate_name": "Maqaa kana qabdu meeshaan dhaabbata kana keessatti duraan jiraatti.",
+        "sku_cap_reached": "Daangaan SKU geenyera. Guddifachuuf bulchaa keessan quunnamaa.",
         "generic": "Dogoggorri hin eegamne uumame. Maaloo irra deebi'ii yaali.",
-        "name_required": "NEEDS_TRANSLATION: Product name is required.",
-        "type_code_min": "NEEDS_TRANSLATION: At least 2 letters required.",
-        "type_code_max": "NEEDS_TRANSLATION: Maximum 5 letters.",
-        "type_code_letters_only": "NEEDS_TRANSLATION: Letters only, no numbers or symbols."
+        "name_required": "Maqaan meeshaa barbaachisaadha.",
+        "type_code_min": "Xiqqaate qubee 2 barbaachisa.",
+        "type_code_max": "Guddaan qubee 5.",
+        "type_code_letters_only": "Qubee qofa, lakkoofsa ykn mallattoo hin fayyadamin."
       }
     },
     "unit": {
-      "KG":   "NEEDS_TRANSLATION: Kilograms (KG)",
-      "PACK": "NEEDS_TRANSLATION: Pack",
-      "QTL":  "NEEDS_TRANSLATION: Quintal (QTL)",
-      "MT":   "NEEDS_TRANSLATION: Metric Ton (MT)"
+      "KG":   "Kilograama (KG)",
+      "PACK": "Kuusaa",
+      "QTL":  "Kuntaala (QTL)",
+      "MT":   "Meetirik Toonii (MT)"
     },
     "pack_size": {
-      "1":  "NEEDS_TRANSLATION: Single (1)",
-      "4":  "NEEDS_TRANSLATION: Pack of 4",
-      "6":  "NEEDS_TRANSLATION: Pack of 6",
-      "12": "NEEDS_TRANSLATION: Pack of 12"
+      "1":  "Tokko (1)",
+      "4":  "Kuusaa 4",
+      "6":  "Kuusaa 6",
+      "12": "Kuusaa 12"
     }
   },
   "lang": {
@@ -186,6 +186,90 @@
     "domain": "Giddugala",
     "role": "Gahee",
     "grant_type": "Akaakuu"
+  },
+  "issue": {
+    "title": "Kuusaa Baasi",
+    "reason": "Koodii Sababa",
+    "reasons": {
+      "SALE": "Gurgurtaa",
+      "INTERNAL_USE": "Fayyadama Keessoo",
+      "DAMAGE": "Miidhaa",
+      "EXPIRY": "Yeroo Dhumaa",
+      "SAMPLE": "Fakkeenya",
+      "OTHER": "Kan biraa"
+    },
+    "submit": "Kuusaa Baasi",
+    "success": "Kuusaan milkaa'inaan baye"
+  },
+  "adjustment": {
+    "title": "Sirreessa Kuusaa",
+    "new_btn": "+ Sirreessa Haaraa",
+    "quantity": "Baay'ina Sirreessaa",
+    "quantity_hint": "Positiivii (+) ykn Negatiivii (-)",
+    "reason": "Sababa",
+    "reasons": {
+      "DAMAGE": "Miidhaa",
+      "COUNT_VARIANCE": "Garaagarummaa Lakkoofsa",
+      "EXPIRY": "Yeroo Dhumaa",
+      "SUPPLIER_RETURN": "Gara Dhiyeessituu Deebi'e",
+      "SYSTEM_CORRECTION": "Sirreessa Sirna",
+      "OTHER": "Kan biraa"
+    },
+    "submit": "Hayyamaaf Galchi",
+    "approve": "Hayyami",
+    "reject": "Dhoorkadhu",
+    "auto_applied": "Hayyamame raawwatame (daangaa gadi)",
+    "pending_rm": "RM hayyama eeggata",
+    "pending_nm": "NM hayyama eeggata",
+    "success_applied": "Sirreessi raawwatame",
+    "success_submitted": "Hayyamaaf dhiyaate"
+  },
+  "transfer_actions": {
+    "submit": "Hayyamaaf Galchi",
+    "approve": "Hayyami",
+    "reject": "Dhoorkadhu",
+    "dispatch": "Ergi",
+    "mark_received": "Fudhatamuun Mallatteessi",
+    "cancel": "Haquu",
+    "confirm_submit": "Dabarsa hayyamaaf galchuuf barbaaddaa?",
+    "confirm_dispatch": "Meeshaaleen ergamaniiruu?",
+    "confirm_receive": "Meeshaaleen hundi gahaniiruu?"
+  },
+  "dispatch": {
+    "title": "Tartiiba Raabsuu",
+    "subtitle": "Meeshaalee FEFO / FIFO / LIFO qindeessi",
+    "strategy": "Tartiiba",
+    "scope": "Daangaa",
+    "product": "Meeshaa",
+    "category": "Gosa",
+    "auto_fefo": "Ofumaan FEFO (yommuu hordoffii gurmuu + yeroo dhumaa socho'u)",
+    "override_btn": "FEFO Darbii",
+    "override_reason": "Sababa Darbii",
+    "override_submit": "Darbii Raawwadhu",
+    "save": "Tartiiba Olkaa'i",
+    "success": "Tartiibni raabsuu haaromfame"
+  },
+  "lots": {
+    "title": "Qo'annoo Kooraa",
+    "subtitle": "Lakkoofsa kooraa barbaadi — bakki jiru hundi mul'ata",
+    "search_placeholder": "Lakkoofsa kooraa galchi...",
+    "search_btn": "Barbaadi",
+    "lot_number": "Lakkoofsa Kooraa",
+    "product": "Meeshaa",
+    "warehouse": "Kuusaa Meeshaa",
+    "quantity": "Baay'ina",
+    "expiry": "Yeroo Dhumaa",
+    "received": "Fudhataame",
+    "status": "Haala",
+    "no_results": "Kooraan hin argamne"
+  },
+  "notifications": {
+    "title": "Beeksisaalee",
+    "mark_all_read": "Hundi Dubbifame Mallatteessi",
+    "no_alerts": "Beeksisa hin jiru",
+    "low_stock": "Kuusaa Xiqqaa",
+    "expiry_soon": "Dhiyootti Ni Dhumata",
+    "pending_approval": "Hayyama Eeggata"
   },
   "errors": {
     "RBAC_DENIED": "Hojii kana raawwachuuf hayyamni hin jiru.",

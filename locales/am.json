@@ -67,42 +67,42 @@
         "sku_copy": "ቅዳ",
         "sku_copied": "ተቀድቷል!",
         "name": "የምርት ስም",
-        "name_placeholder": "NEEDS_TRANSLATION: Enter product name",
-        "type_code": "NEEDS_TRANSLATION: Product Type Code",
-        "type_code_placeholder": "NEEDS_TRANSLATION: e.g. WTR, CMT, FLR",
-        "type_code_hint": "NEEDS_TRANSLATION: 2–5 letters · used in SKU",
-        "unit": "NEEDS_TRANSLATION: Unit of Measure",
-        "pack_size": "NEEDS_TRANSLATION: Pack Size"
+        "name_placeholder": "የምርት ስም ያስገቡ",
+        "type_code": "የምርት አይነት ኮድ",
+        "type_code_placeholder": "ለምሳሌ፦ WTR, CMT, FLR",
+        "type_code_hint": "2–5 ፊደሎች · በSKU ውስጥ ጥቅም ላይ ይውላሉ",
+        "unit": "የመለኪያ አሃድ",
+        "pack_size": "የጥቅል መጠን"
       },
-      "sku_preview_label": "NEEDS_TRANSLATION: SKU preview",
+      "sku_preview_label": "SKU ቅድመ-ዕይታ",
       "confirm": {
-        "discard": "NEEDS_TRANSLATION: Discard changes?"
+        "discard": "ለውጦቹን ትጥላለህ?"
       },
-      "success": "NEEDS_TRANSLATION: Product {{sku}} created successfully",
-      "save": "NEEDS_TRANSLATION: Save Product",
+      "success": "ምርት {{sku}} በተሳካ ሁኔታ ተፈጠረ",
+      "save": "ምርቱን አስቀምጥ",
       "cancel": "ሰርዝ",
-      "loading_sku": "NEEDS_TRANSLATION: Generating…",
+      "loading_sku": "እየፈጠረ ነው…",
       "error": {
-        "duplicate_name": "NEEDS_TRANSLATION: A product with this name already exists.",
-        "sku_cap_reached": "NEEDS_TRANSLATION: SKU limit reached.",
+        "duplicate_name": "በዚህ ስም ምርት አስቀድሞ በዚህ ድርጅት ውስጥ አለ።",
+        "sku_cap_reached": "የSKU ወሰን ደርሷል። ለማሻሻል አስተዳዳሪዎን ያነጋግሩ።",
         "generic": "ያልተጠበቀ ስህተት ተከስቷል። እባክዎ እንደገና ይሞክሩ።",
-        "name_required": "NEEDS_TRANSLATION: Product name is required.",
-        "type_code_min": "NEEDS_TRANSLATION: At least 2 letters required.",
-        "type_code_max": "NEEDS_TRANSLATION: Maximum 5 letters.",
-        "type_code_letters_only": "NEEDS_TRANSLATION: Letters only, no numbers or symbols."
+        "name_required": "የምርት ስም ያስፈልጋል።",
+        "type_code_min": "ቢያንስ 2 ፊደሎች ያስፈልጋሉ።",
+        "type_code_max": "ከፍተኛ 5 ፊደሎች።",
+        "type_code_letters_only": "ፊደሎች ብቻ፣ ቁጥሮች ወይም ምልክቶች አይፈቀዱም።"
       }
     },
     "unit": {
-      "KG":   "NEEDS_TRANSLATION: Kilograms (KG)",
-      "PACK": "NEEDS_TRANSLATION: Pack",
-      "QTL":  "NEEDS_TRANSLATION: Quintal (QTL)",
-      "MT":   "NEEDS_TRANSLATION: Metric Ton (MT)"
+      "KG":   "ኪሎ ግራም (KG)",
+      "PACK": "ጥቅል",
+      "QTL":  "ኩንታል (QTL)",
+      "MT":   "ሜትሪክ ቶን (MT)"
     },
     "pack_size": {
-      "1":  "NEEDS_TRANSLATION: Single (1)",
-      "4":  "NEEDS_TRANSLATION: Pack of 4",
-      "6":  "NEEDS_TRANSLATION: Pack of 6",
-      "12": "NEEDS_TRANSLATION: Pack of 12"
+      "1":  "ነጠላ (1)",
+      "4":  "ጥቅል 4",
+      "6":  "ጥቅል 6",
+      "12": "ጥቅል 12"
     }
   },
   "lang": {
@@ -185,6 +185,90 @@
     "domain": "ጎራ",
     "role": "ሚና",
     "grant_type": "ዓይነት"
+  },
+  "issue": {
+    "title": "ክምችት አውጣ",
+    "reason": "የምክንያት ኮድ",
+    "reasons": {
+      "SALE": "ሽያጭ",
+      "INTERNAL_USE": "ውስጣዊ አጠቃቀም",
+      "DAMAGE": "ጉዳት",
+      "EXPIRY": "ጊዜ ማብቂያ",
+      "SAMPLE": "ናሙና",
+      "OTHER": "ሌላ"
+    },
+    "submit": "ክምችት አውጣ",
+    "success": "ክምችቱ በተሳካ ሁኔታ ወጥቷል"
+  },
+  "adjustment": {
+    "title": "የክምችት ማስተካከያ",
+    "new_btn": "+ አዲስ ማስተካከያ",
+    "quantity": "የማስተካከያ መጠን",
+    "quantity_hint": "አዎንታዊ (+) ወይም አሉታዊ (-)",
+    "reason": "ምክንያት",
+    "reasons": {
+      "DAMAGE": "ጉዳት",
+      "COUNT_VARIANCE": "ቆጠራ ልዩነት",
+      "EXPIRY": "ጊዜ ማብቂያ",
+      "SUPPLIER_RETURN": "ወደ አቅራቢ ተመለሰ",
+      "SYSTEM_CORRECTION": "የስርዓት ማረሙ",
+      "OTHER": "ሌላ"
+    },
+    "submit": "ለፈቃድ አስገባ",
+    "approve": "ፍቀድ",
+    "reject": "ውድቅ አድርግ",
+    "auto_applied": "ተፈቅዶ ተተግብሯል (ከወሰን በታች)",
+    "pending_rm": "RM ፈቃድ ይጠብቃል",
+    "pending_nm": "NM ፈቃድ ይጠብቃል",
+    "success_applied": "ማስተካከያ ተተግብሯል",
+    "success_submitted": "ለፈቃድ ቀርቧል"
+  },
+  "transfer_actions": {
+    "submit": "ለፈቃድ አስገባ",
+    "approve": "ፍቀድ",
+    "reject": "ውድቅ አድርግ",
+    "dispatch": "ላክ",
+    "mark_received": "እንደተቀበለ ምልክት አድርግ",
+    "cancel": "ሰርዝ",
+    "confirm_submit": "ዝውውሩን ለፈቃድ ማስገባት ይፈልጋሉ?",
+    "confirm_dispatch": "እቃዎቹ ተልከዋል?",
+    "confirm_receive": "ሁሉም ዕቃዎች ደርሰዋል?"
+  },
+  "dispatch": {
+    "title": "የላኪ ስልት",
+    "subtitle": "ለምርቶች FEFO / FIFO / LIFO ያዋቅሩ",
+    "strategy": "ስልት",
+    "scope": "ወሰን",
+    "product": "ምርት",
+    "category": "ምድብ",
+    "auto_fefo": "ራስ-ሰር FEFO (ቡድን + ጊዜ ማብቂያ ክትትል ንቁ ሲሆን)",
+    "override_btn": "FEFO ዋቤ",
+    "override_reason": "የዋቤ ምክንያት",
+    "override_submit": "ዋቤ አስወጣ",
+    "save": "ስልት አስቀምጥ",
+    "success": "የላኪ ስልት ተዘምኗል"
+  },
+  "lots": {
+    "title": "ሎት ምርምር",
+    "subtitle": "ሎት ቁጥር ይፈልጉ — ሁሉንም ያሉበቶች ያሳይ",
+    "search_placeholder": "ሎት ቁጥር ያስገቡ...",
+    "search_btn": "ፈልግ",
+    "lot_number": "ሎት ቁጥር",
+    "product": "ምርት",
+    "warehouse": "መጋዘን",
+    "quantity": "መጠን",
+    "expiry": "ጊዜ ማብቂያ",
+    "received": "የተቀበለው",
+    "status": "ሁኔታ",
+    "no_results": "ምንም ሎት አልተገኘም"
+  },
+  "notifications": {
+    "title": "ማንቂያዎች",
+    "mark_all_read": "ሁሉም እንደ-ተነበበ ምልክት",
+    "no_alerts": "ምንም ማንቂያ የለም",
+    "low_stock": "ዝቅተኛ ክምችት",
+    "expiry_soon": "በቅርቡ ሚያልቅ",
+    "pending_approval": "ፈቃድ ይጠብቃል"
   },
   "errors": {
     "RBAC_DENIED": "ይህን ድርጊት ለማከናወን ፈቃድ የለዎትም።",

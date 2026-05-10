@@ -5,10 +5,94 @@ import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { getSession, logout, SA_ORG_SLUG, type SessionUser } from "@/lib/demo-auth";
-import { DEMO_TENANTS } from "@/lib/demo-data";
+import { DEMO_TENANTS, getLowStockProducts } from "@/lib/demo-data";
 import { getCurrentLocale, setLocale, loadLocale } from "@/lib/i18n";
 
 type Locale = "en" | "am" | "or";
+
+/* ── Notification bell ────────────────────────────────────────────────────── */
+function NotificationBell({ org }: { org: string }) {
+  const [open, setOpen] = useState(false);
+
+  const tenant = DEMO_TENANTS.find((t) => t.slug === org);
+  if (!tenant) return null;
+
+  const lowStock = getLowStockProducts(tenant);
+
+  // Expiry alerts: products with expiry within 30 days (demo: check batchTracking products)
+  const expiryAlerts = tenant.products.filter((p) => p.batchTracking).slice(0, 2);
+
+  const alerts = [
+    ...lowStock.map((p) => ({ type: "low_stock" as const, product: p.name, sku: p.sku })),
+    ...expiryAlerts.map((p) => ({ type: "expiry" as const, product: p.name, sku: p.sku })),
+  ];
+
+  const count = alerts.length;
+
+  return (
+    <div style={{ position: "relative" }}>
+      <button
+        onClick={() => setOpen((o) => !o)}
+        style={{
+          position: "relative", background: "rgba(255,255,255,0.07)", border: "none",
+          borderRadius: 6, cursor: "pointer", width: 34, height: 34,
+          display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16,
+        }}
+        title="Alerts"
+      >
+        🔔
+        {count > 0 && (
+          <span style={{
+            position: "absolute", top: -4, right: -4, minWidth: 16, height: 16,
+            background: "#DC2626", color: "#fff", fontSize: 10, fontWeight: 800,
+            borderRadius: 99, display: "flex", alignItems: "center", justifyContent: "center",
+            padding: "0 3px",
+          }}>
+            {count > 9 ? "9+" : count}
+          </span>
+        )}
+      </button>
+
+      {open && (
+        <>
+          <div onClick={() => setOpen(false)} style={{ position: "fixed", inset: 0, zIndex: 90 }} />
+          <div style={{
+            position: "absolute", top: "100%", right: 0, marginTop: 8, width: 320,
+            background: "#fff", borderRadius: 8, boxShadow: "0 8px 32px rgba(0,0,0,0.2)",
+            border: "1px solid #E5E7EB", zIndex: 100, overflow: "hidden",
+          }}>
+            <div style={{ padding: "10px 14px", borderBottom: "1px solid #F3F4F6", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+              <span style={{ fontWeight: 700, fontSize: 13, color: "#1F2937" }}>Alerts {count > 0 && `(${count})`}</span>
+              <button onClick={() => setOpen(false)} style={{ background: "none", border: "none", cursor: "pointer", fontSize: 13, color: "#9CA3AF" }}>✕</button>
+            </div>
+            {alerts.length === 0 ? (
+              <p style={{ padding: "1.5rem", textAlign: "center", color: "#9CA3AF", fontSize: 13 }}>No active alerts</p>
+            ) : (
+              <div style={{ maxHeight: 320, overflowY: "auto" }}>
+                {alerts.map((a, i) => (
+                  <Link key={i} href={`/${org}/inventory`} onClick={() => setOpen(false)} style={{ display: "flex", alignItems: "flex-start", gap: 10, padding: "10px 14px", borderBottom: "1px solid #F9FAFB", textDecoration: "none" }}>
+                    <span style={{ fontSize: 16, flexShrink: 0, marginTop: 1 }}>{a.type === "low_stock" ? "📉" : "⚠️"}</span>
+                    <div>
+                      <p style={{ fontWeight: 600, fontSize: 13, color: "#1F2937", margin: 0 }}>{a.product}</p>
+                      <p style={{ fontSize: 12, color: a.type === "low_stock" ? "#DC2626" : "#92400E", margin: "2px 0 0", fontWeight: 600 }}>
+                        {a.type === "low_stock" ? "Low Stock" : "Expiring Soon"} · {a.sku}
+                      </p>
+                    </div>
+                  </Link>
+                ))}
+              </div>
+            )}
+            <div style={{ padding: "8px 14px", borderTop: "1px solid #F3F4F6" }}>
+              <Link href={`/${org}/analytics`} onClick={() => setOpen(false)} style={{ fontSize: 12, fontWeight: 700, color: "#1B4332", textDecoration: "none" }}>
+                View all alerts →
+              </Link>
+            </div>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
 
 function LangSwitcher() {
   const [current, setCurrent] = useState<Locale>("en");
@@ -312,8 +396,9 @@ export default function OrgLayout({ children }: { children: React.ReactNode }) {
           )}
         </div>
 
-        {/* Right: lang · role · welcome · sign out */}
+        {/* Right: bell · lang · role · welcome · sign out */}
         <div style={{ display: "flex", alignItems: "center", gap: 10, flexShrink: 0 }}>
+          {org !== "admin" && <NotificationBell org={org} />}
           <LangSwitcher />
           <span style={{
             fontSize: 10, fontWeight: 800, color: "#fff", letterSpacing: "0.04em",
@@ -376,16 +461,18 @@ const SA_NAV = [
 
 const TENANT_NAV = [
   { type: "section", label: "Inventory" },
-  { type: "link", icon: "🏠", label: "Dashboard",   page: "dashboard"   },
-  { type: "link", icon: "📦", label: "Inventory",   page: "inventory"   },
-  { type: "link", icon: "🏭", label: "Products",    page: "products"    },
-  { type: "link", icon: "🏗️", label: "Warehouses",  page: "warehouses"  },
+  { type: "link", icon: "🏠", label: "Dashboard",      page: "dashboard"   },
+  { type: "link", icon: "📦", label: "Inventory",      page: "inventory"   },
+  { type: "link", icon: "🏭", label: "Products",       page: "products"    },
+  { type: "link", icon: "🏗️", label: "Warehouses",     page: "warehouses"  },
+  { type: "link", icon: "🔍", label: "Lot Traceability", page: "lots"      },
   { type: "section", label: "Operations" },
-  { type: "link", icon: "🔄", label: "Transfers",   page: "transfers"   },
-  { type: "link", icon: "📋", label: "Adjustments", page: "adjustments" },
-  { type: "link", icon: "🔢", label: "Stock Count", page: "stock-count" },
+  { type: "link", icon: "🔄", label: "Transfers",      page: "transfers"   },
+  { type: "link", icon: "📋", label: "Adjustments",    page: "adjustments" },
+  { type: "link", icon: "🔢", label: "Stock Count",    page: "stock-count" },
+  { type: "link", icon: "🚚", label: "Dispatch",       page: "dispatch"    },
   { type: "section", label: "Reports" },
-  { type: "link", icon: "📈", label: "Analytics",   page: "analytics"   },
-  { type: "link", icon: "📊", label: "Reports",     page: "reports"     },
-  { type: "link", icon: "🔍", label: "Audit Log",   page: "audit-log"   },
+  { type: "link", icon: "📈", label: "Analytics",      page: "analytics"   },
+  { type: "link", icon: "📊", label: "Reports",        page: "reports"     },
+  { type: "link", icon: "📋", label: "Audit Log",      page: "audit-log"   },
 ];

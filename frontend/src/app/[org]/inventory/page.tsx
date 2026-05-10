@@ -7,6 +7,7 @@ import { DEMO_TENANTS, getTotalStock, type DemoProduct } from "@/lib/demo-data";
 import { usePermission } from "@/hooks/usePermission";
 import { AddProductPanel } from "@/components/features/inventory/AddProductPanel";
 import { ReceiveStockPanel } from "@/components/features/inventory/ReceiveStockPanel";
+import { IssueStockPanel } from "@/components/features/inventory/IssueStockPanel";
 import { api } from "@/lib/api";
 
 type ApiProduct = {
@@ -72,8 +73,9 @@ export default function InventoryPage() {
             {tenant.name} · {user.warehouseId ? user.warehouseName : "All locations"} · {demoProducts.length + apiProducts.length} SKUs
           </p>
         </div>
-        <div style={{ display: "flex", gap: 8 }}>
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
           <ReceiveStockPanel products={tenant.products} warehouses={tenant.warehouses} orgSlug={org} />
+          <IssueStockPanel   products={tenant.products} warehouses={tenant.warehouses} orgSlug={org} />
           {canAddProduct && <AddProductPanel apiBase="/api/v1/products" />}
         </div>
       </div>

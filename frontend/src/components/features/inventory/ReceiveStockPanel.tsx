@@ -1,11 +1,12 @@
 "use client";
 
-import { useState } from "react";
+import { useCallback, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { nanoid } from "nanoid";
 import { api } from "@/lib/api";
 import { enqueueOfflineTransaction } from "@/store/offlineQueue";
 import { useOfflineSync } from "@/hooks/useOfflineSync";
+import { useScanner } from "@/hooks/useScanner";
 import type { DemoProduct, DemoWarehouse } from "@/lib/demo-data";
 
 interface Props {
@@ -52,7 +53,9 @@ export function ReceiveStockPanel({ products, warehouses, orgSlug }: Props) {
   const { isOnline } = useOfflineSync();
   const qc = useQueryClient();
 
-  const [open, setOpen] = useState(false);
+  const [open, setOpen]           = useState(false);
+  const [scannerOpen, setScannerOpen] = useState(false);
+  const [scanHint, setScanHint]   = useState("");
   const [form, setForm] = useState<FormState>({
     productId: "", warehouseId: "", quantity: "", lotNumber: "", expiryDate: "",
   });
@@ -60,15 +63,35 @@ export function ReceiveStockPanel({ products, warehouses, orgSlug }: Props) {
   const [success, setSuccess] = useState("");
   const [loading, setLoading] = useState(false);
 
+  // Barcode scan handler — look up product by SKU
+  const onScan = useCallback((code: string) => {
+    const found = products.find(
+      (p) => p.sku === code || p.sku.toLowerCase() === code.toLowerCase()
+    );
+    if (found) {
+      setForm((f) => ({ ...f, productId: found.id }));
+      setScanHint(`✓ Found: ${found.name}`);
+      setScannerOpen(false);
+    } else {
+      setScanHint(`No product matched: ${code}`);
+    }
+  }, [products]);
+
+  const { videoRef, isActive: scanActive, error: scanError, start: startScan, stop: stopScan } = useScanner(onScan);
+
   function reset() {
     setForm({ productId: "", warehouseId: "", quantity: "", lotNumber: "", expiryDate: "" });
-    setError("");
-    setSuccess("");
+    setError(""); setSuccess(""); setScanHint(""); setScannerOpen(false); stopScan();
   }
 
   function set(key: keyof FormState, val: string) {
     setForm((f) => ({ ...f, [key]: val }));
     setError("");
+  }
+
+  function toggleScanner() {
+    if (scannerOpen) { stopScan(); setScannerOpen(false); }
+    else { setScannerOpen(true); void startScan(); }
   }
 
   const onSubmit = async (e: React.FormEvent) => {
@@ -162,6 +185,42 @@ export function ReceiveStockPanel({ products, warehouses, orgSlug }: Props) {
 
         {/* Body */}
         <form onSubmit={onSubmit} style={{ flex: 1, overflowY: "auto", padding: "1.5rem" }}>
+          {/* Barcode scanner toggle */}
+          <div style={{ marginBottom: 16 }}>
+            <button
+              type="button"
+              onClick={toggleScanner}
+              style={{
+                width: "100%", padding: "9px", borderRadius: 4, cursor: "pointer",
+                border: `2px dashed ${scannerOpen ? "#059669" : "#D1D5DB"}`,
+                background: scannerOpen ? "#F0FDF4" : "#F9FAFB",
+                color: scannerOpen ? "#059669" : "#6B7280",
+                fontSize: 13, fontWeight: 600,
+                display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
+              }}
+            >
+              <span style={{ fontSize: 16 }}>{scannerOpen ? "■" : "⬛"}</span>
+              {scannerOpen ? "Stop Scanner" : "Scan Barcode to Find Product"}
+            </button>
+            {scannerOpen && (
+              <div style={{ marginTop: 8, borderRadius: 6, overflow: "hidden", background: "#000", position: "relative" }}>
+                {/* eslint-disable-next-line jsx-a11y/media-has-caption */}
+                <video ref={videoRef} style={{ width: "100%", height: 180, objectFit: "cover", display: "block" }} playsInline muted />
+                {!scanActive && (
+                  <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", background: "rgba(0,0,0,0.5)", color: "#fff", fontSize: 13 }}>
+                    Starting camera…
+                  </div>
+                )}
+              </div>
+            )}
+            {scanError && <p style={{ fontSize: 12, color: "#DC2626", marginTop: 4 }}>{scanError}</p>}
+            {scanHint  && (
+              <p style={{ fontSize: 12, marginTop: 4, color: scanHint.startsWith("✓") ? "#059669" : "#DC2626", fontWeight: 600 }}>
+                {scanHint}
+              </p>
+            )}
+          </div>
+
           <Field label="Product" >
             <select value={form.productId} onChange={(e) => set("productId", e.target.value)} style={SELECT} required>
               <option value="">— select product —</option>
