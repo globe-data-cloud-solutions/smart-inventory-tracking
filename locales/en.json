@@ -90,25 +90,32 @@
       "field": {
         "sku": "SKU",
         "sku_placeholder": "Auto-generated",
-        "sku_copy": "Copy SKU",
+        "sku_copy": "Copy",
         "sku_copied": "Copied!",
         "name": "Product Name",
         "name_placeholder": "Enter product name",
+        "type_code": "Product Type Code",
+        "type_code_placeholder": "e.g. WTR, CMT, FLR",
+        "type_code_hint": "2–5 letters · used in SKU",
         "unit": "Unit of Measure",
         "pack_size": "Pack Size"
       },
+      "sku_preview_label": "SKU preview",
       "confirm": {
         "discard": "Discard changes?"
       },
       "success": "Product {{sku}} created successfully",
       "save": "Save Product",
       "cancel": "Cancel",
-      "loading_sku": "Generating SKU…",
+      "loading_sku": "Generating…",
       "error": {
         "duplicate_name": "A product with this name already exists in this tenant.",
         "sku_cap_reached": "SKU limit reached. Please contact your administrator to upgrade the plan.",
         "generic": "An unexpected error occurred. Please try again.",
-        "name_required": "Product name is required."
+        "name_required": "Product name is required.",
+        "type_code_min": "At least 2 letters required.",
+        "type_code_max": "Maximum 5 letters.",
+        "type_code_letters_only": "Letters only, no numbers or symbols."
       }
     },
     "unit": {

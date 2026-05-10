@@ -64,25 +64,32 @@
       "field": {
         "sku": "SKU",
         "sku_placeholder": "በራስ-ሰር ይፈጠራል",
-        "sku_copy": "SKU ቅዳ",
+        "sku_copy": "ቅዳ",
         "sku_copied": "ተቀድቷል!",
         "name": "የምርት ስም",
         "name_placeholder": "NEEDS_TRANSLATION: Enter product name",
+        "type_code": "NEEDS_TRANSLATION: Product Type Code",
+        "type_code_placeholder": "NEEDS_TRANSLATION: e.g. WTR, CMT, FLR",
+        "type_code_hint": "NEEDS_TRANSLATION: 2–5 letters · used in SKU",
         "unit": "NEEDS_TRANSLATION: Unit of Measure",
         "pack_size": "NEEDS_TRANSLATION: Pack Size"
       },
+      "sku_preview_label": "NEEDS_TRANSLATION: SKU preview",
       "confirm": {
         "discard": "NEEDS_TRANSLATION: Discard changes?"
       },
       "success": "NEEDS_TRANSLATION: Product {{sku}} created successfully",
       "save": "NEEDS_TRANSLATION: Save Product",
       "cancel": "ሰርዝ",
-      "loading_sku": "NEEDS_TRANSLATION: Generating SKU…",
+      "loading_sku": "NEEDS_TRANSLATION: Generating…",
       "error": {
         "duplicate_name": "NEEDS_TRANSLATION: A product with this name already exists.",
         "sku_cap_reached": "NEEDS_TRANSLATION: SKU limit reached.",
         "generic": "ያልተጠበቀ ስህተት ተከስቷል። እባክዎ እንደገና ይሞክሩ።",
-        "name_required": "NEEDS_TRANSLATION: Product name is required."
+        "name_required": "NEEDS_TRANSLATION: Product name is required.",
+        "type_code_min": "NEEDS_TRANSLATION: At least 2 letters required.",
+        "type_code_max": "NEEDS_TRANSLATION: Maximum 5 letters.",
+        "type_code_letters_only": "NEEDS_TRANSLATION: Letters only, no numbers or symbols."
       }
     },
     "unit": {
