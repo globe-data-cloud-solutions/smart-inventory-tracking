@@ -34,6 +34,7 @@ class PERMISSIONS:
     PRODUCT_DEACTIVATE      = Permission("product:deactivate",      ["tenant_id", "audit_required"])
     PRODUCT_IMPORT_BULK     = Permission("product:import_bulk",     ["tenant_id", "sku_cap"])
     PRODUCT_SET_DISPATCH    = Permission("product:set_dispatch_strategy", ["tenant_id"])
+    PRODUCT_READ_NEXT_SKU   = Permission("product:read_next_sku",   ["tenant_id"])
 
     # ── Domain 4 — Inventory ───────────────────────────────────────────────
     INVENTORY_RECEIVE       = Permission("inventory:receive",       ["tenant_id", "warehouse_id"])
@@ -173,7 +174,7 @@ ALL_PERMISSIONS: List[Permission] = [
     v for v in vars(PERMISSIONS).values() if isinstance(v, Permission)
 ]
 
-assert len(ALL_PERMISSIONS) == 115, (
-    f"Expected 115 permissions, found {len(ALL_PERMISSIONS)}. "
+assert len(ALL_PERMISSIONS) == 116, (
+    f"Expected 116 permissions, found {len(ALL_PERMISSIONS)}. "
     "Update registry.py and re-run seed_permissions.py."
 )

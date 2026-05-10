@@ -58,6 +58,47 @@
     "search": "Barbaadi",
     "export": "Ergi"
   },
+  "product": {
+    "add": {
+      "title": "NEEDS_TRANSLATION: Add New Product",
+      "button": "NEEDS_TRANSLATION: + Add Product",
+      "field": {
+        "sku": "SKU",
+        "sku_placeholder": "NEEDS_TRANSLATION: Auto-generated",
+        "sku_copy": "NEEDS_TRANSLATION: Copy SKU",
+        "sku_copied": "NEEDS_TRANSLATION: Copied!",
+        "name": "NEEDS_TRANSLATION: Product Name",
+        "name_placeholder": "NEEDS_TRANSLATION: Enter product name",
+        "unit": "NEEDS_TRANSLATION: Unit of Measure",
+        "pack_size": "NEEDS_TRANSLATION: Pack Size"
+      },
+      "confirm": {
+        "discard": "NEEDS_TRANSLATION: Discard changes?"
+      },
+      "success": "NEEDS_TRANSLATION: Product {{sku}} created successfully",
+      "save": "NEEDS_TRANSLATION: Save Product",
+      "cancel": "Haquu",
+      "loading_sku": "NEEDS_TRANSLATION: Generating SKU…",
+      "error": {
+        "duplicate_name": "NEEDS_TRANSLATION: A product with this name already exists.",
+        "sku_cap_reached": "NEEDS_TRANSLATION: SKU limit reached.",
+        "generic": "Dogoggorri hin eegamne uumame. Maaloo irra deebi'ii yaali.",
+        "name_required": "NEEDS_TRANSLATION: Product name is required."
+      }
+    },
+    "unit": {
+      "KG":   "NEEDS_TRANSLATION: Kilograms (KG)",
+      "PACK": "NEEDS_TRANSLATION: Pack",
+      "QTL":  "NEEDS_TRANSLATION: Quintal (QTL)",
+      "MT":   "NEEDS_TRANSLATION: Metric Ton (MT)"
+    },
+    "pack_size": {
+      "1":  "NEEDS_TRANSLATION: Single (1)",
+      "4":  "NEEDS_TRANSLATION: Pack of 4",
+      "6":  "NEEDS_TRANSLATION: Pack of 6",
+      "12": "NEEDS_TRANSLATION: Pack of 12"
+    }
+  },
   "errors": {
     "RBAC_DENIED": "Hojii kana raawwachuuf hayyamni hin jiru.",
     "ABAC_DENIED": "Heeyyama dhorkaame — qabeenya daangaa keessan alatti.",

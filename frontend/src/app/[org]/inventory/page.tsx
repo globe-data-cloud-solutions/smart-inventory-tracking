@@ -1,13 +1,17 @@
 "use client";
 
 import { useParams } from "next/navigation";
-import { SA_ORG_SLUG } from "@/lib/demo-auth";
+import { SA_ORG_SLUG, getSession } from "@/lib/demo-auth";
 import { DEMO_TENANTS, getTotalStock, type DemoProduct } from "@/lib/demo-data";
-import { getSession } from "@/lib/demo-auth";
+import { usePermission } from "@/hooks/usePermission";
+import { AddProductPanel } from "@/components/features/inventory/AddProductPanel";
 
 export default function InventoryPage() {
   const { org } = useParams() as { org: string };
   const user = getSession();
+  // usePermission controls button visibility only — not a security gate (CLAUDE.md §10)
+  const canAddProduct = usePermission("product:create");
+
   if (!user || org === SA_ORG_SLUG) return <p style={{ padding: "2rem", color: "#6B7280" }}>Select a tenant to view inventory.</p>;
 
   const tenant = DEMO_TENANTS.find((t) => t.slug === org);
@@ -24,13 +28,20 @@ export default function InventoryPage() {
 
   return (
     <div style={{ padding: "2rem" }}>
-      <div style={{ marginBottom: "1.5rem" }}>
-        <h2 style={{ fontSize: "1.5rem", fontWeight: 700, color: "#0f2d1f", margin: 0 }}>
-          Inventory
-        </h2>
-        <p style={{ fontSize: 13, color: "#6B7280", margin: "4px 0 0" }}>
-          {tenant.name} · {user.warehouseId ? user.warehouseName : "All locations"} · {products.length} SKUs
-        </p>
+      <div style={{ marginBottom: "1.5rem", display: "flex", alignItems: "flex-start", justifyContent: "space-between", flexWrap: "wrap", gap: 12 }}>
+        <div>
+          <h2 style={{ fontSize: "1.5rem", fontWeight: 700, color: "#0f2d1f", margin: 0 }}>
+            Inventory
+          </h2>
+          <p style={{ fontSize: 13, color: "#6B7280", margin: "4px 0 0" }}>
+              {tenant.name} · {user.warehouseId ? user.warehouseName : "All locations"} · {products.length} SKUs
+            </p>
+        </div>
+
+        {/* Add Product button — SA and TA only (display-only gate, CLAUDE.md §10) */}
+        {canAddProduct && (
+          <AddProductPanel apiBase="/api/v1/products" />
+        )}
       </div>
 
       {categories.map((cat) => {

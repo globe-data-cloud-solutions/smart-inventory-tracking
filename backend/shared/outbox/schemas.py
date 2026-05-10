@@ -86,6 +86,20 @@ class TransferRequestedPayload(BasePayload):
     required_date: str | None = None
 
 
+class ProductCreatedPayload(BasePayload):
+    """Notifies the National Manager that a new product has been catalogued.
+    Written to the outbox in the same transaction as the products INSERT.
+    Never emitted post-commit.
+    """
+    event_type: Literal["ProductCreated"] = "ProductCreated"
+    product_id: str
+    sku: str
+    name: str
+    unit: str
+    pack_size: int
+    created_by: str
+
+
 PAYLOAD_TYPES = {
     "InventoryUpdated": InventoryUpdatedPayload,
     "StockTransferred": StockTransferredPayload,
@@ -96,4 +110,5 @@ PAYLOAD_TYPES = {
     "TenantOrgTypeChanged": TenantOrgTypeChangedPayload,
     "FefoOverrideApplied": FefoOverrideAppliedPayload,
     "TransferRequested":   TransferRequestedPayload,
+    "ProductCreated":      ProductCreatedPayload,
 }

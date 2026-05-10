@@ -83,6 +83,47 @@
     "filter": "Filter",
     "export": "Export"
   },
+  "product": {
+    "add": {
+      "title": "Add New Product",
+      "button": "+ Add Product",
+      "field": {
+        "sku": "SKU",
+        "sku_placeholder": "Auto-generated",
+        "sku_copy": "Copy SKU",
+        "sku_copied": "Copied!",
+        "name": "Product Name",
+        "name_placeholder": "Enter product name",
+        "unit": "Unit of Measure",
+        "pack_size": "Pack Size"
+      },
+      "confirm": {
+        "discard": "Discard changes?"
+      },
+      "success": "Product {{sku}} created successfully",
+      "save": "Save Product",
+      "cancel": "Cancel",
+      "loading_sku": "Generating SKU…",
+      "error": {
+        "duplicate_name": "A product with this name already exists in this tenant.",
+        "sku_cap_reached": "SKU limit reached. Please contact your administrator to upgrade the plan.",
+        "generic": "An unexpected error occurred. Please try again.",
+        "name_required": "Product name is required."
+      }
+    },
+    "unit": {
+      "KG":   "Kilograms (KG)",
+      "PACK": "Pack",
+      "QTL":  "Quintal (QTL)",
+      "MT":   "Metric Ton (MT)"
+    },
+    "pack_size": {
+      "1":  "Single (1)",
+      "4":  "Pack of 4",
+      "6":  "Pack of 6",
+      "12": "Pack of 12"
+    }
+  },
   "errors": {
     "RBAC_DENIED": "You do not have permission to perform this action.",
     "ABAC_DENIED": "Access denied — resource outside your scope.",
