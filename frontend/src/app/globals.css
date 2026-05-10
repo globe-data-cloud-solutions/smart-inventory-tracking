@@ -51,6 +51,75 @@ body {
   );
 }
 
+/* ── Navbar links ────────────────────────────────────────────────────────── */
+.nav-link {
+  font-size: 14px;
+  font-weight: 500;
+  color: #374151;
+  text-decoration: none;
+  transition: color 0.15s;
+}
+.nav-link:hover { color: #1B4332; }
+
+/* ── Sign in button (light gray, square) ─────────────────────────────────── */
+.btn-signin {
+  margin-left: auto;
+  padding: 8px 20px;
+  background: #F3F4F6;
+  color: #374151;
+  font-size: 13px;
+  font-weight: 600;
+  border-radius: 4px;
+  text-decoration: none;
+  border: 1px solid #D1D5DB;
+  transition: background 0.15s;
+  white-space: nowrap;
+}
+.btn-signin:hover { background: #E5E7EB; }
+
+/* ── Tenant cards ────────────────────────────────────────────────────────── */
+.tenant-card {
+  background: #fff;
+  border: 1px solid #D1D5DB;
+  border-radius: 4px;
+  overflow: hidden;
+  transition: box-shadow 0.2s, transform 0.2s;
+  display: block;
+  text-decoration: none;
+}
+.tenant-card:hover {
+  box-shadow: 0 8px 24px rgba(0,0,0,0.10);
+  transform: translateY(-3px);
+}
+
+/* ── CTA primary button ──────────────────────────────────────────────────── */
+.btn-cta-primary {
+  display: inline-block;
+  padding: 14px 40px;
+  background: #FCDD09;
+  color: #0f2d1f;
+  font-weight: 700;
+  font-size: 15px;
+  border-radius: 4px;
+  text-decoration: none;
+  box-shadow: 0 4px 20px rgba(252,221,9,0.30);
+  transition: opacity 0.15s;
+}
+.btn-cta-primary:hover { opacity: 0.88; }
+
+/* ── Hero outline button ─────────────────────────────────────────────────── */
+.btn-hero-outline {
+  padding: 12px 32px;
+  border: 2px solid rgba(255,255,255,0.35);
+  color: #fff;
+  font-weight: 600;
+  font-size: 14px;
+  border-radius: 4px;
+  text-decoration: none;
+  transition: background 0.15s;
+}
+.btn-hero-outline:hover { background: rgba(255,255,255,0.10); }
+
 /* ── Feature capability cards ────────────────────────────────────────────── */
 .cap-card {
   border-right: 1px solid #D1D5DB;

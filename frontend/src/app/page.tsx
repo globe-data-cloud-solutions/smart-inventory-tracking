@@ -133,38 +133,17 @@ export default function HomePage() {
             </span>
           </Link>
 
-          {/* Centre nav links */}
+          {/* Centre nav links — hover handled by .nav-link CSS class */}
           <div style={{ display: "flex", alignItems: "center", gap: "2rem", margin: "0 auto" }}>
-            {["#features", "#tenants", "#credentials"].map((href, i) => (
-              <a key={i} href={href} style={{
-                fontSize: 14, fontWeight: 500, color: "#374151",
-                textDecoration: "none", transition: "color 0.15s",
-              }}
-                onMouseEnter={e => (e.currentTarget.style.color = MID)}
-                onMouseLeave={e => (e.currentTarget.style.color = "#374151")}
-              >
+            {(["#features", "#tenants", "#credentials"] as const).map((href, i) => (
+              <a key={i} href={href} className="nav-link">
                 {["Features", "Tenants", "Credentials"][i]}
               </a>
             ))}
           </div>
 
-          {/* Far-right: Sign in — light gray square button */}
-          <Link href="/login" style={{
-            marginLeft: "auto",
-            padding: "8px 20px",
-            background: "#F3F4F6",
-            color: "#374151",
-            fontSize: 13,
-            fontWeight: 600,
-            borderRadius: 4,
-            textDecoration: "none",
-            border: "1px solid #D1D5DB",
-            transition: "background 0.15s",
-            whiteSpace: "nowrap",
-          }}
-            onMouseEnter={e => (e.currentTarget.style.background = "#E5E7EB")}
-            onMouseLeave={e => (e.currentTarget.style.background = "#F3F4F6")}
-          >
+          {/* Far-right: Sign in — light gray square button via .btn-signin */}
+          <Link href="/login" className="btn-signin">
             Sign in
           </Link>
         </div>
@@ -233,29 +212,12 @@ export default function HomePage() {
             </span>
           </div>
 
-          {/* CTAs */}
+          {/* CTAs — hover handled by CSS classes */}
           <div style={{ marginTop: "2rem", display: "flex", gap: 12, justifyContent: "center", flexWrap: "wrap" }}>
-            <Link href="/login" style={{
-              padding: "12px 32px",
-              background: GOLD,
-              color: BG,
-              fontWeight: 700,
-              fontSize: 14,
-              borderRadius: 4,
-              textDecoration: "none",
-              boxShadow: "0 4px 20px rgba(252,221,9,0.35)",
-            }}>
+            <Link href="/login" className="btn-cta-primary">
               Open Dashboard →
             </Link>
-            <a href="#features" style={{
-              padding: "12px 32px",
-              border: "2px solid rgba(255,255,255,0.35)",
-              color: "#fff",
-              fontWeight: 600,
-              fontSize: 14,
-              borderRadius: 4,
-              textDecoration: "none",
-            }}>
+            <a href="#features" className="btn-hero-outline">
               Explore Features
             </a>
           </div>
@@ -367,17 +329,9 @@ export default function HomePage() {
 
           <div style={{ display: "grid", gridTemplateColumns: "repeat(2,1fr)", gap: "2rem" }}>
             {TENANTS.map((t) => (
-              <Link key={t.slug} href={`/dashboard/tenants/${t.slug}`} style={{ textDecoration: "none" }}>
-                <div style={{
-                  background: "#fff",
-                  border: "1px solid #D1D5DB",
-                  borderRadius: 4,
-                  overflow: "hidden",
-                  transition: "box-shadow 0.2s, transform 0.2s",
-                }}
-                  onMouseEnter={e => { (e.currentTarget as HTMLDivElement).style.boxShadow = "0 8px 24px rgba(0,0,0,0.1)"; (e.currentTarget as HTMLDivElement).style.transform = "translateY(-3px)"; }}
-                  onMouseLeave={e => { (e.currentTarget as HTMLDivElement).style.boxShadow = "none"; (e.currentTarget as HTMLDivElement).style.transform = "none"; }}
-                >
+              /* .tenant-card CSS class handles hover shadow + lift — no JS needed */
+              <Link key={t.slug} href={`/dashboard/tenants/${t.slug}`} className="tenant-card">
+                <div>
                   {/* Coloured header */}
                   <div style={{ background: t.color, padding: "1.25rem 1.5rem", display: "flex", alignItems: "center", gap: 12 }}>
                     <span style={{ fontSize: "2.5rem" }}>{t.icon}</span>
@@ -463,17 +417,7 @@ export default function HomePage() {
             ))}
           </div>
 
-          <Link href="/login" style={{
-            display: "inline-block",
-            padding: "14px 40px",
-            background: GOLD,
-            color: BG,
-            fontWeight: 700,
-            fontSize: 15,
-            borderRadius: 4,
-            textDecoration: "none",
-            boxShadow: "0 4px 20px rgba(252,221,9,0.3)",
-          }}>
+          <Link href="/login" className="btn-cta-primary">
             Sign in to dashboard →
           </Link>
         </div>
