@@ -91,7 +91,6 @@ def require_permission(action: Permission) -> Callable:
                     detail={"code": result.reason, "action": action.id},
                 )
 
-            kwargs["_permission_result"] = result
             return await func(*args, **kwargs)
 
         wrapper.__permission__ = action  # type: ignore[attr-defined]

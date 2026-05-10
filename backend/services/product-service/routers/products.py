@@ -27,6 +27,7 @@ from shared.permissions.middleware import require_permission
 from shared.permissions.registry import PERMISSIONS
 from shared.utils.responses import SuccessResponse
 from schemas.product import NextSkuResponse, ProductCreateRequest, ProductResponse
+from dependencies import get_current_user
 
 router = APIRouter()
 
@@ -36,7 +37,7 @@ router = APIRouter()
 @router.get("/next-sku", response_model=SuccessResponse[NextSkuResponse])
 @require_permission(PERMISSIONS.PRODUCT_READ_NEXT_SKU)
 async def preview_next_sku(
-    user=Depends(lambda: None),
+    user=Depends(get_current_user),
     db: AsyncSession = Depends(get_db_session),
 ) -> SuccessResponse[NextSkuResponse]:
     """Non-mutating SKU preview.  Does NOT increment sku_counter.
@@ -62,7 +63,7 @@ async def preview_next_sku(
 @require_permission(PERMISSIONS.PRODUCT_LIST)
 async def list_products(
     q: Optional[str] = Query(None, description="pg_trgm name / SKU search"),
-    user=Depends(lambda: None),
+    user=Depends(get_current_user),
     db: AsyncSession = Depends(get_db_session),
 ) -> SuccessResponse[list]:
     if q:
@@ -104,7 +105,7 @@ async def list_products(
 @require_permission(PERMISSIONS.PRODUCT_CREATE)
 async def create_product(
     body: ProductCreateRequest,
-    user=Depends(lambda: None),
+    user=Depends(get_current_user),
     db: AsyncSession = Depends(get_db_session),
 ) -> SuccessResponse[ProductResponse]:
     """Create a new product with server-side atomic SKU generation.

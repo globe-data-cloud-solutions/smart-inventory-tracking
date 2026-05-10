@@ -4,7 +4,7 @@ import uuid
 from datetime import datetime
 from typing import Literal, Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 
 class ProductCreateRequest(BaseModel):
@@ -14,9 +14,14 @@ class ProductCreateRequest(BaseModel):
     sku_counter UPDATE on the tenants table (SELECT FOR UPDATE).
     """
 
-    name: str = Field(min_length=1, max_length=255, strip_whitespace=True)
+    name: str = Field(min_length=1, max_length=255)
     unit: Literal["KG", "PACK", "QTL", "MT"]
     pack_size: Literal[1, 4, 6, 12]
+
+    @field_validator("name", mode="before")
+    @classmethod
+    def strip_name(cls, v: object) -> object:
+        return v.strip() if isinstance(v, str) else v
 
 
 class ProductResponse(BaseModel):
