@@ -1,30 +1,33 @@
 "use client";
 
 import { useState } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { login } from "@/lib/demo-auth";
 import { DEMO_TENANTS, SA_USER } from "@/lib/demo-data";
 
 export default function LoginPage() {
-  const router = useRouter();
-  const [email, setEmail] = useState("");
+  const router       = useRouter();
+  const searchParams = useSearchParams();
+  const [email, setEmail]       = useState("");
   const [password, setPassword] = useState("");
-  const [error, setError] = useState("");
-  const [loading, setLoading] = useState(false);
+  const [error, setError]       = useState("");
+  const [loading, setLoading]   = useState(false);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
     setLoading(true);
-    await new Promise((r) => setTimeout(r, 400)); // simulate network
+    await new Promise((r) => setTimeout(r, 300));
     const session = login(email, password);
     if (!session) {
       setError("Invalid email or password.");
       setLoading(false);
       return;
     }
-    router.push("/dashboard");
+    // Return to the page the user was trying to reach before session expired
+    const from = searchParams.get("from");
+    router.push(from && from.startsWith("/dashboard") ? from : "/dashboard");
   };
 
   const fillCredentials = (em: string, pw: string) => {
