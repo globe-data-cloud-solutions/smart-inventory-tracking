@@ -105,6 +105,87 @@
       "12": "NEEDS_TRANSLATION: Pack of 12"
     }
   },
+  "lang": {
+    "label": "ቋንቋ",
+    "en": "EN",
+    "am": "AM",
+    "or": "OR"
+  },
+  "wizard": {
+    "title": "የተከራይ ኦንቦርዲንግ አዋቂ",
+    "step1_title": "የድርጅት መረጃ",
+    "step2_title": "የድርጅት አይነት",
+    "step3_title": "ነባሪ ቋንቋ",
+    "step4_title": "ግምገማ እና ሚስጥር",
+    "next": "ቀጣይ →",
+    "back": "← ተመለስ",
+    "launch": "ተከራዩን ጀምር",
+    "org_name": "የኩባንያ ስም",
+    "org_name_placeholder": "ለምሳሌ፦ አዲስ መጠጦች ኃ.የ.ስ.ስ",
+    "industry": "ዘርፍ",
+    "industry_placeholder": "ለምሳሌ፦ የታሸገ ውሃ፣ ሲሚንቶ",
+    "sku_limit": "የSKU ወሰን",
+    "sku_limit_hint": "ለአምራቾች ብቻ — በዕቅድ ላይ የተዘጋጀ",
+    "org_types": {
+      "PRODUCER": "አምራች / አስመጪ",
+      "RETAILER": "ችርቻሮ / አከፋፋይ",
+      "HYBRID": "ድቅቅ (ሁለቱም)"
+    },
+    "org_type_desc": {
+      "PRODUCER": "እቃዎችን ያመርታል ወይም ያስመጣል። ባች/ሎት ክትትል፣ FEFO ክፍያ፣ የምርት ዑደቶች።",
+      "RETAILER": "ለተጠቃሚዎች ያከፋፍላል ወይም ይሸጣል። ሙሉ ሎጂስቲክስ፣ ብዙ ቅርንጫፍ ክምችት።",
+      "HYBRID": "ሁለቱም አምራች እና ችርቻሮ። ሙሉ ስብሰባ ቅርጸት ተነቅቷል።"
+    },
+    "flags": {
+      "LOGISTICS": "የሎጂስቲክስ ሞዱል",
+      "AI_ANALYTICS": "AI ትንተና",
+      "ADVANCED_BATCH_TRACKING": "የላቀ ባች ክትትል",
+      "FLEET_MANAGEMENT": "የፍሊት አስተዳደር"
+    },
+    "success": "ተከራዩ በተሳካ ሁኔታ ተሰጥቷል!",
+    "success_desc": "ተከራዩ ዝግጁ ነው። ተጠቃሚዎችን ከአስተዳዳሪ ዳሽቦርድ ጋብዝ።",
+    "go_to_admin": "ወደ አስተዳዳሪ ዳሽቦርድ ተመለስ",
+    "onboard_btn": "አዲስ ተከራይ ያሳትፉ"
+  },
+  "count": {
+    "title": "የክምችት ቆጠራ",
+    "subtitle": "አካላዊ የክምችት ቆጠራዎችን ይመዝግቡ",
+    "start_session": "የቆጠራ ክፍለ ጊዜ ጀምር",
+    "end_session": "ክፍለ ጊዜ አብቃ",
+    "session_active": "ንቁ የቆጠራ ክፍለ ጊዜ",
+    "no_session": "ምንም ንቁ የቆጠራ ክፍለ ጊዜ የለም",
+    "start_hint": "አዲስ ቆጠራ ክፍለ ጊዜ ጀምር ለአካላዊ የክምችት ቆጠራዎችን ለመዝገብ።",
+    "product": "ምርት",
+    "sku": "SKU",
+    "expected": "የሚጠበቀው",
+    "counted": "የተቆጠረ",
+    "variance": "ልዩነት",
+    "save_counts": "ቆጠራዎች አስቀምጥ",
+    "submit_session": "ለፈቃድ አስገባ",
+    "success": "የክምችት ቆጠራ ለፈቃድ ተልኳል።"
+  },
+  "audit": {
+    "title": "የኦዲት ምዝግብ ማስታወሻ",
+    "subtitle": "የሁሉም የፈቃድ ውሳኔዎች ብቻ-ጨምር ምዝግብ",
+    "timestamp": "ጊዜ",
+    "user": "ተጠቃሚ",
+    "role": "ሚና",
+    "action": "ድርጊት",
+    "resource": "ሀብት",
+    "decision": "ውሳኔ",
+    "reason": "ምክንያት",
+    "GRANTED": "ተፈቅዷል",
+    "DENIED": "ተከልክሏል",
+    "CONDITIONAL": "ሁኔታዊ"
+  },
+  "permissions": {
+    "title": "ፈቃዶች",
+    "subtitle": "የሚና-ፈቃድ ሰንጠረዥ — 116 ድርጊቶች በ10 ሚናዎች",
+    "action": "ድርጊት",
+    "domain": "ጎራ",
+    "role": "ሚና",
+    "grant_type": "ዓይነት"
+  },
   "errors": {
     "RBAC_DENIED": "ይህን ድርጊት ለማከናወን ፈቃድ የለዎትም።",
     "ABAC_DENIED": "መዳረሻ ተከልክሏል — ሀብቱ ከወሰንዎ ውጪ ነው።",

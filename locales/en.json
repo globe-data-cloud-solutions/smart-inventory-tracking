@@ -131,6 +131,87 @@
       "12": "Pack of 12"
     }
   },
+  "lang": {
+    "label": "Language",
+    "en": "EN",
+    "am": "AM",
+    "or": "OR"
+  },
+  "wizard": {
+    "title": "Tenant Onboarding Wizard",
+    "step1_title": "Organisation Info",
+    "step2_title": "Organisation Type",
+    "step3_title": "Default Language",
+    "step4_title": "Review & Launch",
+    "next": "Next →",
+    "back": "← Back",
+    "launch": "Launch Tenant",
+    "org_name": "Company Name",
+    "org_name_placeholder": "e.g. Addis Beverages PLC",
+    "industry": "Industry",
+    "industry_placeholder": "e.g. Bottled Water, Cement, FMCG",
+    "sku_limit": "SKU Limit",
+    "sku_limit_hint": "Producers only — set by plan",
+    "org_types": {
+      "PRODUCER": "Producer / Importer",
+      "RETAILER": "Retailer / Distributor",
+      "HYBRID": "Hybrid (Both)"
+    },
+    "org_type_desc": {
+      "PRODUCER": "Manufactures or imports goods. Batch/lot tracking, FEFO dispatch, production cycles.",
+      "RETAILER": "Distributes or sells to consumers. Full logistics, multi-branch stock, unlimited SKUs.",
+      "HYBRID": "Both producer and retailer. Full feature set enabled."
+    },
+    "flags": {
+      "LOGISTICS": "Logistics Module",
+      "AI_ANALYTICS": "AI Analytics",
+      "ADVANCED_BATCH_TRACKING": "Advanced Batch Tracking",
+      "FLEET_MANAGEMENT": "Fleet Management"
+    },
+    "success": "Tenant onboarded successfully!",
+    "success_desc": "The tenant is ready. Invite users from the admin dashboard.",
+    "go_to_admin": "Back to Admin Dashboard",
+    "onboard_btn": "Onboard New Tenant"
+  },
+  "count": {
+    "title": "Stock Count",
+    "subtitle": "Record physical stock counts",
+    "start_session": "Start Count Session",
+    "end_session": "End Session",
+    "session_active": "Active Count Session",
+    "no_session": "No active count session",
+    "start_hint": "Start a new count session to record physical stock counts.",
+    "product": "Product",
+    "sku": "SKU",
+    "expected": "Expected",
+    "counted": "Counted",
+    "variance": "Variance",
+    "save_counts": "Save Counts",
+    "submit_session": "Submit for Approval",
+    "success": "Stock count submitted for approval."
+  },
+  "audit": {
+    "title": "Audit Log",
+    "subtitle": "Append-only record of all permission decisions",
+    "timestamp": "Timestamp",
+    "user": "User",
+    "role": "Role",
+    "action": "Action",
+    "resource": "Resource",
+    "decision": "Decision",
+    "reason": "Reason",
+    "GRANTED": "GRANTED",
+    "DENIED": "DENIED",
+    "CONDITIONAL": "CONDITIONAL"
+  },
+  "permissions": {
+    "title": "Permissions",
+    "subtitle": "Role–permission matrix — 116 actions across 10 roles",
+    "action": "Action",
+    "domain": "Domain",
+    "role": "Role",
+    "grant_type": "Grant"
+  },
   "errors": {
     "RBAC_DENIED": "You do not have permission to perform this action.",
     "ABAC_DENIED": "Access denied — resource outside your scope.",

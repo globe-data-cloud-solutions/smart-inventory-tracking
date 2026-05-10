@@ -161,7 +161,15 @@ export default function OrgDashboard() {
             { label: "Users",      value: DEMO_TENANTS.reduce((a, t) => a + t.users.length, 0) + 1 },
           ]}
         />
-        <h3 style={{ fontSize: 16, fontWeight: 700, color: DARK, margin: "0 0 1rem" }}>Tenants</h3>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "1rem" }}>
+          <h3 style={{ fontSize: 16, fontWeight: 700, color: DARK, margin: 0 }}>Tenants</h3>
+          <Link href="/onboard" style={{
+            padding: "8px 18px", background: GOLD, color: DARK, fontWeight: 700,
+            fontSize: 13, borderRadius: 4, textDecoration: "none",
+          }}>
+            + Onboard New Tenant
+          </Link>
+        </div>
         <div style={{ display: "grid", gridTemplateColumns: "repeat(2,1fr)", gap: "1.5rem" }}>
           {DEMO_TENANTS.map((t) => {
             const low   = getLowStockProducts(t);

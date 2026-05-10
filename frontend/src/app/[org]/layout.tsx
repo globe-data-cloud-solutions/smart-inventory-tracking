@@ -6,6 +6,45 @@ import Link from "next/link";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { getSession, logout, SA_ORG_SLUG, type SessionUser } from "@/lib/demo-auth";
 import { DEMO_TENANTS } from "@/lib/demo-data";
+import { getCurrentLocale, setLocale, loadLocale } from "@/lib/i18n";
+
+type Locale = "en" | "am" | "or";
+
+function LangSwitcher() {
+  const [current, setCurrent] = useState<Locale>("en");
+
+  useEffect(() => {
+    setCurrent(getCurrentLocale());
+  }, []);
+
+  async function switchLocale(loc: Locale) {
+    if (loc === current) return;
+    setLocale(loc);
+    try { await loadLocale(loc); } catch { /* fallback to key */ }
+    setCurrent(loc);
+    window.location.reload();
+  }
+
+  return (
+    <div style={{ display: "flex", gap: 2, background: "rgba(255,255,255,0.07)", borderRadius: 4, padding: 2 }}>
+      {(["en", "am", "or"] as Locale[]).map((loc) => (
+        <button
+          key={loc}
+          onClick={() => void switchLocale(loc)}
+          style={{
+            fontSize: 11, fontWeight: 700, padding: "3px 8px", borderRadius: 3,
+            border: "none", cursor: "pointer",
+            background: current === loc ? "#FCDD09" : "transparent",
+            color: current === loc ? "#0f2d1f" : "rgba(255,255,255,0.5)",
+            transition: "all 0.12s",
+          }}
+        >
+          {loc.toUpperCase()}
+        </button>
+      ))}
+    </div>
+  );
+}
 
 /* ── Brand logo mark ──────────────────────────────────────────────────────── */
 function Logo({ size = 28 }: { size?: number }) {
@@ -273,8 +312,9 @@ export default function OrgLayout({ children }: { children: React.ReactNode }) {
           )}
         </div>
 
-        {/* Right: role · welcome · sign out */}
+        {/* Right: lang · role · welcome · sign out */}
         <div style={{ display: "flex", alignItems: "center", gap: 10, flexShrink: 0 }}>
+          <LangSwitcher />
           <span style={{
             fontSize: 10, fontWeight: 800, color: "#fff", letterSpacing: "0.04em",
             background: ROLE_COLORS[user.role] ?? "#6B7280",
@@ -328,10 +368,10 @@ export default function OrgLayout({ children }: { children: React.ReactNode }) {
 /* ── Nav definitions ──────────────────────────────────────────────────────── */
 const SA_NAV = [
   { type: "section", label: "Overview" },
-  { type: "link", icon: "🏠", label: "Dashboard",   page: "dashboard" },
+  { type: "link", icon: "🏠", label: "Dashboard",   page: "dashboard"   },
   { type: "section", label: "System" },
-  { type: "link", icon: "🔐", label: "Permissions", page: "dashboard" },
-  { type: "link", icon: "📋", label: "Audit Logs",  page: "dashboard" },
+  { type: "link", icon: "🔐", label: "Permissions", page: "permissions" },
+  { type: "link", icon: "📋", label: "Audit Log",   page: "audit-log"   },
 ];
 
 const TENANT_NAV = [
@@ -343,9 +383,9 @@ const TENANT_NAV = [
   { type: "section", label: "Operations" },
   { type: "link", icon: "🔄", label: "Transfers",   page: "transfers"   },
   { type: "link", icon: "📋", label: "Adjustments", page: "adjustments" },
-  { type: "link", icon: "🔢", label: "Stock Count", page: "dashboard"   },
+  { type: "link", icon: "🔢", label: "Stock Count", page: "stock-count" },
   { type: "section", label: "Reports" },
   { type: "link", icon: "📈", label: "Analytics",   page: "analytics"   },
   { type: "link", icon: "📊", label: "Reports",     page: "reports"     },
-  { type: "link", icon: "🔍", label: "Audit Log",   page: "dashboard"   },
+  { type: "link", icon: "🔍", label: "Audit Log",   page: "audit-log"   },
 ];

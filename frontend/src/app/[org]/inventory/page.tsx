@@ -6,6 +6,7 @@ import { SA_ORG_SLUG, getSession } from "@/lib/demo-auth";
 import { DEMO_TENANTS, getTotalStock, type DemoProduct } from "@/lib/demo-data";
 import { usePermission } from "@/hooks/usePermission";
 import { AddProductPanel } from "@/components/features/inventory/AddProductPanel";
+import { ReceiveStockPanel } from "@/components/features/inventory/ReceiveStockPanel";
 import { api } from "@/lib/api";
 
 type ApiProduct = {
@@ -71,7 +72,10 @@ export default function InventoryPage() {
             {tenant.name} · {user.warehouseId ? user.warehouseName : "All locations"} · {demoProducts.length + apiProducts.length} SKUs
           </p>
         </div>
-        {canAddProduct && <AddProductPanel apiBase="/api/v1/products" />}
+        <div style={{ display: "flex", gap: 8 }}>
+          <ReceiveStockPanel products={tenant.products} warehouses={tenant.warehouses} orgSlug={org} />
+          {canAddProduct && <AddProductPanel apiBase="/api/v1/products" />}
+        </div>
       </div>
 
       {/* ── Existing demo products grouped by category ── */}

@@ -106,6 +106,87 @@
       "12": "NEEDS_TRANSLATION: Pack of 12"
     }
   },
+  "lang": {
+    "label": "Afaan",
+    "en": "EN",
+    "am": "AM",
+    "or": "OR"
+  },
+  "wizard": {
+    "title": "Gargaarsa Seensisuu Hirkattoo",
+    "step1_title": "Odeeffannoo Dhaabbata",
+    "step2_title": "Gosa Dhaabbata",
+    "step3_title": "Afaan Durtii",
+    "step4_title": "Ilaaluu fi Jalqabuu",
+    "next": "Itti aanaa →",
+    "back": "← Deebi'i",
+    "launch": "Hirkattoo Jalqabi",
+    "org_name": "Maqaa Dhaabbata",
+    "org_name_placeholder": "fkl. Addis Dhugaatii PLC",
+    "industry": "Aanalee",
+    "industry_placeholder": "fkl. Bishaanii, Simintoo, FMCG",
+    "sku_limit": "Daangaa SKU",
+    "sku_limit_hint": "Omishtoota qofa — karaa karoora",
+    "org_types": {
+      "PRODUCER": "Omishaa / Galchituu",
+      "RETAILER": "Gurgurtaa xiqqaa / Raabsituu",
+      "HYBRID": "Walitti makamaa (Lachuu)"
+    },
+    "org_type_desc": {
+      "PRODUCER": "Meeshaa omisha ykn galcha. Hordoffii gurmuu, raabsa FEFO, marsaa omishaa.",
+      "RETAILER": "Fayyadamtoota biratti raabsa ykn gurgura. Lojistiksi guutuu, damee hedduu.",
+      "HYBRID": "Lachuu omishaa fi gurgurtaa xiqqaa. Qindaa'ina guutuu heeyyamaame."
+    },
+    "flags": {
+      "LOGISTICS": "Moojuula Lojistiksi",
+      "AI_ANALYTICS": "Xiinxala AI",
+      "ADVANCED_BATCH_TRACKING": "Hordoffii Gurmuu Olaanaa",
+      "FLEET_MANAGEMENT": "Bulchiinsa Konkolaataa"
+    },
+    "success": "Hirkattoon milkaa'inaan seensifame!",
+    "success_desc": "Hirkattoon qophaa'eera. Fayyadamtoota gaafadhu.",
+    "go_to_admin": "Gara Daashboordii Bulchaa Deebi'i",
+    "onboard_btn": "Hirkattoo Haaraa Seensi"
+  },
+  "count": {
+    "title": "Lakkoofsa Kuusaa",
+    "subtitle": "Lakkoofsa kuusaa qaamasaa galmeessi",
+    "start_session": "Marii Lakkoofsa Jalqabi",
+    "end_session": "Marii Xumuri",
+    "session_active": "Marii Lakkoofsa Socho'aa",
+    "no_session": "Marii lakkoofsa socho'aa hin jiru",
+    "start_hint": "Marii haaraa jalqabi lakkoofsa kuusaa qaamasaa galmeessuuf.",
+    "product": "Meeshaa",
+    "sku": "SKU",
+    "expected": "Eegama",
+    "counted": "Lakka'ame",
+    "variance": "Garaagarummaa",
+    "save_counts": "Lakkoofsa Olkaa'i",
+    "submit_session": "Hayyamaaf Galchi",
+    "success": "Lakkoofsi kuusaa hayyamaaf ergame."
+  },
+  "audit": {
+    "title": "Galmee Dhageettii",
+    "subtitle": "Galmeewwan murteewwan hayyamaa dabaluu qofa",
+    "timestamp": "Yeroo",
+    "user": "Fayyadamaa",
+    "role": "Gahee",
+    "action": "Hojii",
+    "resource": "Qabeenya",
+    "decision": "Murteewwan",
+    "reason": "Sababa",
+    "GRANTED": "HAYYAMAAME",
+    "DENIED": "DHOORKAME",
+    "CONDITIONAL": "HAALA-QABEESSA"
+  },
+  "permissions": {
+    "title": "Hayyamaalee",
+    "subtitle": "Fiixee gahee-hayyamaa — hojii 116 gahee 10 keessatti",
+    "action": "Hojii",
+    "domain": "Giddugala",
+    "role": "Gahee",
+    "grant_type": "Akaakuu"
+  },
   "errors": {
     "RBAC_DENIED": "Hojii kana raawwachuuf hayyamni hin jiru.",
     "ABAC_DENIED": "Heeyyama dhorkaame — qabeenya daangaa keessan alatti.",
