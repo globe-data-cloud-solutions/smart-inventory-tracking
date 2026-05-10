@@ -2,245 +2,179 @@
 
 import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
-import { useForm, useWatch } from "react-hook-form";
-import { zodResolver } from "@hookform/resolvers/zod";
-import { z } from "zod";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import { getToken } from "@/lib/auth";
 import { t } from "@/lib/i18n";
 
-// ── Org abbreviation: "addis-water" → "AW", "muger-cement" → "MC" ────────────
+// ── Helpers ───────────────────────────────────────────────────────────────────
 
-function toOrgAbbr(orgSlug: string): string {
-  return orgSlug
-    .split("-")
-    .map((w) => (w[0] ?? "").toUpperCase())
-    .join("")
-    .slice(0, 4);
+function toOrgAbbr(slug: string): string {
+  return slug.split("-").map((w) => (w[0] ?? "").toUpperCase()).join("").slice(0, 4);
 }
 
-// ── Validation schema ─────────────────────────────────────────────────────────
+type Unit     = "KG" | "PACK" | "QTL" | "MT";
+type PackSize = 1 | 4 | 6 | 12;
 
-const schema = z.object({
-  name: z.string().min(1, "name_required").max(255).trim(),
-  type_code: z
-    .string()
-    .min(2, "type_code_min")
-    .max(5, "type_code_max")
-    .regex(/^[A-Za-z]+$/, "type_code_letters_only")
-    .transform((s) => s.toUpperCase()),
-  unit: z.enum(["KG", "PACK", "QTL", "MT"]),
-  pack_size: z.coerce
-    .number()
-    .refine((v) => [1, 4, 6, 12].includes(v), "invalid_pack_size"),
-});
-
-type FormValues = z.infer<typeof schema>;
-
-const UNIT_OPTIONS: Array<{ value: "KG" | "PACK" | "QTL" | "MT"; labelKey: string }> = [
-  { value: "KG",   labelKey: "product.unit.KG" },
-  { value: "PACK", labelKey: "product.unit.PACK" },
-  { value: "QTL",  labelKey: "product.unit.QTL" },
-  { value: "MT",   labelKey: "product.unit.MT" },
+const UNITS: Array<{ value: Unit; label: string }> = [
+  { value: "KG",   label: "product.unit.KG" },
+  { value: "PACK", label: "product.unit.PACK" },
+  { value: "QTL",  label: "product.unit.QTL" },
+  { value: "MT",   label: "product.unit.MT" },
 ];
 
-const PACK_OPTIONS: Array<{ value: 1 | 4 | 6 | 12; labelKey: string }> = [
-  { value: 1,  labelKey: "product.pack_size.1" },
-  { value: 4,  labelKey: "product.pack_size.4" },
-  { value: 6,  labelKey: "product.pack_size.6" },
-  { value: 12, labelKey: "product.pack_size.12" },
+const PACKS: Array<{ value: PackSize; label: string }> = [
+  { value: 1,  label: "product.pack_size.1" },
+  { value: 4,  label: "product.pack_size.4" },
+  { value: 6,  label: "product.pack_size.6" },
+  { value: 12, label: "product.pack_size.12" },
 ];
 
-// ── Toast ─────────────────────────────────────────────────────────────────────
+// ── Tiny UI primitives ────────────────────────────────────────────────────────
 
-function Toast({ message, onDismiss }: { message: string; onDismiss: () => void }) {
-  useEffect(() => {
-    const id = setTimeout(onDismiss, 4000);
-    return () => clearTimeout(id);
-  }, [onDismiss]);
-  return (
-    <div role="status" aria-live="polite" style={{
-      position: "fixed", bottom: 24, right: 24, zIndex: 9999,
-      background: "#059669", color: "#fff",
-      padding: "12px 20px", borderRadius: 6,
-      fontSize: 14, fontWeight: 600, boxShadow: "0 4px 16px rgba(0,0,0,0.2)",
-    }}>
-      {message}
-    </div>
-  );
-}
-
-// ── Primitive field components ────────────────────────────────────────────────
-
-function Label({ children, hint }: { children: React.ReactNode; hint?: string }) {
+function FieldLabel({ text, hint }: { text: string; hint?: string }) {
   return (
     <label style={{ display: "block", fontSize: 12, fontWeight: 700,
       textTransform: "uppercase", letterSpacing: "0.05em", color: "#374151", marginBottom: 4 }}>
-      {children}
-      {hint && (
-        <span style={{ fontSize: 11, fontWeight: 400, textTransform: "none",
-          letterSpacing: 0, color: "#9CA3AF", marginLeft: 6 }}>
-          {hint}
-        </span>
-      )}
+      {text}
+      {hint && <span style={{ fontSize: 11, fontWeight: 400, textTransform: "none",
+        letterSpacing: 0, color: "#9CA3AF", marginLeft: 6 }}>{hint}</span>}
     </label>
   );
 }
 
-function FieldError({ message }: { message?: string }) {
-  if (!message) return null;
-  const key = `product.add.error.${message}`;
+function FieldErr({ msg }: { msg?: string }) {
+  if (!msg) return null;
+  const key      = `product.add.error.${msg}`;
   const resolved = t(key);
   return (
     <p role="alert" style={{ fontSize: 12, color: "#DC2626", marginTop: 4 }}>
-      {resolved !== key ? resolved : message}
+      {resolved !== key ? resolved : msg}
     </p>
   );
 }
 
-function Input(props: React.InputHTMLAttributes<HTMLInputElement>) {
+function Toast({ message, onDismiss }: { message: string; onDismiss: () => void }) {
+  useEffect(() => { const id = setTimeout(onDismiss, 4000); return () => clearTimeout(id); }, [onDismiss]);
   return (
-    <input {...props} style={{
-      width: "100%", boxSizing: "border-box",
-      padding: "9px 12px", borderRadius: 4,
-      border: "1px solid #D1D5DB", fontSize: 13,
-      outline: "none", ...props.style,
-    }} />
+    <div role="status" aria-live="polite" style={{
+      position: "fixed", bottom: 24, right: 24, zIndex: 9999,
+      background: "#059669", color: "#fff", padding: "12px 20px",
+      borderRadius: 6, fontSize: 14, fontWeight: 600, boxShadow: "0 4px 16px rgba(0,0,0,0.2)",
+    }}>{message}</div>
   );
 }
 
-function Select(props: React.SelectHTMLAttributes<HTMLSelectElement> & { children: React.ReactNode }) {
-  return (
-    <select {...props} style={{
-      width: "100%", boxSizing: "border-box",
-      padding: "9px 12px", borderRadius: 4,
-      border: "1px solid #D1D5DB", fontSize: 13,
-      background: "#fff", appearance: "auto",
-      outline: "none", ...props.style,
-    }} />
-  );
-}
+// ── Component ─────────────────────────────────────────────────────────────────
 
-// ── Main component ────────────────────────────────────────────────────────────
-
-interface AddProductPanelProps {
-  apiBase: string;
-  onClose?: () => void;
-}
+interface AddProductPanelProps { apiBase: string; onClose?: () => void; }
 
 export function AddProductPanel({ apiBase, onClose }: AddProductPanelProps) {
-  const params = useParams() as { org?: string };
-  const orgSlug = params.org ?? "admin";
-  const orgAbbr = toOrgAbbr(orgSlug);
+  const { org = "admin" } = useParams<{ org: string }>();
+  const orgAbbr = toOrgAbbr(org);
+  const token   = getToken();
+  const qc      = useQueryClient();
 
-  const [open, setOpen]             = useState(false);
-  const [toast, setToast]           = useState<string | null>(null);
-  const [panelError, setPanelError] = useState<string | null>(null);
-  const [copied, setCopied]         = useState(false);
-  const qc                          = useQueryClient();
-  const token                       = getToken();
+  // ── Panel open/close ──────────────────────────────────────────────────────
+  const [open, setOpen] = useState(false);
 
-  const {
-    control,
-    register,
-    handleSubmit,
-    formState: { errors, isDirty, isSubmitting },
-    reset,
-    setError,
-  } = useForm<FormValues>({
-    resolver: zodResolver(schema),
-    mode: "onChange",
-    defaultValues: { unit: "KG", pack_size: 1, type_code: "", name: "" },
-  });
+  // ── Form fields (plain state — unconditionally reactive) ──────────────────
+  const [name,     setName]     = useState("");
+  const [typeCode, setTypeCode] = useState("");
+  const [unit,     setUnit]     = useState<Unit>("KG");
+  const [packSize, setPackSize] = useState<PackSize>(1);
 
-  // useWatch creates an explicit subscription — re-renders on every field change
-  const watchedName     = useWatch({ control, name: "name" }) ?? "";
-  const watchedTypeCode = useWatch({ control, name: "type_code" }) ?? "";
-  const watchedUnit     = useWatch({ control, name: "unit" }) ?? "KG";
-  const watchedPackSize = useWatch({ control, name: "pack_size" }) ?? 1;
+  // ── Field-level validation errors ─────────────────────────────────────────
+  const [nameErr,     setNameErr]     = useState("");
+  const [typeCodeErr, setTypeCodeErr] = useState("");
 
-  // ── Server: fetch next counter ────────────────────────────────────────────
-  const { data: counterData, isFetching: skuLoading, error: skuError } = useQuery({
-    queryKey: ["next-sku-counter", apiBase],
-    queryFn:  () => api.get<{ counter: number }>(`${apiBase}/next-sku`, token ?? undefined),
-    enabled:  open,
+  // ── Submission state ──────────────────────────────────────────────────────
+  const [submitting,  setSubmitting]  = useState(false);
+  const [panelError,  setPanelError]  = useState("");
+  const [toast,       setToast]       = useState<string | null>(null);
+  const [copied,      setCopied]      = useState(false);
+
+  // ── SKU counter from server ───────────────────────────────────────────────
+  const { data: counterData, isFetching: skuLoading } = useQuery({
+    queryKey:  ["next-sku-counter", apiBase],
+    queryFn:   () => api.get<{ counter: number }>(`${apiBase}/next-sku`, token ?? undefined),
+    enabled:   open,
     staleTime: 0,
     refetchOnWindowFocus: false,
   });
-
   const counter = counterData?.counter;
 
-  // Assemble preview: {ORG}-{TYPE}-{UNIT}{PACK}-{COUNTER}
-  const typeDisplay = watchedTypeCode.toUpperCase() || "???";
-  const previewSku = counter != null
-    ? `${orgAbbr}-${typeDisplay}-${watchedUnit}${watchedPackSize}-${String(counter).padStart(4, "0")}`
+  // ── SKU preview — updates live as fields change ───────────────────────────
+  const typeDisplay = typeCode.trim().toUpperCase() || "???";
+  const previewSku  = counter != null
+    ? `${orgAbbr}-${typeDisplay}-${unit}${packSize}-${String(counter).padStart(4, "0")}`
     : "";
 
-  // ── Save gate: derive from live field values, not RHF's isValid flag ────────
-  const nameOk     = watchedName.trim().length > 0;
-  const typeCodeOk = /^[A-Za-z]{2,5}$/.test(watchedTypeCode.trim());
-  const noErrors   = Object.keys(errors).length === 0;
-  const saveDisabled = !nameOk || !typeCodeOk || !noErrors || isSubmitting || skuLoading;
+  // ── Save gate ─────────────────────────────────────────────────────────────
+  const nameOk     = name.trim().length > 0;
+  const typeCodeOk = /^[A-Za-z]{2,5}$/.test(typeCode.trim());
+  const saveDisabled = !nameOk || !typeCodeOk || submitting || skuLoading;
 
-  // ── Copy SKU to clipboard ─────────────────────────────────────────────────
+  // ── Handlers ──────────────────────────────────────────────────────────────
+  const resetForm = () => {
+    setName(""); setTypeCode(""); setUnit("KG"); setPackSize(1);
+    setNameErr(""); setTypeCodeErr(""); setPanelError("");
+  };
+
+  const openPanel = () => { resetForm(); setOpen(true); };
+
+  const closePanel = () => {
+    if ((name.trim() || typeCode.trim()) &&
+        !window.confirm(t("product.add.confirm.discard"))) return;
+    resetForm();
+    setOpen(false);
+    onClose?.();
+  };
+
+  const handleSave = async () => {
+    // Inline validation before submit
+    let valid = true;
+    if (!name.trim())    { setNameErr("name_required");        valid = false; }
+    if (!typeCodeOk)     { setTypeCodeErr("type_code_min");    valid = false; }
+    if (!valid) return;
+
+    setSubmitting(true);
+    setPanelError("");
+    try {
+      const data = await api.post<{ id: string; sku: string }>(apiBase, {
+        name:      name.trim(),
+        type_code: typeCode.trim().toUpperCase(),
+        unit,
+        pack_size: packSize,
+        org_slug:  org,
+      }, token ?? undefined);
+
+      setToast(t("product.add.success").replace("{{sku}}", data.sku));
+      void qc.invalidateQueries({ queryKey: ["products"] });
+      resetForm();
+      setOpen(false);
+      onClose?.();
+    } catch (err) {
+      const e = err as Error & { status?: number };
+      if (e.status === 409)       setNameErr("duplicate_name");
+      else if (e.status === 429)  setPanelError(t("product.add.error.sku_cap_reached"));
+      else                        setPanelError(t("product.add.error.generic"));
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
   const handleCopy = async () => {
-    if (!previewSku) return;
+    if (!previewSku || previewSku.includes("???")) return;
     await navigator.clipboard.writeText(previewSku);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
   };
 
-  // ── Create mutation ───────────────────────────────────────────────────────
-  const mutation = useMutation({
-    mutationFn: (values: FormValues) =>
-      api.post<{ id: string; sku: string }>(apiBase, {
-        ...values,
-        org_slug: orgSlug,
-      }, token ?? undefined),
-    onSuccess: (data) => {
-      const msg = t("product.add.success").replace("{{sku}}", data.sku);
-      setToast(msg);
-      qc.invalidateQueries({ queryKey: ["products"] });
-      reset();
-      setOpen(false);
-      onClose?.();
-    },
-    onError: (err: Error & { status?: number }) => {
-      if (err.status === 409) {
-        setError("name", { message: "duplicate_name" });
-      } else if (err.status === 429) {
-        setPanelError(t("product.add.error.sku_cap_reached"));
-      } else {
-        setPanelError(t("product.add.error.generic"));
-      }
-    },
-  });
-
-  const openPanel = () => {
-    setPanelError(null);
-    reset({ unit: "KG", pack_size: 1, type_code: "", name: "" });
-    setOpen(true);
-  };
-
-  const closePanel = () => {
-    if (isDirty) {
-      if (!window.confirm(t("product.add.confirm.discard"))) return;
-    }
-    reset();
-    setPanelError(null);
-    setOpen(false);
-    onClose?.();
-  };
-
-  const onSubmit = (values: FormValues) => {
-    setPanelError(null);
-    mutation.mutate(values);
-  };
-
+  // ── Render ────────────────────────────────────────────────────────────────
   return (
     <>
-      {/* ── Trigger ── */}
+      {/* Trigger button */}
       <button onClick={openPanel} style={{
         padding: "8px 16px", background: "#FCDD09", color: "#0f2d1f",
         fontWeight: 700, fontSize: 13, borderRadius: 4, border: "none", cursor: "pointer",
@@ -248,14 +182,14 @@ export function AddProductPanel({ apiBase, onClose }: AddProductPanelProps) {
         {t("product.add.button")}
       </button>
 
-      {/* ── Backdrop ── */}
+      {/* Backdrop */}
       {open && (
         <div aria-hidden="true" onClick={closePanel} style={{
           position: "fixed", inset: 0, zIndex: 100, background: "rgba(0,0,0,0.4)",
         }} />
       )}
 
-      {/* ── Slide-over ── */}
+      {/* Slide-over panel */}
       <aside role="dialog" aria-modal="true" aria-label={t("product.add.title")} style={{
         position: "fixed", top: 0, right: 0, bottom: 0, zIndex: 101,
         width: 440, background: "#fff",
@@ -264,11 +198,12 @@ export function AddProductPanel({ apiBase, onClose }: AddProductPanelProps) {
         transform: open ? "translateX(0)" : "translateX(100%)",
         transition: "transform 0.25s ease-out",
       }}>
+
         {/* Header */}
         <div style={{
-          padding: "16px 20px", borderBottom: "1px solid #E5E7EB",
+          padding: "16px 20px", background: "#0f2d1f",
+          borderBottom: "1px solid #E5E7EB",
           display: "flex", alignItems: "center", justifyContent: "space-between",
-          background: "#0f2d1f",
         }}>
           <h2 style={{ fontSize: 16, fontWeight: 700, color: "#fff", margin: 0 }}>
             {t("product.add.title")}
@@ -290,32 +225,25 @@ export function AddProductPanel({ apiBase, onClose }: AddProductPanelProps) {
             {t("product.add.field.sku")}
           </span>
           <span style={{
-            fontFamily: "monospace", fontSize: 15, fontWeight: 800,
-            color: previewSku ? "#059669" : "#9CA3AF", flex: 1,
+            fontFamily: "monospace", fontSize: 15, fontWeight: 800, flex: 1,
+            color: previewSku && !previewSku.includes("???") ? "#059669" : "#9CA3AF",
             letterSpacing: "0.08em",
           }}>
-            {skuLoading
-              ? t("product.add.loading_sku")
-              : (previewSku || t("product.add.field.sku_placeholder"))}
+            {skuLoading ? t("product.add.loading_sku") : (previewSku || t("product.add.field.sku_placeholder"))}
           </span>
           <button type="button" onClick={handleCopy}
             disabled={!previewSku || previewSku.includes("???")}
-            aria-label={t("product.add.field.sku_copy")}
             style={{
-              padding: "5px 10px", border: "1px solid #BBF7D0",
-              borderRadius: 4, background: "#fff", cursor: previewSku ? "pointer" : "not-allowed",
-              fontSize: 12, color: "#059669", fontWeight: 600, flexShrink: 0,
-            }}
-          >
+              padding: "5px 10px", border: "1px solid #BBF7D0", borderRadius: 4,
+              background: "#fff", fontSize: 12, color: "#059669", fontWeight: 600, flexShrink: 0,
+              cursor: (previewSku && !previewSku.includes("???")) ? "pointer" : "not-allowed",
+            }}>
             {copied ? t("product.add.field.sku_copied") : t("product.add.field.sku_copy")}
           </button>
         </div>
 
-        {/* Form */}
-        <form onSubmit={handleSubmit(onSubmit)} noValidate style={{
-          flex: 1, overflowY: "auto", padding: 20,
-          display: "flex", flexDirection: "column", gap: 18,
-        }}>
+        {/* Form body */}
+        <div style={{ flex: 1, overflowY: "auto", padding: 20, display: "flex", flexDirection: "column", gap: 18 }}>
           {panelError && (
             <div role="alert" style={{
               background: "#FEF2F2", border: "1px solid #FECACA",
@@ -327,64 +255,82 @@ export function AddProductPanel({ apiBase, onClose }: AddProductPanelProps) {
 
           {/* Product Name */}
           <div>
-            <Label>{t("product.add.field.name")}</Label>
-            <Input
-              {...register("name")}
+            <FieldLabel text={t("product.add.field.name")} />
+            <input
+              value={name}
+              onChange={(e) => { setName(e.target.value); setNameErr(""); }}
               placeholder={t("product.add.field.name_placeholder")}
               maxLength={255}
               aria-required="true"
-              aria-invalid={!!errors.name}
-              style={errors.name ? { borderColor: "#DC2626" } : {}}
+              style={{
+                width: "100%", boxSizing: "border-box",
+                padding: "9px 12px", borderRadius: 4, fontSize: 13, outline: "none",
+                border: `1px solid ${nameErr ? "#DC2626" : "#D1D5DB"}`,
+              }}
             />
-            <FieldError message={errors.name?.message} />
+            <FieldErr msg={nameErr} />
           </div>
 
           {/* Product Type Code */}
           <div>
-            <Label hint={t("product.add.field.type_code_hint")}>
-              {t("product.add.field.type_code")}
-            </Label>
-            <Input
-              {...register("type_code")}
+            <FieldLabel text={t("product.add.field.type_code")} hint={t("product.add.field.type_code_hint")} />
+            <input
+              value={typeCode}
+              onChange={(e) => {
+                const v = e.target.value.replace(/[^A-Za-z]/g, "").slice(0, 5);
+                setTypeCode(v);
+                setTypeCodeErr("");
+              }}
               placeholder={t("product.add.field.type_code_placeholder")}
               maxLength={5}
-              style={{
-                textTransform: "uppercase",
-                ...(errors.type_code ? { borderColor: "#DC2626" } : {}),
-              }}
               aria-required="true"
-              aria-invalid={!!errors.type_code}
+              style={{
+                width: "100%", boxSizing: "border-box",
+                padding: "9px 12px", borderRadius: 4, fontSize: 13,
+                outline: "none", textTransform: "uppercase",
+                border: `1px solid ${typeCodeErr ? "#DC2626" : "#D1D5DB"}`,
+              }}
             />
-            <FieldError message={errors.type_code?.message} />
+            <FieldErr msg={typeCodeErr} />
           </div>
 
-          {/* Unit and Pack Size side-by-side */}
+          {/* Unit + Pack Size */}
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
             <div>
-              <Label>{t("product.add.field.unit")}</Label>
-              <Select {...register("unit")} aria-required="true">
-                {UNIT_OPTIONS.map((o) => (
-                  <option key={o.value} value={o.value}>{t(o.labelKey)}</option>
-                ))}
-              </Select>
-              <FieldError message={errors.unit?.message} />
+              <FieldLabel text={t("product.add.field.unit")} />
+              <select
+                value={unit}
+                onChange={(e) => setUnit(e.target.value as Unit)}
+                style={{
+                  width: "100%", boxSizing: "border-box", padding: "9px 12px",
+                  borderRadius: 4, border: "1px solid #D1D5DB", fontSize: 13,
+                  background: "#fff", outline: "none",
+                }}
+              >
+                {UNITS.map((o) => <option key={o.value} value={o.value}>{t(o.label)}</option>)}
+              </select>
             </div>
             <div>
-              <Label>{t("product.add.field.pack_size")}</Label>
-              <Select {...register("pack_size")} aria-required="true">
-                {PACK_OPTIONS.map((o) => (
-                  <option key={o.value} value={o.value}>{t(o.labelKey)}</option>
-                ))}
-              </Select>
-              <FieldError message={errors.pack_size?.message} />
+              <FieldLabel text={t("product.add.field.pack_size")} />
+              <select
+                value={packSize}
+                onChange={(e) => setPackSize(Number(e.target.value) as PackSize)}
+                style={{
+                  width: "100%", boxSizing: "border-box", padding: "9px 12px",
+                  borderRadius: 4, border: "1px solid #D1D5DB", fontSize: 13,
+                  background: "#fff", outline: "none",
+                }}
+              >
+                {PACKS.map((o) => <option key={o.value} value={o.value}>{t(o.label)}</option>)}
+              </select>
             </div>
           </div>
 
-          {/* SKU preview: live update as type_code/unit/pack_size change */}
-          {watchedTypeCode.length >= 2 && (
+          {/* Live SKU inline hint once type_code has ≥2 chars */}
+          {typeCode.trim().length >= 2 && previewSku && (
             <div style={{
-              background: "#F9FAFB", border: "1px solid #E5E7EB", borderRadius: 4,
-              padding: "8px 12px", fontSize: 12, color: "#6B7280",
+              background: "#F0FDF4", border: "1px solid #BBF7D0", borderRadius: 4,
+              padding: "8px 12px", fontSize: 12, color: "#374151",
             }}>
               <span style={{ fontWeight: 600 }}>{t("product.add.sku_preview_label")}: </span>
               <span style={{ fontFamily: "monospace", color: "#059669", fontWeight: 700 }}>
@@ -392,7 +338,7 @@ export function AddProductPanel({ apiBase, onClose }: AddProductPanelProps) {
               </span>
             </div>
           )}
-        </form>
+        </div>
 
         {/* Footer */}
         <div style={{
@@ -407,18 +353,19 @@ export function AddProductPanel({ apiBase, onClose }: AddProductPanelProps) {
             {t("product.add.cancel")}
           </button>
           <button
-            onClick={handleSubmit(onSubmit)}
-            disabled={saveDisabled || mutation.isPending}
+            type="button"
+            onClick={handleSave}
+            disabled={saveDisabled}
             style={{
               padding: "9px 18px", borderRadius: 4, border: "none",
-              background: (saveDisabled || mutation.isPending) ? "#D1D5DB" : "#0f2d1f",
-              color:      (saveDisabled || mutation.isPending) ? "#9CA3AF" : "#FCDD09",
+              background: saveDisabled ? "#D1D5DB" : "#0f2d1f",
+              color:      saveDisabled ? "#9CA3AF" : "#FCDD09",
               fontSize: 13, fontWeight: 700,
-              cursor: (saveDisabled || mutation.isPending) ? "not-allowed" : "pointer",
+              cursor: saveDisabled ? "not-allowed" : "pointer",
               display: "flex", alignItems: "center", gap: 8,
             }}
           >
-            {mutation.isPending && (
+            {submitting && (
               <span style={{
                 width: 14, height: 14, borderRadius: "50%",
                 border: "2px solid rgba(252,221,9,0.3)", borderTopColor: "#FCDD09",
