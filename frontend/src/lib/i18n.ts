@@ -1,6 +1,10 @@
+import enFallback from "@/lib/locales/en.json";
+
 type Locale = "en" | "am" | "or";
 
-let translations: Record<string, unknown> = {};
+// Pre-populated with English so t() works on the very first render
+// without waiting for the async loadLocale call.
+let translations: Record<string, unknown> = enFallback as Record<string, unknown>;
 
 export async function loadLocale(locale: Locale): Promise<void> {
   // Language packs served from S3 via CDN, cached by service worker

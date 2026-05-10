@@ -10,9 +10,12 @@ export function Providers({ children }: { children: React.ReactNode }) {
   }));
 
   useEffect(() => {
-    loadLocale(getCurrentLocale()).catch(() => {
-      // Silently fall back to key-as-label if locale fetch fails.
-    });
+    // English is pre-loaded from the static import in i18n.ts.
+    // This call only matters when the user has selected am/or.
+    const locale = getCurrentLocale();
+    if (locale !== "en") {
+      loadLocale(locale).catch(() => {});
+    }
   }, []);
 
   return <QueryClientProvider client={qc}>{children}</QueryClientProvider>;

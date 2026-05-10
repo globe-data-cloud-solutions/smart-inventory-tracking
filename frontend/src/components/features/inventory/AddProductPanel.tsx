@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
-import { useForm } from "react-hook-form";
+import { useForm, useWatch } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -142,23 +142,23 @@ export function AddProductPanel({ apiBase, onClose }: AddProductPanelProps) {
   const token                       = getToken();
 
   const {
+    control,
     register,
     handleSubmit,
     formState: { errors, isDirty, isSubmitting },
     reset,
     setError,
-    watch,
   } = useForm<FormValues>({
     resolver: zodResolver(schema),
     mode: "onChange",
     defaultValues: { unit: "KG", pack_size: 1, type_code: "", name: "" },
   });
 
-  // Watch form values to build SKU preview dynamically
-  const watchedName     = watch("name") ?? "";
-  const watchedTypeCode = watch("type_code") ?? "";
-  const watchedUnit     = watch("unit") ?? "KG";
-  const watchedPackSize = watch("pack_size") ?? 1;
+  // useWatch creates an explicit subscription — re-renders on every field change
+  const watchedName     = useWatch({ control, name: "name" }) ?? "";
+  const watchedTypeCode = useWatch({ control, name: "type_code" }) ?? "";
+  const watchedUnit     = useWatch({ control, name: "unit" }) ?? "KG";
+  const watchedPackSize = useWatch({ control, name: "pack_size" }) ?? 1;
 
   // ── Server: fetch next counter ────────────────────────────────────────────
   const { data: counterData, isFetching: skuLoading, error: skuError } = useQuery({
@@ -177,16 +177,11 @@ export function AddProductPanel({ apiBase, onClose }: AddProductPanelProps) {
     ? `${orgAbbr}-${typeDisplay}-${watchedUnit}${watchedPackSize}-${String(counter).padStart(4, "0")}`
     : "";
 
-  // ── Save gate: check values explicitly to avoid isValid/mode gotcha ───────
-  const hasErrors    = Object.keys(errors).length > 0;
-  const saveDisabled =
-    !watchedName.trim() ||
-    watchedTypeCode.trim().length < 2 ||
-    hasErrors ||
-    !counter ||
-    skuLoading ||
-    !!skuError ||
-    isSubmitting;
+  // ── Save gate: derive from live field values, not RHF's isValid flag ────────
+  const nameOk     = watchedName.trim().length > 0;
+  const typeCodeOk = /^[A-Za-z]{2,5}$/.test(watchedTypeCode.trim());
+  const noErrors   = Object.keys(errors).length === 0;
+  const saveDisabled = !nameOk || !typeCodeOk || !noErrors || isSubmitting || skuLoading;
 
   // ── Copy SKU to clipboard ─────────────────────────────────────────────────
   const handleCopy = async () => {
