@@ -9,380 +9,142 @@ import {
   getTotalStock,
   type DemoProduct,
   type DemoTenant,
-  type DemoWarehouse,
 } from "@/lib/demo-data";
 
-const C = {
-  dark:   "#12291E",
-  forest: "#1B4332",
-  gold:   "#FCDD09",
-};
+/* ── Shared colours ──────────────────────────────────────────────────────── */
+const DARK   = "#0f2d1f";
+const FOREST = "#1B4332";
+const GOLD   = "#FCDD09";
 
-export default function DashboardPage() {
-  const [user, setUser] = useState<SessionUser | null>(null);
-
-  useEffect(() => { setUser(getSession()); }, []);
-  if (!user) return null;
-
-  // ── SA: overview cards, NO inventory tables
-  if (user.role === "SA") return <SAView />;
-
-  // ── Tenant-scoped user
-  const tenant = DEMO_TENANTS.find((t) => t.id === user.tenantId);
-  if (!tenant) return <p className="p-8 text-gray-500">No tenant assigned to your account.</p>;
-
-  // ── WM / NM: scoped to one location
-  if (user.warehouseId) return <LocationView user={user} tenant={tenant} />;
-
-  // ── TA: full tenant view
-  return <TenantAdminView user={user} tenant={tenant} />;
-}
-
-// ══ SA Dashboard — overview only, no tables ═══════════════════════════════════
-
-function SAView() {
-  const totalLocations = DEMO_TENANTS.reduce((a, t) => a + t.warehouses.length, 0);
-  const totalSKUs      = DEMO_TENANTS.reduce((a, t) => a + t.products.length,   0);
-  const totalUsers     = DEMO_TENANTS.reduce((a, t) => a + t.users.length,      0) + 1;
-
-  return (
-    <div className="p-6 space-y-8">
-      <div>
-        <h2 className="text-2xl font-bold" style={{ color: C.dark }}>System Overview</h2>
-        <p className="text-gray-500 text-sm mt-1">System Administrator · Full platform access</p>
-      </div>
-
-      {/* KPI cards */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        {[
-          { label: "Tenants",    value: DEMO_TENANTS.length, icon: "🏢", color: "#DBEAFE", text: "#1E40AF" },
-          { label: "Locations",  value: totalLocations,      icon: "📍", color: "#E9D5FF", text: "#6B21A8" },
-          { label: "Active SKUs",value: totalSKUs,           icon: "📦", color: "#D1FAE5", text: "#065F46" },
-          { label: "Users",      value: totalUsers,          icon: "👤", color: "#FEF3C7", text: "#92400E" },
-        ].map((s) => (
-          <div key={s.label} className="rounded border p-5" style={{ background: s.color, borderColor: s.color }}>
-            <p className="text-2xl mb-1">{s.icon}</p>
-            <p className="text-3xl font-extrabold" style={{ color: s.text }}>{s.value}</p>
-            <p className="text-sm font-semibold mt-0.5" style={{ color: s.text }}>{s.label}</p>
-          </div>
-        ))}
-      </div>
-
-      {/* Tenant cards */}
-      <div>
-        <h3 className="text-lg font-bold mb-4" style={{ color: C.dark }}>Tenants</h3>
-        <div className="grid lg:grid-cols-2 gap-6">
-          {DEMO_TENANTS.map((t) => <SATenantCard key={t.id} tenant={t} />)}
-        </div>
-      </div>
-
-      {/* Role guide */}
-      <div className="rounded border border-gray-200 p-5 bg-gray-50">
-        <h4 className="text-sm font-bold text-gray-700 mb-3">Role-scoped access guide</h4>
-        <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-3 text-xs">
-          {ROLE_GUIDE.map((r) => (
-            <div key={r.role} className="flex items-start gap-2">
-              <span className="px-1.5 py-0.5 rounded text-white font-bold shrink-0" style={{ background: r.color }}>{r.role}</span>
-              <p className="text-gray-600">{r.desc}</p>
-            </div>
-          ))}
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function SATenantCard({ tenant }: { tenant: DemoTenant }) {
-  const lowStock   = getLowStockProducts(tenant);
-  const totalUnits = tenant.products.reduce((a, p) => a + getTotalStock(p), 0);
-  return (
-    <Link href={`/dashboard/tenants/${tenant.slug}`} className="block group">
-      <div className="border-2 border-gray-200 group-hover:border-current group-hover:shadow-lg transition-all duration-200 overflow-hidden" style={{ borderRadius: 4 }}>
-        <div className="px-5 py-4 flex items-center gap-3" style={{ background: tenant.color }}>
-          <span className="text-4xl">{tenant.logo}</span>
-          <div>
-            <h4 className="font-bold text-white text-lg">{tenant.name}</h4>
-            <p className="text-white/75 text-sm">{tenant.industry}</p>
-          </div>
-          <span className="ml-auto text-xs font-semibold bg-black/20 text-white px-2 py-0.5" style={{ borderRadius: 2 }}>{tenant.orgType}</span>
-        </div>
-
-        <div className="px-5 py-4 grid grid-cols-4 gap-3 text-center bg-white">
-          {[
-            { label: "Locations", value: tenant.warehouses.length },
-            { label: "SKUs",      value: tenant.products.length },
-            { label: "Units",     value: totalUnits.toLocaleString() },
-            { label: "Low Stock", value: lowStock.length, warn: lowStock.length > 0 },
-          ].map((s) => (
-            <div key={s.label}>
-              <p className={`text-xl font-extrabold ${s.warn ? "text-red-500" : "text-gray-900"}`}>{s.value}</p>
-              <p className="text-xs text-gray-500 mt-0.5">{s.label}</p>
-            </div>
-          ))}
-        </div>
-
-        <div className="px-5 py-2.5 border-t border-gray-100 bg-gray-50 flex flex-wrap gap-1.5">
-          {tenant.warehouses.slice(0, 4).map((w) => (
-            <span key={w.id} className="text-xs bg-white border border-gray-200 text-gray-600 px-2 py-0.5 rounded">{w.name}</span>
-          ))}
-          {tenant.warehouses.length > 4 && (
-            <span className="text-xs text-gray-400">+{tenant.warehouses.length - 4} more</span>
-          )}
-        </div>
-
-        <div className="px-5 py-2.5 bg-white border-t border-gray-100">
-          <span className="text-xs font-semibold group-hover:underline" style={{ color: tenant.color }}>
-            Open tenant dashboard →
-          </span>
-        </div>
-      </div>
-    </Link>
-  );
-}
-
-// ══ WM / NM Dashboard — single location scoped ════════════════════════════════
-
-function LocationView({ user, tenant }: { user: SessionUser; tenant: DemoTenant }) {
-  const warehouse = tenant.warehouses.find((w) => w.id === user.warehouseId);
-  if (!warehouse) return null;
-
-  const products = tenant.products.filter((p) => (p.stock[user.warehouseId!] ?? 0) > 0);
-  const totalUnits = products.reduce((a, p) => a + (p.stock[user.warehouseId!] ?? 0), 0);
-  const lowStock = products.filter((p) => (p.stock[user.warehouseId!] ?? 0) < p.reorderPoint);
-
-  const typeLabel: Record<string, string> = {
-    PRODUCTION: "Production Center",
-    WAREHOUSE:  "Warehouse",
-    SUBCENTER:  "Sub-center",
-  };
-
-  return (
-    <div className="p-6 space-y-6">
-      {/* Header */}
-      <div className="flex items-start gap-4">
-        <div className="w-14 h-14 rounded flex items-center justify-center text-3xl shrink-0"
-          style={{ background: tenant.color + "20", border: `2px solid ${tenant.color}` }}>
-          {warehouse.type === "PRODUCTION" ? "🏭" : warehouse.type === "SUBCENTER" ? "🔖" : "🏗️"}
-        </div>
-        <div>
-          <p className="text-xs font-bold uppercase tracking-wider text-gray-400">
-            {tenant.name} · {typeLabel[warehouse.type]}
-          </p>
-          <h2 className="text-2xl font-extrabold mt-0.5" style={{ color: C.dark }}>{warehouse.name}</h2>
-          <p className="text-sm text-gray-500">{warehouse.location} · {user.role} access</p>
-        </div>
-      </div>
-
-      {/* KPI strip */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-        {[
-          { label: "Products with stock", value: products.length,             icon: "📦" },
-          { label: "Total units",          value: totalUnits.toLocaleString(), icon: "📊" },
-          { label: "Low stock alerts",     value: lowStock.length,             icon: "⚠️", warn: lowStock.length > 0 },
-          { label: "Reorder needed",       value: lowStock.length > 0 ? "Yes" : "None", icon: "🔔", warn: lowStock.length > 0 },
-        ].map((s) => (
-          <div key={s.label} className="rounded border p-4 bg-white" style={{ borderRadius: 4, borderColor: s.warn ? "#FECACA" : "#E5E7EB", background: s.warn ? "#FFF1F2" : "#FFFFFF" }}>
-            <p className="text-xl mb-1">{s.icon}</p>
-            <p className={`text-2xl font-extrabold ${s.warn ? "text-red-600" : "text-gray-900"}`}>{s.value}</p>
-            <p className="text-xs text-gray-500 mt-0.5">{s.label}</p>
-          </div>
-        ))}
-      </div>
-
-      {/* Inventory table — this location only */}
-      <InventoryTable
-        title={`${warehouse.name} — Inventory`}
-        subtitle={`Showing all products with stock at this location`}
-        products={products}
-        getQty={(p) => p.stock[user.warehouseId!] ?? 0}
-        singleLocation
-        accentColor={tenant.color}
-      />
-    </div>
-  );
-}
-
-// ══ TA Dashboard — full tenant summary ════════════════════════════════════════
-
-function TenantAdminView({ user, tenant }: { user: SessionUser; tenant: DemoTenant }) {
-  const lowStock   = getLowStockProducts(tenant);
-  const totalUnits = tenant.products.reduce((a, p) => a + getTotalStock(p), 0);
-
-  return (
-    <div className="p-6 space-y-6">
-      {/* Header */}
-      <div className="flex items-center gap-4">
-        <div className="w-14 h-14 rounded flex items-center justify-center text-3xl shrink-0"
-          style={{ background: tenant.color + "15", border: `2px solid ${tenant.color}` }}>
-          {tenant.logo}
-        </div>
-        <div>
-          <p className="text-xs font-bold uppercase tracking-wider text-gray-400">Tenant Admin</p>
-          <h2 className="text-2xl font-extrabold mt-0.5" style={{ color: C.dark }}>{tenant.name}</h2>
-          <p className="text-sm text-gray-500">{tenant.industry} · Full tenant access</p>
-        </div>
-        <Link href={`/dashboard/tenants/${tenant.slug}`}
-          className="ml-auto text-sm font-semibold px-4 py-2 text-white"
-          style={{ background: tenant.color, borderRadius: 4 }}>
-          Full detail →
-        </Link>
-      </div>
-
-      {/* KPIs */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-        {[
-          { label: "Locations",  value: tenant.warehouses.length,    icon: "📍" },
-          { label: "SKUs",       value: tenant.products.length,      icon: "📦" },
-          { label: "Total Units",value: totalUnits.toLocaleString(), icon: "📊" },
-          { label: "Low Stock",  value: lowStock.length,             icon: "⚠️", warn: lowStock.length > 0 },
-        ].map((s) => (
-          <div key={s.label} className="border p-4 bg-white" style={{ borderRadius: 4, borderColor: "#E5E7EB" }}>
-            <p className="text-xl mb-1">{s.icon}</p>
-            <p className={`text-2xl font-extrabold ${s.warn ? "text-red-600" : "text-gray-900"}`}>{s.value}</p>
-            <p className="text-xs text-gray-500 mt-0.5">{s.label}</p>
-          </div>
-        ))}
-      </div>
-
-      {/* Warehouse summary table */}
-      <div className="bg-white border border-gray-200 overflow-hidden" style={{ borderRadius: 4 }}>
-        <div className="px-5 py-4 border-b border-gray-100" style={{ background: tenant.color }}>
-          <h3 className="font-bold text-white">Inventory Summary by Location</h3>
-          <p className="text-white/70 text-xs mt-0.5">Total units per warehouse across all products</p>
-        </div>
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead className="bg-gray-50 border-b border-gray-200">
-              <tr>
-                <th className="text-left px-5 py-3 text-xs font-bold text-gray-500 uppercase tracking-wider">Location</th>
-                <th className="text-left px-5 py-3 text-xs font-bold text-gray-500 uppercase tracking-wider">Type</th>
-                <th className="text-right px-5 py-3 text-xs font-bold text-gray-500 uppercase tracking-wider">Active SKUs</th>
-                <th className="text-right px-5 py-3 text-xs font-bold text-gray-500 uppercase tracking-wider">Total Units</th>
-                <th className="text-right px-5 py-3 text-xs font-bold text-gray-500 uppercase tracking-wider">Low Stock</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-100">
-              {tenant.warehouses.map((w, idx) => {
-                const whUnits  = tenant.products.reduce((a, p) => a + (p.stock[w.id] ?? 0), 0);
-                const whSKUs   = tenant.products.filter((p) => (p.stock[w.id] ?? 0) > 0).length;
-                const whLow    = tenant.products.filter((p) => (p.stock[w.id] ?? 0) > 0 && (p.stock[w.id] ?? 0) < p.reorderPoint).length;
-                const typeLabels: Record<string, string> = { PRODUCTION: "Production", WAREHOUSE: "Warehouse", SUBCENTER: "Sub-center" };
-                return (
-                  <tr key={w.id} className={idx % 2 === 0 ? "bg-white" : "bg-gray-50/50"}>
-                    <td className="px-5 py-3 font-medium text-gray-900">
-                      {w.parentId && <span className="text-gray-400 mr-1">↳</span>}
-                      {w.name}
-                      <p className="text-xs text-gray-400 font-normal">{w.location}</p>
-                    </td>
-                    <td className="px-5 py-3">
-                      <span className={`inline-block text-xs font-semibold px-2 py-0.5 rounded ${
-                        w.type === "PRODUCTION" ? "bg-orange-100 text-orange-700" :
-                        w.type === "SUBCENTER"  ? "bg-purple-100 text-purple-700" :
-                                                   "bg-blue-100 text-blue-700"
-                      }`}>{typeLabels[w.type]}</span>
-                    </td>
-                    <td className="px-5 py-3 text-right tabular-nums text-gray-700">{whSKUs}</td>
-                    <td className="px-5 py-3 text-right tabular-nums font-bold text-gray-900">{whUnits.toLocaleString()}</td>
-                    <td className="px-5 py-3 text-right">
-                      {whLow > 0
-                        ? <span className="text-xs font-semibold text-red-600 bg-red-50 border border-red-200 px-2 py-0.5 rounded">{whLow} low</span>
-                        : <span className="text-xs font-semibold text-green-700 bg-green-50 border border-green-200 px-2 py-0.5 rounded">OK</span>}
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-            <tfoot>
-              <tr className="border-t-2 border-gray-200 bg-gray-50 font-bold">
-                <td className="px-5 py-3 text-gray-700">Total</td>
-                <td />
-                <td className="px-5 py-3 text-right tabular-nums text-gray-700">{tenant.products.length}</td>
-                <td className="px-5 py-3 text-right tabular-nums" style={{ color: "#1B4332" }}>
-                  {totalUnits.toLocaleString()}
-                </td>
-                <td className="px-5 py-3 text-right">
-                  {lowStock.length > 0
-                    ? <span className="text-red-600">{lowStock.length} items</span>
-                    : <span className="text-green-700">All OK</span>}
-                </td>
-              </tr>
-            </tfoot>
-          </table>
-        </div>
-      </div>
-
-      {/* Full inventory table */}
-      <InventoryTable
-        title="Full Inventory — All Locations"
-        subtitle={`${tenant.products.length} SKUs across ${tenant.warehouses.length} locations`}
-        products={tenant.products}
-        getQty={getTotalStock}
-        singleLocation={false}
-        accentColor={tenant.color}
-      />
-    </div>
-  );
-}
-
-// ══ Shared inventory table component ══════════════════════════════════════════
-
-function InventoryTable({
-  title, subtitle, products, getQty, singleLocation, accentColor,
+/* ── Summary rectangle component ─────────────────────────────────────────── */
+function SummaryCard({
+  title, subtitle, rows, accentColor,
 }: {
   title: string;
   subtitle: string;
-  products: DemoProduct[];
-  getQty: (p: DemoProduct) => number;
-  singleLocation: boolean;
+  rows: { label: string; value: string | number; warn?: boolean }[];
   accentColor: string;
 }) {
-  const categories = [...new Set(products.map((p) => p.category))];
-
   return (
-    <div className="space-y-4">
+    <div style={{
+      background: "#fff",
+      border: "1px solid #E5E7EB",
+      borderRadius: 4,
+      overflow: "hidden",
+      marginBottom: "1.5rem",
+    }}>
+      {/* Coloured top strip */}
+      <div style={{ height: 4, background: accentColor }} />
+      {/* Header row */}
+      <div style={{
+        padding: "1rem 1.5rem",
+        background: DARK,
+        display: "flex", alignItems: "center", justifyContent: "space-between",
+      }}>
+        <div>
+          <p style={{ fontWeight: 700, fontSize: 16, color: "#fff", margin: 0 }}>{title}</p>
+          <p style={{ fontSize: 12, color: "#6ee7b7", margin: 0, marginTop: 2 }}>{subtitle}</p>
+        </div>
+        <div style={{ height: 5, width: "30%",
+          background: "linear-gradient(to right,#078930 0% 33.33%,#FCDD09 33.33% 66.66%,#DA121A 66.66% 100%)",
+          borderRadius: 2 }} />
+      </div>
+      {/* Metric rows */}
+      <div style={{
+        display: "grid",
+        gridTemplateColumns: `repeat(${rows.length}, 1fr)`,
+        borderTop: "1px solid #F3F4F6",
+      }}>
+        {rows.map((r, i) => (
+          <div key={r.label} style={{
+            padding: "1.25rem 1.5rem",
+            textAlign: "center",
+            borderRight: i < rows.length - 1 ? "1px solid #F3F4F6" : "none",
+            background: r.warn ? "#FFF1F2" : "#fff",
+          }}>
+            <p style={{
+              fontSize: "1.75rem", fontWeight: 800, margin: 0,
+              color: r.warn ? "#DC2626" : FOREST,
+            }}>
+              {typeof r.value === "number" ? r.value.toLocaleString() : r.value}
+            </p>
+            <p style={{ fontSize: 12, color: "#6B7280", margin: "4px 0 0", fontWeight: 500 }}>
+              {r.label}
+            </p>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/* ── Inventory table ──────────────────────────────────────────────────────── */
+function InventoryTable({
+  products, getQty, accentColor, title, subtitle,
+}: {
+  products: DemoProduct[];
+  getQty: (p: DemoProduct) => number;
+  accentColor: string;
+  title: string;
+  subtitle: string;
+}) {
+  const categories = [...new Set(products.map((p) => p.category))];
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: "1.25rem" }}>
       {categories.map((cat) => {
-        const catProducts = products.filter((p) => p.category === cat);
+        const items = products.filter((p) => p.category === cat);
+        const catTotal = items.reduce((a, p) => a + getQty(p), 0);
         return (
-          <div key={cat} className="bg-white border border-gray-200 overflow-hidden" style={{ borderRadius: 4 }}>
-            <div className="px-5 py-3 border-b border-gray-100 bg-gray-50 flex items-center justify-between">
+          <div key={cat} style={{ background: "#fff", border: "1px solid #E5E7EB", borderRadius: 4, overflow: "hidden" }}>
+            <div style={{ height: 3, background: accentColor }} />
+            <div style={{
+              padding: "0.75rem 1.25rem",
+              background: "#F9FAFB",
+              borderBottom: "2px solid #E5E7EB",
+              display: "flex", alignItems: "center", justifyContent: "space-between",
+            }}>
               <div>
-                <h4 className="font-bold text-gray-800">{title}</h4>
-                <p className="text-xs text-gray-500">{subtitle} · Category: {cat}</p>
+                <span style={{ fontSize: 13, fontWeight: 700, color: "#1F2937" }}>{title}</span>
+                <span style={{ fontSize: 12, color: "#9CA3AF", marginLeft: 8 }}>· {subtitle} · {cat}</span>
               </div>
-              <span className="text-xs font-semibold bg-gray-200 text-gray-600 px-2 py-0.5 rounded">
-                {catProducts.length} SKUs
+              <span style={{ fontSize: 11, fontWeight: 700, color: "#6B7280", background: "#E5E7EB", padding: "2px 8px", borderRadius: 3 }}>
+                {items.length} SKUs
               </span>
             </div>
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead className="border-b-2 border-gray-200 bg-white">
-                  <tr>
-                    <th className="text-left px-5 py-3 text-xs font-bold text-gray-500 uppercase tracking-wider">SKU</th>
-                    <th className="text-left px-5 py-3 text-xs font-bold text-gray-500 uppercase tracking-wider">Product</th>
-                    <th className="text-right px-5 py-3 text-xs font-bold text-gray-500 uppercase tracking-wider">
-                      {singleLocation ? "Stock (this location)" : "Total Stock"}
-                    </th>
-                    <th className="text-right px-5 py-3 text-xs font-bold text-gray-500 uppercase tracking-wider">Reorder Point</th>
-                    <th className="px-5 py-3 text-xs font-bold text-gray-500 uppercase tracking-wider">Status</th>
+            <div style={{ overflowX: "auto" }}>
+              <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+                <thead>
+                  <tr style={{ background: "#F9FAFB", borderBottom: "1px solid #E5E7EB" }}>
+                    {["SKU", "Product", "Category", "Stock", "Reorder Point", "Status"].map((h) => (
+                      <th key={h} style={{
+                        padding: "10px 16px", textAlign: h === "Stock" || h === "Reorder Point" ? "right" : "left",
+                        fontSize: 11, fontWeight: 700, color: "#6B7280",
+                        textTransform: "uppercase", letterSpacing: "0.05em",
+                      }}>{h}</th>
+                    ))}
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-gray-100">
-                  {catProducts.map((p, idx) => {
+                <tbody>
+                  {items.map((p, idx) => {
                     const qty   = getQty(p);
                     const isLow = qty < p.reorderPoint;
                     return (
-                      <tr key={p.id} className={idx % 2 === 0 ? "bg-white" : "bg-gray-50/40"}>
-                        <td className="px-5 py-3 font-mono text-xs text-gray-400">{p.sku}</td>
-                        <td className="px-5 py-3 font-medium text-gray-900">{p.name}</td>
-                        <td className="px-5 py-3 text-right font-bold text-gray-900 tabular-nums">{qty.toLocaleString()}</td>
-                        <td className="px-5 py-3 text-right text-gray-500 tabular-nums">{p.reorderPoint.toLocaleString()}</td>
-                        <td className="px-5 py-3">
-                          <span className={`inline-flex items-center gap-1.5 text-xs font-semibold px-2.5 py-0.5 border ${
-                            isLow
-                              ? "bg-red-50 text-red-600 border-red-200"
-                              : "bg-green-50 text-green-700 border-green-200"
-                          }`} style={{ borderRadius: 3 }}>
-                            <span className={`w-1.5 h-1.5 rounded-full ${isLow ? "bg-red-500" : "bg-green-500"}`} />
+                      <tr key={p.id} style={{ background: idx % 2 === 0 ? "#fff" : "#FAFAFA", borderBottom: "1px solid #F3F4F6" }}>
+                        <td style={{ padding: "10px 16px", fontFamily: "monospace", fontSize: 11, color: "#9CA3AF" }}>{p.sku}</td>
+                        <td style={{ padding: "10px 16px", fontWeight: 600, color: "#1F2937" }}>{p.name}</td>
+                        <td style={{ padding: "10px 16px", color: "#6B7280" }}>{p.category}</td>
+                        <td style={{ padding: "10px 16px", textAlign: "right", fontWeight: 700, color: "#111827" }}>{qty.toLocaleString()}</td>
+                        <td style={{ padding: "10px 16px", textAlign: "right", color: "#9CA3AF" }}>{p.reorderPoint.toLocaleString()}</td>
+                        <td style={{ padding: "10px 16px" }}>
+                          <span style={{
+                            display: "inline-flex", alignItems: "center", gap: 5,
+                            fontSize: 11, fontWeight: 700,
+                            padding: "3px 10px", borderRadius: 3,
+                            background: isLow ? "#FEF2F2" : "#F0FDF4",
+                            color: isLow ? "#DC2626" : "#059669",
+                            border: `1px solid ${isLow ? "#FECACA" : "#BBF7D0"}`,
+                          }}>
+                            <span style={{ width: 6, height: 6, borderRadius: "50%", background: isLow ? "#DC2626" : "#059669" }} />
                             {isLow ? "Low Stock" : "In Stock"}
                           </span>
                         </td>
@@ -391,12 +153,14 @@ function InventoryTable({
                   })}
                 </tbody>
                 <tfoot>
-                  <tr className="border-t-2 border-gray-200 bg-gray-50 font-semibold">
-                    <td colSpan={2} className="px-5 py-2.5 text-xs text-gray-600">{catProducts.length} products</td>
-                    <td className="px-5 py-2.5 text-right text-sm tabular-nums font-bold" style={{ color: accentColor }}>
-                      {catProducts.reduce((a, p) => a + getQty(p), 0).toLocaleString()}
+                  <tr style={{ background: "#F3F4F6", borderTop: "2px solid #E5E7EB" }}>
+                    <td colSpan={3} style={{ padding: "10px 16px", fontSize: 12, fontWeight: 600, color: "#6B7280" }}>
+                      {items.length} products in this category
                     </td>
-                    <td /><td />
+                    <td style={{ padding: "10px 16px", textAlign: "right", fontWeight: 800, color: FOREST, fontSize: 14 }}>
+                      {catTotal.toLocaleString()}
+                    </td>
+                    <td colSpan={2} />
                   </tr>
                 </tfoot>
               </table>
@@ -408,11 +172,237 @@ function InventoryTable({
   );
 }
 
-// ─── Static data ──────────────────────────────────────────────────────────────
+/* ── Page ─────────────────────────────────────────────────────────────────── */
+export default function DashboardPage() {
+  const [user, setUser] = useState<SessionUser | null>(null);
+  useEffect(() => { setUser(getSession()); }, []);
+  if (!user) return null;
+
+  if (user.role === "SA") return <SAView />;
+
+  const tenant = DEMO_TENANTS.find((t) => t.id === user.tenantId);
+  if (!tenant) return <p style={{ padding: "2rem", color: "#6B7280" }}>No tenant assigned.</p>;
+
+  if (user.warehouseId) return <LocationView user={user} tenant={tenant} />;
+  return <TenantAdminView user={user} tenant={tenant} />;
+}
+
+/* ── SA view ─────────────────────────────────────────────────────────────── */
+function SAView() {
+  const totalLoc   = DEMO_TENANTS.reduce((a, t) => a + t.warehouses.length, 0);
+  const totalSKUs  = DEMO_TENANTS.reduce((a, t) => a + t.products.length,   0);
+  const totalUnits = DEMO_TENANTS.reduce((a, t) => a + t.products.reduce((b, p) => b + getTotalStock(p), 0), 0);
+
+  return (
+    <div style={{ padding: "2rem" }}>
+      {/* Platform summary rectangle */}
+      <SummaryCard
+        title="Platform Overview"
+        subtitle="All tenants · System Administrator"
+        accentColor={GOLD}
+        rows={[
+          { label: "Tenants",        value: DEMO_TENANTS.length },
+          { label: "Total Locations",value: totalLoc },
+          { label: "Active SKUs",    value: totalSKUs },
+          { label: "Total Units",    value: totalUnits },
+          { label: "Total Users",    value: DEMO_TENANTS.reduce((a, t) => a + t.users.length, 0) + 1 },
+        ]}
+      />
+
+      {/* Tenant cards */}
+      <h3 style={{ fontSize: 16, fontWeight: 700, color: DARK, margin: "0 0 1rem" }}>Tenants</h3>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: "1.5rem" }}>
+        {DEMO_TENANTS.map((t) => <SATenantCard key={t.id} tenant={t} />)}
+      </div>
+
+      {/* Role reference */}
+      <div style={{
+        marginTop: "2rem", background: "#fff", border: "1px solid #E5E7EB",
+        borderRadius: 4, padding: "1.25rem",
+      }}>
+        <p style={{ fontSize: 13, fontWeight: 700, color: "#374151", margin: "0 0 0.75rem" }}>
+          Role-scoped access — users see only their data
+        </p>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: "0.75rem" }}>
+          {ROLE_GUIDE.map((r) => (
+            <div key={r.role} style={{ display: "flex", alignItems: "flex-start", gap: 8 }}>
+              <span style={{ fontSize: 10, fontWeight: 800, color: "#fff", background: r.color, padding: "3px 7px", borderRadius: 3, flexShrink: 0 }}>{r.role}</span>
+              <p style={{ fontSize: 12, color: "#6B7280", margin: 0 }}>{r.desc}</p>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function SATenantCard({ tenant }: { tenant: DemoTenant }) {
+  const low   = getLowStockProducts(tenant);
+  const units = tenant.products.reduce((a, p) => a + getTotalStock(p), 0);
+  return (
+    <Link href={`/dashboard/tenants/${tenant.slug}`} style={{ textDecoration: "none" }}>
+      <div className="tenant-card">
+        <div style={{ background: tenant.color, padding: "1rem 1.25rem", display: "flex", alignItems: "center", gap: 10 }}>
+          <span style={{ fontSize: "2rem" }}>{tenant.logo}</span>
+          <div>
+            <p style={{ fontWeight: 700, fontSize: 16, color: "#fff", margin: 0 }}>{tenant.name}</p>
+            <p style={{ fontSize: 12, color: "rgba(255,255,255,0.75)", margin: 0 }}>{tenant.industry}</p>
+          </div>
+        </div>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", padding: "0.875rem", gap: "0.5rem", textAlign: "center" }}>
+          {[
+            { l: "Locations",  v: tenant.warehouses.length },
+            { l: "SKUs",       v: tenant.products.length },
+            { l: "Units",      v: units.toLocaleString() },
+            { l: "Low Stock",  v: low.length, w: low.length > 0 },
+          ].map((s) => (
+            <div key={s.l}>
+              <p style={{ fontSize: "1.25rem", fontWeight: 800, margin: 0, color: s.w ? "#DC2626" : "#111827" }}>{s.v}</p>
+              <p style={{ fontSize: 11, color: "#9CA3AF", margin: 0 }}>{s.l}</p>
+            </div>
+          ))}
+        </div>
+        <div style={{ padding: "0.625rem 1.25rem", borderTop: "1px solid #F3F4F6", background: "#FAFAFA" }}>
+          <span style={{ fontSize: 12, fontWeight: 700, color: tenant.color }}>Open dashboard →</span>
+        </div>
+      </div>
+    </Link>
+  );
+}
+
+/* ── WM / NM — single location view ──────────────────────────────────────── */
+function LocationView({ user, tenant }: { user: SessionUser; tenant: DemoTenant }) {
+  const wh = tenant.warehouses.find((w) => w.id === user.warehouseId);
+  if (!wh) return null;
+
+  const myProducts  = tenant.products.filter((p) => (p.stock[user.warehouseId!] ?? 0) > 0);
+  const totalUnits  = myProducts.reduce((a, p) => a + (p.stock[user.warehouseId!] ?? 0), 0);
+  const lowStock    = myProducts.filter((p) => (p.stock[user.warehouseId!] ?? 0) < p.reorderPoint);
+  const inStock     = myProducts.length - lowStock.length;
+
+  const typeLabel: Record<string, string> = { PRODUCTION: "Production Center", WAREHOUSE: "Warehouse", SUBCENTER: "Sub-center" };
+
+  return (
+    <div style={{ padding: "2rem" }}>
+      {/* Summary rectangle — 3 metric rows */}
+      <SummaryCard
+        title={`${wh.name}`}
+        subtitle={`${typeLabel[wh.type] ?? "Location"} · ${wh.location ?? tenant.name} · ${user.role}`}
+        accentColor={tenant.color}
+        rows={[
+          { label: "Total Units",        value: totalUnits, },
+          { label: "SKUs with Stock",    value: myProducts.length },
+          { label: "In Stock",           value: inStock },
+          { label: "Low Stock Alerts",   value: lowStock.length, warn: lowStock.length > 0 },
+        ]}
+      />
+
+      {/* Inventory table */}
+      <InventoryTable
+        products={myProducts}
+        getQty={(p) => p.stock[user.warehouseId!] ?? 0}
+        accentColor={tenant.color}
+        title={wh.name}
+        subtitle={`${user.role} view — ${wh.location ?? ""}`}
+      />
+    </div>
+  );
+}
+
+/* ── TA — full tenant view ────────────────────────────────────────────────── */
+function TenantAdminView({ user, tenant }: { user: SessionUser; tenant: DemoTenant }) {
+  const lowStock   = getLowStockProducts(tenant);
+  const totalUnits = tenant.products.reduce((a, p) => a + getTotalStock(p), 0);
+  const prodCentres = tenant.warehouses.filter((w) => w.type === "PRODUCTION").length;
+
+  return (
+    <div style={{ padding: "2rem" }}>
+      {/* Summary rectangle */}
+      <SummaryCard
+        title={tenant.name}
+        subtitle={`${tenant.industry} · Tenant Admin — all locations`}
+        accentColor={tenant.color}
+        rows={[
+          { label: "Locations",      value: tenant.warehouses.length },
+          { label: "Production Ctrs",value: prodCentres },
+          { label: "Active SKUs",    value: tenant.products.length },
+          { label: "Total Units",    value: totalUnits },
+          { label: "Low Stock",      value: lowStock.length, warn: lowStock.length > 0 },
+        ]}
+      />
+
+      {/* Per-warehouse summary rows */}
+      <div style={{ background: "#fff", border: "1px solid #E5E7EB", borderRadius: 4, overflow: "hidden", marginBottom: "1.5rem" }}>
+        <div style={{ height: 3, background: tenant.color }} />
+        <div style={{ padding: "0.75rem 1.25rem", background: "#F9FAFB", borderBottom: "2px solid #E5E7EB" }}>
+          <span style={{ fontSize: 13, fontWeight: 700, color: "#1F2937" }}>Inventory by Location</span>
+        </div>
+        <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+          <thead>
+            <tr>
+              {["Location", "Type", "Active SKUs", "Total Units", "Low Stock"].map((h) => (
+                <th key={h} style={{
+                  padding: "10px 16px", background: "#F9FAFB",
+                  textAlign: h === "Total Units" || h === "Active SKUs" ? "right" : "left",
+                  fontSize: 11, fontWeight: 700, color: "#6B7280",
+                  textTransform: "uppercase", letterSpacing: "0.05em",
+                  borderBottom: "1px solid #E5E7EB",
+                }}>{h}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {tenant.warehouses.map((w, idx) => {
+              const whUnits = tenant.products.reduce((a, p) => a + (p.stock[w.id] ?? 0), 0);
+              const whSKUs  = tenant.products.filter((p) => (p.stock[w.id] ?? 0) > 0).length;
+              const whLow   = tenant.products.filter((p) => (p.stock[w.id] ?? 0) > 0 && (p.stock[w.id] ?? 0) < p.reorderPoint).length;
+              const typeColors: Record<string, { bg: string; text: string }> = {
+                PRODUCTION: { bg: "#FEF3C7", text: "#92400E" },
+                WAREHOUSE:  { bg: "#DBEAFE", text: "#1E40AF" },
+                SUBCENTER:  { bg: "#EDE9FE", text: "#5B21B6" },
+              };
+              const tc = typeColors[w.type] ?? { bg: "#F3F4F6", text: "#6B7280" };
+              return (
+                <tr key={w.id} style={{ background: idx % 2 === 0 ? "#fff" : "#FAFAFA", borderBottom: "1px solid #F3F4F6" }}>
+                  <td style={{ padding: "10px 16px", fontWeight: 600, color: "#1F2937" }}>
+                    {w.parentId && <span style={{ color: "#D1D5DB", marginRight: 4 }}>↳</span>}
+                    {w.name}
+                    <p style={{ margin: 0, fontSize: 11, color: "#9CA3AF", fontWeight: 400 }}>{w.location}</p>
+                  </td>
+                  <td style={{ padding: "10px 16px" }}>
+                    <span style={{ fontSize: 11, fontWeight: 700, background: tc.bg, color: tc.text, padding: "2px 8px", borderRadius: 3 }}>
+                      {w.type === "PRODUCTION" ? "Production" : w.type === "SUBCENTER" ? "Sub-center" : "Warehouse"}
+                    </span>
+                  </td>
+                  <td style={{ padding: "10px 16px", textAlign: "right", color: "#374151" }}>{whSKUs}</td>
+                  <td style={{ padding: "10px 16px", textAlign: "right", fontWeight: 700, color: "#111827" }}>{whUnits.toLocaleString()}</td>
+                  <td style={{ padding: "10px 16px" }}>
+                    {whLow > 0
+                      ? <span style={{ fontSize: 11, fontWeight: 700, background: "#FEF2F2", color: "#DC2626", border: "1px solid #FECACA", padding: "2px 8px", borderRadius: 3 }}>{whLow} low</span>
+                      : <span style={{ fontSize: 11, fontWeight: 700, background: "#F0FDF4", color: "#059669", border: "1px solid #BBF7D0", padding: "2px 8px", borderRadius: 3 }}>OK</span>}
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+
+      {/* Full product inventory */}
+      <InventoryTable
+        products={tenant.products}
+        getQty={getTotalStock}
+        accentColor={tenant.color}
+        title={`${tenant.name} — Full Inventory`}
+        subtitle={`All ${tenant.warehouses.length} locations combined`}
+      />
+    </div>
+  );
+}
 
 const ROLE_GUIDE = [
-  { role: "SA",  color: "#DC2626", desc: "Full platform — all tenants, all data" },
-  { role: "TA",  color: "#7C3AED", desc: "Full tenant — all warehouses, all products" },
-  { role: "NM",  color: "#2563EB", desc: "Production center — their location only" },
-  { role: "WM",  color: "#0D9488", desc: "Warehouse — their location only" },
+  { role: "SA",  color: "#DC2626", desc: "Full platform — all tenants, all locations, all data" },
+  { role: "TA",  color: "#7C3AED", desc: "Tenant Admin — all warehouses, all products in their tenant" },
+  { role: "NM",  color: "#2563EB", desc: "National/Production Manager — their location only" },
+  { role: "WM",  color: "#059669", desc: "Warehouse Manager — their warehouse only" },
 ];

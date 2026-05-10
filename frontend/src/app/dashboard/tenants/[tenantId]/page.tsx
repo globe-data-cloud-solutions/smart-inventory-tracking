@@ -1,6 +1,5 @@
 "use client";
 
-import { use } from "react";
 import { notFound } from "next/navigation";
 import Link from "next/link";
 import {
@@ -13,8 +12,9 @@ import {
   type DemoTenant,
 } from "@/lib/demo-data";
 
-export default function TenantPage({ params }: { params: Promise<{ tenantId: string }> }) {
-  const { tenantId } = use(params);
+// Next.js 14: params is a plain object, not a Promise (Promise params is Next.js 15+)
+export default function TenantPage({ params }: { params: { tenantId: string } }) {
+  const { tenantId } = params;
   const tenant = getTenantBySlug(tenantId);
   if (!tenant) notFound();
 
