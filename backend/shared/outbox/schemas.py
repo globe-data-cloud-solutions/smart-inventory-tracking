@@ -70,6 +70,22 @@ class FefoOverrideAppliedPayload(BasePayload):
     reason_code: str
 
 
+class TransferRequestedPayload(BasePayload):
+    """Notifies the source warehouse that a pull request has been submitted.
+    Written to the outbox in the same transaction as the transfer_request row.
+    Delivered by the notification worker to the source warehouse's alert feed.
+    """
+    event_type: Literal["TransferRequested"] = "TransferRequested"
+    transfer_request_id: str
+    requesting_warehouse_id: str
+    requesting_warehouse_name: str
+    source_warehouse_id: str
+    product_id: str
+    product_name: str
+    quantity: float
+    required_date: str | None = None
+
+
 PAYLOAD_TYPES = {
     "InventoryUpdated": InventoryUpdatedPayload,
     "StockTransferred": StockTransferredPayload,
@@ -79,4 +95,5 @@ PAYLOAD_TYPES = {
     "StockCountCompleted": StockCountCompletedPayload,
     "TenantOrgTypeChanged": TenantOrgTypeChangedPayload,
     "FefoOverrideApplied": FefoOverrideAppliedPayload,
+    "TransferRequested":   TransferRequestedPayload,
 }

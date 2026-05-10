@@ -9,6 +9,7 @@ from shared.db.models.inventory import (
 from shared.db.models.outbox import OutboxEvent
 from shared.db.models.product import Product, ProductCategory
 from shared.db.models.tenant import Tenant
+from shared.db.models.transfer_request import TransferRequest
 from shared.db.models.user import User
 
 __all__ = [
@@ -23,4 +24,5 @@ __all__ = [
     "DispatchStrategyConfig",
     "OutboxEvent",
     "AuditLog",
+    "TransferRequest",
 ]

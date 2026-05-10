@@ -24,6 +24,7 @@ class Product(Base, TimestampMixin, SoftDeleteMixin):
     batch_tracking: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     expiry_tracking: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     reorder_point: Mapped[Optional[float]] = mapped_column(Numeric(15, 4), nullable=True)
+    reorder_quantity: Mapped[Optional[float]] = mapped_column(Numeric(15, 4), nullable=True)
     attributes: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
     created_by: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True), nullable=True)
 
