@@ -25,9 +25,12 @@ export default function LoginPage() {
       setLoading(false);
       return;
     }
-    // Return to the page the user was trying to reach before session expired
+    // Return to the intended URL, or route to the user's org dashboard
     const from = searchParams.get("from");
-    router.push(from && from.startsWith("/dashboard") ? from : "/dashboard");
+    const dest = from && (from.startsWith("/") && !from.startsWith("/login"))
+      ? from
+      : `/${session.orgSlug}/dashboard`;
+    router.push(dest);
   };
 
   const fillCredentials = (em: string, pw: string) => {

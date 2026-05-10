@@ -7,14 +7,18 @@ export interface SessionUser {
   email: string;
   name: string;
   role: Role;
+  /** URL-safe org identifier used as the first path segment: /addis-water/dashboard */
+  orgSlug: string;
   tenantId?: string;
   tenantName?: string;
+  tenantSlug?: string;
   warehouseId?: string;
   warehouseName?: string;
 }
 
-// localStorage persists across tab close / browser suspend / back-forward cache.
-// sessionStorage was the bug: it cleared on tab close, causing 404 after idle.
+/** SA org slug — used as the first path segment for system administrators. */
+export const SA_ORG_SLUG = "admin";
+
 const SESSION_KEY = "smart_demo_session";
 
 function store(): Storage | null {
@@ -30,20 +34,26 @@ export function login(email: string, password: string): SessionUser | null {
 
   let tenantId: string | undefined;
   let tenantName: string | undefined;
+  let tenantSlug: string | undefined;
+  let orgSlug = SA_ORG_SLUG;
 
   if (found.role !== "SA") {
     const tenant = DEMO_TENANTS.find((t) => t.users.some((u) => u.id === found.id));
-    tenantId  = tenant?.id;
+    tenantId   = tenant?.id;
     tenantName = tenant?.name;
+    tenantSlug = tenant?.slug;
+    orgSlug    = tenant?.slug ?? SA_ORG_SLUG;
   }
 
   const session: SessionUser = {
-    id:           found.id,
-    email:        found.email,
-    name:         found.name,
-    role:         found.role as Role,
+    id:    found.id,
+    email: found.email,
+    name:  found.name,
+    role:  found.role as Role,
+    orgSlug,
     tenantId,
     tenantName,
+    tenantSlug,
     warehouseId:   "warehouseId"   in found ? found.warehouseId   : undefined,
     warehouseName: "warehouseName" in found ? found.warehouseName : undefined,
   };
@@ -62,6 +72,8 @@ export function logout(): void {
   store()?.removeItem(SESSION_KEY);
 }
 
-export function requireSession(): SessionUser | null {
-  return getSession();
+/** Build an org-scoped URL: /{orgSlug}/{page} */
+export function orgUrl(orgSlug: string, page: string): string {
+  return `/${orgSlug}/${page}`;
 }
+
