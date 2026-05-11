@@ -6,6 +6,7 @@ import { nanoid } from "nanoid";
 import { api } from "@/lib/api";
 import { enqueueOfflineTransaction } from "@/store/offlineQueue";
 import { useOfflineSync } from "@/hooks/useOfflineSync";
+import { useInventoryStore } from "@/lib/inventory-state";
 import type { DemoProduct, DemoWarehouse } from "@/lib/demo-data";
 
 interface Props {
@@ -47,6 +48,7 @@ function Field({ label, hint, children }: { label: string; hint?: string; childr
 export function IssueStockPanel({ products, warehouses, orgSlug }: Props) {
   const { isOnline } = useOfflineSync();
   const qc = useQueryClient();
+  const addIssue = useInventoryStore((s) => s.addIssue);
 
   const [open, setOpen]       = useState(false);
   const [productId, setProductId] = useState("");
@@ -104,6 +106,7 @@ export function IssueStockPanel({ products, warehouses, orgSlug }: Props) {
         setSuccess(`${selectedProduct?.name ?? "Stock"} issue queued for sync.`);
       } else {
         await api.post("/api/v1/inventory/issue", payload);
+        addIssue(productId, warehouseId, qty);
         setSuccess(`${selectedProduct?.name ?? "Stock"} issued successfully.`);
         void qc.invalidateQueries({ queryKey: ["products", orgSlug] });
       }

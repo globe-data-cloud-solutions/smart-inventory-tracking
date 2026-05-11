@@ -6,14 +6,16 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { getSession, SA_ORG_SLUG } from "@/lib/demo-auth";
 import { DEMO_TENANTS } from "@/lib/demo-data";
 import { NewTransferPanel } from "@/components/features/transfers/NewTransferPanel";
+import { useInventoryStore } from "@/lib/inventory-state";
 import { api } from "@/lib/api";
 
 type TransferStatus =
   | "DRAFT" | "SUBMITTED" | "APPROVED" | "IN_TRANSIT" | "RECEIVED" | "CLOSED" | "REJECTED" | "CANCELLED";
 
 interface ApiTransfer {
-  id: string; ref: string; product_name: string;
-  from_warehouse_name: string; to_warehouse_name: string;
+  id: string; ref: string;
+  product_id: string; product_name: string;
+  from_warehouse_name: string; to_warehouse_id: string; to_warehouse_name: string;
   quantity: number; notes: string; status: TransferStatus; created_at: string;
 }
 
@@ -64,11 +66,11 @@ const ROLE_TRANSITIONS: Record<string, Partial<Record<TransferStatus, { next: Tr
 };
 
 const DEMO_TRANSFERS: ApiTransfer[] = [
-  { id: "d1", ref: "SHIP-2026-001", product_name: "Multiple SKUs", from_warehouse_name: "Main Production Center", to_warehouse_name: "North WH",          quantity: 1200, notes: "", status: "CLOSED",     created_at: "2026-05-01T08:00:00Z" },
-  { id: "d2", ref: "SHIP-2026-002", product_name: "Multiple SKUs", from_warehouse_name: "North WH",              to_warehouse_name: "North-Subcenter WH",  quantity: 480,  notes: "", status: "IN_TRANSIT", created_at: "2026-05-05T09:30:00Z" },
-  { id: "d3", ref: "SHIP-2026-003", product_name: "Multiple SKUs", from_warehouse_name: "Main Production Center", to_warehouse_name: "South WH",           quantity: 860,  notes: "", status: "SUBMITTED",  created_at: "2026-05-07T14:00:00Z" },
-  { id: "d4", ref: "SHIP-2026-004", product_name: "Multiple SKUs", from_warehouse_name: "Main Production Center", to_warehouse_name: "East WH",            quantity: 540,  notes: "", status: "DRAFT",      created_at: "2026-05-09T11:00:00Z" },
-  { id: "d5", ref: "SHIP-2026-005", product_name: "Multiple SKUs", from_warehouse_name: "South WH",              to_warehouse_name: "West WH",             quantity: 200,  notes: "", status: "REJECTED",   created_at: "2026-05-09T16:00:00Z" },
+  { id: "d1", ref: "SHIP-2026-001", product_id: "", product_name: "Multiple SKUs", from_warehouse_name: "Main Production Center", to_warehouse_id: "aw-north",  to_warehouse_name: "North WH",          quantity: 1200, notes: "", status: "CLOSED",     created_at: "2026-05-01T08:00:00Z" },
+  { id: "d2", ref: "SHIP-2026-002", product_id: "", product_name: "Multiple SKUs", from_warehouse_name: "North WH",              to_warehouse_id: "aw-north2", to_warehouse_name: "North-Subcenter WH",  quantity: 480,  notes: "", status: "IN_TRANSIT", created_at: "2026-05-05T09:30:00Z" },
+  { id: "d3", ref: "SHIP-2026-003", product_id: "", product_name: "Multiple SKUs", from_warehouse_name: "Main Production Center", to_warehouse_id: "aw-south",  to_warehouse_name: "South WH",           quantity: 860,  notes: "", status: "SUBMITTED",  created_at: "2026-05-07T14:00:00Z" },
+  { id: "d4", ref: "SHIP-2026-004", product_id: "", product_name: "Multiple SKUs", from_warehouse_name: "Main Production Center", to_warehouse_id: "aw-east",   to_warehouse_name: "East WH",            quantity: 540,  notes: "", status: "DRAFT",      created_at: "2026-05-09T11:00:00Z" },
+  { id: "d5", ref: "SHIP-2026-005", product_id: "", product_name: "Multiple SKUs", from_warehouse_name: "South WH",              to_warehouse_id: "aw-west",   to_warehouse_name: "West WH",             quantity: 200,  notes: "", status: "REJECTED",   created_at: "2026-05-09T16:00:00Z" },
 ];
 
 const COLS = ["Reference", "From", "To", "Product", "Qty", "Status", "Date", "Actions"];
@@ -77,8 +79,9 @@ export default function TransfersPage() {
   const { org } = useParams() as { org: string };
   const user = getSession();
   const qc   = useQueryClient();
+  const completePending = useInventoryStore((s) => s.completePending);
   const [transitioning, setTransitioning] = useState<string | null>(null);
-  const [confirmModal, setConfirmModal] = useState<{ id: string; next: TransferStatus; label: string } | null>(null);
+  const [confirmModal, setConfirmModal] = useState<{ id: string; next: TransferStatus; label: string; transfer?: ApiTransfer } | null>(null);
   const [toast, setToast] = useState("");
 
   if (org === SA_ORG_SLUG) return <p style={{ padding: "2rem", color: "#6B7280" }}>Select a tenant to view transfers.</p>;
@@ -94,12 +97,16 @@ export default function TransfersPage() {
   const allTransfers: ApiTransfer[] = [...apiTransfers, ...DEMO_TRANSFERS];
   const roleActions = ROLE_TRANSITIONS[user.role] ?? {};
 
-  async function doTransition(id: string, next: TransferStatus) {
+  async function doTransition(id: string, next: TransferStatus, transfer?: ApiTransfer) {
     setTransitioning(id);
     setConfirmModal(null);
     try {
       await api.patch(`/api/v1/transfers/${id}`, { next_status: next });
       await qc.invalidateQueries({ queryKey: ["transfers", org] });
+      // When a transfer is received, clear pending and credit destination warehouse
+      if (next === "RECEIVED" && transfer) {
+        completePending(id, transfer.to_warehouse_id, transfer.product_id, transfer.quantity);
+      }
       setToast(`Status updated to ${next}`);
       setTimeout(() => setToast(""), 3000);
     } catch {
@@ -147,7 +154,7 @@ export default function TransfersPage() {
                 Cancel
               </button>
               <button
-                onClick={() => doTransition(confirmModal.id, confirmModal.next)}
+                onClick={() => doTransition(confirmModal.id, confirmModal.next, confirmModal.transfer)}
                 style={{ flex: 2, padding: "9px", background: "#1B4332", color: "#FCDD09", border: "none", borderRadius: 6, fontSize: 13, fontWeight: 700, cursor: "pointer" }}
               >
                 Confirm
@@ -221,7 +228,7 @@ export default function TransfersPage() {
                           {acts.map((a) => (
                             <button
                               key={a.next}
-                              onClick={() => setConfirmModal({ id: t.id, next: a.next, label: a.label })}
+                              onClick={() => setConfirmModal({ id: t.id, next: a.next, label: a.label, transfer: t })}
                               style={{
                                 fontSize: 11, fontWeight: 700, padding: "4px 10px", borderRadius: 4,
                                 border: `1px solid ${a.color}20`, cursor: "pointer", whiteSpace: "nowrap",

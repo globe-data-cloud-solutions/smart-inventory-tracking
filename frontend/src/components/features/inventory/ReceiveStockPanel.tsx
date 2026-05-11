@@ -7,6 +7,7 @@ import { api } from "@/lib/api";
 import { enqueueOfflineTransaction } from "@/store/offlineQueue";
 import { useOfflineSync } from "@/hooks/useOfflineSync";
 import { useScanner } from "@/hooks/useScanner";
+import { useInventoryStore } from "@/lib/inventory-state";
 import type { DemoProduct, DemoWarehouse } from "@/lib/demo-data";
 
 interface Props {
@@ -52,6 +53,7 @@ const SELECT = { ...INPUT, cursor: "pointer" };
 export function ReceiveStockPanel({ products, warehouses, orgSlug }: Props) {
   const { isOnline } = useOfflineSync();
   const qc = useQueryClient();
+  const addReceive = useInventoryStore((s) => s.addReceive);
 
   const [open, setOpen]           = useState(false);
   const [scannerOpen, setScannerOpen] = useState(false);
@@ -121,6 +123,7 @@ export function ReceiveStockPanel({ products, warehouses, orgSlug }: Props) {
         setSuccess(`${product?.name ?? "Stock"} queued for sync when back online.`);
       } else {
         await api.post("/api/v1/inventory/receive", payload);
+        addReceive(form.productId, form.warehouseId, qty);
         setSuccess(`${product?.name ?? "Stock"} received successfully.`);
         void qc.invalidateQueries({ queryKey: ["products", orgSlug] });
         void qc.invalidateQueries({ queryKey: ["receipts", orgSlug] });

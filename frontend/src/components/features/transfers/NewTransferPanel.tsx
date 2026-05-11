@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { nanoid } from "nanoid";
 import { api } from "@/lib/api";
+import { useInventoryStore } from "@/lib/inventory-state";
 import type { DemoProduct, DemoWarehouse } from "@/lib/demo-data";
 
 interface Props {
@@ -47,6 +48,7 @@ const SELECT: React.CSSProperties = { ...INPUT, cursor: "pointer" };
 
 export function NewTransferPanel({ products, warehouses, orgSlug }: Props) {
   const qc = useQueryClient();
+  const { addPending, addIssue } = useInventoryStore();
 
   const [open, setOpen] = useState(false);
   const [form, setForm] = useState<FormState>({
@@ -82,6 +84,7 @@ export function NewTransferPanel({ products, warehouses, orgSlug }: Props) {
     const fromWH  = warehouses.find((w) => w.id === form.fromWarehouseId);
     const toWH    = warehouses.find((w) => w.id === form.toWarehouseId);
 
+    const transferId = crypto.randomUUID();
     setLoading(true);
     try {
       await api.post("/api/v1/transfers", {
@@ -95,6 +98,22 @@ export function NewTransferPanel({ products, warehouses, orgSlug }: Props) {
         notes: form.notes,
         idempotency_key: `transfer:${form.productId}:${form.fromWarehouseId}:${form.toWarehouseId}:${Date.now()}:${nanoid(8)}`,
       });
+
+      // Update live inventory state:
+      // source warehouse shows qty as issued (deducted from My Stock)
+      addIssue(form.productId, form.fromWarehouseId, qty);
+      // destination warehouse shows qty as pending incoming transfer
+      addPending({
+        id: transferId,
+        ref: `TRF-${new Date().getFullYear()}-${String(Date.now()).slice(-4)}`,
+        productId: form.productId,
+        fromWarehouseId: form.fromWarehouseId,
+        fromWarehouseName: fromWH?.name ?? form.fromWarehouseId,
+        toWarehouseId: form.toWarehouseId,
+        quantity: qty,
+        issuedDate: new Date().toISOString(),
+      });
+
       setSuccess(`Transfer created for ${product?.name ?? "product"} → ${toWH?.name}.`);
       void qc.invalidateQueries({ queryKey: ["transfers", orgSlug] });
       reset();
