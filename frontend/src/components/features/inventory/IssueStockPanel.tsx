@@ -24,6 +24,16 @@ const REASONS = [
   { value: "OTHER",           label: "Other" },
 ];
 
+// Destination label and placeholder per reason code
+const DESTINATION_META: Record<string, { label: string; placeholder: string; required: boolean }> = {
+  SALE:         { label: "Issued To (Customer / Recipient)", placeholder: "e.g. Addis Supermarket, Order #1042", required: true  },
+  INTERNAL_USE: { label: "Issued To (Department / Team)",   placeholder: "e.g. Quality Control, Head Office",   required: true  },
+  SAMPLE:       { label: "Issued To (Recipient)",           placeholder: "e.g. Distributor name, event name",   required: true  },
+  DAMAGE:       { label: "Destination / Disposal Note",     placeholder: "e.g. Disposed on-site, Returned to supplier", required: false },
+  EXPIRY:       { label: "Destination / Disposal Note",     placeholder: "e.g. Disposed on-site, Incinerated", required: false },
+  OTHER:        { label: "Issued To / Destination",         placeholder: "Recipient or destination",             required: false },
+};
+
 const PANEL_W = 420;
 
 const INPUT: React.CSSProperties = {
@@ -50,18 +60,22 @@ export function IssueStockPanel({ products, warehouses, orgSlug }: Props) {
   const qc = useQueryClient();
   const addIssue = useInventoryStore((s) => s.addIssue);
 
-  const [open, setOpen]       = useState(false);
-  const [productId, setProductId] = useState("");
+  const [open, setOpen]             = useState(false);
+  const [productId, setProductId]   = useState("");
   const [warehouseId, setWarehouseId] = useState("");
-  const [quantity, setQuantity]   = useState("");
+  const [quantity, setQuantity]     = useState("");
   const [reasonCode, setReasonCode] = useState("");
-  const [notes, setNotes]         = useState("");
-  const [error, setError]         = useState("");
-  const [success, setSuccess]     = useState("");
-  const [loading, setLoading]     = useState(false);
+  const [issuedTo, setIssuedTo]     = useState("");
+  const [notes, setNotes]           = useState("");
+  const [error, setError]           = useState("");
+  const [success, setSuccess]       = useState("");
+  const [loading, setLoading]       = useState(false);
+
+  const destMeta = reasonCode ? DESTINATION_META[reasonCode] : null;
 
   function reset() {
-    setProductId(""); setWarehouseId(""); setQuantity(""); setReasonCode(""); setNotes("");
+    setProductId(""); setWarehouseId(""); setQuantity("");
+    setReasonCode(""); setIssuedTo(""); setNotes("");
     setError(""); setSuccess("");
   }
 
@@ -83,6 +97,9 @@ export function IssueStockPanel({ products, warehouses, orgSlug }: Props) {
     if (!productId)   { setError("Please select a product."); return; }
     if (!warehouseId) { setError("Please select a warehouse."); return; }
     if (!reasonCode)  { setError("Please select a reason code."); return; }
+    if (destMeta?.required && !issuedTo.trim()) {
+      setError(`"${destMeta.label}" is required for this reason.`); return;
+    }
     const qty = parseFloat(quantity);
     if (!qty || qty <= 0) { setError("Quantity must be a positive number."); return; }
     if (availableStock !== null && qty > availableStock) {
@@ -95,6 +112,7 @@ export function IssueStockPanel({ products, warehouses, orgSlug }: Props) {
       warehouse_id: warehouseId,
       quantity:     qty.toFixed(4),
       reason_code:  reasonCode,
+      issued_to:    issuedTo.trim() || undefined,
       notes,
       idempotency_key: key,
     };
@@ -107,7 +125,11 @@ export function IssueStockPanel({ products, warehouses, orgSlug }: Props) {
       } else {
         await api.post("/api/v1/inventory/issue", payload);
         addIssue(productId, warehouseId, qty);
-        setSuccess(`${selectedProduct?.name ?? "Stock"} issued successfully.`);
+        setSuccess(
+          issuedTo.trim()
+            ? `${selectedProduct?.name ?? "Stock"} issued to ${issuedTo.trim()}.`
+            : `${selectedProduct?.name ?? "Stock"} issued successfully.`
+        );
         void qc.invalidateQueries({ queryKey: ["products", orgSlug] });
       }
       reset();
@@ -187,11 +209,33 @@ export function IssueStockPanel({ products, warehouses, orgSlug }: Props) {
           </Field>
 
           <Field label="Reason Code">
-            <select value={reasonCode} onChange={(e) => setReasonCode(e.target.value)} style={SELECT} required>
+            <select
+              value={reasonCode}
+              onChange={(e) => { setReasonCode(e.target.value); setIssuedTo(""); }}
+              style={SELECT}
+              required
+            >
               <option value="">— select reason —</option>
               {REASONS.map((r) => <option key={r.value} value={r.value}>{r.label}</option>)}
             </select>
           </Field>
+
+          {/* Destination — shown after reason is selected, label adapts per reason */}
+          {destMeta && (
+            <Field
+              label={destMeta.label}
+              hint={destMeta.required ? undefined : "optional"}
+            >
+              <input
+                type="text"
+                value={issuedTo}
+                onChange={(e) => setIssuedTo(e.target.value)}
+                placeholder={destMeta.placeholder}
+                style={INPUT}
+                required={destMeta.required}
+              />
+            </Field>
+          )}
 
           <Field label="Notes" hint="optional">
             <textarea

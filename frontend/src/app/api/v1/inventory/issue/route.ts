@@ -6,6 +6,7 @@ interface IssueRecord {
   warehouse_id: string;
   quantity: number;
   reason_code: string;
+  issued_to: string;
   notes: string;
   idempotency_key: string;
   created_at: string;
@@ -20,6 +21,7 @@ export async function POST(req: NextRequest) {
     warehouse_id?: string;
     quantity?: string | number;
     reason_code?: string;
+    issued_to?: string;
     notes?: string;
     idempotency_key?: string;
   };
@@ -62,6 +64,7 @@ export async function POST(req: NextRequest) {
     warehouse_id: body.warehouse_id,
     quantity: qty,
     reason_code: body.reason_code,
+    issued_to: body.issued_to ?? "",
     notes: body.notes ?? "",
     idempotency_key: key,
     created_at: now,
