@@ -2,11 +2,13 @@
 
 import { useParams } from "next/navigation";
 import { useState } from "react";
+import Link from "next/link";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { getSession, SA_ORG_SLUG } from "@/lib/demo-auth";
 import { DEMO_TENANTS } from "@/lib/demo-data";
 import { NewTransferPanel } from "@/components/features/transfers/NewTransferPanel";
 import { useInventoryStore } from "@/lib/inventory-state";
+import { useOfflineSync } from "@/hooks/useOfflineSync";
 import { api } from "@/lib/api";
 
 type TransferStatus =
@@ -65,13 +67,7 @@ const ROLE_TRANSITIONS: Record<string, Partial<Record<TransferStatus, { next: Tr
   },
 };
 
-const DEMO_TRANSFERS: ApiTransfer[] = [
-  { id: "d1", ref: "SHIP-2026-001", product_id: "", product_name: "Multiple SKUs", from_warehouse_name: "Main Production Center", to_warehouse_id: "aw-north",  to_warehouse_name: "North WH",          quantity: 1200, notes: "", status: "CLOSED",     created_at: "2026-05-01T08:00:00Z" },
-  { id: "d2", ref: "SHIP-2026-002", product_id: "", product_name: "Multiple SKUs", from_warehouse_name: "North WH",              to_warehouse_id: "aw-north2", to_warehouse_name: "North-Subcenter WH",  quantity: 480,  notes: "", status: "IN_TRANSIT", created_at: "2026-05-05T09:30:00Z" },
-  { id: "d3", ref: "SHIP-2026-003", product_id: "", product_name: "Multiple SKUs", from_warehouse_name: "Main Production Center", to_warehouse_id: "aw-south",  to_warehouse_name: "South WH",           quantity: 860,  notes: "", status: "SUBMITTED",  created_at: "2026-05-07T14:00:00Z" },
-  { id: "d4", ref: "SHIP-2026-004", product_id: "", product_name: "Multiple SKUs", from_warehouse_name: "Main Production Center", to_warehouse_id: "aw-east",   to_warehouse_name: "East WH",            quantity: 540,  notes: "", status: "DRAFT",      created_at: "2026-05-09T11:00:00Z" },
-  { id: "d5", ref: "SHIP-2026-005", product_id: "", product_name: "Multiple SKUs", from_warehouse_name: "South WH",              to_warehouse_id: "aw-west",   to_warehouse_name: "West WH",             quantity: 200,  notes: "", status: "REJECTED",   created_at: "2026-05-09T16:00:00Z" },
-];
+// DEMO_TRANSFERS now live in _demo-state.ts and are fetched via GET /api/v1/transfers
 
 const COLS = ["Reference", "From", "To", "Product", "Qty", "Status", "Date", "Actions"];
 
@@ -79,6 +75,7 @@ export default function TransfersPage() {
   const { org } = useParams() as { org: string };
   const user = getSession();
   const qc   = useQueryClient();
+  const { isOnline } = useOfflineSync();
   const completePending = useInventoryStore((s) => s.completePending);
   const [transitioning, setTransitioning] = useState<string | null>(null);
   const [confirmModal, setConfirmModal] = useState<{ id: string; next: TransferStatus; label: string; transfer?: ApiTransfer } | null>(null);
@@ -88,16 +85,22 @@ export default function TransfersPage() {
   const tenant = DEMO_TENANTS.find((t) => t.slug === org);
   if (!tenant || !user) return <p style={{ padding: "2rem", color: "#6B7280" }}>Tenant not found.</p>;
 
-  const { data: apiTransfers = [] } = useQuery<ApiTransfer[]>({
+  const { data: allTransfers = [] } = useQuery<ApiTransfer[]>({
     queryKey: ["transfers", org],
     queryFn:  () => api.get<ApiTransfer[]>("/api/v1/transfers"),
     staleTime: 0,
+    refetchInterval: 15000,
   });
-
-  const allTransfers: ApiTransfer[] = [...apiTransfers, ...DEMO_TRANSFERS];
   const roleActions = ROLE_TRANSITIONS[user.role] ?? {};
 
   async function doTransition(id: string, next: TransferStatus, transfer?: ApiTransfer) {
+    // Transfer status changes require server-side approval chain — must not be queued offline
+    if (!isOnline) {
+      setConfirmModal(null);
+      setToast("Transfer status changes require an internet connection. Please reconnect and try again.");
+      setTimeout(() => setToast(""), 5000);
+      return;
+    }
     setTransitioning(id);
     setConfirmModal(null);
     try {
@@ -207,7 +210,11 @@ export default function TransfersPage() {
                 const busy = transitioning === t.id;
                 return (
                   <tr key={t.id} style={{ background: idx % 2 === 0 ? "#fff" : "#FAFAFA", borderBottom: "1px solid #F3F4F6" }}>
-                    <td style={{ padding: "10px 12px", fontFamily: "monospace", fontSize: 12, fontWeight: 600, color: tenant.color }}>{t.ref}</td>
+                    <td style={{ padding: "10px 12px" }}>
+                      <Link href={`/${org}/transfers/${t.id}`} style={{ fontFamily: "monospace", fontSize: 12, fontWeight: 600, color: tenant.color, textDecoration: "none" }}>
+                        {t.ref} →
+                      </Link>
+                    </td>
                     <td style={{ padding: "10px 12px", color: "#374151", fontSize: 13 }}>{t.from_warehouse_name}</td>
                     <td style={{ padding: "10px 12px", color: "#374151", fontSize: 13 }}>{t.to_warehouse_name}</td>
                     <td style={{ padding: "10px 12px", color: "#6B7280", fontSize: 13 }}>{t.product_name}</td>
@@ -224,15 +231,23 @@ export default function TransfersPage() {
                       {busy ? (
                         <span style={{ fontSize: 12, color: "#9CA3AF" }}>Updating…</span>
                       ) : acts.length > 0 ? (
-                        <div style={{ display: "flex", gap: 6, flexWrap: "nowrap" }}>
+                        <div style={{ display: "flex", gap: 6, flexWrap: "nowrap", alignItems: "center" }}>
+                          {!isOnline && (
+                            <span title="Offline — actions unavailable" style={{ fontSize: 11, color: "#9CA3AF" }}>🔌 offline</span>
+                          )}
                           {acts.map((a) => (
                             <button
                               key={a.next}
+                              disabled={!isOnline}
                               onClick={() => setConfirmModal({ id: t.id, next: a.next, label: a.label, transfer: t })}
                               style={{
                                 fontSize: 11, fontWeight: 700, padding: "4px 10px", borderRadius: 4,
-                                border: `1px solid ${a.color}20`, cursor: "pointer", whiteSpace: "nowrap",
-                                background: `${a.color}12`, color: a.color,
+                                border: `1px solid ${a.color}20`,
+                                cursor: isOnline ? "pointer" : "not-allowed",
+                                whiteSpace: "nowrap",
+                                background: isOnline ? `${a.color}12` : "#F3F4F6",
+                                color: isOnline ? a.color : "#9CA3AF",
+                                opacity: isOnline ? 1 : 0.5,
                               }}
                             >
                               {a.label}

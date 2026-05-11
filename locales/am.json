@@ -10,6 +10,13 @@
     "audit": "የኦዲት ምዝግብ ማስታወሻ"
   },
   "inventory": {
+    "balance": {
+      "onHand":    "በእጅ ያለ",
+      "inTransit": "በመጓጓዝ ላይ",
+      "issued":    "የወጣ",
+      "available": "ዝግጁ",
+      "reserved":  "የተጠበቀ"
+    },
     "receive": {
       "title": "ክምችት ተቀበል",
       "product_id": "የምርት መለያ",
@@ -222,6 +229,30 @@
     "pending_nm": "NM ፈቃድ ይጠብቃል",
     "success_applied": "ማስተካከያ ተተግብሯል",
     "success_submitted": "ለፈቃድ ቀርቧል"
+  },
+  "transfer": {
+    "status": {
+      "DRAFT":      "ረቂቅ",
+      "SUBMITTED":  "ቀርቧል",
+      "APPROVED":   "ፈቅዷል",
+      "IN_TRANSIT": "በመጓጓዝ ላይ",
+      "RECEIVED":   "ተቀብሏል",
+      "CLOSED":     "ተዘግቷል",
+      "REJECTED":   "ውድቅ ሆኗል",
+      "CANCELLED":  "ተሰርዟል"
+    },
+    "error": {
+      "invalidTransition":    "ይህ የሁኔታ ለውጥ አይፈቀድም።",
+      "insufficientApproval": "ይህን ዝውውር ለማፅደቅ ስልጣን የለዎትም።",
+      "offlineBlocked":       "የዝውውር ሁኔታ ለውጦች የበይነ መረብ ግንኙነት ይፈልጋሉ።"
+    },
+    "reference": {
+      "PURCHASE_ORDER": "የግዢ ትዕዛዝ",
+      "PRODUCTION":     "የምርት ውጤት",
+      "RETURN":         "የደንበኛ / አቅራቢ ተመላሽ",
+      "DONATION":       "ስጦታ",
+      "MANUAL":         "የእጅ ግቤት"
+    }
   },
   "transfer_actions": {
     "submit": "ለፈቃድ አስገባ",

@@ -11,6 +11,13 @@
     "audit": "Galmee Dhageettii"
   },
   "inventory": {
+    "balance": {
+      "onHand":    "Harka Jiru",
+      "inTransit": "Geejibarra Jiru",
+      "issued":    "Bahe",
+      "available": "Argachuu Danda'amu",
+      "reserved":  "Kuufame"
+    },
     "receive": {
       "title": "Kuusaa Fudhadhu",
       "product_id": "Eenyummaa Meeshaa",
@@ -223,6 +230,30 @@
     "pending_nm": "NM hayyama eeggata",
     "success_applied": "Sirreessi raawwatame",
     "success_submitted": "Hayyamaaf dhiyaate"
+  },
+  "transfer": {
+    "status": {
+      "DRAFT":      "Qophii",
+      "SUBMITTED":  "Dhiyaate",
+      "APPROVED":   "Hayyamame",
+      "IN_TRANSIT": "Geejibarra Jiru",
+      "RECEIVED":   "Fudhataame",
+      "CLOSED":     "Cufame",
+      "REJECTED":   "Dhoorkame",
+      "CANCELLED":  "Haqame"
+    },
+    "error": {
+      "invalidTransition":    "Jijjiirraan haala kana hin hayyamamne.",
+      "insufficientApproval": "Dabarsa kana raggaasisuuf aangoo hin qabdu.",
+      "offlineBlocked":       "Jijjiirraa haala dabarsa sarara interneetii barbaada."
+    },
+    "reference": {
+      "PURCHASE_ORDER": "Ajaja Bitaa",
+      "PRODUCTION":     "Bu'aa Omishaa",
+      "RETURN":         "Deebi'a Bitaa / Dhiyeessituu",
+      "DONATION":       "Kennaa",
+      "MANUAL":         "Galcha Harkaa"
+    }
   },
   "transfer_actions": {
     "submit": "Hayyamaaf Galchi",

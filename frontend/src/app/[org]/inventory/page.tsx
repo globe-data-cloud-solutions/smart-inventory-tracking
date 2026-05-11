@@ -193,7 +193,7 @@ export default function InventoryPage() {
   const { org }        = useParams() as { org: string };
   const user           = getSession();
   const canAddProduct  = usePermission("product:create");
-  const { getNetAdjustment, getReceived, getIssued, getPending } = useInventoryStore();
+  const { getOnHand, getReceived, getIssued, getAvailable, getPending } = useInventoryStore();
 
   const tenant = DEMO_TENANTS.find((t) => t.slug === org);
 
@@ -228,9 +228,9 @@ export default function InventoryPage() {
   const allProducts = whId
     ? tenant.products.filter((p) => {
         const base = p.stock[whId] ?? 0;
-        const adj  = getNetAdjustment(p.id, whId);
+        const onH  = getOnHand(p.id, whId, base);
         const pend = getPending(p.id, whId);
-        return base + adj > 0 || pend.length > 0;
+        return onH > 0 || pend.length > 0;
       })
     : tenant.products;
 
@@ -241,11 +241,10 @@ export default function InventoryPage() {
 
   // Apply filters
   function rowMatchesFilters(p: DemoProduct): boolean {
-    const base   = whId ? (p.stock[whId] ?? 0) : p.stock[Object.keys(p.stock)[0] ?? ""] ?? 0;
-    const adj    = whId ? getNetAdjustment(p.id, whId) : 0;
-    const qty    = base + adj;
-    const isLow  = qty < p.reorderPoint;
-    const status = isLow ? "Low Stock" : "In Stock";
+    const base      = whId ? (p.stock[whId] ?? 0) : Object.values(p.stock).reduce((a, b) => a + b, 0);
+    const available = whId ? getAvailable(p.id, whId, base) : base;
+    const isLow     = available < p.reorderPoint;
+    const status    = isLow ? "Low Stock" : "In Stock";
 
     if (filters.category.length > 0 && !filters.category.includes(p.category)) return false;
     if (filters.unit.length     > 0 && !filters.unit.includes(p.unit))         return false;
@@ -257,7 +256,7 @@ export default function InventoryPage() {
 
   const totalStockAll = visibleProducts.reduce((a, p) => {
     const base = whId ? (p.stock[whId] ?? 0) : Object.values(p.stock).reduce((x, y) => x + y, 0);
-    return a + base + (whId ? getNetAdjustment(p.id, whId) : 0);
+    return a + (whId ? getOnHand(p.id, whId, base) : base);
   }, 0);
 
   const activeFiltersCount = Object.values(filters).filter((f) => f.length > 0 && f.length < (f === filters.category ? categoryOptions.length : f === filters.unit ? unitOptions.length : 2)).length;
@@ -345,24 +344,25 @@ export default function InventoryPage() {
                 <PlainHeader label="Product" />
                 <FilterHeader label="Category" field="category" options={categoryOptions} filters={filters} setFilters={setFilters} />
                 <FilterHeader label="Unit"     field="unit"     options={unitOptions}     filters={filters} setFilters={setFilters} />
-                <PlainHeader label={whId ? "My Stock" : "Total Stock"} align="right" />
-                {showWarehouseColumns && <PlainHeader label="Received" align="right" />}
-                {showWarehouseColumns && <PlainHeader label="Issued"   align="right" />}
-                {showWarehouseColumns && <PlainHeader label="Pending"  align="right" />}
+                <PlainHeader label={whId ? "On Hand"   : "Total Stock"} align="right" />
+                {showWarehouseColumns && <PlainHeader label="Received"  align="right" />}
+                {showWarehouseColumns && <PlainHeader label="Issued"    align="right" />}
+                {showWarehouseColumns && <PlainHeader label="In Transit" align="right" />}
+                {showWarehouseColumns && <PlainHeader label="Available" align="right" />}
                 <PlainHeader label="Reorder Pt" align="right" />
                 <FilterHeader label="Status" field="status" options={statusOptions} filters={filters} setFilters={setFilters} align="left" />
               </tr>
             </thead>
             <tbody>
               {visibleProducts.map((p, idx) => {
-                const base     = whId ? (p.stock[whId] ?? 0) : Object.values(p.stock).reduce((a, b) => a + b, 0);
-                const netAdj   = whId ? getNetAdjustment(p.id, whId) : 0;
-                const received = whId ? getReceived(p.id, whId) : 0;
-                const issued   = whId ? getIssued(p.id, whId) : 0;
-                const pendList = whId ? getPending(p.id, whId) : [];
-                const pendQty  = pendList.reduce((a, t) => a + t.quantity, 0);
-                const myStock  = base + netAdj;
-                const isLow    = myStock < p.reorderPoint;
+                const base      = whId ? (p.stock[whId] ?? 0) : Object.values(p.stock).reduce((a, b) => a + b, 0);
+                const onHand    = whId ? getOnHand(p.id, whId, base) : base;
+                const received  = whId ? getReceived(p.id, whId) : 0;
+                const issued    = whId ? getIssued(p.id, whId) : 0;
+                const available = whId ? getAvailable(p.id, whId, base) : base;
+                const pendList  = whId ? getPending(p.id, whId) : [];
+                const pendQty   = pendList.reduce((a, t) => a + t.quantity, 0);
+                const isLow     = available < p.reorderPoint;
 
                 return (
                   <tr key={p.id} style={{ background: idx % 2 === 0 ? "#fff" : "#FAFAFA", borderBottom: "1px solid #F3F4F6" }}>
@@ -385,9 +385,9 @@ export default function InventoryPage() {
                     {/* Unit */}
                     <td style={{ padding: "10px 14px", color: "#9CA3AF", fontSize: 12 }}>{p.unit}</td>
 
-                    {/* My Stock / Total Stock */}
-                    <td style={{ padding: "10px 14px", textAlign: "right", fontWeight: 700, color: myStock > 0 ? "#111827" : "#9CA3AF" }}>
-                      {myStock.toLocaleString()}
+                    {/* On Hand / Total Stock */}
+                    <td style={{ padding: "10px 14px", textAlign: "right", fontWeight: 700, color: onHand > 0 ? "#111827" : "#9CA3AF" }}>
+                      {onHand.toLocaleString()}
                     </td>
 
                     {/* Received (session) */}
@@ -397,14 +397,14 @@ export default function InventoryPage() {
                       </td>
                     )}
 
-                    {/* Issued (session) */}
+                    {/* Issued (direct: sales, damage, etc.) */}
                     {showWarehouseColumns && (
                       <td style={{ padding: "10px 14px", textAlign: "right", fontWeight: 600, color: issued > 0 ? "#DC2626" : "#E5E7EB" }}>
                         {issued > 0 ? `−${issued.toLocaleString()}` : "—"}
                       </td>
                     )}
 
-                    {/* Pending (clickable) */}
+                    {/* In Transit / Pending (clickable) */}
                     {showWarehouseColumns && (
                       <td style={{ padding: "10px 14px", textAlign: "right" }}>
                         {pendQty > 0 ? (
@@ -422,6 +422,20 @@ export default function InventoryPage() {
                         ) : (
                           <span style={{ color: "#E5E7EB" }}>—</span>
                         )}
+                      </td>
+                    )}
+
+                    {/* Available = On Hand − Issued */}
+                    {showWarehouseColumns && (
+                      <td style={{ padding: "10px 14px", textAlign: "right", fontWeight: 700 }}>
+                        <span style={{
+                          display: "inline-block",
+                          background: available > p.reorderPoint ? "#EFF6FF" : "#FEF2F2",
+                          color: available > p.reorderPoint ? "#1D4ED8" : "#DC2626",
+                          padding: "2px 8px", borderRadius: 4, fontSize: 12, fontWeight: 700,
+                        }}>
+                          {available.toLocaleString()}
+                        </span>
                       </td>
                     )}
 
@@ -463,6 +477,7 @@ export default function InventoryPage() {
                   {showWarehouseColumns && <td style={{ padding: "10px 14px", textAlign: "right", color: "#E5E7EB" }}>—</td>}
                   {showWarehouseColumns && <td style={{ padding: "10px 14px", textAlign: "right", color: "#E5E7EB" }}>—</td>}
                   {showWarehouseColumns && <td style={{ padding: "10px 14px", textAlign: "right", color: "#E5E7EB" }}>—</td>}
+                  {showWarehouseColumns && <td style={{ padding: "10px 14px", textAlign: "right", color: "#E5E7EB" }}>—</td>}
                   <td style={{ padding: "10px 14px", textAlign: "right", color: "#9CA3AF", fontSize: 12 }}>—</td>
                   <td style={{ padding: "10px 14px" }}>
                     <span style={{ display: "inline-flex", alignItems: "center", gap: 5, fontSize: 11, fontWeight: 700, padding: "3px 10px", borderRadius: 3, background: "#FEF9C3", color: "#854D0E", border: "1px solid #FDE68A" }}>
@@ -489,9 +504,10 @@ export default function InventoryPage() {
       {/* Column legend */}
       {showWarehouseColumns && (
         <p style={{ marginTop: "0.75rem", fontSize: 12, color: "#9CA3AF" }}>
-          <strong style={{ color: "#059669" }}>Received</strong> — added this session ·{" "}
-          <strong style={{ color: "#DC2626" }}>Issued</strong> — dispatched this session ·{" "}
-          <strong style={{ color: "#92400E" }}>Pending ⏳</strong> — in-transit from another warehouse (click to view details)
+          <strong style={{ color: "#059669" }}>Received</strong> — received this session ·{" "}
+          <strong style={{ color: "#DC2626" }}>Issued</strong> — dispatched to customers / written off ·{" "}
+          <strong style={{ color: "#92400E" }}>In Transit ⏳</strong> — inbound from another warehouse (click for details) ·{" "}
+          <strong style={{ color: "#1D4ED8" }}>Available</strong> — On Hand minus Issued (blue = above reorder, red = below)
         </p>
       )}
     </div>

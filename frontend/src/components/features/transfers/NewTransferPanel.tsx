@@ -48,7 +48,7 @@ const SELECT: React.CSSProperties = { ...INPUT, cursor: "pointer" };
 
 export function NewTransferPanel({ products, warehouses, orgSlug }: Props) {
   const qc = useQueryClient();
-  const { addPending, addIssue } = useInventoryStore();
+  const { addPending, addTransferOut } = useInventoryStore();
 
   const [open, setOpen] = useState(false);
   const [form, setForm] = useState<FormState>({
@@ -100,8 +100,8 @@ export function NewTransferPanel({ products, warehouses, orgSlug }: Props) {
       });
 
       // Update live inventory state:
-      // source warehouse shows qty as issued (deducted from My Stock)
-      addIssue(form.productId, form.fromWarehouseId, qty);
+      // source warehouse: qty leaves On Hand (TRANSFER_OUT, not a direct issue)
+      addTransferOut(form.productId, form.fromWarehouseId, qty);
       // destination warehouse shows qty as pending incoming transfer
       addPending({
         id: transferId,

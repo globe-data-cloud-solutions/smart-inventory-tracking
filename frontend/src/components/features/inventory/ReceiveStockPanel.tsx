@@ -16,9 +16,18 @@ interface Props {
   orgSlug: string;
 }
 
+const REFERENCE_TYPES = [
+  { value: "PURCHASE_ORDER", label: "Purchase Order" },
+  { value: "PRODUCTION",     label: "Production Output" },
+  { value: "RETURN",         label: "Customer / Supplier Return" },
+  { value: "DONATION",       label: "Donation" },
+  { value: "MANUAL",         label: "Manual Entry" },
+];
+
 type FormState = {
   productId: string;
   warehouseId: string;
+  referenceType: string;
   quantity: string;
   lotNumber: string;
   expiryDate: string;
@@ -59,7 +68,7 @@ export function ReceiveStockPanel({ products, warehouses, orgSlug }: Props) {
   const [scannerOpen, setScannerOpen] = useState(false);
   const [scanHint, setScanHint]   = useState("");
   const [form, setForm] = useState<FormState>({
-    productId: "", warehouseId: "", quantity: "", lotNumber: "", expiryDate: "",
+    productId: "", warehouseId: "", referenceType: "", quantity: "", lotNumber: "", expiryDate: "",
   });
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
@@ -82,7 +91,7 @@ export function ReceiveStockPanel({ products, warehouses, orgSlug }: Props) {
   const { videoRef, isActive: scanActive, error: scanError, start: startScan, stop: stopScan } = useScanner(onScan);
 
   function reset() {
-    setForm({ productId: "", warehouseId: "", quantity: "", lotNumber: "", expiryDate: "" });
+    setForm({ productId: "", warehouseId: "", referenceType: "", quantity: "", lotNumber: "", expiryDate: "" });
     setError(""); setSuccess(""); setScanHint(""); setScannerOpen(false); stopScan();
   }
 
@@ -100,19 +109,21 @@ export function ReceiveStockPanel({ products, warehouses, orgSlug }: Props) {
     e.preventDefault();
     setError("");
 
-    if (!form.productId) { setError("Please select a product."); return; }
-    if (!form.warehouseId) { setError("Please select a warehouse."); return; }
+    if (!form.productId)       { setError("Please select a product."); return; }
+    if (!form.warehouseId)     { setError("Please select a warehouse."); return; }
+    if (!form.referenceType)   { setError("Please select a reference type."); return; }
     const qty = parseFloat(form.quantity);
     if (!qty || qty <= 0) { setError("Quantity must be a positive number."); return; }
 
     const product = products.find((p) => p.id === form.productId);
     const key = `receive:${form.productId}:${form.warehouseId}:${Date.now()}:${nanoid(8)}`;
     const payload = {
-      product_id: form.productId,
-      warehouse_id: form.warehouseId,
-      quantity: qty.toFixed(4),
-      lot_number: form.lotNumber || undefined,
-      expiry_date: form.expiryDate || undefined,
+      product_id:      form.productId,
+      warehouse_id:    form.warehouseId,
+      reference_type:  form.referenceType,
+      quantity:        qty.toFixed(4),
+      lot_number:      form.lotNumber || undefined,
+      expiry_date:     form.expiryDate || undefined,
       idempotency_key: key,
     };
 
@@ -238,6 +249,15 @@ export function ReceiveStockPanel({ products, warehouses, orgSlug }: Props) {
               <option value="">— select warehouse —</option>
               {warehouses.map((w) => (
                 <option key={w.id} value={w.id}>{w.name}{w.location ? ` · ${w.location}` : ""}</option>
+              ))}
+            </select>
+          </Field>
+
+          <Field label="Reference Type">
+            <select value={form.referenceType} onChange={(e) => set("referenceType", e.target.value)} style={SELECT} required>
+              <option value="">— select type —</option>
+              {REFERENCE_TYPES.map((r) => (
+                <option key={r.value} value={r.value}>{r.label}</option>
               ))}
             </select>
           </Field>

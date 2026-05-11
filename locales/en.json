@@ -10,6 +10,13 @@
     "audit": "Audit Log"
   },
   "inventory": {
+    "balance": {
+      "onHand":    "On Hand",
+      "inTransit": "In Transit",
+      "issued":    "Issued",
+      "available": "Available",
+      "reserved":  "Reserved"
+    },
     "receive": {
       "title": "Receive Stock",
       "product_id": "Product ID",
@@ -248,6 +255,30 @@
     "pending_nm": "Awaiting NM approval",
     "success_applied": "Adjustment applied",
     "success_submitted": "Submitted for approval"
+  },
+  "transfer": {
+    "status": {
+      "DRAFT":      "Draft",
+      "SUBMITTED":  "Submitted",
+      "APPROVED":   "Approved",
+      "IN_TRANSIT": "In Transit",
+      "RECEIVED":   "Received",
+      "CLOSED":     "Closed",
+      "REJECTED":   "Rejected",
+      "CANCELLED":  "Cancelled"
+    },
+    "error": {
+      "invalidTransition":     "This status change is not permitted.",
+      "insufficientApproval":  "You do not have authority to approve this transfer.",
+      "offlineBlocked":        "Transfer status changes require an internet connection."
+    },
+    "reference": {
+      "PURCHASE_ORDER": "Purchase Order",
+      "PRODUCTION":     "Production Output",
+      "RETURN":         "Customer / Supplier Return",
+      "DONATION":       "Donation",
+      "MANUAL":         "Manual Entry"
+    }
   },
   "transfer_actions": {
     "submit": "Submit for Approval",

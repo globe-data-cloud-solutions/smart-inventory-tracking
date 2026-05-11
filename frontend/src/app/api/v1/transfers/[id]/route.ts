@@ -1,6 +1,26 @@
 import { NextRequest, NextResponse } from "next/server";
 import { demoTransfers, type TransferStatus } from "../_demo-state";
 
+export async function GET(
+  _req: NextRequest,
+  context: { params: Promise<{ id: string }> }
+) {
+  const { id } = await context.params;
+  const transfer = demoTransfers.find((t) => t.id === id);
+  if (!transfer) {
+    return NextResponse.json(
+      { success: false, error: { code: "NOT_FOUND", message: "Transfer not found" } },
+      { status: 404 }
+    );
+  }
+  return NextResponse.json({
+    success: true,
+    data: transfer,
+    request_id: crypto.randomUUID(),
+    timestamp: new Date().toISOString(),
+  });
+}
+
 // Valid state-machine transitions (mirrors state_machine.py)
 const TRANSITIONS: Record<TransferStatus, TransferStatus[]> = {
   DRAFT:      ["SUBMITTED", "CANCELLED"],
