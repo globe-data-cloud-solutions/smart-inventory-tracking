@@ -2,7 +2,6 @@
 
 import { useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import Link from "next/link";
 import { login } from "@/lib/demo-auth";
 import { DEMO_TENANTS, SA_USER } from "@/lib/demo-data";
 
@@ -43,15 +42,6 @@ export default function LoginPage() {
     <div className="min-h-screen bg-gradient-to-br from-slate-900 via-brand-900 to-slate-900 flex">
       {/* ── Left panel: demo accounts ── */}
       <div className="hidden lg:flex lg:w-96 bg-white/5 border-r border-white/10 flex-col p-8">
-        <Link href="/" className="flex items-center gap-2 mb-10">
-          <div className="w-8 h-8 rounded-md bg-brand-500 flex items-center justify-center">
-            <svg viewBox="0 0 24 24" fill="none" className="w-5 h-5 text-white" stroke="currentColor" strokeWidth={2}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M20 7l-8-4-8 4m16 0v10l-8 4m0-14L4 17m8 4V11" />
-            </svg>
-          </div>
-          <span className="text-white font-semibold">SMART Inventory</span>
-        </Link>
-
         <h2 className="text-white font-bold text-lg mb-1">Demo Accounts</h2>
         <p className="text-slate-400 text-sm mb-6">Click any account to auto-fill credentials.</p>
 
@@ -107,16 +97,6 @@ export default function LoginPage() {
       {/* ── Right panel: login form ── */}
       <div className="flex-1 flex items-center justify-center p-8">
         <div className="w-full max-w-md">
-          {/* Mobile logo */}
-          <Link href="/" className="flex items-center justify-center gap-2 mb-8 lg:hidden">
-            <div className="w-10 h-10 rounded-lg bg-brand-500 flex items-center justify-center">
-              <svg viewBox="0 0 24 24" fill="none" className="w-6 h-6 text-white" stroke="currentColor" strokeWidth={2}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M20 7l-8-4-8 4m16 0v10l-8 4m0-14L4 17m8 4V11" />
-              </svg>
-            </div>
-            <span className="text-white font-bold text-xl">SMART Inventory</span>
-          </Link>
-
           <div className="bg-white rounded-2xl shadow-2xl p-8">
             <div className="mb-7">
               <h1 className="text-2xl font-bold text-gray-900">Sign in</h1>
