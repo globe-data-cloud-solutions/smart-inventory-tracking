@@ -3,8 +3,9 @@
 import { useParams } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
 import { SA_ORG_SLUG } from "@/lib/demo-auth";
-import { DEMO_TENANTS, getTotalStock } from "@/lib/demo-data";
+import { DEMO_TENANTS } from "@/lib/demo-data";
 import { usePermission } from "@/hooks/usePermission";
+import { useInventoryStore } from "@/lib/inventory-state";
 import { AddProductPanel } from "@/components/features/inventory/AddProductPanel";
 import { api } from "@/lib/api";
 
@@ -22,6 +23,7 @@ type Row = {
 export default function ProductsPage() {
   const { org } = useParams() as { org: string };
   const canAdd = usePermission("product:create");
+  const { getOnHand } = useInventoryStore();
 
   const tenant = DEMO_TENANTS.find((t) => t.slug === org);
 
@@ -39,12 +41,17 @@ export default function ProductsPage() {
     return <p style={{ padding: "2rem", color: "#6B7280" }}>Tenant not found.</p>;
   }
 
-  // Merge demo products (static) + API products (newly created)
-  const demoRows: Row[] = tenant.products.map((p) => ({
-    id: p.id, sku: p.sku, name: p.name,
-    category: p.category, unit: p.unit, packSize: "—",
-    balance: getTotalStock(p), batchTracking: p.batchTracking, isNew: false,
-  }));
+  // Sum live On Hand across all warehouses for each product
+  const demoRows: Row[] = tenant.products.map((p) => {
+    const liveBalance = Object.entries(p.stock).reduce((sum, [whId, base]) => {
+      return sum + getOnHand(p.id, whId, base);
+    }, 0);
+    return {
+      id: p.id, sku: p.sku, name: p.name,
+      category: p.category, unit: p.unit, packSize: "—",
+      balance: liveBalance, batchTracking: p.batchTracking, isNew: false,
+    };
+  });
 
   const apiRows: Row[] = apiProducts.map((p) => ({
     id: p.id, sku: p.sku, name: p.name,
@@ -139,6 +146,11 @@ export default function ProductsPage() {
           </table>
         </div>
       </div>
+
+      {/* Balance note */}
+      <p style={{ marginTop: "0.75rem", fontSize: 12, color: "#9CA3AF" }}>
+        <strong style={{ color: "#374151" }}>Balance</strong> — total On Hand across all warehouses (live, reflects this session&apos;s receives, issues, and transfers)
+      </p>
     </div>
   );
 }

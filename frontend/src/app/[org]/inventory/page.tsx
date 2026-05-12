@@ -9,7 +9,7 @@ import { usePermission } from "@/hooks/usePermission";
 import { AddProductPanel } from "@/components/features/inventory/AddProductPanel";
 import { ReceiveStockPanel } from "@/components/features/inventory/ReceiveStockPanel";
 import { IssueStockPanel } from "@/components/features/inventory/IssueStockPanel";
-import { useInventoryStore, type PendingTransfer } from "@/lib/inventory-state";
+import { useInventoryStore } from "@/lib/inventory-state";
 import { api } from "@/lib/api";
 
 /* ── Types ─────────────────────────────────────────────────────────────────── */
@@ -17,20 +17,29 @@ type ApiProduct = {
   id: string; sku: string; name: string; type_code: string;
   unit: string; pack_size: number; created_at: string;
 };
-
 type Filters = { category: string[]; unit: string[]; status: string[] };
+type ExpandedCell = {
+  productId: string;
+  productName: string;
+  warehouseId: string;
+  col: "received" | "issued" | "transit";
+};
+type ModalRow = {
+  direction: "in" | "out" | "direct";
+  label: string;
+  qty: number;
+  date: string;
+  ref?: string;
+};
 
 /* ── Column filter dropdown ─────────────────────────────────────────────────── */
 function FilterDropdown({
   options, selected, onChange, onClose,
 }: {
-  options: string[];
-  selected: string[];
-  onChange: (v: string[]) => void;
-  onClose: () => void;
+  options: string[]; selected: string[];
+  onChange: (v: string[]) => void; onClose: () => void;
 }) {
   const ref = useRef<HTMLDivElement>(null);
-
   useEffect(() => {
     function handleClick(e: MouseEvent) {
       if (ref.current && !ref.current.contains(e.target as Node)) onClose();
@@ -38,18 +47,11 @@ function FilterDropdown({
     document.addEventListener("mousedown", handleClick);
     return () => document.removeEventListener("mousedown", handleClick);
   }, [onClose]);
-
   const allSelected = selected.length === 0 || selected.length === options.length;
-
   function toggle(val: string) {
     if (selected.includes(val)) onChange(selected.filter((s) => s !== val));
     else onChange([...selected, val]);
   }
-
-  function toggleAll() {
-    onChange(allSelected ? [] : [...options]);
-  }
-
   return (
     <div ref={ref} style={{
       position: "absolute", top: "100%", left: 0, zIndex: 50, marginTop: 4,
@@ -57,17 +59,12 @@ function FilterDropdown({
       boxShadow: "0 8px 24px rgba(0,0,0,0.12)", minWidth: 160, padding: "6px 0",
     }}>
       <label style={{ display: "flex", alignItems: "center", gap: 8, padding: "5px 12px", cursor: "pointer", fontSize: 12, color: "#374151", borderBottom: "1px solid #F3F4F6" }}>
-        <input type="checkbox" checked={allSelected} onChange={toggleAll} style={{ cursor: "pointer" }} />
+        <input type="checkbox" checked={allSelected} onChange={() => onChange(allSelected ? [] : [...options])} style={{ cursor: "pointer" }} />
         <span style={{ fontWeight: 600 }}>All</span>
       </label>
       {options.map((opt) => (
         <label key={opt} style={{ display: "flex", alignItems: "center", gap: 8, padding: "5px 12px", cursor: "pointer", fontSize: 12, color: "#374151" }}>
-          <input
-            type="checkbox"
-            checked={selected.length === 0 || selected.includes(opt)}
-            onChange={() => toggle(opt)}
-            style={{ cursor: "pointer" }}
-          />
+          <input type="checkbox" checked={selected.length === 0 || selected.includes(opt)} onChange={() => toggle(opt)} style={{ cursor: "pointer" }} />
           {opt}
         </label>
       ))}
@@ -75,141 +72,172 @@ function FilterDropdown({
   );
 }
 
-/* ── Filterable column header ───────────────────────────────────────────────── */
-function FilterHeader({
-  label, field, options, filters, setFilters, align = "left",
-}: {
+function FilterHeader({ label, field, options, filters, setFilters, align = "left" }: {
   label: string; field: keyof Filters; options: string[];
   filters: Filters; setFilters: (f: Filters) => void; align?: "left" | "right";
 }) {
   const [open, setOpen] = useState(false);
   const active = filters[field].length > 0 && filters[field].length < options.length;
-
   return (
-    <th style={{
-      padding: "10px 14px", textAlign: align,
-      fontSize: 11, fontWeight: 700, color: "#6B7280",
-      textTransform: "uppercase", letterSpacing: "0.05em",
-      whiteSpace: "nowrap", position: "relative", userSelect: "none",
-    }}>
-      <div
-        style={{ display: "inline-flex", alignItems: "center", gap: 4, cursor: "pointer" }}
-        onClick={() => setOpen((o) => !o)}
-      >
+    <th style={{ padding: "10px 14px", textAlign: align, fontSize: 11, fontWeight: 700, color: "#6B7280", textTransform: "uppercase", letterSpacing: "0.05em", whiteSpace: "nowrap", position: "relative", userSelect: "none" }}>
+      <div style={{ display: "inline-flex", alignItems: "center", gap: 4, cursor: "pointer" }} onClick={() => setOpen((o) => !o)}>
         <span style={{ color: active ? "#1B4332" : "#6B7280" }}>{label}</span>
-        <span style={{
-          fontSize: 9, color: active ? "#1B4332" : "#9CA3AF",
-          background: active ? "#DCFCE7" : "transparent",
-          padding: active ? "1px 4px" : "0", borderRadius: 3, fontWeight: 900,
-        }}>
+        <span style={{ fontSize: 9, color: active ? "#1B4332" : "#9CA3AF", background: active ? "#DCFCE7" : "transparent", padding: active ? "1px 4px" : "0", borderRadius: 3, fontWeight: 900 }}>
           {active ? `${filters[field].length}✓` : "▾"}
         </span>
       </div>
       {open && (
-        <FilterDropdown
-          options={options}
-          selected={filters[field]}
+        <FilterDropdown options={options} selected={filters[field]}
           onChange={(v) => setFilters({ ...filters, [field]: v })}
-          onClose={() => setOpen(false)}
-        />
+          onClose={() => setOpen(false)} />
       )}
     </th>
   );
 }
 
-/* ── Plain column header ────────────────────────────────────────────────────── */
 function PlainHeader({ label, align = "left" }: { label: string; align?: "left" | "right" }) {
   return (
-    <th style={{
-      padding: "10px 14px", textAlign: align,
-      fontSize: 11, fontWeight: 700, color: "#6B7280",
-      textTransform: "uppercase", letterSpacing: "0.05em", whiteSpace: "nowrap",
-    }}>{label}</th>
+    <th style={{ padding: "10px 14px", textAlign: align, fontSize: 11, fontWeight: 700, color: "#6B7280", textTransform: "uppercase", letterSpacing: "0.05em", whiteSpace: "nowrap" }}>
+      {label}
+    </th>
   );
 }
 
-/* ── Pending popup ──────────────────────────────────────────────────────────── */
-function PendingModal({
-  productName, transfers, onClose,
+/* ── Transaction detail modal (Received / Issued / In Transit) ──────────────── */
+const COL_META = {
+  received: { title: "Received Details",  bg: "#059669", hdr: "#F0FDF4", totalLabel: "Total Received" },
+  issued:   { title: "Issued / Reserved", bg: "#DC2626", hdr: "#FEF2F2", totalLabel: "Total Issued / Reserved" },
+  transit:  { title: "In Transit Details",bg: "#92400E", hdr: "#FEF3C7", totalLabel: "Total In Transit" },
+};
+
+function TransactionDetailModal({
+  col, productName, rows, onClose,
 }: {
+  col: "received" | "issued" | "transit";
   productName: string;
-  transfers: PendingTransfer[];
+  rows: ModalRow[];
   onClose: () => void;
 }) {
+  const meta = COL_META[col];
+  const total = rows.reduce((s, r) => s + r.qty, 0);
+
+  function arrow(dir: ModalRow["direction"]) {
+    if (dir === "in")     return <span style={{ color: "#059669", fontWeight: 900, fontSize: 14 }}>←</span>;
+    if (dir === "out")    return <span style={{ color: "#DC2626", fontWeight: 900, fontSize: 14 }}>→</span>;
+    return <span style={{ color: "#059669", fontWeight: 900, fontSize: 14 }}>+</span>;
+  }
+
   return (
     <>
-      <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.35)", zIndex: 200 }} />
+      <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.4)", zIndex: 200 }} />
       <div style={{
         position: "fixed", top: "50%", left: "50%", transform: "translate(-50%,-50%)",
-        background: "#fff", borderRadius: 10, zIndex: 201, width: 480,
+        background: "#fff", borderRadius: 10, zIndex: 201, width: 520,
         boxShadow: "0 12px 40px rgba(0,0,0,0.2)", overflow: "hidden",
       }}>
-        <div style={{ padding: "1rem 1.25rem", background: "#0f2d1f", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+        {/* Header */}
+        <div style={{ padding: "1rem 1.25rem", background: meta.bg, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
           <div>
-            <p style={{ fontWeight: 700, fontSize: 15, color: "#fff", margin: 0 }}>Pending Incoming Stock</p>
-            <p style={{ fontSize: 12, color: "#6ee7b7", margin: "2px 0 0" }}>{productName}</p>
+            <p style={{ fontWeight: 700, fontSize: 15, color: "#fff", margin: 0 }}>{meta.title}</p>
+            <p style={{ fontSize: 12, color: "rgba(255,255,255,0.8)", margin: "2px 0 0" }}>{productName}</p>
           </div>
-          <button onClick={onClose} style={{ background: "rgba(255,255,255,0.1)", border: "none", cursor: "pointer", color: "#fff", fontSize: 16, width: 28, height: 28, borderRadius: 4 }}>✕</button>
+          <button onClick={onClose} style={{ background: "rgba(255,255,255,0.15)", border: "none", cursor: "pointer", color: "#fff", fontSize: 16, width: 28, height: 28, borderRadius: 4 }}>✕</button>
         </div>
-        <div style={{ padding: "1rem" }}>
-          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
-            <thead>
-              <tr style={{ background: "#F9FAFB", borderBottom: "2px solid #E5E7EB" }}>
-                {["From Warehouse", "Quantity", "Issued Date", "Ref"].map((h) => (
-                  <th key={h} style={{ padding: "8px 12px", textAlign: "left", fontSize: 11, fontWeight: 700, color: "#6B7280", textTransform: "uppercase", letterSpacing: "0.05em" }}>{h}</th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {transfers.map((t, i) => (
-                <tr key={t.id} style={{ background: i % 2 === 0 ? "#fff" : "#FAFAFA", borderBottom: "1px solid #F3F4F6" }}>
-                  <td style={{ padding: "9px 12px", fontWeight: 600, color: "#1F2937" }}>{t.fromWarehouseName}</td>
-                  <td style={{ padding: "9px 12px", fontWeight: 700, color: "#1B4332" }}>{t.quantity.toLocaleString()}</td>
-                  <td style={{ padding: "9px 12px", color: "#6B7280", fontSize: 12 }}>{new Date(t.issuedDate).toLocaleDateString()} {new Date(t.issuedDate).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</td>
-                  <td style={{ padding: "9px 12px", fontFamily: "monospace", fontSize: 11, color: "#9CA3AF" }}>{t.ref}</td>
+
+        {/* Table */}
+        <div style={{ padding: "0.75rem", maxHeight: 400, overflowY: "auto" }}>
+          {rows.length === 0 ? (
+            <p style={{ textAlign: "center", color: "#9CA3AF", fontSize: 13, padding: "1.5rem 0" }}>No items to display.</p>
+          ) : (
+            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+              <thead>
+                <tr style={{ background: meta.hdr, borderBottom: "2px solid #E5E7EB" }}>
+                  <th style={{ padding: "7px 10px", width: 24 }}></th>
+                  <th style={{ padding: "7px 10px", textAlign: "left", fontSize: 11, fontWeight: 700, color: "#6B7280", textTransform: "uppercase", letterSpacing: "0.05em" }}>
+                    {col === "transit" ? "Warehouse" : col === "issued" ? "Destination / Type" : "Source"}
+                  </th>
+                  <th style={{ padding: "7px 10px", textAlign: "right", fontSize: 11, fontWeight: 700, color: "#6B7280", textTransform: "uppercase", letterSpacing: "0.05em" }}>Qty</th>
+                  <th style={{ padding: "7px 10px", textAlign: "left", fontSize: 11, fontWeight: 700, color: "#6B7280", textTransform: "uppercase", letterSpacing: "0.05em" }}>Date</th>
+                  <th style={{ padding: "7px 10px", textAlign: "left", fontSize: 11, fontWeight: 700, color: "#6B7280", textTransform: "uppercase", letterSpacing: "0.05em" }}>Ref</th>
                 </tr>
-              ))}
-            </tbody>
-            <tfoot>
-              <tr style={{ background: "#F0FDF4", borderTop: "2px solid #BBF7D0" }}>
-                <td style={{ padding: "9px 12px", fontWeight: 700, color: "#1B4332", fontSize: 12 }}>Total Pending</td>
-                <td style={{ padding: "9px 12px", fontWeight: 800, color: "#1B4332" }}>
-                  {transfers.reduce((a, t) => a + t.quantity, 0).toLocaleString()}
-                </td>
-                <td colSpan={2} style={{ padding: "9px 12px", fontSize: 12, color: "#9CA3AF" }}>
-                  In transit · will move to My Stock on receipt
-                </td>
-              </tr>
-            </tfoot>
-          </table>
+              </thead>
+              <tbody>
+                {rows.map((r, i) => (
+                  <tr key={i} style={{ background: i % 2 === 0 ? "#fff" : "#FAFAFA", borderBottom: "1px solid #F3F4F6" }}>
+                    <td style={{ padding: "8px 10px", textAlign: "center" }}>{arrow(r.direction)}</td>
+                    <td style={{ padding: "8px 10px", fontWeight: 600, color: "#1F2937" }}>{r.label}</td>
+                    <td style={{ padding: "8px 10px", textAlign: "right", fontWeight: 700, color: r.direction === "in" || r.direction === "direct" ? "#059669" : "#DC2626" }}>
+                      {r.direction === "out" ? `−${r.qty.toLocaleString()}` : `+${r.qty.toLocaleString()}`}
+                    </td>
+                    <td style={{ padding: "8px 10px", color: "#6B7280", fontSize: 12 }}>
+                      {new Date(r.date).toLocaleDateString()} {new Date(r.date).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                    </td>
+                    <td style={{ padding: "8px 10px", fontFamily: "monospace", fontSize: 11, color: "#9CA3AF" }}>{r.ref ?? "—"}</td>
+                  </tr>
+                ))}
+              </tbody>
+              <tfoot>
+                <tr style={{ background: meta.hdr, borderTop: "2px solid #E5E7EB" }}>
+                  <td colSpan={2} style={{ padding: "8px 10px", fontWeight: 700, color: "#374151", fontSize: 12 }}>{meta.totalLabel}</td>
+                  <td style={{ padding: "8px 10px", textAlign: "right", fontWeight: 800, color: meta.bg }}>{total.toLocaleString()}</td>
+                  <td colSpan={2} />
+                </tr>
+              </tfoot>
+            </table>
+          )}
         </div>
       </div>
     </>
   );
 }
 
+/* ── Expandable cell button ─────────────────────────────────────────────────── */
+function ExpandCell({
+  qty, color, bg, border, prefix, icon, onClick,
+}: {
+  qty: number; color: string; bg: string; border: string;
+  prefix?: string; icon?: string; onClick: () => void;
+}) {
+  if (qty <= 0) return <span style={{ color: "#E5E7EB" }}>—</span>;
+  return (
+    <button
+      onClick={onClick}
+      title="Click to expand"
+      style={{
+        fontWeight: 700, fontSize: 12, color, background: bg,
+        border: `1px solid ${border}`, borderRadius: 4,
+        padding: "3px 10px", cursor: "pointer",
+        display: "inline-flex", alignItems: "center", gap: 4,
+      }}
+    >
+      {icon && <span>{icon}</span>}
+      {prefix}{qty.toLocaleString()}
+    </button>
+  );
+}
+
 /* ── Main page ───────────────────────────────────────────────────────────────── */
 export default function InventoryPage() {
-  const { org }        = useParams() as { org: string };
-  const user           = getSession();
-  const canAddProduct  = usePermission("product:create");
-  const { getOnHand, getReceived, getIssued, getAvailable, getPending } = useInventoryStore();
+  const { org }       = useParams() as { org: string };
+  const user          = getSession();
+  const canAddProduct = usePermission("product:create");
+  const store         = useInventoryStore();
+
+  const {
+    getOnHand, getAvailable,
+    getReceivedTotal, getIssuedTotal, getInTransitTotal,
+    getReceiveAdjs, getIssueAdjs,
+    getOutboundReserved, getOutboundInTransit,
+    getInboundInTransit, getInboundReceived,
+  } = store;
 
   const tenant = DEMO_TENANTS.find((t) => t.slug === org);
 
-  // Warehouse selector (TA/NM/SA can pick a specific warehouse)
   const [selectedWH, setSelectedWH] = useState<string>(user?.warehouseId ?? "");
-
-  // Active warehouse context
   const whId = selectedWH || user?.warehouseId || "";
-
-  // Column filters
   const [filters, setFilters] = useState<Filters>({ category: [], unit: [], status: [] });
+  const [expandedCell, setExpandedCell] = useState<ExpandedCell | null>(null);
 
-  // Pending popup
-  const [pendingModal, setPendingModal] = useState<{ product: DemoProduct; warehouseId: string } | null>(null);
-
-  // Fetch API products (created via Add Product panel)
   const { data: apiProducts = [] } = useQuery<ApiProduct[]>({
     queryKey: ["products", org],
     queryFn:  () => api.get<ApiProduct[]>("/api/v1/products"),
@@ -217,11 +245,43 @@ export default function InventoryPage() {
     staleTime: 0,
   });
 
-  if (!user || org === SA_ORG_SLUG) {
+  if (!user || org === SA_ORG_SLUG)
     return <p style={{ padding: "2rem", color: "#6B7280" }}>Select a tenant to view inventory.</p>;
-  }
-  if (!tenant) {
+  if (!tenant)
     return <p style={{ padding: "2rem", color: "#6B7280" }}>Tenant not found.</p>;
+
+  // ── Build modal rows when a cell is expanded ──────────────────────────────
+  let modalRows: ModalRow[] = [];
+  if (expandedCell) {
+    const { productId, warehouseId, col } = expandedCell;
+    if (col === "received") {
+      modalRows = [
+        ...getReceiveAdjs(productId, warehouseId).map((a) => ({
+          direction: "direct" as const, label: "Direct Receive", qty: a.qty, date: a.createdAt,
+        })),
+        ...getInboundReceived(productId, warehouseId).map((t) => ({
+          direction: "in" as const, label: t.fromWarehouseName, qty: t.quantity, date: t.issuedDate, ref: t.ref,
+        })),
+      ].sort((a, b) => a.date.localeCompare(b.date));
+    } else if (col === "issued") {
+      modalRows = [
+        ...getIssueAdjs(productId, warehouseId).map((a) => ({
+          direction: "out" as const, label: "Issued Out", qty: a.qty, date: a.createdAt,
+        })),
+        ...getOutboundReserved(productId, warehouseId).map((t) => ({
+          direction: "out" as const, label: `To: ${t.toWarehouseName}`, qty: t.quantity, date: t.issuedDate, ref: t.ref,
+        })),
+      ].sort((a, b) => a.date.localeCompare(b.date));
+    } else {
+      // transit — inbound (← green) + outbound (→ red), sorted by date
+      const inbound = getInboundInTransit(productId, warehouseId).map((t) => ({
+        direction: "in" as const, label: `From: ${t.fromWarehouseName}`, qty: t.quantity, date: t.issuedDate, ref: t.ref,
+      }));
+      const outbound = getOutboundInTransit(productId, warehouseId).map((t) => ({
+        direction: "out" as const, label: `To: ${t.toWarehouseName}`, qty: t.quantity, date: t.issuedDate, ref: t.ref,
+      }));
+      modalRows = [...inbound, ...outbound].sort((a, b) => a.date.localeCompare(b.date));
+    }
   }
 
   // Products to display
@@ -229,23 +289,20 @@ export default function InventoryPage() {
     ? tenant.products.filter((p) => {
         const base = p.stock[whId] ?? 0;
         const onH  = getOnHand(p.id, whId, base);
-        const pend = getPending(p.id, whId);
-        return onH > 0 || pend.length > 0;
+        const transit = getInTransitTotal(p.id, whId);
+        return onH > 0 || transit > 0;
       })
     : tenant.products;
 
-  // Build unique filter option lists
   const categoryOptions = Array.from(new Set(allProducts.map((p) => p.category)));
   const unitOptions     = Array.from(new Set(allProducts.map((p) => p.unit)));
   const statusOptions   = ["In Stock", "Low Stock"];
 
-  // Apply filters
   function rowMatchesFilters(p: DemoProduct): boolean {
     const base      = whId ? (p.stock[whId] ?? 0) : Object.values(p.stock).reduce((a, b) => a + b, 0);
     const available = whId ? getAvailable(p.id, whId, base) : base;
     const isLow     = available < p.reorderPoint;
     const status    = isLow ? "Low Stock" : "In Stock";
-
     if (filters.category.length > 0 && !filters.category.includes(p.category)) return false;
     if (filters.unit.length     > 0 && !filters.unit.includes(p.unit))         return false;
     if (filters.status.length   > 0 && !filters.status.includes(status))       return false;
@@ -259,18 +316,21 @@ export default function InventoryPage() {
     return a + (whId ? getOnHand(p.id, whId, base) : base);
   }, 0);
 
-  const activeFiltersCount = Object.values(filters).filter((f) => f.length > 0 && f.length < (f === filters.category ? categoryOptions.length : f === filters.unit ? unitOptions.length : 2)).length;
+  const activeFiltersCount = Object.values(filters).filter(
+    (f) => f.length > 0 && f.length < (f === filters.category ? categoryOptions.length : f === filters.unit ? unitOptions.length : 2)
+  ).length;
 
   const showWarehouseColumns = !!whId;
 
   return (
     <div style={{ padding: "2rem" }}>
-      {/* Pending popup */}
-      {pendingModal && (
-        <PendingModal
-          productName={pendingModal.product.name}
-          transfers={getPending(pendingModal.product.id, pendingModal.warehouseId)}
-          onClose={() => setPendingModal(null)}
+      {/* Transaction detail modal */}
+      {expandedCell && (
+        <TransactionDetailModal
+          col={expandedCell.col}
+          productName={expandedCell.productName}
+          rows={modalRows}
+          onClose={() => setExpandedCell(null)}
         />
       )}
 
@@ -289,14 +349,11 @@ export default function InventoryPage() {
         </div>
       </div>
 
-      {/* Toolbar: warehouse selector + filter summary */}
+      {/* Toolbar */}
       <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: "1rem", flexWrap: "wrap" }}>
-        {/* Warehouse selector — shown to TA/NM/SA */}
         {!user.warehouseId && (
           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-            <label style={{ fontSize: 12, fontWeight: 700, color: "#374151", textTransform: "uppercase", letterSpacing: "0.05em" }}>
-              Warehouse
-            </label>
+            <label style={{ fontSize: 12, fontWeight: 700, color: "#374151", textTransform: "uppercase", letterSpacing: "0.05em" }}>Warehouse</label>
             <select
               value={selectedWH}
               onChange={(e) => setSelectedWH(e.target.value)}
@@ -310,14 +367,13 @@ export default function InventoryPage() {
           </div>
         )}
 
-        {/* Active filter chips */}
         {activeFiltersCount > 0 && (
           <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
             {(["category", "unit", "status"] as (keyof Filters)[]).map((field) =>
               filters[field].length > 0 && filters[field].length < (field === "category" ? categoryOptions.length : field === "unit" ? unitOptions.length : 2) ? (
                 <span key={field} style={{ fontSize: 11, fontWeight: 700, background: "#DCFCE7", color: "#166534", padding: "2px 10px", borderRadius: 99, display: "flex", alignItems: "center", gap: 5 }}>
                   {field}: {filters[field].join(", ")}
-                  <button onClick={() => setFilters({ ...filters, [field]: [] })} style={{ background: "none", border: "none", cursor: "pointer", fontSize: 11, color: "#166534", padding: 0, lineHeight: 1 }}>✕</button>
+                  <button onClick={() => setFilters({ ...filters, [field]: [] })} style={{ background: "none", border: "none", cursor: "pointer", fontSize: 11, color: "#166534", padding: 0 }}>✕</button>
                 </span>
               ) : null
             )}
@@ -327,13 +383,12 @@ export default function InventoryPage() {
           </div>
         )}
 
-        {/* Summary stat */}
         <div style={{ marginLeft: "auto", fontSize: 12, color: "#6B7280" }}>
           {visibleProducts.length} of {allProducts.length} products · {totalStockAll.toLocaleString()} total units
         </div>
       </div>
 
-      {/* ── Main table ── */}
+      {/* Table */}
       <div style={{ background: "#fff", border: "1px solid #E5E7EB", borderRadius: 6, overflow: "hidden" }}>
         <div style={{ height: 3, background: tenant.color }} />
         <div style={{ overflowX: "auto" }}>
@@ -344,11 +399,11 @@ export default function InventoryPage() {
                 <PlainHeader label="Product" />
                 <FilterHeader label="Category" field="category" options={categoryOptions} filters={filters} setFilters={setFilters} />
                 <FilterHeader label="Unit"     field="unit"     options={unitOptions}     filters={filters} setFilters={setFilters} />
-                <PlainHeader label={whId ? "On Hand"   : "Total Stock"} align="right" />
-                {showWarehouseColumns && <PlainHeader label="Received"  align="right" />}
-                {showWarehouseColumns && <PlainHeader label="Issued"    align="right" />}
+                <PlainHeader label={whId ? "On Hand" : "Total Stock"} align="right" />
+                {showWarehouseColumns && <PlainHeader label="Received"   align="right" />}
+                {showWarehouseColumns && <PlainHeader label="Issued"     align="right" />}
                 {showWarehouseColumns && <PlainHeader label="In Transit" align="right" />}
-                {showWarehouseColumns && <PlainHeader label="Available" align="right" />}
+                {showWarehouseColumns && <PlainHeader label="Available"  align="right" />}
                 <PlainHeader label="Reorder Pt" align="right" />
                 <FilterHeader label="Status" field="status" options={statusOptions} filters={filters} setFilters={setFilters} align="left" />
               </tr>
@@ -356,12 +411,11 @@ export default function InventoryPage() {
             <tbody>
               {visibleProducts.map((p, idx) => {
                 const base      = whId ? (p.stock[whId] ?? 0) : Object.values(p.stock).reduce((a, b) => a + b, 0);
-                const onHand    = whId ? getOnHand(p.id, whId, base) : base;
-                const received  = whId ? getReceived(p.id, whId) : 0;
-                const issued    = whId ? getIssued(p.id, whId) : 0;
+                const onHand    = whId ? getOnHand(p.id, whId, base)    : base;
+                const received  = whId ? getReceivedTotal(p.id, whId)  : 0;
+                const issued    = whId ? getIssuedTotal(p.id, whId)    : 0;
+                const inTransit = whId ? getInTransitTotal(p.id, whId) : 0;
                 const available = whId ? getAvailable(p.id, whId, base) : base;
-                const pendList  = whId ? getPending(p.id, whId) : [];
-                const pendQty   = pendList.reduce((a, t) => a + t.quantity, 0);
                 const isLow     = available < p.reorderPoint;
 
                 return (
@@ -385,53 +439,48 @@ export default function InventoryPage() {
                     {/* Unit */}
                     <td style={{ padding: "10px 14px", color: "#9CA3AF", fontSize: 12 }}>{p.unit}</td>
 
-                    {/* On Hand / Total Stock */}
+                    {/* On Hand */}
                     <td style={{ padding: "10px 14px", textAlign: "right", fontWeight: 700, color: onHand > 0 ? "#111827" : "#9CA3AF" }}>
                       {onHand.toLocaleString()}
                     </td>
 
-                    {/* Received (session) */}
-                    {showWarehouseColumns && (
-                      <td style={{ padding: "10px 14px", textAlign: "right", fontWeight: 600, color: received > 0 ? "#059669" : "#E5E7EB" }}>
-                        {received > 0 ? `+${received.toLocaleString()}` : "—"}
-                      </td>
-                    )}
-
-                    {/* Issued (direct: sales, damage, etc.) */}
-                    {showWarehouseColumns && (
-                      <td style={{ padding: "10px 14px", textAlign: "right", fontWeight: 600, color: issued > 0 ? "#DC2626" : "#E5E7EB" }}>
-                        {issued > 0 ? `−${issued.toLocaleString()}` : "—"}
-                      </td>
-                    )}
-
-                    {/* In Transit / Pending (clickable) */}
+                    {/* Received — expandable */}
                     {showWarehouseColumns && (
                       <td style={{ padding: "10px 14px", textAlign: "right" }}>
-                        {pendQty > 0 ? (
-                          <button
-                            onClick={() => setPendingModal({ product: p, warehouseId: whId })}
-                            style={{
-                              fontWeight: 700, fontSize: 12, color: "#92400E",
-                              background: "#FEF3C7", border: "1px solid #FDE68A",
-                              borderRadius: 4, padding: "3px 10px", cursor: "pointer",
-                              display: "inline-flex", alignItems: "center", gap: 4,
-                            }}
-                          >
-                            <span>⏳</span>{pendQty.toLocaleString()}
-                          </button>
-                        ) : (
-                          <span style={{ color: "#E5E7EB" }}>—</span>
-                        )}
+                        <ExpandCell
+                          qty={received} color="#059669" bg="#F0FDF4" border="#BBF7D0" prefix="+"
+                          onClick={() => setExpandedCell({ productId: p.id, productName: p.name, warehouseId: whId, col: "received" })}
+                        />
                       </td>
                     )}
 
-                    {/* Available = On Hand − Issued */}
+                    {/* Issued — expandable (direct issues + outbound reserved transfers) */}
+                    {showWarehouseColumns && (
+                      <td style={{ padding: "10px 14px", textAlign: "right" }}>
+                        <ExpandCell
+                          qty={issued} color="#DC2626" bg="#FEF2F2" border="#FECACA" prefix="−"
+                          onClick={() => setExpandedCell({ productId: p.id, productName: p.name, warehouseId: whId, col: "issued" })}
+                        />
+                      </td>
+                    )}
+
+                    {/* In Transit — expandable (outbound IN_TRANSIT + inbound IN_TRANSIT) */}
+                    {showWarehouseColumns && (
+                      <td style={{ padding: "10px 14px", textAlign: "right" }}>
+                        <ExpandCell
+                          qty={inTransit} color="#92400E" bg="#FEF3C7" border="#FDE68A" icon="⏳"
+                          onClick={() => setExpandedCell({ productId: p.id, productName: p.name, warehouseId: whId, col: "transit" })}
+                        />
+                      </td>
+                    )}
+
+                    {/* Available */}
                     {showWarehouseColumns && (
                       <td style={{ padding: "10px 14px", textAlign: "right", fontWeight: 700 }}>
                         <span style={{
                           display: "inline-block",
                           background: available > p.reorderPoint ? "#EFF6FF" : "#FEF2F2",
-                          color: available > p.reorderPoint ? "#1D4ED8" : "#DC2626",
+                          color:      available > p.reorderPoint ? "#1D4ED8" : "#DC2626",
                           padding: "2px 8px", borderRadius: 4, fontSize: 12, fontWeight: 700,
                         }}>
                           {available.toLocaleString()}
@@ -461,7 +510,7 @@ export default function InventoryPage() {
                 );
               })}
 
-              {/* API (new) products — always at bottom with 0 balance */}
+              {/* API (new) products */}
               {apiProducts.map((p, idx) => (
                 <tr key={p.id} style={{ background: idx % 2 === 0 ? "#FAFFFE" : "#F0FDF4", borderBottom: "1px solid #F3F4F6" }}>
                   <td style={{ padding: "10px 14px", fontFamily: "monospace", fontSize: 11, color: "#9CA3AF" }}>
@@ -504,10 +553,10 @@ export default function InventoryPage() {
       {/* Column legend */}
       {showWarehouseColumns && (
         <p style={{ marginTop: "0.75rem", fontSize: 12, color: "#9CA3AF" }}>
-          <strong style={{ color: "#059669" }}>Received</strong> — received this session ·{" "}
-          <strong style={{ color: "#DC2626" }}>Issued</strong> — dispatched to customers / written off ·{" "}
-          <strong style={{ color: "#92400E" }}>In Transit ⏳</strong> — inbound from another warehouse (click for details) ·{" "}
-          <strong style={{ color: "#1D4ED8" }}>Available</strong> — On Hand minus Issued (blue = above reorder, red = below)
+          <strong style={{ color: "#059669" }}>Received</strong> — stock in this session (click ↗ to expand) ·{" "}
+          <strong style={{ color: "#DC2626" }}>Issued</strong> — direct issues + reserved outbound transfers (click to expand) ·{" "}
+          <strong style={{ color: "#92400E" }}>In Transit ⏳</strong> — ← inbound / → outbound currently moving (click to expand) ·{" "}
+          <strong style={{ color: "#1D4ED8" }}>Available</strong> — On Hand minus issues and reservations
         </p>
       )}
     </div>

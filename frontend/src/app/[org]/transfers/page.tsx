@@ -76,7 +76,7 @@ export default function TransfersPage() {
   const user = getSession();
   const qc   = useQueryClient();
   const { isOnline } = useOfflineSync();
-  const completePending = useInventoryStore((s) => s.completePending);
+  const updateTransferStatus = useInventoryStore((s) => s.updateTransferStatus);
   const [transitioning, setTransitioning] = useState<string | null>(null);
   const [confirmModal, setConfirmModal] = useState<{ id: string; next: TransferStatus; label: string; transfer?: ApiTransfer } | null>(null);
   const [toast, setToast] = useState("");
@@ -106,10 +106,8 @@ export default function TransfersPage() {
     try {
       await api.patch(`/api/v1/transfers/${id}`, { next_status: next });
       await qc.invalidateQueries({ queryKey: ["transfers", org] });
-      // When a transfer is received, clear pending and credit destination warehouse
-      if (next === "RECEIVED" && transfer) {
-        completePending(id, transfer.to_warehouse_id, transfer.product_id, transfer.quantity);
-      }
+      // Mirror status change in Zustand so Inventory page balances update immediately
+      updateTransferStatus(id, next);
       setToast(`Status updated to ${next}`);
       setTimeout(() => setToast(""), 3000);
     } catch {

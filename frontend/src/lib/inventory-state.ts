@@ -1,22 +1,27 @@
 /**
- * Client-side inventory state — tracks live balance adjustments and pending
- * in-transit transfers for the current session.
- *
- * Adjustment types:
- *   RECEIVE       — stock added via ReceiveStockPanel (increases On Hand)
- *   ISSUE         — stock dispatched via IssueStockPanel: sales, damage, etc. (reduces Available)
- *   TRANSFER_OUT  — stock shipped to another warehouse via NewTransferPanel (reduces On Hand)
+ * Client-side inventory state — tracks live balance adjustments and transfers
+ * for the current browser session.
  *
  * Balance semantics (per STOCKBALANCE.md §8.2):
- *   On Hand   = base + RECEIVE − TRANSFER_OUT   (physical stock present in building)
- *   Issued    = sum of ISSUE transactions        (dispatched to customers / written off)
- *   Available = On Hand − Issued                 (can be committed to new orders)
- *   Pending   = incoming in-transit transfers (tracked separately in pendingTransfers)
+ *
+ *  On Hand   = base + RECEIVE_adj + inbound_RECEIVED_transfers
+ *                   − outbound_IN_TRANSIT_transfers − outbound_RECEIVED_transfers
+ *
+ *  Available = On Hand − ISSUE_adj − outbound_reserved (DRAFT/SUBMITTED/APPROVED)
+ *
+ *  Issued (display)    = ISSUE_adj + outbound_reserved qty
+ *  In Transit (display) = outbound_IN_TRANSIT + inbound_IN_TRANSIT qty
+ *  Received (display)  = RECEIVE_adj + inbound_RECEIVED qty
  */
 
 import { create } from "zustand";
 
-export type AdjustmentType = "RECEIVE" | "ISSUE" | "TRANSFER_OUT";
+export type TransferStatus =
+  | "DRAFT" | "SUBMITTED" | "APPROVED"
+  | "IN_TRANSIT" | "RECEIVED" | "CLOSED"
+  | "REJECTED" | "CANCELLED";
+
+export type AdjustmentType = "RECEIVE" | "ISSUE";
 
 export interface StockAdjustment {
   id: string;
@@ -27,106 +32,171 @@ export interface StockAdjustment {
   createdAt: string;
 }
 
-export interface PendingTransfer {
+export interface TransferEntry {
   id: string;
   ref: string;
   productId: string;
   fromWarehouseId: string;
   fromWarehouseName: string;
   toWarehouseId: string;
+  toWarehouseName: string;
   quantity: number;
   issuedDate: string;
+  status: TransferStatus;
 }
+
+// Statuses where an outbound transfer has physically left the source WH
+const OUT_REDUCES_ON_HAND: TransferStatus[] = ["IN_TRANSIT", "RECEIVED", "CLOSED"];
+// Statuses where an inbound transfer credits the destination WH On Hand
+const IN_CREDITS_ON_HAND: TransferStatus[] = ["RECEIVED", "CLOSED"];
+// Statuses where an outbound transfer reduces Available (reserved but not yet gone)
+const OUT_RESERVED: TransferStatus[] = ["DRAFT", "SUBMITTED", "APPROVED"];
 
 interface InventoryStore {
   adjustments: StockAdjustment[];
-  pendingTransfers: PendingTransfer[];
+  transfers: TransferEntry[];
 
-  /** Stock received from supplier, production, or donation */
+  // ── Mutators ─────────────────────────────────────────────────────────────────
   addReceive(productId: string, warehouseId: string, qty: number): void;
-  /** Stock issued outbound: sales, internal use, damage, expiry */
   addIssue(productId: string, warehouseId: string, qty: number): void;
-  /** Stock shipped to another warehouse (reduces On Hand on source) */
-  addTransferOut(productId: string, warehouseId: string, qty: number): void;
-  /** Add an in-transit transfer visible on the destination's Pending column */
-  addPending(t: PendingTransfer): void;
-  /** Transfer received — clears pending and credits On Hand on destination */
-  completePending(transferId: string, toWarehouseId: string, productId: string, qty: number): void;
+  addTransfer(entry: TransferEntry): void;
+  /** No-op if transfer ID is not in the store (e.g. pre-seeded demo records). */
+  updateTransferStatus(transferId: string, newStatus: TransferStatus): void;
 
-  // ── Derived getters ──────────────────────────────────────────────────────
-  /** base + RECEIVE − TRANSFER_OUT = physical stock in this warehouse */
+  // ── Detail helpers (used by expandable cells) ─────────────────────────────
+  getReceiveAdjs(productId: string, warehouseId: string): StockAdjustment[];
+  getIssueAdjs(productId: string, warehouseId: string): StockAdjustment[];
+  getOutboundReserved(productId: string, warehouseId: string): TransferEntry[];
+  getOutboundInTransit(productId: string, warehouseId: string): TransferEntry[];
+  getInboundInTransit(productId: string, warehouseId: string): TransferEntry[];
+  getInboundReceived(productId: string, warehouseId: string): TransferEntry[];
+
+  // ── Column totals ─────────────────────────────────────────────────────────
+  getReceivedTotal(productId: string, warehouseId: string): number;
+  getIssuedTotal(productId: string, warehouseId: string): number;
+  getInTransitTotal(productId: string, warehouseId: string): number;
+
+  // ── Core balances ─────────────────────────────────────────────────────────
   getOnHand(productId: string, warehouseId: string, baseStock: number): number;
-  /** Sum of outbound ISSUE transactions (sales / write-offs) */
-  getIssued(productId: string, warehouseId: string): number;
-  /** Sum of received RECEIVE transactions this session */
-  getReceived(productId: string, warehouseId: string): number;
-  /** On Hand − Issued = stock that can be committed to new orders */
   getAvailable(productId: string, warehouseId: string, baseStock: number): number;
-  /** In-transit transfers incoming to this warehouse */
-  getPending(productId: string, toWarehouseId: string): PendingTransfer[];
 }
 
 export const useInventoryStore = create<InventoryStore>()((set, get) => ({
   adjustments: [],
-  pendingTransfers: [],
+  transfers: [],
 
   addReceive: (productId, warehouseId, qty) =>
     set((s) => ({
-      adjustments: [...s.adjustments,
-        { id: crypto.randomUUID(), productId, warehouseId, qty, type: "RECEIVE", createdAt: new Date().toISOString() }],
+      adjustments: [
+        ...s.adjustments,
+        { id: crypto.randomUUID(), productId, warehouseId, qty, type: "RECEIVE", createdAt: new Date().toISOString() },
+      ],
     })),
 
   addIssue: (productId, warehouseId, qty) =>
     set((s) => ({
-      adjustments: [...s.adjustments,
-        { id: crypto.randomUUID(), productId, warehouseId, qty, type: "ISSUE", createdAt: new Date().toISOString() }],
+      adjustments: [
+        ...s.adjustments,
+        { id: crypto.randomUUID(), productId, warehouseId, qty, type: "ISSUE", createdAt: new Date().toISOString() },
+      ],
     })),
 
-  addTransferOut: (productId, warehouseId, qty) =>
+  addTransfer: (entry) =>
     set((s) => ({
-      adjustments: [...s.adjustments,
-        { id: crypto.randomUUID(), productId, warehouseId, qty, type: "TRANSFER_OUT", createdAt: new Date().toISOString() }],
+      transfers: [...s.transfers.filter((t) => t.id !== entry.id), entry],
     })),
 
-  addPending: (t) =>
+  updateTransferStatus: (transferId, newStatus) =>
     set((s) => ({
-      pendingTransfers: [...s.pendingTransfers.filter((x) => x.id !== t.id), t],
+      transfers: s.transfers.map((t) => (t.id === transferId ? { ...t, status: newStatus } : t)),
     })),
 
-  completePending: (transferId, toWarehouseId, productId, qty) =>
-    set((s) => ({
-      pendingTransfers: s.pendingTransfers.filter((t) => t.id !== transferId),
-      adjustments: [...s.adjustments,
-        { id: crypto.randomUUID(), productId, warehouseId: toWarehouseId, qty, type: "RECEIVE", createdAt: new Date().toISOString() }],
-    })),
+  // ── Detail helpers ────────────────────────────────────────────────────────
+
+  getReceiveAdjs: (productId, warehouseId) =>
+    get().adjustments.filter(
+      (a) => a.productId === productId && a.warehouseId === warehouseId && a.type === "RECEIVE"
+    ),
+
+  getIssueAdjs: (productId, warehouseId) =>
+    get().adjustments.filter(
+      (a) => a.productId === productId && a.warehouseId === warehouseId && a.type === "ISSUE"
+    ),
+
+  getOutboundReserved: (productId, warehouseId) =>
+    get().transfers.filter(
+      (t) =>
+        t.productId === productId &&
+        t.fromWarehouseId === warehouseId &&
+        OUT_RESERVED.includes(t.status)
+    ),
+
+  getOutboundInTransit: (productId, warehouseId) =>
+    get().transfers.filter(
+      (t) => t.productId === productId && t.fromWarehouseId === warehouseId && t.status === "IN_TRANSIT"
+    ),
+
+  getInboundInTransit: (productId, warehouseId) =>
+    get().transfers.filter(
+      (t) => t.productId === productId && t.toWarehouseId === warehouseId && t.status === "IN_TRANSIT"
+    ),
+
+  getInboundReceived: (productId, warehouseId) =>
+    get().transfers.filter(
+      (t) =>
+        t.productId === productId &&
+        t.toWarehouseId === warehouseId &&
+        IN_CREDITS_ON_HAND.includes(t.status)
+    ),
+
+  // ── Totals ────────────────────────────────────────────────────────────────
+
+  getReceivedTotal: (productId, warehouseId) => {
+    const s = get();
+    return (
+      s.getReceiveAdjs(productId, warehouseId).reduce((n, a) => n + a.qty, 0) +
+      s.getInboundReceived(productId, warehouseId).reduce((n, t) => n + t.quantity, 0)
+    );
+  },
+
+  getIssuedTotal: (productId, warehouseId) => {
+    const s = get();
+    return (
+      s.getIssueAdjs(productId, warehouseId).reduce((n, a) => n + a.qty, 0) +
+      s.getOutboundReserved(productId, warehouseId).reduce((n, t) => n + t.quantity, 0)
+    );
+  },
+
+  getInTransitTotal: (productId, warehouseId) => {
+    const s = get();
+    return (
+      s.getOutboundInTransit(productId, warehouseId).reduce((n, t) => n + t.quantity, 0) +
+      s.getInboundInTransit(productId, warehouseId).reduce((n, t) => n + t.quantity, 0)
+    );
+  },
+
+  // ── Core balances ─────────────────────────────────────────────────────────
 
   getOnHand: (productId, warehouseId, baseStock) => {
-    const adjs = get().adjustments.filter(
-      (a) => a.productId === productId && a.warehouseId === warehouseId
-    );
-    const inflow  = adjs.filter((a) => a.type === "RECEIVE").reduce((s, a) => s + a.qty, 0);
-    const outflow = adjs.filter((a) => a.type === "TRANSFER_OUT").reduce((s, a) => s + a.qty, 0);
-    return baseStock + inflow - outflow;
+    const s = get();
+    const receiveQty      = s.getReceiveAdjs(productId, warehouseId).reduce((n, a) => n + a.qty, 0);
+    const inboundReceived = s.getInboundReceived(productId, warehouseId).reduce((n, t) => n + t.quantity, 0);
+    const outboundGone    = s.transfers
+      .filter(
+        (t) =>
+          t.productId === productId &&
+          t.fromWarehouseId === warehouseId &&
+          OUT_REDUCES_ON_HAND.includes(t.status)
+      )
+      .reduce((n, t) => n + t.quantity, 0);
+    return baseStock + receiveQty + inboundReceived - outboundGone;
   },
-
-  getIssued: (productId, warehouseId) =>
-    get()
-      .adjustments.filter((a) => a.productId === productId && a.warehouseId === warehouseId && a.type === "ISSUE")
-      .reduce((s, a) => s + a.qty, 0),
-
-  getReceived: (productId, warehouseId) =>
-    get()
-      .adjustments.filter((a) => a.productId === productId && a.warehouseId === warehouseId && a.type === "RECEIVE")
-      .reduce((s, a) => s + a.qty, 0),
 
   getAvailable: (productId, warehouseId, baseStock) => {
-    const onHand = get().getOnHand(productId, warehouseId, baseStock);
-    const issued = get().getIssued(productId, warehouseId);
-    return Math.max(0, onHand - issued);
+    const s          = get();
+    const onHand     = s.getOnHand(productId, warehouseId, baseStock);
+    const issueQty   = s.getIssueAdjs(productId, warehouseId).reduce((n, a) => n + a.qty, 0);
+    const reserved   = s.getOutboundReserved(productId, warehouseId).reduce((n, t) => n + t.quantity, 0);
+    return Math.max(0, onHand - issueQty - reserved);
   },
-
-  getPending: (productId, toWarehouseId) =>
-    get().pendingTransfers.filter(
-      (t) => t.productId === productId && t.toWarehouseId === toWarehouseId
-    ),
 }));

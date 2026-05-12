@@ -144,7 +144,7 @@ export default function TransferDetailPage() {
   const user         = getSession();
   const qc           = useQueryClient();
   const { isOnline } = useOfflineSync();
-  const completePending = useInventoryStore((s) => s.completePending);
+  const updateTransferStatus = useInventoryStore((s) => s.updateTransferStatus);
 
   const [toast, setToast]       = useState("");
   const [loading, setLoading]   = useState(false);
@@ -172,9 +172,7 @@ export default function TransferDetailPage() {
     setConfirm(null);
     try {
       await api.patch(`/api/v1/transfers/${id}`, { next_status: next });
-      if (next === "RECEIVED" && transfer) {
-        completePending(id, transfer.to_warehouse_id, transfer.product_id, transfer.quantity);
-      }
+      updateTransferStatus(id, next);
       await qc.invalidateQueries({ queryKey: ["transfer", id] });
       await qc.invalidateQueries({ queryKey: ["transfers", org] });
       setToast(`Transfer updated to ${next}`);
