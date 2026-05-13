@@ -7,6 +7,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { getSession, logout, SA_ORG_SLUG, type SessionUser } from "@/lib/demo-auth";
 import { DEMO_TENANTS, getLowStockProducts } from "@/lib/demo-data";
 import { getCurrentLocale, setLocale, loadLocale } from "@/lib/i18n";
+import { useInventoryStore } from "@/lib/inventory-state";
 
 type Locale = "en" | "am" | "or";
 
@@ -293,6 +294,7 @@ export default function OrgLayout({ children }: { children: React.ReactNode }) {
   const checked  = useRef(false);
   const [user, setUser]   = useState<SessionUser | null>(null);
   const [ready, setReady] = useState(false);
+  const setActiveTenant   = useInventoryStore((s) => s.setActiveTenant);
   const [qc]              = useState(() => new QueryClient({
     defaultOptions: { queries: { retry: 1, staleTime: 30_000 } },
   }));
@@ -330,7 +332,9 @@ export default function OrgLayout({ children }: { children: React.ReactNode }) {
 
     setUser(session);
     setReady(true);
-  }, [org, router]);
+    // Scope the inventory Zustand store to this tenant so balances never bleed
+    setActiveTenant(org !== SA_ORG_SLUG ? org : "");
+  }, [org, router, setActiveTenant]);
 
   if (!ready || !user) {
     return (

@@ -2,6 +2,7 @@ export type AdjustStatus = "DRAFT" | "SUBMITTED" | "APPROVED" | "APPLIED" | "REJ
 
 export interface AdjustRecord {
   id: string;
+  tenant_slug: string;
   product_id: string;
   product_name: string;
   product_sku: string;

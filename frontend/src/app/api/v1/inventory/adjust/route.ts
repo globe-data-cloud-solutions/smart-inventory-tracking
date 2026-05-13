@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { demoAdjustments, getRequiredRole, type AdjustRecord } from "./_demo-state";
 
 export async function POST(req: NextRequest) {
+  const tenantSlug = req.headers.get("X-Tenant-Slug") ?? "";
   const body = (await req.json()) as {
     product_id?: string; product_name?: string; product_sku?: string;
     warehouse_id?: string; warehouse_name?: string;
@@ -31,25 +32,26 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  const absQty     = Math.abs(qty);
-  const reqRole    = getRequiredRole(absQty);
-  const autoApply  = reqRole === "NONE";
-  const now        = new Date().toISOString();
+  const absQty    = Math.abs(qty);
+  const reqRole   = getRequiredRole(absQty);
+  const autoApply = reqRole === "NONE";
+  const now       = new Date().toISOString();
 
   const record: AdjustRecord = {
-    id:                   crypto.randomUUID(),
-    product_id:           body.product_id,
-    product_name:         body.product_name ?? body.product_id,
-    product_sku:          body.product_sku  ?? "",
-    warehouse_id:         body.warehouse_id,
-    warehouse_name:       body.warehouse_name ?? body.warehouse_id,
-    quantity:             qty,
-    reason_code:          body.reason_code,
-    notes:                body.notes ?? "",
-    status:               autoApply ? "APPLIED" : "SUBMITTED",
+    id:                     crypto.randomUUID(),
+    tenant_slug:            tenantSlug,
+    product_id:             body.product_id,
+    product_name:           body.product_name ?? body.product_id,
+    product_sku:            body.product_sku  ?? "",
+    warehouse_id:           body.warehouse_id,
+    warehouse_name:         body.warehouse_name ?? body.warehouse_id,
+    quantity:               qty,
+    reason_code:            body.reason_code,
+    notes:                  body.notes ?? "",
+    status:                 autoApply ? "APPLIED" : "SUBMITTED",
     approval_required_role: reqRole,
-    idempotency_key:      body.idempotency_key ?? crypto.randomUUID(),
-    created_at:           now,
+    idempotency_key:        body.idempotency_key ?? crypto.randomUUID(),
+    created_at:             now,
   };
 
   demoAdjustments.unshift(record);
@@ -60,10 +62,14 @@ export async function POST(req: NextRequest) {
   );
 }
 
-export async function GET() {
+export async function GET(req: NextRequest) {
+  const tenantSlug = req.headers.get("X-Tenant-Slug") ?? "";
+  const data = tenantSlug
+    ? demoAdjustments.filter((a) => a.tenant_slug === tenantSlug)
+    : [];
   return NextResponse.json({
     success: true,
-    data: demoAdjustments,
+    data,
     request_id: crypto.randomUUID(),
     timestamp: new Date().toISOString(),
   });

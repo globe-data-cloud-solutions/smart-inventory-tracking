@@ -10,7 +10,7 @@ export const demoSkuCounter = {
 
 export const demoProducts: Array<{
   id: string; sku: string; name: string; type_code: string;
-  unit: string; pack_size: number; tenant_id: string; created_at: string;
+  unit: string; pack_size: number; tenant_slug: string; created_at: string;
 }> = [];
 
 // Derive org abbreviation from slug: "addis-water" → "AW"

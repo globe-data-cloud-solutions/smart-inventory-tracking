@@ -3,7 +3,7 @@
 import { useParams } from "next/navigation";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { getSession, SA_ORG_SLUG } from "@/lib/demo-auth";
-import { DEMO_TENANTS } from "@/lib/demo-data";
+import { DEMO_TENANTS, type DemoTenant } from "@/lib/demo-data";
 import { NewAdjustmentPanel } from "@/components/features/inventory/NewAdjustmentPanel";
 import { api } from "@/lib/api";
 
@@ -25,13 +25,28 @@ const STATUS_STYLE: Record<AdjStatus, { bg: string; color: string }> = {
   CANCELLED: { bg: "#F3F4F6", color: "#9CA3AF" },
 };
 
-const DEMO_ADJ: AdjRecord[] = [
-  { id: "da1", product_name: "Addis Water 500ml P6",  product_sku: "AW-500-P6",   warehouse_name: "North WH",  quantity: -120, reason_code: "DAMAGE",         notes: "Moisture exposure", status: "APPLIED",   approval_required_role: "NONE", created_at: "2026-05-01T08:00:00Z" },
-  { id: "da2", product_name: "Addis Water 1L P12",    product_sku: "AW-1L-P12",   warehouse_name: "East WH",   quantity:  200, reason_code: "COUNT_VARIANCE",  notes: "Count higher",      status: "APPLIED",   approval_required_role: "NONE", created_at: "2026-04-28T10:00:00Z" },
-  { id: "da3", product_name: "Addis Water 500ml P24", product_sku: "AW-500-P24",  warehouse_name: "South WH",  quantity:  -80, reason_code: "EXPIRY",          notes: "Expired disposal",  status: "APPLIED",   approval_required_role: "NONE", created_at: "2026-04-20T14:00:00Z" },
-  { id: "da4", product_name: "Addis Water 1.5L P6",   product_sku: "AW-1.5L-P6",  warehouse_name: "West WH",   quantity:  350, reason_code: "COUNT_VARIANCE",  notes: "Bonus delivery",    status: "SUBMITTED", approval_required_role: "RM",   created_at: "2026-05-09T11:00:00Z" },
-  { id: "da5", product_name: "Addis Water SP500 P6",  product_sku: "AW-SP500-P6", warehouse_name: "North WH",  quantity: -150, reason_code: "SUPPLIER_RETURN", notes: "Transit damage",    status: "SUBMITTED", approval_required_role: "RM",   created_at: "2026-05-09T16:00:00Z" },
-];
+const REASONS = ["DAMAGE", "COUNT_VARIANCE", "EXPIRY", "SUPPLIER_RETURN", "SAMPLE"];
+const NOTES   = ["Moisture exposure", "Count discrepancy resolved", "Expired batch disposed", "Transit damage on return", "Promotion sample"];
+
+/** Build seed adjustments from this tenant's own products — no hardcoded cross-tenant data. */
+function buildSeedAdj(tenant: DemoTenant): AdjRecord[] {
+  return tenant.products.slice(0, 5).map((p, i) => {
+    const wh  = tenant.warehouses[i % tenant.warehouses.length];
+    const qty = i % 2 === 0 ? -(50 + i * 30) : (100 + i * 50);
+    return {
+      id:                    `seed-adj-${tenant.id}-${i}`,
+      product_name:          p.name,
+      product_sku:           p.sku,
+      warehouse_name:        wh?.name ?? "Warehouse",
+      quantity:              qty,
+      reason_code:           REASONS[i % REASONS.length] ?? "DAMAGE",
+      notes:                 NOTES[i % NOTES.length] ?? "",
+      status:                i < 3 ? "APPLIED" : "SUBMITTED",
+      approval_required_role: i < 3 ? "NONE" : "RM",
+      created_at:            `2026-0${i + 1 < 10 ? "0" : ""}${i + 1}-15T10:00:00Z`,
+    } satisfies AdjRecord;
+  });
+}
 
 // Which roles can approve/reject which pending adjustments
 const CAN_APPROVE: Record<string, string[]> = {
@@ -53,7 +68,8 @@ export default function AdjustmentsPage() {
     staleTime: 0,
   });
 
-  const allAdj: AdjRecord[] = [...apiAdj, ...DEMO_ADJ];
+  const seedAdj = buildSeedAdj(tenant);
+  const allAdj: AdjRecord[] = [...apiAdj, ...seedAdj];
   const approvableRoles = CAN_APPROVE[user.role] ?? [];
 
   async function transition(id: string, next: AdjStatus) {

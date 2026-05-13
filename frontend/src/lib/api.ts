@@ -2,6 +2,17 @@ const BASE_URL = process.env.NEXT_PUBLIC_API_URL ?? "";
 
 type Method = "GET" | "POST" | "PATCH" | "DELETE" | "PUT";
 
+/** Read the tenant slug from the session so API routes can filter by tenant. */
+function getTenantSlug(): string {
+  if (typeof window === "undefined") return "";
+  try {
+    const raw = window.localStorage.getItem("smart_demo_session");
+    if (!raw) return "";
+    const s = JSON.parse(raw) as { orgSlug?: string };
+    return s.orgSlug && s.orgSlug !== "admin" ? s.orgSlug : "";
+  } catch { return ""; }
+}
+
 export interface ApiResponse<T> {
   success: boolean;
   data: T;
@@ -26,6 +37,8 @@ async function request<T>(
     "Content-Type": "application/json",
   };
   if (token) headers["Authorization"] = `Bearer ${token}`;
+  const tenantSlug = getTenantSlug();
+  if (tenantSlug) headers["X-Tenant-Slug"] = tenantSlug;
 
   const res = await fetch(`${BASE_URL}${path}`, {
     method,

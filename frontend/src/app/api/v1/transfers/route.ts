@@ -2,16 +2,12 @@ import { NextRequest, NextResponse } from "next/server";
 import { demoTransfers, refCounter, type TransferRecord } from "./_demo-state";
 
 export async function POST(req: NextRequest) {
+  const tenantSlug = req.headers.get("X-Tenant-Slug") ?? "";
   const body = (await req.json()) as {
-    product_id?: string;
-    product_name?: string;
-    from_warehouse_id?: string;
-    from_warehouse_name?: string;
-    to_warehouse_id?: string;
-    to_warehouse_name?: string;
-    quantity?: number | string;
-    notes?: string;
-    idempotency_key?: string;
+    product_id?: string; product_name?: string;
+    from_warehouse_id?: string; from_warehouse_name?: string;
+    to_warehouse_id?: string; to_warehouse_name?: string;
+    quantity?: number | string; notes?: string; idempotency_key?: string;
   };
 
   if (!body.product_id || !body.from_warehouse_id || !body.to_warehouse_id) {
@@ -20,14 +16,12 @@ export async function POST(req: NextRequest) {
       { status: 422 }
     );
   }
-
   if (body.from_warehouse_id === body.to_warehouse_id) {
     return NextResponse.json(
       { success: false, error: { code: "VALIDATION_ERROR", message: "From and to warehouse must be different" } },
       { status: 422 }
     );
   }
-
   const qty = parseFloat(String(body.quantity ?? "0"));
   if (!qty || qty <= 0) {
     return NextResponse.json(
@@ -40,6 +34,7 @@ export async function POST(req: NextRequest) {
   const record: TransferRecord = {
     id: crypto.randomUUID(),
     ref: refCounter.next(),
+    tenant_slug: tenantSlug,
     product_id: body.product_id,
     product_name: body.product_name ?? body.product_id,
     from_warehouse_id: body.from_warehouse_id,
@@ -61,10 +56,14 @@ export async function POST(req: NextRequest) {
   );
 }
 
-export async function GET() {
+export async function GET(req: NextRequest) {
+  const tenantSlug = req.headers.get("X-Tenant-Slug") ?? "";
+  const data = tenantSlug
+    ? demoTransfers.filter((t) => t.tenant_slug === tenantSlug)
+    : [];
   return NextResponse.json({
     success: true,
-    data: demoTransfers,
+    data,
     request_id: crypto.randomUUID(),
     timestamp: new Date().toISOString(),
   });

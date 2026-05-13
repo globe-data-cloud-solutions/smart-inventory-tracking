@@ -1,19 +1,19 @@
 import { NextRequest, NextResponse } from "next/server";
 import { demoSkuCounter, demoProducts, buildSku } from "./_demo-state";
 
-const VALID_UNITS  = ["KG", "PACK", "QTL", "MT"] as const;
-const VALID_PACKS  = [1, 4, 6, 12] as const;
-const DEMO_TENANT  = "10000001-0000-0000-0000-000000000001";
+const VALID_UNITS = ["KG", "PACK", "QTL", "MT"] as const;
+const VALID_PACKS = [1, 4, 6, 12] as const;
 
 export async function POST(req: NextRequest) {
+  const tenantSlug = req.headers.get("X-Tenant-Slug") ?? "unknown";
   const body = (await req.json()) as {
     name?: string; type_code?: string; unit?: string;
     pack_size?: number; org_slug?: string;
   };
 
-  const name      = typeof body.name === "string" ? body.name.trim() : "";
-  const typeCode  = typeof body.type_code === "string" ? body.type_code.trim().toUpperCase() : "";
-  const orgSlug   = typeof body.org_slug === "string" ? body.org_slug : "org";
+  const name     = typeof body.name === "string" ? body.name.trim() : "";
+  const typeCode = typeof body.type_code === "string" ? body.type_code.trim().toUpperCase() : "";
+  const orgSlug  = typeof body.org_slug === "string" ? body.org_slug : tenantSlug;
 
   if (!name) {
     return NextResponse.json(
@@ -41,8 +41,8 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  // 409 duplicate (case-insensitive, same tenant)
-  if (demoProducts.some((p) => p.name.toLowerCase() === name.toLowerCase())) {
+  // 409 duplicate within the same tenant only
+  if (demoProducts.some((p) => p.tenant_slug === tenantSlug && p.name.toLowerCase() === name.toLowerCase())) {
     return NextResponse.json(
       { success: false, error: { code: "duplicate_product_name", message: "Duplicate product name" } },
       { status: 409 }
@@ -54,7 +54,7 @@ export async function POST(req: NextRequest) {
   const id  = crypto.randomUUID();
   const now = new Date().toISOString();
 
-  const product = { id, sku, name, type_code: typeCode, unit: body.unit!, pack_size: packSize, tenant_id: DEMO_TENANT, created_at: now };
+  const product = { id, sku, name, type_code: typeCode, unit: body.unit!, pack_size: packSize, tenant_slug: tenantSlug, created_at: now };
   demoProducts.push(product);
 
   return NextResponse.json(
@@ -63,10 +63,14 @@ export async function POST(req: NextRequest) {
   );
 }
 
-export async function GET() {
+export async function GET(req: NextRequest) {
+  const tenantSlug = req.headers.get("X-Tenant-Slug") ?? "";
+  const data = tenantSlug
+    ? demoProducts.filter((p) => p.tenant_slug === tenantSlug)
+    : [];
   return NextResponse.json({
     success: true,
-    data: demoProducts,
+    data,
     request_id: crypto.randomUUID(),
     timestamp: new Date().toISOString(),
   });
