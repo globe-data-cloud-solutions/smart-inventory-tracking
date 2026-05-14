@@ -5,7 +5,7 @@ import { useState } from "react";
 import Link from "next/link";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { getSession, SA_ORG_SLUG } from "@/lib/demo-auth";
-import { DEMO_TENANTS } from "@/lib/demo-data";
+import { DEMO_TENANTS, type DemoWarehouse } from "@/lib/demo-data";
 import { NewTransferPanel } from "@/components/features/transfers/NewTransferPanel";
 import { useInventoryStore } from "@/lib/inventory-state";
 import { useOfflineSync } from "@/hooks/useOfflineSync";
@@ -35,6 +35,7 @@ interface ApiTransfer {
   transfer_type: TransferType;
   product_id: string;
   product_name: string;
+  from_warehouse_id: string;
   from_warehouse_name: string;
   to_warehouse_id: string;
   to_warehouse_name: string;
@@ -42,6 +43,55 @@ interface ApiTransfer {
   notes: string;
   status: TransferStatus;
   created_at: string;
+}
+
+/**
+ * Returns all descendant warehouse IDs for a given facility (breadth-first via parentId).
+ * MWH nodes at the apex of the hierarchy have no declared children in the current demo
+ * data, so this primarily handles RWH→WH→SUB_WH chains.
+ */
+function getAuthorityScope(warehouseId: string, warehouses: DemoWarehouse[]): string[] {
+  const scope = new Set<string>([warehouseId]);
+  function addDescendants(parentId: string) {
+    for (const wh of warehouses) {
+      if (wh.parentId === parentId && !scope.has(wh.id)) {
+        scope.add(wh.id);
+        addDescendants(wh.id);
+      }
+    }
+  }
+  addDescendants(warehouseId);
+  return Array.from(scope);
+}
+
+/**
+ * Filters the transfer list to only those the current user should see.
+ *
+ * Visibility rules (per CLAUDE.md §13 ABAC + IMTS hierarchy):
+ *   TA / SA         → all transfers (platform / tenant admin)
+ *   RM / LM / AU   → all transfers (no specific facility assignment)
+ *   NM at MWH      → all transfers (apex of supply hierarchy)
+ *   NM / WM at RWH → transfers involving that RWH and all its descendant WHs
+ *   WM at WH/SUB_WH → only transfers where that WH is source or destination
+ */
+function scopeTransfers(
+  transfers: ApiTransfer[],
+  role: string,
+  warehouseId: string | undefined,
+  warehouses: DemoWarehouse[]
+): ApiTransfer[] {
+  if (["TA", "SA", "RM", "LM", "AU"].includes(role)) return transfers;
+  if (!warehouseId) return transfers;
+
+  // MWH is the supply apex — the manager sees every transfer company-wide
+  const userWH = warehouses.find((w) => w.id === warehouseId);
+  if (userWH?.type === "MWH") return transfers;
+
+  // For every other node: scope = own WH + all descendants
+  const scope = getAuthorityScope(warehouseId, warehouses);
+  return transfers.filter(
+    (t) => scope.includes(t.from_warehouse_id) || scope.includes(t.to_warehouse_id)
+  );
 }
 
 interface Action {
@@ -274,6 +324,9 @@ export default function TransfersPage() {
     refetchInterval: 15000,
   });
 
+  // Apply hierarchy + role scoping: each user sees only transfers within their authority
+  const visibleTransfers = scopeTransfers(allTransfers, user.role, user.warehouseId, tenant.warehouses);
+
   async function doTransition(id: string, next: TransferStatus) {
     if (!isOnline) {
       setConfirmModal(null);
@@ -299,10 +352,10 @@ export default function TransfersPage() {
   }
 
   const stats = {
-    draft:      allTransfers.filter((t) => t.status === "DRAFT").length,
-    inTransit:  allTransfers.filter((t) => t.status === "IN_TRANSIT").length,
-    pending:    allTransfers.filter((t) => ["PENDING_REVIEW", "PENDING_APPROVAL", "PENDING_SOURCE_CONFIRM", "PENDING_DEST_CONFIRM"].includes(t.status)).length,
-    approved:   allTransfers.filter((t) => ["APPROVED", "ADVISED", "ISSUED"].includes(t.status)).length,
+    draft:      visibleTransfers.filter((t) => t.status === "DRAFT").length,
+    inTransit:  visibleTransfers.filter((t) => t.status === "IN_TRANSIT").length,
+    pending:    visibleTransfers.filter((t) => ["PENDING_REVIEW", "PENDING_APPROVAL", "PENDING_SOURCE_CONFIRM", "PENDING_DEST_CONFIRM"].includes(t.status)).length,
+    approved:   visibleTransfers.filter((t) => ["APPROVED", "ADVISED", "ISSUED"].includes(t.status)).length,
   };
 
   return (
@@ -351,7 +404,7 @@ export default function TransfersPage() {
         <div>
           <h2 style={{ fontSize: "1.5rem", fontWeight: 700, color: "#0f2d1f", margin: 0 }}>Transfers</h2>
           <p style={{ fontSize: 13, color: "#6B7280", margin: "4px 0 0" }}>
-            {tenant.name} · {allTransfers.length} transfer orders
+            {tenant.name} · {visibleTransfers.length} transfer{visibleTransfers.length !== 1 ? "s" : ""}{user.warehouseId && !["TA","SA","RM","LM"].includes(user.role) ? " · " + (user.warehouseName ?? "your warehouse") : ""}
           </p>
         </div>
         <NewTransferPanel products={tenant.products} warehouses={tenant.warehouses} orgSlug={org} />
@@ -384,7 +437,7 @@ export default function TransfersPage() {
               </tr>
             </thead>
             <tbody>
-              {allTransfers.map((t, idx) => {
+              {visibleTransfers.map((t, idx) => {
                 const s    = STATUS_STYLE[t.status] ?? { bg: "#F3F4F6", color: "#6B7280" };
                 const tb   = TYPE_BADGE[t.transfer_type] ?? { bg: "#F3F4F6", color: "#6B7280", label: t.transfer_type };
                 const acts = getAvailableActions(user.role, t.transfer_type, t.status);
@@ -450,7 +503,7 @@ export default function TransfersPage() {
             </tbody>
           </table>
         </div>
-        {allTransfers.length === 0 && (
+        {visibleTransfers.length === 0 && (
           <p style={{ padding: "2rem", textAlign: "center", color: "#9CA3AF", fontSize: 13 }}>No transfers yet. Click "+ New Transfer" to create one.</p>
         )}
       </div>
