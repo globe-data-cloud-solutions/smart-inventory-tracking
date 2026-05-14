@@ -195,8 +195,10 @@ function getAvailableActions(role: string, type: TransferType, status: TransferS
   if (role === "NM") {
     if (type === "PULL") {
       const map: Partial<Record<TransferStatus, Action[]>> = {
+        PENDING_REVIEW:   [toApproval, reject, cancel],
         PENDING_APPROVAL: [approve, reject, cancel],
         APPROVED:         [issue, cancel],
+        ISSUED:           [dispatch],
       };
       return map[status] ?? [];
     }
@@ -205,6 +207,8 @@ function getAvailableActions(role: string, type: TransferType, status: TransferS
         DRAFT:            [toApproval, cancel],
         PENDING_APPROVAL: [approve, reject, cancel],
         APPROVED:         [advise, issue, cancel],
+        ADVISED:          [issue, cancel],
+        ISSUED:           [dispatch],
       };
       return map[status] ?? [];
     }

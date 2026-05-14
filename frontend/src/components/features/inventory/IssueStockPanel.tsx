@@ -58,7 +58,7 @@ function Field({ label, hint, children }: { label: string; hint?: string; childr
 export function IssueStockPanel({ products, warehouses, orgSlug }: Props) {
   const { isOnline } = useOfflineSync();
   const qc = useQueryClient();
-  const addIssue = useInventoryStore((s) => s.addIssue);
+  const { addIssue, getAvailable } = useInventoryStore();
 
   const [open, setOpen]             = useState(false);
   const [productId, setProductId]   = useState("");
@@ -83,12 +83,17 @@ export function IssueStockPanel({ products, warehouses, orgSlug }: Props) {
   const availableWarehouses = productId
     ? warehouses.filter((w) => {
         const p = products.find((pr) => pr.id === productId);
-        return p ? (p.stock[w.id] ?? 0) > 0 : true;
+        if (!p) return true;
+        const base = p.stock[w.id] ?? 0;
+        return getAvailable(p.id, w.id, base) > 0;
       })
     : warehouses;
 
-  const selectedProduct  = products.find((p) => p.id === productId);
-  const availableStock   = selectedProduct && warehouseId ? (selectedProduct.stock[warehouseId] ?? 0) : null;
+  const selectedProduct = products.find((p) => p.id === productId);
+  // Use live Available from inventory store (reflects reserved/in-transit stock)
+  const availableStock  = selectedProduct && warehouseId
+    ? getAvailable(selectedProduct.id, warehouseId, selectedProduct.stock[warehouseId] ?? 0)
+    : null;
 
   const onSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -184,10 +189,12 @@ export function IssueStockPanel({ products, warehouses, orgSlug }: Props) {
             <select value={warehouseId} onChange={(e) => setWarehouseId(e.target.value)} style={SELECT} required>
               <option value="">— select warehouse —</option>
               {availableWarehouses.map((w) => {
-                const stock = selectedProduct ? (selectedProduct.stock[w.id] ?? 0) : null;
+                const liveAvail = selectedProduct
+                  ? getAvailable(selectedProduct.id, w.id, selectedProduct.stock[w.id] ?? 0)
+                  : null;
                 return (
                   <option key={w.id} value={w.id}>
-                    {w.name}{stock !== null ? ` · ${stock.toLocaleString()} in stock` : ""}
+                    {w.name}{liveAvail !== null ? ` · ${liveAvail.toLocaleString()} available` : ""}
                   </option>
                 );
               })}

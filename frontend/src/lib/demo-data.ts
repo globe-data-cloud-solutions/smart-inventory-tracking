@@ -171,6 +171,8 @@ const ADDIS_WATER: DemoTenant = {
   users: [
     { id: "aw-u01", email: "admin@addis-water.com",       password: "AddisWater@2026",  name: "Yohannes Tesfaye",  role: "TA" },
     { id: "aw-u02", email: "production@addis-water.com",  password: "AddisWater@2026",  name: "Selam Bekele",      role: "NM", warehouseId: "aw-main",      warehouseName: "Main Production Center" },
+    { id: "aw-u08", email: "regional@addis-water.com",    password: "AddisWater@2026",  name: "Meron Alemu",       role: "RM" },
+    { id: "aw-u09", email: "logistics@addis-water.com",   password: "AddisWater@2026",  name: "Abreham Kassa",     role: "LM" },
     { id: "aw-u03", email: "north.wm@addis-water.com",    password: "AddisWater@2026",  name: "Hailu Tadesse",     role: "WM", warehouseId: "aw-north",     warehouseName: "North WH" },
     { id: "aw-u04", email: "northsub.wm@addis-water.com", password: "AddisWater@2026",  name: "Tigist Alemu",      role: "WM", warehouseId: "aw-north-sub", warehouseName: "North-Subcenter WH" },
     { id: "aw-u05", email: "south.wm@addis-water.com",    password: "AddisWater@2026",  name: "Dawit Girma",       role: "WM", warehouseId: "aw-south",     warehouseName: "South WH" },
@@ -300,13 +302,15 @@ const MUGER_CEMENT: DemoTenant = {
     },
   ],
   users: [
-    { id: "mc-u01", email: "admin@muger-cement.com",       password: "MugerCement@2026", name: "Abeba Haile",       role: "TA" },
-    { id: "mc-u02", email: "harar.pm@muger-cement.com",    password: "MugerCement@2026", name: "Biruk Mengistu",    role: "NM", warehouseId: "mc-harar",    warehouseName: "Harar Production Center" },
-    { id: "mc-u03", email: "ambo.pm@muger-cement.com",     password: "MugerCement@2026", name: "Meseret Tadesse",   role: "NM", warehouseId: "mc-ambo",     warehouseName: "Ambo Production Center" },
-    { id: "mc-u04", email: "kombolcha.wm@muger-cement.com",password: "MugerCement@2026", name: "Getnet Assefa",     role: "WM", warehouseId: "mc-kombolcha",warehouseName: "Kombolcha WH" },
-    { id: "mc-u05", email: "mekele.wm@muger-cement.com",   password: "MugerCement@2026", name: "Hiwot Gebre",       role: "WM", warehouseId: "mc-mekele",   warehouseName: "Mekele WH" },
-    { id: "mc-u06", email: "diredawa.wm@muger-cement.com", password: "MugerCement@2026", name: "Abdulaziz Hassen",  role: "WM", warehouseId: "mc-diredawa", warehouseName: "Dire Dawa WH" },
-    { id: "mc-u07", email: "hawassa.wm@muger-cement.com",  password: "MugerCement@2026", name: "Tigabu Tesfay",     role: "WM", warehouseId: "mc-hawassa",  warehouseName: "Hawassa WH" },
+    { id: "mc-u01", email: "admin@muger-cement.com",         password: "MugerCement@2026", name: "Abeba Haile",       role: "TA" },
+    { id: "mc-u02", email: "harar.pm@muger-cement.com",      password: "MugerCement@2026", name: "Biruk Mengistu",    role: "NM", warehouseId: "mc-harar",    warehouseName: "Harar Production Center" },
+    { id: "mc-u03", email: "ambo.pm@muger-cement.com",       password: "MugerCement@2026", name: "Meseret Tadesse",   role: "NM", warehouseId: "mc-ambo",     warehouseName: "Ambo Production Center" },
+    { id: "mc-u08", email: "regional@muger-cement.com",      password: "MugerCement@2026", name: "Chaltu Gemechu",    role: "RM" },
+    { id: "mc-u09", email: "logistics@muger-cement.com",     password: "MugerCement@2026", name: "Lemi Belay",        role: "LM" },
+    { id: "mc-u04", email: "kombolcha.wm@muger-cement.com",  password: "MugerCement@2026", name: "Getnet Assefa",     role: "WM", warehouseId: "mc-kombolcha",warehouseName: "Kombolcha WH" },
+    { id: "mc-u05", email: "mekele.wm@muger-cement.com",     password: "MugerCement@2026", name: "Hiwot Gebre",       role: "WM", warehouseId: "mc-mekele",   warehouseName: "Mekele WH" },
+    { id: "mc-u06", email: "diredawa.wm@muger-cement.com",   password: "MugerCement@2026", name: "Abdulaziz Hassen",  role: "WM", warehouseId: "mc-diredawa", warehouseName: "Dire Dawa WH" },
+    { id: "mc-u07", email: "hawassa.wm@muger-cement.com",    password: "MugerCement@2026", name: "Tigabu Tesfay",     role: "WM", warehouseId: "mc-hawassa",  warehouseName: "Hawassa WH" },
   ],
 };
 
