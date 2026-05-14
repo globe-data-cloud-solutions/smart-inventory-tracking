@@ -4,86 +4,51 @@ import { useParams } from "next/navigation";
 import { useState } from "react";
 import { getSession, SA_ORG_SLUG } from "@/lib/demo-auth";
 import { DEMO_TENANTS } from "@/lib/demo-data";
+import { useAuditStore } from "@/lib/audit-log-state";
 
 const DARK = "#0f2d1f";
 
-type Decision = "GRANTED" | "DENIED" | "CONDITIONAL";
-
-interface AuditEntry {
-  id: string;
-  timestamp: string;
-  user_name: string;
-  role: string;
-  action: string;
-  resource_type: string;
-  decision: Decision;
-  reason: string;
-}
-
-const DECISION_STYLE: Record<Decision, { bg: string; color: string }> = {
-  GRANTED:     { bg: "#DCFCE7", color: "#166534" },
-  DENIED:      { bg: "#FEE2E2", color: "#991B1B" },
-  CONDITIONAL: { bg: "#FEF3C7", color: "#92400E" },
+const CATEGORY_STYLE: Record<string, { bg: string; color: string; icon: string }> = {
+  TRANSFER:    { bg: "#DBEAFE", color: "#1E40AF", icon: "🔄" },
+  INVENTORY:   { bg: "#DCFCE7", color: "#166534", icon: "📦" },
+  ADJUSTMENT:  { bg: "#FEF3C7", color: "#92400E", icon: "✏️" },
+  SYSTEM:      { bg: "#F3F4F6", color: "#374151", icon: "⚙️" },
 };
 
-function makeEntries(tenantName: string, users: Array<{ name: string; role: string }>): AuditEntry[] {
-  const now   = Date.now();
-  const entry = (
-    offsetMs: number, user: { name: string; role: string }, action: string,
-    resource: string, decision: Decision, reason: string
-  ): AuditEntry => ({
-    id:            crypto.randomUUID(),
-    timestamp:     new Date(now - offsetMs).toISOString(),
-    user_name:     user.name,
-    role:          user.role,
-    action,
-    resource_type: resource,
-    decision,
-    reason,
-  });
-
-  const fallback = { name: "User", role: "TA" };
-  const ta = users[0] ?? fallback;
-  const nm = users[1] ?? fallback;
-  const rm = users[2] ?? fallback;
-  const wm = users[3] ?? fallback;
-
-  return [
-    entry(60_000,       wm,  "inventory:receive",        "InventoryTransaction", "GRANTED",     ""),
-    entry(120_000,      wm,  "inventory:adjust",         "InventoryTransaction", "CONDITIONAL", "APPROVAL_REQUIRED"),
-    entry(180_000,      rm,  "inventory:adjust:approve", "AdjustmentOrder",      "GRANTED",     ""),
-    entry(300_000,      wm,  "inventory:transfer",       "TransferOrder",        "GRANTED",     ""),
-    entry(600_000,      ta,  "product:create",           "Product",              "GRANTED",     ""),
-    entry(900_000,      nm,  "report:view",              "Report",               "GRANTED",     ""),
-    entry(1_200_000,    wm,  "dispatch:fefo_override",   "DispatchConfig",       "DENIED",      "RBAC_DENIED"),
-    entry(1_800_000,    rm,  "tenant:configure",         "Tenant",               "DENIED",      "ABAC_DENIED: tenant mismatch"),
-    entry(3_600_000,    ta,  "user:invite",              "User",                 "GRANTED",     ""),
-    entry(7_200_000,    wm,  "inventory:cycle_count",    "StockCountSession",    "GRANTED",     ""),
-    entry(14_400_000,   nm,  "ai:forecast_view",         "AIForecast",           "DENIED",      "RBAC_DENIED"),
-    entry(86_400_000,   ta,  "tenant:set_org_type",      "Tenant",               "GRANTED",     ""),
-  ];
-}
-
 export default function AuditLogPage() {
-  const { org }     = useParams() as { org: string };
-  const user        = getSession();
-  const [filter, setFilter] = useState<"ALL" | Decision>("ALL");
+  const { org }  = useParams() as { org: string };
+  const user     = getSession();
+  const entries  = useAuditStore((s) => s.getForTenant);
+
+  const [categoryFilter, setCategoryFilter] = useState<"ALL" | "TRANSFER" | "INVENTORY" | "ADJUSTMENT">("ALL");
+  const [search, setSearch] = useState("");
 
   if (!user) return null;
+  if (org === SA_ORG_SLUG) return <p style={{ padding: "2rem", color: "#6B7280" }}>Select a tenant to view the audit log.</p>;
 
-  const isSA    = user.role === "SA";
-  const tenant  = org === SA_ORG_SLUG ? null : DEMO_TENANTS.find((t) => t.slug === org);
+  const tenant = DEMO_TENANTS.find((t) => t.slug === org);
+  if (!tenant) return <p style={{ padding: "2rem", color: "#6B7280" }}>Tenant not found.</p>;
 
-  const tenantName = tenant?.name ?? "Platform";
-  const users      = tenant?.users ?? [];
+  const tenantEntries = entries(org).sort((a, b) => b.timestamp.localeCompare(a.timestamp));
 
-  const allEntries = makeEntries(tenantName, users);
-  const entries    = filter === "ALL" ? allEntries : allEntries.filter((e) => e.decision === filter);
+  const filtered = tenantEntries.filter((e) => {
+    if (categoryFilter !== "ALL" && e.category !== categoryFilter) return false;
+    if (search.trim()) {
+      const q = search.toLowerCase();
+      return (
+        e.action.toLowerCase().includes(q) ||
+        e.resourceRef.toLowerCase().includes(q) ||
+        e.details.toLowerCase().includes(q) ||
+        e.userName.toLowerCase().includes(q)
+      );
+    }
+    return true;
+  });
 
   const counts = {
-    GRANTED:     allEntries.filter((e) => e.decision === "GRANTED").length,
-    DENIED:      allEntries.filter((e) => e.decision === "DENIED").length,
-    CONDITIONAL: allEntries.filter((e) => e.decision === "CONDITIONAL").length,
+    TRANSFER:   tenantEntries.filter((e) => e.category === "TRANSFER").length,
+    INVENTORY:  tenantEntries.filter((e) => e.category === "INVENTORY").length,
+    ADJUSTMENT: tenantEntries.filter((e) => e.category === "ADJUSTMENT").length,
   };
 
   return (
@@ -92,94 +57,115 @@ export default function AuditLogPage() {
       <div style={{ marginBottom: "1.5rem" }}>
         <h2 style={{ fontSize: "1.5rem", fontWeight: 700, color: DARK, margin: 0 }}>Audit Log</h2>
         <p style={{ fontSize: 13, color: "#6B7280", margin: "4px 0 0" }}>
-          {tenantName} · Append-only record of all permission decisions
+          {tenant.name} · {tenantEntries.length} recorded events · append-only
         </p>
       </div>
 
-      {/* Summary chips + filter */}
-      <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: "1.5rem", flexWrap: "wrap" }}>
-        {(["ALL", "GRANTED", "DENIED", "CONDITIONAL"] as const).map((d) => {
-          const count = d === "ALL" ? allEntries.length : counts[d];
-          const s = d === "ALL"
-            ? { bg: "#F3F4F6", color: "#374151" }
-            : DECISION_STYLE[d];
+      {/* Toolbar */}
+      <div style={{ display: "flex", gap: 10, marginBottom: "1.5rem", flexWrap: "wrap", alignItems: "center" }}>
+        {/* Category filters */}
+        {(["ALL", "TRANSFER", "INVENTORY", "ADJUSTMENT"] as const).map((cat) => {
+          const count = cat === "ALL" ? tenantEntries.length : counts[cat];
+          const s = cat !== "ALL" ? CATEGORY_STYLE[cat] : { bg: "#F3F4F6", color: "#374151", icon: "" };
           return (
             <button
-              key={d}
-              onClick={() => setFilter(d)}
+              key={cat}
+              onClick={() => setCategoryFilter(cat)}
               style={{
-                fontSize: 12, fontWeight: 700, padding: "4px 12px", borderRadius: 20,
-                border: filter === d ? "2px solid #0f2d1f" : "2px solid transparent",
-                background: filter === d ? s.bg : "#F9FAFB",
-                color: filter === d ? s.color : "#6B7280", cursor: "pointer",
+                fontSize: 12, fontWeight: 700, padding: "4px 12px", borderRadius: 20, cursor: "pointer",
+                border: categoryFilter === cat ? "2px solid #0f2d1f" : "2px solid transparent",
+                background: categoryFilter === cat ? s.bg : "#F9FAFB",
+                color: categoryFilter === cat ? s.color : "#6B7280",
               }}
             >
-              {d} {count > 0 && `(${count})`}
+              {s.icon && `${s.icon} `}{cat} ({count})
             </button>
           );
         })}
-        <span style={{ marginLeft: "auto", fontSize: 12, color: "#9CA3AF" }}>
-          No UPDATE or DELETE — append-only enforced by PostgreSQL RULE
+
+        {/* Search */}
+        <div style={{ position: "relative", flex: 1, minWidth: 200 }}>
+          <span style={{ position: "absolute", left: 10, top: "50%", transform: "translateY(-50%)", color: "#9CA3AF", fontSize: 13 }}>🔍</span>
+          <input
+            type="text" value={search} onChange={(e) => setSearch(e.target.value)}
+            placeholder="Search action, ref, user…"
+            style={{ width: "100%", padding: "6px 10px 6px 30px", fontSize: 13, border: "1px solid #D1D5DB", borderRadius: 6, outline: "none", boxSizing: "border-box" as const }}
+          />
+        </div>
+
+        <span style={{ fontSize: 12, color: "#9CA3AF", whiteSpace: "nowrap" }}>
+          {filtered.length} of {tenantEntries.length} entries
         </span>
       </div>
 
       {/* Table */}
       <div style={{ background: "#fff", border: "1px solid #E5E7EB", borderRadius: 4, overflow: "hidden" }}>
-        <div style={{ height: 3, background: tenant?.color ?? "#FCDD09" }} />
+        <div style={{ height: 3, background: tenant.color }} />
         <div style={{ overflowX: "auto" }}>
           <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
             <thead>
               <tr style={{ background: "#F9FAFB", borderBottom: "2px solid #E5E7EB" }}>
-                {["Timestamp", "User", "Role", "Action", "Resource", "Decision", "Reason"].map((h) => (
-                  <th key={h} style={{
-                    padding: "10px 14px", textAlign: "left",
-                    fontSize: 11, fontWeight: 700, color: "#6B7280",
-                    textTransform: "uppercase", letterSpacing: "0.05em",
-                    whiteSpace: "nowrap",
-                  }}>{h}</th>
+                {["Timestamp", "User", "Role", "Category", "Action", "Reference", "Details"].map((h) => (
+                  <th key={h} style={{ padding: "10px 14px", textAlign: "left", fontSize: 11, fontWeight: 700, color: "#6B7280", textTransform: "uppercase", letterSpacing: "0.05em", whiteSpace: "nowrap" }}>
+                    {h}
+                  </th>
                 ))}
               </tr>
             </thead>
             <tbody>
-              {entries.map((e, idx) => {
-                const s = DECISION_STYLE[e.decision];
+              {filtered.map((e, idx) => {
+                const cs = CATEGORY_STYLE[e.category] ?? CATEGORY_STYLE.SYSTEM;
                 return (
                   <tr key={e.id} style={{ background: idx % 2 === 0 ? "#fff" : "#FAFAFA", borderBottom: "1px solid #F3F4F6" }}>
                     <td style={{ padding: "9px 14px", color: "#9CA3AF", whiteSpace: "nowrap", fontFamily: "monospace", fontSize: 11 }}>
                       {new Date(e.timestamp).toLocaleString()}
                     </td>
-                    <td style={{ padding: "9px 14px", fontWeight: 600, color: "#1F2937", whiteSpace: "nowrap" }}>{e.user_name || "—"}</td>
+                    <td style={{ padding: "9px 14px", fontWeight: 600, color: "#1F2937", whiteSpace: "nowrap" }}>{e.userName}</td>
                     <td style={{ padding: "9px 14px" }}>
                       <span style={{ fontSize: 10, fontWeight: 700, background: "#F3F4F6", color: "#374151", padding: "2px 6px", borderRadius: 3 }}>
                         {e.role}
                       </span>
                     </td>
-                    <td style={{ padding: "9px 14px", fontFamily: "monospace", color: "#374151", whiteSpace: "nowrap" }}>{e.action}</td>
-                    <td style={{ padding: "9px 14px", color: "#6B7280" }}>{e.resource_type}</td>
                     <td style={{ padding: "9px 14px" }}>
-                      <span style={{ fontSize: 11, fontWeight: 700, padding: "3px 8px", borderRadius: 3, background: s.bg, color: s.color, whiteSpace: "nowrap" }}>
-                        {e.decision}
+                      <span style={{ fontSize: 10, fontWeight: 700, padding: "2px 7px", borderRadius: 3, background: cs.bg, color: cs.color, whiteSpace: "nowrap" }}>
+                        {cs.icon} {e.category}
                       </span>
                     </td>
-                    <td style={{ padding: "9px 14px", color: "#9CA3AF", fontSize: 11 }}>{e.reason || "—"}</td>
+                    <td style={{ padding: "9px 14px", fontFamily: "monospace", color: "#374151", whiteSpace: "nowrap", fontSize: 11 }}>
+                      {e.action}
+                    </td>
+                    <td style={{ padding: "9px 14px", fontFamily: "monospace", color: "#6B7280", fontSize: 11 }}>
+                      {e.resourceRef || "—"}
+                    </td>
+                    <td style={{ padding: "9px 14px", color: "#6B7280", maxWidth: 320 }}>
+                      {e.details}
+                    </td>
                   </tr>
                 );
               })}
             </tbody>
           </table>
         </div>
-        {entries.length === 0 && (
-          <p style={{ padding: "2rem", textAlign: "center", color: "#9CA3AF", fontSize: 13 }}>
-            No audit entries match the selected filter.
-          </p>
+
+        {filtered.length === 0 && (
+          <div style={{ padding: "3rem", textAlign: "center" }}>
+            {tenantEntries.length === 0 ? (
+              <div>
+                <p style={{ color: "#9CA3AF", fontSize: 14, margin: "0 0 0.5rem" }}>No activity logged yet.</p>
+                <p style={{ color: "#D1D5DB", fontSize: 12, margin: 0 }}>
+                  Create transfers, receive stock, or issue stock to generate audit entries.
+                </p>
+              </div>
+            ) : (
+              <p style={{ color: "#9CA3AF", fontSize: 13 }}>No entries match the current filter.</p>
+            )}
+          </div>
         )}
       </div>
 
-      {!isSA && (
-        <p style={{ marginTop: "1rem", fontSize: 12, color: "#9CA3AF" }}>
-          Showing last 24h demo entries. Production records are immutable — PostgreSQL RULE prevents UPDATE/DELETE on audit_logs.
-        </p>
-      )}
+      <p style={{ marginTop: "0.75rem", fontSize: 12, color: "#9CA3AF" }}>
+        Append-only · completed and archived transfers are retained here permanently
+      </p>
     </div>
   );
 }

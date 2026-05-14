@@ -8,6 +8,7 @@ import { getSession, SA_ORG_SLUG } from "@/lib/demo-auth";
 import { DEMO_TENANTS, type DemoWarehouse } from "@/lib/demo-data";
 import { NewTransferPanel } from "@/components/features/transfers/NewTransferPanel";
 import { useInventoryStore } from "@/lib/inventory-state";
+import { useAuditStore } from "@/lib/audit-log-state";
 import { useOfflineSync } from "@/hooks/useOfflineSync";
 import { api } from "@/lib/api";
 
@@ -98,6 +99,7 @@ interface Action {
   next: TransferStatus;
   label: string;
   color: string;
+  requiresQty?: boolean; // true for PARTIALLY_RECEIVED — opens qty input
 }
 
 const STATUS_STYLE: Record<TransferStatus, { bg: string; color: string }> = {
@@ -130,7 +132,7 @@ function getAvailableActions(role: string, type: TransferType, status: TransferS
   const issue:      Action = { next: "ISSUED",                 label: "Issue",              color: "#065F46" };
   const dispatch:   Action = { next: "IN_TRANSIT",             label: "Dispatch",           color: "#92400E" };
   const advise:     Action = { next: "ADVISED",                label: "Advise",             color: "#059669" };
-  const partRecv:   Action = { next: "PARTIALLY_RECEIVED",     label: "Partial Receive",    color: "#713F12" };
+  const partRecv:   Action = { next: "PARTIALLY_RECEIVED",     label: "Partial Receive",    color: "#713F12", requiresQty: true };
   const markRecv:   Action = { next: "RECEIVED",               label: "Mark Received",      color: "#059669" };
   const complete:   Action = { next: "COMPLETED",              label: "Complete",           color: "#374151" };
   const review:     Action = { next: "PENDING_REVIEW",         label: "Submit for Review",  color: "#5B21B6" };
@@ -308,9 +310,15 @@ export default function TransfersPage() {
   const user = getSession();
   const qc   = useQueryClient();
   const { isOnline } = useOfflineSync();
-  const updateTransferStatus = useInventoryStore((s) => s.updateTransferStatus);
+  const { updateTransferStatus, partialReceive, getTransferEntry } = useInventoryStore();
+  const logAudit = useAuditStore((s) => s.log);
   const [transitioning, setTransitioning] = useState<string | null>(null);
-  const [confirmModal, setConfirmModal] = useState<{ id: string; next: TransferStatus; label: string; transfer?: ApiTransfer } | null>(null);
+  const [confirmModal, setConfirmModal] = useState<{
+    id: string; next: TransferStatus; label: string; transfer: ApiTransfer;
+    requiresQty?: boolean;
+  } | null>(null);
+  const [partialQtyInput, setPartialQtyInput] = useState("");
+  const [partialQtyErr, setPartialQtyErr] = useState("");
   const [toast, setToast] = useState("");
 
   if (org === SA_ORG_SLUG) return <p style={{ padding: "2rem", color: "#6B7280" }}>Select a tenant to view transfers.</p>;
@@ -324,23 +332,49 @@ export default function TransfersPage() {
     refetchInterval: 15000,
   });
 
-  // Apply hierarchy + role scoping: each user sees only transfers within their authority
-  const visibleTransfers = scopeTransfers(allTransfers, user.role, user.warehouseId, tenant.warehouses);
+  // Apply hierarchy + role scoping
+  const scopedTransfers = scopeTransfers(allTransfers, user.role, user.warehouseId, tenant.warehouses);
 
-  async function doTransition(id: string, next: TransferStatus) {
+  // Bug 4: terminal statuses drop to the Audit Log; only active transfers shown here
+  const TERMINAL: TransferStatus[] = ["COMPLETED", "CANCELLED", "REJECTED"];
+  const visibleTransfers = scopedTransfers.filter((t) => !TERMINAL.includes(t.status));
+  const archivedCount = scopedTransfers.filter((t) => TERMINAL.includes(t.status)).length;
+
+  async function doTransition(id: string, next: TransferStatus, partialQty?: number) {
     if (!isOnline) {
       setConfirmModal(null);
       setToast("Transfer status changes require an internet connection. Please reconnect and try again.");
       setTimeout(() => setToast(""), 5000);
       return;
     }
+    const transfer = allTransfers.find((t) => t.id === id);
     setTransitioning(id);
     setConfirmModal(null);
     try {
       await api.patch(`/api/v1/transfers/${id}`, { next_status: next });
       await qc.invalidateQueries({ queryKey: ["transfers", org] });
       updateTransferStatus(id, next);
-      setToast(`Status updated to ${next}`);
+      if (next === "PARTIALLY_RECEIVED" && partialQty) {
+        partialReceive(id, partialQty);
+      }
+      // Bug 3: record every transition in the audit log
+      logAudit({
+        tenantSlug: org,
+        userEmail: user.email,
+        userName: user.name,
+        role: user.role,
+        action: `transfer:${next}`,
+        category: "TRANSFER",
+        resourceRef: transfer?.ref ?? id,
+        resourceType: "TransferOrder",
+        details: [
+          transfer?.product_name,
+          transfer ? `${transfer.quantity.toLocaleString()} units` : "",
+          transfer ? `${transfer.from_warehouse_name} → ${transfer.to_warehouse_name}` : "",
+          partialQty ? `(${partialQty.toLocaleString()} received this batch)` : "",
+        ].filter(Boolean).join(" · "),
+      });
+      setToast(`Status updated to ${next.replace(/_/g, " ")}`);
       setTimeout(() => setToast(""), 3000);
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : "Transition failed.";
@@ -353,7 +387,7 @@ export default function TransfersPage() {
 
   const stats = {
     draft:      visibleTransfers.filter((t) => t.status === "DRAFT").length,
-    inTransit:  visibleTransfers.filter((t) => t.status === "IN_TRANSIT").length,
+    inTransit:  visibleTransfers.filter((t) => ["IN_TRANSIT", "PARTIALLY_RECEIVED"].includes(t.status)).length,
     pending:    visibleTransfers.filter((t) => ["PENDING_REVIEW", "PENDING_APPROVAL", "PENDING_SOURCE_CONFIRM", "PENDING_DEST_CONFIRM"].includes(t.status)).length,
     approved:   visibleTransfers.filter((t) => ["APPROVED", "ADVISED", "ISSUED"].includes(t.status)).length,
   };
@@ -378,18 +412,69 @@ export default function TransfersPage() {
           <div style={{
             position: "fixed", top: "50%", left: "50%", transform: "translate(-50%,-50%)",
             background: "#fff", borderRadius: 10, padding: "2rem", zIndex: 201,
-            width: 340, boxShadow: "0 8px 32px rgba(0,0,0,0.2)",
+            width: confirmModal.requiresQty ? 400 : 340, boxShadow: "0 8px 32px rgba(0,0,0,0.2)",
           }}>
-            <p style={{ fontWeight: 700, fontSize: 16, color: "#111827", margin: "0 0 0.5rem" }}>Confirm Action</p>
-            <p style={{ fontSize: 14, color: "#6B7280", margin: "0 0 1.5rem" }}>
-              {confirmModal.label} this transfer? Status will change to <strong>{confirmModal.next}</strong>.
+            <p style={{ fontWeight: 700, fontSize: 16, color: "#111827", margin: "0 0 0.5rem" }}>
+              {confirmModal.requiresQty ? "Partial Receive" : "Confirm Action"}
             </p>
+            <p style={{ fontSize: 14, color: "#6B7280", margin: "0 0 1rem" }}>
+              {confirmModal.label} — status will change to <strong>{confirmModal.next.replace(/_/g, " ")}</strong>.
+            </p>
+
+            {/* Bug 2: qty input for PARTIALLY_RECEIVED */}
+            {confirmModal.requiresQty && (() => {
+              const storeEntry   = getTransferEntry(confirmModal.id);
+              const alreadyRecvd = storeEntry?.receivedQuantity ?? 0;
+              const total        = confirmModal.transfer.quantity;
+              const remaining    = total - alreadyRecvd;
+              return (
+                <div style={{ background: "#F9FAFB", borderRadius: 6, padding: "12px 14px", marginBottom: 16 }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, color: "#6B7280", marginBottom: 6 }}>
+                    <span>Total quantity</span><strong style={{ color: "#111827" }}>{total.toLocaleString()}</strong>
+                  </div>
+                  {alreadyRecvd > 0 && (
+                    <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, color: "#6B7280", marginBottom: 6 }}>
+                      <span>Previously received</span><strong style={{ color: "#059669" }}>{alreadyRecvd.toLocaleString()}</strong>
+                    </div>
+                  )}
+                  <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, color: "#6B7280", marginBottom: 10 }}>
+                    <span>Still in transit</span><strong style={{ color: "#92400E" }}>{remaining.toLocaleString()}</strong>
+                  </div>
+                  <label style={{ display: "block", fontSize: 11, fontWeight: 700, color: "#374151", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 4 }}>
+                    Quantity received this batch
+                  </label>
+                  <input
+                    type="number" min="1" max={remaining}
+                    value={partialQtyInput}
+                    onChange={(e) => { setPartialQtyInput(e.target.value); setPartialQtyErr(""); }}
+                    placeholder={`1 – ${remaining.toLocaleString()}`}
+                    autoFocus
+                    style={{ width: "100%", padding: "8px 10px", fontSize: 13, border: `1px solid ${partialQtyErr ? "#DC2626" : "#D1D5DB"}`, borderRadius: 4, outline: "none", boxSizing: "border-box" as const }}
+                  />
+                  {partialQtyErr && <p style={{ fontSize: 11, color: "#DC2626", margin: "4px 0 0" }}>{partialQtyErr}</p>}
+                </div>
+              );
+            })()}
+
             <div style={{ display: "flex", gap: 10 }}>
-              <button onClick={() => setConfirmModal(null)} style={{ flex: 1, padding: "9px", background: "#F3F4F6", border: "none", borderRadius: 6, fontSize: 13, fontWeight: 600, cursor: "pointer" }}>
+              <button onClick={() => { setConfirmModal(null); setPartialQtyErr(""); }} style={{ flex: 1, padding: "9px", background: "#F3F4F6", border: "none", borderRadius: 6, fontSize: 13, fontWeight: 600, cursor: "pointer" }}>
                 Cancel
               </button>
               <button
-                onClick={() => doTransition(confirmModal.id, confirmModal.next)}
+                onClick={() => {
+                  if (confirmModal.requiresQty) {
+                    const storeEntry = getTransferEntry(confirmModal.id);
+                    const remaining  = confirmModal.transfer.quantity - (storeEntry?.receivedQuantity ?? 0);
+                    const qty        = parseFloat(partialQtyInput);
+                    if (!qty || qty <= 0 || qty > remaining) {
+                      setPartialQtyErr(`Enter a quantity between 1 and ${remaining.toLocaleString()}`);
+                      return;
+                    }
+                    doTransition(confirmModal.id, confirmModal.next, qty);
+                  } else {
+                    doTransition(confirmModal.id, confirmModal.next);
+                  }
+                }}
                 style={{ flex: 2, padding: "9px", background: "#1B4332", color: "#FCDD09", border: "none", borderRadius: 6, fontSize: 13, fontWeight: 700, cursor: "pointer" }}
               >
                 Confirm
@@ -404,7 +489,12 @@ export default function TransfersPage() {
         <div>
           <h2 style={{ fontSize: "1.5rem", fontWeight: 700, color: "#0f2d1f", margin: 0 }}>Transfers</h2>
           <p style={{ fontSize: 13, color: "#6B7280", margin: "4px 0 0" }}>
-            {tenant.name} · {visibleTransfers.length} transfer{visibleTransfers.length !== 1 ? "s" : ""}{user.warehouseId && !["TA","SA","RM","LM"].includes(user.role) ? " · " + (user.warehouseName ?? "your warehouse") : ""}
+            {tenant.name} · {visibleTransfers.length} active transfer{visibleTransfers.length !== 1 ? "s" : ""}{user.warehouseId && !["TA","SA","RM","LM"].includes(user.role) ? ` · ${user.warehouseName ?? "your warehouse"}` : ""}
+            {archivedCount > 0 && (
+              <span style={{ marginLeft: 10, fontSize: 11, color: "#9CA3AF" }}>
+                {archivedCount} archived → <a href={`/${org}/audit-log`} style={{ color: "#1B4332", fontWeight: 600, textDecoration: "none" }}>Audit Log</a>
+              </span>
+            )}
           </p>
         </div>
         <NewTransferPanel products={tenant.products} warehouses={tenant.warehouses} orgSlug={org} />
@@ -457,7 +547,18 @@ export default function TransfersPage() {
                     <td style={{ padding: "10px 12px", color: "#374151", fontSize: 13 }}>{t.from_warehouse_name}</td>
                     <td style={{ padding: "10px 12px", color: "#374151", fontSize: 13 }}>{t.to_warehouse_name}</td>
                     <td style={{ padding: "10px 12px", color: "#6B7280", fontSize: 13 }}>{t.product_name}</td>
-                    <td style={{ padding: "10px 12px", fontWeight: 600, color: "#111827", fontSize: 13 }}>{t.quantity.toLocaleString()}</td>
+                    <td style={{ padding: "10px 12px", fontWeight: 600, color: "#111827", fontSize: 13 }}>
+                      {t.quantity.toLocaleString()}
+                      {t.status === "PARTIALLY_RECEIVED" && (() => {
+                        const e = getTransferEntry(t.id);
+                        const rcvd = e?.receivedQuantity ?? 0;
+                        return rcvd > 0 ? (
+                          <span style={{ display: "block", fontSize: 10, fontWeight: 500, color: "#92400E" }}>
+                            {rcvd.toLocaleString()} rcvd · {(t.quantity - rcvd).toLocaleString()} rem
+                          </span>
+                        ) : null;
+                      })()}
+                    </td>
                     <td style={{ padding: "10px 12px" }}>
                       <span style={{ fontSize: 11, fontWeight: 700, padding: "3px 8px", borderRadius: 3, background: s.bg, color: s.color, whiteSpace: "nowrap" }}>
                         {t.status.replace(/_/g, " ")}
@@ -478,7 +579,11 @@ export default function TransfersPage() {
                             <button
                               key={a.next}
                               disabled={!isOnline}
-                              onClick={() => setConfirmModal({ id: t.id, next: a.next, label: a.label, transfer: t })}
+                              onClick={() => {
+                                setPartialQtyInput("");
+                                setPartialQtyErr("");
+                                setConfirmModal({ id: t.id, next: a.next, label: a.label, transfer: t, requiresQty: a.requiresQty });
+                              }}
                               style={{
                                 fontSize: 11, fontWeight: 700, padding: "4px 10px", borderRadius: 4,
                                 border: `1px solid ${a.color}20`,

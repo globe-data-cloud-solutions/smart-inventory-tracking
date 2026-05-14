@@ -228,7 +228,7 @@ export default function InventoryPage() {
     getReceivedTotal, getIssuedTotal, getInTransitTotal,
     getReceiveAdjs, getIssueAdjs,
     getOutboundReserved, getOutboundInTransit,
-    getInboundInTransit, getInboundReceived,
+    getInboundInTransit, getInboundReceived, getInboundPartial,
   } = store;
 
   const tenant = DEMO_TENANTS.find((t) => t.slug === org);
@@ -273,14 +273,25 @@ export default function InventoryPage() {
         })),
       ].sort((a, b) => a.date.localeCompare(b.date));
     } else {
-      // transit — inbound (← green) + outbound (→ red), sorted by date
+      // transit — inbound full (← green), inbound partial remaining (← amber), outbound (→ red)
       const inbound = getInboundInTransit(productId, warehouseId).map((t) => ({
         direction: "in" as const, label: `From: ${t.fromWarehouseName}`, qty: t.quantity, date: t.issuedDate, ref: t.ref,
       }));
+      const partial = getInboundPartial(productId, warehouseId).map((t) => {
+        const rcvd = t.receivedQuantity ?? 0;
+        const rem  = t.quantity - rcvd;
+        return {
+          direction: "in" as const,
+          label: `From: ${t.fromWarehouseName} (partial — ${rcvd.toLocaleString()} of ${t.quantity.toLocaleString()} received, ${rem.toLocaleString()} remaining)`,
+          qty: rem,
+          date: t.issuedDate,
+          ref: t.ref,
+        };
+      });
       const outbound = getOutboundInTransit(productId, warehouseId).map((t) => ({
         direction: "out" as const, label: `To: ${t.toWarehouseName}`, qty: t.quantity, date: t.issuedDate, ref: t.ref,
       }));
-      modalRows = [...inbound, ...outbound].sort((a, b) => a.date.localeCompare(b.date));
+      modalRows = [...inbound, ...partial, ...outbound].sort((a, b) => a.date.localeCompare(b.date));
     }
   }
 

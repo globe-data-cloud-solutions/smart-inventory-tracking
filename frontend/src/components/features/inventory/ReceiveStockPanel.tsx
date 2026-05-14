@@ -8,6 +8,8 @@ import { enqueueOfflineTransaction } from "@/store/offlineQueue";
 import { useOfflineSync } from "@/hooks/useOfflineSync";
 import { useScanner } from "@/hooks/useScanner";
 import { useInventoryStore } from "@/lib/inventory-state";
+import { useAuditStore } from "@/lib/audit-log-state";
+import { getSession } from "@/lib/demo-auth";
 import type { DemoProduct, DemoWarehouse } from "@/lib/demo-data";
 
 interface Props {
@@ -63,6 +65,7 @@ export function ReceiveStockPanel({ products, warehouses, orgSlug }: Props) {
   const { isOnline } = useOfflineSync();
   const qc = useQueryClient();
   const addReceive = useInventoryStore((s) => s.addReceive);
+  const logAudit   = useAuditStore((s) => s.log);
 
   const [open, setOpen]           = useState(false);
   const [scannerOpen, setScannerOpen] = useState(false);
@@ -135,6 +138,16 @@ export function ReceiveStockPanel({ products, warehouses, orgSlug }: Props) {
       } else {
         await api.post("/api/v1/inventory/receive", payload);
         addReceive(form.productId, form.warehouseId, qty);
+        const user = getSession();
+        const wh   = warehouses.find((w) => w.id === form.warehouseId);
+        if (user) {
+          logAudit({
+            tenantSlug: orgSlug, userEmail: user.email, userName: user.name, role: user.role,
+            action: "inventory:receive", category: "INVENTORY",
+            resourceRef: product?.sku ?? form.productId, resourceType: "InventoryTransaction",
+            details: `+${qty.toLocaleString()} ${product?.unit ?? "units"} ${product?.name ?? ""} → ${wh?.name ?? form.warehouseId}`,
+          });
+        }
         setSuccess(`${product?.name ?? "Stock"} received successfully.`);
         void qc.invalidateQueries({ queryKey: ["products", orgSlug] });
         void qc.invalidateQueries({ queryKey: ["receipts", orgSlug] });

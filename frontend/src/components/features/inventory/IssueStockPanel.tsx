@@ -7,6 +7,8 @@ import { api } from "@/lib/api";
 import { enqueueOfflineTransaction } from "@/store/offlineQueue";
 import { useOfflineSync } from "@/hooks/useOfflineSync";
 import { useInventoryStore } from "@/lib/inventory-state";
+import { useAuditStore } from "@/lib/audit-log-state";
+import { getSession } from "@/lib/demo-auth";
 import type { DemoProduct, DemoWarehouse } from "@/lib/demo-data";
 
 interface Props {
@@ -59,6 +61,7 @@ export function IssueStockPanel({ products, warehouses, orgSlug }: Props) {
   const { isOnline } = useOfflineSync();
   const qc = useQueryClient();
   const { addIssue, getAvailable } = useInventoryStore();
+  const logAudit = useAuditStore((s) => s.log);
 
   const [open, setOpen]             = useState(false);
   const [productId, setProductId]   = useState("");
@@ -130,6 +133,16 @@ export function IssueStockPanel({ products, warehouses, orgSlug }: Props) {
       } else {
         await api.post("/api/v1/inventory/issue", payload);
         addIssue(productId, warehouseId, qty);
+        const user = getSession();
+        const wh   = warehouses.find((w) => w.id === warehouseId);
+        if (user) {
+          logAudit({
+            tenantSlug: orgSlug, userEmail: user.email, userName: user.name, role: user.role,
+            action: "inventory:issue", category: "INVENTORY",
+            resourceRef: selectedProduct?.sku ?? productId, resourceType: "InventoryTransaction",
+            details: `-${qty.toLocaleString()} ${selectedProduct?.unit ?? "units"} ${selectedProduct?.name ?? ""} from ${wh?.name ?? warehouseId}${issuedTo.trim() ? ` → ${issuedTo.trim()}` : ""} [${reasonCode}]`,
+          });
+        }
         setSuccess(
           issuedTo.trim()
             ? `${selectedProduct?.name ?? "Stock"} issued to ${issuedTo.trim()}.`

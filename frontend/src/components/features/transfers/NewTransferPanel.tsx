@@ -5,6 +5,8 @@ import { useQueryClient } from "@tanstack/react-query";
 import { nanoid } from "nanoid";
 import { api } from "@/lib/api";
 import { useInventoryStore, type TransferEntry } from "@/lib/inventory-state";
+import { useAuditStore } from "@/lib/audit-log-state";
+import { getSession } from "@/lib/demo-auth";
 import type { DemoProduct, DemoWarehouse } from "@/lib/demo-data";
 
 interface Props {
@@ -50,6 +52,7 @@ const SELECT: React.CSSProperties = { ...INPUT, cursor: "pointer" };
 export function NewTransferPanel({ products, warehouses, orgSlug }: Props) {
   const qc = useQueryClient();
   const addTransfer = useInventoryStore((s) => s.addTransfer);
+  const logAudit    = useAuditStore((s) => s.log);
 
   const [open, setOpen] = useState(false);
   const [form, setForm] = useState<FormState>({
@@ -115,6 +118,21 @@ export function NewTransferPanel({ products, warehouses, orgSlug }: Props) {
         status:            "DRAFT",
       };
       addTransfer(entry);
+
+      const user = getSession();
+      if (user) {
+        logAudit({
+          tenantSlug: orgSlug,
+          userEmail: user.email,
+          userName: user.name,
+          role: user.role,
+          action: "transfer:DRAFT",
+          category: "TRANSFER",
+          resourceRef: created.ref,
+          resourceType: "TransferOrder",
+          details: `${product?.name ?? "Product"} · ${qty.toLocaleString()} units · ${fromWH?.name ?? ""} → ${toWH?.name ?? ""} [${form.transferType}]`,
+        });
+      }
 
       setSuccess(`Transfer created for ${product?.name ?? "product"} → ${toWH?.name}.`);
       void qc.invalidateQueries({ queryKey: ["transfers", orgSlug] });
