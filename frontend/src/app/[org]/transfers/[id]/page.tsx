@@ -10,89 +10,267 @@ import { useOfflineSync } from "@/hooks/useOfflineSync";
 import { api } from "@/lib/api";
 
 /* ── Types ──────────────────────────────────────────────────────────────── */
+type TransferType = "PULL" | "PUSH" | "SISTER";
+
 type TransferStatus =
-  | "DRAFT" | "SUBMITTED" | "APPROVED" | "IN_TRANSIT" | "RECEIVED" | "CLOSED" | "REJECTED" | "CANCELLED";
+  | "DRAFT"
+  | "PENDING_REVIEW"
+  | "PENDING_APPROVAL"
+  | "PENDING_SOURCE_CONFIRM"
+  | "PENDING_DEST_CONFIRM"
+  | "APPROVED"
+  | "ADVISED"
+  | "ISSUED"
+  | "IN_TRANSIT"
+  | "PARTIALLY_RECEIVED"
+  | "RECEIVED"
+  | "COMPLETED"
+  | "REJECTED"
+  | "CANCELLED";
 
 interface TransferDetail {
-  id: string; ref: string;
-  product_id: string; product_name: string;
-  from_warehouse_id: string; from_warehouse_name: string;
-  to_warehouse_id: string; to_warehouse_name: string;
-  quantity: number; notes: string;
+  id: string;
+  ref: string;
+  transfer_type: TransferType;
+  product_id: string;
+  product_name: string;
+  from_warehouse_id: string;
+  from_warehouse_name: string;
+  to_warehouse_id: string;
+  to_warehouse_name: string;
+  quantity: number;
+  notes: string;
   status: TransferStatus;
   created_at: string;
 }
 
+interface Action {
+  next: TransferStatus;
+  label: string;
+  color: string;
+}
+
 /* ── Constants ───────────────────────────────────────────────────────────── */
-const DARK  = "#0f2d1f";
-const GOLD  = "#FCDD09";
+const DARK   = "#0f2d1f";
+const GOLD   = "#FCDD09";
 const FOREST = "#1B4332";
 
-// Forward-progress states (in order)
-const TIMELINE_STATES: TransferStatus[] = ["DRAFT", "SUBMITTED", "APPROVED", "IN_TRANSIT", "RECEIVED", "CLOSED"];
-
 const STATUS_META: Record<TransferStatus, { bg: string; color: string; label: string }> = {
-  DRAFT:      { bg: "#F3F4F6", color: "#6B7280", label: "Draft" },
-  SUBMITTED:  { bg: "#DBEAFE", color: "#1E40AF", label: "Submitted" },
-  APPROVED:   { bg: "#D1FAE5", color: "#065F46", label: "Approved" },
-  IN_TRANSIT: { bg: "#FEF3C7", color: "#92400E", label: "In Transit" },
-  RECEIVED:   { bg: "#DCFCE7", color: "#166534", label: "Received" },
-  CLOSED:     { bg: "#F3F4F6", color: "#374151", label: "Closed" },
-  REJECTED:   { bg: "#FEE2E2", color: "#991B1B", label: "Rejected" },
-  CANCELLED:  { bg: "#F3F4F6", color: "#9CA3AF", label: "Cancelled" },
+  DRAFT:                  { bg: "#F3F4F6", color: "#6B7280", label: "Draft" },
+  PENDING_REVIEW:         { bg: "#EDE9FE", color: "#5B21B6", label: "Pending Review" },
+  PENDING_APPROVAL:       { bg: "#DBEAFE", color: "#1E40AF", label: "Pending Approval" },
+  PENDING_SOURCE_CONFIRM: { bg: "#FEF3C7", color: "#92400E", label: "Pending Source Confirm" },
+  PENDING_DEST_CONFIRM:   { bg: "#FEF3C7", color: "#92400E", label: "Pending Dest Confirm" },
+  APPROVED:               { bg: "#D1FAE5", color: "#065F46", label: "Approved" },
+  ADVISED:                { bg: "#ECFDF5", color: "#059669", label: "Advised" },
+  ISSUED:                 { bg: "#D1FAE5", color: "#065F46", label: "Issued" },
+  IN_TRANSIT:             { bg: "#FEF3C7", color: "#92400E", label: "In Transit" },
+  PARTIALLY_RECEIVED:     { bg: "#FEF9C3", color: "#713F12", label: "Partially Received" },
+  RECEIVED:               { bg: "#DCFCE7", color: "#166534", label: "Received" },
+  COMPLETED:              { bg: "#F3F4F6", color: "#374151", label: "Completed" },
+  REJECTED:               { bg: "#FEE2E2", color: "#991B1B", label: "Rejected" },
+  CANCELLED:              { bg: "#F3F4F6", color: "#9CA3AF", label: "Cancelled" },
 };
 
-const ROLE_TRANSITIONS: Record<string, Partial<Record<TransferStatus, { next: TransferStatus; label: string; color: string }[]>>> = {
-  WM: {
-    DRAFT:      [{ next: "SUBMITTED",  label: "Submit for Approval", color: "#1E40AF"  }, { next: "CANCELLED", label: "Cancel", color: "#DC2626" }],
-    IN_TRANSIT: [{ next: "RECEIVED",   label: "Mark as Received",    color: "#059669"  }],
-  },
-  LM: {
-    APPROVED:   [{ next: "IN_TRANSIT", label: "Dispatch",            color: "#92400E"  }],
-    IN_TRANSIT: [{ next: "RECEIVED",   label: "Mark as Received",    color: "#059669"  }],
-  },
-  RM: {
-    SUBMITTED:  [{ next: "APPROVED",   label: "Approve",             color: "#059669"  }, { next: "REJECTED",  label: "Reject",  color: "#DC2626" }],
-    APPROVED:   [{ next: "CANCELLED",  label: "Cancel",              color: "#DC2626"  }],
-  },
-  NM: {
-    SUBMITTED:  [{ next: "APPROVED",   label: "Approve",             color: "#059669"  }, { next: "REJECTED",  label: "Reject",  color: "#DC2626" }],
-    APPROVED:   [{ next: "IN_TRANSIT", label: "Dispatch",            color: "#92400E"  }, { next: "CANCELLED", label: "Cancel",  color: "#DC2626" }],
-    IN_TRANSIT: [{ next: "RECEIVED",   label: "Mark as Received",    color: "#059669"  }],
-  },
-  TA: {
-    SUBMITTED:  [{ next: "APPROVED",   label: "Approve",             color: "#059669"  }, { next: "REJECTED",  label: "Reject",  color: "#DC2626" }],
-    APPROVED:   [{ next: "IN_TRANSIT", label: "Dispatch",            color: "#92400E"  }, { next: "CANCELLED", label: "Cancel",  color: "#DC2626" }],
-    DRAFT:      [{ next: "SUBMITTED",  label: "Submit for Approval", color: "#1E40AF"  }, { next: "CANCELLED", label: "Cancel",  color: "#DC2626" }],
-    IN_TRANSIT: [{ next: "RECEIVED",   label: "Mark as Received",    color: "#059669"  }],
-  },
-  SA: {
-    DRAFT:      [{ next: "SUBMITTED",  label: "Submit for Approval", color: "#1E40AF"  }, { next: "CANCELLED", label: "Cancel",  color: "#DC2626" }],
-    SUBMITTED:  [{ next: "APPROVED",   label: "Approve",             color: "#059669"  }, { next: "REJECTED",  label: "Reject",  color: "#DC2626" }],
-    APPROVED:   [{ next: "IN_TRANSIT", label: "Dispatch",            color: "#92400E"  }, { next: "CANCELLED", label: "Cancel",  color: "#DC2626" }],
-    IN_TRANSIT: [{ next: "RECEIVED",   label: "Mark as Received",    color: "#059669"  }],
-    RECEIVED:   [{ next: "CLOSED",     label: "Close Transfer",      color: "#374151"  }],
-  },
+const TYPE_BADGE: Record<TransferType, { bg: string; color: string; label: string; desc: string }> = {
+  PULL:   { bg: "#DBEAFE", color: "#1E40AF", label: "PULL", desc: "Pull Request" },
+  PUSH:   { bg: "#FEF3C7", color: "#92400E", label: "PUSH", desc: "Push Issue" },
+  SISTER: { bg: "#EDE9FE", color: "#5B21B6", label: "SISTER", desc: "Sister Transfer" },
 };
 
-/* ── Status timeline ─────────────────────────────────────────────────────── */
-function TransferTimeline({ status }: { status: TransferStatus }) {
-  const terminal = status === "REJECTED" || status === "CANCELLED";
-  const activeIdx = TIMELINE_STATES.indexOf(status);
+const TIMELINE_STATES: Record<TransferType, TransferStatus[]> = {
+  PULL:   ["DRAFT", "PENDING_REVIEW", "PENDING_APPROVAL", "APPROVED", "ISSUED", "IN_TRANSIT", "RECEIVED", "COMPLETED"],
+  PUSH:   ["DRAFT", "PENDING_APPROVAL", "APPROVED", "ADVISED", "ISSUED", "IN_TRANSIT", "RECEIVED", "COMPLETED"],
+  SISTER: ["DRAFT", "PENDING_SOURCE_CONFIRM", "PENDING_DEST_CONFIRM", "PENDING_APPROVAL", "APPROVED", "ISSUED", "IN_TRANSIT", "RECEIVED", "COMPLETED"],
+};
+
+function getAvailableActions(role: string, type: TransferType, status: TransferStatus): Action[] {
+  const approve:    Action = { next: "APPROVED",               label: "Approve",              color: "#059669" };
+  const reject:     Action = { next: "REJECTED",               label: "Reject",               color: "#DC2626" };
+  const cancel:     Action = { next: "CANCELLED",              label: "Cancel",               color: "#DC2626" };
+  const issue:      Action = { next: "ISSUED",                 label: "Issue Stock",           color: "#065F46" };
+  const dispatch:   Action = { next: "IN_TRANSIT",             label: "Dispatch",             color: "#92400E" };
+  const advise:     Action = { next: "ADVISED",                label: "Advise",               color: "#059669" };
+  const partRecv:   Action = { next: "PARTIALLY_RECEIVED",     label: "Partially Received",   color: "#713F12" };
+  const markRecv:   Action = { next: "RECEIVED",               label: "Mark as Received",     color: "#059669" };
+  const complete:   Action = { next: "COMPLETED",              label: "Complete Transfer",    color: "#374151" };
+  const review:     Action = { next: "PENDING_REVIEW",         label: "Submit for Review",    color: "#5B21B6" };
+  const toApproval: Action = { next: "PENDING_APPROVAL",       label: "Send for Approval",    color: "#1E40AF" };
+  const srcConfirm: Action = { next: "PENDING_SOURCE_CONFIRM", label: "Request Confirmation", color: "#92400E" };
+  const dstConfirm: Action = { next: "PENDING_DEST_CONFIRM",   label: "Dest Confirm",         color: "#92400E" };
+
+  if (role === "TA" || role === "SA") {
+    if (type === "PULL") {
+      const map: Partial<Record<TransferStatus, Action[]>> = {
+        DRAFT:              [review, cancel],
+        PENDING_REVIEW:     [toApproval, reject, cancel],
+        PENDING_APPROVAL:   [approve, reject, cancel],
+        APPROVED:           [issue, cancel],
+        ISSUED:             [dispatch],
+        IN_TRANSIT:         [partRecv, markRecv],
+        PARTIALLY_RECEIVED: [markRecv],
+        RECEIVED:           [complete],
+      };
+      return map[status] ?? [];
+    }
+    if (type === "PUSH") {
+      const map: Partial<Record<TransferStatus, Action[]>> = {
+        DRAFT:              [toApproval, cancel],
+        PENDING_APPROVAL:   [approve, reject, cancel],
+        APPROVED:           [advise, issue, cancel],
+        ADVISED:            [issue, cancel],
+        ISSUED:             [dispatch],
+        IN_TRANSIT:         [partRecv, markRecv],
+        PARTIALLY_RECEIVED: [markRecv],
+        RECEIVED:           [complete],
+      };
+      return map[status] ?? [];
+    }
+    if (type === "SISTER") {
+      const map: Partial<Record<TransferStatus, Action[]>> = {
+        DRAFT:                  [srcConfirm, cancel],
+        PENDING_SOURCE_CONFIRM: [dstConfirm, cancel],
+        PENDING_DEST_CONFIRM:   [toApproval, reject, cancel],
+        PENDING_APPROVAL:       [approve, reject, cancel],
+        APPROVED:               [issue, cancel],
+        ISSUED:                 [dispatch],
+        IN_TRANSIT:             [partRecv, markRecv],
+        PARTIALLY_RECEIVED:     [markRecv],
+        RECEIVED:               [complete],
+      };
+      return map[status] ?? [];
+    }
+    return [];
+  }
+
+  if (role === "WM") {
+    if (type === "PULL") {
+      const map: Partial<Record<TransferStatus, Action[]>> = {
+        DRAFT:              [review, cancel],
+        IN_TRANSIT:         [partRecv, markRecv],
+        PARTIALLY_RECEIVED: [markRecv],
+        RECEIVED:           [complete],
+      };
+      return map[status] ?? [];
+    }
+    if (type === "PUSH") {
+      const map: Partial<Record<TransferStatus, Action[]>> = {
+        IN_TRANSIT:         [partRecv, markRecv],
+        PARTIALLY_RECEIVED: [markRecv],
+        RECEIVED:           [complete],
+      };
+      return map[status] ?? [];
+    }
+    if (type === "SISTER") {
+      const map: Partial<Record<TransferStatus, Action[]>> = {
+        DRAFT:                [srcConfirm, cancel],
+        PENDING_DEST_CONFIRM: [toApproval, cancel],
+        IN_TRANSIT:           [partRecv, markRecv],
+        PARTIALLY_RECEIVED:   [markRecv],
+        RECEIVED:             [complete],
+      };
+      return map[status] ?? [];
+    }
+    return [];
+  }
+
+  if (role === "RM") {
+    if (type === "PULL") {
+      const map: Partial<Record<TransferStatus, Action[]>> = {
+        PENDING_REVIEW:   [toApproval, reject, cancel],
+        PENDING_APPROVAL: [approve, reject, cancel],
+      };
+      return map[status] ?? [];
+    }
+    if (type === "PUSH") {
+      const map: Partial<Record<TransferStatus, Action[]>> = {
+        DRAFT:            [toApproval, cancel],
+        PENDING_APPROVAL: [approve, reject, cancel],
+        APPROVED:         [issue, cancel],
+      };
+      return map[status] ?? [];
+    }
+    if (type === "SISTER") {
+      const map: Partial<Record<TransferStatus, Action[]>> = {
+        PENDING_APPROVAL: [approve, reject, cancel],
+      };
+      return map[status] ?? [];
+    }
+    return [];
+  }
+
+  if (role === "NM") {
+    if (type === "PULL") {
+      const map: Partial<Record<TransferStatus, Action[]>> = {
+        PENDING_APPROVAL: [approve, reject, cancel],
+        APPROVED:         [issue, cancel],
+      };
+      return map[status] ?? [];
+    }
+    if (type === "PUSH") {
+      const map: Partial<Record<TransferStatus, Action[]>> = {
+        DRAFT:            [toApproval, cancel],
+        PENDING_APPROVAL: [approve, reject, cancel],
+        APPROVED:         [advise, issue, cancel],
+      };
+      return map[status] ?? [];
+    }
+    if (type === "SISTER") {
+      const map: Partial<Record<TransferStatus, Action[]>> = {
+        PENDING_APPROVAL: [approve, reject, cancel],
+      };
+      return map[status] ?? [];
+    }
+    return [];
+  }
+
+  if (role === "LM") {
+    if (type === "PULL") {
+      const map: Partial<Record<TransferStatus, Action[]>> = {
+        APPROVED: [issue, cancel],
+        ISSUED:   [dispatch],
+      };
+      return map[status] ?? [];
+    }
+    if (type === "PUSH") {
+      const map: Partial<Record<TransferStatus, Action[]>> = {
+        APPROVED: [advise, issue, cancel],
+        ADVISED:  [issue, cancel],
+        ISSUED:   [dispatch],
+      };
+      return map[status] ?? [];
+    }
+    if (type === "SISTER") {
+      const map: Partial<Record<TransferStatus, Action[]>> = {
+        APPROVED: [issue, cancel],
+        ISSUED:   [dispatch],
+      };
+      return map[status] ?? [];
+    }
+    return [];
+  }
+
+  return [];
+}
+
+/* ── Timeline component ──────────────────────────────────────────────────── */
+function TransferTimeline({ status, transferType }: { status: TransferStatus; transferType: TransferType }) {
+  const timelineStates = TIMELINE_STATES[transferType];
+  const terminal  = status === "REJECTED" || status === "CANCELLED";
+  const activeIdx = timelineStates.indexOf(status);
 
   return (
     <div style={{ padding: "1.25rem 1.5rem", background: "#F9FAFB", borderBottom: "1px solid #E5E7EB" }}>
       <p style={{ fontSize: 12, fontWeight: 700, color: "#9CA3AF", textTransform: "uppercase", letterSpacing: "0.05em", margin: "0 0 1rem" }}>
         Transfer Progress
       </p>
-      <div style={{ display: "flex", alignItems: "center" }}>
-        {TIMELINE_STATES.map((s, idx) => {
+      <div style={{ display: "flex", alignItems: "center", overflowX: "auto", paddingBottom: 4 }}>
+        {timelineStates.map((s, idx) => {
           const done    = terminal ? false : activeIdx > idx;
           const current = !terminal && activeIdx === idx;
-          const future  = !done && !current;
 
           return (
-            <div key={s} style={{ display: "flex", alignItems: "center", flex: idx < TIMELINE_STATES.length - 1 ? 1 : "none" }}>
+            <div key={s} style={{ display: "flex", alignItems: "center", flex: idx < timelineStates.length - 1 ? 1 : "none" }}>
               {/* Node */}
               <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 5 }}>
                 <div style={{
@@ -107,15 +285,16 @@ function TransferTimeline({ status }: { status: TransferStatus }) {
                   {done ? "✓" : idx + 1}
                 </div>
                 <span style={{
-                  fontSize: 10, fontWeight: current ? 700 : 500, whiteSpace: "nowrap",
+                  fontSize: 9, fontWeight: current ? 700 : 500, whiteSpace: "nowrap",
                   color: done ? FOREST : current ? DARK : "#9CA3AF",
+                  maxWidth: 72, textAlign: "center", lineHeight: 1.2,
                 }}>
                   {STATUS_META[s]?.label ?? s}
                 </span>
               </div>
               {/* Connector */}
-              {idx < TIMELINE_STATES.length - 1 && (
-                <div style={{ flex: 1, height: 2, background: done ? FOREST : "#E5E7EB", margin: "0 4px", marginBottom: 20 }} />
+              {idx < timelineStates.length - 1 && (
+                <div style={{ flex: 1, height: 2, background: done ? FOREST : "#E5E7EB", margin: "0 4px", marginBottom: 20, minWidth: 8 }} />
               )}
             </div>
           );
@@ -129,7 +308,7 @@ function TransferTimeline({ status }: { status: TransferStatus }) {
               background: STATUS_META[status].bg, color: STATUS_META[status].color,
               display: "flex", alignItems: "center", justifyContent: "center", fontSize: 13,
             }}>✕</div>
-            <span style={{ fontSize: 10, fontWeight: 700, color: STATUS_META[status].color }}>{STATUS_META[status].label}</span>
+            <span style={{ fontSize: 9, fontWeight: 700, color: STATUS_META[status].color }}>{STATUS_META[status].label}</span>
           </div>
         )}
       </div>
@@ -146,9 +325,9 @@ export default function TransferDetailPage() {
   const { isOnline } = useOfflineSync();
   const updateTransferStatus = useInventoryStore((s) => s.updateTransferStatus);
 
-  const [toast, setToast]       = useState("");
-  const [loading, setLoading]   = useState(false);
-  const [confirm, setConfirm]   = useState<{ next: TransferStatus; label: string } | null>(null);
+  const [toast, setToast]     = useState("");
+  const [loading, setLoading] = useState(false);
+  const [confirm, setConfirm] = useState<{ next: TransferStatus; label: string } | null>(null);
 
   if (org === SA_ORG_SLUG) return <p style={{ padding: "2rem", color: "#6B7280" }}>Select a tenant first.</p>;
   const tenant = DEMO_TENANTS.find((t) => t.slug === org);
@@ -186,11 +365,7 @@ export default function TransferDetailPage() {
   }
 
   if (isLoading) {
-    return (
-      <div style={{ padding: "3rem", textAlign: "center", color: "#9CA3AF" }}>
-        Loading transfer…
-      </div>
-    );
+    return <div style={{ padding: "3rem", textAlign: "center", color: "#9CA3AF" }}>Loading transfer…</div>;
   }
 
   if (error || !transfer) {
@@ -205,7 +380,9 @@ export default function TransferDetailPage() {
   }
 
   const s        = STATUS_META[transfer.status];
-  const roleActs = (ROLE_TRANSITIONS[user.role] ?? {})[transfer.status] ?? [];
+  const tb       = TYPE_BADGE[transfer.transfer_type] ?? { bg: "#F3F4F6", color: "#6B7280", label: transfer.transfer_type, desc: transfer.transfer_type };
+  const roleActs = getAvailableActions(user.role, transfer.transfer_type, transfer.status);
+  const terminal = ["COMPLETED", "REJECTED", "CANCELLED"].includes(transfer.status);
 
   return (
     <div style={{ padding: "2rem" }}>
@@ -232,7 +409,7 @@ export default function TransferDetailPage() {
           }}>
             <p style={{ fontWeight: 700, fontSize: 16, color: "#111827", margin: "0 0 0.5rem" }}>Confirm Action</p>
             <p style={{ fontSize: 14, color: "#6B7280", margin: "0 0 1.5rem" }}>
-              {confirm.label} transfer <strong>{transfer.ref}</strong>? Status will change to <strong>{confirm.next}</strong>.
+              {confirm.label} transfer <strong>{transfer.ref}</strong>? Status will change to <strong>{confirm.next.replace(/_/g, " ")}</strong>.
             </p>
             <div style={{ display: "flex", gap: 10 }}>
               <button onClick={() => setConfirm(null)} style={{ flex: 1, padding: "9px", background: "#F3F4F6", border: "none", borderRadius: 6, fontSize: 13, fontWeight: 600, cursor: "pointer" }}>Cancel</button>
@@ -248,14 +425,19 @@ export default function TransferDetailPage() {
       </button>
 
       {/* Transfer card */}
-      <div style={{ background: "#fff", border: "1px solid #E5E7EB", borderRadius: 8, overflow: "hidden", maxWidth: 760 }}>
+      <div style={{ background: "#fff", border: "1px solid #E5E7EB", borderRadius: 8, overflow: "hidden", maxWidth: 800 }}>
         <div style={{ height: 4, background: tenant.color }} />
 
         {/* Header */}
-        <div style={{ padding: "1.25rem 1.5rem", background: DARK, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+        <div style={{ padding: "1.25rem 1.5rem", background: DARK, display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 12 }}>
           <div>
             <p style={{ fontFamily: "monospace", fontSize: 18, fontWeight: 700, color: GOLD, margin: 0 }}>{transfer.ref}</p>
-            <p style={{ fontSize: 13, color: "#6ee7b7", margin: "4px 0 0" }}>Stock Transfer · {tenant.name}</p>
+            <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 4 }}>
+              <span style={{ fontSize: 11, fontWeight: 700, padding: "2px 8px", borderRadius: 3, background: tb.bg, color: tb.color }}>
+                {tb.label}
+              </span>
+              <span style={{ fontSize: 13, color: "#6ee7b7" }}>{tb.desc} · {tenant.name}</span>
+            </div>
           </div>
           <span style={{ fontSize: 13, fontWeight: 700, padding: "5px 14px", borderRadius: 99, background: s.bg, color: s.color }}>
             {s.label}
@@ -263,18 +445,19 @@ export default function TransferDetailPage() {
         </div>
 
         {/* Timeline */}
-        <TransferTimeline status={transfer.status} />
+        <TransferTimeline status={transfer.status} transferType={transfer.transfer_type} />
 
         {/* Details */}
         <div style={{ padding: "1.5rem" }}>
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: "1.5rem" }}>
             {[
-              { label: "From",     value: transfer.from_warehouse_name },
-              { label: "To",       value: transfer.to_warehouse_name   },
-              { label: "Product",  value: transfer.product_name        },
-              { label: "Quantity", value: transfer.quantity.toLocaleString() },
-              { label: "Created",  value: new Date(transfer.created_at).toLocaleString() },
-              { label: "Status",   value: s.label },
+              { label: "Transfer Type", value: `${tb.label} — ${tb.desc}` },
+              { label: "Status",        value: s.label },
+              { label: "From",          value: transfer.from_warehouse_name },
+              { label: "To",            value: transfer.to_warehouse_name   },
+              { label: "Product",       value: transfer.product_name        },
+              { label: "Quantity",      value: transfer.quantity.toLocaleString() },
+              { label: "Created",       value: new Date(transfer.created_at).toLocaleString() },
             ].map(({ label, value }) => (
               <div key={label} style={{ padding: "10px 14px", background: "#F9FAFB", borderRadius: 6, border: "1px solid #E5E7EB" }}>
                 <p style={{ fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.05em", color: "#9CA3AF", margin: 0 }}>{label}</p>
@@ -292,7 +475,7 @@ export default function TransferDetailPage() {
           {/* Offline warning */}
           {!isOnline && roleActs.length > 0 && (
             <div style={{ padding: "10px 14px", background: "#FEF2F2", border: "1px solid #FECACA", borderRadius: 6, marginBottom: "1rem", fontSize: 13, color: "#DC2626" }}>
-              🔌 <strong>Offline</strong> — Transfer status changes require an internet connection. Actions are disabled until you reconnect.
+              <strong>Offline</strong> — Transfer status changes require an internet connection. Actions are disabled until you reconnect.
             </div>
           )}
 
@@ -328,7 +511,7 @@ export default function TransferDetailPage() {
             </div>
           )}
 
-          {roleActs.length === 0 && !["CLOSED", "REJECTED", "CANCELLED"].includes(transfer.status) && (
+          {roleActs.length === 0 && !terminal && (
             <p style={{ fontSize: 13, color: "#9CA3AF", fontStyle: "italic" }}>
               No actions available for your role ({user.role}) at this stage.
             </p>

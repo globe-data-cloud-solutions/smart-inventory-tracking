@@ -14,6 +14,7 @@ interface Props {
 }
 
 type FormState = {
+  transferType: "PULL" | "PUSH" | "SISTER";
   productId: string;
   fromWarehouseId: string;
   toWarehouseId: string;
@@ -52,14 +53,14 @@ export function NewTransferPanel({ products, warehouses, orgSlug }: Props) {
 
   const [open, setOpen] = useState(false);
   const [form, setForm] = useState<FormState>({
-    productId: "", fromWarehouseId: "", toWarehouseId: "", quantity: "", notes: "",
+    transferType: "PUSH", productId: "", fromWarehouseId: "", toWarehouseId: "", quantity: "", notes: "",
   });
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
   const [loading, setLoading] = useState(false);
 
   function reset() {
-    setForm({ productId: "", fromWarehouseId: "", toWarehouseId: "", quantity: "", notes: "" });
+    setForm({ transferType: "PUSH", productId: "", fromWarehouseId: "", toWarehouseId: "", quantity: "", notes: "" });
     setError("");
     setSuccess("");
   }
@@ -88,6 +89,7 @@ export function NewTransferPanel({ products, warehouses, orgSlug }: Props) {
     try {
       // API returns the created record including its server-assigned ID
       const created = await api.post<{ id: string; ref: string }>("/api/v1/transfers", {
+        transfer_type: form.transferType,
         product_id: form.productId,
         product_name: product?.name,
         from_warehouse_id: form.fromWarehouseId,
@@ -101,16 +103,16 @@ export function NewTransferPanel({ products, warehouses, orgSlug }: Props) {
 
       // Add to Zustand store with the server-assigned ID so status updates stay in sync
       const entry: TransferEntry = {
-        id:               created.id,
-        ref:              created.ref,
-        productId:        form.productId,
-        fromWarehouseId:  form.fromWarehouseId,
+        id:                created.id,
+        ref:               created.ref,
+        productId:         form.productId,
+        fromWarehouseId:   form.fromWarehouseId,
         fromWarehouseName: fromWH?.name ?? form.fromWarehouseId,
-        toWarehouseId:    form.toWarehouseId,
-        toWarehouseName:  toWH?.name ?? form.toWarehouseId,
-        quantity:         qty,
-        issuedDate:       new Date().toISOString(),
-        status:           "DRAFT",
+        toWarehouseId:     form.toWarehouseId,
+        toWarehouseName:   toWH?.name ?? form.toWarehouseId,
+        quantity:          qty,
+        issuedDate:        new Date().toISOString(),
+        status:            "DRAFT",
       };
       addTransfer(entry);
 
@@ -170,6 +172,14 @@ export function NewTransferPanel({ products, warehouses, orgSlug }: Props) {
         </div>
 
         <form onSubmit={onSubmit} style={{ flex: 1, overflowY: "auto", padding: "1.5rem" }}>
+          <Field label="Transfer Type">
+            <select value={form.transferType} onChange={(e) => set("transferType", e.target.value as "PULL" | "PUSH" | "SISTER")} style={SELECT}>
+              <option value="PUSH">PUSH — Higher-level facility sends stock down to your warehouse</option>
+              <option value="PULL">PULL — Your warehouse requests stock from a higher-level facility (RWH/MWH)</option>
+              <option value="SISTER">SISTER — Lateral transfer between same-level warehouses</option>
+            </select>
+          </Field>
+
           <Field label="Product">
             <select value={form.productId} onChange={(e) => set("productId", e.target.value)} style={SELECT} required>
               <option value="">— select product —</option>

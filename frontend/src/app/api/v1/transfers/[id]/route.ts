@@ -21,16 +21,41 @@ export async function GET(
   });
 }
 
-// Valid state-machine transitions (mirrors state_machine.py)
-const TRANSITIONS: Record<TransferStatus, TransferStatus[]> = {
-  DRAFT:      ["SUBMITTED", "CANCELLED"],
-  SUBMITTED:  ["APPROVED", "REJECTED", "CANCELLED"],
-  APPROVED:   ["IN_TRANSIT", "CANCELLED"],
-  IN_TRANSIT: ["RECEIVED", "CANCELLED"],
-  RECEIVED:   ["CLOSED"],
-  CLOSED:     [],
-  REJECTED:   [],
-  CANCELLED:  [],
+const PULL_TRANSITIONS: Record<string, TransferStatus[]> = {
+  DRAFT:              ["PENDING_REVIEW", "CANCELLED"],
+  PENDING_REVIEW:     ["PENDING_APPROVAL", "REJECTED", "CANCELLED"],
+  PENDING_APPROVAL:   ["APPROVED", "REJECTED", "CANCELLED"],
+  APPROVED:           ["ISSUED", "CANCELLED"],
+  ISSUED:             ["IN_TRANSIT"],
+  IN_TRANSIT:         ["PARTIALLY_RECEIVED", "RECEIVED"],
+  PARTIALLY_RECEIVED: ["RECEIVED"],
+  RECEIVED:           ["COMPLETED"],
+  COMPLETED: [], REJECTED: [], CANCELLED: [],
+};
+
+const PUSH_TRANSITIONS: Record<string, TransferStatus[]> = {
+  DRAFT:              ["PENDING_APPROVAL", "CANCELLED"],
+  PENDING_APPROVAL:   ["APPROVED", "REJECTED", "CANCELLED"],
+  APPROVED:           ["ADVISED", "ISSUED", "CANCELLED"],
+  ADVISED:            ["ISSUED", "CANCELLED"],
+  ISSUED:             ["IN_TRANSIT"],
+  IN_TRANSIT:         ["PARTIALLY_RECEIVED", "RECEIVED"],
+  PARTIALLY_RECEIVED: ["RECEIVED"],
+  RECEIVED:           ["COMPLETED"],
+  COMPLETED: [], REJECTED: [], CANCELLED: [],
+};
+
+const SISTER_TRANSITIONS: Record<string, TransferStatus[]> = {
+  DRAFT:                  ["PENDING_SOURCE_CONFIRM", "CANCELLED"],
+  PENDING_SOURCE_CONFIRM: ["PENDING_DEST_CONFIRM", "CANCELLED"],
+  PENDING_DEST_CONFIRM:   ["PENDING_APPROVAL", "REJECTED", "CANCELLED"],
+  PENDING_APPROVAL:       ["APPROVED", "REJECTED", "CANCELLED"],
+  APPROVED:               ["ISSUED", "CANCELLED"],
+  ISSUED:                 ["IN_TRANSIT"],
+  IN_TRANSIT:             ["PARTIALLY_RECEIVED", "RECEIVED"],
+  PARTIALLY_RECEIVED:     ["RECEIVED"],
+  RECEIVED:               ["COMPLETED"],
+  COMPLETED: [], REJECTED: [], CANCELLED: [],
 };
 
 export async function PATCH(
@@ -48,7 +73,6 @@ export async function PATCH(
       { status: 404 }
     );
   }
-
   if (!next) {
     return NextResponse.json(
       { success: false, error: { code: "VALIDATION_ERROR", message: "next_status is required" } },
@@ -56,14 +80,19 @@ export async function PATCH(
     );
   }
 
-  const allowed = TRANSITIONS[transfer.status] ?? [];
+  const machine =
+    transfer.transfer_type === "PULL"   ? PULL_TRANSITIONS :
+    transfer.transfer_type === "SISTER" ? SISTER_TRANSITIONS :
+    PUSH_TRANSITIONS;
+
+  const allowed = machine[transfer.status] ?? [];
   if (!allowed.includes(next)) {
     return NextResponse.json(
       {
         success: false,
         error: {
           code: "INVALID_STATE_TRANSITION",
-          message: `Cannot transition from ${transfer.status} to ${next}`,
+          message: `Cannot transition ${transfer.transfer_type} from ${transfer.status} to ${next}`,
         },
       },
       { status: 422 }

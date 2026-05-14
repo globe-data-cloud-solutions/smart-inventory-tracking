@@ -39,7 +39,7 @@ export default function TenantPage({ params }: { params: { tenantId: string } })
 
       <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
         {[
-          { label: "Locations",     value: tenant.warehouses.length,    icon: "📍", sub: `${tenant.warehouses.filter(w => w.type === "PRODUCTION").length} production` },
+          { label: "Locations",     value: tenant.warehouses.length,    icon: "📍", sub: `${tenant.warehouses.filter(w => w.type === "MWH").length} main WH` },
           { label: "SKUs",          value: tenant.products.length,      icon: "📦", sub: `${[...new Set(tenant.products.map(p => p.category))].length} categories` },
           { label: "Total Units",   value: totalUnits.toLocaleString(), icon: "📊", sub: "across all WH" },
           { label: "Low Stock",     value: lowStock.length,             icon: "⚠️", sub: lowStock.length > 0 ? "need restocking" : "all good", warn: lowStock.length > 0 },
@@ -107,7 +107,7 @@ function WarehouseNode({ warehouse, allWarehouses, tenant, depth }: {
   warehouse: DemoWarehouse; allWarehouses: DemoWarehouse[]; tenant: DemoTenant; depth: number;
 }) {
   const children = getChildren(allWarehouses, warehouse.id);
-  const icons: Record<string, string> = { PRODUCTION: "🏭", WAREHOUSE: "🏗️", SUBCENTER: "🔖" };
+  const icons: Record<string, string> = { MWH: "🏭", RWH: "🏗️", WH: "🏗️", SUB_WH: "🔖" };
   const whStock = tenant.products.reduce((acc, p) => acc + (p.stock[warehouse.id] ?? 0), 0);
 
   return (
@@ -134,13 +134,15 @@ function WarehouseNode({ warehouse, allWarehouses, tenant, depth }: {
 
 function TypeBadge({ type }: { type: string }) {
   const styles: Record<string, string> = {
-    PRODUCTION: "bg-orange-100 text-orange-700",
-    WAREHOUSE:  "bg-blue-100 text-blue-700",
-    SUBCENTER:  "bg-purple-100 text-purple-700",
+    MWH:    "bg-orange-100 text-orange-700",
+    RWH:    "bg-blue-100 text-blue-700",
+    WH:     "bg-gray-100 text-gray-600",
+    SUB_WH: "bg-purple-100 text-purple-700",
   };
+  const labels: Record<string, string> = { MWH: "MWH", RWH: "RWH", WH: "WH", SUB_WH: "Sub" };
   return (
     <span className={`flex-shrink-0 text-xs px-1.5 py-0.5 rounded font-medium ${styles[type] ?? "bg-gray-100 text-gray-600"}`}>
-      {type === "PRODUCTION" ? "Prod" : type === "SUBCENTER" ? "Sub" : "WH"}
+      {labels[type] ?? type}
     </span>
   );
 }

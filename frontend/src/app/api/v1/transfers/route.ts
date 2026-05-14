@@ -1,9 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
-import { demoTransfers, refCounter, type TransferRecord } from "./_demo-state";
+import { demoTransfers, refCounter, type TransferRecord, type TransferType } from "./_demo-state";
 
 export async function POST(req: NextRequest) {
   const tenantSlug = req.headers.get("X-Tenant-Slug") ?? "";
   const body = (await req.json()) as {
+    transfer_type?: string;
     product_id?: string; product_name?: string;
     from_warehouse_id?: string; from_warehouse_name?: string;
     to_warehouse_id?: string; to_warehouse_name?: string;
@@ -35,6 +36,7 @@ export async function POST(req: NextRequest) {
     id: crypto.randomUUID(),
     ref: refCounter.next(),
     tenant_slug: tenantSlug,
+    transfer_type: (body.transfer_type as TransferType) ?? "PUSH",
     product_id: body.product_id,
     product_name: body.product_name ?? body.product_id,
     from_warehouse_id: body.from_warehouse_id,

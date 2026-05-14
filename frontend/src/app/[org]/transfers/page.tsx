@@ -11,65 +11,243 @@ import { useInventoryStore } from "@/lib/inventory-state";
 import { useOfflineSync } from "@/hooks/useOfflineSync";
 import { api } from "@/lib/api";
 
+type TransferType = "PULL" | "PUSH" | "SISTER";
+
 type TransferStatus =
-  | "DRAFT" | "SUBMITTED" | "APPROVED" | "IN_TRANSIT" | "RECEIVED" | "CLOSED" | "REJECTED" | "CANCELLED";
+  | "DRAFT"
+  | "PENDING_REVIEW"
+  | "PENDING_APPROVAL"
+  | "PENDING_SOURCE_CONFIRM"
+  | "PENDING_DEST_CONFIRM"
+  | "APPROVED"
+  | "ADVISED"
+  | "ISSUED"
+  | "IN_TRANSIT"
+  | "PARTIALLY_RECEIVED"
+  | "RECEIVED"
+  | "COMPLETED"
+  | "REJECTED"
+  | "CANCELLED";
 
 interface ApiTransfer {
-  id: string; ref: string;
-  product_id: string; product_name: string;
-  from_warehouse_name: string; to_warehouse_id: string; to_warehouse_name: string;
-  quantity: number; notes: string; status: TransferStatus; created_at: string;
+  id: string;
+  ref: string;
+  transfer_type: TransferType;
+  product_id: string;
+  product_name: string;
+  from_warehouse_name: string;
+  to_warehouse_id: string;
+  to_warehouse_name: string;
+  quantity: number;
+  notes: string;
+  status: TransferStatus;
+  created_at: string;
+}
+
+interface Action {
+  next: TransferStatus;
+  label: string;
+  color: string;
 }
 
 const STATUS_STYLE: Record<TransferStatus, { bg: string; color: string }> = {
-  DRAFT:      { bg: "#F3F4F6", color: "#6B7280" },
-  SUBMITTED:  { bg: "#DBEAFE", color: "#1E40AF" },
-  APPROVED:   { bg: "#D1FAE5", color: "#065F46" },
-  IN_TRANSIT: { bg: "#FEF3C7", color: "#92400E" },
-  RECEIVED:   { bg: "#DCFCE7", color: "#166534" },
-  CLOSED:     { bg: "#F3F4F6", color: "#374151" },
-  REJECTED:   { bg: "#FEE2E2", color: "#991B1B" },
-  CANCELLED:  { bg: "#F3F4F6", color: "#9CA3AF" },
+  DRAFT:                  { bg: "#F3F4F6", color: "#6B7280" },
+  PENDING_REVIEW:         { bg: "#EDE9FE", color: "#5B21B6" },
+  PENDING_APPROVAL:       { bg: "#DBEAFE", color: "#1E40AF" },
+  PENDING_SOURCE_CONFIRM: { bg: "#FEF3C7", color: "#92400E" },
+  PENDING_DEST_CONFIRM:   { bg: "#FEF3C7", color: "#92400E" },
+  APPROVED:               { bg: "#D1FAE5", color: "#065F46" },
+  ADVISED:                { bg: "#ECFDF5", color: "#059669" },
+  ISSUED:                 { bg: "#D1FAE5", color: "#065F46" },
+  IN_TRANSIT:             { bg: "#FEF3C7", color: "#92400E" },
+  PARTIALLY_RECEIVED:     { bg: "#FEF9C3", color: "#713F12" },
+  RECEIVED:               { bg: "#DCFCE7", color: "#166534" },
+  COMPLETED:              { bg: "#F3F4F6", color: "#374151" },
+  REJECTED:               { bg: "#FEE2E2", color: "#991B1B" },
+  CANCELLED:              { bg: "#F3F4F6", color: "#9CA3AF" },
 };
 
-// Which roles can trigger which transitions
-const ROLE_TRANSITIONS: Record<string, Partial<Record<TransferStatus, { next: TransferStatus; label: string; color: string }[]>>> = {
-  WM: {
-    DRAFT:      [{ next: "SUBMITTED", label: "Submit",   color: "#1E40AF" }, { next: "CANCELLED", label: "Cancel", color: "#991B1B" }],
-    IN_TRANSIT: [{ next: "RECEIVED",  label: "Mark Received", color: "#059669" }],
-  },
-  LM: {
-    APPROVED:   [{ next: "IN_TRANSIT", label: "Dispatch", color: "#92400E" }],
-    DRAFT:      [{ next: "SUBMITTED", label: "Submit",   color: "#1E40AF" }],
-    IN_TRANSIT: [{ next: "RECEIVED",  label: "Mark Received", color: "#059669" }],
-  },
-  RM: {
-    SUBMITTED:  [{ next: "APPROVED",   label: "Approve", color: "#059669" }, { next: "REJECTED", label: "Reject", color: "#991B1B" }],
-    APPROVED:   [{ next: "CANCELLED",  label: "Cancel",  color: "#991B1B" }],
-  },
-  NM: {
-    SUBMITTED:  [{ next: "APPROVED",   label: "Approve", color: "#059669" }, { next: "REJECTED", label: "Reject", color: "#991B1B" }],
-    APPROVED:   [{ next: "IN_TRANSIT", label: "Dispatch", color: "#92400E" }, { next: "CANCELLED", label: "Cancel", color: "#991B1B" }],
-    IN_TRANSIT: [{ next: "RECEIVED",   label: "Mark Received", color: "#059669" }],
-  },
-  TA: {
-    SUBMITTED:  [{ next: "APPROVED",   label: "Approve", color: "#059669" }, { next: "REJECTED", label: "Reject", color: "#991B1B" }],
-    APPROVED:   [{ next: "IN_TRANSIT", label: "Dispatch", color: "#92400E" }, { next: "CANCELLED", label: "Cancel", color: "#991B1B" }],
-    DRAFT:      [{ next: "SUBMITTED",  label: "Submit",  color: "#1E40AF" }, { next: "CANCELLED", label: "Cancel", color: "#991B1B" }],
-    IN_TRANSIT: [{ next: "RECEIVED",   label: "Mark Received", color: "#059669" }],
-  },
-  SA: {
-    DRAFT:      [{ next: "SUBMITTED",  label: "Submit",  color: "#1E40AF" }, { next: "CANCELLED", label: "Cancel", color: "#991B1B" }],
-    SUBMITTED:  [{ next: "APPROVED",   label: "Approve", color: "#059669" }, { next: "REJECTED", label: "Reject", color: "#991B1B" }],
-    APPROVED:   [{ next: "IN_TRANSIT", label: "Dispatch", color: "#92400E" }, { next: "CANCELLED", label: "Cancel", color: "#991B1B" }],
-    IN_TRANSIT: [{ next: "RECEIVED",   label: "Mark Received", color: "#059669" }],
-    RECEIVED:   [{ next: "CLOSED",     label: "Close",  color: "#374151" }],
-  },
+const TYPE_BADGE: Record<TransferType, { bg: string; color: string; label: string }> = {
+  PULL:   { bg: "#DBEAFE", color: "#1E40AF", label: "PULL" },
+  PUSH:   { bg: "#FEF3C7", color: "#92400E", label: "PUSH" },
+  SISTER: { bg: "#EDE9FE", color: "#5B21B6", label: "SISTER" },
 };
 
-// DEMO_TRANSFERS now live in _demo-state.ts and are fetched via GET /api/v1/transfers
+function getAvailableActions(role: string, type: TransferType, status: TransferStatus): Action[] {
+  const approve:    Action = { next: "APPROVED",               label: "Approve",           color: "#059669" };
+  const reject:     Action = { next: "REJECTED",               label: "Reject",             color: "#991B1B" };
+  const cancel:     Action = { next: "CANCELLED",              label: "Cancel",             color: "#991B1B" };
+  const issue:      Action = { next: "ISSUED",                 label: "Issue",              color: "#065F46" };
+  const dispatch:   Action = { next: "IN_TRANSIT",             label: "Dispatch",           color: "#92400E" };
+  const advise:     Action = { next: "ADVISED",                label: "Advise",             color: "#059669" };
+  const partRecv:   Action = { next: "PARTIALLY_RECEIVED",     label: "Partial Receive",    color: "#713F12" };
+  const markRecv:   Action = { next: "RECEIVED",               label: "Mark Received",      color: "#059669" };
+  const complete:   Action = { next: "COMPLETED",              label: "Complete",           color: "#374151" };
+  const review:     Action = { next: "PENDING_REVIEW",         label: "Submit for Review",  color: "#5B21B6" };
+  const toApproval: Action = { next: "PENDING_APPROVAL",       label: "Send for Approval",  color: "#1E40AF" };
+  const srcConfirm: Action = { next: "PENDING_SOURCE_CONFIRM", label: "Request Confirm",    color: "#92400E" };
+  const dstConfirm: Action = { next: "PENDING_DEST_CONFIRM",   label: "Dest Confirm",       color: "#92400E" };
 
-const COLS = ["Reference", "From", "To", "Product", "Qty", "Status", "Date", "Actions"];
+  // TA and SA see all valid next statuses for the type
+  if (role === "TA" || role === "SA") {
+    if (type === "PULL") {
+      const map: Partial<Record<TransferStatus, Action[]>> = {
+        DRAFT:              [review, cancel],
+        PENDING_REVIEW:     [toApproval, reject, cancel],
+        PENDING_APPROVAL:   [approve, reject, cancel],
+        APPROVED:           [issue, cancel],
+        ISSUED:             [dispatch],
+        IN_TRANSIT:         [partRecv, markRecv],
+        PARTIALLY_RECEIVED: [markRecv],
+        RECEIVED:           [complete],
+      };
+      return map[status] ?? [];
+    }
+    if (type === "PUSH") {
+      const map: Partial<Record<TransferStatus, Action[]>> = {
+        DRAFT:            [toApproval, cancel],
+        PENDING_APPROVAL: [approve, reject, cancel],
+        APPROVED:         [advise, issue, cancel],
+        ADVISED:          [issue, cancel],
+        ISSUED:           [dispatch],
+        IN_TRANSIT:       [partRecv, markRecv],
+        PARTIALLY_RECEIVED: [markRecv],
+        RECEIVED:         [complete],
+      };
+      return map[status] ?? [];
+    }
+    if (type === "SISTER") {
+      const map: Partial<Record<TransferStatus, Action[]>> = {
+        DRAFT:                  [srcConfirm, cancel],
+        PENDING_SOURCE_CONFIRM: [dstConfirm, cancel],
+        PENDING_DEST_CONFIRM:   [toApproval, reject, cancel],
+        PENDING_APPROVAL:       [approve, reject, cancel],
+        APPROVED:               [issue, cancel],
+        ISSUED:                 [dispatch],
+        IN_TRANSIT:             [partRecv, markRecv],
+        PARTIALLY_RECEIVED:     [markRecv],
+        RECEIVED:               [complete],
+      };
+      return map[status] ?? [];
+    }
+    return [];
+  }
+
+  // WM
+  if (role === "WM") {
+    if (type === "PULL") {
+      const map: Partial<Record<TransferStatus, Action[]>> = {
+        DRAFT:              [review, cancel],
+        IN_TRANSIT:         [partRecv, markRecv],
+        PARTIALLY_RECEIVED: [markRecv],
+        RECEIVED:           [complete],
+      };
+      return map[status] ?? [];
+    }
+    if (type === "PUSH") {
+      const map: Partial<Record<TransferStatus, Action[]>> = {
+        IN_TRANSIT:         [partRecv, markRecv],
+        PARTIALLY_RECEIVED: [markRecv],
+        RECEIVED:           [complete],
+      };
+      return map[status] ?? [];
+    }
+    if (type === "SISTER") {
+      const map: Partial<Record<TransferStatus, Action[]>> = {
+        DRAFT:                  [srcConfirm, cancel],
+        PENDING_DEST_CONFIRM:   [toApproval, cancel],
+        IN_TRANSIT:             [partRecv, markRecv],
+        PARTIALLY_RECEIVED:     [markRecv],
+        RECEIVED:               [complete],
+      };
+      return map[status] ?? [];
+    }
+    return [];
+  }
+
+  // RM
+  if (role === "RM") {
+    if (type === "PULL") {
+      const map: Partial<Record<TransferStatus, Action[]>> = {
+        PENDING_REVIEW:   [toApproval, reject, cancel],
+        PENDING_APPROVAL: [approve, reject, cancel],
+      };
+      return map[status] ?? [];
+    }
+    if (type === "PUSH") {
+      const map: Partial<Record<TransferStatus, Action[]>> = {
+        DRAFT:            [toApproval, cancel],
+        PENDING_APPROVAL: [approve, reject, cancel],
+        APPROVED:         [issue, cancel],
+      };
+      return map[status] ?? [];
+    }
+    if (type === "SISTER") {
+      const map: Partial<Record<TransferStatus, Action[]>> = {
+        PENDING_APPROVAL: [approve, reject, cancel],
+      };
+      return map[status] ?? [];
+    }
+    return [];
+  }
+
+  // NM
+  if (role === "NM") {
+    if (type === "PULL") {
+      const map: Partial<Record<TransferStatus, Action[]>> = {
+        PENDING_APPROVAL: [approve, reject, cancel],
+        APPROVED:         [issue, cancel],
+      };
+      return map[status] ?? [];
+    }
+    if (type === "PUSH") {
+      const map: Partial<Record<TransferStatus, Action[]>> = {
+        DRAFT:            [toApproval, cancel],
+        PENDING_APPROVAL: [approve, reject, cancel],
+        APPROVED:         [advise, issue, cancel],
+      };
+      return map[status] ?? [];
+    }
+    if (type === "SISTER") {
+      const map: Partial<Record<TransferStatus, Action[]>> = {
+        PENDING_APPROVAL: [approve, reject, cancel],
+      };
+      return map[status] ?? [];
+    }
+    return [];
+  }
+
+  // LM
+  if (role === "LM") {
+    if (type === "PULL") {
+      const map: Partial<Record<TransferStatus, Action[]>> = {
+        APPROVED: [issue, cancel],
+        ISSUED:   [dispatch],
+      };
+      return map[status] ?? [];
+    }
+    if (type === "PUSH") {
+      const map: Partial<Record<TransferStatus, Action[]>> = {
+        APPROVED: [advise, issue, cancel],
+        ADVISED:  [issue, cancel],
+        ISSUED:   [dispatch],
+      };
+      return map[status] ?? [];
+    }
+    if (type === "SISTER") {
+      const map: Partial<Record<TransferStatus, Action[]>> = {
+        APPROVED: [issue, cancel],
+        ISSUED:   [dispatch],
+      };
+      return map[status] ?? [];
+    }
+    return [];
+  }
+
+  return [];
+}
+
+const COLS = ["Reference", "Type", "From", "To", "Product", "Qty", "Status", "Date", "Actions"];
 
 export default function TransfersPage() {
   const { org } = useParams() as { org: string };
@@ -91,10 +269,8 @@ export default function TransfersPage() {
     staleTime: 0,
     refetchInterval: 15000,
   });
-  const roleActions = ROLE_TRANSITIONS[user.role] ?? {};
 
-  async function doTransition(id: string, next: TransferStatus, transfer?: ApiTransfer) {
-    // Transfer status changes require server-side approval chain — must not be queued offline
+  async function doTransition(id: string, next: TransferStatus) {
     if (!isOnline) {
       setConfirmModal(null);
       setToast("Transfer status changes require an internet connection. Please reconnect and try again.");
@@ -106,7 +282,6 @@ export default function TransfersPage() {
     try {
       await api.patch(`/api/v1/transfers/${id}`, { next_status: next });
       await qc.invalidateQueries({ queryKey: ["transfers", org] });
-      // Mirror status change in Zustand so Inventory page balances update immediately
       updateTransferStatus(id, next);
       setToast(`Status updated to ${next}`);
       setTimeout(() => setToast(""), 3000);
@@ -119,9 +294,10 @@ export default function TransfersPage() {
   }
 
   const stats = {
-    draft:     allTransfers.filter((t) => t.status === "DRAFT").length,
-    inTransit: allTransfers.filter((t) => t.status === "IN_TRANSIT").length,
-    pending:   allTransfers.filter((t) => ["SUBMITTED", "APPROVED"].includes(t.status)).length,
+    draft:      allTransfers.filter((t) => t.status === "DRAFT").length,
+    inTransit:  allTransfers.filter((t) => t.status === "IN_TRANSIT").length,
+    pending:    allTransfers.filter((t) => ["PENDING_REVIEW", "PENDING_APPROVAL", "PENDING_SOURCE_CONFIRM", "PENDING_DEST_CONFIRM"].includes(t.status)).length,
+    approved:   allTransfers.filter((t) => ["APPROVED", "ADVISED", "ISSUED"].includes(t.status)).length,
   };
 
   return (
@@ -155,7 +331,7 @@ export default function TransfersPage() {
                 Cancel
               </button>
               <button
-                onClick={() => doTransition(confirmModal.id, confirmModal.next, confirmModal.transfer)}
+                onClick={() => doTransition(confirmModal.id, confirmModal.next)}
                 style={{ flex: 2, padding: "9px", background: "#1B4332", color: "#FCDD09", border: "none", borderRadius: 6, fontSize: 13, fontWeight: 700, cursor: "pointer" }}
               >
                 Confirm
@@ -180,8 +356,9 @@ export default function TransfersPage() {
       <div style={{ display: "flex", gap: 10, marginBottom: "1.5rem", flexWrap: "wrap" }}>
         {[
           { label: "Draft",      count: stats.draft,     bg: "#F3F4F6", color: "#374151" },
+          { label: "Pending",    count: stats.pending,   bg: "#EDE9FE", color: "#5B21B6" },
+          { label: "Approved",   count: stats.approved,  bg: "#D1FAE5", color: "#065F46" },
           { label: "In Transit", count: stats.inTransit, bg: "#FEF3C7", color: "#92400E" },
-          { label: "Pending",    count: stats.pending,   bg: "#DBEAFE", color: "#1E40AF" },
         ].map((s) => (
           <div key={s.label} style={{ background: s.bg, color: s.color, fontSize: 12, fontWeight: 700, padding: "4px 12px", borderRadius: 20 }}>
             {s.label}: {s.count}
@@ -203,8 +380,9 @@ export default function TransfersPage() {
             </thead>
             <tbody>
               {allTransfers.map((t, idx) => {
-                const s   = STATUS_STYLE[t.status];
-                const acts = roleActions[t.status] ?? [];
+                const s    = STATUS_STYLE[t.status] ?? { bg: "#F3F4F6", color: "#6B7280" };
+                const tb   = TYPE_BADGE[t.transfer_type] ?? { bg: "#F3F4F6", color: "#6B7280", label: t.transfer_type };
+                const acts = getAvailableActions(user.role, t.transfer_type, t.status);
                 const busy = transitioning === t.id;
                 return (
                   <tr key={t.id} style={{ background: idx % 2 === 0 ? "#fff" : "#FAFAFA", borderBottom: "1px solid #F3F4F6" }}>
@@ -213,13 +391,18 @@ export default function TransfersPage() {
                         {t.ref} →
                       </Link>
                     </td>
+                    <td style={{ padding: "10px 12px" }}>
+                      <span style={{ fontSize: 10, fontWeight: 700, padding: "2px 7px", borderRadius: 3, background: tb.bg, color: tb.color, whiteSpace: "nowrap" }}>
+                        {tb.label}
+                      </span>
+                    </td>
                     <td style={{ padding: "10px 12px", color: "#374151", fontSize: 13 }}>{t.from_warehouse_name}</td>
                     <td style={{ padding: "10px 12px", color: "#374151", fontSize: 13 }}>{t.to_warehouse_name}</td>
                     <td style={{ padding: "10px 12px", color: "#6B7280", fontSize: 13 }}>{t.product_name}</td>
                     <td style={{ padding: "10px 12px", fontWeight: 600, color: "#111827", fontSize: 13 }}>{t.quantity.toLocaleString()}</td>
                     <td style={{ padding: "10px 12px" }}>
                       <span style={{ fontSize: 11, fontWeight: 700, padding: "3px 8px", borderRadius: 3, background: s.bg, color: s.color, whiteSpace: "nowrap" }}>
-                        {t.status}
+                        {t.status.replace(/_/g, " ")}
                       </span>
                     </td>
                     <td style={{ padding: "10px 12px", color: "#9CA3AF", fontSize: 12, whiteSpace: "nowrap" }}>
@@ -231,7 +414,7 @@ export default function TransfersPage() {
                       ) : acts.length > 0 ? (
                         <div style={{ display: "flex", gap: 6, flexWrap: "nowrap", alignItems: "center" }}>
                           {!isOnline && (
-                            <span title="Offline — actions unavailable" style={{ fontSize: 11, color: "#9CA3AF" }}>🔌 offline</span>
+                            <span title="Offline — actions unavailable" style={{ fontSize: 11, color: "#9CA3AF" }}>offline</span>
                           )}
                           {acts.map((a) => (
                             <button

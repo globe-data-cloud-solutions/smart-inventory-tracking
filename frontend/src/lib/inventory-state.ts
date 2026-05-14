@@ -7,7 +7,7 @@
  *  On Hand   = base + RECEIVE_adj + inbound_RECEIVED_transfers
  *                   − outbound_IN_TRANSIT_transfers − outbound_RECEIVED_transfers
  *
- *  Available = On Hand − ISSUE_adj − outbound_reserved (DRAFT/SUBMITTED/APPROVED)
+ *  Available = On Hand − ISSUE_adj − outbound_reserved (DRAFT/PENDING_*/APPROVED/ADVISED)
  *
  *  Issued (display)    = ISSUE_adj + outbound_reserved qty
  *  In Transit (display) = outbound_IN_TRANSIT + inbound_IN_TRANSIT qty
@@ -22,9 +22,20 @@
 import { create } from "zustand";
 
 export type TransferStatus =
-  | "DRAFT" | "SUBMITTED" | "APPROVED"
-  | "IN_TRANSIT" | "RECEIVED" | "CLOSED"
-  | "REJECTED" | "CANCELLED";
+  | "DRAFT"
+  | "PENDING_REVIEW"
+  | "PENDING_APPROVAL"
+  | "PENDING_SOURCE_CONFIRM"
+  | "PENDING_DEST_CONFIRM"
+  | "APPROVED"
+  | "ADVISED"
+  | "ISSUED"
+  | "IN_TRANSIT"
+  | "PARTIALLY_RECEIVED"
+  | "RECEIVED"
+  | "COMPLETED"
+  | "REJECTED"
+  | "CANCELLED";
 
 export type AdjustmentType = "RECEIVE" | "ISSUE";
 
@@ -53,11 +64,11 @@ export interface TransferEntry {
 }
 
 // Statuses where an outbound transfer has physically left the source WH
-const OUT_REDUCES_ON_HAND: TransferStatus[] = ["IN_TRANSIT", "RECEIVED", "CLOSED"];
+const OUT_REDUCES_ON_HAND: TransferStatus[] = ["ISSUED", "IN_TRANSIT", "PARTIALLY_RECEIVED", "RECEIVED", "COMPLETED"];
 // Statuses where an inbound transfer credits the destination WH On Hand
-const IN_CREDITS_ON_HAND: TransferStatus[] = ["RECEIVED", "CLOSED"];
+const IN_CREDITS_ON_HAND: TransferStatus[] = ["RECEIVED", "COMPLETED"];
 // Statuses where an outbound transfer reduces Available (reserved but not yet gone)
-const OUT_RESERVED: TransferStatus[] = ["DRAFT", "SUBMITTED", "APPROVED"];
+const OUT_RESERVED: TransferStatus[] = ["DRAFT", "PENDING_REVIEW", "PENDING_APPROVAL", "PENDING_SOURCE_CONFIRM", "PENDING_DEST_CONFIRM", "APPROVED", "ADVISED"];
 
 interface InventoryStore {
   currentTenantSlug: string;

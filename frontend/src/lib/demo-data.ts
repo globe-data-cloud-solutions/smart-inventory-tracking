@@ -1,5 +1,5 @@
 export type OrgType = "PRODUCER" | "RETAILER" | "HYBRID";
-export type WarehouseType = "PRODUCTION" | "WAREHOUSE" | "SUBCENTER";
+export type WarehouseType = "MWH" | "RWH" | "WH" | "SUB_WH";
 export type Role = "SA" | "TA" | "NM" | "RM" | "WM" | "LM" | "AU";
 
 export interface DemoWarehouse {
@@ -64,7 +64,7 @@ const ADDIS_WATER: DemoTenant = {
     {
       id: "aw-main",
       name: "Main Production Center",
-      type: "PRODUCTION",
+      type: "MWH",
       parentId: null,
       location: "Addis Ababa Industrial Zone",
       manager: "Selam Bekele",
@@ -73,7 +73,7 @@ const ADDIS_WATER: DemoTenant = {
     {
       id: "aw-north",
       name: "North WH",
-      type: "WAREHOUSE",
+      type: "RWH",
       parentId: null,
       location: "Gondar",
       manager: "Hailu Tadesse",
@@ -82,7 +82,7 @@ const ADDIS_WATER: DemoTenant = {
     {
       id: "aw-north-sub",
       name: "North-Subcenter WH",
-      type: "SUBCENTER",
+      type: "SUB_WH",
       parentId: "aw-north",
       location: "Bahir Dar",
       manager: "Tigist Alemu",
@@ -91,7 +91,7 @@ const ADDIS_WATER: DemoTenant = {
     {
       id: "aw-south",
       name: "South WH",
-      type: "WAREHOUSE",
+      type: "WH",
       parentId: null,
       location: "Hawassa",
       manager: "Dawit Girma",
@@ -100,7 +100,7 @@ const ADDIS_WATER: DemoTenant = {
     {
       id: "aw-east",
       name: "East WH",
-      type: "WAREHOUSE",
+      type: "WH",
       parentId: null,
       location: "Dire Dawa",
       manager: "Fatuma Hassan",
@@ -109,7 +109,7 @@ const ADDIS_WATER: DemoTenant = {
     {
       id: "aw-west",
       name: "West WH",
-      type: "WAREHOUSE",
+      type: "WH",
       parentId: null,
       location: "Jimma",
       manager: "Abebe Worku",
@@ -195,7 +195,7 @@ const MUGER_CEMENT: DemoTenant = {
     {
       id: "mc-harar",
       name: "Harar Production Center",
-      type: "PRODUCTION",
+      type: "MWH",
       parentId: null,
       location: "Harar, Harari Region",
       manager: "Biruk Mengistu",
@@ -204,7 +204,7 @@ const MUGER_CEMENT: DemoTenant = {
     {
       id: "mc-ambo",
       name: "Ambo Production Center",
-      type: "PRODUCTION",
+      type: "MWH",
       parentId: null,
       location: "Ambo, West Shewa",
       manager: "Meseret Tadesse",
@@ -213,7 +213,7 @@ const MUGER_CEMENT: DemoTenant = {
     {
       id: "mc-kombolcha",
       name: "Kombolcha WH",
-      type: "WAREHOUSE",
+      type: "WH",
       parentId: null,
       location: "Kombolcha, Amhara",
       manager: "Getnet Assefa",
@@ -222,7 +222,7 @@ const MUGER_CEMENT: DemoTenant = {
     {
       id: "mc-mekele",
       name: "Mekele WH",
-      type: "WAREHOUSE",
+      type: "WH",
       parentId: null,
       location: "Mekele, Tigray",
       manager: "Hiwot Gebre",
@@ -231,7 +231,7 @@ const MUGER_CEMENT: DemoTenant = {
     {
       id: "mc-diredawa",
       name: "Dire Dawa WH",
-      type: "WAREHOUSE",
+      type: "WH",
       parentId: null,
       location: "Dire Dawa",
       manager: "Abdulaziz Hassen",
@@ -240,7 +240,7 @@ const MUGER_CEMENT: DemoTenant = {
     {
       id: "mc-hawassa",
       name: "Hawassa WH",
-      type: "WAREHOUSE",
+      type: "WH",
       parentId: null,
       location: "Hawassa, Sidama",
       manager: "Tigabu Tesfay",

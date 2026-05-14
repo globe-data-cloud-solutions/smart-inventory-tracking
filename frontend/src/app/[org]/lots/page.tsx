@@ -208,7 +208,7 @@ export default function LotsPage() {
                           <td style={{ padding: "9px 14px", fontWeight: 600, color: "#1F2937" }}>{r.warehouse_name}</td>
                           <td style={{ padding: "9px 14px" }}>
                             <span style={{ fontSize: 11, fontWeight: 700, background: "#F3F4F6", color: "#374151", padding: "2px 6px", borderRadius: 3 }}>
-                              {wh?.type ?? "WAREHOUSE"}
+                              {wh?.type ?? "WH"}
                             </span>
                           </td>
                           <td style={{ padding: "9px 14px", fontWeight: 700, color: r.quantity > 0 ? "#1B4332" : "#9CA3AF" }}>

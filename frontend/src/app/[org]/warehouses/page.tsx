@@ -2,7 +2,7 @@
 
 import { useParams } from "next/navigation";
 import { SA_ORG_SLUG } from "@/lib/demo-auth";
-import { DEMO_TENANTS, getTotalStock } from "@/lib/demo-data";
+import { DEMO_TENANTS } from "@/lib/demo-data";
 
 export default function WarehousesPage() {
   const { org } = useParams() as { org: string };
@@ -12,10 +12,20 @@ export default function WarehousesPage() {
   if (!tenant) return <p style={{ padding: "2rem", color: "#6B7280" }}>Tenant not found.</p>;
 
   const typeColors: Record<string, { bg: string; text: string; label: string }> = {
-    PRODUCTION: { bg: "#FEF3C7", text: "#92400E", label: "Production" },
-    WAREHOUSE:  { bg: "#DBEAFE", text: "#1E40AF", label: "Warehouse" },
-    SUBCENTER:  { bg: "#EDE9FE", text: "#5B21B6", label: "Sub-center" },
+    MWH:    { bg: "#FEF3C7", text: "#92400E", label: "Main WH (MWH)" },
+    RWH:    { bg: "#DBEAFE", text: "#1E40AF", label: "Regional WH (RWH)" },
+    WH:     { bg: "#F3F4F6", text: "#374151", label: "Warehouse (WH)" },
+    SUB_WH: { bg: "#EDE9FE", text: "#5B21B6", label: "Sub-Warehouse" },
   };
+
+  // Compute hierarchy depth for indentation
+  function getDepth(warehouseId: string, visited = new Set<string>()): number {
+    if (visited.has(warehouseId)) return 0;
+    visited.add(warehouseId);
+    const wh = tenant.warehouses.find((w) => w.id === warehouseId);
+    if (!wh?.parentId) return 0;
+    return 1 + getDepth(wh.parentId, visited);
+  }
 
   return (
     <div style={{ padding: "2rem" }}>
@@ -38,12 +48,13 @@ export default function WarehousesPage() {
             {tenant.warehouses.map((w, idx) => {
               const whUnits = tenant.products.reduce((a, p) => a + (p.stock[w.id] ?? 0), 0);
               const whSKUs  = tenant.products.filter((p) => (p.stock[w.id] ?? 0) > 0).length;
-              const tc = typeColors[w.type] ?? { bg: "#F3F4F6", text: "#6B7280", label: w.type };
-              const user = tenant.users.find((u) => u.warehouseId === w.id);
+              const tc    = typeColors[w.type] ?? { bg: "#F3F4F6", text: "#6B7280", label: w.type };
+              const user  = tenant.users.find((u) => u.warehouseId === w.id);
+              const depth = getDepth(w.id);
               return (
                 <tr key={w.id} style={{ background: idx % 2 === 0 ? "#fff" : "#FAFAFA", borderBottom: "1px solid #F3F4F6" }}>
-                  <td style={{ padding: "10px 16px", fontWeight: 600, color: "#1F2937" }}>
-                    {w.parentId && <span style={{ color: "#D1D5DB", marginRight: 6 }}>↳</span>}
+                  <td style={{ padding: "10px 16px", fontWeight: 600, color: "#1F2937", paddingLeft: `${16 + depth * 20}px` }}>
+                    {depth > 0 && <span style={{ color: "#D1D5DB", marginRight: 6 }}>{"↳".repeat(depth)}</span>}
                     {w.name}
                   </td>
                   <td style={{ padding: "10px 16px", color: "#6B7280" }}>{w.location}</td>

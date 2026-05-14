@@ -287,7 +287,7 @@ export default function OrgDashboard() {
               const whUnits = tenant.products.reduce((a, p) => a + (p.stock[w.id] ?? 0), 0);
               const whSKUs  = tenant.products.filter((p) => (p.stock[w.id] ?? 0) > 0).length;
               const whLow   = tenant.products.filter((p) => (p.stock[w.id] ?? 0) > 0 && (p.stock[w.id] ?? 0) < p.reorderPoint).length;
-              const tc = { PRODUCTION: { bg: "#FEF3C7", text: "#92400E" }, WAREHOUSE: { bg: "#DBEAFE", text: "#1E40AF" }, SUBCENTER: { bg: "#EDE9FE", text: "#5B21B6" } }[w.type] ?? { bg: "#F3F4F6", text: "#6B7280" };
+              const tc = { MWH: { bg: "#FEF3C7", text: "#92400E" }, RWH: { bg: "#DBEAFE", text: "#1E40AF" }, WH: { bg: "#F3F4F6", text: "#374151" }, SUB_WH: { bg: "#EDE9FE", text: "#5B21B6" } }[w.type] ?? { bg: "#F3F4F6", text: "#6B7280" };
               return (
                 <tr key={w.id} style={{ background: idx % 2 === 0 ? "#fff" : "#FAFAFA", borderBottom: "1px solid #F3F4F6" }}>
                   <td style={{ padding: "10px 16px", fontWeight: 600, color: "#1F2937" }}>
@@ -297,7 +297,7 @@ export default function OrgDashboard() {
                   </td>
                   <td style={{ padding: "10px 16px" }}>
                     <span style={{ fontSize: 11, fontWeight: 700, background: tc.bg, color: tc.text, padding: "2px 8px", borderRadius: 3 }}>
-                      {w.type === "PRODUCTION" ? "Production" : w.type === "SUBCENTER" ? "Sub-center" : "Warehouse"}
+                      {w.type === "MWH" ? "Main WH" : w.type === "RWH" ? "Regional WH" : w.type === "SUB_WH" ? "Sub-WH" : "WH"}
                     </span>
                   </td>
                   <td style={{ padding: "10px 16px", color: "#374151" }}>{whSKUs}</td>
