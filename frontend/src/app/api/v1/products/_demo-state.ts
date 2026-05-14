@@ -1,29 +1,29 @@
-// Shared in-memory state for demo product API routes.
-// Resets on hot-reload; acceptable for demo use.
-
-let counter = 0;
-
-export const demoSkuCounter = {
-  peekNumber: () => counter + 1,
-  increment:  () => ++counter,
-};
-
-export const demoProducts: Array<{
+type DemoProduct = {
   id: string; sku: string; name: string; type_code: string;
   unit: string; pack_size: number; tenant_slug: string; created_at: string;
-}> = [];
+};
 
-// Derive org abbreviation from slug: "addis-water" → "AW"
-export function toOrgAbbr(orgSlug: string): string {
-  return orgSlug
-    .split("-")
-    .map((w) => (w[0] ?? "").toUpperCase())
-    .join("")
-    .slice(0, 4);
+declare global {
+  // eslint-disable-next-line no-var
+  var _smartDemoProducts: DemoProduct[] | undefined;
+  // eslint-disable-next-line no-var
+  var _smartSkuCounter: number | undefined;
 }
 
-// Build SKU from components: AW + WTR + KG + 4 + 1 → "AW-WTR-KG4-0001"
+if (!globalThis._smartDemoProducts)  globalThis._smartDemoProducts  = [];
+if (globalThis._smartSkuCounter === undefined) globalThis._smartSkuCounter = 0;
+
+export const demoProducts: DemoProduct[] = globalThis._smartDemoProducts;
+
+export const demoSkuCounter = {
+  peekNumber: () => (globalThis._smartSkuCounter ?? 0) + 1,
+  increment:  () => { globalThis._smartSkuCounter = (globalThis._smartSkuCounter ?? 0) + 1; return globalThis._smartSkuCounter; },
+};
+
+export function toOrgAbbr(orgSlug: string): string {
+  return orgSlug.split("-").map((w) => (w[0] ?? "").toUpperCase()).join("").slice(0, 4);
+}
+
 export function buildSku(orgSlug: string, typeCode: string, unit: string, packSize: number, n: number): string {
-  const abbr = toOrgAbbr(orgSlug);
-  return `${abbr}-${typeCode.toUpperCase()}-${unit}${packSize}-${String(n).padStart(4, "0")}`;
+  return `${toOrgAbbr(orgSlug)}-${typeCode.toUpperCase()}-${unit}${packSize}-${String(n).padStart(4, "0")}`;
 }

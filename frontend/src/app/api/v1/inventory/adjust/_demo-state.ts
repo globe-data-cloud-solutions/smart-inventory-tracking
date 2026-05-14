@@ -8,7 +8,7 @@ export interface AdjustRecord {
   product_sku: string;
   warehouse_id: string;
   warehouse_name: string;
-  quantity: number;       // positive = add, negative = remove
+  quantity: number;
   reason_code: string;
   notes: string;
   status: AdjustStatus;
@@ -17,7 +17,6 @@ export interface AdjustRecord {
   created_at: string;
 }
 
-// PRODUCER defaults from APPROVAL_DEFAULTS in wizard_service.py
 export const THRESHOLDS = { low: 100, medium: 500 };
 
 export function getRequiredRole(absQty: number): "NONE" | "RM" | "NM" {
@@ -26,4 +25,11 @@ export function getRequiredRole(absQty: number): "NONE" | "RM" | "NM" {
   return "NM";
 }
 
-export const demoAdjustments: AdjustRecord[] = [];
+declare global {
+  // eslint-disable-next-line no-var
+  var _smartDemoAdjustments: AdjustRecord[] | undefined;
+}
+
+if (!globalThis._smartDemoAdjustments) globalThis._smartDemoAdjustments = [];
+
+export const demoAdjustments: AdjustRecord[] = globalThis._smartDemoAdjustments;

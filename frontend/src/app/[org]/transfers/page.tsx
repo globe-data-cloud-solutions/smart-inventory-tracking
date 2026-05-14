@@ -289,9 +289,10 @@ export default function TransfersPage() {
       updateTransferStatus(id, next);
       setToast(`Status updated to ${next}`);
       setTimeout(() => setToast(""), 3000);
-    } catch {
-      setToast("Transition failed — check permissions.");
-      setTimeout(() => setToast(""), 4000);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : "Transition failed.";
+      setToast(msg.length <= 80 ? msg : "Transition failed — check permissions.");
+      setTimeout(() => setToast(""), 5000);
     } finally {
       setTransitioning(null);
     }
