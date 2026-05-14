@@ -5,9 +5,9 @@
  * Balance semantics (per STOCKBALANCE.md §8.2):
  *
  *  On Hand   = base + RECEIVE_adj + inbound_RECEIVED_transfers
- *                   − outbound_IN_TRANSIT_transfers − outbound_RECEIVED_transfers
+ *                   - outbound_IN_TRANSIT_transfers - outbound_RECEIVED_transfers
  *
- *  Available = On Hand − ISSUE_adj − outbound_reserved (DRAFT/PENDING_*/APPROVED/ADVISED)
+ *  Available = On Hand - ISSUE_adj - outbound_reserved (DRAFT/PENDING_x/APPROVED/ADVISED)
  *
  *  Issued (display)    = ISSUE_adj + outbound_reserved qty
  *  In Transit (display) = outbound_IN_TRANSIT + inbound_IN_TRANSIT qty
