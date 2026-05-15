@@ -126,20 +126,36 @@ const TYPE_BADGE: Record<TransferType, { bg: string; color: string; label: strin
   SISTER: { bg: "#EDE9FE", color: "#5B21B6", label: "SISTER" },
 };
 
-function getAvailableActions(role: string, type: TransferType, status: TransferStatus): Action[] {
-  const approve:    Action = { next: "APPROVED",               label: "Approve",           color: "#059669" };
-  const reject:     Action = { next: "REJECTED",               label: "Reject",             color: "#991B1B" };
-  const cancel:     Action = { next: "CANCELLED",              label: "Cancel",             color: "#991B1B" };
-  const issue:      Action = { next: "ISSUED",                 label: "Issue",              color: "#065F46" };
-  const dispatch:   Action = { next: "IN_TRANSIT",             label: "Dispatch",           color: "#92400E" };
-  const advise:     Action = { next: "ADVISED",                label: "Advise",             color: "#059669" };
-  const partRecv:   Action = { next: "PARTIALLY_RECEIVED",     label: "Partial Receive",    color: "#713F12", requiresQty: true };
-  const markRecv:   Action = { next: "RECEIVED",               label: "Mark Received",      color: "#059669" };
-  const complete:   Action = { next: "COMPLETED",              label: "Complete",           color: "#374151" };
-  const review:     Action = { next: "PENDING_REVIEW",         label: "Submit for Review",  color: "#5B21B6" };
-  const toApproval: Action = { next: "PENDING_APPROVAL",       label: "Send for Approval",  color: "#1E40AF" };
-  const srcConfirm: Action = { next: "PENDING_SOURCE_CONFIRM", label: "Request Confirm",    color: "#92400E" };
-  const dstConfirm: Action = { next: "PENDING_DEST_CONFIRM",   label: "Dest Confirm",       color: "#92400E" };
+/**
+ * Returns the action buttons available to this user for a specific transfer.
+ *
+ * userWH / fromWH / toWH are used for SISTER context-awareness:
+ *   - Destination WM (userWH === toWH)  : submits the request + re-confirms after source agrees
+ *   - Source WM      (userWH === fromWH): confirms they can supply + issues stock after approval
+ */
+function getAvailableActions(
+  role: string,
+  type: TransferType,
+  status: TransferStatus,
+  userWH?: string,
+  fromWH?: string,
+  toWH?: string,
+): Action[] {
+  const approve:    Action = { next: "APPROVED",               label: "Approve",              color: "#059669" };
+  const reject:     Action = { next: "REJECTED",               label: "Reject",               color: "#991B1B" };
+  const cancel:     Action = { next: "CANCELLED",              label: "Cancel",               color: "#991B1B" };
+  const issue:      Action = { next: "ISSUED",                 label: "Issue",                color: "#065F46" };
+  const dispatch:   Action = { next: "IN_TRANSIT",             label: "Dispatch",             color: "#92400E" };
+  const advise:     Action = { next: "ADVISED",                label: "Advise",               color: "#059669" };
+  const partRecv:   Action = { next: "PARTIALLY_RECEIVED",     label: "Partial Receive",      color: "#713F12", requiresQty: true };
+  const markRecv:   Action = { next: "RECEIVED",               label: "Mark Received",        color: "#059669" };
+  const complete:   Action = { next: "COMPLETED",              label: "Complete",             color: "#374151" };
+  const review:     Action = { next: "PENDING_REVIEW",         label: "Submit for Review",    color: "#5B21B6" };
+  const toApproval: Action = { next: "PENDING_APPROVAL",       label: "Send for Approval",    color: "#1E40AF" };
+  // SISTER-specific labels: destination submits request; source confirms supply
+  const submitReq:  Action = { next: "PENDING_SOURCE_CONFIRM", label: "Submit Request",       color: "#5B21B6" };
+  const confirmSup: Action = { next: "PENDING_DEST_CONFIRM",   label: "Confirm Supply",       color: "#059669" };
+  const confirmInt: Action = { next: "PENDING_APPROVAL",       label: "Confirm & Escalate",   color: "#1E40AF" };
 
   // TA and SA see all valid next statuses for the type
   if (role === "TA" || role === "SA") {
@@ -170,10 +186,11 @@ function getAvailableActions(role: string, type: TransferType, status: TransferS
       return map[status] ?? [];
     }
     if (type === "SISTER") {
+      // TA/SA see the full machine — all steps in order
       const map: Partial<Record<TransferStatus, Action[]>> = {
-        DRAFT:                  [srcConfirm, cancel],
-        PENDING_SOURCE_CONFIRM: [dstConfirm, cancel],
-        PENDING_DEST_CONFIRM:   [toApproval, reject, cancel],
+        DRAFT:                  [submitReq, cancel],
+        PENDING_SOURCE_CONFIRM: [confirmSup, reject, cancel],
+        PENDING_DEST_CONFIRM:   [confirmInt, reject, cancel],
         PENDING_APPROVAL:       [approve, reject, cancel],
         APPROVED:               [issue, cancel],
         ISSUED:                 [dispatch],
@@ -206,14 +223,32 @@ function getAvailableActions(role: string, type: TransferType, status: TransferS
       return map[status] ?? [];
     }
     if (type === "SISTER") {
-      const map: Partial<Record<TransferStatus, Action[]>> = {
-        DRAFT:                  [srcConfirm, cancel],
-        PENDING_DEST_CONFIRM:   [toApproval, cancel],
-        IN_TRANSIT:             [partRecv, markRecv],
-        PARTIALLY_RECEIVED:     [markRecv],
-        RECEIVED:               [complete],
-      };
-      return map[status] ?? [];
+      // Context matters: destination WM vs source WM have different responsibilities
+      const isDestWM = !!userWH && userWH === toWH;   // they requested stock
+      const isSrcWM  = !!userWH && userWH === fromWH; // they supply stock
+
+      if (isDestWM) {
+        // Destination (requestor) WM: submits request, re-confirms intent, receives
+        const map: Partial<Record<TransferStatus, Action[]>> = {
+          DRAFT:                [submitReq, cancel],    // submit request to source
+          PENDING_DEST_CONFIRM: [confirmInt, reject, cancel],  // confirm still want it
+          IN_TRANSIT:           [partRecv, markRecv],
+          PARTIALLY_RECEIVED:   [markRecv],
+          RECEIVED:             [complete],
+        };
+        return map[status] ?? [];
+      }
+      if (isSrcWM) {
+        // Source WM: confirms supply, then issues stock after approval
+        const map: Partial<Record<TransferStatus, Action[]>> = {
+          PENDING_SOURCE_CONFIRM: [confirmSup, reject, cancel],  // confirm can supply
+          APPROVED:               [issue, cancel],
+          ISSUED:                 [dispatch],
+        };
+        return map[status] ?? [];
+      }
+      // User is not directly involved (RM/LM view — handled elsewhere)
+      return [];
     }
     return [];
   }
@@ -530,7 +565,7 @@ export default function TransfersPage() {
               {visibleTransfers.map((t, idx) => {
                 const s    = STATUS_STYLE[t.status] ?? { bg: "#F3F4F6", color: "#6B7280" };
                 const tb   = TYPE_BADGE[t.transfer_type] ?? { bg: "#F3F4F6", color: "#6B7280", label: t.transfer_type };
-                const acts = getAvailableActions(user.role, t.transfer_type, t.status);
+                const acts = getAvailableActions(user.role, t.transfer_type, t.status, user.warehouseId, t.from_warehouse_id, t.to_warehouse_id);
                 const busy = transitioning === t.id;
                 return (
                   <tr key={t.id} style={{ background: idx % 2 === 0 ? "#fff" : "#FAFAFA", borderBottom: "1px solid #F3F4F6" }}>

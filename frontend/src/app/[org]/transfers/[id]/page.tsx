@@ -84,7 +84,14 @@ const TIMELINE_STATES: Record<TransferType, TransferStatus[]> = {
   SISTER: ["DRAFT", "PENDING_SOURCE_CONFIRM", "PENDING_DEST_CONFIRM", "PENDING_APPROVAL", "APPROVED", "ISSUED", "IN_TRANSIT", "RECEIVED", "COMPLETED"],
 };
 
-function getAvailableActions(role: string, type: TransferType, status: TransferStatus): Action[] {
+function getAvailableActions(
+  role: string,
+  type: TransferType,
+  status: TransferStatus,
+  userWH?: string,
+  fromWH?: string,
+  toWH?: string,
+): Action[] {
   const approve:    Action = { next: "APPROVED",               label: "Approve",              color: "#059669" };
   const reject:     Action = { next: "REJECTED",               label: "Reject",               color: "#DC2626" };
   const cancel:     Action = { next: "CANCELLED",              label: "Cancel",               color: "#DC2626" };
@@ -96,8 +103,10 @@ function getAvailableActions(role: string, type: TransferType, status: TransferS
   const complete:   Action = { next: "COMPLETED",              label: "Complete Transfer",    color: "#374151" };
   const review:     Action = { next: "PENDING_REVIEW",         label: "Submit for Review",    color: "#5B21B6" };
   const toApproval: Action = { next: "PENDING_APPROVAL",       label: "Send for Approval",    color: "#1E40AF" };
-  const srcConfirm: Action = { next: "PENDING_SOURCE_CONFIRM", label: "Request Confirmation", color: "#92400E" };
-  const dstConfirm: Action = { next: "PENDING_DEST_CONFIRM",   label: "Dest Confirm",         color: "#92400E" };
+  // SISTER-specific: destination submits the request; source confirms supply
+  const submitReq:  Action = { next: "PENDING_SOURCE_CONFIRM", label: "Submit Request",       color: "#5B21B6" };
+  const confirmSup: Action = { next: "PENDING_DEST_CONFIRM",   label: "Confirm Supply",       color: "#059669" };
+  const confirmInt: Action = { next: "PENDING_APPROVAL",       label: "Confirm & Escalate",   color: "#1E40AF" };
 
   if (role === "TA" || role === "SA") {
     if (type === "PULL") {
@@ -128,9 +137,9 @@ function getAvailableActions(role: string, type: TransferType, status: TransferS
     }
     if (type === "SISTER") {
       const map: Partial<Record<TransferStatus, Action[]>> = {
-        DRAFT:                  [srcConfirm, cancel],
-        PENDING_SOURCE_CONFIRM: [dstConfirm, cancel],
-        PENDING_DEST_CONFIRM:   [toApproval, reject, cancel],
+        DRAFT:                  [submitReq, cancel],
+        PENDING_SOURCE_CONFIRM: [confirmSup, reject, cancel],
+        PENDING_DEST_CONFIRM:   [confirmInt, reject, cancel],
         PENDING_APPROVAL:       [approve, reject, cancel],
         APPROVED:               [issue, cancel],
         ISSUED:                 [dispatch],
@@ -162,14 +171,27 @@ function getAvailableActions(role: string, type: TransferType, status: TransferS
       return map[status] ?? [];
     }
     if (type === "SISTER") {
-      const map: Partial<Record<TransferStatus, Action[]>> = {
-        DRAFT:                [srcConfirm, cancel],
-        PENDING_DEST_CONFIRM: [toApproval, cancel],
-        IN_TRANSIT:           [partRecv, markRecv],
-        PARTIALLY_RECEIVED:   [markRecv],
-        RECEIVED:             [complete],
-      };
-      return map[status] ?? [];
+      const isDestWM = !!userWH && userWH === toWH;
+      const isSrcWM  = !!userWH && userWH === fromWH;
+      if (isDestWM) {
+        const map: Partial<Record<TransferStatus, Action[]>> = {
+          DRAFT:                [submitReq, cancel],
+          PENDING_DEST_CONFIRM: [confirmInt, reject, cancel],
+          IN_TRANSIT:           [partRecv, markRecv],
+          PARTIALLY_RECEIVED:   [markRecv],
+          RECEIVED:             [complete],
+        };
+        return map[status] ?? [];
+      }
+      if (isSrcWM) {
+        const map: Partial<Record<TransferStatus, Action[]>> = {
+          PENDING_SOURCE_CONFIRM: [confirmSup, reject, cancel],
+          APPROVED:               [issue, cancel],
+          ISSUED:                 [dispatch],
+        };
+        return map[status] ?? [];
+      }
+      return [];
     }
     return [];
   }
@@ -385,7 +407,10 @@ export default function TransferDetailPage() {
 
   const s        = STATUS_META[transfer.status];
   const tb       = TYPE_BADGE[transfer.transfer_type] ?? { bg: "#F3F4F6", color: "#6B7280", label: transfer.transfer_type, desc: transfer.transfer_type };
-  const roleActs = getAvailableActions(user.role, transfer.transfer_type, transfer.status);
+  const roleActs = getAvailableActions(
+    user.role, transfer.transfer_type, transfer.status,
+    user.warehouseId, transfer.from_warehouse_id, transfer.to_warehouse_id
+  );
   const terminal = ["COMPLETED", "REJECTED", "CANCELLED"].includes(transfer.status);
 
   return (

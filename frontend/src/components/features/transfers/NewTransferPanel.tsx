@@ -89,14 +89,16 @@ export function NewTransferPanel({ products, warehouses, orgSlug }: Props) {
   const defaultType: TransferType = canPush ? "PUSH" : "PULL";
 
   function initialForm(type: TransferType): FormState {
-    // For PULL: user's WH is the TO (destination — they're requesting stock TO themselves)
-    // For PUSH / SISTER: user's WH is the FROM (origin — they're sending from themselves)
-    const isPull = type === "PULL";
+    // PULL:   user's WH is the TO (they request stock to come TO them)
+    // SISTER: user's WH is the TO (they initiate a lateral request, stock comes TO them)
+    // PUSH:   user's WH is the FROM (they send stock FROM themselves downward)
+    const toShouldLock   = type === "PULL" || type === "SISTER";
+    const fromShouldLock = type === "PUSH";
     return {
       transferType: type,
       productId: "",
-      fromWarehouseId: (!isPull && lockedWH) ? lockedWH : "",
-      toWarehouseId:   (isPull  && lockedWH) ? lockedWH : "",
+      fromWarehouseId: (fromShouldLock && lockedWH) ? lockedWH : "",
+      toWarehouseId:   (toShouldLock   && lockedWH) ? lockedWH : "",
       quantity: "",
       notes: "",
     };
@@ -126,8 +128,12 @@ export function NewTransferPanel({ products, warehouses, orgSlug }: Props) {
 
   // Derived: which fields are locked to the user's own warehouse
   const isPull      = form.transferType === "PULL";
-  const fromIsLocked = !!lockedWH && !isPull; // PUSH / SISTER: origin locked
-  const toIsLocked   = !!lockedWH && isPull;  // PULL: destination locked
+  const isSister    = form.transferType === "SISTER";
+  const isPush      = form.transferType === "PUSH";
+  // PULL + SISTER: destination locked to user's WH (they're the requestor)
+  // PUSH: origin locked to user's WH (they're the sender)
+  const toIsLocked   = !!lockedWH && (isPull || isSister);
+  const fromIsLocked = !!lockedWH && isPush;
 
   // Effective values (locked values always win)
   const effectiveFrom = fromIsLocked ? (lockedWH ?? "") : form.fromWarehouseId;
@@ -271,16 +277,18 @@ export function NewTransferPanel({ products, warehouses, orgSlug }: Props) {
             >
               <option value="PULL">PULL — Request stock from a higher-level facility (MWH/RWH)</option>
               {canPush && <option value="PUSH">PUSH — Send stock down to a lower-level facility</option>}
-              <option value="SISTER">SISTER — Lateral transfer between same-level warehouses</option>
+              <option value="SISTER">SISTER — Request stock from a peer warehouse (you receive, they send)</option>
             </select>
           </Field>
 
           {/* Scope note for WM */}
           {lockedWH && (
             <div style={{ background: "#F0FDF4", border: "1px solid #BBF7D0", borderRadius: 4, padding: "8px 12px", fontSize: 12, color: "#166534", marginBottom: 16 }}>
-              {isPull
-                ? `📥 Stock will be requested TO: ${userWH?.name ?? lockedWH}`
-                : `📤 Stock will be sent FROM: ${userWH?.name ?? lockedWH}`}
+              {isPush
+                ? `📤 Stock will be sent FROM: ${userWH?.name ?? lockedWH}`
+                : isSister
+                  ? `↔ Lateral request — stock will come TO: ${userWH?.name ?? lockedWH} (your WH)`
+                  : `📥 Stock will be requested TO: ${userWH?.name ?? lockedWH}`}
             </div>
           )}
 
@@ -295,7 +303,7 @@ export function NewTransferPanel({ products, warehouses, orgSlug }: Props) {
           </Field>
 
           {/* From Warehouse */}
-          <Field label={isPull ? "From Warehouse (source)" : "From Warehouse"} hint={fromIsLocked ? "your facility" : undefined}>
+          <Field label={isPull || isSister ? "From Warehouse (supply source)" : "From Warehouse"} hint={fromIsLocked ? "your facility" : undefined}>
             {fromIsLocked ? (
               <input value={userWH?.name ?? lockedWH ?? ""} disabled style={LOCKED} />
             ) : (
@@ -309,7 +317,7 @@ export function NewTransferPanel({ products, warehouses, orgSlug }: Props) {
           </Field>
 
           {/* To Warehouse */}
-          <Field label={isPull ? "To Warehouse" : "To Warehouse (destination)"} hint={toIsLocked ? "your facility" : undefined}>
+          <Field label={isPull || isSister ? "To Warehouse (your warehouse)" : "To Warehouse (destination)"} hint={toIsLocked ? "your facility — locked" : undefined}>
             {toIsLocked ? (
               <input value={userWH?.name ?? lockedWH ?? ""} disabled style={LOCKED} />
             ) : (
