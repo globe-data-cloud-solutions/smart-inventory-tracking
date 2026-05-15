@@ -263,7 +263,10 @@ export const useInventoryStore = create<InventoryStore>()(
     }),
     {
       name: "smart-inventory-v2",
-      // Only persist data arrays — functions are always re-created from store definition
+      // skipHydration: true prevents Next.js SSR hydration mismatch.
+      // The layout calls useInventoryStore.persist.rehydrate() in a useEffect
+      // so localStorage data is applied after the initial client render.
+      skipHydration: true,
       partialize: (state) => ({
         currentTenantSlug: state.currentTenantSlug,
         adjustments: state.adjustments,

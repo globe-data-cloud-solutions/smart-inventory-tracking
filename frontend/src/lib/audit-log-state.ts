@@ -50,6 +50,7 @@ export const useAuditStore = create<AuditLogStore>()(
     }),
     {
       name: "smart-audit-log-v1",
+      skipHydration: true,
       partialize: (state) => ({ entries: state.entries }),
     }
   )

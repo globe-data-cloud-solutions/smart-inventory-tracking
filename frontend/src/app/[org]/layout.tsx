@@ -8,6 +8,7 @@ import { getSession, logout, SA_ORG_SLUG, type SessionUser } from "@/lib/demo-au
 import { DEMO_TENANTS, getLowStockProducts } from "@/lib/demo-data";
 import { getCurrentLocale, setLocale, loadLocale } from "@/lib/i18n";
 import { useInventoryStore } from "@/lib/inventory-state";
+import { useAuditStore } from "@/lib/audit-log-state";
 
 type Locale = "en" | "am" | "or";
 
@@ -298,6 +299,14 @@ export default function OrgLayout({ children }: { children: React.ReactNode }) {
   const [qc]              = useState(() => new QueryClient({
     defaultOptions: { queries: { retry: 1, staleTime: 30_000 } },
   }));
+
+  // Rehydrate persisted Zustand stores from localStorage after the first client
+  // render. skipHydration: true in both stores prevents SSR hydration mismatches
+  // that would otherwise cause Next.js to discard localStorage data on every refresh.
+  useEffect(() => {
+    useInventoryStore.persist.rehydrate();
+    useAuditStore.persist.rehydrate();
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     if (checked.current) return;
