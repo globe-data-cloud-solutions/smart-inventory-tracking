@@ -142,7 +142,6 @@ export function NewTransferPanel({ products, warehouses, orgSlug }: Props) {
   // Hierarchy-aware option filtering
   const ancestorIds    = lockedWH ? getAncestorScope(lockedWH, warehouses)    : null;
   const descendantIds  = lockedWH ? getDescendantScope(lockedWH, warehouses)  : null;
-  const isPush         = form.transferType === "PUSH";
 
   const fromOptions = warehouses.filter((w) => {
     if (w.id === effectiveTo)                    return false; // never same as To
