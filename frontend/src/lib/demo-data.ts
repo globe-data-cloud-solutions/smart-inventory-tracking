@@ -213,28 +213,10 @@ const MUGER_CEMENT: DemoTenant = {
       managerEmail: "ambo.pm@muger-cement.com",
     },
     {
-      id: "mc-kombolcha",
-      name: "Kombolcha WH",
-      type: "WH",
-      parentId: null,
-      location: "Kombolcha, Amhara",
-      manager: "Getnet Assefa",
-      managerEmail: "kombolcha.wm@muger-cement.com",
-    },
-    {
-      id: "mc-mekele",
-      name: "Mekele WH",
-      type: "WH",
-      parentId: null,
-      location: "Mekele, Tigray",
-      manager: "Hiwot Gebre",
-      managerEmail: "mekele.wm@muger-cement.com",
-    },
-    {
       id: "mc-diredawa",
-      name: "Dire Dawa WH",
-      type: "WH",
-      parentId: null,
+      name: "Dire Dawa Regional WH",
+      type: "RWH",
+      parentId: "mc-harar",          // Harar MWH → Dire Dawa RWH → Hawassa WH
       location: "Dire Dawa",
       manager: "Abdulaziz Hassen",
       managerEmail: "diredawa.wm@muger-cement.com",
@@ -243,10 +225,28 @@ const MUGER_CEMENT: DemoTenant = {
       id: "mc-hawassa",
       name: "Hawassa WH",
       type: "WH",
-      parentId: null,
+      parentId: "mc-diredawa",       // under Dire Dawa RWH
       location: "Hawassa, Sidama",
       manager: "Tigabu Tesfay",
       managerEmail: "hawassa.wm@muger-cement.com",
+    },
+    {
+      id: "mc-kombolcha",
+      name: "Kombolcha WH",
+      type: "WH",
+      parentId: "mc-ambo",           // Ambo MWH → Kombolcha WH
+      location: "Kombolcha, Amhara",
+      manager: "Getnet Assefa",
+      managerEmail: "kombolcha.wm@muger-cement.com",
+    },
+    {
+      id: "mc-mekele",
+      name: "Mekele WH",
+      type: "WH",
+      parentId: "mc-ambo",           // Ambo MWH → Mekele WH
+      location: "Mekele, Tigray",
+      manager: "Hiwot Gebre",
+      managerEmail: "mekele.wm@muger-cement.com",
     },
   ],
   products: [

@@ -9,6 +9,32 @@ import { useAuditStore } from "@/lib/audit-log-state";
 import { getSession } from "@/lib/demo-auth";
 import type { DemoProduct, DemoWarehouse } from "@/lib/demo-data";
 
+/** All facilities ABOVE warehouseId in the parentId chain (valid PULL sources). */
+function getAncestorScope(warehouseId: string, warehouses: DemoWarehouse[]): string[] {
+  const ancestors: string[] = [];
+  let cur = warehouses.find((w) => w.id === warehouseId);
+  while (cur?.parentId) {
+    ancestors.push(cur.parentId);
+    cur = warehouses.find((w) => w.id === cur!.parentId);
+  }
+  return ancestors;
+}
+
+/** warehouseId + all facilities BELOW it in the parentId chain (valid PUSH destinations). */
+function getDescendantScope(warehouseId: string, warehouses: DemoWarehouse[]): string[] {
+  const scope = new Set<string>([warehouseId]);
+  function add(pid: string) {
+    for (const wh of warehouses) {
+      if (wh.parentId === pid && !scope.has(wh.id)) {
+        scope.add(wh.id);
+        add(wh.id);
+      }
+    }
+  }
+  add(warehouseId);
+  return Array.from(scope).filter((id) => id !== warehouseId); // exclude self
+}
+
 interface Props {
   products: DemoProduct[];
   warehouses: DemoWarehouse[];
@@ -107,17 +133,30 @@ export function NewTransferPanel({ products, warehouses, orgSlug }: Props) {
   const effectiveFrom = fromIsLocked ? (lockedWH ?? "") : form.fromWarehouseId;
   const effectiveTo   = toIsLocked   ? (lockedWH ?? "") : form.toWarehouseId;
 
-  // Warehouse option filtering:
-  // - never show user's own WH in the free-to-select field
-  // - never show the already-selected WH on the opposite field (prevents From=To)
-  const fromOptions = warehouses.filter((w) =>
-    w.id !== effectiveTo &&           // can't equal the To field
-    (!lockedWH || w.id !== lockedWH)  // locked WH never appears as a free option
-  );
-  const toOptions = warehouses.filter((w) =>
-    w.id !== effectiveFrom &&
-    (!lockedWH || w.id !== lockedWH)
-  );
+  // Hierarchy-aware option filtering
+  const ancestorIds    = lockedWH ? getAncestorScope(lockedWH, warehouses)    : null;
+  const descendantIds  = lockedWH ? getDescendantScope(lockedWH, warehouses)  : null;
+  const isPush         = form.transferType === "PUSH";
+
+  const fromOptions = warehouses.filter((w) => {
+    if (w.id === effectiveTo)                    return false; // never same as To
+    if (lockedWH && w.id === lockedWH)           return false; // own WH excluded from free fields
+    // PULL: From must be a valid supply source (ancestor in hierarchy)
+    if (isPull && lockedWH && ancestorIds && ancestorIds.length > 0) {
+      return ancestorIds.includes(w.id);
+    }
+    return true;
+  });
+
+  const toOptions = warehouses.filter((w) => {
+    if (w.id === effectiveFrom)                  return false;
+    if (lockedWH && w.id === lockedWH)           return false;
+    // PUSH: To must be a valid downstream destination (descendant in hierarchy)
+    if (isPush && lockedWH && descendantIds && descendantIds.length > 0) {
+      return descendantIds.includes(w.id);
+    }
+    return true;
+  });
 
   const onSubmit = async (e: React.FormEvent) => {
     e.preventDefault();

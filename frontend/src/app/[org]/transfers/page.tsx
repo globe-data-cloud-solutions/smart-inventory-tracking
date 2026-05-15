@@ -81,14 +81,15 @@ function scopeTransfers(
   warehouseId: string | undefined,
   warehouses: DemoWarehouse[]
 ): ApiTransfer[] {
+  // Roles without a specific facility see all transfers in the tenant
   if (["TA", "SA", "RM", "LM", "AU"].includes(role)) return transfers;
   if (!warehouseId) return transfers;
 
-  // MWH is the supply apex — the manager sees every transfer company-wide
-  const userWH = warehouses.find((w) => w.id === warehouseId);
-  if (userWH?.type === "MWH") return transfers;
-
-  // For every other node: scope = own WH + all descendants
+  // Every facility-bound user (WM, NM at specific facility) sees:
+  //   own facility + all descendants in the parentId hierarchy
+  // e.g. Harar MWH → [harar, diredawa, hawassa]
+  //      Dire Dawa RWH → [diredawa, hawassa]
+  //      Kombolcha WH  → [kombolcha]
   const scope = getAuthorityScope(warehouseId, warehouses);
   return transfers.filter(
     (t) => scope.includes(t.from_warehouse_id) || scope.includes(t.to_warehouse_id)

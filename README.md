@@ -582,17 +582,28 @@ The frontend demo runs at **http://localhost:3000** (start with `cd frontend && 
 
 #### Muger Cement (Cement Manufacturer — `muger-cement`)
 
-| Email | Password | Role | Facility |
-|---|---|---|---|
-| admin@muger-cement.com | MugerCement@2026 | TA | All |
-| harar.pm@muger-cement.com | MugerCement@2026 | NM | Harar Production Center (MWH) |
-| ambo.pm@muger-cement.com | MugerCement@2026 | NM | Ambo Production Center (MWH) |
-| regional@muger-cement.com | MugerCement@2026 | RM | All facilities |
-| logistics@muger-cement.com | MugerCement@2026 | LM | All facilities |
-| kombolcha.wm@muger-cement.com | MugerCement@2026 | WM | Kombolcha WH |
-| mekele.wm@muger-cement.com | MugerCement@2026 | WM | Mekele WH |
-| diredawa.wm@muger-cement.com | MugerCement@2026 | WM | Dire Dawa WH |
-| hawassa.wm@muger-cement.com | MugerCement@2026 | WM | Hawassa WH |
+Org hierarchy:
+```
+Harar Production Center (MWH)
+  └── Dire Dawa Regional WH (RWH)
+        └── Hawassa WH (WH)
+
+Ambo Production Center (MWH)
+  ├── Kombolcha WH (WH)
+  └── Mekele WH (WH)
+```
+
+| Email | Password | Role | Facility | Sees transfers involving |
+|---|---|---|---|---|
+| admin@muger-cement.com | MugerCement@2026 | TA | All | All |
+| harar.pm@muger-cement.com | MugerCement@2026 | NM | Harar MWH | Harar + Dire Dawa + Hawassa |
+| ambo.pm@muger-cement.com | MugerCement@2026 | NM | Ambo MWH | Ambo + Kombolcha + Mekele |
+| regional@muger-cement.com | MugerCement@2026 | RM | All facilities | All |
+| logistics@muger-cement.com | MugerCement@2026 | LM | All facilities | All |
+| diredawa.wm@muger-cement.com | MugerCement@2026 | WM | Dire Dawa RWH | Dire Dawa + Hawassa |
+| hawassa.wm@muger-cement.com | MugerCement@2026 | WM | Hawassa WH | Hawassa only |
+| kombolcha.wm@muger-cement.com | MugerCement@2026 | WM | Kombolcha WH | Kombolcha only |
+| mekele.wm@muger-cement.com | MugerCement@2026 | WM | Mekele WH | Mekele only |
 
 #### System Administrator
 
