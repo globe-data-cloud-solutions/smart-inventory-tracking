@@ -99,6 +99,12 @@ interface InventoryStore {
   getOutboundInTransit(productId: string, warehouseId: string): TransferEntry[];
   getInboundInTransit(productId: string, warehouseId: string): TransferEntry[];
   getInboundReceived(productId: string, warehouseId: string): TransferEntry[];
+  /**
+   * Inbound RECEIVED-but-not-yet-COMPLETED transfers — used for the Received
+   * display column. COMPLETED transfers are excluded: their stock is already
+   * permanently settled into On Hand so they no longer need tracking visibility.
+   */
+  getInboundJustReceived(productId: string, warehouseId: string): TransferEntry[];
   /** Inbound transfers in PARTIALLY_RECEIVED state (some qty still in transit). */
   getInboundPartial(productId: string, warehouseId: string): TransferEntry[];
 
@@ -204,6 +210,14 @@ export const useInventoryStore = create<InventoryStore>()(
         );
       },
 
+      getInboundJustReceived: (productId, warehouseId) => {
+        const { transfers, currentTenantSlug } = get();
+        // RECEIVED only — COMPLETED is excluded because it is fully settled into On Hand
+        return transfers.filter(
+          (t) => t.tenantSlug === currentTenantSlug && t.productId === productId && t.toWarehouseId === warehouseId && t.status === "RECEIVED"
+        );
+      },
+
       getInboundPartial: (productId, warehouseId) => {
         const { transfers, currentTenantSlug } = get();
         return transfers.filter(
@@ -217,7 +231,10 @@ export const useInventoryStore = create<InventoryStore>()(
         const s = get();
         return (
           s.getReceiveAdjs(productId, warehouseId).reduce((n, a) => n + a.qty, 0) +
-          s.getInboundReceived(productId, warehouseId).reduce((n, t) => n + t.quantity, 0) +
+          // Use getInboundJustReceived (not getInboundReceived) so COMPLETED
+          // transfers no longer appear in the Received display column — their
+          // stock is permanently settled into On Hand.
+          s.getInboundJustReceived(productId, warehouseId).reduce((n, t) => n + t.quantity, 0) +
           s.getInboundPartial(productId, warehouseId).reduce((n, t) => n + (t.receivedQuantity ?? 0), 0)
         );
       },

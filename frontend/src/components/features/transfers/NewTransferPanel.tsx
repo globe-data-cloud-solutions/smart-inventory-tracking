@@ -76,7 +76,7 @@ const LOCKED: React.CSSProperties = { ...INPUT, background: "#F3F4F6", color: "#
 
 export function NewTransferPanel({ products, warehouses, orgSlug }: Props) {
   const qc          = useQueryClient();
-  const addTransfer = useInventoryStore((s) => s.addTransfer);
+  const { addTransfer, getAvailable, getOnHand } = useInventoryStore();
   const logAudit    = useAuditStore((s) => s.log);
 
   const user    = getSession();
@@ -109,21 +109,28 @@ export function NewTransferPanel({ products, warehouses, orgSlug }: Props) {
   const [error, setError]     = useState("");
   const [success, setSuccess] = useState("");
   const [loading, setLoading] = useState(false);
+  const [stockAlert, setStockAlert] = useState<{
+    fromWHName: string; productName: string;
+    onHand: number; available: number; requested: number;
+  } | null>(null);
 
   function reset() {
     setForm(initialForm(form.transferType));
     setError("");
     setSuccess("");
+    setStockAlert(null);
   }
 
   function setField(key: keyof FormState, val: string) {
     setForm((f) => ({ ...f, [key]: val }));
     setError("");
+    setStockAlert(null);
   }
 
   function changeType(type: TransferType) {
     setForm(initialForm(type));
     setError("");
+    setStockAlert(null);
   }
 
   // Derived: which fields are locked to the user's own warehouse
@@ -177,6 +184,25 @@ export function NewTransferPanel({ products, warehouses, orgSlug }: Props) {
     const product = products.find((p) => p.id === form.productId);
     const fromWH  = warehouses.find((w) => w.id === effectiveFrom);
     const toWH    = warehouses.find((w) => w.id === effectiveTo);
+
+    // ── Insufficient balance guard ───────────────────────────────────────────
+    // Prevent transfers that would cause negative stock at the source warehouse.
+    // This applies to all transfer types: the source is always effectiveFrom.
+    if (product && effectiveFrom) {
+      const baseStock   = product.stock[effectiveFrom] ?? 0;
+      const liveOnHand  = getOnHand(product.id, effectiveFrom, baseStock);
+      const liveAvail   = getAvailable(product.id, effectiveFrom, baseStock);
+      if (qty > liveAvail) {
+        setStockAlert({
+          fromWHName:  fromWH?.name ?? effectiveFrom,
+          productName: product.name,
+          onHand:      liveOnHand,
+          available:   liveAvail,
+          requested:   qty,
+        });
+        return;
+      }
+    }
 
     setLoading(true);
     try {
@@ -351,6 +377,32 @@ export function NewTransferPanel({ products, warehouses, orgSlug }: Props) {
               style={{ ...INPUT, resize: "vertical" }}
             />
           </Field>
+
+          {/* Insufficient stock alert — structured popup within the panel */}
+          {stockAlert && (
+            <div style={{ background: "#FEF2F2", border: "2px solid #DC2626", borderRadius: 6, padding: "12px 14px", marginBottom: 12 }}>
+              <p style={{ fontWeight: 700, fontSize: 13, color: "#DC2626", margin: "0 0 8px", display: "flex", alignItems: "center", gap: 6 }}>
+                ⛔ Insufficient Stock — {stockAlert.fromWHName}
+              </p>
+              <div style={{ fontSize: 12, color: "#374151", display: "flex", flexDirection: "column", gap: 3 }}>
+                <div><strong>Product:</strong> {stockAlert.productName}</div>
+                <div style={{ display: "flex", gap: 20 }}>
+                  <span><strong>On Hand:</strong> {stockAlert.onHand.toLocaleString()} units</span>
+                  <span><strong>Available:</strong>{" "}
+                    <span style={{ color: "#DC2626", fontWeight: 700 }}>{stockAlert.available.toLocaleString()} units</span>
+                  </span>
+                </div>
+                <div><strong>Requested:</strong> {stockAlert.requested.toLocaleString()} units
+                  <span style={{ color: "#DC2626", marginLeft: 8 }}>
+                    ({(stockAlert.requested - stockAlert.available).toLocaleString()} over available)
+                  </span>
+                </div>
+              </div>
+              <p style={{ fontSize: 11, color: "#9CA3AF", margin: "8px 0 0" }}>
+                Reduce the quantity or choose a different source warehouse.
+              </p>
+            </div>
+          )}
 
           {error   && <div style={{ background: "#FEF2F2", border: "1px solid #FECACA", borderRadius: 4, padding: "10px 12px", fontSize: 13, color: "#DC2626", marginBottom: 12 }}>{error}</div>}
           {success && <div style={{ background: "#F0FDF4", border: "1px solid #BBF7D0", borderRadius: 4, padding: "10px 12px", fontSize: 13, color: "#059669", marginBottom: 12 }}>✓ {success}</div>}

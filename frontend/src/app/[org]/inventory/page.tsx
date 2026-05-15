@@ -228,7 +228,7 @@ export default function InventoryPage() {
     getReceivedTotal, getIssuedTotal, getInTransitTotal,
     getReceiveAdjs, getIssueAdjs,
     getOutboundReserved, getOutboundInTransit,
-    getInboundInTransit, getInboundReceived, getInboundPartial,
+    getInboundInTransit, getInboundJustReceived, getInboundPartial,
   } = store;
 
   const tenant = DEMO_TENANTS.find((t) => t.slug === org);
@@ -255,11 +255,13 @@ export default function InventoryPage() {
   if (expandedCell) {
     const { productId, warehouseId, col } = expandedCell;
     if (col === "received") {
+      // Use getInboundJustReceived (RECEIVED status only) — COMPLETED transfers
+      // are dropped from the column; their stock is already settled into On Hand.
       modalRows = [
         ...getReceiveAdjs(productId, warehouseId).map((a) => ({
           direction: "direct" as const, label: "Direct Receive", qty: a.qty, date: a.createdAt,
         })),
-        ...getInboundReceived(productId, warehouseId).map((t) => ({
+        ...getInboundJustReceived(productId, warehouseId).map((t) => ({
           direction: "in" as const, label: t.fromWarehouseName, qty: t.quantity, date: t.issuedDate, ref: t.ref,
         })),
       ].sort((a, b) => a.date.localeCompare(b.date));
