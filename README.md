@@ -560,6 +560,82 @@ gantt
 
 ---
 
+## Demo Application
+
+The frontend demo runs at **http://localhost:3000** (start with `cd frontend && pnpm dev`).
+
+### Demo tenants & login credentials
+
+#### Addis Water (Bottled Water Producer — `addis-water`)
+
+| Email | Password | Role | Facility |
+|---|---|---|---|
+| admin@addis-water.com | AddisWater@2026 | TA | All |
+| production@addis-water.com | AddisWater@2026 | NM | Main Production Center (MWH) |
+| regional@addis-water.com | AddisWater@2026 | RM | All facilities |
+| logistics@addis-water.com | AddisWater@2026 | LM | All facilities |
+| north.wm@addis-water.com | AddisWater@2026 | WM | North WH (RWH) |
+| northsub.wm@addis-water.com | AddisWater@2026 | WM | North-Subcenter WH |
+| south.wm@addis-water.com | AddisWater@2026 | WM | South WH |
+| east.wm@addis-water.com | AddisWater@2026 | WM | East WH |
+| west.wm@addis-water.com | AddisWater@2026 | WM | West WH |
+
+#### Muger Cement (Cement Manufacturer — `muger-cement`)
+
+| Email | Password | Role | Facility |
+|---|---|---|---|
+| admin@muger-cement.com | MugerCement@2026 | TA | All |
+| harar.pm@muger-cement.com | MugerCement@2026 | NM | Harar Production Center (MWH) |
+| ambo.pm@muger-cement.com | MugerCement@2026 | NM | Ambo Production Center (MWH) |
+| regional@muger-cement.com | MugerCement@2026 | RM | All facilities |
+| logistics@muger-cement.com | MugerCement@2026 | LM | All facilities |
+| kombolcha.wm@muger-cement.com | MugerCement@2026 | WM | Kombolcha WH |
+| mekele.wm@muger-cement.com | MugerCement@2026 | WM | Mekele WH |
+| diredawa.wm@muger-cement.com | MugerCement@2026 | WM | Dire Dawa WH |
+| hawassa.wm@muger-cement.com | MugerCement@2026 | WM | Hawassa WH |
+
+#### System Administrator
+
+| Email | Password | Role |
+|---|---|---|
+| smartadmin@smart-inventory.com | SmartAdmin@2026 | SA |
+
+### IMTS Transfer workflow
+
+| Transfer Type | Initiator | From field | To field |
+|---|---|---|---|
+| **PULL** | Any WH (requesting stock) | Selectable source (MWH/RWH) | **Auto-locked to user's WH** |
+| **PUSH** | MWH / RWH only | **Auto-locked to user's facility** | Selectable destination |
+| **SISTER** | Any WH (lateral) | **Auto-locked to user's WH** | Selectable same-level WH |
+
+WM at WH/SUB_WH level: PULL and SISTER only. NM at MWH, RM, LM: all types including PUSH.
+
+### Transfer state machines
+
+```
+PULL:   DRAFT → PENDING_REVIEW → PENDING_APPROVAL → APPROVED → ISSUED → IN_TRANSIT → [PARTIALLY_RECEIVED] → RECEIVED → COMPLETED
+PUSH:   DRAFT → PENDING_APPROVAL → APPROVED → [ADVISED] → ISSUED → IN_TRANSIT → [PARTIALLY_RECEIVED] → RECEIVED → COMPLETED
+SISTER: DRAFT → PENDING_SOURCE_CONFIRM → PENDING_DEST_CONFIRM → PENDING_APPROVAL → APPROVED → ISSUED → IN_TRANSIT → [PARTIALLY_RECEIVED] → RECEIVED → COMPLETED
+```
+
+### Inventory visibility (hierarchy-scoped)
+
+| Role | Sees in Transfers page |
+|---|---|
+| TA / SA | All transfers |
+| RM / LM | All transfers |
+| NM at MWH | All transfers (apex of supply hierarchy) |
+| WM at RWH | Own RWH + all descendant WHs |
+| WM at WH/SUB_WH | Only transfers involving their warehouse |
+
+Completed, Cancelled, and Rejected transfers are archived to the **Audit Log** page.
+
+### Audit Log
+
+Every transfer transition, stock receive, and issue is recorded in the Audit Log with separate columns for: product name, quantity/unit, From warehouse, To warehouse. Data persists to `localStorage` across refreshes and logins.
+
+---
+
 ## Getting Started
 
 > There is no local development environment. All SDLC environments run on AWS ECS Fargate.
@@ -611,3 +687,4 @@ git push -u origin feature/SMART-<n>-<slug>
 
 *SMART Inventory — PRD v4.0 · Python 3.12 / FastAPI · Next.js 14 / TypeScript · AWS ECS Fargate · Terraform*
 *Languages: English · Amharic (አማርኛ) · Oromifa (Afaan Oromoo)*
+*Last updated: May 2026 — IMTS enhancements: org hierarchy, type-specific state machines, audit log, partial receive*

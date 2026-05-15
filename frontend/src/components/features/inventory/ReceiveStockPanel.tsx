@@ -142,10 +142,17 @@ export function ReceiveStockPanel({ products, warehouses, orgSlug }: Props) {
         const wh   = warehouses.find((w) => w.id === form.warehouseId);
         if (user) {
           logAudit({
-            tenantSlug: orgSlug, userEmail: user.email, userName: user.name, role: user.role,
-            action: "inventory:receive", category: "INVENTORY",
-            resourceRef: product?.sku ?? form.productId, resourceType: "InventoryTransaction",
-            details: `+${qty.toLocaleString()} ${product?.unit ?? "units"} ${product?.name ?? ""} → ${wh?.name ?? form.warehouseId}`,
+            tenantSlug:    orgSlug,
+            userEmail:     user.email,
+            userName:      user.name,
+            role:          user.role,
+            action:        "inventory:receive",
+            category:      "INVENTORY",
+            resourceRef:   product?.sku ?? form.productId,
+            resourceType:  "InventoryTransaction",
+            productName:   product?.name,
+            quantityStr:   `+${qty.toLocaleString()} ${product?.unit ?? "units"}`,
+            toWarehouse:   wh?.name ?? form.warehouseId,
           });
         }
         setSuccess(`${product?.name ?? "Stock"} received successfully.`);

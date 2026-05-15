@@ -137,10 +137,19 @@ export function IssueStockPanel({ products, warehouses, orgSlug }: Props) {
         const wh   = warehouses.find((w) => w.id === warehouseId);
         if (user) {
           logAudit({
-            tenantSlug: orgSlug, userEmail: user.email, userName: user.name, role: user.role,
-            action: "inventory:issue", category: "INVENTORY",
-            resourceRef: selectedProduct?.sku ?? productId, resourceType: "InventoryTransaction",
-            details: `-${qty.toLocaleString()} ${selectedProduct?.unit ?? "units"} ${selectedProduct?.name ?? ""} from ${wh?.name ?? warehouseId}${issuedTo.trim() ? ` → ${issuedTo.trim()}` : ""} [${reasonCode}]`,
+            tenantSlug:    orgSlug,
+            userEmail:     user.email,
+            userName:      user.name,
+            role:          user.role,
+            action:        "inventory:issue",
+            category:      "INVENTORY",
+            resourceRef:   selectedProduct?.sku ?? productId,
+            resourceType:  "InventoryTransaction",
+            productName:   selectedProduct?.name,
+            quantityStr:   `-${qty.toLocaleString()} ${selectedProduct?.unit ?? "units"}`,
+            fromWarehouse: wh?.name ?? warehouseId,
+            toWarehouse:   issuedTo.trim() || undefined,
+            notes:         `[${reasonCode}]`,
           });
         }
         setSuccess(

@@ -359,20 +359,19 @@ export default function TransfersPage() {
       }
       // Bug 3: record every transition in the audit log
       logAudit({
-        tenantSlug: org,
-        userEmail: user.email,
-        userName: user.name,
-        role: user.role,
-        action: `transfer:${next}`,
-        category: "TRANSFER",
-        resourceRef: transfer?.ref ?? id,
-        resourceType: "TransferOrder",
-        details: [
-          transfer?.product_name,
-          transfer ? `${transfer.quantity.toLocaleString()} units` : "",
-          transfer ? `${transfer.from_warehouse_name} → ${transfer.to_warehouse_name}` : "",
-          partialQty ? `(${partialQty.toLocaleString()} received this batch)` : "",
-        ].filter(Boolean).join(" · "),
+        tenantSlug:    org,
+        userEmail:     user.email,
+        userName:      user.name,
+        role:          user.role,
+        action:        `transfer:${next}`,
+        category:      "TRANSFER",
+        resourceRef:   transfer?.ref ?? id,
+        resourceType:  "TransferOrder",
+        productName:   transfer?.product_name,
+        quantityStr:   transfer ? `${transfer.quantity.toLocaleString()} ${transfer.product_name ? "units" : ""}` : undefined,
+        fromWarehouse: transfer?.from_warehouse_name,
+        toWarehouse:   transfer?.to_warehouse_name,
+        notes:         partialQty ? `Batch received: ${partialQty.toLocaleString()} units` : undefined,
       });
       setToast(`Status updated to ${next.replace(/_/g, " ")}`);
       setTimeout(() => setToast(""), 3000);

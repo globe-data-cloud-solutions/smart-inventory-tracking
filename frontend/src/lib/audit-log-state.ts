@@ -14,7 +14,16 @@ export interface AuditLogEntry {
   category: AuditCategory;
   resourceRef: string;
   resourceType: string;
-  details: string;
+  /** For TRANSFER: the product name. For INVENTORY: product name. */
+  productName?: string;
+  /** Formatted qty + unit, e.g. "1,455 Bag" */
+  quantityStr?: string;
+  /** Source facility / warehouse name. */
+  fromWarehouse?: string;
+  /** Destination facility / warehouse name. */
+  toWarehouse?: string;
+  /** Any additional free-form notes. */
+  notes?: string;
 }
 
 interface AuditLogStore {
