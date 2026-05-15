@@ -349,7 +349,7 @@ export default function TransferDetailPage() {
   const user         = getSession();
   const qc           = useQueryClient();
   const { isOnline } = useOfflineSync();
-  const updateTransferStatus = useInventoryStore((s) => s.updateTransferStatus);
+  const { updateTransferStatus, addTransfer, getTransferEntry } = useInventoryStore();
 
   const [toast, setToast]     = useState("");
   const [loading, setLoading] = useState(false);
@@ -377,6 +377,23 @@ export default function TransferDetailPage() {
     setConfirm(null);
     try {
       await api.patch(`/api/v1/transfers/${id}`, { next_status: next });
+
+      // Lazy-add to Zustand store so balance getters react to status changes.
+      // Covers pre-seeded records and transfers created by other users/sessions.
+      if (transfer && !getTransferEntry(id)) {
+        addTransfer({
+          id:                transfer.id,
+          ref:               transfer.ref,
+          productId:         transfer.product_id,
+          fromWarehouseId:   transfer.from_warehouse_id,
+          fromWarehouseName: transfer.from_warehouse_name,
+          toWarehouseId:     transfer.to_warehouse_id,
+          toWarehouseName:   transfer.to_warehouse_name,
+          quantity:          transfer.quantity,
+          issuedDate:        transfer.created_at,
+          status:            transfer.status,
+        });
+      }
       updateTransferStatus(id, next);
       await qc.invalidateQueries({ queryKey: ["transfer", id] });
       await qc.invalidateQueries({ queryKey: ["transfers", org] });

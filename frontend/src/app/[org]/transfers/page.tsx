@@ -346,7 +346,7 @@ export default function TransfersPage() {
   const user = getSession();
   const qc   = useQueryClient();
   const { isOnline } = useOfflineSync();
-  const { updateTransferStatus, partialReceive, getTransferEntry } = useInventoryStore();
+  const { updateTransferStatus, partialReceive, getTransferEntry, addTransfer } = useInventoryStore();
   const logAudit = useAuditStore((s) => s.log);
   const [transitioning, setTransitioning] = useState<string | null>(null);
   const [confirmModal, setConfirmModal] = useState<{
@@ -389,6 +389,25 @@ export default function TransfersPage() {
     try {
       await api.patch(`/api/v1/transfers/${id}`, { next_status: next });
       await qc.invalidateQueries({ queryKey: ["transfers", org] });
+
+      // Lazy-add the transfer to the Zustand store if it isn't already there.
+      // This covers: pre-seeded demo records, transfers created by a different
+      // user in a prior session, and any transfer the current user didn't create.
+      // Without this, updateTransferStatus is a no-op and balances never change.
+      if (transfer && !getTransferEntry(id)) {
+        addTransfer({
+          id:                transfer.id,
+          ref:               transfer.ref,
+          productId:         transfer.product_id,
+          fromWarehouseId:   transfer.from_warehouse_id,
+          fromWarehouseName: transfer.from_warehouse_name,
+          toWarehouseId:     transfer.to_warehouse_id,
+          toWarehouseName:   transfer.to_warehouse_name,
+          quantity:          transfer.quantity,
+          issuedDate:        transfer.created_at,
+          status:            transfer.status, // pre-transition; updateTransferStatus advances it
+        });
+      }
       updateTransferStatus(id, next);
       if (next === "PARTIALLY_RECEIVED" && partialQty) {
         partialReceive(id, partialQty);
