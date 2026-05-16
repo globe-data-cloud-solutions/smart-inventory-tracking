@@ -4,93 +4,57 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { logout, type SessionUser } from "@/lib/demo-auth";
 import { DEMO_TENANTS } from "@/lib/demo-data";
+import { t } from "@/lib/i18n";
 
-interface SidebarProps {
-  user: SessionUser;
-}
+interface SidebarProps { user: SessionUser; }
 
-const ROLE_COLORS: Record<string, string> = {
-  SA:  "#DC2626", TA: "#7C3AED", NM: "#2563EB",
-  RM:  "#0D9488", WM: "#059669", LM: "#0891B2",
-  AU:  "#6B7280", SYS:"#D97706",
+const ROLE_BADGE: Record<string, string> = {
+  SA: "bg-red-600", TA: "bg-violet-600", NM: "bg-blue-600", RM: "bg-teal-600",
+  WM: "bg-emerald-600", LM: "bg-cyan-600", AU: "bg-gray-500", SYS: "bg-amber-600",
 };
 
 export function Sidebar({ user }: SidebarProps) {
   const pathname = usePathname();
   const router   = useRouter();
-
   const handleLogout = () => { logout(); router.push("/login"); };
-
   const navItems = user.role === "SA" ? SA_NAV : TENANT_NAV;
 
+  const linkCls = (active: boolean) =>
+    `flex items-center gap-2.5 px-2.5 py-2 rounded text-sm font-medium no-underline mb-px border-l-[3px] transition-all ${
+      active
+        ? "bg-eth-gold/[0.12] text-eth-gold border-eth-gold"
+        : "text-white/65 border-transparent hover:bg-white/[0.08] hover:text-white/95"
+    }`;
+
   return (
-    /*
-     * Sidebar starts at top: 60px (56px header + 4px Ethiopian stripe).
-     * No logo here — the header already carries the brand mark.
-     * User identity sits at the very top so it's immediately visible.
-     */
-    <aside
-      style={{
-        position: "fixed",
-        top: 60,           /* sits directly below the header + stripe */
-        left: 0,
-        bottom: 0,
-        width: 240,
-        background: "#0f2d1f",
-        display: "flex",
-        flexDirection: "column",
-        zIndex: 40,
-        borderRight: "1px solid rgba(255,255,255,0.06)",
-        overflow: "hidden",
-      }}
-    >
-      {/* ── User identity — top of sidebar, always visible ── */}
-      <div style={{
-        padding: "12px 14px",
-        borderBottom: "1px solid rgba(255,255,255,0.08)",
-        background: "rgba(255,255,255,0.04)",
-        flexShrink: 0,
-      }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          {/* Role badge */}
-          <span style={{
-            fontSize: 10, fontWeight: 800, color: "#fff", letterSpacing: "0.04em",
-            background: ROLE_COLORS[user.role] ?? "#6B7280",
-            padding: "2px 7px", borderRadius: 3, flexShrink: 0,
-          }}>
+    <aside className="fixed top-[60px] left-0 bottom-0 w-60 bg-[#0f2d1f] flex flex-col z-40 border-r border-white/[0.06] overflow-hidden">
+      {/* User identity */}
+      <div className="px-3.5 py-3 border-b border-white/[0.08] bg-white/[0.04] shrink-0">
+        <div className="flex items-center gap-2">
+          <span className={`text-[10px] font-extrabold text-white tracking-wide ${ROLE_BADGE[user.role] ?? "bg-gray-500"} px-[7px] py-0.5 rounded shrink-0`}>
             {user.role}
           </span>
-          <div style={{ minWidth: 0 }}>
-            <p style={{ fontSize: 13, fontWeight: 600, color: "#fff", margin: 0,
-              whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-              {user.name}
-            </p>
+          <div className="min-w-0">
+            <p className="text-sm font-semibold text-white m-0 truncate">{user.name}</p>
             {user.tenantName && (
-              <p style={{ fontSize: 11, color: "#6ee7b7", margin: 0, marginTop: 1,
-                whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+              <p className="text-[11px] text-emerald-300 m-0 mt-px truncate">
                 {user.tenantName}
-                {user.warehouseName && <span style={{ color: "#4ade80" }}> › {user.warehouseName}</span>}
+                {user.warehouseName && <span className="text-green-400"> › {user.warehouseName}</span>}
               </p>
             )}
             {user.role === "SA" && (
-              <p style={{ fontSize: 11, color: "#FCDD09", margin: 0, marginTop: 1 }}>
-                All tenants
-              </p>
+              <p className="text-[11px] text-eth-gold m-0 mt-px">{t("dashboard.tenants_heading")}</p>
             )}
           </div>
         </div>
       </div>
 
-      {/* ── Navigation ── */}
-      <nav style={{ flex: 1, overflowY: "auto", padding: "8px 8px" }}>
+      {/* Navigation */}
+      <nav className="flex-1 overflow-y-auto p-2">
         {navItems.map((item, idx) => {
           if (item.type === "section") {
             return (
-              <p key={idx} style={{
-                fontSize: 10, fontWeight: 700, textTransform: "uppercase",
-                letterSpacing: "0.08em", color: "rgba(255,255,255,0.3)",
-                padding: "14px 10px 4px", margin: 0,
-              }}>
+              <p key={idx} className="text-[10px] font-bold uppercase tracking-widest text-white/30 px-2.5 pt-3.5 pb-1 m-0">
                 {item.label}
               </p>
             );
@@ -99,47 +63,24 @@ export function Sidebar({ user }: SidebarProps) {
             ? pathname === "/dashboard"
             : pathname.startsWith(item.href ?? "NOMATCH");
           return (
-            <Link key={idx} href={item.href ?? "#"} style={{
-              display: "flex", alignItems: "center", gap: 10,
-              padding: "8px 10px", borderRadius: 5,
-              fontSize: 13, fontWeight: 500, textDecoration: "none",
-              marginBottom: 1,
-              background: active ? "rgba(252,221,9,0.12)" : "transparent",
-              color: active ? "#FCDD09" : "rgba(255,255,255,0.65)",
-              borderLeft: active ? "3px solid #FCDD09" : "3px solid transparent",
-              transition: "all 0.12s",
-            }}>
-              <span style={{ fontSize: 15, lineHeight: 1, flexShrink: 0 }}>{item.icon}</span>
+            <Link key={idx} href={item.href ?? "#"} className={linkCls(active)}>
+              <span className="text-[15px] leading-none shrink-0">{item.icon}</span>
               {item.label}
             </Link>
           );
         })}
 
-        {/* SA-only: tenant quick links */}
         {user.role === "SA" && (
           <>
-            <p style={{
-              fontSize: 10, fontWeight: 700, textTransform: "uppercase",
-              letterSpacing: "0.08em", color: "rgba(255,255,255,0.3)",
-              padding: "14px 10px 4px", margin: 0,
-            }}>
-              Tenants
+            <p className="text-[10px] font-bold uppercase tracking-widest text-white/30 px-2.5 pt-3.5 pb-1 m-0">
+              {t("dashboard.tenants_heading")}
             </p>
-            {DEMO_TENANTS.map((t) => {
-              const active = pathname === `/dashboard/tenants/${t.slug}`;
+            {DEMO_TENANTS.map((ten) => {
+              const active = pathname === `/dashboard/tenants/${ten.slug}`;
               return (
-                <Link key={t.id} href={`/dashboard/tenants/${t.slug}`} style={{
-                  display: "flex", alignItems: "center", gap: 10,
-                  padding: "8px 10px", borderRadius: 5,
-                  fontSize: 13, fontWeight: 500, textDecoration: "none",
-                  marginBottom: 1,
-                  background: active ? "rgba(252,221,9,0.12)" : "transparent",
-                  color: active ? "#FCDD09" : "rgba(255,255,255,0.65)",
-                  borderLeft: active ? "3px solid #FCDD09" : "3px solid transparent",
-                  transition: "all 0.12s",
-                }}>
-                  <span style={{ fontSize: 15, lineHeight: 1 }}>{t.logo}</span>
-                  {t.name}
+                <Link key={ten.id} href={`/dashboard/tenants/${ten.slug}`} className={linkCls(active)}>
+                  <span className="text-[15px] leading-none">{ten.logo}</span>
+                  {ten.name}
                 </Link>
               );
             })}
@@ -147,20 +88,12 @@ export function Sidebar({ user }: SidebarProps) {
         )}
       </nav>
 
-      {/* ── Sign out ── */}
-      <div style={{ padding: "10px 8px", borderTop: "1px solid rgba(255,255,255,0.08)", flexShrink: 0 }}>
-        <button
-          onClick={handleLogout}
-          style={{
-            width: "100%", display: "flex", alignItems: "center", gap: 10,
-            padding: "8px 10px", borderRadius: 5, border: "none", cursor: "pointer",
-            fontSize: 13, fontWeight: 500, textAlign: "left",
-            background: "transparent", color: "rgba(255,255,255,0.4)",
-            transition: "all 0.12s",
-          }}
-        >
-          <span style={{ fontSize: 15 }}>🚪</span>
-          Sign out
+      {/* Sign out */}
+      <div className="px-2 py-2.5 border-t border-white/[0.08] shrink-0">
+        <button onClick={handleLogout}
+          className="w-full flex items-center gap-2.5 px-2.5 py-2 rounded border-0 cursor-pointer text-sm font-medium bg-transparent text-white/40 hover:bg-white/[0.08] hover:text-white/70 transition-all text-left">
+          <span className="text-[15px]">🚪</span>
+          {t("layout.sign_out")}
         </button>
       </div>
     </aside>

@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import uuid
-from datetime import date
 from decimal import Decimal
 from typing import Any
 from uuid import UUID
@@ -11,11 +10,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from shared.outbox.schemas import (
     AdjustmentAppliedPayload,
-    InventoryUpdatedPayload,
     StockTransferredPayload,
 )
 from shared.outbox.writer import write_to_outbox
-from shared.utils.idempotency import check_and_register_idempotency_key
+from repositories.ledger_repo import record_transaction
 from schemas.inventory import (
     AdjustmentRequest,
     AdjustmentResponse,
@@ -26,11 +24,7 @@ from schemas.inventory import (
     TransferOrderRequest,
     TransferOrderResponse,
 )
-from services.state_machine import (
-    ADJUSTMENT_TRANSITIONS,
-    TRANSFER_TRANSITIONS,
-    validate_transition,
-)
+from services.state_machine import InvalidStateTransitionError, validate_transition
 
 
 class InventoryService:
@@ -38,77 +32,15 @@ class InventoryService:
         self.db = db
 
     async def receive(self, user: Any, body: ReceiveStockRequest) -> ReceiveStockResponse:
-        tx_id = str(uuid.uuid4())
-        today = date.today()
-
-        await check_and_register_idempotency_key(self.db, body.idempotency_key, tx_id)
-
-        # Pessimistic lock on balance row
-        await self.db.execute(
-            text(
-                "SELECT id FROM inventory_balances "
-                "WHERE tenant_id = :tid AND product_id = :pid AND warehouse_id = :wid "
-                "FOR UPDATE"
-            ),
-            {
-                "tid": str(user.tenant_id),
-                "pid": str(body.product_id),
-                "wid": str(body.warehouse_id),
-            },
-        )
-
-        await self.db.execute(
-            text(
-                "INSERT INTO inventory_transactions "
-                "(id, transaction_date, tenant_id, type, product_id, warehouse_id, "
-                " quantity, unit_cost, lot_number, expiry_date, idempotency_key, "
-                " source, created_by) "
-                "VALUES (:id, :td, :tid, 'RECEIVE', :pid, :wid, :qty, :cost, "
-                "        :lot, :exp, :ikey, :src, :uid)"
-            ),
-            {
-                "id": tx_id,
-                "td": today,
-                "tid": str(user.tenant_id),
-                "pid": str(body.product_id),
-                "wid": str(body.warehouse_id),
-                "qty": str(body.quantity),
-                "cost": str(body.unit_cost) if body.unit_cost else None,
-                "lot": body.lot_number,
-                "exp": body.expiry_date,
-                "ikey": body.idempotency_key,
-                "src": body.source,
-                "uid": str(user.user_id),
-            },
-        )
-
-        # Upsert running balance
-        await self.db.execute(
-            text(
-                "INSERT INTO inventory_balances (tenant_id, product_id, warehouse_id, quantity) "
-                "VALUES (:tid, :pid, :wid, :qty) "
-                "ON CONFLICT (tenant_id, product_id, warehouse_id) WHERE lot_number IS NULL "
-                "DO UPDATE SET quantity = inventory_balances.quantity + EXCLUDED.quantity, "
-                "             updated_at = now()"
-            ),
-            {
-                "tid": str(user.tenant_id),
-                "pid": str(body.product_id),
-                "wid": str(body.warehouse_id),
-                "qty": str(body.quantity),
-            },
-        )
-
-        await write_to_outbox(
+        tx_id = await record_transaction(
             self.db,
-            str(user.tenant_id),
-            "InventoryUpdated",
-            InventoryUpdatedPayload(
-                product_id=str(body.product_id),
-                warehouse_id=str(body.warehouse_id),
-                delta=float(body.quantity),
-                transaction_id=tx_id,
-            ),
+            tenant_id=str(user.tenant_id),
+            transaction_type="RECEIVE",
+            product_id=str(body.product_id),
+            warehouse_id=str(body.warehouse_id),
+            quantity=body.quantity,
+            performed_by=str(user.user_id),
+            idempotency_key=body.idempotency_key,
         )
 
         from datetime import datetime, timezone
@@ -162,7 +94,15 @@ class InventoryService:
             from fastapi import HTTPException
             raise HTTPException(status_code=404, detail="Transfer not found")
 
-        validate_transition(TRANSFER_TRANSITIONS, row.status, next_state)
+        transfer_type = getattr(row, "transfer_type", "PULL")
+        try:
+            validate_transition(transfer_type, row.status, next_state)
+        except InvalidStateTransitionError as exc:
+            from fastapi import HTTPException
+            raise HTTPException(
+                status_code=422,
+                detail={"code": "INVALID_STATE_TRANSITION", "detail": str(exc)},
+            ) from exc
 
         await self.db.execute(
             text("UPDATE transfer_orders SET status = :s, updated_at = now() WHERE id = :id"),
@@ -179,11 +119,11 @@ class InventoryService:
         )
 
     async def dispatch_transfer(self, user: Any, transfer_id: UUID) -> TransferOrderResponse:
-        """Advance an APPROVED transfer to IN_TRANSIT.
+        """Advance an APPROVED transfer to ISSUED.
 
         Writes a TRANSFER_OUT ledger entry for every line and deducts the source
-        warehouse balance.  Only the source warehouse manager may dispatch —
-        user.warehouse_id must equal transfer.from_warehouse_id.
+        warehouse balance via record_transaction().  Only the source warehouse manager
+        may dispatch — user.warehouse_id must equal transfer.from_warehouse_id.
         """
         result = await self.db.execute(
             text("SELECT * FROM transfer_orders WHERE id = :id AND tenant_id = :tid FOR UPDATE"),
@@ -203,9 +143,16 @@ class InventoryService:
                 detail="Only the source warehouse can dispatch this transfer",
             )
 
-        validate_transition(TRANSFER_TRANSITIONS, row.status, "IN_TRANSIT")
+        transfer_type = getattr(row, "transfer_type", "PULL")
+        try:
+            validate_transition(transfer_type, row.status, "ISSUED")
+        except InvalidStateTransitionError as exc:
+            from fastapi import HTTPException
+            raise HTTPException(
+                status_code=422,
+                detail={"code": "INVALID_STATE_TRANSITION", "detail": str(exc)},
+            ) from exc
 
-        today = date.today()
         lines = (await self.db.execute(
             text(
                 "SELECT * FROM transfer_order_lines "
@@ -215,57 +162,28 @@ class InventoryService:
         )).fetchall()
 
         for line in lines:
-            tx_id = str(uuid.uuid4())
             ikey = f"transfer:{transfer_id}:dispatch:line:{line.id}"
-            await check_and_register_idempotency_key(self.db, ikey, tx_id)
-
-            await self.db.execute(
-                text(
-                    "INSERT INTO inventory_transactions "
-                    "(id, transaction_date, tenant_id, type, product_id, warehouse_id, "
-                    " quantity, idempotency_key, reference_id, source, created_by) "
-                    "VALUES (:id, :td, :tid, 'TRANSFER_OUT', :pid, :wid, :qty, "
-                    "        :ikey, :ref, 'WEB', :uid)"
-                ),
-                {
-                    "id": tx_id,
-                    "td": today,
-                    "tid": str(user.tenant_id),
-                    "pid": str(line.product_id),
-                    "wid": str(row.from_warehouse_id),
-                    "qty": str(-line.quantity),  # negative: deduct from source
-                    "ikey": ikey,
-                    "ref": str(transfer_id),
-                    "uid": str(user.user_id),
-                },
-            )
-
-            # Deduct from source warehouse balance
-            await self.db.execute(
-                text(
-                    "INSERT INTO inventory_balances (tenant_id, product_id, warehouse_id, quantity) "
-                    "VALUES (:tid, :pid, :wid, :qty) "
-                    "ON CONFLICT (tenant_id, product_id, warehouse_id) WHERE lot_number IS NULL "
-                    "DO UPDATE SET quantity = inventory_balances.quantity + EXCLUDED.quantity, "
-                    "             updated_at = now()"
-                ),
-                {
-                    "tid": str(user.tenant_id),
-                    "pid": str(line.product_id),
-                    "wid": str(row.from_warehouse_id),
-                    "qty": str(-line.quantity),
-                },
+            await record_transaction(
+                self.db,
+                tenant_id=str(user.tenant_id),
+                transaction_type="TRANSFER_OUT",
+                product_id=str(line.product_id),
+                warehouse_id=str(row.from_warehouse_id),
+                quantity=-Decimal(str(line.quantity)),  # negative: deduct from source
+                performed_by=str(user.user_id),
+                idempotency_key=ikey,
+                reference_id=str(transfer_id),
             )
 
         await self.db.execute(
-            text("UPDATE transfer_orders SET status = 'IN_TRANSIT', updated_at = now() WHERE id = :id"),
+            text("UPDATE transfer_orders SET status = 'ISSUED', updated_at = now() WHERE id = :id"),
             {"id": str(transfer_id)},
         )
 
         from datetime import datetime, timezone
         return TransferOrderResponse(
             transfer_id=transfer_id,
-            status="IN_TRANSIT",
+            status="ISSUED",
             from_warehouse_id=row.from_warehouse_id,
             to_warehouse_id=row.to_warehouse_id,
             created_at=datetime.now(timezone.utc),
@@ -298,9 +216,16 @@ class InventoryService:
                 detail="Only the destination warehouse can receive this transfer",
             )
 
-        validate_transition(TRANSFER_TRANSITIONS, row.status, "RECEIVED")
+        transfer_type = getattr(row, "transfer_type", "PULL")
+        try:
+            validate_transition(transfer_type, row.status, "RECEIVED")
+        except InvalidStateTransitionError as exc:
+            from fastapi import HTTPException
+            raise HTTPException(
+                status_code=422,
+                detail={"code": "INVALID_STATE_TRANSITION", "detail": str(exc)},
+            ) from exc
 
-        today = date.today()
         lines = (await self.db.execute(
             text(
                 "SELECT * FROM transfer_order_lines "
@@ -310,49 +235,21 @@ class InventoryService:
         )).fetchall()
 
         for line in lines:
-            tx_id = str(uuid.uuid4())
             ikey = f"transfer:{transfer_id}:receive:line:{line.id}"
-            await check_and_register_idempotency_key(self.db, ikey, tx_id)
-
-            await self.db.execute(
-                text(
-                    "INSERT INTO inventory_transactions "
-                    "(id, transaction_date, tenant_id, type, product_id, warehouse_id, "
-                    " quantity, idempotency_key, reference_id, source, created_by) "
-                    "VALUES (:id, :td, :tid, 'TRANSFER_IN', :pid, :wid, :qty, "
-                    "        :ikey, :ref, 'WEB', :uid)"
-                ),
-                {
-                    "id": tx_id,
-                    "td": today,
-                    "tid": str(user.tenant_id),
-                    "pid": str(line.product_id),
-                    "wid": str(row.to_warehouse_id),
-                    "qty": str(line.quantity),  # positive: credit to destination
-                    "ikey": ikey,
-                    "ref": str(transfer_id),
-                    "uid": str(user.user_id),
-                },
+            await record_transaction(
+                self.db,
+                tenant_id=str(user.tenant_id),
+                transaction_type="TRANSFER_IN",
+                product_id=str(line.product_id),
+                warehouse_id=str(row.to_warehouse_id),
+                quantity=Decimal(str(line.quantity)),  # positive: credit to destination
+                performed_by=str(user.user_id),
+                idempotency_key=ikey,
+                reference_id=str(transfer_id),
             )
 
-            # Credit destination warehouse balance
-            await self.db.execute(
-                text(
-                    "INSERT INTO inventory_balances (tenant_id, product_id, warehouse_id, quantity) "
-                    "VALUES (:tid, :pid, :wid, :qty) "
-                    "ON CONFLICT (tenant_id, product_id, warehouse_id) WHERE lot_number IS NULL "
-                    "DO UPDATE SET quantity = inventory_balances.quantity + EXCLUDED.quantity, "
-                    "             updated_at = now()"
-                ),
-                {
-                    "tid": str(user.tenant_id),
-                    "pid": str(line.product_id),
-                    "wid": str(row.to_warehouse_id),
-                    "qty": str(line.quantity),
-                },
-            )
-
-            # Outbox event — same transaction as the ledger INSERT
+            # StockTransferred is an additional event beyond the InventoryUpdated
+            # that record_transaction() already fired — both in the same transaction.
             await write_to_outbox(
                 self.db,
                 str(user.tenant_id),
@@ -443,7 +340,14 @@ class InventoryService:
             from fastapi import HTTPException
             raise HTTPException(status_code=404, detail="Adjustment not found")
 
-        validate_transition(ADJUSTMENT_TRANSITIONS, row.status, next_state)
+        try:
+            validate_transition("ADJUSTMENT", row.status, next_state)
+        except InvalidStateTransitionError as exc:
+            from fastapi import HTTPException
+            raise HTTPException(
+                status_code=422,
+                detail={"code": "INVALID_STATE_TRANSITION", "detail": str(exc)},
+            ) from exc
 
         await self.db.execute(
             text("UPDATE adjustment_orders SET status = :s, updated_at = now() WHERE id = :id"),

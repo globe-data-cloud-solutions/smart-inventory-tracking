@@ -7,49 +7,60 @@ import { getSession, SA_ORG_SLUG } from "@/lib/demo-auth";
 import { DEMO_TENANTS } from "@/lib/demo-data";
 import { usePermission } from "@/hooks/usePermission";
 import { api } from "@/lib/api";
+import { t } from "@/lib/i18n";
 
 type Strategy = "FEFO" | "FIFO" | "LIFO";
 
 interface DispatchConfig {
   id: string; product_id: string; product_name: string;
-  product_sku: string; scope: string; strategy: Strategy;
-  effective_from: string;
+  product_sku: string; scope: string; strategy: Strategy; effective_from: string;
 }
 
-const STRATEGY_STYLE: Record<Strategy, { bg: string; color: string; label: string; desc: string }> = {
-  FEFO: { bg: "#FEF3C7", color: "#92400E", label: "FEFO", desc: "First Expired, First Out — enforced automatically when batch+expiry tracking active" },
-  FIFO: { bg: "#DBEAFE", color: "#1E40AF", label: "FIFO", desc: "First In, First Out — oldest received lot dispatched first" },
-  LIFO: { bg: "#EDE9FE", color: "#5B21B6", label: "LIFO", desc: "Last In, First Out — most recently received lot dispatched first" },
+const STRATEGY_CLASS: Record<Strategy, string> = {
+  FEFO: "bg-amber-100 text-amber-800 border-amber-200",
+  FIFO: "bg-blue-100  text-blue-800  border-blue-200",
+  LIFO: "bg-violet-100 text-violet-800 border-violet-200",
 };
 
-const DARK = "#0f2d1f";
-const GOLD = "#FCDD09";
-
 function FefoOverrideModal({ productName, onClose }: { productName: string; onClose: () => void }) {
-  const [reason, setReason] = useState("");
+  const [reason, setReason]       = useState("");
   const [submitted, setSubmitted] = useState(false);
 
   return (
     <>
-      <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.4)", zIndex: 200 }} />
-      <div style={{ position: "fixed", top: "50%", left: "50%", transform: "translate(-50%,-50%)", background: "#fff", borderRadius: 10, padding: "2rem", zIndex: 201, width: 400, boxShadow: "0 8px 32px rgba(0,0,0,0.2)" }}>
+      <div onClick={onClose} className="fixed inset-0 bg-black/40 z-[200]" />
+      <div className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 bg-white rounded-lg p-8 z-[201] w-[400px] shadow-2xl">
         {submitted ? (
-          <div style={{ textAlign: "center" }}>
-            <div style={{ width: 56, height: 56, borderRadius: "50%", background: "#FEF3C7", display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 1rem", fontSize: 24 }}>⚠️</div>
-            <p style={{ fontWeight: 700, fontSize: 16, color: "#111827", margin: "0 0 0.5rem" }}>Override Applied</p>
-            <p style={{ fontSize: 13, color: "#6B7280", margin: "0 0 1.5rem" }}>FEFO override logged for {productName}. Audit record created.</p>
-            <button onClick={onClose} style={{ padding: "9px 24px", background: "#92400E", color: "#fff", border: "none", borderRadius: 6, fontSize: 13, fontWeight: 700, cursor: "pointer" }}>Done</button>
+          <div className="text-center">
+            <div className="w-14 h-14 rounded-full bg-amber-100 flex items-center justify-center mx-auto mb-4 text-2xl">⚠️</div>
+            <p className="font-bold text-base text-gray-900 mb-2">{t("dispatch.override_applied")}</p>
+            <p className="text-sm text-gray-500 mb-6">{t("dispatch.override_logged")} {productName}.</p>
+            <button onClick={onClose} className="px-6 py-2 bg-amber-800 text-white border-0 rounded-md text-sm font-bold cursor-pointer">
+              {t("common.confirm")}
+            </button>
           </div>
         ) : (
           <>
-            <p style={{ fontWeight: 700, fontSize: 16, color: "#111827", margin: "0 0 0.25rem" }}>FEFO Override</p>
-            <p style={{ fontSize: 13, color: "#6B7280", margin: "0 0 1.25rem" }}>Overriding FEFO for <strong>{productName}</strong>. A reason is required and this will be audit-logged.</p>
-            <label style={{ display: "block", fontSize: 12, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.05em", color: "#374151", marginBottom: 6 }}>Override Reason *</label>
-            <textarea value={reason} onChange={(e) => setReason(e.target.value)} rows={3} placeholder="Why is FEFO being overridden for this dispatch?" style={{ width: "100%", padding: "8px 10px", fontSize: 13, border: "1px solid #D1D5DB", borderRadius: 6, outline: "none", resize: "vertical", boxSizing: "border-box" as const, marginBottom: 16 }} />
-            <div style={{ display: "flex", gap: 10 }}>
-              <button onClick={onClose} style={{ flex: 1, padding: "9px", background: "#F3F4F6", border: "none", borderRadius: 6, fontSize: 13, fontWeight: 600, cursor: "pointer" }}>Cancel</button>
-              <button disabled={!reason.trim()} onClick={() => setSubmitted(true)} style={{ flex: 2, padding: "9px", background: reason.trim() ? "#92400E" : "#E5E7EB", color: reason.trim() ? "#fff" : "#9CA3AF", border: "none", borderRadius: 6, fontSize: 13, fontWeight: 700, cursor: reason.trim() ? "pointer" : "not-allowed" }}>
-                Apply Override
+            <p className="font-bold text-base text-gray-900 mb-1">{t("dispatch.override_btn")}</p>
+            <p className="text-sm text-gray-500 mb-5">
+              {t("dispatch.override_warning")} <strong>{productName}</strong>. {t("dispatch.override_audit_note")}
+            </p>
+            <label className="block text-xs font-bold uppercase tracking-wide text-gray-700 mb-1.5">
+              {t("dispatch.override_reason")} *
+            </label>
+            <textarea
+              value={reason} onChange={(e) => setReason(e.target.value)} rows={3}
+              placeholder={t("dispatch.override_placeholder")}
+              className="w-full px-2.5 py-2 text-sm border border-gray-300 rounded-md outline-none resize-vertical mb-4"
+            />
+            <div className="flex gap-2.5">
+              <button onClick={onClose} className="flex-1 py-2 bg-gray-100 border-0 rounded-md text-sm font-semibold cursor-pointer">{t("common.cancel")}</button>
+              <button
+                disabled={!reason.trim()}
+                onClick={() => setSubmitted(true)}
+                className={`flex-[2] py-2 border-0 rounded-md text-sm font-bold ${reason.trim() ? "bg-amber-800 text-white cursor-pointer" : "bg-gray-200 text-gray-400 cursor-not-allowed"}`}
+              >
+                {t("dispatch.override_submit")}
               </button>
             </div>
           </>
@@ -60,19 +71,18 @@ function FefoOverrideModal({ productName, onClose }: { productName: string; onCl
 }
 
 export default function DispatchPage() {
-  const { org }     = useParams() as { org: string };
-  const user        = getSession();
-  const qc          = useQueryClient();
+  const { org }      = useParams() as { org: string };
+  const user         = getSession();
+  const qc           = useQueryClient();
   const canConfigure = usePermission("dispatch:configure");
   const canOverride  = usePermission("dispatch:fefo_override");
-
   const [overrideProduct, setOverrideProduct] = useState<string | null>(null);
   const [saving, setSaving] = useState<string | null>(null);
   const [toast, setToast]   = useState("");
 
-  if (org === SA_ORG_SLUG) return <p style={{ padding: "2rem", color: "#6B7280" }}>Select a tenant to configure dispatch.</p>;
-  const tenant = DEMO_TENANTS.find((t) => t.slug === org);
-  if (!tenant || !user) return <p style={{ padding: "2rem", color: "#6B7280" }}>Tenant not found.</p>;
+  if (org === SA_ORG_SLUG) return <p className="p-8 text-gray-500">{t("common.no_data")}</p>;
+  const tenant = DEMO_TENANTS.find((ten) => ten.slug === org);
+  if (!tenant || !user) return <p className="p-8 text-gray-500">{t("common.no_data")}</p>;
 
   const { data: configs = [] } = useQuery<DispatchConfig[]>({
     queryKey: ["dispatch-config", org],
@@ -89,104 +99,89 @@ export default function DispatchPage() {
     try {
       await api.post("/api/v1/dispatch-config", { product_id: productId, product_name: productName, product_sku: productSku, scope: "PRODUCT", strategy });
       await qc.invalidateQueries({ queryKey: ["dispatch-config", org] });
-      setToast(`${productName}: strategy set to ${strategy}`);
+      setToast(`${productName}: ${t("dispatch.success")}`);
       setTimeout(() => setToast(""), 3000);
-    } catch { setToast("Failed to save strategy."); setTimeout(() => setToast(""), 3000); }
+    } catch { setToast(t("dispatch.save_error") ); setTimeout(() => setToast(""), 3000); }
     finally { setSaving(null); }
   }
 
   return (
-    <div style={{ padding: "2rem" }}>
-      {/* Toast */}
+    <div className="p-8">
       {toast && (
-        <div style={{ position: "fixed", bottom: 24, right: 24, zIndex: 200, background: DARK, color: GOLD, fontWeight: 700, fontSize: 13, padding: "10px 20px", borderRadius: 6, boxShadow: "0 4px 16px rgba(0,0,0,0.2)" }}>
+        <div className="fixed bottom-6 right-6 z-[200] bg-[#0f2d1f] text-eth-gold font-bold text-sm px-5 py-2.5 rounded-md shadow-xl">
           {toast}
         </div>
       )}
+      {overrideProduct && <FefoOverrideModal productName={overrideProduct} onClose={() => setOverrideProduct(null)} />}
 
-      {overrideProduct && (
-        <FefoOverrideModal productName={overrideProduct} onClose={() => setOverrideProduct(null)} />
-      )}
-
-      {/* Header */}
-      <div style={{ marginBottom: "1.5rem" }}>
-        <h2 style={{ fontSize: "1.5rem", fontWeight: 700, color: DARK, margin: 0 }}>Dispatch Strategy</h2>
-        <p style={{ fontSize: 13, color: "#6B7280", margin: "4px 0 0" }}>
-          {tenant.name} · Configure FEFO / FIFO / LIFO per product
-        </p>
+      <div className="mb-6">
+        <h2 className="text-2xl font-bold text-[#0f2d1f] m-0">{t("dispatch.title")}</h2>
+        <p className="text-sm text-gray-500 mt-1">{tenant.name} · {t("dispatch.subtitle")}</p>
       </div>
 
       {/* Strategy legend */}
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 12, marginBottom: "1.5rem" }}>
-        {(["FEFO", "FIFO", "LIFO"] as Strategy[]).map((s) => {
-          const m = STRATEGY_STYLE[s];
-          return (
-            <div key={s} style={{ background: m.bg, border: `1px solid ${m.color}30`, borderRadius: 8, padding: "0.875rem 1rem" }}>
-              <p style={{ fontWeight: 800, fontSize: 14, color: m.color, margin: "0 0 4px" }}>{m.label}</p>
-              <p style={{ fontSize: 12, color: "#6B7280", margin: 0 }}>{m.desc}</p>
-            </div>
-          );
-        })}
+      <div className="grid grid-cols-3 gap-3 mb-6">
+        {(["FEFO", "FIFO", "LIFO"] as Strategy[]).map((s) => (
+          <div key={s} className={`px-4 py-3.5 rounded-lg border ${STRATEGY_CLASS[s]}`}>
+            <p className="font-extrabold text-sm mb-1">{s}</p>
+            <p className="text-xs text-gray-500 m-0">{t(`dispatch.strategy_desc.${s}`)}</p>
+          </div>
+        ))}
       </div>
 
       {/* Auto-FEFO notice */}
-      <div style={{ background: "#FFFBEB", border: "1px solid #FDE68A", borderRadius: 6, padding: "10px 14px", marginBottom: "1.5rem", fontSize: 13, color: "#92400E" }}>
-        <strong>Auto-FEFO:</strong> Products with both batch tracking and expiry date active always use FEFO — strategy overrides are ignored.
-        {canOverride && " Use the FEFO Override button to bypass for a single dispatch (audit-logged)."}
+      <div className="bg-yellow-50 border border-yellow-200 rounded-md px-3.5 py-2.5 mb-6 text-sm text-amber-800">
+        <strong>{t("dispatch.auto_fefo")}:</strong>{" "}
+        {t("dispatch.auto_fefo_note")}
+        {canOverride && " " + t("dispatch.override_note")}
       </div>
 
       {/* Product table */}
-      <div style={{ background: "#fff", border: "1px solid #E5E7EB", borderRadius: 4, overflow: "hidden" }}>
-        <div style={{ height: 3, background: tenant.color }} />
-        <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+      <div className="bg-white border border-gray-200 rounded overflow-hidden">
+        <div className="h-[3px]" style={{ background: tenant.color }} />
+        <table className="w-full border-collapse text-sm">
           <thead>
-            <tr style={{ background: "#F9FAFB", borderBottom: "2px solid #E5E7EB" }}>
-              {["SKU", "Product", "Batch Tracking", "Current Strategy", ...(canConfigure ? ["Set Strategy"] : []), ...(canOverride ? ["Override"] : [])].map((h) => (
-                <th key={h} style={{ padding: "10px 14px", textAlign: "left", fontSize: 11, fontWeight: 700, color: "#6B7280", textTransform: "uppercase", letterSpacing: "0.05em" }}>{h}</th>
+            <tr className="bg-gray-50 border-b-2 border-gray-200">
+              {["table.sku", "table.product", "dispatch.batch_tracking", "dispatch.current_strategy",
+                ...(canConfigure ? ["dispatch.set_strategy"] : []),
+                ...(canOverride  ? ["dispatch.override_col"] : [])].map((key) => (
+                <th key={key} className="px-3.5 py-2.5 text-left text-[11px] font-bold text-gray-500 uppercase tracking-wide">{t(key)}</th>
               ))}
             </tr>
           </thead>
           <tbody>
             {tenant.products.map((p, idx) => {
-              const strategy = p.batchTracking ? "FEFO" : getStrategy(p.id);
-              const s = STRATEGY_STYLE[strategy];
+              const strategy  = p.batchTracking ? "FEFO" : getStrategy(p.id);
+              const cls       = STRATEGY_CLASS[strategy]!;
               const isAutoFefo = p.batchTracking;
               const isSaving  = saving === p.id;
-
               return (
-                <tr key={p.id} style={{ background: idx % 2 === 0 ? "#fff" : "#FAFAFA", borderBottom: "1px solid #F3F4F6" }}>
-                  <td style={{ padding: "10px 14px", fontFamily: "monospace", fontSize: 11, color: "#9CA3AF" }}>{p.sku}</td>
-                  <td style={{ padding: "10px 14px", fontWeight: 600, color: "#1F2937" }}>{p.name}</td>
-                  <td style={{ padding: "10px 14px" }}>
-                    <span style={{ fontSize: 11, fontWeight: 700, background: p.batchTracking ? "#DCFCE7" : "#F3F4F6", color: p.batchTracking ? "#166534" : "#9CA3AF", padding: "2px 8px", borderRadius: 3 }}>
-                      {p.batchTracking ? "Yes" : "No"}
+                <tr key={p.id} className={`border-b border-gray-100 ${idx % 2 === 0 ? "bg-white" : "bg-gray-50"}`}>
+                  <td className="px-3.5 py-2.5 font-mono text-[11px] text-gray-400">{p.sku}</td>
+                  <td className="px-3.5 py-2.5 font-semibold text-gray-800">{p.name}</td>
+                  <td className="px-3.5 py-2.5">
+                    <span className={`text-xs font-bold px-2 py-0.5 rounded ${p.batchTracking ? "bg-green-100 text-green-800" : "bg-gray-100 text-gray-400"}`}>
+                      {p.batchTracking ? t("dispatch.yes") : t("dispatch.no")}
                     </span>
                   </td>
-                  <td style={{ padding: "10px 14px" }}>
-                    <span style={{ fontSize: 11, fontWeight: 700, background: s.bg, color: s.color, padding: "3px 8px", borderRadius: 3 }}>
-                      {strategy}{isAutoFefo ? " (auto)" : ""}
+                  <td className="px-3.5 py-2.5">
+                    <span className={`text-xs font-bold px-2 py-0.5 rounded border ${cls}`}>
+                      {strategy}{isAutoFefo ? ` (${t("dispatch.auto")})` : ""}
                     </span>
                   </td>
                   {canConfigure && (
-                    <td style={{ padding: "8px 14px" }}>
+                    <td className="px-3.5 py-2">
                       {isAutoFefo ? (
-                        <span style={{ fontSize: 12, color: "#D1D5DB" }}>Auto — cannot override</span>
+                        <span className="text-xs text-gray-300">{t("dispatch.auto_cannot_override")}</span>
                       ) : (
-                        <div style={{ display: "flex", gap: 6 }}>
+                        <div className="flex gap-1.5">
                           {(["FEFO", "FIFO", "LIFO"] as Strategy[]).map((strat) => {
                             const active = strategy === strat;
-                            const m = STRATEGY_STYLE[strat];
+                            const sc = STRATEGY_CLASS[strat]!;
                             return (
-                              <button
-                                key={strat}
-                                disabled={isSaving || active}
-                                onClick={() => setStrategy(p.id, p.name, p.sku, strat)}
-                                style={{
-                                  fontSize: 11, fontWeight: 700, padding: "4px 10px", borderRadius: 4, cursor: active || isSaving ? "not-allowed" : "pointer",
-                                  border: `1px solid ${active ? m.color : "#E5E7EB"}`,
-                                  background: active ? m.bg : "#fff", color: active ? m.color : "#9CA3AF",
-                                  opacity: isSaving ? 0.5 : 1,
-                                }}
+                              <button key={strat} disabled={isSaving || active}
+                                onClick={() => void setStrategy(p.id, p.name, p.sku, strat)}
+                                className={`text-xs font-bold px-2.5 py-1 rounded border transition-all ${active ? sc : "border-gray-200 bg-white text-gray-400"} ${(isSaving || active) ? "opacity-50 cursor-not-allowed" : "cursor-pointer"}`}
                               >
                                 {strat}
                               </button>
@@ -197,16 +192,16 @@ export default function DispatchPage() {
                     </td>
                   )}
                   {canOverride && (
-                    <td style={{ padding: "8px 14px" }}>
+                    <td className="px-3.5 py-2">
                       {(strategy === "FEFO" || isAutoFefo) ? (
                         <button
                           onClick={() => setOverrideProduct(p.name)}
-                          style={{ fontSize: 11, fontWeight: 700, padding: "4px 10px", borderRadius: 4, cursor: "pointer", border: "1px solid #FDE68A", background: "#FFFBEB", color: "#92400E" }}
+                          className="text-xs font-bold px-2.5 py-1 rounded border border-yellow-200 bg-yellow-50 text-amber-800 cursor-pointer"
                         >
-                          Override
+                          {t("dispatch.override_btn")}
                         </button>
                       ) : (
-                        <span style={{ fontSize: 11, color: "#D1D5DB" }}>—</span>
+                        <span className="text-xs text-gray-200">—</span>
                       )}
                     </td>
                   )}

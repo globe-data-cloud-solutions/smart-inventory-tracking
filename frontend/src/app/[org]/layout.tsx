@@ -6,50 +6,50 @@ import Link from "next/link";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { getSession, logout, SA_ORG_SLUG, type SessionUser } from "@/lib/demo-auth";
 import { DEMO_TENANTS, getLowStockProducts } from "@/lib/demo-data";
-import { getCurrentLocale, setLocale, loadLocale } from "@/lib/i18n";
+import { getCurrentLocale, setLocale, loadLocale, t } from "@/lib/i18n";
 import { useInventoryStore } from "@/lib/inventory-state";
 import { useAuditStore } from "@/lib/audit-log-state";
 
 type Locale = "en" | "am" | "or";
 
+/* ── Role badge Tailwind classes ──────────────────────────────────────────── */
+const ROLE_BADGE: Record<string, string> = {
+  SA:  "bg-red-600",
+  TA:  "bg-violet-600",
+  NM:  "bg-blue-600",
+  RM:  "bg-teal-600",
+  WM:  "bg-emerald-600",
+  LM:  "bg-cyan-600",
+  AU:  "bg-gray-500",
+  SYS: "bg-amber-600",
+};
+
 /* ── Notification bell ────────────────────────────────────────────────────── */
 function NotificationBell({ org }: { org: string }) {
   const [open, setOpen] = useState(false);
 
-  const tenant = DEMO_TENANTS.find((t) => t.slug === org);
+  const tenant = DEMO_TENANTS.find((ten) => ten.slug === org);
   if (!tenant) return null;
 
-  const lowStock = getLowStockProducts(tenant);
-
-  // Expiry alerts: products with expiry within 30 days (demo: check batchTracking products)
+  const lowStock    = getLowStockProducts(tenant);
   const expiryAlerts = tenant.products.filter((p) => p.batchTracking).slice(0, 2);
 
   const alerts = [
-    ...lowStock.map((p) => ({ type: "low_stock" as const, product: p.name, sku: p.sku })),
-    ...expiryAlerts.map((p) => ({ type: "expiry" as const, product: p.name, sku: p.sku })),
+    ...lowStock.map((p)     => ({ type: "low_stock" as const, product: p.name, sku: p.sku })),
+    ...expiryAlerts.map((p) => ({ type: "expiry"    as const, product: p.name, sku: p.sku })),
   ];
-
   const count = alerts.length;
 
   return (
-    <div style={{ position: "relative" }}>
+    <div className="relative">
       <button
         onClick={() => setOpen((o) => !o)}
-        style={{
-          position: "relative", background: "rgba(255,255,255,0.07)", border: "none",
-          borderRadius: 6, cursor: "pointer", width: 34, height: 34,
-          display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16,
-        }}
-        title="Alerts"
+        className="relative bg-white/10 border-0 rounded cursor-pointer w-[34px] h-[34px] flex items-center justify-center text-base"
+        title={t("notifications.title")}
       >
         🔔
         {count > 0 && (
-          <span style={{
-            position: "absolute", top: -4, right: -4, minWidth: 16, height: 16,
-            background: "#DC2626", color: "#fff", fontSize: 10, fontWeight: 800,
-            borderRadius: 99, display: "flex", alignItems: "center", justifyContent: "center",
-            padding: "0 3px",
-          }}>
+          <span className="absolute -top-1 -right-1 min-w-[16px] h-4 bg-red-600 text-white text-[10px] font-extrabold rounded-full flex items-center justify-center px-0.5">
             {count > 9 ? "9+" : count}
           </span>
         )}
@@ -57,36 +57,44 @@ function NotificationBell({ org }: { org: string }) {
 
       {open && (
         <>
-          <div onClick={() => setOpen(false)} style={{ position: "fixed", inset: 0, zIndex: 90 }} />
-          <div style={{
-            position: "absolute", top: "100%", right: 0, marginTop: 8, width: 320,
-            background: "#fff", borderRadius: 8, boxShadow: "0 8px 32px rgba(0,0,0,0.2)",
-            border: "1px solid #E5E7EB", zIndex: 100, overflow: "hidden",
-          }}>
-            <div style={{ padding: "10px 14px", borderBottom: "1px solid #F3F4F6", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-              <span style={{ fontWeight: 700, fontSize: 13, color: "#1F2937" }}>Alerts {count > 0 && `(${count})`}</span>
-              <button onClick={() => setOpen(false)} style={{ background: "none", border: "none", cursor: "pointer", fontSize: 13, color: "#9CA3AF" }}>✕</button>
+          <div onClick={() => setOpen(false)} className="fixed inset-0 z-[90]" />
+          <div className="absolute top-full right-0 mt-2 w-80 bg-white rounded-lg shadow-2xl border border-gray-200 z-[100] overflow-hidden">
+            <div className="px-3.5 py-2.5 border-b border-gray-100 flex items-center justify-between">
+              <span className="font-bold text-sm text-gray-800">
+                {t("notifications.title")} {count > 0 && `(${count})`}
+              </span>
+              <button
+                onClick={() => setOpen(false)}
+                className="bg-transparent border-0 cursor-pointer text-sm text-gray-400"
+              >
+                ✕
+              </button>
             </div>
             {alerts.length === 0 ? (
-              <p style={{ padding: "1.5rem", textAlign: "center", color: "#9CA3AF", fontSize: 13 }}>No active alerts</p>
+              <p className="p-6 text-center text-gray-400 text-sm">{t("notifications.no_alerts")}</p>
             ) : (
-              <div style={{ maxHeight: 320, overflowY: "auto" }}>
+              <div className="max-h-80 overflow-y-auto">
                 {alerts.map((a, i) => (
-                  <Link key={i} href={`/${org}/inventory`} onClick={() => setOpen(false)} style={{ display: "flex", alignItems: "flex-start", gap: 10, padding: "10px 14px", borderBottom: "1px solid #F9FAFB", textDecoration: "none" }}>
-                    <span style={{ fontSize: 16, flexShrink: 0, marginTop: 1 }}>{a.type === "low_stock" ? "📉" : "⚠️"}</span>
+                  <Link
+                    key={i}
+                    href={`/${org}/inventory`}
+                    onClick={() => setOpen(false)}
+                    className="flex items-start gap-2.5 px-3.5 py-2.5 border-b border-gray-50 no-underline"
+                  >
+                    <span className="text-base shrink-0 mt-0.5">{a.type === "low_stock" ? "📉" : "⚠️"}</span>
                     <div>
-                      <p style={{ fontWeight: 600, fontSize: 13, color: "#1F2937", margin: 0 }}>{a.product}</p>
-                      <p style={{ fontSize: 12, color: a.type === "low_stock" ? "#DC2626" : "#92400E", margin: "2px 0 0", fontWeight: 600 }}>
-                        {a.type === "low_stock" ? "Low Stock" : "Expiring Soon"} · {a.sku}
+                      <p className="font-semibold text-sm text-gray-800 m-0">{a.product}</p>
+                      <p className={`text-xs m-0 mt-0.5 font-semibold ${a.type === "low_stock" ? "text-red-600" : "text-amber-800"}`}>
+                        {a.type === "low_stock" ? t("notifications.low_stock") : t("notifications.expiry_soon")} · {a.sku}
                       </p>
                     </div>
                   </Link>
                 ))}
               </div>
             )}
-            <div style={{ padding: "8px 14px", borderTop: "1px solid #F3F4F6" }}>
-              <Link href={`/${org}/analytics`} onClick={() => setOpen(false)} style={{ fontSize: 12, fontWeight: 700, color: "#1B4332", textDecoration: "none" }}>
-                View all alerts →
+            <div className="px-3.5 py-2 border-t border-gray-100">
+              <Link href={`/${org}/analytics`} onClick={() => setOpen(false)} className="text-xs font-bold text-eth-forest no-underline">
+                {t("notifications.mark_all_read")} →
               </Link>
             </div>
           </div>
@@ -99,9 +107,7 @@ function NotificationBell({ org }: { org: string }) {
 function LangSwitcher() {
   const [current, setCurrent] = useState<Locale>("en");
 
-  useEffect(() => {
-    setCurrent(getCurrentLocale());
-  }, []);
+  useEffect(() => { setCurrent(getCurrentLocale()); }, []);
 
   async function switchLocale(loc: Locale) {
     if (loc === current) return;
@@ -112,20 +118,18 @@ function LangSwitcher() {
   }
 
   return (
-    <div style={{ display: "flex", gap: 2, background: "rgba(255,255,255,0.07)", borderRadius: 4, padding: 2 }}>
+    <div className="flex gap-0.5 bg-white/10 rounded p-0.5">
       {(["en", "am", "or"] as Locale[]).map((loc) => (
         <button
           key={loc}
           onClick={() => void switchLocale(loc)}
-          style={{
-            fontSize: 11, fontWeight: 700, padding: "3px 8px", borderRadius: 3,
-            border: "none", cursor: "pointer",
-            background: current === loc ? "#FCDD09" : "transparent",
-            color: current === loc ? "#0f2d1f" : "rgba(255,255,255,0.5)",
-            transition: "all 0.12s",
-          }}
+          className={`text-[11px] font-bold px-2 py-0.5 rounded border-0 cursor-pointer transition-all ${
+            current === loc
+              ? "bg-eth-gold text-[#0f2d1f]"
+              : "bg-transparent text-white/50 hover:text-white/80"
+          }`}
         >
-          {loc.toUpperCase()}
+          {t(`lang.${loc}`)}
         </button>
       ))}
     </div>
@@ -145,12 +149,6 @@ function Logo({ size = 28 }: { size?: number }) {
 }
 
 /* ── Sidebar nav ──────────────────────────────────────────────────────────── */
-const ROLE_COLORS: Record<string, string> = {
-  SA: "#DC2626", TA: "#7C3AED", NM: "#2563EB",
-  RM: "#0D9488", WM: "#059669", LM: "#0891B2",
-  AU: "#6B7280", SYS: "#D97706",
-};
-
 function Sidebar({ user, org }: { user: SessionUser; org: string }) {
   const router = useRouter();
 
@@ -158,36 +156,21 @@ function Sidebar({ user, org }: { user: SessionUser; org: string }) {
   const tenants  = org === SA_ORG_SLUG ? DEMO_TENANTS : [];
 
   return (
-    <aside style={{
-      position: "fixed", top: 60, left: 0, bottom: 0, width: 240,
-      background: "#0f2d1f", display: "flex", flexDirection: "column",
-      zIndex: 40, borderRight: "1px solid rgba(255,255,255,0.06)", overflow: "hidden",
-    }}>
+    <aside className="fixed top-[60px] left-0 bottom-0 w-60 bg-[#0f2d1f] flex flex-col z-40 border-r border-white/[0.06] overflow-hidden">
       {/* User identity */}
-      <div style={{
-        padding: "12px 14px", borderBottom: "1px solid rgba(255,255,255,0.08)",
-        background: "rgba(255,255,255,0.04)", flexShrink: 0,
-      }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          <span style={{
-            fontSize: 10, fontWeight: 800, color: "#fff", letterSpacing: "0.04em",
-            background: ROLE_COLORS[user.role] ?? "#6B7280",
-            padding: "2px 7px", borderRadius: 3, flexShrink: 0,
-          }}>{user.role}</span>
-          <div style={{ minWidth: 0 }}>
-            <p style={{ fontSize: 13, fontWeight: 600, color: "#fff", margin: 0,
-              whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-              {user.name}
-            </p>
+      <div className="px-3.5 py-3 border-b border-white/[0.08] bg-white/[0.04] shrink-0">
+        <div className="flex items-center gap-2">
+          <span className={`text-[10px] font-extrabold text-white tracking-wide ${ROLE_BADGE[user.role] ?? "bg-gray-500"} px-[7px] py-0.5 rounded shrink-0`}>
+            {user.role}
+          </span>
+          <div className="min-w-0">
+            <p className="text-sm font-semibold text-white m-0 truncate">{user.name}</p>
             {user.role === "SA" ? (
-              <p style={{ fontSize: 11, color: "#FCDD09", margin: "1px 0 0" }}>
-                System Administrator
-              </p>
+              <p className="text-[11px] text-eth-gold mt-px m-0">{t("roles.SA")}</p>
             ) : (
-              <p style={{ fontSize: 11, color: "#6ee7b7", margin: "1px 0 0",
-                whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+              <p className="text-[11px] text-emerald-300 mt-px m-0 truncate">
                 {user.tenantName}
-                {user.warehouseName && <span style={{ color: "#4ade80" }}> › {user.warehouseName}</span>}
+                {user.warehouseName && <span className="text-green-400"> › {user.warehouseName}</span>}
               </p>
             )}
           </div>
@@ -195,29 +178,23 @@ function Sidebar({ user, org }: { user: SessionUser; org: string }) {
       </div>
 
       {/* Navigation */}
-      <nav style={{ flex: 1, overflowY: "auto", padding: "8px" }}>
+      <nav className="flex-1 overflow-y-auto p-2">
         {navItems.map((item, idx) => {
           if (item.type === "section") {
             return (
-              <p key={idx} style={{
-                fontSize: 10, fontWeight: 700, textTransform: "uppercase",
-                letterSpacing: "0.08em", color: "rgba(255,255,255,0.3)",
-                padding: "14px 10px 4px", margin: 0,
-              }}>{item.label}</p>
+              <p key={idx} className="text-[10px] font-bold uppercase tracking-widest text-white/30 px-2.5 pt-3.5 pb-1 m-0">
+                {item.label}
+              </p>
             );
           }
           const href = `/${org}/${item.page}`;
           return (
-            <Link key={idx} href={href} style={{
-              display: "flex", alignItems: "center", gap: 10,
-              padding: "8px 10px", borderRadius: 5,
-              fontSize: 13, fontWeight: 500, textDecoration: "none",
-              marginBottom: 1, transition: "all 0.12s",
-              color: "rgba(255,255,255,0.65)",
-            }}
-              className="sidebar-link"
+            <Link
+              key={idx}
+              href={href}
+              className="flex items-center gap-2.5 px-2.5 py-2 rounded text-sm font-medium no-underline mb-px text-white/65 hover:bg-white/[0.08] hover:text-white/95 transition-all"
             >
-              <span style={{ fontSize: 15, lineHeight: 1, flexShrink: 0 }}>{item.icon}</span>
+              <span className="text-[15px] leading-none shrink-0">{item.icon}</span>
               {item.label}
             </Link>
           );
@@ -226,61 +203,47 @@ function Sidebar({ user, org }: { user: SessionUser; org: string }) {
         {/* SA: quick links to all tenants */}
         {tenants.length > 0 && (
           <>
-            <p style={{
-              fontSize: 10, fontWeight: 700, textTransform: "uppercase",
-              letterSpacing: "0.08em", color: "rgba(255,255,255,0.3)",
-              padding: "14px 10px 4px", margin: 0,
-            }}>Tenants</p>
-            {tenants.map((t) => (
-              <Link key={t.id} href={`/${t.slug}/dashboard`} style={{
-                display: "flex", alignItems: "center", gap: 10,
-                padding: "8px 10px", borderRadius: 5,
-                fontSize: 13, fontWeight: 500, textDecoration: "none",
-                marginBottom: 1, color: "rgba(255,255,255,0.65)", transition: "all 0.12s",
-              }}
-                className="sidebar-link"
+            <p className="text-[10px] font-bold uppercase tracking-widest text-white/30 px-2.5 pt-3.5 pb-1 m-0">
+              {t("dashboard.tenants_heading")}
+            </p>
+            {tenants.map((ten) => (
+              <Link
+                key={ten.id}
+                href={`/${ten.slug}/dashboard`}
+                className="flex items-center gap-2.5 px-2.5 py-2 rounded text-sm font-medium no-underline mb-px text-white/65 hover:bg-white/[0.08] hover:text-white/95 transition-all"
               >
-                <span style={{ fontSize: 15, lineHeight: 1 }}>{t.logo}</span>
-                {t.name}
+                <span className="text-[15px] leading-none">{ten.logo}</span>
+                {ten.name}
               </Link>
             ))}
           </>
         )}
 
-        {/* Non-SA: back to admin link if SA is viewing a tenant */}
+        {/* Non-SA: back to admin if SA is viewing a tenant */}
         {org !== SA_ORG_SLUG && user.role === "SA" && (
           <>
-            <p style={{
-              fontSize: 10, fontWeight: 700, textTransform: "uppercase",
-              letterSpacing: "0.08em", color: "rgba(255,255,255,0.3)",
-              padding: "14px 10px 4px", margin: 0,
-            }}>Admin</p>
-            <Link href={`/${SA_ORG_SLUG}/dashboard`} style={{
-              display: "flex", alignItems: "center", gap: 10,
-              padding: "8px 10px", borderRadius: 5,
-              fontSize: 13, fontWeight: 500, textDecoration: "none",
-              marginBottom: 1, color: "#FCDD09", transition: "all 0.12s",
-            }}>
-              <span style={{ fontSize: 15 }}>⬅</span>
-              All Tenants
+            <p className="text-[10px] font-bold uppercase tracking-widest text-white/30 px-2.5 pt-3.5 pb-1 m-0">
+              {t("layout.admin_section")}
+            </p>
+            <Link
+              href={`/${SA_ORG_SLUG}/dashboard`}
+              className="flex items-center gap-2.5 px-2.5 py-2 rounded text-sm font-medium no-underline mb-px text-eth-gold hover:bg-white/[0.08] transition-all"
+            >
+              <span className="text-[15px]">⬅</span>
+              {t("layout.all_tenants")}
             </Link>
           </>
         )}
       </nav>
 
       {/* Sign out */}
-      <div style={{ padding: "10px 8px", borderTop: "1px solid rgba(255,255,255,0.08)", flexShrink: 0 }}>
+      <div className="px-2 py-2.5 border-t border-white/[0.08] shrink-0">
         <button
           onClick={() => { logout(); router.push("/login"); }}
-          style={{
-            width: "100%", display: "flex", alignItems: "center", gap: 10,
-            padding: "8px 10px", borderRadius: 5, border: "none", cursor: "pointer",
-            fontSize: 13, fontWeight: 500, background: "transparent",
-            color: "rgba(255,255,255,0.4)", transition: "all 0.12s",
-          }}
+          className="w-full flex items-center gap-2.5 px-2.5 py-2 rounded border-0 cursor-pointer text-sm font-medium bg-transparent text-white/40 hover:bg-white/[0.08] hover:text-white/70 transition-all"
         >
-          <span style={{ fontSize: 15 }}>🚪</span>
-          Sign out
+          <span className="text-[15px]">🚪</span>
+          {t("layout.sign_out")}
         </button>
       </div>
     </aside>
@@ -289,20 +252,17 @@ function Sidebar({ user, org }: { user: SessionUser; org: string }) {
 
 /* ── Layout ───────────────────────────────────────────────────────────────── */
 export default function OrgLayout({ children }: { children: React.ReactNode }) {
-  const params   = useParams();
-  const router   = useRouter();
-  const org      = params.org as string;
-  const checked  = useRef(false);
+  const params  = useParams();
+  const router  = useRouter();
+  const org     = params.org as string;
+  const checked = useRef(false);
   const [user, setUser]   = useState<SessionUser | null>(null);
   const [ready, setReady] = useState(false);
   const setActiveTenant   = useInventoryStore((s) => s.setActiveTenant);
-  const [qc]              = useState(() => new QueryClient({
+  const [qc] = useState(() => new QueryClient({
     defaultOptions: { queries: { retry: 1, staleTime: 30_000 } },
   }));
 
-  // Rehydrate persisted Zustand stores from localStorage after the first client
-  // render. skipHydration: true in both stores prevents SSR hydration mismatches
-  // that would otherwise cause Next.js to discard localStorage data on every refresh.
   useEffect(() => {
     useInventoryStore.persist.rehydrate();
     useAuditStore.persist.rehydrate();
@@ -313,152 +273,96 @@ export default function OrgLayout({ children }: { children: React.ReactNode }) {
     checked.current = true;
 
     const session = getSession();
-    if (!session) {
-      router.replace(`/login?from=/${org}/dashboard`);
-      return;
-    }
+    if (!session) { router.replace(`/login?from=/${org}/dashboard`); return; }
 
-    // Access control:
-    //   "admin" org → SA only
-    //   tenant org  → SA (any) OR the user whose orgSlug matches
     if (org === SA_ORG_SLUG && session.role !== "SA") {
-      router.replace(`/${session.orgSlug}/dashboard`);
-      return;
+      router.replace(`/${session.orgSlug}/dashboard`); return;
     }
     if (org !== SA_ORG_SLUG && session.role !== "SA") {
-      // Verify the org matches a real tenant slug
-      const tenant = DEMO_TENANTS.find((t) => t.slug === org);
-      if (!tenant) {
-        router.replace(`/${session.orgSlug}/dashboard`);
-        return;
-      }
-      // Non-SA user must belong to this tenant
-      if (session.orgSlug !== org) {
-        router.replace(`/${session.orgSlug}/dashboard`);
-        return;
+      const tenant = DEMO_TENANTS.find((ten) => ten.slug === org);
+      if (!tenant || session.orgSlug !== org) {
+        router.replace(`/${session.orgSlug}/dashboard`); return;
       }
     }
 
     setUser(session);
     setReady(true);
-    // Scope the inventory Zustand store to this tenant so balances never bleed
     setActiveTenant(org !== SA_ORG_SLUG ? org : "");
   }, [org, router, setActiveTenant]);
 
   if (!ready || !user) {
     return (
-      <div style={{
-        minHeight: "100vh", display: "flex", flexDirection: "column",
-        alignItems: "center", justifyContent: "center", gap: 16,
-        background: "#0f2d1f",
-      }}>
-        <div style={{
-          width: 40, height: 40, borderRadius: "50%",
-          border: "3px solid rgba(252,221,9,0.25)", borderTopColor: "#FCDD09",
-          animation: "spin 0.8s linear infinite",
-        }} />
-        <p style={{ color: "#6ee7b7", fontSize: 14, fontWeight: 500 }}>Loading…</p>
-        <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+      <div className="min-h-screen flex flex-col items-center justify-center gap-4 bg-[#0f2d1f]">
+        <div className="w-10 h-10 rounded-full border-[3px] border-eth-gold/25 border-t-eth-gold animate-spin" />
+        <p className="text-emerald-300 text-sm font-medium">{t("common.loading")}</p>
       </div>
     );
   }
 
   const firstName = user.name.split(" ")[0] ?? user.name;
-
-  // Resolve display tenant name for the org being viewed
-  const viewingTenant = org !== SA_ORG_SLUG
-    ? DEMO_TENANTS.find((t) => t.slug === org)
-    : null;
+  const viewingTenant = org !== SA_ORG_SLUG ? DEMO_TENANTS.find((ten) => ten.slug === org) : null;
 
   return (
     <QueryClientProvider client={qc}>
-    <div style={{ minHeight: "100vh", background: "#F3F4F6" }}>
-
-      {/* ── Top banner ── */}
-      <header style={{
-        position: "fixed", top: 0, left: 0, right: 0, zIndex: 60,
-        height: 56, background: "#0f2d1f",
-        display: "flex", alignItems: "center", padding: "0 1.5rem", gap: "1rem",
-        boxShadow: "0 2px 12px rgba(0,0,0,0.35)",
-      }}>
-        {/* Logo */}
-        <Link href={`/${user.orgSlug}/dashboard`} style={{
-          display: "flex", alignItems: "center", gap: 8,
-          textDecoration: "none", flexShrink: 0,
-        }}>
-          <Logo />
-          <span style={{ fontWeight: 700, fontSize: 14, color: "#fff", whiteSpace: "nowrap" }}>
-            SMART{" "}
-            <span style={{ color: "#FCDD09", fontWeight: 500 }}>Inventory</span>
-          </span>
-        </Link>
-
-        {/* Centre: org breadcrumb */}
-        <div style={{ flex: 1, display: "flex", justifyContent: "center" }}>
-          {viewingTenant ? (
-            <span style={{ fontSize: 13, color: "rgba(255,255,255,0.7)" }}>
-              <span style={{ color: "#FCDD09", fontWeight: 600 }}>{viewingTenant.logo} {viewingTenant.name}</span>
-              {user.warehouseName && (
-                <span style={{ color: "#6ee7b7" }}> › {user.warehouseName}</span>
-              )}
+      <div className="min-h-screen bg-gray-100">
+        {/* ── Top banner ── */}
+        <header className="fixed top-0 left-0 right-0 z-[60] h-14 bg-[#0f2d1f] flex items-center px-6 gap-4 shadow-[0_2px_12px_rgba(0,0,0,0.35)]">
+          {/* Logo */}
+          <Link href={`/${user.orgSlug}/dashboard`} className="flex items-center gap-2 no-underline shrink-0">
+            <Logo />
+            <span className="font-bold text-sm text-white whitespace-nowrap">
+              SMART <span className="text-eth-gold font-medium">{t("nav.inventory")}</span>
             </span>
-          ) : (
-            <span style={{ fontSize: 13, fontWeight: 600, color: "#FCDD09" }}>
-              System Administrator
+          </Link>
+
+          {/* Centre: org breadcrumb */}
+          <div className="flex-1 flex justify-center">
+            {viewingTenant ? (
+              <span className="text-sm text-white/70">
+                <span className="text-eth-gold font-semibold">{viewingTenant.logo} {viewingTenant.name}</span>
+                {user.warehouseName && (
+                  <span className="text-emerald-300"> › {user.warehouseName}</span>
+                )}
+              </span>
+            ) : (
+              <span className="text-sm font-semibold text-eth-gold">{t("roles.SA")}</span>
+            )}
+          </div>
+
+          {/* Right controls */}
+          <div className="flex items-center gap-2.5 shrink-0">
+            {org !== "admin" && <NotificationBell org={org} />}
+            <LangSwitcher />
+            <span className={`text-[10px] font-extrabold text-white tracking-wide ${ROLE_BADGE[user.role] ?? "bg-gray-500"} px-2 py-0.5 rounded`}>
+              {user.role}
             </span>
-          )}
+            <span className="text-sm text-emerald-100 whitespace-nowrap">
+              {t("layout.welcome")},{" "}
+              <strong className="text-eth-gold font-bold">{firstName}</strong>
+            </span>
+            <button
+              onClick={() => { logout(); router.push("/login"); }}
+              className="text-xs font-semibold text-gray-400 cursor-pointer bg-white/[0.07] border border-white/15 rounded px-3 py-1.5"
+            >
+              {t("layout.sign_out")}
+            </button>
+          </div>
+        </header>
+
+        {/* Ethiopian stripe */}
+        <div
+          className="fixed top-14 left-0 right-0 z-[59] h-1"
+          style={{ background: "linear-gradient(to right,#078930 0% 33.33%,#FCDD09 33.33% 66.66%,#DA121A 66.66% 100%)" }}
+        />
+
+        {/* Body */}
+        <div className="flex pt-[60px]">
+          <Sidebar user={user} org={org} />
+          <main className="flex-1 ml-60 min-h-[calc(100vh-60px)] overflow-auto bg-gray-100">
+            {children}
+          </main>
         </div>
-
-        {/* Right: bell · lang · role · welcome · sign out */}
-        <div style={{ display: "flex", alignItems: "center", gap: 10, flexShrink: 0 }}>
-          {org !== "admin" && <NotificationBell org={org} />}
-          <LangSwitcher />
-          <span style={{
-            fontSize: 10, fontWeight: 800, color: "#fff", letterSpacing: "0.04em",
-            background: ROLE_COLORS[user.role] ?? "#6B7280",
-            padding: "3px 8px", borderRadius: 3,
-          }}>{user.role}</span>
-          <span style={{ fontSize: 13, color: "#d1fae5", whiteSpace: "nowrap" }}>
-            Welcome,{" "}
-            <strong style={{ color: "#FCDD09", fontWeight: 700 }}>{firstName}</strong>
-          </span>
-          <button
-            onClick={() => { logout(); router.push("/login"); }}
-            style={{
-              fontSize: 12, fontWeight: 600, color: "#9CA3AF", cursor: "pointer",
-              background: "rgba(255,255,255,0.07)", border: "1px solid rgba(255,255,255,0.15)",
-              borderRadius: 4, padding: "5px 12px",
-            }}
-          >
-            Sign out
-          </button>
-        </div>
-      </header>
-
-      {/* Ethiopian stripe */}
-      <div style={{
-        position: "fixed", top: 56, left: 0, right: 0, zIndex: 59, height: 4,
-        background: "linear-gradient(to right,#078930 0% 33.33%,#FCDD09 33.33% 66.66%,#DA121A 66.66% 100%)",
-      }} />
-
-      {/* Body */}
-      <div style={{ display: "flex", paddingTop: 60 }}>
-        <Sidebar user={user} org={org} />
-        <main style={{
-          flex: 1, marginLeft: 240, minHeight: "calc(100vh - 60px)",
-          overflow: "auto", background: "#F3F4F6",
-        }}>
-          {children}
-        </main>
       </div>
-
-      <style>{`
-        .sidebar-link:hover {
-          background: rgba(255,255,255,0.08) !important;
-          color: rgba(255,255,255,0.95) !important;
-        }
-      `}</style>
-    </div>
     </QueryClientProvider>
   );
 }
@@ -474,18 +378,18 @@ const SA_NAV = [
 
 const TENANT_NAV = [
   { type: "section", label: "Inventory" },
-  { type: "link", icon: "🏠", label: "Dashboard",      page: "dashboard"   },
-  { type: "link", icon: "📦", label: "Inventory",      page: "inventory"   },
-  { type: "link", icon: "🏭", label: "Products",       page: "products"    },
-  { type: "link", icon: "🏗️", label: "Warehouses",     page: "warehouses"  },
-  { type: "link", icon: "🔍", label: "Lot Traceability", page: "lots"      },
+  { type: "link", icon: "🏠", label: "Dashboard",       page: "dashboard"   },
+  { type: "link", icon: "📦", label: "Inventory",       page: "inventory"   },
+  { type: "link", icon: "🏭", label: "Products",        page: "products"    },
+  { type: "link", icon: "🏗️", label: "Warehouses",      page: "warehouses"  },
+  { type: "link", icon: "🔍", label: "Lot Traceability",page: "lots"        },
   { type: "section", label: "Operations" },
-  { type: "link", icon: "🔄", label: "Transfers",      page: "transfers"   },
-  { type: "link", icon: "📋", label: "Adjustments",    page: "adjustments" },
-  { type: "link", icon: "🔢", label: "Stock Count",    page: "stock-count" },
-  { type: "link", icon: "🚚", label: "Dispatch",       page: "dispatch"    },
+  { type: "link", icon: "🔄", label: "Transfers",       page: "transfers"   },
+  { type: "link", icon: "📋", label: "Adjustments",     page: "adjustments" },
+  { type: "link", icon: "🔢", label: "Stock Count",     page: "stock-count" },
+  { type: "link", icon: "🚚", label: "Dispatch",        page: "dispatch"    },
   { type: "section", label: "Reports" },
-  { type: "link", icon: "📈", label: "Analytics",      page: "analytics"   },
-  { type: "link", icon: "📊", label: "Reports",        page: "reports"     },
-  { type: "link", icon: "📋", label: "Audit Log",      page: "audit-log"   },
+  { type: "link", icon: "📈", label: "Analytics",       page: "analytics"   },
+  { type: "link", icon: "📊", label: "Reports",         page: "reports"     },
+  { type: "link", icon: "📋", label: "Audit Log",       page: "audit-log"   },
 ];

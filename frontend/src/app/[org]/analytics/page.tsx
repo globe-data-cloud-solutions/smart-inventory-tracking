@@ -3,59 +3,64 @@
 import { useParams } from "next/navigation";
 import { SA_ORG_SLUG } from "@/lib/demo-auth";
 import { DEMO_TENANTS, getLowStockProducts, getTotalStock } from "@/lib/demo-data";
+import { t } from "@/lib/i18n";
 
 export default function AnalyticsPage() {
   const { org } = useParams() as { org: string };
-  if (org === SA_ORG_SLUG) return <p style={{ padding: "2rem", color: "#6B7280" }}>Select a tenant to view analytics.</p>;
+  if (org === SA_ORG_SLUG) return <p className="p-8 text-gray-500">{t("common.no_data")}</p>;
 
-  const tenant = DEMO_TENANTS.find((t) => t.slug === org);
-  if (!tenant) return <p style={{ padding: "2rem", color: "#6B7280" }}>Tenant not found.</p>;
+  const tenant = DEMO_TENANTS.find((ten) => ten.slug === org);
+  if (!tenant) return <p className="p-8 text-gray-500">{t("common.no_data")}</p>;
 
-  const low = getLowStockProducts(tenant);
+  const low   = getLowStockProducts(tenant);
   const total = tenant.products.reduce((a, p) => a + getTotalStock(p), 0);
-  const byWH = tenant.warehouses.map((w) => ({
-    name: w.name, units: tenant.products.reduce((a, p) => a + (p.stock[w.id] ?? 0), 0)
-  })).sort((a, b) => b.units - a.units);
+  const byWH  = tenant.warehouses
+    .map((w) => ({ name: w.name, units: tenant.products.reduce((a, p) => a + (p.stock[w.id] ?? 0), 0) }))
+    .sort((a, b) => b.units - a.units);
   const maxWH = byWH[0]?.units ?? 1;
 
   return (
-    <div style={{ padding: "2rem" }}>
-      <h2 style={{ fontSize: "1.5rem", fontWeight: 700, color: "#0f2d1f", margin: "0 0 1.5rem" }}>Analytics</h2>
+    <div className="p-8">
+      <h2 className="text-2xl font-bold text-[#0f2d1f] mb-6">{t("nav.analytics")}</h2>
 
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1.5rem", marginBottom: "1.5rem" }}>
-        {/* Inventory distribution */}
-        <div style={{ background: "#fff", border: "1px solid #E5E7EB", borderRadius: 4, padding: "1.25rem" }}>
-          <p style={{ fontSize: 13, fontWeight: 700, color: "#1F2937", margin: "0 0 1rem" }}>Stock by Location</p>
+      <div className="grid grid-cols-2 gap-6 mb-6">
+        {/* Stock by location */}
+        <div className="bg-white border border-gray-200 rounded p-5">
+          <p className="text-sm font-bold text-gray-800 mb-4">{t("analytics.stock_by_location")}</p>
           {byWH.map((w) => (
-            <div key={w.name} style={{ marginBottom: 10 }}>
-              <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
-                <span style={{ fontSize: 12, color: "#374151", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", maxWidth: "70%" }}>{w.name}</span>
-                <span style={{ fontSize: 12, fontWeight: 600, color: "#111827" }}>{w.units.toLocaleString()}</span>
+            <div key={w.name} className="mb-2.5">
+              <div className="flex justify-between mb-1">
+                <span className="text-xs text-gray-700 truncate max-w-[70%]">{w.name}</span>
+                <span className="text-xs font-semibold text-gray-900">{w.units.toLocaleString()}</span>
               </div>
-              <div style={{ height: 8, background: "#F3F4F6", borderRadius: 4, overflow: "hidden" }}>
-                <div style={{ height: "100%", width: `${(w.units / maxWH) * 100}%`, background: tenant.color, borderRadius: 4 }} />
+              <div className="h-2 bg-gray-100 rounded overflow-hidden">
+                {/* bar width is runtime-computed — must use style */}
+                <div className="h-full rounded" style={{ width: `${(w.units / maxWH) * 100}%`, background: tenant.color }} />
               </div>
             </div>
           ))}
         </div>
 
-        {/* Reorder alerts */}
-        <div style={{ background: "#fff", border: "1px solid #E5E7EB", borderRadius: 4, padding: "1.25rem" }}>
-          <p style={{ fontSize: 13, fontWeight: 700, color: "#1F2937", margin: "0 0 1rem" }}>
-            Low Stock Alerts <span style={{ background: "#FEE2E2", color: "#DC2626", fontSize: 11, padding: "2px 7px", borderRadius: 3, marginLeft: 6 }}>{low.length}</span>
+        {/* Low stock alerts */}
+        <div className="bg-white border border-gray-200 rounded p-5">
+          <p className="text-sm font-bold text-gray-800 mb-4">
+            {t("alerts.low_stock")}{" "}
+            <span className="bg-red-100 text-red-600 text-xs px-2 py-0.5 rounded ml-1.5">{low.length}</span>
           </p>
           {low.length === 0 && (
-            <p style={{ fontSize: 13, color: "#059669", background: "#F0FDF4", padding: "0.75rem", borderRadius: 4 }}>✓ All products are adequately stocked.</p>
+            <p className="text-sm text-emerald-600 bg-green-50 px-3 py-3 rounded">
+              ✓ {t("analytics.all_stocked")}
+            </p>
           )}
           {low.map((p) => (
-            <div key={p.id} style={{ display: "flex", justifyContent: "space-between", padding: "8px 0", borderBottom: "1px solid #F3F4F6" }}>
+            <div key={p.id} className="flex justify-between py-2 border-b border-gray-100">
               <div>
-                <p style={{ fontSize: 12, fontWeight: 600, color: "#1F2937", margin: 0 }}>{p.name}</p>
-                <p style={{ fontSize: 11, color: "#9CA3AF", margin: 0 }}>{p.sku}</p>
+                <p className="text-xs font-semibold text-gray-800 m-0">{p.name}</p>
+                <p className="text-[11px] text-gray-400 m-0">{p.sku}</p>
               </div>
-              <div style={{ textAlign: "right" }}>
-                <p style={{ fontSize: 12, fontWeight: 700, color: "#DC2626", margin: 0 }}>{getTotalStock(p).toLocaleString()}</p>
-                <p style={{ fontSize: 11, color: "#9CA3AF", margin: 0 }}>Reorder: {p.reorderPoint}</p>
+              <div className="text-right">
+                <p className="text-xs font-bold text-red-600 m-0">{getTotalStock(p).toLocaleString()}</p>
+                <p className="text-[11px] text-gray-400 m-0">{t("table.reorder_point")}: {p.reorderPoint}</p>
               </div>
             </div>
           ))}
@@ -63,18 +68,18 @@ export default function AnalyticsPage() {
       </div>
 
       {/* Summary stats */}
-      <div style={{ background: "#fff", border: "1px solid #E5E7EB", borderRadius: 4, padding: "1.25rem" }}>
-        <p style={{ fontSize: 13, fontWeight: 700, color: "#1F2937", margin: "0 0 1rem" }}>Inventory Summary</p>
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: "1rem", textAlign: "center" }}>
+      <div className="bg-white border border-gray-200 rounded p-5">
+        <p className="text-sm font-bold text-gray-800 mb-4">{t("analytics.summary")}</p>
+        <div className="grid grid-cols-4 gap-4 text-center">
           {[
-            { label: "Total Units", value: total.toLocaleString() },
-            { label: "Active SKUs", value: tenant.products.length },
-            { label: "Locations",   value: tenant.warehouses.length },
-            { label: "Low Stock",   value: low.length },
+            { label: t("dashboard.stat_units"),     value: total.toLocaleString() },
+            { label: t("analytics.active_skus"),    value: tenant.products.length },
+            { label: t("dashboard.stat_locations"), value: tenant.warehouses.length },
+            { label: t("alerts.low_stock"),         value: low.length },
           ].map((s) => (
-            <div key={s.label} style={{ padding: "1rem", background: "#F9FAFB", borderRadius: 4 }}>
-              <p style={{ fontSize: "1.5rem", fontWeight: 800, color: "#1B4332", margin: 0 }}>{s.value}</p>
-              <p style={{ fontSize: 12, color: "#6B7280", margin: "4px 0 0" }}>{s.label}</p>
+            <div key={s.label} className="p-4 bg-gray-50 rounded">
+              <p className="text-2xl font-extrabold text-eth-forest m-0">{s.value}</p>
+              <p className="text-xs text-gray-500 mt-1">{s.label}</p>
             </div>
           ))}
         </div>

@@ -5,163 +5,103 @@ import { useMemo, useState } from "react";
 import { getSession, SA_ORG_SLUG } from "@/lib/demo-auth";
 import { DEMO_TENANTS, type DemoWarehouse } from "@/lib/demo-data";
 import { useAuditStore, type AuditLogEntry } from "@/lib/audit-log-state";
+import { t } from "@/lib/i18n";
 
-const DARK = "#0f2d1f";
-
-const CATEGORY_STYLE: Record<string, { bg: string; color: string; icon: string }> = {
-  TRANSFER:   { bg: "#DBEAFE", color: "#1E40AF", icon: "🔄" },
-  INVENTORY:  { bg: "#DCFCE7", color: "#166534", icon: "📦" },
-  ADJUSTMENT: { bg: "#FEF3C7", color: "#92400E", icon: "✏️" },
-  SYSTEM:     { bg: "#F3F4F6", color: "#374151", icon: "⚙️" },
+const CATEGORY_CLASS: Record<string, { bg: string; text: string; icon: string }> = {
+  TRANSFER:   { bg: "bg-blue-100",   text: "text-blue-800",    icon: "🔄" },
+  INVENTORY:  { bg: "bg-green-100",  text: "text-green-800",   icon: "📦" },
+  ADJUSTMENT: { bg: "bg-amber-100",  text: "text-amber-800",   icon: "✏️" },
+  SYSTEM:     { bg: "bg-gray-100",   text: "text-gray-700",    icon: "⚙️" },
 };
 
-const SEL: React.CSSProperties = {
-  padding: "6px 10px", fontSize: 12, border: "1px solid #D1D5DB",
-  borderRadius: 6, background: "#fff", outline: "none", cursor: "pointer",
-};
-
-/* ─────────────────────────────────────────────────────────────────────────────
-   Hierarchy scope helpers
-   ─────────────────────────────────────────────────────────────────────────── */
-
-/**
- * Returns the SET of warehouse NAMES the user is allowed to see in the audit log.
- * null = unrestricted (TA or SA only — sees everything in the tenant).
- *
- * View rules:
- *   MWH (NM)     → own MWH + all descendants via parentId (same rule as RWH)
- *   RWH (RM/NM)  → own RWH + all descendants via parentId
- *   WH / SUB_WH  → own WH only
- *   TA / SA      → all  (null)
- *
- * Cross-MWH visibility: if a transfer entry involves one WH from each MWH tree,
- * entryInScope() matches on either fromWarehouse or toWarehouse, so both NMs
- * see that entry automatically without any extra logic here.
- */
 function buildScopeNames(
   warehouseId: string | undefined,
   role: string,
   warehouses: DemoWarehouse[],
 ): Set<string> | null {
   if (!warehouseId || ["TA", "SA"].includes(role)) return null;
-
   const userWH = warehouses.find((w) => w.id === warehouseId);
   if (!userWH) return null;
-
-  // Build set of IDs: own + all descendants via parentId chain
-  // Applies equally to MWH, RWH, WH, and SUB_WH — each user sees only
-  // their own facility and the facilities below it in the parentId tree.
   const scopeIds = new Set<string>([warehouseId]);
   function addDescendants(parentId: string) {
     for (const wh of warehouses) {
       if (wh.parentId === parentId && !scopeIds.has(wh.id)) {
-        scopeIds.add(wh.id);
-        addDescendants(wh.id);
+        scopeIds.add(wh.id); addDescendants(wh.id);
       }
     }
   }
   addDescendants(warehouseId);
-
-  // Translate to names so we can match against entry.fromWarehouse / toWarehouse
   return new Set(warehouses.filter((w) => scopeIds.has(w.id)).map((w) => w.name));
 }
 
 function entryInScope(entry: AuditLogEntry, scopeNames: Set<string> | null): boolean {
   if (!scopeNames) return true;
-  return (
-    (!!entry.fromWarehouse && scopeNames.has(entry.fromWarehouse)) ||
-    (!!entry.toWarehouse   && scopeNames.has(entry.toWarehouse))
-  );
+  return (!!entry.fromWarehouse && scopeNames.has(entry.fromWarehouse)) ||
+         (!!entry.toWarehouse   && scopeNames.has(entry.toWarehouse));
 }
 
-/* ─────────────────────────────────────────────────────────────────────────────
-   Page
-   ─────────────────────────────────────────────────────────────────────────── */
+const selectCls = "px-2.5 py-1.5 text-xs border border-gray-300 rounded-md bg-white outline-none cursor-pointer";
 
 export default function AuditLogPage() {
   const { org } = useParams() as { org: string };
   const user    = getSession();
-
   const allEntries = useAuditStore((s) => s.entries);
-
-  const [categoryFilter, setCategoryFilter] =
-    useState<"ALL" | "TRANSFER" | "INVENTORY" | "ADJUSTMENT">("ALL");
-  const [search, setSearch]   = useState("");
+  const [categoryFilter, setCategoryFilter] = useState<"ALL" | "TRANSFER" | "INVENTORY" | "ADJUSTMENT">("ALL");
+  const [search, setSearch] = useState("");
 
   if (!user) return null;
-  if (org === SA_ORG_SLUG)
-    return <p style={{ padding: "2rem", color: "#6B7280" }}>Select a tenant to view the audit log.</p>;
+  if (org === SA_ORG_SLUG) return <p className="p-8 text-gray-500">{t("common.no_data")}</p>;
 
-  const tenant = DEMO_TENANTS.find((t) => t.slug === org);
-  if (!tenant)
-    return <p style={{ padding: "2rem", color: "#6B7280" }}>Tenant not found.</p>;
+  const tenant = DEMO_TENANTS.find((ten) => ten.slug === org);
+  if (!tenant)   return <p className="p-8 text-gray-500">{t("common.no_data")}</p>;
 
-  // ── 1. Scope by hierarchy ────────────────────────────────────────────────
   const scopeNames = buildScopeNames(user.warehouseId, user.role, tenant.warehouses);
 
   const scopedEntries = useMemo(
-    () =>
-      allEntries
-        .filter((e) => e.tenantSlug === org && entryInScope(e, scopeNames))
-        .sort((a, b) => b.timestamp.localeCompare(a.timestamp)),
+    () => allEntries
+      .filter((e) => e.tenantSlug === org && entryInScope(e, scopeNames))
+      .sort((a, b) => b.timestamp.localeCompare(a.timestamp)),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [allEntries, org, user.warehouseId, user.role],
   );
 
-  // ── 2. Source options (unique non-null fromWarehouse values in scope) ────
   const sourceOptions = useMemo(() => {
     const names = new Set<string>();
-    for (const e of scopedEntries) {
-      if (e.fromWarehouse) names.add(e.fromWarehouse);
-    }
+    for (const e of scopedEntries) { if (e.fromWarehouse) names.add(e.fromWarehouse); }
     return Array.from(names).sort();
   }, [scopedEntries]);
 
-  // Default source: most recent entry's fromWarehouse (first scoped entry)
   const defaultSource = scopedEntries.find((e) => e.fromWarehouse)?.fromWarehouse ?? "";
   const [sourceFilter, setSourceFilter] = useState(defaultSource);
 
-  // ── 3. Source-filtered entries ───────────────────────────────────────────
   const sourceFiltered = useMemo(
-    () =>
-      sourceFilter
-        ? scopedEntries.filter((e) => e.fromWarehouse === sourceFilter)
-        : scopedEntries,
+    () => sourceFilter ? scopedEntries.filter((e) => e.fromWarehouse === sourceFilter) : scopedEntries,
     [scopedEntries, sourceFilter],
   );
 
-  // ── 4. Destination options — cascade from source selection ───────────────
   const destinationOptions = useMemo(() => {
     const names = new Set<string>();
-    for (const e of sourceFiltered) {
-      if (e.toWarehouse) names.add(e.toWarehouse);
-    }
+    for (const e of sourceFiltered) { if (e.toWarehouse) names.add(e.toWarehouse); }
     return Array.from(names).sort();
   }, [sourceFiltered]);
 
   const [destinationFilter, setDestinationFilter] = useState("");
 
-  // Reset destination when source changes so stale selection is cleared
-  function handleSourceChange(v: string) {
-    setSourceFilter(v);
-    setDestinationFilter("");
-  }
+  function handleSourceChange(v: string) { setSourceFilter(v); setDestinationFilter(""); }
 
-  // ── 5. Final filter: category + destination + search ────────────────────
   const filtered = useMemo(() => {
     let rows = sourceFiltered;
     if (destinationFilter) rows = rows.filter((e) => e.toWarehouse === destinationFilter);
     if (categoryFilter !== "ALL") rows = rows.filter((e) => e.category === categoryFilter);
     if (search.trim()) {
       const q = search.toLowerCase();
-      rows = rows.filter(
-        (e) =>
-          e.action.toLowerCase().includes(q) ||
-          e.resourceRef.toLowerCase().includes(q) ||
-          (e.productName  ?? "").toLowerCase().includes(q) ||
-          (e.fromWarehouse ?? "").toLowerCase().includes(q) ||
-          (e.toWarehouse  ?? "").toLowerCase().includes(q) ||
-          e.userName.toLowerCase().includes(q),
+      rows = rows.filter((e) =>
+        e.action.toLowerCase().includes(q) ||
+        e.resourceRef.toLowerCase().includes(q) ||
+        (e.productName  ?? "").toLowerCase().includes(q) ||
+        (e.fromWarehouse ?? "").toLowerCase().includes(q) ||
+        (e.toWarehouse  ?? "").toLowerCase().includes(q) ||
+        e.userName.toLowerCase().includes(q),
       );
     }
     return rows;
@@ -173,179 +113,147 @@ export default function AuditLogPage() {
     ADJUSTMENT: scopedEntries.filter((e) => e.category === "ADJUSTMENT").length,
   };
 
-  // Human-readable scope label for subtitle
-  const userWH       = tenant.warehouses.find((w) => w.id === user.warehouseId);
-  const scopeLabel   = !scopeNames
-    ? "All facilities"
-    : userWH
-      ? `${userWH.name} and facilities under it`
-      : "Your facilities";
+  const userWH     = tenant.warehouses.find((w) => w.id === user.warehouseId);
+  const scopeLabel = !scopeNames ? t("audit.all_facilities")
+    : userWH ? `${userWH.name} ${t("audit.scope_and_below")}` : t("audit.your_facilities");
 
   return (
-    <div style={{ padding: "2rem" }}>
-      {/* Header */}
-      <div style={{ marginBottom: "1.5rem" }}>
-        <h2 style={{ fontSize: "1.5rem", fontWeight: 700, color: DARK, margin: 0 }}>Audit Log</h2>
-        <p style={{ fontSize: 13, color: "#6B7280", margin: "4px 0 0" }}>
-          {tenant.name} · {scopeLabel} · {scopedEntries.length} events · append-only
+    <div className="p-8">
+      <div className="mb-6">
+        <h2 className="text-2xl font-bold text-[#0f2d1f] m-0">{t("audit.title")}</h2>
+        <p className="text-sm text-gray-500 mt-1">
+          {tenant.name} · {scopeLabel} · {scopedEntries.length} {t("audit.events")} · {t("audit.subtitle")}
         </p>
       </div>
 
-      {/* ── Category chips ──────────────────────────────────────────────── */}
-      <div style={{ display: "flex", gap: 8, marginBottom: "1rem", flexWrap: "wrap", alignItems: "center" }}>
+      {/* Category chips */}
+      <div className="flex gap-2 mb-4 flex-wrap items-center">
         {(["ALL", "TRANSFER", "INVENTORY", "ADJUSTMENT"] as const).map((cat) => {
           const count = cat === "ALL" ? scopedEntries.length : counts[cat];
-          const s     = (cat !== "ALL" ? CATEGORY_STYLE[cat] : null) ?? { bg: "#F3F4F6", color: "#374151", icon: "" };
+          const cs    = (cat !== "ALL" ? CATEGORY_CLASS[cat] : null) ?? { bg: "bg-gray-100", text: "text-gray-700", icon: "" };
+          const active = categoryFilter === cat;
           return (
             <button
               key={cat}
               onClick={() => setCategoryFilter(cat)}
-              style={{
-                fontSize: 12, fontWeight: 700, padding: "4px 12px", borderRadius: 20, cursor: "pointer",
-                border: categoryFilter === cat ? "2px solid #0f2d1f" : "2px solid transparent",
-                background: categoryFilter === cat ? s.bg : "#F9FAFB",
-                color:      categoryFilter === cat ? s.color : "#6B7280",
-              }}
+              className={`text-xs font-bold px-3 py-1 rounded-full cursor-pointer border-2 transition-all ${
+                active
+                  ? `${cs.bg} ${cs.text} border-[#0f2d1f]`
+                  : "bg-gray-50 text-gray-500 border-transparent hover:border-gray-300"
+              }`}
             >
-              {s.icon ? `${s.icon} ` : ""}{cat} ({count})
+              {cs.icon ? `${cs.icon} ` : ""}{cat} ({count})
             </button>
           );
         })}
       </div>
 
-      {/* ── Source / Destination filters + search ──────────────────────── */}
-      <div style={{ display: "flex", gap: 10, marginBottom: "1.25rem", flexWrap: "wrap", alignItems: "center" }}>
-
-        {/* Source */}
-        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-          <label style={{ fontSize: 11, fontWeight: 700, color: "#6B7280", textTransform: "uppercase", letterSpacing: "0.05em", whiteSpace: "nowrap" }}>
-            Source
+      {/* Filters */}
+      <div className="flex gap-2.5 mb-5 flex-wrap items-center">
+        <div className="flex items-center gap-1.5">
+          <label className="text-[11px] font-bold text-gray-500 uppercase tracking-wide whitespace-nowrap">
+            {t("audit.source")}
           </label>
-          <select value={sourceFilter} onChange={(e) => handleSourceChange(e.target.value)} style={SEL}>
-            <option value="">All sources</option>
-            {sourceOptions.map((wh) => (
-              <option key={wh} value={wh}>{wh}</option>
-            ))}
+          <select value={sourceFilter} onChange={(e) => handleSourceChange(e.target.value)} className={selectCls}>
+            <option value="">{t("audit.all_sources")}</option>
+            {sourceOptions.map((wh) => <option key={wh} value={wh}>{wh}</option>)}
           </select>
         </div>
 
-        {/* Destination — cascaded */}
-        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-          <label style={{ fontSize: 11, fontWeight: 700, color: "#6B7280", textTransform: "uppercase", letterSpacing: "0.05em", whiteSpace: "nowrap" }}>
-            Destination
+        <div className="flex items-center gap-1.5">
+          <label className="text-[11px] font-bold text-gray-500 uppercase tracking-wide whitespace-nowrap">
+            {t("audit.destination")}
           </label>
           <select
             value={destinationFilter}
             onChange={(e) => setDestinationFilter(e.target.value)}
-            style={SEL}
+            className={selectCls}
             disabled={destinationOptions.length === 0}
           >
-            <option value="">All destinations</option>
-            {destinationOptions.map((wh) => (
-              <option key={wh} value={wh}>{wh}</option>
-            ))}
+            <option value="">{t("audit.all_destinations")}</option>
+            {destinationOptions.map((wh) => <option key={wh} value={wh}>{wh}</option>)}
           </select>
           {sourceFilter && destinationOptions.length > 0 && (
-            <span style={{ fontSize: 11, color: "#9CA3AF" }}>
-              ({destinationOptions.length} available)
-            </span>
+            <span className="text-[11px] text-gray-400">({destinationOptions.length})</span>
           )}
         </div>
 
-        {/* Clear filters link */}
         {(sourceFilter || destinationFilter) && (
           <button
             onClick={() => { setSourceFilter(""); setDestinationFilter(""); }}
-            style={{ fontSize: 11, color: "#6B7280", background: "none", border: "none", cursor: "pointer", textDecoration: "underline", padding: 0 }}
+            className="text-xs text-gray-500 bg-transparent border-0 cursor-pointer underline p-0"
           >
-            Clear filters
+            {t("audit.clear_filters")}
           </button>
         )}
 
-        {/* Search */}
-        <div style={{ position: "relative", flex: 1, minWidth: 200 }}>
-          <span style={{ position: "absolute", left: 10, top: "50%", transform: "translateY(-50%)", color: "#9CA3AF", fontSize: 13 }}>🔍</span>
+        <div className="relative flex-1 min-w-[200px]">
+          <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400 text-sm">🔍</span>
           <input
             type="text"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search action, product, user…"
-            style={{ width: "100%", padding: "6px 10px 6px 30px", fontSize: 13, border: "1px solid #D1D5DB", borderRadius: 6, outline: "none", boxSizing: "border-box" as const }}
+            placeholder={t("audit.search_placeholder")}
+            className="w-full pl-8 pr-2.5 py-1.5 text-sm border border-gray-300 rounded-md outline-none"
           />
         </div>
 
-        <span style={{ fontSize: 12, color: "#9CA3AF", whiteSpace: "nowrap" }}>
-          {filtered.length} of {scopedEntries.length}
+        <span className="text-xs text-gray-400 whitespace-nowrap">
+          {filtered.length} / {scopedEntries.length}
         </span>
       </div>
 
-      {/* ── Scope note ──────────────────────────────────────────────────── */}
+      {/* Scope note */}
       {scopeNames && (
-        <div style={{ background: "#EFF6FF", border: "1px solid #BFDBFE", borderRadius: 6, padding: "8px 14px", marginBottom: "1rem", fontSize: 12, color: "#1E40AF" }}>
-          <strong>Scoped view:</strong> showing only transfers and transactions involving{" "}
-          <strong>{Array.from(scopeNames).join(", ")}</strong>.{" "}
-          {userWH?.type === "RWH" && "Includes all warehouses under your regional hierarchy."}
+        <div className="bg-blue-50 border border-blue-200 rounded-md px-3.5 py-2 mb-4 text-xs text-blue-800">
+          <strong>{t("audit.scoped_view")}:</strong>{" "}
+          {Array.from(scopeNames).join(", ")}.{" "}
+          {userWH?.type === "RWH" && t("audit.regional_hierarchy_note")}
         </div>
       )}
 
-      {/* ── Table ───────────────────────────────────────────────────────── */}
-      <div style={{ background: "#fff", border: "1px solid #E5E7EB", borderRadius: 4, overflow: "hidden" }}>
-        <div style={{ height: 3, background: tenant.color }} />
-        <div style={{ overflowX: "auto" }}>
-          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
+      {/* Table */}
+      <div className="bg-white border border-gray-200 rounded overflow-hidden">
+        <div className="h-[3px]" style={{ background: tenant.color }} />
+        <div className="overflow-x-auto">
+          <table className="w-full border-collapse text-xs">
             <thead>
-              <tr style={{ background: "#F9FAFB", borderBottom: "2px solid #E5E7EB" }}>
-                {["Timestamp", "User", "Role", "Category", "Action", "Ref", "Product", "Qty / Unit", "From", "To", "Notes"].map((h) => (
-                  <th key={h} style={{ padding: "10px 12px", textAlign: "left", fontSize: 11, fontWeight: 700, color: "#6B7280", textTransform: "uppercase", letterSpacing: "0.05em", whiteSpace: "nowrap" }}>
-                    {h}
+              <tr className="bg-gray-50 border-b-2 border-gray-200">
+                {[
+                  "audit.timestamp", "audit.user", "audit.role", "audit.category",
+                  "audit.action", "audit.resource", "lots.product", "audit.qty_unit",
+                  "audit.from", "audit.to", "audit.notes",
+                ].map((key) => (
+                  <th key={key} className="px-3 py-2.5 text-left text-[11px] font-bold text-gray-500 uppercase tracking-wide whitespace-nowrap">
+                    {t(key)}
                   </th>
                 ))}
               </tr>
             </thead>
             <tbody>
               {filtered.map((e, idx) => {
-                const cs = CATEGORY_STYLE[e.category] ?? { bg: "#F3F4F6", color: "#374151", icon: "⚙️" };
+                const cs = CATEGORY_CLASS[e.category] ?? CATEGORY_CLASS.SYSTEM!;
                 return (
-                  <tr key={e.id} style={{ background: idx % 2 === 0 ? "#fff" : "#FAFAFA", borderBottom: "1px solid #F3F4F6" }}>
-                    <td style={{ padding: "8px 12px", color: "#9CA3AF", whiteSpace: "nowrap", fontFamily: "monospace", fontSize: 10 }}>
+                  <tr key={e.id} className={`border-b border-gray-100 ${idx % 2 === 0 ? "bg-white" : "bg-gray-50"}`}>
+                    <td className="px-3 py-2 text-gray-400 whitespace-nowrap font-mono text-[10px]">
                       {new Date(e.timestamp).toLocaleString()}
                     </td>
-                    <td style={{ padding: "8px 12px", fontWeight: 600, color: "#1F2937", whiteSpace: "nowrap", fontSize: 11 }}>{e.userName}</td>
-                    <td style={{ padding: "8px 12px" }}>
-                      <span style={{ fontSize: 10, fontWeight: 700, background: "#F3F4F6", color: "#374151", padding: "2px 6px", borderRadius: 3 }}>
-                        {e.role}
-                      </span>
+                    <td className="px-3 py-2 font-semibold text-gray-800 whitespace-nowrap text-[11px]">{e.userName}</td>
+                    <td className="px-3 py-2">
+                      <span className="text-[10px] font-bold bg-gray-100 text-gray-700 px-1.5 py-0.5 rounded">{e.role}</span>
                     </td>
-                    <td style={{ padding: "8px 12px" }}>
-                      <span style={{ fontSize: 10, fontWeight: 700, padding: "2px 6px", borderRadius: 3, background: cs.bg, color: cs.color, whiteSpace: "nowrap" }}>
+                    <td className="px-3 py-2">
+                      <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded whitespace-nowrap ${cs.bg} ${cs.text}`}>
                         {cs.icon} {e.category}
                       </span>
                     </td>
-                    <td style={{ padding: "8px 12px", fontFamily: "monospace", color: "#374151", whiteSpace: "nowrap", fontSize: 11 }}>
-                      {e.action}
-                    </td>
-                    <td style={{ padding: "8px 12px", fontFamily: "monospace", color: "#6B7280", fontSize: 10 }}>
-                      {e.resourceRef || "—"}
-                    </td>
-                    <td style={{ padding: "8px 12px", color: "#1F2937", fontSize: 11, maxWidth: 160, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                      {e.productName || "—"}
-                    </td>
-                    <td style={{ padding: "8px 12px", fontWeight: 600, color: "#374151", whiteSpace: "nowrap", fontSize: 11 }}>
-                      {e.quantityStr || "—"}
-                    </td>
-                    <td style={{ padding: "8px 12px", fontSize: 11, whiteSpace: "nowrap" }}>
-                      {e.fromWarehouse
-                        ? <span style={{ color: "#374151" }}>{e.fromWarehouse}</span>
-                        : <span style={{ color: "#D1D5DB" }}>—</span>}
-                    </td>
-                    <td style={{ padding: "8px 12px", fontSize: 11, whiteSpace: "nowrap" }}>
-                      {e.toWarehouse
-                        ? <span style={{ color: "#374151" }}>{e.toWarehouse}</span>
-                        : <span style={{ color: "#D1D5DB" }}>—</span>}
-                    </td>
-                    <td style={{ padding: "8px 12px", color: "#9CA3AF", fontSize: 11, maxWidth: 200 }}>
-                      {e.notes || "—"}
-                    </td>
+                    <td className="px-3 py-2 font-mono text-gray-700 whitespace-nowrap text-[11px]">{e.action}</td>
+                    <td className="px-3 py-2 font-mono text-gray-500 text-[10px]">{e.resourceRef || "—"}</td>
+                    <td className="px-3 py-2 text-gray-800 text-[11px] max-w-[160px] overflow-hidden text-ellipsis whitespace-nowrap">{e.productName || "—"}</td>
+                    <td className="px-3 py-2 font-semibold text-gray-700 whitespace-nowrap text-[11px]">{e.quantityStr || "—"}</td>
+                    <td className="px-3 py-2 text-[11px] whitespace-nowrap text-gray-700">{e.fromWarehouse || <span className="text-gray-300">—</span>}</td>
+                    <td className="px-3 py-2 text-[11px] whitespace-nowrap text-gray-700">{e.toWarehouse   || <span className="text-gray-300">—</span>}</td>
+                    <td className="px-3 py-2 text-gray-400 text-[11px] max-w-[200px]">{e.notes || "—"}</td>
                   </tr>
                 );
               })}
@@ -354,24 +262,20 @@ export default function AuditLogPage() {
         </div>
 
         {filtered.length === 0 && (
-          <div style={{ padding: "3rem", textAlign: "center" }}>
+          <div className="p-12 text-center">
             {scopedEntries.length === 0 ? (
               <div>
-                <p style={{ color: "#9CA3AF", fontSize: 14, margin: "0 0 0.5rem" }}>No activity logged yet.</p>
-                <p style={{ color: "#D1D5DB", fontSize: 12, margin: 0 }}>
-                  Create transfers, receive stock, or issue stock to generate audit entries.
-                </p>
+                <p className="text-gray-400 text-sm m-0 mb-2">{t("audit.no_activity")}</p>
+                <p className="text-gray-300 text-xs m-0">{t("audit.no_activity_hint")}</p>
               </div>
             ) : (
-              <p style={{ color: "#9CA3AF", fontSize: 13 }}>No entries match the current filters.</p>
+              <p className="text-gray-400 text-sm">{t("audit.no_match")}</p>
             )}
           </div>
         )}
       </div>
 
-      <p style={{ marginTop: "0.75rem", fontSize: 12, color: "#9CA3AF" }}>
-        Persisted to localStorage · Append-only · Completed transfers archived here permanently
-      </p>
+      <p className="mt-3 text-xs text-gray-400">{t("audit.footer_note")}</p>
     </div>
   );
 }

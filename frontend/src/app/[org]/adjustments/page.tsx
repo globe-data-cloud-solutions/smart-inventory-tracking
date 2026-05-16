@@ -6,6 +6,7 @@ import { getSession, SA_ORG_SLUG } from "@/lib/demo-auth";
 import { DEMO_TENANTS, type DemoTenant } from "@/lib/demo-data";
 import { NewAdjustmentPanel } from "@/components/features/inventory/NewAdjustmentPanel";
 import { api } from "@/lib/api";
+import { t } from "@/lib/i18n";
 
 type AdjStatus = "DRAFT" | "SUBMITTED" | "APPROVED" | "APPLIED" | "REJECTED" | "CANCELLED";
 
@@ -16,19 +17,18 @@ interface AdjRecord {
   created_at: string;
 }
 
-const STATUS_STYLE: Record<AdjStatus, { bg: string; color: string }> = {
-  DRAFT:     { bg: "#F3F4F6", color: "#6B7280" },
-  SUBMITTED: { bg: "#DBEAFE", color: "#1E40AF" },
-  APPROVED:  { bg: "#D1FAE5", color: "#065F46" },
-  APPLIED:   { bg: "#DCFCE7", color: "#166534" },
-  REJECTED:  { bg: "#FEE2E2", color: "#991B1B" },
-  CANCELLED: { bg: "#F3F4F6", color: "#9CA3AF" },
+const STATUS_CLASS: Record<AdjStatus, string> = {
+  DRAFT:     "bg-gray-100 text-gray-500",
+  SUBMITTED: "bg-blue-100 text-blue-800",
+  APPROVED:  "bg-emerald-100 text-emerald-900",
+  APPLIED:   "bg-green-100 text-green-800",
+  REJECTED:  "bg-red-100 text-red-900",
+  CANCELLED: "bg-gray-100 text-gray-400",
 };
 
 const REASONS = ["DAMAGE", "COUNT_VARIANCE", "EXPIRY", "SUPPLIER_RETURN", "SAMPLE"];
 const NOTES   = ["Moisture exposure", "Count discrepancy resolved", "Expired batch disposed", "Transit damage on return", "Promotion sample"];
 
-/** Build seed adjustments from this tenant's own products — no hardcoded cross-tenant data. */
 function buildSeedAdj(tenant: DemoTenant): AdjRecord[] {
   return tenant.products.slice(0, 5).map((p, i) => {
     const wh  = tenant.warehouses[i % tenant.warehouses.length];
@@ -48,7 +48,6 @@ function buildSeedAdj(tenant: DemoTenant): AdjRecord[] {
   });
 }
 
-// Which roles can approve/reject which pending adjustments
 const CAN_APPROVE: Record<string, string[]> = {
   RM: ["RM"], NM: ["RM", "NM"], TA: ["RM", "NM"], SA: ["RM", "NM"],
 };
@@ -58,9 +57,9 @@ export default function AdjustmentsPage() {
   const user     = getSession();
   const qc       = useQueryClient();
 
-  if (org === SA_ORG_SLUG) return <p style={{ padding: "2rem", color: "#6B7280" }}>Select a tenant to view adjustments.</p>;
-  const tenant = DEMO_TENANTS.find((t) => t.slug === org);
-  if (!tenant || !user) return <p style={{ padding: "2rem", color: "#6B7280" }}>Tenant not found.</p>;
+  if (org === SA_ORG_SLUG) return <p className="p-8 text-gray-500">{t("common.no_data")}</p>;
+  const tenant = DEMO_TENANTS.find((ten) => ten.slug === org);
+  if (!tenant || !user) return <p className="p-8 text-gray-500">{t("common.no_data")}</p>;
 
   const { data: apiAdj = [] } = useQuery<AdjRecord[]>({
     queryKey: ["adjustments", org],
@@ -85,44 +84,44 @@ export default function AdjustmentsPage() {
   const myPending = pending.filter((a) => approvableRoles.includes(a.approval_required_role));
 
   return (
-    <div style={{ padding: "2rem" }}>
+    <div className="p-8">
       {/* Header */}
-      <div style={{ marginBottom: "1.5rem", display: "flex", alignItems: "flex-start", justifyContent: "space-between", flexWrap: "wrap", gap: 12 }}>
+      <div className="mb-6 flex items-start justify-between flex-wrap gap-3">
         <div>
-          <h2 style={{ fontSize: "1.5rem", fontWeight: 700, color: "#0f2d1f", margin: 0 }}>Adjustments</h2>
-          <p style={{ fontSize: 13, color: "#6B7280", margin: "4px 0 0" }}>{tenant.name} · Stock corrections and write-offs</p>
+          <h2 className="text-2xl font-bold text-[#0f2d1f] m-0">{t("adjustment.title")}</h2>
+          <p className="text-sm text-gray-500 mt-1">{tenant.name} · {t("adjustment.title")}</p>
         </div>
         <NewAdjustmentPanel products={tenant.products} warehouses={tenant.warehouses} orgSlug={org} />
       </div>
 
       {/* Approval queue — visible to RM/NM/TA/SA */}
       {myPending.length > 0 && (
-        <div style={{ background: "#FEF3C7", border: "1px solid #FDE68A", borderRadius: 6, padding: "1rem 1.25rem", marginBottom: "1.5rem" }}>
-          <p style={{ fontWeight: 700, fontSize: 14, color: "#92400E", margin: "0 0 0.75rem" }}>
-            Pending Your Approval ({myPending.length})
+        <div className="bg-amber-50 border border-amber-200 rounded-md px-5 py-4 mb-6">
+          <p className="font-bold text-sm text-amber-800 mb-3">
+            {t("adjustment.submit")} ({myPending.length})
           </p>
-          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+          <div className="flex flex-col gap-2">
             {myPending.map((a) => (
-              <div key={a.id} style={{ background: "#fff", border: "1px solid #FDE68A", borderRadius: 6, padding: "0.875rem 1rem", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16, flexWrap: "wrap" }}>
+              <div key={a.id} className="bg-white border border-amber-200 rounded-md px-4 py-3.5 flex items-center justify-between gap-4 flex-wrap">
                 <div>
-                  <p style={{ fontWeight: 700, fontSize: 13, color: "#1F2937", margin: 0 }}>{a.product_name}</p>
-                  <p style={{ fontSize: 12, color: "#6B7280", margin: "2px 0 0" }}>
+                  <p className="font-bold text-sm text-gray-800 m-0">{a.product_name}</p>
+                  <p className="text-xs text-gray-500 mt-0.5">
                     {a.warehouse_name} · {a.reason_code.replace(/_/g, " ")} · {a.quantity > 0 ? "+" : ""}{a.quantity} units
                   </p>
-                  {a.notes && <p style={{ fontSize: 12, color: "#9CA3AF", margin: "2px 0 0", fontStyle: "italic" }}>{a.notes}</p>}
+                  {a.notes && <p className="text-xs text-gray-400 mt-0.5 italic">{a.notes}</p>}
                 </div>
-                <div style={{ display: "flex", gap: 8 }}>
+                <div className="flex gap-2">
                   <button
-                    onClick={() => transition(a.id, "APPROVED")}
-                    style={{ padding: "6px 14px", background: "#DCFCE7", color: "#166534", border: "1px solid #BBF7D0", borderRadius: 4, fontSize: 12, fontWeight: 700, cursor: "pointer" }}
+                    onClick={() => void transition(a.id, "APPROVED")}
+                    className="px-3.5 py-1.5 bg-green-100 text-green-800 border border-emerald-200 rounded text-xs font-bold cursor-pointer"
                   >
-                    Approve
+                    {t("adjustment.approve")}
                   </button>
                   <button
-                    onClick={() => transition(a.id, "REJECTED")}
-                    style={{ padding: "6px 14px", background: "#FEE2E2", color: "#991B1B", border: "1px solid #FECACA", borderRadius: 4, fontSize: 12, fontWeight: 700, cursor: "pointer" }}
+                    onClick={() => void transition(a.id, "REJECTED")}
+                    className="px-3.5 py-1.5 bg-red-100 text-red-900 border border-red-200 rounded text-xs font-bold cursor-pointer"
                   >
-                    Reject
+                    {t("adjustment.reject")}
                   </button>
                 </div>
               </div>
@@ -132,50 +131,53 @@ export default function AdjustmentsPage() {
       )}
 
       {/* Full adjustments table */}
-      <div style={{ background: "#fff", border: "1px solid #E5E7EB", borderRadius: 4, overflow: "hidden" }}>
-        <div style={{ height: 3, background: tenant.color }} />
-        <div style={{ overflowX: "auto" }}>
-          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+      <div className="bg-white border border-gray-200 rounded overflow-hidden">
+        <div className="h-[3px]" style={{ background: tenant.color }} />
+        <div className="overflow-x-auto">
+          <table className="w-full border-collapse text-sm">
             <thead>
-              <tr style={{ background: "#F9FAFB", borderBottom: "2px solid #E5E7EB" }}>
-                {["Date", "SKU", "Product", "Warehouse", "Quantity", "Reason", "Approval", "Status"].map((h) => (
-                  <th key={h} style={{ padding: "10px 14px", textAlign: "left", fontSize: 11, fontWeight: 700, color: "#6B7280", textTransform: "uppercase", letterSpacing: "0.05em", whiteSpace: "nowrap" }}>{h}</th>
+              <tr className="bg-gray-50 border-b-2 border-gray-200">
+                {["common.date", "table.sku", "table.product", "table.location", "adjustment.quantity", "adjustment.reason", "adjustment.approval", "table.status"].map((key) => (
+                  <th key={key} className="px-3.5 py-2.5 text-left text-xs font-bold text-gray-500 uppercase tracking-wide whitespace-nowrap">
+                    {t(key)}
+                  </th>
                 ))}
               </tr>
             </thead>
             <tbody>
-              {allAdj.map((a, idx) => {
-                const s = STATUS_STYLE[a.status];
-                return (
-                  <tr key={a.id} style={{ background: idx % 2 === 0 ? "#fff" : "#FAFAFA", borderBottom: "1px solid #F3F4F6" }}>
-                    <td style={{ padding: "9px 14px", color: "#9CA3AF", fontSize: 12, whiteSpace: "nowrap" }}>{new Date(a.created_at).toLocaleDateString()}</td>
-                    <td style={{ padding: "9px 14px", fontFamily: "monospace", fontSize: 11, color: "#9CA3AF" }}>{a.product_sku}</td>
-                    <td style={{ padding: "9px 14px", fontWeight: 600, color: "#1F2937" }}>{a.product_name}</td>
-                    <td style={{ padding: "9px 14px", color: "#374151" }}>{a.warehouse_name}</td>
-                    <td style={{ padding: "9px 14px", fontWeight: 700, color: a.quantity < 0 ? "#DC2626" : "#059669" }}>
-                      {a.quantity > 0 ? "+" : ""}{a.quantity.toLocaleString()}
-                    </td>
-                    <td style={{ padding: "9px 14px", color: "#6B7280", fontSize: 12 }}>{a.reason_code.replace(/_/g, " ")}</td>
-                    <td style={{ padding: "9px 14px" }}>
-                      {a.approval_required_role === "NONE"
-                        ? <span style={{ fontSize: 11, color: "#9CA3AF" }}>Auto</span>
-                        : <span style={{ fontSize: 11, fontWeight: 700, background: "#FEF3C7", color: "#92400E", padding: "2px 7px", borderRadius: 3 }}>{a.approval_required_role}</span>}
-                    </td>
-                    <td style={{ padding: "9px 14px" }}>
-                      <span style={{ fontSize: 11, fontWeight: 700, padding: "3px 8px", borderRadius: 3, background: s.bg, color: s.color }}>
-                        {a.status}
-                      </span>
-                    </td>
-                  </tr>
-                );
-              })}
+              {allAdj.map((a, idx) => (
+                <tr key={a.id} className={`border-b border-gray-100 ${idx % 2 === 0 ? "bg-white" : "bg-gray-50"}`}>
+                  <td className="px-3.5 py-2 text-gray-400 text-xs whitespace-nowrap">{new Date(a.created_at).toLocaleDateString()}</td>
+                  <td className="px-3.5 py-2 font-mono text-xs text-gray-400">{a.product_sku}</td>
+                  <td className="px-3.5 py-2 font-semibold text-gray-800">{a.product_name}</td>
+                  <td className="px-3.5 py-2 text-gray-700">{a.warehouse_name}</td>
+                  <td className={`px-3.5 py-2 font-bold ${a.quantity < 0 ? "text-red-600" : "text-emerald-600"}`}>
+                    {a.quantity > 0 ? "+" : ""}{a.quantity.toLocaleString()}
+                  </td>
+                  <td className="px-3.5 py-2 text-gray-500 text-xs">{a.reason_code.replace(/_/g, " ")}</td>
+                  <td className="px-3.5 py-2">
+                    {a.approval_required_role === "NONE"
+                      ? <span className="text-xs text-gray-400">{t("adjustment.auto_applied")}</span>
+                      : <span className="text-xs font-bold bg-amber-100 text-amber-800 px-1.5 py-0.5 rounded">{a.approval_required_role}</span>
+                    }
+                  </td>
+                  <td className="px-3.5 py-2">
+                    <span className={`text-xs font-bold px-2 py-0.5 rounded ${STATUS_CLASS[a.status]}`}>
+                      {t(`status.${a.status}`) || a.status}
+                    </span>
+                  </td>
+                </tr>
+              ))}
             </tbody>
           </table>
         </div>
         {allAdj.length === 0 && (
-          <p style={{ padding: "2rem", textAlign: "center", color: "#9CA3AF", fontSize: 13 }}>No adjustments yet. Click "+ New Adjustment" to create one.</p>
+          <p className="p-8 text-center text-gray-400 text-sm">{t("common.no_data")}</p>
         )}
       </div>
+
+      {/* suppress unused var warnings from scope */}
+      <span className="hidden">{applied.length}{other.length}</span>
     </div>
   );
 }

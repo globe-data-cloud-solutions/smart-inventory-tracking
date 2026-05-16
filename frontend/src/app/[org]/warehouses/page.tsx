@@ -3,37 +3,23 @@
 import { useParams } from "next/navigation";
 import { SA_ORG_SLUG } from "@/lib/demo-auth";
 import { DEMO_TENANTS, type DemoWarehouse } from "@/lib/demo-data";
+import { t } from "@/lib/i18n";
 
-/**
- * Returns warehouses sorted in depth-first tree order so children always
- * appear immediately after their parent regardless of the raw array order.
- * Handles multiple roots (e.g. Harar chain + Ambo chain side-by-side).
- */
 function sortByHierarchy(warehouses: DemoWarehouse[]): DemoWarehouse[] {
   const result: DemoWarehouse[] = [];
   const placed = new Set<string>();
-
   function place(parentId: string | null) {
     for (const wh of warehouses) {
       if (wh.parentId === parentId && !placed.has(wh.id)) {
-        result.push(wh);
-        placed.add(wh.id);
-        place(wh.id); // recursively place children
+        result.push(wh); placed.add(wh.id); place(wh.id);
       }
     }
   }
-
-  place(null); // roots first
-
-  // Safety: any orphaned nodes (parentId points to a missing WH)
-  for (const wh of warehouses) {
-    if (!placed.has(wh.id)) result.push(wh);
-  }
-
+  place(null);
+  for (const wh of warehouses) { if (!placed.has(wh.id)) result.push(wh); }
   return result;
 }
 
-/** Number of ancestors in the parentId chain → used for visual indentation. */
 function getDepth(warehouseId: string, warehouses: DemoWarehouse[], visited = new Set<string>()): number {
   if (visited.has(warehouseId)) return 0;
   visited.add(warehouseId);
@@ -42,36 +28,36 @@ function getDepth(warehouseId: string, warehouses: DemoWarehouse[], visited = ne
   return 1 + getDepth(wh.parentId, warehouses, visited);
 }
 
+const TYPE_CLASS: Record<string, string> = {
+  MWH:    "bg-amber-100 text-amber-800",
+  RWH:    "bg-blue-100  text-blue-800",
+  WH:     "bg-gray-100  text-gray-700",
+  SUB_WH: "bg-violet-100 text-violet-800",
+};
+
 export default function WarehousesPage() {
   const { org } = useParams() as { org: string };
-  if (org === SA_ORG_SLUG) return <p style={{ padding: "2rem", color: "#6B7280" }}>Select a tenant to view warehouses.</p>;
+  if (org === SA_ORG_SLUG) return <p className="p-8 text-gray-500">{t("common.no_data")}</p>;
 
-  const tenant = DEMO_TENANTS.find((t) => t.slug === org);
-  if (!tenant) return <p style={{ padding: "2rem", color: "#6B7280" }}>Tenant not found.</p>;
-
-  const typeColors: Record<string, { bg: string; text: string; label: string }> = {
-    MWH:    { bg: "#FEF3C7", text: "#92400E", label: "Main WH (MWH)" },
-    RWH:    { bg: "#DBEAFE", text: "#1E40AF", label: "Regional WH (RWH)" },
-    WH:     { bg: "#F3F4F6", text: "#374151", label: "Warehouse (WH)" },
-    SUB_WH: { bg: "#EDE9FE", text: "#5B21B6", label: "Sub-Warehouse" },
-  };
+  const tenant = DEMO_TENANTS.find((ten) => ten.slug === org);
+  if (!tenant) return <p className="p-8 text-gray-500">{t("common.no_data")}</p>;
 
   const sorted = sortByHierarchy(tenant.warehouses);
 
   return (
-    <div style={{ padding: "2rem" }}>
-      <div style={{ marginBottom: "1.5rem" }}>
-        <h2 style={{ fontSize: "1.5rem", fontWeight: 700, color: "#0f2d1f", margin: 0 }}>Warehouses</h2>
-        <p style={{ fontSize: 13, color: "#6B7280", margin: "4px 0 0" }}>{tenant.name} · {tenant.warehouses.length} locations</p>
+    <div className="p-8">
+      <div className="mb-6">
+        <h2 className="text-2xl font-bold text-[#0f2d1f] m-0">{t("warehouses.title")}</h2>
+        <p className="text-sm text-gray-500 mt-1">{tenant.name} · {tenant.warehouses.length} {t("warehouses.locations")}</p>
       </div>
 
-      <div style={{ background: "#fff", border: "1px solid #E5E7EB", borderRadius: 4, overflow: "hidden" }}>
-        <div style={{ height: 3, background: tenant.color }} />
-        <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+      <div className="bg-white border border-gray-200 rounded overflow-hidden">
+        <div className="h-[3px]" style={{ background: tenant.color }} />
+        <table className="w-full border-collapse text-sm">
           <thead>
-            <tr style={{ background: "#F9FAFB", borderBottom: "2px solid #E5E7EB" }}>
-              {["Name", "Location", "Type", "Manager", "Total Units", "SKUs"].map((h) => (
-                <th key={h} style={{ padding: "10px 16px", textAlign: "left", fontSize: 11, fontWeight: 700, color: "#6B7280", textTransform: "uppercase", letterSpacing: "0.05em" }}>{h}</th>
+            <tr className="bg-gray-50 border-b-2 border-gray-200">
+              {["warehouses.col_name","warehouses.col_location","table.type","warehouses.col_manager","table.total_units","table.skus"].map((key) => (
+                <th key={key} className="px-4 py-2.5 text-left text-xs font-bold text-gray-500 uppercase tracking-wide">{t(key)}</th>
               ))}
             </tr>
           </thead>
@@ -79,27 +65,26 @@ export default function WarehousesPage() {
             {sorted.map((w, idx) => {
               const whUnits = tenant.products.reduce((a, p) => a + (p.stock[w.id] ?? 0), 0);
               const whSKUs  = tenant.products.filter((p) => (p.stock[w.id] ?? 0) > 0).length;
-              const tc    = typeColors[w.type] ?? { bg: "#F3F4F6", text: "#6B7280", label: w.type };
-              const user  = tenant.users.find((u) => u.warehouseId === w.id);
-              const depth = getDepth(w.id, tenant.warehouses);
+              const typeClass = TYPE_CLASS[w.type] ?? "bg-gray-100 text-gray-500";
+              const manager   = tenant.users.find((u) => u.warehouseId === w.id);
+              const depth     = getDepth(w.id, tenant.warehouses);
 
               return (
-                <tr key={w.id} style={{ background: idx % 2 === 0 ? "#fff" : "#FAFAFA", borderBottom: "1px solid #F3F4F6" }}>
-                  <td style={{ padding: "10px 16px", fontWeight: 600, color: "#1F2937", paddingLeft: `${16 + depth * 24}px` }}>
-                    {depth > 0 && (
-                      <span style={{ color: "#9CA3AF", marginRight: 6, fontFamily: "monospace" }}>
-                        {"↳".repeat(depth)}
-                      </span>
-                    )}
+                <tr key={w.id} className={`border-b border-gray-100 ${idx % 2 === 0 ? "bg-white" : "bg-gray-50"}`}>
+                  {/* indent is dynamic (depth * 24px) — must use style for this one property */}
+                  <td className="px-4 py-2.5 font-semibold text-gray-800" style={{ paddingLeft: `${16 + depth * 24}px` }}>
+                    {depth > 0 && <span className="text-gray-300 mr-1.5 font-mono">{"↳".repeat(depth)}</span>}
                     {w.name}
                   </td>
-                  <td style={{ padding: "10px 16px", color: "#6B7280" }}>{w.location}</td>
-                  <td style={{ padding: "10px 16px" }}>
-                    <span style={{ fontSize: 11, fontWeight: 700, background: tc.bg, color: tc.text, padding: "2px 8px", borderRadius: 3 }}>{tc.label}</span>
+                  <td className="px-4 py-2.5 text-gray-500">{w.location}</td>
+                  <td className="px-4 py-2.5">
+                    <span className={`text-xs font-bold px-2 py-0.5 rounded ${typeClass}`}>
+                      {t(`warehouse_type.${w.type}`)}
+                    </span>
                   </td>
-                  <td style={{ padding: "10px 16px", color: "#374151" }}>{user?.name ?? "—"}</td>
-                  <td style={{ padding: "10px 16px", fontWeight: 700, color: "#111827" }}>{whUnits.toLocaleString()}</td>
-                  <td style={{ padding: "10px 16px", color: "#374151" }}>{whSKUs}</td>
+                  <td className="px-4 py-2.5 text-gray-700">{manager?.name ?? "—"}</td>
+                  <td className="px-4 py-2.5 font-bold text-gray-900">{whUnits.toLocaleString()}</td>
+                  <td className="px-4 py-2.5 text-gray-700">{whSKUs}</td>
                 </tr>
               );
             })}

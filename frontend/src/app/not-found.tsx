@@ -1,11 +1,9 @@
 import Link from "next/link";
+import { t } from "@/lib/i18n";
 
 export default function NotFound() {
   return (
-    <div
-      className="min-h-screen flex flex-col items-center justify-center px-4 text-center"
-      style={{ background: "#1B4332" }}
-    >
+    <div className="min-h-screen flex flex-col items-center justify-center px-4 text-center bg-eth-forest">
       <div className="mb-6">
         <svg width="56" height="56" viewBox="0 0 48 48" fill="none" aria-hidden="true">
           <rect width="48" height="48" rx="10" fill="#FCDD09" />
@@ -16,25 +14,21 @@ export default function NotFound() {
       </div>
 
       <h1 className="text-6xl font-extrabold text-white mb-2">404</h1>
-      <p className="text-xl font-semibold text-green-200 mb-2">Page not found</p>
-      <p className="text-green-400 text-sm mb-8 max-w-sm">
-        This page doesn't exist or your session expired. Sign in to continue.
-      </p>
+      <p className="text-xl font-semibold text-green-200 mb-2">{t("not_found.heading")}</p>
+      <p className="text-green-400 text-sm mb-8 max-w-sm">{t("not_found.description")}</p>
 
       <div className="flex gap-3">
         <Link
           href="/login"
-          className="px-6 py-3 font-bold text-sm"
-          style={{ background: "#FCDD09", color: "#12291E", borderRadius: 4 }}
+          className="px-6 py-3 font-bold text-sm bg-eth-gold text-[#12291E] rounded no-underline"
         >
-          Sign in →
+          {t("not_found.sign_in")}
         </Link>
         <Link
           href="/"
-          className="px-6 py-3 font-semibold text-sm border-2 border-white/30 text-white hover:bg-white/10 transition"
-          style={{ borderRadius: 4 }}
+          className="px-6 py-3 font-semibold text-sm border-2 border-white/30 text-white hover:bg-white/10 transition rounded no-underline"
         >
-          Home
+          {t("not_found.home")}
         </Link>
       </div>
 

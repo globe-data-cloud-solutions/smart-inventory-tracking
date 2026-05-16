@@ -40,7 +40,7 @@ export default function TenantPage({ params }: { params: { tenantId: string } })
       <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
         {[
           { label: "Locations",     value: tenant.warehouses.length,    icon: "📍", sub: `${tenant.warehouses.filter(w => w.type === "MWH").length} main WH` },
-          { label: "SKUs",          value: tenant.products.length,      icon: "📦", sub: `${[...new Set(tenant.products.map(p => p.category))].length} categories` },
+          { label: "SKUs",          value: tenant.products.length,      icon: "📦", sub: `${Array.from(new Set(tenant.products.map(p => p.category))).length} categories` },
           { label: "Total Units",   value: totalUnits.toLocaleString(), icon: "📊", sub: "across all WH" },
           { label: "Low Stock",     value: lowStock.length,             icon: "⚠️", sub: lowStock.length > 0 ? "need restocking" : "all good", warn: lowStock.length > 0 },
           { label: "Staff Accounts",value: tenant.users.length,         icon: "👤", sub: `${tenant.users.filter(u => u.role === "WM").length} WM, ${tenant.users.filter(u => u.role === "NM").length} NM` },
@@ -89,7 +89,7 @@ export default function TenantPage({ params }: { params: { tenantId: string } })
         </div>
 
         <div className="lg:col-span-2 space-y-4">
-          {[...new Set(tenant.products.map((p) => p.category))].map((cat) => (
+          {Array.from(new Set(tenant.products.map((p) => p.category))).map((cat) => (
             <CategoryTable
               key={cat}
               category={cat}
@@ -111,6 +111,7 @@ function WarehouseNode({ warehouse, allWarehouses, tenant, depth }: {
   const whStock = tenant.products.reduce((acc, p) => acc + (p.stock[warehouse.id] ?? 0), 0);
 
   return (
+    /* depth indentation is runtime-computed — paddingLeft must use style= */
     <div style={{ paddingLeft: depth * 16 }}>
       <div className="flex items-start gap-2 py-2 rounded-lg hover:bg-gray-50 px-2 transition-colors">
         <span className="text-base mt-0.5 flex-shrink-0">{icons[warehouse.type] ?? "📦"}</span>

@@ -9,53 +9,43 @@ import { useOfflineSync } from "@/hooks/useOfflineSync";
 import { useInventoryStore } from "@/lib/inventory-state";
 import { useAuditStore } from "@/lib/audit-log-state";
 import { getSession } from "@/lib/demo-auth";
+import { t } from "@/lib/i18n";
 import type { DemoProduct, DemoWarehouse } from "@/lib/demo-data";
 
-interface Props {
-  products: DemoProduct[];
-  warehouses: DemoWarehouse[];
-  orgSlug: string;
-}
+interface Props { products: DemoProduct[]; warehouses: DemoWarehouse[]; orgSlug: string; }
 
 const REASONS = [
-  { value: "SALE",            label: "Sale / Dispatch to Customer" },
-  { value: "INTERNAL_USE",    label: "Internal Use" },
-  { value: "DAMAGE",          label: "Damaged / Write-off" },
-  { value: "EXPIRY",          label: "Expired Stock Disposal" },
-  { value: "SAMPLE",          label: "Sample / Promotion" },
-  { value: "OTHER",           label: "Other" },
+  { value: "SALE",         label: "issue.reasons.SALE"         },
+  { value: "INTERNAL_USE", label: "issue.reasons.INTERNAL_USE" },
+  { value: "DAMAGE",       label: "issue.reasons.DAMAGE"       },
+  { value: "EXPIRY",       label: "issue.reasons.EXPIRY"       },
+  { value: "SAMPLE",       label: "issue.reasons.SAMPLE"       },
+  { value: "OTHER",        label: "issue.reasons.OTHER"        },
 ];
 
-// Destination label and placeholder per reason code
 const DESTINATION_META: Record<string, { label: string; placeholder: string; required: boolean }> = {
   SALE:         { label: "Issued To (Customer / Recipient)", placeholder: "e.g. Addis Supermarket, Order #1042", required: true  },
   INTERNAL_USE: { label: "Issued To (Department / Team)",   placeholder: "e.g. Quality Control, Head Office",   required: true  },
   SAMPLE:       { label: "Issued To (Recipient)",           placeholder: "e.g. Distributor name, event name",   required: true  },
-  DAMAGE:       { label: "Destination / Disposal Note",     placeholder: "e.g. Disposed on-site, Returned to supplier", required: false },
-  EXPIRY:       { label: "Destination / Disposal Note",     placeholder: "e.g. Disposed on-site, Incinerated", required: false },
+  DAMAGE:       { label: "Destination / Disposal Note",     placeholder: "e.g. Disposed on-site",               required: false },
+  EXPIRY:       { label: "Destination / Disposal Note",     placeholder: "e.g. Disposed on-site, Incinerated",  required: false },
   OTHER:        { label: "Issued To / Destination",         placeholder: "Recipient or destination",             required: false },
 };
 
-const PANEL_W = 420;
-
-const INPUT: React.CSSProperties = {
-  width: "100%", padding: "8px 10px", fontSize: 13,
-  border: "1px solid #D1D5DB", borderRadius: 4,
-  outline: "none", background: "#fff", boxSizing: "border-box",
-};
-const SELECT: React.CSSProperties = { ...INPUT, cursor: "pointer" };
-
 function Field({ label, hint, children }: { label: string; hint?: string; children: React.ReactNode }) {
   return (
-    <div style={{ marginBottom: 16 }}>
-      <label style={{ display: "block", fontSize: 12, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.05em", color: "#374151", marginBottom: 4 }}>
+    <div className="mb-4">
+      <label className="block text-xs font-bold uppercase tracking-wide text-gray-700 mb-1">
         {label}
-        {hint && <span style={{ fontSize: 11, fontWeight: 400, textTransform: "none", color: "#9CA3AF", marginLeft: 6 }}>{hint}</span>}
+        {hint && <span className="text-[11px] font-normal normal-case text-gray-400 ml-1.5">{hint}</span>}
       </label>
       {children}
     </div>
   );
 }
+
+const inputCls  = "w-full px-2.5 py-2 text-sm border border-gray-300 rounded outline-none bg-white";
+const selectCls = `${inputCls} cursor-pointer`;
 
 export function IssueStockPanel({ products, warehouses, orgSlug }: Props) {
   const { isOnline } = useOfflineSync();
@@ -63,227 +53,129 @@ export function IssueStockPanel({ products, warehouses, orgSlug }: Props) {
   const { addIssue, getAvailable } = useInventoryStore();
   const logAudit = useAuditStore((s) => s.log);
 
-  const [open, setOpen]             = useState(false);
-  const [productId, setProductId]   = useState("");
-  const [warehouseId, setWarehouseId] = useState("");
-  const [quantity, setQuantity]     = useState("");
-  const [reasonCode, setReasonCode] = useState("");
-  const [issuedTo, setIssuedTo]     = useState("");
-  const [notes, setNotes]           = useState("");
-  const [error, setError]           = useState("");
-  const [success, setSuccess]       = useState("");
-  const [loading, setLoading]       = useState(false);
+  const [open, setOpen]                 = useState(false);
+  const [productId, setProductId]       = useState("");
+  const [warehouseId, setWarehouseId]   = useState("");
+  const [quantity, setQuantity]         = useState("");
+  const [reasonCode, setReasonCode]     = useState("");
+  const [issuedTo, setIssuedTo]         = useState("");
+  const [notes, setNotes]               = useState("");
+  const [error, setError]               = useState("");
+  const [success, setSuccess]           = useState("");
+  const [loading, setLoading]           = useState(false);
 
   const destMeta = reasonCode ? DESTINATION_META[reasonCode] : null;
 
-  function reset() {
-    setProductId(""); setWarehouseId(""); setQuantity("");
-    setReasonCode(""); setIssuedTo(""); setNotes("");
-    setError(""); setSuccess("");
-  }
+  function reset() { setProductId(""); setWarehouseId(""); setQuantity(""); setReasonCode(""); setIssuedTo(""); setNotes(""); setError(""); setSuccess(""); }
 
-  // Show only warehouses that have stock for the selected product
   const availableWarehouses = productId
-    ? warehouses.filter((w) => {
-        const p = products.find((pr) => pr.id === productId);
-        if (!p) return true;
-        const base = p.stock[w.id] ?? 0;
-        return getAvailable(p.id, w.id, base) > 0;
-      })
+    ? warehouses.filter((w) => { const p = products.find((pr) => pr.id === productId); return p ? getAvailable(p.id, w.id, p.stock[w.id] ?? 0) > 0 : true; })
     : warehouses;
 
   const selectedProduct = products.find((p) => p.id === productId);
-  // Use live Available from inventory store (reflects reserved/in-transit stock)
   const availableStock  = selectedProduct && warehouseId
     ? getAvailable(selectedProduct.id, warehouseId, selectedProduct.stock[warehouseId] ?? 0)
     : null;
 
   const onSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setError("");
-
-    if (!productId)   { setError("Please select a product."); return; }
-    if (!warehouseId) { setError("Please select a warehouse."); return; }
-    if (!reasonCode)  { setError("Please select a reason code."); return; }
-    if (destMeta?.required && !issuedTo.trim()) {
-      setError(`"${destMeta.label}" is required for this reason.`); return;
-    }
+    e.preventDefault(); setError("");
+    if (!productId)   { setError(t("receive_panel.error_product"));   return; }
+    if (!warehouseId) { setError(t("receive_panel.error_warehouse")); return; }
+    if (!reasonCode)  { setError(t("issue.error_reason")); return; }
+    if (destMeta?.required && !issuedTo.trim()) { setError(`"${destMeta.label}" is required.`); return; }
     const qty = parseFloat(quantity);
-    if (!qty || qty <= 0) { setError("Quantity must be a positive number."); return; }
-    if (availableStock !== null && qty > availableStock) {
-      setError(`Insufficient stock. Available: ${availableStock.toLocaleString()} units.`); return;
-    }
-
+    if (!qty || qty <= 0) { setError(t("receive_panel.error_qty")); return; }
+    if (availableStock !== null && qty > availableStock) { setError(`${t("issue.insufficient")} ${availableStock.toLocaleString()}`); return; }
     const key = `issue:${productId}:${warehouseId}:${Date.now()}:${nanoid(8)}`;
-    const payload = {
-      product_id:   productId,
-      warehouse_id: warehouseId,
-      quantity:     qty.toFixed(4),
-      reason_code:  reasonCode,
-      issued_to:    issuedTo.trim() || undefined,
-      notes,
-      idempotency_key: key,
-    };
-
+    const payload = { product_id: productId, warehouse_id: warehouseId, quantity: qty.toFixed(4), reason_code: reasonCode, issued_to: issuedTo.trim() || undefined, notes, idempotency_key: key };
     setLoading(true);
     try {
       if (!isOnline) {
         await enqueueOfflineTransaction({ idempotencyKey: key, action: "inventory:issue", payload });
-        setSuccess(`${selectedProduct?.name ?? "Stock"} issue queued for sync.`);
+        setSuccess(t("inventory.receive.queue_offline"));
       } else {
         await api.post("/api/v1/inventory/issue", payload);
         addIssue(productId, warehouseId, qty);
-        const user = getSession();
-        const wh   = warehouses.find((w) => w.id === warehouseId);
-        if (user) {
-          logAudit({
-            tenantSlug:    orgSlug,
-            userEmail:     user.email,
-            userName:      user.name,
-            role:          user.role,
-            action:        "inventory:issue",
-            category:      "INVENTORY",
-            resourceRef:   selectedProduct?.sku ?? productId,
-            resourceType:  "InventoryTransaction",
-            productName:   selectedProduct?.name,
-            quantityStr:   `-${qty.toLocaleString()} ${selectedProduct?.unit ?? "units"}`,
-            fromWarehouse: wh?.name ?? warehouseId,
-            toWarehouse:   issuedTo.trim() || undefined,
-            notes:         `[${reasonCode}]`,
-          });
-        }
-        setSuccess(
-          issuedTo.trim()
-            ? `${selectedProduct?.name ?? "Stock"} issued to ${issuedTo.trim()}.`
-            : `${selectedProduct?.name ?? "Stock"} issued successfully.`
-        );
+        const user = getSession(); const wh = warehouses.find((w) => w.id === warehouseId);
+        if (user) logAudit({ tenantSlug: orgSlug, userEmail: user.email, userName: user.name, role: user.role, action: "inventory:issue", category: "INVENTORY", resourceRef: selectedProduct?.sku ?? productId, resourceType: "InventoryTransaction", productName: selectedProduct?.name, quantityStr: `-${qty.toLocaleString()} ${selectedProduct?.unit ?? "units"}`, fromWarehouse: wh?.name ?? warehouseId, toWarehouse: issuedTo.trim() || undefined, notes: `[${reasonCode}]` });
+        setSuccess(t("issue.success"));
         void qc.invalidateQueries({ queryKey: ["products", orgSlug] });
       }
-      reset();
-      setTimeout(() => { setSuccess(""); setOpen(false); }, 2500);
-    } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : "Failed to issue stock.");
-    } finally {
-      setLoading(false);
-    }
+      reset(); setTimeout(() => { setSuccess(""); setOpen(false); }, 2500);
+    } catch (err: unknown) { setError(err instanceof Error ? err.message : t("errors.INTERNAL_ERROR")); }
+    finally { setLoading(false); }
   };
 
   return (
     <>
-      <button
-        onClick={() => { reset(); setOpen(true); }}
-        style={{
-          padding: "8px 16px", background: "#7C3AED", color: "#fff",
-          fontWeight: 700, fontSize: 13, borderRadius: 4, border: "none", cursor: "pointer",
-        }}
-      >
-        Issue Stock
+      <button onClick={() => { reset(); setOpen(true); }} className="px-4 py-2 bg-violet-600 text-white font-bold text-sm rounded border-0 cursor-pointer">
+        {t("issue.title")}
       </button>
 
-      {open && (
-        <div onClick={() => setOpen(false)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.35)", zIndex: 100, backdropFilter: "blur(2px)" }} />
-      )}
+      {open && <div onClick={() => setOpen(false)} className="fixed inset-0 bg-black/35 z-[100] backdrop-blur-sm" />}
 
-      <div style={{
-        position: "fixed", top: 0, right: open ? 0 : -PANEL_W,
-        width: PANEL_W, height: "100vh", background: "#fff", zIndex: 110,
-        boxShadow: "-4px 0 24px rgba(0,0,0,0.18)",
-        transition: "right 0.25s cubic-bezier(0.4,0,0.2,1)",
-        display: "flex", flexDirection: "column",
-      }}>
-        <div style={{ padding: "1.25rem 1.5rem", background: "#7C3AED", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+      <div className={`fixed top-0 right-0 w-[420px] h-screen bg-white z-[110] shadow-2xl flex flex-col transition-transform duration-[250ms] ease-out ${open ? "translate-x-0" : "translate-x-full"}`}>
+        <div className="px-6 py-5 bg-violet-600 flex items-center justify-between">
           <div>
-            <p style={{ fontWeight: 700, fontSize: 16, color: "#fff", margin: 0 }}>Issue Stock</p>
-            <p style={{ fontSize: 12, color: "#E9D5FF", margin: "2px 0 0" }}>Record outbound stock movement</p>
+            <p className="font-bold text-base text-white m-0">{t("issue.title")}</p>
+            <p className="text-xs text-violet-200 mt-0.5">{t("issue.subtitle")}</p>
           </div>
-          <button onClick={() => setOpen(false)} style={{ background: "rgba(255,255,255,0.15)", border: "none", cursor: "pointer", color: "#fff", fontSize: 18, width: 32, height: 32, borderRadius: 4, display: "flex", alignItems: "center", justifyContent: "center" }}>✕</button>
+          <button onClick={() => setOpen(false)} className="bg-white/15 border-0 cursor-pointer text-white text-lg w-8 h-8 rounded flex items-center justify-center">✕</button>
         </div>
 
-        <form onSubmit={onSubmit} style={{ flex: 1, overflowY: "auto", padding: "1.5rem" }}>
-          <Field label="Product">
-            <select value={productId} onChange={(e) => { setProductId(e.target.value); setWarehouseId(""); }} style={SELECT} required>
-              <option value="">— select product —</option>
+        <form onSubmit={onSubmit} className="flex-1 overflow-y-auto p-6">
+          <Field label={t("table.product")}>
+            <select value={productId} onChange={(e) => { setProductId(e.target.value); setWarehouseId(""); }} className={selectCls} required>
+              <option value="">— {t("receive_panel.select_product")} —</option>
               {products.map((p) => <option key={p.id} value={p.id}>{p.name} · {p.sku}</option>)}
             </select>
           </Field>
 
-          <Field label="From Warehouse">
-            <select value={warehouseId} onChange={(e) => setWarehouseId(e.target.value)} style={SELECT} required>
-              <option value="">— select warehouse —</option>
+          <Field label={t("inventory.transfer.from_warehouse")}>
+            <select value={warehouseId} onChange={(e) => setWarehouseId(e.target.value)} className={selectCls} required>
+              <option value="">— {t("receive_panel.select_warehouse")} —</option>
               {availableWarehouses.map((w) => {
-                const liveAvail = selectedProduct
-                  ? getAvailable(selectedProduct.id, w.id, selectedProduct.stock[w.id] ?? 0)
-                  : null;
-                return (
-                  <option key={w.id} value={w.id}>
-                    {w.name}{liveAvail !== null ? ` · ${liveAvail.toLocaleString()} available` : ""}
-                  </option>
-                );
+                const liveAvail = selectedProduct ? getAvailable(selectedProduct.id, w.id, selectedProduct.stock[w.id] ?? 0) : null;
+                return <option key={w.id} value={w.id}>{w.name}{liveAvail !== null ? ` · ${liveAvail.toLocaleString()} available` : ""}</option>;
               })}
             </select>
           </Field>
 
           {availableStock !== null && (
-            <div style={{ background: "#F5F3FF", border: "1px solid #DDD6FE", borderRadius: 6, padding: "8px 12px", marginBottom: 12, fontSize: 12, color: "#5B21B6" }}>
-              Available stock: <strong>{availableStock.toLocaleString()}</strong> units
+            <div className="bg-violet-50 border border-violet-200 rounded-md px-3 py-2 mb-3 text-xs text-violet-800">
+              {t("inventory.available")}: <strong>{availableStock.toLocaleString()}</strong> {t("lots.units")}
             </div>
           )}
 
-          <Field label="Quantity to Issue">
-            <input
-              type="number" min="0.0001" step="any"
-              value={quantity} onChange={(e) => setQuantity(e.target.value)}
-              placeholder="e.g. 100" style={INPUT} required
-            />
+          <Field label={t("issue.qty_to_issue")}>
+            <input type="number" min="0.0001" step="any" value={quantity} onChange={(e) => setQuantity(e.target.value)} placeholder="e.g. 100" className={inputCls} required />
           </Field>
 
-          <Field label="Reason Code">
-            <select
-              value={reasonCode}
-              onChange={(e) => { setReasonCode(e.target.value); setIssuedTo(""); }}
-              style={SELECT}
-              required
-            >
-              <option value="">— select reason —</option>
-              {REASONS.map((r) => <option key={r.value} value={r.value}>{r.label}</option>)}
+          <Field label={t("issue.reason")}>
+            <select value={reasonCode} onChange={(e) => { setReasonCode(e.target.value); setIssuedTo(""); }} className={selectCls} required>
+              <option value="">— {t("receive_panel.select_type")} —</option>
+              {REASONS.map((r) => <option key={r.value} value={r.value}>{t(r.label)}</option>)}
             </select>
           </Field>
 
-          {/* Destination — shown after reason is selected, label adapts per reason */}
           {destMeta && (
-            <Field
-              label={destMeta.label}
-              hint={destMeta.required ? undefined : "optional"}
-            >
-              <input
-                type="text"
-                value={issuedTo}
-                onChange={(e) => setIssuedTo(e.target.value)}
-                placeholder={destMeta.placeholder}
-                style={INPUT}
-                required={destMeta.required}
-              />
+            <Field label={destMeta.label} hint={destMeta.required ? undefined : `(${t("receive_panel.optional")})`}>
+              <input type="text" value={issuedTo} onChange={(e) => setIssuedTo(e.target.value)} placeholder={destMeta.placeholder} className={inputCls} required={destMeta.required} />
             </Field>
           )}
 
-          <Field label="Notes" hint="optional">
-            <textarea
-              value={notes} onChange={(e) => setNotes(e.target.value)}
-              placeholder="Customer name, order reference, notes…"
-              rows={3} style={{ ...INPUT, resize: "vertical" }}
-            />
+          <Field label={t("audit.notes")} hint={`(${t("receive_panel.optional")})`}>
+            <textarea value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Customer name, order reference, notes…" rows={3} className={`${inputCls} resize-y`} />
           </Field>
 
-          {error   && <div style={{ background: "#FEF2F2", border: "1px solid #FECACA", borderRadius: 4, padding: "10px 12px", fontSize: 13, color: "#DC2626", marginBottom: 12 }}>{error}</div>}
-          {success && <div style={{ background: "#F5F3FF", border: "1px solid #DDD6FE", borderRadius: 4, padding: "10px 12px", fontSize: 13, color: "#5B21B6", marginBottom: 12 }}>✓ {success}</div>}
+          {error   && <div className="bg-red-50 border border-red-200 rounded p-3 text-sm text-red-600 mb-3">{error}</div>}
+          {success && <div className="bg-violet-50 border border-violet-200 rounded p-3 text-sm text-violet-700 mb-3">✓ {success}</div>}
         </form>
 
-        <div style={{ padding: "1rem 1.5rem", borderTop: "1px solid #E5E7EB", display: "flex", gap: 10 }}>
-          <button type="button" onClick={() => setOpen(false)} style={{ flex: 1, padding: "10px", background: "#F3F4F6", border: "1px solid #E5E7EB", borderRadius: 4, fontSize: 13, fontWeight: 600, color: "#374151", cursor: "pointer" }}>
-            Cancel
-          </button>
-          <button onClick={onSubmit as unknown as React.MouseEventHandler} disabled={loading} style={{ flex: 2, padding: "10px", fontWeight: 700, fontSize: 13, borderRadius: 4, border: "none", cursor: loading ? "not-allowed" : "pointer", background: "#7C3AED", color: "#fff", opacity: loading ? 0.7 : 1 }}>
-            {loading ? "Processing…" : "Issue Stock"}
+        <div className="px-6 py-4 border-t border-gray-200 flex gap-2.5">
+          <button type="button" onClick={() => setOpen(false)} className="flex-1 py-2.5 bg-gray-100 border border-gray-200 rounded text-sm font-semibold text-gray-700 cursor-pointer">{t("common.cancel")}</button>
+          <button onClick={onSubmit as unknown as React.MouseEventHandler} disabled={loading} className={`flex-[2] py-2.5 bg-violet-600 text-white font-bold text-sm rounded border-0 ${loading ? "opacity-70 cursor-not-allowed" : "cursor-pointer"}`}>
+            {loading ? t("common.loading") : t("issue.submit")}
           </button>
         </div>
       </div>

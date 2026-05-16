@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { getSession } from "@/lib/demo-auth";
+import { t } from "@/lib/i18n";
 
 /* ── Types ───────────────────────────────────────────────────────────────── */
 type OrgType   = "PRODUCER" | "RETAILER" | "HYBRID";
@@ -35,63 +36,63 @@ const APPROVAL_DEFAULTS: Record<OrgType, { low: number; medium: number }> = {
   HYBRID:   { low: 250,  medium: 2000  },
 };
 
+/* ORG_META color is per-org-type runtime data — style= required for border/bg alpha */
 const ORG_META: Record<OrgType, { label: string; desc: string; color: string }> = {
-  PRODUCER: { label: "Producer / Importer",      color: "#0891B2", desc: "Manufactures or imports goods. Batch/lot tracking, FEFO dispatch, production cycles." },
-  RETAILER: { label: "Retailer / Distributor",   color: "#059669", desc: "Distributes or sells to consumers. Full logistics, multi-branch stock, unlimited SKUs." },
-  HYBRID:   { label: "Hybrid (Both)",             color: "#7C3AED", desc: "Both producer and retailer. Full feature set enabled." },
+  PRODUCER: { label: t("wizard.org_types.PRODUCER"), color: "#0891B2", desc: t("wizard.org_type_desc.PRODUCER") },
+  RETAILER: { label: t("wizard.org_types.RETAILER"), color: "#059669", desc: t("wizard.org_type_desc.RETAILER") },
+  HYBRID:   { label: t("wizard.org_types.HYBRID"),   color: "#7C3AED", desc: t("wizard.org_type_desc.HYBRID") },
 };
 
 const LOCALE_META: Record<Locale, { label: string; native: string }> = {
-  en: { label: "English",                    native: "English" },
-  am: { label: "Amharic",                    native: "አማርኛ" },
-  or: { label: "Oromifa (Afaan Oromoo)",      native: "Afaan Oromoo" },
+  en: { label: "English",               native: "English" },
+  am: { label: "Amharic",               native: "አማርኛ" },
+  or: { label: "Oromifa (Afaan Oromoo)", native: "Afaan Oromoo" },
 };
 
-/* ── Constants ───────────────────────────────────────────────────────────── */
-const DARK   = "#0f2d1f";
-const FOREST = "#1B4332";
-const GOLD   = "#FCDD09";
 const TOTAL_STEPS = 4;
 
 /* ── Logo ────────────────────────────────────────────────────────────────── */
 function Logo() {
   return (
     <svg width={32} height={32} viewBox="0 0 40 40" fill="none" aria-hidden="true">
-      <rect width="40" height="40" rx="7" fill={GOLD} />
-      <polygon points="20,4 36,12 36,24 20,32 4,24 4,12" fill={DARK} />
-      <polygon points="20,10 30,16 30,23 20,29 10,23 10,16" fill={GOLD} />
-      <polygon points="20,16 25,19 25,23 20,26 15,23 15,19" fill={DARK} />
+      <rect width="40" height="40" rx="7" fill="#FCDD09" />
+      <polygon points="20,4 36,12 36,24 20,32 4,24 4,12" fill="#0f2d1f" />
+      <polygon points="20,10 30,16 30,23 20,29 10,23 10,16" fill="#FCDD09" />
+      <polygon points="20,16 25,19 25,23 20,26 15,23 15,19" fill="#0f2d1f" />
     </svg>
   );
 }
 
 /* ── Step indicator ──────────────────────────────────────────────────────── */
 function StepBar({ current }: { current: number }) {
-  const labels = ["Company Info", "Org Type", "Language", "Review"];
+  const labels = [
+    t("wizard.step1_title"),
+    t("wizard.step2_title"),
+    t("wizard.step3_title"),
+    t("wizard.step4_title"),
+  ];
   return (
-    <div style={{ display: "flex", alignItems: "center", gap: 0, marginBottom: "2rem" }}>
+    <div className="flex items-center mb-8">
       {labels.map((label, idx) => {
-        const n    = idx + 1;
-        const done = n < current;
+        const n      = idx + 1;
+        const done   = n < current;
         const active = n === current;
         return (
-          <div key={label} style={{ display: "flex", alignItems: "center", flex: idx < labels.length - 1 ? 1 : "none" }}>
-            <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 4 }}>
-              <div style={{
-                width: 32, height: 32, borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center",
-                fontWeight: 800, fontSize: 13,
-                background: done ? FOREST : active ? GOLD : "#E5E7EB",
-                color: done ? "#fff" : active ? DARK : "#9CA3AF",
-                border: active ? `2px solid ${FOREST}` : "2px solid transparent",
-              }}>
+          <div key={label} className={`flex items-center ${idx < labels.length - 1 ? "flex-1" : ""}`}>
+            <div className="flex flex-col items-center gap-1">
+              <div className={`w-8 h-8 rounded-full flex items-center justify-center font-extrabold text-[13px] ring-2 ${
+                done    ? "bg-[#1B4332] text-white ring-transparent" :
+                active  ? "bg-[#FCDD09] text-[#0f2d1f] ring-[#1B4332]" :
+                          "bg-gray-200 text-gray-400 ring-transparent"
+              }`}>
                 {done ? "✓" : n}
               </div>
-              <span style={{ fontSize: 11, fontWeight: active ? 700 : 500, color: active ? FOREST : "#9CA3AF", whiteSpace: "nowrap" }}>
+              <span className={`text-[11px] whitespace-nowrap ${active ? "font-bold text-[#1B4332]" : "font-medium text-gray-400"}`}>
                 {label}
               </span>
             </div>
             {idx < labels.length - 1 && (
-              <div style={{ flex: 1, height: 2, background: done ? FOREST : "#E5E7EB", margin: "0 8px", marginBottom: 20 }} />
+              <div className={`flex-1 h-0.5 mx-2 mb-5 ${done ? "bg-[#1B4332]" : "bg-gray-200"}`} />
             )}
           </div>
         );
@@ -103,39 +104,24 @@ function StepBar({ current }: { current: number }) {
 /* ── Flag badge ──────────────────────────────────────────────────────────── */
 function FlagBadge({ name, enabled }: { name: string; enabled: boolean }) {
   return (
-    <div style={{
-      display: "flex", alignItems: "center", justifyContent: "space-between",
-      padding: "8px 12px", border: "1px solid #E5E7EB", borderRadius: 6,
-      background: enabled ? "#F0FDF4" : "#F9FAFB",
-    }}>
-      <span style={{ fontSize: 13, color: "#374151" }}>{name}</span>
-      <span style={{
-        fontSize: 11, fontWeight: 700, padding: "2px 8px", borderRadius: 99,
-        background: enabled ? "#DCFCE7" : "#F3F4F6",
-        color: enabled ? "#166534" : "#9CA3AF",
-      }}>
-        {enabled ? "Enabled" : "Disabled"}
+    <div className={`flex items-center justify-between px-3 py-2 border rounded-md ${enabled ? "bg-green-50 border-green-200" : "bg-gray-50 border-gray-200"}`}>
+      <span className="text-[13px] text-gray-700">{name}</span>
+      <span className={`text-[11px] font-bold px-2 py-0.5 rounded-full ${enabled ? "bg-green-100 text-green-800" : "bg-gray-100 text-gray-400"}`}>
+        {enabled ? t("wizard.enabled") : t("wizard.disabled")}
       </span>
     </div>
   );
 }
 
-const FLAG_LABELS: Record<string, string> = {
-  LOGISTICS: "Logistics Module",
-  AI_ANALYTICS: "AI Analytics",
-  ADVANCED_BATCH_TRACKING: "Advanced Batch Tracking",
-  FLEET_MANAGEMENT: "Fleet Management",
-};
-
 /* ── Main wizard ─────────────────────────────────────────────────────────── */
 export default function OnboardPage() {
   const router = useRouter();
 
-  const [ready, setReady]   = useState(false);
-  const [step, setStep]     = useState(1);
+  const [ready, setReady]     = useState(false);
+  const [step, setStep]       = useState(1);
   const [loading, setLoading] = useState(false);
-  const [result, setResult] = useState<WizardResult | null>(null);
-  const [error, setError]   = useState("");
+  const [result, setResult]   = useState<WizardResult | null>(null);
+  const [error, setError]     = useState("");
 
   const [form, setForm] = useState<WizardState>({
     name: "", industry: "", skuLimit: "500", orgType: "", locale: "en",
@@ -154,12 +140,8 @@ export default function OnboardPage() {
   }
 
   function nextStep() {
-    if (step === 1) {
-      if (!form.name.trim()) { setError("Company name is required."); return; }
-    }
-    if (step === 2) {
-      if (!form.orgType) { setError("Please select an organisation type."); return; }
-    }
+    if (step === 1 && !form.name.trim()) { setError(t("wizard.company_required")); return; }
+    if (step === 2 && !form.orgType)     { setError(t("wizard.select_org_type"));  return; }
     setError("");
     setStep((s) => Math.min(s + 1, TOTAL_STEPS));
   }
@@ -182,7 +164,7 @@ export default function OnboardPage() {
       const json = (await res.json()) as { success: boolean; data?: WizardResult; error?: { message: string } };
       if (!json.success || !json.data) throw new Error(json.error?.message ?? "Failed to onboard tenant");
       setResult(json.data);
-      setStep(5); // success state
+      setStep(5);
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "Unexpected error");
     } finally {
@@ -192,45 +174,50 @@ export default function OnboardPage() {
 
   if (!ready) {
     return (
-      <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", background: DARK }}>
-        <div style={{ width: 40, height: 40, borderRadius: "50%", border: "3px solid rgba(252,221,9,0.25)", borderTopColor: GOLD, animation: "spin 0.8s linear infinite" }} />
+      <div className="min-h-screen flex items-center justify-center bg-[#0f2d1f]">
+        {/* Spinner: animation properties are dynamic — style= required */}
+        <div
+          className="w-10 h-10 rounded-full border-[3px] border-[rgba(252,221,9,0.25)] border-t-[#FCDD09]"
+          style={{ animation: "spin 0.8s linear infinite" }}
+        />
         <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
       </div>
     );
   }
 
-  const INPUT: React.CSSProperties = {
-    width: "100%", padding: "10px 12px", fontSize: 14, boxSizing: "border-box",
-    border: "1px solid #D1D5DB", borderRadius: 6, outline: "none", background: "#fff",
-  };
+  const inputClass = "w-full px-3 py-2.5 text-sm border border-gray-300 rounded-md outline-none bg-white focus:border-[#1B4332] focus:ring-1 focus:ring-[#1B4332]";
 
   /* ── Success screen ── */
   if (step === 5 && result) {
     return (
-      <div style={{ minHeight: "100vh", background: "#F3F4F6", display: "flex", alignItems: "center", justifyContent: "center", padding: "2rem" }}>
-        <div style={{ background: "#fff", borderRadius: 12, padding: "3rem", maxWidth: 480, width: "100%", textAlign: "center", boxShadow: "0 4px 24px rgba(0,0,0,0.08)" }}>
-          <div style={{ width: 72, height: 72, borderRadius: "50%", background: "#DCFCE7", display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 1.5rem", fontSize: 36 }}>
+      <div className="min-h-screen bg-gray-100 flex items-center justify-center p-8">
+        <div className="bg-white rounded-xl p-12 max-w-[480px] w-full text-center shadow-lg">
+          <div className="w-18 h-18 rounded-full bg-green-100 flex items-center justify-center mx-auto mb-6 text-4xl">
             ✓
           </div>
-          <h2 style={{ fontSize: "1.5rem", fontWeight: 800, color: DARK, margin: "0 0 0.5rem" }}>Tenant Onboarded!</h2>
-          <p style={{ color: "#6B7280", fontSize: 14, margin: "0 0 1.5rem" }}>
-            <strong style={{ color: FOREST }}>{result.name}</strong> is ready.<br />
-            Slug: <code style={{ background: "#F3F4F6", padding: "1px 6px", borderRadius: 3, fontSize: 13 }}>/{result.slug}</code>
+          <h2 className="text-2xl font-extrabold text-[#0f2d1f] m-0 mb-2">{t("wizard.success_title")}</h2>
+          <p className="text-gray-500 text-sm m-0 mb-6">
+            <strong className="text-[#1B4332]">{result.name}</strong> is ready.<br />
+            {t("wizard.slug_label")}:{" "}
+            <code className="bg-gray-100 px-1.5 py-0.5 rounded text-[13px]">/{result.slug}</code>
           </p>
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: "1.5rem" }}>
+          <div className="grid grid-cols-2 gap-2 mb-6">
             {Object.entries(result.feature_flags).map(([flag, enabled]) => (
-              <FlagBadge key={flag} name={FLAG_LABELS[flag] ?? flag} enabled={enabled} />
+              <FlagBadge key={flag} name={t(`wizard.flags.${flag}`) || flag} enabled={enabled} />
             ))}
           </div>
-          <div style={{ display: "flex", gap: 10 }}>
+          <div className="flex gap-2.5">
             <button
               onClick={() => { setStep(1); setResult(null); setForm({ name: "", industry: "", skuLimit: "500", orgType: "", locale: "en" }); }}
-              style={{ flex: 1, padding: "10px", background: "#F3F4F6", border: "none", borderRadius: 6, fontSize: 14, fontWeight: 600, cursor: "pointer", color: "#374151" }}
+              className="flex-1 py-2.5 bg-gray-100 border-none rounded-md text-sm font-semibold cursor-pointer text-gray-700 hover:bg-gray-200 transition-colors"
             >
-              Onboard Another
+              {t("wizard.onboard_another")}
             </button>
-            <Link href="/admin/dashboard" style={{ flex: 1, padding: "10px", background: FOREST, borderRadius: 6, fontSize: 14, fontWeight: 700, textDecoration: "none", color: GOLD, display: "flex", alignItems: "center", justifyContent: "center" }}>
-              Admin Dashboard →
+            <Link
+              href="/admin/dashboard"
+              className="flex-1 py-2.5 bg-[#1B4332] rounded-md text-sm font-bold no-underline text-[#FCDD09] flex items-center justify-center hover:bg-[#0f2d1f] transition-colors"
+            >
+              {t("wizard.admin_dash")}
             </Link>
           </div>
         </div>
@@ -238,61 +225,71 @@ export default function OnboardPage() {
     );
   }
 
-  const flags = form.orgType ? FLAG_DEFAULTS[form.orgType] : null;
+  const flags    = form.orgType ? FLAG_DEFAULTS[form.orgType] : null;
   const approvals = form.orgType ? APPROVAL_DEFAULTS[form.orgType] : null;
 
   return (
-    <div style={{ minHeight: "100vh", background: "#F3F4F6" }}>
+    <div className="min-h-screen bg-gray-100">
       {/* Header */}
-      <header style={{ background: DARK, padding: "0 2rem", height: 56, display: "flex", alignItems: "center", justifyContent: "space-between", boxShadow: "0 2px 12px rgba(0,0,0,0.35)" }}>
-        <Link href="/admin/dashboard" style={{ display: "flex", alignItems: "center", gap: 10, textDecoration: "none" }}>
+      <header className="bg-[#0f2d1f] px-8 h-14 flex items-center justify-between shadow-[0_2px_12px_rgba(0,0,0,0.35)]">
+        <Link href="/admin/dashboard" className="flex items-center gap-2.5 no-underline">
           <Logo />
-          <span style={{ fontWeight: 700, fontSize: 15, color: "#fff" }}>SMART <span style={{ color: GOLD }}>Inventory</span></span>
+          <span className="font-bold text-[15px] text-white">
+            SMART <span className="text-[#FCDD09]">Inventory</span>
+          </span>
         </Link>
-        <span style={{ fontSize: 12, fontWeight: 700, color: "#6ee7b7" }}>Tenant Onboarding Wizard</span>
-        <Link href="/admin/dashboard" style={{ fontSize: 12, color: "#9CA3AF", textDecoration: "none" }}>← Back to admin</Link>
+        <span className="text-xs font-bold text-emerald-300">{t("wizard.title")}</span>
+        <Link href="/admin/dashboard" className="text-xs text-gray-400 no-underline hover:text-gray-200 transition-colors">
+          {t("wizard.back_to_admin")}
+        </Link>
       </header>
-      <div style={{ height: 4, background: `linear-gradient(to right,#078930 0% 33.33%,${GOLD} 33.33% 66.66%,#DA121A 66.66% 100%)` }} />
+      {/* Ethiopian flag stripe — multi-stop gradient, style= required */}
+      <div
+        className="h-1"
+        style={{ background: "linear-gradient(to right,#078930 0% 33.33%,#FCDD09 33.33% 66.66%,#DA121A 66.66% 100%)" }}
+      />
 
-      <div style={{ maxWidth: 680, margin: "3rem auto", padding: "0 1rem" }}>
-        {/* Progress */}
+      <div className="max-w-[680px] mx-auto mt-12 px-4 pb-12">
         <StepBar current={step} />
 
-        <div style={{ background: "#fff", borderRadius: 12, boxShadow: "0 2px 16px rgba(0,0,0,0.06)", overflow: "hidden" }}>
+        <div className="bg-white rounded-xl shadow-md overflow-hidden">
           {/* Card header */}
-          <div style={{ background: FOREST, padding: "1.25rem 2rem" }}>
-            <p style={{ fontWeight: 700, fontSize: 18, color: "#fff", margin: 0 }}>
-              {step === 1 && "Organisation Info"}
-              {step === 2 && "Organisation Type"}
-              {step === 3 && "Default Language"}
-              {step === 4 && "Review & Launch"}
+          <div className="bg-[#1B4332] px-8 py-5">
+            <p className="font-bold text-lg text-white m-0">
+              {step === 1 && t("wizard.step1_title")}
+              {step === 2 && t("wizard.step2_title")}
+              {step === 3 && t("wizard.step3_title")}
+              {step === 4 && t("wizard.step4_title")}
             </p>
-            <p style={{ fontSize: 12, color: "#6ee7b7", margin: "4px 0 0" }}>Step {step} of {TOTAL_STEPS}</p>
+            <p className="text-xs text-emerald-300 mt-1 mb-0">
+              {t("wizard.step_of")} {step} {t("wizard.of")} {TOTAL_STEPS}
+            </p>
           </div>
 
-          <div style={{ padding: "2rem" }}>
+          <div className="p-8">
 
             {/* ── Step 1: Company Info ── */}
             {step === 1 && (
-              <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
+              <div className="flex flex-col gap-5">
                 <div>
-                  <label style={{ display: "block", fontWeight: 700, fontSize: 13, color: "#374151", marginBottom: 6 }}>
-                    Company Name <span style={{ color: "#DC2626" }}>*</span>
+                  <label className="block font-bold text-[13px] text-gray-700 mb-1.5">
+                    {t("wizard.org_name")} <span className="text-red-600">*</span>
                   </label>
                   <input
-                    type="text" value={form.name} placeholder="e.g. Addis Beverages PLC"
+                    type="text" value={form.name} placeholder={t("wizard.org_name_placeholder")}
                     onChange={(e) => set("name", e.target.value)}
-                    style={INPUT} autoFocus
+                    className={inputClass} autoFocus
                   />
                 </div>
                 <div>
-                  <label style={{ display: "block", fontWeight: 700, fontSize: 13, color: "#374151", marginBottom: 6 }}>
-                    Industry <span style={{ fontSize: 12, fontWeight: 400, color: "#9CA3AF" }}>(optional)</span>
+                  <label className="block font-bold text-[13px] text-gray-700 mb-1.5">
+                    {t("wizard.industry")}{" "}
+                    <span className="text-xs font-normal text-gray-400">({t("common.optional")})</span>
                   </label>
                   <input
-                    type="text" value={form.industry} placeholder="e.g. Bottled Water, Cement, FMCG"
+                    type="text" value={form.industry} placeholder={t("wizard.industry_placeholder")}
                     onChange={(e) => set("industry", e.target.value)}
-                    style={INPUT}
+                    className={inputClass}
                   />
                 </div>
               </div>
@@ -300,35 +297,35 @@ export default function OnboardPage() {
 
             {/* ── Step 2: Org Type ── */}
             {step === 2 && (
-              <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+              <div className="flex flex-col gap-3">
                 {(["PRODUCER", "RETAILER", "HYBRID"] as OrgType[]).map((type) => {
-                  const m       = ORG_META[type];
+                  const m        = ORG_META[type];
                   const selected = form.orgType === type;
                   return (
                     <button
                       key={type}
                       onClick={() => set("orgType", type)}
+                      className="flex items-start gap-4 px-5 py-4 rounded-lg cursor-pointer text-left transition-all"
+                      /* Per-org-type color — runtime data value, style= required */
                       style={{
-                        display: "flex", alignItems: "flex-start", gap: 16,
-                        padding: "1rem 1.25rem", borderRadius: 8, cursor: "pointer",
-                        border: selected ? `2px solid ${m.color}` : "2px solid #E5E7EB",
+                        border:     selected ? `2px solid ${m.color}` : "2px solid #E5E7EB",
                         background: selected ? `${m.color}10` : "#fff",
-                        textAlign: "left", transition: "all 0.15s",
                       }}
                     >
-                      <div style={{
-                        width: 20, height: 20, borderRadius: "50%", flexShrink: 0, marginTop: 2,
-                        border: selected ? `6px solid ${m.color}` : "2px solid #D1D5DB",
-                        background: selected ? "#fff" : "transparent",
-                        transition: "all 0.15s",
-                      }} />
+                      <div
+                        className="w-5 h-5 rounded-full flex-shrink-0 mt-0.5 transition-all"
+                        style={{
+                          border:     selected ? `6px solid ${m.color}` : "2px solid #D1D5DB",
+                          background: selected ? "#fff" : "transparent",
+                        }}
+                      />
                       <div>
-                        <p style={{ fontWeight: 700, fontSize: 15, color: "#111827", margin: "0 0 4px" }}>{m.label}</p>
-                        <p style={{ fontSize: 13, color: "#6B7280", margin: 0 }}>{m.desc}</p>
+                        <p className="font-bold text-[15px] text-gray-900 m-0 mb-1">{m.label}</p>
+                        <p className="text-[13px] text-gray-500 m-0">{m.desc}</p>
                         {selected && (
-                          <div style={{ marginTop: 10, display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6 }}>
+                          <div className="mt-2.5 grid grid-cols-2 gap-1.5">
                             {Object.entries(FLAG_DEFAULTS[type]).map(([flag, en]) => (
-                              <FlagBadge key={flag} name={FLAG_LABELS[flag] ?? flag} enabled={en} />
+                              <FlagBadge key={flag} name={t(`wizard.flags.${flag}`) || flag} enabled={en} />
                             ))}
                           </div>
                         )}
@@ -337,14 +334,15 @@ export default function OnboardPage() {
                   );
                 })}
                 {form.orgType === "PRODUCER" && (
-                  <div style={{ padding: "1rem", background: "#F0FDF4", borderRadius: 8, border: "1px solid #BBF7D0" }}>
-                    <label style={{ display: "block", fontWeight: 700, fontSize: 13, color: "#374151", marginBottom: 6 }}>
-                      SKU Limit <span style={{ fontSize: 12, fontWeight: 400, color: "#9CA3AF" }}>Producers only — set by plan</span>
+                  <div className="p-4 bg-green-50 rounded-lg border border-green-200">
+                    <label className="block font-bold text-[13px] text-gray-700 mb-1.5">
+                      {t("wizard.sku_limit")}{" "}
+                      <span className="text-xs font-normal text-gray-400">{t("wizard.sku_limit_hint")}</span>
                     </label>
                     <input
                       type="number" min={1} value={form.skuLimit}
                       onChange={(e) => set("skuLimit", e.target.value)}
-                      style={{ ...INPUT, maxWidth: 180 }}
+                      className={`${inputClass} max-w-[180px]`}
                     />
                   </div>
                 )}
@@ -353,39 +351,32 @@ export default function OnboardPage() {
 
             {/* ── Step 3: Locale ── */}
             {step === 3 && (
-              <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+              <div className="flex flex-col gap-3">
                 {(["en", "am", "or"] as Locale[]).map((loc) => {
-                  const m       = LOCALE_META[loc];
+                  const m        = LOCALE_META[loc];
                   const selected = form.locale === loc;
                   return (
                     <button
                       key={loc}
                       onClick={() => set("locale", loc)}
-                      style={{
-                        display: "flex", alignItems: "center", gap: 16,
-                        padding: "1rem 1.25rem", borderRadius: 8, cursor: "pointer",
-                        border: selected ? `2px solid ${FOREST}` : "2px solid #E5E7EB",
-                        background: selected ? "#F0FDF4" : "#fff",
-                        textAlign: "left", transition: "all 0.15s",
-                      }}
+                      className={`flex items-center gap-4 px-5 py-4 rounded-lg cursor-pointer text-left transition-all border-2 ${
+                        selected ? "border-[#1B4332] bg-green-50" : "border-gray-200 bg-white"
+                      }`}
                     >
-                      <div style={{
-                        width: 20, height: 20, borderRadius: "50%", flexShrink: 0,
-                        border: selected ? `6px solid ${FOREST}` : "2px solid #D1D5DB",
-                        background: selected ? "#fff" : "transparent",
-                        transition: "all 0.15s",
-                      }} />
+                      <div
+                        className="w-5 h-5 rounded-full flex-shrink-0 transition-all"
+                        style={{
+                          border:     selected ? "6px solid #1B4332" : "2px solid #D1D5DB",
+                          background: selected ? "#fff" : "transparent",
+                        }}
+                      />
                       <div>
-                        <p style={{ fontWeight: 700, fontSize: 15, color: "#111827", margin: "0 0 2px" }}>{m.label}</p>
-                        <p style={{ fontSize: 14, color: "#6B7280", margin: 0 }}>{m.native}</p>
+                        <p className="font-bold text-[15px] text-gray-900 m-0 mb-0.5">{m.label}</p>
+                        <p className="text-sm text-gray-500 m-0">{m.native}</p>
                       </div>
                       {loc === "or" && (
-                        <span style={{
-                          marginLeft: "auto", fontSize: 11, fontWeight: 700,
-                          background: "#FEF3C7", color: "#92400E",
-                          padding: "2px 8px", borderRadius: 99,
-                        }}>
-                          Needs expert review
+                        <span className="ml-auto text-[11px] font-bold bg-amber-100 text-amber-800 px-2 py-0.5 rounded-full">
+                          {t("wizard.needs_expert_review")}
                         </span>
                       )}
                     </button>
@@ -396,47 +387,45 @@ export default function OnboardPage() {
 
             {/* ── Step 4: Review ── */}
             {step === 4 && form.orgType && (
-              <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
-                {/* Summary */}
-                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+              <div className="flex flex-col gap-5">
+                <div className="grid grid-cols-2 gap-3">
                   {[
-                    { label: "Company",  value: form.name },
-                    { label: "Industry", value: form.industry || "—" },
-                    { label: "Org Type", value: ORG_META[form.orgType].label },
-                    { label: "Language", value: `${LOCALE_META[form.locale].label} (${form.locale})` },
-                    ...(form.orgType === "PRODUCER" ? [{ label: "SKU Limit", value: form.skuLimit }] : []),
+                    { label: t("wizard.company_label"),   value: form.name },
+                    { label: t("wizard.industry_label"),  value: form.industry || "—" },
+                    { label: t("wizard.org_type_label"),  value: ORG_META[form.orgType].label },
+                    { label: t("wizard.language_label"),  value: `${LOCALE_META[form.locale].label} (${form.locale})` },
+                    ...(form.orgType === "PRODUCER" ? [{ label: t("wizard.sku_limit_label_short"), value: form.skuLimit }] : []),
                   ].map(({ label, value }) => (
-                    <div key={label} style={{ padding: "10px 14px", background: "#F9FAFB", borderRadius: 6, border: "1px solid #E5E7EB" }}>
-                      <p style={{ fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.05em", color: "#9CA3AF", margin: 0 }}>{label}</p>
-                      <p style={{ fontSize: 14, fontWeight: 600, color: "#111827", margin: "4px 0 0" }}>{value}</p>
+                    <div key={label} className="px-3.5 py-2.5 bg-gray-50 rounded-md border border-gray-200">
+                      <p className="text-[11px] font-bold uppercase tracking-wider text-gray-400 m-0">{label}</p>
+                      <p className="text-sm font-semibold text-gray-900 mt-1 mb-0">{value}</p>
                     </div>
                   ))}
                 </div>
 
-                {/* Feature flags */}
                 {flags && (
                   <div>
-                    <p style={{ fontWeight: 700, fontSize: 13, color: "#374151", margin: "0 0 8px" }}>Feature Flags</p>
-                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+                    <p className="font-bold text-[13px] text-gray-700 m-0 mb-2">{t("wizard.feature_flags")}</p>
+                    <div className="grid grid-cols-2 gap-2">
                       {Object.entries(flags).map(([flag, en]) => (
-                        <FlagBadge key={flag} name={FLAG_LABELS[flag] ?? flag} enabled={en} />
+                        <FlagBadge key={flag} name={t(`wizard.flags.${flag}`) || flag} enabled={en} />
                       ))}
                     </div>
                   </div>
                 )}
 
-                {/* Approval thresholds */}
                 {approvals && (
-                  <div style={{ padding: "1rem", background: "#F9FAFB", borderRadius: 8, border: "1px solid #E5E7EB" }}>
-                    <p style={{ fontWeight: 700, fontSize: 13, color: "#374151", margin: "0 0 8px" }}>Approval Thresholds — inventory:adjust</p>
-                    <div style={{ display: "flex", gap: 16 }}>
+                  <div className="p-4 bg-gray-50 rounded-lg border border-gray-200">
+                    <p className="font-bold text-[13px] text-gray-700 m-0 mb-2">{t("wizard.approval_thresholds")}</p>
+                    <div className="flex gap-4">
                       {[
-                        { level: "Auto-approve below", value: approvals.low,    color: "#059669" },
-                        { level: "WM → RM above",       value: approvals.medium, color: "#D97706" },
-                      ].map((t) => (
-                        <div key={t.level} style={{ flex: 1, padding: "10px", background: "#fff", borderRadius: 6, border: "1px solid #E5E7EB", textAlign: "center" }}>
-                          <p style={{ fontSize: 18, fontWeight: 800, color: t.color, margin: 0 }}>{t.value.toLocaleString()}</p>
-                          <p style={{ fontSize: 11, color: "#9CA3AF", margin: "4px 0 0" }}>{t.level}</p>
+                        { level: t("wizard.auto_approve_below"), value: approvals.low,    color: "#059669" },
+                        { level: t("wizard.wm_rm_above"),        value: approvals.medium, color: "#D97706" },
+                      ].map((th) => (
+                        <div key={th.level} className="flex-1 p-2.5 bg-white rounded-md border border-gray-200 text-center">
+                          {/* Per-threshold color — runtime data value */}
+                          <p className="text-lg font-extrabold m-0" style={{ color: th.color }}>{th.value.toLocaleString()}</p>
+                          <p className="text-[11px] text-gray-400 mt-1 mb-0">{th.level}</p>
                         </div>
                       ))}
                     </div>
@@ -447,47 +436,40 @@ export default function OnboardPage() {
 
             {/* Error */}
             {error && (
-              <div style={{ marginTop: 16, background: "#FEF2F2", border: "1px solid #FECACA", borderRadius: 6, padding: "10px 14px", fontSize: 13, color: "#DC2626" }}>
+              <div className="mt-4 bg-red-50 border border-red-200 rounded-md px-3.5 py-2.5 text-[13px] text-red-600">
                 {error}
               </div>
             )}
           </div>
 
           {/* Footer */}
-          <div style={{ padding: "1.25rem 2rem", borderTop: "1px solid #F3F4F6", display: "flex", justifyContent: "space-between", gap: 12 }}>
+          <div className="px-8 py-5 border-t border-gray-100 flex justify-between gap-3">
             <button
               onClick={() => { setError(""); setStep((s) => Math.max(s - 1, 1)); }}
               disabled={step === 1}
-              style={{
-                padding: "10px 20px", background: "#F3F4F6", border: "1px solid #E5E7EB",
-                borderRadius: 6, fontSize: 14, fontWeight: 600, color: "#374151",
-                cursor: step === 1 ? "not-allowed" : "pointer", opacity: step === 1 ? 0.5 : 1,
-              }}
+              className={`px-5 py-2.5 bg-gray-100 border border-gray-200 rounded-md text-sm font-semibold text-gray-700 transition-opacity ${
+                step === 1 ? "cursor-not-allowed opacity-50" : "cursor-pointer hover:bg-gray-200"
+              }`}
             >
-              ← Back
+              {t("wizard.back")}
             </button>
 
             {step < TOTAL_STEPS ? (
               <button
                 onClick={nextStep}
-                style={{
-                  padding: "10px 28px", background: FOREST, border: "none",
-                  borderRadius: 6, fontSize: 14, fontWeight: 700, color: GOLD, cursor: "pointer",
-                }}
+                className="px-7 py-2.5 bg-[#1B4332] border-none rounded-md text-sm font-bold text-[#FCDD09] cursor-pointer hover:bg-[#0f2d1f] transition-colors"
               >
-                Next →
+                {t("wizard.next")}
               </button>
             ) : (
               <button
                 onClick={launch}
                 disabled={loading}
-                style={{
-                  padding: "10px 28px", background: loading ? "#9CA3AF" : "#059669", border: "none",
-                  borderRadius: 6, fontSize: 14, fontWeight: 700, color: "#fff",
-                  cursor: loading ? "not-allowed" : "pointer",
-                }}
+                className={`px-7 py-2.5 border-none rounded-md text-sm font-bold text-white transition-colors ${
+                  loading ? "bg-gray-400 cursor-not-allowed" : "bg-emerald-600 cursor-pointer hover:bg-emerald-700"
+                }`}
               >
-                {loading ? "Launching…" : "Launch Tenant →"}
+                {loading ? t("wizard.launching") : t("wizard.launch_btn")}
               </button>
             )}
           </div>

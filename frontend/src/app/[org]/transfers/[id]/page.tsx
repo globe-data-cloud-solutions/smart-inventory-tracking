@@ -8,6 +8,7 @@ import { DEMO_TENANTS } from "@/lib/demo-data";
 import { useInventoryStore } from "@/lib/inventory-state";
 import { useOfflineSync } from "@/hooks/useOfflineSync";
 import { api } from "@/lib/api";
+import { t } from "@/lib/i18n";
 
 /* ── Types ──────────────────────────────────────────────────────────────── */
 type TransferType = "PULL" | "PUSH" | "SISTER";
@@ -50,32 +51,28 @@ interface Action {
   color: string;
 }
 
-/* ── Constants ───────────────────────────────────────────────────────────── */
-const DARK   = "#0f2d1f";
-const GOLD   = "#FCDD09";
-const FOREST = "#1B4332";
-
-const STATUS_META: Record<TransferStatus, { bg: string; color: string; label: string }> = {
-  DRAFT:                  { bg: "#F3F4F6", color: "#6B7280", label: "Draft" },
-  PENDING_REVIEW:         { bg: "#EDE9FE", color: "#5B21B6", label: "Pending Review" },
-  PENDING_APPROVAL:       { bg: "#DBEAFE", color: "#1E40AF", label: "Pending Approval" },
-  PENDING_SOURCE_CONFIRM: { bg: "#FEF3C7", color: "#92400E", label: "Pending Source Confirm" },
-  PENDING_DEST_CONFIRM:   { bg: "#FEF3C7", color: "#92400E", label: "Pending Dest Confirm" },
-  APPROVED:               { bg: "#D1FAE5", color: "#065F46", label: "Approved" },
-  ADVISED:                { bg: "#ECFDF5", color: "#059669", label: "Advised" },
-  ISSUED:                 { bg: "#D1FAE5", color: "#065F46", label: "Issued" },
-  IN_TRANSIT:             { bg: "#FEF3C7", color: "#92400E", label: "In Transit" },
-  PARTIALLY_RECEIVED:     { bg: "#FEF9C3", color: "#713F12", label: "Partially Received" },
-  RECEIVED:               { bg: "#DCFCE7", color: "#166534", label: "Received" },
-  COMPLETED:              { bg: "#F3F4F6", color: "#374151", label: "Completed" },
-  REJECTED:               { bg: "#FEE2E2", color: "#991B1B", label: "Rejected" },
-  CANCELLED:              { bg: "#F3F4F6", color: "#9CA3AF", label: "Cancelled" },
+/* ── Status / type Tailwind maps ────────────────────────────────────────── */
+const STATUS_META: Record<TransferStatus, { bgClass: string; textClass: string; label: string }> = {
+  DRAFT:                  { bgClass: "bg-gray-100",      textClass: "text-gray-500",      label: "Draft" },
+  PENDING_REVIEW:         { bgClass: "bg-violet-100",    textClass: "text-violet-700",    label: "Pending Review" },
+  PENDING_APPROVAL:       { bgClass: "bg-blue-100",      textClass: "text-blue-800",      label: "Pending Approval" },
+  PENDING_SOURCE_CONFIRM: { bgClass: "bg-amber-100",     textClass: "text-amber-800",     label: "Pending Source Confirm" },
+  PENDING_DEST_CONFIRM:   { bgClass: "bg-amber-100",     textClass: "text-amber-800",     label: "Pending Dest Confirm" },
+  APPROVED:               { bgClass: "bg-emerald-100",   textClass: "text-emerald-800",   label: "Approved" },
+  ADVISED:                { bgClass: "bg-emerald-50",    textClass: "text-emerald-600",   label: "Advised" },
+  ISSUED:                 { bgClass: "bg-emerald-100",   textClass: "text-emerald-800",   label: "Issued" },
+  IN_TRANSIT:             { bgClass: "bg-amber-100",     textClass: "text-amber-800",     label: "In Transit" },
+  PARTIALLY_RECEIVED:     { bgClass: "bg-yellow-100",    textClass: "text-yellow-800",    label: "Partially Received" },
+  RECEIVED:               { bgClass: "bg-green-100",     textClass: "text-green-800",     label: "Received" },
+  COMPLETED:              { bgClass: "bg-gray-100",      textClass: "text-gray-700",      label: "Completed" },
+  REJECTED:               { bgClass: "bg-red-100",       textClass: "text-red-800",       label: "Rejected" },
+  CANCELLED:              { bgClass: "bg-gray-100",      textClass: "text-gray-400",      label: "Cancelled" },
 };
 
-const TYPE_BADGE: Record<TransferType, { bg: string; color: string; label: string; desc: string }> = {
-  PULL:   { bg: "#DBEAFE", color: "#1E40AF", label: "PULL", desc: "Pull Request" },
-  PUSH:   { bg: "#FEF3C7", color: "#92400E", label: "PUSH", desc: "Push Issue" },
-  SISTER: { bg: "#EDE9FE", color: "#5B21B6", label: "SISTER", desc: "Sister Transfer" },
+const TYPE_META: Record<TransferType, { bgClass: string; textClass: string; label: string; desc: string }> = {
+  PULL:   { bgClass: "bg-blue-100",    textClass: "text-blue-800",    label: "PULL",   desc: "Pull Request" },
+  PUSH:   { bgClass: "bg-amber-100",   textClass: "text-amber-800",   label: "PUSH",   desc: "Push Issue" },
+  SISTER: { bgClass: "bg-violet-100",  textClass: "text-violet-700",  label: "SISTER", desc: "Sister Transfer" },
 };
 
 const TIMELINE_STATES: Record<TransferType, TransferStatus[]> = {
@@ -103,7 +100,6 @@ function getAvailableActions(
   const complete:   Action = { next: "COMPLETED",              label: "Complete Transfer",    color: "#374151" };
   const review:     Action = { next: "PENDING_REVIEW",         label: "Submit for Review",    color: "#5B21B6" };
   const toApproval: Action = { next: "PENDING_APPROVAL",       label: "Send for Approval",    color: "#1E40AF" };
-  // SISTER-specific: destination submits the request; source confirms supply
   const submitReq:  Action = { next: "PENDING_SOURCE_CONFIRM", label: "Submit Request",       color: "#5B21B6" };
   const confirmSup: Action = { next: "PENDING_DEST_CONFIRM",   label: "Confirm Supply",       color: "#059669" };
   const confirmInt: Action = { next: "PENDING_APPROVAL",       label: "Confirm & Escalate",   color: "#1E40AF" };
@@ -157,7 +153,6 @@ function getAvailableActions(
     const isSrcWM  = !!userWH && userWH === fromWH;
 
     if (type === "PULL") {
-      // Destination WM initiates the request and is the only one who can receive/complete.
       if (isDestWM) {
         const map: Partial<Record<TransferStatus, Action[]>> = {
           DRAFT:              [review, cancel],
@@ -167,11 +162,9 @@ function getAvailableActions(
         };
         return map[status] ?? [];
       }
-      // Source WM has no direct actions — NM/LM handles issue and dispatch.
       return [];
     }
     if (type === "PUSH") {
-      // Only the destination WM can receive/complete. Source WM is view-only.
       if (isDestWM) {
         const map: Partial<Record<TransferStatus, Action[]>> = {
           IN_TRANSIT:         [partRecv, markRecv],
@@ -180,7 +173,7 @@ function getAvailableActions(
         };
         return map[status] ?? [];
       }
-      void isSrcWM; // source WM is view-only for PUSH
+      void isSrcWM;
       return [];
     }
     if (type === "SISTER") {
@@ -295,57 +288,49 @@ function TransferTimeline({ status, transferType }: { status: TransferStatus; tr
   const timelineStates = TIMELINE_STATES[transferType];
   const terminal  = status === "REJECTED" || status === "CANCELLED";
   const activeIdx = timelineStates.indexOf(status);
+  const termMeta  = STATUS_META[status];
 
   return (
-    <div style={{ padding: "1.25rem 1.5rem", background: "#F9FAFB", borderBottom: "1px solid #E5E7EB" }}>
-      <p style={{ fontSize: 12, fontWeight: 700, color: "#9CA3AF", textTransform: "uppercase", letterSpacing: "0.05em", margin: "0 0 1rem" }}>
-        Transfer Progress
+    <div className="px-6 py-5 bg-gray-50 border-b border-gray-200">
+      <p className="text-[11px] font-bold text-gray-400 uppercase tracking-wider mb-4">
+        {t("transfers.progress")}
       </p>
-      <div style={{ display: "flex", alignItems: "center", overflowX: "auto", paddingBottom: 4 }}>
+      <div className="flex items-center overflow-x-auto pb-1">
         {timelineStates.map((s, idx) => {
           const done    = terminal ? false : activeIdx > idx;
           const current = !terminal && activeIdx === idx;
 
           return (
-            <div key={s} style={{ display: "flex", alignItems: "center", flex: idx < timelineStates.length - 1 ? 1 : "none" }}>
-              {/* Node */}
-              <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 5 }}>
-                <div style={{
-                  width: 28, height: 28, borderRadius: "50%",
-                  display: "flex", alignItems: "center", justifyContent: "center",
-                  fontWeight: 800, fontSize: 11,
-                  background: done ? FOREST : current ? GOLD : "#E5E7EB",
-                  color: done ? "#fff" : current ? DARK : "#9CA3AF",
-                  border: current ? `2px solid ${FOREST}` : "2px solid transparent",
-                  flexShrink: 0,
-                }}>
+            <div key={s} className={`flex items-center ${idx < timelineStates.length - 1 ? "flex-1" : ""}`}>
+              <div className="flex flex-col items-center gap-1.5">
+                <div className={`w-7 h-7 rounded-full flex items-center justify-center font-extrabold text-[11px] flex-shrink-0 ring-2 ${
+                  done    ? "bg-[#1B4332] text-white ring-transparent" :
+                  current ? "bg-[#FCDD09] text-[#0f2d1f] ring-[#1B4332]" :
+                            "bg-gray-200 text-gray-400 ring-transparent"
+                }`}>
                   {done ? "✓" : idx + 1}
                 </div>
-                <span style={{
-                  fontSize: 9, fontWeight: current ? 700 : 500, whiteSpace: "nowrap",
-                  color: done ? FOREST : current ? DARK : "#9CA3AF",
-                  maxWidth: 72, textAlign: "center", lineHeight: 1.2,
-                }}>
+                <span className={`text-[9px] whitespace-nowrap max-w-[72px] text-center leading-tight ${
+                  done    ? "text-[#1B4332] font-medium" :
+                  current ? "text-[#0f2d1f] font-bold" :
+                            "text-gray-400 font-medium"
+                }`}>
                   {STATUS_META[s]?.label ?? s}
                 </span>
               </div>
-              {/* Connector */}
               {idx < timelineStates.length - 1 && (
-                <div style={{ flex: 1, height: 2, background: done ? FOREST : "#E5E7EB", margin: "0 4px", marginBottom: 20, minWidth: 8 }} />
+                <div className={`flex-1 h-0.5 mx-1 mb-5 min-w-2 ${done ? "bg-[#1B4332]" : "bg-gray-200"}`} />
               )}
             </div>
           );
         })}
 
-        {/* Terminal state badge */}
         {terminal && (
-          <div style={{ marginLeft: 12, display: "flex", flexDirection: "column", alignItems: "center", gap: 5 }}>
-            <div style={{
-              width: 28, height: 28, borderRadius: "50%",
-              background: STATUS_META[status].bg, color: STATUS_META[status].color,
-              display: "flex", alignItems: "center", justifyContent: "center", fontSize: 13,
-            }}>✕</div>
-            <span style={{ fontSize: 9, fontWeight: 700, color: STATUS_META[status].color }}>{STATUS_META[status].label}</span>
+          <div className="ml-3 flex flex-col items-center gap-1.5">
+            <div className={`w-7 h-7 rounded-full flex items-center justify-center text-sm ${termMeta.bgClass} ${termMeta.textClass}`}>
+              ✕
+            </div>
+            <span className={`text-[9px] font-bold ${termMeta.textClass}`}>{termMeta.label}</span>
           </div>
         )}
       </div>
@@ -366,9 +351,9 @@ export default function TransferDetailPage() {
   const [loading, setLoading] = useState(false);
   const [confirm, setConfirm] = useState<{ next: TransferStatus; label: string } | null>(null);
 
-  if (org === SA_ORG_SLUG) return <p style={{ padding: "2rem", color: "#6B7280" }}>Select a tenant first.</p>;
-  const tenant = DEMO_TENANTS.find((t) => t.slug === org);
-  if (!tenant || !user) return <p style={{ padding: "2rem", color: "#6B7280" }}>Tenant not found.</p>;
+  if (org === SA_ORG_SLUG) return <p className="p-8 text-gray-500">{t("transfers.select_tenant")}</p>;
+  const tenant = DEMO_TENANTS.find((ten) => ten.slug === org);
+  if (!tenant || !user) return <p className="p-8 text-gray-500">{t("transfers.not_found")}</p>;
 
   const { data: transfer, isLoading, error } = useQuery<TransferDetail>({
     queryKey: ["transfer", id],
@@ -380,7 +365,7 @@ export default function TransferDetailPage() {
   async function doTransition(next: TransferStatus) {
     if (!isOnline) {
       setConfirm(null);
-      setToast("Transfer status changes require an internet connection.");
+      setToast(t("transfers.offline_action_blocked"));
       setTimeout(() => setToast(""), 5000);
       return;
     }
@@ -389,8 +374,6 @@ export default function TransferDetailPage() {
     try {
       await api.patch(`/api/v1/transfers/${id}`, { next_status: next });
 
-      // Lazy-add to Zustand store so balance getters react to status changes.
-      // Covers pre-seeded records and transfers created by other users/sessions.
       if (transfer && !getTransferEntry(id)) {
         addTransfer({
           id:                transfer.id,
@@ -408,10 +391,10 @@ export default function TransferDetailPage() {
       updateTransferStatus(id, next);
       await qc.invalidateQueries({ queryKey: ["transfer", id] });
       await qc.invalidateQueries({ queryKey: ["transfers", org] });
-      setToast(`Transfer updated to ${next}`);
+      setToast(`${t("transfers.updated_to")} ${next}`);
       setTimeout(() => setToast(""), 3000);
     } catch (err: unknown) {
-      setToast(err instanceof Error ? err.message : "Transition failed.");
+      setToast(err instanceof Error ? err.message : t("transfers.transition_failed"));
       setTimeout(() => setToast(""), 4000);
     } finally {
       setLoading(false);
@@ -419,38 +402,46 @@ export default function TransferDetailPage() {
   }
 
   if (isLoading) {
-    return <div style={{ padding: "3rem", textAlign: "center", color: "#9CA3AF" }}>Loading transfer…</div>;
+    return <div className="p-12 text-center text-gray-400">{t("transfers.loading")}</div>;
   }
 
   if (error || !transfer) {
     return (
-      <div style={{ padding: "2rem" }}>
-        <p style={{ color: "#DC2626", fontSize: 14 }}>Transfer not found.</p>
-        <button onClick={() => router.back()} style={{ marginTop: 12, fontSize: 13, color: FOREST, background: "none", border: "none", cursor: "pointer", textDecoration: "underline" }}>
-          ← Back to Transfers
+      <div className="p-8">
+        <p className="text-red-600 text-sm">{t("transfers.transfer_not_found")}</p>
+        <button
+          onClick={() => router.back()}
+          className="mt-3 text-sm text-[#1B4332] bg-transparent border-none cursor-pointer underline"
+        >
+          {t("transfers.back")}
         </button>
       </div>
     );
   }
 
   const s        = STATUS_META[transfer.status];
-  const tb       = TYPE_BADGE[transfer.transfer_type] ?? { bg: "#F3F4F6", color: "#6B7280", label: transfer.transfer_type, desc: transfer.transfer_type };
+  const tb       = TYPE_META[transfer.transfer_type] ?? { bgClass: "bg-gray-100", textClass: "text-gray-600", label: transfer.transfer_type, desc: transfer.transfer_type };
   const roleActs = getAvailableActions(
     user.role, transfer.transfer_type, transfer.status,
     user.warehouseId, transfer.from_warehouse_id, transfer.to_warehouse_id
   );
   const terminal = ["COMPLETED", "REJECTED", "CANCELLED"].includes(transfer.status);
 
+  const detailFields = [
+    { label: t("transfers.detail.type"),     value: `${tb.label} — ${tb.desc}` },
+    { label: t("transfers.detail.status"),   value: s.label },
+    { label: t("transfers.detail.from"),     value: transfer.from_warehouse_name },
+    { label: t("transfers.detail.to"),       value: transfer.to_warehouse_name },
+    { label: t("transfers.detail.product"),  value: transfer.product_name },
+    { label: t("transfers.detail.quantity"), value: transfer.quantity.toLocaleString() },
+    { label: t("transfers.detail.created"),  value: new Date(transfer.created_at).toLocaleString() },
+  ];
+
   return (
-    <div style={{ padding: "2rem" }}>
+    <div className="p-8">
       {/* Toast */}
       {toast && (
-        <div style={{
-          position: "fixed", bottom: 24, right: 24, zIndex: 200,
-          background: DARK, color: GOLD, fontWeight: 700, fontSize: 13,
-          padding: "10px 20px", borderRadius: 6, boxShadow: "0 4px 16px rgba(0,0,0,0.2)",
-          maxWidth: 360,
-        }}>
+        <div className="fixed bottom-6 right-6 z-50 bg-[#0f2d1f] text-[#FCDD09] font-bold text-sm px-5 py-2.5 rounded-md shadow-lg max-w-sm">
           {toast}
         </div>
       )}
@@ -458,45 +449,56 @@ export default function TransferDetailPage() {
       {/* Confirm modal */}
       {confirm && (
         <>
-          <div onClick={() => setConfirm(null)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.4)", zIndex: 200 }} />
-          <div style={{
-            position: "fixed", top: "50%", left: "50%", transform: "translate(-50%,-50%)",
-            background: "#fff", borderRadius: 10, padding: "2rem", zIndex: 201,
-            width: 340, boxShadow: "0 8px 32px rgba(0,0,0,0.2)",
-          }}>
-            <p style={{ fontWeight: 700, fontSize: 16, color: "#111827", margin: "0 0 0.5rem" }}>Confirm Action</p>
-            <p style={{ fontSize: 14, color: "#6B7280", margin: "0 0 1.5rem" }}>
-              {confirm.label} transfer <strong>{transfer.ref}</strong>? Status will change to <strong>{confirm.next.replace(/_/g, " ")}</strong>.
+          <div onClick={() => setConfirm(null)} className="fixed inset-0 bg-black/40 z-50" />
+          <div className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 bg-white rounded-xl p-8 z-50 w-[340px] shadow-2xl">
+            <p className="font-bold text-base text-gray-900 mb-2">{t("transfers.confirm_action")}</p>
+            <p className="text-sm text-gray-500 mb-6">
+              {confirm.label} {t("transfers.confirm_transfer")} <strong>{transfer.ref}</strong>?{" "}
+              {t("transfers.status_will_change")} <strong>{confirm.next.replace(/_/g, " ")}</strong>.
             </p>
-            <div style={{ display: "flex", gap: 10 }}>
-              <button onClick={() => setConfirm(null)} style={{ flex: 1, padding: "9px", background: "#F3F4F6", border: "none", borderRadius: 6, fontSize: 13, fontWeight: 600, cursor: "pointer" }}>Cancel</button>
-              <button onClick={() => doTransition(confirm.next)} style={{ flex: 2, padding: "9px", background: FOREST, color: GOLD, border: "none", borderRadius: 6, fontSize: 13, fontWeight: 700, cursor: "pointer" }}>Confirm</button>
+            <div className="flex gap-2.5">
+              <button
+                onClick={() => setConfirm(null)}
+                className="flex-1 py-2 bg-gray-100 border-none rounded-md text-sm font-semibold cursor-pointer hover:bg-gray-200 transition-colors"
+              >
+                {t("common.cancel")}
+              </button>
+              <button
+                onClick={() => doTransition(confirm.next)}
+                className="flex-[2] py-2 bg-[#1B4332] text-[#FCDD09] border-none rounded-md text-sm font-bold cursor-pointer hover:bg-[#0f2d1f] transition-colors"
+              >
+                {t("common.confirm")}
+              </button>
             </div>
           </div>
         </>
       )}
 
       {/* Back link */}
-      <button onClick={() => router.back()} style={{ fontSize: 13, color: "#6B7280", background: "none", border: "none", cursor: "pointer", marginBottom: "1rem", padding: 0 }}>
-        ← Back to Transfers
+      <button
+        onClick={() => router.back()}
+        className="text-sm text-gray-500 bg-transparent border-none cursor-pointer mb-4 p-0 hover:text-gray-700 transition-colors"
+      >
+        {t("transfers.back")}
       </button>
 
       {/* Transfer card */}
-      <div style={{ background: "#fff", border: "1px solid #E5E7EB", borderRadius: 8, overflow: "hidden", maxWidth: 800 }}>
-        <div style={{ height: 4, background: tenant.color }} />
+      <div className="bg-white border border-gray-200 rounded-lg overflow-hidden max-w-[800px]">
+        {/* Tenant colour bar — runtime value, legitimately dynamic */}
+        <div className="h-1" style={{ background: tenant.color }} />
 
         {/* Header */}
-        <div style={{ padding: "1.25rem 1.5rem", background: DARK, display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 12 }}>
+        <div className="px-6 py-5 bg-[#0f2d1f] flex items-center justify-between flex-wrap gap-3">
           <div>
-            <p style={{ fontFamily: "monospace", fontSize: 18, fontWeight: 700, color: GOLD, margin: 0 }}>{transfer.ref}</p>
-            <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 4 }}>
-              <span style={{ fontSize: 11, fontWeight: 700, padding: "2px 8px", borderRadius: 3, background: tb.bg, color: tb.color }}>
+            <p className="font-mono text-lg font-bold text-[#FCDD09] m-0">{transfer.ref}</p>
+            <div className="flex items-center gap-2 mt-1">
+              <span className={`text-[11px] font-bold px-2 py-0.5 rounded ${tb.bgClass} ${tb.textClass}`}>
                 {tb.label}
               </span>
-              <span style={{ fontSize: 13, color: "#6ee7b7" }}>{tb.desc} · {tenant.name}</span>
+              <span className="text-sm text-emerald-300">{tb.desc} · {tenant.name}</span>
             </div>
           </div>
-          <span style={{ fontSize: 13, fontWeight: 700, padding: "5px 14px", borderRadius: 99, background: s.bg, color: s.color }}>
+          <span className={`text-sm font-bold px-3.5 py-1.5 rounded-full ${s.bgClass} ${s.textClass}`}>
             {s.label}
           </span>
         </div>
@@ -505,46 +507,38 @@ export default function TransferDetailPage() {
         <TransferTimeline status={transfer.status} transferType={transfer.transfer_type} />
 
         {/* Details */}
-        <div style={{ padding: "1.5rem" }}>
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: "1.5rem" }}>
-            {[
-              { label: "Transfer Type", value: `${tb.label} — ${tb.desc}` },
-              { label: "Status",        value: s.label },
-              { label: "From",          value: transfer.from_warehouse_name },
-              { label: "To",            value: transfer.to_warehouse_name   },
-              { label: "Product",       value: transfer.product_name        },
-              { label: "Quantity",      value: transfer.quantity.toLocaleString() },
-              { label: "Created",       value: new Date(transfer.created_at).toLocaleString() },
-            ].map(({ label, value }) => (
-              <div key={label} style={{ padding: "10px 14px", background: "#F9FAFB", borderRadius: 6, border: "1px solid #E5E7EB" }}>
-                <p style={{ fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.05em", color: "#9CA3AF", margin: 0 }}>{label}</p>
-                <p style={{ fontSize: 14, fontWeight: 600, color: "#111827", margin: "4px 0 0" }}>{value}</p>
+        <div className="p-6">
+          <div className="grid grid-cols-2 gap-3 mb-6">
+            {detailFields.map(({ label, value }) => (
+              <div key={label} className="px-3.5 py-2.5 bg-gray-50 rounded-md border border-gray-200">
+                <p className="text-[11px] font-bold uppercase tracking-wider text-gray-400 m-0">{label}</p>
+                <p className="text-sm font-semibold text-gray-900 mt-1 mb-0">{value}</p>
               </div>
             ))}
           </div>
 
           {transfer.notes && (
-            <div style={{ padding: "10px 14px", background: "#FFFBEB", border: "1px solid #FDE68A", borderRadius: 6, marginBottom: "1.5rem", fontSize: 13, color: "#92400E" }}>
-              <strong>Notes:</strong> {transfer.notes}
+            <div className="px-3.5 py-2.5 bg-amber-50 border border-amber-200 rounded-md mb-6 text-sm text-amber-800">
+              <strong>{t("transfers.detail.notes")}:</strong> {transfer.notes}
             </div>
           )}
 
           {/* Offline warning */}
           {!isOnline && roleActs.length > 0 && (
-            <div style={{ padding: "10px 14px", background: "#FEF2F2", border: "1px solid #FECACA", borderRadius: 6, marginBottom: "1rem", fontSize: 13, color: "#DC2626" }}>
-              <strong>Offline</strong> — Transfer status changes require an internet connection. Actions are disabled until you reconnect.
+            <div className="px-3.5 py-2.5 bg-red-50 border border-red-200 rounded-md mb-4 text-sm text-red-600">
+              <strong>{t("common.offline")}</strong> — {t("transfers.offline_actions_disabled")}
             </div>
           )}
 
-          {/* Action buttons */}
+          {/* Action buttons — a.color is runtime hex, style= is legitimately required */}
           {roleActs.length > 0 && (
             <div>
-              <p style={{ fontSize: 12, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.05em", color: "#9CA3AF", margin: "0 0 10px" }}>
-                Available Actions
+              <p className="text-[11px] font-bold uppercase tracking-wider text-gray-400 mb-2.5">
+                {t("transfers.available_actions")}
               </p>
-              <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+              <div className="flex gap-2.5 flex-wrap">
                 {loading ? (
-                  <span style={{ fontSize: 13, color: "#9CA3AF" }}>Updating…</span>
+                  <span className="text-sm text-gray-400">{t("transfers.updating")}</span>
                 ) : (
                   roleActs.map((a) => (
                     <button
@@ -552,13 +546,13 @@ export default function TransferDetailPage() {
                       disabled={!isOnline}
                       onClick={() => setConfirm({ next: a.next, label: a.label })}
                       style={{
-                        padding: "10px 24px", borderRadius: 6, fontWeight: 700, fontSize: 13,
-                        border: `1.5px solid ${a.color}40`,
-                        background: isOnline ? `${a.color}10` : "#F3F4F6",
-                        color: isOnline ? a.color : "#9CA3AF",
-                        cursor: isOnline ? "pointer" : "not-allowed",
-                        opacity: isOnline ? 1 : 0.5,
+                        border:     `1.5px solid ${a.color}40`,
+                        background: isOnline ? `${a.color}10` : undefined,
+                        color:      isOnline ? a.color : undefined,
                       }}
+                      className={`px-6 py-2.5 rounded-md font-bold text-sm transition-opacity ${
+                        isOnline ? "cursor-pointer opacity-100" : "cursor-not-allowed opacity-50 bg-gray-100 text-gray-400"
+                      }`}
                     >
                       {a.label}
                     </button>
@@ -569,8 +563,8 @@ export default function TransferDetailPage() {
           )}
 
           {roleActs.length === 0 && !terminal && (
-            <p style={{ fontSize: 13, color: "#9CA3AF", fontStyle: "italic" }}>
-              No actions available for your role ({user.role}) at this stage.
+            <p className="text-sm text-gray-400 italic">
+              {t("transfers.no_actions_for_role")} ({user.role})
             </p>
           )}
         </div>

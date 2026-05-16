@@ -1,4 +1,5 @@
-import { BrowserMultiFormatReader, NotFoundException } from "@zxing/browser";
+import { BrowserMultiFormatReader } from "@zxing/browser";
+import { NotFoundException } from "@zxing/library";
 
 // Supported: Code128, Code39, EAN-13, EAN-8, QR Code, DataMatrix
 // Target: < 1 second P90 scan recognition on mid-range Android
@@ -29,7 +30,10 @@ export class BarcodeScanner {
   }
 
   stop(): void {
+    // Stop all media tracks — this releases the camera hardware.
+    // BrowserMultiFormatReader no longer exposes reset(); stopping the
+    // underlying MediaStream is sufficient to halt scanning.
     this.stream?.getTracks().forEach((t) => t.stop());
-    this.reader.reset();
+    this.stream = null;
   }
 }

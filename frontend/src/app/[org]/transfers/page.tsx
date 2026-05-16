@@ -11,6 +11,7 @@ import { useInventoryStore } from "@/lib/inventory-state";
 import { useAuditStore } from "@/lib/audit-log-state";
 import { useOfflineSync } from "@/hooks/useOfflineSync";
 import { api } from "@/lib/api";
+import { t } from "@/lib/i18n";
 
 type TransferType = "PULL" | "PUSH" | "SISTER";
 
@@ -109,27 +110,27 @@ interface Action {
   requiresQty?: boolean; // true for PARTIALLY_RECEIVED — opens qty input
 }
 
-const STATUS_STYLE: Record<TransferStatus, { bg: string; color: string }> = {
-  DRAFT:                  { bg: "#F3F4F6", color: "#6B7280" },
-  PENDING_REVIEW:         { bg: "#EDE9FE", color: "#5B21B6" },
-  PENDING_APPROVAL:       { bg: "#DBEAFE", color: "#1E40AF" },
-  PENDING_SOURCE_CONFIRM: { bg: "#FEF3C7", color: "#92400E" },
-  PENDING_DEST_CONFIRM:   { bg: "#FEF3C7", color: "#92400E" },
-  APPROVED:               { bg: "#D1FAE5", color: "#065F46" },
-  ADVISED:                { bg: "#ECFDF5", color: "#059669" },
-  ISSUED:                 { bg: "#D1FAE5", color: "#065F46" },
-  IN_TRANSIT:             { bg: "#FEF3C7", color: "#92400E" },
-  PARTIALLY_RECEIVED:     { bg: "#FEF9C3", color: "#713F12" },
-  RECEIVED:               { bg: "#DCFCE7", color: "#166534" },
-  COMPLETED:              { bg: "#F3F4F6", color: "#374151" },
-  REJECTED:               { bg: "#FEE2E2", color: "#991B1B" },
-  CANCELLED:              { bg: "#F3F4F6", color: "#9CA3AF" },
+const STATUS_CLASS: Record<TransferStatus, string> = {
+  DRAFT:                  "bg-gray-100  text-gray-500",
+  PENDING_REVIEW:         "bg-violet-100 text-violet-800",
+  PENDING_APPROVAL:       "bg-blue-100   text-blue-800",
+  PENDING_SOURCE_CONFIRM: "bg-amber-100  text-amber-800",
+  PENDING_DEST_CONFIRM:   "bg-amber-100  text-amber-800",
+  APPROVED:               "bg-emerald-100 text-emerald-900",
+  ADVISED:                "bg-teal-50    text-emerald-600",
+  ISSUED:                 "bg-emerald-100 text-emerald-900",
+  IN_TRANSIT:             "bg-amber-100  text-amber-800",
+  PARTIALLY_RECEIVED:     "bg-yellow-50  text-yellow-900",
+  RECEIVED:               "bg-green-100  text-green-800",
+  COMPLETED:              "bg-gray-100   text-gray-700",
+  REJECTED:               "bg-red-100    text-red-900",
+  CANCELLED:              "bg-gray-100   text-gray-400",
 };
 
-const TYPE_BADGE: Record<TransferType, { bg: string; color: string; label: string }> = {
-  PULL:   { bg: "#DBEAFE", color: "#1E40AF", label: "PULL" },
-  PUSH:   { bg: "#FEF3C7", color: "#92400E", label: "PUSH" },
-  SISTER: { bg: "#EDE9FE", color: "#5B21B6", label: "SISTER" },
+const TYPE_CLASS: Record<TransferType, { cls: string; label: string }> = {
+  PULL:   { cls: "bg-blue-100   text-blue-800",   label: "PULL"   },
+  PUSH:   { cls: "bg-amber-100  text-amber-800",  label: "PUSH"   },
+  SISTER: { cls: "bg-violet-100 text-violet-800", label: "SISTER" },
 };
 
 /**
@@ -373,9 +374,9 @@ export default function TransfersPage() {
   const [partialQtyErr, setPartialQtyErr] = useState("");
   const [toast, setToast] = useState("");
 
-  if (org === SA_ORG_SLUG) return <p style={{ padding: "2rem", color: "#6B7280" }}>Select a tenant to view transfers.</p>;
-  const tenant = DEMO_TENANTS.find((t) => t.slug === org);
-  if (!tenant || !user) return <p style={{ padding: "2rem", color: "#6B7280" }}>Tenant not found.</p>;
+  if (org === SA_ORG_SLUG) return <p className="p-8 text-gray-500">{t("dashboard.tenants_heading")}</p>;
+  const tenant = DEMO_TENANTS.find((ten) => ten.slug === org);
+  if (!tenant || !user) return <p className="p-8 text-gray-500">{t("common.no_data")}</p>;
 
   const { data: allTransfers = [] } = useQuery<ApiTransfer[]>({
     queryKey: ["transfers", org],
@@ -419,6 +420,7 @@ export default function TransfersPage() {
   const archivedCount = scopedTransfers.filter((t) => TERMINAL.includes(t.status)).length;
 
   async function doTransition(id: string, next: TransferStatus, partialQty?: number) {
+    if (!user) return; // guard: component always returns early if user is null, but closure must re-check
     if (!isOnline) {
       setConfirmModal(null);
       setToast("Transfer status changes require an internet connection. Please reconnect and try again.");
@@ -489,55 +491,44 @@ export default function TransfersPage() {
   };
 
   return (
-    <div style={{ padding: "2rem" }}>
-      {/* Toast */}
+    <div className="p-8">
       {toast && (
-        <div style={{
-          position: "fixed", bottom: 24, right: 24, zIndex: 200,
-          background: "#1B4332", color: "#FCDD09", fontWeight: 700, fontSize: 13,
-          padding: "10px 20px", borderRadius: 6, boxShadow: "0 4px 16px rgba(0,0,0,0.2)",
-        }}>
+        <div className="fixed bottom-6 right-6 z-[200] bg-eth-forest text-eth-gold font-bold text-sm px-5 py-2.5 rounded-md shadow-xl">
           {toast}
         </div>
       )}
 
-      {/* Confirm modal */}
       {confirmModal && (
         <>
-          <div onClick={() => setConfirmModal(null)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.4)", zIndex: 200 }} />
-          <div style={{
-            position: "fixed", top: "50%", left: "50%", transform: "translate(-50%,-50%)",
-            background: "#fff", borderRadius: 10, padding: "2rem", zIndex: 201,
-            width: confirmModal.requiresQty ? 400 : 340, boxShadow: "0 8px 32px rgba(0,0,0,0.2)",
-          }}>
-            <p style={{ fontWeight: 700, fontSize: 16, color: "#111827", margin: "0 0 0.5rem" }}>
-              {confirmModal.requiresQty ? "Partial Receive" : "Confirm Action"}
+          <div onClick={() => setConfirmModal(null)} className="fixed inset-0 bg-black/40 z-[200]" />
+          <div className={`fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 bg-white rounded-lg p-8 z-[201] shadow-2xl ${confirmModal.requiresQty ? "w-[400px]" : "w-[340px]"}`}>
+            <p className="font-bold text-base text-gray-900 mb-2">
+              {confirmModal.requiresQty ? t("transfers.partial_receive") : t("transfers.confirm_action")}
             </p>
-            <p style={{ fontSize: 14, color: "#6B7280", margin: "0 0 1rem" }}>
-              {confirmModal.label} — status will change to <strong>{confirmModal.next.replace(/_/g, " ")}</strong>.
+            <p className="text-sm text-gray-500 mb-4">
+              {confirmModal.label} — {t("transfers.status_will_change")} <strong>{confirmModal.next.replace(/_/g, " ")}</strong>.
             </p>
 
-            {/* Bug 2: qty input for PARTIALLY_RECEIVED */}
             {confirmModal.requiresQty && (() => {
               const storeEntry   = getTransferEntry(confirmModal.id);
               const alreadyRecvd = storeEntry?.receivedQuantity ?? 0;
               const total        = confirmModal.transfer.quantity;
               const remaining    = total - alreadyRecvd;
               return (
-                <div style={{ background: "#F9FAFB", borderRadius: 6, padding: "12px 14px", marginBottom: 16 }}>
-                  <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, color: "#6B7280", marginBottom: 6 }}>
-                    <span>Total quantity</span><strong style={{ color: "#111827" }}>{total.toLocaleString()}</strong>
+                <div className="bg-gray-50 rounded-md px-3.5 py-3 mb-4">
+                  <div className="flex justify-between text-xs text-gray-500 mb-1.5">
+                    <span>{t("transfers.total_qty")}</span><strong className="text-gray-900">{total.toLocaleString()}</strong>
                   </div>
                   {alreadyRecvd > 0 && (
-                    <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, color: "#6B7280", marginBottom: 6 }}>
-                      <span>Previously received</span><strong style={{ color: "#059669" }}>{alreadyRecvd.toLocaleString()}</strong>
+                    <div className="flex justify-between text-xs text-gray-500 mb-1.5">
+                      <span>{t("transfers.prev_received")}</span><strong className="text-emerald-600">{alreadyRecvd.toLocaleString()}</strong>
                     </div>
                   )}
-                  <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, color: "#6B7280", marginBottom: 10 }}>
-                    <span>Still in transit</span><strong style={{ color: "#92400E" }}>{remaining.toLocaleString()}</strong>
+                  <div className="flex justify-between text-xs text-gray-500 mb-2.5">
+                    <span>{t("transfers.still_in_transit")}</span><strong className="text-amber-800">{remaining.toLocaleString()}</strong>
                   </div>
-                  <label style={{ display: "block", fontSize: 11, fontWeight: 700, color: "#374151", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 4 }}>
-                    Quantity received this batch
+                  <label className="block text-[11px] font-bold uppercase tracking-wide text-gray-700 mb-1">
+                    {t("transfers.qty_this_batch")}
                   </label>
                   <input
                     type="number" min="1" max={remaining}
@@ -545,16 +536,16 @@ export default function TransfersPage() {
                     onChange={(e) => { setPartialQtyInput(e.target.value); setPartialQtyErr(""); }}
                     placeholder={`1 – ${remaining.toLocaleString()}`}
                     autoFocus
-                    style={{ width: "100%", padding: "8px 10px", fontSize: 13, border: `1px solid ${partialQtyErr ? "#DC2626" : "#D1D5DB"}`, borderRadius: 4, outline: "none", boxSizing: "border-box" as const }}
+                    className={`w-full px-2.5 py-2 text-sm rounded border outline-none ${partialQtyErr ? "border-red-600" : "border-gray-300"}`}
                   />
-                  {partialQtyErr && <p style={{ fontSize: 11, color: "#DC2626", margin: "4px 0 0" }}>{partialQtyErr}</p>}
+                  {partialQtyErr && <p className="text-[11px] text-red-600 mt-1">{partialQtyErr}</p>}
                 </div>
               );
             })()}
 
-            <div style={{ display: "flex", gap: 10 }}>
-              <button onClick={() => { setConfirmModal(null); setPartialQtyErr(""); }} style={{ flex: 1, padding: "9px", background: "#F3F4F6", border: "none", borderRadius: 6, fontSize: 13, fontWeight: 600, cursor: "pointer" }}>
-                Cancel
+            <div className="flex gap-2.5">
+              <button onClick={() => { setConfirmModal(null); setPartialQtyErr(""); }} className="flex-1 py-2.5 bg-gray-100 border-0 rounded-md text-sm font-semibold cursor-pointer">
+                {t("common.cancel")}
               </button>
               <button
                 onClick={() => {
@@ -562,33 +553,29 @@ export default function TransfersPage() {
                     const storeEntry = getTransferEntry(confirmModal.id);
                     const remaining  = confirmModal.transfer.quantity - (storeEntry?.receivedQuantity ?? 0);
                     const qty        = parseFloat(partialQtyInput);
-                    if (!qty || qty <= 0 || qty > remaining) {
-                      setPartialQtyErr(`Enter a quantity between 1 and ${remaining.toLocaleString()}`);
-                      return;
-                    }
-                    doTransition(confirmModal.id, confirmModal.next, qty);
+                    if (!qty || qty <= 0 || qty > remaining) { setPartialQtyErr(`Enter a quantity between 1 and ${remaining.toLocaleString()}`); return; }
+                    void doTransition(confirmModal.id, confirmModal.next, qty);
                   } else {
-                    doTransition(confirmModal.id, confirmModal.next);
+                    void doTransition(confirmModal.id, confirmModal.next);
                   }
                 }}
-                style={{ flex: 2, padding: "9px", background: "#1B4332", color: "#FCDD09", border: "none", borderRadius: 6, fontSize: 13, fontWeight: 700, cursor: "pointer" }}
+                className="flex-[2] py-2.5 bg-eth-forest text-eth-gold border-0 rounded-md text-sm font-bold cursor-pointer"
               >
-                Confirm
+                {t("common.confirm")}
               </button>
             </div>
           </div>
         </>
       )}
 
-      {/* Header */}
-      <div style={{ marginBottom: "1.5rem", display: "flex", alignItems: "flex-start", justifyContent: "space-between", flexWrap: "wrap", gap: 12 }}>
+      <div className="mb-6 flex items-start justify-between flex-wrap gap-3">
         <div>
-          <h2 style={{ fontSize: "1.5rem", fontWeight: 700, color: "#0f2d1f", margin: 0 }}>Transfers</h2>
-          <p style={{ fontSize: 13, color: "#6B7280", margin: "4px 0 0" }}>
-            {tenant.name} · {visibleTransfers.length} active transfer{visibleTransfers.length !== 1 ? "s" : ""}{user.warehouseId && !["TA","SA","RM","LM"].includes(user.role) ? ` · ${user.warehouseName ?? "your warehouse"}` : ""}
+          <h2 className="text-2xl font-bold text-[#0f2d1f] m-0">{t("nav.inventory")} — {t("transfers.transfers_heading")}</h2>
+          <p className="text-sm text-gray-500 mt-1">
+            {tenant.name} · {visibleTransfers.length} {t("transfers.active_label")}{user.warehouseId && !["TA","SA","RM","LM"].includes(user.role) ? ` · ${user.warehouseName ?? t("transfers.your_warehouse")}` : ""}
             {archivedCount > 0 && (
-              <span style={{ marginLeft: 10, fontSize: 11, color: "#9CA3AF" }}>
-                {archivedCount} archived → <a href={`/${org}/audit-log`} style={{ color: "#1B4332", fontWeight: 600, textDecoration: "none" }}>Audit Log</a>
+              <span className="ml-2.5 text-[11px] text-gray-400">
+                {archivedCount} {t("transfers.archived")} → <a href={`/${org}/audit-log`} className="text-eth-forest font-semibold no-underline">{t("audit.title")}</a>
               </span>
             )}
           </p>
@@ -596,98 +583,83 @@ export default function TransfersPage() {
         <NewTransferPanel products={mergedProducts} warehouses={tenant.warehouses} orgSlug={org} />
       </div>
 
-      {/* Summary chips */}
-      <div style={{ display: "flex", gap: 10, marginBottom: "1.5rem", flexWrap: "wrap" }}>
+      <div className="flex gap-2.5 mb-6 flex-wrap">
         {[
-          { label: "Draft",      count: stats.draft,     bg: "#F3F4F6", color: "#374151" },
-          { label: "Pending",    count: stats.pending,   bg: "#EDE9FE", color: "#5B21B6" },
-          { label: "Approved",   count: stats.approved,  bg: "#D1FAE5", color: "#065F46" },
-          { label: "In Transit", count: stats.inTransit, bg: "#FEF3C7", color: "#92400E" },
+          { label: t("status.DRAFT"),      count: stats.draft,     cls: "bg-gray-100   text-gray-700"    },
+          { label: t("transfers.pending"),  count: stats.pending,   cls: "bg-violet-100 text-violet-800"  },
+          { label: t("status.APPROVED"),    count: stats.approved,  cls: "bg-emerald-100 text-emerald-900" },
+          { label: t("status.IN_TRANSIT"),  count: stats.inTransit, cls: "bg-amber-100  text-amber-800"   },
         ].map((s) => (
-          <div key={s.label} style={{ background: s.bg, color: s.color, fontSize: 12, fontWeight: 700, padding: "4px 12px", borderRadius: 20 }}>
+          <div key={s.label} className={`text-xs font-bold px-3 py-1 rounded-full ${s.cls}`}>
             {s.label}: {s.count}
           </div>
         ))}
       </div>
 
-      {/* Table */}
-      <div style={{ background: "#fff", border: "1px solid #E5E7EB", borderRadius: 4, overflow: "hidden" }}>
-        <div style={{ height: 3, background: tenant.color }} />
-        <div style={{ overflowX: "auto" }}>
-          <table style={{ width: "100%", borderCollapse: "collapse" }}>
+      <div className="bg-white border border-gray-200 rounded overflow-hidden">
+        <div className="h-[3px]" style={{ background: tenant.color }} />
+        <div className="overflow-x-auto">
+          <table className="w-full border-collapse">
             <thead>
-              <tr style={{ background: "#F9FAFB", borderBottom: "2px solid #E5E7EB" }}>
+              <tr className="bg-gray-50 border-b-2 border-gray-200">
                 {COLS.map((h) => (
-                  <th key={h} style={{ padding: "10px 12px", textAlign: "left", fontSize: 11, fontWeight: 700, color: "#6B7280", textTransform: "uppercase", letterSpacing: "0.05em", whiteSpace: "nowrap" }}>{h}</th>
+                  <th key={h} className="px-3 py-2.5 text-left text-[11px] font-bold text-gray-500 uppercase tracking-wide whitespace-nowrap">{h}</th>
                 ))}
               </tr>
             </thead>
             <tbody>
-              {visibleTransfers.map((t, idx) => {
-                const s    = STATUS_STYLE[t.status] ?? { bg: "#F3F4F6", color: "#6B7280" };
-                const tb   = TYPE_BADGE[t.transfer_type] ?? { bg: "#F3F4F6", color: "#6B7280", label: t.transfer_type };
-                const acts = getAvailableActions(user.role, t.transfer_type, t.status, user.warehouseId, t.from_warehouse_id, t.to_warehouse_id);
-                const busy = transitioning === t.id;
+              {visibleTransfers.map((txn, idx) => {
+                const sCls = STATUS_CLASS[txn.status] ?? "bg-gray-100 text-gray-500";
+                const tb   = TYPE_CLASS[txn.transfer_type] ?? { cls: "bg-gray-100 text-gray-500", label: txn.transfer_type };
+                const acts = getAvailableActions(user.role, txn.transfer_type, txn.status, user.warehouseId, txn.from_warehouse_id, txn.to_warehouse_id);
+                const busy = transitioning === txn.id;
                 return (
-                  <tr key={t.id} style={{ background: idx % 2 === 0 ? "#fff" : "#FAFAFA", borderBottom: "1px solid #F3F4F6" }}>
-                    <td style={{ padding: "10px 12px" }}>
-                      <Link href={`/${org}/transfers/${t.id}`} style={{ fontFamily: "monospace", fontSize: 12, fontWeight: 600, color: tenant.color, textDecoration: "none" }}>
-                        {t.ref} →
+                  <tr key={txn.id} className={`border-b border-gray-100 ${idx % 2 === 0 ? "bg-white" : "bg-gray-50"}`}>
+                    <td className="px-3 py-2.5">
+                      <Link href={`/${org}/transfers/${txn.id}`} className="font-mono text-xs font-semibold no-underline" style={{ color: tenant.color }}>
+                        {txn.ref} →
                       </Link>
                     </td>
-                    <td style={{ padding: "10px 12px" }}>
-                      <span style={{ fontSize: 10, fontWeight: 700, padding: "2px 7px", borderRadius: 3, background: tb.bg, color: tb.color, whiteSpace: "nowrap" }}>
-                        {tb.label}
-                      </span>
+                    <td className="px-3 py-2.5">
+                      <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded whitespace-nowrap ${tb.cls}`}>{tb.label}</span>
                     </td>
-                    <td style={{ padding: "10px 12px", color: "#374151", fontSize: 13 }}>{t.from_warehouse_name}</td>
-                    <td style={{ padding: "10px 12px", color: "#374151", fontSize: 13 }}>{t.to_warehouse_name}</td>
-                    <td style={{ padding: "10px 12px", color: "#6B7280", fontSize: 13 }}>{t.product_name}</td>
-                    <td style={{ padding: "10px 12px", fontWeight: 600, color: "#111827", fontSize: 13 }}>
-                      {t.quantity.toLocaleString()}
-                      {t.status === "PARTIALLY_RECEIVED" && (() => {
-                        const e = getTransferEntry(t.id);
-                        const rcvd = e?.receivedQuantity ?? 0;
-                        return rcvd > 0 ? (
-                          <span style={{ display: "block", fontSize: 10, fontWeight: 500, color: "#92400E" }}>
-                            {rcvd.toLocaleString()} rcvd · {(t.quantity - rcvd).toLocaleString()} rem
-                          </span>
-                        ) : null;
+                    <td className="px-3 py-2.5 text-gray-700 text-sm">{txn.from_warehouse_name}</td>
+                    <td className="px-3 py-2.5 text-gray-700 text-sm">{txn.to_warehouse_name}</td>
+                    <td className="px-3 py-2.5 text-gray-500 text-sm">{txn.product_name}</td>
+                    <td className="px-3 py-2.5 font-semibold text-gray-900 text-sm">
+                      {txn.quantity.toLocaleString()}
+                      {txn.status === "PARTIALLY_RECEIVED" && (() => {
+                        const e = getTransferEntry(txn.id); const rcvd = e?.receivedQuantity ?? 0;
+                        return rcvd > 0 ? <span className="block text-[10px] font-medium text-amber-800">{rcvd.toLocaleString()} rcvd · {(txn.quantity - rcvd).toLocaleString()} rem</span> : null;
                       })()}
                     </td>
-                    <td style={{ padding: "10px 12px" }}>
-                      <span style={{ fontSize: 11, fontWeight: 700, padding: "3px 8px", borderRadius: 3, background: s.bg, color: s.color, whiteSpace: "nowrap" }}>
-                        {t.status.replace(/_/g, " ")}
+                    <td className="px-3 py-2.5">
+                      <span className={`text-[11px] font-bold px-2 py-0.5 rounded whitespace-nowrap ${sCls}`}>
+                        {txn.status.replace(/_/g, " ")}
                       </span>
                     </td>
-                    <td style={{ padding: "10px 12px", color: "#9CA3AF", fontSize: 12, whiteSpace: "nowrap" }}>
-                      {new Date(t.created_at).toLocaleDateString()}
+                    <td className="px-3 py-2.5 text-gray-400 text-xs whitespace-nowrap">
+                      {new Date(txn.created_at).toLocaleDateString()}
                     </td>
-                    <td style={{ padding: "10px 12px" }}>
+                    <td className="px-3 py-2.5">
                       {busy ? (
-                        <span style={{ fontSize: 12, color: "#9CA3AF" }}>Updating…</span>
+                        <span className="text-xs text-gray-400">{t("common.loading")}</span>
                       ) : acts.length > 0 ? (
-                        <div style={{ display: "flex", gap: 6, flexWrap: "nowrap", alignItems: "center" }}>
-                          {!isOnline && (
-                            <span title="Offline — actions unavailable" style={{ fontSize: 11, color: "#9CA3AF" }}>offline</span>
-                          )}
+                        <div className="flex gap-1.5 flex-nowrap items-center">
+                          {!isOnline && <span title={t("errors.OFFLINE")} className="text-[11px] text-gray-400">offline</span>}
                           {acts.map((a) => (
                             <button
                               key={a.next}
                               disabled={!isOnline}
-                              onClick={() => {
-                                setPartialQtyInput("");
-                                setPartialQtyErr("");
-                                setConfirmModal({ id: t.id, next: a.next, label: a.label, transfer: t, requiresQty: a.requiresQty });
-                              }}
+                              onClick={() => { setPartialQtyInput(""); setPartialQtyErr(""); setConfirmModal({ id: txn.id, next: a.next, label: a.label, transfer: txn, requiresQty: a.requiresQty }); }}
+                              className="text-[11px] font-bold px-2.5 py-1 rounded whitespace-nowrap border"
+                              /* action button colors are per-action (a.color) — dynamic, must stay as style */
                               style={{
-                                fontSize: 11, fontWeight: 700, padding: "4px 10px", borderRadius: 4,
-                                border: `1px solid ${a.color}20`,
-                                cursor: isOnline ? "pointer" : "not-allowed",
-                                whiteSpace: "nowrap",
-                                background: isOnline ? `${a.color}12` : "#F3F4F6",
-                                color: isOnline ? a.color : "#9CA3AF",
-                                opacity: isOnline ? 1 : 0.5,
+                                borderColor: `${a.color}30`,
+                                cursor:      isOnline ? "pointer" : "not-allowed",
+                                background:  isOnline ? `${a.color}15` : "#F3F4F6",
+                                color:       isOnline ? a.color : "#9CA3AF",
+                                opacity:     isOnline ? 1 : 0.5,
                               }}
                             >
                               {a.label}
@@ -695,7 +667,7 @@ export default function TransfersPage() {
                           ))}
                         </div>
                       ) : (
-                        <span style={{ fontSize: 11, color: "#D1D5DB" }}>—</span>
+                        <span className="text-[11px] text-gray-200">—</span>
                       )}
                     </td>
                   </tr>
@@ -705,7 +677,7 @@ export default function TransfersPage() {
           </table>
         </div>
         {visibleTransfers.length === 0 && (
-          <p style={{ padding: "2rem", textAlign: "center", color: "#9CA3AF", fontSize: 13 }}>No transfers yet. Click "+ New Transfer" to create one.</p>
+          <p className="p-8 text-center text-gray-400 text-sm">{t("common.no_data")}</p>
         )}
       </div>
     </div>

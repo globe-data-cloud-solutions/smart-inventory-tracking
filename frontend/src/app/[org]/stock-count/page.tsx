@@ -5,12 +5,8 @@ import { useParams } from "next/navigation";
 import { SA_ORG_SLUG } from "@/lib/demo-auth";
 import { DEMO_TENANTS, getTotalStock, type DemoProduct } from "@/lib/demo-data";
 import { useScanner } from "@/hooks/useScanner";
+import { t } from "@/lib/i18n";
 
-const DARK   = "#0f2d1f";
-const FOREST = "#1B4332";
-const GOLD   = "#FCDD09";
-
-/* ── Inline scanner widget for stock count ─────────────────────────────── */
 function ScannerToggle({ products, warehouseId, open, hint, onToggle, onHint, onCount }: {
   products: DemoProduct[];
   warehouseId: string;
@@ -38,27 +34,29 @@ function ScannerToggle({ products, warehouseId, open, hint, onToggle, onHint, on
   }
 
   return (
-    <div style={{ position: "relative" }}>
+    <div className="relative">
       <button
         onClick={toggle}
-        style={{
-          padding: "8px 14px", borderRadius: 4, cursor: "pointer", fontSize: 12, fontWeight: 700,
-          border: `2px solid ${open ? "#059669" : "#D1D5DB"}`,
-          background: open ? "#F0FDF4" : "#F9FAFB",
-          color: open ? "#059669" : "#374151",
-          display: "flex", alignItems: "center", gap: 6,
-        }}
+        className={`px-3.5 py-2 rounded cursor-pointer text-xs font-bold flex items-center gap-1.5 border-2 transition-all ${
+          open
+            ? "border-emerald-600 bg-green-50 text-emerald-600"
+            : "border-gray-300 bg-gray-50 text-gray-700"
+        }`}
       >
-        <span style={{ fontSize: 14 }}>{open ? "■" : "⬛"}</span>
-        {open ? "Stop Scanner" : "Scan to Count"}
+        <span>{open ? "■" : "⬛"}</span>
+        {open ? t("scanner.stop") : t("count.scan_to_count")}
       </button>
       {open && (
-        <div style={{ position: "absolute", top: "100%", right: 0, zIndex: 50, marginTop: 6, width: 280, borderRadius: 8, overflow: "hidden", boxShadow: "0 8px 24px rgba(0,0,0,0.18)", border: "2px solid #059669" }}>
+        <div className="absolute top-full right-0 z-50 mt-1.5 w-[280px] rounded-lg overflow-hidden shadow-xl border-2 border-emerald-600">
           {/* eslint-disable-next-line jsx-a11y/media-has-caption */}
-          <video ref={videoRef} style={{ width: "100%", height: 160, objectFit: "cover", display: "block", background: "#000" }} playsInline muted />
-          {!isActive && <div style={{ position: "absolute", top: 0, left: 0, right: 0, height: 160, display: "flex", alignItems: "center", justifyContent: "center", background: "rgba(0,0,0,0.5)", color: "#fff", fontSize: 13 }}>Starting camera…</div>}
+          <video ref={videoRef} className="w-full h-[160px] object-cover block bg-black" playsInline muted />
+          {!isActive && (
+            <div className="absolute top-0 left-0 right-0 h-[160px] flex items-center justify-center bg-black/50 text-white text-sm">
+              {t("scanner.idle")}…
+            </div>
+          )}
           {(hint || scanErr) && (
-            <div style={{ padding: "8px 10px", background: "#fff", fontSize: 12, color: hint.startsWith("✓") ? "#059669" : "#DC2626", fontWeight: 600 }}>
+            <div className={`px-2.5 py-2 bg-white text-xs font-semibold ${hint.startsWith("✓") ? "text-emerald-600" : "text-red-600"}`}>
               {hint || scanErr}
             </div>
           )}
@@ -68,21 +66,16 @@ function ScannerToggle({ products, warehouseId, open, hint, onToggle, onHint, on
   );
 }
 
-interface CountEntry {
-  productId: string;
-  warehouseId: string;
-  counted: string;
-}
+interface CountEntry { productId: string; warehouseId: string; counted: string; }
 
-function getVarianceColor(variance: number): string {
-  if (variance > 0)  return "#059669";
-  if (variance < 0)  return "#DC2626";
-  return "#6B7280";
+function varianceCls(v: number): string {
+  if (v > 0) return "text-emerald-600";
+  if (v < 0) return "text-red-600";
+  return "text-gray-500";
 }
 
 export default function StockCountPage() {
   const { org } = useParams() as { org: string };
-
   const [sessionActive, setSessionActive] = useState(false);
   const [submitted, setSubmitted]         = useState(false);
   const [counts, setCounts]               = useState<Record<string, string>>({});
@@ -90,49 +83,37 @@ export default function StockCountPage() {
   const [scannerOpen, setScannerOpen]     = useState(false);
   const [scanHint, setScanHint]           = useState("");
 
-  if (org === SA_ORG_SLUG) {
-    return <p style={{ padding: "2rem", color: "#6B7280" }}>Select a tenant to run a stock count.</p>;
-  }
-
-  const tenant = DEMO_TENANTS.find((t) => t.slug === org);
-  if (!tenant) return <p style={{ padding: "2rem", color: "#6B7280" }}>Tenant not found.</p>;
+  if (org === SA_ORG_SLUG) return <p className="p-8 text-gray-500">{t("common.no_data")}</p>;
+  const tenant = DEMO_TENANTS.find((ten) => ten.slug === org);
+  if (!tenant) return <p className="p-8 text-gray-500">{t("common.no_data")}</p>;
 
   const warehouse = tenant.warehouses.find((w) => w.id === selectedWH);
-
   const products: DemoProduct[] = selectedWH
     ? tenant.products.filter((p) => (p.stock[selectedWH] ?? 0) > 0)
     : tenant.products;
 
-  function getExpected(p: DemoProduct): number {
-    return selectedWH ? (p.stock[selectedWH] ?? 0) : getTotalStock(p);
-  }
-
+  function getExpected(p: DemoProduct): number { return selectedWH ? (p.stock[selectedWH] ?? 0) : getTotalStock(p); }
   function countKey(pid: string) { return `${pid}::${selectedWH}`; }
 
   const totalVariance = products.reduce((acc, p) => {
     const raw = counts[countKey(p.id)] ?? "";
-    if (!raw) return acc;
-    return acc + (parseFloat(raw) - getExpected(p));
+    return raw ? acc + (parseFloat(raw) - getExpected(p)) : acc;
   }, 0);
-
   const filledCount = products.filter((p) => counts[countKey(p.id)] !== undefined && counts[countKey(p.id)] !== "").length;
 
   if (submitted) {
     return (
-      <div style={{ padding: "2rem", maxWidth: 560, margin: "4rem auto", textAlign: "center" }}>
-        <div style={{ width: 64, height: 64, borderRadius: "50%", background: "#DCFCE7", display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 1.5rem", fontSize: 28 }}>
-          ✓
-        </div>
-        <h2 style={{ fontSize: "1.5rem", fontWeight: 800, color: DARK, margin: "0 0 0.5rem" }}>Count Submitted</h2>
-        <p style={{ color: "#6B7280", fontSize: 14, margin: "0 0 1.5rem" }}>
-          {filledCount} product count{filledCount !== 1 ? "s" : ""} submitted for approval.<br />
-          Variances will be reviewed by your Regional Manager.
+      <div className="p-8 max-w-[560px] mx-auto mt-16 text-center">
+        <div className="w-16 h-16 rounded-full bg-green-100 flex items-center justify-center mx-auto mb-6 text-3xl">✓</div>
+        <h2 className="text-2xl font-extrabold text-[#0f2d1f] mb-2">{t("count.success")}</h2>
+        <p className="text-gray-500 text-sm mb-6">
+          {filledCount} {t("count.products_counted")}.
         </p>
         <button
           onClick={() => { setSubmitted(false); setSessionActive(false); setCounts({}); setSelectedWH(""); }}
-          style={{ padding: "10px 24px", background: FOREST, color: GOLD, fontWeight: 700, fontSize: 14, borderRadius: 6, border: "none", cursor: "pointer" }}
+          className="px-6 py-2.5 bg-eth-forest text-eth-gold font-bold text-sm rounded-md border-0 cursor-pointer"
         >
-          Start New Count
+          {t("count.start_session")}
         </button>
       </div>
     );
@@ -140,38 +121,27 @@ export default function StockCountPage() {
 
   if (!sessionActive) {
     return (
-      <div style={{ padding: "2rem" }}>
-        <h2 style={{ fontSize: "1.5rem", fontWeight: 700, color: DARK, margin: "0 0 0.5rem" }}>Stock Count</h2>
-        <p style={{ fontSize: 13, color: "#6B7280", margin: "0 0 2rem" }}>{tenant.name} · Record physical stock counts</p>
-
-        <div style={{ background: "#fff", border: "1px solid #E5E7EB", borderRadius: 8, padding: "2rem", maxWidth: 480 }}>
-          <p style={{ fontWeight: 700, fontSize: 15, color: "#1F2937", margin: "0 0 1rem" }}>Start a Count Session</p>
-
-          <label style={{ display: "block", fontSize: 12, fontWeight: 700, color: "#374151", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 6 }}>
-            Warehouse
-          </label>
+      <div className="p-8">
+        <h2 className="text-2xl font-bold text-[#0f2d1f] mb-2">{t("count.title")}</h2>
+        <p className="text-sm text-gray-500 mb-8">{tenant.name} · {t("count.subtitle")}</p>
+        <div className="bg-white border border-gray-200 rounded-lg p-8 max-w-[480px]">
+          <p className="font-bold text-[15px] text-gray-800 mb-4">{t("count.start_session")}</p>
+          <label className="block text-xs font-bold text-gray-700 uppercase tracking-wide mb-1.5">{t("table.location")}</label>
           <select
-            value={selectedWH}
-            onChange={(e) => setSelectedWH(e.target.value)}
-            style={{ width: "100%", padding: "9px 12px", fontSize: 13, border: "1px solid #D1D5DB", borderRadius: 6, outline: "none", marginBottom: 20, cursor: "pointer" }}
+            value={selectedWH} onChange={(e) => setSelectedWH(e.target.value)}
+            className="w-full px-3 py-2 text-sm border border-gray-300 rounded-md outline-none mb-5 cursor-pointer"
           >
-            <option value="">All locations (full count)</option>
-            {tenant.warehouses.map((w) => (
-              <option key={w.id} value={w.id}>{w.name}</option>
-            ))}
+            <option value="">{t("count.all_locations")}</option>
+            {tenant.warehouses.map((w) => <option key={w.id} value={w.id}>{w.name}</option>)}
           </select>
-
-          <div style={{ padding: "12px 14px", background: "#F0FDF4", borderRadius: 6, border: "1px solid #BBF7D0", marginBottom: 20, fontSize: 13, color: "#166534" }}>
-            {selectedWH
-              ? `${products.length} products to count in ${warehouse?.name}`
-              : `${tenant.products.length} products across ${tenant.warehouses.length} locations`}
+          <div className="px-3.5 py-3 bg-green-50 rounded-md border border-emerald-200 mb-5 text-sm text-green-800">
+            {selectedWH ? `${products.length} ${t("count.products_to_count")} ${warehouse?.name}` : `${tenant.products.length} ${t("count.products_across")} ${tenant.warehouses.length} ${t("warehouses.locations")}`}
           </div>
-
           <button
             onClick={() => setSessionActive(true)}
-            style={{ width: "100%", padding: "12px", background: FOREST, color: GOLD, fontWeight: 700, fontSize: 14, borderRadius: 6, border: "none", cursor: "pointer" }}
+            className="w-full py-3 bg-eth-forest text-eth-gold font-bold text-sm rounded-md border-0 cursor-pointer"
           >
-            Start Count Session
+            {t("count.start_session")}
           </button>
         </div>
       </div>
@@ -179,76 +149,59 @@ export default function StockCountPage() {
   }
 
   return (
-    <div style={{ padding: "2rem" }}>
-      {/* Header */}
-      <div style={{ marginBottom: "1.5rem", display: "flex", alignItems: "flex-start", justifyContent: "space-between", flexWrap: "wrap", gap: 12 }}>
+    <div className="p-8">
+      <div className="mb-6 flex items-start justify-between flex-wrap gap-3">
         <div>
-          <h2 style={{ fontSize: "1.5rem", fontWeight: 700, color: DARK, margin: 0 }}>Stock Count — Active Session</h2>
-          <p style={{ fontSize: 13, color: "#6B7280", margin: "4px 0 0" }}>
-            {tenant.name} · {warehouse?.name ?? "All locations"} · {filledCount}/{products.length} products counted
+          <h2 className="text-2xl font-bold text-[#0f2d1f] m-0">{t("count.session_active")}</h2>
+          <p className="text-sm text-gray-500 mt-1">
+            {tenant.name} · {warehouse?.name ?? t("inventory.all_locations")} · {filledCount}/{products.length} {t("count.products_counted")}
           </p>
         </div>
-        <div style={{ display: "flex", gap: 10 }}>
-          <ScannerToggle
-            products={products}
-            warehouseId={selectedWH}
-            open={scannerOpen}
-            hint={scanHint}
-            onToggle={() => setScannerOpen((o) => !o)}
-            onHint={setScanHint}
-            onCount={(pid, wid, qty) => {
-              const k = `${pid}::${wid}`;
-              setCounts((c) => ({ ...c, [k]: String(qty) }));
-            }}
+        <div className="flex gap-2.5">
+          <ScannerToggle products={products} warehouseId={selectedWH} open={scannerOpen} hint={scanHint}
+            onToggle={() => setScannerOpen((o) => !o)} onHint={setScanHint}
+            onCount={(pid, wid, qty) => { const k = `${pid}::${wid}`; setCounts((c) => ({ ...c, [k]: String(qty) })); }}
           />
-          <button
-            onClick={() => { setSessionActive(false); setCounts({}); setScannerOpen(false); setScanHint(""); }}
-            style={{ padding: "8px 16px", background: "#F3F4F6", border: "1px solid #E5E7EB", borderRadius: 4, fontSize: 13, fontWeight: 600, cursor: "pointer", color: "#374151" }}
-          >
-            Cancel
+          <button onClick={() => { setSessionActive(false); setCounts({}); setScannerOpen(false); setScanHint(""); }}
+            className="px-4 py-2 bg-gray-100 border border-gray-200 rounded text-sm font-semibold cursor-pointer text-gray-700">
+            {t("common.cancel")}
           </button>
-          <button
-            onClick={() => setSubmitted(true)}
-            disabled={filledCount === 0}
-            style={{
-              padding: "8px 16px", background: filledCount > 0 ? "#059669" : "#E5E7EB",
-              color: filledCount > 0 ? "#fff" : "#9CA3AF",
-              fontWeight: 700, fontSize: 13, borderRadius: 4, border: "none",
-              cursor: filledCount > 0 ? "pointer" : "not-allowed",
-            }}
-          >
-            Submit for Approval ({filledCount})
+          <button onClick={() => setSubmitted(true)} disabled={filledCount === 0}
+            className={`px-4 py-2 font-bold text-sm rounded border-0 ${filledCount > 0 ? "bg-emerald-600 text-white cursor-pointer" : "bg-gray-200 text-gray-400 cursor-not-allowed"}`}>
+            {t("count.submit_session")} ({filledCount})
           </button>
         </div>
       </div>
 
-      {/* Variance summary */}
       {filledCount > 0 && (
-        <div style={{ display: "flex", gap: 12, marginBottom: "1.5rem" }}>
+        <div className="flex gap-3 mb-6">
           {[
-            { label: "Counted", value: filledCount, color: "#1B4332", bg: "#F0FDF4" },
-            { label: "Variance", value: totalVariance > 0 ? `+${totalVariance.toFixed(0)}` : totalVariance.toFixed(0), color: getVarianceColor(totalVariance), bg: totalVariance !== 0 ? "#FEF2F2" : "#F9FAFB" },
+            { label: t("count.counted"), value: filledCount, cls: "text-eth-forest", bg: "bg-green-50" },
+            { label: t("count.variance"), value: totalVariance > 0 ? `+${totalVariance.toFixed(0)}` : totalVariance.toFixed(0), cls: varianceCls(totalVariance), bg: totalVariance !== 0 ? "bg-red-50" : "bg-gray-50" },
           ].map((s) => (
-            <div key={s.label} style={{ padding: "10px 20px", background: s.bg, borderRadius: 6, border: "1px solid #E5E7EB", textAlign: "center" }}>
-              <p style={{ fontSize: "1.25rem", fontWeight: 800, color: s.color, margin: 0 }}>{s.value}</p>
-              <p style={{ fontSize: 12, color: "#6B7280", margin: "2px 0 0" }}>{s.label}</p>
+            <div key={s.label} className={`px-5 py-2.5 ${s.bg} rounded-md border border-gray-200 text-center`}>
+              <p className={`text-xl font-extrabold m-0 ${s.cls}`}>{s.value}</p>
+              <p className="text-xs text-gray-500 mt-0.5">{s.label}</p>
             </div>
           ))}
         </div>
       )}
 
-      {/* Count table */}
-      <div style={{ background: "#fff", border: "1px solid #E5E7EB", borderRadius: 4, overflow: "hidden" }}>
-        <div style={{ height: 3, background: tenant.color }} />
-        <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+      <div className="bg-white border border-gray-200 rounded overflow-hidden">
+        <div className="h-[3px]" style={{ background: tenant.color }} />
+        <table className="w-full border-collapse text-sm">
           <thead>
-            <tr style={{ background: "#F9FAFB", borderBottom: "2px solid #E5E7EB" }}>
-              {["SKU", "Product", "Expected", "Counted", "Variance"].map((h) => (
-                <th key={h} style={{
-                  padding: "10px 16px", textAlign: h === "Expected" || h === "Variance" || h === "Counted" ? "right" : "left",
-                  fontSize: 11, fontWeight: 700, color: "#6B7280",
-                  textTransform: "uppercase", letterSpacing: "0.05em",
-                }}>{h}</th>
+            <tr className="bg-gray-50 border-b-2 border-gray-200">
+              {[
+                { key: "table.sku",       align: "text-left"  },
+                { key: "table.product",   align: "text-left"  },
+                { key: "count.expected",  align: "text-right" },
+                { key: "count.counted",   align: "text-right" },
+                { key: "count.variance",  align: "text-right" },
+              ].map((h) => (
+                <th key={h.key} className={`px-4 py-2.5 ${h.align} text-[11px] font-bold text-gray-500 uppercase tracking-wide`}>
+                  {t(h.key)}
+                </th>
               ))}
             </tr>
           </thead>
@@ -259,27 +212,20 @@ export default function StockCountPage() {
               const raw      = counts[key] ?? "";
               const counted  = raw !== "" ? parseFloat(raw) : null;
               const variance = counted !== null ? counted - expected : null;
-
               return (
-                <tr key={p.id} style={{ background: idx % 2 === 0 ? "#fff" : "#FAFAFA", borderBottom: "1px solid #F3F4F6" }}>
-                  <td style={{ padding: "10px 16px", fontFamily: "monospace", fontSize: 11, color: "#9CA3AF" }}>{p.sku}</td>
-                  <td style={{ padding: "10px 16px", fontWeight: 600, color: "#1F2937" }}>{p.name}</td>
-                  <td style={{ padding: "10px 16px", textAlign: "right", color: "#6B7280" }}>{expected.toLocaleString()}</td>
-                  <td style={{ padding: "8px 16px", textAlign: "right" }}>
+                <tr key={p.id} className={`border-b border-gray-100 ${idx % 2 === 0 ? "bg-white" : "bg-gray-50"}`}>
+                  <td className="px-4 py-2.5 font-mono text-[11px] text-gray-400">{p.sku}</td>
+                  <td className="px-4 py-2.5 font-semibold text-gray-800">{p.name}</td>
+                  <td className="px-4 py-2.5 text-right text-gray-500">{expected.toLocaleString()}</td>
+                  <td className="px-3 py-2 text-right">
                     <input
-                      type="number" min={0} step={1}
-                      value={raw}
+                      type="number" min={0} step={1} value={raw}
                       onChange={(e) => setCounts((c) => ({ ...c, [key]: e.target.value }))}
                       placeholder="—"
-                      style={{
-                        width: 90, padding: "5px 8px", textAlign: "right",
-                        border: raw ? "1px solid #059669" : "1px solid #D1D5DB",
-                        borderRadius: 4, fontSize: 13, outline: "none",
-                        background: raw ? "#F0FDF4" : "#fff",
-                      }}
+                      className={`w-[90px] px-2 py-1.5 text-right rounded border text-sm outline-none ${raw ? "border-emerald-600 bg-green-50" : "border-gray-300 bg-white"}`}
                     />
                   </td>
-                  <td style={{ padding: "10px 16px", textAlign: "right", fontWeight: variance !== null ? 700 : 400, color: variance !== null ? getVarianceColor(variance) : "#E5E7EB" }}>
+                  <td className={`px-4 py-2.5 text-right font-bold ${variance !== null ? varianceCls(variance) : "text-gray-200"}`}>
                     {variance !== null ? (variance > 0 ? `+${variance.toFixed(0)}` : variance.toFixed(0)) : "—"}
                   </td>
                 </tr>

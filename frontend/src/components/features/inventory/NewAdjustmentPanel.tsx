@@ -4,187 +4,151 @@ import { useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { nanoid } from "nanoid";
 import { api } from "@/lib/api";
+import { t } from "@/lib/i18n";
 import type { DemoProduct, DemoWarehouse } from "@/lib/demo-data";
 
-interface Props {
-  products: DemoProduct[];
-  warehouses: DemoWarehouse[];
-  orgSlug: string;
-}
+interface Props { products: DemoProduct[]; warehouses: DemoWarehouse[]; orgSlug: string; }
 
 const REASONS = [
-  { value: "DAMAGE",            label: "Damaged / Write-off" },
-  { value: "COUNT_VARIANCE",    label: "Stock Count Variance" },
-  { value: "EXPIRY",            label: "Expired Stock Disposal" },
-  { value: "SUPPLIER_RETURN",   label: "Return to Supplier" },
-  { value: "SYSTEM_CORRECTION", label: "System Correction" },
-  { value: "OTHER",             label: "Other" },
+  { value: "DAMAGE",            label: "adjustment.reasons.DAMAGE"            },
+  { value: "COUNT_VARIANCE",    label: "adjustment.reasons.COUNT_VARIANCE"    },
+  { value: "EXPIRY",            label: "adjustment.reasons.EXPIRY"            },
+  { value: "SUPPLIER_RETURN",   label: "adjustment.reasons.SUPPLIER_RETURN"   },
+  { value: "SYSTEM_CORRECTION", label: "adjustment.reasons.SYSTEM_CORRECTION" },
+  { value: "OTHER",             label: "adjustment.reasons.OTHER"             },
 ];
 
-// PRODUCER thresholds (mirrors _demo-state.ts)
 const THRESHOLDS = { low: 100, medium: 500 };
 
-function getApprovalInfo(qty: number): { role: string; label: string; color: string } {
+function getApprovalInfo(qty: number): { role: string; label: string; cls: string } {
   const abs = Math.abs(qty);
-  if (abs < THRESHOLDS.low)    return { role: "NONE", label: "Auto-approved (below 100 units)", color: "#059669" };
-  if (abs < THRESHOLDS.medium) return { role: "RM",   label: "Requires Regional Manager approval (100–500 units)", color: "#D97706" };
-  return                              { role: "NM",   label: "Requires National Manager approval (≥500 units)", color: "#DC2626" };
+  if (abs < THRESHOLDS.low)    return { role: "NONE", label: t("adjustment.auto_applied"),  cls: "bg-green-50 text-emerald-700" };
+  if (abs < THRESHOLDS.medium) return { role: "RM",   label: t("adjustment.pending_rm"),    cls: "bg-amber-50 text-amber-800" };
+  return                              { role: "NM",   label: t("adjustment.pending_nm"),    cls: "bg-red-50 text-red-700" };
 }
-
-const PANEL_W = 440;
-const INPUT: React.CSSProperties = { width: "100%", padding: "8px 10px", fontSize: 13, border: "1px solid #D1D5DB", borderRadius: 4, outline: "none", background: "#fff", boxSizing: "border-box" };
 
 function Field({ label, hint, children }: { label: string; hint?: string; children: React.ReactNode }) {
   return (
-    <div style={{ marginBottom: 16 }}>
-      <label style={{ display: "block", fontSize: 12, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.05em", color: "#374151", marginBottom: 4 }}>
-        {label}{hint && <span style={{ fontSize: 11, fontWeight: 400, textTransform: "none", color: "#9CA3AF", marginLeft: 6 }}>{hint}</span>}
+    <div className="mb-4">
+      <label className="block text-xs font-bold uppercase tracking-wide text-gray-700 mb-1">
+        {label}
+        {hint && <span className="text-[11px] font-normal normal-case text-gray-400 ml-1.5">{hint}</span>}
       </label>
       {children}
     </div>
   );
 }
 
+const inputCls  = "w-full px-2.5 py-2 text-sm border border-gray-300 rounded outline-none bg-white";
+const selectCls = `${inputCls} cursor-pointer`;
+
 interface AdjResult { status: string; approval_required_role: string }
 
 export function NewAdjustmentPanel({ products, warehouses, orgSlug }: Props) {
   const qc = useQueryClient();
-
-  const [open, setOpen]           = useState(false);
-  const [productId, setProductId] = useState("");
+  const [open, setOpen]               = useState(false);
+  const [productId, setProductId]     = useState("");
   const [warehouseId, setWarehouseId] = useState("");
-  const [quantity, setQuantity]   = useState("");
-  const [reason, setReason]       = useState("");
-  const [notes, setNotes]         = useState("");
-  const [error, setError]         = useState("");
-  const [result, setResult]       = useState<AdjResult | null>(null);
-  const [loading, setLoading]     = useState(false);
+  const [quantity, setQuantity]       = useState("");
+  const [reason, setReason]           = useState("");
+  const [notes, setNotes]             = useState("");
+  const [error, setError]             = useState("");
+  const [result, setResult]           = useState<AdjResult | null>(null);
+  const [loading, setLoading]         = useState(false);
 
-  function reset() {
-    setProductId(""); setWarehouseId(""); setQuantity(""); setReason(""); setNotes("");
-    setError(""); setResult(null);
-  }
+  function reset() { setProductId(""); setWarehouseId(""); setQuantity(""); setReason(""); setNotes(""); setError(""); setResult(null); }
 
-  const qty       = parseFloat(quantity) || 0;
+  const qty          = parseFloat(quantity) || 0;
   const approvalInfo = qty !== 0 ? getApprovalInfo(qty) : null;
-  const selectedP = products.find((p) => p.id === productId);
+  const selectedP    = products.find((p) => p.id === productId);
 
   const onSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setError("");
-
-    if (!productId)   { setError("Please select a product."); return; }
-    if (!warehouseId) { setError("Please select a warehouse."); return; }
-    if (!reason)      { setError("Please select a reason."); return; }
-    if (qty === 0)    { setError("Quantity must be non-zero."); return; }
-
+    e.preventDefault(); setError("");
+    if (!productId)   { setError(t("receive_panel.error_product"));   return; }
+    if (!warehouseId) { setError(t("receive_panel.error_warehouse")); return; }
+    if (!reason)      { setError(t("issue.error_reason")); return; }
+    if (qty === 0)    { setError(t("adjustment.error_qty")); return; }
     const key = `adjust:${productId}:${warehouseId}:${Date.now()}:${nanoid(8)}`;
     setLoading(true);
     try {
-      const adj = await api.post<AdjResult>("/api/v1/inventory/adjust", {
-        product_id: productId, product_name: selectedP?.name, product_sku: selectedP?.sku,
-        warehouse_id: warehouseId,
-        warehouse_name: warehouses.find((w) => w.id === warehouseId)?.name,
-        quantity: qty, reason_code: reason, notes,
-        idempotency_key: key,
-      });
+      const adj = await api.post<AdjResult>("/api/v1/inventory/adjust", { product_id: productId, product_name: selectedP?.name, product_sku: selectedP?.sku, warehouse_id: warehouseId, warehouse_name: warehouses.find((w) => w.id === warehouseId)?.name, quantity: qty, reason_code: reason, notes, idempotency_key: key });
       setResult(adj);
       void qc.invalidateQueries({ queryKey: ["adjustments", orgSlug] });
-    } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : "Failed to submit adjustment.");
-    } finally {
-      setLoading(false);
-    }
+    } catch (err: unknown) { setError(err instanceof Error ? err.message : t("errors.INTERNAL_ERROR")); }
+    finally { setLoading(false); }
   };
 
   return (
     <>
-      <button
-        onClick={() => { reset(); setOpen(true); }}
-        style={{ padding: "8px 16px", background: "#0891B2", color: "#fff", fontWeight: 700, fontSize: 13, borderRadius: 4, border: "none", cursor: "pointer" }}
-      >
-        + New Adjustment
+      <button onClick={() => { reset(); setOpen(true); }} className="px-4 py-2 bg-cyan-600 text-white font-bold text-sm rounded border-0 cursor-pointer">
+        {t("adjustment.new_btn")}
       </button>
 
-      {open && <div onClick={() => setOpen(false)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.35)", zIndex: 100, backdropFilter: "blur(2px)" }} />}
+      {open && <div onClick={() => setOpen(false)} className="fixed inset-0 bg-black/35 z-[100] backdrop-blur-sm" />}
 
-      <div style={{ position: "fixed", top: 0, right: open ? 0 : -PANEL_W, width: PANEL_W, height: "100vh", background: "#fff", zIndex: 110, boxShadow: "-4px 0 24px rgba(0,0,0,0.18)", transition: "right 0.25s cubic-bezier(0.4,0,0.2,1)", display: "flex", flexDirection: "column" }}>
-        <div style={{ padding: "1.25rem 1.5rem", background: "#0891B2", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+      <div className={`fixed top-0 right-0 w-[440px] h-screen bg-white z-[110] shadow-2xl flex flex-col transition-transform duration-[250ms] ease-out ${open ? "translate-x-0" : "translate-x-full"}`}>
+        <div className="px-6 py-5 bg-cyan-600 flex items-center justify-between">
           <div>
-            <p style={{ fontWeight: 700, fontSize: 16, color: "#fff", margin: 0 }}>Stock Adjustment</p>
-            <p style={{ fontSize: 12, color: "#BAE6FD", margin: "2px 0 0" }}>Correct stock balance — approval may be required</p>
+            <p className="font-bold text-base text-white m-0">{t("adjustment.title")}</p>
+            <p className="text-xs text-cyan-100 mt-0.5">{t("adjustment.subtitle")}</p>
           </div>
-          <button onClick={() => setOpen(false)} style={{ background: "rgba(255,255,255,0.15)", border: "none", cursor: "pointer", color: "#fff", fontSize: 18, width: 32, height: 32, borderRadius: 4, display: "flex", alignItems: "center", justifyContent: "center" }}>✕</button>
+          <button onClick={() => setOpen(false)} className="bg-white/15 border-0 cursor-pointer text-white text-lg w-8 h-8 rounded flex items-center justify-center">✕</button>
         </div>
 
         {result ? (
-          /* ── Success screen ── */
-          <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: "2rem", textAlign: "center" }}>
-            <div style={{ width: 64, height: 64, borderRadius: "50%", background: result.status === "APPLIED" ? "#DCFCE7" : "#FEF3C7", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 28, margin: "0 0 1.25rem" }}>
+          <div className="flex-1 flex flex-col items-center justify-center p-8 text-center">
+            <div className={`w-16 h-16 rounded-full flex items-center justify-center text-3xl mb-5 ${result.status === "APPLIED" ? "bg-green-100" : "bg-amber-100"}`}>
               {result.status === "APPLIED" ? "✓" : "⏳"}
             </div>
-            <p style={{ fontWeight: 800, fontSize: 18, color: "#111827", margin: "0 0 0.5rem" }}>
-              {result.status === "APPLIED" ? "Adjustment Applied" : "Submitted for Approval"}
+            <p className="font-extrabold text-lg text-gray-900 mb-2">
+              {result.status === "APPLIED" ? t("adjustment.success_applied") : t("adjustment.success_submitted")}
             </p>
-            <p style={{ fontSize: 14, color: "#6B7280", margin: "0 0 2rem" }}>
-              {result.status === "APPLIED"
-                ? "The adjustment has been auto-approved and applied to the ledger."
-                : `Awaiting ${result.approval_required_role} approval.`}
+            <p className="text-sm text-gray-500 mb-8">
+              {result.status === "APPLIED" ? t("adjustment.auto_applied") : `${t("adjustment.pending_rm").split(" ").slice(0, 2).join(" ")} ${result.approval_required_role}.`}
             </p>
-            <div style={{ display: "flex", gap: 10 }}>
-              <button onClick={reset} style={{ padding: "9px 20px", background: "#F3F4F6", border: "none", borderRadius: 6, fontSize: 13, fontWeight: 600, cursor: "pointer" }}>New Adjustment</button>
-              <button onClick={() => { reset(); setOpen(false); }} style={{ padding: "9px 20px", background: "#0891B2", color: "#fff", border: "none", borderRadius: 6, fontSize: 13, fontWeight: 700, cursor: "pointer" }}>Done</button>
+            <div className="flex gap-2.5">
+              <button onClick={reset} className="px-5 py-2 bg-gray-100 border-0 rounded-md text-sm font-semibold cursor-pointer">{t("adjustment.new_btn")}</button>
+              <button onClick={() => { reset(); setOpen(false); }} className="px-5 py-2 bg-cyan-600 text-white border-0 rounded-md text-sm font-bold cursor-pointer">{t("common.confirm")}</button>
             </div>
           </div>
         ) : (
-          <form onSubmit={onSubmit} style={{ flex: 1, overflowY: "auto", padding: "1.5rem" }}>
-            <Field label="Product">
-              <select value={productId} onChange={(e) => setProductId(e.target.value)} style={{ ...INPUT, cursor: "pointer" }} required>
-                <option value="">— select product —</option>
+          <form onSubmit={onSubmit} className="flex-1 overflow-y-auto p-6">
+            <Field label={t("table.product")}>
+              <select value={productId} onChange={(e) => setProductId(e.target.value)} className={selectCls} required>
+                <option value="">— {t("receive_panel.select_product")} —</option>
                 {products.map((p) => <option key={p.id} value={p.id}>{p.name} · {p.sku}</option>)}
               </select>
             </Field>
-
-            <Field label="Warehouse">
-              <select value={warehouseId} onChange={(e) => setWarehouseId(e.target.value)} style={{ ...INPUT, cursor: "pointer" }} required>
-                <option value="">— select warehouse —</option>
+            <Field label={t("inventory.warehouse")}>
+              <select value={warehouseId} onChange={(e) => setWarehouseId(e.target.value)} className={selectCls} required>
+                <option value="">— {t("receive_panel.select_warehouse")} —</option>
                 {warehouses.map((w) => <option key={w.id} value={w.id}>{w.name}</option>)}
               </select>
             </Field>
-
-            <Field label="Adjustment Quantity" hint="positive = add, negative = remove">
-              <input
-                type="number" step="any"
-                value={quantity} onChange={(e) => setQuantity(e.target.value)}
-                placeholder="e.g. -50 or +200" style={INPUT}
-              />
+            <Field label={t("adjustment.quantity")} hint={t("adjustment.quantity_hint")}>
+              <input type="number" step="any" value={quantity} onChange={(e) => setQuantity(e.target.value)} placeholder="e.g. -50 or +200" className={inputCls} />
               {approvalInfo && (
-                <div style={{ marginTop: 6, padding: "6px 10px", borderRadius: 4, background: approvalInfo.role === "NONE" ? "#F0FDF4" : approvalInfo.role === "RM" ? "#FEF3C7" : "#FEF2F2", fontSize: 12, color: approvalInfo.color }}>
-                  {approvalInfo.label}
-                </div>
+                <div className={`mt-1.5 px-2.5 py-1.5 rounded text-xs ${approvalInfo.cls}`}>{approvalInfo.label}</div>
               )}
             </Field>
-
-            <Field label="Reason">
-              <select value={reason} onChange={(e) => setReason(e.target.value)} style={{ ...INPUT, cursor: "pointer" }} required>
-                <option value="">— select reason —</option>
-                {REASONS.map((r) => <option key={r.value} value={r.value}>{r.label}</option>)}
+            <Field label={t("adjustment.reason")}>
+              <select value={reason} onChange={(e) => setReason(e.target.value)} className={selectCls} required>
+                <option value="">— {t("receive_panel.select_type")} —</option>
+                {REASONS.map((r) => <option key={r.value} value={r.value}>{t(r.label)}</option>)}
               </select>
             </Field>
-
-            <Field label="Notes" hint="optional">
-              <textarea value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Supporting details…" rows={3} style={{ ...INPUT, resize: "vertical" }} />
+            <Field label={t("audit.notes")} hint={`(${t("receive_panel.optional")})`}>
+              <textarea value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Supporting details…" rows={3} className={`${inputCls} resize-y`} />
             </Field>
-
-            {error && <div style={{ background: "#FEF2F2", border: "1px solid #FECACA", borderRadius: 4, padding: "10px 12px", fontSize: 13, color: "#DC2626", marginBottom: 12 }}>{error}</div>}
+            {error && <div className="bg-red-50 border border-red-200 rounded p-3 text-sm text-red-600 mb-3">{error}</div>}
           </form>
         )}
 
         {!result && (
-          <div style={{ padding: "1rem 1.5rem", borderTop: "1px solid #E5E7EB", display: "flex", gap: 10 }}>
-            <button type="button" onClick={() => setOpen(false)} style={{ flex: 1, padding: "10px", background: "#F3F4F6", border: "1px solid #E5E7EB", borderRadius: 4, fontSize: 13, fontWeight: 600, color: "#374151", cursor: "pointer" }}>Cancel</button>
-            <button onClick={onSubmit as unknown as React.MouseEventHandler} disabled={loading} style={{ flex: 2, padding: "10px", fontWeight: 700, fontSize: 13, borderRadius: 4, border: "none", cursor: loading ? "not-allowed" : "pointer", background: "#0891B2", color: "#fff", opacity: loading ? 0.7 : 1 }}>
-              {loading ? "Submitting…" : "Submit Adjustment"}
+          <div className="px-6 py-4 border-t border-gray-200 flex gap-2.5">
+            <button type="button" onClick={() => setOpen(false)} className="flex-1 py-2.5 bg-gray-100 border border-gray-200 rounded text-sm font-semibold text-gray-700 cursor-pointer">{t("common.cancel")}</button>
+            <button onClick={onSubmit as unknown as React.MouseEventHandler} disabled={loading} className={`flex-[2] py-2.5 bg-cyan-600 text-white font-bold text-sm rounded border-0 ${loading ? "opacity-70 cursor-not-allowed" : "cursor-pointer"}`}>
+              {loading ? t("common.loading") : t("adjustment.submit")}
             </button>
           </div>
         )}

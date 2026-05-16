@@ -48,6 +48,11 @@ class PERMISSIONS:
     INVENTORY_RESERVE       = Permission("inventory:reserve",       ["tenant_id", "warehouse_id"])
     INVENTORY_RELEASE       = Permission("inventory:release_reservation", ["tenant_id", "warehouse_id"])
     INVENTORY_RETURN        = Permission("inventory:return",        ["tenant_id", "warehouse_id"])
+    # IMTS §10 — hierarchical distribution view (NM/LM role, read replica)
+    # Roles that may call this endpoint are enforced via role_permissions DB table.
+    INVENTORY_VIEW_DISTRIBUTION      = Permission("inventory:view_distribution",      ["tenant_id", "facility_id"])
+    # IMTS §10.1 — multi-source suggestion algorithm (WM/RM role, read replica)
+    INVENTORY_VIEW_SUGGESTED_SOURCES = Permission("inventory:view_suggested_sources", ["tenant_id", "warehouse_id"])
 
     # ── Domain 5 — Warehouse ──────────────────────────────────────────────
     WAREHOUSE_CREATE        = Permission("warehouse:create",        ["tenant_id"])
@@ -174,7 +179,7 @@ ALL_PERMISSIONS: List[Permission] = [
     v for v in vars(PERMISSIONS).values() if isinstance(v, Permission)
 ]
 
-assert len(ALL_PERMISSIONS) == 116, (
-    f"Expected 116 permissions, found {len(ALL_PERMISSIONS)}. "
+assert len(ALL_PERMISSIONS) == 118, (
+    f"Expected 118 permissions, found {len(ALL_PERMISSIONS)}. "
     "Update registry.py and re-run seed_permissions.py."
 )

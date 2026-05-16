@@ -54,8 +54,12 @@ export function login(email: string, password: string): SessionUser | null {
     tenantId,
     tenantName,
     tenantSlug,
-    warehouseId:   "warehouseId"   in found ? found.warehouseId   : undefined,
-    warehouseName: "warehouseName" in found ? found.warehouseName : undefined,
+    warehouseId:   "warehouseId"   in found
+      ? (found as { warehouseId: string }).warehouseId
+      : undefined,
+    warehouseName: "warehouseName" in found
+      ? (found as { warehouseName: string }).warehouseName
+      : undefined,
   };
 
   store()?.setItem(SESSION_KEY, JSON.stringify(session));

@@ -1,17 +1,8 @@
 import Link from "next/link";
 
-/* ─────────────────────────────────────────────────────────────────────────────
-   SMART Inventory Tracker — Homepage
-   All colours are inline styles. No custom Tailwind tokens used.
-   Safe to render on first load without any Tailwind config rebuild.
-───────────────────────────────────────────────────────────────────────────── */
+const BG   = "#0f2d1f";
+const GOLD = "#FCDD09";
 
-const BG   = "#0f2d1f";   // deep forest hero bg
-const MID  = "#1B4332";   // mid green
-const GOLD = "#FCDD09";   // Ethiopian gold — primary CTA
-const TEXT = "#f0fdf4";   // near-white text on dark
-
-/* ── Small reusable logo mark ─────────────────────────────────────────────── */
 function Logo({ size = 36 }: { size?: number }) {
   return (
     <svg width={size} height={size} viewBox="0 0 40 40" fill="none" aria-hidden="true">
@@ -23,26 +14,19 @@ function Logo({ size = 36 }: { size?: number }) {
   );
 }
 
-/* ── Ethiopian 3-colour stripe ────────────────────────────────────────────── */
 function Stripe({ h = 5 }: { h?: number }) {
   return (
-    <div
-      aria-hidden="true"
-      className="eth-stripe w-full"
-      style={{ height: h }}
-    />
+    <div aria-hidden="true" className="eth-stripe w-full" style={{ height: h }} />
   );
 }
 
-/* ── Wave SVG divider ─────────────────────────────────────────────────────── */
 function Wave({ from, to, flip }: { from: string; to: string; flip?: boolean }) {
   const path = flip
     ? "M0,40 C240,0 480,80 720,40 C960,0 1200,80 1440,40 L1440,0 L0,0 Z"
     : "M0,40 C240,80 480,0 720,40 C960,80 1200,0 1440,40 L1440,80 L0,80 Z";
   return (
-    <div style={{ overflow: "hidden", lineHeight: 0, margin: "-1px 0" }}>
-      <svg viewBox="0 0 1440 80" preserveAspectRatio="none"
-        style={{ display: "block", width: "100%", height: 64 }}>
+    <div className="overflow-hidden leading-none -my-px">
+      <svg viewBox="0 0 1440 80" preserveAspectRatio="none" className="block w-full h-16">
         <rect width="1440" height="80" fill={from} />
         <path d={path} fill={to} />
       </svg>
@@ -50,7 +34,6 @@ function Wave({ from, to, flip }: { from: string; to: string; flip?: boolean }) 
   );
 }
 
-/* ── Animated background lines (disappear at centre, reappear opposite side) ─ */
 const LINES = [
   { top:  "8%",  dur: 9,  del: 0,   dir: "right", op: 0.10 },
   { top: "18%",  dur: 13, del: -4,  dir: "left",  op: 0.07 },
@@ -63,31 +46,15 @@ const LINES = [
   { top: "93%",  dur: 15, del: -9,  dir: "right", op: 0.05 },
 ] as const;
 
+/* HeroLines: data-driven animation duration/delay/opacity must stay as style= */
 function HeroLines() {
   return (
-    /* The radial gradient mask fades lines to transparent at the centre
-       where the title sits, then brings them back at the edges.
-       As each streak passes through the transparent zone it vanishes,
-       and when it exits on the far side it reappears — the "disappear
-       and come from the other end" effect. */
-    <div
-      aria-hidden="true"
-      className="hero-lines-mask"
-      style={{ position: "absolute", inset: 0, overflow: "hidden" }}
-    >
+    <div aria-hidden="true" className="hero-lines-mask absolute inset-0 overflow-hidden">
       {LINES.map((l, i) => (
         <div
           key={i}
-          style={{
-            position: "absolute",
-            top: l.top,
-            left: 0,
-            right: 0,
-            height: 1,
-            overflow: "hidden",
-          }}
+          style={{ position: "absolute", top: l.top, left: 0, right: 0, height: 1, overflow: "hidden" }}
         >
-          {/* The moving streak — a soft gradient blob that sweeps the line */}
           <div
             style={{
               position: "absolute",
@@ -109,195 +76,119 @@ function HeroLines() {
   );
 }
 
-/* ── Homepage ─────────────────────────────────────────────────────────────── */
 export default function HomePage() {
   return (
-    <div style={{ minHeight: "100vh", background: "#fff", overflowX: "hidden" }}>
+    <div className="min-h-screen bg-white overflow-x-hidden">
 
-      {/* ════════════════ STICKY NAVBAR ════════════════════════════════════ */}
-      <nav style={{
-        position: "fixed", top: 0, left: 0, right: 0, zIndex: 50,
-        background: "#fff", borderBottom: "1px solid #e5e7eb",
-        boxShadow: "0 1px 3px rgba(0,0,0,0.06)",
-      }}>
-        <div style={{
-          maxWidth: 1200, margin: "0 auto",
-          padding: "0 1.5rem", height: 56,
-          display: "flex", alignItems: "center", gap: "1.5rem",
-        }}>
-          {/* Logo + brand name */}
-          <Link href="/" style={{ display: "flex", alignItems: "center", gap: 8, textDecoration: "none" }}>
+      {/* ════ STICKY NAVBAR ═════════════════════════════════════════════════ */}
+      <nav className="fixed top-0 inset-x-0 z-50 bg-white border-b border-gray-200 shadow-sm">
+        <div className="max-w-[1200px] mx-auto px-6 h-14 flex items-center gap-6">
+          <Link href="/" className="flex items-center gap-2 no-underline">
             <Logo size={32} />
-            <span style={{ fontWeight: 700, fontSize: 15, color: BG, whiteSpace: "nowrap" }}>
-              SMART <span style={{ color: "#2D6A4F", fontWeight: 500 }}>Inventory</span>
+            <span className="font-bold text-[15px] text-[#0f2d1f] whitespace-nowrap">
+              SMART <span className="text-[#2D6A4F] font-medium">Inventory</span>
             </span>
           </Link>
-
-          {/* Centre nav links — hover handled by .nav-link CSS class */}
-          <div style={{ display: "flex", alignItems: "center", gap: "2rem", margin: "0 auto" }}>
+          <div className="flex items-center gap-8 mx-auto">
             {(["#features", "#tenants", "#credentials"] as const).map((href, i) => (
               <a key={i} href={href} className="nav-link">
                 {["Features", "Tenants", "Credentials"][i]}
               </a>
             ))}
           </div>
-
-          {/* Far-right: Sign in — light gray square button via .btn-signin */}
           <Link href="/login" className="btn-signin">
             Sign in
           </Link>
         </div>
       </nav>
 
-      {/* ════════════════ HERO — centred, animated background ══════════════ */}
-      <section style={{
-        paddingTop: 56,
-        position: "relative",
-        background: `linear-gradient(170deg, ${BG} 0%, #1B4332 55%, #2D6A4F 100%)`,
-        textAlign: "center",
-      }}>
-        {/* Animated lines behind the title */}
+      {/* ════ HERO ══════════════════════════════════════════════════════════ */}
+      {/* Multi-stop angled gradient — style= required (Tailwind bg-gradient-to-* only supports 4 directions) */}
+      <section
+        className="pt-14 relative text-center"
+        style={{ background: `linear-gradient(170deg, ${BG} 0%, #1B4332 55%, #2D6A4F 100%)` }}
+      >
         <HeroLines />
-
-        {/* Content sits above lines */}
-        <div style={{ position: "relative", zIndex: 1, maxWidth: 800, margin: "0 auto", padding: "6rem 1.5rem 5rem" }}>
-
-          {/* Big centred logo */}
-          <div style={{ display: "flex", justifyContent: "center", marginBottom: "1.75rem" }}>
+        <div className="relative z-[1] max-w-[800px] mx-auto px-6 pt-24 pb-20">
+          <div className="flex justify-center mb-7">
             <Logo size={80} />
           </div>
-
-          {/* Big centred heading */}
-          <h1 style={{
-            fontSize: "clamp(2.5rem, 6vw, 4.5rem)",
-            fontWeight: 800,
-            color: "#ffffff",
-            lineHeight: 1.08,
-            letterSpacing: "-0.02em",
-            margin: 0,
-          }}>
+          {/* clamp() viewport font — style= required (Tailwind arbitrary values don't support clamp in JIT) */}
+          <h1
+            className="font-extrabold text-white m-0 leading-[1.08] tracking-[-0.02em]"
+            style={{ fontSize: "clamp(2.5rem, 6vw, 4.5rem)" }}
+          >
             SMART Inventory
-            <span style={{ display: "block", color: GOLD }}>Tracker</span>
+            <span className="block text-[#FCDD09]">Tracker</span>
           </h1>
-
-          <p style={{
-            marginTop: "1.25rem",
-            fontSize: "clamp(1rem, 2vw, 1.2rem)",
-            color: "rgba(240,253,244,0.85)",
-            lineHeight: 1.6,
-            maxWidth: 540,
-            marginLeft: "auto",
-            marginRight: "auto",
-          }}>
+          <p
+            className="mt-5 text-[rgba(240,253,244,0.85)] leading-relaxed max-w-[540px] mx-auto"
+            style={{ fontSize: "clamp(1rem, 2vw, 1.2rem)" }}
+          >
             Real-time stock ledger · FEFO dispatch · Offline barcode scanning ·
             3-layer security — built for Ethiopian producers and distributors.
           </p>
-
-          {/* Language badge */}
-          <div style={{ marginTop: "1.5rem", display: "flex", justifyContent: "center" }}>
-            <span style={{
-              display: "inline-flex", alignItems: "center", gap: 8,
-              padding: "6px 16px",
-              background: "rgba(255,255,255,0.08)",
-              border: "1px solid rgba(255,255,255,0.18)",
-              borderRadius: 100,
-              fontSize: 12, fontWeight: 500, color: "rgba(200,240,220,0.9)",
-            }}>
-              <span style={{
-                width: 8, height: 8, borderRadius: "50%",
-                background: "#4ade80",
-                animation: "pulse 2s ease-in-out infinite",
-              }} />
+          <div className="mt-6 flex justify-center">
+            <span className="inline-flex items-center gap-2 px-4 py-1.5 bg-white/[0.08] border border-white/[0.18] rounded-full text-xs font-medium text-[rgba(200,240,220,0.9)]">
+              <span className="w-2 h-2 rounded-full bg-green-400 animate-pulse" />
               🇪🇹 &nbsp;English · አማርኛ · Afaan Oromoo · Offline-ready · Multi-tenant
             </span>
           </div>
-
-          {/* CTAs — hover handled by CSS classes */}
-          <div style={{ marginTop: "2rem", display: "flex", gap: 12, justifyContent: "center", flexWrap: "wrap" }}>
-            <Link href="/login" className="btn-cta-primary">
-              Open Dashboard →
-            </Link>
-            <a href="#features" className="btn-hero-outline">
-              Explore Features
-            </a>
+          <div className="mt-8 flex gap-3 justify-center flex-wrap">
+            <Link href="/login" className="btn-cta-primary">Open Dashboard →</Link>
+            <a href="#features" className="btn-hero-outline">Explore Features</a>
           </div>
-
-          {/* Credential hint */}
-          <p style={{
-            marginTop: "2rem",
-            fontSize: 12,
-            fontFamily: "monospace",
-            color: "#6ee7b7",
-            background: "rgba(0,0,0,0.25)",
-            border: "1px solid rgba(255,255,255,0.1)",
-            borderRadius: 4,
-            padding: "10px 20px",
-            display: "inline-block",
-          }}>
+          <p className="mt-8 text-xs font-mono text-emerald-300 bg-black/25 border border-white/10 rounded px-5 py-2.5 inline-block">
             📧 smartadmin@smart-inventory.com &nbsp;·&nbsp; 🔑 SmartAdmin@2026
           </p>
         </div>
-
         <Stripe h={6} />
       </section>
 
-      {/* ════════════════ STATS ════════════════════════════════════════════ */}
-      <section style={{ background: MID, padding: "2.5rem 1.5rem" }}>
-        <div style={{
-          maxWidth: 1000, margin: "0 auto",
-          display: "grid", gridTemplateColumns: "repeat(4,1fr)",
-          gap: "2rem", textAlign: "center",
-        }}>
+      {/* ════ STATS ═════════════════════════════════════════════════════════ */}
+      <section className="bg-[#1B4332] px-6 py-10">
+        <div className="max-w-[1000px] mx-auto grid grid-cols-4 gap-8 text-center">
           {STATS.map((s) => (
             <div key={s.label}>
-              <p style={{ fontSize: "2.25rem", fontWeight: 800, color: GOLD, margin: 0 }}>{s.value}</p>
-              <p style={{ fontSize: 13, fontWeight: 600, color: "#fff", marginTop: 4 }}>{s.label}</p>
-              <p style={{ fontSize: 11, color: "#86efac", marginTop: 2 }}>{s.sub}</p>
+              <p className="text-[2.25rem] font-extrabold text-[#FCDD09] m-0">{s.value}</p>
+              <p className="text-[13px] font-semibold text-white mt-1">{s.label}</p>
+              <p className="text-[11px] text-green-300 mt-0.5">{s.sub}</p>
             </div>
           ))}
         </div>
       </section>
 
-      <Wave from={MID} to="#fff" />
+      <Wave from="#1B4332" to="#fff" />
 
-      {/* ════════════════ PLATFORM CAPABILITIES — 3-col rectangles ════════ */}
-      <section id="features" style={{ background: "#fff", padding: "5rem 1.5rem" }}>
-        <div style={{ maxWidth: 1200, margin: "0 auto" }}>
-          {/* Section heading */}
-          <div style={{ textAlign: "center", marginBottom: "3.5rem" }}>
-            <span style={{
-              display: "inline-block", fontSize: 11, fontWeight: 700,
-              textTransform: "uppercase", letterSpacing: "0.1em",
-              color: "#2D6A4F", background: "#D1FAE5",
-              padding: "4px 12px", borderRadius: 100, marginBottom: 12,
-            }}>
+      {/* ════ PLATFORM CAPABILITIES ═════════════════════════════════════════ */}
+      <section id="features" className="bg-white px-6 py-20">
+        <div className="max-w-[1200px] mx-auto">
+          <div className="text-center mb-14">
+            <span className="inline-block text-[11px] font-bold uppercase tracking-[0.1em] text-[#2D6A4F] bg-emerald-100 px-3 py-1 rounded-full mb-3">
               Platform Capabilities
             </span>
-            <h2 style={{ fontSize: "2rem", fontWeight: 800, color: BG, margin: 0 }}>
+            <h2 className="text-[2rem] font-extrabold text-[#0f2d1f] m-0">
               Everything your warehouse team needs
             </h2>
-            <p style={{ fontSize: 15, color: "#6B7280", marginTop: 8, maxWidth: 520, marginLeft: "auto", marginRight: "auto" }}>
+            <p className="text-[15px] text-gray-500 mt-2 max-w-[520px] mx-auto">
               From barcode scanning on the warehouse floor to AI-powered demand forecasting.
             </p>
           </div>
-
-          {/* 3-column bordered rectangle grid — 2 rows stacked */}
-          <div style={{
-            display: "grid",
-            gridTemplateColumns: "repeat(3, 1fr)",
-            border: "1px solid #D1D5DB",
-          }}>
+          <div className="grid grid-cols-3 border border-gray-300">
             {FEATURES.map((f, i) => (
-              <div key={f.title} className="cap-card" style={{
-                /* Remove double borders on right/bottom edges */
-                borderRight: (i % 3 === 2) ? "none" : "1px solid #D1D5DB",
-                borderBottom: (i >= 3)     ? "none" : "1px solid #D1D5DB",
-              }}>
-                {/* Coloured top accent strip */}
-                <div style={{ height: 3, background: f.accent, borderRadius: 2, marginBottom: "1.5rem" }} />
-                <div style={{ fontSize: "1.75rem", marginBottom: "0.75rem" }}>{f.icon}</div>
-                <h3 style={{ fontSize: 15, fontWeight: 700, color: BG, margin: "0 0 8px" }}>{f.title}</h3>
-                <p style={{ fontSize: 13, color: "#6B7280", lineHeight: 1.6, margin: 0 }}>{f.desc}</p>
+              <div
+                key={f.title}
+                className="cap-card"
+                style={{
+                  borderRight:  i % 3 === 2 ? "none" : "1px solid #D1D5DB",
+                  borderBottom: i >= 3      ? "none" : "1px solid #D1D5DB",
+                }}
+              >
+                {/* Per-feature accent color — runtime data value */}
+                <div className="h-[3px] rounded-sm mb-6" style={{ background: f.accent }} />
+                <div className="text-[1.75rem] mb-3">{f.icon}</div>
+                <h3 className="text-[15px] font-bold text-[#0f2d1f] m-0 mb-2">{f.title}</h3>
+                <p className="text-[13px] text-gray-500 leading-relaxed m-0">{f.desc}</p>
               </div>
             ))}
           </div>
@@ -307,75 +198,58 @@ export default function HomePage() {
       <Wave from="#fff" to="#F3F4F6" flip />
       <Stripe h={4} />
 
-      {/* ════════════════ TENANT SHOWCASE ══════════════════════════════════ */}
-      <section id="tenants" style={{ background: "#F3F4F6", padding: "5rem 1.5rem" }}>
-        <div style={{ maxWidth: 1200, margin: "0 auto" }}>
-          <div style={{ textAlign: "center", marginBottom: "3rem" }}>
-            <span style={{
-              display: "inline-block", fontSize: 11, fontWeight: 700,
-              textTransform: "uppercase", letterSpacing: "0.1em",
-              color: "#2D6A4F", background: "#D1FAE5",
-              padding: "4px 12px", borderRadius: 100, marginBottom: 12,
-            }}>
+      {/* ════ TENANT SHOWCASE ═══════════════════════════════════════════════ */}
+      <section id="tenants" className="bg-gray-100 px-6 py-20">
+        <div className="max-w-[1200px] mx-auto">
+          <div className="text-center mb-12">
+            <span className="inline-block text-[11px] font-bold uppercase tracking-[0.1em] text-[#2D6A4F] bg-emerald-100 px-3 py-1 rounded-full mb-3">
               Live Demo Tenants
             </span>
-            <h2 style={{ fontSize: "2rem", fontWeight: 800, color: BG, margin: 0 }}>
+            <h2 className="text-[2rem] font-extrabold text-[#0f2d1f] m-0">
               Two live companies, ready to explore
             </h2>
-            <p style={{ fontSize: 14, color: "#6B7280", marginTop: 8 }}>
+            <p className="text-sm text-gray-500 mt-2">
               Sign in as SA to switch between tenants. Sign in as WM to see only your warehouse.
             </p>
           </div>
-
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(2,1fr)", gap: "2rem" }}>
-            {TENANTS.map((t) => (
-              /* .tenant-card CSS class handles hover shadow + lift — no JS needed */
-              <Link key={t.slug} href={`/dashboard/tenants/${t.slug}`} className="tenant-card">
+          <div className="grid grid-cols-2 gap-8">
+            {TENANTS.map((ten) => (
+              <Link key={ten.slug} href={`/dashboard/tenants/${ten.slug}`} className="tenant-card">
                 <div>
-                  {/* Coloured header */}
-                  <div style={{ background: t.color, padding: "1.25rem 1.5rem", display: "flex", alignItems: "center", gap: 12 }}>
-                    <span style={{ fontSize: "2.5rem" }}>{t.icon}</span>
+                  {/* Per-tenant brand color — runtime data value */}
+                  <div className="px-6 py-5 flex items-center gap-3" style={{ background: ten.color }}>
+                    <span className="text-[2.5rem]">{ten.icon}</span>
                     <div>
-                      <p style={{ fontWeight: 700, fontSize: 18, color: "#fff", margin: 0 }}>{t.name}</p>
-                      <p style={{ fontSize: 13, color: "rgba(255,255,255,0.75)", margin: 0 }}>{t.industry}</p>
+                      <p className="font-bold text-lg text-white m-0">{ten.name}</p>
+                      <p className="text-[13px] text-white/75 m-0">{ten.industry}</p>
                     </div>
-                    <span style={{
-                      marginLeft: "auto", fontSize: 11, fontWeight: 700,
-                      background: "rgba(0,0,0,0.2)", color: "#fff",
-                      padding: "3px 8px", borderRadius: 3,
-                    }}>{t.orgType}</span>
+                    <span className="ml-auto text-[11px] font-bold bg-black/20 text-white px-2 py-0.5 rounded">
+                      {ten.orgType}
+                    </span>
                   </div>
-
-                  {/* Body */}
-                  <div style={{ padding: "1.25rem 1.5rem", display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1.5rem" }}>
+                  <div className="px-6 py-5 grid grid-cols-2 gap-6">
                     <div>
-                      <p style={{ fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.07em", color: "#9CA3AF", marginBottom: 8 }}>Locations</p>
-                      {t.warehouses.map((w) => (
-                        <p key={w} style={{ fontSize: 13, color: "#374151", margin: "3px 0", display: "flex", alignItems: "center", gap: 6 }}>
-                          <span style={{ width: 6, height: 6, borderRadius: "50%", background: t.color, flexShrink: 0 }} />
+                      <p className="text-[11px] font-bold uppercase tracking-[0.07em] text-gray-400 mb-2">Locations</p>
+                      {ten.warehouses.map((w) => (
+                        <p key={w} className="text-[13px] text-gray-700 my-0.5 flex items-center gap-1.5">
+                          <span className="w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ background: ten.color }} />
                           {w}
                         </p>
                       ))}
                     </div>
                     <div>
-                      <p style={{ fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.07em", color: "#9CA3AF", marginBottom: 8 }}>Products</p>
-                      {t.categories.map((c) => (
-                        <p key={c} style={{ fontSize: 13, color: "#374151", margin: "3px 0", display: "flex", alignItems: "center", gap: 6 }}>
-                          <span style={{ width: 6, height: 6, borderRadius: "50%", background: "#D1D5DB", flexShrink: 0 }} />
+                      <p className="text-[11px] font-bold uppercase tracking-[0.07em] text-gray-400 mb-2">Products</p>
+                      {ten.categories.map((c) => (
+                        <p key={c} className="text-[13px] text-gray-700 my-0.5 flex items-center gap-1.5">
+                          <span className="w-1.5 h-1.5 rounded-full bg-gray-300 flex-shrink-0" />
                           {c}
                         </p>
                       ))}
                     </div>
                   </div>
-
-                  <div style={{
-                    padding: "10px 1.5rem",
-                    borderTop: "1px solid #F3F4F6",
-                    background: "#FAFAFA",
-                    display: "flex", justifyContent: "space-between", alignItems: "center",
-                  }}>
-                    <span style={{ fontSize: 12, color: "#9CA3AF" }}>{t.skuCount} SKUs · {t.userCount} user accounts</span>
-                    <span style={{ fontSize: 12, fontWeight: 700, color: t.color }}>Open dashboard →</span>
+                  <div className="px-6 py-2.5 border-t border-gray-100 bg-gray-50 flex justify-between items-center">
+                    <span className="text-xs text-gray-400">{ten.skuCount} SKUs · {ten.userCount} user accounts</span>
+                    <span className="text-xs font-bold" style={{ color: ten.color }}>Open dashboard →</span>
                   </div>
                 </div>
               </Link>
@@ -387,59 +261,49 @@ export default function HomePage() {
       <Stripe h={4} />
       <Wave from="#F3F4F6" to={BG} flip />
 
-      {/* ════════════════ CREDENTIALS CTA ══════════════════════════════════ */}
-      <section id="credentials" style={{ background: BG, padding: "5rem 1.5rem", textAlign: "center" }}>
-        <div style={{ maxWidth: 860, margin: "0 auto" }}>
-          <h2 style={{ fontSize: "2rem", fontWeight: 800, color: "#fff", margin: 0 }}>
+      {/* ════ CREDENTIALS CTA ═══════════════════════════════════════════════ */}
+      <section id="credentials" className="bg-[#0f2d1f] px-6 py-20 text-center">
+        <div className="max-w-[860px] mx-auto">
+          <h2 className="text-[2rem] font-extrabold text-white m-0">
             Start exploring the demo
           </h2>
-          <p style={{ fontSize: 14, color: "#6ee7b7", marginTop: 8, marginBottom: "3rem" }}>
+          <p className="text-sm text-emerald-300 mt-2 mb-12">
             Each role is scoped to its own data — WMs see only their warehouse, NMs their center.
           </p>
-
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: "1rem", marginBottom: "2.5rem", textAlign: "left" }}>
+          <div className="grid grid-cols-3 gap-4 mb-10 text-left">
             {CREDS.map((c) => (
-              <div key={c.email} style={{
-                padding: "1rem", borderRadius: 4,
-                background: "rgba(255,255,255,0.05)",
-                border: "1px solid rgba(255,255,255,0.1)",
-              }}>
-                <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
-                  <span style={{
-                    fontSize: 11, fontWeight: 700, color: "#fff",
-                    background: c.roleColor, padding: "2px 7px", borderRadius: 3,
-                  }}>{c.role}</span>
-                  <span style={{ fontSize: 12, color: "#6ee7b7", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{c.company}</span>
+              <div key={c.email} className="p-4 rounded bg-white/[0.05] border border-white/10">
+                <div className="flex items-center gap-2 mb-2">
+                  {/* Role badge color — runtime data value */}
+                  <span className="text-[11px] font-bold text-white px-1.5 py-0.5 rounded" style={{ background: c.roleColor }}>
+                    {c.role}
+                  </span>
+                  <span className="text-xs text-emerald-300 overflow-hidden text-ellipsis whitespace-nowrap">{c.company}</span>
                 </div>
-                <p style={{ fontSize: 12, fontFamily: "monospace", color: "#a7f3d0", wordBreak: "break-all", margin: "0 0 4px" }}>{c.email}</p>
-                <p style={{ fontSize: 12, fontFamily: "monospace", color: "#6ee7b7", margin: 0 }}>{c.pw}</p>
+                <p className="text-xs font-mono text-[#a7f3d0] break-all m-0 mb-1">{c.email}</p>
+                <p className="text-xs font-mono text-emerald-300 m-0">{c.pw}</p>
               </div>
             ))}
           </div>
-
           <Link href="/login" className="btn-cta-primary">
             Sign in to dashboard →
           </Link>
         </div>
       </section>
 
-      {/* ════════════════ FOOTER ═══════════════════════════════════════════ */}
+      {/* ════ FOOTER ════════════════════════════════════════════════════════ */}
       <Stripe h={5} />
-      <footer style={{ background: "#061410", padding: "2rem 1.5rem" }}>
-        <div style={{
-          maxWidth: 1200, margin: "0 auto",
-          display: "flex", flexWrap: "wrap",
-          alignItems: "center", justifyContent: "space-between", gap: "1rem",
-        }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+      <footer className="bg-[#061410] px-6 py-8">
+        <div className="max-w-[1200px] mx-auto flex flex-wrap items-center justify-between gap-4">
+          <div className="flex items-center gap-2">
             <Logo size={24} />
             <div>
-              <p style={{ fontWeight: 700, fontSize: 14, color: "#fff", margin: 0 }}>SMART Inventory Tracker</p>
-              <p style={{ fontSize: 11, color: "#166534", margin: 0 }}>PRD v4.0 · Phase 0</p>
+              <p className="font-bold text-sm text-white m-0">SMART Inventory Tracker</p>
+              <p className="text-[11px] text-green-900 m-0">PRD v4.0 · Phase 0</p>
             </div>
           </div>
-          <p style={{ fontSize: 12, color: "#166534" }}>FastAPI · Next.js 14 · PostgreSQL 16 · AWS ECS Fargate</p>
-          <p style={{ fontSize: 12, color: "#166534" }}>🇪🇹 EN · አማርኛ · Afaan Oromoo</p>
+          <p className="text-xs text-green-900">FastAPI · Next.js 14 · PostgreSQL 16 · AWS ECS Fargate</p>
+          <p className="text-xs text-green-900">🇪🇹 EN · አማርኛ · Afaan Oromoo</p>
         </div>
       </footer>
     </div>

@@ -8,24 +8,17 @@ import { usePermission } from "@/hooks/usePermission";
 import { useInventoryStore } from "@/lib/inventory-state";
 import { AddProductPanel } from "@/components/features/inventory/AddProductPanel";
 import { api } from "@/lib/api";
+import { t } from "@/lib/i18n";
 
-type ApiProduct = {
-  id: string; sku: string; name: string; type_code: string;
-  unit: string; pack_size: number; created_at: string;
-};
-
-type Row = {
-  id: string; sku: string; name: string;
-  category: string; unit: string; packSize: string;
-  balance: number; batchTracking: boolean; isNew: boolean;
-};
+type ApiProduct = { id: string; sku: string; name: string; type_code: string; unit: string; pack_size: number; created_at: string; };
+type Row        = { id: string; sku: string; name: string; category: string; unit: string; packSize: string; balance: number; batchTracking: boolean; isNew: boolean; };
 
 export default function ProductsPage() {
-  const { org } = useParams() as { org: string };
-  const canAdd = usePermission("product:create");
+  const { org }  = useParams() as { org: string };
+  const canAdd   = usePermission("product:create");
   const { getOnHand } = useInventoryStore();
 
-  const tenant = DEMO_TENANTS.find((t) => t.slug === org);
+  const tenant = DEMO_TENANTS.find((ten) => ten.slug === org);
 
   const { data: apiProducts = [] } = useQuery<ApiProduct[]>({
     queryKey: ["products", org],
@@ -34,55 +27,34 @@ export default function ProductsPage() {
     staleTime: 0,
   });
 
-  if (org === SA_ORG_SLUG) {
-    return <p style={{ padding: "2rem", color: "#6B7280" }}>Select a tenant to view products.</p>;
-  }
-  if (!tenant) {
-    return <p style={{ padding: "2rem", color: "#6B7280" }}>Tenant not found.</p>;
-  }
+  if (org === SA_ORG_SLUG) return <p className="p-8 text-gray-500">{t("common.no_data")}</p>;
+  if (!tenant)             return <p className="p-8 text-gray-500">{t("common.no_data")}</p>;
 
-  // Sum live On Hand across all warehouses for each product
-  const demoRows: Row[] = tenant.products.map((p) => {
-    const liveBalance = Object.entries(p.stock).reduce((sum, [whId, base]) => {
-      return sum + getOnHand(p.id, whId, base);
-    }, 0);
-    return {
-      id: p.id, sku: p.sku, name: p.name,
-      category: p.category, unit: p.unit, packSize: "—",
-      balance: liveBalance, batchTracking: p.batchTracking, isNew: false,
-    };
-  });
+  const demoRows: Row[] = tenant.products.map((p) => ({
+    id: p.id, sku: p.sku, name: p.name, category: p.category, unit: p.unit, packSize: "—",
+    balance: Object.entries(p.stock).reduce((sum, [whId, base]) => sum + getOnHand(p.id, whId, base), 0),
+    batchTracking: p.batchTracking, isNew: false,
+  }));
 
   const apiRows: Row[] = apiProducts.map((p) => ({
-    id: p.id, sku: p.sku, name: p.name,
-    category: p.type_code, unit: p.unit, packSize: String(p.pack_size),
+    id: p.id, sku: p.sku, name: p.name, category: p.type_code, unit: p.unit, packSize: String(p.pack_size),
     balance: 0, batchTracking: false, isNew: true,
   }));
 
-  const all = [...demoRows, ...apiRows];
+  const all   = [...demoRows, ...apiRows];
   const total = all.length;
 
-  const COLS = ["SKU", "Product Name", "Category / Type", "Unit", "Pack Size", "Balance", "Batch"];
+  const COLS = ["table.sku","products.col_name","products.col_category","inventory.unit","products.col_pack_size","products.col_balance","products.col_batch"];
 
   return (
-    <div style={{ padding: "2rem" }}>
-      {/* Header */}
-      <div style={{
-        marginBottom: "1.5rem", display: "flex", alignItems: "flex-start",
-        justifyContent: "space-between", flexWrap: "wrap", gap: 12,
-      }}>
+    <div className="p-8">
+      <div className="mb-6 flex items-start justify-between flex-wrap gap-3">
         <div>
-          <h2 style={{ fontSize: "1.5rem", fontWeight: 700, color: "#0f2d1f", margin: 0 }}>
-            Products
-          </h2>
-          <p style={{ fontSize: 13, color: "#6B7280", margin: "4px 0 0" }}>
-            {tenant.name} · {total} SKUs
+          <h2 className="text-2xl font-bold text-[#0f2d1f] m-0">{t("nav.products")}</h2>
+          <p className="text-sm text-gray-500 mt-1">
+            {tenant.name} · {total} {t("table.skus")}
             {apiProducts.length > 0 && (
-              <span style={{
-                marginLeft: 8, fontSize: 11, fontWeight: 700,
-                background: "#DCFCE7", color: "#166534",
-                padding: "1px 7px", borderRadius: 99,
-              }}>
+              <span className="ml-2 text-[11px] font-bold bg-green-100 text-green-800 px-1.5 py-0.5 rounded-full">
                 {apiProducts.length} new
               </span>
             )}
@@ -91,53 +63,34 @@ export default function ProductsPage() {
         {canAdd && <AddProductPanel apiBase="/api/v1/products" />}
       </div>
 
-      {/* Table */}
-      <div style={{ background: "#fff", border: "1px solid #E5E7EB", borderRadius: 4, overflow: "hidden" }}>
-        <div style={{ height: 3, background: tenant.color }} />
-        <div style={{ overflowX: "auto" }}>
-          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+      <div className="bg-white border border-gray-200 rounded overflow-hidden">
+        <div className="h-[3px]" style={{ background: tenant.color }} />
+        <div className="overflow-x-auto">
+          <table className="w-full border-collapse text-sm">
             <thead>
-              <tr style={{ background: "#F9FAFB", borderBottom: "2px solid #E5E7EB" }}>
-                {COLS.map((h) => (
-                  <th key={h} style={{
-                    padding: "10px 16px", textAlign: "left",
-                    fontSize: 11, fontWeight: 700, color: "#6B7280",
-                    textTransform: "uppercase", letterSpacing: "0.05em",
-                  }}>{h}</th>
+              <tr className="bg-gray-50 border-b-2 border-gray-200">
+                {COLS.map((key) => (
+                  <th key={key} className="px-4 py-2.5 text-left text-[11px] font-bold text-gray-500 uppercase tracking-wide">{t(key)}</th>
                 ))}
               </tr>
             </thead>
             <tbody>
               {all.map((p, idx) => (
-                <tr key={p.id} style={{
-                  background: idx % 2 === 0 ? "#fff" : "#FAFAFA",
-                  borderBottom: "1px solid #F3F4F6",
-                }}>
-                  <td style={{ padding: "10px 16px", fontFamily: "monospace", fontSize: 11, color: "#9CA3AF" }}>
+                <tr key={p.id} className={`border-b border-gray-100 ${idx % 2 === 0 ? "bg-white" : "bg-gray-50"}`}>
+                  <td className="px-4 py-2.5 font-mono text-[11px] text-gray-400">
                     {p.sku}
-                    {p.isNew && (
-                      <span style={{
-                        marginLeft: 6, fontSize: 10, fontWeight: 700,
-                        background: "#DCFCE7", color: "#166534",
-                        padding: "1px 5px", borderRadius: 3,
-                      }}>NEW</span>
-                    )}
+                    {p.isNew && <span className="ml-1.5 text-[10px] font-bold bg-green-100 text-green-800 px-1 py-0.5 rounded">NEW</span>}
                   </td>
-                  <td style={{ padding: "10px 16px", fontWeight: 600, color: "#1F2937" }}>{p.name}</td>
-                  <td style={{ padding: "10px 16px", color: "#6B7280" }}>{p.category}</td>
-                  <td style={{ padding: "10px 16px", color: "#6B7280" }}>{p.unit}</td>
-                  <td style={{ padding: "10px 16px", color: "#6B7280" }}>{p.packSize}</td>
-                  <td style={{ padding: "10px 16px", textAlign: "right", fontWeight: 700,
-                    color: p.balance > 0 ? "#111827" : "#9CA3AF" }}>
+                  <td className="px-4 py-2.5 font-semibold text-gray-800">{p.name}</td>
+                  <td className="px-4 py-2.5 text-gray-500">{p.category}</td>
+                  <td className="px-4 py-2.5 text-gray-500">{p.unit}</td>
+                  <td className="px-4 py-2.5 text-gray-500">{p.packSize}</td>
+                  <td className={`px-4 py-2.5 text-right font-bold ${p.balance > 0 ? "text-gray-900" : "text-gray-400"}`}>
                     {p.balance > 0 ? p.balance.toLocaleString() : "—"}
                   </td>
-                  <td style={{ padding: "10px 16px" }}>
-                    <span style={{
-                      fontSize: 11, fontWeight: 700, padding: "2px 8px", borderRadius: 3,
-                      background: p.batchTracking ? "#DCFCE7" : "#F3F4F6",
-                      color: p.batchTracking ? "#166534" : "#6B7280",
-                    }}>
-                      {p.batchTracking ? "Yes" : "No"}
+                  <td className="px-4 py-2.5">
+                    <span className={`text-xs font-bold px-2 py-0.5 rounded ${p.batchTracking ? "bg-green-100 text-green-800" : "bg-gray-100 text-gray-500"}`}>
+                      {p.batchTracking ? t("dispatch.yes") : t("dispatch.no")}
                     </span>
                   </td>
                 </tr>
@@ -147,9 +100,8 @@ export default function ProductsPage() {
         </div>
       </div>
 
-      {/* Balance note */}
-      <p style={{ marginTop: "0.75rem", fontSize: 12, color: "#9CA3AF" }}>
-        <strong style={{ color: "#374151" }}>Balance</strong> — total On Hand across all warehouses (live, reflects this session&apos;s receives, issues, and transfers)
+      <p className="mt-3 text-xs text-gray-400">
+        <strong className="text-gray-700">{t("products.balance_label")}</strong> — {t("products.balance_note")}
       </p>
     </div>
   );

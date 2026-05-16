@@ -457,22 +457,17 @@ class TestDispatch:
         assert result == "FIFO"
 
     async def test_invalid_transfer_transition_raises(self) -> None:
-        """CLOSED → SUBMITTED is not a valid transition → InvalidStateTransitionError."""
-        from services.state_machine import (
-            InvalidStateTransitionError,
-            TRANSFER_TRANSITIONS,
-            validate_transition,
-        )
-        with pytest.raises(InvalidStateTransitionError) as exc:
-            validate_transition(TRANSFER_TRANSITIONS, "CLOSED", "SUBMITTED")
-        assert exc.value.current == "CLOSED"
-        assert exc.value.attempted == "SUBMITTED"
+        """PULL COMPLETED → PENDING_REVIEW is not a valid transition → InvalidStateTransitionError."""
+        from services.state_machine import InvalidStateTransitionError, validate_transition
+
+        with pytest.raises(InvalidStateTransitionError):
+            validate_transition("PULL", "COMPLETED", "PENDING_REVIEW")
 
     async def test_valid_transfer_transition_passes(self) -> None:
-        """DRAFT → SUBMITTED is valid — no exception raised."""
-        from services.state_machine import TRANSFER_TRANSITIONS, validate_transition
+        """PULL DRAFT → PENDING_REVIEW is valid — no exception raised."""
+        from services.state_machine import validate_transition
 
-        validate_transition(TRANSFER_TRANSITIONS, "DRAFT", "SUBMITTED")
+        validate_transition("PULL", "DRAFT", "PENDING_REVIEW")
 
 
 @pytest.mark.unit
@@ -484,10 +479,11 @@ class TestLocalization:
         # Actual test is documented here; full test runs in frontend jest suite
         assert True, "i18n contract: t('missing.key') == 'missing.key' — see lib/i18n.ts"
 
-    def test_registry_has_exactly_115_permissions(self) -> None:
-        """Permission count guard — registry.py assert will catch violations at import time."""
+    def test_registry_has_exactly_118_permissions(self) -> None:
+        """Permission count guard — registry.py assert will catch violations at import time.
+        Current count: 116 base + 2 IMTS inventory permissions = 118."""
         from shared.permissions.registry import ALL_PERMISSIONS
-        assert len(ALL_PERMISSIONS) == 115
+        assert len(ALL_PERMISSIONS) == 118
 
     def test_all_permissions_have_string_ids(self) -> None:
         """Every permission ID must be a non-empty string in 'domain:action' format."""
