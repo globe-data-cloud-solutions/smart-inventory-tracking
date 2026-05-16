@@ -272,12 +272,9 @@ export default function InventoryPage() {
         unit:          p.unit,
         batchTracking: false,
         reorderPoint:  p.reorder_point ?? 0,
-        // Seed stock map from on_hand when the product was created with a warehouse.
-        // The Zustand store is the live authority (addReceive was called at creation);
-        // this is a fallback so the inventory table base is non-zero on page load.
-        stock: (p.on_hand && p.warehouse_id)
-          ? { [p.warehouse_id]: p.on_hand } as Record<string, number>
-          : {} as Record<string, number>,
+        // addReceive() was called at creation and persists to localStorage via Zustand.
+        // Do NOT seed stock here — that would double-count with the Zustand adjustment.
+        stock: {} as Record<string, number>,
       })),
   ];
 
@@ -399,7 +396,12 @@ export default function InventoryPage() {
           {isMWH && <BulkImportPanel     products={mergedProducts} warehouses={tenant.warehouses} orgSlug={org} />}
           <ReceiveStockPanel products={mergedProducts} warehouses={tenant.warehouses} orgSlug={org} />
           <IssueStockPanel   products={mergedProducts} warehouses={tenant.warehouses} orgSlug={org} />
-          {canAddProduct && <AddProductPanel apiBase="/api/v1/products" />}
+          {canAddProduct && (
+            <AddProductPanel
+              apiBase="/api/v1/products"
+              categories={Array.from(new Set(mergedProducts.map((p) => p.category).filter(Boolean)))}
+            />
+          )}
         </div>
       </div>
 

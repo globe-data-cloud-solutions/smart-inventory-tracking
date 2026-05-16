@@ -69,9 +69,14 @@ function Toast({ message, onDismiss }: { message: string; onDismiss: () => void 
 
 // ── Component ─────────────────────────────────────────────────────────────────
 
-interface AddProductPanelProps { apiBase: string; onClose?: () => void; }
+interface AddProductPanelProps {
+  apiBase: string;
+  onClose?: () => void;
+  /** Existing tenant categories for the dropdown — derived by the parent from mergedProducts. */
+  categories?: string[];
+}
 
-export function AddProductPanel({ apiBase, onClose }: AddProductPanelProps) {
+export function AddProductPanel({ apiBase, onClose, categories = [] }: AddProductPanelProps) {
   const { org = "admin" } = useParams<{ org: string }>();
   const orgAbbr    = toOrgAbbr(org);
   const token      = getToken();
@@ -83,8 +88,9 @@ export function AddProductPanel({ apiBase, onClose }: AddProductPanelProps) {
   const [open, setOpen] = useState(false);
 
   // ── Form fields ───────────────────────────────────────────────────────────
-  const [name,         setName]         = useState("");
-  const [category,     setCategory]     = useState("");
+  const [name,             setName]             = useState("");
+  const [category,         setCategory]         = useState("");
+  const [isCustomCategory, setIsCustomCategory] = useState(false);
   const [typeCode,     setTypeCode]     = useState("");
   const [unit,         setUnit]         = useState<Unit>("KG");
   const [packSize,     setPackSize]     = useState<PackSize>(1);
@@ -133,7 +139,8 @@ export function AddProductPanel({ apiBase, onClose }: AddProductPanelProps) {
 
   // ── Handlers ──────────────────────────────────────────────────────────────
   const resetForm = () => {
-    setName(""); setCategory(""); setTypeCode(""); setUnit("KG"); setPackSize(1);
+    setName(""); setCategory(""); setIsCustomCategory(false);
+    setTypeCode(""); setUnit("KG"); setPackSize(1);
     setOnHand(""); setReorderPoint("");
     setNameErr(""); setCategoryErr(""); setTypeCodeErr(""); setPanelError("");
   };
@@ -302,21 +309,58 @@ export function AddProductPanel({ apiBase, onClose }: AddProductPanelProps) {
             <FieldErr msg={nameErr} />
           </div>
 
-          {/* Category (required) */}
+          {/* Category (required) — dropdown when categories are available */}
           <div>
             <FieldLabel text="Category" />
-            <input
-              value={category}
-              onChange={(e) => { setCategory(e.target.value); setCategoryErr(""); }}
-              placeholder="e.g. Bottled Water, Cement, Packaging"
-              maxLength={100}
-              aria-required="true"
-              style={{
-                width: "100%", boxSizing: "border-box",
-                padding: "9px 12px", borderRadius: 4, fontSize: 13, outline: "none",
-                border: `1px solid ${categoryErr ? "#DC2626" : "#D1D5DB"}`,
-              }}
-            />
+            {categories.length > 0 && !isCustomCategory ? (
+              <select
+                value={category}
+                onChange={(e) => {
+                  if (e.target.value === "__new__") {
+                    setIsCustomCategory(true);
+                    setCategory("");
+                  } else {
+                    setCategory(e.target.value);
+                    setCategoryErr("");
+                  }
+                }}
+                aria-required="true"
+                style={{
+                  width: "100%", boxSizing: "border-box",
+                  padding: "9px 12px", borderRadius: 4, fontSize: 13,
+                  background: "#fff", outline: "none", cursor: "pointer",
+                  border: `1px solid ${categoryErr ? "#DC2626" : "#D1D5DB"}`,
+                }}
+              >
+                <option value="">— select category —</option>
+                {categories.map((c) => <option key={c} value={c}>{c}</option>)}
+                <option value="__new__">+ Add new category…</option>
+              </select>
+            ) : (
+              <div style={{ display: "flex", gap: 6 }}>
+                <input
+                  value={category}
+                  onChange={(e) => { setCategory(e.target.value); setCategoryErr(""); }}
+                  placeholder="e.g. Bottled Water, Cement, Packaging"
+                  maxLength={100}
+                  aria-required="true"
+                  style={{
+                    flex: 1, boxSizing: "border-box",
+                    padding: "9px 12px", borderRadius: 4, fontSize: 13, outline: "none",
+                    border: `1px solid ${categoryErr ? "#DC2626" : "#D1D5DB"}`,
+                  }}
+                />
+                {isCustomCategory && (
+                  <button
+                    type="button"
+                    onClick={() => { setIsCustomCategory(false); setCategory(""); }}
+                    style={{ padding: "9px 10px", fontSize: 12, background: "#F3F4F6", border: "1px solid #D1D5DB", borderRadius: 4, cursor: "pointer", color: "#6B7280", whiteSpace: "nowrap" }}
+                  >
+                    ← Back
+                  </button>
+                )}
+              </div>
+            )}
             {categoryErr && <p role="alert" style={{ fontSize: 12, color: "#DC2626", marginTop: 4 }}>{categoryErr}</p>}
           </div>
 

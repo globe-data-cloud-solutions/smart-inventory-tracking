@@ -404,9 +404,7 @@ export default function TransfersPage() {
         unit:          p.unit,
         batchTracking: false,
         reorderPoint:  p.reorder_point ?? 0,
-        stock:         (p.on_hand && p.warehouse_id)
-          ? { [p.warehouse_id]: p.on_hand } as Record<string, number>
-          : {} as Record<string, number>,
+        stock:         {} as Record<string, number>,
       })),
   ];
 
