@@ -9,7 +9,11 @@ from uuid import UUID
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from shared.outbox.schemas import AdjustmentAppliedPayload, InventoryUpdatedPayload
+from shared.outbox.schemas import (
+    AdjustmentAppliedPayload,
+    InventoryUpdatedPayload,
+    StockTransferredPayload,
+)
 from shared.outbox.writer import write_to_outbox
 from shared.utils.idempotency import check_and_register_idempotency_key
 from schemas.inventory import (
@@ -169,6 +173,206 @@ class InventoryService:
         return TransferOrderResponse(
             transfer_id=transfer_id,
             status=next_state,
+            from_warehouse_id=row.from_warehouse_id,
+            to_warehouse_id=row.to_warehouse_id,
+            created_at=datetime.now(timezone.utc),
+        )
+
+    async def dispatch_transfer(self, user: Any, transfer_id: UUID) -> TransferOrderResponse:
+        """Advance an APPROVED transfer to IN_TRANSIT.
+
+        Writes a TRANSFER_OUT ledger entry for every line and deducts the source
+        warehouse balance.  Only the source warehouse manager may dispatch —
+        user.warehouse_id must equal transfer.from_warehouse_id.
+        """
+        result = await self.db.execute(
+            text("SELECT * FROM transfer_orders WHERE id = :id AND tenant_id = :tid FOR UPDATE"),
+            {"id": str(transfer_id), "tid": str(user.tenant_id)},
+        )
+        row = result.fetchone()
+        if not row:
+            from fastapi import HTTPException
+            raise HTTPException(status_code=404, detail="Transfer not found")
+
+        # ABAC: only the source warehouse may dispatch
+        if user.warehouse_id and str(user.warehouse_id) != str(row.from_warehouse_id):
+            from fastapi import HTTPException
+            raise HTTPException(
+                status_code=403,
+                detail="Only the source warehouse can dispatch this transfer",
+            )
+
+        validate_transition(TRANSFER_TRANSITIONS, row.status, "IN_TRANSIT")
+
+        today = date.today()
+        lines = (await self.db.execute(
+            text(
+                "SELECT * FROM transfer_order_lines "
+                "WHERE transfer_order_id = :tid_order AND tenant_id = :tid"
+            ),
+            {"tid_order": str(transfer_id), "tid": str(user.tenant_id)},
+        )).fetchall()
+
+        for line in lines:
+            tx_id = str(uuid.uuid4())
+            ikey = f"transfer:{transfer_id}:dispatch:line:{line.id}"
+            await check_and_register_idempotency_key(self.db, ikey, tx_id)
+
+            await self.db.execute(
+                text(
+                    "INSERT INTO inventory_transactions "
+                    "(id, transaction_date, tenant_id, type, product_id, warehouse_id, "
+                    " quantity, idempotency_key, reference_id, source, created_by) "
+                    "VALUES (:id, :td, :tid, 'TRANSFER_OUT', :pid, :wid, :qty, "
+                    "        :ikey, :ref, 'WEB', :uid)"
+                ),
+                {
+                    "id": tx_id,
+                    "td": today,
+                    "tid": str(user.tenant_id),
+                    "pid": str(line.product_id),
+                    "wid": str(row.from_warehouse_id),
+                    "qty": str(-line.quantity),  # negative: deduct from source
+                    "ikey": ikey,
+                    "ref": str(transfer_id),
+                    "uid": str(user.user_id),
+                },
+            )
+
+            # Deduct from source warehouse balance
+            await self.db.execute(
+                text(
+                    "INSERT INTO inventory_balances (tenant_id, product_id, warehouse_id, quantity) "
+                    "VALUES (:tid, :pid, :wid, :qty) "
+                    "ON CONFLICT (tenant_id, product_id, warehouse_id) WHERE lot_number IS NULL "
+                    "DO UPDATE SET quantity = inventory_balances.quantity + EXCLUDED.quantity, "
+                    "             updated_at = now()"
+                ),
+                {
+                    "tid": str(user.tenant_id),
+                    "pid": str(line.product_id),
+                    "wid": str(row.from_warehouse_id),
+                    "qty": str(-line.quantity),
+                },
+            )
+
+        await self.db.execute(
+            text("UPDATE transfer_orders SET status = 'IN_TRANSIT', updated_at = now() WHERE id = :id"),
+            {"id": str(transfer_id)},
+        )
+
+        from datetime import datetime, timezone
+        return TransferOrderResponse(
+            transfer_id=transfer_id,
+            status="IN_TRANSIT",
+            from_warehouse_id=row.from_warehouse_id,
+            to_warehouse_id=row.to_warehouse_id,
+            created_at=datetime.now(timezone.utc),
+        )
+
+    async def receive_transfer(self, user: Any, transfer_id: UUID) -> TransferOrderResponse:
+        """Advance an IN_TRANSIT transfer to RECEIVED.
+
+        Writes a TRANSFER_IN ledger entry for every line and credits the destination
+        warehouse balance.  Only the destination warehouse manager may receive —
+        user.warehouse_id must equal transfer.to_warehouse_id.
+
+        Writes a StockTransferred outbox event per line in the same transaction.
+        """
+        result = await self.db.execute(
+            text("SELECT * FROM transfer_orders WHERE id = :id AND tenant_id = :tid FOR UPDATE"),
+            {"id": str(transfer_id), "tid": str(user.tenant_id)},
+        )
+        row = result.fetchone()
+        if not row:
+            from fastapi import HTTPException
+            raise HTTPException(status_code=404, detail="Transfer not found")
+
+        # ABAC: only the destination warehouse may receive
+        if user.warehouse_id and str(user.warehouse_id) != str(row.to_warehouse_id):
+            from fastapi import HTTPException
+            raise HTTPException(
+                status_code=403,
+                detail="Only the destination warehouse can receive this transfer",
+            )
+
+        validate_transition(TRANSFER_TRANSITIONS, row.status, "RECEIVED")
+
+        today = date.today()
+        lines = (await self.db.execute(
+            text(
+                "SELECT * FROM transfer_order_lines "
+                "WHERE transfer_order_id = :tid_order AND tenant_id = :tid"
+            ),
+            {"tid_order": str(transfer_id), "tid": str(user.tenant_id)},
+        )).fetchall()
+
+        for line in lines:
+            tx_id = str(uuid.uuid4())
+            ikey = f"transfer:{transfer_id}:receive:line:{line.id}"
+            await check_and_register_idempotency_key(self.db, ikey, tx_id)
+
+            await self.db.execute(
+                text(
+                    "INSERT INTO inventory_transactions "
+                    "(id, transaction_date, tenant_id, type, product_id, warehouse_id, "
+                    " quantity, idempotency_key, reference_id, source, created_by) "
+                    "VALUES (:id, :td, :tid, 'TRANSFER_IN', :pid, :wid, :qty, "
+                    "        :ikey, :ref, 'WEB', :uid)"
+                ),
+                {
+                    "id": tx_id,
+                    "td": today,
+                    "tid": str(user.tenant_id),
+                    "pid": str(line.product_id),
+                    "wid": str(row.to_warehouse_id),
+                    "qty": str(line.quantity),  # positive: credit to destination
+                    "ikey": ikey,
+                    "ref": str(transfer_id),
+                    "uid": str(user.user_id),
+                },
+            )
+
+            # Credit destination warehouse balance
+            await self.db.execute(
+                text(
+                    "INSERT INTO inventory_balances (tenant_id, product_id, warehouse_id, quantity) "
+                    "VALUES (:tid, :pid, :wid, :qty) "
+                    "ON CONFLICT (tenant_id, product_id, warehouse_id) WHERE lot_number IS NULL "
+                    "DO UPDATE SET quantity = inventory_balances.quantity + EXCLUDED.quantity, "
+                    "             updated_at = now()"
+                ),
+                {
+                    "tid": str(user.tenant_id),
+                    "pid": str(line.product_id),
+                    "wid": str(row.to_warehouse_id),
+                    "qty": str(line.quantity),
+                },
+            )
+
+            # Outbox event — same transaction as the ledger INSERT
+            await write_to_outbox(
+                self.db,
+                str(user.tenant_id),
+                "StockTransferred",
+                StockTransferredPayload(
+                    from_warehouse_id=str(row.from_warehouse_id),
+                    to_warehouse_id=str(row.to_warehouse_id),
+                    product_id=str(line.product_id),
+                    quantity=float(line.quantity),
+                    transfer_order_id=str(transfer_id),
+                ),
+            )
+
+        await self.db.execute(
+            text("UPDATE transfer_orders SET status = 'RECEIVED', updated_at = now() WHERE id = :id"),
+            {"id": str(transfer_id)},
+        )
+
+        from datetime import datetime, timezone
+        return TransferOrderResponse(
+            transfer_id=transfer_id,
+            status="RECEIVED",
             from_warehouse_id=row.from_warehouse_id,
             to_warehouse_id=row.to_warehouse_id,
             created_at=datetime.now(timezone.utc),

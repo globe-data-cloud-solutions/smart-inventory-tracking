@@ -49,6 +49,37 @@ async def approve_transfer(
     return SuccessResponse(data=result)
 
 
+@router.post("/{transfer_id}/dispatch", response_model=SuccessResponse[TransferOrderResponse])
+@require_permission(PERMISSIONS.TRANSFER_DISPATCH)
+async def dispatch_transfer(
+    transfer_id: UUID,
+    user=Depends(lambda: None),
+    db: AsyncSession = Depends(get_db_session),
+) -> SuccessResponse[TransferOrderResponse]:
+    """Advance APPROVED → IN_TRANSIT. Source warehouse only (warehouse_id ABAC).
+    Writes TRANSFER_OUT ledger entries and deducts source balance.
+    """
+    svc = InventoryService(db)
+    result = await svc.dispatch_transfer(user, transfer_id)
+    return SuccessResponse(data=result)
+
+
+@router.post("/{transfer_id}/receive", response_model=SuccessResponse[TransferOrderResponse])
+@require_permission(PERMISSIONS.TRANSFER_RECEIVE)
+async def receive_transfer(
+    transfer_id: UUID,
+    user=Depends(lambda: None),
+    db: AsyncSession = Depends(get_db_session),
+) -> SuccessResponse[TransferOrderResponse]:
+    """Advance IN_TRANSIT → RECEIVED. Destination warehouse only (warehouse_id ABAC).
+    Writes TRANSFER_IN ledger entries, credits destination balance, and fires
+    StockTransferred outbox events — all in the same database transaction.
+    """
+    svc = InventoryService(db)
+    result = await svc.receive_transfer(user, transfer_id)
+    return SuccessResponse(data=result)
+
+
 @router.get("/{transfer_id}", response_model=SuccessResponse[TransferOrderResponse])
 @require_permission(PERMISSIONS.TRANSFER_VIEW)
 async def get_transfer(
