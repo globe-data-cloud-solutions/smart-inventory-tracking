@@ -9,6 +9,8 @@ import { usePermission } from "@/hooks/usePermission";
 import { AddProductPanel } from "@/components/features/inventory/AddProductPanel";
 import { ReceiveStockPanel } from "@/components/features/inventory/ReceiveStockPanel";
 import { IssueStockPanel } from "@/components/features/inventory/IssueStockPanel";
+import { OpeningBalancePanel } from "@/components/features/inventory/OpeningBalancePanel";
+import { BulkImportPanel } from "@/components/features/inventory/BulkImportPanel";
 import { useInventoryStore } from "@/lib/inventory-state";
 import { api } from "@/lib/api";
 
@@ -250,6 +252,9 @@ export default function InventoryPage() {
   if (!tenant)
     return <p style={{ padding: "2rem", color: "#6B7280" }}>Tenant not found.</p>;
 
+  const userWarehouse = tenant.warehouses.find((w) => w.id === user.warehouseId);
+  const isMWH = userWarehouse?.type === "MWH" || ["TA", "SA"].includes(user.role);
+
   // ── Build modal rows when a cell is expanded ──────────────────────────────
   let modalRows: ModalRow[] = [];
   if (expandedCell) {
@@ -356,6 +361,8 @@ export default function InventoryPage() {
           </p>
         </div>
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+          {isMWH && <OpeningBalancePanel products={tenant.products} warehouses={tenant.warehouses} orgSlug={org} />}
+          {isMWH && <BulkImportPanel     products={tenant.products} warehouses={tenant.warehouses} orgSlug={org} />}
           <ReceiveStockPanel products={tenant.products} warehouses={tenant.warehouses} orgSlug={org} />
           <IssueStockPanel   products={tenant.products} warehouses={tenant.warehouses} orgSlug={org} />
           {canAddProduct && <AddProductPanel apiBase="/api/v1/products" />}
