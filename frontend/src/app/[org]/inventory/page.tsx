@@ -322,15 +322,23 @@ export default function InventoryPage() {
     }
   }
 
-  // Products to display
+  // Products to display — use mergedProducts so API-created products that have
+  // received opening balance stock (written to Zustand) appear in the main table.
   const allProducts = whId
-    ? tenant.products.filter((p) => {
-        const base = p.stock[whId] ?? 0;
-        const onH  = getOnHand(p.id, whId, base);
+    ? mergedProducts.filter((p) => {
+        const base    = p.stock[whId] ?? 0;
+        const onH     = getOnHand(p.id, whId, base);
         const transit = getInTransitTotal(p.id, whId);
         return onH > 0 || transit > 0;
       })
-    : tenant.products;
+    : mergedProducts;
+
+  // API products with genuinely zero stock — shown at the bottom with a NEW badge.
+  // Exclude any that now appear in the main table because they received stock.
+  const mainTableIds = new Set(allProducts.map((p) => p.id));
+  const zeroStockNewProducts = apiProducts.filter(
+    (p) => !tenantProductIds.has(p.id) && !mainTableIds.has(p.id)
+  );
 
   const categoryOptions = Array.from(new Set(allProducts.map((p) => p.category)));
   const unitOptions     = Array.from(new Set(allProducts.map((p) => p.unit)));
@@ -550,8 +558,8 @@ export default function InventoryPage() {
                 );
               })}
 
-              {/* API (new) products */}
-              {apiProducts.map((p, idx) => (
+              {/* API-created products with no stock yet — promoted to main rows once stock is added */}
+              {zeroStockNewProducts.map((p, idx) => (
                 <tr key={p.id} style={{ background: idx % 2 === 0 ? "#FAFFFE" : "#F0FDF4", borderBottom: "1px solid #F3F4F6" }}>
                   <td style={{ padding: "10px 14px", fontFamily: "monospace", fontSize: 11, color: "#9CA3AF" }}>
                     {p.sku}
