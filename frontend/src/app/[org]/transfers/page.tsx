@@ -205,28 +205,38 @@ function getAvailableActions(
 
   // WM
   if (role === "WM") {
+    const isDestWM = !!userWH && userWH === toWH;
+    const isSrcWM  = !!userWH && userWH === fromWH;
+
     if (type === "PULL") {
-      const map: Partial<Record<TransferStatus, Action[]>> = {
-        DRAFT:              [review, cancel],
-        IN_TRANSIT:         [partRecv, markRecv],
-        PARTIALLY_RECEIVED: [markRecv],
-        RECEIVED:           [complete],
-      };
-      return map[status] ?? [];
+      // Destination WM initiates the request and is the only one who can receive/complete.
+      if (isDestWM) {
+        const map: Partial<Record<TransferStatus, Action[]>> = {
+          DRAFT:              [review, cancel],
+          IN_TRANSIT:         [partRecv, markRecv],
+          PARTIALLY_RECEIVED: [markRecv],
+          RECEIVED:           [complete],
+        };
+        return map[status] ?? [];
+      }
+      // Source WM for a PULL has no direct actions — NM/LM handles issue and dispatch.
+      return [];
     }
     if (type === "PUSH") {
-      const map: Partial<Record<TransferStatus, Action[]>> = {
-        IN_TRANSIT:         [partRecv, markRecv],
-        PARTIALLY_RECEIVED: [markRecv],
-        RECEIVED:           [complete],
-      };
-      return map[status] ?? [];
+      // Destination WM is the only one who can receive and complete a PUSH.
+      // The source WM has no actions — NM/LM initiates and dispatches.
+      if (isDestWM) {
+        const map: Partial<Record<TransferStatus, Action[]>> = {
+          IN_TRANSIT:         [partRecv, markRecv],
+          PARTIALLY_RECEIVED: [markRecv],
+          RECEIVED:           [complete],
+        };
+        return map[status] ?? [];
+      }
+      void isSrcWM; // source WM is view-only for PUSH
+      return [];
     }
     if (type === "SISTER") {
-      // Context matters: destination WM vs source WM have different responsibilities
-      const isDestWM = !!userWH && userWH === toWH;   // they requested stock
-      const isSrcWM  = !!userWH && userWH === fromWH; // they supply stock
-
       if (isDestWM) {
         // Destination (requestor) WM: submits request, re-confirms intent, receives
         const map: Partial<Record<TransferStatus, Action[]>> = {

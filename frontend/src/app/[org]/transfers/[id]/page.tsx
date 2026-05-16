@@ -153,26 +153,37 @@ function getAvailableActions(
   }
 
   if (role === "WM") {
+    const isDestWM = !!userWH && userWH === toWH;
+    const isSrcWM  = !!userWH && userWH === fromWH;
+
     if (type === "PULL") {
-      const map: Partial<Record<TransferStatus, Action[]>> = {
-        DRAFT:              [review, cancel],
-        IN_TRANSIT:         [partRecv, markRecv],
-        PARTIALLY_RECEIVED: [markRecv],
-        RECEIVED:           [complete],
-      };
-      return map[status] ?? [];
+      // Destination WM initiates the request and is the only one who can receive/complete.
+      if (isDestWM) {
+        const map: Partial<Record<TransferStatus, Action[]>> = {
+          DRAFT:              [review, cancel],
+          IN_TRANSIT:         [partRecv, markRecv],
+          PARTIALLY_RECEIVED: [markRecv],
+          RECEIVED:           [complete],
+        };
+        return map[status] ?? [];
+      }
+      // Source WM has no direct actions — NM/LM handles issue and dispatch.
+      return [];
     }
     if (type === "PUSH") {
-      const map: Partial<Record<TransferStatus, Action[]>> = {
-        IN_TRANSIT:         [partRecv, markRecv],
-        PARTIALLY_RECEIVED: [markRecv],
-        RECEIVED:           [complete],
-      };
-      return map[status] ?? [];
+      // Only the destination WM can receive/complete. Source WM is view-only.
+      if (isDestWM) {
+        const map: Partial<Record<TransferStatus, Action[]>> = {
+          IN_TRANSIT:         [partRecv, markRecv],
+          PARTIALLY_RECEIVED: [markRecv],
+          RECEIVED:           [complete],
+        };
+        return map[status] ?? [];
+      }
+      void isSrcWM; // source WM is view-only for PUSH
+      return [];
     }
     if (type === "SISTER") {
-      const isDestWM = !!userWH && userWH === toWH;
-      const isSrcWM  = !!userWH && userWH === fromWH;
       if (isDestWM) {
         const map: Partial<Record<TransferStatus, Action[]>> = {
           DRAFT:                [submitReq, cancel],

@@ -2,15 +2,24 @@ const BASE_URL = process.env.NEXT_PUBLIC_API_URL ?? "";
 
 type Method = "GET" | "POST" | "PATCH" | "DELETE" | "PUT";
 
-/** Read the tenant slug from the session so API routes can filter by tenant. */
-function getTenantSlug(): string {
-  if (typeof window === "undefined") return "";
+interface _Session {
+  orgSlug?: string;
+  role?: string;
+  warehouseId?: string;
+}
+
+function _readSession(): _Session {
+  if (typeof window === "undefined") return {};
   try {
     const raw = window.localStorage.getItem("smart_demo_session");
-    if (!raw) return "";
-    const s = JSON.parse(raw) as { orgSlug?: string };
-    return s.orgSlug && s.orgSlug !== "admin" ? s.orgSlug : "";
-  } catch { return ""; }
+    return raw ? (JSON.parse(raw) as _Session) : {};
+  } catch { return {}; }
+}
+
+/** Read the tenant slug from the session so API routes can filter by tenant. */
+function getTenantSlug(): string {
+  const s = _readSession();
+  return s.orgSlug && s.orgSlug !== "admin" ? s.orgSlug : "";
 }
 
 export interface ApiResponse<T> {
@@ -39,6 +48,10 @@ async function request<T>(
   if (token) headers["Authorization"] = `Bearer ${token}`;
   const tenantSlug = getTenantSlug();
   if (tenantSlug) headers["X-Tenant-Slug"] = tenantSlug;
+  // Pass caller identity so server-side route handlers can enforce ABAC.
+  const session = _readSession();
+  if (session.role)        headers["X-User-Role"]         = session.role;
+  if (session.warehouseId) headers["X-User-Warehouse-Id"] = session.warehouseId;
 
   const res = await fetch(`${BASE_URL}${path}`, {
     method,
