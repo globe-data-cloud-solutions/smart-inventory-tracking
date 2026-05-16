@@ -50,8 +50,14 @@ async def check_permission(
             await audit_log(user, action.id, resource, "DENIED", "ABAC_DENIED: region scope")
             return PermissionResult(allowed=False, reason="ABAC_DENIED: region scope")
 
-    if "warehouse_id" in action.abac and getattr(user, "warehouse_id", None):
-        if resource.get("warehouse_id") and resource["warehouse_id"] != user.warehouse_id:
+    if "warehouse_id" in action.abac:
+        user_wh = getattr(user, "warehouse_id", None)
+        resource_wh = resource.get("warehouse_id")
+        # Only enforce when the resource carries a specific warehouse_id — actions that
+        # don't supply one (e.g. list endpoints) are still allowed.  When a warehouse_id
+        # IS present in the resource, the user must have a matching assignment; a None
+        # warehouse_id (middle-layer manager) never satisfies a warehouse scope check.
+        if resource_wh and (not user_wh or str(user_wh) != str(resource_wh)):
             await audit_log(user, action.id, resource, "DENIED", "ABAC_DENIED: warehouse scope")
             return PermissionResult(allowed=False, reason="ABAC_DENIED: warehouse scope")
 

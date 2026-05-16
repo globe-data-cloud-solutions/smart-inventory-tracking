@@ -194,8 +194,9 @@ class InventoryService:
             from fastapi import HTTPException
             raise HTTPException(status_code=404, detail="Transfer not found")
 
-        # ABAC: only the source warehouse may dispatch
-        if user.warehouse_id and str(user.warehouse_id) != str(row.from_warehouse_id):
+        # ABAC: caller must be the source warehouse — no warehouse_id means middle-layer
+        # manager (RM/NM/LM) who has no facility assignment and must be denied.
+        if not user.warehouse_id or str(user.warehouse_id) != str(row.from_warehouse_id):
             from fastapi import HTTPException
             raise HTTPException(
                 status_code=403,
@@ -288,8 +289,9 @@ class InventoryService:
             from fastapi import HTTPException
             raise HTTPException(status_code=404, detail="Transfer not found")
 
-        # ABAC: only the destination warehouse may receive
-        if user.warehouse_id and str(user.warehouse_id) != str(row.to_warehouse_id):
+        # ABAC: caller must be the destination warehouse — no warehouse_id means
+        # middle-layer manager (RM/NM/LM) who must be denied regardless of role.
+        if not user.warehouse_id or str(user.warehouse_id) != str(row.to_warehouse_id):
             from fastapi import HTTPException
             raise HTTPException(
                 status_code=403,
