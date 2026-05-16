@@ -255,6 +255,26 @@ export default function InventoryPage() {
   const userWarehouse = tenant.warehouses.find((w) => w.id === user.warehouseId);
   const isMWH = userWarehouse?.type === "MWH" || ["TA", "SA"].includes(user.role);
 
+  // Merge API-created products into the DemoProduct shape so every panel's dropdown
+  // includes products added via AddProductPanel this session. Static demo products
+  // take precedence; API products not already in the demo catalog are appended.
+  const tenantProductIds = new Set(tenant.products.map((p) => p.id));
+  const mergedProducts: DemoProduct[] = [
+    ...tenant.products,
+    ...apiProducts
+      .filter((p) => !tenantProductIds.has(p.id))
+      .map((p) => ({
+        id:            p.id,
+        sku:           p.sku,
+        name:          p.name,
+        category:      p.type_code,
+        unit:          p.unit,
+        batchTracking: false,
+        reorderPoint:  0,
+        stock:         {} as Record<string, number>,
+      })),
+  ];
+
   // ── Build modal rows when a cell is expanded ──────────────────────────────
   let modalRows: ModalRow[] = [];
   if (expandedCell) {
@@ -361,10 +381,10 @@ export default function InventoryPage() {
           </p>
         </div>
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-          {isMWH && <OpeningBalancePanel products={tenant.products} warehouses={tenant.warehouses} orgSlug={org} />}
-          {isMWH && <BulkImportPanel     products={tenant.products} warehouses={tenant.warehouses} orgSlug={org} />}
-          <ReceiveStockPanel products={tenant.products} warehouses={tenant.warehouses} orgSlug={org} />
-          <IssueStockPanel   products={tenant.products} warehouses={tenant.warehouses} orgSlug={org} />
+          {isMWH && <OpeningBalancePanel products={mergedProducts} warehouses={tenant.warehouses} orgSlug={org} />}
+          {isMWH && <BulkImportPanel     products={mergedProducts} warehouses={tenant.warehouses} orgSlug={org} />}
+          <ReceiveStockPanel products={mergedProducts} warehouses={tenant.warehouses} orgSlug={org} />
+          <IssueStockPanel   products={mergedProducts} warehouses={tenant.warehouses} orgSlug={org} />
           {canAddProduct && <AddProductPanel apiBase="/api/v1/products" />}
         </div>
       </div>
