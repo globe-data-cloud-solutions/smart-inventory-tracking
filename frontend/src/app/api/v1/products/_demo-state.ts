@@ -1,6 +1,10 @@
-type DemoProduct = {
+export type DemoProduct = {
   id: string; sku: string; name: string; type_code: string;
   unit: string; pack_size: number; tenant_slug: string; created_at: string;
+  category?: string;
+  on_hand?: number;
+  reorder_point?: number;
+  warehouse_id?: string;  // warehouse the on_hand applies to
 };
 
 declare global {

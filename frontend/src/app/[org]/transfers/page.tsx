@@ -5,7 +5,7 @@ import { useState } from "react";
 import Link from "next/link";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { getSession, SA_ORG_SLUG } from "@/lib/demo-auth";
-import { DEMO_TENANTS, type DemoWarehouse } from "@/lib/demo-data";
+import { DEMO_TENANTS, type DemoProduct, type DemoWarehouse } from "@/lib/demo-data";
 import { NewTransferPanel } from "@/components/features/transfers/NewTransferPanel";
 import { useInventoryStore } from "@/lib/inventory-state";
 import { useAuditStore } from "@/lib/audit-log-state";
@@ -29,6 +29,12 @@ type TransferStatus =
   | "COMPLETED"
   | "REJECTED"
   | "CANCELLED";
+
+interface ApiProduct {
+  id: string; sku: string; name: string; type_code: string;
+  unit: string; pack_size: number; created_at: string;
+  category?: string; on_hand?: number; reorder_point?: number; warehouse_id?: string | null;
+}
 
 interface ApiTransfer {
   id: string;
@@ -378,6 +384,32 @@ export default function TransfersPage() {
     refetchInterval: 15000,
   });
 
+  // Fetch API-created products and merge with static demo catalog so the
+  // NewTransferPanel product dropdown includes products added this session.
+  const { data: apiProducts = [] } = useQuery<ApiProduct[]>({
+    queryKey: ["products", org],
+    queryFn:  () => api.get<ApiProduct[]>("/api/v1/products"),
+    staleTime: 0,
+  });
+  const tenantProductIds = new Set(tenant.products.map((p) => p.id));
+  const mergedProducts: DemoProduct[] = [
+    ...tenant.products,
+    ...apiProducts
+      .filter((p) => !tenantProductIds.has(p.id))
+      .map((p) => ({
+        id:            p.id,
+        sku:           p.sku,
+        name:          p.name,
+        category:      p.category ?? p.type_code,
+        unit:          p.unit,
+        batchTracking: false,
+        reorderPoint:  p.reorder_point ?? 0,
+        stock:         (p.on_hand && p.warehouse_id)
+          ? { [p.warehouse_id]: p.on_hand } as Record<string, number>
+          : {} as Record<string, number>,
+      })),
+  ];
+
   // Apply hierarchy + role scoping
   const scopedTransfers = scopeTransfers(allTransfers, user.role, user.warehouseId, tenant.warehouses);
 
@@ -561,7 +593,7 @@ export default function TransfersPage() {
             )}
           </p>
         </div>
-        <NewTransferPanel products={tenant.products} warehouses={tenant.warehouses} orgSlug={org} />
+        <NewTransferPanel products={mergedProducts} warehouses={tenant.warehouses} orgSlug={org} />
       </div>
 
       {/* Summary chips */}

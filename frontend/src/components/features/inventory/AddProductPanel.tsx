@@ -6,6 +6,8 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import { getToken } from "@/lib/auth";
 import { t } from "@/lib/i18n";
+import { useInventoryStore } from "@/lib/inventory-state";
+import { getSession } from "@/lib/demo-auth";
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -71,21 +73,27 @@ interface AddProductPanelProps { apiBase: string; onClose?: () => void; }
 
 export function AddProductPanel({ apiBase, onClose }: AddProductPanelProps) {
   const { org = "admin" } = useParams<{ org: string }>();
-  const orgAbbr = toOrgAbbr(org);
-  const token   = getToken();
-  const qc      = useQueryClient();
+  const orgAbbr    = toOrgAbbr(org);
+  const token      = getToken();
+  const qc         = useQueryClient();
+  const addReceive = useInventoryStore((s) => s.addReceive);
+  const user       = getSession();
 
   // ── Panel open/close ──────────────────────────────────────────────────────
   const [open, setOpen] = useState(false);
 
-  // ── Form fields (plain state — unconditionally reactive) ──────────────────
-  const [name,     setName]     = useState("");
-  const [typeCode, setTypeCode] = useState("");
-  const [unit,     setUnit]     = useState<Unit>("KG");
-  const [packSize, setPackSize] = useState<PackSize>(1);
+  // ── Form fields ───────────────────────────────────────────────────────────
+  const [name,         setName]         = useState("");
+  const [category,     setCategory]     = useState("");
+  const [typeCode,     setTypeCode]     = useState("");
+  const [unit,         setUnit]         = useState<Unit>("KG");
+  const [packSize,     setPackSize]     = useState<PackSize>(1);
+  const [onHand,       setOnHand]       = useState("");
+  const [reorderPoint, setReorderPoint] = useState("");
 
   // ── Field-level validation errors ─────────────────────────────────────────
   const [nameErr,     setNameErr]     = useState("");
+  const [categoryErr, setCategoryErr] = useState("");
   const [typeCodeErr, setTypeCodeErr] = useState("");
 
   // ── Submission state ──────────────────────────────────────────────────────
@@ -110,15 +118,24 @@ export function AddProductPanel({ apiBase, onClose }: AddProductPanelProps) {
     ? `${orgAbbr}-${typeDisplay}-${unit}${packSize}-${String(counter).padStart(4, "0")}`
     : "";
 
+  // ── Derived ───────────────────────────────────────────────────────────────
+  const parsedOnHand = parseFloat(onHand);
+  const availableDisplay = (!isNaN(parsedOnHand) && parsedOnHand > 0)
+    ? parsedOnHand.toLocaleString()
+    : "—";
+  const onHandProvided = !isNaN(parsedOnHand) && parsedOnHand > 0;
+
   // ── Save gate ─────────────────────────────────────────────────────────────
   const nameOk     = name.trim().length > 0;
+  const categoryOk = category.trim().length > 0;
   const typeCodeOk = /^[A-Za-z]{2,5}$/.test(typeCode.trim());
-  const saveDisabled = !nameOk || !typeCodeOk || submitting || skuLoading;
+  const saveDisabled = !nameOk || !categoryOk || !typeCodeOk || submitting || skuLoading;
 
   // ── Handlers ──────────────────────────────────────────────────────────────
   const resetForm = () => {
-    setName(""); setTypeCode(""); setUnit("KG"); setPackSize(1);
-    setNameErr(""); setTypeCodeErr(""); setPanelError("");
+    setName(""); setCategory(""); setTypeCode(""); setUnit("KG"); setPackSize(1);
+    setOnHand(""); setReorderPoint("");
+    setNameErr(""); setCategoryErr(""); setTypeCodeErr(""); setPanelError("");
   };
 
   const openPanel = () => { resetForm(); setOpen(true); };
@@ -132,22 +149,36 @@ export function AddProductPanel({ apiBase, onClose }: AddProductPanelProps) {
   };
 
   const handleSave = async () => {
-    // Inline validation before submit
     let valid = true;
-    if (!name.trim())    { setNameErr("name_required");        valid = false; }
-    if (!typeCodeOk)     { setTypeCodeErr("type_code_min");    valid = false; }
+    if (!name.trim())     { setNameErr("name_required");     valid = false; }
+    if (!category.trim()) { setCategoryErr("Category is required."); valid = false; }
+    if (!typeCodeOk)      { setTypeCodeErr("type_code_min"); valid = false; }
     if (!valid) return;
 
     setSubmitting(true);
     setPanelError("");
     try {
+      const onHandQty  = parsedOnHand > 0 ? parsedOnHand : 0;
+      const reorderQty = parseFloat(reorderPoint);
+      const whId       = user?.warehouseId ?? "";
+
       const data = await api.post<{ id: string; sku: string }>(apiBase, {
-        name:      name.trim(),
-        type_code: typeCode.trim().toUpperCase(),
+        name:          name.trim(),
+        category:      category.trim(),
+        type_code:     typeCode.trim().toUpperCase(),
         unit,
-        pack_size: packSize,
-        org_slug:  org,
+        pack_size:     packSize,
+        org_slug:      org,
+        on_hand:       onHandQty,
+        reorder_point: !isNaN(reorderQty) && reorderQty > 0 ? reorderQty : 0,
+        warehouse_id:  whId || undefined,
       }, token ?? undefined);
+
+      // If on_hand was provided and we have a target warehouse, initialise the
+      // Zustand balance immediately — equivalent to an implicit opening receipt.
+      if (onHandQty > 0 && whId) {
+        addReceive(data.id, whId, onHandQty);
+      }
 
       setToast(t("product.add.success").replace("{{sku}}", data.sku));
       void qc.invalidateQueries({ queryKey: ["products"] });
@@ -271,6 +302,24 @@ export function AddProductPanel({ apiBase, onClose }: AddProductPanelProps) {
             <FieldErr msg={nameErr} />
           </div>
 
+          {/* Category (required) */}
+          <div>
+            <FieldLabel text="Category" />
+            <input
+              value={category}
+              onChange={(e) => { setCategory(e.target.value); setCategoryErr(""); }}
+              placeholder="e.g. Bottled Water, Cement, Packaging"
+              maxLength={100}
+              aria-required="true"
+              style={{
+                width: "100%", boxSizing: "border-box",
+                padding: "9px 12px", borderRadius: 4, fontSize: 13, outline: "none",
+                border: `1px solid ${categoryErr ? "#DC2626" : "#D1D5DB"}`,
+              }}
+            />
+            {categoryErr && <p role="alert" style={{ fontSize: 12, color: "#DC2626", marginTop: 4 }}>{categoryErr}</p>}
+          </div>
+
           {/* Product Type Code */}
           <div>
             <FieldLabel text={t("product.add.field.type_code")} hint={t("product.add.field.type_code_hint")} />
@@ -324,6 +373,63 @@ export function AddProductPanel({ apiBase, onClose }: AddProductPanelProps) {
                 {PACKS.map((o) => <option key={o.value} value={o.value}>{t(o.label)}</option>)}
               </select>
             </div>
+          </div>
+
+          {/* ── Stock initialisation (optional) ──────────────────────────── */}
+          <div style={{ borderTop: "1px solid #F3F4F6", paddingTop: 14 }}>
+            <p style={{ fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.05em", color: "#9CA3AF", margin: "0 0 12px" }}>
+              Initial Stock — optional
+            </p>
+
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 12 }}>
+              {/* On-hand */}
+              <div>
+                <FieldLabel text="On-hand" hint="optional" />
+                <input
+                  type="number" min="0" step="1"
+                  value={onHand}
+                  onChange={(e) => setOnHand(e.target.value)}
+                  placeholder="0"
+                  style={{ width: "100%", boxSizing: "border-box", padding: "9px 12px", borderRadius: 4, border: "1px solid #D1D5DB", fontSize: 13, outline: "none" }}
+                />
+              </div>
+
+              {/* Available — read-only, computed from on-hand */}
+              <div>
+                <FieldLabel text="Available" hint="computed" />
+                <div style={{
+                  padding: "9px 12px", borderRadius: 4, border: "1px solid #E5E7EB",
+                  background: "#F9FAFB", fontSize: 13, color: "#6B7280", fontWeight: 600,
+                }}>
+                  {availableDisplay}
+                </div>
+                <p style={{ fontSize: 11, color: "#9CA3AF", marginTop: 3 }}>On-hand minus reservations</p>
+              </div>
+            </div>
+
+            {/* Reorder point */}
+            <div>
+              <FieldLabel text={`Reorder when ${unit} is at`} hint="optional" />
+              <input
+                type="number" min="0" step="1"
+                value={reorderPoint}
+                onChange={(e) => setReorderPoint(e.target.value)}
+                placeholder="0"
+                style={{ width: "100%", boxSizing: "border-box", padding: "9px 12px", borderRadius: 4, border: "1px solid #D1D5DB", fontSize: 13, outline: "none" }}
+              />
+            </div>
+
+            {/* Warehouse note for TA/SA without a locked warehouse */}
+            {onHandProvided && !user?.warehouseId && (
+              <div style={{ marginTop: 8, background: "#EFF6FF", border: "1px solid #BFDBFE", borderRadius: 4, padding: "8px 12px", fontSize: 12, color: "#1E40AF" }}>
+                Stock will be stored in the product record. Use <strong>Opening Balance</strong> on the Inventory page to post it to a specific warehouse.
+              </div>
+            )}
+            {onHandProvided && user?.warehouseId && (
+              <div style={{ marginTop: 8, background: "#F0FDF4", border: "1px solid #BBF7D0", borderRadius: 4, padding: "8px 12px", fontSize: 12, color: "#059669" }}>
+                On-hand will be posted to <strong>{user.warehouseName ?? "your warehouse"}</strong> on save.
+              </div>
+            )}
           </div>
 
           {/* Live SKU inline hint once type_code has ≥2 chars */}

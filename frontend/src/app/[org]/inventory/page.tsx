@@ -18,6 +18,7 @@ import { api } from "@/lib/api";
 type ApiProduct = {
   id: string; sku: string; name: string; type_code: string;
   unit: string; pack_size: number; created_at: string;
+  category?: string; on_hand?: number; reorder_point?: number; warehouse_id?: string | null;
 };
 type Filters = { category: string[]; unit: string[]; status: string[] };
 type ExpandedCell = {
@@ -267,11 +268,16 @@ export default function InventoryPage() {
         id:            p.id,
         sku:           p.sku,
         name:          p.name,
-        category:      p.type_code,
+        category:      p.category ?? p.type_code,
         unit:          p.unit,
         batchTracking: false,
-        reorderPoint:  0,
-        stock:         {} as Record<string, number>,
+        reorderPoint:  p.reorder_point ?? 0,
+        // Seed stock map from on_hand when the product was created with a warehouse.
+        // The Zustand store is the live authority (addReceive was called at creation);
+        // this is a fallback so the inventory table base is non-zero on page load.
+        stock: (p.on_hand && p.warehouse_id)
+          ? { [p.warehouse_id]: p.on_hand } as Record<string, number>
+          : {} as Record<string, number>,
       })),
   ];
 

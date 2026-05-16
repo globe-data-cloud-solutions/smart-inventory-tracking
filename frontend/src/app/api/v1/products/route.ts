@@ -9,6 +9,8 @@ export async function POST(req: NextRequest) {
   const body = (await req.json()) as {
     name?: string; type_code?: string; unit?: string;
     pack_size?: number; org_slug?: string;
+    category?: string; on_hand?: number; reorder_point?: number;
+    warehouse_id?: string;
   };
 
   const name     = typeof body.name === "string" ? body.name.trim() : "";
@@ -54,7 +56,14 @@ export async function POST(req: NextRequest) {
   const id  = crypto.randomUUID();
   const now = new Date().toISOString();
 
-  const product = { id, sku, name, type_code: typeCode, unit: body.unit!, pack_size: packSize, tenant_slug: tenantSlug, created_at: now };
+  const product = {
+    id, sku, name, type_code: typeCode, unit: body.unit!, pack_size: packSize,
+    tenant_slug: tenantSlug, created_at: now,
+    category:      body.category     ?? typeCode,
+    on_hand:       body.on_hand      ?? 0,
+    reorder_point: body.reorder_point ?? 0,
+    warehouse_id:  body.warehouse_id ?? undefined,
+  };
   demoProducts.push(product);
 
   return NextResponse.json(
