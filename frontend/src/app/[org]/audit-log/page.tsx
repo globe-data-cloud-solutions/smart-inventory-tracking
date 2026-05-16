@@ -26,13 +26,17 @@ const SEL: React.CSSProperties = {
 
 /**
  * Returns the SET of warehouse NAMES the user is allowed to see in the audit log.
- * null = unrestricted (TA, SA, or NM at MWH — sees everything in the tenant).
+ * null = unrestricted (TA or SA only — sees everything in the tenant).
  *
  * View rules:
- *   MWH (NM)     → all warehouses in org  (null)
- *   RWH (RM/NM)  → own WH + all descendants via parentId
+ *   MWH (NM)     → own MWH + all descendants via parentId (same rule as RWH)
+ *   RWH (RM/NM)  → own RWH + all descendants via parentId
  *   WH / SUB_WH  → own WH only
  *   TA / SA      → all  (null)
+ *
+ * Cross-MWH visibility: if a transfer entry involves one WH from each MWH tree,
+ * entryInScope() matches on either fromWarehouse or toWarehouse, so both NMs
+ * see that entry automatically without any extra logic here.
  */
 function buildScopeNames(
   warehouseId: string | undefined,
@@ -44,10 +48,9 @@ function buildScopeNames(
   const userWH = warehouses.find((w) => w.id === warehouseId);
   if (!userWH) return null;
 
-  // MWH users see everything regardless of role
-  if (userWH.type === "MWH") return null;
-
   // Build set of IDs: own + all descendants via parentId chain
+  // Applies equally to MWH, RWH, WH, and SUB_WH — each user sees only
+  // their own facility and the facilities below it in the parentId tree.
   const scopeIds = new Set<string>([warehouseId]);
   function addDescendants(parentId: string) {
     for (const wh of warehouses) {
