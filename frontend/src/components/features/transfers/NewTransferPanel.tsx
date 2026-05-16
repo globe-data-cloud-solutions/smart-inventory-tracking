@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useRef, useEffect } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { nanoid } from "nanoid";
 import { api } from "@/lib/api";
@@ -74,6 +74,121 @@ const INPUT: React.CSSProperties = {
 const SELECT: React.CSSProperties = { ...INPUT, cursor: "pointer" };
 const LOCKED: React.CSSProperties = { ...INPUT, background: "#F3F4F6", color: "#6B7280", cursor: "not-allowed" };
 
+/* ── Tier helpers ─────────────────────────────────────────────────────────── */
+const TIER_COLOR = ["#111827", "#D97706", "#DC2626"] as const;
+const TIER_BG    = ["#F0FDF4", "#FFFBEB", "#FEF2F2"] as const;
+const TIER_ICON  = ["",        "⚠",       "✕"       ] as const;
+
+function stockTier(avail: number, reorderPoint: number): 0 | 1 | 2 {
+  if (avail < 0)                                   return 2;
+  if (reorderPoint > 0 && avail <= reorderPoint)   return 1;
+  return 0;
+}
+
+interface ProductOption {
+  id: string; name: string; sku: string;
+  avail: number; tier: 0 | 1 | 2; sourceKnown: boolean;
+}
+
+/** Custom color-coded product dropdown.
+ *  Tier 0 = ok (black) · Tier 1 = below reorder (orange) · Tier 2 = negative (red).
+ *  Red items are sorted to the bottom of the list.
+ */
+function ProductSelect({
+  options, value, onChange,
+}: {
+  options: ProductOption[];
+  value: string;
+  onChange: (id: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    function close(e: MouseEvent) {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    }
+    document.addEventListener("mousedown", close);
+    return () => document.removeEventListener("mousedown", close);
+  }, []);
+
+  const selected = options.find((o) => o.id === value);
+
+  return (
+    <div ref={ref} style={{ position: "relative" }}>
+      {/* Trigger */}
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        style={{
+          width: "100%", padding: "8px 10px", fontSize: 13,
+          border: "1px solid #D1D5DB", borderRadius: 4, background: "#fff",
+          textAlign: "left", cursor: "pointer", outline: "none",
+          display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8,
+        }}
+      >
+        {selected ? (
+          <span style={{ flex: 1, overflow: "hidden" }}>
+            <span style={{ color: TIER_COLOR[selected.tier], fontWeight: 600 }}>
+              {TIER_ICON[selected.tier] && <span style={{ marginRight: 4 }}>{TIER_ICON[selected.tier]}</span>}
+              {selected.name}
+            </span>
+            <span style={{ color: "#9CA3AF", fontSize: 11, marginLeft: 6 }}>{selected.sku}</span>
+          </span>
+        ) : (
+          <span style={{ color: "#9CA3AF", flex: 1 }}>— select product —</span>
+        )}
+        <span style={{ color: "#9CA3AF", fontSize: 10, flexShrink: 0 }}>▾</span>
+      </button>
+
+      {open && (
+        <div style={{
+          position: "absolute", top: "calc(100% + 2px)", left: 0, right: 0, zIndex: 300,
+          background: "#fff", border: "1px solid #D1D5DB", borderRadius: 4,
+          boxShadow: "0 6px 20px rgba(0,0,0,0.14)", maxHeight: 300, overflowY: "auto",
+        }}>
+          {options.length === 0 && (
+            <p style={{ padding: "12px", color: "#9CA3AF", fontSize: 13, textAlign: "center" }}>
+              No products
+            </p>
+          )}
+          {options.map((o) => (
+            <div
+              key={o.id}
+              onMouseDown={() => { onChange(o.id); setOpen(false); }}
+              style={{
+                padding: "9px 10px", cursor: "pointer", fontSize: 13,
+                borderBottom: "1px solid #F3F4F6",
+                background: o.id === value ? TIER_BG[o.tier] : "transparent",
+                display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8,
+              }}
+            >
+              <span style={{ flex: 1, overflow: "hidden" }}>
+                <span style={{ color: TIER_COLOR[o.tier], fontWeight: o.tier > 0 ? 600 : 500 }}>
+                  {TIER_ICON[o.tier] && <span style={{ marginRight: 4 }}>{TIER_ICON[o.tier]}</span>}
+                  {o.name}
+                </span>
+                <span style={{ color: "#9CA3AF", fontSize: 11, marginLeft: 6 }}>{o.sku}</span>
+              </span>
+              {o.sourceKnown && (
+                <span style={{
+                  fontSize: 11, fontWeight: 700, flexShrink: 0,
+                  color: TIER_COLOR[o.tier],
+                  background: TIER_BG[o.tier],
+                  padding: "2px 7px", borderRadius: 3,
+                }}>
+                  {o.avail < 0 ? o.avail.toLocaleString() : `+${o.avail.toLocaleString()}`}
+                </span>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ── Main component ───────────────────────────────────────────────────────── */
 export function NewTransferPanel({ products, warehouses, orgSlug }: Props) {
   const qc          = useQueryClient();
   const { addTransfer, getAvailable, getOnHand } = useInventoryStore();
@@ -112,6 +227,7 @@ export function NewTransferPanel({ products, warehouses, orgSlug }: Props) {
   const [stockAlert, setStockAlert] = useState<{
     fromWHName: string; productName: string;
     onHand: number; available: number; requested: number;
+    canForce: boolean;
   } | null>(null);
 
   function reset() {
@@ -170,8 +286,21 @@ export function NewTransferPanel({ products, warehouses, orgSlug }: Props) {
     return true;
   });
 
-  const onSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
+  // ── Computed product options — colour-coded and sorted by availability tier ──
+  const productOptions: ProductOption[] = [...products]
+    .map((p) => {
+      const base  = effectiveFrom ? (p.stock[effectiveFrom] ?? 0) : 0;
+      const avail = effectiveFrom ? getAvailable(p.id, effectiveFrom, base) : 0;
+      return {
+        id: p.id, name: p.name, sku: p.sku,
+        avail,
+        tier: effectiveFrom ? stockTier(avail, p.reorderPoint) : 0,
+        sourceKnown: !!effectiveFrom,
+      } as ProductOption;
+    })
+    .sort((a, b) => a.tier - b.tier || a.name.localeCompare(b.name));
+
+  async function doCreate(skipStockCheck: boolean) {
     setError("");
 
     if (!form.productId)   { setError("Please select a product."); return; }
@@ -185,13 +314,14 @@ export function NewTransferPanel({ products, warehouses, orgSlug }: Props) {
     const fromWH  = warehouses.find((w) => w.id === effectiveFrom);
     const toWH    = warehouses.find((w) => w.id === effectiveTo);
 
-    // ── Insufficient balance guard ───────────────────────────────────────────
-    // Prevent transfers that would cause negative stock at the source warehouse.
-    // This applies to all transfer types: the source is always effectiveFrom.
-    if (product && effectiveFrom) {
-      const baseStock   = product.stock[effectiveFrom] ?? 0;
-      const liveOnHand  = getOnHand(product.id, effectiveFrom, baseStock);
-      const liveAvail   = getAvailable(product.id, effectiveFrom, baseStock);
+    // ── Insufficient balance guard ────────────────────────────────────────────
+    // PUSH: hard block — you can't send what you don't have.
+    // PULL / SISTER: soft warning — user may override because the approval
+    //   workflow can still handle the request at a source with limited stock.
+    if (!skipStockCheck && product && effectiveFrom) {
+      const baseStock  = product.stock[effectiveFrom] ?? 0;
+      const liveOnHand = getOnHand(product.id, effectiveFrom, baseStock);
+      const liveAvail  = getAvailable(product.id, effectiveFrom, baseStock);
       if (qty > liveAvail) {
         setStockAlert({
           fromWHName:  fromWH?.name ?? effectiveFrom,
@@ -199,6 +329,7 @@ export function NewTransferPanel({ products, warehouses, orgSlug }: Props) {
           onHand:      liveOnHand,
           available:   liveAvail,
           requested:   qty,
+          canForce:    isPull || isSister,
         });
         return;
       }
@@ -260,6 +391,11 @@ export function NewTransferPanel({ products, warehouses, orgSlug }: Props) {
     } finally {
       setLoading(false);
     }
+  }
+
+  const onSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    void doCreate(false);
   };
 
   return (
@@ -317,14 +453,14 @@ export function NewTransferPanel({ products, warehouses, orgSlug }: Props) {
             </div>
           )}
 
-          {/* Product */}
-          <Field label="Product">
-            <select value={form.productId} onChange={(e) => setField("productId", e.target.value)} style={SELECT} required>
-              <option value="">— select product —</option>
-              {products.map((p) => (
-                <option key={p.id} value={p.id}>{p.name} · {p.sku}</option>
-              ))}
-            </select>
+          {/* Product — color-coded by available balance at the source warehouse */}
+          <Field label="Product"
+            hint={effectiveFrom ? "orange = below reorder · red = negative" : "select source warehouse first to see availability"}>
+            <ProductSelect
+              options={productOptions}
+              value={form.productId}
+              onChange={(id) => setField("productId", id)}
+            />
           </Field>
 
           {/* From Warehouse */}
@@ -398,9 +534,28 @@ export function NewTransferPanel({ products, warehouses, orgSlug }: Props) {
                   </span>
                 </div>
               </div>
-              <p style={{ fontSize: 11, color: "#9CA3AF", margin: "8px 0 0" }}>
-                Reduce the quantity or choose a different source warehouse.
-              </p>
+              {stockAlert.canForce ? (
+                <div style={{ marginTop: 10, display: "flex", gap: 8 }}>
+                  <button
+                    type="button"
+                    onClick={() => { setStockAlert(null); void doCreate(true); }}
+                    style={{ flex: 1, padding: "7px 12px", background: "#DC2626", color: "#fff", fontWeight: 700, fontSize: 12, borderRadius: 4, border: "none", cursor: "pointer" }}
+                  >
+                    Proceed anyway (PULL draft)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setStockAlert(null)}
+                    style={{ padding: "7px 12px", background: "#F3F4F6", color: "#374151", fontWeight: 600, fontSize: 12, borderRadius: 4, border: "1px solid #D1D5DB", cursor: "pointer" }}
+                  >
+                    Cancel
+                  </button>
+                </div>
+              ) : (
+                <p style={{ fontSize: 11, color: "#9CA3AF", margin: "8px 0 0" }}>
+                  Reduce the quantity or choose a different source warehouse.
+                </p>
+              )}
             </div>
           )}
 
