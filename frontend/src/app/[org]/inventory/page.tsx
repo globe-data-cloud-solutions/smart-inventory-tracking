@@ -272,9 +272,12 @@ export default function InventoryPage() {
         unit:          p.unit,
         batchTracking: false,
         reorderPoint:  p.reorder_point ?? 0,
-        // addReceive() was called at creation and persists to localStorage via Zustand.
-        // Do NOT seed stock here — that would double-count with the Zustand adjustment.
-        stock: {} as Record<string, number>,
+        // Seed baseStock from the server-side on_hand value so getOnHand returns the
+        // correct balance without a Zustand adjustment (which would double-count and
+        // only be available in the creating user's browser session).
+        stock: (p.on_hand && p.warehouse_id)
+          ? { [p.warehouse_id]: p.on_hand } as Record<string, number>
+          : {} as Record<string, number>,
       })),
   ];
 

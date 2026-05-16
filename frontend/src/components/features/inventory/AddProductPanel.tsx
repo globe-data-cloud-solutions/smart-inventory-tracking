@@ -6,7 +6,6 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import { getToken } from "@/lib/auth";
 import { t } from "@/lib/i18n";
-import { useInventoryStore } from "@/lib/inventory-state";
 import { getSession } from "@/lib/demo-auth";
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -80,9 +79,8 @@ export function AddProductPanel({ apiBase, onClose, categories = [] }: AddProduc
   const { org = "admin" } = useParams<{ org: string }>();
   const orgAbbr    = toOrgAbbr(org);
   const token      = getToken();
-  const qc         = useQueryClient();
-  const addReceive = useInventoryStore((s) => s.addReceive);
-  const user       = getSession();
+  const qc   = useQueryClient();
+  const user = getSession();
 
   // ── Panel open/close ──────────────────────────────────────────────────────
   const [open, setOpen] = useState(false);
@@ -181,11 +179,11 @@ export function AddProductPanel({ apiBase, onClose, categories = [] }: AddProduc
         warehouse_id:  whId || undefined,
       }, token ?? undefined);
 
-      // If on_hand was provided and we have a target warehouse, initialise the
-      // Zustand balance immediately — equivalent to an implicit opening receipt.
-      if (onHandQty > 0 && whId) {
-        addReceive(data.id, whId, onHandQty);
-      }
+      // on_hand is stored on the server-side product record.
+      // mergedProducts in every page seeds product.stock from it, so getOnHand
+      // reads it as baseStock without creating a Zustand adjustment.
+      // This keeps the balance consistent across browser sessions and prevents
+      // on_hand from appearing in the "Received" column.
 
       setToast(t("product.add.success").replace("{{sku}}", data.sku));
       void qc.invalidateQueries({ queryKey: ["products"] });
