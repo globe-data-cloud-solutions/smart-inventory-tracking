@@ -76,3 +76,10 @@ if (!globalThis._smartDemoTransfers) {
 }
 
 export const demoTransfers: TransferRecord[] = globalThis._smartDemoTransfers;
+
+/** Reset to seed state — dev/test only. Replaces contents in-place so the
+ *  exported array reference stays valid. Called by the /_reset route. */
+export function resetDemoTransfers(): void {
+  demoTransfers.splice(0, demoTransfers.length, ...SEED.map((r) => ({ ...r })));
+  globalThis._smartDemoTransfers = demoTransfers;
+}
