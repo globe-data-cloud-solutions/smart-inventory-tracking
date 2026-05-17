@@ -47,6 +47,13 @@ def _decode_jwt(token: str) -> dict[str, Any]:
         raise HTTPException(status_code=401, detail=str(exc))
 
 
+# /health must be declared BEFORE the /{path:path} catch-all — FastAPI matches
+# routes in registration order and the wildcard would otherwise intercept it.
+@app.get("/health")
+async def health() -> dict:
+    return {"status": "ok", "service": "api-gateway"}
+
+
 @app.api_route("/{path:path}", methods=["GET", "POST", "PATCH", "DELETE", "PUT"])
 async def proxy(request: Request, path: str) -> Response:
     full_path = f"/{path}"
@@ -81,8 +88,3 @@ async def proxy(request: Request, path: str) -> Response:
         status_code=resp.status_code,
         headers=dict(resp.headers),
     )
-
-
-@app.get("/health")
-async def health() -> dict:
-    return {"status": "ok", "service": "api-gateway"}
