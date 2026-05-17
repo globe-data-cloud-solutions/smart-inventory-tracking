@@ -7,7 +7,7 @@ from uuid import UUID
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from services.inventory_service.schemas.inventory import LotSelection
+from schemas.inventory import LotSelection
 
 
 class InsufficientStockError(Exception):

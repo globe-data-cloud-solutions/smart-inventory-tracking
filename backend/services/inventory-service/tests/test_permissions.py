@@ -12,7 +12,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from fastapi import HTTPException
-from httpx import AsyncClient
+from httpx import ASGITransport, AsyncClient
 
 from main import app
 
@@ -48,10 +48,7 @@ RECEIVE_PAYLOAD = {
 }
 
 
-@pytest.fixture
-async def client():
-    async with AsyncClient(app=app, base_url="http://test") as ac:
-        yield ac
+# client fixture is provided by conftest.py (WM_STUB user + mock DB)
 
 
 def _mock_full_grant():
@@ -81,26 +78,28 @@ class TestInventoryReceivePermissions:
 
     async def test_01_rbac_happy_path(self, client: AsyncClient) -> None:
         """WM + valid context + FULL grant → permission passes (handler may 422 without DB)."""
-        from shared.permissions.middleware import PermissionResult
-
         with patch(
-            "shared.permissions.store.get_role_permission",
+            "shared.permissions.middleware.get_role_permission",
             new=AsyncMock(return_value=_mock_full_grant()),
-        ), patch("shared.permissions.audit.audit_log", new=AsyncMock()):
+        ), patch("shared.permissions.middleware.audit_log", new=AsyncMock()):
             response = await client.post(
                 "/api/v1/inventory/receive/",
                 json=RECEIVE_PAYLOAD,
                 headers={"Authorization": "Bearer dummy"},
             )
-        # 422 is acceptable — it means permission passed but DB is unavailable in unit test
+        # 422 is acceptable — permission passed but mock DB raises in the service layer
         assert response.status_code in (201, 422, 500)
 
     async def test_02_rbac_deny_wrong_role(self, client: AsyncClient) -> None:
         """Auditor (AU) → get_role_permission returns None → 403 RBAC_DENIED."""
+        from dependencies import get_current_user
+
+        au = _User("u-au", TENANT_A, None, None, "AU")
+        app.dependency_overrides[get_current_user] = lambda: au
         with patch(
-            "shared.permissions.store.get_role_permission",
+            "shared.permissions.middleware.get_role_permission",
             new=AsyncMock(return_value=None),
-        ), patch("shared.permissions.audit.audit_log", new=AsyncMock()):
+        ), patch("shared.permissions.middleware.audit_log", new=AsyncMock()):
             response = await client.post(
                 "/api/v1/inventory/receive/",
                 json=RECEIVE_PAYLOAD,
@@ -116,9 +115,9 @@ class TestInventoryReceivePermissions:
         from shared.permissions.registry import PERMISSIONS
 
         with patch(
-            "shared.permissions.store.get_role_permission",
+            "shared.permissions.middleware.get_role_permission",
             new=AsyncMock(return_value=_mock_full_grant()),
-        ), patch("shared.permissions.audit.audit_log", new=AsyncMock()):
+        ), patch("shared.permissions.middleware.audit_log", new=AsyncMock()):
             result = await check_permission(
                 OTHER_TENANT,  # user whose tenant_id = TENANT_B
                 PERMISSIONS.INVENTORY_RECEIVE,
@@ -138,9 +137,9 @@ class TestInventoryReceivePermissions:
 
         user = _User("u-rm", TENANT_A, None, "region-1", "RM")
         with patch(
-            "shared.permissions.store.get_role_permission",
+            "shared.permissions.middleware.get_role_permission",
             new=AsyncMock(return_value=_mock_full_grant()),
-        ), patch("shared.permissions.audit.audit_log", new=AsyncMock()):
+        ), patch("shared.permissions.middleware.audit_log", new=AsyncMock()):
             result = await check_permission(
                 user,
                 PERMISSIONS.TRANSFER_APPROVE,
@@ -155,9 +154,9 @@ class TestInventoryReceivePermissions:
         from shared.permissions.registry import PERMISSIONS
 
         with patch(
-            "shared.permissions.store.get_role_permission",
+            "shared.permissions.middleware.get_role_permission",
             new=AsyncMock(return_value=_mock_full_grant()),
-        ), patch("shared.permissions.audit.audit_log", new=AsyncMock()):
+        ), patch("shared.permissions.middleware.audit_log", new=AsyncMock()):
             result = await check_permission(
                 WRONG_WH,
                 PERMISSIONS.INVENTORY_RECEIVE,
@@ -174,9 +173,9 @@ class TestInventoryReceivePermissions:
 
         # Non-SA user in TENANT_B trying to access TENANT_A resource
         with patch(
-            "shared.permissions.store.get_role_permission",
+            "shared.permissions.middleware.get_role_permission",
             new=AsyncMock(return_value=_mock_full_grant()),
-        ), patch("shared.permissions.audit.audit_log", new=AsyncMock()):
+        ), patch("shared.permissions.middleware.audit_log", new=AsyncMock()):
             result = await check_permission(
                 OTHER_TENANT,
                 PERMISSIONS.INVENTORY_RECEIVE,
@@ -191,9 +190,9 @@ class TestInventoryReceivePermissions:
         from shared.permissions.registry import PERMISSIONS
 
         with patch(
-            "shared.permissions.store.get_role_permission",
+            "shared.permissions.middleware.get_role_permission",
             new=AsyncMock(return_value=_mock_conditional_grant()),
-        ), patch("shared.permissions.audit.audit_log", new=AsyncMock()):
+        ), patch("shared.permissions.middleware.audit_log", new=AsyncMock()):
             result = await check_permission(
                 WM_USER,
                 PERMISSIONS.INVENTORY_ADJUST,
@@ -208,9 +207,9 @@ class TestInventoryReceivePermissions:
         from shared.permissions.registry import PERMISSIONS
 
         with patch(
-            "shared.permissions.store.get_role_permission",
+            "shared.permissions.middleware.get_role_permission",
             new=AsyncMock(return_value=_mock_conditional_grant()),
-        ), patch("shared.permissions.audit.audit_log", new=AsyncMock()):
+        ), patch("shared.permissions.middleware.audit_log", new=AsyncMock()):
             result = await check_permission(
                 WM_USER,
                 PERMISSIONS.INVENTORY_ADJUST,
@@ -224,9 +223,9 @@ class TestInventoryReceivePermissions:
         from shared.permissions.registry import PERMISSIONS
 
         with patch(
-            "shared.permissions.store.get_role_permission",
+            "shared.permissions.middleware.get_role_permission",
             new=AsyncMock(return_value=None),
-        ), patch("shared.permissions.audit.audit_log", new=AsyncMock()):
+        ), patch("shared.permissions.middleware.audit_log", new=AsyncMock()):
             result = await check_permission(
                 AU_USER,
                 PERMISSIONS.INVENTORY_RECEIVE,
@@ -245,9 +244,9 @@ class TestInventoryReceivePermissions:
         from shared.permissions.registry import PERMISSIONS
 
         with patch(
-            "shared.permissions.store.get_role_permission",
+            "shared.permissions.middleware.get_role_permission",
             new=AsyncMock(return_value=read_only),
-        ), patch("shared.permissions.audit.audit_log", new=AsyncMock()):
+        ), patch("shared.permissions.middleware.audit_log", new=AsyncMock()):
             result = await check_permission(
                 AU_USER,
                 PERMISSIONS.INVENTORY_RECEIVE,
@@ -264,10 +263,10 @@ class TestInventoryReceivePermissions:
         from shared.permissions.registry import PERMISSIONS
 
         with patch(
-            "shared.permissions.store.get_role_permission",
+            "shared.permissions.middleware.get_role_permission",
             new=AsyncMock(return_value=_mock_full_grant()),
         ) as _grant, patch(
-            "shared.permissions.audit.audit_log", new=AsyncMock()
+            "shared.permissions.middleware.audit_log", new=AsyncMock()
         ) as mock_audit:
             await check_permission(
                 WM_USER,
@@ -284,10 +283,10 @@ class TestInventoryReceivePermissions:
         from shared.permissions.registry import PERMISSIONS
 
         with patch(
-            "shared.permissions.store.get_role_permission",
+            "shared.permissions.middleware.get_role_permission",
             new=AsyncMock(return_value=None),
         ), patch(
-            "shared.permissions.audit.audit_log", new=AsyncMock()
+            "shared.permissions.middleware.audit_log", new=AsyncMock()
         ) as mock_audit:
             await check_permission(
                 AU_USER,
@@ -309,11 +308,14 @@ class TestInventoryReceivePermissions:
         assert True, "RLS cross-tenant isolation is enforced by PostgreSQL — see migration 001"
 
     async def test_14_jwt_expired_returns_401(self, client: AsyncClient) -> None:
-        """Missing or malformed Authorization header → 401 or 422."""
+        """No user (expired/missing JWT) → require_permission raises 401."""
+        from dependencies import get_current_user
+
+        # Override to None — simulates expired/absent JWT; fixture restores on teardown
+        app.dependency_overrides[get_current_user] = lambda: None
         response = await client.post(
             "/api/v1/inventory/receive/",
             json=RECEIVE_PAYLOAD,
-            # No Authorization header
         )
         assert response.status_code in (401, 422)
 
@@ -323,9 +325,9 @@ class TestInventoryReceivePermissions:
         from shared.permissions.registry import PERMISSIONS
 
         with patch(
-            "shared.permissions.store.get_role_permission",
+            "shared.permissions.middleware.get_role_permission",
             new=AsyncMock(return_value=_mock_full_grant()),
-        ), patch("shared.permissions.audit.audit_log", new=AsyncMock()):
+        ), patch("shared.permissions.middleware.audit_log", new=AsyncMock()):
             result = await check_permission(
                 NM_USER,  # NM role — not SYS
                 PERMISSIONS.AI_MODEL_RUN,

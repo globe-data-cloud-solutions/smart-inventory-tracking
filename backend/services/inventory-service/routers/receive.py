@@ -7,6 +7,7 @@ from shared.permissions.registry import PERMISSIONS
 from shared.utils.responses import SuccessResponse
 from schemas.inventory import ReceiveStockRequest, ReceiveStockResponse
 from services.inventory_service import InventoryService
+from dependencies import get_current_user
 
 router = APIRouter()
 
@@ -15,7 +16,7 @@ router = APIRouter()
 @require_permission(PERMISSIONS.INVENTORY_RECEIVE)
 async def receive_stock(
     body: ReceiveStockRequest,
-    user=Depends(lambda: None),
+    user=Depends(get_current_user),
     db: AsyncSession = Depends(get_db_session),
 ) -> SuccessResponse[ReceiveStockResponse]:
     svc = InventoryService(db)

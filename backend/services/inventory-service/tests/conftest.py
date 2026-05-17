@@ -1,46 +1,76 @@
+from __future__ import annotations
+
+from dataclasses import dataclass
+from typing import Optional
+from unittest.mock import AsyncMock, MagicMock
+
 import pytest
-from httpx import AsyncClient
+from httpx import ASGITransport, AsyncClient
 
 from main import app
+from dependencies import get_current_user
+from shared.db.dependencies import get_db_session
+
+
+@dataclass
+class _StubUser:
+    user_id: str
+    tenant_id: str
+    role: str
+    warehouse_id: Optional[str] = None
+    region_id: Optional[str] = None
+
+
+TENANT_A = "10000000-0000-0000-0000-000000000001"
+WAREHOUSE_A = "20000000-0000-0000-0000-000000000001"
+
+WM_STUB = _StubUser("u-wm", TENANT_A, "WM", warehouse_id=WAREHOUSE_A)
+
+
+def _make_mock_db() -> AsyncMock:
+    """Minimal AsyncSession mock — no real DB needed for unit tests."""
+    db = AsyncMock()
+    default = MagicMock()
+    default.fetchone.return_value = None
+    default.scalar.return_value = 0
+    db.execute = AsyncMock(return_value=default)
+    db.commit = AsyncMock()
+    db.rollback = AsyncMock()
+    return db
+
+
+def _db_override(db: AsyncMock):
+    async def _gen():
+        yield db
+    return _gen
 
 
 @pytest.fixture
 async def client():
-    async with AsyncClient(app=app, base_url="http://test") as ac:
-        yield ac
+    """Default test client — injects WM_STUB user and mock DB."""
+    db = _make_mock_db()
+    app.dependency_overrides[get_current_user] = lambda: WM_STUB
+    app.dependency_overrides[get_db_session] = _db_override(db)
+    try:
+        async with AsyncClient(
+            transport=ASGITransport(app=app), base_url="http://test"
+        ) as ac:
+            yield ac
+    finally:
+        app.dependency_overrides.clear()
 
 
 @pytest.fixture
 def wm_user():
-    """Warehouse Manager with valid tenant and warehouse scope."""
-    class _User:
-        user_id = "00000000-0000-0000-0000-000000000001"
-        tenant_id = "10000000-0000-0000-0000-000000000001"
-        warehouse_id = "20000000-0000-0000-0000-000000000001"
-        region_id = None
-        role = "WM"
-    return _User()
+    return WM_STUB
 
 
 @pytest.fixture
 def au_user():
-    """Auditor — read-only role."""
-    class _User:
-        user_id = "00000000-0000-0000-0000-000000000002"
-        tenant_id = "10000000-0000-0000-0000-000000000001"
-        warehouse_id = None
-        region_id = None
-        role = "AU"
-    return _User()
+    return _StubUser("u-au", TENANT_A, "AU")
 
 
 @pytest.fixture
 def other_tenant_user():
-    """WM from a different tenant — must not access Tenant A data."""
-    class _User:
-        user_id = "00000000-0000-0000-0000-000000000003"
-        tenant_id = "99999999-0000-0000-0000-000000000001"
-        warehouse_id = "20000000-0000-0000-0000-000000000001"
-        region_id = None
-        role = "WM"
-    return _User()
+    return _StubUser("u-ot", "99999999-0000-0000-0000-000000000001", "WM",
+                     warehouse_id=WAREHOUSE_A)
