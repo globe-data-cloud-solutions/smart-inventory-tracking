@@ -1,11 +1,20 @@
 "use client";
 
-import { useState } from "react";
+import { Suspense, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { login } from "@/lib/demo-auth";
 import { DEMO_TENANTS, SA_USER } from "@/lib/demo-data";
 
+/* useSearchParams() requires a Suspense boundary in Next.js 14 production builds. */
 export default function LoginPage() {
+  return (
+    <Suspense>
+      <LoginContent />
+    </Suspense>
+  );
+}
+
+function LoginContent() {
   const router       = useRouter();
   const searchParams = useSearchParams();
   const [email, setEmail]       = useState("");

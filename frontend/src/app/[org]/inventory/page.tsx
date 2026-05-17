@@ -64,8 +64,9 @@ function FilterHeader({ label, field, options, filters, setFilters, align = "lef
 }) {
   const [open, setOpen] = useState(false);
   const active = filters[field].length > 0 && filters[field].length < options.length;
+  const alignCls = align === "right" ? "text-right" : "text-left";
   return (
-    <th className={`px-3.5 py-2.5 text-${align} text-[11px] font-bold text-gray-500 uppercase tracking-wide whitespace-nowrap relative select-none`}>
+    <th className={`px-3.5 py-2.5 ${alignCls} text-[11px] font-bold text-gray-500 uppercase tracking-wide whitespace-nowrap relative select-none`}>
       <div className="inline-flex items-center gap-1 cursor-pointer" onClick={() => setOpen((o) => !o)}>
         <span className={active ? "text-eth-forest" : "text-gray-500"}>{label}</span>
         <span className={`text-[9px] font-black rounded px-1 ${active ? "bg-green-100 text-eth-forest" : "text-gray-400"}`}>
@@ -82,8 +83,9 @@ function FilterHeader({ label, field, options, filters, setFilters, align = "lef
 }
 
 function PlainHeader({ label, align = "left" }: { label: string; align?: "left" | "right" }) {
+  const alignCls = align === "right" ? "text-right" : "text-left";
   return (
-    <th className={`px-3.5 py-2.5 text-${align} text-[11px] font-bold text-gray-500 uppercase tracking-wide whitespace-nowrap`}>
+    <th className={`px-3.5 py-2.5 ${alignCls} text-[11px] font-bold text-gray-500 uppercase tracking-wide whitespace-nowrap`}>
       {label}
     </th>
   );
