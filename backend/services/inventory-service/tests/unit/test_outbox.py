@@ -90,6 +90,48 @@ class TestOutboxWriter:
         params = session.execute.call_args.args[1]
         assert params["etype"] == "InventoryUpdated"
 
+    async def test_idempotency_key_inserted_when_provided(self) -> None:
+        """When idempotency_key is supplied, the :ikey param in the INSERT must
+        carry the exact key string so the DB can enforce the partial unique index."""
+        from shared.outbox.writer import write_to_outbox
+
+        session = AsyncMock()
+        payload = _inventory_payload()
+        key = "transfer:abc123:dispatch:line:1"
+
+        await write_to_outbox(session, "tenant-1", "InventoryUpdated", payload,
+                              idempotency_key=key)
+
+        params = session.execute.call_args.args[1]
+        assert params["ikey"] == key
+
+    async def test_idempotency_key_null_when_omitted(self) -> None:
+        """When idempotency_key is not supplied (default), :ikey must be None so
+        the DB stores NULL and the partial unique index does not apply."""
+        from shared.outbox.writer import write_to_outbox
+
+        session = AsyncMock()
+        payload = _inventory_payload()
+
+        await write_to_outbox(session, "tenant-1", "InventoryUpdated", payload)
+
+        params = session.execute.call_args.args[1]
+        assert params["ikey"] is None
+
+    async def test_idempotency_key_column_in_insert_sql(self) -> None:
+        """The INSERT SQL must reference the idempotency_key column explicitly —
+        confirms migration 007 is reflected in the writer (no silent schema drift)."""
+        from shared.outbox.writer import write_to_outbox
+
+        session = AsyncMock()
+        payload = _inventory_payload()
+
+        await write_to_outbox(session, "tenant-1", "InventoryUpdated", payload,
+                              idempotency_key="some-key")
+
+        sql_str = str(session.execute.call_args.args[0])
+        assert "idempotency_key" in sql_str
+
 
 # ── worker.py tests ───────────────────────────────────────────────────────────
 

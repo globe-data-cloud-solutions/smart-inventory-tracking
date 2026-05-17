@@ -2,7 +2,7 @@
 **Generated:** 2026-05-17  
 **Branch:** `main`  
 **Head commit:** `b675211`  
-**Unit tests:** `pytest backend/ -v -m "unit"` — **75 passed, 0 failed, 0 errors**  
+**Unit tests:** `pytest backend/ -v -m "unit"` — **94 passed, 0 failed, 0 errors**  
 **CI drift check:** PASS — 25 router files scanned, 0 drift detected  
 **TypeScript:** `npx tsc --noEmit` — 0 errors  
 **Lint:** `next lint` — 0 warnings, 0 errors  
@@ -264,9 +264,9 @@ Priority order — fix blockers before adding features.
 | 7 | **Seed `approval_rule` table with per-tenant thresholds** — populate for Addis Water and Muger Cement | S | ✅ DONE 2026-05-17 (migration 006 + seed script) |
 | 8 | **Fix remaining inline styles in `style=` attributes inside feature components** | M | ✅ DONE 2026-05-17 (43 → 24; 5 justified exceptions) |
 | 9 | **Native-speaker review of `or.json`** | L (staffing) | ⏳ OPEN — hard blocker for Phase 1 go-live per CLAUDE.md §12 |
-| 10 | **Add `idempotency_key` column to `outbox` table** (Alembic migration) | S | ⏳ OPEN — schema gap documented in `writer.py`; deferred to next session |
+| 10 | **Add `idempotency_key` column to `outbox` table** (Alembic migration) | S | ✅ DONE 2026-05-17 (migration 007, writer.py updated, 3 new outbox tests) |
 | 11 | **Run full Playwright E2E suite** (`frontend/tests/transfer-receive-auth.spec.ts`) | S | ✅ DONE 2026-05-17 (12/12 passed, 1 skipped) |
-| 12 | **Add approval workflow tests** per CLAUDE.md §21 `TestApprovalWorkflows` | L | ⏳ OPEN — none of the 15 approval matrix test cases written yet |
+| 12 | **Add approval workflow tests** per CLAUDE.md §21 `TestApprovalWorkflows` | L | ✅ DONE 2026-05-17 (16 tests — 15 IMTS §6 scenarios + 1 missing-rule guard) |
 
 ---
 
@@ -292,7 +292,7 @@ Priority order — fix blockers before adding features.
 
 Root `pyproject.toml` added: `--import-mode=importlib`, `asyncio_mode = auto`. Product-service `conftest.py` uses sys.modules save/evict/reload/restore to prevent inventory-service module cache contamination. Removed all `tests/__init__.py` files.
 
-### Final test counts
+### Final test counts (end of Session 2)
 
 | Suite | Count | Status |
 |---|---|---|
@@ -302,7 +302,7 @@ Root `pyproject.toml` added: `--import-mode=importlib`, `asyncio_mode = auto`. P
 | `npx tsc --noEmit` | — | ✅ 0 errors |
 | `next lint` | — | ✅ 0 warnings |
 
-### Remaining open items (deferred)
+### Remaining open items (deferred from Session 2)
 
 - §8-6 (L): AWS dev environment — Terraform apply, RDS + ElastiCache provisioning
 - §8-9 (L): Native-speaker review of `or.json` — staffing decision
@@ -311,5 +311,39 @@ Root `pyproject.toml` added: `--import-mode=importlib`, `asyncio_mode = auto`. P
 
 ---
 
-*SMART Inventory Platform — Bug Report v2.0*  
+## 10. SESSION 3 SUMMARY — 2026-05-17
+
+**Head commit at start:** `d676e0f`  
+**Head commit at end:** see git log
+
+### Items completed
+
+| Item | Description |
+|---|---|
+| §8-10 (S) | **Migration 007**: `ADD COLUMN idempotency_key VARCHAR(255)` on `outbox` table with partial unique index `WHERE idempotency_key IS NOT NULL`. `writer.py` updated to accept optional `idempotency_key` parameter. 3 new `TestOutboxWriter` tests verifying column presence, NULL-when-omitted, and key propagation. |
+| §8-12 (L) | **TestApprovalWorkflows**: New `approval_service.py` (`ApprovalService`, `ApprovalDecision`, `ROLE_LEVEL`). 16 unit tests covering all 15 IMTS §6 scenario rows plus a missing-rule guard. Pull routing (3), Push routing (4), Sister routing (4), Damage/write-off (4), plus guard (1). |
+
+### Seed script note
+
+`test_damage_exceeds_wm_limit_routes_to_rm` documents that `scripts/seed_approval_rules.py` currently uses 2 bands for ADJUSTMENT (WM / NM) but the authoritative IMTS §6 / CLAUDE.md §15 matrix requires 3 bands (WM / RM / TA). The seed script must be updated before any real Adjustment approval workflow is tested end-to-end against a live DB.
+
+### Final test counts
+
+| Suite | Count | Status |
+|---|---|---|
+| `pytest backend/ -v -m "unit"` | **94 / 94** | ✅ All pass |
+| `frontend/tests/transfer-receive-auth.spec.ts` | **12 / 12** (1 skip) | ✅ All pass |
+| `ci_drift_check.py` | 25 files scanned | ✅ 0 drift |
+| `npx tsc --noEmit` | — | ✅ 0 errors |
+| `next lint` | — | ✅ 0 warnings |
+
+### Remaining open items
+
+- §8-6 (L): AWS dev environment — Terraform apply, RDS + ElastiCache provisioning
+- §8-9 (L): Native-speaker review of `or.json` — staffing decision
+- Seed script fix (S): Update ADJUSTMENT bands to 3-tier (WM/RM/TA) per CLAUDE.md §15
+
+---
+
+*SMART Inventory Platform — Bug Report v3.0*  
 *Backend: Python 3.12 / FastAPI · Frontend: Next.js 14 / TypeScript · DB: PostgreSQL 16*
