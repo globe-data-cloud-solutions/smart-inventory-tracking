@@ -33,8 +33,8 @@ function SummaryCard({ title, subtitle, rows }: {
           style={{ background: "linear-gradient(to right,#078930 0% 33.33%,#FCDD09 33.33% 66.66%,#DA121A 66.66% 100%)" }}
         />
       </div>
-      {/* stat columns — column count is runtime data; arbitrary value covers it */}
-      <div className={`grid grid-cols-[repeat(${rows.length},1fr)]`}>
+      {/* stat columns — count is runtime data; Tailwind JIT cannot build classes from template literals */}
+      <div className="grid" style={{ gridTemplateColumns: `repeat(${rows.length},1fr)` }}>
         {rows.map((r, i) => (
           <div
             key={i}
