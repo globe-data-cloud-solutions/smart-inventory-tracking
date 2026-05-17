@@ -17,11 +17,7 @@ depends_on = None
 
 
 def upgrade() -> None:
-    op.execute(
-        "CREATE TYPE transfer_request_status AS ENUM "
-        "('PENDING','APPROVED','REJECTED','FULFILLED','CANCELLED')"
-    )
-
+    # transfer_request_status is created implicitly by op.create_table below
     op.create_table(
         "transfer_requests",
         sa.Column(
@@ -108,4 +104,4 @@ def upgrade() -> None:
 
 def downgrade() -> None:
     op.drop_table("transfer_requests")
-    op.execute("DROP TYPE transfer_request_status")
+    op.execute("DROP TYPE IF EXISTS transfer_request_status")

@@ -12,7 +12,7 @@ from shared.db.models.base import Base
 
 TransferRequestStatusEnum = Enum(
     "PENDING", "APPROVED", "REJECTED", "FULFILLED", "CANCELLED",
-    name="transfer_request_status",
+    name="transfer_request_status", create_type=False,
 )
 
 

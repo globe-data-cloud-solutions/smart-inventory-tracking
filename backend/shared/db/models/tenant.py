@@ -7,8 +7,8 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from shared.db.models.base import Base, SoftDeleteMixin, TimestampMixin
 
-OrgType = Enum("PRODUCER", "RETAILER", "HYBRID", name="organisation_type")
-LocaleEnum = Enum("en", "am", "or", name="supported_locale")
+OrgType    = Enum("PRODUCER", "RETAILER", "HYBRID", name="organisation_type", create_type=False)
+LocaleEnum = Enum("en", "am", "or",               name="supported_locale",   create_type=False)
 
 
 class Tenant(Base, TimestampMixin, SoftDeleteMixin):

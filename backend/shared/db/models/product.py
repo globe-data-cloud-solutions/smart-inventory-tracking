@@ -7,7 +7,7 @@ from sqlalchemy.orm import Mapped, mapped_column
 
 from shared.db.models.base import Base, SoftDeleteMixin, TimestampMixin
 
-DispatchEnum = Enum("FEFO", "FIFO", "LIFO", name="dispatch_strategy")
+DispatchEnum = Enum("FEFO", "FIFO", "LIFO", name="dispatch_strategy", create_type=False)
 
 
 class Product(Base, TimestampMixin, SoftDeleteMixin):

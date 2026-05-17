@@ -28,7 +28,8 @@ test = [
 ]
 
 [tool.hatch.build.targets.wheel]
-packages = ["shared"]
+# The shared package IS this directory — flat layout, not a subdirectory
+packages = ["."]
 
 [tool.ruff]
 line-length = 100

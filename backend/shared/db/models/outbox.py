@@ -9,7 +9,8 @@ from sqlalchemy.orm import Mapped, mapped_column
 from shared.db.models.base import Base
 
 OutboxStatusEnum = Enum(
-    "PENDING", "PROCESSING", "PROCESSED", "FAILED", name="outbox_status"
+    "PENDING", "PROCESSING", "PROCESSED", "FAILED",
+    name="outbox_status", create_type=False,
 )
 
 

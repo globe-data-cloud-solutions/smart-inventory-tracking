@@ -7,12 +7,13 @@ import asyncio
 import os
 import sys
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+# Add backend/ to path so `import shared` works (shared package == backend/shared/)
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "backend"))
 
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
-from backend.shared.permissions.registry import ALL_PERMISSIONS
+from shared.permissions.registry import ALL_PERMISSIONS
 
 ROLE_PERMISSION_MATRIX: dict[str, dict[str, str]] = {
     # grant_type: FULL | CONDITIONAL | READ_ONLY

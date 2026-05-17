@@ -10,7 +10,7 @@ from shared.db.models.base import Base
 
 RoleEnum = Enum(
     "SA", "TA", "NM", "RM", "WM", "LM", "SA_GT", "RT", "AU", "SYS",
-    name="role_code",
+    name="role_code", create_type=False,
 )
 
 

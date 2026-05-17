@@ -17,25 +17,11 @@ depends_on = None
 
 
 def upgrade() -> None:
-    # ── ENUMs ─────────────────────────────────────────────────────────────
-    op.execute("CREATE TYPE organisation_type AS ENUM ('PRODUCER','RETAILER','HYBRID')")
-    op.execute(
-        "CREATE TYPE transaction_type AS ENUM "
-        "('RECEIVE','TRANSFER_OUT','TRANSFER_IN','ISSUE',"
-        "'ADJUSTMENT','RESERVE','RELEASE','RETURN','COUNT_VARIANCE')"
-    )
-    op.execute("CREATE TYPE dispatch_strategy AS ENUM ('FEFO','FIFO','LIFO')")
-    op.execute(
-        "CREATE TYPE transfer_status AS ENUM "
-        "('DRAFT','SUBMITTED','APPROVED','IN_TRANSIT','RECEIVED','CLOSED','REJECTED','CANCELLED')"
-    )
-    op.execute(
-        "CREATE TYPE role_code AS ENUM "
-        "('SA','TA','NM','RM','WM','LM','SA_GT','RT','AU','SYS')"
-    )
-    op.execute("CREATE TYPE grant_type AS ENUM ('FULL','CONDITIONAL','READ_ONLY')")
-    op.execute("CREATE TYPE outbox_status AS ENUM ('PENDING','PROCESSING','PROCESSED','FAILED')")
-    op.execute("CREATE TYPE supported_locale AS ENUM ('en','am','or')")
+    # ENUMs are created implicitly by op.create_table via SQLAlchemy's
+    # _on_table_create mechanism.  The memo system (_check_for_name_in_memos)
+    # ensures each type is emitted only once even when used in multiple tables.
+    # Do NOT add explicit op.execute("CREATE TYPE ...") — that causes a
+    # duplicate-type error because op.create_table already handles it.
 
     # ── tenants ───────────────────────────────────────────────────────────
     op.create_table(
@@ -43,15 +29,17 @@ def upgrade() -> None:
         sa.Column("id", postgresql.UUID(as_uuid=True), primary_key=True,
                   server_default=sa.text("gen_random_uuid()")),
         sa.Column("name", sa.String(255), nullable=False),
-        sa.Column("organisation_type", sa.Enum("PRODUCER", "RETAILER", "HYBRID",
-                  name="organisation_type"), nullable=False),
+        sa.Column("organisation_type",
+                  sa.Enum("PRODUCER", "RETAILER", "HYBRID", name="organisation_type"),
+                  nullable=False),
         sa.Column("parent_tenant_id", postgresql.UUID(as_uuid=True),
                   sa.ForeignKey("tenants.id"), nullable=True),
         sa.Column("plan_id", postgresql.UUID(as_uuid=True), nullable=False),
         sa.Column("feature_flags", postgresql.JSONB, nullable=False, server_default="{}"),
         sa.Column("sku_cap", sa.Integer, nullable=True),
         sa.Column("approval_thresholds", postgresql.JSONB, nullable=False, server_default="{}"),
-        sa.Column("default_locale", sa.Enum("en", "am", "or", name="supported_locale"),
+        sa.Column("default_locale",
+                  sa.Enum("en", "am", "or", name="supported_locale"),
                   nullable=False, server_default="en"),
         sa.Column("onboarding_complete", sa.Boolean, nullable=False, server_default="false"),
         sa.Column("is_active", sa.Boolean, nullable=False, server_default="true"),
@@ -62,6 +50,7 @@ def upgrade() -> None:
     )
 
     # ── users ─────────────────────────────────────────────────────────────
+    # role_code and supported_locale are already in the DB from the tenants table above.
     op.create_table(
         "users",
         sa.Column("id", postgresql.UUID(as_uuid=True), primary_key=True,
@@ -71,11 +60,14 @@ def upgrade() -> None:
         sa.Column("cognito_sub", sa.String(255), nullable=False, unique=True),
         sa.Column("email", sa.String(320), nullable=False),
         sa.Column("full_name", sa.String(255), nullable=False),
-        sa.Column("role", sa.Enum("SA","TA","NM","RM","WM","LM","SA_GT","RT","AU","SYS",
-                  name="role_code"), nullable=False),
+        sa.Column("role",
+                  sa.Enum("SA","TA","NM","RM","WM","LM","SA_GT","RT","AU","SYS",
+                          name="role_code"),
+                  nullable=False),
         sa.Column("region_id", postgresql.UUID(as_uuid=True), nullable=True),
         sa.Column("warehouse_id", postgresql.UUID(as_uuid=True), nullable=True),
-        sa.Column("locale", sa.Enum("en","am","or", name="supported_locale"),
+        sa.Column("locale",
+                  sa.Enum("en","am","or", name="supported_locale"),
                   nullable=False, server_default="en"),
         sa.Column("created_by", postgresql.UUID(as_uuid=True), nullable=True),
         sa.Column("is_active", sa.Boolean, nullable=False, server_default="true"),
@@ -85,8 +77,6 @@ def upgrade() -> None:
                   nullable=False, server_default=sa.text("now()")),
     )
     op.create_index("idx_users_tenant", "users", ["tenant_id"])
-
-    # ── RLS on users ──────────────────────────────────────────────────────
     op.execute("ALTER TABLE users ENABLE ROW LEVEL SECURITY")
     op.execute(
         "CREATE POLICY tenant_isolation ON users "
@@ -152,6 +142,13 @@ def upgrade() -> None:
     )
 
     # ── inventory_transactions (partitioned by transaction_date) ──────────
+    # Uses raw SQL because op.create_table doesn't support PARTITION BY.
+    # The transaction_type enum will be created by the raw DDL below.
+    op.execute("CREATE TYPE transaction_type AS ENUM "
+               "('RECEIVE','TRANSFER_OUT','TRANSFER_IN','ISSUE',"
+               "'ADJUSTMENT','RESERVE','RELEASE','RETURN','COUNT_VARIANCE')")
+    op.execute("CREATE TYPE transfer_status AS ENUM "
+               "('DRAFT','SUBMITTED','APPROVED','IN_TRANSIT','RECEIVED','CLOSED','REJECTED','CANCELLED')")
     op.execute(
         """
         CREATE TABLE inventory_transactions (
@@ -232,7 +229,8 @@ def upgrade() -> None:
                   sa.ForeignKey("tenants.id"), nullable=False),
         sa.Column("scope", sa.String(20), nullable=False),
         sa.Column("scope_id", postgresql.UUID(as_uuid=True), nullable=False),
-        sa.Column("strategy", sa.Enum("FEFO","FIFO","LIFO", name="dispatch_strategy"),
+        sa.Column("strategy",
+                  sa.Enum("FEFO","FIFO","LIFO", name="dispatch_strategy"),
                   nullable=False),
         sa.Column("effective_from", sa.Date, nullable=False),
         sa.Column("configured_by", postgresql.UUID(as_uuid=True), nullable=False),
@@ -260,8 +258,10 @@ def upgrade() -> None:
         sa.Column("event_type", sa.String(100), nullable=False),
         sa.Column("payload", postgresql.JSONB, nullable=False),
         sa.Column("payload_ver", sa.String(10), nullable=False, server_default="1.0"),
-        sa.Column("status", sa.Enum("PENDING","PROCESSING","PROCESSED","FAILED",
-                  name="outbox_status"), nullable=False, server_default="PENDING"),
+        sa.Column("status",
+                  sa.Enum("PENDING","PROCESSING","PROCESSED","FAILED",
+                          name="outbox_status"),
+                  nullable=False, server_default="PENDING"),
         sa.Column("attempts", sa.Integer, nullable=False, server_default="0"),
         sa.Column("last_error", sa.Text, nullable=True),
         sa.Column("created_at", sa.TIMESTAMP(timezone=True),
@@ -290,6 +290,7 @@ def upgrade() -> None:
     )
 
     # ── audit_logs ────────────────────────────────────────────────────────
+    # role_code is already created by the users table above.
     op.create_table(
         "audit_logs",
         sa.Column("id", postgresql.UUID(as_uuid=True), primary_key=True,
@@ -298,8 +299,10 @@ def upgrade() -> None:
         sa.Column("timestamp", sa.TIMESTAMP(timezone=True),
                   nullable=False, server_default=sa.text("now()")),
         sa.Column("user_id", postgresql.UUID(as_uuid=True), nullable=True),
-        sa.Column("role", sa.Enum("SA","TA","NM","RM","WM","LM","SA_GT","RT","AU","SYS",
-                  name="role_code"), nullable=True),
+        sa.Column("role",
+                  sa.Enum("SA","TA","NM","RM","WM","LM","SA_GT","RT","AU","SYS",
+                          name="role_code"),
+                  nullable=True),
         sa.Column("action", sa.String(100), nullable=False),
         sa.Column("resource_type", sa.String(100), nullable=True),
         sa.Column("resource_id", postgresql.UUID(as_uuid=True), nullable=True),
@@ -326,8 +329,9 @@ def upgrade() -> None:
                   server_default=sa.text("gen_random_uuid()")),
         sa.Column("role_code", sa.String(10), nullable=False),
         sa.Column("action_id", sa.String(100), nullable=False),
-        sa.Column("grant_type", sa.Enum("FULL","CONDITIONAL","READ_ONLY",
-                  name="grant_type"), nullable=False),
+        sa.Column("grant_type",
+                  sa.Enum("FULL","CONDITIONAL","READ_ONLY", name="grant_type"),
+                  nullable=False),
         sa.Column("is_active", sa.Boolean, nullable=False, server_default="true"),
         sa.Column("created_at", sa.TIMESTAMP(timezone=True),
                   nullable=False, server_default=sa.text("now()")),
@@ -342,20 +346,25 @@ def upgrade() -> None:
 
 def downgrade() -> None:
     op.drop_table("role_permissions")
+    op.execute("DROP TYPE IF EXISTS grant_type")
     op.execute("DROP RULE IF EXISTS no_delete_audit ON audit_logs")
     op.execute("DROP RULE IF EXISTS no_update_audit ON audit_logs")
     op.drop_table("audit_logs")
     op.execute("DROP TRIGGER IF EXISTS outbox_notify ON outbox")
     op.execute("DROP FUNCTION IF EXISTS notify_outbox()")
     op.drop_table("outbox")
+    op.execute("DROP TYPE IF EXISTS outbox_status")
     op.drop_table("dispatch_strategy_configs")
+    op.execute("DROP TYPE IF EXISTS dispatch_strategy")
     op.drop_table("inventory_balances")
     op.drop_table("inventory_transaction_keys")
-    op.drop_table("inventory_transactions")
+    op.execute("DROP TABLE IF EXISTS inventory_transactions")
+    op.execute("DROP TYPE IF EXISTS transfer_status")
+    op.execute("DROP TYPE IF EXISTS transaction_type")
     op.drop_table("products")
     op.drop_table("product_categories")
     op.drop_table("users")
+    op.execute("DROP TYPE IF EXISTS role_code")
+    op.execute("DROP TYPE IF EXISTS supported_locale")
     op.drop_table("tenants")
-    for t in ["organisation_type","transaction_type","dispatch_strategy",
-              "transfer_status","role_code","grant_type","outbox_status","supported_locale"]:
-        op.execute(f"DROP TYPE IF EXISTS {t}")
+    op.execute("DROP TYPE IF EXISTS organisation_type")
