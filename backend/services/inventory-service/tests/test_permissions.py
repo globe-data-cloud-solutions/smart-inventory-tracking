@@ -15,6 +15,7 @@ from fastapi import HTTPException
 from httpx import ASGITransport, AsyncClient
 
 from main import app
+from dependencies import get_current_user as _inv_get_current_user
 
 
 # ── Fixtures ──────────────────────────────────────────────────────────────────
@@ -92,10 +93,8 @@ class TestInventoryReceivePermissions:
 
     async def test_02_rbac_deny_wrong_role(self, client: AsyncClient) -> None:
         """Auditor (AU) → get_role_permission returns None → 403 RBAC_DENIED."""
-        from dependencies import get_current_user
-
         au = _User("u-au", TENANT_A, None, None, "AU")
-        app.dependency_overrides[get_current_user] = lambda: au
+        app.dependency_overrides[_inv_get_current_user] = lambda: au
         with patch(
             "shared.permissions.middleware.get_role_permission",
             new=AsyncMock(return_value=None),
@@ -309,10 +308,8 @@ class TestInventoryReceivePermissions:
 
     async def test_14_jwt_expired_returns_401(self, client: AsyncClient) -> None:
         """No user (expired/missing JWT) → require_permission raises 401."""
-        from dependencies import get_current_user
-
-        # Override to None — simulates expired/absent JWT; fixture restores on teardown
-        app.dependency_overrides[get_current_user] = lambda: None
+        # Use module-level import captured before any conftest sys.modules manipulation.
+        app.dependency_overrides[_inv_get_current_user] = lambda: None
         response = await client.post(
             "/api/v1/inventory/receive/",
             json=RECEIVE_PAYLOAD,

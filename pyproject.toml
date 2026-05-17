@@ -1,0 +1,10 @@
+[tool.pytest.ini_options]
+# importlib mode gives every conftest and test file a unique import identity
+# based on its filesystem path, eliminating ImportPathMismatchError when
+# running pytest across multiple services with identically-named test packages.
+addopts = "--import-mode=importlib"
+asyncio_mode = "auto"
+markers = [
+    "unit: fast in-process tests — no real database or external services required",
+    "integration: connects to live RDS/ElastiCache dev environment — CI only",
+]

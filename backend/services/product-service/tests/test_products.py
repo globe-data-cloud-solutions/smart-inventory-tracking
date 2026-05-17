@@ -11,7 +11,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from httpx import AsyncClient
 
-from tests.conftest import (
+from product_test_data import (
     TENANT_A, TENANT_B,
     TA_USER, SA_USER, WM_USER,
     VALID_BODY,
@@ -54,12 +54,11 @@ class TestCreateProduct:
 
     # 02 — SA can create ───────────────────────────────────────────────────────
 
-    async def test_02_sa_can_create_product(self, client: AsyncClient) -> None:
-        from main import app
-        app.dependency_overrides[get_current_user] = lambda: SA_USER
+    async def test_02_sa_can_create_product(self, client: AsyncClient, product_app) -> None:
+        product_app.dependency_overrides[get_current_user] = lambda: SA_USER
         with _patch_perm(True), _patch_audit():
             r = await client.post("/api/v1/products/", json=VALID_BODY)
-        app.dependency_overrides.pop(get_current_user, None)
+        product_app.dependency_overrides.pop(get_current_user, None)
         assert r.status_code == 201
         assert r.json()["data"]["sku"].startswith("ETH-")
 
@@ -133,16 +132,14 @@ class TestCreateProduct:
 
     # 09 — Duplicate name same tenant → 409 ───────────────────────────────────
 
-    async def test_09_duplicate_name_same_tenant_returns_409(self, client: AsyncClient) -> None:
-        from main import app
-
+    async def test_09_duplicate_name_same_tenant_returns_409(self, client: AsyncClient, product_app) -> None:
         db = _make_mock_db(dup_exists=True)
-        app.dependency_overrides[get_db_session] = _make_db_override(db)
+        product_app.dependency_overrides[get_db_session] = _make_db_override(db)
         try:
             with _patch_perm(True), _patch_audit():
                 r = await client.post("/api/v1/products/", json=VALID_BODY)
         finally:
-            app.dependency_overrides.pop(get_db_session, None)
+            product_app.dependency_overrides.pop(get_db_session, None)
 
         assert r.status_code == 409
         assert r.json()["detail"]["code"] == "duplicate_product_name"
@@ -157,16 +154,14 @@ class TestCreateProduct:
 
     # 11 — SKU cap reached (PRODUCER) → 429 ───────────────────────────────────
 
-    async def test_11_sku_cap_producer_returns_429(self, client: AsyncClient) -> None:
-        from main import app
-
+    async def test_11_sku_cap_producer_returns_429(self, client: AsyncClient, product_app) -> None:
         db = _cap_db(cap=10, current_count=10, org_type="PRODUCER")
-        app.dependency_overrides[get_db_session] = _make_db_override(db)
+        product_app.dependency_overrides[get_db_session] = _make_db_override(db)
         try:
             with _patch_perm(True), _patch_audit():
                 r = await client.post("/api/v1/products/", json=VALID_BODY)
         finally:
-            app.dependency_overrides.pop(get_db_session, None)
+            product_app.dependency_overrides.pop(get_db_session, None)
 
         assert r.status_code == 429
         body = r.json()
@@ -194,9 +189,7 @@ class TestCreateProduct:
 
     # 14 — GET /next-sku is non-mutating ──────────────────────────────────────
 
-    async def test_14_next_sku_does_not_mutate(self, client: AsyncClient) -> None:
-        from main import app
-
+    async def test_14_next_sku_does_not_mutate(self, client: AsyncClient, product_app) -> None:
         next_row = MagicMock()
         next_row.sku_prefix = "ETH"
         next_row.next_num   = 48
@@ -208,12 +201,12 @@ class TestCreateProduct:
         db.execute = AsyncMock(return_value=res)
         db.commit  = AsyncMock()
 
-        app.dependency_overrides[get_db_session] = _make_db_override(db)
+        product_app.dependency_overrides[get_db_session] = _make_db_override(db)
         try:
             with _patch_perm(True), _patch_audit():
                 r = await client.get("/api/v1/products/next-sku")
         finally:
-            app.dependency_overrides.pop(get_db_session, None)
+            product_app.dependency_overrides.pop(get_db_session, None)
 
         assert r.status_code == 200
         assert r.json()["data"]["sku"] == "ETH-0048"
