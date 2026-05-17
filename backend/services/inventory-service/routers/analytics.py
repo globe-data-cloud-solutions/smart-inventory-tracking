@@ -12,6 +12,7 @@ from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from shared.db.dependencies import get_read_db_session
+from dependencies import get_current_user
 from shared.permissions.middleware import require_permission
 from shared.permissions.registry import PERMISSIONS
 from shared.utils.responses import SuccessResponse
@@ -33,7 +34,7 @@ router = APIRouter()
 async def stock_levels(
     warehouse_id: Optional[uuid.UUID] = Query(None),
     tenant_id: Optional[uuid.UUID]   = Query(None, description="SA only — filter to specific tenant"),
-    user=Depends(lambda: None),
+    user=Depends(get_current_user),
     db: AsyncSession = Depends(get_read_db_session),
 ) -> SuccessResponse[List[InventoryStockOut]]:
     """Current stock levels with pending outbound and inbound quantities."""
@@ -46,7 +47,7 @@ async def stock_levels(
 @require_permission(PERMISSIONS.REPORT_LOW_STOCK)
 async def reorder_alerts(
     tenant_id: Optional[uuid.UUID] = Query(None),
-    user=Depends(lambda: None),
+    user=Depends(get_current_user),
     db: AsyncSession = Depends(get_read_db_session),
 ) -> SuccessResponse[List[ReorderAlertOut]]:
     """All product/warehouse pairs at or below their reorder point, sorted by shortfall."""
@@ -61,7 +62,7 @@ async def demand_forecast(
     product_id: Optional[uuid.UUID] = Query(None),
     days: int                        = Query(30, ge=1, le=365),
     tenant_id: Optional[uuid.UUID]  = Query(None),
-    user=Depends(lambda: None),
+    user=Depends(get_current_user),
     db: AsyncSession = Depends(get_read_db_session),
 ) -> SuccessResponse[List[ForecastOut]]:
     """Average daily consumption and estimated days until stockout per location."""
@@ -75,7 +76,7 @@ async def demand_forecast(
 async def cross_warehouse_stock(
     product_id: uuid.UUID,
     tenant_id: Optional[uuid.UUID] = Query(None),
-    user=Depends(lambda: None),
+    user=Depends(get_current_user),
     db: AsyncSession = Depends(get_read_db_session),
 ) -> SuccessResponse[CrossWarehouseStockOut]:
     """Stock of a single product across all warehouses."""
@@ -90,7 +91,7 @@ async def transfer_history(
     product_id:   uuid.UUID = Query(...),
     warehouse_id: uuid.UUID = Query(...),
     tenant_id: Optional[uuid.UUID] = Query(None),
-    user=Depends(lambda: None),
+    user=Depends(get_current_user),
     db: AsyncSession = Depends(get_read_db_session),
 ) -> SuccessResponse[List[TransferHistoryItem]]:
     """Outbound transfer history for a product at a specific warehouse."""

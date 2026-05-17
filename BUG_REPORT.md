@@ -116,48 +116,89 @@ Covers: WM login → PULL creation → NM approval flow → WM receive with ABAC
 
 ---
 
-## 5. KNOWN GAP — BFF RBAC
+## 5. ~~KNOWN GAP — BFF RBAC~~ — CLOSED 2026-05-17
 
-### What it is
+### Status: CLOSED
 
-The Next.js BFF API routes (`/api/v1/transfers/[id]`) enforce **warehouse-scope ABAC** (who can receive, who can dispatch) but do **not** enforce **role-based RBAC** for mid-workflow approval transitions.
+All three parts of the fix were applied and verified end-to-end.
 
-Concretely: any authenticated user can call `PATCH /api/v1/transfers/{id}` with `next_status: "APPROVED"` and the BFF will accept it — even a WM approving their own transfer request. This was confirmed in the TEST 3 session: a WM session successfully advanced a PULL from `PENDING_APPROVAL` to `APPROVED`.
+---
 
-### Why it exists
+### What the gap was
 
-The BFF routes are a demo layer backed by in-memory state (`_demo-state.ts`). They were built to demonstrate UI flows, not to replicate the full three-layer enforcement model. The full RBAC check (`check_permission()` in `shared/permissions/middleware.py`) lives in the Python backend services, which enforce:
+The Next.js BFF API routes (`/api/v1/transfers/[id]`) enforced **warehouse-scope ABAC** (who can receive/dispatch) but did **not** enforce **role-based RBAC** for mid-workflow approval transitions. A WM could call `PATCH /api/v1/transfers/{id}` with `next_status: "APPROVED"` and the BFF would accept it — bypassing NM sign-off entirely.
 
-1. API Gateway — JWT role coarse check
-2. Service layer — `@require_permission` + `check_permission()` RBAC + ABAC + conditional routing
-3. PostgreSQL RLS — tenant isolation
+---
 
-The BFF sits outside this chain.
+### How it was fixed
 
-### What is needed to fix it before go-live
+**PART 1 — Route frontend through the API gateway**
 
-The frontend must be routed through the API gateway (`localhost:8000`) instead of calling `/api/...` BFF routes directly. This requires:
+- `frontend/.env.local`: `NEXT_PUBLIC_API_URL=http://localhost:8000`
+- `frontend/src/lib/api.ts` already uses `process.env.NEXT_PUBLIC_API_URL ?? ""` — no code change needed.
+- `smart-platform/.env` updated with `AUTH_SERVICE_URL`, `TENANT_SERVICE_URL`, `PRODUCT_SERVICE_URL`, `INVENTORY_SERVICE_URL` pointing to local service ports so the gateway can proxy correctly.
 
-1. Setting `NEXT_PUBLIC_API_URL=http://localhost:8000` (or the production API gateway URL) in each environment.
-2. Removing or disabling the BFF route handlers for all inventory/transfer mutations — keeping only the demo data seeding and locale routes.
-3. The backend services (tenant:8002, product:8003, inventory:8004) must be live and healthy for all requests.
-4. The `@require_permission(PERMISSIONS.INVENTORY_TRANSFER)` decorator on the transfer PATCH endpoint in the inventory service must verify the caller's role can perform the requested transition (e.g. only NM/RM can approve, only WM at source can dispatch).
+**PART 2 — Disabled all 7 BFF mutation routes (HTTP 410 Gone)**
 
-Until this is done, **all RBAC in the running demo is enforced by the UI only** (`usePermission` hook hides buttons), which is not a security layer.
+Each handler replaced with a `BFF_DISABLED` error pointing to the correct gateway endpoint:
 
-### Which endpoints are affected
+| Route file | Disabled method | Replacement |
+|---|---|---|
+| `transfers/[id]/route.ts` | `PATCH` | 410 → `POST /api/v1/inventory/transfers/{id}/approve\|submit\|receive\|dispatch` |
+| `transfers/route.ts` | `POST` | 410 → `POST /api/v1/inventory/transfers/` |
+| `inventory/receive/route.ts` | `POST` | 410 → `POST /api/v1/inventory/receive/` |
+| `inventory/issue/route.ts` | `POST` | 410 → `POST /api/v1/inventory/issue/` |
+| `inventory/adjust/route.ts` | `POST` | 410 → `POST /api/v1/inventory/adjust/` |
+| `inventory/adjust/[id]/route.ts` | `PATCH` | 410 → `PATCH /api/v1/inventory/adjust/{id}/` |
+| `receipts/opening-balance/route.ts` | `POST` | 410 → `POST /api/v1/inventory/receipts/opening-balance/` |
 
-All BFF mutation routes under `frontend/src/app/api/v1/`:
+GET handlers on the same routes were preserved (read-only, no security risk).
 
-| Route | Gap |
-|---|---|
-| `PATCH /api/v1/transfers/[id]` | No role check on approval/rejection transitions |
-| `POST /api/v1/transfers` | No role check preventing WM from creating PUSH |
-| `POST /api/v1/inventory/receive` | No `@require_permission(INVENTORY_RECEIVE)` |
-| `POST /api/v1/inventory/adjust` | No approval threshold enforcement |
-| `POST /api/v1/inventory/issue` | No role check |
-| `POST /api/v1/receipts/opening-balance` | No role check |
-| `POST /api/v1/imports/opening-balance` | No role check |
+**PART 3 — Backend wired for JWT-based RBAC**
+
+- `inventory-service/dependencies.py`: `get_current_user(request: Request)` now decodes the SMART JWT from the `Authorization` header and returns a `UserContext` dataclass with `role`, `tenant_id`, `warehouse_id`, `region_id`.
+- `shared/db/dependencies.py`: `get_db_session` guards against `None` user with `if user is not None:` before calling `set_rls_context` — prevents 500 on unauthenticated requests, allowing `@require_permission` to return a clean 401.
+- All inventory-service routers updated: `user=Depends(lambda: None)` → `user=Depends(get_current_user)`.
+
+---
+
+### End-to-end verification (curl tests — gateway → inventory-service → role_permissions DB)
+
+```
+Gateway (port 8080) → Inventory-service (port 8044)
+
+Step 1 — WM token (role=WM, no transfer:approve grant in DB):
+  POST /api/v1/inventory/transfers/{id}/approve
+  HTTP 403
+  {"detail": {"code": "RBAC_DENIED", "action": "transfer:approve"}}
+  ✓ EXPECTED: 403 RBAC_DENIED
+
+Step 2 — NM token (role=NM, transfer:approve=FULL in DB):
+  POST /api/v1/inventory/transfers/{id}/approve
+  HTTP 404
+  {"detail": "Transfer not found"}
+  ✓ EXPECTED: NOT 403 RBAC_DENIED — NM passed permission check, hit DB layer
+
+Step 3 — No token:
+  POST /api/v1/inventory/transfers/{id}/approve
+  HTTP 401
+  {"detail": "Missing token"}
+  ✓ EXPECTED: 401
+```
+
+The three-layer enforcement chain now holds end-to-end:
+1. **API Gateway** — validates JWT signature, rejects missing/expired tokens (401)
+2. **Service layer** — `@require_permission(TRANSFER_APPROVE)` queries `role_permissions` table; WM has no grant → 403 RBAC_DENIED; NM has FULL grant → proceeds
+3. **PostgreSQL RLS** — tenant isolation enforced on every DB query via `set_rls_context()`
+
+---
+
+### Test results after fix
+
+```
+pytest backend/ -v -m "unit"   → 75 passed in 1.22s
+python scripts/ci_drift_check.py  → PASS (25 router files, 0 drift)
+```
 
 ---
 

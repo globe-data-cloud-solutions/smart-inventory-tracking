@@ -4,6 +4,7 @@ from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from shared.db.dependencies import get_db_session
+from dependencies import get_current_user
 from shared.permissions.middleware import require_permission
 from shared.permissions.registry import PERMISSIONS
 from shared.utils.responses import SuccessResponse
@@ -17,7 +18,7 @@ router = APIRouter()
 @require_permission(PERMISSIONS.COUNT_CREATE_SESSION)
 async def create_count_session(
     body: CountSessionRequest,
-    user=Depends(lambda: None),
+    user=Depends(get_current_user),
     db: AsyncSession = Depends(get_db_session),
 ) -> SuccessResponse[CountSessionResponse]:
     svc = InventoryService(db)
@@ -29,7 +30,7 @@ async def create_count_session(
 @require_permission(PERMISSIONS.COUNT_VIEW)
 async def get_count_session(
     session_id: UUID,
-    user=Depends(lambda: None),
+    user=Depends(get_current_user),
     db: AsyncSession = Depends(get_db_session),
 ) -> SuccessResponse[CountSessionResponse]:
     svc = InventoryService(db)

@@ -15,6 +15,7 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from shared.db.dependencies import get_db_session
+from dependencies import get_current_user
 from shared.outbox.schemas import TransferRequestedPayload
 from shared.outbox.writer import write_to_outbox
 from shared.permissions.middleware import require_permission
@@ -60,7 +61,7 @@ async def _enrich(row: Any, session: AsyncSession) -> TransferRequestOut:
 @require_permission(PERMISSIONS.TRANSFER_CREATE)
 async def create_transfer_request(
     body: TransferRequestCreate,
-    user=Depends(lambda: None),
+    user=Depends(get_current_user),
     db: AsyncSession = Depends(get_db_session),
 ) -> SuccessResponse[TransferRequestOut]:
     """Submit a pull request for stock. The source warehouse is notified via the outbox."""
@@ -134,7 +135,7 @@ async def list_transfer_requests(
     product_id:          Optional[uuid.UUID]  = Query(None),
     status:              Optional[str]         = Query(None),
     tenant_id:           Optional[uuid.UUID]  = Query(None),
-    user=Depends(lambda: None),
+    user=Depends(get_current_user),
     db: AsyncSession = Depends(get_db_session),
 ) -> SuccessResponse[List[TransferRequestOut]]:
     tid = effective_tenant_id(user, tenant_id)
@@ -166,7 +167,7 @@ async def list_transfer_requests(
 async def update_request_status(
     request_id: uuid.UUID,
     new_status: str = Query(..., pattern="^(APPROVED|REJECTED|FULFILLED|CANCELLED)$"),
-    user=Depends(lambda: None),
+    user=Depends(get_current_user),
     db: AsyncSession = Depends(get_db_session),
 ) -> SuccessResponse[TransferRequestOut]:
     row = (await db.execute(

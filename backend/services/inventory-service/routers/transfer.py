@@ -4,6 +4,7 @@ from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from shared.db.dependencies import get_db_session
+from dependencies import get_current_user
 from shared.permissions.middleware import require_permission
 from shared.permissions.registry import PERMISSIONS
 from shared.utils.responses import SuccessResponse
@@ -17,7 +18,7 @@ router = APIRouter()
 @require_permission(PERMISSIONS.TRANSFER_CREATE)
 async def create_transfer(
     body: TransferOrderRequest,
-    user=Depends(lambda: None),
+    user=Depends(get_current_user),
     db: AsyncSession = Depends(get_db_session),
 ) -> SuccessResponse[TransferOrderResponse]:
     svc = InventoryService(db)
@@ -29,7 +30,7 @@ async def create_transfer(
 @require_permission(PERMISSIONS.TRANSFER_SUBMIT)
 async def submit_transfer(
     transfer_id: UUID,
-    user=Depends(lambda: None),
+    user=Depends(get_current_user),
     db: AsyncSession = Depends(get_db_session),
 ) -> SuccessResponse[TransferOrderResponse]:
     svc = InventoryService(db)
@@ -41,7 +42,7 @@ async def submit_transfer(
 @require_permission(PERMISSIONS.TRANSFER_APPROVE)
 async def approve_transfer(
     transfer_id: UUID,
-    user=Depends(lambda: None),
+    user=Depends(get_current_user),
     db: AsyncSession = Depends(get_db_session),
 ) -> SuccessResponse[TransferOrderResponse]:
     svc = InventoryService(db)
@@ -53,7 +54,7 @@ async def approve_transfer(
 @require_permission(PERMISSIONS.TRANSFER_DISPATCH)
 async def dispatch_transfer(
     transfer_id: UUID,
-    user=Depends(lambda: None),
+    user=Depends(get_current_user),
     db: AsyncSession = Depends(get_db_session),
 ) -> SuccessResponse[TransferOrderResponse]:
     """Advance APPROVED → IN_TRANSIT. Source warehouse only (warehouse_id ABAC).
@@ -68,7 +69,7 @@ async def dispatch_transfer(
 @require_permission(PERMISSIONS.TRANSFER_RECEIVE)
 async def receive_transfer(
     transfer_id: UUID,
-    user=Depends(lambda: None),
+    user=Depends(get_current_user),
     db: AsyncSession = Depends(get_db_session),
 ) -> SuccessResponse[TransferOrderResponse]:
     """Advance IN_TRANSIT → RECEIVED. Destination warehouse only (warehouse_id ABAC).
@@ -84,7 +85,7 @@ async def receive_transfer(
 @require_permission(PERMISSIONS.TRANSFER_VIEW)
 async def get_transfer(
     transfer_id: UUID,
-    user=Depends(lambda: None),
+    user=Depends(get_current_user),
     db: AsyncSession = Depends(get_db_session),
 ) -> SuccessResponse[TransferOrderResponse]:
     svc = InventoryService(db)
