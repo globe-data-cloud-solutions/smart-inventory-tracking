@@ -35,7 +35,11 @@ export default function AnalyticsPage() {
               </div>
               <div className="h-2 bg-gray-100 rounded overflow-hidden">
                 {/* bar width is runtime-computed — must use style */}
-                <div className="h-full rounded" style={{ width: `${(w.units / maxWH) * 100}%`, background: tenant.color }} />
+                {/* --bw: bar width is runtime-computed; --tenant-color from layout */}
+                <div
+                  className="h-full rounded bg-[var(--tenant-color)] w-[var(--bw)]"
+                  style={{ "--bw": `${(w.units / maxWH) * 100}%` } as React.CSSProperties}
+                />
               </div>
             </div>
           ))}

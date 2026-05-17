@@ -358,7 +358,13 @@ export default function OrgLayout({ children }: { children: React.ReactNode }) {
         {/* Body */}
         <div className="flex pt-[60px]">
           <Sidebar user={user} org={org} />
-          <main className="flex-1 ml-60 min-h-[calc(100vh-60px)] overflow-auto bg-gray-100">
+          {/* --tenant-color CSS custom property scoped to every [org]/* page.
+              Children use bg-[var(--tenant-color)] / text-[var(--tenant-color)]
+              instead of 15+ scattered per-element inline background/color props. */}
+          <main
+            className="flex-1 ml-60 min-h-[calc(100vh-60px)] overflow-auto bg-gray-100"
+            style={{ "--tenant-color": viewingTenant?.color ?? "#FCDD09" } as React.CSSProperties}
+          >
             {children}
           </main>
         </div>

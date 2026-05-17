@@ -64,7 +64,8 @@ export default function ProductsPage() {
       </div>
 
       <div className="bg-white border border-gray-200 rounded overflow-hidden">
-        <div className="h-[3px]" style={{ background: tenant.color }} />
+        {/* uses --tenant-color from [org]/layout.tsx */}
+        <div className="h-[3px] bg-[var(--tenant-color)]" />
         <div className="overflow-x-auto">
           <table className="w-full border-collapse text-sm">
             <thead>

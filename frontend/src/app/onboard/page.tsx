@@ -302,16 +302,18 @@ export default function OnboardPage() {
                   const m        = ORG_META[type];
                   const selected = form.orgType === type;
                   return (
+                    /* inline: m.color+"10" hex-alpha — CSS vars can't express alpha suffixes;
+                       no Tailwind arbitrary value covers runtime+alpha hex combos */
                     <button
                       key={type}
                       onClick={() => set("orgType", type)}
                       className="flex items-start gap-4 px-5 py-4 rounded-lg cursor-pointer text-left transition-all"
-                      /* Per-org-type color — runtime data value, style= required */
                       style={{
                         border:     selected ? `2px solid ${m.color}` : "2px solid #E5E7EB",
                         background: selected ? `${m.color}10` : "#fff",
                       }}
                     >
+                      {/* inline: same m.color-with-alpha pattern for the radio dot */}
                       <div
                         className="w-5 h-5 rounded-full flex-shrink-0 mt-0.5 transition-all"
                         style={{
@@ -364,11 +366,11 @@ export default function OnboardPage() {
                       }`}
                     >
                       <div
-                        className="w-5 h-5 rounded-full flex-shrink-0 transition-all"
-                        style={{
-                          border:     selected ? "6px solid #1B4332" : "2px solid #D1D5DB",
-                          background: selected ? "#fff" : "transparent",
-                        }}
+                        className={`w-5 h-5 rounded-full flex-shrink-0 transition-all ${
+                          selected
+                            ? "border-[6px] border-[#1B4332] bg-white"
+                            : "border-2 border-gray-300 bg-transparent"
+                        }`}
                       />
                       <div>
                         <p className="font-bold text-[15px] text-gray-900 m-0 mb-0.5">{m.label}</p>
@@ -419,12 +421,12 @@ export default function OnboardPage() {
                     <p className="font-bold text-[13px] text-gray-700 m-0 mb-2">{t("wizard.approval_thresholds")}</p>
                     <div className="flex gap-4">
                       {[
-                        { level: t("wizard.auto_approve_below"), value: approvals.low,    color: "#059669" },
-                        { level: t("wizard.wm_rm_above"),        value: approvals.medium, color: "#D97706" },
+                        { level: t("wizard.auto_approve_below"), value: approvals.low,    colorClass: "text-[#059669]" },
+                        { level: t("wizard.wm_rm_above"),        value: approvals.medium, colorClass: "text-[#D97706]" },
                       ].map((th) => (
                         <div key={th.level} className="flex-1 p-2.5 bg-white rounded-md border border-gray-200 text-center">
-                          {/* Per-threshold color — runtime data value */}
-                          <p className="text-lg font-extrabold m-0" style={{ color: th.color }}>{th.value.toLocaleString()}</p>
+                          {/* #059669 = emerald-600-ish, #D97706 = amber-600-ish — Tailwind arbitrary values */}
+                          <p className={`text-lg font-extrabold m-0 ${th.colorClass}`}>{th.value.toLocaleString()}</p>
                           <p className="text-[11px] text-gray-400 mt-1 mb-0">{th.level}</p>
                         </div>
                       ))}

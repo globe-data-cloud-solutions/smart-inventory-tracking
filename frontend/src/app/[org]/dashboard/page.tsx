@@ -13,31 +13,28 @@ import {
 import { t } from "@/lib/i18n";
 
 /* ── Summary card ─────────────────────────────────────────────────────────── */
-function SummaryCard({ title, subtitle, rows, accentColor }: {
+function SummaryCard({ title, subtitle, rows }: {
   title: string;
   subtitle: string;
   rows: { label: string; value: string | number; warn?: boolean }[];
-  accentColor: string;
 }) {
   return (
     <div className="bg-white border border-gray-200 rounded overflow-hidden mb-6">
-      {/* brand accent strip — accentColor is tenant-specific, must be dynamic */}
-      <div className="h-1" style={{ background: accentColor }} />
+      {/* brand accent strip — uses --tenant-color injected by [org]/layout.tsx */}
+      <div className="h-1 bg-[var(--tenant-color)]" />
       <div className="px-6 py-4 bg-[#0f2d1f] flex items-center justify-between">
         <div>
           <p className="font-bold text-base text-white m-0">{title}</p>
           <p className="text-xs text-emerald-300 mt-0.5">{subtitle}</p>
         </div>
+        {/* inline: multi-stop 3-color gradient — Tailwind only supports 2-stop direction gradients */}
         <div
           className="h-1.5 w-[28%] rounded"
           style={{ background: "linear-gradient(to right,#078930 0% 33.33%,#FCDD09 33.33% 66.66%,#DA121A 66.66% 100%)" }}
         />
       </div>
-      {/* stat columns — count drives cols, must be dynamic */}
-      <div
-        className="grid"
-        style={{ gridTemplateColumns: `repeat(${rows.length},1fr)` }}
-      >
+      {/* stat columns — column count is runtime data; arbitrary value covers it */}
+      <div className={`grid grid-cols-[repeat(${rows.length},1fr)]`}>
         {rows.map((r, i) => (
           <div
             key={i}
@@ -59,10 +56,9 @@ function SummaryCard({ title, subtitle, rows, accentColor }: {
 }
 
 /* ── Inventory table ──────────────────────────────────────────────────────── */
-function InventoryTable({ products, getQty, accentColor, title, subtitle }: {
+function InventoryTable({ products, getQty, title, subtitle }: {
   products: DemoProduct[];
   getQty: (p: DemoProduct) => number;
-  accentColor: string;
   title: string;
   subtitle: string;
 }) {
@@ -74,7 +70,8 @@ function InventoryTable({ products, getQty, accentColor, title, subtitle }: {
         const total = items.reduce((a, p) => a + getQty(p), 0);
         return (
           <div key={cat} className="bg-white border border-gray-200 rounded overflow-hidden">
-            <div className="h-[3px]" style={{ background: accentColor }} />
+            {/* uses --tenant-color injected by [org]/layout.tsx */}
+            <div className="h-[3px] bg-[var(--tenant-color)]" />
             <div className="px-5 py-3 bg-gray-50 border-b-2 border-gray-200 flex items-center justify-between">
               <span className="text-sm font-bold text-gray-800">
                 {title}{" "}
@@ -173,7 +170,6 @@ export default function OrgDashboard() {
         <SummaryCard
           title={t("dashboard.platform_overview")}
           subtitle={t("dashboard.sa_subtitle")}
-          accentColor="#FCDD09"
           rows={[
             { label: t("dashboard.stat_tenants"),    value: DEMO_TENANTS.length },
             { label: t("dashboard.stat_locations"),  value: totalLoc },
@@ -196,13 +192,10 @@ export default function OrgDashboard() {
             const low   = getLowStockProducts(ten);
             const units = ten.products.reduce((a, p) => a + getTotalStock(p), 0);
             return (
-              <Link key={ten.id} href={`/${ten.slug}/dashboard`} className="no-underline">
+              <Link key={ten.id} href={`/${ten.slug}/dashboard`} className="no-underline" style={{ "--tc": ten.color } as React.CSSProperties}>
                 <div className="bg-white border border-gray-200 rounded overflow-hidden">
                   {/* tenant header — color is per-tenant, must be dynamic */}
-                  <div
-                    className="px-5 py-4 flex items-center gap-3"
-                    style={{ background: ten.color }}
-                  >
+                  <div className="px-5 py-4 flex items-center gap-3 bg-[var(--tc)]">
                     <span className="text-3xl">{ten.logo}</span>
                     <div>
                       <p className="font-bold text-base text-white m-0">{ten.name}</p>
@@ -224,7 +217,7 @@ export default function OrgDashboard() {
                   </div>
                   <div className="px-5 py-2.5 border-t border-gray-100 bg-gray-50">
                     {/* tenant slug link — color is per-tenant */}
-                    <span className="text-xs font-bold" style={{ color: ten.color }}>
+                    <span className="text-xs font-bold text-[var(--tc)]">
                       /{ten.slug}/dashboard →
                     </span>
                   </div>
@@ -261,7 +254,6 @@ export default function OrgDashboard() {
         <SummaryCard
           title={wh?.name ?? t("dashboard.my_warehouse")}
           subtitle={`${wh?.location ?? ""} · ${user.role} access`}
-          accentColor={tenant.color}
           rows={[
             { label: t("dashboard.stat_units"),          value: myUnits },
             { label: t("dashboard.stat_skus_with_stock"),value: myProducts.length },
@@ -272,7 +264,6 @@ export default function OrgDashboard() {
         <InventoryTable
           products={myProducts}
           getQty={(p) => p.stock[user.warehouseId!] ?? 0}
-          accentColor={tenant.color}
           title={wh?.name ?? t("dashboard.my_warehouse")}
           subtitle={user.role}
         />
@@ -286,7 +277,6 @@ export default function OrgDashboard() {
       <SummaryCard
         title={tenant.name}
         subtitle={`${tenant.industry} · ${user.role === "SA" ? t("dashboard.sa_viewing") : t("dashboard.tenant_admin")}`}
-        accentColor={tenant.color}
         rows={[
           { label: t("dashboard.stat_locations"), value: tenant.warehouses.length },
           { label: t("table.skus"),               value: tenant.products.length },
@@ -297,7 +287,8 @@ export default function OrgDashboard() {
 
       {/* Warehouse summary */}
       <div className="bg-white border border-gray-200 rounded overflow-hidden mb-6">
-        <div className="h-[3px]" style={{ background: tenant.color }} />
+        {/* uses --tenant-color from [org]/layout.tsx */}
+        <div className="h-[3px] bg-[var(--tenant-color)]" />
         <div className="px-5 py-3 bg-gray-50 border-b-2 border-gray-200">
           <span className="text-sm font-bold text-gray-800">{t("dashboard.inventory_by_location")}</span>
         </div>
@@ -374,7 +365,6 @@ export default function OrgDashboard() {
       <InventoryTable
         products={tenant.products}
         getQty={getTotalStock}
-        accentColor={tenant.color}
         title={`${tenant.name} — ${t("dashboard.full_inventory")}`}
         subtitle={t("dashboard.all_locations")}
       />
