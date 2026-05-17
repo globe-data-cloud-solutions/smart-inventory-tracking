@@ -31,8 +31,9 @@ ADDIS_WATER_RULES: dict[str, list[tuple[Decimal, Optional[Decimal], str]]] = {
         (Decimal("5000"), None,                 "TA"),
     ],
     "ADJUSTMENT": [
-        (Decimal("0"),   Decimal("99.9999"), "WM"),
-        (Decimal("100"), None,               "NM"),
+        (Decimal("0"),    Decimal("99.9999"),  "WM"),   # 0–99:    WM self-approval
+        (Decimal("100"),  Decimal("999.9999"), "RM"),   # 100–999: RM required
+        (Decimal("1000"), None,               "TA"),    # 1000+:   TA (CEO) required
     ],
     "SISTER": [
         (Decimal("0"),    Decimal("999.9999"), "WM"),
@@ -116,10 +117,17 @@ class TestApprovalRuleRouting:
         for qty in [Decimal("0"), Decimal("50"), Decimal("99")]:
             assert _resolve_approver("ADJUSTMENT", qty) == "WM"
 
-    def test_adjustment_large_requires_nm(self) -> None:
-        """Adjustments ≥ 100 units require National Manager."""
-        for qty in [Decimal("100"), Decimal("500"), Decimal("10000")]:
-            assert _resolve_approver("ADJUSTMENT", qty) == "NM"
+    def test_adjustment_mid_requires_rm(self) -> None:
+        """Adjustments 100–999 units require Regional Manager."""
+        for qty in [Decimal("100"), Decimal("500"), Decimal("999")]:
+            assert _resolve_approver("ADJUSTMENT", qty) == "RM", \
+                f"Expected RM for ADJUSTMENT qty={qty}"
+
+    def test_adjustment_large_requires_ta(self) -> None:
+        """Adjustments ≥ 1000 units require Tenant Admin (CEO-equivalent)."""
+        for qty in [Decimal("1000"), Decimal("5000"), Decimal("10000")]:
+            assert _resolve_approver("ADJUSTMENT", qty) == "TA", \
+                f"Expected TA for ADJUSTMENT qty={qty}"
 
     # ── SISTER routing ────────────────────────────────────────────────────────
 

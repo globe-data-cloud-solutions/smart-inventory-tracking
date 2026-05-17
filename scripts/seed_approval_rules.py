@@ -18,8 +18,9 @@ Rule design (from CLAUDE.md §15 + §24, Business Rule #2):
     5000+         → TA  (Tenant Admin — CEO-equivalent per CLAUDE.md §24)
 
   ADJUSTMENT (damage, write-off, count variance):
-    0 – 99        → WM  (minor adjustments self-approved)
-    100+          → NM  (larger adjustments require NM oversight)
+    0 – 99        → WM   (minor adjustments self-approved by WM)
+    100 – 999     → RM   (mid-range damage requires Regional Manager)
+    1000+         → TA   (large write-offs require Tenant Admin / CEO)
 
   SISTER transfers (peer WH ↔ WH):
     0 – 999       → WM  (both WHs agree, no escalation)
@@ -68,9 +69,10 @@ ADDIS_WATER_RULES = [
     ("PUSH",       "0",    "4999.9999",   "NM", 1),
     ("PUSH",    "5000",         None,     "TA", 1),
 
-    # ADJUSTMENT: damage, write-off, count variance
-    ("ADJUSTMENT",  "0",     "99.9999",   "WM", 1),
-    ("ADJUSTMENT",  "100",        None,   "NM", 1),
+    # ADJUSTMENT: damage, write-off, count variance — 3 bands per CLAUDE.md §15
+    ("ADJUSTMENT",    "0",   "99.9999",   "WM", 1),   # WM self-approves minor damage
+    ("ADJUSTMENT",  "100",  "999.9999",   "RM", 1),   # RM approval for mid-range
+    ("ADJUSTMENT", "1000",       None,    "TA", 1),   # TA (CEO) for large write-offs
 
     # SISTER: peer WH ↔ WH lateral transfer
     ("SISTER",     "0",     "999.9999",   "WM", 1),
@@ -79,15 +81,16 @@ ADDIS_WATER_RULES = [
 
 # Muger Cement uses the same bands (both are PRODUCER, same org size)
 MUGER_CEMENT_RULES = [
-    ("PULL",       "0",    "999.9999",    "WM", 1),
-    ("PULL",    "1000",   "4999.9999",    "RM", 1),
-    ("PULL",    "5000",        None,      "NM", 1),
-    ("PUSH",       "0",   "4999.9999",    "NM", 1),
-    ("PUSH",    "5000",        None,      "TA", 1),
-    ("ADJUSTMENT",  "0",    "99.9999",    "WM", 1),
-    ("ADJUSTMENT",  "100",      None,     "NM", 1),
-    ("SISTER",     "0",    "999.9999",    "WM", 1),
-    ("SISTER",  "1000",        None,      "RM", 1),
+    ("PULL",          "0",   "999.9999",  "WM", 1),
+    ("PULL",       "1000",  "4999.9999",  "RM", 1),
+    ("PULL",       "5000",       None,    "NM", 1),
+    ("PUSH",          "0",  "4999.9999",  "NM", 1),
+    ("PUSH",       "5000",       None,    "TA", 1),
+    ("ADJUSTMENT",    "0",   "99.9999",   "WM", 1),
+    ("ADJUSTMENT",  "100",  "999.9999",   "RM", 1),
+    ("ADJUSTMENT", "1000",       None,    "TA", 1),
+    ("SISTER",        "0",  "999.9999",   "WM", 1),
+    ("SISTER",     "1000",       None,    "RM", 1),
 ]
 
 SEED_DATA: list[tuple[str, list]] = [

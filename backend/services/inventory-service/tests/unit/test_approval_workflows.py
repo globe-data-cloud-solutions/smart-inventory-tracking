@@ -16,10 +16,12 @@ Inline rule constants at the top of this file are AUTHORITATIVE for the IMTS
 §6 approval matrix.  The seed script (scripts/seed_approval_rules.py) should
 match these.
 
-NOTE: ADJUSTMENT_RULES below uses 3 bands (WM / RM / TA) as required by
-CLAUDE.md §15 APPROVAL_DEFAULTS for PRODUCER (low=100, medium=500).
-The seed script currently has only 2 bands (WM / NM) and must be updated to
-insert the RM intermediate band and change the top band from NM to TA.
+ADJUSTMENT_RULES uses 3 bands (WM / RM / TA) per the authoritative IMTS §6
+matrix and the user-specified thresholds:
+  0–99   → WM   (minor damage, WM self-approval)
+  100–999 → RM  (mid-range, Regional Manager required)
+  1000+  → TA   (large write-off, Tenant Admin / CEO required)
+scripts/seed_approval_rules.py matches these bands as of Session 4.
 """
 from __future__ import annotations
 
@@ -54,13 +56,11 @@ SISTER_RULES: list[tuple[Decimal, Decimal | None, str]] = [
     (Decimal("1000"), None,               "RM"),
 ]
 
-# ADJUSTMENT: damage / write-off / count variance
-# Three bands per CLAUDE.md §15 APPROVAL_DEFAULTS PRODUCER (low=100, medium=500).
-# Seed script uses NM for 100+ — update seed to match these 3 bands.
+# ADJUSTMENT: damage / write-off / count variance — 3 bands (IMTS §6 / user spec)
 ADJUSTMENT_RULES: list[tuple[Decimal, Decimal | None, str]] = [
-    (Decimal("0"),   Decimal("99.9999"),  "WM"),
-    (Decimal("100"), Decimal("499.9999"), "RM"),
-    (Decimal("500"), None,               "TA"),
+    (Decimal("0"),    Decimal("99.9999"),  "WM"),   # 0–99:    WM self-approval
+    (Decimal("100"),  Decimal("999.9999"), "RM"),   # 100–999: RM required
+    (Decimal("1000"), None,               "TA"),    # 1000+:   TA (CEO) required
 ]
 
 
@@ -329,32 +329,29 @@ class TestApprovalWorkflows:
             validate_transition("ADJUSTMENT", "POSTED", "COMPLETED")
 
     async def test_damage_exceeds_wm_limit_routes_to_rm(self) -> None:
-        """ADJUSTMENT qty=200 (RM band, 100–499) → RM required; WM cannot self-approve.
+        """ADJUSTMENT qty=500 (RM band, 100–999) → RM required; WM cannot self-approve.
 
-        Per CLAUDE.md §15 APPROVAL_DEFAULTS PRODUCER (low=100): adjustments at
-        or above 100 units exceed the WM self-approval limit.  RM (level 7) must
-        review before the adjustment is posted to the inventory ledger.
-
-        NOTE: The seed script (scripts/seed_approval_rules.py) currently maps
-        ADJUSTMENT 100+ → NM (2 bands only).  It must be updated to add this
-        RM intermediate band (100–499) as required by CLAUDE.md §15.
+        Adjustments at or above 100 units exceed the WM self-approval limit.
+        RM (level 7) must review before the adjustment is posted to the ledger.
+        qty=500 is clearly in the RM band (100–999) — above WM limit but below
+        the 1000-unit threshold that requires TA.
         """
         svc      = ApprovalService(_mock_db("RM"))
-        decision = await svc.route_approval(TENANT_ID, "ADJUSTMENT", Decimal("200"), "WM")
+        decision = await svc.route_approval(TENANT_ID, "ADJUSTMENT", Decimal("500"), "WM")
 
         assert decision.required_role    == "RM"
         assert decision.is_auto_approved is False   # WM (6) < RM (7)
         assert decision.next_status      == "PENDING_APPROVAL"
 
     async def test_damage_exceeds_limit_final_ta(self) -> None:
-        """ADJUSTMENT qty=600 (TA band, ≥ 500) → TA (CEO-equivalent) required.
+        """ADJUSTMENT qty=1200 (TA band, ≥ 1000) → TA (CEO-equivalent) required.
 
-        Large write-offs at or above the medium threshold (500 units, PRODUCER)
-        require Tenant Admin approval.  TA is the highest tenant-scoped role
-        (level 9).  NM (level 8) cannot self-approve TA-band adjustments.
+        Large write-offs at or above 1000 units require Tenant Admin approval.
+        TA is the highest tenant-scoped role (level 9).  NM (level 8) cannot
+        self-approve TA-band adjustments.
         """
         svc      = ApprovalService(_mock_db("TA"))
-        decision = await svc.route_approval(TENANT_ID, "ADJUSTMENT", Decimal("600"), "NM")
+        decision = await svc.route_approval(TENANT_ID, "ADJUSTMENT", Decimal("1200"), "NM")
 
         assert decision.required_role    == "TA"
         assert decision.is_auto_approved is False   # NM (8) < TA (9)
@@ -364,18 +361,18 @@ class TestApprovalWorkflows:
         assert ROLE_LEVEL["TA"] > ROLE_LEVEL["NM"]
 
     async def test_mwh_damage_exceeds_limit_to_ta(self) -> None:
-        """LM initiates large MWH damage write-off (qty=750); TA approval required.
+        """LM initiates large MWH damage write-off (qty=1500); TA approval required.
 
         LM (Logistics Manager, level 6) manages the Main Warehouse.  When a
-        large write-off (≥ 500) is initiated at MWH, TA sign-off is required.
-        LM is two levels below TA — cannot self-approve.
+        large write-off (≥ 1000) is initiated at MWH, TA sign-off is required.
+        LM is three levels below TA — cannot self-approve.
 
         The multi-step escalation path (LM initiates → NM advisory review →
         TA final approval) is captured through approval_order in the rule table.
         This test verifies the highest required approver for the TA-band scenario.
         """
         svc      = ApprovalService(_mock_db("TA"))
-        decision = await svc.route_approval(TENANT_ID, "ADJUSTMENT", Decimal("750"), "LM")
+        decision = await svc.route_approval(TENANT_ID, "ADJUSTMENT", Decimal("1500"), "LM")
 
         assert decision.required_role    == "TA"
         assert decision.is_auto_approved is False   # LM (6) < TA (9)

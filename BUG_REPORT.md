@@ -2,7 +2,7 @@
 **Generated:** 2026-05-17  
 **Branch:** `main`  
 **Head commit:** `b675211`  
-**Unit tests:** `pytest backend/ -v -m "unit"` — **94 passed, 0 failed, 0 errors**  
+**Unit tests:** `pytest backend/ -v -m "unit"` — **95 passed, 0 failed, 0 errors**  
 **CI drift check:** PASS — 25 router files scanned, 0 drift detected  
 **TypeScript:** `npx tsc --noEmit` — 0 errors  
 **Lint:** `next lint` — 0 warnings, 0 errors  
@@ -325,9 +325,10 @@ Root `pyproject.toml` added: `--import-mode=importlib`, `asyncio_mode = auto`. P
 
 ### Seed script note
 
-`test_damage_exceeds_wm_limit_routes_to_rm` documents that `scripts/seed_approval_rules.py` currently uses 2 bands for ADJUSTMENT (WM / NM) but the authoritative IMTS §6 / CLAUDE.md §15 matrix requires 3 bands (WM / RM / TA). The seed script must be updated before any real Adjustment approval workflow is tested end-to-end against a live DB.
+~~`scripts/seed_approval_rules.py` had 2 ADJUSTMENT bands (WM/NM).~~
+**CLOSED in Session 4** — 3-band ADJUSTMENT now seeded to live DB (see §11).
 
-### Final test counts
+### Final test counts (Session 3)
 
 | Suite | Count | Status |
 |---|---|---|
@@ -337,13 +338,55 @@ Root `pyproject.toml` added: `--import-mode=importlib`, `asyncio_mode = auto`. P
 | `npx tsc --noEmit` | — | ✅ 0 errors |
 | `next lint` | — | ✅ 0 warnings |
 
+### Remaining open items (carried to Session 4)
+
+- §8-6 (L): AWS dev environment — Terraform apply, RDS + ElastiCache provisioning
+- §8-9 (L): Native-speaker review of `or.json` — staffing decision
+- Seed script ADJUSTMENT gap (S): CLOSED in Session 4 (§11)
+
+---
+
+## 11. SESSION 4 SUMMARY — 2026-05-17
+
+**Head commit at start:** `ddf1600`
+
+### Item completed: ADJUSTMENT approval gap — CLOSED
+
+**Gap**: `scripts/seed_approval_rules.py` had 2 ADJUSTMENT bands:
+- 0–99 → WM
+- 100+ → NM ← wrong (NM is too high for mid-range; skips RM entirely)
+
+**Fix**: Updated to 3 bands matching the authoritative IMTS §6 / user spec:
+- 0–99 → WM (unchanged)
+- 100–999 → RM ← **added**
+- 1000+ → TA ← changed from NM to TA
+
+**Files changed:**
+- `scripts/seed_approval_rules.py` — both `ADDIS_WATER_RULES` and `MUGER_CEMENT_RULES`: 9 rules → 10 rules per tenant (20 total, was 18)
+- `tests/unit/test_approval_rules.py` — `ADDIS_WATER_RULES["ADJUSTMENT"]` updated; `test_adjustment_large_requires_nm` split into `test_adjustment_mid_requires_rm` + `test_adjustment_large_requires_ta`
+- `tests/unit/test_approval_workflows.py` — `ADJUSTMENT_RULES` constant updated; docstrings/quantities updated for tests 13–15
+
+**Live DB verified:**
+```
+Addis Water  — ADJUSTMENT  0.0000   99.9999  WM
+Addis Water  — ADJUSTMENT  100.0000 999.9999  RM   ← now correct
+Addis Water  — ADJUSTMENT  1000.0000 unlimited TA  ← now correct
+(same for Muger Cement)
+```
+
+### Final test counts
+
+| Suite | Count | Status |
+|---|---|---|
+| `pytest backend/ -v -m "unit"` | **95 / 95** | ✅ All pass |
+| `frontend/tests/transfer-receive-auth.spec.ts` | **12 / 12** (1 skip) | ✅ All pass |
+
 ### Remaining open items
 
 - §8-6 (L): AWS dev environment — Terraform apply, RDS + ElastiCache provisioning
 - §8-9 (L): Native-speaker review of `or.json` — staffing decision
-- Seed script fix (S): Update ADJUSTMENT bands to 3-tier (WM/RM/TA) per CLAUDE.md §15
 
 ---
 
-*SMART Inventory Platform — Bug Report v3.0*  
+*SMART Inventory Platform — Bug Report v4.0*  
 *Backend: Python 3.12 / FastAPI · Frontend: Next.js 14 / TypeScript · DB: PostgreSQL 16*
