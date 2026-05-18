@@ -15,8 +15,9 @@ function Logo({ size = 36 }: { size?: number }) {
 }
 
 function Stripe({ h = 5 }: { h?: number }) {
-  /* inline: height is a runtime number — Tailwind JIT cannot build arbitrary px from JS vars */
-  return <div aria-hidden="true" className="eth-stripe w-full" style={{ height: h }} />;
+  return (
+    <div aria-hidden="true" className="eth-stripe w-full" style={{ height: h }} />
+  );
 }
 
 function Wave({ from, to, flip }: { from: string; to: string; flip?: boolean }) {
@@ -50,13 +51,10 @@ function HeroLines() {
   return (
     <div aria-hidden="true" className="hero-lines-mask absolute inset-0 overflow-hidden">
       {LINES.map((l, i) => (
-        /* inline: l.top, l.op, l.dur, l.del are runtime data-array values —
-           Tailwind JIT cannot build classes from runtime JS variables */
         <div
           key={i}
           style={{ position: "absolute", top: l.top, left: 0, right: 0, height: 1, overflow: "hidden" }}
         >
-          {/* inline: multi-stop gradient + keyframe animation driven by runtime data */}
           <div
             style={{
               position: "absolute",
@@ -178,13 +176,16 @@ export default function HomePage() {
           </div>
           <div className="grid grid-cols-3 border border-gray-300">
             {FEATURES.map((f, i) => (
-              /* --facc: per-feature accent color — runtime data; injected once per card */
               <div
                 key={f.title}
-                className={`cap-card ${i % 3 !== 2 ? "[border-right:1px_solid_#D1D5DB]" : ""} ${i < 3 ? "[border-bottom:1px_solid_#D1D5DB]" : ""}`}
-                style={{ "--facc": f.accent } as React.CSSProperties}
+                className="cap-card"
+                style={{
+                  borderRight:  i % 3 === 2 ? "none" : "1px solid #D1D5DB",
+                  borderBottom: i >= 3      ? "none" : "1px solid #D1D5DB",
+                }}
               >
-                <div className="h-[3px] rounded-sm mb-6 bg-[var(--facc)]" />
+                {/* Per-feature accent color — runtime data value */}
+                <div className="h-[3px] rounded-sm mb-6" style={{ background: f.accent }} />
                 <div className="text-[1.75rem] mb-3">{f.icon}</div>
                 <h3 className="text-[15px] font-bold text-[#0f2d1f] m-0 mb-2">{f.title}</h3>
                 <p className="text-[13px] text-gray-500 leading-relaxed m-0">{f.desc}</p>
@@ -213,15 +214,10 @@ export default function HomePage() {
           </div>
           <div className="grid grid-cols-2 gap-8">
             {TENANTS.map((ten) => (
-              /* --tc: per-tenant brand color — one CSS var injection covers all 3 uses below */
-              <Link
-                key={ten.slug}
-                href={`/dashboard/tenants/${ten.slug}`}
-                className="tenant-card"
-                style={{ "--tc": ten.color } as React.CSSProperties}
-              >
+              <Link key={ten.slug} href={`/dashboard/tenants/${ten.slug}`} className="tenant-card">
                 <div>
-                  <div className="px-6 py-5 flex items-center gap-3 bg-[var(--tc)]">
+                  {/* Per-tenant brand color — runtime data value */}
+                  <div className="px-6 py-5 flex items-center gap-3" style={{ background: ten.color }}>
                     <span className="text-[2.5rem]">{ten.icon}</span>
                     <div>
                       <p className="font-bold text-lg text-white m-0">{ten.name}</p>
@@ -236,7 +232,7 @@ export default function HomePage() {
                       <p className="text-[11px] font-bold uppercase tracking-[0.07em] text-gray-400 mb-2">Locations</p>
                       {ten.warehouses.map((w) => (
                         <p key={w} className="text-[13px] text-gray-700 my-0.5 flex items-center gap-1.5">
-                          <span className="w-1.5 h-1.5 rounded-full flex-shrink-0 bg-[var(--tc)]" />
+                          <span className="w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ background: ten.color }} />
                           {w}
                         </p>
                       ))}
@@ -253,7 +249,7 @@ export default function HomePage() {
                   </div>
                   <div className="px-6 py-2.5 border-t border-gray-100 bg-gray-50 flex justify-between items-center">
                     <span className="text-xs text-gray-400">{ten.skuCount} SKUs · {ten.userCount} user accounts</span>
-                    <span className="text-xs font-bold text-[var(--tc)]">Open dashboard →</span>
+                    <span className="text-xs font-bold" style={{ color: ten.color }}>Open dashboard →</span>
                   </div>
                 </div>
               </Link>
@@ -276,10 +272,10 @@ export default function HomePage() {
           </p>
           <div className="grid grid-cols-3 gap-4 mb-10 text-left">
             {CREDS.map((c) => (
-              /* --rc: per-role badge color — one CSS var injection covers the badge below */
-              <div key={c.email} className="p-4 rounded bg-white/[0.05] border border-white/10" style={{ "--rc": c.roleColor } as React.CSSProperties}>
+              <div key={c.email} className="p-4 rounded bg-white/[0.05] border border-white/10">
                 <div className="flex items-center gap-2 mb-2">
-                  <span className="text-[11px] font-bold text-white px-1.5 py-0.5 rounded bg-[var(--rc)]">
+                  {/* Role badge color — runtime data value */}
+                  <span className="text-[11px] font-bold text-white px-1.5 py-0.5 rounded" style={{ background: c.roleColor }}>
                     {c.role}
                   </span>
                   <span className="text-xs text-emerald-300 overflow-hidden text-ellipsis whitespace-nowrap">{c.company}</span>

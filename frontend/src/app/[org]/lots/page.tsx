@@ -188,11 +188,7 @@ export default function LotsPage() {
                             <div className="flex items-center gap-2">
                               <div className="flex-1 h-1.5 bg-gray-100 rounded overflow-hidden max-w-[80px]">
                                 {/* bar width is runtime-computed */}
-                                {/* --bw: bar width is runtime-computed; --tenant-color from layout */}
-                                <div
-                                  className="h-full rounded bg-[var(--tenant-color)] w-[var(--bw)]"
-                                  style={{ "--bw": `${pct}%` } as React.CSSProperties}
-                                />
+                                <div className="h-full rounded" style={{ width: `${pct}%`, background: tenant.color }} />
                               </div>
                               <span className="text-xs text-gray-500">{pct}%</span>
                             </div>

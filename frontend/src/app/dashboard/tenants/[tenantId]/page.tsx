@@ -111,8 +111,8 @@ function WarehouseNode({ warehouse, allWarehouses, tenant, depth }: {
   const whStock = tenant.products.reduce((acc, p) => acc + (p.stock[warehouse.id] ?? 0), 0);
 
   return (
-    /* --dp: depth-computed left padding converted to CSS custom property */
-    <div style={{ "--dp": `${depth * 16}px` } as React.CSSProperties} className="pl-[var(--dp)]">
+    /* depth indentation is runtime-computed — paddingLeft must use style= */
+    <div style={{ paddingLeft: depth * 16 }}>
       <div className="flex items-start gap-2 py-2 rounded-lg hover:bg-gray-50 px-2 transition-colors">
         <span className="text-base mt-0.5 flex-shrink-0">{icons[warehouse.type] ?? "📦"}</span>
         <div className="min-w-0 flex-1">

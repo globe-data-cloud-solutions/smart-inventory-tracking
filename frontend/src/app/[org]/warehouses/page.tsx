@@ -52,8 +52,7 @@ export default function WarehousesPage() {
       </div>
 
       <div className="bg-white border border-gray-200 rounded overflow-hidden">
-        {/* uses --tenant-color from [org]/layout.tsx */}
-        <div className="h-[3px] bg-[var(--tenant-color)]" />
+        <div className="h-[3px]" style={{ background: tenant.color }} />
         <table className="w-full border-collapse text-sm">
           <thead>
             <tr className="bg-gray-50 border-b-2 border-gray-200">
@@ -72,11 +71,8 @@ export default function WarehousesPage() {
 
               return (
                 <tr key={w.id} className={`border-b border-gray-100 ${idx % 2 === 0 ? "bg-white" : "bg-gray-50"}`}>
-                  {/* --dp: depth-computed left padding; px-4 becomes pr-4 + pl-[var(--dp)] */}
-                  <td
-                    className="pr-4 py-2.5 font-semibold text-gray-800 pl-[var(--dp)]"
-                    style={{ "--dp": `${16 + depth * 24}px` } as React.CSSProperties}
-                  >
+                  {/* indent is dynamic (depth * 24px) — must use style for this one property */}
+                  <td className="px-4 py-2.5 font-semibold text-gray-800" style={{ paddingLeft: `${16 + depth * 24}px` }}>
                     {depth > 0 && <span className="text-gray-300 mr-1.5 font-mono">{"↳".repeat(depth)}</span>}
                     {w.name}
                   </td>

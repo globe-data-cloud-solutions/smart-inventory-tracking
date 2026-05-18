@@ -15,7 +15,7 @@
  *   (defined in src/app/api/v1/transfers/_demo-state.ts seed)
  *
  * Prerequisites:
- *   npx playwright install --with-deps chromium
+ *   npx playwright install --with-deps
  *   pnpm dev  (app must be running at BASE_URL)
  *
  * Run:
@@ -28,42 +28,24 @@ const BASE_URL = process.env.BASE_URL ?? "http://localhost:3000";
 
 // ── Transfer fixture ────────────────────────────────────────────────────────
 // PUSH  ·  North WH (source)  →  North-Subcenter WH (destination)  ·  IN_TRANSIT
-const TRANSFER_ID   = "d2";
-const TRANSFER_URL  = `${BASE_URL}/addis-water/transfers/${TRANSFER_ID}`;
-const TRANSFERS_URL = `${BASE_URL}/addis-water/transfers`;
+const TRANSFER_ID    = "d2";
+const TRANSFER_URL   = `${BASE_URL}/addis-water/transfers/${TRANSFER_ID}`;
+const TRANSFERS_URL  = `${BASE_URL}/addis-water/transfers`;
 
 // Warehouse IDs as stored in the demo state (see _demo-state.ts)
 const FROM_WH = "aw-north";
 const TO_WH   = "aw-north-sub";
 
-// ── Reset helper ─────────────────────────────────────────────────────────────
-// Restores globalThis._smartDemoTransfers to seed state so tests are
-// deterministic on re-runs. The endpoint is dev-only (returns 403 in prod).
-async function resetDemoState(page: Page): Promise<void> {
-  const result = await page.evaluate(async (url: string) => {
-    const res = await fetch(`${url}/api/v1/transfers/reset`, { method: "DELETE" });
-    return res.status;
-  }, BASE_URL);
-  if (result !== 200) throw new Error(`Reset failed with HTTP ${result}`);
-}
-
-// ── Login helper ─────────────────────────────────────────────────────────────
+// ── Login helper ────────────────────────────────────────────────────────────
 async function loginAs(page: Page, email: string, password: string) {
   await page.goto(`${BASE_URL}/login`);
-  // Wait for the email input to be visible and stable — more reliable than
-  // waitForLoadState('networkidle') which can hang during Next.js hot-reload.
-  await page.locator("#email").waitFor({ state: "visible", timeout: 20000 });
-  await page.locator("#email").fill(email);
-  await page.locator("#password").fill(password);
-  // Promise.all is the recommended Playwright pattern for navigation-triggering
-  // actions: start listening for the URL change before clicking.
-  await Promise.all([
-    page.waitForURL(/\/(admin|addis-water|muger-cement)\/dashboard/, { timeout: 15000 }),
-    page.locator("button[type='submit']").click(),
-  ]);
+  await page.fill('input[type="email"]',    email);
+  await page.fill('input[type="password"]', password);
+  await page.click('button[type="submit"]');
+  await page.waitForURL(/\/(admin|addis-water|muger-cement)\/dashboard/);
 }
 
-// ── Direct API helper ─────────────────────────────────────────────────────────
+// ── Direct API helper ───────────────────────────────────────────────────────
 // Calls the server route with explicit identity headers, bypassing the browser
 // session so we can verify server-side ABAC independently of the UI.
 async function patchTransferStatus(
@@ -78,9 +60,9 @@ async function patchTransferStatus(
       const res = await fetch(url, {
         method:  "PATCH",
         headers: {
-          "Content-Type":        "application/json",
-          "X-Tenant-Slug":       "addis-water",
-          "X-User-Role":         role,
+          "Content-Type":      "application/json",
+          "X-Tenant-Slug":     "addis-water",
+          "X-User-Role":       role,
           "X-User-Warehouse-Id": warehouseId,
         },
         body: JSON.stringify({ next_status: nextStatus }),
@@ -92,27 +74,28 @@ async function patchTransferStatus(
   );
 }
 
+// ── Restore transfer to IN_TRANSIT so each test starts with the same state ──
+async function resetTransferToInTransit(page: Page) {
+  // Directly patch via the API using TA (unrestricted) role to reset state.
+  // The demo state is in-memory per Next.js server process, so this needs the
+  // full machine path: if status has advanced we must re-create the record.
+  // Simplest approach: use a fresh browser context for each test that opens a
+  // clean in-memory server state (Next.js restarts between test runs in dev).
+  // For deterministic isolation we patch back using a privileged role.
+  await patchTransferStatus(page, TRANSFER_ID, "IN_TRANSIT", "TA", "");
+}
+
 // ════════════════════════════════════════════════════════════════════════════
 // UI tests — verify button visibility per role
-// Serial: tests share the same in-memory demo server state; running in
-// parallel causes non-deterministic results.
 // ════════════════════════════════════════════════════════════════════════════
 
 test.describe("UI — receive/complete button visibility", () => {
-  test.describe.configure({ mode: "serial" });
-
-  test.beforeAll(async ({ browser }) => {
-    const ctx  = await browser.newContext();
-    const page = await ctx.newPage();
-    await page.goto(BASE_URL);
-    await resetDemoState(page);
-    await ctx.close();
-  });
 
   test("NM (middle-layer) sees no receive or complete buttons on the detail page", async ({ page }) => {
     await loginAs(page, "production@addis-water.com", "AddisWater@2026");
     await page.goto(TRANSFER_URL);
 
+    // Receive and complete actions must not be visible for middle-layer manager
     await expect(page.getByRole("button", { name: /Mark.*Received|Partially Received|Complete/i }))
       .not.toBeVisible();
   });
@@ -121,30 +104,30 @@ test.describe("UI — receive/complete button visibility", () => {
     await loginAs(page, "north.wm@addis-water.com", "AddisWater@2026");
     await page.goto(TRANSFER_URL);
 
+    // Source WM must NOT see receive/complete for a PUSH they are dispatching
     await expect(page.getByRole("button", { name: /Mark.*Received|Partially Received|Complete/i }))
       .not.toBeVisible();
 
-    // Detail page should still render the transfer (use .first() — "North WH"
-    // appears in both the page header and the sidebar breadcrumb)
-    await expect(page.locator("text=North WH").first()).toBeVisible();
-    await expect(page.locator("text=North-Subcenter WH").first()).toBeVisible();
+    // The detail page should still load and show the transfer
+    await expect(page.locator("text=North WH")).toBeVisible();
+    await expect(page.locator("text=North-Subcenter WH")).toBeVisible();
   });
 
   test("Destination WM (North-Subcenter WH) sees receive buttons on the detail page", async ({ page }) => {
     await loginAs(page, "northsub.wm@addis-water.com", "AddisWater@2026");
     await page.goto(TRANSFER_URL);
 
-    // Both "Partially Received" and "Mark as Received" are shown — use .first()
-    // to avoid Playwright strict-mode violation when the locator matches 2 buttons.
+    // Destination WM MUST see receive actions for an IN_TRANSIT transfer
     await expect(
-      page.getByRole("button", { name: /Mark.*Received|Partial(ly)? Receiv/i }).first()
-    ).toBeVisible({ timeout: 8000 });
+      page.getByRole("button", { name: /Mark.*Received|Partial(ly)? Receiv/i })
+    ).toBeVisible({ timeout: 5000 });
   });
 
   test("Source WM sees no receive button in the transfers list", async ({ page }) => {
     await loginAs(page, "north.wm@addis-water.com", "AddisWater@2026");
     await page.goto(TRANSFERS_URL);
 
+    // Find the row for transfer d2 (SHIP-2026-002) — it should have no receive button
     const row = page.locator("tr").filter({ hasText: "SHIP-2026-002" });
     await expect(row).toBeVisible();
     await expect(row.getByRole("button", { name: /Receiv/i })).not.toBeVisible();
@@ -156,35 +139,23 @@ test.describe("UI — receive/complete button visibility", () => {
 
     const row = page.locator("tr").filter({ hasText: "SHIP-2026-002" });
     await expect(row).toBeVisible();
-    // Row shows both "Partial Receive" and "Mark Received" — use .first()
-    await expect(row.getByRole("button", { name: /Mark Received|Receiv/i }).first()).toBeVisible();
+    await expect(row.getByRole("button", { name: /Mark Received|Receiv/i })).toBeVisible();
   });
+
 });
 
 // ════════════════════════════════════════════════════════════════════════════
 // Server-side ABAC tests — call the route handler directly with explicit
 // identity headers, independent of any UI or session state.
-//
-// Tests run in SERIAL so the PUSH state machine advances linearly:
-//   IN_TRANSIT → (blocked attempts) → RECEIVED → (blocked attempts) → COMPLETED
 // ════════════════════════════════════════════════════════════════════════════
 
 test.describe("Server-side ABAC — PATCH /api/v1/transfers/:id", () => {
-  test.describe.configure({ mode: "serial" });
-
-  test.beforeAll(async ({ browser }) => {
-    const ctx  = await browser.newContext();
-    const page = await ctx.newPage();
-    await page.goto(BASE_URL);
-    await resetDemoState(page);
-    await ctx.close();
-  });
-
-  // ── Phase 1: transfer d2 is IN_TRANSIT — all receives must be BLOCKED ──
 
   test("Source WM calling RECEIVED is rejected with 403", async ({ page }) => {
-    await page.goto(BASE_URL);
-    const { status, body } = await patchTransferStatus(page, TRANSFER_ID, "RECEIVED", "WM", FROM_WH);
+    await page.goto(BASE_URL); // need a page context for evaluate
+    const { status, body } = await patchTransferStatus(
+      page, TRANSFER_ID, "RECEIVED", "WM", FROM_WH
+    );
     expect(status).toBe(403);
     expect(body.success).toBe(false);
     expect(body.error?.code).toBe("ABAC_DENIED");
@@ -192,7 +163,9 @@ test.describe("Server-side ABAC — PATCH /api/v1/transfers/:id", () => {
 
   test("NM (no warehouse) calling RECEIVED is rejected with 403", async ({ page }) => {
     await page.goto(BASE_URL);
-    const { status, body } = await patchTransferStatus(page, TRANSFER_ID, "RECEIVED", "NM", "");
+    const { status, body } = await patchTransferStatus(
+      page, TRANSFER_ID, "RECEIVED", "NM", ""
+    );
     expect(status).toBe(403);
     expect(body.success).toBe(false);
     expect(body.error?.code).toBe("ABAC_DENIED");
@@ -200,55 +173,69 @@ test.describe("Server-side ABAC — PATCH /api/v1/transfers/:id", () => {
 
   test("RM (no warehouse) calling RECEIVED is rejected with 403", async ({ page }) => {
     await page.goto(BASE_URL);
-    const { status, body } = await patchTransferStatus(page, TRANSFER_ID, "RECEIVED", "RM", "");
+    const { status, body } = await patchTransferStatus(
+      page, TRANSFER_ID, "RECEIVED", "RM", ""
+    );
     expect(status).toBe(403);
     expect(body.success).toBe(false);
     expect(body.error?.code).toBe("ABAC_DENIED");
   });
 
-  test("PARTIALLY_RECEIVED is also blocked for source WM", async ({ page }) => {
-    await page.goto(BASE_URL);
-    const { status, body } = await patchTransferStatus(
-      page, TRANSFER_ID, "PARTIALLY_RECEIVED", "WM", FROM_WH,
-    );
-    expect(status).toBe(403);
-    expect(body.error?.code).toBe("ABAC_DENIED");
-  });
-
-  // ── Phase 2: advance to RECEIVED as destination WM ──────────────────────
-
   test("Destination WM calling RECEIVED succeeds with 200", async ({ page }) => {
     await page.goto(BASE_URL);
-    const { status, body } = await patchTransferStatus(page, TRANSFER_ID, "RECEIVED", "WM", TO_WH);
+    const { status, body } = await patchTransferStatus(
+      page, TRANSFER_ID, "RECEIVED", "WM", TO_WH
+    );
     expect(status).toBe(200);
     expect(body.success).toBe(true);
-    // d2 is now RECEIVED
   });
 
-  // ── Phase 3: transfer d2 is RECEIVED — COMPLETED checks ─────────────────
-
-  test("COMPLETED is blocked for source WM even after RECEIVED", async ({ page }) => {
+  test("TA (unrestricted) calling RECEIVED succeeds with 200", async ({ page }) => {
+    // TA/SA are platform/tenant admins and bypass warehouse-scope checks.
     await page.goto(BASE_URL);
+    // Reset first in case the previous test already moved to RECEIVED
+    await patchTransferStatus(page, TRANSFER_ID, "IN_TRANSIT", "TA", "");
     const { status, body } = await patchTransferStatus(
-      page, TRANSFER_ID, "COMPLETED", "WM", FROM_WH,
+      page, TRANSFER_ID, "RECEIVED", "TA", ""
+    );
+    expect(status).toBe(200);
+    expect(body.success).toBe(true);
+  });
+
+  test("NM calling IN_TRANSIT (dispatch) succeeds — manager roles may dispatch", async ({ page }) => {
+    // Reset to ISSUED state first using TA
+    await page.goto(BASE_URL);
+    await patchTransferStatus(page, TRANSFER_ID, "IN_TRANSIT", "TA", ""); // ensure IN_TRANSIT
+    // Rewind: we need ISSUED to test IN_TRANSIT transition — use TA to go back would
+    // violate the state machine; test instead that NM cannot receive in the current state.
+    // Alternative: verify the 403 comes from NM trying to receive (already tested above).
+    // Verify NM dispatch from source warehouse: set up a separate fresh ISSUED fixture.
+    // Since the in-memory seed starts at IN_TRANSIT, we skip the full round-trip here
+    // and rely on the receive-block tests above to cover the core authorization path.
+    test.skip(true, "Dispatch from ISSUED requires a separate fixture — covered by unit tests");
+  });
+
+  test("PARTIALLY_RECEIVED is also blocked for source WM", async ({ page }) => {
+    await page.goto(BASE_URL);
+    // Restore to IN_TRANSIT with TA first
+    await patchTransferStatus(page, TRANSFER_ID, "IN_TRANSIT", "TA", "");
+    const { status, body } = await patchTransferStatus(
+      page, TRANSFER_ID, "PARTIALLY_RECEIVED", "WM", FROM_WH
     );
     expect(status).toBe(403);
     expect(body.error?.code).toBe("ABAC_DENIED");
   });
 
-  test("TA (unrestricted) calling COMPLETED from RECEIVED succeeds with 200", async ({ page }) => {
-    // d2 is at RECEIVED (advanced by the previous test-phase).
-    // TA/SA bypass all warehouse-scope ABAC checks — this verifies that
-    // the unrestricted path works, and advances d2 to COMPLETED.
+  test("COMPLETED is blocked for source WM even after RECEIVED", async ({ page }) => {
+    // Advance to RECEIVED as destination WM, then try COMPLETED as source WM
     await page.goto(BASE_URL);
-    const { status, body } = await patchTransferStatus(page, TRANSFER_ID, "COMPLETED", "TA", "");
-    expect(status).toBe(200);
-    expect(body.success).toBe(true);
+    await patchTransferStatus(page, TRANSFER_ID, "IN_TRANSIT", "TA", "");
+    await patchTransferStatus(page, TRANSFER_ID, "RECEIVED", "WM", TO_WH);
+    const { status, body } = await patchTransferStatus(
+      page, TRANSFER_ID, "COMPLETED", "WM", FROM_WH
+    );
+    expect(status).toBe(403);
+    expect(body.error?.code).toBe("ABAC_DENIED");
   });
 
-  test("NM calling IN_TRANSIT (dispatch) — skipped, requires ISSUED fixture", async () => {
-    // Dispatch from ISSUED requires a separate fixture with a transfer
-    // in ISSUED state. Covered by backend unit tests (test_transfer_service.py).
-    test.skip(true, "Dispatch authorization covered by unit tests — no ISSUED fixture here");
-  });
 });
