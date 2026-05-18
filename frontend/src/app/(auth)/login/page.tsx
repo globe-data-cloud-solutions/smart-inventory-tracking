@@ -41,7 +41,7 @@ export default function LoginPage() {
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-900 via-brand-900 to-slate-900 flex">
       {/* ── Left panel: demo accounts ── */}
-      <div className="hidden lg:flex lg:w-96 bg-white/5 border-r border-white/10 flex-col p-8">
+      <div className="hidden lg:flex lg:w-96 bg-white/5 border-r border-white/10 flex-col p-8 overflow-y-auto h-screen">
         <h2 className="text-white font-bold text-lg mb-1">Demo Accounts</h2>
         <p className="text-slate-400 text-sm mb-6">Click any account to auto-fill credentials.</p>
 
@@ -129,8 +129,8 @@ export default function LoginPage() {
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   required
-                  autoComplete="current-password"
-                  placeholder="••••••••••"
+                  autoComplete="off"
+                  placeholder="click a demo account →"
                   className="w-full rounded-lg border border-gray-300 px-4 py-2.5 text-sm text-gray-900 placeholder-gray-400 focus:border-brand-500 focus:ring-2 focus:ring-brand-200 outline-none transition"
                 />
               </div>
