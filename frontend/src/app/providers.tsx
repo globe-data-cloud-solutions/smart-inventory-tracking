@@ -10,12 +10,10 @@ export function Providers({ children }: { children: React.ReactNode }) {
   }));
 
   useEffect(() => {
-    // English is pre-loaded from the static import in i18n.ts.
-    // This call only matters when the user has selected am/or.
-    const locale = getCurrentLocale();
-    if (locale !== "en") {
-      loadLocale(locale).catch(() => {});
-    }
+    // Always load the locale from the API so in-app additions stay in sync.
+    // English is pre-loaded from the static import in i18n.ts so the first
+    // render never shows raw keys, and this call refreshes it if keys changed.
+    loadLocale(getCurrentLocale()).catch(() => {});
   }, []);
 
   return <QueryClientProvider client={qc}>{children}</QueryClientProvider>;
