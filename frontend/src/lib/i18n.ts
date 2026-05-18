@@ -1,4 +1,7 @@
-import enFallback from "@/lib/locales/en.json";
+// Canonical locale file lives at smart-platform/locales/en.json.
+// The @/lib/locales/en.json copy is a stale snapshot — import the
+// authoritative source directly so the static fallback is always current.
+import enFallback from "../../../locales/en.json";
 
 type Locale = "en" | "am" | "or";
 

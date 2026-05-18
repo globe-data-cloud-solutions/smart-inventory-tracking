@@ -1,5 +1,6 @@
 import { BrowserMultiFormatReader } from "@zxing/browser";
-import { NotFoundException } from "@zxing/library";
+// @zxing/library is a peer dep of @zxing/browser — not directly importable
+// under pnpm strict hoisting.  Check the error name instead of instanceof.
 
 // Supported: Code128, Code39, EAN-13, EAN-8, QR Code, DataMatrix
 // Target: < 1 second P90 scan recognition on mid-range Android
@@ -22,7 +23,7 @@ export class BarcodeScanner {
       videoEl,
       (result, error) => {
         if (result) onResult(result.getText());
-        if (error && !(error instanceof NotFoundException)) {
+        if (error && (error as Error).name !== "NotFoundException") {
           console.error("[scanner]", error);
         }
       }

@@ -1,18 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-
-interface OnboardedTenant {
-  id: string;
-  name: string;
-  slug: string;
-  industry: string;
-  org_type: "PRODUCER" | "RETAILER" | "HYBRID";
-  default_locale: "en" | "am" | "or";
-  sku_limit: number | null;
-  feature_flags: Record<string, boolean>;
-  approval_thresholds: Record<string, unknown>;
-  onboarding_complete: boolean;
-  created_at: string;
-}
+import { type OnboardedTenant, onboardedTenants } from "./_state";
 
 const FEATURE_FLAG_DEFAULTS: Record<string, Record<string, boolean>> = {
   PRODUCER: { LOGISTICS: false, AI_ANALYTICS: false, ADVANCED_BATCH_TRACKING: true,  FLEET_MANAGEMENT: false },
@@ -25,9 +12,6 @@ const APPROVAL_DEFAULTS: Record<string, Record<string, unknown>> = {
   RETAILER: { "inventory:adjust": { low: 500,  medium: 5000  } },
   HYBRID:   { "inventory:adjust": { low: 250,  medium: 2000  } },
 };
-
-// In-memory store
-export const onboardedTenants: OnboardedTenant[] = [];
 
 function toSlug(name: string): string {
   return name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");

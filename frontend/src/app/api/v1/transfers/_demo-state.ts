@@ -76,3 +76,10 @@ if (!globalThis._smartDemoTransfers) {
 }
 
 export const demoTransfers: TransferRecord[] = globalThis._smartDemoTransfers;
+
+/** Reset back to seed data — used by the Playwright E2E reset endpoint. */
+export function resetDemoTransfers(): void {
+  globalThis._smartDemoTransfers = [...SEED];
+  // Splice-in-place so the exported const still points to the same array ref
+  demoTransfers.splice(0, demoTransfers.length, ...globalThis._smartDemoTransfers);
+}
