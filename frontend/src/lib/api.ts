@@ -6,6 +6,7 @@ interface _Session {
   orgSlug?: string;
   role?: string;
   warehouseId?: string;
+  jwtToken?: string;
 }
 
 function _readSession(): _Session {
@@ -45,11 +46,14 @@ async function request<T>(
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
   };
-  if (token) headers["Authorization"] = `Bearer ${token}`;
+  // JWT from session (stored after login's fire-and-forget _exchangeJWT call).
+  // An explicit token argument always wins; falls back to the session JWT.
+  const session = _readSession();
+  const bearer = token ?? session.jwtToken;
+  if (bearer) headers["Authorization"] = `Bearer ${bearer}`;
   const tenantSlug = getTenantSlug();
   if (tenantSlug) headers["X-Tenant-Slug"] = tenantSlug;
   // Pass caller identity so server-side route handlers can enforce ABAC.
-  const session = _readSession();
   if (session.role)        headers["X-User-Role"]         = session.role;
   if (session.warehouseId) headers["X-User-Warehouse-Id"] = session.warehouseId;
 

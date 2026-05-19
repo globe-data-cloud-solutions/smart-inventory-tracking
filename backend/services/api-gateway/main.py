@@ -13,13 +13,17 @@ JWT_SECRET    = os.environ.get("JWT_SECRET", "")
 JWT_ALGORITHM = os.environ.get("JWT_ALGORITHM", "HS256")
 
 SERVICE_MAP = {
-    "/api/v1/auth":      os.environ.get("AUTH_SERVICE_URL",      "http://auth-service:8000"),
-    "/api/v1/tenants":   os.environ.get("TENANT_SERVICE_URL",    "http://tenant-service:8000"),
-    "/api/v1/products":  os.environ.get("PRODUCT_SERVICE_URL",   "http://product-service:8000"),
-    "/api/v1/inventory": os.environ.get("INVENTORY_SERVICE_URL", "http://inventory-service:8000"),
-    "/api/v1/orders":    os.environ.get("ORDER_SERVICE_URL",      "http://order-service:8000"),
-    "/api/v1/logistics": os.environ.get("LOGISTICS_SERVICE_URL", "http://logistics-service:8000"),
-    "/api/v1/analytics": os.environ.get("ANALYTICS_SERVICE_URL","http://analytics-service:8000"),
+    "/api/v1/auth":      os.environ.get("AUTH_SERVICE_URL",       "http://auth-service:8000"),
+    "/api/v1/tenants":   os.environ.get("TENANT_SERVICE_URL",     "http://tenant-service:8000"),
+    "/api/v1/products":  os.environ.get("PRODUCT_SERVICE_URL",    "http://product-service:8000"),
+    "/api/v1/inventory": os.environ.get("INVENTORY_SERVICE_URL",  "http://inventory-service:8000"),
+    # Transfer requests are handled by the inventory service (routers/transfer.py
+    # and routers/transfer_requests.py).  Separate entry so the prefix match is
+    # unambiguous and a dedicated transfers microservice can replace it later.
+    "/api/v1/transfers": os.environ.get("INVENTORY_SERVICE_URL",  "http://inventory-service:8000"),
+    "/api/v1/orders":    os.environ.get("ORDER_SERVICE_URL",       "http://order-service:8000"),
+    "/api/v1/logistics": os.environ.get("LOGISTICS_SERVICE_URL",  "http://logistics-service:8000"),
+    "/api/v1/analytics": os.environ.get("ANALYTICS_SERVICE_URL",  "http://analytics-service:8000"),
 }
 
 UNAUTHENTICATED_PATHS = {"/api/v1/auth/token", "/health"}

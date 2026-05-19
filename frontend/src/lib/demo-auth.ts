@@ -14,6 +14,10 @@ export interface SessionUser {
   tenantSlug?: string;
   warehouseId?: string;
   warehouseName?: string;
+  /** SMART JWT — present when NEXT_PUBLIC_API_URL points to the Python gateway.
+   *  Exchanged asynchronously after login; absent during the first render.
+   *  api.ts reads this and sends it as Authorization: Bearer. */
+  jwtToken?: string;
 }
 
 /** SA org slug — used as the first path segment for system administrators. */
@@ -24,6 +28,43 @@ const SESSION_KEY = "smart_demo_session";
 function store(): Storage | null {
   if (typeof window === "undefined") return null;
   try { return window.localStorage; } catch { return null; }
+}
+
+/**
+ * Exchange a SMART JWT for a demo session.
+ * Called fire-and-forget after login() so the token is ready before the first
+ * authenticated API call.  Silently skips if the auth endpoint is unreachable
+ * (BFF-only mode — NEXT_PUBLIC_API_URL is empty or not set).
+ */
+async function _exchangeJWT(session: SessionUser): Promise<void> {
+  const apiBase = process.env.NEXT_PUBLIC_API_URL ?? "";
+  if (!apiBase) return; // BFF mode — no gateway, no JWT needed
+
+  try {
+    const res = await fetch(`${apiBase}/api/v1/auth/token`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        cognito_token:    "demo",
+        demo_sub:          session.id,
+        demo_role:         session.role,
+        demo_tenant_id:    session.tenantId    ?? null,
+        demo_warehouse_id: session.warehouseId ?? null,
+      }),
+    });
+    if (!res.ok) return;
+    const data = (await res.json()) as { access_token?: string };
+    if (!data.access_token) return;
+
+    // Patch the stored session with the JWT
+    const raw = store()?.getItem(SESSION_KEY);
+    if (!raw) return;
+    const stored = JSON.parse(raw) as SessionUser;
+    stored.jwtToken = data.access_token;
+    store()?.setItem(SESSION_KEY, JSON.stringify(stored));
+  } catch {
+    // Auth service unreachable — continue without JWT (BFF routes handle it)
+  }
 }
 
 export function login(email: string, password: string): SessionUser | null {
@@ -63,6 +104,11 @@ export function login(email: string, password: string): SessionUser | null {
   };
 
   store()?.setItem(SESSION_KEY, JSON.stringify(session));
+
+  // Fire-and-forget JWT exchange — token will be in localStorage before the
+  // first dashboard API call (login triggers a router.push and a brief re-render)
+  void _exchangeJWT(session);
+
   return session;
 }
 
@@ -80,4 +126,3 @@ export function logout(): void {
 export function orgUrl(orgSlug: string, page: string): string {
   return `/${orgSlug}/${page}`;
 }
-
