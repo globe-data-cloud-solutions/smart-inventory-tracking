@@ -162,6 +162,13 @@ function getAvailableActions(
         };
         return map[status] ?? [];
       }
+      if (isSrcWM) {
+        const map: Partial<Record<TransferStatus, Action[]>> = {
+          APPROVED: [issue, cancel],
+          ISSUED:   [dispatch],
+        };
+        return map[status] ?? [];
+      }
       return [];
     }
     if (type === "PUSH") {
@@ -173,7 +180,14 @@ function getAvailableActions(
         };
         return map[status] ?? [];
       }
-      void isSrcWM;
+      if (isSrcWM) {
+        const map: Partial<Record<TransferStatus, Action[]>> = {
+          APPROVED: [advise, issue, cancel],
+          ADVISED:  [issue, cancel],
+          ISSUED:   [dispatch],
+        };
+        return map[status] ?? [];
+      }
       return [];
     }
     if (type === "SISTER") {
@@ -427,6 +441,13 @@ export default function TransferDetailPage() {
   );
   const terminal = ["COMPLETED", "REJECTED", "CANCELLED"].includes(transfer.status);
 
+  // DEBUG — remove after confirming ISSUE button appears for source WM
+  const _dbgUserWH  = user.warehouseId ?? "(none)";
+  const _dbgFromWH  = transfer.from_warehouse_id;
+  const _dbgToWH    = transfer.to_warehouse_id;
+  const _dbgIsSrc   = !!user.warehouseId && user.warehouseId === transfer.from_warehouse_id;
+  const _dbgIsDest  = !!user.warehouseId && user.warehouseId === transfer.to_warehouse_id;
+
   const detailFields = [
     { label: t("transfers.detail.type"),     value: `${tb.label} — ${tb.desc}` },
     { label: t("transfers.detail.status"),   value: s.label },
@@ -522,6 +543,22 @@ export default function TransferDetailPage() {
               <strong>{t("transfers.detail.notes")}:</strong> {transfer.notes}
             </div>
           )}
+
+          {/* DEBUG PANEL — remove after confirming ISSUE button appears for source WM */}
+          <div className="mb-4 px-3.5 py-3 bg-slate-900 rounded-md font-mono text-[11px] leading-relaxed text-emerald-300 border border-slate-700">
+            <p className="text-slate-400 font-bold uppercase tracking-widest text-[9px] mb-2">⚙ DEBUG — action visibility (remove after testing)</p>
+            <div className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-0.5 items-baseline">
+              <span className="text-slate-400">user.role</span>          <span className="text-yellow-300">{user.role}</span>
+              <span className="text-slate-400">user.warehouseId</span>   <span className={_dbgUserWH === "(none)" ? "text-red-400" : "text-emerald-300"}>{_dbgUserWH}</span>
+              <span className="text-slate-400">from_warehouse_id</span>  <span className="text-emerald-300">{_dbgFromWH}</span>
+              <span className="text-slate-400">to_warehouse_id</span>    <span className="text-emerald-300">{_dbgToWH}</span>
+              <span className="text-slate-400">transfer_type</span>      <span className="text-sky-300">{transfer.transfer_type}</span>
+              <span className="text-slate-400">status</span>             <span className="text-sky-300">{transfer.status}</span>
+              <span className="text-slate-400">isSrcWM</span>            <span className={_dbgIsSrc  ? "text-green-400 font-bold" : "text-red-400"}>{String(_dbgIsSrc)}</span>
+              <span className="text-slate-400">isDestWM</span>           <span className={_dbgIsDest ? "text-green-400 font-bold" : "text-red-400"}>{String(_dbgIsDest)}</span>
+              <span className="text-slate-400">actions shown</span>      <span className={roleActs.length > 0 ? "text-green-400 font-bold" : "text-red-400"}>{roleActs.length > 0 ? roleActs.map(a => a.label).join(", ") : "none"}</span>
+            </div>
+          </div>
 
           {/* Offline warning */}
           {!isOnline && roleActs.length > 0 && (

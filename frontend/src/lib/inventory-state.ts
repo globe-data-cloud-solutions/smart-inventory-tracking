@@ -2,18 +2,36 @@
  * Client-side inventory state — persisted to localStorage so balances survive
  * browser refreshes. Scoped strictly to the active tenant via currentTenantSlug.
  *
- * Balance semantics:
- *  On Hand   = base + RECEIVE_adj + inbound_RECEIVED/COMPLETED.quantity
- *                   + inbound_PARTIALLY_RECEIVED.receivedQuantity
- *                   - outbound_ISSUED/IN_TRANSIT/PARTIALLY_RECEIVED/RECEIVED/COMPLETED.quantity
+ * WMS column layout (Option A — industry standard, per CLAUDE.md §17):
+ *  On Hand        = base + RECEIVE_adj - ISSUE_adj
+ *                       + inbound_RECEIVED/COMPLETED.quantity
+ *                       + inbound_PARTIALLY_RECEIVED.receivedQuantity
+ *                       - outbound_APPROVED/ADVISED/ISSUED/IN_TRANSIT/…/COMPLETED.quantity
+ *                         (deduction at APPROVED — reservation converts to hard deduction)
  *
- *  Available = On Hand - ISSUE_adj - outbound_reserved
- *              (reserved = DRAFT/PENDING_x/APPROVED/ADVISED)
+ *  Reserved       = outbound_DRAFT/PENDING_x.quantity
+ *                   (ISSUE adjustments are direct On Hand deductions — never a reservation)
  *
- *  In Transit (display) =
- *    outbound_IN_TRANSIT.quantity
- *    + inbound_IN_TRANSIT.quantity
- *    + inbound_PARTIALLY_RECEIVED.(quantity - receivedQuantity)
+ *  In Transit Out = outbound_ISSUED/IN_TRANSIT.quantity
+ *                   (informational: stock left On Hand at APPROVED, now physically in transit)
+ *
+ *  In Transit In  = inbound_IN_TRANSIT.quantity
+ *                   + inbound_PARTIALLY_RECEIVED.(quantity - receivedQuantity)
+ *
+ *  Available      = On Hand - Reserved
+ *                   (inTransitOut NOT subtracted — On Hand already captures APPROVED deduction)
+ *
+ * Column trace (qty = 100, source base = 2000, destination base = 0):
+ * ┌──────────────────────┬────────────┬──────────┬────────────────┬──────────────┬───────────┐
+ * │ Stage                │ Src OnHand │ Reserved │ Src InTransOut │ Dst InTransIn│ Available │
+ * ├──────────────────────┼────────────┼──────────┼────────────────┼──────────────┼───────────┤
+ * │ PENDING_APPROVAL     │   2000     │   100    │       0        │      0       │   1900    │
+ * │ APPROVED             │   1900     │     0    │       0        │      0       │   1900    │
+ * │ ISSUED               │   1900     │     0    │     100        │      0       │   1900    │
+ * │ IN_TRANSIT           │   1900     │     0    │     100        │    100       │   1900    │
+ * │ RECEIVED src / dst   │   1900     │     0    │       0        │      0       │   1900    │
+ * │                      │            │          │                │  dst: +100   │           │
+ * └──────────────────────┴────────────┴──────────┴────────────────┴──────────────┴───────────┘
  */
 
 import { create } from "zustand";
@@ -63,14 +81,19 @@ export interface TransferEntry {
   status: TransferStatus;
 }
 
+// On Hand at source reduces at APPROVED — the reservation converts to a hard deduction
+// when the transfer is approved. All post-APPROVED statuses keep the deduction in place.
 const OUT_REDUCES_ON_HAND: TransferStatus[] = [
-  "ISSUED", "IN_TRANSIT", "PARTIALLY_RECEIVED", "RECEIVED", "COMPLETED",
+  "APPROVED", "ADVISED",
+  "ISSUED", "IN_TRANSIT", "PARTIALLY_RECEIVED",
+  "RECEIVED", "COMPLETED",
 ];
 const IN_CREDITS_ON_HAND: TransferStatus[] = ["RECEIVED", "COMPLETED"];
+// Reserved = stock committed but not yet approved (soft hold, no On Hand change yet).
+// APPROVED is excluded: at APPROVED the reservation converts to a deduction in On Hand.
 const OUT_RESERVED: TransferStatus[] = [
   "DRAFT", "PENDING_REVIEW", "PENDING_APPROVAL",
   "PENDING_SOURCE_CONFIRM", "PENDING_DEST_CONFIRM",
-  "APPROVED", "ADVISED",
 ];
 
 interface InventoryStore {
@@ -108,11 +131,13 @@ interface InventoryStore {
   /** Inbound transfers in PARTIALLY_RECEIVED state (some qty still in transit). */
   getInboundPartial(productId: string, warehouseId: string): TransferEntry[];
 
-  // ── Column totals ──────────────────────────────────────────────────────────
-  getReceivedTotal(productId: string, warehouseId: string): number;
-  getIssuedTotal(productId: string, warehouseId: string): number;
-  /** Includes remaining qty from partial receives. */
-  getInTransitTotal(productId: string, warehouseId: string): number;
+  // ── Column totals (WMS Option A layout) ───────────────────────────────────
+  /** Outbound DRAFT/PENDING transfers only. ISSUE adjustments reduce On Hand directly, not Reserved. */
+  getReservedTotal(productId: string, warehouseId: string): number;
+  /** Outbound transfers in ISSUED or IN_TRANSIT state. */
+  getInTransitOutTotal(productId: string, warehouseId: string): number;
+  /** Inbound IN_TRANSIT transfers + remaining qty from partial receives. */
+  getInTransitInTotal(productId: string, warehouseId: string): number;
 
   // ── Core balances ──────────────────────────────────────────────────────────
   getOnHand(productId: string, warehouseId: string, baseStock: number): number;
@@ -191,8 +216,11 @@ export const useInventoryStore = create<InventoryStore>()(
 
       getOutboundInTransit: (productId, warehouseId) => {
         const { transfers, currentTenantSlug } = get();
+        // ISSUED = stock has been picked/staged at source (deducted from on_hand) but not yet
+        // received at destination. Show in In Transit (Out) so the stock doesn't appear to
+        // vanish between ISSUED and IN_TRANSIT statuses.
         return transfers.filter(
-          (t) => t.tenantSlug === currentTenantSlug && t.productId === productId && t.fromWarehouseId === warehouseId && t.status === "IN_TRANSIT"
+          (t) => t.tenantSlug === currentTenantSlug && t.productId === productId && t.fromWarehouseId === warehouseId && (t.status === "ISSUED" || t.status === "IN_TRANSIT")
         );
       },
 
@@ -227,34 +255,22 @@ export const useInventoryStore = create<InventoryStore>()(
 
       // ── Totals ────────────────────────────────────────────────────────────
 
-      getReceivedTotal: (productId, warehouseId) => {
+      getReservedTotal: (productId, warehouseId) => {
         const s = get();
-        return (
-          s.getReceiveAdjs(productId, warehouseId).reduce((n, a) => n + a.qty, 0) +
-          // Use getInboundJustReceived (not getInboundReceived) so COMPLETED
-          // transfers no longer appear in the Received display column — their
-          // stock is permanently settled into On Hand.
-          s.getInboundJustReceived(productId, warehouseId).reduce((n, t) => n + t.quantity, 0) +
-          s.getInboundPartial(productId, warehouseId).reduce((n, t) => n + (t.receivedQuantity ?? 0), 0)
-        );
+        return s.getOutboundReserved(productId, warehouseId).reduce((n, t) => n + t.quantity, 0);
       },
 
-      getIssuedTotal: (productId, warehouseId) => {
+      getInTransitOutTotal: (productId, warehouseId) => {
         const s = get();
-        return (
-          s.getIssueAdjs(productId, warehouseId).reduce((n, a) => n + a.qty, 0) +
-          s.getOutboundReserved(productId, warehouseId).reduce((n, t) => n + t.quantity, 0)
-        );
+        return s.getOutboundInTransit(productId, warehouseId).reduce((n, t) => n + t.quantity, 0);
       },
 
-      getInTransitTotal: (productId, warehouseId) => {
+      getInTransitInTotal: (productId, warehouseId) => {
         const s = get();
-        const outbound   = s.getOutboundInTransit(productId, warehouseId).reduce((n, t) => n + t.quantity, 0);
-        const inbound    = s.getInboundInTransit(productId, warehouseId).reduce((n, t) => n + t.quantity, 0);
-        // Remaining from partial receives (not yet fully received)
-        const partial    = s.getInboundPartial(productId, warehouseId)
+        const inbound = s.getInboundInTransit(productId, warehouseId).reduce((n, t) => n + t.quantity, 0);
+        const partial = s.getInboundPartial(productId, warehouseId)
           .reduce((n, t) => n + (t.quantity - (t.receivedQuantity ?? 0)), 0);
-        return outbound + inbound + partial;
+        return inbound + partial;
       },
 
       // ── Core balances ─────────────────────────────────────────────────────
@@ -262,20 +278,22 @@ export const useInventoryStore = create<InventoryStore>()(
       getOnHand: (productId, warehouseId, baseStock) => {
         const s = get();
         const receiveQty      = s.getReceiveAdjs(productId, warehouseId).reduce((n, a) => n + a.qty, 0);
+        const issueQty        = s.getIssueAdjs(productId, warehouseId).reduce((n, a) => n + a.qty, 0);
         const inboundFull     = s.getInboundReceived(productId, warehouseId).reduce((n, t) => n + t.quantity, 0);
         const inboundPartial  = s.getInboundPartial(productId, warehouseId).reduce((n, t) => n + (t.receivedQuantity ?? 0), 0);
         const outboundGone    = s.transfers
           .filter((t) => t.tenantSlug === s.currentTenantSlug && t.productId === productId && t.fromWarehouseId === warehouseId && OUT_REDUCES_ON_HAND.includes(t.status))
           .reduce((n, t) => n + t.quantity, 0);
-        return baseStock + receiveQty + inboundFull + inboundPartial - outboundGone;
+        return baseStock + receiveQty + inboundFull + inboundPartial - outboundGone - issueQty;
       },
 
       getAvailable: (productId, warehouseId, baseStock) => {
         const s        = get();
         const onHand   = s.getOnHand(productId, warehouseId, baseStock);
-        const issueQty = s.getIssueAdjs(productId, warehouseId).reduce((n, a) => n + a.qty, 0);
         const reserved = s.getOutboundReserved(productId, warehouseId).reduce((n, t) => n + t.quantity, 0);
-        return Math.max(0, onHand - issueQty - reserved);
+        // issueQty already deducted inside getOnHand — do not subtract again.
+        // On Hand already reflects the APPROVED deduction — do NOT subtract inTransitOut either.
+        return Math.max(0, onHand - reserved);
       },
     }),
     {

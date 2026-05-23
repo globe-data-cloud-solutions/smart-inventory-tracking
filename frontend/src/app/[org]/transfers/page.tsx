@@ -216,7 +216,6 @@ function getAvailableActions(
     const isSrcWM  = !!userWH && userWH === fromWH;
 
     if (type === "PULL") {
-      // Destination WM initiates the request and is the only one who can receive/complete.
       if (isDestWM) {
         const map: Partial<Record<TransferStatus, Action[]>> = {
           DRAFT:              [review, cancel],
@@ -226,12 +225,16 @@ function getAvailableActions(
         };
         return map[status] ?? [];
       }
-      // Source WM for a PULL has no direct actions — NM/LM handles issue and dispatch.
+      if (isSrcWM) {
+        const map: Partial<Record<TransferStatus, Action[]>> = {
+          APPROVED: [issue, cancel],
+          ISSUED:   [dispatch],
+        };
+        return map[status] ?? [];
+      }
       return [];
     }
     if (type === "PUSH") {
-      // Destination WM is the only one who can receive and complete a PUSH.
-      // The source WM has no actions — NM/LM initiates and dispatches.
       if (isDestWM) {
         const map: Partial<Record<TransferStatus, Action[]>> = {
           IN_TRANSIT:         [partRecv, markRecv],
@@ -240,7 +243,14 @@ function getAvailableActions(
         };
         return map[status] ?? [];
       }
-      void isSrcWM; // source WM is view-only for PUSH
+      if (isSrcWM) {
+        const map: Partial<Record<TransferStatus, Action[]>> = {
+          APPROVED: [advise, issue, cancel],
+          ADVISED:  [issue, cancel],
+          ISSUED:   [dispatch],
+        };
+        return map[status] ?? [];
+      }
       return [];
     }
     if (type === "SISTER") {

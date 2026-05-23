@@ -15,13 +15,20 @@ import { useInventoryStore } from "@/lib/inventory-state";
 import { api } from "@/lib/api";
 import { t } from "@/lib/i18n";
 
+type ApiTransfer = {
+  id: string; ref: string; product_id: string; product_name: string;
+  from_warehouse_id: string; from_warehouse_name: string;
+  to_warehouse_id: string; to_warehouse_name: string;
+  quantity: number; status: string; created_at: string;
+};
+
 type ApiProduct = {
   id: string; sku: string; name: string; type_code: string;
   unit: string; pack_size: number; created_at: string;
   category?: string; on_hand?: number; reorder_point?: number; warehouse_id?: string | null;
 };
 type Filters      = { category: string[]; unit: string[]; status: string[] };
-type ExpandedCell = { productId: string; productName: string; warehouseId: string; col: "received" | "issued" | "transit" };
+type ExpandedCell = { productId: string; productName: string; warehouseId: string; col: "reserved" | "inTransitOut" | "inTransitIn" };
 type ModalRow     = { direction: "in" | "out" | "direct"; label: string; qty: number; date: string; ref?: string };
 
 /* ── Column filter dropdown ─────────────────────────────────────────────────── */
@@ -91,13 +98,13 @@ function PlainHeader({ label, align = "left" }: { label: string; align?: "left" 
 
 /* ── Transaction detail modal ───────────────────────────────────────────────── */
 const COL_META = {
-  received: { title: t("inventory.modal.received"), headerCls: "bg-emerald-600", hdBg: "bg-green-50",  totalCls: "text-emerald-600", totalLabel: t("inventory.modal.total_received") },
-  issued:   { title: t("inventory.modal.issued"),   headerCls: "bg-red-600",     hdBg: "bg-red-50",    totalCls: "text-red-600",     totalLabel: t("inventory.modal.total_issued") },
-  transit:  { title: t("inventory.modal.transit"),  headerCls: "bg-amber-800",   hdBg: "bg-amber-50",  totalCls: "text-amber-800",   totalLabel: t("inventory.modal.total_transit") },
+  reserved:    { title: t("inventory.modal.reserved"),      headerCls: "bg-amber-600",  hdBg: "bg-amber-50",  totalCls: "text-amber-700",  totalLabel: t("inventory.modal.total_reserved") },
+  inTransitOut:{ title: t("inventory.modal.in_transit_out"), headerCls: "bg-red-600",    hdBg: "bg-red-50",    totalCls: "text-red-600",    totalLabel: t("inventory.modal.total_in_transit_out") },
+  inTransitIn: { title: t("inventory.modal.in_transit_in"),  headerCls: "bg-blue-600",   hdBg: "bg-blue-50",   totalCls: "text-blue-600",   totalLabel: t("inventory.modal.total_in_transit_in") },
 };
 
 function TransactionDetailModal({ col, productName, rows, onClose }: {
-  col: "received" | "issued" | "transit";
+  col: "reserved" | "inTransitOut" | "inTransitIn";
   productName: string;
   rows: ModalRow[];
   onClose: () => void;
@@ -131,7 +138,7 @@ function TransactionDetailModal({ col, productName, rows, onClose }: {
                 <tr className={`${meta.hdBg} border-b-2 border-gray-200`}>
                   <th className="w-6 px-2.5 py-1.5" />
                   <th className="px-2.5 py-1.5 text-left text-[11px] font-bold text-gray-500 uppercase tracking-wide">
-                    {col === "transit" ? t("table.location") : col === "issued" ? t("inventory.modal.dest_type") : t("inventory.modal.source")}
+                    {col === "inTransitIn" ? t("table.location") : col === "reserved" ? t("inventory.modal.dest_type") : t("table.location")}
                   </th>
                   <th className="px-2.5 py-1.5 text-right text-[11px] font-bold text-gray-500 uppercase tracking-wide">{t("lots.quantity")}</th>
                   <th className="px-2.5 py-1.5 text-left text-[11px] font-bold text-gray-500 uppercase tracking-wide">{t("common.date")}</th>
@@ -191,10 +198,11 @@ export default function InventoryPage() {
 
   const {
     getOnHand, getAvailable,
-    getReceivedTotal, getIssuedTotal, getInTransitTotal,
-    getReceiveAdjs, getIssueAdjs,
+    getReservedTotal, getInTransitOutTotal, getInTransitInTotal,
     getOutboundReserved, getOutboundInTransit,
-    getInboundInTransit, getInboundJustReceived, getInboundPartial,
+    getInboundInTransit, getInboundPartial,
+    getReceiveAdjs,
+    addTransfer, getTransferEntry, updateTransferStatus,
   } = store;
 
   const tenant = DEMO_TENANTS.find((ten) => ten.slug === org);
@@ -210,6 +218,50 @@ export default function InventoryPage() {
     enabled:  !!tenant && !!user && org !== SA_ORG_SLUG,
     staleTime: 0,
   });
+
+  // Fetch active transfers so the balance columns reflect in-transit state for
+  // transfers the current user hasn't personally created or transitioned this session.
+  const { data: apiTransfers = [] } = useQuery<ApiTransfer[]>({
+    queryKey: ["transfers", org],
+    queryFn:  () => api.get<ApiTransfer[]>("/api/v1/transfers"),
+    enabled:  !!tenant && !!user && org !== SA_ORG_SLUG,
+    staleTime: 0,
+    refetchInterval: 15000,
+  });
+
+  const syncedRef = useRef(new Set<string>());
+  useEffect(() => {
+    const TERMINAL = new Set(["COMPLETED", "CANCELLED", "REJECTED"]);
+    for (const t of apiTransfers) {
+      if (!t.product_id) continue;
+      const apiStatus = t.status as import("@/lib/inventory-state").TransferStatus;
+      const existing  = getTransferEntry(t.id);
+      if (existing) {
+        // BUG B+C fix: propagate status changes from the API into Zustand so that
+        // in-transit and cleared columns reflect the latest state even when the
+        // transition was performed in a different page/tab.
+        if (existing.status !== apiStatus) {
+          updateTransferStatus(t.id, apiStatus);
+        }
+        continue;
+      }
+      if (TERMINAL.has(t.status))      continue;
+      if (syncedRef.current.has(t.id)) continue;
+      syncedRef.current.add(t.id);
+      addTransfer({
+        id:                t.id,
+        ref:               t.ref,
+        productId:         t.product_id,
+        fromWarehouseId:   t.from_warehouse_id,
+        fromWarehouseName: t.from_warehouse_name,
+        toWarehouseId:     t.to_warehouse_id,
+        toWarehouseName:   t.to_warehouse_name,
+        quantity:          t.quantity,
+        issuedDate:        t.created_at,
+        status:            apiStatus,
+      });
+    }
+  }, [apiTransfers, addTransfer, getTransferEntry, updateTransferStatus]);
 
   if (!user || org === SA_ORG_SLUG)
     return <p className="p-8 text-gray-500">{t("common.no_data")}</p>;
@@ -233,29 +285,37 @@ export default function InventoryPage() {
   let modalRows: ModalRow[] = [];
   if (expandedCell) {
     const { productId, warehouseId, col } = expandedCell;
-    if (col === "received") {
-      modalRows = [
-        ...getReceiveAdjs(productId, warehouseId).map((a) => ({ direction: "direct" as const, label: t("inventory.modal.direct_receive"), qty: a.qty, date: a.createdAt })),
-        ...getInboundJustReceived(productId, warehouseId).map((txn) => ({ direction: "in" as const, label: txn.fromWarehouseName, qty: txn.quantity, date: txn.issuedDate, ref: txn.ref })),
-      ].sort((a, b) => a.date.localeCompare(b.date));
-    } else if (col === "issued") {
-      modalRows = [
-        ...getIssueAdjs(productId, warehouseId).map((a) => ({ direction: "out" as const, label: t("inventory.modal.issued_out"), qty: a.qty, date: a.createdAt })),
-        ...getOutboundReserved(productId, warehouseId).map((txn) => ({ direction: "out" as const, label: `To: ${txn.toWarehouseName}`, qty: txn.quantity, date: txn.issuedDate, ref: txn.ref })),
-      ].sort((a, b) => a.date.localeCompare(b.date));
+    if (col === "reserved") {
+      modalRows = getOutboundReserved(productId, warehouseId)
+        .map((txn) => ({ direction: "out" as const, label: `To: ${txn.toWarehouseName}`, qty: txn.quantity, date: txn.issuedDate, ref: txn.ref }))
+        .sort((a, b) => a.date.localeCompare(b.date));
+    } else if (col === "inTransitOut") {
+      modalRows = getOutboundInTransit(productId, warehouseId)
+        .map((txn) => ({ direction: "out" as const, label: `To: ${txn.toWarehouseName}`, qty: txn.quantity, date: txn.issuedDate, ref: txn.ref }))
+        .sort((a, b) => a.date.localeCompare(b.date));
     } else {
-      const inbound  = getInboundInTransit(productId, warehouseId).map((txn) => ({ direction: "in"  as const, label: `From: ${txn.fromWarehouseName}`, qty: txn.quantity, date: txn.issuedDate, ref: txn.ref }));
-      const partial  = getInboundPartial(productId, warehouseId).map((txn) => {
+      const inbound = getInboundInTransit(productId, warehouseId).map((txn) => ({ direction: "in" as const, label: `From: ${txn.fromWarehouseName}`, qty: txn.quantity, date: txn.issuedDate, ref: txn.ref }));
+      const partial = getInboundPartial(productId, warehouseId).map((txn) => {
         const rcvd = txn.receivedQuantity ?? 0; const rem = txn.quantity - rcvd;
         return { direction: "in" as const, label: `From: ${txn.fromWarehouseName} (partial — ${rcvd.toLocaleString()} of ${txn.quantity.toLocaleString()} received, ${rem.toLocaleString()} remaining)`, qty: rem, date: txn.issuedDate, ref: txn.ref };
       });
-      const outbound = getOutboundInTransit(productId, warehouseId).map((txn) => ({ direction: "out" as const, label: `To: ${txn.toWarehouseName}`, qty: txn.quantity, date: txn.issuedDate, ref: txn.ref }));
-      modalRows = [...inbound, ...partial, ...outbound].sort((a, b) => a.date.localeCompare(b.date));
+      modalRows = [...inbound, ...partial].sort((a, b) => a.date.localeCompare(b.date));
     }
   }
 
   const allProducts = whId
-    ? mergedProducts.filter((p) => { const base = p.stock[whId] ?? 0; return getOnHand(p.id, whId, base) > 0 || getInTransitTotal(p.id, whId) > 0; })
+    ? mergedProducts.filter((p) => {
+        const base = p.stock[whId] ?? 0;
+        // Retain products that belong to this warehouse regardless of current balance.
+        // "whId in p.stock" covers products with a base allocation (including zero-balance).
+        // The remaining checks cover products received here dynamically (no base entry).
+        return (whId in p.stock) ||
+               getOnHand(p.id, whId, base) > 0 ||
+               getReservedTotal(p.id, whId) > 0 ||
+               getInTransitOutTotal(p.id, whId) > 0 ||
+               getInTransitInTotal(p.id, whId) > 0 ||
+               getReceiveAdjs(p.id, whId).length > 0;
+      })
     : mergedProducts;
 
   const mainTableIds = new Set(allProducts.map((p) => p.id));
@@ -263,25 +323,40 @@ export default function InventoryPage() {
 
   const categoryOptions = Array.from(new Set(allProducts.map((p) => p.category)));
   const unitOptions     = Array.from(new Set(allProducts.map((p) => p.unit)));
-  const statusOptions   = [t("dashboard.in_stock"), t("alerts.low_stock")];
+  const statusOptions   = [t("dashboard.in_stock"), t("alerts.low_stock"), t("inventory.no_stock")];
 
   function rowMatchesFilters(p: DemoProduct): boolean {
-    const base = whId ? (p.stock[whId] ?? 0) : Object.values(p.stock).reduce((a, b) => a + b, 0);
-    const available = whId ? getAvailable(p.id, whId, base) : base;
-    const status = available < p.reorderPoint ? t("alerts.low_stock") : t("dashboard.in_stock");
+    const base   = whId ? (p.stock[whId] ?? 0) : Object.values(p.stock).reduce((a, b) => a + b, 0);
+    const onHand = whId ? getOnHand(p.id, whId, base) : base;
+    const status = onHand === 0
+      ? t("inventory.no_stock")
+      : onHand <= p.reorderPoint
+        ? t("alerts.low_stock")
+        : t("dashboard.in_stock");
     if (filters.category.length > 0 && !filters.category.includes(p.category)) return false;
     if (filters.unit.length     > 0 && !filters.unit.includes(p.unit))         return false;
     if (filters.status.length   > 0 && !filters.status.includes(status))       return false;
     return true;
   }
 
-  const visibleProducts = allProducts.filter(rowMatchesFilters);
+  // Out of Stock products sort to the bottom; In Stock and Low Stock keep their relative order.
+  const visibleProducts = allProducts
+    .filter(rowMatchesFilters)
+    .sort((a, b) => {
+      const aBase   = whId ? (a.stock[whId] ?? 0) : Object.values(a.stock).reduce((x, y) => x + y, 0);
+      const bBase   = whId ? (b.stock[whId] ?? 0) : Object.values(b.stock).reduce((x, y) => x + y, 0);
+      const aOnHand = whId ? getOnHand(a.id, whId, aBase) : aBase;
+      const bOnHand = whId ? getOnHand(b.id, whId, bBase) : bBase;
+      if (aOnHand === 0 && bOnHand !== 0) return 1;
+      if (bOnHand === 0 && aOnHand !== 0) return -1;
+      return 0;
+    });
   const totalStockAll   = visibleProducts.reduce((a, p) => {
     const base = whId ? (p.stock[whId] ?? 0) : Object.values(p.stock).reduce((x, y) => x + y, 0);
     return a + (whId ? getOnHand(p.id, whId, base) : base);
   }, 0);
   const activeFiltersCount = Object.values(filters).filter(
-    (f) => f.length > 0 && f.length < (f === filters.category ? categoryOptions.length : f === filters.unit ? unitOptions.length : 2)
+    (f) => f.length > 0 && f.length < (f === filters.category ? categoryOptions.length : f === filters.unit ? unitOptions.length : statusOptions.length)
   ).length;
   const showWarehouseColumns = !!whId;
 
@@ -302,8 +377,8 @@ export default function InventoryPage() {
         <div className="flex gap-2 flex-wrap">
           {isMWH && <OpeningBalancePanel products={mergedProducts} warehouses={tenant.warehouses} orgSlug={org} />}
           {isMWH && <BulkImportPanel     products={mergedProducts} warehouses={tenant.warehouses} orgSlug={org} />}
-          <ReceiveStockPanel products={mergedProducts} warehouses={tenant.warehouses} orgSlug={org} />
-          <IssueStockPanel   products={mergedProducts} warehouses={tenant.warehouses} orgSlug={org} />
+          <ReceiveStockPanel products={mergedProducts} orgSlug={org} />
+          <IssueStockPanel   products={mergedProducts} orgSlug={org} />
           {canAddProduct && (
             <AddProductPanel
               apiBase="/api/v1/products"
@@ -332,7 +407,7 @@ export default function InventoryPage() {
         {activeFiltersCount > 0 && (
           <div className="flex gap-1.5 flex-wrap items-center">
             {(["category", "unit", "status"] as (keyof Filters)[]).map((field) =>
-              filters[field].length > 0 && filters[field].length < (field === "category" ? categoryOptions.length : field === "unit" ? unitOptions.length : 2) ? (
+              filters[field].length > 0 && filters[field].length < (field === "category" ? categoryOptions.length : field === "unit" ? unitOptions.length : statusOptions.length) ? (
                 <span key={field} className="text-[11px] font-bold bg-green-100 text-green-800 px-2.5 py-0.5 rounded-full flex items-center gap-1">
                   {field}: {filters[field].join(", ")}
                   <button onClick={() => setFilters({ ...filters, [field]: [] })} className="bg-transparent border-0 cursor-pointer text-[11px] text-green-800 p-0">✕</button>
@@ -362,9 +437,9 @@ export default function InventoryPage() {
                 <FilterHeader label={t("inventory.category")} field="category" options={categoryOptions} filters={filters} setFilters={setFilters} />
                 <FilterHeader label={t("inventory.unit")}     field="unit"     options={unitOptions}     filters={filters} setFilters={setFilters} />
                 <PlainHeader label={whId ? t("inventory.on_hand") : t("dashboard.stat_units")} align="right" />
-                {showWarehouseColumns && <PlainHeader label={t("inventory.received")}   align="right" />}
-                {showWarehouseColumns && <PlainHeader label={t("inventory.issued")}     align="right" />}
-                {showWarehouseColumns && <PlainHeader label={t("inventory.in_transit")} align="right" />}
+                {showWarehouseColumns && <PlainHeader label={t("inventory.reserved")}      align="right" />}
+                {showWarehouseColumns && <PlainHeader label={t("inventory.in_transit_out")} align="right" />}
+                {showWarehouseColumns && <PlainHeader label={t("inventory.in_transit_in")}  align="right" />}
                 {showWarehouseColumns && <PlainHeader label={t("inventory.available")}  align="right" />}
                 <PlainHeader label={t("table.reorder_point")} align="right" />
                 <FilterHeader label={t("table.status")} field="status" options={statusOptions} filters={filters} setFilters={setFilters} />
@@ -372,13 +447,13 @@ export default function InventoryPage() {
             </thead>
             <tbody>
               {visibleProducts.map((p, idx) => {
-                const base      = whId ? (p.stock[whId] ?? 0) : Object.values(p.stock).reduce((a, b) => a + b, 0);
-                const onHand    = whId ? getOnHand(p.id, whId, base)    : base;
-                const received  = whId ? getReceivedTotal(p.id, whId)  : 0;
-                const issued    = whId ? getIssuedTotal(p.id, whId)    : 0;
-                const inTransit = whId ? getInTransitTotal(p.id, whId) : 0;
-                const available = whId ? getAvailable(p.id, whId, base) : base;
-                const isLow     = available < p.reorderPoint;
+                const base         = whId ? (p.stock[whId] ?? 0) : Object.values(p.stock).reduce((a, b) => a + b, 0);
+                const onHand       = whId ? getOnHand(p.id, whId, base)          : base;
+                const reserved     = whId ? getReservedTotal(p.id, whId)         : 0;
+                const inTransitOut = whId ? getInTransitOutTotal(p.id, whId)     : 0;
+                const inTransitIn  = whId ? getInTransitInTotal(p.id, whId)      : 0;
+                const available    = whId ? getAvailable(p.id, whId, base)       : base;
+                const stockStatus = onHand === 0 ? "out" : onHand <= p.reorderPoint ? "low" : "in";
 
                 return (
                   <tr key={p.id} className={`border-b border-gray-100 ${idx % 2 === 0 ? "bg-white" : "bg-gray-50"}`}>
@@ -398,20 +473,20 @@ export default function InventoryPage() {
                     </td>
                     {showWarehouseColumns && (
                       <td className="px-3.5 py-2.5 text-right">
-                        <ExpandCell qty={received} cls="text-emerald-600 bg-green-50 border-emerald-200" prefix="+"
-                          onClick={() => setExpandedCell({ productId: p.id, productName: p.name, warehouseId: whId, col: "received" })} />
+                        <ExpandCell qty={reserved} cls="text-amber-700 bg-amber-50 border-amber-200" icon="⊘"
+                          onClick={() => setExpandedCell({ productId: p.id, productName: p.name, warehouseId: whId, col: "reserved" })} />
                       </td>
                     )}
                     {showWarehouseColumns && (
                       <td className="px-3.5 py-2.5 text-right">
-                        <ExpandCell qty={issued} cls="text-red-600 bg-red-50 border-red-200" prefix="−"
-                          onClick={() => setExpandedCell({ productId: p.id, productName: p.name, warehouseId: whId, col: "issued" })} />
+                        <ExpandCell qty={inTransitOut} cls="text-red-600 bg-red-50 border-red-200" icon="→"
+                          onClick={() => setExpandedCell({ productId: p.id, productName: p.name, warehouseId: whId, col: "inTransitOut" })} />
                       </td>
                     )}
                     {showWarehouseColumns && (
                       <td className="px-3.5 py-2.5 text-right">
-                        <ExpandCell qty={inTransit} cls="text-amber-800 bg-amber-50 border-amber-200" icon="⏳"
-                          onClick={() => setExpandedCell({ productId: p.id, productName: p.name, warehouseId: whId, col: "transit" })} />
+                        <ExpandCell qty={inTransitIn} cls="text-blue-600 bg-blue-50 border-blue-200" icon="←"
+                          onClick={() => setExpandedCell({ productId: p.id, productName: p.name, warehouseId: whId, col: "inTransitIn" })} />
                       </td>
                     )}
                     {showWarehouseColumns && (
@@ -423,9 +498,19 @@ export default function InventoryPage() {
                     )}
                     <td className="px-3.5 py-2.5 text-right text-gray-400 text-xs">{p.reorderPoint.toLocaleString()}</td>
                     <td className="px-3.5 py-2.5">
-                      <span className={`inline-flex items-center gap-1 text-[11px] font-bold px-2.5 py-0.5 rounded border ${isLow ? "bg-red-50 text-red-600 border-red-200" : "bg-green-50 text-emerald-600 border-emerald-200"}`}>
-                        <span className={`w-1.5 h-1.5 rounded-full ${isLow ? "bg-red-600" : "bg-emerald-600"}`} />
-                        {isLow ? t("alerts.low_stock") : t("dashboard.in_stock")}
+                      <span className={`inline-flex items-center gap-1 text-[11px] font-bold px-2.5 py-0.5 rounded border ${
+                        stockStatus === "out" ? "bg-red-50 text-red-700 border-red-200" :
+                        stockStatus === "low" ? "bg-amber-50 text-amber-700 border-amber-200" :
+                        "bg-green-50 text-emerald-600 border-emerald-200"
+                      }`}>
+                        <span className={`w-1.5 h-1.5 rounded-full ${
+                          stockStatus === "out" ? "bg-red-600" :
+                          stockStatus === "low" ? "bg-amber-600" :
+                          "bg-emerald-600"
+                        }`} />
+                        {stockStatus === "out" ? t("inventory.no_stock") :
+                         stockStatus === "low" ? t("alerts.low_stock") :
+                         t("dashboard.in_stock")}
                       </span>
                     </td>
                   </tr>
@@ -471,9 +556,9 @@ export default function InventoryPage() {
 
       {showWarehouseColumns && (
         <p className="mt-3 text-xs text-gray-400">
-          <strong className="text-emerald-600">{t("inventory.received")}</strong> — {t("inventory.legend.received")} ·{" "}
-          <strong className="text-red-600">{t("inventory.issued")}</strong> — {t("inventory.legend.issued")} ·{" "}
-          <strong className="text-amber-800">{t("inventory.in_transit")} ⏳</strong> — {t("inventory.legend.transit")} ·{" "}
+          <strong className="text-amber-700">{t("inventory.reserved")} ⊘</strong> — {t("inventory.legend.reserved")} ·{" "}
+          <strong className="text-red-600">{t("inventory.in_transit_out")} →</strong> — {t("inventory.legend.in_transit_out")} ·{" "}
+          <strong className="text-blue-600">{t("inventory.in_transit_in")} ←</strong> — {t("inventory.legend.in_transit_in")} ·{" "}
           <strong className="text-blue-700">{t("inventory.available")}</strong> — {t("inventory.legend.available")}
         </p>
       )}

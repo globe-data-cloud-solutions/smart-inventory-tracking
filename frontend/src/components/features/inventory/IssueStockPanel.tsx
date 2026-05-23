@@ -10,9 +10,9 @@ import { useInventoryStore } from "@/lib/inventory-state";
 import { useAuditStore } from "@/lib/audit-log-state";
 import { getSession } from "@/lib/demo-auth";
 import { t } from "@/lib/i18n";
-import type { DemoProduct, DemoWarehouse } from "@/lib/demo-data";
+import type { DemoProduct } from "@/lib/demo-data";
 
-interface Props { products: DemoProduct[]; warehouses: DemoWarehouse[]; orgSlug: string; }
+interface Props { products: DemoProduct[]; orgSlug: string; }
 
 const REASONS = [
   { value: "SALE",         label: "issue.reasons.SALE"         },
@@ -47,30 +47,29 @@ function Field({ label, hint, children }: { label: string; hint?: string; childr
 const inputCls  = "w-full px-2.5 py-2 text-sm border border-gray-300 rounded outline-none bg-white";
 const selectCls = `${inputCls} cursor-pointer`;
 
-export function IssueStockPanel({ products, warehouses, orgSlug }: Props) {
+export function IssueStockPanel({ products, orgSlug }: Props) {
   const { isOnline } = useOfflineSync();
   const qc = useQueryClient();
   const { addIssue, getAvailable } = useInventoryStore();
   const logAudit = useAuditStore((s) => s.log);
 
-  const [open, setOpen]                 = useState(false);
-  const [productId, setProductId]       = useState("");
-  const [warehouseId, setWarehouseId]   = useState("");
-  const [quantity, setQuantity]         = useState("");
-  const [reasonCode, setReasonCode]     = useState("");
-  const [issuedTo, setIssuedTo]         = useState("");
-  const [notes, setNotes]               = useState("");
-  const [error, setError]               = useState("");
-  const [success, setSuccess]           = useState("");
-  const [loading, setLoading]           = useState(false);
+  const user          = getSession();
+  const warehouseId   = user?.warehouseId   ?? "";
+  const warehouseName = user?.warehouseName ?? warehouseId;
+
+  const [open, setOpen]             = useState(false);
+  const [productId, setProductId]   = useState("");
+  const [quantity, setQuantity]     = useState("");
+  const [reasonCode, setReasonCode] = useState("");
+  const [issuedTo, setIssuedTo]     = useState("");
+  const [notes, setNotes]           = useState("");
+  const [error, setError]           = useState("");
+  const [success, setSuccess]       = useState("");
+  const [loading, setLoading]       = useState(false);
 
   const destMeta = reasonCode ? DESTINATION_META[reasonCode] : null;
 
-  function reset() { setProductId(""); setWarehouseId(""); setQuantity(""); setReasonCode(""); setIssuedTo(""); setNotes(""); setError(""); setSuccess(""); }
-
-  const availableWarehouses = productId
-    ? warehouses.filter((w) => { const p = products.find((pr) => pr.id === productId); return p ? getAvailable(p.id, w.id, p.stock[w.id] ?? 0) > 0 : true; })
-    : warehouses;
+  function reset() { setProductId(""); setQuantity(""); setReasonCode(""); setIssuedTo(""); setNotes(""); setError(""); setSuccess(""); }
 
   const selectedProduct = products.find((p) => p.id === productId);
   const availableStock  = selectedProduct && warehouseId
@@ -96,8 +95,7 @@ export function IssueStockPanel({ products, warehouses, orgSlug }: Props) {
       } else {
         await api.post("/api/v1/inventory/issue", payload);
         addIssue(productId, warehouseId, qty);
-        const user = getSession(); const wh = warehouses.find((w) => w.id === warehouseId);
-        if (user) logAudit({ tenantSlug: orgSlug, userEmail: user.email, userName: user.name, role: user.role, action: "inventory:issue", category: "INVENTORY", resourceRef: selectedProduct?.sku ?? productId, resourceType: "InventoryTransaction", productName: selectedProduct?.name, quantityStr: `-${qty.toLocaleString()} ${selectedProduct?.unit ?? "units"}`, fromWarehouse: wh?.name ?? warehouseId, toWarehouse: issuedTo.trim() || undefined, notes: `[${reasonCode}]` });
+        if (user) logAudit({ tenantSlug: orgSlug, userEmail: user.email, userName: user.name, role: user.role, action: "inventory:issue", category: "INVENTORY", resourceRef: selectedProduct?.sku ?? productId, resourceType: "InventoryTransaction", productName: selectedProduct?.name, quantityStr: `-${qty.toLocaleString()} ${selectedProduct?.unit ?? "units"}`, fromWarehouse: warehouseName, toWarehouse: issuedTo.trim() || undefined, notes: `[${reasonCode}]` });
         setSuccess(t("issue.success"));
         void qc.invalidateQueries({ queryKey: ["products", orgSlug] });
       }
@@ -125,20 +123,16 @@ export function IssueStockPanel({ products, warehouses, orgSlug }: Props) {
 
         <form onSubmit={onSubmit} className="flex-1 overflow-y-auto p-6">
           <Field label={t("table.product")}>
-            <select value={productId} onChange={(e) => { setProductId(e.target.value); setWarehouseId(""); }} className={selectCls} required>
+            <select value={productId} onChange={(e) => setProductId(e.target.value)} className={selectCls} required>
               <option value="">— {t("receive_panel.select_product")} —</option>
               {products.map((p) => <option key={p.id} value={p.id}>{p.name} · {p.sku}</option>)}
             </select>
           </Field>
 
           <Field label={t("inventory.transfer.from_warehouse")}>
-            <select value={warehouseId} onChange={(e) => setWarehouseId(e.target.value)} className={selectCls} required>
-              <option value="">— {t("receive_panel.select_warehouse")} —</option>
-              {availableWarehouses.map((w) => {
-                const liveAvail = selectedProduct ? getAvailable(selectedProduct.id, w.id, selectedProduct.stock[w.id] ?? 0) : null;
-                return <option key={w.id} value={w.id}>{w.name}{liveAvail !== null ? ` · ${liveAvail.toLocaleString()} available` : ""}</option>;
-              })}
-            </select>
+            <div className={`${inputCls} bg-gray-50 text-gray-700 select-none`}>
+              {warehouseName || "—"}
+            </div>
           </Field>
 
           {availableStock !== null && (

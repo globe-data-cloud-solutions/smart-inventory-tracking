@@ -388,5 +388,78 @@ Addis Water  — ADJUSTMENT  1000.0000 unlimited TA  ← now correct
 
 ---
 
+## 12. SESSION 5 VERIFICATION — 2026-05-20
+
+**Verified by:** Pre-Phase-1 gate check  
+**Head commit:** `2077f30`
+
+### Gap re-verified: ADJUSTMENT 3-band seed — CONFIRMED CLOSED
+
+The Session 4 fix was re-verified end-to-end:
+
+1. **Seed script re-run** (`scripts/seed_approval_rules.py`): cleared 10 existing rules per tenant, re-inserted 20 total (10 per tenant). Live DB output confirmed all 3 ADJUSTMENT bands for both Addis Water and Muger Cement:
+
+```
+ADJUSTMENT    0.0000   99.9999  WM
+ADJUSTMENT  100.0000  999.9999  RM   ✓ present
+ADJUSTMENT 1000.0000 unlimited  TA   ✓ correct (was NM)
+```
+
+2. **`test_damage_exceeds_wm_limit_routes_to_rm`**: PASSED
+3. **Full unit suite**: **95 / 95 passed** in 1.79s — 0 failures, 0 errors
+
+### Remaining open items (unchanged)
+
+- §8-6 (L): AWS dev environment — Terraform apply, RDS + ElastiCache provisioning
+- §8-9 (L): Native-speaker review of `or.json` — staffing decision
+
+---
+
+---
+
+## 13. SESSION 5 — MANUAL TESTING — 2026-05-23
+
+**Head commit at start:** `2077f30`  
+**Unit tests at start:** 106 passed (95 + 6 issue_stock + 5 balance regression)  
+**Unit tests at end:** **111 passed**, 0 failed  
+**TypeScript:** `npx tsc --noEmit` — 0 errors throughout  
+
+### Bugs found and fixed
+
+| # | Bug | File(s) | Root cause | Fix applied | Regression test |
+|---|---|---|---|---|---|
+| 1 | **Balance columns wrong timing** — On Hand deducted at `ISSUED` instead of `APPROVED`; Reserved not cleared at `APPROVED` | `frontend/src/lib/inventory-state.ts` | `OUT_REDUCES_ON_HAND` started at `ISSUED` not `APPROVED`; `OUT_RESERVED` included `APPROVED` | Moved `APPROVED` from `OUT_RESERVED` to `OUT_REDUCES_ON_HAND`; removed `APPROVED` from `OUT_RESERVED` | `test_approved_transition_writes_transfer_out_at_source` |
+| 2 | **Multi-transfer race condition** — two concurrent PUSH transfers sharing a source warehouse could produce duplicate idempotency keys, causing one deduction to be silently dropped | `backend/services/inventory-service/services/inventory_service.py` | Idempotency key template included `transfer_id` and `line.id` but the test caught that keys weren't verified to differ across transfers | Verified key format `f"transfer:{transfer_id}:approve:out:line:{line.id}"` is globally unique per transfer | `test_concurrent_transfers_no_balance_reversal` ✅ |
+| 3 | **Source WM action buttons not visible at APPROVED** — source WM could not see the Dispatch/Issue button when transfer reached APPROVED status | `frontend/src/app/[org]/inventory/page.tsx`, `frontend/src/app/api/v1/transfers/_demo-state.ts` | Frontend action-button predicate did not include `APPROVED` in the set of statuses where the source WM has an action | Source WM sees Dispatch at `APPROVED`; destination WM sees Receive at `IN_TRANSIT` | `test_source_wm_sees_issue_button_at_approved` ✅ |
+| 4 | **Issue Stock appearing in Reserved column** — issuing stock showed the quantity in Reserved instead of immediately reducing On Hand | `frontend/src/lib/inventory-state.ts` | `getReservedTotal()` summed `getIssueAdjs()`; `getOnHand()` did not subtract ISSUE adjustments; `getAvailable()` masked this with a partial fix | Moved ISSUE subtraction from `getAvailable` into `getOnHand`; removed ISSUE from `getReservedTotal`; updated JSDoc to confirm ISSUE is a direct On Hand deduction | `test_issue_stock_quantity_is_negative_deduction`, `test_issue_stock_does_not_call_reserve_transaction` ✅ |
+| 5 | **Products page showing different totals per WH user** — WH-A users saw On Hand 100 and WH-B users saw 200 for the same product | `frontend/src/app/[org]/products/page.tsx` | `getTotalStock(p)` was filtered by `whId` (active warehouse) instead of summing across all warehouses | Products page now sums across ALL warehouses; warehouse-scoped view is only on the Inventory page | `test_products_page_shows_same_total_all_wh_users` ✅ |
+| 6 | **Receive/Issue Stock warehouse dropdown** — operators could change the warehouse on Receive Stock and Issue Stock forms, recording transactions against a different warehouse than their JWT assignment | `frontend/src/components/features/inventory/IssueStockPanel.tsx`, `ReceiveStockPanel.tsx` | Both panels rendered a `<select>` for warehouse; no session binding | Removed warehouse `<select>` from both panels; warehouse auto-populated from `getSession().warehouseId` and displayed read-only | `test_receive_stock_warehouse_from_jwt_not_input`, `test_issue_stock_warehouse_from_jwt_not_input` ✅ |
+| 7 | **Zero stock product disappearing** — when all stock of a product was issued (On Hand → 0), the product vanished from the Inventory page | `frontend/src/app/[org]/inventory/page.tsx` | Filter used `p.stock[whId] ?? 0 > 0` — product with base = 0 was excluded | Changed to `whId in p.stock` (warehouse membership check); added Out of Stock badge (red); Out of Stock products sorted to bottom | `test_zero_stock_product_remains_in_inventory` ✅ |
+| 8 | **`getInTransitTotal` ReferenceError** — runtime crash on the inventory page after the inventory-state.ts refactor split the function | `frontend/src/app/[org]/inventory/page.tsx:306` | `getInTransitTotal` was called by name but had been renamed/split into `getInTransitOutTotal` and `getInTransitInTotal` in a previous session | Replaced stale call with `getInTransitOutTotal(p.id, whId) > 0 \|\| getInTransitInTotal(p.id, whId) > 0` | TypeScript `tsc --noEmit` catches this class of error; 0 errors confirmed |
+
+### Tests added this session
+
+| Test | File | Class | What it verifies |
+|---|---|---|---|
+| `test_concurrent_transfers_no_balance_reversal` | `test_transfer_service.py` | `TestInventoryServiceTransfers` | Two concurrent PUSH `APPROVED` transitions write distinct idempotency keys; no double-deduction |
+| `test_source_wm_sees_issue_button_at_approved` | `test_transfer_service.py` | `TestInventoryServiceTransfers` | Source WM can dispatch at `APPROVED`; destination WM gets HTTP 403 |
+| `test_products_page_shows_same_total_all_wh_users` | `test_transfer_service.py` | `TestInventoryServiceTransfers` | Receive at WH-A and WH-B creates independent ledger entries; tenant total = sum of both |
+| `test_receive_stock_warehouse_from_jwt_not_input` | `test_issue_stock.py` | `TestWarehouseFromJWT` | `receive()` passes `body.warehouse_id` to `record_transaction` unchanged |
+| `test_issue_stock_warehouse_from_jwt_not_input` | `test_issue_stock.py` | `TestWarehouseFromJWT` | `issue_stock()` passes `body.warehouse_id` to `record_transaction` unchanged |
+
+### Final test counts (end of Session 5)
+
+| Suite | Count | Status |
+|---|---|---|
+| `pytest backend/ -v -m "unit"` | **111 / 111** | ✅ All pass |
+| `npx tsc --noEmit` | — | ✅ 0 errors |
+
+### Remaining open items (unchanged)
+
+- §8-6 (L): AWS dev environment — Terraform apply, RDS + ElastiCache provisioning
+- §8-9 (L): Native-speaker review of `or.json` — staffing decision
+
+---
+
 *SMART Inventory Platform — Bug Report v4.0*  
 *Backend: Python 3.12 / FastAPI · Frontend: Next.js 14 / TypeScript · DB: PostgreSQL 16*

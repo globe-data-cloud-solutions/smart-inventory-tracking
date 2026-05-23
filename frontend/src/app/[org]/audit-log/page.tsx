@@ -71,8 +71,7 @@ export default function AuditLogPage() {
     return Array.from(names).sort();
   }, [scopedEntries]);
 
-  const defaultSource = scopedEntries.find((e) => e.fromWarehouse)?.fromWarehouse ?? "";
-  const [sourceFilter, setSourceFilter] = useState(defaultSource);
+  const [sourceFilter, setSourceFilter] = useState("");
 
   const sourceFiltered = useMemo(
     () => sourceFilter ? scopedEntries.filter((e) => e.fromWarehouse === sourceFilter) : scopedEntries,

@@ -11,9 +11,9 @@ import { useInventoryStore } from "@/lib/inventory-state";
 import { useAuditStore } from "@/lib/audit-log-state";
 import { getSession } from "@/lib/demo-auth";
 import { t } from "@/lib/i18n";
-import type { DemoProduct, DemoWarehouse } from "@/lib/demo-data";
+import type { DemoProduct } from "@/lib/demo-data";
 
-interface Props { products: DemoProduct[]; warehouses: DemoWarehouse[]; orgSlug: string; }
+interface Props { products: DemoProduct[]; orgSlug: string; }
 
 const REFERENCE_TYPES = [
   { value: "PURCHASE_ORDER", label: "transfer.reference.PURCHASE_ORDER" },
@@ -24,7 +24,7 @@ const REFERENCE_TYPES = [
 ];
 
 type FormState = {
-  productId: string; warehouseId: string; referenceType: string;
+  productId: string; referenceType: string;
   quantity: string; lotNumber: string; expiryDate: string;
 };
 
@@ -43,16 +43,20 @@ function Field({ label, hint, children }: { label: string; hint?: string; childr
 const inputCls = "w-full px-2.5 py-2 text-sm border border-gray-300 rounded outline-none bg-white";
 const selectCls = `${inputCls} cursor-pointer`;
 
-export function ReceiveStockPanel({ products, warehouses, orgSlug }: Props) {
+export function ReceiveStockPanel({ products, orgSlug }: Props) {
   const { isOnline } = useOfflineSync();
-  const qc       = useQueryClient();
+  const qc         = useQueryClient();
   const addReceive = useInventoryStore((s) => s.addReceive);
   const logAudit   = useAuditStore((s) => s.log);
+
+  const user          = getSession();
+  const warehouseId   = user?.warehouseId   ?? "";
+  const warehouseName = user?.warehouseName ?? warehouseId;
 
   const [open, setOpen]               = useState(false);
   const [scannerOpen, setScannerOpen] = useState(false);
   const [scanHint, setScanHint]       = useState("");
-  const [form, setForm] = useState<FormState>({ productId: "", warehouseId: "", referenceType: "", quantity: "", lotNumber: "", expiryDate: "" });
+  const [form, setForm] = useState<FormState>({ productId: "", referenceType: "", quantity: "", lotNumber: "", expiryDate: "" });
   const [error, setError]     = useState("");
   const [success, setSuccess] = useState("");
   const [loading, setLoading] = useState(false);
@@ -65,20 +69,20 @@ export function ReceiveStockPanel({ products, warehouses, orgSlug }: Props) {
 
   const { videoRef, isActive: scanActive, error: scanError, start: startScan, stop: stopScan } = useScanner(onScan);
 
-  function reset() { setForm({ productId: "", warehouseId: "", referenceType: "", quantity: "", lotNumber: "", expiryDate: "" }); setError(""); setSuccess(""); setScanHint(""); setScannerOpen(false); stopScan(); }
+  function reset() { setForm({ productId: "", referenceType: "", quantity: "", lotNumber: "", expiryDate: "" }); setError(""); setSuccess(""); setScanHint(""); setScannerOpen(false); stopScan(); }
   function set(key: keyof FormState, val: string) { setForm((f) => ({ ...f, [key]: val })); setError(""); }
   function toggleScanner() { if (scannerOpen) { stopScan(); setScannerOpen(false); } else { setScannerOpen(true); void startScan(); } }
 
   const onSubmit = async (e: React.FormEvent) => {
     e.preventDefault(); setError("");
     if (!form.productId)     { setError(t("receive_panel.error_product"));   return; }
-    if (!form.warehouseId)   { setError(t("receive_panel.error_warehouse")); return; }
+    if (!warehouseId)        { setError(t("receive_panel.error_warehouse")); return; }
     if (!form.referenceType) { setError(t("receive_panel.error_ref_type")); return; }
     const qty = parseFloat(form.quantity);
     if (!qty || qty <= 0) { setError(t("receive_panel.error_qty")); return; }
     const product = products.find((p) => p.id === form.productId);
-    const key = `receive:${form.productId}:${form.warehouseId}:${Date.now()}:${nanoid(8)}`;
-    const payload = { product_id: form.productId, warehouse_id: form.warehouseId, reference_type: form.referenceType, quantity: qty.toFixed(4), lot_number: form.lotNumber || undefined, expiry_date: form.expiryDate || undefined, idempotency_key: key };
+    const key = `receive:${form.productId}:${warehouseId}:${Date.now()}:${nanoid(8)}`;
+    const payload = { product_id: form.productId, warehouse_id: warehouseId, reference_type: form.referenceType, quantity: qty.toFixed(4), lot_number: form.lotNumber || undefined, expiry_date: form.expiryDate || undefined, idempotency_key: key };
     setLoading(true);
     try {
       if (!isOnline) {
@@ -86,9 +90,8 @@ export function ReceiveStockPanel({ products, warehouses, orgSlug }: Props) {
         setSuccess(t("inventory.receive.queue_offline"));
       } else {
         await api.post("/api/v1/inventory/receive", payload);
-        addReceive(form.productId, form.warehouseId, qty);
-        const user = getSession(); const wh = warehouses.find((w) => w.id === form.warehouseId);
-        if (user) logAudit({ tenantSlug: orgSlug, userEmail: user.email, userName: user.name, role: user.role, action: "inventory:receive", category: "INVENTORY", resourceRef: product?.sku ?? form.productId, resourceType: "InventoryTransaction", productName: product?.name, quantityStr: `+${qty.toLocaleString()} ${product?.unit ?? "units"}`, toWarehouse: wh?.name ?? form.warehouseId });
+        addReceive(form.productId, warehouseId, qty);
+        if (user) logAudit({ tenantSlug: orgSlug, userEmail: user.email, userName: user.name, role: user.role, action: "inventory:receive", category: "INVENTORY", resourceRef: product?.sku ?? form.productId, resourceType: "InventoryTransaction", productName: product?.name, quantityStr: `+${qty.toLocaleString()} ${product?.unit ?? "units"}`, toWarehouse: warehouseName, notes: t(`transfer.reference.${form.referenceType}`) });
         setSuccess(t("inventory.receive.success"));
         void qc.invalidateQueries({ queryKey: ["products", orgSlug] });
         void qc.invalidateQueries({ queryKey: ["receipts", orgSlug] });
@@ -140,10 +143,9 @@ export function ReceiveStockPanel({ products, warehouses, orgSlug }: Props) {
             </select>
           </Field>
           <Field label={t("inventory.warehouse")}>
-            <select value={form.warehouseId} onChange={(e) => set("warehouseId", e.target.value)} className={selectCls} required>
-              <option value="">— {t("receive_panel.select_warehouse")} —</option>
-              {warehouses.map((w) => <option key={w.id} value={w.id}>{w.name}{w.location ? ` · ${w.location}` : ""}</option>)}
-            </select>
+            <div className={`${inputCls} bg-gray-50 text-gray-700 select-none`}>
+              {warehouseName || "—"}
+            </div>
           </Field>
           <Field label={t("receive_panel.reference_type")}>
             <select value={form.referenceType} onChange={(e) => set("referenceType", e.target.value)} className={selectCls} required>

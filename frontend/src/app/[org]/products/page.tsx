@@ -3,7 +3,7 @@
 import { useParams } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
 import { SA_ORG_SLUG } from "@/lib/demo-auth";
-import { DEMO_TENANTS } from "@/lib/demo-data";
+import { DEMO_TENANTS, getTotalStock } from "@/lib/demo-data";
 import { usePermission } from "@/hooks/usePermission";
 import { useInventoryStore } from "@/lib/inventory-state";
 import { AddProductPanel } from "@/components/features/inventory/AddProductPanel";
@@ -11,12 +11,24 @@ import { api } from "@/lib/api";
 import { t } from "@/lib/i18n";
 
 type ApiProduct = { id: string; sku: string; name: string; type_code: string; unit: string; pack_size: number; created_at: string; };
-type Row        = { id: string; sku: string; name: string; category: string; unit: string; packSize: string; balance: number; batchTracking: boolean; isNew: boolean; };
+type Row        = { id: string; sku: string; name: string; category: string; unit: string; packSize: string; balance: number; batchTracking: boolean; isNew: boolean; isActive: boolean; };
 
 export default function ProductsPage() {
   const { org }  = useParams() as { org: string };
-  const canAdd   = usePermission("product:create");
-  const { getOnHand } = useInventoryStore();
+  const canAdd            = usePermission("product:create");
+  const adjustments       = useInventoryStore((s) => s.adjustments);
+  const currentTenantSlug = useInventoryStore((s) => s.currentTenantSlug);
+
+  // Net adjustment for a product across ALL warehouses (receives − issues for this session).
+  // Transfers are excluded: moving stock between locations does not change the tenant-wide total.
+  function getAdjTotal(productId: string): number {
+    const adjs = adjustments.filter(
+      (a) => a.tenantSlug === currentTenantSlug && a.productId === productId
+    );
+    const receives = adjs.filter((a) => a.type === "RECEIVE").reduce((n, a) => n + a.qty, 0);
+    const issues   = adjs.filter((a) => a.type === "ISSUE").reduce((n, a) => n + a.qty, 0);
+    return receives - issues;
+  }
 
   const tenant = DEMO_TENANTS.find((ten) => ten.slug === org);
 
@@ -32,19 +44,19 @@ export default function ProductsPage() {
 
   const demoRows: Row[] = tenant.products.map((p) => ({
     id: p.id, sku: p.sku, name: p.name, category: p.category, unit: p.unit, packSize: "—",
-    balance: Object.entries(p.stock).reduce((sum, [whId, base]) => sum + getOnHand(p.id, whId, base), 0),
-    batchTracking: p.batchTracking, isNew: false,
+    balance: getTotalStock(p) + getAdjTotal(p.id),
+    batchTracking: p.batchTracking, isNew: false, isActive: true,
   }));
 
   const apiRows: Row[] = apiProducts.map((p) => ({
     id: p.id, sku: p.sku, name: p.name, category: p.type_code, unit: p.unit, packSize: String(p.pack_size),
-    balance: 0, batchTracking: false, isNew: true,
+    balance: 0, batchTracking: false, isNew: true, isActive: true,
   }));
 
   const all   = [...demoRows, ...apiRows];
   const total = all.length;
 
-  const COLS = ["table.sku","products.col_name","products.col_category","inventory.unit","products.col_pack_size","products.col_balance","products.col_batch"];
+  const COLS = ["table.sku","products.col_name","products.col_category","inventory.unit","products.col_pack_size","products.col_balance","products.col_batch","products.col_status"];
 
   return (
     <div className="p-8">
@@ -91,6 +103,11 @@ export default function ProductsPage() {
                   <td className="px-4 py-2.5">
                     <span className={`text-xs font-bold px-2 py-0.5 rounded ${p.batchTracking ? "bg-green-100 text-green-800" : "bg-gray-100 text-gray-500"}`}>
                       {p.batchTracking ? t("dispatch.yes") : t("dispatch.no")}
+                    </span>
+                  </td>
+                  <td className="px-4 py-2.5">
+                    <span className={`text-xs font-bold px-2 py-0.5 rounded ${p.isActive ? "bg-emerald-100 text-emerald-800" : "bg-gray-100 text-gray-500"}`}>
+                      {p.isActive ? t("products.status_active") : t("products.status_inactive")}
                     </span>
                   </td>
                 </tr>

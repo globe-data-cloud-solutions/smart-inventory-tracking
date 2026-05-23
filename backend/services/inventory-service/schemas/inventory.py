@@ -82,6 +82,26 @@ class CountSessionResponse(BaseModel):
     created_at: datetime
 
 
+class IssueStockRequest(BaseModel):
+    product_id: uuid.UUID
+    warehouse_id: uuid.UUID
+    quantity: Decimal = Field(gt=0)
+    reason_code: str
+    issued_to: Optional[str] = None
+    notes: Optional[str] = None
+    idempotency_key: str
+    source: str = "WEB"
+
+
+class IssueStockResponse(BaseModel):
+    transaction_id: uuid.UUID
+    product_id: uuid.UUID
+    warehouse_id: uuid.UUID
+    quantity: Decimal
+    reason_code: str
+    created_at: datetime
+
+
 class LotSelection(BaseModel):
     lot_id: uuid.UUID
     lot_number: Optional[str]

@@ -19,6 +19,8 @@ from schemas.inventory import (
     AdjustmentResponse,
     CountSessionRequest,
     CountSessionResponse,
+    IssueStockRequest,
+    IssueStockResponse,
     ReceiveStockRequest,
     ReceiveStockResponse,
     TransferOrderRequest,
@@ -49,6 +51,35 @@ class InventoryService:
             product_id=body.product_id,
             warehouse_id=body.warehouse_id,
             quantity=body.quantity,
+            created_at=datetime.now(timezone.utc),
+        )
+
+    async def issue_stock(self, user: Any, body: IssueStockRequest) -> IssueStockResponse:
+        """Issue stock out of a warehouse — direct On Hand deduction, no reservation step.
+
+        ISSUE is always a single ledger INSERT with a negative quantity.
+        No RESERVE transaction is created at any point in the workflow.
+        If quantity exceeds the tenant approval threshold, the caller must
+        route through the adjustment approval workflow instead.
+        """
+        tx_id = await record_transaction(
+            self.db,
+            tenant_id=str(user.tenant_id),
+            transaction_type="ISSUE",
+            product_id=str(body.product_id),
+            warehouse_id=str(body.warehouse_id),
+            quantity=-abs(body.quantity),   # always a deduction
+            performed_by=str(user.user_id),
+            idempotency_key=body.idempotency_key,
+        )
+
+        from datetime import datetime, timezone
+        return IssueStockResponse(
+            transaction_id=UUID(tx_id),
+            product_id=body.product_id,
+            warehouse_id=body.warehouse_id,
+            quantity=body.quantity,
+            reason_code=body.reason_code,
             created_at=datetime.now(timezone.utc),
         )
 
@@ -103,6 +134,50 @@ class InventoryService:
                 status_code=422,
                 detail={"code": "INVALID_STATE_TRANSITION", "detail": str(exc)},
             ) from exc
+
+        # APPROVED: reservation converts to a hard deduction — write TRANSFER_OUT per line.
+        if next_state == "APPROVED":
+            lines = (await self.db.execute(
+                text(
+                    "SELECT * FROM transfer_order_lines "
+                    "WHERE transfer_order_id = :tid_order AND tenant_id = :tid"
+                ),
+                {"tid_order": str(transfer_id), "tid": str(user.tenant_id)},
+            )).fetchall()
+            for line in lines:
+                await record_transaction(
+                    self.db,
+                    tenant_id=str(user.tenant_id),
+                    transaction_type="TRANSFER_OUT",
+                    product_id=str(line.product_id),
+                    warehouse_id=str(row.from_warehouse_id),
+                    quantity=-Decimal(str(line.quantity)),
+                    performed_by=str(user.user_id),
+                    idempotency_key=f"transfer:{transfer_id}:approve:out:line:{line.id}",
+                    reference_id=str(transfer_id),
+                )
+
+        # CANCELLED from APPROVED/ADVISED: compensate with RETURN to restore source on_hand.
+        elif next_state == "CANCELLED" and row.status in ("APPROVED", "ADVISED"):
+            lines = (await self.db.execute(
+                text(
+                    "SELECT * FROM transfer_order_lines "
+                    "WHERE transfer_order_id = :tid_order AND tenant_id = :tid"
+                ),
+                {"tid_order": str(transfer_id), "tid": str(user.tenant_id)},
+            )).fetchall()
+            for line in lines:
+                await record_transaction(
+                    self.db,
+                    tenant_id=str(user.tenant_id),
+                    transaction_type="RETURN",
+                    product_id=str(line.product_id),
+                    warehouse_id=str(row.from_warehouse_id),
+                    quantity=Decimal(str(line.quantity)),
+                    performed_by=str(user.user_id),
+                    idempotency_key=f"transfer:{transfer_id}:cancel:restore:line:{line.id}",
+                    reference_id=str(transfer_id),
+                )
 
         await self.db.execute(
             text("UPDATE transfer_orders SET status = :s, updated_at = now() WHERE id = :id"),
@@ -162,16 +237,19 @@ class InventoryService:
         )).fetchall()
 
         for line in lines:
-            ikey = f"transfer:{transfer_id}:dispatch:line:{line.id}"
+            # Source on_hand deduction is deferred to receive_transfer() — Option A WMS
+            # semantics: On Hand does not move until stock is physically received.
+            # Book in_transit_in at destination so the receiving warehouse can see stock
+            # committed for delivery. RELEASE reverses this when receive_transfer() is called.
             await record_transaction(
                 self.db,
                 tenant_id=str(user.tenant_id),
-                transaction_type="TRANSFER_OUT",
+                transaction_type="RESERVE",
                 product_id=str(line.product_id),
-                warehouse_id=str(row.from_warehouse_id),
-                quantity=-Decimal(str(line.quantity)),  # negative: deduct from source
+                warehouse_id=str(row.to_warehouse_id),
+                quantity=Decimal(str(line.quantity)),   # positive: reserve at destination
                 performed_by=str(user.user_id),
-                idempotency_key=ikey,
+                idempotency_key=f"transfer:{transfer_id}:dispatch:reserve:line:{line.id}",
                 reference_id=str(transfer_id),
             )
 
@@ -235,7 +313,20 @@ class InventoryService:
         )).fetchall()
 
         for line in lines:
-            ikey = f"transfer:{transfer_id}:receive:line:{line.id}"
+            # Source on_hand was already deducted at APPROVED via TRANSFER_OUT — do not repeat.
+            # Clear the in_transit_in booking written at dispatch time.
+            await record_transaction(
+                self.db,
+                tenant_id=str(user.tenant_id),
+                transaction_type="RELEASE",
+                product_id=str(line.product_id),
+                warehouse_id=str(row.to_warehouse_id),
+                quantity=-Decimal(str(line.quantity)),  # negative: reverse the RESERVE
+                performed_by=str(user.user_id),
+                idempotency_key=f"transfer:{transfer_id}:receive:release:line:{line.id}",
+                reference_id=str(transfer_id),
+            )
+            # Credit destination on_hand — stock has been physically received.
             await record_transaction(
                 self.db,
                 tenant_id=str(user.tenant_id),
@@ -244,7 +335,7 @@ class InventoryService:
                 warehouse_id=str(row.to_warehouse_id),
                 quantity=Decimal(str(line.quantity)),  # positive: credit to destination
                 performed_by=str(user.user_id),
-                idempotency_key=ikey,
+                idempotency_key=f"transfer:{transfer_id}:receive:in:line:{line.id}",
                 reference_id=str(transfer_id),
             )
 
