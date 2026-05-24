@@ -44,6 +44,7 @@ class _User:
 WM  = _User("u-wm-001",  TENANT_ID, WAREHOUSE_ID, "WM")
 NM  = _User("u-nm-001",  TENANT_ID, "",            "NM")
 RM  = _User("u-rm-001",  TENANT_ID, "",            "RM")
+TA  = _User("u-ta-001",  TENANT_ID, "",            "TA")   # Tenant Admin — no assigned warehouse
 
 
 @pytest.fixture()
@@ -477,3 +478,79 @@ class TestAdjustmentAutoApplyVsPending:
         ):
             with pytest.raises(Exception, match="InsufficientStockError"):
                 await svc.adjust(WM, body)
+
+
+@pytest.mark.unit
+class TestApproverWarehouseScopeIsolation:
+    """BUG A regression: manager approval must write the ledger at the ADJUSTED warehouse,
+    not at the approver's warehouse.
+
+    TA and NM have warehouse_id == "" (no assigned facility). If approve_adjustment()
+    used the approver's warehouse_id instead of body.warehouse_id, the ledger INSERT
+    would target an empty string warehouse — silently doing nothing useful.
+    """
+
+    async def test_ta_approval_updates_adjusted_wh_not_approver_wh(
+        self, svc: InventoryService
+    ) -> None:
+        """TA (warehouse_id='') approves a WM adjustment at WAREHOUSE_ID.
+
+        record_transaction must be called with warehouse_id=WAREHOUSE_ID (from body),
+        NOT with warehouse_id='' (the TA's JWT claim). A wrong warehouse_id means the
+        ledger entry lands at no real facility and On Hand never changes at the WH.
+        """
+        body = AdjustStockRequest(
+            product_id=UUID(PRODUCT_ID),
+            warehouse_id=UUID(WAREHOUSE_ID),   # the WH that created the adjustment
+            quantity=Decimal("-1500"),          # >= 1000 → TA-tier approval required
+            reason_code="DAMAGE",
+            idempotency_key="adj:ta-wh-scope:001",
+        )
+
+        with patch(
+            "services.inventory_service.record_transaction",
+            new_callable=AsyncMock,
+            return_value=TX_ID,
+        ) as mock_record:
+            await svc.approve_adjustment(TA, UUID(TX_ID), body)
+
+        mock_record.assert_awaited_once()
+        _, kwargs = mock_record.call_args
+        assert kwargs["warehouse_id"] == WAREHOUSE_ID, (
+            f"approve_adjustment must write ledger at the adjustment's WH={WAREHOUSE_ID!r}, "
+            f"not the TA's empty warehouse_id={TA.warehouse_id!r}"
+        )
+        assert kwargs["quantity"] == Decimal("-1500"), (
+            "Signed quantity from the adjustment record must be preserved"
+        )
+
+    async def test_nm_approval_updates_adjusted_wh_not_approver_wh(
+        self, svc: InventoryService
+    ) -> None:
+        """NM (warehouse_id='') approves a WM adjustment at WAREHOUSE_ID.
+
+        Same contract as TA: body.warehouse_id is the adjustment's originating WH.
+        The NM's empty warehouse_id must never pollute the ledger write.
+        """
+        body = AdjustStockRequest(
+            product_id=UUID(PRODUCT_ID),
+            warehouse_id=UUID(WAREHOUSE_ID),
+            quantity=Decimal("-300"),           # 100–999 → RM-tier; NM can approve RM-tier too
+            reason_code="COUNT_VARIANCE",
+            idempotency_key="adj:nm-wh-scope:001",
+        )
+
+        with patch(
+            "services.inventory_service.record_transaction",
+            new_callable=AsyncMock,
+            return_value=TX_ID,
+        ) as mock_record:
+            await svc.approve_adjustment(NM, UUID(TX_ID), body)
+
+        mock_record.assert_awaited_once()
+        _, kwargs = mock_record.call_args
+        assert kwargs["warehouse_id"] == WAREHOUSE_ID, (
+            f"approve_adjustment must write ledger at the adjustment's WH={WAREHOUSE_ID!r}, "
+            f"not the NM's empty warehouse_id={NM.warehouse_id!r}"
+        )
+        assert kwargs["quantity"] == Decimal("-300")
