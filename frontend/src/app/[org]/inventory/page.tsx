@@ -194,10 +194,11 @@ export default function InventoryPage() {
   const { org }       = useParams() as { org: string };
   const user          = getSession();
   const canAddProduct = usePermission("product:create");
-  // Explicit slice subscriptions — Zustand only triggers re-renders when the selected
-  // slice reference changes. A whole-store subscription does not re-render on partial
-  // mutations (e.g. addReceive / addIssue append to the adjustments array).
-  const adjustments   = useInventoryStore((s) => s.adjustments);
+  // Subscribe to the specific maps that addIssue/addReceive mutate.
+  // Each call spreads a new object reference into issues/receives, which guarantees
+  // Zustand fires these selectors and triggers a re-render without a page reload.
+  const issues         = useInventoryStore((s) => s.issues);
+  const receives       = useInventoryStore((s) => s.receives);
   const storeTransfers = useInventoryStore((s) => s.transfers);
   const {
     getOnHand, getAvailable,
@@ -209,7 +210,7 @@ export default function InventoryPage() {
 
   const tenant = DEMO_TENANTS.find((ten) => ten.slug === org);
 
-  const [selectedWH, setSelectedWH] = useState<string>(user?.warehouseId ?? "");
+const [selectedWH, setSelectedWH] = useState<string>(user?.warehouseId ?? "");
   const whId = selectedWH || user?.warehouseId || "";
   const [filters, setFilters] = useState<Filters>({ category: [], unit: [], status: [] });
   const [expandedCell, setExpandedCell] = useState<ExpandedCell | null>(null);
@@ -316,7 +317,8 @@ export default function InventoryPage() {
                getReservedTotal(p.id, whId) > 0 ||
                getInTransitOutTotal(p.id, whId) > 0 ||
                getInTransitInTotal(p.id, whId) > 0 ||
-               adjustments.some((a) => a.productId === p.id && a.warehouseId === whId);
+               (issues[`${org}:${whId}:${p.id}`] ?? 0) > 0 ||
+               (receives[`${org}:${whId}:${p.id}`] ?? 0) > 0;
       })
     : mergedProducts;
 

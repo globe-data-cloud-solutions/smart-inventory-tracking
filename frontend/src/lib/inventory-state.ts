@@ -100,6 +100,17 @@ interface InventoryStore {
   currentTenantSlug: string;
   adjustments: StockAdjustment[];
   transfers: TransferEntry[];
+  /**
+   * Cumulative ISSUE quantities keyed by "tenantSlug:warehouseId:productId".
+   * Nested-object spread in addIssue guarantees a new reference on every mutation,
+   * which is what Zustand slice selectors need to fire re-renders.
+   */
+  issues: Record<string, number>;
+  /**
+   * Cumulative RECEIVE quantities keyed by "tenantSlug:warehouseId:productId".
+   * Same immutability contract as issues.
+   */
+  receives: Record<string, number>;
 
   // ── Tenant scope ───────────────────────────────────────────────────────────
   setActiveTenant(slug: string): void;
@@ -150,24 +161,34 @@ export const useInventoryStore = create<InventoryStore>()(
       currentTenantSlug: "",
       adjustments: [],
       transfers: [],
+      issues: {},
+      receives: {},
 
       setActiveTenant: (slug) => set({ currentTenantSlug: slug }),
 
       addReceive: (productId, warehouseId, qty) =>
-        set((s) => ({
-          adjustments: [
-            ...s.adjustments,
-            { id: crypto.randomUUID(), tenantSlug: s.currentTenantSlug, productId, warehouseId, qty, type: "RECEIVE", createdAt: new Date().toISOString() },
-          ],
-        })),
+        set((s) => {
+          const key = `${s.currentTenantSlug}:${warehouseId}:${productId}`;
+          return {
+            adjustments: [
+              ...s.adjustments,
+              { id: crypto.randomUUID(), tenantSlug: s.currentTenantSlug, productId, warehouseId, qty, type: "RECEIVE" as const, createdAt: new Date().toISOString() },
+            ],
+            receives: { ...s.receives, [key]: (s.receives[key] ?? 0) + qty },
+          };
+        }),
 
       addIssue: (productId, warehouseId, qty) =>
-        set((s) => ({
-          adjustments: [
-            ...s.adjustments,
-            { id: crypto.randomUUID(), tenantSlug: s.currentTenantSlug, productId, warehouseId, qty, type: "ISSUE", createdAt: new Date().toISOString() },
-          ],
-        })),
+        set((s) => {
+          const key = `${s.currentTenantSlug}:${warehouseId}:${productId}`;
+          return {
+            adjustments: [
+              ...s.adjustments,
+              { id: crypto.randomUUID(), tenantSlug: s.currentTenantSlug, productId, warehouseId, qty, type: "ISSUE" as const, createdAt: new Date().toISOString() },
+            ],
+            issues: { ...s.issues, [key]: (s.issues[key] ?? 0) + qty },
+          };
+        }),
 
       addTransfer: (entry) =>
         set((s) => ({
@@ -276,15 +297,16 @@ export const useInventoryStore = create<InventoryStore>()(
       // ── Core balances ─────────────────────────────────────────────────────
 
       getOnHand: (productId, warehouseId, baseStock) => {
-        const s = get();
-        const receiveQty      = s.getReceiveAdjs(productId, warehouseId).reduce((n, a) => n + a.qty, 0);
-        const issueQty        = s.getIssueAdjs(productId, warehouseId).reduce((n, a) => n + a.qty, 0);
-        const inboundFull     = s.getInboundReceived(productId, warehouseId).reduce((n, t) => n + t.quantity, 0);
-        const inboundPartial  = s.getInboundPartial(productId, warehouseId).reduce((n, t) => n + (t.receivedQuantity ?? 0), 0);
-        const outboundGone    = s.transfers
+        const s   = get();
+        const key = `${s.currentTenantSlug}:${warehouseId}:${productId}`;
+        const receiveQty     = s.receives[key] ?? 0;
+        const issueQty       = s.issues[key] ?? 0;
+        const inboundFull    = s.getInboundReceived(productId, warehouseId).reduce((n, t) => n + t.quantity, 0);
+        const inboundPartial = s.getInboundPartial(productId, warehouseId).reduce((n, t) => n + (t.receivedQuantity ?? 0), 0);
+        const outboundGone   = s.transfers
           .filter((t) => t.tenantSlug === s.currentTenantSlug && t.productId === productId && t.fromWarehouseId === warehouseId && OUT_REDUCES_ON_HAND.includes(t.status))
           .reduce((n, t) => n + t.quantity, 0);
-        return baseStock + receiveQty + inboundFull + inboundPartial - outboundGone - issueQty;
+return baseStock + receiveQty + inboundFull + inboundPartial - outboundGone - issueQty;
       },
 
       getAvailable: (productId, warehouseId, baseStock) => {
@@ -306,6 +328,8 @@ export const useInventoryStore = create<InventoryStore>()(
         currentTenantSlug: state.currentTenantSlug,
         adjustments: state.adjustments,
         transfers: state.transfers,
+        issues: state.issues,
+        receives: state.receives,
       }),
     }
   )

@@ -480,14 +480,14 @@ ADJUSTMENT 1000.0000 unlimited  TA   ✓ correct (was NM)
 | 6 | **Confirmation result screen blocked re-use** — after submitting, the panel showed a full-screen result requiring a "Confirm" click to dismiss | `setResult(adj)` triggered a conditional render of a blocking result screen; `reset()` only ran after user click | Removed `result` state; added `toast` state; useEffect auto-dismisses after 3 s and closes panel; `reset()` called immediately after submit | — (UX change, no backend assertion) |
 | 7 | **No zero-floor validation** — adjustments could drive On Hand below zero without warning | No projected balance check before `api.post()` | Before submit: compute `projected = getOnHand(productId, whId, baseStock) + qty`; if < 0 → WM blocked with error; RM/NM/TA/SA shown override confirmation banner | `test_adjustment_below_zero_blocked_for_wm`, `test_adjustment_override_requires_permission` |
 | 8 | **No audit log entry on adjustment submit** | `NewAdjustmentPanel.tsx` never called `useAuditStore.log()` | After successful `api.post()`: `useAuditStore.getState().log({category:"ADJUSTMENT", action:"ADJUSTMENT_APPLIED" or "ADJUSTMENT_SUBMITTED", ...})` | `test_adjustment_creates_audit_log_entry` |
-| 9 | **NM/RM approval did not update inventory balance** — approving a SUBMITTED adjustment changed status but left On Hand unchanged | `transition()` in `adjustments/page.tsx` called `api.patch()` but never updated the Zustand store; `AdjRecord` lacked `product_id`/`warehouse_id` needed for store call | Added `product_id`/`warehouse_id` to `AdjRecord`; after APPROVED transition, calls `addReceive/addIssue` with the adjustment quantity; backend `approve_adjustment()` calls `record_transaction()` with `transaction_type="ADJUSTMENT"` | `test_nm_approval_triggers_balance_update` |
+| 9 | **NM/RM/TA approval did not update inventory balance** — approving a SUBMITTED adjustment changed status but left On Hand unchanged even after multiple fix attempts (**CLOSED**) | Initial fix added `product_id`/`warehouse_id` to `AdjRecord` and called `addReceive/addIssue` on approval, but On Hand remained stale after navigation. Root cause: inventory page reinitialises on mount and did not include `issues`/`receives` maps in its dependency path. The Zustand store's `addIssue`/`addReceive` only updated the `adjustments` flat array; `getOnHand` had no map lookup, so the approved delta was invisible on mount. | (1) Zustand store adds `issues: Record<string,number>` and `receives: Record<string,number>` keyed `tenantSlug:warehouseId:productId`; `addIssue`/`addReceive` spread new map reference on every call. (2) `getOnHand` reads `s.issues[key]`/`s.receives[key]` directly — O(1) lookup, no array scan. (3) Inventory page subscribes to `issues`/`receives` selectors; new object reference on any approval triggers re-render with correct balance immediately. (4) `transition()` uses `allAdj` (not WM-scoped `visibleAdj`) so NM/TA can always locate the adj record. (5) TA/NM approval audit logged using `adj.warehouse_id` not approver JWT. | `test_nm_approval_triggers_balance_update`, `test_approval_uses_adjustment_warehouse_not_approver_warehouse`, `test_ta_approval_updates_adjusted_wh_not_approver_wh`, `test_nm_approval_updates_adjusted_wh_not_approver_wh` |
 
 ### New backend additions
 
 | Item | File | Purpose |
 |---|---|---|
 | `AdjustStockRequest` / `AdjustStockResponse` | `schemas/inventory.py` | Pydantic models for `adjust()` and `approve_adjustment()` |
-| `_FORCE_NEGATIVE_REASONS` | `services/inventory_service.py` | Module-level frozenset: `{"DAMAGE", "EXPIRY"}` |
+| `_FORCE_NEGATIVE_REASONS` | `services/inventory_service.py` | Module-level frozenset: `{"DAMAGE", "EXPIRY", "SUPPLIER_RETURN"}` — SUPPLIER_RETURN added; always a deduction, always requires approval |
 | `adjust()` | `services/inventory_service.py` | Records ADJUSTMENT ledger entry; enforces negative sign for DAMAGE/EXPIRY; calls `audit_log()` |
 | `approve_adjustment()` | `services/inventory_service.py` | Posted when NM/RM approves SUBMITTED adjustment; calls `record_transaction(transaction_type="ADJUSTMENT")` |
 | `audit_log` import | `services/inventory_service.py` | `from shared.permissions.audit import audit_log` |
@@ -505,12 +505,19 @@ ADJUSTMENT 1000.0000 unlimited  TA   ✓ correct (was NM)
 | `test_adjustment_override_requires_permission` | `test_adjustment_service.py` | `TestAdjustmentZeroFloor` | NM with `override_zero_floor=True` succeeds (record_transaction patched) |
 | `test_adjustment_creates_audit_log_entry` | `test_adjustment_service.py` | `TestAdjustmentAuditLog` | `adjust()` calls `audit_log()` once per adjustment |
 | `test_nm_approval_triggers_balance_update` | `test_adjustment_service.py` | `TestNMApprovalTriggersBalance` | `approve_adjustment()` calls `record_transaction(transaction_type="ADJUSTMENT", quantity=-200)` |
+| `test_approval_uses_adjustment_warehouse_not_approver_warehouse` | `test_adjustment_service.py` | `TestNMApprovalTriggersBalance` | `approve_adjustment()` passes `adj.warehouse_id` (from the adjustment record), never the approver's JWT `warehouse_id` |
+| `test_auto_apply_calls_record_transaction_immediately` | `test_adjustment_service.py` | `TestAdjustmentAutoApplyVsPending` | qty < threshold → `adjust()` calls `record_transaction()` immediately with status APPLIED |
+| `test_approval_updates_adjusted_wh_balance` | `test_adjustment_service.py` | `TestAdjustmentAutoApplyVsPending` | `approve_adjustment()` updates the warehouse where the adjustment was created, not the approver's warehouse |
+| `test_pending_adjustment_does_not_call_record_transaction` | `test_adjustment_service.py` | `TestAdjustmentAutoApplyVsPending` | qty ≥ threshold → `adjust()` does NOT call `record_transaction()` until approved |
+| `test_ta_approval_updates_adjusted_wh_not_approver_wh` | `test_adjustment_service.py` | `TestApproverWarehouseScopeIsolation` | TA approver (no assigned warehouse) → balance update targets adj warehouse, not TA |
+| `test_nm_approval_updates_adjusted_wh_not_approver_wh` | `test_adjustment_service.py` | `TestApproverWarehouseScopeIsolation` | NM approver (no assigned warehouse) → balance update targets adj warehouse, not NM |
+| `test_return_to_supplier_always_negative` | `test_adjustment_service.py` | `TestAdjustmentNegativeEnforced` | SUPPLIER_RETURN reason code → ledger qty is always negative regardless of input sign |
 
 ### Final test counts (end of this session)
 
 | Suite | Count | Status |
 |---|---|---|
-| `pytest backend/ -v -m "unit"` | **120 / 120** | ✅ All pass |
+| `pytest backend/ -v -m "unit"` | **127 / 127** | ✅ All pass |
 | `npx tsc --noEmit` | — | ✅ 0 errors (TypeScript strict) |
 
 ### Remaining open items (unchanged)

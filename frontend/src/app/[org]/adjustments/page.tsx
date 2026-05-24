@@ -98,25 +98,6 @@ export default function AdjustmentsPage() {
     // Approvers (RM/NM/TA) must find the adjustment record regardless of which WH created it.
     const adj = allAdj.find((a) => a.id === id);
 
-    console.log("[ADJ] APPROVE START", {
-      id,
-      next,
-      adjFound:            !!adj,
-      adjProductId:        adj?.product_id,
-      adjWarehouseId:      adj?.warehouse_id,
-      adjQty:              adj?.quantity,
-      adjStatus:           adj?.status,
-      approverRole:        user?.role,
-      approverWarehouseId: user?.warehouseId ?? "(none — manager)",
-      allAdjCount:         allAdj.length,
-      visibleAdjCount:     visibleAdj.length,
-      storeTenantSlug:     useInventoryStore.getState().currentTenantSlug,
-    });
-
-    if (!adj) {
-      console.warn("[ADJ] adj is undefined — id not found in allAdj. Balance update will be skipped.", { id, allAdjIds: allAdj.map((a) => a.id) });
-    }
-
     try {
       await api.patch(`/api/v1/inventory/adjust/${id}`, { next_status: next });
     } catch { /* seed adjustments return 404 — fall through to state updates below */ }
@@ -132,18 +113,6 @@ export default function AdjustmentsPage() {
 
       if (adjQty > 0) store.addReceive(adjProductId, adjWarehouseId, adjQty);
       else            store.addIssue(adjProductId, adjWarehouseId, Math.abs(adjQty));
-
-      console.log("[ADJ] STORE UPDATE CALLED", {
-        method:                adjQty > 0 ? "addReceive" : "addIssue",
-        productId:             adjProductId,
-        warehouseId:           adjWarehouseId,
-        qty:                   Math.abs(adjQty),
-        storeTenantSlug:       useInventoryStore.getState().currentTenantSlug,
-        newAdjustmentsCount:   useInventoryStore.getState().adjustments.length,
-        issueEntriesForThisWH: useInventoryStore.getState().adjustments.filter(
-          (a) => a.productId === adjProductId && a.warehouseId === adjWarehouseId && a.type === "ISSUE"
-        ).length,
-      });
 
       // Audit log for this approval — use adj.warehouse_id (the WH that created the
       // adjustment), never the approver's warehouse_id (NM/TA have none).
@@ -163,17 +132,11 @@ export default function AdjustmentsPage() {
           notes:         adj.notes,
         });
       }
-    } else if (next === "APPROVED") {
-      console.warn("[ADJ] APPROVED but store update skipped — adj missing or empty warehouse_id", {
-        adjFound:          !!adj,
-        adjProductId:      adj?.product_id,
-        adjWarehouseId:    adj?.warehouse_id,
-        adjWarehouseTruthy: !!adj?.warehouse_id,
-      });
     }
 
     await qc.invalidateQueries({ queryKey: ["adjustments", org] });
     void qc.invalidateQueries({ queryKey: ["products", org] });
+    void qc.invalidateQueries({ queryKey: ["inventory", org] });
   }
 
   const pending   = visibleAdj.filter((a) => a.status === "SUBMITTED");
