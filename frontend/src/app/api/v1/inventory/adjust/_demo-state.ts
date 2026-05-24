@@ -12,7 +12,7 @@ export interface AdjustRecord {
   reason_code: string;
   notes: string;
   status: AdjustStatus;
-  approval_required_role: "NONE" | "RM" | "NM";
+  approval_required_role: "NONE" | "RM" | "NM" | "TA";
   idempotency_key: string;
   created_at: string;
 }
