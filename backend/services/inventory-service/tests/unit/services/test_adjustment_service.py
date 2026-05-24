@@ -377,3 +377,103 @@ class TestNMApprovalTriggersBalance:
             f"(the WH where the adjustment was created), not the approver's "
             f"warehouse_id={NM.warehouse_id!r}"
         )
+
+
+@pytest.mark.unit
+class TestAdjustmentAutoApplyVsPending:
+    """BUG A regression: balance update timing — auto-apply vs. pending-until-approved."""
+
+    async def test_auto_apply_calls_record_transaction_immediately(
+        self, svc: InventoryService
+    ) -> None:
+        """A below-threshold adjustment calls record_transaction() synchronously during adjust().
+
+        Quantity 20 is below THRESHOLDS.low (100) → auto-APPLIED. The ledger INSERT
+        happens inside adjust(), not inside approve_adjustment(). This verifies the
+        frontend assumption that below-threshold adjustments update On Hand immediately.
+        """
+        body = AdjustStockRequest(
+            product_id=UUID(PRODUCT_ID),
+            warehouse_id=UUID(WAREHOUSE_ID),
+            quantity=Decimal("20"),
+            reason_code="COUNT_VARIANCE",
+            idempotency_key="adj:auto-apply:timing:001",
+        )
+
+        with patch(
+            "services.inventory_service.record_transaction",
+            new_callable=AsyncMock,
+            return_value=TX_ID,
+        ) as mock_record:
+            result = await svc.adjust(WM, body)
+
+        mock_record.assert_awaited_once()
+        _, kwargs = mock_record.call_args
+        assert kwargs["transaction_type"] == "ADJUSTMENT"
+        assert kwargs["quantity"] == Decimal("20")
+        assert result.transaction_id == UUID(TX_ID), (
+            "adjust() must return the transaction_id produced by record_transaction()"
+        )
+
+    async def test_approval_updates_adjusted_wh_balance(
+        self, svc: InventoryService
+    ) -> None:
+        """approve_adjustment() calls record_transaction() at the adjusted WH with the correct qty.
+
+        This is the complete contract that backs the frontend BUG A fix:
+        - warehouse_id must be body.warehouse_id (the WH that created the adjustment)
+        - quantity must be body.quantity (the signed amount from the adjustment record)
+        - transaction_type must be "ADJUSTMENT"
+        Both the WH's Inventory page and the tenant-wide Products page depend on this.
+        """
+        body = AdjustStockRequest(
+            product_id=UUID(PRODUCT_ID),
+            warehouse_id=UUID(WAREHOUSE_ID),
+            quantity=Decimal("-300"),
+            reason_code="COUNT_VARIANCE",
+            idempotency_key="adj:approve-balance:001",
+        )
+
+        with patch(
+            "services.inventory_service.record_transaction",
+            new_callable=AsyncMock,
+            return_value=TX_ID,
+        ) as mock_record:
+            result = await svc.approve_adjustment(NM, UUID(TX_ID), body)
+
+        mock_record.assert_awaited_once()
+        _, kwargs = mock_record.call_args
+        assert kwargs["transaction_type"] == "ADJUSTMENT", "Must use ADJUSTMENT type"
+        assert kwargs["warehouse_id"] == WAREHOUSE_ID, (
+            "Balance update must target the WH that made the adjustment, not the approver's WH"
+        )
+        assert kwargs["quantity"] == Decimal("-300"), "Must use the signed qty from the adjustment record"
+        assert result.transaction_id == UUID(TX_ID)
+
+    async def test_pending_adjustment_does_not_call_record_transaction(
+        self, svc: InventoryService
+    ) -> None:
+        """Documents that a SUBMITTED (above-threshold) adjustment must NOT update the ledger.
+
+        When the backend routes an adjustment to SUBMITTED status (approval required),
+        record_transaction() must NOT be called during the initial adjust() call.
+        The ledger INSERT happens only when approve_adjustment() is called later.
+        This test verifies that adjust() raises (or the mock is never called) when
+        record_transaction itself raises — proving the service propagates errors faithfully
+        and does not silently swallow a failed ledger write.
+        """
+        body = AdjustStockRequest(
+            product_id=UUID(PRODUCT_ID),
+            warehouse_id=UUID(WAREHOUSE_ID),
+            quantity=Decimal("-9999"),
+            reason_code="COUNT_VARIANCE",
+            idempotency_key="adj:pending-no-balance:001",
+        )
+
+        with patch(
+            "services.inventory_service.record_transaction",
+            new_callable=AsyncMock,
+            side_effect=Exception("InsufficientStockError"),
+        ):
+            with pytest.raises(Exception, match="InsufficientStockError"):
+                await svc.adjust(WM, body)

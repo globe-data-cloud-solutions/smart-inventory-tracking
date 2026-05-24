@@ -24,7 +24,7 @@ interface AdjRecord {
   reason_code: string;
   notes: string;
   status: AdjStatus;
-  approval_required_role: "NONE" | "RM" | "NM";
+  approval_required_role: "NONE" | "RM" | "NM" | "TA";
   created_at: string;
 }
 
@@ -63,7 +63,7 @@ function buildSeedAdj(tenant: DemoTenant): AdjRecord[] {
 }
 
 const CAN_APPROVE: Record<string, string[]> = {
-  RM: ["RM"], NM: ["RM", "NM"], TA: ["RM", "NM"], SA: ["RM", "NM"],
+  RM: ["RM"], NM: ["RM", "NM"], TA: ["RM", "NM", "TA"], SA: ["RM", "NM", "TA"],
 };
 
 export default function AdjustmentsPage() {
@@ -105,12 +105,16 @@ export default function AdjustmentsPage() {
     // swallow the store update. warehouse_id comes from the adjustment record — NOT from
     // the approver's JWT (NM/RM have no assigned warehouse_id).
     if (next === "APPROVED" && adj?.product_id && adj.warehouse_id) {
+      const adjWarehouseId = adj.warehouse_id;
+      const adjProductId   = adj.product_id;
+      const adjQty         = adj.quantity;
       const store = useInventoryStore.getState();
-      if (adj.quantity > 0) store.addReceive(adj.product_id, adj.warehouse_id, adj.quantity);
-      else                   store.addIssue(adj.product_id, adj.warehouse_id, Math.abs(adj.quantity));
+      if (adjQty > 0) store.addReceive(adjProductId, adjWarehouseId, adjQty);
+      else            store.addIssue(adjProductId, adjWarehouseId, Math.abs(adjQty));
     }
 
     await qc.invalidateQueries({ queryKey: ["adjustments", org] });
+    void qc.invalidateQueries({ queryKey: ["products", org] });
   }
 
   const pending   = visibleAdj.filter((a) => a.status === "SUBMITTED");
@@ -144,6 +148,7 @@ export default function AdjustmentsPage() {
           <p className="font-bold text-sm mb-2">{t("adjustment.threshold_legend_title")}</p>
           <ul className="flex flex-col gap-1.5">
             <li>✓ {t("adjustment.threshold_damage_always")}</li>
+            <li>✓ {t("adjustment.threshold_expiry_always")}</li>
             <li>✓ {t("adjustment.threshold_qty_wm")}</li>
             <li>✓ {t("adjustment.threshold_qty_rm")}</li>
             <li>✓ {t("adjustment.threshold_qty_ta")}</li>

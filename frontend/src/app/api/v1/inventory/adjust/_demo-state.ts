@@ -17,12 +17,12 @@ export interface AdjustRecord {
   created_at: string;
 }
 
-export const THRESHOLDS = { low: 100, medium: 500 };
+export const THRESHOLDS = { low: 100, medium: 1000 };
 
-export function getRequiredRole(absQty: number): "NONE" | "RM" | "NM" {
+export function getRequiredRole(absQty: number): "NONE" | "RM" | "NM" | "TA" {
   if (absQty < THRESHOLDS.low)    return "NONE";
   if (absQty < THRESHOLDS.medium) return "RM";
-  return "NM";
+  return "TA";
 }
 
 declare global {

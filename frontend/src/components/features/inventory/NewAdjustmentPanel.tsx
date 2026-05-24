@@ -24,13 +24,13 @@ const REASONS = [
 // Bug 4A: These reasons always deduct stock — user enters magnitude, system negates
 const FORCE_NEGATIVE = new Set(["DAMAGE", "EXPIRY"]);
 
-const THRESHOLDS = { low: 100, medium: 500 };
+const THRESHOLDS = { low: 100, medium: 1000 };
 
 function getApprovalInfo(qty: number): { role: string; label: string; cls: string } {
   const abs = Math.abs(qty);
   if (abs < THRESHOLDS.low)    return { role: "NONE", label: t("adjustment.auto_applied"),  cls: "bg-green-50 text-emerald-700" };
   if (abs < THRESHOLDS.medium) return { role: "RM",   label: t("adjustment.pending_rm"),    cls: "bg-amber-50 text-amber-800" };
-  return                              { role: "NM",   label: t("adjustment.pending_nm"),    cls: "bg-red-50 text-red-700" };
+  return                              { role: "TA",   label: t("adjustment.pending_ta"),    cls: "bg-red-50 text-red-700" };
 }
 
 function Field({ label, hint, children }: { label: string; hint?: string; children: React.ReactNode }) {
