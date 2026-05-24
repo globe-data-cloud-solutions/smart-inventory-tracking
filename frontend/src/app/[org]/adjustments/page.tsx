@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import { useParams } from "next/navigation";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { getSession, SA_ORG_SLUG } from "@/lib/demo-auth";
@@ -66,9 +67,10 @@ const CAN_APPROVE: Record<string, string[]> = {
 };
 
 export default function AdjustmentsPage() {
-  const { org }  = useParams() as { org: string };
-  const user     = getSession();
-  const qc       = useQueryClient();
+  const { org }        = useParams() as { org: string };
+  const user           = getSession();
+  const qc             = useQueryClient();
+  const [showLegend, setShowLegend] = useState(false);
 
   if (org === SA_ORG_SLUG) return <p className="p-8 text-gray-500">{t("common.no_data")}</p>;
   const tenant = DEMO_TENANTS.find((ten) => ten.slug === org);
@@ -91,21 +93,24 @@ export default function AdjustmentsPage() {
   const approvableRoles = CAN_APPROVE[user.role] ?? [];
 
   async function transition(id: string, next: AdjStatus) {
+    // Capture record before async ops; use allAdj (not visibleAdj) so NM can always find
+    // adjustments created by WMs at other warehouses.
+    const adj = allAdj.find((a) => a.id === id);
+
     try {
       await api.patch(`/api/v1/inventory/adjust/${id}`, { next_status: next });
+    } catch { /* seed adjustments return 404 — fall through to state updates below */ }
 
-      // Bug 9: when NM/RM approves (which auto-applies), update inventory store balance
-      if (next === "APPROVED") {
-        const adj = visibleAdj.find((a) => a.id === id);
-        if (adj?.product_id && adj.warehouse_id) {
-          const store = useInventoryStore.getState();
-          if (adj.quantity > 0) store.addReceive(adj.product_id, adj.warehouse_id, adj.quantity);
-          else                   store.addIssue(adj.product_id, adj.warehouse_id, Math.abs(adj.quantity));
-        }
-      }
+    // Update inventory balance OUTSIDE the try/catch so 404s (seed records) don't
+    // swallow the store update. warehouse_id comes from the adjustment record — NOT from
+    // the approver's JWT (NM/RM have no assigned warehouse_id).
+    if (next === "APPROVED" && adj?.product_id && adj.warehouse_id) {
+      const store = useInventoryStore.getState();
+      if (adj.quantity > 0) store.addReceive(adj.product_id, adj.warehouse_id, adj.quantity);
+      else                   store.addIssue(adj.product_id, adj.warehouse_id, Math.abs(adj.quantity));
+    }
 
-      await qc.invalidateQueries({ queryKey: ["adjustments", org] });
-    } catch { /* seed adjustments return 404 — ignore */ }
+    await qc.invalidateQueries({ queryKey: ["adjustments", org] });
   }
 
   const pending   = visibleAdj.filter((a) => a.status === "SUBMITTED");
@@ -116,13 +121,36 @@ export default function AdjustmentsPage() {
   return (
     <div className="p-8">
       {/* Header */}
-      <div className="mb-6 flex items-start justify-between flex-wrap gap-3">
+      <div className="mb-4 flex items-start justify-between flex-wrap gap-3">
         <div>
           <h2 className="text-2xl font-bold text-[#0f2d1f] m-0">{t("adjustment.title")}</h2>
           <p className="text-sm text-gray-500 mt-1">{tenant.name} · {t("adjustment.title")}</p>
         </div>
-        <NewAdjustmentPanel products={tenant.products} warehouses={tenant.warehouses} orgSlug={org} />
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => setShowLegend((s) => !s)}
+            aria-expanded={showLegend}
+            className="text-xs text-gray-500 border border-gray-200 rounded px-2.5 py-1.5 hover:bg-gray-50 cursor-pointer"
+          >
+            {showLegend ? t("adjustment.threshold_hide") : t("adjustment.threshold_show")} ⓘ
+          </button>
+          <NewAdjustmentPanel products={tenant.products} warehouses={tenant.warehouses} orgSlug={org} />
+        </div>
       </div>
+
+      {/* Approval threshold legend — collapsible */}
+      {showLegend && (
+        <div className="mb-5 bg-blue-50 border border-blue-200 rounded-md px-5 py-4 text-xs text-blue-900">
+          <p className="font-bold text-sm mb-2">{t("adjustment.threshold_legend_title")}</p>
+          <ul className="flex flex-col gap-1.5">
+            <li>✓ {t("adjustment.threshold_damage_always")}</li>
+            <li>✓ {t("adjustment.threshold_qty_wm")}</li>
+            <li>✓ {t("adjustment.threshold_qty_rm")}</li>
+            <li>✓ {t("adjustment.threshold_qty_ta")}</li>
+            <li>✓ {t("adjustment.threshold_zero_floor")}</li>
+          </ul>
+        </div>
+      )}
 
       {/* Approval queue — visible to RM/NM/TA/SA */}
       {myPending.length > 0 && (

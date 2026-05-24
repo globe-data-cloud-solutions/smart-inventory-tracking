@@ -274,7 +274,21 @@
     "pending_rm": "RM ፈቃድ ይጠብቃል",
     "pending_nm": "NM ፈቃድ ይጠብቃል",
     "success_applied": "ማስተካከያ ተተግብሯል",
-    "success_submitted": "ለፈቃድ ቀርቧል"
+    "success_submitted": "ለፈቃድ ቀርቧል",
+    "add_stock": "ክምችት ጨምር",
+    "remove_stock": "ክምችት አስወግድ",
+    "quantity_hint_remove": "ትክክለኛ መጠን ያስገቡ — ሁሌም ቅናሽ ነው",
+    "zero_floor_wm": "በቂ ክምችት የለም። ሒሳቡ አሉታዊ ይሆናል። ሥራ አስኪያጁን ያነጋግሩ።",
+    "zero_floor_warn": "ይህ ማስተካከያ ሒሳቡን ወደ ዜሮ በታች ያወርዳል። ይቀጥሉ?",
+    "zero_floor_proceed": "ቀጥል",
+    "threshold_legend_title": "ፈቃድ መቼ ያስፈልጋል?",
+    "threshold_damage_always": "ጉዳት / ዝ-ዬ — ሁሌም ፈቃድ ያስፈልጋል",
+    "threshold_qty_wm": "መጠን > 99 — WM ፈቃድ ያስፈልጋል",
+    "threshold_qty_rm": "መጠን > 999 — RM ፈቃድ ያስፈልጋል",
+    "threshold_qty_ta": "መጠን > 9,999 — TA ፈቃድ ያስፈልጋል",
+    "threshold_zero_floor": "ዜሮ ወለል ስር — ሥራ አስኪያጅ ይፈቅዳል",
+    "threshold_show": "የፈቃድ ደንቦች",
+    "threshold_hide": "ደንቦችን ደብቅ"
   },
   "transfer": {
     "status": {

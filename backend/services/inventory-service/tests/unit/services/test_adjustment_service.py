@@ -342,3 +342,38 @@ class TestNMApprovalTriggersBalance:
         _, kwargs = mock_record.call_args
         assert kwargs["transaction_type"] == "ADJUSTMENT"
         assert kwargs["quantity"] == Decimal("-200")
+
+    async def test_approval_uses_adjustment_warehouse_not_approver_warehouse(
+        self, svc: InventoryService
+    ) -> None:
+        """approve_adjustment() must use body.warehouse_id, NOT the approver's warehouse_id.
+
+        NM has no assigned warehouse (warehouse_id == ""). The adjustment was created by
+        a WM at WAREHOUSE_ID. When NM approves, record_transaction must be called with
+        WAREHOUSE_ID (from the body), not with "" (the NM's empty warehouse_id).
+
+        This is the backend contract that backs the frontend fix: the store update in
+        adjustments/page.tsx uses adj.warehouse_id (from the record), not user.warehouseId.
+        """
+        body = AdjustStockRequest(
+            product_id=UUID(PRODUCT_ID),
+            warehouse_id=UUID(WAREHOUSE_ID),  # WM's warehouse from the adjustment record
+            quantity=Decimal("-150"),
+            reason_code="DAMAGE",
+            idempotency_key="adj:approval-wh-scope:001",
+        )
+
+        with patch(
+            "services.inventory_service.record_transaction",
+            new_callable=AsyncMock,
+            return_value=TX_ID,
+        ) as mock_record:
+            await svc.approve_adjustment(NM, UUID(TX_ID), body)
+
+        mock_record.assert_awaited_once()
+        _, kwargs = mock_record.call_args
+        assert kwargs["warehouse_id"] == WAREHOUSE_ID, (
+            f"approve_adjustment must use body.warehouse_id={WAREHOUSE_ID!r} "
+            f"(the WH where the adjustment was created), not the approver's "
+            f"warehouse_id={NM.warehouse_id!r}"
+        )

@@ -365,7 +365,15 @@
     "quantity_hint_remove": "Enter magnitude — always a deduction",
     "zero_floor_wm": "Insufficient stock. On-hand would go negative. Contact your manager.",
     "zero_floor_warn": "This adjustment will bring on-hand below zero. Proceed?",
-    "zero_floor_proceed": "Proceed Anyway"
+    "zero_floor_proceed": "Proceed Anyway",
+    "threshold_legend_title": "When is approval required?",
+    "threshold_damage_always": "Write-off / Damage — always requires approval",
+    "threshold_qty_wm": "Quantity > 99 units — requires WM approval",
+    "threshold_qty_rm": "Quantity > 999 units — requires RM approval",
+    "threshold_qty_ta": "Quantity > 9,999 units — requires TA approval",
+    "threshold_zero_floor": "Below zero floor — requires manager override",
+    "threshold_show": "Approval rules",
+    "threshold_hide": "Hide rules"
   },
   "transfer": {
     "status": {

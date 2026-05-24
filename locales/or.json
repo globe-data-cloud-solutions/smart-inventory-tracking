@@ -241,7 +241,21 @@
     "pending_rm": "RM hayyama eeggata",
     "pending_nm": "NM hayyama eeggata",
     "success_applied": "Sirreessi raawwatame",
-    "success_submitted": "Hayyamaaf dhiyaate"
+    "success_submitted": "Hayyamaaf dhiyaate",
+    "add_stock": "Kuusaa Dabal",
+    "remove_stock": "Kuusaa Haqi",
+    "quantity_hint_remove": "Baay'ina galchi — yeroo hundumaa hir'ina",
+    "zero_floor_wm": "Kuusaan ga'aa miti. Wal-madaalli negatiivii ta'a. Hooggansaatti bilbili.",
+    "zero_floor_warn": "Sirreessi kun wal-madaalaa ziroo gadi buusa. Itti fufi?",
+    "zero_floor_proceed": "Itti Fufuu",
+    "threshold_legend_title": "Hayyamni yoom barbaachisa?",
+    "threshold_damage_always": "Miidhaa / Balleessuu — yeroo hundumaa hayyama barbaada",
+    "threshold_qty_wm": "Baay'ina > 99 — hayyama WM barbaada",
+    "threshold_qty_rm": "Baay'ina > 999 — hayyama RM barbaada",
+    "threshold_qty_ta": "Baay'ina > 9,999 — hayyama TA barbaada",
+    "threshold_zero_floor": "Daangaa ziroo gadi — hoogganaan hayyama kenna",
+    "threshold_show": "Seerota hayyamaa",
+    "threshold_hide": "Seerota dhoksi"
   },
   "transfer": {
     "status": {
