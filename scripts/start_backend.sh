@@ -28,6 +28,18 @@ else
   echo "⚠  No .env found at $ENV_FILE — using existing environment variables"
 fi
 
+# ── Helper: free a port by killing its owner (Windows-safe) ──────────────────
+free_port() {
+  local port="$1"
+  # On Windows, use powershell to find and kill the process owning the port
+  powershell.exe -NoProfile -Command "
+    \$pids = (Get-NetTCPConnection -LocalPort $port -State Listen -ErrorAction SilentlyContinue).OwningProcess
+    foreach (\$p in \$pids) {
+      Stop-Process -Id \$p -Force -ErrorAction SilentlyContinue
+    }
+  " 2>/dev/null || true
+}
+
 # ── Helper: start one service ─────────────────────────────────────────────────
 # Usage: start_service <name> <port>
 # The service directory must be backend/services/<name>/ and contain main.py
@@ -39,6 +51,10 @@ start_service() {
 
   echo ""
   echo "▶ Starting $name on port $port …"
+
+  # Kill any existing process on this port before starting
+  free_port "$port"
+  sleep 0.5
 
   # Run uvicorn from inside the service directory so 'main:app' resolves correctly
   (

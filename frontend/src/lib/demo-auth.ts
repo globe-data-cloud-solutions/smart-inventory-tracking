@@ -33,24 +33,27 @@ function store(): Storage | null {
 /**
  * Exchange a SMART JWT for a demo session.
  * Called fire-and-forget after login() so the token is ready before the first
- * authenticated API call.  Silently skips if the auth endpoint is unreachable
- * (BFF-only mode — NEXT_PUBLIC_API_URL is empty or not set).
+ * authenticated API call.
+ *
+ * Routing:
+ *   NEXT_PUBLIC_AUTH_URL set  → call real auth-service with dev_email (Phase 4B Step 1+)
+ *   NEXT_PUBLIC_API_URL set   → fallback for gateway mode without dedicated auth URL
+ *   Both empty                → BFF-only mode, no JWT needed
+ *
+ * The dev_email path returns a JWT with exact seed UUIDs matching the database.
  */
 async function _exchangeJWT(session: SessionUser): Promise<void> {
-  const apiBase = process.env.NEXT_PUBLIC_API_URL ?? "";
-  if (!apiBase) return; // BFF mode — no gateway, no JWT needed
+  const authBase =
+    process.env.NEXT_PUBLIC_AUTH_URL ??
+    process.env.NEXT_PUBLIC_API_URL ??
+    "";
+  if (!authBase) return; // BFF mode — no gateway, no JWT needed
 
   try {
-    const res = await fetch(`${apiBase}/api/v1/auth/token`, {
+    const res = await fetch(`${authBase}/api/v1/auth/token`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        cognito_token:    "demo",
-        demo_sub:          session.id,
-        demo_role:         session.role,
-        demo_tenant_id:    session.tenantId    ?? null,
-        demo_warehouse_id: session.warehouseId ?? null,
-      }),
+      body: JSON.stringify({ dev_email: session.email }),
     });
     if (!res.ok) return;
     const data = (await res.json()) as { access_token?: string };

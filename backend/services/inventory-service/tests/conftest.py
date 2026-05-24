@@ -1,5 +1,14 @@
 from __future__ import annotations
 
+import os
+
+# Must be set before shared.db.session is imported (it reads DATABASE_URL at module level)
+os.environ.setdefault("DATABASE_URL",      "postgresql+asyncpg://test:x@localhost/test")
+os.environ.setdefault("DATABASE_READ_URL", "postgresql+asyncpg://test:x@localhost/test")
+os.environ.setdefault("JWT_SECRET",        "test-secret-for-unit-tests")
+os.environ.setdefault("JWT_SECRET_KEY",    "test-secret-for-unit-tests")
+os.environ.setdefault("ENVIRONMENT",       "local")
+
 from dataclasses import dataclass
 from typing import Optional
 from unittest.mock import AsyncMock, MagicMock
