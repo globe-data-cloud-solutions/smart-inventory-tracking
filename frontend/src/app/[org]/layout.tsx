@@ -256,8 +256,9 @@ export default function OrgLayout({ children }: { children: React.ReactNode }) {
   const router  = useRouter();
   const org     = params.org as string;
   const checked = useRef(false);
-  const [user, setUser]   = useState<SessionUser | null>(null);
-  const [ready, setReady] = useState(false);
+  const [user, setUser]         = useState<SessionUser | null>(null);
+  const [ready, setReady]       = useState(false);
+  const [bannerDismissed, setBannerDismissed] = useState(false);
   const setActiveTenant   = useInventoryStore((s) => s.setActiveTenant);
   const [qc] = useState(() => new QueryClient({
     defaultOptions: { queries: { retry: 1, staleTime: 30_000 } },
@@ -359,6 +360,17 @@ export default function OrgLayout({ children }: { children: React.ReactNode }) {
         <div className="flex pt-[60px]">
           <Sidebar user={user} org={org} />
           <main className="flex-1 ml-60 min-h-[calc(100vh-60px)] overflow-auto bg-gray-100">
+            {process.env.NODE_ENV !== "production" && !bannerDismissed && (
+              <div className="bg-amber-50 border-b border-amber-200 px-4 py-2 flex items-center justify-between gap-3">
+                <p className="text-xs text-amber-800 font-medium m-0">⚠ {t("demo.mode_banner")}</p>
+                <button
+                  onClick={() => setBannerDismissed(true)}
+                  className="text-amber-600 border-0 bg-transparent cursor-pointer text-sm font-bold shrink-0 hover:text-amber-900"
+                >
+                  ✕
+                </button>
+              </div>
+            )}
             {children}
           </main>
         </div>

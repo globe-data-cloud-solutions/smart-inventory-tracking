@@ -3,7 +3,7 @@
 import { useParams } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
 import { SA_ORG_SLUG } from "@/lib/demo-auth";
-import { DEMO_TENANTS, getTotalStock } from "@/lib/demo-data";
+import { DEMO_TENANTS } from "@/lib/demo-data";
 import { usePermission } from "@/hooks/usePermission";
 import { useInventoryStore } from "@/lib/inventory-state";
 import { AddProductPanel } from "@/components/features/inventory/AddProductPanel";
@@ -15,20 +15,16 @@ type Row        = { id: string; sku: string; name: string; category: string; uni
 
 export default function ProductsPage() {
   const { org }  = useParams() as { org: string };
-  const canAdd            = usePermission("product:create");
-  const adjustments       = useInventoryStore((s) => s.adjustments);
-  const currentTenantSlug = useInventoryStore((s) => s.currentTenantSlug);
+  const canAdd    = usePermission("product:create");
+  // Subscribe to issues, receives, and transfers so the total re-renders on any mutation.
+  // getOnHand is a stable function reference — subscribing to the maps is what drives reactivity.
+  const issues    = useInventoryStore((s) => s.issues);
+  const receives  = useInventoryStore((s) => s.receives);
+  const transfers = useInventoryStore((s) => s.transfers);
+  const getOnHand = useInventoryStore((s) => s.getOnHand);
 
-  // Net adjustment for a product across ALL warehouses (receives − issues for this session).
-  // Transfers are excluded: moving stock between locations does not change the tenant-wide total.
-  function getAdjTotal(productId: string): number {
-    const adjs = adjustments.filter(
-      (a) => a.tenantSlug === currentTenantSlug && a.productId === productId
-    );
-    const receives = adjs.filter((a) => a.type === "RECEIVE").reduce((n, a) => n + a.qty, 0);
-    const issues   = adjs.filter((a) => a.type === "ISSUE").reduce((n, a) => n + a.qty, 0);
-    return receives - issues;
-  }
+  // Suppress unused-variable warning — these subscriptions exist for reactivity only.
+  void issues; void receives; void transfers;
 
   const tenant = DEMO_TENANTS.find((ten) => ten.slug === org);
 
@@ -44,7 +40,9 @@ export default function ProductsPage() {
 
   const demoRows: Row[] = tenant.products.map((p) => ({
     id: p.id, sku: p.sku, name: p.name, category: p.category, unit: p.unit, packSize: "—",
-    balance: getTotalStock(p) + getAdjTotal(p.id),
+    // Sum getOnHand across every warehouse — identical for all users regardless of their
+    // warehouse_id (CLAUDE.md §27: never filter by the viewing user's warehouse).
+    balance: tenant.warehouses.reduce((total, wh) => total + getOnHand(p.id, wh.id, p.stock[wh.id] ?? 0), 0),
     batchTracking: p.batchTracking, isNew: false, isActive: true,
   }));
 

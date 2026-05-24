@@ -450,5 +450,8 @@
       "created":  "Created",
       "notes":    "Notes"
     }
+  },
+  "demo": {
+    "mode_banner": "ዴሞ ሁኔታ — ለውጦቹ ሲያስነሱ ይጠፋሉ። ለቋሚ መረጃ ከ backend ጋር ይያያዙ።"
   }
 }

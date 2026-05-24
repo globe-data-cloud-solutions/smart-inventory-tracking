@@ -702,5 +702,8 @@
     "RWH":    "Regional WH",
     "WH":     "WH",
     "SUB_WH": "Sub-WH"
+  },
+  "demo": {
+    "mode_banner": "Demo mode — changes reset on page refresh. Connect to backend for persistent data."
   }
 }

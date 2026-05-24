@@ -324,12 +324,11 @@ return baseStock + receiveQty + inboundFull + inboundPartial - outboundGone - is
       // The layout calls useInventoryStore.persist.rehydrate() in a useEffect
       // so localStorage data is applied after the initial client render.
       skipHydration: true,
+      // Only persist identity. Ephemeral state (issues, receives, transfers, adjustments)
+      // is intentionally NOT persisted so a browser refresh always returns to the clean
+      // demo baseline. Within a session, SPA navigation keeps the in-memory state intact.
       partialize: (state) => ({
         currentTenantSlug: state.currentTenantSlug,
-        adjustments: state.adjustments,
-        transfers: state.transfers,
-        issues: state.issues,
-        receives: state.receives,
       }),
     }
   )
