@@ -1,25 +1,113 @@
 import os
+from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, HTTPException
-from jose import JWTError, jwt
+from jose import jwt
 from pydantic import BaseModel
 
 router = APIRouter()
 
-JWT_SECRET    = os.environ.get("JWT_SECRET", "")
+JWT_SECRET    = os.environ.get("JWT_SECRET", os.environ.get("JWT_SECRET_KEY", ""))
 JWT_ALGORITHM = os.environ.get("JWT_ALGORITHM", "HS256")
 JWT_EXPIRE    = int(os.environ.get("JWT_EXPIRE_MINUTES", "60"))
+ENVIRONMENT   = os.environ.get("ENVIRONMENT", "")
+
+# ── Local-dev user registry ────────────────────────────────────────────────────
+# Maps every seeded demo email → fixed JWT claims (UUIDs match seed_demo_data.py).
+# Only reachable when ENVIRONMENT=local — rejected with 403 in all other envs.
+# Add entries here whenever a new seed user is added to seed_demo_data.py.
+DEV_USERS: dict[str, dict[str, str | None]] = {
+    # ── System Admin ──────────────────────────────────────────────────────────
+    "smartadmin@smart-inventory.com": {
+        "sub": "00000001-sa00-0000-0000-000000000001", "role": "SA",
+        "tenant_id": None, "warehouse_id": None,
+    },
+    # ── Addis Water ───────────────────────────────────────────────────────────
+    "admin@addis-water.com": {
+        "sub": "00000001-aw01-0000-0000-000000000001", "role": "TA",
+        "tenant_id": "10000001-0000-0000-0000-000000000001", "warehouse_id": None,
+    },
+    "production@addis-water.com": {
+        "sub": "00000001-aw02-0000-0000-000000000001", "role": "NM",
+        "tenant_id": "10000001-0000-0000-0000-000000000001",
+        "warehouse_id": "20000001-aw00-0000-0000-000000000001",
+    },
+    "north.wm@addis-water.com": {
+        "sub": "00000001-aw03-0000-0000-000000000001", "role": "WM",
+        "tenant_id": "10000001-0000-0000-0000-000000000001",
+        "warehouse_id": "20000001-aw00-0000-0000-000000000002",
+    },
+    "northsub.wm@addis-water.com": {
+        "sub": "00000001-aw04-0000-0000-000000000001", "role": "WM",
+        "tenant_id": "10000001-0000-0000-0000-000000000001",
+        "warehouse_id": "20000001-aw00-0000-0000-000000000003",
+    },
+    "south.wm@addis-water.com": {
+        "sub": "00000001-aw05-0000-0000-000000000001", "role": "WM",
+        "tenant_id": "10000001-0000-0000-0000-000000000001",
+        "warehouse_id": "20000001-aw00-0000-0000-000000000004",
+    },
+    "east.wm@addis-water.com": {
+        "sub": "00000001-aw06-0000-0000-000000000001", "role": "WM",
+        "tenant_id": "10000001-0000-0000-0000-000000000001",
+        "warehouse_id": "20000001-aw00-0000-0000-000000000005",
+    },
+    "west.wm@addis-water.com": {
+        "sub": "00000001-aw07-0000-0000-000000000001", "role": "WM",
+        "tenant_id": "10000001-0000-0000-0000-000000000001",
+        "warehouse_id": "20000001-aw00-0000-0000-000000000006",
+    },
+    # ── Muger Cement ──────────────────────────────────────────────────────────
+    "admin@muger-cement.com": {
+        "sub": "00000002-mc01-0000-0000-000000000001", "role": "TA",
+        "tenant_id": "10000002-0000-0000-0000-000000000001", "warehouse_id": None,
+    },
+    "harar.pm@muger-cement.com": {
+        "sub": "00000002-mc02-0000-0000-000000000001", "role": "NM",
+        "tenant_id": "10000002-0000-0000-0000-000000000001",
+        "warehouse_id": "20000002-mc00-0000-0000-000000000001",
+    },
+    "ambo.pm@muger-cement.com": {
+        "sub": "00000002-mc03-0000-0000-000000000001", "role": "NM",
+        "tenant_id": "10000002-0000-0000-0000-000000000001",
+        "warehouse_id": "20000002-mc00-0000-0000-000000000002",
+    },
+    "kombolcha.wm@muger-cement.com": {
+        "sub": "00000002-mc04-0000-0000-000000000001", "role": "WM",
+        "tenant_id": "10000002-0000-0000-0000-000000000001",
+        "warehouse_id": "20000002-mc00-0000-0000-000000000003",
+    },
+    "mekele.wm@muger-cement.com": {
+        "sub": "00000002-mc05-0000-0000-000000000001", "role": "WM",
+        "tenant_id": "10000002-0000-0000-0000-000000000001",
+        "warehouse_id": "20000002-mc00-0000-0000-000000000004",
+    },
+    "diredawa.wm@muger-cement.com": {
+        "sub": "00000002-mc06-0000-0000-000000000001", "role": "WM",
+        "tenant_id": "10000002-0000-0000-0000-000000000001",
+        "warehouse_id": "20000002-mc00-0000-0000-000000000005",
+    },
+    "hawassa.wm@muger-cement.com": {
+        "sub": "00000002-mc07-0000-0000-000000000001", "role": "WM",
+        "tenant_id": "10000002-0000-0000-0000-000000000001",
+        "warehouse_id": "20000002-mc00-0000-0000-000000000006",
+    },
+}
 
 
 class TokenRequest(BaseModel):
-    cognito_token: str
-    # Demo-only overrides — ignored in production Cognito validation.
-    # When the frontend passes these, the issued JWT carries the correct
-    # role/tenant/warehouse for that demo user rather than the scaffold defaults.
+    # Production path: Cognito IdToken (required in non-local envs).
+    # Optional here so dev_email can be used alone in local mode.
+    cognito_token:     str | None = None
+    # Demo-only overrides — used with cognito_token="demo" from the frontend.
+    # When present these take priority over any Cognito payload.
     demo_sub:          str | None = None
     demo_role:         str | None = None
     demo_tenant_id:    str | None = None
     demo_warehouse_id: str | None = None
+    # Local-dev shortcut: pass an email and get a fully-scoped JWT without Cognito.
+    # Only accepted when ENVIRONMENT=local. Rejected with 403 in all other envs.
+    dev_email:         str | None = None
 
 
 class TokenResponse(BaseModel):
@@ -30,25 +118,56 @@ class TokenResponse(BaseModel):
 
 @router.post("/token", response_model=TokenResponse)
 async def exchange_token(body: TokenRequest) -> TokenResponse:
-    """Exchange a Cognito IdToken for a SMART JWT with tenant + role claims.
+    """Issue a SMART JWT.
 
-    Production path: validate body.cognito_token against Cognito JWKS,
-    look up user + role in the database, build claims from DB rows.
-
-    Demo path: when demo_* fields are present, use them directly so every
-    demo role gets a correctly-scoped JWT instead of the hardcoded WM stub.
+    Three paths:
+      1. dev_email (ENVIRONMENT=local only) — looks up claims from DEV_USERS dict.
+      2. cognito_token + demo_* overrides — demo frontend path.
+      3. cognito_token only — production Cognito validation (not yet implemented).
     """
-    from datetime import datetime, timedelta, timezone
-
     now = datetime.now(timezone.utc)
-    payload = {
-        "sub":          body.demo_sub          or "00000000-0000-0000-0000-000000000001",
-        "role":         body.demo_role         or "WM",
-        "tenant_id":    body.demo_tenant_id    or "10000000-0000-0000-0000-000000000001",
+
+    # ── Path 1: local dev bypass via dev_email ─────────────────────────────
+    if body.dev_email is not None:
+        if ENVIRONMENT != "local":
+            raise HTTPException(
+                status_code=403,
+                detail="dev_email bypass is only available when ENVIRONMENT=local",
+            )
+        entry = DEV_USERS.get(body.dev_email.lower())
+        if entry is None:
+            raise HTTPException(
+                status_code=404,
+                detail=f"dev_email not found in DEV_USERS registry: {body.dev_email!r}",
+            )
+        sub          = str(entry["sub"])
+        role         = str(entry["role"])
+        tenant_id    = entry["tenant_id"]
+        warehouse_id = entry["warehouse_id"]
+
+    # ── Path 2 / 3: cognito_token (+ optional demo_* overrides) ───────────
+    elif body.cognito_token is not None:
+        # Production: validate body.cognito_token against Cognito JWKS here.
+        # Demo/local: demo_* fields carry the claims directly.
+        sub          = body.demo_sub          or "00000000-0000-0000-0000-000000000001"
+        role         = body.demo_role         or "WM"
+        tenant_id    = body.demo_tenant_id    or "10000000-0000-0000-0000-000000000001"
+        warehouse_id = body.demo_warehouse_id  # None is valid for NM/TA
+
+    else:
+        raise HTTPException(
+            status_code=422,
+            detail="Provide dev_email (local only) or cognito_token",
+        )
+
+    payload: dict[str, object] = {
+        "sub":          sub,
+        "role":         role,
+        "tenant_id":    tenant_id,
         "region_id":    None,
-        "warehouse_id": body.demo_warehouse_id,   # None is valid — NM/TA have no warehouse
-        "iat": int(now.timestamp()),
-        "exp": int((now + timedelta(minutes=JWT_EXPIRE)).timestamp()),
+        "warehouse_id": warehouse_id,
+        "iat":          int(now.timestamp()),
+        "exp":          int((now + timedelta(minutes=JWT_EXPIRE)).timestamp()),
     }
     token = jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
     return TokenResponse(access_token=token, expires_in=JWT_EXPIRE * 60)
