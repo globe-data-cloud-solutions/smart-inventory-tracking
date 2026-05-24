@@ -527,5 +527,57 @@ ADJUSTMENT 1000.0000 unlimited  TA   ✓ correct (was NM)
 
 ---
 
+## 14. KNOWN DEMO LAYER LIMITATIONS — Requires AWS Verification
+
+These items are fixed in the demo/BFF layer but must be re-tested and verified once connected to the real AWS backend (Phase 1 Prompt 4B).
+
+### 1. PRODUCTS PAGE BALANCE CONSISTENCY
+
+**Fix applied:** Products page now sums `getOnHand()` across all warehouses using Zustand `issues`/`receives` maps. All users see the same tenant-wide total regardless of their `warehouse_id`.
+
+**AWS test:** After any stock movement (transfer, adjustment, receive, or issue), all users must see the same updated tenant-wide total on the Products page.
+
+**Test accounts:** NWH WM, SWH WM, NM — must all see identical product totals.
+
+**STATUS:** ⏳ Pending AWS environment verification  
+**PRIORITY:** High — must verify before Phase 1 go-live
+
+---
+
+### 2. BALANCE PERSISTENCE ACROSS PAGE REFRESH
+
+**Current behaviour:** Demo layer resets all stock changes on browser refresh by design (ephemeral Zustand state, only `currentTenantSlug` persisted). The amber demo banner warns users of this.
+
+**AWS behaviour:** All changes must persist after refresh because data lives in PostgreSQL. The Zustand store will be replaced by TanStack Query fetching from `/api/v1/inventory`.
+
+**AWS test:** Make a stock change (receive, issue, transfer, or adjustment approval), refresh the browser, and confirm the balance is unchanged.
+
+**STATUS:** ⏳ Pending AWS environment verification  
+**PRIORITY:** High — must verify before Phase 1 go-live
+
+---
+
+### 3. ADJUSTMENT BALANCE UPDATE AFTER RM/NM/TA APPROVAL
+
+**Fix applied:** Inventory page now reads `issues`/`receives` maps on mount and includes them in `useMemo` deps. Approving an adjustment on the Adjustments page updates the Zustand maps; navigating to the Inventory page picks up the change immediately without a refresh.
+
+**AWS test:** RM approves an adjustment → navigate to Inventory page → balance must reflect the approval without a page refresh. Also test with NM and TA approvers (neither has an assigned `warehouse_id` — balance must update for the adjustment's warehouse, not the approver's).
+
+**STATUS:** ⏳ Pending AWS environment verification  
+**PRIORITY:** High — must verify before Phase 1 go-live
+
+---
+
+### 4. TRANSFER IN-TRANSIT BALANCE ON BOTH SIDES
+
+**Fix applied:** `IN_TRANSIT` status surfaces in both the source warehouse In Transit Out column and the destination warehouse In Transit In column via the Zustand `transfers` array, which is shared across all pages within a session.
+
+**AWS test:** After dispatch (transfer reaches `IN_TRANSIT`), open the Inventory page as the source WM — confirm In Transit Out shows the correct quantity. Open the Inventory page as the destination WM — confirm In Transit In shows the same quantity. Neither side should show the stock in On Hand until the transfer reaches `RECEIVED`/`COMPLETED`.
+
+**STATUS:** ⏳ Pending AWS environment verification  
+**PRIORITY:** High — must verify before Phase 1 go-live
+
+---
+
 *SMART Inventory Platform — Bug Report v4.0*  
 *Backend: Python 3.12 / FastAPI · Frontend: Next.js 14 / TypeScript · DB: PostgreSQL 16*
