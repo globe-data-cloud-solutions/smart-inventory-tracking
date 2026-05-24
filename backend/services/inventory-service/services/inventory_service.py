@@ -32,7 +32,7 @@ from services.state_machine import InvalidStateTransitionError, validate_transit
 from shared.permissions.audit import audit_log
 
 # Reason codes that always deduct stock — service forces negative quantity regardless of input sign
-_FORCE_NEGATIVE_REASONS: frozenset[str] = frozenset({"DAMAGE", "EXPIRY"})
+_FORCE_NEGATIVE_REASONS: frozenset[str] = frozenset({"DAMAGE", "EXPIRY", "SUPPLIER_RETURN"})
 
 
 class InventoryService:

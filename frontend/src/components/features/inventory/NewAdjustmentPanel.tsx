@@ -22,7 +22,7 @@ const REASONS = [
 ];
 
 // Bug 4A: These reasons always deduct stock — user enters magnitude, system negates
-const FORCE_NEGATIVE = new Set(["DAMAGE", "EXPIRY"]);
+const FORCE_NEGATIVE = new Set(["DAMAGE", "EXPIRY", "SUPPLIER_RETURN"]);
 
 const THRESHOLDS = { low: 100, medium: 1000 };
 

@@ -252,6 +252,7 @@
     "threshold_legend_title": "Hayyamni yoom barbaachisa?",
     "threshold_damage_always": "Miidhaa / Balleessuu — yeroo hundumaa hayyama barbaada",
     "threshold_expiry_always": "Kuusaa Mire Balleessuu — yeroo hundumaa hayyama barbaada",
+    "threshold_supplier_return_always": "Dhiyeessaaf Deebi'uu — hir'annaa yeroo hundumaa, hayyama barbaada",
     "threshold_qty_wm": "Sababa kamuu, baay'ina 1–99 — WM ofii hayyamuu danda'a",
     "threshold_qty_rm": "Sababa kamuu, baay'ina 100–999 — hayyama RM barbaada",
     "threshold_qty_ta": "Sababa kamuu, baay'ina 1000+ — hayyama TA barbaada",

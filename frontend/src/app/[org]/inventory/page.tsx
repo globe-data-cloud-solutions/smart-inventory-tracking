@@ -194,16 +194,18 @@ export default function InventoryPage() {
   const { org }       = useParams() as { org: string };
   const user          = getSession();
   const canAddProduct = usePermission("product:create");
-  const store         = useInventoryStore();
-
+  // Explicit slice subscriptions — Zustand only triggers re-renders when the selected
+  // slice reference changes. A whole-store subscription does not re-render on partial
+  // mutations (e.g. addReceive / addIssue append to the adjustments array).
+  const adjustments   = useInventoryStore((s) => s.adjustments);
+  const storeTransfers = useInventoryStore((s) => s.transfers);
   const {
     getOnHand, getAvailable,
     getReservedTotal, getInTransitOutTotal, getInTransitInTotal,
     getOutboundReserved, getOutboundInTransit,
     getInboundInTransit, getInboundPartial,
-    getReceiveAdjs,
     addTransfer, getTransferEntry, updateTransferStatus,
-  } = store;
+  } = useInventoryStore();
 
   const tenant = DEMO_TENANTS.find((ten) => ten.slug === org);
 
@@ -314,7 +316,7 @@ export default function InventoryPage() {
                getReservedTotal(p.id, whId) > 0 ||
                getInTransitOutTotal(p.id, whId) > 0 ||
                getInTransitInTotal(p.id, whId) > 0 ||
-               getReceiveAdjs(p.id, whId).length > 0;
+               adjustments.some((a) => a.productId === p.id && a.warehouseId === whId);
       })
     : mergedProducts;
 

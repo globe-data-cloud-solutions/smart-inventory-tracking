@@ -285,6 +285,7 @@
     "threshold_legend_title": "ፈቃድ መቼ ያስፈልጋል?",
     "threshold_damage_always": "ጉዳት / ዝ-ዬ — ሁሌም ፈቃድ ያስፈልጋል",
     "threshold_expiry_always": "ያለቀ ክምችት ማስወገድ — ሁሌም ፈቃድ ያስፈልጋል",
+    "threshold_supplier_return_always": "ለአቅራቢ መመለስ — ሁሌም ቅናሽ፣ ሁሌም ፈቃድ ያስፈልጋል",
     "threshold_qty_wm": "ማናቸውም ምክንያት፣ መጠን 1–99 — WM ራሱ ይፈቅዳል",
     "threshold_qty_rm": "ማናቸውም ምክንያት፣ መጠን 100–999 — RM ፈቃድ ያስፈልጋል",
     "threshold_qty_ta": "ማናቸውም ምክንያት፣ መጠን 1000+ — TA ፈቃድ ያስፈልጋል",

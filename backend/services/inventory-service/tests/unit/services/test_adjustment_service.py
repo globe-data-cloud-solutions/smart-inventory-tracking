@@ -3,8 +3,8 @@
 Covers 7 business rules enforced by InventoryService.adjust():
 1. WM adjustments are scoped to their assigned warehouse (warehouse_id from body,
    pre-populated by the frontend from the JWT session — never a dropdown selection).
-2. DAMAGE and EXPIRY reason codes must produce a negative ledger quantity regardless
-   of the sign supplied by the caller.
+2. DAMAGE, EXPIRY, and SUPPLIER_RETURN reason codes must produce a negative ledger
+   quantity regardless of the sign supplied by the caller.
 3. A successful adjustment with status APPLIED must call record_transaction() with
    transaction_type="ADJUSTMENT" and the correct signed quantity.
 4. An adjustment quantity that would bring on-hand below zero is rejected with
@@ -145,6 +145,35 @@ class TestAdjustmentNegativeEnforced:
         assert kwargs["quantity"] == Decimal("-15"), (
             "EXPIRY adjustment must always produce a negative ledger quantity"
         )
+
+    async def test_return_to_supplier_always_negative(
+        self, svc: InventoryService
+    ) -> None:
+        """SUPPLIER_RETURN reason forces a negative quantity regardless of input sign.
+
+        Returning goods to a supplier is a stock deduction. The user enters a
+        positive magnitude; the service must negate it before writing the ledger.
+        """
+        body = AdjustStockRequest(
+            product_id=UUID(PRODUCT_ID),
+            warehouse_id=UUID(WAREHOUSE_ID),
+            quantity=Decimal("75"),  # positive magnitude from the UI
+            reason_code="SUPPLIER_RETURN",
+            idempotency_key="adj:negative:supplier-return:001",
+        )
+
+        with patch(
+            "services.inventory_service.record_transaction",
+            new_callable=AsyncMock,
+            return_value=TX_ID,
+        ) as mock_record:
+            await svc.adjust(WM, body)
+
+        _, kwargs = mock_record.call_args
+        assert kwargs["quantity"] < 0, (
+            "SUPPLIER_RETURN adjustment must always produce a negative ledger quantity"
+        )
+        assert kwargs["quantity"] == Decimal("-75")
 
     async def test_adjustment_count_variance_preserves_sign(
         self, svc: InventoryService

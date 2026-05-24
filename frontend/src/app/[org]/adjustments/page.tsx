@@ -149,6 +149,7 @@ export default function AdjustmentsPage() {
           <ul className="flex flex-col gap-1.5">
             <li>✓ {t("adjustment.threshold_damage_always")}</li>
             <li>✓ {t("adjustment.threshold_expiry_always")}</li>
+            <li>✓ {t("adjustment.threshold_supplier_return_always")}</li>
             <li>✓ {t("adjustment.threshold_qty_wm")}</li>
             <li>✓ {t("adjustment.threshold_qty_rm")}</li>
             <li>✓ {t("adjustment.threshold_qty_ta")}</li>
