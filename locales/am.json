@@ -55,6 +55,18 @@
     "expiry_soon": "በቅርቡ ሚያልቅ",
     "pending_approval": "ፈቃድ በጠበቃ ላይ"
   },
+  "status": {
+    "DRAFT": "ረቂቅ",
+    "SUBMITTED": "ቀርቧል",
+    "APPROVED": "ፈቅዷል",
+    "APPLIED": "ተተግብሯል",
+    "IN_TRANSIT": "በመጓጓዝ ላይ",
+    "RECEIVED": "ተቀብሏል",
+    "CLOSED": "ተዘግቷል",
+    "REJECTED": "ውድቅ ሆኗል",
+    "CANCELLED": "ተሰርዟል",
+    "PENDING_APPROVAL": "ፈቃድ ይጠብቃል"
+  },
   "common": {
     "save": "አስቀምጥ",
     "cancel": "ሰርዝ",

@@ -5,15 +5,25 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { getSession, SA_ORG_SLUG } from "@/lib/demo-auth";
 import { DEMO_TENANTS, type DemoTenant } from "@/lib/demo-data";
 import { NewAdjustmentPanel } from "@/components/features/inventory/NewAdjustmentPanel";
+import { useInventoryStore } from "@/lib/inventory-state";
 import { api } from "@/lib/api";
 import { t } from "@/lib/i18n";
 
 type AdjStatus = "DRAFT" | "SUBMITTED" | "APPROVED" | "APPLIED" | "REJECTED" | "CANCELLED";
 
+// Bug 2: added product_id and warehouse_id for scoping and balance update (Bug 9)
 interface AdjRecord {
-  id: string; product_name: string; product_sku: string;
-  warehouse_name: string; quantity: number; reason_code: string;
-  notes: string; status: AdjStatus; approval_required_role: "NONE" | "RM" | "NM";
+  id: string;
+  product_id: string;
+  product_name: string;
+  product_sku: string;
+  warehouse_id: string;
+  warehouse_name: string;
+  quantity: number;
+  reason_code: string;
+  notes: string;
+  status: AdjStatus;
+  approval_required_role: "NONE" | "RM" | "NM";
   created_at: string;
 }
 
@@ -29,21 +39,24 @@ const STATUS_CLASS: Record<AdjStatus, string> = {
 const REASONS = ["DAMAGE", "COUNT_VARIANCE", "EXPIRY", "SUPPLIER_RETURN", "SAMPLE"];
 const NOTES   = ["Moisture exposure", "Count discrepancy resolved", "Expired batch disposed", "Transit damage on return", "Promotion sample"];
 
+// Bug 2: buildSeedAdj now includes product_id and warehouse_id for scoping
 function buildSeedAdj(tenant: DemoTenant): AdjRecord[] {
   return tenant.products.slice(0, 5).map((p, i) => {
     const wh  = tenant.warehouses[i % tenant.warehouses.length];
     const qty = i % 2 === 0 ? -(50 + i * 30) : (100 + i * 50);
     return {
-      id:                    `seed-adj-${tenant.id}-${i}`,
-      product_name:          p.name,
-      product_sku:           p.sku,
-      warehouse_name:        wh?.name ?? "Warehouse",
-      quantity:              qty,
-      reason_code:           REASONS[i % REASONS.length] ?? "DAMAGE",
-      notes:                 NOTES[i % NOTES.length] ?? "",
-      status:                i < 3 ? "APPLIED" : "SUBMITTED",
+      id:                     `seed-adj-${tenant.id}-${i}`,
+      product_id:             p.id,
+      product_name:           p.name,
+      product_sku:            p.sku,
+      warehouse_id:           wh?.id ?? "",
+      warehouse_name:         wh?.name ?? "Warehouse",
+      quantity:               qty,
+      reason_code:            REASONS[i % REASONS.length] ?? "DAMAGE",
+      notes:                  NOTES[i % NOTES.length] ?? "",
+      status:                 i < 3 ? "APPLIED" : "SUBMITTED",
       approval_required_role: i < 3 ? "NONE" : "RM",
-      created_at:            `2026-0${i + 1 < 10 ? "0" : ""}${i + 1}-15T10:00:00Z`,
+      created_at:             `2026-0${i + 1 < 10 ? "0" : ""}${i + 1}-15T10:00:00Z`,
     } satisfies AdjRecord;
   });
 }
@@ -69,18 +82,35 @@ export default function AdjustmentsPage() {
 
   const seedAdj = buildSeedAdj(tenant);
   const allAdj: AdjRecord[] = [...apiAdj, ...seedAdj];
+
+  // Bug 2: WM sees only adjustments for their own warehouse; managers see all
+  const visibleAdj = user.role === "WM" && user.warehouseId
+    ? allAdj.filter((a) => a.warehouse_id === user.warehouseId)
+    : allAdj;
+
   const approvableRoles = CAN_APPROVE[user.role] ?? [];
 
   async function transition(id: string, next: AdjStatus) {
     try {
       await api.patch(`/api/v1/inventory/adjust/${id}`, { next_status: next });
+
+      // Bug 9: when NM/RM approves (which auto-applies), update inventory store balance
+      if (next === "APPROVED") {
+        const adj = visibleAdj.find((a) => a.id === id);
+        if (adj?.product_id && adj.warehouse_id) {
+          const store = useInventoryStore.getState();
+          if (adj.quantity > 0) store.addReceive(adj.product_id, adj.warehouse_id, adj.quantity);
+          else                   store.addIssue(adj.product_id, adj.warehouse_id, Math.abs(adj.quantity));
+        }
+      }
+
       await qc.invalidateQueries({ queryKey: ["adjustments", org] });
-    } catch { /* demo adjustments ignore 404 */ }
+    } catch { /* seed adjustments return 404 — ignore */ }
   }
 
-  const pending   = allAdj.filter((a) => a.status === "SUBMITTED");
-  const applied   = allAdj.filter((a) => a.status === "APPLIED");
-  const other     = allAdj.filter((a) => !["SUBMITTED", "APPLIED"].includes(a.status));
+  const pending   = visibleAdj.filter((a) => a.status === "SUBMITTED");
+  const applied   = visibleAdj.filter((a) => a.status === "APPLIED");
+  const other     = visibleAdj.filter((a) => !["SUBMITTED", "APPLIED"].includes(a.status));
   const myPending = pending.filter((a) => approvableRoles.includes(a.approval_required_role));
 
   return (
@@ -145,7 +175,7 @@ export default function AdjustmentsPage() {
               </tr>
             </thead>
             <tbody>
-              {allAdj.map((a, idx) => (
+              {visibleAdj.map((a, idx) => (
                 <tr key={a.id} className={`border-b border-gray-100 ${idx % 2 === 0 ? "bg-white" : "bg-gray-50"}`}>
                   <td className="px-3.5 py-2 text-gray-400 text-xs whitespace-nowrap">{new Date(a.created_at).toLocaleDateString()}</td>
                   <td className="px-3.5 py-2 font-mono text-xs text-gray-400">{a.product_sku}</td>
@@ -162,8 +192,9 @@ export default function AdjustmentsPage() {
                     }
                   </td>
                   <td className="px-3.5 py-2">
+                    {/* Bug 3: status.APPLIED now resolves to "Applied" via en.json */}
                     <span className={`text-xs font-bold px-2 py-0.5 rounded ${STATUS_CLASS[a.status]}`}>
-                      {t(`status.${a.status}`) || a.status}
+                      {t(`status.${a.status}`)}
                     </span>
                   </td>
                 </tr>
@@ -171,12 +202,12 @@ export default function AdjustmentsPage() {
             </tbody>
           </table>
         </div>
-        {allAdj.length === 0 && (
+        {visibleAdj.length === 0 && (
           <p className="p-8 text-center text-gray-400 text-sm">{t("common.no_data")}</p>
         )}
       </div>
 
-      {/* suppress unused var warnings from scope */}
+      {/* suppress unused var warnings */}
       <span className="hidden">{applied.length}{other.length}</span>
     </div>
   );

@@ -56,6 +56,18 @@
     "expiry_soon": "Yeroo Dhiyootti Ni Dhumata",
     "pending_approval": "Hayyama Eegaa Jira"
   },
+  "status": {
+    "DRAFT": "Qophii",
+    "SUBMITTED": "Dhiyaate",
+    "APPROVED": "Hayyamame",
+    "APPLIED": "Raawwatame",
+    "IN_TRANSIT": "Geejibarra Jiru",
+    "RECEIVED": "Fudhataame",
+    "CLOSED": "Cufame",
+    "REJECTED": "Dhoorkame",
+    "CANCELLED": "Haqame",
+    "PENDING_APPROVAL": "Hayyama Eegaa Jira"
+  },
   "common": {
     "save": "Olkaa'i",
     "cancel": "Haquu",

@@ -1,10 +1,13 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { nanoid } from "nanoid";
 import { api } from "@/lib/api";
 import { t } from "@/lib/i18n";
+import { getSession } from "@/lib/demo-auth";
+import { useInventoryStore } from "@/lib/inventory-state";
+import { useAuditStore } from "@/lib/audit-log-state";
 import type { DemoProduct, DemoWarehouse } from "@/lib/demo-data";
 
 interface Props { products: DemoProduct[]; warehouses: DemoWarehouse[]; orgSlug: string; }
@@ -17,6 +20,9 @@ const REASONS = [
   { value: "SYSTEM_CORRECTION", label: "adjustment.reasons.SYSTEM_CORRECTION" },
   { value: "OTHER",             label: "adjustment.reasons.OTHER"             },
 ];
+
+// Bug 4A: These reasons always deduct stock — user enters magnitude, system negates
+const FORCE_NEGATIVE = new Set(["DAMAGE", "EXPIRY"]);
 
 const THRESHOLDS = { low: 100, medium: 500 };
 
@@ -45,38 +51,133 @@ const selectCls = `${inputCls} cursor-pointer`;
 interface AdjResult { status: string; approval_required_role: string }
 
 export function NewAdjustmentPanel({ products, warehouses, orgSlug }: Props) {
-  const qc = useQueryClient();
+  const qc      = useQueryClient();
+  const session = getSession();
+  const isWM    = session?.role === "WM";
+
   const [open, setOpen]               = useState(false);
   const [productId, setProductId]     = useState("");
-  const [warehouseId, setWarehouseId] = useState("");
-  const [quantity, setQuantity]       = useState("");
+  const [warehouseId, setWarehouseId] = useState(""); // non-WM only
+  const [addQty, setAddQty]           = useState("");
+  const [removeQty, setRemoveQty]     = useState("");
   const [reason, setReason]           = useState("");
   const [notes, setNotes]             = useState("");
   const [error, setError]             = useState("");
-  const [result, setResult]           = useState<AdjResult | null>(null);
   const [loading, setLoading]         = useState(false);
+  const [toast, setToast]             = useState<{ msg: string; applied: boolean } | null>(null);
+  const [zeroWarn, setZeroWarn]       = useState(false);
 
-  function reset() { setProductId(""); setWarehouseId(""); setQuantity(""); setReason(""); setNotes(""); setError(""); setResult(null); }
+  // Bug 1: WM warehouse is always the JWT session warehouse — never a dropdown selection
+  const effectiveWarehouseId   = isWM ? (session?.warehouseId ?? "") : warehouseId;
+  const effectiveWarehouseName = isWM
+    ? (session?.warehouseName ?? "")
+    : warehouses.find((w) => w.id === warehouseId)?.name ?? "";
 
-  const qty          = parseFloat(quantity) || 0;
+  const forceNeg  = FORCE_NEGATIVE.has(reason);
+  const addNum    = parseFloat(addQty)    || 0;
+  const removeNum = parseFloat(removeQty) || 0;
+  // Bug 4A: DAMAGE/EXPIRY → always negative. Bug 4B: other reasons → add minus remove.
+  const qty       = forceNeg ? -Math.abs(addNum) : addNum - removeNum;
+
   const approvalInfo = qty !== 0 ? getApprovalInfo(qty) : null;
   const selectedP    = products.find((p) => p.id === productId);
 
-  const onSubmit = async (e: React.FormEvent) => {
-    e.preventDefault(); setError("");
-    if (!productId)   { setError(t("receive_panel.error_product"));   return; }
-    if (!warehouseId) { setError(t("receive_panel.error_warehouse")); return; }
-    if (!reason)      { setError(t("issue.error_reason")); return; }
-    if (qty === 0)    { setError(t("adjustment.error_qty")); return; }
-    const key = `adjust:${productId}:${warehouseId}:${Date.now()}:${nanoid(8)}`;
+  function reset() {
+    setProductId(""); setWarehouseId(""); setAddQty(""); setRemoveQty("");
+    setReason(""); setNotes(""); setError(""); setZeroWarn(false);
+  }
+
+  // Bug 6: auto-dismiss toast and close panel after 3 s
+  useEffect(() => {
+    if (!toast) return;
+    const id = setTimeout(() => { setToast(null); setOpen(false); }, 3000);
+    return () => clearTimeout(id);
+  }, [toast]);
+
+  async function doSubmit(bypassZeroFloor = false) {
+    setError("");
+
+    if (!productId)            { setError(t("receive_panel.error_product"));   return; }
+    if (!effectiveWarehouseId) { setError(t("receive_panel.error_warehouse")); return; }
+    if (!reason)               { setError(t("issue.error_reason")); return; }
+    if (forceNeg  && addNum === 0)                 { setError(t("adjustment.error_qty")); return; }
+    if (!forceNeg && addNum === 0 && removeNum === 0) { setError(t("adjustment.error_qty")); return; }
+    if (!forceNeg && addNum > 0 && removeNum > 0) {
+      setError("Fill either Add Stock or Remove Stock, not both.");
+      return;
+    }
+
+    // Bug 7: zero-floor guard — block WM, confirm for managers
+    if (!bypassZeroFloor) {
+      const store     = useInventoryStore.getState();
+      const baseStock = selectedP?.stock?.[effectiveWarehouseId] ?? 0;
+      const projected = store.getOnHand(productId, effectiveWarehouseId, baseStock) + qty;
+      if (projected < 0) {
+        if (isWM) {
+          setError(t("adjustment.zero_floor_wm"));
+          return;
+        }
+        setZeroWarn(true);
+        return;
+      }
+    }
+
+    setZeroWarn(false);
+    const key = `adjust:${productId}:${effectiveWarehouseId}:${Date.now()}:${nanoid(8)}`;
     setLoading(true);
     try {
-      const adj = await api.post<AdjResult>("/api/v1/inventory/adjust", { product_id: productId, product_name: selectedP?.name, product_sku: selectedP?.sku, warehouse_id: warehouseId, warehouse_name: warehouses.find((w) => w.id === warehouseId)?.name, quantity: qty, reason_code: reason, notes, idempotency_key: key });
-      setResult(adj);
+      const adj = await api.post<AdjResult>("/api/v1/inventory/adjust", {
+        product_id:     productId,
+        product_name:   selectedP?.name,
+        product_sku:    selectedP?.sku,
+        warehouse_id:   effectiveWarehouseId,
+        warehouse_name: effectiveWarehouseName,
+        quantity:       qty,
+        reason_code:    reason,
+        notes,
+        idempotency_key: key,
+      });
+
+      // Bug 5: update Zustand inventory store when adjustment is auto-applied
+      if (adj.status === "APPLIED") {
+        const store = useInventoryStore.getState();
+        if (qty > 0) store.addReceive(productId, effectiveWarehouseId, qty);
+        else         store.addIssue(productId, effectiveWarehouseId, Math.abs(qty));
+      }
+
+      // Bug 8: write audit log entry
+      if (session) {
+        useAuditStore.getState().log({
+          tenantSlug:    orgSlug,
+          userEmail:     session.email,
+          userName:      session.name,
+          role:          session.role,
+          category:      "ADJUSTMENT",
+          action:        adj.status === "APPLIED" ? "ADJUSTMENT_APPLIED" : "ADJUSTMENT_SUBMITTED",
+          resourceRef:   key,
+          resourceType:  "adjustment",
+          productName:   selectedP?.name,
+          quantityStr:   `${qty > 0 ? "+" : ""}${qty}`,
+          fromWarehouse: effectiveWarehouseName,
+          notes,
+        });
+      }
+
+      // Bug 6: show toast, reset form, auto-close in 3 s (via useEffect)
+      reset();
+      setToast({
+        msg:     adj.status === "APPLIED" ? t("adjustment.success_applied") : t("adjustment.success_submitted"),
+        applied: adj.status === "APPLIED",
+      });
       void qc.invalidateQueries({ queryKey: ["adjustments", orgSlug] });
-    } catch (err: unknown) { setError(err instanceof Error ? err.message : t("errors.INTERNAL_ERROR")); }
-    finally { setLoading(false); }
-  };
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : t("errors.INTERNAL_ERROR"));
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  const onFormSubmit = (e: React.FormEvent) => { e.preventDefault(); void doSubmit(); };
 
   return (
     <>
@@ -95,63 +196,136 @@ export function NewAdjustmentPanel({ products, warehouses, orgSlug }: Props) {
           <button onClick={() => setOpen(false)} className="bg-white/15 border-0 cursor-pointer text-white text-lg w-8 h-8 rounded flex items-center justify-center">✕</button>
         </div>
 
-        {result ? (
-          <div className="flex-1 flex flex-col items-center justify-center p-8 text-center">
-            <div className={`w-16 h-16 rounded-full flex items-center justify-center text-3xl mb-5 ${result.status === "APPLIED" ? "bg-green-100" : "bg-amber-100"}`}>
-              {result.status === "APPLIED" ? "✓" : "⏳"}
+        <form onSubmit={onFormSubmit} className="flex-1 overflow-y-auto p-6">
+          {/* Bug 6: toast replaces full-screen result */}
+          {toast && (
+            <div className={`mb-4 px-4 py-3 rounded-md text-sm font-semibold flex items-center gap-2 ${toast.applied ? "bg-green-50 text-green-800 border border-green-200" : "bg-amber-50 text-amber-800 border border-amber-200"}`}>
+              <span>{toast.applied ? "✓" : "⏳"}</span>
+              {toast.msg}
             </div>
-            <p className="font-extrabold text-lg text-gray-900 mb-2">
-              {result.status === "APPLIED" ? t("adjustment.success_applied") : t("adjustment.success_submitted")}
-            </p>
-            <p className="text-sm text-gray-500 mb-8">
-              {result.status === "APPLIED" ? t("adjustment.auto_applied") : `${t("adjustment.pending_rm").split(" ").slice(0, 2).join(" ")} ${result.approval_required_role}.`}
-            </p>
-            <div className="flex gap-2.5">
-              <button onClick={reset} className="px-5 py-2 bg-gray-100 border-0 rounded-md text-sm font-semibold cursor-pointer">{t("adjustment.new_btn")}</button>
-              <button onClick={() => { reset(); setOpen(false); }} className="px-5 py-2 bg-cyan-600 text-white border-0 rounded-md text-sm font-bold cursor-pointer">{t("common.confirm")}</button>
-            </div>
-          </div>
-        ) : (
-          <form onSubmit={onSubmit} className="flex-1 overflow-y-auto p-6">
-            <Field label={t("table.product")}>
-              <select value={productId} onChange={(e) => setProductId(e.target.value)} className={selectCls} required>
-                <option value="">— {t("receive_panel.select_product")} —</option>
-                {products.map((p) => <option key={p.id} value={p.id}>{p.name} · {p.sku}</option>)}
-              </select>
-            </Field>
-            <Field label={t("inventory.warehouse")}>
+          )}
+
+          <Field label={t("table.product")}>
+            <select value={productId} onChange={(e) => setProductId(e.target.value)} className={selectCls} required>
+              <option value="">— {t("receive_panel.select_product")} —</option>
+              {products.map((p) => <option key={p.id} value={p.id}>{p.name} · {p.sku}</option>)}
+            </select>
+          </Field>
+
+          {/* Bug 1: WM sees read-only warehouse from JWT; managers see dropdown */}
+          <Field label={t("inventory.warehouse")}>
+            {isWM ? (
+              <div className={`${inputCls} bg-gray-50 text-gray-600 cursor-not-allowed border-dashed`}>
+                {effectiveWarehouseName || "—"}
+              </div>
+            ) : (
               <select value={warehouseId} onChange={(e) => setWarehouseId(e.target.value)} className={selectCls} required>
                 <option value="">— {t("receive_panel.select_warehouse")} —</option>
                 {warehouses.map((w) => <option key={w.id} value={w.id}>{w.name}</option>)}
               </select>
-            </Field>
-            <Field label={t("adjustment.quantity")} hint={t("adjustment.quantity_hint")}>
-              <input type="number" step="any" value={quantity} onChange={(e) => setQuantity(e.target.value)} placeholder="e.g. -50 or +200" className={inputCls} />
-              {approvalInfo && (
-                <div className={`mt-1.5 px-2.5 py-1.5 rounded text-xs ${approvalInfo.cls}`}>{approvalInfo.label}</div>
-              )}
-            </Field>
-            <Field label={t("adjustment.reason")}>
-              <select value={reason} onChange={(e) => setReason(e.target.value)} className={selectCls} required>
-                <option value="">— {t("receive_panel.select_type")} —</option>
-                {REASONS.map((r) => <option key={r.value} value={r.value}>{t(r.label)}</option>)}
-              </select>
-            </Field>
-            <Field label={t("audit.notes")} hint={`(${t("receive_panel.optional")})`}>
-              <textarea value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Supporting details…" rows={3} className={`${inputCls} resize-y`} />
-            </Field>
-            {error && <div className="bg-red-50 border border-red-200 rounded p-3 text-sm text-red-600 mb-3">{error}</div>}
-          </form>
-        )}
+            )}
+          </Field>
 
-        {!result && (
-          <div className="px-6 py-4 border-t border-gray-200 flex gap-2.5">
-            <button type="button" onClick={() => setOpen(false)} className="flex-1 py-2.5 bg-gray-100 border border-gray-200 rounded text-sm font-semibold text-gray-700 cursor-pointer">{t("common.cancel")}</button>
-            <button onClick={onSubmit as unknown as React.MouseEventHandler} disabled={loading} className={`flex-[2] py-2.5 bg-cyan-600 text-white font-bold text-sm rounded border-0 ${loading ? "opacity-70 cursor-not-allowed" : "cursor-pointer"}`}>
-              {loading ? t("common.loading") : t("adjustment.submit")}
-            </button>
-          </div>
-        )}
+          <Field label={t("adjustment.reason")}>
+            <select
+              value={reason}
+              onChange={(e) => { setReason(e.target.value); setAddQty(""); setRemoveQty(""); }}
+              className={selectCls}
+              required
+            >
+              <option value="">— {t("receive_panel.select_type")} —</option>
+              {REASONS.map((r) => <option key={r.value} value={r.value}>{t(r.label)}</option>)}
+            </select>
+          </Field>
+
+          {reason && (
+            forceNeg ? (
+              /* Bug 4A: DAMAGE / EXPIRY — always a deduction, user enters positive magnitude */
+              <Field label={t("adjustment.quantity")} hint={t("adjustment.quantity_hint_remove")}>
+                <input
+                  type="number" min="0" step="any"
+                  value={addQty}
+                  onChange={(e) => setAddQty(e.target.value)}
+                  placeholder="e.g. 50"
+                  className={inputCls}
+                />
+                {approvalInfo && (
+                  <div className={`mt-1.5 px-2.5 py-1.5 rounded text-xs ${approvalInfo.cls}`}>
+                    −{addNum || 0} units · {approvalInfo.label}
+                  </div>
+                )}
+              </Field>
+            ) : (
+              /* Bug 4B: other reasons — two inputs, only one fillable at a time */
+              <div className="mb-4">
+                <label className="block text-xs font-bold uppercase tracking-wide text-gray-700 mb-2">
+                  {t("adjustment.quantity")}
+                </label>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <p className="text-[11px] text-emerald-700 font-semibold mb-1">{t("adjustment.add_stock")}</p>
+                    <input
+                      type="number" min="0" step="any"
+                      value={addQty}
+                      onChange={(e) => { setAddQty(e.target.value); if (e.target.value) setRemoveQty(""); }}
+                      placeholder="0"
+                      className={inputCls}
+                    />
+                  </div>
+                  <div>
+                    <p className="text-[11px] text-red-600 font-semibold mb-1">{t("adjustment.remove_stock")}</p>
+                    <input
+                      type="number" min="0" step="any"
+                      value={removeQty}
+                      onChange={(e) => { setRemoveQty(e.target.value); if (e.target.value) setAddQty(""); }}
+                      placeholder="0"
+                      className={inputCls}
+                    />
+                  </div>
+                </div>
+                {approvalInfo && qty !== 0 && (
+                  <div className={`mt-1.5 px-2.5 py-1.5 rounded text-xs ${approvalInfo.cls}`}>
+                    {qty > 0 ? "+" : ""}{qty} units · {approvalInfo.label}
+                  </div>
+                )}
+              </div>
+            )
+          )}
+
+          <Field label={t("audit.notes")} hint={`(${t("receive_panel.optional")})`}>
+            <textarea value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Supporting details…" rows={3} className={`${inputCls} resize-y`} />
+          </Field>
+
+          {error && <div className="bg-red-50 border border-red-200 rounded p-3 text-sm text-red-600 mb-3">{error}</div>}
+
+          {/* Bug 7: manager override confirmation when projected balance goes negative */}
+          {zeroWarn && (
+            <div className="bg-amber-50 border border-amber-300 rounded p-3 mb-3">
+              <p className="text-sm font-bold text-amber-900 mb-1">{t("adjustment.zero_floor_warn")}</p>
+              <p className="text-xs text-amber-700 mb-3">This action will be audit-logged.</p>
+              <div className="flex gap-2">
+                <button type="button" onClick={() => setZeroWarn(false)} className="px-3 py-1.5 bg-white border border-amber-300 rounded text-xs font-semibold cursor-pointer">
+                  {t("common.cancel")}
+                </button>
+                <button type="button" onClick={() => void doSubmit(true)} className="px-3 py-1.5 bg-amber-700 text-white rounded text-xs font-bold cursor-pointer">
+                  {t("adjustment.zero_floor_proceed")}
+                </button>
+              </div>
+            </div>
+          )}
+        </form>
+
+        <div className="px-6 py-4 border-t border-gray-200 flex gap-2.5">
+          <button type="button" onClick={() => setOpen(false)} className="flex-1 py-2.5 bg-gray-100 border border-gray-200 rounded text-sm font-semibold text-gray-700 cursor-pointer">{t("common.cancel")}</button>
+          <button
+            type="button"
+            onClick={() => void doSubmit()}
+            disabled={loading || zeroWarn}
+            className={`flex-[2] py-2.5 bg-cyan-600 text-white font-bold text-sm rounded border-0 ${(loading || zeroWarn) ? "opacity-70 cursor-not-allowed" : "cursor-pointer"}`}
+          >
+            {loading ? t("common.loading") : t("adjustment.submit")}
+          </button>
+        </div>
       </div>
     </>
   );

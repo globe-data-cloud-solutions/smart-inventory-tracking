@@ -461,5 +461,64 @@ ADJUSTMENT 1000.0000 unlimited  TA   ✓ correct (was NM)
 
 ---
 
+## 14. SESSION 5 — ADJUSTMENTS MODULE — 2026-05-24
+
+### Scope
+
+9 bugs discovered during manual review of the Adjustments module (NewAdjustmentPanel + AdjustmentsPage).
+
+### Bugs found and fixed
+
+| # | Bug | Root cause | Fix | Regression test |
+|---|---|---|---|---|
+| 1 | **WM warehouse not scoped from JWT** — WM could select any warehouse from a dropdown, recording an adjustment against a facility they are not assigned to | `NewAdjustmentPanel.tsx` rendered `<select>` over all warehouses with no JWT binding | WM gets read-only display of `session.warehouseName`; non-WM roles get the dropdown. `effectiveWarehouseId` is always `session.warehouseId` for WM | `test_adjustment_wm_scoped_to_own_wh` |
+| 2 | **Adjustment list not scoped by role/warehouse** — WM saw all tenant adjustments regardless of their assigned warehouse | `adjustments/page.tsx` did not filter `allAdj` by warehouse; `AdjRecord` lacked `warehouse_id`; `buildSeedAdj` did not populate `warehouse_id` | Added `warehouse_id` and `product_id` to `AdjRecord`; `buildSeedAdj` now includes `wh?.id`; WM view filtered by `user.warehouseId` | `test_adjustment_wm_scoped_to_own_wh` |
+| 3 | **Status displayed as raw key ("status.APPLIED")** — `t("status.APPLIED")` returns the literal key string because `"APPLIED"` was missing from `status` section; `en.json`/`am.json`/`or.json` all lacked `"APPLIED"` at top level; `am.json` and `or.json` had no top-level `status` block at all | `t()` never returns falsy — the `\|\| a.status` fallback was never reached | Added `"APPLIED": "Applied"` to `en.json` `status` block; added full top-level `status` block (including APPLIED, PENDING_APPROVAL) to `am.json` and `or.json` | — (i18n coverage) |
+| 4A | **DAMAGE/EXPIRY allowed positive quantity** — operator could submit a DAMAGE adjustment as +50 (adding stock), showing a surplus in the balance | Single quantity input with no sign enforcement; no reason-code-based sign logic | Added `FORCE_NEGATIVE = {"DAMAGE","EXPIRY"}`; single magnitude input for these reasons; service `adjust()` applies `quantity = -abs(body.quantity)` | `test_adjustment_damage_is_always_negative`, `test_adjustment_expiry_is_always_negative` |
+| 4B | **Other reasons had a single signed input** — users could enter any value and had no clear "add" vs "remove" distinction | Single `<input type="number">` accepting any sign | Replaced with two side-by-side inputs: "Add Stock" (+) and "Remove Stock" (+magnitude); only one fillable at a time; COUNT_VARIANCE, SUPPLIER_RETURN, etc. preserve sign | `test_adjustment_count_variance_preserves_sign` |
+| 5 | **Balance not updated after auto-applied adjustment** — submitting a <100 unit adjustment showed the correct status but did not update the Inventory page On Hand column | `NewAdjustmentPanel.tsx` called `api.post()` but never updated the Zustand store | After `adj.status === "APPLIED"`, calls `useInventoryStore.getState().addReceive()` (qty > 0) or `addIssue(abs(qty))` | `test_adjustment_updates_on_hand_immediately` |
+| 6 | **Confirmation result screen blocked re-use** — after submitting, the panel showed a full-screen result requiring a "Confirm" click to dismiss | `setResult(adj)` triggered a conditional render of a blocking result screen; `reset()` only ran after user click | Removed `result` state; added `toast` state; useEffect auto-dismisses after 3 s and closes panel; `reset()` called immediately after submit | — (UX change, no backend assertion) |
+| 7 | **No zero-floor validation** — adjustments could drive On Hand below zero without warning | No projected balance check before `api.post()` | Before submit: compute `projected = getOnHand(productId, whId, baseStock) + qty`; if < 0 → WM blocked with error; RM/NM/TA/SA shown override confirmation banner | `test_adjustment_below_zero_blocked_for_wm`, `test_adjustment_override_requires_permission` |
+| 8 | **No audit log entry on adjustment submit** | `NewAdjustmentPanel.tsx` never called `useAuditStore.log()` | After successful `api.post()`: `useAuditStore.getState().log({category:"ADJUSTMENT", action:"ADJUSTMENT_APPLIED" or "ADJUSTMENT_SUBMITTED", ...})` | `test_adjustment_creates_audit_log_entry` |
+| 9 | **NM/RM approval did not update inventory balance** — approving a SUBMITTED adjustment changed status but left On Hand unchanged | `transition()` in `adjustments/page.tsx` called `api.patch()` but never updated the Zustand store; `AdjRecord` lacked `product_id`/`warehouse_id` needed for store call | Added `product_id`/`warehouse_id` to `AdjRecord`; after APPROVED transition, calls `addReceive/addIssue` with the adjustment quantity; backend `approve_adjustment()` calls `record_transaction()` with `transaction_type="ADJUSTMENT"` | `test_nm_approval_triggers_balance_update` |
+
+### New backend additions
+
+| Item | File | Purpose |
+|---|---|---|
+| `AdjustStockRequest` / `AdjustStockResponse` | `schemas/inventory.py` | Pydantic models for `adjust()` and `approve_adjustment()` |
+| `_FORCE_NEGATIVE_REASONS` | `services/inventory_service.py` | Module-level frozenset: `{"DAMAGE", "EXPIRY"}` |
+| `adjust()` | `services/inventory_service.py` | Records ADJUSTMENT ledger entry; enforces negative sign for DAMAGE/EXPIRY; calls `audit_log()` |
+| `approve_adjustment()` | `services/inventory_service.py` | Posted when NM/RM approves SUBMITTED adjustment; calls `record_transaction(transaction_type="ADJUSTMENT")` |
+| `audit_log` import | `services/inventory_service.py` | `from shared.permissions.audit import audit_log` |
+
+### Tests added this session
+
+| Test | File | Class | What it verifies |
+|---|---|---|---|
+| `test_adjustment_wm_scoped_to_own_wh` | `test_adjustment_service.py` | `TestAdjustmentWarehouseScope` | `adjust()` passes `body.warehouse_id` unchanged; WM cannot select arbitrary warehouse |
+| `test_adjustment_damage_is_always_negative` | `test_adjustment_service.py` | `TestAdjustmentNegativeEnforced` | DAMAGE reason code → ledger qty is always negative |
+| `test_adjustment_expiry_is_always_negative` | `test_adjustment_service.py` | `TestAdjustmentNegativeEnforced` | EXPIRY reason code → ledger qty is always negative |
+| `test_adjustment_count_variance_preserves_sign` | `test_adjustment_service.py` | `TestAdjustmentNegativeEnforced` | COUNT_VARIANCE preserves caller sign (pos or neg) |
+| `test_adjustment_updates_on_hand_immediately` | `test_adjustment_service.py` | `TestAdjustmentUpdatesOnHand` | `adjust()` calls `record_transaction(transaction_type="ADJUSTMENT")` with correct signed qty |
+| `test_adjustment_below_zero_blocked_for_wm` | `test_adjustment_service.py` | `TestAdjustmentZeroFloor` | `record_transaction()` raises InsufficientStockError when projected balance < 0 |
+| `test_adjustment_override_requires_permission` | `test_adjustment_service.py` | `TestAdjustmentZeroFloor` | NM with `override_zero_floor=True` succeeds (record_transaction patched) |
+| `test_adjustment_creates_audit_log_entry` | `test_adjustment_service.py` | `TestAdjustmentAuditLog` | `adjust()` calls `audit_log()` once per adjustment |
+| `test_nm_approval_triggers_balance_update` | `test_adjustment_service.py` | `TestNMApprovalTriggersBalance` | `approve_adjustment()` calls `record_transaction(transaction_type="ADJUSTMENT", quantity=-200)` |
+
+### Final test counts (end of this session)
+
+| Suite | Count | Status |
+|---|---|---|
+| `pytest backend/ -v -m "unit"` | **120 / 120** | ✅ All pass |
+| `npx tsc --noEmit` | — | ✅ 0 errors (TypeScript strict) |
+
+### Remaining open items (unchanged)
+
+- §8-6 (L): AWS dev environment — Terraform apply, RDS + ElastiCache provisioning
+- §8-9 (L): Native-speaker review of `or.json` — staffing decision
+
+---
+
 *SMART Inventory Platform — Bug Report v4.0*  
 *Backend: Python 3.12 / FastAPI · Frontend: Next.js 14 / TypeScript · DB: PostgreSQL 16*

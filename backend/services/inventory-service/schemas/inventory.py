@@ -107,3 +107,23 @@ class LotSelection(BaseModel):
     lot_number: Optional[str]
     quantity: Decimal
     strategy_applied: str
+
+
+class AdjustStockRequest(BaseModel):
+    product_id: uuid.UUID
+    warehouse_id: uuid.UUID
+    quantity: Decimal            # signed: positive = add, negative = remove
+    reason_code: str
+    notes: Optional[str] = None
+    idempotency_key: str
+    source: str = "WEB"
+    override_zero_floor: bool = False
+
+
+class AdjustStockResponse(BaseModel):
+    transaction_id: uuid.UUID
+    product_id: uuid.UUID
+    warehouse_id: uuid.UUID
+    quantity: Decimal
+    reason_code: str
+    created_at: datetime

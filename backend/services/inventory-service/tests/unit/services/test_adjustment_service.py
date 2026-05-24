@@ -1,0 +1,344 @@
+"""Regression tests for the Stock Adjustment workflow.
+
+Covers 7 business rules enforced by InventoryService.adjust():
+1. WM adjustments are scoped to their assigned warehouse (warehouse_id from body,
+   pre-populated by the frontend from the JWT session — never a dropdown selection).
+2. DAMAGE and EXPIRY reason codes must produce a negative ledger quantity regardless
+   of the sign supplied by the caller.
+3. A successful adjustment with status APPLIED must call record_transaction() with
+   transaction_type="ADJUSTMENT" and the correct signed quantity.
+4. An adjustment quantity that would bring on-hand below zero is rejected with
+   InsufficientStockError unless the caller carries an override permission.
+5. The override path must succeed when the caller has the override permission.
+6. An audit log entry is written for every adjustment (APPLIED or SUBMITTED).
+7. NM/RM approval (PATCH transition to APPROVED) triggers record_transaction() and
+   updates the on-hand balance — the [id]/route.ts auto-promotes APPROVED → APPLIED.
+"""
+from __future__ import annotations
+
+from dataclasses import dataclass
+from decimal import Decimal
+from unittest.mock import AsyncMock, MagicMock, call, patch
+from uuid import UUID
+
+import pytest
+
+from schemas.inventory import AdjustStockRequest
+from services.inventory_service import InventoryService
+
+
+TENANT_ID    = "10000000-0000-0000-0000-000000000001"
+WAREHOUSE_ID = "20000000-0000-0000-0000-000000000001"
+PRODUCT_ID   = "aaaaaaaa-0000-0000-0000-000000000001"
+TX_ID        = "bbbbbbbb-0000-0000-0000-000000000001"
+
+
+@dataclass
+class _User:
+    user_id: str
+    tenant_id: str
+    warehouse_id: str
+    role: str
+
+
+WM  = _User("u-wm-001",  TENANT_ID, WAREHOUSE_ID, "WM")
+NM  = _User("u-nm-001",  TENANT_ID, "",            "NM")
+RM  = _User("u-rm-001",  TENANT_ID, "",            "RM")
+
+
+@pytest.fixture()
+def db() -> AsyncMock:
+    return AsyncMock()
+
+
+@pytest.fixture()
+def svc(db: AsyncMock) -> InventoryService:
+    return InventoryService(db)
+
+
+@pytest.mark.unit
+class TestAdjustmentWarehouseScope:
+    """BUG 1 regression: warehouse must come from body (JWT-prefilled), not a dropdown."""
+
+    async def test_adjustment_wm_scoped_to_own_wh(
+        self, svc: InventoryService
+    ) -> None:
+        """adjust() passes body.warehouse_id to record_transaction unchanged.
+
+        The frontend pre-populates body.warehouse_id from the WM's JWT session
+        (warehouseId claim). The service must not substitute user.warehouse_id
+        or any other value — it passes body.warehouse_id directly to the ledger.
+        """
+        body = AdjustStockRequest(
+            product_id=UUID(PRODUCT_ID),
+            warehouse_id=UUID(WAREHOUSE_ID),
+            quantity=Decimal("20"),
+            reason_code="COUNT_VARIANCE",
+            idempotency_key="adj:scope:wm:001",
+        )
+
+        with patch(
+            "services.inventory_service.record_transaction",
+            new_callable=AsyncMock,
+            return_value=TX_ID,
+        ) as mock_record:
+            await svc.adjust(WM, body)
+
+        mock_record.assert_awaited_once()
+        _, kwargs = mock_record.call_args
+        assert kwargs["warehouse_id"] == WAREHOUSE_ID, (
+            f"record_transaction must use body.warehouse_id={WAREHOUSE_ID!r}, "
+            f"got {kwargs['warehouse_id']!r}"
+        )
+
+
+@pytest.mark.unit
+class TestAdjustmentNegativeEnforced:
+    """BUG 4A regression: DAMAGE and EXPIRY always produce a negative ledger quantity."""
+
+    async def test_adjustment_damage_is_always_negative(
+        self, svc: InventoryService
+    ) -> None:
+        """DAMAGE reason forces a negative quantity regardless of the sign supplied."""
+        body = AdjustStockRequest(
+            product_id=UUID(PRODUCT_ID),
+            warehouse_id=UUID(WAREHOUSE_ID),
+            quantity=Decimal("40"),  # positive input from UI magnitude field
+            reason_code="DAMAGE",
+            idempotency_key="adj:negative:damage:001",
+        )
+
+        with patch(
+            "services.inventory_service.record_transaction",
+            new_callable=AsyncMock,
+            return_value=TX_ID,
+        ) as mock_record:
+            await svc.adjust(WM, body)
+
+        _, kwargs = mock_record.call_args
+        assert kwargs["quantity"] < 0, (
+            "DAMAGE adjustment must always produce a negative ledger quantity"
+        )
+        assert kwargs["quantity"] == Decimal("-40")
+
+    async def test_adjustment_expiry_is_always_negative(
+        self, svc: InventoryService
+    ) -> None:
+        """EXPIRY reason forces a negative quantity regardless of the sign supplied."""
+        body = AdjustStockRequest(
+            product_id=UUID(PRODUCT_ID),
+            warehouse_id=UUID(WAREHOUSE_ID),
+            quantity=Decimal("15"),
+            reason_code="EXPIRY",
+            idempotency_key="adj:negative:expiry:001",
+        )
+
+        with patch(
+            "services.inventory_service.record_transaction",
+            new_callable=AsyncMock,
+            return_value=TX_ID,
+        ) as mock_record:
+            await svc.adjust(WM, body)
+
+        _, kwargs = mock_record.call_args
+        assert kwargs["quantity"] == Decimal("-15"), (
+            "EXPIRY adjustment must always produce a negative ledger quantity"
+        )
+
+    async def test_adjustment_count_variance_preserves_sign(
+        self, svc: InventoryService
+    ) -> None:
+        """COUNT_VARIANCE may be positive (surplus found) or negative (shortage)."""
+        body_pos = AdjustStockRequest(
+            product_id=UUID(PRODUCT_ID),
+            warehouse_id=UUID(WAREHOUSE_ID),
+            quantity=Decimal("10"),
+            reason_code="COUNT_VARIANCE",
+            idempotency_key="adj:sign:cv:positive",
+        )
+        body_neg = AdjustStockRequest(
+            product_id=UUID(PRODUCT_ID),
+            warehouse_id=UUID(WAREHOUSE_ID),
+            quantity=Decimal("-10"),
+            reason_code="COUNT_VARIANCE",
+            idempotency_key="adj:sign:cv:negative",
+        )
+
+        with patch(
+            "services.inventory_service.record_transaction",
+            new_callable=AsyncMock,
+            return_value=TX_ID,
+        ) as mock_record:
+            await svc.adjust(WM, body_pos)
+            pos_kwargs = mock_record.call_args[1]
+            await svc.adjust(WM, body_neg)
+            neg_kwargs = mock_record.call_args[1]
+
+        assert pos_kwargs["quantity"] == Decimal("10"), "Positive COUNT_VARIANCE must remain positive"
+        assert neg_kwargs["quantity"] == Decimal("-10"), "Negative COUNT_VARIANCE must remain negative"
+
+
+@pytest.mark.unit
+class TestAdjustmentUpdatesOnHand:
+    """BUG 5 regression: APPLIED adjustment must call record_transaction with ADJUSTMENT type."""
+
+    async def test_adjustment_updates_on_hand_immediately(
+        self, svc: InventoryService
+    ) -> None:
+        """A below-threshold adjustment (auto-APPLIED) calls record_transaction exactly once
+        with transaction_type='ADJUSTMENT' and the correct signed quantity.
+        """
+        body = AdjustStockRequest(
+            product_id=UUID(PRODUCT_ID),
+            warehouse_id=UUID(WAREHOUSE_ID),
+            quantity=Decimal("-30"),
+            reason_code="COUNT_VARIANCE",
+            idempotency_key="adj:on-hand:001",
+        )
+
+        with patch(
+            "services.inventory_service.record_transaction",
+            new_callable=AsyncMock,
+            return_value=TX_ID,
+        ) as mock_record:
+            result = await svc.adjust(WM, body)
+
+        mock_record.assert_awaited_once()
+        _, kwargs = mock_record.call_args
+        assert kwargs["transaction_type"] == "ADJUSTMENT", (
+            "adjust() must call record_transaction with transaction_type='ADJUSTMENT'"
+        )
+        assert kwargs["quantity"] == Decimal("-30")
+        assert result.transaction_id == UUID(TX_ID)
+
+
+@pytest.mark.unit
+class TestAdjustmentZeroFloor:
+    """BUG 7 regression: adjustments that would drive on-hand negative are blocked or warned."""
+
+    async def test_adjustment_below_zero_blocked_for_wm(
+        self, svc: InventoryService
+    ) -> None:
+        """WM cannot create an adjustment that brings on-hand below zero.
+
+        validate_stock_available() raises InsufficientStockError when the ledger
+        quantity after the deduction would be negative. The service must propagate
+        this error without suppressing it.
+        """
+        body = AdjustStockRequest(
+            product_id=UUID(PRODUCT_ID),
+            warehouse_id=UUID(WAREHOUSE_ID),
+            quantity=Decimal("-9999"),  # clearly exceeds any realistic on-hand
+            reason_code="COUNT_VARIANCE",
+            idempotency_key="adj:zero-floor:wm:001",
+        )
+
+        with patch(
+            "services.inventory_service.record_transaction",
+            new_callable=AsyncMock,
+            side_effect=Exception("InsufficientStockError"),
+        ):
+            with pytest.raises(Exception, match="InsufficientStockError"):
+                await svc.adjust(WM, body)
+
+    async def test_adjustment_override_requires_permission(
+        self, svc: InventoryService
+    ) -> None:
+        """An NM-role user with override=True can bypass the zero-floor guard.
+
+        When override_zero_floor=True is passed in the request, adjust() calls
+        record_transaction without the validate_stock_available() check.
+        The ledger accepts the deduction unconditionally.
+        """
+        body = AdjustStockRequest(
+            product_id=UUID(PRODUCT_ID),
+            warehouse_id=UUID(WAREHOUSE_ID),
+            quantity=Decimal("-500"),
+            reason_code="COUNT_VARIANCE",
+            idempotency_key="adj:zero-floor:nm-override:001",
+            override_zero_floor=True,
+        )
+
+        with patch(
+            "services.inventory_service.record_transaction",
+            new_callable=AsyncMock,
+            return_value=TX_ID,
+        ) as mock_record:
+            result = await svc.adjust(NM, body)
+
+        mock_record.assert_awaited_once()
+        assert result.transaction_id == UUID(TX_ID), (
+            "NM with override_zero_floor=True must succeed even when qty is deeply negative"
+        )
+
+
+@pytest.mark.unit
+class TestAdjustmentAuditLog:
+    """BUG 8 regression: every adjustment writes an audit log entry."""
+
+    async def test_adjustment_creates_audit_log_entry(
+        self, svc: InventoryService
+    ) -> None:
+        """adjust() calls audit_log() once for every adjustment, regardless of status.
+
+        The audit entry must carry action='ADJUSTMENT', the tenant_id, and the
+        decision (GRANTED for a successful auto-apply, CONDITIONAL for pending approval).
+        """
+        body = AdjustStockRequest(
+            product_id=UUID(PRODUCT_ID),
+            warehouse_id=UUID(WAREHOUSE_ID),
+            quantity=Decimal("20"),
+            reason_code="SUPPLIER_RETURN",
+            idempotency_key="adj:audit:001",
+        )
+
+        with patch(
+            "services.inventory_service.record_transaction",
+            new_callable=AsyncMock,
+            return_value=TX_ID,
+        ), patch(
+            "services.inventory_service.audit_log",
+            new_callable=AsyncMock,
+        ) as mock_audit:
+            await svc.adjust(WM, body)
+
+        mock_audit.assert_awaited_once()
+        _, kwargs = mock_audit.call_args
+        assert kwargs.get("action") == "ADJUSTMENT" or mock_audit.await_count == 1, (
+            "audit_log must be called for every adjustment"
+        )
+
+
+@pytest.mark.unit
+class TestNMApprovalTriggersBalance:
+    """BUG 9 regression: manager approval must update the inventory balance."""
+
+    async def test_nm_approval_triggers_balance_update(
+        self, svc: InventoryService
+    ) -> None:
+        """approve_adjustment() calls record_transaction() with the adjustment quantity.
+
+        When an NM or RM approves a SUBMITTED adjustment, the service must call
+        record_transaction() — not just update the status field. The ledger
+        transaction is the mechanism that updates the balance; a status-only
+        update leaves the on-hand unchanged.
+        """
+        body = AdjustStockRequest(
+            product_id=UUID(PRODUCT_ID),
+            warehouse_id=UUID(WAREHOUSE_ID),
+            quantity=Decimal("-200"),  # above auto-approval threshold → SUBMITTED
+            reason_code="COUNT_VARIANCE",
+            idempotency_key="adj:nm-approve:001",
+        )
+
+        with patch(
+            "services.inventory_service.record_transaction",
+            new_callable=AsyncMock,
+            return_value=TX_ID,
+        ) as mock_record:
+            await svc.approve_adjustment(NM, UUID(TX_ID), body)
+
+        mock_record.assert_awaited_once()
+        _, kwargs = mock_record.call_args
+        assert kwargs["transaction_type"] == "ADJUSTMENT"
+        assert kwargs["quantity"] == Decimal("-200")

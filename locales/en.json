@@ -114,6 +114,7 @@
     "DRAFT": "Draft",
     "SUBMITTED": "Submitted",
     "APPROVED": "Approved",
+    "APPLIED": "Applied",
     "IN_TRANSIT": "In Transit",
     "RECEIVED": "Received",
     "CLOSED": "Closed",
@@ -358,7 +359,13 @@
     "success_applied": "Adjustment applied",
     "success_submitted": "Submitted for approval",
     "subtitle": "Correct stock balance — approval may be required",
-    "error_qty": "Quantity must be non-zero."
+    "error_qty": "Quantity must be non-zero.",
+    "add_stock": "Add Stock",
+    "remove_stock": "Remove Stock",
+    "quantity_hint_remove": "Enter magnitude — always a deduction",
+    "zero_floor_wm": "Insufficient stock. On-hand would go negative. Contact your manager.",
+    "zero_floor_warn": "This adjustment will bring on-hand below zero. Proceed?",
+    "zero_floor_proceed": "Proceed Anyway"
   },
   "transfer": {
     "status": {

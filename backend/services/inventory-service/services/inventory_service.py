@@ -17,6 +17,8 @@ from repositories.ledger_repo import record_transaction
 from schemas.inventory import (
     AdjustmentRequest,
     AdjustmentResponse,
+    AdjustStockRequest,
+    AdjustStockResponse,
     CountSessionRequest,
     CountSessionResponse,
     IssueStockRequest,
@@ -27,6 +29,10 @@ from schemas.inventory import (
     TransferOrderResponse,
 )
 from services.state_machine import InvalidStateTransitionError, validate_transition
+from shared.permissions.audit import audit_log
+
+# Reason codes that always deduct stock — service forces negative quantity regardless of input sign
+_FORCE_NEGATIVE_REASONS: frozenset[str] = frozenset({"DAMAGE", "EXPIRY"})
 
 
 class InventoryService:
@@ -75,6 +81,86 @@ class InventoryService:
 
         from datetime import datetime, timezone
         return IssueStockResponse(
+            transaction_id=UUID(tx_id),
+            product_id=body.product_id,
+            warehouse_id=body.warehouse_id,
+            quantity=body.quantity,
+            reason_code=body.reason_code,
+            created_at=datetime.now(timezone.utc),
+        )
+
+    async def adjust(self, user: Any, body: AdjustStockRequest) -> AdjustStockResponse:
+        """Apply a stock adjustment to a warehouse's on-hand balance.
+
+        BUG 4A: DAMAGE and EXPIRY reason codes always produce a negative quantity
+        (deduction) regardless of the sign supplied by the caller.
+        BUG 7:  record_transaction() raises INSUFFICIENT_STOCK (HTTP 422) when the
+        resulting balance would go below zero; callers with override_zero_floor=True
+        have already confirmed the risk in the frontend — the ledger still enforces
+        idempotency and outbox atomicity.
+        """
+        quantity = (
+            -abs(body.quantity)
+            if body.reason_code in _FORCE_NEGATIVE_REASONS
+            else body.quantity
+        )
+
+        tx_id = await record_transaction(
+            self.db,
+            tenant_id=str(user.tenant_id),
+            transaction_type="ADJUSTMENT",
+            product_id=str(body.product_id),
+            warehouse_id=str(body.warehouse_id),
+            quantity=quantity,
+            performed_by=str(user.user_id),
+            idempotency_key=body.idempotency_key,
+        )
+
+        await audit_log(
+            user=user,
+            action="ADJUSTMENT",
+            resource={
+                "resource_type": "adjustment",
+                "product_id": str(body.product_id),
+                "warehouse_id": str(body.warehouse_id),
+                "quantity": str(quantity),
+                "reason_code": body.reason_code,
+            },
+            decision="GRANTED",
+        )
+
+        from datetime import datetime, timezone
+        return AdjustStockResponse(
+            transaction_id=UUID(tx_id),
+            product_id=body.product_id,
+            warehouse_id=body.warehouse_id,
+            quantity=quantity,
+            reason_code=body.reason_code,
+            created_at=datetime.now(timezone.utc),
+        )
+
+    async def approve_adjustment(
+        self, user: Any, adjustment_id: UUID, body: AdjustStockRequest
+    ) -> AdjustStockResponse:
+        """Approve a SUBMITTED adjustment — posts the ledger entry and updates on-hand.
+
+        BUG 9: manager approval must call record_transaction() with transaction_type=
+        'ADJUSTMENT'.  A status-only UPDATE leaves on-hand unchanged.
+        """
+        tx_id = await record_transaction(
+            self.db,
+            tenant_id=str(user.tenant_id),
+            transaction_type="ADJUSTMENT",
+            product_id=str(body.product_id),
+            warehouse_id=str(body.warehouse_id),
+            quantity=body.quantity,
+            performed_by=str(user.user_id),
+            idempotency_key=body.idempotency_key,
+            reference_id=str(adjustment_id),
+        )
+
+        from datetime import datetime, timezone
+        return AdjustStockResponse(
             transaction_id=UUID(tx_id),
             product_id=body.product_id,
             warehouse_id=body.warehouse_id,
