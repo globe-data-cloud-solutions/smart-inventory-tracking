@@ -92,3 +92,11 @@ class TransferRequestCreate(BaseModel):
     quantity: Decimal
     required_date: Optional[date] = None
     notes: Optional[str] = None
+
+
+class WarehouseOut(BaseModel):
+    id: uuid.UUID
+    name: str
+    warehouse_type: Optional[str] = None
+    address: Optional[str] = None
+    manager_name: Optional[str] = None

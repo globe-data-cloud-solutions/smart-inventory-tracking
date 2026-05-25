@@ -15,6 +15,14 @@ interface ApiStockRow {
   current_stock: number;
 }
 
+interface ApiWarehouseRow {
+  id: string;
+  name: string;
+  warehouse_type: string | null;
+  address: string | null;
+  manager_name: string | null;
+}
+
 function sortByHierarchy(warehouses: DemoWarehouse[]): DemoWarehouse[] {
   const result: DemoWarehouse[] = [];
   const placed = new Set<string>();
@@ -53,6 +61,8 @@ interface GatewayWarehouseRow {
   id: string;
   name: string;
   type: DemoWarehouse["type"];
+  address: string | null;
+  managerName: string | null;
   units: number;
   skuCount: number;
 }
@@ -66,6 +76,12 @@ export default function WarehousesPage() {
     staleTime: 30000,
   });
 
+  const { data: warehouseDetails = [] } = useQuery<ApiWarehouseRow[]>({
+    queryKey: ["analytics-warehouses", org],
+    queryFn:  () => api.get<ApiWarehouseRow[]>("/api/v1/inventory/analytics/warehouses"),
+    staleTime: 60000,
+  });
+
   if (org === SA_ORG_SLUG) return <p className="p-8 text-gray-500">{t("common.no_data")}</p>;
 
   const tenant = DEMO_TENANTS.find((ten) => ten.slug === org);
@@ -76,6 +92,10 @@ export default function WarehousesPage() {
   // ── Gateway mode: build rows from real API data, keyed by UUID ────────────
   let gatewayRows: GatewayWarehouseRow[] = [];
   if (isGatewayMode) {
+    // Index address and manager from the dedicated warehouses endpoint
+    const detailsById = new Map<string, ApiWarehouseRow>();
+    for (const wd of warehouseDetails) detailsById.set(wd.id, wd);
+
     const byId = new Map<string, { name: string; type: DemoWarehouse["type"]; units: number; skus: Set<string> }>();
     for (const row of stockData) {
       const entry = byId.get(row.warehouse_id) ?? {
@@ -91,7 +111,11 @@ export default function WarehousesPage() {
     // Sort: MWH first, then RWH, then WH, then SUB_WH, then alphabetical within each tier
     const tierOrder: Record<string, number> = { MWH: 0, RWH: 1, WH: 2, SUB_WH: 3 };
     gatewayRows = Array.from(byId.entries())
-      .map(([id, v]) => ({ id, name: v.name, type: v.type, units: v.units, skuCount: v.skus.size }))
+      .map(([id, v]) => ({
+        id, name: v.name, type: v.type, units: v.units, skuCount: v.skus.size,
+        address:     detailsById.get(id)?.address ?? null,
+        managerName: detailsById.get(id)?.manager_name ?? null,
+      }))
       .sort((a, b) => (tierOrder[a.type] ?? 4) - (tierOrder[b.type] ?? 4) || a.name.localeCompare(b.name));
   }
 
@@ -124,13 +148,13 @@ export default function WarehousesPage() {
                 return (
                   <tr key={row.id} className={`border-b border-gray-100 ${idx % 2 === 0 ? "bg-white" : "bg-gray-50"}`}>
                     <td className="px-4 py-2.5 font-semibold text-gray-800">{row.name}</td>
-                    <td className="px-4 py-2.5 text-gray-500">—</td>
+                    <td className="px-4 py-2.5 text-gray-500">{row.address ?? "—"}</td>
                     <td className="px-4 py-2.5">
                       <span className={`text-xs font-bold px-2 py-0.5 rounded ${typeClass}`}>
                         {TYPE_LABEL[row.type] ?? row.type}
                       </span>
                     </td>
-                    <td className="px-4 py-2.5 text-gray-700">—</td>
+                    <td className="px-4 py-2.5 text-gray-700">{row.managerName ?? "—"}</td>
                     <td className="px-4 py-2.5 font-bold text-gray-900">{row.units.toLocaleString()}</td>
                     <td className="px-4 py-2.5 text-gray-700">{row.skuCount}</td>
                   </tr>

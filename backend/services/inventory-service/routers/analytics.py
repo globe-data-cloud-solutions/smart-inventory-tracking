@@ -17,7 +17,7 @@ from shared.permissions.middleware import require_permission
 from shared.permissions.registry import PERMISSIONS
 from shared.utils.responses import SuccessResponse
 from shared.utils.tenant_scope import effective_tenant_id
-from schemas.analytics import CrossWarehouseStockOut, ForecastOut, InventoryStockOut, ReorderAlertOut, TransferHistoryItem
+from schemas.analytics import CrossWarehouseStockOut, ForecastOut, InventoryStockOut, ReorderAlertOut, TransferHistoryItem, WarehouseOut
 from services.inventory_analytics import (
     get_alerts,
     get_cross_warehouse_stock,
@@ -83,6 +83,43 @@ async def cross_warehouse_stock(
     tid = effective_tenant_id(user, tenant_id)
     data = await get_cross_warehouse_stock(db, tid, product_id)
     return SuccessResponse(data=data)
+
+
+@router.get("/warehouses", response_model=SuccessResponse[List[WarehouseOut]])
+@require_permission(PERMISSIONS.INVENTORY_VIEW_BALANCE)
+async def list_warehouses(
+    tenant_id: Optional[uuid.UUID] = Query(None),
+    user=Depends(get_current_user),
+    db: AsyncSession = Depends(get_read_db_session),
+) -> SuccessResponse[List[WarehouseOut]]:
+    """All active warehouses for the tenant with address and assigned manager name."""
+    from sqlalchemy import text
+    tid = effective_tenant_id(user, tenant_id)
+    rows = (await db.execute(
+        text("""
+            SELECT w.id, w.name, w.warehouse_type::text, w.address,
+                   u.full_name AS manager_name
+            FROM warehouses w
+            LEFT JOIN users u
+              ON u.warehouse_id = w.id
+             AND u.role = 'WM'
+             AND u.is_active = true
+             AND u.tenant_id = w.tenant_id
+            WHERE w.tenant_id = :tid AND w.is_active = true
+            ORDER BY w.name
+        """),
+        {"tid": str(tid)},
+    )).fetchall()
+    return SuccessResponse(data=[
+        WarehouseOut(
+            id=r.id,
+            name=r.name,
+            warehouse_type=r.warehouse_type,
+            address=r.address,
+            manager_name=r.manager_name,
+        )
+        for r in rows
+    ])
 
 
 @router.get("/transfer-history", response_model=SuccessResponse[List[TransferHistoryItem]])

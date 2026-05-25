@@ -40,7 +40,7 @@ async def write_to_outbox(
         text(
             "INSERT INTO outbox "
             "(tenant_id, event_type, payload, payload_ver, status, idempotency_key) "
-            "VALUES (:tid, :etype, :payload::jsonb, :ver, 'PENDING', :ikey)"
+            "VALUES (:tid, :etype, CAST(:payload AS jsonb), :ver, 'PENDING', :ikey)"
         ),
         {
             "tid":   tenant_id,

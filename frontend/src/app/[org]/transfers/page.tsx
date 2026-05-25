@@ -494,6 +494,16 @@ export default function TransfersPage() {
   }
   const gatewayWarehouses: DemoWarehouse[] = Array.from(gatewayWarehouseMap.values());
 
+  // Build stockByProductId from analytics/stock data: productId → { warehouseId: currentStock }
+  // This is the source of truth for balances in gateway mode — the products API does not
+  // return on_hand or warehouse_id.
+  const stockByProductId = new Map<string, Record<string, number>>();
+  for (const row of stockData) {
+    const existing = stockByProductId.get(row.product_id) ?? {};
+    existing[row.warehouse_id] = Number(row.current_stock);
+    stockByProductId.set(row.product_id, existing);
+  }
+
   // Gateway mode: use only real API products (demo slugs are not valid UUIDs in the DB).
   // Demo mode: merge demo catalog + API products so the dropdown shows all products.
   const tenantProductIds = new Set(tenant.products.map((p) => p.id));
@@ -506,9 +516,7 @@ export default function TransfersPage() {
         unit:          p.unit,
         batchTracking: false,
         reorderPoint:  p.reorder_point ?? 0,
-        stock: (p.on_hand && p.warehouse_id)
-          ? { [p.warehouse_id]: p.on_hand } as Record<string, number>
-          : {} as Record<string, number>,
+        stock:         stockByProductId.get(p.id) ?? {},
       }))
     : [
         ...tenant.products,
@@ -522,9 +530,7 @@ export default function TransfersPage() {
             unit:          p.unit,
             batchTracking: false,
             reorderPoint:  p.reorder_point ?? 0,
-            stock: (p.on_hand && p.warehouse_id)
-              ? { [p.warehouse_id]: p.on_hand } as Record<string, number>
-              : {} as Record<string, number>,
+            stock:         stockByProductId.get(p.id) ?? {},
           })),
       ];
 

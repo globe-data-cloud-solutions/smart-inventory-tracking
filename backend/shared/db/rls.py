@@ -10,8 +10,8 @@ async def set_rls_context(
     """
     await session.execute(
         text(
-            "SELECT set_config('app.current_tenant_id', :tid, true), "
-            "       set_config('app.current_user_id',   :uid, true)"
+            "SELECT set_config('app.current_tenant_id', :tid, false), "
+            "       set_config('app.current_user_id',   :uid, false)"
         ),
         {"tid": tenant_id, "uid": user_id},
     )
