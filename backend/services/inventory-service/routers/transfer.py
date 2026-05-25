@@ -1,17 +1,31 @@
+from typing import List
 from uuid import UUID
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from shared.db.dependencies import get_db_session
+from dependencies import get_db_session
 from dependencies import get_current_user
 from shared.permissions.middleware import require_permission
 from shared.permissions.registry import PERMISSIONS
 from shared.utils.responses import SuccessResponse
-from schemas.inventory import TransferOrderRequest, TransferOrderResponse
+from schemas.inventory import TransferListItem, TransferOrderRequest, TransferOrderResponse, TransferTransitionRequest
 from services.inventory_service import InventoryService
 
 router = APIRouter()
+
+
+@router.get("/", response_model=SuccessResponse[List[TransferListItem]])
+@require_permission(PERMISSIONS.TRANSFER_LIST)
+async def list_transfers(
+    page: int = Query(1, ge=1),
+    limit: int = Query(50, ge=1, le=200),
+    user=Depends(get_current_user),
+    db: AsyncSession = Depends(get_db_session),
+) -> SuccessResponse[List[TransferListItem]]:
+    svc = InventoryService(db)
+    result = await svc.list_transfers(user, page=page, limit=limit)
+    return SuccessResponse(data=result)
 
 
 @router.post("/", status_code=201, response_model=SuccessResponse[TransferOrderResponse])
@@ -78,6 +92,30 @@ async def receive_transfer(
     """
     svc = InventoryService(db)
     result = await svc.receive_transfer(user, transfer_id)
+    return SuccessResponse(data=result)
+
+
+@router.patch("/{transfer_id}", response_model=SuccessResponse[TransferOrderResponse])
+@require_permission(PERMISSIONS.TRANSFER_VIEW)
+async def transition_transfer(
+    transfer_id: UUID,
+    body: TransferTransitionRequest,
+    user=Depends(get_current_user),
+    db: AsyncSession = Depends(get_db_session),
+) -> SuccessResponse[TransferOrderResponse]:
+    """Generic state transition — delegates to specialized methods for ledger-writing states.
+
+    next_status == "ISSUED":   calls dispatch_transfer() — books RESERVE at destination.
+    next_status == "RECEIVED": calls receive_transfer()  — books TRANSFER_IN at destination.
+    All other statuses:        calls transition_transfer() — pure status update.
+    """
+    svc = InventoryService(db)
+    if body.next_status == "ISSUED":
+        result = await svc.dispatch_transfer(user, transfer_id)
+    elif body.next_status == "RECEIVED":
+        result = await svc.receive_transfer(user, transfer_id)
+    else:
+        result = await svc.transition_transfer(user, transfer_id, body.next_status)
     return SuccessResponse(data=result)
 
 

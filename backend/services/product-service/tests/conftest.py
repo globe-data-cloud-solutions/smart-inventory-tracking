@@ -55,7 +55,7 @@ os.environ.setdefault("JWT_SECRET",            "x" * 64)
 
 # 4. Import product-service modules while product-service root is first.
 from main import app                            # noqa: E402  — product-service app
-from shared.db.dependencies import get_db_session  # noqa: E402
+from dependencies import get_db_session  # noqa: E402
 from dependencies import get_current_user       # noqa: E402  — product-service version
 
 # 5. Force-restore ALL inventory-service module refs that were evicted in step 1.
@@ -85,6 +85,14 @@ from product_test_data import (              # noqa: F401  (re-export for fixtur
     _cap_db,
     _make_db_override,
 )
+
+# Inject the product-service get_db_session into product_test_data so that
+# test_products.py can import it from there.  By this point sys.modules has been
+# restored to inventory-service versions, so `from dependencies import get_db_session`
+# in test_products.py would return the wrong object.  product_test_data is a stable
+# intermediate that survives sys.modules restoration.
+import product_test_data as _ptd
+_ptd.get_db_session = get_db_session  # type: ignore[attr-defined]
 
 
 # ── Client fixture ────────────────────────────────────────────────────────────

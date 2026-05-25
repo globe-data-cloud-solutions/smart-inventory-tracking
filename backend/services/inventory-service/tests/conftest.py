@@ -17,8 +17,7 @@ import pytest
 from httpx import ASGITransport, AsyncClient
 
 from main import app
-from dependencies import get_current_user
-from shared.db.dependencies import get_db_session
+from dependencies import get_current_user, get_db_session
 
 
 @dataclass

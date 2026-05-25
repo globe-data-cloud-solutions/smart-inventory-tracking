@@ -1,17 +1,31 @@
+from typing import List
 from uuid import UUID
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from shared.db.dependencies import get_db_session
+from dependencies import get_db_session
 from dependencies import get_current_user
 from shared.permissions.middleware import require_permission
 from shared.permissions.registry import PERMISSIONS
 from shared.utils.responses import SuccessResponse
-from schemas.inventory import AdjustmentRequest, AdjustmentResponse
+from schemas.inventory import AdjustmentListItem, AdjustmentRequest, AdjustmentResponse
 from services.inventory_service import InventoryService
 
 router = APIRouter()
+
+
+@router.get("/", response_model=SuccessResponse[List[AdjustmentListItem]])
+@require_permission(PERMISSIONS.ADJUSTMENT_LIST)
+async def list_adjustments(
+    page: int = Query(1, ge=1),
+    limit: int = Query(50, ge=1, le=200),
+    user=Depends(get_current_user),
+    db: AsyncSession = Depends(get_db_session),
+) -> SuccessResponse[List[AdjustmentListItem]]:
+    svc = InventoryService(db)
+    result = await svc.list_adjustments(user, page=page, limit=limit)
+    return SuccessResponse(data=result)
 
 
 @router.post("/", status_code=201, response_model=SuccessResponse[AdjustmentResponse])

@@ -20,7 +20,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from shared.db.dependencies import get_db_session
+from dependencies import get_db_session
 from shared.outbox.schemas import ProductCreatedPayload
 from shared.outbox.writer import write_to_outbox
 from shared.permissions.middleware import require_permission

@@ -21,7 +21,7 @@ from product_test_data import (
     _make_db_override,
 )
 from dependencies import get_current_user
-from shared.db.dependencies import get_db_session
+from product_test_data import get_db_session  # product-service version, injected by conftest
 
 
 def _patch_perm(granted: bool = True):
