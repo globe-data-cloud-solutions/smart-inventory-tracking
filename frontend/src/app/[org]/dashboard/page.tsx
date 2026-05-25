@@ -2,6 +2,7 @@
 
 import { useParams } from "next/navigation";
 import Link from "next/link";
+import { useQuery } from "@tanstack/react-query";
 import { getSession } from "@/lib/demo-auth";
 import { SA_ORG_SLUG } from "@/lib/demo-auth";
 import {
@@ -10,9 +11,49 @@ import {
   getTotalStock,
   type DemoProduct,
 } from "@/lib/demo-data";
+import { api } from "@/lib/api";
 import { t } from "@/lib/i18n";
 
-/* ── Summary card ─────────────────────────────────────────────────────────── */
+const isGatewayMode = !!process.env.NEXT_PUBLIC_API_URL;
+
+// ── API types ──────────────────────────────────────────────────────────────────
+
+interface ApiStockRow {
+  product_id: string;
+  product_name: string;
+  product_sku: string;
+  warehouse_id: string;
+  warehouse_name: string;
+  warehouse_type: string | null;
+  current_stock: number;
+}
+
+interface ApiAlertRow {
+  product_id: string;
+  warehouse_id: string;
+  warehouse_name: string;
+  current_stock: number;
+  reorder_point: number;
+}
+
+interface ApiTransferLine {
+  product_id: string;
+  product_name: string;
+  sku: string;
+  quantity: string;
+}
+
+interface ApiTransferRow {
+  transfer_id: string;
+  transfer_type: string;
+  status: string;
+  from_warehouse_name: string;
+  to_warehouse_name: string;
+  created_at: string;
+  lines: ApiTransferLine[];
+}
+
+// ── Summary card ────────────────────────────────────────────────────────────────
 function SummaryCard({ title, subtitle, rows, accentColor }: {
   title: string;
   subtitle: string;
@@ -58,7 +99,7 @@ function SummaryCard({ title, subtitle, rows, accentColor }: {
   );
 }
 
-/* ── Inventory table ──────────────────────────────────────────────────────── */
+// ── Inventory table (demo mode only) ──────────────────────────────────────────
 function InventoryTable({ products, getQty, accentColor, title, subtitle }: {
   products: DemoProduct[];
   getQty: (p: DemoProduct) => number;
@@ -155,16 +196,64 @@ function InventoryTable({ products, getQty, accentColor, title, subtitle }: {
   );
 }
 
-/* ── Main page ────────────────────────────────────────────────────────────── */
+const TYPE_CLASS: Record<string, string> = {
+  MWH:    "bg-amber-100 text-amber-800",
+  RWH:    "bg-blue-100  text-blue-800",
+  WH:     "bg-gray-100  text-gray-700",
+  SUB_WH: "bg-violet-100 text-violet-800",
+};
+
+const STATUS_CLASS: Record<string, string> = {
+  COMPLETED:        "bg-green-50 text-emerald-700 border-emerald-200",
+  IN_TRANSIT:       "bg-blue-50 text-blue-700 border-blue-200",
+  APPROVED:         "bg-indigo-50 text-indigo-700 border-indigo-200",
+  PENDING_APPROVAL: "bg-amber-50 text-amber-700 border-amber-200",
+  DRAFT:            "bg-gray-100 text-gray-600 border-gray-300",
+  CANCELLED:        "bg-red-50 text-red-600 border-red-200",
+  REJECTED:         "bg-red-50 text-red-600 border-red-200",
+};
+
+// ── Main page ──────────────────────────────────────────────────────────────────
 export default function OrgDashboard() {
   const { org } = useParams() as { org: string };
   const user = getSession();
+
+  // ── Hooks (called unconditionally, disabled for SA/demo modes) ─────────────
+  const enabled = isGatewayMode && org !== SA_ORG_SLUG;
+
+  const { data: stockData = [] } = useQuery<ApiStockRow[]>({
+    queryKey: ["dashboard-stock", org],
+    queryFn: () => api.get<ApiStockRow[]>("/api/v1/inventory/analytics/stock"),
+    enabled,
+    staleTime: 0,
+    refetchOnMount: true,
+    refetchOnWindowFocus: true,
+  });
+
+  const { data: alertsData = [] } = useQuery<ApiAlertRow[]>({
+    queryKey: ["dashboard-alerts", org],
+    queryFn: () => api.get<ApiAlertRow[]>("/api/v1/inventory/analytics/alerts"),
+    enabled,
+    staleTime: 0,
+    refetchOnMount: true,
+    refetchOnWindowFocus: true,
+  });
+
+  const { data: recentTransfers = [] } = useQuery<ApiTransferRow[]>({
+    queryKey: ["dashboard-transfers", org],
+    queryFn: () => api.get<ApiTransferRow[]>("/api/v1/inventory/transfers/"),
+    enabled,
+    staleTime: 0,
+    refetchOnMount: true,
+    refetchOnWindowFocus: true,
+  });
+
   if (!user) return null;
 
-  // ── SA home (/admin/dashboard)
+  // ── SA home (/admin/dashboard) — always demo ───────────────────────────────
   if (org === SA_ORG_SLUG) {
-    const totalLoc   = DEMO_TENANTS.reduce((a, t) => a + t.warehouses.length, 0);
-    const totalSKUs  = DEMO_TENANTS.reduce((a, t) => a + t.products.length, 0);
+    const totalLoc   = DEMO_TENANTS.reduce((a, ten) => a + ten.warehouses.length, 0);
+    const totalSKUs  = DEMO_TENANTS.reduce((a, ten) => a + ten.products.length, 0);
     const totalUnits = DEMO_TENANTS.reduce(
       (a, ten) => a + ten.products.reduce((b, p) => b + getTotalStock(p), 0), 0
     );
@@ -237,7 +326,7 @@ export default function OrgDashboard() {
     );
   }
 
-  // ── Tenant dashboard (/{slug}/dashboard)
+  // ── Tenant lookup (needed for branding in both modes) ──────────────────────
   const tenant = DEMO_TENANTS.find((ten) => ten.slug === org);
   if (!tenant) {
     return (
@@ -247,6 +336,182 @@ export default function OrgDashboard() {
     );
   }
 
+  // ── Gateway mode — real API data ───────────────────────────────────────────
+  if (isGatewayMode) {
+    const whStock  = user.warehouseId
+      ? stockData.filter((r) => r.warehouse_id === user.warehouseId)
+      : stockData;
+
+    const whAlerts = user.warehouseId
+      ? alertsData.filter((r) => r.warehouse_id === user.warehouseId)
+      : alertsData;
+
+    const totalUnits   = whStock.reduce((s, r) => s + Number(r.current_stock), 0);
+    const skusWithStock = new Set(
+      whStock.filter((r) => Number(r.current_stock) > 0).map((r) => r.product_id)
+    ).size;
+    const lowStockCount = new Set(whAlerts.map((r) => r.product_id)).size;
+    const inStockCount  = Math.max(0, skusWithStock - lowStockCount);
+
+    // Warehouse name for WM view
+    const myWarehouseName = user.warehouseId
+      ? (whStock[0]?.warehouse_name ?? t("dashboard.my_warehouse"))
+      : null;
+
+    // Per-warehouse breakdown for TA/NM view
+    const warehouseMap = new Map<string, {
+      id: string; name: string; type: string;
+      totalUnits: number; skuCount: number; lowCount: number;
+    }>();
+    if (!user.warehouseId) {
+      for (const row of stockData) {
+        const entry = warehouseMap.get(row.warehouse_id) ?? {
+          id: row.warehouse_id,
+          name: row.warehouse_name,
+          type: row.warehouse_type ?? "WH",
+          totalUnits: 0,
+          skuCount: 0,
+          lowCount: 0,
+        };
+        entry.totalUnits += Number(row.current_stock);
+        if (Number(row.current_stock) > 0) entry.skuCount++;
+        warehouseMap.set(row.warehouse_id, entry);
+      }
+      for (const alert of alertsData) {
+        const wh = warehouseMap.get(alert.warehouse_id);
+        if (wh) wh.lowCount++;
+      }
+    }
+    const warehouseRows = Array.from(warehouseMap.values());
+
+    const cardTitle    = myWarehouseName ?? tenant.name;
+    const cardSubtitle = myWarehouseName
+      ? `${user.role} access`
+      : `${tenant.industry} · ${user.role === "SA" ? t("dashboard.sa_viewing") : t("dashboard.tenant_admin")}`;
+
+    return (
+      <div className="p-8">
+        <SummaryCard
+          title={cardTitle}
+          subtitle={cardSubtitle}
+          accentColor={tenant.color}
+          rows={[
+            { label: t("dashboard.stat_units"),           value: totalUnits },
+            { label: t("dashboard.stat_skus_with_stock"), value: skusWithStock },
+            { label: t("dashboard.in_stock"),             value: inStockCount },
+            { label: t("alerts.low_stock"),               value: lowStockCount, warn: lowStockCount > 0 },
+          ]}
+        />
+
+        {/* Warehouse breakdown — TA/NM only */}
+        {warehouseRows.length > 0 && (
+          <div className="bg-white border border-gray-200 rounded overflow-hidden mb-6">
+            <div className="h-[3px]" style={{ background: tenant.color }} />
+            <div className="px-5 py-3 bg-gray-50 border-b-2 border-gray-200">
+              <span className="text-sm font-bold text-gray-800">{t("dashboard.inventory_by_location")}</span>
+            </div>
+            <table className="w-full border-collapse text-sm">
+              <thead>
+                <tr>
+                  {["table.location","table.type","table.skus","table.total_units","alerts.low_stock"].map((key) => (
+                    <th
+                      key={key}
+                      className="px-4 py-2.5 bg-gray-50 text-left text-xs font-bold text-gray-500 uppercase tracking-wide border-b border-gray-200"
+                    >
+                      {t(key)}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {warehouseRows.map((wh, idx) => {
+                  const typeClass = TYPE_CLASS[wh.type] ?? "bg-gray-100 text-gray-500";
+                  return (
+                    <tr
+                      key={wh.id}
+                      className={`border-b border-gray-100 ${idx % 2 === 0 ? "bg-white" : "bg-gray-50"}`}
+                    >
+                      <td className="px-4 py-2.5 font-semibold text-gray-800">{wh.name}</td>
+                      <td className="px-4 py-2.5">
+                        <span className={`text-xs font-bold px-2 py-0.5 rounded ${typeClass}`}>
+                          {wh.type}
+                        </span>
+                      </td>
+                      <td className="px-4 py-2.5 text-gray-700">{wh.skuCount}</td>
+                      <td className="px-4 py-2.5 font-bold text-gray-900">{wh.totalUnits.toLocaleString()}</td>
+                      <td className="px-4 py-2.5">
+                        {wh.lowCount > 0 ? (
+                          <span className="text-xs font-bold bg-red-50 text-red-600 border border-red-200 px-2 py-0.5 rounded">
+                            {wh.lowCount} {t("dashboard.low_badge")}
+                          </span>
+                        ) : (
+                          <span className="text-xs font-bold bg-green-50 text-emerald-600 border border-emerald-200 px-2 py-0.5 rounded">
+                            {t("dashboard.ok_badge")}
+                          </span>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+
+        {/* Recent transfers */}
+        {recentTransfers.length > 0 && (
+          <div className="bg-white border border-gray-200 rounded overflow-hidden">
+            <div className="h-[3px]" style={{ background: tenant.color }} />
+            <div className="px-5 py-3 bg-gray-50 border-b-2 border-gray-200">
+              <span className="text-sm font-bold text-gray-800">{t("dashboard.recent_transfers")}</span>
+            </div>
+            <table className="w-full border-collapse text-sm">
+              <thead>
+                <tr className="bg-gray-50 border-b border-gray-200">
+                  {["table.date","transfers.type","transfers.route","table.product","table.status"].map((key) => (
+                    <th key={key} className="px-4 py-2.5 text-left text-xs font-bold text-gray-500 uppercase tracking-wide">
+                      {t(key)}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {recentTransfers.slice(0, 10).map((tr, idx) => {
+                  const statusClass = STATUS_CLASS[tr.status] ?? "bg-gray-100 text-gray-600 border-gray-300";
+                  const productSummary = tr.lines.length > 0
+                    ? tr.lines[0]!.product_name + (tr.lines.length > 1 ? ` +${tr.lines.length - 1}` : "")
+                    : "—";
+                  return (
+                    <tr key={tr.transfer_id} className={`border-b border-gray-100 ${idx % 2 === 0 ? "bg-white" : "bg-gray-50"}`}>
+                      <td className="px-4 py-2.5 text-gray-500 text-xs">
+                        {new Date(tr.created_at).toLocaleDateString()}
+                      </td>
+                      <td className="px-4 py-2.5">
+                        <span className="text-xs font-bold bg-gray-100 text-gray-700 px-2 py-0.5 rounded">
+                          {tr.transfer_type}
+                        </span>
+                      </td>
+                      <td className="px-4 py-2.5 text-gray-700 text-xs">
+                        {tr.from_warehouse_name} → {tr.to_warehouse_name}
+                      </td>
+                      <td className="px-4 py-2.5 text-gray-700">{productSummary}</td>
+                      <td className="px-4 py-2.5">
+                        <span className={`text-xs font-bold px-2 py-0.5 rounded border ${statusClass}`}>
+                          {tr.status}
+                        </span>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  // ── Demo mode ──────────────────────────────────────────────────────────────
   const lowStock   = getLowStockProducts(tenant);
   const totalUnits = tenant.products.reduce((a, p) => a + getTotalStock(p), 0);
 
@@ -263,10 +528,10 @@ export default function OrgDashboard() {
           subtitle={`${wh?.location ?? ""} · ${user.role} access`}
           accentColor={tenant.color}
           rows={[
-            { label: t("dashboard.stat_units"),          value: myUnits },
-            { label: t("dashboard.stat_skus_with_stock"),value: myProducts.length },
-            { label: t("dashboard.in_stock"),            value: myProducts.length - myLow.length },
-            { label: t("alerts.low_stock"),              value: myLow.length, warn: myLow.length > 0 },
+            { label: t("dashboard.stat_units"),           value: myUnits },
+            { label: t("dashboard.stat_skus_with_stock"), value: myProducts.length },
+            { label: t("dashboard.in_stock"),             value: myProducts.length - myLow.length },
+            { label: t("alerts.low_stock"),               value: myLow.length, warn: myLow.length > 0 },
           ]}
         />
         <InventoryTable
