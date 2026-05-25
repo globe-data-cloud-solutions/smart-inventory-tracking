@@ -607,3 +607,36 @@ class TestInventoryServiceTransfers:
                 "a transfer to transition to its current state"
             )
             assert exc_info.value.detail["code"] == "INVALID_STATE_TRANSITION"
+
+    async def test_transition_reads_fresh_status_before_applying(self) -> None:
+        """transition_transfer() validates against the DB row's current status (SELECT FOR
+        UPDATE), not the caller's assumed current state.
+
+        Scenario: the frontend's TanStack Query cache is stale — it thinks the transfer
+        is still at DRAFT and sends next_status=PENDING_REVIEW (the valid WM submit action
+        from DRAFT). The DB row already shows PENDING_REVIEW (another user advanced it).
+
+        The backend must read the DB row (PENDING_REVIEW) and reject the self-transition
+        PENDING_REVIEW → PENDING_REVIEW with 422. This is the contract that makes FIX 1
+        (pre-fetch check in doTransition) a UX improvement rather than a security gate —
+        the backend always wins regardless of what the frontend believes.
+        """
+        from services.inventory_service import InventoryService
+        from fastapi import HTTPException
+
+        # DB row is already at PENDING_REVIEW — advanced past DRAFT
+        advanced_row = _make_transfer_row("PENDING_REVIEW", transfer_type="PULL")
+        session = AsyncMock()
+        session.execute = AsyncMock(
+            return_value=MagicMock(fetchone=MagicMock(return_value=advanced_row))
+        )
+
+        svc = InventoryService(session)
+        # Frontend sends next_status=PENDING_REVIEW believing current=DRAFT.
+        # Backend reads DB status=PENDING_REVIEW → PENDING_REVIEW → PENDING_REVIEW is
+        # not a valid transition → 422.
+        with pytest.raises(HTTPException) as exc_info:
+            await svc.transition_transfer(SRC_WM, TRANSFER_ID, "PENDING_REVIEW")
+
+        assert exc_info.value.status_code == 422
+        assert exc_info.value.detail["code"] == "INVALID_STATE_TRANSITION"

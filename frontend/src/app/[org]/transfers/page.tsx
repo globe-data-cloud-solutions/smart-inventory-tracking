@@ -559,7 +559,52 @@ export default function TransfersPage() {
     setTransitioning(id);
     setConfirmModal(null);
     try {
+      // ── Pre-fetch fresh status ──────────────────────────────────────────────
+      // The TanStack Query cache can be up to 15 s stale. Another user may have
+      // advanced the transfer since the action button was rendered, which would
+      // send the wrong next_status and receive a 422. Fetching the single transfer
+      // before the PATCH lets us detect this early and show a helpful message.
+      interface FreshTransfer {
+        transfer_id: string;
+        status: TransferStatus;
+        from_warehouse_id: string;
+        to_warehouse_id: string;
+        created_at: string;
+      }
+      let freshStatus: TransferStatus      = transfer?.status ?? next;
+      let freshFromWH: string | undefined  = transfer?.from_warehouse_id;
+      let freshToWH:   string | undefined  = transfer?.to_warehouse_id;
+      try {
+        const fresh = await api.get<FreshTransfer>(`/api/v1/inventory/transfers/${id}`);
+        freshStatus = fresh.status;
+        freshFromWH = fresh.from_warehouse_id;
+        freshToWH   = fresh.to_warehouse_id;
+      } catch {
+        // GET failed (network issue) — let the PATCH proceed and handle any 422 below
+      }
+      // transfer_type is immutable — safe to use cached value
+      const transferType = transfer?.transfer_type ?? "PULL";
+      const validActions = getAvailableActions(
+        user.role, transferType, freshStatus,
+        user.warehouseId, freshFromWH, freshToWH,
+      );
+      if (!validActions.some((a) => a.next === next)) {
+        // Status changed since the button was shown — abort and let user retry with fresh data
+        await qc.invalidateQueries({ queryKey: ["transfers", org] });
+        setToast(`Status changed to ${freshStatus.replace(/_/g, " ")} — list refreshed. Please try again.`);
+        setTimeout(() => setToast(""), 5000);
+        return;
+      }
+      // ───────────────────────────────────────────────────────────────────────
+
       await api.patch(`/api/v1/inventory/transfers/${id}`, { next_status: next });
+
+      // FIX 4: Optimistic update — reflect new status in the table immediately,
+      // before the background refetch arrives.
+      qc.setQueryData<ApiTransfer[]>(
+        ["transfers", org],
+        (old) => old?.map((t) => (t.id === id ? { ...t, status: next } : t)),
+      );
       await qc.invalidateQueries({ queryKey: ["transfers", org] });
 
       if (transfer && !getTransferEntry(id)) {
