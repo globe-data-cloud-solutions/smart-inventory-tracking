@@ -63,10 +63,10 @@ class TestLocalDevAuth:
         assert data["expires_in"] > 0
 
         payload = jwt.decode(data["access_token"], _SECRET, algorithms=[_ALG])
-        assert payload["sub"]          == "00000001-aw03-0000-0000-000000000001"
+        assert payload["sub"]          == "00000001-a003-0000-0000-000000000001"
         assert payload["role"]         == "WM"
         assert payload["tenant_id"]    == "10000001-0000-0000-0000-000000000001"
-        assert payload["warehouse_id"] == "20000001-aw00-0000-0000-000000000002"
+        assert payload["warehouse_id"] == "20000001-a000-0000-0000-000000000002"
         assert "exp" in payload
         assert "iat" in payload
 
@@ -84,7 +84,7 @@ class TestLocalDevAuth:
         """NM user at Main Production Center gets the correct warehouse_id claim.
 
         production@addis-water.com is seeded as NM assigned to the Main Production Center
-        (20000001-aw00-0000-0000-000000000001). NM users CAN have a warehouse_id when
+        (20000001-a000-0000-0000-000000000001). NM users CAN have a warehouse_id when
         they are facility-level managers, unlike TA/SA who never have one.
         """
         resp = client.post(
@@ -94,7 +94,7 @@ class TestLocalDevAuth:
         assert resp.status_code == 200
         payload = jwt.decode(resp.json()["access_token"], _SECRET, algorithms=[_ALG])
         assert payload["role"]         == "NM"
-        assert payload["warehouse_id"] == "20000001-aw00-0000-0000-000000000001"
+        assert payload["warehouse_id"] == "20000001-a000-0000-0000-000000000001"
         assert payload["tenant_id"]    == "10000001-0000-0000-0000-000000000001"
 
     def test_dev_email_unknown_returns_404(self) -> None:
@@ -146,6 +146,6 @@ class TestLocalDevAuth:
         )
         assert resp.status_code == 200
         payload = jwt.decode(resp.json()["access_token"], _SECRET, algorithms=[_ALG])
-        assert payload["sub"]          == "00000002-mc04-0000-0000-000000000001"
+        assert payload["sub"]          == "00000002-0c04-0000-0000-000000000001"
         assert payload["tenant_id"]    == "10000002-0000-0000-0000-000000000001"
-        assert payload["warehouse_id"] == "20000002-mc00-0000-0000-000000000003"
+        assert payload["warehouse_id"] == "20000002-0c00-0000-0000-000000000003"

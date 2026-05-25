@@ -30,6 +30,17 @@ function store(): Storage | null {
   try { return window.localStorage; } catch { return null; }
 }
 
+function decodeJwtPayload(token: string): Record<string, unknown> | null {
+  try {
+    const parts = token.split(".");
+    if (parts.length !== 3) return null;
+    const b64 = parts[1]!.replace(/-/g, "+").replace(/_/g, "/");
+    return JSON.parse(atob(b64)) as Record<string, unknown>;
+  } catch {
+    return null;
+  }
+}
+
 /**
  * Exchange a SMART JWT for a demo session.
  * Called fire-and-forget after login() so the token is ready before the first
@@ -59,11 +70,16 @@ async function _exchangeJWT(session: SessionUser): Promise<void> {
     const data = (await res.json()) as { access_token?: string };
     if (!data.access_token) return;
 
-    // Patch the stored session with the JWT
+    // Patch the stored session with the JWT and real warehouse/tenant IDs from claims
     const raw = store()?.getItem(SESSION_KEY);
     if (!raw) return;
     const stored = JSON.parse(raw) as SessionUser;
     stored.jwtToken = data.access_token;
+    const claims = decodeJwtPayload(data.access_token);
+    if (claims) {
+      if (claims.warehouse_id) stored.warehouseId = String(claims.warehouse_id);
+      if (claims.tenant_id)    stored.tenantId    = String(claims.tenant_id);
+    }
     store()?.setItem(SESSION_KEY, JSON.stringify(stored));
   } catch {
     // Auth service unreachable — continue without JWT (BFF routes handle it)

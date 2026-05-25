@@ -29,14 +29,16 @@ Session = async_sessionmaker(bind=engine, expire_on_commit=False)
 
 # ─── Tenant definitions ────────────────────────────────────────────────────────
 
-PLAN_ID = str(uuid.uuid4())  # placeholder plan
+PLAN_ID = str(uuid.uuid4())  # placeholder — plan_id column has no FK, any UUID works
 
 TENANTS = [
     {
         "id": "10000001-0000-0000-0000-000000000001",
         "name": "Addis Water",
+        "slug": "addis-water",
         "organisation_type": "PRODUCER",
         "default_locale": "am",
+        "sku_prefix": "AW",
         "feature_flags": {"LOGISTICS": False, "AI_ANALYTICS": False, "ADVANCED_BATCH_TRACKING": True, "FLEET_MANAGEMENT": False},
         "approval_thresholds": {"inventory:adjust": {"low": 100, "medium": 500}},
         "sku_cap": 100,
@@ -44,8 +46,10 @@ TENANTS = [
     {
         "id": "10000002-0000-0000-0000-000000000001",
         "name": "Muger Cement",
+        "slug": "muger-cement",
         "organisation_type": "PRODUCER",
         "default_locale": "am",
+        "sku_prefix": "MC",
         "feature_flags": {"LOGISTICS": False, "AI_ANALYTICS": False, "ADVANCED_BATCH_TRACKING": False, "FLEET_MANAGEMENT": False},
         "approval_thresholds": {"inventory:adjust": {"low": 100, "medium": 500}},
         "sku_cap": 50,
@@ -56,20 +60,20 @@ TENANTS = [
 
 WAREHOUSES = {
     "10000001-0000-0000-0000-000000000001": [
-        {"id": "20000001-aw00-0000-0000-000000000001", "name": "Main Production Center", "parent_id": None, "location": "Addis Ababa Industrial Zone"},
-        {"id": "20000001-aw00-0000-0000-000000000002", "name": "North WH",               "parent_id": None, "location": "Gondar"},
-        {"id": "20000001-aw00-0000-0000-000000000003", "name": "North-Subcenter WH",      "parent_id": "20000001-aw00-0000-0000-000000000002", "location": "Bahir Dar"},
-        {"id": "20000001-aw00-0000-0000-000000000004", "name": "South WH",               "parent_id": None, "location": "Hawassa"},
-        {"id": "20000001-aw00-0000-0000-000000000005", "name": "East WH",                "parent_id": None, "location": "Dire Dawa"},
-        {"id": "20000001-aw00-0000-0000-000000000006", "name": "West WH",                "parent_id": None, "location": "Jimma"},
+        {"id": "20000001-a000-0000-0000-000000000001", "name": "Main Production Center", "parent_id": None, "location": "Addis Ababa Industrial Zone"},
+        {"id": "20000001-a000-0000-0000-000000000002", "name": "North WH",               "parent_id": None, "location": "Gondar"},
+        {"id": "20000001-a000-0000-0000-000000000003", "name": "North-Subcenter WH",      "parent_id": "20000001-a000-0000-0000-000000000002", "location": "Bahir Dar"},
+        {"id": "20000001-a000-0000-0000-000000000004", "name": "South WH",               "parent_id": None, "location": "Hawassa"},
+        {"id": "20000001-a000-0000-0000-000000000005", "name": "East WH",                "parent_id": None, "location": "Dire Dawa"},
+        {"id": "20000001-a000-0000-0000-000000000006", "name": "West WH",                "parent_id": None, "location": "Jimma"},
     ],
     "10000002-0000-0000-0000-000000000001": [
-        {"id": "20000002-mc00-0000-0000-000000000001", "name": "Harar Production Center", "parent_id": None, "location": "Harar, Harari Region"},
-        {"id": "20000002-mc00-0000-0000-000000000002", "name": "Ambo Production Center",  "parent_id": None, "location": "Ambo, West Shewa"},
-        {"id": "20000002-mc00-0000-0000-000000000003", "name": "Kombolcha WH",            "parent_id": None, "location": "Kombolcha, Amhara"},
-        {"id": "20000002-mc00-0000-0000-000000000004", "name": "Mekele WH",              "parent_id": None, "location": "Mekele, Tigray"},
-        {"id": "20000002-mc00-0000-0000-000000000005", "name": "Dire Dawa WH",           "parent_id": None, "location": "Dire Dawa"},
-        {"id": "20000002-mc00-0000-0000-000000000006", "name": "Hawassa WH",             "parent_id": None, "location": "Hawassa, Sidama"},
+        {"id": "20000002-0c00-0000-0000-000000000001", "name": "Harar Production Center", "parent_id": None, "location": "Harar, Harari Region"},
+        {"id": "20000002-0c00-0000-0000-000000000002", "name": "Ambo Production Center",  "parent_id": None, "location": "Ambo, West Shewa"},
+        {"id": "20000002-0c00-0000-0000-000000000003", "name": "Kombolcha WH",            "parent_id": None, "location": "Kombolcha, Amhara"},
+        {"id": "20000002-0c00-0000-0000-000000000004", "name": "Mekele WH",              "parent_id": None, "location": "Mekele, Tigray"},
+        {"id": "20000002-0c00-0000-0000-000000000005", "name": "Dire Dawa WH",           "parent_id": None, "location": "Dire Dawa"},
+        {"id": "20000002-0c00-0000-0000-000000000006", "name": "Hawassa WH",             "parent_id": None, "location": "Hawassa, Sidama"},
     ],
 }
 
@@ -109,7 +113,7 @@ PRODUCTS = {
 # ─── Users ────────────────────────────────────────────────────────────────────
 
 SA_USER = {
-    "id": "00000001-sa00-0000-0000-000000000001",
+    "id": "00000001-0a00-0000-0000-000000000001",
     "email": "smartadmin@smart-inventory.com",
     "name": "System Administrator",
     "role": "SA",
@@ -119,23 +123,23 @@ SA_USER = {
 }
 
 AW_USERS = [
-    {"id": "00000001-aw01-0000-0000-000000000001", "email": "admin@addis-water.com",       "name": "Yohannes Tesfaye", "role": "TA", "wh": None},
-    {"id": "00000001-aw02-0000-0000-000000000001", "email": "production@addis-water.com",  "name": "Selam Bekele",     "role": "NM", "wh": "20000001-aw00-0000-0000-000000000001"},
-    {"id": "00000001-aw03-0000-0000-000000000001", "email": "north.wm@addis-water.com",    "name": "Hailu Tadesse",    "role": "WM", "wh": "20000001-aw00-0000-0000-000000000002"},
-    {"id": "00000001-aw04-0000-0000-000000000001", "email": "northsub.wm@addis-water.com", "name": "Tigist Alemu",     "role": "WM", "wh": "20000001-aw00-0000-0000-000000000003"},
-    {"id": "00000001-aw05-0000-0000-000000000001", "email": "south.wm@addis-water.com",    "name": "Dawit Girma",      "role": "WM", "wh": "20000001-aw00-0000-0000-000000000004"},
-    {"id": "00000001-aw06-0000-0000-000000000001", "email": "east.wm@addis-water.com",     "name": "Fatuma Hassan",    "role": "WM", "wh": "20000001-aw00-0000-0000-000000000005"},
-    {"id": "00000001-aw07-0000-0000-000000000001", "email": "west.wm@addis-water.com",     "name": "Abebe Worku",      "role": "WM", "wh": "20000001-aw00-0000-0000-000000000006"},
+    {"id": "00000001-a001-0000-0000-000000000001", "email": "admin@addis-water.com",       "name": "Yohannes Tesfaye", "role": "TA", "wh": None},
+    {"id": "00000001-a002-0000-0000-000000000001", "email": "production@addis-water.com",  "name": "Selam Bekele",     "role": "NM", "wh": "20000001-a000-0000-0000-000000000001"},
+    {"id": "00000001-a003-0000-0000-000000000001", "email": "north.wm@addis-water.com",    "name": "Hailu Tadesse",    "role": "WM", "wh": "20000001-a000-0000-0000-000000000002"},
+    {"id": "00000001-a004-0000-0000-000000000001", "email": "northsub.wm@addis-water.com", "name": "Tigist Alemu",     "role": "WM", "wh": "20000001-a000-0000-0000-000000000003"},
+    {"id": "00000001-a005-0000-0000-000000000001", "email": "south.wm@addis-water.com",    "name": "Dawit Girma",      "role": "WM", "wh": "20000001-a000-0000-0000-000000000004"},
+    {"id": "00000001-a006-0000-0000-000000000001", "email": "east.wm@addis-water.com",     "name": "Fatuma Hassan",    "role": "WM", "wh": "20000001-a000-0000-0000-000000000005"},
+    {"id": "00000001-a007-0000-0000-000000000001", "email": "west.wm@addis-water.com",     "name": "Abebe Worku",      "role": "WM", "wh": "20000001-a000-0000-0000-000000000006"},
 ]
 
 MC_USERS = [
-    {"id": "00000002-mc01-0000-0000-000000000001", "email": "admin@muger-cement.com",       "name": "Abeba Haile",      "role": "TA", "wh": None},
-    {"id": "00000002-mc02-0000-0000-000000000001", "email": "harar.pm@muger-cement.com",    "name": "Biruk Mengistu",   "role": "NM", "wh": "20000002-mc00-0000-0000-000000000001"},
-    {"id": "00000002-mc03-0000-0000-000000000001", "email": "ambo.pm@muger-cement.com",     "name": "Meseret Tadesse",  "role": "NM", "wh": "20000002-mc00-0000-0000-000000000002"},
-    {"id": "00000002-mc04-0000-0000-000000000001", "email": "kombolcha.wm@muger-cement.com","name": "Getnet Assefa",    "role": "WM", "wh": "20000002-mc00-0000-0000-000000000003"},
-    {"id": "00000002-mc05-0000-0000-000000000001", "email": "mekele.wm@muger-cement.com",   "name": "Hiwot Gebre",      "role": "WM", "wh": "20000002-mc00-0000-0000-000000000004"},
-    {"id": "00000002-mc06-0000-0000-000000000001", "email": "diredawa.wm@muger-cement.com", "name": "Abdulaziz Hassen", "role": "WM", "wh": "20000002-mc00-0000-0000-000000000005"},
-    {"id": "00000002-mc07-0000-0000-000000000001", "email": "hawassa.wm@muger-cement.com",  "name": "Tigabu Tesfay",    "role": "WM", "wh": "20000002-mc00-0000-0000-000000000006"},
+    {"id": "00000002-0c01-0000-0000-000000000001", "email": "admin@muger-cement.com",       "name": "Abeba Haile",      "role": "TA", "wh": None},
+    {"id": "00000002-0c02-0000-0000-000000000001", "email": "harar.pm@muger-cement.com",    "name": "Biruk Mengistu",   "role": "NM", "wh": "20000002-0c00-0000-0000-000000000001"},
+    {"id": "00000002-0c03-0000-0000-000000000001", "email": "ambo.pm@muger-cement.com",     "name": "Meseret Tadesse",  "role": "NM", "wh": "20000002-0c00-0000-0000-000000000002"},
+    {"id": "00000002-0c04-0000-0000-000000000001", "email": "kombolcha.wm@muger-cement.com","name": "Getnet Assefa",    "role": "WM", "wh": "20000002-0c00-0000-0000-000000000003"},
+    {"id": "00000002-0c05-0000-0000-000000000001", "email": "mekele.wm@muger-cement.com",   "name": "Hiwot Gebre",      "role": "WM", "wh": "20000002-0c00-0000-0000-000000000004"},
+    {"id": "00000002-0c06-0000-0000-000000000001", "email": "diredawa.wm@muger-cement.com", "name": "Abdulaziz Hassen", "role": "WM", "wh": "20000002-0c00-0000-0000-000000000005"},
+    {"id": "00000002-0c07-0000-0000-000000000001", "email": "hawassa.wm@muger-cement.com",  "name": "Tigabu Tesfay",    "role": "WM", "wh": "20000002-0c00-0000-0000-000000000006"},
 ]
 
 USERS_BY_TENANT = {
@@ -147,14 +151,14 @@ USERS_BY_TENANT = {
 
 INITIAL_STOCK = {
     "10000001-0000-0000-0000-000000000001": {
-        "AW-500-P6":   {"20000001-aw00-0000-0000-000000000001": 8400, "20000001-aw00-0000-0000-000000000002": 1200, "20000001-aw00-0000-0000-000000000003": 350,  "20000001-aw00-0000-0000-000000000004": 980,  "20000001-aw00-0000-0000-000000000005": 760,  "20000001-aw00-0000-0000-000000000006": 540},
-        "AW-500-P12":  {"20000001-aw00-0000-0000-000000000001": 5200, "20000001-aw00-0000-0000-000000000002": 840,  "20000001-aw00-0000-0000-000000000003": 210,  "20000001-aw00-0000-0000-000000000004": 620,  "20000001-aw00-0000-0000-000000000005": 490,  "20000001-aw00-0000-0000-000000000006": 380},
-        "AW-1L-P6":    {"20000001-aw00-0000-0000-000000000001": 6800, "20000001-aw00-0000-0000-000000000002": 960,  "20000001-aw00-0000-0000-000000000003": 280,  "20000001-aw00-0000-0000-000000000004": 740,  "20000001-aw00-0000-0000-000000000005": 620,  "20000001-aw00-0000-0000-000000000006": 480},
+        "AW-500-P6":   {"20000001-a000-0000-0000-000000000001": 8400, "20000001-a000-0000-0000-000000000002": 1200, "20000001-a000-0000-0000-000000000003": 350,  "20000001-a000-0000-0000-000000000004": 980,  "20000001-a000-0000-0000-000000000005": 760,  "20000001-a000-0000-0000-000000000006": 540},
+        "AW-500-P12":  {"20000001-a000-0000-0000-000000000001": 5200, "20000001-a000-0000-0000-000000000002": 840,  "20000001-a000-0000-0000-000000000003": 210,  "20000001-a000-0000-0000-000000000004": 620,  "20000001-a000-0000-0000-000000000005": 490,  "20000001-a000-0000-0000-000000000006": 380},
+        "AW-1L-P6":    {"20000001-a000-0000-0000-000000000001": 6800, "20000001-a000-0000-0000-000000000002": 960,  "20000001-a000-0000-0000-000000000003": 280,  "20000001-a000-0000-0000-000000000004": 740,  "20000001-a000-0000-0000-000000000005": 620,  "20000001-a000-0000-0000-000000000006": 480},
     },
     "10000002-0000-0000-0000-000000000001": {
-        "MC-OPC42N-25": {"20000002-mc00-0000-0000-000000000001": 18500, "20000002-mc00-0000-0000-000000000002": 21000, "20000002-mc00-0000-0000-000000000003": 4200, "20000002-mc00-0000-0000-000000000004": 3800, "20000002-mc00-0000-0000-000000000005": 5100, "20000002-mc00-0000-0000-000000000006": 4600},
-        "MC-OPC42N-50": {"20000002-mc00-0000-0000-000000000001": 12400, "20000002-mc00-0000-0000-000000000002": 15600, "20000002-mc00-0000-0000-000000000003": 3100, "20000002-mc00-0000-0000-000000000004": 2800, "20000002-mc00-0000-0000-000000000005": 3700, "20000002-mc00-0000-0000-000000000006": 3300},
-        "MC-PPC-25":    {"20000002-mc00-0000-0000-000000000001": 8100,  "20000002-mc00-0000-0000-000000000002": 9600,  "20000002-mc00-0000-0000-000000000003": 1800, "20000002-mc00-0000-0000-000000000004": 1600, "20000002-mc00-0000-0000-000000000005": 2200, "20000002-mc00-0000-0000-000000000006": 1900},
+        "MC-OPC42N-25": {"20000002-0c00-0000-0000-000000000001": 18500, "20000002-0c00-0000-0000-000000000002": 21000, "20000002-0c00-0000-0000-000000000003": 4200, "20000002-0c00-0000-0000-000000000004": 3800, "20000002-0c00-0000-0000-000000000005": 5100, "20000002-0c00-0000-0000-000000000006": 4600},
+        "MC-OPC42N-50": {"20000002-0c00-0000-0000-000000000001": 12400, "20000002-0c00-0000-0000-000000000002": 15600, "20000002-0c00-0000-0000-000000000003": 3100, "20000002-0c00-0000-0000-000000000004": 2800, "20000002-0c00-0000-0000-000000000005": 3700, "20000002-0c00-0000-0000-000000000006": 3300},
+        "MC-PPC-25":    {"20000002-0c00-0000-0000-000000000001": 8100,  "20000002-0c00-0000-0000-000000000002": 9600,  "20000002-0c00-0000-0000-000000000003": 1800, "20000002-0c00-0000-0000-000000000004": 1600, "20000002-0c00-0000-0000-000000000005": 2200, "20000002-0c00-0000-0000-000000000006": 1900},
     },
 }
 
@@ -163,48 +167,49 @@ INITIAL_STOCK = {
 
 async def seed() -> None:
     async with Session() as s:
-        # Plan
-        await s.execute(text(
-            "INSERT INTO plans (id, name, sku_limit) VALUES (:id, :name, :lim) ON CONFLICT DO NOTHING"
-        ), {"id": PLAN_ID, "name": "Enterprise", "lim": None})
-
-        # SA user (no tenant)
-        await upsert_user(s, SA_USER, None)
+        # SA user — insert using the first tenant as owner (tenant_id NOT NULL in schema).
+        # SA role has platform-wide access via JWT role check; the tenant_id is a placeholder.
+        await upsert_user(s, SA_USER, "10000001-0000-0000-0000-000000000001")
 
         for tenant in TENANTS:
             tid = tenant["id"]
             print(f"\n[{tenant['name']}]")
 
-            # Tenant
+            # Tenant — include sku_prefix/sku_counter required by schema; no plans FK needed
             await s.execute(text("""
                 INSERT INTO tenants (id, name, organisation_type, plan_id, feature_flags,
-                    approval_thresholds, default_locale, onboarding_complete, sku_cap)
-                VALUES (:id, :name, :org_type, :plan_id, :flags::jsonb, :thresholds::jsonb,
-                    :locale, true, :sku_cap)
+                    approval_thresholds, default_locale, onboarding_complete, sku_cap,
+                    sku_prefix, sku_counter, slug)
+                VALUES (:id, :name, :org_type, :plan_id, CAST(:flags AS jsonb), CAST(:thresholds AS jsonb),
+                    :locale, true, :sku_cap, :sku_prefix, 0, :slug)
                 ON CONFLICT (id) DO UPDATE SET
-                    name = EXCLUDED.name, feature_flags = EXCLUDED.feature_flags
+                    name = EXCLUDED.name,
+                    feature_flags = EXCLUDED.feature_flags,
+                    sku_prefix = EXCLUDED.sku_prefix,
+                    slug = EXCLUDED.slug
             """), {
                 "id": tid, "name": tenant["name"], "org_type": tenant["organisation_type"],
                 "plan_id": PLAN_ID, "flags": json.dumps(tenant["feature_flags"]),
                 "thresholds": json.dumps(tenant["approval_thresholds"]),
                 "locale": tenant["default_locale"], "sku_cap": tenant.get("sku_cap"),
+                "sku_prefix": tenant["sku_prefix"], "slug": tenant["slug"],
             })
             print(f"  ✓ Tenant created")
 
             # RLS context
             await s.execute(text(
                 "SELECT set_config('app.current_tenant_id', :tid, true), "
-                "       set_config('app.current_user_id', '00000001-sa00-0000-0000-000000000001', true)"
+                "       set_config('app.current_user_id', '00000001-0a00-0000-0000-000000000001', true)"
             ), {"tid": tid})
 
-            # Warehouses
+            # Warehouses — no parent_id column in schema; use address for location
             for wh in WAREHOUSES[tid]:
                 await s.execute(text("""
-                    INSERT INTO warehouses (id, tenant_id, name, parent_id, address)
-                    VALUES (:id, :tid, :name, :parent, :addr)
+                    INSERT INTO warehouses (id, tenant_id, name, address)
+                    VALUES (:id, :tid, :name, :addr)
                     ON CONFLICT (id) DO NOTHING
                 """), {"id": wh["id"], "tid": tid, "name": wh["name"],
-                       "parent": wh["parent_id"], "addr": wh["location"]})
+                       "addr": wh["location"]})
             print(f"  ✓ {len(WAREHOUSES[tid])} warehouses created")
 
             # Products
@@ -224,7 +229,7 @@ async def seed() -> None:
 
             # Initial inventory transactions
             tx_date = date.today()
-            system_user = "00000001-sa00-0000-0000-000000000001"
+            system_user = "00000001-0a00-0000-0000-000000000001"
             if tid in INITIAL_STOCK:
                 tx_count = 0
                 for sku, wh_qtys in INITIAL_STOCK[tid].items():

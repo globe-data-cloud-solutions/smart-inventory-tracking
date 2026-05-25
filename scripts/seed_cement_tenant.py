@@ -32,7 +32,7 @@ engine = create_async_engine(os.environ["DATABASE_URL"])
 Session = async_sessionmaker(bind=engine, expire_on_commit=False)
 
 PLAN_ID = str(uuid.uuid4())
-SYSTEM_USER = "00000001-sa00-0000-0000-000000000001"  # SA created by seed_demo_data.py
+SYSTEM_USER = "00000001-0a00-0000-0000-000000000001"  # SA created by seed_demo_data.py
 
 
 def uid() -> str:

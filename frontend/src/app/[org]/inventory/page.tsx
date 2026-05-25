@@ -1,10 +1,10 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useParams } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
 import { SA_ORG_SLUG, getSession } from "@/lib/demo-auth";
-import { DEMO_TENANTS, type DemoProduct } from "@/lib/demo-data";
+import { DEMO_TENANTS, type DemoProduct, type DemoWarehouse, type WarehouseType } from "@/lib/demo-data";
 import { usePermission } from "@/hooks/usePermission";
 import { AddProductPanel } from "@/components/features/inventory/AddProductPanel";
 import { ReceiveStockPanel } from "@/components/features/inventory/ReceiveStockPanel";
@@ -23,9 +23,14 @@ type ApiTransfer = {
 };
 
 type ApiProduct = {
-  id: string; sku: string; name: string; type_code: string;
-  unit: string; pack_size: number; created_at: string;
-  category?: string; on_hand?: number; reorder_point?: number; warehouse_id?: string | null;
+  id: string; sku: string; name: string; unit: string; pack_size: number;
+};
+
+type InventoryStockItem = {
+  product_id: string; product_name: string; product_sku: string;
+  warehouse_id: string; warehouse_name: string; warehouse_type: string;
+  current_stock: string; pending_out_qty: string; in_transit_in_qty: string;
+  requested_qty: string; net_available: string;
 };
 type Filters      = { category: string[]; unit: string[]; status: string[] };
 type ExpandedCell = { productId: string; productName: string; warehouseId: string; col: "reserved" | "inTransitOut" | "inTransitIn" };
@@ -208,9 +213,10 @@ export default function InventoryPage() {
     addTransfer, getTransferEntry, updateTransferStatus,
   } = useInventoryStore();
 
+  const isGatewayMode = !!process.env.NEXT_PUBLIC_API_URL;
   const tenant = DEMO_TENANTS.find((ten) => ten.slug === org);
 
-const [selectedWH, setSelectedWH] = useState<string>(user?.warehouseId ?? "");
+  const [selectedWH, setSelectedWH] = useState<string>(user?.warehouseId ?? "");
   const whId = selectedWH || user?.warehouseId || "";
   const [filters, setFilters] = useState<Filters>({ category: [], unit: [], status: [] });
   const [expandedCell, setExpandedCell] = useState<ExpandedCell | null>(null);
@@ -231,6 +237,48 @@ const [selectedWH, setSelectedWH] = useState<string>(user?.warehouseId ?? "");
     staleTime: 0,
     refetchInterval: 15000,
   });
+
+  const { data: inventoryStock = [] } = useQuery<InventoryStockItem[]>({
+    queryKey: ["inventory-stock", org],
+    queryFn:  () => api.get<InventoryStockItem[]>("/api/v1/inventory/analytics/stock"),
+    enabled:  isGatewayMode && !!tenant && !!user && org !== SA_ORG_SLUG,
+    staleTime: 0,
+    refetchInterval: 30000,
+  });
+
+  const stockByKey = useMemo(() => {
+    const map = new Map<string, InventoryStockItem>();
+    for (const item of inventoryStock) {
+      map.set(`${item.product_id}:${item.warehouse_id}`, item);
+    }
+    return map;
+  }, [inventoryStock]);
+
+  const gatewayWarehouses = useMemo((): DemoWarehouse[] => {
+    const seen = new Map<string, DemoWarehouse>();
+    for (const item of inventoryStock) {
+      if (!seen.has(item.warehouse_id)) {
+        seen.set(item.warehouse_id, {
+          id: item.warehouse_id, name: item.warehouse_name,
+          type: (item.warehouse_type as WarehouseType) ?? "WH",
+          parentId: null,
+        });
+      }
+    }
+    return Array.from(seen.values());
+  }, [inventoryStock]);
+
+  // Re-sync selectedWH to the real UUID once gateway warehouse list has loaded.
+  // After login, _exchangeJWT updates warehouseId in localStorage; reading it here
+  // ensures the dropdown pre-selects the correct real warehouse on first render.
+  useEffect(() => {
+    if (!isGatewayMode || gatewayWarehouses.length === 0) return;
+    const realWhId = getSession()?.warehouseId;
+    if (realWhId && gatewayWarehouses.some((w) => w.id === realWhId)) {
+      setSelectedWH((prev) => (prev === realWhId ? prev : realWhId));
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [gatewayWarehouses]);
 
   const syncedRef = useRef(new Set<string>());
   useEffect(() => {
@@ -272,18 +320,40 @@ const [selectedWH, setSelectedWH] = useState<string>(user?.warehouseId ?? "");
     return <p className="p-8 text-gray-500">{t("common.no_data")}</p>;
 
   const userWarehouse = tenant.warehouses.find((w) => w.id === user.warehouseId);
-  const isMWH = userWarehouse?.type === "MWH" || ["TA", "SA"].includes(user.role);
+  const isMWH = isGatewayMode
+    ? ["TA", "SA", "NM", "LM", "RM"].includes(user.role)
+    : (userWarehouse?.type === "MWH" || ["TA", "SA"].includes(user.role));
+
+  // In gateway mode: use real warehouse list from inventory analytics;
+  // in BFF mode: use demo tenant warehouses.
+  const displayWarehouses: DemoWarehouse[] = isGatewayMode ? gatewayWarehouses : tenant.warehouses;
 
   const tenantProductIds = new Set(tenant.products.map((p) => p.id));
-  const mergedProducts: DemoProduct[] = [
-    ...tenant.products,
-    ...apiProducts.filter((p) => !tenantProductIds.has(p.id)).map((p) => ({
-      id:           p.id, sku: p.sku, name: p.name,
-      category:     p.category ?? p.type_code, unit: p.unit,
-      batchTracking: false, reorderPoint: p.reorder_point ?? 0,
-      stock: (p.on_hand && p.warehouse_id) ? { [p.warehouse_id]: p.on_hand } as Record<string, number> : {} as Record<string, number>,
-    })),
-  ];
+  const mergedProducts: DemoProduct[] = isGatewayMode
+    ? apiProducts.map((p) => ({
+        id: p.id, sku: p.sku, name: p.name, category: "—", unit: p.unit,
+        batchTracking: false, reorderPoint: 0, stock: {} as Record<string, number>,
+      }))
+    : [
+        ...tenant.products,
+        ...apiProducts.filter((p) => !tenantProductIds.has(p.id)).map((p) => ({
+          id: p.id, sku: p.sku, name: p.name, category: "—", unit: p.unit,
+          batchTracking: false, reorderPoint: 0, stock: {} as Record<string, number>,
+        })),
+      ];
+
+  // Effective on-hand: use real API balance in gateway mode, Zustand-adjusted demo balance in BFF mode.
+  function effectiveOnHand(productId: string, warehouseId: string, demoBase: number): number {
+    if (isGatewayMode) {
+      if (warehouseId) {
+        return parseFloat(stockByKey.get(`${productId}:${warehouseId}`)?.current_stock ?? "0");
+      }
+      return Array.from(stockByKey.entries())
+        .filter(([k]) => k.startsWith(`${productId}:`))
+        .reduce((sum, [, item]) => sum + parseFloat(item.current_stock), 0);
+    }
+    return warehouseId ? getOnHand(productId, warehouseId, demoBase) : demoBase;
+  }
 
   let modalRows: ModalRow[] = [];
   if (expandedCell) {
@@ -308,10 +378,12 @@ const [selectedWH, setSelectedWH] = useState<string>(user?.warehouseId ?? "");
 
   const allProducts = whId
     ? mergedProducts.filter((p) => {
+        if (isGatewayMode) {
+          // In gateway mode: show product if it has a stock entry at this warehouse OR
+          // has pending inbound transfers (per CLAUDE.md §27 zero-stock visibility rule).
+          return stockByKey.has(`${p.id}:${whId}`) || getInTransitInTotal(p.id, whId) > 0;
+        }
         const base = p.stock[whId] ?? 0;
-        // Retain products that belong to this warehouse regardless of current balance.
-        // "whId in p.stock" covers products with a base allocation (including zero-balance).
-        // The remaining checks cover products received here dynamically (no base entry).
         return (whId in p.stock) ||
                getOnHand(p.id, whId, base) > 0 ||
                getReservedTotal(p.id, whId) > 0 ||
@@ -323,16 +395,19 @@ const [selectedWH, setSelectedWH] = useState<string>(user?.warehouseId ?? "");
     : mergedProducts;
 
   const mainTableIds = new Set(allProducts.map((p) => p.id));
-  const zeroStockNewProducts = apiProducts.filter((p) => !tenantProductIds.has(p.id) && !mainTableIds.has(p.id));
+  // In gateway mode: all products come from the API — no separate "zero stock new" section.
+  const zeroStockNewProducts = isGatewayMode
+    ? []
+    : apiProducts.filter((p) => !tenantProductIds.has(p.id) && !mainTableIds.has(p.id));
 
   const categoryOptions = Array.from(new Set(allProducts.map((p) => p.category)));
   const unitOptions     = Array.from(new Set(allProducts.map((p) => p.unit)));
   const statusOptions   = [t("dashboard.in_stock"), t("alerts.low_stock"), t("inventory.no_stock")];
 
   function rowMatchesFilters(p: DemoProduct): boolean {
-    const base   = whId ? (p.stock[whId] ?? 0) : Object.values(p.stock).reduce((a, b) => a + b, 0);
-    const onHand = whId ? getOnHand(p.id, whId, base) : base;
-    const status = onHand === 0
+    const demoBase = whId ? (p.stock[whId] ?? 0) : Object.values(p.stock).reduce((a, b) => a + b, 0);
+    const onHand   = effectiveOnHand(p.id, whId, demoBase);
+    const status   = onHand === 0
       ? t("inventory.no_stock")
       : onHand <= p.reorderPoint
         ? t("alerts.low_stock")
@@ -347,17 +422,17 @@ const [selectedWH, setSelectedWH] = useState<string>(user?.warehouseId ?? "");
   const visibleProducts = allProducts
     .filter(rowMatchesFilters)
     .sort((a, b) => {
-      const aBase   = whId ? (a.stock[whId] ?? 0) : Object.values(a.stock).reduce((x, y) => x + y, 0);
-      const bBase   = whId ? (b.stock[whId] ?? 0) : Object.values(b.stock).reduce((x, y) => x + y, 0);
-      const aOnHand = whId ? getOnHand(a.id, whId, aBase) : aBase;
-      const bOnHand = whId ? getOnHand(b.id, whId, bBase) : bBase;
+      const aDemoBase = whId ? (a.stock[whId] ?? 0) : Object.values(a.stock).reduce((x, y) => x + y, 0);
+      const bDemoBase = whId ? (b.stock[whId] ?? 0) : Object.values(b.stock).reduce((x, y) => x + y, 0);
+      const aOnHand   = effectiveOnHand(a.id, whId, aDemoBase);
+      const bOnHand   = effectiveOnHand(b.id, whId, bDemoBase);
       if (aOnHand === 0 && bOnHand !== 0) return 1;
       if (bOnHand === 0 && aOnHand !== 0) return -1;
       return 0;
     });
-  const totalStockAll   = visibleProducts.reduce((a, p) => {
-    const base = whId ? (p.stock[whId] ?? 0) : Object.values(p.stock).reduce((x, y) => x + y, 0);
-    return a + (whId ? getOnHand(p.id, whId, base) : base);
+  const totalStockAll = visibleProducts.reduce((acc, p) => {
+    const demoBase = whId ? (p.stock[whId] ?? 0) : Object.values(p.stock).reduce((x, y) => x + y, 0);
+    return acc + effectiveOnHand(p.id, whId, demoBase);
   }, 0);
   const activeFiltersCount = Object.values(filters).filter(
     (f) => f.length > 0 && f.length < (f === filters.category ? categoryOptions.length : f === filters.unit ? unitOptions.length : statusOptions.length)
@@ -375,12 +450,12 @@ const [selectedWH, setSelectedWH] = useState<string>(user?.warehouseId ?? "");
         <div>
           <h2 className="text-2xl font-bold text-[#0f2d1f] m-0">{t("nav.inventory")}</h2>
           <p className="text-sm text-gray-500 mt-1">
-            {tenant.name} · {whId ? (tenant.warehouses.find((w) => w.id === whId)?.name ?? t("inventory.warehouse")) : t("inventory.all_locations")} · {visibleProducts.length} {t("table.skus")}
+            {tenant.name} · {whId ? (displayWarehouses.find((w) => w.id === whId)?.name ?? t("inventory.warehouse")) : t("inventory.all_locations")} · {visibleProducts.length} {t("table.skus")}
           </p>
         </div>
         <div className="flex gap-2 flex-wrap">
-          {isMWH && <OpeningBalancePanel products={mergedProducts} warehouses={tenant.warehouses} orgSlug={org} />}
-          {isMWH && <BulkImportPanel     products={mergedProducts} warehouses={tenant.warehouses} orgSlug={org} />}
+          {isMWH && <OpeningBalancePanel products={mergedProducts} warehouses={displayWarehouses} orgSlug={org} />}
+          {isMWH && <BulkImportPanel     products={mergedProducts} warehouses={displayWarehouses} orgSlug={org} />}
           <ReceiveStockPanel products={mergedProducts} orgSlug={org} />
           <IssueStockPanel   products={mergedProducts} orgSlug={org} />
           {canAddProduct && (
@@ -403,7 +478,7 @@ const [selectedWH, setSelectedWH] = useState<string>(user?.warehouseId ?? "");
               className="px-2.5 py-1.5 text-sm border border-gray-300 rounded-md outline-none cursor-pointer"
             >
               <option value="">{t("inventory.all_locations")}</option>
-              {tenant.warehouses.map((w) => <option key={w.id} value={w.id}>{w.name}</option>)}
+              {displayWarehouses.map((w) => <option key={w.id} value={w.id}>{w.name}</option>)}
             </select>
           </div>
         )}
@@ -451,13 +526,14 @@ const [selectedWH, setSelectedWH] = useState<string>(user?.warehouseId ?? "");
             </thead>
             <tbody>
               {visibleProducts.map((p, idx) => {
-                const base         = whId ? (p.stock[whId] ?? 0) : Object.values(p.stock).reduce((a, b) => a + b, 0);
-                const onHand       = whId ? getOnHand(p.id, whId, base)          : base;
-                const reserved     = whId ? getReservedTotal(p.id, whId)         : 0;
-                const inTransitOut = whId ? getInTransitOutTotal(p.id, whId)     : 0;
-                const inTransitIn  = whId ? getInTransitInTotal(p.id, whId)      : 0;
-                const available    = whId ? getAvailable(p.id, whId, base)       : base;
-                const stockStatus = onHand === 0 ? "out" : onHand <= p.reorderPoint ? "low" : "in";
+                const demoBase     = whId ? (p.stock[whId] ?? 0) : Object.values(p.stock).reduce((a, b) => a + b, 0);
+                const gatewayItem  = isGatewayMode && whId ? stockByKey.get(`${p.id}:${whId}`) : undefined;
+                const onHand       = effectiveOnHand(p.id, whId, demoBase);
+                const reserved     = whId ? (isGatewayMode ? parseFloat(gatewayItem?.pending_out_qty   ?? "0") : getReservedTotal(p.id, whId))   : 0;
+                const inTransitOut = whId ? getInTransitOutTotal(p.id, whId) : 0;
+                const inTransitIn  = whId ? (isGatewayMode ? parseFloat(gatewayItem?.in_transit_in_qty ?? "0") : getInTransitInTotal(p.id, whId)) : 0;
+                const available    = whId ? (isGatewayMode ? parseFloat(gatewayItem?.net_available     ?? "0") : getAvailable(p.id, whId, demoBase)) : demoBase;
+                const stockStatus  = onHand === 0 ? "out" : onHand <= p.reorderPoint ? "low" : "in";
 
                 return (
                   <tr key={p.id} className={`border-b border-gray-100 ${idx % 2 === 0 ? "bg-white" : "bg-gray-50"}`}>
@@ -528,7 +604,7 @@ const [selectedWH, setSelectedWH] = useState<string>(user?.warehouseId ?? "");
                     <span className="ml-1.5 text-[10px] font-bold bg-green-100 text-green-800 px-1 py-0.5 rounded">NEW</span>
                   </td>
                   <td className="px-3.5 py-2.5 font-semibold text-gray-800">{p.name}</td>
-                  <td className="px-3.5 py-2.5 text-xs"><span className="bg-gray-100 px-2 py-0.5 rounded font-semibold text-gray-700">{p.type_code}</span></td>
+                  <td className="px-3.5 py-2.5 text-xs"><span className="bg-gray-100 px-2 py-0.5 rounded font-semibold text-gray-700">—</span></td>
                   <td className="px-3.5 py-2.5 text-gray-400 text-xs">{p.unit}</td>
                   <td className="px-3.5 py-2.5 text-right font-bold text-gray-400">0</td>
                   {showWarehouseColumns && <td className="px-3.5 py-2.5 text-right text-gray-200">—</td>}

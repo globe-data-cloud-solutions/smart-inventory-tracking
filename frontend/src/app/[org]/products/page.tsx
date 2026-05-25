@@ -1,5 +1,6 @@
 "use client";
 
+import { useMemo } from "react";
 import { useParams } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
 import { SA_ORG_SLUG } from "@/lib/demo-auth";
@@ -10,7 +11,8 @@ import { AddProductPanel } from "@/components/features/inventory/AddProductPanel
 import { api } from "@/lib/api";
 import { t } from "@/lib/i18n";
 
-type ApiProduct = { id: string; sku: string; name: string; type_code: string; unit: string; pack_size: number; created_at: string; };
+type ApiProduct = { id: string; sku: string; name: string; unit: string; pack_size: number; };
+type StockItem   = { product_id: string; current_stock: string; };
 type Row        = { id: string; sku: string; name: string; category: string; unit: string; packSize: string; balance: number; batchTracking: boolean; isNew: boolean; isActive: boolean; };
 
 export default function ProductsPage() {
@@ -26,6 +28,7 @@ export default function ProductsPage() {
   // Suppress unused-variable warning — these subscriptions exist for reactivity only.
   void issues; void receives; void transfers;
 
+  const isGatewayMode = !!process.env.NEXT_PUBLIC_API_URL;
   const tenant = DEMO_TENANTS.find((ten) => ten.slug === org);
 
   const { data: apiProducts = [] } = useQuery<ApiProduct[]>({
@@ -35,10 +38,30 @@ export default function ProductsPage() {
     staleTime: 0,
   });
 
+  const { data: inventoryStock = [] } = useQuery<StockItem[]>({
+    queryKey: ["inventory-stock", org],
+    queryFn:  () => api.get<StockItem[]>("/api/v1/inventory/analytics/stock"),
+    enabled:  isGatewayMode && !!tenant && org !== SA_ORG_SLUG,
+    staleTime: 0,
+    refetchInterval: 30000,
+  });
+
+  // Sum current_stock across all warehouses per product for the tenant-wide balance.
+  // CLAUDE.md §27: never filter by the viewing user's warehouse on the Products page.
+  const productBalanceMap = useMemo(() => {
+    const map = new Map<string, number>();
+    for (const item of inventoryStock) {
+      map.set(item.product_id, (map.get(item.product_id) ?? 0) + parseFloat(item.current_stock));
+    }
+    return map;
+  }, [inventoryStock]);
+
   if (org === SA_ORG_SLUG) return <p className="p-8 text-gray-500">{t("common.no_data")}</p>;
   if (!tenant)             return <p className="p-8 text-gray-500">{t("common.no_data")}</p>;
 
-  const demoRows: Row[] = tenant.products.map((p) => ({
+  // In gateway mode: show only real API products with real balances from inventory analytics.
+  // In BFF mode: show demo products with Zustand-adjusted balances + any new API products.
+  const demoRows: Row[] = isGatewayMode ? [] : tenant.products.map((p) => ({
     id: p.id, sku: p.sku, name: p.name, category: p.category, unit: p.unit, packSize: "—",
     // Sum getOnHand across every warehouse — identical for all users regardless of their
     // warehouse_id (CLAUDE.md §27: never filter by the viewing user's warehouse).
@@ -47,11 +70,12 @@ export default function ProductsPage() {
   }));
 
   const apiRows: Row[] = apiProducts.map((p) => ({
-    id: p.id, sku: p.sku, name: p.name, category: p.type_code, unit: p.unit, packSize: String(p.pack_size),
-    balance: 0, batchTracking: false, isNew: true, isActive: true,
+    id: p.id, sku: p.sku, name: p.name, category: "—", unit: p.unit, packSize: String(p.pack_size),
+    balance: isGatewayMode ? (productBalanceMap.get(p.id) ?? 0) : 0,
+    batchTracking: false, isNew: !isGatewayMode, isActive: true,
   }));
 
-  const all   = [...demoRows, ...apiRows];
+  const all   = isGatewayMode ? apiRows : [...demoRows, ...apiRows];
   const total = all.length;
 
   const COLS = ["table.sku","products.col_name","products.col_category","inventory.unit","products.col_pack_size","products.col_balance","products.col_batch","products.col_status"];
@@ -63,7 +87,7 @@ export default function ProductsPage() {
           <h2 className="text-2xl font-bold text-[#0f2d1f] m-0">{t("nav.products")}</h2>
           <p className="text-sm text-gray-500 mt-1">
             {tenant.name} · {total} {t("table.skus")}
-            {apiProducts.length > 0 && (
+            {!isGatewayMode && apiProducts.length > 0 && (
               <span className="ml-2 text-[11px] font-bold bg-green-100 text-green-800 px-1.5 py-0.5 rounded-full">
                 {apiProducts.length} new
               </span>
