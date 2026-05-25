@@ -746,10 +746,10 @@ export default function TransfersPage() {
                     <td className="px-3 py-2.5 text-gray-700 text-sm">{txn.to_warehouse_name}</td>
                     <td className="px-3 py-2.5 text-gray-500 text-sm">{txn.product_name}</td>
                     <td className="px-3 py-2.5 font-semibold text-gray-900 text-sm">
-                      {txn.quantity.toLocaleString()}
+                      {Number(txn.quantity ?? 0).toLocaleString()}
                       {txn.status === "PARTIALLY_RECEIVED" && (() => {
                         const e = getTransferEntry(txn.id); const rcvd = e?.receivedQuantity ?? 0;
-                        return rcvd > 0 ? <span className="block text-[10px] font-medium text-amber-800">{rcvd.toLocaleString()} rcvd · {(txn.quantity - rcvd).toLocaleString()} rem</span> : null;
+                        return rcvd > 0 ? <span className="block text-[10px] font-medium text-amber-800">{rcvd.toLocaleString()} rcvd · {(Number(txn.quantity ?? 0) - rcvd).toLocaleString()} rem</span> : null;
                       })()}
                     </td>
                     <td className="px-3 py-2.5">

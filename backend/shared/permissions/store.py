@@ -44,7 +44,10 @@ async def get_role_permission(
         row = row.fetchone()
 
     result = RolePermissionGrant(role=role, action_id=action_id, grant_type=row[0]) if row else None
-    _cache[key] = (result, time.monotonic() + _CACHE_TTL_SECONDS)
+    # Only cache found grants — not misses. Permissions can be added to the DB at runtime
+    # (migrations, seed scripts) and should take effect on the next request without restart.
+    if result is not None:
+        _cache[key] = (result, time.monotonic() + _CACHE_TTL_SECONDS)
     return result
 
 

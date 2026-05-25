@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useCallback } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { nanoid } from "nanoid";
 import { api } from "@/lib/api";
@@ -137,7 +137,23 @@ export function NewTransferPanel({ products, warehouses, orgSlug }: Props) {
   const [loading, setLoading]   = useState(false);
   const [stockAlert, setStockAlert] = useState<{ fromWHName: string; productName: string; onHand: number; available: number; requested: number; canForce: boolean; } | null>(null);
 
-  function reset() { setForm(initialForm(form.transferType)); setError(""); setSuccess(""); setStockAlert(null); }
+  // When warehouse data loads asynchronously and canPush flips true,
+  // reset the form to use the now-correct defaultType — but only if panel is closed.
+  const prevCanPush = useRef(canPush);
+  useEffect(() => {
+    if (prevCanPush.current !== canPush && !open) {
+      setForm(initialForm(defaultType));
+    }
+    prevCanPush.current = canPush;
+  }, [canPush, open, defaultType]);  // eslint-disable-line react-hooks/exhaustive-deps
+
+  // reset() always uses the live defaultType so opening the panel picks up latest canPush state
+  const reset = useCallback(() => {
+    setForm(initialForm(defaultType));
+    setError("");
+    setSuccess("");
+    setStockAlert(null);
+  }, [defaultType, lockedWH]);  // eslint-disable-line react-hooks/exhaustive-deps
   function setField(key: keyof FormState, val: string) { setForm((f) => ({ ...f, [key]: val })); setError(""); setStockAlert(null); }
   function changeType(type: TransferType) { setForm(initialForm(type)); setError(""); setStockAlert(null); }
 

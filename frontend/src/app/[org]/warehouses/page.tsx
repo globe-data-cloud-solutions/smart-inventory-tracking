@@ -38,12 +38,24 @@ function getDepth(warehouseId: string, warehouses: DemoWarehouse[], visited = ne
   return 1 + getDepth(wh.parentId, warehouses, visited);
 }
 
+const TYPE_LABEL: Record<string, string> = { MWH: "MWH", RWH: "RWH", WH: "WH", SUB_WH: "SUB_WH" };
 const TYPE_CLASS: Record<string, string> = {
   MWH:    "bg-amber-100 text-amber-800",
   RWH:    "bg-blue-100  text-blue-800",
   WH:     "bg-gray-100  text-gray-700",
   SUB_WH: "bg-violet-100 text-violet-800",
 };
+const DB_TYPE_MAP: Record<string, DemoWarehouse["type"]> = {
+  FACTORY: "MWH", REGIONAL: "RWH", RETAIL: "WH", SUBCENTER: "SUB_WH",
+};
+
+interface GatewayWarehouseRow {
+  id: string;
+  name: string;
+  type: DemoWarehouse["type"];
+  units: number;
+  skuCount: number;
+}
 
 export default function WarehousesPage() {
   const { org } = useParams() as { org: string };
@@ -59,25 +71,40 @@ export default function WarehousesPage() {
   const tenant = DEMO_TENANTS.find((ten) => ten.slug === org);
   if (!tenant) return <p className="p-8 text-gray-500">{t("common.no_data")}</p>;
 
-  // Build per-warehouse totals from real API data keyed by warehouse name.
-  // We match by name because the demo IDs are slugs while the DB uses UUIDs.
   const isGatewayMode = stockData.length > 0;
-  const realTotalsByName = new Map<string, { units: number; skus: Set<string> }>();
-  for (const row of stockData) {
-    const key = row.warehouse_name;
-    const entry = realTotalsByName.get(key) ?? { units: 0, skus: new Set<string>() };
-    entry.units += Number(row.current_stock);
-    if (Number(row.current_stock) > 0) entry.skus.add(row.product_id);
-    realTotalsByName.set(key, entry);
+
+  // ── Gateway mode: build rows from real API data, keyed by UUID ────────────
+  let gatewayRows: GatewayWarehouseRow[] = [];
+  if (isGatewayMode) {
+    const byId = new Map<string, { name: string; type: DemoWarehouse["type"]; units: number; skus: Set<string> }>();
+    for (const row of stockData) {
+      const entry = byId.get(row.warehouse_id) ?? {
+        name:  row.warehouse_name,
+        type:  DB_TYPE_MAP[row.warehouse_type ?? ""] ?? "WH",
+        units: 0,
+        skus:  new Set<string>(),
+      };
+      entry.units += Number(row.current_stock);
+      if (Number(row.current_stock) > 0) entry.skus.add(row.product_id);
+      byId.set(row.warehouse_id, entry);
+    }
+    // Sort: MWH first, then RWH, then WH, then SUB_WH, then alphabetical within each tier
+    const tierOrder: Record<string, number> = { MWH: 0, RWH: 1, WH: 2, SUB_WH: 3 };
+    gatewayRows = Array.from(byId.entries())
+      .map(([id, v]) => ({ id, name: v.name, type: v.type, units: v.units, skuCount: v.skus.size }))
+      .sort((a, b) => (tierOrder[a.type] ?? 4) - (tierOrder[b.type] ?? 4) || a.name.localeCompare(b.name));
   }
 
-  const sorted = sortByHierarchy(tenant.warehouses);
+  // ── Demo mode: use tenant.warehouses with hierarchy sort ──────────────────
+  const sorted = isGatewayMode ? [] : sortByHierarchy(tenant.warehouses);
+
+  const warehouseCount = isGatewayMode ? gatewayRows.length : tenant.warehouses.length;
 
   return (
     <div className="p-8">
       <div className="mb-6">
         <h2 className="text-2xl font-bold text-[#0f2d1f] m-0">{t("warehouses.title")}</h2>
-        <p className="text-sm text-gray-500 mt-1">{tenant.name} · {tenant.warehouses.length} {t("warehouses.locations")}</p>
+        <p className="text-sm text-gray-500 mt-1">{tenant.name} · {warehouseCount} {t("warehouses.locations")}</p>
       </div>
 
       <div className="bg-white border border-gray-200 rounded overflow-hidden">
@@ -91,40 +118,51 @@ export default function WarehousesPage() {
             </tr>
           </thead>
           <tbody>
-            {sorted.map((w, idx) => {
-              let whUnits: number;
-              let whSKUs: number;
-              if (isGatewayMode) {
-                const real = realTotalsByName.get(w.name);
-                whUnits = real?.units ?? 0;
-                whSKUs  = real?.skus.size ?? 0;
-              } else {
-                whUnits = tenant.products.reduce((a, p) => a + (p.stock[w.id] ?? 0), 0);
-                whSKUs  = tenant.products.filter((p) => (p.stock[w.id] ?? 0) > 0).length;
-              }
-              const typeClass = TYPE_CLASS[w.type] ?? "bg-gray-100 text-gray-500";
-              const manager   = tenant.users.find((u) => u.warehouseId === w.id);
-              const depth     = getDepth(w.id, tenant.warehouses);
-
-              return (
-                <tr key={w.id} className={`border-b border-gray-100 ${idx % 2 === 0 ? "bg-white" : "bg-gray-50"}`}>
-                  {/* indent is dynamic (depth * 24px) — must use style for this one property */}
-                  <td className="px-4 py-2.5 font-semibold text-gray-800" style={{ paddingLeft: `${16 + depth * 24}px` }}>
-                    {depth > 0 && <span className="text-gray-300 mr-1.5 font-mono">{"↳".repeat(depth)}</span>}
-                    {w.name}
-                  </td>
-                  <td className="px-4 py-2.5 text-gray-500">{w.location}</td>
-                  <td className="px-4 py-2.5">
-                    <span className={`text-xs font-bold px-2 py-0.5 rounded ${typeClass}`}>
-                      {t(`warehouse_type.${w.type}`)}
-                    </span>
-                  </td>
-                  <td className="px-4 py-2.5 text-gray-700">{manager?.name ?? "—"}</td>
-                  <td className="px-4 py-2.5 font-bold text-gray-900">{whUnits.toLocaleString()}</td>
-                  <td className="px-4 py-2.5 text-gray-700">{whSKUs}</td>
-                </tr>
-              );
-            })}
+            {isGatewayMode ? (
+              gatewayRows.map((row, idx) => {
+                const typeClass = TYPE_CLASS[row.type] ?? "bg-gray-100 text-gray-500";
+                return (
+                  <tr key={row.id} className={`border-b border-gray-100 ${idx % 2 === 0 ? "bg-white" : "bg-gray-50"}`}>
+                    <td className="px-4 py-2.5 font-semibold text-gray-800">{row.name}</td>
+                    <td className="px-4 py-2.5 text-gray-500">—</td>
+                    <td className="px-4 py-2.5">
+                      <span className={`text-xs font-bold px-2 py-0.5 rounded ${typeClass}`}>
+                        {TYPE_LABEL[row.type] ?? row.type}
+                      </span>
+                    </td>
+                    <td className="px-4 py-2.5 text-gray-700">—</td>
+                    <td className="px-4 py-2.5 font-bold text-gray-900">{row.units.toLocaleString()}</td>
+                    <td className="px-4 py-2.5 text-gray-700">{row.skuCount}</td>
+                  </tr>
+                );
+              })
+            ) : (
+              sorted.map((w, idx) => {
+                const whUnits = tenant.products.reduce((a, p) => a + (p.stock[w.id] ?? 0), 0);
+                const whSKUs  = tenant.products.filter((p) => (p.stock[w.id] ?? 0) > 0).length;
+                const typeClass = TYPE_CLASS[w.type] ?? "bg-gray-100 text-gray-500";
+                const manager   = tenant.users.find((u) => u.warehouseId === w.id);
+                const depth     = getDepth(w.id, tenant.warehouses);
+                return (
+                  <tr key={w.id} className={`border-b border-gray-100 ${idx % 2 === 0 ? "bg-white" : "bg-gray-50"}`}>
+                    {/* indent is dynamic (depth * 24px) — must use style for this one property */}
+                    <td className="px-4 py-2.5 font-semibold text-gray-800" style={{ paddingLeft: `${16 + depth * 24}px` }}>
+                      {depth > 0 && <span className="text-gray-300 mr-1.5 font-mono">{"↳".repeat(depth)}</span>}
+                      {w.name}
+                    </td>
+                    <td className="px-4 py-2.5 text-gray-500">{w.location}</td>
+                    <td className="px-4 py-2.5">
+                      <span className={`text-xs font-bold px-2 py-0.5 rounded ${typeClass}`}>
+                        {t(`warehouse_type.${w.type}`)}
+                      </span>
+                    </td>
+                    <td className="px-4 py-2.5 text-gray-700">{manager?.name ?? "—"}</td>
+                    <td className="px-4 py-2.5 font-bold text-gray-900">{whUnits.toLocaleString()}</td>
+                    <td className="px-4 py-2.5 text-gray-700">{whSKUs}</td>
+                  </tr>
+                );
+              })
+            )}
           </tbody>
         </table>
       </div>
