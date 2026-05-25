@@ -118,9 +118,10 @@ export function NewTransferPanel({ products, warehouses, orgSlug }: Props) {
   const logAudit = useAuditStore((s) => s.log);
 
   const user     = getSession();
-  const lockedWH = user?.warehouseId;
-  const userWH   = warehouses.find((w) => w.id === lockedWH);
-  const canPush  = !lockedWH || (userWH && ["MWH", "RWH"].includes(userWH.type));
+  const lockedWH     = user?.warehouseId;
+  const userWH       = warehouses.find((w) => w.id === lockedWH);
+  const lockedWHName = user?.warehouseName ?? userWH?.name ?? lockedWH ?? "";
+  const canPush      = !lockedWH || (userWH && ["MWH", "RWH"].includes(userWH.type));
   const defaultType: TransferType = canPush ? "PUSH" : "PULL";
 
   function initialForm(type: TransferType): FormState {
@@ -189,7 +190,7 @@ export function NewTransferPanel({ products, warehouses, orgSlug }: Props) {
     }
     setLoading(true);
     try {
-      const created = await api.post<{ id: string; ref: string }>("/api/v1/transfers", { transfer_type: form.transferType, product_id: form.productId, product_name: product?.name, from_warehouse_id: effectiveFrom, from_warehouse_name: fromWH?.name, to_warehouse_id: effectiveTo, to_warehouse_name: toWH?.name, quantity: qty, notes: form.notes, idempotency_key: `transfer:${form.productId}:${effectiveFrom}:${effectiveTo}:${Date.now()}:${nanoid(8)}` });
+      const created = await api.post<{ id: string; ref: string }>("/api/v1/inventory/transfers/", { transfer_type: form.transferType, product_id: form.productId, product_name: product?.name, from_warehouse_id: effectiveFrom, from_warehouse_name: fromWH?.name, to_warehouse_id: effectiveTo, to_warehouse_name: toWH?.name, quantity: qty, notes: form.notes, idempotency_key: `transfer:${form.productId}:${effectiveFrom}:${effectiveTo}:${Date.now()}:${nanoid(8)}` });
       const entry: TransferEntry = { id: created.id, ref: created.ref, tenantSlug: orgSlug, productId: form.productId, fromWarehouseId: effectiveFrom, fromWarehouseName: fromWH?.name ?? effectiveFrom, toWarehouseId: effectiveTo, toWarehouseName: toWH?.name ?? effectiveTo, quantity: qty, issuedDate: new Date().toISOString(), status: "DRAFT" };
       addTransfer(entry);
       if (user) logAudit({ tenantSlug: orgSlug, userEmail: user.email, userName: user.name, role: user.role, action: "transfer:DRAFT", category: "TRANSFER", resourceRef: created.ref, resourceType: "TransferOrder", productName: product?.name, quantityStr: `${qty.toLocaleString()} ${product?.unit ?? "units"}`, fromWarehouse: fromWH?.name, toWarehouse: toWH?.name, notes: `[${form.transferType}]${form.notes ? " " + form.notes : ""}` });
@@ -230,7 +231,7 @@ export function NewTransferPanel({ products, warehouses, orgSlug }: Props) {
 
           {lockedWH && (
             <div className="bg-green-50 border border-emerald-200 rounded px-3 py-2 text-xs text-green-800 mb-4">
-              {isPush ? `📤 ${t("transfer_panel.from_note")}: ${userWH?.name ?? lockedWH}` : isSister ? `↔ ${t("transfer_panel.sister_note")}: ${userWH?.name ?? lockedWH}` : `📥 ${t("transfer_panel.to_note")}: ${userWH?.name ?? lockedWH}`}
+              {isPush ? `📤 ${t("transfer_panel.from_note")}: ${lockedWHName}` : isSister ? `↔ ${t("transfer_panel.sister_note")}: ${lockedWHName}` : `📥 ${t("transfer_panel.to_note")}: ${lockedWHName}`}
             </div>
           )}
 
@@ -240,7 +241,7 @@ export function NewTransferPanel({ products, warehouses, orgSlug }: Props) {
 
           <Field label={isPull || isSister ? t("transfer_panel.from_supply") : t("inventory.transfer.from_warehouse")} hint={fromIsLocked ? t("transfer_panel.your_facility") : undefined}>
             {fromIsLocked ? (
-              <input value={userWH?.name ?? lockedWH ?? ""} disabled className={lockedCls} />
+              <input value={lockedWHName} disabled className={lockedCls} />
             ) : (
               <select value={form.fromWarehouseId} onChange={(e) => setField("fromWarehouseId", e.target.value)} className={selectCls} required>
                 <option value="">— {t("transfer_panel.origin")} —</option>
@@ -251,7 +252,7 @@ export function NewTransferPanel({ products, warehouses, orgSlug }: Props) {
 
           <Field label={isPull || isSister ? t("transfer_panel.to_your_wh") : t("inventory.transfer.to_warehouse")} hint={toIsLocked ? t("transfer_panel.locked") : undefined}>
             {toIsLocked ? (
-              <input value={userWH?.name ?? lockedWH ?? ""} disabled className={lockedCls} />
+              <input value={lockedWHName} disabled className={lockedCls} />
             ) : (
               <select value={form.toWarehouseId} onChange={(e) => setField("toWarehouseId", e.target.value)} className={selectCls} required>
                 <option value="">— {t("transfer_panel.destination")} —</option>
