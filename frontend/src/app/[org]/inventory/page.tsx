@@ -232,7 +232,7 @@ export default function InventoryPage() {
   // transfers the current user hasn't personally created or transitioned this session.
   const { data: apiTransfers = [] } = useQuery<ApiTransfer[]>({
     queryKey: ["transfers", org],
-    queryFn:  () => api.get<ApiTransfer[]>("/api/v1/transfers"),
+    queryFn:  () => api.get<ApiTransfer[]>("/api/v1/inventory/transfers"),
     enabled:  !!tenant && !!user && org !== SA_ORG_SLUG,
     staleTime: 0,
     refetchInterval: 15000,

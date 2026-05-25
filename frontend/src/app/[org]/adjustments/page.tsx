@@ -79,7 +79,7 @@ export default function AdjustmentsPage() {
 
   const { data: apiAdj = [] } = useQuery<AdjRecord[]>({
     queryKey: ["adjustments", org],
-    queryFn:  () => api.get<AdjRecord[]>("/api/v1/inventory/adjust"),
+    queryFn:  () => api.get<AdjRecord[]>("/api/v1/inventory/adjustments"),
     staleTime: 0,
   });
 
@@ -99,7 +99,7 @@ export default function AdjustmentsPage() {
     const adj = allAdj.find((a) => a.id === id);
 
     try {
-      await api.patch(`/api/v1/inventory/adjust/${id}`, { next_status: next });
+      await api.patch(`/api/v1/inventory/adjustments/${id}`, { next_status: next });
     } catch { /* seed adjustments return 404 — fall through to state updates below */ }
 
     // Update inventory balance OUTSIDE the try/catch so 404s (seed records) don't

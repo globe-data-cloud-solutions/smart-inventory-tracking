@@ -50,7 +50,7 @@ const selectCls = `${inputCls} cursor-pointer`;
 export function IssueStockPanel({ products, orgSlug }: Props) {
   const { isOnline } = useOfflineSync();
   const qc = useQueryClient();
-  const { addIssue, getAvailable } = useInventoryStore();
+  const { getAvailable } = useInventoryStore();
   const logAudit = useAuditStore((s) => s.log);
 
   const user          = getSession();
@@ -93,11 +93,11 @@ export function IssueStockPanel({ products, orgSlug }: Props) {
         await enqueueOfflineTransaction({ idempotencyKey: key, action: "inventory:issue", payload });
         setSuccess(t("inventory.receive.queue_offline"));
       } else {
-        await api.post("/api/v1/inventory/issue", payload);
-        addIssue(productId, warehouseId, qty);
+        await api.post("/api/v1/inventory/issues/", payload);
         if (user) logAudit({ tenantSlug: orgSlug, userEmail: user.email, userName: user.name, role: user.role, action: "inventory:issue", category: "INVENTORY", resourceRef: selectedProduct?.sku ?? productId, resourceType: "InventoryTransaction", productName: selectedProduct?.name, quantityStr: `-${qty.toLocaleString()} ${selectedProduct?.unit ?? "units"}`, fromWarehouse: warehouseName, toWarehouse: issuedTo.trim() || undefined, notes: `[${reasonCode}]` });
         setSuccess(t("issue.success"));
         void qc.invalidateQueries({ queryKey: ["products", orgSlug] });
+        void qc.invalidateQueries({ queryKey: ["inventory-stock", orgSlug] });
       }
       reset(); setTimeout(() => { setSuccess(""); setOpen(false); }, 2500);
     } catch (err: unknown) { setError(err instanceof Error ? err.message : t("errors.INTERNAL_ERROR")); }

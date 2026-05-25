@@ -390,7 +390,7 @@ export default function TransfersPage() {
 
   const { data: allTransfers = [] } = useQuery<ApiTransfer[]>({
     queryKey: ["transfers", org],
-    queryFn:  () => api.get<ApiTransfer[]>("/api/v1/transfers"),
+    queryFn:  () => api.get<ApiTransfer[]>("/api/v1/inventory/transfers"),
     staleTime: 0,
     refetchInterval: 15000,
   });
@@ -441,7 +441,7 @@ export default function TransfersPage() {
     setTransitioning(id);
     setConfirmModal(null);
     try {
-      await api.patch(`/api/v1/transfers/${id}`, { next_status: next });
+      await api.patch(`/api/v1/inventory/transfers/${id}`, { next_status: next });
       await qc.invalidateQueries({ queryKey: ["transfers", org] });
 
       // Lazy-add the transfer to the Zustand store if it isn't already there.

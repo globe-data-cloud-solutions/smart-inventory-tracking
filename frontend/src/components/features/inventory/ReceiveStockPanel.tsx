@@ -7,7 +7,6 @@ import { api } from "@/lib/api";
 import { enqueueOfflineTransaction } from "@/store/offlineQueue";
 import { useOfflineSync } from "@/hooks/useOfflineSync";
 import { useScanner } from "@/hooks/useScanner";
-import { useInventoryStore } from "@/lib/inventory-state";
 import { useAuditStore } from "@/lib/audit-log-state";
 import { getSession } from "@/lib/demo-auth";
 import { t } from "@/lib/i18n";
@@ -45,9 +44,8 @@ const selectCls = `${inputCls} cursor-pointer`;
 
 export function ReceiveStockPanel({ products, orgSlug }: Props) {
   const { isOnline } = useOfflineSync();
-  const qc         = useQueryClient();
-  const addReceive = useInventoryStore((s) => s.addReceive);
-  const logAudit   = useAuditStore((s) => s.log);
+  const qc       = useQueryClient();
+  const logAudit = useAuditStore((s) => s.log);
 
   const user          = getSession();
   const warehouseId   = user?.warehouseId   ?? "";
@@ -89,12 +87,11 @@ export function ReceiveStockPanel({ products, orgSlug }: Props) {
         await enqueueOfflineTransaction({ idempotencyKey: key, action: "inventory:receive", payload });
         setSuccess(t("inventory.receive.queue_offline"));
       } else {
-        await api.post("/api/v1/inventory/receive", payload);
-        addReceive(form.productId, warehouseId, qty);
+        await api.post("/api/v1/inventory/receive/", payload);
         if (user) logAudit({ tenantSlug: orgSlug, userEmail: user.email, userName: user.name, role: user.role, action: "inventory:receive", category: "INVENTORY", resourceRef: product?.sku ?? form.productId, resourceType: "InventoryTransaction", productName: product?.name, quantityStr: `+${qty.toLocaleString()} ${product?.unit ?? "units"}`, toWarehouse: warehouseName, notes: t(`transfer.reference.${form.referenceType}`) });
         setSuccess(t("inventory.receive.success"));
         void qc.invalidateQueries({ queryKey: ["products", orgSlug] });
-        void qc.invalidateQueries({ queryKey: ["receipts", orgSlug] });
+        void qc.invalidateQueries({ queryKey: ["inventory-stock", orgSlug] });
       }
       reset(); setTimeout(() => { setSuccess(""); setOpen(false); }, 2500);
     } catch (err: unknown) { setError(err instanceof Error ? err.message : t("errors.INTERNAL_ERROR")); }
