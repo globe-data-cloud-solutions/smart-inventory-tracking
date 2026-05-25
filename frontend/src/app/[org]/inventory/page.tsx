@@ -379,9 +379,10 @@ export default function InventoryPage() {
   const allProducts = whId
     ? mergedProducts.filter((p) => {
         if (isGatewayMode) {
-          // In gateway mode: show product if it has a stock entry at this warehouse OR
-          // has pending inbound transfers (per CLAUDE.md §27 zero-stock visibility rule).
-          return stockByKey.has(`${p.id}:${whId}`) || getInTransitInTotal(p.id, whId) > 0;
+          // Show ALL products per CLAUDE.md §27 — zero-balance items get Out of Stock badge
+          // and sort to the bottom. Filtering by stockByKey would hide products whose balance
+          // dropped to zero after being issued, violating the rule.
+          return true;
         }
         const base = p.stock[whId] ?? 0;
         return (whId in p.stock) ||

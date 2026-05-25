@@ -28,6 +28,7 @@ class ReceiveStockResponse(BaseModel):
 
 
 class TransferOrderRequest(BaseModel):
+    transfer_type: str = "PULL"
     from_warehouse_id: uuid.UUID
     to_warehouse_id: uuid.UUID
     lines: List[TransferLineRequest]
@@ -127,3 +128,46 @@ class AdjustStockResponse(BaseModel):
     quantity: Decimal
     reason_code: str
     created_at: datetime
+
+
+# ── List response schemas ──────────────────────────────────────────────────────
+
+class TransferLineItem(BaseModel):
+    product_id: uuid.UUID
+    product_name: str
+    sku: str
+    quantity: Decimal
+    uom: str
+
+
+class TransferListItem(BaseModel):
+    transfer_id: uuid.UUID
+    transfer_type: str
+    status: str
+    from_warehouse_id: uuid.UUID
+    from_warehouse_name: str
+    to_warehouse_id: uuid.UUID
+    to_warehouse_name: str
+    created_by: str
+    created_at: datetime
+    updated_at: Optional[datetime] = None
+    lines: List[TransferLineItem]
+
+
+class TransferTransitionRequest(BaseModel):
+    next_status: str
+
+
+class AdjustmentListItem(BaseModel):
+    adjustment_id: uuid.UUID
+    product_id: uuid.UUID
+    product_name: str
+    sku: str
+    warehouse_id: uuid.UUID
+    warehouse_name: str
+    quantity_delta: Decimal
+    reason_code: str
+    status: str
+    created_by: str
+    created_at: datetime
+    notes: Optional[str] = None

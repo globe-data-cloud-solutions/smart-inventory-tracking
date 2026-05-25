@@ -15,6 +15,7 @@ from shared.outbox.schemas import (
 from shared.outbox.writer import write_to_outbox
 from repositories.ledger_repo import record_transaction
 from schemas.inventory import (
+    AdjustmentListItem,
     AdjustmentRequest,
     AdjustmentResponse,
     AdjustStockRequest,
@@ -25,6 +26,8 @@ from schemas.inventory import (
     IssueStockResponse,
     ReceiveStockRequest,
     ReceiveStockResponse,
+    TransferLineItem,
+    TransferListItem,
     TransferOrderRequest,
     TransferOrderResponse,
 )
@@ -179,17 +182,34 @@ class InventoryService:
         await self.db.execute(
             text(
                 "INSERT INTO transfer_orders "
-                "(id, tenant_id, from_warehouse_id, to_warehouse_id, status, created_by) "
-                "VALUES (:id, :tid, :from_wid, :to_wid, 'DRAFT', :uid)"
+                "(id, tenant_id, from_warehouse_id, to_warehouse_id, transfer_type, status, created_by) "
+                "VALUES (:id, :tid, :from_wid, :to_wid, :ttype, 'DRAFT', :uid)"
             ),
             {
                 "id": str(transfer_id),
                 "tid": str(user.tenant_id),
                 "from_wid": str(body.from_warehouse_id),
                 "to_wid": str(body.to_warehouse_id),
+                "ttype": body.transfer_type,
                 "uid": str(user.user_id),
             },
         )
+
+        for line in body.lines:
+            await self.db.execute(
+                text(
+                    "INSERT INTO transfer_order_lines "
+                    "(id, transfer_order_id, tenant_id, product_id, quantity, lot_number) "
+                    "VALUES (gen_random_uuid(), :xfer_id, :tid, :pid, :qty, :lot)"
+                ),
+                {
+                    "xfer_id": str(transfer_id),
+                    "tid": str(user.tenant_id),
+                    "pid": str(line.product_id),
+                    "qty": str(line.quantity),
+                    "lot": getattr(line, "lot_number", None),
+                },
+            )
 
         return TransferOrderResponse(
             transfer_id=transfer_id,
@@ -599,3 +619,145 @@ class InventoryService:
             status=row.status,
             created_at=datetime.now(timezone.utc),
         )
+
+    async def list_transfers(
+        self, user: Any, page: int = 1, limit: int = 50
+    ) -> list[TransferListItem]:
+        """List transfers scoped by role.
+
+        WM: sees only transfers involving their assigned warehouse (source or destination).
+        All other roles: see all transfers for the tenant.
+        """
+        offset = (page - 1) * limit
+        params: dict = {"tid": str(user.tenant_id), "offset": offset, "limit": limit}
+
+        wh_filter = ""
+        if user.role == "WM" and user.warehouse_id:
+            wh_filter = "AND (to_.from_warehouse_id = :wid OR to_.to_warehouse_id = :wid)"
+            params["wid"] = str(user.warehouse_id)
+
+        sql = text(f"""
+            SELECT
+                to_.id                 AS transfer_id,
+                'PULL'                 AS transfer_type,
+                to_.status,
+                to_.from_warehouse_id,
+                fw.name                AS from_warehouse_name,
+                to_.to_warehouse_id,
+                tw.name                AS to_warehouse_name,
+                to_.created_by::text   AS created_by,
+                to_.created_at,
+                to_.updated_at
+            FROM transfer_orders to_
+            JOIN warehouses fw ON fw.id = to_.from_warehouse_id
+            JOIN warehouses tw ON tw.id = to_.to_warehouse_id
+            WHERE to_.tenant_id = :tid
+              {wh_filter}
+            ORDER BY to_.created_at DESC
+            OFFSET :offset LIMIT :limit
+        """)
+
+        rows = (await self.db.execute(sql, params)).fetchall()
+        results: list[TransferListItem] = []
+
+        for r in rows:
+            lines_sql = text("""
+                SELECT
+                    tol.product_id,
+                    p.name               AS product_name,
+                    p.sku,
+                    tol.quantity,
+                    COALESCE(p.unit, '') AS uom
+                FROM transfer_order_lines tol
+                JOIN products p ON p.id = tol.product_id
+                WHERE tol.transfer_order_id = :xfer_id
+            """)
+            line_rows = (
+                await self.db.execute(lines_sql, {"xfer_id": str(r.transfer_id)})
+            ).fetchall()
+
+            results.append(
+                TransferListItem(
+                    transfer_id=r.transfer_id,
+                    transfer_type=r.transfer_type,
+                    status=r.status,
+                    from_warehouse_id=r.from_warehouse_id,
+                    from_warehouse_name=r.from_warehouse_name,
+                    to_warehouse_id=r.to_warehouse_id,
+                    to_warehouse_name=r.to_warehouse_name,
+                    created_by=str(r.created_by),
+                    created_at=r.created_at,
+                    updated_at=r.updated_at,
+                    lines=[
+                        TransferLineItem(
+                            product_id=line.product_id,
+                            product_name=line.product_name,
+                            sku=line.sku,
+                            quantity=Decimal(str(line.quantity)),
+                            uom=line.uom,
+                        )
+                        for line in line_rows
+                    ],
+                )
+            )
+
+        return results
+
+    async def list_adjustments(
+        self, user: Any, page: int = 1, limit: int = 50
+    ) -> list[AdjustmentListItem]:
+        """List adjustment orders scoped by role.
+
+        WM: sees only adjustments at their assigned warehouse.
+        All other roles: see all adjustments for the tenant.
+        """
+        offset = (page - 1) * limit
+        params: dict = {"tid": str(user.tenant_id), "offset": offset, "limit": limit}
+
+        wh_filter = ""
+        if user.role == "WM" and user.warehouse_id:
+            wh_filter = "AND ao.warehouse_id = :wid"
+            params["wid"] = str(user.warehouse_id)
+
+        sql = text(f"""
+            SELECT
+                ao.id               AS adjustment_id,
+                ao.product_id,
+                p.name              AS product_name,
+                p.sku,
+                ao.warehouse_id,
+                w.name              AS warehouse_name,
+                ao.quantity_delta,
+                ao.reason_code,
+                ao.status,
+                ao.created_by::text AS created_by,
+                ao.created_at,
+                ao.notes
+            FROM adjustment_orders ao
+            JOIN products   p ON p.id = ao.product_id
+            JOIN warehouses w ON w.id = ao.warehouse_id
+            WHERE ao.tenant_id = :tid
+              {wh_filter}
+            ORDER BY ao.created_at DESC
+            OFFSET :offset LIMIT :limit
+        """)
+
+        rows = (await self.db.execute(sql, params)).fetchall()
+
+        return [
+            AdjustmentListItem(
+                adjustment_id=r.adjustment_id,
+                product_id=r.product_id,
+                product_name=r.product_name,
+                sku=r.sku,
+                warehouse_id=r.warehouse_id,
+                warehouse_name=r.warehouse_name,
+                quantity_delta=Decimal(str(r.quantity_delta)),
+                reason_code=r.reason_code,
+                status=r.status,
+                created_by=str(r.created_by),
+                created_at=r.created_at,
+                notes=r.notes,
+            )
+            for r in rows
+        ]

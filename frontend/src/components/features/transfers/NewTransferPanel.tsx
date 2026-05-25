@@ -190,11 +190,19 @@ export function NewTransferPanel({ products, warehouses, orgSlug }: Props) {
     }
     setLoading(true);
     try {
-      const created = await api.post<{ id: string; ref: string }>("/api/v1/inventory/transfers/", { transfer_type: form.transferType, product_id: form.productId, product_name: product?.name, from_warehouse_id: effectiveFrom, from_warehouse_name: fromWH?.name, to_warehouse_id: effectiveTo, to_warehouse_name: toWH?.name, quantity: qty, notes: form.notes, idempotency_key: `transfer:${form.productId}:${effectiveFrom}:${effectiveTo}:${Date.now()}:${nanoid(8)}` });
-      const entry: TransferEntry = { id: created.id, ref: created.ref, tenantSlug: orgSlug, productId: form.productId, fromWarehouseId: effectiveFrom, fromWarehouseName: fromWH?.name ?? effectiveFrom, toWarehouseId: effectiveTo, toWarehouseName: toWH?.name ?? effectiveTo, quantity: qty, issuedDate: new Date().toISOString(), status: "DRAFT" };
+      const created = await api.post<{ transfer_id: string }>("/api/v1/inventory/transfers/", {
+        transfer_type: form.transferType,
+        from_warehouse_id: effectiveFrom,
+        to_warehouse_id: effectiveTo,
+        lines: [{ product_id: form.productId, quantity: qty }],
+        notes: form.notes || null,
+      });
+      const transferId  = created.transfer_id;
+      const displayRef  = transferId.slice(0, 8).toUpperCase();
+      const entry: TransferEntry = { id: transferId, ref: displayRef, tenantSlug: orgSlug, productId: form.productId, fromWarehouseId: effectiveFrom, fromWarehouseName: fromWH?.name ?? effectiveFrom, toWarehouseId: effectiveTo, toWarehouseName: toWH?.name ?? effectiveTo, quantity: qty, issuedDate: new Date().toISOString(), status: "DRAFT" };
       addTransfer(entry);
-      if (user) logAudit({ tenantSlug: orgSlug, userEmail: user.email, userName: user.name, role: user.role, action: "transfer:DRAFT", category: "TRANSFER", resourceRef: created.ref, resourceType: "TransferOrder", productName: product?.name, quantityStr: `${qty.toLocaleString()} ${product?.unit ?? "units"}`, fromWarehouse: fromWH?.name, toWarehouse: toWH?.name, notes: `[${form.transferType}]${form.notes ? " " + form.notes : ""}` });
-      setSuccess(`${t("transfer_panel.created")} ${created.ref} — ${fromWH?.name} → ${toWH?.name}.`);
+      if (user) logAudit({ tenantSlug: orgSlug, userEmail: user.email, userName: user.name, role: user.role, action: "transfer:DRAFT", category: "TRANSFER", resourceRef: displayRef, resourceType: "TransferOrder", productName: product?.name, quantityStr: `${qty.toLocaleString()} ${product?.unit ?? "units"}`, fromWarehouse: fromWH?.name, toWarehouse: toWH?.name, notes: `[${form.transferType}]${form.notes ? " " + form.notes : ""}` });
+      setSuccess(`${t("transfer_panel.created")} ${displayRef} — ${fromWH?.name} → ${toWH?.name}.`);
       void qc.invalidateQueries({ queryKey: ["transfers", orgSlug] });
       reset(); setTimeout(() => { setSuccess(""); setOpen(false); }, 2500);
     } catch (err: unknown) { setError(err instanceof Error ? err.message : t("errors.INTERNAL_ERROR")); }
