@@ -37,6 +37,28 @@ interface ApiProduct {
   category?: string; on_hand?: number; reorder_point?: number; warehouse_id?: string | null;
 }
 
+interface RawApiTransferLine {
+  product_id: string;
+  product_name: string;
+  sku: string;
+  quantity: string;
+  uom: string;
+}
+
+interface RawApiTransfer {
+  transfer_id: string;
+  transfer_type: TransferType;
+  status: TransferStatus;
+  from_warehouse_id: string;
+  from_warehouse_name: string;
+  to_warehouse_id: string;
+  to_warehouse_name: string;
+  lines: RawApiTransferLine[];
+  created_by?: string;
+  created_at: string;
+  updated_at?: string;
+}
+
 interface ApiTransfer {
   id: string;
   ref: string;
@@ -51,6 +73,25 @@ interface ApiTransfer {
   notes: string;
   status: TransferStatus;
   created_at: string;
+}
+
+function normalizeTransfer(raw: RawApiTransfer): ApiTransfer {
+  const line = raw.lines[0];
+  return {
+    id:                 raw.transfer_id,
+    ref:                raw.transfer_id.slice(0, 8).toUpperCase(),
+    transfer_type:      raw.transfer_type,
+    product_id:         line?.product_id ?? "",
+    product_name:       line?.product_name ?? "",
+    from_warehouse_id:  raw.from_warehouse_id,
+    from_warehouse_name: raw.from_warehouse_name,
+    to_warehouse_id:    raw.to_warehouse_id,
+    to_warehouse_name:  raw.to_warehouse_name,
+    quantity:           parseFloat(line?.quantity ?? "0"),
+    notes:              "",
+    status:             raw.status,
+    created_at:         raw.created_at,
+  };
 }
 
 /**
@@ -390,7 +431,9 @@ export default function TransfersPage() {
 
   const { data: allTransfers = [] } = useQuery<ApiTransfer[]>({
     queryKey: ["transfers", org],
-    queryFn:  () => api.get<ApiTransfer[]>("/api/v1/inventory/transfers"),
+    queryFn:  () =>
+      api.get<RawApiTransfer[]>("/api/v1/inventory/transfers")
+        .then((rows) => rows.map(normalizeTransfer)),
     staleTime: 0,
     refetchInterval: 15000,
   });
