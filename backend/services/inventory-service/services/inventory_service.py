@@ -213,6 +213,7 @@ class InventoryService:
 
         return TransferOrderResponse(
             transfer_id=transfer_id,
+            transfer_type=body.transfer_type,
             status="DRAFT",
             from_warehouse_id=body.from_warehouse_id,
             to_warehouse_id=body.to_warehouse_id,
@@ -293,6 +294,7 @@ class InventoryService:
         from datetime import datetime, timezone
         return TransferOrderResponse(
             transfer_id=transfer_id,
+            transfer_type=transfer_type,
             status=next_state,
             from_warehouse_id=row.from_warehouse_id,
             to_warehouse_id=row.to_warehouse_id,
@@ -367,6 +369,7 @@ class InventoryService:
         from datetime import datetime, timezone
         return TransferOrderResponse(
             transfer_id=transfer_id,
+            transfer_type=transfer_type,
             status="ISSUED",
             from_warehouse_id=row.from_warehouse_id,
             to_warehouse_id=row.to_warehouse_id,
@@ -468,6 +471,7 @@ class InventoryService:
         from datetime import datetime, timezone
         return TransferOrderResponse(
             transfer_id=transfer_id,
+            transfer_type=transfer_type,
             status="RECEIVED",
             from_warehouse_id=row.from_warehouse_id,
             to_warehouse_id=row.to_warehouse_id,
@@ -487,6 +491,7 @@ class InventoryService:
         from datetime import datetime, timezone
         return TransferOrderResponse(
             transfer_id=transfer_id,
+            transfer_type=row.transfer_type,
             status=row.status,
             from_warehouse_id=row.from_warehouse_id,
             to_warehouse_id=row.to_warehouse_id,

@@ -43,6 +43,7 @@ class TransferLineRequest(BaseModel):
 
 class TransferOrderResponse(BaseModel):
     transfer_id: uuid.UUID
+    transfer_type: str
     status: str
     from_warehouse_id: uuid.UUID
     to_warehouse_id: uuid.UUID

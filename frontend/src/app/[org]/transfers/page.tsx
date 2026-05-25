@@ -564,36 +564,33 @@ export default function TransfersPage() {
       // advanced the transfer since the action button was rendered, which would
       // send the wrong next_status and receive a 422. Fetching the single transfer
       // before the PATCH lets us detect this early and show a helpful message.
+      //
+      // Validation: compare fresh.status vs cached status only (status-equality
+      // check). Re-running getAvailableActions() with fresh warehouse IDs was
+      // causing false negatives when the session UUID and DB UUID differed in
+      // case, incorrectly blocking the Issue (APPROVED → ISSUED) transition.
       interface FreshTransfer {
         transfer_id: string;
+        transfer_type: TransferType;
         status: TransferStatus;
         from_warehouse_id: string;
         to_warehouse_id: string;
         created_at: string;
       }
-      let freshStatus: TransferStatus      = transfer?.status ?? next;
-      let freshFromWH: string | undefined  = transfer?.from_warehouse_id;
-      let freshToWH:   string | undefined  = transfer?.to_warehouse_id;
+      let freshStatus: TransferStatus = transfer?.status ?? next;
       try {
         const fresh = await api.get<FreshTransfer>(`/api/v1/inventory/transfers/${id}`);
         freshStatus = fresh.status;
-        freshFromWH = fresh.from_warehouse_id;
-        freshToWH   = fresh.to_warehouse_id;
+
+        if (fresh.status !== transfer?.status) {
+          // Status changed since the button was shown — abort and let user retry
+          await qc.invalidateQueries({ queryKey: ["transfers", org] });
+          setToast(`Status changed to ${freshStatus.replace(/_/g, " ")} — list refreshed. Please try again.`);
+          setTimeout(() => setToast(""), 5000);
+          return;
+        }
       } catch {
         // GET failed (network issue) — let the PATCH proceed and handle any 422 below
-      }
-      // transfer_type is immutable — safe to use cached value
-      const transferType = transfer?.transfer_type ?? "PULL";
-      const validActions = getAvailableActions(
-        user.role, transferType, freshStatus,
-        user.warehouseId, freshFromWH, freshToWH,
-      );
-      if (!validActions.some((a) => a.next === next)) {
-        // Status changed since the button was shown — abort and let user retry with fresh data
-        await qc.invalidateQueries({ queryKey: ["transfers", org] });
-        setToast(`Status changed to ${freshStatus.replace(/_/g, " ")} — list refreshed. Please try again.`);
-        setTimeout(() => setToast(""), 5000);
-        return;
       }
       // ───────────────────────────────────────────────────────────────────────
 
