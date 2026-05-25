@@ -37,6 +37,16 @@ interface ApiProduct {
   category?: string; on_hand?: number; reorder_point?: number; warehouse_id?: string | null;
 }
 
+interface ApiStockRow {
+  product_id: string;
+  product_name: string;
+  product_sku: string;
+  warehouse_id: string;
+  warehouse_name: string;
+  warehouse_type: string | null;
+  current_stock: number;
+}
+
 interface RawApiTransferLine {
   product_id: string;
   product_name: string;
@@ -438,19 +448,57 @@ export default function TransfersPage() {
     refetchInterval: 15000,
   });
 
-  // Fetch API-created products and merge with static demo catalog so the
-  // NewTransferPanel product dropdown includes products added this session.
+  // Fetch API-created products for the transfer panel product dropdown.
   const { data: apiProducts = [] } = useQuery<ApiProduct[]>({
     queryKey: ["products", org],
     queryFn:  () => api.get<ApiProduct[]>("/api/v1/products"),
     staleTime: 0,
   });
+
+  // Real warehouse data from the inventory analytics endpoint.
+  // When this returns non-empty data, we are in gateway mode (real backend, real UUIDs).
+  // In gateway mode, warehouse dropdowns must use real UUIDs — not the demo slug IDs
+  // in tenant.warehouses — otherwise the backend rejects warehouse_id as invalid UUID.
+  const { data: stockData = [] } = useQuery<ApiStockRow[]>({
+    queryKey: ["analytics-stock", org],
+    queryFn:  () => api.get<ApiStockRow[]>("/api/v1/inventory/analytics/stock"),
+    staleTime: 30000,
+  });
+
+  const isGatewayMode = stockData.length > 0;
+
+  // DB warehouse_type enum → frontend DemoWarehouse type mapping.
+  // DB uses FACTORY|REGIONAL|RETAIL|SUBCENTER; frontend uses MWH|RWH|WH|SUB_WH.
+  function mapWarehouseType(dbType: string | null): DemoWarehouse["type"] {
+    const MAP: Record<string, DemoWarehouse["type"]> = {
+      FACTORY: "MWH", REGIONAL: "RWH", RETAIL: "WH", SUBCENTER: "SUB_WH",
+    };
+    return MAP[dbType ?? ""] ?? "WH";
+  }
+
+  // Build a deduplicated warehouse list from analytics data (real UUIDs + types).
+  // parentId is not available from analytics — hierarchy scoping falls back to "show all"
+  // in the dropdowns, which is acceptable since ABAC enforcement is on the backend.
+  const gatewayWarehouseMap = new Map<string, DemoWarehouse>();
+  for (const row of stockData) {
+    if (!gatewayWarehouseMap.has(row.warehouse_id)) {
+      gatewayWarehouseMap.set(row.warehouse_id, {
+        id:       row.warehouse_id,
+        name:     row.warehouse_name,
+        type:     mapWarehouseType(row.warehouse_type),
+        parentId: null,
+        location: "",
+        manager:  "",
+      });
+    }
+  }
+  const gatewayWarehouses: DemoWarehouse[] = Array.from(gatewayWarehouseMap.values());
+
+  // Gateway mode: use only real API products (demo slugs are not valid UUIDs in the DB).
+  // Demo mode: merge demo catalog + API products so the dropdown shows all products.
   const tenantProductIds = new Set(tenant.products.map((p) => p.id));
-  const mergedProducts: DemoProduct[] = [
-    ...tenant.products,
-    ...apiProducts
-      .filter((p) => !tenantProductIds.has(p.id))
-      .map((p) => ({
+  const mergedProducts: DemoProduct[] = isGatewayMode
+    ? apiProducts.map((p) => ({
         id:            p.id,
         sku:           p.sku,
         name:          p.name,
@@ -461,11 +509,29 @@ export default function TransfersPage() {
         stock: (p.on_hand && p.warehouse_id)
           ? { [p.warehouse_id]: p.on_hand } as Record<string, number>
           : {} as Record<string, number>,
-      })),
-  ];
+      }))
+    : [
+        ...tenant.products,
+        ...apiProducts
+          .filter((p) => !tenantProductIds.has(p.id))
+          .map((p) => ({
+            id:            p.id,
+            sku:           p.sku,
+            name:          p.name,
+            category:      p.category ?? p.type_code,
+            unit:          p.unit,
+            batchTracking: false,
+            reorderPoint:  p.reorder_point ?? 0,
+            stock: (p.on_hand && p.warehouse_id)
+              ? { [p.warehouse_id]: p.on_hand } as Record<string, number>
+              : {} as Record<string, number>,
+          })),
+      ];
+
+  const effectiveWarehouses = isGatewayMode ? gatewayWarehouses : tenant.warehouses;
 
   // Apply hierarchy + role scoping
-  const scopedTransfers = scopeTransfers(allTransfers, user.role, user.warehouseId, tenant.warehouses);
+  const scopedTransfers = scopeTransfers(allTransfers, user.role, user.warehouseId, effectiveWarehouses);
 
   // Bug 4: terminal statuses drop to the Audit Log; only active transfers shown here
   const TERMINAL: TransferStatus[] = ["COMPLETED", "CANCELLED", "REJECTED"];
@@ -625,7 +691,7 @@ export default function TransfersPage() {
         <div>
           <h2 className="text-2xl font-bold text-[#0f2d1f] m-0">{t("nav.inventory")} — {t("transfers.transfers_heading")}</h2>
           <p className="text-sm text-gray-500 mt-1">
-            {tenant.name} · {visibleTransfers.length} {t("transfers.active_label")}{user.warehouseId && !["TA","SA","RM","LM"].includes(user.role) ? ` · ${user.warehouseName ?? t("transfers.your_warehouse")}` : ""}
+            {tenant.name} · {visibleTransfers.length} {t("transfers.active_label")}{user.warehouseId && !["TA","SA","RM","LM"].includes(user.role) ? ` · ${user.warehouseName ?? effectiveWarehouses.find((w) => w.id === user.warehouseId)?.name ?? t("transfers.your_warehouse")}` : ""}
             {archivedCount > 0 && (
               <span className="ml-2.5 text-[11px] text-gray-400">
                 {archivedCount} {t("transfers.archived")} → <a href={`/${org}/audit-log`} className="text-eth-forest font-semibold no-underline">{t("audit.title")}</a>
@@ -633,7 +699,7 @@ export default function TransfersPage() {
             )}
           </p>
         </div>
-        <NewTransferPanel products={mergedProducts} warehouses={tenant.warehouses} orgSlug={org} />
+        <NewTransferPanel products={mergedProducts} warehouses={effectiveWarehouses} orgSlug={org} />
       </div>
 
       <div className="flex gap-2.5 mb-6 flex-wrap">

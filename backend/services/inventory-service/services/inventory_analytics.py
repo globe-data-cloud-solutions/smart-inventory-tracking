@@ -65,7 +65,6 @@ async def get_stock(
           {warehouse_clause}
         GROUP BY ib.product_id, ib.warehouse_id,
                  p.name, p.sku, w.name, w.warehouse_type
-        HAVING SUM(ib.quantity) > 0
         ORDER BY p.name, w.name
     """)
 

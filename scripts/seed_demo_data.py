@@ -58,22 +58,24 @@ TENANTS = [
 
 # ─── Warehouses ────────────────────────────────────────────────────────────────
 
+# warehouse_type DB enum values: FACTORY | REGIONAL | RETAIL | SUBCENTER
+# Frontend display mapping:     MWH     | RWH      | WH     | SUB_WH
 WAREHOUSES = {
     "10000001-0000-0000-0000-000000000001": [
-        {"id": "20000001-a000-0000-0000-000000000001", "name": "Main Production Center", "parent_id": None, "location": "Addis Ababa Industrial Zone"},
-        {"id": "20000001-a000-0000-0000-000000000002", "name": "North WH",               "parent_id": None, "location": "Gondar"},
-        {"id": "20000001-a000-0000-0000-000000000003", "name": "North-Subcenter WH",      "parent_id": "20000001-a000-0000-0000-000000000002", "location": "Bahir Dar"},
-        {"id": "20000001-a000-0000-0000-000000000004", "name": "South WH",               "parent_id": None, "location": "Hawassa"},
-        {"id": "20000001-a000-0000-0000-000000000005", "name": "East WH",                "parent_id": None, "location": "Dire Dawa"},
-        {"id": "20000001-a000-0000-0000-000000000006", "name": "West WH",                "parent_id": None, "location": "Jimma"},
+        {"id": "20000001-a000-0000-0000-000000000001", "type": "FACTORY",   "name": "Main Production Center", "parent_id": None, "location": "Addis Ababa Industrial Zone"},
+        {"id": "20000001-a000-0000-0000-000000000002", "type": "RETAIL",    "name": "North WH",               "parent_id": None, "location": "Gondar"},
+        {"id": "20000001-a000-0000-0000-000000000003", "type": "SUBCENTER", "name": "North-Subcenter WH",     "parent_id": "20000001-a000-0000-0000-000000000002", "location": "Bahir Dar"},
+        {"id": "20000001-a000-0000-0000-000000000004", "type": "RETAIL",    "name": "South WH",               "parent_id": None, "location": "Hawassa"},
+        {"id": "20000001-a000-0000-0000-000000000005", "type": "RETAIL",    "name": "East WH",                "parent_id": None, "location": "Dire Dawa"},
+        {"id": "20000001-a000-0000-0000-000000000006", "type": "RETAIL",    "name": "West WH",                "parent_id": None, "location": "Jimma"},
     ],
     "10000002-0000-0000-0000-000000000001": [
-        {"id": "20000002-0c00-0000-0000-000000000001", "name": "Harar Production Center", "parent_id": None, "location": "Harar, Harari Region"},
-        {"id": "20000002-0c00-0000-0000-000000000002", "name": "Ambo Production Center",  "parent_id": None, "location": "Ambo, West Shewa"},
-        {"id": "20000002-0c00-0000-0000-000000000003", "name": "Kombolcha WH",            "parent_id": None, "location": "Kombolcha, Amhara"},
-        {"id": "20000002-0c00-0000-0000-000000000004", "name": "Mekele WH",              "parent_id": None, "location": "Mekele, Tigray"},
-        {"id": "20000002-0c00-0000-0000-000000000005", "name": "Dire Dawa WH",           "parent_id": None, "location": "Dire Dawa"},
-        {"id": "20000002-0c00-0000-0000-000000000006", "name": "Hawassa WH",             "parent_id": None, "location": "Hawassa, Sidama"},
+        {"id": "20000002-0c00-0000-0000-000000000001", "type": "FACTORY",   "name": "Harar Production Center", "parent_id": None, "location": "Harar, Harari Region"},
+        {"id": "20000002-0c00-0000-0000-000000000002", "type": "FACTORY",   "name": "Ambo Production Center",  "parent_id": None, "location": "Ambo, West Shewa"},
+        {"id": "20000002-0c00-0000-0000-000000000003", "type": "RETAIL",    "name": "Kombolcha WH",            "parent_id": None, "location": "Kombolcha, Amhara"},
+        {"id": "20000002-0c00-0000-0000-000000000004", "type": "RETAIL",    "name": "Mekele WH",              "parent_id": None, "location": "Mekele, Tigray"},
+        {"id": "20000002-0c00-0000-0000-000000000005", "type": "RETAIL",    "name": "Dire Dawa WH",           "parent_id": None, "location": "Dire Dawa"},
+        {"id": "20000002-0c00-0000-0000-000000000006", "type": "RETAIL",    "name": "Hawassa WH",             "parent_id": None, "location": "Hawassa, Sidama"},
     ],
 }
 
@@ -205,11 +207,11 @@ async def seed() -> None:
             # Warehouses — no parent_id column in schema; use address for location
             for wh in WAREHOUSES[tid]:
                 await s.execute(text("""
-                    INSERT INTO warehouses (id, tenant_id, name, address)
-                    VALUES (:id, :tid, :name, :addr)
-                    ON CONFLICT (id) DO NOTHING
+                    INSERT INTO warehouses (id, tenant_id, name, address, warehouse_type)
+                    VALUES (:id, :tid, :name, :addr, :wtype)
+                    ON CONFLICT (id) DO UPDATE SET warehouse_type = EXCLUDED.warehouse_type
                 """), {"id": wh["id"], "tid": tid, "name": wh["name"],
-                       "addr": wh["location"]})
+                       "addr": wh["location"], "wtype": wh["type"]})
             print(f"  ✓ {len(WAREHOUSES[tid])} warehouses created")
 
             # Products

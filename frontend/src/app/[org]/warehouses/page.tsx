@@ -1,9 +1,19 @@
 "use client";
 
 import { useParams } from "next/navigation";
+import { useQuery } from "@tanstack/react-query";
 import { SA_ORG_SLUG } from "@/lib/demo-auth";
 import { DEMO_TENANTS, type DemoWarehouse } from "@/lib/demo-data";
+import { api } from "@/lib/api";
 import { t } from "@/lib/i18n";
+
+interface ApiStockRow {
+  product_id: string;
+  warehouse_id: string;
+  warehouse_name: string;
+  warehouse_type: string | null;
+  current_stock: number;
+}
 
 function sortByHierarchy(warehouses: DemoWarehouse[]): DemoWarehouse[] {
   const result: DemoWarehouse[] = [];
@@ -37,10 +47,29 @@ const TYPE_CLASS: Record<string, string> = {
 
 export default function WarehousesPage() {
   const { org } = useParams() as { org: string };
+
+  const { data: stockData = [] } = useQuery<ApiStockRow[]>({
+    queryKey: ["analytics-stock", org],
+    queryFn:  () => api.get<ApiStockRow[]>("/api/v1/inventory/analytics/stock"),
+    staleTime: 30000,
+  });
+
   if (org === SA_ORG_SLUG) return <p className="p-8 text-gray-500">{t("common.no_data")}</p>;
 
   const tenant = DEMO_TENANTS.find((ten) => ten.slug === org);
   if (!tenant) return <p className="p-8 text-gray-500">{t("common.no_data")}</p>;
+
+  // Build per-warehouse totals from real API data keyed by warehouse name.
+  // We match by name because the demo IDs are slugs while the DB uses UUIDs.
+  const isGatewayMode = stockData.length > 0;
+  const realTotalsByName = new Map<string, { units: number; skus: Set<string> }>();
+  for (const row of stockData) {
+    const key = row.warehouse_name;
+    const entry = realTotalsByName.get(key) ?? { units: 0, skus: new Set<string>() };
+    entry.units += Number(row.current_stock);
+    if (Number(row.current_stock) > 0) entry.skus.add(row.product_id);
+    realTotalsByName.set(key, entry);
+  }
 
   const sorted = sortByHierarchy(tenant.warehouses);
 
@@ -63,8 +92,16 @@ export default function WarehousesPage() {
           </thead>
           <tbody>
             {sorted.map((w, idx) => {
-              const whUnits = tenant.products.reduce((a, p) => a + (p.stock[w.id] ?? 0), 0);
-              const whSKUs  = tenant.products.filter((p) => (p.stock[w.id] ?? 0) > 0).length;
+              let whUnits: number;
+              let whSKUs: number;
+              if (isGatewayMode) {
+                const real = realTotalsByName.get(w.name);
+                whUnits = real?.units ?? 0;
+                whSKUs  = real?.skus.size ?? 0;
+              } else {
+                whUnits = tenant.products.reduce((a, p) => a + (p.stock[w.id] ?? 0), 0);
+                whSKUs  = tenant.products.filter((p) => (p.stock[w.id] ?? 0) > 0).length;
+              }
               const typeClass = TYPE_CLASS[w.type] ?? "bg-gray-100 text-gray-500";
               const manager   = tenant.users.find((u) => u.warehouseId === w.id);
               const depth     = getDepth(w.id, tenant.warehouses);
