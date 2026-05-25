@@ -639,7 +639,7 @@ class InventoryService:
         sql = text(f"""
             SELECT
                 to_.id                 AS transfer_id,
-                'PULL'                 AS transfer_type,
+                to_.transfer_type,
                 to_.status,
                 to_.from_warehouse_id,
                 fw.name                AS from_warehouse_name,

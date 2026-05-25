@@ -427,6 +427,7 @@ export default function TransfersPage() {
   const { updateTransferStatus, partialReceive, getTransferEntry, addTransfer } = useInventoryStore();
   const logAudit = useAuditStore((s) => s.log);
   const [transitioning, setTransitioning] = useState<string | null>(null);
+  const [isSubmitting, setIsSubmitting]   = useState(false);
   const [confirmModal, setConfirmModal] = useState<{
     id: string; next: TransferStatus; label: string; transfer: ApiTransfer;
     requiresQty?: boolean;
@@ -439,7 +440,7 @@ export default function TransfersPage() {
   const tenant = DEMO_TENANTS.find((ten) => ten.slug === org);
   if (!tenant || !user) return <p className="p-8 text-gray-500">{t("common.no_data")}</p>;
 
-  const { data: allTransfers = [] } = useQuery<ApiTransfer[]>({
+  const { data: allTransfers = [], isLoading: transfersLoading } = useQuery<ApiTransfer[]>({
     queryKey: ["transfers", org],
     queryFn:  () =>
       api.get<RawApiTransfer[]>("/api/v1/inventory/transfers")
@@ -452,7 +453,7 @@ export default function TransfersPage() {
   const { data: apiProducts = [] } = useQuery<ApiProduct[]>({
     queryKey: ["products", org],
     queryFn:  () => api.get<ApiProduct[]>("/api/v1/products"),
-    staleTime: 0,
+    staleTime: 30_000,
   });
 
   // Real warehouse data from the inventory analytics endpoint.
@@ -545,7 +546,8 @@ export default function TransfersPage() {
   const archivedCount = scopedTransfers.filter((t) => TERMINAL.includes(t.status)).length;
 
   async function doTransition(id: string, next: TransferStatus, partialQty?: number) {
-    if (!user) return; // guard: component always returns early if user is null, but closure must re-check
+    if (!user) return;
+    if (isSubmitting) return;  // prevent double-submit
     if (!isOnline) {
       setConfirmModal(null);
       setToast("Transfer status changes require an internet connection. Please reconnect and try again.");
@@ -553,16 +555,13 @@ export default function TransfersPage() {
       return;
     }
     const transfer = allTransfers.find((t) => t.id === id);
+    setIsSubmitting(true);
     setTransitioning(id);
     setConfirmModal(null);
     try {
       await api.patch(`/api/v1/inventory/transfers/${id}`, { next_status: next });
       await qc.invalidateQueries({ queryKey: ["transfers", org] });
 
-      // Lazy-add the transfer to the Zustand store if it isn't already there.
-      // This covers: pre-seeded demo records, transfers created by a different
-      // user in a prior session, and any transfer the current user didn't create.
-      // Without this, updateTransferStatus is a no-op and balances never change.
       if (transfer && !getTransferEntry(id)) {
         addTransfer({
           id:                transfer.id,
@@ -574,14 +573,13 @@ export default function TransfersPage() {
           toWarehouseName:   transfer.to_warehouse_name,
           quantity:          transfer.quantity,
           issuedDate:        transfer.created_at,
-          status:            transfer.status, // pre-transition; updateTransferStatus advances it
+          status:            transfer.status,
         });
       }
       updateTransferStatus(id, next);
       if (next === "PARTIALLY_RECEIVED" && partialQty) {
         partialReceive(id, partialQty);
       }
-      // Bug 3: record every transition in the audit log
       logAudit({
         tenantSlug:    org,
         userEmail:     user.email,
@@ -600,11 +598,16 @@ export default function TransfersPage() {
       setToast(`Status updated to ${next.replace(/_/g, " ")}`);
       setTimeout(() => setToast(""), 3000);
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : "Transition failed.";
-      setToast(msg.length <= 80 ? msg : "Transition failed — check permissions.");
+      const apiErr = err as { status?: number; message?: string };
+      const is422  = apiErr.status === 422;
+      const msg    = apiErr.message ?? "Transition failed.";
+      setToast(is422 ? `Invalid transition — refreshing status…` : (msg.length <= 80 ? msg : "Transition failed — check permissions."));
       setTimeout(() => setToast(""), 5000);
+      // Always refresh on error so the UI reflects the actual backend state
+      void qc.invalidateQueries({ queryKey: ["transfers", org] });
     } finally {
       setTransitioning(null);
+      setIsSubmitting(false);
     }
   }
 
@@ -673,6 +676,7 @@ export default function TransfersPage() {
                 {t("common.cancel")}
               </button>
               <button
+                disabled={isSubmitting}
                 onClick={() => {
                   if (confirmModal.requiresQty) {
                     const storeEntry = getTransferEntry(confirmModal.id);
@@ -684,9 +688,9 @@ export default function TransfersPage() {
                     void doTransition(confirmModal.id, confirmModal.next);
                   }
                 }}
-                className="flex-[2] py-2.5 bg-eth-forest text-eth-gold border-0 rounded-md text-sm font-bold cursor-pointer"
+                className="flex-[2] py-2.5 bg-eth-forest text-eth-gold border-0 rounded-md text-sm font-bold cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                {t("common.confirm")}
+                {isSubmitting ? t("common.loading") : t("common.confirm")}
               </button>
             </div>
           </div>
@@ -733,7 +737,16 @@ export default function TransfersPage() {
               </tr>
             </thead>
             <tbody>
-              {visibleTransfers.map((txn, idx) => {
+              {transfersLoading && Array.from({ length: 4 }).map((_, i) => (
+                <tr key={`skel-${i}`} className={`border-b border-gray-100 ${i % 2 === 0 ? "bg-white" : "bg-gray-50"}`}>
+                  {COLS.map((c) => (
+                    <td key={c} className="px-3 py-3">
+                      <div className="h-3 rounded bg-gray-200 animate-pulse" style={{ width: `${55 + (i * 13 + c.length * 7) % 35}%` }} />
+                    </td>
+                  ))}
+                </tr>
+              ))}
+              {!transfersLoading && visibleTransfers.map((txn, idx) => {
                 const sCls = STATUS_CLASS[txn.status] ?? "bg-gray-100 text-gray-500";
                 const tb   = TYPE_CLASS[txn.transfer_type] ?? { cls: "bg-gray-100 text-gray-500", label: txn.transfer_type };
                 const acts = getAvailableActions(user.role, txn.transfer_type, txn.status, user.warehouseId, txn.from_warehouse_id, txn.to_warehouse_id);
@@ -801,7 +814,7 @@ export default function TransfersPage() {
             </tbody>
           </table>
         </div>
-        {visibleTransfers.length === 0 && (
+        {!transfersLoading && visibleTransfers.length === 0 && (
           <p className="p-8 text-center text-gray-400 text-sm">{t("common.no_data")}</p>
         )}
       </div>

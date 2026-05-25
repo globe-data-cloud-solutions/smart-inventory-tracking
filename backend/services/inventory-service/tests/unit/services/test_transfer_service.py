@@ -558,3 +558,52 @@ class TestInventoryServiceTransfers:
             "products page must show tenant-wide total = 300, "
             f"not a per-user-warehouse subset; got {tenant_total}"
         )
+
+    async def test_transition_idempotent_on_double_submit(self) -> None:
+        """Backend handles rapid double-submit: first call succeeds, second returns 422.
+
+        Regression: the Confirm button in the transfers UI had no disabled state,
+        allowing two PATCH requests to fire concurrently before the React state
+        caught up. The FOR UPDATE lock on transfer_orders serialises concurrent
+        requests — the second request reads the already-advanced status and raises
+        InvalidStateTransitionError (HTTP 422).
+
+        Fix A (backend):  SELECT FOR UPDATE in transition_transfer — already present.
+        Fix B (frontend): isSubmitting guard disables the Confirm button after first click.
+        Fix C (frontend): qc.invalidateQueries on error so the UI refreshes to the
+                          correct post-first-request status.
+
+        This test verifies the backend contract: the second identical request MUST
+        raise InvalidStateTransitionError rather than silently succeeding or
+        producing a duplicate ledger entry.
+        """
+        from services.inventory_service import InventoryService
+        from fastapi import HTTPException
+
+        line     = _make_line(quantity=50.0)
+        xfer_row = _make_transfer_row("PENDING_APPROVAL", transfer_type="PULL")
+
+        _TX = "tx-double-submit"
+        with patch(
+            "services.inventory_service.record_transaction",
+            new=AsyncMock(return_value=_TX),
+        ):
+            # First request succeeds: PENDING_APPROVAL → APPROVED
+            session1 = _session_for_dispatch(xfer_row, [line])
+            result1  = await InventoryService(session1).transition_transfer(
+                SRC_WM, TRANSFER_ID, "APPROVED"
+            )
+            assert result1.status == "APPROVED"
+
+            # Second request: DB row now shows APPROVED — trying APPROVED → APPROVED is invalid
+            already_approved = _make_transfer_row("APPROVED", transfer_type="PULL")
+            session2 = _session_for_dispatch(already_approved, [line])
+            with pytest.raises(HTTPException) as exc_info:
+                await InventoryService(session2).transition_transfer(
+                    SRC_WM, TRANSFER_ID, "APPROVED"
+                )
+            assert exc_info.value.status_code == 422, (
+                "second identical request must return 422 — backend must not allow "
+                "a transfer to transition to its current state"
+            )
+            assert exc_info.value.detail["code"] == "INVALID_STATE_TRANSITION"

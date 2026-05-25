@@ -202,6 +202,38 @@ class TestListTransfersScopedByRole:
         assert params["offset"] == 10, f"Expected offset=10 for page=2 limit=10, got {params.get('offset')}"
         assert params["limit"]  == 10
 
+    async def test_list_transfers_returns_actual_transfer_type(self) -> None:
+        """list_transfers() must return the DB transfer_type, not hardcoded 'PULL'.
+
+        Regression: the SQL previously had 'PULL' AS transfer_type which meant
+        every PUSH and SISTER transfer appeared as PULL in the frontend, causing
+        HTTP 422 on the first action attempt because the wrong state machine was
+        consulted. The SQL must select to_.transfer_type from the table.
+        """
+        push_row = _make_transfer_row()
+        push_row.transfer_type = "PUSH"
+
+        sister_row = _make_transfer_row()
+        sister_row.transfer_type = "SISTER"
+
+        for expected_type, db_row in [("PUSH", push_row), ("SISTER", sister_row)]:
+            session = AsyncMock()
+            session.execute = AsyncMock(side_effect=[
+                MagicMock(fetchall=MagicMock(return_value=[db_row])),
+                MagicMock(fetchall=MagicMock(return_value=[])),
+            ])
+
+            svc = InventoryService(session)
+            results = await svc.list_transfers(NM_USER)
+
+            assert len(results) == 1
+            assert results[0].transfer_type == expected_type, (
+                f"Expected transfer_type={expected_type!r} from DB row, "
+                f"got {results[0].transfer_type!r}. "
+                "Hardcoded 'PULL' in list_transfers SQL was the root cause of "
+                "HTTP 422 on first action attempt for PUSH/SISTER transfers."
+            )
+
 
 @pytest.mark.unit
 class TestListAdjustmentsScopedByRole:

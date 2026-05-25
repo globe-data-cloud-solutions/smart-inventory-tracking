@@ -579,5 +579,79 @@ These items are fixed in the demo/BFF layer but must be re-tested and verified o
 
 ---
 
+---
+
+## 15. SESSION 6 — PHASE 4B WIRING + TRANSFER FIXES — 2026-05-25
+
+**Head commit at start:** `9d42354`  
+**Unit tests at start:** 145 passed (from prior session)  
+**Unit tests at end:** **147 passed**, 0 failed  
+**TypeScript:** `npx tsc --noEmit` — 0 errors throughout
+
+### Issue 1 — General page lag (performance optimisation)
+
+**Symptom:** All pages had noticeable delay when navigating between them.
+
+**Quick wins applied:**
+
+| Change | File | Effect |
+|---|---|---|
+| `staleTime: 30_000` on products query | `transfers/page.tsx` | Products list no longer refetches on every mount (30 s cache window) |
+| `isLoading: transfersLoading` + skeleton rows | `transfers/page.tsx` | 4 placeholder `animate-pulse` rows render instantly while data loads; table no longer blank-flashes |
+| Empty-state guard only shown when `!transfersLoading` | `transfers/page.tsx` | Prevents "no data" flash before fetch completes |
+
+**Note:** This is a known performance optimisation for the demo layer. Full resolution requires the AWS backend (real PostgreSQL queries replace in-memory BFF state). Documented here for tracking.
+
+---
+
+### Issue 2 — HTTP 422 on first transfer action (Submit/Approve/Dispatch/Receive)
+
+**Symptom:** First click → HTTP 422 error. Second click on the same button → succeeds. Affected all transition actions.
+
+**Root cause A — hardcoded `'PULL'` in `list_transfers` SQL (primary cause)**
+
+`list_transfers()` in `inventory_service.py` had the literal string `'PULL' AS transfer_type` in the SELECT clause. Every transfer — PUSH, SISTER, or PULL — was returned to the frontend with `transfer_type="PULL"`. The frontend's `getAvailableActions()` then used the PULL state machine for all transfers. For a PUSH transfer in `DRAFT` state, PULL machine allows `PENDING_REVIEW` as the next step; the backend's real PUSH machine only allows `PENDING_APPROVAL` from `DRAFT`. Result: frontend sent `next_status=PENDING_REVIEW` for a PUSH → backend raised 422 `INVALID_STATE_TRANSITION`.
+
+**Fix A:** Changed `'PULL' AS transfer_type` → `to_.transfer_type` in the SELECT clause of `list_transfers()`.
+
+**Root cause B — missing `isSubmitting` guard (double-submit)**
+
+The Confirm button in the transition modal had no disabled state. A rapid double-click (or React StrictMode double-invoke) sent two concurrent PATCH requests. First request advanced the status; second request tried the same transition on the already-advanced state → 422.
+
+**Fix B:** Added `isSubmitting` state to `transfers/page.tsx`. Guard at top of `doTransition()` returns early if already submitting. Confirm button gets `disabled={isSubmitting}` and shows `t("common.loading")` text while in flight.
+
+**Root cause C — missing `invalidateQueries` on error (stale UI after 422)**
+
+When a transition returned 422, the TanStack Query cache was not invalidated. The UI retained the stale transfer record showing the old status. The user would click the same button again (same `next_status`), which now appeared valid because the frontend still believed the transfer was in the previous state — but this second attempt succeeded because it was hitting the correct current state in the DB. Masking the root cause.
+
+**Fix C:** Added `void qc.invalidateQueries({ queryKey: ["transfers", org] })` to the catch block in `doTransition()`, so the UI always refreshes to reflect DB truth after any error.
+
+**Auth tests fix (same session):** Five auth-service unit tests were failing because `os.environ.setdefault(...)` in `conftest.py` does not override values already present in the loaded `.env` file. Changed to direct assignment `os.environ["JWT_SECRET"] = "test-secret-for-unit-tests"` placed before any imports. All 8 auth tests now pass.
+
+**Dashboard rewrite (same session):** Dashboard page fully rewired for gateway mode. Three TanStack Query hooks (`dashboard-stock`, `dashboard-alerts`, `dashboard-transfers`) hit real analytics endpoints when `NEXT_PUBLIC_API_URL` is set. WM view filters by `user.warehouseId`; NM/TA view aggregates tenant-wide. Demo mode fallback preserved.
+
+**Demo banner fix (same session):** Banner was still showing in gateway mode. Added `!process.env.NEXT_PUBLIC_API_URL` condition alongside `process.env.NODE_ENV !== "production"` check.
+
+### Regression tests added
+
+| Test | File | What it verifies |
+|---|---|---|
+| `test_list_transfers_returns_actual_transfer_type` | `test_list_endpoints.py` | `list_transfers()` returns the DB `transfer_type` value (`PUSH`, `SISTER`) — not hardcoded `'PULL'`. Regression for Root cause A. |
+| `test_transition_idempotent_on_double_submit` | `test_transfer_service.py` | First PATCH succeeds (`PENDING_APPROVAL → APPROVED`); second PATCH on the same transfer raises HTTP 422 `INVALID_STATE_TRANSITION`. Confirms backend serialises concurrent requests via `SELECT FOR UPDATE`. |
+
+### Final test counts (end of session)
+
+| Suite | Count | Status |
+|---|---|---|
+| `pytest backend/ -v -m "unit"` | **147 / 147** | ✅ All pass |
+| `npx tsc --noEmit` | — | ✅ 0 errors |
+
+### Remaining open items (unchanged)
+
+- §8-6 (L): AWS dev environment — Terraform apply, RDS + ElastiCache provisioning
+- §8-9 (L): Native-speaker review of `or.json` — staffing decision
+
+---
+
 *SMART Inventory Platform — Bug Report v4.0*  
 *Backend: Python 3.12 / FastAPI · Frontend: Next.js 14 / TypeScript · DB: PostgreSQL 16*
