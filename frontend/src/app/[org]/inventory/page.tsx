@@ -29,7 +29,8 @@ type ApiProduct = {
 type InventoryStockItem = {
   product_id: string; product_name: string; product_sku: string;
   warehouse_id: string; warehouse_name: string; warehouse_type: string;
-  current_stock: string; pending_out_qty: string; in_transit_in_qty: string;
+  current_stock: string; pending_out_qty: string;
+  in_transit_out_qty: string; in_transit_in_qty: string;
   requested_qty: string; net_available: string;
 };
 type Filters      = { category: string[]; unit: string[]; status: string[] };
@@ -530,10 +531,10 @@ export default function InventoryPage() {
                 const demoBase     = whId ? (p.stock[whId] ?? 0) : Object.values(p.stock).reduce((a, b) => a + b, 0);
                 const gatewayItem  = isGatewayMode && whId ? stockByKey.get(`${p.id}:${whId}`) : undefined;
                 const onHand       = effectiveOnHand(p.id, whId, demoBase);
-                const reserved     = whId ? (isGatewayMode ? parseFloat(gatewayItem?.pending_out_qty   ?? "0") : getReservedTotal(p.id, whId))   : 0;
-                const inTransitOut = whId ? getInTransitOutTotal(p.id, whId) : 0;
-                const inTransitIn  = whId ? (isGatewayMode ? parseFloat(gatewayItem?.in_transit_in_qty ?? "0") : getInTransitInTotal(p.id, whId)) : 0;
-                const available    = whId ? (isGatewayMode ? parseFloat(gatewayItem?.net_available     ?? "0") : getAvailable(p.id, whId, demoBase)) : demoBase;
+                const reserved     = whId ? (isGatewayMode ? parseFloat(gatewayItem?.pending_out_qty     ?? "0") : getReservedTotal(p.id, whId))     : 0;
+                const inTransitOut = whId ? (isGatewayMode ? parseFloat(gatewayItem?.in_transit_out_qty ?? "0") : getInTransitOutTotal(p.id, whId)) : 0;
+                const inTransitIn  = whId ? (isGatewayMode ? parseFloat(gatewayItem?.in_transit_in_qty  ?? "0") : getInTransitInTotal(p.id, whId))  : 0;
+                const available    = whId ? (isGatewayMode ? parseFloat(gatewayItem?.net_available      ?? "0") : getAvailable(p.id, whId, demoBase)) : demoBase;
                 const stockStatus  = onHand === 0 ? "out" : onHand <= p.reorderPoint ? "low" : "in";
 
                 return (

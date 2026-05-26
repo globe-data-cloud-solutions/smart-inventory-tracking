@@ -84,17 +84,38 @@ async def get_stock(
         wid = r.warehouse_id
         tid_param = {"tid": str(tenant_id)} if tenant_id else {}
 
-        # Pending out: approved or in-transit orders leaving this warehouse
+        # Soft holds: orders not yet approved (reservation, no On Hand change yet).
+        # WMS Option A: On Hand reduces at APPROVED via TRANSFER_OUT ledger entry.
+        # APPROVED/ISSUED/IN_TRANSIT must NOT be included here — current_stock
+        # already reflects the APPROVED deduction; including them causes a double
+        # deduction in net_available.
         pending_out_sql = text("""
             SELECT COALESCE(SUM(tol.quantity), 0)
             FROM transfer_order_lines tol
             JOIN transfer_orders to_ ON to_.id = tol.transfer_order_id
             WHERE to_.from_warehouse_id = :wid
               AND tol.product_id = :pid
-              AND to_.status IN ('APPROVED','IN_TRANSIT')
+              AND to_.status IN (
+                'DRAFT','PENDING_REVIEW','PENDING_APPROVAL',
+                'PENDING_SOURCE_CONFIRM','PENDING_DEST_CONFIRM'
+              )
         """ + (" AND to_.tenant_id = :tid" if tenant_id else ""))
         pending_out = (
             await session.execute(pending_out_sql, {"wid": str(wid), "pid": str(pid), **tid_param})
+        ).scalar() or Decimal("0")
+
+        # In transit out: stock already deducted from On Hand (at APPROVED) and
+        # physically moving — informational only, does NOT affect net_available.
+        in_transit_out_sql = text("""
+            SELECT COALESCE(SUM(tol.quantity), 0)
+            FROM transfer_order_lines tol
+            JOIN transfer_orders to_ ON to_.id = tol.transfer_order_id
+            WHERE to_.from_warehouse_id = :wid
+              AND tol.product_id = :pid
+              AND to_.status IN ('ISSUED','IN_TRANSIT')
+        """ + (" AND to_.tenant_id = :tid" if tenant_id else ""))
+        in_transit_out = (
+            await session.execute(in_transit_out_sql, {"wid": str(wid), "pid": str(pid), **tid_param})
         ).scalar() or Decimal("0")
 
         # In-transit inbound: orders in transit destined for this warehouse
@@ -132,6 +153,7 @@ async def get_stock(
                 warehouse_type=r.warehouse_type,
                 current_stock=Decimal(str(r.current_stock)),
                 pending_out_qty=Decimal(str(pending_out)),
+                in_transit_out_qty=Decimal(str(in_transit_out)),
                 in_transit_in_qty=Decimal(str(in_transit_in)),
                 requested_qty=Decimal(str(requested)),
             )

@@ -16,14 +16,19 @@ class InventoryStockOut(BaseModel):
     warehouse_name: str
     warehouse_type: Optional[str] = None
     current_stock: Decimal
-    pending_out_qty: Decimal = Decimal("0")     # approved/in-transit going out
-    in_transit_in_qty: Decimal = Decimal("0")   # inbound not yet received
-    requested_qty: Decimal = Decimal("0")        # pending transfer requests on this stock
+    # WMS Option A: pending_out_qty = soft holds only (DRAFT/PENDING statuses).
+    # On Hand is already reduced at APPROVED via TRANSFER_OUT ledger entry, so
+    # APPROVED/ISSUED/IN_TRANSIT must NOT be included here — doing so causes a
+    # double deduction: current_stock already reflects the APPROVED deduction.
+    pending_out_qty: Decimal = Decimal("0")      # DRAFT/PENDING soft holds
+    in_transit_out_qty: Decimal = Decimal("0")   # ISSUED/IN_TRANSIT (informational)
+    in_transit_in_qty: Decimal = Decimal("0")    # inbound not yet received
+    requested_qty: Decimal = Decimal("0")         # pending transfer requests on this stock
 
     @computed_field  # type: ignore[misc]
     @property
     def net_available(self) -> Decimal:
-        """Conservatively available: current minus all committed outbound."""
+        """Available = On Hand - soft holds. In Transit Out is informational only."""
         return self.current_stock - self.pending_out_qty - self.requested_qty
 
 
