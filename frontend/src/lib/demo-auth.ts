@@ -86,6 +86,58 @@ async function _exchangeJWT(session: SessionUser): Promise<void> {
   }
 }
 
+/**
+ * Login path for backend-created users not present in ALL_DEMO_USERS.
+ * Calls dev_email endpoint; uses tenant_id UUID as the orgSlug so the
+ * URL becomes /{tenant_id}/dashboard.
+ * Only works when ENVIRONMENT=local on the auth-service side.
+ */
+export async function loginWithDevEmail(email: string): Promise<SessionUser | null> {
+  const authBase =
+    process.env.NEXT_PUBLIC_AUTH_URL ??
+    process.env.NEXT_PUBLIC_API_URL ??
+    "";
+  if (!authBase) return null;
+
+  try {
+    const res = await fetch(`${authBase}/api/v1/auth/token`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ dev_email: email }),
+    });
+    if (!res.ok) return null;
+    const data = (await res.json()) as { access_token?: string };
+    if (!data.access_token) return null;
+
+    const claims = decodeJwtPayload(data.access_token);
+    if (!claims) return null;
+
+    const tenantId    = claims.tenant_id    ? String(claims.tenant_id)    : undefined;
+    const warehouseId = claims.warehouse_id ? String(claims.warehouse_id) : undefined;
+    const role        = claims.role         ? String(claims.role)         : "AU";
+    const sub         = claims.sub          ? String(claims.sub)          : email;
+    // Use tenant_id as the org slug for live API tenants
+    const orgSlug = tenantId ?? SA_ORG_SLUG;
+
+    const session: SessionUser = {
+      id:         sub,
+      email,
+      name:       email.split("@")[0] ?? email,
+      role:       role as Role,
+      orgSlug,
+      tenantId,
+      tenantName: tenantId,
+      tenantSlug: orgSlug,
+      warehouseId,
+      jwtToken:   data.access_token,
+    };
+    store()?.setItem(SESSION_KEY, JSON.stringify(session));
+    return session;
+  } catch {
+    return null;
+  }
+}
+
 export function login(email: string, password: string): SessionUser | null {
   const found = ALL_DEMO_USERS.find(
     (u) => u.email.toLowerCase() === email.toLowerCase() && u.password === password

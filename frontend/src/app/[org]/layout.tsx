@@ -280,8 +280,9 @@ export default function OrgLayout({ children }: { children: React.ReactNode }) {
       router.replace(`/${session.orgSlug}/dashboard`); return;
     }
     if (org !== SA_ORG_SLUG && session.role !== "SA") {
-      const tenant = DEMO_TENANTS.find((ten) => ten.slug === org);
-      if (!tenant || session.orgSlug !== org) {
+      // Allow both demo tenants (in DEMO_TENANTS) and live API-created tenants
+      // (not in DEMO_TENANTS but orgSlug matches the URL org param)
+      if (session.orgSlug !== org) {
         router.replace(`/${session.orgSlug}/dashboard`); return;
       }
     }
@@ -301,7 +302,11 @@ export default function OrgLayout({ children }: { children: React.ReactNode }) {
   }
 
   const firstName = user.name.split(" ")[0] ?? user.name;
-  const viewingTenant = org !== SA_ORG_SLUG ? DEMO_TENANTS.find((ten) => ten.slug === org) : null;
+  const demoTenant    = org !== SA_ORG_SLUG ? DEMO_TENANTS.find((ten) => ten.slug === org) : null;
+  // For API-created tenants not in DEMO_TENANTS, build a minimal display object
+  const viewingTenant = demoTenant ?? (org !== SA_ORG_SLUG
+    ? { name: user.tenantName ?? org, logo: "🏢", slug: org }
+    : null);
 
   return (
     <QueryClientProvider client={qc}>
@@ -390,18 +395,21 @@ const SA_NAV = [
 
 const TENANT_NAV = [
   { type: "section", label: "Inventory" },
-  { type: "link", icon: "🏠", label: "Dashboard",       page: "dashboard"   },
-  { type: "link", icon: "📦", label: "Inventory",       page: "inventory"   },
-  { type: "link", icon: "🏭", label: "Products",        page: "products"    },
-  { type: "link", icon: "🏗️", label: "Warehouses",      page: "warehouses"  },
-  { type: "link", icon: "🔍", label: "Lot Traceability",page: "lots"        },
+  { type: "link", icon: "🏠", label: "Dashboard",       page: "dashboard"         },
+  { type: "link", icon: "📦", label: "Inventory",       page: "inventory"         },
+  { type: "link", icon: "🏭", label: "Products",        page: "products"          },
+  { type: "link", icon: "🏗️", label: "Warehouses",      page: "warehouses"        },
+  { type: "link", icon: "🔍", label: "Lot Traceability",page: "lots"              },
   { type: "section", label: "Operations" },
-  { type: "link", icon: "🔄", label: "Transfers",       page: "transfers"   },
-  { type: "link", icon: "📋", label: "Adjustments",     page: "adjustments" },
-  { type: "link", icon: "🔢", label: "Stock Count",     page: "stock-count" },
-  { type: "link", icon: "🚚", label: "Dispatch",        page: "dispatch"    },
+  { type: "link", icon: "🔄", label: "Transfers",       page: "transfers"         },
+  { type: "link", icon: "📋", label: "Adjustments",     page: "adjustments"       },
+  { type: "link", icon: "🔢", label: "Stock Count",     page: "stock-count"       },
+  { type: "link", icon: "🚚", label: "Dispatch",        page: "dispatch"          },
   { type: "section", label: "Reports" },
-  { type: "link", icon: "📈", label: "Analytics",       page: "analytics"   },
-  { type: "link", icon: "📊", label: "Reports",         page: "reports"     },
-  { type: "link", icon: "📋", label: "Audit Log",       page: "audit-log"   },
+  { type: "link", icon: "📈", label: "Analytics",       page: "analytics"         },
+  { type: "link", icon: "📊", label: "Reports",         page: "reports"           },
+  { type: "link", icon: "📋", label: "Audit Log",       page: "audit-log"         },
+  { type: "section", label: "Settings" },
+  { type: "link", icon: "🏢", label: "Org Setup",       page: "settings/org-setup"  },
+  { type: "link", icon: "👥", label: "Personnel",       page: "settings/personnel"  },
 ];

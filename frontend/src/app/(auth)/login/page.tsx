@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { login } from "@/lib/demo-auth";
+import { login, loginWithDevEmail } from "@/lib/demo-auth";
 import { DEMO_TENANTS, SA_USER } from "@/lib/demo-data";
 
 export default function LoginPage() {
@@ -18,7 +18,11 @@ export default function LoginPage() {
     setError("");
     setLoading(true);
     await new Promise((r) => setTimeout(r, 300));
-    const session = login(email, password);
+    let session = login(email, password);
+    if (!session) {
+      // Fallback: try backend dev_email for API-created users (ENVIRONMENT=local only)
+      session = await loginWithDevEmail(email);
+    }
     if (!session) {
       setError("Invalid email or password.");
       setLoading(false);

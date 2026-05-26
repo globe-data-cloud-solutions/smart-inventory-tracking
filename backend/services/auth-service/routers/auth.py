@@ -95,6 +95,41 @@ DEV_USERS: dict[str, dict[str, str | None]] = {
 }
 
 
+async def _lookup_user_in_db(email: str) -> dict | None:
+    """Query the users table for a dynamically-created user (not in DEV_USERS).
+    Returns JWT claim fields or None if not found / DB unavailable.
+    Only called in ENVIRONMENT=local dev_email path.
+    """
+    try:
+        from shared.db.session import AsyncSessionLocal
+        from sqlalchemy import text as sa_text
+        async with AsyncSessionLocal() as db:
+            row = await db.execute(
+                sa_text("""
+                    SELECT u.id, u.role, u.tenant_id, ufa.facility_id
+                    FROM users u
+                    LEFT JOIN user_facility_assignments ufa
+                        ON ufa.user_id = u.id
+                        AND ufa.assignment_type = 'PRIMARY'
+                        AND ufa.is_active = true
+                    WHERE lower(u.email) = lower(:email) AND u.is_active = true
+                    LIMIT 1
+                """),
+                {"email": email},
+            )
+            rec = row.fetchone()
+        if rec is None:
+            return None
+        return {
+            "sub":          str(rec.id),
+            "role":         str(rec.role),
+            "tenant_id":    str(rec.tenant_id) if rec.tenant_id else None,
+            "warehouse_id": str(rec.facility_id) if rec.facility_id else None,
+        }
+    except Exception:
+        return None
+
+
 class TokenRequest(BaseModel):
     # Production path: Cognito IdToken (required in non-local envs).
     # Optional here so dev_email can be used alone in local mode.
@@ -135,15 +170,23 @@ async def exchange_token(body: TokenRequest) -> TokenResponse:
                 detail="dev_email bypass is only available when ENVIRONMENT=local",
             )
         entry = DEV_USERS.get(body.dev_email.lower())
-        if entry is None:
-            raise HTTPException(
-                status_code=404,
-                detail=f"dev_email not found in DEV_USERS registry: {body.dev_email!r}",
-            )
-        sub          = str(entry["sub"])
-        role         = str(entry["role"])
-        tenant_id    = entry["tenant_id"]
-        warehouse_id = entry["warehouse_id"]
+        if entry is not None:
+            sub          = str(entry["sub"])
+            role         = str(entry["role"])
+            tenant_id    = entry["tenant_id"]
+            warehouse_id = entry["warehouse_id"]
+        else:
+            # Fallback: look up dynamically-created users in the database
+            db_user = await _lookup_user_in_db(body.dev_email)
+            if db_user is None:
+                raise HTTPException(
+                    status_code=404,
+                    detail=f"dev_email not found: {body.dev_email!r}",
+                )
+            sub          = db_user["sub"]
+            role         = db_user["role"]
+            tenant_id    = db_user["tenant_id"]
+            warehouse_id = db_user["warehouse_id"]
 
     # ── Path 2 / 3: cognito_token (+ optional demo_* overrides) ───────────
     elif body.cognito_token is not None:

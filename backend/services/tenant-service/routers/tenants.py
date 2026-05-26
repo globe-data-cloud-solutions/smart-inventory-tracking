@@ -23,21 +23,22 @@ async def create_tenant(
     tenant_id = uuid.uuid4()
     await db.execute(
         text(
-            "INSERT INTO tenants (id, name, plan_id, default_locale) "
-            "VALUES (:id, :name, :plan_id, :locale)"
+            "INSERT INTO tenants (id, name, plan_id, default_locale, organisation_type) "
+            "VALUES (:id, :name, :plan_id, :locale, :org_type)"
         ),
         {
             "id": str(tenant_id),
             "name": body.name,
             "plan_id": str(body.plan_id),
             "locale": body.default_locale,
+            "org_type": body.organisation_type,
         },
     )
     return SuccessResponse(
         data=TenantResponse(
             id=tenant_id,
             name=body.name,
-            organisation_type=None,
+            organisation_type=body.organisation_type,
             onboarding_complete=False,
             default_locale=body.default_locale,
             is_active=True,

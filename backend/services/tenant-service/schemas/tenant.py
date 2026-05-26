@@ -23,6 +23,7 @@ class TenantCreateRequest(BaseModel):
     name: str
     plan_id: uuid.UUID
     default_locale: str = "en"
+    organisation_type: Optional[str] = None   # PRODUCER | RETAILER | HYBRID
 
 
 class TenantResponse(BaseModel):
