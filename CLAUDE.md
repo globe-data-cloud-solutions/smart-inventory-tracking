@@ -2286,6 +2286,88 @@ NEVER leave a state machine missing transitions that the UI exposes as buttons.
   Root cause: BUG_REPORT.md §15 Bug 3 — missing REJECTED in state machines.
 ```
 
+---
+
+## 28. Org Hierarchy Configuration
+
+Full design: PRD-APPENDIX.md §B. This section states the rules that apply to all code in the hierarchy domain.
+
+### Hierarchy Rules
+
+```
+Maximum 5 levels per tenant (Level 0–4 in tenant_hierarchy_config).
+Level names, role mappings, and display labels are tenant-configurable
+  — stored in tenant_hierarchy_config, not hardcoded.
+Multiple root nodes are allowed (e.g. two separate factories under one tenant).
+Every organization_node has is_stock_holding BOOLEAN.
+  is_stock_holding=false nodes participate in the approval chain only —
+  they hold no inventory, appear in no balance queries, and cannot be a
+  PULL/PUSH source or destination.
+Authority scope is always resolved via get_authority_scope() querying
+  org_node_hierarchy — never inferred from role code alone (see §14, Rule 25).
+```
+
+### Product Scoping Rules
+
+```
+Standard products (source_factory_id IS NULL):
+  Pullable from any node in the tenant that has available stock.
+  No source restriction applies.
+
+Factory-specific products (source_factory_id IS NOT NULL):
+  Pullable only from nodes within the home factory's subtree.
+  Backend validates source on every PULL creation.
+  Invalid source raises HTTP 422 with code INVALID_SOURCE_FACTORY.
+  Frontend filters source dropdown to nodes within the factory subtree.
+  Product card displays badge: "Source: [Factory Name] only".
+
+NEVER allow a factory-specific product to be pulled from outside its
+  home factory subtree. This applies to all three transfer types
+  (PULL, PUSH, SISTER) and to the dispatch engine's lot selection.
+```
+
+### Personnel Assignment Rules
+
+```
+Every user has exactly ONE PRIMARY facility assignment (permanent).
+ACTING assignments are time-bounded (valid_from / valid_until).
+  Any manager may create ACTING for any user within their authority scope.
+  No higher-level approval is required.
+DELEGATE assignments are time-bounded and permission-scoped.
+  Scope is explicitly defined per assignment, not inherited from role.
+
+JWT warehouse_id always equals the user's PRIMARY facility.
+  ACTING/DELEGATE facilities do not appear in the JWT.
+  ABAC permission checks union all currently-active assignments.
+  Expired assignments (valid_until in the past) are ignored by all checks.
+
+User deactivation sets is_active=false on the users table and closes
+  all active ACTING/DELEGATE assignments.
+NEVER hard-delete a user record. Deactivation is always reversible.
+NEVER allow a manager to assign a role at or above their own level.
+  This rule applies to PRIMARY, ACTING, and DELEGATE assignment types.
+```
+
+### NEVER Rules (addendum to §1)
+
+```
+NEVER delete a user record — set is_active=false. Reactivation restores
+  the account. Deletion would break foreign key references in audit_logs,
+  inventory_transactions, and approval_history.
+
+NEVER allow a factory-specific product's PULL to source stock from outside
+  its home factory subtree. The constraint must be enforced at the service
+  layer on every transfer creation — it cannot be a frontend-only guard.
+
+NEVER hardcode level names, role display labels, or level-to-role mappings
+  in application code. All such labels must be read from
+  tenant_hierarchy_config at runtime and included in API responses.
+  Hardcoded labels produce incorrect UX for every tenant that uses
+  non-default naming (e.g. "General Manager" vs "National Manager").
+```
+
+---
+
 # SMART Inventory — Claude Prompts for Initial Stock Entry
 ## Option A: RECEIPT Workflow | Option C: Bulk Import (Structured Import)
 

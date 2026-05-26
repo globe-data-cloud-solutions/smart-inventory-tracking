@@ -781,5 +781,118 @@ const isDestWM = !!uWH && uWH === toWH?.toLowerCase();
 
 ---
 
+## 16. PHASE 1 FEATURES — PENDING IMPLEMENTATION
+
+Design decisions for all items below are documented in PRD-APPENDIX.md and CLAUDE.md §28. No implementation work is tracked here — this section records readiness status only.
+
+---
+
+### 16.1 — Org Hierarchy Setup Wizard
+
+**Status:** ⏳ Designed, not yet implemented  
+**Design reference:** PRD-APPENDIX.md §B1–B2, CLAUDE.md §28
+
+Migrations required before implementation:
+
+| Migration | Table | Change |
+|---|---|---|
+| Add `role_display_labels` | `tenant_hierarchy_config` | JSONB column for tenant role name overrides |
+| Add `default_role_code` | `tenant_hierarchy_config` | role_code column for auto-suggested role per level |
+| Add `is_stock_holding` | `organization_node` | BOOLEAN DEFAULT true |
+| Add `level_number` | `organization_node` | INTEGER FK to tenant_hierarchy_config.level |
+| Add `source_factory_id` | `products` | UUID REFERENCES organization_node(id) NULLABLE |
+| Add `is_active` | `users` | BOOLEAN NOT NULL DEFAULT true |
+| New table | `user_facility_assignments` | PRIMARY / ACTING / DELEGATE assignments (see §B5) |
+
+All migrations must include RLS policy and tenant_id leading composite index per CLAUDE.md §7.
+
+**Blocking dependencies:** None — can be implemented independently of other Phase 1 features.
+
+---
+
+### 16.2 — Personnel Management Page
+
+**Status:** ⏳ Designed, not yet implemented  
+**Design reference:** PRD-APPENDIX.md §B5–B7, CLAUDE.md §28
+
+**Features in scope:**
+- List view: all users in manager's authority subtree, with role, facility, status, active assignments
+- Add user: name, email, role (≤ manager's level), primary facility, initial password
+- Acting assignment: user, acting facility, acting role, valid_from, valid_until, notes
+- Deactivate / Reactivate user (never hard-delete)
+- All mutations audit-logged
+
+**Blocking dependency:** Org Hierarchy Setup Wizard (§16.1) must be implemented first. Personnel page relies on `organization_node` level configuration and `user_facility_assignments` table.
+
+**Permissions to register:**
+- `PERSONNEL_VIEW` — read user list scoped to authority
+- `PERSONNEL_CREATE` — create users below own level
+- `PERSONNEL_DEACTIVATE` — deactivate users in scope
+- `PERSONNEL_ASSIGNMENT_CREATE` — create ACTING / DELEGATE assignments
+
+---
+
+### 16.3 — Low Stock + Expiry Alerts
+
+**Status:** ⏳ Designed, ready to implement  
+**Design reference:** CLAUDE.md §8 (outbox pattern), §24 Business Rules 4 and 5
+
+No new design decisions required. Implementation is self-contained and does not depend on §16.1 or §16.2.
+
+**Scope:**
+- `alerts` table: `LOW_STOCK`, `OUT_OF_STOCK`, `EXPIRY_APPROACHING` alert types
+- `AlertService`: `check_low_stock()`, `check_expiry()`, `get_alerts()`, `mark_read()`, `dismiss()`
+- Alert check triggered by: Celery beat (every 6 hours) + outbox worker on `InventoryUpdated` event
+- Dedup logic: no duplicate UNREAD alert for same product + warehouse + type
+- Frontend: bell icon badge with unread count, dropdown (latest 5), full `/alerts` page
+- Email/SMS delivery deferred until AWS SES/SNS provisioned
+
+**Permissions to register:**
+- `INVENTORY_ALERTS_VIEW` — read alerts scoped to facility
+- `INVENTORY_ALERTS_MANAGE` — dismiss / mark-read alerts
+
+---
+
+### 16.4 — FEFO Dispatch Engine
+
+**Status:** ⏳ Spec in CLAUDE.md §16, not yet implemented  
+**Design reference:** CLAUDE.md §16, §24 Business Rules 4 and 5
+
+No new design decisions required. Spec in CLAUDE.md §16 is complete. Implementation can proceed independently.
+
+**Key rules (from CLAUDE.md §16):**
+- FEFO auto-enforced when `batch_tracking=true` AND `expiry_date` is populated on the product
+- FEFO override requires `dispatch:fefo_override` permission + `reason_code` + `DispatchOverrideLog` INSERT
+- Override is audit-logged and fires a `FefoOverrideApplied` outbox event
+
+---
+
+### 16.5 — Stock Count Module
+
+**Status:** ⏳ Not yet designed  
+**Design reference:** CLAUDE.md §7 (`transaction_type = COUNT_VARIANCE`), §24 Business Rule 2
+
+Needs a design session before implementation. Open questions:
+- Blind count vs guided count (show expected quantity or hide it?)
+- Partial count (subset of SKUs) vs full warehouse count
+- Freeze rules during active count session (block transfers for counted SKUs?)
+- Variance approval threshold — same as adjustment, or separate rule?
+- How cycle count scheduling integrates with the approval workflow tables
+
+**No implementation until design questions are resolved.**
+
+---
+
+### 16.6 — Barcode Scanning
+
+**Status:** ⏳ Spec in CLAUDE.md §11, not yet implemented  
+**Design reference:** CLAUDE.md §11
+
+No new design decisions required. Spec is complete. Blocked only by hardware availability for P90 scan recognition testing (CLAUDE.md NFR-V4-3: < 1 second on mid-range Android).
+
+Implementation uses `@zxing/browser` (already in `package.json` per CLAUDE.md §2). No backend changes required — scanning produces a product SKU that populates the existing Receive / Issue / Transfer forms.
+
+---
+
 *SMART Inventory Platform — Bug Report v4.0*  
 *Backend: Python 3.12 / FastAPI · Frontend: Next.js 14 / TypeScript · DB: PostgreSQL 16*
