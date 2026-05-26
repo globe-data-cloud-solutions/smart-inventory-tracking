@@ -345,10 +345,10 @@ class InventoryService:
         )).fetchall()
 
         for line in lines:
-            # Source on_hand deduction is deferred to receive_transfer() — Option A WMS
-            # semantics: On Hand does not move until stock is physically received.
-            # Book in_transit_in at destination so the receiving warehouse can see stock
-            # committed for delivery. RELEASE reverses this when receive_transfer() is called.
+            # Source on_hand was already deducted at APPROVED via TRANSFER_OUT ledger entry.
+            # dispatch_transfer() only books in-transit at the destination via RESERVE so
+            # the receiving warehouse can see committed inbound stock. RELEASE reverses
+            # this booking when receive_transfer() is called.
             await record_transaction(
                 self.db,
                 tenant_id=str(user.tenant_id),

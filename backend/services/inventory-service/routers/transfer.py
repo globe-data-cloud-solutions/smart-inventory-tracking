@@ -71,8 +71,9 @@ async def dispatch_transfer(
     user=Depends(get_current_user),
     db: AsyncSession = Depends(get_db_session),
 ) -> SuccessResponse[TransferOrderResponse]:
-    """Advance APPROVED → IN_TRANSIT. Source warehouse only (warehouse_id ABAC).
-    Writes TRANSFER_OUT ledger entries and deducts source balance.
+    """Advance APPROVED → ISSUED. Source warehouse only (warehouse_id ABAC).
+    Books a RESERVE at the destination warehouse so in_transit_in is visible.
+    Source on_hand was already deducted at APPROVED via TRANSFER_OUT — no second deduction here.
     """
     svc = InventoryService(db)
     result = await svc.dispatch_transfer(user, transfer_id)

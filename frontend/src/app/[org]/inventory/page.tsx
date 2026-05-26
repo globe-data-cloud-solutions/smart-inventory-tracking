@@ -37,6 +37,13 @@ type Filters      = { category: string[]; unit: string[]; status: string[] };
 type ExpandedCell = { productId: string; productName: string; warehouseId: string; col: "reserved" | "inTransitOut" | "inTransitIn" };
 type ModalRow     = { direction: "in" | "out" | "direct"; label: string; qty: number; date: string; ref?: string };
 
+// Null-safe float parser. parseFloat(null|undefined) returns NaN; this returns 0.
+// Use for every balance field from the API — field may be absent in stale cached responses.
+function safeFloat(val: unknown): number {
+  const n = parseFloat(String(val ?? 0));
+  return isNaN(n) ? 0 : n;
+}
+
 /* ── Column filter dropdown ─────────────────────────────────────────────────── */
 function FilterDropdown({ options, selected, onChange, onClose }: {
   options: string[]; selected: string[];
@@ -356,11 +363,11 @@ export default function InventoryPage() {
   function effectiveOnHand(productId: string, warehouseId: string, demoBase: number): number {
     if (isGatewayMode) {
       if (warehouseId) {
-        return parseFloat(stockByKey.get(`${productId}:${warehouseId}`)?.current_stock ?? "0");
+        return safeFloat(stockByKey.get(`${productId}:${warehouseId}`)?.current_stock);
       }
       return Array.from(stockByKey.entries())
         .filter(([k]) => k.startsWith(`${productId}:`))
-        .reduce((sum, [, item]) => sum + parseFloat(item.current_stock), 0);
+        .reduce((sum, [, item]) => sum + safeFloat(item.current_stock), 0);
     }
     return warehouseId ? getOnHand(productId, warehouseId, demoBase) : demoBase;
   }
@@ -540,10 +547,10 @@ export default function InventoryPage() {
                 const demoBase  = whId ? (p.stock[whId] ?? 0) : Object.values(p.stock).reduce((a, b) => a + b, 0);
                 const stockItem = getStock(p.id);   // null in demo mode → Zustand fallback
                 const onHand       = effectiveOnHand(p.id, whId, demoBase);
-                const reserved     = whId ? (stockItem ? parseFloat(stockItem.pending_out_qty)     : getReservedTotal(p.id, whId))     : 0;
-                const inTransitOut = whId ? (stockItem ? parseFloat(stockItem.in_transit_out_qty) : getInTransitOutTotal(p.id, whId)) : 0;
-                const inTransitIn  = whId ? (stockItem ? parseFloat(stockItem.in_transit_in_qty)  : getInTransitInTotal(p.id, whId))  : 0;
-                const available    = whId ? (stockItem ? parseFloat(stockItem.net_available)       : getAvailable(p.id, whId, demoBase)) : demoBase;
+                const reserved     = whId ? (stockItem ? safeFloat(stockItem.pending_out_qty)     : getReservedTotal(p.id, whId))     : 0;
+                const inTransitOut = whId ? (stockItem ? safeFloat(stockItem.in_transit_out_qty) : getInTransitOutTotal(p.id, whId)) : 0;
+                const inTransitIn  = whId ? (stockItem ? safeFloat(stockItem.in_transit_in_qty)  : getInTransitInTotal(p.id, whId))  : 0;
+                const available    = whId ? (stockItem ? safeFloat(stockItem.net_available)       : getAvailable(p.id, whId, demoBase)) : demoBase;
                 const stockStatus  = onHand === 0 ? "out" : onHand <= p.reorderPoint ? "low" : "in";
 
                 return (

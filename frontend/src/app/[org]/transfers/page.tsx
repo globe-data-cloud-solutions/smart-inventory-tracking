@@ -261,10 +261,12 @@ function getAvailableActions(
     return [];
   }
 
-  // WM
+  // WM — compare UUIDs case-insensitively: session warehouseId vs DB from/to_warehouse_id
+  // may differ in casing depending on how the JWT was issued vs how Postgres serializes UUIDs.
   if (role === "WM") {
-    const isDestWM = !!userWH && userWH === toWH;
-    const isSrcWM  = !!userWH && userWH === fromWH;
+    const uWH = userWH?.toLowerCase();
+    const isDestWM = !!uWH && uWH === toWH?.toLowerCase();
+    const isSrcWM  = !!uWH && uWH === fromWH?.toLowerCase();
 
     if (type === "PULL") {
       if (isDestWM) {
