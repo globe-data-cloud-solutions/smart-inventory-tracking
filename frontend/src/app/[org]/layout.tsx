@@ -6,11 +6,14 @@ import Link from "next/link";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { getSession, logout, SA_ORG_SLUG, type SessionUser } from "@/lib/demo-auth";
 import { DEMO_TENANTS, getLowStockProducts } from "@/lib/demo-data";
+import { api } from "@/lib/api";
 import { getCurrentLocale, setLocale, loadLocale, t } from "@/lib/i18n";
 import { useInventoryStore } from "@/lib/inventory-state";
 import { useAuditStore } from "@/lib/audit-log-state";
 
 type Locale = "en" | "am" | "or";
+
+const isGatewayMode = !!process.env.NEXT_PUBLIC_API_URL;
 
 /* ── Role badge Tailwind classes ──────────────────────────────────────────── */
 const ROLE_BADGE: Record<string, string> = {
@@ -29,10 +32,9 @@ function NotificationBell({ org }: { org: string }) {
   const [open, setOpen] = useState(false);
 
   const tenant = DEMO_TENANTS.find((ten) => ten.slug === org);
-  if (!tenant) return null;
-
-  const lowStock    = getLowStockProducts(tenant);
-  const expiryAlerts = tenant.products.filter((p) => p.batchTracking).slice(0, 2);
+  // For real (non-demo) tenants show an empty bell — no hardcoded alert data available
+  const lowStock     = tenant ? getLowStockProducts(tenant) : [];
+  const expiryAlerts = tenant ? tenant.products.filter((p) => p.batchTracking).slice(0, 2) : [];
 
   const alerts = [
     ...lowStock.map((p)     => ({ type: "low_stock" as const, product: p.name, sku: p.sku })),
@@ -149,7 +151,7 @@ function Logo({ size = 28 }: { size?: number }) {
 }
 
 /* ── Sidebar nav ──────────────────────────────────────────────────────────── */
-function Sidebar({ user, org }: { user: SessionUser; org: string }) {
+function Sidebar({ user, org, tenantName }: { user: SessionUser; org: string; tenantName?: string }) {
   const router = useRouter();
 
   const navItems = org === SA_ORG_SLUG ? SA_NAV : TENANT_NAV;
@@ -169,7 +171,7 @@ function Sidebar({ user, org }: { user: SessionUser; org: string }) {
               <p className="text-[11px] text-eth-gold mt-px m-0">{t("roles.SA")}</p>
             ) : (
               <p className="text-[11px] text-emerald-300 mt-px m-0 truncate">
-                {user.tenantName}
+                {tenantName ?? user.tenantName}
                 {user.warehouseName && <span className="text-green-400"> › {user.warehouseName}</span>}
               </p>
             )}
@@ -259,6 +261,7 @@ export default function OrgLayout({ children }: { children: React.ReactNode }) {
   const [user, setUser]         = useState<SessionUser | null>(null);
   const [ready, setReady]       = useState(false);
   const [bannerDismissed, setBannerDismissed] = useState(false);
+  const [apiTenantName, setApiTenantName] = useState<string | null>(null);
   const setActiveTenant   = useInventoryStore((s) => s.setActiveTenant);
   const [qc] = useState(() => new QueryClient({
     defaultOptions: { queries: { retry: 1, staleTime: 30_000 } },
@@ -290,6 +293,13 @@ export default function OrgLayout({ children }: { children: React.ReactNode }) {
     setUser(session);
     setReady(true);
     setActiveTenant(org !== SA_ORG_SLUG ? org : "");
+
+    // Fetch real tenant name for API-created tenants (UUID slugs not in DEMO_TENANTS)
+    if (isGatewayMode && org !== SA_ORG_SLUG && !DEMO_TENANTS.some((t) => t.slug === org)) {
+      api.get<{ id: string; name: string }>(`/api/v1/tenants/${org}`)
+        .then((data) => setApiTenantName(data.name))
+        .catch(() => { /* silently fall back to UUID */ });
+    }
   }, [org, router, setActiveTenant]);
 
   if (!ready || !user) {
@@ -304,8 +314,9 @@ export default function OrgLayout({ children }: { children: React.ReactNode }) {
   const firstName = user.name.split(" ")[0] ?? user.name;
   const demoTenant    = org !== SA_ORG_SLUG ? DEMO_TENANTS.find((ten) => ten.slug === org) : null;
   // For API-created tenants not in DEMO_TENANTS, build a minimal display object
+  // apiTenantName is populated async after login; falls back to user.tenantName (may be UUID) then org
   const viewingTenant = demoTenant ?? (org !== SA_ORG_SLUG
-    ? { name: user.tenantName ?? org, logo: "🏢", slug: org }
+    ? { name: apiTenantName ?? user.tenantName ?? org, logo: "🏢", slug: org }
     : null);
 
   return (
@@ -363,7 +374,7 @@ export default function OrgLayout({ children }: { children: React.ReactNode }) {
 
         {/* Body */}
         <div className="flex pt-[60px]">
-          <Sidebar user={user} org={org} />
+          <Sidebar user={user} org={org} tenantName={apiTenantName ?? undefined} />
           <main className="flex-1 ml-60 min-h-[calc(100vh-60px)] overflow-auto bg-gray-100">
             {process.env.NODE_ENV !== "production" && !process.env.NEXT_PUBLIC_API_URL && !bannerDismissed && (
               <div className="bg-amber-50 border-b border-amber-200 px-4 py-2 flex items-center justify-between gap-3">

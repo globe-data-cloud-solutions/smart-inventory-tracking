@@ -277,8 +277,7 @@ function BuildTreeStep({
     try {
       const created = await api.post<OrgNode>(`/api/v1/tenants/${tenantId}/nodes`, {
         name: form.name.trim(),
-        code: form.code.trim().toUpperCase(),
-        hierarchy_level: form.hierarchy_level,
+        level_number: form.hierarchy_level,
         parent_node_id: form.parent_node_id || null,
         is_stock_holding: form.is_stock_holding,
       });
