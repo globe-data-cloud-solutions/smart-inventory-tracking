@@ -3,7 +3,7 @@ import uuid
 from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from shared.db.dependencies import get_db_session
+from dependencies import get_current_user, get_db_session
 from shared.permissions.middleware import require_permission
 from shared.permissions.registry import PERMISSIONS
 from shared.utils.responses import SuccessResponse
@@ -18,7 +18,7 @@ router = APIRouter()
 async def run_wizard(
     tenant_id: uuid.UUID,
     body: WizardData,
-    user=Depends(lambda: None),
+    user=Depends(get_current_user),
     db: AsyncSession = Depends(get_db_session),
 ) -> SuccessResponse[WizardResult]:
     result = await complete_wizard(db, str(tenant_id), body, str(user.user_id))

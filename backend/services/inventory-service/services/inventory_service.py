@@ -172,9 +172,62 @@ class InventoryService:
             created_at=datetime.now(timezone.utc),
         )
 
+    async def _get_factory_subtree(self, tenant_id: str, factory_node_id: str) -> set[str]:
+        """Returns all organization_node IDs within the given factory's subtree.
+
+        Traverses PRIMARY_REPORTS_TO relationships downward from the factory root.
+        Used to validate that a source warehouse is within a factory-specific product's
+        permitted sourcing scope.
+        """
+        rows = await self.db.execute(
+            text("""
+                WITH RECURSIVE subtree AS (
+                    SELECT id AS node_id
+                    FROM organization_node
+                    WHERE id = :fid AND tenant_id = :tid
+                    UNION ALL
+                    SELECT h.from_node_id
+                    FROM org_node_hierarchy h
+                    INNER JOIN subtree s ON h.to_node_id = s.node_id
+                    WHERE h.tenant_id = :tid
+                      AND h.relationship_type = 'PRIMARY_REPORTS_TO'
+                )
+                SELECT node_id FROM subtree
+            """),
+            {"tid": tenant_id, "fid": factory_node_id},
+        )
+        return {str(r[0]) for r in rows.fetchall()}
+
     async def create_transfer(
         self, user: Any, body: TransferOrderRequest
     ) -> TransferOrderResponse:
+        from fastapi import HTTPException
+
+        # Validate factory-specific products before any INSERT.
+        for line in body.lines:
+            product_row = (await self.db.execute(
+                text("SELECT sku, source_factory_id FROM products WHERE id = :pid AND tenant_id = :tid"),
+                {"pid": str(line.product_id), "tid": str(user.tenant_id)},
+            )).fetchone()
+
+            if product_row and product_row.source_factory_id is not None:
+                subtree = await self._get_factory_subtree(
+                    str(user.tenant_id), str(product_row.source_factory_id)
+                )
+                if str(body.from_warehouse_id) not in subtree:
+                    factory_row = (await self.db.execute(
+                        text("SELECT name FROM organization_node WHERE id = :fid AND tenant_id = :tid"),
+                        {"fid": str(product_row.source_factory_id), "tid": str(user.tenant_id)},
+                    )).fetchone()
+                    factory_name = factory_row.name if factory_row else str(product_row.source_factory_id)
+                    raise HTTPException(
+                        status_code=422,
+                        detail={
+                            "code": "INVALID_SOURCE_FACTORY",
+                            "message": f"Product {product_row.sku} can only be sourced from {factory_name}",
+                        },
+                    )
+
         transfer_id = uuid.uuid4()
         from datetime import datetime, timezone
         now = datetime.now(timezone.utc)

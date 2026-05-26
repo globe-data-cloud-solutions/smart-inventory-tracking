@@ -3,7 +3,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from routers import tenants, wizard
+from routers import hierarchy, personnel, tenants, wizard
 
 
 @asynccontextmanager
@@ -15,8 +15,10 @@ app = FastAPI(title="SMART Tenant Service", version="1.0.0", lifespan=lifespan)
 
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 
-app.include_router(tenants.router, prefix="/api/v1/tenants", tags=["tenants"])
-app.include_router(wizard.router,  prefix="/api/v1/tenants", tags=["wizard"])
+app.include_router(tenants.router,   prefix="/api/v1/tenants", tags=["tenants"])
+app.include_router(wizard.router,    prefix="/api/v1/tenants", tags=["wizard"])
+app.include_router(hierarchy.router, prefix="/api/v1/tenants", tags=["hierarchy"])
+app.include_router(personnel.router, prefix="/api/v1/tenants", tags=["personnel"])
 
 
 @app.get("/health")

@@ -19,10 +19,10 @@ ROLE_PERMISSION_MATRIX: dict[str, dict[str, str]] = {
     # grant_type: FULL | CONDITIONAL | READ_ONLY
     "SA": {p.id: "FULL" for p in ALL_PERMISSIONS},  # SA gets everything
     "TA": {
-        "tenant:configure": "FULL", "tenant:view": "FULL",
+        "tenant:configure": "FULL", "tenant:view": "FULL", "tenant:manage": "FULL",
         "user:create": "FULL", "user:view": "FULL", "user:list": "FULL",
-        "user:update": "FULL", "user:deactivate": "FULL", "user:assign_role": "FULL",
-        "user:reset_password": "FULL",
+        "user:update": "FULL", "user:manage": "FULL", "user:deactivate": "FULL",
+        "user:assign_role": "FULL", "user:reset_password": "FULL",
         "product:create": "FULL", "product:view": "FULL", "product:list": "FULL",
         "product:update": "FULL", "product:import_bulk": "FULL",
         "inventory:receive": "FULL", "inventory:adjust": "CONDITIONAL",

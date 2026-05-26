@@ -16,6 +16,8 @@ class PERMISSIONS:
     TENANT_CONFIGURE        = Permission("tenant:configure",        ["tenant_id"])
     TENANT_SET_ORG_TYPE     = Permission("tenant:set_org_type",     ["tenant_id", "audit_required"])
     TENANT_DEACTIVATE       = Permission("tenant:deactivate",       ["platform_only", "audit_required"])
+    # Org hierarchy node and level management (SA/TA only)
+    TENANT_MANAGE           = Permission("tenant:manage",           ["tenant_id", "audit_required"])
 
     # ── Domain 2 — User Management ─────────────────────────────────────────
     USER_CREATE             = Permission("user:create",             ["tenant_id"])
@@ -25,6 +27,8 @@ class PERMISSIONS:
     USER_DEACTIVATE         = Permission("user:deactivate",         ["tenant_id", "audit_required"])
     USER_ASSIGN_ROLE        = Permission("user:assign_role",        ["tenant_id", "role_ceiling"])
     USER_RESET_PASSWORD     = Permission("user:reset_password",     ["tenant_id"])
+    # Covers update, deactivate, reactivate, and ACTING/DELEGATE assignment management
+    USER_MANAGE             = Permission("user:manage",             ["tenant_id", "role_ceiling"])
 
     # ── Domain 3 — Product ─────────────────────────────────────────────────
     PRODUCT_CREATE          = Permission("product:create",          ["tenant_id", "sku_cap"])
@@ -179,7 +183,7 @@ ALL_PERMISSIONS: List[Permission] = [
     v for v in vars(PERMISSIONS).values() if isinstance(v, Permission)
 ]
 
-assert len(ALL_PERMISSIONS) == 118, (
-    f"Expected 118 permissions, found {len(ALL_PERMISSIONS)}. "
+assert len(ALL_PERMISSIONS) == 120, (
+    f"Expected 120 permissions, found {len(ALL_PERMISSIONS)}. "
     "Update registry.py and re-run seed_permissions.py."
 )

@@ -291,6 +291,189 @@ class TestListAdjustmentsScopedByRole:
 
 
 @pytest.mark.unit
+class TestFactorySpecificProductValidation:
+    """create_transfer() must reject lines where from_warehouse_id is outside
+    the product's source_factory subtree. Standard products (source_factory_id IS NULL)
+    are always allowed from any warehouse.
+    """
+
+    FACTORY_ID   = "ffffffff-0000-0000-0000-000000000001"
+    SUBTREE_WH   = "20000000-0000-0000-0000-000000000001"   # inside factory subtree
+    OUTSIDE_WH   = "20000000-0000-0000-0000-000000000099"   # NOT in subtree
+    PRODUCT_B    = "bbbbbbbb-0000-0000-0000-000000000001"
+
+    def _make_user(self, wh_id: str) -> _User:
+        return _User("u-wm", TENANT_ID, wh_id, None, "WM")
+
+    def _make_transfer_body(self, from_wh: str, product_id: str) -> Any:
+        from schemas.inventory import TransferOrderRequest, TransferLineRequest
+        return TransferOrderRequest(
+            from_warehouse_id=UUID(from_wh),
+            to_warehouse_id=UUID(WAREHOUSE_B),
+            transfer_type="PULL",
+            lines=[TransferLineRequest(product_id=UUID(product_id), quantity=Decimal("10"))],
+        )
+
+    async def test_standard_product_any_source_allowed(self) -> None:
+        """Product with source_factory_id=NULL may be transferred from any warehouse."""
+        product_row = MagicMock()
+        product_row.source_factory_id = None
+        product_row.sku = "STD-001"
+
+        session = AsyncMock()
+        session.execute = AsyncMock(side_effect=[
+            MagicMock(fetchone=MagicMock(return_value=product_row)),  # products lookup
+            MagicMock(fetchone=MagicMock(return_value=None)),          # INSERT transfer_orders
+            MagicMock(fetchone=MagicMock(return_value=None)),          # INSERT transfer_order_lines
+        ])
+
+        svc = InventoryService(session)
+        user = self._make_user(self.OUTSIDE_WH)
+        body = self._make_transfer_body(self.OUTSIDE_WH, PRODUCT_ID)
+
+        with patch("services.inventory_service.record_transaction", new_callable=AsyncMock):
+            result = await svc.create_transfer(user, body)
+
+        assert result.status == "DRAFT"
+
+    async def test_factory_product_valid_source_accepted(self) -> None:
+        """Product with source_factory_id set, from_warehouse_id IS in subtree → allowed."""
+        product_row = MagicMock()
+        product_row.source_factory_id = self.FACTORY_ID
+        product_row.sku = "FAC-001"
+
+        subtree_result = MagicMock()
+        subtree_result.fetchall = MagicMock(
+            return_value=[(self.FACTORY_ID,), (self.SUBTREE_WH,)]
+        )
+
+        session = AsyncMock()
+        session.execute = AsyncMock(side_effect=[
+            MagicMock(fetchone=MagicMock(return_value=product_row)),  # products lookup
+            subtree_result,                                            # subtree CTE
+            MagicMock(fetchone=MagicMock(return_value=None)),          # INSERT transfer_orders
+            MagicMock(fetchone=MagicMock(return_value=None)),          # INSERT lines
+        ])
+
+        svc = InventoryService(session)
+        user = self._make_user(self.SUBTREE_WH)
+        body = self._make_transfer_body(self.SUBTREE_WH, self.PRODUCT_B)
+
+        result = await svc.create_transfer(user, body)
+
+        assert result.status == "DRAFT"
+
+    async def test_factory_product_invalid_source_raises_422(self) -> None:
+        """Product with source_factory_id set, from_warehouse_id NOT in subtree → HTTP 422."""
+        from fastapi import HTTPException
+
+        product_row = MagicMock()
+        product_row.source_factory_id = self.FACTORY_ID
+        product_row.sku = "FAC-001"
+
+        subtree_result = MagicMock()
+        subtree_result.fetchall = MagicMock(
+            return_value=[(self.FACTORY_ID,), (self.SUBTREE_WH,)]
+        )
+
+        factory_node_row = MagicMock()
+        factory_node_row.name = "Jimma Factory"
+
+        session = AsyncMock()
+        session.execute = AsyncMock(side_effect=[
+            MagicMock(fetchone=MagicMock(return_value=product_row)),       # products lookup
+            subtree_result,                                                  # subtree CTE
+            MagicMock(fetchone=MagicMock(return_value=factory_node_row)),   # factory name lookup
+        ])
+
+        svc = InventoryService(session)
+        user = self._make_user(self.OUTSIDE_WH)
+        body = self._make_transfer_body(self.OUTSIDE_WH, self.PRODUCT_B)
+
+        with pytest.raises(HTTPException) as exc_info:
+            await svc.create_transfer(user, body)
+
+        assert exc_info.value.status_code == 422
+        detail = exc_info.value.detail
+        assert detail["code"] == "INVALID_SOURCE_FACTORY"
+        assert "FAC-001" in detail["message"]
+        assert "Jimma Factory" in detail["message"]
+
+    async def test_factory_product_invalid_source_error_message_format(self) -> None:
+        """Error message must contain SKU and factory name in the expected format."""
+        from fastapi import HTTPException
+
+        product_row = MagicMock()
+        product_row.source_factory_id = self.FACTORY_ID
+        product_row.sku = "CEM-50KG"
+
+        subtree_result = MagicMock()
+        subtree_result.fetchall = MagicMock(return_value=[(self.FACTORY_ID,)])
+
+        factory_node_row = MagicMock()
+        factory_node_row.name = "Addis Main Factory"
+
+        session = AsyncMock()
+        session.execute = AsyncMock(side_effect=[
+            MagicMock(fetchone=MagicMock(return_value=product_row)),
+            subtree_result,
+            MagicMock(fetchone=MagicMock(return_value=factory_node_row)),
+        ])
+
+        svc = InventoryService(session)
+        user = self._make_user(self.OUTSIDE_WH)
+        body = self._make_transfer_body(self.OUTSIDE_WH, self.PRODUCT_B)
+
+        with pytest.raises(HTTPException) as exc_info:
+            await svc.create_transfer(user, body)
+
+        msg = exc_info.value.detail["message"]
+        assert msg == "Product CEM-50KG can only be sourced from Addis Main Factory"
+
+    async def test_multiple_lines_first_invalid_raises_immediately(self) -> None:
+        """Validation short-circuits on the first invalid line — no partial insert."""
+        from fastapi import HTTPException
+
+        bad_product = MagicMock()
+        bad_product.source_factory_id = self.FACTORY_ID
+        bad_product.sku = "BAD-SKU"
+
+        subtree_result = MagicMock()
+        subtree_result.fetchall = MagicMock(return_value=[(self.FACTORY_ID,)])
+
+        factory_node_row = MagicMock()
+        factory_node_row.name = "Locked Factory"
+
+        session = AsyncMock()
+        session.execute = AsyncMock(side_effect=[
+            MagicMock(fetchone=MagicMock(return_value=bad_product)),
+            subtree_result,
+            MagicMock(fetchone=MagicMock(return_value=factory_node_row)),
+        ])
+
+        svc = InventoryService(session)
+        user = self._make_user(self.OUTSIDE_WH)
+
+        from schemas.inventory import TransferOrderRequest, TransferLineRequest
+        body = TransferOrderRequest(
+            from_warehouse_id=UUID(self.OUTSIDE_WH),
+            to_warehouse_id=UUID(WAREHOUSE_B),
+            transfer_type="PULL",
+            lines=[
+                TransferLineRequest(product_id=UUID(self.PRODUCT_B), quantity=Decimal("5")),
+                TransferLineRequest(product_id=UUID(PRODUCT_ID),     quantity=Decimal("3")),
+            ],
+        )
+
+        with pytest.raises(HTTPException) as exc_info:
+            await svc.create_transfer(user, body)
+
+        assert exc_info.value.status_code == 422
+        # No INSERT should have been attempted — execute call count = 3 (product + subtree + factory name)
+        assert session.execute.call_count == 3
+
+
+@pytest.mark.unit
 class TestIssueStockBelowZeroBlocked:
 
     async def test_issue_below_zero_blocked_by_record_transaction(self) -> None:
