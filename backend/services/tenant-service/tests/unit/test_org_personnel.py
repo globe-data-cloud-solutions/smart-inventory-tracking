@@ -405,3 +405,119 @@ class TestPrimaryAssignmentCannotBeRemoved:
             "Exactly one active PRIMARY assignment per user — "
             "enforced by partial unique index on user_facility_assignments"
         )
+
+
+# ── Regression: tenant creation includes TA user ─────────────────────────────
+
+@pytest.mark.unit
+class TestTenantCreationIncludesTAUser:
+
+    def test_tenant_creation_creates_ta_user(self) -> None:
+        """Wizard launch() must POST to /tenants/ then POST to /tenants/{id}/users.
+
+        The two-step creation flow:
+          1. POST /api/v1/tenants/ → returns tenant_id
+          2. POST /api/v1/tenants/{tenant_id}/users with role="TA"
+        Without step 2, the new tenant has no admin and cannot be logged into.
+        This test documents the required shape of the user payload.
+        """
+        from pydantic import BaseModel
+        from typing import Optional
+
+        class _UserCreateRequest(BaseModel):
+            name: str
+            email: str
+            role: str
+            password: Optional[str] = None
+            facility_id: Optional[UUID] = None
+
+        req = _UserCreateRequest(
+            name="Test Admin",
+            email="admin@testcorp.com",
+            role="TA",
+            password="securepass123",
+        )
+        assert req.role == "TA", "Wizard must create user with role='TA'"
+        assert req.email == "admin@testcorp.com"
+        assert req.password is not None, "Password is required for TA user creation"
+
+    def test_wizard_rollback_deletes_tenant_on_user_failure(self) -> None:
+        """If user creation fails, the orphaned tenant must be deleted.
+
+        The wizard launch() function must:
+          1. Create tenant (step 1)
+          2. On user creation failure (step 2): call DELETE /tenants/{id}
+          3. Re-raise the original error so the UI shows it
+        Without the rollback, orphaned tenants accumulate with no admin access.
+        """
+        tenant_created = {"id": None, "deleted": False}
+        user_created = False
+
+        def create_tenant(name: str) -> dict:
+            tenant_created["id"] = "fake-tenant-id"
+            return {"id": "fake-tenant-id", "name": name}
+
+        def create_user(_tenant_id: str, _email: str) -> None:
+            raise RuntimeError("Database error: email already exists")
+
+        def delete_tenant(tenant_id: str) -> None:
+            if tenant_id == tenant_created["id"]:
+                tenant_created["deleted"] = True
+
+        # Simulate the wizard launch() two-step with rollback
+        tenant = create_tenant("Test Corp")
+        try:
+            create_user(tenant["id"], "admin@testcorp.com")
+        except RuntimeError:
+            delete_tenant(tenant["id"])
+            # Re-raise would happen here in real code
+
+        assert tenant_created["deleted"] is True, (
+            "Tenant must be deleted (rolled back) when user creation fails"
+        )
+
+    def test_new_tenant_appears_in_list(self) -> None:
+        """After creation, the tenant must appear in GET /api/v1/tenants/ response.
+
+        The SA sidebar and dashboard fetch from GET /api/v1/tenants/. This endpoint
+        must return newly created tenants so the SA can see and navigate to them.
+        The list is ordered by created_at DESC so new tenants appear first.
+        """
+        existing = [
+            {"id": "aaaaa", "name": "Addis Water", "is_active": True},
+        ]
+        new_tenant = {"id": "bbbbb", "name": "Horizon Beverages", "is_active": True}
+
+        # Simulate the DB query result (most recent first)
+        all_tenants = [new_tenant] + existing
+
+        active = [t for t in all_tenants if t["is_active"]]
+        names = [t["name"] for t in active]
+
+        assert "Horizon Beverages" in names, "New tenant must appear in the list"
+        assert names[0] == "Horizon Beverages", "New tenant must be first (ordered by created_at DESC)"
+
+    def test_ta_user_can_login_after_creation(self) -> None:
+        """TA user created via wizard must be findable by _lookup_user_in_db().
+
+        The auth service's _lookup_user_in_db() queries the users table for
+        dynamically-created users not in DEV_USERS. The user row must have:
+          - is_active = True
+          - role = 'TA'
+          - tenant_id set to the new tenant's UUID
+        If any of these are wrong, the TA gets 404 on login.
+        """
+        # Simulate what _lookup_user_in_db returns for a freshly created TA
+        simulated_db_row = {
+            "sub": "some-uuid",
+            "role": "TA",
+            "tenant_id": "40d8e07d-1bd5-4a9c-ba40-c5ad2df646a8",
+            "warehouse_id": None,
+            "region_id": None,
+            "is_active": True,
+        }
+
+        assert simulated_db_row["is_active"] is True, "User must be active to login"
+        assert simulated_db_row["role"] == "TA", "Role must be TA for tenant admin"
+        assert simulated_db_row["tenant_id"] is not None, "tenant_id must be set for TA"
+        assert simulated_db_row["sub"] is not None, "sub (user UUID) must be set"

@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { getSession } from "@/lib/demo-auth";
+import { api } from "@/lib/api";
 import { t } from "@/lib/i18n";
 
 /* ── Types ───────────────────────────────────────────────────────────────── */
@@ -11,16 +12,30 @@ type OrgType   = "PRODUCER" | "RETAILER" | "HYBRID";
 type Locale    = "en" | "am" | "or";
 
 interface WizardState {
-  name:     string;
-  industry: string;
-  skuLimit: string;
-  orgType:  OrgType | "";
-  locale:   Locale;
+  name:                 string;
+  industry:             string;
+  skuLimit:             string;
+  orgType:              OrgType | "";
+  locale:               Locale;
+  adminName:            string;
+  adminEmail:           string;
+  adminPassword:        string;
+  adminPasswordConfirm: string;
 }
 
 interface WizardResult {
   id: string; name: string; slug: string; org_type: OrgType;
   feature_flags: Record<string, boolean>;
+  adminEmail: string;
+}
+
+interface TenantCreateResponse {
+  id: string;
+  name: string;
+  organisation_type: string | null;
+  onboarding_complete: boolean;
+  default_locale: string;
+  is_active: boolean;
 }
 
 /* ── Feature flag defaults (mirrors wizard_service.py) ───────────────────── */
@@ -49,7 +64,7 @@ const LOCALE_META: Record<Locale, { label: string; native: string }> = {
   or: { label: "Oromifa (Afaan Oromoo)", native: "Afaan Oromoo" },
 };
 
-const TOTAL_STEPS = 4;
+const TOTAL_STEPS = 5;
 
 /* ── Logo ────────────────────────────────────────────────────────────────── */
 function Logo() {
@@ -69,6 +84,7 @@ function StepBar({ current }: { current: number }) {
     t("wizard.step1_title"),
     t("wizard.step2_title"),
     t("wizard.step3_title"),
+    t("wizard.step_admin_title"),
     t("wizard.step4_title"),
   ];
   return (
@@ -125,6 +141,7 @@ export default function OnboardPage() {
 
   const [form, setForm] = useState<WizardState>({
     name: "", industry: "", skuLimit: "500", orgType: "", locale: "en",
+    adminName: "", adminEmail: "", adminPassword: "", adminPasswordConfirm: "",
   });
 
   useEffect(() => {
@@ -142,6 +159,12 @@ export default function OnboardPage() {
   function nextStep() {
     if (step === 1 && !form.name.trim()) { setError(t("wizard.company_required")); return; }
     if (step === 2 && !form.orgType)     { setError(t("wizard.select_org_type"));  return; }
+    if (step === 4) {
+      if (!form.adminName.trim())                        { setError(t("wizard.admin_name_required"));      return; }
+      if (!form.adminEmail.trim())                       { setError(t("wizard.admin_email_required"));     return; }
+      if (form.adminPassword.length < 8)                 { setError(t("wizard.admin_password_required")); return; }
+      if (form.adminPassword !== form.adminPasswordConfirm) { setError(t("wizard.admin_password_mismatch")); return; }
+    }
     setError("");
     setStep((s) => Math.min(s + 1, TOTAL_STEPS));
   }
@@ -149,22 +172,39 @@ export default function OnboardPage() {
   async function launch() {
     setLoading(true);
     setError("");
+    let tenantId: string | null = null;
     try {
-      const res = await fetch("/api/v1/tenants/wizard", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          name:           form.name.trim(),
-          industry:       form.industry.trim(),
-          org_type:       form.orgType,
-          default_locale: form.locale,
-          sku_limit:      form.orgType === "PRODUCER" ? parseInt(form.skuLimit, 10) : null,
-        }),
+      // Step 1: Create the tenant
+      const tenantData = await api.post<TenantCreateResponse>("/api/v1/tenants/", {
+        name:               form.name.trim(),
+        default_locale:     form.locale,
+        organisation_type:  form.orgType || null,
       });
-      const json = (await res.json()) as { success: boolean; data?: WizardResult; error?: { message: string } };
-      if (!json.success || !json.data) throw new Error(json.error?.message ?? "Failed to onboard tenant");
-      setResult(json.data);
-      setStep(5);
+      tenantId = tenantData.id;
+
+      // Step 2: Create the TA admin user
+      try {
+        await api.post(`/api/v1/tenants/${tenantId}/users`, {
+          name:     form.adminName.trim(),
+          email:    form.adminEmail.trim(),
+          role:     "TA",
+          password: form.adminPassword,
+        });
+      } catch (userErr: unknown) {
+        // Rollback: remove the orphaned tenant
+        try { await api.delete(`/api/v1/tenants/${tenantId}`); } catch { /* ignore rollback errors */ }
+        throw userErr;
+      }
+
+      setResult({
+        id:            tenantData.id,
+        name:          tenantData.name,
+        slug:          tenantData.id,
+        org_type:      form.orgType as OrgType,
+        feature_flags: FLAG_DEFAULTS[form.orgType as OrgType],
+        adminEmail:    form.adminEmail.trim(),
+      });
+      setStep(6);
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "Unexpected error");
     } finally {
@@ -188,7 +228,7 @@ export default function OnboardPage() {
   const inputClass = "w-full px-3 py-2.5 text-sm border border-gray-300 rounded-md outline-none bg-white focus:border-[#1B4332] focus:ring-1 focus:ring-[#1B4332]";
 
   /* ── Success screen ── */
-  if (step === 5 && result) {
+  if (step === 6 && result) {
     return (
       <div className="min-h-screen bg-gray-100 flex items-center justify-center p-8">
         <div className="bg-white rounded-xl p-12 max-w-[480px] w-full text-center shadow-lg">
@@ -196,10 +236,14 @@ export default function OnboardPage() {
             ✓
           </div>
           <h2 className="text-2xl font-extrabold text-[#0f2d1f] m-0 mb-2">{t("wizard.success_title")}</h2>
+          <p className="text-gray-500 text-sm m-0 mb-2">
+            <strong className="text-[#1B4332]">{result.name}</strong> {t("wizard.success_desc")}
+          </p>
           <p className="text-gray-500 text-sm m-0 mb-6">
-            <strong className="text-[#1B4332]">{result.name}</strong> is ready.<br />
-            {t("wizard.slug_label")}:{" "}
-            <code className="bg-gray-100 px-1.5 py-0.5 rounded text-[13px]">/{result.slug}</code>
+            {t("wizard.admin_login_hint")}{" "}
+            <code className="bg-gray-100 px-1.5 py-0.5 rounded text-[13px] text-[#1B4332] font-bold">
+              {result.adminEmail}
+            </code>
           </p>
           <div className="grid grid-cols-2 gap-2 mb-6">
             {Object.entries(result.feature_flags).map(([flag, enabled]) => (
@@ -208,7 +252,11 @@ export default function OnboardPage() {
           </div>
           <div className="flex gap-2.5">
             <button
-              onClick={() => { setStep(1); setResult(null); setForm({ name: "", industry: "", skuLimit: "500", orgType: "", locale: "en" }); }}
+              onClick={() => {
+                setStep(1); setResult(null);
+                setForm({ name: "", industry: "", skuLimit: "500", orgType: "", locale: "en",
+                          adminName: "", adminEmail: "", adminPassword: "", adminPasswordConfirm: "" });
+              }}
               className="flex-1 py-2.5 bg-gray-100 border-none rounded-md text-sm font-semibold cursor-pointer text-gray-700 hover:bg-gray-200 transition-colors"
             >
               {t("wizard.onboard_another")}
@@ -259,7 +307,8 @@ export default function OnboardPage() {
               {step === 1 && t("wizard.step1_title")}
               {step === 2 && t("wizard.step2_title")}
               {step === 3 && t("wizard.step3_title")}
-              {step === 4 && t("wizard.step4_title")}
+              {step === 4 && t("wizard.step_admin_title")}
+              {step === 5 && t("wizard.step4_title")}
             </p>
             <p className="text-xs text-emerald-300 mt-1 mb-0">
               {t("wizard.step_of")} {step} {t("wizard.of")} {TOTAL_STEPS}
@@ -385,15 +434,65 @@ export default function OnboardPage() {
               </div>
             )}
 
-            {/* ── Step 4: Review ── */}
-            {step === 4 && form.orgType && (
+            {/* ── Step 4: Admin User ── */}
+            {step === 4 && (
+              <div className="flex flex-col gap-5">
+                <p className="text-sm text-gray-500 m-0 -mt-2">{t("wizard.admin_heading")}</p>
+                <div>
+                  <label className="block font-bold text-[13px] text-gray-700 mb-1.5">
+                    {t("wizard.admin_name_label")} <span className="text-red-600">*</span>
+                  </label>
+                  <input
+                    type="text" value={form.adminName}
+                    placeholder={t("wizard.admin_name_placeholder")}
+                    onChange={(e) => set("adminName", e.target.value)}
+                    className={inputClass} autoFocus
+                  />
+                </div>
+                <div>
+                  <label className="block font-bold text-[13px] text-gray-700 mb-1.5">
+                    {t("wizard.admin_email_label")} <span className="text-red-600">*</span>
+                  </label>
+                  <input
+                    type="email" value={form.adminEmail}
+                    placeholder={t("wizard.admin_email_placeholder")}
+                    onChange={(e) => set("adminEmail", e.target.value)}
+                    className={inputClass}
+                  />
+                </div>
+                <div>
+                  <label className="block font-bold text-[13px] text-gray-700 mb-1.5">
+                    {t("wizard.admin_password_label")} <span className="text-red-600">*</span>
+                  </label>
+                  <input
+                    type="password" value={form.adminPassword}
+                    onChange={(e) => set("adminPassword", e.target.value)}
+                    className={inputClass}
+                  />
+                </div>
+                <div>
+                  <label className="block font-bold text-[13px] text-gray-700 mb-1.5">
+                    {t("wizard.admin_confirm_password_label")} <span className="text-red-600">*</span>
+                  </label>
+                  <input
+                    type="password" value={form.adminPasswordConfirm}
+                    onChange={(e) => set("adminPasswordConfirm", e.target.value)}
+                    className={inputClass}
+                  />
+                </div>
+              </div>
+            )}
+
+            {/* ── Step 5: Review ── */}
+            {step === 5 && form.orgType && (
               <div className="flex flex-col gap-5">
                 <div className="grid grid-cols-2 gap-3">
                   {[
-                    { label: t("wizard.company_label"),   value: form.name },
-                    { label: t("wizard.industry_label"),  value: form.industry || "—" },
-                    { label: t("wizard.org_type_label"),  value: ORG_META[form.orgType].label },
-                    { label: t("wizard.language_label"),  value: `${LOCALE_META[form.locale].label} (${form.locale})` },
+                    { label: t("wizard.company_label"),    value: form.name },
+                    { label: t("wizard.industry_label"),   value: form.industry || "—" },
+                    { label: t("wizard.org_type_label"),   value: ORG_META[form.orgType].label },
+                    { label: t("wizard.language_label"),   value: `${LOCALE_META[form.locale].label} (${form.locale})` },
+                    { label: t("wizard.admin_email_label"), value: form.adminEmail },
                     ...(form.orgType === "PRODUCER" ? [{ label: t("wizard.sku_limit_label_short"), value: form.skuLimit }] : []),
                   ].map(({ label, value }) => (
                     <div key={label} className="px-3.5 py-2.5 bg-gray-50 rounded-md border border-gray-200">

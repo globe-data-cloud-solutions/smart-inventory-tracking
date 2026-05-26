@@ -253,7 +253,20 @@
     "company_required": "Company name is required.",
     "select_org_type": "Please select an organisation type.",
     "launching": "Launching…",
-    "launch_btn": "Launch Tenant →"
+    "launch_btn": "Launch Tenant →",
+    "step_admin_title": "Administrator",
+    "admin_heading": "Initial Tenant Administrator",
+    "admin_name_label": "Full Name",
+    "admin_name_placeholder": "e.g. Abebe Kebede",
+    "admin_email_label": "Email Address",
+    "admin_email_placeholder": "admin@company.com",
+    "admin_password_label": "Password (min 8 characters)",
+    "admin_confirm_password_label": "Confirm Password",
+    "admin_name_required": "Administrator name is required.",
+    "admin_email_required": "Admin email is required.",
+    "admin_password_required": "Password must be at least 8 characters.",
+    "admin_password_mismatch": "Passwords do not match.",
+    "admin_login_hint": "Admin login:"
   },
   "count": {
     "title": "Stock Count",

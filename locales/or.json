@@ -171,7 +171,20 @@
     "success": "Hirkattoon milkaa'inaan seensifame!",
     "success_desc": "Hirkattoon qophaa'eera. Fayyadamtoota gaafadhu.",
     "go_to_admin": "Gara Daashboordii Bulchaa Deebi'i",
-    "onboard_btn": "Hirkattoo Haaraa Seensi"
+    "onboard_btn": "Hirkattoo Haaraa Seensi",
+    "step_admin_title": "Bulchaa",
+    "admin_heading": "Bulchaa Hirkattoo Jalqabaa",
+    "admin_name_label": "Maqaa Guutuu",
+    "admin_name_placeholder": "fkl. Abebe Kebede",
+    "admin_email_label": "Teessoo Imeelii",
+    "admin_email_placeholder": "admin@company.com",
+    "admin_password_label": "Jecha Darbii (xiqqaate 8 qubee)",
+    "admin_confirm_password_label": "Jecha Darbii Mirkaneessi",
+    "admin_name_required": "Maqaan bulchaa barbaachisaadha.",
+    "admin_email_required": "Imeeliin bulchaa barbaachisaadha.",
+    "admin_password_required": "Jecha darbii xiqqaate qubee 8 ta'uu qaba.",
+    "admin_password_mismatch": "Jechonni darbii wal hin simatani.",
+    "admin_login_hint": "Imeelii Bulchaa:"
   },
   "count": {
     "title": "Lakkoofsa Kuusaa",

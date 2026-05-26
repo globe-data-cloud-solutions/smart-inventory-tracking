@@ -204,7 +204,20 @@
     "company_required": "የኩባንያ ስም ያስፈልጋል።",
     "select_org_type": "እባክዎ የድርጅት አይነት ይምረጡ።",
     "launching": "በመጀመር ላይ…",
-    "launch_btn": "ተከራዩን ጀምር →"
+    "launch_btn": "ተከራዩን ጀምር →",
+    "step_admin_title": "አስተዳዳሪ",
+    "admin_heading": "የመጀመሪያ ተከራይ አስተዳዳሪ",
+    "admin_name_label": "ሙሉ ስም",
+    "admin_name_placeholder": "ለምሳሌ አቤቤ ከበደ",
+    "admin_email_label": "ኢሜይል አድራሻ",
+    "admin_email_placeholder": "admin@company.com",
+    "admin_password_label": "የይለፍ ቃል (ቢያንስ 8 ቁምፊዎች)",
+    "admin_confirm_password_label": "የይለፍ ቃል ያረጋግጡ",
+    "admin_name_required": "የአስተዳዳሪ ስም ያስፈልጋል።",
+    "admin_email_required": "የአስተዳዳሪ ኢሜይል ያስፈልጋል።",
+    "admin_password_required": "የይለፍ ቃሉ ቢያንስ 8 ቁምፊዎች መሆን አለበት።",
+    "admin_password_mismatch": "የይለፍ ቃሎቹ አይዛመዱም።",
+    "admin_login_hint": "የአስተዳዳሪ ኢሜይል:"
   },
   "count": {
     "title": "የክምችት ቆጠራ",

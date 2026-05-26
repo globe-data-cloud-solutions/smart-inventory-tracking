@@ -19,9 +19,12 @@ class WizardResult(BaseModel):
     onboarding_complete: bool
 
 
+DEFAULT_SYSTEM_PLAN_ID = uuid.UUID("00000000-0000-0000-0000-000000000001")
+
+
 class TenantCreateRequest(BaseModel):
     name: str
-    plan_id: uuid.UUID
+    plan_id: Optional[uuid.UUID] = DEFAULT_SYSTEM_PLAN_ID
     default_locale: str = "en"
     organisation_type: Optional[str] = None   # PRODUCER | RETAILER | HYBRID
 

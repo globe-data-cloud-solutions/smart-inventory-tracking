@@ -1,6 +1,7 @@
 import uuid
+from typing import List
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException, Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from dependencies import get_current_user, get_db_session
@@ -10,6 +11,35 @@ from shared.utils.responses import SuccessResponse
 from schemas.tenant import TenantCreateRequest, TenantResponse
 
 router = APIRouter()
+
+
+@router.get("/", response_model=SuccessResponse[List[TenantResponse]])
+@require_permission(PERMISSIONS.TENANT_LIST)
+async def list_tenants(
+    user=Depends(get_current_user),
+    db: AsyncSession = Depends(get_db_session),
+) -> SuccessResponse[List[TenantResponse]]:
+    from sqlalchemy import text
+    result = await db.execute(
+        text(
+            "SELECT id, name, organisation_type, onboarding_complete, default_locale, is_active "
+            "FROM tenants WHERE is_active = true ORDER BY created_at DESC"
+        )
+    )
+    rows = result.fetchall()
+    return SuccessResponse(
+        data=[
+            TenantResponse(
+                id=row.id,
+                name=row.name,
+                organisation_type=row.organisation_type,
+                onboarding_complete=row.onboarding_complete,
+                default_locale=row.default_locale,
+                is_active=row.is_active,
+            )
+            for row in rows
+        ]
+    )
 
 
 @router.post("/", status_code=201, response_model=SuccessResponse[TenantResponse])
@@ -71,3 +101,22 @@ async def get_tenant(
             is_active=row.is_active,
         )
     )
+
+
+@router.delete("/{tenant_id}", status_code=204)
+@require_permission(PERMISSIONS.TENANT_DEACTIVATE)
+async def delete_tenant(
+    tenant_id: uuid.UUID,
+    user=Depends(get_current_user),
+    db: AsyncSession = Depends(get_db_session),
+) -> Response:
+    from sqlalchemy import text
+    result = await db.execute(
+        text("SELECT id FROM tenants WHERE id = :id"), {"id": str(tenant_id)}
+    )
+    if not result.fetchone():
+        raise HTTPException(status_code=404, detail="Tenant not found")
+    await db.execute(
+        text("DELETE FROM tenants WHERE id = :id"), {"id": str(tenant_id)}
+    )
+    return Response(status_code=204)

@@ -1,10 +1,21 @@
 "use client";
 
 import Link from "next/link";
+import { useEffect, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { logout, type SessionUser } from "@/lib/demo-auth";
 import { DEMO_TENANTS } from "@/lib/demo-data";
+import { api } from "@/lib/api";
 import { t } from "@/lib/i18n";
+
+const isGatewayMode = !!process.env.NEXT_PUBLIC_API_URL;
+
+interface RealTenant {
+  id: string;
+  name: string;
+  organisation_type: string | null;
+  is_active: boolean;
+}
 
 interface SidebarProps { user: SessionUser; }
 
@@ -18,6 +29,15 @@ export function Sidebar({ user }: SidebarProps) {
   const router   = useRouter();
   const handleLogout = () => { logout(); router.push("/login"); };
   const navItems = user.role === "SA" ? SA_NAV : TENANT_NAV;
+
+  const [realTenants, setRealTenants] = useState<RealTenant[]>([]);
+  useEffect(() => {
+    if (user.role === "SA" && isGatewayMode) {
+      api.get<RealTenant[]>("/api/v1/tenants/")
+        .then((data) => setRealTenants(data))
+        .catch(() => { /* silently ignore — show demo tenants as fallback */ });
+    }
+  }, [user.role]);
 
   const linkCls = (active: boolean) =>
     `flex items-center gap-2.5 px-2.5 py-2 rounded text-sm font-medium no-underline mb-px border-l-[3px] transition-all ${
@@ -75,15 +95,27 @@ export function Sidebar({ user }: SidebarProps) {
             <p className="text-[10px] font-bold uppercase tracking-widest text-white/30 px-2.5 pt-3.5 pb-1 m-0">
               {t("dashboard.tenants_heading")}
             </p>
-            {DEMO_TENANTS.map((ten) => {
-              const active = pathname === `/dashboard/tenants/${ten.slug}`;
-              return (
-                <Link key={ten.id} href={`/dashboard/tenants/${ten.slug}`} className={linkCls(active)}>
-                  <span className="text-[15px] leading-none">{ten.logo}</span>
-                  {ten.name}
-                </Link>
-              );
-            })}
+            {isGatewayMode ? (
+              realTenants.map((ten) => {
+                const active = pathname.startsWith(`/${ten.id}/`);
+                return (
+                  <Link key={ten.id} href={`/${ten.id}/dashboard`} className={linkCls(active)}>
+                    <span className="text-[15px] leading-none">🏢</span>
+                    {ten.name}
+                  </Link>
+                );
+              })
+            ) : (
+              DEMO_TENANTS.map((ten) => {
+                const active = pathname === `/dashboard/tenants/${ten.slug}`;
+                return (
+                  <Link key={ten.id} href={`/dashboard/tenants/${ten.slug}`} className={linkCls(active)}>
+                    <span className="text-[15px] leading-none">{ten.logo}</span>
+                    {ten.name}
+                  </Link>
+                );
+              })
+            )}
           </>
         )}
       </nav>

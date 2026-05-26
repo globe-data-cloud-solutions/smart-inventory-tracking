@@ -326,15 +326,11 @@ export default function OrgDashboard() {
     );
   }
 
-  // ── Tenant lookup (needed for branding in both modes) ──────────────────────
-  const tenant = DEMO_TENANTS.find((ten) => ten.slug === org);
-  if (!tenant) {
-    return (
-      <p className="p-8 text-gray-500">
-        {t("common.no_data")}: {org}
-      </p>
-    );
-  }
+  // ── Tenant lookup — demo branding only. Real tenants use fallback values. ─
+  const tenant     = DEMO_TENANTS.find((ten) => ten.slug === org);
+  const tenantName = tenant?.name     ?? org;
+  const tenantColor = tenant?.color   ?? "#1B4332";
+  const tenantIndustry = tenant?.industry ?? "";
 
   // ── Gateway mode — real API data ───────────────────────────────────────────
   if (isGatewayMode) {
@@ -384,17 +380,17 @@ export default function OrgDashboard() {
     }
     const warehouseRows = Array.from(warehouseMap.values());
 
-    const cardTitle    = myWarehouseName ?? tenant.name;
+    const cardTitle    = myWarehouseName ?? tenantName;
     const cardSubtitle = myWarehouseName
       ? `${user.role} access`
-      : `${tenant.industry} · ${user.role === "SA" ? t("dashboard.sa_viewing") : t("dashboard.tenant_admin")}`;
+      : `${tenantIndustry ? tenantIndustry + " · " : ""}${user.role === "SA" ? t("dashboard.sa_viewing") : t("dashboard.tenant_admin")}`;
 
     return (
       <div className="p-8">
         <SummaryCard
           title={cardTitle}
           subtitle={cardSubtitle}
-          accentColor={tenant.color}
+          accentColor={tenantColor}
           rows={[
             { label: t("dashboard.stat_units"),           value: totalUnits },
             { label: t("dashboard.stat_skus_with_stock"), value: skusWithStock },
@@ -406,7 +402,7 @@ export default function OrgDashboard() {
         {/* Warehouse breakdown — TA/NM only */}
         {warehouseRows.length > 0 && (
           <div className="bg-white border border-gray-200 rounded overflow-hidden mb-6">
-            <div className="h-[3px]" style={{ background: tenant.color }} />
+            <div className="h-[3px]" style={{ background: tenantColor }} />
             <div className="px-5 py-3 bg-gray-50 border-b-2 border-gray-200">
               <span className="text-sm font-bold text-gray-800">{t("dashboard.inventory_by_location")}</span>
             </div>
@@ -461,7 +457,7 @@ export default function OrgDashboard() {
         {/* Recent transfers */}
         {recentTransfers.length > 0 && (
           <div className="bg-white border border-gray-200 rounded overflow-hidden">
-            <div className="h-[3px]" style={{ background: tenant.color }} />
+            <div className="h-[3px]" style={{ background: tenantColor }} />
             <div className="px-5 py-3 bg-gray-50 border-b-2 border-gray-200">
               <span className="text-sm font-bold text-gray-800">{t("dashboard.recent_transfers")}</span>
             </div>
@@ -512,6 +508,14 @@ export default function OrgDashboard() {
   }
 
   // ── Demo mode ──────────────────────────────────────────────────────────────
+  if (!tenant) {
+    return (
+      <p className="p-8 text-gray-500">
+        {t("common.no_data")}: {org}
+      </p>
+    );
+  }
+
   const lowStock   = getLowStockProducts(tenant);
   const totalUnits = tenant.products.reduce((a, p) => a + getTotalStock(p), 0);
 
