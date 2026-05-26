@@ -12,14 +12,15 @@ class InvalidStateTransitionError(Exception):
 # Has a mandatory PENDING_REVIEW step before approval.
 PULL_TRANSITIONS: dict[str, list[str]] = {
     "DRAFT":              ["PENDING_REVIEW", "CANCELLED"],
-    "PENDING_REVIEW":     ["PENDING_APPROVAL", "CANCELLED"],
-    "PENDING_APPROVAL":   ["APPROVED", "CANCELLED"],
+    "PENDING_REVIEW":     ["PENDING_APPROVAL", "REJECTED", "CANCELLED"],
+    "PENDING_APPROVAL":   ["APPROVED", "REJECTED", "CANCELLED"],
     "APPROVED":           ["ISSUED", "CANCELLED"],
     "ISSUED":             ["IN_TRANSIT"],
     "IN_TRANSIT":         ["PARTIALLY_RECEIVED", "RECEIVED"],
     "PARTIALLY_RECEIVED": ["RECEIVED"],
     "RECEIVED":           ["COMPLETED"],
     "COMPLETED":          [],
+    "REJECTED":           [],
     "CANCELLED":          [],
 }
 
@@ -27,7 +28,7 @@ PULL_TRANSITIONS: dict[str, list[str]] = {
 # No review step; ADVISED state lets the destination flag issues before dispatch.
 PUSH_TRANSITIONS: dict[str, list[str]] = {
     "DRAFT":              ["PENDING_APPROVAL", "CANCELLED"],
-    "PENDING_APPROVAL":   ["APPROVED", "CANCELLED"],
+    "PENDING_APPROVAL":   ["APPROVED", "REJECTED", "CANCELLED"],
     "APPROVED":           ["ADVISED", "ISSUED", "CANCELLED"],
     "ADVISED":            ["ISSUED", "CANCELLED"],
     "ISSUED":             ["IN_TRANSIT"],
@@ -44,7 +45,7 @@ SISTER_TRANSITIONS: dict[str, list[str]] = {
     "DRAFT":                  ["PENDING_SOURCE_CONFIRM", "CANCELLED"],
     "PENDING_SOURCE_CONFIRM": ["PENDING_DEST_CONFIRM", "CANCELLED"],
     "PENDING_DEST_CONFIRM":   ["PENDING_APPROVAL", "REJECTED"],
-    "PENDING_APPROVAL":       ["APPROVED", "CANCELLED"],
+    "PENDING_APPROVAL":       ["APPROVED", "REJECTED", "CANCELLED"],
     "APPROVED":               ["ISSUED"],
     "ISSUED":                 ["IN_TRANSIT"],
     "IN_TRANSIT":             ["PARTIALLY_RECEIVED", "RECEIVED"],

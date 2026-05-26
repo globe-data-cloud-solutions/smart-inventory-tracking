@@ -67,9 +67,15 @@ async function request<T>(
 
   if (!res.ok || !json.success) {
     const err = json as ApiError;
-    const apiErr = new Error(err.error?.message ?? `HTTP ${res.status}`) as Error & { status: number; code: string };
+    // FastAPI HTTPException returns {"detail": {...}} instead of {"error": {...}}.
+    // Fall back to the detail field so the error code and message are not lost.
+    const raw   = json as unknown as { detail?: { code?: string; message?: string; detail?: string } | string };
+    const det   = typeof raw.detail === "object" ? raw.detail : null;
+    const detMsg = det?.message ?? det?.detail ?? (typeof raw.detail === "string" ? raw.detail : "");
+    const detCode = det?.code ?? "";
+    const apiErr = new Error(err.error?.message ?? (detMsg || `HTTP ${res.status}`)) as Error & { status: number; code: string };
     apiErr.status = res.status;
-    apiErr.code   = err.error?.code ?? "";
+    apiErr.code   = err.error?.code ?? detCode;
     throw apiErr;
   }
 

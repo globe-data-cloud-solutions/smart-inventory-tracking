@@ -583,19 +583,23 @@ export default function TransfersPage() {
       try {
         const fresh = await api.get<FreshTransfer>(`/api/v1/inventory/transfers/${id}`);
         freshStatus = fresh.status;
+        console.log("[doTransition] pre-fetch", { id, next, freshStatus: fresh.status, cachedStatus: transfer?.status });
 
-        if (fresh.status !== transfer?.status) {
+        // Case-insensitive comparison — DB may return different casing than the cached value
+        if (fresh.status.toUpperCase() !== (transfer?.status ?? "").toUpperCase()) {
           // Status changed since the button was shown — abort and let user retry
           await qc.invalidateQueries({ queryKey: ["transfers", org] });
           setToast(`Status changed to ${freshStatus.replace(/_/g, " ")} — list refreshed. Please try again.`);
           setTimeout(() => setToast(""), 5000);
           return;
         }
-      } catch {
-        // GET failed (network issue) — let the PATCH proceed and handle any 422 below
+      } catch (prefetchErr) {
+        // GET failed (network issue or 4xx) — let the PATCH proceed and handle any error below
+        console.warn("[doTransition] pre-fetch GET failed:", prefetchErr);
       }
       // ───────────────────────────────────────────────────────────────────────
 
+      console.log("[doTransition] sending PATCH:", { id, next_status: next, cachedStatus: transfer?.status });
       await api.patch(`/api/v1/inventory/transfers/${id}`, { next_status: next });
 
       // FIX 4: Optimistic update — reflect new status in the table immediately,
@@ -645,10 +649,16 @@ export default function TransfersPage() {
       setToast(`Status updated to ${next.replace(/_/g, " ")}`);
       setTimeout(() => setToast(""), 3000);
     } catch (err: unknown) {
-      const apiErr = err as { status?: number; message?: string };
+      const apiErr = err as { status?: number; message?: string; code?: string };
       const is422  = apiErr.status === 422;
+      const code   = apiErr.code ?? "";
       const msg    = apiErr.message ?? "Transition failed.";
-      setToast(is422 ? `Invalid transition — refreshing status…` : (msg.length <= 80 ? msg : "Transition failed — check permissions."));
+      // Log full error so browser console shows the exact backend code + message
+      console.error("[doTransition] transition failed:", { id, next, status: apiErr.status, code, message: msg, raw: err });
+      const toastMsg = is422
+        ? `Invalid transition${code ? ` (${code})` : ""} — refreshing status…`
+        : (msg.length <= 80 ? msg : "Transition failed — check permissions.");
+      setToast(toastMsg);
       setTimeout(() => setToast(""), 5000);
       // Always refresh on error so the UI reflects the actual backend state
       void qc.invalidateQueries({ queryKey: ["transfers", org] });
