@@ -603,6 +603,9 @@ export default function TransfersPage() {
         (old) => old?.map((t) => (t.id === id ? { ...t, status: next } : t)),
       );
       await qc.invalidateQueries({ queryKey: ["transfers", org] });
+      // Refresh inventory balances immediately so On Hand / Available on the
+      // Inventory page reflect the new ledger state without waiting for the 30 s poll.
+      void qc.invalidateQueries({ queryKey: ["inventory-stock", org] });
 
       if (transfer && !getTransferEntry(id)) {
         addTransfer({

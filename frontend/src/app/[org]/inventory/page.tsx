@@ -343,6 +343,15 @@ export default function InventoryPage() {
         })),
       ];
 
+  // Single source of truth for API stock in gateway mode.
+  // Returns null in demo mode (isGatewayMode=false) or when the product has no
+  // stock row for the currently-selected warehouse — callers fall back to Zustand
+  // or demo seed values respectively.
+  const getStock = (productId: string): InventoryStockItem | null => {
+    if (!isGatewayMode || !whId) return null;
+    return stockByKey.get(`${productId}:${whId}`) ?? null;
+  };
+
   // Effective on-hand: use real API balance in gateway mode, Zustand-adjusted demo balance in BFF mode.
   function effectiveOnHand(productId: string, warehouseId: string, demoBase: number): number {
     if (isGatewayMode) {
@@ -528,13 +537,13 @@ export default function InventoryPage() {
             </thead>
             <tbody>
               {visibleProducts.map((p, idx) => {
-                const demoBase     = whId ? (p.stock[whId] ?? 0) : Object.values(p.stock).reduce((a, b) => a + b, 0);
-                const gatewayItem  = isGatewayMode && whId ? stockByKey.get(`${p.id}:${whId}`) : undefined;
+                const demoBase  = whId ? (p.stock[whId] ?? 0) : Object.values(p.stock).reduce((a, b) => a + b, 0);
+                const stockItem = getStock(p.id);   // null in demo mode → Zustand fallback
                 const onHand       = effectiveOnHand(p.id, whId, demoBase);
-                const reserved     = whId ? (isGatewayMode ? parseFloat(gatewayItem?.pending_out_qty     ?? "0") : getReservedTotal(p.id, whId))     : 0;
-                const inTransitOut = whId ? (isGatewayMode ? parseFloat(gatewayItem?.in_transit_out_qty ?? "0") : getInTransitOutTotal(p.id, whId)) : 0;
-                const inTransitIn  = whId ? (isGatewayMode ? parseFloat(gatewayItem?.in_transit_in_qty  ?? "0") : getInTransitInTotal(p.id, whId))  : 0;
-                const available    = whId ? (isGatewayMode ? parseFloat(gatewayItem?.net_available      ?? "0") : getAvailable(p.id, whId, demoBase)) : demoBase;
+                const reserved     = whId ? (stockItem ? parseFloat(stockItem.pending_out_qty)     : getReservedTotal(p.id, whId))     : 0;
+                const inTransitOut = whId ? (stockItem ? parseFloat(stockItem.in_transit_out_qty) : getInTransitOutTotal(p.id, whId)) : 0;
+                const inTransitIn  = whId ? (stockItem ? parseFloat(stockItem.in_transit_in_qty)  : getInTransitInTotal(p.id, whId))  : 0;
+                const available    = whId ? (stockItem ? parseFloat(stockItem.net_available)       : getAvailable(p.id, whId, demoBase)) : demoBase;
                 const stockStatus  = onHand === 0 ? "out" : onHand <= p.reorderPoint ? "low" : "in";
 
                 return (
