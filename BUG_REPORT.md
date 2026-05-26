@@ -653,5 +653,133 @@ When a transition returned 422, the TanStack Query cache was not invalidated. Th
 
 ---
 
+## 15. SESSION 5+ TRANSFER FLOW FIXES — 2026-05-25
+
+### Overview
+
+Six bugs found and fixed during transfer workflow testing against the live Python backend. All bugs are now resolved and covered by regression tests.
+
+---
+
+### Bug 1 — Balance double deduction: Reserved column included post-APPROVED statuses
+
+**Symptom:** After a transfer moved to APPROVED, the Inventory page still showed the quantity in the Reserved column. Available = On Hand − Reserved gave a double deduction: the TRANSFER_OUT ledger entry had already reduced On Hand at APPROVED, but pending_out_qty was also counting the APPROVED transfer as a soft hold.
+
+**Root cause:** The analytics query `pending_out_sql` in `inventory_analytics.py` used `status IN ('APPROVED','IN_TRANSIT')` to compute `pending_out_qty`. Per WMS Option A, APPROVED is the point at which On Hand is reduced via TRANSFER_OUT. Including APPROVED in the soft-hold count means the same quantity is deducted twice (once from On Hand via the ledger, once from Available via the Reserved column).
+
+**Fix:** Changed `pending_out_sql` to `status IN ('DRAFT','PENDING_REVIEW','PENDING_APPROVAL','PENDING_SOURCE_CONFIRM','PENDING_DEST_CONFIRM')` — only pre-ledger soft holds. APPROVED/ISSUED/IN_TRANSIT are excluded because On Hand is already reduced at APPROVED.
+
+**WMS Option A column trace (qty=100, source start=2000):**
+
+| Status | On Hand | Reserved | InTransit Out | Available |
+|---|---|---|---|---|
+| PENDING_APPROVAL | 2000 | 100 | 0 | 1900 |
+| APPROVED | 1900 | 0 | 0 | 1900 |
+| ISSUED | 1900 | 0 | 100 | 1900 |
+| IN_TRANSIT | 1900 | 0 | 100 | 1900 |
+| RECEIVED | dest +100 | 0 | 0 | dest +100 |
+
+**Regression tests:** `test_approved_transfer_does_not_double_deduct_available`, `test_pending_approval_reserves_without_reducing_on_hand`, `test_issued_in_transit_out_is_informational_only`, `test_net_available_full_column_trace`
+
+---
+
+### Bug 2 — NaN in InTransitOut column
+
+**Symptom:** The Inventory page showed `NaN` in the InTransitOut column when a transfer was in ISSUED or IN_TRANSIT status.
+
+**Root cause:** The stale running service was returning API responses where `in_transit_out_qty` was absent. `parseFloat(undefined)` = `NaN`. `NaN` propagated into the column display.
+
+**Fix:** Added a `safeFloat()` helper in `inventory/page.tsx`:
+```typescript
+function safeFloat(val: unknown): number {
+  const n = parseFloat(String(val ?? 0));
+  return isNaN(n) ? 0 : n;
+}
+```
+All five balance fields (`current_stock`, `pending_out_qty`, `in_transit_out_qty`, `in_transit_in_qty`, `net_available`) now go through `safeFloat()`.
+
+**Root cause also:** The running inventory service was executing pre-fix SQL (Bug 1). A backend restart was required after the code fix to load the corrected `pending_out_sql`.
+
+---
+
+### Bug 3 — Invalid transition on first click (state machine missing REJECTED)
+
+**Symptom:** Clicking Approve on a PENDING_APPROVAL transfer showed "Invalid transition — refreshing status…" toast. Second click worked.
+
+**Root cause (primary):** `PULL_TRANSITIONS`, `PUSH_TRANSITIONS`, and `SISTER_TRANSITIONS` in `state_machine.py` were missing `"REJECTED"` from `PENDING_REVIEW` and `PENDING_APPROVAL` states. The frontend shows a Reject button at those states. If a user (or a concurrent session) clicked Reject, the backend returned 422 `INVALID_STATE_TRANSITION`. The catch block called `invalidateQueries`, the list refreshed, and the second Approve click hit a clean state.
+
+**Root cause (secondary, same toast):** The `api.ts` error parser was expecting `{"error": {...}}` but FastAPI's `HTTPException` returns `{"detail": {...}}`. Every 422 appeared as a generic "HTTP 422" with no code or message, hiding which specific failure occurred.
+
+**Fix 1 — state_machine.py:** Added `"REJECTED"` to `PENDING_REVIEW` and `PENDING_APPROVAL` in PULL, PUSH, and SISTER machines.
+
+**Fix 2 — api.ts:** Added fallback parsing of FastAPI's `detail` field:
+```typescript
+const raw   = json as unknown as { detail?: { code?: string; message?: string; detail?: string } | string };
+const det   = typeof raw.detail === "object" ? raw.detail : null;
+const detMsg = det?.message ?? det?.detail ?? ...;
+const detCode = det?.code ?? "";
+const apiErr = new Error(err.error?.message ?? (detMsg || `HTTP ${res.status}`));
+apiErr.code  = err.error?.code ?? detCode;
+```
+
+**Fix 3 — transfers/page.tsx:** Pre-fetch status comparison made case-insensitive (`.toUpperCase()` on both sides). `console.log` added before PATCH, `console.warn` on pre-fetch failure, `console.error` with full `{ status, code, message }` in catch. Toast now shows backend error code when available: `Invalid transition (INVALID_STATE_TRANSITION) — refreshing status…`.
+
+---
+
+### Bug 4 — isSrcWM / isDestWM UUID case comparison
+
+**Symptom:** Source Warehouse Manager could not see the Issue button at APPROVED status. The button was correctly defined in `getAvailableActions()` for `isSrcWM` but never rendered.
+
+**Root cause:** `userWH === fromWH` used strict equality. JWT `warehouseId` and DB `from_warehouse_id` may differ in casing (e.g. `"ABC-123"` vs `"abc-123"` depending on how the JWT was issued vs how PostgreSQL serialises UUIDs).
+
+**Fix:** Applied `.toLowerCase()` on both sides in `getAvailableActions()`:
+```typescript
+const uWH = userWH?.toLowerCase();
+const isSrcWM  = !!uWH && uWH === fromWH?.toLowerCase();
+const isDestWM = !!uWH && uWH === toWH?.toLowerCase();
+```
+
+**Regression test:** `test_source_wm_sees_issue_button_at_approved`
+
+---
+
+### Bug 5 — Stale running service executing pre-fix SQL
+
+**Symptom:** After the `pending_out_sql` fix was applied to disk, the Inventory page still showed the old double-deduction behaviour (Bug 1). NaN (Bug 2) also persisted.
+
+**Root cause:** The Python inventory service process was still running the pre-fix code from before the source edit. `uvicorn` in development mode with `--reload` typically hot-reloads on file change, but if the process was started before the fix was written, changes to `inventory_analytics.py` may not have been picked up automatically.
+
+**Fix:** Restarted all backend services via `bash scripts/start_backend.sh`. All five balance columns immediately showed correct values after hard refresh.
+
+**Lesson:** After editing any backend analytics or service file, restart the running service to ensure the process is executing the new code. Do not assume hot reload is active or has fired.
+
+---
+
+### Bug 6 — HTTPException detail field not parsed (api.ts)
+
+*(Documented separately from Bug 3 as it affects all backend error responses, not just transfer transitions.)*
+
+**Symptom:** All FastAPI HTTPException errors (403, 404, 422) showed only "HTTP {status}" as the error message in frontend toasts and `console.error`. Backend error codes such as `RBAC_DENIED`, `INVALID_STATE_TRANSITION`, `INSUFFICIENT_STOCK` were invisible.
+
+**Root cause:** FastAPI's built-in HTTPException handler returns `{"detail": "..."}` or `{"detail": {...}}`. The `api.ts` error parser was only reading `json.error.message` and `json.error.code` — the shape used by the custom `ErrorResponse` model that the global 500 handler returns. 4xx errors from HTTPException never matched this shape so `err.error` was always `undefined`.
+
+**Fix:** See Bug 3 Fix 2. The `detail` field is now parsed as a fallback whenever `err.error` is absent.
+
+---
+
+### Final test counts (end of session)
+
+| Suite | Count | Status |
+|---|---|---|
+| `pytest backend/ -v -m "unit"` | **103 / 103** | ✅ All pass |
+| `npx tsc --noEmit` | — | ✅ 0 errors |
+
+### Remaining open items (unchanged)
+
+- §8-6 (L): AWS dev environment — Terraform apply, RDS + ElastiCache provisioning
+- §8-9 (L): Native-speaker review of `or.json` — staffing decision
+
+---
+
 *SMART Inventory Platform — Bug Report v4.0*  
 *Backend: Python 3.12 / FastAPI · Frontend: Next.js 14 / TypeScript · DB: PostgreSQL 16*

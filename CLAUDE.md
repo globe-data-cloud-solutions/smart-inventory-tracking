@@ -2258,6 +2258,32 @@ NEVER calculate the Products page stock total with a per-warehouse filter.
   tenant total is 300. Per-warehouse views belong on the Inventory page, not the
   Products page.
   Regression test: test_products_page_shows_same_total_all_wh_users
+
+NEVER compare warehouse UUIDs without .toLowerCase() on both sides.
+  JWT warehouseId claims and DB from_warehouse_id / to_warehouse_id values may
+  differ in casing depending on how the JWT was issued vs how PostgreSQL serialises
+  UUIDs. Strict equality (===) silently fails the comparison and hides action
+  buttons (e.g. Issue, Dispatch, Receive) from the correct warehouse manager.
+  Always normalise both operands: uWH === fromWH?.toLowerCase() where
+  uWH = userWH?.toLowerCase(). This applies everywhere a facility-scoped identity
+  check is performed in the frontend — getAvailableActions(), scopeTransfers(),
+  ABAC attribute checks, and any new warehouse-scoped conditional.
+  Root cause: BUG_REPORT.md §15 Bug 4 — isSrcWM UUID case mismatch.
+
+NEVER leave a state machine missing transitions that the UI exposes as buttons.
+  Every action button shown by getAvailableActions() must have a corresponding
+  entry in the backend state machine (PULL_TRANSITIONS, PUSH_TRANSITIONS,
+  SISTER_TRANSITIONS, ADJUSTMENT_TRANSITIONS). A button whose target status is
+  absent from the machine always returns HTTP 422 INVALID_STATE_TRANSITION.
+  This produces a spurious "Invalid transition" toast that masks unrelated errors
+  and causes intermittent first-click failures when a concurrent session triggered
+  the missing transition just before the current click.
+  Specifically: REJECTED must be present in PENDING_REVIEW and PENDING_APPROVAL
+  for all transfer types where the UI shows a Reject button (PULL, PUSH, SISTER).
+  When adding new action buttons, update both getAvailableActions() in
+  transfers/page.tsx AND the corresponding machine dict in state_machine.py
+  in the same PR.
+  Root cause: BUG_REPORT.md §15 Bug 3 — missing REJECTED in state machines.
 ```
 
 # SMART Inventory — Claude Prompts for Initial Stock Entry
