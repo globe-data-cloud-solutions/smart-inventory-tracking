@@ -49,20 +49,15 @@ export default function AuditLogPage() {
   const [categoryFilter, setCategoryFilter] = useState<"ALL" | "TRANSFER" | "INVENTORY" | "ADJUSTMENT">("ALL");
   const [search, setSearch] = useState("");
 
-  if (!user) return null;
-  if (org === SA_ORG_SLUG) return <p className="p-8 text-gray-500">{t("sa.select_tenant")}</p>;
-
   const tenant = DEMO_TENANTS.find((ten) => ten.slug === org);
-  if (!tenant)   return <p className="p-8 text-gray-500">{t("common.no_data")}</p>;
-
-  const scopeNames = buildScopeNames(user.warehouseId, user.role, tenant.warehouses);
+  const scopeNames = buildScopeNames(user?.warehouseId, user?.role ?? "", tenant?.warehouses ?? []);
 
   const scopedEntries = useMemo(
     () => allEntries
       .filter((e) => e.tenantSlug === org && entryInScope(e, scopeNames))
       .sort((a, b) => b.timestamp.localeCompare(a.timestamp)),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [allEntries, org, user.warehouseId, user.role],
+    [allEntries, org, user?.warehouseId, user?.role],
   );
 
   const sourceOptions = useMemo(() => {
@@ -112,7 +107,10 @@ export default function AuditLogPage() {
     ADJUSTMENT: scopedEntries.filter((e) => e.category === "ADJUSTMENT").length,
   };
 
-  const userWH     = tenant.warehouses.find((w) => w.id === user.warehouseId);
+  if (!user) return null;
+  if (org === SA_ORG_SLUG) return <p className="p-8 text-gray-500">{t("sa.select_tenant")}</p>;
+
+  const userWH     = tenant?.warehouses?.find((w) => w.id === user.warehouseId);
   const scopeLabel = !scopeNames ? t("audit.all_facilities")
     : userWH ? `${userWH.name} ${t("audit.scope_and_below")}` : t("audit.your_facilities");
 
@@ -121,7 +119,7 @@ export default function AuditLogPage() {
       <div className="mb-6">
         <h2 className="text-2xl font-bold text-[#0f2d1f] m-0">{t("audit.title")}</h2>
         <p className="text-sm text-gray-500 mt-1">
-          {tenant.name} · {scopeLabel} · {scopedEntries.length} {t("audit.events")} · {t("audit.subtitle")}
+          {tenant?.name ?? org} · {scopeLabel} · {scopedEntries.length} {t("audit.events")} · {t("audit.subtitle")}
         </p>
       </div>
 
@@ -213,7 +211,7 @@ export default function AuditLogPage() {
 
       {/* Table */}
       <div className="bg-white border border-gray-200 rounded overflow-hidden">
-        <div className="h-[3px]" style={{ background: tenant.color }} />
+        <div className="h-[3px]" style={{ background: tenant?.color ?? "#1B4332" }} />
         <div className="overflow-x-auto">
           <table className="w-full border-collapse text-xs">
             <thead>

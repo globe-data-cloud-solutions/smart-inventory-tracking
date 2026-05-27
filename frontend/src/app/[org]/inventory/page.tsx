@@ -232,7 +232,7 @@ export default function InventoryPage() {
   const { data: apiProducts = [] } = useQuery<ApiProduct[]>({
     queryKey: ["products", org],
     queryFn:  () => api.get<ApiProduct[]>("/api/v1/products"),
-    enabled:  !!tenant && !!user && org !== SA_ORG_SLUG,
+    enabled:  !!user && org !== SA_ORG_SLUG,
     staleTime: 0,
   });
 
@@ -241,7 +241,7 @@ export default function InventoryPage() {
   const { data: apiTransfers = [] } = useQuery<ApiTransfer[]>({
     queryKey: ["transfers", org],
     queryFn:  () => api.get<ApiTransfer[]>("/api/v1/inventory/transfers"),
-    enabled:  !!tenant && !!user && org !== SA_ORG_SLUG,
+    enabled:  !!user && org !== SA_ORG_SLUG,
     staleTime: 0,
     refetchInterval: 15000,
   });
@@ -249,7 +249,7 @@ export default function InventoryPage() {
   const { data: inventoryStock = [] } = useQuery<InventoryStockItem[]>({
     queryKey: ["inventory-stock", org],
     queryFn:  () => api.get<InventoryStockItem[]>("/api/v1/inventory/analytics/stock"),
-    enabled:  isGatewayMode && !!tenant && !!user && org !== SA_ORG_SLUG,
+    enabled:  isGatewayMode && !!user && org !== SA_ORG_SLUG,
     staleTime: 0,
     refetchInterval: 30000,
   });
@@ -324,26 +324,26 @@ export default function InventoryPage() {
 
   if (org === SA_ORG_SLUG)
     return <p className="p-8 text-gray-500">{t("sa.select_tenant")}</p>;
-  if (!user || !tenant)
+  if (!user || (!tenant && !isGatewayMode))
     return <p className="p-8 text-gray-500">{t("common.no_data")}</p>;
 
-  const userWarehouse = tenant.warehouses.find((w) => w.id === user.warehouseId);
+  const userWarehouse = tenant?.warehouses?.find((w) => w.id === user.warehouseId);
   const isMWH = isGatewayMode
     ? ["TA", "SA", "NM", "LM", "RM"].includes(user.role)
     : (userWarehouse?.type === "MWH" || ["TA", "SA"].includes(user.role));
 
   // In gateway mode: use real warehouse list from inventory analytics;
   // in BFF mode: use demo tenant warehouses.
-  const displayWarehouses: DemoWarehouse[] = isGatewayMode ? gatewayWarehouses : tenant.warehouses;
+  const displayWarehouses: DemoWarehouse[] = isGatewayMode ? gatewayWarehouses : (tenant?.warehouses ?? []);
 
-  const tenantProductIds = new Set(tenant.products.map((p) => p.id));
+  const tenantProductIds = new Set((tenant?.products ?? []).map((p) => p.id));
   const mergedProducts: DemoProduct[] = isGatewayMode
     ? apiProducts.map((p) => ({
         id: p.id, sku: p.sku, name: p.name, category: "—", unit: p.unit,
         batchTracking: false, reorderPoint: 0, stock: {} as Record<string, number>,
       }))
     : [
-        ...tenant.products,
+        ...(tenant?.products ?? []),
         ...apiProducts.filter((p) => !tenantProductIds.has(p.id)).map((p) => ({
           id: p.id, sku: p.sku, name: p.name, category: "—", unit: p.unit,
           batchTracking: false, reorderPoint: 0, stock: {} as Record<string, number>,
@@ -468,7 +468,7 @@ export default function InventoryPage() {
         <div>
           <h2 className="text-2xl font-bold text-[#0f2d1f] m-0">{t("nav.inventory")}</h2>
           <p className="text-sm text-gray-500 mt-1">
-            {tenant.name} · {whId ? (displayWarehouses.find((w) => w.id === whId)?.name ?? t("inventory.warehouse")) : t("inventory.all_locations")} · {visibleProducts.length} {t("table.skus")}
+            {tenant?.name ?? org} · {whId ? (displayWarehouses.find((w) => w.id === whId)?.name ?? t("inventory.warehouse")) : t("inventory.all_locations")} · {visibleProducts.length} {t("table.skus")}
           </p>
         </div>
         <div className="flex gap-2 flex-wrap">
@@ -524,7 +524,7 @@ export default function InventoryPage() {
 
       {/* Table */}
       <div className="bg-white border border-gray-200 rounded-md overflow-hidden">
-        <div className="h-[3px]" style={{ background: tenant.color }} />
+        <div className="h-[3px]" style={{ background: tenant?.color ?? "#1B4332" }} />
         <div className="overflow-x-auto">
           <table className="w-full border-collapse">
             <thead>

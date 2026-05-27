@@ -52,7 +52,12 @@ export default function LotsPage() {
 
   if (org === SA_ORG_SLUG) return <p className="p-8 text-gray-500">{t("sa.select_tenant")}</p>;
   const tenant = DEMO_TENANTS.find((ten) => ten.slug === org);
-  if (!tenant)   return <p className="p-8 text-gray-500">{t("common.no_data")}</p>;
+  if (!tenant) return (
+    <div className="p-8">
+      <h2 className="text-2xl font-bold text-[#0f2d1f] m-0">{t("lots.title")}</h2>
+      <p className="text-sm text-gray-400 mt-1">{t("common.no_data")}</p>
+    </div>
+  );
 
   const tenantLots = buildTenantLots(tenant);
 

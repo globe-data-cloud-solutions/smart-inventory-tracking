@@ -311,6 +311,7 @@ function NodeForm({
           level_number:     form.level_number,
           parent_node_id:   form.parent_node_id || null,
           is_stock_holding: form.is_stock_holding,
+          address:          form.location.trim() || null,
         });
       }
       // Wire up primary source as SUPPLY_FROM if selected

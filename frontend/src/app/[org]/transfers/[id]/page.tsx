@@ -365,16 +365,17 @@ export default function TransferDetailPage() {
   const [loading, setLoading] = useState(false);
   const [confirm, setConfirm] = useState<{ next: TransferStatus; label: string } | null>(null);
 
-  if (org === SA_ORG_SLUG) return <p className="p-8 text-gray-500">{t("transfers.select_tenant")}</p>;
-  const tenant = DEMO_TENANTS.find((ten) => ten.slug === org);
-  if (!tenant || !user) return <p className="p-8 text-gray-500">{t("transfers.not_found")}</p>;
-
   const { data: transfer, isLoading, error } = useQuery<TransferDetail>({
     queryKey: ["transfer", id],
     queryFn:  () => api.get<TransferDetail>(`/api/v1/transfers/${id}`),
+    enabled: org !== SA_ORG_SLUG,
     staleTime: 0,
     refetchInterval: 15000,
   });
+
+  if (org === SA_ORG_SLUG) return <p className="p-8 text-gray-500">{t("transfers.select_tenant")}</p>;
+  const tenant = DEMO_TENANTS.find((ten) => ten.slug === org);
+  if (!user) return <p className="p-8 text-gray-500">{t("transfers.not_found")}</p>;
 
   async function doTransition(next: TransferStatus) {
     if (!isOnline) {
@@ -506,7 +507,7 @@ export default function TransferDetailPage() {
       {/* Transfer card */}
       <div className="bg-white border border-gray-200 rounded-lg overflow-hidden max-w-[800px]">
         {/* Tenant colour bar — runtime value, legitimately dynamic */}
-        <div className="h-1" style={{ background: tenant.color }} />
+        <div className="h-1" style={{ background: tenant?.color ?? "#1B4332" }} />
 
         {/* Header */}
         <div className="px-6 py-5 bg-[#0f2d1f] flex items-center justify-between flex-wrap gap-3">
@@ -516,7 +517,7 @@ export default function TransferDetailPage() {
               <span className={`text-[11px] font-bold px-2 py-0.5 rounded ${tb.bgClass} ${tb.textClass}`}>
                 {tb.label}
               </span>
-              <span className="text-sm text-emerald-300">{tb.desc} · {tenant.name}</span>
+              <span className="text-sm text-emerald-300">{tb.desc} · {tenant?.name ?? org}</span>
             </div>
           </div>
           <span className={`text-sm font-bold px-3.5 py-1.5 rounded-full ${s.bgClass} ${s.textClass}`}>

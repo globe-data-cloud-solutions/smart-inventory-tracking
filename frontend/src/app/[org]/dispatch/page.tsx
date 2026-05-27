@@ -4,7 +4,7 @@ import { useParams } from "next/navigation";
 import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { getSession, SA_ORG_SLUG } from "@/lib/demo-auth";
-import { DEMO_TENANTS } from "@/lib/demo-data";
+import { DEMO_TENANTS, type DemoProduct } from "@/lib/demo-data";
 import { usePermission } from "@/hooks/usePermission";
 import { api } from "@/lib/api";
 import { t } from "@/lib/i18n";
@@ -80,15 +80,28 @@ export default function DispatchPage() {
   const [saving, setSaving] = useState<string | null>(null);
   const [toast, setToast]   = useState("");
 
-  if (org === SA_ORG_SLUG) return <p className="p-8 text-gray-500">{t("sa.select_tenant")}</p>;
-  const tenant = DEMO_TENANTS.find((ten) => ten.slug === org);
-  if (!tenant || !user) return <p className="p-8 text-gray-500">{t("common.no_data")}</p>;
-
   const { data: configs = [] } = useQuery<DispatchConfig[]>({
     queryKey: ["dispatch-config", org],
     queryFn:  () => api.get<DispatchConfig[]>("/api/v1/dispatch-config"),
+    enabled: org !== SA_ORG_SLUG,
     staleTime: 0,
   });
+
+  const { data: apiProducts = [] } = useQuery<Array<{ id: string; sku: string; name: string }>>({
+    queryKey: ["products", org],
+    queryFn:  () => api.get<Array<{ id: string; sku: string; name: string }>>("/api/v1/products"),
+    enabled: org !== SA_ORG_SLUG,
+    staleTime: 30_000,
+  });
+
+  if (org === SA_ORG_SLUG) return <p className="p-8 text-gray-500">{t("sa.select_tenant")}</p>;
+  const tenant = DEMO_TENANTS.find((ten) => ten.slug === org);
+  if (!user) return <p className="p-8 text-gray-500">{t("common.no_data")}</p>;
+
+  const displayProducts: DemoProduct[] = tenant?.products ?? apiProducts.map((p) => ({
+    id: p.id, sku: p.sku, name: p.name,
+    category: "—", unit: "—", batchTracking: false, reorderPoint: 0, stock: {},
+  }));
 
   function getStrategy(productId: string): Strategy {
     return configs.find((c) => c.product_id === productId)?.strategy ?? "FIFO";
@@ -116,7 +129,7 @@ export default function DispatchPage() {
 
       <div className="mb-6">
         <h2 className="text-2xl font-bold text-[#0f2d1f] m-0">{t("dispatch.title")}</h2>
-        <p className="text-sm text-gray-500 mt-1">{tenant.name} · {t("dispatch.subtitle")}</p>
+        <p className="text-sm text-gray-500 mt-1">{tenant?.name ?? org} · {t("dispatch.subtitle")}</p>
       </div>
 
       {/* Strategy legend */}
@@ -138,7 +151,7 @@ export default function DispatchPage() {
 
       {/* Product table */}
       <div className="bg-white border border-gray-200 rounded overflow-hidden">
-        <div className="h-[3px]" style={{ background: tenant.color }} />
+        <div className="h-[3px]" style={{ background: tenant?.color ?? "#1B4332" }} />
         <table className="w-full border-collapse text-sm">
           <thead>
             <tr className="bg-gray-50 border-b-2 border-gray-200">
@@ -150,7 +163,7 @@ export default function DispatchPage() {
             </tr>
           </thead>
           <tbody>
-            {tenant.products.map((p, idx) => {
+            {displayProducts.map((p, idx) => {
               const strategy  = p.batchTracking ? "FEFO" : getStrategy(p.id);
               const cls       = STRATEGY_CLASS[strategy]!;
               const isAutoFefo = p.batchTracking;

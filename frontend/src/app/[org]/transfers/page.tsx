@@ -438,15 +438,12 @@ export default function TransfersPage() {
   const [partialQtyErr, setPartialQtyErr] = useState("");
   const [toast, setToast] = useState("");
 
-  if (org === SA_ORG_SLUG) return <p className="p-8 text-gray-500">{t("dashboard.tenants_heading")}</p>;
-  const tenant = DEMO_TENANTS.find((ten) => ten.slug === org);
-  if (!tenant || !user) return <p className="p-8 text-gray-500">{t("common.no_data")}</p>;
-
   const { data: allTransfers = [], isLoading: transfersLoading } = useQuery<ApiTransfer[]>({
     queryKey: ["transfers", org],
     queryFn:  () =>
       api.get<RawApiTransfer[]>("/api/v1/inventory/transfers")
         .then((rows) => rows.map(normalizeTransfer)),
+    enabled: org !== SA_ORG_SLUG,
     staleTime: 0,
     refetchInterval: 15000,
   });
@@ -455,6 +452,7 @@ export default function TransfersPage() {
   const { data: apiProducts = [] } = useQuery<ApiProduct[]>({
     queryKey: ["products", org],
     queryFn:  () => api.get<ApiProduct[]>("/api/v1/products"),
+    enabled: org !== SA_ORG_SLUG,
     staleTime: 30_000,
   });
 
@@ -465,8 +463,13 @@ export default function TransfersPage() {
   const { data: stockData = [] } = useQuery<ApiStockRow[]>({
     queryKey: ["analytics-stock", org],
     queryFn:  () => api.get<ApiStockRow[]>("/api/v1/inventory/analytics/stock"),
+    enabled: org !== SA_ORG_SLUG,
     staleTime: 30000,
   });
+
+  if (org === SA_ORG_SLUG) return <p className="p-8 text-gray-500">{t("dashboard.tenants_heading")}</p>;
+  const tenant = DEMO_TENANTS.find((ten) => ten.slug === org);
+  if (!user) return <p className="p-8 text-gray-500">{t("common.no_data")}</p>;
 
   const isGatewayMode = stockData.length > 0;
 
@@ -509,7 +512,7 @@ export default function TransfersPage() {
 
   // Gateway mode: use only real API products (demo slugs are not valid UUIDs in the DB).
   // Demo mode: merge demo catalog + API products so the dropdown shows all products.
-  const tenantProductIds = new Set(tenant.products.map((p) => p.id));
+  const tenantProductIds = new Set((tenant?.products ?? []).map((p) => p.id));
   const mergedProducts: DemoProduct[] = isGatewayMode
     ? apiProducts.map((p) => ({
         id:            p.id,
@@ -522,7 +525,7 @@ export default function TransfersPage() {
         stock:         stockByProductId.get(p.id) ?? {},
       }))
     : [
-        ...tenant.products,
+        ...(tenant?.products ?? []),
         ...apiProducts
           .filter((p) => !tenantProductIds.has(p.id))
           .map((p) => ({
@@ -537,7 +540,7 @@ export default function TransfersPage() {
           })),
       ];
 
-  const effectiveWarehouses = isGatewayMode ? gatewayWarehouses : tenant.warehouses;
+  const effectiveWarehouses = isGatewayMode ? gatewayWarehouses : (tenant?.warehouses ?? []);
 
   // Apply hierarchy + role scoping
   const scopedTransfers = scopeTransfers(allTransfers, user.role, user.warehouseId, effectiveWarehouses);
@@ -758,7 +761,7 @@ export default function TransfersPage() {
         <div>
           <h2 className="text-2xl font-bold text-[#0f2d1f] m-0">{t("nav.inventory")} — {t("transfers.transfers_heading")}</h2>
           <p className="text-sm text-gray-500 mt-1">
-            {tenant.name} · {visibleTransfers.length} {t("transfers.active_label")}{user.warehouseId && !["TA","SA","RM","LM"].includes(user.role) ? ` · ${user.warehouseName ?? effectiveWarehouses.find((w) => w.id === user.warehouseId)?.name ?? t("transfers.your_warehouse")}` : ""}
+            {tenant?.name ?? org} · {visibleTransfers.length} {t("transfers.active_label")}{user.warehouseId && !["TA","SA","RM","LM"].includes(user.role) ? ` · ${user.warehouseName ?? effectiveWarehouses.find((w) => w.id === user.warehouseId)?.name ?? t("transfers.your_warehouse")}` : ""}
             {archivedCount > 0 && (
               <span className="ml-2.5 text-[11px] text-gray-400">
                 {archivedCount} {t("transfers.archived")} → <a href={`/${org}/audit-log`} className="text-eth-forest font-semibold no-underline">{t("audit.title")}</a>
@@ -783,7 +786,7 @@ export default function TransfersPage() {
       </div>
 
       <div className="bg-white border border-gray-200 rounded overflow-hidden">
-        <div className="h-[3px]" style={{ background: tenant.color }} />
+        <div className="h-[3px]" style={{ background: tenant?.color ?? "#1B4332" }} />
         <div className="overflow-x-auto">
           <table className="w-full border-collapse">
             <thead>
@@ -811,7 +814,7 @@ export default function TransfersPage() {
                 return (
                   <tr key={txn.id} className={`border-b border-gray-100 ${idx % 2 === 0 ? "bg-white" : "bg-gray-50"}`}>
                     <td className="px-3 py-2.5">
-                      <Link href={`/${org}/transfers/${txn.id}`} className="font-mono text-xs font-semibold no-underline" style={{ color: tenant.color }}>
+                      <Link href={`/${org}/transfers/${txn.id}`} className="font-mono text-xs font-semibold no-underline" style={{ color: tenant?.color ?? "#1B4332" }}>
                         {txn.ref} →
                       </Link>
                     </td>

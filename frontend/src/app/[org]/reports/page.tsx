@@ -3,14 +3,11 @@
 import { useParams } from "next/navigation";
 import Link from "next/link";
 import { SA_ORG_SLUG } from "@/lib/demo-auth";
-import { DEMO_TENANTS } from "@/lib/demo-data";
 import { t } from "@/lib/i18n";
 
 export default function ReportsPage() {
   const { org } = useParams() as { org: string };
   if (org === SA_ORG_SLUG) return <p className="p-8 text-gray-500">{t("sa.select_tenant")}</p>;
-  const tenant = DEMO_TENANTS.find((ten) => ten.slug === org);
-  if (!tenant) return <p className="p-8 text-gray-500">{t("common.no_data")}</p>;
 
   const REPORTS = [
     { key: "report:inventory_valuation", desc: t("report.inv_valuation_desc"), icon: "📊", href: `/${org}/analytics` },

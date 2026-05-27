@@ -10,7 +10,12 @@ export default function AnalyticsPage() {
   if (org === SA_ORG_SLUG) return <p className="p-8 text-gray-500">{t("sa.select_tenant")}</p>;
 
   const tenant = DEMO_TENANTS.find((ten) => ten.slug === org);
-  if (!tenant) return <p className="p-8 text-gray-500">{t("common.no_data")}</p>;
+  if (!tenant) return (
+    <div className="p-8">
+      <h2 className="text-2xl font-bold text-[#0f2d1f] mb-4">{t("nav.analytics")}</h2>
+      <p className="text-sm text-gray-400">{t("common.no_data")}</p>
+    </div>
+  );
 
   const low   = getLowStockProducts(tenant);
   const total = tenant.products.reduce((a, p) => a + getTotalStock(p), 0);
