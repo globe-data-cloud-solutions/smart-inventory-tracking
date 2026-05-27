@@ -1,12 +1,10 @@
 import os
 from datetime import datetime, timedelta, timezone
 
+import bcrypt as _bcrypt
 from fastapi import APIRouter, HTTPException
 from jose import jwt
-from passlib.context import CryptContext
 from pydantic import BaseModel
-
-_pwd_ctx = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 router = APIRouter()
 
@@ -127,7 +125,9 @@ async def _lookup_user_in_db(email: str, password: str | None = None) -> dict | 
         # Verify password when one is provided and the user has a hash stored
         if password is not None:
             stored_hash = rec.password_hash
-            if stored_hash is None or not _pwd_ctx.verify(password, stored_hash):
+            if stored_hash is None or not _bcrypt.checkpw(
+                password.encode(), stored_hash.encode()
+            ):
                 raise HTTPException(status_code=401, detail="Invalid password")
         return {
             "sub":          str(rec.id),

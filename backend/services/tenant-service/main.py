@@ -1,7 +1,9 @@
+import traceback
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 
 from routers import hierarchy, personnel, tenants, wizard
 
@@ -14,6 +16,15 @@ async def lifespan(app: FastAPI):  # type: ignore[type-arg]
 app = FastAPI(title="SMART Tenant Service", version="1.0.0", lifespan=lifespan)
 
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
+
+
+@app.exception_handler(Exception)
+async def unhandled_exception_handler(request: Request, exc: Exception) -> JSONResponse:
+    traceback.print_exc()
+    return JSONResponse(
+        status_code=500,
+        content={"success": False, "error": {"code": "INTERNAL_ERROR", "message": str(exc)}},
+    )
 
 app.include_router(tenants.router,   prefix="/api/v1/tenants", tags=["tenants"])
 app.include_router(wizard.router,    prefix="/api/v1/tenants", tags=["wizard"])

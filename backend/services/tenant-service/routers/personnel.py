@@ -13,13 +13,20 @@ import uuid
 from datetime import datetime, timezone
 from typing import List, Optional
 
+import bcrypt as _bcrypt
+
 from fastapi import APIRouter, Depends, HTTPException
-from passlib.context import CryptContext
 from pydantic import BaseModel, EmailStr
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-_pwd_ctx = CryptContext(schemes=["bcrypt"], deprecated="auto")
+
+def _hash_password(password: str) -> str:
+    return _bcrypt.hashpw(password.encode(), _bcrypt.gensalt()).decode()
+
+
+def _verify_password(password: str, hashed: str) -> bool:
+    return _bcrypt.checkpw(password.encode(), hashed.encode())
 
 from dependencies import get_current_user, get_db_session
 from shared.permissions.middleware import require_permission
@@ -334,7 +341,7 @@ async def create_user(
 
     new_user_id = uuid.uuid4()
     cognito_sub = f"local-{new_user_id}"  # placeholder; real sub comes from Cognito at go-live
-    password_hash = _pwd_ctx.hash(body.password) if body.password else None
+    password_hash = _hash_password(body.password) if body.password else None
 
     await db.execute(
         text(
