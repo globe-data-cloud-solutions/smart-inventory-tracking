@@ -161,9 +161,9 @@ function Sidebar({ user, org, tenantName }: { user: SessionUser; org: string; te
   // In gateway mode, SA sidebar shows real API tenants instead of hardcoded demo list
   const { data: apiTenants } = useQuery<ApiTenantRow[]>({
     queryKey: ["tenants-list"],
-    queryFn: () => api.get<{ data: ApiTenantRow[] }>("/api/v1/tenants/").then((r) => r.data),
+    queryFn: () => api.get<ApiTenantRow[]>("/api/v1/tenants/"),
     enabled: isGatewayMode && org === SA_ORG_SLUG && user.role === "SA",
-    staleTime: 30_000,
+    staleTime: 0,
     refetchOnMount: true,
   });
   const tenants = org === SA_ORG_SLUG

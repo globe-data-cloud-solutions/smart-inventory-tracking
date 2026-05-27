@@ -97,15 +97,22 @@ async def create_tenant(
 @router.get("/{tenant_id}", response_model=SuccessResponse[TenantResponse])
 @require_permission(PERMISSIONS.TENANT_VIEW)
 async def get_tenant(
-    tenant_id: uuid.UUID,
+    tenant_id: str,
     user=Depends(get_current_user),
     db: AsyncSession = Depends(get_db_session),
 ) -> SuccessResponse[TenantResponse]:
     from fastapi import HTTPException
     from sqlalchemy import text
-    result = await db.execute(
-        text("SELECT * FROM tenants WHERE id = :id"), {"id": str(tenant_id)}
-    )
+    # Accept both UUID (id) and slug lookups
+    try:
+        uuid.UUID(tenant_id)
+        result = await db.execute(
+            text("SELECT * FROM tenants WHERE id = :id"), {"id": tenant_id}
+        )
+    except ValueError:
+        result = await db.execute(
+            text("SELECT * FROM tenants WHERE slug = :slug"), {"slug": tenant_id}
+        )
     row = result.fetchone()
     if not row:
         raise HTTPException(status_code=404, detail="Tenant not found")

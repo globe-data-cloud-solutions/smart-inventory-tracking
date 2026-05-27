@@ -258,7 +258,7 @@ export default function OrgDashboard() {
   interface ApiTenantRow { id: string; name: string; slug: string | null; organisation_type: string | null }
   const { data: apiTenantList } = useQuery<ApiTenantRow[]>({
     queryKey: ["tenants-list"],
-    queryFn: () => api.get<{ data: ApiTenantRow[] }>("/api/v1/tenants/").then((r) => r.data),
+    queryFn: () => api.get<ApiTenantRow[]>("/api/v1/tenants/"),
     enabled: isGatewayMode && org === SA_ORG_SLUG,
     staleTime: 0,
     refetchOnMount: true,

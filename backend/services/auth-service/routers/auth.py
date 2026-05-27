@@ -331,6 +331,7 @@ async def change_password_by_id(user_id: str, body: ChangePasswordByIdRequest) -
                 ),
                 {"ph": new_hash, "uid": user_id},
             )
+            await db.commit()
     except HTTPException:
         raise
     except Exception as exc:

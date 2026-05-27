@@ -245,23 +245,31 @@ export default function OnboardPage() {
               <FlagBadge key={flag} name={t(`wizard.flags.${flag}`) || flag} enabled={enabled} />
             ))}
           </div>
-          <div className="flex gap-2.5">
-            <button
-              onClick={() => {
-                setStep(1); setResult(null);
-                setForm({ name: "", industry: "", skuLimit: "500", orgType: "", locale: "en",
-                          adminName: "", adminEmail: "", adminPassword: "", adminPasswordConfirm: "" });
-              }}
-              className="flex-1 py-2.5 bg-gray-100 border-none rounded-md text-sm font-semibold cursor-pointer text-gray-700 hover:bg-gray-200 transition-colors"
-            >
-              {t("wizard.onboard_another")}
-            </button>
+          <div className="flex flex-col gap-2.5">
             <Link
-              href="/admin/dashboard"
-              className="flex-1 py-2.5 bg-[#1B4332] rounded-md text-sm font-bold no-underline text-[#FCDD09] flex items-center justify-center hover:bg-[#0f2d1f] transition-colors"
+              href={`/${result.slug}/dashboard`}
+              className="w-full py-3 bg-[#1B4332] rounded-md text-sm font-bold no-underline text-[#FCDD09] flex items-center justify-center hover:bg-[#0f2d1f] transition-colors"
             >
-              {t("wizard.admin_dash")}
+              {t("wizard.view_tenant_dash")} →
             </Link>
+            <div className="flex gap-2.5">
+              <button
+                onClick={() => {
+                  setStep(1); setResult(null);
+                  setForm({ name: "", industry: "", skuLimit: "500", orgType: "", locale: "en",
+                            adminName: "", adminEmail: "", adminPassword: "", adminPasswordConfirm: "" });
+                }}
+                className="flex-1 py-2.5 bg-gray-100 border-none rounded-md text-sm font-semibold cursor-pointer text-gray-700 hover:bg-gray-200 transition-colors"
+              >
+                {t("wizard.onboard_another")}
+              </button>
+              <Link
+                href="/admin/dashboard"
+                className="flex-1 py-2.5 bg-white border border-gray-200 rounded-md text-sm font-semibold no-underline text-gray-700 flex items-center justify-center hover:bg-gray-50 transition-colors"
+              >
+                {t("wizard.admin_dash")}
+              </Link>
+            </div>
           </div>
         </div>
       </div>

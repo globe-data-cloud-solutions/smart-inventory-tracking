@@ -184,7 +184,10 @@
     "admin_email_required": "Imeeliin bulchaa barbaachisaadha.",
     "admin_password_required": "Jecha darbii xiqqaate qubee 8 ta'uu qaba.",
     "admin_password_mismatch": "Jechonni darbii wal hin simatani.",
-    "admin_login_hint": "Imeelii Bulchaa:"
+    "admin_login_hint": "Imeelii Bulchaa:",
+    "admin_dash": "Dasha Bulchaa",
+    "onboard_another": "Hirkattoo Biraa Seensi",
+    "view_tenant_dash": "Dasha Hirkattoo Ilaaladhu"
   },
   "count": {
     "title": "Lakkoofsa Kuusaa",
