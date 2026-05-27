@@ -249,6 +249,26 @@ All form submissions are audit-logged.
 
 ---
 
+### B8 — Multiple NM Routing
+
+Some tenants configure more than one National Manager (NM role, privilege level 8). This is valid because tenants may have parallel divisions (e.g., a factory NM and a distribution NM) that are both modelled as Level 1 or Level 2 nodes in the hierarchy.
+
+**How approval routing works when multiple NMs exist:**
+
+1. **Node-scoped approval**: Approval requests route to the NM whose `authority_scope` (from `get_authority_scope()`) includes the requesting warehouse node. If exactly one NM covers the requesting node, that NM receives the request.
+
+2. **Ambiguous scope (multiple NMs cover the same node)**: When `get_authority_scope()` returns multiple candidates at NM privilege level, the system routes to **all matching NMs in parallel**. The first NM to act (approve or reject) resolves the request; subsequent actions by other NMs are ignored (idempotency key prevents double-processing).
+
+3. **No NM covers the node**: Falls back to `TA` (Tenant Admin, privilege level 9) — the tenant's ultimate authority.
+
+**Frontend display rule**: The transfer detail page shows all pending approver names when multiple NMs are in the routing path, separated by " or " (e.g., "Awaiting approval from Abebe Kebede or Tigist Haile").
+
+**Backend implementation**: `get_approval_routing()` in `approval_service.py` returns a list of `(user_id, role)` tuples. Multiple entries at the same privilege level trigger parallel notification via the outbox (one `ApprovalRequired` event per approver). The approval is resolved when any one approver acts.
+
+**Constraint**: This behaviour only applies when multiple NMs have overlapping authority scopes for the same requesting node. Multiple NMs at different parts of the hierarchy (non-overlapping scopes) each receive only the requests within their own scope.
+
+---
+
 ## §C — Phase 4B Architecture Decisions
 
 ### C1 — Gateway vs BFF Mode

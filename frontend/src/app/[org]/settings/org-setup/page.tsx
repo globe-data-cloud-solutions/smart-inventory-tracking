@@ -20,6 +20,7 @@ interface OrgNode {
   id: string;
   name: string;
   code: string;
+  address?: string | null;
   hierarchy_level: number;
   parent_node_id: string | null;
   is_stock_holding: boolean;
@@ -176,7 +177,7 @@ function LevelsTab({ tenantId }: { tenantId: string }) {
         <table className="w-full text-sm">
           <thead className="bg-gray-50 border-b border-gray-200">
             <tr>
-              <th className="px-3 py-2 text-left text-xs font-semibold text-gray-500 w-12">L#</th>
+              <th className="px-3 py-2 text-left text-xs font-semibold text-gray-500 w-12">No</th>
               <th className="px-3 py-2 text-left text-xs font-semibold text-gray-500">Level Name *</th>
               <th className="px-3 py-2 text-left text-xs font-semibold text-gray-500">Role *</th>
               <th className="px-3 py-2 text-left text-xs font-semibold text-gray-500">Display Label</th>
@@ -285,7 +286,7 @@ function NodeForm({
 
   const [form, setForm] = useState<NodeFormState>(() => ({
     name:              editingNode?.name ?? "",
-    location:          "",
+    location:          editingNode?.address ?? "",
     parent_node_id:    editingNode?.parent_node_id ?? defaultParentId,
     primary_source_id: "",
     is_stock_holding:  editingNode?.is_stock_holding ?? true,
@@ -302,6 +303,7 @@ function NodeForm({
       if (editingNode) {
         await api.patch(`/api/v1/tenants/${tenantId}/nodes/${editingNode.id}`, {
           name: form.name.trim(),
+          address: form.location.trim() || null,
         });
       } else {
         await api.post(`/api/v1/tenants/${tenantId}/nodes`, {
@@ -482,6 +484,9 @@ function TreeTab({ tenantId }: { tenantId: string }) {
             <p className="text-xs text-gray-400 m-0">
               {node.code} · {levelLabel}
             </p>
+            {node.address && (
+              <p className="text-xs text-gray-400 m-0 truncate">📍 {node.address}</p>
+            )}
           </div>
           <div className="flex items-center gap-1 shrink-0">
             {canAddChild && (
@@ -615,9 +620,125 @@ function TreeTab({ tenantId }: { tenantId: string }) {
   );
 }
 
+/* ── Tab 3: Approval Rules ────────────────────────────────────────────────── */
+
+const APPROVAL_DEFAULTS: Record<string, { low: number; medium: number }> = {
+  PRODUCER: { low: 100,  medium: 500   },
+  RETAILER: { low: 500,  medium: 5000  },
+  HYBRID:   { low: 250,  medium: 2000  },
+};
+
+interface ApprovalRule {
+  transaction_type: string;
+  low_threshold: number;
+  medium_threshold: number;
+}
+
+function ApprovalRulesTab({ tenantId }: { tenantId: string }) {
+  const qc = useQueryClient();
+
+  const { data: tenant } = useQuery<{ organisation_type?: string | null }>({
+    queryKey: ["tenant-detail", tenantId],
+    queryFn: () => api.get(`/api/v1/tenants/${tenantId}`),
+    staleTime: 60_000,
+  });
+
+  const orgType = tenant?.organisation_type ?? "PRODUCER";
+  const defaults = APPROVAL_DEFAULTS[orgType] ?? { low: 100, medium: 500 };
+
+  const [rules, setRules] = useState<ApprovalRule[]>([
+    { transaction_type: "inventory:adjust", low_threshold: defaults.low, medium_threshold: defaults.medium },
+    { transaction_type: "inventory:transfer", low_threshold: defaults.low * 2, medium_threshold: defaults.medium * 2 },
+  ]);
+  const [saveOk, setSaveOk] = useState(false);
+  const [saveErr, setSaveErr] = useState<string | null>(null);
+
+  function updateRule(idx: number, patch: Partial<ApprovalRule>) {
+    setRules((prev) => prev.map((r, i) => i === idx ? { ...r, ...patch } : r));
+    setSaveOk(false);
+  }
+
+  const saveMutation = useMutation({
+    mutationFn: () =>
+      api.put(`/api/v1/tenants/${tenantId}/approval-rules`, { rules }),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ["approval-rules", tenantId] });
+      setSaveOk(true);
+      setSaveErr(null);
+    },
+    onError: (e: unknown) => {
+      setSaveErr(e instanceof Error ? e.message : t("common.error"));
+      setSaveOk(false);
+    },
+  });
+
+  return (
+    <div className="space-y-6">
+      <p className="text-sm text-gray-500">
+        Set quantity thresholds that determine approval routing for each transaction type.
+        Below the low threshold, transactions are auto-approved. Between low and medium, WM approves.
+        Above medium, RM or NM approval is required.
+      </p>
+
+      <div className="overflow-x-auto rounded-lg border border-gray-200">
+        <table className="w-full text-sm">
+          <thead className="bg-gray-50 border-b border-gray-200">
+            <tr>
+              <th className="px-4 py-2 text-left text-xs font-semibold text-gray-500">Transaction Type</th>
+              <th className="px-4 py-2 text-left text-xs font-semibold text-gray-500">Auto-approve below</th>
+              <th className="px-4 py-2 text-left text-xs font-semibold text-gray-500">WM → RM above</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-gray-100">
+            {rules.map((rule, idx) => (
+              <tr key={rule.transaction_type} className="hover:bg-gray-50">
+                <td className="px-4 py-2.5">
+                  <code className="text-xs bg-gray-100 px-1.5 py-0.5 rounded text-gray-700">
+                    {rule.transaction_type}
+                  </code>
+                </td>
+                <td className="px-4 py-2.5">
+                  <input
+                    type="number"
+                    min={0}
+                    value={rule.low_threshold}
+                    onChange={(e) => updateRule(idx, { low_threshold: Number(e.target.value) })}
+                    className="w-28 border border-gray-300 rounded px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                  />
+                </td>
+                <td className="px-4 py-2.5">
+                  <input
+                    type="number"
+                    min={0}
+                    value={rule.medium_threshold}
+                    onChange={(e) => updateRule(idx, { medium_threshold: Number(e.target.value) })}
+                    className="w-28 border border-gray-300 rounded px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                  />
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      {saveErr && <p className="text-sm text-red-600">{saveErr}</p>}
+      {saveOk  && <p className="text-sm text-emerald-600 font-medium">Approval rules saved.</p>}
+
+      <button
+        type="button"
+        onClick={() => saveMutation.mutate()}
+        disabled={saveMutation.isPending}
+        className="px-5 py-2 bg-emerald-700 text-white text-sm font-semibold rounded-lg hover:bg-emerald-800 disabled:opacity-50"
+      >
+        {saveMutation.isPending ? t("common.saving") : "Save Rules"}
+      </button>
+    </div>
+  );
+}
+
 /* ── Main page ─────────────────────────────────────────────────────────────── */
 
-type TabId = "levels" | "tree";
+type TabId = "levels" | "tree" | "approval";
 
 export default function OrgSetupPage() {
   const { org: tenantId } = useParams() as { org: string };
@@ -645,10 +766,14 @@ export default function OrgSetupPage() {
         <button type="button" className={tabCls("tree")} onClick={() => setActiveTab("tree")}>
           Organisation Tree
         </button>
+        <button type="button" className={tabCls("approval")} onClick={() => setActiveTab("approval")}>
+          Approval Rules
+        </button>
       </div>
 
-      {activeTab === "levels" && <LevelsTab tenantId={tenantId} />}
-      {activeTab === "tree"   && <TreeTab   tenantId={tenantId} />}
+      {activeTab === "levels"   && <LevelsTab        tenantId={tenantId} />}
+      {activeTab === "tree"     && <TreeTab           tenantId={tenantId} />}
+      {activeTab === "approval" && <ApprovalRulesTab  tenantId={tenantId} />}
     </div>
   );
 }

@@ -18,6 +18,8 @@ export interface SessionUser {
    *  Exchanged asynchronously after login; absent during the first render.
    *  api.ts reads this and sends it as Authorization: Bearer. */
   jwtToken?: string;
+  /** When true, the user must change their password before proceeding. */
+  mustResetPassword?: boolean;
 }
 
 /** SA org slug — used as the first path segment for system administrators. */
@@ -108,7 +110,11 @@ export async function loginWithDevEmail(email: string, password?: string): Promi
       body: JSON.stringify(body),
     });
     if (!res.ok) return null;
-    const data = (await res.json()) as { access_token?: string };
+    const data = (await res.json()) as {
+      access_token?: string;
+      tenant_slug?: string | null;
+      must_reset_password?: boolean;
+    };
     if (!data.access_token) return null;
 
     const claims = decodeJwtPayload(data.access_token);
@@ -118,20 +124,21 @@ export async function loginWithDevEmail(email: string, password?: string): Promi
     const warehouseId = claims.warehouse_id ? String(claims.warehouse_id) : undefined;
     const role        = claims.role         ? String(claims.role)         : "AU";
     const sub         = claims.sub          ? String(claims.sub)          : email;
-    // Use tenant_id as the org slug for live API tenants
-    const orgSlug = tenantId ?? SA_ORG_SLUG;
+    // Prefer the friendly slug returned by auth-service; fall back to tenant_id UUID
+    const orgSlug = (role === "SA") ? SA_ORG_SLUG : (data.tenant_slug ?? tenantId ?? SA_ORG_SLUG);
 
     const session: SessionUser = {
-      id:         sub,
+      id:                 sub,
       email,
-      name:       email.split("@")[0] ?? email,
-      role:       role as Role,
+      name:               email.split("@")[0] ?? email,
+      role:               role as Role,
       orgSlug,
       tenantId,
-      tenantName: tenantId,
-      tenantSlug: orgSlug,
+      tenantName:         tenantId,   // layout.tsx will overwrite this async with the real name
+      tenantSlug:         data.tenant_slug ?? orgSlug,
       warehouseId,
-      jwtToken:   data.access_token,
+      jwtToken:           data.access_token,
+      mustResetPassword:  data.must_reset_password ?? false,
     };
     store()?.setItem(SESSION_KEY, JSON.stringify(session));
     return session;

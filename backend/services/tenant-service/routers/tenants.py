@@ -1,3 +1,4 @@
+import re
 import uuid
 from typing import List
 
@@ -9,6 +10,14 @@ from shared.permissions.middleware import require_permission
 from shared.permissions.registry import PERMISSIONS
 from shared.utils.responses import SuccessResponse
 from schemas.tenant import TenantCreateRequest, TenantResponse
+
+
+def _slugify(name: str) -> str:
+    slug = name.lower().strip()
+    slug = re.sub(r"[^\w\s-]", "", slug)
+    slug = re.sub(r"[\s_]+", "-", slug)
+    slug = re.sub(r"-+", "-", slug).strip("-")
+    return slug[:80]
 
 router = APIRouter()
 
@@ -22,7 +31,7 @@ async def list_tenants(
     from sqlalchemy import text
     result = await db.execute(
         text(
-            "SELECT id, name, organisation_type, onboarding_complete, default_locale, is_active "
+            "SELECT id, name, slug, organisation_type, onboarding_complete, default_locale, is_active "
             "FROM tenants WHERE is_active = true ORDER BY created_at DESC"
         )
     )
@@ -32,6 +41,7 @@ async def list_tenants(
             TenantResponse(
                 id=row.id,
                 name=row.name,
+                slug=row.slug,
                 organisation_type=row.organisation_type,
                 onboarding_complete=row.onboarding_complete,
                 default_locale=row.default_locale,
@@ -51,14 +61,21 @@ async def create_tenant(
 ) -> SuccessResponse[TenantResponse]:
     from sqlalchemy import text
     tenant_id = uuid.uuid4()
+    base_slug = _slugify(body.name) or str(tenant_id)[:8]
+    # Ensure uniqueness: append short UUID suffix on collision
+    slug = base_slug
+    row = await db.execute(text("SELECT id FROM tenants WHERE slug = :s"), {"s": slug})
+    if row.fetchone():
+        slug = f"{base_slug}-{str(tenant_id)[:8]}"
     await db.execute(
         text(
-            "INSERT INTO tenants (id, name, plan_id, default_locale, organisation_type) "
-            "VALUES (:id, :name, :plan_id, :locale, :org_type)"
+            "INSERT INTO tenants (id, name, slug, plan_id, default_locale, organisation_type) "
+            "VALUES (:id, :name, :slug, :plan_id, :locale, :org_type)"
         ),
         {
             "id": str(tenant_id),
             "name": body.name,
+            "slug": slug,
             "plan_id": str(body.plan_id),
             "locale": body.default_locale,
             "org_type": body.organisation_type,
@@ -68,6 +85,7 @@ async def create_tenant(
         data=TenantResponse(
             id=tenant_id,
             name=body.name,
+            slug=slug,
             organisation_type=body.organisation_type,
             onboarding_complete=False,
             default_locale=body.default_locale,
@@ -95,6 +113,7 @@ async def get_tenant(
         data=TenantResponse(
             id=row.id,
             name=row.name,
+            slug=getattr(row, "slug", None),
             organisation_type=row.organisation_type,
             onboarding_complete=row.onboarding_complete,
             default_locale=row.default_locale,

@@ -65,6 +65,7 @@ class OrgNodeOut(BaseModel):
     tenant_id: uuid.UUID
     name: str
     code: str
+    address: Optional[str] = None
     hierarchy_level: int
     level_name: Optional[str]
     is_stock_holding: bool
@@ -138,6 +139,7 @@ async def _build_tree(
                 tenant_id=node["tenant_id"],
                 name=node["name"],
                 code=node["code"],
+                address=node.get("address"),
                 hierarchy_level=node["hierarchy_level"],
                 level_name=level_names.get(node["hierarchy_level"]),
                 is_stock_holding=node["is_stock_holding"],
@@ -281,7 +283,7 @@ async def list_org_nodes(
     rows = await db.execute(
         text(
             "SELECT id, tenant_id, name, code, hierarchy_level, parent_node_id, "
-            "is_stock_holding, is_active "
+            "is_stock_holding, is_active, address "
             "FROM organization_node "
             "WHERE tenant_id = :tid AND is_active = true "
             "ORDER BY hierarchy_level, name"
@@ -298,6 +300,7 @@ async def list_org_nodes(
             "parent_node_id": r.parent_node_id,
             "is_stock_holding": r.is_stock_holding,
             "is_active": r.is_active,
+            "address": getattr(r, "address", None),
             "manager_user_id": None,
         }
         for r in rows.fetchall()
@@ -358,8 +361,8 @@ async def create_org_node(
             """
             INSERT INTO organization_node
                 (id, tenant_id, name, code, hierarchy_level, parent_node_id,
-                 is_stock_holding, is_active)
-            VALUES (:id, :tid, :name, :code, :level, :parent, :stock, true)
+                 is_stock_holding, address, is_active)
+            VALUES (:id, :tid, :name, :code, :level, :parent, :stock, :address, true)
             """
         ),
         {
@@ -370,6 +373,7 @@ async def create_org_node(
             "level": body.level_number,
             "parent": str(body.parent_node_id) if body.parent_node_id else None,
             "stock": body.is_stock_holding,
+            "address": body.address,
         },
     )
 
@@ -428,7 +432,7 @@ async def update_org_node(
     row = await db.execute(
         text(
             "SELECT id, tenant_id, name, code, hierarchy_level, parent_node_id, "
-            "is_stock_holding, is_active "
+            "is_stock_holding, is_active, address "
             "FROM organization_node "
             "WHERE id = :id AND tenant_id = :tid AND is_active = true"
         ),
@@ -440,16 +444,18 @@ async def update_org_node(
 
     new_name = body.name if body.name is not None else existing.name
     new_stock = body.is_stock_holding if body.is_stock_holding is not None else existing.is_stock_holding
+    new_address = body.address if body.address is not None else getattr(existing, "address", None)
 
     await db.execute(
         text(
             "UPDATE organization_node SET name = :name, is_stock_holding = :stock, "
-            "updated_at = now() "
+            "address = :address, updated_at = now() "
             "WHERE id = :id AND tenant_id = :tid"
         ),
         {
             "name": new_name,
             "stock": new_stock,
+            "address": new_address,
             "id": str(node_id),
             "tid": str(tenant_id),
         },
@@ -466,6 +472,7 @@ async def update_org_node(
             tenant_id=tenant_id,
             name=new_name,
             code=existing.code,
+            address=new_address,
             hierarchy_level=existing.hierarchy_level,
             level_name=level_name,
             is_stock_holding=new_stock,

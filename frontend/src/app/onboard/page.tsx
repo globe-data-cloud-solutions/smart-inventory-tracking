@@ -32,6 +32,7 @@ interface WizardResult {
 interface TenantCreateResponse {
   id: string;
   name: string;
+  slug: string | null;
   organisation_type: string | null;
   onboarding_complete: boolean;
   default_locale: string;
@@ -43,12 +44,6 @@ const FLAG_DEFAULTS: Record<OrgType, Record<string, boolean>> = {
   PRODUCER: { LOGISTICS: false, AI_ANALYTICS: false, ADVANCED_BATCH_TRACKING: true,  FLEET_MANAGEMENT: false },
   RETAILER: { LOGISTICS: true,  AI_ANALYTICS: true,  ADVANCED_BATCH_TRACKING: false, FLEET_MANAGEMENT: true  },
   HYBRID:   { LOGISTICS: true,  AI_ANALYTICS: true,  ADVANCED_BATCH_TRACKING: true,  FLEET_MANAGEMENT: true  },
-};
-
-const APPROVAL_DEFAULTS: Record<OrgType, { low: number; medium: number }> = {
-  PRODUCER: { low: 100,  medium: 500   },
-  RETAILER: { low: 500,  medium: 5000  },
-  HYBRID:   { low: 250,  medium: 2000  },
 };
 
 /* ORG_META color is per-org-type runtime data — style= required for border/bg alpha */
@@ -199,7 +194,7 @@ export default function OnboardPage() {
       setResult({
         id:            tenantData.id,
         name:          tenantData.name,
-        slug:          tenantData.id,
+        slug:          tenantData.slug ?? tenantData.id,
         org_type:      form.orgType as OrgType,
         feature_flags: FLAG_DEFAULTS[form.orgType as OrgType],
         adminEmail:    form.adminEmail.trim(),
@@ -273,8 +268,7 @@ export default function OnboardPage() {
     );
   }
 
-  const flags    = form.orgType ? FLAG_DEFAULTS[form.orgType] : null;
-  const approvals = form.orgType ? APPROVAL_DEFAULTS[form.orgType] : null;
+  const flags = form.orgType ? FLAG_DEFAULTS[form.orgType] : null;
 
   return (
     <div className="min-h-screen bg-gray-100">
@@ -513,23 +507,9 @@ export default function OnboardPage() {
                   </div>
                 )}
 
-                {approvals && (
-                  <div className="p-4 bg-gray-50 rounded-lg border border-gray-200">
-                    <p className="font-bold text-[13px] text-gray-700 m-0 mb-2">{t("wizard.approval_thresholds")}</p>
-                    <div className="flex gap-4">
-                      {[
-                        { level: t("wizard.auto_approve_below"), value: approvals.low,    color: "#059669" },
-                        { level: t("wizard.wm_rm_above"),        value: approvals.medium, color: "#D97706" },
-                      ].map((th) => (
-                        <div key={th.level} className="flex-1 p-2.5 bg-white rounded-md border border-gray-200 text-center">
-                          {/* Per-threshold color — runtime data value */}
-                          <p className="text-lg font-extrabold m-0" style={{ color: th.color }}>{th.value.toLocaleString()}</p>
-                          <p className="text-[11px] text-gray-400 mt-1 mb-0">{th.level}</p>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
+                <p className="text-xs text-gray-400 m-0">
+                  {t("wizard.approval_rules_hint")}
+                </p>
               </div>
             )}
 

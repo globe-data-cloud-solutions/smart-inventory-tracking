@@ -28,6 +28,11 @@ export default function LoginPage() {
       setLoading(false);
       return;
     }
+    // Force password reset before proceeding
+    if (session.mustResetPassword) {
+      router.push(`/change-password?userId=${session.id}`);
+      return;
+    }
     // Return to the intended URL, or route to the user's org dashboard
     const from = searchParams.get("from");
     const dest = from && (from.startsWith("/") && !from.startsWith("/login"))

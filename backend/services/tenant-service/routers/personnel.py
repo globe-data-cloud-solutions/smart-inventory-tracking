@@ -348,8 +348,8 @@ async def create_user(
             """
             INSERT INTO users
                 (id, tenant_id, cognito_sub, email, full_name, role,
-                 warehouse_id, password_hash, is_active)
-            VALUES (:id, :tid, :sub, :email, :name, :role, :wh, :ph, true)
+                 warehouse_id, password_hash, must_reset_password, is_active)
+            VALUES (:id, :tid, :sub, :email, :name, :role, :wh, :ph, true, true)
             """
         ),
         {

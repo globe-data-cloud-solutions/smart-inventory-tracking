@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { QueryClient, QueryClientProvider, useQuery } from "@tanstack/react-query";
 import { getSession, logout, SA_ORG_SLUG, type SessionUser } from "@/lib/demo-auth";
 import { DEMO_TENANTS, getLowStockProducts } from "@/lib/demo-data";
 import { api } from "@/lib/api";
@@ -150,12 +150,25 @@ function Logo({ size = 28 }: { size?: number }) {
   );
 }
 
+interface ApiTenantRow { id: string; name: string; slug: string | null; organisation_type: string | null }
+
 /* ── Sidebar nav ──────────────────────────────────────────────────────────── */
 function Sidebar({ user, org, tenantName }: { user: SessionUser; org: string; tenantName?: string }) {
   const router = useRouter();
 
   const navItems = org === SA_ORG_SLUG ? SA_NAV : TENANT_NAV;
-  const tenants  = org === SA_ORG_SLUG ? DEMO_TENANTS : [];
+
+  // In gateway mode, SA sidebar shows real API tenants instead of hardcoded demo list
+  const { data: apiTenants } = useQuery<ApiTenantRow[]>({
+    queryKey: ["tenants-list"],
+    queryFn: () => api.get<{ data: ApiTenantRow[] }>("/api/v1/tenants/").then((r) => r.data),
+    enabled: isGatewayMode && org === SA_ORG_SLUG && user.role === "SA",
+    staleTime: 30_000,
+    refetchOnMount: true,
+  });
+  const tenants = org === SA_ORG_SLUG
+    ? (isGatewayMode && apiTenants ? [] : DEMO_TENANTS)   // SA sidebar uses API or demo
+    : [];
 
   return (
     <aside className="fixed top-[60px] left-0 bottom-0 w-60 bg-[#0f2d1f] flex flex-col z-40 border-r border-white/[0.06] overflow-hidden">
@@ -182,6 +195,8 @@ function Sidebar({ user, org, tenantName }: { user: SessionUser; org: string; te
       {/* Navigation */}
       <nav className="flex-1 overflow-y-auto p-2">
         {navItems.map((item, idx) => {
+          // Role-restricted items: hide if user's role is not in the allowed list
+          if (item.roles && !item.roles.includes(user.role)) return null;
           if (item.type === "section") {
             return (
               <p key={idx} className="text-[10px] font-bold uppercase tracking-widest text-white/30 px-2.5 pt-3.5 pb-1 m-0">
@@ -202,7 +217,26 @@ function Sidebar({ user, org, tenantName }: { user: SessionUser; org: string; te
           );
         })}
 
-        {/* SA: quick links to all tenants */}
+        {/* SA gateway mode: real API tenants */}
+        {isGatewayMode && apiTenants && apiTenants.length > 0 && (
+          <>
+            <p className="text-[10px] font-bold uppercase tracking-widest text-white/30 px-2.5 pt-3.5 pb-1 m-0">
+              {t("dashboard.tenants_heading")}
+            </p>
+            {apiTenants.map((ten) => (
+              <Link
+                key={ten.id}
+                href={`/${ten.slug ?? ten.id}/dashboard`}
+                className="flex items-center gap-2.5 px-2.5 py-2 rounded text-sm font-medium no-underline mb-px text-white/65 hover:bg-white/[0.08] hover:text-white/95 transition-all"
+              >
+                <span className="text-[15px] leading-none">🏢</span>
+                {ten.name}
+              </Link>
+            ))}
+          </>
+        )}
+
+        {/* SA demo mode: hardcoded demo tenants */}
         {tenants.length > 0 && (
           <>
             <p className="text-[10px] font-bold uppercase tracking-widest text-white/30 px-2.5 pt-3.5 pb-1 m-0">
@@ -312,11 +346,16 @@ export default function OrgLayout({ children }: { children: React.ReactNode }) {
   }
 
   const firstName = user.name.split(" ")[0] ?? user.name;
-  const demoTenant    = org !== SA_ORG_SLUG ? DEMO_TENANTS.find((ten) => ten.slug === org) : null;
-  // For API-created tenants not in DEMO_TENANTS, build a minimal display object
-  // apiTenantName is populated async after login; falls back to user.tenantName (may be UUID) then org
+  const demoTenant = org !== SA_ORG_SLUG ? DEMO_TENANTS.find((ten) => ten.slug === org) : null;
+  // For API-created tenants, show empty string while the real name is loading async.
+  // Never fall back to the raw UUID — it flashes confusingly in the header breadcrumb.
+  const resolvedName = apiTenantName ?? (
+    user.tenantName && !user.tenantName.match(/^[0-9a-f-]{36}$/i)
+      ? user.tenantName
+      : null
+  );
   const viewingTenant = demoTenant ?? (org !== SA_ORG_SLUG
-    ? { name: apiTenantName ?? user.tenantName ?? org, logo: "🏢", slug: org }
+    ? { name: resolvedName ?? "", logo: "🏢", slug: org }
     : null);
 
   return (
@@ -396,7 +435,11 @@ export default function OrgLayout({ children }: { children: React.ReactNode }) {
 }
 
 /* ── Nav definitions ──────────────────────────────────────────────────────── */
-const SA_NAV = [
+type NavItem =
+  | { type: "section"; label: string; roles?: string[] }
+  | { type: "link"; icon: string; label: string; page: string; roles?: string[] };
+
+const SA_NAV: NavItem[] = [
   { type: "section", label: "Overview" },
   { type: "link", icon: "🏠", label: "Dashboard",   page: "dashboard"   },
   { type: "section", label: "System" },
@@ -404,7 +447,7 @@ const SA_NAV = [
   { type: "link", icon: "📋", label: "Audit Log",   page: "audit-log"   },
 ];
 
-const TENANT_NAV = [
+const TENANT_NAV: NavItem[] = [
   { type: "section", label: "Inventory" },
   { type: "link", icon: "🏠", label: "Dashboard",       page: "dashboard"         },
   { type: "link", icon: "📦", label: "Inventory",       page: "inventory"         },
@@ -420,7 +463,7 @@ const TENANT_NAV = [
   { type: "link", icon: "📈", label: "Analytics",       page: "analytics"         },
   { type: "link", icon: "📊", label: "Reports",         page: "reports"           },
   { type: "link", icon: "📋", label: "Audit Log",       page: "audit-log"         },
-  { type: "section", label: "Settings" },
-  { type: "link", icon: "🏢", label: "Org Setup",       page: "settings/org-setup"  },
-  { type: "link", icon: "👥", label: "Personnel",       page: "settings/personnel"  },
+  { type: "section", label: "Settings", roles: ["SA", "TA"] },
+  { type: "link", icon: "🏢", label: "Org Setup",       page: "settings/org-setup",  roles: ["SA", "TA"] },
+  { type: "link", icon: "👥", label: "Personnel",       page: "settings/personnel",  roles: ["SA", "TA"] },
 ];

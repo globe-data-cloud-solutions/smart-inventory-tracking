@@ -32,6 +32,7 @@ class TenantCreateRequest(BaseModel):
 class TenantResponse(BaseModel):
     id: uuid.UUID
     name: str
+    slug: Optional[str] = None
     organisation_type: Optional[str]
     onboarding_complete: bool
     default_locale: str

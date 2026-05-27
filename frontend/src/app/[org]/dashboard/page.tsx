@@ -255,10 +255,75 @@ export default function OrgDashboard() {
     staleTime: 60_000,
   });
 
+  interface ApiTenantRow { id: string; name: string; slug: string | null; organisation_type: string | null }
+  const { data: apiTenantList } = useQuery<ApiTenantRow[]>({
+    queryKey: ["tenants-list"],
+    queryFn: () => api.get<{ data: ApiTenantRow[] }>("/api/v1/tenants/").then((r) => r.data),
+    enabled: isGatewayMode && org === SA_ORG_SLUG,
+    staleTime: 0,
+    refetchOnMount: true,
+  });
+
   if (!user) return null;
 
-  // ── SA home (/admin/dashboard) — always demo ───────────────────────────────
+  // ── SA home (/admin/dashboard) ─────────────────────────────────────────────
   if (org === SA_ORG_SLUG) {
+    // Gateway mode: show real API tenants
+    if (isGatewayMode) {
+      const tenantCount = apiTenantList?.length ?? 0;
+      return (
+        <div className="p-8">
+          <SummaryCard
+            title={t("dashboard.platform_overview")}
+            subtitle={t("dashboard.sa_subtitle")}
+            accentColor="#FCDD09"
+            rows={[
+              { label: t("dashboard.stat_tenants"), value: tenantCount },
+              { label: t("dashboard.stat_users"),   value: "—" },
+              { label: t("table.skus"),             value: "—" },
+              { label: t("dashboard.stat_units"),   value: "—" },
+            ]}
+          />
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="text-base font-bold text-[#0f2d1f] m-0">{t("dashboard.tenants_heading")}</h3>
+            <Link
+              href="/onboard"
+              className="px-4 py-2 bg-eth-gold text-[#0f2d1f] font-bold text-sm rounded no-underline"
+            >
+              {t("wizard.onboard_btn")}
+            </Link>
+          </div>
+          {(!apiTenantList || apiTenantList.length === 0) && (
+            <p className="text-gray-400 text-sm">{t("common.no_data")}</p>
+          )}
+          <div className="grid grid-cols-2 gap-6">
+            {(apiTenantList ?? []).map((ten) => {
+              const slug = ten.slug ?? ten.id;
+              return (
+                <Link key={ten.id} href={`/${slug}/dashboard`} className="no-underline">
+                  <div className="bg-white border border-gray-200 rounded overflow-hidden hover:shadow-md transition-shadow">
+                    <div className="px-5 py-4 flex items-center gap-3 bg-[#1B4332]">
+                      <span className="text-3xl">🏢</span>
+                      <div>
+                        <p className="font-bold text-base text-white m-0">{ten.name}</p>
+                        <p className="text-xs text-white/75 m-0">{ten.organisation_type ?? "—"}</p>
+                      </div>
+                    </div>
+                    <div className="px-5 py-2.5 border-t border-gray-100 bg-gray-50">
+                      <span className="text-xs font-bold text-emerald-700">
+                        /{slug}/dashboard →
+                      </span>
+                    </div>
+                  </div>
+                </Link>
+              );
+            })}
+          </div>
+        </div>
+      );
+    }
+
+    // Demo mode: hardcoded tenant data with branding
     const totalLoc   = DEMO_TENANTS.reduce((a, ten) => a + ten.warehouses.length, 0);
     const totalSKUs  = DEMO_TENANTS.reduce((a, ten) => a + ten.products.length, 0);
     const totalUnits = DEMO_TENANTS.reduce(
