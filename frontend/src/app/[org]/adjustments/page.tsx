@@ -72,18 +72,22 @@ export default function AdjustmentsPage() {
   const user           = getSession();
   const qc             = useQueryClient();
   const [showLegend, setShowLegend] = useState(false);
+  const isGatewayMode  = !!process.env.NEXT_PUBLIC_API_URL;
 
-  if (org === SA_ORG_SLUG) return <p className="p-8 text-gray-500">{t("common.no_data")}</p>;
-  const tenant = DEMO_TENANTS.find((ten) => ten.slug === org);
-  if (!tenant || !user) return <p className="p-8 text-gray-500">{t("common.no_data")}</p>;
-
+  // Hook must be called unconditionally — before any early returns
   const { data: apiAdj = [] } = useQuery<AdjRecord[]>({
     queryKey: ["adjustments", org],
     queryFn:  () => api.get<AdjRecord[]>("/api/v1/inventory/adjustments"),
+    enabled:  isGatewayMode && org !== SA_ORG_SLUG,
     staleTime: 0,
   });
 
-  const seedAdj = buildSeedAdj(tenant);
+  if (org === SA_ORG_SLUG) return <p className="p-8 text-gray-500">{t("common.no_data")}</p>;
+  const tenant = DEMO_TENANTS.find((ten) => ten.slug === org);
+  if (!tenant && !isGatewayMode) return <p className="p-8 text-gray-500">{t("common.no_data")}</p>;
+  if (!user) return <p className="p-8 text-gray-500">{t("common.no_data")}</p>;
+
+  const seedAdj = tenant ? buildSeedAdj(tenant) : [];
   const allAdj: AdjRecord[] = [...apiAdj, ...seedAdj];
 
   // Bug 2: WM sees only adjustments for their own warehouse; managers see all
@@ -150,7 +154,7 @@ export default function AdjustmentsPage() {
       <div className="mb-4 flex items-start justify-between flex-wrap gap-3">
         <div>
           <h2 className="text-2xl font-bold text-[#0f2d1f] m-0">{t("adjustment.title")}</h2>
-          <p className="text-sm text-gray-500 mt-1">{tenant.name} · {t("adjustment.title")}</p>
+          <p className="text-sm text-gray-500 mt-1">{tenant?.name ?? org} · {t("adjustment.title")}</p>
         </div>
         <div className="flex items-center gap-2">
           <button
@@ -160,7 +164,7 @@ export default function AdjustmentsPage() {
           >
             {showLegend ? t("adjustment.threshold_hide") : t("adjustment.threshold_show")} ⓘ
           </button>
-          <NewAdjustmentPanel products={tenant.products} warehouses={tenant.warehouses} orgSlug={org} />
+          <NewAdjustmentPanel products={tenant?.products ?? []} warehouses={tenant?.warehouses ?? []} orgSlug={org} />
         </div>
       </div>
 
@@ -218,7 +222,7 @@ export default function AdjustmentsPage() {
 
       {/* Full adjustments table */}
       <div className="bg-white border border-gray-200 rounded overflow-hidden">
-        <div className="h-[3px]" style={{ background: tenant.color }} />
+        <div className="h-[3px]" style={{ background: tenant?.color ?? "#1B4332" }} />
         <div className="overflow-x-auto">
           <table className="w-full border-collapse text-sm">
             <thead>

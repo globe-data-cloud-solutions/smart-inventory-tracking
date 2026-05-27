@@ -824,6 +824,19 @@
     "no_active_assignments": "No active assignments.",
     "expired_assignments": "Expired Assignments",
     "deactivate": "Deactivate",
-    "reactivate": "Reactivate"
+    "reactivate": "Reactivate",
+    "no_facility_assigned": "No facility assigned (assign later)"
+  },
+  "approval_rules": {
+    "description": "Set quantity thresholds that determine approval routing. Below the low threshold, transactions are auto-approved. Between low and medium, WM approves. Above medium, RM or NM approval is required.",
+    "col_type": "Transaction Type",
+    "col_low": "Auto-approve below",
+    "col_medium": "WM → RM above",
+    "save_button": "Save Rules",
+    "saved": "Approval rules saved.",
+    "type": {
+      "inventory_adjust": "Adjustment",
+      "inventory_transfer": "Transfer"
+    }
   }
 }

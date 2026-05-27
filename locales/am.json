@@ -569,6 +569,19 @@
     "no_active_assignments": "No active assignments.",
     "expired_assignments": "Expired Assignments",
     "deactivate": "Deactivate",
-    "reactivate": "Reactivate"
+    "reactivate": "Reactivate",
+    "no_facility_assigned": "ምንም ቦታ አልተሰጠም (ኋላ ላይ ይመድቡ)"
+  },
+  "approval_rules": {
+    "description": "ለእያንዳንዱ የግብይት አይነት የፍቃድ ወረፋ የሚወስኑ የቁጥር ደረጃዎችን ያቀናብሩ።",
+    "col_type": "የግብይት አይነት",
+    "col_low": "ከዚህ በታች ራስ-ፈቃድ",
+    "col_medium": "WM → RM ከዚህ በላይ",
+    "save_button": "ደንቦችን አስቀምጥ",
+    "saved": "የፈቃድ ደንቦች ተቀምጠዋል።",
+    "type": {
+      "inventory_adjust": "ማስተካከያ",
+      "inventory_transfer": "ዝውውር"
+    }
   }
 }

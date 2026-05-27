@@ -457,6 +457,19 @@
     "no_active_assignments": "No active assignments.",
     "expired_assignments": "Expired Assignments",
     "deactivate": "Deactivate",
-    "reactivate": "Reactivate"
+    "reactivate": "Reactivate",
+    "no_facility_assigned": "Bakka hin kennamne (booda ramadi)"
+  },
+  "approval_rules": {
+    "description": "Gosoota hojii hunda dhaaf ramaddii hayyamaa murteessu gatii qabsiisi.",
+    "col_type": "Gosa Hojii",
+    "col_low": "Gaditti of-hayyamuu",
+    "col_medium": "WM → RM olitti",
+    "save_button": "Seerota Kuusi",
+    "saved": "Seerri hayyamaa kuufameera.",
+    "type": {
+      "inventory_adjust": "Sirreessaa",
+      "inventory_transfer": "Dabarsaa"
+    }
   }
 }

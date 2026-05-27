@@ -34,14 +34,14 @@ export default function ProductsPage() {
   const { data: apiProducts = [] } = useQuery<ApiProduct[]>({
     queryKey: ["products", org],
     queryFn:  () => api.get<ApiProduct[]>("/api/v1/products"),
-    enabled:  !!tenant && org !== SA_ORG_SLUG,
+    enabled:  org !== SA_ORG_SLUG,
     staleTime: 0,
   });
 
   const { data: inventoryStock = [] } = useQuery<StockItem[]>({
     queryKey: ["inventory-stock", org],
     queryFn:  () => api.get<StockItem[]>("/api/v1/inventory/analytics/stock"),
-    enabled:  isGatewayMode && !!tenant && org !== SA_ORG_SLUG,
+    enabled:  isGatewayMode && org !== SA_ORG_SLUG,
     staleTime: 0,
     refetchInterval: 30000,
   });
@@ -57,11 +57,12 @@ export default function ProductsPage() {
   }, [inventoryStock]);
 
   if (org === SA_ORG_SLUG) return <p className="p-8 text-gray-500">{t("common.no_data")}</p>;
-  if (!tenant)             return <p className="p-8 text-gray-500">{t("common.no_data")}</p>;
+  // In demo mode without a matching demo tenant, there is nothing to show
+  if (!tenant && !isGatewayMode) return <p className="p-8 text-gray-500">{t("common.no_data")}</p>;
 
   // In gateway mode: show only real API products with real balances from inventory analytics.
   // In BFF mode: show demo products with Zustand-adjusted balances + any new API products.
-  const demoRows: Row[] = isGatewayMode ? [] : tenant.products.map((p) => ({
+  const demoRows: Row[] = (isGatewayMode || !tenant) ? [] : tenant.products.map((p) => ({
     id: p.id, sku: p.sku, name: p.name, category: p.category, unit: p.unit, packSize: "—",
     // Sum getOnHand across every warehouse — identical for all users regardless of their
     // warehouse_id (CLAUDE.md §27: never filter by the viewing user's warehouse).
@@ -86,8 +87,8 @@ export default function ProductsPage() {
         <div>
           <h2 className="text-2xl font-bold text-[#0f2d1f] m-0">{t("nav.products")}</h2>
           <p className="text-sm text-gray-500 mt-1">
-            {tenant.name} · {total} {t("table.skus")}
-            {!isGatewayMode && apiProducts.length > 0 && (
+            {tenant?.name ?? org} · {total} {t("table.skus")}
+            {!isGatewayMode && tenant && apiProducts.length > 0 && (
               <span className="ml-2 text-[11px] font-bold bg-green-100 text-green-800 px-1.5 py-0.5 rounded-full">
                 {apiProducts.length} new
               </span>
@@ -98,7 +99,7 @@ export default function ProductsPage() {
       </div>
 
       <div className="bg-white border border-gray-200 rounded overflow-hidden">
-        <div className="h-[3px]" style={{ background: tenant.color }} />
+        <div className="h-[3px]" style={{ background: tenant?.color ?? "#1B4332" }} />
         <div className="overflow-x-auto">
           <table className="w-full border-collapse text-sm">
             <thead>
@@ -109,6 +110,13 @@ export default function ProductsPage() {
               </tr>
             </thead>
             <tbody>
+              {all.length === 0 && (
+                <tr>
+                  <td colSpan={COLS.length} className="px-4 py-10 text-center text-sm text-gray-400">
+                    {t("common.no_data")}
+                  </td>
+                </tr>
+              )}
               {all.map((p, idx) => (
                 <tr key={p.id} className={`border-b border-gray-100 ${idx % 2 === 0 ? "bg-white" : "bg-gray-50"}`}>
                   <td className="px-4 py-2.5 font-mono text-[11px] text-gray-400">

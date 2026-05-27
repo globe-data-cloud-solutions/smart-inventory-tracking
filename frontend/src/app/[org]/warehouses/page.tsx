@@ -85,9 +85,10 @@ export default function WarehousesPage() {
   if (org === SA_ORG_SLUG) return <p className="p-8 text-gray-500">{t("common.no_data")}</p>;
 
   const tenant = DEMO_TENANTS.find((ten) => ten.slug === org);
-  if (!tenant) return <p className="p-8 text-gray-500">{t("common.no_data")}</p>;
+  const isGatewayMode = !!process.env.NEXT_PUBLIC_API_URL;
 
-  const isGatewayMode = stockData.length > 0;
+  // In demo mode without a matching tenant, nothing to show
+  if (!tenant && !isGatewayMode) return <p className="p-8 text-gray-500">{t("common.no_data")}</p>;
 
   // ── Gateway mode: build rows from real API data, keyed by UUID ────────────
   let gatewayRows: GatewayWarehouseRow[] = [];
@@ -120,19 +121,19 @@ export default function WarehousesPage() {
   }
 
   // ── Demo mode: use tenant.warehouses with hierarchy sort ──────────────────
-  const sorted = isGatewayMode ? [] : sortByHierarchy(tenant.warehouses);
+  const sorted = isGatewayMode || !tenant ? [] : sortByHierarchy(tenant.warehouses);
 
-  const warehouseCount = isGatewayMode ? gatewayRows.length : tenant.warehouses.length;
+  const warehouseCount = isGatewayMode ? gatewayRows.length : (tenant?.warehouses.length ?? 0);
 
   return (
     <div className="p-8">
       <div className="mb-6">
         <h2 className="text-2xl font-bold text-[#0f2d1f] m-0">{t("warehouses.title")}</h2>
-        <p className="text-sm text-gray-500 mt-1">{tenant.name} · {warehouseCount} {t("warehouses.locations")}</p>
+        <p className="text-sm text-gray-500 mt-1">{tenant?.name ?? org} · {warehouseCount} {t("warehouses.locations")}</p>
       </div>
 
       <div className="bg-white border border-gray-200 rounded overflow-hidden">
-        <div className="h-[3px]" style={{ background: tenant.color }} />
+        <div className="h-[3px]" style={{ background: tenant?.color ?? "#1B4332" }} />
         <table className="w-full border-collapse text-sm">
           <thead>
             <tr className="bg-gray-50 border-b-2 border-gray-200">
@@ -142,6 +143,13 @@ export default function WarehousesPage() {
             </tr>
           </thead>
           <tbody>
+            {isGatewayMode && gatewayRows.length === 0 && (
+              <tr>
+                <td colSpan={6} className="px-4 py-10 text-center text-sm text-gray-400">
+                  {t("common.no_data")}
+                </td>
+              </tr>
+            )}
             {isGatewayMode ? (
               gatewayRows.map((row, idx) => {
                 const typeClass = TYPE_CLASS[row.type] ?? "bg-gray-100 text-gray-500";
@@ -162,11 +170,11 @@ export default function WarehousesPage() {
               })
             ) : (
               sorted.map((w, idx) => {
-                const whUnits = tenant.products.reduce((a, p) => a + (p.stock[w.id] ?? 0), 0);
-                const whSKUs  = tenant.products.filter((p) => (p.stock[w.id] ?? 0) > 0).length;
+                const whUnits = tenant?.products.reduce((a, p) => a + (p.stock[w.id] ?? 0), 0) ?? 0;
+                const whSKUs  = tenant?.products.filter((p) => (p.stock[w.id] ?? 0) > 0).length ?? 0;
                 const typeClass = TYPE_CLASS[w.type] ?? "bg-gray-100 text-gray-500";
-                const manager   = tenant.users.find((u) => u.warehouseId === w.id);
-                const depth     = getDepth(w.id, tenant.warehouses);
+                const manager   = tenant?.users.find((u) => u.warehouseId === w.id);
+                const depth     = getDepth(w.id, tenant?.warehouses ?? []);
                 return (
                   <tr key={w.id} className={`border-b border-gray-100 ${idx % 2 === 0 ? "bg-white" : "bg-gray-50"}`}>
                     {/* indent is dynamic (depth * 24px) — must use style for this one property */}

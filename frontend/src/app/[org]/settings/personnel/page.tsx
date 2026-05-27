@@ -150,7 +150,7 @@ function AddUserPanel({
   }
 
   async function submit() {
-    if (!form.name.trim() || !form.email.trim() || !form.facility_id) {
+    if (!form.name.trim() || !form.email.trim()) {
       setError(t("personnel.fill_required_fields"));
       return;
     }
@@ -216,13 +216,13 @@ function AddUserPanel({
               </select>
             </div>
             <div>
-              <label className="block text-xs font-medium text-gray-600 mb-1">{t("personnel.primary_facility")} *</label>
+              <label className="block text-xs font-medium text-gray-600 mb-1">{t("personnel.primary_facility")}</label>
               <select
                 value={form.facility_id}
                 onChange={(e) => update({ facility_id: e.target.value })}
                 className="w-full text-sm border border-gray-300 rounded-md px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-emerald-500"
               >
-                <option value="">{t("personnel.select_facility")}</option>
+                <option value="">{t("personnel.no_facility_assigned")}</option>
                 {flat.map((n) => (
                   <option key={n.id} value={n.id}>L{n.hierarchy_level} — {n.name}</option>
                 ))}

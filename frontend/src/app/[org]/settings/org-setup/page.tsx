@@ -322,7 +322,7 @@ function NodeForm({
           });
         if (nodeId) {
           await api.post(`/api/v1/tenants/${tenantId}/nodes/${nodeId}/supply-routes`, {
-            routes: [{ source_node_id: form.primary_source_id, is_preferred: true }],
+            primary_source_id: form.primary_source_id,
           }).catch(() => { /* non-fatal — user can set routes later */ });
         }
       }
@@ -628,6 +628,13 @@ const APPROVAL_DEFAULTS: Record<string, { low: number; medium: number }> = {
   HYBRID:   { low: 250,  medium: 2000  },
 };
 
+const DEFAULT_RULE_TYPES = ["inventory:adjust", "inventory:transfer"] as const;
+
+const TX_TYPE_LABELS: Record<string, string> = {
+  "inventory:adjust":   t("approval_rules.type.inventory_adjust"),
+  "inventory:transfer": t("approval_rules.type.inventory_transfer"),
+};
+
 interface ApprovalRule {
   transaction_type: string;
   low_threshold: number;
@@ -646,12 +653,44 @@ function ApprovalRulesTab({ tenantId }: { tenantId: string }) {
   const orgType = tenant?.organisation_type ?? "PRODUCER";
   const defaults = APPROVAL_DEFAULTS[orgType] ?? { low: 100, medium: 500 };
 
-  const [rules, setRules] = useState<ApprovalRule[]>([
-    { transaction_type: "inventory:adjust", low_threshold: defaults.low, medium_threshold: defaults.medium },
-    { transaction_type: "inventory:transfer", low_threshold: defaults.low * 2, medium_threshold: defaults.medium * 2 },
-  ]);
+  // Load saved rules from backend
+  const { data: savedRules = [], isLoading: rulesLoading } = useQuery<ApprovalRule[]>({
+    queryKey: ["approval-rules", tenantId],
+    queryFn: () => api.get<ApprovalRule[]>(`/api/v1/tenants/${tenantId}/approval-rules`),
+    staleTime: 30_000,
+  });
+
+  const [rules, setRules] = useState<ApprovalRule[]>([]);
+  const [initialized, setInitialized] = useState(false);
   const [saveOk, setSaveOk] = useState(false);
   const [saveErr, setSaveErr] = useState<string | null>(null);
+
+  // Initialise from saved rules (merge with defaults for any missing types)
+  if (!initialized && !rulesLoading) {
+    const merged = DEFAULT_RULE_TYPES.map((txType) => {
+      const saved = savedRules.find((r) => r.transaction_type === txType);
+      if (saved) return saved;
+      const isTransfer = txType === "inventory:transfer";
+      return {
+        transaction_type: txType,
+        low_threshold:    isTransfer ? defaults.low * 2    : defaults.low,
+        medium_threshold: isTransfer ? defaults.medium * 2 : defaults.medium,
+      };
+    });
+    setRules(merged);
+    setInitialized(true);
+  }
+
+  const displayRules: ApprovalRule[] = rules.length > 0
+    ? rules
+    : DEFAULT_RULE_TYPES.map((txType) => {
+        const isTransfer = txType === "inventory:transfer";
+        return {
+          transaction_type: txType,
+          low_threshold:    isTransfer ? defaults.low * 2    : defaults.low,
+          medium_threshold: isTransfer ? defaults.medium * 2 : defaults.medium,
+        };
+      });
 
   function updateRule(idx: number, patch: Partial<ApprovalRule>) {
     setRules((prev) => prev.map((r, i) => i === idx ? { ...r, ...patch } : r));
@@ -660,7 +699,7 @@ function ApprovalRulesTab({ tenantId }: { tenantId: string }) {
 
   const saveMutation = useMutation({
     mutationFn: () =>
-      api.put(`/api/v1/tenants/${tenantId}/approval-rules`, { rules }),
+      api.put(`/api/v1/tenants/${tenantId}/approval-rules`, { rules: displayRules }),
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: ["approval-rules", tenantId] });
       setSaveOk(true);
@@ -672,30 +711,33 @@ function ApprovalRulesTab({ tenantId }: { tenantId: string }) {
     },
   });
 
+  if (rulesLoading) {
+    return <p className="text-sm text-gray-400 py-8 text-center">{t("common.loading")}</p>;
+  }
+
   return (
     <div className="space-y-6">
       <p className="text-sm text-gray-500">
-        Set quantity thresholds that determine approval routing for each transaction type.
-        Below the low threshold, transactions are auto-approved. Between low and medium, WM approves.
-        Above medium, RM or NM approval is required.
+        {t("approval_rules.description")}
       </p>
 
       <div className="overflow-x-auto rounded-lg border border-gray-200">
         <table className="w-full text-sm">
           <thead className="bg-gray-50 border-b border-gray-200">
             <tr>
-              <th className="px-4 py-2 text-left text-xs font-semibold text-gray-500">Transaction Type</th>
-              <th className="px-4 py-2 text-left text-xs font-semibold text-gray-500">Auto-approve below</th>
-              <th className="px-4 py-2 text-left text-xs font-semibold text-gray-500">WM → RM above</th>
+              <th className="px-4 py-2 text-left text-xs font-semibold text-gray-500">{t("approval_rules.col_type")}</th>
+              <th className="px-4 py-2 text-left text-xs font-semibold text-gray-500">{t("approval_rules.col_low")}</th>
+              <th className="px-4 py-2 text-left text-xs font-semibold text-gray-500">{t("approval_rules.col_medium")}</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-100">
-            {rules.map((rule, idx) => (
+            {displayRules.map((rule, idx) => (
               <tr key={rule.transaction_type} className="hover:bg-gray-50">
                 <td className="px-4 py-2.5">
-                  <code className="text-xs bg-gray-100 px-1.5 py-0.5 rounded text-gray-700">
-                    {rule.transaction_type}
-                  </code>
+                  <span className="text-sm font-medium text-gray-800">
+                    {TX_TYPE_LABELS[rule.transaction_type] ?? rule.transaction_type}
+                  </span>
+                  <span className="ml-2 text-xs text-gray-400">({rule.transaction_type})</span>
                 </td>
                 <td className="px-4 py-2.5">
                   <input
@@ -722,7 +764,7 @@ function ApprovalRulesTab({ tenantId }: { tenantId: string }) {
       </div>
 
       {saveErr && <p className="text-sm text-red-600">{saveErr}</p>}
-      {saveOk  && <p className="text-sm text-emerald-600 font-medium">Approval rules saved.</p>}
+      {saveOk  && <p className="text-sm text-emerald-600 font-medium">{t("approval_rules.saved")}</p>}
 
       <button
         type="button"
@@ -730,7 +772,7 @@ function ApprovalRulesTab({ tenantId }: { tenantId: string }) {
         disabled={saveMutation.isPending}
         className="px-5 py-2 bg-emerald-700 text-white text-sm font-semibold rounded-lg hover:bg-emerald-800 disabled:opacity-50"
       >
-        {saveMutation.isPending ? t("common.saving") : "Save Rules"}
+        {saveMutation.isPending ? t("common.saving") : t("approval_rules.save_button")}
       </button>
     </div>
   );
@@ -741,8 +783,25 @@ function ApprovalRulesTab({ tenantId }: { tenantId: string }) {
 type TabId = "levels" | "tree" | "approval";
 
 export default function OrgSetupPage() {
-  const { org: tenantId } = useParams() as { org: string };
+  const { org } = useParams() as { org: string };
   const [activeTab, setActiveTab] = useState<TabId>("levels");
+
+  // All hierarchy/node endpoints require a UUID — resolve it from the slug (or UUID) in the URL
+  const { data: tenantMeta, isLoading: metaLoading } = useQuery<{ id: string; name: string }>({
+    queryKey: ["tenant-meta", org],
+    queryFn: () => api.get<{ id: string; name: string }>(`/api/v1/tenants/${org}`),
+    staleTime: 300_000,
+  });
+
+  const tenantId = tenantMeta?.id ?? "";
+
+  if (metaLoading || !tenantId) {
+    return (
+      <div className="p-8 max-w-3xl">
+        <p className="text-sm text-gray-400 py-8 text-center">{t("common.loading")}</p>
+      </div>
+    );
+  }
 
   const tabCls = (id: TabId) =>
     `px-5 py-2.5 text-sm font-semibold rounded-t-lg border-b-2 transition-all ${

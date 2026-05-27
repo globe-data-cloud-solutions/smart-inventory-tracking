@@ -1,8 +1,10 @@
+import json
 import re
 import uuid
-from typing import List
+from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Response
+from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from dependencies import get_current_user, get_db_session
@@ -127,6 +129,88 @@ async def get_tenant(
             is_active=row.is_active,
         )
     )
+
+
+# ── Approval rules schemas ─────────────────────────────────────────────────────
+
+class ApprovalRuleItem(BaseModel):
+    transaction_type: str
+    low_threshold: float
+    medium_threshold: float
+
+
+class ApprovalRulesBody(BaseModel):
+    rules: List[ApprovalRuleItem]
+
+
+async def _resolve_tenant_id(tenant_id: str, db: AsyncSession) -> Optional[str]:
+    """Accept either a UUID or slug, return the UUID string or None if not found."""
+    from sqlalchemy import text
+    try:
+        uuid.UUID(tenant_id)
+        row = await db.execute(text("SELECT id FROM tenants WHERE id = :id"), {"id": tenant_id})
+    except ValueError:
+        row = await db.execute(text("SELECT id FROM tenants WHERE slug = :slug"), {"slug": tenant_id})
+    r = row.fetchone()
+    return str(r.id) if r else None
+
+
+@router.get("/{tenant_id}/approval-rules", response_model=SuccessResponse[List[ApprovalRuleItem]])
+@require_permission(PERMISSIONS.TENANT_VIEW)
+async def get_approval_rules(
+    tenant_id: str,
+    user=Depends(get_current_user),
+    db: AsyncSession = Depends(get_db_session),
+) -> SuccessResponse[List[ApprovalRuleItem]]:
+    from sqlalchemy import text
+    try:
+        uuid.UUID(tenant_id)
+        result = await db.execute(
+            text("SELECT approval_thresholds FROM tenants WHERE id = :id"), {"id": tenant_id}
+        )
+    except ValueError:
+        result = await db.execute(
+            text("SELECT approval_thresholds FROM tenants WHERE slug = :slug"), {"slug": tenant_id}
+        )
+    row = result.fetchone()
+    if not row:
+        raise HTTPException(status_code=404, detail="Tenant not found")
+    thresholds: dict = row.approval_thresholds or {}
+    rules = [
+        ApprovalRuleItem(
+            transaction_type=tx_type,
+            low_threshold=float(data.get("low", 0)),
+            medium_threshold=float(data.get("medium", 0)),
+        )
+        for tx_type, data in thresholds.items()
+    ]
+    return SuccessResponse(data=rules)
+
+
+@router.put("/{tenant_id}/approval-rules", response_model=SuccessResponse[List[ApprovalRuleItem]])
+@require_permission(PERMISSIONS.TENANT_MANAGE)
+async def put_approval_rules(
+    tenant_id: str,
+    body: ApprovalRulesBody,
+    user=Depends(get_current_user),
+    db: AsyncSession = Depends(get_db_session),
+) -> SuccessResponse[List[ApprovalRuleItem]]:
+    from sqlalchemy import text
+    resolved_id = await _resolve_tenant_id(tenant_id, db)
+    if not resolved_id:
+        raise HTTPException(status_code=404, detail="Tenant not found")
+    thresholds = {
+        rule.transaction_type: {"low": rule.low_threshold, "medium": rule.medium_threshold}
+        for rule in body.rules
+    }
+    await db.execute(
+        text(
+            "UPDATE tenants SET approval_thresholds = cast(:thresholds as jsonb), updated_at = now() "
+            "WHERE id = :id"
+        ),
+        {"thresholds": json.dumps(thresholds), "id": resolved_id},
+    )
+    return SuccessResponse(data=body.rules)
 
 
 @router.delete("/{tenant_id}", status_code=204)
