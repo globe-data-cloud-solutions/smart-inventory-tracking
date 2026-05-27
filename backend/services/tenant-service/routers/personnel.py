@@ -14,9 +14,12 @@ from datetime import datetime, timezone
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
+from passlib.context import CryptContext
 from pydantic import BaseModel, EmailStr
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
+
+_pwd_ctx = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 from dependencies import get_current_user, get_db_session
 from shared.permissions.middleware import require_permission
@@ -331,14 +334,15 @@ async def create_user(
 
     new_user_id = uuid.uuid4()
     cognito_sub = f"local-{new_user_id}"  # placeholder; real sub comes from Cognito at go-live
+    password_hash = _pwd_ctx.hash(body.password) if body.password else None
 
     await db.execute(
         text(
             """
             INSERT INTO users
                 (id, tenant_id, cognito_sub, email, full_name, role,
-                 warehouse_id, is_active)
-            VALUES (:id, :tid, :sub, :email, :name, :role, :wh, true)
+                 warehouse_id, password_hash, is_active)
+            VALUES (:id, :tid, :sub, :email, :name, :role, :wh, :ph, true)
             """
         ),
         {
@@ -349,6 +353,7 @@ async def create_user(
             "name": body.name,
             "role": body.role,
             "wh": str(body.facility_id) if body.facility_id else None,
+            "ph": password_hash,
         },
     )
 

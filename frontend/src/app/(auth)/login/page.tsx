@@ -21,7 +21,7 @@ export default function LoginPage() {
     let session = login(email, password);
     if (!session) {
       // Fallback: try backend dev_email for API-created users (ENVIRONMENT=local only)
-      session = await loginWithDevEmail(email);
+      session = await loginWithDevEmail(email, password);
     }
     if (!session) {
       setError("Invalid email or password.");

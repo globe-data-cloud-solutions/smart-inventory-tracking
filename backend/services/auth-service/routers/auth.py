@@ -3,7 +3,10 @@ from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, HTTPException
 from jose import jwt
+from passlib.context import CryptContext
 from pydantic import BaseModel
+
+_pwd_ctx = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 router = APIRouter()
 
@@ -95,9 +98,10 @@ DEV_USERS: dict[str, dict[str, str | None]] = {
 }
 
 
-async def _lookup_user_in_db(email: str) -> dict | None:
+async def _lookup_user_in_db(email: str, password: str | None = None) -> dict | None:
     """Query the users table for a dynamically-created user (not in DEV_USERS).
     Returns JWT claim fields or None if not found / DB unavailable.
+    When password is provided, verifies bcrypt hash — raises 401 on mismatch.
     Only called in ENVIRONMENT=local dev_email path.
     """
     try:
@@ -106,7 +110,7 @@ async def _lookup_user_in_db(email: str) -> dict | None:
         async with AsyncSessionLocal() as db:
             row = await db.execute(
                 sa_text("""
-                    SELECT u.id, u.role, u.tenant_id, ufa.facility_id
+                    SELECT u.id, u.role, u.tenant_id, u.password_hash, ufa.facility_id
                     FROM users u
                     LEFT JOIN user_facility_assignments ufa
                         ON ufa.user_id = u.id
@@ -120,12 +124,19 @@ async def _lookup_user_in_db(email: str) -> dict | None:
             rec = row.fetchone()
         if rec is None:
             return None
+        # Verify password when one is provided and the user has a hash stored
+        if password is not None:
+            stored_hash = rec.password_hash
+            if stored_hash is None or not _pwd_ctx.verify(password, stored_hash):
+                raise HTTPException(status_code=401, detail="Invalid password")
         return {
             "sub":          str(rec.id),
             "role":         str(rec.role),
             "tenant_id":    str(rec.tenant_id) if rec.tenant_id else None,
             "warehouse_id": str(rec.facility_id) if rec.facility_id else None,
         }
+    except HTTPException:
+        raise
     except Exception:
         return None
 
@@ -143,6 +154,9 @@ class TokenRequest(BaseModel):
     # Local-dev shortcut: pass an email and get a fully-scoped JWT without Cognito.
     # Only accepted when ENVIRONMENT=local. Rejected with 403 in all other envs.
     dev_email:         str | None = None
+    # Optional password for API-created users (bcrypt verified). Not required for
+    # hardcoded DEV_USERS (demo accounts). Ignored in Cognito paths.
+    dev_password:      str | None = None
 
 
 class TokenResponse(BaseModel):
@@ -177,7 +191,7 @@ async def exchange_token(body: TokenRequest) -> TokenResponse:
             warehouse_id = entry["warehouse_id"]
         else:
             # Fallback: look up dynamically-created users in the database
-            db_user = await _lookup_user_in_db(body.dev_email)
+            db_user = await _lookup_user_in_db(body.dev_email, body.dev_password)
             if db_user is None:
                 raise HTTPException(
                     status_code=404,

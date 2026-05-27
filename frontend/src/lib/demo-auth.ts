@@ -92,7 +92,7 @@ async function _exchangeJWT(session: SessionUser): Promise<void> {
  * URL becomes /{tenant_id}/dashboard.
  * Only works when ENVIRONMENT=local on the auth-service side.
  */
-export async function loginWithDevEmail(email: string): Promise<SessionUser | null> {
+export async function loginWithDevEmail(email: string, password?: string): Promise<SessionUser | null> {
   const authBase =
     process.env.NEXT_PUBLIC_AUTH_URL ??
     process.env.NEXT_PUBLIC_API_URL ??
@@ -100,10 +100,12 @@ export async function loginWithDevEmail(email: string): Promise<SessionUser | nu
   if (!authBase) return null;
 
   try {
+    const body: Record<string, string> = { dev_email: email };
+    if (password) body.dev_password = password;
     const res = await fetch(`${authBase}/api/v1/auth/token`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ dev_email: email }),
+      body: JSON.stringify(body),
     });
     if (!res.ok) return null;
     const data = (await res.json()) as { access_token?: string };

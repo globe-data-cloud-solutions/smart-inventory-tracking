@@ -248,6 +248,13 @@ export default function OrgDashboard() {
     refetchOnWindowFocus: true,
   });
 
+  const { data: apiTenantData } = useQuery<{ id: string; name: string }>({
+    queryKey: ["tenant-meta", org],
+    queryFn: () => api.get<{ id: string; name: string }>(`/api/v1/tenants/${org}`),
+    enabled: isGatewayMode && org !== SA_ORG_SLUG && !DEMO_TENANTS.some((t) => t.slug === org),
+    staleTime: 60_000,
+  });
+
   if (!user) return null;
 
   // ── SA home (/admin/dashboard) — always demo ───────────────────────────────
@@ -328,7 +335,7 @@ export default function OrgDashboard() {
 
   // ── Tenant lookup — demo branding only. Real tenants use fallback values. ─
   const tenant     = DEMO_TENANTS.find((ten) => ten.slug === org);
-  const tenantName = tenant?.name     ?? org;
+  const tenantName = apiTenantData?.name ?? tenant?.name ?? org;
   const tenantColor = tenant?.color   ?? "#1B4332";
   const tenantIndustry = tenant?.industry ?? "";
 
