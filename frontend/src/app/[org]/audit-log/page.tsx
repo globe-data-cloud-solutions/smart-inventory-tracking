@@ -50,7 +50,7 @@ export default function AuditLogPage() {
   const [search, setSearch] = useState("");
 
   if (!user) return null;
-  if (org === SA_ORG_SLUG) return <p className="p-8 text-gray-500">{t("common.no_data")}</p>;
+  if (org === SA_ORG_SLUG) return <p className="p-8 text-gray-500">{t("sa.select_tenant")}</p>;
 
   const tenant = DEMO_TENANTS.find((ten) => ten.slug === org);
   if (!tenant)   return <p className="p-8 text-gray-500">{t("common.no_data")}</p>;

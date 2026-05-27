@@ -787,18 +787,27 @@ export default function OrgSetupPage() {
   const [activeTab, setActiveTab] = useState<TabId>("levels");
 
   // All hierarchy/node endpoints require a UUID — resolve it from the slug (or UUID) in the URL
-  const { data: tenantMeta, isLoading: metaLoading } = useQuery<{ id: string; name: string }>({
+  const { data: tenantMeta, isLoading: metaLoading, isError: metaError } = useQuery<{ id: string; name: string }>({
     queryKey: ["tenant-meta", org],
     queryFn: () => api.get<{ id: string; name: string }>(`/api/v1/tenants/${org}`),
     staleTime: 300_000,
+    retry: false,
   });
 
   const tenantId = tenantMeta?.id ?? "";
 
-  if (metaLoading || !tenantId) {
+  if (metaLoading) {
     return (
       <div className="p-8 max-w-3xl">
         <p className="text-sm text-gray-400 py-8 text-center">{t("common.loading")}</p>
+      </div>
+    );
+  }
+
+  if (metaError || !tenantId) {
+    return (
+      <div className="p-8 max-w-3xl">
+        <p className="text-sm text-red-500 py-8 text-center">{t("org_setup.tenant_not_found")}</p>
       </div>
     );
   }

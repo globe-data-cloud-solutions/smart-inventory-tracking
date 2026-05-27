@@ -80,7 +80,7 @@ export default function DispatchPage() {
   const [saving, setSaving] = useState<string | null>(null);
   const [toast, setToast]   = useState("");
 
-  if (org === SA_ORG_SLUG) return <p className="p-8 text-gray-500">{t("common.no_data")}</p>;
+  if (org === SA_ORG_SLUG) return <p className="p-8 text-gray-500">{t("sa.select_tenant")}</p>;
   const tenant = DEMO_TENANTS.find((ten) => ten.slug === org);
   if (!tenant || !user) return <p className="p-8 text-gray-500">{t("common.no_data")}</p>;
 

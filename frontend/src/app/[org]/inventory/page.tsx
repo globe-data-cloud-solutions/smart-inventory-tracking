@@ -322,9 +322,9 @@ export default function InventoryPage() {
     }
   }, [apiTransfers, addTransfer, getTransferEntry, updateTransferStatus]);
 
-  if (!user || org === SA_ORG_SLUG)
-    return <p className="p-8 text-gray-500">{t("common.no_data")}</p>;
-  if (!tenant)
+  if (org === SA_ORG_SLUG)
+    return <p className="p-8 text-gray-500">{t("sa.select_tenant")}</p>;
+  if (!user || !tenant)
     return <p className="p-8 text-gray-500">{t("common.no_data")}</p>;
 
   const userWarehouse = tenant.warehouses.find((w) => w.id === user.warehouseId);

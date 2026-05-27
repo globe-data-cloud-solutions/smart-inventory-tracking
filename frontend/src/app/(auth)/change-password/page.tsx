@@ -33,9 +33,13 @@ function ChangePasswordForm() {
     }
     setLoading(true);
     try {
+      const jwt = getSession()?.jwtToken ?? "";
       const res = await fetch(`${API_BASE}/api/v1/auth/password/${userId}`, {
         method: "PATCH",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          ...(jwt ? { "Authorization": `Bearer ${jwt}` } : {}),
+        },
         body: JSON.stringify({
           user_id: userId,
           current_password: currentPassword,

@@ -82,7 +82,7 @@ export default function WarehousesPage() {
     staleTime: 60000,
   });
 
-  if (org === SA_ORG_SLUG) return <p className="p-8 text-gray-500">{t("common.no_data")}</p>;
+  if (org === SA_ORG_SLUG) return <p className="p-8 text-gray-500">{t("sa.select_tenant")}</p>;
 
   const tenant = DEMO_TENANTS.find((ten) => ten.slug === org);
   const isGatewayMode = !!process.env.NEXT_PUBLIC_API_URL;

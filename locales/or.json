@@ -414,7 +414,8 @@
     "confirm_and_save": "Confirm & Save",
     "complete_level_config_first": "Complete level configuration before continuing.",
     "saved_success": "Organisation setup saved successfully.",
-    "redirecting": "Redirecting to Personnel Management…"
+    "redirecting": "Redirecting to Personnel Management…",
+    "tenant_not_found": "Miseensi kun siistema keessatti argamuu hin dandeenye. Miseensa komii ta'uu danda'a. Fuula Miseensota fayyadami."
   },
   "personnel": {
     "page_title": "Personnel Management",
@@ -471,5 +472,8 @@
       "inventory_adjust": "Sirreessaa",
       "inventory_transfer": "Dabarsaa"
     }
+  },
+  "sa": {
+    "select_tenant": "Ragaa ilaluuf miseensa filadhu."
   }
 }
