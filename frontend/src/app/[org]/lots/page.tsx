@@ -55,7 +55,11 @@ export default function LotsPage() {
   if (!tenant) return (
     <div className="p-8">
       <h2 className="text-2xl font-bold text-[#0f2d1f] m-0">{t("lots.title")}</h2>
-      <p className="text-sm text-gray-400 mt-1">{t("common.no_data")}</p>
+      <p className="text-sm text-gray-500 mt-1 mb-6">{org} · {t("lots.subtitle")}</p>
+      <div className="bg-white border border-gray-200 rounded-md p-12 text-center">
+        <p className="text-gray-700 font-semibold mb-2">No Lot Records Found</p>
+        <p className="text-sm text-gray-400">{t("lots.enable_batch_hint")}</p>
+      </div>
     </div>
   );
 

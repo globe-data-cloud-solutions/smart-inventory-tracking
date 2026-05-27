@@ -161,7 +161,7 @@ function AddUserPanel({
         name:        form.name.trim(),
         email:       form.email.trim().toLowerCase(),
         role:        form.role,
-        facility_id: form.facility_id,
+        facility_id: form.facility_id || null,
         password:    form.password || undefined,
       });
       onCreated();

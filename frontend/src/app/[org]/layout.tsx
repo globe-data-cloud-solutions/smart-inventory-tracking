@@ -10,6 +10,7 @@ import { api } from "@/lib/api";
 import { getCurrentLocale, setLocale, loadLocale, t } from "@/lib/i18n";
 import { useInventoryStore } from "@/lib/inventory-state";
 import { useAuditStore } from "@/lib/audit-log-state";
+import { useTenantName } from "@/hooks/useTenantName";
 
 type Locale = "en" | "am" | "or";
 
@@ -184,7 +185,7 @@ function Sidebar({ user, org, tenantName }: { user: SessionUser; org: string; te
               <p className="text-[11px] text-eth-gold mt-px m-0">{t("roles.SA")}</p>
             ) : (
               <p className="text-[11px] text-emerald-300 mt-px m-0 truncate">
-                {tenantName ?? user.tenantName}
+                {tenantName ?? (!user.tenantName?.match(/^[0-9a-f-]{36}$/i) ? user.tenantName : null)}
                 {user.warehouseName && <span className="text-green-400"> › {user.warehouseName}</span>}
               </p>
             )}
@@ -286,6 +287,14 @@ function Sidebar({ user, org, tenantName }: { user: SessionUser; org: string; te
   );
 }
 
+/* ── Tenant name resolver ─────────────────────────��───────────────────────── */
+// Must be rendered inside QueryClientProvider so useTenantName's useQuery works.
+function TenantNameResolver({ org, onName }: { org: string; onName: (n: string | null) => void }) {
+  const name = useTenantName(org);
+  useEffect(() => { onName(name); }, [name, onName]);
+  return null;
+}
+
 /* ── Layout ───────────────────────────────────────────────────────────────── */
 export default function OrgLayout({ children }: { children: React.ReactNode }) {
   const params  = useParams();
@@ -327,13 +336,7 @@ export default function OrgLayout({ children }: { children: React.ReactNode }) {
     setUser(session);
     setReady(true);
     setActiveTenant(org !== SA_ORG_SLUG ? org : "");
-
-    // Fetch real tenant name for API-created tenants (UUID slugs not in DEMO_TENANTS)
-    if (isGatewayMode && org !== SA_ORG_SLUG && !DEMO_TENANTS.some((t) => t.slug === org)) {
-      api.get<{ id: string; name: string }>(`/api/v1/tenants/${org}`)
-        .then((data) => setApiTenantName(data.name))
-        .catch(() => { /* silently fall back to UUID */ });
-    }
+    // Tenant name is resolved by TenantNameResolver (rendered inside QueryClientProvider).
   }, [org, router, setActiveTenant]);
 
   if (!ready || !user) {
@@ -360,6 +363,7 @@ export default function OrgLayout({ children }: { children: React.ReactNode }) {
 
   return (
     <QueryClientProvider client={qc}>
+      {org !== SA_ORG_SLUG && <TenantNameResolver org={org} onName={setApiTenantName} />}
       <div className="min-h-screen bg-gray-100">
         {/* ── Top banner ── */}
         <header className="fixed top-0 left-0 right-0 z-[60] h-14 bg-[#0f2d1f] flex items-center px-6 gap-4 shadow-[0_2px_12px_rgba(0,0,0,0.35)]">

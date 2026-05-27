@@ -28,7 +28,7 @@ def _hash_password(password: str) -> str:
 def _verify_password(password: str, hashed: str) -> bool:
     return _bcrypt.checkpw(password.encode(), hashed.encode())
 
-from dependencies import get_current_user, get_db_session
+from dependencies import get_current_user, get_db_session, get_db_session_for_tenant
 from shared.permissions.middleware import require_permission
 from shared.permissions.registry import PERMISSIONS
 from shared.utils.responses import SuccessResponse
@@ -180,7 +180,7 @@ def _check_role_ceiling(caller_role: str, target_role: str) -> None:
 async def list_users(
     tenant_id: uuid.UUID,
     user=Depends(get_current_user),
-    db: AsyncSession = Depends(get_db_session),
+    db: AsyncSession = Depends(get_db_session_for_tenant),
 ) -> SuccessResponse[List[UserOut]]:
     tid = str(tenant_id)
 
@@ -259,7 +259,7 @@ async def get_user(
     tenant_id: uuid.UUID,
     user_id: uuid.UUID,
     user=Depends(get_current_user),
-    db: AsyncSession = Depends(get_db_session),
+    db: AsyncSession = Depends(get_db_session_for_tenant),
 ) -> SuccessResponse[UserOut]:
     row = await db.execute(
         text(
@@ -306,7 +306,7 @@ async def create_user(
     tenant_id: uuid.UUID,
     body: UserCreateRequest,
     user=Depends(get_current_user),
-    db: AsyncSession = Depends(get_db_session),
+    db: AsyncSession = Depends(get_db_session_for_tenant),
 ) -> SuccessResponse[UserOut]:
     tid = str(tenant_id)
     caller_role = getattr(user, "role", "SA")
@@ -413,7 +413,7 @@ async def update_user(
     user_id: uuid.UUID,
     body: UserUpdateRequest,
     user=Depends(get_current_user),
-    db: AsyncSession = Depends(get_db_session),
+    db: AsyncSession = Depends(get_db_session_for_tenant),
 ) -> SuccessResponse[UserOut]:
     tid = str(tenant_id)
     caller_role = getattr(user, "role", "SA")
@@ -482,7 +482,7 @@ async def deactivate_user(
     tenant_id: uuid.UUID,
     user_id: uuid.UUID,
     user=Depends(get_current_user),
-    db: AsyncSession = Depends(get_db_session),
+    db: AsyncSession = Depends(get_db_session_for_tenant),
 ) -> SuccessResponse[dict]:
     # Cannot deactivate yourself
     caller_id = str(user.user_id) if user else None
@@ -523,7 +523,7 @@ async def reactivate_user(
     tenant_id: uuid.UUID,
     user_id: uuid.UUID,
     user=Depends(get_current_user),
-    db: AsyncSession = Depends(get_db_session),
+    db: AsyncSession = Depends(get_db_session_for_tenant),
 ) -> SuccessResponse[dict]:
     result = await db.execute(
         text(
@@ -551,7 +551,7 @@ async def create_assignment(
     user_id: uuid.UUID,
     body: AssignmentCreateRequest,
     user=Depends(get_current_user),
-    db: AsyncSession = Depends(get_db_session),
+    db: AsyncSession = Depends(get_db_session_for_tenant),
 ) -> SuccessResponse[AssignmentOut]:
     tid = str(tenant_id)
     caller_role = getattr(user, "role", "SA")
@@ -656,7 +656,7 @@ async def deactivate_assignment(
     user_id: uuid.UUID,
     assignment_id: uuid.UUID,
     user=Depends(get_current_user),
-    db: AsyncSession = Depends(get_db_session),
+    db: AsyncSession = Depends(get_db_session_for_tenant),
 ) -> SuccessResponse[dict]:
     # Block removal of PRIMARY assignment
     row = await db.execute(

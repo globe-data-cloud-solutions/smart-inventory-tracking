@@ -73,11 +73,23 @@ function LevelsTab({ tenantId }: { tenantId: string }) {
     staleTime: 30_000,
   });
 
-  // Local editable copy — initialised from server data, edited in-place
-  const [levels, setLevels] = useState<HierarchyLevel[]>([]);
+  // Local editable copy — initialised with defaults so inputs are editable on first render
+  // (before server data arrives). Synced to server data once on first successful load.
+  const [levels, setLevels] = useState<HierarchyLevel[]>(() =>
+    Array.from({ length: 3 }, (_, i) => {
+      const role = suggestRole(i + 1);
+      return {
+        level_number: i + 1,
+        level_name: "",
+        default_role_code: role,
+        role_display_label: defaultDisplayLabel(role),
+        is_stock_holding: i + 1 > 1,
+      };
+    })
+  );
   const [initialised, setInitialised] = useState(false);
 
-  // Sync from server on first load
+  // Sync from server on first load (replaces defaults with saved values)
   if (!initialised && savedLevels.length > 0) {
     setLevels(savedLevels);
     setInitialised(true);
@@ -127,21 +139,6 @@ function LevelsTab({ tenantId }: { tenantId: string }) {
     },
   });
 
-  // Ensure levels array is initialised if savedLevels arrived after first render
-  const displayLevels =
-    levels.length === 0 && !initialised
-      ? Array.from({ length: levelCount }, (_, i) => {
-          const role = suggestRole(i + 1);
-          return {
-            level_number: i + 1,
-            level_name: "",
-            default_role_code: role,
-            role_display_label: defaultDisplayLabel(role),
-            is_stock_holding: i + 1 > 1,
-          };
-        })
-      : levels;
-
   if (isLoading) {
     return <p className="text-sm text-gray-400 py-8 text-center">{t("common.loading")}</p>;
   }
@@ -185,7 +182,7 @@ function LevelsTab({ tenantId }: { tenantId: string }) {
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-100">
-            {displayLevels.map((lv, idx) => (
+            {levels.map((lv, idx) => (
               <tr key={lv.level_number} className="hover:bg-gray-50">
                 <td className="px-3 py-2">
                   <span className="w-7 h-7 rounded-full bg-emerald-600 text-white text-xs font-bold flex items-center justify-center">

@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import os
+import uuid
 from dataclasses import dataclass
 from typing import AsyncGenerator, Optional
 
@@ -50,6 +51,28 @@ async def get_db_session(
     async with AsyncSessionLocal() as session:
         if user is not None:
             await set_rls_context(session, user.tenant_id, user.user_id)
+        try:
+            yield session
+            await session.commit()
+        except Exception:
+            await session.rollback()
+            raise
+
+
+async def get_db_session_for_tenant(
+    tenant_id: uuid.UUID,
+    user: Optional[UserContext] = Depends(get_current_user),
+) -> AsyncGenerator[AsyncSession, None]:
+    """Like get_db_session but sets RLS to the URL tenant_id for SA cross-tenant access.
+
+    SA users carry their own tenant_id in the JWT which doesn't match target tenants.
+    Setting RLS to the requested tenant_id lets SA read/write any tenant's data while
+    non-SA users still get RLS scoped to their own tenant_id (validated elsewhere).
+    """
+    async with AsyncSessionLocal() as session:
+        if user is not None:
+            rls_tenant = str(tenant_id) if user.role == "SA" else user.tenant_id
+            await set_rls_context(session, rls_tenant, user.user_id)
         try:
             yield session
             await session.commit()

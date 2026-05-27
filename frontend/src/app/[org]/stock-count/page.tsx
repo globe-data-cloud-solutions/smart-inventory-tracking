@@ -85,17 +85,12 @@ export default function StockCountPage() {
 
   if (org === SA_ORG_SLUG) return <p className="p-8 text-gray-500">{t("sa.select_tenant")}</p>;
   const tenant = DEMO_TENANTS.find((ten) => ten.slug === org);
-  if (!tenant) return (
-    <div className="p-8">
-      <h2 className="text-2xl font-bold text-[#0f2d1f] mb-2">{t("count.title")}</h2>
-      <p className="text-sm text-gray-400">{t("common.no_data")}</p>
-    </div>
-  );
 
-  const warehouse = tenant.warehouses.find((w) => w.id === selectedWH);
+  const warehouses = tenant?.warehouses ?? [];
+  const warehouse = warehouses.find((w) => w.id === selectedWH);
   const products: DemoProduct[] = selectedWH
-    ? tenant.products.filter((p) => (p.stock[selectedWH] ?? 0) > 0)
-    : tenant.products;
+    ? (tenant?.products ?? []).filter((p) => (p.stock[selectedWH] ?? 0) > 0)
+    : (tenant?.products ?? []);
 
   function getExpected(p: DemoProduct): number { return selectedWH ? (p.stock[selectedWH] ?? 0) : getTotalStock(p); }
   function countKey(pid: string) { return `${pid}::${selectedWH}`; }
@@ -128,7 +123,7 @@ export default function StockCountPage() {
     return (
       <div className="p-8">
         <h2 className="text-2xl font-bold text-[#0f2d1f] mb-2">{t("count.title")}</h2>
-        <p className="text-sm text-gray-500 mb-8">{tenant.name} · {t("count.subtitle")}</p>
+        <p className="text-sm text-gray-500 mb-8">{tenant?.name ?? org} · {t("count.subtitle")}</p>
         <div className="bg-white border border-gray-200 rounded-lg p-8 max-w-[480px]">
           <p className="font-bold text-[15px] text-gray-800 mb-4">{t("count.start_session")}</p>
           <label className="block text-xs font-bold text-gray-700 uppercase tracking-wide mb-1.5">{t("table.location")}</label>
@@ -137,10 +132,10 @@ export default function StockCountPage() {
             className="w-full px-3 py-2 text-sm border border-gray-300 rounded-md outline-none mb-5 cursor-pointer"
           >
             <option value="">{t("count.all_locations")}</option>
-            {tenant.warehouses.map((w) => <option key={w.id} value={w.id}>{w.name}</option>)}
+            {warehouses.map((w) => <option key={w.id} value={w.id}>{w.name}</option>)}
           </select>
           <div className="px-3.5 py-3 bg-green-50 rounded-md border border-emerald-200 mb-5 text-sm text-green-800">
-            {selectedWH ? `${products.length} ${t("count.products_to_count")} ${warehouse?.name}` : `${tenant.products.length} ${t("count.products_across")} ${tenant.warehouses.length} ${t("warehouses.locations")}`}
+            {selectedWH ? `${products.length} ${t("count.products_to_count")} ${warehouse?.name}` : `${products.length} ${t("count.products_across")} ${warehouses.length} ${t("warehouses.locations")}`}
           </div>
           <button
             onClick={() => setSessionActive(true)}
@@ -159,7 +154,7 @@ export default function StockCountPage() {
         <div>
           <h2 className="text-2xl font-bold text-[#0f2d1f] m-0">{t("count.session_active")}</h2>
           <p className="text-sm text-gray-500 mt-1">
-            {tenant.name} · {warehouse?.name ?? t("inventory.all_locations")} · {filledCount}/{products.length} {t("count.products_counted")}
+            {tenant?.name ?? org} · {warehouse?.name ?? t("inventory.all_locations")} · {filledCount}/{products.length} {t("count.products_counted")}
           </p>
         </div>
         <div className="flex gap-2.5">
@@ -193,7 +188,7 @@ export default function StockCountPage() {
       )}
 
       <div className="bg-white border border-gray-200 rounded overflow-hidden">
-        <div className="h-[3px]" style={{ background: tenant.color }} />
+        <div className="h-[3px]" style={{ background: tenant?.color ?? "#1B4332" }} />
         <table className="w-full border-collapse text-sm">
           <thead>
             <tr className="bg-gray-50 border-b-2 border-gray-200">

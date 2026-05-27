@@ -10,12 +10,45 @@ export default function AnalyticsPage() {
   if (org === SA_ORG_SLUG) return <p className="p-8 text-gray-500">{t("sa.select_tenant")}</p>;
 
   const tenant = DEMO_TENANTS.find((ten) => ten.slug === org);
-  if (!tenant) return (
-    <div className="p-8">
-      <h2 className="text-2xl font-bold text-[#0f2d1f] mb-4">{t("nav.analytics")}</h2>
-      <p className="text-sm text-gray-400">{t("common.no_data")}</p>
-    </div>
-  );
+
+  if (!tenant) {
+    return (
+      <div className="p-8">
+        <h2 className="text-2xl font-bold text-[#0f2d1f] mb-6">{t("nav.analytics")}</h2>
+        <div className="grid grid-cols-2 gap-6 mb-6">
+          <div className="bg-white border border-gray-200 rounded p-5">
+            <p className="text-sm font-bold text-gray-800 mb-4">{t("analytics.stock_by_location")}</p>
+            <div className="py-8 text-center text-gray-400 text-sm">{t("common.no_data")}</div>
+          </div>
+          <div className="bg-white border border-gray-200 rounded p-5">
+            <p className="text-sm font-bold text-gray-800 mb-4">
+              {t("alerts.low_stock")}{" "}
+              <span className="bg-red-100 text-red-600 text-xs px-2 py-0.5 rounded ml-1.5">0</span>
+            </p>
+            <p className="text-sm text-emerald-600 bg-green-50 px-3 py-3 rounded">
+              ✓ {t("analytics.all_stocked")}
+            </p>
+          </div>
+        </div>
+        <div className="bg-white border border-gray-200 rounded p-5">
+          <p className="text-sm font-bold text-gray-800 mb-4">{t("analytics.summary")}</p>
+          <div className="grid grid-cols-4 gap-4 text-center">
+            {[
+              { label: t("dashboard.stat_units"),     value: "0" },
+              { label: t("analytics.active_skus"),    value: "0" },
+              { label: t("dashboard.stat_locations"), value: "0" },
+              { label: t("alerts.low_stock"),         value: "0" },
+            ].map((s) => (
+              <div key={s.label} className="p-4 bg-gray-50 rounded">
+                <p className="text-2xl font-extrabold text-eth-forest m-0">{s.value}</p>
+                <p className="text-xs text-gray-500 mt-1">{s.label}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   const low   = getLowStockProducts(tenant);
   const total = tenant.products.reduce((a, p) => a + getTotalStock(p), 0);

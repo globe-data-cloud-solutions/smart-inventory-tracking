@@ -781,6 +781,117 @@ const isDestWM = !!uWH && uWH === toWH?.toLowerCase();
 
 ---
 
+## 17. SESSION 7 — UX FIXES — 2026-05-27
+
+### Overview
+
+Five bugs found and fixed covering empty states for real tenants, org level input initialization, SA cross-tenant RLS access, optional facility on user creation, and UUID leaking into the sidebar tenant name. All fixes are covered by 14 new regression tests.
+
+---
+
+### Bug 1 — stock-count / lots / analytics show blank page or `common.no_data` for real tenants
+
+**Symptom:** When a non-demo tenant (not in `DEMO_TENANTS`) navigated to `/stock-count`, `/lots`, or `/analytics`, each page returned early with a plain `common.no_data` string or a completely blank layout. Real tenants got no session-setup screen on stock-count, no "no records" card on lots, and no stat buckets on analytics.
+
+**Root cause:** All three pages tested `const tenant = DEMO_TENANTS[org]` and returned immediately when `tenant` was `undefined`. `DEMO_TENANTS` only contains hard-coded demo tenants — real API tenants are absent by design.
+
+**Fix:**
+- **Analytics:** Removed the early return. Replaced with a full structured layout rendering four stat buckets (all showing "0") and two panel cards with `common.no_data` inside each panel. Layout is identical to the live-data path.
+- **Lots:** Changed early return from a bare string to a proper `<div>` with heading, org breadcrumb, and a white card showing "No Lot Records Found" + a hint to enable batch tracking.
+- **Stock-count:** Removed the early `!tenant` return entirely. Made all `tenant.*` accesses null-safe (`tenant?.warehouses ?? []`, `tenant?.products ?? []`, `tenant?.name ?? org`, `tenant?.color ?? "#1B4332"`). Real tenants now reach the session-setup screen and proceed to count normally.
+
+**Regression tests:** `TestEmptyStateForRealTenants` — `test_analytics_zero_stats_not_blank`, `test_lots_shows_no_records_card`, `test_stock_count_allows_session_setup`
+
+---
+
+### Bug 2 — Org Setup → Level Names inputs discard text on first render
+
+**Symptom:** On the first render of the Org Setup "Levels" tab, typing in any level-name input had no effect. The input appeared editable but text was not retained. After changing the "Number of Levels" dropdown and re-rendering, inputs worked normally.
+
+**Root cause:** `const [levels, setLevels] = useState<HierarchyLevel[]>([])` initialized the array as empty. `updateLevel` called `prev.map(...)` on `[]`, which returns `[]` — discarding the new value. `displayLevels` (a computed fallback) always showed defaults from `Array.from({length: numLevels})` but these were not backed by state, so user edits to them were lost.
+
+**Fix:** Changed `useState` initializer to `Array.from({ length: 3 }, ...)` producing a 3-element default array. Removed the `displayLevels` computed variable entirely. Changed all JSX references from `displayLevels.map(...)` to `levels.map(...)`. `updateLevel` now always finds an element to update since `levels` is never empty.
+
+**Regression tests:** `TestOrgLevelInputsEditableOnFirstRender` — `test_update_level_on_empty_array_discards_input` (demonstrates old bug), `test_update_level_on_non_empty_array_preserves_input` (demonstrates fix)
+
+---
+
+### Bug 3 — SA cannot view org setup or personnel for any tenant (empty results)
+
+**Symptom:** A Super Admin (SA) navigating to `/{tenant_slug}/settings/org-setup` saw no nodes listed. The Personnel page showed no users. Both pages silently returned empty data even when the target tenant had populated records.
+
+**Root cause:** PostgreSQL RLS enforces `tenant_id = current_setting('app.current_tenant_id', true)::uuid` on every tenant-scoped table. `get_db_session` always sets the RLS context to `user.tenant_id` — the SA's own tenant. The SA's own `tenant_id` does not match the target tenant, so all queries returned empty result sets with no error.
+
+**Fix:** Added `get_db_session_for_tenant` dependency to `backend/services/tenant-service/dependencies.py`. When the caller is SA, it sets RLS context to the URL path parameter `tenant_id` instead of `user.tenant_id`. For all other roles, it behaves identically to `get_db_session`. Applied this dependency with `replace_all` across all routes in `hierarchy.py` and `personnel.py`.
+
+```python
+async def get_db_session_for_tenant(
+    tenant_id: uuid.UUID,
+    user: Optional[UserContext] = Depends(get_current_user),
+) -> AsyncGenerator[AsyncSession, None]:
+    async with AsyncSessionLocal() as session:
+        if user is not None:
+            rls_tenant = str(tenant_id) if user.role == "SA" else user.tenant_id
+            await set_rls_context(session, rls_tenant, user.user_id)
+        ...
+```
+
+**Regression tests:** `TestSACrossTenantRlsContext` — `test_sa_uses_url_tenant_id_for_rls`, `test_non_sa_uses_own_tenant_id`, `test_sa_with_own_rls_sees_empty_list`
+
+---
+
+### Bug 4 — Creating a user without Primary Facility returns HTTP 422
+
+**Symptom:** Submitting the Add User form with no Primary Facility selected returned 422. The Pydantic error message was `value is not a valid uuid: ''`.
+
+**Root cause:** `NewUserForm` initialized `facility_id: ""`. When the user left the dropdown unselected, `form.facility_id` was `""` (empty string). Pydantic's `Optional[uuid.UUID]` rejected the empty string as an invalid UUID.
+
+**Fix:** Changed `facility_id: form.facility_id` to `facility_id: form.facility_id || null` in the form submit handler. Empty string is falsy → coerces to `null`. Backend `UserCreateRequest.facility_id: Optional[uuid.UUID] = None` already handled `null` correctly — it skips PRIMARY assignment creation.
+
+**Regression tests:** `TestCreateUserWithoutFacility` — `test_empty_string_fails_uuid_validation`, `test_null_facility_skips_assignment_creation`, `test_valid_uuid_creates_assignment`
+
+---
+
+### Bug 5 — WM and non-demo-user headers show UUID instead of tenant name
+
+**Symptom:** For Warehouse Manager accounts and any user authenticated against a real (non-demo) tenant, the sidebar displayed a raw UUID (e.g. `"550e8400-e29b-41d4-a716-446655440000"`) instead of the tenant's human-readable name.
+
+**Root cause (1):** `demo-auth.ts` line 137 initializes `tenantName: tenantId` — a UUID — as the synchronous placeholder before the async fetch completes. For demo tenants the fetch resolved quickly and the name appeared. For real tenants the async resolution pathway was not integrated.
+
+**Root cause (2):** `useTenantName` uses `useQuery` (TanStack Query), which requires a `QueryClientProvider` ancestor. In `layout.tsx`, `QueryClientProvider` wraps the page content but `OrgLayout` calls hooks before the provider renders — calling `useTenantName` directly in `OrgLayout` would throw.
+
+**Fix:** Added `TenantNameResolver` sub-component that renders inside `QueryClientProvider`, calls `useTenantName(org)`, and updates parent state via `setApiTenantName` callback:
+```tsx
+function TenantNameResolver({ org, onName }: { org: string; onName: (n: string | null) => void }) {
+  const name = useTenantName(org);
+  useEffect(() => { onName(name); }, [name, onName]);
+  return null;
+}
+```
+Added UUID-detection guard in sidebar display:
+```tsx
+{tenantName ?? (!user.tenantName?.match(/^[0-9a-f-]{36}$/i) ? user.tenantName : null)}
+```
+UUID-shaped `tenantName` values from the JWT placeholder are filtered out until the resolved API name arrives.
+
+**Regression tests:** `TestWMTenantNameResolvesFromUUID` — `test_uuid_shaped_name_is_filtered`, `test_human_readable_name_is_shown`, `test_resolved_api_name_overrides_uuid_placeholder`
+
+---
+
+### Final test counts (end of session)
+
+| Suite | Count | Status |
+|---|---|---|
+| `pytest backend/ -v -m "unit"` | **201 / 201** | ✅ All pass |
+| `npx tsc --noEmit` | — | ✅ 0 errors |
+
+### Remaining open items (unchanged)
+
+- §8-6 (L): AWS dev environment — Terraform apply, RDS + ElastiCache provisioning
+- §8-9 (L): Native-speaker review of `or.json` — staffing decision
+
+---
+
 ## 16. PHASE 1 FEATURES — PENDING IMPLEMENTATION
 
 Design decisions for all items below are documented in PRD-APPENDIX.md and CLAUDE.md §28. No implementation work is tracked here — this section records readiness status only.

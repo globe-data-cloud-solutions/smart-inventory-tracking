@@ -15,7 +15,7 @@ from pydantic import BaseModel
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from dependencies import get_current_user, get_db_session
+from dependencies import get_current_user, get_db_session, get_db_session_for_tenant
 from shared.permissions.middleware import require_permission
 from shared.permissions.registry import PERMISSIONS
 from shared.utils.responses import SuccessResponse
@@ -169,7 +169,7 @@ def _derive_code(tenant_id: str, name: str, level: int) -> str:
 async def get_hierarchy_config(
     tenant_id: uuid.UUID,
     user=Depends(get_current_user),
-    db: AsyncSession = Depends(get_db_session),
+    db: AsyncSession = Depends(get_db_session_for_tenant),
 ) -> SuccessResponse[List[HierarchyLevelOut]]:
     rows = await db.execute(
         text(
@@ -205,7 +205,7 @@ async def upsert_hierarchy_config(
     tenant_id: uuid.UUID,
     body: List[HierarchyLevelIn],
     user=Depends(get_current_user),
-    db: AsyncSession = Depends(get_db_session),
+    db: AsyncSession = Depends(get_db_session_for_tenant),
 ) -> SuccessResponse[List[HierarchyLevelOut]]:
     if not body:
         raise HTTPException(status_code=400, detail="At least one level is required")
@@ -278,7 +278,7 @@ async def upsert_hierarchy_config(
 async def list_org_nodes(
     tenant_id: uuid.UUID,
     user=Depends(get_current_user),
-    db: AsyncSession = Depends(get_db_session),
+    db: AsyncSession = Depends(get_db_session_for_tenant),
 ) -> SuccessResponse[List[OrgNodeOut]]:
     rows = await db.execute(
         text(
@@ -336,7 +336,7 @@ async def create_org_node(
     tenant_id: uuid.UUID,
     body: OrgNodeCreate,
     user=Depends(get_current_user),
-    db: AsyncSession = Depends(get_db_session),
+    db: AsyncSession = Depends(get_db_session_for_tenant),
 ) -> SuccessResponse[OrgNodeOut]:
     if not (1 <= body.level_number <= 5):
         raise HTTPException(status_code=422, detail="level_number must be between 1 and 5")
@@ -427,7 +427,7 @@ async def update_org_node(
     node_id: uuid.UUID,
     body: OrgNodeUpdate,
     user=Depends(get_current_user),
-    db: AsyncSession = Depends(get_db_session),
+    db: AsyncSession = Depends(get_db_session_for_tenant),
 ) -> SuccessResponse[OrgNodeOut]:
     row = await db.execute(
         text(
@@ -493,7 +493,7 @@ async def delete_org_node(
     tenant_id: uuid.UUID,
     node_id: uuid.UUID,
     user=Depends(get_current_user),
-    db: AsyncSession = Depends(get_db_session),
+    db: AsyncSession = Depends(get_db_session_for_tenant),
 ) -> SuccessResponse[dict]:
     row = await db.execute(
         text(
@@ -565,7 +565,7 @@ async def set_supply_routes(
     node_id: uuid.UUID,
     body: SupplyRouteIn,
     user=Depends(get_current_user),
-    db: AsyncSession = Depends(get_db_session),
+    db: AsyncSession = Depends(get_db_session_for_tenant),
 ) -> SuccessResponse[SupplyRouteOut]:
     # Verify node belongs to tenant
     row = await db.execute(
