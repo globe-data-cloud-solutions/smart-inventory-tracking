@@ -1303,5 +1303,50 @@ Implementation uses `@zxing/browser` (already in `package.json` per CLAUDE.md §
 
 ---
 
+## 19. PROMPT C — Product-Level Approval Rules
+
+**Status:** ✅ Implemented 2026-05-28
+
+Product-level approval rule overrides with 3-level fallback chain.  Each product can have its own approval thresholds that take precedence over tenant-level rules.
+
+### Design decisions
+
+| Decision | Detail |
+|---|---|
+| **Fallback chain** | Level 1: product-level rule → Level 2: tenant-level rule → Level 3: org-type hardcoded default |
+| **Schema change** | `ALTER TABLE approval_rule ADD COLUMN product_id UUID NULL REFERENCES products(id)` (migration 025) |
+| **Unique index** | Partial unique index on `(tenant_id, transaction_type, approval_order, product_id) WHERE product_id IS NOT NULL` — prevents duplicate bands per product |
+| **Existing rows** | Rows with `product_id IS NULL` continue to function as tenant-level rules — no migration of existing data |
+| **Edit permission** | `product:manage_approval_rules` granted to SA, TA, NM only — matches "Only TA and NM can edit" requirement |
+| **View permission** | `product:view_approval_rules` granted to SA, TA, NM, RM, WM |
+| **Pre-population** | `GET /api/v1/products/approval-rules/latest` returns the most recently created product's rules; Add Product panel pre-fills the Approval Thresholds section from this response |
+| **Reset to defaults** | PUT with `{"rules": []}` deletes all product-level rules, causing automatic fallback to tenant/org-type defaults |
+| **Approval section** | Collapsed by default in Add Product panel; shows "Using tenant defaults" badge when empty |
+| **Backward compatibility** | `ApprovalService.route_approval()` gains an optional `product_id` parameter; all existing callers (no product_id) continue to work unchanged |
+
+### New endpoints
+
+| Method | Path | Permission | Who |
+|---|---|---|---|
+| `GET` | `/api/v1/products/approval-rules/latest` | `product:view_approval_rules` | Any operational role |
+| `GET` | `/api/v1/products/{product_id}/approval-rules` | `product:view_approval_rules` | Any operational role |
+| `PUT` | `/api/v1/products/{product_id}/approval-rules` | `product:manage_approval_rules` | SA, TA, NM only |
+
+### Tests added (5)
+
+| Test | What it verifies |
+|---|---|
+| `test_product_rule_takes_priority` | Product-level rule overrides tenant-level rule for the same band |
+| `test_falls_back_to_tenant_rule` | Tenant-level rule used when product has no custom rules |
+| `test_falls_back_to_org_type_default` | Hardcoded defaults used when neither product nor tenant rules exist |
+| `test_prepopulate_from_previous_product` | `/approval-rules/latest` returns the most recently created product's rules |
+| `test_only_ta_nm_can_edit_rules` | `product:manage_approval_rules` has `audit_required` ABAC; view permission does not |
+
+### Existing test updated
+
+`test_get_required_approver_raises_when_no_rule_matches` → renamed to `test_get_required_approver_falls_back_to_org_type_default`.  The old behaviour (raise `ValueError`) is replaced by the Level 3 fallback — a missing tenant rule no longer crashes the approval workflow.
+
+---
+
 *SMART Inventory Platform — Bug Report v4.0*  
 *Backend: Python 3.12 / FastAPI · Frontend: Next.js 14 / TypeScript · DB: PostgreSQL 16*

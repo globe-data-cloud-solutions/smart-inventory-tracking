@@ -383,14 +383,22 @@ class TestApprovalWorkflows:
 
     # ── Missing rule guard ────────────────────────────────────────────────────
 
-    async def test_get_required_approver_raises_when_no_rule_matches(self) -> None:
-        """ValueError is raised when no approval_rule band matches the request.
+    async def test_get_required_approver_falls_back_to_org_type_default(self) -> None:
+        """When no DB rule matches, get_required_approver falls back to the
+        hardcoded org-type defaults (_ORG_TYPE_DEFAULTS) instead of raising.
 
-        This is a configuration error — the tenant has not been seeded with rules
-        for this transfer_type / quantity combination.  The error message must
-        direct the operator to the seed script.
+        PULL qty=500 is in the WM band (0–999) of the default rules.
+        PROMPT C §fallback: Level 3 fallback never raises for valid tx types.
         """
         svc = ApprovalService(_mock_db_no_rule())
 
-        with pytest.raises(ValueError, match="No approval rule found"):
-            await svc.get_required_approver(TENANT_ID, "PULL", Decimal("500"))
+        role = await svc.get_required_approver(TENANT_ID, "PULL", Decimal("500"))
+        assert role == "WM"
+
+    async def test_org_type_default_raises_for_unknown_tx_type(self) -> None:
+        """ValueError is still raised when the transaction_type is unrecognised —
+        the org-type defaults only cover PULL, PUSH, ADJUSTMENT, SISTER."""
+        svc = ApprovalService(_mock_db_no_rule())
+
+        with pytest.raises(ValueError, match="No default approval rule"):
+            await svc.get_required_approver(TENANT_ID, "UNKNOWN_TYPE", Decimal("500"))

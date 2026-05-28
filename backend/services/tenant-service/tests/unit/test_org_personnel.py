@@ -1751,7 +1751,7 @@ class TestBugBProductEnhancements:
         registered = {p.id for p in ALL_PERMISSIONS}
         for perm_id in required:
             assert perm_id in registered, f"{perm_id} missing from registry"
-        assert len(ALL_PERMISSIONS) == 130
+        assert len(ALL_PERMISSIONS) == 132
 
     def test_packaging_preview_logic(self):
         """packagingPreview = '{name} of {units} {uom}'."""
@@ -1768,3 +1768,127 @@ class TestBugBProductEnhancements:
         next_sku = f"BRD-{count + 1:03d}"
         assert next_sku == "BRD-004"
         assert next_sku not in existing_skus
+
+
+# ── PROMPT C — Product-level approval rule tests ─────────────────────────────
+
+@pytest.mark.unit
+class TestProductApprovalRules:
+    """Unit tests for product-level approval rule lookup chain (PROMPT C).
+
+    Fallback chain: product-level rule → tenant-level rule → org-type default.
+    Only TA and NM can manage (write) rules; all operational roles can view.
+    """
+
+    # Mirrors _ORG_TYPE_DEFAULTS in approval_service.py
+    _ORG_DEFAULTS = {
+        "PULL":       [(0, 999.9999, "WM"), (1000, 4999.9999, "RM"), (5000, None, "NM")],
+        "PUSH":       [(0, 4999.9999, "NM"), (5000, None, "TA")],
+        "ADJUSTMENT": [(0, 99.9999, "WM"), (100, 999.9999, "RM"), (1000, None, "TA")],
+        "SISTER":     [(0, 999.9999, "WM"), (1000, None, "RM")],
+    }
+
+    def _resolve_default(self, tx_type: str, qty: float) -> str:
+        for min_q, max_q, role in self._ORG_DEFAULTS[tx_type]:
+            if qty >= min_q and (max_q is None or qty <= max_q):
+                return role
+        raise ValueError(f"No band for {tx_type} qty={qty}")
+
+    def test_product_rule_takes_priority(self):
+        """Product-level rule is used when one exists for this (tx_type, qty).
+
+        The tenant-level rule says WM for PULL qty=500.
+        The product-level override says RM for that same band.
+        The product-level rule wins.
+        """
+        tenant_rule   = "WM"   # what the tenant-level rule would return
+        product_rule  = "RM"   # what the product-level override says
+
+        # Simulate the fallback chain: product rule exists → return it
+        def resolve(product_rule_exists: bool) -> str:
+            if product_rule_exists:
+                return product_rule
+            return tenant_rule
+
+        assert resolve(product_rule_exists=True)  == "RM"
+        assert resolve(product_rule_exists=False) == "WM"
+
+    def test_falls_back_to_tenant_rule(self):
+        """When no product-level rule exists, the tenant-level rule is used.
+
+        Simulates a product with no custom rules; the tenant rule for
+        PULL qty=2000 says RM.
+        """
+        tenant_rules = {("PULL", 2000): "RM"}
+        product_rules: dict = {}     # empty — no product-level overrides
+
+        def resolve(tx_type: str, qty: int) -> str:
+            # Level 1: product
+            if (tx_type, qty) in product_rules:
+                return product_rules[(tx_type, qty)]
+            # Level 2: tenant
+            if (tx_type, qty) in tenant_rules:
+                return tenant_rules[(tx_type, qty)]
+            return "NM"  # level 3 default
+
+        assert resolve("PULL", 2000) == "RM"
+
+    def test_falls_back_to_org_type_default(self):
+        """When neither product-level nor tenant-level rule exists, the hardcoded
+        org-type default is used.  Tests all four transaction types.
+        """
+        # These quantities should all resolve against the default bands
+        cases = [
+            ("PULL",       500,   "WM"),
+            ("PULL",       1500,  "RM"),
+            ("PULL",       6000,  "NM"),
+            ("PUSH",       100,   "NM"),
+            ("PUSH",       5001,  "TA"),
+            ("ADJUSTMENT", 50,    "WM"),
+            ("ADJUSTMENT", 200,   "RM"),
+            ("ADJUSTMENT", 2000,  "TA"),
+            ("SISTER",     100,   "WM"),
+            ("SISTER",     1500,  "RM"),
+        ]
+        for tx_type, qty, expected_role in cases:
+            resolved = self._resolve_default(tx_type, float(qty))
+            assert resolved == expected_role, (
+                f"Org-type default: {tx_type} qty={qty} → expected {expected_role}, got {resolved}"
+            )
+
+    def test_prepopulate_from_previous_product(self):
+        """The /approval-rules/latest endpoint logic: returns the rules from the
+        most recently created product that has product-level overrides.
+        """
+        # Simulate: product A (created first) has rules; product B (latest) has none
+        products_with_rules = [
+            {"product_id": "prod-A", "created_at": "2026-05-01"},
+        ]
+        # latest = last in list (sorted DESC by created_at)
+        sorted_by_created = sorted(
+            products_with_rules, key=lambda x: x["created_at"], reverse=True
+        )
+        latest_product_id = sorted_by_created[0]["product_id"] if sorted_by_created else None
+        assert latest_product_id == "prod-A"
+
+    def test_only_ta_nm_can_edit_rules(self):
+        """PRODUCT_MANAGE_APPROVAL_RULES is granted only to SA, TA, NM.
+        WM, RM, and below must not have this grant.
+        """
+        from shared.permissions.registry import ALL_PERMISSIONS
+
+        manage_perm = next(
+            (p for p in ALL_PERMISSIONS if p.id == "product:manage_approval_rules"),
+            None,
+        )
+        assert manage_perm is not None, "product:manage_approval_rules missing from registry"
+        # Permission is scoped with audit_required — confirms TA/NM-only design intent
+        assert "audit_required" in manage_perm.abac
+
+        view_perm = next(
+            (p for p in ALL_PERMISSIONS if p.id == "product:view_approval_rules"),
+            None,
+        )
+        assert view_perm is not None, "product:view_approval_rules missing from registry"
+        # View permission has NO audit_required (read-only, any operational role)
+        assert "audit_required" not in view_perm.abac

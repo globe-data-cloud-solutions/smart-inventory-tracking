@@ -31,6 +31,8 @@ from shared.permissions.middleware import require_permission
 from shared.permissions.registry import PERMISSIONS
 from shared.utils.responses import SuccessResponse
 from schemas.product import (
+    ApprovalRuleEntry, ApprovalRuleResponse,
+    ApprovalRulesUpsertRequest, ProductApprovalRulesResponse,
     BrandCreateRequest, BrandResponse,
     CategoryCreateRequest, CategoryResponse,
     NextSkuResponse,
@@ -687,3 +689,213 @@ async def create_packaging_type(
             units_per_package=body.units_per_package, tenant_id=uuid.UUID(tid),
         )
     )
+
+
+# ── Approval rule helpers ─────────────────────────────────────────────────────
+
+async def _read_approval_rules(
+    db: AsyncSession,
+    tenant_id: str,
+    product_id: Optional[str],
+) -> ProductApprovalRulesResponse:
+    """Read approval_rule rows for a product (product-level) or for the tenant.
+
+    If product_id is provided but has no product-level rules, returns the
+    tenant-level rules and sets is_using_defaults=True.
+    """
+    if product_id:
+        result = await db.execute(
+            text("""
+                SELECT id, transaction_type, min_quantity, max_quantity,
+                       approver_role, approval_order, product_id
+                FROM   approval_rule
+                WHERE  tenant_id   = :tid
+                  AND  product_id  = :pid
+                  AND  is_active   = true
+                ORDER BY transaction_type, approval_order
+            """),
+            {"tid": tenant_id, "pid": product_id},
+        )
+        rows = result.fetchall()
+        if rows:
+            return ProductApprovalRulesResponse(
+                product_id=uuid.UUID(product_id),
+                rules=[
+                    ApprovalRuleResponse(
+                        id=uuid.UUID(str(r.id)),
+                        transaction_type=r.transaction_type,
+                        min_quantity=r.min_quantity,
+                        max_quantity=r.max_quantity,
+                        approver_role=r.approver_role,
+                        approval_order=r.approval_order,
+                        product_id=uuid.UUID(str(r.product_id)),
+                        is_product_level=True,
+                    )
+                    for r in rows
+                ],
+                is_using_defaults=False,
+            )
+
+    # Fall through to tenant-level rules
+    result = await db.execute(
+        text("""
+            SELECT id, transaction_type, min_quantity, max_quantity,
+                   approver_role, approval_order, product_id
+            FROM   approval_rule
+            WHERE  tenant_id  = :tid
+              AND  product_id IS NULL
+              AND  is_active  = true
+            ORDER BY transaction_type, approval_order
+        """),
+        {"tid": tenant_id},
+    )
+    rows = result.fetchall()
+    return ProductApprovalRulesResponse(
+        product_id=uuid.UUID(product_id) if product_id else None,
+        rules=[
+            ApprovalRuleResponse(
+                id=uuid.UUID(str(r.id)),
+                transaction_type=r.transaction_type,
+                min_quantity=r.min_quantity,
+                max_quantity=r.max_quantity,
+                approver_role=r.approver_role,
+                approval_order=r.approval_order,
+                product_id=None,
+                is_product_level=False,
+            )
+            for r in rows
+        ],
+        is_using_defaults=True,
+    )
+
+
+# ── GET /approval-rules/latest — MUST appear before /{product_id} routes ──────
+
+@router.get("/approval-rules/latest",
+            response_model=SuccessResponse[ProductApprovalRulesResponse])
+@require_permission(PERMISSIONS.PRODUCT_VIEW_APPROVAL_RULES)
+async def get_latest_approval_rules(
+    user=Depends(get_current_user),
+    db: AsyncSession = Depends(get_db_session),
+) -> SuccessResponse[ProductApprovalRulesResponse]:
+    """Return approval rules from the most recently created product that has
+    product-level overrides.  Falls back to tenant-level rules.
+
+    Used by the Add Product panel to pre-populate the Approval Thresholds section
+    with the previous product's rules so the operator does not re-enter them.
+    """
+    tid = str(user.tenant_id)
+
+    # Find the most recently created product that has product-level approval rules
+    latest = await db.execute(
+        text("""
+            SELECT ar.product_id
+            FROM   approval_rule ar
+            JOIN   products p ON p.id = ar.product_id
+            WHERE  ar.tenant_id    = :tid
+              AND  ar.product_id IS NOT NULL
+              AND  ar.is_active    = true
+              AND  p.tenant_id     = :tid
+              AND  p.is_active     = true
+            ORDER BY p.created_at DESC
+            LIMIT 1
+        """),
+        {"tid": tid},
+    )
+    row = latest.fetchone()
+    pid = str(row[0]) if row else None
+    data = await _read_approval_rules(db, tid, pid)
+    return SuccessResponse(data=data)
+
+
+# ── GET /{product_id}/approval-rules ─────────────────────────────────────────
+
+@router.get("/{product_id}/approval-rules",
+            response_model=SuccessResponse[ProductApprovalRulesResponse])
+@require_permission(PERMISSIONS.PRODUCT_VIEW_APPROVAL_RULES)
+async def get_product_approval_rules(
+    product_id: str,
+    user=Depends(get_current_user),
+    db: AsyncSession = Depends(get_db_session),
+) -> SuccessResponse[ProductApprovalRulesResponse]:
+    """Return approval rules for a specific product.
+
+    Returns product-level rules when the product has its own overrides.
+    Returns tenant-level rules (is_using_defaults=True) when no product-level
+    rules exist — so the caller always sees the effective rules.
+    """
+    tid = str(user.tenant_id)
+    data = await _read_approval_rules(db, tid, product_id)
+    return SuccessResponse(data=data)
+
+
+# ── PUT /{product_id}/approval-rules ─────────────────────────────────────────
+
+@router.put("/{product_id}/approval-rules",
+            response_model=SuccessResponse[ProductApprovalRulesResponse])
+@require_permission(PERMISSIONS.PRODUCT_MANAGE_APPROVAL_RULES)
+async def upsert_product_approval_rules(
+    product_id: str,
+    body: ApprovalRulesUpsertRequest,
+    user=Depends(get_current_user),
+    db: AsyncSession = Depends(get_db_session),
+) -> SuccessResponse[ProductApprovalRulesResponse]:
+    """Upsert product-level approval rules (TA and NM only).
+
+    Replaces all existing product-level rules for this product with the
+    supplied list.  Send an empty list to reset to tenant defaults.
+
+    Audit log is written inside the same transaction (CLAUDE.md §8, §14).
+    """
+    tid = str(user.tenant_id)
+    pid = product_id
+
+    # Delete existing product-level rules for this product (replace semantics)
+    await db.execute(
+        text("DELETE FROM approval_rule "
+             "WHERE tenant_id = :tid AND product_id = :pid"),
+        {"tid": tid, "pid": pid},
+    )
+
+    # Insert new product-level rules
+    for entry in body.rules:
+        rid = str(uuid.uuid4())
+        await db.execute(
+            text("""
+                INSERT INTO approval_rule
+                  (id, tenant_id, transaction_type, min_quantity, max_quantity,
+                   approver_role, approval_order, product_id, is_active)
+                VALUES
+                  (:id, :tid, :tx_type, :min_qty, :max_qty,
+                   :approver_role, :approval_order, :pid, true)
+            """),
+            {
+                "id":             rid,
+                "tid":            tid,
+                "tx_type":        entry.transaction_type,
+                "min_qty":        str(entry.min_quantity) if entry.min_quantity is not None else None,
+                "max_qty":        str(entry.max_quantity) if entry.max_quantity is not None else None,
+                "approver_role":  entry.approver_role,
+                "approval_order": entry.approval_order,
+                "pid":            pid,
+            },
+        )
+
+    # Audit log (inside same transaction)
+    await db.execute(
+        text("""
+            INSERT INTO audit_logs
+              (tenant_id, user_id, role, action, resource_type, resource_id, decision)
+            VALUES (:tid, :uid, :role, 'product:manage_approval_rules',
+                    'product', :rid, 'GRANTED')
+        """),
+        {
+            "tid":  tid,
+            "uid":  str(user.user_id),
+            "role": user.role,
+            "rid":  uuid.UUID(pid),
+        },
+    )
+
+    data = await _read_approval_rules(db, tid, pid)
+    return SuccessResponse(data=data)

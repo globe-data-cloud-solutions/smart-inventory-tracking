@@ -199,3 +199,62 @@ class PackagingTypeResponse(BaseModel):
     name: str
     units_per_package: int
     tenant_id: uuid.UUID
+
+
+# ── approval rules ────────────────────────────────────────────────────────────
+
+_VALID_TX_TYPES   = {"PULL", "PUSH", "ADJUSTMENT", "SISTER"}
+_VALID_APPROVERS  = {"WM", "RM", "NM", "TA", "SA"}
+
+
+class ApprovalRuleEntry(BaseModel):
+    """One quantity band override for a specific product + transaction type."""
+
+    transaction_type: str = Field(description="PULL | PUSH | ADJUSTMENT | SISTER")
+    min_quantity:     Optional[Decimal] = Field(default=None, ge=0)
+    max_quantity:     Optional[Decimal] = Field(default=None, ge=0)
+    approver_role:    str = Field(min_length=2, max_length=10)
+    approval_order:   int = Field(default=1, ge=1)
+
+    @field_validator("transaction_type", mode="before")
+    @classmethod
+    def validate_tx_type(cls, v: object) -> object:
+        if isinstance(v, str) and v.upper() in _VALID_TX_TYPES:
+            return v.upper()
+        raise ValueError(f"transaction_type must be one of {sorted(_VALID_TX_TYPES)}")
+
+    @field_validator("approver_role", mode="before")
+    @classmethod
+    def validate_role(cls, v: object) -> object:
+        if isinstance(v, str) and v.upper() in _VALID_APPROVERS:
+            return v.upper()
+        raise ValueError(f"approver_role must be one of {sorted(_VALID_APPROVERS)}")
+
+
+class ApprovalRulesUpsertRequest(BaseModel):
+    """PUT /api/v1/products/{product_id}/approval-rules body.
+
+    Send an empty list to reset to tenant defaults (clears all product-level rules).
+    """
+    rules: list[ApprovalRuleEntry] = Field(default_factory=list)
+
+
+class ApprovalRuleResponse(BaseModel):
+    """Single row from the approval_rule table, annotated with scope."""
+
+    id:               uuid.UUID
+    transaction_type: str
+    min_quantity:     Optional[Decimal] = None
+    max_quantity:     Optional[Decimal] = None
+    approver_role:    str
+    approval_order:   int
+    product_id:       Optional[uuid.UUID] = None
+    is_product_level: bool  # True when product_id is set
+
+
+class ProductApprovalRulesResponse(BaseModel):
+    """Response from GET /products/{id}/approval-rules and /approval-rules/latest."""
+
+    product_id:        Optional[uuid.UUID] = None
+    rules:             list[ApprovalRuleResponse]
+    is_using_defaults: bool  # True when product has no custom rules of its own

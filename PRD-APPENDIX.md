@@ -269,6 +269,43 @@ Some tenants configure more than one National Manager (NM role, privilege level 
 
 ---
 
+### B9 — Product-Level Approval Rules
+
+Products may define their own approval thresholds that take precedence over the tenant-level rules in `approval_rule`.
+
+#### Fallback chain
+
+```
+1. Product-level rule    approval_rule WHERE product_id = <this product>
+2. Tenant-level rule     approval_rule WHERE product_id IS NULL
+3. Org-type default      ApprovalService._ORG_TYPE_DEFAULTS (hardcoded, same as seed data)
+```
+
+The Level 3 default ensures `get_required_approver()` never raises for a valid transaction type, even on a fresh tenant with no approval_rule rows.
+
+#### Schema
+
+`product_id UUID NULL REFERENCES products(id)` added to `approval_rule` via migration 025.  Existing rows (product_id NULL) remain tenant-level rules.  A partial unique index on `(tenant_id, transaction_type, approval_order, product_id) WHERE product_id IS NOT NULL` prevents duplicate bands per product.
+
+#### Permission model
+
+| Permission | Roles granted | Notes |
+|---|---|---|
+| `product:view_approval_rules` | SA, TA, NM, RM, WM | Read — no `audit_required` |
+| `product:manage_approval_rules` | SA, TA, NM | Write — includes `audit_required` in ABAC |
+
+WM and RM may view but never write product-level approval rules.
+
+#### Pre-population
+
+`GET /api/v1/products/approval-rules/latest` returns the most recently created product's rules (or tenant defaults if no product has rules yet).  The Add Product panel fetches this on open and pre-fills the collapsed Approval Thresholds section, reducing re-entry for operators adding many similar products.
+
+#### Reset to tenant defaults
+
+`PUT /api/v1/products/{id}/approval-rules` with `{"rules": []}` deletes all product-level rows, causing the fallback chain to reach the tenant-level rules on the next approval routing call.
+
+---
+
 ## §C — Phase 4B Architecture Decisions
 
 ### C1 — Gateway vs BFF Mode
