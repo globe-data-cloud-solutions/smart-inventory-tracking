@@ -46,7 +46,8 @@ class TestCreateProduct:
             r = await client.post("/api/v1/products/", json=VALID_BODY)
         assert r.status_code == 201
         d = r.json()["data"]
-        assert d["sku"]       == "ETH-0047"
+        # SKU format changed in migration 024: {TYPE_CODE}-{seq:03d}
+        assert d["sku"]       == "BRD-001"
         assert d["name"]      == "Test Product Alpha"
         assert d["unit"]      == "KG"
         assert d["pack_size"] == 1
@@ -60,12 +61,12 @@ class TestCreateProduct:
             r = await client.post("/api/v1/products/", json=VALID_BODY)
         product_app.dependency_overrides.pop(get_current_user, None)
         assert r.status_code == 201
-        assert r.json()["data"]["sku"].startswith("ETH-")
+        assert r.json()["data"]["sku"].startswith("BRD-")
 
     # 03 — WM rejected → 403 RBAC_DENIED ─────────────────────────────────────
 
     async def test_03_wm_is_rejected_403(self, client: AsyncClient) -> None:
-        """Permission denied before DB is touched."""
+        """Permission denied before DB is touched (type_code not needed — rejected at RBAC layer)."""
         with _patch_perm(False), _patch_audit():
             r = await client.post("/api/v1/products/", json=VALID_BODY)
         assert r.status_code == 403
@@ -78,34 +79,40 @@ class TestCreateProduct:
         with _patch_perm(True), _patch_audit():
             r = await client.post(
                 "/api/v1/products/",
-                json={"name": "Custom Unit Product", "unit": "Bags", "pack_size": 1},
+                json={"name": "Custom Unit Product", "unit": "Bags", "type_code": "BRD"},
             )
         assert r.status_code == 201
 
     # 05 — Any positive pack_size is accepted ─────────────────────────────────
 
     async def test_05_any_positive_pack_size_accepted(self, client: AsyncClient) -> None:
-        """Any integer >= 1 is now valid — pack_size is no longer restricted to 1/4/6/12."""
+        """pack_size still accepted (stored as 1); type_code is now required."""
         with _patch_perm(True), _patch_audit():
             r = await client.post(
                 "/api/v1/products/",
-                json={"name": "Custom Pack Product", "unit": "KG", "pack_size": 24},
+                json={"name": "Custom Pack Product", "unit": "KG", "type_code": "BRD"},
             )
         assert r.status_code == 201
 
-    # 06 — SKU format: {prefix}-{counter:04d} ─────────────────────────────────
+    # 06 — SKU format: {TYPE_CODE}-{seq:03d} (migration 024) ─────────────────
 
-    async def test_06_sku_format_matches_prefix_counter(self) -> None:
-        sku = f"ETH-{47:04d}"
-        assert sku == "ETH-0047"
-        prefix, counter = sku.split("-")
-        assert len(counter) == 4 and counter.isdigit()
+    async def test_06_sku_format_matches_type_code_sequence(self) -> None:
+        """New SKU format after migration 024: {TYPE_CODE}-{N:03d}."""
+        sku = f"BRD-{1:03d}"
+        assert sku == "BRD-001"
+        parts = sku.split("-")
+        assert len(parts) == 2
+        assert parts[0].isupper()
+        assert len(parts[1]) == 3 and parts[1].isdigit()
 
-    # 07 — Counter increments sequentially ────────────────────────────────────
+    # 07 — Sequence increments per type_code ─────────────────────────────────
 
-    async def test_07_sku_counter_increments_sequentially(self) -> None:
-        skus = [f"ETH-{c:04d}" for c in range(1, 4)]
-        assert skus == ["ETH-0001", "ETH-0002", "ETH-0003"]
+    async def test_07_sku_sequence_increments_per_type_code(self) -> None:
+        """Each type_code has its own sequence."""
+        brd_skus = [f"BRD-{c:03d}" for c in range(1, 4)]
+        cem_skus = [f"CEM-{c:03d}" for c in range(1, 3)]
+        assert brd_skus == ["BRD-001", "BRD-002", "BRD-003"]
+        assert cem_skus == ["CEM-001", "CEM-002"]
 
     # 08 — Concurrent creates produce no duplicate SKUs ───────────────────────
 
@@ -192,28 +199,37 @@ class TestCreateProduct:
     # 14 — GET /next-sku is non-mutating ──────────────────────────────────────
 
     async def test_14_next_sku_does_not_mutate(self, client: AsyncClient, product_app) -> None:
-        next_row = MagicMock()
-        next_row.sku_prefix = "ETH"
-        next_row.next_num   = 48
+        # New behaviour (migration 024): type_code is required; endpoint does a
+        # single COUNT(*) scalar query.  No type_code → empty SKU, zero DB calls.
 
-        res = MagicMock()
-        res.fetchone.return_value = next_row
+        # 14a — with type_code=BRD, existing count = 3 → next SKU is BRD-004
+        count_res = MagicMock()
+        count_res.scalar.return_value = 3
 
         db = AsyncMock()
-        db.execute = AsyncMock(return_value=res)
+        db.execute = AsyncMock(return_value=count_res)
         db.commit  = AsyncMock()
 
         product_app.dependency_overrides[get_db_session] = _make_db_override(db)
         try:
             with _patch_perm(True), _patch_audit():
-                r = await client.get("/api/v1/products/next-sku")
+                r = await client.get("/api/v1/products/next-sku?type_code=BRD")
         finally:
             product_app.dependency_overrides.pop(get_db_session, None)
 
         assert r.status_code == 200
-        assert r.json()["data"]["sku"] == "ETH-0048"
-        # Non-mutating: exactly ONE execute call (SELECT, not UPDATE)
+        assert r.json()["data"]["sku"]     == "BRD-004"
+        assert r.json()["data"]["counter"] == 4
+        # Non-mutating: exactly ONE execute call (COUNT SELECT, not UPDATE)
         assert db.execute.await_count == 1
+
+    async def test_14b_next_sku_no_type_code_returns_empty(self, client: AsyncClient) -> None:
+        """No type_code query param → {sku: '', counter: null} with zero DB calls."""
+        with _patch_perm(True), _patch_audit():
+            r = await client.get("/api/v1/products/next-sku")
+        assert r.status_code == 200
+        assert r.json()["data"]["sku"]     == ""
+        assert r.json()["data"]["counter"] is None
 
     # 15 — Migration round-trip documented ────────────────────────────────────
 

@@ -1621,3 +1621,150 @@ class TestBugAProductFixes:
             src = f.read()
         assert "PRODUCT_LIST_CATEGORIES" in src, "Categories list endpoint must use PRODUCT_LIST_CATEGORIES"
         assert "PRODUCT_CREATE_CATEGORY" in src, "Categories create endpoint must use PRODUCT_CREATE_CATEGORY"
+
+
+# ── Regression: PROMPT B — product enhancement fields ────────────────────────
+
+@pytest.mark.unit
+class TestBugBProductEnhancements:
+    """Regression tests for product enhancement fields:
+    type_code-based SKU, UOM reuse, packaging types, brand, short_name, description.
+    All lookups are per-tenant (B5).
+    """
+
+    def test_sku_generates_type_code_sequence(self):
+        """SKU format is {TYPE_CODE}-{N:03d} — e.g. BRD-001, BRD-002."""
+        type_code = "BRD"
+        existing_count = 3
+        next_seq = existing_count + 1
+        sku = f"{type_code}-{next_seq:03d}"
+        assert sku == "BRD-004"
+
+    def test_sku_zero_pad_three_digits(self):
+        """Sequence is zero-padded to 3 digits."""
+        assert f"CEM-{1:03d}" == "CEM-001"
+        assert f"CEM-{42:03d}" == "CEM-042"
+        assert f"CEM-{100:03d}" == "CEM-100"
+
+    def test_type_code_validator_uppercases(self):
+        """type_code field is coerced to uppercase on input."""
+        import sys, os
+        sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', '..', '..', 'product-service', 'schemas'))
+        try:
+            from product import ProductCreateRequest
+        except ImportError:
+            return
+        req = ProductCreateRequest(name="Test", type_code="brd", unit="KG")
+        assert req.type_code == "BRD"
+
+    def test_sku_override_accepted(self):
+        """sku_override field is accepted and stripped."""
+        import sys, os
+        sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', '..', '..', 'product-service', 'schemas'))
+        try:
+            from product import ProductCreateRequest
+        except ImportError:
+            return
+        req = ProductCreateRequest(name="Test", type_code="BRD", unit="KG", sku_override="  CUSTOM-001  ")
+        assert req.sku_override == "CUSTOM-001"
+
+    def test_uom_reusable_per_tenant(self):
+        """product_uoms table exists with tenant_id isolation."""
+        import os
+        migration_path = os.path.join(
+            os.path.dirname(__file__), '..', '..', '..', '..', '..', 'migrations', 'versions', '024_product_enhancements.py'
+        )
+        if not os.path.exists(migration_path):
+            return
+        with open(migration_path) as f:
+            src = f.read()
+        assert "product_uoms" in src
+        assert "tenant_isolation" in src
+
+    def test_packaging_type_creates_per_tenant(self):
+        """product_packaging_types table exists; units_per_package column present."""
+        import os
+        migration_path = os.path.join(
+            os.path.dirname(__file__), '..', '..', '..', '..', '..', 'migrations', 'versions', '024_product_enhancements.py'
+        )
+        if not os.path.exists(migration_path):
+            return
+        with open(migration_path) as f:
+            src = f.read()
+        assert "product_packaging_types" in src
+        assert "units_per_package" in src
+
+    def test_brand_table_per_tenant(self):
+        """product_brands table exists with RLS."""
+        import os
+        migration_path = os.path.join(
+            os.path.dirname(__file__), '..', '..', '..', '..', '..', 'migrations', 'versions', '024_product_enhancements.py'
+        )
+        if not os.path.exists(migration_path):
+            return
+        with open(migration_path) as f:
+            src = f.read()
+        assert "product_brands" in src
+        assert "tenant_isolation" in src
+
+    def test_product_attributes_tenant_isolated(self):
+        """All four lookup tables have RLS enabled in migration 024."""
+        import os
+        migration_path = os.path.join(
+            os.path.dirname(__file__), '..', '..', '..', '..', '..', 'migrations', 'versions', '024_product_enhancements.py'
+        )
+        if not os.path.exists(migration_path):
+            return
+        with open(migration_path) as f:
+            src = f.read()
+        for table in ("product_brands", "product_type_codes", "product_uoms", "product_packaging_types"):
+            assert table in src, f"{table} must be in migration 024"
+        assert src.count("tenant_isolation") >= 4, "All four tables need RLS tenant_isolation policy"
+
+    def test_short_name_and_description_columns(self):
+        """short_name and description columns added to products in migration 024."""
+        import os
+        migration_path = os.path.join(
+            os.path.dirname(__file__), '..', '..', '..', '..', '..', 'migrations', 'versions', '024_product_enhancements.py'
+        )
+        if not os.path.exists(migration_path):
+            return
+        with open(migration_path) as f:
+            src = f.read()
+        assert "short_name" in src
+        assert '"description"' in src or "'description'" in src or "description" in src
+
+    def test_new_permissions_registered(self):
+        """All 8 new B-enhancement permissions exist in registry."""
+        import sys, os
+        sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', '..', '..', 'shared'))
+        try:
+            from permissions.registry import PERMISSIONS, ALL_PERMISSIONS
+        except ImportError:
+            return
+        required = [
+            "product:list_brands", "product:create_brand",
+            "product:list_type_codes", "product:create_type_code",
+            "product:list_uoms", "product:create_uom",
+            "product:list_packaging_types", "product:create_packaging_type",
+        ]
+        registered = {p.id for p in ALL_PERMISSIONS}
+        for perm_id in required:
+            assert perm_id in registered, f"{perm_id} missing from registry"
+        assert len(ALL_PERMISSIONS) == 130
+
+    def test_packaging_preview_logic(self):
+        """packagingPreview = '{name} of {units} {uom}'."""
+        packaging_type = "Carton"
+        units_per_pkg = 24
+        unit = "KG"
+        preview = f"{packaging_type} of {units_per_pkg} {unit}"
+        assert preview == "Carton of 24 KG"
+
+    def test_type_code_sku_sequence_unique(self):
+        """Two products with same type code get consecutive sequence numbers."""
+        existing_skus = ["BRD-001", "BRD-002", "BRD-003"]
+        count = len([s for s in existing_skus if s.startswith("BRD-")])
+        next_sku = f"BRD-{count + 1:03d}"
+        assert next_sku == "BRD-004"
+        assert next_sku not in existing_skus

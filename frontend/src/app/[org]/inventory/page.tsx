@@ -26,6 +26,9 @@ type ApiTransfer = {
 type ApiProduct = {
   id: string; sku: string; name: string; unit: string; pack_size: number;
   reorder_point?: number | null; category?: string | null;
+  short_name?: string | null; description?: string | null;
+  brand?: string | null; type_code?: string | null;
+  packaging_type?: string | null; units_per_package?: number | null;
 };
 
 type InventoryStockItem = {
@@ -354,6 +357,12 @@ export default function InventoryPage() {
         batchTracking: false,
         reorderPoint: p.reorder_point != null ? safeFloat(p.reorder_point) : 0,
         stock: {} as Record<string, number>,
+        shortName: p.short_name ?? undefined,
+        description: p.description ?? undefined,
+        brand: p.brand ?? undefined,
+        typeCode: p.type_code ?? undefined,
+        packagingType: p.packaging_type ?? undefined,
+        unitsPerPackage: p.units_per_package ?? undefined,
       }))
     : [
         ...(tenant?.products ?? []),
