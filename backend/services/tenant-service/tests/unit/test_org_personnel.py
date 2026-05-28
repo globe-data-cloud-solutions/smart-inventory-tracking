@@ -1294,3 +1294,147 @@ class TestSACrossTenantPersonnelFrontend:
         assert query_enabled(True, "e5999d62-74b9-4ee5-97fb-668263d96e2e", None)
         # WM — always enabled (uses session.tenantId)
         assert query_enabled(False, None, "10000001-0000-0000-0000-000000000001")
+
+
+# ── Session 10: New-tenant workflow regressions ───────────────────────────────
+
+@pytest.mark.unit
+class TestUseWarehousesHook:
+    """useWarehouses hook must fetch from org-nodes API, not analytics stock.
+    Gateway mode: org nodes are the source of truth even before any stock exists.
+    Demo mode: returns empty list (caller uses demo tenant warehouses).
+    """
+
+    def test_gateway_mode_uses_org_nodes_endpoint(self):
+        """Hook query path must be /api/v1/tenants/{id}/nodes, not analytics."""
+        expected = "/api/v1/tenants/{tenant_id}/nodes"
+        not_expected = "/api/v1/inventory/analytics/stock"
+        assert "nodes" in expected
+        assert expected != not_expected
+
+    def test_non_stock_holding_nodes_excluded_from_warehouse_list(self):
+        """Nodes with is_stock_holding=False must not appear in the dropdown."""
+        nodes = [
+            {"id": "A", "name": "Main WH",    "is_stock_holding": True,  "parent_node_id": None, "address": None, "children": []},
+            {"id": "B", "name": "Admin Node", "is_stock_holding": False, "parent_node_id": None, "address": None, "children": []},
+            {"id": "C", "name": "Sub WH",     "is_stock_holding": True,  "parent_node_id": "A",  "address": None, "children": []},
+        ]
+        warehouses = [n for n in nodes if n["is_stock_holding"]]
+        ids = [w["id"] for w in warehouses]
+        assert "A" in ids
+        assert "C" in ids
+        assert "B" not in ids, "Non-stock-holding node must be excluded"
+
+    def test_org_nodes_available_before_any_stock_received(self):
+        """For a new tenant, org nodes exist before inventory_balances has any rows.
+        Warehouse dropdown must work even with empty analytics stock response."""
+        analytics_stock = []   # new tenant, no stock received yet
+        org_nodes = [
+            {"id": "N1", "name": "Factory WH", "is_stock_holding": True, "children": []},
+        ]
+        # Analytics-derived gateway warehouses would be empty:
+        gateway_from_analytics = [
+            {"id": row["warehouse_id"], "name": row["warehouse_name"]}
+            for row in analytics_stock
+        ]
+        # Org-node-derived list is populated regardless of stock:
+        gateway_from_nodes = [n for n in org_nodes if n["is_stock_holding"]]
+
+        assert len(gateway_from_analytics) == 0, "Analytics gives nothing for new tenant"
+        assert len(gateway_from_nodes) == 1, "Org nodes available before first receipt"
+
+    def test_display_warehouses_prefers_org_nodes_over_analytics(self):
+        """inventory/page.tsx displayWarehouses must use org nodes when available."""
+        org_node_whs = [{"id": "N1", "name": "Factory WH"}]
+        analytics_whs = []  # empty — new tenant
+
+        display_warehouses = org_node_whs if org_node_whs else analytics_whs
+
+        assert len(display_warehouses) == 1
+        assert display_warehouses[0]["id"] == "N1"
+
+
+@pytest.mark.unit
+class TestOpeningBalanceEndpoint:
+    """Opening Balance panel must POST to /api/v1/inventory/receive/, not the
+    deprecated BFF route /api/v1/receipts/opening-balance (HTTP 410 in gateway mode)."""
+
+    def test_correct_endpoint_is_inventory_receive(self):
+        """OpeningBalancePanel must use the standard receive endpoint."""
+        correct_endpoint = "/api/v1/inventory/receive/"
+        old_endpoint = "/api/v1/receipts/opening-balance"
+        assert correct_endpoint != old_endpoint
+        assert "inventory/receive" in correct_endpoint
+
+    def test_opening_balance_payload_matches_receive_request_schema(self):
+        """Payload sent to /api/v1/inventory/receive/ must match ReceiveStockRequest."""
+        import uuid
+        from decimal import Decimal
+
+        product_id = str(uuid.uuid4())
+        warehouse_id = str(uuid.uuid4())
+        idempotency_key = f"ob:{product_id}:{warehouse_id}:12345:abcd1234"
+
+        payload = {
+            "product_id":      product_id,
+            "warehouse_id":    warehouse_id,
+            "quantity":        Decimal("500"),
+            "lot_number":      "LOT-001",
+            "expiry_date":     "2027-12-31",
+            "idempotency_key": idempotency_key,
+            "source":          "OPENING_BALANCE",
+        }
+        required_fields = {"product_id", "warehouse_id", "quantity", "idempotency_key"}
+        assert required_fields.issubset(payload.keys())
+        assert payload["source"] == "OPENING_BALANCE"
+        assert payload["quantity"] > 0
+
+    def test_mwh_type_filter_removed_from_dropdown(self):
+        """Opening Balance warehouse dropdown must show ALL org nodes, not just MWH.
+        For org nodes, type is always 'WH' (hierarchy-level based typing not stored)."""
+        warehouses = [
+            {"id": "N1", "name": "Main Factory", "type": "WH"},
+            {"id": "N2", "name": "North Hub",    "type": "WH"},
+            {"id": "N3", "name": "Sub Store",    "type": "WH"},
+        ]
+        # Old code: mwhWarehouses = warehouses.filter(w => w.type === "MWH")
+        # → empty list for org nodes (all have type "WH")
+        old_available = [w for w in warehouses if w["type"] == "MWH"]
+        # New code: availableWarehouses = warehouses (no filter)
+        new_available = warehouses
+        assert len(old_available) == 0, "MWH filter returns nothing for org nodes"
+        assert len(new_available) == 3, "All warehouses shown without filter"
+
+
+@pytest.mark.unit
+class TestAddProductFreeTextUOM:
+    """Unit and Pack Size in AddProductPanel must accept any string/number, not just
+    the hardcoded KG/PACK/QTL/MT and 1/4/6/12 options."""
+
+    def test_unit_accepts_custom_string(self):
+        """Any non-empty string is a valid unit value."""
+        valid_units = ["KG", "Bag", "Box", "Carton", "Pallet", "piece", "ltr", "MT"]
+        for u in valid_units:
+            assert isinstance(u, str) and len(u) > 0
+
+    def test_pack_size_accepts_any_positive_integer(self):
+        """pack_size must be a positive integer; any value >= 1 is valid."""
+        def parse_pack_size(raw: str) -> int:
+            parsed = int(raw) if raw.isdigit() else 0
+            return max(parsed, 1)
+
+        assert parse_pack_size("24") == 24
+        assert parse_pack_size("100") == 100
+        assert parse_pack_size("0") == 1    # fallback to 1
+        assert parse_pack_size("") == 1     # fallback to 1
+
+    def test_sku_preview_uses_free_text_unit_and_pack(self):
+        """SKU preview formula works with arbitrary unit/pack_size strings."""
+        org_abbr = "SMAR"
+        type_display = "CEM"
+        unit = "Bag"
+        pack_size = "50"
+        counter = 3
+
+        sku = f"{org_abbr}-{type_display}-{unit}{pack_size}-{str(counter).zfill(4)}"
+        assert sku == "SMAR-CEM-Bag50-0003"

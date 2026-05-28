@@ -12,21 +12,6 @@ function toOrgAbbr(slug: string): string {
   return slug.split("-").map((w) => (w[0] ?? "").toUpperCase()).join("").slice(0, 4);
 }
 
-type Unit     = "KG" | "PACK" | "QTL" | "MT";
-type PackSize = 1 | 4 | 6 | 12;
-
-const UNITS: Array<{ value: Unit; label: string }> = [
-  { value: "KG",   label: "product.unit.KG"   },
-  { value: "PACK", label: "product.unit.PACK" },
-  { value: "QTL",  label: "product.unit.QTL"  },
-  { value: "MT",   label: "product.unit.MT"   },
-];
-const PACKS: Array<{ value: PackSize; label: string }> = [
-  { value: 1,  label: "product.pack_size.1"  },
-  { value: 4,  label: "product.pack_size.4"  },
-  { value: 6,  label: "product.pack_size.6"  },
-  { value: 12, label: "product.pack_size.12" },
-];
 
 function FieldLabel({ text, hint }: { text: string; hint?: string }) {
   return (
@@ -70,8 +55,8 @@ export function AddProductPanel({ apiBase, onClose, categories = [] }: AddProduc
   const [category, setCategory]             = useState("");
   const [isCustomCategory, setIsCustomCategory] = useState(false);
   const [typeCode, setTypeCode]             = useState("");
-  const [unit, setUnit]                     = useState<Unit>("KG");
-  const [packSize, setPackSize]             = useState<PackSize>(1);
+  const [unit, setUnit]                     = useState<string>("");
+  const [packSize, setPackSize]             = useState<string>("1");
   const [onHand, setOnHand]                 = useState("");
   const [reorderPoint, setReorderPoint]     = useState("");
   const [nameErr, setNameErr]               = useState("");
@@ -100,7 +85,7 @@ export function AddProductPanel({ apiBase, onClose, categories = [] }: AddProduc
   const saveDisabled = !nameOk || !categoryOk || !typeCodeOk || submitting || skuLoading;
 
   const resetForm = () => {
-    setName(""); setCategory(""); setIsCustomCategory(false); setTypeCode(""); setUnit("KG"); setPackSize(1);
+    setName(""); setCategory(""); setIsCustomCategory(false); setTypeCode(""); setUnit(""); setPackSize("1");
     setOnHand(""); setReorderPoint(""); setNameErr(""); setCategoryErr(""); setTypeCodeErr(""); setPanelError("");
   };
   const openPanel  = () => { resetForm(); setOpen(true); };
@@ -120,7 +105,8 @@ export function AddProductPanel({ apiBase, onClose, categories = [] }: AddProduc
       const onHandQty  = parsedOnHand > 0 ? parsedOnHand : 0;
       const reorderQty = parseFloat(reorderPoint);
       const whId       = user?.warehouseId ?? "";
-      const data = await api.post<{ id: string; sku: string }>(apiBase, { name: name.trim(), category: category.trim(), type_code: typeCode.trim().toUpperCase(), unit, pack_size: packSize, org_slug: org, on_hand: onHandQty, reorder_point: !isNaN(reorderQty) && reorderQty > 0 ? reorderQty : 0, warehouse_id: whId || undefined }, token ?? undefined);
+      const parsedPack = parseInt(packSize, 10);
+      const data = await api.post<{ id: string; sku: string }>(apiBase, { name: name.trim(), category: category.trim(), type_code: typeCode.trim().toUpperCase(), unit: unit.trim() || "units", pack_size: !isNaN(parsedPack) && parsedPack > 0 ? parsedPack : 1, org_slug: org, on_hand: onHandQty, reorder_point: !isNaN(reorderQty) && reorderQty > 0 ? reorderQty : 0, warehouse_id: whId || undefined }, token ?? undefined);
       setToast(t("product.add.success").replace("{{sku}}", data.sku));
       void qc.invalidateQueries({ queryKey: ["products"] });
       resetForm(); setOpen(false); onClose?.();
@@ -224,16 +210,26 @@ export function AddProductPanel({ apiBase, onClose, categories = [] }: AddProduc
           {/* Unit + Pack Size */}
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <FieldLabel text={t("product.add.field.unit")} />
-              <select value={unit} onChange={(e) => setUnit(e.target.value as Unit)} className={selectCls}>
-                {UNITS.map((o) => <option key={o.value} value={o.value}>{t(o.label)}</option>)}
-              </select>
+              <FieldLabel text={t("product.add.field.unit")} hint={`(${t("receive_panel.optional")})`} />
+              <input
+                value={unit}
+                onChange={(e) => setUnit(e.target.value)}
+                placeholder="e.g. KG, Box, Bag"
+                maxLength={20}
+                className={fieldOk}
+              />
             </div>
             <div>
               <FieldLabel text={t("product.add.field.pack_size")} />
-              <select value={packSize} onChange={(e) => setPackSize(Number(e.target.value) as PackSize)} className={selectCls}>
-                {PACKS.map((o) => <option key={o.value} value={o.value}>{t(o.label)}</option>)}
-              </select>
+              <input
+                type="number"
+                min="1"
+                step="1"
+                value={packSize}
+                onChange={(e) => setPackSize(e.target.value)}
+                placeholder="1"
+                className={fieldOk}
+              />
             </div>
           </div>
 

@@ -12,6 +12,7 @@ import { IssueStockPanel } from "@/components/features/inventory/IssueStockPanel
 import { OpeningBalancePanel } from "@/components/features/inventory/OpeningBalancePanel";
 import { BulkImportPanel } from "@/components/features/inventory/BulkImportPanel";
 import { useInventoryStore } from "@/lib/inventory-state";
+import { useWarehouses } from "@/hooks/useWarehouses";
 import { api } from "@/lib/api";
 import { t } from "@/lib/i18n";
 
@@ -223,6 +224,7 @@ export default function InventoryPage() {
 
   const isGatewayMode = !!process.env.NEXT_PUBLIC_API_URL;
   const tenant = DEMO_TENANTS.find((ten) => ten.slug === org);
+  const { warehouses: orgNodeWarehouses } = useWarehouses();
 
   const [selectedWH, setSelectedWH] = useState<string>(user?.warehouseId ?? "");
   const whId = selectedWH || user?.warehouseId || "";
@@ -276,17 +278,20 @@ export default function InventoryPage() {
     return Array.from(seen.values());
   }, [inventoryStock]);
 
-  // Re-sync selectedWH to the real UUID once gateway warehouse list has loaded.
-  // After login, _exchangeJWT updates warehouseId in localStorage; reading it here
-  // ensures the dropdown pre-selects the correct real warehouse on first render.
+  // Re-sync selectedWH once any warehouse list has loaded.
+  // Org node warehouses (from useWarehouses) are preferred because they exist even
+  // before any stock has been received. Analytics-based list is the fallback.
+  const effectiveWhList = isGatewayMode
+    ? (orgNodeWarehouses.length > 0 ? orgNodeWarehouses : gatewayWarehouses)
+    : [];
   useEffect(() => {
-    if (!isGatewayMode || gatewayWarehouses.length === 0) return;
+    if (!isGatewayMode || effectiveWhList.length === 0) return;
     const realWhId = getSession()?.warehouseId;
-    if (realWhId && gatewayWarehouses.some((w) => w.id === realWhId)) {
+    if (realWhId && effectiveWhList.some((w) => w.id === realWhId)) {
       setSelectedWH((prev) => (prev === realWhId ? prev : realWhId));
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [gatewayWarehouses]);
+  }, [effectiveWhList.length]);
 
   const syncedRef = useRef(new Set<string>());
   useEffect(() => {
@@ -332,9 +337,12 @@ export default function InventoryPage() {
     ? ["TA", "SA", "NM", "LM", "RM"].includes(user.role)
     : (userWarehouse?.type === "MWH" || ["TA", "SA"].includes(user.role));
 
-  // In gateway mode: use real warehouse list from inventory analytics;
-  // in BFF mode: use demo tenant warehouses.
-  const displayWarehouses: DemoWarehouse[] = isGatewayMode ? gatewayWarehouses : (tenant?.warehouses ?? []);
+  // In gateway mode: org node warehouses are the source of truth (exist before any stock).
+  // Falls back to analytics-derived list if org nodes haven't loaded yet.
+  // In BFF/demo mode: use demo tenant warehouses.
+  const displayWarehouses: DemoWarehouse[] = isGatewayMode
+    ? (orgNodeWarehouses.length > 0 ? orgNodeWarehouses : gatewayWarehouses)
+    : (tenant?.warehouses ?? []);
 
   const tenantProductIds = new Set((tenant?.products ?? []).map((p) => p.id));
   const mergedProducts: DemoProduct[] = isGatewayMode

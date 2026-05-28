@@ -43,8 +43,7 @@ export function OpeningBalancePanel({ products, warehouses, orgSlug }: Props) {
   const [success, setSuccess] = useState("");
   const [loading, setLoading] = useState(false);
 
-  const mwhWarehouses      = warehouses.filter((w) => w.type === "MWH");
-  const availableWarehouses = mwhWarehouses.length > 0 ? mwhWarehouses : warehouses;
+  const availableWarehouses = warehouses;
   const selectedProduct    = products.find((p) => p.id === form.productId);
   const requiresBatch      = selectedProduct?.batchTracking === true;
 
@@ -63,12 +62,20 @@ export function OpeningBalancePanel({ products, warehouses, orgSlug }: Props) {
       if (!form.manufactureDate) { setError(t("opening_balance.error_mfg"));   return; }
     }
     const product   = products.find((p) => p.id === form.productId);
-    const warehouse = availableWarehouses.find((w) => w.id === form.warehouseId) ?? warehouses.find((w) => w.id === form.warehouseId);
+    const warehouse = warehouses.find((w) => w.id === form.warehouseId);
     const idempotencyKey = `ob:${form.productId}:${form.warehouseId}:${Date.now()}:${nanoid(8)}`;
-    const payload = { warehouse_id: form.warehouseId, warehouse_name: warehouse?.name ?? form.warehouseId, product_id: form.productId, product_name: product?.name ?? form.productId, product_sku: product?.sku ?? "", quantity: qty, uom: product?.unit ?? "units", batch_number: form.lotNumber || null, manufacture_date: form.manufactureDate || null, expiry_date: form.expiryDate || null, notes: form.notes || "", reference_document: form.referenceDocument || null, idempotency_key: idempotencyKey, created_by: user.email };
+    const payload = {
+      product_id:       form.productId,
+      warehouse_id:     form.warehouseId,
+      quantity:         qty,
+      lot_number:       form.lotNumber || undefined,
+      expiry_date:      form.expiryDate || undefined,
+      idempotency_key:  idempotencyKey,
+      source:           "OPENING_BALANCE",
+    };
     setLoading(true);
     try {
-      await api.post("/api/v1/receipts/opening-balance", payload);
+      await api.post("/api/v1/inventory/receive/", payload);
       addReceive(form.productId, form.warehouseId, qty);
       logAudit({ tenantSlug: orgSlug, userEmail: user.email, userName: user.name, role: user.role, action: "inventory:opening_balance", category: "INVENTORY", resourceRef: product?.sku ?? form.productId, resourceType: "OpeningBalanceReceipt", productName: product?.name, quantityStr: `+${qty.toLocaleString()} ${product?.unit ?? "units"}`, toWarehouse: warehouse?.name ?? form.warehouseId, notes: form.notes || undefined });
       void qc.invalidateQueries({ queryKey: ["products", orgSlug] });

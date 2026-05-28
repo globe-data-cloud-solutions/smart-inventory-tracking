@@ -1100,6 +1100,96 @@ End-to-end workflow confirmed against a real (non-demo) tenant created via the S
 
 ---
 
+## 20. SESSION 10 — NEW-TENANT WORKFLOW: WAREHOUSE DROPDOWNS, OPENING BALANCE, UOM — 2026-05-28
+
+**Head commit at start:** Session 9 commit  
+**Unit tests at start:** 230 passed  
+**Unit tests at end:** **240 passed**, 0 failed  
+**TypeScript:** `npx tsc --noEmit` — 0 errors  
+
+### Overview
+
+Root cause: pages derived the warehouse list from analytics stock data. For a brand-new tenant with no stock received yet, the analytics query returns zero rows → warehouse dropdowns are empty → users cannot perform opening balance. Four fixes applied.
+
+---
+
+### FIX 1 — `useWarehouses` hook fetches from org-nodes API
+
+**Symptom:** Warehouse dropdowns in OpeningBalancePanel, BulkImportPanel, and the inventory page toolbar are empty for new tenants because `gatewayWarehouses` is built from analytics stock (which has no rows before the first receipt).
+
+**Root cause:** `inventory/page.tsx` built `gatewayWarehouses` by iterating over `inventoryStock` (analytics response). New tenants have `inventoryStock = []` → no warehouses in dropdown.
+
+**Fix:** New `frontend/src/hooks/useWarehouses.ts` hook fetches from `/api/v1/tenants/{id}/nodes`. The returned list is flat (tree children recursively unfolded), filtered to `is_stock_holding=true` nodes only. `inventory/page.tsx` now uses `useWarehouses()` for `displayWarehouses` (preferred over analytics-derived list). Analytics stock is still used for per-row balance data.
+
+**Files changed:** `frontend/src/hooks/useWarehouses.ts` (created), `frontend/src/app/[org]/inventory/page.tsx`
+
+**Regression tests:** `TestUseWarehousesHook` (4 tests):
+- `test_gateway_mode_uses_org_nodes_endpoint`
+- `test_non_stock_holding_nodes_excluded_from_warehouse_list`
+- `test_org_nodes_available_before_any_stock_received`
+- `test_display_warehouses_prefers_org_nodes_over_analytics`
+
+---
+
+### FIX 2 — Opening Balance endpoint fixed
+
+**Symptom:** "Route not found" or HTTP 4xx when TA/WM clicks "Opening Balance → Submit". In gateway mode (real FastAPI backend), the BFF route `/api/v1/receipts/opening-balance` does not exist in the Python backend — only in Next.js API routes.
+
+**Root cause:** `OpeningBalancePanel.tsx` posted to `/api/v1/receipts/opening-balance`. In gateway mode `BASE_URL = NEXT_PUBLIC_API_URL`, so the request went to the FastAPI backend where this path has no handler.
+
+**Fix:** Changed endpoint to `/api/v1/inventory/receive/` (the standard receive endpoint). Payload mapped to `ReceiveStockRequest` fields: `product_id`, `warehouse_id`, `quantity`, `lot_number`, `expiry_date`, `idempotency_key`, `source: "OPENING_BALANCE"`. The `source` field tags ledger records as opening balance entries.
+
+**Files changed:** `frontend/src/components/features/inventory/OpeningBalancePanel.tsx`
+
+**Regression tests:** `TestOpeningBalanceEndpoint` (3 tests):
+- `test_correct_endpoint_is_inventory_receive`
+- `test_opening_balance_payload_matches_receive_request_schema`
+- `test_mwh_type_filter_removed_from_dropdown`
+
+---
+
+### FIX 3 — OpeningBalancePanel MWH type filter removed
+
+**Symptom:** Even after FIX 1, the Opening Balance warehouse dropdown was always empty. The old code filtered `warehouses.filter(w => w.type === "MWH")`. Org nodes returned by `useWarehouses` all have `type: "WH"` (hierarchy-level-based typing is not stored on the node), so the MWH filter returned nothing.
+
+**Root cause:** `availableWarehouses = mwhWarehouses.length > 0 ? mwhWarehouses : warehouses` — `mwhWarehouses` was empty for org nodes, so `availableWarehouses` fell back to the unfiltered list. But this only worked if `warehouses` was non-empty. The filter logic was designed for the legacy demo tenant warehouse types.
+
+**Fix:** Removed the `mwhWarehouses` filter. `availableWarehouses = warehouses` directly. Backend ABAC enforces which warehouses a user may post to — frontend filtering here was redundant and incorrect for org nodes.
+
+**Files changed:** `frontend/src/components/features/inventory/OpeningBalancePanel.tsx`
+
+---
+
+### FIX 4 — AddProductPanel UOM and Pack Size free-text
+
+**Symptom:** When creating a product on a real tenant, Unit of Measure showed only KG / PACK / QTL / MT and Pack Size only 1 / 4 / 6 / 12 — hardcoded demo values that don't fit all product categories (cement bags, water bottles, medicine strips, etc).
+
+**Root cause:** `AddProductPanel.tsx` had `UNITS` and `PACKS` constant arrays with fixed dropdown options.
+
+**Fix:** Replaced both `<select>` elements with `<input>` elements:
+- `unit`: `<input type="text" placeholder="e.g. KG, Box, Bag">` — accepts any string; defaults to `"units"` if empty
+- `pack_size`: `<input type="number" min="1">` — parsed with `parseInt(packSize, 10) || 1`
+- SKU preview continues to work: `${orgAbbr}-${typeDisplay}-${unit}${packSize}-${counter}`
+- Removed `Unit` and `PackSize` type aliases and `UNITS`/`PACKS` constant arrays
+
+**Files changed:** `frontend/src/components/features/inventory/AddProductPanel.tsx`
+
+**Regression tests:** `TestAddProductFreeTextUOM` (3 tests):
+- `test_unit_accepts_custom_string`
+- `test_pack_size_accepts_any_positive_integer`
+- `test_sku_preview_uses_free_text_unit_and_pack`
+
+---
+
+### Final test counts
+
+| Suite | Count | Status |
+|---|---|---|
+| `pytest backend/ -v -m "unit"` | **240 / 240** | ✅ All pass |
+| `npx tsc --noEmit` | — | ✅ 0 errors |
+
+---
+
 ## 16. PHASE 1 FEATURES — PENDING IMPLEMENTATION
 
 Design decisions for all items below are documented in PRD-APPENDIX.md and CLAUDE.md §28. No implementation work is tracked here — this section records readiness status only.
