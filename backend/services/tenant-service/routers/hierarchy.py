@@ -274,7 +274,7 @@ async def upsert_hierarchy_config(
     "/{tenant_id}/nodes",
     response_model=SuccessResponse[List[OrgNodeOut]],
 )
-@require_permission(PERMISSIONS.TENANT_VIEW)
+@require_permission(PERMISSIONS.INVENTORY_VIEW)
 async def list_org_nodes(
     tenant_id: uuid.UUID,
     user=Depends(get_current_user),

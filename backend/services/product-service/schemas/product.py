@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import uuid
 from datetime import datetime
-from typing import Literal, Optional
+from typing import Optional
 
 from pydantic import BaseModel, Field, field_validator
 
@@ -15,12 +15,17 @@ class ProductCreateRequest(BaseModel):
     """
 
     name: str = Field(min_length=1, max_length=255)
-    unit: Literal["KG", "PACK", "QTL", "MT"]
-    pack_size: Literal[1, 4, 6, 12]
+    unit: str = Field(default="units", min_length=1, max_length=20)
+    pack_size: int = Field(default=1, ge=1)
 
     @field_validator("name", mode="before")
     @classmethod
     def strip_name(cls, v: object) -> object:
+        return v.strip() if isinstance(v, str) else v
+
+    @field_validator("unit", mode="before")
+    @classmethod
+    def strip_unit(cls, v: object) -> object:
         return v.strip() if isinstance(v, str) else v
 
 

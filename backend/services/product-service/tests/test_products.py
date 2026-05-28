@@ -73,23 +73,25 @@ class TestCreateProduct:
 
     # 04 — Invalid unit → 422 ─────────────────────────────────────────────────
 
-    async def test_04_invalid_unit_returns_422(self, client: AsyncClient) -> None:
+    async def test_04_custom_unit_string_accepted(self, client: AsyncClient) -> None:
+        """Any non-empty string is now a valid unit — free-text replaces the old Literal enum."""
         with _patch_perm(True), _patch_audit():
             r = await client.post(
                 "/api/v1/products/",
-                json={"name": "X", "unit": "BAGS", "pack_size": 1},
+                json={"name": "Custom Unit Product", "unit": "Bags", "pack_size": 1},
             )
-        assert r.status_code == 422
+        assert r.status_code == 201
 
-    # 05 — Invalid pack_size → 422 ────────────────────────────────────────────
+    # 05 — Any positive pack_size is accepted ─────────────────────────────────
 
-    async def test_05_invalid_pack_size_returns_422(self, client: AsyncClient) -> None:
+    async def test_05_any_positive_pack_size_accepted(self, client: AsyncClient) -> None:
+        """Any integer >= 1 is now valid — pack_size is no longer restricted to 1/4/6/12."""
         with _patch_perm(True), _patch_audit():
             r = await client.post(
                 "/api/v1/products/",
-                json={"name": "X", "unit": "KG", "pack_size": 7},
+                json={"name": "Custom Pack Product", "unit": "KG", "pack_size": 24},
             )
-        assert r.status_code == 422
+        assert r.status_code == 201
 
     # 06 — SKU format: {prefix}-{counter:04d} ─────────────────────────────────
 
