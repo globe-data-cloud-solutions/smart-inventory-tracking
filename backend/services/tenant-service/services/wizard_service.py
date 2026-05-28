@@ -47,8 +47,8 @@ async def complete_wizard(
         text(
             "UPDATE tenants SET "
             "  organisation_type   = :org_type, "
-            "  feature_flags       = :flags::jsonb, "
-            "  approval_thresholds = :thresholds::jsonb, "
+            "  feature_flags       = CAST(:flags AS jsonb), "
+            "  approval_thresholds = CAST(:thresholds AS jsonb), "
             "  default_locale      = :locale, "
             "  onboarding_complete = true, "
             "  updated_at          = now() "

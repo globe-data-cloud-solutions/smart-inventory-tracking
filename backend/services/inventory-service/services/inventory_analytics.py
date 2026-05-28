@@ -52,20 +52,21 @@ async def get_stock(
         SELECT
             ib.product_id,
             ib.warehouse_id,
-            p.name           AS product_name,
-            p.sku            AS product_sku,
-            w.name           AS warehouse_name,
-            w.warehouse_type AS warehouse_type,
-            SUM(ib.quantity) AS current_stock
+            p.name                                AS product_name,
+            p.sku                                 AS product_sku,
+            COALESCE(w.name, on_node.name)        AS warehouse_name,
+            COALESCE(w.warehouse_type::text, 'WAREHOUSE') AS warehouse_type,
+            SUM(ib.quantity)                      AS current_stock
         FROM inventory_balances ib
-        JOIN products  p ON p.id = ib.product_id
-        JOIN warehouses w ON w.id = ib.warehouse_id
+        JOIN products          p       ON p.id       = ib.product_id
+        LEFT JOIN warehouses   w       ON w.id       = ib.warehouse_id
+        LEFT JOIN organization_node on_node ON on_node.id = ib.warehouse_id
         WHERE 1=1
           {tenant_clause}
           {warehouse_clause}
         GROUP BY ib.product_id, ib.warehouse_id,
-                 p.name, p.sku, w.name, w.warehouse_type
-        ORDER BY p.name, w.name
+                 p.name, p.sku, w.name, w.warehouse_type, on_node.name
+        ORDER BY p.name, COALESCE(w.name, on_node.name)
     """)
 
     params: dict = {}
@@ -322,14 +323,15 @@ async def get_transfer_history(
         SELECT
             to_.id               AS transfer_id,
             to_.reference_number,
-            to_.to_warehouse_id  AS destination_warehouse_id,
-            dw.name              AS destination_warehouse_name,
+            to_.to_warehouse_id                          AS destination_warehouse_id,
+            COALESCE(dw.name, dw_node.name)              AS destination_warehouse_name,
             tol.quantity,
             to_.status,
             to_.created_at
         FROM transfer_orders to_
         JOIN transfer_order_lines tol ON tol.transfer_order_id = to_.id
-        JOIN warehouses dw            ON dw.id = to_.to_warehouse_id
+        LEFT JOIN warehouses dw                  ON dw.id      = to_.to_warehouse_id
+        LEFT JOIN organization_node dw_node      ON dw_node.id = to_.to_warehouse_id
         WHERE to_.from_warehouse_id = :wid
           AND tol.product_id        = :pid
           {tid_clause}

@@ -145,30 +145,40 @@ class InventoryService:
     async def approve_adjustment(
         self, user: Any, adjustment_id: UUID, body: AdjustStockRequest
     ) -> AdjustStockResponse:
-        """Approve a SUBMITTED adjustment — posts the ledger entry and updates on-hand.
+        """Post the ledger entry and advance adjustment to POSTED.
 
-        BUG 9: manager approval must call record_transaction() with transaction_type=
-        'ADJUSTMENT'.  A status-only UPDATE leaves on-hand unchanged.
+        Called by the approve endpoint after APPROVED transition succeeds.
+        Calls record_transaction() — the only permitted path for balance mutations.
         """
+        quantity = (
+            -abs(body.quantity)
+            if body.reason_code in _FORCE_NEGATIVE_REASONS
+            else body.quantity
+        )
+
         tx_id = await record_transaction(
             self.db,
             tenant_id=str(user.tenant_id),
             transaction_type="ADJUSTMENT",
             product_id=str(body.product_id),
             warehouse_id=str(body.warehouse_id),
-            quantity=body.quantity,
+            quantity=quantity,
             performed_by=str(user.user_id),
             idempotency_key=body.idempotency_key,
             reference_id=str(adjustment_id),
         )
 
+        # APPROVED → POSTED (terminal state)
+        await self.db.execute(
+            text("UPDATE adjustment_orders SET status = 'POSTED', updated_at = now() WHERE id = :id"),
+            {"id": str(adjustment_id)},
+        )
+
         from datetime import datetime, timezone
-        return AdjustStockResponse(
-            transaction_id=UUID(tx_id),
-            product_id=body.product_id,
-            warehouse_id=body.warehouse_id,
-            quantity=body.quantity,
-            reason_code=body.reason_code,
+        return AdjustmentResponse(
+            adjustment_id=adjustment_id,
+            status="POSTED",
+            quantity_delta=quantity,
             created_at=datetime.now(timezone.utc),
         )
 
@@ -700,15 +710,17 @@ class InventoryService:
                 to_.transfer_type,
                 to_.status,
                 to_.from_warehouse_id,
-                fw.name                AS from_warehouse_name,
+                COALESCE(fw.name, fw_n.name) AS from_warehouse_name,
                 to_.to_warehouse_id,
-                tw.name                AS to_warehouse_name,
+                COALESCE(tw.name, tw_n.name) AS to_warehouse_name,
                 to_.created_by::text   AS created_by,
                 to_.created_at,
                 to_.updated_at
             FROM transfer_orders to_
-            JOIN warehouses fw ON fw.id = to_.from_warehouse_id
-            JOIN warehouses tw ON tw.id = to_.to_warehouse_id
+            LEFT JOIN warehouses fw          ON fw.id       = to_.from_warehouse_id
+            LEFT JOIN organization_node fw_n ON fw_n.id    = to_.from_warehouse_id
+            LEFT JOIN warehouses tw          ON tw.id       = to_.to_warehouse_id
+            LEFT JOIN organization_node tw_n ON tw_n.id    = to_.to_warehouse_id
             WHERE to_.tenant_id = :tid
               {wh_filter}
             ORDER BY to_.created_at DESC
@@ -784,7 +796,7 @@ class InventoryService:
                 p.name              AS product_name,
                 p.sku,
                 ao.warehouse_id,
-                w.name              AS warehouse_name,
+                COALESCE(w.name, wn.name) AS warehouse_name,
                 ao.quantity_delta,
                 ao.reason_code,
                 ao.status,
@@ -792,8 +804,9 @@ class InventoryService:
                 ao.created_at,
                 ao.notes
             FROM adjustment_orders ao
-            JOIN products   p ON p.id = ao.product_id
-            JOIN warehouses w ON w.id = ao.warehouse_id
+            JOIN products          p  ON p.id  = ao.product_id
+            LEFT JOIN warehouses   w  ON w.id  = ao.warehouse_id
+            LEFT JOIN organization_node wn ON wn.id = ao.warehouse_id
             WHERE ao.tenant_id = :tid
               {wh_filter}
             ORDER BY ao.created_at DESC

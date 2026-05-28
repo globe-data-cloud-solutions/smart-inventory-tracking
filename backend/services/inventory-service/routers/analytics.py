@@ -97,16 +97,20 @@ async def list_warehouses(
     tid = effective_tenant_id(user, tenant_id)
     rows = (await db.execute(
         text("""
+            SELECT n.id, n.name, 'WAREHOUSE' AS warehouse_type,
+                   NULL::text AS address, NULL::text AS manager_name
+            FROM organization_node n
+            WHERE n.tenant_id = :tid AND n.is_active = true
+            UNION ALL
             SELECT w.id, w.name, w.warehouse_type::text, w.address,
-                   u.full_name AS manager_name
+                   NULL::text AS manager_name
             FROM warehouses w
-            LEFT JOIN users u
-              ON u.warehouse_id = w.id
-             AND u.role = 'WM'
-             AND u.is_active = true
-             AND u.tenant_id = w.tenant_id
             WHERE w.tenant_id = :tid AND w.is_active = true
-            ORDER BY w.name
+              AND NOT EXISTS (
+                SELECT 1 FROM organization_node n2
+                WHERE n2.id = w.id AND n2.tenant_id = :tid
+              )
+            ORDER BY name
         """),
         {"tid": str(tid)},
     )).fetchall()

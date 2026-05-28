@@ -24,7 +24,7 @@ async def audit_log(
                     "(id, tenant_id, user_id, role, action, resource_type, resource_id, "
                     " decision, reason, abac_context) "
                     "VALUES (:id, :tenant_id, :user_id, :role, :action, :resource_type, "
-                    "        :resource_id, :decision, :reason, :abac_context::jsonb)"
+                    "        :resource_id, :decision, :reason, CAST(:abac_context AS jsonb))"
                 ),
                 {
                     "id": str(uuid.uuid4()),

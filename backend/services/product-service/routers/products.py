@@ -211,7 +211,7 @@ async def create_product(
             "   resource_id, decision, abac_context) "
             "VALUES "
             "  (:id, :tid, :uid, :role, 'product:create', 'product', "
-            "   :rid, 'GRANTED', :ctx::jsonb)"
+            "   :rid, 'GRANTED', CAST(:ctx AS jsonb))"
         ),
         {
             "id":   str(uuid.uuid4()),

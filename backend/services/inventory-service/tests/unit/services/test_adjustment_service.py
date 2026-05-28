@@ -478,7 +478,7 @@ class TestAdjustmentAutoApplyVsPending:
             "Balance update must target the WH that made the adjustment, not the approver's WH"
         )
         assert kwargs["quantity"] == Decimal("-300"), "Must use the signed qty from the adjustment record"
-        assert result.transaction_id == UUID(TX_ID)
+        assert result.status == "POSTED", "approve_adjustment must advance to POSTED"
 
     async def test_pending_adjustment_does_not_call_record_transaction(
         self, svc: InventoryService

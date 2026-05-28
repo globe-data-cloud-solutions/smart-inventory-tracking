@@ -25,6 +25,7 @@ ROLE_PERMISSION_MATRIX: dict[str, dict[str, str]] = {
         "user:assign_role": "FULL", "user:reset_password": "FULL",
         "product:create": "FULL", "product:view": "FULL", "product:list": "FULL",
         "product:update": "FULL", "product:import_bulk": "FULL",
+        "product:read_next_sku": "FULL",
         "inventory:receive": "FULL", "inventory:adjust": "CONDITIONAL",
         "inventory:transfer": "FULL", "inventory:cycle_count": "FULL",
         "inventory:view": "FULL", "inventory:view_ledger": "FULL",
@@ -47,6 +48,7 @@ ROLE_PERMISSION_MATRIX: dict[str, dict[str, str]] = {
     "NM": {
         "product:create": "FULL", "product:view": "FULL", "product:list": "FULL",
         "product:update": "FULL", "product:set_dispatch_strategy": "FULL",
+        "product:read_next_sku": "FULL",
         "inventory:receive": "FULL", "inventory:adjust": "CONDITIONAL",
         "inventory:transfer": "FULL", "inventory:view": "FULL",
         "inventory:view_ledger": "FULL", "inventory:view_balance": "FULL",

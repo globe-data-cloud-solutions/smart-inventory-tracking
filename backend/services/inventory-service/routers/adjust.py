@@ -47,6 +47,36 @@ async def approve_adjustment(
     user=Depends(get_current_user),
     db: AsyncSession = Depends(get_db_session),
 ) -> SuccessResponse[AdjustmentResponse]:
+    from sqlalchemy import text as _text
+    from schemas.inventory import AdjustStockRequest
+    from decimal import Decimal as _Decimal
+
     svc = InventoryService(db)
-    result = await svc.transition_adjustment(user, adjustment_id, "APPROVED")
+
+    # Load adjustment data from DB before advancing state
+    row = (await db.execute(
+        _text("SELECT status, product_id, warehouse_id, quantity_delta, reason_code "
+              "FROM adjustment_orders WHERE id = :id"),
+        {"id": str(adjustment_id)},
+    )).fetchone()
+    if not row:
+        from fastapi import HTTPException
+        raise HTTPException(status_code=404, detail="Adjustment not found")
+
+    # If DRAFT, auto-advance to PENDING_APPROVAL first (single-approver shortcut)
+    if row.status == "DRAFT":
+        await svc.transition_adjustment(user, adjustment_id, "PENDING_APPROVAL")
+
+    # PENDING_APPROVAL → APPROVED (pure status change)
+    await svc.transition_adjustment(user, adjustment_id, "APPROVED")
+
+    # APPROVED → POSTED + ledger entry via AdjustStockRequest
+    adj_body = AdjustStockRequest(
+        product_id=row.product_id,
+        warehouse_id=row.warehouse_id,
+        quantity=_Decimal(str(row.quantity_delta)),
+        reason_code=row.reason_code,
+        idempotency_key=f"adj:{adjustment_id}:post",
+    )
+    result = await svc.approve_adjustment(user, adjustment_id, adj_body)
     return SuccessResponse(data=result)

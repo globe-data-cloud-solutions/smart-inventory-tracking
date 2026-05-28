@@ -53,11 +53,12 @@ async def check_permission(
     if "warehouse_id" in action.abac:
         user_wh = getattr(user, "warehouse_id", None)
         resource_wh = resource.get("warehouse_id")
-        # Only enforce when the resource carries a specific warehouse_id — actions that
-        # don't supply one (e.g. list endpoints) are still allowed.  When a warehouse_id
-        # IS present in the resource, the user must have a matching assignment; a None
-        # warehouse_id (middle-layer manager) never satisfies a warehouse scope check.
-        if resource_wh and (not user_wh or str(user_wh) != str(resource_wh)):
+        # Warehouse scope is only enforced for facility-scoped roles (WM, SA_GT, RT).
+        # Management roles (TA, NM, RM, LM, AU, SA) operate across warehouses within
+        # their authority — their warehouse_id JWT claim is a home facility, not a cage.
+        FACILITY_SCOPED_ROLES = {"WM", "SA_GT", "RT"}
+        if user.role in FACILITY_SCOPED_ROLES and user_wh and resource_wh and \
+                str(user_wh).lower() != str(resource_wh).lower():
             await audit_log(user, action.id, resource, "DENIED", "ABAC_DENIED: warehouse scope")
             return PermissionResult(allowed=False, reason="ABAC_DENIED: warehouse scope")
 

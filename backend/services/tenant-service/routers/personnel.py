@@ -109,7 +109,7 @@ async def _get_authority_scope(
                 SELECT from_node_id AS node_id
                 FROM org_node_hierarchy
                 WHERE tenant_id = :tid
-                  AND to_node_id = :fid::uuid
+                  AND to_node_id = CAST(:fid AS uuid)
                   AND relationship_type = 'PRIMARY_REPORTS_TO'
                 UNION ALL
                 SELECT h.from_node_id
