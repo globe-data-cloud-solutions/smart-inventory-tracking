@@ -26,7 +26,10 @@ from shared.outbox.writer import write_to_outbox
 from shared.permissions.middleware import require_permission
 from shared.permissions.registry import PERMISSIONS
 from shared.utils.responses import SuccessResponse
-from schemas.product import NextSkuResponse, ProductCreateRequest, ProductResponse
+from schemas.product import (
+    CategoryCreateRequest, CategoryResponse,
+    NextSkuResponse, ProductCreateRequest, ProductResponse,
+)
 from dependencies import get_current_user
 
 router = APIRouter()
@@ -54,7 +57,7 @@ async def preview_next_sku(
     if not row:
         raise HTTPException(status_code=404, detail="Tenant not found")
     sku = f"{row.sku_prefix}-{row.next_num:04d}"
-    return SuccessResponse(data=NextSkuResponse(sku=sku))
+    return SuccessResponse(data=NextSkuResponse(sku=sku, counter=row.next_num))
 
 
 # ── GET / ─────────────────────────────────────────────────────────────────────
@@ -66,21 +69,27 @@ async def list_products(
     user=Depends(get_current_user),
     db: AsyncSession = Depends(get_db_session),
 ) -> SuccessResponse[list]:
+    base_select = (
+        "SELECT p.id, p.sku, p.name, p.unit, p.pack_size, p.reorder_point, "
+        "pc.name AS category "
+        "FROM products p "
+        "LEFT JOIN product_categories pc ON pc.id = p.category_id "
+    )
     if q:
         result = await db.execute(
             text(
-                "SELECT id, sku, name, unit, pack_size FROM products "
-                "WHERE tenant_id = :tid AND name % :q AND is_active = true "
-                "ORDER BY similarity(name, :q) DESC LIMIT 50"
+                base_select +
+                "WHERE p.tenant_id = :tid AND p.name % :q AND p.is_active = true "
+                "ORDER BY similarity(p.name, :q) DESC LIMIT 50"
             ),
             {"tid": str(user.tenant_id), "q": q},
         )
     else:
         result = await db.execute(
             text(
-                "SELECT id, sku, name, unit, pack_size FROM products "
-                "WHERE tenant_id = :tid AND is_active = true "
-                "ORDER BY name LIMIT 100"
+                base_select +
+                "WHERE p.tenant_id = :tid AND p.is_active = true "
+                "ORDER BY p.name LIMIT 200"
             ),
             {"tid": str(user.tenant_id)},
         )
@@ -88,11 +97,13 @@ async def list_products(
     return SuccessResponse(
         data=[
             {
-                "id":        str(r.id),
-                "sku":       r.sku,
-                "name":      r.name,
-                "unit":      getattr(r, "unit", None),
-                "pack_size": getattr(r, "pack_size", None),
+                "id":            str(r.id),
+                "sku":           r.sku,
+                "name":          r.name,
+                "unit":          getattr(r, "unit", None),
+                "pack_size":     getattr(r, "pack_size", None),
+                "reorder_point": float(r.reorder_point) if r.reorder_point is not None else None,
+                "category":      r.category,
             }
             for r in rows
         ]
@@ -179,7 +190,33 @@ async def create_product(
     sku_row = sku_result.fetchone()
     sku = f"{sku_row.sku_prefix}-{sku_row.sku_counter:04d}"
 
-    # 5. INSERT product — idempotency guaranteed by UNIQUE(tenant_id, sku).
+    # 5. Resolve category — find or create for this tenant.
+    category_id: Optional[str] = None
+    category_name: Optional[str] = None
+    if body.category:
+        cat_result = await db.execute(
+            text(
+                "SELECT id, name FROM product_categories "
+                "WHERE tenant_id = :tid AND LOWER(name) = LOWER(:name) AND is_active = true"
+            ),
+            {"tid": tid, "name": body.category},
+        )
+        cat_row = cat_result.fetchone()
+        if cat_row:
+            category_id = str(cat_row.id)
+            category_name = cat_row.name
+        else:
+            category_id = str(uuid.uuid4())
+            category_name = body.category
+            await db.execute(
+                text(
+                    "INSERT INTO product_categories (id, tenant_id, name) "
+                    "VALUES (:id, :tid, :name)"
+                ),
+                {"id": category_id, "tid": tid, "name": category_name},
+            )
+
+    # 6. INSERT product — idempotency guaranteed by UNIQUE(tenant_id, sku).
     product_id = str(uuid.uuid4())
     now = datetime.now(timezone.utc)
 
@@ -187,23 +224,26 @@ async def create_product(
         text(
             "INSERT INTO products "
             "  (id, tenant_id, sku, name, unit_of_measure, unit, pack_size, "
-            "   is_active, created_by) "
+            "   category_id, reorder_point, is_active, created_by) "
             "VALUES "
-            "  (:id, :tid, :sku, :name, :uom, :unit, :pack_size, true, :uid)"
+            "  (:id, :tid, :sku, :name, :uom, :unit, :pack_size, "
+            "   :cat_id, :reorder_point, true, :uid)"
         ),
         {
-            "id":        product_id,
-            "tid":       tid,
-            "sku":       sku,
-            "name":      body.name,
-            "uom":       body.unit,   # unit_of_measure for backward compat
-            "unit":      body.unit,
-            "pack_size": body.pack_size,
-            "uid":       uid,
+            "id":            product_id,
+            "tid":           tid,
+            "sku":           sku,
+            "name":          body.name,
+            "uom":           body.unit,   # unit_of_measure for backward compat
+            "unit":          body.unit,
+            "pack_size":     body.pack_size,
+            "cat_id":        category_id,
+            "reorder_point": float(body.reorder_point) if body.reorder_point is not None else None,
+            "uid":           uid,
         },
     )
 
-    # 6. Audit log — append-only, same transaction (CLAUDE.md §7 + §14).
+    # 7. Audit log — append-only, same transaction (CLAUDE.md §7 + §14).
     await db.execute(
         text(
             "INSERT INTO audit_logs "
@@ -220,12 +260,13 @@ async def create_product(
             "role": getattr(user, "role", None),
             "rid":  product_id,
             "ctx":  json.dumps(
-                {"sku": sku, "name": body.name, "unit": body.unit, "pack_size": body.pack_size}
+                {"sku": sku, "name": body.name, "unit": body.unit,
+                 "pack_size": body.pack_size, "category": category_name}
             ),
         },
     )
 
-    # 7. Outbox — same transaction, never post-commit (CLAUDE.md §8, §24 rule 6).
+    # 8. Outbox — same transaction, never post-commit (CLAUDE.md §8, §24 rule 6).
     await write_to_outbox(
         db,
         tid,
@@ -247,8 +288,78 @@ async def create_product(
             name=body.name,
             unit=body.unit,
             pack_size=body.pack_size,
+            category=category_name,
+            reorder_point=body.reorder_point,
             tenant_id=uuid.UUID(tid),
             created_at=now,
             created_by=uuid.UUID(uid) if uid else None,
+        )
+    )
+
+
+# ── GET /categories/ ─────────────────────────────────────────────────────────
+
+@router.get("/categories/", response_model=SuccessResponse[list])
+@require_permission(PERMISSIONS.PRODUCT_LIST_CATEGORIES)
+async def list_categories(
+    user=Depends(get_current_user),
+    db: AsyncSession = Depends(get_db_session),
+) -> SuccessResponse[list]:
+    result = await db.execute(
+        text(
+            "SELECT id, tenant_id, name FROM product_categories "
+            "WHERE tenant_id = :tid AND is_active = true "
+            "ORDER BY name"
+        ),
+        {"tid": str(user.tenant_id)},
+    )
+    rows = result.fetchall()
+    return SuccessResponse(
+        data=[
+            {"id": str(r.id), "tenant_id": str(r.tenant_id), "name": r.name}
+            for r in rows
+        ]
+    )
+
+
+# ── POST /categories/ ────────────────────────────────────────────────────────
+
+@router.post("/categories/", status_code=201, response_model=SuccessResponse[CategoryResponse])
+@require_permission(PERMISSIONS.PRODUCT_CREATE_CATEGORY)
+async def create_category(
+    body: CategoryCreateRequest,
+    user=Depends(get_current_user),
+    db: AsyncSession = Depends(get_db_session),
+) -> SuccessResponse[CategoryResponse]:
+    tid = str(user.tenant_id)
+    existing = await db.execute(
+        text(
+            "SELECT id, name FROM product_categories "
+            "WHERE tenant_id = :tid AND LOWER(name) = LOWER(:name) AND is_active = true"
+        ),
+        {"tid": tid, "name": body.name},
+    )
+    row = existing.fetchone()
+    if row:
+        return SuccessResponse(
+            data=CategoryResponse(
+                id=uuid.UUID(str(row.id)),
+                name=row.name,
+                tenant_id=uuid.UUID(tid),
+            )
+        )
+    cat_id = str(uuid.uuid4())
+    await db.execute(
+        text(
+            "INSERT INTO product_categories (id, tenant_id, name) "
+            "VALUES (:id, :tid, :name)"
+        ),
+        {"id": cat_id, "tid": tid, "name": body.name},
+    )
+    return SuccessResponse(
+        data=CategoryResponse(
+            id=uuid.UUID(cat_id),
+            name=body.name,
+            tenant_id=uuid.UUID(tid),
         )
     )

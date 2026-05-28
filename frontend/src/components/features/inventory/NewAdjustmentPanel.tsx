@@ -67,11 +67,11 @@ export function NewAdjustmentPanel({ products, warehouses, orgSlug }: Props) {
   const [toast, setToast]             = useState<{ msg: string; applied: boolean } | null>(null);
   const [zeroWarn, setZeroWarn]       = useState(false);
 
-  // Bug 1: WM warehouse is always the JWT session warehouse — never a dropdown selection
-  const effectiveWarehouseId   = isWM ? (session?.warehouseId ?? "") : warehouseId;
+  const effectiveWarehouseId = isWM ? (session?.warehouseId ?? "") : warehouseId;
   const effectiveWarehouseName = isWM
-    ? (session?.warehouseName ?? "")
-    : warehouses.find((w) => w.id === warehouseId)?.name ?? "";
+    ? (warehouses.find((w) => w.id.toLowerCase() === effectiveWarehouseId.toLowerCase())?.name
+        ?? session?.warehouseName ?? "")
+    : warehouses.find((w) => w.id.toLowerCase() === warehouseId.toLowerCase())?.name ?? "";
 
   const forceNeg  = FORCE_NEGATIVE.has(reason);
   const addNum    = parseFloat(addQty)    || 0;

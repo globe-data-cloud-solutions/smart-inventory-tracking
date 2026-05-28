@@ -113,7 +113,7 @@ export function OpeningBalancePanel({ products, warehouses, orgSlug }: Props) {
 
           <Field label={t("inventory.warehouse")}>
             {lockedWarehouseId ? (
-              <input type="text" value={warehouses.find((w) => w.id === lockedWarehouseId)?.name ?? lockedWarehouseId} readOnly className={lockedCls} />
+              <input type="text" value={warehouses.find((w) => w.id.toLowerCase() === lockedWarehouseId.toLowerCase())?.name ?? lockedWarehouseId} readOnly className={lockedCls} />
             ) : (
               <select value={form.warehouseId} onChange={(e) => set("warehouseId", e.target.value)} className={selectCls} required>
                 <option value="">— {t("receive_panel.select_warehouse")} —</option>

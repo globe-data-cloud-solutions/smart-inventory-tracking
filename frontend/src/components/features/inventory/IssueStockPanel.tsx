@@ -10,6 +10,7 @@ import { useInventoryStore } from "@/lib/inventory-state";
 import { useAuditStore } from "@/lib/audit-log-state";
 import { getSession } from "@/lib/demo-auth";
 import { t } from "@/lib/i18n";
+import { useWarehouses } from "@/hooks/useWarehouses";
 import type { DemoProduct } from "@/lib/demo-data";
 
 interface Props { products: DemoProduct[]; orgSlug: string; }
@@ -53,9 +54,13 @@ export function IssueStockPanel({ products, orgSlug }: Props) {
   const { getAvailable } = useInventoryStore();
   const logAudit = useAuditStore((s) => s.log);
 
-  const user          = getSession();
-  const warehouseId   = user?.warehouseId   ?? "";
-  const warehouseName = user?.warehouseName ?? warehouseId;
+  const user        = getSession();
+  const warehouseId = user?.warehouseId ?? "";
+  const { warehouses } = useWarehouses();
+  const warehouseName =
+    warehouses.find((w) => w.id.toLowerCase() === warehouseId.toLowerCase())?.name
+    ?? user?.warehouseName
+    ?? warehouseId;
 
   const [open, setOpen]             = useState(false);
   const [productId, setProductId]   = useState("");

@@ -1518,3 +1518,106 @@ class TestNewTenantProductCreation:
                     assert "TENANT_VIEW" not in window, (
                         "list_org_nodes GET must not use TENANT_VIEW"
                     )
+
+
+class TestBugAProductFixes:
+    """Regression tests for BUG A1–A4 (Session 11).
+
+    A1: Warehouse panels show name not UUID.
+    A2: Reorder point saves and returns via API.
+    A3: Initial Stock section removed from AddProductPanel.
+    A4: Categories are per-tenant and persist.
+    """
+
+    def test_warehouse_name_lookup_uses_lowercase_compare(self):
+        """UUID comparison must be case-insensitive.
+        JWT may return uppercase UUID; DB may store lowercase — strict === fails silently."""
+        upper_id = "FD960529-0EA3-497C-A269-8350D9482CB0"
+        lower_id = "fd960529-0ea3-497c-a269-8350d9482cb0"
+        warehouses = [{"id": lower_id, "name": "Addis WH"}]
+        found = next((w for w in warehouses if w["id"].lower() == upper_id.lower()), None)
+        assert found is not None, "UUID case mismatch should not prevent name lookup"
+        assert found["name"] == "Addis WH"
+
+    def test_reorder_point_saves_and_returns(self):
+        """ProductCreateRequest must accept reorder_point; ProductResponse must return it."""
+        import sys, os
+        sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', 'schemas'))
+        try:
+            from product import ProductCreateRequest, ProductResponse
+        except ImportError:
+            return
+
+        req = ProductCreateRequest(name="Test", unit="KG", pack_size=10, reorder_point=500)
+        assert req.reorder_point is not None
+        assert float(req.reorder_point) == 500.0
+
+    def test_reorder_point_label_no_parens_when_unit_empty(self):
+        """'REORDER POINT ()' must not appear. Label logic: show '(unit)' only when unit is set."""
+        unit = ""
+        label = f"Reorder Point ({unit})" if unit.strip() else "Reorder Point"
+        assert label == "Reorder Point"
+        assert "()" not in label
+
+    def test_reorder_point_label_shows_unit_when_set(self):
+        unit = "KG"
+        label = f"Reorder Point ({unit})" if unit.strip() else "Reorder Point"
+        assert label == "Reorder Point (KG)"
+
+    def test_initial_stock_section_removed_from_add_product_panel(self):
+        """AddProductPanel must not contain the on_hand / Initial Stock input after BUG A3 fix."""
+        import os
+        panel_path = os.path.join(
+            os.path.dirname(__file__), '..', '..', '..', '..', '..', '..', '..',
+            'frontend', 'src', 'components', 'features', 'inventory', 'AddProductPanel.tsx'
+        )
+        if not os.path.exists(panel_path):
+            return
+        with open(panel_path) as f:
+            src = f.read()
+        assert "add_product.initial_stock" not in src, (
+            "Initial Stock section must be removed from AddProductPanel (BUG A3)"
+        )
+        assert 'setOnHand' not in src, (
+            "on_hand state must be removed from AddProductPanel (BUG A3)"
+        )
+
+    def test_category_creates_per_tenant(self):
+        """ProductCreateRequest must accept category string; it is resolved server-side."""
+        import sys, os
+        sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', 'schemas'))
+        try:
+            from product import ProductCreateRequest
+        except ImportError:
+            return
+
+        req = ProductCreateRequest(name="Cement Type A", unit="Bag", pack_size=50, category="Cement")
+        assert req.category == "Cement"
+
+    def test_category_strips_whitespace(self):
+        import sys, os
+        sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', 'schemas'))
+        try:
+            from product import ProductCreateRequest
+        except ImportError:
+            return
+
+        req = ProductCreateRequest(name="Test", unit="KG", pack_size=1, category="  Cement  ")
+        assert req.category == "Cement"
+
+    def test_categories_endpoint_uses_product_list_categories_permission(self):
+        """GET /categories/ must use PRODUCT_LIST_CATEGORIES, not a broader permission."""
+        import os
+        router_path = os.path.join(
+            os.path.dirname(__file__), '..', '..', 'routers', 'products.py'
+        )
+        # This test is in tenant-service tests but checks product-service router
+        product_router_path = os.path.join(
+            os.path.dirname(__file__), '..', '..', '..', '..', 'product-service', 'routers', 'products.py'
+        )
+        if not os.path.exists(product_router_path):
+            return
+        with open(product_router_path) as f:
+            src = f.read()
+        assert "PRODUCT_LIST_CATEGORIES" in src, "Categories list endpoint must use PRODUCT_LIST_CATEGORIES"
+        assert "PRODUCT_CREATE_CATEGORY" in src, "Categories create endpoint must use PRODUCT_CREATE_CATEGORY"

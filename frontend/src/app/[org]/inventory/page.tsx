@@ -25,6 +25,7 @@ type ApiTransfer = {
 
 type ApiProduct = {
   id: string; sku: string; name: string; unit: string; pack_size: number;
+  reorder_point?: number | null; category?: string | null;
 };
 
 type InventoryStockItem = {
@@ -347,14 +348,22 @@ export default function InventoryPage() {
   const tenantProductIds = new Set((tenant?.products ?? []).map((p) => p.id));
   const mergedProducts: DemoProduct[] = isGatewayMode
     ? apiProducts.map((p) => ({
-        id: p.id, sku: p.sku, name: p.name, category: "—", unit: p.unit,
-        batchTracking: false, reorderPoint: 0, stock: {} as Record<string, number>,
+        id: p.id, sku: p.sku, name: p.name,
+        category: p.category ?? "—",
+        unit: p.unit,
+        batchTracking: false,
+        reorderPoint: p.reorder_point != null ? safeFloat(p.reorder_point) : 0,
+        stock: {} as Record<string, number>,
       }))
     : [
         ...(tenant?.products ?? []),
         ...apiProducts.filter((p) => !tenantProductIds.has(p.id)).map((p) => ({
-          id: p.id, sku: p.sku, name: p.name, category: "—", unit: p.unit,
-          batchTracking: false, reorderPoint: 0, stock: {} as Record<string, number>,
+          id: p.id, sku: p.sku, name: p.name,
+          category: p.category ?? "—",
+          unit: p.unit,
+          batchTracking: false,
+          reorderPoint: p.reorder_point != null ? safeFloat(p.reorder_point) : 0,
+          stock: {} as Record<string, number>,
         })),
       ];
 
@@ -485,10 +494,7 @@ export default function InventoryPage() {
           <ReceiveStockPanel products={mergedProducts} orgSlug={org} />
           <IssueStockPanel   products={mergedProducts} orgSlug={org} />
           {canAddProduct && (
-            <AddProductPanel
-              apiBase="/api/v1/products"
-              categories={Array.from(new Set(mergedProducts.map((p) => p.category).filter(Boolean)))}
-            />
+            <AddProductPanel apiBase="/api/v1/products" />
           )}
         </div>
       </div>
