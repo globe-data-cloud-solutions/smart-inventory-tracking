@@ -1,7 +1,7 @@
 from typing import List
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from dependencies import get_db_session
@@ -13,6 +13,14 @@ from schemas.inventory import TransferListItem, TransferOrderRequest, TransferOr
 from services.inventory_service import InventoryService
 
 router = APIRouter()
+
+# GAP 1 fix: each transfer type has a different first post-DRAFT state.
+# "SUBMITTED" is not a valid state in any machine — it was the old placeholder.
+_SUBMIT_NEXT_STATUS: dict[str, str] = {
+    "PULL":   "PENDING_REVIEW",
+    "PUSH":   "PENDING_APPROVAL",
+    "SISTER": "PENDING_SOURCE_CONFIRM",
+}
 
 
 @router.get("/", response_model=SuccessResponse[List[TransferListItem]])
@@ -48,7 +56,14 @@ async def submit_transfer(
     db: AsyncSession = Depends(get_db_session),
 ) -> SuccessResponse[TransferOrderResponse]:
     svc = InventoryService(db)
-    result = await svc.transition_transfer(user, transfer_id, "SUBMITTED")
+    transfer = await svc.get_transfer(user, transfer_id)
+    next_status = _SUBMIT_NEXT_STATUS.get(transfer.transfer_type)
+    if next_status is None:
+        raise HTTPException(
+            status_code=422,
+            detail={"code": "UNKNOWN_TRANSFER_TYPE", "message": f"Unknown transfer type: {transfer.transfer_type}"},
+        )
+    result = await svc.transition_transfer(user, transfer_id, next_status)
     return SuccessResponse(data=result)
 
 

@@ -996,6 +996,110 @@ Backend was already working. Bug was purely frontend: `session.tenantId=null` �
 
 ---
 
+## 19. SESSION 9 — TRANSFER SUBMIT + ENRICHMENT GAPS — 2026-05-28
+
+**Head commit at start:** `77f0b74`
+**Unit tests at start:** 222 passed (from Session 8)
+**Unit tests at end:** **230 passed**, 0 failed
+**TypeScript:** `npx tsc --noEmit` — 0 errors
+
+### Overview
+
+Three known gaps carried from prior sessions closed. Core workflow verified for real (non-demo) tenants.
+
+---
+
+### GAP 1 — submit endpoint hardcoded `"SUBMITTED"` — invalid for all transfer types
+
+**Symptom:** Clicking the Submit button on any transfer (PULL, PUSH, or SISTER) returned HTTP 422 `INVALID_STATE_TRANSITION`. No transfer could be submitted from DRAFT.
+
+**Root cause:** `submit_transfer()` in `routers/transfer.py` called `svc.transition_transfer(user, transfer_id, "SUBMITTED")`. `"SUBMITTED"` is not a state in any of the PULL, PUSH, or SISTER machines — it is a leftover placeholder from before IMTS type-specific state machines were introduced.
+
+**Fix:** Added `_SUBMIT_NEXT_STATUS` mapping at module level:
+```python
+_SUBMIT_NEXT_STATUS: dict[str, str] = {
+    "PULL":   "PENDING_REVIEW",
+    "PUSH":   "PENDING_APPROVAL",
+    "SISTER": "PENDING_SOURCE_CONFIRM",
+}
+```
+`submit_transfer()` now calls `svc.get_transfer()` to resolve the type, looks up the correct first post-DRAFT state, then calls `svc.transition_transfer()` with that state. `transition_transfer()` still validates via `validate_transition()`, so invalid types surface as 422.
+
+**Files changed:** `routers/transfer.py`
+
+**Regression tests:** 6 new tests in `TestInventoryServiceTransfers` (`test_transfer_service.py`):
+- `test_pull_draft_to_submitted_is_invalid` — confirms "SUBMITTED" raises for PULL
+- `test_push_draft_to_submitted_is_invalid` — confirms "SUBMITTED" raises for PUSH
+- `test_sister_draft_to_submitted_is_invalid` — confirms "SUBMITTED" raises for SISTER
+- `test_pull_submit_maps_to_pending_review` — PULL DRAFT → PENDING_REVIEW passes
+- `test_push_submit_maps_to_pending_approval` — PUSH DRAFT → PENDING_APPROVAL passes
+- `test_sister_submit_maps_to_pending_source_confirm` — SISTER DRAFT → PENDING_SOURCE_CONFIRM passes
+
+---
+
+### GAP 2 — `transfer_requests.py _enrich` queries only `warehouses` table
+
+**Symptom:** Transfer requests created against org-node facilities (created via Org Setup) showed `"Unknown"` for both warehouse name columns in the transfer requests list. The `warehouses` table is a legacy table; real tenants create facilities via `organization_node`.
+
+**Root cause:** `_enrich()` in `routers/transfer_requests.py` used `SELECT name FROM warehouses WHERE id = :id` for both `requesting_warehouse_id` and `source_warehouse_id` lookups. When no row existed in `warehouses`, the function received `None` and fell back to `"Unknown"`.
+
+**Fix:** Replaced both point-lookups with a COALESCE subquery matching the pattern already used by `list_transfers()` and `list_adjustments()` in `inventory_service.py`:
+```sql
+SELECT COALESCE(
+    (SELECT name FROM warehouses WHERE id = :id),
+    (SELECT name FROM organization_node WHERE id = :id)
+) AS name
+```
+
+**Files changed:** `routers/transfer_requests.py`
+
+**Regression tests:** 2 new tests in `TestTransferRequestsEnrich` (`test_list_endpoints.py`):
+- `test_enrich_uses_org_node_name_when_no_warehouses_row` — asserts org node name is returned when warehouses has no row
+- `test_enrich_coalesce_query_contains_org_node` — asserts the SQL passed to the DB contains `organization_node`
+
+---
+
+### Core workflow verified for new tenants
+
+End-to-end workflow confirmed against a real (non-demo) tenant created via the SA panel:
+
+| Step | Status |
+|---|---|
+| SA creates tenant + TA user | ✅ |
+| TA logs in, org setup → creates org nodes | ✅ |
+| TA creates WM users, assigns to nodes | ✅ |
+| WM receives stock (Opening Balance) | ✅ |
+| WM creates PULL transfer → Submit → PENDING_REVIEW | ✅ (GAP 1 fix) |
+| WM creates PUSH transfer → Submit → PENDING_APPROVAL | ✅ (GAP 1 fix) |
+| Transfer request warehouse names resolve from org nodes | ✅ (GAP 2 fix) |
+| Warehouses page shows org nodes (not legacy warehouses table) | ✅ (Session 8 fix) |
+
+---
+
+### Known gaps — all closed in this session
+
+| Gap | Status |
+|---|---|
+| `submit_transfer` hardcoded `"SUBMITTED"` | ✅ CLOSED |
+| `transfer_requests._enrich` warehouses-only lookup | ✅ CLOSED |
+| BUG_REPORT.md not updated for prior session fixes | ✅ CLOSED (this section) |
+
+---
+
+### Final test counts
+
+| Suite | Count | Status |
+|---|---|---|
+| `pytest backend/ -v -m "unit"` | **230 / 230** | ✅ All pass |
+| `npx tsc --noEmit` | — | ✅ 0 errors |
+
+### Remaining open items (unchanged)
+
+- §8-6 (L): AWS dev environment — Terraform apply, RDS + ElastiCache provisioning
+- §8-9 (L): Native-speaker review of `or.json` — staffing decision
+
+---
+
 ## 16. PHASE 1 FEATURES — PENDING IMPLEMENTATION
 
 Design decisions for all items below are documented in PRD-APPENDIX.md and CLAUDE.md §28. No implementation work is tracked here — this section records readiness status only.

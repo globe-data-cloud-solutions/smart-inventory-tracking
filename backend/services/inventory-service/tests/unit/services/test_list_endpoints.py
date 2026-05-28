@@ -7,6 +7,7 @@ Tests verify:
 """
 from __future__ import annotations
 
+import uuid
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from decimal import Decimal
@@ -505,3 +506,100 @@ class TestIssueStockBelowZeroBlocked:
         ):
             with pytest.raises(Exception, match="INSUFFICIENT_STOCK"):
                 await svc.issue_stock(WM_USER, body)
+
+
+@pytest.mark.unit
+class TestTransferRequestsEnrich:
+    """Regression tests for GAP 2: _enrich in transfer_requests.py queried only
+    the warehouses table. Fix: COALESCE falls back to organization_node so that
+    org-node-based facilities (created via Org Setup) resolve to their display name.
+    """
+
+    async def test_enrich_uses_org_node_name_when_no_warehouses_row(self) -> None:
+        """_enrich returns the organization_node name when warehouses has no matching row.
+
+        The COALESCE query returns the first non-NULL of:
+          (SELECT name FROM warehouses WHERE id = :id)
+          (SELECT name FROM organization_node WHERE id = :id)
+        When warehouses returns NULL, the org node name must be used.
+        """
+        from routers.transfer_requests import _enrich
+
+        row = MagicMock()
+        row.id = uuid.uuid4()
+        row.tenant_id = UUID(TENANT_ID)
+        row.requesting_warehouse_id = UUID(WAREHOUSE_A)
+        row.source_warehouse_id = UUID(WAREHOUSE_B)
+        row.product_id = UUID(PRODUCT_ID)
+        row.quantity = Decimal("100")
+        row.required_date = None
+        row.notes = None
+        row.status = "PENDING"
+        row.created_at = datetime(2026, 5, 28, 10, 0, 0, tzinfo=timezone.utc)
+
+        req_wh_row = MagicMock()
+        req_wh_row.name = "North Org Node"
+        src_wh_row = MagicMock()
+        src_wh_row.name = "South Org Node"
+        product_row = MagicMock()
+        product_row.name = "Cement 50kg"
+        product_row.sku = "CEM-50"
+
+        session = AsyncMock()
+        session.execute = AsyncMock(side_effect=[
+            MagicMock(fetchone=MagicMock(return_value=req_wh_row)),   # COALESCE for requesting_wh
+            MagicMock(fetchone=MagicMock(return_value=src_wh_row)),   # COALESCE for source_wh
+            MagicMock(fetchone=MagicMock(return_value=product_row)),  # product lookup
+        ])
+
+        result = await _enrich(row, session)
+
+        assert result.requesting_warehouse_name == "North Org Node", (
+            "_enrich must fall back to organization_node name when no warehouses row exists"
+        )
+        assert result.source_warehouse_name == "South Org Node"
+        assert result.product_name == "Cement 50kg"
+        assert result.product_sku == "CEM-50"
+
+    async def test_enrich_coalesce_query_contains_org_node(self) -> None:
+        """_enrich's warehouse lookup SQL must reference organization_node.
+
+        Verifies that the COALESCE fix is actually present in the SQL sent to the
+        database — not just that the result happens to be correct.
+        """
+        from routers.transfer_requests import _enrich
+
+        row = MagicMock()
+        row.id = uuid.uuid4()
+        row.tenant_id = UUID(TENANT_ID)
+        row.requesting_warehouse_id = UUID(WAREHOUSE_A)
+        row.source_warehouse_id = UUID(WAREHOUSE_B)
+        row.product_id = UUID(PRODUCT_ID)
+        row.quantity = Decimal("50")
+        row.required_date = None
+        row.notes = None
+        row.status = "PENDING"
+        row.created_at = datetime(2026, 5, 28, 10, 0, 0, tzinfo=timezone.utc)
+
+        result_row = MagicMock()
+        result_row.name = "Some Node"
+        product_row = MagicMock()
+        product_row.name = "Product X"
+        product_row.sku = "X-001"
+
+        session = AsyncMock()
+        session.execute = AsyncMock(side_effect=[
+            MagicMock(fetchone=MagicMock(return_value=result_row)),
+            MagicMock(fetchone=MagicMock(return_value=result_row)),
+            MagicMock(fetchone=MagicMock(return_value=product_row)),
+        ])
+
+        await _enrich(row, session)
+
+        # Inspect the SQL sent for the first warehouse lookup
+        first_call = session.execute.call_args_list[0]
+        sql_text = str(first_call.args[0])
+        assert "organization_node" in sql_text, (
+            "_enrich SQL must reference organization_node for COALESCE fallback; "
+            "got: " + sql_text
+        )

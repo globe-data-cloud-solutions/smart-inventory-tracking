@@ -608,6 +608,40 @@ class TestInventoryServiceTransfers:
             )
             assert exc_info.value.detail["code"] == "INVALID_STATE_TRANSITION"
 
+    # ── GAP 1 regression tests ───────────────────────────────────────────────
+
+    async def test_pull_draft_to_submitted_is_invalid(self) -> None:
+        """PULL: DRAFT → SUBMITTED raises InvalidStateTransitionError.
+
+        Regression for GAP 1: submit_transfer() hardcoded 'SUBMITTED' which does
+        not exist in any PULL/PUSH/SISTER machine. Fix: router resolves the
+        type-specific first transition via _SUBMIT_NEXT_STATUS mapping.
+        """
+        with pytest.raises(InvalidStateTransitionError):
+            validate_transition("PULL", "DRAFT", "SUBMITTED")
+
+    async def test_push_draft_to_submitted_is_invalid(self) -> None:
+        """PUSH: DRAFT → SUBMITTED raises InvalidStateTransitionError."""
+        with pytest.raises(InvalidStateTransitionError):
+            validate_transition("PUSH", "DRAFT", "SUBMITTED")
+
+    async def test_sister_draft_to_submitted_is_invalid(self) -> None:
+        """SISTER: DRAFT → SUBMITTED raises InvalidStateTransitionError."""
+        with pytest.raises(InvalidStateTransitionError):
+            validate_transition("SISTER", "DRAFT", "SUBMITTED")
+
+    def test_pull_submit_maps_to_pending_review(self) -> None:
+        """PULL submit: the correct first post-DRAFT state is PENDING_REVIEW."""
+        validate_transition("PULL", "DRAFT", "PENDING_REVIEW")  # must not raise
+
+    def test_push_submit_maps_to_pending_approval(self) -> None:
+        """PUSH submit: the correct first post-DRAFT state is PENDING_APPROVAL."""
+        validate_transition("PUSH", "DRAFT", "PENDING_APPROVAL")  # must not raise
+
+    def test_sister_submit_maps_to_pending_source_confirm(self) -> None:
+        """SISTER submit: the correct first post-DRAFT state is PENDING_SOURCE_CONFIRM."""
+        validate_transition("SISTER", "DRAFT", "PENDING_SOURCE_CONFIRM")  # must not raise
+
     async def test_transition_reads_fresh_status_before_applying(self) -> None:
         """transition_transfer() validates against the DB row's current status (SELECT FOR
         UPDATE), not the caller's assumed current state.

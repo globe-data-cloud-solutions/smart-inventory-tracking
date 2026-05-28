@@ -28,13 +28,19 @@ router = APIRouter()
 
 
 async def _enrich(row: Any, session: AsyncSession) -> TransferRequestOut:
-    """Join warehouse and product names onto a transfer_request row."""
-    rw = (await session.execute(
-        text("SELECT name FROM warehouses WHERE id = :id"), {"id": str(row.requesting_warehouse_id)}
-    )).fetchone()
-    sw = (await session.execute(
-        text("SELECT name FROM warehouses WHERE id = :id"), {"id": str(row.source_warehouse_id)}
-    )).fetchone()
+    """Join warehouse and product names onto a transfer_request row.
+
+    Warehouse lookup falls back to organization_node when the legacy warehouses
+    table has no row for the ID — same COALESCE pattern used by list_transfers().
+    """
+    _wh_sql = text("""
+        SELECT COALESCE(
+            (SELECT name FROM warehouses WHERE id = :id),
+            (SELECT name FROM organization_node WHERE id = :id)
+        ) AS name
+    """)
+    rw = (await session.execute(_wh_sql, {"id": str(row.requesting_warehouse_id)})).fetchone()
+    sw = (await session.execute(_wh_sql, {"id": str(row.source_warehouse_id)})).fetchone()
     pr = (await session.execute(
         text("SELECT name, sku FROM products WHERE id = :id"), {"id": str(row.product_id)}
     )).fetchone()
