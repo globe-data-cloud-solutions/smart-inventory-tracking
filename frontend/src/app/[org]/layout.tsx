@@ -185,7 +185,7 @@ function Sidebar({ user, org, tenantName }: { user: SessionUser; org: string; te
               <p className="text-[11px] text-eth-gold mt-px m-0">{t("roles.SA")}</p>
             ) : (
               <p className="text-[11px] text-emerald-300 mt-px m-0 truncate">
-                {tenantName ?? (!user.tenantName?.match(/^[0-9a-f-]{36}$/i) ? user.tenantName : null)}
+                {tenantName ?? (!user.tenantName?.match(/^[0-9a-f-]{36}$/i) ? user.tenantName : org)}
                 {user.warehouseName && <span className="text-green-400"> › {user.warehouseName}</span>}
               </p>
             )}
@@ -357,8 +357,9 @@ export default function OrgLayout({ children }: { children: React.ReactNode }) {
       ? user.tenantName
       : null
   );
+  // Use org slug as fallback while resolvedName is loading — always shows something
   const viewingTenant = demoTenant ?? (org !== SA_ORG_SLUG
-    ? { name: resolvedName ?? "", logo: "🏢", slug: org }
+    ? { name: resolvedName ?? org, logo: "🏢", slug: org }
     : null);
 
   return (

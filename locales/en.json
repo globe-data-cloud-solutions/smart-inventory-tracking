@@ -826,7 +826,10 @@
     "expired_assignments": "Expired Assignments",
     "deactivate": "Deactivate",
     "reactivate": "Reactivate",
-    "no_facility_assigned": "No facility assigned (assign later)"
+    "no_facility_assigned": "No facility assigned (assign later)",
+    "edit_user": "Edit User",
+    "save_changes": "Save Changes",
+    "force_password_reset": "Force password reset on next login"
   },
   "approval_rules": {
     "description": "Set quantity thresholds that determine approval routing. Below the low threshold, transactions are auto-approved. Between low and medium, WM approves. Above medium, RM or NM approval is required.",

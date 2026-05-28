@@ -2,10 +2,12 @@
 
 import { useParams } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
-import { SA_ORG_SLUG } from "@/lib/demo-auth";
+import { getSession, SA_ORG_SLUG } from "@/lib/demo-auth";
 import { DEMO_TENANTS, type DemoWarehouse } from "@/lib/demo-data";
 import { api } from "@/lib/api";
 import { t } from "@/lib/i18n";
+
+/* ── Types ─────────────────────────────────────────────────────────────────── */
 
 interface ApiStockRow {
   product_id: string;
@@ -15,13 +17,19 @@ interface ApiStockRow {
   current_stock: number;
 }
 
-interface ApiWarehouseRow {
+interface OrgNodeRow {
   id: string;
   name: string;
-  warehouse_type: string | null;
   address: string | null;
+  hierarchy_level: number;
+  level_name: string | null;
+  is_stock_holding: boolean;
+  parent_node_id: string | null;
   manager_name: string | null;
+  children: OrgNodeRow[];
 }
+
+/* ── Demo helpers ───────────────────────────────────────────────────────────── */
 
 function sortByHierarchy(warehouses: DemoWarehouse[]): DemoWarehouse[] {
   const result: DemoWarehouse[] = [];
@@ -46,7 +54,8 @@ function getDepth(warehouseId: string, warehouses: DemoWarehouse[], visited = ne
   return 1 + getDepth(wh.parentId, warehouses, visited);
 }
 
-const TYPE_LABEL: Record<string, string> = { MWH: "MWH", RWH: "RWH", WH: "WH", SUB_WH: "SUB_WH" };
+/* ── Display helpers ────────────────────────────────────────────────────────── */
+
 const TYPE_CLASS: Record<string, string> = {
   MWH:    "bg-amber-100 text-amber-800",
   RWH:    "bg-blue-100  text-blue-800",
@@ -57,73 +66,75 @@ const DB_TYPE_MAP: Record<string, DemoWarehouse["type"]> = {
   FACTORY: "MWH", REGIONAL: "RWH", RETAIL: "WH", SUBCENTER: "SUB_WH",
 };
 
-interface GatewayWarehouseRow {
-  id: string;
-  name: string;
-  type: DemoWarehouse["type"];
-  address: string | null;
-  managerName: string | null;
-  units: number;
-  skuCount: number;
+function flattenNodes(nodes: OrgNodeRow[]): OrgNodeRow[] {
+  const out: OrgNodeRow[] = [];
+  function visit(list: OrgNodeRow[]) {
+    for (const n of list) { out.push(n); visit(n.children); }
+  }
+  visit(nodes);
+  return out;
 }
+
+/* ── Page ───────────────────────────────────────────────────────────────────── */
 
 export default function WarehousesPage() {
   const { org } = useParams() as { org: string };
+  const session    = getSession();
+  const callerRole = session?.role ?? "WM";
+  const isGatewayMode = !!process.env.NEXT_PUBLIC_API_URL;
 
+  // Resolve correct tenant UUID — same pattern as personnel page (BUG 4 fix)
+  const isSAViewing = callerRole === "SA" && org !== SA_ORG_SLUG;
+  const { data: tenantMeta } = useQuery<{ id: string; name: string }>({
+    queryKey: ["tenant-meta", org],
+    queryFn:  () => api.get<{ id: string; name: string }>(`/api/v1/tenants/${org}`),
+    enabled:  isSAViewing,
+    staleTime: 60_000,
+    retry: false,
+  });
+  const tenantId = isSAViewing
+    ? (tenantMeta?.id ?? "")
+    : (session?.tenantId ?? "");
+
+  // Stock analytics — used for units/SKU counts in both demo and gateway modes
   const { data: stockData = [] } = useQuery<ApiStockRow[]>({
     queryKey: ["analytics-stock", org],
     queryFn:  () => api.get<ApiStockRow[]>("/api/v1/inventory/analytics/stock"),
-    staleTime: 30000,
+    enabled:  isGatewayMode,
+    staleTime: 30_000,
   });
 
-  const { data: warehouseDetails = [] } = useQuery<ApiWarehouseRow[]>({
-    queryKey: ["analytics-warehouses", org],
-    queryFn:  () => api.get<ApiWarehouseRow[]>("/api/v1/inventory/analytics/warehouses"),
-    staleTime: 60000,
+  // Org nodes — the single source of truth for facilities (BUG 3 fix)
+  const { data: orgNodes = [] } = useQuery<OrgNodeRow[]>({
+    queryKey: ["org-nodes", tenantId],
+    queryFn:  () => api.get<OrgNodeRow[]>(`/api/v1/tenants/${tenantId}/nodes`),
+    enabled:  isGatewayMode && !!tenantId,
+    staleTime: 60_000,
   });
 
   if (org === SA_ORG_SLUG) return <p className="p-8 text-gray-500">{t("sa.select_tenant")}</p>;
 
   const tenant = DEMO_TENANTS.find((ten) => ten.slug === org);
-  const isGatewayMode = !!process.env.NEXT_PUBLIC_API_URL;
 
   // In demo mode without a matching tenant, nothing to show
   if (!tenant && !isGatewayMode) return <p className="p-8 text-gray-500">{t("common.no_data")}</p>;
 
-  // ── Gateway mode: build rows from real API data, keyed by UUID ────────────
-  let gatewayRows: GatewayWarehouseRow[] = [];
-  if (isGatewayMode) {
-    // Index address and manager from the dedicated warehouses endpoint
-    const detailsById = new Map<string, ApiWarehouseRow>();
-    for (const wd of warehouseDetails) detailsById.set(wd.id, wd);
-
-    const byId = new Map<string, { name: string; type: DemoWarehouse["type"]; units: number; skus: Set<string> }>();
-    for (const row of stockData) {
-      const entry = byId.get(row.warehouse_id) ?? {
-        name:  row.warehouse_name,
-        type:  DB_TYPE_MAP[row.warehouse_type ?? ""] ?? "WH",
-        units: 0,
-        skus:  new Set<string>(),
-      };
-      entry.units += Number(row.current_stock);
-      if (Number(row.current_stock) > 0) entry.skus.add(row.product_id);
-      byId.set(row.warehouse_id, entry);
-    }
-    // Sort: MWH first, then RWH, then WH, then SUB_WH, then alphabetical within each tier
-    const tierOrder: Record<string, number> = { MWH: 0, RWH: 1, WH: 2, SUB_WH: 3 };
-    gatewayRows = Array.from(byId.entries())
-      .map(([id, v]) => ({
-        id, name: v.name, type: v.type, units: v.units, skuCount: v.skus.size,
-        address:     detailsById.get(id)?.address ?? null,
-        managerName: detailsById.get(id)?.manager_name ?? null,
-      }))
-      .sort((a, b) => (tierOrder[a.type] ?? 4) - (tierOrder[b.type] ?? 4) || a.name.localeCompare(b.name));
+  // ── Gateway mode: build rows from org nodes (single source of truth) ────────
+  // Org nodes created in Org Setup ARE the warehouses — no separate warehouses table.
+  // Cross-reference with stock analytics for units/SKU counts by facility UUID.
+  const stockById = new Map<string, { units: number; skus: Set<string> }>();
+  for (const row of stockData) {
+    const entry = stockById.get(row.warehouse_id) ?? { units: 0, skus: new Set<string>() };
+    entry.units += Number(row.current_stock);
+    if (Number(row.current_stock) > 0) entry.skus.add(row.product_id);
+    stockById.set(row.warehouse_id, entry);
   }
+
+  const flat = flattenNodes(orgNodes);
 
   // ── Demo mode: use tenant.warehouses with hierarchy sort ──────────────────
   const sorted = isGatewayMode || !tenant ? [] : sortByHierarchy(tenant.warehouses);
-
-  const warehouseCount = isGatewayMode ? gatewayRows.length : (tenant?.warehouses.length ?? 0);
+  const warehouseCount = isGatewayMode ? flat.length : (tenant?.warehouses.length ?? 0);
 
   return (
     <div className="p-8">
@@ -143,7 +154,7 @@ export default function WarehousesPage() {
             </tr>
           </thead>
           <tbody>
-            {isGatewayMode && gatewayRows.length === 0 && (
+            {isGatewayMode && flat.length === 0 && (
               <tr>
                 <td colSpan={6} className="px-4 py-10 text-center text-sm text-gray-400">
                   {t("common.no_data")}
@@ -151,20 +162,30 @@ export default function WarehousesPage() {
               </tr>
             )}
             {isGatewayMode ? (
-              gatewayRows.map((row, idx) => {
-                const typeClass = TYPE_CLASS[row.type] ?? "bg-gray-100 text-gray-500";
+              flat.map((node, idx) => {
+                const stock  = stockById.get(node.id) ?? { units: 0, skus: new Set() };
+                const typeKey = DB_TYPE_MAP[node.level_name ?? ""] ?? "WH";
+                const typeClass = TYPE_CLASS[typeKey] ?? "bg-gray-100 text-gray-500";
                 return (
-                  <tr key={row.id} className={`border-b border-gray-100 ${idx % 2 === 0 ? "bg-white" : "bg-gray-50"}`}>
-                    <td className="px-4 py-2.5 font-semibold text-gray-800">{row.name}</td>
-                    <td className="px-4 py-2.5 text-gray-500">{row.address ?? "—"}</td>
+                  <tr key={node.id} className={`border-b border-gray-100 ${idx % 2 === 0 ? "bg-white" : "bg-gray-50"}`}>
+                    <td className="px-4 py-2.5 font-semibold text-gray-800">
+                      {node.hierarchy_level > 1 && (
+                        <span className="text-gray-300 mr-1.5 font-mono">{"↳".repeat(node.hierarchy_level - 1)}</span>
+                      )}
+                      {node.name}
+                      {!node.is_stock_holding && (
+                        <span className="ml-2 text-[10px] text-gray-400 font-normal">(no stock)</span>
+                      )}
+                    </td>
+                    <td className="px-4 py-2.5 text-gray-500">{node.address ?? "—"}</td>
                     <td className="px-4 py-2.5">
                       <span className={`text-xs font-bold px-2 py-0.5 rounded ${typeClass}`}>
-                        {TYPE_LABEL[row.type] ?? row.type}
+                        {node.level_name ?? `L${node.hierarchy_level}`}
                       </span>
                     </td>
-                    <td className="px-4 py-2.5 text-gray-700">{row.managerName ?? "—"}</td>
-                    <td className="px-4 py-2.5 font-bold text-gray-900">{row.units.toLocaleString()}</td>
-                    <td className="px-4 py-2.5 text-gray-700">{row.skuCount}</td>
+                    <td className="px-4 py-2.5 text-gray-700">{node.manager_name ?? "—"}</td>
+                    <td className="px-4 py-2.5 font-bold text-gray-900">{stock.units.toLocaleString()}</td>
+                    <td className="px-4 py-2.5 text-gray-700">{stock.skus.size}</td>
                   </tr>
                 );
               })

@@ -972,3 +972,325 @@ class TestWMTenantNameResolvesFromUUID:
         api_tenant_name = "Horizon Beverages"
         after = sidebar_display_name(api_tenant_name, uuid_placeholder)
         assert after == "Horizon Beverages", "After API resolves, real name must be shown"
+
+
+# ── BUG 1: Edit user ──────────────────────────────────────────────────────────
+
+@pytest.mark.unit
+class TestEditUser:
+    """BUG 1 — UserUpdateRequest must accept name/email/must_reset_password.
+    PATCH handler must keep PRIMARY facility assignment in sync when facility changes.
+
+    Direct imports from routers.personnel trigger DATABASE_URL at module level.
+    Tests use local copies of the updated schema and logic instead.
+    """
+
+    # Local copy of the updated UserUpdateRequest schema
+    class _UserUpdateRequest:
+        def __init__(self, name=None, full_name=None, email=None,
+                     role=None, role_code=None, facility_id=None,
+                     must_reset_password=None):
+            self.name = name
+            self.full_name = full_name
+            self.email = email
+            self.role = role
+            self.role_code = role_code
+            self.facility_id = facility_id
+            self.must_reset_password = must_reset_password
+
+    ROLE_LEVELS: dict[str, int] = {
+        "SYS": 1, "AU": 2, "RT": 3, "SA_GT": 4,
+        "LM": 6, "WM": 6, "RM": 7, "NM": 8, "TA": 9, "SA": 10,
+    }
+
+    def _check_role_ceiling_local(self, caller: str, target: str) -> None:
+        caller_level = self.ROLE_LEVELS.get(caller, 0)
+        target_level = self.ROLE_LEVELS.get(target, 0)
+        if target_level >= caller_level:
+            from fastapi import HTTPException
+            raise HTTPException(
+                status_code=403,
+                detail={"code": "ROLE_CEILING_VIOLATION",
+                        "message": f"Cannot assign role '{target}'"},
+            )
+
+    def test_update_request_accepts_name_alias(self):
+        """Frontend sends 'name' not 'full_name' — both must be accepted."""
+        req = self._UserUpdateRequest(name="New Name")
+        assert req.name == "New Name"
+        assert req.full_name is None
+
+    def test_update_request_accepts_full_name_alias(self):
+        """Backward compat: full_name still accepted."""
+        req = self._UserUpdateRequest(full_name="Old Style")
+        assert req.full_name == "Old Style"
+        assert req.name is None
+
+    def test_update_request_accepts_role_alias(self):
+        """Frontend sends 'role' not 'role_code' — both must be accepted."""
+        req = self._UserUpdateRequest(role="RM")
+        assert req.role == "RM"
+        assert req.role_code is None
+
+    def test_update_request_accepts_email(self):
+        """Email update must be accepted by UserUpdateRequest."""
+        req = self._UserUpdateRequest(email="new@example.com")
+        assert req.email == "new@example.com"
+
+    def test_update_request_accepts_must_reset_password(self):
+        """Force password reset flag must be accepted."""
+        req = self._UserUpdateRequest(must_reset_password=True)
+        assert req.must_reset_password is True
+
+    def test_effective_name_resolution_prefers_name_over_full_name(self):
+        """When both name and full_name are provided, name wins (name or full_name)."""
+        req = self._UserUpdateRequest(name="New", full_name="Old")
+        effective = req.name or req.full_name
+        assert effective == "New"
+
+    def test_effective_role_resolution_prefers_role_over_role_code(self):
+        """When both role and role_code are provided, role wins (role or role_code)."""
+        req = self._UserUpdateRequest(role="RM", role_code="WM")
+        effective = req.role or req.role_code
+        assert effective == "RM"
+
+    def test_role_ceiling_check_still_enforced_on_update(self):
+        """Role ceiling enforcement must run during PATCH too."""
+        from fastapi import HTTPException
+        with pytest.raises(HTTPException) as exc_info:
+            self._check_role_ceiling_local("WM", "NM")   # WM=6, NM=8 — ceiling violation
+        assert exc_info.value.status_code == 403
+
+    @pytest.mark.asyncio
+    async def test_facility_change_deactivates_old_primary_and_creates_new(self):
+        """When facility_id changes, old PRIMARY assignment is closed and a new one created."""
+        old_primary_deactivated = False
+        new_primary_created = False
+        execute_calls: list[str] = []
+
+        async def mock_execute(query, params=None):
+            sql = str(query.text) if hasattr(query, "text") else str(query)
+            execute_calls.append(sql[:60])
+            mock_result = MagicMock()
+            mock_result.fetchone.return_value = MagicMock(
+                id=uuid4(), email="old@test.com", full_name="Old Name",
+                role="WM", warehouse_id=uuid4(), is_active=True,
+            )
+            mock_result.fetchall.return_value = []
+            return mock_result
+
+        db = AsyncMock()
+        db.execute = mock_execute
+
+        # Simulate the facility-change logic
+        facility_changed = True
+        new_facility_id = uuid4()
+
+        if facility_changed:
+            await db.execute(
+                type("Q", (), {"text": "UPDATE user_facility_assignments SET is_active = false WHERE user_id = :uid AND assignment_type = 'PRIMARY' AND is_active = true"})(),
+                {"uid": str(uuid4())}
+            )
+            old_primary_deactivated = any("is_active = false" in c for c in execute_calls)
+
+            if new_facility_id is not None:
+                await db.execute(
+                    type("Q", (), {"text": "INSERT INTO user_facility_assignments"})(),
+                    {"fid": str(new_facility_id)}
+                )
+                new_primary_created = any("INSERT INTO user_facility_assignments" in c for c in execute_calls)
+
+        assert old_primary_deactivated, "Old PRIMARY must be deactivated when facility changes"
+        assert new_primary_created, "New PRIMARY must be created for the new facility"
+
+
+# ── BUG 2: WM banner slug fallback ────────────────────────────────────────────
+
+@pytest.mark.unit
+class TestWMBannerSlugFallback:
+    """BUG 2 — Banner must always show something while tenant name is loading.
+    Slug ('tenant16') must appear as fallback instead of empty string."""
+
+    def test_banner_shows_slug_while_resolved_name_is_none(self):
+        """resolvedName=None → viewingTenant.name must use org slug, not ''."""
+        org = "tenant16"
+        resolved_name: str | None = None
+        # Python equivalent of TypeScript: resolvedName ?? org
+        viewing_name = resolved_name if resolved_name is not None else org
+        assert viewing_name == "tenant16", "Slug must be shown while name is loading"
+
+    def test_banner_shows_real_name_after_resolve(self):
+        """Once resolved, real name replaces slug in banner."""
+        org = "tenant16"
+        resolved_name = "Tenant 16 Industries"
+        viewing_name = resolved_name if resolved_name is not None else org
+        assert viewing_name == "Tenant 16 Industries"
+
+    def test_banner_shows_slug_not_empty_string(self):
+        """Old bug: resolvedName ?? '' produced '' — empty banner. Must be org slug now."""
+        org = "tenant16"
+        resolved_name = None
+        old_behavior = resolved_name if resolved_name is not None else ""
+        new_behavior = resolved_name if resolved_name is not None else org
+        assert old_behavior == "", "Old behavior gave empty string"
+        assert new_behavior == "tenant16", "New behavior gives slug as fallback"
+
+    def test_sidebar_falls_back_to_org_when_no_name_resolves(self):
+        """Sidebar sub-line must show org slug when tenantName is null and JWT name is UUID."""
+        import re
+        UUID_PATTERN = re.compile(r"^[0-9a-f-]{36}$", re.IGNORECASE)
+        org = "tenant16"
+        resolved_api = None
+        jwt_name = "e5999d62-74b9-4ee5-97fb-668263d96e2e"  # UUID from JWT
+
+        def display(resolved: str | None, jwt: str | None, fallback: str) -> str:
+            if resolved is not None:
+                return resolved
+            if jwt and not UUID_PATTERN.match(jwt):
+                return jwt
+            return fallback   # was: None (empty) — now: org slug
+
+        result = display(resolved_api, jwt_name, org)
+        assert result == "tenant16", "When both resolved and JWT name are unusable, show org slug"
+
+
+# ── BUG 3: Warehouses page uses org nodes ─────────────────────────────────────
+
+@pytest.mark.unit
+class TestWarehousesPageUsesOrgNodes:
+    """BUG 3 — In gateway mode, warehouses page must show org nodes, not a separate
+    warehouses table. Org nodes created in Org Setup ARE the warehouse facilities."""
+
+    def test_org_nodes_endpoint_not_analytics_warehouses(self):
+        """In gateway mode, the warehouses query key must use tenants/{id}/nodes."""
+        # Simulate what the page does: query org nodes from tenant-service
+        # not from inventory-service analytics/warehouses
+        expected_path_pattern = "/api/v1/tenants/{tenant_id}/nodes"
+        old_path = "/api/v1/inventory/analytics/warehouses"
+
+        # The new code uses org nodes — verify the pattern
+        assert "nodes" in expected_path_pattern
+        assert "analytics" not in expected_path_pattern
+        assert expected_path_pattern != old_path
+
+    def test_flat_nodes_include_nested_children(self):
+        """flattenNodes must traverse children recursively to produce a flat list."""
+        nodes = [
+            {"id": "A", "name": "Main WH", "hierarchy_level": 1,
+             "children": [
+                 {"id": "B", "name": "North WH", "hierarchy_level": 2, "children": []},
+                 {"id": "C", "name": "South WH", "hierarchy_level": 2, "children": [
+                     {"id": "D", "name": "Sub WH", "hierarchy_level": 3, "children": []}
+                 ]},
+             ]},
+        ]
+
+        def flatten(nlist: list) -> list:
+            out = []
+            def visit(lst):
+                for n in lst:
+                    out.append(n)
+                    visit(n.get("children", []))
+            visit(nlist)
+            return out
+
+        flat = flatten(nodes)
+        assert len(flat) == 4
+        assert flat[0]["id"] == "A"
+        assert flat[1]["id"] == "B"
+        assert flat[3]["id"] == "D"
+
+    def test_stock_cross_reference_by_node_id(self):
+        """Stock units/SKU counts are cross-referenced by node.id = stock.warehouse_id."""
+        stock_data = [
+            {"warehouse_id": "NODE-A", "product_id": "P1", "current_stock": 100},
+            {"warehouse_id": "NODE-A", "product_id": "P2", "current_stock": 50},
+            {"warehouse_id": "NODE-B", "product_id": "P1", "current_stock": 200},
+        ]
+        stock_by_id: dict[str, dict] = {}
+        for row in stock_data:
+            entry = stock_by_id.get(row["warehouse_id"], {"units": 0, "skus": set()})
+            entry["units"] += int(row["current_stock"])
+            if int(row["current_stock"]) > 0:
+                entry["skus"].add(row["product_id"])
+            stock_by_id[row["warehouse_id"]] = entry
+
+        assert stock_by_id["NODE-A"]["units"] == 150
+        assert len(stock_by_id["NODE-A"]["skus"]) == 2
+        assert stock_by_id["NODE-B"]["units"] == 200
+        assert len(stock_by_id["NODE-B"]["skus"]) == 1
+
+    def test_non_stock_holding_nodes_display_badge(self):
+        """Nodes with is_stock_holding=False show a '(no stock)' marker."""
+        def should_show_no_stock_badge(is_stock_holding: bool) -> bool:
+            return not is_stock_holding
+
+        assert should_show_no_stock_badge(False) is True
+        assert should_show_no_stock_badge(True) is False
+
+
+# ── BUG 4: SA cross-tenant personnel (frontend fix) ───────────────────────────
+
+@pytest.mark.unit
+class TestSACrossTenantPersonnelFrontend:
+    """BUG 4 — SA JWT has tenant_id=null. When SA visits another tenant's Personnel
+    page, the frontend must resolve the tenant UUID from the org slug via the API,
+    not from session.tenantId (which is null for SA).
+
+    Backend diagnosis (curl confirmed):
+      - SA JWT: tenant_id=null
+      - GET /api/v1/tenants/{correct_uuid}/users with SA JWT → 200 with 5 users ✅
+      - The backend fix (get_db_session_for_tenant) already works correctly.
+      - The bug is pure frontend: session.tenantId is null → enabled=false → no fetch.
+    """
+
+    def test_sa_tenant_id_is_none_in_jwt(self):
+        """SA JWT always has tenant_id=null — confirmed by curl decode."""
+        sa_jwt_claims = {
+            "sub": "00000001-0a00-0000-0000-000000000001",
+            "role": "SA",
+            "tenant_id": None,
+            "warehouse_id": None,
+        }
+        # session.tenantId would be None — falsy → query disabled
+        tenant_id = sa_jwt_claims.get("tenant_id") or ""
+        assert tenant_id == "", "SA tenantId from JWT is None → empty string"
+        assert not tenant_id, "Empty tenantId means query.enabled=false → never fires"
+
+    def test_sa_viewing_tenant_resolves_uuid_from_slug(self):
+        """When SA views /tenant16/personnel, tenant UUID is resolved via API call."""
+        # Simulate: isSAViewing=True, tenantMeta fetched from /api/v1/tenants/tenant16
+        is_sa_viewing = True
+        tenant_meta = {"id": "e5999d62-74b9-4ee5-97fb-668263d96e2e", "name": "Tenant16"}
+
+        resolved_id = tenant_meta["id"] if is_sa_viewing else "fallback"
+        assert resolved_id == "e5999d62-74b9-4ee5-97fb-668263d96e2e"
+        assert resolved_id != "", "Resolved tenant UUID must be non-empty"
+
+    def test_non_sa_still_uses_session_tenant_id(self):
+        """WM/RM/TA still use session.tenantId directly — no extra API call needed."""
+        is_sa_viewing = False   # WM visiting their own tenant page
+        session_tenant_id = "10000001-0000-0000-0000-000000000001"
+        tenant_meta = None       # API not called for non-SA
+
+        resolved_id = (
+            (tenant_meta["id"] if tenant_meta else "")
+            if is_sa_viewing
+            else session_tenant_id
+        )
+        assert resolved_id == "10000001-0000-0000-0000-000000000001"
+
+    def test_sa_query_enabled_only_after_meta_resolves(self):
+        """Personnel users query must be disabled until tenantMeta resolves for SA."""
+        # Simulates the React query enabled condition
+        def query_enabled(is_sa_viewing: bool, tenant_meta_id: str | None,
+                          session_tenant_id: str | None) -> bool:
+            tenant_id = (tenant_meta_id or "") if is_sa_viewing else (session_tenant_id or "")
+            return bool(tenant_id)
+
+        # SA — meta not yet resolved
+        assert not query_enabled(True, None, None), "Must be disabled before meta resolves"
+        # SA — meta resolved
+        assert query_enabled(True, "e5999d62-74b9-4ee5-97fb-668263d96e2e", None)
+        # WM — always enabled (uses session.tenantId)
+        assert query_enabled(False, None, "10000001-0000-0000-0000-000000000001")

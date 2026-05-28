@@ -78,9 +78,13 @@ class UserCreateRequest(BaseModel):
 
 
 class UserUpdateRequest(BaseModel):
-    full_name: Optional[str] = None
-    role_code: Optional[str] = None
+    name: Optional[str] = None              # frontend alias for full_name
+    full_name: Optional[str] = None         # backward compat
+    email: Optional[EmailStr] = None
+    role: Optional[str] = None              # frontend alias for role_code
+    role_code: Optional[str] = None         # backward compat
     facility_id: Optional[uuid.UUID] = None
+    must_reset_password: Optional[bool] = None
 
 
 class AssignmentCreateRequest(BaseModel):
@@ -429,23 +433,35 @@ async def update_user(
     if not existing:
         raise HTTPException(status_code=404, detail="User not found")
 
-    new_name = body.full_name if body.full_name is not None else existing.full_name
-    new_role = body.role_code if body.role_code is not None else existing.role
-    new_wh   = str(body.facility_id) if body.facility_id is not None else str(existing.warehouse_id) if existing.warehouse_id else None
-
-    if body.role_code:
-        _check_role_ceiling(caller_role, body.role_code)
-
-    await db.execute(
-        text(
-            "UPDATE users SET full_name = :name, role = :role, "
-            "warehouse_id = :wh, updated_at = now() "
-            "WHERE id = :uid AND tenant_id = :tid"
-        ),
-        {"name": new_name, "role": new_role, "wh": new_wh,
-         "uid": str(user_id), "tid": tid},
+    # Resolve effective values — accept both field name variants
+    effective_name = body.name or body.full_name
+    effective_role = body.role or body.role_code
+    new_name = effective_name if effective_name is not None else existing.full_name
+    new_role = effective_role if effective_role is not None else existing.role
+    new_email = body.email if body.email is not None else existing.email
+    facility_changed = body.facility_id is not None
+    new_wh = str(body.facility_id) if facility_changed else (
+        str(existing.warehouse_id) if existing.warehouse_id else None
     )
 
+    if effective_role:
+        _check_role_ceiling(caller_role, effective_role)
+
+    # Build SET clause conditionally to avoid overwriting unchanged fields
+    set_parts = ["full_name = :name", "role = :role", "email = :email",
+                 "warehouse_id = :wh", "updated_at = now()"]
+    params: dict = {"name": new_name, "role": new_role, "email": new_email,
+                    "wh": new_wh, "uid": str(user_id), "tid": tid}
+    if body.must_reset_password is not None:
+        set_parts.append("must_reset_password = :mrp")
+        params["mrp"] = body.must_reset_password
+
+    await db.execute(
+        text(f"UPDATE users SET {', '.join(set_parts)} WHERE id = :uid AND tenant_id = :tid"),
+        params,
+    )
+
+    # Keep PRIMARY assignment in sync when facility changes
     fac_name: Optional[str] = None
     if new_wh:
         fac_row = await db.execute(
@@ -455,12 +471,38 @@ async def update_user(
         fac = fac_row.fetchone()
         fac_name = fac[0] if fac else None
 
+    if facility_changed:
+        # Deactivate old PRIMARY (if any) and create new one
+        await db.execute(
+            text(
+                "UPDATE user_facility_assignments SET is_active = false "
+                "WHERE user_id = :uid AND assignment_type = 'PRIMARY' AND is_active = true"
+            ),
+            {"uid": str(user_id)},
+        )
+        if body.facility_id is not None:
+            await db.execute(
+                text(
+                    """
+                    INSERT INTO user_facility_assignments
+                        (tenant_id, user_id, facility_id, assignment_type, role_code,
+                         valid_from, created_by, is_active)
+                    VALUES (:tid, :uid, :fid, 'PRIMARY', :role, now(), :created_by, true)
+                    """
+                ),
+                {
+                    "tid": tid, "uid": str(user_id), "fid": str(body.facility_id),
+                    "role": new_role,
+                    "created_by": str(user.user_id) if user else str(user_id),
+                },
+            )
+
     assignments = await _get_user_assignments(db, str(user_id))
     return SuccessResponse(
         data=UserOut(
             id=user_id,
             tenant_id=tenant_id,
-            email=existing.email,
+            email=new_email,
             name=new_name,
             role=new_role,
             primary_facility_id=uuid.UUID(new_wh) if new_wh else None,

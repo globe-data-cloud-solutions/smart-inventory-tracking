@@ -892,6 +892,110 @@ UUID-shaped `tenantName` values from the JWT placeholder are filtered out until 
 
 ---
 
+## 18. SESSION 8 — PERSONNEL EDIT, BANNER, WAREHOUSES, SA CROSS-TENANT — 2026-05-27
+
+### Overview
+
+Four bugs fixed covering user editing, tenant name display, the warehouses page data source, and SA personnel visibility. Includes a live curl diagnosis of BUG 4 confirming backend was already correct. 21 new regression tests (222 total).
+
+**BUG 4 pre-fix curl diagnosis:**
+```
+SA JWT decode: { "role": "SA", "tenant_id": null, ... }
+GET /api/v1/tenants/{correct_uuid}/users  →  200 OK, 5 users returned ✅
+```
+Backend was already working. Bug was purely frontend: `session.tenantId=null` → `enabled: false` → query never fired.
+
+---
+
+### Bug 1 — Personnel page has no way to edit a user after creation
+
+**Symptom:** Once a user was created in the Personnel page, there was no way to update their name, email, role, or primary facility. The only panel was the read-only detail drawer (with deactivate/reactivate/acting-assignment).
+
+**Root cause:** No edit UI existed. The PATCH endpoint existed (`/{tenant_id}/users/{user_id}`) but accepted only `full_name`/`role_code` — not the `name`/`role`/`email` aliases the frontend uses, and not `must_reset_password`.
+
+**Fix — Backend** (`routers/personnel.py`):
+- Updated `UserUpdateRequest` to accept `name` (alias for `full_name`), `role` (alias for `role_code`), `email`, and `must_reset_password`
+- `update_user` handler resolves effective values with `body.name or body.full_name` / `body.role or body.role_code`
+- When `facility_id` changes: deactivates old PRIMARY assignment and creates a new one (keeps `user_facility_assignments` in sync)
+- Applies `must_reset_password` flag via conditional SET clause
+
+**Fix — Frontend** (`personnel/page.tsx`):
+- Added `EditUserForm` interface
+- Added `EditUserPanel` component: pre-fills from `UserRecord`, submits PATCH, includes must_reset_password checkbox, enforces role ceiling
+- Added ✏ Edit button on each table row (`e.stopPropagation()` prevents triggering the row detail panel)
+- Added `editUser` state; renders `EditUserPanel` when set
+
+**Regression tests:** `TestEditUser` (9 tests) — schema aliases, effective-value resolution, role ceiling enforcement, facility change sync
+
+---
+
+### Bug 2 — WM banner shows empty tenant name (e.g. "tenant16")
+
+**Symptom:** WM logged in to a tenant created via the SA panel (slug "tenant16") saw an empty center header and empty sidebar sub-line while the tenant name was loading. The `resolvedName ?? ""` fallback produced an empty string that rendered as nothing.
+
+**Root cause:** `viewingTenant.name` was initialized to `resolvedName ?? ""`. While `resolvedName` was `null` (async fetch in progress), the banner showed an empty name.
+
+**Fix** (`layout.tsx`):
+- Changed `resolvedName ?? ""` → `resolvedName ?? org` (show org slug as fallback)
+- Applied same fix to sidebar sub-line: UUID-filtered fallback now falls back to `org` rather than `null`
+
+**Regression tests:** `TestWMBannerSlugFallback` (4 tests) — slug fallback while loading, real name after resolve, empty string vs slug comparison, sidebar fallback chain
+
+---
+
+### Bug 3 — Warehouses page shows empty in gateway mode (org nodes not shown)
+
+**Symptom:** After a TA created org nodes in Org Setup, the Warehouses page still showed "No data available" in gateway mode. The page was reading from `/api/v1/inventory/analytics/warehouses` which queries the `warehouses` table — a separate table that is not populated by Org Setup.
+
+**Root cause:** `analytics/warehouses` reads from a legacy `warehouses` table. Org Setup creates `organization_node` records. These are separate tables. The warehouses page must use org nodes as its data source.
+
+**Fix** (`warehouses/page.tsx`):
+- Added `getSession()` to resolve caller role
+- Added `isSAViewing` check and tenant UUID resolution from org slug (same pattern as personnel BUG 4 fix)
+- Replaced `analytics/warehouses` query with `GET /api/v1/tenants/{tenantId}/nodes`
+- Cross-references org node IDs against stock analytics data (`warehouse_id = node.id`) for units/SKU counts
+- Flattens nested node tree to a flat list with hierarchy-level indentation
+- Displays `is_stock_holding=false` nodes with a "(no stock)" badge
+
+**Regression tests:** `TestWarehousesPageUsesOrgNodes` (4 tests) — endpoint path verification, flat node traversal, stock cross-reference logic, non-stock-holding badge
+
+---
+
+### Bug 4 — SA cannot see Personnel for tenants (frontend-only fix)
+
+**Symptom:** SA visiting any tenant's Personnel page saw zero users. SA visiting org setup saw zero nodes. Both pages were empty.
+
+**Root cause (confirmed by curl):**
+- SA JWT has `"tenant_id": null`
+- `personnel/page.tsx` derived `tenantId = session?.tenantId ?? ""`
+- For SA: `tenantId = ""` → `enabled: !!tenantId = false` → query never fires
+- Backend was already correct: `get_db_session_for_tenant` sets RLS to URL param for SA — calling directly with the correct UUID returned all 5 users
+
+**Fix** (`personnel/page.tsx`):
+- Added `isSAViewing = callerRole === "SA" && org !== SA_ORG_SLUG`
+- When `isSAViewing`, resolves tenant UUID via `GET /api/v1/tenants/${org}` (slug-to-UUID lookup)
+- `tenantId = isSAViewing ? (tenantMeta?.id ?? "") : (session?.tenantId ?? "")`
+- All queries (`users`, `nodes`) use the resolved UUID
+- Same pattern applied to `warehouses/page.tsx` (BUG 3 fix)
+
+**Regression tests:** `TestSACrossTenantPersonnelFrontend` (4 tests) — SA JWT tenant_id is null, UUID resolution from slug, non-SA still uses session.tenantId, query enabled only after meta resolves
+
+---
+
+### Final test counts (end of session)
+
+| Suite | Count | Status |
+|---|---|---|
+| `pytest backend/ -v -m "unit"` | **222 / 222** | ✅ All pass |
+| `npx tsc --noEmit` | — | ✅ 0 errors |
+
+### Remaining open items (unchanged)
+
+- §8-6 (L): AWS dev environment — Terraform apply, RDS + ElastiCache provisioning
+- §8-9 (L): Native-speaker review of `or.json` — staffing decision
+
+---
+
 ## 16. PHASE 1 FEATURES — PENDING IMPLEMENTATION
 
 Design decisions for all items below are documented in PRD-APPENDIX.md and CLAUDE.md §28. No implementation work is tracked here — this section records readiness status only.

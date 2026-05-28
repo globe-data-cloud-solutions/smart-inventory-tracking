@@ -2,10 +2,10 @@
 
 import { useState } from "react";
 import { useParams } from "next/navigation";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import { t } from "@/lib/i18n";
-import { getSession } from "@/lib/demo-auth";
+import { getSession, SA_ORG_SLUG } from "@/lib/demo-auth";
 
 /* ── Types ─────────────────────────────────────────────────────────────────── */
 
@@ -94,6 +94,14 @@ const EMPTY_ACTING: ActingAssignmentForm = {
   facility_id: "", role_code: "WM", valid_from: "", valid_until: "",
 };
 
+interface EditUserForm {
+  name: string;
+  email: string;
+  role: string;
+  facility_id: string;
+  must_reset_password: boolean;
+}
+
 /* ── Helpers ────────────────────────────────────────────────────────────────── */
 
 function flattenNodes(nodes: OrgNode[]): OrgNode[] {
@@ -120,6 +128,157 @@ function roleBadge(role: string) {
 function isExpired(until: string | null): boolean {
   if (!until) return false;
   return new Date(until) < new Date();
+}
+
+/* ── Edit User Panel ────────────────────────────────────────────────────────── */
+
+function EditUserPanel({
+  tenantId,
+  user: initialUser,
+  callerRole,
+  nodes,
+  onClose,
+  onUpdated,
+}: {
+  tenantId: string;
+  user: UserRecord;
+  callerRole: string;
+  nodes: OrgNode[];
+  onClose: () => void;
+  onUpdated: () => void;
+}) {
+  const [form, setForm] = useState<EditUserForm>({
+    name:               initialUser.name,
+    email:              initialUser.email,
+    role:               initialUser.role,
+    facility_id:        initialUser.primary_facility_id ?? "",
+    must_reset_password: false,
+  });
+  const [saving, setSaving] = useState(false);
+  const [error, setError]   = useState<string | null>(null);
+
+  const callerLevel  = ROLE_LEVEL[callerRole] ?? 0;
+  const allowedRoles = ROLE_OPTIONS.filter((r) => r.level < callerLevel);
+  const flat         = flattenNodes(nodes);
+
+  function update(patch: Partial<EditUserForm>) {
+    setForm((f) => ({ ...f, ...patch }));
+  }
+
+  async function submit() {
+    if (!form.name.trim() || !form.email.trim()) {
+      setError(t("personnel.fill_required_fields"));
+      return;
+    }
+    setSaving(true);
+    setError(null);
+    try {
+      await api.patch(`/api/v1/tenants/${tenantId}/users/${initialUser.id}`, {
+        name:                form.name.trim(),
+        email:               form.email.trim().toLowerCase(),
+        role:                form.role,
+        facility_id:         form.facility_id || null,
+        must_reset_password: form.must_reset_password,
+      });
+      onUpdated();
+      onClose();
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : t("common.error"));
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/50 p-4">
+      <div className="bg-white rounded-xl shadow-2xl w-full max-w-md p-6 space-y-4">
+        <div className="flex items-center justify-between">
+          <h2 className="text-base font-bold text-gray-900">{t("personnel.edit_user")}</h2>
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-700 text-xl border-0 bg-transparent cursor-pointer">✕</button>
+        </div>
+
+        <div className="space-y-3">
+          <div>
+            <label className="block text-xs font-medium text-gray-600 mb-1">{t("personnel.full_name")} *</label>
+            <input
+              type="text"
+              value={form.name}
+              onChange={(e) => update({ name: e.target.value })}
+              className="w-full text-sm border border-gray-300 rounded-md px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+            />
+          </div>
+
+          <div>
+            <label className="block text-xs font-medium text-gray-600 mb-1">{t("personnel.email")} *</label>
+            <input
+              type="email"
+              value={form.email}
+              onChange={(e) => update({ email: e.target.value })}
+              className="w-full text-sm border border-gray-300 rounded-md px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+            />
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs font-medium text-gray-600 mb-1">{t("personnel.role")} *</label>
+              <select
+                value={form.role}
+                onChange={(e) => update({ role: e.target.value })}
+                className="w-full text-sm border border-gray-300 rounded-md px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+              >
+                {allowedRoles.map((r) => (
+                  <option key={r.code} value={r.code}>{r.code} — {r.label}</option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-gray-600 mb-1">{t("personnel.primary_facility")}</label>
+              <select
+                value={form.facility_id}
+                onChange={(e) => update({ facility_id: e.target.value })}
+                className="w-full text-sm border border-gray-300 rounded-md px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+              >
+                <option value="">{t("personnel.no_facility_assigned")}</option>
+                {flat.map((n) => (
+                  <option key={n.id} value={n.id}>L{n.hierarchy_level} — {n.name}</option>
+                ))}
+              </select>
+            </div>
+          </div>
+
+          <label className="flex items-center gap-2 cursor-pointer select-none">
+            <input
+              type="checkbox"
+              checked={form.must_reset_password}
+              onChange={(e) => update({ must_reset_password: e.target.checked })}
+              className="w-4 h-4 accent-emerald-600"
+            />
+            <span className="text-xs text-gray-600">{t("personnel.force_password_reset")}</span>
+          </label>
+        </div>
+
+        {error && <p className="text-xs text-red-600 font-medium">{error}</p>}
+
+        <div className="flex justify-end gap-2 pt-2">
+          <button
+            type="button"
+            onClick={onClose}
+            className="px-4 py-1.5 text-sm text-gray-600 border border-gray-300 rounded-lg hover:bg-gray-50"
+          >
+            {t("common.cancel")}
+          </button>
+          <button
+            type="button"
+            onClick={() => void submit()}
+            disabled={saving}
+            className="px-4 py-1.5 text-sm font-bold text-white bg-emerald-600 rounded-lg hover:bg-emerald-700 disabled:opacity-50"
+          >
+            {saving ? t("common.saving") : t("personnel.save_changes")}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
 }
 
 /* ── Add User Panel ─────────────────────────────────────────────────────────── */
@@ -622,15 +781,29 @@ function UserDetailPanel({
 
 export default function PersonnelPage() {
   const { org } = useParams() as { org: string };
-  const session  = getSession();
-  const tenantId = session?.tenantId ?? "";
+  const session    = getSession();
   const callerRole = session?.role ?? "WM";
   const qc = useQueryClient();
+
+  // BUG 4 fix: SA JWT has tenant_id=null. When SA visits another tenant's page,
+  // resolve the correct tenant UUID from the org slug via the API.
+  const isSAViewing = callerRole === "SA" && org !== SA_ORG_SLUG;
+  const { data: tenantMeta } = useQuery<{ id: string; name: string }>({
+    queryKey: ["tenant-meta", org],
+    queryFn:  () => api.get<{ id: string; name: string }>(`/api/v1/tenants/${org}`),
+    enabled:  isSAViewing,
+    staleTime: 60_000,
+    retry: false,
+  });
+  const tenantId = isSAViewing
+    ? (tenantMeta?.id ?? "")
+    : (session?.tenantId ?? "");
 
   const [search, setSearch]         = useState("");
   const [roleFilter, setRoleFilter] = useState("");
   const [statusFilter, setStatusFilter] = useState<"all" | "active" | "inactive">("active");
   const [showAddUser, setShowAddUser] = useState(false);
+  const [editUser, setEditUser]       = useState<UserRecord | null>(null);
   const [selectedUser, setSelectedUser] = useState<UserDetail | null>(null);
 
   const { data: users = [], refetch: refetchUsers } = useQuery<UserRecord[]>({
@@ -795,7 +968,17 @@ export default function PersonnelPage() {
                     </span>
                   </td>
                   <td className="px-4 py-3 text-right">
-                    <span className="text-xs text-emerald-600 font-semibold">{t("common.view")} →</span>
+                    <div className="flex items-center justify-end gap-2">
+                      <button
+                        type="button"
+                        onClick={(e) => { e.stopPropagation(); setEditUser(u); }}
+                        className="text-xs text-blue-600 font-semibold hover:text-blue-800 border-0 bg-transparent cursor-pointer px-2 py-1 rounded hover:bg-blue-50"
+                        title={t("personnel.edit_user")}
+                      >
+                        ✏ {t("common.edit")}
+                      </button>
+                      <span className="text-xs text-emerald-600 font-semibold">{t("common.view")} →</span>
+                    </div>
                   </td>
                 </tr>
               ))}
@@ -812,6 +995,17 @@ export default function PersonnelPage() {
           nodes={nodes}
           onClose={() => setShowAddUser(false)}
           onCreated={() => void refetchUsers()}
+        />
+      )}
+
+      {editUser && (
+        <EditUserPanel
+          tenantId={tenantId}
+          user={editUser}
+          callerRole={callerRole}
+          nodes={nodes}
+          onClose={() => setEditUser(null)}
+          onUpdated={() => { void refetchUsers(); qc.invalidateQueries({ queryKey: ["personnel-users", tenantId] }); }}
         />
       )}
 
