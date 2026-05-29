@@ -81,6 +81,15 @@ start_service() {
   echo " ready (${attempts}s)"
 }
 
+# ── Apply pending migrations before starting any service ─────────────────────
+echo ""
+echo "▶ Running database migrations …"
+(
+  cd "$REPO_ROOT/backend/migrations"
+  alembic upgrade head
+)
+echo "  ✔ Migrations applied"
+
 # ── Start services in dependency order ────────────────────────────────────────
 start_service "auth-service"      8001
 start_service "api-gateway"       8000

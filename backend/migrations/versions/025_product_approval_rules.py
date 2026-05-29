@@ -62,9 +62,9 @@ def upgrade() -> None:
     for role in _VIEW_ROLES:
         conn.execute(
             sa.text(
-                "INSERT INTO role_permissions (role_code, action, grant_type) "
+                "INSERT INTO role_permissions (role_code, action_id, grant_type) "
                 "VALUES (:r, 'product:view_approval_rules', 'FULL') "
-                "ON CONFLICT DO NOTHING"
+                "ON CONFLICT (role_code, action_id) DO NOTHING"
             ),
             {"r": role},
         )
@@ -72,9 +72,9 @@ def upgrade() -> None:
     for role in _MANAGE_ROLES:
         conn.execute(
             sa.text(
-                "INSERT INTO role_permissions (role_code, action, grant_type) "
+                "INSERT INTO role_permissions (role_code, action_id, grant_type) "
                 "VALUES (:r, 'product:manage_approval_rules', 'FULL') "
-                "ON CONFLICT DO NOTHING"
+                "ON CONFLICT (role_code, action_id) DO NOTHING"
             ),
             {"r": role},
         )
@@ -87,7 +87,7 @@ def downgrade() -> None:
     conn.execute(
         sa.text(
             "DELETE FROM role_permissions "
-            "WHERE action IN ('product:view_approval_rules', 'product:manage_approval_rules')"
+            "WHERE action_id IN ('product:view_approval_rules', 'product:manage_approval_rules')"
         )
     )
 
