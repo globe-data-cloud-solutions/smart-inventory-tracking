@@ -3,28 +3,32 @@
 Inserts approval routing bands into the approval_rule table for Addis Water
 (PRODUCER, addis-water) and Muger Cement (PRODUCER, muger-cement).
 
-Rule design (from CLAUDE.md §15 + §24, Business Rule #2):
+Rule design (from CLAUDE.md §15 + §24, PRD-APPENDIX §B9, Business Rule #2):
   Every stock mutation must pass through the approval workflow defined here
   before execution.  The bands are contiguous and cover all quantities
   (no gaps, no overlaps).
 
-  PULL transfers (warehouse requests stock from upstream):
-    0 – 999       → WM  (Warehouse Manager handles internally)
-    1000 – 4999   → RM  (Regional Manager sign-off for mid-range)
-    5000+         → NM  (National Manager for large pulls)
-
-  PUSH transfers (upstream proactively sends stock downstream):
-    0 – 4999      → NM  (NM initiates and approves all routine push)
-    5000+         → TA  (Tenant Admin — CEO-equivalent per CLAUDE.md §24)
-
-  ADJUSTMENT (damage, write-off, count variance):
-    0 – 99        → WM   (minor adjustments self-approved by WM)
-    100 – 999     → RM   (mid-range damage requires Regional Manager)
-    1000+         → TA   (large write-offs require Tenant Admin / CEO)
+  PULL / PUSH transfers:
+    0 – 99        → WM  level 4  (routine ops, warehouse self-manages)
+    100 – 999     → RM  level 2  (regional sign-off for mid-range)
+    1000+         → NM  level 1  (national manager for large moves)
 
   SISTER transfers (peer WH ↔ WH):
-    0 – 999       → WM  (both WHs agree, no escalation)
-    1000+         → RM  (RM notified and must approve larger lateral moves)
+    Same bands as PULL — PRD-APPENDIX §B9.
+    Migration 029 syncs authority fields from matching PULL rows automatically.
+
+  ADJUSTMENT (damage, write-off, count variance):
+    0 – 99        → WM  level 4  auto_approve=true  (minor damage self-certified)
+    100 – 999     → RM  level 2  (mid-range damage requires Regional Manager)
+    1000+         → TA  level 1  (large write-offs require Tenant Admin / CEO)
+
+  RECEIVE / ISSUE:
+    0 – 199       → WM  level 4  (WM handles routine receipts and issues)
+    200+          → RM  level 2  (RM review for larger quantities)
+
+  authority_level:  SA/TA/NM=1, RM=2, LM=3, WM=4
+  auto_approve:     true = band approves without manual action; higher levels notified
+  notify_levels:    integer array of authority levels to notify on approval/rejection
 
 Run after `alembic upgrade head`:
   python scripts/seed_approval_rules.py
@@ -56,41 +60,67 @@ ADDIS_WATER_ID  = "10000001-0000-0000-0000-000000000001"
 MUGER_CEMENT_ID = "10000002-0000-0000-0000-000000000001"
 
 # ── Approval rule definitions ───────────────────────────────────────────────
-# Each tuple: (transaction_type, min_qty, max_qty, approver_role, approval_order)
-# max_qty = None means "no upper bound" (open-ended top band)
+# Each tuple:
+#   (transaction_type, min_qty, max_qty,
+#    approver_role, approval_order,
+#    authority_level, auto_approve, notify_levels)
+#
+# max_qty    = None  →  no upper bound (open-ended top band)
+# notify_levels      →  PostgreSQL array literal string, e.g. "'{1,2}'" or "'{}'"
 
 ADDIS_WATER_RULES = [
-    # PULL: warehouse requests stock upstream
-    ("PULL",       "0",      "999.9999",  "WM", 1),
-    ("PULL",    "1000",    "4999.9999",   "RM", 1),
-    ("PULL",    "5000",         None,     "NM", 1),
+    # ── PULL ───────────────────────────────────────────────────────────────
+    ("PULL",         "0",   "99.9999",  "WM", 1, 4, False, "'{}'"),
+    ("PULL",       "100",  "999.9999",  "RM", 1, 2, False, "'{1}'"),
+    ("PULL",      "1000",       None,   "NM", 1, 1, False, "'{}'"),
 
-    # PUSH: upstream sends stock downstream
-    ("PUSH",       "0",    "4999.9999",   "NM", 1),
-    ("PUSH",    "5000",         None,     "TA", 1),
+    # ── PUSH ───────────────────────────────────────────────────────────────
+    ("PUSH",         "0",   "99.9999",  "WM", 1, 4, False, "'{}'"),
+    ("PUSH",       "100",  "999.9999",  "RM", 1, 2, False, "'{1}'"),
+    ("PUSH",      "1000",       None,   "NM", 1, 1, False, "'{}'"),
 
-    # ADJUSTMENT: damage, write-off, count variance — 3 bands per CLAUDE.md §15
-    ("ADJUSTMENT",    "0",   "99.9999",   "WM", 1),   # WM self-approves minor damage
-    ("ADJUSTMENT",  "100",  "999.9999",   "RM", 1),   # RM approval for mid-range
-    ("ADJUSTMENT", "1000",       None,    "TA", 1),   # TA (CEO) for large write-offs
+    # ── SISTER (migration 029 will sync authority fields from PULL) ────────
+    ("SISTER",       "0",   "99.9999",  "WM", 1, 4, False, "'{}'"),
+    ("SISTER",     "100",  "999.9999",  "RM", 1, 2, False, "'{1}'"),
+    ("SISTER",    "1000",       None,   "NM", 1, 1, False, "'{}'"),
 
-    # SISTER: peer WH ↔ WH lateral transfer
-    ("SISTER",     "0",     "999.9999",   "WM", 1),
-    ("SISTER",  "1000",         None,     "RM", 1),
+    # ── ADJUSTMENT ─────────────────────────────────────────────────────────
+    ("ADJUSTMENT",   "0",   "99.9999",  "WM", 1, 4, True,  "'{}'"),   # auto-approved
+    ("ADJUSTMENT", "100",  "999.9999",  "RM", 1, 2, False, "'{1}'"),
+    ("ADJUSTMENT","1000",       None,   "TA", 1, 1, False, "'{}'"),
+
+    # ── RECEIVE ────────────────────────────────────────────────────────────
+    ("RECEIVE",      "0",  "199.9999",  "WM", 1, 4, False, "'{}'"),
+    ("RECEIVE",    "200",       None,   "RM", 1, 2, False, "'{1}'"),
+
+    # ── ISSUE ──────────────────────────────────────────────────────────────
+    ("ISSUE",        "0",  "199.9999",  "WM", 1, 4, False, "'{}'"),
+    ("ISSUE",      "200",       None,   "RM", 1, 2, False, "'{1}'"),
 ]
 
-# Muger Cement uses the same bands (both are PRODUCER, same org size)
+# Muger Cement — same org type and size, identical bands
 MUGER_CEMENT_RULES = [
-    ("PULL",          "0",   "999.9999",  "WM", 1),
-    ("PULL",       "1000",  "4999.9999",  "RM", 1),
-    ("PULL",       "5000",       None,    "NM", 1),
-    ("PUSH",          "0",  "4999.9999",  "NM", 1),
-    ("PUSH",       "5000",       None,    "TA", 1),
-    ("ADJUSTMENT",    "0",   "99.9999",   "WM", 1),
-    ("ADJUSTMENT",  "100",  "999.9999",   "RM", 1),
-    ("ADJUSTMENT", "1000",       None,    "TA", 1),
-    ("SISTER",        "0",  "999.9999",   "WM", 1),
-    ("SISTER",     "1000",       None,    "RM", 1),
+    ("PULL",         "0",   "99.9999",  "WM", 1, 4, False, "'{}'"),
+    ("PULL",       "100",  "999.9999",  "RM", 1, 2, False, "'{1}'"),
+    ("PULL",      "1000",       None,   "NM", 1, 1, False, "'{}'"),
+
+    ("PUSH",         "0",   "99.9999",  "WM", 1, 4, False, "'{}'"),
+    ("PUSH",       "100",  "999.9999",  "RM", 1, 2, False, "'{1}'"),
+    ("PUSH",      "1000",       None,   "NM", 1, 1, False, "'{}'"),
+
+    ("SISTER",       "0",   "99.9999",  "WM", 1, 4, False, "'{}'"),
+    ("SISTER",     "100",  "999.9999",  "RM", 1, 2, False, "'{1}'"),
+    ("SISTER",    "1000",       None,   "NM", 1, 1, False, "'{}'"),
+
+    ("ADJUSTMENT",   "0",   "99.9999",  "WM", 1, 4, True,  "'{}'"),
+    ("ADJUSTMENT", "100",  "999.9999",  "RM", 1, 2, False, "'{1}'"),
+    ("ADJUSTMENT","1000",       None,   "TA", 1, 1, False, "'{}'"),
+
+    ("RECEIVE",      "0",  "199.9999",  "WM", 1, 4, False, "'{}'"),
+    ("RECEIVE",    "200",       None,   "RM", 1, 2, False, "'{1}'"),
+
+    ("ISSUE",        "0",  "199.9999",  "WM", 1, 4, False, "'{}'"),
+    ("ISSUE",      "200",       None,   "RM", 1, 2, False, "'{1}'"),
 ]
 
 SEED_DATA: list[tuple[str, list]] = [
@@ -152,27 +182,34 @@ async def seed() -> None:
         # 3. Insert rules
         total = 0
         for tenant_id, rules in SEED_DATA:
-            for (tx_type, min_qty, max_qty, role, order) in rules:
+            for (tx_type, min_qty, max_qty, role, order,
+                 auth_level, auto_approve, notify_levels) in rules:
                 await session.execute(
-                    text("""
+                    text(f"""
                         INSERT INTO approval_rule
                             (tenant_id, transaction_type,
                              min_quantity, max_quantity,
                              approver_role, approval_order,
+                             authority_level, auto_approve,
+                             notify_levels,
                              is_active)
                         VALUES
                             (:tid, :tx_type,
                              :min_qty, :max_qty,
                              :role, :order,
+                             :auth_level, :auto_approve,
+                             {notify_levels}::integer[],
                              true)
                     """),
                     {
-                        "tid":     tenant_id,
-                        "tx_type": tx_type,
-                        "min_qty": min_qty,
-                        "max_qty": max_qty,
-                        "role":    role,
-                        "order":   order,
+                        "tid":          tenant_id,
+                        "tx_type":      tx_type,
+                        "min_qty":      min_qty,
+                        "max_qty":      max_qty,
+                        "role":         role,
+                        "order":        order,
+                        "auth_level":   auth_level,
+                        "auto_approve": auto_approve,
                     },
                 )
                 total += 1
@@ -185,7 +222,8 @@ async def seed() -> None:
         rows = await session.execute(
             text("""
                 SELECT t.name AS tenant, r.transaction_type, r.min_quantity,
-                       r.max_quantity, r.approver_role
+                       r.max_quantity, r.approver_role, r.authority_level,
+                       r.auto_approve, r.notify_levels
                 FROM approval_rule r
                 JOIN tenants t ON t.id = r.tenant_id
                 ORDER BY t.name, r.transaction_type, r.min_quantity NULLS FIRST
@@ -195,11 +233,16 @@ async def seed() -> None:
         for row in rows:
             if row.tenant != current_tenant:
                 print(f"Tenant: {row.tenant}")
-                print(f"  {'Type':<12} {'Min Qty':>10} {'Max Qty':>10}  {'Approver'}")
-                print(f"  {'-'*12} {'-'*10} {'-'*10}  {'-'*8}")
+                print(f"  {'Type':<12} {'Min':>8} {'Max':>10}  {'Role':<4}  {'Lvl':>3}  {'Auto':>5}  Notify")
+                print(f"  {'-'*12} {'-'*8} {'-'*10}  {'-'*4}  {'-'*3}  {'-'*5}  {'-'*8}")
                 current_tenant = row.tenant
-            max_str = str(row.max_quantity) if row.max_quantity is not None else "unlimited"
-            print(f"  {row.transaction_type:<12} {str(row.min_quantity):>10} {max_str:>10}  {row.approver_role}")
+            max_str    = str(row.max_quantity) if row.max_quantity is not None else "unlimited"
+            auto_str   = "yes" if row.auto_approve else "no"
+            notify_str = str(row.notify_levels) if row.notify_levels else "[]"
+            print(
+                f"  {row.transaction_type:<12} {str(row.min_quantity):>8} {max_str:>10}"
+                f"  {row.approver_role:<4}  {row.authority_level:>3}  {auto_str:>5}  {notify_str}"
+            )
         print()
 
     await engine.dispose()
