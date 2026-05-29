@@ -333,7 +333,26 @@
     "from": "From",
     "to": "To",
     "notes": "Notes",
-    "category": "Category"
+    "category": "Category",
+    "actions": {
+      "transfer_DRAFT":                  "Transfer Created",
+      "transfer_PENDING_REVIEW":         "Transfer Submitted for Review",
+      "transfer_PENDING_APPROVAL":       "Transfer Sent for Approval",
+      "transfer_PENDING_SOURCE_CONFIRM": "Transfer Source Confirm Requested",
+      "transfer_PENDING_DEST_CONFIRM":   "Transfer Destination Confirmed",
+      "transfer_APPROVED":               "Transfer Approved",
+      "transfer_ADVISED":                "Transfer Advised",
+      "transfer_ISSUED":                 "Transfer Issued",
+      "transfer_IN_TRANSIT":             "Transfer Dispatched",
+      "transfer_PARTIALLY_RECEIVED":     "Transfer Partially Received",
+      "transfer_RECEIVED":               "Transfer Received",
+      "transfer_COMPLETED":              "Transfer Completed",
+      "transfer_REJECTED":               "Transfer Rejected",
+      "transfer_CANCELLED":              "Transfer Cancelled",
+      "ADJUSTMENT":                      "Stock Adjustment",
+      "receive_stock":                   "Stock Received",
+      "issue_stock":                     "Stock Issued"
+    }
   },
   "permissions": {
     "title": "Permissions",

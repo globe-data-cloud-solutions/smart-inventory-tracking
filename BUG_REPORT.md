@@ -1409,5 +1409,92 @@ Both columns (`inventory.category` and `table.reorder_point`) were already in th
 
 ---
 
+---
+
+## 21. PROMPT D (continued) — 7 Bugs + Nav Enhancement — 2026-05-28
+
+**Status:** ✅ Fixed 2026-05-28  
+**Tests:** 266 passed (5 unit tests updated to assert correct no-RESERVE/RELEASE behavior)  
+**TypeScript:** 0 errors after fix
+
+---
+
+### CRITICAL BUG 1 — Balance shows at destination before RECEIVED (Ledger integrity violation)
+
+| Item | Detail |
+|---|---|
+| **Symptom** | Destination warehouse shows positive On Hand stock immediately after a transfer is ISSUED, before any RECEIVED event. This violates immutable ledger rule #2 and Business Rule #2 |
+| **Root cause** | `dispatch_transfer()` wrote a `RESERVE` ledger entry (`transaction_type="RESERVE"`, positive quantity) at the destination warehouse when advancing status to ISSUED. `_update_running_balance()` runs unconditionally for ALL transaction types, so `inventory_balances` at the destination was credited immediately. `receive_transfer()` wrote a preceding `RELEASE` entry (negative quantity) at the destination before `TRANSFER_IN`, making the net correct but the intermediate state invalid |
+| **Fix** | Removed the RESERVE block from `dispatch_transfer()` and the RELEASE block from `receive_transfer()`. In-transit tracking in analytics SQL uses `transfer_orders.status = 'IN_TRANSIT'` (not ledger entries), so no analytics regression. `TRANSFER_OUT` at APPROVED and `TRANSFER_IN` at RECEIVED remain unchanged |
+| **Files** | `backend/services/inventory-service/services/inventory_service.py` — `dispatch_transfer()` and `receive_transfer()` |
+| **Tests updated** | `test_dispatch_writes_no_ledger_entries` (was `test_dispatch_reserves_destination_only`), `test_received_credits_destination_no_release` (was `test_received_clears_in_transit_credits_destination`), `test_issued_does_not_deduct_source_on_hand`, `test_in_transit_writes_no_ledger_entries` (was `test_in_transit_shows_on_both_sides`), `test_received_transition_credits_destination_balance` |
+
+---
+
+### CRITICAL BUG 2 — No Submit / Review button for RM and NM on PULL DRAFT
+
+| Item | Detail |
+|---|---|
+| **Symptom** | When an RM or NM user creates a PULL transfer (DRAFT status), the transfer detail shows no action buttons — no Submit, no Review, no Cancel. The transfer is stuck |
+| **Root cause** | `getAvailableActions()` in `transfers/page.tsx` had no `DRAFT` entry in the RM block for PULL type and no `DRAFT` entry in the NM block for PULL type. The DRAFT state was only handled for WM role |
+| **Fix** | Added `DRAFT: [review, cancel]` to RM PULL map, `DRAFT: [submitReq, cancel]` to RM SISTER map, and `DRAFT: [review, cancel]` to NM PULL map in `getAvailableActions()` |
+| **Files** | `frontend/src/app/[org]/transfers/page.tsx` — `getAvailableActions()` |
+
+---
+
+### CRITICAL BUG 3 — PUSH always blocked for WM users in gateway mode (regression)
+
+| Item | Detail |
+|---|---|
+| **Symptom** | In gateway mode (real tenant), the "Push" option is missing from the transfer type dropdown for WM users at Main WH (level 1) and Regional WH (level 2) facilities. PUSH worked in demo mode but regressed |
+| **Root cause** | `canPush = !lockedWH \|\| ((userWH?.level_number ?? 99) <= 2)`. In gateway mode, `effectiveWarehouses` was built from `gatewayWarehouses` (analytics API response) which never includes `level_number`. So `userWH?.level_number` was `undefined`, defaulted to 99, `99 <= 2` = false — `canPush` was always false for any `lockedWH` user |
+| **Fix** | Added `useWarehouses` hook to `transfers/page.tsx` and used `orgNodeWarehouses` (from `/api/v1/tenants/{tid}/nodes`) as the primary source when in gateway mode. These nodes always carry `level_number: n.hierarchy_level`. `effectiveWarehouses` now prefers `orgNodeWarehouses` over `gatewayWarehouses` in gateway mode |
+| **Files** | `frontend/src/app/[org]/transfers/page.tsx` — added `useWarehouses` import and hook call; updated `effectiveWarehouses` assignment |
+
+---
+
+### HIGH BUG 4 — UUID displayed in transfer list warehouse columns
+
+| Item | Detail |
+|---|---|
+| **Symptom** | Transfer list rows show raw UUIDs (e.g. `b3f1a2c4-...`) in the From and To columns instead of warehouse names |
+| **Root cause** | `from_warehouse_name` and `to_warehouse_name` were null in the API response when the JOIN in the analytics SQL missed a warehouse. The fallback `tx.from_warehouse_name \|\| tx.from_warehouse_id` then stored the UUID as the display value |
+| **Fix** | Added a post-processing step after the transfers API call that resolves names from `effectiveWarehouses` (now backed by `orgNodeWarehouses` which includes all nodes): `const fromName = tx.from_warehouse_name \|\| effectiveWarehouses.find(w => w.id === tx.from_warehouse_id)?.name \|\| tx.from_warehouse_id` |
+| **Files** | `frontend/src/app/[org]/transfers/page.tsx` — `allTransfers` post-processing |
+
+---
+
+### HIGH BUG 5 — UUID in inventory detail popup location labels
+
+| Item | Detail |
+|---|---|
+| **Symptom** | "In Transit" and location detail popups on the Inventory page show raw UUIDs instead of facility names for transfers fetched from the API |
+| **Root cause** | When building the transfer store from the API response (`useEffect` in `inventory/page.tsx`), `addTransfer()` calls used `t.from_warehouse_name \|\| t.from_warehouse_id`. If the API returned null for the name, the UUID was stored as `fromWarehouseName` in the Zustand store |
+| **Fix** | Added `resolveWHName()` helper inside the sync `useEffect` that looks up by ID in `displayWarehouses` before falling back to the UUID |
+| **Files** | `frontend/src/app/[org]/inventory/page.tsx` — transfer sync `useEffect` |
+
+---
+
+### HIGH BUG 6 — Audit log displays raw action codes instead of readable labels
+
+| Item | Detail |
+|---|---|
+| **Symptom** | Audit Log page shows raw action strings like `transfer:APPROVED`, `transfer:IN_TRANSIT`, `receive_stock` in the Action column instead of human-readable text |
+| **Root cause** | The `audit-log/page.tsx` rendered `{e.action}` directly. No i18n keys existed for action codes under `audit.actions.*` |
+| **Fix** | Added `audit.actions` object to `en.json` covering all transfer status transitions and common actions (`transfer_DRAFT`, `transfer_APPROVED`, `transfer_IN_TRANSIT`, etc., plus `receive_stock`, `issue_stock`, `ADJUSTMENT`). Updated audit log page to look up `audit.actions.${e.action.replace(/:/g, "_")}` and fall back to the raw code if the key is missing |
+| **Files** | `locales/en.json`, `frontend/src/app/[org]/audit-log/page.tsx` |
+
+---
+
+### ENHANCEMENT — Inventory nav item moved to top of OPERATIONS section
+
+| Item | Detail |
+|---|---|
+| **Change** | Moved the "Inventory" nav link from the INVENTORY section (below Lot Traceability) to the top of the OPERATIONS section (above Transfers) |
+| **Reason** | Inventory is an operational view that warehouse managers use constantly alongside Transfers and Receive/Issue. Grouping it with other operational actions (Transfers, Receive, Issue) improves workflow efficiency — it is not a configuration/reference item like Products and Warehouses |
+| **Files** | `frontend/src/app/[org]/layout.tsx` — `TENANT_NAV` array |
+
+---
+
 *SMART Inventory Platform — Bug Report v4.0*  
 *Backend: Python 3.12 / FastAPI · Frontend: Next.js 14 / TypeScript · DB: PostgreSQL 16*

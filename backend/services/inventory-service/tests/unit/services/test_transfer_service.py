@@ -161,11 +161,12 @@ def _session_for_receive(
 @pytest.mark.unit
 class TestInventoryServiceTransfers:
 
-    async def test_dispatch_reserves_destination_only(self) -> None:
-        """dispatch_transfer() (APPROVED → ISSUED) writes one ledger entry per line:
-          RESERVE at destination — books in_transit_in.
-        Source on_hand was already deducted at APPROVED via transition_transfer(); dispatch
-        must NOT write another TRANSFER_OUT."""
+    async def test_dispatch_writes_no_ledger_entries(self) -> None:
+        """dispatch_transfer() (APPROVED → ISSUED) writes NO ledger entries.
+        Source on_hand was already deducted at APPROVED via transition_transfer().
+        The old RESERVE at destination was removed: it credited inventory_balances
+        before stock arrived, causing balance-shows-early (BUG #8).
+        Destination balance is only credited via TRANSFER_IN at receive_transfer()."""
         from services.inventory_service import InventoryService
 
         line      = _make_line(quantity=50.0)
@@ -180,22 +181,15 @@ class TestInventoryServiceTransfers:
             result = await svc.dispatch_transfer(SRC_WM, TRANSFER_ID)
 
         assert result.status == "ISSUED"
-        # One ledger entry per line: only RESERVE at destination
-        assert mock_record.await_count == 1
-
-        calls = {kw["transaction_type"]: kw for _, kw in mock_record.call_args_list}
-        assert "TRANSFER_OUT" not in calls, "TRANSFER_OUT must NOT be written at dispatch"
-
-        rsrv = calls["RESERVE"]
-        assert rsrv["warehouse_id"] == WAREHOUSE_B        # destination WH reserved
-        assert rsrv["quantity"]     == Decimal("50")       # positive = in_transit booking
-        assert rsrv["reference_id"] == str(TRANSFER_ID)
+        # No ledger entries at dispatch — neither TRANSFER_OUT nor RESERVE
+        assert mock_record.await_count == 0, "dispatch_transfer must write zero ledger entries"
 
     async def test_received_transition_credits_destination_balance(self) -> None:
-        """receive_transfer() (IN_TRANSIT → RECEIVED) writes two ledger entries per line:
-          1. RELEASE at destination   — clears the in_transit_in booking
-          2. TRANSFER_IN at destination — credits on_hand
-        Source on_hand was already deducted at APPROVED; NO TRANSFER_OUT at receive."""
+        """receive_transfer() (IN_TRANSIT → RECEIVED) writes one ledger entry per line:
+          TRANSFER_IN at destination — credits on_hand.
+        Source on_hand was already deducted at APPROVED; NO TRANSFER_OUT at receive.
+        No RELEASE needed: dispatch_transfer() no longer writes a RESERVE at destination
+        (that pair was removed to fix balance-shows-early BUG #8)."""
         from services.inventory_service import InventoryService
 
         line      = _make_line(quantity=30.0)
@@ -213,17 +207,13 @@ class TestInventoryServiceTransfers:
             result = await svc.receive_transfer(DST_WM, TRANSFER_ID)
 
         assert result.status == "RECEIVED"
-        # Two ledger entries per line: RELEASE + TRANSFER_IN at destination only
-        assert mock_record.await_count == 2
+        # One ledger entry per line: only TRANSFER_IN at destination
+        assert mock_record.await_count == 1
 
         calls = {kw["transaction_type"]: kw for _, kw in mock_record.call_args_list}
         assert "TRANSFER_OUT" not in calls, "TRANSFER_OUT must NOT be written at receive (deducted at APPROVED)"
-        rel  = calls["RELEASE"]
+        assert "RELEASE" not in calls, "RELEASE must NOT be written (no RESERVE was made at dispatch)"
         tin  = calls["TRANSFER_IN"]
-
-        assert rel["warehouse_id"]  == WAREHOUSE_B        # destination — clearing booking
-        assert rel["quantity"]      == -Decimal("30")      # negative = release
-        assert rel["reference_id"]  == str(TRANSFER_ID)
 
         assert tin["warehouse_id"]  == WAREHOUSE_B        # destination WH credited
         assert tin["quantity"]      == Decimal("30")       # positive = credit
@@ -264,9 +254,9 @@ class TestInventoryServiceTransfers:
     # ── Regression tests for BUGs 1–3 ────────────────────────────────────────
 
     async def test_issued_does_not_deduct_source_on_hand(self) -> None:
-        """dispatch_transfer() (APPROVED → ISSUED) must NOT deduct source warehouse on_hand.
+        """dispatch_transfer() (APPROVED → ISSUED) must NOT write any ledger entries.
         Source on_hand was already deducted at APPROVED via transition_transfer().
-        dispatch_transfer() only writes a RESERVE at destination; no TRANSFER_OUT at source."""
+        No RESERVE at destination either — that was removed to fix balance-shows-early (BUG #8)."""
         from services.inventory_service import InventoryService
 
         line     = _make_line(quantity=120.0)
@@ -282,25 +272,13 @@ class TestInventoryServiceTransfers:
             result = await svc.dispatch_transfer(SRC_WM, TRANSFER_ID)
 
         assert result.status == "ISSUED", "status must advance to ISSUED"
+        assert mock_record.await_count == 0, "dispatch must write zero ledger entries"
 
-        transfer_out_calls = [
-            kw for _, kw in mock_record.call_args_list
-            if kw.get("transaction_type") == "TRANSFER_OUT"
-        ]
-        assert len(transfer_out_calls) == 0, "TRANSFER_OUT must NOT be written at dispatch"
-
-        reserve_calls = [
-            kw for _, kw in mock_record.call_args_list
-            if kw.get("transaction_type") == "RESERVE"
-        ]
-        assert len(reserve_calls) == 1, "exactly one RESERVE at destination per line"
-        assert reserve_calls[0]["warehouse_id"] == WAREHOUSE_B, "destination WH must be reserved"
-        assert reserve_calls[0]["quantity"] == Decimal("120"), "quantity must be positive"
-
-    async def test_in_transit_shows_on_both_sides(self) -> None:
-        """dispatch_transfer() writes a RESERVE at destination to track in_transit_in.
-        Source in_transit_out is derived from transfer status in the display layer.
-        No TRANSFER_OUT at source during dispatch — deduction was already made at APPROVED."""
+    async def test_in_transit_writes_no_ledger_entries(self) -> None:
+        """dispatch_transfer() writes NO ledger entries (APPROVED → ISSUED).
+        In-transit tracking (in_transit_in_qty) is read from transfer status in the analytics
+        query — not from ledger entries. The old RESERVE/RELEASE pair was removed because it
+        credited inventory_balances at destination before stock arrived (BUG #8)."""
         from services.inventory_service import InventoryService
 
         qty      = Decimal("75")
@@ -317,24 +295,13 @@ class TestInventoryServiceTransfers:
             result = await svc.dispatch_transfer(SRC_WM, TRANSFER_ID)
 
         assert result.status == "ISSUED"
+        assert mock_record.await_count == 0, "dispatch must write zero ledger entries"
 
-        calls_by_type = {kw["transaction_type"]: kw for _, kw in mock_record.call_args_list}
-
-        # Source side — no TRANSFER_OUT at dispatch; deduction deferred to receive
-        assert "TRANSFER_OUT" not in calls_by_type, "TRANSFER_OUT must NOT be written at dispatch"
-
-        # Destination side — RESERVE books in_transit_in
-        assert "RESERVE" in calls_by_type, "RESERVE missing — destination in_transit_in not tracked"
-        dst = calls_by_type["RESERVE"]
-        assert dst["warehouse_id"] == WAREHOUSE_B
-        assert dst["quantity"]     == qty
-        assert dst["reference_id"] == str(TRANSFER_ID)
-
-    async def test_received_clears_in_transit_credits_destination(self) -> None:
+    async def test_received_credits_destination_no_release(self) -> None:
         """receive_transfer() (IN_TRANSIT → RECEIVED) must:
-          a. Write a RELEASE at destination to clear the in_transit_in booking.
-          b. Write a TRANSFER_IN at destination to credit on_hand.
-        Must NOT write TRANSFER_OUT at source — deduction was already made at APPROVED."""
+          a. Write only TRANSFER_IN at destination — credits on_hand.
+        Must NOT write TRANSFER_OUT at source — deduction was already made at APPROVED.
+        Must NOT write RELEASE — dispatch no longer writes RESERVE (BUG #8 fix)."""
         from services.inventory_service import InventoryService
 
         qty      = Decimal("60")
@@ -359,20 +326,15 @@ class TestInventoryServiceTransfers:
 
         # Source must NOT get another TRANSFER_OUT — already written at APPROVED
         assert "TRANSFER_OUT" not in calls_by_type, "TRANSFER_OUT must NOT be written at receive"
-
-        # In-transit clearing — must reverse the RESERVE written at dispatch
-        assert "RELEASE" in calls_by_type, "RELEASE missing — in_transit_in not cleared on receive"
-        rel = calls_by_type["RELEASE"]
-        assert rel["warehouse_id"] == WAREHOUSE_B, "RELEASE must target destination"
-        assert rel["quantity"]     == -qty,         "RELEASE must be negative (reversal)"
+        # No RELEASE — dispatch no longer writes RESERVE at destination
+        assert "RELEASE" not in calls_by_type, "RELEASE must NOT be written (no RESERVE was made)"
 
         # On-hand credit — stock is now physically at destination
         assert "TRANSFER_IN" in calls_by_type, "TRANSFER_IN missing — destination on_hand not credited"
         tin = calls_by_type["TRANSFER_IN"]
         assert tin["warehouse_id"] == WAREHOUSE_B, "TRANSFER_IN must target destination"
         assert tin["quantity"]     == qty,          "TRANSFER_IN must be positive (credit)"
-
-        assert rel["reference_id"] == tin["reference_id"] == str(TRANSFER_ID)
+        assert tin["reference_id"] == str(TRANSFER_ID)
 
     async def test_approved_transition_writes_transfer_out_at_source(self) -> None:
         """transition_transfer() (PENDING_APPROVAL → APPROVED) must write one TRANSFER_OUT

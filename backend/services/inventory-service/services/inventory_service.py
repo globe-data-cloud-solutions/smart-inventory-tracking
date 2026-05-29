@@ -407,22 +407,11 @@ class InventoryService:
             {"tid_order": str(transfer_id), "tid": str(user.tenant_id)},
         )).fetchall()
 
-        for line in lines:
-            # Source on_hand was already deducted at APPROVED via TRANSFER_OUT ledger entry.
-            # dispatch_transfer() only books in-transit at the destination via RESERVE so
-            # the receiving warehouse can see committed inbound stock. RELEASE reverses
-            # this booking when receive_transfer() is called.
-            await record_transaction(
-                self.db,
-                tenant_id=str(user.tenant_id),
-                transaction_type="RESERVE",
-                product_id=str(line.product_id),
-                warehouse_id=str(row.to_warehouse_id),
-                quantity=Decimal(str(line.quantity)),   # positive: reserve at destination
-                performed_by=str(user.user_id),
-                idempotency_key=f"transfer:{transfer_id}:dispatch:reserve:line:{line.id}",
-                reference_id=str(transfer_id),
-            )
+        # Source on_hand was already deducted at APPROVED via TRANSFER_OUT.
+        # No ledger entry is written at the destination until RECEIVED —
+        # writing RESERVE here credited inventory_balances at the destination
+        # before stock arrived, causing balance-shows-early (BUG #8).
+        # RELEASE was removed from receive_transfer() alongside this change.
 
         await self.db.execute(
             text("UPDATE transfer_orders SET status = 'ISSUED', updated_at = now() WHERE id = :id"),
@@ -486,18 +475,8 @@ class InventoryService:
 
         for line in lines:
             # Source on_hand was already deducted at APPROVED via TRANSFER_OUT — do not repeat.
-            # Clear the in_transit_in booking written at dispatch time.
-            await record_transaction(
-                self.db,
-                tenant_id=str(user.tenant_id),
-                transaction_type="RELEASE",
-                product_id=str(line.product_id),
-                warehouse_id=str(row.to_warehouse_id),
-                quantity=-Decimal(str(line.quantity)),  # negative: reverse the RESERVE
-                performed_by=str(user.user_id),
-                idempotency_key=f"transfer:{transfer_id}:receive:release:line:{line.id}",
-                reference_id=str(transfer_id),
-            )
+            # No RELEASE needed here because dispatch_transfer() no longer writes a RESERVE
+            # at the destination (that was removed to fix balance-shows-early BUG #8).
             # Credit destination on_hand — stock has been physically received.
             await record_transaction(
                 self.db,

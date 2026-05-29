@@ -244,7 +244,13 @@ export default function AuditLogPage() {
                         {cs.icon} {e.category}
                       </span>
                     </td>
-                    <td className="px-3 py-2 font-mono text-gray-700 whitespace-nowrap text-[11px]">{e.action}</td>
+                    <td className="px-3 py-2 font-mono text-gray-700 whitespace-nowrap text-[11px]">
+                      {(() => {
+                        const key = `audit.actions.${e.action.replace(/:/g, "_")}`;
+                        const label = t(key);
+                        return label !== key ? label : e.action;
+                      })()}
+                    </td>
                     <td className="px-3 py-2 font-mono text-gray-500 text-[10px]">{e.resourceRef || "—"}</td>
                     <td className="px-3 py-2 text-gray-800 text-[11px] max-w-[160px] overflow-hidden text-ellipsis whitespace-nowrap">{e.productName || "—"}</td>
                     <td className="px-3 py-2 font-semibold text-gray-700 whitespace-nowrap text-[11px]">{e.quantityStr || "—"}</td>

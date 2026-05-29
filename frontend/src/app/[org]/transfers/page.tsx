@@ -10,6 +10,7 @@ import { NewTransferPanel } from "@/components/features/transfers/NewTransferPan
 import { useInventoryStore } from "@/lib/inventory-state";
 import { useAuditStore } from "@/lib/audit-log-state";
 import { useOfflineSync } from "@/hooks/useOfflineSync";
+import { useWarehouses } from "@/hooks/useWarehouses";
 import { api } from "@/lib/api";
 import { t } from "@/lib/i18n";
 
@@ -337,6 +338,7 @@ function getAvailableActions(
   if (role === "RM") {
     if (type === "PULL") {
       const map: Partial<Record<TransferStatus, Action[]>> = {
+        DRAFT:            [review, cancel],
         PENDING_REVIEW:   [toApproval, reject, cancel],
         PENDING_APPROVAL: [approve, reject, cancel],
       };
@@ -352,6 +354,7 @@ function getAvailableActions(
     }
     if (type === "SISTER") {
       const map: Partial<Record<TransferStatus, Action[]>> = {
+        DRAFT:            [submitReq, cancel],
         PENDING_APPROVAL: [approve, reject, cancel],
       };
       return map[status] ?? [];
@@ -363,6 +366,7 @@ function getAvailableActions(
   if (role === "NM") {
     if (type === "PULL") {
       const map: Partial<Record<TransferStatus, Action[]>> = {
+        DRAFT:            [review, cancel],
         PENDING_REVIEW:   [toApproval, reject, cancel],
         PENDING_APPROVAL: [approve, reject, cancel],
         APPROVED:         [issue, cancel],
@@ -438,7 +442,7 @@ export default function TransfersPage() {
   const [partialQtyErr, setPartialQtyErr] = useState("");
   const [toast, setToast] = useState("");
 
-  const { data: allTransfers = [], isLoading: transfersLoading } = useQuery<ApiTransfer[]>({
+  const { data: rawTransfers = [], isLoading: transfersLoading } = useQuery<ApiTransfer[]>({
     queryKey: ["transfers", org],
     queryFn:  () =>
       api.get<RawApiTransfer[]>("/api/v1/inventory/transfers")
@@ -446,6 +450,18 @@ export default function TransfersPage() {
     enabled: org !== SA_ORG_SLUG,
     staleTime: 0,
     refetchInterval: 15000,
+  });
+
+  // Resolve warehouse names: API JOIN may return null when a node exists only in
+  // organization_node (not warehouses table). Fall back to effectiveWarehouses by ID.
+  const allTransfers = rawTransfers.map((tx) => {
+    const fromName = tx.from_warehouse_name ||
+      effectiveWarehouses.find((w) => w.id === tx.from_warehouse_id)?.name ||
+      tx.from_warehouse_id;
+    const toName = tx.to_warehouse_name ||
+      effectiveWarehouses.find((w) => w.id === tx.to_warehouse_id)?.name ||
+      tx.to_warehouse_id;
+    return { ...tx, from_warehouse_name: fromName, to_warehouse_name: toName };
   });
 
   // Fetch API-created products for the transfer panel product dropdown.
@@ -466,6 +482,10 @@ export default function TransfersPage() {
     enabled: org !== SA_ORG_SLUG,
     staleTime: 30000,
   });
+
+  // Org-node warehouses include level_number (needed for canPush) and all nodes
+  // even those with no stock yet — covers BUG 3 (canPush) and BUG 4 (name resolution).
+  const { warehouses: orgNodeWarehouses } = useWarehouses();
 
   if (org === SA_ORG_SLUG) return <p className="p-8 text-gray-500">{t("dashboard.tenants_heading")}</p>;
   const tenant = DEMO_TENANTS.find((ten) => ten.slug === org);
@@ -540,7 +560,11 @@ export default function TransfersPage() {
           })),
       ];
 
-  const effectiveWarehouses = isGatewayMode ? gatewayWarehouses : (tenant?.warehouses ?? []);
+  // Prefer org-node list (has level_number for canPush + all nodes regardless of stock).
+  // Fall back to analytics-derived list until org-node data loads.
+  const effectiveWarehouses = isGatewayMode
+    ? (orgNodeWarehouses.length > 0 ? orgNodeWarehouses : gatewayWarehouses)
+    : (tenant?.warehouses ?? []);
 
   // Apply hierarchy + role scoping
   const scopedTransfers = scopeTransfers(allTransfers, user.role, user.warehouseId, effectiveWarehouses);

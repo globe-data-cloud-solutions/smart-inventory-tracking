@@ -316,14 +316,18 @@ export default function InventoryPage() {
       if (TERMINAL.has(t.status))      continue;
       if (syncedRef.current.has(t.id)) continue;
       syncedRef.current.add(t.id);
+      // Resolve names: API JOIN may return null when warehouse only exists in
+      // organization_node. Fall back to displayWarehouses lookup, then raw UUID.
+      const resolveWHName = (id: string, name: string | null | undefined) =>
+        name || displayWarehouses.find((w) => w.id === id)?.name || id;
       addTransfer({
         id:                t.id,
         ref:               t.ref,
         productId:         t.product_id,
         fromWarehouseId:   t.from_warehouse_id,
-        fromWarehouseName: t.from_warehouse_name,
+        fromWarehouseName: resolveWHName(t.from_warehouse_id, t.from_warehouse_name),
         toWarehouseId:     t.to_warehouse_id,
-        toWarehouseName:   t.to_warehouse_name,
+        toWarehouseName:   resolveWHName(t.to_warehouse_id, t.to_warehouse_name),
         quantity:          t.quantity,
         issuedDate:        t.created_at,
         status:            apiStatus,

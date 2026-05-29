@@ -455,11 +455,11 @@ const SA_NAV: NavItem[] = [
 const TENANT_NAV: NavItem[] = [
   { type: "section", label: "Inventory" },
   { type: "link", icon: "🏠", label: "Dashboard",       page: "dashboard"         },
-  { type: "link", icon: "📦", label: "Inventory",       page: "inventory"         },
   { type: "link", icon: "🏭", label: "Products",        page: "products"          },
   { type: "link", icon: "🏗️", label: "Warehouses",      page: "warehouses"        },
   { type: "link", icon: "🔍", label: "Lot Traceability",page: "lots"              },
   { type: "section", label: "Operations" },
+  { type: "link", icon: "📦", label: "Inventory",       page: "inventory"         },
   { type: "link", icon: "🔄", label: "Transfers",       page: "transfers"         },
   { type: "link", icon: "📋", label: "Adjustments",     page: "adjustments"       },
   { type: "link", icon: "🔢", label: "Stock Count",     page: "stock-count"       },
