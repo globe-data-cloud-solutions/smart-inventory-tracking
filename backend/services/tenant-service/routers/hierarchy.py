@@ -132,7 +132,8 @@ async def _build_tree(
     for node in nodes_by_parent.get(parent_id, []):
         node_id_str = str(node["id"])
         children = await _build_tree(db, tenant_id, nodes_by_parent, level_names, node_id_str)
-        manager_name, manager_role = await _get_manager_info(db, node.get("manager_user_id"))
+        manager_name = node.get("manager_name")
+        manager_role = node.get("manager_role")
         result.append(
             OrgNodeOut(
                 id=node["id"],
@@ -282,11 +283,16 @@ async def list_org_nodes(
 ) -> SuccessResponse[List[OrgNodeOut]]:
     rows = await db.execute(
         text(
-            "SELECT id, tenant_id, name, code, hierarchy_level, parent_node_id, "
-            "is_stock_holding, is_active, address "
-            "FROM organization_node "
-            "WHERE tenant_id = :tid AND is_active = true "
-            "ORDER BY hierarchy_level, name"
+            "SELECT n.id, n.tenant_id, n.name, n.code, n.hierarchy_level, n.parent_node_id, "
+            "n.is_stock_holding, n.is_active, n.address, "
+            "u.full_name AS manager_name, u.role AS manager_role "
+            "FROM organization_node n "
+            "LEFT JOIN user_facility_assignments ufa "
+            "  ON ufa.facility_id = n.id "
+            "  AND ufa.assignment_type = 'PRIMARY' AND ufa.is_active = true "
+            "LEFT JOIN users u ON u.id = ufa.user_id "
+            "WHERE n.tenant_id = :tid AND n.is_active = true "
+            "ORDER BY n.hierarchy_level, n.name"
         ),
         {"tid": str(tenant_id)},
     )
@@ -301,7 +307,8 @@ async def list_org_nodes(
             "is_stock_holding": r.is_stock_holding,
             "is_active": r.is_active,
             "address": getattr(r, "address", None),
-            "manager_user_id": None,
+            "manager_name":  getattr(r, "manager_name", None),
+            "manager_role":  getattr(r, "manager_role", None),
         }
         for r in rows.fetchall()
     ]

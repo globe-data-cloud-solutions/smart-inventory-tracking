@@ -107,8 +107,16 @@
         "type_code_placeholder": "ለምሳሌ፦ WTR, CMT, FLR",
         "type_code_hint": "2–5 ፊደሎች · በSKU ውስጥ ጥቅም ላይ ይውላሉ",
         "unit": "የመለኪያ አሃድ",
-        "pack_size": "የጥቅል መጠን"
+        "pack_size": "የጥቅል መጠን",
+        "short_name": "አጭር ስም",
+        "short_name_hint": "በቲኬቶችና አጭር ዕይታዎች ላይ ይጠቅማል",
+        "brand": "ብራንድ",
+        "description": "መግለጫ",
+        "description_placeholder": "የምርት መግለጫ…",
+        "packaging_type": "የማሸጊያ አይነት",
+        "units_per_package": "በአንድ ጥቅል ውስጥ ያሉ አሃዶች"
       },
+      "sold_as": "ይሸጣል",
       "sku_preview_label": "SKU ቅድመ-ዕይታ",
       "confirm": {
         "discard": "ለውጦቹን ትጥላለህ?"
@@ -580,6 +588,21 @@
     "col_medium": "WM → RM ከዚህ በላይ",
     "save_button": "ደንቦችን አስቀምጥ",
     "saved": "የፈቃድ ደንቦች ተቀምጠዋል።",
+    "section": "የፈቃድ ደረጃዎች",
+    "custom_set": "ብጁ",
+    "using_defaults": "የአከራይ ነባሪዎችን ተጠቅሞ",
+    "hint": "ለነባሪ ተጠቅሞ ባዶ ተዉ",
+    "tx": {
+      "receive":    "ተቀበል",
+      "issue":      "አዉጣ",
+      "adjustment": "ማስተካከያ",
+      "transfer":   "ዝውውር"
+    },
+    "col": {
+      "transaction": "ግብይት",
+      "qty_up_to":   "መጠን እስከ",
+      "approver":    "ፈቃድ ሰጭ"
+    },
     "type": {
       "inventory_adjust": "ማስተካከያ",
       "inventory_transfer": "ዝውውር"

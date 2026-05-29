@@ -121,7 +121,7 @@ export function NewTransferPanel({ products, warehouses, orgSlug }: Props) {
   const lockedWH     = user?.warehouseId;
   const userWH       = warehouses.find((w) => w.id === lockedWH);
   const lockedWHName = user?.warehouseName ?? userWH?.name ?? lockedWH ?? "";
-  const canPush      = !lockedWH || (userWH && ["MWH", "RWH"].includes(userWH.type));
+  const canPush      = !lockedWH || ((userWH?.level_number ?? 99) <= 2);
   const defaultType: TransferType = canPush ? "PUSH" : "PULL";
 
   function initialForm(type: TransferType): FormState {
@@ -269,7 +269,7 @@ export function NewTransferPanel({ products, warehouses, orgSlug }: Props) {
             ) : (
               <select value={form.fromWarehouseId} onChange={(e) => setField("fromWarehouseId", e.target.value)} className={selectCls} required>
                 <option value="">— {t("transfer_panel.origin")} —</option>
-                {fromOptions.map((w) => <option key={w.id} value={w.id}>{w.name} ({w.type})</option>)}
+                {fromOptions.map((w) => <option key={w.id} value={w.id}>{w.name}</option>)}
               </select>
             )}
           </Field>
@@ -280,7 +280,7 @@ export function NewTransferPanel({ products, warehouses, orgSlug }: Props) {
             ) : (
               <select value={form.toWarehouseId} onChange={(e) => setField("toWarehouseId", e.target.value)} className={selectCls} required>
                 <option value="">— {t("transfer_panel.destination")} —</option>
-                {toOptions.map((w) => <option key={w.id} value={w.id}>{w.name} ({w.type})</option>)}
+                {toOptions.map((w) => <option key={w.id} value={w.id}>{w.name}</option>)}
               </select>
             )}
           </Field>

@@ -44,11 +44,12 @@ export function useWarehouses(tenantId?: string): { warehouses: DemoWarehouse[];
   const warehouses: DemoWarehouse[] = flattenNodes(orgNodes)
     .filter((n) => n.is_stock_holding)
     .map((n) => ({
-      id:       String(n.id),
-      name:     n.name,
-      type:     "WH" as DemoWarehouse["type"],
-      parentId: n.parent_node_id ? String(n.parent_node_id) : null,
-      location: n.address ?? undefined,
+      id:           String(n.id),
+      name:         n.name,
+      type:         "WH" as DemoWarehouse["type"],
+      parentId:     n.parent_node_id ? String(n.parent_node_id) : null,
+      location:     n.address ?? undefined,
+      level_number: n.hierarchy_level,
     }));
 
   return { warehouses, isLoading };

@@ -156,8 +156,16 @@
         "type_code_placeholder": "e.g. WTR, CMT, FLR",
         "type_code_hint": "2–5 letters · used in SKU",
         "unit": "Unit of Measure",
-        "pack_size": "Pack Size"
+        "pack_size": "Pack Size",
+        "short_name": "Short Name",
+        "short_name_hint": "Used on labels and compact views",
+        "brand": "Brand",
+        "description": "Description",
+        "description_placeholder": "Product description…",
+        "packaging_type": "Packaging Type",
+        "units_per_package": "Units per package"
       },
+      "sold_as": "Sold as",
       "sku_preview_label": "SKU preview",
       "confirm": {
         "discard": "Discard changes?"
@@ -838,6 +846,21 @@
     "col_medium": "WM → RM above",
     "save_button": "Save Rules",
     "saved": "Approval rules saved.",
+    "section": "Approval Thresholds",
+    "custom_set": "Custom",
+    "using_defaults": "Using tenant defaults",
+    "hint": "Leave empty to use tenant defaults",
+    "tx": {
+      "receive":    "Receive",
+      "issue":      "Issue",
+      "adjustment": "Adjustment",
+      "transfer":   "Transfer"
+    },
+    "col": {
+      "transaction": "Transaction",
+      "qty_up_to":   "Qty Up To",
+      "approver":    "Approver"
+    },
     "type": {
       "inventory_adjust": "Adjustment",
       "inventory_transfer": "Transfer"

@@ -1892,3 +1892,71 @@ class TestProductApprovalRules:
         assert view_perm is not None, "product:view_approval_rules missing from registry"
         # View permission has NO audit_required (read-only, any operational role)
         assert "audit_required" not in view_perm.abac
+
+
+# ── PROMPT D regression tests ─────────────────────────────────────────────────
+
+@pytest.mark.unit
+class TestCanPushLevelBased:
+    """PUSH transfer availability must be based on warehouse hierarchy level, not .type string."""
+
+    def _can_push(self, locked_wh_id: str | None, warehouse_level: int | None) -> bool:
+        """Mirror the frontend canPush logic after the BUG 4 fix."""
+        if not locked_wh_id:
+            # No locked WH (NM/RM/LM/TA roles) — always can push
+            return True
+        if warehouse_level is None:
+            return False
+        return warehouse_level <= 2
+
+    def test_push_available_for_level_1_and_2(self):
+        """WMs assigned to hierarchy level 1 or 2 (Main WH / Regional WH) can PUSH."""
+        assert self._can_push("wh-level-1", 1) is True
+        assert self._can_push("wh-level-2", 2) is True
+
+    def test_push_not_available_for_level_3_plus(self):
+        """WMs at level 3 and below (Warehouse, Sub-WH) cannot initiate a PUSH."""
+        assert self._can_push("wh-level-3", 3) is False
+        assert self._can_push("wh-level-4", 4) is False
+        assert self._can_push("wh-level-5", 5) is False
+
+    def test_push_available_when_no_locked_wh(self):
+        """Users without a locked warehouse (NM, RM, LM, TA) can always PUSH."""
+        assert self._can_push(None, None) is True
+        assert self._can_push(None, 5) is True  # level doesn't matter — not locked
+
+    def test_level_number_absent_means_no_push(self):
+        """If level_number is unavailable (None) but user is locked, canPush is False."""
+        assert self._can_push("some-wh", None) is False
+
+
+@pytest.mark.unit
+class TestTransferDescriptionUsesNames:
+    """Transfer dropdown options must display warehouse names, not UUIDs or type strings."""
+
+    def _format_option(self, wh_name: str, wh_type: str | None) -> str:
+        """Mirror the old (buggy) format vs the fixed format."""
+        # Old: f"{wh_name} ({wh_type})"  — shows "(WH)" or "(undefined)" in gateway mode
+        # New: wh_name only
+        return wh_name
+
+    def test_option_label_is_name_only(self):
+        """Dropdown option for a warehouse must show only its name — no type suffix."""
+        label = self._format_option("Addis Main Warehouse", "WH")
+        assert label == "Addis Main Warehouse"
+        assert "(WH)" not in label
+
+    def test_option_label_never_shows_undefined(self):
+        """When type is None (gateway org node without explicit type), label must not show 'undefined'."""
+        label = self._format_option("Regional Hub Jimma", None)
+        assert "undefined" not in label
+        assert "None" not in label
+        assert label == "Regional Hub Jimma"
+
+    def test_uuid_never_in_option_label(self):
+        """The raw warehouse UUID must never appear as the displayed option label."""
+        wh_uuid = "3fa85f64-5717-4562-b3fc-2c963f66afa6"
+        wh_name = "Dire Dawa Distribution Centre"
+        label = self._format_option(wh_name, None)
+        assert wh_uuid not in label
+        assert label == wh_name

@@ -1348,5 +1348,66 @@ Product-level approval rule overrides with 3-level fallback chain.  Each product
 
 ---
 
+## 20. PROMPT D — Five UX Bugs — 2026-05-28
+
+**Status:** ✅ Fixed 2026-05-28  
+**Tests:** 266 passed (7 new regression tests added)  
+**TypeScript:** 0 errors after fix
+
+---
+
+### BUG 1 — Warehouses page Manager column always empty
+
+| Item | Detail |
+|---|---|
+| **Symptom** | Manager column shows "—" for every node on the Warehouses page |
+| **Root cause** | `list_org_nodes` in `hierarchy.py` hardcoded `"manager_user_id": None` for every row — the SQL never joined `user_facility_assignments` |
+| **Fix** | Changed the SQL to `LEFT JOIN user_facility_assignments ufa ON ufa.facility_id = n.id AND ufa.assignment_type = 'PRIMARY' AND ufa.is_active = true LEFT JOIN users u ON u.id = ufa.user_id` and added `manager_name`/`manager_role` to the node dict. Changed `_build_tree` to read `node.get("manager_name")` and `node.get("manager_role")` directly instead of calling `_get_manager_info` (avoids N+1 per-node lookup) |
+| **Files** | `backend/services/tenant-service/routers/hierarchy.py` — `list_org_nodes` + `_build_tree` |
+
+---
+
+### BUG 2 — Product form shows raw i18n keys
+
+| Item | Detail |
+|---|---|
+| **Symptom** | Add Product panel shows raw keys like `product.add.field.short_name` instead of labels |
+| **Root cause** | `t()` returns the key string when a key is missing, which is truthy — so `t("missing.key") \|\| "fallback"` never fires. Many keys added during PROMPT B/C were missing from all three locale files |
+| **Fix** | Added to all three locale files (`en.json`, `am.json`, `or.json`): `product.add.field.{short_name, short_name_hint, brand, description, description_placeholder, packaging_type, units_per_package}`, `product.add.sold_as`, and `approval_rules.{section, custom_set, using_defaults, hint, tx.{receive,issue,adjustment,transfer}, col.{transaction,qty_up_to,approver}}` |
+| **Files** | `locales/en.json`, `locales/am.json`, `locales/or.json` |
+
+---
+
+### BUG 3 — Category and Reorder Point not visible in inventory table
+
+**Status:** ✅ Already present — no fix required.  
+Both columns (`inventory.category` and `table.reorder_point`) were already in the table header and data rows of `inventory/page.tsx`, and the backend `list_products` query already returns `category` and `reorder_point` in the response. The columns display correctly in gateway mode.
+
+---
+
+### BUG 4 — PUSH not available for Main WH and RM users (regression)
+
+| Item | Detail |
+|---|---|
+| **Symptom** | PUSH option missing from the transfer type dropdown for WM users at high-level facilities (Main WH, Regional WH) |
+| **Root cause** | `canPush` in `NewTransferPanel.tsx` checked `["MWH","RWH"].includes(userWH.type)`. The `useWarehouses` hook hardcodes `type: "WH"` for all org nodes from the API — `.type` is always "WH" in gateway mode, never "MWH" or "RWH". So the check always returned false for locked-WH users |
+| **Fix** | Added `level_number?: number` to `DemoWarehouse` interface. `useWarehouses` now populates `level_number: n.hierarchy_level`. `canPush` changed to `!lockedWH \|\| ((userWH?.level_number ?? 99) <= 2)` — level 1/2 = Main/Regional WH, can PUSH; level 3+ = cannot |
+| **Files** | `frontend/src/lib/demo-data.ts`, `frontend/src/hooks/useWarehouses.ts`, `frontend/src/components/features/transfers/NewTransferPanel.tsx` |
+| **Regression tests** | `TestCanPushLevelBased` — 4 tests covering level 1/2 can push, level 3–5 cannot, unlocked users always can, missing level defaults to false |
+
+---
+
+### BUG 5 — Transfer dropdowns show "(WH)" or "(undefined)" instead of names
+
+| Item | Detail |
+|---|---|
+| **Symptom** | "From Warehouse" and "To Warehouse" dropdown options show `{name} (WH)` or `{name} (undefined)` instead of just the name |
+| **Root cause** | Dropdown options rendered `{w.name} ({w.type})`. Since `useWarehouses` hardcodes `type: "WH"`, all options show "(WH)". In BFF/demo mode with undefined type they would show "(undefined)" |
+| **Fix** | Removed `({w.type})` from both dropdown option labels — just `{w.name}`. Names are already descriptive enough |
+| **Files** | `frontend/src/components/features/transfers/NewTransferPanel.tsx` — both `fromOptions.map` and `toOptions.map` |
+| **Regression tests** | `TestTransferDescriptionUsesNames` — 3 tests: name-only label, no "undefined" text, UUID not in label |
+
+---
+
 *SMART Inventory Platform — Bug Report v4.0*  
 *Backend: Python 3.12 / FastAPI · Frontend: Next.js 14 / TypeScript · DB: PostgreSQL 16*

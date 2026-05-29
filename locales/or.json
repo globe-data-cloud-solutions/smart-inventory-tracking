@@ -98,8 +98,16 @@
         "type_code_placeholder": "fkl. WTR, CMT, FLR",
         "type_code_hint": "Qubee 2–5 · SKU keessatti fayyadama",
         "unit": "Madaala Safaraa",
-        "pack_size": "Bal'ina Kuusaa"
+        "pack_size": "Bal'ina Kuusaa",
+        "short_name": "Maqaa Gabaabaa",
+        "short_name_hint": "Labelloota fi ilaalcha gabaabaa irratti fayyadama",
+        "brand": "Maqaa Daldala",
+        "description": "Ibsa",
+        "description_placeholder": "Ibsa meeshaa…",
+        "packaging_type": "Gosa Kuusaa",
+        "units_per_package": "Lakkoofsa tokkotti"
       },
+      "sold_as": "Gurgurame",
       "sku_preview_label": "SKU mul'ata",
       "confirm": {
         "discard": "Jijjiirraa dhiistaa?"
@@ -468,6 +476,21 @@
     "col_medium": "WM → RM olitti",
     "save_button": "Seerota Kuusi",
     "saved": "Seerri hayyamaa kuufameera.",
+    "section": "Meetii Hayyamaa",
+    "custom_set": "Addaa",
+    "using_defaults": "Meetii durtii fayyadama",
+    "hint": "Meetii durtii fayyadamuuf duwwaa dhiisi",
+    "tx": {
+      "receive":    "Fudhachuu",
+      "issue":      "Baasuu",
+      "adjustment": "Sirreessaa",
+      "transfer":   "Dabarsaa"
+    },
+    "col": {
+      "transaction": "Hojii",
+      "qty_up_to":   "Lakkoofsa hanga",
+      "approver":    "Hayyamsiisaa"
+    },
     "type": {
       "inventory_adjust": "Sirreessaa",
       "inventory_transfer": "Dabarsaa"

@@ -10,6 +10,7 @@ export interface DemoWarehouse {
   location?: string;
   manager?: string;
   managerEmail?: string;
+  level_number?: number;
 }
 
 export interface DemoProduct {
