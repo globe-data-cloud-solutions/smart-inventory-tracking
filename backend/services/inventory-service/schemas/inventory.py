@@ -172,3 +172,17 @@ class AdjustmentListItem(BaseModel):
     created_by: str
     created_at: datetime
     notes: Optional[str] = None
+
+
+class ApprovalInfoResponse(BaseModel):
+    """Response for GET /transfers/{id}/approval-info.
+
+    tells the caller who must approve this transfer, whether it auto-approves,
+    and whether the current user has sufficient authority.
+    """
+    transfer_id:              uuid.UUID
+    required_authority_level: int
+    required_role_display:    str
+    is_auto_approve:          bool
+    can_approve:              bool
+    reason:                   str

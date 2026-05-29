@@ -9,7 +9,13 @@ from dependencies import get_current_user
 from shared.permissions.middleware import require_permission
 from shared.permissions.registry import PERMISSIONS
 from shared.utils.responses import SuccessResponse
-from schemas.inventory import TransferListItem, TransferOrderRequest, TransferOrderResponse, TransferTransitionRequest
+from schemas.inventory import (
+    ApprovalInfoResponse,
+    TransferListItem,
+    TransferOrderRequest,
+    TransferOrderResponse,
+    TransferTransitionRequest,
+)
 from services.inventory_service import InventoryService
 
 router = APIRouter()
@@ -133,6 +139,57 @@ async def transition_transfer(
     else:
         result = await svc.transition_transfer(user, transfer_id, body.next_status)
     return SuccessResponse(data=result)
+
+
+@router.get("/{transfer_id}/approval-info",
+            response_model=SuccessResponse[ApprovalInfoResponse])
+@require_permission(PERMISSIONS.TRANSFER_VIEW)
+async def get_approval_info(
+    transfer_id: UUID,
+    user=Depends(get_current_user),
+    db: AsyncSession = Depends(get_db_session),
+) -> SuccessResponse[ApprovalInfoResponse]:
+    """Return approval requirements for a transfer.
+
+    Tells the frontend who must approve, whether it auto-approves, and whether
+    the current user has sufficient authority to approve.
+    """
+    from decimal import Decimal
+    from sqlalchemy import text
+    from services.approval_service import resolve_approval, ROLE_AUTHORITY_LEVEL
+
+    transfer_row = (await db.execute(
+        text("SELECT transfer_type FROM transfer_orders WHERE id = :id AND tenant_id = :tid"),
+        {"id": str(transfer_id), "tid": str(user.tenant_id)},
+    )).fetchone()
+    if not transfer_row:
+        raise HTTPException(status_code=404, detail="Transfer not found")
+
+    lines = (await db.execute(
+        text(
+            "SELECT quantity FROM transfer_order_lines "
+            "WHERE transfer_order_id = :xfer_id AND tenant_id = :tid"
+        ),
+        {"xfer_id": str(transfer_id), "tid": str(user.tenant_id)},
+    )).fetchall()
+
+    total_qty = sum(Decimal(str(l.quantity)) for l in lines) if lines else Decimal("0")
+
+    decision = await resolve_approval(
+        db, str(user.tenant_id), transfer_row.transfer_type, total_qty
+    )
+
+    caller_level = ROLE_AUTHORITY_LEVEL.get(getattr(user, "role", ""), 5)
+    can_approve  = caller_level <= decision.required_authority_level
+
+    return SuccessResponse(data=ApprovalInfoResponse(
+        transfer_id=transfer_id,
+        required_authority_level=decision.required_authority_level,
+        required_role_display=decision.required_role_display,
+        is_auto_approve=decision.is_auto_approve,
+        can_approve=can_approve,
+        reason=decision.reason,
+    ))
 
 
 @router.get("/{transfer_id}", response_model=SuccessResponse[TransferOrderResponse])

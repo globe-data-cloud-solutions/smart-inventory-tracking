@@ -50,8 +50,10 @@ class PERMISSIONS:
     PRODUCT_LIST_PACKAGING_TYPES  = Permission("product:list_packaging_types",  ["tenant_id"])
     PRODUCT_CREATE_PACKAGING_TYPE = Permission("product:create_packaging_type", ["tenant_id"])
     # Product-level approval rule overrides (PROMPT C)
-    PRODUCT_VIEW_APPROVAL_RULES   = Permission("product:view_approval_rules",   ["tenant_id"])
-    PRODUCT_MANAGE_APPROVAL_RULES = Permission("product:manage_approval_rules", ["tenant_id", "audit_required"])
+    PRODUCT_VIEW_APPROVAL_RULES        = Permission("product:view_approval_rules",        ["tenant_id"])
+    PRODUCT_MANAGE_APPROVAL_RULES      = Permission("product:manage_approval_rules",      ["tenant_id", "audit_required"])
+    # Per-product authority floor overrides in product_approval_minimums (PROMPT 2D)
+    PRODUCT_MANAGE_APPROVAL_MINIMUMS   = Permission("product:manage_approval_minimums",   ["tenant_id", "audit_required"])
 
     # ── Domain 4 — Inventory ───────────────────────────────────────────────
     INVENTORY_RECEIVE       = Permission("inventory:receive",       ["tenant_id", "warehouse_id"])
@@ -196,7 +198,7 @@ ALL_PERMISSIONS: List[Permission] = [
     v for v in vars(PERMISSIONS).values() if isinstance(v, Permission)
 ]
 
-assert len(ALL_PERMISSIONS) == 132, (
-    f"Expected 132 permissions, found {len(ALL_PERMISSIONS)}. "
+assert len(ALL_PERMISSIONS) == 133, (
+    f"Expected 133 permissions, found {len(ALL_PERMISSIONS)}. "
     "Update registry.py and re-run seed_permissions.py."
 )

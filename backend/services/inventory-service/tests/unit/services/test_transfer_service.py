@@ -340,6 +340,7 @@ class TestInventoryServiceTransfers:
         """transition_transfer() (PENDING_APPROVAL → APPROVED) must write one TRANSFER_OUT
         per line at source — this is when On Hand deducts (reservation converts to a hard
         deduction at APPROVED per CLAUDE.md §17)."""
+        from services.approval_service import ApprovalDecision
         from services.inventory_service import InventoryService
 
         line     = _make_line(quantity=50.0)
@@ -347,6 +348,12 @@ class TestInventoryServiceTransfers:
         session  = _session_for_dispatch(xfer_row, [line])  # SELECT transfer, SELECT lines, UPDATE
 
         with patch(
+            "services.inventory_service.resolve_approval",
+            new=AsyncMock(return_value=ApprovalDecision(
+                required_role="WM", is_auto_approved=False,
+                next_status="PENDING_APPROVAL", required_authority_level=4,
+            )),
+        ), patch(
             "services.inventory_service.record_transaction",
             new=AsyncMock(return_value="tx-approved"),
         ) as mock_record:
@@ -430,7 +437,15 @@ class TestInventoryServiceTransfers:
             recorded.append(kw)
             return _TX
 
+        from services.approval_service import ApprovalDecision
+        _auto_approve_off = ApprovalDecision(
+            required_role="WM", is_auto_approved=False,
+            next_status="PENDING_APPROVAL", required_authority_level=4,
+        )
         with patch(
+            "services.inventory_service.resolve_approval",
+            new=AsyncMock(return_value=_auto_approve_off),
+        ), patch(
             "services.inventory_service.record_transaction",
             new=AsyncMock(side_effect=_record),
         ):
@@ -545,8 +560,15 @@ class TestInventoryServiceTransfers:
         line     = _make_line(quantity=50.0)
         xfer_row = _make_transfer_row("PENDING_APPROVAL", transfer_type="PULL")
 
+        from services.approval_service import ApprovalDecision
         _TX = "tx-double-submit"
         with patch(
+            "services.inventory_service.resolve_approval",
+            new=AsyncMock(return_value=ApprovalDecision(
+                required_role="WM", is_auto_approved=False,
+                next_status="PENDING_APPROVAL", required_authority_level=4,
+            )),
+        ), patch(
             "services.inventory_service.record_transaction",
             new=AsyncMock(return_value=_TX),
         ):
@@ -603,6 +625,72 @@ class TestInventoryServiceTransfers:
     def test_sister_submit_maps_to_pending_source_confirm(self) -> None:
         """SISTER submit: the correct first post-DRAFT state is PENDING_SOURCE_CONFIRM."""
         validate_transition("SISTER", "DRAFT", "PENDING_SOURCE_CONFIRM")  # must not raise
+
+    # ── Approval authority enforcement tests ─────────────────────────────────
+
+    async def test_auto_approve_sends_notification(self) -> None:
+        """When resolve_approval returns is_auto_approved=True, transition_transfer()
+        writes one AutoApprovalNotice outbox event per notify_level."""
+        from services.approval_service import ApprovalDecision
+        from services.inventory_service import InventoryService
+
+        line     = _make_line(quantity=50.0)
+        xfer_row = _make_transfer_row("PENDING_APPROVAL", transfer_type="PULL")
+        session  = _session_for_dispatch(xfer_row, [line])
+
+        mock_outbox = AsyncMock()
+        with patch(
+            "services.inventory_service.resolve_approval",
+            new=AsyncMock(return_value=ApprovalDecision(
+                required_role="WM", is_auto_approved=True,
+                next_status="APPROVED", required_authority_level=4,
+                notify_levels=[1, 2],
+            )),
+        ), patch(
+            "services.inventory_service.record_transaction",
+            new=AsyncMock(return_value="tx-auto"),
+        ), patch(
+            "services.inventory_service.write_to_outbox",
+            new=mock_outbox,
+        ):
+            result = await InventoryService(session).transition_transfer(
+                SRC_WM, TRANSFER_ID, "APPROVED"
+            )
+
+        assert result.status == "APPROVED"
+        # write_to_outbox(db, tenant_id, event_type, payload) — event_type is args[2]
+        auto_notices = [
+            c for c in mock_outbox.call_args_list
+            if c.args[2] == "AutoApprovalNotice"
+        ]
+        assert len(auto_notices) == 2, (
+            f"expected 2 AutoApprovalNotice events (one per notify_level), got {len(auto_notices)}"
+        )
+
+    async def test_insufficient_authority_rejected(self) -> None:
+        """A WM (authority_level=4) cannot approve a transfer that requires RM (authority_level=2).
+        transition_transfer() must raise HTTP 403 INSUFFICIENT_APPROVAL_AUTHORITY."""
+        from services.approval_service import ApprovalDecision
+        from services.inventory_service import InventoryService
+
+        line     = _make_line(quantity=50.0)
+        xfer_row = _make_transfer_row("PENDING_APPROVAL", transfer_type="PULL")
+        session  = _session_for_dispatch(xfer_row, [line])
+
+        with patch(
+            "services.inventory_service.resolve_approval",
+            new=AsyncMock(return_value=ApprovalDecision(
+                required_role="RM", is_auto_approved=False,
+                next_status="PENDING_APPROVAL", required_authority_level=2,
+            )),
+        ), patch(
+            "services.inventory_service.record_transaction",
+            new=AsyncMock(return_value="tx-blocked"),
+        ), pytest.raises(HTTPException) as exc_info:
+            await InventoryService(session).transition_transfer(SRC_WM, TRANSFER_ID, "APPROVED")
+
+        assert exc_info.value.status_code == 403
+        assert exc_info.value.detail["code"] == "INSUFFICIENT_APPROVAL_AUTHORITY"
 
     async def test_destination_on_hand_zero_until_received(self) -> None:
         """Destination on_hand must NOT be credited at APPROVED, ISSUED, or IN_TRANSIT.

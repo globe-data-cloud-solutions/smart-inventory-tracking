@@ -258,3 +258,50 @@ class ProductApprovalRulesResponse(BaseModel):
     product_id:        Optional[uuid.UUID] = None
     rules:             list[ApprovalRuleResponse]
     is_using_defaults: bool  # True when product has no custom rules of its own
+
+
+# ── product approval minimums ─────────────────────────────────────────────────
+
+_VALID_MIN_TX_TYPES = {"PULL", "PUSH", "ADJUSTMENT", "SISTER", "RECEIVE", "ISSUE"}
+
+
+class ApprovalMinimumEntry(BaseModel):
+    """One per-product, per-transaction-type authority floor override.
+
+    min_authority_level=None in a PUT request deletes the override for that tx_type.
+    """
+    transaction_type:    str
+    min_authority_level: Optional[int] = Field(default=None, ge=1, le=5)
+
+    @field_validator("transaction_type", mode="before")
+    @classmethod
+    def validate_tx_type(cls, v: object) -> object:
+        if isinstance(v, str) and v.upper() in _VALID_MIN_TX_TYPES:
+            return v.upper()
+        raise ValueError(f"transaction_type must be one of {sorted(_VALID_MIN_TX_TYPES)}")
+
+
+class ApprovalMinimumsUpsertRequest(BaseModel):
+    """PUT /products/{product_id}/approval-minimums body.
+
+    Send an empty list to clear all product-level authority floor overrides.
+    Entries with min_authority_level=None delete the override for that tx_type.
+    """
+    entries: list[ApprovalMinimumEntry] = Field(default_factory=list)
+
+
+class ApprovalMinimumResponse(BaseModel):
+    """One row from product_approval_minimums."""
+    id:                  uuid.UUID
+    product_id:          uuid.UUID
+    transaction_type:    str
+    min_authority_level: int
+    created_by:          uuid.UUID
+    created_at:          datetime
+    updated_at:          datetime
+
+
+class ProductApprovalMinimumsResponse(BaseModel):
+    """Response from GET/PUT /products/{id}/approval-minimums."""
+    product_id: uuid.UUID
+    minimums:   list[ApprovalMinimumResponse]

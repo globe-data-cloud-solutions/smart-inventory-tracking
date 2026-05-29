@@ -31,6 +31,8 @@ from shared.permissions.middleware import require_permission
 from shared.permissions.registry import PERMISSIONS
 from shared.utils.responses import SuccessResponse
 from schemas.product import (
+    ApprovalMinimumEntry, ApprovalMinimumResponse,
+    ApprovalMinimumsUpsertRequest, ProductApprovalMinimumsResponse,
     ApprovalRuleEntry, ApprovalRuleResponse,
     ApprovalRulesUpsertRequest, ProductApprovalRulesResponse,
     BrandCreateRequest, BrandResponse,
@@ -898,4 +900,118 @@ async def upsert_product_approval_rules(
     )
 
     data = await _read_approval_rules(db, tid, pid)
+    return SuccessResponse(data=data)
+
+
+# ── GET /{product_id}/approval-minimums ───────────────────────────────────────
+
+async def _read_approval_minimums(
+    db: AsyncSession,
+    tenant_id: str,
+    product_id: str,
+) -> ProductApprovalMinimumsResponse:
+    rows = (await db.execute(
+        text("""
+            SELECT id, transaction_type, min_authority_level, created_by,
+                   created_at, updated_at
+            FROM   product_approval_minimums
+            WHERE  product_id = :pid AND tenant_id = :tid
+            ORDER BY transaction_type
+        """),
+        {"pid": product_id, "tid": tenant_id},
+    )).fetchall()
+    return ProductApprovalMinimumsResponse(
+        product_id=uuid.UUID(product_id),
+        minimums=[
+            ApprovalMinimumResponse(
+                id=uuid.UUID(str(r.id)),
+                product_id=uuid.UUID(product_id),
+                transaction_type=r.transaction_type,
+                min_authority_level=r.min_authority_level,
+                created_by=uuid.UUID(str(r.created_by)),
+                created_at=r.created_at,
+                updated_at=r.updated_at,
+            )
+            for r in rows
+        ],
+    )
+
+
+@router.get("/{product_id}/approval-minimums",
+            response_model=SuccessResponse[ProductApprovalMinimumsResponse])
+@require_permission(PERMISSIONS.PRODUCT_VIEW)
+async def get_product_approval_minimums(
+    product_id: str,
+    user=Depends(get_current_user),
+    db: AsyncSession = Depends(get_db_session),
+) -> SuccessResponse[ProductApprovalMinimumsResponse]:
+    """Return per-product authority floor overrides from product_approval_minimums."""
+    data = await _read_approval_minimums(db, str(user.tenant_id), product_id)
+    return SuccessResponse(data=data)
+
+
+# ── PUT /{product_id}/approval-minimums ───────────────────────────────────────
+
+@router.put("/{product_id}/approval-minimums",
+            response_model=SuccessResponse[ProductApprovalMinimumsResponse])
+@require_permission(PERMISSIONS.PRODUCT_MANAGE_APPROVAL_MINIMUMS)
+async def upsert_product_approval_minimums(
+    product_id: str,
+    body: ApprovalMinimumsUpsertRequest,
+    user=Depends(get_current_user),
+    db: AsyncSession = Depends(get_db_session),
+) -> SuccessResponse[ProductApprovalMinimumsResponse]:
+    """Replace all product-level authority floor overrides.
+
+    Entries with min_authority_level=None delete the override for that tx_type.
+    Send an empty list to clear all overrides.
+    Audit log written in the same transaction (CLAUDE.md §8, §14).
+    """
+    tid = str(user.tenant_id)
+    pid = product_id
+    now = datetime.now(timezone.utc)
+
+    await db.execute(
+        text("DELETE FROM product_approval_minimums "
+             "WHERE product_id = :pid AND tenant_id = :tid"),
+        {"pid": pid, "tid": tid},
+    )
+
+    for entry in body.entries:
+        if entry.min_authority_level is None:
+            continue
+        await db.execute(
+            text("""
+                INSERT INTO product_approval_minimums
+                  (tenant_id, product_id, transaction_type, min_authority_level,
+                   created_by, created_at, updated_at)
+                VALUES
+                  (:tid, :pid, :tx_type, :min_auth, :by, :now, :now)
+            """),
+            {
+                "tid":      tid,
+                "pid":      pid,
+                "tx_type":  entry.transaction_type,
+                "min_auth": entry.min_authority_level,
+                "by":       str(user.user_id),
+                "now":      now,
+            },
+        )
+
+    await db.execute(
+        text("""
+            INSERT INTO audit_logs
+              (tenant_id, user_id, role, action, resource_type, resource_id, decision)
+            VALUES (:tid, :uid, :role, 'product:manage_approval_minimums',
+                    'product', :rid, 'GRANTED')
+        """),
+        {
+            "tid":  tid,
+            "uid":  str(user.user_id),
+            "role": user.role,
+            "rid":  uuid.UUID(pid),
+        },
+    )
+
+    data = await _read_approval_minimums(db, tid, pid)
     return SuccessResponse(data=data)

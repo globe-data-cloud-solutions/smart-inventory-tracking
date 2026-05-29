@@ -10,9 +10,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from shared.outbox.schemas import (
     AdjustmentAppliedPayload,
+    AutoApprovalNoticePayload,
     StockTransferredPayload,
 )
 from shared.outbox.writer import write_to_outbox
+from services.approval_service import resolve_approval, ROLE_AUTHORITY_LEVEL
 from repositories.ledger_repo import record_transaction
 from schemas.inventory import (
     AdjustmentListItem,
@@ -305,7 +307,7 @@ class InventoryService:
                 detail={"code": "INVALID_STATE_TRANSITION", "detail": str(exc)},
             ) from exc
 
-        # APPROVED: reservation converts to a hard deduction — write TRANSFER_OUT per line.
+        # APPROVED: authority check → hard deduction per line → auto-approve notification.
         if next_state == "APPROVED":
             lines = (await self.db.execute(
                 text(
@@ -314,6 +316,28 @@ class InventoryService:
                 ),
                 {"tid_order": str(transfer_id), "tid": str(user.tenant_id)},
             )).fetchall()
+
+            total_qty = sum(Decimal(str(l.quantity)) for l in lines)
+            decision = await resolve_approval(
+                self.db, str(user.tenant_id), transfer_type, total_qty
+            )
+            caller_level = ROLE_AUTHORITY_LEVEL.get(getattr(user, "role", ""), 5)
+            if caller_level > decision.required_authority_level:
+                from fastapi import HTTPException
+                raise HTTPException(
+                    status_code=403,
+                    detail={
+                        "code":    "INSUFFICIENT_APPROVAL_AUTHORITY",
+                        "message": (
+                            f"This transfer requires {decision.required_role_display} "
+                            f"approval. Your role ({getattr(user, 'role', '?')}) does "
+                            f"not have sufficient authority."
+                        ),
+                        "required_authority_level": decision.required_authority_level,
+                        "required_role":            decision.required_role,
+                    },
+                )
+
             for line in lines:
                 await record_transaction(
                     self.db,
@@ -326,6 +350,23 @@ class InventoryService:
                     idempotency_key=f"transfer:{transfer_id}:approve:out:line:{line.id}",
                     reference_id=str(transfer_id),
                 )
+
+            # Notify higher authority levels when the band auto-approves (PROMPT 2B).
+            if decision.is_auto_approved:
+                for notify_level in decision.notify_levels:
+                    await write_to_outbox(
+                        self.db,
+                        str(user.tenant_id),
+                        "AutoApprovalNotice",
+                        AutoApprovalNoticePayload(
+                            transfer_id=str(transfer_id),
+                            transaction_type=transfer_type,
+                            quantity=float(total_qty),
+                            notify_authority_level=notify_level,
+                            approver_role=decision.required_role,
+                            tenant_id=str(user.tenant_id),
+                        ),
+                    )
 
         # CANCELLED from APPROVED/ADVISED: compensate with RETURN to restore source on_hand.
         elif next_state == "CANCELLED" and row.status in ("APPROVED", "ADVISED"):

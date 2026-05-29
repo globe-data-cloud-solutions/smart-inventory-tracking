@@ -402,3 +402,88 @@ class TestApprovalWorkflows:
 
         with pytest.raises(ValueError, match="No default approval rule"):
             await svc.get_required_approver(TENANT_ID, "UNKNOWN_TYPE", Decimal("500"))
+
+    # ── resolve_approval() 3-step resolution tests ───────────────────────────
+
+    async def test_resolve_approval_product_min_wins(self) -> None:
+        """When product authority floor (level 2 = RM) is tighter than the qty band
+        (level 4 = WM), required_authority_level = min(2, 4) = 2.
+
+        product_min=2 overrides threshold_level=4 because lower = higher authority.
+        is_auto_approved must be False (product override disables auto-approve).
+        """
+        from services.approval_service import resolve_approval
+
+        PRODUCT = "pppppppp-0000-0000-0000-000000000001"
+        db = AsyncMock()
+        db.execute = AsyncMock(side_effect=[
+            MagicMock(fetchone=MagicMock(return_value=(2,))),              # pam → min_level=2
+            MagicMock(fetchone=MagicMock(return_value=("WM", 4, True, []))),  # band → WM level 4
+        ])
+
+        decision = await resolve_approval(
+            db, TENANT_ID, "PULL", Decimal("50"), product_id=PRODUCT
+        )
+
+        assert decision.required_authority_level == 2, (
+            "product_min=2 must win over threshold=4: min(2,4)=2"
+        )
+        assert decision.is_auto_approved is False, (
+            "auto_approve must be False when product override is in effect"
+        )
+
+    async def test_resolve_approval_qty_threshold_wins(self) -> None:
+        """Without a product override, the quantity-band threshold (level 2 = RM)
+        determines required_authority_level directly."""
+        from services.approval_service import resolve_approval
+
+        db = AsyncMock()
+        db.execute = AsyncMock(
+            return_value=MagicMock(fetchone=MagicMock(return_value=("RM", 2, False, [])))
+        )
+
+        decision = await resolve_approval(db, TENANT_ID, "PULL", Decimal("2000"))
+
+        assert decision.required_authority_level == 2
+        assert decision.required_role == "RM"
+        assert decision.is_auto_approved is False
+
+    async def test_resolve_approval_higher_wins(self) -> None:
+        """When product_min=1 (NM/TA) is more restrictive than threshold=2 (RM),
+        required_authority_level = min(1, 2) = 1."""
+        from services.approval_service import resolve_approval
+
+        PRODUCT = "pppppppp-0000-0000-0000-000000000002"
+        db = AsyncMock()
+        db.execute = AsyncMock(side_effect=[
+            MagicMock(fetchone=MagicMock(return_value=(1,))),              # pam → min_level=1
+            MagicMock(fetchone=MagicMock(return_value=("RM", 2, False, []))),  # band → RM level 2
+        ])
+
+        decision = await resolve_approval(
+            db, TENANT_ID, "PULL", Decimal("2000"), product_id=PRODUCT
+        )
+
+        assert decision.required_authority_level == 1, (
+            "product_min=1 must win over threshold=2: min(1,2)=1"
+        )
+        assert decision.is_auto_approved is False
+
+    async def test_sister_shares_pull_tiers(self) -> None:
+        """SISTER transfers use PULL quantity bands — _query_threshold() is called
+        with tx_type='PULL' even when transaction_type='SISTER'."""
+        from services.approval_service import resolve_approval
+
+        db = AsyncMock()
+        db.execute = AsyncMock(
+            return_value=MagicMock(fetchone=MagicMock(return_value=("WM", 4, False, [])))
+        )
+
+        await resolve_approval(db, TENANT_ID, "SISTER", Decimal("100"))
+
+        # Verify that the threshold query used 'PULL' not 'SISTER'
+        assert db.execute.await_count == 1, "no product_id → exactly one DB call"
+        call_params = db.execute.call_args_list[0].args[1]
+        assert call_params["tx_type"] == "PULL", (
+            "SISTER must look up PULL bands, not SISTER bands"
+        )

@@ -70,6 +70,22 @@ class FefoOverrideAppliedPayload(BasePayload):
     reason_code: str
 
 
+class AutoApprovalNoticePayload(BasePayload):
+    """Notify higher authority levels when a transfer auto-approves.
+
+    Written once per notify_level inside the same transaction as the TRANSFER_OUT
+    ledger entries at APPROVED state. Consumed by the notification worker to alert
+    the relevant role (e.g. RM notified when WM band auto-approves a small transfer).
+    """
+    event_type: Literal["AutoApprovalNotice"] = "AutoApprovalNotice"
+    transfer_id: str
+    transaction_type: str
+    quantity: float
+    notify_authority_level: int
+    approver_role: str
+    tenant_id: str
+
+
 class TransferRequestedPayload(BasePayload):
     """Notifies the source warehouse that a pull request has been submitted.
     Written to the outbox in the same transaction as the transfer_request row.
@@ -101,14 +117,15 @@ class ProductCreatedPayload(BasePayload):
 
 
 PAYLOAD_TYPES = {
-    "InventoryUpdated": InventoryUpdatedPayload,
-    "StockTransferred": StockTransferredPayload,
-    "OrderCreated": OrderCreatedPayload,
-    "ShipmentDispatched": ShipmentDispatchedPayload,
-    "AdjustmentApplied": AdjustmentAppliedPayload,
+    "InventoryUpdated":    InventoryUpdatedPayload,
+    "StockTransferred":    StockTransferredPayload,
+    "OrderCreated":        OrderCreatedPayload,
+    "ShipmentDispatched":  ShipmentDispatchedPayload,
+    "AdjustmentApplied":   AdjustmentAppliedPayload,
     "StockCountCompleted": StockCountCompletedPayload,
     "TenantOrgTypeChanged": TenantOrgTypeChangedPayload,
     "FefoOverrideApplied": FefoOverrideAppliedPayload,
     "TransferRequested":   TransferRequestedPayload,
     "ProductCreated":      ProductCreatedPayload,
+    "AutoApprovalNotice":  AutoApprovalNoticePayload,
 }
