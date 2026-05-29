@@ -1568,5 +1568,41 @@ Both columns (`inventory.category` and `table.reorder_point`) were already in th
 
 ---
 
+---
+
+## 18. SESSION 8 — 2026-05-29
+
+### Approval System Frontend (PROMPT 3) — No new bugs found
+
+All changes in this session were new features, not bug fixes.
+
+| Area | Change | Files |
+|---|---|---|
+| **Org Setup Tab 3 — ApprovalRulesTab** | Complete rewrite: tier-based rules (Simple / Custom mode), hierarchy-level approver dropdown, auto-approve with notify options, `[+ Add Tier]`, `[Save All Rules]`, `[Copy to all types]`; SISTER shares PULL tiers | `frontend/src/app/[org]/settings/org-setup/page.tsx` |
+| **AddProductPanel — approval minimums** | Replaced collapsible "Approval Thresholds" section with always-visible "Minimum Approval Level" table (6 TX types); saves to `PUT /products/{id}/approval-minimums`; shows tenant defaults preview | `frontend/src/components/features/inventory/AddProductPanel.tsx` |
+| **Transfers page — ApprovalPendingActions** | New component: fetches `GET /transfers/{id}/approval-info`; shows Approve/Reject buttons when `can_approve=true`; shows dynamic waiting message with `required_role_display` when `can_approve=false`; auto-approve toast | `frontend/src/app/[org]/transfers/page.tsx` |
+| **Bell notifications — auto-approve notices** | `NotificationBell` in layout.tsx now fetches `AUTO_APPROVAL_NOTICE` alerts in gateway mode and shows them in the dropdown | `frontend/src/app/[org]/layout.tsx` |
+| **i18n** | Added `approval.*` key block to `en.json`, `am.json`, `or.json` | `locales/en.json`, `am.json`, `or.json` |
+| **Regression tests** | Added 4 regression tests to `TestApprovalWorkflows`: `test_wm_cannot_approve_above_threshold`, `test_auto_approve_notifies_rm`, `test_product_min_overrides_threshold`, `test_sister_shares_pull_tiers_in_ui` | `backend/services/inventory-service/tests/unit/test_approval_workflows.py` |
+
+### TypeScript issues fixed
+
+| Error | Location | Fix |
+|---|---|---|
+| TS2869 — unreachable `?? false` operand | `org-setup/page.tsx` `tiersFromRules()` | Removed `?? false`; `r.notify_levels?.length === 1` always produces boolean |
+| TS18048 — possibly undefined array elements (×3) | `org-setup/page.tsx` `validateTiers()` + `deleteTier()` | Added null guards for all index accesses under `noUncheckedIndexedAccess: true` |
+| TS2322 — type incompatibility in spread | `org-setup/page.tsx` `deleteTier()` | Explicit `ApprovalTier` type annotation on spread target |
+
+### Pre-existing test failures fixed (not caused by this session)
+
+| Test | Old value | Corrected value |
+|---|---|---|
+| `test_registry_has_exactly_132_permissions` | 132 | 133 |
+| `test_new_permissions_registered` (tenant-service) | 132 | 133 |
+
+**Final state:** 279 unit tests passing, 0 failing · TypeScript: 0 errors
+
+---
+
 *SMART Inventory Platform — Bug Report v4.0*  
 *Backend: Python 3.12 / FastAPI · Frontend: Next.js 14 / TypeScript · DB: PostgreSQL 16*

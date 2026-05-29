@@ -887,5 +887,21 @@
   },
   "sa": {
     "select_tenant": "Select a tenant to view data."
+  },
+  "approval": {
+    "simple_mode": "Simple — same rules for all",
+    "custom_mode": "Custom — different per type",
+    "add_tier": "Add Tier",
+    "copy_to_all": "Copy to all types",
+    "auto_approve": "Auto-approve",
+    "notify_above": "Notify level above",
+    "notify_all": "Notify all managers",
+    "min_level": "Minimum Approval Level",
+    "use_thresholds": "None — use thresholds",
+    "tenant_defaults": "Tenant Default Thresholds",
+    "awaiting": "Awaiting {role} approval",
+    "auto_notice": "Auto-approved: {transfer}",
+    "insufficient": "Insufficient authority",
+    "gap_error": "Gap detected between tiers"
   }
 }

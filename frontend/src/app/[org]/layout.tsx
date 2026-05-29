@@ -29,19 +29,52 @@ const ROLE_BADGE: Record<string, string> = {
 };
 
 /* ── Notification bell ────────────────────────────────────────────────────── */
+
+interface AutoApprovalAlert {
+  id: string;
+  alert_type: "AUTO_APPROVAL_NOTICE";
+  transfer_id: string;
+  transfer_ref: string;
+  transfer_type: string;
+  quantity: number;
+  product_name: string;
+  warehouse_name: string;
+  reason: string;
+  created_at: string;
+}
+
 function NotificationBell({ org }: { org: string }) {
   const [open, setOpen] = useState(false);
 
   const tenant = DEMO_TENANTS.find((ten) => ten.slug === org);
-  // For real (non-demo) tenants show an empty bell — no hardcoded alert data available
   const lowStock     = tenant ? getLowStockProducts(tenant) : [];
   const expiryAlerts = tenant ? tenant.products.filter((p) => p.batchTracking).slice(0, 2) : [];
 
-  const alerts = [
+  const demoAlerts = [
     ...lowStock.map((p)     => ({ type: "low_stock" as const, product: p.name, sku: p.sku })),
     ...expiryAlerts.map((p) => ({ type: "expiry"    as const, product: p.name, sku: p.sku })),
   ];
-  const count = alerts.length;
+
+  const { data: autoApprovalAlerts = [] } = useQuery<AutoApprovalAlert[]>({
+    queryKey: ["auto-approval-alerts", org],
+    queryFn:  async () => {
+      try {
+        const r = await api.get<AutoApprovalAlert[]>(
+          "/api/v1/notifications?alert_type=AUTO_APPROVAL_NOTICE"
+        );
+        return r ?? [];
+      } catch {
+        return [];
+      }
+    },
+    enabled:         isGatewayMode,
+    staleTime:       30_000,
+    refetchInterval: 60_000,
+  });
+
+  const count = isGatewayMode
+    ? autoApprovalAlerts.length
+    : demoAlerts.length;
 
   return (
     <div className="relative">
@@ -73,28 +106,62 @@ function NotificationBell({ org }: { org: string }) {
                 ✕
               </button>
             </div>
-            {alerts.length === 0 ? (
-              <p className="p-6 text-center text-gray-400 text-sm">{t("notifications.no_alerts")}</p>
-            ) : (
-              <div className="max-h-80 overflow-y-auto">
-                {alerts.map((a, i) => (
-                  <Link
-                    key={i}
-                    href={`/${org}/inventory`}
-                    onClick={() => setOpen(false)}
-                    className="flex items-start gap-2.5 px-3.5 py-2.5 border-b border-gray-50 no-underline"
-                  >
-                    <span className="text-base shrink-0 mt-0.5">{a.type === "low_stock" ? "📉" : "⚠️"}</span>
-                    <div>
-                      <p className="font-semibold text-sm text-gray-800 m-0">{a.product}</p>
-                      <p className={`text-xs m-0 mt-0.5 font-semibold ${a.type === "low_stock" ? "text-red-600" : "text-amber-800"}`}>
-                        {a.type === "low_stock" ? t("notifications.low_stock") : t("notifications.expiry_soon")} · {a.sku}
-                      </p>
-                    </div>
-                  </Link>
-                ))}
-              </div>
+
+            {/* Gateway mode: show real auto-approval notices */}
+            {isGatewayMode && (
+              autoApprovalAlerts.length === 0 ? (
+                <p className="p-6 text-center text-gray-400 text-sm">{t("notifications.no_alerts")}</p>
+              ) : (
+                <div className="max-h-80 overflow-y-auto">
+                  {autoApprovalAlerts.map((a) => (
+                    <Link
+                      key={a.id}
+                      href={`/${org}/transfers/${a.transfer_id}`}
+                      onClick={() => setOpen(false)}
+                      className="flex items-start gap-2.5 px-3.5 py-2.5 border-b border-gray-50 no-underline"
+                    >
+                      <span className="text-base shrink-0 mt-0.5">🔔</span>
+                      <div>
+                        <p className="font-semibold text-sm text-gray-800 m-0">
+                          Auto-approved: {a.transfer_type} transfer {a.transfer_ref}
+                        </p>
+                        <p className="text-xs text-gray-500 m-0 mt-0.5">
+                          {a.quantity.toLocaleString()} units {a.product_name} — {a.warehouse_name}
+                        </p>
+                        <p className="text-xs text-blue-600 m-0 mt-0.5 font-medium">{a.reason}</p>
+                      </div>
+                    </Link>
+                  ))}
+                </div>
+              )
             )}
+
+            {/* Demo mode: show static low-stock / expiry alerts */}
+            {!isGatewayMode && (
+              demoAlerts.length === 0 ? (
+                <p className="p-6 text-center text-gray-400 text-sm">{t("notifications.no_alerts")}</p>
+              ) : (
+                <div className="max-h-80 overflow-y-auto">
+                  {demoAlerts.map((a, i) => (
+                    <Link
+                      key={i}
+                      href={`/${org}/inventory`}
+                      onClick={() => setOpen(false)}
+                      className="flex items-start gap-2.5 px-3.5 py-2.5 border-b border-gray-50 no-underline"
+                    >
+                      <span className="text-base shrink-0 mt-0.5">{a.type === "low_stock" ? "📉" : "⚠️"}</span>
+                      <div>
+                        <p className="font-semibold text-sm text-gray-800 m-0">{a.product}</p>
+                        <p className={`text-xs m-0 mt-0.5 font-semibold ${a.type === "low_stock" ? "text-red-600" : "text-amber-800"}`}>
+                          {a.type === "low_stock" ? t("notifications.low_stock") : t("notifications.expiry_soon")} · {a.sku}
+                        </p>
+                      </div>
+                    </Link>
+                  ))}
+                </div>
+              )
+            )}
+
             <div className="px-3.5 py-2 border-t border-gray-100">
               <Link href={`/${org}/analytics`} onClick={() => setOpen(false)} className="text-xs font-bold text-eth-forest no-underline">
                 {t("notifications.mark_all_read")} →

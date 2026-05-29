@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, Fragment } from "react";
 import { useParams } from "next/navigation";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
@@ -620,84 +620,390 @@ function TreeTab({ tenantId }: { tenantId: string }) {
 
 /* ── Tab 3: Approval Rules ────────────────────────────────────────────────── */
 
-const APPROVAL_DEFAULTS: Record<string, { low: number; medium: number }> = {
-  PRODUCER: { low: 100,  medium: 500   },
-  RETAILER: { low: 500,  medium: 5000  },
-  HYBRID:   { low: 250,  medium: 2000  },
-};
+interface ApprovalTier {
+  id: string;
+  max_quantity: number | null;  // null = unlimited (last tier)
+  approver_role: string;
+  auto_approve: boolean;
+  notify_above: boolean;
+  notify_all: boolean;
+}
 
-const DEFAULT_RULE_TYPES = ["inventory:adjust", "inventory:transfer"] as const;
-
-const TX_TYPE_LABELS: Record<string, string> = {
-  "inventory:adjust":   t("approval_rules.type.inventory_adjust"),
-  "inventory:transfer": t("approval_rules.type.inventory_transfer"),
-};
-
-interface ApprovalRule {
+interface SavedApprovalRule {
   transaction_type: string;
-  low_threshold: number;
-  medium_threshold: number;
+  min_quantity: number | null;
+  max_quantity: number | null;
+  approver_role: string;
+  approval_order: number;
+  auto_approve?: boolean;
+  notify_levels?: number[];
+}
+
+type TxTabKey = "PULL" | "PUSH" | "ADJUSTMENT" | "RECEIVE" | "ISSUE";
+
+const TX_TABS: { key: TxTabKey; label: string }[] = [
+  { key: "PULL",       label: "PULL / SISTER" },
+  { key: "PUSH",       label: "PUSH" },
+  { key: "ADJUSTMENT", label: "Adjustment" },
+  { key: "RECEIVE",    label: "Receive" },
+  { key: "ISSUE",      label: "Issue" },
+];
+
+const ALL_NOTIFY_LEVELS = [1, 2, 3, 4];
+const ROLE_AUTH: Record<string, number> = {
+  SA: 1, TA: 1, NM: 1, RM: 2, LM: 3, WM: 4,
+};
+
+function mkTier(role = ""): ApprovalTier {
+  return {
+    id: `${Date.now()}_${Math.random()}`,
+    max_quantity: null,
+    approver_role: role,
+    auto_approve: false,
+    notify_above: false,
+    notify_all: false,
+  };
+}
+
+function tiersFromRules(rules: SavedApprovalRule[]): ApprovalTier[] {
+  if (!rules.length) return [mkTier()];
+  return rules
+    .slice()
+    .sort((a, b) => a.approval_order - b.approval_order)
+    .map((r, idx) => ({
+      id: `saved_${idx}`,
+      max_quantity: r.max_quantity,
+      approver_role: r.approver_role,
+      auto_approve: r.auto_approve ?? false,
+      notify_above: r.notify_levels?.length === 1,
+      notify_all: (r.notify_levels?.length ?? 0) >= 4,
+    }));
+}
+
+function tiersToRules(tiers: ApprovalTier[], txType: string): SavedApprovalRule[] {
+  let prev: number | null = null;
+  return tiers.map((tier, idx) => {
+    const authLevel = ROLE_AUTH[tier.approver_role] ?? 4;
+    const notifyLevels: number[] = tier.auto_approve
+      ? tier.notify_all
+        ? ALL_NOTIFY_LEVELS
+        : tier.notify_above
+          ? [Math.max(1, authLevel - 1)]
+          : []
+      : [];
+    const rule: SavedApprovalRule = {
+      transaction_type: txType,
+      min_quantity: prev,
+      max_quantity: tier.max_quantity,
+      approver_role: tier.approver_role,
+      approval_order: idx + 1,
+      auto_approve: tier.auto_approve,
+      notify_levels: notifyLevels,
+    };
+    prev = tier.max_quantity;
+    return rule;
+  });
+}
+
+function validateTiers(tiers: ApprovalTier[]): string | null {
+  if (tiers.length === 0) return "At least one tier is required.";
+  const last = tiers[tiers.length - 1];
+  if (!last) return "At least one tier is required.";
+  if (last.max_quantity !== null) return "Last tier must be unlimited.";
+  for (let i = 0; i < tiers.length - 1; i++) {
+    const cur = tiers[i];
+    const nxt = tiers[i + 1];
+    if (!cur || !nxt) continue;
+    if (cur.max_quantity === null) {
+      return `Tier ${i + 1}: only the last tier can be unlimited.`;
+    }
+    if (!cur.approver_role) return `Tier ${i + 1}: approver required.`;
+    if (nxt.max_quantity !== null && cur.max_quantity >= nxt.max_quantity) {
+      return `Gap detected between tier ${i + 1} (up to ${cur.max_quantity}) and tier ${i + 2} (starts at ${nxt.max_quantity}).`;
+    }
+  }
+  if (!last.approver_role) return "Last tier: approver required.";
+  return null;
+}
+
+function TierTable({
+  tiers,
+  setTiers,
+  levels,
+}: {
+  tiers: ApprovalTier[];
+  setTiers: (fn: (prev: ApprovalTier[]) => ApprovalTier[]) => void;
+  levels: HierarchyLevel[];
+}) {
+  function updateTier(i: number, patch: Partial<ApprovalTier>) {
+    setTiers((prev) => prev.map((t, idx) => (idx === i ? { ...t, ...patch } : t)));
+  }
+
+  function deleteTier(i: number) {
+    setTiers((prev) => {
+      const next = prev.filter((_, idx) => idx !== i);
+      if (next.length === 0) return [mkTier()];
+      const lastItem = next[next.length - 1];
+      if (lastItem !== undefined && lastItem.max_quantity !== null) {
+        const updated: ApprovalTier = { ...lastItem, max_quantity: null };
+        next[next.length - 1] = updated;
+      }
+      return next;
+    });
+  }
+
+  function addTier() {
+    setTiers((prev) => {
+      const maxSoFar = prev
+        .slice(0, -1)
+        .reduce((m, tier) => Math.max(m, tier.max_quantity ?? 0), 0);
+      const proposed = maxSoFar > 0 ? maxSoFar * 10 : 100;
+      const updated = prev.map((tier, i) =>
+        i === prev.length - 1 ? { ...tier, max_quantity: proposed } : tier
+      );
+      return [...updated, mkTier()];
+    });
+  }
+
+  return (
+    <div className="space-y-3">
+      <div className="overflow-x-auto rounded-lg border border-gray-200">
+        <table className="w-full text-sm">
+          <thead className="bg-gray-50 border-b border-gray-200">
+            <tr>
+              <th className="px-3 py-2 text-left text-xs font-semibold text-gray-500 w-10">No</th>
+              <th className="px-3 py-2 text-left text-xs font-semibold text-gray-500 w-40">Up To (units)</th>
+              <th className="px-3 py-2 text-left text-xs font-semibold text-gray-500">Approver</th>
+              <th className="px-3 py-2 text-left text-xs font-semibold text-gray-500 w-32">{t("approval.auto_approve")}</th>
+              <th className="px-3 py-2 w-10"></th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-gray-100">
+            {tiers.map((tier, i) => (
+              <Fragment key={tier.id}>
+                <tr className="hover:bg-gray-50">
+                  <td className="px-3 py-2.5 text-gray-400 font-mono text-xs">{i + 1}</td>
+                  <td className="px-3 py-2.5">
+                    {i === tiers.length - 1 ? (
+                      <span className="text-sm text-gray-400 italic">unlimited</span>
+                    ) : (
+                      <input
+                        type="number"
+                        min={1}
+                        value={tier.max_quantity ?? ""}
+                        onChange={(e) =>
+                          updateTier(i, {
+                            max_quantity: e.target.value ? Number(e.target.value) : null,
+                          })
+                        }
+                        className="w-28 border border-gray-300 rounded px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                      />
+                    )}
+                  </td>
+                  <td className="px-3 py-2.5">
+                    <select
+                      value={tier.approver_role}
+                      onChange={(e) => updateTier(i, { approver_role: e.target.value })}
+                      className="border border-gray-300 rounded px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 bg-white"
+                    >
+                      <option value="">— select —</option>
+                      {levels.map((lv) => (
+                        <option key={lv.default_role_code} value={lv.default_role_code}>
+                          {lv.level_name} ({lv.role_display_label})
+                        </option>
+                      ))}
+                    </select>
+                  </td>
+                  <td className="px-3 py-2.5">
+                    <label className="flex items-center gap-1.5 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={tier.auto_approve}
+                        onChange={(e) =>
+                          updateTier(i, {
+                            auto_approve: e.target.checked,
+                            notify_above: e.target.checked ? tier.notify_above : false,
+                            notify_all: e.target.checked ? tier.notify_all : false,
+                          })
+                        }
+                        className="rounded"
+                      />
+                      <span className="text-xs text-gray-600">{t("approval.auto_approve")}</span>
+                    </label>
+                  </td>
+                  <td className="px-3 py-2.5">
+                    {tiers.length > 1 && (
+                      <button
+                        type="button"
+                        onClick={() => deleteTier(i)}
+                        className="text-red-400 hover:text-red-600 text-base leading-none"
+                        aria-label="Remove tier"
+                      >
+                        🗑
+                      </button>
+                    )}
+                  </td>
+                </tr>
+                {tier.auto_approve && (
+                  <tr key={`${tier.id}-notify`}>
+                    <td></td>
+                    <td colSpan={3} className="px-3 py-2 bg-blue-50">
+                      <div className="flex items-center gap-4 text-xs text-gray-600 pl-2 border-l-2 border-blue-300">
+                        <span className="font-medium">Notify:</span>
+                        <label className="flex items-center gap-1 cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={tier.notify_above}
+                            onChange={(e) => updateTier(i, { notify_above: e.target.checked })}
+                            className="rounded"
+                          />
+                          {t("approval.notify_above")}
+                        </label>
+                        <label className="flex items-center gap-1 cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={tier.notify_all}
+                            onChange={(e) => updateTier(i, { notify_all: e.target.checked })}
+                            className="rounded"
+                          />
+                          {t("approval.notify_all")}
+                        </label>
+                      </div>
+                    </td>
+                    <td className="bg-blue-50"></td>
+                  </tr>
+                )}
+              </Fragment>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <button
+        type="button"
+        onClick={addTier}
+        className="px-3 py-1.5 border border-dashed border-emerald-400 text-emerald-700 text-sm rounded hover:bg-emerald-50"
+      >
+        + {t("approval.add_tier")}
+      </button>
+    </div>
+  );
+}
+
+function defaultCustomTiers(): Record<TxTabKey, ApprovalTier[]> {
+  return {
+    PULL:       [mkTier()],
+    PUSH:       [mkTier()],
+    ADJUSTMENT: [mkTier()],
+    RECEIVE:    [mkTier()],
+    ISSUE:      [mkTier()],
+  };
 }
 
 function ApprovalRulesTab({ tenantId }: { tenantId: string }) {
   const qc = useQueryClient();
-
-  const { data: tenant } = useQuery<{ organisation_type?: string | null }>({
-    queryKey: ["tenant-detail", tenantId],
-    queryFn: () => api.get(`/api/v1/tenants/${tenantId}`),
-    staleTime: 60_000,
-  });
-
-  const orgType = tenant?.organisation_type ?? "PRODUCER";
-  const defaults = APPROVAL_DEFAULTS[orgType] ?? { low: 100, medium: 500 };
-
-  // Load saved rules from backend
-  const { data: savedRules = [], isLoading: rulesLoading } = useQuery<ApprovalRule[]>({
-    queryKey: ["approval-rules", tenantId],
-    queryFn: () => api.get<ApprovalRule[]>(`/api/v1/tenants/${tenantId}/approval-rules`),
-    staleTime: 30_000,
-  });
-
-  const [rules, setRules] = useState<ApprovalRule[]>([]);
+  const [simpleMode, setSimpleMode] = useState(true);
+  const [simpleTiers, setSimpleTiers] = useState<ApprovalTier[]>([mkTier()]);
+  const [customTiers, setCustomTiers] = useState<Record<TxTabKey, ApprovalTier[]>>(
+    defaultCustomTiers
+  );
+  const [activeCustomTab, setActiveCustomTab] = useState<TxTabKey>("PULL");
   const [initialized, setInitialized] = useState(false);
+  const [gapError, setGapError] = useState<string | null>(null);
   const [saveOk, setSaveOk] = useState(false);
   const [saveErr, setSaveErr] = useState<string | null>(null);
 
-  // Initialise from saved rules (merge with defaults for any missing types)
+  const { data: levels = [] } = useQuery<HierarchyLevel[]>({
+    queryKey: ["hierarchy-config", tenantId],
+    queryFn: () => api.get<HierarchyLevel[]>(`/api/v1/tenants/${tenantId}/hierarchy/config`),
+    staleTime: 30_000,
+  });
+
+  const { data: savedRules = [], isLoading: rulesLoading } = useQuery<SavedApprovalRule[]>({
+    queryKey: ["approval-rules", tenantId],
+    queryFn: () => api.get<SavedApprovalRule[]>(`/api/v1/tenants/${tenantId}/approval-rules`),
+    staleTime: 30_000,
+  });
+
   if (!initialized && !rulesLoading) {
-    const merged = DEFAULT_RULE_TYPES.map((txType) => {
-      const saved = savedRules.find((r) => r.transaction_type === txType);
-      if (saved) return saved;
-      const isTransfer = txType === "inventory:transfer";
-      return {
-        transaction_type: txType,
-        low_threshold:    isTransfer ? defaults.low * 2    : defaults.low,
-        medium_threshold: isTransfer ? defaults.medium * 2 : defaults.medium,
-      };
-    });
-    setRules(merged);
+    if (savedRules.length > 0) {
+      const pullTiers = tiersFromRules(
+        savedRules.filter((r) => r.transaction_type === "PULL")
+      );
+      const allSame = (["PUSH", "ADJUSTMENT", "RECEIVE", "ISSUE"] as const).every((tx) => {
+        const compare = tiersFromRules(savedRules.filter((r) => r.transaction_type === tx));
+        return (
+          JSON.stringify(
+            compare.map(({ approver_role, max_quantity, auto_approve }) => ({
+              approver_role, max_quantity, auto_approve,
+            }))
+          ) ===
+          JSON.stringify(
+            pullTiers.map(({ approver_role, max_quantity, auto_approve }) => ({
+              approver_role, max_quantity, auto_approve,
+            }))
+          )
+        );
+      });
+
+      if (allSame) {
+        setSimpleMode(true);
+        setSimpleTiers(pullTiers.length > 0 ? pullTiers : [mkTier()]);
+      } else {
+        setSimpleMode(false);
+        setCustomTiers({
+          PULL:       tiersFromRules(savedRules.filter((r) => r.transaction_type === "PULL")),
+          PUSH:       tiersFromRules(savedRules.filter((r) => r.transaction_type === "PUSH")),
+          ADJUSTMENT: tiersFromRules(savedRules.filter((r) => r.transaction_type === "ADJUSTMENT")),
+          RECEIVE:    tiersFromRules(savedRules.filter((r) => r.transaction_type === "RECEIVE")),
+          ISSUE:      tiersFromRules(savedRules.filter((r) => r.transaction_type === "ISSUE")),
+        });
+      }
+    }
     setInitialized(true);
   }
 
-  const displayRules: ApprovalRule[] = rules.length > 0
-    ? rules
-    : DEFAULT_RULE_TYPES.map((txType) => {
-        const isTransfer = txType === "inventory:transfer";
-        return {
-          transaction_type: txType,
-          low_threshold:    isTransfer ? defaults.low * 2    : defaults.low,
-          medium_threshold: isTransfer ? defaults.medium * 2 : defaults.medium,
-        };
-      });
+  function buildRules(): SavedApprovalRule[] {
+    if (simpleMode) {
+      return (["PULL", "SISTER", "PUSH", "ADJUSTMENT", "RECEIVE", "ISSUE"] as const).flatMap(
+        (tx) => tiersToRules(simpleTiers, tx)
+      );
+    }
+    return [
+      ...tiersToRules(customTiers["PULL"],       "PULL"),
+      ...tiersToRules(customTiers["PULL"],       "SISTER"),
+      ...tiersToRules(customTiers["PUSH"],       "PUSH"),
+      ...tiersToRules(customTiers["ADJUSTMENT"], "ADJUSTMENT"),
+      ...tiersToRules(customTiers["RECEIVE"],    "RECEIVE"),
+      ...tiersToRules(customTiers["ISSUE"],      "ISSUE"),
+    ];
+  }
 
-  function updateRule(idx: number, patch: Partial<ApprovalRule>) {
-    setRules((prev) => prev.map((r, i) => i === idx ? { ...r, ...patch } : r));
-    setSaveOk(false);
+  function handleSave() {
+    const tierSets = simpleMode
+      ? [simpleTiers]
+      : Object.values(customTiers);
+    for (const ts of tierSets) {
+      const err = validateTiers(ts);
+      if (err) { setGapError(err); return; }
+    }
+    setGapError(null);
+    saveMutation.mutate(buildRules());
+  }
+
+  function copyToAll() {
+    const src = customTiers[activeCustomTab];
+    setCustomTiers({
+      PULL:       src.map((t) => ({ ...t, id: `${Date.now()}_${Math.random()}` })),
+      PUSH:       src.map((t) => ({ ...t, id: `${Date.now()}_${Math.random()}` })),
+      ADJUSTMENT: src.map((t) => ({ ...t, id: `${Date.now()}_${Math.random()}` })),
+      RECEIVE:    src.map((t) => ({ ...t, id: `${Date.now()}_${Math.random()}` })),
+      ISSUE:      src.map((t) => ({ ...t, id: `${Date.now()}_${Math.random()}` })),
+    });
   }
 
   const saveMutation = useMutation({
-    mutationFn: () =>
-      api.put(`/api/v1/tenants/${tenantId}/approval-rules`, { rules: displayRules }),
+    mutationFn: (rules: SavedApprovalRule[]) =>
+      api.put(`/api/v1/tenants/${tenantId}/approval-rules`, { rules }),
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: ["approval-rules", tenantId] });
       setSaveOk(true);
@@ -709,64 +1015,109 @@ function ApprovalRulesTab({ tenantId }: { tenantId: string }) {
     },
   });
 
+  const customTabCls = (k: TxTabKey) =>
+    `px-3 py-1.5 text-xs font-semibold border-b-2 transition-all ${
+      activeCustomTab === k
+        ? "border-emerald-600 text-emerald-700"
+        : "border-transparent text-gray-500 hover:text-gray-700"
+    }`;
+
   if (rulesLoading) {
     return <p className="text-sm text-gray-400 py-8 text-center">{t("common.loading")}</p>;
   }
 
   return (
     <div className="space-y-6">
-      <p className="text-sm text-gray-500">
-        {t("approval_rules.description")}
-      </p>
-
-      <div className="overflow-x-auto rounded-lg border border-gray-200">
-        <table className="w-full text-sm">
-          <thead className="bg-gray-50 border-b border-gray-200">
-            <tr>
-              <th className="px-4 py-2 text-left text-xs font-semibold text-gray-500">{t("approval_rules.col_type")}</th>
-              <th className="px-4 py-2 text-left text-xs font-semibold text-gray-500">{t("approval_rules.col_low")}</th>
-              <th className="px-4 py-2 text-left text-xs font-semibold text-gray-500">{t("approval_rules.col_medium")}</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-gray-100">
-            {displayRules.map((rule, idx) => (
-              <tr key={rule.transaction_type} className="hover:bg-gray-50">
-                <td className="px-4 py-2.5">
-                  <span className="text-sm font-medium text-gray-800">
-                    {TX_TYPE_LABELS[rule.transaction_type] ?? rule.transaction_type}
-                  </span>
-                  <span className="ml-2 text-xs text-gray-400">({rule.transaction_type})</span>
-                </td>
-                <td className="px-4 py-2.5">
-                  <input
-                    type="number"
-                    min={0}
-                    value={rule.low_threshold}
-                    onChange={(e) => updateRule(idx, { low_threshold: Number(e.target.value) })}
-                    className="w-28 border border-gray-300 rounded px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
-                  />
-                </td>
-                <td className="px-4 py-2.5">
-                  <input
-                    type="number"
-                    min={0}
-                    value={rule.medium_threshold}
-                    onChange={(e) => updateRule(idx, { medium_threshold: Number(e.target.value) })}
-                    className="w-28 border border-gray-300 rounded px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
-                  />
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+      <div>
+        <h3 className="text-base font-semibold text-gray-900">{t("approval_rules.section")}</h3>
+        <p className="text-sm text-gray-500 mt-0.5">
+          Define who approves each type of transaction based on quantity
+        </p>
       </div>
 
+      {/* Mode selector */}
+      <div className="flex gap-6">
+        <label className="flex items-center gap-2 cursor-pointer">
+          <input
+            type="radio"
+            name="approval-mode"
+            checked={simpleMode}
+            onChange={() => setSimpleMode(true)}
+            className="accent-emerald-600"
+          />
+          <span className="text-sm text-gray-700">{t("approval.simple_mode")}</span>
+        </label>
+        <label className="flex items-center gap-2 cursor-pointer">
+          <input
+            type="radio"
+            name="approval-mode"
+            checked={!simpleMode}
+            onChange={() => setSimpleMode(false)}
+            className="accent-emerald-600"
+          />
+          <span className="text-sm text-gray-700">{t("approval.custom_mode")}</span>
+        </label>
+      </div>
+
+      {/* Simple mode — one table for all transaction types */}
+      {simpleMode && (
+        <TierTable tiers={simpleTiers} setTiers={setSimpleTiers} levels={levels} />
+      )}
+
+      {/* Custom mode — per-type tabs */}
+      {!simpleMode && (
+        <div className="space-y-4">
+          <div className="flex border-b border-gray-200">
+            {TX_TABS.map(({ key, label }) => (
+              <button
+                key={key}
+                type="button"
+                className={customTabCls(key)}
+                onClick={() => setActiveCustomTab(key)}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+
+          {activeCustomTab === "PULL" && (
+            <p className="text-xs text-gray-500 italic">
+              SISTER transfers share these tiers with PULL
+            </p>
+          )}
+
+          <TierTable
+            tiers={customTiers[activeCustomTab]}
+            setTiers={(fn) =>
+              setCustomTiers((prev) => ({
+                ...prev,
+                [activeCustomTab]: fn(prev[activeCustomTab]),
+              }))
+            }
+            levels={levels}
+          />
+
+          <button
+            type="button"
+            onClick={copyToAll}
+            className="px-3 py-1.5 border border-gray-300 text-gray-600 text-sm rounded hover:bg-gray-50"
+          >
+            {t("approval.copy_to_all")}
+          </button>
+        </div>
+      )}
+
+      {gapError && (
+        <p className="text-sm text-red-600 bg-red-50 border border-red-200 rounded px-3 py-2">
+          {gapError}
+        </p>
+      )}
       {saveErr && <p className="text-sm text-red-600">{saveErr}</p>}
       {saveOk  && <p className="text-sm text-emerald-600 font-medium">{t("approval_rules.saved")}</p>}
 
       <button
         type="button"
-        onClick={() => saveMutation.mutate()}
+        onClick={handleSave}
         disabled={saveMutation.isPending}
         className="px-5 py-2 bg-emerald-700 text-white text-sm font-semibold rounded-lg hover:bg-emerald-800 disabled:opacity-50"
       >

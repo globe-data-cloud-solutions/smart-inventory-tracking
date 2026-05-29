@@ -464,6 +464,116 @@ function getAvailableActions(
   return [];
 }
 
+interface ApprovalInfoResponse {
+  transfer_id: string;
+  required_authority_level: number;
+  required_role_display: string;
+  is_auto_approve: boolean;
+  can_approve: boolean;
+  reason: string;
+}
+
+/**
+ * Renders the actions cell for PENDING_APPROVAL transfers.
+ * Fetches approval-info to determine if the current user can approve,
+ * and shows a dynamic waiting message with the required role if not.
+ */
+function ApprovalPendingActions({
+  transferId,
+  isOnline,
+  onApprove,
+  onReject,
+  fallbackActions,
+}: {
+  transferId: string;
+  isOnline: boolean;
+  onApprove: (label: string) => void;
+  onReject: () => void;
+  fallbackActions: Action[];
+}) {
+  const { data: info, isLoading, isError } = useQuery<ApprovalInfoResponse>({
+    queryKey: ["approval-info", transferId],
+    queryFn:  () =>
+      api.get<ApprovalInfoResponse>(
+        `/api/v1/inventory/transfers/${transferId}/approval-info`
+      ),
+    staleTime: 30_000,
+  });
+
+  if (isLoading) {
+    return <span className="text-xs text-gray-400">…</span>;
+  }
+
+  if (isError || !info) {
+    if (!fallbackActions.length) {
+      return <span className="text-[11px] text-gray-200">—</span>;
+    }
+    return (
+      <div className="flex gap-1.5 flex-nowrap">
+        {fallbackActions.map((a) => (
+          <button
+            key={a.next}
+            disabled={!isOnline}
+            onClick={() =>
+              a.next === "APPROVED" ? onApprove(a.label) : onReject()
+            }
+            className="text-[11px] font-bold px-2.5 py-1 rounded whitespace-nowrap border"
+            style={{
+              borderColor: `${a.color}30`,
+              background:  isOnline ? `${a.color}15` : "#F3F4F6",
+              color:       isOnline ? a.color : "#9CA3AF",
+              cursor:      isOnline ? "pointer" : "not-allowed",
+            }}
+          >
+            {a.label}
+          </button>
+        ))}
+      </div>
+    );
+  }
+
+  if (info.can_approve) {
+    const approveLabel = info.is_auto_approve
+      ? `✓ Approve (auto — within your authority)`
+      : "Approve";
+    return (
+      <div className="flex gap-1.5 flex-nowrap">
+        <button
+          disabled={!isOnline}
+          onClick={() => onApprove(approveLabel)}
+          className="text-[11px] font-bold px-2.5 py-1 rounded whitespace-nowrap border"
+          style={{
+            borderColor: "#05996930",
+            background:  isOnline ? "#05996915" : "#F3F4F6",
+            color:       isOnline ? "#059669" : "#9CA3AF",
+            cursor:      isOnline ? "pointer" : "not-allowed",
+          }}
+        >
+          {approveLabel}
+        </button>
+        <button
+          disabled={!isOnline}
+          onClick={onReject}
+          className="text-[11px] font-bold px-2.5 py-1 rounded whitespace-nowrap border"
+          style={{
+            borderColor: "#991B1B30",
+            background:  isOnline ? "#991B1B15" : "#F3F4F6",
+            color:       isOnline ? "#991B1B" : "#9CA3AF",
+            cursor:      isOnline ? "pointer" : "not-allowed",
+          }}
+        >
+          Reject
+        </button>
+      </div>
+    );
+  }
+
+  const waitMsg = info.required_role_display
+    ? `${t("approval.awaiting").replace("{role}", info.required_role_display)}${info.reason ? ` (${info.reason})` : ""}`
+    : "Awaiting approval";
+  return <span className="text-[11px] text-gray-400 italic leading-tight">{waitMsg}</span>;
+}
+
 const COLS = ["Reference", "Type", "From", "To", "Product", "Qty", "Status", "Date", "Actions"];
 
 export default function TransfersPage() {
@@ -714,7 +824,15 @@ export default function TransfersPage() {
         toWarehouse:   transfer?.to_warehouse_name,
         notes:         partialQty ? `Batch received: ${partialQty.toLocaleString()} units` : undefined,
       });
-      setToast(`Status updated to ${next.replace(/_/g, " ")}`);
+      if (next === "APPROVED") {
+        const approvalInfo = qc.getQueryData<ApprovalInfoResponse>(["approval-info", id]);
+        const toastMsg = approvalInfo?.is_auto_approve
+          ? `Transfer auto-approved. ${approvalInfo.required_role_display} has been notified.`
+          : `Status updated to APPROVED`;
+        setToast(toastMsg);
+      } else {
+        setToast(`Status updated to ${next.replace(/_/g, " ")}`);
+      }
       setTimeout(() => setToast(""), 3000);
     } catch (err: unknown) {
       const apiErr = err as { status?: number; message?: string; code?: string };
@@ -901,11 +1019,6 @@ export default function TransfersPage() {
                       <span className={`text-[11px] font-bold px-2 py-0.5 rounded whitespace-nowrap ${sCls}`}>
                         {txn.status.replace(/_/g, " ")}
                       </span>
-                      {txn.status === "PENDING_APPROVAL" && (
-                        <span className="block text-[9px] font-semibold text-blue-700 mt-0.5 whitespace-nowrap" title="This transfer requires higher-level approval (NM or TA)">
-                          ⚠ NM/TA approval required
-                        </span>
-                      )}
                     </td>
                     <td className="px-3 py-2.5 text-gray-400 text-xs whitespace-nowrap">
                       {new Date(txn.created_at).toLocaleDateString()}
@@ -913,6 +1026,22 @@ export default function TransfersPage() {
                     <td className="px-3 py-2.5">
                       {busy ? (
                         <span className="text-xs text-gray-400">{t("common.loading")}</span>
+                      ) : txn.status === "PENDING_APPROVAL" ? (
+                        <ApprovalPendingActions
+                          transferId={txn.id}
+                          isOnline={isOnline}
+                          onApprove={(label) => {
+                            setPartialQtyInput(""); setPartialQtyErr("");
+                            setConfirmModal({ id: txn.id, next: "APPROVED", label, transfer: txn });
+                          }}
+                          onReject={() => {
+                            setPartialQtyInput(""); setPartialQtyErr("");
+                            setConfirmModal({ id: txn.id, next: "REJECTED", label: "Reject", transfer: txn });
+                          }}
+                          fallbackActions={acts.filter(
+                            (a) => a.next === "APPROVED" || a.next === "REJECTED"
+                          )}
+                        />
                       ) : acts.length > 0 ? (
                         <div className="flex gap-1.5 flex-nowrap items-center">
                           {!isOnline && <span title={t("errors.OFFLINE")} className="text-[11px] text-gray-400">offline</span>}

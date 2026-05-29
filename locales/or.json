@@ -498,5 +498,21 @@
   },
   "sa": {
     "select_tenant": "Ragaa ilaluuf miseensa filadhu."
+  },
+  "approval": {
+    "simple_mode": "Salphaa — seera wal-fakkaataa hunda",
+    "custom_mode": "Addaa — gosa hunda adda",
+    "add_tier": "Sadarkaa Dabaluu",
+    "copy_to_all": "Gosa hundaaf koppi godhi",
+    "auto_approve": "Ofiin hayyama kenni",
+    "notify_above": "Sadarkaa olii beeksisi",
+    "notify_all": "Maamiltootaa hunda beeksisi",
+    "min_level": "Sadarkaa Hayyama Xiqqaa",
+    "use_thresholds": "Hin jiru — daangaa qofa fayyadami",
+    "tenant_defaults": "Daangaa Durtii Miseensaa",
+    "awaiting": "Hayyama {role} eegaa jira",
+    "auto_notice": "Ofiin hayyamame: {transfer}",
+    "insufficient": "Aangoo ga'aa miti",
+    "gap_error": "Gidduu sadarkaalee duwwaa argame"
   }
 }

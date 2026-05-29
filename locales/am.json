@@ -610,5 +610,21 @@
   },
   "sa": {
     "select_tenant": "ውሂብ ለማየት ተከፋይ ምረጥ።"
+  },
+  "approval": {
+    "simple_mode": "ቀላል — ለሁሉም ዓይነቶች ተመሳሳይ ደንቦች",
+    "custom_mode": "ብጁ — በዓይነት የተለዩ ደንቦች",
+    "add_tier": "ደረጃ ጨምር",
+    "copy_to_all": "ለሁሉም ዓይነቶች ቅዳ",
+    "auto_approve": "ራስ-ሰር ፍቀድ",
+    "notify_above": "ከፍ ያለ ደረጃ አሳውቅ",
+    "notify_all": "ሁሉንም አስተዳዳሪዎች አሳውቅ",
+    "min_level": "ዝቅተኛ የፍቃድ ደረጃ",
+    "use_thresholds": "ምንም — ደፍ ብቻ ተጠቀም",
+    "tenant_defaults": "ነባሪ የድርጅት ደፎች",
+    "awaiting": "የ{role} ፍቃድ ይጠበቃል",
+    "auto_notice": "ራስ-ሰር ፍቃድ: {transfer}",
+    "insufficient": "በቂ ስልጣን የለም",
+    "gap_error": "በደረጃዎች መካከል ክፍተት ተገኝቷል"
   }
 }

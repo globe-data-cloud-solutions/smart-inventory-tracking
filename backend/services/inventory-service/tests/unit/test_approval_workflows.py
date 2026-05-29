@@ -487,3 +487,140 @@ class TestApprovalWorkflows:
         assert call_params["tx_type"] == "PULL", (
             "SISTER must look up PULL bands, not SISTER bands"
         )
+
+    # ── Regression tests (PROMPT 3 — approval UI + routing) ──────────────────
+
+    async def test_wm_cannot_approve_above_threshold(self) -> None:
+        """Regression: WM initiator cannot auto-approve when qty falls in RM band.
+
+        Authority level scale: WM=4, RM=2, NM/TA=1.  Lower = higher authority.
+        can_approve = (caller_level <= required_level), so WM(4) cannot approve
+        a band that requires RM(2).  resolve_approval must return is_auto_approved=False.
+
+        Protects against regressions where caller_level was compared with the wrong
+        direction (e.g. >=) causing WM to self-approve above-threshold transfers.
+        """
+        from services.approval_service import resolve_approval
+
+        # Band returns RM (authority_level=2), auto_approve=False, no product override
+        db = AsyncMock()
+        db.execute = AsyncMock(
+            return_value=MagicMock(fetchone=MagicMock(return_value=("RM", 2, False, [])))
+        )
+
+        # WM initiates a PULL in the RM quantity band (qty=2000)
+        decision = await resolve_approval(db, TENANT_ID, "PULL", Decimal("2000"))
+
+        assert decision.required_authority_level == 2, (
+            "RM-band transfer must require authority level 2"
+        )
+        assert decision.required_role == "RM"
+        assert decision.is_auto_approved is False, (
+            "WM (level 4) must not auto-approve RM-band (level 2) transfer"
+        )
+        assert decision.next_status == "PENDING_APPROVAL", (
+            "Non-auto-approved transfer must route to PENDING_APPROVAL"
+        )
+
+    async def test_auto_approve_notifies_rm(self) -> None:
+        """Regression: auto-approve decision forwards notify_levels from the band rule.
+
+        When a band has auto_approve=True and notify_levels=[2] (RM tier), the
+        ApprovalDecision must include notify_levels=[2] so the outbox writer can
+        dispatch AutoApprovalNotice events to the correct managers.
+
+        Protects against regressions where notify_levels was dropped from the
+        decision object or not forwarded by resolve_approval().
+        """
+        from services.approval_service import resolve_approval
+
+        # Band: auto_approve=True, notify_levels=[2] (notify RM when auto-approved)
+        db = AsyncMock()
+        db.execute = AsyncMock(
+            return_value=MagicMock(fetchone=MagicMock(return_value=("WM", 4, True, [2])))
+        )
+
+        decision = await resolve_approval(db, TENANT_ID, "PULL", Decimal("50"))
+
+        assert decision.is_auto_approved is True, (
+            "Band with auto_approve=True and no product override must be auto-approved"
+        )
+        assert decision.next_status == "APPROVED"
+        assert 2 in decision.notify_levels, (
+            "notify_levels=[2] from band rule must be forwarded in the decision "
+            "so AutoApprovalNotice events reach RM (level 2)"
+        )
+
+    async def test_product_min_overrides_threshold(self) -> None:
+        """Regression: product-level authority floor disables auto-approve even when
+        the quantity band is marked auto_approve=True.
+
+        Scenario: WM (level 4) requests a small PULL (qty=50) that is in the WM
+        auto-approve band (auto_approve=True, authority_level=4).  But the product
+        has min_authority_level=2 (RM required).  resolve_approval must:
+          1. Set required_authority_level = min(2, 4) = 2
+          2. Set is_auto_approved = False (product override disables auto-approve)
+          3. Set next_status = PENDING_APPROVAL
+
+        Protects against regressions where the product-level floor was fetched but
+        not applied to the auto-approve flag, allowing low-quantity transfers to
+        bypass RM review on controlled products.
+        """
+        from services.approval_service import resolve_approval
+
+        PRODUCT = "pppppppp-0000-0000-0000-000000000099"
+        db = AsyncMock()
+        db.execute = AsyncMock(side_effect=[
+            MagicMock(fetchone=MagicMock(return_value=(2,))),               # pam → min_level=2
+            MagicMock(fetchone=MagicMock(return_value=("WM", 4, True, []))),  # band → WM, auto=True
+        ])
+
+        decision = await resolve_approval(
+            db, TENANT_ID, "PULL", Decimal("50"), product_id=PRODUCT
+        )
+
+        assert decision.required_authority_level == 2, (
+            "product_min=2 must override band level=4: min(2,4)=2"
+        )
+        assert decision.is_auto_approved is False, (
+            "product override must disable auto-approve even when band says auto_approve=True"
+        )
+        assert decision.next_status == "PENDING_APPROVAL", (
+            "product override must route to PENDING_APPROVAL, not APPROVED"
+        )
+
+    async def test_sister_shares_pull_tiers_in_ui(self) -> None:
+        """Regression: SISTER UI note 'shares these tiers with PULL' is backed by
+        backend logic — resolve_approval() for SISTER must query PULL bands.
+
+        This test verifies the backend contract that the SISTER approval tab in org-setup
+        (which shows 'SISTER transfers share these tiers with PULL') correctly mirrors
+        the backend behaviour: quantity-band lookup always uses tx_type='PULL' for SISTER.
+
+        Specifically verifies:
+          - The DB query parameter tx_type='PULL' (not 'SISTER')
+          - The decision's required_authority_level matches the PULL band
+          - A qty=1500 SISTER (PULL RM band) routes to PENDING_APPROVAL for WM initiator
+        """
+        from services.approval_service import resolve_approval
+
+        # RM band: authority_level=2, auto_approve=False (mirrors PULL 1000–4999 band)
+        db = AsyncMock()
+        db.execute = AsyncMock(
+            return_value=MagicMock(fetchone=MagicMock(return_value=("RM", 2, False, [])))
+        )
+
+        decision = await resolve_approval(db, TENANT_ID, "SISTER", Decimal("1500"))
+
+        # Backend must query PULL bands for SISTER (the UI 'shares PULL tiers' invariant)
+        assert db.execute.await_count == 1, "no product_id → exactly one DB call"
+        call_params = db.execute.call_args_list[0].args[1]
+        assert call_params["tx_type"] == "PULL", (
+            "SISTER must query PULL bands — backend contract backing the UI note "
+            "'SISTER transfers share these tiers with PULL'"
+        )
+
+        # Verify the routing result is correct (WM cannot self-approve RM-band SISTER)
+        assert decision.required_authority_level == 2
+        assert decision.required_role == "RM"
+        assert decision.is_auto_approved is False

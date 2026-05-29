@@ -196,18 +196,28 @@ export function AddProductPanel({ apiBase, onClose }: AddProductPanelProps) {
   const [skuOverride, setSkuOvr]    = useState("");
   const [skuEditing, setSkuEditing] = useState(false);
 
-  // ── approval rules state ───────────────────────────────────────────────
-  type ApprovalRow = { transaction_type: string; max_quantity: string; approver_role: string };
-  const TX_TYPES: { key: string; label: string; order: number }[] = [
-    { key: "PULL",       label: t("approval_rules.tx.receive")    || "Receive",    order: 1 },
-    { key: "PUSH",       label: t("approval_rules.tx.issue")      || "Issue",      order: 2 },
-    { key: "ADJUSTMENT", label: t("approval_rules.tx.adjustment") || "Adjustment", order: 3 },
-    { key: "SISTER",     label: t("approval_rules.tx.transfer")   || "Transfer",   order: 4 },
-  ];
-  const ROLE_OPTIONS = ["WM", "RM", "NM", "TA"];
-  const [approvalOpen, setApprovalOpen] = useState(false);
-  const [approvalRows, setApprovalRows] = useState<ApprovalRow[]>(
-    TX_TYPES.map((tx) => ({ transaction_type: tx.key, max_quantity: "", approver_role: "" }))
+  // ── approval minimums state ────────────────────────────────────────────
+  interface HierarchyLevelInfo {
+    level_number: number;
+    level_name: string;
+    default_role_code: string;
+    role_display_label: string;
+    is_stock_holding: boolean;
+  }
+  const ROLE_AUTH_MAP: Record<string, number> = {
+    SA: 1, TA: 1, NM: 1, RM: 2, LM: 3, WM: 4,
+  };
+  const MIN_TX_TYPES = [
+    { key: "PULL",       label: "PULL Transfer" },
+    { key: "PUSH",       label: "PUSH Transfer" },
+    { key: "SISTER",     label: "SISTER Transfer" },
+    { key: "ADJUSTMENT", label: "Adjustment" },
+    { key: "RECEIVE",    label: "Receive Stock" },
+    { key: "ISSUE",      label: "Issue Stock" },
+  ] as const;
+  type MinimumRow = { transaction_type: string; min_authority_level: string };
+  const [minimumRows, setMinimumRows] = useState<MinimumRow[]>(
+    MIN_TX_TYPES.map((tx) => ({ transaction_type: tx.key, min_authority_level: "" }))
   );
 
   // ── error state ────────────────────────────────────────────────────────
@@ -272,43 +282,54 @@ export function AddProductPanel({ apiBase, onClose }: AddProductPanelProps) {
     staleTime: 30_000,
   });
 
-  // ── Approval rules: pre-populate from last product ────────────────────
-  type ApprovalRuleApiRow = {
-    transaction_type: string;
-    max_quantity?: string | null;
-    approver_role: string;
-    is_product_level: boolean;
-  };
-  type ApprovalRulesApiResp = { rules: ApprovalRuleApiRow[]; is_using_defaults: boolean };
-  const { data: latestApprovalData } = useQuery<ApprovalRulesApiResp>({
-    queryKey:  ["product-approval-rules-latest", apiBase],
+  // ── Hierarchy levels for approval minimum dropdown ────────────────────
+  const { data: hierarchyLevels = [] } = useQuery<HierarchyLevelInfo[]>({
+    queryKey:  ["hierarchy-config", org],
     queryFn:   async () => {
-      const r = await api.get<unknown>(`${apiBase}/approval-rules/latest`, token ?? undefined);
-      return ((r as { data?: unknown }).data ?? r) as ApprovalRulesApiResp;
+      const r = await api.get<unknown>(`/api/v1/tenants/${org}/hierarchy/config`, token ?? undefined);
+      return ((r as { data?: unknown }).data ?? r) as HierarchyLevelInfo[];
     },
     enabled:   open && !!token,
     staleTime: 60_000,
   });
 
-  // Pre-fill approval rows from latest product rules (once, when data arrives)
+  // ── Tenant default approval rules for preview ──────────────────────────
+  type TenantRulePreview = { transaction_type: string; max_quantity: number | null; approver_role: string };
+  const { data: tenantDefaultRules = [] } = useQuery<TenantRulePreview[]>({
+    queryKey:  ["tenant-approval-rules", org],
+    queryFn:   async () => {
+      const r = await api.get<unknown>(`/api/v1/tenants/${org}/approval-rules`, token ?? undefined);
+      return ((r as { data?: unknown }).data ?? r) as TenantRulePreview[];
+    },
+    enabled:   open && !!token,
+    staleTime: 60_000,
+  });
+
+  // ── Pre-populate from latest product minimums ──────────────────────────
+  type LatestMinimumsResp = { minimums: { transaction_type: string; min_authority_level: number }[] };
+  const { data: latestMinimumsData } = useQuery<LatestMinimumsResp>({
+    queryKey:  ["product-minimums-latest", apiBase],
+    queryFn:   async () => {
+      const r = await api.get<unknown>(`${apiBase}/approval-minimums/latest`, token ?? undefined);
+      return ((r as { data?: unknown }).data ?? r) as LatestMinimumsResp;
+    },
+    enabled:   open && !!token,
+    staleTime: 60_000,
+  });
+
   useEffect(() => {
-    if (!latestApprovalData?.rules?.length) return;
-    // Only pre-fill from product-level rules (not tenant defaults — those show separately)
-    const src = latestApprovalData.rules.filter((r) => r.is_product_level);
-    if (!src.length) return;
-    setApprovalRows((prev) =>
+    if (!latestMinimumsData?.minimums?.length) return;
+    setMinimumRows((prev) =>
       prev.map((row) => {
-        const match = src.find((s) => s.transaction_type === row.transaction_type);
+        const match = latestMinimumsData.minimums.find(
+          (m) => m.transaction_type === row.transaction_type
+        );
         if (!match) return row;
-        return {
-          ...row,
-          max_quantity:  match.max_quantity ?? "",
-          approver_role: match.approver_role,
-        };
+        return { ...row, min_authority_level: String(match.min_authority_level) };
       })
     );
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [latestApprovalData]);
+  }, [latestMinimumsData]);
 
   // ── SKU preview via /next-sku?type_code=BRD ────────────────────────────
   const { data: skuPreviewData, isFetching: skuLoading } = useQuery<{ sku: string; counter: number | null }>({
@@ -367,8 +388,7 @@ export function AddProductPanel({ apiBase, onClose }: AddProductPanelProps) {
     setTypeCode(""); setBrand(""); setUnit(""); setPkgType("");
     setUpp("1"); setReorder(""); setSkuOvr(""); setSkuEditing(false);
     setNameErr(""); setTcErr(""); setCatErr(""); setPanelError("");
-    setApprovalOpen(false);
-    setApprovalRows(TX_TYPES.map((tx) => ({ transaction_type: tx.key, max_quantity: "", approver_role: "" })));
+    setMinimumRows(MIN_TX_TYPES.map((tx) => ({ transaction_type: tx.key, min_authority_level: "" })));
   };
 
   const openPanel  = () => { resetForm(); setOpen(true); };
@@ -406,20 +426,15 @@ export function AddProductPanel({ apiBase, onClose }: AddProductPanelProps) {
         token ?? undefined,
       );
 
-      // Save product-level approval rules if any thresholds were filled in
-      const filledRules = approvalRows.filter(
-        (r) => r.approver_role && r.max_quantity.trim(),
-      );
-      if (filledRules.length > 0) {
+      // Save product-level approval minimums if any were set
+      const filledMinimums = minimumRows.filter((r) => r.min_authority_level !== "");
+      if (filledMinimums.length > 0) {
         await api.put<unknown>(
-          `${apiBase}/${product.id}/approval-rules`,
+          `${apiBase}/${product.id}/approval-minimums`,
           {
-            rules: filledRules.map((r, i) => ({
-              transaction_type: r.transaction_type,
-              min_quantity:     0,
-              max_quantity:     parseFloat(r.max_quantity),
-              approver_role:    r.approver_role,
-              approval_order:   i + 1,
+            entries: filledMinimums.map((r) => ({
+              transaction_type:    r.transaction_type,
+              min_authority_level: Number(r.min_authority_level),
             })),
           },
           token ?? undefined,
@@ -434,7 +449,7 @@ export function AddProductPanel({ apiBase, onClose }: AddProductPanelProps) {
       void qc.invalidateQueries({ queryKey: ["product-uoms"] });
       void qc.invalidateQueries({ queryKey: ["product-packaging-types"] });
       void qc.invalidateQueries({ queryKey: ["next-sku"] });
-      void qc.invalidateQueries({ queryKey: ["product-approval-rules-latest"] });
+      void qc.invalidateQueries({ queryKey: ["product-minimums-latest"] });
       resetForm(); setOpen(false); onClose?.();
     } catch (err) {
       const e = err as Error & { status?: number; code?: string };
@@ -707,95 +722,82 @@ export function AddProductPanel({ apiBase, onClose }: AddProductPanelProps) {
             />
           </div>
 
-          {/* ── Approval Thresholds (collapsible) ────────────────── */}
+          {/* ── Minimum Approval Level ───────────────────────────── */}
           <div className="border border-gray-200 rounded-md overflow-hidden">
-            <button
-              type="button"
-              onClick={() => setApprovalOpen((v) => !v)}
-              className="w-full flex items-center justify-between px-3.5 py-2.5 bg-gray-50 text-left cursor-pointer border-0"
-            >
+            <div className="px-3.5 py-2.5 bg-gray-50 border-b border-gray-200">
               <span className="text-xs font-bold uppercase tracking-wide text-gray-600">
-                {approvalOpen ? "▼" : "▶"}{" "}
-                {t("approval_rules.section") || "Approval Thresholds"}
-                <span className="text-[11px] font-normal normal-case tracking-normal text-gray-400 ml-2">
-                  ({t("receive_panel.optional")})
-                </span>
+                {t("approval.min_level")}
               </span>
-              {approvalRows.some((r) => r.approver_role) ? (
-                <span className="text-[10px] bg-emerald-100 text-emerald-700 font-semibold px-1.5 py-0.5 rounded">
-                  {t("approval_rules.custom_set") || "Custom"}
-                </span>
-              ) : (
-                <span className="text-[10px] text-gray-400 italic">
-                  {t("approval_rules.using_defaults") || "Using tenant defaults"}
-                </span>
-              )}
-            </button>
-
-            {approvalOpen && (
-              <div className="px-3.5 py-3">
-                <p className="text-[11px] text-gray-500 mb-2.5 italic">
-                  {t("approval_rules.hint") || "Leave empty to use tenant defaults"}
-                </p>
-                <table className="w-full text-xs border-collapse">
-                  <thead>
-                    <tr className="text-gray-500">
-                      <th className="text-left py-1 pr-2 font-semibold w-[35%]">
-                        {t("approval_rules.col.transaction") || "Transaction"}
-                      </th>
-                      <th className="text-left py-1 pr-2 font-semibold w-[30%]">
-                        {t("approval_rules.col.qty_up_to") || "Qty Up To"}
-                      </th>
-                      <th className="text-left py-1 font-semibold w-[35%]">
-                        {t("approval_rules.col.approver") || "Approver"}
-                      </th>
+              <p className="text-[11px] text-gray-400 mt-0.5">
+                Set a floor approval level per transaction type regardless of quantity thresholds.
+              </p>
+            </div>
+            <div className="px-3.5 py-3 space-y-3">
+              <table className="w-full text-xs border-collapse">
+                <thead>
+                  <tr className="text-gray-500">
+                    <th className="text-left py-1 pr-2 font-semibold w-[48%]">Transaction Type</th>
+                    <th className="text-left py-1 font-semibold">Minimum Approver</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {MIN_TX_TYPES.map((tx, i) => (
+                    <tr key={tx.key} className="border-t border-gray-100">
+                      <td className="py-1.5 pr-2 text-gray-700 font-medium">{tx.label}</td>
+                      <td className="py-1.5">
+                        <select
+                          value={minimumRows[i]?.min_authority_level ?? ""}
+                          onChange={(e) =>
+                            setMinimumRows((rows) =>
+                              rows.map((r, idx) =>
+                                idx === i ? { ...r, min_authority_level: e.target.value } : r
+                              )
+                            )
+                          }
+                          className="w-full px-2 py-1 text-xs border border-gray-300 rounded bg-white outline-none cursor-pointer"
+                        >
+                          <option value="">{t("approval.use_thresholds")}</option>
+                          {hierarchyLevels.map((lv) => (
+                            <option
+                              key={lv.default_role_code}
+                              value={String(ROLE_AUTH_MAP[lv.default_role_code] ?? 4)}
+                            >
+                              {lv.level_name} ({lv.role_display_label})
+                            </option>
+                          ))}
+                        </select>
+                      </td>
                     </tr>
-                  </thead>
-                  <tbody>
-                    {TX_TYPES.map((tx, i) => (
-                      <tr key={tx.key} className="border-t border-gray-100">
-                        <td className="py-1.5 pr-2 text-gray-700 font-medium">{tx.label}</td>
-                        <td className="py-1.5 pr-2">
-                          <input
-                            type="number"
-                            min="1"
-                            step="1"
-                            value={approvalRows[i]?.max_quantity ?? ""}
-                            onChange={(e) =>
-                              setApprovalRows((rows) =>
-                                rows.map((r, idx) =>
-                                  idx === i ? { ...r, max_quantity: e.target.value } : r
-                                )
-                              )
-                            }
-                            placeholder="e.g. 100"
-                            className="w-full px-2 py-1 text-xs border border-gray-300 rounded outline-none"
-                          />
-                        </td>
-                        <td className="py-1.5">
-                          <select
-                            value={approvalRows[i]?.approver_role ?? ""}
-                            onChange={(e) =>
-                              setApprovalRows((rows) =>
-                                rows.map((r, idx) =>
-                                  idx === i ? { ...r, approver_role: e.target.value } : r
-                                )
-                              )
-                            }
-                            className="w-full px-2 py-1 text-xs border border-gray-300 rounded bg-white outline-none cursor-pointer"
-                          >
-                            <option value="">— {t("approval_rules.col.approver") || "Approver"} —</option>
-                            {ROLE_OPTIONS.map((role) => (
-                              <option key={role} value={role}>{role}</option>
-                            ))}
-                          </select>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
+                  ))}
+                </tbody>
+              </table>
+
+              {tenantDefaultRules.length > 0 && (
+                <div className="pt-2 border-t border-gray-100">
+                  <p className="text-[10px] text-gray-400 font-semibold uppercase tracking-wide mb-1">
+                    {t("approval.tenant_defaults")}
+                  </p>
+                  <div className="text-[10px] text-gray-400 space-y-0.5">
+                    {(["PULL", "PUSH", "ADJUSTMENT"] as const).map((tx) => {
+                      const rules = tenantDefaultRules.filter((r) => r.transaction_type === tx);
+                      if (!rules.length) return null;
+                      const summary = rules
+                        .map((r) =>
+                          r.max_quantity != null
+                            ? `${r.approver_role} <${r.max_quantity}`
+                            : `${r.approver_role}+`
+                        )
+                        .join(" | ");
+                      return (
+                        <p key={tx}>
+                          <span className="font-medium text-gray-500">{tx}:</span> {summary}
+                        </p>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+            </div>
           </div>
         </div>
 

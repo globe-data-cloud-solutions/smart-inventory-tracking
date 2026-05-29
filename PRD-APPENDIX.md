@@ -360,6 +360,90 @@ Items confirmed working in local gateway mode. Must be re-verified after AWS dep
 
 ---
 
+## §D2 — Approval System Design (Session 8)
+
+### D2.1 — Authority Level Scale
+
+All approval routing uses an inverted authority scale where **lower = higher authority**:
+
+| Level | Roles | Can approve |
+|---|---|---|
+| 1 | SA, TA, NM | Level 1, 2, 3, 4 bands |
+| 2 | RM | Level 2, 3, 4 bands |
+| 3 | LM | Level 3, 4 bands |
+| 4 | WM | Level 4 bands only |
+| 5 | SA_GT, RT, AU, SYS | No approval authority |
+
+`can_approve = (caller_authority_level <= required_authority_level)`
+
+This scale is stored in `approval_rule.authority_level` and `product_approval_minimums.min_authority_level`. It is **distinct** from the old `ROLE_LEVEL` (SA=10 highest) used by the legacy `ApprovalService` class.
+
+### D2.2 — 3-Step Approval Resolution (`resolve_approval`)
+
+```
+Step 1 — product authority floor:
+  SELECT min_authority_level FROM product_approval_minimums
+  WHERE product_id = :pid AND transaction_type = :type
+
+Step 2 — quantity-band threshold:
+  SELECT approver_role, authority_level, auto_approve, notify_levels
+  FROM approval_rule WHERE tenant_id = :tid AND …
+  (SISTER always queries PULL bands — same tier structure)
+
+Step 3 — take more restrictive:
+  required_level = min(product_min, threshold_level)
+  is_auto_approve = (band.auto_approve AND product_min is None AND required_level == threshold_level)
+```
+
+Product minimum override **always disables auto-approve**, even when the quantity band is marked `auto_approve=True`. This prevents controlled products from bypassing review on small quantities.
+
+### D2.3 — Auto-Approve Notify Levels
+
+When `is_auto_approve=True`, the `ApprovalDecision.notify_levels` list contains authority levels to notify via outbox `AutoApprovalNotice` events:
+
+- **"Notify level above"**: `max(1, auth_level - 1)` (e.g. WM auto-approves → notify RM = level 2)
+- **"Notify all managers"**: `[1, 2, 3, 4]`
+
+The UI stores these as `notify_above: boolean` and `notify_all: boolean` per tier. `tiersToRules()` converts them to `notify_levels` integer arrays for the backend.
+
+### D2.4 — SISTER Shares PULL Tiers
+
+SISTER transfers use PULL quantity bands for approval routing — there is no separate SISTER approval rule table. This applies to:
+- Backend: `_query_threshold()` is called with `tx_type='PULL'` when `transaction_type='SISTER'`
+- Frontend: Org Setup Tab 3 Custom mode shows a note on the PULL tab: "SISTER transfers share these tiers with PULL"
+- `buildRules()` includes `tiersToRules(customTiers["PULL"], "SISTER")` when saving
+
+### D2.5 — Approval Info Endpoint Contract
+
+`GET /api/v1/inventory/transfers/{id}/approval-info` returns:
+
+```typescript
+{
+  transfer_id: string;
+  required_authority_level: number;   // 1–4
+  required_role_display: string;      // e.g. "Regional Manager"
+  is_auto_approve: boolean;
+  can_approve: boolean;               // caller_level <= required_level
+  reason: string;                     // human-readable routing reason
+}
+```
+
+Frontend `ApprovalPendingActions` component fetches this and:
+- `can_approve=true`: shows Approve button (with "✓ Approve (auto — within your authority)" label if `is_auto_approve`)
+- `can_approve=false`: shows `"Awaiting {required_role_display} approval{reason}"`
+
+### D2.6 — Product Approval Minimums
+
+Per-product, per-transaction-type authority floor stored in `product_approval_minimums`:
+- Saved via `PUT /api/v1/products/{id}/approval-minimums`
+- 6 transaction types: PULL, PUSH, SISTER, ADJUSTMENT, RECEIVE, ISSUE
+- Value `""` (empty) = "None — use tenant thresholds" (no override)
+- Integer 1–4 = minimum authority level required for this product
+
+Displayed as a read-only "Tenant Default Thresholds" preview section below the product override table, so operators can see what they are overriding.
+
+---
+
 ## §E — Deferred Features
 
 Features fully designed but not yet implemented, pending AWS environment or specific dependencies:
