@@ -1548,5 +1548,25 @@ Both columns (`inventory.category` and `table.reorder_point`) were already in th
 
 ---
 
+---
+
+## 17. SESSION 7 BUG — 2026-05-29
+
+### CRITICAL BUG — PULL transfer stuck at APPROVED: NM has no Issue button; transfer cannot proceed
+
+| Item | Detail |
+|---|---|
+| **Symptom** | End-to-end PULL flow (WH → Region W RM → Main NW NM): after NM approves at PENDING_APPROVAL the transfer reaches APPROVED but NM sees no action buttons. The transfer is stuck — NM cannot issue, WM cannot issue (wrong warehouse), RM cannot issue (wrong role). |
+| **Root cause A — Frontend** | NM PULL action map had no `APPROVED` or `ISSUED` entries. The previous session fix (Bug 2) correctly removed NM's ability to approve-then-issue for same-session double-actions, but went too far by removing Issue entirely. NM who manages the source facility (Main NW) is the correct actor at APPROVED. |
+| **Root cause B — Backend** | `dispatch_transfer()` ABAC check was `if not user.warehouse_id or ...`, which unconditionally denied any user with `warehouse_id = None`. NM managing at tenant level (no specific facility assignment) always got 403 even though they are the correct source manager. |
+| **Fix — Frontend** | Added `isSrcManager = !uWH \|\| uWH === fromWH?.toLowerCase()` to NM block. NM without a warehouseId = tenant-level authority (can dispatch from any source). NM with a warehouseId = can dispatch only from their facility. Added `map.APPROVED = [issue, cancel]` and `map.ISSUED = [dispatch]` gated on `isSrcManager`. |
+| **Fix — Backend** | Replaced single ABAC condition with: if `user.warehouse_id` is set → check exact match; if `user.warehouse_id` is None → allow only NM/TA/SA (`_TENANT_LEVEL_ROLES`). Facility-bound roles (WM/RM/LM) without a matching warehouse_id are still denied. |
+| **Side fix** | Added `getWaitingMessage()` helper in `transfers/page.tsx` — when a user has no action buttons on a transfer, the Actions cell now shows a contextual message (e.g. "Waiting for Main NW to issue", "Awaiting RM review") instead of an empty "—". |
+| **Files** | `backend/services/inventory-service/services/inventory_service.py` — `dispatch_transfer()` ABAC; `frontend/src/app/[org]/transfers/page.tsx` — NM PULL map + `getWaitingMessage()` |
+| **Tests** | `test_nm_can_dispatch_as_tenant_manager` (replaces `test_nm_cannot_issue_at_approved`), `test_rm_cannot_issue_non_source_transfer` — 25/25 pass |
+| **Threshold routing note** | RM sees Approve at PENDING_APPROVAL (correct for qty ≤ threshold). For qty > threshold, only NM should approve — this requires fetching `approval_rule` table data in the frontend, which is a future enhancement. Backend must enforce threshold when RM submits an above-threshold approval. |
+
+---
+
 *SMART Inventory Platform — Bug Report v4.0*  
 *Backend: Python 3.12 / FastAPI · Frontend: Next.js 14 / TypeScript · DB: PostgreSQL 16*

@@ -367,9 +367,11 @@ class InventoryService:
     async def dispatch_transfer(self, user: Any, transfer_id: UUID) -> TransferOrderResponse:
         """Advance an APPROVED transfer to ISSUED.
 
-        Writes a TRANSFER_OUT ledger entry for every line and deducts the source
-        warehouse balance via record_transaction().  Only the source warehouse manager
-        may dispatch — user.warehouse_id must equal transfer.from_warehouse_id.
+        Source manager ABAC — allowed when either:
+          (a) user.warehouse_id == transfer.from_warehouse_id (WM/RM/LM at source facility), OR
+          (b) user has no warehouse_id AND role is NM/TA/SA (tenant-level authority, no single
+              facility assignment — e.g. General Manager overseeing the source warehouse).
+        Writes NO ledger entries — source on_hand was already deducted at APPROVED.
         """
         result = await self.db.execute(
             text("SELECT * FROM transfer_orders WHERE id = :id AND tenant_id = :tid FOR UPDATE"),
@@ -380,13 +382,20 @@ class InventoryService:
             from fastapi import HTTPException
             raise HTTPException(status_code=404, detail="Transfer not found")
 
-        # ABAC: caller must be the source warehouse — no warehouse_id means middle-layer
-        # manager (RM/NM/LM) who has no facility assignment and must be denied.
-        if not user.warehouse_id or str(user.warehouse_id) != str(row.from_warehouse_id):
+        # ABAC: the caller must manage the source warehouse.
+        # Facility-bound roles (WM/RM/LM) must have warehouse_id matching from_warehouse_id.
+        # Tenant-level roles (NM/TA/SA) without a specific warehouse assignment have
+        # organisation-wide authority and may dispatch from any source facility.
+        _TENANT_LEVEL_ROLES = {"NM", "TA", "SA"}
+        if user.warehouse_id:
+            can_dispatch = str(user.warehouse_id).lower() == str(row.from_warehouse_id).lower()
+        else:
+            can_dispatch = getattr(user, "role", None) in _TENANT_LEVEL_ROLES
+        if not can_dispatch:
             from fastapi import HTTPException
             raise HTTPException(
                 status_code=403,
-                detail="Only the source warehouse can dispatch this transfer",
+                detail="Only the source warehouse manager can dispatch this transfer",
             )
 
         transfer_type = getattr(row, "transfer_type", "PULL")

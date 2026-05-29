@@ -106,6 +106,29 @@ function normalizeTransfer(raw: RawApiTransfer): ApiTransfer {
 }
 
 /**
+ * Returns a contextual "waiting for…" label when the current user has no action on a
+ * transfer. Shown in the Actions column instead of "—" so non-actors understand why
+ * the row is visible but has no buttons.
+ */
+function getWaitingMessage(
+  status: TransferStatus,
+  fromWarehouseName: string,
+  toWarehouseName: string,
+): string | null {
+  switch (status) {
+    case "PENDING_REVIEW":          return "Awaiting RM review";
+    case "PENDING_APPROVAL":        return "Awaiting NM/TA approval";
+    case "PENDING_SOURCE_CONFIRM":  return `Awaiting ${fromWarehouseName} confirmation`;
+    case "PENDING_DEST_CONFIRM":    return `Awaiting ${toWarehouseName} confirmation`;
+    case "APPROVED":                return `Waiting for ${fromWarehouseName} to issue`;
+    case "ADVISED":                 return `Waiting for ${fromWarehouseName} to issue (advised)`;
+    case "ISSUED":                  return `Waiting for ${fromWarehouseName} to dispatch`;
+    case "IN_TRANSIT":              return `In transit → ${toWarehouseName}`;
+    default:                        return null;
+  }
+}
+
+/**
  * Returns all descendant warehouse IDs for a given facility (breadth-first via parentId).
  * MWH nodes at the apex of the hierarchy have no declared children in the current demo
  * data, so this primarily handles RWH→WH→SUB_WH chains.
@@ -188,9 +211,14 @@ const TYPE_CLASS: Record<TransferType, { cls: string; label: string }> = {
 /**
  * Returns the action buttons available to this user for a specific transfer.
  *
- * userWH / fromWH / toWH are used for SISTER context-awareness:
+ * userWH / fromWH / toWH are used for SISTER context-awareness and for source-manager
+ * gating (APPROVED → ISSUED actions):
  *   - Destination WM (userWH === toWH)  : submits the request + re-confirms after source agrees
  *   - Source WM      (userWH === fromWH): confirms they can supply + issues stock after approval
+ *
+ * quantity is included for future threshold-based routing at PENDING_APPROVAL
+ * (RM approves if qty ≤ threshold; NM approves otherwise). Threshold data requires
+ * an approval_rule API call — routing is currently role-only (both RM and NM see Approve).
  */
 function getAvailableActions(
   role: string,
@@ -199,6 +227,7 @@ function getAvailableActions(
   userWH?: string,
   fromWH?: string,
   toWH?: string,
+  _quantity?: number,   // reserved for threshold routing — see JSDoc above
 ): Action[] {
   const approve:    Action = { next: "APPROVED",               label: "Approve",              color: "#059669" };
   const reject:     Action = { next: "REJECTED",               label: "Reject",               color: "#991B1B" };
@@ -364,17 +393,26 @@ function getAvailableActions(
 
   // NM
   if (role === "NM") {
+    // isSrcManager: NM without a specific facility assignment manages at tenant level
+    // and may dispatch from any source facility (backend ABAC mirrors this logic).
+    // NM assigned to a specific facility may dispatch only from that facility.
+    // This is the source-manager gate for APPROVED → ISSUED on PULL transfers.
+    const uWH = userWH?.toLowerCase();
+    const isSrcManager = !uWH || uWH === fromWH?.toLowerCase();
+
     if (type === "PULL") {
       const map: Partial<Record<TransferStatus, Action[]>> = {
         DRAFT:            [review, cancel],
         PENDING_REVIEW:   [toApproval, reject, cancel],
         PENDING_APPROVAL: [approve, reject, cancel],
-        // APPROVED and ISSUED are intentionally absent for NM on PULL transfers:
-        // only the source warehouse manager may dispatch (backend enforces via
-        // ABAC in dispatch_transfer()). NM's role ends at approval; issuing stock
-        // is the source WM's responsibility. Showing Issue here caused "Only source
-        // warehouse can dispatch" 403 errors when NM clicked the button (BUG).
       };
+      // At APPROVED the source facility issues stock. For a PULL from Main NW,
+      // NM is the source facility manager — they must see Issue, not the approving RM.
+      // Backend dispatch_transfer() enforces the same rule via ABAC.
+      if (isSrcManager) {
+        map.APPROVED = [issue, cancel];
+        map.ISSUED   = [dispatch];
+      }
       return map[status] ?? [];
     }
     if (type === "PUSH") {
@@ -836,8 +874,9 @@ export default function TransfersPage() {
               {!transfersLoading && visibleTransfers.map((txn, idx) => {
                 const sCls = STATUS_CLASS[txn.status] ?? "bg-gray-100 text-gray-500";
                 const tb   = TYPE_CLASS[txn.transfer_type] ?? { cls: "bg-gray-100 text-gray-500", label: txn.transfer_type };
-                const acts = getAvailableActions(user.role, txn.transfer_type, txn.status, user.warehouseId, txn.from_warehouse_id, txn.to_warehouse_id);
-                const busy = transitioning === txn.id;
+                const acts    = getAvailableActions(user.role, txn.transfer_type, txn.status, user.warehouseId, txn.from_warehouse_id, txn.to_warehouse_id, txn.quantity);
+                const waitMsg = acts.length === 0 ? getWaitingMessage(txn.status, txn.from_warehouse_name, txn.to_warehouse_name) : null;
+                const busy    = transitioning === txn.id;
                 return (
                   <tr key={txn.id} className={`border-b border-gray-100 ${idx % 2 === 0 ? "bg-white" : "bg-gray-50"}`}>
                     <td className="px-3 py-2.5">
@@ -896,6 +935,8 @@ export default function TransfersPage() {
                             </button>
                           ))}
                         </div>
+                      ) : waitMsg ? (
+                        <span className="text-[11px] text-gray-400 italic leading-tight">{waitMsg}</span>
                       ) : (
                         <span className="text-[11px] text-gray-200">—</span>
                       )}

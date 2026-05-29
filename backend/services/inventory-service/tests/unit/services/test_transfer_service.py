@@ -660,37 +660,64 @@ class TestInventoryServiceTransfers:
         assert tin["warehouse_id"]     == WAREHOUSE_B, "TRANSFER_IN must target destination"
         assert tin["quantity"]         == qty,          "TRANSFER_IN must be positive (credit)"
 
-    async def test_nm_cannot_issue_at_approved(self) -> None:
-        """NM (no warehouse_id) must be rejected with 403 when attempting dispatch.
+    async def test_nm_can_dispatch_as_tenant_manager(self) -> None:
+        """NM without warehouse_id must be ALLOWED to dispatch APPROVED transfers.
 
-        Regression for CRITICAL BUG 2: NM's getAvailableActions() PULL map incorrectly
-        contained APPROVED: [issue, cancel], so after NM approved at PENDING_APPROVAL the
-        UI showed an Issue button. NM has no warehouse_id in their JWT, so dispatch_transfer()
-        correctly rejects with ABAC 403, but the UX showed a usable button that always failed.
+        NM manages at tenant/organisation level — their warehouse_id may be None because
+        they oversee the source facility without being assigned to a specific node.
+        dispatch_transfer() allows NM (and TA/SA) when warehouse_id is absent, mirroring
+        the frontend isSrcManager = !uWH || uWH === fromWH logic.
 
-        Fix (frontend): removed APPROVED and ISSUED from NM's PULL map — NM's role ends at
-        approval; dispatching is the source warehouse manager's responsibility.
-        Fix (backend): dispatch_transfer() ABAC check already enforces this correctly
-        (user.warehouse_id must equal transfer.from_warehouse_id).
-
-        This test verifies the backend contract is correct and will catch regressions if
-        the ABAC check is accidentally weakened.
+        Regression: previously the ABAC check denied ALL users with warehouse_id = None.
+        This caused 403 errors when an NM (General Manager) tried to issue a PULL from
+        their facility after approving it — the transfer was stuck at APPROVED with no actor.
         """
         from services.inventory_service import InventoryService
 
         NM_USER = _User("u-nm", TENANT_ID, None, None, "NM")
 
+        line     = _make_line(quantity=60.0)
         xfer_row = _make_transfer_row("APPROVED", transfer_type="PULL")
+        session  = _session_for_dispatch(xfer_row, [line])
+
+        with patch(
+            "services.inventory_service.record_transaction",
+            new=AsyncMock(return_value="tx-nm-dispatch"),
+        ):
+            result = await InventoryService(session).dispatch_transfer(NM_USER, TRANSFER_ID)
+
+        assert result.status == "ISSUED", (
+            "NM with no warehouse_id must be able to dispatch — they have tenant-level authority"
+        )
+        # No ledger entries at dispatch — source on_hand was deducted at APPROVED
+        # (this is verified by test_dispatch_writes_no_ledger_entries)
+
+    async def test_rm_cannot_issue_non_source_transfer(self) -> None:
+        """RM whose warehouse does not match the source must be denied with 403.
+
+        RM is a facility-bound manager. In a PULL from Main NW (WAREHOUSE_A) to WH,
+        the RM at Region W (WAREHOUSE_B) reviewed and approved the transfer but is NOT
+        the source manager — issuing stock is Main NW's NM's responsibility.
+
+        Backend ABAC: user.warehouse_id (WAREHOUSE_B) != from_warehouse_id (WAREHOUSE_A)
+        → 403. Frontend mirrors this: RM PULL map has no APPROVED entry.
+        """
+        from services.inventory_service import InventoryService
+
+        RM_USER = _User("u-rm-region", TENANT_ID, WAREHOUSE_B, None, "RM")
+
+        xfer_row = _make_transfer_row("APPROVED", transfer_type="PULL",
+                                      from_wh=WAREHOUSE_A, to_wh=WAREHOUSE_B)
         session  = AsyncMock()
         session.execute = AsyncMock(
             return_value=MagicMock(fetchone=MagicMock(return_value=xfer_row))
         )
 
         with pytest.raises(HTTPException) as exc_info:
-            await InventoryService(session).dispatch_transfer(NM_USER, TRANSFER_ID)
+            await InventoryService(session).dispatch_transfer(RM_USER, TRANSFER_ID)
 
         assert exc_info.value.status_code == 403, (
-            "NM must receive HTTP 403 — warehouse ABAC denies dispatch to non-source-WM users"
+            "RM at a different warehouse must be denied — only source manager may dispatch"
         )
 
     async def test_transition_reads_fresh_status_before_applying(self) -> None:
