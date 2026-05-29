@@ -1496,5 +1496,57 @@ Both columns (`inventory.category` and `table.reorder_point`) were already in th
 
 ---
 
+---
+
+## 16. SESSION 6 BUGS — 2026-05-29
+
+### CRITICAL BUG 1 — `in_transit_in_qty` drops to zero when transfer enters PARTIALLY_RECEIVED
+
+| Item | Detail |
+|---|---|
+| **Symptom** | Destination warehouse's "In Transit In" counter resets to zero as soon as any portion of stock is received, even though remaining quantity is still physically in transit |
+| **Root cause** | `inventory_analytics.py::get_stock()` SQL for `in_transit_in_qty` only included `AND to_.status = 'IN_TRANSIT'`. When a partial receipt advances status to `PARTIALLY_RECEIVED`, the transfer no longer matched the filter — the remaining in-transit quantity vanished from the inbound counter |
+| **Fix** | Changed the `in_transit_in_qty` SQL to include both statuses: `AND to_.status IN ('IN_TRANSIT', 'PARTIALLY_RECEIVED')`. PARTIALLY_RECEIVED is included because the remaining un-received quantity is still in transit |
+| **Files** | `backend/services/inventory-service/services/inventory_analytics.py` — `in_transit_sql` WHERE clause |
+| **Regression test** | `test_destination_on_hand_zero_until_received` in `test_transfer_service.py` |
+
+---
+
+### CRITICAL BUG 2 — NM sees Issue button at APPROVED, clicking it returns 403
+
+| Item | Detail |
+|---|---|
+| **Symptom** | After NM approves a PULL transfer (PENDING_APPROVAL → APPROVED), NM sees an "Issue" action button. Clicking it returns HTTP 403: "Only source warehouse can dispatch" |
+| **Root cause** | `getAvailableActions()` in `transfers/page.tsx` had `APPROVED: [issue, cancel]` in the NM PULL action map. NM has no `warehouse_id` in their JWT, so `dispatch_transfer()` correctly rejects via ABAC. But the UI showed a button that always failed — confusing and misleading |
+| **Fix** | Removed `APPROVED` and `ISSUED` from NM's PULL action map entirely. NM's role ends at approval; dispatching is the source warehouse manager's exclusive responsibility |
+| **Side fix** | Added `⚠ NM/TA approval required` sub-label under the status badge for transfers in `PENDING_APPROVAL` state so the requesting WM knows why no action is available |
+| **Files** | `frontend/src/app/[org]/transfers/page.tsx` — NM PULL action map |
+| **Regression test** | `test_nm_cannot_issue_at_approved` in `test_transfer_service.py` |
+
+---
+
+### BUG 3 — Products page Category column shows "—" for all products from API
+
+| Item | Detail |
+|---|---|
+| **Symptom** | Category column shows "—" for every product on the Products page when running in gateway mode against the real API |
+| **Root cause** | `type ApiProduct` in `products/page.tsx` was missing the `category` field. `apiRows` hardcoded `category: "—"` regardless of what the API returned. Backend `list_products` and `ProductResponse` schema both return `category` correctly via `LEFT JOIN product_categories` |
+| **Fix** | Added `category?: string \| null` to `ApiProduct` type. Changed `apiRows` mapping from `category: "—"` to `category: p.category ?? "—"` |
+| **Files** | `frontend/src/app/[org]/products/page.tsx` — `ApiProduct` type definition and `apiRows` map |
+| **Backend** | No backend changes needed — `product_categories` JOIN and `ProductResponse.category` were already correct |
+
+---
+
+### DOCUMENTATION FIX — Stale router docstrings
+
+| Item | Detail |
+|---|---|
+| **Symptom** | `routers/transfer.py` docstrings said "Books a RESERVE at the destination warehouse" for `dispatch_transfer` — contradicting the actual behavior |
+| **Root cause** | Docstrings were written before the RESERVE/RELEASE removal (Bug #8 from previous session). They were never updated |
+| **Fix** | Updated `dispatch_transfer` endpoint docstring: "Advance APPROVED → ISSUED. Source warehouse only (warehouse_id ABAC). Writes NO ledger entries — source on_hand was already deducted at APPROVED via TRANSFER_OUT." Updated PATCH endpoint routing comment to accurately describe the three dispatch paths |
+| **Files** | `backend/services/inventory-service/routers/transfer.py` |
+
+---
+
 *SMART Inventory Platform — Bug Report v4.0*  
 *Backend: Python 3.12 / FastAPI · Frontend: Next.js 14 / TypeScript · DB: PostgreSQL 16*

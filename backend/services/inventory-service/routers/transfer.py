@@ -87,8 +87,8 @@ async def dispatch_transfer(
     db: AsyncSession = Depends(get_db_session),
 ) -> SuccessResponse[TransferOrderResponse]:
     """Advance APPROVED → ISSUED. Source warehouse only (warehouse_id ABAC).
-    Books a RESERVE at the destination warehouse so in_transit_in is visible.
-    Source on_hand was already deducted at APPROVED via TRANSFER_OUT — no second deduction here.
+    Writes NO ledger entries — source on_hand was already deducted at APPROVED via TRANSFER_OUT.
+    In-transit tracking uses transfer_orders.status in analytics queries, not ledger entries.
     """
     svc = InventoryService(db)
     result = await svc.dispatch_transfer(user, transfer_id)
@@ -121,7 +121,7 @@ async def transition_transfer(
 ) -> SuccessResponse[TransferOrderResponse]:
     """Generic state transition — delegates to specialized methods for ledger-writing states.
 
-    next_status == "ISSUED":   calls dispatch_transfer() — books RESERVE at destination.
+    next_status == "ISSUED":   calls dispatch_transfer() — ABAC check, no ledger entries.
     next_status == "RECEIVED": calls receive_transfer()  — books TRANSFER_IN at destination.
     All other statuses:        calls transition_transfer() — pure status update.
     """

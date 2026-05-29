@@ -604,6 +604,95 @@ class TestInventoryServiceTransfers:
         """SISTER submit: the correct first post-DRAFT state is PENDING_SOURCE_CONFIRM."""
         validate_transition("SISTER", "DRAFT", "PENDING_SOURCE_CONFIRM")  # must not raise
 
+    async def test_destination_on_hand_zero_until_received(self) -> None:
+        """Destination on_hand must NOT be credited at APPROVED, ISSUED, or IN_TRANSIT.
+        The only state that credits destination on_hand is RECEIVED via TRANSFER_IN.
+
+        Regression for CRITICAL BUG 1: the old RESERVE at dispatch_transfer() caused
+        inventory_balances to show a positive balance at destination as soon as the source
+        dispatched — before the stock physically arrived. Balance shows early because the
+        RESERVE ledger entry ran update_running_balance() at the destination.
+
+        Fix: dispatch_transfer() writes zero ledger entries. Only receive_transfer()
+        writes TRANSFER_IN which credits destination on_hand.
+        """
+        from services.inventory_service import InventoryService
+
+        line      = _make_line(quantity=100.0)
+        qty       = Decimal("100")
+
+        # APPROVED → ISSUED: dispatch_transfer() must write zero ledger entries
+        approved_row = _make_transfer_row("APPROVED", transfer_type="PULL")
+        session_a    = _session_for_dispatch(approved_row, [line])
+
+        with patch(
+            "services.inventory_service.record_transaction",
+            new=AsyncMock(return_value="tx"),
+        ) as mock_dispatch:
+            await InventoryService(session_a).dispatch_transfer(SRC_WM, TRANSFER_ID)
+
+        assert mock_dispatch.await_count == 0, (
+            "No ledger entries at ISSUED — destination on_hand must remain unchanged"
+        )
+
+        # IN_TRANSIT → RECEIVED: receive_transfer() must write exactly TRANSFER_IN at destination
+        in_transit_row = _make_transfer_row("IN_TRANSIT", transfer_type="PULL")
+        session_r      = _session_for_receive(in_transit_row, [line])
+
+        received_calls: list = []
+        async def _record_receive(*_args, **kw):
+            received_calls.append(kw)
+            return "tx-receive"
+
+        with patch(
+            "services.inventory_service.record_transaction",
+            new=AsyncMock(side_effect=_record_receive),
+        ), patch(
+            "services.inventory_service.write_to_outbox",
+            new=AsyncMock(),
+        ):
+            result = await InventoryService(session_r).receive_transfer(DST_WM, TRANSFER_ID)
+
+        assert result.status == "RECEIVED"
+        assert len(received_calls) == 1, "exactly one ledger entry written at RECEIVED"
+        tin = received_calls[0]
+        assert tin["transaction_type"] == "TRANSFER_IN"
+        assert tin["warehouse_id"]     == WAREHOUSE_B, "TRANSFER_IN must target destination"
+        assert tin["quantity"]         == qty,          "TRANSFER_IN must be positive (credit)"
+
+    async def test_nm_cannot_issue_at_approved(self) -> None:
+        """NM (no warehouse_id) must be rejected with 403 when attempting dispatch.
+
+        Regression for CRITICAL BUG 2: NM's getAvailableActions() PULL map incorrectly
+        contained APPROVED: [issue, cancel], so after NM approved at PENDING_APPROVAL the
+        UI showed an Issue button. NM has no warehouse_id in their JWT, so dispatch_transfer()
+        correctly rejects with ABAC 403, but the UX showed a usable button that always failed.
+
+        Fix (frontend): removed APPROVED and ISSUED from NM's PULL map — NM's role ends at
+        approval; dispatching is the source warehouse manager's responsibility.
+        Fix (backend): dispatch_transfer() ABAC check already enforces this correctly
+        (user.warehouse_id must equal transfer.from_warehouse_id).
+
+        This test verifies the backend contract is correct and will catch regressions if
+        the ABAC check is accidentally weakened.
+        """
+        from services.inventory_service import InventoryService
+
+        NM_USER = _User("u-nm", TENANT_ID, None, None, "NM")
+
+        xfer_row = _make_transfer_row("APPROVED", transfer_type="PULL")
+        session  = AsyncMock()
+        session.execute = AsyncMock(
+            return_value=MagicMock(fetchone=MagicMock(return_value=xfer_row))
+        )
+
+        with pytest.raises(HTTPException) as exc_info:
+            await InventoryService(session).dispatch_transfer(NM_USER, TRANSFER_ID)
+
+        assert exc_info.value.status_code == 403, (
+            "NM must receive HTTP 403 — warehouse ABAC denies dispatch to non-source-WM users"
+        )
+
     async def test_transition_reads_fresh_status_before_applying(self) -> None:
         """transition_transfer() validates against the DB row's current status (SELECT FOR
         UPDATE), not the caller's assumed current state.

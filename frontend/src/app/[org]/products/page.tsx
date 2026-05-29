@@ -11,7 +11,7 @@ import { AddProductPanel } from "@/components/features/inventory/AddProductPanel
 import { api } from "@/lib/api";
 import { t } from "@/lib/i18n";
 
-type ApiProduct = { id: string; sku: string; name: string; unit: string; pack_size: number; };
+type ApiProduct = { id: string; sku: string; name: string; unit: string; pack_size: number; category?: string | null; };
 type StockItem   = { product_id: string; current_stock: string; };
 type Row        = { id: string; sku: string; name: string; category: string; unit: string; packSize: string; balance: number; batchTracking: boolean; isNew: boolean; isActive: boolean; };
 
@@ -71,7 +71,7 @@ export default function ProductsPage() {
   }));
 
   const apiRows: Row[] = apiProducts.map((p) => ({
-    id: p.id, sku: p.sku, name: p.name, category: "—", unit: p.unit, packSize: String(p.pack_size),
+    id: p.id, sku: p.sku, name: p.name, category: p.category ?? "—", unit: p.unit, packSize: String(p.pack_size),
     balance: isGatewayMode ? (productBalanceMap.get(p.id) ?? 0) : 0,
     batchTracking: false, isNew: !isGatewayMode, isActive: true,
   }));

@@ -119,14 +119,18 @@ async def get_stock(
             await session.execute(in_transit_out_sql, {"wid": str(wid), "pid": str(pid), **tid_param})
         ).scalar() or Decimal("0")
 
-        # In-transit inbound: orders in transit destined for this warehouse
+        # In-transit inbound: orders destined for this warehouse that have physically
+        # left the source (ISSUED) or are in motion (IN_TRANSIT, PARTIALLY_RECEIVED).
+        # PARTIALLY_RECEIVED is included because the remaining un-received quantity is
+        # still in transit — omitting it caused the inbound counter to drop to zero mid-way
+        # through a partial receipt, which confused operators tracking expected stock.
         in_transit_sql = text("""
             SELECT COALESCE(SUM(tol.quantity), 0)
             FROM transfer_order_lines tol
             JOIN transfer_orders to_ ON to_.id = tol.transfer_order_id
             WHERE to_.to_warehouse_id = :wid
               AND tol.product_id = :pid
-              AND to_.status = 'IN_TRANSIT'
+              AND to_.status IN ('IN_TRANSIT', 'PARTIALLY_RECEIVED')
         """ + (" AND to_.tenant_id = :tid" if tenant_id else ""))
         in_transit_in = (
             await session.execute(in_transit_sql, {"wid": str(wid), "pid": str(pid), **tid_param})

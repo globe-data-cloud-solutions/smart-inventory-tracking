@@ -369,8 +369,11 @@ function getAvailableActions(
         DRAFT:            [review, cancel],
         PENDING_REVIEW:   [toApproval, reject, cancel],
         PENDING_APPROVAL: [approve, reject, cancel],
-        APPROVED:         [issue, cancel],
-        ISSUED:           [dispatch],
+        // APPROVED and ISSUED are intentionally absent for NM on PULL transfers:
+        // only the source warehouse manager may dispatch (backend enforces via
+        // ABAC in dispatch_transfer()). NM's role ends at approval; issuing stock
+        // is the source WM's responsibility. Showing Issue here caused "Only source
+        // warehouse can dispatch" 403 errors when NM clicked the button (BUG).
       };
       return map[status] ?? [];
     }
@@ -859,6 +862,11 @@ export default function TransfersPage() {
                       <span className={`text-[11px] font-bold px-2 py-0.5 rounded whitespace-nowrap ${sCls}`}>
                         {txn.status.replace(/_/g, " ")}
                       </span>
+                      {txn.status === "PENDING_APPROVAL" && (
+                        <span className="block text-[9px] font-semibold text-blue-700 mt-0.5 whitespace-nowrap" title="This transfer requires higher-level approval (NM or TA)">
+                          ⚠ NM/TA approval required
+                        </span>
+                      )}
                     </td>
                     <td className="px-3 py-2.5 text-gray-400 text-xs whitespace-nowrap">
                       {new Date(txn.created_at).toLocaleDateString()}
