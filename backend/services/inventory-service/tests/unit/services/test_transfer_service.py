@@ -840,3 +840,133 @@ class TestInventoryServiceTransfers:
 
         assert exc_info.value.status_code == 422
         assert exc_info.value.detail["code"] == "INVALID_STATE_TRANSITION"
+
+    # ── Session 10 regression tests — self-approval, Issue/Dispatch, RM receive ─
+
+    async def test_requester_cannot_approve_own_transfer(self) -> None:
+        """An RM who created a transfer must be blocked from approving it (BUG 1).
+
+        Business rule: You cannot approve a transfer you created.
+        Fix: transition_transfer() APPROVED block compares created_by to user.user_id
+        and raises 403 CANNOT_APPROVE_OWN_TRANSFER before the authority check.
+        """
+        from services.inventory_service import InventoryService
+
+        RM_CREATOR_ID = "u-rm-creator-001"
+        RM_USER = _User(RM_CREATOR_ID, TENANT_ID, None, None, "RM")
+
+        line     = _make_line(quantity=300.0)
+        xfer_row = _make_transfer_row("PENDING_APPROVAL", transfer_type="PULL")
+        xfer_row.created_by               = RM_CREATOR_ID  # RM is the creator
+        xfer_row.created_by_authority_level = 2             # RM authority level
+
+        session = _session_for_dispatch(xfer_row, [line])
+
+        with patch("services.inventory_service.resolve_approval", new=AsyncMock()), \
+             patch("services.inventory_service.record_transaction", new=AsyncMock()), \
+             pytest.raises(HTTPException) as exc_info:
+            await InventoryService(session).transition_transfer(RM_USER, TRANSFER_ID, "APPROVED")
+
+        assert exc_info.value.status_code == 403
+        assert exc_info.value.detail["code"] == "CANNOT_APPROVE_OWN_TRANSFER"
+
+    async def test_rm_escalates_to_nm_approval(self) -> None:
+        """resolve_approval() escalates when requester_authority_level == required_level.
+
+        RM (authority_level=2) creates a PULL where the band requires RM (level 2).
+        Escalation bumps required to max(1, 2-1)=1 (NM/TA), auto_approve is suppressed,
+        and the reason string mentions 'Escalated'.
+        """
+        from services.approval_service import resolve_approval
+
+        # Mock DB: threshold query returns RM-level rule (authority_level=2)
+        threshold_row = MagicMock()
+        threshold_row.__getitem__ = MagicMock(side_effect=lambda i: ["RM", 2, False, None][i])
+        db = AsyncMock()
+        db.execute = AsyncMock(
+            return_value=MagicMock(fetchone=MagicMock(return_value=threshold_row))
+        )
+
+        decision = await resolve_approval(
+            db,
+            TENANT_ID,
+            "PULL",
+            Decimal("500"),
+            requester_authority_level=2,  # RM is the requester
+        )
+
+        assert decision.required_authority_level == 1, (
+            "RM-required transfer created by RM must escalate to level 1 (NM/TA)"
+        )
+        assert decision.is_auto_approved is False, "auto_approve must be suppressed after escalation"
+        assert "Escalated" in decision.reason
+
+    async def test_issue_and_dispatch_separate_steps(self) -> None:
+        """PUSH state machine enforces Issue and Dispatch as two distinct clicks (BUG 2).
+
+        APPROVED → ISSUED  (Issue)    — valid
+        ISSUED   → IN_TRANSIT (Dispatch) — valid
+        APPROVED → IN_TRANSIT           — INVALID: cannot skip the ISSUED step
+
+        Root cause: RM PUSH action map was missing ISSUED: [dispatch], leaving RM
+        stuck at ISSUED with no buttons after clicking Issue.
+        """
+        # Valid two-step sequence
+        validate_transition("PUSH", "APPROVED",  "ISSUED")      # Issue click
+        validate_transition("PUSH", "ISSUED",    "IN_TRANSIT")  # Dispatch click
+
+        # Skipping ISSUED is not allowed
+        with pytest.raises(InvalidStateTransitionError):
+            validate_transition("PUSH", "APPROVED", "IN_TRANSIT")
+
+    async def test_rm_sees_receive_at_in_transit(self) -> None:
+        """RM who created a PULL (no warehouse_id) can receive it at IN_TRANSIT (BUG 3).
+
+        Scenario: RM submits a PULL request from Main WH to their region.
+        The RM has no specific warehouse_id in their JWT (region-level manager).
+        After the transfer is dispatched and reaches IN_TRANSIT, the RM must be
+        able to receive it — they are the logical destination manager.
+
+        Fix: receive_transfer() allows the creator (created_by == user.user_id)
+        when the caller has no warehouse_id and is not a tenant-level role.
+        """
+        from services.inventory_service import InventoryService
+
+        RM_CREATOR_ID = "u-rm-no-wh-002"
+        RM_USER = _User(RM_CREATOR_ID, TENANT_ID, None, None, "RM")  # no warehouse_id
+
+        line     = _make_line(quantity=80.0)
+        xfer_row = _make_transfer_row("IN_TRANSIT", transfer_type="PULL",
+                                      from_wh=WAREHOUSE_A, to_wh=WAREHOUSE_B)
+        xfer_row.created_by = RM_CREATOR_ID  # RM is the creator
+
+        session = _session_for_receive(xfer_row, [line])
+
+        with patch(
+            "services.inventory_service.record_transaction",
+            new=AsyncMock(return_value="tx-rm-receive"),
+        ) as mock_record, patch(
+            "services.inventory_service.write_to_outbox",
+            new=AsyncMock(),
+        ):
+            result = await InventoryService(session).receive_transfer(RM_USER, TRANSFER_ID)
+
+        assert result.status == "RECEIVED", (
+            "RM who created the PULL must be able to receive it even without warehouse_id"
+        )
+        assert mock_record.await_count == 1, "TRANSFER_IN must be written at destination"
+
+        # An RM with a different user_id must still be denied
+        OTHER_RM = _User("u-rm-other", TENANT_ID, None, None, "RM")
+        xfer_row2 = _make_transfer_row("IN_TRANSIT", transfer_type="PULL")
+        xfer_row2.created_by = RM_CREATOR_ID  # original creator, not OTHER_RM
+
+        session2 = AsyncMock()
+        session2.execute = AsyncMock(
+            return_value=MagicMock(fetchone=MagicMock(return_value=xfer_row2))
+        )
+        with pytest.raises(HTTPException) as exc_info:
+            await InventoryService(session2).receive_transfer(OTHER_RM, TRANSFER_ID)
+        assert exc_info.value.status_code == 403, (
+            "RM who did not create the transfer must be denied"
+        )

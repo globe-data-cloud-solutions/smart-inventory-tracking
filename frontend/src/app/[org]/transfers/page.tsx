@@ -83,6 +83,7 @@ interface ApiTransfer {
   quantity: number;
   notes: string;
   status: TransferStatus;
+  created_by?: string;
   created_at: string;
 }
 
@@ -101,6 +102,7 @@ function normalizeTransfer(raw: RawApiTransfer): ApiTransfer {
     quantity:           parseFloat(line?.quantity ?? "0"),
     notes:              "",
     status:             raw.status,
+    created_by:         raw.created_by,
     created_at:         raw.created_at,
   };
 }
@@ -228,6 +230,8 @@ function getAvailableActions(
   fromWH?: string,
   toWH?: string,
   _quantity?: number,   // reserved for threshold routing — see JSDoc above
+  userId?: string,
+  createdBy?: string,
 ): Action[] {
   const approve:    Action = { next: "APPROVED",               label: "Approve",              color: "#059669" };
   const reject:     Action = { next: "REJECTED",               label: "Reject",               color: "#991B1B" };
@@ -366,11 +370,26 @@ function getAvailableActions(
   // RM
   if (role === "RM") {
     if (type === "PULL") {
+      const uWH = userWH?.toLowerCase();
+      // RM who created the PULL (no warehouse_id) is the logical destination manager.
+      const isDestRM = (!!uWH && uWH === toWH?.toLowerCase()) ||
+                       (!uWH && !!userId && userId === createdBy);
+      const isSrcRM  = !!uWH && uWH === fromWH?.toLowerCase();
+
       const map: Partial<Record<TransferStatus, Action[]>> = {
         DRAFT:            [review, cancel],
         PENDING_REVIEW:   [toApproval, reject, cancel],
         PENDING_APPROVAL: [approve, reject, cancel],
       };
+      if (isSrcRM) {
+        map.APPROVED = [issue, cancel];
+        map.ISSUED   = [dispatch];
+      }
+      if (isDestRM) {
+        map.IN_TRANSIT         = [partRecv, markRecv];
+        map.PARTIALLY_RECEIVED = [markRecv];
+        map.RECEIVED           = [complete];
+      }
       return map[status] ?? [];
     }
     if (type === "PUSH") {
@@ -378,6 +397,7 @@ function getAvailableActions(
         DRAFT:            [toApproval, cancel],
         PENDING_APPROVAL: [approve, reject, cancel],
         APPROVED:         [issue, cancel],
+        ISSUED:           [dispatch],   // BUG 2 fix: Issue and Dispatch are separate clicks
       };
       return map[status] ?? [];
     }
@@ -992,7 +1012,7 @@ export default function TransfersPage() {
               {!transfersLoading && visibleTransfers.map((txn, idx) => {
                 const sCls = STATUS_CLASS[txn.status] ?? "bg-gray-100 text-gray-500";
                 const tb   = TYPE_CLASS[txn.transfer_type] ?? { cls: "bg-gray-100 text-gray-500", label: txn.transfer_type };
-                const acts    = getAvailableActions(user.role, txn.transfer_type, txn.status, user.warehouseId, txn.from_warehouse_id, txn.to_warehouse_id, txn.quantity);
+                const acts    = getAvailableActions(user.role, txn.transfer_type, txn.status, user.warehouseId, txn.from_warehouse_id, txn.to_warehouse_id, txn.quantity, user.id, txn.created_by);
                 const waitMsg = acts.length === 0 ? getWaitingMessage(txn.status, txn.from_warehouse_name, txn.to_warehouse_name) : null;
                 const busy    = transitioning === txn.id;
                 return (

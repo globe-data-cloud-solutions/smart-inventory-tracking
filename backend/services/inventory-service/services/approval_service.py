@@ -193,6 +193,7 @@ async def resolve_approval(
     quantity: Decimal,
     product_id: Optional[str] = None,
     simple_mode: bool = True,
+    requester_authority_level: Optional[int] = None,
 ) -> ApprovalDecision:
     """3-step approval resolution for a transfer or adjustment.
 
@@ -201,11 +202,15 @@ async def resolve_approval(
             When simple_mode=False and no custom rule exists for the type, falls back
             to PULL rules before using hardcoded org-type defaults.
     Step 3: required_level = min(product_min, threshold_level) — lower = more restrictive.
+    Step 4: escalation — if the required level >= requester_authority_level (same role or
+            lower authority), bump up by one level so requesters cannot approve their own
+            transfers.  auto_approve is suppressed when escalation fires.
 
     auto_approve is True only when:
       - the band is marked auto_approve=True AND
       - no product-level minimum override is in effect AND
-      - the band's authority level is used unchanged.
+      - the band's authority level is used unchanged AND
+      - no escalation was applied.
     """
     # Step 1: per-product authority floor
     product_min: Optional[int] = None
@@ -244,7 +249,22 @@ async def resolve_approval(
         and required_level == threshold_level
     )
 
-    if product_min is not None and product_min < threshold_level:
+    # Step 4: escalation — requester cannot approve their own transfer.
+    # If the resolved level is the same or lower authority than the requester
+    # (same number or larger number), bump up one level (smaller number = higher auth).
+    escalated = False
+    if requester_authority_level is not None and required_level >= requester_authority_level:
+        required_level = max(1, requester_authority_level - 1)
+        is_auto = False
+        escalated = True
+
+    if escalated:
+        role_display = _ROLE_DISPLAY.get(required_level, threshold.approver_role)
+        reason = (
+            f"Escalated: requester authority (level {requester_authority_level}) cannot "
+            f"self-approve. Now requires {role_display} (level {required_level})."
+        )
+    elif product_min is not None and product_min < threshold_level:
         reason = (
             f"Product authority floor (level {product_min}) overrides "
             f"quantity band (level {threshold_level}) for qty={quantity}."

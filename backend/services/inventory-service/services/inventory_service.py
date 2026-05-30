@@ -247,8 +247,9 @@ class InventoryService:
         await self.db.execute(
             text(
                 "INSERT INTO transfer_orders "
-                "(id, tenant_id, from_warehouse_id, to_warehouse_id, transfer_type, status, created_by) "
-                "VALUES (:id, :tid, :from_wid, :to_wid, :ttype, 'DRAFT', :uid)"
+                "(id, tenant_id, from_warehouse_id, to_warehouse_id, transfer_type, status, "
+                "created_by, created_by_authority_level) "
+                "VALUES (:id, :tid, :from_wid, :to_wid, :ttype, 'DRAFT', :uid, :creator_level)"
             ),
             {
                 "id": str(transfer_id),
@@ -257,6 +258,7 @@ class InventoryService:
                 "to_wid": str(body.to_warehouse_id),
                 "ttype": body.transfer_type,
                 "uid": str(user.user_id),
+                "creator_level": ROLE_AUTHORITY_LEVEL.get(getattr(user, "role", "WM"), 4),
             },
         )
 
@@ -318,10 +320,29 @@ class InventoryService:
             )).fetchall()
 
             total_qty = sum(Decimal(str(l.quantity)) for l in lines)
-            decision = await resolve_approval(
-                self.db, str(user.tenant_id), transfer_type, total_qty
-            )
+
+            # Self-approval guard: fetch the creator's authority level stored at creation.
+            creator_level: int | None = getattr(row, "created_by_authority_level", None)
             caller_level = ROLE_AUTHORITY_LEVEL.get(getattr(user, "role", ""), 5)
+
+            # Belt-and-suspenders: if the caller IS the creator, reject immediately.
+            if (
+                getattr(row, "created_by", None) is not None
+                and str(getattr(row, "created_by", "")) == str(user.user_id)
+            ):
+                from fastapi import HTTPException
+                raise HTTPException(
+                    status_code=403,
+                    detail={
+                        "code":    "CANNOT_APPROVE_OWN_TRANSFER",
+                        "message": "You cannot approve a transfer you created.",
+                    },
+                )
+
+            decision = await resolve_approval(
+                self.db, str(user.tenant_id), transfer_type, total_qty,
+                requester_authority_level=creator_level,
+            )
             if caller_level > decision.required_authority_level:
                 from fastapi import HTTPException
                 raise HTTPException(
@@ -496,9 +517,21 @@ class InventoryService:
             from fastapi import HTTPException
             raise HTTPException(status_code=404, detail="Transfer not found")
 
-        # ABAC: caller must be the destination warehouse — no warehouse_id means
-        # middle-layer manager (RM/NM/LM) who must be denied regardless of role.
-        if not user.warehouse_id or str(user.warehouse_id) != str(row.to_warehouse_id):
+        # ABAC: caller must be the destination warehouse.
+        # Three cases are permitted:
+        #   (a) user.warehouse_id matches to_warehouse_id (facility-bound WM/RM),
+        #   (b) tenant-level role without a warehouse assignment (NM/TA/SA),
+        #   (c) the user created this transfer (RM who submitted the PULL without a
+        #       specific warehouse assignment — they are the logical destination manager).
+        _TENANT_LEVEL_ROLES = {"NM", "TA", "SA"}
+        user_role = getattr(user, "role", None)
+        if user.warehouse_id:
+            can_receive = str(user.warehouse_id).lower() == str(row.to_warehouse_id).lower()
+        elif user_role in _TENANT_LEVEL_ROLES:
+            can_receive = True
+        else:
+            can_receive = str(getattr(user, "user_id", "")) == str(getattr(row, "created_by", "NONE"))
+        if not can_receive:
             from fastapi import HTTPException
             raise HTTPException(
                 status_code=403,

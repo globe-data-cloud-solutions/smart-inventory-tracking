@@ -159,7 +159,10 @@ async def get_approval_info(
     from services.approval_service import resolve_approval, ROLE_AUTHORITY_LEVEL
 
     transfer_row = (await db.execute(
-        text("SELECT transfer_type FROM transfer_orders WHERE id = :id AND tenant_id = :tid"),
+        text(
+            "SELECT transfer_type, created_by, created_by_authority_level "
+            "FROM transfer_orders WHERE id = :id AND tenant_id = :tid"
+        ),
         {"id": str(transfer_id), "tid": str(user.tenant_id)},
     )).fetchone()
     if not transfer_row:
@@ -175,12 +178,24 @@ async def get_approval_info(
 
     total_qty = sum(Decimal(str(l.quantity)) for l in lines) if lines else Decimal("0")
 
+    creator_level: int | None = (
+        int(transfer_row.created_by_authority_level)
+        if transfer_row.created_by_authority_level is not None
+        else None
+    )
+
     decision = await resolve_approval(
-        db, str(user.tenant_id), transfer_row.transfer_type, total_qty
+        db, str(user.tenant_id), transfer_row.transfer_type, total_qty,
+        requester_authority_level=creator_level,
     )
 
     caller_level = ROLE_AUTHORITY_LEVEL.get(getattr(user, "role", ""), 5)
-    can_approve  = caller_level <= decision.required_authority_level
+    # A user cannot approve a transfer they created, regardless of authority level.
+    is_own_transfer = (
+        transfer_row.created_by is not None
+        and str(transfer_row.created_by) == str(user.user_id)
+    )
+    can_approve = (not is_own_transfer) and (caller_level <= decision.required_authority_level)
 
     return SuccessResponse(data=ApprovalInfoResponse(
         transfer_id=transfer_id,

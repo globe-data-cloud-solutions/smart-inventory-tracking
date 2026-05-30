@@ -1639,5 +1639,67 @@ All changes in this session were new features, not bug fixes.
 
 ---
 
+## Session 10 — Transfer Approval Flow (2026-05-30)
+
+**Business rule enforced:** You cannot approve a transfer you created. If the required approver is the same role as the requester, escalate one level up.
+
+Three bugs fixed.
+
+### Bug 1 — Requester can approve own transfer
+
+**Symptom:** RM creates a PULL transfer → RM sees the Approve button and can approve it.
+
+**Root cause:**
+- `transition_transfer()` APPROVED block only checked `caller_level > decision.required_authority_level` — it never verified whether the caller was the transfer creator.
+- `resolve_approval()` had no concept of the requester's authority level, so no escalation occurred.
+
+| Change | File |
+|---|---|
+| Migration 030: `ALTER TABLE transfer_orders ADD COLUMN created_by_authority_level INTEGER DEFAULT 4` | `backend/migrations/versions/030_add_created_by_authority_level.py` |
+| `create_transfer()`: store `ROLE_AUTHORITY_LEVEL[user.role]` in `created_by_authority_level` at INSERT | `backend/services/inventory-service/services/inventory_service.py` |
+| `resolve_approval()`: add `requester_authority_level` param; escalate `required_level = max(1, requester_authority_level - 1)` when `required_level >= requester_authority_level` | `backend/services/inventory-service/services/approval_service.py` |
+| `transition_transfer()` APPROVED: fetch `created_by_authority_level` from row; raise 403 `CANNOT_APPROVE_OWN_TRANSFER` if `created_by == user.user_id`; pass `requester_authority_level` to `resolve_approval()` | `backend/services/inventory-service/services/inventory_service.py` |
+| `get_approval_info()`: fetch `created_by` + `created_by_authority_level`; pass to `resolve_approval()`; set `can_approve = False` if `is_own_transfer` | `backend/services/inventory-service/routers/transfer.py` |
+
+### Bug 2 — Issue and Dispatch combined/skipped for RM PUSH
+
+**Symptom:** RM clicks Issue at APPROVED → transfer moves to ISSUED → RM sees no buttons → transfer stuck at ISSUED forever.
+
+**Root cause:** RM PUSH action map in `getAvailableActions()` was missing the `ISSUED: [dispatch]` entry.
+
+| Change | File |
+|---|---|
+| Add `ISSUED: [dispatch]` to RM PUSH map | `frontend/src/app/[org]/transfers/page.tsx` |
+
+### Bug 3 — RM sees no action buttons at IN_TRANSIT (can't receive)
+
+**Symptom:** RM creates a PULL from Main WH. Transfer is dispatched and reaches IN_TRANSIT. RM sees no buttons — cannot receive the transfer they requested.
+
+**Root cause:**
+- RM PULL action map had no `IN_TRANSIT`, `PARTIALLY_RECEIVED`, or `RECEIVED` entries.
+- `receive_transfer()` ABAC check required `user.warehouse_id` to match `to_warehouse_id` — an RM without a specific warehouse assignment was always denied.
+
+| Change | File |
+|---|---|
+| Add `userId` + `createdBy` parameters to `getAvailableActions()` | `frontend/src/app/[org]/transfers/page.tsx` |
+| Add `isDestRM`/`isSrcRM` flags to RM PULL block; `isDestRM` uses creator fallback for RM without warehouse_id | `frontend/src/app/[org]/transfers/page.tsx` |
+| Add `IN_TRANSIT`, `PARTIALLY_RECEIVED`, `RECEIVED` entries gated on `isDestRM`; `APPROVED`, `ISSUED` entries gated on `isSrcRM` | `frontend/src/app/[org]/transfers/page.tsx` |
+| Add `created_by?: string` to `ApiTransfer`; propagate from `normalizeTransfer()` | `frontend/src/app/[org]/transfers/page.tsx` |
+| Update call site to pass `user.id` and `txn.created_by` | `frontend/src/app/[org]/transfers/page.tsx` |
+| `receive_transfer()`: allow creator (RM with no warehouse_id whose `user_id == created_by`) to receive | `backend/services/inventory-service/services/inventory_service.py` |
+
+### Regression tests added (Session 10)
+
+| Test | File |
+|---|---|
+| `test_requester_cannot_approve_own_transfer` | `test_transfer_service.py` |
+| `test_rm_escalates_to_nm_approval` | `test_transfer_service.py` |
+| `test_issue_and_dispatch_separate_steps` | `test_transfer_service.py` |
+| `test_rm_sees_receive_at_in_transit` | `test_transfer_service.py` |
+
+**Final state:** 283 unit tests passing, 0 failing · TypeScript: 0 errors
+
+---
+
 *SMART Inventory Platform — Bug Report v4.0*  
 *Backend: Python 3.12 / FastAPI · Frontend: Next.js 14 / TypeScript · DB: PostgreSQL 16*
