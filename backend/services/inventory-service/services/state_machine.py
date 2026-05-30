@@ -36,6 +36,7 @@ PUSH_TRANSITIONS: dict[str, list[str]] = {
     "PARTIALLY_RECEIVED": ["RECEIVED"],
     "RECEIVED":           ["COMPLETED"],
     "COMPLETED":          [],
+    "REJECTED":           [],
     "CANCELLED":          [],
 }
 
@@ -44,7 +45,7 @@ PUSH_TRANSITIONS: dict[str, list[str]] = {
 SISTER_TRANSITIONS: dict[str, list[str]] = {
     "DRAFT":                  ["PENDING_SOURCE_CONFIRM", "CANCELLED"],
     "PENDING_SOURCE_CONFIRM": ["PENDING_DEST_CONFIRM", "CANCELLED"],
-    "PENDING_DEST_CONFIRM":   ["PENDING_APPROVAL", "REJECTED"],
+    "PENDING_DEST_CONFIRM":   ["PENDING_APPROVAL", "REJECTED", "CANCELLED"],
     "PENDING_APPROVAL":       ["APPROVED", "REJECTED", "CANCELLED"],
     "APPROVED":               ["ISSUED"],
     "ISSUED":                 ["IN_TRANSIT"],

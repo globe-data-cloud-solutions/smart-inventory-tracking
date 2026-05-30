@@ -73,6 +73,26 @@ async def submit_transfer(
     return SuccessResponse(data=result)
 
 
+@router.post("/{transfer_id}/review", response_model=SuccessResponse[TransferOrderResponse])
+@require_permission(PERMISSIONS.TRANSFER_APPROVE)
+async def review_transfer(
+    transfer_id: UUID,
+    user=Depends(get_current_user),
+    db: AsyncSession = Depends(get_db_session),
+) -> SuccessResponse[TransferOrderResponse]:
+    """Advance PENDING_REVIEW → PENDING_APPROVAL for PULL transfers.
+
+    Called by the reviewer (RM or NM) after inspecting a PULL request before
+    it enters the formal approval queue.  This transition is only valid for PULL
+    — PUSH and SISTER skip PENDING_REVIEW entirely.
+    The state machine enforces the type constraint: calling this on a PUSH or SISTER
+    transfer raises HTTP 422 INVALID_STATE_TRANSITION.
+    """
+    svc = InventoryService(db)
+    result = await svc.transition_transfer(user, transfer_id, "PENDING_APPROVAL")
+    return SuccessResponse(data=result)
+
+
 @router.post("/{transfer_id}/approve", response_model=SuccessResponse[TransferOrderResponse])
 @require_permission(PERMISSIONS.TRANSFER_APPROVE)
 async def approve_transfer(

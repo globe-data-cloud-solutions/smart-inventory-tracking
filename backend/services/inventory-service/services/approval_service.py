@@ -244,10 +244,19 @@ async def resolve_approval(
 
     if escalated:
         role_display = _ROLE_DISPLAY.get(required_level, threshold.approver_role)
-        reason = (
-            f"Escalated: requester authority (level {requester_authority_level}) cannot "
-            f"self-approve. Now requires {role_display} (level {required_level})."
-        )
+        if required_level == requester_authority_level:
+            # Ceiling: requester is already at the highest authority (level 1).
+            # Escalation fired but the level could not increase further.
+            # A DIFFERENT user at the same level must approve.
+            reason = (
+                f"Any {role_display} approval must come from a different user "
+                f"— not the creator (highest operational authority, level {requester_authority_level})."
+            )
+        else:
+            reason = (
+                f"Escalated: requester authority (level {requester_authority_level}) cannot "
+                f"self-approve. Now requires {role_display} (level {required_level})."
+            )
     elif product_min is not None and product_min < threshold_level:
         reason = (
             f"Product authority floor (level {product_min}) overrides "

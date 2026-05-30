@@ -95,6 +95,40 @@ class TestIMTSStateMachines:
                 with pytest.raises(InvalidStateTransitionError):
                     validate_transition(transfer_type, "COMPLETED", next_state)
 
+    def test_push_rejected_terminal_state(self) -> None:
+        """PUSH can transition to REJECTED from PENDING_APPROVAL.
+        Once REJECTED, no further transition is allowed — REJECTED is terminal.
+
+        Fix 5A: PUSH_TRANSITIONS now explicitly declares 'REJECTED': [] so
+        the terminal state is unambiguous (not silently inferred via dict.get default).
+        """
+        # REJECTED is reachable from PENDING_APPROVAL
+        validate_transition("PUSH", "PENDING_APPROVAL", "REJECTED")  # must not raise
+
+        # REJECTED is a hard terminal — nothing is permitted from it
+        for next_state in ("APPROVED", "CANCELLED", "DRAFT", "PENDING_APPROVAL",
+                           "ISSUED", "IN_TRANSIT", "COMPLETED"):
+            with pytest.raises(InvalidStateTransitionError,
+                               match=r"PUSH.*REJECTED"):
+                validate_transition("PUSH", "REJECTED", next_state)
+
+    def test_sister_cancelled_from_dest_confirm(self) -> None:
+        """Destination WM can CANCEL a SISTER transfer from PENDING_DEST_CONFIRM.
+
+        Fix 5B: previously only REJECTED was available at this state, meaning
+        an abandonment would pollute reports as a rejection.  CANCELLED is now
+        explicitly permitted as a semantically distinct outcome.
+        """
+        # Destination WM can abandon (CANCELLED) or refuse (REJECTED)
+        validate_transition("SISTER", "PENDING_DEST_CONFIRM", "CANCELLED")   # must not raise
+        validate_transition("SISTER", "PENDING_DEST_CONFIRM", "REJECTED")    # already worked
+
+        # CANCELLED is a hard terminal for SISTER
+        for next_state in ("DRAFT", "PENDING_APPROVAL", "APPROVED", "ISSUED"):
+            with pytest.raises(InvalidStateTransitionError,
+                               match=r"SISTER.*CANCELLED"):
+                validate_transition("SISTER", "CANCELLED", next_state)
+
 
 # ── InventoryService integration tests (tests 5–7) ───────────────────────────
 
@@ -1274,3 +1308,48 @@ class TestGap4SimpleModeWiring:
         assert captured_resolve_kwargs.get("simple_mode") is False, (
             "resolve_approval must receive simple_mode=False from tenant settings"
         )
+
+    async def test_review_endpoint_transitions_correctly(self) -> None:
+        """POST /transfers/{id}/review advances PENDING_REVIEW → PENDING_APPROVAL.
+
+        Fix 5C: the dedicated /review endpoint calls
+        transition_transfer(user, transfer_id, 'PENDING_APPROVAL').  This test
+        verifies the service correctly handles that transition and that the state
+        machine enforces the PULL-only constraint (PUSH has no PENDING_REVIEW state).
+        """
+        from services.inventory_service import InventoryService
+        from fastapi import HTTPException
+
+        # ── PULL: PENDING_REVIEW → PENDING_APPROVAL is valid ────────────────
+        pull_row = _make_transfer_row("PENDING_REVIEW", transfer_type="PULL")
+        session  = AsyncMock()
+        session.execute = AsyncMock(side_effect=[
+            MagicMock(fetchone=MagicMock(return_value=pull_row)),  # SELECT transfer
+            MagicMock(),                                            # UPDATE status
+        ])
+
+        result = await InventoryService(session).transition_transfer(
+            SRC_WM, TRANSFER_ID, "PENDING_APPROVAL"
+        )
+        assert result.status == "PENDING_APPROVAL", (
+            "review transition must advance PULL to PENDING_APPROVAL"
+        )
+
+        # State machine sanity: PENDING_REVIEW → PENDING_APPROVAL is valid for PULL
+        validate_transition("PULL", "PENDING_REVIEW", "PENDING_APPROVAL")  # must not raise
+
+        # ── PUSH: no PENDING_REVIEW state — must raise 422 ──────────────────
+        push_row = _make_transfer_row("PENDING_REVIEW", transfer_type="PUSH")
+        session2 = AsyncMock()
+        session2.execute = AsyncMock(
+            return_value=MagicMock(fetchone=MagicMock(return_value=push_row))
+        )
+
+        with pytest.raises(HTTPException) as exc_info:
+            await InventoryService(session2).transition_transfer(
+                SRC_WM, TRANSFER_ID, "PENDING_APPROVAL"
+            )
+        assert exc_info.value.status_code == 422, (
+            "PUSH transfers have no PENDING_REVIEW state — review must raise 422"
+        )
+        assert exc_info.value.detail["code"] == "INVALID_STATE_TRANSITION"
