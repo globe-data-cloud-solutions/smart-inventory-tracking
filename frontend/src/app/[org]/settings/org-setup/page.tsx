@@ -634,6 +634,7 @@ interface SavedApprovalRule {
   min_quantity: number | null;
   max_quantity: number | null;
   approver_role: string;
+  authority_level?: number;
   approval_order: number;
   auto_approve?: boolean;
   notify_levels?: number[];
@@ -714,6 +715,7 @@ function tiersToRules(tiers: ApprovalTier[], txType: string): SavedApprovalRule[
       min_quantity: prev,
       max_quantity: tier.max_quantity,
       approver_role: tier.approver_role,
+      authority_level: authLevel,
       approval_order: idx + 1,
       auto_approve: tier.auto_approve,
       notify_levels: notifyLevels,
@@ -1045,7 +1047,7 @@ function ApprovalRulesTab({ tenantId }: { tenantId: string }) {
       if (err) { setGapError(err); return; }
     }
     setGapError(null);
-    saveMutation.mutate(buildRules());
+    saveMutation.mutate({ rules: buildRules(), simple_mode: simpleMode });
   }
 
   function copyToAll() {
@@ -1060,8 +1062,8 @@ function ApprovalRulesTab({ tenantId }: { tenantId: string }) {
   }
 
   const saveMutation = useMutation({
-    mutationFn: (rules: SavedApprovalRule[]) =>
-      api.put(`/api/v1/tenants/${tenantId}/approval-rules`, { rules }),
+    mutationFn: ({ rules, simple_mode }: { rules: SavedApprovalRule[]; simple_mode: boolean }) =>
+      api.put(`/api/v1/tenants/${tenantId}/approval-rules`, { simple_mode, rules }),
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: ["approval-rules", tenantId] });
       setSaveOk(true);

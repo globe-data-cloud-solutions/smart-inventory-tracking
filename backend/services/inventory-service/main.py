@@ -5,7 +5,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from shared.utils.responses import ErrorResponse, ErrorDetail
-from routers import adjust, analytics, count, issue, receive, transfer, transfer_requests
+from routers import adjust, alerts, analytics, count, issue, receive, transfer, transfer_requests
 
 
 @asynccontextmanager
@@ -26,6 +26,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+app.include_router(alerts.router,             prefix="/api/v1/inventory/alerts",           tags=["alerts"])
 app.include_router(receive.router,            prefix="/api/v1/inventory/receive",          tags=["receive"])
 app.include_router(issue.router,              prefix="/api/v1/inventory/issues",            tags=["issue"])
 app.include_router(transfer.router,           prefix="/api/v1/inventory/transfers",         tags=["transfer"])

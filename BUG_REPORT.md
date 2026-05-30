@@ -1604,5 +1604,40 @@ All changes in this session were new features, not bug fixes.
 
 ---
 
+## 19. SESSION 9 — 2026-05-29
+
+### Bug 1 — 422 on approval-rules save (schema mismatch)
+
+**Root cause:** `ApprovalRuleItem` backend schema was missing `authority_level` field; `ApprovalRulesBody` was missing `simple_mode`. JSONB was stored as a bare array (interim format from §18 fix) — now stored as `{"simple_mode": bool, "rules": [...]}` with full backward-compat reader handling three legacy formats (old `{tx: {low, medium}}` dict, bare array, new dict-with-rules-key).
+
+| Change | File |
+|---|---|
+| Add `authority_level: int = 1` to `ApprovalRuleItem` | `backend/services/tenant-service/routers/tenants.py` |
+| Add `simple_mode: bool = True` to `ApprovalRulesBody` | same |
+| PUT stores `{"simple_mode": …, "rules": […]}` JSONB | same |
+| GET handles all three legacy JSONB formats | same |
+| Add `authority_level?: number` to `SavedApprovalRule` interface | `frontend/src/app/[org]/settings/org-setup/page.tsx` |
+| `tiersToRules` populates `authority_level` from `ROLE_AUTH` | same |
+| `saveMutation` passes `{ simple_mode, rules }` | same |
+| `handleSave` passes `simpleMode` to mutation | same |
+
+### Bug 2 — 404 on notifications bell endpoint
+
+**Root cause:** Frontend called `/api/v1/notifications?alert_type=AUTO_APPROVAL_NOTICE` — this endpoint never existed.
+
+| Change | File |
+|---|---|
+| New `routers/alerts.py` — `GET /` with `?alert_type=` query param, queries `approval_history` for `AUTO_APPROVED` actions in last 24 h, joins `transfer_orders` + `products` + `organization_node` | `backend/services/inventory-service/routers/alerts.py` (new) |
+| Mount at `/api/v1/inventory/alerts` | `backend/services/inventory-service/main.py` |
+| Update frontend URL to `/api/v1/inventory/alerts?alert_type=AUTO_APPROVAL_NOTICE` | `frontend/src/app/[org]/layout.tsx` |
+
+### Bug 3 — PWA icon-192.png missing (cosmetic)
+
+`frontend/public/icon-192.png` does not exist. The `manifest.json` references it but it is not in the repo. This is a cosmetic issue — the PWA installs and functions without it. A 404 appears in DevTools Network tab. **Not fixed** — add a proper icon asset in a future design pass.
+
+**Final state:** 279 unit tests passing, 0 failing · TypeScript: 0 errors
+
+---
+
 *SMART Inventory Platform — Bug Report v4.0*  
 *Backend: Python 3.12 / FastAPI · Frontend: Next.js 14 / TypeScript · DB: PostgreSQL 16*
