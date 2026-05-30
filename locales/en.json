@@ -903,6 +903,7 @@
     "auto_notice": "Auto-approved: {transfer}",
     "insufficient": "Insufficient authority",
     "gap_error": "Gap detected between tiers",
-    "tier_hint": "The last tier automatically covers all quantities above the previous limit."
+    "tier_hint": "The last tier automatically covers all quantities above the previous limit.",
+    "tier_help": "Each tier defines who approves transfers up to a certain quantity.\nThe last tier covers all quantities above the previous limit (unlimited).\nDelete a tier to skip that approval level — e.g. send all requests directly to the top.\nThe highest authority level cannot be exceeded."
   }
 }

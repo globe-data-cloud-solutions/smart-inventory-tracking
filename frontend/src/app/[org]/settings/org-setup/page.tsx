@@ -654,15 +654,33 @@ const ROLE_AUTH: Record<string, number> = {
   SA: 1, TA: 1, NM: 1, RM: 2, LM: 3, WM: 4,
 };
 
-function mkTier(role = ""): ApprovalTier {
+function mkTier(
+  role = "",
+  maxQty: number | null = null,
+  autoApprove = false,
+): ApprovalTier {
   return {
-    id: `${Date.now()}_${Math.random()}`,
-    max_quantity: null,
+    id: `${Date.now()}_${Math.random().toString(36).slice(2, 9)}`,
+    max_quantity: maxQty,
     approver_role: role,
-    auto_approve: false,
+    auto_approve: autoApprove,
     notify_above: false,
     notify_all: false,
   };
+}
+
+// Build pre-populated tiers from hierarchy levels when no saved rules exist.
+// Sorted bottom→top: highest level_number (WH) → lowest level_number (NM/Main).
+// Ground tier: qty=100, auto_approve=true. Top tier: unlimited, auto_approve=false.
+function buildDefaultTiers(levels: HierarchyLevel[]): ApprovalTier[] {
+  if (levels.length === 0) return [mkTier()];
+  const sorted = [...levels].sort((a, b) => b.level_number - a.level_number);
+  return sorted.map((lv, i) => {
+    const isLast = i === sorted.length - 1;
+    // 10^(i+2): i=0→100, i=1→1000, i=2→10000 ...
+    const maxQty = isLast ? null : Math.pow(10, i + 2);
+    return mkTier(lv.default_role_code, maxQty, i === 0);
+  });
 }
 
 function tiersFromRules(rules: SavedApprovalRule[]): ApprovalTier[] {
@@ -710,19 +728,21 @@ function validateTiers(tiers: ApprovalTier[]): string | null {
   const last = tiers[tiers.length - 1];
   if (!last) return "At least one tier is required.";
   if (last.max_quantity !== null) return "Last tier must be unlimited.";
-  for (let i = 0; i < tiers.length - 1; i++) {
-    const cur = tiers[i];
-    const nxt = tiers[i + 1];
-    if (!cur || !nxt) continue;
-    if (cur.max_quantity === null) {
+  for (let i = 0; i < tiers.length; i++) {
+    const tier = tiers[i];
+    if (!tier) continue;
+    const isLast = i === tiers.length - 1;
+    if (!isLast && tier.max_quantity === null) {
       return `Tier ${i + 1}: enter an upper bound — only the last tier can be unlimited.`;
     }
-    if (!cur.approver_role) return `Tier ${i + 1}: approver required.`;
-    if (nxt.max_quantity !== null && cur.max_quantity >= nxt.max_quantity) {
-      return `Upper bounds must be ascending: tier ${i + 1} (${cur.max_quantity.toLocaleString()} units) must be less than tier ${i + 2} (${nxt.max_quantity.toLocaleString()} units).`;
+    if (!tier.approver_role) return `Tier ${i + 1}: please select an approver.`;
+    if (!isLast) {
+      const nxt = tiers[i + 1];
+      if (nxt && nxt.max_quantity !== null && tier.max_quantity !== null && tier.max_quantity >= nxt.max_quantity) {
+        return `Upper bounds must be ascending: tier ${i + 1} (${tier.max_quantity.toLocaleString()} units) must be less than tier ${i + 2} (${nxt.max_quantity.toLocaleString()} units).`;
+      }
     }
   }
-  if (!last.approver_role) return "Last tier: approver required.";
   return null;
 }
 
@@ -765,8 +785,18 @@ function TierTable({
     });
   }
 
+  const lastTier = tiers[tiers.length - 1];
+  // Hide "+ Add Tier" when the last tier already requires the highest authority (Level 1 = NM/TA/SA)
+  const canAddTier = !lastTier || (ROLE_AUTH[lastTier.approver_role] ?? 5) > 1;
+
   return (
     <div className="space-y-3">
+      {/* Enhancement 5 — helper instruction note */}
+      <div className="flex gap-2 items-start px-3 py-2 bg-blue-50 border border-blue-200 rounded-lg">
+        <span className="text-blue-500 shrink-0 mt-0.5">ℹ</span>
+        <p className="text-xs text-blue-800 whitespace-pre-line">{t("approval.tier_help")}</p>
+      </div>
+
       <div className="overflow-x-auto rounded-lg border border-gray-200">
         <table className="w-full text-sm">
           <thead className="bg-gray-50 border-b border-gray-200">
@@ -779,60 +809,64 @@ function TierTable({
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-100">
-            {tiers.map((tier, i) => (
-              <Fragment key={tier.id}>
-                <tr className="hover:bg-gray-50">
-                  <td className="px-3 py-2.5 text-gray-400 font-mono text-xs">{i + 1}</td>
-                  <td className="px-3 py-2.5">
-                    {i === tiers.length - 1 ? (
-                      <span className="text-sm text-gray-400 italic">unlimited</span>
-                    ) : (
-                      <input
-                        type="number"
-                        min={1}
-                        value={tier.max_quantity ?? ""}
-                        onChange={(e) =>
-                          updateTier(i, {
-                            max_quantity: e.target.value ? Number(e.target.value) : null,
-                          })
-                        }
-                        className="w-28 border border-gray-300 rounded px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
-                      />
-                    )}
-                  </td>
-                  <td className="px-3 py-2.5">
-                    <select
-                      value={tier.approver_role}
-                      onChange={(e) => updateTier(i, { approver_role: e.target.value })}
-                      className="border border-gray-300 rounded px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 bg-white"
-                    >
-                      <option value="">— select —</option>
-                      {levels.map((lv) => (
-                        <option key={lv.default_role_code} value={lv.default_role_code}>
-                          {lv.level_name} ({lv.role_display_label})
-                        </option>
-                      ))}
-                    </select>
-                  </td>
-                  <td className="px-3 py-2.5">
-                    <label className="flex items-center gap-1.5 cursor-pointer">
-                      <input
-                        type="checkbox"
-                        checked={tier.auto_approve}
-                        onChange={(e) =>
-                          updateTier(i, {
-                            auto_approve: e.target.checked,
-                            notify_above: e.target.checked ? tier.notify_above : false,
-                            notify_all: e.target.checked ? tier.notify_all : false,
-                          })
-                        }
-                        className="rounded"
-                      />
-                      <span className="text-xs text-gray-600">{t("approval.auto_approve")}</span>
-                    </label>
-                  </td>
-                  <td className="px-3 py-2.5">
-                    {tiers.length > 1 && (
+            {tiers.map((tier, i) => {
+              const isLastTier = i === tiers.length - 1;
+              const approverAuthLevel = ROLE_AUTH[tier.approver_role] ?? 5;
+              const isLevel1Approver = approverAuthLevel === 1;
+              return (
+                <Fragment key={tier.id}>
+                  <tr className="hover:bg-gray-50">
+                    <td className="px-3 py-2.5 text-gray-400 font-mono text-xs">{i + 1}</td>
+                    <td className="px-3 py-2.5">
+                      {isLastTier ? (
+                        <span className="text-sm text-gray-400 italic">unlimited</span>
+                      ) : (
+                        <input
+                          type="number"
+                          min={1}
+                          value={tier.max_quantity ?? ""}
+                          onChange={(e) =>
+                            updateTier(i, {
+                              max_quantity: e.target.value ? Number(e.target.value) : null,
+                            })
+                          }
+                          className="w-28 border border-gray-300 rounded px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                        />
+                      )}
+                    </td>
+                    <td className="px-3 py-2.5">
+                      <select
+                        value={tier.approver_role}
+                        onChange={(e) => updateTier(i, { approver_role: e.target.value })}
+                        className="border border-gray-300 rounded px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 bg-white"
+                      >
+                        <option value="">— select —</option>
+                        {levels.map((lv) => (
+                          <option key={lv.default_role_code} value={lv.default_role_code}>
+                            {lv.level_name} ({lv.role_display_label})
+                          </option>
+                        ))}
+                      </select>
+                    </td>
+                    <td className="px-3 py-2.5">
+                      <label className="flex items-center gap-1.5 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={tier.auto_approve}
+                          onChange={(e) =>
+                            updateTier(i, {
+                              auto_approve: e.target.checked,
+                              notify_above: e.target.checked ? tier.notify_above : false,
+                              notify_all: e.target.checked ? tier.notify_all : false,
+                            })
+                          }
+                          className="rounded"
+                        />
+                        <span className="text-xs text-gray-600">{t("approval.auto_approve")}</span>
+                      </label>
+                    </td>
+                    {/* Enhancement 4 — delete button on every tier */}
+                    <td className="px-3 py-2.5">
                       <button
                         type="button"
                         onClick={() => deleteTier(i)}
@@ -841,53 +875,59 @@ function TierTable({
                       >
                         🗑
                       </button>
-                    )}
-                  </td>
-                </tr>
-                {tier.auto_approve && (
-                  <tr key={`${tier.id}-notify`}>
-                    <td></td>
-                    <td colSpan={3} className="px-3 py-2 bg-blue-50">
-                      <div className="flex items-center gap-4 text-xs text-gray-600 pl-2 border-l-2 border-blue-300">
-                        <span className="font-medium">Notify:</span>
-                        <label className="flex items-center gap-1 cursor-pointer">
-                          <input
-                            type="checkbox"
-                            checked={tier.notify_above}
-                            onChange={(e) => updateTier(i, { notify_above: e.target.checked })}
-                            className="rounded"
-                          />
-                          {t("approval.notify_above")}
-                        </label>
-                        <label className="flex items-center gap-1 cursor-pointer">
-                          <input
-                            type="checkbox"
-                            checked={tier.notify_all}
-                            onChange={(e) => updateTier(i, { notify_all: e.target.checked })}
-                            className="rounded"
-                          />
-                          {t("approval.notify_all")}
-                        </label>
-                      </div>
                     </td>
-                    <td className="bg-blue-50"></td>
                   </tr>
-                )}
-              </Fragment>
-            ))}
+                  {tier.auto_approve && (
+                    <tr key={`${tier.id}-notify`}>
+                      <td></td>
+                      <td colSpan={3} className="px-3 py-2 bg-blue-50">
+                        <div className="flex items-center gap-4 text-xs text-gray-600 pl-2 border-l-2 border-blue-300">
+                          <span className="font-medium">Notify:</span>
+                          {/* Enhancement 3 — hide "Notify level above" for Level 1 approvers */}
+                          {!isLevel1Approver && (
+                            <label className="flex items-center gap-1 cursor-pointer">
+                              <input
+                                type="checkbox"
+                                checked={tier.notify_above}
+                                onChange={(e) => updateTier(i, { notify_above: e.target.checked })}
+                                className="rounded"
+                              />
+                              {t("approval.notify_above")}
+                            </label>
+                          )}
+                          <label className="flex items-center gap-1 cursor-pointer">
+                            <input
+                              type="checkbox"
+                              checked={tier.notify_all}
+                              onChange={(e) => updateTier(i, { notify_all: e.target.checked })}
+                              className="rounded"
+                            />
+                            {t("approval.notify_all")}
+                          </label>
+                        </div>
+                      </td>
+                      <td className="bg-blue-50"></td>
+                    </tr>
+                  )}
+                </Fragment>
+              );
+            })}
           </tbody>
         </table>
       </div>
-      <div className="flex items-center gap-4">
-        <button
-          type="button"
-          onClick={addTier}
-          className="px-3 py-1.5 border border-dashed border-emerald-400 text-emerald-700 text-sm rounded hover:bg-emerald-50"
-        >
-          + {t("approval.add_tier")}
-        </button>
-        <p className="text-xs text-gray-400">{t("approval.tier_hint")}</p>
-      </div>
+      {/* Enhancement 2 — hide "+ Add Tier" when already at highest authority (Level 1) */}
+      {canAddTier && (
+        <div className="flex items-center gap-4">
+          <button
+            type="button"
+            onClick={addTier}
+            className="px-3 py-1.5 border border-dashed border-emerald-400 text-emerald-700 text-sm rounded hover:bg-emerald-50"
+          >
+            + {t("approval.add_tier")}
+          </button>
+          <p className="text-xs text-gray-400">{t("approval.tier_hint")}</p>
+        </div>
+      )}
     </div>
   );
 }
@@ -915,7 +955,7 @@ function ApprovalRulesTab({ tenantId }: { tenantId: string }) {
   const [saveOk, setSaveOk] = useState(false);
   const [saveErr, setSaveErr] = useState<string | null>(null);
 
-  const { data: levels = [] } = useQuery<HierarchyLevel[]>({
+  const { data: levels = [], isLoading: levelsLoading } = useQuery<HierarchyLevel[]>({
     queryKey: ["hierarchy-config", tenantId],
     queryFn: () => api.get<HierarchyLevel[]>(`/api/v1/tenants/${tenantId}/hierarchy/config`),
     staleTime: 30_000,
@@ -927,7 +967,7 @@ function ApprovalRulesTab({ tenantId }: { tenantId: string }) {
     staleTime: 30_000,
   });
 
-  if (!initialized && !rulesLoading) {
+  if (!initialized && !rulesLoading && !levelsLoading) {
     if (savedRules.length > 0) {
       const pullTiers = tiersFromRules(
         savedRules.filter((r) => r.transaction_type === "PULL")
@@ -961,6 +1001,21 @@ function ApprovalRulesTab({ tenantId }: { tenantId: string }) {
           ISSUE:      tiersFromRules(savedRules.filter((r) => r.transaction_type === "ISSUE")),
         });
       }
+    } else if (levels.length > 0) {
+      const baseTiers = buildDefaultTiers(levels);
+      const freshCopy = () =>
+        baseTiers.map((tier) => ({
+          ...tier,
+          id: `${Date.now()}_${Math.random().toString(36).slice(2, 9)}`,
+        }));
+      setSimpleTiers(freshCopy());
+      setCustomTiers({
+        PULL:       freshCopy(),
+        PUSH:       freshCopy(),
+        ADJUSTMENT: freshCopy(),
+        RECEIVE:    freshCopy(),
+        ISSUE:      freshCopy(),
+      });
     }
     setInitialized(true);
   }

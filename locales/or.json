@@ -514,6 +514,7 @@
     "auto_notice": "Ofiin hayyamame: {transfer}",
     "insufficient": "Aangoo ga'aa miti",
     "gap_error": "Gidduu sadarkaalee duwwaa argame",
-    "tier_hint": "Sadarkaan dhumaa daangaa duraatii ol jiru hunda of keessatti hammata."
+    "tier_hint": "Sadarkaan dhumaa daangaa duraatii ol jiru hunda of keessatti hammata.",
+    "tier_help": "Sadarkaan tokko tokko hanga baay'ina murtaa'etti dabarsiinsa eenyutu hayyamu akka ta'e adda baasuuf.\nSadarkaan dhumaa daangaa duraatii ol jiru hunda hammata (daangaa hin qabu).\nSadarkaa haquun sadarkaa hayyamaa sana darbuuf — fkn gaaffii hunda kallattiin gara gubbaa erguuf.\nSadarkaa aangoo olaanaa caaluun hin danda'amu."
   }
 }
