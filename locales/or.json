@@ -513,6 +513,7 @@
     "awaiting": "Hayyama {role} eegaa jira",
     "auto_notice": "Ofiin hayyamame: {transfer}",
     "insufficient": "Aangoo ga'aa miti",
-    "gap_error": "Gidduu sadarkaalee duwwaa argame"
+    "gap_error": "Gidduu sadarkaalee duwwaa argame",
+    "tier_hint": "Sadarkaan dhumaa daangaa duraatii ol jiru hunda of keessatti hammata."
   }
 }

@@ -902,6 +902,7 @@
     "awaiting": "Awaiting {role} approval",
     "auto_notice": "Auto-approved: {transfer}",
     "insufficient": "Insufficient authority",
-    "gap_error": "Gap detected between tiers"
+    "gap_error": "Gap detected between tiers",
+    "tier_hint": "The last tier automatically covers all quantities above the previous limit."
   }
 }

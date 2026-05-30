@@ -715,11 +715,11 @@ function validateTiers(tiers: ApprovalTier[]): string | null {
     const nxt = tiers[i + 1];
     if (!cur || !nxt) continue;
     if (cur.max_quantity === null) {
-      return `Tier ${i + 1}: only the last tier can be unlimited.`;
+      return `Tier ${i + 1}: enter an upper bound — only the last tier can be unlimited.`;
     }
     if (!cur.approver_role) return `Tier ${i + 1}: approver required.`;
     if (nxt.max_quantity !== null && cur.max_quantity >= nxt.max_quantity) {
-      return `Gap detected between tier ${i + 1} (up to ${cur.max_quantity}) and tier ${i + 2} (starts at ${nxt.max_quantity}).`;
+      return `Upper bounds must be ascending: tier ${i + 1} (${cur.max_quantity.toLocaleString()} units) must be less than tier ${i + 2} (${nxt.max_quantity.toLocaleString()} units).`;
     }
   }
   if (!last.approver_role) return "Last tier: approver required.";
@@ -878,13 +878,16 @@ function TierTable({
           </tbody>
         </table>
       </div>
-      <button
-        type="button"
-        onClick={addTier}
-        className="px-3 py-1.5 border border-dashed border-emerald-400 text-emerald-700 text-sm rounded hover:bg-emerald-50"
-      >
-        + {t("approval.add_tier")}
-      </button>
+      <div className="flex items-center gap-4">
+        <button
+          type="button"
+          onClick={addTier}
+          className="px-3 py-1.5 border border-dashed border-emerald-400 text-emerald-700 text-sm rounded hover:bg-emerald-50"
+        >
+          + {t("approval.add_tier")}
+        </button>
+        <p className="text-xs text-gray-400">{t("approval.tier_hint")}</p>
+      </div>
     </div>
   );
 }
