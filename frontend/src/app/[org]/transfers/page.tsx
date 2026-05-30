@@ -66,6 +66,7 @@ interface RawApiTransfer {
   to_warehouse_name: string;
   lines: RawApiTransferLine[];
   created_by?: string;
+  created_by_authority_level?: number;
   created_at: string;
   updated_at?: string;
 }
@@ -84,6 +85,7 @@ interface ApiTransfer {
   notes: string;
   status: TransferStatus;
   created_by?: string;
+  created_by_authority_level?: number;
   created_at: string;
 }
 
@@ -100,10 +102,11 @@ function normalizeTransfer(raw: RawApiTransfer): ApiTransfer {
     to_warehouse_id:    raw.to_warehouse_id,
     to_warehouse_name:  raw.to_warehouse_name,
     quantity:           parseFloat(line?.quantity ?? "0"),
-    notes:              "",
-    status:             raw.status,
-    created_by:         raw.created_by,
-    created_at:         raw.created_at,
+    notes:                        "",
+    status:                       raw.status,
+    created_by:                   raw.created_by,
+    created_by_authority_level:   raw.created_by_authority_level,
+    created_at:                   raw.created_at,
   };
 }
 
@@ -211,16 +214,32 @@ const TYPE_CLASS: Record<TransferType, { cls: string; label: string }> = {
 };
 
 /**
+ * Authority level scale — lower number = higher authority (mirrors backend ROLE_AUTHORITY_LEVEL).
+ * Used to compute canReview / canApprove / isSrcManager / isDstManager without hardcoding
+ * role names.  Adding a new role only requires adding it here.
+ */
+const ROLE_AUTHORITY_LEVEL: Record<string, number> = {
+  SA: 1, TA: 1, NM: 1,
+  RM: 2,
+  LM: 3,
+  WM: 4,
+  SA_GT: 5, RT: 5, AU: 5, SYS: 5,
+};
+
+/**
  * Returns the action buttons available to this user for a specific transfer.
  *
- * userWH / fromWH / toWH are used for SISTER context-awareness and for source-manager
- * gating (APPROVED → ISSUED actions):
- *   - Destination WM (userWH === toWH)  : submits the request + re-confirms after source agrees
- *   - Source WM      (userWH === fromWH): confirms they can supply + issues stock after approval
+ * Authority-level rules (replace all hardcoded role === 'X' checks):
  *
- * quantity is included for future threshold-based routing at PENDING_APPROVAL
- * (RM approves if qty ≤ threshold; NM approves otherwise). Threshold data requires
- * an approval_rule API call — routing is currently role-only (both RM and NM see Approve).
+ *   isTenantMgr  = userLevel <= 1          SA/TA/NM — tenant-wide authority
+ *   isSrcManager = isTenantMgr || isSrcWH  dispatch / issue authority
+ *   isDstManager = isTenantMgr || isDstWH || isCreator   receive authority
+ *   canReview    = !isCreator && userLevel < creatorAuthorityLevel
+ *   canApprove   = userLevel <= 2 && !isCreator
+ *
+ * UUID comparisons are always case-insensitive — JWT warehouseId and DB UUIDs
+ * may differ in casing depending on how the JWT was issued vs how Postgres
+ * serialises UUIDs (CLAUDE.md §27).
  */
 function getAvailableActions(
   role: string,
@@ -229,259 +248,140 @@ function getAvailableActions(
   userWH?: string,
   fromWH?: string,
   toWH?: string,
-  _quantity?: number,   // reserved for threshold routing — see JSDoc above
+  _quantity?: number,
   userId?: string,
   createdBy?: string,
+  creatorAuthorityLevel?: number,
 ): Action[] {
-  const approve:    Action = { next: "APPROVED",               label: "Approve",              color: "#059669" };
-  const reject:     Action = { next: "REJECTED",               label: "Reject",               color: "#991B1B" };
-  const cancel:     Action = { next: "CANCELLED",              label: "Cancel",               color: "#991B1B" };
-  const issue:      Action = { next: "ISSUED",                 label: "Issue",                color: "#065F46" };
-  const dispatch:   Action = { next: "IN_TRANSIT",             label: "Dispatch",             color: "#92400E" };
-  const advise:     Action = { next: "ADVISED",                label: "Advise",               color: "#059669" };
+  const userLevel = ROLE_AUTHORITY_LEVEL[role] ?? 5;
+  if (userLevel >= 5) return [];   // AU/RT/SYS/SA_GT have no transfer authority
+
+  const uWH     = userWH?.toLowerCase();
+  const isSrcWH = !!uWH && uWH === fromWH?.toLowerCase();
+  const isDstWH = !!uWH && uWH === toWH?.toLowerCase();
+  const isCreator = !!userId && userId === createdBy;
+
+  // Tenant-level managers (NM/TA/SA, level ≤ 1) have authority over any transfer.
+  // Facility-bound roles (RM/LM/WM) need their warehouse_id to match.
+  const isTenantMgr  = userLevel <= 1;
+  const isSrcManager = isTenantMgr || isSrcWH;
+  const isDstManager = isTenantMgr || isDstWH || isCreator;
+
+  // PENDING_REVIEW — reviewer must outrank the creator and must not be the creator.
+  // creatorAuthorityLevel comes from transfer.created_by_authority_level (stored at creation).
+  const canReview = !isCreator
+    && creatorAuthorityLevel != null
+    && userLevel < creatorAuthorityLevel;
+
+  // PENDING_APPROVAL — level ≤ 2 (RM or above).
+  // Fine-grained "can_approve" is enforced by the backend and surfaced by ApprovalPendingActions
+  // via GET /transfers/{id}/approval-info; the action map shows the button to potential approvers.
+  const canApprove = userLevel <= 2 && !isCreator;
+
+  // ── Action definitions (defined once, referenced by all maps) ─────────────
+  const approve   : Action = { next: "APPROVED",               label: "Approve",            color: "#059669" };
+  const reject    : Action = { next: "REJECTED",               label: "Reject",             color: "#991B1B" };
+  const cancel    : Action = { next: "CANCELLED",              label: "Cancel",             color: "#991B1B" };
+  const issue     : Action = { next: "ISSUED",                 label: "Issue",              color: "#065F46" };
+  const dispatch  : Action = { next: "IN_TRANSIT",             label: "Dispatch",           color: "#92400E" };
+  const advise    : Action = { next: "ADVISED",                label: "Advise",             color: "#059669" };
   // PARTIAL_RECEIVE: hidden pending full implementation. State machine entry kept
   // for data integrity. Re-enable by adding partialReceive back to IN_TRANSIT actions.
   // See BUG_REPORT.md §deferred
-  const markRecv:   Action = { next: "RECEIVED",               label: "Mark Received",        color: "#059669" };
-  const complete:   Action = { next: "COMPLETED",              label: "Complete",             color: "#374151" };
-  const review:     Action = { next: "PENDING_REVIEW",         label: "Submit for Review",    color: "#5B21B6" };
-  const toApproval: Action = { next: "PENDING_APPROVAL",       label: "Send for Approval",    color: "#1E40AF" };
-  // SISTER-specific labels: destination submits request; source confirms supply
-  const submitReq:  Action = { next: "PENDING_SOURCE_CONFIRM", label: "Submit Request",       color: "#5B21B6" };
-  const confirmSup: Action = { next: "PENDING_DEST_CONFIRM",   label: "Confirm Supply",       color: "#059669" };
-  const confirmInt: Action = { next: "PENDING_APPROVAL",       label: "Confirm & Escalate",   color: "#1E40AF" };
+  const markRecv  : Action = { next: "RECEIVED",               label: "Mark Received",      color: "#059669" };
+  const complete  : Action = { next: "COMPLETED",              label: "Complete",           color: "#374151" };
+  const review    : Action = { next: "PENDING_REVIEW",         label: "Submit for Review",  color: "#5B21B6" };
+  const toApproval: Action = { next: "PENDING_APPROVAL",       label: "Send for Approval",  color: "#1E40AF" };
+  const submitReq : Action = { next: "PENDING_SOURCE_CONFIRM", label: "Submit Request",     color: "#5B21B6" };
+  const confirmSup: Action = { next: "PENDING_DEST_CONFIRM",   label: "Confirm Supply",     color: "#059669" };
+  const confirmInt: Action = { next: "PENDING_APPROVAL",       label: "Confirm & Escalate", color: "#1E40AF" };
 
-  // TA and SA see all valid next statuses for the type
-  if (role === "TA" || role === "SA") {
-    if (type === "PULL") {
-      const map: Partial<Record<TransferStatus, Action[]>> = {
-        DRAFT:              [review, cancel],
-        PENDING_REVIEW:     [toApproval, reject, cancel],
-        PENDING_APPROVAL:   [approve, reject, cancel],
-        APPROVED:           [issue, cancel],
-        ISSUED:             [dispatch],
-        IN_TRANSIT:         [markRecv],
-        PARTIALLY_RECEIVED: [markRecv],
-        RECEIVED:           [complete],
-      };
-      return map[status] ?? [];
+  // ── PULL: destination requests stock from source ──────────────────────────
+  if (type === "PULL") {
+    const map: Partial<Record<TransferStatus, Action[]>> = {};
+
+    // DRAFT: destination side (or any reviewer/approver) initiates
+    if (isDstManager || userLevel <= 2) map.DRAFT = [review, cancel];
+
+    // PENDING_REVIEW: reviewer sends to approval queue
+    if (canReview) map.PENDING_REVIEW = [toApproval, reject, cancel];
+
+    // PENDING_APPROVAL: approver approves/rejects
+    if (canApprove) map.PENDING_APPROVAL = [approve, reject, cancel];
+
+    // APPROVED/ISSUED: source manager issues and dispatches
+    if (isSrcManager) {
+      map.APPROVED = [issue, cancel];
+      map.ISSUED   = [dispatch];
     }
-    if (type === "PUSH") {
-      const map: Partial<Record<TransferStatus, Action[]>> = {
-        DRAFT:            [toApproval, cancel],
-        PENDING_APPROVAL: [approve, reject, cancel],
-        APPROVED:         [advise, issue, cancel],
-        ADVISED:          [issue, cancel],
-        ISSUED:           [dispatch],
-        IN_TRANSIT:       [markRecv],
-        PARTIALLY_RECEIVED: [markRecv],
-        RECEIVED:         [complete],
-      };
-      return map[status] ?? [];
+
+    // IN_TRANSIT: destination manager receives
+    if (isDstManager) {
+      map.IN_TRANSIT         = [markRecv];
+      map.PARTIALLY_RECEIVED = [markRecv];
+      map.RECEIVED           = [complete];
     }
-    if (type === "SISTER") {
-      // TA/SA see the full machine — all steps in order
-      const map: Partial<Record<TransferStatus, Action[]>> = {
-        DRAFT:                  [submitReq, cancel],
-        PENDING_SOURCE_CONFIRM: [confirmSup, reject, cancel],
-        PENDING_DEST_CONFIRM:   [confirmInt, reject, cancel],
-        PENDING_APPROVAL:       [approve, reject, cancel],
-        APPROVED:               [issue, cancel],
-        ISSUED:                 [dispatch],
-        IN_TRANSIT:             [markRecv],
-        PARTIALLY_RECEIVED:     [markRecv],
-        RECEIVED:               [complete],
-      };
-      return map[status] ?? [];
-    }
-    return [];
+
+    return map[status] ?? [];
   }
 
-  // WM — compare UUIDs case-insensitively: session warehouseId vs DB from/to_warehouse_id
-  // may differ in casing depending on how the JWT was issued vs how Postgres serializes UUIDs.
-  if (role === "WM") {
-    const uWH = userWH?.toLowerCase();
-    const isDestWM = !!uWH && uWH === toWH?.toLowerCase();
-    const isSrcWM  = !!uWH && uWH === fromWH?.toLowerCase();
+  // ── PUSH: source proactively sends stock to destination ───────────────────
+  if (type === "PUSH") {
+    const map: Partial<Record<TransferStatus, Action[]>> = {};
 
-    if (type === "PULL") {
-      if (isDestWM) {
-        const map: Partial<Record<TransferStatus, Action[]>> = {
-          DRAFT:              [review, cancel],
-          IN_TRANSIT:         [markRecv],
-          PARTIALLY_RECEIVED: [markRecv],
-          RECEIVED:           [complete],
-        };
-        return map[status] ?? [];
-      }
-      if (isSrcWM) {
-        const map: Partial<Record<TransferStatus, Action[]>> = {
-          APPROVED: [issue, cancel],
-          ISSUED:   [dispatch],
-        };
-        return map[status] ?? [];
-      }
-      return [];
+    // DRAFT: source manager (or any reviewer-level role) initiates
+    if (isSrcManager || userLevel <= 2) map.DRAFT = [toApproval, cancel];
+
+    // PENDING_APPROVAL
+    if (canApprove) map.PENDING_APPROVAL = [approve, reject, cancel];
+
+    // APPROVED/ADVISED/ISSUED: source dispatches
+    if (isSrcManager || userLevel <= 2) {
+      map.APPROVED = [advise, issue, cancel];
+      map.ADVISED  = [issue, cancel];
+      map.ISSUED   = [dispatch];
     }
-    if (type === "PUSH") {
-      if (isDestWM) {
-        const map: Partial<Record<TransferStatus, Action[]>> = {
-          IN_TRANSIT:         [markRecv],
-          PARTIALLY_RECEIVED: [markRecv],
-          RECEIVED:           [complete],
-        };
-        return map[status] ?? [];
-      }
-      if (isSrcWM) {
-        const map: Partial<Record<TransferStatus, Action[]>> = {
-          APPROVED: [advise, issue, cancel],
-          ADVISED:  [issue, cancel],
-          ISSUED:   [dispatch],
-        };
-        return map[status] ?? [];
-      }
-      return [];
+
+    // IN_TRANSIT: destination receives
+    if (isDstManager) {
+      map.IN_TRANSIT         = [markRecv];
+      map.PARTIALLY_RECEIVED = [markRecv];
+      map.RECEIVED           = [complete];
     }
-    if (type === "SISTER") {
-      if (isDestWM) {
-        // Destination (requestor) WM: submits request, re-confirms intent, receives
-        const map: Partial<Record<TransferStatus, Action[]>> = {
-          DRAFT:                [submitReq, cancel],    // submit request to source
-          PENDING_DEST_CONFIRM: [confirmInt, reject, cancel],  // confirm still want it
-          IN_TRANSIT:           [markRecv],
-          PARTIALLY_RECEIVED:   [markRecv],
-          RECEIVED:             [complete],
-        };
-        return map[status] ?? [];
-      }
-      if (isSrcWM) {
-        // Source WM: confirms supply, then issues stock after approval
-        const map: Partial<Record<TransferStatus, Action[]>> = {
-          PENDING_SOURCE_CONFIRM: [confirmSup, reject, cancel],  // confirm can supply
-          APPROVED:               [issue, cancel],
-          ISSUED:                 [dispatch],
-        };
-        return map[status] ?? [];
-      }
-      // User is not directly involved (RM/LM view — handled elsewhere)
-      return [];
-    }
-    return [];
+
+    return map[status] ?? [];
   }
 
-  // RM
-  if (role === "RM") {
-    if (type === "PULL") {
-      const uWH = userWH?.toLowerCase();
-      // RM who created the PULL (no warehouse_id) is the logical destination manager.
-      const isDestRM = (!!uWH && uWH === toWH?.toLowerCase()) ||
-                       (!uWH && !!userId && userId === createdBy);
-      const isSrcRM  = !!uWH && uWH === fromWH?.toLowerCase();
+  // ── SISTER: lateral WH ↔ WH transfer ─────────────────────────────────────
+  if (type === "SISTER") {
+    const map: Partial<Record<TransferStatus, Action[]>> = {};
 
-      const map: Partial<Record<TransferStatus, Action[]>> = {
-        DRAFT:            [review, cancel],
-        PENDING_REVIEW:   [toApproval, reject, cancel],
-        PENDING_APPROVAL: [approve, reject, cancel],
-      };
-      if (isSrcRM) {
-        map.APPROVED = [issue, cancel];
-        map.ISSUED   = [dispatch];
-      }
-      if (isDestRM) {
-        map.IN_TRANSIT         = [markRecv];
-        map.PARTIALLY_RECEIVED = [markRecv];
-        map.RECEIVED           = [complete];
-      }
-      return map[status] ?? [];
-    }
-    if (type === "PUSH") {
-      const map: Partial<Record<TransferStatus, Action[]>> = {
-        DRAFT:            [toApproval, cancel],
-        PENDING_APPROVAL: [approve, reject, cancel],
-        APPROVED:         [issue, cancel],
-        ISSUED:           [dispatch],   // BUG 2 fix: Issue and Dispatch are separate clicks
-      };
-      return map[status] ?? [];
-    }
-    if (type === "SISTER") {
-      const map: Partial<Record<TransferStatus, Action[]>> = {
-        DRAFT:            [submitReq, cancel],
-        PENDING_APPROVAL: [approve, reject, cancel],
-      };
-      return map[status] ?? [];
-    }
-    return [];
-  }
+    // DRAFT: destination WM initiates the request
+    if (isDstManager) map.DRAFT = [submitReq, cancel];
 
-  // NM
-  if (role === "NM") {
-    // isSrcManager: NM without a specific facility assignment manages at tenant level
-    // and may dispatch from any source facility (backend ABAC mirrors this logic).
-    // NM assigned to a specific facility may dispatch only from that facility.
-    // This is the source-manager gate for APPROVED → ISSUED on PULL transfers.
-    const uWH = userWH?.toLowerCase();
-    const isSrcManager = !uWH || uWH === fromWH?.toLowerCase();
+    // PENDING_SOURCE_CONFIRM: source confirms supply
+    if (isSrcManager) map.PENDING_SOURCE_CONFIRM = [confirmSup, reject, cancel];
 
-    if (type === "PULL") {
-      const map: Partial<Record<TransferStatus, Action[]>> = {
-        DRAFT:            [review, cancel],
-        // PENDING_REVIEW: NM sees nothing here — only RM (reviewer) acts at this step.
-        // NM shows a waiting message while RM sends the transfer to approval.
-        PENDING_APPROVAL: [approve, reject, cancel],
-      };
-      // At APPROVED the source facility issues stock. For a PULL from Main NW,
-      // NM is the source facility manager — they must see Issue, not the approving RM.
-      // Backend dispatch_transfer() enforces the same rule via ABAC.
-      if (isSrcManager) {
-        map.APPROVED = [issue, cancel];
-        map.ISSUED   = [dispatch];
-      }
-      return map[status] ?? [];
-    }
-    if (type === "PUSH") {
-      const map: Partial<Record<TransferStatus, Action[]>> = {
-        DRAFT:            [toApproval, cancel],
-        PENDING_APPROVAL: [approve, reject, cancel],
-        APPROVED:         [advise, issue, cancel],
-        ADVISED:          [issue, cancel],
-        ISSUED:           [dispatch],
-      };
-      return map[status] ?? [];
-    }
-    if (type === "SISTER") {
-      const map: Partial<Record<TransferStatus, Action[]>> = {
-        PENDING_APPROVAL: [approve, reject, cancel],
-      };
-      return map[status] ?? [];
-    }
-    return [];
-  }
+    // PENDING_DEST_CONFIRM: destination re-confirms or abandons
+    if (isDstManager) map.PENDING_DEST_CONFIRM = [confirmInt, reject, cancel];
 
-  // LM
-  if (role === "LM") {
-    if (type === "PULL") {
-      const map: Partial<Record<TransferStatus, Action[]>> = {
-        APPROVED: [issue, cancel],
-        ISSUED:   [dispatch],
-      };
-      return map[status] ?? [];
+    // PENDING_APPROVAL
+    if (canApprove) map.PENDING_APPROVAL = [approve, reject, cancel];
+
+    // APPROVED/ISSUED: source issues and dispatches
+    if (isSrcManager) {
+      map.APPROVED = [issue, cancel];
+      map.ISSUED   = [dispatch];
     }
-    if (type === "PUSH") {
-      const map: Partial<Record<TransferStatus, Action[]>> = {
-        APPROVED: [advise, issue, cancel],
-        ADVISED:  [issue, cancel],
-        ISSUED:   [dispatch],
-      };
-      return map[status] ?? [];
+
+    // IN_TRANSIT: destination receives
+    if (isDstManager) {
+      map.IN_TRANSIT         = [markRecv];
+      map.PARTIALLY_RECEIVED = [markRecv];
+      map.RECEIVED           = [complete];
     }
-    if (type === "SISTER") {
-      const map: Partial<Record<TransferStatus, Action[]>> = {
-        APPROVED: [issue, cancel],
-        ISSUED:   [dispatch],
-      };
-      return map[status] ?? [];
-    }
-    return [];
+
+    return map[status] ?? [];
   }
 
   return [];
@@ -1015,7 +915,7 @@ export default function TransfersPage() {
               {!transfersLoading && visibleTransfers.map((txn, idx) => {
                 const sCls = STATUS_CLASS[txn.status] ?? "bg-gray-100 text-gray-500";
                 const tb   = TYPE_CLASS[txn.transfer_type] ?? { cls: "bg-gray-100 text-gray-500", label: txn.transfer_type };
-                const acts    = getAvailableActions(user.role, txn.transfer_type, txn.status, user.warehouseId, txn.from_warehouse_id, txn.to_warehouse_id, txn.quantity, user.id, txn.created_by);
+                const acts    = getAvailableActions(user.role, txn.transfer_type, txn.status, user.warehouseId, txn.from_warehouse_id, txn.to_warehouse_id, txn.quantity, user.id, txn.created_by, txn.created_by_authority_level);
                 const waitMsg = acts.length === 0 ? getWaitingMessage(txn.status, txn.from_warehouse_name, txn.to_warehouse_name) : null;
                 const busy    = transitioning === txn.id;
                 return (

@@ -888,7 +888,8 @@ class InventoryService:
                 COALESCE(fw.name, fw_n.name) AS from_warehouse_name,
                 to_.to_warehouse_id,
                 COALESCE(tw.name, tw_n.name) AS to_warehouse_name,
-                to_.created_by::text   AS created_by,
+                to_.created_by::text              AS created_by,
+                to_.created_by_authority_level,
                 to_.created_at,
                 to_.updated_at
             FROM transfer_orders to_
@@ -931,6 +932,7 @@ class InventoryService:
                     to_warehouse_id=r.to_warehouse_id,
                     to_warehouse_name=r.to_warehouse_name,
                     created_by=str(r.created_by),
+                    created_by_authority_level=r.created_by_authority_level,
                     created_at=r.created_at,
                     updated_at=r.updated_at,
                     lines=[

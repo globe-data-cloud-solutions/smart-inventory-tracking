@@ -150,6 +150,7 @@ class TransferListItem(BaseModel):
     to_warehouse_id: uuid.UUID
     to_warehouse_name: str
     created_by: str
+    created_by_authority_level: Optional[int] = None
     created_at: datetime
     updated_at: Optional[datetime] = None
     lines: List[TransferLineItem]
