@@ -135,8 +135,12 @@ async def get_tenant(
 
 class ApprovalRuleItem(BaseModel):
     transaction_type: str
-    low_threshold: float
-    medium_threshold: float
+    min_quantity: Optional[float] = None
+    max_quantity: Optional[float] = None
+    approver_role: str
+    approval_order: int = 1
+    auto_approve: bool = False
+    notify_levels: List[int] = []
 
 
 class ApprovalRulesBody(BaseModel):
@@ -175,15 +179,11 @@ async def get_approval_rules(
     row = result.fetchone()
     if not row:
         raise HTTPException(status_code=404, detail="Tenant not found")
-    thresholds: dict = row.approval_thresholds or {}
-    rules = [
-        ApprovalRuleItem(
-            transaction_type=tx_type,
-            low_threshold=float(data.get("low", 0)),
-            medium_threshold=float(data.get("medium", 0)),
-        )
-        for tx_type, data in thresholds.items()
-    ]
+    raw = row.approval_thresholds or []
+    # Legacy dict format {tx: {low, medium}} → return empty so frontend pre-populates
+    if isinstance(raw, dict):
+        raw = []
+    rules = [ApprovalRuleItem(**item) for item in raw]
     return SuccessResponse(data=rules)
 
 
@@ -199,16 +199,13 @@ async def put_approval_rules(
     resolved_id = await _resolve_tenant_id(tenant_id, db)
     if not resolved_id:
         raise HTTPException(status_code=404, detail="Tenant not found")
-    thresholds = {
-        rule.transaction_type: {"low": rule.low_threshold, "medium": rule.medium_threshold}
-        for rule in body.rules
-    }
+    rules_list = [rule.model_dump() for rule in body.rules]
     await db.execute(
         text(
             "UPDATE tenants SET approval_thresholds = cast(:thresholds as jsonb), updated_at = now() "
             "WHERE id = :id"
         ),
-        {"thresholds": json.dumps(thresholds), "id": resolved_id},
+        {"thresholds": json.dumps(rules_list), "id": resolved_id},
     )
     return SuccessResponse(data=body.rules)
 
