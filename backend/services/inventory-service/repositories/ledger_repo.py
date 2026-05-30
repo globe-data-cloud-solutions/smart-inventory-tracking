@@ -93,22 +93,24 @@ async def record_transaction(
     lot_id: Optional[str] = None,
     notes: Optional[str] = None,
 ) -> str:
-    """Record an immutable ledger entry and update the running balance.
+    """Record an immutable ledger entry and conditionally update the running balance.
 
     Single entry point for all inventory mutations. Sequence within ONE transaction:
       1. Idempotency guard  — HTTP 409 on duplicate key
       2. Pessimistic lock   — FOR UPDATE on balance row prevents concurrent races
       3. Stock floor check  — HTTP 422 when balance + quantity would go negative
+                             SKIPPED for _BALANCE_NEUTRAL_TYPES (audit-only entries)
       4. Ledger INSERT      — immutable row in inventory_transactions (never UPDATE)
       5. Balance update     — _update_running_balance() is the ONLY writer to inventory_balances
+                             SKIPPED for _BALANCE_NEUTRAL_TYPES (must not affect on_hand)
       6. Outbox event       — InventoryUpdated fired in the SAME transaction
 
-    Returns the new transaction UUID string.
+    _BALANCE_NEUTRAL_TYPES (RESERVE, RELEASE, TRANSIT_OUT, TRANSIT_IN, TRANSIT_CLEAR)
+    write an audit-trail ledger row but never mutate inventory_balances.
+    This prevents RESERVE entries written at PENDING_REVIEW from falsely inflating
+    the On Hand balance that inventory_analytics.py reads from inventory_balances.
 
-    Note: balance_before/balance_after columns are not yet present in
-    inventory_transactions (see 001_initial_schema.py). They are computed here
-    for the stock-floor check; a future migration can add them to the ledger row
-    for full auditability without changing this function's contract.
+    Returns the new transaction UUID string.
     """
     tx_id = str(uuid.uuid4())
 
@@ -126,19 +128,23 @@ async def record_transaction(
         session, tenant_id, product_id, warehouse_id, lock=True
     )
 
-    # Step 3 — stock floor: negative quantity (deduction) may not exceed available
-    balance_after = balance_before + quantity
-    if balance_after < Decimal("0"):
-        raise HTTPException(
-            status_code=422,
-            detail={
-                "code": "INSUFFICIENT_STOCK",
-                "product_id": product_id,
-                "warehouse_id": warehouse_id,
-                "available": float(balance_before),
-                "requested": float(abs(quantity)),
-            },
-        )
+    # Step 3 — stock floor: skip for audit-only types that don't mutate on_hand.
+    # RESERVE (positive) would falsely inflate balance; TRANSIT_CLEAR (negative)
+    # would cause a spurious INSUFFICIENT_STOCK error because it doesn't represent
+    # a real stock deduction — the TRANSFER_OUT already happened at APPROVED.
+    if transaction_type not in _BALANCE_NEUTRAL_TYPES:
+        balance_after = balance_before + quantity
+        if balance_after < Decimal("0"):
+            raise HTTPException(
+                status_code=422,
+                detail={
+                    "code": "INSUFFICIENT_STOCK",
+                    "product_id": product_id,
+                    "warehouse_id": warehouse_id,
+                    "available": float(balance_before),
+                    "requested": float(abs(quantity)),
+                },
+            )
 
     # Step 4 — INSERT into ledger (never UPDATE)
     await session.execute(
@@ -163,8 +169,9 @@ async def record_transaction(
         },
     )
 
-    # Step 5 — update running balance through the dedicated writer (not directly)
-    await _update_running_balance(session, tenant_id, product_id, warehouse_id, quantity)
+    # Step 5 — update running balance (skip for audit-only types that must not affect on_hand)
+    if transaction_type not in _BALANCE_NEUTRAL_TYPES:
+        await _update_running_balance(session, tenant_id, product_id, warehouse_id, quantity)
 
     # Step 6 — outbox event in the SAME transaction (atomicity with ledger INSERT)
     await write_to_outbox(
@@ -181,6 +188,17 @@ async def record_transaction(
 
     return tx_id
 
+
+# Audit-trail types that write an immutable ledger row but must NOT touch
+# inventory_balances.  TRANSFER_REVERSAL is NOT here — it restores on_hand
+# when a transfer is cancelled after APPROVED (replacing the old RETURN type).
+_BALANCE_NEUTRAL_TYPES: frozenset[str] = frozenset({
+    "RESERVE",       # soft-lock at PENDING_REVIEW: on_hand unchanged
+    "RELEASE",       # release soft-lock on cancel: on_hand unchanged
+    "TRANSIT_OUT",   # dispatch audit at ISSUED: on_hand already deducted at APPROVED
+    "TRANSIT_IN",    # inbound audit at IN_TRANSIT: stock not received yet
+    "TRANSIT_CLEAR", # clear-transit audit at RECEIVED: TRANSFER_IN handles credit
+})
 
 _TRANSFER_LEDGER_TYPES: frozenset[str] = frozenset({
     "RESERVE",

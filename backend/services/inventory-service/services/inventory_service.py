@@ -524,14 +524,18 @@ class InventoryService:
             raise HTTPException(status_code=404, detail="Transfer not found")
 
         # ABAC: the caller must manage the source warehouse.
-        # Facility-bound roles (WM/RM/LM) must have warehouse_id matching from_warehouse_id.
-        # Tenant-level roles (NM/TA/SA) without a specific warehouse assignment have
-        # organisation-wide authority and may dispatch from any source facility.
+        # NM/TA/SA have tenant-wide authority — check role FIRST regardless of warehouse_id.
+        # An NM with a specific facility assignment can still dispatch from any source because
+        # their authority is organisation-wide, not facility-scoped (CLAUDE.md §13).
+        # Facility-bound roles (WM/RM/LM) must match warehouse_id to from_warehouse_id.
         _TENANT_LEVEL_ROLES = {"NM", "TA", "SA"}
-        if user.warehouse_id:
+        user_role = getattr(user, "role", None)
+        if user_role in _TENANT_LEVEL_ROLES:
+            can_dispatch = True
+        elif user.warehouse_id:
             can_dispatch = str(user.warehouse_id).lower() == str(row.from_warehouse_id).lower()
         else:
-            can_dispatch = getattr(user, "role", None) in _TENANT_LEVEL_ROLES
+            can_dispatch = False
         if not can_dispatch:
             from fastapi import HTTPException
             raise HTTPException(
@@ -607,17 +611,15 @@ class InventoryService:
             raise HTTPException(status_code=404, detail="Transfer not found")
 
         # ABAC: caller must be the destination warehouse.
-        # Three cases are permitted:
-        #   (a) user.warehouse_id matches to_warehouse_id (facility-bound WM/RM),
-        #   (b) tenant-level role without a warehouse assignment (NM/TA/SA),
-        #   (c) the user created this transfer (RM who submitted the PULL without a
-        #       specific warehouse assignment — they are the logical destination manager).
+        # NM/TA/SA have tenant-wide authority — check role FIRST regardless of warehouse_id.
+        # Facility-bound roles (WM/RM/LM) must match warehouse_id to to_warehouse_id.
+        # Fallback: RM who created the PULL (no warehouse_id) is the logical dest manager.
         _TENANT_LEVEL_ROLES = {"NM", "TA", "SA"}
         user_role = getattr(user, "role", None)
-        if user.warehouse_id:
-            can_receive = str(user.warehouse_id).lower() == str(row.to_warehouse_id).lower()
-        elif user_role in _TENANT_LEVEL_ROLES:
+        if user_role in _TENANT_LEVEL_ROLES:
             can_receive = True
+        elif user.warehouse_id:
+            can_receive = str(user.warehouse_id).lower() == str(row.to_warehouse_id).lower()
         else:
             can_receive = str(getattr(user, "user_id", "")) == str(getattr(row, "created_by", "NONE"))
         if not can_receive:

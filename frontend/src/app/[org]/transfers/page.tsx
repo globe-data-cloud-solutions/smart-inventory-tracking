@@ -425,7 +425,8 @@ function getAvailableActions(
     if (type === "PULL") {
       const map: Partial<Record<TransferStatus, Action[]>> = {
         DRAFT:            [review, cancel],
-        PENDING_REVIEW:   [toApproval, reject, cancel],
+        // PENDING_REVIEW: NM sees nothing here — only RM (reviewer) acts at this step.
+        // NM shows a waiting message while RM sends the transfer to approval.
         PENDING_APPROVAL: [approve, reject, cancel],
       };
       // At APPROVED the source facility issues stock. For a PULL from Main NW,

@@ -210,6 +210,88 @@ class TestLedgerRepo:
         assert exc_info.value.detail["code"] == "INSUFFICIENT_STOCK"
         mock_writer.assert_not_awaited()
 
+    async def test_reserve_does_not_affect_on_hand(self) -> None:
+        """RESERVE (written at PENDING_REVIEW) must NOT call _update_running_balance.
+
+        Root cause of Critical Bug 1: RESERVE entries went through the normal
+        record_transaction path including _update_running_balance, which increased
+        inventory_balances.quantity.  inventory_analytics.get_stock() reads that
+        column as current_stock — so On Hand incorrectly grew at PENDING_REVIEW.
+
+        Fix: _BALANCE_NEUTRAL_TYPES causes record_transaction to skip both the
+        stock-floor check AND the balance update for RESERVE/RELEASE/TRANSIT_* types.
+        """
+        from repositories.ledger_repo import record_transaction
+
+        session = _make_session(balance=100.0)
+
+        with patch("repositories.ledger_repo._update_running_balance",
+                   new=AsyncMock()) as mock_writer, \
+             patch("repositories.ledger_repo.write_to_outbox", new=AsyncMock()):
+            await record_transaction(
+                session,
+                tenant_id=TENANT_ID,
+                transaction_type="RESERVE",
+                product_id=PRODUCT_ID,
+                warehouse_id=WAREHOUSE_ID,
+                quantity=Decimal("50"),
+                performed_by=USER_ID,
+                idempotency_key=IDEM_KEY,
+            )
+
+        mock_writer.assert_not_awaited(), (
+            "RESERVE must NOT call _update_running_balance — it is a balance-neutral "
+            "audit entry and must not inflate On Hand"
+        )
+
+        # Verify same protection for all other neutral types
+        for neutral_type in ("RELEASE", "TRANSIT_OUT", "TRANSIT_IN", "TRANSIT_CLEAR"):
+            session2 = _make_session(balance=100.0)
+            with patch("repositories.ledger_repo._update_running_balance",
+                       new=AsyncMock()) as mock2, \
+                 patch("repositories.ledger_repo.write_to_outbox", new=AsyncMock()):
+                await record_transaction(
+                    session2,
+                    tenant_id=TENANT_ID,
+                    transaction_type=neutral_type,
+                    product_id=PRODUCT_ID,
+                    warehouse_id=WAREHOUSE_ID,
+                    quantity=Decimal("30"),
+                    performed_by=USER_ID,
+                    idempotency_key=f"{IDEM_KEY}-{neutral_type}",
+                )
+            mock2.assert_not_awaited(), f"{neutral_type} must not update balance"
+
+    async def test_transfer_reversal_does_affect_on_hand(self) -> None:
+        """TRANSFER_REVERSAL (at APPROVED→CANCELLED) MUST update inventory_balances.
+
+        Unlike the other transfer-ledger types, TRANSFER_REVERSAL replaces the old
+        RETURN transaction and restores on_hand after the TRANSFER_OUT deduction at APPROVED.
+        It must NOT be in _BALANCE_NEUTRAL_TYPES.
+        """
+        from repositories.ledger_repo import record_transaction
+
+        session = _make_session(balance=100.0)
+
+        with patch("repositories.ledger_repo._update_running_balance",
+                   new=AsyncMock()) as mock_writer, \
+             patch("repositories.ledger_repo.write_to_outbox", new=AsyncMock()):
+            await record_transaction(
+                session,
+                tenant_id=TENANT_ID,
+                transaction_type="TRANSFER_REVERSAL",
+                product_id=PRODUCT_ID,
+                warehouse_id=WAREHOUSE_ID,
+                quantity=Decimal("50"),
+                performed_by=USER_ID,
+                idempotency_key=f"{IDEM_KEY}-reversal",
+            )
+
+        mock_writer.assert_awaited_once(), (
+            "TRANSFER_REVERSAL must call _update_running_balance to restore on_hand "
+            "after APPROVED→CANCELLED"
+        )
+
 
 # ── write_transfer_ledger_entry tests ────────────────────────────────────────
 

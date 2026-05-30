@@ -11,11 +11,11 @@
   },
   "inventory": {
     "balance": {
-      "onHand":    "በእጅ ያለ",
+      "onHand": "በእጅ ያለ",
       "inTransit": "በመጓጓዝ ላይ",
-      "issued":    "የወጣ",
+      "issued": "የወጣ",
       "available": "ዝግጁ",
-      "reserved":  "የተጠበቀ"
+      "reserved": "የተጠበቀ"
     },
     "receive": {
       "title": "ክምችት ተቀበል",
@@ -45,7 +45,7 @@
     },
     "tooltip": {
       "in_transit_out": "ከዚህ መጋዘን የተላከ ክምችት፤ ወደ መድረሻ እስካሁን አልደረሰም",
-      "in_transit_in":  "ወደዚህ መጋዘን በጉዞ ላይ ያለ ክምችት"
+      "in_transit_in": "ወደዚህ መጋዘን በጉዞ ላይ ያለ ክምችት"
     }
   },
   "scanner": {
@@ -91,10 +91,10 @@
     "error": "ስህተት"
   },
   "not_found": {
-    "heading":     "ገጽ አልተገኘም",
+    "heading": "ገጽ አልተገኘም",
     "description": "ይህ ገጽ የለም ወይም ክፍለ ጊዜዎ አልቋል። ለመቀጠል ይግቡ።",
-    "sign_in":     "ግባ →",
-    "home":        "ዋና ገጽ"
+    "sign_in": "ግባ →",
+    "home": "ዋና ገጽ"
   },
   "product": {
     "add": {
@@ -140,15 +140,15 @@
       }
     },
     "unit": {
-      "KG":   "ኪሎ ግራም (KG)",
+      "KG": "ኪሎ ግራም (KG)",
       "PACK": "ጥቅል",
-      "QTL":  "ኩንታል (QTL)",
-      "MT":   "ሜትሪክ ቶን (MT)"
+      "QTL": "ኩንታል (QTL)",
+      "MT": "ሜትሪክ ቶን (MT)"
     },
     "pack_size": {
-      "1":  "ነጠላ (1)",
-      "4":  "ጥቅል 4",
-      "6":  "ጥቅል 6",
+      "1": "ነጠላ (1)",
+      "4": "ጥቅል 4",
+      "6": "ጥቅል 6",
       "12": "ጥቅል 12"
     }
   },
@@ -327,26 +327,26 @@
   },
   "transfer": {
     "status": {
-      "DRAFT":      "ረቂቅ",
-      "SUBMITTED":  "ቀርቧል",
-      "APPROVED":   "ፈቅዷል",
+      "DRAFT": "ረቂቅ",
+      "SUBMITTED": "ቀርቧል",
+      "APPROVED": "ፈቅዷል",
       "IN_TRANSIT": "በመጓጓዝ ላይ",
-      "RECEIVED":   "ተቀብሏል",
-      "CLOSED":     "ተዘግቷል",
-      "REJECTED":   "ውድቅ ሆኗል",
-      "CANCELLED":  "ተሰርዟል"
+      "RECEIVED": "ተቀብሏል",
+      "CLOSED": "ተዘግቷል",
+      "REJECTED": "ውድቅ ሆኗል",
+      "CANCELLED": "ተሰርዟል"
     },
     "error": {
-      "invalidTransition":    "ይህ የሁኔታ ለውጥ አይፈቀድም።",
+      "invalidTransition": "ይህ የሁኔታ ለውጥ አይፈቀድም።",
       "insufficientApproval": "ይህን ዝውውር ለማፅደቅ ስልጣን የለዎትም።",
-      "offlineBlocked":       "የዝውውር ሁኔታ ለውጦች የበይነ መረብ ግንኙነት ይፈልጋሉ።"
+      "offlineBlocked": "የዝውውር ሁኔታ ለውጦች የበይነ መረብ ግንኙነት ይፈልጋሉ።"
     },
     "reference": {
       "PURCHASE_ORDER": "የግዢ ትዕዛዝ",
-      "PRODUCTION":     "የምርት ውጤት",
-      "RETURN":         "የደንበኛ / አቅራቢ ተመላሽ",
-      "DONATION":       "ስጦታ",
-      "MANUAL":         "የእጅ ግቤት"
+      "PRODUCTION": "የምርት ውጤት",
+      "RETURN": "የደንበኛ / አቅራቢ ተመላሽ",
+      "DONATION": "ስጦታ",
+      "MANUAL": "የእጅ ግቤት"
     }
   },
   "transfer_actions": {
@@ -403,84 +403,84 @@
     "OFFLINE": "ከመስመር ውጪ ነዎት። ይህ ድርጊት ወደ ጠብቅ ተጨምሯል።"
   },
   "layout": {
-    "sign_out":      "ውጣ",
-    "welcome":       "እንኳን ደህና መጡ",
+    "sign_out": "ውጣ",
+    "welcome": "እንኳን ደህና መጡ",
     "admin_section": "አስተዳዳሪ",
-    "all_tenants":   "ሁሉም ተኪራዮች"
+    "all_tenants": "ሁሉም ተኪራዮች"
   },
   "dashboard": {
-    "platform_overview":     "Platform Overview",
-    "sa_subtitle":           "System Administrator · All tenants",
-    "sa_viewing":            "SA viewing",
-    "tenant_admin":          "Tenant Admin",
-    "tenants_heading":       "Tenants",
+    "platform_overview": "Platform Overview",
+    "sa_subtitle": "System Administrator · All tenants",
+    "sa_viewing": "SA viewing",
+    "tenant_admin": "Tenant Admin",
+    "tenants_heading": "Tenants",
     "inventory_by_location": "Inventory by Location",
-    "in_stock":              "In Stock",
-    "my_warehouse":          "My Warehouse",
-    "full_inventory":        "Full Inventory",
-    "all_locations":         "All locations",
-    "ok_badge":              "OK",
-    "low_badge":             "low",
-    "stat_tenants":          "Tenants",
-    "stat_locations":        "Locations",
-    "stat_units":            "Total Units",
-    "stat_users":            "Users",
-    "stat_skus_with_stock":  "SKUs with Stock"
+    "in_stock": "In Stock",
+    "my_warehouse": "My Warehouse",
+    "full_inventory": "Full Inventory",
+    "all_locations": "All locations",
+    "ok_badge": "OK",
+    "low_badge": "low",
+    "stat_tenants": "Tenants",
+    "stat_locations": "Locations",
+    "stat_units": "Total Units",
+    "stat_users": "Users",
+    "stat_skus_with_stock": "SKUs with Stock"
   },
   "table": {
-    "sku":          "SKU",
-    "product":      "Product",
-    "stock":        "Stock",
-    "reorder_point":"Reorder Point",
-    "status":       "Status",
-    "skus":         "SKUs",
-    "products":     "products",
-    "location":     "Location",
-    "type":         "Type",
-    "total_units":  "Total Units"
+    "sku": "SKU",
+    "product": "Product",
+    "stock": "Stock",
+    "reorder_point": "Reorder Point",
+    "status": "Status",
+    "skus": "SKUs",
+    "products": "products",
+    "location": "Location",
+    "type": "Type",
+    "total_units": "Total Units"
   },
   "warehouse_type": {
-    "MWH":    "Main WH",
-    "RWH":    "Regional WH",
-    "WH":     "WH",
+    "MWH": "Main WH",
+    "RWH": "Regional WH",
+    "WH": "WH",
     "SUB_WH": "Sub-WH"
   },
   "transfers": {
-    "transfers_heading":       "ዝውውሮች",
-    "active_label":            "ንቁ",
-    "archived":                "የተቀመጠ",
-    "your_warehouse":          "የእርስዎ መጋዘን",
-    "pending":                 "በመጠባበቅ ላይ",
-    "partial_receive":         "ከፊል ተቀብሏል",
-    "confirm_action":          "Confirm Action",
-    "confirm_transfer":        "transfer",
-    "status_will_change":      "Status will change to",
-    "total_qty":               "Total quantity",
-    "prev_received":           "Previously received",
-    "still_in_transit":        "Still in transit",
-    "qty_this_batch":          "Quantity received this batch",
-    "select_tenant":           "Select a tenant first.",
-    "not_found":               "Tenant not found.",
-    "loading":                 "Loading transfer…",
-    "transfer_not_found":      "Transfer not found.",
-    "back":                    "← Back to Transfers",
-    "progress":                "Transfer Progress",
-    "updated_to":              "Transfer updated to",
-    "transition_failed":       "Transition failed.",
-    "offline_action_blocked":  "Transfer status changes require an internet connection.",
-    "offline_actions_disabled":"Actions are disabled until you reconnect.",
-    "available_actions":       "Available Actions",
-    "updating":                "Updating…",
-    "no_actions_for_role":     "No actions available for your role",
+    "transfers_heading": "ዝውውሮች",
+    "active_label": "ንቁ",
+    "archived": "የተቀመጠ",
+    "your_warehouse": "የእርስዎ መጋዘን",
+    "pending": "በመጠባበቅ ላይ",
+    "partial_receive": "ከፊል ተቀብሏል",
+    "confirm_action": "Confirm Action",
+    "confirm_transfer": "transfer",
+    "status_will_change": "Status will change to",
+    "total_qty": "Total quantity",
+    "prev_received": "Previously received",
+    "still_in_transit": "Still in transit",
+    "qty_this_batch": "Quantity received this batch",
+    "select_tenant": "Select a tenant first.",
+    "not_found": "Tenant not found.",
+    "loading": "Loading transfer…",
+    "transfer_not_found": "Transfer not found.",
+    "back": "← Back to Transfers",
+    "progress": "Transfer Progress",
+    "updated_to": "Transfer updated to",
+    "transition_failed": "Transition failed.",
+    "offline_action_blocked": "Transfer status changes require an internet connection.",
+    "offline_actions_disabled": "Actions are disabled until you reconnect.",
+    "available_actions": "Available Actions",
+    "updating": "Updating…",
+    "no_actions_for_role": "No actions available for your role",
     "detail": {
-      "type":     "Transfer Type",
-      "status":   "Status",
-      "from":     "From",
-      "to":       "To",
-      "product":  "Product",
+      "type": "Transfer Type",
+      "status": "Status",
+      "from": "From",
+      "to": "To",
+      "product": "Product",
       "quantity": "Quantity",
-      "created":  "Created",
-      "notes":    "Notes"
+      "created": "Created",
+      "notes": "Notes"
     }
   },
   "demo": {
@@ -597,15 +597,15 @@
     "using_defaults": "የአከራይ ነባሪዎችን ተጠቅሞ",
     "hint": "ለነባሪ ተጠቅሞ ባዶ ተዉ",
     "tx": {
-      "receive":    "ተቀበል",
-      "issue":      "አዉጣ",
+      "receive": "ተቀበል",
+      "issue": "አዉጣ",
       "adjustment": "ማስተካከያ",
-      "transfer":   "ዝውውር"
+      "transfer": "ዝውውር"
     },
     "col": {
       "transaction": "ግብይት",
-      "qty_up_to":   "መጠን እስከ",
-      "approver":    "ፈቃድ ሰጭ"
+      "qty_up_to": "መጠን እስከ",
+      "approver": "ፈቃድ ሰጭ"
     },
     "type": {
       "inventory_adjust": "ማስተካከያ",
@@ -644,6 +644,8 @@
     "switch_warning_simple": "ወደ ቀላል ሁነታ መቀየር ብጁ ደንቦችን ያቋርጣል። ብጁ ደንቦችዎ ተቀምጠዋል እናም በማንኛውም ጊዜ ዳግም ሊነቁ ይችላሉ።",
     "confirm_switch": "ቀይርን አረጋግጥ",
     "switched_to_custom": "ወደ ብጁ ሁነታ ተቀይሯል። ቀላል ደንቦች ለኋላ ተቀምጠዋል።",
-    "switched_to_simple": "ወደ ቀላል ሁነታ ተቀይሯል። ብጁ ደንቦች ለኋላ ተቀምጠዋል።"
+    "switched_to_simple": "ወደ ቀላል ሁነታ ተቀይሯል። ብጁ ደንቦች ለኋላ ተቀምጠዋል።",
+    "rules_desc": "Define who approves each type of transaction based on quantity.",
+    "sister_shares_pull": "SISTER transfers share these approval tiers with PULL."
   }
 }

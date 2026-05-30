@@ -9,10 +9,11 @@ import { t } from "@/lib/i18n";
 
 // ── small presentational helpers ─────────────────────────────────────────────
 
-function FieldLabel({ text, hint }: { text: string; hint?: string }) {
+function FieldLabel({ text, hint, required }: { text: string; hint?: string; required?: boolean }) {
   return (
     <label className="block text-xs font-bold uppercase tracking-wide text-gray-700 mb-1">
       {text}
+      {required && <span className="text-red-500 ml-0.5">*</span>}
       {hint && (
         <span className="text-[11px] font-normal normal-case tracking-normal text-gray-400 ml-1.5">
           {hint}
@@ -558,7 +559,7 @@ export function AddProductPanel({ apiBase, onClose }: AddProductPanelProps) {
 
           {/* ── Product Name ─────────────────────────────────────── */}
           <div>
-            <FieldLabel text={t("product.add.field.name")} />
+            <FieldLabel text={t("product.add.field.name")} required />
             <input
               value={name}
               onChange={(e) => { setName(e.target.value); setNameErr(""); }}
@@ -606,6 +607,7 @@ export function AddProductPanel({ apiBase, onClose }: AddProductPanelProps) {
             <FieldLabel
               text={t("product.add.field.type_code")}
               hint={t("product.add.field.type_code_hint")}
+              required
             />
             <TypeCodeSelect
               options={typeCodeOptions}

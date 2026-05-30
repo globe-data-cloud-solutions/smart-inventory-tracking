@@ -12,11 +12,11 @@
   },
   "inventory": {
     "balance": {
-      "onHand":    "Harka Jiru",
+      "onHand": "Harka Jiru",
       "inTransit": "Geejibarra Jiru",
-      "issued":    "Bahe",
+      "issued": "Bahe",
       "available": "Argachuu Danda'amu",
-      "reserved":  "Kuufame"
+      "reserved": "Kuufame"
     },
     "receive": {
       "title": "Kuusaa Fudhadhu",
@@ -46,7 +46,7 @@
     },
     "tooltip": {
       "in_transit_out": "Kuusaan kuusaa kanaa ergame; bakka gahuu isaa hin gahin",
-      "in_transit_in":  "Kuusaan kuusaa kanatti dhufaa jiru"
+      "in_transit_in": "Kuusaan kuusaa kanatti dhufaa jiru"
     }
   },
   "scanner": {
@@ -131,15 +131,15 @@
       }
     },
     "unit": {
-      "KG":   "Kilograama (KG)",
+      "KG": "Kilograama (KG)",
       "PACK": "Kuusaa",
-      "QTL":  "Kuntaala (QTL)",
-      "MT":   "Meetirik Toonii (MT)"
+      "QTL": "Kuntaala (QTL)",
+      "MT": "Meetirik Toonii (MT)"
     },
     "pack_size": {
-      "1":  "Tokko (1)",
-      "4":  "Kuusaa 4",
-      "6":  "Kuusaa 6",
+      "1": "Tokko (1)",
+      "4": "Kuusaa 4",
+      "6": "Kuusaa 6",
       "12": "Kuusaa 12"
     }
   },
@@ -296,26 +296,26 @@
   },
   "transfer": {
     "status": {
-      "DRAFT":      "Qophii",
-      "SUBMITTED":  "Dhiyaate",
-      "APPROVED":   "Hayyamame",
+      "DRAFT": "Qophii",
+      "SUBMITTED": "Dhiyaate",
+      "APPROVED": "Hayyamame",
       "IN_TRANSIT": "Geejibarra Jiru",
-      "RECEIVED":   "Fudhataame",
-      "CLOSED":     "Cufame",
-      "REJECTED":   "Dhoorkame",
-      "CANCELLED":  "Haqame"
+      "RECEIVED": "Fudhataame",
+      "CLOSED": "Cufame",
+      "REJECTED": "Dhoorkame",
+      "CANCELLED": "Haqame"
     },
     "error": {
-      "invalidTransition":    "Jijjiirraan haala kana hin hayyamamne.",
+      "invalidTransition": "Jijjiirraan haala kana hin hayyamamne.",
       "insufficientApproval": "Dabarsa kana raggaasisuuf aangoo hin qabdu.",
-      "offlineBlocked":       "Jijjiirraa haala dabarsa sarara interneetii barbaada."
+      "offlineBlocked": "Jijjiirraa haala dabarsa sarara interneetii barbaada."
     },
     "reference": {
       "PURCHASE_ORDER": "Ajaja Bitaa",
-      "PRODUCTION":     "Bu'aa Omishaa",
-      "RETURN":         "Deebi'a Bitaa / Dhiyeessituu",
-      "DONATION":       "Kennaa",
-      "MANUAL":         "Galcha Harkaa"
+      "PRODUCTION": "Bu'aa Omishaa",
+      "RETURN": "Deebi'a Bitaa / Dhiyeessituu",
+      "DONATION": "Kennaa",
+      "MANUAL": "Galcha Harkaa"
     }
   },
   "transfer_actions": {
@@ -485,15 +485,15 @@
     "using_defaults": "Meetii durtii fayyadama",
     "hint": "Meetii durtii fayyadamuuf duwwaa dhiisi",
     "tx": {
-      "receive":    "Fudhachuu",
-      "issue":      "Baasuu",
+      "receive": "Fudhachuu",
+      "issue": "Baasuu",
       "adjustment": "Sirreessaa",
-      "transfer":   "Dabarsaa"
+      "transfer": "Dabarsaa"
     },
     "col": {
       "transaction": "Hojii",
-      "qty_up_to":   "Lakkoofsa hanga",
-      "approver":    "Hayyamsiisaa"
+      "qty_up_to": "Lakkoofsa hanga",
+      "approver": "Hayyamsiisaa"
     },
     "type": {
       "inventory_adjust": "Sirreessaa",
@@ -532,6 +532,8 @@
     "switch_warning_simple": "Gara haala salphaaatti jijjiiruu seera addaa dhorkuu danda'a. Seerri addaa kee kuufamee jira yeroo kamiiyyuu hojii irra ooluu danda'a.",
     "confirm_switch": "Jijjiira Mirkaneessi",
     "switched_to_custom": "Gara haala addaatti jijjiirrame. Seerri salphaa booda kuufame.",
-    "switched_to_simple": "Gara haala salphaaatti jijjiirrame. Seerri addaa booda kuufame."
+    "switched_to_simple": "Gara haala salphaaatti jijjiirrame. Seerri addaa booda kuufame.",
+    "rules_desc": "Define who approves each type of transaction based on quantity.",
+    "sister_shares_pull": "SISTER transfers share these approval tiers with PULL."
   }
 }

@@ -1107,7 +1107,7 @@ function ApprovalRulesTab({ tenantId }: { tenantId: string }) {
       <div>
         <h3 className="text-base font-semibold text-gray-900">{t("approval_rules.section")}</h3>
         <p className="text-sm text-gray-500 mt-0.5">
-          Define who approves each type of transaction based on quantity
+          {t("approval.rules_desc")}
         </p>
       </div>
 
@@ -1211,7 +1211,7 @@ function ApprovalRulesTab({ tenantId }: { tenantId: string }) {
 
           {activeCustomTab === "PULL" && (
             <p className="text-xs text-gray-500 italic">
-              SISTER transfers share these tiers with PULL
+              {t("approval.sister_shares_pull")}
             </p>
           )}
 

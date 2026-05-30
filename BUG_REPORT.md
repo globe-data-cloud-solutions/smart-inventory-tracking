@@ -1772,6 +1772,70 @@ State machine entry (`PARTIALLY_RECEIVED` state) retained in `state_machine.py` 
 
 ---
 
+## Session 13 — Critical bug fixes (manual testing 2026-05-30)
+
+**Date:** 2026-05-30 | **Branch:** main | **Unit tests:** 182 passed · TypeScript: 0 errors
+
+### Bug 1 (CRITICAL) — RESERVE incorrectly inflates On Hand at PENDING_REVIEW
+
+**Symptom:** Source On Hand increased when a PULL entered PENDING_REVIEW. On Hand must only change at APPROVED (deduction) and RECEIVED (credit).
+
+**Root cause:** Gap 2 wired `write_transfer_ledger_entry(RESERVE, +qty)` at PENDING_REVIEW. Since RESERVE passed through `record_transaction()`, `_update_running_balance()` incremented `inventory_balances.quantity`. `get_stock()` reads that column as `current_stock`.
+
+| Change | File |
+|--------|------|
+| Add `_BALANCE_NEUTRAL_TYPES` frozenset (RESERVE/RELEASE/TRANSIT_OUT/TRANSIT_IN/TRANSIT_CLEAR) | `repositories/ledger_repo.py` |
+| Skip stock-floor check and `_update_running_balance()` for neutral types | `repositories/ledger_repo.py` |
+| `test_reserve_does_not_affect_on_hand` + `test_transfer_reversal_does_affect_on_hand` | `tests/unit/repositories/test_ledger_repo.py` |
+
+Note: TRANSFER_REVERSAL is deliberately NOT neutral — it restores on_hand after APPROVED→CANCELLED.
+
+### Bug 2 (CRITICAL) — NM sees Send for Approval and Reject at PENDING_REVIEW
+
+**Symptom:** NM (National Manager) saw `[Send for Approval, Reject, Cancel]` at PENDING_REVIEW for PULL transfers. Only RM (reviewer) should act at this step.
+
+**Root cause:** NM's PULL action map in `getAvailableActions()` included `PENDING_REVIEW: [toApproval, reject, cancel]`.
+
+| Change | File |
+|--------|------|
+| Remove `PENDING_REVIEW` entry from NM PULL map; add comment | `frontend/src/app/[org]/transfers/page.tsx` |
+| `test_nm_no_actions_at_pending_review_in_state_machine` | `tests/unit/services/test_transfer_service.py` |
+
+### Bug 3 (CRITICAL) — NM "Transition failed" when issuing after approving
+
+**Symptom:** NM with a specific facility assigned (warehouse_id set in JWT) clicked Issue after approving and got 403. NM should have tenant-wide dispatch authority.
+
+**Root cause:** `dispatch_transfer()` and `receive_transfer()` checked `warehouse_id` BEFORE checking role. NM with a warehouse_id was treated like WM and denied access to source/dest facilities other than their own.
+
+| Change | File |
+|--------|------|
+| Check role FIRST in dispatch ABAC: NM/TA/SA always `can_dispatch = True` | `inventory_service.py: dispatch_transfer()` |
+| Check role FIRST in receive ABAC: NM/TA/SA always `can_receive = True` | `inventory_service.py: receive_transfer()` |
+| `test_nm_can_dispatch_with_warehouse_id` | `tests/unit/services/test_transfer_service.py` |
+
+### Bug 4 (HIGH) — Hardcoded English in approval settings
+
+**Symptom:** Two English strings in the org-setup approval tab violated §20 (never hardcode English in JSX).
+
+| Change | File |
+|--------|------|
+| Replace hardcoded description with `t("approval.rules_desc")` | `frontend/src/app/[org]/settings/org-setup/page.tsx` |
+| Replace hardcoded SISTER note with `t("approval.sister_shares_pull")` | `frontend/src/app/[org]/settings/org-setup/page.tsx` |
+| Add `approval.rules_desc` and `approval.sister_shares_pull` | `locales/en.json`, `locales/am.json`, `locales/or.json` |
+
+### Bug 5 (HIGH) — Inventory nav placement (stale build cache)
+
+Nav structure verified correct in layout.tsx (confirmed by Gap 6 fix). Issue is stale `.next` build cache. Fix: `rm -rf frontend/.next && pnpm build`.
+
+### Bug 6 (MEDIUM) — No asterisk on mandatory fields
+
+| Change | File |
+|--------|------|
+| Add `required?: boolean` to `FieldLabel` component; render `<span className="text-red-500">*</span>` | `AddProductPanel.tsx` |
+| Add `required` prop to Product Name and Type Code field labels | `AddProductPanel.tsx` |
+
+---
+
 ## Session 12 — Gap fixes (Gaps 1–6 from APPROVAL_WORKFLOW_REPORT.md)
 
 **Date:** 2026-05-30 | **Branch:** main | **Committed:** 5 separate commits

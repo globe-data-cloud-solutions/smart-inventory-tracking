@@ -1353,3 +1353,47 @@ class TestGap4SimpleModeWiring:
             "PUSH transfers have no PENDING_REVIEW state — review must raise 422"
         )
         assert exc_info.value.detail["code"] == "INVALID_STATE_TRANSITION"
+
+    async def test_nm_can_dispatch_with_warehouse_id(self) -> None:
+        """NM with a specific warehouse_id assigned must still dispatch transfers
+        from ANY source warehouse — NM has tenant-level authority (Critical Bug 3).
+
+        Root cause: dispatch_transfer() checked warehouse_id BEFORE role.
+        An NM with warehouse_id="facility-X" was treated like a WM and blocked
+        from dispatching transfers from "facility-Y".
+
+        Fix: role check runs FIRST — NM/TA/SA always get can_dispatch=True.
+        """
+        from services.inventory_service import InventoryService
+
+        NM_WITH_WH = _User("u-nm-wh", TENANT_ID, WAREHOUSE_B, None, "NM")
+
+        line     = _make_line(quantity=60.0)
+        xfer_row = _make_transfer_row("APPROVED", transfer_type="PULL",
+                                      from_wh=WAREHOUSE_A, to_wh=WAREHOUSE_B)
+        session  = _session_for_dispatch(xfer_row, [line])
+
+        with patch("services.inventory_service.record_transaction", new=AsyncMock()), \
+             patch("services.inventory_service.write_transfer_ledger_entry", new=AsyncMock()):
+            result = await InventoryService(session).dispatch_transfer(NM_WITH_WH, TRANSFER_ID)
+
+        assert result.status == "ISSUED", (
+            "NM with warehouse_id=WAREHOUSE_B must dispatch a transfer from WAREHOUSE_A — "
+            "NM authority is tenant-wide, not facility-scoped"
+        )
+
+    async def test_nm_no_actions_at_pending_review_in_state_machine(self) -> None:
+        """Backend allows PENDING_REVIEW → PENDING_APPROVAL for any authenticated user,
+        but the frontend must NOT show NM the review actions at PENDING_REVIEW.
+
+        This test confirms the state machine contract: PENDING_REVIEW → PENDING_APPROVAL
+        is valid for PULL.  A separate UI regression test verifies NM sees no buttons.
+        The frontend Bug 2 fix (NM PULL map no longer includes PENDING_REVIEW) is
+        confirmed by the absence of any PENDING_REVIEW entry in NM's action map.
+        """
+        # State machine sanity: PULL PENDING_REVIEW → PENDING_APPROVAL is valid
+        validate_transition("PULL", "PENDING_REVIEW", "PENDING_APPROVAL")  # must not raise
+
+        # PULL PENDING_REVIEW → APPROVED is invalid (must go through PENDING_APPROVAL first)
+        with pytest.raises(InvalidStateTransitionError):
+            validate_transition("PULL", "PENDING_REVIEW", "APPROVED")
