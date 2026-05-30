@@ -7,7 +7,10 @@ Key translation decisions:
     (faster; consistent with how we maintain balances on RECEIVE/TRANSFER)
   - Forecast consumption computed from inventory_transactions WHERE quantity < 0
     (TRANSFER_OUT, ISSUE, ADJUSTMENT with negative value)
-  - pending_out from transfer_orders WHERE status IN (APPROVED, IN_TRANSIT)
+  - pending_out from transfer_orders WHERE status IN (PENDING_REVIEW, PENDING_APPROVAL,
+    PENDING_SOURCE_CONFIRM, PENDING_DEST_CONFIRM) — pre-approval soft holds only.
+    DRAFT excluded (no commitment). APPROVED/ISSUED/IN_TRANSIT excluded (on_hand
+    already deducted via TRANSFER_OUT ledger entry — would double-count).
   - in_transit_in from transfer_orders WHERE status = IN_TRANSIT (destination side)
   - requested_qty from transfer_requests WHERE status = PENDING
 """
@@ -92,6 +95,11 @@ async def get_stock(
         # APPROVED/ISSUED/IN_TRANSIT are also excluded: current_stock already
         # reflects the APPROVED deduction via the TRANSFER_OUT ledger entry;
         # including them would cause a double deduction in net_available.
+        # NEVER include DRAFT or APPROVED here.
+        # DRAFT = no reservation yet; APPROVED = on_hand already deducted.
+        # Only pre-approval statuses create a soft hold (reserved) on source stock.
+        # Correct set: PENDING_REVIEW, PENDING_APPROVAL,
+        #              PENDING_SOURCE_CONFIRM, PENDING_DEST_CONFIRM
         pending_out_sql = text("""
             SELECT COALESCE(SUM(tol.quantity), 0)
             FROM transfer_order_lines tol

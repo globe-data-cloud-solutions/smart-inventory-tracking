@@ -1757,5 +1757,50 @@ Three bugs fixed.
 
 ---
 
+---
+
+## Deferred: Partial Receive
+
+**Status:** Hidden in UI — Partial Receive button removed from all IN_TRANSIT action maps.  
+State machine entry (`PARTIALLY_RECEIVED` state) retained in `state_machine.py` for data integrity.
+
+**Re-enable:** Add `partialReceive` action back to `IN_TRANSIT` entries in `getAvailableActions()` in `transfers/page.tsx`.
+
+**Dependencies before re-enabling:**
+- `receive_transfer()` in `inventory_service.py` needs a `partial_qtys: dict[str, Decimal]` parameter to accept per-line quantities and advance to `PARTIALLY_RECEIVED` instead of `RECEIVED`.
+- Frontend needs a qty-input modal triggered when `action.requiresQty === true`.
+
+---
+
+## Session 12 — Gap fixes (Gaps 1–6 from APPROVAL_WORKFLOW_REPORT.md)
+
+**Date:** 2026-05-30 | **Branch:** main | **Committed:** 5 separate commits
+
+All 6 gaps documented in `docs/APPROVAL_WORKFLOW_REPORT.md` are now resolved.
+
+| Gap | Description | Status | Commit |
+|-----|-------------|--------|--------|
+| Gap 1 | `write_transfer_ledger_entry()` helper — immutable ledger for RESERVE/TRANSIT/REVERSAL events | ✅ RESOLVED | `feat(gap1)` |
+| Gap 2 | Wire ledger entries into all transfer status transitions | ✅ RESOLVED | `feat(gap2)` |
+| Gap 3 | Remove legacy `route_approval()`, wire `resolve_approval()` everywhere | ✅ RESOLVED | `refactor(gap3)` |
+| Gap 4 | Custom mode approval routing — reads `simple_mode` from tenant `approval_thresholds` | ✅ RESOLVED | `fix(gap4)` |
+| Gap 5 | State machine: PUSH `REJECTED` terminal, SISTER `CANCELLED` from dest-confirm, `/review` endpoint, escalation ceiling message | ✅ RESOLVED | `fix(gap5)` |
+| Gap 6 | Hide partial receive (deferred), nav i18n guard, code guards, docs update | ✅ RESOLVED | `fix(gap6)` |
+
+### Changes in this session
+
+| Change | File |
+|--------|------|
+| Remove `partRecv` from all `IN_TRANSIT` action maps; add deferred comment | `frontend/src/app/[org]/transfers/page.tsx` |
+| Add NAV ORDER comment; render nav labels via `t()` instead of hardcoded strings | `frontend/src/app/[org]/layout.tsx` |
+| Fix docstring (pending_out = pre-approval statuses, not APPROVED/IN_TRANSIT); add NEVER guard | `backend/services/inventory-service/services/inventory_analytics.py` |
+| Add GATEWAY MODE guard comment above `safeFloat` | `frontend/src/app/[org]/inventory/page.tsx` |
+| Add `canPush` guard comment (use `level_number`, never type string) | `frontend/src/components/features/transfers/NewTransferPanel.tsx` |
+| Add partial receive to deferred features | `PRD-APPENDIX.md §E`, `BUG_REPORT.md §deferred` |
+
+**Final state:** 178 unit tests passing · TypeScript: 0 errors · Drift check: 0 violations (auth-service pre-existing)
+
+---
+
 *SMART Inventory Platform — Bug Report v4.0*  
 *Backend: Python 3.12 / FastAPI · Frontend: Next.js 14 / TypeScript · DB: PostgreSQL 16*

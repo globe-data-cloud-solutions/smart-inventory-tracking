@@ -42,6 +42,11 @@ type Filters      = { category: string[]; unit: string[]; status: string[] };
 type ExpandedCell = { productId: string; productName: string; warehouseId: string; col: "reserved" | "inTransitOut" | "inTransitIn" };
 type ModalRow     = { direction: "in" | "out" | "direct"; label: string; qty: number; date: string; ref?: string };
 
+// GATEWAY MODE: use API values ONLY for all balance columns.
+// NEVER mix Zustand store calculations with API balance values —
+// they represent different data sources and will produce inconsistent totals.
+// Use safeFloat() for every API numeric field; null/undefined → 0, not NaN.
+
 // Null-safe float parser. parseFloat(null|undefined) returns NaN; this returns 0.
 // Use for every balance field from the API — field may be absent in stale cached responses.
 function safeFloat(val: unknown): number {

@@ -450,6 +450,7 @@ Features fully designed but not yet implemented, pending AWS environment or spec
 
 | Feature | Blocked by | Spec location |
 |---|---|---|
+| Partial receive (qty-split per line) | `receive_transfer()` needs `partial_qtys` param; frontend needs qty-input modal. UI button hidden; state machine entry retained. | CLAUDE.md §17 (PARTIALLY_RECEIVED state), BUG_REPORT.md §deferred |
 | Offline mode (IndexedDB sync + service worker) | Testing complexity without real devices | CLAUDE.md §18 |
 | Email/SMS alerts | AWS SES + SNS | CLAUDE.md §8 (outbox event handlers) |
 | Cognito authentication (replace dev_email) | AWS Cognito provisioning | CLAUDE.md §6 |

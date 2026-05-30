@@ -268,7 +268,7 @@ function Sidebar({ user, org, tenantName }: { user: SessionUser; org: string; te
           if (item.type === "section") {
             return (
               <p key={idx} className="text-[10px] font-bold uppercase tracking-widest text-white/30 px-2.5 pt-3.5 pb-1 m-0">
-                {item.label}
+                {t(item.label)}
               </p>
             );
           }
@@ -280,7 +280,7 @@ function Sidebar({ user, org, tenantName }: { user: SessionUser; org: string; te
               className="flex items-center gap-2.5 px-2.5 py-2 rounded text-sm font-medium no-underline mb-px text-white/65 hover:bg-white/[0.08] hover:text-white/95 transition-all"
             >
               <span className="text-[15px] leading-none shrink-0">{item.icon}</span>
-              {item.label}
+              {t(item.label)}
             </Link>
           );
         })}
@@ -519,6 +519,8 @@ const SA_NAV: NavItem[] = [
   { type: "link", icon: "📋", label: "Audit Log",   page: "audit-log"   },
 ];
 
+// NAV ORDER: Do not change without updating PRD-APPENDIX.md §A — confirmed structure.
+// All labels are i18n keys rendered via t(item.label) — never hardcode English in JSX.
 const TENANT_NAV: NavItem[] = [
   { type: "section", label: "Inventory" },
   { type: "link", icon: "🏠", label: "Dashboard",       page: "dashboard"         },

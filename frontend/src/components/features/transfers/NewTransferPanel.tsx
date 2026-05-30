@@ -121,6 +121,9 @@ export function NewTransferPanel({ products, warehouses, orgSlug }: Props) {
   const lockedWH     = user?.warehouseId;
   const userWH       = warehouses.find((w) => w.id === lockedWH);
   const lockedWHName = user?.warehouseName ?? userWH?.name ?? lockedWH ?? "";
+  // canPush: facility hierarchy level_number <= 2 (L1 = Main WH, L2 = Regional WH only).
+  // NEVER derive this from warehouse type string — type strings are display labels, not authority.
+  // useWarehouses hook provides level_number from org_node_hierarchy.
   const canPush      = !lockedWH || ((userWH?.level_number ?? 99) <= 2);
   const defaultType: TransferType = canPush ? "PUSH" : "PULL";
 

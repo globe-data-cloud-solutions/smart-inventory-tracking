@@ -239,7 +239,9 @@ function getAvailableActions(
   const issue:      Action = { next: "ISSUED",                 label: "Issue",                color: "#065F46" };
   const dispatch:   Action = { next: "IN_TRANSIT",             label: "Dispatch",             color: "#92400E" };
   const advise:     Action = { next: "ADVISED",                label: "Advise",               color: "#059669" };
-  const partRecv:   Action = { next: "PARTIALLY_RECEIVED",     label: "Partial Receive",      color: "#713F12", requiresQty: true };
+  // PARTIAL_RECEIVE: hidden pending full implementation. State machine entry kept
+  // for data integrity. Re-enable by adding partialReceive back to IN_TRANSIT actions.
+  // See BUG_REPORT.md §deferred
   const markRecv:   Action = { next: "RECEIVED",               label: "Mark Received",        color: "#059669" };
   const complete:   Action = { next: "COMPLETED",              label: "Complete",             color: "#374151" };
   const review:     Action = { next: "PENDING_REVIEW",         label: "Submit for Review",    color: "#5B21B6" };
@@ -258,7 +260,7 @@ function getAvailableActions(
         PENDING_APPROVAL:   [approve, reject, cancel],
         APPROVED:           [issue, cancel],
         ISSUED:             [dispatch],
-        IN_TRANSIT:         [partRecv, markRecv],
+        IN_TRANSIT:         [markRecv],
         PARTIALLY_RECEIVED: [markRecv],
         RECEIVED:           [complete],
       };
@@ -271,7 +273,7 @@ function getAvailableActions(
         APPROVED:         [advise, issue, cancel],
         ADVISED:          [issue, cancel],
         ISSUED:           [dispatch],
-        IN_TRANSIT:       [partRecv, markRecv],
+        IN_TRANSIT:       [markRecv],
         PARTIALLY_RECEIVED: [markRecv],
         RECEIVED:         [complete],
       };
@@ -286,7 +288,7 @@ function getAvailableActions(
         PENDING_APPROVAL:       [approve, reject, cancel],
         APPROVED:               [issue, cancel],
         ISSUED:                 [dispatch],
-        IN_TRANSIT:             [partRecv, markRecv],
+        IN_TRANSIT:             [markRecv],
         PARTIALLY_RECEIVED:     [markRecv],
         RECEIVED:               [complete],
       };
@@ -306,7 +308,7 @@ function getAvailableActions(
       if (isDestWM) {
         const map: Partial<Record<TransferStatus, Action[]>> = {
           DRAFT:              [review, cancel],
-          IN_TRANSIT:         [partRecv, markRecv],
+          IN_TRANSIT:         [markRecv],
           PARTIALLY_RECEIVED: [markRecv],
           RECEIVED:           [complete],
         };
@@ -324,7 +326,7 @@ function getAvailableActions(
     if (type === "PUSH") {
       if (isDestWM) {
         const map: Partial<Record<TransferStatus, Action[]>> = {
-          IN_TRANSIT:         [partRecv, markRecv],
+          IN_TRANSIT:         [markRecv],
           PARTIALLY_RECEIVED: [markRecv],
           RECEIVED:           [complete],
         };
@@ -346,7 +348,7 @@ function getAvailableActions(
         const map: Partial<Record<TransferStatus, Action[]>> = {
           DRAFT:                [submitReq, cancel],    // submit request to source
           PENDING_DEST_CONFIRM: [confirmInt, reject, cancel],  // confirm still want it
-          IN_TRANSIT:           [partRecv, markRecv],
+          IN_TRANSIT:           [markRecv],
           PARTIALLY_RECEIVED:   [markRecv],
           RECEIVED:             [complete],
         };
@@ -386,7 +388,7 @@ function getAvailableActions(
         map.ISSUED   = [dispatch];
       }
       if (isDestRM) {
-        map.IN_TRANSIT         = [partRecv, markRecv];
+        map.IN_TRANSIT         = [markRecv];
         map.PARTIALLY_RECEIVED = [markRecv];
         map.RECEIVED           = [complete];
       }
