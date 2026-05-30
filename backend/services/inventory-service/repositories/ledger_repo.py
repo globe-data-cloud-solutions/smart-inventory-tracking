@@ -180,3 +180,59 @@ async def record_transaction(
     )
 
     return tx_id
+
+
+_TRANSFER_LEDGER_TYPES: frozenset[str] = frozenset({
+    "RESERVE",
+    "RELEASE",
+    "TRANSIT_OUT",
+    "TRANSIT_IN",
+    "TRANSIT_CLEAR",
+    "TRANSFER_REVERSAL",
+})
+
+
+async def write_transfer_ledger_entry(
+    session: AsyncSession,
+    transfer_id: str,
+    transaction_type: str,
+    quantity: Decimal,
+    warehouse_id: str,
+    product_id: str,
+    tenant_id: str,
+    performed_by: str,
+    status_transition: str,
+) -> None:
+    """Write a single immutable ledger entry for a transfer status transition.
+
+    Idempotency key: {transfer_id}:{transaction_type}:{status_transition}
+    Duplicate-key 409 is caught and swallowed — safe to call on retry.
+
+    Must be called inside the same DB transaction as the status change.
+    Never call after session.commit().
+    """
+    if transaction_type not in _TRANSFER_LEDGER_TYPES:
+        raise ValueError(
+            f"write_transfer_ledger_entry: unsupported transaction_type {transaction_type!r}. "
+            f"Supported: {sorted(_TRANSFER_LEDGER_TYPES)}"
+        )
+
+    idempotency_key = f"{transfer_id}:{transaction_type}:{status_transition}"
+
+    try:
+        await record_transaction(
+            session,
+            tenant_id=tenant_id,
+            transaction_type=transaction_type,
+            product_id=product_id,
+            warehouse_id=warehouse_id,
+            quantity=quantity,
+            performed_by=performed_by,
+            idempotency_key=idempotency_key,
+            reference_type="TRANSFER",
+            reference_id=transfer_id,
+        )
+    except HTTPException as exc:
+        if exc.status_code == 409:
+            return  # already written — idempotent replay
+        raise

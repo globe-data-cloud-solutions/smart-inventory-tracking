@@ -209,3 +209,152 @@ class TestLedgerRepo:
         assert exc_info.value.status_code == 422
         assert exc_info.value.detail["code"] == "INSUFFICIENT_STOCK"
         mock_writer.assert_not_awaited()
+
+
+# ── write_transfer_ledger_entry tests ────────────────────────────────────────
+
+TRANSFER_ID  = "aaaabbbb-0000-0000-0000-000000000099"
+PRODUCT_ID_2 = "bbbbbbbb-0000-0000-0000-000000000002"
+
+
+@pytest.mark.unit
+class TestWriteTransferLedgerEntry:
+
+    async def test_write_transfer_ledger_idempotent(self) -> None:
+        """Calling write_transfer_ledger_entry twice with identical args produces
+        exactly one ledger entry.  The duplicate 409 from record_transaction is
+        caught silently — no exception propagates to the caller."""
+        from repositories.ledger_repo import write_transfer_ledger_entry
+        from fastapi import HTTPException as FHE
+
+        call_count = 0
+
+        async def fake_record(_session, **kwargs):
+            nonlocal call_count
+            call_count += 1
+            if call_count > 1:
+                raise FHE(
+                    status_code=409,
+                    detail={"code": "DUPLICATE_TRANSACTION",
+                            "idempotency_key": kwargs.get("idempotency_key")},
+                )
+            return "tx-idem-001"
+
+        session = AsyncMock()
+
+        with patch("repositories.ledger_repo.record_transaction", new=fake_record):
+            await write_transfer_ledger_entry(
+                session=session,
+                transfer_id=TRANSFER_ID,
+                transaction_type="RESERVE",
+                quantity=Decimal("50"),
+                warehouse_id=WAREHOUSE_ID,
+                product_id=PRODUCT_ID_2,
+                tenant_id=TENANT_ID,
+                performed_by=USER_ID,
+                status_transition="DRAFT_TO_PENDING_REVIEW",
+            )
+            # second call — must not raise
+            await write_transfer_ledger_entry(
+                session=session,
+                transfer_id=TRANSFER_ID,
+                transaction_type="RESERVE",
+                quantity=Decimal("50"),
+                warehouse_id=WAREHOUSE_ID,
+                product_id=PRODUCT_ID_2,
+                tenant_id=TENANT_ID,
+                performed_by=USER_ID,
+                status_transition="DRAFT_TO_PENDING_REVIEW",
+            )
+
+        assert call_count == 2, (
+            "record_transaction must be called on each attempt "
+            "so the idempotency guard inside record_transaction can fire"
+        )
+
+    async def test_write_transfer_ledger_reference_type(self) -> None:
+        """record_transaction is called with reference_type='TRANSFER',
+        reference_id=transfer_id, and the correct deterministic idempotency key."""
+        from repositories.ledger_repo import write_transfer_ledger_entry
+
+        session = AsyncMock()
+        captured: dict = {}
+
+        async def capture(_session, **kwargs):
+            captured.update(kwargs)
+            return "tx-ref-001"
+
+        with patch("repositories.ledger_repo.record_transaction", new=capture):
+            await write_transfer_ledger_entry(
+                session=session,
+                transfer_id=TRANSFER_ID,
+                transaction_type="TRANSIT_OUT",
+                quantity=Decimal("10"),
+                warehouse_id=WAREHOUSE_ID,
+                product_id=PRODUCT_ID_2,
+                tenant_id=TENANT_ID,
+                performed_by=USER_ID,
+                status_transition="APPROVED_TO_ISSUED",
+            )
+
+        assert captured.get("reference_type") == "TRANSFER"
+        assert captured.get("reference_id") == TRANSFER_ID
+        expected_key = f"{TRANSFER_ID}:TRANSIT_OUT:APPROVED_TO_ISSUED"
+        assert captured.get("idempotency_key") == expected_key, (
+            f"Expected idempotency_key={expected_key!r}, "
+            f"got {captured.get('idempotency_key')!r}"
+        )
+
+    async def test_write_transfer_ledger_all_types(self) -> None:
+        """Every supported transaction_type is forwarded to record_transaction
+        without error.  An unsupported type raises ValueError before any DB call."""
+        from repositories.ledger_repo import write_transfer_ledger_entry
+
+        supported = [
+            ("RESERVE",           Decimal("50"),   "DRAFT_TO_PENDING_REVIEW"),
+            ("RELEASE",           Decimal("-50"),  "PENDING_REVIEW_TO_CANCELLED"),
+            ("TRANSIT_OUT",       Decimal("50"),   "APPROVED_TO_ISSUED"),
+            ("TRANSIT_IN",        Decimal("50"),   "ISSUED_TO_IN_TRANSIT"),
+            ("TRANSIT_CLEAR",     Decimal("-50"),  "IN_TRANSIT_TO_RECEIVED"),
+            ("TRANSFER_REVERSAL", Decimal("50"),   "APPROVED_TO_CANCELLED"),
+        ]
+
+        session = AsyncMock()
+        forwarded_types: list[str] = []
+
+        async def capture(_session, **kwargs):
+            forwarded_types.append(kwargs.get("transaction_type"))
+            return "tx-type-001"
+
+        with patch("repositories.ledger_repo.record_transaction", new=capture):
+            for tx_type, qty, transition in supported:
+                await write_transfer_ledger_entry(
+                    session=session,
+                    transfer_id=TRANSFER_ID,
+                    transaction_type=tx_type,
+                    quantity=qty,
+                    warehouse_id=WAREHOUSE_ID,
+                    product_id=PRODUCT_ID_2,
+                    tenant_id=TENANT_ID,
+                    performed_by=USER_ID,
+                    status_transition=transition,
+                )
+
+        assert forwarded_types == [t for t, _, _ in supported], (
+            "Not all supported types were forwarded to record_transaction"
+        )
+
+        # unsupported type must be rejected before any DB call
+        with patch("repositories.ledger_repo.record_transaction", new=capture):
+            with pytest.raises(ValueError, match="unsupported transaction_type"):
+                await write_transfer_ledger_entry(
+                    session=session,
+                    transfer_id=TRANSFER_ID,
+                    transaction_type="TRANSFER_OUT",  # this is a ledger type, not a transfer-event type
+                    quantity=Decimal("10"),
+                    warehouse_id=WAREHOUSE_ID,
+                    product_id=PRODUCT_ID_2,
+                    tenant_id=TENANT_ID,
+                    performed_by=USER_ID,
+                    status_transition="APPROVED",
+                )
