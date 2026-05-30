@@ -162,11 +162,9 @@ def _session_for_receive(
 class TestInventoryServiceTransfers:
 
     async def test_dispatch_writes_no_ledger_entries(self) -> None:
-        """dispatch_transfer() (APPROVED → ISSUED) writes NO ledger entries.
-        Source on_hand was already deducted at APPROVED via transition_transfer().
-        The old RESERVE at destination was removed: it credited inventory_balances
-        before stock arrived, causing balance-shows-early (BUG #8).
-        Destination balance is only credited via TRANSFER_IN at receive_transfer()."""
+        """dispatch_transfer() (APPROVED → ISSUED) writes no direct record_transaction entries.
+        Source on_hand was already deducted at APPROVED. Transit-tracking entries are written
+        via write_transfer_ledger_entry (a separate audit path — not a balance mutation)."""
         from services.inventory_service import InventoryService
 
         line      = _make_line(quantity=50.0)
@@ -176,20 +174,21 @@ class TestInventoryServiceTransfers:
         with patch(
             "services.inventory_service.record_transaction",
             new=AsyncMock(return_value="tx-dispatched"),
-        ) as mock_record:
+        ) as mock_record, patch(
+            "services.inventory_service.write_transfer_ledger_entry",
+            new=AsyncMock(),
+        ):
             svc    = InventoryService(session)
             result = await svc.dispatch_transfer(SRC_WM, TRANSFER_ID)
 
         assert result.status == "ISSUED"
-        # No ledger entries at dispatch — neither TRANSFER_OUT nor RESERVE
-        assert mock_record.await_count == 0, "dispatch_transfer must write zero ledger entries"
+        # No direct record_transaction calls at dispatch (transit audit is via write_transfer_ledger_entry)
+        assert mock_record.await_count == 0, "dispatch_transfer must write zero direct ledger entries"
 
     async def test_received_transition_credits_destination_balance(self) -> None:
-        """receive_transfer() (IN_TRANSIT → RECEIVED) writes one ledger entry per line:
-          TRANSFER_IN at destination — credits on_hand.
-        Source on_hand was already deducted at APPROVED; NO TRANSFER_OUT at receive.
-        No RELEASE needed: dispatch_transfer() no longer writes a RESERVE at destination
-        (that pair was removed to fix balance-shows-early BUG #8)."""
+        """receive_transfer() (IN_TRANSIT → RECEIVED) writes one TRANSFER_IN per line
+        via record_transaction (credits destination on_hand).
+        Transit-clear audit entries are written via write_transfer_ledger_entry (separate path)."""
         from services.inventory_service import InventoryService
 
         line      = _make_line(quantity=30.0)
@@ -202,12 +201,14 @@ class TestInventoryServiceTransfers:
         ) as mock_record, patch(
             "services.inventory_service.write_to_outbox",
             new=AsyncMock(),
+        ), patch(
+            "services.inventory_service.write_transfer_ledger_entry",
+            new=AsyncMock(),
         ):
             svc    = InventoryService(session)
             result = await svc.receive_transfer(DST_WM, TRANSFER_ID)
 
         assert result.status == "RECEIVED"
-        # One ledger entry per line: only TRANSFER_IN at destination
         assert mock_record.await_count == 1
 
         calls = {kw["transaction_type"]: kw for _, kw in mock_record.call_args_list}
@@ -220,11 +221,16 @@ class TestInventoryServiceTransfers:
         assert tin["reference_id"]  == str(TRANSFER_ID)
 
     async def test_cancelled_from_approved_reverses_source_balance(self) -> None:
-        """A PULL transfer cancelled while in APPROVED state must write a compensating
-        RETURN at source to restore on_hand — because TRANSFER_OUT was written at APPROVED.
+        """A PULL transfer cancelled while in APPROVED state must write a TRANSFER_REVERSAL
+        at source to restore on_hand — because TRANSFER_OUT was written at APPROVED.
+
+        Gap 2: The old record_transaction(RETURN,...) call is replaced by
+        write_transfer_ledger_entry(TRANSFER_REVERSAL,...) for consistent idempotency
+        key management and a cleaner audit trail.
 
         1. Allows APPROVED → CANCELLED (valid in PULL machine).
-        2. Writes exactly one RETURN at source (positive quantity, restores on_hand).
+        2. Writes exactly one TRANSFER_REVERSAL via write_transfer_ledger_entry.
+        3. No direct record_transaction call is made for the reversal.
         """
         from services.inventory_service import InventoryService
 
@@ -232,21 +238,32 @@ class TestInventoryServiceTransfers:
         xfer_row = _make_transfer_row("APPROVED", transfer_type="PULL")
         session  = _session_for_dispatch(xfer_row, [line])  # SELECT transfer, SELECT lines, UPDATE
 
+        captured_ledger_calls: list = []
+        async def _capture_ledger(*_, **kw):
+            captured_ledger_calls.append(kw)
+
         with patch(
             "services.inventory_service.record_transaction",
             new=AsyncMock(),
-        ) as mock_record:
+        ) as mock_record, patch(
+            "services.inventory_service.write_transfer_ledger_entry",
+            new=AsyncMock(side_effect=_capture_ledger),
+        ):
             svc    = InventoryService(session)
             result = await svc.transition_transfer(SRC_WM, TRANSFER_ID, "CANCELLED")
 
         assert result.status == "CANCELLED"
-        assert mock_record.await_count == 1
-
-        calls = {kw["transaction_type"]: kw for _, kw in mock_record.call_args_list}
-        ret = calls["RETURN"]
-        assert ret["warehouse_id"] == WAREHOUSE_A,        "RETURN must target source warehouse"
-        assert ret["quantity"]     == Decimal("50"),       "RETURN quantity must be positive (restore)"
-        assert ret["reference_id"] == str(TRANSFER_ID)
+        # No direct record_transaction — reversal goes via write_transfer_ledger_entry
+        assert mock_record.await_count == 0, (
+            "TRANSFER_REVERSAL must NOT use record_transaction directly; "
+            "it must go through write_transfer_ledger_entry"
+        )
+        assert len(captured_ledger_calls) == 1, "exactly one TRANSFER_REVERSAL entry expected"
+        rev = captured_ledger_calls[0]
+        assert rev["transaction_type"] == "TRANSFER_REVERSAL"
+        assert rev["warehouse_id"]     == WAREHOUSE_A,    "reversal must target source warehouse"
+        assert rev["quantity"]         == Decimal("50"),   "reversal must be positive (restore)"
+        assert rev["transfer_id"]      == str(TRANSFER_ID)
 
         # State machine sanity: APPROVED → CANCELLED is valid for PULL
         validate_transition("PULL", "APPROVED", "CANCELLED")  # must not raise
@@ -254,9 +271,8 @@ class TestInventoryServiceTransfers:
     # ── Regression tests for BUGs 1–3 ────────────────────────────────────────
 
     async def test_issued_does_not_deduct_source_on_hand(self) -> None:
-        """dispatch_transfer() (APPROVED → ISSUED) must NOT write any ledger entries.
-        Source on_hand was already deducted at APPROVED via transition_transfer().
-        No RESERVE at destination either — that was removed to fix balance-shows-early (BUG #8)."""
+        """dispatch_transfer() (APPROVED → ISSUED) must NOT write any direct record_transaction
+        entries. Source on_hand was already deducted at APPROVED via transition_transfer()."""
         from services.inventory_service import InventoryService
 
         line     = _make_line(quantity=120.0)
@@ -267,18 +283,19 @@ class TestInventoryServiceTransfers:
         with patch(
             "services.inventory_service.record_transaction",
             new=AsyncMock(return_value="tx-issued"),
-        ) as mock_record:
+        ) as mock_record, patch(
+            "services.inventory_service.write_transfer_ledger_entry",
+            new=AsyncMock(),
+        ):
             svc    = InventoryService(session)
             result = await svc.dispatch_transfer(SRC_WM, TRANSFER_ID)
 
         assert result.status == "ISSUED", "status must advance to ISSUED"
-        assert mock_record.await_count == 0, "dispatch must write zero ledger entries"
+        assert mock_record.await_count == 0, "dispatch must write zero direct ledger entries"
 
     async def test_in_transit_writes_no_ledger_entries(self) -> None:
-        """dispatch_transfer() writes NO ledger entries (APPROVED → ISSUED).
-        In-transit tracking (in_transit_in_qty) is read from transfer status in the analytics
-        query — not from ledger entries. The old RESERVE/RELEASE pair was removed because it
-        credited inventory_balances at destination before stock arrived (BUG #8)."""
+        """dispatch_transfer() writes zero direct record_transaction entries (APPROVED → ISSUED).
+        Transit-tracking entries go via write_transfer_ledger_entry (audit only, not balance)."""
         from services.inventory_service import InventoryService
 
         qty      = Decimal("75")
@@ -290,18 +307,19 @@ class TestInventoryServiceTransfers:
         with patch(
             "services.inventory_service.record_transaction",
             new=AsyncMock(return_value="tx-both-sides"),
-        ) as mock_record:
+        ) as mock_record, patch(
+            "services.inventory_service.write_transfer_ledger_entry",
+            new=AsyncMock(),
+        ):
             svc    = InventoryService(session)
             result = await svc.dispatch_transfer(SRC_WM, TRANSFER_ID)
 
         assert result.status == "ISSUED"
-        assert mock_record.await_count == 0, "dispatch must write zero ledger entries"
+        assert mock_record.await_count == 0, "dispatch must write zero direct ledger entries"
 
     async def test_received_credits_destination_no_release(self) -> None:
-        """receive_transfer() (IN_TRANSIT → RECEIVED) must:
-          a. Write only TRANSFER_IN at destination — credits on_hand.
-        Must NOT write TRANSFER_OUT at source — deduction was already made at APPROVED.
-        Must NOT write RELEASE — dispatch no longer writes RESERVE (BUG #8 fix)."""
+        """receive_transfer() (IN_TRANSIT → RECEIVED) must write only TRANSFER_IN
+        via record_transaction. TRANSIT_CLEAR audit entries go via write_transfer_ledger_entry."""
         from services.inventory_service import InventoryService
 
         qty      = Decimal("60")
@@ -316,6 +334,9 @@ class TestInventoryServiceTransfers:
         ) as mock_record, patch(
             "services.inventory_service.write_to_outbox",
             new=AsyncMock(),
+        ), patch(
+            "services.inventory_service.write_transfer_ledger_entry",
+            new=AsyncMock(),
         ):
             svc    = InventoryService(session)
             result = await svc.receive_transfer(DST_WM, TRANSFER_ID)
@@ -324,12 +345,9 @@ class TestInventoryServiceTransfers:
 
         calls_by_type = {kw["transaction_type"]: kw for _, kw in mock_record.call_args_list}
 
-        # Source must NOT get another TRANSFER_OUT — already written at APPROVED
         assert "TRANSFER_OUT" not in calls_by_type, "TRANSFER_OUT must NOT be written at receive"
-        # No RELEASE — dispatch no longer writes RESERVE at destination
         assert "RELEASE" not in calls_by_type, "RELEASE must NOT be written (no RESERVE was made)"
 
-        # On-hand credit — stock is now physically at destination
         assert "TRANSFER_IN" in calls_by_type, "TRANSFER_IN missing — destination on_hand not credited"
         tin = calls_by_type["TRANSFER_IN"]
         assert tin["warehouse_id"] == WAREHOUSE_B, "TRANSFER_IN must target destination"
@@ -396,6 +414,9 @@ class TestInventoryServiceTransfers:
         with patch(
             "services.inventory_service.record_transaction",
             new=AsyncMock(return_value="tx-src-dispatch"),
+        ), patch(
+            "services.inventory_service.write_transfer_ledger_entry",
+            new=AsyncMock(),
         ):
             result = await InventoryService(session).dispatch_transfer(SRC_WM, TRANSFER_ID)
         assert result.status == "ISSUED", "source WM must be able to dispatch an APPROVED transfer"
@@ -716,11 +737,14 @@ class TestInventoryServiceTransfers:
         with patch(
             "services.inventory_service.record_transaction",
             new=AsyncMock(return_value="tx"),
-        ) as mock_dispatch:
+        ) as mock_dispatch, patch(
+            "services.inventory_service.write_transfer_ledger_entry",
+            new=AsyncMock(),
+        ):
             await InventoryService(session_a).dispatch_transfer(SRC_WM, TRANSFER_ID)
 
         assert mock_dispatch.await_count == 0, (
-            "No ledger entries at ISSUED — destination on_hand must remain unchanged"
+            "No direct ledger entries at ISSUED — destination on_hand must remain unchanged"
         )
 
         # IN_TRANSIT → RECEIVED: receive_transfer() must write exactly TRANSFER_IN at destination
@@ -737,6 +761,9 @@ class TestInventoryServiceTransfers:
             new=AsyncMock(side_effect=_record_receive),
         ), patch(
             "services.inventory_service.write_to_outbox",
+            new=AsyncMock(),
+        ), patch(
+            "services.inventory_service.write_transfer_ledger_entry",
             new=AsyncMock(),
         ):
             result = await InventoryService(session_r).receive_transfer(DST_WM, TRANSFER_ID)
@@ -771,6 +798,9 @@ class TestInventoryServiceTransfers:
         with patch(
             "services.inventory_service.record_transaction",
             new=AsyncMock(return_value="tx-nm-dispatch"),
+        ), patch(
+            "services.inventory_service.write_transfer_ledger_entry",
+            new=AsyncMock(),
         ):
             result = await InventoryService(session).dispatch_transfer(NM_USER, TRANSFER_ID)
 
@@ -948,6 +978,9 @@ class TestInventoryServiceTransfers:
         ) as mock_record, patch(
             "services.inventory_service.write_to_outbox",
             new=AsyncMock(),
+        ), patch(
+            "services.inventory_service.write_transfer_ledger_entry",
+            new=AsyncMock(),
         ):
             result = await InventoryService(session).receive_transfer(RM_USER, TRANSFER_ID)
 
@@ -970,3 +1003,212 @@ class TestInventoryServiceTransfers:
         assert exc_info.value.status_code == 403, (
             "RM who did not create the transfer must be denied"
         )
+
+
+# ── Gap 2 — ledger wiring tests ──────────────────────────────────────────────
+
+def _session_for_transition_with_lines(
+    transfer_row: MagicMock,
+    lines: list,
+) -> AsyncMock:
+    """Session for transition_transfer() branches that need to load lines:
+      call 0 — SELECT transfer_orders FOR UPDATE
+      call 1 — SELECT transfer_order_lines
+      call 2 — UPDATE transfer_orders SET status
+    """
+    session = AsyncMock()
+    session.execute = AsyncMock(side_effect=[
+        MagicMock(fetchone=MagicMock(return_value=transfer_row)),
+        MagicMock(fetchall=MagicMock(return_value=lines)),
+        MagicMock(),
+    ])
+    return session
+
+
+@pytest.mark.unit
+class TestGap2LedgerWiring:
+
+    async def test_pending_review_writes_reserve_entry(self) -> None:
+        """DRAFT → PENDING_REVIEW must write one RESERVE entry per line via
+        write_transfer_ledger_entry at the source warehouse."""
+        from services.inventory_service import InventoryService
+
+        line     = _make_line(quantity=40.0)
+        xfer_row = _make_transfer_row("DRAFT", transfer_type="PULL")
+        session  = _session_for_transition_with_lines(xfer_row, [line])
+
+        captured: list = []
+        async def _cap(*_, **kw):
+            captured.append(kw)
+
+        with patch("services.inventory_service.write_transfer_ledger_entry",
+                   new=AsyncMock(side_effect=_cap)):
+            result = await InventoryService(session).transition_transfer(
+                SRC_WM, TRANSFER_ID, "PENDING_REVIEW"
+            )
+
+        assert result.status == "PENDING_REVIEW"
+        assert len(captured) == 1
+        r = captured[0]
+        assert r["transaction_type"] == "RESERVE"
+        assert r["warehouse_id"]     == WAREHOUSE_A
+        assert r["quantity"]         == Decimal("40")
+        assert r["status_transition"] == "DRAFT_TO_PENDING_REVIEW"
+        assert r["line_id"]          == LINE_ID
+        assert r["transfer_id"]      == str(TRANSFER_ID)
+
+    async def test_cancel_pre_approval_writes_release(self) -> None:
+        """PENDING_REVIEW → CANCELLED must write one RELEASE per line (negative qty)
+        to release the RESERVE written at PENDING_REVIEW."""
+        from services.inventory_service import InventoryService
+
+        line     = _make_line(quantity=40.0)
+        xfer_row = _make_transfer_row("PENDING_REVIEW", transfer_type="PULL")
+        session  = _session_for_transition_with_lines(xfer_row, [line])
+
+        captured: list = []
+        async def _cap(*_, **kw):
+            captured.append(kw)
+
+        with patch("services.inventory_service.write_transfer_ledger_entry",
+                   new=AsyncMock(side_effect=_cap)):
+            result = await InventoryService(session).transition_transfer(
+                SRC_WM, TRANSFER_ID, "CANCELLED"
+            )
+
+        assert result.status == "CANCELLED"
+        assert len(captured) == 1
+        r = captured[0]
+        assert r["transaction_type"] == "RELEASE"
+        assert r["quantity"]         == -Decimal("40")   # negative = release the reservation
+        assert r["warehouse_id"]     == WAREHOUSE_A
+        assert r["status_transition"] == "CANCELLED_PRE_APPROVAL"
+        assert r["line_id"]          == LINE_ID
+
+    async def test_issued_writes_transit_out(self) -> None:
+        """dispatch_transfer() (APPROVED → ISSUED) must write one TRANSIT_OUT entry per
+        line via write_transfer_ledger_entry at the source warehouse."""
+        from services.inventory_service import InventoryService
+
+        line     = _make_line(quantity=50.0)
+        xfer_row = _make_transfer_row("APPROVED", transfer_type="PULL")
+        session  = _session_for_dispatch(xfer_row, [line])
+
+        captured: list = []
+        async def _cap(*_, **kw):
+            captured.append(kw)
+
+        with patch("services.inventory_service.record_transaction", new=AsyncMock()), \
+             patch("services.inventory_service.write_transfer_ledger_entry",
+                   new=AsyncMock(side_effect=_cap)):
+            result = await InventoryService(session).dispatch_transfer(SRC_WM, TRANSFER_ID)
+
+        assert result.status == "ISSUED"
+        assert len(captured) == 1
+        r = captured[0]
+        assert r["transaction_type"] == "TRANSIT_OUT"
+        assert r["warehouse_id"]     == WAREHOUSE_A       # source
+        assert r["quantity"]         == Decimal("50")
+        assert r["status_transition"] == "APPROVED_TO_ISSUED"
+        assert r["line_id"]          == LINE_ID
+
+    async def test_in_transit_writes_transit_in_both_sides(self) -> None:
+        """ISSUED → IN_TRANSIT must write TRANSIT_OUT at source AND TRANSIT_IN at
+        destination — one pair per line."""
+        from services.inventory_service import InventoryService
+
+        line     = _make_line(quantity=60.0)
+        xfer_row = _make_transfer_row("ISSUED", transfer_type="PULL")
+        session  = _session_for_transition_with_lines(xfer_row, [line])
+
+        captured: list = []
+        async def _cap(*_, **kw):
+            captured.append(kw)
+
+        with patch("services.inventory_service.write_transfer_ledger_entry",
+                   new=AsyncMock(side_effect=_cap)):
+            result = await InventoryService(session).transition_transfer(
+                SRC_WM, TRANSFER_ID, "IN_TRANSIT"
+            )
+
+        assert result.status == "IN_TRANSIT"
+        assert len(captured) == 2, "one TRANSIT_OUT and one TRANSIT_IN expected"
+
+        by_type = {c["transaction_type"]: c for c in captured}
+        assert "TRANSIT_OUT" in by_type
+        assert "TRANSIT_IN"  in by_type
+
+        out = by_type["TRANSIT_OUT"]
+        assert out["warehouse_id"]     == WAREHOUSE_A    # source
+        assert out["quantity"]         == Decimal("60")
+        assert out["status_transition"] == "ISSUED_TO_IN_TRANSIT"
+
+        inp = by_type["TRANSIT_IN"]
+        assert inp["warehouse_id"]     == WAREHOUSE_B    # destination
+        assert inp["quantity"]         == Decimal("60")
+        assert inp["status_transition"] == "ISSUED_TO_IN_TRANSIT"
+
+    async def test_received_writes_transit_clear(self) -> None:
+        """IN_TRANSIT → RECEIVED must write TRANSIT_CLEAR at BOTH source and destination
+        (negative qty) and then write TRANSFER_IN at destination via record_transaction."""
+        from services.inventory_service import InventoryService
+
+        line     = _make_line(quantity=70.0)
+        xfer_row = _make_transfer_row("IN_TRANSIT", transfer_type="PULL")
+        session  = _session_for_receive(xfer_row, [line])
+
+        ledger_calls: list = []
+        async def _cap_ledger(*_, **kw):
+            ledger_calls.append(kw)
+
+        with patch("services.inventory_service.record_transaction",
+                   new=AsyncMock(return_value="tx-tin")), \
+             patch("services.inventory_service.write_to_outbox", new=AsyncMock()), \
+             patch("services.inventory_service.write_transfer_ledger_entry",
+                   new=AsyncMock(side_effect=_cap_ledger)):
+            result = await InventoryService(session).receive_transfer(DST_WM, TRANSFER_ID)
+
+        assert result.status == "RECEIVED"
+        assert len(ledger_calls) == 2, "TRANSIT_CLEAR at source and destination"
+
+        wh_ids = {c["warehouse_id"] for c in ledger_calls}
+        assert WAREHOUSE_A in wh_ids, "TRANSIT_CLEAR at source"
+        assert WAREHOUSE_B in wh_ids, "TRANSIT_CLEAR at destination"
+
+        for c in ledger_calls:
+            assert c["transaction_type"] == "TRANSIT_CLEAR"
+            assert c["quantity"]         == -Decimal("70")   # negative = clear
+            assert c["status_transition"] == "IN_TRANSIT_TO_RECEIVED"
+
+    async def test_cancel_post_approved_writes_reversal(self) -> None:
+        """APPROVED → CANCELLED must write TRANSFER_REVERSAL via write_transfer_ledger_entry
+        (positive qty = restores source on_hand). No direct record_transaction call."""
+        from services.inventory_service import InventoryService
+
+        line     = _make_line(quantity=55.0)
+        xfer_row = _make_transfer_row("APPROVED", transfer_type="PULL")
+        session  = _session_for_dispatch(xfer_row, [line])
+
+        captured: list = []
+        async def _cap(*_, **kw):
+            captured.append(kw)
+
+        with patch("services.inventory_service.record_transaction",
+                   new=AsyncMock()) as mock_record, \
+             patch("services.inventory_service.write_transfer_ledger_entry",
+                   new=AsyncMock(side_effect=_cap)):
+            result = await InventoryService(session).transition_transfer(
+                SRC_WM, TRANSFER_ID, "CANCELLED"
+            )
+
+        assert result.status == "CANCELLED"
+        assert mock_record.await_count == 0, (
+            "TRANSFER_REVERSAL must not use record_transaction directly"
+        )
+        assert len(captured) == 1
+        r = captured[0]
+        assert r["transaction_type"] == "TRANSFER_REVERSAL"
+        assert r["warehouse_id"]     == WAREHOUSE_A
+        assert r["quantity"]         == Decimal("55")    # positive = restore
+        assert r["status_transition"] == "APPROVED_TO_CANCELLED"
+        assert r["line_id"]          == LINE_ID

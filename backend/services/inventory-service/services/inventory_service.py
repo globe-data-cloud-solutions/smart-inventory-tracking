@@ -15,7 +15,7 @@ from shared.outbox.schemas import (
 )
 from shared.outbox.writer import write_to_outbox
 from services.approval_service import resolve_approval, ROLE_AUTHORITY_LEVEL
-from repositories.ledger_repo import record_transaction
+from repositories.ledger_repo import record_transaction, write_transfer_ledger_entry
 from schemas.inventory import (
     AdjustmentListItem,
     AdjustmentRequest,
@@ -309,8 +309,31 @@ class InventoryService:
                 detail={"code": "INVALID_STATE_TRANSITION", "detail": str(exc)},
             ) from exc
 
+        _lines_query = text(
+            "SELECT * FROM transfer_order_lines "
+            "WHERE transfer_order_id = :tid_order AND tenant_id = :tid"
+        )
+        _lines_params = {"tid_order": str(transfer_id), "tid": str(user.tenant_id)}
+
+        # PENDING_REVIEW: soft-lock source stock per line (RESERVE audit entry).
+        if next_state == "PENDING_REVIEW":
+            lines = (await self.db.execute(_lines_query, _lines_params)).fetchall()
+            for line in lines:
+                await write_transfer_ledger_entry(
+                    session=self.db,
+                    transfer_id=str(transfer_id),
+                    transaction_type="RESERVE",
+                    quantity=Decimal(str(line.quantity)),
+                    warehouse_id=str(row.from_warehouse_id),
+                    product_id=str(line.product_id),
+                    tenant_id=str(user.tenant_id),
+                    performed_by=str(user.user_id),
+                    status_transition="DRAFT_TO_PENDING_REVIEW",
+                    line_id=str(line.id),
+                )
+
         # APPROVED: authority check → hard deduction per line → auto-approve notification.
-        if next_state == "APPROVED":
+        elif next_state == "APPROVED":
             lines = (await self.db.execute(
                 text(
                     "SELECT * FROM transfer_order_lines "
@@ -389,26 +412,69 @@ class InventoryService:
                         ),
                     )
 
-        # CANCELLED from APPROVED/ADVISED: compensate with RETURN to restore source on_hand.
-        elif next_state == "CANCELLED" and row.status in ("APPROVED", "ADVISED"):
-            lines = (await self.db.execute(
-                text(
-                    "SELECT * FROM transfer_order_lines "
-                    "WHERE transfer_order_id = :tid_order AND tenant_id = :tid"
-                ),
-                {"tid_order": str(transfer_id), "tid": str(user.tenant_id)},
-            )).fetchall()
+        # CANCELLED/REJECTED from pre-approval: release the soft-lock written at PENDING_REVIEW.
+        elif next_state in ("CANCELLED", "REJECTED") and row.status in (
+            "PENDING_REVIEW", "PENDING_APPROVAL"
+        ):
+            lines = (await self.db.execute(_lines_query, _lines_params)).fetchall()
             for line in lines:
-                await record_transaction(
-                    self.db,
-                    tenant_id=str(user.tenant_id),
-                    transaction_type="RETURN",
-                    product_id=str(line.product_id),
+                await write_transfer_ledger_entry(
+                    session=self.db,
+                    transfer_id=str(transfer_id),
+                    transaction_type="RELEASE",
+                    quantity=-Decimal(str(line.quantity)),
                     warehouse_id=str(row.from_warehouse_id),
-                    quantity=Decimal(str(line.quantity)),
+                    product_id=str(line.product_id),
+                    tenant_id=str(user.tenant_id),
                     performed_by=str(user.user_id),
-                    idempotency_key=f"transfer:{transfer_id}:cancel:restore:line:{line.id}",
-                    reference_id=str(transfer_id),
+                    status_transition="CANCELLED_PRE_APPROVAL",
+                    line_id=str(line.id),
+                )
+
+        # CANCELLED from APPROVED/ADVISED: restore source on_hand (deducted at APPROVED).
+        elif next_state == "CANCELLED" and row.status in ("APPROVED", "ADVISED"):
+            lines = (await self.db.execute(_lines_query, _lines_params)).fetchall()
+            for line in lines:
+                await write_transfer_ledger_entry(
+                    session=self.db,
+                    transfer_id=str(transfer_id),
+                    transaction_type="TRANSFER_REVERSAL",
+                    quantity=Decimal(str(line.quantity)),
+                    warehouse_id=str(row.from_warehouse_id),
+                    product_id=str(line.product_id),
+                    tenant_id=str(user.tenant_id),
+                    performed_by=str(user.user_id),
+                    status_transition="APPROVED_TO_CANCELLED",
+                    line_id=str(line.id),
+                )
+
+        # IN_TRANSIT: confirm source dispatch + record destination inbound.
+        elif next_state == "IN_TRANSIT":
+            lines = (await self.db.execute(_lines_query, _lines_params)).fetchall()
+            for line in lines:
+                await write_transfer_ledger_entry(
+                    session=self.db,
+                    transfer_id=str(transfer_id),
+                    transaction_type="TRANSIT_OUT",
+                    quantity=Decimal(str(line.quantity)),
+                    warehouse_id=str(row.from_warehouse_id),
+                    product_id=str(line.product_id),
+                    tenant_id=str(user.tenant_id),
+                    performed_by=str(user.user_id),
+                    status_transition="ISSUED_TO_IN_TRANSIT",
+                    line_id=str(line.id),
+                )
+                await write_transfer_ledger_entry(
+                    session=self.db,
+                    transfer_id=str(transfer_id),
+                    transaction_type="TRANSIT_IN",
+                    quantity=Decimal(str(line.quantity)),
+                    warehouse_id=str(row.to_warehouse_id),
+                    product_id=str(line.product_id),
+                    tenant_id=str(user.tenant_id),
+                    performed_by=str(user.user_id),
+                    status_transition="ISSUED_TO_IN_TRANSIT",
+                    line_id=str(line.id),
                 )
 
         await self.db.execute(
@@ -479,10 +545,20 @@ class InventoryService:
         )).fetchall()
 
         # Source on_hand was already deducted at APPROVED via TRANSFER_OUT.
-        # No ledger entry is written at the destination until RECEIVED —
-        # writing RESERVE here credited inventory_balances at the destination
-        # before stock arrived, causing balance-shows-early (BUG #8).
-        # RELEASE was removed from receive_transfer() alongside this change.
+        # Record physical dispatch in the audit ledger (does not affect on_hand again).
+        for line in lines:
+            await write_transfer_ledger_entry(
+                session=self.db,
+                transfer_id=str(transfer_id),
+                transaction_type="TRANSIT_OUT",
+                quantity=Decimal(str(line.quantity)),
+                warehouse_id=str(row.from_warehouse_id),
+                product_id=str(line.product_id),
+                tenant_id=str(user.tenant_id),
+                performed_by=str(user.user_id),
+                status_transition="APPROVED_TO_ISSUED",
+                line_id=str(line.id),
+            )
 
         await self.db.execute(
             text("UPDATE transfer_orders SET status = 'ISSUED', updated_at = now() WHERE id = :id"),
@@ -557,10 +633,32 @@ class InventoryService:
         )).fetchall()
 
         for line in lines:
-            # Source on_hand was already deducted at APPROVED via TRANSFER_OUT — do not repeat.
-            # No RELEASE needed here because dispatch_transfer() no longer writes a RESERVE
-            # at the destination (that was removed to fix balance-shows-early BUG #8).
-            # Credit destination on_hand — stock has been physically received.
+            # Clear in-transit tracking at both source and destination.
+            await write_transfer_ledger_entry(
+                session=self.db,
+                transfer_id=str(transfer_id),
+                transaction_type="TRANSIT_CLEAR",
+                quantity=-Decimal(str(line.quantity)),
+                warehouse_id=str(row.from_warehouse_id),
+                product_id=str(line.product_id),
+                tenant_id=str(user.tenant_id),
+                performed_by=str(user.user_id),
+                status_transition="IN_TRANSIT_TO_RECEIVED",
+                line_id=str(line.id),
+            )
+            await write_transfer_ledger_entry(
+                session=self.db,
+                transfer_id=str(transfer_id),
+                transaction_type="TRANSIT_CLEAR",
+                quantity=-Decimal(str(line.quantity)),
+                warehouse_id=str(row.to_warehouse_id),
+                product_id=str(line.product_id),
+                tenant_id=str(user.tenant_id),
+                performed_by=str(user.user_id),
+                status_transition="IN_TRANSIT_TO_RECEIVED",
+                line_id=f"{line.id}:dest",
+            )
+            # Credit destination on_hand — stock physically received.
             await record_transaction(
                 self.db,
                 tenant_id=str(user.tenant_id),

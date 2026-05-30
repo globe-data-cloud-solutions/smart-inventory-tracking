@@ -202,10 +202,13 @@ async def write_transfer_ledger_entry(
     tenant_id: str,
     performed_by: str,
     status_transition: str,
+    *,
+    line_id: Optional[str] = None,
 ) -> None:
     """Write a single immutable ledger entry for a transfer status transition.
 
-    Idempotency key: {transfer_id}:{transaction_type}:{status_transition}
+    Idempotency key: {transfer_id}:{transaction_type}:{status_transition}[:{line_id}]
+    Pass line_id when the transfer has multiple lines so each line gets a unique key.
     Duplicate-key 409 is caught and swallowed — safe to call on retry.
 
     Must be called inside the same DB transaction as the status change.
@@ -217,7 +220,8 @@ async def write_transfer_ledger_entry(
             f"Supported: {sorted(_TRANSFER_LEDGER_TYPES)}"
         )
 
-    idempotency_key = f"{transfer_id}:{transaction_type}:{status_transition}"
+    suffix = f":{line_id}" if line_id else ""
+    idempotency_key = f"{transfer_id}:{transaction_type}:{status_transition}{suffix}"
 
     try:
         await record_transaction(
