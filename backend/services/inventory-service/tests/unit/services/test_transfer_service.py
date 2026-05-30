@@ -374,7 +374,10 @@ class TestInventoryServiceTransfers:
         ), patch(
             "services.inventory_service.record_transaction",
             new=AsyncMock(return_value="tx-approved"),
-        ) as mock_record:
+        ) as mock_record, patch(
+            "services.inventory_service._get_simple_mode",
+            new=AsyncMock(return_value=True),
+        ):
             svc    = InventoryService(session)
             result = await svc.transition_transfer(SRC_WM, TRANSFER_ID, "APPROVED")
 
@@ -469,6 +472,9 @@ class TestInventoryServiceTransfers:
         ), patch(
             "services.inventory_service.record_transaction",
             new=AsyncMock(side_effect=_record),
+        ), patch(
+            "services.inventory_service._get_simple_mode",
+            new=AsyncMock(return_value=True),
         ):
             await InventoryService(_session_for_dispatch(xfer1, [line1])).transition_transfer(
                 SRC_WM, TRANSFER_ID, "APPROVED"
@@ -592,6 +598,9 @@ class TestInventoryServiceTransfers:
         ), patch(
             "services.inventory_service.record_transaction",
             new=AsyncMock(return_value=_TX),
+        ), patch(
+            "services.inventory_service._get_simple_mode",
+            new=AsyncMock(return_value=True),
         ):
             # First request succeeds: PENDING_APPROVAL → APPROVED
             session1 = _session_for_dispatch(xfer_row, [line])
@@ -673,6 +682,9 @@ class TestInventoryServiceTransfers:
         ), patch(
             "services.inventory_service.write_to_outbox",
             new=mock_outbox,
+        ), patch(
+            "services.inventory_service._get_simple_mode",
+            new=AsyncMock(return_value=True),
         ):
             result = await InventoryService(session).transition_transfer(
                 SRC_WM, TRANSFER_ID, "APPROVED"
@@ -707,6 +719,9 @@ class TestInventoryServiceTransfers:
         ), patch(
             "services.inventory_service.record_transaction",
             new=AsyncMock(return_value="tx-blocked"),
+        ), patch(
+            "services.inventory_service._get_simple_mode",
+            new=AsyncMock(return_value=True),
         ), pytest.raises(HTTPException) as exc_info:
             await InventoryService(session).transition_transfer(SRC_WM, TRANSFER_ID, "APPROVED")
 
@@ -1212,3 +1227,50 @@ class TestGap2LedgerWiring:
         assert r["quantity"]         == Decimal("55")    # positive = restore
         assert r["status_transition"] == "APPROVED_TO_CANCELLED"
         assert r["line_id"]          == LINE_ID
+
+
+# ── Gap 4 — simple_mode wiring tests ─────────────────────────────────────────
+
+@pytest.mark.unit
+class TestGap4SimpleModeWiring:
+
+    async def test_simple_mode_flag_read_from_tenant(self) -> None:
+        """APPROVED transition reads simple_mode from tenant.approval_thresholds
+        and passes the value to resolve_approval().
+
+        Verifies: _get_simple_mode() is awaited exactly once, and the captured
+        simple_mode kwarg on resolve_approval() matches what the helper returned.
+        """
+        from services.approval_service import ApprovalDecision
+        from services.inventory_service import InventoryService
+
+        line     = _make_line(quantity=100.0)
+        xfer_row = _make_transfer_row("PENDING_APPROVAL", transfer_type="PUSH")
+        session  = _session_for_dispatch(xfer_row, [line])
+
+        captured_resolve_kwargs: dict = {}
+
+        async def fake_resolve(*_, **kw):
+            captured_resolve_kwargs.update(kw)
+            return ApprovalDecision(
+                required_role="WM", is_auto_approved=False,
+                next_status="PENDING_APPROVAL", required_authority_level=4,
+            )
+
+        with patch("services.inventory_service.resolve_approval",
+                   side_effect=fake_resolve), \
+             patch("services.inventory_service._get_simple_mode",
+                   new=AsyncMock(return_value=False)) as mock_get_mode, \
+             patch("services.inventory_service.record_transaction",
+                   new=AsyncMock(return_value="tx-sm")), \
+             patch("services.inventory_service.write_transfer_ledger_entry",
+                   new=AsyncMock()):
+            result = await InventoryService(session).transition_transfer(
+                SRC_WM, TRANSFER_ID, "APPROVED"
+            )
+
+        assert result.status == "APPROVED"
+        mock_get_mode.assert_awaited_once(), "_get_simple_mode must be awaited once per approval"
+        assert captured_resolve_kwargs.get("simple_mode") is False, (
+            "resolve_approval must receive simple_mode=False from tenant settings"
+        )

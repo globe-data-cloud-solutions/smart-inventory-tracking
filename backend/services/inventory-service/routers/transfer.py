@@ -184,9 +184,17 @@ async def get_approval_info(
         else None
     )
 
+    _tenant_result = await db.execute(
+        text("SELECT approval_thresholds FROM tenants WHERE id = :tid"),
+        {"tid": str(user.tenant_id)},
+    )
+    _rules_json = _tenant_result.scalar()
+    simple_mode = _rules_json.get("simple_mode", True) if isinstance(_rules_json, dict) else True
+
     decision = await resolve_approval(
         db, str(user.tenant_id), transfer_row.transfer_type, total_qty,
         requester_authority_level=creator_level,
+        simple_mode=simple_mode,
     )
 
     caller_level = ROLE_AUTHORITY_LEVEL.get(getattr(user, "role", ""), 5)

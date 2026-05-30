@@ -652,3 +652,76 @@ class TestApprovalWorkflows:
         assert hasattr(svc_module, "ROLE_AUTHORITY_LEVEL"), (
             "ROLE_AUTHORITY_LEVEL must remain — it is used by inventory_service.py."
         )
+
+    # ── Gap 4 — custom mode routing tests ────────────────────────────────────
+
+    async def test_custom_mode_uses_per_type_rules(self) -> None:
+        """In custom mode (simple_mode=False), each tx type queries its own
+        approval_rule rows.  A PUSH-specific rule is used directly rather than
+        falling back to PULL rules."""
+        db = AsyncMock()
+        db.execute = AsyncMock(
+            return_value=MagicMock(fetchone=MagicMock(return_value=("NM", 1, False, [])))
+        )
+
+        decision = await resolve_approval(
+            db, TENANT_ID, "PUSH", Decimal("500"), simple_mode=False
+        )
+
+        assert decision.required_role            == "NM"
+        assert decision.required_authority_level == 1
+        assert decision.is_auto_approved         is False
+
+        # The DB query must use "PUSH" not "PULL" in custom mode
+        assert db.execute.await_count == 1, "custom PUSH rule found — no PULL fallback needed"
+        call_params = db.execute.call_args_list[0].args[1]
+        assert call_params["tx_type"] == "PUSH", (
+            "custom mode must query the PUSH-specific rule first"
+        )
+
+    async def test_custom_mode_falls_back_to_simple(self) -> None:
+        """In custom mode (simple_mode=False), when no PUSH-specific rule exists,
+        fall back to PULL rules before using org-type defaults."""
+        db = AsyncMock()
+        db.execute = AsyncMock(side_effect=[
+            MagicMock(fetchone=MagicMock(return_value=None)),                      # PUSH → no rule
+            MagicMock(fetchone=MagicMock(return_value=("RM", 2, False, []))),      # PULL → RM
+        ])
+
+        decision = await resolve_approval(
+            db, TENANT_ID, "PUSH", Decimal("500"), simple_mode=False
+        )
+
+        assert decision.required_role            == "RM"
+        assert decision.required_authority_level == 2
+        assert db.execute.await_count == 2, (
+            "two DB calls expected: PUSH lookup (None) then PULL fallback"
+        )
+        push_params = db.execute.call_args_list[0].args[1]
+        pull_params  = db.execute.call_args_list[1].args[1]
+        assert push_params["tx_type"] == "PUSH"
+        assert pull_params["tx_type"] == "PULL", (
+            "custom mode fallback must query PULL rules when PUSH rule is absent"
+        )
+
+    async def test_sister_always_uses_pull_rules(self) -> None:
+        """SISTER always queries PULL bands regardless of simple_mode.
+
+        In custom mode, the PULL-fallback is skipped for SISTER because the
+        type is remapped to PULL before any fallback check — so SISTER makes
+        exactly one DB call (the PULL lookup) even in custom mode.
+        """
+        db = AsyncMock()
+        db.execute = AsyncMock(
+            return_value=MagicMock(fetchone=MagicMock(return_value=("WM", 4, True, [])))
+        )
+
+        await resolve_approval(db, TENANT_ID, "SISTER", Decimal("100"), simple_mode=False)
+
+        assert db.execute.await_count == 1, (
+            "SISTER makes exactly one DB call in custom mode (PULL lookup, no fallback)"
+        )
+        call_params = db.execute.call_args_list[0].args[1]
+        assert call_params["tx_type"] == "PULL", (
+            "SISTER must query PULL bands in custom mode — it is remapped before fallback"
+        )

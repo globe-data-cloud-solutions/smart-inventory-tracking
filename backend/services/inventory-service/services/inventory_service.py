@@ -40,6 +40,21 @@ from shared.permissions.audit import audit_log
 _FORCE_NEGATIVE_REASONS: frozenset[str] = frozenset({"DAMAGE", "EXPIRY", "SUPPLIER_RETURN"})
 
 
+async def _get_simple_mode(session: AsyncSession, tenant_id: str) -> bool:
+    """Read simple_mode from the tenant's approval_thresholds JSONB.
+
+    Returns True when the column is absent, None, or the key is missing — safe default.
+    simple_mode=True  → all tx types share one approval tier set.
+    simple_mode=False → each tx type may have its own tier set (custom mode).
+    """
+    result = await session.execute(
+        text("SELECT approval_thresholds FROM tenants WHERE id = :tid"),
+        {"tid": tenant_id},
+    )
+    rules_json = result.scalar()
+    return rules_json.get("simple_mode", True) if isinstance(rules_json, dict) else True
+
+
 class InventoryService:
     def __init__(self, db: AsyncSession) -> None:
         self.db = db
@@ -362,9 +377,11 @@ class InventoryService:
                     },
                 )
 
+            simple_mode = await _get_simple_mode(self.db, str(user.tenant_id))
             decision = await resolve_approval(
                 self.db, str(user.tenant_id), transfer_type, total_qty,
                 requester_authority_level=creator_level,
+                simple_mode=simple_mode,
             )
             if caller_level > decision.required_authority_level:
                 from fastapi import HTTPException
