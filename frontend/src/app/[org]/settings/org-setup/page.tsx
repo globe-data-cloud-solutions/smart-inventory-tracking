@@ -953,6 +953,8 @@ function ApprovalRulesTab({ tenantId }: { tenantId: string }) {
   );
   const [activeCustomTab, setActiveCustomTab] = useState<TxTabKey>("PULL");
   const [initialized, setInitialized] = useState(false);
+  const [pendingSwitch, setPendingSwitch] = useState(false);
+  const [switchNotice, setSwitchNotice] = useState<string | null>(null);
   const [gapError, setGapError] = useState<string | null>(null);
   const [saveOk, setSaveOk] = useState(false);
   const [saveErr, setSaveErr] = useState<string | null>(null);
@@ -1022,8 +1024,9 @@ function ApprovalRulesTab({ tenantId }: { tenantId: string }) {
     setInitialized(true);
   }
 
-  function buildRules(): SavedApprovalRule[] {
-    if (simpleMode) {
+  function buildRules(mode?: boolean): SavedApprovalRule[] {
+    const useSimple = mode ?? simpleMode;
+    if (useSimple) {
       return (["PULL", "SISTER", "PUSH", "ADJUSTMENT", "RECEIVE", "ISSUE"] as const).flatMap(
         (tx) => tiersToRules(simpleTiers, tx)
       );
@@ -1038,6 +1041,18 @@ function ApprovalRulesTab({ tenantId }: { tenantId: string }) {
     ];
   }
 
+  function handleConfirmSwitch() {
+    const newMode = !simpleMode;
+    const notice = newMode
+      ? t("approval.switched_to_simple")
+      : t("approval.switched_to_custom");
+    setSimpleMode(newMode);
+    setPendingSwitch(false);
+    setSwitchNotice(notice);
+    setSaveOk(false);
+    saveMutation.mutate({ rules: buildRules(newMode), simple_mode: newMode });
+  }
+
   function handleSave() {
     const tierSets = simpleMode
       ? [simpleTiers]
@@ -1047,6 +1062,7 @@ function ApprovalRulesTab({ tenantId }: { tenantId: string }) {
       if (err) { setGapError(err); return; }
     }
     setGapError(null);
+    setSwitchNotice(null);
     saveMutation.mutate({ rules: buildRules(), simple_mode: simpleMode });
   }
 
@@ -1096,27 +1112,80 @@ function ApprovalRulesTab({ tenantId }: { tenantId: string }) {
       </div>
 
       {/* Mode selector */}
-      <div className="flex gap-6">
-        <label className="flex items-center gap-2 cursor-pointer">
-          <input
-            type="radio"
-            name="approval-mode"
-            checked={simpleMode}
-            onChange={() => setSimpleMode(true)}
-            className="accent-emerald-600"
-          />
-          <span className="text-sm text-gray-700">{t("approval.simple_mode")}</span>
-        </label>
-        <label className="flex items-center gap-2 cursor-pointer">
-          <input
-            type="radio"
-            name="approval-mode"
-            checked={!simpleMode}
-            onChange={() => setSimpleMode(false)}
-            className="accent-emerald-600"
-          />
-          <span className="text-sm text-gray-700">{t("approval.custom_mode")}</span>
-        </label>
+      <div className="space-y-3">
+        <div className="flex gap-3">
+          <button
+            type="button"
+            onClick={() => !simpleMode && setPendingSwitch(true)}
+            className={`flex-1 text-left rounded-lg border-2 px-4 py-3 transition-all ${
+              simpleMode
+                ? "border-emerald-500 bg-emerald-50"
+                : "border-gray-200 bg-white hover:border-gray-300"
+            }`}
+          >
+            <div className="flex items-center justify-between mb-1">
+              <span className="text-sm font-semibold text-gray-900">{t("approval.simple_mode_title")}</span>
+              {simpleMode ? (
+                <span className="text-xs font-medium text-emerald-700 bg-emerald-100 px-2 py-0.5 rounded-full">
+                  {"●"} {t("approval.active")}
+                </span>
+              ) : (
+                <span className="text-xs text-gray-400 bg-gray-100 px-2 py-0.5 rounded-full">
+                  {"○"} {t("approval.saved")}
+                </span>
+              )}
+            </div>
+            <p className="text-xs text-gray-500">{t("approval.simple_mode_desc")}</p>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => simpleMode && setPendingSwitch(true)}
+            className={`flex-1 text-left rounded-lg border-2 px-4 py-3 transition-all ${
+              !simpleMode
+                ? "border-emerald-500 bg-emerald-50"
+                : "border-gray-200 bg-white hover:border-gray-300"
+            }`}
+          >
+            <div className="flex items-center justify-between mb-1">
+              <span className="text-sm font-semibold text-gray-900">{t("approval.custom_mode_title")}</span>
+              {!simpleMode ? (
+                <span className="text-xs font-medium text-emerald-700 bg-emerald-100 px-2 py-0.5 rounded-full">
+                  {"●"} {t("approval.active")}
+                </span>
+              ) : (
+                <span className="text-xs text-gray-400 bg-gray-100 px-2 py-0.5 rounded-full">
+                  {"○"} {t("approval.saved")}
+                </span>
+              )}
+            </div>
+            <p className="text-xs text-gray-500">{t("approval.custom_mode_desc")}</p>
+          </button>
+        </div>
+
+        {pendingSwitch && (
+          <div className="rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 space-y-2">
+            <p className="text-sm text-amber-800">
+              {"⚠"} {simpleMode ? t("approval.switch_warning_custom") : t("approval.switch_warning_simple")}
+            </p>
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={handleConfirmSwitch}
+                className="px-3 py-1.5 bg-emerald-700 text-white text-xs font-semibold rounded hover:bg-emerald-800"
+              >
+                {t("approval.confirm_switch")}
+              </button>
+              <button
+                type="button"
+                onClick={() => setPendingSwitch(false)}
+                className="px-3 py-1.5 border border-gray-300 text-gray-700 text-xs rounded hover:bg-gray-50"
+              >
+                {t("common.cancel")}
+              </button>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Simple mode — one table for all transaction types */}
@@ -1173,7 +1242,8 @@ function ApprovalRulesTab({ tenantId }: { tenantId: string }) {
         </p>
       )}
       {saveErr && <p className="text-sm text-red-600">{saveErr}</p>}
-      {saveOk  && <p className="text-sm text-emerald-600 font-medium">{t("approval_rules.saved")}</p>}
+      {saveOk && !switchNotice && <p className="text-sm text-emerald-600 font-medium">{t("approval_rules.saved")}</p>}
+      {switchNotice && <p className="text-sm text-emerald-600 font-medium">{switchNotice}</p>}
 
       <button
         type="button"

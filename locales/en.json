@@ -904,6 +904,19 @@
     "insufficient": "Insufficient authority",
     "gap_error": "Gap detected between tiers",
     "tier_hint": "The last tier automatically covers all quantities above the previous limit.",
-    "tier_help": "Each tier defines who approves transfers up to a certain quantity.\nThe last tier covers all quantities above the previous limit (unlimited).\nDelete a tier to skip that approval level — e.g. send all requests directly to the top.\nThe highest authority level cannot be exceeded."
+    "tier_help": "Each tier defines who approves transfers up to a certain quantity.\nThe last tier covers all quantities above the previous limit (unlimited).\nDelete a tier to skip that approval level — e.g. send all requests directly to the top.\nThe highest authority level cannot be exceeded.",
+    "simple_mode_title": "Simple Mode",
+    "custom_mode_title": "Custom Mode",
+    "simple_mode_desc": "Same rules for all transaction types",
+    "custom_mode_desc": "Different rules per transaction type",
+    "active": "Active",
+    "saved": "Saved",
+    "switch_to_custom": "Switch to Custom Mode",
+    "switch_to_simple": "Switch to Simple Mode",
+    "switch_warning_custom": "Switching to Custom mode will deactivate Simple rules. Your Simple rules remain saved and can be reactivated anytime.",
+    "switch_warning_simple": "Switching to Simple mode will deactivate Custom rules. Your Custom rules remain saved and can be reactivated anytime.",
+    "confirm_switch": "Confirm Switch",
+    "switched_to_custom": "Switched to Custom mode. Simple rules saved for later.",
+    "switched_to_simple": "Switched to Simple mode. Custom rules saved for later."
   }
 }

@@ -153,11 +153,11 @@ async def _query_threshold(
     tenant_id: str,
     transaction_type: str,
     quantity: Decimal,
-) -> ThresholdRow:
+) -> Optional[ThresholdRow]:
     """Query approval_rule for the matching quantity band (tenant-level rules only).
 
     Reads authority_level, auto_approve, and notify_levels added by migration 027.
-    Falls back to _get_default_threshold() when no matching row exists.
+    Returns None when no matching row exists (caller decides fallback strategy).
     """
     result = await session.execute(
         text("""
@@ -183,7 +183,7 @@ async def _query_threshold(
             auto_approve=bool(row[2]),
             notify_levels=notify,
         )
-    return _get_default_threshold(transaction_type, quantity)
+    return None
 
 
 async def resolve_approval(
@@ -192,11 +192,14 @@ async def resolve_approval(
     transaction_type: str,
     quantity: Decimal,
     product_id: Optional[str] = None,
+    simple_mode: bool = True,
 ) -> ApprovalDecision:
     """3-step approval resolution for a transfer or adjustment.
 
     Step 1: product_approval_minimums — per-product authority floor override.
     Step 2: approval_rule quantity band.  SISTER uses PULL bands (PRD-APPENDIX §B9).
+            When simple_mode=False and no custom rule exists for the type, falls back
+            to PULL rules before using hardcoded org-type defaults.
     Step 3: required_level = min(product_min, threshold_level) — lower = more restrictive.
 
     auto_approve is True only when:
@@ -221,6 +224,13 @@ async def resolve_approval(
     # Step 2: quantity-band threshold (SISTER → PULL lookup)
     lookup_type = "PULL" if transaction_type == "SISTER" else transaction_type
     threshold = await _query_threshold(session, tenant_id, lookup_type, quantity)
+
+    # Custom mode fallback: if no rule found for this type, try PULL before org defaults
+    if threshold is None and not simple_mode and lookup_type != "PULL":
+        threshold = await _query_threshold(session, tenant_id, "PULL", quantity)
+
+    if threshold is None:
+        threshold = _get_default_threshold(lookup_type, quantity)
 
     # Step 3: take more restrictive level (lower number = higher authority)
     threshold_level = threshold.authority_level

@@ -515,6 +515,19 @@
     "insufficient": "Aangoo ga'aa miti",
     "gap_error": "Gidduu sadarkaalee duwwaa argame",
     "tier_hint": "Sadarkaan dhumaa daangaa duraatii ol jiru hunda of keessatti hammata.",
-    "tier_help": "Sadarkaan tokko tokko hanga baay'ina murtaa'etti dabarsiinsa eenyutu hayyamu akka ta'e adda baasuuf.\nSadarkaan dhumaa daangaa duraatii ol jiru hunda hammata (daangaa hin qabu).\nSadarkaa haquun sadarkaa hayyamaa sana darbuuf — fkn gaaffii hunda kallattiin gara gubbaa erguuf.\nSadarkaa aangoo olaanaa caaluun hin danda'amu."
+    "tier_help": "Sadarkaan tokko tokko hanga baay'ina murtaa'etti dabarsiinsa eenyutu hayyamu akka ta'e adda baasuuf.\nSadarkaan dhumaa daangaa duraatii ol jiru hunda hammata (daangaa hin qabu).\nSadarkaa haquun sadarkaa hayyamaa sana darbuuf — fkn gaaffii hunda kallattiin gara gubbaa erguuf.\nSadarkaa aangoo olaanaa caaluun hin danda'amu.",
+    "simple_mode_title": "Haala Salphaa",
+    "custom_mode_title": "Haala Addaa",
+    "simple_mode_desc": "Seera wal-fakkaataa gosa daldalaa hundaaf",
+    "custom_mode_desc": "Seera adda adda gosa daldalaa tokkoo tokkoof",
+    "active": "Hojjataa",
+    "saved": "Kuufame",
+    "switch_to_custom": "Gara Haala Addaatti Jijjiiri",
+    "switch_to_simple": "Gara Haala Salphaaatti Jijjiiri",
+    "switch_warning_custom": "Gara haala addaatti jijjiiruu seera salphaa dhorkuu danda'a. Seerri salphaa kee kuufamee jira yeroo kamiiyyuu hojii irra ooluu danda'a.",
+    "switch_warning_simple": "Gara haala salphaaatti jijjiiruu seera addaa dhorkuu danda'a. Seerri addaa kee kuufamee jira yeroo kamiiyyuu hojii irra ooluu danda'a.",
+    "confirm_switch": "Jijjiira Mirkaneessi",
+    "switched_to_custom": "Gara haala addaatti jijjiirrame. Seerri salphaa booda kuufame.",
+    "switched_to_simple": "Gara haala salphaaatti jijjiirrame. Seerri addaa booda kuufame."
   }
 }
