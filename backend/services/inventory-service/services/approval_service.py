@@ -1,23 +1,22 @@
-"""Approval routing service (CLAUDE.md §15, §21, IMTS §6, PROMPT 2A).
+"""Approval routing service (CLAUDE.md §15, §21, IMTS §6).
 
-Two interfaces:
-  resolve_approval()   — module-level async function; 3-step resolution using the
-                         new authority_level / auto_approve / notify_levels columns
-                         added by migration 027.  Use this in all new code.
-  ApprovalService      — legacy class kept for backward compatibility with existing
-                         tests and callers that use route_approval() / get_required_approver().
+Single interface: resolve_approval() — module-level async function.
+
+3-step resolution using authority_level / auto_approve / notify_levels columns:
+  Step 1: product_approval_minimums authority floor (per-product override)
+  Step 2: approval_rule quantity band (SISTER always queries PULL bands)
+  Step 3: required_level = min(product_min, threshold_level); escalation if
+          required_level >= requester_authority_level (requester cannot self-approve)
 
 Authority level scale (lower = higher authority):
   SA/TA/NM = 1,  RM = 2,  LM = 3,  WM = 4
   Stored in approval_rule.authority_level and product_approval_minimums.min_authority_level.
-
-Old ROLE_LEVEL scale (SA=10 highest) is retained for backward compat with ApprovalService.
 """
 from __future__ import annotations
 
 from dataclasses import dataclass, field
 from decimal import Decimal
-from typing import ClassVar, Optional
+from typing import Optional
 
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -25,22 +24,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 # ── Role scale constants ──────────────────────────────────────────────────────
 
-# Old privilege scale: CLAUDE.md §13 role hierarchy (SA=10 highest)
-# Used by ApprovalService.route_approval() for backward compatibility.
-ROLE_LEVEL: dict[str, int] = {
-    "SYS":   1,
-    "AU":    2,
-    "RT":    3,
-    "SA_GT": 4,
-    "WM":    6,
-    "LM":    6,
-    "RM":    7,
-    "NM":    8,
-    "TA":    9,
-    "SA":   10,
-}
-
-# New authority tier (lower = higher authority).
+# Authority tier (lower = higher authority).
 # Matches authority_level column added by migration 027.
 ROLE_AUTHORITY_LEVEL: dict[str, int] = {
     "SA":    1,
@@ -284,114 +268,3 @@ async def resolve_approval(
         reason=reason,
     )
 
-
-# ── ApprovalService — legacy class-based interface ────────────────────────────
-
-class ApprovalService:
-    """Legacy approval service.
-
-    Uses the old ROLE_LEVEL (SA=10) scale for auto-approve decisions.
-    New code should use the module-level resolve_approval() function instead.
-    """
-
-    _ROLE_LEVEL: ClassVar[dict[str, int]] = ROLE_LEVEL
-    _ORG_TYPE_DEFAULTS: ClassVar[dict[str, list[tuple[Decimal, Optional[Decimal], str]]]] = (
-        _ORG_TYPE_DEFAULTS
-    )
-
-    def __init__(self, db: AsyncSession) -> None:
-        self.db = db
-
-    async def _query_rule(
-        self,
-        tenant_id: str,
-        transfer_type: str,
-        quantity: Decimal,
-        product_id: Optional[str],
-    ) -> Optional[str]:
-        """Query approval_rule for approver_role only.
-
-        product_id=None → tenant-level rules (product_id IS NULL).
-        product_id=<uuid> → product-level rules for that product.
-        """
-        if product_id is not None:
-            result = await self.db.execute(
-                text("""
-                    SELECT approver_role
-                    FROM   approval_rule
-                    WHERE  tenant_id        = :tid
-                      AND  transaction_type = :tx_type
-                      AND  product_id       = :pid
-                      AND  is_active        = true
-                      AND  (min_quantity IS NULL OR :qty >= min_quantity)
-                      AND  (max_quantity IS NULL OR :qty <= max_quantity)
-                    ORDER BY approval_order ASC
-                    LIMIT 1
-                """),
-                {"tid": tenant_id, "tx_type": transfer_type,
-                 "qty": str(quantity), "pid": product_id},
-            )
-        else:
-            result = await self.db.execute(
-                text("""
-                    SELECT approver_role
-                    FROM   approval_rule
-                    WHERE  tenant_id        = :tid
-                      AND  transaction_type = :tx_type
-                      AND  product_id IS NULL
-                      AND  is_active        = true
-                      AND  (min_quantity IS NULL OR :qty >= min_quantity)
-                      AND  (max_quantity IS NULL OR :qty <= max_quantity)
-                    ORDER BY approval_order ASC
-                    LIMIT 1
-                """),
-                {"tid": tenant_id, "tx_type": transfer_type, "qty": str(quantity)},
-            )
-        row = result.fetchone()
-        return str(row[0]) if row else None
-
-    @classmethod
-    def _get_org_type_default(cls, transfer_type: str, quantity: Decimal) -> str:
-        bands = cls._ORG_TYPE_DEFAULTS.get(transfer_type)
-        if not bands:
-            raise ValueError(f"No default approval rule for transfer_type={transfer_type!r}")
-        for min_qty, max_qty, role in bands:
-            if quantity >= min_qty and (max_qty is None or quantity <= max_qty):
-                return role
-        raise ValueError(f"No default band matched {transfer_type} qty={quantity}")
-
-    async def get_required_approver(
-        self,
-        tenant_id: str,
-        transfer_type: str,
-        quantity: Decimal,
-        product_id: Optional[str] = None,
-    ) -> str:
-        if product_id:
-            role = await self._query_rule(tenant_id, transfer_type, quantity, product_id)
-            if role:
-                return role
-        role = await self._query_rule(tenant_id, transfer_type, quantity, None)
-        if role:
-            return role
-        return self._get_org_type_default(transfer_type, quantity)
-
-    async def route_approval(
-        self,
-        tenant_id: str,
-        transfer_type: str,
-        quantity: Decimal,
-        initiator_role: str,
-        product_id: Optional[str] = None,
-    ) -> ApprovalDecision:
-        required_role    = await self.get_required_approver(
-            tenant_id, transfer_type, quantity, product_id
-        )
-        initiator_level  = self._ROLE_LEVEL.get(initiator_role, 0)
-        required_level   = self._ROLE_LEVEL.get(required_role, 0)
-        is_auto_approved = initiator_level >= required_level
-        return ApprovalDecision(
-            required_role=required_role,
-            is_auto_approved=is_auto_approved,
-            next_status="APPROVED" if is_auto_approved else "PENDING_APPROVAL",
-        )

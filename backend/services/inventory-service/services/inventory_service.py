@@ -371,14 +371,10 @@ class InventoryService:
                 raise HTTPException(
                     status_code=403,
                     detail={
-                        "code":    "INSUFFICIENT_APPROVAL_AUTHORITY",
-                        "message": (
-                            f"This transfer requires {decision.required_role_display} "
-                            f"approval. Your role ({getattr(user, 'role', '?')}) does "
-                            f"not have sufficient authority."
-                        ),
-                        "required_authority_level": decision.required_authority_level,
-                        "required_role":            decision.required_role,
+                        "code":          "INSUFFICIENT_APPROVAL_AUTHORITY",
+                        "required":      decision.required_authority_level,
+                        "required_role": decision.required_role_display,
+                        "reason":        decision.reason,
                     },
                 )
 
