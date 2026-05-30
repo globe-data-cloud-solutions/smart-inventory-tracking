@@ -7,7 +7,9 @@ in pending_out_qty caused net_available = current_stock - pending_out_qty = 1900
 = 1800, a double deduction.
 
 Correct WMS Option A behaviour (per CLAUDE.md §17 and inventory-state.ts):
-  pending_out_qty  = DRAFT/PENDING soft holds only (On Hand NOT yet reduced)
+  pending_out_qty  = PENDING_REVIEW/PENDING_APPROVAL/PENDING_*_CONFIRM only
+                     DRAFT is excluded: it carries no stock commitment and creates
+                     no reservation — source Reserved must be 0 at DRAFT status.
   in_transit_out_qty = ISSUED/IN_TRANSIT (informational; On Hand already reduced at APPROVED)
   net_available    = current_stock - pending_out_qty   (in_transit_out NOT subtracted)
 
@@ -97,6 +99,30 @@ class TestInventoryStockOutSchema:
         assert item.net_available == Decimal("1900"), (
             "in_transit_out_qty is informational. "
             "It must NOT be subtracted from net_available — On Hand already reflects the deduction."
+        )
+
+    def test_draft_transfer_does_not_reserve_stock(self) -> None:
+        """DRAFT status must produce pending_out_qty=0 and net_available=current_stock.
+
+        The SQL filter in get_stock() excludes 'DRAFT' from pending_out_qty by design
+        (CLAUDE.md §17): a DRAFT transfer carries no stock commitment and can be
+        discarded at any time. Reserved (soft hold) only begins at PENDING_REVIEW.
+        """
+        item = InventoryStockOut(
+            product_id="aaaaaaaa-0000-0000-0000-000000000001",
+            product_name="Cement 50kg",
+            product_sku="CEM-001",
+            warehouse_id="20000000-0000-0000-0000-000000000001",
+            warehouse_name="AW North",
+            current_stock=Decimal("2000"),
+            pending_out_qty=Decimal("0"),    # DRAFT excluded — no soft hold
+            in_transit_out_qty=Decimal("0"),
+            in_transit_in_qty=Decimal("0"),
+            requested_qty=Decimal("0"),
+        )
+        assert item.net_available == Decimal("2000"), (
+            "At DRAFT: pending_out_qty must be 0. net_available must equal current_stock. "
+            "The SQL filter enforces this by excluding DRAFT from the pending_out query."
         )
 
     def test_net_available_full_column_trace(self) -> None:

@@ -194,12 +194,12 @@ function TransactionDetailModal({ col, productName, rows, onClose }: {
 }
 
 /* ── Expandable cell button ─────────────────────────────────────────────────── */
-function ExpandCell({ qty, cls, prefix, icon, onClick }: {
-  qty: number; cls: string; prefix?: string; icon?: string; onClick: () => void;
+function ExpandCell({ qty, cls, prefix, icon, tooltip, onClick }: {
+  qty: number; cls: string; prefix?: string; icon?: string; tooltip?: string; onClick: () => void;
 }) {
   if (qty <= 0) return <span className="text-gray-200">—</span>;
   return (
-    <button onClick={onClick} title={t("inventory.expand_hint")}
+    <button onClick={onClick} title={tooltip ?? t("inventory.expand_hint")}
       className={`font-bold text-xs px-2.5 py-0.5 rounded border cursor-pointer inline-flex items-center gap-1 ${cls}`}>
       {icon && <span>{icon}</span>}
       {prefix}{qty.toLocaleString()}
@@ -605,12 +605,14 @@ export default function InventoryPage() {
                     {showWarehouseColumns && (
                       <td className="px-3.5 py-2.5 text-right">
                         <ExpandCell qty={inTransitOut} cls="text-red-600 bg-red-50 border-red-200" icon="→"
+                          tooltip={t("inventory.tooltip.in_transit_out")}
                           onClick={() => setExpandedCell({ productId: p.id, productName: p.name, warehouseId: whId, col: "inTransitOut" })} />
                       </td>
                     )}
                     {showWarehouseColumns && (
                       <td className="px-3.5 py-2.5 text-right">
                         <ExpandCell qty={inTransitIn} cls="text-blue-600 bg-blue-50 border-blue-200" icon="←"
+                          tooltip={t("inventory.tooltip.in_transit_in")}
                           onClick={() => setExpandedCell({ productId: p.id, productName: p.name, warehouseId: whId, col: "inTransitIn" })} />
                       </td>
                     )}

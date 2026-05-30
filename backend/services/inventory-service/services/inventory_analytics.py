@@ -85,11 +85,13 @@ async def get_stock(
         wid = r.warehouse_id
         tid_param = {"tid": str(tenant_id)} if tenant_id else {}
 
-        # Soft holds: orders not yet approved (reservation, no On Hand change yet).
-        # WMS Option A: On Hand reduces at APPROVED via TRANSFER_OUT ledger entry.
-        # APPROVED/ISSUED/IN_TRANSIT must NOT be included here — current_stock
-        # already reflects the APPROVED deduction; including them causes a double
-        # deduction in net_available.
+        # Soft holds: transfers that have passed DRAFT and entered the approval
+        # chain — the stock is "spoken for" but On Hand has not changed yet.
+        # DRAFT is intentionally excluded: a DRAFT transfer has no commitment —
+        # it can be discarded without any stock consequence (CLAUDE.md §17).
+        # APPROVED/ISSUED/IN_TRANSIT are also excluded: current_stock already
+        # reflects the APPROVED deduction via the TRANSFER_OUT ledger entry;
+        # including them would cause a double deduction in net_available.
         pending_out_sql = text("""
             SELECT COALESCE(SUM(tol.quantity), 0)
             FROM transfer_order_lines tol
@@ -97,7 +99,7 @@ async def get_stock(
             WHERE to_.from_warehouse_id = :wid
               AND tol.product_id = :pid
               AND to_.status IN (
-                'DRAFT','PENDING_REVIEW','PENDING_APPROVAL',
+                'PENDING_REVIEW','PENDING_APPROVAL',
                 'PENDING_SOURCE_CONFIRM','PENDING_DEST_CONFIRM'
               )
         """ + (" AND to_.tenant_id = :tid" if tenant_id else ""))

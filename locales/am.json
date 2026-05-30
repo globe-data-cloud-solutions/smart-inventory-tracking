@@ -42,6 +42,10 @@
     "count": {
       "title": "ዑደታዊ ቆጠራ",
       "start_session": "የቆጠራ ክፍለ ጊዜ ጀምር"
+    },
+    "tooltip": {
+      "in_transit_out": "ከዚህ መጋዘን የተላከ ክምችት፤ ወደ መድረሻ እስካሁን አልደረሰም",
+      "in_transit_in":  "ወደዚህ መጋዘን በጉዞ ላይ ያለ ክምችት"
     }
   },
   "scanner": {

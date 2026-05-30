@@ -13,6 +13,8 @@ export default function LoginPage() {
   const [error, setError]       = useState("");
   const [loading, setLoading]   = useState(false);
 
+  const sessionExpired = searchParams.get("reason") === "session_expired";
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
@@ -111,6 +113,12 @@ export default function LoginPage() {
               <h1 className="text-2xl font-bold text-gray-900">Sign in</h1>
               <p className="text-gray-500 text-sm mt-1">Access your inventory dashboard</p>
             </div>
+
+            {sessionExpired && (
+              <div className="mb-5 rounded-lg bg-amber-50 border border-amber-200 px-4 py-3 text-sm text-amber-800">
+                Your session has expired. Please sign in again to continue.
+              </div>
+            )}
 
             <form onSubmit={handleSubmit} className="space-y-5">
               <div>

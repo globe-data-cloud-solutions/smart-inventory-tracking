@@ -1701,5 +1701,61 @@ Three bugs fixed.
 
 ---
 
+---
+
+## Session 11 — Inventory analytics, JWT expiry, transit tooltips
+
+Three bugs fixed.
+
+### Bug 1 — Reserved shows at DRAFT status
+
+**Symptom:** A transfer at DRAFT status caused the source warehouse Reserved column to show a non-zero value, making available stock appear lower than it actually was.
+
+**Root cause:** `pending_out_sql` in `get_stock()` included `'DRAFT'` in its status IN clause. Per CLAUDE.md §17, DRAFT carries no stock commitment — it can be discarded without any stock consequence. Reserved (soft hold) must only begin at `PENDING_REVIEW`.
+
+| Change | File |
+|---|---|
+| Remove `'DRAFT'` from `pending_out_sql` status IN clause | `backend/services/inventory-service/services/inventory_analytics.py` |
+| Update docstring to describe correct DRAFT exclusion rationale | `backend/services/inventory-service/services/inventory_analytics.py` |
+| Add regression test `test_draft_transfer_does_not_reserve_stock` | `backend/services/inventory-service/tests/unit/services/test_analytics_stock.py` |
+| Update module docstring to reflect correct WMS Option A column trace | `backend/services/inventory-service/tests/unit/services/test_analytics_stock.py` |
+
+### Bug 2 — JWT expiry causes data loss
+
+**Symptom:** When a JWT token expires mid-session, API calls return 401. The frontend threw an unhandled error, losing all in-progress form data. The user had to manually log out and log back in with no indication of why.
+
+**Root cause:** `api.ts` had no JWT expiry pre-check and no 401 redirect. `demo-auth.ts` `getSession()` returned stale expired sessions. The login page had no session-expired notice.
+
+| Change | File |
+|---|---|
+| Add `_jwtExp()`, `_isJwtExpiringSoon()` (5-min window), `_redirectToLogin()` helpers | `frontend/src/lib/api.ts` |
+| Pre-flight check in `request()`: redirect to `/login?reason=session_expired&from=<path>` if token expiring | `frontend/src/lib/api.ts` |
+| On 401 response: clear `smart_demo_session` from localStorage and redirect to login | `frontend/src/lib/api.ts` |
+| `getSession()`: detect expired `jwtToken` via `decodeJwtPayload`, clear session and return null | `frontend/src/lib/demo-auth.ts` |
+| Show amber "Your session has expired" notice when `?reason=session_expired` in URL | `frontend/src/app/(auth)/login/page.tsx` |
+
+### Bug 3 — Transit arrow direction unclear
+
+**Symptom:** Users were unsure whether the `→` and `←` arrows in the In Transit Out and In Transit In columns represented stock leaving or arriving, and how it related to their On Hand balance.
+
+**Root cause:** No hover tooltip distinguished the direction semantics. Arrows were already correct (`→` out, `←` in) but provided no contextual explanation.
+
+| Change | File |
+|---|---|
+| Add optional `tooltip?: string` prop to `ExpandCell`; use it as `title` attribute (falls back to expand hint) | `frontend/src/app/[org]/inventory/page.tsx` |
+| Pass `t("inventory.tooltip.in_transit_out")` to In Transit Out cell | `frontend/src/app/[org]/inventory/page.tsx` |
+| Pass `t("inventory.tooltip.in_transit_in")` to In Transit In cell | `frontend/src/app/[org]/inventory/page.tsx` |
+| Add `inventory.tooltip.in_transit_out` and `inventory.tooltip.in_transit_in` keys | `locales/en.json`, `locales/am.json`, `locales/or.json` |
+
+### Regression tests added (Session 11)
+
+| Test | File |
+|---|---|
+| `test_draft_transfer_does_not_reserve_stock` | `test_analytics_stock.py` |
+
+**Final state:** 135 unit tests passing, 0 failing · TypeScript: 0 errors
+
+---
+
 *SMART Inventory Platform — Bug Report v4.0*  
 *Backend: Python 3.12 / FastAPI · Frontend: Next.js 14 / TypeScript · DB: PostgreSQL 16*

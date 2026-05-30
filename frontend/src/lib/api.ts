@@ -17,6 +17,30 @@ function _readSession(): _Session {
   } catch { return {}; }
 }
 
+/** Decode JWT exp claim. Returns seconds-since-epoch or null if unreadable. */
+function _jwtExp(token: string): number | null {
+  try {
+    const b64 = token.split(".")[1]?.replace(/-/g, "+").replace(/_/g, "/") ?? "";
+    const payload = JSON.parse(atob(b64)) as { exp?: number };
+    return typeof payload.exp === "number" ? payload.exp : null;
+  } catch { return null; }
+}
+
+/** True if the token has expired or will expire within windowSeconds (default 5 min). */
+function _isJwtExpiringSoon(token: string, windowSeconds = 300): boolean {
+  const exp = _jwtExp(token);
+  if (exp === null) return false;
+  return Date.now() / 1000 >= exp - windowSeconds;
+}
+
+/** Redirect to /login preserving the current path and signalling session expiry. */
+function _redirectToLogin(): void {
+  if (typeof window === "undefined") return;
+  const from = window.location.pathname + window.location.search;
+  const params = new URLSearchParams({ reason: "session_expired", from });
+  window.location.href = `/login?${params.toString()}`;
+}
+
 /** Read the tenant slug from the session so API routes can filter by tenant. */
 function getTenantSlug(): string {
   const s = _readSession();
@@ -50,6 +74,13 @@ async function request<T>(
   // An explicit token argument always wins; falls back to the session JWT.
   const session = _readSession();
   const bearer = token ?? session.jwtToken;
+
+  // Pre-flight: redirect before sending if the token is expired or about to expire.
+  if (bearer && _isJwtExpiringSoon(bearer)) {
+    _redirectToLogin();
+    return new Promise<T>(() => { /* navigation pending */ });
+  }
+
   if (bearer) headers["Authorization"] = `Bearer ${bearer}`;
   const tenantSlug = getTenantSlug();
   if (tenantSlug) headers["X-Tenant-Slug"] = tenantSlug;
@@ -62,6 +93,13 @@ async function request<T>(
     headers,
     body: body ? JSON.stringify(body) : undefined,
   });
+
+  // 401 from the server means the token was rejected — clear session and redirect.
+  if (res.status === 401) {
+    window.localStorage.removeItem("smart_demo_session");
+    _redirectToLogin();
+    return new Promise<T>(() => { /* navigation pending */ });
+  }
 
   const json = (await res.json()) as ApiResponse<T> | ApiError;
 

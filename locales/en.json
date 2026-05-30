@@ -53,6 +53,10 @@
       "transit":        "← inbound / → outbound currently moving (click to expand)",
       "available":      "On Hand minus Reserved and In Transit Out"
     },
+    "tooltip": {
+      "in_transit_out": "Stock dispatched from this warehouse, not yet received at destination",
+      "in_transit_in":  "Inbound stock currently in transit to this warehouse"
+    },
     "balance": {
       "onHand":    "On Hand",
       "inTransit": "In Transit",

@@ -195,7 +195,20 @@ export function login(email: string, password: string): SessionUser | null {
 export function getSession(): SessionUser | null {
   const raw = store()?.getItem(SESSION_KEY);
   if (!raw) return null;
-  try { return JSON.parse(raw) as SessionUser; } catch { return null; }
+  try {
+    const session = JSON.parse(raw) as SessionUser;
+    // If the JWT is present and has expired, clear the session so auth guards
+    // redirect to /login. api.ts handles the in-flight 401 redirect separately.
+    if (session.jwtToken) {
+      const payload = decodeJwtPayload(session.jwtToken);
+      const exp = typeof payload?.exp === "number" ? payload.exp : null;
+      if (exp !== null && Date.now() / 1000 >= exp) {
+        store()?.removeItem(SESSION_KEY);
+        return null;
+      }
+    }
+    return session;
+  } catch { return null; }
 }
 
 export function logout(): void {

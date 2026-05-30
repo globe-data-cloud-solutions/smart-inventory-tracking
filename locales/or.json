@@ -43,6 +43,10 @@
     "count": {
       "title": "Lakkoofsa Marsaa",
       "start_session": "Marii Lakkoofsa Jalqabi"
+    },
+    "tooltip": {
+      "in_transit_out": "Kuusaan kuusaa kanaa ergame; bakka gahuu isaa hin gahin",
+      "in_transit_in":  "Kuusaan kuusaa kanatti dhufaa jiru"
     }
   },
   "scanner": {
