@@ -1,14 +1,35 @@
 """Unit tests for positions, personnel_v2, and transfer_types endpoints.
 
 DATABASE_URL and JWT_SECRET must be set before any router import.
+
+sys.path note
+─────────────
+When the full backend test suite runs, inventory-service's conftest imports
+`from main import app`, registering inventory-service/routers in sys.modules.
+Any subsequent `from routers.X import ...` then resolves to the wrong package.
+
+Fix mirrors the auth-service pattern: temporarily insert tenant-service root at
+position 0, flush stale routers.* entries, then restore sys.path after loading.
+Inline imports inside test methods re-resolve after each per-test flush in conftest.
 """
 from __future__ import annotations
 
 import os
+import sys
+
 os.environ.setdefault("DATABASE_URL",      "postgresql+asyncpg://test:x@localhost/test")
 os.environ.setdefault("DATABASE_READ_URL", "postgresql+asyncpg://test:x@localhost/test")
 os.environ.setdefault("JWT_SECRET",        "test-secret")
 os.environ.setdefault("JWT_SECRET_KEY",    "test-secret")
+
+# ── Scoped sys.path: guarantee tenant-service routers win the lookup ──────────
+_TENANT_ROOT = os.path.normpath(
+    os.path.join(os.path.dirname(__file__), "..", "..")
+)
+_was_on_path = _TENANT_ROOT in sys.path
+if not _was_on_path:
+    sys.path.insert(0, _TENANT_ROOT)
+# ─────────────────────────────────────────────────────────────────────────────
 
 import json
 from contextlib import asynccontextmanager

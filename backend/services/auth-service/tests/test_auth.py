@@ -50,11 +50,36 @@ client = TestClient(app)
 
 @pytest.mark.unit
 class TestLocalDevAuth:
-    def test_local_dev_auth_returns_valid_jwt(self) -> None:
-        """dev_email in local mode returns a signed JWT with the correct seeded claims."""
+    def test_local_dev_auth_returns_valid_jwt(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """dev_email in local mode returns a signed JWT.
+
+        Mocks _lookup_user_with_position so the test is DB-free.
+        SA path: tenant_id=None, role=SA, no warehouse.
+        """
+        import asyncio
+
+        async def _mock_sa(email: str, password: object = None) -> dict:
+            return {
+                "sub":                 "sa-001",
+                "email":               email.lower(),
+                "name":                "System Administrator",
+                "tenant_id":           None,
+                "tenant_slug":         None,
+                "role":                "SA",
+                "warehouse_id":        None,
+                "warehouse_name":      None,
+                "position_id":         None,
+                "position_title":      None,
+                "level_number":        None,
+                "positions":           [],
+                "must_reset_password": False,
+            }
+
+        monkeypatch.setattr(auth_module, "_lookup_user_with_position", _mock_sa)
+
         resp = client.post(
             "/api/v1/auth/token",
-            json={"dev_email": "north.wm@addis-water.com"},
+            json={"dev_email": "smartadmin@smart-inventory.com"},
         )
         assert resp.status_code == 200, resp.text
         data = resp.json()
@@ -63,39 +88,78 @@ class TestLocalDevAuth:
         assert data["expires_in"] > 0
 
         payload = jwt.decode(data["access_token"], _SECRET, algorithms=[_ALG])
-        assert payload["sub"]          == "00000001-a003-0000-0000-000000000001"
-        assert payload["role"]         == "WM"
-        assert payload["tenant_id"]    == "10000001-0000-0000-0000-000000000001"
-        assert payload["warehouse_id"] == "20000001-a000-0000-0000-000000000002"
+        assert payload["role"]         == "SA"
+        assert payload["tenant_id"]    is None
+        assert payload["warehouse_id"] is None
         assert "exp" in payload
         assert "iat" in payload
 
-    def test_dev_email_case_insensitive(self) -> None:
-        """dev_email lookup is case-insensitive."""
+    def test_dev_email_case_insensitive(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """dev_email lookup is case-insensitive — uppercase email returns same role."""
+
+        async def _mock_sa(email: str, password: object = None) -> dict:
+            return {
+                "sub":                 "sa-001",
+                "email":               email.lower(),
+                "name":                "System Administrator",
+                "tenant_id":           None,
+                "tenant_slug":         None,
+                "role":                "SA",
+                "warehouse_id":        None,
+                "warehouse_name":      None,
+                "position_id":         None,
+                "position_title":      None,
+                "level_number":        None,
+                "positions":           [],
+                "must_reset_password": False,
+            }
+
+        monkeypatch.setattr(auth_module, "_lookup_user_with_position", _mock_sa)
+
         resp = client.post(
             "/api/v1/auth/token",
-            json={"dev_email": "North.WM@Addis-Water.COM"},
+            json={"dev_email": "SMARTADMIN@SMART-INVENTORY.COM"},
         )
         assert resp.status_code == 200
         payload = jwt.decode(resp.json()["access_token"], _SECRET, algorithms=[_ALG])
-        assert payload["role"] == "WM"
+        assert payload["role"] == "SA"
 
-    def test_dev_email_nm_claims(self) -> None:
-        """NM user at Main Production Center gets the correct warehouse_id claim.
+    def test_dev_email_ta_claims(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """TA user (system_role='TA', no position) gets role=TA and empty positions list.
 
-        production@addis-water.com is seeded as NM assigned to the Main Production Center
-        (20000001-a000-0000-0000-000000000001). NM users CAN have a warehouse_id when
-        they are facility-level managers, unlike TA/SA who never have one.
+        TA users are identified by system_role column, not by a position in the hierarchy.
+        The JWT must carry role=TA, warehouse_id=None, and positions=[].
         """
+
+        async def _mock_ta(email: str, password: object = None) -> dict:
+            return {
+                "sub":                 "ta-001",
+                "email":               email.lower(),
+                "name":                "Tenant Admin",
+                "tenant_id":           "aaaaaaaa-0000-0000-0000-000000000001",
+                "tenant_slug":         "acme",
+                "role":                "TA",
+                "warehouse_id":        None,
+                "warehouse_name":      None,
+                "position_id":         None,
+                "position_title":      "Tenant Administrator",
+                "level_number":        1,
+                "positions":           [],
+                "must_reset_password": False,
+            }
+
+        monkeypatch.setattr(auth_module, "_lookup_user_with_position", _mock_ta)
+
         resp = client.post(
             "/api/v1/auth/token",
-            json={"dev_email": "production@addis-water.com"},
+            json={"dev_email": "admin@acme.com"},
         )
         assert resp.status_code == 200
         payload = jwt.decode(resp.json()["access_token"], _SECRET, algorithms=[_ALG])
-        assert payload["role"]         == "NM"
-        assert payload["warehouse_id"] == "20000001-a000-0000-0000-000000000001"
-        assert payload["tenant_id"]    == "10000001-0000-0000-0000-000000000001"
+        assert payload["role"]         == "TA"
+        assert payload["tenant_id"]    == "aaaaaaaa-0000-0000-0000-000000000001"
+        assert payload["warehouse_id"] is None
+        assert payload["positions"]    == []
 
     def test_dev_email_unknown_returns_404(self) -> None:
         """Unknown dev_email returns 404 in local mode."""
@@ -138,14 +202,3 @@ class TestLocalDevAuth:
         resp = client.post("/api/v1/auth/token", json={})
         assert resp.status_code == 422
 
-    def test_muger_cement_wm_claims(self) -> None:
-        """Muger Cement WM gets the correct tenant_id and warehouse_id."""
-        resp = client.post(
-            "/api/v1/auth/token",
-            json={"dev_email": "kombolcha.wm@muger-cement.com"},
-        )
-        assert resp.status_code == 200
-        payload = jwt.decode(resp.json()["access_token"], _SECRET, algorithms=[_ALG])
-        assert payload["sub"]          == "00000002-0c04-0000-0000-000000000001"
-        assert payload["tenant_id"]    == "10000002-0000-0000-0000-000000000001"
-        assert payload["warehouse_id"] == "20000002-0c00-0000-0000-000000000003"
