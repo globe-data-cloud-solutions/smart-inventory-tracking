@@ -2,6 +2,16 @@
 
 import { ALL_DEMO_USERS, DEMO_TENANTS, type Role } from "@/lib/demo-data";
 
+/** One active position from the user's personnel_positions record. */
+export interface ActivePosition {
+  positionId:     string;
+  roleCode:       string;
+  nodeId:         string;
+  nodeName:       string;
+  levelNumber:    number;
+  assignmentType: "PRIMARY" | "ACTING" | "DELEGATE";
+}
+
 export interface SessionUser {
   id: string;
   email: string;
@@ -14,11 +24,15 @@ export interface SessionUser {
   tenantSlug?: string;
   warehouseId?: string;
   warehouseName?: string;
-  /** SMART JWT — present when NEXT_PUBLIC_API_URL points to the Python gateway.
-   *  Exchanged asynchronously after login; absent during the first render.
-   *  api.ts reads this and sends it as Authorization: Bearer. */
+  /** Session 2: position-derived claims from auth-service. */
+  positionId?:    string;
+  positionTitle?: string;
+  levelNumber?:   number;
+  /** All active positions (PRIMARY + ACTING + DELEGATE) for multi-facility ABAC. */
+  positions?: ActivePosition[];
+  /** SMART JWT — present in gateway mode.  api.ts reads this as Authorization: Bearer. */
   jwtToken?: string;
-  /** When true, the user must change their password before proceeding. */
+  /** When true the user must change their password before proceeding. */
   mustResetPassword?: boolean;
 }
 
@@ -72,15 +86,29 @@ async function _exchangeJWT(session: SessionUser): Promise<void> {
     const data = (await res.json()) as { access_token?: string };
     if (!data.access_token) return;
 
-    // Patch the stored session with the JWT and real warehouse/tenant IDs from claims
+    // Patch the stored session with the JWT and position-derived claims
     const raw = store()?.getItem(SESSION_KEY);
     if (!raw) return;
     const stored = JSON.parse(raw) as SessionUser;
     stored.jwtToken = data.access_token;
     const claims = decodeJwtPayload(data.access_token);
     if (claims) {
-      if (claims.warehouse_id) stored.warehouseId = String(claims.warehouse_id);
-      if (claims.tenant_id)    stored.tenantId    = String(claims.tenant_id);
+      if (claims.tenant_id)      stored.tenantId      = String(claims.tenant_id);
+      if (claims.warehouse_id)   stored.warehouseId   = String(claims.warehouse_id);
+      if (claims.warehouse_name) stored.warehouseName = String(claims.warehouse_name);
+      if (claims.position_id)    stored.positionId    = String(claims.position_id);
+      if (claims.position_title) stored.positionTitle = String(claims.position_title);
+      if (typeof claims.level_number === "number") stored.levelNumber = claims.level_number;
+      if (Array.isArray(claims.positions)) {
+        stored.positions = (claims.positions as Record<string, unknown>[]).map((p) => ({
+          positionId:     String(p["position_id"]     ?? ""),
+          roleCode:       String(p["role_code"]       ?? ""),
+          nodeId:         String(p["node_id"]         ?? ""),
+          nodeName:       String(p["node_name"]       ?? ""),
+          levelNumber:    typeof p["level_number"] === "number" ? p["level_number"] : 0,
+          assignmentType: String(p["assignment_type"] ?? "PRIMARY") as ActivePosition["assignmentType"],
+        }));
+      }
     }
     store()?.setItem(SESSION_KEY, JSON.stringify(stored));
   } catch {
@@ -120,25 +148,44 @@ export async function loginWithDevEmail(email: string, password?: string): Promi
     const claims = decodeJwtPayload(data.access_token);
     if (!claims) return null;
 
-    const tenantId    = claims.tenant_id    ? String(claims.tenant_id)    : undefined;
-    const warehouseId = claims.warehouse_id ? String(claims.warehouse_id) : undefined;
-    const role        = claims.role         ? String(claims.role)         : "AU";
-    const sub         = claims.sub          ? String(claims.sub)          : email;
-    // Prefer the friendly slug returned by auth-service; fall back to tenant_id UUID
+    const tenantId      = claims.tenant_id      ? String(claims.tenant_id)      : undefined;
+    const warehouseId   = claims.warehouse_id   ? String(claims.warehouse_id)   : undefined;
+    const warehouseName = claims.warehouse_name ? String(claims.warehouse_name) : undefined;
+    const role          = claims.role           ? String(claims.role)           : "AU";
+    const sub           = claims.sub            ? String(claims.sub)            : email;
+    const positionId    = claims.position_id    ? String(claims.position_id)    : undefined;
+    const positionTitle = claims.position_title ? String(claims.position_title) : undefined;
+    const levelNumber   = typeof claims.level_number === "number" ? claims.level_number : undefined;
+    const positions: ActivePosition[] = Array.isArray(claims.positions)
+      ? (claims.positions as Record<string, unknown>[]).map((p) => ({
+          positionId:     String(p["position_id"]     ?? ""),
+          roleCode:       String(p["role_code"]       ?? ""),
+          nodeId:         String(p["node_id"]         ?? ""),
+          nodeName:       String(p["node_name"]       ?? ""),
+          levelNumber:    typeof p["level_number"] === "number" ? p["level_number"] : 0,
+          assignmentType: String(p["assignment_type"] ?? "PRIMARY") as ActivePosition["assignmentType"],
+        }))
+      : [];
+
     const orgSlug = (role === "SA") ? SA_ORG_SLUG : (data.tenant_slug ?? tenantId ?? SA_ORG_SLUG);
 
     const session: SessionUser = {
-      id:                 sub,
+      id:                sub,
       email,
-      name:               email.split("@")[0] ?? email,
-      role:               role as Role,
+      name:              claims.name ? String(claims.name) : (email.split("@")[0] ?? email),
+      role:              role as Role,
       orgSlug,
       tenantId,
-      tenantName:         tenantId,   // layout.tsx will overwrite this async with the real name
-      tenantSlug:         data.tenant_slug ?? orgSlug,
+      tenantName:        tenantId,
+      tenantSlug:        data.tenant_slug ?? orgSlug,
       warehouseId,
-      jwtToken:           data.access_token,
-      mustResetPassword:  data.must_reset_password ?? false,
+      warehouseName,
+      positionId,
+      positionTitle,
+      levelNumber,
+      positions,
+      jwtToken:          data.access_token,
+      mustResetPassword: data.must_reset_password ?? false,
     };
     store()?.setItem(SESSION_KEY, JSON.stringify(session));
     return session;

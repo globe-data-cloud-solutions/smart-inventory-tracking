@@ -1,5 +1,16 @@
+"""Auth-service token endpoint.
+
+Session 2: JWT claims are now derived from the user's PRIMARY active position
+in personnel_positions → positions → organization_node.  The old DEV_USERS
+hardcoded dict (demo tenants) has been removed; role and warehouse_id are no
+longer columns on the users table.
+
+SA accounts (tenant_id IS NULL) bypass position lookup and receive a
+hardcoded SA claim set.
+"""
 import os
 from datetime import datetime, timedelta, timezone
+from typing import Optional
 
 import bcrypt as _bcrypt
 from fastapi import APIRouter, HTTPException
@@ -13,133 +24,146 @@ JWT_ALGORITHM = os.environ.get("JWT_ALGORITHM", "HS256")
 JWT_EXPIRE    = int(os.environ.get("JWT_EXPIRE_MINUTES", "60"))
 ENVIRONMENT   = os.environ.get("ENVIRONMENT", "")
 
-# ── Local-dev user registry ────────────────────────────────────────────────────
-# Maps every seeded demo email → fixed JWT claims (UUIDs match seed_demo_data.py).
-# Only reachable when ENVIRONMENT=local — rejected with 403 in all other envs.
-# Add entries here whenever a new seed user is added to seed_demo_data.py.
-DEV_USERS: dict[str, dict[str, str | None]] = {
-    # ── System Admin ──────────────────────────────────────────────────────────
-    "smartadmin@smart-inventory.com": {
-        "sub": "00000001-0a00-0000-0000-000000000001", "role": "SA",
-        "tenant_id": None, "warehouse_id": None,
-    },
-    # ── Addis Water ───────────────────────────────────────────────────────────
-    "admin@addis-water.com": {
-        "sub": "00000001-a001-0000-0000-000000000001", "role": "TA",
-        "tenant_id": "10000001-0000-0000-0000-000000000001", "warehouse_id": None,
-    },
-    "production@addis-water.com": {
-        "sub": "00000001-a002-0000-0000-000000000001", "role": "NM",
-        "tenant_id": "10000001-0000-0000-0000-000000000001",
-        "warehouse_id": "20000001-a000-0000-0000-000000000001",
-    },
-    "north.wm@addis-water.com": {
-        "sub": "00000001-a003-0000-0000-000000000001", "role": "WM",
-        "tenant_id": "10000001-0000-0000-0000-000000000001",
-        "warehouse_id": "20000001-a000-0000-0000-000000000002",
-    },
-    "northsub.wm@addis-water.com": {
-        "sub": "00000001-a004-0000-0000-000000000001", "role": "WM",
-        "tenant_id": "10000001-0000-0000-0000-000000000001",
-        "warehouse_id": "20000001-a000-0000-0000-000000000003",
-    },
-    "south.wm@addis-water.com": {
-        "sub": "00000001-a005-0000-0000-000000000001", "role": "WM",
-        "tenant_id": "10000001-0000-0000-0000-000000000001",
-        "warehouse_id": "20000001-a000-0000-0000-000000000004",
-    },
-    "east.wm@addis-water.com": {
-        "sub": "00000001-a006-0000-0000-000000000001", "role": "WM",
-        "tenant_id": "10000001-0000-0000-0000-000000000001",
-        "warehouse_id": "20000001-a000-0000-0000-000000000005",
-    },
-    "west.wm@addis-water.com": {
-        "sub": "00000001-a007-0000-0000-000000000001", "role": "WM",
-        "tenant_id": "10000001-0000-0000-0000-000000000001",
-        "warehouse_id": "20000001-a000-0000-0000-000000000006",
-    },
-    # ── Muger Cement ──────────────────────────────────────────────────────────
-    "admin@muger-cement.com": {
-        "sub": "00000002-0c01-0000-0000-000000000001", "role": "TA",
-        "tenant_id": "10000002-0000-0000-0000-000000000001", "warehouse_id": None,
-    },
-    "harar.pm@muger-cement.com": {
-        "sub": "00000002-0c02-0000-0000-000000000001", "role": "NM",
-        "tenant_id": "10000002-0000-0000-0000-000000000001",
-        "warehouse_id": "20000002-0c00-0000-0000-000000000001",
-    },
-    "ambo.pm@muger-cement.com": {
-        "sub": "00000002-0c03-0000-0000-000000000001", "role": "NM",
-        "tenant_id": "10000002-0000-0000-0000-000000000001",
-        "warehouse_id": "20000002-0c00-0000-0000-000000000002",
-    },
-    "kombolcha.wm@muger-cement.com": {
-        "sub": "00000002-0c04-0000-0000-000000000001", "role": "WM",
-        "tenant_id": "10000002-0000-0000-0000-000000000001",
-        "warehouse_id": "20000002-0c00-0000-0000-000000000003",
-    },
-    "mekele.wm@muger-cement.com": {
-        "sub": "00000002-0c05-0000-0000-000000000001", "role": "WM",
-        "tenant_id": "10000002-0000-0000-0000-000000000001",
-        "warehouse_id": "20000002-0c00-0000-0000-000000000004",
-    },
-    "diredawa.wm@muger-cement.com": {
-        "sub": "00000002-0c06-0000-0000-000000000001", "role": "WM",
-        "tenant_id": "10000002-0000-0000-0000-000000000001",
-        "warehouse_id": "20000002-0c00-0000-0000-000000000005",
-    },
-    "hawassa.wm@muger-cement.com": {
-        "sub": "00000002-0c07-0000-0000-000000000001", "role": "WM",
-        "tenant_id": "10000002-0000-0000-0000-000000000001",
-        "warehouse_id": "20000002-0c00-0000-0000-000000000006",
-    },
-}
 
+async def _lookup_user_with_position(
+    email: str,
+    password: Optional[str] = None,
+) -> Optional[dict]:
+    """Find user by email and derive JWT claims from their primary active position.
 
-async def _lookup_user_in_db(email: str, password: str | None = None) -> dict | None:
-    """Query the users table for a dynamically-created user (not in DEV_USERS).
-    Returns JWT claim fields or None if not found / DB unavailable.
-    When password is provided, verifies bcrypt hash — raises 401 on mismatch.
-    Only called in ENVIRONMENT=local dev_email path.
+    Returns a claims dict ready to embed in the JWT, or None if not found.
+    Raises HTTP 401 on password mismatch.
+    Raises HTTP 403 if user exists but has no active PRIMARY position assigned.
+    SA users (tenant_id IS NULL) bypass position lookup.
     """
     try:
         from shared.db.session import AsyncSessionLocal
         from sqlalchemy import text as sa_text
+
         async with AsyncSessionLocal() as db:
-            row = await db.execute(
+            # Step 1 — find user by email
+            user_row = await db.execute(
                 sa_text("""
-                    SELECT u.id, u.role, u.tenant_id, u.password_hash, ufa.facility_id,
-                           t.slug AS tenant_slug,
-                           COALESCE(u.must_reset_password, false) AS must_reset_password
-                    FROM users u
-                    LEFT JOIN user_facility_assignments ufa
-                        ON ufa.user_id = u.id
-                        AND ufa.assignment_type = 'PRIMARY'
-                        AND ufa.is_active = true
+                    SELECT u.id, u.email, u.full_name, u.tenant_id,
+                           u.password_hash, u.must_reset_password,
+                           t.slug AS tenant_slug
+                    FROM   users u
                     LEFT JOIN tenants t ON t.id = u.tenant_id
-                    WHERE lower(u.email) = lower(:email) AND u.is_active = true
-                    LIMIT 1
+                    WHERE  lower(u.email) = lower(:email)
+                    AND    u.is_active = true
+                    LIMIT  1
                 """),
                 {"email": email},
             )
-            rec = row.fetchone()
-        if rec is None:
+            user_rec = user_row.fetchone()
+
+        if user_rec is None:
             return None
-        # Verify password when one is provided and the user has a hash stored
+
+        # Verify password when provided
         if password is not None:
-            stored_hash = rec.password_hash
-            if stored_hash is None or not _bcrypt.checkpw(
-                password.encode(), stored_hash.encode()
-            ):
+            stored = user_rec.password_hash
+            if stored is None or not _bcrypt.checkpw(password.encode(), stored.encode()):
                 raise HTTPException(status_code=401, detail="Invalid password")
+
+        # SA — no tenant, no position; return hardcoded SA claims
+        if user_rec.tenant_id is None:
+            return {
+                "sub":                  str(user_rec.id),
+                "email":                str(user_rec.email),
+                "name":                 str(user_rec.full_name),
+                "tenant_id":            None,
+                "tenant_slug":          None,
+                "role":                 "SA",
+                "warehouse_id":         None,
+                "warehouse_name":       None,
+                "position_id":          None,
+                "position_title":       None,
+                "level_number":         None,
+                "positions":            [],
+                "must_reset_password":  bool(user_rec.must_reset_password),
+            }
+
+        async with AsyncSessionLocal() as db:
+            # Step 2 — primary active position
+            primary_row = await db.execute(
+                sa_text("""
+                    SELECT pp.id                   AS pp_id,
+                           p.role_code,
+                           p.node_id,
+                           p.title,
+                           n.name                 AS node_name,
+                           n.hierarchy_level,
+                           tc.level_name
+                    FROM   personnel_positions pp
+                    JOIN   positions           p  ON pp.position_id  = p.id
+                    JOIN   organization_node   n  ON p.node_id       = n.id
+                    LEFT JOIN tenant_hierarchy_config tc
+                           ON  tc.tenant_id    = p.tenant_id
+                           AND tc.level_number = n.hierarchy_level
+                    WHERE  pp.user_id          = :uid
+                    AND    pp.assignment_type  = 'PRIMARY'
+                    AND    pp.is_active        = true
+                    AND    (pp.valid_until IS NULL OR pp.valid_until >= CURRENT_DATE)
+                    LIMIT  1
+                """),
+                {"uid": str(user_rec.id)},
+            )
+            primary_rec = primary_row.fetchone()
+
+            if primary_rec is None:
+                raise HTTPException(
+                    status_code=403,
+                    detail="No active position assigned. Contact your administrator.",
+                )
+
+            # Step 3 — all active positions (PRIMARY + ACTING + DELEGATE)
+            all_rows = await db.execute(
+                sa_text("""
+                    SELECT pp.id                   AS pp_id,
+                           pp.assignment_type,
+                           p.role_code,
+                           p.node_id,
+                           p.title,
+                           n.name                 AS node_name,
+                           n.hierarchy_level
+                    FROM   personnel_positions pp
+                    JOIN   positions           p  ON pp.position_id = p.id
+                    JOIN   organization_node   n  ON p.node_id      = n.id
+                    WHERE  pp.user_id    = :uid
+                    AND    pp.is_active  = true
+                    AND    (pp.valid_until IS NULL OR pp.valid_until >= CURRENT_DATE)
+                """),
+                {"uid": str(user_rec.id)},
+            )
+            all_positions = all_rows.fetchall()
+
         return {
-            "sub":                 str(rec.id),
-            "role":                str(rec.role),
-            "tenant_id":           str(rec.tenant_id) if rec.tenant_id else None,
-            "tenant_slug":         str(rec.tenant_slug) if rec.tenant_slug else None,
-            "warehouse_id":        str(rec.facility_id) if rec.facility_id else None,
-            "must_reset_password": bool(rec.must_reset_password),
+            "sub":                  str(user_rec.id),
+            "email":                str(user_rec.email),
+            "name":                 str(user_rec.full_name),
+            "tenant_id":            str(user_rec.tenant_id),
+            "tenant_slug":          str(user_rec.tenant_slug) if user_rec.tenant_slug else None,
+            "role":                 str(primary_rec.role_code),
+            "warehouse_id":         str(primary_rec.node_id),
+            "warehouse_name":       str(primary_rec.node_name),
+            "position_id":          str(primary_rec.pp_id),
+            "position_title":       str(primary_rec.title),
+            "level_number":         int(primary_rec.hierarchy_level),
+            "positions": [
+                {
+                    "position_id":      str(pos.pp_id),
+                    "role_code":        str(pos.role_code),
+                    "node_id":          str(pos.node_id),
+                    "node_name":        str(pos.node_name),
+                    "level_number":     int(pos.hierarchy_level),
+                    "assignment_type":  str(pos.assignment_type),
+                }
+                for pos in all_positions
+            ],
+            "must_reset_password":  bool(user_rec.must_reset_password),
         }
+
     except HTTPException:
         raise
     except Exception:
@@ -147,28 +171,20 @@ async def _lookup_user_in_db(email: str, password: str | None = None) -> dict | 
 
 
 class TokenRequest(BaseModel):
-    # Production path: Cognito IdToken (required in non-local envs).
-    # Optional here so dev_email can be used alone in local mode.
-    cognito_token:     str | None = None
-    # Demo-only overrides — used with cognito_token="demo" from the frontend.
-    # When present these take priority over any Cognito payload.
-    demo_sub:          str | None = None
-    demo_role:         str | None = None
-    demo_tenant_id:    str | None = None
+    cognito_token:  str | None = None
+    demo_sub:       str | None = None
+    demo_role:      str | None = None
+    demo_tenant_id: str | None = None
     demo_warehouse_id: str | None = None
-    # Local-dev shortcut: pass an email and get a fully-scoped JWT without Cognito.
-    # Only accepted when ENVIRONMENT=local. Rejected with 403 in all other envs.
-    dev_email:         str | None = None
-    # Optional password for API-created users (bcrypt verified). Not required for
-    # hardcoded DEV_USERS (demo accounts). Ignored in Cognito paths.
-    dev_password:      str | None = None
+    dev_email:      str | None = None
+    dev_password:   str | None = None
 
 
 class TokenResponse(BaseModel):
-    access_token: str
-    token_type: str = "bearer"
-    expires_in: int
-    tenant_slug: str | None = None
+    access_token:       str
+    token_type:         str  = "bearer"
+    expires_in:         int
+    tenant_slug:        str | None = None
     must_reset_password: bool = False
 
 
@@ -176,67 +192,73 @@ class TokenResponse(BaseModel):
 async def exchange_token(body: TokenRequest) -> TokenResponse:
     """Issue a SMART JWT.
 
-    Three paths:
-      1. dev_email (ENVIRONMENT=local only) — looks up claims from DEV_USERS dict.
-      2. cognito_token + demo_* overrides — demo frontend path.
-      3. cognito_token only — production Cognito validation (not yet implemented).
+    Path 1 — dev_email (ENVIRONMENT=local only):
+      Looks up user from DB, queries primary position, builds position-aware JWT.
+      SA users get hardcoded SA claims (no position required).
+
+    Path 2/3 — cognito_token (demo overrides or production Cognito):
+      Not yet migrated to position model; passes demo_* claims through.
     """
     now = datetime.now(timezone.utc)
-    tenant_slug: str | None = None
-    must_reset_password: bool = False
+    tenant_slug:         str | None = None
+    must_reset_password: bool       = False
 
-    # ── Path 1: local dev bypass via dev_email ─────────────────────────────
+    # ── Path 1: local dev bypass ───────────────────────────────────────────
     if body.dev_email is not None:
         if ENVIRONMENT != "local":
             raise HTTPException(
                 status_code=403,
                 detail="dev_email bypass is only available when ENVIRONMENT=local",
             )
-        entry = DEV_USERS.get(body.dev_email.lower())
-        if entry is not None:
-            sub          = str(entry["sub"])
-            role         = str(entry["role"])
-            tenant_id    = entry["tenant_id"]
-            warehouse_id = entry["warehouse_id"]
-        else:
-            # Fallback: look up dynamically-created users in the database
-            db_user = await _lookup_user_in_db(body.dev_email, body.dev_password)
-            if db_user is None:
-                raise HTTPException(
-                    status_code=404,
-                    detail=f"dev_email not found: {body.dev_email!r}",
-                )
-            sub                  = db_user["sub"]
-            role                 = db_user["role"]
-            tenant_id            = db_user["tenant_id"]
-            tenant_slug          = db_user.get("tenant_slug")
-            warehouse_id         = db_user["warehouse_id"]
-            must_reset_password  = bool(db_user.get("must_reset_password", False))
+        claims = await _lookup_user_with_position(body.dev_email, body.dev_password)
+        if claims is None:
+            raise HTTPException(status_code=404, detail=f"dev_email not found: {body.dev_email!r}")
 
-    # ── Path 2 / 3: cognito_token (+ optional demo_* overrides) ───────────
+        tenant_slug          = claims.get("tenant_slug")
+        must_reset_password  = bool(claims.get("must_reset_password", False))
+
+        payload: dict = {
+            "sub":            claims["sub"],
+            "email":          claims["email"],
+            "name":           claims["name"],
+            "tenant_id":      claims["tenant_id"],
+            "role":           claims["role"],
+            "warehouse_id":   claims["warehouse_id"],
+            "warehouse_name": claims["warehouse_name"],
+            "position_id":    claims["position_id"],
+            "position_title": claims["position_title"],
+            "level_number":   claims["level_number"],
+            "positions":      claims["positions"],
+            "iat":            int(now.timestamp()),
+            "exp":            int((now + timedelta(minutes=JWT_EXPIRE)).timestamp()),
+        }
+
+    # ── Path 2/3: cognito_token ──────��─────────────────────────────────────
     elif body.cognito_token is not None:
-        # Production: validate body.cognito_token against Cognito JWKS here.
-        # Demo/local: demo_* fields carry the claims directly.
         sub          = body.demo_sub          or "00000000-0000-0000-0000-000000000001"
         role         = body.demo_role         or "WM"
         tenant_id    = body.demo_tenant_id    or "10000000-0000-0000-0000-000000000001"
-        warehouse_id = body.demo_warehouse_id  # None is valid for NM/TA
+        warehouse_id = body.demo_warehouse_id
 
+        payload = {
+            "sub":            sub,
+            "role":           role,
+            "tenant_id":      tenant_id,
+            "warehouse_id":   warehouse_id,
+            "warehouse_name": None,
+            "position_id":    None,
+            "position_title": None,
+            "level_number":   None,
+            "positions":      [],
+            "iat":            int(now.timestamp()),
+            "exp":            int((now + timedelta(minutes=JWT_EXPIRE)).timestamp()),
+        }
     else:
         raise HTTPException(
             status_code=422,
             detail="Provide dev_email (local only) or cognito_token",
         )
 
-    payload: dict[str, object] = {
-        "sub":          sub,
-        "role":         role,
-        "tenant_id":    tenant_id,
-        "region_id":    None,
-        "warehouse_id": warehouse_id,
-        "iat":          int(now.timestamp()),
-        "exp":          int((now + timedelta(minutes=JWT_EXPIRE)).timestamp()),
-    }
     token = jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
     return TokenResponse(
         access_token=token,
@@ -251,58 +273,17 @@ async def refresh_token() -> dict:
     return {"message": "use Cognito refresh flow"}
 
 
-class ChangePasswordRequest(BaseModel):
-    current_password: str
-    new_password: str
-
-
-@router.patch("/password", response_model=dict)
-async def change_password(body: ChangePasswordRequest) -> dict:
-    """Change password for an authenticated user and clear must_reset_password flag.
-
-    Requires a valid SMART JWT in the Authorization header.
-    Only available in ENVIRONMENT=local (Cognito handles this in production).
-    """
-    if ENVIRONMENT != "local":
-        raise HTTPException(
-            status_code=403,
-            detail="Password change via this endpoint is only available when ENVIRONMENT=local",
-        )
-    if len(body.new_password) < 8:
-        raise HTTPException(status_code=422, detail="New password must be at least 8 characters")
-
-    try:
-        from fastapi import Request
-        from jose import JWTError, jwt as _jwt
-    except ImportError:
-        raise HTTPException(status_code=500, detail="JWT library unavailable")
-
-    # This endpoint is called with a Bearer token — we need the request object.
-    # Since we're not using Depends(get_current_user) here (auth-service doesn't have
-    # that dependency), we use a manual approach via a secondary function below.
-    raise HTTPException(
-        status_code=501,
-        detail="Use PATCH /api/v1/auth/password/{user_id} with user_id from JWT sub claim",
-    )
-
-
 class ChangePasswordByIdRequest(BaseModel):
-    user_id: str
+    user_id:          str
     current_password: str
-    new_password: str
+    new_password:     str
 
 
 @router.patch("/password/{user_id}", response_model=dict)
 async def change_password_by_id(user_id: str, body: ChangePasswordByIdRequest) -> dict:
-    """Change password for a user identified by user_id and clear must_reset_password.
-
-    Only available in ENVIRONMENT=local.
-    """
+    """Change password for a user identified by user_id."""
     if ENVIRONMENT != "local":
-        raise HTTPException(
-            status_code=403,
-            detail="Password change via this endpoint is only available when ENVIRONMENT=local",
-        )
+        raise HTTPException(status_code=403, detail="Only available when ENVIRONMENT=local")
     if len(body.new_password) < 8:
         raise HTTPException(status_code=422, detail="New password must be at least 8 characters")
 
@@ -310,24 +291,21 @@ async def change_password_by_id(user_id: str, body: ChangePasswordByIdRequest) -
         from shared.db.session import AsyncSessionLocal
         from sqlalchemy import text as sa_text
         async with AsyncSessionLocal() as db:
-            row = await db.execute(
+            row = (await db.execute(
                 sa_text("SELECT id, password_hash FROM users WHERE id = :uid AND is_active = true"),
                 {"uid": user_id},
-            )
-            rec = row.fetchone()
-            if rec is None:
+            )).fetchone()
+            if row is None:
                 raise HTTPException(status_code=404, detail="User not found")
-
-            if rec.password_hash is None or not _bcrypt.checkpw(
-                body.current_password.encode(), rec.password_hash.encode()
+            if row.password_hash is None or not _bcrypt.checkpw(
+                body.current_password.encode(), row.password_hash.encode()
             ):
                 raise HTTPException(status_code=401, detail="Current password is incorrect")
-
             new_hash = _bcrypt.hashpw(body.new_password.encode(), _bcrypt.gensalt()).decode()
             await db.execute(
                 sa_text(
-                    "UPDATE users SET password_hash = :ph, must_reset_password = false, "
-                    "updated_at = now() WHERE id = :uid"
+                    "UPDATE users SET password_hash = :ph, must_reset_password = false,"
+                    " updated_at = now() WHERE id = :uid"
                 ),
                 {"ph": new_hash, "uid": user_id},
             )

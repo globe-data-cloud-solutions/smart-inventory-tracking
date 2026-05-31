@@ -50,6 +50,12 @@ export interface DemoTenant {
   warehouses: DemoWarehouse[];
   products: DemoProduct[];
   users: DemoUser[];
+  // Legacy display fields referenced by dashboard/audit-log/analytics pages.
+  // Kept as optional so existing pages compile; values come from the API in gateway mode.
+  color?:       string;
+  bgClass?:     string;
+  industry?:    string;
+  description?: string;
 }
 
 // ── SA (System Admin) ─────────────────────────────────────────────────────────

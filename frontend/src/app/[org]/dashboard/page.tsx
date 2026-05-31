@@ -602,7 +602,7 @@ export default function OrgDashboard() {
         <SummaryCard
           title={wh?.name ?? t("dashboard.my_warehouse")}
           subtitle={`${wh?.location ?? ""} · ${user.role} access`}
-          accentColor={tenant.color}
+          accentColor={tenant.color ?? "#059669"}
           rows={[
             { label: t("dashboard.stat_units"),           value: myUnits },
             { label: t("dashboard.stat_skus_with_stock"), value: myProducts.length },
@@ -613,7 +613,7 @@ export default function OrgDashboard() {
         <InventoryTable
           products={myProducts}
           getQty={(p) => p.stock[user.warehouseId!] ?? 0}
-          accentColor={tenant.color}
+          accentColor={tenant.color ?? "#059669"}
           title={wh?.name ?? t("dashboard.my_warehouse")}
           subtitle={user.role}
         />
@@ -627,7 +627,7 @@ export default function OrgDashboard() {
       <SummaryCard
         title={tenant.name}
         subtitle={`${tenant.industry} · ${user.role === "SA" ? t("dashboard.sa_viewing") : t("dashboard.tenant_admin")}`}
-        accentColor={tenant.color}
+        accentColor={tenant.color ?? "#059669"}
         rows={[
           { label: t("dashboard.stat_locations"), value: tenant.warehouses.length },
           { label: t("table.skus"),               value: tenant.products.length },
@@ -638,7 +638,7 @@ export default function OrgDashboard() {
 
       {/* Warehouse summary */}
       <div className="bg-white border border-gray-200 rounded overflow-hidden mb-6">
-        <div className="h-[3px]" style={{ background: tenant.color }} />
+        <div className="h-[3px]" style={{ background: tenant.color ?? "#059669" }} />
         <div className="px-5 py-3 bg-gray-50 border-b-2 border-gray-200">
           <span className="text-sm font-bold text-gray-800">{t("dashboard.inventory_by_location")}</span>
         </div>
@@ -715,7 +715,7 @@ export default function OrgDashboard() {
       <InventoryTable
         products={tenant.products}
         getQty={getTotalStock}
-        accentColor={tenant.color}
+        accentColor={tenant.color ?? "#059669"}
         title={`${tenant.name} — ${t("dashboard.full_inventory")}`}
         subtitle={t("dashboard.all_locations")}
       />
