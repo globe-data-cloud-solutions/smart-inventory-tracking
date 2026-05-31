@@ -33,6 +33,7 @@ class TransferOrderRequest(BaseModel):
     to_warehouse_id: uuid.UUID
     lines: List[TransferLineRequest]
     notes: Optional[str] = None
+    transfer_type_config_id: Optional[uuid.UUID] = None
 
 
 class TransferLineRequest(BaseModel):
@@ -48,6 +49,9 @@ class TransferOrderResponse(BaseModel):
     from_warehouse_id: uuid.UUID
     to_warehouse_id: uuid.UUID
     created_at: datetime
+    total_value: Optional[Decimal] = None
+    currency: Optional[str] = None
+    transfer_type_config_id: Optional[uuid.UUID] = None
 
 
 class TransferActionRequest(BaseModel):

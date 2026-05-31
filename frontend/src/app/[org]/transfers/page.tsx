@@ -207,11 +207,14 @@ const STATUS_CLASS: Record<TransferStatus, string> = {
   CANCELLED:              "bg-gray-100   text-gray-400",
 };
 
+// Base styling per underlying type — labels overridden by tenant display name at render time
 const TYPE_CLASS: Record<TransferType, { cls: string; label: string }> = {
   PULL:   { cls: "bg-blue-100   text-blue-800",   label: "PULL"   },
   PUSH:   { cls: "bg-amber-100  text-amber-800",  label: "PUSH"   },
   SISTER: { cls: "bg-violet-100 text-violet-800", label: "SISTER" },
 };
+
+interface TenantTransferType { id: string; underlying_type: TransferType; display_name: string; is_active: boolean }
 
 /**
  * Authority level scale — lower number = higher authority (mirrors backend ROLE_AUTHORITY_LEVEL).
@@ -515,6 +518,22 @@ export default function TransfersPage() {
   const [partialQtyInput, setPartialQtyInput] = useState("");
   const [partialQtyErr, setPartialQtyErr] = useState("");
   const [toast, setToast] = useState("");
+
+  const tenantId = user?.tenantId ?? "";
+  const isGateway = !!process.env.NEXT_PUBLIC_API_URL;
+
+  // Fetch tenant transfer type configs to show display names instead of PULL/PUSH/SISTER
+  const { data: tenantTransferTypes = [] } = useQuery<TenantTransferType[]>({
+    queryKey: ["transfer-types-page", tenantId],
+    queryFn:  () => api.get<TenantTransferType[]>(`/api/v1/tenants/${tenantId}/transfer-types`),
+    enabled:  isGateway && !!tenantId,
+    staleTime: 60_000,
+  });
+
+  function getTypeLabel(underlyingType: TransferType): string {
+    const cfg = tenantTransferTypes.find((t) => t.underlying_type === underlyingType);
+    return cfg?.display_name ?? TYPE_CLASS[underlyingType]?.label ?? underlyingType;
+  }
 
   const { data: rawTransfers = [], isLoading: transfersLoading } = useQuery<ApiTransfer[]>({
     queryKey: ["transfers", org],
@@ -914,7 +933,7 @@ export default function TransfersPage() {
               ))}
               {!transfersLoading && visibleTransfers.map((txn, idx) => {
                 const sCls = STATUS_CLASS[txn.status] ?? "bg-gray-100 text-gray-500";
-                const tb   = TYPE_CLASS[txn.transfer_type] ?? { cls: "bg-gray-100 text-gray-500", label: txn.transfer_type };
+                const tb   = { ...(TYPE_CLASS[txn.transfer_type] ?? { cls: "bg-gray-100 text-gray-500", label: txn.transfer_type }), label: getTypeLabel(txn.transfer_type) };
                 const acts    = getAvailableActions(user.role, txn.transfer_type, txn.status, user.warehouseId, txn.from_warehouse_id, txn.to_warehouse_id, txn.quantity, user.id, txn.created_by, txn.created_by_authority_level);
                 const waitMsg = acts.length === 0 ? getWaitingMessage(txn.status, txn.from_warehouse_name, txn.to_warehouse_name) : null;
                 const busy    = transitioning === txn.id;

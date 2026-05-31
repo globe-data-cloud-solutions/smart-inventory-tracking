@@ -1397,3 +1397,145 @@ class TestGap4SimpleModeWiring:
         # PULL PENDING_REVIEW → APPROVED is invalid (must go through PENDING_APPROVAL first)
         with pytest.raises(InvalidStateTransitionError):
             validate_transition("PULL", "PENDING_REVIEW", "APPROVED")
+
+
+# ── Session 5 — transfer type config + level permission + value tests ─────────
+
+@pytest.mark.unit
+class TestSession5TransferTypeConfig:
+
+    async def test_transfer_type_validated_against_config(self) -> None:
+        """create_transfer() resolves transfer_type_config by underlying_type and
+        stores the config_id on the new transfer_order row.
+
+        When a matching active config exists the INSERT receives config_id = <uuid>.
+        When no config exists (brand-new tenant), config_id = None and the transfer
+        proceeds normally — backward-compat guarantee.
+        """
+        from services.inventory_service import InventoryService
+        from schemas.inventory import TransferOrderRequest, TransferLineRequest
+        from decimal import Decimal
+        from uuid import UUID
+
+        CONFIG_UUID = "eeeeeeee-0000-0000-0000-000000000001"
+
+        # DB calls in create_transfer (happy path with config found):
+        #  0: factory subtree check (no factory restriction)
+        #  1: auto-resolve config by underlying_type → returns config row
+        #  2: src node level (for can_initiate check) → None so perm not checked
+        #  3: dst node level → None
+        #  4: unit_price for line → None (no price)
+        #  5: INSERT transfer_orders
+        #  6: INSERT transfer_order_lines
+        config_row = MagicMock()
+        config_row.id = UUID(CONFIG_UUID)
+
+        def _make_create_session() -> AsyncMock:
+            session = AsyncMock()
+            session.execute = AsyncMock(side_effect=[
+                MagicMock(fetchone=MagicMock(return_value=None)),   # factory check
+                MagicMock(fetchone=MagicMock(return_value=config_row)),  # config lookup
+                MagicMock(fetchone=MagicMock(return_value=None)),   # src node level
+                MagicMock(fetchone=MagicMock(return_value=None)),   # dst node level
+                MagicMock(fetchone=MagicMock(return_value=None)),   # unit_price
+                MagicMock(),  # INSERT transfer_orders
+                MagicMock(),  # INSERT lines
+            ])
+            return session
+
+        user = _User("u-wm", TENANT_ID, WAREHOUSE_A, None, "WM")
+        session = _make_create_session()
+
+        with patch("services.inventory_service.write_to_outbox", new=AsyncMock()), \
+             patch("services.inventory_service.write_transfer_ledger_entry", new=AsyncMock()), \
+             patch("services.inventory_service._get_simple_mode", new=AsyncMock(return_value=True)):
+            body = TransferOrderRequest(
+                transfer_type="PULL",
+                from_warehouse_id=UUID(WAREHOUSE_A),
+                to_warehouse_id=UUID(WAREHOUSE_B),
+                lines=[TransferLineRequest(product_id=UUID(PRODUCT_ID), quantity=Decimal("50"))],
+            )
+            result = await InventoryService(session).create_transfer(user, body)
+
+        assert result.transfer_type == "PULL"
+        # Config ID resolved from DB and stored
+        assert result.transfer_type_config_id == UUID(CONFIG_UUID)
+
+    async def test_level_permission_blocks_initiation(self) -> None:
+        """When a transfer_type_level_permissions row says can_initiate=False for the
+        source node's level, create_transfer() raises HTTP 422 LEVEL_CANNOT_INITIATE."""
+        from services.inventory_service import InventoryService
+        from schemas.inventory import TransferOrderRequest, TransferLineRequest
+        from decimal import Decimal
+        from uuid import UUID
+        from fastapi import HTTPException
+
+        CONFIG_UUID = "eeeeeeee-0000-0000-0000-000000000001"
+
+        config_row   = MagicMock(); config_row.id = UUID(CONFIG_UUID)
+        src_node_row = MagicMock(); src_node_row.hierarchy_level = 3
+        perm_row     = MagicMock(); perm_row.can_initiate = False   # blocked
+
+        session = AsyncMock()
+        session.execute = AsyncMock(side_effect=[
+            MagicMock(fetchone=MagicMock(return_value=None)),         # factory check
+            MagicMock(fetchone=MagicMock(return_value=config_row)),   # config lookup
+            MagicMock(fetchone=MagicMock(return_value=src_node_row)), # src node level=3
+            MagicMock(fetchone=MagicMock(return_value=perm_row)),     # perm: can_initiate=False
+        ])
+
+        user = _User("u-wm", TENANT_ID, WAREHOUSE_A, None, "WM")
+
+        with pytest.raises(HTTPException) as exc_info:
+            await InventoryService(session).create_transfer(
+                user,
+                TransferOrderRequest(
+                    transfer_type="PULL",
+                    from_warehouse_id=UUID(WAREHOUSE_A),
+                    to_warehouse_id=UUID(WAREHOUSE_B),
+                    lines=[TransferLineRequest(product_id=UUID(PRODUCT_ID), quantity=Decimal("50"))],
+                ),
+            )
+
+        assert exc_info.value.status_code == 422
+        assert exc_info.value.detail["code"] == "LEVEL_CANNOT_INITIATE"
+
+    async def test_transfer_value_calculated_correctly(self) -> None:
+        """create_transfer() sums qty × unit_price across lines and stores total_value.
+
+        For a 50-unit transfer of a product with unit_price=100, total_value = 5000.
+        When unit_price is NULL the total_value remains None (not stored as 0).
+        """
+        from services.inventory_service import InventoryService
+        from schemas.inventory import TransferOrderRequest, TransferLineRequest
+        from decimal import Decimal
+        from uuid import UUID
+
+        price_row = MagicMock(); price_row.unit_price = Decimal("100")
+
+        session = AsyncMock()
+        session.execute = AsyncMock(side_effect=[
+            MagicMock(fetchone=MagicMock(return_value=None)),       # factory check
+            MagicMock(fetchone=MagicMock(return_value=None)),       # no config → config_id=None
+            MagicMock(fetchone=MagicMock(return_value=price_row)),  # unit_price=100
+            MagicMock(),  # INSERT transfer_orders
+            MagicMock(),  # INSERT lines
+        ])
+
+        user = _User("u-wm", TENANT_ID, WAREHOUSE_A, None, "WM")
+
+        result = await InventoryService(session).create_transfer(
+            user,
+            TransferOrderRequest(
+                transfer_type="PULL",
+                from_warehouse_id=UUID(WAREHOUSE_A),
+                to_warehouse_id=UUID(WAREHOUSE_B),
+                lines=[TransferLineRequest(product_id=UUID(PRODUCT_ID), quantity=Decimal("50"))],
+            ),
+        )
+
+        assert result.total_value == Decimal("5000"), (
+            "50 units × ETB 100/unit = ETB 5,000 total_value"
+        )
+        assert result.currency == "ETB"
+        assert result.transfer_type_config_id is None  # no config found in this scenario

@@ -324,8 +324,10 @@ class TestFactorySpecificProductValidation:
         session = AsyncMock()
         session.execute = AsyncMock(side_effect=[
             MagicMock(fetchone=MagicMock(return_value=product_row)),  # products lookup
-            MagicMock(fetchone=MagicMock(return_value=None)),          # INSERT transfer_orders
-            MagicMock(fetchone=MagicMock(return_value=None)),          # INSERT transfer_order_lines
+            MagicMock(fetchone=MagicMock(return_value=None)),          # config lookup → None
+            MagicMock(fetchone=MagicMock(return_value=None)),          # unit_price → None
+            MagicMock(),                                                # INSERT transfer_orders
+            MagicMock(),                                                # INSERT transfer_order_lines
         ])
 
         svc = InventoryService(session)
@@ -352,8 +354,10 @@ class TestFactorySpecificProductValidation:
         session.execute = AsyncMock(side_effect=[
             MagicMock(fetchone=MagicMock(return_value=product_row)),  # products lookup
             subtree_result,                                            # subtree CTE
-            MagicMock(fetchone=MagicMock(return_value=None)),          # INSERT transfer_orders
-            MagicMock(fetchone=MagicMock(return_value=None)),          # INSERT lines
+            MagicMock(fetchone=MagicMock(return_value=None)),          # config lookup → None
+            MagicMock(fetchone=MagicMock(return_value=None)),          # unit_price → None
+            MagicMock(),                                                # INSERT transfer_orders
+            MagicMock(),                                                # INSERT lines
         ])
 
         svc = InventoryService(session)

@@ -259,12 +259,80 @@ class InventoryService:
         from datetime import datetime, timezone
         now = datetime.now(timezone.utc)
 
+        # ── Resolve transfer_type_config (optional — allows backward compat) ──
+        config_id: str | None = str(body.transfer_type_config_id) if body.transfer_type_config_id else None
+
+        if config_id is None:
+            # Auto-resolve by underlying_type so new tenants get config linkage automatically
+            cfg_row = (await self.db.execute(
+                text("SELECT id FROM transfer_type_config WHERE underlying_type = :tt AND tenant_id = :tid AND is_active = true"),
+                {"tt": body.transfer_type, "tid": str(user.tenant_id)},
+            )).fetchone()
+            if cfg_row:
+                config_id = str(cfg_row.id)
+
+        # ── Validate level permissions if config is present ───────────────────
+        if config_id:
+            from fastapi import HTTPException as _HTTPException
+            # Source node level — check can_initiate
+            src_node = (await self.db.execute(
+                text("SELECT hierarchy_level FROM organization_node WHERE id = :nid AND tenant_id = :tid"),
+                {"nid": str(body.from_warehouse_id), "tid": str(user.tenant_id)},
+            )).fetchone()
+            if src_node:
+                src_perm = (await self.db.execute(
+                    text("SELECT can_initiate FROM transfer_type_level_permissions "
+                         "WHERE transfer_type_config_id = :cid AND level_number = :ln"),
+                    {"cid": config_id, "ln": src_node.hierarchy_level},
+                )).fetchone()
+                if src_perm is not None and not src_perm.can_initiate:
+                    raise _HTTPException(
+                        status_code=422,
+                        detail={
+                            "code":    "LEVEL_CANNOT_INITIATE",
+                            "message": f"Level {src_node.hierarchy_level} nodes cannot initiate this transfer type.",
+                        },
+                    )
+            # Destination node level — check can_receive
+            dst_node = (await self.db.execute(
+                text("SELECT hierarchy_level FROM organization_node WHERE id = :nid AND tenant_id = :tid"),
+                {"nid": str(body.to_warehouse_id), "tid": str(user.tenant_id)},
+            )).fetchone()
+            if dst_node:
+                dst_perm = (await self.db.execute(
+                    text("SELECT can_receive FROM transfer_type_level_permissions "
+                         "WHERE transfer_type_config_id = :cid AND level_number = :ln"),
+                    {"cid": config_id, "ln": dst_node.hierarchy_level},
+                )).fetchone()
+                if dst_perm is not None and not dst_perm.can_receive:
+                    raise _HTTPException(
+                        status_code=422,
+                        detail={
+                            "code":    "LEVEL_CANNOT_RECEIVE",
+                            "message": f"Level {dst_node.hierarchy_level} nodes cannot receive this transfer type.",
+                        },
+                    )
+
+        # ── Calculate total_value from product unit_prices ────────────────────
+        total_value: Decimal | None = None
+        for line in body.lines:
+            price_row = (await self.db.execute(
+                text("SELECT unit_price FROM products WHERE id = :pid AND tenant_id = :tid"),
+                {"pid": str(line.product_id), "tid": str(user.tenant_id)},
+            )).fetchone()
+            if price_row and price_row.unit_price is not None:
+                line_value = Decimal(str(price_row.unit_price)) * line.quantity
+                total_value = (total_value or Decimal("0")) + line_value
+
+        # ── Insert transfer order ─────────────────────────────────────────────
         await self.db.execute(
             text(
                 "INSERT INTO transfer_orders "
                 "(id, tenant_id, from_warehouse_id, to_warehouse_id, transfer_type, status, "
-                "created_by, created_by_authority_level) "
-                "VALUES (:id, :tid, :from_wid, :to_wid, :ttype, 'DRAFT', :uid, :creator_level)"
+                "created_by, created_by_authority_level, "
+                "transfer_type_config_id, total_value, currency) "
+                "VALUES (:id, :tid, :from_wid, :to_wid, :ttype, 'DRAFT', :uid, :creator_level, "
+                ":config_id, :total_value, :currency)"
             ),
             {
                 "id": str(transfer_id),
@@ -274,6 +342,9 @@ class InventoryService:
                 "ttype": body.transfer_type,
                 "uid": str(user.user_id),
                 "creator_level": ROLE_AUTHORITY_LEVEL.get(getattr(user, "role", "WM"), 4),
+                "config_id": config_id,
+                "total_value": str(total_value) if total_value is not None else None,
+                "currency": "ETB",
             },
         )
 
@@ -293,6 +364,7 @@ class InventoryService:
                 },
             )
 
+        import uuid as _uuid
         return TransferOrderResponse(
             transfer_id=transfer_id,
             transfer_type=body.transfer_type,
@@ -300,6 +372,9 @@ class InventoryService:
             from_warehouse_id=body.from_warehouse_id,
             to_warehouse_id=body.to_warehouse_id,
             created_at=now,
+            total_value=total_value,
+            currency="ETB",
+            transfer_type_config_id=_uuid.UUID(config_id) if config_id else None,
         )
 
     async def transition_transfer(

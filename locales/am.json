@@ -695,5 +695,9 @@
     "source_node": "Source node",
     "dest_node": "Destination node",
     "tenant_wide": "Tenant-wide"
+  },
+  "transfer_panel": {
+    "estimated_value": "Estimated value",
+    "level_cannot_initiate": "not allowed from your location"
   }
 }

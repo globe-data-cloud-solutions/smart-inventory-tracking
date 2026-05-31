@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useRef, useEffect, useCallback } from "react";
-import { useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { nanoid } from "nanoid";
 import { api } from "@/lib/api";
 import { useInventoryStore, type TransferEntry } from "@/lib/inventory-state";
@@ -26,7 +26,23 @@ function getDescendantScope(warehouseId: string, warehouses: DemoWarehouse[]): s
 
 interface Props { products: DemoProduct[]; warehouses: DemoWarehouse[]; orgSlug: string; }
 type TransferType = "PULL" | "PUSH" | "SISTER";
-type FormState = { transferType: TransferType; productId: string; fromWarehouseId: string; toWarehouseId: string; quantity: string; notes: string; };
+type FormState = {
+  transferType: TransferType;
+  transferTypeConfigId?: string;   // links to transfer_type_config for display name + validation
+  productId: string;
+  fromWarehouseId: string;
+  toWarehouseId: string;
+  quantity: string;
+  notes: string;
+};
+
+interface ApiTransferType {
+  id: string;
+  underlying_type: TransferType;
+  display_name: string;
+  is_active: boolean;
+  level_permissions: Array<{ level_number: number; can_initiate: boolean; can_receive: boolean }>;
+}
 
 function Field({ label, hint, children }: { label: string; hint?: string; children: React.ReactNode }) {
   return (
@@ -118,6 +134,35 @@ export function NewTransferPanel({ products, warehouses, orgSlug }: Props) {
   const logAudit = useAuditStore((s) => s.log);
 
   const user     = getSession();
+  const tenantId = user?.tenantId ?? "";
+
+  // ── Fetch tenant transfer type configs (gateway mode only) ─────────────────
+  const isGateway = !!process.env.NEXT_PUBLIC_API_URL;
+  const { data: apiTransferTypes = [] } = useQuery<ApiTransferType[]>({
+    queryKey: ["transfer-types-panel", tenantId],
+    queryFn:  () => api.get<ApiTransferType[]>(`/api/v1/tenants/${tenantId}/transfer-types`),
+    enabled:  isGateway && !!tenantId,
+    staleTime: 60_000,
+  });
+
+  // Active types from API, or fall back to static default set in BFF mode
+  const activeTypes: ApiTransferType[] = isGateway && apiTransferTypes.length > 0
+    ? apiTransferTypes.filter((t) => t.is_active)
+    : [
+        { id: "", underlying_type: "PULL",   display_name: t("transfer_panel.pull_desc"),   is_active: true, level_permissions: [] },
+        { id: "", underlying_type: "PUSH",   display_name: t("transfer_panel.push_desc"),   is_active: true, level_permissions: [] },
+        { id: "", underlying_type: "SISTER", display_name: t("transfer_panel.sister_desc"), is_active: true, level_permissions: [] },
+      ];
+
+  // Check whether the current user's level can initiate a given transfer type
+  const userLevel = user?.levelNumber ?? 99;
+  function canUserInitiate(cfg: ApiTransferType): boolean {
+    if (!cfg.level_permissions.length) return true;  // no restrictions configured
+    const perm = cfg.level_permissions.find((p) => p.level_number === userLevel);
+    if (!perm) return true;  // level not in config → allowed by default
+    return perm.can_initiate;
+  }
+
   const lockedWH     = user?.warehouseId;
   const userWH       = warehouses.find((w) => w.id === lockedWH);
   const lockedWHName = user?.warehouseName ?? userWH?.name ?? lockedWH ?? "";
@@ -158,7 +203,10 @@ export function NewTransferPanel({ products, warehouses, orgSlug }: Props) {
     setStockAlert(null);
   }, [defaultType, lockedWH]);  // eslint-disable-line react-hooks/exhaustive-deps
   function setField(key: keyof FormState, val: string) { setForm((f) => ({ ...f, [key]: val })); setError(""); setStockAlert(null); }
-  function changeType(type: TransferType) { setForm(initialForm(type)); setError(""); setStockAlert(null); }
+  function changeType(type: TransferType, configId?: string) {
+    setForm({ ...initialForm(type), transferTypeConfigId: configId });
+    setError(""); setStockAlert(null);
+  }
 
   const isPull    = form.transferType === "PULL";
   const isSister  = form.transferType === "SISTER";
@@ -183,6 +231,12 @@ export function NewTransferPanel({ products, warehouses, orgSlug }: Props) {
     if (isPush && lockedWH && descendantIds && descendantIds.length > 0) return descendantIds.includes(w.id);
     return true;
   });
+
+  // Estimated transfer value (Step 5C) — displayed when unit_price is available
+  const selectedProduct = products.find((p) => p.id === form.productId);
+  const unitPrice: number | undefined = (selectedProduct as DemoProduct & { unit_price?: number })?.unit_price;
+  const qty = parseFloat(form.quantity);
+  const estimatedValue = unitPrice && qty > 0 ? unitPrice * qty : undefined;
 
   const productOptions: ProductOption[] = [...products]
     .map((p) => { const base = effectiveFrom ? (p.stock[effectiveFrom] ?? 0) : 0; const avail = effectiveFrom ? getAvailable(p.id, effectiveFrom, base) : 0; return { id: p.id, name: p.name, sku: p.sku, avail, tier: effectiveFrom ? stockTier(avail, p.reorderPoint) : 0, sourceKnown: !!effectiveFrom } as ProductOption; })
@@ -209,12 +263,13 @@ export function NewTransferPanel({ products, warehouses, orgSlug }: Props) {
     }
     setLoading(true);
     try {
-      const created = await api.post<{ transfer_id: string }>("/api/v1/inventory/transfers/", {
+      const created = await api.post<{ transfer_id: string; total_value?: number; currency?: string }>("/api/v1/inventory/transfers/", {
         transfer_type: form.transferType,
         from_warehouse_id: effectiveFrom,
         to_warehouse_id: effectiveTo,
         lines: [{ product_id: form.productId, quantity: qty }],
         notes: form.notes || null,
+        transfer_type_config_id: form.transferTypeConfigId || null,
       });
       const transferId  = created.transfer_id;
       const displayRef  = transferId.slice(0, 8).toUpperCase();
@@ -249,10 +304,24 @@ export function NewTransferPanel({ products, warehouses, orgSlug }: Props) {
 
         <form onSubmit={onSubmit} className="flex-1 overflow-y-auto p-6">
           <Field label={t("transfer_panel.type_label")}>
-            <select value={form.transferType} onChange={(e) => changeType(e.target.value as TransferType)} className={selectCls}>
-              <option value="PULL">{t("transfer_panel.pull_desc")}</option>
-              {canPush && <option value="PUSH">{t("transfer_panel.push_desc")}</option>}
-              <option value="SISTER">{t("transfer_panel.sister_desc")}</option>
+            <select
+              value={form.transferType}
+              onChange={(e) => {
+                const cfg = activeTypes.find((tt) => tt.underlying_type === e.target.value);
+                changeType(e.target.value as TransferType, cfg?.id || undefined);
+              }}
+              className={selectCls}
+            >
+              {activeTypes
+                .filter((tt) => tt.underlying_type !== "PUSH" || canPush)
+                .map((tt) => {
+                  const blocked = !canUserInitiate(tt);
+                  return (
+                    <option key={tt.underlying_type} value={tt.underlying_type} disabled={blocked}>
+                      {tt.display_name}{blocked ? ` (${t("transfer_panel.level_cannot_initiate")})` : ""}
+                    </option>
+                  );
+                })}
             </select>
           </Field>
 
@@ -290,6 +359,11 @@ export function NewTransferPanel({ products, warehouses, orgSlug }: Props) {
 
           <Field label={t("lots.quantity")}>
             <input type="number" min="1" step="1" value={form.quantity} onChange={(e) => setField("quantity", e.target.value)} placeholder="e.g. 1455" className={inputCls} required />
+            {estimatedValue !== undefined && (
+              <p className="text-xs text-emerald-700 mt-1">
+                💰 {t("transfer_panel.estimated_value")}: ETB {estimatedValue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+              </p>
+            )}
           </Field>
 
           <Field label={t("audit.notes")} hint={`(${t("receive_panel.optional")})`}>
