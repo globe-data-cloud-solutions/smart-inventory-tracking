@@ -462,5 +462,45 @@ Features fully designed but not yet implemented, pending AWS environment or spec
 
 ---
 
+---
+
+## §F — Dynamic Org Model (Sessions 1-8, 2026-05-31)
+
+### F1 — Position-Based User Model
+
+Users no longer carry `role` or `warehouse_id` on the `users` table (dropped in Migration 031). Instead:
+
+- Every user has exactly ONE active `PRIMARY` assignment in `personnel_positions → positions → organization_node`
+- The `positions` table maps a `role_code` (NM/RM/LM/WM/AU/RT) to a specific `organization_node`
+- JWT claims derive `role`, `warehouse_id`, `level_number`, and `positions[]` from the primary position at login time
+
+Special case: `TA` (Tenant Admin) users hold `system_role='TA'` on the users row (Migration 037) and do not require a position in the org hierarchy. The auth service issues TA claims with `role=TA, positions=[]`.
+
+### F2 — Transfer Type Configuration
+
+Tenants configure transfer types via `transfer_type_config` (PULL/PUSH/SISTER) with:
+- Custom display names (e.g. "Replenishment Request" instead of "PULL")
+- Level permissions: which hierarchy levels can initiate vs receive each type
+- For PULL: initiator is the destination node; for PUSH: initiator is the source node
+
+### F3 — Dynamic Approval Resolution
+
+When a transfer enters `PENDING_APPROVAL`, `resolve_transfer_approvers()` runs:
+
+1. Finds the matching `transfer_approval_rules` row by config_id, source/dest level, and quantity/value thresholds
+2. For each approval step, resolves the target org node (SOURCE, DESTINATION, SOURCE_PARENT_NODE, DESTINATION_PARENT_NODE, NEAREST_ANCESTOR, TENANT_WIDE)
+3. Finds the active PRIMARY holder of the named position at that node
+4. If position is vacant, escalates up the `reports_to_position_id` chain
+5. If holder == transfer creator, escalates (self-approval prevention)
+6. If no rule matches, falls back to any NM-role position holder
+
+The resolved chain is stored as `resolved_approval_steps JSONB` on `transfer_orders` so approval-info queries don't re-run resolution on every call.
+
+### F4 — Value-Based Thresholds
+
+Products can have `unit_price NUMERIC(15,4)` (Migration 034). `create_transfer()` calculates `total_value = SUM(qty × unit_price)` across lines. Approval rules can use `threshold_type = VALUE | EITHER | BOTH` to route based on monetary value in addition to quantity.
+
+---
+
 *PRD Appendix v1.0 — SMART Inventory Platform*  
-*Created: 2026-05-26 · Maintained alongside CLAUDE.md*
+*Created: 2026-05-26 · Updated: 2026-05-31 (Sessions 1-8 dynamic org model)*

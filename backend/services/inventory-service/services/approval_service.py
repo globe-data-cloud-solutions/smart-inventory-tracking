@@ -474,43 +474,19 @@ async def _find_position_and_holder(
 
     For TENANT_WIDE (node_id=None), searches any active position with the title.
     """
-    if node_id:
-        row = (await session.execute(
-            text("""
-                SELECT p.id AS pos_id, pp.user_id, u.full_name, p.node_id
-                FROM   positions p
-                LEFT JOIN personnel_positions pp
-                       ON pp.position_id = p.id
-                       AND pp.is_active  = true
-                       AND pp.assignment_type = 'PRIMARY'
-                       AND (pp.valid_until IS NULL OR pp.valid_until >= CURRENT_DATE)
-                LEFT JOIN users u ON u.id = pp.user_id AND u.is_active = true
-                WHERE  p.node_id   = :nid
-                AND    p.tenant_id = :tid
-                AND    p.is_active = true
-                AND    (:title IS NULL OR p.title = :title)
-                LIMIT 1
-            """),
-            {"nid": node_id, "tid": tenant_id, "title": position_title},
-        )).fetchone()
+    # Build SQL dynamically to avoid asyncpg type-inference issues with nullable params
+    if node_id and position_title:
+        sql = text("SELECT p.id AS pos_id, pp.user_id, u.full_name, p.node_id FROM positions p LEFT JOIN personnel_positions pp ON pp.position_id = p.id AND pp.is_active = true AND pp.assignment_type = 'PRIMARY' AND (pp.valid_until IS NULL OR pp.valid_until >= CURRENT_DATE) LEFT JOIN users u ON u.id = pp.user_id AND u.is_active = true WHERE p.node_id = :nid AND p.tenant_id = :tid AND p.is_active = true AND p.title = :title LIMIT 1")
+        row = (await session.execute(sql, {"nid": node_id, "tid": tenant_id, "title": position_title})).fetchone()
+    elif node_id:
+        sql = text("SELECT p.id AS pos_id, pp.user_id, u.full_name, p.node_id FROM positions p LEFT JOIN personnel_positions pp ON pp.position_id = p.id AND pp.is_active = true AND pp.assignment_type = 'PRIMARY' AND (pp.valid_until IS NULL OR pp.valid_until >= CURRENT_DATE) LEFT JOIN users u ON u.id = pp.user_id AND u.is_active = true WHERE p.node_id = :nid AND p.tenant_id = :tid AND p.is_active = true LIMIT 1")
+        row = (await session.execute(sql, {"nid": node_id, "tid": tenant_id})).fetchone()
+    elif position_title:
+        sql = text("SELECT p.id AS pos_id, pp.user_id, u.full_name, p.node_id FROM positions p LEFT JOIN personnel_positions pp ON pp.position_id = p.id AND pp.is_active = true AND pp.assignment_type = 'PRIMARY' AND (pp.valid_until IS NULL OR pp.valid_until >= CURRENT_DATE) LEFT JOIN users u ON u.id = pp.user_id AND u.is_active = true WHERE p.tenant_id = :tid AND p.is_active = true AND p.title = :title LIMIT 1")
+        row = (await session.execute(sql, {"tid": tenant_id, "title": position_title})).fetchone()
     else:
-        row = (await session.execute(
-            text("""
-                SELECT p.id AS pos_id, pp.user_id, u.full_name, p.node_id
-                FROM   positions p
-                LEFT JOIN personnel_positions pp
-                       ON pp.position_id = p.id
-                       AND pp.is_active  = true
-                       AND pp.assignment_type = 'PRIMARY'
-                       AND (pp.valid_until IS NULL OR pp.valid_until >= CURRENT_DATE)
-                LEFT JOIN users u ON u.id = pp.user_id AND u.is_active = true
-                WHERE  p.tenant_id = :tid
-                AND    p.is_active = true
-                AND    (:title IS NULL OR p.title = :title)
-                LIMIT 1
-            """),
-            {"tid": tenant_id, "title": position_title},
-        )).fetchone()
+        sql = text("SELECT p.id AS pos_id, pp.user_id, u.full_name, p.node_id FROM positions p LEFT JOIN personnel_positions pp ON pp.position_id = p.id AND pp.is_active = true AND pp.assignment_type = 'PRIMARY' AND (pp.valid_until IS NULL OR pp.valid_until >= CURRENT_DATE) LEFT JOIN users u ON u.id = pp.user_id AND u.is_active = true WHERE p.tenant_id = :tid AND p.is_active = true LIMIT 1")
+        row = (await session.execute(sql, {"tid": tenant_id})).fetchone()
 
     if not row:
         return None, None, None, node_id

@@ -1866,5 +1866,60 @@ All 6 gaps documented in `docs/APPROVAL_WORKFLOW_REPORT.md` are now resolved.
 
 ---
 
+## Session 14 — Full Dynamic Org Model (Sessions 1-8) · 2026-05-31
+
+**Branch:** main | **Migrations:** 031-037 | **Unit tests:** 190 inv + 106 tenant = 296 passing
+
+### Summary of all changes (Sessions 1-8)
+
+| Session | Description | Status |
+|---------|-------------|--------|
+| S1 | Clean slate: truncate demo data, Migrations 031-034 (positions, personnel, transfer_type_config, transfer_approval_rules, unit_price) | DONE |
+| S2 | JWT derived from primary position; TA system_role for tenant admins | DONE |
+| S3 | Positions API, personnel_v2 API, transfer_types API, approval_rules API | DONE |
+| S4 | Org setup wizard tabs 3-6 (positions, transfer types, approval rules, personnel) | DONE |
+| S5 | Transfer creation validates level_permissions; calculates total_value; uses transfer_type_config | DONE |
+| S6 | Dynamic approval routing via positions/personnel_positions; vacancy escalation | DONE |
+| S7 | All tests already passing from previous sessions | DONE |
+| S8 | Integration: TA system_role fix, personnel_v2 router conflict fix, JSONB bindparam fix, level_permission initiator fix, asyncpg nullable param fix; landing page updated | DONE |
+
+### Session 8 bugs fixed
+
+| Bug | File | Fix |
+|-----|------|-----|
+| `personnel.router` conflicts with `personnel_v2.router` | `tenant-service/main.py` | Removed old legacy router registration |
+| TA user can't log in — no position required for system accounts | `auth-service/routers/auth.py`, Migration 037 | Added `system_role='TA'` column; auth service issues TA claims for users with this field |
+| `::jsonb` cast syntax error with asyncpg | `tenant-service/routers/transfer_types.py`, `inventory_service.py` | Use `bindparam(..., type_=types.JSON)` for JSONB columns |
+| Level permission check used wrong node for PULL | `inventory_service.py create_transfer()` | Check initiator node (to_warehouse for PULL, from_warehouse for PUSH) |
+| asyncpg `$N IS NULL` type inference error | `approval_service.py _find_position_and_holder()` | Split SQL into 4 branches based on which params are None |
+| Landing page shows wrong credentials | `frontend/src/app/page.tsx` | Updated to single SA account, removed demo tenants section |
+| New Session 3 permissions not seeded | DB | Seeded POSITION_MANAGE, TRANSFER_TYPE_MANAGE etc. for SA/TA/NM roles |
+
+### End-to-end smoke test results (Session 8)
+
+Full flow completed via API:
+
+| Step | Result |
+|------|--------|
+| SA login | JWT role=SA ✅ |
+| SA creates tenant | Tenant created ✅ |
+| SA creates TA user (system_role=TA) | User created ✅ |
+| TA login | JWT role=TA, positions=[] ✅ |
+| TA sets hierarchy (3 levels) | Levels saved ✅ |
+| TA creates nodes (Factory/Region/WH) | 3 nodes created ✅ |
+| TA creates positions at nodes | 3 positions created (NM/RM/WM) ✅ |
+| TA creates users and assigns positions | 3 users with PRIMARY positions ✅ |
+| TA configures transfer types (PULL=Replenishment Request) | Active types saved ✅ |
+| TA configures approval rule | Region Manager approves PULL from Main→WH ✅ |
+| WM creates PULL (Replenishment Request) | Transfer DRAFT, type_config_id stored ✅ |
+| WM submits → PENDING_REVIEW | State machine ✅ |
+| RM reviews → PENDING_APPROVAL | Dynamic routing fired: RM User assigned ✅ |
+| RM approval-info: can_approve=True, assignee=RM User, dynamic=True | Dynamic routing correct ✅ |
+| RM approves → INSUFFICIENT_STOCK | Ledger floor check working (no stock seeded yet) ✅ |
+
+**Final test count:** 190 + 106 = 296 unit tests · TypeScript: 0 errors · Drift check: PASS
+
+---
+
 *SMART Inventory Platform — Bug Report v4.0*  
 *Backend: Python 3.12 / FastAPI · Frontend: Next.js 14 / TypeScript · DB: PostgreSQL 16*

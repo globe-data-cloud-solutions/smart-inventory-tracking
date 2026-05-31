@@ -5,7 +5,8 @@ from decimal import Decimal
 from typing import Any
 from uuid import UUID
 
-from sqlalchemy import text
+import json as _json
+from sqlalchemy import bindparam, text, types
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from shared.outbox.schemas import (
@@ -275,22 +276,31 @@ class InventoryService:
         if config_id:
             from fastapi import HTTPException as _HTTPException
             # Source node level — check can_initiate
-            src_node = (await self.db.execute(
+            # Initiator is the requesting side:
+            #   PULL:   destination (to_warehouse_id) requests stock from source
+            #   PUSH:   source (from_warehouse_id) proactively sends stock down
+            #   SISTER: both sides; check the destination (requestor) node
+            initiator_node_id = (
+                str(body.to_warehouse_id)
+                if body.transfer_type in ("PULL", "SISTER")
+                else str(body.from_warehouse_id)
+            )
+            initiator_node = (await self.db.execute(
                 text("SELECT hierarchy_level FROM organization_node WHERE id = :nid AND tenant_id = :tid"),
-                {"nid": str(body.from_warehouse_id), "tid": str(user.tenant_id)},
+                {"nid": initiator_node_id, "tid": str(user.tenant_id)},
             )).fetchone()
-            if src_node:
-                src_perm = (await self.db.execute(
+            if initiator_node:
+                init_perm = (await self.db.execute(
                     text("SELECT can_initiate FROM transfer_type_level_permissions "
                          "WHERE transfer_type_config_id = :cid AND level_number = :ln"),
-                    {"cid": config_id, "ln": src_node.hierarchy_level},
+                    {"cid": config_id, "ln": initiator_node.hierarchy_level},
                 )).fetchone()
-                if src_perm is not None and not src_perm.can_initiate:
+                if init_perm is not None and not init_perm.can_initiate:
                     raise _HTTPException(
                         status_code=422,
                         detail={
                             "code":    "LEVEL_CANNOT_INITIATE",
-                            "message": f"Level {src_node.hierarchy_level} nodes cannot initiate this transfer type.",
+                            "message": f"Level {initiator_node.hierarchy_level} nodes cannot initiate this transfer type.",
                         },
                     )
             # Destination node level — check can_receive
@@ -455,10 +465,10 @@ class InventoryService:
             await self.db.execute(
                 text(
                     "UPDATE transfer_orders "
-                    "SET resolved_approval_steps = :steps::jsonb, current_approval_step = 1 "
+                    "SET resolved_approval_steps = :steps, current_approval_step = 1 "
                     "WHERE id = :id"
-                ),
-                {"steps": resolution.steps_as_json(), "id": str(transfer_id)},
+                ).bindparams(bindparam("steps", type_=types.JSON)),
+                {"steps": _json.loads(resolution.steps_as_json()), "id": str(transfer_id)},
             )
 
         # APPROVED: authority check → hard deduction per line → auto-approve notification.

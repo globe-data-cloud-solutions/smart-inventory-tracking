@@ -307,7 +307,9 @@ class TestTransferTypeConfig:
         insert_with_steps = [p for s, p in stmts_params if p.get("steps")]
         assert insert_with_steps, "Expected approval_steps in INSERT params"
 
-        steps = json.loads(insert_with_steps[0]["steps"])
+        # steps is now a Python list (not JSON string) since we use bindparam(type_=types.JSON)
+        raw_steps = insert_with_steps[0]["steps"]
+        steps = raw_steps if isinstance(raw_steps, list) else json.loads(raw_steps)
         assert steps[0]["sequence"]       == 1
         assert steps[0]["position_title"] == "Regional Manager"
         assert steps[0]["sla_hours"]      == 24
