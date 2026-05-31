@@ -1751,7 +1751,7 @@ class TestBugBProductEnhancements:
         registered = {p.id for p in ALL_PERMISSIONS}
         for perm_id in required:
             assert perm_id in registered, f"{perm_id} missing from registry"
-        assert len(ALL_PERMISSIONS) == 133
+        assert len(ALL_PERMISSIONS) == 139
 
     def test_packaging_preview_logic(self):
         """packagingPreview = '{name} of {units} {uom}'."""

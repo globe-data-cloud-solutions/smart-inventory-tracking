@@ -27,6 +27,8 @@ ALLOWLISTED_PUBLIC_ROUTES: dict[str, list[str]] = {
     "backend/services/auth-service/routers/auth.py": [
         "exchange_token",
         "refresh_token",
+        # Local-dev password change endpoint — protected by ENVIRONMENT=local guard, not JWT.
+        "change_password_by_id",
     ],
 }
 

@@ -166,6 +166,18 @@ class PERMISSIONS:
 
     # ── Domain 17 — System Administration ────────────────────────────────
     SYSTEM_FEATURE_FLAG     = Permission("system:feature_flag_manage",  ["platform_only"])
+
+    # ── Domain 18 — Positions (Session 3) ────────────────────────────────
+    POSITION_VIEW          = Permission("position:view",          ["tenant_id"])
+    POSITION_MANAGE        = Permission("position:manage",        ["tenant_id", "audit_required"])
+
+    # ── Domain 19 — Transfer Type Configuration (Session 3) ──────────────
+    TRANSFER_TYPE_VIEW     = Permission("transfer_type:view",     ["tenant_id"])
+    TRANSFER_TYPE_MANAGE   = Permission("transfer_type:manage",   ["tenant_id", "audit_required"])
+
+    # ── Domain 20 — Transfer Approval Rules (Session 3) ──────────────────
+    TRANSFER_APPROVAL_RULE_VIEW   = Permission("transfer_approval_rule:view",   ["tenant_id"])
+    TRANSFER_APPROVAL_RULE_MANAGE = Permission("transfer_approval_rule:manage", ["tenant_id", "audit_required"])
     SYSTEM_PLAN_MANAGE      = Permission("system:plan_manage",          ["platform_only"])
     SYSTEM_SEED_PERMISSIONS = Permission("system:seed_permissions",     ["system_only"])
     SYSTEM_HEALTH_CHECK     = Permission("system:health_check",         [])
@@ -198,7 +210,7 @@ ALL_PERMISSIONS: List[Permission] = [
     v for v in vars(PERMISSIONS).values() if isinstance(v, Permission)
 ]
 
-assert len(ALL_PERMISSIONS) == 133, (
-    f"Expected 133 permissions, found {len(ALL_PERMISSIONS)}. "
+assert len(ALL_PERMISSIONS) == 139, (
+    f"Expected 139 permissions, found {len(ALL_PERMISSIONS)}. "
     "Update registry.py and re-run seed_permissions.py."
 )
