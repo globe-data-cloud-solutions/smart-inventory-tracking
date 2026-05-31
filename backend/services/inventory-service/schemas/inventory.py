@@ -182,8 +182,9 @@ class AdjustmentListItem(BaseModel):
 class ApprovalInfoResponse(BaseModel):
     """Response for GET /transfers/{id}/approval-info.
 
-    tells the caller who must approve this transfer, whether it auto-approves,
-    and whether the current user has sufficient authority.
+    Session 6: when resolved_approval_steps are present (dynamic routing),
+    can_approve is true only when the caller IS the specifically-assigned approver.
+    Legacy fields (required_authority_level etc.) preserved for backward compat.
     """
     transfer_id:              uuid.UUID
     required_authority_level: int
@@ -191,3 +192,12 @@ class ApprovalInfoResponse(BaseModel):
     is_auto_approve:          bool
     can_approve:              bool
     reason:                   str
+    # Session 6 — specific assignee fields
+    current_step:                   int           = 1
+    total_steps:                    int           = 1
+    current_approver_user_id:       Optional[str] = None
+    current_approver_name:          Optional[str] = None
+    current_approver_position_title: Optional[str] = None
+    execution_mode:                 str           = "sequential"
+    sla_hours:                      Optional[int] = None
+    is_dynamic_routing:             bool          = False

@@ -397,6 +397,15 @@ interface ApprovalInfoResponse {
   is_auto_approve: boolean;
   can_approve: boolean;
   reason: string;
+  // Session 6: dynamic routing fields
+  current_step?: number;
+  total_steps?: number;
+  current_approver_user_id?: string | null;
+  current_approver_name?: string | null;
+  current_approver_position_title?: string | null;
+  execution_mode?: string;
+  sla_hours?: number | null;
+  is_dynamic_routing?: boolean;
 }
 
 /**
@@ -492,6 +501,15 @@ function ApprovalPendingActions({
         </button>
       </div>
     );
+  }
+
+  // Dynamic routing: show specific assignee name + position title
+  if (info.is_dynamic_routing && info.current_approver_name) {
+    const step = info.current_step && info.total_steps && info.total_steps > 1
+      ? ` (${info.current_step}/${info.total_steps})`
+      : "";
+    const waitMsg = `Awaiting ${info.current_approver_position_title ?? info.required_role_display}: ${info.current_approver_name}${step}`;
+    return <span className="text-[11px] text-gray-400 italic leading-tight">{waitMsg}</span>;
   }
 
   const waitMsg = info.required_role_display

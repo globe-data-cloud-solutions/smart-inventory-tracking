@@ -178,9 +178,11 @@ async def get_approval_info(
     from sqlalchemy import text
     from services.approval_service import resolve_approval, ROLE_AUTHORITY_LEVEL
 
+    import json as _json
     transfer_row = (await db.execute(
         text(
-            "SELECT transfer_type, created_by, created_by_authority_level "
+            "SELECT transfer_type, created_by, created_by_authority_level, "
+            "resolved_approval_steps, current_approval_step "
             "FROM transfer_orders WHERE id = :id AND tenant_id = :tid"
         ),
         {"id": str(transfer_id), "tid": str(user.tenant_id)},
@@ -188,6 +190,38 @@ async def get_approval_info(
     if not transfer_row:
         raise HTTPException(status_code=404, detail="Transfer not found")
 
+    # ── Session 6: dynamic routing via resolved_approval_steps ────────────────
+    resolved_steps = transfer_row.resolved_approval_steps
+    if resolved_steps:
+        if isinstance(resolved_steps, str):
+            resolved_steps = _json.loads(resolved_steps)
+        steps: list[dict] = resolved_steps if isinstance(resolved_steps, list) else []
+        cur_idx = max(0, (transfer_row.current_approval_step or 1) - 1)
+        cur_step = steps[cur_idx] if cur_idx < len(steps) else (steps[-1] if steps else {})
+
+        caller_uid = str(user.user_id)
+        assignee_uid = cur_step.get("assigned_to_user_id")
+        can_approve_dyn = bool(assignee_uid and caller_uid == assignee_uid)
+
+        return SuccessResponse(data=ApprovalInfoResponse(
+            transfer_id=transfer_id,
+            required_authority_level=1,
+            required_role_display=cur_step.get("position_title", "Approver"),
+            is_auto_approve=False,
+            can_approve=can_approve_dyn,
+            reason=f"Step {cur_step.get('sequence', 1)} of {len(steps)}: "
+                   f"{cur_step.get('position_title', 'Approver')} approval required.",
+            current_step=cur_step.get("sequence", 1),
+            total_steps=len(steps),
+            current_approver_user_id=assignee_uid,
+            current_approver_name=cur_step.get("assigned_to_name"),
+            current_approver_position_title=cur_step.get("position_title"),
+            execution_mode=cur_step.get("execution_mode", "sequential"),
+            sla_hours=cur_step.get("sla_hours"),
+            is_dynamic_routing=True,
+        ))
+
+    # ── Legacy path: role-level routing (old approval_rule / authority_level) ─
     lines = (await db.execute(
         text(
             "SELECT quantity FROM transfer_order_lines "
@@ -218,7 +252,6 @@ async def get_approval_info(
     )
 
     caller_level = ROLE_AUTHORITY_LEVEL.get(getattr(user, "role", ""), 5)
-    # A user cannot approve a transfer they created, regardless of authority level.
     is_own_transfer = (
         transfer_row.created_by is not None
         and str(transfer_row.created_by) == str(user.user_id)

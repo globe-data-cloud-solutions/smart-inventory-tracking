@@ -14,9 +14,10 @@ Authority level scale (lower = higher authority):
 """
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass, field
 from decimal import Decimal
-from typing import Optional
+from typing import Any, Optional
 
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -275,5 +276,446 @@ async def resolve_approval(
         required_authority_level=required_level,
         notify_levels=threshold.notify_levels or [],
         reason=reason,
+    )
+
+
+# ── Session 6: Dynamic position-based approval resolution ────────────────────
+
+
+@dataclass
+class ResolvedStep:
+    """One step in the dynamically-resolved approval chain."""
+    sequence:              int
+    position_title:        str
+    position_id:           Optional[str]
+    node_id:               Optional[str]
+    assigned_to_user_id:   Optional[str]
+    assigned_to_name:      Optional[str]
+    execution_mode:        str = "sequential"
+    sla_hours:             Optional[int] = None
+    is_vacant:             bool = False
+    escalated:             bool = False
+    status:                str = "pending"
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "sequence":            self.sequence,
+            "position_title":      self.position_title,
+            "position_id":         self.position_id,
+            "node_id":             self.node_id,
+            "assigned_to_user_id": self.assigned_to_user_id,
+            "assigned_to_name":    self.assigned_to_name,
+            "execution_mode":      self.execution_mode,
+            "sla_hours":           self.sla_hours,
+            "is_vacant":           self.is_vacant,
+            "escalated":           self.escalated,
+            "status":              self.status,
+        }
+
+
+@dataclass
+class ApprovalResolution:
+    """Full resolution result — stored as JSON on the transfer order."""
+    steps:        list[ResolvedStep]
+    rule_id:      Optional[str] = None
+    missing_rule: bool = False
+
+    def steps_as_json(self) -> str:
+        return json.dumps([s.to_dict() for s in self.steps])
+
+
+# ── Helper: find matching transfer_approval_rules row ────────────────────────
+
+async def _find_matching_rule(
+    session:       AsyncSession,
+    config_id:     str,
+    src_level:     Optional[int],
+    dst_level:     Optional[int],
+    quantity:      Decimal,
+    value:         Optional[Decimal],
+) -> Optional[dict[str, Any]]:
+    """Return the highest-priority rule that matches the transfer parameters.
+
+    Specificity: rules with explicit source_level/dest_level take precedence
+    over NULL (any-level) rules.  Within the same specificity, lower priority
+    number wins.
+    """
+    result = await session.execute(
+        text("""
+            SELECT id, approval_steps, threshold_type,
+                   quantity_min, quantity_max,
+                   value_min, value_max,
+                   source_level, destination_level,
+                   priority
+            FROM   transfer_approval_rules
+            WHERE  transfer_type_config_id = :cid
+            AND    is_active = true
+            AND    (source_level IS NULL OR source_level = :sl)
+            AND    (destination_level IS NULL OR destination_level = :dl)
+            ORDER  BY
+                -- more-specific rules first (non-NULL levels before NULL)
+                (CASE WHEN source_level IS NOT NULL THEN 0 ELSE 1 END) +
+                (CASE WHEN destination_level IS NOT NULL THEN 0 ELSE 1 END),
+                priority ASC
+        """),
+        {"cid": config_id, "sl": src_level, "dl": dst_level},
+    )
+    rows = result.fetchall()
+    for row in rows:
+        # Threshold check
+        tt = str(row.threshold_type)
+        qty_ok = val_ok = True
+        if tt in ("QUANTITY", "EITHER", "BOTH"):
+            qty_min = Decimal(str(row.quantity_min)) if row.quantity_min is not None else Decimal("0")
+            qty_max = Decimal(str(row.quantity_max)) if row.quantity_max is not None else None
+            qty_ok = quantity >= qty_min and (qty_max is None or quantity <= qty_max)
+        if tt in ("VALUE", "EITHER", "BOTH"):
+            val_min = Decimal(str(row.value_min)) if row.value_min is not None else Decimal("0")
+            val_max = Decimal(str(row.value_max)) if row.value_max is not None else None
+            v = value or Decimal("0")
+            val_ok = v >= val_min and (val_max is None or v <= val_max)
+        if tt == "BOTH":
+            if qty_ok and val_ok:
+                return dict(id=str(row.id), approval_steps=row.approval_steps or [])
+        elif tt in ("EITHER",):
+            if qty_ok or val_ok:
+                return dict(id=str(row.id), approval_steps=row.approval_steps or [])
+        else:
+            check = qty_ok if tt == "QUANTITY" else val_ok
+            if check:
+                return dict(id=str(row.id), approval_steps=row.approval_steps or [])
+    return None
+
+
+# ── Helper: get an org node ───────────────────────────────────────────────────
+
+async def _get_node(
+    session: AsyncSession, tenant_id: str, node_id: str,
+) -> Optional[dict[str, Any]]:
+    row = (await session.execute(
+        text("SELECT id, name, hierarchy_level FROM organization_node WHERE id = :nid AND tenant_id = :tid"),
+        {"nid": node_id, "tid": tenant_id},
+    )).fetchone()
+    return dict(id=str(row.id), name=row.name, level=row.hierarchy_level) if row else None
+
+
+async def _get_parent_node(
+    session: AsyncSession, tenant_id: str, node_id: str,
+) -> Optional[dict[str, Any]]:
+    """Return the PRIMARY_REPORTS_TO parent of a node."""
+    row = (await session.execute(
+        text("""
+            SELECT n.id, n.name, n.hierarchy_level
+            FROM   org_node_hierarchy h
+            JOIN   organization_node n ON n.id = h.to_node_id
+            WHERE  h.from_node_id         = :nid
+            AND    h.tenant_id            = :tid
+            AND    h.relationship_type    = 'PRIMARY_REPORTS_TO'
+            LIMIT 1
+        """),
+        {"nid": node_id, "tid": tenant_id},
+    )).fetchone()
+    return dict(id=str(row.id), name=row.name, level=row.hierarchy_level) if row else None
+
+
+# ── Helper: resolve which node to search for a step's position ───────────────
+
+async def _resolve_node_for_step(
+    session:       AsyncSession,
+    tenant_id:     str,
+    resolution:    str,
+    src_node_id:   str,
+    dst_node_id:   str,
+    position_title: Optional[str] = None,
+) -> Optional[dict[str, Any]]:
+    """Map a step resolution string to a specific org node."""
+    res = resolution.upper()
+    if res == "SOURCE":
+        return await _get_node(session, tenant_id, src_node_id)
+    if res == "DESTINATION":
+        return await _get_node(session, tenant_id, dst_node_id)
+    if res == "SOURCE_PARENT_NODE":
+        return await _get_parent_node(session, tenant_id, src_node_id)
+    if res == "DESTINATION_PARENT_NODE":
+        return await _get_parent_node(session, tenant_id, dst_node_id)
+    if res == "NEAREST_ANCESTOR_WITH_POSITION":
+        # Traverse up from source until we find a node that has the requested position
+        cur = src_node_id
+        for _ in range(10):
+            row = (await session.execute(
+                text("""
+                    SELECT COUNT(*) FROM positions
+                    WHERE node_id = :nid AND tenant_id = :tid
+                    AND is_active = true
+                    AND (:title IS NULL OR title = :title)
+                """),
+                {"nid": cur, "tid": tenant_id, "title": position_title},
+            )).scalar()
+            if row and int(row) > 0:
+                return await _get_node(session, tenant_id, cur)
+            parent = await _get_parent_node(session, tenant_id, cur)
+            if not parent:
+                break
+            cur = parent["id"]
+        return None
+    # TENANT_WIDE — no specific node, caller handles
+    return None
+
+
+# ── Helper: find a position at a node and its current holder ─────────────────
+
+async def _find_position_and_holder(
+    session:        AsyncSession,
+    tenant_id:      str,
+    node_id:        Optional[str],
+    position_title: Optional[str],
+) -> tuple[Optional[str], Optional[str], Optional[str], Optional[str]]:
+    """Return (position_id, holder_user_id, holder_name, actual_node_id).
+
+    For TENANT_WIDE (node_id=None), searches any active position with the title.
+    """
+    if node_id:
+        row = (await session.execute(
+            text("""
+                SELECT p.id AS pos_id, pp.user_id, u.full_name, p.node_id
+                FROM   positions p
+                LEFT JOIN personnel_positions pp
+                       ON pp.position_id = p.id
+                       AND pp.is_active  = true
+                       AND pp.assignment_type = 'PRIMARY'
+                       AND (pp.valid_until IS NULL OR pp.valid_until >= CURRENT_DATE)
+                LEFT JOIN users u ON u.id = pp.user_id AND u.is_active = true
+                WHERE  p.node_id   = :nid
+                AND    p.tenant_id = :tid
+                AND    p.is_active = true
+                AND    (:title IS NULL OR p.title = :title)
+                LIMIT 1
+            """),
+            {"nid": node_id, "tid": tenant_id, "title": position_title},
+        )).fetchone()
+    else:
+        row = (await session.execute(
+            text("""
+                SELECT p.id AS pos_id, pp.user_id, u.full_name, p.node_id
+                FROM   positions p
+                LEFT JOIN personnel_positions pp
+                       ON pp.position_id = p.id
+                       AND pp.is_active  = true
+                       AND pp.assignment_type = 'PRIMARY'
+                       AND (pp.valid_until IS NULL OR pp.valid_until >= CURRENT_DATE)
+                LEFT JOIN users u ON u.id = pp.user_id AND u.is_active = true
+                WHERE  p.tenant_id = :tid
+                AND    p.is_active = true
+                AND    (:title IS NULL OR p.title = :title)
+                LIMIT 1
+            """),
+            {"tid": tenant_id, "title": position_title},
+        )).fetchone()
+
+    if not row:
+        return None, None, None, node_id
+    return (
+        str(row.pos_id),
+        str(row.user_id) if row.user_id else None,
+        str(row.full_name) if row.full_name else None,
+        str(row.node_id),
+    )
+
+
+async def _escalate_vacant(
+    session:      AsyncSession,
+    tenant_id:    str,
+    position_id:  str,
+) -> tuple[Optional[str], Optional[str], bool]:
+    """Traverse reports_to chain until we find a holder, or fall back to NM.
+
+    Returns (user_id, name, escalated_flag).
+    """
+    cur_pos = position_id
+    for _ in range(10):
+        parent_row = (await session.execute(
+            text("""
+                SELECT p.id, pp.user_id, u.full_name
+                FROM   positions p
+                LEFT JOIN personnel_positions pp
+                       ON pp.position_id = p.id AND pp.is_active = true
+                       AND pp.assignment_type = 'PRIMARY'
+                       AND (pp.valid_until IS NULL OR pp.valid_until >= CURRENT_DATE)
+                LEFT JOIN users u ON u.id = pp.user_id AND u.is_active = true
+                WHERE  p.id = (SELECT reports_to_position_id FROM positions WHERE id = :pid)
+                AND    p.tenant_id = :tid
+            """),
+            {"pid": cur_pos, "tid": tenant_id},
+        )).fetchone()
+        if not parent_row:
+            break
+        if parent_row.user_id:
+            return str(parent_row.user_id), str(parent_row.full_name), True
+        cur_pos = str(parent_row.id)
+
+    # Fall back to any NM-level position holder
+    nm_row = (await session.execute(
+        text("""
+            SELECT pp.user_id, u.full_name
+            FROM   positions p
+            JOIN   personnel_positions pp
+                   ON pp.position_id = p.id AND pp.is_active = true
+                   AND pp.assignment_type = 'PRIMARY'
+                   AND (pp.valid_until IS NULL OR pp.valid_until >= CURRENT_DATE)
+            JOIN   users u ON u.id = pp.user_id AND u.is_active = true
+            WHERE  p.tenant_id = :tid
+            AND    p.role_code IN ('NM')
+            LIMIT  1
+        """),
+        {"tid": tenant_id},
+    )).fetchone()
+    if nm_row:
+        return str(nm_row.user_id), str(nm_row.full_name), True
+    return None, None, True
+
+
+# ── Main entry point: resolve_transfer_approvers ─────────────────────────────
+
+async def resolve_transfer_approvers(
+    session:              AsyncSession,
+    tenant_id:            str,
+    transfer_type_config_id: Optional[str],
+    from_warehouse_id:    str,
+    to_warehouse_id:      str,
+    quantity:             Decimal,
+    total_value:          Optional[Decimal],
+    created_by:           Optional[str],
+    src_level:            Optional[int] = None,
+    dst_level:            Optional[int] = None,
+) -> ApprovalResolution:
+    """Dynamic approval routing using transfer_approval_rules + positions.
+
+    Resolution order:
+      1. Find matching transfer_approval_rule for config/level/qty/value
+      2. For each step, resolve the target node (source/dest/parent/tenant-wide)
+      3. Find the position by title at that node
+      4. Find the current PRIMARY holder
+      5. If vacant → escalate up reports_to chain
+      6. If holder == creator → escalate up reports_to chain
+      7. No rule → fall back to any NM-role position holder
+
+    Stores the full resolution on the transfer order so approval-info
+    queries don't re-run the logic on every call.
+    """
+    # Auto-detect node levels if not provided
+    if src_level is None:
+        src_row = (await session.execute(
+            text("SELECT hierarchy_level FROM organization_node WHERE id = :nid AND tenant_id = :tid"),
+            {"nid": from_warehouse_id, "tid": tenant_id},
+        )).fetchone()
+        src_level = int(src_row.hierarchy_level) if src_row else None
+
+    if dst_level is None:
+        dst_row = (await session.execute(
+            text("SELECT hierarchy_level FROM organization_node WHERE id = :nid AND tenant_id = :tid"),
+            {"nid": to_warehouse_id, "tid": tenant_id},
+        )).fetchone()
+        dst_level = int(dst_row.hierarchy_level) if dst_row else None
+
+    # Find matching rule
+    rule: Optional[dict[str, Any]] = None
+    if transfer_type_config_id:
+        rule = await _find_matching_rule(
+            session, transfer_type_config_id,
+            src_level, dst_level, quantity, total_value,
+        )
+
+    # No rule → NM fallback
+    if not rule:
+        nm_row = (await session.execute(
+            text("""
+                SELECT pp.user_id, u.full_name, p.id AS pos_id, p.title, p.node_id
+                FROM   positions p
+                JOIN   personnel_positions pp
+                       ON pp.position_id = p.id AND pp.is_active = true
+                       AND pp.assignment_type = 'PRIMARY'
+                       AND (pp.valid_until IS NULL OR pp.valid_until >= CURRENT_DATE)
+                JOIN   users u ON u.id = pp.user_id AND u.is_active = true
+                WHERE  p.tenant_id = :tid
+                AND    p.role_code IN ('NM')
+                LIMIT  1
+            """),
+            {"tid": tenant_id},
+        )).fetchone()
+
+        uid = str(nm_row.user_id) if nm_row and nm_row.user_id else None
+        name = str(nm_row.full_name) if nm_row and nm_row.full_name else None
+        title = str(nm_row.title) if nm_row else "National Manager"
+        # Self-approval escalation for the fallback step
+        if uid and uid == created_by:
+            uid, name, _ = await _escalate_vacant(
+                session, tenant_id, str(nm_row.pos_id) if nm_row else "fallback"
+            )
+
+        return ApprovalResolution(
+            missing_rule=True,
+            steps=[ResolvedStep(
+                sequence=1,
+                position_title=title,
+                position_id=str(nm_row.pos_id) if nm_row else None,
+                node_id=str(nm_row.node_id) if nm_row else None,
+                assigned_to_user_id=uid,
+                assigned_to_name=name,
+                is_vacant=nm_row is None,
+                escalated=nm_row is None,
+            )],
+        )
+
+    # Resolve each step in the rule
+    resolved_steps: list[ResolvedStep] = []
+    for step in rule["approval_steps"]:
+        seq         = int(step.get("sequence", len(resolved_steps) + 1))
+        title       = step.get("position_title")
+        resolution  = step.get("resolution", "TENANT_WIDE")
+        exec_mode   = step.get("execution_mode", "sequential")
+        sla         = step.get("sla_hours")
+
+        # Resolve target node
+        node = await _resolve_node_for_step(
+            session, tenant_id, resolution,
+            from_warehouse_id, to_warehouse_id, title,
+        )
+        node_id = node["id"] if node else None
+
+        # Find position and holder
+        pos_id, holder_uid, holder_name, actual_node_id = await _find_position_and_holder(
+            session, tenant_id, node_id, title,
+        )
+
+        is_vacant = pos_id is not None and holder_uid is None
+        escalated = False
+
+        if is_vacant and pos_id:
+            holder_uid, holder_name, escalated = await _escalate_vacant(session, tenant_id, pos_id)
+
+        # Self-approval prevention
+        if holder_uid and holder_uid == created_by:
+            if pos_id:
+                holder_uid, holder_name, escalated = await _escalate_vacant(session, tenant_id, pos_id)
+            else:
+                holder_uid, holder_name = None, None
+
+        resolved_steps.append(ResolvedStep(
+            sequence=seq,
+            position_title=title or "Approver",
+            position_id=pos_id,
+            node_id=actual_node_id or node_id,
+            assigned_to_user_id=holder_uid,
+            assigned_to_name=holder_name,
+            execution_mode=exec_mode,
+            sla_hours=int(sla) if sla is not None else None,
+            is_vacant=is_vacant,
+            escalated=escalated,
+        ))
+
+    return ApprovalResolution(
+        steps=resolved_steps,
+        rule_id=rule["id"],
+        missing_rule=False,
     )
 

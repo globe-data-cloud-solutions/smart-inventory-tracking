@@ -422,6 +422,45 @@ class InventoryService:
                     line_id=str(line.id),
                 )
 
+        # PENDING_APPROVAL: resolve dynamic approver chain and store on transfer order.
+        elif next_state == "PENDING_APPROVAL":
+            from services.approval_service import resolve_transfer_approvers as _resolve_approvers
+            lines = (await self.db.execute(
+                text(
+                    "SELECT quantity FROM transfer_order_lines "
+                    "WHERE transfer_order_id = :tid_order AND tenant_id = :tid"
+                ),
+                {"tid_order": str(transfer_id), "tid": str(user.tenant_id)},
+            )).fetchall()
+            total_qty = sum(Decimal(str(l.quantity)) for l in lines)
+            tv_row = (await self.db.execute(
+                text("SELECT transfer_type_config_id, total_value, created_by "
+                     "FROM transfer_orders WHERE id = :id"),
+                {"id": str(transfer_id)},
+            )).fetchone()
+            config_id_for_res = str(tv_row.transfer_type_config_id) if tv_row and tv_row.transfer_type_config_id else None
+            tv_for_res = Decimal(str(tv_row.total_value)) if tv_row and tv_row.total_value else None
+            created_by_for_res = str(tv_row.created_by) if tv_row and tv_row.created_by else None
+
+            resolution = await _resolve_approvers(
+                session=self.db,
+                tenant_id=str(user.tenant_id),
+                transfer_type_config_id=config_id_for_res,
+                from_warehouse_id=str(row.from_warehouse_id),
+                to_warehouse_id=str(row.to_warehouse_id),
+                quantity=total_qty,
+                total_value=tv_for_res,
+                created_by=created_by_for_res,
+            )
+            await self.db.execute(
+                text(
+                    "UPDATE transfer_orders "
+                    "SET resolved_approval_steps = :steps::jsonb, current_approval_step = 1 "
+                    "WHERE id = :id"
+                ),
+                {"steps": resolution.steps_as_json(), "id": str(transfer_id)},
+            )
+
         # APPROVED: authority check → hard deduction per line → auto-approve notification.
         elif next_state == "APPROVED":
             lines = (await self.db.execute(

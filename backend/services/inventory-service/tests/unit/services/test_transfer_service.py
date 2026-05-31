@@ -1321,16 +1321,23 @@ class TestGap4SimpleModeWiring:
         from fastapi import HTTPException
 
         # ── PULL: PENDING_REVIEW → PENDING_APPROVAL is valid ────────────────
+        from services.approval_service import ApprovalResolution
+
         pull_row = _make_transfer_row("PENDING_REVIEW", transfer_type="PULL")
         session  = AsyncMock()
         session.execute = AsyncMock(side_effect=[
             MagicMock(fetchone=MagicMock(return_value=pull_row)),  # SELECT transfer
-            MagicMock(),                                            # UPDATE status
+            MagicMock(fetchall=MagicMock(return_value=[])),         # SELECT lines (for qty)
+            MagicMock(fetchone=MagicMock(return_value=None)),       # SELECT transfer for config_id
+            MagicMock(),                                             # UPDATE resolved_steps
+            MagicMock(),                                             # UPDATE status
         ])
 
-        result = await InventoryService(session).transition_transfer(
-            SRC_WM, TRANSFER_ID, "PENDING_APPROVAL"
-        )
+        with patch("services.approval_service.resolve_transfer_approvers",
+                   new=AsyncMock(return_value=ApprovalResolution(steps=[], missing_rule=True))):
+            result = await InventoryService(session).transition_transfer(
+                SRC_WM, TRANSFER_ID, "PENDING_APPROVAL"
+            )
         assert result.status == "PENDING_APPROVAL", (
             "review transition must advance PULL to PENDING_APPROVAL"
         )
