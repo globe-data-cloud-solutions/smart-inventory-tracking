@@ -1,9 +1,9 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { login, loginWithDevEmail } from "@/lib/demo-auth";
-import { DEMO_TENANTS, SA_USER } from "@/lib/demo-data";
+import { SA_USER } from "@/lib/demo-data";
 
 export default function LoginPage() {
   const router       = useRouter();
@@ -13,7 +13,11 @@ export default function LoginPage() {
   const [error, setError]       = useState("");
   const [loading, setLoading]   = useState(false);
 
-  const sessionExpired = searchParams.get("reason") === "session_expired";
+  // Derived from URL params client-side only — starts false to avoid hydration mismatch.
+  const [sessionExpired, setSessionExpired] = useState(false);
+  useEffect(() => {
+    setSessionExpired(searchParams.get("reason") === "session_expired");
+  }, [searchParams]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -51,15 +55,14 @@ export default function LoginPage() {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-900 via-brand-900 to-slate-900 flex">
-      {/* ── Left panel: demo accounts ── */}
+      {/* ── Left panel: SA quick access ── */}
       <div className="hidden lg:flex lg:w-96 bg-white/5 border-r border-white/10 flex-col p-8 overflow-y-auto h-screen">
-        <h2 className="text-white font-bold text-lg mb-1">Demo Accounts</h2>
-        <p className="text-slate-400 text-sm mb-6">Click any account to auto-fill credentials.</p>
+        <h2 className="text-white font-bold text-lg mb-1">Quick Access</h2>
+        <p className="text-slate-400 text-sm mb-6">Click to auto-fill credentials.</p>
 
-        {/* SA */}
         <div className="mb-6">
           <p className="text-xs text-slate-400 uppercase tracking-wider font-semibold mb-2">
-            System Admin (all tenants)
+            System Administrator
           </p>
           <button
             onClick={() => fillCredentials(SA_USER.email, SA_USER.password)}
@@ -71,38 +74,11 @@ export default function LoginPage() {
           </button>
         </div>
 
-        {/* Tenant users */}
-        {DEMO_TENANTS.map((tenant) => (
-          <div key={tenant.id} className="mb-5">
-            <p className="text-xs text-slate-400 uppercase tracking-wider font-semibold mb-2 flex items-center gap-1.5">
-              <span>{tenant.logo}</span> {tenant.name}
-            </p>
-            <div className="space-y-1.5 max-h-48 overflow-y-auto pr-1">
-              {tenant.users.map((u) => (
-                <button
-                  key={u.id}
-                  onClick={() => fillCredentials(u.email, u.password)}
-                  className="w-full text-left p-2.5 rounded-lg bg-white/5 border border-white/10 hover:bg-white/10 transition-colors group"
-                >
-                  <div className="flex items-start justify-between gap-2">
-                    <div className="min-w-0">
-                      <p className="text-white text-xs font-medium truncate">{u.name}</p>
-                      <p className="text-slate-400 text-xs font-mono truncate">{u.email}</p>
-                    </div>
-                    <span className={`flex-shrink-0 text-xs rounded px-1.5 py-0.5 font-medium ${
-                      u.role === "TA" ? "bg-purple-500 text-white" :
-                      u.role === "NM" ? "bg-blue-500 text-white" :
-                      "bg-teal-500 text-white"
-                    }`}>{u.role}</span>
-                  </div>
-                  {u.warehouseName && (
-                    <p className="text-slate-500 text-xs mt-0.5 truncate">📍 {u.warehouseName}</p>
-                  )}
-                </button>
-              ))}
-            </div>
-          </div>
-        ))}
+        <div className="mt-auto border-t border-white/10 pt-4">
+          <p className="text-xs text-slate-500">
+            To add tenant accounts, sign in as SA and use Settings → Personnel.
+          </p>
+        </div>
       </div>
 
       {/* ── Right panel: login form ── */}
@@ -174,9 +150,9 @@ export default function LoginPage() {
 
             {/* Mobile credentials hint */}
             <div className="mt-6 p-4 rounded-lg bg-brand-50 border border-brand-100 lg:hidden">
-              <p className="text-xs font-semibold text-brand-700 mb-2">SA Demo Account</p>
-              <p className="text-xs font-mono text-brand-800">smartadmin@smart-inventory.com</p>
-              <p className="text-xs font-mono text-brand-800">SmartAdmin@2026</p>
+              <p className="text-xs font-semibold text-brand-700 mb-2">System Admin</p>
+              <p className="text-xs font-mono text-brand-800">{SA_USER.email}</p>
+              <p className="text-xs font-mono text-brand-800">{SA_USER.password}</p>
             </div>
           </div>
 
