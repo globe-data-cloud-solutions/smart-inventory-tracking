@@ -681,7 +681,7 @@ function UserDetailPanel({
                         </span>
                         {roleBadge(a.role_code)}
                       </div>
-                      <p className="text-xs text-gray-600 mt-1">{a.facility_name ?? a.facility_id}</p>
+                      <p className="text-xs text-gray-600 mt-1">{a.facility_name ?? t("common.unknown")}</p>
                       {a.valid_from && (
                         <p className="text-[10px] text-gray-400 mt-0.5">
                           {a.valid_from} → {a.valid_until ?? "∞"}
@@ -716,7 +716,7 @@ function UserDetailPanel({
                     <span className="text-[10px] font-bold text-gray-400 border border-gray-300 rounded px-1">
                       {a.assignment_type}
                     </span>
-                    <span className="text-xs text-gray-500">{a.facility_name ?? a.facility_id}</span>
+                    <span className="text-xs text-gray-500">{a.facility_name ?? t("common.unknown")}</span>
                     {a.valid_until && (
                       <span className="text-[10px] text-red-400">expired {a.valid_until}</span>
                     )}

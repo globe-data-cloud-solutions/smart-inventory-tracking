@@ -2284,6 +2284,24 @@ NEVER leave a state machine missing transitions that the UI exposes as buttons.
   transfers/page.tsx AND the corresponding machine dict in state_machine.py
   in the same PR.
   Root cause: BUG_REPORT.md §15 Bug 3 — missing REJECTED in state machines.
+
+NEVER render a raw i18n key as visible JSX text.
+  Every string the user sees must be wrapped in t('key.name').
+  If the key is missing from locales/en.json — add it first, then use t().
+  After adding a key to en.json, run:
+    python3 -c "..." to sync the same key to am.json and or.json.
+  Prevention: bash scripts/check_i18n.sh must pass before git commit.
+
+NEVER render a UUID directly in JSX text content.
+  Warehouse/node IDs → resolve to name via API or ?? t('common.unknown')
+  Tenant/org IDs → use useTenantName(org) hook
+  User IDs → resolve to user.name before rendering
+  Product IDs → resolve to product.name or SKU before rendering
+  Fallback pattern: {value ?? t('common.unknown')} — never {value ?? rawId}
+
+NEVER commit frontend changes without running both:
+  npx tsc --noEmit          → must show 0 errors
+  bash scripts/check_i18n.sh → must show PASS
 ```
 
 ---

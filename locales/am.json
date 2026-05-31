@@ -46,6 +46,49 @@
     "tooltip": {
       "in_transit_out": "ከዚህ መጋዘን የተላከ ክምችት፤ ወደ መድረሻ እስካሁን አልደረሰም",
       "in_transit_in": "ወደዚህ መጋዘን በጉዞ ላይ ያለ ክምችት"
+    },
+    "warehouse": "Warehouse",
+    "all_locations": "All locations",
+    "category": "Category",
+    "unit": "Unit",
+    "on_hand": "On Hand",
+    "reserved": "Reserved",
+    "in_transit_out": "In Transit Out",
+    "in_transit_in": "In Transit In",
+    "received": "Received",
+    "issued": "Issued",
+    "in_transit": "In Transit",
+    "available": "Available",
+    "total_units": "total units",
+    "no_stock": "No Stock",
+    "no_match": "No products match the current filters.",
+    "expand_hint": "Click to expand",
+    "modal": {
+      "reserved": "Reserved Details",
+      "in_transit_out": "In Transit Out Details",
+      "in_transit_in": "In Transit In Details",
+      "total_reserved": "Total Reserved",
+      "total_in_transit_out": "Total In Transit Out",
+      "total_in_transit_in": "Total In Transit In",
+      "received": "Received Details",
+      "issued": "Issued / Reserved",
+      "transit": "In Transit Details",
+      "total_received": "Total Received",
+      "total_issued": "Total Issued / Reserved",
+      "total_transit": "Total In Transit",
+      "direct_receive": "Direct Receive",
+      "issued_out": "Issued Out",
+      "source": "Source",
+      "dest_type": "Destination / Type"
+    },
+    "legend": {
+      "reserved": "direct issues + pending/approved outbound transfers (click to expand)",
+      "in_transit_out": "picked at source, not yet received at destination (click to expand)",
+      "in_transit_in": "inbound stock currently in transit to this warehouse (click to expand)",
+      "received": "stock in this session (click to expand)",
+      "issued": "direct issues + reserved outbound transfers (click to expand)",
+      "transit": "← inbound / → outbound currently moving (click to expand)",
+      "available": "On Hand minus Reserved and In Transit Out"
     }
   },
   "scanner": {
@@ -88,7 +131,20 @@
     "next": "ቀጣይ",
     "remove": "አስወግድ",
     "view": "ተመልከት",
-    "error": "ስህተት"
+    "error": "ስህተት",
+    "offline": "You are offline. This action has been queued.",
+    "optional": "optional",
+    "required": "required",
+    "add": "Add",
+    "close": "Close",
+    "active": "Active",
+    "inactive": "Inactive",
+    "yes": "Yes",
+    "no": "No",
+    "none": "None",
+    "unknown": "Unknown",
+    "unassigned": "Unassigned",
+    "success": "Saved successfully"
   },
   "not_found": {
     "heading": "ገጽ አልተገኘም",
@@ -136,7 +192,8 @@
         "name_required": "የምርት ስም ያስፈልጋል።",
         "type_code_min": "ቢያንስ 2 ፊደሎች ያስፈልጋሉ።",
         "type_code_max": "ከፍተኛ 5 ፊደሎች።",
-        "type_code_letters_only": "ፊደሎች ብቻ፣ ቁጥሮች ወይም ምልክቶች አይፈቀዱም።"
+        "type_code_letters_only": "ፊደሎች ብቻ፣ ቁጥሮች ወይም ምልክቶች አይፈቀዱም።",
+        "duplicate_sku": "SKU already exists. Edit the SKU and try again."
       }
     },
     "unit": {
@@ -234,7 +291,8 @@
     "positions_tab": "Positions",
     "transfer_types_tab": "Transfer Types",
     "approval_rules_tab": "Approval Rules",
-    "personnel_tab": "Personnel"
+    "personnel_tab": "Personnel",
+    "approval_rules_hint": "Approval thresholds are configured per transaction type in Settings → Org Setup → Approval Rules after onboarding."
   },
   "count": {
     "title": "የክምችት ቆጠራ",
@@ -251,7 +309,12 @@
     "variance": "ልዩነት",
     "save_counts": "ቆጠራዎች አስቀምጥ",
     "submit_session": "ለፈቃድ አስገባ",
-    "success": "የክምችት ቆጠራ ለፈቃድ ተልኳል።"
+    "success": "የክምችት ቆጠራ ለፈቃድ ተልኳል።",
+    "products_counted": "products counted",
+    "products_to_count": "products to count in",
+    "products_across": "products across",
+    "all_locations": "All locations (full count)",
+    "scan_to_count": "Scan to Count"
   },
   "audit": {
     "title": "የኦዲት ምዝግብ ማስታወሻ",
@@ -265,7 +328,47 @@
     "reason": "ምክንያት",
     "GRANTED": "ተፈቅዷል",
     "DENIED": "ተከልክሏል",
-    "CONDITIONAL": "ሁኔታዊ"
+    "CONDITIONAL": "ሁኔታዊ",
+    "events": "events",
+    "source": "Source",
+    "destination": "Destination",
+    "all_sources": "All sources",
+    "all_destinations": "All destinations",
+    "all_facilities": "All facilities",
+    "your_facilities": "Your facilities",
+    "scope_and_below": "and facilities under it",
+    "clear_filters": "Clear filters",
+    "search_placeholder": "Search action, product, user…",
+    "scoped_view": "Scoped view",
+    "regional_hierarchy_note": "Includes all warehouses under your regional hierarchy.",
+    "no_activity": "No activity logged yet.",
+    "no_activity_hint": "Create transfers, receive stock, or issue stock to generate audit entries.",
+    "no_match": "No entries match the current filters.",
+    "footer_note": "Persisted to localStorage · Append-only · Completed transfers archived here permanently",
+    "qty_unit": "Qty / Unit",
+    "from": "From",
+    "to": "To",
+    "notes": "Notes",
+    "category": "Category",
+    "actions": {
+      "transfer_DRAFT": "Transfer Created",
+      "transfer_PENDING_REVIEW": "Transfer Submitted for Review",
+      "transfer_PENDING_APPROVAL": "Transfer Sent for Approval",
+      "transfer_PENDING_SOURCE_CONFIRM": "Transfer Source Confirm Requested",
+      "transfer_PENDING_DEST_CONFIRM": "Transfer Destination Confirmed",
+      "transfer_APPROVED": "Transfer Approved",
+      "transfer_ADVISED": "Transfer Advised",
+      "transfer_ISSUED": "Transfer Issued",
+      "transfer_IN_TRANSIT": "Transfer Dispatched",
+      "transfer_PARTIALLY_RECEIVED": "Transfer Partially Received",
+      "transfer_RECEIVED": "Transfer Received",
+      "transfer_COMPLETED": "Transfer Completed",
+      "transfer_REJECTED": "Transfer Rejected",
+      "transfer_CANCELLED": "Transfer Cancelled",
+      "ADJUSTMENT": "Stock Adjustment",
+      "receive_stock": "Stock Received",
+      "issue_stock": "Stock Issued"
+    }
   },
   "permissions": {
     "title": "ፈቃዶች",
@@ -273,7 +376,10 @@
     "action": "ድርጊት",
     "domain": "ጎራ",
     "role": "ሚና",
-    "grant_type": "ዓይነት"
+    "grant_type": "ዓይነት",
+    "restricted": "Access restricted to System Admin and Auditor roles.",
+    "no_access": "— = No access",
+    "showing": "Showing"
   },
   "issue": {
     "title": "ክምችት አውጣ",
@@ -287,7 +393,11 @@
       "OTHER": "ሌላ"
     },
     "submit": "ክምችት አውጣ",
-    "success": "ክምችቱ በተሳካ ሁኔታ ወጥቷል"
+    "success": "ክምችቱ በተሳካ ሁኔታ ወጥቷል",
+    "subtitle": "Record outbound stock movement",
+    "qty_to_issue": "Quantity to Issue",
+    "insufficient": "Insufficient stock. Available:",
+    "error_reason": "Please select a reason code."
   },
   "adjustment": {
     "title": "የክምችት ማስተካከያ",
@@ -327,7 +437,10 @@
     "threshold_qty_ta": "ማናቸውም ምክንያት፣ መጠን 1000+ — TA ፈቃድ ያስፈልጋል",
     "threshold_zero_floor": "ክምችቱን አሉታዊ የሚያደርግ ማስተካከያ — ሥራ አስኪያጅ ፈቃድ ያስፈልጋል",
     "threshold_show": "የፈቃድ ደንቦች",
-    "threshold_hide": "ደንቦችን ደብቅ"
+    "threshold_hide": "ደንቦችን ደብቅ",
+    "approval": "Approval",
+    "subtitle": "Correct stock balance — approval may be required",
+    "error_qty": "Quantity must be non-zero."
   },
   "transfer": {
     "status": {
@@ -376,7 +489,28 @@
     "override_reason": "የዋቤ ምክንያት",
     "override_submit": "ዋቤ አስወጣ",
     "save": "ስልት አስቀምጥ",
-    "success": "የላኪ ስልት ተዘምኗል"
+    "success": "የላኪ ስልት ተዘምኗል",
+    "auto_fefo_note": "Products with both batch tracking and expiry date active always use FEFO — strategy overrides are ignored.",
+    "override_note": "Use the FEFO Override button to bypass for a single dispatch (audit-logged).",
+    "override_applied": "Override Applied",
+    "override_logged": "FEFO override logged for",
+    "override_warning": "Overriding FEFO for",
+    "override_audit_note": "A reason is required and this will be audit-logged.",
+    "override_placeholder": "Why is FEFO being overridden for this dispatch?",
+    "override_col": "Override",
+    "save_error": "Failed to save strategy.",
+    "batch_tracking": "Batch Tracking",
+    "current_strategy": "Current Strategy",
+    "set_strategy": "Set Strategy",
+    "yes": "Yes",
+    "no": "No",
+    "auto": "auto",
+    "auto_cannot_override": "Auto — cannot override",
+    "strategy_desc": {
+      "FEFO": "First Expired, First Out — enforced automatically when batch+expiry tracking active",
+      "FIFO": "First In, First Out — oldest received lot dispatched first",
+      "LIFO": "Last In, First Out — most recently received lot dispatched first"
+    }
   },
   "lots": {
     "title": "ሎት ምርምር",
@@ -390,7 +524,16 @@
     "expiry": "ጊዜ ማብቂያ",
     "received": "የተቀበለው",
     "status": "ሁኔታ",
-    "no_results": "ምንም ሎት አልተገኘም"
+    "no_results": "ምንም ሎት አልተገኘም",
+    "warehouse_col": "Warehouse",
+    "no_batch_products": "No batch-tracked products configured",
+    "enable_batch_hint": "Enable batch tracking on a product to see lot data here.",
+    "expires_in": "Expires in",
+    "expired": "Expired",
+    "ago": "ago",
+    "total": "Total",
+    "units": "units",
+    "pct_of_lot": "% of Lot"
   },
   "notifications": {
     "title": "ማንቂያዎች",
@@ -404,7 +547,8 @@
     "RBAC_DENIED": "ይህን ድርጊት ለማከናወን ፈቃድ የለዎትም።",
     "ABAC_DENIED": "መዳረሻ ተከልክሏል — ሀብቱ ከወሰንዎ ውጪ ነው።",
     "INTERNAL_ERROR": "ያልተጠበቀ ስህተት ተከስቷል። እባክዎ እንደገና ይሞክሩ።",
-    "OFFLINE": "ከመስመር ውጪ ነዎት። ይህ ድርጊት ወደ ጠብቅ ተጨምሯል።"
+    "OFFLINE": "ከመስመር ውጪ ነዎት። ይህ ድርጊት ወደ ጠብቅ ተጨምሯል።",
+    "DUPLICATE_TRANSACTION": "This transaction was already submitted."
   },
   "layout": {
     "sign_out": "ውጣ",
@@ -429,7 +573,8 @@
     "stat_locations": "Locations",
     "stat_units": "Total Units",
     "stat_users": "Users",
-    "stat_skus_with_stock": "SKUs with Stock"
+    "stat_skus_with_stock": "SKUs with Stock",
+    "recent_transfers": "Recent Transfers"
   },
   "table": {
     "sku": "SKU",
@@ -543,7 +688,9 @@
     "complete_level_config_first": "Complete level configuration before continuing.",
     "saved_success": "Organisation setup saved successfully.",
     "redirecting": "Redirecting to Personnel Management…",
-    "tenant_not_found": "ይህ ተከፋይ በሲስተሙ ውስጥ አልተገኘም። የሙከሪያ ድርጅት ሊሆን ይችላል። ተከፋዮች ገጽ ይጠቀሙ።"
+    "tenant_not_found": "ይህ ተከፋይ በሲስተሙ ውስጥ አልተገኘም። የሙከሪያ ድርጅት ሊሆን ይችላል። ተከፋዮች ገጽ ይጠቀሙ።",
+    "title": "Organisation Setup",
+    "subtitle": "Configure your organisation structure, facility nodes, and supply routes."
   },
   "personnel": {
     "page_title": "Personnel Management",
@@ -587,7 +734,10 @@
     "expired_assignments": "Expired Assignments",
     "deactivate": "Deactivate",
     "reactivate": "Reactivate",
-    "no_facility_assigned": "ምንም ቦታ አልተሰጠም (ኋላ ላይ ይመድቡ)"
+    "no_facility_assigned": "ምንም ቦታ አልተሰጠም (ኋላ ላይ ይመድቡ)",
+    "edit_user": "Edit User",
+    "save_changes": "Save Changes",
+    "force_password_reset": "Force password reset on next login"
   },
   "approval_rules": {
     "description": "ለእያንዳንዱ የግብይት አይነት የፍቃድ ወረፋ የሚወስኑ የቁጥር ደረጃዎችን ያቀናብሩ።",
@@ -698,6 +848,146 @@
   },
   "transfer_panel": {
     "estimated_value": "Estimated value",
-    "level_cannot_initiate": "not allowed from your location"
+    "level_cannot_initiate": "not allowed from your location",
+    "title": "New Stock Transfer",
+    "subtitle": "Creates a DRAFT transfer order",
+    "type_label": "Transfer Type",
+    "pull_desc": "PULL — Request stock from a higher-level facility",
+    "push_desc": "PUSH — Send stock down to a lower-level facility",
+    "sister_desc": "SISTER — Request stock from a peer warehouse",
+    "from_note": "Stock will be sent FROM",
+    "to_note": "Stock will be requested TO",
+    "sister_note": "Lateral request — stock will come TO",
+    "your_facility": "your facility",
+    "locked": "your facility — locked",
+    "from_supply": "From Warehouse (supply source)",
+    "to_your_wh": "To Warehouse (your warehouse)",
+    "origin": "origin",
+    "destination": "destination",
+    "color_hint": "orange = below reorder · red = negative",
+    "select_source_first": "select source warehouse first to see availability",
+    "insufficient": "Insufficient Stock",
+    "requested": "Requested",
+    "proceed_anyway": "Proceed anyway (PULL draft)",
+    "reduce_qty": "Reduce the quantity or choose a different source warehouse.",
+    "notes_placeholder": "Reason for transfer, special instructions…",
+    "created": "Transfer",
+    "error_from": "Please select the origin warehouse.",
+    "error_to": "Please select the destination warehouse.",
+    "error_same": "Origin and destination must be different."
+  },
+  "roles": {
+    "SA": "System Admin",
+    "TA": "Tenant Admin",
+    "NM": "National Manager",
+    "RM": "Regional Manager",
+    "WM": "Warehouse Manager",
+    "LM": "Logistics Manager",
+    "SA_GT": "Sales Agent / Ground Team",
+    "RT": "Retailer",
+    "AU": "Auditor",
+    "SYS": "System"
+  },
+  "products": {
+    "col_name": "Product Name",
+    "col_category": "Category / Type",
+    "col_pack_size": "Pack Size",
+    "col_balance": "Total Stock",
+    "col_batch": "Batch",
+    "col_status": "Status",
+    "balance_label": "Total Stock",
+    "balance_note": "reference total across all warehouses. For live per-warehouse balances, see the Inventory page.",
+    "status_active": "Active",
+    "status_inactive": "Inactive"
+  },
+  "bulk_import": {
+    "title": "Bulk Import",
+    "full_title": "Bulk Import — Opening Balances",
+    "subtitle": "Paste CSV data to initialise multiple products in one batch",
+    "csv_columns": "CSV Template Columns",
+    "header_label": "Header:",
+    "examples_label": "Examples:",
+    "columns_hint": "Columns with * are required. Use the warehouse name or ID for",
+    "paste_label": "Paste CSV Data",
+    "placeholder": "Paste your CSV here (with or without header row):",
+    "validate_btn": "Validate Data",
+    "submitted": "Import Batch Submitted",
+    "ref": "Reference",
+    "summary": "Validation Summary",
+    "total_rows": "Total rows",
+    "valid_rows": "Valid rows",
+    "error_rows": "Error rows (blocked)",
+    "warning_rows": "Warning rows",
+    "unique_skus": "Unique SKUs",
+    "unique_whs": "Unique warehouses",
+    "row_report": "Row Validation Report",
+    "cannot_submit": "Cannot Submit",
+    "error_row_label": "error row(s) must be fixed",
+    "submit_btn": "Submit Import",
+    "rows_label": "row(s)",
+    "fix_hint": "Fix all ERROR rows in your CSV and re-validate before submitting.",
+    "error_empty": "Please paste CSV data before validating.",
+    "error_no_data": "No data rows found. Please include at least one data row after the header.",
+    "error_validate_first": "Please validate the data first.",
+    "error_fix_errors": "Fix all ERROR rows before submitting."
+  },
+  "opening_balance": {
+    "title": "Opening Balance",
+    "subtitle": "Initialize stock for a new product or go-live setup",
+    "info": "Receipts are used to initialise stock levels at go-live or when adding a new product. They require National Manager sign-off before posting.",
+    "opening_qty": "Opening Quantity",
+    "batch_required": "BATCH TRACKED — lot details required",
+    "manufacture_date": "Manufacture Date",
+    "required": "required",
+    "ref_doc": "Reference Document",
+    "submit": "Submit Opening Balance",
+    "success": "Opening Balance receipt created — status: PENDING_APPROVAL.",
+    "error_session": "No session found — please log in again.",
+    "error_lot": "Lot / Batch Number is required for batch-tracked products.",
+    "error_mfg": "Manufacture Date is required for batch-tracked products."
+  },
+  "add_product": {
+    "new_category": "+ Add new category…",
+    "back": "Back",
+    "initial_stock": "Initial Stock — optional",
+    "computed": "computed",
+    "avail_hint": "On-hand minus reservations",
+    "no_wh_note": "Stock will be stored in the product record. Use Opening Balance on the Inventory page to post it to a specific warehouse.",
+    "wh_note": "On-hand will be posted to",
+    "your_wh": "your warehouse"
+  },
+  "receive_panel": {
+    "online_note": "Online — will post immediately",
+    "offline_note": "Offline — will queue for sync",
+    "select_product": "select product",
+    "select_warehouse": "select warehouse",
+    "select_type": "select type",
+    "reference_type": "Reference Type",
+    "optional": "optional",
+    "error_product": "Please select a product.",
+    "error_warehouse": "Please select a warehouse.",
+    "error_ref_type": "Please select a reference type.",
+    "error_qty": "Quantity must be a positive number."
+  },
+  "report": {
+    "inv_valuation_desc": "Current stock value across all locations",
+    "stock_movement_desc": "All RECEIVE / TRANSFER / ISSUE transactions",
+    "expiry_alerts_desc": "Products approaching or past expiry date",
+    "low_stock_desc": "Products at or below reorder point",
+    "lot_trace_desc": "Full batch-to-location tracing",
+    "dispatch_desc": "FEFO / FIFO / LIFO dispatch history by product"
+  },
+  "warehouses": {
+    "title": "Warehouses",
+    "locations": "locations",
+    "col_name": "Name",
+    "col_location": "Location",
+    "col_manager": "Manager"
+  },
+  "analytics": {
+    "stock_by_location": "Stock by Location",
+    "all_stocked": "All products are adequately stocked.",
+    "summary": "Inventory Summary",
+    "active_skus": "Active SKUs"
   }
 }
