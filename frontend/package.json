@@ -4,11 +4,12 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
-    "build": "next build",
+    "build": "bash ../scripts/check_i18n.sh && next build",
     "start": "next start",
     "lint": "next lint",
     "test": "jest --passWithNoTests",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "check:i18n": "bash ../scripts/check_i18n.sh"
   },
   "dependencies": {
     "@tanstack/react-query": "^5.40.0",

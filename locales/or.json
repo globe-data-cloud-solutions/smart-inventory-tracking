@@ -832,7 +832,8 @@
       "quantity": "Quantity",
       "created": "Created",
       "notes": "Notes"
-    }
+    },
+    "offline_error": "Transfer status changes require an internet connection. Please reconnect and try again."
   },
   "products": {
     "col_name": "Product Name",

@@ -692,7 +692,7 @@ export default function TransfersPage() {
     if (isSubmitting) return;  // prevent double-submit
     if (!isOnline) {
       setConfirmModal(null);
-      setToast("Transfer status changes require an internet connection. Please reconnect and try again.");
+      setToast(t("transfers.offline_error"));
       setTimeout(() => setToast(""), 5000);
       return;
     }

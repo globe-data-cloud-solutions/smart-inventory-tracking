@@ -630,7 +630,8 @@
       "quantity": "Quantity",
       "created": "Created",
       "notes": "Notes"
-    }
+    },
+    "offline_error": "Transfer status changes require an internet connection. Please reconnect and try again."
   },
   "demo": {
     "mode_banner": "ዴሞ ሁኔታ — ለውጦቹ ሲያስነሱ ይጠፋሉ። ለቋሚ መረጃ ከ backend ጋር ይያያዙ።"

@@ -284,7 +284,13 @@
     "onboard_another": "Onboard Another",
     "back_to_admin": "← Back to admin",
     "admin_dash": "Admin Dashboard",
-    "view_tenant_dash": "View Tenant Dashboard"
+    "view_tenant_dash": "View Tenant Dashboard",
+    "flags": {
+      "LOGISTICS": "Logistics",
+      "AI_ANALYTICS": "AI Analytics",
+      "ADVANCED_BATCH_TRACKING": "Advanced Batch Tracking",
+      "FLEET_MANAGEMENT": "Fleet Management"
+    }
   },
   "count": {
     "title": "Stock Count",
@@ -578,7 +584,8 @@
       "quantity": "Quantity",
       "created": "Created",
       "notes": "Notes"
-    }
+    },
+    "offline_error": "Transfer status changes require an internet connection. Please reconnect and try again."
   },
   "products": {
     "col_name": "Product Name",

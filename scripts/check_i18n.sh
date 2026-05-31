@@ -1,23 +1,25 @@
 #!/usr/bin/env bash
-# check_i18n.sh — Fail if raw i18n keys or UUIDs appear as JSX text content.
+# check_i18n.sh — Fail if raw i18n keys or missing t() keys appear in JSX.
+# Warns (non-blocking) on dynamic template literal keys and hardcoded toast strings.
 # Run before every frontend commit: bash scripts/check_i18n.sh
-# Both findings categories must be clean before git commit.
 
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 SRC="$ROOT/frontend/src/app"
+COMPONENTS="$ROOT/frontend/src/components"
 EXIT=0
 
-# ── Check 1: Raw i18n-style keys in JSX text content ──────────────────────────
-# Pattern: JSX text like >wizard.step1_title< or >common.loading<
-# Exclusions: t() calls, className, href, style props, comments, tests
+echo "=== SMART i18n Check ==="
+echo ""
 
+# ── ERROR Check 1: Raw i18n-style keys in JSX text content ────────────────
+# Pattern: JSX text like >wizard.step1_title< or >common.loading<
 echo "Checking for raw i18n keys in JSX text..."
 
 RAW_KEYS=$(grep -rn \
   '>[a-z][a-z_]*\.[a-z][a-z_]*<' \
-  "$SRC" \
+  "$SRC" "$COMPONENTS" \
   --include="*.tsx" 2>/dev/null \
   | grep -v "className\|href\|style=\|//\|test\|spec\|t(\|{t(" \
   | grep -v "\.toLowerCase\|\.toUpperCase\|\.split\|\.replace\|\.trim" \
@@ -26,16 +28,16 @@ RAW_KEYS=$(grep -rn \
 
 if [ -n "$RAW_KEYS" ]; then
   echo ""
-  echo "FAIL: Raw i18n keys found in JSX:"
+  echo "ERROR: Raw i18n keys found in JSX text:"
   echo "$RAW_KEYS"
   echo ""
-  echo "Fix: wrap each key in t() or add to locales/en.json first."
+  echo "Fix: wrap each key in t('key.name') and add to locales/en.json first."
   EXIT=1
 else
-  echo "  PASS: No raw i18n keys found."
+  echo "  PASS: No raw i18n keys in JSX."
 fi
 
-# ── Check 2: t() calls for keys missing from en.json ─────────────────────────
+# ── ERROR Check 2: t() calls with keys missing from en.json ───────────────
 echo ""
 echo "Checking for t() calls with missing en.json keys..."
 
@@ -73,24 +75,85 @@ for root, dirs, files in os.walk('$SRC'):
                 if not key_exists(en, key):
                     missing.add(key)
 
+for root, dirs, files in os.walk('$COMPONENTS'):
+    dirs[:] = [d for d in dirs if d not in ['node_modules', '.next']]
+    for fn in files:
+        if not fn.endswith(('.tsx', '.ts')): continue
+        try:
+            content = open(os.path.join(root, fn), encoding='utf-8').read()
+        except: continue
+        for m in pattern.finditer(content):
+            key = m.group(1)
+            if '.' in key and len(key) > 4 and not key.startswith('.'):
+                if not key_exists(en, key):
+                    missing.add(key)
+
 for k in sorted(missing):
     print(k)
 " 2>/dev/null || true)
 
 if [ -n "$MISSING" ]; then
   echo ""
-  echo "FAIL: t() calls with missing en.json keys:"
+  echo "ERROR: t() calls with missing en.json keys:"
   echo "$MISSING"
   echo ""
-  echo "Fix: add these keys to locales/en.json (and am.json, or.json)."
+  echo "Fix: add these keys to locales/en.json (then sync to am.json and or.json)."
   EXIT=1
 else
-  echo "  PASS: All t() keys found in en.json."
+  echo "  PASS: All static t() keys found in en.json."
 fi
 
-# ── Check 3: Raw UUID-like values in JSX content ──────────────────────────────
+# ── WARNING Check 3: Dynamic template literal t() calls ───────────────────
+# These use t(\`key.\${var}\`) — the script cannot verify all possible values.
+# Caller must manually ensure all dynamic values have entries in en.json.
 echo ""
-echo "Checking for possible UUID display in JSX..."
+echo "Checking for dynamic template literal t() calls..."
+
+DYNAMIC=$(grep -rn \
+  "t(\`[a-z][a-z_.]*\\\${" \
+  "$SRC" "$COMPONENTS" \
+  --include="*.tsx" 2>/dev/null \
+  | grep -v "//\|test\|spec" \
+  || true)
+
+if [ -n "$DYNAMIC" ]; then
+  echo ""
+  echo "WARNING: Dynamic template literal t() calls found:"
+  echo "$DYNAMIC"
+  echo ""
+  echo "  Manual check required: ensure every possible value of the variable"
+  echo "  has a corresponding key in locales/en.json."
+  echo "  (This is a warning — build is not blocked.)"
+else
+  echo "  PASS: No dynamic t() template literals."
+fi
+
+# ── WARNING Check 4: Hardcoded English strings in toast/alert/error calls ─
+echo ""
+echo "Checking for hardcoded English strings in toast/alert/error calls..."
+
+HARDCODED=$(grep -rn \
+  'setToast(\|showError(\|showToast(\|toast\.error(\|toast\.warn(\|toast\.info(\|alert(' \
+  "$SRC" "$COMPONENTS" \
+  --include="*.tsx" 2>/dev/null \
+  | grep '"[A-Z][a-z]\|'"'"'[A-Z][a-z]' \
+  | grep -v "//\|t(\|{t(\|test\|spec" \
+  || true)
+
+if [ -n "$HARDCODED" ]; then
+  echo ""
+  echo "WARNING: Hardcoded English strings in toast/alert calls:"
+  echo "$HARDCODED"
+  echo ""
+  echo "  Replace with t('key.name') and add the key to locales/en.json."
+  echo "  (This is a warning — build is not blocked.)"
+else
+  echo "  PASS: No hardcoded strings in toast/alert calls."
+fi
+
+# ── WARNING Check 5: Raw UUID-like ID values in JSX content ───────────────
+echo ""
+echo "Checking for possible raw ID/UUID display in JSX..."
 
 UUID_DISPLAY=$(grep -rn \
   '\.[a-z]*_id}\b' \
@@ -105,19 +168,22 @@ if [ -n "$UUID_DISPLAY" ]; then
   echo "WARNING: Possible raw ID/UUID display in JSX:"
   echo "$UUID_DISPLAY"
   echo ""
-  echo "Review: confirm these are not raw UUIDs shown to users."
-  echo "(This is a warning, not a hard failure — IDs may be intentional.)"
-  # Not setting EXIT=1 for UUID check — too many false positives
-  # Set EXIT=1 if you want to enforce this strictly
+  echo "  Review: confirm these are not raw UUIDs shown to users."
+  echo "  Use useTenantName(), useNodeName(), or resolve to a display name."
+  echo "  (This is a warning — build is not blocked.)"
 else
-  echo "  PASS: No suspicious raw ID displays found."
+  echo "  PASS: No suspicious raw ID displays."
 fi
 
+# ── Summary ───────────────────────────────────────────────────────────────
 echo ""
+echo "─────────────────────────────────────────"
 if [ "$EXIT" -eq 0 ]; then
-  echo "PASS: All i18n checks passed."
+  echo "PASS: All i18n ERROR checks passed."
+  echo "      Review any WARNINGs above manually."
 else
-  echo "FAIL: i18n issues detected. Fix before committing."
+  echo "FAIL: i18n ERROR(s) detected. Fix before committing or building."
 fi
+echo "─────────────────────────────────────────"
 
 exit $EXIT

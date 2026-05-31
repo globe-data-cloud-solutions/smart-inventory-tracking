@@ -1933,6 +1933,7 @@ function PersonnelV2Tab({ tenantId }: { tenantId: string }) {
   }
 
   async function toggleActive(userId: string, currentlyActive: boolean) {
+    if (!tenantId) return;
     const path = currentlyActive ? "deactivate" : "reactivate";
     try {
       await api.patch(`/api/v1/tenants/${tenantId}/users/${userId}/${path}`, {});
@@ -2011,7 +2012,8 @@ function PersonnelV2Tab({ tenantId }: { tenantId: string }) {
                 )}
               </div>
               <button type="button" onClick={() => void toggleActive(u.id, u.is_active)}
-                className={`px-2.5 py-1 text-xs rounded border font-medium shrink-0 ${u.is_active ? "border-red-200 text-red-600 hover:bg-red-50" : "border-emerald-200 text-emerald-600 hover:bg-emerald-50"}`}>
+                disabled={!tenantId || isLoading}
+                className={`px-2.5 py-1 text-xs rounded border font-medium shrink-0 disabled:opacity-40 disabled:cursor-not-allowed ${u.is_active ? "border-red-200 text-red-600 hover:bg-red-50" : "border-emerald-200 text-emerald-600 hover:bg-emerald-50"}`}>
                 {u.is_active ? t("personnel.deactivate") : t("personnel.reactivate")}
               </button>
             </div>
