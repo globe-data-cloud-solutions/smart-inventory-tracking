@@ -6,6 +6,7 @@ import { getSession, SA_ORG_SLUG } from "@/lib/demo-auth";
 import { DEMO_TENANTS, type DemoWarehouse } from "@/lib/demo-data";
 import { useAuditStore, type AuditLogEntry } from "@/lib/audit-log-state";
 import { t } from "@/lib/i18n";
+import { useTenantName } from "@/hooks/useTenantName";
 
 const CATEGORY_CLASS: Record<string, { bg: string; text: string; icon: string }> = {
   TRANSFER:   { bg: "bg-blue-100",   text: "text-blue-800",    icon: "🔄" },
@@ -44,6 +45,7 @@ const selectCls = "px-2.5 py-1.5 text-xs border border-gray-300 rounded-md bg-wh
 
 export default function AuditLogPage() {
   const { org } = useParams() as { org: string };
+  const tenantName = useTenantName(org);
   const user    = getSession();
   const allEntries = useAuditStore((s) => s.entries);
   const [categoryFilter, setCategoryFilter] = useState<"ALL" | "TRANSFER" | "INVENTORY" | "ADJUSTMENT">("ALL");
@@ -119,7 +121,7 @@ export default function AuditLogPage() {
       <div className="mb-6">
         <h2 className="text-2xl font-bold text-[#0f2d1f] m-0">{t("audit.title")}</h2>
         <p className="text-sm text-gray-500 mt-1">
-          {tenant?.name ?? org} · {scopeLabel} · {scopedEntries.length} {t("audit.events")} · {t("audit.subtitle")}
+          {tenantName ?? org} · {scopeLabel} · {scopedEntries.length} {t("audit.events")} · {t("audit.subtitle")}
         </p>
       </div>
 

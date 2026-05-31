@@ -251,7 +251,7 @@ export default function OrgDashboard() {
   const { data: apiTenantData } = useQuery<{ id: string; name: string }>({
     queryKey: ["tenant-meta", org],
     queryFn: () => api.get<{ id: string; name: string }>(`/api/v1/tenants/${org}`),
-    enabled: isGatewayMode && org !== SA_ORG_SLUG && !DEMO_TENANTS.some((t) => t.slug === org),
+    enabled: isGatewayMode && org !== SA_ORG_SLUG,
     staleTime: 60_000,
   });
 
@@ -583,7 +583,7 @@ export default function OrgDashboard() {
   if (!tenant) {
     return (
       <p className="p-8 text-gray-500">
-        {t("common.no_data")}: {org}
+        {t("common.no_data")}: {tenantName}
       </p>
     );
   }

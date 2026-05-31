@@ -9,6 +9,7 @@ import { useInventoryStore } from "@/lib/inventory-state";
 import { useOfflineSync } from "@/hooks/useOfflineSync";
 import { api } from "@/lib/api";
 import { t } from "@/lib/i18n";
+import { useTenantName } from "@/hooks/useTenantName";
 
 /* ── Types ──────────────────────────────────────────────────────────────── */
 type TransferType = "PULL" | "PUSH" | "SISTER";
@@ -355,6 +356,7 @@ function TransferTimeline({ status, transferType }: { status: TransferStatus; tr
 /* ── Main page ───────────────────────────────────────────────────────────── */
 export default function TransferDetailPage() {
   const { org, id } = useParams() as { org: string; id: string };
+  const tenantName  = useTenantName(org);
   const router       = useRouter();
   const user         = getSession();
   const qc           = useQueryClient();
@@ -517,7 +519,7 @@ export default function TransferDetailPage() {
               <span className={`text-[11px] font-bold px-2 py-0.5 rounded ${tb.bgClass} ${tb.textClass}`}>
                 {tb.label}
               </span>
-              <span className="text-sm text-emerald-300">{tb.desc} · {tenant?.name ?? org}</span>
+              <span className="text-sm text-emerald-300">{tb.desc} · {tenantName ?? org}</span>
             </div>
           </div>
           <span className={`text-sm font-bold px-3.5 py-1.5 rounded-full ${s.bgClass} ${s.textClass}`}>

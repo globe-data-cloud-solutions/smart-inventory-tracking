@@ -6,6 +6,7 @@ import { SA_ORG_SLUG } from "@/lib/demo-auth";
 import { DEMO_TENANTS, getTotalStock, type DemoProduct } from "@/lib/demo-data";
 import { useScanner } from "@/hooks/useScanner";
 import { t } from "@/lib/i18n";
+import { useTenantName } from "@/hooks/useTenantName";
 
 function ScannerToggle({ products, warehouseId, open, hint, onToggle, onHint, onCount }: {
   products: DemoProduct[];
@@ -76,6 +77,7 @@ function varianceCls(v: number): string {
 
 export default function StockCountPage() {
   const { org } = useParams() as { org: string };
+  const tenantName = useTenantName(org);
   const [sessionActive, setSessionActive] = useState(false);
   const [submitted, setSubmitted]         = useState(false);
   const [counts, setCounts]               = useState<Record<string, string>>({});
@@ -123,7 +125,7 @@ export default function StockCountPage() {
     return (
       <div className="p-8">
         <h2 className="text-2xl font-bold text-[#0f2d1f] mb-2">{t("count.title")}</h2>
-        <p className="text-sm text-gray-500 mb-8">{tenant?.name ?? org} · {t("count.subtitle")}</p>
+        <p className="text-sm text-gray-500 mb-8">{tenantName ?? org} · {t("count.subtitle")}</p>
         <div className="bg-white border border-gray-200 rounded-lg p-8 max-w-[480px]">
           <p className="font-bold text-[15px] text-gray-800 mb-4">{t("count.start_session")}</p>
           <label className="block text-xs font-bold text-gray-700 uppercase tracking-wide mb-1.5">{t("table.location")}</label>
@@ -154,7 +156,7 @@ export default function StockCountPage() {
         <div>
           <h2 className="text-2xl font-bold text-[#0f2d1f] m-0">{t("count.session_active")}</h2>
           <p className="text-sm text-gray-500 mt-1">
-            {tenant?.name ?? org} · {warehouse?.name ?? t("inventory.all_locations")} · {filledCount}/{products.length} {t("count.products_counted")}
+            {tenantName ?? org} · {warehouse?.name ?? t("inventory.all_locations")} · {filledCount}/{products.length} {t("count.products_counted")}
           </p>
         </div>
         <div className="flex gap-2.5">

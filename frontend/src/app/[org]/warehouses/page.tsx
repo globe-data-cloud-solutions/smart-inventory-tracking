@@ -6,6 +6,7 @@ import { getSession, SA_ORG_SLUG } from "@/lib/demo-auth";
 import { DEMO_TENANTS, type DemoWarehouse } from "@/lib/demo-data";
 import { api } from "@/lib/api";
 import { t } from "@/lib/i18n";
+import { useTenantName } from "@/hooks/useTenantName";
 
 /* ── Types ─────────────────────────────────────────────────────────────────── */
 
@@ -79,6 +80,7 @@ function flattenNodes(nodes: OrgNodeRow[]): OrgNodeRow[] {
 
 export default function WarehousesPage() {
   const { org } = useParams() as { org: string };
+  const tenantName = useTenantName(org);
   const session    = getSession();
   const callerRole = session?.role ?? "WM";
   const isGatewayMode = !!process.env.NEXT_PUBLIC_API_URL;
@@ -140,7 +142,7 @@ export default function WarehousesPage() {
     <div className="p-8">
       <div className="mb-6">
         <h2 className="text-2xl font-bold text-[#0f2d1f] m-0">{t("warehouses.title")}</h2>
-        <p className="text-sm text-gray-500 mt-1">{tenant?.name ?? org} · {warehouseCount} {t("warehouses.locations")}</p>
+        <p className="text-sm text-gray-500 mt-1">{tenantName ?? org} · {warehouseCount} {t("warehouses.locations")}</p>
       </div>
 
       <div className="bg-white border border-gray-200 rounded overflow-hidden">

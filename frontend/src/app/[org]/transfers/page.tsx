@@ -13,6 +13,7 @@ import { useOfflineSync } from "@/hooks/useOfflineSync";
 import { useWarehouses } from "@/hooks/useWarehouses";
 import { api } from "@/lib/api";
 import { t } from "@/lib/i18n";
+import { useTenantName } from "@/hooks/useTenantName";
 
 type TransferType = "PULL" | "PUSH" | "SISTER";
 
@@ -522,6 +523,7 @@ const COLS = ["Reference", "Type", "From", "To", "Product", "Qty", "Status", "Da
 
 export default function TransfersPage() {
   const { org } = useParams() as { org: string };
+  const tenantName = useTenantName(org);
   const user = getSession();
   const qc   = useQueryClient();
   const { isOnline } = useOfflineSync();
@@ -904,7 +906,7 @@ export default function TransfersPage() {
         <div>
           <h2 className="text-2xl font-bold text-[#0f2d1f] m-0">{t("nav.inventory")} — {t("transfers.transfers_heading")}</h2>
           <p className="text-sm text-gray-500 mt-1">
-            {tenant?.name ?? org} · {visibleTransfers.length} {t("transfers.active_label")}{user.warehouseId && !["TA","SA","RM","LM"].includes(user.role) ? ` · ${user.warehouseName ?? effectiveWarehouses.find((w) => w.id === user.warehouseId)?.name ?? t("transfers.your_warehouse")}` : ""}
+            {tenantName ?? org} · {visibleTransfers.length} {t("transfers.active_label")}{user.warehouseId && !["TA","SA","RM","LM"].includes(user.role) ? ` · ${user.warehouseName ?? effectiveWarehouses.find((w) => w.id === user.warehouseId)?.name ?? t("transfers.your_warehouse")}` : ""}
             {archivedCount > 0 && (
               <span className="ml-2.5 text-[11px] text-gray-400">
                 {archivedCount} {t("transfers.archived")} → <a href={`/${org}/audit-log`} className="text-eth-forest font-semibold no-underline">{t("audit.title")}</a>

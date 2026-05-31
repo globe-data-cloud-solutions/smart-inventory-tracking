@@ -123,7 +123,7 @@ export default function LoginPage() {
                   onChange={(e) => setPassword(e.target.value)}
                   required
                   autoComplete="off"
-                  placeholder="click a demo account →"
+                  placeholder="enter your password"
                   className="w-full rounded-lg border border-gray-300 px-4 py-2.5 text-sm text-gray-900 placeholder-gray-400 focus:border-brand-500 focus:ring-2 focus:ring-brand-200 outline-none transition"
                 />
               </div>

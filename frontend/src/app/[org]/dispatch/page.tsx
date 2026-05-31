@@ -8,6 +8,7 @@ import { DEMO_TENANTS, type DemoProduct } from "@/lib/demo-data";
 import { usePermission } from "@/hooks/usePermission";
 import { api } from "@/lib/api";
 import { t } from "@/lib/i18n";
+import { useTenantName } from "@/hooks/useTenantName";
 
 type Strategy = "FEFO" | "FIFO" | "LIFO";
 
@@ -72,6 +73,7 @@ function FefoOverrideModal({ productName, onClose }: { productName: string; onCl
 
 export default function DispatchPage() {
   const { org }      = useParams() as { org: string };
+  const tenantName   = useTenantName(org);
   const user         = getSession();
   const qc           = useQueryClient();
   const canConfigure = usePermission("dispatch:configure");
@@ -129,7 +131,7 @@ export default function DispatchPage() {
 
       <div className="mb-6">
         <h2 className="text-2xl font-bold text-[#0f2d1f] m-0">{t("dispatch.title")}</h2>
-        <p className="text-sm text-gray-500 mt-1">{tenant?.name ?? org} · {t("dispatch.subtitle")}</p>
+        <p className="text-sm text-gray-500 mt-1">{tenantName ?? org} · {t("dispatch.subtitle")}</p>
       </div>
 
       {/* Strategy legend */}

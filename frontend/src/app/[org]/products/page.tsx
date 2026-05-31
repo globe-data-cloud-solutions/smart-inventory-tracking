@@ -10,6 +10,7 @@ import { useInventoryStore } from "@/lib/inventory-state";
 import { AddProductPanel } from "@/components/features/inventory/AddProductPanel";
 import { api } from "@/lib/api";
 import { t } from "@/lib/i18n";
+import { useTenantName } from "@/hooks/useTenantName";
 
 type ApiProduct = { id: string; sku: string; name: string; unit: string; pack_size: number; category?: string | null; };
 type StockItem   = { product_id: string; current_stock: string; };
@@ -17,6 +18,7 @@ type Row        = { id: string; sku: string; name: string; category: string; uni
 
 export default function ProductsPage() {
   const { org }  = useParams() as { org: string };
+  const tenantName = useTenantName(org);
   const canAdd    = usePermission("product:create");
   // Subscribe to issues, receives, and transfers so the total re-renders on any mutation.
   // getOnHand is a stable function reference — subscribing to the maps is what drives reactivity.
@@ -87,7 +89,7 @@ export default function ProductsPage() {
         <div>
           <h2 className="text-2xl font-bold text-[#0f2d1f] m-0">{t("nav.products")}</h2>
           <p className="text-sm text-gray-500 mt-1">
-            {tenant?.name ?? org} · {total} {t("table.skus")}
+            {tenantName ?? org} · {total} {t("table.skus")}
             {!isGatewayMode && tenant && apiProducts.length > 0 && (
               <span className="ml-2 text-[11px] font-bold bg-green-100 text-green-800 px-1.5 py-0.5 rounded-full">
                 {apiProducts.length} new

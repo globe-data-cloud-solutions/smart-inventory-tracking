@@ -10,6 +10,7 @@ import { useInventoryStore } from "@/lib/inventory-state";
 import { useAuditStore } from "@/lib/audit-log-state";
 import { api } from "@/lib/api";
 import { t } from "@/lib/i18n";
+import { useTenantName } from "@/hooks/useTenantName";
 
 type AdjStatus = "DRAFT" | "SUBMITTED" | "APPROVED" | "APPLIED" | "REJECTED" | "CANCELLED";
 
@@ -69,6 +70,7 @@ const CAN_APPROVE: Record<string, string[]> = {
 
 export default function AdjustmentsPage() {
   const { org }        = useParams() as { org: string };
+  const tenantName     = useTenantName(org);
   const user           = getSession();
   const qc             = useQueryClient();
   const [showLegend, setShowLegend] = useState(false);
@@ -154,7 +156,7 @@ export default function AdjustmentsPage() {
       <div className="mb-4 flex items-start justify-between flex-wrap gap-3">
         <div>
           <h2 className="text-2xl font-bold text-[#0f2d1f] m-0">{t("adjustment.title")}</h2>
-          <p className="text-sm text-gray-500 mt-1">{tenant?.name ?? org} · {t("adjustment.title")}</p>
+          <p className="text-sm text-gray-500 mt-1">{tenantName ?? org} · {t("adjustment.title")}</p>
         </div>
         <div className="flex items-center gap-2">
           <button

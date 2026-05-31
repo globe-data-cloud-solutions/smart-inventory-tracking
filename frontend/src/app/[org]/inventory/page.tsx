@@ -15,6 +15,7 @@ import { useInventoryStore } from "@/lib/inventory-state";
 import { useWarehouses } from "@/hooks/useWarehouses";
 import { api } from "@/lib/api";
 import { t } from "@/lib/i18n";
+import { useTenantName } from "@/hooks/useTenantName";
 
 type ApiTransfer = {
   id: string; ref: string; product_id: string; product_name: string;
@@ -215,6 +216,7 @@ function ExpandCell({ qty, cls, prefix, icon, tooltip, onClick }: {
 /* ── Main page ───────────────────────────────────────────────────────────────── */
 export default function InventoryPage() {
   const { org }       = useParams() as { org: string };
+  const tenantName    = useTenantName(org);
   const user          = getSession();
   const canAddProduct = usePermission("product:create");
   // Subscribe to the specific maps that addIssue/addReceive mutate.
@@ -503,7 +505,7 @@ export default function InventoryPage() {
         <div>
           <h2 className="text-2xl font-bold text-[#0f2d1f] m-0">{t("nav.inventory")}</h2>
           <p className="text-sm text-gray-500 mt-1">
-            {tenant?.name ?? org} · {whId ? (displayWarehouses.find((w) => w.id === whId)?.name ?? t("inventory.warehouse")) : t("inventory.all_locations")} · {visibleProducts.length} {t("table.skus")}
+            {tenantName ?? org} · {whId ? (displayWarehouses.find((w) => w.id === whId)?.name ?? t("inventory.warehouse")) : t("inventory.all_locations")} · {visibleProducts.length} {t("table.skus")}
           </p>
         </div>
         <div className="flex gap-2 flex-wrap">
