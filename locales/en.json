@@ -924,5 +924,55 @@
     "switched_to_simple": "Switched to Simple mode. Custom rules saved for later.",
     "rules_desc": "Define who approves each type of transaction based on quantity.",
     "sister_shares_pull": "SISTER transfers share these approval tiers with PULL."
+  },
+  "wizard": {
+    "positions_tab":       "Positions",
+    "transfer_types_tab":  "Transfer Types",
+    "approval_rules_tab":  "Approval Rules",
+    "personnel_tab":       "Personnel"
+  },
+  "position": {
+    "title":       "Position Title",
+    "role":        "System Role",
+    "reports_to":  "Reports To",
+    "holder":      "Current Holder",
+    "vacant":      "Vacant",
+    "add":         "Add Position",
+    "save":        "Save Position",
+    "no_positions": "No positions defined for this node.",
+    "select_node":  "Select a node on the left to manage its positions."
+  },
+  "transfer_type": {
+    "request_stock":  "Request Stock (PULL)",
+    "send_stock":     "Send Stock (PUSH)",
+    "exchange":       "Exchange with Peers (SISTER)",
+    "display_name":   "Display Name",
+    "description":    "Description",
+    "can_initiate":   "Can Initiate",
+    "can_receive":    "Can Receive",
+    "save":           "Save Transfer Types",
+    "who_can_initiate": "Who can initiate?"
+  },
+  "approval_rule": {
+    "from_level":    "From Level",
+    "to_level":      "To Level",
+    "threshold_type": "Threshold Type",
+    "qty":           "Quantity",
+    "value":         "Value",
+    "either":        "Either",
+    "both":          "Both",
+    "add_step":      "Add Step",
+    "add_rule":      "Add Rule",
+    "position":      "Approver Position",
+    "location":      "Resolution Scope",
+    "mode":          "Mode",
+    "sla":           "SLA (hours)",
+    "save":          "Save Rules",
+    "any_level":     "Any level",
+    "sequential":    "Sequential",
+    "parallel":      "Parallel",
+    "source_node":   "Source node",
+    "dest_node":     "Destination node",
+    "tenant_wide":   "Tenant-wide"
   }
 }

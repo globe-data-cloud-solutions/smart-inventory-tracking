@@ -1257,9 +1257,774 @@ function ApprovalRulesTab({ tenantId }: { tenantId: string }) {
   );
 }
 
+/* ── Shared position types ──────────────────────────────────────────────────── */
+
+interface Position {
+  id: string;
+  title: string;
+  role_code: string;
+  reports_to_position_id: string | null;
+  reports_to_title: string | null;
+  current_holder: { user_id: string; name: string; email: string; assignment_type: string } | null;
+  is_active: boolean;
+}
+interface NodePositionGroup { node_id: string; node_name: string; level_number: number; positions: Position[] }
+
+const POSITION_ROLES = [
+  { code: "NM", label: "National Manager" },
+  { code: "RM", label: "Regional Manager" },
+  { code: "LM", label: "Logistics Manager" },
+  { code: "WM", label: "Warehouse Manager" },
+  { code: "AU", label: "Auditor" },
+  { code: "RT", label: "Retailer" },
+] as const;
+
+/* ── Tab 3: Positions ───────────────────────────────────────────────────────── */
+
+function PositionsTab({ tenantId }: { tenantId: string }) {
+  const qc = useQueryClient();
+  const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
+  const [showAddForm, setShowAddForm]         = useState(false);
+  const [editPosId, setEditPosId]             = useState<string | null>(null);
+  const [formTitle, setFormTitle]             = useState("");
+  const [formRole, setFormRole]               = useState("WM");
+  const [formReportsTo, setFormReportsTo]     = useState<string>("");
+  const [formErr, setFormErr]                 = useState<string | null>(null);
+  const [saving, setSaving]                   = useState(false);
+
+  const { data: levels = [] } = useQuery<HierarchyLevel[]>({
+    queryKey: ["hierarchy-config", tenantId],
+    queryFn:  () => api.get<HierarchyLevel[]>(`/api/v1/tenants/${tenantId}/hierarchy/config`),
+    staleTime: 30_000,
+  });
+  const { data: nodes = [], isLoading: nodesLoading } = useQuery<OrgNode[]>({
+    queryKey: ["org-nodes", tenantId],
+    queryFn:  () => api.get<OrgNode[]>(`/api/v1/tenants/${tenantId}/nodes`),
+    staleTime: 0,
+  });
+  const { data: posGroups = [], isLoading: posLoading } = useQuery<NodePositionGroup[]>({
+    queryKey: ["positions", tenantId],
+    queryFn:  () => api.get<NodePositionGroup[]>(`/api/v1/tenants/${tenantId}/positions`),
+    staleTime: 0,
+    enabled:  !!tenantId,
+  });
+
+  const allPositions: Position[] = posGroups.flatMap((g) => g.positions);
+  const selectedGroup = posGroups.find((g) => g.node_id === selectedNodeId);
+
+  function openAdd() {
+    setEditPosId(null); setFormTitle(""); setFormRole("WM"); setFormReportsTo(""); setFormErr(null);
+    setShowAddForm(true);
+  }
+  function openEdit(pos: Position) {
+    setEditPosId(pos.id); setFormTitle(pos.title); setFormRole(pos.role_code);
+    setFormReportsTo(pos.reports_to_position_id ?? ""); setFormErr(null);
+    setShowAddForm(false);
+  }
+  function cancelForm() { setShowAddForm(false); setEditPosId(null); }
+
+  async function savePosition() {
+    if (!formTitle.trim()) { setFormErr(t("position.title") + " is required."); return; }
+    setSaving(true); setFormErr(null);
+    try {
+      const body = {
+        title: formTitle.trim(), role_code: formRole,
+        reports_to_position_id: formReportsTo || null,
+      };
+      if (editPosId) {
+        await api.patch(`/api/v1/tenants/${tenantId}/positions/${editPosId}`, body);
+      } else {
+        await api.post(`/api/v1/tenants/${tenantId}/nodes/${selectedNodeId}/positions`, body);
+      }
+      void qc.invalidateQueries({ queryKey: ["positions", tenantId] });
+      cancelForm();
+    } catch (e) { setFormErr(e instanceof Error ? e.message : t("common.error")); }
+    setSaving(false);
+  }
+
+  async function deletePosition(posId: string, title: string) {
+    if (!confirm(`Delete position "${title}"?`)) return;
+    try {
+      await api.delete(`/api/v1/tenants/${tenantId}/positions/${posId}`);
+      void qc.invalidateQueries({ queryKey: ["positions", tenantId] });
+      if (editPosId === posId) cancelForm();
+    } catch (e) { alert(e instanceof Error ? e.message : t("common.error")); }
+  }
+
+  function renderTreeNode(node: OrgNode, depth: number): React.ReactNode {
+    const levelLabel = levels.find((l) => l.level_number === node.hierarchy_level)?.level_name ?? `L${node.hierarchy_level}`;
+    const isSelected = node.id === selectedNodeId;
+    const groupCount = posGroups.find((g) => g.node_id === node.id)?.positions.length ?? 0;
+    return (
+      <div key={node.id}>
+        <button
+          type="button"
+          onClick={() => { setSelectedNodeId(node.id); cancelForm(); }}
+          className={`w-full text-left flex items-center gap-2 px-3 py-2 rounded-lg border text-sm transition-all ${
+            isSelected ? "border-emerald-500 bg-emerald-50 font-semibold" : "border-gray-200 bg-white hover:bg-gray-50"
+          }`}
+          style={{ marginLeft: `${depth * 16}px` }}
+        >
+          <span className="shrink-0">{node.is_stock_holding ? "🏭" : "📋"}</span>
+          <span className="flex-1 truncate">{node.name}</span>
+          <span className="text-xs text-gray-400 shrink-0">{levelLabel}</span>
+          {groupCount > 0 && <span className="text-xs bg-emerald-100 text-emerald-700 px-1.5 rounded-full shrink-0">{groupCount}</span>}
+        </button>
+        {node.children.map((c) => renderTreeNode(c, depth + 1))}
+      </div>
+    );
+  }
+
+  const selectedNode = flattenNodes(nodes).find((n) => n.id === selectedNodeId);
+
+  return (
+    <div className="flex gap-4" style={{ minHeight: "480px" }}>
+      {/* Left: tree */}
+      <div className="w-64 shrink-0 space-y-1 border-r border-gray-200 pr-4 overflow-y-auto" style={{ maxHeight: "600px" }}>
+        {nodesLoading ? <p className="text-xs text-gray-400 py-4 text-center">{t("common.loading")}</p>
+          : nodes.length === 0 ? <p className="text-xs text-gray-400 py-4 text-center">No nodes. Set up the Tree first.</p>
+          : nodes.map((n) => renderTreeNode(n, 0))}
+      </div>
+
+      {/* Right: positions */}
+      <div className="flex-1 min-w-0">
+        {!selectedNodeId ? (
+          <p className="text-sm text-gray-400 py-8 text-center">{t("position.select_node")}</p>
+        ) : (
+          <div className="space-y-3">
+            <div className="flex items-center justify-between">
+              <h3 className="text-sm font-semibold text-gray-800">
+                {t("wizard.positions_tab")}: {selectedGroup?.node_name ?? ""}
+              </h3>
+              {!showAddForm && !editPosId && (
+                <button type="button" onClick={openAdd}
+                  className="px-3 py-1 bg-emerald-600 text-white text-xs font-semibold rounded hover:bg-emerald-700">
+                  + {t("position.add")}
+                </button>
+              )}
+            </div>
+
+            {/* Add/edit form */}
+            {(showAddForm || editPosId) && (
+              <div className="border border-emerald-300 rounded-lg p-4 bg-emerald-50 space-y-3">
+                <p className="text-xs font-bold uppercase text-emerald-700">{editPosId ? "Edit Position" : t("position.add")}</p>
+                <div>
+                  <label className="block text-xs font-bold text-gray-700 mb-1">{t("position.title")} *</label>
+                  <input value={formTitle} onChange={(e) => setFormTitle(e.target.value)}
+                    className="w-full border border-gray-300 rounded px-2.5 py-1.5 text-sm" placeholder="e.g. Warehouse Manager" />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-gray-700 mb-1">{t("position.role")} *</label>
+                  <select value={formRole} onChange={(e) => setFormRole(e.target.value)}
+                    className="w-full border border-gray-300 rounded px-2.5 py-1.5 text-sm bg-white">
+                    {POSITION_ROLES.map((r) => <option key={r.code} value={r.code}>{r.label} ({r.code})</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-gray-700 mb-1">{t("position.reports_to")}</label>
+                  <select value={formReportsTo} onChange={(e) => setFormReportsTo(e.target.value)}
+                    className="w-full border border-gray-300 rounded px-2.5 py-1.5 text-sm bg-white">
+                    <option value="">— none —</option>
+                    {allPositions.filter((p) => p.id !== editPosId).map((p) => (
+                      <option key={p.id} value={p.id}>{p.title} ({p.role_code})</option>
+                    ))}
+                  </select>
+                </div>
+                {formErr && <p className="text-xs text-red-600">{formErr}</p>}
+                <div className="flex gap-2">
+                  <button type="button" onClick={() => void savePosition()} disabled={saving}
+                    className="px-3 py-1.5 bg-emerald-600 text-white text-xs font-semibold rounded hover:bg-emerald-700 disabled:opacity-50">
+                    {saving ? t("common.saving") : t("position.save")}
+                  </button>
+                  <button type="button" onClick={cancelForm}
+                    className="px-3 py-1.5 border border-gray-300 text-gray-600 text-xs rounded hover:bg-gray-50">
+                    {t("common.cancel")}
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* Positions list */}
+            {posLoading ? <p className="text-xs text-gray-400">{t("common.loading")}</p>
+              : (selectedGroup?.positions ?? []).length === 0 && !showAddForm ? (
+                <p className="text-sm text-gray-400 py-4 text-center">{t("position.no_positions")}</p>
+              ) : (
+                <div className="space-y-2">
+                  {(selectedGroup?.positions ?? []).filter((p) => p.is_active).map((pos) => (
+                    <div key={pos.id} className={`border rounded-lg p-3 flex items-start justify-between gap-3 ${
+                      editPosId === pos.id ? "border-blue-300 bg-blue-50" : "border-gray-200 bg-white"}`}>
+                      <div className="min-w-0 flex-1">
+                        <p className="text-sm font-semibold text-gray-800 m-0">{pos.title}</p>
+                        <p className="text-xs text-gray-500 m-0">{t("position.role")}: {pos.role_code}{pos.reports_to_title ? ` · Reports to: ${pos.reports_to_title}` : ""}</p>
+                        <p className="text-xs m-0 mt-0.5">
+                          {t("position.holder")}: {pos.current_holder
+                            ? <span className="text-emerald-700 font-medium">{pos.current_holder.name}</span>
+                            : <span className="text-gray-400">{t("position.vacant")}</span>}
+                        </p>
+                      </div>
+                      <div className="flex gap-1 shrink-0">
+                        <button type="button" onClick={() => openEdit(pos)}
+                          className="w-6 h-6 flex items-center justify-center text-xs rounded border border-gray-300 text-gray-600 hover:bg-gray-100 bg-white">✏</button>
+                        <button type="button" onClick={() => void deletePosition(pos.id, pos.title)}
+                          className="w-6 h-6 flex items-center justify-center text-xs rounded border border-red-200 text-red-500 hover:bg-red-50 bg-white">🗑</button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/* ── Tab 4: Transfer Types ──────────────────────────────────────────────────── */
+
+interface LevelPermission { level_number: number; level_name?: string | null; can_initiate: boolean; can_receive: boolean }
+interface TransferTypeConfig { id: string; underlying_type: "PULL" | "PUSH" | "SISTER"; display_name: string; description: string | null; is_active: boolean; sort_order: number; level_permissions: LevelPermission[] }
+
+const UNDERLYING_TYPES: Array<{ key: "PULL" | "PUSH" | "SISTER"; labelKey: string; icon: string }> = [
+  { key: "PULL",   labelKey: "transfer_type.request_stock", icon: "📥" },
+  { key: "PUSH",   labelKey: "transfer_type.send_stock",    icon: "📤" },
+  { key: "SISTER", labelKey: "transfer_type.exchange",      icon: "🔄" },
+];
+
+function TransferTypesTab({ tenantId }: { tenantId: string }) {
+  const qc = useQueryClient();
+  const [saving, setSaving] = useState(false);
+  const [saveOk, setSaveOk] = useState(false);
+  const [saveErr, setSaveErr] = useState<string | null>(null);
+
+  const { data: levels = [] } = useQuery<HierarchyLevel[]>({
+    queryKey: ["hierarchy-config", tenantId],
+    queryFn:  () => api.get<HierarchyLevel[]>(`/api/v1/tenants/${tenantId}/hierarchy/config`),
+    staleTime: 30_000,
+  });
+  const { data: savedTypes = [], isLoading } = useQuery<TransferTypeConfig[]>({
+    queryKey: ["transfer-types", tenantId],
+    queryFn:  () => api.get<TransferTypeConfig[]>(`/api/v1/tenants/${tenantId}/transfer-types`),
+    staleTime: 0,
+    enabled:  !!tenantId,
+  });
+
+  // Local editable state — initialise from saved or defaults
+  const [configs, setConfigs] = useState<TransferTypeConfig[]>([]);
+  const [initialized, setInitialized] = useState(false);
+
+  if (!initialized && !isLoading) {
+    const defaults: TransferTypeConfig[] = UNDERLYING_TYPES.map((ut) => {
+      const saved = savedTypes.find((s) => s.underlying_type === ut.key);
+      return saved ?? {
+        id: "", underlying_type: ut.key,
+        display_name: ut.key === "PULL" ? "Request Stock" : ut.key === "PUSH" ? "Send Stock" : "Branch Exchange",
+        description: null, is_active: ut.key !== "SISTER", sort_order: UNDERLYING_TYPES.indexOf(ut),
+        level_permissions: levels.map((l) => ({
+          level_number: l.level_number, level_name: l.level_name,
+          can_initiate: l.level_number >= 2, can_receive: true,
+        })),
+      };
+    });
+    setConfigs(defaults);
+    setInitialized(true);
+  }
+
+  function updateConfig(idx: number, patch: Partial<TransferTypeConfig>) {
+    setConfigs((prev) => prev.map((c, i) => i === idx ? { ...c, ...patch } : c));
+  }
+  function updatePerm(configIdx: number, levelNum: number, field: "can_initiate" | "can_receive", val: boolean) {
+    setConfigs((prev) => prev.map((c, i) => {
+      if (i !== configIdx) return c;
+      const perms = c.level_permissions.map((p) => p.level_number === levelNum ? { ...p, [field]: val } : p);
+      // Ensure all current levels are represented
+      const existing = new Set(perms.map((p) => p.level_number));
+      const merged = [...perms];
+      for (const lv of levels) {
+        if (!existing.has(lv.level_number)) merged.push({ level_number: lv.level_number, level_name: lv.level_name, can_initiate: false, can_receive: true });
+      }
+      return { ...c, level_permissions: merged.sort((a, b) => a.level_number - b.level_number) };
+    }));
+  }
+
+  async function save() {
+    setSaving(true); setSaveOk(false); setSaveErr(null);
+    try {
+      const body = configs.map((c) => ({
+        underlying_type: c.underlying_type, display_name: c.display_name,
+        description: c.description, is_active: c.is_active, sort_order: c.sort_order,
+        level_permissions: levels.map((lv) => {
+          const p = c.level_permissions.find((x) => x.level_number === lv.level_number);
+          return { level_number: lv.level_number, can_initiate: p?.can_initiate ?? false, can_receive: p?.can_receive ?? true };
+        }),
+      }));
+      await api.put(`/api/v1/tenants/${tenantId}/transfer-types`, body);
+      void qc.invalidateQueries({ queryKey: ["transfer-types", tenantId] });
+      setSaveOk(true);
+    } catch (e) { setSaveErr(e instanceof Error ? e.message : t("common.error")); }
+    setSaving(false);
+  }
+
+  if (isLoading) return <p className="text-sm text-gray-400 py-8 text-center">{t("common.loading")}</p>;
+
+  return (
+    <div className="space-y-4">
+      {configs.map((cfg, idx) => {
+        const meta = UNDERLYING_TYPES[idx];
+        return (
+          <div key={cfg.underlying_type} className={`border-2 rounded-xl p-4 ${cfg.is_active ? "border-emerald-400 bg-emerald-50" : "border-gray-200 bg-gray-50"}`}>
+            <div className="flex items-start gap-3 mb-3">
+              <input type="checkbox" checked={cfg.is_active} id={`tt-${cfg.underlying_type}`}
+                onChange={(e) => updateConfig(idx, { is_active: e.target.checked })}
+                className="mt-1 w-4 h-4 accent-emerald-600" />
+              <label htmlFor={`tt-${cfg.underlying_type}`} className="text-sm font-bold text-gray-800 cursor-pointer">
+                {meta?.icon} {t(meta?.labelKey ?? "")}
+              </label>
+            </div>
+            {cfg.is_active && (
+              <div className="pl-7 space-y-3">
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs font-bold text-gray-600 mb-1">{t("transfer_type.display_name")}</label>
+                    <input value={cfg.display_name} onChange={(e) => updateConfig(idx, { display_name: e.target.value })}
+                      className="w-full border border-gray-300 rounded px-2 py-1.5 text-sm" />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold text-gray-600 mb-1">{t("transfer_type.description")}</label>
+                    <input value={cfg.description ?? ""} onChange={(e) => updateConfig(idx, { description: e.target.value || null })}
+                      className="w-full border border-gray-300 rounded px-2 py-1.5 text-sm" />
+                  </div>
+                </div>
+                {levels.length > 0 && (
+                  <div>
+                    <p className="text-xs font-bold text-gray-600 mb-1">{t("transfer_type.who_can_initiate")}</p>
+                    <div className="flex flex-wrap gap-2">
+                      {levels.map((lv) => {
+                        const perm = cfg.level_permissions.find((p) => p.level_number === lv.level_number);
+                        const canInit = perm?.can_initiate ?? false;
+                        return (
+                          <label key={lv.level_number} className="flex items-center gap-1.5 text-xs cursor-pointer">
+                            <input type="checkbox" checked={canInit}
+                              onChange={(e) => updatePerm(idx, lv.level_number, "can_initiate", e.target.checked)}
+                              className="w-3.5 h-3.5 accent-emerald-600" />
+                            L{lv.level_number}: {lv.level_name}
+                          </label>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        );
+      })}
+      {saveErr && <p className="text-sm text-red-600">{saveErr}</p>}
+      {saveOk && <p className="text-sm text-emerald-600 font-medium">✓ {t("common.save")}d</p>}
+      <button type="button" onClick={() => void save()} disabled={saving}
+        className="px-4 py-2 bg-blue-600 text-white text-sm font-semibold rounded hover:bg-blue-700 disabled:opacity-50">
+        {saving ? t("common.saving") : t("transfer_type.save")}
+      </button>
+    </div>
+  );
+}
+
+/* ── Tab 5: Approval Rules (new transfer_approval_rules API) ────────────────── */
+
+interface ApprovalStepLocal { sequence: number; position_id: string; position_title: string; location: string; mode: string; sla_hours: number | null }
+interface ApprovalRuleLocal {
+  id: string;
+  source_level: number | null; destination_level: number | null;
+  quantity_min: number; quantity_max: number | null;
+  value_min: number; value_max: number | null;
+  threshold_type: "QUANTITY" | "VALUE" | "EITHER" | "BOTH";
+  steps: ApprovalStepLocal[];
+}
+
+const LOCATION_OPTIONS = [
+  { v: "SOURCE",      l: "approval_rule.source_node" },
+  { v: "DESTINATION", l: "approval_rule.dest_node" },
+  { v: "TENANT_WIDE", l: "approval_rule.tenant_wide" },
+];
+const MODE_OPTIONS = [
+  { v: "SEQUENTIAL", l: "approval_rule.sequential" },
+  { v: "PARALLEL",   l: "approval_rule.parallel" },
+];
+
+function ApprovalRulesV2Tab({ tenantId }: { tenantId: string }) {
+  const qc = useQueryClient();
+  const [activeType, setActiveType] = useState<string | null>(null);
+  const [rules, setRules] = useState<Record<string, ApprovalRuleLocal[]>>({});
+  const [saving, setSaving] = useState(false);
+  const [saveOk, setSaveOk] = useState(false);
+  const [saveErr, setSaveErr] = useState<string | null>(null);
+
+  const { data: levels = [] } = useQuery<HierarchyLevel[]>({
+    queryKey: ["hierarchy-config", tenantId],
+    queryFn:  () => api.get<HierarchyLevel[]>(`/api/v1/tenants/${tenantId}/hierarchy/config`),
+    staleTime: 30_000,
+  });
+  const { data: ttypes = [], isLoading: ttLoading } = useQuery<TransferTypeConfig[]>({
+    queryKey: ["transfer-types", tenantId],
+    queryFn:  () => api.get<TransferTypeConfig[]>(`/api/v1/tenants/${tenantId}/transfer-types`),
+    staleTime: 0,
+    enabled:  !!tenantId,
+  });
+  const { data: posGroups = [] } = useQuery<NodePositionGroup[]>({
+    queryKey: ["positions", tenantId],
+    queryFn:  () => api.get<NodePositionGroup[]>(`/api/v1/tenants/${tenantId}/positions`),
+    staleTime: 30_000,
+    enabled:  !!tenantId,
+  });
+  const { data: savedRules = [], isLoading: rulesLoading } = useQuery<Array<{ id: string; transfer_type_config_id: string; source_level: number | null; destination_level: number | null; quantity_min: number; quantity_max: number | null; value_min: number; value_max: number | null; threshold_type: string; approval_steps: ApprovalStepLocal[]; priority: number; is_active: boolean }>>({
+    queryKey: ["transfer-approval-rules", tenantId],
+    queryFn:  () => api.get(`/api/v1/tenants/${tenantId}/transfer-approval-rules`),
+    staleTime: 0,
+    enabled:  !!tenantId,
+  });
+
+  const activeTypes = ttypes.filter((t) => t.is_active);
+  const allPositions = posGroups.flatMap((g) => g.positions);
+
+  // Init active tab and load saved rules
+  if (!activeType && activeTypes.length > 0) setActiveType(activeTypes[0]?.id ?? null);
+
+  function getRules(typeId: string): ApprovalRuleLocal[] {
+    if (rules[typeId]) return rules[typeId];
+    const saved = savedRules.filter((r) => r.transfer_type_config_id === typeId);
+    return saved.map((r) => ({
+      id: r.id,
+      source_level: r.source_level, destination_level: r.destination_level,
+      quantity_min: r.quantity_min, quantity_max: r.quantity_max,
+      value_min: r.value_min, value_max: r.value_max,
+      threshold_type: (r.threshold_type as "QUANTITY" | "VALUE" | "EITHER" | "BOTH") ?? "QUANTITY",
+      steps: r.approval_steps ?? [],
+    }));
+  }
+
+  function setTypeRules(typeId: string, fn: (prev: ApprovalRuleLocal[]) => ApprovalRuleLocal[]) {
+    setRules((prev) => ({ ...prev, [typeId]: fn(prev[typeId] ?? getRules(typeId)) }));
+  }
+
+  function addRule(typeId: string) {
+    setTypeRules(typeId, (prev) => [...prev, {
+      id: `local_${Date.now()}`, source_level: null, destination_level: null,
+      quantity_min: 0, quantity_max: null, value_min: 0, value_max: null,
+      threshold_type: "QUANTITY", steps: [],
+    }]);
+  }
+  function removeRule(typeId: string, idx: number) {
+    setTypeRules(typeId, (prev) => prev.filter((_, i) => i !== idx));
+  }
+  function updateRule(typeId: string, idx: number, patch: Partial<ApprovalRuleLocal>) {
+    setTypeRules(typeId, (prev) => prev.map((r, i) => i === idx ? { ...r, ...patch } : r));
+  }
+  function addStep(typeId: string, ruleIdx: number) {
+    setTypeRules(typeId, (prev) => prev.map((r, i) => {
+      if (i !== ruleIdx) return r;
+      return { ...r, steps: [...r.steps, { sequence: r.steps.length + 1, position_id: "", position_title: "", location: "TENANT_WIDE", mode: "SEQUENTIAL", sla_hours: 24 }] };
+    }));
+  }
+  function updateStep(typeId: string, ruleIdx: number, stepIdx: number, patch: Partial<ApprovalStepLocal>) {
+    setTypeRules(typeId, (prev) => prev.map((r, i) => {
+      if (i !== ruleIdx) return r;
+      return { ...r, steps: r.steps.map((s, j) => j === stepIdx ? { ...s, ...patch } : s) };
+    }));
+  }
+  function removeStep(typeId: string, ruleIdx: number, stepIdx: number) {
+    setTypeRules(typeId, (prev) => prev.map((r, i) => {
+      if (i !== ruleIdx) return r;
+      return { ...r, steps: r.steps.filter((_, j) => j !== stepIdx).map((s, j) => ({ ...s, sequence: j + 1 })) };
+    }));
+  }
+
+  async function save() {
+    setSaving(true); setSaveOk(false); setSaveErr(null);
+    try {
+      const body = activeTypes.flatMap((tt) => {
+        const typeRules = rules[tt.id] ?? getRules(tt.id);
+        return typeRules.map((r, pri) => ({
+          transfer_type_config_id: tt.id,
+          source_level: r.source_level, destination_level: r.destination_level,
+          quantity_min: r.quantity_min, quantity_max: r.quantity_max,
+          value_min: r.value_min, value_max: r.value_max,
+          threshold_type: r.threshold_type, currency: "ETB",
+          approval_steps: r.steps.map((s) => ({
+            sequence: s.sequence, position_title: s.position_title || null,
+            resolution: s.location, execution_mode: s.mode, sla_hours: s.sla_hours,
+          })),
+          priority: pri, is_active: true,
+        }));
+      });
+      await api.put(`/api/v1/tenants/${tenantId}/transfer-approval-rules`, body);
+      void qc.invalidateQueries({ queryKey: ["transfer-approval-rules", tenantId] });
+      setSaveOk(true);
+    } catch (e) { setSaveErr(e instanceof Error ? e.message : t("common.error")); }
+    setSaving(false);
+  }
+
+  if (ttLoading || rulesLoading) return <p className="text-sm text-gray-400 py-8 text-center">{t("common.loading")}</p>;
+  if (activeTypes.length === 0) return <p className="text-sm text-gray-400 py-8 text-center">No active transfer types. Configure them in the Transfer Types tab first.</p>;
+
+  const levelOptions = [{ value: null, label: t("approval_rule.any_level") }, ...levels.map((l) => ({ value: l.level_number, label: `${l.level_name} (L${l.level_number})` }))];
+  const currentRules = getRules(activeType ?? "");
+
+  return (
+    <div className="space-y-4">
+      {/* Type tabs */}
+      <div className="flex border-b border-gray-200">
+        {activeTypes.map((tt) => (
+          <button key={tt.id} type="button"
+            onClick={() => setActiveType(tt.id)}
+            className={`px-4 py-2 text-sm font-medium transition-all ${activeType === tt.id ? "border-b-2 border-emerald-600 text-emerald-700" : "text-gray-500 hover:text-gray-700"}`}>
+            {tt.display_name}
+          </button>
+        ))}
+      </div>
+
+      {/* Rules for active type */}
+      {activeType && (
+        <div className="space-y-3">
+          {currentRules.map((rule, rIdx) => (
+            <div key={rule.id} className="border border-gray-200 rounded-xl p-4 bg-white space-y-3">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-bold uppercase text-gray-500">Rule {rIdx + 1}</span>
+                <button type="button" onClick={() => removeRule(activeType, rIdx)}
+                  className="w-6 h-6 flex items-center justify-center text-xs rounded border border-red-200 text-red-500 hover:bg-red-50">🗑</button>
+              </div>
+
+              {/* Level selectors */}
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-bold text-gray-600 mb-1">{t("approval_rule.from_level")}</label>
+                  <select value={rule.source_level ?? ""} onChange={(e) => updateRule(activeType, rIdx, { source_level: e.target.value ? Number(e.target.value) : null })}
+                    className="w-full border border-gray-300 rounded px-2 py-1.5 text-sm bg-white">
+                    {levelOptions.map((o) => <option key={String(o.value)} value={o.value ?? ""}>{o.label}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-gray-600 mb-1">{t("approval_rule.to_level")}</label>
+                  <select value={rule.destination_level ?? ""} onChange={(e) => updateRule(activeType, rIdx, { destination_level: e.target.value ? Number(e.target.value) : null })}
+                    className="w-full border border-gray-300 rounded px-2 py-1.5 text-sm bg-white">
+                    {levelOptions.map((o) => <option key={String(o.value)} value={o.value ?? ""}>{o.label}</option>)}
+                  </select>
+                </div>
+              </div>
+
+              {/* Threshold */}
+              <div>
+                <p className="text-xs font-bold text-gray-600 mb-1">{t("approval_rule.threshold_type")}</p>
+                <div className="flex gap-3 flex-wrap">
+                  {(["QUANTITY","VALUE","EITHER","BOTH"] as const).map((tt2) => (
+                    <label key={tt2} className="flex items-center gap-1 text-xs cursor-pointer">
+                      <input type="radio" name={`thresh-${rule.id}`} value={tt2} checked={rule.threshold_type === tt2}
+                        onChange={() => updateRule(activeType, rIdx, { threshold_type: tt2 })} className="accent-emerald-600" />
+                      {t(`approval_rule.${tt2.toLowerCase()}`)}
+                    </label>
+                  ))}
+                </div>
+                {(rule.threshold_type === "QUANTITY" || rule.threshold_type === "EITHER" || rule.threshold_type === "BOTH") && (
+                  <div className="flex items-center gap-2 mt-2">
+                    <input type="number" min={0} value={rule.quantity_min} placeholder="min" onChange={(e) => updateRule(activeType, rIdx, { quantity_min: Number(e.target.value) })}
+                      className="w-24 border border-gray-300 rounded px-2 py-1 text-xs" />
+                    <span className="text-xs text-gray-400">to</span>
+                    <input type="number" min={0} value={rule.quantity_max ?? ""} placeholder="unlimited" onChange={(e) => updateRule(activeType, rIdx, { quantity_max: e.target.value ? Number(e.target.value) : null })}
+                      className="w-28 border border-gray-300 rounded px-2 py-1 text-xs" />
+                    <span className="text-xs text-gray-400">units</span>
+                  </div>
+                )}
+              </div>
+
+              {/* Approval steps */}
+              <div>
+                <p className="text-xs font-bold text-gray-600 mb-2">Approval Steps</p>
+                <div className="space-y-2">
+                  {rule.steps.map((step, sIdx) => (
+                    <div key={sIdx} className="flex items-center gap-2 flex-wrap bg-gray-50 rounded p-2">
+                      <span className="text-xs text-gray-400 shrink-0">{step.sequence}.</span>
+                      <select value={step.position_id} onChange={(e) => {
+                        const pos = allPositions.find((p) => p.id === e.target.value);
+                        updateStep(activeType, rIdx, sIdx, { position_id: e.target.value, position_title: pos?.title ?? "" });
+                      }} className="flex-1 min-w-0 border border-gray-300 rounded px-2 py-1 text-xs bg-white">
+                        <option value="">— {t("approval_rule.position")} —</option>
+                        {allPositions.map((p) => <option key={p.id} value={p.id}>{p.title} ({p.role_code})</option>)}
+                      </select>
+                      <select value={step.location} onChange={(e) => updateStep(activeType, rIdx, sIdx, { location: e.target.value })}
+                        className="border border-gray-300 rounded px-2 py-1 text-xs bg-white">
+                        {LOCATION_OPTIONS.map((o) => <option key={o.v} value={o.v}>{t(o.l)}</option>)}
+                      </select>
+                      <select value={step.mode} onChange={(e) => updateStep(activeType, rIdx, sIdx, { mode: e.target.value })}
+                        className="border border-gray-300 rounded px-2 py-1 text-xs bg-white">
+                        {MODE_OPTIONS.map((o) => <option key={o.v} value={o.v}>{t(o.l)}</option>)}
+                      </select>
+                      <input type="number" min={1} value={step.sla_hours ?? ""} placeholder={t("approval_rule.sla")} onChange={(e) => updateStep(activeType, rIdx, sIdx, { sla_hours: e.target.value ? Number(e.target.value) : null })}
+                        className="w-16 border border-gray-300 rounded px-2 py-1 text-xs" />
+                      <button type="button" onClick={() => removeStep(activeType, rIdx, sIdx)}
+                        className="w-5 h-5 flex items-center justify-center text-xs rounded border border-red-200 text-red-400 hover:bg-red-50">×</button>
+                    </div>
+                  ))}
+                </div>
+                <button type="button" onClick={() => addStep(activeType, rIdx)}
+                  className="mt-2 px-2 py-1 text-xs border border-dashed border-emerald-400 text-emerald-700 rounded hover:bg-emerald-50">
+                  + {t("approval_rule.add_step")}
+                </button>
+              </div>
+            </div>
+          ))}
+
+          <button type="button" onClick={() => addRule(activeType)}
+            className="w-full py-2 border-2 border-dashed border-gray-300 text-gray-500 text-sm rounded-xl hover:border-emerald-400 hover:text-emerald-600">
+            + {t("approval_rule.add_rule")}
+          </button>
+        </div>
+      )}
+
+      {saveErr && <p className="text-sm text-red-600">{saveErr}</p>}
+      {saveOk && <p className="text-sm text-emerald-600 font-medium">✓ Saved</p>}
+      <button type="button" onClick={() => void save()} disabled={saving}
+        className="px-4 py-2 bg-blue-600 text-white text-sm font-semibold rounded hover:bg-blue-700 disabled:opacity-50">
+        {saving ? t("common.saving") : t("approval_rule.save")}
+      </button>
+    </div>
+  );
+}
+
+/* ── Tab 6: Personnel ───────────────────────────────────────────────────────── */
+
+interface PositionAssignment { assignment_id: string; position_id: string; title: string; role_code: string; node_id: string; node_name: string; level_number: number; assignment_type: string; valid_from: string | null; valid_until: string | null }
+interface UserWithPositions { id: string; email: string; name: string; primary_position: PositionAssignment | null; acting_positions: PositionAssignment[]; is_active: boolean; must_reset_password: boolean }
+
+function PersonnelV2Tab({ tenantId }: { tenantId: string }) {
+  const qc = useQueryClient();
+  const [showCreate, setShowCreate] = useState(false);
+  const [uName, setUName]           = useState("");
+  const [uEmail, setUEmail]         = useState("");
+  const [uPass, setUPass]           = useState("");
+  const [uPosId, setUPosId]         = useState("");
+  const [formErr, setFormErr]       = useState<string | null>(null);
+  const [saving, setSaving]         = useState(false);
+
+  const { data: users = [], isLoading } = useQuery<UserWithPositions[]>({
+    queryKey: ["personnel-v2", tenantId],
+    queryFn:  () => api.get<UserWithPositions[]>(`/api/v1/tenants/${tenantId}/users`),
+    staleTime: 0,
+    enabled:  !!tenantId,
+  });
+  const { data: posGroups = [] } = useQuery<NodePositionGroup[]>({
+    queryKey: ["positions", tenantId],
+    queryFn:  () => api.get<NodePositionGroup[]>(`/api/v1/tenants/${tenantId}/positions`),
+    staleTime: 30_000,
+    enabled:  !!tenantId,
+  });
+
+  const allPositions = posGroups.flatMap((g) => g.positions);
+
+  async function createUser() {
+    if (!uName.trim() || !uEmail.trim() || !uPass.trim()) { setFormErr("Name, email and password are required."); return; }
+    setSaving(true); setFormErr(null);
+    try {
+      await api.post(`/api/v1/tenants/${tenantId}/users`, {
+        name: uName.trim(), email: uEmail.trim(), password: uPass,
+        position_id: uPosId || null,
+      });
+      void qc.invalidateQueries({ queryKey: ["personnel-v2", tenantId] });
+      setShowCreate(false); setUName(""); setUEmail(""); setUPass(""); setUPosId("");
+    } catch (e) { setFormErr(e instanceof Error ? e.message : t("common.error")); }
+    setSaving(false);
+  }
+
+  async function toggleActive(userId: string, currentlyActive: boolean) {
+    const path = currentlyActive ? "deactivate" : "reactivate";
+    try {
+      await api.patch(`/api/v1/tenants/${tenantId}/users/${userId}/${path}`, {});
+      void qc.invalidateQueries({ queryKey: ["personnel-v2", tenantId] });
+    } catch (e) { alert(e instanceof Error ? e.message : t("common.error")); }
+  }
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <h3 className="text-sm font-semibold text-gray-800">{t("wizard.personnel_tab")}</h3>
+        {!showCreate && (
+          <button type="button" onClick={() => setShowCreate(true)}
+            className="px-3 py-1 bg-emerald-600 text-white text-xs font-semibold rounded hover:bg-emerald-700">
+            + {t("personnel.add_user")}
+          </button>
+        )}
+      </div>
+
+      {showCreate && (
+        <div className="border border-emerald-300 rounded-xl p-4 bg-emerald-50 space-y-3">
+          <p className="text-xs font-bold uppercase text-emerald-700">{t("personnel.add_user")}</p>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs font-bold text-gray-700 mb-1">{t("personnel.full_name")} *</label>
+              <input value={uName} onChange={(e) => setUName(e.target.value)} className="w-full border border-gray-300 rounded px-2.5 py-1.5 text-sm" placeholder="Full name" />
+            </div>
+            <div>
+              <label className="block text-xs font-bold text-gray-700 mb-1">{t("personnel.email")} *</label>
+              <input type="email" value={uEmail} onChange={(e) => setUEmail(e.target.value)} className="w-full border border-gray-300 rounded px-2.5 py-1.5 text-sm" placeholder="email@company.com" />
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs font-bold text-gray-700 mb-1">Temporary Password *</label>
+              <input type="password" value={uPass} onChange={(e) => setUPass(e.target.value)} className="w-full border border-gray-300 rounded px-2.5 py-1.5 text-sm" />
+            </div>
+            <div>
+              <label className="block text-xs font-bold text-gray-700 mb-1">{t("personnel.primary_facility")} (optional)</label>
+              <select value={uPosId} onChange={(e) => setUPosId(e.target.value)}
+                className="w-full border border-gray-300 rounded px-2.5 py-1.5 text-sm bg-white">
+                <option value="">— assign later —</option>
+                {allPositions.map((p) => <option key={p.id} value={p.id}>{p.title} · {posGroups.find((g) => g.positions.some((pos) => pos.id === p.id))?.node_name ?? ""}</option>)}
+              </select>
+            </div>
+          </div>
+          {formErr && <p className="text-xs text-red-600">{formErr}</p>}
+          <div className="flex gap-2">
+            <button type="button" onClick={() => void createUser()} disabled={saving}
+              className="px-3 py-1.5 bg-emerald-600 text-white text-xs font-semibold rounded hover:bg-emerald-700 disabled:opacity-50">
+              {saving ? t("common.saving") : t("personnel.create_user")}
+            </button>
+            <button type="button" onClick={() => { setShowCreate(false); setFormErr(null); }}
+              className="px-3 py-1.5 border border-gray-300 text-gray-600 text-xs rounded hover:bg-gray-50">
+              {t("common.cancel")}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {isLoading ? <p className="text-sm text-gray-400">{t("common.loading")}</p> : (
+        <div className="space-y-2">
+          {users.length === 0 && <p className="text-sm text-gray-400 py-4 text-center">{t("personnel.no_users_found")}</p>}
+          {users.map((u) => (
+            <div key={u.id} className={`border rounded-xl p-3 flex items-start justify-between gap-3 ${u.is_active ? "border-gray-200 bg-white" : "border-gray-100 bg-gray-50 opacity-60"}`}>
+              <div className="min-w-0 flex-1">
+                <p className="text-sm font-semibold text-gray-800 m-0">{u.name} {u.must_reset_password && <span className="text-[10px] bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded-full ml-1">pwd reset</span>}</p>
+                <p className="text-xs text-gray-500 m-0">{u.email}</p>
+                {u.primary_position ? (
+                  <p className="text-xs text-emerald-700 m-0 mt-0.5">✓ {u.primary_position.title} · {u.primary_position.node_name}</p>
+                ) : (
+                  <p className="text-xs text-amber-600 m-0 mt-0.5">⚠ No position assigned</p>
+                )}
+                {u.acting_positions.length > 0 && (
+                  <p className="text-xs text-gray-400 m-0">{u.acting_positions.length} acting assignment{u.acting_positions.length > 1 ? "s" : ""}</p>
+                )}
+              </div>
+              <button type="button" onClick={() => void toggleActive(u.id, u.is_active)}
+                className={`px-2.5 py-1 text-xs rounded border font-medium shrink-0 ${u.is_active ? "border-red-200 text-red-600 hover:bg-red-50" : "border-emerald-200 text-emerald-600 hover:bg-emerald-50"}`}>
+                {u.is_active ? t("personnel.deactivate") : t("personnel.reactivate")}
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 /* ── Main page ─────────────────────────────────────────────────────────────── */
 
-type TabId = "levels" | "tree" | "approval";
+type TabId = "levels" | "tree" | "positions" | "transfer-types" | "approval" | "personnel";
 
 export default function OrgSetupPage() {
   const { org } = useParams() as { org: string };
@@ -1299,28 +2064,28 @@ export default function OrgSetupPage() {
     }`;
 
   return (
-    <div className="p-8 max-w-3xl">
+    <div className="p-8 max-w-5xl">
       <div className="mb-6">
         <h2 className="text-xl font-bold text-gray-900 m-0">{t("org_setup.title")}</h2>
         <p className="text-sm text-gray-500 mt-1">{t("org_setup.subtitle")}</p>
       </div>
 
       {/* Tab bar */}
-      <div className="flex border-b border-gray-200 mb-6">
-        <button type="button" className={tabCls("levels")} onClick={() => setActiveTab("levels")}>
-          Organisation Levels
-        </button>
-        <button type="button" className={tabCls("tree")} onClick={() => setActiveTab("tree")}>
-          Organisation Tree
-        </button>
-        <button type="button" className={tabCls("approval")} onClick={() => setActiveTab("approval")}>
-          Approval Rules
-        </button>
+      <div className="flex flex-wrap border-b border-gray-200 mb-6 gap-0.5">
+        <button type="button" className={tabCls("levels")}         onClick={() => setActiveTab("levels")}>Organisation Levels</button>
+        <button type="button" className={tabCls("tree")}           onClick={() => setActiveTab("tree")}>Organisation Tree</button>
+        <button type="button" className={tabCls("positions")}      onClick={() => setActiveTab("positions")}>{t("wizard.positions_tab")}</button>
+        <button type="button" className={tabCls("transfer-types")} onClick={() => setActiveTab("transfer-types")}>{t("wizard.transfer_types_tab")}</button>
+        <button type="button" className={tabCls("approval")}       onClick={() => setActiveTab("approval")}>{t("wizard.approval_rules_tab")}</button>
+        <button type="button" className={tabCls("personnel")}      onClick={() => setActiveTab("personnel")}>{t("wizard.personnel_tab")}</button>
       </div>
 
-      {activeTab === "levels"   && <LevelsTab        tenantId={tenantId} />}
-      {activeTab === "tree"     && <TreeTab           tenantId={tenantId} />}
-      {activeTab === "approval" && <ApprovalRulesTab  tenantId={tenantId} />}
+      {activeTab === "levels"         && <LevelsTab          tenantId={tenantId} />}
+      {activeTab === "tree"           && <TreeTab             tenantId={tenantId} />}
+      {activeTab === "positions"      && <PositionsTab        tenantId={tenantId} />}
+      {activeTab === "transfer-types" && <TransferTypesTab    tenantId={tenantId} />}
+      {activeTab === "approval"       && <ApprovalRulesV2Tab  tenantId={tenantId} />}
+      {activeTab === "personnel"      && <PersonnelV2Tab      tenantId={tenantId} />}
     </div>
   );
 }
