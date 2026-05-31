@@ -15,7 +15,7 @@ from typing import Any, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
-from sqlalchemy import text
+from sqlalchemy import bindparam, text, types
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from dependencies import get_current_user, get_db_session_for_tenant
@@ -245,8 +245,8 @@ async def upsert_transfer_types(
             )
         result_ids.append(config_id)
 
-    # Return updated configs
-    return await list_transfer_types(tenant_id, user, db)
+    # Return updated configs — pass as kwargs to avoid @require_permission positional-arg confusion
+    return await list_transfer_types(tenant_id=tenant_id, user=user, db=db)
 
 
 # ── Transfer approval rules routes ────────────────────────────────────────────
@@ -326,8 +326,6 @@ async def upsert_approval_rules(
     db: AsyncSession = Depends(get_db_session_for_tenant),
 ) -> SuccessResponse[List[ApprovalRuleOut]]:
     """Replace all transfer approval rules for the tenant (full upsert)."""
-    import json as _json
-
     for rule in body:
         if rule.threshold_type not in THRESHOLD_TYPES:
             raise HTTPException(
@@ -341,7 +339,6 @@ async def upsert_approval_rules(
         {"tid": str(tenant_id)},
     )
     for rule in body:
-        steps_json = _json.dumps([s.model_dump() for s in rule.approval_steps])
         await db.execute(
             text("""
                 INSERT INTO transfer_approval_rules
@@ -356,8 +353,8 @@ async def upsert_approval_rules(
                   (gen_random_uuid(), :tid, :ctid,
                    :sl, :dl, :sn, :dn,
                    :qmin, :qmax, :vmin, :vmax,
-                   :tt, :cur, :steps::jsonb, :prio, :ia)
-            """),
+                   :tt, :cur, :steps, :prio, :ia)
+            """).bindparams(bindparam("steps", type_=types.JSON)),
             {
                 "tid":  str(tenant_id),
                 "ctid": str(rule.transfer_type_config_id),
@@ -367,9 +364,9 @@ async def upsert_approval_rules(
                 "qmin": rule.quantity_min, "qmax": rule.quantity_max,
                 "vmin": rule.value_min,    "vmax": rule.value_max,
                 "tt":   rule.threshold_type, "cur": rule.currency,
-                "steps": steps_json,
+                "steps": [s.model_dump() for s in rule.approval_steps],
                 "prio": rule.priority, "ia": rule.is_active,
             },
         )
 
-    return await list_approval_rules(tenant_id, user, db)
+    return await list_approval_rules(tenant_id=tenant_id, user=user, db=db)

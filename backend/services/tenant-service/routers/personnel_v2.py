@@ -66,6 +66,7 @@ class UserCreate(BaseModel):
     email:       EmailStr
     password:    str
     position_id: Optional[uuid.UUID] = None
+    system_role: Optional[str] = None   # "TA" for tenant-admin accounts without a position
 
 
 class AssignPositionRequest(BaseModel):
@@ -183,18 +184,24 @@ async def create_user(
             detail={"code": "DUPLICATE_EMAIL", "message": f"Email '{body.email}' already exists."},
         )
 
+    # Validate system_role — only "TA" is permitted
+    if body.system_role and body.system_role != "TA":
+        raise HTTPException(status_code=422, detail={"code": "INVALID_SYSTEM_ROLE",
+            "message": "system_role must be 'TA' or null."})
+
     user_id = uuid.uuid4()
     await db.execute(
         text("""
             INSERT INTO users
               (id, tenant_id, email, full_name, password_hash,
-               is_active, must_reset_password)
-            VALUES (:id, :tid, :email, :name, :hash, true, true)
+               is_active, must_reset_password, system_role)
+            VALUES (:id, :tid, :email, :name, :hash, true, true, :sysrole)
         """),
         {
             "id": str(user_id), "tid": str(tenant_id),
             "email": body.email, "name": body.name,
             "hash": _hash(body.password),
+            "sysrole": body.system_role,
         },
     )
 

@@ -139,7 +139,7 @@ export default function HomePage() {
             <a href="#features" className="btn-hero-outline">Explore Features</a>
           </div>
           <p className="mt-8 text-xs font-mono text-emerald-300 bg-black/25 border border-white/10 rounded px-5 py-2.5 inline-block">
-            📧 smartadmin@smart-inventory.com &nbsp;·&nbsp; 🔑 SmartAdmin@2026
+            System Administrator: smartadmin@smart-inventory.com / Admin@2026
           </p>
         </div>
         <Stripe h={6} />
@@ -198,63 +198,30 @@ export default function HomePage() {
       <Wave from="#fff" to="#F3F4F6" flip />
       <Stripe h={4} />
 
-      {/* ════ TENANT SHOWCASE ═══════════════════════════════════════════════ */}
+      {/* ════ GET STARTED ═══════════════════════════════════════════════════ */}
       <section id="tenants" className="bg-gray-100 px-6 py-20">
-        <div className="max-w-[1200px] mx-auto">
-          <div className="text-center mb-12">
-            <span className="inline-block text-[11px] font-bold uppercase tracking-[0.1em] text-[#2D6A4F] bg-emerald-100 px-3 py-1 rounded-full mb-3">
-              Live Demo Tenants
-            </span>
-            <h2 className="text-[2rem] font-extrabold text-[#0f2d1f] m-0">
-              Two live companies, ready to explore
-            </h2>
-            <p className="text-sm text-gray-500 mt-2">
-              Sign in as SA to switch between tenants. Sign in as WM to see only your warehouse.
-            </p>
-          </div>
-          <div className="grid grid-cols-2 gap-8">
-            {TENANTS.map((ten) => (
-              <Link key={ten.slug} href={`/dashboard/tenants/${ten.slug}`} className="tenant-card">
-                <div>
-                  {/* Per-tenant brand color — runtime data value */}
-                  <div className="px-6 py-5 flex items-center gap-3" style={{ background: ten.color }}>
-                    <span className="text-[2.5rem]">{ten.icon}</span>
-                    <div>
-                      <p className="font-bold text-lg text-white m-0">{ten.name}</p>
-                      <p className="text-[13px] text-white/75 m-0">{ten.industry}</p>
-                    </div>
-                    <span className="ml-auto text-[11px] font-bold bg-black/20 text-white px-2 py-0.5 rounded">
-                      {ten.orgType}
-                    </span>
-                  </div>
-                  <div className="px-6 py-5 grid grid-cols-2 gap-6">
-                    <div>
-                      <p className="text-[11px] font-bold uppercase tracking-[0.07em] text-gray-400 mb-2">Locations</p>
-                      {ten.warehouses.map((w) => (
-                        <p key={w} className="text-[13px] text-gray-700 my-0.5 flex items-center gap-1.5">
-                          <span className="w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ background: ten.color }} />
-                          {w}
-                        </p>
-                      ))}
-                    </div>
-                    <div>
-                      <p className="text-[11px] font-bold uppercase tracking-[0.07em] text-gray-400 mb-2">Products</p>
-                      {ten.categories.map((c) => (
-                        <p key={c} className="text-[13px] text-gray-700 my-0.5 flex items-center gap-1.5">
-                          <span className="w-1.5 h-1.5 rounded-full bg-gray-300 flex-shrink-0" />
-                          {c}
-                        </p>
-                      ))}
-                    </div>
-                  </div>
-                  <div className="px-6 py-2.5 border-t border-gray-100 bg-gray-50 flex justify-between items-center">
-                    <span className="text-xs text-gray-400">{ten.skuCount} SKUs · {ten.userCount} user accounts</span>
-                    <span className="text-xs font-bold" style={{ color: ten.color }}>Open dashboard →</span>
-                  </div>
-                </div>
-              </Link>
+        <div className="max-w-[760px] mx-auto text-center">
+          <span className="inline-block text-[11px] font-bold uppercase tracking-[0.1em] text-[#2D6A4F] bg-emerald-100 px-3 py-1 rounded-full mb-3">
+            Get Started
+          </span>
+          <h2 className="text-[2rem] font-extrabold text-[#0f2d1f] m-0">
+            Welcome to SMART Inventory
+          </h2>
+          <p className="text-sm text-gray-500 mt-2 mb-8">
+            Sign in as System Administrator to create your first tenant and configure the org hierarchy.
+          </p>
+          <div className="grid grid-cols-3 gap-4 text-left mb-8">
+            {SETUP_STEPS.map((s, i) => (
+              <div key={i} className="p-4 rounded-xl bg-white border border-gray-200">
+                <p className="text-[1.5rem] mb-2">{s.icon}</p>
+                <p className="text-sm font-bold text-[#0f2d1f] m-0">{s.title}</p>
+                <p className="text-[12px] text-gray-500 mt-1 m-0">{s.desc}</p>
+              </div>
             ))}
           </div>
+          <Link href="/login" className="btn-cta-primary">
+            Sign In as Admin
+          </Link>
         </div>
       </section>
 
@@ -263,30 +230,23 @@ export default function HomePage() {
 
       {/* ════ CREDENTIALS CTA ═══════════════════════════════════════════════ */}
       <section id="credentials" className="bg-[#0f2d1f] px-6 py-20 text-center">
-        <div className="max-w-[860px] mx-auto">
+        <div className="max-w-[560px] mx-auto">
           <h2 className="text-[2rem] font-extrabold text-white m-0">
-            Start exploring the demo
+            System Administrator Login
           </h2>
-          <p className="text-sm text-emerald-300 mt-2 mb-12">
-            Each role is scoped to its own data — WMs see only their warehouse, NMs their center.
+          <p className="text-sm text-emerald-300 mt-2 mb-8">
+            Use the SA account to create tenants and onboard your first company.
           </p>
-          <div className="grid grid-cols-3 gap-4 mb-10 text-left">
-            {CREDS.map((c) => (
-              <div key={c.email} className="p-4 rounded bg-white/[0.05] border border-white/10">
-                <div className="flex items-center gap-2 mb-2">
-                  {/* Role badge color — runtime data value */}
-                  <span className="text-[11px] font-bold text-white px-1.5 py-0.5 rounded" style={{ background: c.roleColor }}>
-                    {c.role}
-                  </span>
-                  <span className="text-xs text-emerald-300 overflow-hidden text-ellipsis whitespace-nowrap">{c.company}</span>
-                </div>
-                <p className="text-xs font-mono text-[#a7f3d0] break-all m-0 mb-1">{c.email}</p>
-                <p className="text-xs font-mono text-emerald-300 m-0">{c.pw}</p>
-              </div>
-            ))}
+          <div className="p-5 rounded-xl bg-white/[0.05] border border-white/10 text-left mb-8">
+            <div className="flex items-center gap-2 mb-3">
+              <span className="text-[11px] font-bold text-white px-1.5 py-0.5 rounded bg-red-600">SA</span>
+              <span className="text-xs text-emerald-300">System Administrator</span>
+            </div>
+            <p className="text-xs font-mono text-[#a7f3d0] m-0 mb-1">smartadmin@smart-inventory.com</p>
+            <p className="text-xs font-mono text-emerald-300 m-0">Admin@2026</p>
           </div>
           <Link href="/login" className="btn-cta-primary">
-            Sign in to dashboard →
+            Sign in to dashboard
           </Link>
         </div>
       </section>
@@ -328,25 +288,8 @@ const FEATURES = [
   { icon: "🌍", accent: "#078930", title: "EN · Amharic · Oromifa",       desc: "Language packs served from S3 CDN, cached by service worker. Switch per-user. Native speaker review for Oromifa." },
 ];
 
-const TENANTS = [
-  {
-    name: "Addis Water", slug: "addis-water", icon: "💧",
-    industry: "Bottled Water · Producer", orgType: "PRODUCER",
-    color: "#0891B2", skuCount: 10, userCount: 7,
-    warehouses: ["Main Production Center", "North WH", "  ↳ North-Subcenter WH", "South WH", "East WH", "West WH"],
-    categories: ["Still Water — 500ml, 1L, 1.5L packs", "Sparkling Water — 500ml, 1L", "Pack sizes: 6 · 12 · 24 units"],
-  },
-  {
-    name: "Muger Cement", slug: "muger-cement", icon: "🏗️",
-    industry: "Cement Manufacturing · Producer", orgType: "PRODUCER",
-    color: "#D97706", skuCount: 10, userCount: 7,
-    warehouses: ["Harar Production Center", "Ambo Production Center", "Kombolcha WH", "Mekele WH", "Dire Dawa WH", "Hawassa WH"],
-    categories: ["OPC 42.5N & 32.5R", "Portland Pozzolana (PPC)", "Sulphate Resistant (SRC)", "White Portland (WPC)", "Bags: 25kg · 50kg"],
-  },
-];
-
-const CREDS = [
-  { role: "SA", roleColor: "#DC2626", company: "All tenants",  email: "smartadmin@smart-inventory.com", pw: "SmartAdmin@2026" },
-  { role: "TA", roleColor: "#7C3AED", company: "Addis Water",  email: "admin@addis-water.com",          pw: "AddisWater@2026"  },
-  { role: "TA", roleColor: "#D97706", company: "Muger Cement", email: "admin@muger-cement.com",         pw: "MugerCement@2026" },
+const SETUP_STEPS = [
+  { icon: "🏢", title: "Create Tenant",      desc: "Register your company and set the organisation type (Producer / Retailer)." },
+  { icon: "🌳", title: "Configure Hierarchy", desc: "Define levels, nodes, positions, and supply routes in the org setup wizard." },
+  { icon: "👥", title: "Add Users",           desc: "Create users, assign positions, and configure approval rules for transfers." },
 ];

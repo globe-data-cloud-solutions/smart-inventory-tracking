@@ -46,6 +46,7 @@ async def _lookup_user_with_position(
                 sa_text("""
                     SELECT u.id, u.email, u.full_name, u.tenant_id,
                            u.password_hash, u.must_reset_password,
+                           u.system_role,
                            t.slug AS tenant_slug
                     FROM   users u
                     LEFT JOIN tenants t ON t.id = u.tenant_id
@@ -65,6 +66,24 @@ async def _lookup_user_with_position(
             stored = user_rec.password_hash
             if stored is None or not _bcrypt.checkpw(password.encode(), stored.encode()):
                 raise HTTPException(status_code=401, detail="Invalid password")
+
+        # TA — has tenant, system_role='TA', no position required
+        if getattr(user_rec, "system_role", None) == "TA":
+            return {
+                "sub":                  str(user_rec.id),
+                "email":                str(user_rec.email),
+                "name":                 str(user_rec.full_name),
+                "tenant_id":            str(user_rec.tenant_id),
+                "tenant_slug":          str(user_rec.tenant_slug) if user_rec.tenant_slug else None,
+                "role":                 "TA",
+                "warehouse_id":         None,
+                "warehouse_name":       None,
+                "position_id":          None,
+                "position_title":       "Tenant Administrator",
+                "level_number":         1,
+                "positions":            [],
+                "must_reset_password":  bool(user_rec.must_reset_password),
+            }
 
         # SA — no tenant, no position; return hardcoded SA claims
         if user_rec.tenant_id is None:
@@ -112,6 +131,8 @@ async def _lookup_user_with_position(
             primary_rec = primary_row.fetchone()
 
             if primary_rec is None:
+                # TA users may not have a position — already handled above via system_role.
+                # Any other user without a position cannot log in.
                 raise HTTPException(
                     status_code=403,
                     detail="No active position assigned. Contact your administrator.",
