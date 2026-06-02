@@ -439,18 +439,20 @@ async def _resolve_node_for_step(
     if res == "DESTINATION_PARENT_NODE":
         return await _get_parent_node(session, tenant_id, dst_node_id)
     if res == "NEAREST_ANCESTOR_WITH_POSITION":
-        # Traverse up from source until we find a node that has the requested position
+        # Traverse up from source until we find a node that has the requested position.
+        # NOTE: avoid "(:title IS NULL OR title = :title)" — asyncpg raises
+        # AmbiguousParameterError because it cannot infer the bind-parameter type
+        # when the same placeholder appears in both IS NULL and an equality check.
+        # Use separate SQL branches instead.
         cur = src_node_id
         for _ in range(10):
-            row = (await session.execute(
-                text("""
-                    SELECT COUNT(*) FROM positions
-                    WHERE node_id = :nid AND tenant_id = :tid
-                    AND is_active = true
-                    AND (:title IS NULL OR title = :title)
-                """),
-                {"nid": cur, "tid": tenant_id, "title": position_title},
-            )).scalar()
+            if position_title:
+                sql    = text("SELECT COUNT(*) FROM positions WHERE node_id = :nid AND tenant_id = :tid AND is_active = true AND title = :title")
+                params = {"nid": cur, "tid": tenant_id, "title": position_title}
+            else:
+                sql    = text("SELECT COUNT(*) FROM positions WHERE node_id = :nid AND tenant_id = :tid AND is_active = true")
+                params = {"nid": cur, "tid": tenant_id}
+            row = (await session.execute(sql, params)).scalar()
             if row and int(row) > 0:
                 return await _get_node(session, tenant_id, cur)
             parent = await _get_parent_node(session, tenant_id, cur)
@@ -505,10 +507,20 @@ async def _escalate_vacant(
 ) -> tuple[Optional[str], Optional[str], bool]:
     """Traverse reports_to chain until we find a holder, or fall back to NM.
 
-    Returns (user_id, name, escalated_flag).
+    Returns (user_id, name, escalated_flag).  Always returns safely — never
+    raises; callers must check for (None, None, True) and handle accordingly.
     """
+    if not position_id:
+        # Safety: no valid position_id to traverse from
+        return None, None, True
+
+    visited: set[str] = set()
     cur_pos = position_id
     for _ in range(10):
+        if cur_pos in visited:
+            break   # cycle guard
+        visited.add(cur_pos)
+
         parent_row = (await session.execute(
             text("""
                 SELECT p.id, pp.user_id, u.full_name
@@ -523,8 +535,8 @@ async def _escalate_vacant(
             """),
             {"pid": cur_pos, "tid": tenant_id},
         )).fetchone()
-        if not parent_row:
-            break
+        if not parent_row or not parent_row.id:
+            break   # reached the top of the chain
         if parent_row.user_id:
             return str(parent_row.user_id), str(parent_row.full_name), True
         cur_pos = str(parent_row.id)
@@ -696,6 +708,21 @@ async def resolve_transfer_approvers(
                 holder_uid, holder_name, escalated = await _escalate_vacant(session, tenant_id, pos_id)
             else:
                 holder_uid, holder_name = None, None
+
+        # If escalation exhausted the chain and no approver was found, surface
+        # a clear 422 rather than silently storing a step with no assignee.
+        if is_vacant and not holder_uid:
+            from fastapi import HTTPException as _HTTPException
+            raise _HTTPException(
+                status_code=422,
+                detail={
+                    "code":    "NO_APPROVER_FOUND",
+                    "message": (
+                        f"No active holder for '{title or 'Approver'}' and escalation "
+                        "found no available approver. Contact your Tenant Administrator."
+                    ),
+                },
+            )
 
         resolved_steps.append(ResolvedStep(
             sequence=seq,

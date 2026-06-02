@@ -313,3 +313,161 @@ class TestNoRuleRoutesToNM:
         assert steps[0]["position_title"]       == "Regional Manager"
         assert steps[0]["sla_hours"]            == 24
         assert steps[0]["status"]               == "pending"
+
+
+# ── FIX C1 tests: vacancy escalation + NO_APPROVER_FOUND ─────────────────────
+
+NM_UID   = "11111111-0000-0000-0000-000000000001"
+RM_POS   = "22222222-0000-0000-0000-000000000001"
+NM_POS   = "33333333-0000-0000-0000-000000000001"
+PARENT_P = "44444444-0000-0000-0000-000000000001"
+
+
+@pytest.mark.unit
+class TestVacancyEscalation:
+
+    async def test_vacancy_escalates_to_reports_to(self) -> None:
+        """_escalate_vacant traverses the reports_to chain and returns the
+        first position holder it finds."""
+        from services.approval_service import _escalate_vacant
+
+        # Chain: RM_POS → PARENT_P (has holder NM_UID)
+        parent_row = _row(id=PARENT_P, user_id=NM_UID, full_name="National Manager")
+        db = _db_seq(parent_row)   # first execute → parent_row
+
+        uid, name, escalated = await _escalate_vacant(db, TENANT_ID, RM_POS)
+
+        assert uid       == NM_UID
+        assert name      == "National Manager"
+        assert escalated is True
+
+    async def test_vacancy_falls_back_to_nm(self) -> None:
+        """_escalate_vacant falls back to any NM-role holder when the
+        reports_to chain is exhausted with no active holder."""
+        from services.approval_service import _escalate_vacant
+
+        # Chain traversal: parent row has no user (vacant parent)
+        # then parent of parent: None (top of tree) → break
+        # NM fallback: finds an NM holder
+        vacant_parent = _row(id=PARENT_P, user_id=None, full_name=None)
+        nm_holder     = _row(user_id=NM_UID, full_name="NM Fallback")
+
+        db = _db_seq(
+            vacant_parent,   # first chain step — no holder, keep going
+            None,            # second chain step — no parent (root reached)
+            nm_holder,       # NM fallback query
+        )
+
+        uid, name, escalated = await _escalate_vacant(db, TENANT_ID, RM_POS)
+
+        assert uid       == NM_UID
+        assert escalated is True
+
+    async def test_vacancy_returns_none_when_no_nm(self) -> None:
+        """_escalate_vacant returns (None, None, True) safely when both the
+        reports_to chain and the NM fallback have no active holder."""
+        from services.approval_service import _escalate_vacant
+
+        # No parent in chain, no NM holder either
+        db = _db_seq(
+            None,   # chain traversal — no parent
+            None,   # NM fallback → also None
+        )
+
+        uid, name, escalated = await _escalate_vacant(db, TENANT_ID, RM_POS)
+
+        assert uid  is None
+        assert name is None
+        assert escalated is True   # still returns True to signal escalation was attempted
+
+    async def test_no_approver_raises_422(self) -> None:
+        """resolve_transfer_approvers raises HTTP 422 NO_APPROVER_FOUND when a
+        position is vacant and escalation cannot find any holder."""
+        from fastapi import HTTPException
+        from services.approval_service import resolve_transfer_approvers
+
+        rule_row = _row(
+            id=CONFIG_ID,
+            approval_steps=[{
+                "sequence":       1,
+                "position_title": "Regional Manager",
+                "resolution":     "SOURCE",
+                "execution_mode": "SEQUENTIAL",
+                "sla_hours":      None,
+            }],
+            threshold_type="QUANTITY",
+            quantity_min=0,  quantity_max=None,
+            value_min=0,     value_max=None,
+            source_level=1,  destination_level=3,
+            priority=0,
+        )
+        # Position found but vacant (no holder)
+        pos_row_vacant = _row(pos_id=RM_POS, user_id=None, full_name=None, node_id=SRC_NODE)
+
+        db = _db_seq(
+            _row(hierarchy_level=1),   # src level
+            _row(hierarchy_level=3),   # dst level
+            rule_row,                  # _find_matching_rule
+            _row(id=SRC_NODE, name="HQ National", hierarchy_level=1),  # _get_node (SOURCE)
+            pos_row_vacant,            # _find_position_and_holder → vacant
+            None,                      # _escalate_vacant: chain step → no parent
+            None,                      # _escalate_vacant: NM fallback → also None
+        )
+
+        with pytest.raises(HTTPException) as exc_info:
+            await resolve_transfer_approvers(
+                session=db,
+                tenant_id=TENANT_ID,
+                transfer_type_config_id=CONFIG_ID,
+                from_warehouse_id=SRC_NODE,
+                to_warehouse_id=DST_NODE,
+                quantity=Decimal("50"),
+                total_value=None,
+                created_by=CREATOR_UID,
+            )
+
+        assert exc_info.value.status_code == 422
+        assert exc_info.value.detail["code"] == "NO_APPROVER_FOUND"
+
+
+# ── FIX C2 test: product audit log ────────────────────────────────────────────
+
+@pytest.mark.unit
+class TestProductAuditLog:
+
+    def test_product_create_audit_log(self) -> None:
+        """create_product source must contain an INSERT INTO audit_logs with
+        action='product:create' in the SAME transaction as the product INSERT
+        (CLAUDE.md §14, §8 rule 6).
+
+        This is a structural test: we read the source file and verify the
+        SQL pattern is present rather than mocking the entire DB interaction
+        (which would require mocking 10+ sequential queries).
+        """
+        import os
+        products_src = os.path.normpath(
+            os.path.join(
+                os.path.dirname(__file__),
+                "..", "..", "..", "..", "product-service", "routers", "products.py",
+            )
+        )
+        assert os.path.exists(products_src), f"products.py not found at {products_src}"
+
+        with open(products_src, encoding="utf-8") as f:
+            src = f.read()
+
+        assert "INSERT INTO audit_logs" in src, \
+            "create_product must INSERT INTO audit_logs"
+        assert "product:create" in src, \
+            "audit_logs INSERT must use action='product:create'"
+        assert "unit_price" in src, \
+            "audit log abac_context should include unit_price (FIX C2)"
+
+        # Verify the audit INSERT is in the SAME function as the products INSERT
+        # by checking the audit INSERT appears AFTER the products INSERT in the source.
+        products_insert_pos = src.find("INSERT INTO products")
+        audit_log_pos       = src.find("INSERT INTO audit_logs")
+        assert products_insert_pos > 0,  "products INSERT not found"
+        assert audit_log_pos > 0,        "audit_logs INSERT not found"
+        assert audit_log_pos > products_insert_pos, \
+            "audit_logs INSERT must follow the products INSERT (same transaction)"

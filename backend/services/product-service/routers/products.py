@@ -395,6 +395,8 @@ async def create_product(
                 "unit":          uom_name,
                 "category":      category_name,
                 "brand":         brand_name,
+                "unit_price":    str(body.unit_price) if body.unit_price is not None else None,
+                "currency":      body.currency,
             }),
         },
     )
