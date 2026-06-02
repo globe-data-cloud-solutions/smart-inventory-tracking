@@ -1000,5 +1000,10 @@
     "source_node": "Source node",
     "dest_node": "Destination node",
     "tenant_wide": "Tenant-wide"
+  },
+  "login": {
+    "quick_access": "Quick Access",
+    "password": "Password",
+    "click_to_fill": "Click to auto-fill"
   }
 }

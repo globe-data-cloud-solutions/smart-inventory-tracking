@@ -388,6 +388,10 @@ export default function OrgLayout({ children }: { children: React.ReactNode }) {
 
     const session = getSession();
     if (!session) { router.replace(`/login?from=/${org}/dashboard`); return; }
+    // SA has tenantId=undefined — only redirect non-SA users missing a tenantId.
+    if (!session.tenantId && session.role !== "SA") {
+      router.replace(`/login?reason=session_expired`); return;
+    }
 
     if (org === SA_ORG_SLUG && session.role !== "SA") {
       router.replace(`/${session.orgSlug}/dashboard`); return;

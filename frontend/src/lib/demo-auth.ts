@@ -244,14 +244,15 @@ export function getSession(): SessionUser | null {
   if (!raw) return null;
   try {
     const session = JSON.parse(raw) as SessionUser;
-    // If the JWT is present and has expired, clear the session so auth guards
-    // redirect to /login. api.ts handles the in-flight 401 redirect separately.
+    // If the JWT is present and has expired, strip the token but preserve the
+    // demo session. SA has tenant_id=null which is valid; api.ts handles 401s.
     if (session.jwtToken) {
       const payload = decodeJwtPayload(session.jwtToken);
       const exp = typeof payload?.exp === "number" ? payload.exp : null;
       if (exp !== null && Date.now() / 1000 >= exp) {
-        store()?.removeItem(SESSION_KEY);
-        return null;
+        const { jwtToken: _expired, ...rest } = session;
+        store()?.setItem(SESSION_KEY, JSON.stringify(rest));
+        return rest as SessionUser;
       }
     }
     return session;

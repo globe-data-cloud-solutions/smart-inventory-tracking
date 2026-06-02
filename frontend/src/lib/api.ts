@@ -94,11 +94,19 @@ async function request<T>(
     body: body ? JSON.stringify(body) : undefined,
   });
 
-  // 401 from the server means the token was rejected — clear session and redirect.
+  // 401 when a JWT was sent means the token was rejected — clear session.
+  // 401 with no JWT (SA with no token yet, or BFF mode) is surfaced as a normal
+  // API error so the session is not destroyed for users who are still valid.
   if (res.status === 401) {
-    window.localStorage.removeItem("smart_demo_session");
-    _redirectToLogin();
-    return new Promise<T>(() => { /* navigation pending */ });
+    if (bearer) {
+      window.localStorage.removeItem("smart_demo_session");
+      _redirectToLogin();
+      return new Promise<T>(() => { /* navigation pending */ });
+    }
+    const authErr = new Error("Unauthorized") as Error & { status: number; code: string };
+    authErr.status = 401;
+    authErr.code   = "UNAUTHORIZED";
+    throw authErr;
   }
 
   const json = (await res.json()) as ApiResponse<T> | ApiError;

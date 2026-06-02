@@ -1008,5 +1008,10 @@
     "all_stocked": "All products are adequately stocked.",
     "summary": "Inventory Summary",
     "active_skus": "Active SKUs"
+  },
+  "login": {
+    "quick_access": "ፈጣን መዳረሻ",
+    "password": "የሚስጥር ቃል",
+    "click_to_fill": "ራሱ ሞሞን ለ ጠቅ ያድርጉ"
   }
 }

@@ -4,6 +4,7 @@ import { useState, useEffect } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { login, loginWithDevEmail } from "@/lib/demo-auth";
 import { SA_USER } from "@/lib/demo-data";
+import { t } from "@/lib/i18n";
 
 export default function LoginPage() {
   const router       = useRouter();
@@ -12,6 +13,7 @@ export default function LoginPage() {
   const [password, setPassword] = useState("");
   const [error, setError]       = useState("");
   const [loading, setLoading]   = useState(false);
+  const [showPwd, setShowPwd]   = useState(false);
 
   // Derived from URL params client-side only — starts false to avoid hydration mismatch.
   const [sessionExpired, setSessionExpired] = useState(false);
@@ -56,22 +58,47 @@ export default function LoginPage() {
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-900 via-brand-900 to-slate-900 flex">
       {/* ── Left panel: SA quick access ── */}
+      {/* Quick Access panel is for local development only.
+          Remove before production deployment.
+          Credentials are for the SA system account only. */}
       <div className="hidden lg:flex lg:w-96 bg-white/5 border-r border-white/10 flex-col p-8 overflow-y-auto h-screen">
-        <h2 className="text-white font-bold text-lg mb-1">Quick Access</h2>
-        <p className="text-slate-400 text-sm mb-6">Click to auto-fill credentials.</p>
+        <h2 className="text-white font-bold text-lg mb-1">{t("login.quick_access")}</h2>
 
         <div className="mb-6">
           <p className="text-xs text-slate-400 uppercase tracking-wider font-semibold mb-2">
             System Administrator
           </p>
-          <button
+          {/* Clicking anywhere on the card except the eye icon fills both fields */}
+          <div
+            role="button"
+            tabIndex={0}
             onClick={() => fillCredentials(SA_USER.email, SA_USER.password)}
-            className="w-full text-left p-3 rounded-lg bg-brand-600/30 border border-brand-500/40 hover:bg-brand-600/50 transition-colors group"
+            onKeyDown={(e) => e.key === "Enter" && fillCredentials(SA_USER.email, SA_USER.password)}
+            className="w-full text-left p-3 rounded-lg bg-brand-600/30 border border-brand-500/40 hover:bg-brand-600/50 transition-colors group cursor-pointer"
           >
-            <p className="text-white text-sm font-medium group-hover:text-brand-200">{SA_USER.name}</p>
+            <div className="flex items-center justify-between">
+              <p className="text-white text-sm font-medium group-hover:text-brand-200">{SA_USER.name}</p>
+              <span className="text-xs bg-brand-500 text-white rounded px-1.5 py-0.5">SA</span>
+            </div>
             <p className="text-slate-400 text-xs font-mono mt-0.5">{SA_USER.email}</p>
-            <span className="inline-block mt-1 text-xs bg-brand-500 text-white rounded px-1.5 py-0.5">SA</span>
-          </button>
+            <div className="flex items-center gap-2 mt-1.5">
+              <span className="text-xs text-gray-400">{t("login.password")}:</span>
+              <span className="text-xs font-mono text-slate-300">
+                {showPwd ? SA_USER.password : "••••••••"}
+              </span>
+              <button
+                type="button"
+                onClick={(e) => { e.stopPropagation(); setShowPwd((v) => !v); }}
+                className="text-gray-400 hover:text-gray-200 transition-colors leading-none"
+                aria-label={showPwd ? "Hide password" : "Show password"}
+              >
+                {showPwd ? "👁" : "👁‍🗨"}
+              </button>
+            </div>
+            <p className="text-xs text-brand-300 group-hover:text-brand-100 mt-2 font-medium">
+              {t("login.click_to_fill")} →
+            </p>
+          </div>
         </div>
 
         <div className="mt-auto border-t border-white/10 pt-4">
