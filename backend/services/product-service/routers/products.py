@@ -87,7 +87,7 @@ async def list_products(
 ) -> SuccessResponse[list]:
     base_select = (
         "SELECT p.id, p.sku, p.name, p.short_name, p.description, "
-        "p.unit, p.pack_size, p.reorder_point, "
+        "p.unit, p.pack_size, p.reorder_point, p.unit_price, p.currency, "
         "pc.name AS category, "
         "pb.name AS brand, "
         "ptc.code AS type_code, "
@@ -128,6 +128,8 @@ async def list_products(
                 "unit":             getattr(r, "unit", None),
                 "pack_size":        getattr(r, "pack_size", None),
                 "reorder_point":    float(r.reorder_point) if r.reorder_point is not None else None,
+                "unit_price":       float(r.unit_price) if getattr(r, "unit_price", None) is not None else None,
+                "currency":         getattr(r, "currency", None),
                 "category":         r.category,
                 "brand":            r.brand,
                 "type_code":        r.type_code,
