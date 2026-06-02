@@ -566,6 +566,27 @@ async def resolve_transfer_approvers(
 ) -> ApprovalResolution:
     """Dynamic approval routing using transfer_approval_rules + positions.
 
+    ── Level-matching convention ──────────────────────────────────────────────
+    transfer_approval_rules.source_level      = hierarchy level of from_warehouse_id
+                                                (the stock PROVIDER / sender node).
+    transfer_approval_rules.destination_level = hierarchy level of to_warehouse_id
+                                                (the stock RECEIVER / requester node).
+
+    For a PULL transfer (WM at L3 requests stock from NM at L1):
+      from_warehouse_id → L1 (HQ National, stock source)  → source_level = 1
+      to_warehouse_id   → L3 (Bole Warehouse, requester)  → destination_level = 3
+      Rule: {source_level: 1, destination_level: 3}
+
+    For a PUSH transfer (NM at L1 proactively sends stock to WM at L3):
+      from_warehouse_id → L1 (initiator, sender)          → source_level = 1
+      to_warehouse_id   → L3 (receiver)                   → destination_level = 3
+      Rule: {source_level: 1, destination_level: 3}
+
+    The rule levels always match the physical FROM/TO node levels, regardless
+    of which role "initiated" the request.  This is consistent with how
+    _find_matching_rule passes src_level/dst_level to the SQL query.
+    ──────────────────────────────────────────────────────────────────────────
+
     Resolution order:
       1. Find matching transfer_approval_rule for config/level/qty/value
       2. For each step, resolve the target node (source/dest/parent/tenant-wide)
