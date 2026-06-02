@@ -113,12 +113,13 @@ async def _get_manager_info(
 ) -> tuple[Optional[str], Optional[str]]:
     if not user_id:
         return None, None
+    # role column was dropped in migration 031 — query full_name only
     row = await db.execute(
-        text("SELECT full_name, role FROM users WHERE id = :uid"),
+        text("SELECT full_name FROM users WHERE id = :uid"),
         {"uid": user_id},
     )
     r = row.fetchone()
-    return (r[0], r[1]) if r else (None, None)
+    return (r[0], None) if r else (None, None)
 
 
 async def _build_tree(
@@ -281,16 +282,12 @@ async def list_org_nodes(
     user=Depends(get_current_user),
     db: AsyncSession = Depends(get_db_session_for_tenant),
 ) -> SuccessResponse[List[OrgNodeOut]]:
+    # user_facility_assignments was dropped in migration 031 — query nodes directly
     rows = await db.execute(
         text(
             "SELECT n.id, n.tenant_id, n.name, n.code, n.hierarchy_level, n.parent_node_id, "
-            "n.is_stock_holding, n.is_active, n.address, "
-            "u.full_name AS manager_name, u.role AS manager_role "
+            "n.is_stock_holding, n.is_active, n.address "
             "FROM organization_node n "
-            "LEFT JOIN user_facility_assignments ufa "
-            "  ON ufa.facility_id = n.id "
-            "  AND ufa.assignment_type = 'PRIMARY' AND ufa.is_active = true "
-            "LEFT JOIN users u ON u.id = ufa.user_id "
             "WHERE n.tenant_id = :tid AND n.is_active = true "
             "ORDER BY n.hierarchy_level, n.name"
         ),
@@ -307,8 +304,8 @@ async def list_org_nodes(
             "is_stock_holding": r.is_stock_holding,
             "is_active": r.is_active,
             "address": getattr(r, "address", None),
-            "manager_name":  getattr(r, "manager_name", None),
-            "manager_role":  getattr(r, "manager_role", None),
+            "manager_name":  None,
+            "manager_role":  None,
         }
         for r in rows.fetchall()
     ]
