@@ -92,11 +92,36 @@ async def get_db_session_for_tenant(
     tenant_id: uuid.UUID,
     user: Optional[UserContext] = Depends(get_current_user),
 ) -> AsyncGenerator[AsyncSession, None]:
-    """RLS set to the URL tenant_id — allows SA to access any tenant's data."""
+    """Verify tenant access then set RLS to the URL tenant_id.
+
+    Security contract:
+      SA  — may access any tenant; RLS set to URL tenant_id.
+      All others — may only access their own tenant.
+                   If JWT tenant_id != URL tenant_id → HTTP 403.
+                   RLS set to URL tenant_id (same as JWT tenant_id after check).
+
+    This is the single enforcement point for cross-tenant isolation in the
+    tenant-service.  Every {tenant_id} route must use this dependency.
+    """
+    from fastapi import HTTPException as _HTTPException
+
+    if user is None:
+        raise _HTTPException(status_code=401, detail="Unauthenticated")
+
+    if user.role != "SA":
+        # Non-SA users (including TA) are bound to exactly one tenant.
+        if user.tenant_id is None or str(user.tenant_id) != str(tenant_id):
+            raise _HTTPException(
+                status_code=403,
+                detail={
+                    "code":    "TENANT_ACCESS_DENIED",
+                    "message": "You do not have access to this tenant",
+                },
+            )
+
     async with AsyncSessionLocal() as session:
-        if user is not None:
-            rls_tenant = str(tenant_id) if user.role == "SA" else user.tenant_id
-            await set_rls_context(session, rls_tenant, user.user_id)
+        # Always set RLS to the URL's tenant_id (verified for non-SA above).
+        await set_rls_context(session, str(tenant_id), user.user_id)
         try:
             yield session
             await session.commit()

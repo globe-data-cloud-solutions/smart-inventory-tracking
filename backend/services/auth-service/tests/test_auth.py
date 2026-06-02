@@ -161,13 +161,14 @@ class TestLocalDevAuth:
         assert payload["warehouse_id"] is None
         assert payload["positions"]    == []
 
-    def test_dev_email_unknown_returns_404(self) -> None:
-        """Unknown dev_email returns 404 in local mode."""
+    def test_dev_email_unknown_returns_401(self) -> None:
+        """Unknown dev_email returns 401 (was 404 before FIX A2).
+        Using 401 avoids leaking whether an email exists in the system."""
         resp = client.post(
             "/api/v1/auth/token",
             json={"dev_email": "nobody@unknown.com"},
         )
-        assert resp.status_code == 404
+        assert resp.status_code == 401
 
     def test_dev_email_blocked_in_non_local(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """dev_email is rejected with 403 when ENVIRONMENT != 'local'."""

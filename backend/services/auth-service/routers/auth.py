@@ -41,17 +41,18 @@ async def _lookup_user_with_position(
         from sqlalchemy import text as sa_text
 
         async with AsyncSessionLocal() as db:
-            # Step 1 — find user by email
+            # Step 1 — find user by email WITHOUT is_active filter so we can
+            # distinguish "unknown email" from "deactivated account" and return
+            # the same 401 for both (no information leak).
             user_row = await db.execute(
                 sa_text("""
                     SELECT u.id, u.email, u.full_name, u.tenant_id,
                            u.password_hash, u.must_reset_password,
-                           u.system_role,
+                           u.system_role, u.is_active,
                            t.slug AS tenant_slug
                     FROM   users u
                     LEFT JOIN tenants t ON t.id = u.tenant_id
                     WHERE  lower(u.email) = lower(:email)
-                    AND    u.is_active = true
                     LIMIT  1
                 """),
                 {"email": email},
@@ -59,7 +60,12 @@ async def _lookup_user_with_position(
             user_rec = user_row.fetchone()
 
         if user_rec is None:
-            return None
+            return None  # caller raises 401
+
+        # Step 2 — reject deactivated accounts with the same 401 as "not found"
+        # to avoid leaking whether an email address is registered.
+        if not bool(user_rec.is_active):
+            raise HTTPException(status_code=401, detail="Invalid email or password")
 
         # Verify password when provided
         if password is not None:
@@ -233,7 +239,7 @@ async def exchange_token(body: TokenRequest) -> TokenResponse:
             )
         claims = await _lookup_user_with_position(body.dev_email, body.dev_password)
         if claims is None:
-            raise HTTPException(status_code=404, detail=f"dev_email not found: {body.dev_email!r}")
+            raise HTTPException(status_code=401, detail="Invalid email or password")
 
         tenant_slug          = claims.get("tenant_slug")
         must_reset_password  = bool(claims.get("must_reset_password", False))

@@ -21,6 +21,13 @@ def _slugify(name: str) -> str:
     slug = re.sub(r"-+", "-", slug).strip("-")
     return slug[:80]
 
+
+def _validate_slug(slug: str) -> bool:
+    """Return True if slug matches: 3-50 chars, lowercase alphanumeric + hyphens,
+    must start and end with alphanumeric (no leading/trailing hyphens)."""
+    import re as _re
+    return bool(_re.match(r"^[a-z0-9][a-z0-9-]{1,48}[a-z0-9]$", slug))
+
 router = APIRouter()
 
 
@@ -63,12 +70,37 @@ async def create_tenant(
 ) -> SuccessResponse[TenantResponse]:
     from sqlalchemy import text
     tenant_id = uuid.uuid4()
-    base_slug = _slugify(body.name) or str(tenant_id)[:8]
-    # Ensure uniqueness: append short UUID suffix on collision
-    slug = base_slug
-    row = await db.execute(text("SELECT id FROM tenants WHERE slug = :s"), {"s": slug})
-    if row.fetchone():
-        slug = f"{base_slug}-{str(tenant_id)[:8]}"
+
+    # Slug resolution: use caller-provided slug (validated) or auto-generate from name.
+    if body.slug is not None:
+        candidate = body.slug.strip().lower()
+        if not _validate_slug(candidate):
+            raise HTTPException(
+                status_code=422,
+                detail={
+                    "code":    "INVALID_SLUG",
+                    "message": "Slug must be 3-50 characters, lowercase letters/digits/hyphens, "
+                               "and must start and end with a letter or digit.",
+                },
+            )
+        slug = candidate
+        # Check uniqueness of the caller-provided slug — never auto-resolve.
+        dup = await db.execute(text("SELECT id FROM tenants WHERE slug = :s"), {"s": slug})
+        if dup.fetchone():
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "code":    "SLUG_ALREADY_EXISTS",
+                    "message": f"The URL identifier '{slug}' is already taken.",
+                },
+            )
+    else:
+        # Auto-generate from name; append short UUID suffix on collision.
+        base_slug = _slugify(body.name) or str(tenant_id)[:8]
+        slug = base_slug
+        row = await db.execute(text("SELECT id FROM tenants WHERE slug = :s"), {"s": slug})
+        if row.fetchone():
+            slug = f"{base_slug}-{str(tenant_id)[:8]}"
     await db.execute(
         text(
             "INSERT INTO tenants (id, name, slug, plan_id, default_locale, organisation_type) "

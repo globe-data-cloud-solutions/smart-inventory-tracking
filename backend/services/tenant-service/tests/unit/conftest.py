@@ -34,7 +34,7 @@ _TENANT_SVC_ROOT = os.path.normpath(
 
 # Bare-name packages that every service defines — the ones that collide when
 # multiple services' tests run in the same process.
-_SERVICE_PACKAGES = ("routers", "dependencies", "services", "main")
+_SERVICE_PACKAGES = ("routers", "dependencies", "services", "main", "schemas")
 
 
 def _flush_service_modules() -> None:

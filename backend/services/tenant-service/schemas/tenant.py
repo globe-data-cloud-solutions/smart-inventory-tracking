@@ -24,6 +24,7 @@ DEFAULT_SYSTEM_PLAN_ID = uuid.UUID("00000000-0000-0000-0000-000000000001")
 
 class TenantCreateRequest(BaseModel):
     name: str
+    slug: Optional[str] = None               # custom URL identifier; auto-generated if omitted
     plan_id: Optional[uuid.UUID] = DEFAULT_SYSTEM_PLAN_ID
     default_locale: str = "en"
     organisation_type: Optional[str] = None   # PRODUCER | RETAILER | HYBRID
