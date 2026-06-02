@@ -1,25 +1,27 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useRouter } from "next/navigation";
 import { login, loginWithDevEmail } from "@/lib/demo-auth";
 import { SA_USER } from "@/lib/demo-data";
 import { t } from "@/lib/i18n";
 
 export default function LoginPage() {
-  const router       = useRouter();
-  const searchParams = useSearchParams();
+  const router = useRouter();
   const [email, setEmail]       = useState("");
   const [password, setPassword] = useState("");
   const [error, setError]       = useState("");
   const [loading, setLoading]   = useState(false);
-  const [showPwd, setShowPwd]   = useState(false);
+  // Show password by default so users can see SA credentials without clicking
+  const [showPwd, setShowPwd]   = useState(true);
 
-  // Derived from URL params client-side only — starts false to avoid hydration mismatch.
+  // Read URL params client-side only to avoid SSR/hydration mismatch.
+  // useSearchParams() requires <Suspense> in Next.js 14; window.location is safer here.
   const [sessionExpired, setSessionExpired] = useState(false);
   useEffect(() => {
-    setSessionExpired(searchParams.get("reason") === "session_expired");
-  }, [searchParams]);
+    const params = new URLSearchParams(window.location.search);
+    setSessionExpired(params.get("reason") === "session_expired");
+  }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -42,8 +44,9 @@ export default function LoginPage() {
       return;
     }
     // Return to the intended URL, or route to the user's org dashboard
-    const from = searchParams.get("from");
-    const dest = from && (from.startsWith("/") && !from.startsWith("/login"))
+    const params = new URLSearchParams(window.location.search);
+    const from   = params.get("from");
+    const dest   = from && (from.startsWith("/") && !from.startsWith("/login"))
       ? from
       : `/${session.orgSlug}/dashboard`;
     router.push(dest);
