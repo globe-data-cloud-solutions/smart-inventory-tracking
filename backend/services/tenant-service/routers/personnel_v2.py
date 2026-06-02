@@ -55,10 +55,14 @@ class UserOut(BaseModel):
     id:               uuid.UUID
     email:            str
     name:             str
-    primary_position: Optional[PositionAssignmentOut]
-    acting_positions: List[PositionAssignmentOut]
-    is_active:        bool
-    must_reset_password: bool
+    # role / facility fields for frontend UserRecord compatibility
+    role:                   str                      # system_role or primary_position.role_code
+    primary_facility_id:    Optional[uuid.UUID]      # primary_position.node_id
+    primary_facility_name:  Optional[str]            # primary_position.node_name
+    primary_position:       Optional[PositionAssignmentOut]
+    acting_positions:       List[PositionAssignmentOut]
+    is_active:              bool
+    must_reset_password:    bool
 
 
 class UserCreate(BaseModel):
@@ -67,6 +71,15 @@ class UserCreate(BaseModel):
     password:    str
     position_id: Optional[uuid.UUID] = None
     system_role: Optional[str] = None   # "TA" for tenant-admin accounts without a position
+    role:        Optional[str] = None   # Frontend compat: if "TA", maps to system_role="TA"
+
+
+class UserUpdateRequest(BaseModel):
+    name:                Optional[str]       = None
+    email:               Optional[EmailStr]  = None
+    must_reset_password: Optional[bool]      = None
+    system_role:         Optional[str]       = None
+    role:                Optional[str]       = None  # Frontend compat: "TA" → system_role="TA"
 
 
 class AssignPositionRequest(BaseModel):
@@ -136,7 +149,7 @@ async def list_users(
     """List all users for a tenant with their current position assignments."""
     rows = (await db.execute(
         text("""
-            SELECT id, email, full_name, is_active, must_reset_password
+            SELECT id, email, full_name, is_active, must_reset_password, system_role
             FROM   users
             WHERE  tenant_id = :tid
             ORDER  BY full_name
@@ -147,10 +160,17 @@ async def list_users(
     result: List[UserOut] = []
     for r in rows:
         primary, acting = await _user_positions(db, str(r.id), str(tenant_id))
+        effective_role = (
+            str(r.system_role) if r.system_role
+            else (primary.role_code if primary else "—")
+        )
         result.append(UserOut(
             id=r.id,
             email=r.email,
             name=r.full_name,
+            role=effective_role,
+            primary_facility_id=primary.node_id if primary else None,
+            primary_facility_name=primary.node_name if primary else None,
             primary_position=primary,
             acting_positions=acting,
             is_active=r.is_active,
@@ -184,8 +204,9 @@ async def create_user(
             detail={"code": "DUPLICATE_EMAIL", "message": f"Email '{body.email}' already exists."},
         )
 
-    # Validate system_role — only "TA" is permitted
-    if body.system_role and body.system_role != "TA":
+    # Derive effective system_role: explicit field wins, then map role="TA" → "TA"
+    effective_system_role = body.system_role or ("TA" if body.role == "TA" else None)
+    if effective_system_role and effective_system_role != "TA":
         raise HTTPException(status_code=422, detail={"code": "INVALID_SYSTEM_ROLE",
             "message": "system_role must be 'TA' or null."})
 
@@ -201,7 +222,7 @@ async def create_user(
             "id": str(user_id), "tid": str(tenant_id),
             "email": body.email, "name": body.name,
             "hash": _hash(body.password),
-            "sysrole": body.system_role,
+            "sysrole": effective_system_role,
         },
     )
 
@@ -248,6 +269,9 @@ async def create_user(
         id=user_id,
         email=body.email,
         name=body.name,
+        role=effective_system_role or (primary.role_code if primary else "—"),
+        primary_facility_id=primary.node_id if primary else None,
+        primary_facility_name=primary.node_name if primary else None,
         primary_position=primary,
         acting_positions=[],
         is_active=True,
@@ -456,3 +480,97 @@ async def reactivate_user(
         {"uid": str(user_id)},
     )
     return SuccessResponse(data={"reactivated": True, "user_id": str(user_id)})
+
+
+@router.get("/{tenant_id}/users/{user_id}",
+            response_model=SuccessResponse[UserOut])
+@require_permission(PERMISSIONS.USER_VIEW)
+async def get_user(
+    tenant_id: uuid.UUID,
+    user_id: uuid.UUID,
+    user=Depends(get_current_user),
+    db: AsyncSession = Depends(get_db_session_for_tenant),
+) -> SuccessResponse[UserOut]:
+    """Fetch a single user with their position assignments."""
+    row = (await db.execute(
+        text("""
+            SELECT id, email, full_name, is_active, must_reset_password, system_role
+            FROM   users
+            WHERE  id = :uid AND tenant_id = :tid
+        """),
+        {"uid": str(user_id), "tid": str(tenant_id)},
+    )).fetchone()
+    if not row:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    primary, acting = await _user_positions(db, str(user_id), str(tenant_id))
+    effective_role = (
+        str(row.system_role) if row.system_role
+        else (primary.role_code if primary else "—")
+    )
+    return SuccessResponse(data=UserOut(
+        id=row.id,
+        email=row.email,
+        name=row.full_name,
+        role=effective_role,
+        primary_facility_id=primary.node_id if primary else None,
+        primary_facility_name=primary.node_name if primary else None,
+        primary_position=primary,
+        acting_positions=acting,
+        is_active=row.is_active,
+        must_reset_password=row.must_reset_password,
+    ))
+
+
+@router.patch("/{tenant_id}/users/{user_id}",
+              response_model=SuccessResponse[dict])
+@require_permission(PERMISSIONS.USER_MANAGE)
+async def update_user(
+    tenant_id: uuid.UUID,
+    user_id: uuid.UUID,
+    body: UserUpdateRequest,
+    user=Depends(get_current_user),
+    db: AsyncSession = Depends(get_db_session_for_tenant),
+) -> SuccessResponse[dict]:
+    """Update user name, email, password-reset flag, or system_role.
+
+    Role comes from position assignments, not this endpoint — except for TA
+    accounts (system_role='TA') which have no position. Sending role='TA' maps
+    to system_role='TA' for backward compatibility with the frontend.
+    """
+    row = (await db.execute(
+        text("SELECT id FROM users WHERE id = :uid AND tenant_id = :tid"),
+        {"uid": str(user_id), "tid": str(tenant_id)},
+    )).fetchone()
+    if not row:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    set_parts: list[str] = ["updated_at = now()"]
+    params: dict = {"uid": str(user_id), "tid": str(tenant_id)}
+
+    if body.name is not None:
+        set_parts.append("full_name = :name")
+        params["name"] = body.name.strip()
+    if body.email is not None:
+        set_parts.append("email = :email")
+        params["email"] = str(body.email).lower()
+    if body.must_reset_password is not None:
+        set_parts.append("must_reset_password = :mrp")
+        params["mrp"] = body.must_reset_password
+
+    # system_role: explicit field or mapped from legacy role="TA"
+    effective_sr = body.system_role or ("TA" if body.role == "TA" else None)
+    if effective_sr is not None:
+        if effective_sr != "TA":
+            raise HTTPException(
+                status_code=422,
+                detail={"code": "INVALID_SYSTEM_ROLE", "message": "system_role must be 'TA' or null."},
+            )
+        set_parts.append("system_role = :sr")
+        params["sr"] = effective_sr
+
+    await db.execute(
+        text(f"UPDATE users SET {', '.join(set_parts)} WHERE id = :uid AND tenant_id = :tid"),
+        params,
+    )
+    return SuccessResponse(data={"updated": True, "user_id": str(user_id)})
