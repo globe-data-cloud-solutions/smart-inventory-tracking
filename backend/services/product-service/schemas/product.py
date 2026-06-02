@@ -43,6 +43,9 @@ class ProductCreateRequest(BaseModel):
     reorder_point: Optional[Decimal] = Field(default=None, ge=0)
     sku_override: Optional[str] = Field(default=None, max_length=50,
                                         description="Manual SKU override; skips auto-generation")
+    unit_price: Optional[Decimal] = Field(default=None, ge=0,
+                                          description="Unit selling/transfer price; used for total_value on transfers")
+    currency: str = Field(default="ETB", max_length=10)
 
     @field_validator("name", mode="before")
     @classmethod
@@ -96,6 +99,8 @@ class ProductResponse(BaseModel):
     packaging_type: Optional[str] = None
     units_per_package: Optional[int] = None
     reorder_point: Optional[Decimal] = None
+    unit_price: Optional[Decimal] = None
+    currency: Optional[str] = None
     tenant_id: uuid.UUID
     created_at: datetime
     created_by: Optional[uuid.UUID] = None

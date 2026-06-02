@@ -83,6 +83,31 @@ async def create_tenant(
             "org_type": body.organisation_type,
         },
     )
+
+    # Atomic TA admin user creation — same DB transaction as tenant INSERT.
+    admin_user_id: Optional[uuid.UUID] = None
+    admin_email_out: Optional[str] = None
+    if body.admin_email and body.admin_password:
+        import bcrypt as _bcrypt
+        pw_hash = _bcrypt.hashpw(body.admin_password.encode(), _bcrypt.gensalt()).decode()
+        admin_user_id = uuid.uuid4()
+        admin_email_out = body.admin_email
+        await db.execute(
+            text(
+                "INSERT INTO users "
+                "  (id, tenant_id, email, full_name, password_hash, "
+                "   is_active, must_reset_password, system_role) "
+                "VALUES (:id, :tid, :email, :name, :hash, true, true, 'TA')"
+            ),
+            {
+                "id":    str(admin_user_id),
+                "tid":   str(tenant_id),
+                "email": body.admin_email,
+                "name":  body.admin_name or body.admin_email,
+                "hash":  pw_hash,
+            },
+        )
+
     return SuccessResponse(
         data=TenantResponse(
             id=tenant_id,
@@ -92,6 +117,8 @@ async def create_tenant(
             onboarding_complete=False,
             default_locale=body.default_locale,
             is_active=True,
+            admin_user_id=admin_user_id,
+            admin_email=admin_email_out,
         )
     )
 

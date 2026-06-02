@@ -27,6 +27,10 @@ class TenantCreateRequest(BaseModel):
     plan_id: Optional[uuid.UUID] = DEFAULT_SYSTEM_PLAN_ID
     default_locale: str = "en"
     organisation_type: Optional[str] = None   # PRODUCER | RETAILER | HYBRID
+    # Optional atomic TA admin user creation
+    admin_name: Optional[str] = None
+    admin_email: Optional[str] = None
+    admin_password: Optional[str] = None
 
 
 class TenantResponse(BaseModel):
@@ -37,3 +41,6 @@ class TenantResponse(BaseModel):
     onboarding_complete: bool
     default_locale: str
     is_active: bool
+    # Populated when admin user was created atomically
+    admin_user_id: Optional[uuid.UUID] = None
+    admin_email: Optional[str] = None

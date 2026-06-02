@@ -342,12 +342,12 @@ async def create_product(
             "  (id, tenant_id, sku, name, short_name, description, "
             "   unit_of_measure, unit, pack_size, "
             "   category_id, brand_id, type_code_id, packaging_type_id, "
-            "   reorder_point, is_active, created_by) "
+            "   reorder_point, unit_price, currency, is_active, created_by) "
             "VALUES "
             "  (:id, :tid, :sku, :name, :short_name, :description, "
             "   :uom, :unit, :pack_size, "
             "   :cat_id, :brand_id, :tc_id, :pt_id, "
-            "   :reorder_point, true, :uid)"
+            "   :reorder_point, :unit_price, :currency, true, :uid)"
         ),
         {
             "id":            product_id,
@@ -364,6 +364,8 @@ async def create_product(
             "tc_id":         type_code_id,
             "pt_id":         packaging_type_id,
             "reorder_point": float(body.reorder_point) if body.reorder_point is not None else None,
+            "unit_price":    float(body.unit_price) if body.unit_price is not None else None,
+            "currency":      body.currency,
             "uid":           uid,
         },
     )
@@ -425,6 +427,8 @@ async def create_product(
             packaging_type=packaging_type_name,
             units_per_package=resolved_units_per_package,
             reorder_point=body.reorder_point,
+            unit_price=body.unit_price,
+            currency=body.currency,
             tenant_id=uuid.UUID(tid),
             created_at=now,
             created_by=uuid.UUID(uid) if uid else None,
