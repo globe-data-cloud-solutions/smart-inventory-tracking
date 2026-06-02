@@ -392,6 +392,10 @@ export default function OrgLayout({ children }: { children: React.ReactNode }) {
     if (!session.tenantId && session.role !== "SA") {
       router.replace(`/login?reason=session_expired`); return;
     }
+    // PENDING_SETUP: user has no position yet; force them back to change-password.
+    if (session.role === "PENDING_SETUP" || (session.mustResetPassword && session.role !== "SA")) {
+      router.replace(`/change-password?userId=${session.id}`); return;
+    }
 
     if (org === SA_ORG_SLUG && session.role !== "SA") {
       router.replace(`/${session.orgSlug}/dashboard`); return;

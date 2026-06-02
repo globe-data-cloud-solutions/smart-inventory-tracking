@@ -1009,5 +1009,10 @@
     "quick_access": "Seenaa Ariifataa",
     "password": "Jecha Icciitii",
     "click_to_fill": "Guuti Ofumaan Tuqaa"
+  },
+  "change_password": {
+    "contact_admin": "Jecha darbee haaromfame. Bulchaan kee ramadee booda sistamitti seenuu dandeessa.",
+    "current_label_optional": "Jecha Darbee Ammaa (yoo hin beekin duwwaa dhiisi)",
+    "success_redirect": "Jecha darbee haaromfame. Jecha haarawa keetiin seeni."
   }
 }

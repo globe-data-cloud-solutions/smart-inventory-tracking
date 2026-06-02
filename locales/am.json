@@ -1013,5 +1013,10 @@
     "quick_access": "ፈጣን መዳረሻ",
     "password": "የሚስጥር ቃል",
     "click_to_fill": "ራሱ ሞሞን ለ ጠቅ ያድርጉ"
+  },
+  "change_password": {
+    "contact_admin": "password ተቀይሯል። አስተዳዳሪ ቦታ ይወስናሉ።",
+    "current_label_optional": "ያለፈው password (ካላወቁ ባዶ ይተዉ)",
+    "success_redirect": "password ተቀይሯል። ይግቡ።"
   }
 }

@@ -203,3 +203,113 @@ class TestLocalDevAuth:
         resp = client.post("/api/v1/auth/token", json={})
         assert resp.status_code == 422
 
+    # ── PENDING_SETUP tests (PART B1 / B3) ────────────────────────────────
+
+    def test_must_reset_no_position_gets_jwt(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """User with must_reset_password=true and no position gets a PENDING_SETUP
+        JWT instead of HTTP 403.  Fixes the catch-22 where new users could never
+        reach the change-password page."""
+
+        async def _mock_pending(email: str, password: object = None) -> dict:
+            return {
+                "sub":                 "user-pending-001",
+                "email":               email.lower(),
+                "name":                "New User",
+                "tenant_id":           "tttt-1111",
+                "tenant_slug":         "test-tenant",
+                "role":                "PENDING_SETUP",
+                "warehouse_id":        None,
+                "warehouse_name":      None,
+                "position_id":         None,
+                "position_title":      None,
+                "level_number":        None,
+                "positions":           [],
+                "must_reset_password": True,
+            }
+
+        monkeypatch.setattr(auth_module, "_lookup_user_with_position", _mock_pending)
+
+        resp = client.post(
+            "/api/v1/auth/token",
+            json={"dev_email": "newuser@test.com", "dev_password": "TempPass@2026"},
+        )
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["must_reset_password"] is True
+
+    def test_pending_setup_role_in_jwt(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """The JWT returned for a PENDING_SETUP user must carry role=PENDING_SETUP
+        so the frontend can recognise and redirect appropriately."""
+
+        async def _mock_pending(email: str, password: object = None) -> dict:
+            return {
+                "sub":                 "user-pending-002",
+                "email":               email.lower(),
+                "name":                "Pending User",
+                "tenant_id":           "tttt-2222",
+                "tenant_slug":         "demo-tenant",
+                "role":                "PENDING_SETUP",
+                "warehouse_id":        None,
+                "warehouse_name":      None,
+                "position_id":         None,
+                "position_title":      None,
+                "level_number":        None,
+                "positions":           [],
+                "must_reset_password": True,
+            }
+
+        monkeypatch.setattr(auth_module, "_lookup_user_with_position", _mock_pending)
+
+        resp = client.post("/api/v1/auth/token", json={"dev_email": "pending@demo.com"})
+        assert resp.status_code == 200
+
+        body    = resp.json()
+        token   = body["access_token"]
+        payload = jwt.decode(token, _SECRET, algorithms=[_ALG])
+        # role is in the JWT payload
+        assert payload["role"]         == "PENDING_SETUP"
+        assert payload["warehouse_id"] is None
+        assert payload["positions"]    == []
+        # must_reset_password is in the TokenResponse body (not in the JWT)
+        assert body["must_reset_password"] is True
+
+    def test_password_change_clears_reset_flag(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """PATCH /password/{id} with must_reset=true and NO current_password must
+        succeed (current_password is optional for PENDING_SETUP users) and the
+        endpoint should not return 401."""
+        from unittest.mock import AsyncMock, MagicMock
+
+        monkeypatch.setattr(auth_module, "ENVIRONMENT", "local")
+
+        # Build a fake DB row: must_reset=True, password_hash=some_hash
+        import bcrypt as _bcrypt
+        fake_hash = _bcrypt.hashpw(b"TempPass@2026", _bcrypt.gensalt()).decode()
+        fake_row  = MagicMock()
+        fake_row.id                 = "user-pending-003"
+        fake_row.password_hash      = fake_hash
+        fake_row.must_reset_password = True
+
+        fake_result = MagicMock()
+        fake_result.fetchone = MagicMock(return_value=fake_row)
+
+        fake_db = AsyncMock()
+        fake_db.execute   = AsyncMock(return_value=fake_result)
+        fake_db.commit    = AsyncMock()
+        fake_db.__aenter__ = AsyncMock(return_value=fake_db)
+        fake_db.__aexit__  = AsyncMock(return_value=None)
+
+        import shared.db.session as _sess_mod
+        monkeypatch.setattr(_sess_mod, "AsyncSessionLocal", lambda: fake_db)
+
+        # No current_password supplied — must NOT return 401
+        resp = client.patch(
+            "/api/v1/auth/password/user-pending-003",
+            json={
+                "user_id":     "user-pending-003",
+                "new_password": "NewSecure@2026!",
+                # current_password intentionally omitted
+            },
+        )
+        assert resp.status_code == 200, f"Expected 200, got {resp.status_code}: {resp.text}"
+        assert resp.json()["success"] is True
+

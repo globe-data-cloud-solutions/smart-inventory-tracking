@@ -1005,5 +1005,10 @@
     "quick_access": "Quick Access",
     "password": "Password",
     "click_to_fill": "Click to auto-fill"
+  },
+  "change_password": {
+    "contact_admin": "Password updated. Your administrator needs to assign your position before you can access the system.",
+    "current_label_optional": "Current Password (leave blank if not known)",
+    "success_redirect": "Password updated. Please sign in with your new password."
   }
 }

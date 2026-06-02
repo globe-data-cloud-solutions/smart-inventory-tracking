@@ -5,7 +5,7 @@
 
 export type OrgType = "PRODUCER" | "RETAILER" | "HYBRID";
 export type WarehouseType = "MWH" | "RWH" | "WH" | "SUB_WH";
-export type Role = "SA" | "TA" | "NM" | "RM" | "WM" | "LM" | "AU";
+export type Role = "SA" | "TA" | "NM" | "RM" | "WM" | "LM" | "AU" | "PENDING_SETUP";
 
 export interface DemoWarehouse {
   id: string;

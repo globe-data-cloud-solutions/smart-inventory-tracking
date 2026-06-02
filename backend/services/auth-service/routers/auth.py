@@ -138,7 +138,28 @@ async def _lookup_user_with_position(
 
             if primary_rec is None:
                 # TA users may not have a position — already handled above via system_role.
-                # Any other user without a position cannot log in.
+                #
+                # For non-TA users without a position AND must_reset_password=true:
+                # issue a PENDING_SETUP JWT so they can reach the change-password page
+                # before their position is assigned.  This prevents the catch-22 where
+                # a new user with a temp password can never log in to change it.
+                if bool(user_rec.must_reset_password):
+                    return {
+                        "sub":                 str(user_rec.id),
+                        "email":               str(user_rec.email),
+                        "name":                str(user_rec.full_name),
+                        "tenant_id":           str(user_rec.tenant_id),
+                        "tenant_slug":         str(user_rec.tenant_slug) if user_rec.tenant_slug else None,
+                        "role":                "PENDING_SETUP",
+                        "warehouse_id":        None,
+                        "warehouse_name":      None,
+                        "position_id":         None,
+                        "position_title":      None,
+                        "level_number":        None,
+                        "positions":           [],
+                        "must_reset_password": True,
+                    }
+                # User has no position and no pending password reset → hard block.
                 raise HTTPException(
                     status_code=403,
                     detail="No active position assigned. Contact your administrator.",
@@ -302,13 +323,19 @@ async def refresh_token() -> dict:
 
 class ChangePasswordByIdRequest(BaseModel):
     user_id:          str
-    current_password: str
+    current_password: Optional[str] = None   # optional for must_reset users
     new_password:     str
 
 
 @router.patch("/password/{user_id}", response_model=dict)
 async def change_password_by_id(user_id: str, body: ChangePasswordByIdRequest) -> dict:
-    """Change password for a user identified by user_id."""
+    """Change password for a user identified by user_id.
+
+    For users with must_reset_password=true (PENDING_SETUP role — new accounts
+    awaiting position assignment), current_password may be omitted because the
+    user may have been given a temporary password they cannot verify without
+    first logging in.  All other active users must supply current_password.
+    """
     if ENVIRONMENT != "local":
         raise HTTPException(status_code=403, detail="Only available when ENVIRONMENT=local")
     if len(body.new_password) < 8:
@@ -319,15 +346,39 @@ async def change_password_by_id(user_id: str, body: ChangePasswordByIdRequest) -
         from sqlalchemy import text as sa_text
         async with AsyncSessionLocal() as db:
             row = (await db.execute(
-                sa_text("SELECT id, password_hash FROM users WHERE id = :uid AND is_active = true"),
+                sa_text(
+                    "SELECT id, password_hash, must_reset_password "
+                    "FROM users WHERE id = :uid AND is_active = true"
+                ),
                 {"uid": user_id},
             )).fetchone()
             if row is None:
                 raise HTTPException(status_code=404, detail="User not found")
-            if row.password_hash is None or not _bcrypt.checkpw(
-                body.current_password.encode(), row.password_hash.encode()
-            ):
-                raise HTTPException(status_code=401, detail="Current password is incorrect")
+
+            must_reset = bool(row.must_reset_password)
+
+            if not must_reset:
+                # Standard path: current_password is required.
+                if not body.current_password:
+                    raise HTTPException(status_code=422, detail="Current password is required")
+                if row.password_hash is None:
+                    raise HTTPException(
+                        status_code=401,
+                        detail="No password set for this account — contact your administrator",
+                    )
+                if not _bcrypt.checkpw(
+                    body.current_password.encode(), row.password_hash.encode()
+                ):
+                    raise HTTPException(status_code=401, detail="Current password is incorrect")
+            elif body.current_password:
+                # must_reset=true but caller supplied current_password: validate it.
+                # (Allows users who know their temp password to confirm it.)
+                if row.password_hash is not None and not _bcrypt.checkpw(
+                    body.current_password.encode(), row.password_hash.encode()
+                ):
+                    raise HTTPException(status_code=401, detail="Current password is incorrect")
+            # else: must_reset=true, no current_password → skip verification (PENDING_SETUP path)
+
             new_hash = _bcrypt.hashpw(body.new_password.encode(), _bcrypt.gensalt()).decode()
             await db.execute(
                 sa_text(
