@@ -477,9 +477,25 @@ class InventoryService:
         )
         _lines_params = {"tid_order": str(transfer_id), "tid": str(user.tenant_id)}
 
-        # PENDING_REVIEW: soft-lock source stock per line (RESERVE audit entry).
+        # PENDING_REVIEW: WH submitted the PULL request; source has not yet committed.
+        # No RESERVE is written here — the source warehouse has not seen or acted on
+        # the request, so no stock should be locked at this stage.
+        # (PUSH never reaches PENDING_REVIEW; SISTER goes via PENDING_SOURCE_CONFIRM.)
         if next_state == "PENDING_REVIEW":
+            pass  # intentionally empty — reservation happens at PENDING_APPROVAL
+
+        # PENDING_APPROVAL: first committed reservation for ALL transfer types.
+        #   PULL:   source reviewed the request and forwarded it — lock now.
+        #   PUSH:   source initiates here (DRAFT → PENDING_APPROVAL); lock immediately.
+        #   SISTER: both parties confirmed (PENDING_DEST_CONFIRM → PENDING_APPROVAL);
+        #           source is committed — lock now.
+        elif next_state == "PENDING_APPROVAL":
+            from services.approval_service import resolve_transfer_approvers as _resolve_approvers
             lines = (await self.db.execute(_lines_query, _lines_params)).fetchall()
+            total_qty = sum(Decimal(str(l.quantity)) for l in lines)
+
+            # Write RESERVE for each line at the source warehouse.
+            # Idempotency key encodes the originating status so retries are safe.
             for line in lines:
                 await write_transfer_ledger_entry(
                     session=self.db,
@@ -490,21 +506,9 @@ class InventoryService:
                     product_id=str(line.product_id),
                     tenant_id=str(user.tenant_id),
                     performed_by=str(user.user_id),
-                    status_transition="DRAFT_TO_PENDING_REVIEW",
+                    status_transition=f"{row.status}_TO_PENDING_APPROVAL",
                     line_id=str(line.id),
                 )
-
-        # PENDING_APPROVAL: resolve dynamic approver chain and store on transfer order.
-        elif next_state == "PENDING_APPROVAL":
-            from services.approval_service import resolve_transfer_approvers as _resolve_approvers
-            lines = (await self.db.execute(
-                text(
-                    "SELECT quantity FROM transfer_order_lines "
-                    "WHERE transfer_order_id = :tid_order AND tenant_id = :tid"
-                ),
-                {"tid_order": str(transfer_id), "tid": str(user.tenant_id)},
-            )).fetchall()
-            total_qty = sum(Decimal(str(l.quantity)) for l in lines)
             tv_row = (await self.db.execute(
                 text("SELECT transfer_type_config_id, total_value, created_by "
                      "FROM transfer_orders WHERE id = :id"),
@@ -611,10 +615,11 @@ class InventoryService:
                         ),
                     )
 
-        # CANCELLED/REJECTED from pre-approval: release the soft-lock written at PENDING_REVIEW.
-        elif next_state in ("CANCELLED", "REJECTED") and row.status in (
-            "PENDING_REVIEW", "PENDING_APPROVAL"
-        ):
+        # CANCELLED/REJECTED from PENDING_APPROVAL: release the RESERVE written when
+        # entering PENDING_APPROVAL.  Must NOT fire for PENDING_REVIEW (PULL) or
+        # PENDING_SOURCE_CONFIRM/PENDING_DEST_CONFIRM (SISTER) — no RESERVE was written
+        # at those stages so there is nothing to release.
+        elif next_state in ("CANCELLED", "REJECTED") and row.status == "PENDING_APPROVAL":
             lines = (await self.db.execute(_lines_query, _lines_params)).fetchall()
             for line in lines:
                 await write_transfer_ledger_entry(

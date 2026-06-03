@@ -7,10 +7,11 @@ Key translation decisions:
     (faster; consistent with how we maintain balances on RECEIVE/TRANSFER)
   - Forecast consumption computed from inventory_transactions WHERE quantity < 0
     (TRANSFER_OUT, ISSUE, ADJUSTMENT with negative value)
-  - pending_out from transfer_orders WHERE status IN (PENDING_REVIEW, PENDING_APPROVAL,
-    PENDING_SOURCE_CONFIRM, PENDING_DEST_CONFIRM) — pre-approval soft holds only.
-    DRAFT excluded (no commitment). APPROVED/ISSUED/IN_TRANSIT excluded (on_hand
-    already deducted via TRANSFER_OUT ledger entry — would double-count).
+  - pending_out from transfer_orders WHERE status = PENDING_APPROVAL only.
+    RESERVE is written when entering PENDING_APPROVAL for all transfer types.
+    Pre-PENDING_APPROVAL statuses (DRAFT, PENDING_REVIEW, PENDING_SOURCE_CONFIRM,
+    PENDING_DEST_CONFIRM) carry no reservation. APPROVED/ISSUED/IN_TRANSIT excluded
+    (on_hand already deducted via TRANSFER_OUT — would double-count).
   - in_transit_in from transfer_orders WHERE status = IN_TRANSIT (destination side)
   - requested_qty from transfer_requests WHERE status = PENDING
 """
@@ -88,18 +89,16 @@ async def get_stock(
         wid = r.warehouse_id
         tid_param = {"tid": str(tenant_id)} if tenant_id else {}
 
-        # Soft holds: transfers that have passed DRAFT and entered the approval
-        # chain — the stock is "spoken for" but On Hand has not changed yet.
-        # DRAFT is intentionally excluded: a DRAFT transfer has no commitment —
-        # it can be discarded without any stock consequence (CLAUDE.md §17).
-        # APPROVED/ISSUED/IN_TRANSIT are also excluded: current_stock already
-        # reflects the APPROVED deduction via the TRANSFER_OUT ledger entry;
-        # including them would cause a double deduction in net_available.
-        # NEVER include DRAFT or APPROVED here.
-        # DRAFT = no reservation yet; APPROVED = on_hand already deducted.
-        # Only pre-approval statuses create a soft hold (reserved) on source stock.
-        # Correct set: PENDING_REVIEW, PENDING_APPROVAL,
-        #              PENDING_SOURCE_CONFIRM, PENDING_DEST_CONFIRM
+        # Soft holds: the RESERVE ledger entry is written when a transfer enters
+        # PENDING_APPROVAL — for ALL types (PULL, PUSH, SISTER).
+        # Statuses before PENDING_APPROVAL carry no reservation:
+        #   DRAFT                  — no commitment; can be discarded freely
+        #   PENDING_REVIEW (PULL)  — WH submitted; source not yet committed
+        #   PENDING_SOURCE_CONFIRM — SISTER source confirm; no reservation yet
+        #   PENDING_DEST_CONFIRM   — SISTER dest confirm; no reservation yet
+        # APPROVED/ISSUED/IN_TRANSIT are excluded: current_stock already reflects
+        # the APPROVED deduction via TRANSFER_OUT; including them double-subtracts.
+        # Correct set: PENDING_APPROVAL only.
         pending_out_sql = text("""
             SELECT COALESCE(SUM(tol.quantity), 0)
             FROM transfer_order_lines tol
@@ -107,8 +106,7 @@ async def get_stock(
             WHERE to_.from_warehouse_id = :wid
               AND tol.product_id = :pid
               AND to_.status IN (
-                'PENDING_REVIEW','PENDING_APPROVAL',
-                'PENDING_SOURCE_CONFIRM','PENDING_DEST_CONFIRM'
+                'PENDING_APPROVAL'
               )
         """ + (" AND to_.tenant_id = :tid" if tenant_id else ""))
         pending_out = (

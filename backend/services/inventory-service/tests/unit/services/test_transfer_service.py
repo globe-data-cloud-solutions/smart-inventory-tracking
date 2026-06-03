@@ -1077,9 +1077,13 @@ def _session_for_transition_with_lines(
 @pytest.mark.unit
 class TestGap2LedgerWiring:
 
-    async def test_pending_review_writes_reserve_entry(self) -> None:
-        """DRAFT → PENDING_REVIEW must write one RESERVE entry per line via
-        write_transfer_ledger_entry at the source warehouse."""
+    async def test_pending_review_writes_no_reserve_entry(self) -> None:
+        """PULL DRAFT → PENDING_REVIEW must NOT write any ledger entry.
+
+        The WH (destination) creates a pull request. The source warehouse has
+        not yet seen or committed to fulfilling it — no stock should be locked.
+        Reservation (RESERVE) happens when the request enters PENDING_APPROVAL.
+        """
         from services.inventory_service import InventoryService
 
         line     = _make_line(quantity=40.0)
@@ -1097,18 +1101,18 @@ class TestGap2LedgerWiring:
             )
 
         assert result.status == "PENDING_REVIEW"
-        assert len(captured) == 1
-        r = captured[0]
-        assert r["transaction_type"] == "RESERVE"
-        assert r["warehouse_id"]     == WAREHOUSE_A
-        assert r["quantity"]         == Decimal("40")
-        assert r["status_transition"] == "DRAFT_TO_PENDING_REVIEW"
-        assert r["line_id"]          == LINE_ID
-        assert r["transfer_id"]      == str(TRANSFER_ID)
+        assert len(captured) == 0, (
+            "PENDING_REVIEW must write zero ledger entries — "
+            "RESERVE only happens at PENDING_APPROVAL"
+        )
 
-    async def test_cancel_pre_approval_writes_release(self) -> None:
-        """PENDING_REVIEW → CANCELLED must write one RELEASE per line (negative qty)
-        to release the RESERVE written at PENDING_REVIEW."""
+    async def test_cancel_at_pending_review_writes_no_release(self) -> None:
+        """PULL PENDING_REVIEW → CANCELLED must NOT write any ledger entry.
+
+        No RESERVE was written when entering PENDING_REVIEW, so there is
+        nothing to release.  RELEASE only fires when cancelling at
+        PENDING_APPROVAL (where RESERVE was written).
+        """
         from services.inventory_service import InventoryService
 
         line     = _make_line(quantity=40.0)
@@ -1126,13 +1130,10 @@ class TestGap2LedgerWiring:
             )
 
         assert result.status == "CANCELLED"
-        assert len(captured) == 1
-        r = captured[0]
-        assert r["transaction_type"] == "RELEASE"
-        assert r["quantity"]         == -Decimal("40")   # negative = release the reservation
-        assert r["warehouse_id"]     == WAREHOUSE_A
-        assert r["status_transition"] == "CANCELLED_PRE_APPROVAL"
-        assert r["line_id"]          == LINE_ID
+        assert len(captured) == 0, (
+            "PENDING_REVIEW → CANCELLED must write zero ledger entries "
+            "— no RESERVE was made at PENDING_REVIEW"
+        )
 
     async def test_issued_writes_transit_out(self) -> None:
         """dispatch_transfer() (APPROVED → ISSUED) must write one TRANSIT_OUT entry per
@@ -1644,3 +1645,195 @@ class TestCreateTransferStockCheck:
         assert result.status == "DRAFT", "transfer must be created in DRAFT status"
         assert result.total_value == Decimal("300"), "30 × ETB 10 = ETB 300"
         assert result.transfer_type_config_id is None  # no config found in this scenario
+
+
+# ── WMS-standard reservation timing ────────────────────────────────────────
+
+def _session_for_pending_approval(
+    transfer_row: MagicMock,
+    lines: list,
+) -> AsyncMock:
+    """Session for transition_transfer() → PENDING_APPROVAL:
+      call 0 — SELECT transfer_orders FOR UPDATE
+      call 1 — SELECT transfer_order_lines  (RESERVE writes + total_qty)
+      call 2 — SELECT transfer_orders       (tv_row: config_id, total_value, created_by)
+      call 3 — UPDATE transfer_orders       (resolved_approval_steps)
+      call 4 — UPDATE transfer_orders       (status)
+    """
+    tv_row = MagicMock()
+    tv_row.transfer_type_config_id = None
+    tv_row.total_value             = None
+    tv_row.created_by              = "u-creator-000"
+
+    session = AsyncMock()
+    session.execute = AsyncMock(side_effect=[
+        MagicMock(fetchone=MagicMock(return_value=transfer_row)),  # transfer SELECT
+        MagicMock(fetchall=MagicMock(return_value=lines)),          # lines SELECT
+        MagicMock(fetchone=MagicMock(return_value=tv_row)),         # tv_row SELECT
+        MagicMock(),                                                 # UPDATE approval steps
+        MagicMock(),                                                 # UPDATE status
+    ])
+    return session
+
+
+def _mock_resolution() -> MagicMock:
+    res = MagicMock()
+    res.steps_as_json.return_value = "[]"
+    res.is_auto_approved           = False
+    res.notify_levels              = []
+    return res
+
+
+@pytest.mark.asyncio
+@pytest.mark.unit
+class TestWMSReservationTiming:
+    """Regression tests for WMS-standard PULL/PUSH/SISTER reservation timing.
+
+    RESERVE must be written when entering PENDING_APPROVAL for all transfer types:
+      PULL:   PENDING_REVIEW → PENDING_APPROVAL  (source reviewed; now commits)
+      PUSH:   DRAFT → PENDING_APPROVAL           (source initiates; commits immediately)
+      SISTER: PENDING_DEST_CONFIRM → PENDING_APPROVAL (both agreed; source commits)
+
+    PENDING_REVIEW for PULL must NOT write RESERVE — the WH submitted the
+    request but the source has not yet seen or committed to it.
+    """
+
+    async def test_pull_no_reserve_at_pending_review(self) -> None:
+        """PULL DRAFT → PENDING_REVIEW: zero ledger entries written.
+
+        Available at source must NOT change when a PULL request is submitted.
+        The source warehouse has not committed; no RESERVE = no soft lock.
+        """
+        from services.inventory_service import InventoryService
+
+        line     = _make_line(quantity=100.0)
+        xfer_row = _make_transfer_row("DRAFT", transfer_type="PULL")
+        session  = _session_for_transition_with_lines(xfer_row, [line])
+
+        captured: list = []
+        with patch("services.inventory_service.write_transfer_ledger_entry",
+                   new=AsyncMock(side_effect=lambda *_, **kw: captured.append(kw))):
+            result = await InventoryService(session).transition_transfer(
+                SRC_WM, TRANSFER_ID, "PENDING_REVIEW"
+            )
+
+        assert result.status == "PENDING_REVIEW"
+        assert len(captured) == 0, (
+            "DRAFT → PENDING_REVIEW must write zero ledger entries for PULL; "
+            "RESERVE only happens at PENDING_APPROVAL"
+        )
+
+    async def test_pull_reserve_at_pending_approval(self) -> None:
+        """PULL PENDING_REVIEW → PENDING_APPROVAL: RESERVE written at source.
+
+        Source reviewed the request and forwarded it for approval.
+        Available at source must decrease by the transfer quantity.
+        """
+        from services.inventory_service import InventoryService
+
+        line     = _make_line(quantity=100.0)
+        xfer_row = _make_transfer_row("PENDING_REVIEW", transfer_type="PULL")
+        session  = _session_for_pending_approval(xfer_row, [line])
+
+        captured: list = []
+        with patch("services.inventory_service.write_transfer_ledger_entry",
+                   new=AsyncMock(side_effect=lambda *_, **kw: captured.append(kw))), \
+             patch("services.approval_service.resolve_transfer_approvers",
+                   new=AsyncMock(return_value=_mock_resolution())):
+            result = await InventoryService(session).transition_transfer(
+                SRC_WM, TRANSFER_ID, "PENDING_APPROVAL"
+            )
+
+        assert result.status == "PENDING_APPROVAL"
+        reserves = [c for c in captured if c.get("transaction_type") == "RESERVE"]
+        assert len(reserves) == 1, "exactly one RESERVE entry per line at PENDING_APPROVAL"
+        r = reserves[0]
+        assert r["warehouse_id"]      == WAREHOUSE_A
+        assert r["quantity"]          == Decimal("100")
+        assert r["status_transition"] == "PENDING_REVIEW_TO_PENDING_APPROVAL"
+        assert r["line_id"]           == LINE_ID
+
+    async def test_push_reserve_at_pending_approval(self) -> None:
+        """PUSH DRAFT → PENDING_APPROVAL: RESERVE written at source.
+
+        PUSH has no PENDING_REVIEW step.  The source creates and immediately
+        commits the transfer at PENDING_APPROVAL.
+        """
+        from services.inventory_service import InventoryService
+
+        line     = _make_line(quantity=75.0)
+        xfer_row = _make_transfer_row("DRAFT", transfer_type="PUSH")
+        session  = _session_for_pending_approval(xfer_row, [line])
+
+        captured: list = []
+        with patch("services.inventory_service.write_transfer_ledger_entry",
+                   new=AsyncMock(side_effect=lambda *_, **kw: captured.append(kw))), \
+             patch("services.approval_service.resolve_transfer_approvers",
+                   new=AsyncMock(return_value=_mock_resolution())):
+            result = await InventoryService(session).transition_transfer(
+                SRC_WM, TRANSFER_ID, "PENDING_APPROVAL"
+            )
+
+        assert result.status == "PENDING_APPROVAL"
+        reserves = [c for c in captured if c.get("transaction_type") == "RESERVE"]
+        assert len(reserves) == 1
+        r = reserves[0]
+        assert r["warehouse_id"]      == WAREHOUSE_A
+        assert r["quantity"]          == Decimal("75")
+        assert r["status_transition"] == "DRAFT_TO_PENDING_APPROVAL"
+
+    async def test_sister_reserve_at_pending_approval(self) -> None:
+        """SISTER PENDING_DEST_CONFIRM → PENDING_APPROVAL: RESERVE written at source.
+
+        Both WMs confirmed the lateral transfer.  Source is now committed;
+        RESERVE locks the stock before it goes for senior approval.
+        """
+        from services.inventory_service import InventoryService
+
+        line     = _make_line(quantity=50.0)
+        xfer_row = _make_transfer_row("PENDING_DEST_CONFIRM", transfer_type="SISTER")
+        session  = _session_for_pending_approval(xfer_row, [line])
+
+        captured: list = []
+        with patch("services.inventory_service.write_transfer_ledger_entry",
+                   new=AsyncMock(side_effect=lambda *_, **kw: captured.append(kw))), \
+             patch("services.approval_service.resolve_transfer_approvers",
+                   new=AsyncMock(return_value=_mock_resolution())):
+            result = await InventoryService(session).transition_transfer(
+                SRC_WM, TRANSFER_ID, "PENDING_APPROVAL"
+            )
+
+        assert result.status == "PENDING_APPROVAL"
+        reserves = [c for c in captured if c.get("transaction_type") == "RESERVE"]
+        assert len(reserves) == 1
+        r = reserves[0]
+        assert r["warehouse_id"]      == WAREHOUSE_A
+        assert r["quantity"]          == Decimal("50")
+        assert r["status_transition"] == "PENDING_DEST_CONFIRM_TO_PENDING_APPROVAL"
+
+    async def test_cancel_at_pending_approval_writes_release(self) -> None:
+        """PENDING_APPROVAL → CANCELLED: RELEASE written at source.
+
+        RESERVE was written when entering PENDING_APPROVAL; cancelling must
+        release it.
+        """
+        from services.inventory_service import InventoryService
+
+        line     = _make_line(quantity=60.0)
+        xfer_row = _make_transfer_row("PENDING_APPROVAL", transfer_type="PULL")
+        session  = _session_for_transition_with_lines(xfer_row, [line])
+
+        captured: list = []
+        with patch("services.inventory_service.write_transfer_ledger_entry",
+                   new=AsyncMock(side_effect=lambda *_, **kw: captured.append(kw))):
+            result = await InventoryService(session).transition_transfer(
+                SRC_WM, TRANSFER_ID, "CANCELLED"
+            )
+
+        assert result.status == "CANCELLED"
+        releases = [c for c in captured if c.get("transaction_type") == "RELEASE"]
+        assert len(releases) == 1, "RELEASE must fire when cancelling at PENDING_APPROVAL"
+        r = releases[0]
+        assert r["quantity"]          == -Decimal("60")
+        assert r["warehouse_id"]      == WAREHOUSE_A
+        assert r["status_transition"] == "CANCELLED_PRE_APPROVAL"
