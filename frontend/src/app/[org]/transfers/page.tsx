@@ -301,13 +301,23 @@ function getAvailableActions(
   const confirmInt: Action = { next: "PENDING_APPROVAL",       label: "Confirm & Escalate", color: "#1E40AF" };
 
   // ── PULL: destination requests stock from source ──────────────────────────
+  //
+  // Role mapping for a PULL (Region WH requests from Main):
+  //   Creator/requester (RM at Region)  = destination side
+  //   Source manager (NM at Main)       = supply side
+  //
+  // isTenantMgr (NM/TA/SA) intentionally excluded from destination actions:
+  // NM is the *source* for a PULL, so they must see supply-side buttons
+  // (issue, dispatch) and NOT destination buttons (receive, complete).
+  // Using isDstManager (which includes isTenantMgr) would give NM both sides.
   if (type === "PULL") {
     const map: Partial<Record<TransferStatus, Action[]>> = {};
 
-    // DRAFT: destination side (or any reviewer/approver) initiates
-    if (isDstManager || userLevel <= 2) map.DRAFT = [review, cancel];
+    // DRAFT: only the creator (RM who raised the request) can submit it.
+    // isTenantMgr / any-reviewer guard removed — showing Submit to NM was wrong.
+    if (isCreator) map.DRAFT = [review, cancel];
 
-    // PENDING_REVIEW: reviewer sends to approval queue
+    // PENDING_REVIEW: reviewer outranks creator and is not the creator
     if (canReview) map.PENDING_REVIEW = [toApproval, reject, cancel];
 
     // PENDING_APPROVAL: approver approves/rejects
@@ -319,8 +329,10 @@ function getAvailableActions(
       map.ISSUED   = [dispatch];
     }
 
-    // IN_TRANSIT: destination manager receives
-    if (isDstManager) {
+    // IN_TRANSIT/RECEIVED: strictly destination-side.
+    // pullDst excludes isTenantMgr so NM (source) never gets receive/complete.
+    const pullDst = isDstWH || isCreator;
+    if (pullDst) {
       map.IN_TRANSIT         = [markRecv];
       map.PARTIALLY_RECEIVED = [markRecv];
       map.RECEIVED           = [complete];
@@ -725,8 +737,11 @@ export default function TransfersPage() {
         freshStatus = fresh.status;
         console.log("[doTransition] pre-fetch", { id, next, freshStatus: fresh.status, cachedStatus: transfer?.status });
 
-        // Case-insensitive comparison — DB may return different casing than the cached value
-        if (fresh.status.toUpperCase() !== (transfer?.status ?? "").toUpperCase()) {
+        // Case-insensitive comparison — DB may return different casing than cached value.
+        // Guard: only abort if we HAVE a cached status to compare against.
+        // If transfer is absent from the cache (background refetch cleared it), we
+        // cannot detect a stale-cache scenario — proceed to the PATCH in that case.
+        if (transfer?.status && fresh.status.toUpperCase() !== transfer.status.toUpperCase()) {
           // Status changed since the button was shown — abort and let user retry
           await qc.invalidateQueries({ queryKey: ["transfers", org] });
           setToast(`Status changed to ${freshStatus.replace(/_/g, " ")} — list refreshed. Please try again.`);
