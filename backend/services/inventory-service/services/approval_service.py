@@ -733,12 +733,14 @@ async def resolve_transfer_approvers(
             session, tenant_id, node_id, title,
         )
 
-        # ANY mode: collect all active holders; first to approve wins.
-        # assigned_to_user_id stays None — _check_can_approve validates from all_holders.
+        # ANY mode: collect ALL active holders; first to approve wins.
+        # Do NOT filter the creator here — the APPROVED block's self-approval guard
+        # (CANNOT_APPROVE_OWN_TRANSFER) already prevents the creator from approving.
+        # Filtering the creator here would erroneously raise NO_APPROVER_FOUND when the
+        # creator is the only holder of the position (e.g. GM at HQ creates a PUSH and
+        # GM is the only "General Manager").  The guard and all_holders work independently.
         if exec_mode.lower() == "any" and pos_id:
             all_holders = await _find_all_holders_for_position(session, tenant_id, pos_id)
-            # Filter out the creator to prevent self-approval
-            all_holders = [h for h in all_holders if str(h["user_id"]) != str(created_by or "")]
             is_vacant = len(all_holders) == 0
             if is_vacant:
                 from fastapi import HTTPException as _HTTPException
@@ -747,8 +749,8 @@ async def resolve_transfer_approvers(
                     detail={
                         "code":    "NO_APPROVER_FOUND",
                         "message": (
-                            f"No active holder for '{title or 'Approver'}' and no "
-                            "eligible approver available for ANY-mode step."
+                            f"No active holder for '{title or 'Approver'}'. "
+                            "Assign at least one person to this position before approving."
                         ),
                     },
                 )

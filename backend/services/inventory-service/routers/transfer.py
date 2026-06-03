@@ -199,31 +199,50 @@ async def get_approval_info(
         cur_idx = max(0, (transfer_row.current_approval_step or 1) - 1)
         cur_step = steps[cur_idx] if cur_idx < len(steps) else (steps[-1] if steps else {})
 
-        caller_uid   = str(user.user_id)
-        assignee_uid = cur_step.get("assigned_to_user_id")
-        exec_mode    = (cur_step.get("execution_mode") or "sequential").lower()
-        all_holders  = cur_step.get("all_holders") or []
-        holder_count = cur_step.get("holder_count") or (len(all_holders) if all_holders else (1 if assignee_uid else 0))
-        position_title = cur_step.get("position_title", "Approver")
+        caller_uid      = str(user.user_id)
+        assignee_uid    = cur_step.get("assigned_to_user_id")
+        exec_mode       = (cur_step.get("execution_mode") or "sequential").lower()
+        all_holders     = cur_step.get("all_holders") or []
+        holder_count    = cur_step.get("holder_count") or (len(all_holders) if all_holders else (1 if assignee_uid else 0))
+        position_title  = cur_step.get("position_title", "Approver")
+        is_own_transfer = (
+            transfer_row.created_by is not None
+            and str(transfer_row.created_by) == caller_uid
+        )
 
-        # Compute can_approve for dynamic routing
+        # Compute can_approve for dynamic routing.
+        # For ANY mode: caller must be one of the listed holders AND not the creator.
+        # Creator self-approval is already blocked by CANNOT_APPROVE_OWN_TRANSFER in the
+        # APPROVED transition, but we also reflect it here so the UI shows correctly.
         if exec_mode == "any":
             holder_uids     = {str(h.get("user_id", "")) for h in all_holders}
-            can_approve_dyn = bool(holder_uids and caller_uid in holder_uids)
+            can_approve_dyn = bool(holder_uids and caller_uid in holder_uids and not is_own_transfer)
         else:
-            can_approve_dyn = bool(assignee_uid and caller_uid == assignee_uid)
+            can_approve_dyn = bool(assignee_uid and caller_uid == assignee_uid and not is_own_transfer)
 
-        # Compute human-readable status_label
+        # Compute human-readable status_label.
+        # For ANY mode, exclude the TRANSFER CREATOR from the "available approvers" count
+        # shown in the label so the label reflects who can actually act (not the creator).
+        transfer_creator_uid = str(transfer_row.created_by) if transfer_row.created_by else ""
+        non_creator_holders = [
+            h for h in all_holders
+            if str(h.get("user_id", "")) != transfer_creator_uid
+        ]
+        display_count = len(non_creator_holders) if exec_mode == "any" else holder_count
+
         is_vacant = cur_step.get("is_vacant", False)
         escalated  = cur_step.get("escalated", False)
         if is_vacant or escalated:
             esc_name = cur_step.get("assigned_to_name") or "an escalated approver"
             status_label: str | None = f"Position vacant — escalating to {esc_name}"
-        elif exec_mode == "any" and holder_count > 1:
-            status_label = f"Any {position_title} can approve ({holder_count} approvers available)"
-        elif exec_mode == "any" and holder_count == 1:
-            name = all_holders[0]["name"] if all_holders else (assignee_uid or position_title)
-            status_label = f"Awaiting {name} approval"
+        elif exec_mode == "any" and display_count > 1:
+            status_label = f"Any {position_title} can approve ({display_count} approvers available)"
+        elif exec_mode == "any" and display_count == 1:
+            approver_name = non_creator_holders[0]["name"] if non_creator_holders else (assignee_uid or position_title)
+            status_label = f"Awaiting {approver_name} approval"
+        elif exec_mode == "any" and display_count == 0 and all_holders:
+            # Only the creator holds the position — they can't self-approve
+            status_label = f"Only you hold '{position_title}' — cannot self-approve"
         elif cur_step.get("assigned_to_name"):
             status_label = f"Awaiting {cur_step['assigned_to_name']} approval"
         else:
