@@ -2151,3 +2151,200 @@ class TestApprovalGateAndAnyMode:
         # Vacant position
         label = compute_label("sequential", 0, "Regional Manager", "RM-fallback", True, True, [])
         assert label == "Position vacant — escalating to RM-fallback"
+
+
+# ── FIX 1/2: ancestor traversal and empty-holders gate ──────────────────────
+
+@pytest.mark.asyncio
+@pytest.mark.unit
+class TestAncestorTraversal:
+    """Regression tests for _find_ancestor_with_position traversal (FIX 1)
+    and the empty-holders 422 gate in _check_can_approve (FIX 2)."""
+
+    async def test_ancestor_traversal_finds_two_levels_up(self) -> None:
+        """_find_ancestor_with_position returns a node 2+ hops above the start.
+
+        Scenario: DESTINATION_PARENT_NODE from Sub-WH-A looking for
+        'Zone Manager'. The chain is Sub-WH-A → WH-A → Region A → Zone A.
+        'Zone Manager' exists only at Zone A (3 hops up).
+        """
+        from services.approval_service import _find_ancestor_with_position
+
+        SUBWH = "node-sub-wh"; WHA = "node-wh-a"; REGA = "node-reg-a"; ZONA = "node-zone-a"
+        TENANT = "tenant-001"; TITLE = "Zone Manager"
+
+        # Counts: Zone Manager found only at Zone A
+        counts_by_nid = {SUBWH: 0, WHA: 0, REGA: 0, ZONA: 1}
+        # Parents chain: Sub-WH-A → WH-A → Region A → Zone A → None
+        parents = {SUBWH: WHA, WHA: REGA, REGA: ZONA, ZONA: None}
+        # Node names
+        names = {SUBWH: "Sub-WH-A", WHA: "WH-A", REGA: "Region A", ZONA: "Zone A"}
+
+        execute_calls: list[str] = []
+
+        async def fake_execute(sql, params=None, **kw):
+            nid = (params or {}).get("nid")
+            execute_calls.append(nid)
+            result = MagicMock()
+            sql_str = str(sql)
+            if "COUNT" in sql_str:
+                # position-count query
+                result.scalar = MagicMock(return_value=counts_by_nid.get(nid, 0))
+                result.fetchone = MagicMock(return_value=None)
+            elif "org_node_hierarchy" in sql_str:
+                # _get_parent_node — returns the parent
+                parent_id = parents.get(nid)
+                if parent_id:
+                    row = MagicMock()
+                    row.id = parent_id; row.name = names[parent_id]; row.hierarchy_level = 0
+                    result.fetchone = MagicMock(return_value=row)
+                else:
+                    result.fetchone = MagicMock(return_value=None)
+                result.scalar = MagicMock(return_value=None)
+            else:
+                # _get_node — returns the node itself
+                row = MagicMock()
+                row.id = nid; row.name = names.get(nid, nid); row.hierarchy_level = 0
+                result.fetchone = MagicMock(return_value=row)
+                result.scalar = MagicMock(return_value=None)
+            return result
+
+        session = AsyncMock()
+        session.execute = AsyncMock(side_effect=fake_execute)
+
+        node = await _find_ancestor_with_position(session, TENANT, SUBWH, TITLE)
+
+        # Must have traversed all the way to Zone A
+        assert node is not None, "Should find Zone A after traversal"
+        assert node["id"] == ZONA, f"Expected Zone A, got {node}"
+        # Must have checked Sub-WH-A, WH-A, Region A before finding Zone A
+        count_checks = [c for c in execute_calls if c in (SUBWH, WHA, REGA, ZONA)]
+        assert SUBWH in count_checks and WHA in count_checks and REGA in count_checks, (
+            f"Must check all intermediate nodes. Checked: {count_checks}"
+        )
+
+    async def test_ancestor_traversal_cycle_guard(self) -> None:
+        """_find_ancestor_with_position terminates on a circular hierarchy.
+
+        Scenario: node A's parent is B and B's parent is A (cycle).
+        The function must not loop forever.
+        """
+        from services.approval_service import _find_ancestor_with_position
+
+        NODE_A = "node-a"; NODE_B = "node-b"; TENANT = "tenant-001"
+
+        async def fake_execute(sql, params=None, **kw):
+            nid = (params or {}).get("nid")
+            result = MagicMock()
+            if "COUNT" in str(sql):
+                result.scalar = MagicMock(return_value=0)  # never found
+                result.fetchone = MagicMock(return_value=None)
+            else:
+                # A's parent is B, B's parent is A (cycle)
+                other = NODE_B if nid == NODE_A else NODE_A
+                row = MagicMock(); row.id = other; row.name = other; row.hierarchy_level = 0
+                result.fetchone = MagicMock(return_value=row)
+                result.scalar = MagicMock(return_value=None)
+            return result
+
+        session = AsyncMock()
+        session.execute = AsyncMock(side_effect=fake_execute)
+
+        # Must return None (not found) without hanging
+        result = await _find_ancestor_with_position(session, TENANT, NODE_A, "Any Position")
+        assert result is None, "Cycle guard must terminate and return None"
+
+    async def test_source_parent_finds_zone_from_subwh(self) -> None:
+        """SOURCE_PARENT_NODE for 'Zone Manager' starting from Sub-WH-A
+        must traverse up and find Zone A — not stop at WH-A.
+
+        This is the exact failure from Test 2 (PUSH) and Test 3 (SISTER)
+        of the complex scenario test.
+        """
+        from services.approval_service import _resolve_node_for_step
+
+        SUBWH = "node-sub-wh"; ZONA = "node-zone-a"; TENANT = "tenant-001"
+        CHAIN = {"node-sub-wh": "node-wh-a", "node-wh-a": "node-reg-a",
+                 "node-reg-a": ZONA, ZONA: None}
+        # Zone Manager only at Zone A
+        HAS_POS = {ZONA}
+
+        async def fake_execute(sql, params=None, **kw):
+            nid = (params or {}).get("nid")
+            result = MagicMock()
+            sql_str = str(sql)
+            if "COUNT" in sql_str:
+                result.scalar = MagicMock(return_value=(1 if nid in HAS_POS else 0))
+                result.fetchone = MagicMock(return_value=None)
+            elif "org_node_hierarchy" in sql_str:
+                # _get_parent_node
+                parent_id = CHAIN.get(nid)
+                if parent_id:
+                    row = MagicMock(); row.id = parent_id; row.name = parent_id; row.hierarchy_level = 0
+                    result.fetchone = MagicMock(return_value=row)
+                else:
+                    result.fetchone = MagicMock(return_value=None)
+                result.scalar = MagicMock(return_value=None)
+            else:
+                # _get_node — return the node itself
+                row = MagicMock(); row.id = nid; row.name = nid; row.hierarchy_level = 0
+                result.fetchone = MagicMock(return_value=row)
+                result.scalar = MagicMock(return_value=None)
+            return result
+
+        session = AsyncMock()
+        session.execute = AsyncMock(side_effect=fake_execute)
+
+        # SOURCE_PARENT_NODE from Sub-WH-A — must find Zone A
+        node = await _resolve_node_for_step(
+            session, TENANT, "source_parent_node", SUBWH, "ignored-dst", "Zone Manager"
+        )
+        assert node is not None and node["id"] == ZONA, (
+            "SOURCE_PARENT_NODE must traverse until Zone A (3 hops) is found"
+        )
+
+        # DESTINATION_PARENT_NODE from Sub-WH-A — must also find Zone A
+        node2 = await _resolve_node_for_step(
+            session, TENANT, "destination_parent_node", "ignored-src", SUBWH, "Zone Manager"
+        )
+        assert node2 is not None and node2["id"] == ZONA, (
+            "DESTINATION_PARENT_NODE must traverse until Zone A (3 hops) is found"
+        )
+
+    async def test_empty_holders_raises_422(self) -> None:
+        """_check_can_approve raises HTTP 422 when dynamic routing is active
+        but all_holders is empty (position exists in rule but no holder stored).
+
+        This prevents the silent 'anyone can approve' behaviour that was
+        observed in Tests 2/3 of the complex scenario.
+        """
+        from services.inventory_service import _check_can_approve
+        from services.approval_service import ApprovalDecision
+        from fastapi import HTTPException
+
+        row = MagicMock()
+        row.resolved_approval_steps = [
+            {
+                "sequence": 1,
+                "position_title": "Zone Manager",
+                "execution_mode": "any",
+                "assigned_to_user_id": None,
+                "all_holders": [],          # ← empty: position not found in hierarchy
+                "holder_count": 0,
+            }
+        ]
+        row.current_approval_step = 1
+
+        user = _User("any-user", TENANT_ID, WAREHOUSE_A, None, "RM")
+        decision = ApprovalDecision(
+            required_role="RM", is_auto_approved=False,
+            next_status="PENDING_APPROVAL", required_authority_level=2,
+        )
+
+        with pytest.raises(HTTPException) as exc:
+            await _check_can_approve(row, user, 2, decision)
+
+        assert exc.value.status_code == 422
+        assert exc.value.detail["code"] == "NO_APPROVER_FOUND", (
+            "Empty all_holders must raise 422 NO_APPROVER_FOUND, not silently allow anyone"
+        )

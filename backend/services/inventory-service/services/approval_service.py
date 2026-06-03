@@ -423,6 +423,53 @@ async def _get_parent_node(
     return dict(id=str(row.id), name=row.name, level=row.hierarchy_level) if row else None
 
 
+# ── Helper: walk the PRIMARY_REPORTS_TO chain to find a node with a position ──
+
+async def _find_ancestor_with_position(
+    session:        AsyncSession,
+    tenant_id:      str,
+    start_node_id:  str,
+    position_title: Optional[str],
+) -> Optional[dict[str, Any]]:
+    """Traverse up the PRIMARY_REPORTS_TO hierarchy from start_node_id until a
+    node with an active position matching position_title is found.
+
+    Starts at start_node_id itself (checks it before climbing to its parent).
+    Returns the first matching node, or None if the chain is exhausted.
+
+    Cycle guard (visited set) prevents infinite loops on accidentally circular
+    org hierarchies.  Depth is also capped at 15 levels.
+    """
+    current_id = start_node_id
+    visited: set[str] = set()
+
+    for _ in range(15):
+        if not current_id or current_id in visited:
+            break
+        visited.add(current_id)
+
+        # Check whether this node has an active position with the required title.
+        # Two separate SQL branches avoid asyncpg AmbiguousParameterError that
+        # occurs when the same placeholder appears in both IS NULL and = checks.
+        if position_title:
+            sql    = text("SELECT COUNT(*) FROM positions WHERE node_id = :nid AND tenant_id = :tid AND is_active = true AND title = :title")
+            params = {"nid": current_id, "tid": tenant_id, "title": position_title}
+        else:
+            sql    = text("SELECT COUNT(*) FROM positions WHERE node_id = :nid AND tenant_id = :tid AND is_active = true")
+            params = {"nid": current_id, "tid": tenant_id}
+        count = (await session.execute(sql, params)).scalar()
+        if count and int(count) > 0:
+            return await _get_node(session, tenant_id, current_id)
+
+        # Climb one level toward the root.
+        parent = await _get_parent_node(session, tenant_id, current_id)
+        if not parent:
+            break
+        current_id = parent["id"]
+
+    return None
+
+
 # ── Helper: resolve which node to search for a step's position ───────────────
 
 async def _resolve_node_for_step(
@@ -433,38 +480,43 @@ async def _resolve_node_for_step(
     dst_node_id:   str,
     position_title: Optional[str] = None,
 ) -> Optional[dict[str, Any]]:
-    """Map a step resolution string to a specific org node."""
+    """Map a step resolution string to a specific org node.
+
+    SOURCE / DESTINATION
+        Direct node — no traversal.
+
+    SOURCE_PARENT_NODE / DESTINATION_PARENT_NODE
+        Walk up the PRIMARY_REPORTS_TO chain from the source or destination node
+        until a node with an active position matching position_title is found.
+        This replaces the original single-hop _get_parent_node() call, which
+        failed whenever the named position was more than one level above the
+        start node (e.g. "Zone Manager" 3 levels above Sub-WH-A).
+
+    NEAREST_ANCESTOR_WITH_POSITION
+        Same traversal as SOURCE_PARENT_NODE (from source). Kept as a distinct
+        label for backward compatibility with stored approval_steps.
+
+    TENANT_WIDE
+        No specific node — caller searches across the whole tenant.
+    """
     res = resolution.upper()
     if res == "SOURCE":
         return await _get_node(session, tenant_id, src_node_id)
     if res == "DESTINATION":
         return await _get_node(session, tenant_id, dst_node_id)
     if res == "SOURCE_PARENT_NODE":
-        return await _get_parent_node(session, tenant_id, src_node_id)
+        return await _find_ancestor_with_position(
+            session, tenant_id, src_node_id, position_title
+        )
     if res == "DESTINATION_PARENT_NODE":
-        return await _get_parent_node(session, tenant_id, dst_node_id)
+        return await _find_ancestor_with_position(
+            session, tenant_id, dst_node_id, position_title
+        )
     if res == "NEAREST_ANCESTOR_WITH_POSITION":
-        # Traverse up from source until we find a node that has the requested position.
-        # NOTE: avoid "(:title IS NULL OR title = :title)" — asyncpg raises
-        # AmbiguousParameterError because it cannot infer the bind-parameter type
-        # when the same placeholder appears in both IS NULL and an equality check.
-        # Use separate SQL branches instead.
-        cur = src_node_id
-        for _ in range(10):
-            if position_title:
-                sql    = text("SELECT COUNT(*) FROM positions WHERE node_id = :nid AND tenant_id = :tid AND is_active = true AND title = :title")
-                params = {"nid": cur, "tid": tenant_id, "title": position_title}
-            else:
-                sql    = text("SELECT COUNT(*) FROM positions WHERE node_id = :nid AND tenant_id = :tid AND is_active = true")
-                params = {"nid": cur, "tid": tenant_id}
-            row = (await session.execute(sql, params)).scalar()
-            if row and int(row) > 0:
-                return await _get_node(session, tenant_id, cur)
-            parent = await _get_parent_node(session, tenant_id, cur)
-            if not parent:
-                break
-            cur = parent["id"]
-        return None
+        # Identical to SOURCE_PARENT_NODE — preserved for stored rule compatibility.
+        return await _find_ancestor_with_position(
+            session, tenant_id, src_node_id, position_title
+        )
     # TENANT_WIDE — no specific node, caller handles
     return None
 

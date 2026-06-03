@@ -1784,6 +1784,24 @@ function ApprovalRulesV2Tab({ tenantId }: { tenantId: string }) {
       {/* Rules for active type */}
       {activeType && (
         <div className="space-y-3">
+          {/* Orientation hint — clarifies which side is "source" to prevent
+              the common misconfiguration of inverted source/destination levels */}
+          {(() => {
+            const meta = activeTypes.find((tt) => tt.id === activeType);
+            const ut   = meta?.underlying_type?.toUpperCase() ?? "";
+            const hint = ut === "PULL"
+              ? t("approval_rule.pull_orientation_hint")
+              : ut === "PUSH"
+              ? t("approval_rule.push_orientation_hint")
+              : t("approval_rule.sister_orientation_hint");
+            return (
+              <div className="flex items-start gap-2 px-3 py-2.5 rounded-lg bg-blue-50 border border-blue-100 text-[11px] text-blue-700 leading-snug">
+                <span className="shrink-0 font-bold mt-0.5">ℹ</span>
+                <span>{hint}</span>
+              </div>
+            );
+          })()}
+
           {currentRules.map((rule, rIdx) => (
             <div key={rule.id} className="border border-gray-200 rounded-xl p-4 bg-white space-y-3">
               <div className="flex items-center justify-between">

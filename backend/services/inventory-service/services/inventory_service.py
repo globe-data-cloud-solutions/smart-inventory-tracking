@@ -77,9 +77,31 @@ async def _check_can_approve(
             all_holders  = cur_step.get("all_holders") or []
 
             if exec_mode == "any":
-                # ANY mode: first eligible holder to approve wins
+                # ANY mode: first eligible holder to approve wins.
                 holder_uids = {str(h.get("user_id", "")) for h in all_holders}
-                if holder_uids and caller_uid not in holder_uids:
+
+                if not holder_uids:
+                    # Dynamic routing is configured but no holder was stored.
+                    # This means resolve_transfer_approvers() found no active
+                    # person for the position (misconfigured rule, vacant position,
+                    # or position not found in the hierarchy).
+                    # Raise 422 rather than silently allowing anyone — a stuck
+                    # transfer is safer than an incorrectly approved one.
+                    raise HTTPException(
+                        status_code=422,
+                        detail={
+                            "code":           "NO_APPROVER_FOUND",
+                            "message":        (
+                                f"No active holder found for "
+                                f"'{cur_step.get('position_title', 'the designated approver')}' "
+                                "in the approval chain. Contact your Tenant Admin to assign "
+                                "someone to this position or update the approval rules."
+                            ),
+                            "position_title": cur_step.get("position_title"),
+                        },
+                    )
+
+                if caller_uid not in holder_uids:
                     raise HTTPException(
                         status_code=403,
                         detail={
