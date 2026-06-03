@@ -199,26 +199,55 @@ async def get_approval_info(
         cur_idx = max(0, (transfer_row.current_approval_step or 1) - 1)
         cur_step = steps[cur_idx] if cur_idx < len(steps) else (steps[-1] if steps else {})
 
-        caller_uid = str(user.user_id)
+        caller_uid   = str(user.user_id)
         assignee_uid = cur_step.get("assigned_to_user_id")
-        can_approve_dyn = bool(assignee_uid and caller_uid == assignee_uid)
+        exec_mode    = (cur_step.get("execution_mode") or "sequential").lower()
+        all_holders  = cur_step.get("all_holders") or []
+        holder_count = cur_step.get("holder_count") or (len(all_holders) if all_holders else (1 if assignee_uid else 0))
+        position_title = cur_step.get("position_title", "Approver")
+
+        # Compute can_approve for dynamic routing
+        if exec_mode == "any":
+            holder_uids     = {str(h.get("user_id", "")) for h in all_holders}
+            can_approve_dyn = bool(holder_uids and caller_uid in holder_uids)
+        else:
+            can_approve_dyn = bool(assignee_uid and caller_uid == assignee_uid)
+
+        # Compute human-readable status_label
+        is_vacant = cur_step.get("is_vacant", False)
+        escalated  = cur_step.get("escalated", False)
+        if is_vacant or escalated:
+            esc_name = cur_step.get("assigned_to_name") or "an escalated approver"
+            status_label: str | None = f"Position vacant — escalating to {esc_name}"
+        elif exec_mode == "any" and holder_count > 1:
+            status_label = f"Any {position_title} can approve ({holder_count} approvers available)"
+        elif exec_mode == "any" and holder_count == 1:
+            name = all_holders[0]["name"] if all_holders else (assignee_uid or position_title)
+            status_label = f"Awaiting {name} approval"
+        elif cur_step.get("assigned_to_name"):
+            status_label = f"Awaiting {cur_step['assigned_to_name']} approval"
+        else:
+            status_label = f"Awaiting {position_title} approval"
 
         return SuccessResponse(data=ApprovalInfoResponse(
             transfer_id=transfer_id,
             required_authority_level=1,
-            required_role_display=cur_step.get("position_title", "Approver"),
+            required_role_display=position_title,
             is_auto_approve=False,
             can_approve=can_approve_dyn,
             reason=f"Step {cur_step.get('sequence', 1)} of {len(steps)}: "
-                   f"{cur_step.get('position_title', 'Approver')} approval required.",
+                   f"{position_title} approval required.",
             current_step=cur_step.get("sequence", 1),
             total_steps=len(steps),
             current_approver_user_id=assignee_uid,
             current_approver_name=cur_step.get("assigned_to_name"),
-            current_approver_position_title=cur_step.get("position_title"),
-            execution_mode=cur_step.get("execution_mode", "sequential"),
+            current_approver_position_title=position_title,
+            execution_mode=exec_mode,
             sla_hours=cur_step.get("sla_hours"),
             is_dynamic_routing=True,
+            holder_count=holder_count,
+            all_holders=all_holders,
+            status_label=status_label,
         ))
 
     # ── Legacy path: role-level routing (old approval_rule / authority_level) ─

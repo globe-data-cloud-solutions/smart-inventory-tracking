@@ -502,5 +502,47 @@ Products can have `unit_price NUMERIC(15,4)` (Migration 034). `create_transfer()
 
 ---
 
+---
+
+## §B8 — Approval Routing Reference
+
+### Cross-Factory Transfer Rules
+
+For transfers between nodes under different root nodes (e.g. two factories in a multi-factory tenant), the TA configures explicit multi-step approval rules in Org Setup → Tab 5.  Example two-factory rule:
+
+```
+Step 1 — Source Factory GM   (resolution: source_parent_node,  execution_mode: any)
+Step 2 — Destination Factory GM  (resolution: destination_parent_node, execution_mode: any)
+```
+
+The system does **not** auto-detect cross-factory topology.  The tenant defines the rule explicitly.  Both steps must be completed in sequence (`execution_mode: SEQUENTIAL` on the rule, `any` within each step so any GM-level holder can satisfy it).
+
+### Multiple Approvers — ANY Mode
+
+When a position has more than one active PRIMARY holder and the step's `execution_mode` is `"any"`:
+- **First holder to approve wins** — the transfer advances immediately.
+- All other holders see the updated transfer status on their next refresh.
+- The audit log records which specific holder approved.
+- `approval-info` returns `holder_count > 1` and `all_holders` list so the UI can show "Any Regional Manager can approve (2 approvers available)".
+
+When `execution_mode` is `"sequential"` (or `"SEQUENTIAL"`):
+- A single holder is resolved at rule evaluation time and stored as `assigned_to_user_id`.
+- Only that specific holder can approve.  If they leave or are deactivated, escalation runs up the `reports_to` chain.
+
+### Approval Tier Thresholds
+
+All quantity and value thresholds are **tenant-defined** in Org Setup → Tab 5.  Nothing is hardcoded in application code.  The system reads `transfer_approval_rules` at runtime.  Tenants configure as many tiers as needed with any quantity/value bounds.
+
+### Approval Gate Priority
+
+The APPROVED transition applies the following gate in order:
+1. **Self-approval guard** — creator cannot approve their own transfer.
+2. **Dynamic routing gate** — if `resolved_approval_steps` is set:
+   - `execution_mode = "any"`: caller must be in the step's `all_holders` list.
+   - Otherwise: caller must match `assigned_to_user_id`.
+3. **Simple-mode authority gate** (fallback) — used when no dynamic steps were resolved.  Requires `caller_level ≤ required_authority_level` from `resolve_approval()`.
+
+---
+
 *PRD Appendix v1.0 — SMART Inventory Platform*  
-*Created: 2026-05-26 · Updated: 2026-05-31 (Sessions 1-8 dynamic org model)*
+*Created: 2026-05-26 · Updated: 2026-06-03 (§B8 approval routing, ANY mode, cross-factory)*

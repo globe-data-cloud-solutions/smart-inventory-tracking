@@ -471,6 +471,9 @@ interface ApprovalInfoResponse {
   execution_mode?: string;
   sla_hours?: number | null;
   is_dynamic_routing?: boolean;
+  holder_count?: number;
+  all_holders?: { user_id: string; name: string }[];
+  status_label?: string | null;
 }
 
 /**
@@ -1087,6 +1090,11 @@ export default function TransfersPage() {
                       <span className={`text-[11px] font-bold px-2 py-0.5 rounded whitespace-nowrap ${sCls}`}>
                         {txn.status.replace(/_/g, " ")}
                       </span>
+                      {txn.status === "PENDING_APPROVAL" && cachedApprInfo?.status_label && (
+                        <p className="text-[10px] text-gray-400 mt-0.5 leading-tight max-w-[140px]">
+                          {cachedApprInfo.status_label}
+                        </p>
+                      )}
                     </td>
                     <td className="px-3 py-2.5 text-gray-400 text-xs whitespace-nowrap">
                       {new Date(txn.created_at).toLocaleDateString()}

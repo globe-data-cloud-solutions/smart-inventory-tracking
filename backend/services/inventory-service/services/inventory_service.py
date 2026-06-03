@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import uuid
 from decimal import Decimal
-from typing import Any
+from typing import Any, Optional
 from uuid import UUID
 
 import json as _json
@@ -39,6 +39,88 @@ from shared.permissions.audit import audit_log
 
 # Reason codes that always deduct stock — service forces negative quantity regardless of input sign
 _FORCE_NEGATIVE_REASONS: frozenset[str] = frozenset({"DAMAGE", "EXPIRY", "SUPPLIER_RETURN"})
+
+
+async def _check_can_approve(
+    row:          Any,
+    user:         Any,
+    caller_level: int,
+    decision:     Any,  # resolve_approval() result — used for simple-mode fallback gate
+) -> None:
+    """Raise HTTP 403 if the user cannot approve this transfer.
+
+    Priority order:
+      1. Dynamic routing (resolved_approval_steps on the transfer):
+         - ANY mode  : caller must be one of the listed all_holders
+         - Sequential: caller must match assigned_to_user_id exactly
+      2. No dynamic steps: fall back to simple-mode authority gate using the
+         pre-computed decision (caller passes it to avoid a double DB round-trip).
+
+    Self-approval is blocked by the caller before this function runs.
+    """
+    import json as _json
+    from fastapi import HTTPException
+
+    caller_uid = str(user.user_id)
+
+    resolved_steps = getattr(row, "resolved_approval_steps", None)
+    if resolved_steps:
+        if isinstance(resolved_steps, str):
+            resolved_steps = _json.loads(resolved_steps)
+        steps: list = resolved_steps if isinstance(resolved_steps, list) else []
+        if steps:
+            cur_idx  = max(0, (getattr(row, "current_approval_step", 1) or 1) - 1)
+            cur_step = steps[cur_idx] if cur_idx < len(steps) else steps[-1]
+
+            exec_mode    = (cur_step.get("execution_mode") or "sequential").lower()
+            assigned_uid = cur_step.get("assigned_to_user_id")
+            all_holders  = cur_step.get("all_holders") or []
+
+            if exec_mode == "any":
+                # ANY mode: first eligible holder to approve wins
+                holder_uids = {str(h.get("user_id", "")) for h in all_holders}
+                if holder_uids and caller_uid not in holder_uids:
+                    raise HTTPException(
+                        status_code=403,
+                        detail={
+                            "code":     "NOT_ASSIGNED_APPROVER",
+                            "message":  (
+                                f"Only an active '{cur_step.get('position_title', 'designated')}' "
+                                "can approve this step."
+                            ),
+                            "position": cur_step.get("position_title"),
+                        },
+                    )
+                return  # caller is a valid ANY-mode approver
+
+            # Sequential / specific assignment
+            if assigned_uid and caller_uid != str(assigned_uid):
+                raise HTTPException(
+                    status_code=403,
+                    detail={
+                        "code":        "NOT_ASSIGNED_APPROVER",
+                        "message":     (
+                            f"This transfer is assigned to "
+                            f"{cur_step.get('assigned_to_name', 'another approver')}. "
+                            "You are not the assigned approver."
+                        ),
+                        "assigned_to": cur_step.get("assigned_to_name"),
+                        "position":    cur_step.get("position_title"),
+                    },
+                )
+            return  # caller matches assigned approver (or no specific assignee)
+
+    # No dynamic routing — simple-mode authority gate using pre-computed decision
+    if caller_level > decision.required_authority_level:
+        raise HTTPException(
+            status_code=403,
+            detail={
+                "code":          "INSUFFICIENT_APPROVAL_AUTHORITY",
+                "required":      decision.required_authority_level,
+                "required_role": decision.required_role_display,
+                "reason":        decision.reason,
+            },
+        )
 
 
 async def _get_simple_mode(session: AsyncSession, tenant_id: str) -> bool:
@@ -580,23 +662,16 @@ class InventoryService:
                     },
                 )
 
+            # Compute once for both the gate and auto-approve notification.
             simple_mode = await _get_simple_mode(self.db, str(user.tenant_id))
             decision = await resolve_approval(
                 self.db, str(user.tenant_id), transfer_type, total_qty,
                 requester_authority_level=creator_level,
                 simple_mode=simple_mode,
             )
-            if caller_level > decision.required_authority_level:
-                from fastapi import HTTPException
-                raise HTTPException(
-                    status_code=403,
-                    detail={
-                        "code":          "INSUFFICIENT_APPROVAL_AUTHORITY",
-                        "required":      decision.required_authority_level,
-                        "required_role": decision.required_role_display,
-                        "reason":        decision.reason,
-                    },
-                )
+
+            # Gate check: dynamic routing overrides simple-mode authority level.
+            await _check_can_approve(row, user, caller_level, decision)
 
             for line in lines:
                 await record_transaction(

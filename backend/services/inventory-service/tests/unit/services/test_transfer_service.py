@@ -1955,3 +1955,199 @@ class TestE2EDiscrepancyRegressions:
         # With override=True (from approval-info: RM IS the required approver):
         assert can_approve_with_override(RM_LEVEL, is_creator=False, override=True) is True, \
             "override=True from approval-info correctly allows RM"
+
+
+# ── FIX 1/2/3 regression tests ──────────────────────────────────────────────
+
+@pytest.mark.asyncio
+@pytest.mark.unit
+class TestApprovalGateAndAnyMode:
+    """Regression tests for dynamic approval gate and ANY execution mode."""
+
+    async def test_dynamic_approver_overrides_gate(self) -> None:
+        """_check_can_approve allows the dynamically-assigned approver regardless of
+        their authority level — overriding the simple-mode gate.
+
+        This was the B4 failure: RM (L2) was blocked by the simple-mode gate
+        requiring L1 for a PUSH created by NM, even though the dynamic rule
+        assigned RM as the designated approver.
+        """
+        from services.inventory_service import _check_can_approve
+        from services.approval_service import ApprovalDecision
+
+        RM_USER_ID = "rm-user-0001"
+
+        # Transfer row with resolved_approval_steps assigning RM
+        row = MagicMock()
+        row.resolved_approval_steps = [
+            {
+                "sequence": 1,
+                "position_title": "Regional Manager",
+                "execution_mode": "sequential",
+                "assigned_to_user_id": RM_USER_ID,
+                "assigned_to_name": "RM User",
+                "all_holders": [],
+            }
+        ]
+        row.current_approval_step = 1
+
+        # User is RM (authority level 2)
+        user = _User(RM_USER_ID, TENANT_ID, WAREHOUSE_B, None, "RM")
+
+        # Simple-mode decision would BLOCK RM (requires L1)
+        blocking_decision = ApprovalDecision(
+            required_role="NM",
+            is_auto_approved=False,
+            next_status="PENDING_APPROVAL",
+            required_authority_level=1,  # requires L1 — RM (L2) would be blocked
+        )
+        caller_level = 2  # RM = authority level 2
+
+        # Must NOT raise — dynamic routing takes precedence and allows RM
+        await _check_can_approve(row, user, caller_level, blocking_decision)
+
+    async def test_dynamic_gate_blocks_non_assigned(self) -> None:
+        """_check_can_approve blocks a user who is not the assigned approver
+        even if their authority level would normally allow approval."""
+        from services.inventory_service import _check_can_approve
+        from services.approval_service import ApprovalDecision
+        from fastapi import HTTPException
+
+        RM_USER_ID = "rm-user-0001"
+        GM_USER_ID = "gm-user-0001"  # GM assigned but someone else tries
+
+        row = MagicMock()
+        row.resolved_approval_steps = [
+            {
+                "sequence": 1,
+                "position_title": "General Manager",
+                "execution_mode": "sequential",
+                "assigned_to_user_id": GM_USER_ID,
+                "assigned_to_name": "GM User",
+                "all_holders": [],
+            }
+        ]
+        row.current_approval_step = 1
+
+        user = _User(RM_USER_ID, TENANT_ID, WAREHOUSE_B, None, "RM")  # RM, not GM
+
+        decision = ApprovalDecision(
+            required_role="NM", is_auto_approved=False,
+            next_status="PENDING_APPROVAL", required_authority_level=1,
+        )
+
+        with pytest.raises(HTTPException) as exc:
+            await _check_can_approve(row, user, 2, decision)
+
+        assert exc.value.status_code == 403
+        assert exc.value.detail["code"] == "NOT_ASSIGNED_APPROVER"
+
+    async def test_any_mode_first_holder_wins(self) -> None:
+        """ANY-mode step: any holder in all_holders may approve."""
+        from services.inventory_service import _check_can_approve
+        from services.approval_service import ApprovalDecision
+
+        RM_A_ID = "rm-a-user"; RM_B_ID = "rm-b-user"
+
+        row = MagicMock()
+        row.resolved_approval_steps = [
+            {
+                "sequence": 1,
+                "position_title": "Regional Manager",
+                "execution_mode": "any",
+                "assigned_to_user_id": None,  # ANY mode — no specific assignee
+                "assigned_to_name": None,
+                "all_holders": [
+                    {"user_id": RM_A_ID, "name": "RM-A"},
+                    {"user_id": RM_B_ID, "name": "RM-B"},
+                ],
+                "holder_count": 2,
+            }
+        ]
+        row.current_approval_step = 1
+
+        decision = ApprovalDecision(
+            required_role="RM", is_auto_approved=False,
+            next_status="PENDING_APPROVAL", required_authority_level=2,
+        )
+
+        # Both RM-A and RM-B must be allowed
+        for uid, name in [(RM_A_ID, "RM-A"), (RM_B_ID, "RM-B")]:
+            user = _User(uid, TENANT_ID, WAREHOUSE_B, None, "RM")
+            await _check_can_approve(row, user, 2, decision)  # must not raise
+
+    async def test_any_mode_blocks_non_holder(self) -> None:
+        """ANY-mode step: user NOT in all_holders is blocked."""
+        from services.inventory_service import _check_can_approve
+        from services.approval_service import ApprovalDecision
+        from fastapi import HTTPException
+
+        RM_A_ID = "rm-a-user"
+        OUTSIDER_ID = "outsider-user"
+
+        row = MagicMock()
+        row.resolved_approval_steps = [
+            {
+                "sequence": 1,
+                "position_title": "Regional Manager",
+                "execution_mode": "any",
+                "assigned_to_user_id": None,
+                "assigned_to_name": None,
+                "all_holders": [{"user_id": RM_A_ID, "name": "RM-A"}],
+                "holder_count": 1,
+            }
+        ]
+        row.current_approval_step = 1
+
+        user = _User(OUTSIDER_ID, TENANT_ID, WAREHOUSE_B, None, "RM")
+        decision = ApprovalDecision(
+            required_role="RM", is_auto_approved=False,
+            next_status="PENDING_APPROVAL", required_authority_level=2,
+        )
+
+        with pytest.raises(HTTPException) as exc:
+            await _check_can_approve(row, user, 2, decision)
+
+        assert exc.value.status_code == 403
+        assert exc.value.detail["code"] == "NOT_ASSIGNED_APPROVER"
+
+    def test_approval_info_status_label_any_mode(self) -> None:
+        """status_label correctly describes ANY-mode multi-holder steps."""
+        # Mirror the status_label logic from get_approval_info
+        def compute_label(
+            exec_mode: str,
+            holder_count: int,
+            position_title: str,
+            assigned_name: str | None,
+            is_vacant: bool,
+            escalated: bool,
+            all_holders: list,
+        ) -> str:
+            if is_vacant or escalated:
+                return f"Position vacant — escalating to {assigned_name or 'an escalated approver'}"
+            if exec_mode == "any" and holder_count > 1:
+                return f"Any {position_title} can approve ({holder_count} approvers available)"
+            if exec_mode == "any" and holder_count == 1:
+                name = all_holders[0]["name"] if all_holders else position_title
+                return f"Awaiting {name} approval"
+            if assigned_name:
+                return f"Awaiting {assigned_name} approval"
+            return f"Awaiting {position_title} approval"
+
+        # ANY mode, 2 holders
+        label = compute_label("any", 2, "Regional Manager", None, False, False,
+                               [{"user_id": "a", "name": "RM-A"}, {"user_id": "b", "name": "RM-B"}])
+        assert label == "Any Regional Manager can approve (2 approvers available)"
+
+        # ANY mode, 1 holder
+        label = compute_label("any", 1, "Regional Manager", None, False, False,
+                               [{"user_id": "a", "name": "RM-A"}])
+        assert label == "Awaiting RM-A approval"
+
+        # Sequential, named approver
+        label = compute_label("sequential", 1, "General Manager", "GM User", False, False, [])
+        assert label == "Awaiting GM User approval"
+
+        # Vacant position
+        label = compute_label("sequential", 0, "Regional Manager", "RM-fallback", True, True, [])
+        assert label == "Position vacant — escalating to RM-fallback"

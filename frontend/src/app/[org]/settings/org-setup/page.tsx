@@ -1646,8 +1646,8 @@ const LOCATION_OPTIONS = [
   { v: "TENANT_WIDE", l: "approval_rule.tenant_wide" },
 ];
 const MODE_OPTIONS = [
-  { v: "SEQUENTIAL", l: "approval_rule.sequential" },
-  { v: "PARALLEL",   l: "approval_rule.parallel" },
+  { v: "any",        l: "approval_rule.mode_any" },
+  { v: "SEQUENTIAL", l: "approval_rule.mode_all" },
 ];
 
 function ApprovalRulesV2Tab({ tenantId }: { tenantId: string }) {
@@ -1721,7 +1721,7 @@ function ApprovalRulesV2Tab({ tenantId }: { tenantId: string }) {
   function addStep(typeId: string, ruleIdx: number) {
     setTypeRules(typeId, (prev) => prev.map((r, i) => {
       if (i !== ruleIdx) return r;
-      return { ...r, steps: [...r.steps, { sequence: r.steps.length + 1, position_id: "", position_title: "", location: "TENANT_WIDE", mode: "SEQUENTIAL", sla_hours: 24 }] };
+      return { ...r, steps: [...r.steps, { sequence: r.steps.length + 1, position_id: "", position_title: "", location: "TENANT_WIDE", mode: "any", sla_hours: 24 }] };
     }));
   }
   function updateStep(typeId: string, ruleIdx: number, stepIdx: number, patch: Partial<ApprovalStepLocal>) {
@@ -1853,6 +1853,7 @@ function ApprovalRulesV2Tab({ tenantId }: { tenantId: string }) {
                         {LOCATION_OPTIONS.map((o) => <option key={o.v} value={o.v}>{t(o.l)}</option>)}
                       </select>
                       <select value={step.mode} onChange={(e) => updateStep(activeType, rIdx, sIdx, { mode: e.target.value })}
+                        title={t("approval_rule.mode_note")}
                         className="border border-gray-300 rounded px-2 py-1 text-xs bg-white">
                         {MODE_OPTIONS.map((o) => <option key={o.v} value={o.v}>{t(o.l)}</option>)}
                       </select>

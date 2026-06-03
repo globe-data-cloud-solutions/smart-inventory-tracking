@@ -183,7 +183,8 @@ class ApprovalInfoResponse(BaseModel):
     """Response for GET /transfers/{id}/approval-info.
 
     Session 6: when resolved_approval_steps are present (dynamic routing),
-    can_approve is true only when the caller IS the specifically-assigned approver.
+    can_approve is true only when the caller IS the specifically-assigned approver
+    (or one of the all_holders list for ANY-mode steps).
     Legacy fields (required_authority_level etc.) preserved for backward compat.
     """
     transfer_id:              uuid.UUID
@@ -193,11 +194,15 @@ class ApprovalInfoResponse(BaseModel):
     can_approve:              bool
     reason:                   str
     # Session 6 — specific assignee fields
-    current_step:                   int           = 1
-    total_steps:                    int           = 1
-    current_approver_user_id:       Optional[str] = None
-    current_approver_name:          Optional[str] = None
+    current_step:                    int           = 1
+    total_steps:                     int           = 1
+    current_approver_user_id:        Optional[str] = None
+    current_approver_name:           Optional[str] = None
     current_approver_position_title: Optional[str] = None
-    execution_mode:                 str           = "sequential"
-    sla_hours:                      Optional[int] = None
-    is_dynamic_routing:             bool          = False
+    execution_mode:                  str           = "sequential"
+    sla_hours:                       Optional[int] = None
+    is_dynamic_routing:              bool          = False
+    # ANY-mode and status-label fields
+    holder_count:                    int           = 1
+    all_holders:                     list[dict]    = []
+    status_label:                    Optional[str] = None

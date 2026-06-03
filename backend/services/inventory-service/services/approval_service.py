@@ -289,13 +289,16 @@ class ResolvedStep:
     position_title:        str
     position_id:           Optional[str]
     node_id:               Optional[str]
-    assigned_to_user_id:   Optional[str]
+    assigned_to_user_id:   Optional[str]   # None = ANY holder can approve
     assigned_to_name:      Optional[str]
     execution_mode:        str = "sequential"
     sla_hours:             Optional[int] = None
     is_vacant:             bool = False
     escalated:             bool = False
     status:                str = "pending"
+    # ANY mode: all active holders for this position step
+    all_holders:           list[dict[str, str]] = field(default_factory=list)
+    holder_count:          int = 0
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -310,6 +313,8 @@ class ResolvedStep:
             "is_vacant":           self.is_vacant,
             "escalated":           self.escalated,
             "status":              self.status,
+            "all_holders":         self.all_holders,
+            "holder_count":        self.holder_count,
         }
 
 
@@ -462,6 +467,33 @@ async def _resolve_node_for_step(
         return None
     # TENANT_WIDE — no specific node, caller handles
     return None
+
+
+# ── Helper: return ALL active PRIMARY holders for a position ─────────────────
+
+async def _find_all_holders_for_position(
+    session: AsyncSession,
+    tenant_id: str,
+    position_id: str,
+) -> list[dict[str, str]]:
+    """Return every active PRIMARY personnel_positions holder for a position.
+
+    Used by ANY-mode steps so any of the listed holders may approve.
+    """
+    rows = (await session.execute(
+        text("""
+            SELECT pp.user_id, u.full_name
+            FROM   personnel_positions pp
+            JOIN   users u ON u.id = pp.user_id AND u.is_active = true
+            WHERE  pp.position_id    = :pid
+            AND    pp.tenant_id      = :tid
+            AND    pp.assignment_type = 'PRIMARY'
+            AND    pp.is_active      = true
+            AND    (pp.valid_until IS NULL OR pp.valid_until >= CURRENT_DATE)
+        """),
+        {"pid": position_id, "tid": tenant_id},
+    )).fetchall()
+    return [{"user_id": str(r.user_id), "name": str(r.full_name)} for r in rows]
 
 
 # ── Helper: find a position at a node and its current holder ─────────────────
@@ -696,11 +728,47 @@ async def resolve_transfer_approvers(
         )
         node_id = node["id"] if node else None
 
-        # Find position and holder
+        # Find position and holder(s)
         pos_id, holder_uid, holder_name, actual_node_id = await _find_position_and_holder(
             session, tenant_id, node_id, title,
         )
 
+        # ANY mode: collect all active holders; first to approve wins.
+        # assigned_to_user_id stays None — _check_can_approve validates from all_holders.
+        if exec_mode.lower() == "any" and pos_id:
+            all_holders = await _find_all_holders_for_position(session, tenant_id, pos_id)
+            # Filter out the creator to prevent self-approval
+            all_holders = [h for h in all_holders if str(h["user_id"]) != str(created_by or "")]
+            is_vacant = len(all_holders) == 0
+            if is_vacant:
+                from fastapi import HTTPException as _HTTPException
+                raise _HTTPException(
+                    status_code=422,
+                    detail={
+                        "code":    "NO_APPROVER_FOUND",
+                        "message": (
+                            f"No active holder for '{title or 'Approver'}' and no "
+                            "eligible approver available for ANY-mode step."
+                        ),
+                    },
+                )
+            resolved_steps.append(ResolvedStep(
+                sequence=seq,
+                position_title=title or "Approver",
+                position_id=pos_id,
+                node_id=actual_node_id or node_id,
+                assigned_to_user_id=None,  # ANY: no single assignee
+                assigned_to_name=None,
+                execution_mode=exec_mode,
+                sla_hours=int(sla) if sla is not None else None,
+                is_vacant=False,
+                escalated=False,
+                all_holders=all_holders,
+                holder_count=len(all_holders),
+            ))
+            continue
+
+        # Sequential / specific-assignment mode
         is_vacant = pos_id is not None and holder_uid is None
         escalated = False
 
