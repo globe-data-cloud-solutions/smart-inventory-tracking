@@ -106,6 +106,7 @@ async def list_positions(
                    AND (pp.valid_until IS NULL OR pp.valid_until >= CURRENT_DATE)
             LEFT JOIN users u ON u.id = pp.user_id
             WHERE  p.tenant_id = :tid
+            AND    p.is_active = true
             ORDER  BY n.hierarchy_level, n.name, p.title
         """),
         {"tid": str(tenant_id)},

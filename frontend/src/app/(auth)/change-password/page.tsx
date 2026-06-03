@@ -15,7 +15,12 @@ function ChangePasswordForm() {
 
   // Read URL params and session client-side only (avoids SSR/hydration mismatch)
   const [userId,         setUserId]         = useState("");
+  // isPendingSetup: true only for role=PENDING_SETUP (non-TA user with no position).
+  // Controls post-change action: logout + "contact admin" vs redirect to login.
   const [isPendingSetup, setIsPendingSetup] = useState(false);
+  // isMustReset: true for any user with mustResetPassword=true (PENDING_SETUP + TA).
+  // Controls whether current_password is optional in the form and request body.
+  const [isMustReset,    setIsMustReset]    = useState(false);
   const [done,           setDone]           = useState(false);     // success + no-position state
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword,     setNewPassword]     = useState("");
@@ -28,9 +33,11 @@ function ChangePasswordForm() {
     const uid     = params.get("userId") ?? getSession()?.id ?? "";
     const session = getSession();
     setUserId(uid);
-    // PENDING_SETUP users have no assigned position yet; they don't know (or can't
-    // use) their current password because they couldn't fully log in before.
-    setIsPendingSetup(session?.role === "PENDING_SETUP" || (session?.mustResetPassword === true && !session?.positions?.length));
+    // PENDING_SETUP: non-TA user awaiting position assignment — needs admin action after reset.
+    // TA users (role="TA") are the tenant admin; they don't need a position and should
+    // be redirected to login (not shown "contact admin") after changing their password.
+    setIsPendingSetup(session?.role === "PENDING_SETUP");
+    setIsMustReset(session?.mustResetPassword === true);
   }, []);
 
   async function handleSubmit(e: React.FormEvent) {
@@ -55,8 +62,8 @@ function ChangePasswordForm() {
         },
         body: JSON.stringify({
           user_id:          userId,
-          // current_password omitted for PENDING_SETUP users — backend accepts null
-          ...(isPendingSetup
+          // current_password optional for any must_reset user (PENDING_SETUP + TA)
+          ...(isMustReset
             ? (currentPassword ? { current_password: currentPassword } : {})
             : { current_password: currentPassword }),
           new_password: newPassword,
@@ -133,10 +140,10 @@ function ChangePasswordForm() {
         </div>
 
         <form onSubmit={(e) => void handleSubmit(e)} className="p-8 space-y-5">
-          {/* Current password — hidden for PENDING_SETUP (optional for them) */}
+          {/* Current password optional for any must_reset user (PENDING_SETUP + TA) */}
           <div>
             <label className="block text-sm font-semibold text-gray-700 mb-1.5">
-              {isPendingSetup
+              {isMustReset
                 ? t("change_password.current_label_optional")
                 : "Current Password"}
             </label>
@@ -144,9 +151,9 @@ function ChangePasswordForm() {
               type="password"
               value={currentPassword}
               onChange={(e) => setCurrentPassword(e.target.value)}
-              required={!isPendingSetup}   // not required for PENDING_SETUP
+              required={!isMustReset}
               autoFocus
-              placeholder={isPendingSetup ? "Optional — leave blank if not known" : ""}
+              placeholder={isMustReset ? "Optional — leave blank if not known" : ""}
               className={inputClass}
             />
           </div>
