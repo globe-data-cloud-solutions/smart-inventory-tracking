@@ -736,6 +736,7 @@
     "from_level": "From Level",
     "to_level": "To Level",
     "threshold_type": "Threshold Type",
+    "quantity": "Quantity",
     "qty": "Quantity",
     "value": "Value",
     "either": "Either",

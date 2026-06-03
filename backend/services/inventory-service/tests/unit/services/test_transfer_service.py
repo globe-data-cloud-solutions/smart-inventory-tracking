@@ -1438,13 +1438,17 @@ class TestSession5TransferTypeConfig:
         config_row.id = UUID(CONFIG_UUID)
 
         def _make_create_session() -> AsyncMock:
+            oh_r = MagicMock(); oh_r.qty = Decimal("9999")
+            pd_r = MagicMock(); pd_r.pending = Decimal("0")
             session = AsyncMock()
             session.execute = AsyncMock(side_effect=[
-                MagicMock(fetchone=MagicMock(return_value=None)),   # factory check
+                MagicMock(fetchone=MagicMock(return_value=None)),        # factory check
                 MagicMock(fetchone=MagicMock(return_value=config_row)),  # config lookup
-                MagicMock(fetchone=MagicMock(return_value=None)),   # src node level
-                MagicMock(fetchone=MagicMock(return_value=None)),   # dst node level
-                MagicMock(fetchone=MagicMock(return_value=None)),   # unit_price
+                MagicMock(fetchone=MagicMock(return_value=None)),        # src node level
+                MagicMock(fetchone=MagicMock(return_value=None)),        # dst node level
+                MagicMock(fetchone=MagicMock(return_value=oh_r)),        # on_hand (stock check)
+                MagicMock(fetchone=MagicMock(return_value=pd_r)),        # pending_out (stock check)
+                MagicMock(fetchone=MagicMock(return_value=None)),        # unit_price
                 MagicMock(),  # INSERT transfer_orders
                 MagicMock(),  # INSERT lines
             ])
@@ -1518,13 +1522,17 @@ class TestSession5TransferTypeConfig:
         from decimal import Decimal
         from uuid import UUID
 
-        price_row = MagicMock(); price_row.unit_price = Decimal("100")
+        price_row  = MagicMock(); price_row.unit_price  = Decimal("100")
+        oh_row_tv  = MagicMock(); oh_row_tv.qty        = Decimal("9999")
+        pend_row_tv = MagicMock(); pend_row_tv.pending = Decimal("0")
 
         session = AsyncMock()
         session.execute = AsyncMock(side_effect=[
-            MagicMock(fetchone=MagicMock(return_value=None)),       # factory check
-            MagicMock(fetchone=MagicMock(return_value=None)),       # no config → config_id=None
-            MagicMock(fetchone=MagicMock(return_value=price_row)),  # unit_price=100
+            MagicMock(fetchone=MagicMock(return_value=None)),           # factory check
+            MagicMock(fetchone=MagicMock(return_value=None)),           # no config → config_id=None
+            MagicMock(fetchone=MagicMock(return_value=oh_row_tv)),      # on_hand (stock check)
+            MagicMock(fetchone=MagicMock(return_value=pend_row_tv)),    # pending_out (stock check)
+            MagicMock(fetchone=MagicMock(return_value=price_row)),      # unit_price=100
             MagicMock(),  # INSERT transfer_orders
             MagicMock(),  # INSERT lines
         ])
@@ -1545,4 +1553,94 @@ class TestSession5TransferTypeConfig:
             "50 units × ETB 100/unit = ETB 5,000 total_value"
         )
         assert result.currency == "ETB"
+
+
+# ── Stock availability check at creation ────────────────────────────────────
+
+@pytest.mark.asyncio
+class TestCreateTransferStockCheck:
+    """Regression tests for BUG: PUSH transfers allowed qty > available stock.
+
+    create_transfer() must check available (on_hand - pending_out) at the source
+    warehouse for every requested line BEFORE inserting the transfer record.
+    """
+
+    async def test_push_blocked_insufficient_stock(self) -> None:
+        """HTTP 422 INSUFFICIENT_STOCK when requested qty > available at source.
+
+        on_hand=50, pending_out=30, available=20 — requesting 40 must fail.
+        """
+        from schemas.inventory import TransferOrderRequest, TransferLineRequest
+        from services.inventory_service import InventoryService
+
+        on_hand_row  = MagicMock(); on_hand_row.qty     = Decimal("50")
+        pending_row  = MagicMock(); pending_row.pending = Decimal("30")
+        # available = 50 - 30 = 20; requested = 40 > 20 → must raise
+
+        session = AsyncMock()
+        session.execute = AsyncMock(side_effect=[
+            MagicMock(fetchone=MagicMock(return_value=None)),          # factory check → no restriction
+            MagicMock(fetchone=MagicMock(return_value=None)),          # config resolution → None
+            MagicMock(fetchone=MagicMock(return_value=on_hand_row)),   # inventory_balances on_hand=50
+            MagicMock(fetchone=MagicMock(return_value=pending_row)),   # pending_out=30
+        ])
+
+        user = _User("u-nm", TENANT_ID, WAREHOUSE_A, None, "NM")
+
+        with pytest.raises(HTTPException) as exc:
+            await InventoryService(session).create_transfer(
+                user,
+                TransferOrderRequest(
+                    transfer_type="PUSH",
+                    from_warehouse_id=UUID(WAREHOUSE_A),
+                    to_warehouse_id=UUID(WAREHOUSE_B),
+                    lines=[TransferLineRequest(
+                        product_id=UUID(PRODUCT_ID), quantity=Decimal("40")
+                    )],
+                ),
+            )
+
+        assert exc.value.status_code == 422
+        detail = exc.value.detail
+        assert detail["code"] == "INSUFFICIENT_STOCK"
+        assert detail["available"] == pytest.approx(20.0), "available must be on_hand - pending_out"
+        assert detail["requested"] == pytest.approx(40.0)
+
+    async def test_push_succeeds_when_stock_sufficient(self) -> None:
+        """create_transfer() proceeds normally when requested qty ≤ available."""
+        from schemas.inventory import TransferOrderRequest, TransferLineRequest
+        from services.inventory_service import InventoryService
+
+        on_hand_row  = MagicMock(); on_hand_row.qty     = Decimal("100")
+        pending_row  = MagicMock(); pending_row.pending = Decimal("20")
+        price_row    = MagicMock(); price_row.unit_price = Decimal("10")
+        # available = 100 - 20 = 80; requested = 30 ≤ 80 → must succeed
+
+        session = AsyncMock()
+        session.execute = AsyncMock(side_effect=[
+            MagicMock(fetchone=MagicMock(return_value=None)),         # factory check
+            MagicMock(fetchone=MagicMock(return_value=None)),         # config resolution
+            MagicMock(fetchone=MagicMock(return_value=on_hand_row)),  # on_hand=100
+            MagicMock(fetchone=MagicMock(return_value=pending_row)),  # pending_out=20
+            MagicMock(fetchone=MagicMock(return_value=price_row)),    # unit_price=10
+            MagicMock(),                                               # INSERT transfer_orders
+            MagicMock(),                                               # INSERT lines
+        ])
+
+        user = _User("u-nm", TENANT_ID, WAREHOUSE_A, None, "NM")
+
+        result = await InventoryService(session).create_transfer(
+            user,
+            TransferOrderRequest(
+                transfer_type="PUSH",
+                from_warehouse_id=UUID(WAREHOUSE_A),
+                to_warehouse_id=UUID(WAREHOUSE_B),
+                lines=[TransferLineRequest(
+                    product_id=UUID(PRODUCT_ID), quantity=Decimal("30")
+                )],
+            ),
+        )
+
+        assert result.status == "DRAFT", "transfer must be created in DRAFT status"
+        assert result.total_value == Decimal("300"), "30 × ETB 10 = ETB 300"
         assert result.transfer_type_config_id is None  # no config found in this scenario

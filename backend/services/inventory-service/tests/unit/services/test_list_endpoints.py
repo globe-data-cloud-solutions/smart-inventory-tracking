@@ -321,10 +321,15 @@ class TestFactorySpecificProductValidation:
         product_row.source_factory_id = None
         product_row.sku = "STD-001"
 
+        oh_row = MagicMock(); oh_row.qty = Decimal("9999")
+        pend_row = MagicMock(); pend_row.pending = Decimal("0")
+
         session = AsyncMock()
         session.execute = AsyncMock(side_effect=[
             MagicMock(fetchone=MagicMock(return_value=product_row)),  # products lookup
             MagicMock(fetchone=MagicMock(return_value=None)),          # config lookup → None
+            MagicMock(fetchone=MagicMock(return_value=oh_row)),        # on_hand (stock check)
+            MagicMock(fetchone=MagicMock(return_value=pend_row)),      # pending_out (stock check)
             MagicMock(fetchone=MagicMock(return_value=None)),          # unit_price → None
             MagicMock(),                                                # INSERT transfer_orders
             MagicMock(),                                                # INSERT transfer_order_lines
@@ -350,11 +355,16 @@ class TestFactorySpecificProductValidation:
             return_value=[(self.FACTORY_ID,), (self.SUBTREE_WH,)]
         )
 
+        oh_row2 = MagicMock(); oh_row2.qty = Decimal("9999")
+        pend_row2 = MagicMock(); pend_row2.pending = Decimal("0")
+
         session = AsyncMock()
         session.execute = AsyncMock(side_effect=[
             MagicMock(fetchone=MagicMock(return_value=product_row)),  # products lookup
             subtree_result,                                            # subtree CTE
             MagicMock(fetchone=MagicMock(return_value=None)),          # config lookup → None
+            MagicMock(fetchone=MagicMock(return_value=oh_row2)),       # on_hand (stock check)
+            MagicMock(fetchone=MagicMock(return_value=pend_row2)),     # pending_out (stock check)
             MagicMock(fetchone=MagicMock(return_value=None)),          # unit_price → None
             MagicMock(),                                                # INSERT transfer_orders
             MagicMock(),                                                # INSERT lines

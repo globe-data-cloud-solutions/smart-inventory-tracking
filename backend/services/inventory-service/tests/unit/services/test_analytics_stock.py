@@ -125,6 +125,49 @@ class TestInventoryStockOutSchema:
             "The SQL filter enforces this by excluding DRAFT from the pending_out query."
         )
 
+    def test_available_unchanged_at_pending_review(self) -> None:
+        """PENDING_REVIEW soft hold reduces available but On Hand is unchanged.
+
+        Regression test for BUG: OUT_RESERVED included 'DRAFT' which caused
+        available to reduce when a transfer was merely created (DRAFT status)
+        instead of only when it entered PENDING_REVIEW.
+
+        Correct behaviour: available reduces when pending_out_qty = qty (at
+        PENDING_REVIEW).  At DRAFT, pending_out_qty must be 0 so available
+        equals current_stock.
+        """
+        # DRAFT: no soft hold — available must equal On Hand
+        draft_item = InventoryStockOut(
+            product_id="aaaaaaaa-0000-0000-0000-000000000001",
+            product_name="Cement 50kg", product_sku="CEM-001",
+            warehouse_id="20000000-0000-0000-0000-000000000001",
+            warehouse_name="AW North",
+            current_stock=Decimal("500"), pending_out_qty=Decimal("0"),
+            in_transit_out_qty=Decimal("0"), in_transit_in_qty=Decimal("0"),
+            requested_qty=Decimal("0"),
+        )
+        assert draft_item.net_available == Decimal("500"), (
+            "At DRAFT: pending_out_qty=0, net_available must equal current_stock."
+        )
+
+        # PENDING_REVIEW: soft hold in place — available reduces, On Hand unchanged
+        pending_item = InventoryStockOut(
+            product_id="aaaaaaaa-0000-0000-0000-000000000001",
+            product_name="Cement 50kg", product_sku="CEM-001",
+            warehouse_id="20000000-0000-0000-0000-000000000001",
+            warehouse_name="AW North",
+            current_stock=Decimal("500"), pending_out_qty=Decimal("200"),
+            in_transit_out_qty=Decimal("0"), in_transit_in_qty=Decimal("0"),
+            requested_qty=Decimal("0"),
+        )
+        assert pending_item.net_available == Decimal("300"), (
+            "At PENDING_REVIEW: pending_out=200 reduces available to 300; "
+            "current_stock (On Hand) stays at 500 — no ledger entry yet."
+        )
+        assert pending_item.current_stock == Decimal("500"), (
+            "On Hand must not change at PENDING_REVIEW (no TRANSFER_OUT yet)."
+        )
+
     def test_net_available_full_column_trace(self) -> None:
         """Full WMS Option A column trace for a qty=100 outbound transfer.
 

@@ -282,12 +282,31 @@ async def list_org_nodes(
     user=Depends(get_current_user),
     db: AsyncSession = Depends(get_db_session_for_tenant),
 ) -> SuccessResponse[List[OrgNodeOut]]:
-    # user_facility_assignments was dropped in migration 031 — query nodes directly
+    # user_facility_assignments was dropped in migration 031.
+    # Manager = the PRIMARY personnel_position holder at the node with the highest
+    # authority role (NM > RM > WM = LM > …). LATERAL subquery returns at most one
+    # manager per node, ordered by role authority descending.
     rows = await db.execute(
         text(
             "SELECT n.id, n.tenant_id, n.name, n.code, n.hierarchy_level, n.parent_node_id, "
-            "n.is_stock_holding, n.is_active, n.address "
+            "n.is_stock_holding, n.is_active, n.address, "
+            "mgr.manager_name, mgr.manager_role "
             "FROM organization_node n "
+            "LEFT JOIN LATERAL ("
+            "  SELECT u.full_name AS manager_name, p.role_code AS manager_role "
+            "  FROM positions p "
+            "  JOIN personnel_positions pp "
+            "    ON pp.position_id = p.id "
+            "   AND pp.assignment_type = 'PRIMARY' "
+            "   AND pp.is_active = true "
+            "   AND (pp.valid_until IS NULL OR pp.valid_until >= CURRENT_DATE) "
+            "  JOIN users u ON u.id = pp.user_id AND u.is_active = true "
+            "  WHERE p.node_id = n.id AND p.tenant_id = :tid AND p.is_active = true "
+            "  ORDER BY CASE p.role_code "
+            "    WHEN 'NM' THEN 8 WHEN 'RM' THEN 7 WHEN 'LM' THEN 6 "
+            "    WHEN 'WM' THEN 6 WHEN 'SA_GT' THEN 4 ELSE 0 END DESC "
+            "  LIMIT 1"
+            ") mgr ON true "
             "WHERE n.tenant_id = :tid AND n.is_active = true "
             "ORDER BY n.hierarchy_level, n.name"
         ),
@@ -304,8 +323,8 @@ async def list_org_nodes(
             "is_stock_holding": r.is_stock_holding,
             "is_active": r.is_active,
             "address": getattr(r, "address", None),
-            "manager_name":  None,
-            "manager_role":  None,
+            "manager_name":  getattr(r, "manager_name", None),
+            "manager_role":  getattr(r, "manager_role", None),
         }
         for r in rows.fetchall()
     ]

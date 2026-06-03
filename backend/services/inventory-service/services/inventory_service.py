@@ -323,6 +323,68 @@ class InventoryService:
                         },
                     )
 
+        # ── Source stock availability check ──────────────────────────────────
+        # Reject at creation time when requested qty exceeds available stock at the
+        # source warehouse for any line.  Catches over-allocation for PUSH, PULL, and
+        # SISTER before the transfer enters the approval workflow.
+        # available = on_hand  - pending_out (soft holds at PENDING_* statuses).
+        # APPROVED/ISSUED/IN_TRANSIT are excluded: on_hand already reflects the
+        # APPROVED deduction, so counting them again would double-subtract.
+        from fastapi import HTTPException as _HTTPEx2
+        for line in body.lines:
+            oh_row = (await self.db.execute(
+                text(
+                    "SELECT COALESCE(quantity, 0) AS qty "
+                    "FROM inventory_balances "
+                    "WHERE tenant_id = :tid AND product_id = :pid "
+                    "  AND warehouse_id = :wid AND lot_number IS NULL"
+                ),
+                {
+                    "tid": str(user.tenant_id),
+                    "pid": str(line.product_id),
+                    "wid": str(body.from_warehouse_id),
+                },
+            )).fetchone()
+            on_hand = Decimal(str(oh_row.qty)) if oh_row else Decimal("0")
+
+            pending_row = (await self.db.execute(
+                text(
+                    "SELECT COALESCE(SUM(tol.quantity), 0) AS pending "
+                    "FROM transfer_order_lines tol "
+                    "JOIN transfer_orders to_ ON to_.id = tol.transfer_order_id "
+                    "WHERE to_.from_warehouse_id = :wid "
+                    "  AND tol.product_id = :pid "
+                    "  AND to_.tenant_id = :tid "
+                    "  AND to_.status IN ("
+                    "    'PENDING_REVIEW','PENDING_APPROVAL',"
+                    "    'PENDING_SOURCE_CONFIRM','PENDING_DEST_CONFIRM'"
+                    "  )"
+                ),
+                {
+                    "tid": str(user.tenant_id),
+                    "pid": str(line.product_id),
+                    "wid": str(body.from_warehouse_id),
+                },
+            )).fetchone()
+            pending_out = Decimal(str(pending_row.pending)) if pending_row else Decimal("0")
+
+            available = on_hand - pending_out
+            if line.quantity > available:
+                raise _HTTPEx2(
+                    status_code=422,
+                    detail={
+                        "code":         "INSUFFICIENT_STOCK",
+                        "product_id":   str(line.product_id),
+                        "warehouse_id": str(body.from_warehouse_id),
+                        "available":    float(available),
+                        "requested":    float(line.quantity),
+                        "message": (
+                            f"Insufficient stock. "
+                            f"Available: {available}, Requested: {line.quantity}"
+                        ),
+                    },
+                )
+
         # ── Calculate total_value from product unit_prices ────────────────────
         total_value: Decimal | None = None
         for line in body.lines:

@@ -90,9 +90,11 @@ const OUT_REDUCES_ON_HAND: TransferStatus[] = [
 ];
 const IN_CREDITS_ON_HAND: TransferStatus[] = ["RECEIVED", "COMPLETED"];
 // Reserved = stock committed but not yet approved (soft hold, no On Hand change yet).
+// DRAFT is excluded: a DRAFT transfer carries no stock commitment — it can be discarded
+// at any time without consequence (CLAUDE.md §17: DRAFT → Reserved=0).
 // APPROVED is excluded: at APPROVED the reservation converts to a deduction in On Hand.
 const OUT_RESERVED: TransferStatus[] = [
-  "DRAFT", "PENDING_REVIEW", "PENDING_APPROVAL",
+  "PENDING_REVIEW", "PENDING_APPROVAL",
   "PENDING_SOURCE_CONFIRM", "PENDING_DEST_CONFIRM",
 ];
 
