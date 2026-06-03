@@ -1921,5 +1921,31 @@ Full flow completed via API:
 
 ---
 
+## KNOWN ARCHITECTURAL GAPS — Phase 2
+
+These are not bugs in the current implementation but design limits that will be addressed in Phase 2. Documenting them here prevents surprise re-discovery and scopes future work.
+
+### GAP A — Stale JWT on position change
+If a user's position is reassigned while they are logged in, their JWT still carries the old `role` and `warehouse_id` until they log out and back in.  
+**Risk:** User may see incorrect action buttons or be incorrectly denied transitions until re-login.  
+**Fix (Phase 2):** JWT refresh endpoint that re-derives claims from current active position without requiring a full re-login (`POST /api/v1/auth/refresh-position`). Call it automatically when a 403 ABAC_DENIED is received on a state transition.
+
+### GAP B — Stuck transfer on approver change
+When a transfer is at `PENDING_APPROVAL` with `resolved_approval_steps` stored, if the assigned approver's position is deleted or they are deactivated, the transfer becomes stuck — no one is notified or assigned to approve it.  
+**Risk:** Transfers stuck indefinitely at `PENDING_APPROVAL`.  
+**Fix (Phase 2):** Celery periodic task (every 24 h) that detects transfers stuck `> 24 h` at `PENDING_APPROVAL` with an inactive or deleted approver and escalates to `TA` with an outbox notification. Also expose a `POST /api/v1/transfers/{id}/re-resolve-approvers` endpoint for TA to manually trigger re-resolution.
+
+### GAP C — Org restructure mid-transfer
+If the org hierarchy changes (node level changed, node renamed, node deleted) after a transfer was created, the transfer references old node IDs. Display issues and incorrect level-permission checks can result.  
+**Risk:** Misleading display names, potentially incorrect ABAC decisions for in-flight transfers.  
+**Fix (Phase 2):** Hierarchy versioning — freeze an org snapshot (from_node_level, to_node_level, from_node_name, to_node_name) into the `transfer_orders` row at creation time. Use the snapshot for display and for level-permission checks rather than querying the live hierarchy. Described in PRD-APPENDIX.md §B.
+
+### GAP D — Approval chain is resolved once and not refreshed
+`resolved_approval_steps` is computed when a transfer enters `PENDING_APPROVAL` and stored. Subsequent org or threshold changes do not update it.  
+**Risk:** Approval chain reflects org structure at approval-entry time, not at current state. This is standard WMS practice (approval chains must not silently change mid-flow) but may surprise operators after large reorgs.  
+**Fix (Phase 2):** Re-resolve button for TA: `POST /api/v1/transfers/{id}/re-resolve-approvers` forces fresh re-evaluation of the approval chain and resets `current_approval_step = 1`. Requires explicit TA action to prevent silent authority escalation.
+
+---
+
 *SMART Inventory Platform — Bug Report v4.0*  
 *Backend: Python 3.12 / FastAPI · Frontend: Next.js 14 / TypeScript · DB: PostgreSQL 16*

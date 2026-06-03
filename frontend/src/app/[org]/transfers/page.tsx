@@ -115,15 +115,30 @@ function normalizeTransfer(raw: RawApiTransfer): ApiTransfer {
  * Returns a contextual "waiting for…" label when the current user has no action on a
  * transfer. Shown in the Actions column instead of "—" so non-actors understand why
  * the row is visible but has no buttons.
+ *
+ * getLevelName: optional resolver from hierarchy config — maps level_number → tenant
+ * level label (e.g. 1 → "National", 2 → "Regional"). When provided, PENDING_REVIEW
+ * shows the reviewer's level name derived from the creator's authority level.
+ * creatorAuthorityLevel: from transfer.created_by_authority_level.
  */
 function getWaitingMessage(
   status: TransferStatus,
   fromWarehouseName: string,
   toWarehouseName: string,
+  creatorAuthorityLevel?: number | null,
+  getLevelName?: (levelNum: number) => string,
 ): string | null {
   switch (status) {
-    case "PENDING_REVIEW":          return "Awaiting RM review";
-    case "PENDING_APPROVAL":        return "Awaiting NM/TA approval";
+    case "PENDING_REVIEW": {
+      // Dynamic: derive reviewer level from creator authority level.
+      // Creator is RM (authority 2) → reviewer is level 1 (NM / "National Manager").
+      if (getLevelName && creatorAuthorityLevel != null && creatorAuthorityLevel > 1) {
+        const reviewerLvl = creatorAuthorityLevel - 1;
+        return `Awaiting ${getLevelName(reviewerLvl)} review`;
+      }
+      return "Awaiting review";
+    }
+    case "PENDING_APPROVAL":        return "Awaiting approval";
     case "PENDING_SOURCE_CONFIRM":  return `Awaiting ${fromWarehouseName} confirmation`;
     case "PENDING_DEST_CONFIRM":    return `Awaiting ${toWarehouseName} confirmation`;
     case "APPROVED":                return `Waiting for ${fromWarehouseName} to issue`;
@@ -342,24 +357,31 @@ function getAvailableActions(
   }
 
   // ── PUSH: source proactively sends stock to destination ───────────────────
+  //
+  // PUSH originates at the source; the destination only receives.
+  // isTenantMgr excluded from destination actions for PUSH:
+  // NM/TA are typically the *source* of a PUSH, so giving them
+  // receive authority via isTenantMgr would let the source receive their
+  // own shipment. pushDst uses exact warehouse match only.
   if (type === "PUSH") {
     const map: Partial<Record<TransferStatus, Action[]>> = {};
 
-    // DRAFT: source manager (or any reviewer-level role) initiates
-    if (isSrcManager || userLevel <= 2) map.DRAFT = [toApproval, cancel];
+    // DRAFT: only the creator (the source who initiated the push) can submit
+    if (isCreator) map.DRAFT = [toApproval, cancel];
 
     // PENDING_APPROVAL
     if (canApprove) map.PENDING_APPROVAL = [approve, reject, cancel];
 
-    // APPROVED/ADVISED/ISSUED: source dispatches
-    if (isSrcManager || userLevel <= 2) {
+    // APPROVED/ADVISED/ISSUED: source manager advises, issues, and dispatches
+    if (isSrcManager) {
       map.APPROVED = [advise, issue, cancel];
       map.ADVISED  = [issue, cancel];
       map.ISSUED   = [dispatch];
     }
 
-    // IN_TRANSIT: destination receives
-    if (isDstManager) {
+    // IN_TRANSIT/RECEIVED: strictly destination-side — exact warehouse match only
+    const pushDst = isDstWH;
+    if (pushDst) {
       map.IN_TRANSIT         = [markRecv];
       map.PARTIALLY_RECEIVED = [markRecv];
       map.RECEIVED           = [complete];
@@ -369,29 +391,36 @@ function getAvailableActions(
   }
 
   // ── SISTER: lateral WH ↔ WH transfer ─────────────────────────────────────
+  //
+  // SISTER is strictly peer-to-peer between two WH facilities at the same level.
+  // Higher-level managers (NM/TA) may approve the escalated request but must NOT
+  // see confirm/issue/receive buttons — those belong to the two peer WMs only.
+  // isSrcWH and isDstWH use exact warehouse match (never isTenantMgr).
+  // canApprove (level ≤ 2, !isCreator) correctly gives NM the PENDING_APPROVAL
+  // buttons since the transfer is escalated to NM for approval.
   if (type === "SISTER") {
     const map: Partial<Record<TransferStatus, Action[]>> = {};
 
-    // DRAFT: destination WM initiates the request
-    if (isDstManager) map.DRAFT = [submitReq, cancel];
+    // DRAFT: only the creator (destination WM who raised the request)
+    if (isCreator) map.DRAFT = [submitReq, cancel];
 
-    // PENDING_SOURCE_CONFIRM: source confirms supply
-    if (isSrcManager) map.PENDING_SOURCE_CONFIRM = [confirmSup, reject, cancel];
+    // PENDING_SOURCE_CONFIRM: source WM confirms supply — exact warehouse match only
+    if (isSrcWH) map.PENDING_SOURCE_CONFIRM = [confirmSup, reject, cancel];
 
-    // PENDING_DEST_CONFIRM: destination re-confirms or abandons
-    if (isDstManager) map.PENDING_DEST_CONFIRM = [confirmInt, reject, cancel];
+    // PENDING_DEST_CONFIRM: destination WM re-confirms — exact warehouse match only
+    if (isDstWH) map.PENDING_DEST_CONFIRM = [confirmInt, reject, cancel];
 
-    // PENDING_APPROVAL
+    // PENDING_APPROVAL: escalated to NM/TA (canApprove handles level gate)
     if (canApprove) map.PENDING_APPROVAL = [approve, reject, cancel];
 
-    // APPROVED/ISSUED: source issues and dispatches
-    if (isSrcManager) {
+    // APPROVED/ISSUED: source WM issues and dispatches — exact warehouse match only
+    if (isSrcWH) {
       map.APPROVED = [issue, cancel];
       map.ISSUED   = [dispatch];
     }
 
-    // IN_TRANSIT: destination receives
-    if (isDstManager) {
+    // IN_TRANSIT/RECEIVED: destination WM receives — exact warehouse match only
+    if (isDstWH) {
       map.IN_TRANSIT         = [markRecv];
       map.PARTIALLY_RECEIVED = [markRecv];
       map.RECEIVED           = [complete];
@@ -553,6 +582,19 @@ export default function TransfersPage() {
 
   const tenantId = user?.tenantId ?? "";
   const isGateway = !!process.env.NEXT_PUBLIC_API_URL;
+
+  // Hierarchy config — used for dynamic waiting text (level names per org level).
+  // Fetched once per page load; stale after 5 minutes.
+  interface HierarchyLevel { level_number: number; level_name: string; }
+  const { data: hierarchyLevels } = useQuery<HierarchyLevel[]>({
+    queryKey: ["hierarchy-config", tenantId],
+    queryFn:  () => api.get<HierarchyLevel[]>(`/api/v1/tenants/${tenantId}/hierarchy/config`),
+    enabled:  !!tenantId && isGateway,
+    staleTime: 300_000,
+  });
+  const getLevelName = (levelNum: number): string =>
+    hierarchyLevels?.find((l) => l.level_number === levelNum)?.level_name
+    ?? `Level ${levelNum} Manager`;
 
   // Fetch tenant transfer type configs to show display names instead of PULL/PUSH/SISTER
   const { data: tenantTransferTypes = [] } = useQuery<TenantTransferType[]>({
@@ -970,7 +1012,7 @@ export default function TransfersPage() {
                 const sCls = STATUS_CLASS[txn.status] ?? "bg-gray-100 text-gray-500";
                 const tb   = { ...(TYPE_CLASS[txn.transfer_type] ?? { cls: "bg-gray-100 text-gray-500", label: txn.transfer_type }), label: getTypeLabel(txn.transfer_type) };
                 const acts    = getAvailableActions(user.role, txn.transfer_type, txn.status, user.warehouseId, txn.from_warehouse_id, txn.to_warehouse_id, txn.quantity, user.id, txn.created_by, txn.created_by_authority_level);
-                const waitMsg = acts.length === 0 ? getWaitingMessage(txn.status, txn.from_warehouse_name, txn.to_warehouse_name) : null;
+                const waitMsg = acts.length === 0 ? getWaitingMessage(txn.status, txn.from_warehouse_name, txn.to_warehouse_name, txn.created_by_authority_level, getLevelName) : null;
                 const busy    = transitioning === txn.id;
                 return (
                   <tr key={txn.id} className={`border-b border-gray-100 ${idx % 2 === 0 ? "bg-white" : "bg-gray-50"}`}>

@@ -550,7 +550,7 @@ export function AddProductPanel({ apiBase, onClose }: AddProductPanelProps) {
         </div>
 
         {/* Form body */}
-        <div className="flex-1 overflow-y-auto p-5 flex flex-col gap-4">
+        <div className="flex-1 min-h-0 overflow-y-auto p-5 flex flex-col gap-4">
           {panelError && (
             <div role="alert" className="bg-red-50 border border-red-200 rounded px-3.5 py-2.5 text-sm text-red-600">
               {panelError}
