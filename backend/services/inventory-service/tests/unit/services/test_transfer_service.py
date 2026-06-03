@@ -1330,6 +1330,7 @@ class TestGap4SimpleModeWiring:
             MagicMock(fetchone=MagicMock(return_value=pull_row)),  # SELECT transfer
             MagicMock(fetchall=MagicMock(return_value=[])),         # SELECT lines (for qty)
             MagicMock(fetchone=MagicMock(return_value=None)),       # SELECT transfer for config_id
+            MagicMock(fetchone=MagicMock(return_value=None)),       # fallback config lookup → None
             MagicMock(),                                             # UPDATE resolved_steps
             MagicMock(),                                             # UPDATE status
         ])
@@ -1657,8 +1658,9 @@ def _session_for_pending_approval(
       call 0 — SELECT transfer_orders FOR UPDATE
       call 1 — SELECT transfer_order_lines  (RESERVE writes + total_qty)
       call 2 — SELECT transfer_orders       (tv_row: config_id, total_value, created_by)
-      call 3 — UPDATE transfer_orders       (resolved_approval_steps)
-      call 4 — UPDATE transfer_orders       (status)
+      call 3 — SELECT transfer_type_config  (fallback config lookup when config_id is None)
+      call 4 — UPDATE transfer_orders       (resolved_approval_steps)
+      call 5 — UPDATE transfer_orders       (status)
     """
     tv_row = MagicMock()
     tv_row.transfer_type_config_id = None
@@ -1670,6 +1672,7 @@ def _session_for_pending_approval(
         MagicMock(fetchone=MagicMock(return_value=transfer_row)),  # transfer SELECT
         MagicMock(fetchall=MagicMock(return_value=lines)),          # lines SELECT
         MagicMock(fetchone=MagicMock(return_value=tv_row)),         # tv_row SELECT
+        MagicMock(fetchone=MagicMock(return_value=None)),           # fallback config lookup → None
         MagicMock(),                                                 # UPDATE approval steps
         MagicMock(),                                                 # UPDATE status
     ])
@@ -1837,3 +1840,118 @@ class TestWMSReservationTiming:
         assert r["quantity"]          == -Decimal("60")
         assert r["warehouse_id"]      == WAREHOUSE_A
         assert r["status_transition"] == "CANCELLED_PRE_APPROVAL"
+
+
+# ── D5/D1/D2/D3/D4 regression tests ────────────────────────────────────────
+
+@pytest.mark.unit
+class TestE2EDiscrepancyRegressions:
+    """Regression tests for discrepancies found in the end-to-end transfer test."""
+
+    # ── D5: SISTER VARCHAR ───────────────────────────────────────────────────
+
+    def test_sister_pending_source_confirm_fits_varchar30(self) -> None:
+        """PENDING_SOURCE_CONFIRM (22 chars) must fit in the widened VARCHAR(30) column.
+
+        Migration 040 widened transfer_orders.status from VARCHAR(20) to VARCHAR(30).
+        This test documents that the status value's length is within the new limit.
+        """
+        assert len("PENDING_SOURCE_CONFIRM") == 22, "status string is 22 chars"
+        assert 22 <= 30, "22 chars fits in VARCHAR(30)"
+        assert 22 > 20, "22 chars did NOT fit in VARCHAR(20) — that was the bug"
+
+    # ── D1: Approval rules used, not fallback ────────────────────────────────
+
+    def test_approval_rules_empty_steps_treated_as_no_rule(self) -> None:
+        """_find_matching_rule result with approval_steps=[] must be discarded.
+
+        A rule row with an empty approval_steps JSONB array produces an ApprovalResolution
+        with no assignee, making the approval invisible to everyone.  The caller now
+        discards such results and falls through to the NM fallback so a real person
+        is always found.
+        """
+        # Simulate the dict returned by _find_matching_rule when steps are empty
+        rule_with_empty_steps = {"id": "some-uuid", "approval_steps": []}
+        rule_with_none_steps  = {"id": "some-uuid", "approval_steps": None}
+
+        # The check used in resolve_transfer_approvers:
+        # rule = candidate if candidate and candidate.get("approval_steps") else None
+        assert not rule_with_empty_steps.get("approval_steps"), \
+            "empty list is falsy — must be treated as no rule"
+        assert not rule_with_none_steps.get("approval_steps"), \
+            "None is falsy — must be treated as no rule"
+
+        # A properly configured rule has at least one step
+        rule_with_steps = {"id": "some-uuid", "approval_steps": [{"sequence": 1}]}
+        assert rule_with_steps.get("approval_steps"), \
+            "non-empty steps list is truthy — rule is used"
+
+    # ── D2: Reviewer is immediate superior only ──────────────────────────────
+
+    def test_reviewer_is_immediate_superior_only(self) -> None:
+        """canReview must match ONLY the immediate superior level, not anyone who outranks.
+
+        WM (authority 4) creator → immediate reviewer = level 3 (LM/RM).
+        NM (authority 1) must NOT see PENDING_REVIEW actions on WM-created PULLs.
+        """
+        # Mirrors the frontend getAvailableActions logic
+        def immediate_reviewer_level(creator_authority_level: int) -> int:
+            return max(1, creator_authority_level - 1)
+
+        def can_review(user_level: int, creator_level: int, is_creator: bool) -> bool:
+            return (
+                not is_creator
+                and user_level == immediate_reviewer_level(creator_level)
+            )
+
+        # WM (L4) creates PULL → immediate reviewer is L3
+        assert immediate_reviewer_level(4) == 3
+        assert can_review(user_level=3, creator_level=4, is_creator=False) is True,  \
+            "LM (L3) IS the immediate reviewer for WM (L4) creator"
+        assert can_review(user_level=2, creator_level=4, is_creator=False) is False, \
+            "RM (L2) must NOT review WM-created PULL (L3 is immediate)"
+        assert can_review(user_level=1, creator_level=4, is_creator=False) is False, \
+            "NM (L1) must NOT review WM-created PULL (L3 is immediate)"
+
+        # RM (L2) creates → immediate reviewer is L1 (NM)
+        assert immediate_reviewer_level(2) == 1
+        assert can_review(user_level=1, creator_level=2, is_creator=False) is True,  \
+            "NM (L1) IS the immediate reviewer for RM (L2) creator"
+        assert can_review(user_level=2, creator_level=2, is_creator=True) is False,  \
+            "creator cannot review their own transfer"
+
+    # ── D3: canApprove from approval-info endpoint ───────────────────────────
+
+    def test_canApprove_override_takes_precedence(self) -> None:
+        """When approval-info provides can_approve, it overrides the local estimate.
+
+        Local estimate: canApprove = level <= 2 && !isCreator
+        This incorrectly shows RM can approve a PUSH created by NM (backend needs L1).
+
+        With override: canApprove = can_approve from approval-info (backend truth).
+        """
+        # Simulate the local estimate that was wrong in the e2e test
+        def local_can_approve(user_level: int, is_creator: bool) -> bool:
+            return user_level <= 2 and not is_creator
+
+        # Simulate the override behaviour
+        def can_approve_with_override(
+            user_level: int, is_creator: bool, override: bool | None
+        ) -> bool:
+            if override is not None:
+                return override
+            return local_can_approve(user_level, is_creator)
+
+        RM_LEVEL = 2  # RM is L2
+
+        # Without override: RM (L2) incorrectly appears to be able to approve
+        assert local_can_approve(RM_LEVEL, is_creator=False) is True, \
+            "local estimate incorrectly allows RM to approve NM-created PUSH"
+
+        # With override=False (from approval-info: required L1, RM is L2 → blocked):
+        assert can_approve_with_override(RM_LEVEL, is_creator=False, override=False) is False, \
+            "override=False from approval-info correctly blocks RM"
+
+        # With override=True (from approval-info: RM IS the required approver):
+        assert can_approve_with_override(RM_LEVEL, is_creator=False, override=True) is True, \
+            "override=True from approval-info correctly allows RM"

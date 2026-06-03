@@ -518,6 +518,19 @@ class InventoryService:
             tv_for_res = Decimal(str(tv_row.total_value)) if tv_row and tv_row.total_value else None
             created_by_for_res = str(tv_row.created_by) if tv_row and tv_row.created_by else None
 
+            # If the transfer was created before transfer type configs existed,
+            # transfer_type_config_id may be NULL.  Re-resolve it now so rules
+            # are used for legacy transfers too.
+            if not config_id_for_res:
+                cfg_fallback = (await self.db.execute(
+                    text("SELECT id FROM transfer_type_config "
+                         "WHERE underlying_type = :tt AND tenant_id = :tid AND is_active = true "
+                         "LIMIT 1"),
+                    {"tt": transfer_type, "tid": str(user.tenant_id)},
+                )).fetchone()
+                if cfg_fallback:
+                    config_id_for_res = str(cfg_fallback.id)
+
             resolution = await _resolve_approvers(
                 session=self.db,
                 tenant_id=str(user.tenant_id),

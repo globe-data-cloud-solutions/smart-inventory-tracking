@@ -1,7 +1,7 @@
 "use client";
 
 import { useParams } from "next/navigation";
-import { useState } from "react";
+import { useState, useRef, useEffect } from "react";
 import Link from "next/link";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { getSession, SA_ORG_SLUG } from "@/lib/demo-auth";
@@ -120,6 +120,7 @@ function normalizeTransfer(raw: RawApiTransfer): ApiTransfer {
  * level label (e.g. 1 → "National", 2 → "Regional"). When provided, PENDING_REVIEW
  * shows the reviewer's level name derived from the creator's authority level.
  * creatorAuthorityLevel: from transfer.created_by_authority_level.
+ * type: used for DRAFT message to identify which facility is responsible for submitting.
  */
 function getWaitingMessage(
   status: TransferStatus,
@@ -127,13 +128,20 @@ function getWaitingMessage(
   toWarehouseName: string,
   creatorAuthorityLevel?: number | null,
   getLevelName?: (levelNum: number) => string,
+  type?: TransferType,
 ): string | null {
   switch (status) {
+    case "DRAFT": {
+      // PULL: creator is at destination (to_warehouse) — show destination facility.
+      // PUSH/SISTER: creator is at source (from_warehouse) — show source facility.
+      const submitter = type === "PULL" ? toWarehouseName : fromWarehouseName;
+      return `Waiting for ${submitter} to submit`;
+    }
     case "PENDING_REVIEW": {
       // Dynamic: derive reviewer level from creator authority level.
-      // Creator is RM (authority 2) → reviewer is level 1 (NM / "National Manager").
+      // Creator is WM (authority 4) → reviewer is level 3 (LM/RM).
       if (getLevelName && creatorAuthorityLevel != null && creatorAuthorityLevel > 1) {
-        const reviewerLvl = creatorAuthorityLevel - 1;
+        const reviewerLvl = Math.max(1, creatorAuthorityLevel - 1);
         return `Awaiting ${getLevelName(reviewerLvl)} review`;
       }
       return "Awaiting review";
@@ -253,8 +261,16 @@ const ROLE_AUTHORITY_LEVEL: Record<string, number> = {
  *   isTenantMgr  = userLevel <= 1          SA/TA/NM — tenant-wide authority
  *   isSrcManager = isTenantMgr || isSrcWH  dispatch / issue authority
  *   isDstManager = isTenantMgr || isDstWH || isCreator   receive authority
- *   canReview    = !isCreator && userLevel < creatorAuthorityLevel
- *   canApprove   = userLevel <= 2 && !isCreator
+ *
+ *   canReview    = !isCreator && userLevel === immediateReviewerLevel
+ *                  immediateReviewerLevel = max(1, creatorAuthorityLevel - 1)
+ *                  Only the IMMEDIATE superior reviews — not anyone who outranks
+ *                  the creator.  For a WM (L4) creator: reviewer is L3 (LM).
+ *
+ *   canApprove   = canApproveOverride (from approval-info endpoint) when available,
+ *                  else falls back to userLevel <= 2 && !isCreator.
+ *                  The override ensures the frontend matches the backend's actual
+ *                  required authority level (e.g., NM-created PUSH requires L1).
  *
  * UUID comparisons are always case-insensitive — JWT warehouseId and DB UUIDs
  * may differ in casing depending on how the JWT was issued vs how Postgres
@@ -271,6 +287,7 @@ function getAvailableActions(
   userId?: string,
   createdBy?: string,
   creatorAuthorityLevel?: number,
+  canApproveOverride?: boolean,   // from approval-info endpoint; takes precedence when defined
 ): Action[] {
   const userLevel = ROLE_AUTHORITY_LEVEL[role] ?? 5;
   if (userLevel >= 5) return [];   // AU/RT/SYS/SA_GT have no transfer authority
@@ -286,16 +303,22 @@ function getAvailableActions(
   const isSrcManager = isTenantMgr || isSrcWH;
   const isDstManager = isTenantMgr || isDstWH || isCreator;
 
-  // PENDING_REVIEW — reviewer must outrank the creator and must not be the creator.
-  // creatorAuthorityLevel comes from transfer.created_by_authority_level (stored at creation).
+  // PENDING_REVIEW — only the IMMEDIATE superior of the creator reviews.
+  // immediateReviewerLevel = creatorLevel - 1 (floor at 1).
+  // WM (L4) creator → L3 (LM) reviews. RM (L2) creator → L1 (NM) reviews.
+  // This prevents NM from seeing review buttons on WM-created PULLs (that belongs to RM/LM).
+  const immediateReviewerLevel = Math.max(1, (creatorAuthorityLevel ?? 4) - 1);
   const canReview = !isCreator
     && creatorAuthorityLevel != null
-    && userLevel < creatorAuthorityLevel;
+    && userLevel === immediateReviewerLevel;
 
-  // PENDING_APPROVAL — level ≤ 2 (RM or above).
-  // Fine-grained "can_approve" is enforced by the backend and surfaced by ApprovalPendingActions
-  // via GET /transfers/{id}/approval-info; the action map shows the button to potential approvers.
-  const canApprove = userLevel <= 2 && !isCreator;
+  // PENDING_APPROVAL — use the approval-info response when available (canApproveOverride).
+  // The override reflects the backend's actual required_authority_level which accounts for
+  // self-approval escalation (e.g., NM-created PUSH requires TA/different-NM, not RM).
+  // Falls back to level ≤ 2 && !isCreator when approval-info hasn't loaded yet.
+  const canApprove = canApproveOverride !== undefined
+    ? canApproveOverride
+    : (userLevel <= 2 && !isCreator);
 
   // ── Action definitions (defined once, referenced by all maps) ─────────────
   const approve   : Action = { next: "APPROVED",               label: "Approve",            color: "#059669" };
@@ -596,6 +619,12 @@ export default function TransfersPage() {
     hierarchyLevels?.find((l) => l.level_number === levelNum)?.level_name
     ?? `Level ${levelNum} Manager`;
 
+  // Approval-info cache — prefetched for every PENDING_APPROVAL transfer so
+  // getAvailableActions can use the backend's actual can_approve rather than
+  // the coarse frontend estimate (canApprove = level <= 2).
+  // useRef keeps the Map stable across re-renders without triggering extra effects.
+  const approvalInfoCache = useRef<Map<string, ApprovalInfoResponse>>(new Map());
+
   // Fetch tenant transfer type configs to show display names instead of PULL/PUSH/SISTER
   const { data: tenantTransferTypes = [] } = useQuery<TenantTransferType[]>({
     queryKey: ["transfer-types-page", tenantId],
@@ -630,6 +659,20 @@ export default function TransfersPage() {
       tx.to_warehouse_id;
     return { ...tx, from_warehouse_name: fromName, to_warehouse_name: toName };
   });
+
+  // Prefetch approval-info for all PENDING_APPROVAL transfers so the Approve/Reject
+  // buttons are controlled by the backend's actual required_authority_level.
+  // Runs whenever allTransfers changes; only fetches each transfer once.
+  useEffect(() => {
+    if (!isGateway) return;
+    allTransfers
+      .filter((t) => t.status === "PENDING_APPROVAL" && !approvalInfoCache.current.has(t.id))
+      .forEach((t) => {
+        api.get<ApprovalInfoResponse>(`/api/v1/inventory/transfers/${t.id}/approval-info`)
+          .then((info) => { approvalInfoCache.current.set(t.id, info); })
+          .catch(() => { /* silently ignore — falls back to local canApprove */ });
+      });
+  }, [allTransfers, isGateway]);  // eslint-disable-line react-hooks/exhaustive-deps
 
   // Fetch API-created products for the transfer panel product dropdown.
   const { data: apiProducts = [] } = useQuery<ApiProduct[]>({
@@ -1011,8 +1054,14 @@ export default function TransfersPage() {
               {!transfersLoading && visibleTransfers.map((txn, idx) => {
                 const sCls = STATUS_CLASS[txn.status] ?? "bg-gray-100 text-gray-500";
                 const tb   = { ...(TYPE_CLASS[txn.transfer_type] ?? { cls: "bg-gray-100 text-gray-500", label: txn.transfer_type }), label: getTypeLabel(txn.transfer_type) };
-                const acts    = getAvailableActions(user.role, txn.transfer_type, txn.status, user.warehouseId, txn.from_warehouse_id, txn.to_warehouse_id, txn.quantity, user.id, txn.created_by, txn.created_by_authority_level);
-                const waitMsg = acts.length === 0 ? getWaitingMessage(txn.status, txn.from_warehouse_name, txn.to_warehouse_name, txn.created_by_authority_level, getLevelName) : null;
+                // Use cached approval-info can_approve when available (populated by the
+                // prefetch useEffect above).  Falls back to local estimate on first render.
+                const cachedApprInfo = txn.status === "PENDING_APPROVAL"
+                  ? (approvalInfoCache.current.get(txn.id)
+                      ?? qc.getQueryData<ApprovalInfoResponse>(["approval-info", txn.id]))
+                  : undefined;
+                const acts    = getAvailableActions(user.role, txn.transfer_type, txn.status, user.warehouseId, txn.from_warehouse_id, txn.to_warehouse_id, txn.quantity, user.id, txn.created_by, txn.created_by_authority_level, cachedApprInfo?.can_approve);
+                const waitMsg = acts.length === 0 ? getWaitingMessage(txn.status, txn.from_warehouse_name, txn.to_warehouse_name, txn.created_by_authority_level, getLevelName, txn.transfer_type) : null;
                 const busy    = transitioning === txn.id;
                 return (
                   <tr key={txn.id} className={`border-b border-gray-100 ${idx % 2 === 0 ? "bg-white" : "bg-gray-50"}`}>

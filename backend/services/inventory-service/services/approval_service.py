@@ -627,14 +627,19 @@ async def resolve_transfer_approvers(
         dst_level = int(dst_row.hierarchy_level) if dst_row else None
 
     # Find matching rule
+    # A rule with an empty approval_steps list is treated as "no rule" — it would
+    # produce an empty resolution with no assigned approver.  Fall through to the
+    # NM-fallback so a real person is always found.
     rule: Optional[dict[str, Any]] = None
     if transfer_type_config_id:
-        rule = await _find_matching_rule(
+        candidate = await _find_matching_rule(
             session, transfer_type_config_id,
             src_level, dst_level, quantity, total_value,
         )
+        if candidate and candidate.get("approval_steps"):
+            rule = candidate
 
-    # No rule → NM fallback
+    # No rule (or rule had no steps) → NM fallback
     if not rule:
         nm_row = (await session.execute(
             text("""
