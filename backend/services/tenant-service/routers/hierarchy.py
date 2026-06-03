@@ -301,7 +301,7 @@ async def list_org_nodes(
             "   AND pp.is_active = true "
             "   AND (pp.valid_until IS NULL OR pp.valid_until >= CURRENT_DATE) "
             "  JOIN users u ON u.id = pp.user_id AND u.is_active = true "
-            "  WHERE p.node_id = n.id AND p.tenant_id = :tid AND p.is_active = true "
+            "  WHERE p.node_id = n.id AND p.tenant_id = n.tenant_id AND p.is_active = true "
             "  ORDER BY CASE p.role_code "
             "    WHEN 'NM' THEN 8 WHEN 'RM' THEN 7 WHEN 'LM' THEN 6 "
             "    WHEN 'WM' THEN 6 WHEN 'SA_GT' THEN 4 ELSE 0 END DESC "

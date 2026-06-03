@@ -27,6 +27,7 @@ interface OrgNodeRow {
   is_stock_holding: boolean;
   parent_node_id: string | null;
   manager_name: string | null;
+  manager_role: string | null;
   children: OrgNodeRow[];
 }
 
@@ -185,7 +186,18 @@ export default function WarehousesPage() {
                         {node.level_name ?? `L${node.hierarchy_level}`}
                       </span>
                     </td>
-                    <td className="px-4 py-2.5 text-gray-700">{node.manager_name ?? "—"}</td>
+                    <td className="px-4 py-2.5 text-gray-700">
+                      {node.manager_name
+                        ? <>
+                            {node.manager_name}
+                            {node.manager_role && (
+                              <span className="ml-1.5 text-[11px] font-semibold text-gray-400 uppercase tracking-wide">
+                                {node.manager_role}
+                              </span>
+                            )}
+                          </>
+                        : "—"}
+                    </td>
                     <td className="px-4 py-2.5 font-bold text-gray-900">{stock.units.toLocaleString()}</td>
                     <td className="px-4 py-2.5 text-gray-700">{stock.skus.size}</td>
                   </tr>
