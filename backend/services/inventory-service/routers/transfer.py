@@ -220,6 +220,14 @@ async def get_approval_info(
         else:
             can_approve_dyn = bool(assignee_uid and caller_uid == assignee_uid and not is_own_transfer)
 
+        # BUG 5: TA (Tenant Admin, system_role='TA') can approve any transfer they didn't
+        # create, regardless of who the specifically assigned approver is.  This prevents
+        # TA from being locked out when a transfer escalated to them shows can_approve=False
+        # because the dynamic step has no holders or a different assignee.
+        caller_role = getattr(user, "role", "")
+        if caller_role == "TA" and not is_own_transfer:
+            can_approve_dyn = True
+
         # Compute human-readable status_label.
         # For ANY mode, exclude the TRANSFER CREATOR from the "available approvers" count
         # shown in the label so the label reflects who can actually act (not the creator).
@@ -232,9 +240,16 @@ async def get_approval_info(
 
         is_vacant = cur_step.get("is_vacant", False)
         escalated  = cur_step.get("escalated", False)
-        if is_vacant or escalated:
-            esc_name = cur_step.get("assigned_to_name") or "an escalated approver"
+        esc_name   = cur_step.get("assigned_to_name") or "an escalated approver"
+        # BUG 4: distinguish "position vacant → escalating" from "self-approval → escalating".
+        # is_vacant=True means the position had no holder at all.
+        # escalated=True with is_vacant=False means the original holder was the creator.
+        if is_vacant and escalated:
             status_label: str | None = f"Position vacant — escalating to {esc_name}"
+        elif is_vacant:
+            status_label = f"Position vacant — no available approver"
+        elif escalated:
+            status_label = f"Awaiting {esc_name} approval (escalated — creator cannot self-approve)"
         elif exec_mode == "any" and display_count > 1:
             status_label = f"Any {position_title} can approve ({display_count} approvers available)"
         elif exec_mode == "any" and display_count == 1:

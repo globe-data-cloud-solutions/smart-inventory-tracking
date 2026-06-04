@@ -64,8 +64,7 @@ async def get_notification_alerts(
                     SELECT product_id, quantity
                     FROM transfer_order_lines
                     WHERE transfer_order_id = t.id
-                    ORDER BY created_at
-                    LIMIT 1
+                    LIMIT 1           -- transfer_order_lines has no created_at column
                 ) tol ON true
                 LEFT JOIN products p
                        ON p.id = tol.product_id AND p.tenant_id = ah.tenant_id

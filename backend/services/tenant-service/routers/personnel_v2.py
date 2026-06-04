@@ -342,6 +342,10 @@ async def assign_position(
         raise HTTPException(status_code=404, detail="Position not found")
 
     assignment_id = uuid.uuid4()
+    from datetime import date as _date
+    # Default valid_from to today if not provided — prevents NOT NULL violation when
+    # the Edit User panel calls this endpoint without an explicit valid_from date.
+    effective_valid_from = body.valid_from or _date.today()
     await db.execute(
         text("""
             INSERT INTO personnel_positions
@@ -354,7 +358,7 @@ async def assign_position(
             "id": str(assignment_id), "tid": str(tenant_id),
             "uid": str(user_id), "pid": str(body.position_id),
             "atype": body.assignment_type,
-            "vf":    body.valid_from, "vu": body.valid_until,
+            "vf":    effective_valid_from, "vu": body.valid_until,
             "notes": body.notes,
         },
     )

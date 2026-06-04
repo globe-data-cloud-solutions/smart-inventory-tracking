@@ -65,7 +65,7 @@ async def get_stock(
         JOIN products          p       ON p.id       = ib.product_id
         LEFT JOIN warehouses   w       ON w.id       = ib.warehouse_id
         LEFT JOIN organization_node on_node ON on_node.id = ib.warehouse_id
-        WHERE 1=1
+        WHERE ib.lot_number IS NULL   -- aggregate running balance only; lot rows excluded
           {tenant_clause}
           {warehouse_clause}
         GROUP BY ib.product_id, ib.warehouse_id,

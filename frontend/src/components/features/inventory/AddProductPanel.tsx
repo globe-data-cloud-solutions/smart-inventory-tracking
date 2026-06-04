@@ -234,13 +234,16 @@ export function AddProductPanel({ apiBase, onClose }: AddProductPanelProps) {
 
   // ── API lookups ────────────────────────────────────────────────────────
   const { data: categoriesData } = useQuery<{ id: string; name: string }[]>({
-    queryKey:  ["product-categories"],
+    queryKey:  ["product-categories", org],   // org-scoped so different tenants don't share cache
     queryFn:   async () => {
-      const r = await api.get<unknown>(`${apiBase}/categories/`, token ?? undefined);
+      // Use relative path so api.ts prepends BASE_URL correctly.
+      // Falls back to apiBase for backward compat with non-gateway deployments.
+      const path = apiBase.startsWith("/") ? `${apiBase}/categories/` : "/api/v1/products/categories/";
+      const r = await api.get<unknown>(path, token ?? undefined);
       return ((r as { data?: unknown }).data ?? r) as { id: string; name: string }[];
     },
-    enabled:   open && !!token,
-    staleTime: 30_000,
+    enabled:   open,
+    staleTime: 60_000,
   });
 
   const { data: brandsData } = useQuery<{ id: string; name: string }[]>({
@@ -497,7 +500,7 @@ export function AddProductPanel({ apiBase, onClose }: AddProductPanelProps) {
         className={`fixed top-0 right-0 bottom-0 z-[101] w-[460px] bg-white shadow-2xl flex flex-col transition-transform duration-[250ms] ease-out ${open ? "translate-x-0" : "translate-x-full"}`}
       >
         {/* Header */}
-        <div className="px-5 py-4 bg-[#0f2d1f] border-b border-gray-200 flex items-center justify-between">
+        <div className="flex-shrink-0 px-5 py-4 bg-[#0f2d1f] border-b border-gray-200 flex items-center justify-between">
           <h2 className="text-base font-bold text-white m-0">{t("product.add.title")}</h2>
           <button
             onClick={closePanel}
@@ -509,7 +512,7 @@ export function AddProductPanel({ apiBase, onClose }: AddProductPanelProps) {
         </div>
 
         {/* SKU preview banner */}
-        <div className="px-5 py-2.5 bg-green-50 border-b border-emerald-200 flex items-center gap-2.5">
+        <div className="flex-shrink-0 px-5 py-2.5 bg-green-50 border-b border-emerald-200 flex items-center gap-2.5">
           <span className="text-[11px] font-bold text-gray-500 uppercase tracking-wide shrink-0">
             {t("product.add.field.sku")}
           </span>
@@ -804,7 +807,7 @@ export function AddProductPanel({ apiBase, onClose }: AddProductPanelProps) {
         </div>
 
         {/* Footer */}
-        <div className="px-5 py-3.5 border-t border-gray-200 flex justify-end gap-2.5">
+        <div className="flex-shrink-0 px-5 py-3.5 border-t border-gray-200 flex justify-end gap-2.5">
           <button
             type="button"
             onClick={closePanel}
