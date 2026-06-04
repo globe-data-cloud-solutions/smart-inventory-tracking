@@ -32,7 +32,16 @@ interface Assignment {
 }
 
 interface UserDetail extends UserRecord {
-  assignments: Assignment[];
+  assignments?: Assignment[];   // optional — API may omit on some paths
+}
+
+/** A position flattened from NodePositionGroupOut for dropdown use. */
+interface PositionItem {
+  id: string;
+  title: string;
+  role_code: string;
+  node_id: string;
+  node_name: string;
 }
 
 interface OrgNode {
@@ -47,7 +56,7 @@ interface NewUserForm {
   name: string;
   email: string;
   role: string;
-  facility_id: string;
+  position_id: string;
   password: string;
 }
 
@@ -87,7 +96,7 @@ const ROLE_BADGE_CLASS: Record<string, string> = {
 };
 
 const EMPTY_USER: NewUserForm = {
-  name: "", email: "", role: "WM", facility_id: "", password: "",
+  name: "", email: "", role: "WM", position_id: "", password: "",
 };
 
 const EMPTY_ACTING: ActingAssignmentForm = {
@@ -98,7 +107,7 @@ interface EditUserForm {
   name: string;
   email: string;
   role: string;
-  facility_id: string;
+  position_id: string;
   must_reset_password: boolean;
 }
 
@@ -136,14 +145,14 @@ function EditUserPanel({
   tenantId,
   user: initialUser,
   callerRole,
-  nodes,
+  positions,
   onClose,
   onUpdated,
 }: {
   tenantId: string;
   user: UserRecord;
   callerRole: string;
-  nodes: OrgNode[];
+  positions: PositionItem[];
   onClose: () => void;
   onUpdated: () => void;
 }) {
@@ -151,7 +160,7 @@ function EditUserPanel({
     name:               initialUser.name,
     email:              initialUser.email,
     role:               initialUser.role,
-    facility_id:        initialUser.primary_facility_id ?? "",
+    position_id:        "",   // re-select to change; leave blank to keep existing
     must_reset_password: false,
   });
   const [saving, setSaving] = useState(false);
@@ -159,7 +168,6 @@ function EditUserPanel({
 
   const callerLevel  = ROLE_LEVEL[callerRole] ?? 0;
   const allowedRoles = ROLE_OPTIONS.filter((r) => r.level < callerLevel);
-  const flat         = flattenNodes(nodes);
 
   function update(patch: Partial<EditUserForm>) {
     setForm((f) => ({ ...f, ...patch }));
@@ -177,9 +185,15 @@ function EditUserPanel({
         name:                form.name.trim(),
         email:               form.email.trim().toLowerCase(),
         role:                form.role,
-        facility_id:         form.facility_id || null,
         must_reset_password: form.must_reset_password,
       });
+      // If a new position was selected, assign it as PRIMARY
+      if (form.position_id) {
+        await api.post(`/api/v1/tenants/${tenantId}/users/${initialUser.id}/positions`, {
+          position_id:     form.position_id,
+          assignment_type: "PRIMARY",
+        });
+      }
       onUpdated();
       onClose();
     } catch (e: unknown) {
@@ -232,15 +246,17 @@ function EditUserPanel({
               </select>
             </div>
             <div>
-              <label className="block text-xs font-medium text-gray-600 mb-1">{t("personnel.primary_facility")}</label>
+              <label className="block text-xs font-medium text-gray-600 mb-1">{t("personnel.primary_position")}</label>
               <select
-                value={form.facility_id}
-                onChange={(e) => update({ facility_id: e.target.value })}
+                value={form.position_id}
+                onChange={(e) => update({ position_id: e.target.value })}
                 className="w-full text-sm border border-gray-300 rounded-md px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-emerald-500"
               >
-                <option value="">{t("personnel.no_facility_assigned")}</option>
-                {flat.map((n) => (
-                  <option key={n.id} value={n.id}>L{n.hierarchy_level} — {n.name}</option>
+                <option value="">{t("personnel.keep_existing_position")}</option>
+                {positions.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.title} ({p.role_code}) — {p.node_name}
+                  </option>
                 ))}
               </select>
             </div>
@@ -286,13 +302,13 @@ function EditUserPanel({
 function AddUserPanel({
   tenantId,
   callerRole,
-  nodes,
+  positions,
   onClose,
   onCreated,
 }: {
   tenantId: string;
   callerRole: string;
-  nodes: OrgNode[];
+  positions: PositionItem[];
   onClose: () => void;
   onCreated: () => void;
 }) {
@@ -302,7 +318,6 @@ function AddUserPanel({
 
   const callerLevel = ROLE_LEVEL[callerRole] ?? 0;
   const allowedRoles = ROLE_OPTIONS.filter((r) => r.level < callerLevel);
-  const flat = flattenNodes(nodes);
 
   function update(patch: Partial<NewUserForm>) {
     setForm((f) => ({ ...f, ...patch }));
@@ -320,7 +335,7 @@ function AddUserPanel({
         name:        form.name.trim(),
         email:       form.email.trim().toLowerCase(),
         role:        form.role,
-        facility_id: form.facility_id || null,
+        position_id: form.position_id || null,
         password:    form.password || undefined,
       });
       onCreated();
@@ -375,15 +390,17 @@ function AddUserPanel({
               </select>
             </div>
             <div>
-              <label className="block text-xs font-medium text-gray-600 mb-1">{t("personnel.primary_facility")}</label>
+              <label className="block text-xs font-medium text-gray-600 mb-1">{t("personnel.primary_position")}</label>
               <select
-                value={form.facility_id}
-                onChange={(e) => update({ facility_id: e.target.value })}
+                value={form.position_id}
+                onChange={(e) => update({ position_id: e.target.value })}
                 className="w-full text-sm border border-gray-300 rounded-md px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-emerald-500"
               >
-                <option value="">{t("personnel.no_facility_assigned")}</option>
-                {flat.map((n) => (
-                  <option key={n.id} value={n.id}>L{n.hierarchy_level} — {n.name}</option>
+                <option value="">{t("personnel.no_position_assigned")}</option>
+                {positions.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.title} ({p.role_code}) — {p.node_name}
+                  </option>
                 ))}
               </select>
             </div>
@@ -618,10 +635,10 @@ function UserDetailPanel({
     }
   }
 
-  const activeAssignments = user.assignments.filter(
+  const activeAssignments  = (user.assignments ?? []).filter(
     (a) => a.is_active && !isExpired(a.valid_until)
   );
-  const expiredAssignments = user.assignments.filter(
+  const expiredAssignments = (user.assignments ?? []).filter(
     (a) => !a.is_active || isExpired(a.valid_until)
   );
 
@@ -816,6 +833,28 @@ export default function PersonnelPage() {
     queryKey: ["org-nodes", tenantId],
     queryFn:  () => api.get<OrgNode[]>(`/api/v1/tenants/${tenantId}/nodes`),
     enabled:  !!tenantId,
+    staleTime: 60_000,
+  });
+
+  // Positions flattened from node groups — used in Add/Edit user dropdowns.
+  // Fetches from GET /tenants/{uuid}/positions which returns NodePositionGroupOut[].
+  const { data: positions = [] } = useQuery<PositionItem[]>({
+    queryKey: ["positions-flat", tenantId],
+    queryFn: async () => {
+      const groups = await api.get<Array<{
+        node_id:     string;
+        node_name:   string;
+        level_number: number;
+        positions: Array<{ id: string; title: string; role_code: string; is_active: boolean }>;
+      }>>(`/api/v1/tenants/${tenantId}/positions`);
+      return groups.flatMap((g) =>
+        g.positions
+          .filter((p) => p.is_active)
+          .map((p) => ({ id: p.id, title: p.title, role_code: p.role_code, node_id: g.node_id, node_name: g.node_name }))
+      );
+    },
+    enabled:   !!tenantId,
+    staleTime: 60_000,
   });
 
   async function openDetail(user: UserRecord) {
@@ -823,9 +862,10 @@ export default function PersonnelPage() {
       const detail = await api.get<UserDetail>(
         `/api/v1/tenants/${tenantId}/users/${user.id}`
       );
-      setSelectedUser(detail);
+      // assignments may be absent from the API response — default to []
+      setSelectedUser({ ...detail, assignments: detail.assignments ?? [] });
     } catch {
-      // Fallback: show limited info
+      // Fallback: show limited info without crashing
       setSelectedUser({ ...user, assignments: [] });
     }
   }
@@ -992,7 +1032,7 @@ export default function PersonnelPage() {
         <AddUserPanel
           tenantId={tenantId}
           callerRole={callerRole}
-          nodes={nodes}
+          positions={positions}
           onClose={() => setShowAddUser(false)}
           onCreated={() => void refetchUsers()}
         />
@@ -1003,7 +1043,7 @@ export default function PersonnelPage() {
           tenantId={tenantId}
           user={editUser}
           callerRole={callerRole}
-          nodes={nodes}
+          positions={positions}
           onClose={() => setEditUser(null)}
           onUpdated={() => { void refetchUsers(); qc.invalidateQueries({ queryKey: ["personnel-users", tenantId] }); }}
         />
