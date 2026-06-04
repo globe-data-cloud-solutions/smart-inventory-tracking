@@ -1637,6 +1637,7 @@ interface ApprovalRuleLocal {
   quantity_min: number; quantity_max: number | null;
   value_min: number; value_max: number | null;
   threshold_type: "QUANTITY" | "VALUE" | "EITHER" | "BOTH";
+  priority: number;
   steps: ApprovalStepLocal[];
 }
 
@@ -1691,12 +1692,13 @@ function ApprovalRulesV2Tab({ tenantId }: { tenantId: string }) {
   function getRules(typeId: string): ApprovalRuleLocal[] {
     if (rules[typeId]) return rules[typeId];
     const saved = savedRules.filter((r) => r.transfer_type_config_id === typeId);
-    return saved.map((r) => ({
+    return saved.map((r, idx) => ({
       id: r.id,
       source_level: r.source_level, destination_level: r.destination_level,
       quantity_min: r.quantity_min, quantity_max: r.quantity_max,
       value_min: r.value_min, value_max: r.value_max,
       threshold_type: (r.threshold_type as "QUANTITY" | "VALUE" | "EITHER" | "BOTH") ?? "QUANTITY",
+      priority: r.priority ?? idx,
       steps: r.approval_steps ?? [],
     }));
   }
@@ -1709,7 +1711,7 @@ function ApprovalRulesV2Tab({ tenantId }: { tenantId: string }) {
     setTypeRules(typeId, (prev) => [...prev, {
       id: `local_${Date.now()}`, source_level: null, destination_level: null,
       quantity_min: 0, quantity_max: null, value_min: 0, value_max: null,
-      threshold_type: "QUANTITY", steps: [],
+      threshold_type: "QUANTITY", priority: prev.length + 1, steps: [],
     }]);
   }
   function removeRule(typeId: string, idx: number) {
@@ -1742,7 +1744,7 @@ function ApprovalRulesV2Tab({ tenantId }: { tenantId: string }) {
     try {
       const body = activeTypes.flatMap((tt) => {
         const typeRules = rules[tt.id] ?? getRules(tt.id);
-        return typeRules.map((r, pri) => ({
+        return typeRules.map((r, idx) => ({
           transfer_type_config_id: tt.id,
           source_level: r.source_level, destination_level: r.destination_level,
           quantity_min: r.quantity_min, quantity_max: r.quantity_max,
@@ -1752,7 +1754,7 @@ function ApprovalRulesV2Tab({ tenantId }: { tenantId: string }) {
             sequence: s.sequence, position_title: s.position_title || null,
             resolution: s.location, execution_mode: s.mode, sla_hours: s.sla_hours,
           })),
-          priority: pri, is_active: true,
+          priority: r.priority ?? idx, is_active: true,
         }));
       });
       await api.put(`/api/v1/tenants/${tenantId}/transfer-approval-rules`, body);
@@ -1805,7 +1807,23 @@ function ApprovalRulesV2Tab({ tenantId }: { tenantId: string }) {
           {currentRules.map((rule, rIdx) => (
             <div key={rule.id} className="border border-gray-200 rounded-xl p-4 bg-white space-y-3">
               <div className="flex items-center justify-between">
-                <span className="text-xs font-bold uppercase text-gray-500">Rule {rIdx + 1}</span>
+                <div className="flex items-center gap-3">
+                  <span className="text-xs font-bold uppercase text-gray-500">Rule {rIdx + 1}</span>
+                  <div className="flex flex-col gap-0.5">
+                    <div className="flex items-center gap-1.5">
+                      <label className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide">
+                        {t("approval_rule.priority_label")}
+                      </label>
+                      <input
+                        type="number" min={0}
+                        value={rule.priority}
+                        onChange={(e) => updateRule(activeType, rIdx, { priority: Number(e.target.value) })}
+                        className="w-14 border border-gray-200 rounded px-1.5 py-0.5 text-xs text-center focus:border-emerald-400 focus:outline-none"
+                      />
+                    </div>
+                    <p className="text-[10px] text-gray-400 leading-tight">{t("approval_rule.priority_hint")}</p>
+                  </div>
+                </div>
                 <button type="button" onClick={() => removeRule(activeType, rIdx)}
                   className="w-6 h-6 flex items-center justify-center text-xs rounded border border-red-200 text-red-500 hover:bg-red-50">🗑</button>
               </div>

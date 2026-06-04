@@ -759,6 +759,8 @@
     "any_can_approve": "Any {position} can approve",
     "awaiting_approval": "Awaiting {name} approval",
     "position_vacant": "Position vacant — escalating to {name}",
+    "priority_label": "Priority",
+    "priority_hint": "Lower number = higher priority (matched first). Use 1 for most specific rules.",
     "pull_orientation_hint": "Source = stock sender (higher level). Destination = requesting warehouse. Example: WH requests from Factory → Source Level = Factory (L1), Destination Level = WH (L4).",
     "push_orientation_hint": "Source = stock sender (initiator). Destination = receiving warehouse. Example: Factory sends to WH → Source Level = Factory (L1), Destination Level = WH (L4).",
     "sister_orientation_hint": "Source = sending warehouse. Destination = receiving warehouse. Both are typically the same level.",
