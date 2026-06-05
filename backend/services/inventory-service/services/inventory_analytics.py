@@ -58,19 +58,18 @@ async def get_stock(
             ib.warehouse_id,
             p.name                                AS product_name,
             p.sku                                 AS product_sku,
-            COALESCE(w.name, on_node.name)        AS warehouse_name,
-            COALESCE(w.warehouse_type::text, 'WAREHOUSE') AS warehouse_type,
+            on_node.name                          AS warehouse_name,
+            'WAREHOUSE'                           AS warehouse_type,
             SUM(ib.quantity)                      AS current_stock
         FROM inventory_balances ib
         JOIN products          p       ON p.id       = ib.product_id
-        LEFT JOIN warehouses   w       ON w.id       = ib.warehouse_id
         LEFT JOIN organization_node on_node ON on_node.id = ib.warehouse_id
         WHERE ib.lot_number IS NULL   -- aggregate running balance only; lot rows excluded
           {tenant_clause}
           {warehouse_clause}
         GROUP BY ib.product_id, ib.warehouse_id,
-                 p.name, p.sku, w.name, w.warehouse_type, on_node.name
-        ORDER BY p.name, COALESCE(w.name, on_node.name)
+                 p.name, p.sku, on_node.name
+        ORDER BY p.name, on_node.name
     """)
 
     params: dict = {}

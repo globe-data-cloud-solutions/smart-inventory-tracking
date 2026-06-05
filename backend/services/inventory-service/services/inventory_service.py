@@ -75,6 +75,17 @@ async def _check_can_approve(
             exec_mode    = (cur_step.get("execution_mode") or "sequential").lower()
             assigned_uid = cur_step.get("assigned_to_user_id")
             all_holders  = cur_step.get("all_holders") or []
+            step_escalated = cur_step.get("escalated", False)
+
+            # Escalated step override: when a step was escalated to TA because the
+            # original assignee was the transfer creator (self-approval prevention),
+            # any active TA for this tenant is allowed to approve — even if their
+            # user_id differs from the stored assigned_to_user_id.
+            if step_escalated:
+                caller_role = getattr(user, "role", "")
+                is_own      = str(getattr(row, "created_by", "")) == caller_uid
+                if caller_role == "TA" and not is_own:
+                    return  # TA allowed on escalated steps
 
             if exec_mode == "any":
                 # ANY mode: first eligible holder to approve wins.

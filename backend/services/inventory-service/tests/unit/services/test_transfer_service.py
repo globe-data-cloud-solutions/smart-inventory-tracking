@@ -2348,3 +2348,143 @@ class TestAncestorTraversal:
         assert exc.value.detail["code"] == "NO_APPROVER_FOUND", (
             "Empty all_holders must raise 422 NO_APPROVER_FOUND, not silently allow anyone"
         )
+
+
+# ── BUG 1 + BUG 2 regression tests ──────────────────────────────────────────
+
+@pytest.mark.unit
+class TestL1StockAndTAEscalation:
+    """Regression tests for L1 stock double-count (BUG 1) and TA escalation (BUG 2)."""
+
+    def test_l1_stock_not_doubled_no_warehouses_join(self) -> None:
+        """The stock SQL no longer JOINs the legacy warehouses table.
+
+        Removing LEFT JOIN warehouses prevents double-counting when a
+        warehouse UUID exists in both the legacy warehouses table and
+        organization_node (the current IMTS system).  Confirmed by
+        checking the SQL template in get_stock().
+        """
+        import inspect
+        from services.inventory_analytics import get_stock
+        src = inspect.getsource(get_stock)
+        assert "LEFT JOIN warehouses" not in src, (
+            "get_stock() must not JOIN the legacy warehouses table — "
+            "it duplicates rows for warehouses that exist in both tables"
+        )
+        assert "LEFT JOIN organization_node on_node" in src, (
+            "get_stock() must JOIN organization_node for warehouse names"
+        )
+        assert "lot_number IS NULL" in src, (
+            "get_stock() must filter to aggregate (lot_number IS NULL) rows only"
+        )
+
+    async def test_ta_can_approve_escalated_transfer(self) -> None:
+        """_check_can_approve allows any TA on steps flagged as escalated.
+
+        When self-approval prevention escalates the approval step to TA,
+        any active TA for the tenant may approve — even if their user_id
+        differs from the stored assigned_to_user_id (e.g. when the
+        escalation updated stored TA ID but a different TA is calling).
+        """
+        from services.inventory_service import _check_can_approve
+        from services.approval_service import ApprovalDecision
+        from fastapi import HTTPException
+
+        CREATOR_ID = "creator-000"; OTHER_TA_ID = "ta-user-001"
+
+        # A step that was escalated to TA (self-approval prevention)
+        row = MagicMock()
+        row.resolved_approval_steps = [
+            {
+                "sequence": 1,
+                "position_title": "Tenant Admin",
+                "execution_mode": "sequential",
+                "assigned_to_user_id": OTHER_TA_ID,  # TA stored, but another TA calling
+                "assigned_to_name": "Tenant Admin",
+                "all_holders": [],
+                "escalated": True,                   # ← self-approval escalation flag
+            }
+        ]
+        row.current_approval_step = 1
+        row.created_by = CREATOR_ID
+
+        decision = ApprovalDecision(
+            required_role="TA", is_auto_approved=False,
+            next_status="PENDING_APPROVAL", required_authority_level=1,
+        )
+
+        # A different TA (not the stored OTHER_TA_ID) tries to approve
+        DIFFERENT_TA_ID = "ta-user-002"
+        user = _User(DIFFERENT_TA_ID, TENANT_ID, None, None, "TA")
+
+        # Must NOT raise — escalated step allows any TA
+        await _check_can_approve(row, user, 1, decision)
+
+    async def test_non_ta_cannot_approve_escalated_transfer(self) -> None:
+        """_check_can_approve blocks non-TA users on escalated steps."""
+        from services.inventory_service import _check_can_approve
+        from services.approval_service import ApprovalDecision
+        from fastapi import HTTPException
+
+        TA_ID = "ta-user-001"; RM_ID = "rm-user-001"; CREATOR_ID = "creator-000"
+
+        row = MagicMock()
+        row.resolved_approval_steps = [
+            {
+                "sequence": 1,
+                "position_title": "Tenant Admin",
+                "execution_mode": "sequential",
+                "assigned_to_user_id": TA_ID,
+                "assigned_to_name": "TA User",
+                "all_holders": [],
+                "escalated": True,
+            }
+        ]
+        row.current_approval_step = 1
+        row.created_by = CREATOR_ID
+
+        decision = ApprovalDecision(
+            required_role="TA", is_auto_approved=False,
+            next_status="PENDING_APPROVAL", required_authority_level=1,
+        )
+
+        # RM (not TA) tries to approve — must be blocked
+        user = _User(RM_ID, TENANT_ID, WAREHOUSE_A, None, "RM")
+
+        with pytest.raises(HTTPException) as exc:
+            await _check_can_approve(row, user, 2, decision)
+
+        assert exc.value.status_code == 403
+        assert exc.value.detail["code"] == "NOT_ASSIGNED_APPROVER"
+
+    async def test_escalated_steps_store_ta_user_id(self) -> None:
+        """_find_tenant_ta returns the TA user_id for a given tenant.
+
+        The escalation path in resolve_transfer_approvers calls
+        _find_tenant_ta to find the TA user when self-approval exhausts
+        the reports_to chain.  This test verifies the helper SQL returns
+        a user with system_role='TA'.
+        """
+        from services.approval_service import _find_tenant_ta
+
+        TA_USER_ID = "ta-user-001"
+
+        async def fake_execute(sql, params=None, **kw):
+            result = MagicMock()
+            row = MagicMock()
+            row.id = TA_USER_ID
+            row.full_name = "Tenant Admin"
+            result.fetchone = MagicMock(return_value=row)
+            return result
+
+        session = AsyncMock()
+        session.execute = AsyncMock(side_effect=fake_execute)
+
+        uid, name = await _find_tenant_ta(session, TENANT_ID)
+        assert uid == TA_USER_ID, "Must return the TA user's ID"
+        assert name == "Tenant Admin"
+        # Verify the SQL queries for system_role='TA'
+        call_sql = str(session.execute.call_args_list[0][0][0])
+        assert "system_role" in call_sql and "TA" in call_sql, (
+            "_find_tenant_ta must query by system_role='TA'"
+        )

@@ -584,6 +584,29 @@ async def _find_position_and_holder(
     )
 
 
+async def _find_tenant_ta(
+    session:   AsyncSession,
+    tenant_id: str,
+) -> tuple[Optional[str], Optional[str]]:
+    """Return (user_id, full_name) of the first active TA for this tenant.
+
+    Used as the last-resort escalation target when self-approval prevention
+    exhausts the reports_to chain without finding a different approver.
+    Returns (None, None) when no TA user exists.
+    """
+    row = (await session.execute(
+        text(
+            "SELECT id, full_name FROM users "
+            "WHERE tenant_id = :tid AND system_role = 'TA' AND is_active = true "
+            "LIMIT 1"
+        ),
+        {"tid": tenant_id},
+    )).fetchone()
+    if row:
+        return str(row.id), str(row.full_name)
+    return None, None
+
+
 async def _escalate_vacant(
     session:      AsyncSession,
     tenant_id:    str,
@@ -744,23 +767,29 @@ async def resolve_transfer_approvers(
         uid = str(nm_row.user_id) if nm_row and nm_row.user_id else None
         name = str(nm_row.full_name) if nm_row and nm_row.full_name else None
         title = str(nm_row.title) if nm_row else "National Manager"
+        ta_escalated = False
         # Self-approval escalation for the fallback step
         if uid and uid == created_by:
             uid, name, _ = await _escalate_vacant(
                 session, tenant_id, str(nm_row.pos_id) if nm_row else "fallback"
             )
+            # If the reports_to chain is exhausted or circles back to the creator,
+            # escalate to the Tenant Admin as the ultimate fallback approver.
+            if not uid or uid == created_by:
+                uid, name = await _find_tenant_ta(session, tenant_id)
+                ta_escalated = True
 
         return ApprovalResolution(
             missing_rule=True,
             steps=[ResolvedStep(
                 sequence=1,
-                position_title=title,
+                position_title="Tenant Admin" if ta_escalated else title,
                 position_id=str(nm_row.pos_id) if nm_row else None,
                 node_id=str(nm_row.node_id) if nm_row else None,
                 assigned_to_user_id=uid,
                 assigned_to_name=name,
                 is_vacant=nm_row is None,
-                escalated=nm_row is None,
+                escalated=nm_row is None or ta_escalated,
             )],
         )
 
@@ -835,6 +864,12 @@ async def resolve_transfer_approvers(
                 holder_uid, holder_name, escalated = await _escalate_vacant(session, tenant_id, pos_id)
             else:
                 holder_uid, holder_name = None, None
+            # If the reports_to chain is exhausted or loops back to the creator,
+            # escalate to the Tenant Admin as the ultimate fallback approver.
+            if not holder_uid or holder_uid == created_by:
+                holder_uid, holder_name = await _find_tenant_ta(session, tenant_id)
+                if holder_uid:
+                    escalated = True
 
         # If escalation exhausted the chain and no approver was found, surface
         # a clear 422 rather than silently storing a step with no assignee.
