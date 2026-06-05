@@ -11,7 +11,7 @@ import { useInventoryStore } from "@/lib/inventory-state";
 import { useAuditStore } from "@/lib/audit-log-state";
 import { useOfflineSync } from "@/hooks/useOfflineSync";
 import { useWarehouses } from "@/hooks/useWarehouses";
-import { api } from "@/lib/api";
+import { api, IS_GATEWAY_MODE } from "@/lib/api";
 import { t } from "@/lib/i18n";
 import { useTenantName } from "@/hooks/useTenantName";
 
@@ -704,7 +704,12 @@ export default function TransfersPage() {
   const tenant = DEMO_TENANTS.find((ten) => ten.slug === org);
   if (!user) return <p className="p-8 text-gray-500">{t("common.no_data")}</p>;
 
-  const isGatewayMode = stockData.length > 0;
+  // Config-based: true whenever NEXT_PUBLIC_API_URL is set, regardless of whether
+  // inventory_balances has rows yet.  The old stockData.length > 0 check was the
+  // root cause of L1 stock doubling — an empty inventory_balances caused
+  // isGatewayMode=false, which fell through to demo data paths and Zustand
+  // double-counting even though the backend IS configured.
+  const isGatewayMode = IS_GATEWAY_MODE;
 
   // DB warehouse_type enum → frontend DemoWarehouse type mapping.
   // DB uses FACTORY|REGIONAL|RETAIL|SUBCENTER; frontend uses MWH|RWH|WH|SUB_WH.
@@ -743,35 +748,18 @@ export default function TransfersPage() {
     stockByProductId.set(row.product_id, existing);
   }
 
-  // Gateway mode: use only real API products (demo slugs are not valid UUIDs in the DB).
-  // Demo mode: merge demo catalog + API products so the dropdown shows all products.
-  const tenantProductIds = new Set((tenant?.products ?? []).map((p) => p.id));
-  const mergedProducts: DemoProduct[] = isGatewayMode
-    ? apiProducts.map((p) => ({
-        id:            p.id,
-        sku:           p.sku,
-        name:          p.name,
-        category:      p.category ?? p.type_code,
-        unit:          p.unit,
-        batchTracking: false,
-        reorderPoint:  p.reorder_point ?? 0,
-        stock:         stockByProductId.get(p.id) ?? {},
-      }))
-    : [
-        ...(tenant?.products ?? []),
-        ...apiProducts
-          .filter((p) => !tenantProductIds.has(p.id))
-          .map((p) => ({
-            id:            p.id,
-            sku:           p.sku,
-            name:          p.name,
-            category:      p.category ?? p.type_code,
-            unit:          p.unit,
-            batchTracking: false,
-            reorderPoint:  p.reorder_point ?? 0,
-            stock:         stockByProductId.get(p.id) ?? {},
-          })),
-      ];
+  // In gateway mode, always use real API products — never fall back to demo catalog.
+  // DEMO_TENANTS is empty (all data is in the DB), so this is now unconditional.
+  const mergedProducts: DemoProduct[] = apiProducts.map((p) => ({
+    id:            p.id,
+    sku:           p.sku,
+    name:          p.name,
+    category:      p.category ?? p.type_code,
+    unit:          p.unit,
+    batchTracking: false,
+    reorderPoint:  p.reorder_point ?? 0,
+    stock:         stockByProductId.get(p.id) ?? {},
+  }));
 
   // Prefer org-node list (has level_number for canPush + all nodes regardless of stock).
   // Fall back to analytics-derived list until org-node data loads.

@@ -36,6 +36,7 @@
 
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
+import { IS_GATEWAY_MODE } from "@/lib/api";
 
 export type TransferStatus =
   | "DRAFT"
@@ -299,6 +300,13 @@ export const useInventoryStore = create<InventoryStore>()(
       // ── Core balances ─────────────────────────────────────────────────────
 
       getOnHand: (productId, warehouseId, baseStock) => {
+        // In gateway mode the backend is the single source of truth.
+        // baseStock already reflects every committed transaction (RECEIVE, ISSUE,
+        // TRANSFER_OUT, etc.) via inventory_balances.  Adding Zustand session-time
+        // movements on top would double-count any operation the user performed
+        // during this session (e.g. a receive that was already committed to the DB).
+        if (IS_GATEWAY_MODE) return baseStock;
+
         const s   = get();
         const key = `${s.currentTenantSlug}:${warehouseId}:${productId}`;
         const receiveQty     = s.receives[key] ?? 0;
@@ -308,10 +316,14 @@ export const useInventoryStore = create<InventoryStore>()(
         const outboundGone   = s.transfers
           .filter((t) => t.tenantSlug === s.currentTenantSlug && t.productId === productId && t.fromWarehouseId === warehouseId && OUT_REDUCES_ON_HAND.includes(t.status))
           .reduce((n, t) => n + t.quantity, 0);
-return baseStock + receiveQty + inboundFull + inboundPartial - outboundGone - issueQty;
+        return baseStock + receiveQty + inboundFull + inboundPartial - outboundGone - issueQty;
       },
 
       getAvailable: (productId, warehouseId, baseStock) => {
+        // In gateway mode, net_available is returned directly by the analytics API
+        // (it already subtracts pending_out_qty).  Use baseStock as-is.
+        if (IS_GATEWAY_MODE) return Math.max(0, baseStock);
+
         const s        = get();
         const onHand   = s.getOnHand(productId, warehouseId, baseStock);
         const reserved = s.getOutboundReserved(productId, warehouseId).reduce((n, t) => n + t.quantity, 0);

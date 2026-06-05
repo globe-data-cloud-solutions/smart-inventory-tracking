@@ -1,5 +1,17 @@
 const BASE_URL = process.env.NEXT_PUBLIC_API_URL ?? "";
 
+/**
+ * True when a real backend URL is configured (NEXT_PUBLIC_API_URL is set and non-empty).
+ * Import this constant instead of re-computing !!process.env.NEXT_PUBLIC_API_URL everywhere,
+ * and especially instead of using stockData.length > 0 as a proxy for gateway mode.
+ *
+ * Gateway mode:  API is the single source of truth — Zustand session state must NOT be
+ *                added on top of API values or stock will be doubled.
+ * Demo mode:     No backend; BFF routes (Next.js /api/v1/*) handle requests in-process
+ *                and Zustand tracks session-time movements.
+ */
+export const IS_GATEWAY_MODE = !!BASE_URL;
+
 type Method = "GET" | "POST" | "PATCH" | "DELETE" | "PUT";
 
 interface _Session {

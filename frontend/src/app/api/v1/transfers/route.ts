@@ -2,6 +2,9 @@ import { NextRequest, NextResponse } from "next/server";
 import { demoTransfers, refCounter, type TransferRecord, type TransferType } from "./_demo-state";
 
 export async function POST(req: NextRequest) {
+  if (process.env.NEXT_PUBLIC_API_URL) {
+    console.warn("[BFF] transfers POST called in gateway mode:", req.url, "— should be routed to real backend");
+  }
   const tenantSlug = req.headers.get("X-Tenant-Slug") ?? "";
   const body = (await req.json()) as {
     transfer_type?: string;
@@ -59,6 +62,9 @@ export async function POST(req: NextRequest) {
 }
 
 export async function GET(req: NextRequest) {
+  if (process.env.NEXT_PUBLIC_API_URL) {
+    console.warn("[BFF] transfers GET called in gateway mode:", req.url, "— should be routed to real backend");
+  }
   const tenantSlug = req.headers.get("X-Tenant-Slug") ?? "";
   const data = tenantSlug
     ? demoTransfers.filter((t) => t.tenant_slug === tenantSlug)

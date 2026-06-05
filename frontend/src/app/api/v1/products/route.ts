@@ -5,6 +5,9 @@ const VALID_UNITS = ["KG", "PACK", "QTL", "MT"] as const;
 const VALID_PACKS = [1, 4, 6, 12] as const;
 
 export async function POST(req: NextRequest) {
+  if (process.env.NEXT_PUBLIC_API_URL) {
+    console.warn("[BFF] products POST called in gateway mode:", req.url, "— should be routed to real backend");
+  }
   const tenantSlug = req.headers.get("X-Tenant-Slug") ?? "unknown";
   const body = (await req.json()) as {
     name?: string; type_code?: string; unit?: string;
