@@ -117,7 +117,8 @@
     "CLOSED": "Cufame",
     "REJECTED": "Dhoorkame",
     "CANCELLED": "Haqame",
-    "PENDING_APPROVAL": "Hayyama Eegaa Jira"
+    "PENDING_APPROVAL": "Hayyama Eegaa Jira",
+    "POSTED": "Maxxanfame"
   },
   "common": {
     "save": "Olkaa'i",
@@ -412,6 +413,7 @@
     "submit": "Hayyamaaf Galchi",
     "approve": "Hayyami",
     "reject": "Dhoorkadhu",
+    "cancel": "Haqi",
     "auto_applied": "Hayyamame raawwatame (daangaa gadi)",
     "pending_rm": "RM hayyama eeggata",
     "pending_nm": "NM hayyama eeggata",
@@ -1022,7 +1024,8 @@
     "products": "products",
     "location": "Location",
     "type": "Type",
-    "total_units": "Total Units"
+    "total_units": "Total Units",
+    "actions": "Tarkaanfii"
   },
   "warehouse_type": {
     "MWH": "Main WH",

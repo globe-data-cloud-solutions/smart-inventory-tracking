@@ -116,7 +116,8 @@
     "CLOSED": "ተዘግቷል",
     "REJECTED": "ውድቅ ሆኗል",
     "CANCELLED": "ተሰርዟል",
-    "PENDING_APPROVAL": "ፈቃድ ይጠብቃል"
+    "PENDING_APPROVAL": "ፈቃድ ይጠብቃል",
+    "POSTED": "ተለጠፈ"
   },
   "common": {
     "save": "አስቀምጥ",
@@ -422,6 +423,7 @@
     "submit": "ለፈቃድ አስገባ",
     "approve": "ፍቀድ",
     "reject": "ውድቅ አድርግ",
+    "cancel": "ሰርዝ",
     "auto_applied": "ተፈቅዶ ተተግብሯል (ከወሰን በታች)",
     "pending_rm": "RM ፈቃድ ይጠብቃል",
     "pending_nm": "NM ፈቃድ ይጠብቃል",
@@ -594,7 +596,8 @@
     "products": "products",
     "location": "Location",
     "type": "Type",
-    "total_units": "Total Units"
+    "total_units": "Total Units",
+    "actions": "ድርጊቶች"
   },
   "warehouse_type": {
     "MWH": "Main WH",

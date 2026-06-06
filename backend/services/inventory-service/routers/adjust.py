@@ -40,6 +40,42 @@ async def create_adjustment(
     return SuccessResponse(data=result)
 
 
+@router.post("/{adjustment_id}/submit", response_model=SuccessResponse[AdjustmentResponse])
+@require_permission(PERMISSIONS.ADJUSTMENT_SUBMIT)
+async def submit_adjustment(
+    adjustment_id: UUID,
+    user=Depends(get_current_user),
+    db: AsyncSession = Depends(get_db_session),
+) -> SuccessResponse[AdjustmentResponse]:
+    svc = InventoryService(db)
+    result = await svc.transition_adjustment(user, adjustment_id, "PENDING_APPROVAL")
+    return SuccessResponse(data=result)
+
+
+@router.post("/{adjustment_id}/reject", response_model=SuccessResponse[AdjustmentResponse])
+@require_permission(PERMISSIONS.ADJUSTMENT_REJECT)
+async def reject_adjustment(
+    adjustment_id: UUID,
+    user=Depends(get_current_user),
+    db: AsyncSession = Depends(get_db_session),
+) -> SuccessResponse[AdjustmentResponse]:
+    svc = InventoryService(db)
+    result = await svc.transition_adjustment(user, adjustment_id, "REJECTED")
+    return SuccessResponse(data=result)
+
+
+@router.post("/{adjustment_id}/cancel", response_model=SuccessResponse[AdjustmentResponse])
+@require_permission(PERMISSIONS.ADJUSTMENT_CANCEL)
+async def cancel_adjustment(
+    adjustment_id: UUID,
+    user=Depends(get_current_user),
+    db: AsyncSession = Depends(get_db_session),
+) -> SuccessResponse[AdjustmentResponse]:
+    svc = InventoryService(db)
+    result = await svc.transition_adjustment(user, adjustment_id, "CANCELLED")
+    return SuccessResponse(data=result)
+
+
 @router.post("/{adjustment_id}/approve", response_model=SuccessResponse[AdjustmentResponse])
 @require_permission(PERMISSIONS.ADJUSTMENT_APPROVE)
 async def approve_adjustment(

@@ -128,7 +128,8 @@
     "CLOSED": "Closed",
     "REJECTED": "Rejected",
     "CANCELLED": "Cancelled",
-    "PENDING_APPROVAL": "Pending Approval"
+    "PENDING_APPROVAL": "Pending Approval",
+    "POSTED": "Posted"
   },
   "common": {
     "save": "Save",
@@ -421,6 +422,7 @@
     "submit": "Submit for Approval",
     "approve": "Approve",
     "reject": "Reject",
+    "cancel": "Cancel",
     "auto_applied": "Auto",
     "pending_rm": "Awaiting RM approval",
     "pending_nm": "Awaiting NM approval",
@@ -787,7 +789,8 @@
     "products": "products",
     "location": "Location",
     "type": "Type",
-    "total_units": "Total Units"
+    "total_units": "Total Units",
+    "actions": "Actions"
   },
   "warehouse_type": {
     "MWH": "Main WH",

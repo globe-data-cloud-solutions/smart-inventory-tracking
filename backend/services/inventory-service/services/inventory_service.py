@@ -1153,7 +1153,7 @@ class InventoryService:
             {"s": next_state, "id": str(adjustment_id)},
         )
 
-        if next_state == "APPLIED":
+        if next_state == "POSTED":
             await write_to_outbox(
                 self.db,
                 str(user.tenant_id),

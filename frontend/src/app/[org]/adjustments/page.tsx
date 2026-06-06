@@ -18,7 +18,8 @@ type ApiProduct = {
   reorder_point?: number | null; category?: string | null;
 };
 
-type AdjStatus = "DRAFT" | "SUBMITTED" | "APPROVED" | "APPLIED" | "REJECTED" | "CANCELLED";
+type AdjStatus = "DRAFT" | "PENDING_APPROVAL" | "APPROVED" | "POSTED" | "REJECTED" | "CANCELLED";
+type AdjAction  = "submit" | "approve" | "reject" | "cancel";
 
 // Bug 2: added product_id and warehouse_id for scoping and balance update (Bug 9)
 interface AdjRecord {
@@ -32,27 +33,30 @@ interface AdjRecord {
   reason_code: string;
   notes: string;
   status: AdjStatus;
-  approval_required_role: "NONE" | "RM" | "NM" | "TA";
+  approval_required_role?: "NONE" | "RM" | "NM" | "TA";
+  created_by?: string;
   created_at: string;
 }
 
 const STATUS_CLASS: Record<AdjStatus, string> = {
-  DRAFT:     "bg-gray-100 text-gray-500",
-  SUBMITTED: "bg-blue-100 text-blue-800",
-  APPROVED:  "bg-emerald-100 text-emerald-900",
-  APPLIED:   "bg-green-100 text-green-800",
-  REJECTED:  "bg-red-100 text-red-900",
-  CANCELLED: "bg-gray-100 text-gray-400",
+  DRAFT:            "bg-gray-100 text-gray-500",
+  PENDING_APPROVAL: "bg-blue-100 text-blue-800",
+  APPROVED:         "bg-emerald-100 text-emerald-900",
+  POSTED:           "bg-green-100 text-green-800",
+  REJECTED:         "bg-red-100 text-red-900",
+  CANCELLED:        "bg-gray-100 text-gray-400",
 };
 
 const REASONS = ["DAMAGE", "COUNT_VARIANCE", "EXPIRY", "SUPPLIER_RETURN", "SAMPLE"];
 const NOTES   = ["Moisture exposure", "Count discrepancy resolved", "Expired batch disposed", "Transit damage on return", "Promotion sample"];
 
 // Bug 2: buildSeedAdj now includes product_id and warehouse_id for scoping
-function buildSeedAdj(tenant: DemoTenant): AdjRecord[] {
+function buildSeedAdj(tenant: DemoTenant, userId: string): AdjRecord[] {
   return tenant.products.slice(0, 5).map((p, i) => {
     const wh  = tenant.warehouses[i % tenant.warehouses.length];
     const qty = i % 2 === 0 ? -(50 + i * 30) : (100 + i * 50);
+    const status: AdjStatus =
+      i < 2 ? "POSTED" : i === 2 ? "REJECTED" : i === 3 ? "PENDING_APPROVAL" : "DRAFT";
     return {
       id:                     `seed-adj-${tenant.id}-${i}`,
       product_id:             p.id,
@@ -63,16 +67,15 @@ function buildSeedAdj(tenant: DemoTenant): AdjRecord[] {
       quantity_delta:         qty,
       reason_code:            REASONS[i % REASONS.length] ?? "DAMAGE",
       notes:                  NOTES[i % NOTES.length] ?? "",
-      status:                 i < 3 ? "APPLIED" : "SUBMITTED",
-      approval_required_role: i < 3 ? "NONE" : "RM",
+      status,
+      approval_required_role: i < 2 ? "NONE" : "RM",
+      created_by:             i === 4 ? userId : "other-seed-user",
       created_at:             `2026-0${i + 1 < 10 ? "0" : ""}${i + 1}-15T10:00:00Z`,
     } satisfies AdjRecord;
   });
 }
 
-const CAN_APPROVE: Record<string, string[]> = {
-  RM: ["RM"], NM: ["RM", "NM"], TA: ["RM", "NM", "TA"], SA: ["RM", "NM", "TA"],
-};
+const APPROVER_ROLES = new Set(["NM", "RM", "TA", "SA"]);
 
 export default function AdjustmentsPage() {
   const { org }        = useParams() as { org: string };
@@ -120,8 +123,9 @@ export default function AdjustmentsPage() {
   const tenant = DEMO_TENANTS.find((ten) => ten.slug === org);
   if (!tenant && !isGatewayMode) return <p className="p-8 text-gray-500">{t("common.no_data")}</p>;
   if (!user) return <p className="p-8 text-gray-500">{t("common.no_data")}</p>;
+  const currentUser = user;
 
-  const seedAdj = tenant ? buildSeedAdj(tenant) : [];
+  const seedAdj = tenant ? buildSeedAdj(tenant, currentUser.id) : [];
   const allAdj: AdjRecord[] = [...apiAdj, ...seedAdj];
 
   // Build product and warehouse lists for NewAdjustmentPanel.
@@ -141,25 +145,30 @@ export default function AdjustmentsPage() {
     : (tenant?.warehouses ?? []);
 
   // Bug 2: WM sees only adjustments for their own warehouse; managers see all
-  const visibleAdj = user.role === "WM" && user.warehouseId
-    ? allAdj.filter((a) => a.warehouse_id === user.warehouseId)
+  const visibleAdj = currentUser.role === "WM" && currentUser.warehouseId
+    ? allAdj.filter((a) => a.warehouse_id === currentUser.warehouseId)
     : allAdj;
 
-  const approvableRoles = CAN_APPROVE[user.role] ?? [];
+  const isApproverRole = APPROVER_ROLES.has(currentUser.role);
 
-  async function transition(id: string, next: AdjStatus) {
+  function canApprove(adj: AdjRecord): boolean {
+    const isCreator = currentUser.id.toLowerCase() === (adj.created_by ?? "").toLowerCase();
+    return isApproverRole && !isCreator;
+  }
+
+  async function transition(id: string, action: AdjAction) {
     // IMPORTANT: search allAdj — not visibleAdj. visibleAdj is display-only (WM-scoped).
     // Approvers (RM/NM/TA) must find the adjustment record regardless of which WH created it.
     const adj = allAdj.find((a) => a.id === id);
 
     try {
-      await api.patch(`/api/v1/inventory/adjustments/${id}`, { next_status: next });
+      await api.post(`/api/v1/inventory/adjustments/${id}/${action}`, {});
     } catch { /* seed adjustments return 404 — fall through to state updates below */ }
 
     // Update inventory balance OUTSIDE the try/catch so 404s (seed records) don't
     // swallow the store update. warehouse_id comes from the adjustment record — NOT from
     // the approver's JWT (NM/RM/TA have no assigned warehouse_id).
-    if (next === "APPROVED" && adj?.product_id && adj.warehouse_id) {
+    if (action === "approve" && adj?.product_id && adj.warehouse_id) {
       const adjWarehouseId = adj.warehouse_id;
       const adjProductId   = adj.product_id;
       const adjQty         = adj.quantity_delta ?? 0;
@@ -170,22 +179,20 @@ export default function AdjustmentsPage() {
 
       // Audit log for this approval — use adj.warehouse_id (the WH that created the
       // adjustment), never the approver's warehouse_id (NM/TA have none).
-      if (user) {
-        useAuditStore.getState().log({
-          tenantSlug:    org,
-          userEmail:     user.email,
-          userName:      user.name,
-          role:          user.role,
-          category:      "ADJUSTMENT",
-          action:        "ADJUSTMENT_APPROVED",
-          resourceRef:   id,
-          resourceType:  "adjustment",
-          productName:   adj.product_name,
-          quantityStr:   `${adjQty > 0 ? "+" : ""}${adjQty}`,
-          fromWarehouse: adj.warehouse_name,
-          notes:         adj.notes,
-        });
-      }
+      useAuditStore.getState().log({
+        tenantSlug:    org,
+        userEmail:     currentUser.email,
+        userName:      currentUser.name,
+        role:          currentUser.role,
+        category:      "ADJUSTMENT",
+        action:        "ADJUSTMENT_APPROVED",
+        resourceRef:   id,
+        resourceType:  "adjustment",
+        productName:   adj.product_name,
+        quantityStr:   `${adjQty > 0 ? "+" : ""}${adjQty}`,
+        fromWarehouse: adj.warehouse_name,
+        notes:         adj.notes,
+      });
     }
 
     await qc.invalidateQueries({ queryKey: ["adjustments", org] });
@@ -193,10 +200,10 @@ export default function AdjustmentsPage() {
     void qc.invalidateQueries({ queryKey: ["inventory", org] });
   }
 
-  const pending   = visibleAdj.filter((a) => a.status === "SUBMITTED");
-  const applied   = visibleAdj.filter((a) => a.status === "APPLIED");
-  const other     = visibleAdj.filter((a) => !["SUBMITTED", "APPLIED"].includes(a.status));
-  const myPending = pending.filter((a) => approvableRoles.includes(a.approval_required_role));
+  const pending   = visibleAdj.filter((a) => a.status === "PENDING_APPROVAL");
+  const applied   = visibleAdj.filter((a) => a.status === "POSTED");
+  const other     = visibleAdj.filter((a) => !["PENDING_APPROVAL", "POSTED"].includes(a.status));
+  const myPending = pending.filter(canApprove);
 
   return (
     <div className="p-8">
@@ -252,13 +259,13 @@ export default function AdjustmentsPage() {
                 </div>
                 <div className="flex gap-2">
                   <button
-                    onClick={() => void transition(a.id, "APPROVED")}
+                    onClick={() => void transition(a.id, "approve")}
                     className="px-3.5 py-1.5 bg-green-100 text-green-800 border border-emerald-200 rounded text-xs font-bold cursor-pointer"
                   >
                     {t("adjustment.approve")}
                   </button>
                   <button
-                    onClick={() => void transition(a.id, "REJECTED")}
+                    onClick={() => void transition(a.id, "reject")}
                     className="px-3.5 py-1.5 bg-red-100 text-red-900 border border-red-200 rounded text-xs font-bold cursor-pointer"
                   >
                     {t("adjustment.reject")}
@@ -277,7 +284,7 @@ export default function AdjustmentsPage() {
           <table className="w-full border-collapse text-sm">
             <thead>
               <tr className="bg-gray-50 border-b-2 border-gray-200">
-                {["common.date", "table.sku", "table.product", "table.location", "adjustment.quantity", "adjustment.reason", "adjustment.approval", "table.status"].map((key) => (
+                {["common.date", "table.sku", "table.product", "table.location", "adjustment.quantity", "adjustment.reason", "adjustment.approval", "table.status", "table.actions"].map((key) => (
                   <th key={key} className="px-3.5 py-2.5 text-left text-xs font-bold text-gray-500 uppercase tracking-wide whitespace-nowrap">
                     {t(key)}
                   </th>
@@ -296,16 +303,49 @@ export default function AdjustmentsPage() {
                   </td>
                   <td className="px-3.5 py-2 text-gray-500 text-xs">{a.reason_code.replace(/_/g, " ")}</td>
                   <td className="px-3.5 py-2">
-                    {a.approval_required_role === "NONE"
+                    {(a.approval_required_role ?? "NONE") === "NONE"
                       ? <span className="text-xs text-gray-400">{t("adjustment.auto_applied")}</span>
                       : <span className="text-xs font-bold bg-amber-100 text-amber-800 px-1.5 py-0.5 rounded">{a.approval_required_role}</span>
                     }
                   </td>
                   <td className="px-3.5 py-2">
-                    {/* Bug 3: status.APPLIED now resolves to "Applied" via en.json */}
                     <span className={`text-xs font-bold px-2 py-0.5 rounded ${STATUS_CLASS[a.status]}`}>
                       {t(`status.${a.status}`)}
                     </span>
+                  </td>
+                  <td className="px-3.5 py-2">
+                    {a.status === "DRAFT" && currentUser.id.toLowerCase() === (a.created_by ?? "").toLowerCase() && (
+                      <div className="flex gap-1.5">
+                        <button
+                          onClick={() => void transition(a.id, "submit")}
+                          className="px-2.5 py-1 bg-blue-100 text-blue-800 border border-blue-200 rounded text-xs font-bold cursor-pointer hover:bg-blue-200"
+                        >
+                          {t("adjustment.submit")}
+                        </button>
+                        <button
+                          onClick={() => void transition(a.id, "cancel")}
+                          className="px-2.5 py-1 bg-gray-100 text-gray-600 border border-gray-200 rounded text-xs font-bold cursor-pointer hover:bg-gray-200"
+                        >
+                          {t("adjustment.cancel")}
+                        </button>
+                      </div>
+                    )}
+                    {a.status === "PENDING_APPROVAL" && canApprove(a) && (
+                      <div className="flex gap-1.5">
+                        <button
+                          onClick={() => void transition(a.id, "approve")}
+                          className="px-2.5 py-1 bg-green-100 text-green-800 border border-emerald-200 rounded text-xs font-bold cursor-pointer hover:bg-green-200"
+                        >
+                          {t("adjustment.approve")}
+                        </button>
+                        <button
+                          onClick={() => void transition(a.id, "reject")}
+                          className="px-2.5 py-1 bg-red-100 text-red-900 border border-red-200 rounded text-xs font-bold cursor-pointer hover:bg-red-200"
+                        >
+                          {t("adjustment.reject")}
+                        </button>
+                      </div>
+                    )}
                   </td>
                 </tr>
               ))}
