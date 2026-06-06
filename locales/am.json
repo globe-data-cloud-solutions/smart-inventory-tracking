@@ -97,7 +97,9 @@
     "cost_price": "ዋጋ",
     "stock_value": "የቋሚ ዕቃ ዋጋ",
     "total_value": "ጠቅላላ ዋጋ",
-    "grand_total": "ታላቅ ድምር"
+    "grand_total": "ታላቅ ድምር",
+    "showing_all": "ዜሮ ክምችት ጨምሮ ሁሉም ምርቶች",
+    "showing_active": "ክምችት ያላቸው ምርቶች ብቻ"
   },
   "scanner": {
     "idle": "ካሜራ አልነቃም",
@@ -219,7 +221,17 @@
     },
     "cost_price": "የምርት ዋጋ",
     "cost_price_hint": "ለቋሚ ዕቃ ዋጋ ስሌት እና ለፈቃድ ወሰን ይጠቅማል።",
-    "cost_price_currency": "ምንዛሬ"
+    "cost_price_currency": "ምንዛሬ",
+    "discontinued": "ወጥቷል",
+    "show_discontinued": "ወጥተው ያሉ ምርቶችን አሳይ",
+    "discontinue": "ምርቱን አስቆም",
+    "reactivate": "ምርቱን ንቁ አድርግ",
+    "discontinue_confirm": "ይህን ምርት ማስቆም እርግጠኛ ነዎት?",
+    "discontinue_has_stock": "ማስቆም አይቻልም — ክምችት አለ: {locations}። ሁሉንም ሚዛን ያጥፉ።",
+    "discontinue_has_pending": "ማስቆም አይቻልም — ያልተጠናቀቁ ዝውውሮች አሉ።",
+    "discontinued_badge": "ወጥቷል",
+    "reactivate_success": "ምርቱ እንደገና ንቁ ሆኗል",
+    "discontinue_success": "ምርቱ ታስቋል"
   },
   "lang": {
     "label": "ቋንቋ",

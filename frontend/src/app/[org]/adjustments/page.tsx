@@ -17,6 +17,7 @@ import { useWarehouses } from "@/hooks/useWarehouses";
 type ApiProduct = {
   id: string; sku: string; name: string; unit: string; pack_size?: number;
   reorder_point?: number | null; category?: string | null;
+  is_discontinued?: boolean;
 };
 
 type AdjStatus = "DRAFT" | "PENDING_APPROVAL" | "APPROVED" | "POSTED" | "REJECTED" | "CANCELLED";
@@ -133,7 +134,7 @@ export default function AdjustmentsPage() {
   // Build product and warehouse lists for NewAdjustmentPanel.
   // In gateway mode use real API data; in demo mode fall back to tenant seed data.
   const panelProducts: DemoProduct[] = isGatewayMode
-    ? apiProducts.map((p) => ({
+    ? apiProducts.filter((p) => !p.is_discontinued).map((p) => ({
         id: p.id, sku: p.sku, name: p.name,
         category: p.category ?? "—",
         unit: p.unit,

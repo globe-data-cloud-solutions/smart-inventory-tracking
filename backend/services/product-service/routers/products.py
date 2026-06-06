@@ -82,12 +82,14 @@ async def preview_next_sku(
 @require_permission(PERMISSIONS.PRODUCT_LIST)
 async def list_products(
     q: Optional[str] = Query(None, description="pg_trgm name / SKU search"),
+    active_only: bool = Query(True, description="Exclude discontinued products"),
     user=Depends(get_current_user),
     db: AsyncSession = Depends(get_db_session),
 ) -> SuccessResponse[list]:
     base_select = (
         "SELECT p.id, p.sku, p.name, p.short_name, p.description, "
         "p.unit, p.pack_size, p.reorder_point, p.unit_price, p.currency, "
+        "p.is_discontinued, "
         "pc.name AS category, "
         "pb.name AS brand, "
         "ptc.code AS type_code, "
@@ -103,18 +105,20 @@ async def list_products(
             text(
                 base_select
                 + "WHERE p.tenant_id = :tid AND p.name % :q AND p.is_active = true "
+                  "AND (NOT :active_only OR p.is_discontinued = FALSE) "
                   "ORDER BY similarity(p.name, :q) DESC LIMIT 50"
             ),
-            {"tid": str(user.tenant_id), "q": q},
+            {"tid": str(user.tenant_id), "q": q, "active_only": active_only},
         )
     else:
         result = await db.execute(
             text(
                 base_select
                 + "WHERE p.tenant_id = :tid AND p.is_active = true "
+                  "AND (NOT :active_only OR p.is_discontinued = FALSE) "
                   "ORDER BY p.name LIMIT 200"
             ),
-            {"tid": str(user.tenant_id)},
+            {"tid": str(user.tenant_id), "active_only": active_only},
         )
     rows = result.fetchall()
     return SuccessResponse(
@@ -130,6 +134,7 @@ async def list_products(
                 "reorder_point":    float(r.reorder_point) if r.reorder_point is not None else None,
                 "unit_price":       float(r.unit_price) if getattr(r, "unit_price", None) is not None else None,
                 "currency":         getattr(r, "currency", None),
+                "is_discontinued":  bool(r.is_discontinued),
                 "category":         r.category,
                 "brand":            r.brand,
                 "type_code":        r.type_code,
@@ -139,6 +144,102 @@ async def list_products(
             for r in rows
         ]
     )
+
+
+# ── POST /{id}/discontinue ────────────────────────────────────────────────────
+
+@router.post("/{product_id}/discontinue", response_model=SuccessResponse[dict])
+@require_permission(PERMISSIONS.PRODUCT_DISCONTINUE)
+async def discontinue_product(
+    product_id: uuid.UUID,
+    user=Depends(get_current_user),
+    db: AsyncSession = Depends(get_db_session),
+) -> SuccessResponse[dict]:
+    """Mark a product as discontinued. Blocked if any warehouse holds stock or pending transfers exist."""
+    tid = str(user.tenant_id)
+    pid = str(product_id)
+
+    # Check stock across all warehouses
+    stock_rows = (await db.execute(
+        text(
+            "SELECT ib.warehouse_id::text, COALESCE(n.name, ib.warehouse_id::text) AS warehouse_name, "
+            "SUM(ib.quantity) AS on_hand "
+            "FROM inventory_balances ib "
+            "LEFT JOIN organization_node n ON n.id = ib.warehouse_id "
+            "WHERE ib.product_id = :pid AND ib.tenant_id = :tid "
+            "GROUP BY ib.warehouse_id, n.name "
+            "HAVING SUM(ib.quantity) > 0"
+        ),
+        {"pid": pid, "tid": tid},
+    )).fetchall()
+
+    if stock_rows:
+        locations = [
+            {"warehouse": r.warehouse_name, "on_hand": float(r.on_hand)}
+            for r in stock_rows
+        ]
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "code": "PRODUCT_HAS_STOCK",
+                "message": "Cannot discontinue. Clear all stock first.",
+                "locations": locations,
+            },
+        )
+
+    # Check pending transfers
+    pending_count = (await db.execute(
+        text(
+            "SELECT COUNT(*) FROM transfer_orders t "
+            "WHERE t.tenant_id = :tid "
+            "AND t.status IN ('PENDING_REVIEW','PENDING_APPROVAL','APPROVED','IN_TRANSIT') "
+            "AND EXISTS ("
+            "  SELECT 1 FROM transfer_order_lines tol "
+            "  WHERE tol.transfer_order_id = t.id AND tol.product_id = :pid"
+            ")"
+        ),
+        {"pid": pid, "tid": tid},
+    )).scalar() or 0
+
+    if pending_count > 0:
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "code": "PRODUCT_HAS_PENDING_TRANSACTIONS",
+                "message": "Cannot discontinue. Pending transfers exist.",
+            },
+        )
+
+    await db.execute(
+        text(
+            "UPDATE products SET is_discontinued = TRUE, updated_at = NOW() "
+            "WHERE id = :pid AND tenant_id = :tid"
+        ),
+        {"pid": pid, "tid": tid},
+    )
+    return SuccessResponse(data={"product_id": pid, "is_discontinued": True})
+
+
+# ── POST /{id}/reactivate ─────────────────────────────────────────────────────
+
+@router.post("/{product_id}/reactivate", response_model=SuccessResponse[dict])
+@require_permission(PERMISSIONS.PRODUCT_REACTIVATE)
+async def reactivate_product(
+    product_id: uuid.UUID,
+    user=Depends(get_current_user),
+    db: AsyncSession = Depends(get_db_session),
+) -> SuccessResponse[dict]:
+    """Reactivate a discontinued product."""
+    tid = str(user.tenant_id)
+    pid = str(product_id)
+    await db.execute(
+        text(
+            "UPDATE products SET is_discontinued = FALSE, updated_at = NOW() "
+            "WHERE id = :pid AND tenant_id = :tid"
+        ),
+        {"pid": pid, "tid": tid},
+    )
+    return SuccessResponse(data={"product_id": pid, "is_discontinued": False})
 
 
 # ── POST / ───────────────────────────────────────────────────────────────────

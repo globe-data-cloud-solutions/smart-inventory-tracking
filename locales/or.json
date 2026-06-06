@@ -98,7 +98,9 @@
     "cost_price": "Gatii",
     "stock_value": "Gatii Kuusaa",
     "total_value": "Gatii Waliigalaa",
-    "grand_total": "Waliigala Guddaa"
+    "grand_total": "Waliigala Guddaa",
+    "showing_all": "Kuusaa ziroo dabalatee meeshaalee hundumaa",
+    "showing_active": "Kuusaa qaban qofaa"
   },
   "scanner": {
     "idle": "Kaameraan hin socho'u",
@@ -214,7 +216,17 @@
     },
     "cost_price": "Gatii Meeshaa",
     "cost_price_hint": "Gatiin kuusaa herreeguu fi daangaa hayyamaaf ni fayyada.",
-    "cost_price_currency": "Maallaqaa"
+    "cost_price_currency": "Maallaqaa",
+    "discontinued": "Dhaabame",
+    "show_discontinued": "Meeshaalee dhaabaman agarsiisi",
+    "discontinue": "Dhaabi",
+    "reactivate": "Hojii Eegali",
+    "discontinue_confirm": "Meeshaa kana dhaabuuf mirkaneessitaa?",
+    "discontinue_has_stock": "Dhaabuun hin danda'amu — kuusaan jira: {locations}. Dura wal-madaalaa haqaa.",
+    "discontinue_has_pending": "Dhaabuun hin danda'amu — jijjiirraaleen eeggatan jiru.",
+    "discontinued_badge": "Dhaabame",
+    "reactivate_success": "Meeshaan hojii jalqabe",
+    "discontinue_success": "Meeshaan dhaabame"
   },
   "lang": {
     "label": "Afaan",

@@ -29,6 +29,7 @@ export interface DemoProduct {
   stock: Record<string, number>;
   shortName?: string;
   description?: string;
+  is_discontinued?: boolean;
 }
 
 export interface DemoUser {

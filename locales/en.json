@@ -97,7 +97,9 @@
     "cost_price": "Cost Price",
     "stock_value": "Stock Value",
     "total_value": "Total Inventory Value",
-    "grand_total": "Grand Total"
+    "grand_total": "Grand Total",
+    "showing_all": "Showing all products including zero stock",
+    "showing_active": "Showing products with stock only"
   },
   "scanner": {
     "idle": "Camera not active",
@@ -225,7 +227,17 @@
     },
     "cost_price": "Cost Price",
     "cost_price_hint": "Used for inventory valuation and approval thresholds.",
-    "cost_price_currency": "Currency"
+    "cost_price_currency": "Currency",
+    "discontinued": "Discontinued",
+    "show_discontinued": "Show discontinued products",
+    "discontinue": "Discontinue",
+    "reactivate": "Reactivate",
+    "discontinue_confirm": "Are you sure you want to discontinue this product?",
+    "discontinue_has_stock": "Cannot discontinue — stock exists at: {locations}. Clear all balances first.",
+    "discontinue_has_pending": "Cannot discontinue — pending transfers exist. Complete or cancel them first.",
+    "discontinued_badge": "Discontinued",
+    "reactivate_success": "Product reactivated successfully",
+    "discontinue_success": "Product discontinued successfully"
   },
   "lang": {
     "label": "Language",

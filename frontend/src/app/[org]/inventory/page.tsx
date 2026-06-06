@@ -32,6 +32,7 @@ type ApiProduct = {
   brand?: string | null; type_code?: string | null;
   packaging_type?: string | null; units_per_package?: number | null;
   unit_price?: number | null; currency?: string | null;
+  is_discontinued?: boolean;
 };
 
 type InventoryStockItem = {
@@ -220,6 +221,7 @@ export default function InventoryPage() {
   const { org }       = useParams() as { org: string };
   const tenantName    = useTenantName(org);
   const user          = getSession();
+  const userLevel     = user?.levelNumber ?? 99;
   const canAddProduct = usePermission("product:create");
   // Subscribe to the specific maps that addIssue/addReceive mutate.
   // Each call spreads a new object reference into issues/receives, which guarantees
@@ -320,6 +322,7 @@ export default function InventoryPage() {
         typeCode: p.type_code ?? undefined,
         packagingType: p.packaging_type ?? undefined,
         unitsPerPackage: p.units_per_package ?? undefined,
+        is_discontinued: p.is_discontinued ?? false,
       }))
     : [
         ...(tenant?.products ?? []),
@@ -344,6 +347,7 @@ export default function InventoryPage() {
         return product ? { product, stockItem: item } : null;
       })
       .filter((r): r is { product: DemoProduct; stockItem: InventoryStockItem } => r !== null)
+      .filter((r) => userLevel <= 1 || safeFloat(r.stockItem.current_stock) > 0)
       .sort((a, b) => {
         const aQty = safeFloat(a.stockItem.current_stock);
         const bQty = safeFloat(b.stockItem.current_stock);
@@ -351,7 +355,7 @@ export default function InventoryPage() {
         if (bQty === 0 && aQty !== 0) return -1;
         return a.product.name.localeCompare(b.product.name);
       });
-  }, [isGatewayMode, whId, inventoryStock, mergedProducts]);
+  }, [isGatewayMode, whId, inventoryStock, mergedProducts, userLevel]);
 
   const gatewayWarehouses = useMemo((): DemoWarehouse[] => {
     const seen = new Map<string, DemoWarehouse>();
@@ -483,22 +487,41 @@ export default function InventoryPage() {
 
   const allProducts = whId
     ? mergedProducts.filter((p) => {
-        if (isGatewayMode) {
-          // Show ALL products per CLAUDE.md §27 — zero-balance items get Out of Stock badge
-          // and sort to the bottom. Filtering by stockByKey would hide products whose balance
-          // dropped to zero after being issued, violating the rule.
-          return true;
-        }
+        if (p.is_discontinued) return false;
         const base = p.stock[whId] ?? 0;
-        return (whId in p.stock) ||
-               getOnHand(p.id, whId, base) > 0 ||
-               getReservedTotal(p.id, whId) > 0 ||
-               getInTransitOutTotal(p.id, whId) > 0 ||
-               getInTransitInTotal(p.id, whId) > 0 ||
-               (issues[`${org}:${whId}:${p.id}`] ?? 0) > 0 ||
-               (receives[`${org}:${whId}:${p.id}`] ?? 0) > 0;
+        if (userLevel <= 1) {
+          // L1: show ALL per CLAUDE.md §27 (zero-balance items get Out of Stock badge,
+          // dropped to zero after being issued, violating the rule)
+          return (
+            (whId in p.stock) ||
+            getOnHand(p.id, whId, base) > 0 ||
+            getReservedTotal(p.id, whId) > 0 ||
+            getInTransitOutTotal(p.id, whId) > 0 ||
+            getInTransitInTotal(p.id, whId) > 0 ||
+            (issues[`${org}:${whId}:${p.id}`] ?? 0) > 0 ||
+            (receives[`${org}:${whId}:${p.id}`] ?? 0) > 0
+          );
+        }
+        // L2+: show only products with current stock or pending activity
+        if (isGatewayMode) {
+          const si = stockByKey.get(`${p.id}:${whId}`);
+          return si
+            ? safeFloat(si.current_stock) > 0 ||
+              safeFloat(si.pending_out_qty) > 0 ||
+              safeFloat(si.in_transit_out_qty) > 0 ||
+              safeFloat(si.in_transit_in_qty) > 0
+            : false;
+        }
+        return (
+          getOnHand(p.id, whId, base) > 0 ||
+          getReservedTotal(p.id, whId) > 0 ||
+          getInTransitOutTotal(p.id, whId) > 0 ||
+          getInTransitInTotal(p.id, whId) > 0 ||
+          (issues[`${org}:${whId}:${p.id}`] ?? 0) > 0 ||
+          (receives[`${org}:${whId}:${p.id}`] ?? 0) > 0
+        );
       })
-    : mergedProducts;
+    : mergedProducts.filter((p) => !p.is_discontinued);
 
   const mainTableIds = new Set(allProducts.map((p) => p.id));
   // In gateway mode: all products come from the API — no separate "zero stock new" section.
@@ -586,13 +609,13 @@ export default function InventoryPage() {
           </p>
         </div>
         <div className="flex gap-2 flex-wrap">
-          {isMWH && <OpeningBalancePanel products={mergedProducts} warehouses={displayWarehouses} orgSlug={org} />}
-          {isMWH && <BulkImportPanel     products={mergedProducts} warehouses={displayWarehouses} orgSlug={org} />}
-          <ReceiveStockPanel products={mergedProducts} orgSlug={org} />
+          {isMWH && <OpeningBalancePanel products={mergedProducts.filter((p) => !p.is_discontinued)} warehouses={displayWarehouses} orgSlug={org} />}
+          {isMWH && <BulkImportPanel     products={mergedProducts.filter((p) => !p.is_discontinued)} warehouses={displayWarehouses} orgSlug={org} />}
+          <ReceiveStockPanel products={mergedProducts.filter((p) => !p.is_discontinued)} orgSlug={org} />
           {/* Issue Stock hidden — internal use only. Adjustment covers all correction
               needs for distributors. Re-enable when dispatch/sales module is built
               (Phase 2). */}
-          {false && <IssueStockPanel products={mergedProducts} orgSlug={org} />}
+          {false && <IssueStockPanel products={mergedProducts.filter((p) => !p.is_discontinued)} orgSlug={org} />}
           {canAddProduct && (
             <AddProductPanel apiBase="/api/v1/products" />
           )}
@@ -631,6 +654,9 @@ export default function InventoryPage() {
           </div>
         )}
 
+        {userLevel <= 1 && whId && (
+          <span className="text-xs text-blue-500">{t("inventory.showing_all")}</span>
+        )}
         <div className="ml-auto text-xs text-gray-500">
           {visibleProducts.length} / {allProducts.length} {t("table.products")} · {formatQty(totalStockAll)} {t("inventory.total_units")}
         </div>
@@ -712,9 +738,10 @@ export default function InventoryPage() {
                 const inTransitIn  = whId ? (stockItem ? safeFloat(stockItem.in_transit_in_qty)  : getInTransitInTotal(p.id, whId))  : 0;
                 const available    = whId ? (stockItem ? safeFloat(stockItem.net_available)       : getAvailable(p.id, whId, demoBase)) : demoBase;
                 const stockStatus  = onHand === 0 ? "out" : onHand <= p.reorderPoint ? "low" : "in";
+                const isZeroRow    = onHand === 0 && userLevel <= 1;
 
                 return (
-                  <tr key={p.id} className={`border-b border-gray-100 ${idx % 2 === 0 ? "bg-white" : "bg-gray-50"}`}>
+                  <tr key={p.id} className={`border-b border-gray-100 ${idx % 2 === 0 ? "bg-white" : "bg-gray-50"} ${isZeroRow ? "opacity-60" : ""}`}>
                     <td className="px-3.5 py-2.5 font-mono text-[11px] text-gray-400 whitespace-nowrap">{p.sku}</td>
                     <td className="px-3.5 py-2.5 whitespace-nowrap">
                       <span className="font-semibold text-gray-800">{p.name}</span>

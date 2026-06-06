@@ -1,8 +1,8 @@
 "use client";
 
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { useParams } from "next/navigation";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { SA_ORG_SLUG } from "@/lib/demo-auth";
 import { DEMO_TENANTS } from "@/lib/demo-data";
 import { usePermission } from "@/hooks/usePermission";
@@ -12,9 +12,9 @@ import { api } from "@/lib/api";
 import { t } from "@/lib/i18n";
 import { useTenantName } from "@/hooks/useTenantName";
 
-type ApiProduct = { id: string; sku: string; name: string; unit: string; pack_size: number; category?: string | null; };
+type ApiProduct = { id: string; sku: string; name: string; unit: string; pack_size: number; category?: string | null; is_discontinued?: boolean; };
 type StockItem   = { product_id: string; current_stock: string; };
-type Row        = { id: string; sku: string; name: string; category: string; unit: string; packSize: string; balance: number; batchTracking: boolean; isNew: boolean; isActive: boolean; };
+type Row        = { id: string; sku: string; name: string; category: string; unit: string; packSize: string; balance: number; batchTracking: boolean; isNew: boolean; isActive: boolean; is_discontinued: boolean; };
 
 export default function ProductsPage() {
   const { org }  = useParams() as { org: string };
@@ -33,9 +33,14 @@ export default function ProductsPage() {
   const isGatewayMode = !!process.env.NEXT_PUBLIC_API_URL;
   const tenant = DEMO_TENANTS.find((ten) => ten.slug === org);
 
+  const [showDiscontinued, setShowDiscontinued] = useState(false);
+  const canDiscontinue = usePermission("product:discontinue");
+  const [actionError, setActionError] = useState<string | null>(null);
+  const qcProducts = useQueryClient();
+
   const { data: apiProducts = [] } = useQuery<ApiProduct[]>({
-    queryKey: ["products", org],
-    queryFn:  () => api.get<ApiProduct[]>("/api/v1/products"),
+    queryKey: ["products", org, showDiscontinued],
+    queryFn:  () => api.get<ApiProduct[]>(`/api/v1/products${showDiscontinued ? "?active_only=false" : ""}`),
     enabled:  org !== SA_ORG_SLUG,
     staleTime: 0,
   });
@@ -58,6 +63,25 @@ export default function ProductsPage() {
     return map;
   }, [inventoryStock]);
 
+  async function handleDiscontinue(productId: string, isCurrentlyDiscontinued: boolean) {
+    setActionError(null);
+    const action = isCurrentlyDiscontinued ? "reactivate" : "discontinue";
+    try {
+      await api.post(`/api/v1/products/${productId}/${action}`, {});
+      void qcProducts.invalidateQueries({ queryKey: ["products", org] });
+    } catch (err) {
+      const e = err as { status?: number; detail?: { code?: string; locations?: { warehouse: string; on_hand: number }[] } };
+      if (e.detail?.code === "PRODUCT_HAS_STOCK") {
+        const locs = (e.detail.locations ?? []).map((l) => `${l.warehouse}: ${l.on_hand} units`).join(", ");
+        setActionError(t("product.discontinue_has_stock").replace("{locations}", locs));
+      } else if (e.detail?.code === "PRODUCT_HAS_PENDING_TRANSACTIONS") {
+        setActionError(t("product.discontinue_has_pending"));
+      } else {
+        setActionError(t("common.error"));
+      }
+    }
+  }
+
   if (org === SA_ORG_SLUG) return <p className="p-8 text-gray-500">{t("sa.select_tenant")}</p>;
   // In demo mode without a matching demo tenant, there is nothing to show
   if (!tenant && !isGatewayMode) return <p className="p-8 text-gray-500">{t("common.no_data")}</p>;
@@ -69,19 +93,30 @@ export default function ProductsPage() {
     // Sum getOnHand across every warehouse — identical for all users regardless of their
     // warehouse_id (CLAUDE.md §27: never filter by the viewing user's warehouse).
     balance: tenant.warehouses.reduce((total, wh) => total + getOnHand(p.id, wh.id, p.stock[wh.id] ?? 0), 0),
-    batchTracking: p.batchTracking, isNew: false, isActive: true,
+    batchTracking: p.batchTracking, isNew: false, isActive: true, is_discontinued: p.is_discontinued ?? false,
   }));
 
   const apiRows: Row[] = apiProducts.map((p) => ({
     id: p.id, sku: p.sku, name: p.name, category: p.category ?? "—", unit: p.unit, packSize: String(p.pack_size),
     balance: isGatewayMode ? (productBalanceMap.get(p.id) ?? 0) : 0,
-    batchTracking: false, isNew: !isGatewayMode, isActive: true,
+    batchTracking: false, isNew: !isGatewayMode, isActive: true, is_discontinued: p.is_discontinued ?? false,
   }));
 
-  const all   = isGatewayMode ? apiRows : [...demoRows, ...apiRows];
-  const total = all.length;
+  const allBase   = isGatewayMode ? apiRows : [...demoRows, ...apiRows];
 
-  const COLS = ["table.sku","products.col_name","products.col_category","inventory.unit","products.col_pack_size","products.col_balance","products.col_batch","products.col_status"];
+  // Sort: active first (alphabetically), discontinued at bottom (alphabetically).
+  const displayProducts = useMemo(() => {
+    return [...allBase].sort((a, b) => {
+      if (a.is_discontinued !== b.is_discontinued) {
+        return a.is_discontinued ? 1 : -1;
+      }
+      return a.name.localeCompare(b.name);
+    });
+  }, [allBase]);
+
+  const total = allBase.length;
+
+  const COLS = ["table.sku","products.col_name","products.col_category","inventory.unit","products.col_pack_size","products.col_balance","products.col_batch","products.col_status","table.actions"];
 
   return (
     <div className="p-8">
@@ -97,8 +132,27 @@ export default function ProductsPage() {
             )}
           </p>
         </div>
-        {canAdd && <AddProductPanel apiBase="/api/v1/products" />}
+        <div className="flex items-center gap-3 flex-wrap">
+          {isGatewayMode && (
+            <label className="flex items-center gap-2 text-sm text-gray-600 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={showDiscontinued}
+                onChange={(e) => setShowDiscontinued(e.target.checked)}
+                className="cursor-pointer"
+              />
+              {t("product.show_discontinued")}
+            </label>
+          )}
+          {canAdd && <AddProductPanel apiBase="/api/v1/products" />}
+        </div>
       </div>
+
+      {actionError && (
+        <div className="mb-3 bg-red-50 border border-red-200 rounded px-4 py-2.5 text-sm text-red-600">
+          {actionError}
+        </div>
+      )}
 
       <div className="bg-white border border-gray-200 rounded overflow-hidden">
         <div className="h-[3px]" style={{ background: tenant?.color ?? "#1B4332" }} />
@@ -112,20 +166,27 @@ export default function ProductsPage() {
               </tr>
             </thead>
             <tbody>
-              {all.length === 0 && (
+              {displayProducts.length === 0 && (
                 <tr>
                   <td colSpan={COLS.length} className="px-4 py-10 text-center text-sm text-gray-400">
                     {t("common.no_data")}
                   </td>
                 </tr>
               )}
-              {all.map((p, idx) => (
-                <tr key={p.id} className={`border-b border-gray-100 ${idx % 2 === 0 ? "bg-white" : "bg-gray-50"}`}>
+              {displayProducts.map((p, idx) => (
+                <tr key={p.id} className={`border-b border-gray-100 ${idx % 2 === 0 ? "bg-white" : "bg-gray-50"} ${p.is_discontinued ? "opacity-60" : ""}`}>
                   <td className="px-4 py-2.5 font-mono text-[11px] text-gray-400">
                     {p.sku}
                     {p.isNew && <span className="ml-1.5 text-[10px] font-bold bg-green-100 text-green-800 px-1 py-0.5 rounded">NEW</span>}
                   </td>
-                  <td className="px-4 py-2.5 font-semibold text-gray-800">{p.name}</td>
+                  <td className="px-4 py-2.5 font-semibold text-gray-800">
+                    {p.name}
+                    {p.is_discontinued && (
+                      <span className="ml-1.5 text-[10px] font-bold bg-gray-200 text-gray-500 px-1 py-0.5 rounded">
+                        {t("product.discontinued_badge")}
+                      </span>
+                    )}
+                  </td>
                   <td className="px-4 py-2.5 text-gray-500">{p.category}</td>
                   <td className="px-4 py-2.5 text-gray-500">{p.unit}</td>
                   <td className="px-4 py-2.5 text-gray-500">{p.packSize}</td>
@@ -138,9 +199,19 @@ export default function ProductsPage() {
                     </span>
                   </td>
                   <td className="px-4 py-2.5">
-                    <span className={`text-xs font-bold px-2 py-0.5 rounded ${p.isActive ? "bg-emerald-100 text-emerald-800" : "bg-gray-100 text-gray-500"}`}>
-                      {p.isActive ? t("products.status_active") : t("products.status_inactive")}
+                    <span className={`text-xs font-bold px-2 py-0.5 rounded ${p.isActive && !p.is_discontinued ? "bg-emerald-100 text-emerald-800" : "bg-gray-100 text-gray-500"}`}>
+                      {p.is_discontinued ? t("product.discontinued") : p.isActive ? t("products.status_active") : t("products.status_inactive")}
                     </span>
+                  </td>
+                  <td className="px-4 py-2.5">
+                    {canDiscontinue && isGatewayMode && (
+                      <button
+                        onClick={() => void handleDiscontinue(p.id, p.is_discontinued ?? false)}
+                        className={`ml-2 text-xs cursor-pointer border-0 bg-transparent underline ${p.is_discontinued ? "text-emerald-600" : "text-red-500"}`}
+                      >
+                        {p.is_discontinued ? t("product.reactivate") : t("product.discontinue")}
+                      </button>
+                    )}
                   </td>
                 </tr>
               ))}
