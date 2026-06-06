@@ -55,7 +55,10 @@ interface AdjResult { status: string; approval_required_role: string }
 export function NewAdjustmentPanel({ products, warehouses, orgSlug }: Props) {
   const qc      = useQueryClient();
   const session = getSession();
-  const isWM    = session?.role === "WM";
+  // Auto-assign warehouse from JWT for any role that has a specific facility
+  // assignment (WM, RM, LM). Only NM/TA who have no warehouseId in their JWT
+  // see the dropdown so they can choose which facility to adjust.
+  const hasAssignedWarehouse = !!session?.warehouseId;
 
   const [open, setOpen]               = useState(false);
   const [productId, setProductId]     = useState("");
@@ -69,8 +72,8 @@ export function NewAdjustmentPanel({ products, warehouses, orgSlug }: Props) {
   const [toast, setToast]             = useState<{ msg: string; applied: boolean } | null>(null);
   const [zeroWarn, setZeroWarn]       = useState(false);
 
-  const effectiveWarehouseId = isWM ? (session?.warehouseId ?? "") : warehouseId;
-  const effectiveWarehouseName = isWM
+  const effectiveWarehouseId = hasAssignedWarehouse ? (session?.warehouseId ?? "") : warehouseId;
+  const effectiveWarehouseName = hasAssignedWarehouse
     ? (warehouses.find((w) => w.id.toLowerCase() === effectiveWarehouseId.toLowerCase())?.name
         ?? session?.warehouseName ?? "")
     : warehouses.find((w) => w.id.toLowerCase() === warehouseId.toLowerCase())?.name ?? "";
@@ -115,7 +118,7 @@ export function NewAdjustmentPanel({ products, warehouses, orgSlug }: Props) {
       const baseStock = selectedP?.stock?.[effectiveWarehouseId] ?? 0;
       const projected = store.getOnHand(productId, effectiveWarehouseId, baseStock) + qty;
       if (projected < 0) {
-        if (isWM) {
+        if (hasAssignedWarehouse) {
           setError(t("adjustment.zero_floor_wm"));
           return;
         }
@@ -214,15 +217,19 @@ export function NewAdjustmentPanel({ products, warehouses, orgSlug }: Props) {
             </select>
           </Field>
 
-          {/* Bug 1: WM sees read-only warehouse from JWT; managers see dropdown */}
+          {/* Auto-assign from JWT for roles with a specific facility (WM/RM/LM).
+              NM/TA have no warehouseId in JWT so they see a dropdown. */}
           <Field label={t("inventory.warehouse")}>
-            {isWM ? (
-              <div className={`${inputCls} bg-gray-50 text-gray-600 cursor-not-allowed border-dashed`}>
-                {effectiveWarehouseName || "—"}
+            {hasAssignedWarehouse ? (
+              <div>
+                <p className="text-[11px] text-gray-400 mb-0.5">{t("adjustment.warehouse_auto")}</p>
+                <div className={`${inputCls} bg-gray-50 text-gray-600 cursor-not-allowed border-dashed`}>
+                  {effectiveWarehouseName || "—"}
+                </div>
               </div>
             ) : (
               <select value={warehouseId} onChange={(e) => setWarehouseId(e.target.value)} className={selectCls} required>
-                <option value="">— {t("receive_panel.select_warehouse")} —</option>
+                <option value="">— {t("adjustment.warehouse_select")} —</option>
                 {warehouses.map((w) => <option key={w.id} value={w.id}>{w.name}</option>)}
               </select>
             )}

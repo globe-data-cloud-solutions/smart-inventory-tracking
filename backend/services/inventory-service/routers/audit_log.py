@@ -12,6 +12,43 @@ from schemas.inventory import AuditLogItem
 
 router = APIRouter()
 
+# Roles with tenant-wide audit visibility — no warehouse scope filter applied.
+_TENANT_WIDE_ROLES = frozenset({"NM", "TA", "SA"})
+
+# CTE that expands a facility node and all its descendants via parent_node_id.
+_SUBTREE_CTE = """
+WITH RECURSIVE facility_subtree AS (
+    SELECT id FROM organization_node
+    WHERE id = :scope_wh AND tenant_id = :tid
+    UNION ALL
+    SELECT n.id FROM organization_node n
+    JOIN facility_subtree fs ON n.parent_node_id = fs.id
+    WHERE n.tenant_id = :tid
+)
+"""
+
+# Appended to WHERE when scoping to a facility and its children.
+# Covers: own actions, transfers where the facility is source or destination,
+# and adjustments posted against the facility.
+_SCOPE_CLAUSE = """
+AND (
+    al.user_id = :scope_uid
+    OR al.resource_id IN (
+        SELECT id FROM transfer_orders
+        WHERE tenant_id = :tid
+          AND (
+            from_warehouse_id IN (SELECT id FROM facility_subtree)
+            OR to_warehouse_id IN (SELECT id FROM facility_subtree)
+          )
+    )
+    OR al.resource_id IN (
+        SELECT id FROM adjustment_orders
+        WHERE tenant_id = :tid
+          AND warehouse_id IN (SELECT id FROM facility_subtree)
+    )
+)
+"""
+
 
 @router.get("/", response_model=SuccessResponse[List[AuditLogItem]])
 @require_permission(PERMISSIONS.AUDIT_VIEW_LOGS)
@@ -20,31 +57,59 @@ async def list_audit_logs(
     limit: int = Query(50, ge=1, le=200),
     action: str = Query(None),
     resource_type: str = Query(None),
+    scope: str = Query("auto",
+                       description="'auto' applies role-based scoping. "
+                                   "'all' shows the entire tenant log (NM/TA only)."),
     user=Depends(get_current_user),
     db: AsyncSession = Depends(get_db_session),
 ) -> SuccessResponse[List[AuditLogItem]]:
-    filters = ["tenant_id = :tid"]
-    params: dict = {"tid": str(user.tenant_id), "limit": limit, "offset": (page - 1) * limit}
+    params: dict = {
+        "tid": str(user.tenant_id),
+        "limit": limit,
+        "offset": (page - 1) * limit,
+    }
 
+    # Determine whether to apply facility-level scoping.
+    # NM/TA/SA always see the full tenant log; scope=all is a no-op for them.
+    # WM/RM/LM are always facility-scoped — scope=all is ignored to prevent
+    # privilege escalation via query parameter.
+    apply_scope = (
+        user.role not in _TENANT_WIDE_ROLES
+        and user.warehouse_id is not None
+    )
+
+    # Build query: prefix CTE only when scoping is active.
+    if apply_scope:
+        params["scope_uid"] = str(user.user_id)
+        params["scope_wh"] = str(user.warehouse_id)
+        cte_prefix = _SUBTREE_CTE
+        scope_fragment = _SCOPE_CLAUSE
+    else:
+        cte_prefix = ""
+        scope_fragment = ""
+
+    where_parts = ["al.tenant_id = :tid"]
     if action:
-        filters.append("action = :action")
+        where_parts.append("al.action = :action")
         params["action"] = action
     if resource_type:
-        filters.append("resource_type = :rtype")
+        where_parts.append("al.resource_type = :rtype")
         params["rtype"] = resource_type
 
-    where = " AND ".join(filters)
-    rows = (await db.execute(
-        text(
-            f"SELECT id, timestamp, user_id, role, action, resource_type, "
-            f"       resource_id, decision, reason, abac_context "
-            f"FROM audit_logs "
-            f"WHERE {where} "
-            f"ORDER BY timestamp DESC "
-            f"LIMIT :limit OFFSET :offset"
-        ),
-        params,
-    )).fetchall()
+    where_clause = " AND ".join(where_parts)
+
+    query = (
+        f"{cte_prefix}"
+        f"SELECT al.id, al.timestamp, al.user_id, al.role, al.action, "
+        f"       al.resource_type, al.resource_id, al.decision, al.reason, al.abac_context "
+        f"FROM audit_logs al "
+        f"WHERE {where_clause} "
+        f"{scope_fragment}"
+        f"ORDER BY al.timestamp DESC "
+        f"LIMIT :limit OFFSET :offset"
+    )
+
+    rows = (await db.execute(text(query), params)).fetchall()
 
     return SuccessResponse(data=[
         AuditLogItem(

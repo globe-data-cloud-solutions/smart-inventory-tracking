@@ -442,7 +442,9 @@
     "threshold_hide": "ደንቦችን ደብቅ",
     "approval": "Approval",
     "subtitle": "Correct stock balance — approval may be required",
-    "error_qty": "Quantity must be non-zero."
+    "error_qty": "Quantity must be non-zero.",
+    "warehouse_auto": "Auto-assigned from your profile",
+    "warehouse_select": "Select warehouse"
   },
   "transfer": {
     "status": {

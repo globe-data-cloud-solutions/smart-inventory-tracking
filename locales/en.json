@@ -440,7 +440,9 @@
     "threshold_qty_ta": "Any reason, qty 1000+ — TA approval needed",
     "threshold_zero_floor": "Any adjustment making stock negative — manager override required",
     "threshold_show": "Approval rules",
-    "threshold_hide": "Hide rules"
+    "threshold_hide": "Hide rules",
+    "warehouse_auto": "Auto-assigned from your profile",
+    "warehouse_select": "Select warehouse"
   },
   "transfer": {
     "status": {

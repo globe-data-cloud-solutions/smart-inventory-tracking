@@ -4,13 +4,19 @@ import { useState } from "react";
 import { useParams } from "next/navigation";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { getSession, SA_ORG_SLUG } from "@/lib/demo-auth";
-import { DEMO_TENANTS, type DemoTenant } from "@/lib/demo-data";
+import { DEMO_TENANTS, type DemoTenant, type DemoProduct } from "@/lib/demo-data";
 import { NewAdjustmentPanel } from "@/components/features/inventory/NewAdjustmentPanel";
 import { useInventoryStore } from "@/lib/inventory-state";
 import { useAuditStore } from "@/lib/audit-log-state";
-import { api } from "@/lib/api";
+import { api, IS_GATEWAY_MODE } from "@/lib/api";
 import { t } from "@/lib/i18n";
 import { useTenantName } from "@/hooks/useTenantName";
+import { useWarehouses } from "@/hooks/useWarehouses";
+
+type ApiProduct = {
+  id: string; sku: string; name: string; unit: string; pack_size?: number;
+  reorder_point?: number | null; category?: string | null;
+};
 
 type AdjStatus = "DRAFT" | "SUBMITTED" | "APPROVED" | "APPLIED" | "REJECTED" | "CANCELLED";
 
@@ -74,15 +80,24 @@ export default function AdjustmentsPage() {
   const user           = getSession();
   const qc             = useQueryClient();
   const [showLegend, setShowLegend] = useState(false);
-  const isGatewayMode  = !!process.env.NEXT_PUBLIC_API_URL;
+  const isGatewayMode  = IS_GATEWAY_MODE;
 
-  // Hook must be called unconditionally — before any early returns
+  // All hooks called unconditionally — before any early returns
   const { data: apiAdj = [] } = useQuery<AdjRecord[]>({
     queryKey: ["adjustments", org],
     queryFn:  () => api.get<AdjRecord[]>("/api/v1/inventory/adjustments"),
     enabled:  isGatewayMode && org !== SA_ORG_SLUG,
     staleTime: 0,
   });
+
+  const { data: apiProducts = [] } = useQuery<ApiProduct[]>({
+    queryKey: ["products", org],
+    queryFn:  () => api.get<ApiProduct[]>("/api/v1/products"),
+    enabled:  isGatewayMode && org !== SA_ORG_SLUG,
+    staleTime: 30_000,
+  });
+
+  const { warehouses: orgNodeWarehouses } = useWarehouses();
 
   if (org === SA_ORG_SLUG) return <p className="p-8 text-gray-500">{t("sa.select_tenant")}</p>;
   const tenant = DEMO_TENANTS.find((ten) => ten.slug === org);
@@ -91,6 +106,22 @@ export default function AdjustmentsPage() {
 
   const seedAdj = tenant ? buildSeedAdj(tenant) : [];
   const allAdj: AdjRecord[] = [...apiAdj, ...seedAdj];
+
+  // Build product and warehouse lists for NewAdjustmentPanel.
+  // In gateway mode use real API data; in demo mode fall back to tenant seed data.
+  const panelProducts: DemoProduct[] = isGatewayMode
+    ? apiProducts.map((p) => ({
+        id: p.id, sku: p.sku, name: p.name,
+        category: p.category ?? "—",
+        unit: p.unit,
+        batchTracking: false,
+        reorderPoint: p.reorder_point ?? 0,
+        stock: {},
+      }))
+    : (tenant?.products ?? []);
+  const panelWarehouses = isGatewayMode
+    ? orgNodeWarehouses
+    : (tenant?.warehouses ?? []);
 
   // Bug 2: WM sees only adjustments for their own warehouse; managers see all
   const visibleAdj = user.role === "WM" && user.warehouseId
@@ -166,7 +197,7 @@ export default function AdjustmentsPage() {
           >
             {showLegend ? t("adjustment.threshold_hide") : t("adjustment.threshold_show")} ⓘ
           </button>
-          <NewAdjustmentPanel products={tenant?.products ?? []} warehouses={tenant?.warehouses ?? []} orgSlug={org} />
+          <NewAdjustmentPanel products={panelProducts} warehouses={panelWarehouses} orgSlug={org} />
         </div>
       </div>
 
