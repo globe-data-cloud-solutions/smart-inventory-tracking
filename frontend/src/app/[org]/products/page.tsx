@@ -70,11 +70,11 @@ export default function ProductsPage() {
       await api.post(`/api/v1/products/${productId}/${action}`, {});
       void qcProducts.invalidateQueries({ queryKey: ["products", org] });
     } catch (err) {
-      const e = err as { status?: number; detail?: { code?: string; locations?: { warehouse: string; on_hand: number }[] } };
-      if (e.detail?.code === "PRODUCT_HAS_STOCK") {
-        const locs = (e.detail.locations ?? []).map((l) => `${l.warehouse}: ${l.on_hand} units`).join(", ");
+      const e = err as { status?: number; code?: string; locations?: { warehouse: string; on_hand: number }[] };
+      if (e.code === "PRODUCT_HAS_STOCK") {
+        const locs = (e.locations ?? []).map((l) => `${l.warehouse}: ${l.on_hand} units`).join(", ");
         setActionError(t("product.discontinue_has_stock").replace("{locations}", locs));
-      } else if (e.detail?.code === "PRODUCT_HAS_PENDING_TRANSACTIONS") {
+      } else if (e.code === "PRODUCT_HAS_PENDING_TRANSACTIONS") {
         setActionError(t("product.discontinue_has_pending"));
       } else {
         setActionError(t("common.error"));
