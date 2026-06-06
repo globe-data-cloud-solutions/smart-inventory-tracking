@@ -94,7 +94,11 @@
     "your_warehouse": "Your Warehouse",
     "total_stock": "Total Stock",
     "warehouse_col": "Location",
-    "stock_across_locations": "Across {count} locations"
+    "stock_across_locations": "Across {count} locations",
+    "cost_price": "Gatii",
+    "stock_value": "Gatii Kuusaa",
+    "total_value": "Gatii Waliigalaa",
+    "grand_total": "Waliigala Guddaa"
   },
   "scanner": {
     "idle": "Kaameraan hin socho'u",
@@ -207,7 +211,10 @@
       "4": "Kuusaa 4",
       "6": "Kuusaa 6",
       "12": "Kuusaa 12"
-    }
+    },
+    "cost_price": "Gatii Meeshaa",
+    "cost_price_hint": "Gatiin kuusaa herreeguu fi daangaa hayyamaaf ni fayyada.",
+    "cost_price_currency": "Maallaqaa"
   },
   "lang": {
     "label": "Afaan",

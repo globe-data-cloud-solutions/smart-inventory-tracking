@@ -13,3 +13,11 @@ export function formatQty(qty: number): string {
   if (Number.isInteger(qty)) return qty.toLocaleString();
   return parseFloat(qty.toFixed(2)).toLocaleString();
 }
+
+export function formatCurrency(value: number, currency = "ETB"): string {
+  return (
+    value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) +
+    " " +
+    currency
+  );
+}

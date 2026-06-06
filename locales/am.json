@@ -93,7 +93,11 @@
     "your_warehouse": "Your Warehouse",
     "total_stock": "Total Stock",
     "warehouse_col": "Location",
-    "stock_across_locations": "Across {count} locations"
+    "stock_across_locations": "Across {count} locations",
+    "cost_price": "ዋጋ",
+    "stock_value": "የቋሚ ዕቃ ዋጋ",
+    "total_value": "ጠቅላላ ዋጋ",
+    "grand_total": "ታላቅ ድምር"
   },
   "scanner": {
     "idle": "ካሜራ አልነቃም",
@@ -212,7 +216,10 @@
       "4": "ጥቅል 4",
       "6": "ጥቅል 6",
       "12": "ጥቅል 12"
-    }
+    },
+    "cost_price": "የምርት ዋጋ",
+    "cost_price_hint": "ለቋሚ ዕቃ ዋጋ ስሌት እና ለፈቃድ ወሰን ይጠቅማል።",
+    "cost_price_currency": "ምንዛሬ"
   },
   "lang": {
     "label": "ቋንቋ",

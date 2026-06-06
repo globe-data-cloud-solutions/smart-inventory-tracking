@@ -15,7 +15,7 @@ import { useInventoryStore } from "@/lib/inventory-state";
 import { useWarehouses } from "@/hooks/useWarehouses";
 import { api } from "@/lib/api";
 import { t } from "@/lib/i18n";
-import { formatQty } from "@/lib/utils";
+import { formatQty, formatCurrency } from "@/lib/utils";
 import { useTenantName } from "@/hooks/useTenantName";
 
 type ApiTransfer = {
@@ -31,6 +31,7 @@ type ApiProduct = {
   short_name?: string | null; description?: string | null;
   brand?: string | null; type_code?: string | null;
   packaging_type?: string | null; units_per_package?: number | null;
+  unit_price?: number | null; currency?: string | null;
 };
 
 type InventoryStockItem = {
@@ -296,6 +297,14 @@ export default function InventoryPage() {
     return map;
   }, [inventoryStock]);
 
+  const priceByProductId = useMemo(() => {
+    const m = new Map<string, { price: number; currency: string }>();
+    for (const p of apiProducts) {
+      if (p.unit_price != null) m.set(p.id, { price: p.unit_price, currency: p.currency ?? "ETB" });
+    }
+    return m;
+  }, [apiProducts]);
+
   const tenantProductIds = new Set((tenant?.products ?? []).map((p) => p.id));
   const mergedProducts: DemoProduct[] = isGatewayMode
     ? apiProducts.map((p) => ({
@@ -531,6 +540,28 @@ export default function InventoryPage() {
     const demoBase = whId ? (p.stock[whId] ?? 0) : Object.values(p.stock).reduce((x, y) => x + y, 0);
     return acc + effectiveOnHand(p.id, whId, demoBase);
   }, 0);
+
+  const totalStockValue: number = isGatewayMode && whId
+    ? inventoryStock
+        .filter((si) => si.warehouse_id === whId)
+        .reduce((s, si) => s + safeFloat(si.current_stock) * (priceByProductId.get(si.product_id)?.price ?? 0), 0)
+    : 0;
+
+  const multiWHValueSummary = expandedRows
+    ? (() => {
+        const byWH = new Map<string, { name: string; value: number; currency: string }>();
+        for (const { product: p, stockItem: si } of expandedRows) {
+          const pd = priceByProductId.get(p.id);
+          if (!pd) continue;
+          const existing = byWH.get(si.warehouse_id) ?? { name: si.warehouse_name, value: 0, currency: pd.currency };
+          existing.value += safeFloat(si.current_stock) * pd.price;
+          byWH.set(si.warehouse_id, existing);
+        }
+        const list = Array.from(byWH.values());
+        return { list, grandTotal: list.reduce((s, w) => s + w.value, 0), currency: list[0]?.currency ?? "ETB" };
+      })()
+    : null;
+
   const activeFiltersCount = Object.values(filters).filter(
     (f) => f.length > 0 && f.length < (f === filters.category ? categoryOptions.length : f === filters.unit ? unitOptions.length : statusOptions.length)
   ).length;
@@ -623,6 +654,8 @@ export default function InventoryPage() {
                 {showWarehouseColumns && <PlainHeader label={t("inventory.in_transit_in")}  align="right" />}
                 {showWarehouseColumns && <PlainHeader label={t("inventory.available")}  align="right" />}
                 <PlainHeader label={t("table.reorder_point")} align="right" />
+                <PlainHeader label={t("inventory.cost_price")} align="right" />
+                <PlainHeader label={t("inventory.stock_value")} align="right" />
                 <FilterHeader label={t("table.status")} field="status" options={statusOptions} filters={filters} setFilters={setFilters} />
               </tr>
             </thead>
@@ -655,6 +688,12 @@ export default function InventoryPage() {
                         <td className="px-3.5 py-2.5 text-right text-xs text-blue-600">{formatQty(inTransitIn)}</td>
                         <td className={`px-3.5 py-2.5 text-right text-xs font-semibold ${available > 0 ? "text-emerald-700" : "text-gray-400"}`}>{formatQty(available)}</td>
                         <td className="px-3.5 py-2.5 text-right text-xs text-gray-500">{formatQty(p.reorderPoint)}</td>
+                        <td className="px-3.5 py-2.5 text-right text-xs text-gray-600">
+                          {priceByProductId.has(p.id) ? formatCurrency(priceByProductId.get(p.id)!.price, priceByProductId.get(p.id)!.currency) : "—"}
+                        </td>
+                        <td className="px-3.5 py-2.5 text-right text-xs font-semibold text-gray-700">
+                          {priceByProductId.has(p.id) ? formatCurrency(onHand * priceByProductId.get(p.id)!.price, priceByProductId.get(p.id)!.currency) : "—"}
+                        </td>
                         <td className="px-3.5 py-2.5">
                           <span className={`inline-flex items-center gap-1 text-[11px] font-bold px-2.5 py-0.5 rounded border ${stockStatus === "out" ? "bg-red-50 text-red-700 border-red-200" : stockStatus === "low" ? "bg-amber-50 text-amber-700 border-amber-200" : "bg-green-50 text-emerald-600 border-emerald-200"}`}>
                             <span className={`w-1.5 h-1.5 rounded-full ${stockStatus === "out" ? "bg-red-600" : stockStatus === "low" ? "bg-amber-600" : "bg-emerald-600"}`} />
@@ -727,6 +766,12 @@ export default function InventoryPage() {
                       </td>
                     )}
                     <td className="px-3.5 py-2.5 text-right text-gray-400 text-xs">{formatQty(p.reorderPoint)}</td>
+                    <td className="px-3.5 py-2.5 text-right text-xs text-gray-600">
+                      {priceByProductId.has(p.id) ? formatCurrency(priceByProductId.get(p.id)!.price, priceByProductId.get(p.id)!.currency) : "—"}
+                    </td>
+                    <td className="px-3.5 py-2.5 text-right text-xs font-semibold text-gray-700">
+                      {priceByProductId.has(p.id) ? formatCurrency(onHand * priceByProductId.get(p.id)!.price, priceByProductId.get(p.id)!.currency) : "—"}
+                    </td>
                     <td className="px-3.5 py-2.5">
                       <span className={`inline-flex items-center gap-1 text-[11px] font-bold px-2.5 py-0.5 rounded border ${
                         stockStatus === "out" ? "bg-red-50 text-red-700 border-red-200" :
@@ -762,6 +807,10 @@ export default function InventoryPage() {
                   {showWarehouseColumns && <td className="px-3.5 py-2.5 text-right text-gray-200">—</td>}
                   {showWarehouseColumns && <td className="px-3.5 py-2.5 text-right text-gray-200">—</td>}
                   <td className="px-3.5 py-2.5 text-right text-gray-400 text-xs">—</td>
+                  <td className="px-3.5 py-2.5 text-right text-xs text-gray-400">
+                    {p.unit_price != null ? formatCurrency(p.unit_price, p.currency ?? "ETB") : "—"}
+                  </td>
+                  <td className="px-3.5 py-2.5 text-right text-gray-200">—</td>
                   <td className="px-3.5 py-2.5">
                     <span className="inline-flex items-center gap-1 text-[11px] font-bold px-2.5 py-0.5 rounded border bg-yellow-50 text-yellow-800 border-yellow-200">
                       <span className="w-1.5 h-1.5 rounded-full bg-yellow-700" />
@@ -783,6 +832,39 @@ export default function InventoryPage() {
           )}
         </div>
       </div>
+
+      {isGatewayMode && (multiWHValueSummary ?? (whId ? totalStockValue > 0 : false)) && (
+        <div className="mt-4 bg-gray-50 border border-gray-200 rounded-md p-4">
+          {multiWHValueSummary ? (
+            <>
+              <p className="text-xs font-bold text-gray-700 uppercase tracking-wide mb-2">{t("inventory.total_value")}</p>
+              <div className="space-y-1">
+                {multiWHValueSummary.list.map((w) => (
+                  <div key={w.name} className="flex justify-between text-sm text-gray-600">
+                    <span>{w.name}</span>
+                    <span className="font-mono font-semibold">{formatCurrency(w.value, w.currency)}</span>
+                  </div>
+                ))}
+                <div className="flex justify-between text-sm font-bold text-gray-900 border-t border-gray-300 pt-2 mt-1">
+                  <span>{t("inventory.grand_total")}</span>
+                  <span className="font-mono">{formatCurrency(multiWHValueSummary.grandTotal, multiWHValueSummary.currency)}</span>
+                </div>
+              </div>
+            </>
+          ) : (
+            <>
+              <p className="text-xs font-bold text-gray-700 uppercase tracking-wide mb-2">
+                {whName || t("inventory.warehouse")} — {t("inventory.total_value")}
+              </p>
+              <div className="flex flex-wrap gap-6 text-sm text-gray-600">
+                <span>{t("table.skus")}: <strong>{visibleProducts.length}</strong></span>
+                <span>{t("inventory.total_units")}: <strong>{formatQty(totalStockAll)}</strong></span>
+                <span>{t("inventory.stock_value")}: <strong className="font-mono text-emerald-700">{formatCurrency(totalStockValue)}</strong></span>
+              </div>
+            </>
+          )}
+        </div>
+      )}
 
       {showWarehouseColumns && (
         <p className="mt-3 text-xs text-gray-400">

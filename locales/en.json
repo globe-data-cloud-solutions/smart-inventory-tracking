@@ -93,7 +93,11 @@
     "your_warehouse": "Your Warehouse",
     "total_stock": "Total Stock",
     "warehouse_col": "Location",
-    "stock_across_locations": "Across {count} locations"
+    "stock_across_locations": "Across {count} locations",
+    "cost_price": "Cost Price",
+    "stock_value": "Stock Value",
+    "total_value": "Total Inventory Value",
+    "grand_total": "Grand Total"
   },
   "scanner": {
     "idle": "Camera not active",
@@ -218,7 +222,10 @@
       "4": "Pack of 4",
       "6": "Pack of 6",
       "12": "Pack of 12"
-    }
+    },
+    "cost_price": "Cost Price",
+    "cost_price_hint": "Used for inventory valuation and approval thresholds.",
+    "cost_price_currency": "Currency"
   },
   "lang": {
     "label": "Language",

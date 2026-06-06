@@ -194,6 +194,8 @@ export function AddProductPanel({ apiBase, onClose }: AddProductPanelProps) {
   const [packagingType, setPkgType] = useState("");
   const [unitsPerPkg, setUpp]       = useState<string>("1");
   const [reorderPoint, setReorder]  = useState("");
+  const [unitPrice, setCostPrice]   = useState("");
+  const [currency, setCurrency]     = useState("ETB");
   const [skuOverride, setSkuOvr]    = useState("");
   const [skuEditing, setSkuEditing] = useState(false);
 
@@ -391,6 +393,7 @@ export function AddProductPanel({ apiBase, onClose }: AddProductPanelProps) {
     setName(""); setShortName(""); setDesc(""); setCategory("");
     setTypeCode(""); setBrand(""); setUnit(""); setPkgType("");
     setUpp("1"); setReorder(""); setSkuOvr(""); setSkuEditing(false);
+    setCostPrice(""); setCurrency("ETB");
     setNameErr(""); setTcErr(""); setCatErr(""); setPanelError("");
     setMinimumRows(MIN_TX_TYPES.map((tx) => ({ transaction_type: tx.key, min_authority_level: "" })));
   };
@@ -425,6 +428,8 @@ export function AddProductPanel({ apiBase, onClose }: AddProductPanelProps) {
           packaging_type:    packagingType.trim() || undefined,
           units_per_package: packagingType.trim() && !isNaN(uppVal) && uppVal > 0 ? uppVal : undefined,
           reorder_point:     !isNaN(reorderQty) && reorderQty > 0 ? reorderQty : undefined,
+          unit_price:        parseFloat(unitPrice) >= 0 && unitPrice !== "" ? parseFloat(unitPrice) : undefined,
+          currency:          currency.trim() || undefined,
           sku_override:      skuEditing && skuOverride.trim() ? skuOverride.trim() : undefined,
         },
         token ?? undefined,
@@ -725,6 +730,35 @@ export function AddProductPanel({ apiBase, onClose }: AddProductPanelProps) {
               placeholder="0"
               className={fieldOk}
             />
+          </div>
+
+          {/* ── Cost Price ───────────────────────────────────────── */}
+          <div>
+            <FieldLabel
+              text={t("product.cost_price")}
+              hint={`(${t("receive_panel.optional")})`}
+            />
+            <div className="flex gap-2">
+              <input
+                type="number"
+                min="0"
+                step="0.01"
+                value={unitPrice}
+                onChange={(e) => setCostPrice(e.target.value)}
+                placeholder="0.00"
+                className={`flex-1 ${fieldOk}`}
+              />
+              <select
+                value={currency}
+                onChange={(e) => setCurrency(e.target.value)}
+                className="w-20 px-2 py-2 rounded text-sm border border-gray-300 bg-white outline-none cursor-pointer"
+              >
+                <option value="ETB">ETB</option>
+                <option value="USD">USD</option>
+                <option value="EUR">EUR</option>
+              </select>
+            </div>
+            <p className="text-[11px] text-gray-400 mt-1">{t("product.cost_price_hint")}</p>
           </div>
 
           {/* ── Minimum Approval Level ───────────────────────────── */}
