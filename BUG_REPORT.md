@@ -1947,5 +1947,69 @@ If the org hierarchy changes (node level changed, node renamed, node deleted) af
 
 ---
 
+---
+
+## ADJUSTMENT WORKFLOW E2E TEST — 2026-06-05
+
+**Tenant:** Integration Test Co (`cfb374e7-...`)  
+**Tester:** Claude Code (automated)  
+**Product:** Audit Test Product 56F56D (`AUT-001`)  
+**Opening balance:** 200 units at Bole Warehouse → final balance: 195 (after -10 DAMAGE + +5 COUNT_DISCREPANCY)
+
+### Test Results
+
+| Test | Description | Result |
+|---|---|---|
+| A — Basic negative | WM creates DAMAGE -10 → NM approves → balance 200→190 | **PASS** |
+| B — Positive | WM creates COUNT_DISCREPANCY +5 → NM approves → balance 190→195 | **PASS** |
+| C — Approval flow | No threshold-based routing; all adjustments: WM creates (DRAFT), NM/RM/TA approves (POSTED) in one call | **PASS (with gap — see GAP E)** |
+| D — Reason codes | All 9 codes accepted (DAMAGE, EXPIRY, THEFT, COUNT_DISCREPANCY, RETURN, OTHER, SUPPLIER_RETURN, SYSTEM_CORRECTION, COUNT_VARIANCE) | **PASS (with gap — see GAP F)** |
+| E — Audit trail | `GET /audit-log` → 404 Route not found for all roles. `GET /inventory/adjustments/` returns list with product name, delta, reason, status ✓ | **PARTIAL — see Bug #ADJ-1** |
+| F — Idempotency | Same `idempotency_key` accepted twice → NEW adjustment_id returned. Balance unchanged (only POSTED adjustments update balance) | **FAIL — see Bug #ADJ-2** |
+| G1 — Oversell | WM creates -500 DRAFT (accepted). NM approve → HTTP 422 INSUFFICIENT_STOCK | **PASS** |
+| G2 — Cross-warehouse | WM adjusts HO node → HTTP 403 ABAC_DENIED: warehouse scope | **PASS** |
+| G3 — Product approval minimums | `product_approval_minimums` table exists but `approve_adjustment` never reads it | **GAP — see GAP G** |
+
+---
+
+### Bug #ADJ-1 — Audit log missing `adjustment:create` entries
+
+**Severity:** Medium  
+**Symptom:** `audit_logs` table only records RBAC permission checks (`adjustment:list`, `adjustment:approve`). No `adjustment:create` entry is written when an adjustment is created.  
+**Expected:** Every `create_adjustment()` call should produce an `audit_logs` row with `action=adjustment:create`, `decision=GRANTED`, `resource_id=adjustment_id`.  
+**Root cause:** `create_adjustment` in `inventory_service.py` (line ~1051) writes to `adjustment_orders` directly without calling `audit_log()`.  
+**Also:** `GET /audit-log/` returns 404 — no audit log read endpoint exists at that path. Audit reads are currently only possible via direct DB query.  
+**Phase 2 fix:** Add `audit_log()` call at end of `create_adjustment()`. Add `GET /api/v1/audit-log/` route with pagination.
+
+### Bug #ADJ-2 — Idempotency key not enforced on adjustment creation
+
+**Severity:** High  
+**Symptom:** `POST /inventory/adjustments/` with a previously-used `idempotency_key` creates a NEW adjustment with a NEW `adjustment_id` instead of returning the existing one.  
+**Expected:** HTTP 200 with the original `adjustment_id`, or HTTP 409 Conflict.  
+**Root cause:** `create_adjustment()` accepts `AdjustmentRequest.idempotency_key` but never checks `inventory_transaction_keys` or any deduplication store before INSERTing. The field is stored in `adjustment_orders` but not enforced as UNIQUE.  
+**Risk:** A network retry or double-submit creates two separate adjustment orders. If both are approved (e.g. automated retry), the balance is debited twice.  
+**Phase 2 fix:** Add UNIQUE constraint on `(tenant_id, idempotency_key)` on `adjustment_orders`. In `create_adjustment()`, do `INSERT ... ON CONFLICT (idempotency_key) DO NOTHING RETURNING *` and return the existing row if no INSERT occurred.
+
+---
+
+### GAP E — No threshold-based approval routing for adjustments
+
+The approval endpoint (`POST /adjustments/{id}/approve`) auto-advances DRAFT → PENDING_APPROVAL → APPROVED → POSTED in a single call. Any NM/RM/TA user can approve any-size adjustment without differentiated routing.  
+**Risk:** A large negative adjustment (e.g. -5000 units = large write-off) has the same single-approver flow as a 1-unit correction. CLAUDE.md §24 Business Rule #21 and IMTS §6 require adjustments above a threshold to escalate to RM → NM → TA.  
+**Phase 2 fix:** Read `approval_rule` table for `transaction_type='DAMAGE'/'EXCESS'` to determine routing. Large adjustments should require multi-level approvals matching the transfer approval framework.
+
+### GAP F — Backend accepts any string as `reason_code`
+
+`AdjustmentRequest.reason_code` is `str` with no enum constraint. The UI (`NewAdjustmentPanel`) presents 6 specific codes (DAMAGE, COUNT_VARIANCE, EXPIRY, SUPPLIER_RETURN, SYSTEM_CORRECTION, OTHER), but the backend accepts any arbitrary string.  
+**Mismatch with UI:** UI uses `COUNT_VARIANCE`, tests sent `COUNT_DISCREPANCY` — both accepted silently. `THEFT` is in the task prompt but absent from the UI — also accepted.  
+**Phase 2 fix:** Add a `reason_code` enum type to `AdjustmentRequest` using Pydantic `Literal` or a backend-managed allowed-values list. Align UI `NewAdjustmentPanel` codes with the backend enum.
+
+### GAP G — `product_approval_minimums` is defined but never read by adjustment workflow
+
+The `product_approval_minimums` table (`min_authority_level` per `product_id` + `transaction_type`) exists and has a schema for `ADJUSTMENT` transaction type, but `approve_adjustment()` never queries it. Any NM can approve an adjustment regardless of the product's configured minimum authority level.  
+**Phase 2 fix:** In `approve_adjustment()`, query `product_approval_minimums WHERE product_id = ? AND transaction_type = 'ADJUSTMENT'`. If `min_authority_level` is set and the approver's role level is below it, return HTTP 403 ABAC_DENIED.
+
+---
+
 *SMART Inventory Platform — Bug Report v4.0*  
 *Backend: Python 3.12 / FastAPI · Frontend: Next.js 14 / TypeScript · DB: PostgreSQL 16*

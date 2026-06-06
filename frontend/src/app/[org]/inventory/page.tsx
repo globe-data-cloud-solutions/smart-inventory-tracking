@@ -275,6 +275,19 @@ export default function InventoryPage() {
     return map;
   }, [inventoryStock]);
 
+  // Per-product stock map: product_id → { warehouse_id: on_hand_qty }.
+  // Used by IssueStockPanel (and any other component that receives mergedProducts)
+  // to look up available balance by warehouse without iterating stockByKey.
+  const stockByProductId = useMemo(() => {
+    const map = new Map<string, Record<string, number>>();
+    for (const item of inventoryStock) {
+      const existing = map.get(item.product_id) ?? {};
+      existing[item.warehouse_id] = safeFloat(item.current_stock);
+      map.set(item.product_id, existing);
+    }
+    return map;
+  }, [inventoryStock]);
+
   const gatewayWarehouses = useMemo((): DemoWarehouse[] => {
     const seen = new Map<string, DemoWarehouse>();
     for (const item of inventoryStock) {
@@ -367,7 +380,7 @@ export default function InventoryPage() {
         unit: p.unit,
         batchTracking: false,
         reorderPoint: p.reorder_point != null ? safeFloat(p.reorder_point) : 0,
-        stock: {} as Record<string, number>,
+        stock: stockByProductId.get(p.id) ?? {},
         shortName: p.short_name ?? undefined,
         description: p.description ?? undefined,
         brand: p.brand ?? undefined,
@@ -512,7 +525,10 @@ export default function InventoryPage() {
           {isMWH && <OpeningBalancePanel products={mergedProducts} warehouses={displayWarehouses} orgSlug={org} />}
           {isMWH && <BulkImportPanel     products={mergedProducts} warehouses={displayWarehouses} orgSlug={org} />}
           <ReceiveStockPanel products={mergedProducts} orgSlug={org} />
-          <IssueStockPanel   products={mergedProducts} orgSlug={org} />
+          {/* Issue Stock hidden — internal use only. Adjustment covers all correction
+              needs for distributors. Re-enable when dispatch/sales module is built
+              (Phase 2). */}
+          {false && <IssueStockPanel products={mergedProducts} orgSlug={org} />}
           {canAddProduct && (
             <AddProductPanel apiBase="/api/v1/products" />
           )}

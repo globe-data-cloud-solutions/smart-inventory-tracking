@@ -326,7 +326,6 @@ function getAvailableActions(
   const cancel    : Action = { next: "CANCELLED",              label: "Cancel",             color: "#991B1B" };
   const issue     : Action = { next: "ISSUED",                 label: "Issue",              color: "#065F46" };
   const dispatch  : Action = { next: "IN_TRANSIT",             label: "Dispatch",           color: "#92400E" };
-  const advise    : Action = { next: "ADVISED",                label: "Advise",             color: "#059669" };
   // PARTIAL_RECEIVE: hidden pending full implementation. State machine entry kept
   // for data integrity. Re-enable by adding partialReceive back to IN_TRANSIT actions.
   // See BUG_REPORT.md §deferred
@@ -395,9 +394,12 @@ function getAvailableActions(
     // PENDING_APPROVAL
     if (canApprove) map.PENDING_APPROVAL = [approve, reject, cancel];
 
-    // APPROVED/ADVISED/ISSUED: source manager advises, issues, and dispatches
+    // APPROVED/ISSUED: source manager issues and dispatches.
+    // The Advise step was removed from the UI — operators skipped it in practice.
+    // ADVISED state is kept for backward compat: transfers that were already ADVISED
+    // before this change still need Issue/Cancel buttons.
     if (isSrcManager) {
-      map.APPROVED = [advise, issue, cancel];
+      map.APPROVED = [issue, cancel];
       map.ADVISED  = [issue, cancel];
       map.ISSUED   = [dispatch];
     }
