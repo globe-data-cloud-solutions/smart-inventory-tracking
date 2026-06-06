@@ -1,6 +1,7 @@
 """Notification alerts endpoint — /api/v1/inventory/alerts."""
 from __future__ import annotations
 
+import logging
 import uuid
 from typing import List, Optional
 
@@ -14,6 +15,8 @@ from shared.permissions.middleware import require_permission
 from shared.permissions.registry import PERMISSIONS
 from shared.utils.responses import SuccessResponse
 from shared.utils.tenant_scope import effective_tenant_id
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -44,41 +47,45 @@ async def get_notification_alerts(
         return SuccessResponse(data=[])
 
     tid = effective_tenant_id(user, tenant_id)
-    rows = (
-        await db.execute(
-            text("""
-                SELECT
-                    ah.id::text                                            AS id,
-                    ah.transaction_id::text                               AS transfer_id,
-                    COALESCE(t.reference_number, 'N/A')                  AS transfer_ref,
-                    COALESCE(t.transfer_type::text, 'PULL')              AS transfer_type,
-                    COALESCE(tol.quantity, 0)::float                     AS quantity,
-                    COALESCE(p.name, 'Unknown product')                  AS product_name,
-                    COALESCE(n.name, 'Unknown warehouse')                AS warehouse_name,
-                    COALESCE(ah.notes, 'Auto-approved within threshold') AS reason,
-                    ah.actioned_at::text                                  AS created_at
-                FROM approval_history ah
-                LEFT JOIN transfer_orders t
-                       ON t.id = ah.transaction_id
-                LEFT JOIN LATERAL (
-                    SELECT product_id, quantity
-                    FROM transfer_order_lines
-                    WHERE transfer_order_id = t.id
-                    LIMIT 1           -- transfer_order_lines has no created_at column
-                ) tol ON true
-                LEFT JOIN products p
-                       ON p.id = tol.product_id AND p.tenant_id = ah.tenant_id
-                LEFT JOIN organization_node n
-                       ON n.id = t.from_warehouse_id
-                WHERE ah.tenant_id = :tid
-                  AND ah.action   = 'AUTO_APPROVED'
-                  AND ah.actioned_at > now() - interval '24 hours'
-                ORDER BY ah.actioned_at DESC
-                LIMIT 50
-            """),
-            {"tid": str(tid)},
-        )
-    ).fetchall()
+    try:
+        rows = (
+            await db.execute(
+                text("""
+                    SELECT
+                        ah.id::text                                            AS id,
+                        ah.transaction_id::text                               AS transfer_id,
+                        COALESCE(t.reference_number, 'N/A')                  AS transfer_ref,
+                        COALESCE(t.transfer_type::text, 'PULL')              AS transfer_type,
+                        COALESCE(tol.quantity, 0)::float                     AS quantity,
+                        COALESCE(p.name, 'Unknown product')                  AS product_name,
+                        COALESCE(n.name, 'Unknown warehouse')                AS warehouse_name,
+                        COALESCE(ah.notes, 'Auto-approved within threshold') AS reason,
+                        ah.actioned_at::text                                  AS created_at
+                    FROM approval_history ah
+                    LEFT JOIN transfer_orders t
+                           ON t.id = ah.transaction_id
+                    LEFT JOIN LATERAL (
+                        SELECT product_id, quantity
+                        FROM transfer_order_lines
+                        WHERE transfer_order_id = t.id
+                        LIMIT 1           -- transfer_order_lines has no created_at column
+                    ) tol ON true
+                    LEFT JOIN products p
+                           ON p.id = tol.product_id AND p.tenant_id = ah.tenant_id
+                    LEFT JOIN organization_node n
+                           ON n.id = t.from_warehouse_id
+                    WHERE ah.tenant_id = :tid
+                      AND ah.action   = 'AUTO_APPROVED'
+                      AND ah.actioned_at > now() - interval '24 hours'
+                    ORDER BY ah.actioned_at DESC
+                    LIMIT 50
+                """),
+                {"tid": str(tid)},
+            )
+        ).fetchall()
+    except Exception as exc:
+        logger.warning("alerts query error (returning empty): %s", exc)
+        return SuccessResponse(data=[])
 
     return SuccessResponse(
         data=[
