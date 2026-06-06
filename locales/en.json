@@ -89,7 +89,11 @@
     "count": {
       "title": "Cycle Count",
       "start_session": "Start Count Session"
-    }
+    },
+    "your_warehouse": "Your Warehouse",
+    "total_stock": "Total Stock",
+    "warehouse_col": "Location",
+    "stock_across_locations": "Across {count} locations"
   },
   "scanner": {
     "idle": "Camera not active",

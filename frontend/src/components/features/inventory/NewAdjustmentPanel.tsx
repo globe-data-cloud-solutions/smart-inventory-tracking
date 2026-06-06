@@ -50,7 +50,7 @@ function Field({ label, hint, children }: { label: string; hint?: string; childr
 const inputCls  = "w-full px-2.5 py-2 text-sm border border-gray-300 rounded outline-none bg-white";
 const selectCls = `${inputCls} cursor-pointer`;
 
-interface AdjResult { status: string; approval_required_role: string }
+interface AdjResult { adjustment_id: string; status: string; quantity_delta: string }
 
 export function NewAdjustmentPanel({ products, warehouses, orgSlug }: Props) {
   const qc      = useQueryClient();
@@ -131,7 +131,7 @@ export function NewAdjustmentPanel({ products, warehouses, orgSlug }: Props) {
     const key = `adjust:${productId}:${effectiveWarehouseId}:${Date.now()}:${nanoid(8)}`;
     setLoading(true);
     try {
-      const adj = await api.post<AdjResult>("/api/v1/inventory/adjust", {
+      const adj = await api.post<AdjResult>("/api/v1/inventory/adjustments/", {
         product_id:     productId,
         product_name:   selectedP?.name,
         product_sku:    selectedP?.sku,

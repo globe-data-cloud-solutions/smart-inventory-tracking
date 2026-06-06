@@ -90,7 +90,11 @@
       "issued": "direct issues + reserved outbound transfers (click to expand)",
       "transit": "← inbound / → outbound currently moving (click to expand)",
       "available": "On Hand minus Reserved and In Transit Out"
-    }
+    },
+    "your_warehouse": "Your Warehouse",
+    "total_stock": "Total Stock",
+    "warehouse_col": "Location",
+    "stock_across_locations": "Across {count} locations"
   },
   "scanner": {
     "idle": "Kaameraan hin socho'u",

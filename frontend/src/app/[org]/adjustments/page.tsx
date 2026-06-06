@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { useParams } from "next/navigation";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { getSession, SA_ORG_SLUG } from "@/lib/demo-auth";
@@ -97,6 +97,23 @@ export default function AdjustmentsPage() {
     staleTime: 30_000,
   });
 
+  type AdjStockItem = { product_id: string; warehouse_id: string; current_stock: string };
+  const { data: adjInventoryStock = [] } = useQuery<AdjStockItem[]>({
+    queryKey: ["inventory-stock", org],
+    queryFn:  () => api.get<AdjStockItem[]>("/api/v1/inventory/analytics/stock"),
+    enabled:  isGatewayMode && org !== SA_ORG_SLUG,
+    staleTime: 30_000,
+  });
+  const adjStockByProductId = useMemo(() => {
+    const map = new Map<string, Record<string, number>>();
+    for (const item of adjInventoryStock) {
+      const existing = map.get(item.product_id) ?? {};
+      existing[item.warehouse_id] = parseFloat(item.current_stock) || 0;
+      map.set(item.product_id, existing);
+    }
+    return map;
+  }, [adjInventoryStock]);
+
   const { warehouses: orgNodeWarehouses } = useWarehouses();
 
   if (org === SA_ORG_SLUG) return <p className="p-8 text-gray-500">{t("sa.select_tenant")}</p>;
@@ -116,7 +133,7 @@ export default function AdjustmentsPage() {
         unit: p.unit,
         batchTracking: false,
         reorderPoint: p.reorder_point ?? 0,
-        stock: {},
+        stock: adjStockByProductId.get(p.id) ?? {},
       }))
     : (tenant?.products ?? []);
   const panelWarehouses = isGatewayMode

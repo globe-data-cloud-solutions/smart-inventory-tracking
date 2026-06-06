@@ -237,8 +237,15 @@ export default function InventoryPage() {
   const tenant = DEMO_TENANTS.find((ten) => ten.slug === org);
   const { warehouses: orgNodeWarehouses } = useWarehouses();
 
-  const [selectedWH, setSelectedWH] = useState<string>(user?.warehouseId ?? "");
-  const whId = selectedWH || user?.warehouseId || "";
+  // NM/TA/SA have tenant-wide authority — default to all-warehouse view (no pre-selected WH).
+  // WM/RM/LM have a specific facility assignment — lock to their own warehouse from JWT.
+  const HIGH_AUTHORITY_ROLES = new Set(["NM", "TA", "SA"]);
+  const isHighAuthority = HIGH_AUTHORITY_ROLES.has(user?.role ?? "");
+
+  const [selectedWH, setSelectedWH] = useState<string>(
+    isHighAuthority ? "" : (user?.warehouseId ?? "")
+  );
+  const whId = selectedWH || (!isHighAuthority ? (user?.warehouseId ?? "") : "");
   const [filters, setFilters] = useState<Filters>({ category: [], unit: [], status: [] });
   const [expandedCell, setExpandedCell] = useState<ExpandedCell | null>(null);
 
@@ -288,6 +295,27 @@ export default function InventoryPage() {
     return map;
   }, [inventoryStock]);
 
+  // Multi-warehouse expanded rows (NM/TA/SA with no warehouse filter selected).
+  // Each InventoryStockItem → one table row showing product + specific warehouse stock.
+  // null when a warehouse is selected (single-warehouse view) or in demo mode.
+  const expandedRows = useMemo(() => {
+    if (!isGatewayMode || whId) return null;
+    return inventoryStock
+      .map((item) => {
+        const product = mergedProducts.find((p) => p.id === item.product_id);
+        return product ? { product, stockItem: item } : null;
+      })
+      .filter((r): r is { product: DemoProduct; stockItem: InventoryStockItem } => r !== null)
+      .sort((a, b) => {
+        const aQty = safeFloat(a.stockItem.current_stock);
+        const bQty = safeFloat(b.stockItem.current_stock);
+        if (aQty === 0 && bQty !== 0) return 1;
+        if (bQty === 0 && aQty !== 0) return -1;
+        return a.product.name.localeCompare(b.product.name);
+      });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isGatewayMode, whId, inventoryStock]);
+
   const gatewayWarehouses = useMemo((): DemoWarehouse[] => {
     const seen = new Map<string, DemoWarehouse>();
     for (const item of inventoryStock) {
@@ -310,12 +338,13 @@ export default function InventoryPage() {
     : [];
   useEffect(() => {
     if (!isGatewayMode || effectiveWhList.length === 0) return;
+    // NM/TA/SA keep their all-warehouse default ("").
+    // WM/RM/LM: lock to own warehouse from JWT on every warehouse-list reload.
+    if (isHighAuthority) return;
     const realWhId = getSession()?.warehouseId;
-    if (realWhId && effectiveWhList.some((w) => w.id === realWhId)) {
-      setSelectedWH((prev) => (prev === realWhId ? prev : realWhId));
-    }
+    if (realWhId) setSelectedWH(realWhId);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [effectiveWhList.length]);
+  }, [effectiveWhList.length, isHighAuthority]);
 
   const syncedRef = useRef(new Set<string>());
   useEffect(() => {
@@ -505,7 +534,11 @@ export default function InventoryPage() {
   const activeFiltersCount = Object.values(filters).filter(
     (f) => f.length > 0 && f.length < (f === filters.category ? categoryOptions.length : f === filters.unit ? unitOptions.length : statusOptions.length)
   ).length;
-  const showWarehouseColumns = !!whId;
+  const showWarehouseColumns = !!whId || !!expandedRows;
+  // Warehouse name for the currently-selected single warehouse (WM view)
+  const whName = whId
+    ? (displayWarehouses.find((w) => w.id.toLowerCase() === whId.toLowerCase())?.name ?? "")
+    : "";
 
   return (
     <div className="p-8">
@@ -537,7 +570,7 @@ export default function InventoryPage() {
 
       {/* Toolbar */}
       <div className="flex items-center gap-3 mb-4 flex-wrap">
-        {!user.warehouseId && (
+        {isHighAuthority && (
           <div className="flex items-center gap-2">
             <label className="text-xs font-bold text-gray-700 uppercase tracking-wide">{t("table.location")}</label>
             <select
@@ -581,9 +614,10 @@ export default function InventoryPage() {
               <tr className="bg-gray-50 border-b-2 border-gray-200">
                 <PlainHeader label={t("table.sku")} />
                 <PlainHeader label={t("table.product")} />
+                {expandedRows && <PlainHeader label={t("inventory.warehouse_col")} />}
                 <FilterHeader label={t("inventory.category")} field="category" options={categoryOptions} filters={filters} setFilters={setFilters} />
                 <FilterHeader label={t("inventory.unit")}     field="unit"     options={unitOptions}     filters={filters} setFilters={setFilters} />
-                <PlainHeader label={whId ? t("inventory.on_hand") : t("dashboard.stat_units")} align="right" />
+                <PlainHeader label={t("inventory.on_hand")} align="right" />
                 {showWarehouseColumns && <PlainHeader label={t("inventory.reserved")}      align="right" />}
                 {showWarehouseColumns && <PlainHeader label={t("inventory.in_transit_out")} align="right" />}
                 {showWarehouseColumns && <PlainHeader label={t("inventory.in_transit_in")}  align="right" />}
@@ -593,7 +627,44 @@ export default function InventoryPage() {
               </tr>
             </thead>
             <tbody>
-              {visibleProducts.map((p, idx) => {
+              {expandedRows
+                ? expandedRows.map(({ product: p, stockItem: si }, idx) => {
+                    const onHand       = safeFloat(si.current_stock);
+                    const reserved     = safeFloat(si.pending_out_qty);
+                    const inTransitOut = safeFloat(si.in_transit_out_qty);
+                    const inTransitIn  = safeFloat(si.in_transit_in_qty);
+                    const available    = safeFloat(si.net_available);
+                    const stockStatus  = onHand === 0 ? "out" : onHand <= p.reorderPoint ? "low" : "in";
+                    return (
+                      <tr key={`${p.id}:${si.warehouse_id}`} className={`border-b border-gray-100 ${idx % 2 === 0 ? "bg-white" : "bg-gray-50"}`}>
+                        <td className="px-3.5 py-2.5 font-mono text-[11px] text-gray-400 whitespace-nowrap">{p.sku}</td>
+                        <td className="px-3.5 py-2.5 font-semibold text-gray-800 whitespace-nowrap">
+                          {p.name}
+                          {p.batchTracking && (
+                            <span className="ml-1.5 text-[10px] font-bold bg-violet-100 text-violet-800 px-1 py-0.5 rounded">BATCH</span>
+                          )}
+                        </td>
+                        <td className="px-3.5 py-2.5 text-xs text-gray-600 whitespace-nowrap">{si.warehouse_name}</td>
+                        <td className="px-3.5 py-2.5 text-xs">
+                          <span className="bg-gray-100 px-2 py-0.5 rounded font-semibold text-gray-700">{p.category}</span>
+                        </td>
+                        <td className="px-3.5 py-2.5 text-gray-400 text-xs">{p.unit}</td>
+                        <td className={`px-3.5 py-2.5 text-right font-bold ${onHand > 0 ? "text-gray-900" : "text-gray-400"}`}>{onHand.toLocaleString()}</td>
+                        <td className="px-3.5 py-2.5 text-right text-xs text-amber-700">{reserved.toLocaleString()}</td>
+                        <td className="px-3.5 py-2.5 text-right text-xs text-orange-600">{inTransitOut.toLocaleString()}</td>
+                        <td className="px-3.5 py-2.5 text-right text-xs text-blue-600">{inTransitIn.toLocaleString()}</td>
+                        <td className={`px-3.5 py-2.5 text-right text-xs font-semibold ${available > 0 ? "text-emerald-700" : "text-gray-400"}`}>{available.toLocaleString()}</td>
+                        <td className="px-3.5 py-2.5 text-right text-xs text-gray-500">{p.reorderPoint.toLocaleString()}</td>
+                        <td className="px-3.5 py-2.5">
+                          <span className={`inline-flex items-center gap-1 text-[11px] font-bold px-2.5 py-0.5 rounded border ${stockStatus === "out" ? "bg-red-50 text-red-700 border-red-200" : stockStatus === "low" ? "bg-amber-50 text-amber-700 border-amber-200" : "bg-green-50 text-emerald-600 border-emerald-200"}`}>
+                            <span className={`w-1.5 h-1.5 rounded-full ${stockStatus === "out" ? "bg-red-600" : stockStatus === "low" ? "bg-amber-600" : "bg-emerald-600"}`} />
+                            {stockStatus === "out" ? t("inventory.no_stock") : stockStatus === "low" ? t("alerts.low_stock") : t("dashboard.in_stock")}
+                          </span>
+                        </td>
+                      </tr>
+                    );
+                  })
+                : visibleProducts.map((p, idx) => {
                 const demoBase  = whId ? (p.stock[whId] ?? 0) : Object.values(p.stock).reduce((a, b) => a + b, 0);
                 const stockItem = getStock(p.id);   // null in demo mode → Zustand fallback
                 const onHand       = effectiveOnHand(p.id, whId, demoBase);
@@ -606,12 +677,21 @@ export default function InventoryPage() {
                 return (
                   <tr key={p.id} className={`border-b border-gray-100 ${idx % 2 === 0 ? "bg-white" : "bg-gray-50"}`}>
                     <td className="px-3.5 py-2.5 font-mono text-[11px] text-gray-400 whitespace-nowrap">{p.sku}</td>
-                    <td className="px-3.5 py-2.5 font-semibold text-gray-800 whitespace-nowrap">
-                      {p.name}
+                    <td className="px-3.5 py-2.5 whitespace-nowrap">
+                      <span className="font-semibold text-gray-800">{p.name}</span>
                       {p.batchTracking && (
                         <span className="ml-1.5 text-[10px] font-bold bg-violet-100 text-violet-800 px-1 py-0.5 rounded">BATCH</span>
                       )}
+                      {/* WM/RM/LM: show warehouse context under product name so operator
+                          knows the on-hand figure is scoped to their facility only */}
+                      {whId && !isHighAuthority && whName && (
+                        <p className="text-[11px] text-gray-400 mt-0.5 font-normal">
+                          {t("inventory.your_warehouse")}: {whName}
+                        </p>
+                      )}
                     </td>
+                    {/* no warehouse column in single-wh view — placeholder keeps alignment */}
+                    {expandedRows && <td />}
                     <td className="px-3.5 py-2.5 text-xs">
                       <span className="bg-gray-100 px-2 py-0.5 rounded font-semibold text-gray-700">{p.category}</span>
                     </td>
