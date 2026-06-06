@@ -20,6 +20,9 @@ SERVICE_MAP = {
     # are mounted under /api/v1/inventory/* on the inventory service.
     # Callers must use /api/v1/inventory/transfers (not /api/v1/transfers).
     "/api/v1/inventory": os.environ.get("INVENTORY_SERVICE_URL",  "http://inventory-service:8000"),
+    # Audit log is served by inventory-service but exposed at /api/v1/audit-log
+    # so callers don't need to know which service owns it.
+    "/api/v1/audit-log": os.environ.get("INVENTORY_SERVICE_URL",  "http://inventory-service:8000"),
     "/api/v1/orders":    os.environ.get("ORDER_SERVICE_URL",       "http://order-service:8000"),
     "/api/v1/logistics": os.environ.get("LOGISTICS_SERVICE_URL",  "http://logistics-service:8000"),
     "/api/v1/analytics": os.environ.get("ANALYTICS_SERVICE_URL",  "http://analytics-service:8000"),

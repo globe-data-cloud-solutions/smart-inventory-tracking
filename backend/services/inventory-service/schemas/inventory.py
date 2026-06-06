@@ -3,9 +3,26 @@ from __future__ import annotations
 import uuid
 from datetime import date, datetime
 from decimal import Decimal
+from enum import Enum
 from typing import List, Optional
 
 from pydantic import BaseModel, Field
+
+
+class AdjustmentReasonCode(str, Enum):
+    DAMAGE = "DAMAGE"
+    EXPIRY = "EXPIRY"
+    THEFT = "THEFT"
+    COUNT_DISCREPANCY = "COUNT_DISCREPANCY"
+    RETURN = "RETURN"
+    PRODUCTION_USE = "PRODUCTION_USE"
+    SAMPLE = "SAMPLE"
+    OTHER = "OTHER"
+    # backward compat: values that may exist in adjustment_orders.reason_code
+    # from before this enum was introduced — accepted by backend, not shown in UI
+    SUPPLIER_RETURN = "SUPPLIER_RETURN"
+    COUNT_VARIANCE = "COUNT_VARIANCE"
+    SYSTEM_CORRECTION = "SYSTEM_CORRECTION"
 
 
 class ReceiveStockRequest(BaseModel):
@@ -62,7 +79,7 @@ class AdjustmentRequest(BaseModel):
     warehouse_id: uuid.UUID
     product_id: uuid.UUID
     quantity_delta: Decimal
-    reason_code: str
+    reason_code: AdjustmentReasonCode
     lot_number: Optional[str] = None
     idempotency_key: str
     notes: Optional[str] = None
@@ -119,7 +136,7 @@ class AdjustStockRequest(BaseModel):
     product_id: uuid.UUID
     warehouse_id: uuid.UUID
     quantity: Decimal            # signed: positive = add, negative = remove
-    reason_code: str
+    reason_code: AdjustmentReasonCode
     notes: Optional[str] = None
     idempotency_key: str
     source: str = "WEB"
@@ -206,3 +223,16 @@ class ApprovalInfoResponse(BaseModel):
     holder_count:                    int           = 1
     all_holders:                     list[dict]    = []
     status_label:                    Optional[str] = None
+
+
+class AuditLogItem(BaseModel):
+    id: uuid.UUID
+    timestamp: datetime
+    user_id: Optional[uuid.UUID] = None
+    role: Optional[str] = None
+    action: str
+    resource_type: Optional[str] = None
+    resource_id: Optional[uuid.UUID] = None
+    decision: str
+    reason: Optional[str] = None
+    abac_context: Optional[dict] = None

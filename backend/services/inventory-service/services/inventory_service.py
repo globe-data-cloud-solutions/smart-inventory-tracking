@@ -307,6 +307,20 @@ class InventoryService:
             {"id": str(adjustment_id)},
         )
 
+        await audit_log(
+            user, "adjustment:approve",
+            {
+                "resource_type": "adjustment",
+                "resource_id": str(adjustment_id),
+                "product_id": str(body.product_id),
+                "warehouse_id": str(body.warehouse_id),
+                "quantity_delta": str(quantity),
+                "reason_code": str(body.reason_code),
+                "transaction_id": str(tx_id),
+            },
+            "GRANTED",
+        )
+
         from datetime import datetime, timezone
         return AdjustmentResponse(
             adjustment_id=adjustment_id,
@@ -1051,16 +1065,34 @@ class InventoryService:
     async def create_adjustment(
         self, user: Any, body: AdjustmentRequest
     ) -> AdjustmentResponse:
-        adj_id = uuid.uuid4()
         from datetime import datetime, timezone
+
+        # Idempotency: return the existing record if this key was already used
+        existing = (await self.db.execute(
+            text(
+                "SELECT id, status, quantity_delta, created_at "
+                "FROM adjustment_orders "
+                "WHERE tenant_id = :tid AND idempotency_key = :key"
+            ),
+            {"tid": str(user.tenant_id), "key": body.idempotency_key},
+        )).fetchone()
+        if existing is not None:
+            return AdjustmentResponse(
+                adjustment_id=existing.id,
+                status=existing.status,
+                quantity_delta=existing.quantity_delta,
+                created_at=existing.created_at or datetime.now(timezone.utc),
+            )
+
+        adj_id = uuid.uuid4()
         now = datetime.now(timezone.utc)
 
         await self.db.execute(
             text(
                 "INSERT INTO adjustment_orders "
                 "(id, tenant_id, warehouse_id, product_id, quantity_delta, "
-                " reason_code, status, created_by) "
-                "VALUES (:id, :tid, :wid, :pid, :delta, :reason, 'DRAFT', :uid)"
+                " reason_code, status, idempotency_key, notes, created_by) "
+                "VALUES (:id, :tid, :wid, :pid, :delta, :reason, 'DRAFT', :key, :notes, :uid)"
             ),
             {
                 "id": str(adj_id),
@@ -1068,9 +1100,24 @@ class InventoryService:
                 "wid": str(body.warehouse_id),
                 "pid": str(body.product_id),
                 "delta": str(body.quantity_delta),
-                "reason": body.reason_code,
+                "reason": str(body.reason_code),
+                "key": body.idempotency_key,
+                "notes": body.notes,
                 "uid": str(user.user_id),
             },
+        )
+
+        await audit_log(
+            user, "adjustment:create",
+            {
+                "resource_type": "adjustment",
+                "resource_id": str(adj_id),
+                "product_id": str(body.product_id),
+                "warehouse_id": str(body.warehouse_id),
+                "quantity_delta": str(body.quantity_delta),
+                "reason_code": str(body.reason_code),
+            },
+            "GRANTED",
         )
 
         return AdjustmentResponse(

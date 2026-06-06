@@ -14,15 +14,17 @@ interface Props { products: DemoProduct[]; warehouses: DemoWarehouse[]; orgSlug:
 
 const REASONS = [
   { value: "DAMAGE",            label: "adjustment.reasons.DAMAGE"            },
-  { value: "COUNT_VARIANCE",    label: "adjustment.reasons.COUNT_VARIANCE"    },
   { value: "EXPIRY",            label: "adjustment.reasons.EXPIRY"            },
-  { value: "SUPPLIER_RETURN",   label: "adjustment.reasons.SUPPLIER_RETURN"   },
-  { value: "SYSTEM_CORRECTION", label: "adjustment.reasons.SYSTEM_CORRECTION" },
+  { value: "THEFT",             label: "adjustment.reasons.THEFT"             },
+  { value: "COUNT_DISCREPANCY", label: "adjustment.reasons.COUNT_DISCREPANCY" },
+  { value: "RETURN",            label: "adjustment.reasons.RETURN"            },
+  { value: "PRODUCTION_USE",    label: "adjustment.reasons.PRODUCTION_USE"    },
+  { value: "SAMPLE",            label: "adjustment.reasons.SAMPLE"            },
   { value: "OTHER",             label: "adjustment.reasons.OTHER"             },
 ];
 
-// Bug 4A: These reasons always deduct stock — user enters magnitude, system negates
-const FORCE_NEGATIVE = new Set(["DAMAGE", "EXPIRY", "SUPPLIER_RETURN"]);
+// These reasons always deduct stock — user enters magnitude, system negates
+const FORCE_NEGATIVE = new Set(["DAMAGE", "EXPIRY", "THEFT"]);
 
 const THRESHOLDS = { low: 100, medium: 1000 };
 

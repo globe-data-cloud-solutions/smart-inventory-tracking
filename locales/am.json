@@ -406,12 +406,14 @@
     "quantity_hint": "አዎንታዊ (+) ወይም አሉታዊ (-)",
     "reason": "ምክንያት",
     "reasons": {
-      "DAMAGE": "ጉዳት",
-      "COUNT_VARIANCE": "ቆጠራ ልዩነት",
-      "EXPIRY": "ጊዜ ማብቂያ",
-      "SUPPLIER_RETURN": "ወደ አቅራቢ ተመለሰ",
-      "SYSTEM_CORRECTION": "የስርዓት ማረሙ",
-      "OTHER": "ሌላ"
+      "DAMAGE": "Damaged / Write-off",
+      "EXPIRY": "Expired Stock Disposal",
+      "THEFT": "Theft / Loss",
+      "COUNT_DISCREPANCY": "Stock Count Discrepancy",
+      "RETURN": "Customer Return",
+      "PRODUCTION_USE": "Production Use",
+      "SAMPLE": "Sample / Promotional",
+      "OTHER": "Other"
     },
     "submit": "ለፈቃድ አስገባ",
     "approve": "ፍቀድ",

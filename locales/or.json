@@ -396,12 +396,14 @@
     "quantity_hint": "Positiivii (+) ykn Negatiivii (-)",
     "reason": "Sababa",
     "reasons": {
-      "DAMAGE": "Miidhaa",
-      "COUNT_VARIANCE": "Garaagarummaa Lakkoofsa",
-      "EXPIRY": "Yeroo Dhumaa",
-      "SUPPLIER_RETURN": "Gara Dhiyeessituu Deebi'e",
-      "SYSTEM_CORRECTION": "Sirreessa Sirna",
-      "OTHER": "Kan biraa"
+      "DAMAGE": "Damaged / Write-off",
+      "EXPIRY": "Expired Stock Disposal",
+      "THEFT": "Theft / Loss",
+      "COUNT_DISCREPANCY": "Stock Count Discrepancy",
+      "RETURN": "Customer Return",
+      "PRODUCTION_USE": "Production Use",
+      "SAMPLE": "Sample / Promotional",
+      "OTHER": "Other"
     },
     "submit": "Hayyamaaf Galchi",
     "approve": "Hayyami",

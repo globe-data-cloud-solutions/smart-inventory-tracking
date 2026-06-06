@@ -406,10 +406,12 @@
     "approval": "Approval",
     "reasons": {
       "DAMAGE": "Damaged / Write-off",
-      "COUNT_VARIANCE": "Stock Count Variance",
       "EXPIRY": "Expired Stock Disposal",
-      "SUPPLIER_RETURN": "Return to Supplier",
-      "SYSTEM_CORRECTION": "System Correction",
+      "THEFT": "Theft / Loss",
+      "COUNT_DISCREPANCY": "Stock Count Discrepancy",
+      "RETURN": "Customer Return",
+      "PRODUCTION_USE": "Production Use",
+      "SAMPLE": "Sample / Promotional",
       "OTHER": "Other"
     },
     "submit": "Submit for Approval",
