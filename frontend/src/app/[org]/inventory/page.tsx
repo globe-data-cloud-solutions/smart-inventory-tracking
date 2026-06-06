@@ -15,6 +15,7 @@ import { useInventoryStore } from "@/lib/inventory-state";
 import { useWarehouses } from "@/hooks/useWarehouses";
 import { api } from "@/lib/api";
 import { t } from "@/lib/i18n";
+import { formatQty } from "@/lib/utils";
 import { useTenantName } from "@/hooks/useTenantName";
 
 type ApiTransfer = {
@@ -175,7 +176,7 @@ function TransactionDetailModal({ col, productName, rows, onClose }: {
                     <td className="px-2.5 py-2 text-center">{arrow(r.direction)}</td>
                     <td className="px-2.5 py-2 font-semibold text-gray-800">{r.label}</td>
                     <td className={`px-2.5 py-2 text-right font-bold ${r.direction === "in" || r.direction === "direct" ? "text-emerald-600" : "text-red-600"}`}>
-                      {r.direction === "out" ? `−${r.qty.toLocaleString()}` : `+${r.qty.toLocaleString()}`}
+                      {r.direction === "out" ? `−${formatQty(r.qty)}` : `+${formatQty(r.qty)}`}
                     </td>
                     <td className="px-2.5 py-2 text-gray-500 text-xs">
                       {new Date(r.date).toLocaleDateString()} {new Date(r.date).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
@@ -187,7 +188,7 @@ function TransactionDetailModal({ col, productName, rows, onClose }: {
               <tfoot>
                 <tr className={`${meta.hdBg} border-t-2 border-gray-200`}>
                   <td colSpan={2} className="px-2.5 py-2 font-bold text-gray-700 text-xs">{meta.totalLabel}</td>
-                  <td className={`px-2.5 py-2 text-right font-extrabold ${meta.totalCls}`}>{total.toLocaleString()}</td>
+                  <td className={`px-2.5 py-2 text-right font-extrabold ${meta.totalCls}`}>{formatQty(total)}</td>
                   <td colSpan={2} />
                 </tr>
               </tfoot>
@@ -208,7 +209,7 @@ function ExpandCell({ qty, cls, prefix, icon, tooltip, onClick }: {
     <button onClick={onClick} title={tooltip ?? t("inventory.expand_hint")}
       className={`font-bold text-xs px-2.5 py-0.5 rounded border cursor-pointer inline-flex items-center gap-1 ${cls}`}>
       {icon && <span>{icon}</span>}
-      {prefix}{qty.toLocaleString()}
+      {prefix}{formatQty(qty)}
     </button>
   );
 }
@@ -465,7 +466,7 @@ export default function InventoryPage() {
       const inbound = getInboundInTransit(productId, warehouseId).map((txn) => ({ direction: "in" as const, label: `From: ${txn.fromWarehouseName}`, qty: txn.quantity, date: txn.issuedDate, ref: txn.ref }));
       const partial = getInboundPartial(productId, warehouseId).map((txn) => {
         const rcvd = txn.receivedQuantity ?? 0; const rem = txn.quantity - rcvd;
-        return { direction: "in" as const, label: `From: ${txn.fromWarehouseName} (partial — ${rcvd.toLocaleString()} of ${txn.quantity.toLocaleString()} received, ${rem.toLocaleString()} remaining)`, qty: rem, date: txn.issuedDate, ref: txn.ref };
+        return { direction: "in" as const, label: `From: ${txn.fromWarehouseName} (partial — ${formatQty(rcvd)} of ${formatQty(txn.quantity)} received, ${formatQty(rem)} remaining)`, qty: rem, date: txn.issuedDate, ref: txn.ref };
       });
       modalRows = [...inbound, ...partial].sort((a, b) => a.date.localeCompare(b.date));
     }
@@ -600,7 +601,7 @@ export default function InventoryPage() {
         )}
 
         <div className="ml-auto text-xs text-gray-500">
-          {visibleProducts.length} / {allProducts.length} {t("table.products")} · {totalStockAll.toLocaleString()} {t("inventory.total_units")}
+          {visibleProducts.length} / {allProducts.length} {t("table.products")} · {formatQty(totalStockAll)} {t("inventory.total_units")}
         </div>
       </div>
 
@@ -648,12 +649,12 @@ export default function InventoryPage() {
                           <span className="bg-gray-100 px-2 py-0.5 rounded font-semibold text-gray-700">{p.category}</span>
                         </td>
                         <td className="px-3.5 py-2.5 text-gray-400 text-xs">{p.unit}</td>
-                        <td className={`px-3.5 py-2.5 text-right font-bold ${onHand > 0 ? "text-gray-900" : "text-gray-400"}`}>{onHand.toLocaleString()}</td>
-                        <td className="px-3.5 py-2.5 text-right text-xs text-amber-700">{reserved.toLocaleString()}</td>
-                        <td className="px-3.5 py-2.5 text-right text-xs text-orange-600">{inTransitOut.toLocaleString()}</td>
-                        <td className="px-3.5 py-2.5 text-right text-xs text-blue-600">{inTransitIn.toLocaleString()}</td>
-                        <td className={`px-3.5 py-2.5 text-right text-xs font-semibold ${available > 0 ? "text-emerald-700" : "text-gray-400"}`}>{available.toLocaleString()}</td>
-                        <td className="px-3.5 py-2.5 text-right text-xs text-gray-500">{p.reorderPoint.toLocaleString()}</td>
+                        <td className={`px-3.5 py-2.5 text-right font-bold ${onHand > 0 ? "text-gray-900" : "text-gray-400"}`}>{formatQty(onHand)}</td>
+                        <td className="px-3.5 py-2.5 text-right text-xs text-amber-700">{formatQty(reserved)}</td>
+                        <td className="px-3.5 py-2.5 text-right text-xs text-orange-600">{formatQty(inTransitOut)}</td>
+                        <td className="px-3.5 py-2.5 text-right text-xs text-blue-600">{formatQty(inTransitIn)}</td>
+                        <td className={`px-3.5 py-2.5 text-right text-xs font-semibold ${available > 0 ? "text-emerald-700" : "text-gray-400"}`}>{formatQty(available)}</td>
+                        <td className="px-3.5 py-2.5 text-right text-xs text-gray-500">{formatQty(p.reorderPoint)}</td>
                         <td className="px-3.5 py-2.5">
                           <span className={`inline-flex items-center gap-1 text-[11px] font-bold px-2.5 py-0.5 rounded border ${stockStatus === "out" ? "bg-red-50 text-red-700 border-red-200" : stockStatus === "low" ? "bg-amber-50 text-amber-700 border-amber-200" : "bg-green-50 text-emerald-600 border-emerald-200"}`}>
                             <span className={`w-1.5 h-1.5 rounded-full ${stockStatus === "out" ? "bg-red-600" : stockStatus === "low" ? "bg-amber-600" : "bg-emerald-600"}`} />
@@ -696,7 +697,7 @@ export default function InventoryPage() {
                     </td>
                     <td className="px-3.5 py-2.5 text-gray-400 text-xs">{p.unit}</td>
                     <td className={`px-3.5 py-2.5 text-right font-bold ${onHand > 0 ? "text-gray-900" : "text-gray-400"}`}>
-                      {onHand.toLocaleString()}
+                      {formatQty(onHand)}
                     </td>
                     {showWarehouseColumns && (
                       <td className="px-3.5 py-2.5 text-right">
@@ -721,11 +722,11 @@ export default function InventoryPage() {
                     {showWarehouseColumns && (
                       <td className="px-3.5 py-2.5 text-right font-bold">
                         <span className={`inline-block px-2 py-0.5 rounded text-xs font-bold ${available > p.reorderPoint ? "bg-blue-50 text-blue-700" : "bg-red-50 text-red-600"}`}>
-                          {available.toLocaleString()}
+                          {formatQty(available)}
                         </span>
                       </td>
                     )}
-                    <td className="px-3.5 py-2.5 text-right text-gray-400 text-xs">{p.reorderPoint.toLocaleString()}</td>
+                    <td className="px-3.5 py-2.5 text-right text-gray-400 text-xs">{formatQty(p.reorderPoint)}</td>
                     <td className="px-3.5 py-2.5">
                       <span className={`inline-flex items-center gap-1 text-[11px] font-bold px-2.5 py-0.5 rounded border ${
                         stockStatus === "out" ? "bg-red-50 text-red-700 border-red-200" :

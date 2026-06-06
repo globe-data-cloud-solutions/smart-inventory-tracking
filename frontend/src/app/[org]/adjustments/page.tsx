@@ -10,6 +10,7 @@ import { useInventoryStore } from "@/lib/inventory-state";
 import { useAuditStore } from "@/lib/audit-log-state";
 import { api, IS_GATEWAY_MODE } from "@/lib/api";
 import { t } from "@/lib/i18n";
+import { formatQty } from "@/lib/utils";
 import { useTenantName } from "@/hooks/useTenantName";
 import { useWarehouses } from "@/hooks/useWarehouses";
 
@@ -254,7 +255,7 @@ export default function AdjustmentsPage() {
                 <div>
                   <p className="font-bold text-sm text-gray-800 m-0">{a.product_name}</p>
                   <p className="text-xs text-gray-500 mt-0.5">
-                    {a.warehouse_name} · {a.reason_code.replace(/_/g, " ")} · {(a.quantity_delta ?? 0) > 0 ? "+" : ""}{(a.quantity_delta ?? 0).toLocaleString()} units
+                    {a.warehouse_name} · {a.reason_code.replace(/_/g, " ")} · {(a.quantity_delta ?? 0) > 0 ? "+" : ""}{formatQty(a.quantity_delta ?? 0)} units
                   </p>
                   {a.notes && <p className="text-xs text-gray-400 mt-0.5 italic">{a.notes}</p>}
                 </div>
@@ -300,7 +301,7 @@ export default function AdjustmentsPage() {
                   <td className="px-3.5 py-2 font-semibold text-gray-800">{a.product_name}</td>
                   <td className="px-3.5 py-2 text-gray-700">{a.warehouse_name}</td>
                   <td className={`px-3.5 py-2 font-bold ${(a.quantity_delta ?? 0) < 0 ? "text-red-600" : "text-emerald-600"}`}>
-                    {(a.quantity_delta ?? 0) > 0 ? "+" : ""}{(a.quantity_delta ?? 0).toLocaleString()}
+                    {(a.quantity_delta ?? 0) > 0 ? "+" : ""}{formatQty(a.quantity_delta ?? 0)}
                   </td>
                   <td className="px-3.5 py-2 text-gray-500 text-xs">{a.reason_code.replace(/_/g, " ")}</td>
                   <td className="px-3.5 py-2">

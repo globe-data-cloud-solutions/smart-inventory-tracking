@@ -8,6 +8,7 @@ import { useInventoryStore, type TransferEntry } from "@/lib/inventory-state";
 import { useAuditStore } from "@/lib/audit-log-state";
 import { getSession } from "@/lib/demo-auth";
 import { t } from "@/lib/i18n";
+import { formatQty } from "@/lib/utils";
 import type { DemoProduct, DemoWarehouse } from "@/lib/demo-data";
 
 function getAncestorScope(warehouseId: string, warehouses: DemoWarehouse[]): string[] {
@@ -378,10 +379,10 @@ export function NewTransferPanel({ products, warehouses, orgSlug }: Props) {
               <div className="text-xs text-gray-700 flex flex-col gap-1">
                 <div><strong>{t("table.product")}:</strong> {stockAlert.productName}</div>
                 <div className="flex gap-5">
-                  <span><strong>{t("inventory.on_hand")}:</strong> {stockAlert.onHand.toLocaleString()}</span>
-                  <span><strong>{t("inventory.available")}:</strong> <span className="text-red-600 font-bold">{stockAlert.available.toLocaleString()}</span></span>
+                  <span><strong>{t("inventory.on_hand")}:</strong> {formatQty(stockAlert.onHand)}</span>
+                  <span><strong>{t("inventory.available")}:</strong> <span className="text-red-600 font-bold">{formatQty(stockAlert.available)}</span></span>
                 </div>
-                <div><strong>{t("transfer_panel.requested")}:</strong> {stockAlert.requested.toLocaleString()} <span className="text-red-600 ml-2">({(stockAlert.requested - stockAlert.available).toLocaleString()} over)</span></div>
+                <div><strong>{t("transfer_panel.requested")}:</strong> {formatQty(stockAlert.requested)} <span className="text-red-600 ml-2">({formatQty(stockAlert.requested - stockAlert.available)} over)</span></div>
               </div>
               {stockAlert.canForce ? (
                 <div className="mt-2.5 flex gap-2">
