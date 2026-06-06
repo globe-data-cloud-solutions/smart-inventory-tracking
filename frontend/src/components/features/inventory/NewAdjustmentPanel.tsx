@@ -137,7 +137,7 @@ export function NewAdjustmentPanel({ products, warehouses, orgSlug }: Props) {
         product_sku:    selectedP?.sku,
         warehouse_id:   effectiveWarehouseId,
         warehouse_name: effectiveWarehouseName,
-        quantity:       qty,
+        quantity_delta: qty,
         reason_code:    reason,
         notes,
         idempotency_key: key,
