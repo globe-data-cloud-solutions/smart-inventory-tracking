@@ -28,7 +28,7 @@ interface AdjRecord {
   product_sku: string;
   warehouse_id: string;
   warehouse_name: string;
-  quantity: number;
+  quantity_delta: number;
   reason_code: string;
   notes: string;
   status: AdjStatus;
@@ -60,7 +60,7 @@ function buildSeedAdj(tenant: DemoTenant): AdjRecord[] {
       product_sku:            p.sku,
       warehouse_id:           wh?.id ?? "",
       warehouse_name:         wh?.name ?? "Warehouse",
-      quantity:               qty,
+      quantity_delta:         qty,
       reason_code:            REASONS[i % REASONS.length] ?? "DAMAGE",
       notes:                  NOTES[i % NOTES.length] ?? "",
       status:                 i < 3 ? "APPLIED" : "SUBMITTED",
@@ -162,7 +162,7 @@ export default function AdjustmentsPage() {
     if (next === "APPROVED" && adj?.product_id && adj.warehouse_id) {
       const adjWarehouseId = adj.warehouse_id;
       const adjProductId   = adj.product_id;
-      const adjQty         = adj.quantity;
+      const adjQty         = adj.quantity_delta ?? 0;
       const store          = useInventoryStore.getState();
 
       if (adjQty > 0) store.addReceive(adjProductId, adjWarehouseId, adjQty);
@@ -246,7 +246,7 @@ export default function AdjustmentsPage() {
                 <div>
                   <p className="font-bold text-sm text-gray-800 m-0">{a.product_name}</p>
                   <p className="text-xs text-gray-500 mt-0.5">
-                    {a.warehouse_name} · {a.reason_code.replace(/_/g, " ")} · {a.quantity > 0 ? "+" : ""}{a.quantity} units
+                    {a.warehouse_name} · {a.reason_code.replace(/_/g, " ")} · {(a.quantity_delta ?? 0) > 0 ? "+" : ""}{(a.quantity_delta ?? 0).toLocaleString()} units
                   </p>
                   {a.notes && <p className="text-xs text-gray-400 mt-0.5 italic">{a.notes}</p>}
                 </div>
@@ -291,8 +291,8 @@ export default function AdjustmentsPage() {
                   <td className="px-3.5 py-2 font-mono text-xs text-gray-400">{a.product_sku}</td>
                   <td className="px-3.5 py-2 font-semibold text-gray-800">{a.product_name}</td>
                   <td className="px-3.5 py-2 text-gray-700">{a.warehouse_name}</td>
-                  <td className={`px-3.5 py-2 font-bold ${a.quantity < 0 ? "text-red-600" : "text-emerald-600"}`}>
-                    {a.quantity > 0 ? "+" : ""}{a.quantity.toLocaleString()}
+                  <td className={`px-3.5 py-2 font-bold ${(a.quantity_delta ?? 0) < 0 ? "text-red-600" : "text-emerald-600"}`}>
+                    {(a.quantity_delta ?? 0) > 0 ? "+" : ""}{(a.quantity_delta ?? 0).toLocaleString()}
                   </td>
                   <td className="px-3.5 py-2 text-gray-500 text-xs">{a.reason_code.replace(/_/g, " ")}</td>
                   <td className="px-3.5 py-2">
