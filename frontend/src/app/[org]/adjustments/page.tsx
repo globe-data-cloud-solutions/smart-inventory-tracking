@@ -24,6 +24,7 @@ type AdjAction  = "submit" | "approve" | "reject" | "cancel";
 // Bug 2: added product_id and warehouse_id for scoping and balance update (Bug 9)
 interface AdjRecord {
   id: string;
+  adjustment_id?: string;
   product_id: string;
   product_name: string;
   product_sku: string;
@@ -159,7 +160,7 @@ export default function AdjustmentsPage() {
   async function transition(id: string, action: AdjAction) {
     // IMPORTANT: search allAdj — not visibleAdj. visibleAdj is display-only (WM-scoped).
     // Approvers (RM/NM/TA) must find the adjustment record regardless of which WH created it.
-    const adj = allAdj.find((a) => a.id === id);
+    const adj = allAdj.find((a) => (a.adjustment_id ?? a.id) === id);
 
     try {
       await api.post(`/api/v1/inventory/adjustments/${id}/${action}`, {});
@@ -259,13 +260,13 @@ export default function AdjustmentsPage() {
                 </div>
                 <div className="flex gap-2">
                   <button
-                    onClick={() => void transition(a.id, "approve")}
+                    onClick={() => void transition(a.adjustment_id ?? a.id,"approve")}
                     className="px-3.5 py-1.5 bg-green-100 text-green-800 border border-emerald-200 rounded text-xs font-bold cursor-pointer"
                   >
                     {t("adjustment.approve")}
                   </button>
                   <button
-                    onClick={() => void transition(a.id, "reject")}
+                    onClick={() => void transition(a.adjustment_id ?? a.id,"reject")}
                     className="px-3.5 py-1.5 bg-red-100 text-red-900 border border-red-200 rounded text-xs font-bold cursor-pointer"
                   >
                     {t("adjustment.reject")}
@@ -293,7 +294,7 @@ export default function AdjustmentsPage() {
             </thead>
             <tbody>
               {visibleAdj.map((a, idx) => (
-                <tr key={a.id} className={`border-b border-gray-100 ${idx % 2 === 0 ? "bg-white" : "bg-gray-50"}`}>
+                <tr key={a.adjustment_id ?? a.id} className={`border-b border-gray-100 ${idx % 2 === 0 ? "bg-white" : "bg-gray-50"}`}>
                   <td className="px-3.5 py-2 text-gray-400 text-xs whitespace-nowrap">{new Date(a.created_at).toLocaleDateString()}</td>
                   <td className="px-3.5 py-2 font-mono text-xs text-gray-400">{a.product_sku}</td>
                   <td className="px-3.5 py-2 font-semibold text-gray-800">{a.product_name}</td>
@@ -317,13 +318,13 @@ export default function AdjustmentsPage() {
                     {a.status === "DRAFT" && currentUser.id.toLowerCase() === (a.created_by ?? "").toLowerCase() && (
                       <div className="flex gap-1.5">
                         <button
-                          onClick={() => void transition(a.id, "submit")}
+                          onClick={() => void transition(a.adjustment_id ?? a.id,"submit")}
                           className="px-2.5 py-1 bg-blue-100 text-blue-800 border border-blue-200 rounded text-xs font-bold cursor-pointer hover:bg-blue-200"
                         >
                           {t("adjustment.submit")}
                         </button>
                         <button
-                          onClick={() => void transition(a.id, "cancel")}
+                          onClick={() => void transition(a.adjustment_id ?? a.id,"cancel")}
                           className="px-2.5 py-1 bg-gray-100 text-gray-600 border border-gray-200 rounded text-xs font-bold cursor-pointer hover:bg-gray-200"
                         >
                           {t("adjustment.cancel")}
@@ -333,13 +334,13 @@ export default function AdjustmentsPage() {
                     {a.status === "PENDING_APPROVAL" && canApprove(a) && (
                       <div className="flex gap-1.5">
                         <button
-                          onClick={() => void transition(a.id, "approve")}
+                          onClick={() => void transition(a.adjustment_id ?? a.id,"approve")}
                           className="px-2.5 py-1 bg-green-100 text-green-800 border border-emerald-200 rounded text-xs font-bold cursor-pointer hover:bg-green-200"
                         >
                           {t("adjustment.approve")}
                         </button>
                         <button
-                          onClick={() => void transition(a.id, "reject")}
+                          onClick={() => void transition(a.adjustment_id ?? a.id,"reject")}
                           className="px-2.5 py-1 bg-red-100 text-red-900 border border-red-200 rounded text-xs font-bold cursor-pointer hover:bg-red-200"
                         >
                           {t("adjustment.reject")}
