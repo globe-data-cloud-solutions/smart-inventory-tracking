@@ -295,6 +295,34 @@ export default function InventoryPage() {
     return map;
   }, [inventoryStock]);
 
+  const tenantProductIds = new Set((tenant?.products ?? []).map((p) => p.id));
+  const mergedProducts: DemoProduct[] = isGatewayMode
+    ? apiProducts.map((p) => ({
+        id: p.id, sku: p.sku, name: p.name,
+        category: p.category ?? "—",
+        unit: p.unit,
+        batchTracking: false,
+        reorderPoint: p.reorder_point != null ? safeFloat(p.reorder_point) : 0,
+        stock: stockByProductId.get(p.id) ?? {},
+        shortName: p.short_name ?? undefined,
+        description: p.description ?? undefined,
+        brand: p.brand ?? undefined,
+        typeCode: p.type_code ?? undefined,
+        packagingType: p.packaging_type ?? undefined,
+        unitsPerPackage: p.units_per_package ?? undefined,
+      }))
+    : [
+        ...(tenant?.products ?? []),
+        ...apiProducts.filter((p) => !tenantProductIds.has(p.id)).map((p) => ({
+          id: p.id, sku: p.sku, name: p.name,
+          category: p.category ?? "—",
+          unit: p.unit,
+          batchTracking: false,
+          reorderPoint: p.reorder_point != null ? safeFloat(p.reorder_point) : 0,
+          stock: {} as Record<string, number>,
+        })),
+      ];
+
   // Multi-warehouse expanded rows (NM/TA/SA with no warehouse filter selected).
   // Each InventoryStockItem → one table row showing product + specific warehouse stock.
   // null when a warehouse is selected (single-warehouse view) or in demo mode.
@@ -313,8 +341,7 @@ export default function InventoryPage() {
         if (bQty === 0 && aQty !== 0) return -1;
         return a.product.name.localeCompare(b.product.name);
       });
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isGatewayMode, whId, inventoryStock]);
+  }, [isGatewayMode, whId, inventoryStock, mergedProducts]);
 
   const gatewayWarehouses = useMemo((): DemoWarehouse[] => {
     const seen = new Map<string, DemoWarehouse>();
@@ -400,34 +427,6 @@ export default function InventoryPage() {
   const displayWarehouses: DemoWarehouse[] = isGatewayMode
     ? (orgNodeWarehouses.length > 0 ? orgNodeWarehouses : gatewayWarehouses)
     : (tenant?.warehouses ?? []);
-
-  const tenantProductIds = new Set((tenant?.products ?? []).map((p) => p.id));
-  const mergedProducts: DemoProduct[] = isGatewayMode
-    ? apiProducts.map((p) => ({
-        id: p.id, sku: p.sku, name: p.name,
-        category: p.category ?? "—",
-        unit: p.unit,
-        batchTracking: false,
-        reorderPoint: p.reorder_point != null ? safeFloat(p.reorder_point) : 0,
-        stock: stockByProductId.get(p.id) ?? {},
-        shortName: p.short_name ?? undefined,
-        description: p.description ?? undefined,
-        brand: p.brand ?? undefined,
-        typeCode: p.type_code ?? undefined,
-        packagingType: p.packaging_type ?? undefined,
-        unitsPerPackage: p.units_per_package ?? undefined,
-      }))
-    : [
-        ...(tenant?.products ?? []),
-        ...apiProducts.filter((p) => !tenantProductIds.has(p.id)).map((p) => ({
-          id: p.id, sku: p.sku, name: p.name,
-          category: p.category ?? "—",
-          unit: p.unit,
-          batchTracking: false,
-          reorderPoint: p.reorder_point != null ? safeFloat(p.reorder_point) : 0,
-          stock: {} as Record<string, number>,
-        })),
-      ];
 
   // Single source of truth for API stock in gateway mode.
   // Returns null in demo mode (isGatewayMode=false) or when the product has no
