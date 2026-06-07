@@ -1756,6 +1756,265 @@ function TransferTypesTab({ tenantId }: { tenantId: string }) {
 
 /* ── Tab 5: Approval Rules (new transfer_approval_rules API) ────────────────── */
 
+const ADJ_REASON_CODES = [
+  "DAMAGE", "EXPIRY", "THEFT", "COUNT_DISCREPANCY",
+  "RETURN", "PRODUCTION_USE", "SAMPLE", "OTHER",
+];
+
+const ADJ_ROLE_CODES = ["WM", "RM", "LM", "NM", "TA"];
+
+interface AdjRuleLocal {
+  id?: string;
+  role_code: string;
+  level_number: number;
+  mode: "GLOBAL" | "PER_CODE";
+  reason_code: string | null;
+  threshold_type: "QUANTITY" | "VALUE" | "EITHER";
+  qty_limit: string;
+  value_limit: string;
+  approver_role_code: string | null;
+  priority: number;
+  is_active: boolean;
+}
+
+function AdjustmentRulesSection({ tenantId }: { tenantId: string }) {
+  const qc = useQueryClient();
+  const [adjMode, setAdjMode] = useState<"GLOBAL" | "PER_CODE">("GLOBAL");
+  const [ruleList, setRuleList] = useState<AdjRuleLocal[] | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [saveOk, setSaveOk] = useState(false);
+  const [saveErr, setSaveErr] = useState<string | null>(null);
+
+  const { data: levels = [] } = useQuery<HierarchyLevel[]>({
+    queryKey: ["hierarchy-config", tenantId],
+    queryFn:  () => api.get<HierarchyLevel[]>(`/api/v1/tenants/${tenantId}/hierarchy/config`),
+    staleTime: 30_000,
+  });
+
+  const { data: savedRules = [], isLoading } = useQuery<Array<{
+    id: string; role_code: string; level_number: number; mode: string;
+    reason_code: string | null; threshold_type: string;
+    qty_limit: string | null; value_limit: string | null;
+    approver_role_code: string | null; priority: number; is_active: boolean;
+  }>>({
+    queryKey: ["adj-approval-rules", tenantId],
+    queryFn:  () => api.get(`/api/v1/tenants/${tenantId}/adjustment-approval-rules`),
+    staleTime: 0,
+    enabled:  !!tenantId,
+  });
+
+  const effectiveRules: AdjRuleLocal[] = ruleList ?? savedRules.map((r) => ({
+    id: r.id,
+    role_code: r.role_code,
+    level_number: r.level_number,
+    mode: (r.mode as "GLOBAL" | "PER_CODE"),
+    reason_code: r.reason_code,
+    threshold_type: (r.threshold_type as "QUANTITY" | "VALUE" | "EITHER"),
+    qty_limit: r.qty_limit ?? "",
+    value_limit: r.value_limit ?? "",
+    approver_role_code: r.approver_role_code,
+    priority: r.priority,
+    is_active: r.is_active,
+  }));
+
+  const displayMode: "GLOBAL" | "PER_CODE" = ruleList
+    ? adjMode
+    : effectiveRules.length > 0
+    ? effectiveRules[0]!.mode
+    : adjMode;
+
+  function getList(): AdjRuleLocal[] { return ruleList ?? effectiveRules; }
+
+  function addRule() {
+    setRuleList([...getList(), {
+      role_code: "", level_number: 0,
+      mode: displayMode, reason_code: null,
+      threshold_type: "QUANTITY", qty_limit: "", value_limit: "",
+      approver_role_code: null, priority: getList().length + 1, is_active: true,
+    }]);
+  }
+  function removeRule(idx: number) { setRuleList(getList().filter((_, i) => i !== idx)); }
+  function updateRule(idx: number, patch: Partial<AdjRuleLocal>) {
+    setRuleList(getList().map((r, i) => i === idx ? { ...r, ...patch } : r));
+  }
+  function handleModeChange(m: "GLOBAL" | "PER_CODE") {
+    setAdjMode(m);
+    setRuleList(getList().map((r) => ({ ...r, mode: m, reason_code: m === "GLOBAL" ? null : r.reason_code })));
+  }
+
+  async function save() {
+    setSaving(true); setSaveOk(false); setSaveErr(null);
+    try {
+      const body = getList().map((r) => ({
+        role_code: r.role_code,
+        level_number: r.level_number,
+        mode: displayMode,
+        reason_code: displayMode === "GLOBAL" ? null : (r.reason_code ?? null),
+        threshold_type: r.threshold_type,
+        qty_limit: r.qty_limit ? parseFloat(r.qty_limit) : null,
+        value_limit: r.value_limit ? parseFloat(r.value_limit) : null,
+        approver_role_code: r.approver_role_code ?? null,
+        priority: r.priority,
+        is_active: r.is_active,
+      }));
+      await api.put(`/api/v1/tenants/${tenantId}/adjustment-approval-rules`, body);
+      void qc.invalidateQueries({ queryKey: ["adj-approval-rules", tenantId] });
+      setRuleList(null);
+      setSaveOk(true);
+    } catch (e) { setSaveErr(e instanceof Error ? e.message : t("common.error")); }
+    setSaving(false);
+  }
+
+  if (isLoading) return <p className="text-sm text-gray-400 py-8 text-center">{t("common.loading")}</p>;
+
+  const currentList = getList();
+
+  return (
+    <div className="space-y-4">
+      {/* Mode selector */}
+      <div className="border border-gray-200 rounded-xl p-4 bg-gray-50">
+        <p className="text-sm font-semibold text-gray-700 mb-3">{t("approval_rule.adj_mode_title")}</p>
+        <div className="space-y-2">
+          {(["GLOBAL", "PER_CODE"] as const).map((m) => (
+            <label key={m} className="flex items-start gap-2 cursor-pointer">
+              <input type="radio" name="adj-mode" value={m} checked={displayMode === m}
+                onChange={() => handleModeChange(m)} className="mt-0.5 accent-emerald-600" />
+              <span className="text-sm text-gray-700">
+                {t(m === "GLOBAL" ? "approval_rule.adj_mode_global" : "approval_rule.adj_mode_per_code")}
+              </span>
+            </label>
+          ))}
+        </div>
+      </div>
+
+      {/* Rule cards */}
+      {currentList.length === 0 ? (
+        <p className="text-sm text-gray-400 italic py-4 text-center">{t("approval_rule.adj_no_rules")}</p>
+      ) : (
+        <div className="space-y-3">
+          {currentList.map((rule, idx) => (
+            <div key={idx} className="border border-gray-200 rounded-xl p-4 bg-white space-y-3">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-bold uppercase text-gray-500">Rule {idx + 1}</span>
+                <div className="flex items-center gap-2">
+                  <label className="text-[10px] font-semibold text-gray-400 uppercase">{t("approval_rule.priority_label")}</label>
+                  <input type="number" min={0} value={rule.priority}
+                    onChange={(e) => updateRule(idx, { priority: Number(e.target.value) })}
+                    className="w-14 border border-gray-200 rounded px-1.5 py-0.5 text-xs text-center focus:border-emerald-400 focus:outline-none" />
+                  <button type="button" onClick={() => removeRule(idx)}
+                    className="w-6 h-6 flex items-center justify-center text-xs rounded border border-red-200 text-red-500 hover:bg-red-50">✕</button>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-bold text-gray-600 mb-1">{t("approval_rule.adj_role_code")}</label>
+                  <select value={rule.role_code} onChange={(e) => updateRule(idx, { role_code: e.target.value })}
+                    className="w-full border border-gray-300 rounded px-2 py-1.5 text-sm bg-white">
+                    <option value="">— select —</option>
+                    {ADJ_ROLE_CODES.map((rc) => <option key={rc} value={rc}>{rc}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-gray-600 mb-1">{t("approval_rule.adj_level")}</label>
+                  <select value={rule.level_number} onChange={(e) => updateRule(idx, { level_number: Number(e.target.value) })}
+                    className="w-full border border-gray-300 rounded px-2 py-1.5 text-sm bg-white">
+                    <option value={0}>— any —</option>
+                    {levels.map((l) => <option key={l.level_number} value={l.level_number}>{l.level_name} (L{l.level_number})</option>)}
+                  </select>
+                </div>
+              </div>
+
+              {displayMode === "PER_CODE" && (
+                <div>
+                  <label className="block text-xs font-bold text-gray-600 mb-1">{t("approval_rule.adj_reason_code")}</label>
+                  <select value={rule.reason_code ?? ""} onChange={(e) => updateRule(idx, { reason_code: e.target.value || null })}
+                    className="w-full border border-gray-300 rounded px-2 py-1.5 text-sm bg-white">
+                    <option value="">{t("approval_rule.adj_reason_all")}</option>
+                    {ADJ_REASON_CODES.map((rc) => <option key={rc} value={rc}>{rc}</option>)}
+                  </select>
+                </div>
+              )}
+
+              <div>
+                <p className="text-xs font-bold text-gray-600 mb-1">{t("approval_rule.threshold_type")}</p>
+                <div className="flex gap-3 flex-wrap">
+                  {(["QUANTITY", "VALUE", "EITHER"] as const).map((tt) => (
+                    <label key={tt} className="flex items-center gap-1 text-xs cursor-pointer">
+                      <input type="radio" name={`adj-thresh-${idx}`} value={tt} checked={rule.threshold_type === tt}
+                        onChange={() => updateRule(idx, { threshold_type: tt })} className="accent-emerald-600" />
+                      {t(`approval_rule.${tt.toLowerCase()}`)}
+                    </label>
+                  ))}
+                </div>
+                <div className="flex items-center gap-2 mt-2 flex-wrap">
+                  {(rule.threshold_type === "QUANTITY" || rule.threshold_type === "EITHER") && (
+                    <>
+                      <input type="number" min={0} value={rule.qty_limit} placeholder={t("approval_rule.adj_qty_limit")}
+                        onChange={(e) => updateRule(idx, { qty_limit: e.target.value })}
+                        className="w-32 border border-gray-300 rounded px-2 py-1 text-xs" />
+                      <span className="text-xs text-gray-400">{t("approval_rule.qty")}</span>
+                    </>
+                  )}
+                  {(rule.threshold_type === "VALUE" || rule.threshold_type === "EITHER") && (
+                    <>
+                      <input type="number" min={0} value={rule.value_limit} placeholder={t("approval_rule.adj_value_limit")}
+                        onChange={(e) => updateRule(idx, { value_limit: e.target.value })}
+                        className="w-32 border border-gray-300 rounded px-2 py-1 text-xs" />
+                      <span className="text-xs text-gray-400">ETB</span>
+                    </>
+                  )}
+                </div>
+              </div>
+
+              <div>
+                <p className="text-xs font-bold text-gray-600 mb-1">{t("approval_rule.adj_approval_type")}</p>
+                <div className="space-y-1.5">
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input type="radio" name={`adj-approv-${idx}`} checked={rule.approver_role_code === null}
+                      onChange={() => updateRule(idx, { approver_role_code: null })} className="accent-emerald-600" />
+                    <span className="text-xs text-gray-700">{t("approval_rule.adj_self_approve")}</span>
+                  </label>
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input type="radio" name={`adj-approv-${idx}`} checked={rule.approver_role_code !== null}
+                      onChange={() => updateRule(idx, { approver_role_code: rule.approver_role_code ?? "RM" })} className="accent-emerald-600" />
+                    <span className="text-xs text-gray-700">{t("approval_rule.adj_route_to")}:</span>
+                    {rule.approver_role_code !== null && (
+                      <select value={rule.approver_role_code} onChange={(e) => updateRule(idx, { approver_role_code: e.target.value })}
+                        className="border border-gray-300 rounded px-2 py-1 text-xs bg-white">
+                        {ADJ_ROLE_CODES.map((rc) => <option key={rc} value={rc}>{rc}</option>)}
+                      </select>
+                    )}
+                  </label>
+                </div>
+              </div>
+
+              <div className="flex items-start gap-1.5 text-[11px] text-blue-600">
+                <span className="font-bold shrink-0">ℹ</span>
+                <span>{t("approval_rule.priority_hint")}</span>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      <button type="button" onClick={addRule}
+        className="w-full py-2 border-2 border-dashed border-gray-300 text-gray-500 text-sm rounded-xl hover:border-emerald-400 hover:text-emerald-600">
+        + {t("approval_rule.add_rule")}
+      </button>
+
+      <p className="text-xs text-gray-400 italic">{t("approval_rule.adj_rules_note")}</p>
+
+      {saveErr && <p className="text-sm text-red-600">{saveErr}</p>}
+      {saveOk && <p className="text-sm text-emerald-600 font-medium">✓ {t("approval_rule.save")}</p>}
+      <button type="button" onClick={() => void save()} disabled={saving}
+        className="px-4 py-2 bg-blue-600 text-white text-sm font-semibold rounded hover:bg-blue-700 disabled:opacity-50">
+        {saving ? t("common.saving") : t("approval_rule.save")}
+      </button>
+    </div>
+  );
+}
+
 interface ApprovalStepLocal { sequence: number; position_id: string; position_title: string; location: string; mode: string; sla_hours: number | null }
 interface ApprovalRuleLocal {
   id: string;
@@ -1779,6 +2038,7 @@ const MODE_OPTIONS = [
 
 function ApprovalRulesV2Tab({ tenantId }: { tenantId: string }) {
   const qc = useQueryClient();
+  const [subTab, setSubTab] = useState<"transfer" | "adjustment">("transfer");
   const [activeType, setActiveType] = useState<string | null>(null);
   const [rules, setRules] = useState<Record<string, ApprovalRuleLocal[]>>({});
   const [saving, setSaving] = useState(false);
@@ -1890,24 +2150,40 @@ function ApprovalRulesV2Tab({ tenantId }: { tenantId: string }) {
     setSaving(false);
   }
 
-  if (ttLoading || rulesLoading) return <p className="text-sm text-gray-400 py-8 text-center">{t("common.loading")}</p>;
-  if (activeTypes.length === 0) return <p className="text-sm text-gray-400 py-8 text-center">No active transfer types. Configure them in the Transfer Types tab first.</p>;
-
   const levelOptions = [{ value: null, label: t("approval_rule.any_level") }, ...levels.map((l) => ({ value: l.level_number, label: `${l.level_name} (L${l.level_number})` }))];
   const currentRules = getRules(activeType ?? "");
 
   return (
     <div className="space-y-4">
-      {/* Type tabs */}
+      {/* Sub-tab nav: Transfer Rules | Adjustment Rules */}
       <div className="flex border-b border-gray-200">
-        {activeTypes.map((tt) => (
-          <button key={tt.id} type="button"
-            onClick={() => setActiveType(tt.id)}
-            className={`px-4 py-2 text-sm font-medium transition-all ${activeType === tt.id ? "border-b-2 border-emerald-600 text-emerald-700" : "text-gray-500 hover:text-gray-700"}`}>
-            {tt.display_name}
-          </button>
-        ))}
+        <button type="button" onClick={() => setSubTab("transfer")}
+          className={`px-4 py-2 text-sm font-medium transition-all ${subTab === "transfer" ? "border-b-2 border-emerald-600 text-emerald-700" : "text-gray-500 hover:text-gray-700"}`}>
+          {t("approval_rule.transfer_rules_tab")}
+        </button>
+        <button type="button" onClick={() => setSubTab("adjustment")}
+          className={`px-4 py-2 text-sm font-medium transition-all ${subTab === "adjustment" ? "border-b-2 border-emerald-600 text-emerald-700" : "text-gray-500 hover:text-gray-700"}`}>
+          {t("approval_rule.adj_rules_tab")}
+        </button>
       </div>
+
+      {subTab === "transfer" && (
+        <>
+          {(ttLoading || rulesLoading) && <p className="text-sm text-gray-400 py-8 text-center">{t("common.loading")}</p>}
+          {!ttLoading && !rulesLoading && activeTypes.length === 0 && (
+            <p className="text-sm text-gray-400 py-8 text-center">No active transfer types. Configure them in the Transfer Types tab first.</p>
+          )}
+          {!ttLoading && !rulesLoading && activeTypes.length > 0 && (<>
+            {/* Type tabs */}
+            <div className="flex border-b border-gray-200">
+              {activeTypes.map((tt) => (
+                <button key={tt.id} type="button"
+                  onClick={() => setActiveType(tt.id)}
+                  className={`px-4 py-2 text-sm font-medium transition-all ${activeType === tt.id ? "border-b-2 border-emerald-600 text-emerald-700" : "text-gray-500 hover:text-gray-700"}`}>
+                  {tt.display_name}
+                </button>
+              ))}
+            </div>
 
       {/* Rules for active type */}
       {activeType && (
@@ -2041,12 +2317,17 @@ function ApprovalRulesV2Tab({ tenantId }: { tenantId: string }) {
         </div>
       )}
 
-      {saveErr && <p className="text-sm text-red-600">{saveErr}</p>}
-      {saveOk && <p className="text-sm text-emerald-600 font-medium">✓ Saved</p>}
-      <button type="button" onClick={() => void save()} disabled={saving}
-        className="px-4 py-2 bg-blue-600 text-white text-sm font-semibold rounded hover:bg-blue-700 disabled:opacity-50">
-        {saving ? t("common.saving") : t("approval_rule.save")}
-      </button>
+          {saveErr && <p className="text-sm text-red-600">{saveErr}</p>}
+          {saveOk && <p className="text-sm text-emerald-600 font-medium">✓ Saved</p>}
+          <button type="button" onClick={() => void save()} disabled={saving}
+            className="px-4 py-2 bg-blue-600 text-white text-sm font-semibold rounded hover:bg-blue-700 disabled:opacity-50">
+            {saving ? t("common.saving") : t("approval_rule.save")}
+          </button>
+        </>)}
+        </>
+      )}
+
+      {subTab === "adjustment" && <AdjustmentRulesSection tenantId={tenantId} />}
     </div>
   );
 }

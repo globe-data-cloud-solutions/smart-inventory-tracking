@@ -185,6 +185,10 @@ class PERMISSIONS:
     TRANSFER_APPROVAL_RULE_VIEW   = Permission("transfer_approval_rule:view",   ["tenant_id"])
     TRANSFER_APPROVAL_RULE_MANAGE = Permission("transfer_approval_rule:manage", ["tenant_id", "audit_required"])
     SYSTEM_PLAN_MANAGE      = Permission("system:plan_manage",          ["platform_only"])
+
+    # ── Domain 22 — Adjustment Approval Rules (P4) ────────────────────────
+    ADJUSTMENT_APPROVAL_RULE_VIEW   = Permission("adjustment_approval_rule:view",   ["tenant_id"])
+    ADJUSTMENT_APPROVAL_RULE_MANAGE = Permission("adjustment_approval_rule:manage", ["tenant_id", "audit_required"])
     SYSTEM_SEED_PERMISSIONS = Permission("system:seed_permissions",     ["system_only"])
     SYSTEM_HEALTH_CHECK     = Permission("system:health_check",         [])
 
@@ -216,7 +220,7 @@ ALL_PERMISSIONS: List[Permission] = [
     v for v in vars(PERMISSIONS).values() if isinstance(v, Permission)
 ]
 
-assert len(ALL_PERMISSIONS) == 143, (
-    f"Expected 141 permissions, found {len(ALL_PERMISSIONS)}. "
+assert len(ALL_PERMISSIONS) == 145, (
+    f"Expected 145 permissions, found {len(ALL_PERMISSIONS)}. "
     "Update registry.py and re-run seed_permissions.py."
 )
