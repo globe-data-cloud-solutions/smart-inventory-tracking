@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback, Fragment } from "react";
+import { useState, useCallback, useMemo, Fragment } from "react";
 import { useParams } from "next/navigation";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
@@ -1259,6 +1259,12 @@ function ApprovalRulesTab({ tenantId }: { tenantId: string }) {
 
 /* ── Shared position types ──────────────────────────────────────────────────── */
 
+interface SelfApprovalPolicy {
+  id: string; tenant_id: string; role_code: string; level_number: number;
+  transfer_types: string[]; threshold_type: string;
+  qty_limit: number | null; value_limit: number | null; is_active: boolean;
+}
+
 interface Position {
   id: string;
   title: string;
@@ -1292,6 +1298,13 @@ function PositionsTab({ tenantId }: { tenantId: string }) {
   const [formErr, setFormErr]                 = useState<string | null>(null);
   const [saving, setSaving]                   = useState(false);
 
+  // Self-approval form state
+  const [formSAEnabled, setFormSAEnabled]         = useState(false);
+  const [formSATypes, setFormSATypes]             = useState<string[]>(["PULL","PUSH","SISTER"]);
+  const [formSAThreshold, setFormSAThreshold]     = useState<"QUANTITY"|"VALUE"|"EITHER">("QUANTITY");
+  const [formSAQtyLimit, setFormSAQtyLimit]       = useState("");
+  const [formSAValueLimit, setFormSAValueLimit]   = useState("");
+
   const { data: levels = [] } = useQuery<HierarchyLevel[]>({
     queryKey: ["hierarchy-config", tenantId],
     queryFn:  () => api.get<HierarchyLevel[]>(`/api/v1/tenants/${tenantId}/hierarchy/config`),
@@ -1308,20 +1321,43 @@ function PositionsTab({ tenantId }: { tenantId: string }) {
     staleTime: 0,
     enabled:  !!tenantId,
   });
+  const { data: selfApprovalPolicies = [] } = useQuery<SelfApprovalPolicy[]>({
+    queryKey: ["self-approval-policies", tenantId],
+    queryFn:  () => api.get<SelfApprovalPolicy[]>(`/api/v1/tenants/${tenantId}/self-approval-policies`),
+    staleTime: 0,
+    enabled:  !!tenantId,
+  });
 
   const allPositions: Position[] = posGroups.flatMap((g) => g.positions);
   const selectedGroup = posGroups.find((g) => g.node_id === selectedNodeId);
 
+  const policyMap = useMemo(() => {
+    const map = new Map<string, SelfApprovalPolicy>();
+    selfApprovalPolicies.forEach((p) => map.set(`${p.role_code}-${p.level_number}`, p));
+    return map;
+  }, [selfApprovalPolicies]);
+
+  function resetSAState(policy?: SelfApprovalPolicy) {
+    setFormSAEnabled(policy?.is_active ?? false);
+    setFormSATypes(policy?.transfer_types ?? ["PULL","PUSH","SISTER"]);
+    setFormSAThreshold((policy?.threshold_type ?? "QUANTITY") as "QUANTITY"|"VALUE"|"EITHER");
+    setFormSAQtyLimit(policy?.qty_limit != null ? String(policy.qty_limit) : "");
+    setFormSAValueLimit(policy?.value_limit != null ? String(policy.value_limit) : "");
+  }
+
   function openAdd() {
     setEditPosId(null); setFormTitle(""); setFormRole("WM"); setFormReportsTo(""); setFormErr(null);
+    resetSAState();
     setShowAddForm(true);
   }
   function openEdit(pos: Position) {
     setEditPosId(pos.id); setFormTitle(pos.title); setFormRole(pos.role_code);
     setFormReportsTo(pos.reports_to_position_id ?? ""); setFormErr(null);
+    const existing = policyMap.get(`${pos.role_code}-${selectedGroup?.level_number ?? 0}`);
+    resetSAState(existing);
     setShowAddForm(false);
   }
-  function cancelForm() { setShowAddForm(false); setEditPosId(null); }
+  function cancelForm() { setShowAddForm(false); setEditPosId(null); resetSAState(); }
 
   async function savePosition() {
     if (!formTitle.trim()) { setFormErr(t("position.title") + " is required."); return; }
@@ -1337,6 +1373,24 @@ function PositionsTab({ tenantId }: { tenantId: string }) {
         await api.post(`/api/v1/tenants/${tenantId}/nodes/${selectedNodeId}/positions`, body);
       }
       void qc.invalidateQueries({ queryKey: ["positions", tenantId] });
+      // Save self-approval policy (upsert enabled or disabled state)
+      if (selectedGroup) {
+        const levelNumber = selectedGroup.level_number;
+        const roleToSave = editPosId ? formRole : formRole;
+        const existingPolicy = policyMap.get(`${roleToSave}-${levelNumber}`);
+        if (formSAEnabled || existingPolicy) {
+          await api.put(`/api/v1/tenants/${tenantId}/self-approval-policies`, [{
+            role_code:       roleToSave,
+            level_number:    levelNumber,
+            transfer_types:  formSATypes,
+            threshold_type:  formSAThreshold,
+            qty_limit:       formSAQtyLimit ? parseFloat(formSAQtyLimit) : null,
+            value_limit:     formSAValueLimit ? parseFloat(formSAValueLimit) : null,
+            is_active:       formSAEnabled,
+          }]);
+          void qc.invalidateQueries({ queryKey: ["self-approval-policies", tenantId] });
+        }
+      }
       cancelForm();
     } catch (e) { setFormErr(e instanceof Error ? e.message : t("common.error")); }
     setSaving(false);
@@ -1430,6 +1484,78 @@ function PositionsTab({ tenantId }: { tenantId: string }) {
                     ))}
                   </select>
                 </div>
+
+                {/* Self-approval section */}
+                <div className="border border-blue-200 rounded-lg p-3 bg-blue-50 space-y-3">
+                  <p className="text-xs font-bold uppercase text-blue-700">{t("org_setup.self_approval_title")}</p>
+                  <p className="text-xs text-gray-600">{t("org_setup.self_approval_desc")}</p>
+                  {selectedGroup && (
+                    <p className="text-xs text-blue-600 bg-blue-100 rounded px-2 py-1">
+                      {t("org_setup.self_approval_level_note")
+                        .replace("{role}", formRole)
+                        .replace("{level}", levels.find((l) => l.level_number === selectedGroup.level_number)?.level_name ?? `L${selectedGroup.level_number}`)}
+                    </p>
+                  )}
+                  <label className="flex items-center gap-2 text-sm cursor-pointer">
+                    <input type="checkbox" checked={formSAEnabled}
+                      onChange={(e) => setFormSAEnabled(e.target.checked)}
+                      className="rounded border-gray-300 text-blue-600" />
+                    <span className="text-xs font-medium text-gray-700">{t("org_setup.self_approval_enable")}</span>
+                  </label>
+                  {formSAEnabled && (
+                    <div className="space-y-3 pt-1">
+                      <div>
+                        <label className="block text-xs font-bold text-gray-700 mb-1">{t("org_setup.self_approval_transfer_types")}</label>
+                        <div className="flex gap-3">
+                          {(["PULL","PUSH","SISTER"] as const).map((tt) => (
+                            <label key={tt} className="flex items-center gap-1 text-xs cursor-pointer">
+                              <input type="checkbox"
+                                checked={formSATypes.includes(tt)}
+                                onChange={(e) => setFormSATypes(e.target.checked
+                                  ? [...formSATypes, tt]
+                                  : formSATypes.filter((x) => x !== tt))}
+                                className="rounded border-gray-300 text-blue-600" />
+                              {tt}
+                            </label>
+                          ))}
+                        </div>
+                      </div>
+                      <div>
+                        <label className="block text-xs font-bold text-gray-700 mb-1">{t("org_setup.self_approval_threshold_type")}</label>
+                        <div className="flex gap-4">
+                          {(["QUANTITY","VALUE","EITHER"] as const).map((thr) => (
+                            <label key={thr} className="flex items-center gap-1 text-xs cursor-pointer">
+                              <input type="radio" name="sa-threshold" value={thr}
+                                checked={formSAThreshold === thr}
+                                onChange={() => setFormSAThreshold(thr)}
+                                className="border-gray-300 text-blue-600" />
+                              {t(`org_setup.threshold_${thr.toLowerCase()}`)}
+                            </label>
+                          ))}
+                        </div>
+                      </div>
+                      {(formSAThreshold === "QUANTITY" || formSAThreshold === "EITHER") && (
+                        <div>
+                          <label className="block text-xs font-bold text-gray-700 mb-1">{t("org_setup.self_approval_qty_limit")}</label>
+                          <input type="number" min="0" value={formSAQtyLimit}
+                            onChange={(e) => setFormSAQtyLimit(e.target.value)}
+                            placeholder={t("org_setup.self_approval_unlimited")}
+                            className="w-full border border-gray-300 rounded px-2.5 py-1.5 text-sm" />
+                        </div>
+                      )}
+                      {(formSAThreshold === "VALUE" || formSAThreshold === "EITHER") && (
+                        <div>
+                          <label className="block text-xs font-bold text-gray-700 mb-1">{t("org_setup.self_approval_value_limit")}</label>
+                          <input type="number" min="0" value={formSAValueLimit}
+                            onChange={(e) => setFormSAValueLimit(e.target.value)}
+                            placeholder={t("org_setup.self_approval_unlimited")}
+                            className="w-full border border-gray-300 rounded px-2.5 py-1.5 text-sm" />
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+
                 {formErr && <p className="text-xs text-red-600">{formErr}</p>}
                 <div className="flex gap-2">
                   <button type="button" onClick={() => void savePosition()} disabled={saving}

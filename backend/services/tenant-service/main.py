@@ -5,7 +5,7 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from routers import hierarchy, personnel_v2, positions, tenants, transfer_types, wizard
+from routers import hierarchy, personnel_v2, positions, self_approval, tenants, transfer_types, wizard
 
 
 @asynccontextmanager
@@ -32,6 +32,7 @@ app.include_router(hierarchy.router,      prefix="/api/v1/tenants", tags=["hiera
 app.include_router(positions.router,      prefix="/api/v1/tenants", tags=["positions"])
 app.include_router(personnel_v2.router,   prefix="/api/v1/tenants", tags=["personnel"])
 app.include_router(transfer_types.router, prefix="/api/v1/tenants", tags=["transfer-types"])
+app.include_router(self_approval.router,  prefix="/api/v1/tenants", tags=["self-approval"])
 
 
 @app.get("/health")

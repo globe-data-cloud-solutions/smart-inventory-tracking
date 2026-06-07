@@ -875,7 +875,19 @@
     "complete_level_config_first": "Complete level configuration before continuing.",
     "saved_success": "Organisation setup saved successfully.",
     "redirecting": "Redirecting to Personnel Management…",
-    "tenant_not_found": "This tenant could not be found in the system. It may be a demo-only organisation. Use the Tenants page to create or select a real tenant."
+    "tenant_not_found": "This tenant could not be found in the system. It may be a demo-only organisation. Use the Tenants page to create or select a real tenant.",
+    "self_approval_title": "Self-Approval Limits",
+    "self_approval_desc": "Allow this position to approve their own transfer requests within defined limits.",
+    "self_approval_enable": "Enable self-approval",
+    "self_approval_transfer_types": "Transfer Types",
+    "self_approval_threshold_type": "Limit Type",
+    "self_approval_qty_limit": "Quantity Limit",
+    "self_approval_value_limit": "Value Limit (ETB)",
+    "self_approval_unlimited": "Leave empty for unlimited",
+    "self_approval_level_note": "Limits apply to all {role} positions at {level} level.",
+    "threshold_quantity": "Quantity",
+    "threshold_value": "Value",
+    "threshold_either": "Either"
   },
   "personnel": {
     "page_title": "Personnel Management",

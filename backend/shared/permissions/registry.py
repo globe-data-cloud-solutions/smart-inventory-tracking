@@ -177,6 +177,10 @@ class PERMISSIONS:
     TRANSFER_TYPE_VIEW     = Permission("transfer_type:view",     ["tenant_id"])
     TRANSFER_TYPE_MANAGE   = Permission("transfer_type:manage",   ["tenant_id", "audit_required"])
 
+    # ── Domain 21 — Self-Approval Policies (P2/P3) ───────────────────────
+    SELF_APPROVAL_POLICY_VIEW   = Permission("tenant:self_approval_view",   ["tenant_id"])
+    SELF_APPROVAL_POLICY_MANAGE = Permission("tenant:self_approval_manage", ["tenant_id", "audit_required"])
+
     # ── Domain 20 — Transfer Approval Rules (Session 3) ──────────────────
     TRANSFER_APPROVAL_RULE_VIEW   = Permission("transfer_approval_rule:view",   ["tenant_id"])
     TRANSFER_APPROVAL_RULE_MANAGE = Permission("transfer_approval_rule:manage", ["tenant_id", "audit_required"])
@@ -212,7 +216,7 @@ ALL_PERMISSIONS: List[Permission] = [
     v for v in vars(PERMISSIONS).values() if isinstance(v, Permission)
 ]
 
-assert len(ALL_PERMISSIONS) == 141, (
+assert len(ALL_PERMISSIONS) == 143, (
     f"Expected 141 permissions, found {len(ALL_PERMISSIONS)}. "
     "Update registry.py and re-run seed_permissions.py."
 )
