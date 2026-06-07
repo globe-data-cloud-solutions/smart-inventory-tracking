@@ -16,7 +16,7 @@ from shared.outbox.schemas import (
 )
 from shared.outbox.writer import write_to_outbox
 from services.approval_service import resolve_approval, ROLE_AUTHORITY_LEVEL
-from services.self_approval_service import check_self_approval
+from services.self_approval_service import check_self_approval, get_self_approval_decision
 from repositories.ledger_repo import record_transaction, write_transfer_ledger_entry
 from schemas.inventory import (
     AdjustmentListItem,
@@ -622,7 +622,7 @@ class InventoryService:
             except Exception:
                 total_value_pull = Decimal("0")
 
-            if await check_self_approval(
+            _self_approval_policy_pull = await get_self_approval_decision(
                 session=self.db,
                 tenant_id=str(user.tenant_id),
                 user_role=str(user.role),
@@ -630,7 +630,8 @@ class InventoryService:
                 transfer_type=transfer_type,
                 quantity=total_qty,
                 total_value=total_value_pull,
-            ):
+            )
+            if _self_approval_policy_pull is not None:
                 for line in lines:
                     await write_transfer_ledger_entry(
                         session=self.db,
@@ -663,6 +664,28 @@ class InventoryService:
                     ),
                     {"id": str(transfer_id)},
                 )
+                await audit_log(
+                    user=user,
+                    action="transfer:self_approved",
+                    resource={
+                        "resource_type": "transfer",
+                        "resource_id": str(transfer_id),
+                        "transfer_type": transfer_type,
+                        "quantity": str(total_qty),
+                        "total_value": str(total_value_pull),
+                        "policy": {
+                            "role_code": str(user.role),
+                            "level_number": getattr(user, "level_number", None),
+                            "threshold_type": _self_approval_policy_pull.threshold_type,
+                            "qty_limit": str(_self_approval_policy_pull.qty_limit)
+                            if _self_approval_policy_pull.qty_limit is not None else None,
+                            "value_limit": str(_self_approval_policy_pull.value_limit)
+                            if _self_approval_policy_pull.value_limit is not None else None,
+                        },
+                    },
+                    decision="GRANTED",
+                    reason="within_self_approval_limit",
+                )
                 from datetime import datetime, timezone
                 return TransferOrderResponse(
                     transfer_id=transfer_id,
@@ -694,7 +717,7 @@ class InventoryService:
                 except Exception:
                     total_value_push = Decimal("0")
 
-                if await check_self_approval(
+                _self_approval_policy_push = await get_self_approval_decision(
                     session=self.db,
                     tenant_id=str(user.tenant_id),
                     user_role=str(user.role),
@@ -702,7 +725,8 @@ class InventoryService:
                     transfer_type=transfer_type,
                     quantity=total_qty,
                     total_value=total_value_push,
-                ):
+                )
+                if _self_approval_policy_push is not None:
                     for line in lines:
                         await write_transfer_ledger_entry(
                             session=self.db,
@@ -734,6 +758,28 @@ class InventoryService:
                             "WHERE id = :id"
                         ),
                         {"id": str(transfer_id)},
+                    )
+                    await audit_log(
+                        user=user,
+                        action="transfer:self_approved",
+                        resource={
+                            "resource_type": "transfer",
+                            "resource_id": str(transfer_id),
+                            "transfer_type": transfer_type,
+                            "quantity": str(total_qty),
+                            "total_value": str(total_value_push),
+                            "policy": {
+                                "role_code": str(user.role),
+                                "level_number": getattr(user, "level_number", None),
+                                "threshold_type": _self_approval_policy_push.threshold_type,
+                                "qty_limit": str(_self_approval_policy_push.qty_limit)
+                                if _self_approval_policy_push.qty_limit is not None else None,
+                                "value_limit": str(_self_approval_policy_push.value_limit)
+                                if _self_approval_policy_push.value_limit is not None else None,
+                            },
+                        },
+                        decision="GRANTED",
+                        reason="within_self_approval_limit",
                     )
                     from datetime import datetime, timezone
                     return TransferOrderResponse(
@@ -1183,6 +1229,7 @@ class InventoryService:
             from_warehouse_id=row.from_warehouse_id,
             to_warehouse_id=row.to_warehouse_id,
             created_at=datetime.now(timezone.utc),
+            is_self_approved=bool(row.is_self_approved),
         )
 
     async def create_adjustment(

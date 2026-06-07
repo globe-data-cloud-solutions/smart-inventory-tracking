@@ -7,13 +7,13 @@ normal approval workflow and jumping directly to APPROVED.
 from __future__ import annotations
 
 from decimal import Decimal
-from typing import Optional
+from typing import Any, Optional
 
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 
-async def check_self_approval(
+async def get_self_approval_decision(
     session: AsyncSession,
     tenant_id: str,
     user_role: str,
@@ -21,15 +21,17 @@ async def check_self_approval(
     transfer_type: str,
     quantity: Decimal,
     total_value: Decimal,
-) -> bool:
-    """Return True if this transfer can be self-approved by the submitter.
+) -> Optional[Any]:
+    """Return the matching policy row if this transfer can be self-approved, else None.
 
     Looks up self_approval_policies for the submitter's (role_code, level_number).
-    Returns False immediately if no policy exists or the transfer type / threshold
-    conditions are not met.
+    Returns None immediately if no policy exists or the transfer type / threshold
+    conditions are not met. Returning the policy row (rather than a bare bool) lets
+    callers record which policy and threshold permitted the self-approval, e.g. for
+    audit logging.
     """
     if level_number is None:
-        return False
+        return None
 
     result = await session.execute(
         text("""
@@ -46,11 +48,11 @@ async def check_self_approval(
     policy = result.fetchone()
 
     if not policy:
-        return False
+        return None
 
     allowed_types = list(policy.transfer_types)
     if transfer_type not in allowed_types and "ALL" not in allowed_types:
-        return False
+        return None
 
     threshold_type: str = policy.threshold_type
     qty_limit: Optional[Decimal] = (
@@ -61,14 +63,40 @@ async def check_self_approval(
     )
 
     if threshold_type == "QUANTITY":
-        return qty_limit is None or quantity <= qty_limit
-
-    if threshold_type == "VALUE":
-        return value_limit is None or total_value <= value_limit
-
-    if threshold_type == "EITHER":
+        permitted = qty_limit is None or quantity <= qty_limit
+    elif threshold_type == "VALUE":
+        permitted = value_limit is None or total_value <= value_limit
+    elif threshold_type == "EITHER":
         qty_ok = qty_limit is None or quantity <= qty_limit
         val_ok = value_limit is None or total_value <= value_limit
-        return qty_ok or val_ok
+        permitted = qty_ok or val_ok
+    else:
+        permitted = False
 
-    return False
+    return policy if permitted else None
+
+
+async def check_self_approval(
+    session: AsyncSession,
+    tenant_id: str,
+    user_role: str,
+    level_number: Optional[int],
+    transfer_type: str,
+    quantity: Decimal,
+    total_value: Decimal,
+) -> bool:
+    """Return True if this transfer can be self-approved by the submitter.
+
+    Thin wrapper around get_self_approval_decision() for callers that only need
+    the yes/no answer.
+    """
+    policy = await get_self_approval_decision(
+        session=session,
+        tenant_id=tenant_id,
+        user_role=user_role,
+        level_number=level_number,
+        transfer_type=transfer_type,
+        quantity=quantity,
+        total_value=total_value,
+    )
+    return policy is not None
