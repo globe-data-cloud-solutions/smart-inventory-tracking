@@ -39,6 +39,7 @@ interface AdjRecord {
   approval_required_role?: "NONE" | "RM" | "NM" | "TA";
   created_by?: string;
   created_at: string;
+  is_self_approved?: boolean;
 }
 
 const STATUS_CLASS: Record<AdjStatus, string> = {
@@ -315,6 +316,11 @@ export default function AdjustmentsPage() {
                     <span className={`text-xs font-bold px-2 py-0.5 rounded ${STATUS_CLASS[a.status]}`}>
                       {t(`status.${a.status}`)}
                     </span>
+                    {a.status === "POSTED" && a.is_self_approved && (
+                      <span className="ml-1 px-1.5 py-0.5 text-xs bg-blue-100 text-blue-700 rounded">
+                        {t('adjustment.self_approved')}
+                      </span>
+                    )}
                   </td>
                   <td className="px-3.5 py-2">
                     {a.status === "DRAFT" && currentUser.id.toLowerCase() === (a.created_by ?? "").toLowerCase() && (

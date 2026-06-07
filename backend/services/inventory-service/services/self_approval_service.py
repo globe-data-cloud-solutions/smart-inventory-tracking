@@ -76,6 +76,106 @@ async def get_self_approval_decision(
     return policy if permitted else None
 
 
+def _check_threshold(
+    threshold_type: str,
+    qty_limit: Optional[Decimal],
+    value_limit: Optional[Decimal],
+    quantity: Decimal,
+    total_value: Decimal,
+) -> bool:
+    """Return True when (quantity, total_value) fall within the rule's threshold."""
+    if threshold_type == "QUANTITY":
+        return qty_limit is None or quantity <= qty_limit
+    elif threshold_type == "VALUE":
+        return value_limit is None or total_value <= value_limit
+    elif threshold_type == "EITHER":
+        qty_ok = qty_limit is None or quantity <= qty_limit
+        val_ok = value_limit is None or total_value <= value_limit
+        return qty_ok or val_ok
+    return False
+
+
+async def check_adjustment_self_approval(
+    session: AsyncSession,
+    tenant_id: Any,
+    user: Any,
+    reason_code: str,
+    quantity: Decimal,
+    total_value: Decimal,
+) -> tuple[bool, Optional[str]]:
+    """Resolve the adjustment self-approval/routing decision for a submission.
+
+    Looks up adjustment_approval_rules for the submitter's (role_code, level_number),
+    preferring a PER_CODE rule that matches reason_code over a GLOBAL (reason_code IS NULL)
+    rule, then by ascending priority.
+
+    Returns (can_self_approve, approver_role_code):
+      (True,  None)        → within limit, no matching approver override → self-approve
+      (False, role_code)   → exceeds limit or rule names a specific approver → route to role_code
+      (False, None)        → no matching rule, or rule exceeded → default routing
+    """
+    level_number = getattr(user, "level_number", None)
+    if level_number is None:
+        return False, None
+
+    result = await session.execute(
+        text("""
+            SELECT
+                approver_role_code,
+                threshold_type,
+                qty_limit,
+                value_limit,
+                mode
+            FROM adjustment_approval_rules
+            WHERE tenant_id = :tid
+              AND role_code = :role
+              AND level_number = :level
+              AND is_active = TRUE
+              AND (
+                reason_code = :reason
+                OR reason_code IS NULL
+              )
+            ORDER BY
+                CASE WHEN reason_code = :reason THEN 0 ELSE 1 END,
+                priority ASC
+            LIMIT 1
+        """),
+        {
+            "tid": str(tenant_id),
+            "role": str(user.role),
+            "level": level_number,
+            "reason": reason_code,
+        },
+    )
+    rule = result.fetchone()
+
+    # No rule → default routing
+    if not rule:
+        return False, None
+
+    qty_limit: Optional[Decimal] = (
+        Decimal(str(rule.qty_limit)) if rule.qty_limit is not None else None
+    )
+    value_limit: Optional[Decimal] = (
+        Decimal(str(rule.value_limit)) if rule.value_limit is not None else None
+    )
+
+    within_limit = _check_threshold(
+        rule.threshold_type, qty_limit, value_limit, quantity, total_value
+    )
+
+    if not within_limit:
+        # Exceeds limit → default routing
+        return False, None
+
+    if rule.approver_role_code is None:
+        # Self-approve
+        return True, None
+    else:
+        # Route to specific role
+        return False, rule.approver_role_code
+
+
 async def check_self_approval(
     session: AsyncSession,
     tenant_id: str,

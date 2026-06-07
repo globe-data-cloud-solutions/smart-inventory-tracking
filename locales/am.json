@@ -444,6 +444,8 @@
     "reject": "ውድቅ አድርግ",
     "cancel": "ሰርዝ",
     "auto_applied": "ተፈቅዶ ተተግብሯል (ከወሰን በታች)",
+    "self_approved": "በራስ ተፈቅዷል",
+    "self_approved_hint": "ይህ ማስተካከያ በራስ-ፈቃድ ወሰንዎ ውስጥ በመሆኑ ራሱን ችሎ ተመዝግቧል።",
     "pending_rm": "RM ፈቃድ ይጠብቃል",
     "pending_nm": "NM ፈቃድ ይጠብቃል",
     "pending_ta": "TA ፈቃድ ይጠብቃል",

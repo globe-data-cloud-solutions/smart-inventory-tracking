@@ -443,6 +443,8 @@
     "reject": "Reject",
     "cancel": "Cancel",
     "auto_applied": "Auto",
+    "self_approved": "Self-approved",
+    "self_approved_hint": "This adjustment was posted automatically within your self-approval limit.",
     "pending_rm": "Awaiting RM approval",
     "pending_nm": "Awaiting NM approval",
     "pending_ta": "Awaiting TA approval",

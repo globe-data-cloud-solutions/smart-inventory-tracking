@@ -16,7 +16,11 @@ from shared.outbox.schemas import (
 )
 from shared.outbox.writer import write_to_outbox
 from services.approval_service import resolve_approval, ROLE_AUTHORITY_LEVEL
-from services.self_approval_service import check_self_approval, get_self_approval_decision
+from services.self_approval_service import (
+    check_adjustment_self_approval,
+    check_self_approval,
+    get_self_approval_decision,
+)
 from repositories.ledger_repo import record_transaction, write_transfer_ledger_entry
 from schemas.inventory import (
     AdjustmentListItem,
@@ -1318,6 +1322,110 @@ class InventoryService:
                 detail={"code": "INVALID_STATE_TRANSITION", "detail": str(exc)},
             ) from exc
 
+        # ── Adjustment self-approval engine — runs at submission (DRAFT → PENDING_APPROVAL) ──
+        if row.status == "DRAFT" and next_state == "PENDING_APPROVAL":
+            product_row = (await self.db.execute(
+                text("SELECT unit_price FROM products WHERE id = :pid"),
+                {"pid": str(row.product_id)},
+            )).fetchone()
+            unit_price = (
+                Decimal(str(product_row.unit_price))
+                if product_row and product_row.unit_price is not None
+                else Decimal("0")
+            )
+            quantity_abs = abs(Decimal(str(row.quantity_delta)))
+            total_value = quantity_abs * unit_price
+
+            await self.db.execute(
+                text(
+                    "UPDATE adjustment_orders "
+                    "SET unit_price_at_submission = :up, total_value = :tv, updated_at = now() "
+                    "WHERE id = :id"
+                ),
+                {"up": str(unit_price), "tv": str(total_value), "id": str(adjustment_id)},
+            )
+
+            can_self_approve, _route_to = await check_adjustment_self_approval(
+                session=self.db,
+                tenant_id=user.tenant_id,
+                user=user,
+                reason_code=row.reason_code,
+                quantity=quantity_abs,
+                total_value=total_value,
+            )
+
+            if can_self_approve:
+                quantity = (
+                    -quantity_abs
+                    if row.reason_code in _FORCE_NEGATIVE_REASONS
+                    else Decimal(str(row.quantity_delta))
+                )
+
+                tx_id = await record_transaction(
+                    self.db,
+                    tenant_id=str(user.tenant_id),
+                    transaction_type="ADJUSTMENT",
+                    product_id=str(row.product_id),
+                    warehouse_id=str(row.warehouse_id),
+                    quantity=quantity,
+                    performed_by=str(user.user_id),
+                    idempotency_key=f"adj:{adjustment_id}:self_approve",
+                    reference_id=str(adjustment_id),
+                )
+
+                await self.db.execute(
+                    text(
+                        "UPDATE adjustment_orders "
+                        "SET status = 'POSTED', is_self_approved = TRUE, updated_at = now() "
+                        "WHERE id = :id"
+                    ),
+                    {"id": str(adjustment_id)},
+                )
+
+                await write_to_outbox(
+                    self.db,
+                    str(user.tenant_id),
+                    "AdjustmentApplied",
+                    AdjustmentAppliedPayload(
+                        adjustment_id=str(adjustment_id),
+                        product_id=str(row.product_id),
+                        warehouse_id=str(row.warehouse_id),
+                        delta=float(quantity),
+                    ),
+                )
+
+                await audit_log(
+                    user,
+                    "adjustment:self_approved",
+                    {
+                        "resource_type": "adjustment",
+                        "resource_id": str(adjustment_id),
+                        "quantity": str(quantity_abs),
+                        "total_value": str(total_value),
+                        "reason_code": row.reason_code,
+                        "transaction_id": str(tx_id),
+                        "policy": {
+                            "role_code": str(user.role),
+                            "level_number": getattr(user, "level_number", None),
+                        },
+                    },
+                    "GRANTED",
+                    "within_self_approval_limit",
+                )
+
+                from datetime import datetime, timezone
+                return AdjustmentResponse(
+                    adjustment_id=adjustment_id,
+                    status="POSTED",
+                    quantity_delta=quantity,
+                    created_at=datetime.now(timezone.utc),
+                    is_self_approved=True,
+                    total_value=total_value,
+                )
+            # else: not self-approved — fall through to normal PENDING_APPROVAL transition.
+            # _route_to (when present) names a specific approver role; routing to that role
+            # is resolved by the existing approval workflow, not by this transition.
+
         await self.db.execute(
             text("UPDATE adjustment_orders SET status = :s, updated_at = now() WHERE id = :id"),
             {"s": next_state, "id": str(adjustment_id)},
@@ -1342,6 +1450,8 @@ class InventoryService:
             status=next_state,
             quantity_delta=Decimal(str(row.quantity_delta)),
             created_at=datetime.now(timezone.utc),
+            is_self_approved=bool(row.is_self_approved),
+            total_value=Decimal(str(row.total_value)) if row.total_value is not None else None,
         )
 
     async def create_count_session(
@@ -1510,7 +1620,8 @@ class InventoryService:
                 ao.status,
                 ao.created_by::text AS created_by,
                 ao.created_at,
-                ao.notes
+                ao.notes,
+                ao.is_self_approved
             FROM adjustment_orders ao
             JOIN products          p  ON p.id  = ao.product_id
             LEFT JOIN warehouses   w  ON w.id  = ao.warehouse_id
@@ -1537,6 +1648,7 @@ class InventoryService:
                 created_by=str(r.created_by),
                 created_at=r.created_at,
                 notes=r.notes,
+                is_self_approved=bool(r.is_self_approved),
             )
             for r in rows
         ]

@@ -91,6 +91,8 @@ class AdjustmentResponse(BaseModel):
     status: str
     quantity_delta: Decimal
     created_at: datetime
+    is_self_approved: bool = False
+    total_value: Optional[Decimal] = None
 
 
 class CountSessionRequest(BaseModel):
@@ -196,6 +198,7 @@ class AdjustmentListItem(BaseModel):
     created_by: str
     created_at: datetime
     notes: Optional[str] = None
+    is_self_approved: bool = False
 
 
 class ApprovalInfoResponse(BaseModel):

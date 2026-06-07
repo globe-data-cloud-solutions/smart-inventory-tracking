@@ -434,6 +434,8 @@
     "reject": "Dhoorkadhu",
     "cancel": "Haqi",
     "auto_applied": "Hayyamame raawwatame (daangaa gadi)",
+    "self_approved": "Ofiin hayyamame",
+    "self_approved_hint": "Sirreeffamni kun daangaa ofiin-hayyamuu keessanitti waan ta'eef ofumaan galmaa'eera.",
     "pending_rm": "RM hayyama eeggata",
     "pending_nm": "NM hayyama eeggata",
     "pending_ta": "TA hayyama eeggata",
