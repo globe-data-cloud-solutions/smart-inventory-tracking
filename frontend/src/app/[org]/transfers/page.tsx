@@ -70,6 +70,7 @@ interface RawApiTransfer {
   created_by_authority_level?: number;
   created_at: string;
   updated_at?: string;
+  is_self_approved?: boolean;
 }
 
 interface ApiTransfer {
@@ -88,6 +89,7 @@ interface ApiTransfer {
   created_by?: string;
   created_by_authority_level?: number;
   created_at: string;
+  is_self_approved?: boolean;
 }
 
 function normalizeTransfer(raw: RawApiTransfer): ApiTransfer {
@@ -108,6 +110,7 @@ function normalizeTransfer(raw: RawApiTransfer): ApiTransfer {
     created_by:                   raw.created_by,
     created_by_authority_level:   raw.created_by_authority_level,
     created_at:                   raw.created_at,
+    is_self_approved:             raw.is_self_approved ?? false,
   };
 }
 
@@ -1080,6 +1083,14 @@ export default function TransfersPage() {
                       <span className={`text-[11px] font-bold px-2 py-0.5 rounded whitespace-nowrap ${sCls}`}>
                         {txn.status.replace(/_/g, " ")}
                       </span>
+                      {txn.is_self_approved && (
+                        <span
+                          title={t("transfers.self_approved_hint")}
+                          className="ml-1 text-[10px] font-semibold px-1.5 py-0.5 rounded bg-teal-100 text-teal-800 whitespace-nowrap"
+                        >
+                          {t("transfers.self_approved")}
+                        </span>
+                      )}
                       {txn.status === "PENDING_APPROVAL" && cachedApprInfo?.status_label && (
                         <p className="text-[10px] text-gray-400 mt-0.5 leading-tight max-w-[140px]">
                           {cachedApprInfo.status_label}

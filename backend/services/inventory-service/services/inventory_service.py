@@ -16,6 +16,7 @@ from shared.outbox.schemas import (
 )
 from shared.outbox.writer import write_to_outbox
 from services.approval_service import resolve_approval, ROLE_AUTHORITY_LEVEL
+from services.self_approval_service import check_self_approval
 from repositories.ledger_repo import record_transaction, write_transfer_ledger_entry
 from schemas.inventory import (
     AdjustmentListItem,
@@ -610,8 +611,68 @@ class InventoryService:
         # No RESERVE is written here — the source warehouse has not seen or acted on
         # the request, so no stock should be locked at this stage.
         # (PUSH never reaches PENDING_REVIEW; SISTER goes via PENDING_SOURCE_CONFIRM.)
+        #
+        # Self-approval fast-path: if the submitter's policy permits it, skip
+        # the full approval chain and jump directly to APPROVED in one step.
         if next_state == "PENDING_REVIEW":
-            pass  # intentionally empty — reservation happens at PENDING_APPROVAL
+            lines = (await self.db.execute(_lines_query, _lines_params)).fetchall()
+            total_qty = sum(Decimal(str(l.quantity)) for l in lines)
+            try:
+                total_value_pull = Decimal(str(getattr(row, "total_value", None) or "0"))
+            except Exception:
+                total_value_pull = Decimal("0")
+
+            if await check_self_approval(
+                session=self.db,
+                tenant_id=str(user.tenant_id),
+                user_role=str(user.role),
+                level_number=getattr(user, "level_number", None),
+                transfer_type=transfer_type,
+                quantity=total_qty,
+                total_value=total_value_pull,
+            ):
+                for line in lines:
+                    await write_transfer_ledger_entry(
+                        session=self.db,
+                        transfer_id=str(transfer_id),
+                        transaction_type="RESERVE",
+                        quantity=Decimal(str(line.quantity)),
+                        warehouse_id=str(row.from_warehouse_id),
+                        product_id=str(line.product_id),
+                        tenant_id=str(user.tenant_id),
+                        performed_by=str(user.user_id),
+                        status_transition="DRAFT_TO_SELF_APPROVED_RESERVE",
+                        line_id=str(line.id),
+                    )
+                    await record_transaction(
+                        self.db,
+                        tenant_id=str(user.tenant_id),
+                        transaction_type="TRANSFER_OUT",
+                        product_id=str(line.product_id),
+                        warehouse_id=str(row.from_warehouse_id),
+                        quantity=-Decimal(str(line.quantity)),
+                        performed_by=str(user.user_id),
+                        idempotency_key=f"transfer:{transfer_id}:self_approve:out:line:{line.id}",
+                        reference_id=str(transfer_id),
+                    )
+                await self.db.execute(
+                    text(
+                        "UPDATE transfer_orders "
+                        "SET status = 'APPROVED', is_self_approved = TRUE, updated_at = now() "
+                        "WHERE id = :id"
+                    ),
+                    {"id": str(transfer_id)},
+                )
+                from datetime import datetime, timezone
+                return TransferOrderResponse(
+                    transfer_id=transfer_id,
+                    transfer_type=transfer_type,
+                    status="APPROVED",
+                    from_warehouse_id=row.from_warehouse_id,
+                    to_warehouse_id=row.to_warehouse_id,
+                    created_at=datetime.now(timezone.utc),
+                    is_self_approved=True,
+                )
 
         # PENDING_APPROVAL: first committed reservation for ALL transfer types.
         #   PULL:   source reviewed the request and forwarded it — lock now.
@@ -622,6 +683,68 @@ class InventoryService:
             from services.approval_service import resolve_transfer_approvers as _resolve_approvers
             lines = (await self.db.execute(_lines_query, _lines_params)).fetchall()
             total_qty = sum(Decimal(str(l.quantity)) for l in lines)
+
+            # Self-approval fast-path for PUSH (DRAFT → PENDING_APPROVAL is the submission
+            # step). If the submitter's policy permits it, skip the approval chain and jump
+            # directly to APPROVED. PULL self-approval is handled earlier at PENDING_REVIEW.
+            # SISTER is excluded intentionally — dual-confirm is non-negotiable (§17).
+            if row.status == "DRAFT" and transfer_type == "PUSH":
+                try:
+                    total_value_push = Decimal(str(getattr(row, "total_value", None) or "0"))
+                except Exception:
+                    total_value_push = Decimal("0")
+
+                if await check_self_approval(
+                    session=self.db,
+                    tenant_id=str(user.tenant_id),
+                    user_role=str(user.role),
+                    level_number=getattr(user, "level_number", None),
+                    transfer_type=transfer_type,
+                    quantity=total_qty,
+                    total_value=total_value_push,
+                ):
+                    for line in lines:
+                        await write_transfer_ledger_entry(
+                            session=self.db,
+                            transfer_id=str(transfer_id),
+                            transaction_type="RESERVE",
+                            quantity=Decimal(str(line.quantity)),
+                            warehouse_id=str(row.from_warehouse_id),
+                            product_id=str(line.product_id),
+                            tenant_id=str(user.tenant_id),
+                            performed_by=str(user.user_id),
+                            status_transition="DRAFT_TO_SELF_APPROVED_RESERVE",
+                            line_id=str(line.id),
+                        )
+                        await record_transaction(
+                            self.db,
+                            tenant_id=str(user.tenant_id),
+                            transaction_type="TRANSFER_OUT",
+                            product_id=str(line.product_id),
+                            warehouse_id=str(row.from_warehouse_id),
+                            quantity=-Decimal(str(line.quantity)),
+                            performed_by=str(user.user_id),
+                            idempotency_key=f"transfer:{transfer_id}:self_approve:out:line:{line.id}",
+                            reference_id=str(transfer_id),
+                        )
+                    await self.db.execute(
+                        text(
+                            "UPDATE transfer_orders "
+                            "SET status = 'APPROVED', is_self_approved = TRUE, updated_at = now() "
+                            "WHERE id = :id"
+                        ),
+                        {"id": str(transfer_id)},
+                    )
+                    from datetime import datetime, timezone
+                    return TransferOrderResponse(
+                        transfer_id=transfer_id,
+                        transfer_type=transfer_type,
+                        status="APPROVED",
+                        from_warehouse_id=row.from_warehouse_id,
+                        to_warehouse_id=row.to_warehouse_id,
+                        created_at=datetime.now(timezone.utc),
+                        is_self_approved=True,
+                    )
 
             # Write RESERVE for each line at the source warehouse.
             # Idempotency key encodes the originating status so retries are safe.
@@ -1250,7 +1373,8 @@ class InventoryService:
                 to_.created_by::text              AS created_by,
                 to_.created_by_authority_level,
                 to_.created_at,
-                to_.updated_at
+                to_.updated_at,
+                to_.is_self_approved
             FROM transfer_orders to_
             LEFT JOIN warehouses fw          ON fw.id       = to_.from_warehouse_id
             LEFT JOIN organization_node fw_n ON fw_n.id    = to_.from_warehouse_id
@@ -1294,6 +1418,7 @@ class InventoryService:
                     created_by_authority_level=r.created_by_authority_level,
                     created_at=r.created_at,
                     updated_at=r.updated_at,
+                    is_self_approved=bool(r.is_self_approved),
                     lines=[
                         TransferLineItem(
                             product_id=line.product_id,

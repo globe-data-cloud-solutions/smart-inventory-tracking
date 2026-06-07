@@ -69,6 +69,7 @@ class TransferOrderResponse(BaseModel):
     total_value: Optional[Decimal] = None
     currency: Optional[str] = None
     transfer_type_config_id: Optional[uuid.UUID] = None
+    is_self_approved: bool = False
 
 
 class TransferActionRequest(BaseModel):
@@ -174,6 +175,7 @@ class TransferListItem(BaseModel):
     created_by_authority_level: Optional[int] = None
     created_at: datetime
     updated_at: Optional[datetime] = None
+    is_self_approved: bool = False
     lines: List[TransferLineItem]
 
 

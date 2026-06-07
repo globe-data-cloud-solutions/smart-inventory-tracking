@@ -894,6 +894,8 @@
     "transition_failed": "Transition failed.",
     "offline_action_blocked": "Transfer status changes require an internet connection.",
     "offline_actions_disabled": "Actions are disabled until you reconnect.",
+    "self_approved": "Self-approved",
+    "self_approved_hint": "This transfer was auto-approved by the submitter's self-approval policy",
     "available_actions": "Available Actions",
     "updating": "Updating…",
     "no_actions_for_role": "No actions available for your role",
