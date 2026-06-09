@@ -86,7 +86,8 @@ export default function AdjustmentsPage() {
   const tenantName     = useTenantName(org);
   const user           = getSession();
   const qc             = useQueryClient();
-  const [showLegend, setShowLegend] = useState(false);
+  const [showLegend, setShowLegend]   = useState(false);
+  const [showHistory, setShowHistory] = useState(false);
   const isGatewayMode  = IS_GATEWAY_MODE;
 
   // All hooks called unconditionally — before any early returns
@@ -153,6 +154,12 @@ export default function AdjustmentsPage() {
     ? allAdj.filter((a) => a.warehouse_id === currentUser.warehouseId)
     : allAdj;
 
+  // Default: show only actionable records. History toggle reveals the full list.
+  const ACTIVE_STATUSES = new Set<AdjStatus>(["DRAFT", "PENDING_APPROVAL"]);
+  const displayAdj = showHistory
+    ? visibleAdj
+    : visibleAdj.filter((a) => ACTIVE_STATUSES.has(a.status));
+
   const isApproverRole = APPROVER_ROLES.has(currentUser.role);
 
   function canApprove(adj: AdjRecord): boolean {
@@ -218,6 +225,12 @@ export default function AdjustmentsPage() {
           <p className="text-sm text-gray-500 mt-1">{tenantName ?? org} · {t("adjustment.title")}</p>
         </div>
         <div className="flex items-center gap-2">
+          <button
+            onClick={() => setShowHistory((s) => !s)}
+            className="text-xs text-gray-500 border border-gray-200 rounded px-2.5 py-1.5 hover:bg-gray-50 cursor-pointer"
+          >
+            {showHistory ? t("adjustment.hide_history") : t("adjustment.show_history")}
+          </button>
           <button
             onClick={() => setShowLegend((s) => !s)}
             aria-expanded={showLegend}
@@ -296,7 +309,7 @@ export default function AdjustmentsPage() {
               </tr>
             </thead>
             <tbody>
-              {visibleAdj.map((a, idx) => (
+              {displayAdj.map((a, idx) => (
                 <tr key={a.adjustment_id ?? a.id} className={`border-b border-gray-100 ${idx % 2 === 0 ? "bg-white" : "bg-gray-50"}`}>
                   <td className="px-3.5 py-2 text-gray-400 text-xs whitespace-nowrap">{new Date(a.created_at).toLocaleDateString()}</td>
                   <td className="px-3.5 py-2 font-mono text-xs text-gray-400">{a.product_sku}</td>
@@ -361,8 +374,13 @@ export default function AdjustmentsPage() {
             </tbody>
           </table>
         </div>
-        {visibleAdj.length === 0 && (
-          <p className="p-8 text-center text-gray-400 text-sm">{t("common.no_data")}</p>
+        {displayAdj.length === 0 && (
+          <div className="p-8 text-center">
+            <p className="text-gray-400 text-sm font-medium">{t("adjustment.no_pending")}</p>
+            {!showHistory && visibleAdj.length > 0 && (
+              <p className="text-gray-400 text-xs mt-1">{t("adjustment.no_pending_hint")}</p>
+            )}
+          </div>
         )}
       </div>
 

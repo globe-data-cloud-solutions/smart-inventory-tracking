@@ -98,11 +98,6 @@ _ORG_TYPE_DEFAULTS: dict[str, list[tuple[Decimal, Optional[Decimal], str]]] = {
         (Decimal("0"),    Decimal("4999.9999"), "NM"),
         (Decimal("5000"), None,                 "TA"),
     ],
-    "ADJUSTMENT": [
-        (Decimal("0"),    Decimal("99.9999"),  "WM"),
-        (Decimal("100"),  Decimal("999.9999"), "RM"),
-        (Decimal("1000"), None,               "TA"),
-    ],
     "SISTER": [
         (Decimal("0"),    Decimal("999.9999"), "WM"),
         (Decimal("1000"), None,               "RM"),

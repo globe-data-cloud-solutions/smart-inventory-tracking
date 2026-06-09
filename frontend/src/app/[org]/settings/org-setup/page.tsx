@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback, useMemo, Fragment } from "react";
+import { useState, useCallback, useMemo, useEffect, Fragment } from "react";
 import { useParams } from "next/navigation";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
@@ -1780,7 +1780,7 @@ interface AdjRuleLocal {
   is_active: boolean;
 }
 
-function AdjustmentRulesSection({ tenantId }: { tenantId: string }) {
+function AdjustmentRulesSection({ tenantId, onRuleCountChange }: { tenantId: string; onRuleCountChange?: (n: number) => void }) {
   const qc = useQueryClient();
   const [adjMode, setAdjMode] = useState<"GLOBAL" | "PER_CODE">("GLOBAL");
   const [ruleList, setRuleList] = useState<AdjRuleLocal[] | null>(null);
@@ -1868,12 +1868,22 @@ function AdjustmentRulesSection({ tenantId }: { tenantId: string }) {
     setSaving(false);
   }
 
-  if (isLoading) return <p className="text-sm text-gray-400 py-8 text-center">{t("common.loading")}</p>;
-
   const currentList = getList();
+
+  // Notify parent of current rule count so tab-change confirmation can gate.
+  useEffect(() => { onRuleCountChange?.(currentList.length); }, [currentList.length, onRuleCountChange]);
+
+  if (isLoading) return <p className="text-sm text-gray-400 py-8 text-center">{t("common.loading")}</p>;
 
   return (
     <div className="space-y-4">
+      {/* Warning banner when no rules configured */}
+      {currentList.length === 0 && (
+        <div className="flex items-start gap-2 rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+          <span className="mt-0.5">⚠</span>
+          <span>{t("approval_rule.no_rules_warning")}</span>
+        </div>
+      )}
       {/* Mode selector */}
       <div className="border border-gray-200 rounded-xl p-4 bg-gray-50">
         <p className="text-sm font-semibold text-gray-700 mb-3">{t("approval_rule.adj_mode_title")}</p>
@@ -2050,6 +2060,7 @@ const MODE_OPTIONS = [
 function ApprovalRulesV2Tab({ tenantId }: { tenantId: string }) {
   const qc = useQueryClient();
   const [subTab, setSubTab] = useState<"transfer" | "adjustment">("transfer");
+  const [adjRuleCount, setAdjRuleCount] = useState(0);
   const [activeType, setActiveType] = useState<string | null>(null);
   const [rules, setRules] = useState<Record<string, ApprovalRuleLocal[]>>({});
   const [saving, setSaving] = useState(false);
@@ -2168,7 +2179,12 @@ function ApprovalRulesV2Tab({ tenantId }: { tenantId: string }) {
     <div className="space-y-4">
       {/* Sub-tab nav: Transfer Rules | Adjustment Rules */}
       <div className="flex border-b border-gray-200">
-        <button type="button" onClick={() => setSubTab("transfer")}
+        <button type="button" onClick={() => {
+            if (subTab === "adjustment" && adjRuleCount === 0) {
+              if (!window.confirm(t("approval_rule.no_rules_confirm"))) return;
+            }
+            setSubTab("transfer");
+          }}
           className={`px-4 py-2 text-sm font-medium transition-all ${subTab === "transfer" ? "border-b-2 border-emerald-600 text-emerald-700" : "text-gray-500 hover:text-gray-700"}`}>
           {t("approval_rule.transfer_rules_tab")}
         </button>
@@ -2338,7 +2354,7 @@ function ApprovalRulesV2Tab({ tenantId }: { tenantId: string }) {
         </>
       )}
 
-      {subTab === "adjustment" && <AdjustmentRulesSection tenantId={tenantId} />}
+      {subTab === "adjustment" && <AdjustmentRulesSection tenantId={tenantId} onRuleCountChange={setAdjRuleCount} />}
     </div>
   );
 }

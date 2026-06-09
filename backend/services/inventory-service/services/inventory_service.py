@@ -259,9 +259,10 @@ class InventoryService:
 
         await audit_log(
             user=user,
-            action="ADJUSTMENT",
+            action="adjustment:post",
             resource={
                 "resource_type": "adjustment",
+                "resource_id": tx_id,
                 "product_id": str(body.product_id),
                 "warehouse_id": str(body.warehouse_id),
                 "quantity": str(quantity),
@@ -1345,7 +1346,7 @@ class InventoryService:
                 {"up": str(unit_price), "tv": str(total_value), "id": str(adjustment_id)},
             )
 
-            can_self_approve, _route_to = await check_adjustment_self_approval(
+            can_self_approve, route_to = await check_adjustment_self_approval(
                 session=self.db,
                 tenant_id=user.tenant_id,
                 user=user,
@@ -1422,9 +1423,23 @@ class InventoryService:
                     is_self_approved=True,
                     total_value=total_value,
                 )
-            # else: not self-approved — fall through to normal PENDING_APPROVAL transition.
-            # _route_to (when present) names a specific approver role; routing to that role
-            # is resolved by the existing approval workflow, not by this transition.
+            # Not self-approved — fall through to PENDING_APPROVAL.
+            # Log which role will handle approval so the audit trail is complete.
+            if route_to:
+                await audit_log(
+                    user,
+                    "adjustment:routed",
+                    {
+                        "resource_type": "adjustment",
+                        "resource_id": str(adjustment_id),
+                        "quantity": str(quantity_abs),
+                        "total_value": str(total_value),
+                        "reason_code": row.reason_code,
+                        "required_role": route_to,
+                    },
+                    "CONDITIONAL",
+                    f"routed_to:{route_to}",
+                )
 
         await self.db.execute(
             text("UPDATE adjustment_orders SET status = :s, updated_at = now() WHERE id = :id"),

@@ -469,7 +469,11 @@
     "threshold_show": "Approval rules",
     "threshold_hide": "Hide rules",
     "warehouse_auto": "Auto-assigned from your profile",
-    "warehouse_select": "Select warehouse"
+    "warehouse_select": "Select warehouse",
+    "show_history": "Show history",
+    "hide_history": "Hide history",
+    "no_pending": "No pending adjustments",
+    "no_pending_hint": "All adjustments are resolved. Toggle history to view past records."
   },
   "transfer": {
     "status": {
@@ -1075,6 +1079,8 @@
     "adj_route_to": "Route to",
     "adj_no_rules": "No adjustment rules configured. All adjustments will follow default approval routing.",
     "adj_rules_note": "Rules are matched by position level and reason code. First matching rule wins. If no rule matches, the default approval routing applies.",
+    "no_rules_warning": "No adjustment approval rules are configured. Adjustments cannot be self-approved and will require manual routing.",
+    "no_rules_confirm": "No adjustment approval rules are configured. Leave this tab without adding rules?",
     "adj_qty_limit": "Qty Limit",
     "adj_value_limit": "Value Limit",
     "adj_role_code": "Position Role",

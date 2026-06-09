@@ -1,9 +1,9 @@
 "use client";
 
-import { useState, useEffect } from "react";
-import { useQueryClient } from "@tanstack/react-query";
+import { useState, useEffect, useMemo } from "react";
+import { useQueryClient, useQuery } from "@tanstack/react-query";
 import { nanoid } from "nanoid";
-import { api } from "@/lib/api";
+import { api, IS_GATEWAY_MODE } from "@/lib/api";
 import { t } from "@/lib/i18n";
 import { getSession } from "@/lib/demo-auth";
 import { useInventoryStore } from "@/lib/inventory-state";
@@ -25,15 +25,6 @@ const REASONS = [
 
 // These reasons always deduct stock — user enters magnitude, system negates
 const FORCE_NEGATIVE = new Set(["DAMAGE", "EXPIRY", "THEFT"]);
-
-const THRESHOLDS = { low: 100, medium: 1000 };
-
-function getApprovalInfo(qty: number): { role: string; label: string; cls: string } {
-  const abs = Math.abs(qty);
-  if (abs < THRESHOLDS.low)    return { role: "NONE", label: t("adjustment.auto_applied"),  cls: "bg-green-50 text-emerald-700" };
-  if (abs < THRESHOLDS.medium) return { role: "RM",   label: t("adjustment.pending_rm"),    cls: "bg-amber-50 text-amber-800" };
-  return                              { role: "TA",   label: t("adjustment.pending_ta"),    cls: "bg-red-50 text-red-700" };
-}
 
 function Field({ label, hint, children }: { label: string; hint?: string; children: React.ReactNode }) {
   return (
@@ -60,6 +51,47 @@ export function NewAdjustmentPanel({ products, warehouses, orgSlug }: Props) {
   // see the dropdown so they can choose which facility to adjust.
   const hasAssignedWarehouse = !!session?.warehouseId;
 
+  type AdjRule = {
+    role_code: string; level_number: number; threshold_type: string;
+    qty_limit: string | null; value_limit: string | null;
+    approver_role_code: string | null; is_active: boolean;
+  };
+  const tenantId = session?.tenantId;
+  const { data: adjRules = [] } = useQuery<AdjRule[]>({
+    queryKey: ["adj-approval-rules", tenantId],
+    queryFn:  () => api.get<AdjRule[]>(`/api/v1/tenants/${tenantId}/adjustment-approval-rules`),
+    enabled:  IS_GATEWAY_MODE && !!tenantId,
+    staleTime: 60_000,
+  });
+
+  const approvalHint = useMemo(() => {
+    // Match a rule for the current user's role + level
+    const userRole  = session?.role ?? "";
+    const userLevel = (session as { level_number?: number } | null)?.level_number ?? null;
+    const activeRules = adjRules.filter(
+      (r) => r.is_active && r.role_code === userRole &&
+             (userLevel === null || r.level_number === userLevel)
+    );
+    return (qty: number): { role: string; label: string; cls: string } | null => {
+      if (qty === 0) return null;
+      const abs = Math.abs(qty);
+      if (activeRules.length === 0) return null;
+      const match = activeRules.find((r) => {
+        const limit = r.qty_limit ? parseFloat(r.qty_limit) : null;
+        return r.threshold_type === "QUANTITY" && (limit === null || abs <= limit);
+      });
+      if (!match) {
+        return { role: "TA", label: t("adjustment.pending_ta"), cls: "bg-red-50 text-red-700" };
+      }
+      if (match.approver_role_code === null) {
+        return { role: "NONE", label: t("adjustment.auto_applied"), cls: "bg-green-50 text-emerald-700" };
+      }
+      const cls = match.approver_role_code === "TA" ? "bg-red-50 text-red-700" : "bg-amber-50 text-amber-800";
+      const label = match.approver_role_code === "TA" ? t("adjustment.pending_ta") : t("adjustment.pending_rm");
+      return { role: match.approver_role_code, label, cls };
+    };
+  }, [adjRules, session?.role]);
+
   const [open, setOpen]               = useState(false);
   const [productId, setProductId]     = useState("");
   const [warehouseId, setWarehouseId] = useState(""); // non-WM only
@@ -84,7 +116,7 @@ export function NewAdjustmentPanel({ products, warehouses, orgSlug }: Props) {
   // Bug 4A: DAMAGE/EXPIRY → always negative. Bug 4B: other reasons → add minus remove.
   const qty       = forceNeg ? -Math.abs(addNum) : addNum - removeNum;
 
-  const approvalInfo = qty !== 0 ? getApprovalInfo(qty) : null;
+  const approvalInfo = qty !== 0 ? approvalHint(qty) : null;
   const selectedP    = products.find((p) => p.id === productId);
 
   function reset() {
