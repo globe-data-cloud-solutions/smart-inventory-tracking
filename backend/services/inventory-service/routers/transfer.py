@@ -263,16 +263,17 @@ async def get_approval_info(
         else:
             status_label = f"Awaiting {position_title} approval"
 
+        _cur_seq = cur_step.get("sequence", 1)
+        _total   = len(steps)
         return SuccessResponse(data=ApprovalInfoResponse(
             transfer_id=transfer_id,
             required_authority_level=1,
             required_role_display=position_title,
             is_auto_approve=False,
             can_approve=can_approve_dyn,
-            reason=f"Step {cur_step.get('sequence', 1)} of {len(steps)}: "
-                   f"{position_title} approval required.",
-            current_step=cur_step.get("sequence", 1),
-            total_steps=len(steps),
+            reason=f"Step {_cur_seq} of {_total}: {position_title} approval required.",
+            current_step=_cur_seq,
+            total_steps=_total,
             current_approver_user_id=assignee_uid,
             current_approver_name=cur_step.get("assigned_to_name"),
             current_approver_position_title=position_title,
@@ -282,6 +283,7 @@ async def get_approval_info(
             holder_count=holder_count,
             all_holders=all_holders,
             status_label=status_label,
+            step_label=f"Step {_cur_seq} of {_total}" if _total > 1 else None,
         ))
 
     # ── Legacy path: role-level routing (old approval_rule / authority_level) ─

@@ -479,6 +479,7 @@ interface ApprovalInfoResponse {
   holder_count?: number;
   all_holders?: { user_id: string; name: string }[];
   status_label?: string | null;
+  step_label?: string | null;
 }
 
 /**
@@ -1103,6 +1104,11 @@ export default function TransfersPage() {
                       {txn.status === "PENDING_APPROVAL" && cachedApprInfo?.status_label && (
                         <p className="text-[10px] text-gray-400 mt-0.5 leading-tight max-w-[140px]">
                           {cachedApprInfo.status_label}
+                        </p>
+                      )}
+                      {txn.status === "PENDING_APPROVAL" && cachedApprInfo?.step_label && (
+                        <p className="text-[10px] font-semibold text-blue-600 mt-0.5">
+                          {cachedApprInfo.step_label}
                         </p>
                       )}
                     </td>

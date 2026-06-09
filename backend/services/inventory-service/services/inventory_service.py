@@ -894,6 +894,75 @@ class InventoryService:
             # Gate check: dynamic routing overrides simple-mode authority level.
             await _check_can_approve(row, user, caller_level, decision)
 
+            # ── Multi-step sequential advancement (GAP-A fix) ────────────────
+            # resolved_approval_steps snapshot was set at PENDING_APPROVAL time.
+            # Each /approve call marks the current step and checks if more remain.
+            _steps: list[dict] = list(row.resolved_approval_steps or [])
+            if isinstance(_steps, str):
+                _steps = _json.loads(_steps)
+
+            if _steps:
+                from datetime import datetime as _dt, timezone as _tz
+                _cur_idx = (getattr(row, "current_approval_step", 1) or 1) - 1
+                _next_idx = _cur_idx + 1
+
+                _steps[_cur_idx]["status"] = "approved"
+                _steps[_cur_idx]["approved_by_user_id"] = str(user.user_id)
+                _steps[_cur_idx]["approved_at"] = _dt.now(_tz.utc).isoformat()
+
+                if _next_idx < len(_steps):
+                    # More steps remain — advance counter, stay PENDING_APPROVAL.
+                    # Do NOT fire TRANSFER_OUT; return early before the fall-through.
+                    await self.db.execute(
+                        text(
+                            "UPDATE transfer_orders "
+                            "SET resolved_approval_steps = :steps::jsonb, "
+                            "    current_approval_step = :next_step, "
+                            "    updated_at = now() "
+                            "WHERE id = :id"
+                        ),
+                        {
+                            "steps": _json.dumps(_steps),
+                            "next_step": _next_idx + 1,
+                            "id": str(transfer_id),
+                        },
+                    )
+                    await audit_log(
+                        user=user,
+                        action="transfer:step_approved",
+                        resource={
+                            "resource_type": "transfer_order",
+                            "resource_id": str(transfer_id),
+                            "step": _cur_idx + 1,
+                            "total_steps": len(_steps),
+                        },
+                        decision="GRANTED",
+                        reason=(
+                            f"Step {_cur_idx + 1} of {len(_steps)} approved; "
+                            f"advancing to step {_next_idx + 1}"
+                        ),
+                    )
+                    from datetime import datetime, timezone
+                    return TransferOrderResponse(
+                        transfer_id=transfer_id,
+                        transfer_type=transfer_type,
+                        status="PENDING_APPROVAL",
+                        from_warehouse_id=row.from_warehouse_id,
+                        to_warehouse_id=row.to_warehouse_id,
+                        created_at=datetime.now(timezone.utc),
+                    )
+                else:
+                    # Final step — persist the approval into the JSONB snapshot,
+                    # then fall through to TRANSFER_OUT and the APPROVED transition.
+                    await self.db.execute(
+                        text(
+                            "UPDATE transfer_orders "
+                            "SET resolved_approval_steps = :steps::jsonb "
+                            "WHERE id = :id"
+                        ),
+                        {"steps": _json.dumps(_steps), "id": str(transfer_id)},
+                    )
+
             for line in lines:
                 await record_transaction(
                     self.db,
@@ -1546,7 +1615,9 @@ class InventoryService:
                 to_.created_by_authority_level,
                 to_.created_at,
                 to_.updated_at,
-                to_.is_self_approved
+                to_.is_self_approved,
+                to_.current_approval_step,
+                to_.resolved_approval_steps
             FROM transfer_orders to_
             LEFT JOIN warehouses fw          ON fw.id       = to_.from_warehouse_id
             LEFT JOIN organization_node fw_n ON fw_n.id    = to_.from_warehouse_id
@@ -1577,6 +1648,14 @@ class InventoryService:
                 await self.db.execute(lines_sql, {"xfer_id": str(r.transfer_id)})
             ).fetchall()
 
+            _rs = r.resolved_approval_steps
+            if isinstance(_rs, str):
+                try:
+                    _rs = _json.loads(_rs)
+                except Exception:
+                    _rs = None
+            _total_steps = len(_rs) if _rs else 1
+
             results.append(
                 TransferListItem(
                     transfer_id=r.transfer_id,
@@ -1591,6 +1670,8 @@ class InventoryService:
                     created_at=r.created_at,
                     updated_at=r.updated_at,
                     is_self_approved=bool(r.is_self_approved),
+                    current_step=r.current_approval_step or 1,
+                    total_steps=_total_steps,
                     lines=[
                         TransferLineItem(
                             product_id=line.product_id,

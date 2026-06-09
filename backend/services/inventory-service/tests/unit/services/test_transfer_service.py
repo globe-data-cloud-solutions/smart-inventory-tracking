@@ -2488,3 +2488,211 @@ class TestL1StockAndTAEscalation:
         assert "system_role" in call_sql and "TA" in call_sql, (
             "_find_tenant_ta must query by system_role='TA'"
         )
+
+
+# ── GAP-A regression tests — multi-step sequential approval enforcement ───────
+
+@pytest.mark.unit
+class TestMultiStepApproval:
+    """GAP-A: verify that the APPROVED transition handler enforces sequential
+    multi-step approval — intermediate steps stay PENDING_APPROVAL and the
+    TRANSFER_OUT ledger entry fires only on the final step."""
+
+    @staticmethod
+    def _make_two_step_row(
+        current_step: int = 1,
+        approver1_uid: str = "u-approver-1",
+        approver2_uid: str = "u-approver-2",
+    ) -> MagicMock:
+        row = _make_transfer_row("PENDING_APPROVAL", transfer_type="PULL")
+        row.created_by = "u-creator"
+        row.created_by_authority_level = 4
+        row.current_approval_step = current_step
+        row.resolved_approval_steps = [
+            {
+                "sequence": 1,
+                "position_title": "General Manager",
+                "execution_mode": "sequential",
+                "assigned_to_user_id": approver1_uid,
+                "assigned_to_name": "GM User",
+                "all_holders": [],
+                "holder_count": 1,
+                "is_vacant": False,
+                "escalated": False,
+                "status": "pending",
+            },
+            {
+                "sequence": 2,
+                "position_title": "Regional Manager",
+                "execution_mode": "sequential",
+                "assigned_to_user_id": approver2_uid,
+                "assigned_to_name": "RM User",
+                "all_holders": [],
+                "holder_count": 1,
+                "is_vacant": False,
+                "escalated": False,
+                "status": "pending",
+            },
+        ]
+        return row
+
+    @staticmethod
+    def _make_one_step_row(approver_uid: str = "u-approver-1") -> MagicMock:
+        row = _make_transfer_row("PENDING_APPROVAL", transfer_type="PULL")
+        row.created_by = "u-creator"
+        row.created_by_authority_level = 4
+        row.current_approval_step = 1
+        row.resolved_approval_steps = [
+            {
+                "sequence": 1,
+                "position_title": "General Manager",
+                "execution_mode": "sequential",
+                "assigned_to_user_id": approver_uid,
+                "assigned_to_name": "GM User",
+                "all_holders": [],
+                "holder_count": 1,
+                "is_vacant": False,
+                "escalated": False,
+                "status": "pending",
+            },
+        ]
+        return row
+
+    async def test_single_step_still_works(self) -> None:
+        """Single-step approval must still produce APPROVED and fire TRANSFER_OUT."""
+        from services.approval_service import ApprovalDecision
+        from services.inventory_service import InventoryService
+
+        approver = _User("u-approver-1", TENANT_ID, WAREHOUSE_B, None, "NM")
+        row  = self._make_one_step_row(approver.user_id)
+        line = _make_line(quantity=50.0)
+
+        # execute 0: SELECT row; 1: SELECT lines; 2: UPDATE JSONB final; 3: UPDATE status
+        session = AsyncMock()
+        session.execute = AsyncMock(side_effect=[
+            MagicMock(fetchone=MagicMock(return_value=row)),
+            MagicMock(fetchall=MagicMock(return_value=[line])),
+            MagicMock(),
+            MagicMock(),
+        ])
+
+        with patch("services.inventory_service.resolve_approval",
+                   new=AsyncMock(return_value=ApprovalDecision(
+                       required_role="NM", is_auto_approved=False,
+                       next_status="PENDING_APPROVAL", required_authority_level=1,
+                   ))), \
+             patch("services.inventory_service.record_transaction",
+                   new=AsyncMock(return_value="tx-single")) as mock_record, \
+             patch("services.inventory_service._get_simple_mode",
+                   new=AsyncMock(return_value=False)):
+            result = await InventoryService(session).transition_transfer(
+                approver, TRANSFER_ID, "APPROVED"
+            )
+
+        assert result.status == "APPROVED", "Single-step approval must yield APPROVED"
+        assert mock_record.await_count == 1, "TRANSFER_OUT must fire on the single final step"
+
+    async def test_step1_approval_stays_pending(self) -> None:
+        """Step 1 of 2 approval must return PENDING_APPROVAL and NOT fire TRANSFER_OUT."""
+        from services.approval_service import ApprovalDecision
+        from services.inventory_service import InventoryService
+
+        approver1 = _User("u-approver-1", TENANT_ID, WAREHOUSE_B, None, "NM")
+        row  = self._make_two_step_row(current_step=1, approver1_uid=approver1.user_id)
+        line = _make_line(quantity=50.0)
+
+        # execute 0: SELECT row; 1: SELECT lines; 2: UPDATE JSONB + advance counter
+        # No execute 3 — returns early at PENDING_APPROVAL
+        session = AsyncMock()
+        session.execute = AsyncMock(side_effect=[
+            MagicMock(fetchone=MagicMock(return_value=row)),
+            MagicMock(fetchall=MagicMock(return_value=[line])),
+            MagicMock(),
+        ])
+
+        with patch("services.inventory_service.resolve_approval",
+                   new=AsyncMock(return_value=ApprovalDecision(
+                       required_role="NM", is_auto_approved=False,
+                       next_status="PENDING_APPROVAL", required_authority_level=1,
+                   ))), \
+             patch("services.inventory_service.record_transaction",
+                   new=AsyncMock(return_value="tx-step1")) as mock_record, \
+             patch("services.inventory_service._get_simple_mode",
+                   new=AsyncMock(return_value=False)):
+            result = await InventoryService(session).transition_transfer(
+                approver1, TRANSFER_ID, "APPROVED"
+            )
+
+        assert result.status == "PENDING_APPROVAL", (
+            "Step 1 of 2 approval must keep transfer in PENDING_APPROVAL"
+        )
+        assert mock_record.await_count == 0, (
+            "TRANSFER_OUT must NOT fire for intermediate approval steps"
+        )
+
+    async def test_step2_approval_completes_transfer(self) -> None:
+        """Step 2 of 2 (final) approval must yield APPROVED and fire TRANSFER_OUT."""
+        from services.approval_service import ApprovalDecision
+        from services.inventory_service import InventoryService
+
+        approver2 = _User("u-approver-2", TENANT_ID, WAREHOUSE_B, None, "RM")
+        row  = self._make_two_step_row(current_step=2, approver2_uid=approver2.user_id)
+        row.resolved_approval_steps[0]["status"] = "approved"  # step 1 already done
+        line = _make_line(quantity=50.0)
+
+        # execute 0: SELECT row; 1: SELECT lines; 2: UPDATE JSONB final; 3: UPDATE status
+        session = AsyncMock()
+        session.execute = AsyncMock(side_effect=[
+            MagicMock(fetchone=MagicMock(return_value=row)),
+            MagicMock(fetchall=MagicMock(return_value=[line])),
+            MagicMock(),
+            MagicMock(),
+        ])
+
+        with patch("services.inventory_service.resolve_approval",
+                   new=AsyncMock(return_value=ApprovalDecision(
+                       required_role="RM", is_auto_approved=False,
+                       next_status="PENDING_APPROVAL", required_authority_level=2,
+                   ))), \
+             patch("services.inventory_service.record_transaction",
+                   new=AsyncMock(return_value="tx-step2")) as mock_record, \
+             patch("services.inventory_service._get_simple_mode",
+                   new=AsyncMock(return_value=False)):
+            result = await InventoryService(session).transition_transfer(
+                approver2, TRANSFER_ID, "APPROVED"
+            )
+
+        assert result.status == "APPROVED", "Final step approval must yield APPROVED"
+        assert mock_record.await_count == 1, "TRANSFER_OUT must fire on the final step"
+
+    async def test_two_step_approval_requires_both(self) -> None:
+        """A user not assigned to the current step must be denied with HTTP 403."""
+        from services.approval_service import ApprovalDecision
+        from services.inventory_service import InventoryService
+
+        approver1  = _User("u-approver-1", TENANT_ID, WAREHOUSE_B, None, "NM")
+        wrong_user = _User("u-wrong", TENANT_ID, WAREHOUSE_B, None, "RM")
+        row  = self._make_two_step_row(current_step=1, approver1_uid=approver1.user_id)
+        line = _make_line(quantity=50.0)
+
+        # execute 0: SELECT row; 1: SELECT lines; then 403 before any writes
+        session = AsyncMock()
+        session.execute = AsyncMock(side_effect=[
+            MagicMock(fetchone=MagicMock(return_value=row)),
+            MagicMock(fetchall=MagicMock(return_value=[line])),
+        ])
+
+        with patch("services.inventory_service.resolve_approval",
+                   new=AsyncMock(return_value=ApprovalDecision(
+                       required_role="NM", is_auto_approved=False,
+                       next_status="PENDING_APPROVAL", required_authority_level=1,
+                   ))), \
+             patch("services.inventory_service._get_simple_mode",
+                   new=AsyncMock(return_value=False)):
+            with pytest.raises(HTTPException) as exc_info:
+                await InventoryService(session).transition_transfer(
+                    wrong_user, TRANSFER_ID, "APPROVED"
+                )
+
+        assert exc_info.value.status_code == 403
+        assert exc_info.value.detail["code"] == "NOT_ASSIGNED_APPROVER"

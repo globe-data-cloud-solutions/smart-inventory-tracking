@@ -179,6 +179,8 @@ class TransferListItem(BaseModel):
     updated_at: Optional[datetime] = None
     is_self_approved: bool = False
     lines: List[TransferLineItem]
+    current_step: int = 1
+    total_steps:  int = 1
 
 
 class TransferTransitionRequest(BaseModel):
@@ -228,6 +230,7 @@ class ApprovalInfoResponse(BaseModel):
     holder_count:                    int           = 1
     all_holders:                     list[dict]    = []
     status_label:                    Optional[str] = None
+    step_label:                      Optional[str] = None
 
 
 class AuditLogItem(BaseModel):
