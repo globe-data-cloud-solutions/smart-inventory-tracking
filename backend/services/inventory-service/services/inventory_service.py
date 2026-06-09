@@ -916,13 +916,13 @@ class InventoryService:
                     await self.db.execute(
                         text(
                             "UPDATE transfer_orders "
-                            "SET resolved_approval_steps = :steps::jsonb, "
+                            "SET resolved_approval_steps = :steps, "
                             "    current_approval_step = :next_step, "
                             "    updated_at = now() "
                             "WHERE id = :id"
-                        ),
+                        ).bindparams(bindparam("steps", type_=types.JSON)),
                         {
-                            "steps": _json.dumps(_steps),
+                            "steps": _steps,
                             "next_step": _next_idx + 1,
                             "id": str(transfer_id),
                         },
@@ -957,10 +957,10 @@ class InventoryService:
                     await self.db.execute(
                         text(
                             "UPDATE transfer_orders "
-                            "SET resolved_approval_steps = :steps::jsonb "
+                            "SET resolved_approval_steps = :steps "
                             "WHERE id = :id"
-                        ),
-                        {"steps": _json.dumps(_steps), "id": str(transfer_id)},
+                        ).bindparams(bindparam("steps", type_=types.JSON)),
+                        {"steps": _steps, "id": str(transfer_id)},
                     )
 
             for line in lines:

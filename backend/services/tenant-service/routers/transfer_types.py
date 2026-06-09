@@ -366,7 +366,7 @@ async def upsert_approval_rules(
                 "qmin": rule.quantity_min, "qmax": rule.quantity_max,
                 "vmin": rule.value_min,    "vmax": rule.value_max,
                 "tt":   rule.threshold_type, "cur": rule.currency,
-                "steps": [s.model_dump() for s in rule.approval_steps],
+                "steps": [s.model_dump(exclude_none=False) for s in rule.approval_steps],
                 "prio": rule.priority, "ia": rule.is_active,
             },
         )

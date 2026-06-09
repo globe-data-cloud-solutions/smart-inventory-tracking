@@ -16,7 +16,7 @@ from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
-from sqlalchemy import text
+from sqlalchemy import bindparam, text, types
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from dependencies import get_current_user, get_db_session_for_tenant
@@ -273,9 +273,9 @@ async def update_position(
                 await db.execute(
                     text(
                         "UPDATE transfer_approval_rules "
-                        "SET approval_steps = :steps::jsonb WHERE id = :rid"
-                    ),
-                    {"steps": _json.dumps(steps), "rid": str(rule_row.id)},
+                        "SET approval_steps = :steps WHERE id = :rid"
+                    ).bindparams(bindparam("steps", type_=types.JSON)),
+                    {"steps": steps, "rid": str(rule_row.id)},
                 )
 
     rp_title: Optional[str] = row.rp_title
