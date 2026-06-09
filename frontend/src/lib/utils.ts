@@ -5,18 +5,18 @@ export function cn(...inputs: ClassValue[]): string {
   return twMerge(clsx(inputs));
 }
 
-/**
- * Format a stock/adjustment quantity for display.
- * Whole numbers (22.0) → "22"   Decimals (22.5) → "22.5"   Large (1000) → "1,000"
- */
-export function formatQty(qty: number): string {
-  if (Number.isInteger(qty)) return qty.toLocaleString();
-  return parseFloat(qty.toFixed(2)).toLocaleString();
+export function formatQty(qty: number | string | null | undefined): string {
+  const n = Number(qty);
+  if (!isFinite(n)) return "0";
+  if (Number.isInteger(n)) return n.toLocaleString();
+  return parseFloat(n.toFixed(2)).toLocaleString();
 }
 
-export function formatCurrency(value: number, currency = "ETB"): string {
+export function formatCurrency(value: number | string | null | undefined, currency = "ETB"): string {
+  const n = Number(value);
+  if (!isFinite(n)) return `0.00 ${currency}`;
   return (
-    value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) +
+    new Intl.NumberFormat("en-ET", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n) +
     " " +
     currency
   );

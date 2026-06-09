@@ -924,7 +924,8 @@
     "adj_qty_limit": "Qty Limit",
     "adj_value_limit": "Value Limit",
     "adj_role_code": "Position Role",
-    "adj_level": "Level"
+    "adj_level": "Level",
+    "adj_select_level": "select position level"
   },
   "transfer_panel": {
     "estimated_value": "Estimated value",

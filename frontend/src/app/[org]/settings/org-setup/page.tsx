@@ -1492,7 +1492,10 @@ function PositionsTab({ tenantId }: { tenantId: string }) {
                   {selectedGroup && (
                     <p className="text-xs text-blue-600 bg-blue-100 rounded px-2 py-1">
                       {t("org_setup.self_approval_level_note")
-                        .replace("{role}", formRole)
+                        .replace("{role}", (() => {
+                          const lv = levels.find((l) => l.default_role_code === formRole);
+                          return lv ? `${lv.role_display_label} (${formRole})` : formRole;
+                        })())
                         .replace("{level}", levels.find((l) => l.level_number === selectedGroup.level_number)?.level_name ?? `L${selectedGroup.level_number}`)}
                     </p>
                   )}
@@ -1906,23 +1909,24 @@ function AdjustmentRulesSection({ tenantId }: { tenantId: string }) {
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-xs font-bold text-gray-600 mb-1">{t("approval_rule.adj_role_code")}</label>
-                  <select value={rule.role_code} onChange={(e) => updateRule(idx, { role_code: e.target.value })}
-                    className="w-full border border-gray-300 rounded px-2 py-1.5 text-sm bg-white">
-                    <option value="">— select —</option>
-                    {ADJ_ROLE_CODES.map((rc) => <option key={rc} value={rc}>{rc}</option>)}
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-xs font-bold text-gray-600 mb-1">{t("approval_rule.adj_level")}</label>
-                  <select value={rule.level_number} onChange={(e) => updateRule(idx, { level_number: Number(e.target.value) })}
-                    className="w-full border border-gray-300 rounded px-2 py-1.5 text-sm bg-white">
-                    <option value={0}>— any —</option>
-                    {levels.map((l) => <option key={l.level_number} value={l.level_number}>{l.level_name} (L{l.level_number})</option>)}
-                  </select>
-                </div>
+              <div>
+                <label className="block text-xs font-bold text-gray-600 mb-1">{t("approval_rule.adj_role_code")}</label>
+                <select
+                  value={rule.level_number ?? 0}
+                  onChange={(e) => {
+                    const lv = levels.find((l) => l.level_number === Number(e.target.value));
+                    if (lv) updateRule(idx, { role_code: lv.default_role_code, level_number: lv.level_number });
+                    else updateRule(idx, { role_code: "", level_number: 0 });
+                  }}
+                  className="w-full border border-gray-300 rounded px-2 py-1.5 text-sm bg-white"
+                >
+                  <option value={0}>— {t("approval_rule.adj_select_level")} —</option>
+                  {levels.map((l) => (
+                    <option key={l.level_number} value={l.level_number}>
+                      {l.role_display_label} ({l.default_role_code}) — {l.level_name} (L{l.level_number})
+                    </option>
+                  ))}
+                </select>
               </div>
 
               {displayMode === "PER_CODE" && (
@@ -1982,7 +1986,14 @@ function AdjustmentRulesSection({ tenantId }: { tenantId: string }) {
                     {rule.approver_role_code !== null && (
                       <select value={rule.approver_role_code} onChange={(e) => updateRule(idx, { approver_role_code: e.target.value })}
                         className="border border-gray-300 rounded px-2 py-1 text-xs bg-white">
-                        {ADJ_ROLE_CODES.map((rc) => <option key={rc} value={rc}>{rc}</option>)}
+                        {ADJ_ROLE_CODES.map((rc) => {
+                          const lv = levels.find((l) => l.default_role_code === rc);
+                          return (
+                            <option key={rc} value={rc}>
+                              {lv ? `${lv.role_display_label} (${rc}) — ${lv.level_name} (L${lv.level_number})` : rc}
+                            </option>
+                          );
+                        })}
                       </select>
                     )}
                   </label>
