@@ -264,7 +264,38 @@ export default function InventoryPage() {
   // transfers the current user hasn't personally created or transitioned this session.
   const { data: apiTransfers = [] } = useQuery<ApiTransfer[]>({
     queryKey: ["transfers", org],
-    queryFn:  () => api.get<ApiTransfer[]>("/api/v1/inventory/transfers"),
+    // Normalize raw API response (transfer_id + lines[]) to the same flat shape that
+    // the transfers page produces. Both pages share the queryKey cache; mismatched
+    // queryFns cause the inventory page to see raw objects with undefined product_id,
+    // which breaks the Zustand sync and prevents arrows + popups from appearing.
+    queryFn: () =>
+      api
+        .get<Array<{
+          transfer_id: string; transfer_type: string; status: string;
+          from_warehouse_id: string; from_warehouse_name: string | null;
+          to_warehouse_id: string; to_warehouse_name: string | null;
+          created_by?: string; created_by_authority_level?: number;
+          created_at: string; is_self_approved?: boolean;
+          lines: Array<{ product_id: string; product_name: string; quantity: string }>;
+        }>>("/api/v1/inventory/transfers")
+        .then((rows) =>
+          rows.map((r) => {
+            const line = r.lines[0];
+            return {
+              id:                        r.transfer_id,
+              ref:                       r.transfer_id.slice(0, 8).toUpperCase(),
+              product_id:                line?.product_id ?? "",
+              product_name:              line?.product_name ?? "",
+              from_warehouse_id:         r.from_warehouse_id,
+              from_warehouse_name:       r.from_warehouse_name ?? "",
+              to_warehouse_id:           r.to_warehouse_id,
+              to_warehouse_name:         r.to_warehouse_name ?? "",
+              quantity:                  parseFloat(line?.quantity ?? "0"),
+              status:                    r.status,
+              created_at:                r.created_at,
+            };
+          })
+        ),
     enabled:  !!user && org !== SA_ORG_SLUG,
     staleTime: 0,
     refetchInterval: 15000,
@@ -347,7 +378,14 @@ export default function InventoryPage() {
         return product ? { product, stockItem: item } : null;
       })
       .filter((r): r is { product: DemoProduct; stockItem: InventoryStockItem } => r !== null)
-      .filter((r) => userLevel <= 1 || safeFloat(r.stockItem.current_stock) > 0)
+      .filter(
+        (r) =>
+          userLevel <= 1 ||
+          safeFloat(r.stockItem.current_stock) > 0 ||
+          safeFloat(r.stockItem.pending_out_qty) > 0 ||
+          safeFloat(r.stockItem.in_transit_out_qty) > 0 ||
+          safeFloat(r.stockItem.in_transit_in_qty) > 0,
+      )
       .sort((a, b) => {
         const aQty = safeFloat(a.stockItem.current_stock);
         const bQty = safeFloat(b.stockItem.current_stock);
@@ -505,12 +543,21 @@ export default function InventoryPage() {
         // L2+: show only products with current stock or pending activity
         if (isGatewayMode) {
           const si = stockByKey.get(`${p.id}:${whId}`);
-          return si
-            ? safeFloat(si.current_stock) > 0 ||
+          if (si) {
+            return (
+              safeFloat(si.current_stock) > 0 ||
               safeFloat(si.pending_out_qty) > 0 ||
               safeFloat(si.in_transit_out_qty) > 0 ||
               safeFloat(si.in_transit_in_qty) > 0
-            : false;
+            );
+          }
+          // No API stock record yet (product never received at this WH).
+          // Fall to Zustand: show row if any active in-transit or reserved transfer exists.
+          return (
+            getInTransitInTotal(p.id, whId) > 0 ||
+            getInTransitOutTotal(p.id, whId) > 0 ||
+            getReservedTotal(p.id, whId) > 0
+          );
         }
         return (
           getOnHand(p.id, whId, base) > 0 ||

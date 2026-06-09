@@ -829,8 +829,17 @@ export default function TransfersPage() {
           setTimeout(() => setToast(""), 5000);
           return;
         }
-      } catch (prefetchErr) {
-        // GET failed (network issue or 4xx) — let the PATCH proceed and handle any error below
+      } catch (prefetchErr: unknown) {
+        const pErr = prefetchErr as { status?: number };
+        if (pErr.status === 422) {
+          // 422 on GET: route validation error or stale ID — refresh rather than proceeding
+          // to a PATCH that will also 422. Let the user retry with fresh data.
+          await qc.invalidateQueries({ queryKey: ["transfers", org] });
+          setToast("Transfer state changed — refreshed. Please try again.");
+          setTimeout(() => setToast(""), 5000);
+          return;
+        }
+        // Non-422 failures (network, 404): proceed to the PATCH and handle any error there
         console.warn("[doTransition] pre-fetch GET failed:", prefetchErr);
       }
       // ───────────────────────────────────────────────────────────────────────
