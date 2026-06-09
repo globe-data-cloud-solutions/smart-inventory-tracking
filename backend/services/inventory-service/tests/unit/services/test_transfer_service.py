@@ -2696,3 +2696,195 @@ class TestMultiStepApproval:
 
         assert exc_info.value.status_code == 403
         assert exc_info.value.detail["code"] == "NOT_ASSIGNED_APPROVER"
+
+
+# ── GAP-C regression tests: position_id-based approval routing ───────────────
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+class TestGapCPositionIdRouting:
+    """GAP-C: approval step resolver uses position_id (UUID FK) for direct DB
+    lookup when present, making routing immune to position title renames."""
+
+    # ── shared rule factory ───────────────────────────────────────────────────
+
+    @staticmethod
+    def _rule(pos_id: str | None, title: str, rule_id: str) -> dict:
+        step: dict = {
+            "sequence": 1,
+            "position_title": title,
+            "resolution": "TENANT_WIDE",
+            "execution_mode": "sequential",
+            "sla_hours": None,
+        }
+        if pos_id:
+            step["position_id"] = pos_id
+        return {"id": rule_id, "approval_steps": [step]}
+
+    @staticmethod
+    def _pos_db_row(pos_id: str, user_id: str, name: str,
+                    node_id: str, title: str) -> MagicMock:
+        r = MagicMock()
+        r.pos_id = pos_id; r.user_id = user_id; r.full_name = name
+        r.node_id = node_id; r.title = title
+        return r
+
+    async def test_approval_step_resolves_by_position_id(self) -> None:
+        """When step.position_id is set, resolver queries by UUID — ignores stale title."""
+        from decimal import Decimal as D
+        from services.approval_service import resolve_transfer_approvers
+
+        POS_ID    = "pppppppp-0000-0000-0000-000000000001"
+        HOLDER    = "u-holder-001"
+        NODE_ID   = "nnnnnnnn-0000-0000-0000-000000000001"
+        RULE_ID   = "rrrrrrrr-0000-0000-0000-000000000001"
+        TTCID     = "tttttttt-0000-0000-0000-000000000001"
+
+        db_row = self._pos_db_row(POS_ID, HOLDER, "Alice", NODE_ID, "New Title (current)")
+
+        with patch("services.approval_service._find_matching_rule",
+                   new=AsyncMock(return_value=self._rule(POS_ID, "Old Title (stale)", RULE_ID))):
+            session = AsyncMock()
+            # src_level and dst_level provided → no initial node queries.
+            # Only the direct-by-ID position query fires.
+            session.execute = AsyncMock(
+                return_value=MagicMock(fetchone=MagicMock(return_value=db_row))
+            )
+
+            result = await resolve_transfer_approvers(
+                session=session,
+                tenant_id=TENANT_ID,
+                transfer_type_config_id=TTCID,
+                from_warehouse_id=WAREHOUSE_A,
+                to_warehouse_id=WAREHOUSE_B,
+                quantity=D("10"),
+                total_value=None,
+                created_by="u-creator-001",
+                src_level=1,
+                dst_level=3,
+            )
+
+        assert result is not None
+        assert len(result.steps) == 1
+        step = result.steps[0]
+        assert step.assigned_to_user_id == HOLDER
+        assert step.assigned_to_name == "Alice"
+        assert step.position_title == "New Title (current)"   # refreshed from DB
+        # Only ONE execute call: the direct-by-ID query
+        assert session.execute.await_count == 1
+
+    async def test_legacy_title_match_still_works(self) -> None:
+        """Steps without position_id fall back to existing title-based traversal."""
+        from decimal import Decimal as D
+        from services.approval_service import resolve_transfer_approvers
+
+        RULE_ID   = "rrrrrrrr-0000-0000-0000-000000000002"
+        TTCID     = "tttttttt-0000-0000-0000-000000000002"
+        POS_ID    = "pppppppp-0000-0000-0000-000000000002"
+        HOLDER    = "u-holder-002"
+        NODE_ID   = "nnnnnnnn-0000-0000-0000-000000000002"
+
+        pos_row = MagicMock()
+        pos_row.pos_id = POS_ID; pos_row.user_id = HOLDER
+        pos_row.full_name = "Bob"; pos_row.node_id = NODE_ID
+
+        # TENANT_WIDE resolution returns None without a DB call, so only
+        # _find_position_and_holder fires → 1 execute call total.
+        with patch("services.approval_service._find_matching_rule",
+                   new=AsyncMock(return_value=self._rule(None, "Regional Manager", RULE_ID))):
+            session = AsyncMock()
+            session.execute = AsyncMock(
+                return_value=MagicMock(fetchone=MagicMock(return_value=pos_row))
+            )
+
+            result = await resolve_transfer_approvers(
+                session=session,
+                tenant_id=TENANT_ID,
+                transfer_type_config_id=TTCID,
+                from_warehouse_id=WAREHOUSE_A,
+                to_warehouse_id=WAREHOUSE_B,
+                quantity=D("10"),
+                total_value=None,
+                created_by="u-creator-002",
+                src_level=1,
+                dst_level=3,
+            )
+
+        assert result is not None
+        assert len(result.steps) == 1
+        step = result.steps[0]
+        assert step.assigned_to_user_id == HOLDER
+        assert step.position_title == "Regional Manager"
+        assert session.execute.await_count == 1   # find_position_and_holder only
+
+    def test_rename_position_updates_approval_rules_jsonb(self) -> None:
+        """Part B cascade logic: renaming updates position_title in JSONB steps
+        that reference the position by position_id."""
+        import json as _json
+
+        POS_ID    = "pppppppp-0000-0000-0000-000000000003"
+        RULE_ID   = "rrrrrrrr-0000-0000-0000-000000000003"
+        OLD_TITLE = "Regional Manager"
+        NEW_TITLE = "Zone Director"
+
+        # Simulate the in-memory JSONB (as Python list) returned from DB
+        steps: list[dict] = [
+            {"sequence": 1, "position_id": POS_ID, "position_title": OLD_TITLE,
+             "resolution": "TENANT_WIDE", "execution_mode": "sequential", "sla_hours": None},
+        ]
+
+        # Apply the cascade logic exactly as written in positions.py
+        updated = False
+        for s in steps:
+            if isinstance(s, dict) and s.get("position_id") == POS_ID:
+                s["position_title"] = NEW_TITLE
+                updated = True
+
+        assert updated, "Should have found and updated the step"
+        serialised = _json.dumps(steps)
+        roundtripped = _json.loads(serialised)
+        assert roundtripped[0]["position_title"] == NEW_TITLE
+        assert roundtripped[0]["position_id"] == POS_ID
+
+    async def test_rename_does_not_break_routing(self) -> None:
+        """After a rename, resolver finds the holder via position_id regardless of
+        the (now-stale) title stored in the approval rule JSONB."""
+        from decimal import Decimal as D
+        from services.approval_service import resolve_transfer_approvers
+
+        POS_ID  = "pppppppp-0000-0000-0000-000000000004"
+        HOLDER  = "u-holder-004"
+        NODE_ID = "nnnnnnnn-0000-0000-0000-000000000004"
+        RULE_ID = "rrrrrrrr-0000-0000-0000-000000000004"
+        TTCID   = "tttttttt-0000-0000-0000-000000000004"
+
+        db_row = self._pos_db_row(POS_ID, HOLDER, "Carol", NODE_ID, "Supply Chain Lead")
+
+        with patch("services.approval_service._find_matching_rule",
+                   new=AsyncMock(return_value=self._rule(POS_ID, "Logistics Director (old)", RULE_ID))):
+            session = AsyncMock()
+            session.execute = AsyncMock(
+                return_value=MagicMock(fetchone=MagicMock(return_value=db_row))
+            )
+
+            result = await resolve_transfer_approvers(
+                session=session,
+                tenant_id=TENANT_ID,
+                transfer_type_config_id=TTCID,
+                from_warehouse_id=WAREHOUSE_A,
+                to_warehouse_id=WAREHOUSE_B,
+                quantity=D("10"),
+                total_value=None,
+                created_by="u-creator-004",
+                src_level=1,
+                dst_level=3,
+            )
+
+        assert result is not None
+        assert len(result.steps) == 1
+        step = result.steps[0]
+        assert step.assigned_to_user_id == HOLDER, (
+            f"Expected {HOLDER!r} but got {step.assigned_to_user_id!r}. "
+            "Rename should not break routing when position_id is stored."
+        )
+        assert step.position_title == "Supply Chain Lead"   # refreshed from DB

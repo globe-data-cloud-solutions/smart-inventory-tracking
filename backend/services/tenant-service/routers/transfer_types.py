@@ -66,6 +66,7 @@ class TransferTypeConfigOut(BaseModel):
 class ApprovalStepIn(BaseModel):
     sequence:       int
     position_title: Optional[str] = None
+    position_id:    Optional[str] = None
     resolution:     str = "ANY"
     execution_mode: str = "SEQUENTIAL"
     sla_hours:      Optional[int] = None
@@ -74,6 +75,7 @@ class ApprovalStepIn(BaseModel):
 class ApprovalStepOut(BaseModel):
     sequence:       int
     position_title: Optional[str]
+    position_id:    Optional[str] = None
     resolution:     str
     execution_mode: str
     sla_hours:      Optional[int]

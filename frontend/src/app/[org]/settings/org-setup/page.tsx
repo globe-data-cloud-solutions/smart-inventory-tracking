@@ -2160,6 +2160,7 @@ function ApprovalRulesV2Tab({ tenantId }: { tenantId: string }) {
           threshold_type: r.threshold_type, currency: "ETB",
           approval_steps: r.steps.map((s) => ({
             sequence: s.sequence, position_title: s.position_title || null,
+            position_id: s.position_id || null,
             resolution: s.location, execution_mode: s.mode, sla_hours: s.sla_hours,
           })),
           priority: r.priority ?? idx, is_active: true,

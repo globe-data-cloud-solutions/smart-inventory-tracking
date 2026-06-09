@@ -10,6 +10,7 @@ DELETE /tenants/{tenant_id}/positions/{position_id}
 """
 from __future__ import annotations
 
+import json as _json
 import uuid
 from typing import List, Optional
 
@@ -250,6 +251,32 @@ async def update_position(
         {"title": new_title, "rpt": str(new_reports_to) if new_reports_to else None,
          "pid": str(position_id), "tid": str(tenant_id)},
     )
+
+    # Cascade title change into approval_steps JSONB so display names stay in sync
+    if body.title is not None and body.title != row.title:
+        rule_rows = (await db.execute(
+            text("SELECT id, approval_steps FROM transfer_approval_rules WHERE tenant_id = :tid"),
+            {"tid": str(tenant_id)},
+        )).fetchall()
+        for rule_row in rule_rows:
+            steps = rule_row.approval_steps
+            if isinstance(steps, str):
+                steps = _json.loads(steps)
+            if not isinstance(steps, list):
+                continue
+            changed = False
+            for s in steps:
+                if isinstance(s, dict) and s.get("position_id") == str(position_id):
+                    s["position_title"] = new_title
+                    changed = True
+            if changed:
+                await db.execute(
+                    text(
+                        "UPDATE transfer_approval_rules "
+                        "SET approval_steps = :steps::jsonb WHERE id = :rid"
+                    ),
+                    {"steps": _json.dumps(steps), "rid": str(rule_row.id)},
+                )
 
     rp_title: Optional[str] = row.rp_title
     if body.reports_to_position_id and body.reports_to_position_id != row.reports_to_position_id:

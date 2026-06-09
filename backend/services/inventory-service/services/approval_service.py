@@ -797,17 +797,44 @@ async def resolve_transfer_approvers(
         exec_mode   = step.get("execution_mode", "sequential")
         sla         = step.get("sla_hours")
 
-        # Resolve target node
-        node = await _resolve_node_for_step(
-            session, tenant_id, resolution,
-            from_warehouse_id, to_warehouse_id, title,
-        )
-        node_id = node["id"] if node else None
-
-        # Find position and holder(s)
-        pos_id, holder_uid, holder_name, actual_node_id = await _find_position_and_holder(
-            session, tenant_id, node_id, title,
-        )
+        step_pos_id = step.get("position_id")
+        if step_pos_id:
+            # Direct ID lookup — immune to position renames (GAP-C fix)
+            pos_row = (await session.execute(
+                text("""
+                    SELECT p.id AS pos_id, pp.user_id, u.full_name, p.node_id, p.title
+                    FROM   positions p
+                    LEFT JOIN personnel_positions pp
+                           ON pp.position_id = p.id AND pp.is_active = true
+                           AND pp.assignment_type = 'PRIMARY'
+                           AND (pp.valid_until IS NULL OR pp.valid_until >= CURRENT_DATE)
+                    LEFT JOIN users u ON u.id = pp.user_id AND u.is_active = true
+                    WHERE  p.id = :pid AND p.tenant_id = :tid AND p.is_active = true
+                """),
+                {"pid": step_pos_id, "tid": tenant_id},
+            )).fetchone()
+            if pos_row:
+                pos_id         = str(pos_row.pos_id)
+                holder_uid     = str(pos_row.user_id)   if pos_row.user_id   else None
+                holder_name    = str(pos_row.full_name) if pos_row.full_name else None
+                actual_node_id = str(pos_row.node_id)   if pos_row.node_id   else None
+                if pos_row.title:
+                    title = str(pos_row.title)   # refresh from DB; handles rename
+                node_id = actual_node_id
+            else:
+                pos_id, holder_uid, holder_name, actual_node_id, node_id = (
+                    None, None, None, None, None
+                )
+        else:
+            # Legacy: title-based resolution (existing behaviour)
+            node = await _resolve_node_for_step(
+                session, tenant_id, resolution,
+                from_warehouse_id, to_warehouse_id, title,
+            )
+            node_id = node["id"] if node else None
+            pos_id, holder_uid, holder_name, actual_node_id = await _find_position_and_holder(
+                session, tenant_id, node_id, title,
+            )
 
         # ANY mode: collect ALL active holders; first to approve wins.
         # Do NOT filter the creator here — the APPROVED block's self-approval guard
