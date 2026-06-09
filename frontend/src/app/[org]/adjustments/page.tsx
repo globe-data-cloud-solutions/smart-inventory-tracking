@@ -86,7 +86,6 @@ export default function AdjustmentsPage() {
   const tenantName     = useTenantName(org);
   const user           = getSession();
   const qc             = useQueryClient();
-  const [showLegend, setShowLegend]   = useState(false);
   const [showHistory, setShowHistory] = useState(false);
   const isGatewayMode  = IS_GATEWAY_MODE;
 
@@ -231,32 +230,9 @@ export default function AdjustmentsPage() {
           >
             {showHistory ? t("adjustment.hide_history") : t("adjustment.show_history")}
           </button>
-          <button
-            onClick={() => setShowLegend((s) => !s)}
-            aria-expanded={showLegend}
-            className="text-xs text-gray-500 border border-gray-200 rounded px-2.5 py-1.5 hover:bg-gray-50 cursor-pointer"
-          >
-            {showLegend ? t("adjustment.threshold_hide") : t("adjustment.threshold_show")} ⓘ
-          </button>
           <NewAdjustmentPanel products={panelProducts} warehouses={panelWarehouses} orgSlug={org} />
         </div>
       </div>
-
-      {/* Approval threshold legend — collapsible */}
-      {showLegend && (
-        <div className="mb-5 bg-blue-50 border border-blue-200 rounded-md px-5 py-4 text-xs text-blue-900">
-          <p className="font-bold text-sm mb-2">{t("adjustment.threshold_legend_title")}</p>
-          <ul className="flex flex-col gap-1.5">
-            <li>✓ {t("adjustment.threshold_damage_always")}</li>
-            <li>✓ {t("adjustment.threshold_expiry_always")}</li>
-            <li>✓ {t("adjustment.threshold_supplier_return_always")}</li>
-            <li>✓ {t("adjustment.threshold_qty_wm")}</li>
-            <li>✓ {t("adjustment.threshold_qty_rm")}</li>
-            <li>✓ {t("adjustment.threshold_qty_ta")}</li>
-            <li>✓ {t("adjustment.threshold_zero_floor")}</li>
-          </ul>
-        </div>
-      )}
 
       {/* Approval queue — visible to RM/NM/TA/SA */}
       {myPending.length > 0 && (
