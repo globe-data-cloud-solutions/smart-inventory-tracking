@@ -5,6 +5,7 @@ import { useParams } from "next/navigation";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import { t } from "@/lib/i18n";
+import { useTenantPositions } from "@/hooks/useTenantPositions";
 
 /* ── Types ─────────────────────────────────────────────────────────────────── */
 
@@ -1492,11 +1493,9 @@ function PositionsTab({ tenantId }: { tenantId: string }) {
                   {selectedGroup && (
                     <p className="text-xs text-blue-600 bg-blue-100 rounded px-2 py-1">
                       {t("org_setup.self_approval_level_note")
-                        .replace("{role}", (() => {
-                          const lv = levels.find((l) => l.default_role_code === formRole);
-                          return lv ? `${lv.role_display_label} (${formRole})` : formRole;
-                        })())
-                        .replace("{level}", levels.find((l) => l.level_number === selectedGroup.level_number)?.level_name ?? `L${selectedGroup.level_number}`)}
+                        .replace("{position}", `${formTitle || t("position.title")} (${formRole})`)
+                        .replace("{node}", selectedGroup.node_name)
+                        .replace("{level}", String(selectedGroup.level_number))}
                     </p>
                   )}
                   <label className="flex items-center gap-2 text-sm cursor-pointer">
@@ -1764,8 +1763,6 @@ const ADJ_REASON_CODES = [
   "RETURN", "PRODUCTION_USE", "SAMPLE", "OTHER",
 ];
 
-const ADJ_ROLE_CODES = ["WM", "RM", "LM", "NM", "TA"];
-
 interface AdjRuleLocal {
   id?: string;
   role_code: string;
@@ -1776,6 +1773,8 @@ interface AdjRuleLocal {
   qty_limit: string;
   value_limit: string;
   approver_role_code: string | null;
+  approver_position_id: string | null;
+  approver_position_title?: string | null;
   priority: number;
   is_active: boolean;
 }
@@ -1794,11 +1793,16 @@ function AdjustmentRulesSection({ tenantId, onRuleCountChange }: { tenantId: str
     staleTime: 30_000,
   });
 
+  const { positions: allPositions } = useTenantPositions(tenantId);
+
   const { data: savedRules = [], isLoading } = useQuery<Array<{
     id: string; role_code: string; level_number: number; mode: string;
     reason_code: string | null; threshold_type: string;
     qty_limit: string | null; value_limit: string | null;
-    approver_role_code: string | null; priority: number; is_active: boolean;
+    approver_role_code: string | null;
+    approver_position_id: string | null;
+    approver_position_title: string | null;
+    priority: number; is_active: boolean;
   }>>({
     queryKey: ["adj-approval-rules", tenantId],
     queryFn:  () => api.get(`/api/v1/tenants/${tenantId}/adjustment-approval-rules`),
@@ -1816,6 +1820,8 @@ function AdjustmentRulesSection({ tenantId, onRuleCountChange }: { tenantId: str
     qty_limit: r.qty_limit ?? "",
     value_limit: r.value_limit ?? "",
     approver_role_code: r.approver_role_code,
+    approver_position_id: r.approver_position_id,
+    approver_position_title: r.approver_position_title,
     priority: r.priority,
     is_active: r.is_active,
   }));
@@ -1833,7 +1839,7 @@ function AdjustmentRulesSection({ tenantId, onRuleCountChange }: { tenantId: str
       role_code: "", level_number: 0,
       mode: displayMode, reason_code: null,
       threshold_type: "QUANTITY", qty_limit: "", value_limit: "",
-      approver_role_code: null, priority: getList().length + 1, is_active: true,
+      approver_role_code: null, approver_position_id: null, priority: getList().length + 1, is_active: true,
     }]);
   }
   function removeRule(idx: number) { setRuleList(getList().filter((_, i) => i !== idx)); }
@@ -1857,6 +1863,7 @@ function AdjustmentRulesSection({ tenantId, onRuleCountChange }: { tenantId: str
         qty_limit: r.qty_limit ? parseFloat(r.qty_limit) : null,
         value_limit: r.value_limit ? parseFloat(r.value_limit) : null,
         approver_role_code: r.approver_role_code ?? null,
+        approver_position_id: r.approver_position_id ?? null,
         priority: r.priority,
         is_active: r.is_active,
       }));
@@ -1985,26 +1992,63 @@ function AdjustmentRulesSection({ tenantId, onRuleCountChange }: { tenantId: str
                 <p className="text-xs font-bold text-gray-600 mb-1">{t("approval_rule.adj_approval_type")}</p>
                 <div className="space-y-1.5">
                   <label className="flex items-center gap-2 cursor-pointer">
-                    <input type="radio" name={`adj-approv-${idx}`} checked={rule.approver_role_code === null}
-                      onChange={() => updateRule(idx, { approver_role_code: null })} className="accent-emerald-600" />
+                    <input type="radio" name={`adj-approv-${idx}`}
+                      checked={rule.approver_role_code === null && rule.approver_position_id === null}
+                      onChange={() => updateRule(idx, { approver_role_code: null, approver_position_id: null, approver_position_title: null })}
+                      className="accent-emerald-600" />
                     <span className="text-xs text-gray-700">{t("approval_rule.adj_self_approve")}</span>
                   </label>
                   <label className="flex items-center gap-2 cursor-pointer">
-                    <input type="radio" name={`adj-approv-${idx}`} checked={rule.approver_role_code !== null}
-                      onChange={() => updateRule(idx, { approver_role_code: rule.approver_role_code ?? "RM" })} className="accent-emerald-600" />
+                    <input type="radio" name={`adj-approv-${idx}`}
+                      checked={rule.approver_role_code !== null || rule.approver_position_id !== null}
+                      onChange={() => {
+                        if (rule.approver_role_code !== null || rule.approver_position_id !== null) return;
+                        const first = allPositions[0];
+                        if (first) {
+                          updateRule(idx, {
+                            approver_position_id: first.id,
+                            approver_position_title: first.title,
+                            approver_role_code: first.role_code,
+                          });
+                        } else {
+                          updateRule(idx, { approver_role_code: "RM", approver_position_id: null });
+                        }
+                      }} className="accent-emerald-600" />
                     <span className="text-xs text-gray-700">{t("approval_rule.adj_route_to")}:</span>
-                    {rule.approver_role_code !== null && (
-                      <select value={rule.approver_role_code} onChange={(e) => updateRule(idx, { approver_role_code: e.target.value })}
-                        className="border border-gray-300 rounded px-2 py-1 text-xs bg-white">
-                        {ADJ_ROLE_CODES.map((rc) => {
-                          const lv = levels.find((l) => l.default_role_code === rc);
-                          return (
-                            <option key={rc} value={rc}>
-                              {lv ? `${lv.role_display_label} (${rc}) — ${lv.level_name} (L${lv.level_number})` : rc}
+                    {(rule.approver_role_code !== null || rule.approver_position_id !== null) && (
+                      allPositions.length > 0 ? (
+                        <select
+                          value={rule.approver_position_id ?? (rule.approver_role_code ? `legacy:${rule.approver_role_code}` : "")}
+                          onChange={(e) => {
+                            const val = e.target.value;
+                            if (val.startsWith("legacy:")) {
+                              updateRule(idx, {
+                                approver_role_code: val.slice("legacy:".length),
+                                approver_position_id: null,
+                                approver_position_title: null,
+                              });
+                              return;
+                            }
+                            const pos = allPositions.find((p) => p.id === val);
+                            updateRule(idx, {
+                              approver_position_id: val,
+                              approver_position_title: pos?.title ?? null,
+                              approver_role_code: pos?.role_code ?? null,
+                            });
+                          }}
+                          className="border border-gray-300 rounded px-2 py-1 text-xs bg-white">
+                          {rule.approver_role_code !== null && rule.approver_position_id === null && (
+                            <option value={`legacy:${rule.approver_role_code}`}>
+                              {t("approval_rule.legacy_role_label").replace("{role}", rule.approver_role_code)}
                             </option>
-                          );
-                        })}
-                      </select>
+                          )}
+                          {allPositions.map((p) => (
+                            <option key={p.id} value={p.id}>{p.display_label}</option>
+                          ))}
+                        </select>
+                      ) : (
+                        <span className="text-xs text-gray-400 italic">{t("approval_rule.no_positions_available")}</span>
+                      )
                     )}
                   </label>
                 </div>
@@ -2078,12 +2122,7 @@ function ApprovalRulesV2Tab({ tenantId }: { tenantId: string }) {
     staleTime: 0,
     enabled:  !!tenantId,
   });
-  const { data: posGroups = [] } = useQuery<NodePositionGroup[]>({
-    queryKey: ["positions", tenantId],
-    queryFn:  () => api.get<NodePositionGroup[]>(`/api/v1/tenants/${tenantId}/positions`),
-    staleTime: 30_000,
-    enabled:  !!tenantId,
-  });
+  const { positions: allPositions } = useTenantPositions(tenantId);
   const { data: savedRules = [], isLoading: rulesLoading } = useQuery<Array<{ id: string; transfer_type_config_id: string; source_level: number | null; destination_level: number | null; quantity_min: number; quantity_max: number | null; value_min: number; value_max: number | null; threshold_type: string; approval_steps: ApprovalStepLocal[]; priority: number; is_active: boolean }>>({
     queryKey: ["transfer-approval-rules", tenantId],
     queryFn:  () => api.get(`/api/v1/tenants/${tenantId}/transfer-approval-rules`),
@@ -2092,7 +2131,6 @@ function ApprovalRulesV2Tab({ tenantId }: { tenantId: string }) {
   });
 
   const activeTypes = ttypes.filter((t) => t.is_active);
-  const allPositions = posGroups.flatMap((g) => g.positions);
 
   // Init active tab and load saved rules
   if (!activeType && activeTypes.length > 0) setActiveType(activeTypes[0]?.id ?? null);
@@ -2107,7 +2145,15 @@ function ApprovalRulesV2Tab({ tenantId }: { tenantId: string }) {
       value_min: r.value_min, value_max: r.value_max,
       threshold_type: (r.threshold_type as "QUANTITY" | "VALUE" | "EITHER" | "BOTH") ?? "QUANTITY",
       priority: r.priority ?? idx,
-      steps: r.approval_steps ?? [],
+      // Legacy rules saved before position_id existed only carry position_title —
+      // resolve to the matching position's id so the dropdown pre-selects it.
+      steps: (r.approval_steps ?? []).map((s) => {
+        if (!s.position_id && s.position_title) {
+          const match = allPositions.find((p) => p.title === s.position_title);
+          if (match) return { ...s, position_id: match.id };
+        }
+        return s;
+      }),
     }));
   }
 
@@ -2312,7 +2358,7 @@ function ApprovalRulesV2Tab({ tenantId }: { tenantId: string }) {
                         updateStep(activeType, rIdx, sIdx, { position_id: e.target.value, position_title: pos?.title ?? "" });
                       }} className="flex-1 min-w-0 border border-gray-300 rounded px-2 py-1 text-xs bg-white">
                         <option value="">— {t("approval_rule.position")} —</option>
-                        {allPositions.map((p) => <option key={p.id} value={p.id}>{p.title} ({p.role_code})</option>)}
+                        {allPositions.map((p) => <option key={p.id} value={p.id}>{p.display_label}</option>)}
                       </select>
                       <select value={step.location} onChange={(e) => updateStep(activeType, rIdx, sIdx, { location: e.target.value })}
                         className="border border-gray-300 rounded px-2 py-1 text-xs bg-white">

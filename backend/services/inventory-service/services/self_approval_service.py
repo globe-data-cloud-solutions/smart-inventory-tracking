@@ -102,26 +102,31 @@ async def check_adjustment_self_approval(
     reason_code: str,
     quantity: Decimal,
     total_value: Decimal,
-) -> tuple[bool, Optional[str]]:
+) -> tuple[bool, Optional[str], Optional[dict]]:
     """Resolve the adjustment self-approval/routing decision for a submission.
 
     Looks up adjustment_approval_rules for the submitter's (role_code, level_number),
     preferring a PER_CODE rule that matches reason_code over a GLOBAL (reason_code IS NULL)
     rule, then by ascending priority.
 
-    Returns (can_self_approve, approver_role_code):
-      (True,  None)        → within limit, no matching approver override → self-approve
-      (False, role_code)   → exceeds limit or rule names a specific approver → route to role_code
-      (False, None)        → no matching rule, or rule exceeded → default routing
+    Returns (can_self_approve, approver_role_code, approver_position):
+      (True,  None, None)              → within limit, no matching approver override → self-approve
+      (False, role_code, None)         → exceeds limit or rule names a specific role → route to role_code
+      (False, "TA", info)              → rule names a position, holder vacant → escalate to TA
+      (False, role_code, info)         → rule names a position with an active holder → route to that
+                                          user (info has approver_user_id/approver_name/approver_position_title);
+                                          role_code is the position's holder role for legacy display
+      (False, None, None)              → no matching rule, or rule exceeded → default routing
     """
     level_number = getattr(user, "level_number", None)
     if level_number is None:
-        return False, None
+        return False, None, None
 
     result = await session.execute(
         text("""
             SELECT
                 approver_role_code,
+                approver_position_id,
                 threshold_type,
                 qty_limit,
                 value_limit,
@@ -151,7 +156,7 @@ async def check_adjustment_self_approval(
 
     # No rule → default routing
     if not rule:
-        return False, None
+        return False, None, None
 
     qty_limit: Optional[Decimal] = (
         Decimal(str(rule.qty_limit)) if rule.qty_limit is not None else None
@@ -166,14 +171,46 @@ async def check_adjustment_self_approval(
 
     if not within_limit:
         # Exceeds limit → default routing
-        return False, None
+        return False, None, None
+
+    if rule.approver_position_id is not None:
+        # Route to the current PRIMARY holder of the named position.
+        holder = (await session.execute(
+            text("""
+                SELECT u.id AS user_id, u.full_name AS user_name,
+                       p.title AS position_title, p.role_code AS position_role_code
+                FROM   personnel_positions pp
+                JOIN   users u     ON u.id = pp.user_id
+                JOIN   positions p ON p.id = pp.position_id
+                WHERE  pp.position_id = :pid
+                  AND  pp.is_active = TRUE
+                  AND  pp.assignment_type = 'PRIMARY'
+                  AND  (pp.valid_until IS NULL OR pp.valid_until >= CURRENT_DATE)
+                LIMIT 1
+            """),
+            {"pid": str(rule.approver_position_id)},
+        )).fetchone()
+
+        if holder is None:
+            # Vacant position — escalate to Tenant Admin
+            return False, "TA", {
+                "approver_position_id": str(rule.approver_position_id),
+                "escalated_vacant_position": True,
+            }
+
+        return False, holder.position_role_code, {
+            "approver_position_id": str(rule.approver_position_id),
+            "approver_user_id": str(holder.user_id),
+            "approver_name": holder.user_name,
+            "approver_position_title": holder.position_title,
+        }
 
     if rule.approver_role_code is None:
         # Self-approve
-        return True, None
+        return True, None, None
     else:
-        # Route to specific role
-        return False, rule.approver_role_code
+        # Route to specific role (legacy)
+        return False, rule.approver_role_code, None
 
 
 async def check_self_approval(

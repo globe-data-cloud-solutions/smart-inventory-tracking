@@ -632,7 +632,7 @@
     "self_approval_qty_limit": "Quantity Limit",
     "self_approval_value_limit": "Value Limit (ETB)",
     "self_approval_unlimited": "Leave empty for unlimited",
-    "self_approval_level_note": "Limits apply to all {role} positions at {level} level.",
+    "self_approval_level_note": "Of-eeyyamuu ofii {position} — {node} (L{level}) tiif.",
     "threshold_quantity": "Quantity",
     "threshold_value": "Value",
     "threshold_either": "Either"
@@ -825,7 +825,13 @@
     "adj_value_limit": "Value Limit",
     "adj_role_code": "Position Role",
     "adj_level": "Level",
-    "adj_select_level": "select position level"
+    "adj_select_level": "select position level",
+    "select_position": "Iddoo filadhu",
+    "position_placeholder": "— iddoo filadhu —",
+    "route_to_position": "Gara iddoo erguu",
+    "no_positions_available": "Kireeffataa kanaaf iddoon hin qophoofne.",
+    "self_approve_unlimited": "Ofii of-mirkaneessuu (daangaa hin qabu)",
+    "legacy_role_label": "{role} (durii — iddoon hin ramadamne)"
   },
   "transfer_panel": {
     "estimated_value": "Estimated value",

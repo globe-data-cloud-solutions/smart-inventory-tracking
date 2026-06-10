@@ -31,6 +31,7 @@ class AdjApprovalRuleIn(BaseModel):
     qty_limit: Optional[Decimal] = None
     value_limit: Optional[Decimal] = None
     approver_role_code: Optional[str] = None
+    approver_position_id: Optional[uuid.UUID] = None
     priority: int = 10
     is_active: bool = True
 
@@ -46,6 +47,8 @@ class AdjApprovalRuleOut(BaseModel):
     qty_limit: Optional[Decimal]
     value_limit: Optional[Decimal]
     approver_role_code: Optional[str]
+    approver_position_id: Optional[uuid.UUID]
+    approver_position_title: Optional[str] = None
     priority: int
     is_active: bool
 
@@ -60,12 +63,14 @@ async def list_adj_approval_rules(
 ) -> SuccessResponse[List[AdjApprovalRuleOut]]:
     rows = (await db.execute(
         text("""
-            SELECT id, tenant_id, role_code, level_number, mode,
-                   reason_code, threshold_type, qty_limit, value_limit,
-                   approver_role_code, priority, is_active
-            FROM   adjustment_approval_rules
-            WHERE  tenant_id = :tid
-            ORDER  BY role_code, level_number, priority
+            SELECT r.id, r.tenant_id, r.role_code, r.level_number, r.mode,
+                   r.reason_code, r.threshold_type, r.qty_limit, r.value_limit,
+                   r.approver_role_code, r.approver_position_id, p.title AS approver_position_title,
+                   r.priority, r.is_active
+            FROM   adjustment_approval_rules r
+            LEFT JOIN positions p ON p.id = r.approver_position_id
+            WHERE  r.tenant_id = :tid
+            ORDER  BY r.role_code, r.level_number, r.priority
         """),
         {"tid": str(tenant_id)},
     )).fetchall()
@@ -78,6 +83,8 @@ async def list_adj_approval_rules(
             threshold_type=r.threshold_type,
             qty_limit=r.qty_limit, value_limit=r.value_limit,
             approver_role_code=r.approver_role_code,
+            approver_position_id=r.approver_position_id,
+            approver_position_title=r.approver_position_title,
             priority=r.priority, is_active=r.is_active,
         )
         for r in rows
@@ -104,11 +111,11 @@ async def upsert_adj_approval_rules(
                 INSERT INTO adjustment_approval_rules
                     (tenant_id, role_code, level_number, mode, reason_code,
                      threshold_type, qty_limit, value_limit,
-                     approver_role_code, priority, is_active)
+                     approver_role_code, approver_position_id, priority, is_active)
                 VALUES
                     (:tid, :role, :level, :mode, :rc,
                      :tt, :qty, :val,
-                     :arc, :prio, :ia)
+                     :arc, :apid, :prio, :ia)
             """),
             {
                 "tid":  tid,
@@ -120,6 +127,7 @@ async def upsert_adj_approval_rules(
                 "qty":  float(rule.qty_limit) if rule.qty_limit is not None else None,
                 "val":  float(rule.value_limit) if rule.value_limit is not None else None,
                 "arc":  rule.approver_role_code,
+                "apid": str(rule.approver_position_id) if rule.approver_position_id else None,
                 "prio": rule.priority,
                 "ia":   rule.is_active,
             },

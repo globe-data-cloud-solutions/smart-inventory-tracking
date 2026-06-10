@@ -68,7 +68,78 @@ class NodePositionGroupOut(BaseModel):
     positions: List[PositionOut]
 
 
+class TenantPositionFlatOut(BaseModel):
+    id: uuid.UUID
+    title: str
+    role_code: str
+    level_number: int
+    level_name: str
+    node_id: uuid.UUID
+    node_name: str
+    display_label: str
+    reports_to_position_id: Optional[uuid.UUID]
+    reports_to_title: Optional[str]
+
+
 # ── Routes ────────────────────────────────────────────────────────────────────
+
+@router.get("/{tenant_id}/positions/flat",
+            response_model=SuccessResponse[List[TenantPositionFlatOut]])
+@require_permission(PERMISSIONS.POSITION_VIEW)
+async def list_positions_flat(
+    tenant_id: uuid.UUID,
+    user=Depends(get_current_user),
+    db: AsyncSession = Depends(get_db_session_for_tenant),
+) -> SuccessResponse[List[TenantPositionFlatOut]]:
+    """Return a flat list of all active positions across all nodes.
+
+    Used by frontend dropdowns that need a single tenant-wide list of
+    positions with enough context (node + level) to disambiguate
+    same-titled positions at different facilities.
+    """
+    rows = (await db.execute(
+        text("""
+            SELECT
+                p.id                    AS position_id,
+                p.title,
+                p.role_code,
+                p.reports_to_position_id,
+                p2.title                AS reports_to_title,
+                n.id                    AS node_id,
+                n.name                  AS node_name,
+                thc.level_number        AS level_number,
+                thc.level_name          AS level_name
+            FROM   positions p
+            JOIN   organization_node n
+                   ON n.id = p.node_id
+            JOIN   tenant_hierarchy_config thc
+                   ON thc.tenant_id = p.tenant_id
+                  AND thc.level_number = n.hierarchy_level
+            LEFT JOIN positions p2
+                   ON p2.id = p.reports_to_position_id
+            WHERE  p.tenant_id = :tid
+              AND  p.is_active = true
+            ORDER  BY thc.level_number, n.name, p.title
+        """),
+        {"tid": str(tenant_id)},
+    )).fetchall()
+
+    return SuccessResponse(data=[
+        TenantPositionFlatOut(
+            id=r.position_id,
+            title=r.title,
+            role_code=r.role_code,
+            level_number=r.level_number,
+            level_name=r.level_name,
+            node_id=r.node_id,
+            node_name=r.node_name,
+            display_label=f"{r.title} ({r.role_code}) — {r.node_name} (L{r.level_number})",
+            reports_to_position_id=r.reports_to_position_id,
+            reports_to_title=r.reports_to_title,
+        )
+        for r in rows
+    ])
+
 
 @router.get("/{tenant_id}/positions",
             response_model=SuccessResponse[List[NodePositionGroupOut]])

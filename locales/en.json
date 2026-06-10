@@ -882,7 +882,7 @@
     "self_approval_qty_limit": "Quantity Limit",
     "self_approval_value_limit": "Value Limit (ETB)",
     "self_approval_unlimited": "Leave empty for unlimited",
-    "self_approval_level_note": "Limits apply to all {role} positions at {level} level.",
+    "self_approval_level_note": "Self-approval for {position} — {node} (L{level}).",
     "threshold_quantity": "Quantity",
     "threshold_value": "Value",
     "threshold_either": "Either"
@@ -1075,7 +1075,13 @@
     "adj_value_limit": "Value Limit",
     "adj_role_code": "Position Role",
     "adj_level": "Level",
-    "adj_select_level": "select position level"
+    "adj_select_level": "select position level",
+    "select_position": "Select position",
+    "position_placeholder": "— select a position —",
+    "route_to_position": "Route to position",
+    "no_positions_available": "No positions configured for this tenant yet.",
+    "self_approve_unlimited": "Self-approve (unlimited)",
+    "legacy_role_label": "{role} (legacy — no position assigned)"
   },
   "login": {
     "quick_access": "Quick Access",

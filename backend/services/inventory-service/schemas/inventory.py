@@ -70,6 +70,8 @@ class TransferOrderResponse(BaseModel):
     currency: Optional[str] = None
     transfer_type_config_id: Optional[uuid.UUID] = None
     is_self_approved: bool = False
+    current_approval_step: Optional[int] = None
+    resolved_approval_steps: Optional[list] = None
 
 
 class TransferActionRequest(BaseModel):

@@ -728,7 +728,7 @@
     "self_approval_qty_limit": "Quantity Limit",
     "self_approval_value_limit": "Value Limit (ETB)",
     "self_approval_unlimited": "Leave empty for unlimited",
-    "self_approval_level_note": "Limits apply to all {role} positions at {level} level.",
+    "self_approval_level_note": "ራስ-ማጽደቅ ለ {position} — {node} (L{level})።",
     "threshold_quantity": "Quantity",
     "threshold_value": "Value",
     "threshold_either": "Either"
@@ -921,7 +921,13 @@
     "adj_value_limit": "Value Limit",
     "adj_role_code": "Position Role",
     "adj_level": "Level",
-    "adj_select_level": "select position level"
+    "adj_select_level": "select position level",
+    "select_position": "ቦታ ይምረጡ",
+    "position_placeholder": "— ቦታ ይምረጡ —",
+    "route_to_position": "ወደ ቦታ ላክ",
+    "no_positions_available": "ለዚህ ተከራይ እስካሁን ምንም ቦታ አልተዋቀረም።",
+    "self_approve_unlimited": "በራስ ማጽደቅ (ያለ ገደብ)",
+    "legacy_role_label": "{role} (ነባር — ምንም ቦታ አልተመደበም)"
   },
   "transfer_panel": {
     "estimated_value": "Estimated value",

@@ -950,6 +950,8 @@ class InventoryService:
                         from_warehouse_id=row.from_warehouse_id,
                         to_warehouse_id=row.to_warehouse_id,
                         created_at=datetime.now(timezone.utc),
+                        current_approval_step=_next_idx + 1,
+                        resolved_approval_steps=_steps,
                     )
                 else:
                     # Final step — persist the approval into the JSONB snapshot,
@@ -1415,7 +1417,7 @@ class InventoryService:
                 {"up": str(unit_price), "tv": str(total_value), "id": str(adjustment_id)},
             )
 
-            can_self_approve, route_to = await check_adjustment_self_approval(
+            can_self_approve, route_to, route_position = await check_adjustment_self_approval(
                 session=self.db,
                 tenant_id=user.tenant_id,
                 user=user,
@@ -1493,19 +1495,22 @@ class InventoryService:
                     total_value=total_value,
                 )
             # Not self-approved — fall through to PENDING_APPROVAL.
-            # Log which role will handle approval so the audit trail is complete.
+            # Log which role/position will handle approval so the audit trail is complete.
             if route_to:
+                audit_context: dict[str, Any] = {
+                    "resource_type": "adjustment",
+                    "resource_id": str(adjustment_id),
+                    "quantity": str(quantity_abs),
+                    "total_value": str(total_value),
+                    "reason_code": row.reason_code,
+                    "required_role": route_to,
+                }
+                if route_position:
+                    audit_context["routed_position"] = route_position
                 await audit_log(
                     user,
                     "adjustment:routed",
-                    {
-                        "resource_type": "adjustment",
-                        "resource_id": str(adjustment_id),
-                        "quantity": str(quantity_abs),
-                        "total_value": str(total_value),
-                        "reason_code": row.reason_code,
-                        "required_role": route_to,
-                    },
+                    audit_context,
                     "CONDITIONAL",
                     f"routed_to:{route_to}",
                 )
