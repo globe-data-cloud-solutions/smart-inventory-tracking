@@ -191,7 +191,7 @@ export function NewAdjustmentPanel({ products, warehouses, orgSlug }: Props) {
           role:          session.role,
           category:      "ADJUSTMENT",
           action:        adj.status === "APPLIED" ? "ADJUSTMENT_APPLIED" : "ADJUSTMENT_SUBMITTED",
-          resourceRef:   key,
+          resourceRef:   adj.adjustment_id,
           resourceType:  "adjustment",
           productName:   selectedP?.name,
           quantityStr:   `${qty > 0 ? "+" : ""}${qty}`,

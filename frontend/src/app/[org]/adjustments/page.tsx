@@ -13,6 +13,7 @@ import { t } from "@/lib/i18n";
 import { formatQty } from "@/lib/utils";
 import { useTenantName } from "@/hooks/useTenantName";
 import { useWarehouses } from "@/hooks/useWarehouses";
+import { useTenantPositions } from "@/hooks/useTenantPositions";
 
 type ApiProduct = {
   id: string; sku: string; name: string; unit: string; pack_size?: number;
@@ -123,6 +124,66 @@ export default function AdjustmentsPage() {
 
   const { warehouses: orgNodeWarehouses } = useWarehouses();
 
+  // Dynamic adjustment-approval-rules helper — shown next to "Show History".
+  const tid = user?.tenantId ?? "";
+
+  interface AdjApprovalRuleOut {
+    id: string;
+    role_code: string;
+    level_number: number;
+    reason_code: string | null;
+    threshold_type: "QUANTITY" | "VALUE";
+    qty_limit: string | null;
+    value_limit: string | null;
+    approver_role_code: string | null;
+    approver_position_id: string | null;
+    approver_position_title: string | null;
+    priority: number;
+    is_active: boolean;
+  }
+  const { data: adjApprovalRules = [] } = useQuery<AdjApprovalRuleOut[]>({
+    queryKey: ["adjustment-approval-rules", tid],
+    queryFn:  () => api.get<AdjApprovalRuleOut[]>(`/api/v1/tenants/${tid}/adjustment-approval-rules`),
+    enabled:  !!tid && isGatewayMode,
+    staleTime: 300_000,
+  });
+
+  interface HierarchyLevel { level_number: number; level_name: string; role_display_label: string | null; default_role_code: string | null; }
+  const { data: hierarchyConfig = [] } = useQuery<HierarchyLevel[]>({
+    queryKey: ["hierarchy-config", tid],
+    queryFn:  () => api.get<HierarchyLevel[]>(`/api/v1/tenants/${tid}/hierarchy/config`),
+    enabled:  !!tid && isGatewayMode,
+    staleTime: 300_000,
+  });
+
+  const { positions: tenantPositions } = useTenantPositions(tid);
+
+  const ruleSummary = useMemo(() => {
+    return adjApprovalRules
+      .filter((r) => r.is_active)
+      .sort((a, b) => a.priority - b.priority)
+      .map((r) => {
+        const level = hierarchyConfig.find((l) => l.level_number === r.level_number);
+        const levelLabel = level?.role_display_label ?? level?.level_name ?? r.role_code;
+
+        let posLabel: string;
+        if (r.approver_position_id) {
+          const pos = tenantPositions.find((p) => p.id === r.approver_position_id);
+          posLabel = pos?.display_label ?? r.approver_position_title ?? r.approver_role_code ?? "TA";
+        } else if (r.approver_role_code) {
+          posLabel = r.approver_role_code;
+        } else {
+          posLabel = t("adjustment.self_approve");
+        }
+
+        const limitText = r.threshold_type === "VALUE"
+          ? (r.value_limit != null ? `> ${formatQty(parseFloat(r.value_limit))}` : "")
+          : (r.qty_limit != null ? `> ${formatQty(parseFloat(r.qty_limit))} units` : "");
+
+        return `${levelLabel} (${limitText}) → ${posLabel}`;
+      });
+  }, [adjApprovalRules, hierarchyConfig, tenantPositions]);
+
   if (org === SA_ORG_SLUG) return <p className="p-8 text-gray-500">{t("sa.select_tenant")}</p>;
   const tenant = DEMO_TENANTS.find((ten) => ten.slug === org);
   if (!tenant && !isGatewayMode) return <p className="p-8 text-gray-500">{t("common.no_data")}</p>;
@@ -224,6 +285,28 @@ export default function AdjustmentsPage() {
           <p className="text-sm text-gray-500 mt-1">{tenantName ?? org} · {t("adjustment.title")}</p>
         </div>
         <div className="flex items-center gap-2">
+          {ruleSummary.length > 0 && (
+            <div className="relative group">
+              <button
+                type="button"
+                title={t("adjustment.rules_hint")}
+                className="w-6 h-6 flex items-center justify-center rounded-full border border-gray-300 text-gray-500 text-xs font-bold hover:bg-gray-50 cursor-pointer"
+              >
+                ⓘ
+              </button>
+              <div className="hidden group-hover:block absolute right-0 top-full mt-1 w-72 bg-white border border-gray-200 rounded-md shadow-lg z-50 p-3 text-xs">
+                <p className="font-bold text-gray-700 mb-1.5">{t("adjustment.rules_hint")}</p>
+                <ul className="space-y-1 text-gray-600">
+                  {ruleSummary.map((line, i) => (
+                    <li key={i}>{line}</li>
+                  ))}
+                </ul>
+                <p className="text-[11px] text-gray-400 mt-2 pt-2 border-t border-gray-100">
+                  {t("approval_rule.no_match_default")}
+                </p>
+              </div>
+            </div>
+          )}
           <button
             onClick={() => setShowHistory((s) => !s)}
             className="text-xs text-gray-500 border border-gray-200 rounded px-2.5 py-1.5 hover:bg-gray-50 cursor-pointer"

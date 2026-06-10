@@ -391,7 +391,10 @@
       "transfer_CANCELLED": "Transfer Cancelled",
       "ADJUSTMENT": "Stock Adjustment",
       "receive_stock": "Stock Received",
-      "issue_stock": "Stock Issued"
+      "issue_stock": "Stock Issued",
+      "ADJUSTMENT_SUBMITTED": "ማስተካከያ ቀርቧል",
+      "ADJUSTMENT_APPLIED": "ማስተካከያ ተተግብሯል",
+      "ADJUSTMENT_APPROVED": "ማስተካከያ ጸድቋል"
     }
   },
   "permissions": {
@@ -465,7 +468,9 @@
     "show_history": "ታሪክ አሳይ",
     "hide_history": "ታሪክ ደብቅ",
     "no_pending": "ምንም አስቸኳይ ማስተካከያዎች የሉም",
-    "no_pending_hint": "ሁሉም ማስተካከያዎች ተፈቅደዋል። ያለፉ መዝገቦችን ለማየት ታሪክን ቀያይሩ።"
+    "no_pending_hint": "ሁሉም ማስተካከያዎች ተፈቅደዋል። ያለፉ መዝገቦችን ለማየት ታሪክን ቀያይሩ።",
+    "rules_hint": "የማጽደቅ ህጎች",
+    "self_approve": "በራስ ማጽደቅ"
   },
   "transfer": {
     "status": {
@@ -915,6 +920,7 @@
     "adj_route_to": "Route to",
     "adj_no_rules": "No adjustment rules configured. All adjustments will follow default approval routing.",
     "adj_rules_note": "Rules are matched by position level and reason code. First matching rule wins. If no rule matches, the default approval routing applies.",
+    "no_match_default": "ምንም ህግ የማይዛመድ ከሆነ ነባሪ የማጽደቅ መስመር ተግባራዊ ይሆናል።",
     "no_rules_warning": "No adjustment approval rules are configured. Adjustments cannot be self-approved and will require manual routing.",
     "no_rules_confirm": "No adjustment approval rules are configured. Leave this tab without adding rules?",
     "adj_qty_limit": "Qty Limit",

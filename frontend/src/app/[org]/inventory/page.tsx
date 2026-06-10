@@ -756,9 +756,20 @@ export default function InventoryPage() {
                         </td>
                         <td className="px-3.5 py-2.5 text-gray-400 text-xs">{p.unit}</td>
                         <td className={`px-3.5 py-2.5 text-right font-bold ${onHand > 0 ? "text-gray-900" : "text-gray-400"}`}>{formatQty(onHand)}</td>
-                        <td className="px-3.5 py-2.5 text-right text-xs text-amber-700">{formatQty(reserved)}</td>
-                        <td className="px-3.5 py-2.5 text-right text-xs text-orange-600">{formatQty(inTransitOut)}</td>
-                        <td className="px-3.5 py-2.5 text-right text-xs text-blue-600">{formatQty(inTransitIn)}</td>
+                        <td className="px-3.5 py-2.5 text-right">
+                          <ExpandCell qty={reserved} cls="text-amber-700 bg-amber-50 border-amber-200" icon="⊘"
+                            onClick={() => setExpandedCell({ productId: p.id, productName: p.name, warehouseId: si.warehouse_id, col: "reserved" })} />
+                        </td>
+                        <td className="px-3.5 py-2.5 text-right">
+                          <ExpandCell qty={inTransitOut} cls="text-red-600 bg-red-50 border-red-200" icon="→"
+                            tooltip={t("inventory.tooltip.in_transit_out")}
+                            onClick={() => setExpandedCell({ productId: p.id, productName: p.name, warehouseId: si.warehouse_id, col: "inTransitOut" })} />
+                        </td>
+                        <td className="px-3.5 py-2.5 text-right">
+                          <ExpandCell qty={inTransitIn} cls="text-blue-600 bg-blue-50 border-blue-200" icon="←"
+                            tooltip={t("inventory.tooltip.in_transit_in")}
+                            onClick={() => setExpandedCell({ productId: p.id, productName: p.name, warehouseId: si.warehouse_id, col: "inTransitIn" })} />
+                        </td>
                         <td className={`px-3.5 py-2.5 text-right text-xs font-semibold ${available > 0 ? "text-emerald-700" : "text-gray-400"}`}>{formatQty(available)}</td>
                         <td className="px-3.5 py-2.5 text-right text-xs text-gray-500">{formatQty(p.reorderPoint)}</td>
                         <td className="px-3.5 py-2.5 text-right text-xs text-gray-600">

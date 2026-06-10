@@ -381,7 +381,10 @@
       "transfer_CANCELLED": "Transfer Cancelled",
       "ADJUSTMENT": "Stock Adjustment",
       "receive_stock": "Stock Received",
-      "issue_stock": "Stock Issued"
+      "issue_stock": "Stock Issued",
+      "ADJUSTMENT_SUBMITTED": "Sirreeffamni Dhihaateera",
+      "ADJUSTMENT_APPLIED": "Sirreeffamni Hojiirra Oolfameera",
+      "ADJUSTMENT_APPROVED": "Sirreeffamni Mirkanaa'eera"
     }
   },
   "permissions": {
@@ -455,7 +458,9 @@
     "show_history": "Seenaa agarsiisi",
     "hide_history": "Seenaa dhoksi",
     "no_pending": "Sirreessiwwan eegama hin jiran",
-    "no_pending_hint": "Sirreessiwwan hundi xumuramaniiru. Galmeewwan darbe ilaaluuf seenaa jijjiiraa."
+    "no_pending_hint": "Sirreessiwwan hundi xumuramaniiru. Galmeewwan darbe ilaaluuf seenaa jijjiiraa.",
+    "rules_hint": "Seerota mirkaneessaa",
+    "self_approve": "Ofiin mirkaneessuu"
   },
   "transfer": {
     "status": {
@@ -819,6 +824,7 @@
     "adj_route_to": "Route to",
     "adj_no_rules": "No adjustment rules configured. All adjustments will follow default approval routing.",
     "adj_rules_note": "Rules are matched by position level and reason code. First matching rule wins. If no rule matches, the default approval routing applies.",
+    "no_match_default": "Yoo seerri tokko hin walqabsiifne, karaan mirkaneessuu durtii ni hojjeta.",
     "no_rules_warning": "No adjustment approval rules are configured. Adjustments cannot be self-approved and will require manual routing.",
     "no_rules_confirm": "No adjustment approval rules are configured. Leave this tab without adding rules?",
     "adj_qty_limit": "Qty Limit",
