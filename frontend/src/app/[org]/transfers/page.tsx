@@ -132,6 +132,7 @@ function getWaitingMessage(
   creatorAuthorityLevel?: number | null,
   getLevelName?: (levelNum: number) => string,
   type?: TransferType,
+  hierarchyLevels?: HierarchyLevel[],
 ): string | null {
   switch (status) {
     case "DRAFT": {
@@ -141,10 +142,11 @@ function getWaitingMessage(
       return `Waiting for ${submitter} to submit`;
     }
     case "PENDING_REVIEW": {
-      // Dynamic: derive reviewer level from creator authority level.
-      // Creator is WM (authority 4) → reviewer is level 3 (LM/RM).
+      // Dynamic: derive reviewer level from creator authority level, mapped
+      // through the tenant's actual configured hierarchy levels (handles
+      // tenants without an LM tier — see getImmediateReviewerLevel).
       if (getLevelName && creatorAuthorityLevel != null && creatorAuthorityLevel > 1) {
-        const reviewerLvl = Math.max(1, creatorAuthorityLevel - 1);
+        const reviewerLvl = getImmediateReviewerLevel(creatorAuthorityLevel, hierarchyLevels);
         return `Awaiting ${getLevelName(reviewerLvl)} review`;
       }
       return "Awaiting review";
@@ -256,6 +258,59 @@ const ROLE_AUTHORITY_LEVEL: Record<string, number> = {
   SA_GT: 5, RT: 5, AU: 5, SYS: 5,
 };
 
+/** Inverse of ROLE_AUTHORITY_LEVEL's primary tiers — used to map a stored
+ * created_by_authority_level (global scale) back to a canonical role code
+ * so it can be located in the tenant's actual hierarchy_config levels. */
+const GLOBAL_AUTHORITY_TO_ROLE: Record<number, string> = {
+  1: "NM", 2: "RM", 3: "LM", 4: "WM",
+};
+
+/** A single level of a tenant's configured org hierarchy (CLAUDE.md §28). */
+interface HierarchyLevel {
+  level_number: number;
+  level_name: string;
+  default_role_code?: string | null;
+}
+
+/**
+ * Resolves the tenant's configured hierarchy level_number for a given role,
+ * by matching default_role_code. Falls back to the global ROLE_AUTHORITY_LEVEL
+ * scale if the tenant hierarchy isn't loaded or has no matching level
+ * (e.g. a 3-level tenant with no LM — see BUG_REPORT.md PENDING_REVIEW fix).
+ */
+function getTenantLevelForRole(role: string, hierarchyLevels?: HierarchyLevel[]): number {
+  const match = hierarchyLevels?.find((l) => l.default_role_code === role);
+  return match?.level_number ?? ROLE_AUTHORITY_LEVEL[role] ?? 4;
+}
+
+/**
+ * Computes the tenant level_number of the immediate reviewer for a transfer
+ * created by a user whose stored authority level is creatorAuthorityLevel
+ * (global ROLE_AUTHORITY_LEVEL scale).
+ *
+ * Maps the creator's global level to their role, finds that role's actual
+ * level_number in the tenant's configured hierarchy, then returns the next
+ * configured level up. This avoids assuming a contiguous 4-level
+ * NM/RM/LM/WM hierarchy — a 3-level tenant (NM/RM/WM, no LM) correctly
+ * resolves a WM creator's reviewer to RM instead of a non-existent LM.
+ */
+function getImmediateReviewerLevel(
+  creatorAuthorityLevel: number,
+  hierarchyLevels?: HierarchyLevel[],
+): number {
+  if (!hierarchyLevels?.length) {
+    return Math.max(1, creatorAuthorityLevel - 1);
+  }
+  const creatorRole = GLOBAL_AUTHORITY_TO_ROLE[creatorAuthorityLevel] ?? "WM";
+  const creatorTenantLevel = getTenantLevelForRole(creatorRole, hierarchyLevels);
+
+  const levelAbove = [...hierarchyLevels]
+    .sort((a, b) => b.level_number - a.level_number)
+    .find((l) => l.level_number < creatorTenantLevel);
+
+  return levelAbove?.level_number ?? 1;
+}
+
 /**
  * Returns the action buttons available to this user for a specific transfer.
  *
@@ -291,6 +346,7 @@ function getAvailableActions(
   createdBy?: string,
   creatorAuthorityLevel?: number,
   canApproveOverride?: boolean,   // from approval-info endpoint; takes precedence when defined
+  hierarchyLevels?: HierarchyLevel[],
 ): Action[] {
   const userLevel = ROLE_AUTHORITY_LEVEL[role] ?? 5;
   if (userLevel >= 5) return [];   // AU/RT/SYS/SA_GT have no transfer authority
@@ -307,13 +363,15 @@ function getAvailableActions(
   const isDstManager = isTenantMgr || isDstWH || isCreator;
 
   // PENDING_REVIEW — only the IMMEDIATE superior of the creator reviews.
-  // immediateReviewerLevel = creatorLevel - 1 (floor at 1).
-  // WM (L4) creator → L3 (LM) reviews. RM (L2) creator → L1 (NM) reviews.
-  // This prevents NM from seeing review buttons on WM-created PULLs (that belongs to RM/LM).
-  const immediateReviewerLevel = Math.max(1, (creatorAuthorityLevel ?? 4) - 1);
+  // immediateReviewerLevel is derived from the creator's stored (global-scale)
+  // authority level, then mapped through the tenant's actual configured
+  // hierarchy levels — handles tenants without an LM tier (3-level orgs),
+  // where a WM creator's reviewer is RM, not a non-existent LM.
+  const immediateReviewerLevel = getImmediateReviewerLevel(creatorAuthorityLevel ?? 4, hierarchyLevels);
+  const userTenantLevel = getTenantLevelForRole(role, hierarchyLevels);
   const canReview = !isCreator
     && creatorAuthorityLevel != null
-    && userLevel === immediateReviewerLevel;
+    && userTenantLevel === immediateReviewerLevel;
 
   // PENDING_APPROVAL — use the approval-info response when available (canApproveOverride).
   // The override reflects the backend's actual required_authority_level which accounts for
@@ -615,9 +673,9 @@ export default function TransfersPage() {
   const tenantId = user?.tenantId ?? "";
   const isGateway = !!process.env.NEXT_PUBLIC_API_URL;
 
-  // Hierarchy config — used for dynamic waiting text (level names per org level).
+  // Hierarchy config — used for dynamic waiting text (level names per org level)
+  // and for mapping global authority levels to this tenant's actual reviewer levels.
   // Fetched once per page load; stale after 5 minutes.
-  interface HierarchyLevel { level_number: number; level_name: string; }
   const { data: hierarchyLevels } = useQuery<HierarchyLevel[]>({
     queryKey: ["hierarchy-config", tenantId],
     queryFn:  () => api.get<HierarchyLevel[]>(`/api/v1/tenants/${tenantId}/hierarchy/config`),
@@ -1066,8 +1124,8 @@ export default function TransfersPage() {
                   ? (approvalInfoCache.current.get(txn.id)
                       ?? qc.getQueryData<ApprovalInfoResponse>(["approval-info", txn.id]))
                   : undefined;
-                const acts    = getAvailableActions(user.role, txn.transfer_type, txn.status, user.warehouseId, txn.from_warehouse_id, txn.to_warehouse_id, txn.quantity, user.id, txn.created_by, txn.created_by_authority_level, cachedApprInfo?.can_approve);
-                const waitMsg = acts.length === 0 ? getWaitingMessage(txn.status, txn.from_warehouse_name, txn.to_warehouse_name, txn.created_by_authority_level, getLevelName, txn.transfer_type) : null;
+                const acts    = getAvailableActions(user.role, txn.transfer_type, txn.status, user.warehouseId, txn.from_warehouse_id, txn.to_warehouse_id, txn.quantity, user.id, txn.created_by, txn.created_by_authority_level, cachedApprInfo?.can_approve, hierarchyLevels);
+                const waitMsg = acts.length === 0 ? getWaitingMessage(txn.status, txn.from_warehouse_name, txn.to_warehouse_name, txn.created_by_authority_level, getLevelName, txn.transfer_type, hierarchyLevels) : null;
                 const busy    = transitioning === txn.id;
                 return (
                   <tr key={txn.id} className={`border-b border-gray-100 ${idx % 2 === 0 ? "bg-white" : "bg-gray-50"}`}>
