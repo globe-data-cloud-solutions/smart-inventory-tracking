@@ -249,42 +249,42 @@ export function AddProductPanel({ apiBase, onClose }: AddProductPanelProps) {
   });
 
   const { data: brandsData } = useQuery<{ id: string; name: string }[]>({
-    queryKey:  ["product-brands"],
+    queryKey:  ["product-brands", org],
     queryFn:   async () => {
       const r = await api.get<unknown>(`${apiBase}/brands/`, token ?? undefined);
       return ((r as { data?: unknown }).data ?? r) as { id: string; name: string }[];
     },
-    enabled:   open && !!token,
+    enabled:   open,
     staleTime: 30_000,
   });
 
   const { data: typeCodesData } = useQuery<TypeCodeOption[]>({
-    queryKey:  ["product-type-codes"],
+    queryKey:  ["product-type-codes", org],
     queryFn:   async () => {
       const r = await api.get<unknown>(`${apiBase}/type-codes/`, token ?? undefined);
       return ((r as { data?: unknown }).data ?? r) as TypeCodeOption[];
     },
-    enabled:   open && !!token,
+    enabled:   open,
     staleTime: 30_000,
   });
 
   const { data: uomsData } = useQuery<{ id: string; name: string }[]>({
-    queryKey:  ["product-uoms"],
+    queryKey:  ["product-uoms", org],
     queryFn:   async () => {
       const r = await api.get<unknown>(`${apiBase}/uoms/`, token ?? undefined);
       return ((r as { data?: unknown }).data ?? r) as { id: string; name: string }[];
     },
-    enabled:   open && !!token,
+    enabled:   open,
     staleTime: 30_000,
   });
 
   const { data: packagingTypesData } = useQuery<PackagingTypeOption[]>({
-    queryKey:  ["product-packaging-types"],
+    queryKey:  ["product-packaging-types", org],
     queryFn:   async () => {
       const r = await api.get<unknown>(`${apiBase}/packaging-types/`, token ?? undefined);
       return ((r as { data?: unknown }).data ?? r) as PackagingTypeOption[];
     },
-    enabled:   open && !!token,
+    enabled:   open,
     staleTime: 30_000,
   });
 
