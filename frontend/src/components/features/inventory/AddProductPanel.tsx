@@ -762,7 +762,7 @@ export function AddProductPanel({ apiBase, onClose }: AddProductPanelProps) {
           </div>
 
           {/* ── Minimum Approval Level ───────────────────────────── */}
-          <div className="border border-gray-200 rounded-md overflow-hidden">
+          <div className="border border-gray-200 rounded-md overflow-hidden flex-shrink-0">
             <div className="px-3.5 py-2.5 bg-gray-50 border-b border-gray-200">
               <span className="text-xs font-bold uppercase tracking-wide text-gray-600">
                 {t("approval.min_level")}
