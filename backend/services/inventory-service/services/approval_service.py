@@ -203,7 +203,7 @@ async def resolve_approval(
             {"pid": product_id, "type": transaction_type},
         )
         pam_row = result.fetchone()
-        if pam_row:
+        if pam_row and pam_row[0] is not None:
             product_min = int(pam_row[0])
 
     # Step 2: quantity-band threshold (SISTER → PULL lookup)

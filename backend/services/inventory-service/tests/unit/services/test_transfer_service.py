@@ -1063,12 +1063,14 @@ def _session_for_transition_with_lines(
     """Session for transition_transfer() branches that need to load lines:
       call 0 — SELECT transfer_orders FOR UPDATE
       call 1 — SELECT transfer_order_lines
-      call 2 — UPDATE transfer_orders SET status
+      call 2 — SELECT product_approval_minimums (Design-B override check; none configured)
+      call 3 — UPDATE transfer_orders SET status
     """
     session = AsyncMock()
     session.execute = AsyncMock(side_effect=[
         MagicMock(fetchone=MagicMock(return_value=transfer_row)),
         MagicMock(fetchall=MagicMock(return_value=lines)),
+        MagicMock(fetchone=MagicMock(return_value=None)),
         MagicMock(),
     ])
     return session
@@ -1653,29 +1655,64 @@ class TestCreateTransferStockCheck:
 def _session_for_pending_approval(
     transfer_row: MagicMock,
     lines: list,
+    transfer_type: str = "PULL",
 ) -> AsyncMock:
-    """Session for transition_transfer() → PENDING_APPROVAL:
+    """Session for transition_transfer() → PENDING_APPROVAL.
+
+    PULL / SISTER (status != DRAFT, or transfer_type != PUSH — the
+    self-approval fast-path at the top of the PENDING_APPROVAL branch is
+    not entered):
       call 0 — SELECT transfer_orders FOR UPDATE
       call 1 — SELECT transfer_order_lines  (RESERVE writes + total_qty)
       call 2 — SELECT transfer_orders       (tv_row: config_id, total_value, created_by)
       call 3 — SELECT transfer_type_config  (fallback config lookup when config_id is None)
-      call 4 — UPDATE transfer_orders       (resolved_approval_steps)
-      call 5 — UPDATE transfer_orders       (status)
+      call 4 — SELECT product_approval_minimums (Design-B override check, routing; none configured)
+      call 5 — UPDATE transfer_orders       (resolved_approval_steps)
+      call 6 — UPDATE transfer_orders       (status)
+
+    PUSH (DRAFT → PENDING_APPROVAL is the submission step; the self-approval
+    fast-path runs first, checks for a Design-B override, finds none, then
+    get_self_approval_decision short-circuits to None since the test users
+    have no level_number — so the fast-path falls through to the normal
+    reservation/routing flow below):
+      call 0 — SELECT transfer_orders FOR UPDATE
+      call 1 — SELECT transfer_order_lines
+      call 2 — SELECT product_approval_minimums (Design-B override check, fast-path; none configured)
+      call 3 — SELECT transfer_orders       (tv_row)
+      call 4 — SELECT transfer_type_config  (fallback config lookup)
+      call 5 — SELECT product_approval_minimums (Design-B override check, routing; none configured)
+      call 6 — UPDATE transfer_orders       (resolved_approval_steps)
+      call 7 — UPDATE transfer_orders       (status)
     """
     tv_row = MagicMock()
     tv_row.transfer_type_config_id = None
     tv_row.total_value             = None
     tv_row.created_by              = "u-creator-000"
 
+    if transfer_type == "PUSH":
+        side_effect = [
+            MagicMock(fetchone=MagicMock(return_value=transfer_row)),  # transfer SELECT
+            MagicMock(fetchall=MagicMock(return_value=lines)),          # lines SELECT
+            MagicMock(fetchone=MagicMock(return_value=None)),           # product override (fast-path) → None
+            MagicMock(fetchone=MagicMock(return_value=tv_row)),         # tv_row SELECT
+            MagicMock(fetchone=MagicMock(return_value=None)),           # fallback config lookup → None
+            MagicMock(fetchone=MagicMock(return_value=None)),           # product override (routing) → None
+            MagicMock(),                                                 # UPDATE approval steps
+            MagicMock(),                                                 # UPDATE status
+        ]
+    else:
+        side_effect = [
+            MagicMock(fetchone=MagicMock(return_value=transfer_row)),  # transfer SELECT
+            MagicMock(fetchall=MagicMock(return_value=lines)),          # lines SELECT
+            MagicMock(fetchone=MagicMock(return_value=tv_row)),         # tv_row SELECT
+            MagicMock(fetchone=MagicMock(return_value=None)),           # fallback config lookup → None
+            MagicMock(fetchone=MagicMock(return_value=None)),           # product override (routing) → None
+            MagicMock(),                                                 # UPDATE approval steps
+            MagicMock(),                                                 # UPDATE status
+        ]
+
     session = AsyncMock()
-    session.execute = AsyncMock(side_effect=[
-        MagicMock(fetchone=MagicMock(return_value=transfer_row)),  # transfer SELECT
-        MagicMock(fetchall=MagicMock(return_value=lines)),          # lines SELECT
-        MagicMock(fetchone=MagicMock(return_value=tv_row)),         # tv_row SELECT
-        MagicMock(fetchone=MagicMock(return_value=None)),           # fallback config lookup → None
-        MagicMock(),                                                 # UPDATE approval steps
-        MagicMock(),                                                 # UPDATE status
-    ])
+    session.execute = AsyncMock(side_effect=side_effect)
     return session
 
 
@@ -1766,7 +1803,7 @@ class TestWMSReservationTiming:
 
         line     = _make_line(quantity=75.0)
         xfer_row = _make_transfer_row("DRAFT", transfer_type="PUSH")
-        session  = _session_for_pending_approval(xfer_row, [line])
+        session  = _session_for_pending_approval(xfer_row, [line], transfer_type="PUSH")
 
         captured: list = []
         with patch("services.inventory_service.write_transfer_ledger_entry",

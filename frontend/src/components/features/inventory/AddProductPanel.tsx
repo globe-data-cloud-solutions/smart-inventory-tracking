@@ -5,6 +5,8 @@ import { useParams } from "next/navigation";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import { getToken } from "@/lib/auth";
+import { getSession } from "@/lib/demo-auth";
+import { useTenantPositions } from "@/hooks/useTenantPositions";
 import { t } from "@/lib/i18n";
 
 // ── small presentational helpers ─────────────────────────────────────────────
@@ -179,8 +181,10 @@ interface AddProductPanelProps { apiBase: string; onClose?: () => void; categori
 
 export function AddProductPanel({ apiBase, onClose }: AddProductPanelProps) {
   const { org = "admin" } = useParams<{ org: string }>();
-  const token = getToken();
-  const qc    = useQueryClient();
+  const token   = getToken();
+  const session = getSession();
+  const qc      = useQueryClient();
+  const { positions } = useTenantPositions(org);
 
   // ── form state ─────────────────────────────────────────────────────────
   const [open, setOpen]             = useState(false);
@@ -218,10 +222,31 @@ export function AddProductPanel({ apiBase, onClose }: AddProductPanelProps) {
     { key: "RECEIVE",    label: "Receive Stock" },
     { key: "ISSUE",      label: "Issue Stock" },
   ] as const;
-  type MinimumRow = { transaction_type: string; min_authority_level: string };
-  const [minimumRows, setMinimumRows] = useState<MinimumRow[]>(
-    MIN_TX_TYPES.map((tx) => ({ transaction_type: tx.key, min_authority_level: "" }))
-  );
+  type ThresholdType = "ALWAYS" | "QUANTITY" | "VALUE";
+  type MinimumRow = {
+    transaction_type:     string;
+    min_authority_level:  string;
+    override_enabled:     boolean;
+    threshold_type:       ThresholdType;
+    qty_threshold:        string;
+    value_threshold:      string;
+    approver_position_id: string;
+    note:                 string;
+  };
+  const emptyMinimumRows = (): MinimumRow[] =>
+    MIN_TX_TYPES.map((tx) => ({
+      transaction_type:     tx.key,
+      min_authority_level:  "",
+      override_enabled:     false,
+      threshold_type:       "ALWAYS",
+      qty_threshold:        "",
+      value_threshold:      "",
+      approver_position_id: "",
+      note:                 "",
+    }));
+  const [minimumRows, setMinimumRows] = useState<MinimumRow[]>(emptyMinimumRows());
+  const updateMinimumRow = (i: number, patch: Partial<MinimumRow>) =>
+    setMinimumRows((rows) => rows.map((r, idx) => (idx === i ? { ...r, ...patch } : r)));
 
   // ── error state ────────────────────────────────────────────────────────
   const [nameErr, setNameErr]       = useState("");
@@ -289,13 +314,18 @@ export function AddProductPanel({ apiBase, onClose }: AddProductPanelProps) {
   });
 
   // ── Hierarchy levels for approval minimum dropdown ────────────────────
+  // NOTE: must NOT gate on `!!token` — getToken() reads a sessionStorage key
+  // that this app's demo-auth session never populates, so `token` is always
+  // null and the query never ran, leaving the dropdown permanently empty.
+  // api.get() falls back to the session JWT internally (see lib/api.ts),
+  // matching the other lookups above which use `enabled: open`.
   const { data: hierarchyLevels = [] } = useQuery<HierarchyLevelInfo[]>({
     queryKey:  ["hierarchy-config", org],
     queryFn:   async () => {
       const r = await api.get<unknown>(`/api/v1/tenants/${org}/hierarchy/config`, token ?? undefined);
       return ((r as { data?: unknown }).data ?? r) as HierarchyLevelInfo[];
     },
-    enabled:   open && !!token,
+    enabled:   open,
     staleTime: 60_000,
   });
 
@@ -307,35 +337,9 @@ export function AddProductPanel({ apiBase, onClose }: AddProductPanelProps) {
       const r = await api.get<unknown>(`/api/v1/tenants/${org}/approval-rules`, token ?? undefined);
       return ((r as { data?: unknown }).data ?? r) as TenantRulePreview[];
     },
-    enabled:   open && !!token,
+    enabled:   open,
     staleTime: 60_000,
   });
-
-  // ── Pre-populate from latest product minimums ──────────────────────────
-  type LatestMinimumsResp = { minimums: { transaction_type: string; min_authority_level: number }[] };
-  const { data: latestMinimumsData } = useQuery<LatestMinimumsResp>({
-    queryKey:  ["product-minimums-latest", apiBase],
-    queryFn:   async () => {
-      const r = await api.get<unknown>(`${apiBase}/approval-minimums/latest`, token ?? undefined);
-      return ((r as { data?: unknown }).data ?? r) as LatestMinimumsResp;
-    },
-    enabled:   open && !!token,
-    staleTime: 60_000,
-  });
-
-  useEffect(() => {
-    if (!latestMinimumsData?.minimums?.length) return;
-    setMinimumRows((prev) =>
-      prev.map((row) => {
-        const match = latestMinimumsData.minimums.find(
-          (m) => m.transaction_type === row.transaction_type
-        );
-        if (!match) return row;
-        return { ...row, min_authority_level: String(match.min_authority_level) };
-      })
-    );
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [latestMinimumsData]);
 
   // ── SKU preview via /next-sku?type_code=BRD ────────────────────────────
   const { data: skuPreviewData, isFetching: skuLoading } = useQuery<{ sku: string; counter: number | null }>({
@@ -395,7 +399,7 @@ export function AddProductPanel({ apiBase, onClose }: AddProductPanelProps) {
     setUpp("1"); setReorder(""); setSkuOvr(""); setSkuEditing(false);
     setCostPrice(""); setCurrency("ETB");
     setNameErr(""); setTcErr(""); setCatErr(""); setPanelError("");
-    setMinimumRows(MIN_TX_TYPES.map((tx) => ({ transaction_type: tx.key, min_authority_level: "" })));
+    setMinimumRows(emptyMinimumRows());
   };
 
   const openPanel  = () => { resetForm(); setOpen(true); };
@@ -435,16 +439,33 @@ export function AddProductPanel({ apiBase, onClose }: AddProductPanelProps) {
         token ?? undefined,
       );
 
-      // Save product-level approval minimums if any were set
-      const filledMinimums = minimumRows.filter((r) => r.min_authority_level !== "");
+      // Save product-level approval minimums / overrides if any were set.
+      // An override is only persisted if a position has been chosen — the
+      // backend's check_product_override() requires approver_position_id
+      // IS NOT NULL, so a checked-but-unconfigured override is dropped here
+      // rather than sent as a half-configured row.
+      const filledMinimums = minimumRows.filter(
+        (r) => r.min_authority_level !== "" || (r.override_enabled && r.approver_position_id !== "")
+      );
       if (filledMinimums.length > 0) {
         await api.put<unknown>(
           `${apiBase}/${product.id}/approval-minimums`,
           {
-            entries: filledMinimums.map((r) => ({
-              transaction_type:    r.transaction_type,
-              min_authority_level: Number(r.min_authority_level),
-            })),
+            entries: filledMinimums.map((r) => {
+              const overrideActive = r.override_enabled && r.approver_position_id !== "";
+              return {
+                transaction_type:     r.transaction_type,
+                min_authority_level: r.min_authority_level !== "" ? Number(r.min_authority_level) : undefined,
+                override_enabled:    overrideActive,
+                threshold_type:      r.threshold_type,
+                qty_threshold:       overrideActive && r.threshold_type === "QUANTITY" && r.qty_threshold !== ""
+                                       ? Number(r.qty_threshold) : undefined,
+                value_threshold:     overrideActive && r.threshold_type === "VALUE" && r.value_threshold !== ""
+                                       ? Number(r.value_threshold) : undefined,
+                approver_position_id: overrideActive ? r.approver_position_id : undefined,
+                note:                 overrideActive && r.note.trim() ? r.note.trim() : undefined,
+              };
+            }),
           },
           token ?? undefined,
         );
@@ -458,7 +479,6 @@ export function AddProductPanel({ apiBase, onClose }: AddProductPanelProps) {
       void qc.invalidateQueries({ queryKey: ["product-uoms"] });
       void qc.invalidateQueries({ queryKey: ["product-packaging-types"] });
       void qc.invalidateQueries({ queryKey: ["next-sku"] });
-      void qc.invalidateQueries({ queryKey: ["product-minimums-latest"] });
       resetForm(); setOpen(false); onClose?.();
     } catch (err) {
       const e = err as Error & { status?: number; code?: string };
@@ -761,83 +781,183 @@ export function AddProductPanel({ apiBase, onClose }: AddProductPanelProps) {
             <p className="text-[11px] text-gray-400 mt-1">{t("product.cost_price_hint")}</p>
           </div>
 
-          {/* ── Minimum Approval Level ───────────────────────────── */}
-          <div className="border border-gray-200 rounded-md overflow-hidden flex-shrink-0">
-            <div className="px-3.5 py-2.5 bg-gray-50 border-b border-gray-200">
-              <span className="text-xs font-bold uppercase tracking-wide text-gray-600">
-                {t("approval.min_level")}
-              </span>
-              <p className="text-[11px] text-gray-400 mt-0.5">
-                Set a floor approval level per transaction type regardless of quantity thresholds.
-              </p>
-            </div>
-            <div className="px-3.5 py-3 space-y-3">
-              <table className="w-full text-xs border-collapse">
-                <thead>
-                  <tr className="text-gray-500">
-                    <th className="text-left py-1 pr-2 font-semibold w-[48%]">Transaction Type</th>
-                    <th className="text-left py-1 font-semibold">Minimum Approver</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {MIN_TX_TYPES.map((tx, i) => (
-                    <tr key={tx.key} className="border-t border-gray-100">
-                      <td className="py-1.5 pr-2 text-gray-700 font-medium">{tx.label}</td>
-                      <td className="py-1.5">
-                        <select
-                          value={minimumRows[i]?.min_authority_level ?? ""}
-                          onChange={(e) =>
-                            setMinimumRows((rows) =>
-                              rows.map((r, idx) =>
-                                idx === i ? { ...r, min_authority_level: e.target.value } : r
-                              )
-                            )
-                          }
-                          className="w-full px-2 py-1 text-xs border border-gray-300 rounded bg-white outline-none cursor-pointer"
-                        >
-                          <option value="">{t("approval.use_thresholds")}</option>
-                          {hierarchyLevels.map((lv) => (
-                            <option
-                              key={lv.default_role_code}
-                              value={String(ROLE_AUTH_MAP[lv.default_role_code] ?? 4)}
-                            >
-                              {lv.level_name} ({lv.role_display_label})
-                            </option>
-                          ))}
-                        </select>
-                      </td>
+          {/* ── Minimum Approval Level (TA only) ─────────────────── */}
+          {session?.role === "TA" && (
+            <div className="border border-gray-200 rounded-md overflow-hidden flex-shrink-0">
+              <div className="px-3.5 py-2.5 bg-gray-50 border-b border-gray-200">
+                <span className="text-xs font-bold uppercase tracking-wide text-gray-600">
+                  {t("approval.min_level")}
+                </span>
+                <p className="text-[11px] text-gray-400 mt-0.5">
+                  Set a floor approval level per transaction type regardless of quantity thresholds.
+                </p>
+                <p className="text-[10px] text-gray-400 mt-1 italic">{t("product.ta_only_notice")}</p>
+              </div>
+              <div className="px-3.5 py-3 space-y-3">
+                <table className="w-full text-xs border-collapse">
+                  <thead>
+                    <tr className="text-gray-500">
+                      <th className="text-left py-1 pr-2 font-semibold w-[48%]">Transaction Type</th>
+                      <th className="text-left py-1 font-semibold">Minimum Approver</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
+                  </thead>
+                  <tbody>
+                    {MIN_TX_TYPES.map((tx, i) => (
+                      <tr key={tx.key} className="border-t border-gray-100">
+                        <td className="py-1.5 pr-2 text-gray-700 font-medium">{tx.label}</td>
+                        <td className="py-1.5">
+                          <select
+                            value={minimumRows[i]?.min_authority_level ?? ""}
+                            onChange={(e) => updateMinimumRow(i, { min_authority_level: e.target.value })}
+                            className="w-full px-2 py-1 text-xs border border-gray-300 rounded bg-white outline-none cursor-pointer"
+                          >
+                            <option value="">{t("approval.use_thresholds")}</option>
+                            {hierarchyLevels.map((lv) => (
+                              <option
+                                key={lv.default_role_code}
+                                value={String(ROLE_AUTH_MAP[lv.default_role_code] ?? 4)}
+                              >
+                                {lv.level_name} ({lv.role_display_label})
+                              </option>
+                            ))}
+                          </select>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
 
-              {tenantDefaultRules.length > 0 && (
-                <div className="pt-2 border-t border-gray-100">
-                  <p className="text-[10px] text-gray-400 font-semibold uppercase tracking-wide mb-1">
-                    {t("approval.tenant_defaults")}
-                  </p>
-                  <div className="text-[10px] text-gray-400 space-y-0.5">
-                    {(["PULL", "PUSH", "ADJUSTMENT"] as const).map((tx) => {
-                      const rules = tenantDefaultRules.filter((r) => r.transaction_type === tx);
-                      if (!rules.length) return null;
-                      const summary = rules
-                        .map((r) =>
-                          r.max_quantity != null
-                            ? `${r.approver_role} <${r.max_quantity}`
-                            : `${r.approver_role}+`
-                        )
-                        .join(" | ");
-                      return (
-                        <p key={tx}>
-                          <span className="font-medium text-gray-500">{tx}:</span> {summary}
-                        </p>
-                      );
-                    })}
+                {tenantDefaultRules.length > 0 && (
+                  <div className="pt-2 border-t border-gray-100">
+                    <p className="text-[10px] text-gray-400 font-semibold uppercase tracking-wide mb-1">
+                      {t("approval.tenant_defaults")}
+                    </p>
+                    <div className="text-[10px] text-gray-400 space-y-0.5">
+                      {(["PULL", "PUSH", "ADJUSTMENT"] as const).map((tx) => {
+                        const rules = tenantDefaultRules.filter((r) => r.transaction_type === tx);
+                        if (!rules.length) return null;
+                        const summary = rules
+                          .map((r) =>
+                            r.max_quantity != null
+                              ? `${r.approver_role} <${r.max_quantity}`
+                              : `${r.approver_role}+`
+                          )
+                          .join(" | ");
+                        return (
+                          <p key={tx}>
+                            <span className="font-medium text-gray-500">{tx}:</span> {summary}
+                          </p>
+                        );
+                      })}
+                    </div>
                   </div>
+                )}
+              </div>
+
+              {/* ── Per-product approval overrides (Design B) ──────── */}
+              <div className="px-3.5 py-3 border-t border-gray-200 space-y-2.5">
+                <div>
+                  <span className="text-xs font-bold uppercase tracking-wide text-gray-600">
+                    {t("product.approval_override_title")}
+                  </span>
+                  <p className="text-[11px] text-gray-400 mt-0.5">
+                    {t("product.approval_override_desc")}
+                  </p>
                 </div>
-              )}
+
+                {MIN_TX_TYPES.map((tx, i) => {
+                  const row = minimumRows[i];
+                  if (!row) return null;
+                  return (
+                    <div key={tx.key} className="border border-gray-100 rounded p-2.5 space-y-2">
+                      <label className="flex items-center gap-2 text-xs font-semibold text-gray-700 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={row.override_enabled}
+                          onChange={(e) => updateMinimumRow(i, { override_enabled: e.target.checked })}
+                        />
+                        {tx.label} — {t("product.enable_override")}
+                      </label>
+
+                      {row.override_enabled && (
+                        <div className="pl-5 space-y-2">
+                          <div className="flex flex-col gap-1.5">
+                            {(["ALWAYS", "QUANTITY", "VALUE"] as const).map((mode) => (
+                              <label key={mode} className="flex items-center gap-2 text-[11px] text-gray-600">
+                                <input
+                                  type="radio"
+                                  name={`override-trigger-${tx.key}`}
+                                  checked={row.threshold_type === mode}
+                                  onChange={() => updateMinimumRow(i, { threshold_type: mode })}
+                                />
+                                {mode === "ALWAYS" && t("product.trigger_always")}
+                                {mode === "QUANTITY" && (
+                                  <>
+                                    {t("product.trigger_quantity")}
+                                    <input
+                                      type="number"
+                                      min="0"
+                                      step="1"
+                                      value={row.qty_threshold}
+                                      onFocus={() => updateMinimumRow(i, { threshold_type: "QUANTITY" })}
+                                      onChange={(e) => updateMinimumRow(i, { threshold_type: "QUANTITY", qty_threshold: e.target.value })}
+                                      className="w-20 px-1.5 py-0.5 border border-gray-300 rounded text-[11px] outline-none"
+                                    />
+                                    {unit.trim() || "units"}
+                                  </>
+                                )}
+                                {mode === "VALUE" && (
+                                  <>
+                                    {t("product.trigger_value")}
+                                    <input
+                                      type="number"
+                                      min="0"
+                                      step="0.01"
+                                      value={row.value_threshold}
+                                      onFocus={() => updateMinimumRow(i, { threshold_type: "VALUE" })}
+                                      onChange={(e) => updateMinimumRow(i, { threshold_type: "VALUE", value_threshold: e.target.value })}
+                                      className="w-24 px-1.5 py-0.5 border border-gray-300 rounded text-[11px] outline-none"
+                                    />
+                                    {currency}
+                                  </>
+                                )}
+                              </label>
+                            ))}
+                          </div>
+
+                          <div>
+                            <label className="block text-[11px] font-semibold text-gray-500 mb-0.5">
+                              {t("product.requires_approval_from")}
+                            </label>
+                            <select
+                              value={row.approver_position_id}
+                              onChange={(e) => updateMinimumRow(i, { approver_position_id: e.target.value })}
+                              className="w-full px-2 py-1 text-xs border border-gray-300 rounded bg-white outline-none cursor-pointer"
+                            >
+                              <option value="">— {t("receive_panel.select_type")} —</option>
+                              {positions.map((p) => (
+                                <option key={p.id} value={p.id}>
+                                  {p.title} ({p.node_name})
+                                </option>
+                              ))}
+                            </select>
+                          </div>
+
+                          <input
+                            value={row.note}
+                            onChange={(e) => updateMinimumRow(i, { note: e.target.value })}
+                            placeholder={t("product.override_note_placeholder")}
+                            maxLength={255}
+                            className="w-full px-2 py-1 text-xs border border-gray-300 rounded outline-none"
+                          />
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
             </div>
-          </div>
+          )}
         </div>
 
         {/* Footer */}

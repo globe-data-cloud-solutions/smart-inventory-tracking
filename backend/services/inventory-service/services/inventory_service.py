@@ -18,6 +18,7 @@ from shared.outbox.writer import write_to_outbox
 from services.approval_service import resolve_approval, ROLE_AUTHORITY_LEVEL
 from services.self_approval_service import (
     check_adjustment_self_approval,
+    check_product_override,
     check_self_approval,
     get_self_approval_decision,
 )
@@ -44,6 +45,106 @@ from shared.permissions.audit import audit_log
 
 # Reason codes that always deduct stock — service forces negative quantity regardless of input sign
 _FORCE_NEGATIVE_REASONS: frozenset[str] = frozenset({"DAMAGE", "EXPIRY", "SUPPLIER_RETURN"})
+
+
+async def _resolve_product_override(
+    db: Any,
+    tenant_id: str,
+    lines: Any,
+    transaction_type: str,
+    quantity: Decimal,
+    total_value: Decimal,
+) -> Optional[dict]:
+    """Check each line's product for an active Design-B approval override.
+
+    Returns the first override found (by line order), or None if no line's
+    product has an active override that fires for this quantity/value.
+    Takes precedence over self-approval and normal position routing — see
+    check_product_override() in self_approval_service.py.
+    """
+    for line in lines:
+        override = await check_product_override(
+            session=db,
+            tenant_id=tenant_id,
+            product_id=str(line.product_id),
+            transaction_type=transaction_type,
+            quantity=quantity,
+            total_value=total_value,
+        )
+        if override is not None:
+            override = dict(override)
+            override["product_id"] = str(line.product_id)
+            return override
+    return None
+
+
+async def _apply_product_override_flag(
+    db: Any,
+    user: Any,
+    resource_type: str,
+    resource_id: Any,
+    override: dict,
+) -> None:
+    """Set product_override_applied=TRUE and write the override audit log entry.
+
+    resource_type is "transfer" or "adjustment" — selects the table updated
+    and the audit action name (transfer:product_override_required /
+    adjustment:product_override_required).
+    """
+    table = "transfer_orders" if resource_type == "transfer" else "adjustment_orders"
+    await db.execute(
+        text(f"UPDATE {table} SET product_override_applied = TRUE, updated_at = now() "
+             f"WHERE id = :id"),
+        {"id": str(resource_id)},
+    )
+
+    product_row = (await db.execute(
+        text("SELECT name FROM products WHERE id = :pid AND tenant_id = :tid"),
+        {"pid": override["product_id"], "tid": str(user.tenant_id)},
+    )).fetchone()
+
+    await audit_log(
+        user=user,
+        action=f"{resource_type}:product_override_required",
+        resource={
+            "resource_type": resource_type,
+            "resource_id": str(resource_id),
+            "product_id": override["product_id"],
+            "product_name": product_row.name if product_row else None,
+            "required_approver_position_id": override.get("approver_position_id"),
+            "required_approver_title": override.get("approver_title"),
+            "threshold_type": override.get("threshold_type"),
+            "note": override.get("note"),
+        },
+        decision="CONDITIONAL",
+        reason="product_override_required",
+    )
+
+
+def _override_resolution_steps(override: dict) -> list[dict]:
+    """Build a single-step resolved_approval_steps list from a product override.
+
+    Mirrors the shape produced by approval_service.ResolvedStep.to_dict() so
+    _check_can_approve() routes correctly: caller must match
+    assigned_to_user_id (sequential mode), or be escalated to TA if the
+    position is vacant.
+    """
+    is_vacant = override.get("approver_user_id") is None
+    return [{
+        "sequence":            1,
+        "position_title":      override.get("approver_title") or "Designated Approver",
+        "position_id":         override.get("approver_position_id"),
+        "node_id":             None,
+        "assigned_to_user_id": override.get("approver_user_id"),
+        "assigned_to_name":    override.get("approver_name"),
+        "execution_mode":      "sequential",
+        "sla_hours":           None,
+        "is_vacant":           is_vacant,
+        "escalated":           is_vacant,
+        "status":              "pending",
+        "all_holders":         [],
+        "holder_count":        0 if is_vacant else 1,
+    }]
 
 
 async def _check_can_approve(
@@ -627,15 +728,29 @@ class InventoryService:
             except Exception:
                 total_value_pull = Decimal("0")
 
-            _self_approval_policy_pull = await get_self_approval_decision(
-                session=self.db,
-                tenant_id=str(user.tenant_id),
-                user_role=str(user.role),
-                level_number=getattr(user, "level_number", None),
-                transfer_type=transfer_type,
-                quantity=total_qty,
-                total_value=total_value_pull,
+            # Product override (Design B) — takes precedence over self-approval.
+            # If any line's product has an active override that fires for this
+            # quantity/value, skip self-approval entirely; the named approver
+            # position will be enforced when normal routing is resolved at
+            # PENDING_APPROVAL.
+            _product_override_pull = await _resolve_product_override(
+                self.db, str(user.tenant_id), lines, transfer_type, total_qty, total_value_pull,
             )
+            if _product_override_pull is not None:
+                await _apply_product_override_flag(
+                    self.db, user, "transfer", transfer_id, _product_override_pull,
+                )
+                _self_approval_policy_pull = None
+            else:
+                _self_approval_policy_pull = await get_self_approval_decision(
+                    session=self.db,
+                    tenant_id=str(user.tenant_id),
+                    user_role=str(user.role),
+                    level_number=getattr(user, "level_number", None),
+                    transfer_type=transfer_type,
+                    quantity=total_qty,
+                    total_value=total_value_pull,
+                )
             if _self_approval_policy_pull is not None:
                 for line in lines:
                     await write_transfer_ledger_entry(
@@ -722,15 +837,25 @@ class InventoryService:
                 except Exception:
                     total_value_push = Decimal("0")
 
-                _self_approval_policy_push = await get_self_approval_decision(
-                    session=self.db,
-                    tenant_id=str(user.tenant_id),
-                    user_role=str(user.role),
-                    level_number=getattr(user, "level_number", None),
-                    transfer_type=transfer_type,
-                    quantity=total_qty,
-                    total_value=total_value_push,
+                # Product override (Design B) — takes precedence over self-approval.
+                _product_override_push = await _resolve_product_override(
+                    self.db, str(user.tenant_id), lines, transfer_type, total_qty, total_value_push,
                 )
+                if _product_override_push is not None:
+                    await _apply_product_override_flag(
+                        self.db, user, "transfer", transfer_id, _product_override_push,
+                    )
+                    _self_approval_policy_push = None
+                else:
+                    _self_approval_policy_push = await get_self_approval_decision(
+                        session=self.db,
+                        tenant_id=str(user.tenant_id),
+                        user_role=str(user.role),
+                        level_number=getattr(user, "level_number", None),
+                        transfer_type=transfer_type,
+                        quantity=total_qty,
+                        total_value=total_value_push,
+                    )
                 if _self_approval_policy_push is not None:
                     for line in lines:
                         await write_transfer_ledger_entry(
@@ -834,23 +959,41 @@ class InventoryService:
                 if cfg_fallback:
                     config_id_for_res = str(cfg_fallback.id)
 
-            resolution = await _resolve_approvers(
-                session=self.db,
-                tenant_id=str(user.tenant_id),
-                transfer_type_config_id=config_id_for_res,
-                from_warehouse_id=str(row.from_warehouse_id),
-                to_warehouse_id=str(row.to_warehouse_id),
-                quantity=total_qty,
-                total_value=tv_for_res,
-                created_by=created_by_for_res,
+            # Product override (Design B) takes precedence over normal position
+            # routing — if a prior step already flagged this transfer (or any
+            # line's product carries an active override that now fires), route
+            # directly to the override's approver position instead of calling
+            # resolve_transfer_approvers().
+            _product_override_routing = await _resolve_product_override(
+                self.db, str(user.tenant_id), lines, transfer_type, total_qty,
+                tv_for_res if tv_for_res is not None else Decimal("0"),
             )
+            if _product_override_routing is not None:
+                if not getattr(row, "product_override_applied", False):
+                    await _apply_product_override_flag(
+                        self.db, user, "transfer", transfer_id, _product_override_routing,
+                    )
+                resolved_steps = _override_resolution_steps(_product_override_routing)
+            else:
+                resolution = await _resolve_approvers(
+                    session=self.db,
+                    tenant_id=str(user.tenant_id),
+                    transfer_type_config_id=config_id_for_res,
+                    from_warehouse_id=str(row.from_warehouse_id),
+                    to_warehouse_id=str(row.to_warehouse_id),
+                    quantity=total_qty,
+                    total_value=tv_for_res,
+                    created_by=created_by_for_res,
+                )
+                resolved_steps = _json.loads(resolution.steps_as_json())
+
             await self.db.execute(
                 text(
                     "UPDATE transfer_orders "
                     "SET resolved_approval_steps = :steps, current_approval_step = 1 "
                     "WHERE id = :id"
                 ).bindparams(bindparam("steps", type_=types.JSON)),
-                {"steps": _json.loads(resolution.steps_as_json()), "id": str(transfer_id)},
+                {"steps": resolved_steps, "id": str(transfer_id)},
             )
 
         # APPROVED: authority check → hard deduction per line → auto-approve notification.
@@ -1417,14 +1560,39 @@ class InventoryService:
                 {"up": str(unit_price), "tv": str(total_value), "id": str(adjustment_id)},
             )
 
-            can_self_approve, route_to, route_position = await check_adjustment_self_approval(
+            # Product override (Design B) — takes precedence over self-approval
+            # and normal adjustment routing.
+            _product_override_adj = await check_product_override(
                 session=self.db,
-                tenant_id=user.tenant_id,
-                user=user,
-                reason_code=row.reason_code,
+                tenant_id=str(user.tenant_id),
+                product_id=str(row.product_id),
+                transaction_type="ADJUSTMENT",
                 quantity=quantity_abs,
                 total_value=total_value,
             )
+            if _product_override_adj is not None:
+                _product_override_adj = dict(_product_override_adj)
+                _product_override_adj["product_id"] = str(row.product_id)
+                await _apply_product_override_flag(
+                    self.db, user, "adjustment", adjustment_id, _product_override_adj,
+                )
+                can_self_approve = False
+                route_to = _product_override_adj.get("approver_role_code")
+                route_position = {
+                    "approver_position_id":   _product_override_adj.get("approver_position_id"),
+                    "approver_user_id":       _product_override_adj.get("approver_user_id"),
+                    "approver_name":          _product_override_adj.get("approver_name"),
+                    "approver_position_title": _product_override_adj.get("approver_title"),
+                }
+            else:
+                can_self_approve, route_to, route_position = await check_adjustment_self_approval(
+                    session=self.db,
+                    tenant_id=user.tenant_id,
+                    user=user,
+                    reason_code=row.reason_code,
+                    quantity=quantity_abs,
+                    total_value=total_value,
+                )
 
             if can_self_approve:
                 quantity = (

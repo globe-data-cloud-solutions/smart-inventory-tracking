@@ -167,7 +167,8 @@
     "none": "None",
     "unknown": "Unknown",
     "unassigned": "Unassigned",
-    "success": "Saved successfully"
+    "success": "Saved successfully",
+    "transaction": "transaction"
   },
   "product": {
     "add": {
@@ -237,7 +238,19 @@
     "discontinue_has_pending": "Cannot discontinue — pending transfers exist. Complete or cancel them first.",
     "discontinued_badge": "Discontinued",
     "reactivate_success": "Product reactivated successfully",
-    "discontinue_success": "Product discontinued successfully"
+    "discontinue_success": "Product discontinued successfully",
+    "approval_override_title": "Approval Override",
+    "approval_override_desc": "Bypass self-approval and normal routing — require approval from a specific position.",
+    "enable_override": "Enable override for this transaction type",
+    "trigger_always": "Always require approval",
+    "trigger_quantity": "Quantity at or above",
+    "trigger_value": "Value at or above",
+    "requires_approval_from": "Requires approval from",
+    "override_note_placeholder": "Optional note shown to the approver",
+    "ta_only_notice": "Visible to Tenant Admins only",
+    "override_always": "Requires approval from {approver} for every {transaction}.",
+    "override_quantity": "Requires approval from {approver} when quantity is at least {threshold}.",
+    "override_value": "Requires approval from {approver} when value is at least {threshold}."
   },
   "lang": {
     "label": "Language",

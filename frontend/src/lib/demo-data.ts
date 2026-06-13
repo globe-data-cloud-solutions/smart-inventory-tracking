@@ -18,6 +18,15 @@ export interface DemoWarehouse {
   level_number?: number;
 }
 
+// Design-B per-product approval override summary — see
+// backend/services/product-service/schemas/product.py ProductApprovalOverride.
+export interface ProductApprovalOverride {
+  mode: "ALWAYS" | "QUANTITY" | "VALUE";
+  threshold?: number | string | null;
+  approver_label?: string | null;
+  note?: string | null;
+}
+
 export interface DemoProduct {
   id: string;
   name: string;
@@ -30,6 +39,7 @@ export interface DemoProduct {
   shortName?: string;
   description?: string;
   is_discontinued?: boolean;
+  approval_overrides?: Record<string, ProductApprovalOverride>;
 }
 
 export interface DemoUser {

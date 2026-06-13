@@ -33,6 +33,7 @@ from shared.utils.responses import SuccessResponse
 from schemas.product import (
     ApprovalMinimumEntry, ApprovalMinimumResponse,
     ApprovalMinimumsUpsertRequest, ProductApprovalMinimumsResponse,
+    ProductApprovalOverride,
     ApprovalRuleEntry, ApprovalRuleResponse,
     ApprovalRulesUpsertRequest, ProductApprovalRulesResponse,
     BrandCreateRequest, BrandResponse,
@@ -121,6 +122,38 @@ async def list_products(
             {"tid": str(user.tenant_id), "active_only": active_only},
         )
     rows = result.fetchall()
+
+    # Computed approval_overrides — Design-B per-product overrides (migration 050),
+    # keyed by product_id then transaction_type. Consumed by NewTransferPanel /
+    # NewAdjustmentPanel (PART F) to render the lock icon + tooltip.
+    overrides_by_product: dict[str, dict[str, ProductApprovalOverride]] = {}
+    if rows:
+        override_rows = (await db.execute(
+            text("""
+                SELECT pam.product_id, pam.transaction_type, pam.threshold_type,
+                       pam.qty_threshold, pam.value_threshold, pam.note,
+                       pos.title AS approver_title
+                FROM   product_approval_minimums pam
+                LEFT JOIN positions pos ON pos.id = pam.approver_position_id
+                WHERE  pam.tenant_id = :tid
+                  AND  pam.is_active = TRUE
+                  AND  pam.approver_position_id IS NOT NULL
+            """),
+            {"tid": str(user.tenant_id)},
+        )).fetchall()
+        for o in override_rows:
+            threshold = o.qty_threshold if o.threshold_type == "QUANTITY" else (
+                o.value_threshold if o.threshold_type == "VALUE" else None
+            )
+            overrides_by_product.setdefault(str(o.product_id), {})[o.transaction_type] = (
+                ProductApprovalOverride(
+                    mode=o.threshold_type,
+                    threshold=threshold,
+                    approver_label=o.approver_title,
+                    note=o.note,
+                )
+            )
+
     return SuccessResponse(
         data=[
             {
@@ -140,6 +173,10 @@ async def list_products(
                 "type_code":        r.type_code,
                 "packaging_type":   r.packaging_type,
                 "units_per_package": r.units_per_package,
+                "approval_overrides": {
+                    tx: o.model_dump(mode="json")
+                    for tx, o in overrides_by_product.get(str(r.id), {}).items()
+                },
             }
             for r in rows
         ]
@@ -1021,11 +1058,15 @@ async def _read_approval_minimums(
 ) -> ProductApprovalMinimumsResponse:
     rows = (await db.execute(
         text("""
-            SELECT id, transaction_type, min_authority_level, created_by,
-                   created_at, updated_at
-            FROM   product_approval_minimums
-            WHERE  product_id = :pid AND tenant_id = :tid
-            ORDER BY transaction_type
+            SELECT pam.id, pam.transaction_type, pam.min_authority_level,
+                   pam.threshold_type, pam.qty_threshold, pam.value_threshold,
+                   pam.approver_position_id, pam.note, pam.is_active,
+                   pos.title AS approver_title,
+                   pam.created_by, pam.created_at, pam.updated_at
+            FROM   product_approval_minimums pam
+            LEFT JOIN positions pos ON pos.id = pam.approver_position_id
+            WHERE  pam.product_id = :pid AND pam.tenant_id = :tid
+            ORDER BY pam.transaction_type
         """),
         {"pid": product_id, "tid": tenant_id},
     )).fetchall()
@@ -1037,6 +1078,13 @@ async def _read_approval_minimums(
                 product_id=uuid.UUID(product_id),
                 transaction_type=r.transaction_type,
                 min_authority_level=r.min_authority_level,
+                override_enabled=bool(r.is_active and r.approver_position_id is not None),
+                threshold_type=r.threshold_type,
+                qty_threshold=r.qty_threshold,
+                value_threshold=r.value_threshold,
+                approver_position_id=uuid.UUID(str(r.approver_position_id)) if r.approver_position_id else None,
+                approver_label=r.approver_title,
+                note=r.note,
                 created_by=uuid.UUID(str(r.created_by)),
                 created_at=r.created_at,
                 updated_at=r.updated_at,
@@ -1070,10 +1118,11 @@ async def upsert_product_approval_minimums(
     user=Depends(get_current_user),
     db: AsyncSession = Depends(get_db_session),
 ) -> SuccessResponse[ProductApprovalMinimumsResponse]:
-    """Replace all product-level authority floor overrides.
+    """Replace all product-level approval configuration (authority floor + Design-B override).
 
-    Entries with min_authority_level=None delete the override for that tx_type.
-    Send an empty list to clear all overrides.
+    An entry is persisted only if min_authority_level is not None OR
+    override_enabled is True; otherwise any existing row for that tx_type is
+    dropped. Send an empty list to clear all overrides.
     Audit log written in the same transaction (CLAUDE.md §8, §14).
     """
     tid = str(user.tenant_id)
@@ -1087,23 +1136,34 @@ async def upsert_product_approval_minimums(
     )
 
     for entry in body.entries:
-        if entry.min_authority_level is None:
+        if entry.min_authority_level is None and not entry.override_enabled:
             continue
         await db.execute(
             text("""
                 INSERT INTO product_approval_minimums
                   (tenant_id, product_id, transaction_type, min_authority_level,
+                   threshold_type, qty_threshold, value_threshold,
+                   approver_position_id, note, is_active,
                    created_by, created_at, updated_at)
                 VALUES
-                  (:tid, :pid, :tx_type, :min_auth, :by, :now, :now)
+                  (:tid, :pid, :tx_type, :min_auth,
+                   :threshold_type, :qty_threshold, :value_threshold,
+                   :approver_position_id, :note, :is_active,
+                   :by, :now, :now)
             """),
             {
-                "tid":      tid,
-                "pid":      pid,
-                "tx_type":  entry.transaction_type,
-                "min_auth": entry.min_authority_level,
-                "by":       str(user.user_id),
-                "now":      now,
+                "tid":                  tid,
+                "pid":                  pid,
+                "tx_type":              entry.transaction_type,
+                "min_auth":             entry.min_authority_level,
+                "threshold_type":       entry.threshold_type,
+                "qty_threshold":        entry.qty_threshold,
+                "value_threshold":      entry.value_threshold,
+                "approver_position_id": str(entry.approver_position_id) if entry.approver_position_id else None,
+                "note":                 entry.note,
+                "is_active":            entry.override_enabled,
+                "by":                   str(user.user_id),
+                "now":                  now,
             },
         )
 

@@ -156,7 +156,8 @@
     "none": "None",
     "unknown": "Unknown",
     "unassigned": "Unassigned",
-    "success": "Saved successfully"
+    "success": "Saved successfully",
+    "transaction": "daldala"
   },
   "product": {
     "add": {
@@ -226,7 +227,19 @@
     "discontinue_has_pending": "Dhaabuun hin danda'amu — jijjiirraaleen eeggatan jiru.",
     "discontinued_badge": "Dhaabame",
     "reactivate_success": "Meeshaan hojii jalqabe",
-    "discontinue_success": "Meeshaan dhaabame"
+    "discontinue_success": "Meeshaan dhaabame",
+    "approval_override_title": "Mirkaneessuu Cabsaa",
+    "approval_override_desc": "Mirkaneessuu ofii fi karaa idileef darbii, iddoo hojii murtaa'e irraa mirkaneessuu gaafadhu.",
+    "enable_override": "Gosa daldalaa kanaaf cabsaa banaa",
+    "trigger_always": "Yeroo hunda mirkaneessuu gaafadhu",
+    "trigger_quantity": "Hanga yoo xiqqaate",
+    "trigger_value": "Gatii yoo xiqqaate",
+    "requires_approval_from": "Mirkaneessuu irraa kan barbaachisu",
+    "override_note_placeholder": "Yaada filannoo mirkaneessaaf agarsiifamu",
+    "ta_only_notice": "Bulchaa Kiraa qofaaf kan mul'atu",
+    "override_always": "Daldala {transaction} hundaaf {approver} irraa mirkaneessuu gaafata.",
+    "override_quantity": "Hangi yoo xiqqaate {threshold} ta'e {approver} irraa mirkaneessuu gaafata.",
+    "override_value": "Gatiin yoo xiqqaate {threshold} ta'e {approver} irraa mirkaneessuu gaafata."
   },
   "lang": {
     "label": "Afaan",

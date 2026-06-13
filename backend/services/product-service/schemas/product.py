@@ -268,15 +268,34 @@ class ProductApprovalRulesResponse(BaseModel):
 # ── product approval minimums ─────────────────────────────────────────────────
 
 _VALID_MIN_TX_TYPES = {"PULL", "PUSH", "ADJUSTMENT", "SISTER", "RECEIVE", "ISSUE"}
+_VALID_THRESHOLD_TYPES = {"ALWAYS", "QUANTITY", "VALUE"}
 
 
 class ApprovalMinimumEntry(BaseModel):
-    """One per-product, per-transaction-type authority floor override.
+    """One per-product, per-transaction-type approval configuration row.
 
-    min_authority_level=None in a PUT request deletes the override for that tx_type.
+    Combines two independent mechanisms that share the same
+    product_approval_minimums row (CLAUDE.md migration 050):
+
+      - min_authority_level: authority-floor override (legacy, unchanged).
+        None deletes/omits the authority floor for this tx_type.
+      - override_enabled + threshold_type/qty_threshold/value_threshold/
+        approver_position_id/note: Design-B precedence override consulted by
+        check_product_override(). override_enabled=False means no Design-B
+        override is configured for this tx_type.
+
+    A row is persisted only if min_authority_level is not None OR
+    override_enabled is True; otherwise any existing row for this tx_type
+    is deleted.
     """
-    transaction_type:    str
-    min_authority_level: Optional[int] = Field(default=None, ge=1, le=5)
+    transaction_type:     str
+    min_authority_level:  Optional[int] = Field(default=None, ge=1, le=5)
+    override_enabled:     bool = False
+    threshold_type:       str = "ALWAYS"
+    qty_threshold:        Optional[Decimal] = Field(default=None, ge=0)
+    value_threshold:      Optional[Decimal] = Field(default=None, ge=0)
+    approver_position_id: Optional[uuid.UUID] = None
+    note:                 Optional[str] = None
 
     @field_validator("transaction_type", mode="before")
     @classmethod
@@ -285,28 +304,54 @@ class ApprovalMinimumEntry(BaseModel):
             return v.upper()
         raise ValueError(f"transaction_type must be one of {sorted(_VALID_MIN_TX_TYPES)}")
 
+    @field_validator("threshold_type", mode="before")
+    @classmethod
+    def validate_threshold_type(cls, v: object) -> object:
+        if isinstance(v, str) and v.upper() in _VALID_THRESHOLD_TYPES:
+            return v.upper()
+        raise ValueError(f"threshold_type must be one of {sorted(_VALID_THRESHOLD_TYPES)}")
+
 
 class ApprovalMinimumsUpsertRequest(BaseModel):
     """PUT /products/{product_id}/approval-minimums body.
 
-    Send an empty list to clear all product-level authority floor overrides.
-    Entries with min_authority_level=None delete the override for that tx_type.
+    Send an empty list to clear all product-level approval configuration.
     """
     entries: list[ApprovalMinimumEntry] = Field(default_factory=list)
 
 
 class ApprovalMinimumResponse(BaseModel):
     """One row from product_approval_minimums."""
-    id:                  uuid.UUID
-    product_id:          uuid.UUID
-    transaction_type:    str
-    min_authority_level: int
-    created_by:          uuid.UUID
-    created_at:          datetime
-    updated_at:          datetime
+    id:                   uuid.UUID
+    product_id:           uuid.UUID
+    transaction_type:     str
+    min_authority_level:  Optional[int] = None
+    override_enabled:     bool = False
+    threshold_type:       str = "ALWAYS"
+    qty_threshold:        Optional[Decimal] = None
+    value_threshold:      Optional[Decimal] = None
+    approver_position_id: Optional[uuid.UUID] = None
+    approver_label:       Optional[str] = None
+    note:                 Optional[str] = None
+    created_by:           uuid.UUID
+    created_at:           datetime
+    updated_at:           datetime
 
 
 class ProductApprovalMinimumsResponse(BaseModel):
     """Response from GET/PUT /products/{id}/approval-minimums."""
     product_id: uuid.UUID
     minimums:   list[ApprovalMinimumResponse]
+
+
+class ProductApprovalOverride(BaseModel):
+    """Computed Design-B override summary for one transaction type.
+
+    Included in GET /products/ list responses as `approval_overrides`,
+    keyed by transaction_type. Consumed by NewTransferPanel /
+    NewAdjustmentPanel (PART F) to render the lock icon + tooltip.
+    """
+    mode:           str  # ALWAYS | QUANTITY | VALUE
+    threshold:      Optional[Decimal] = None
+    approver_label: Optional[str] = None
+    note:           Optional[str] = None

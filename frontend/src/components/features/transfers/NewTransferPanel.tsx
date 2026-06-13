@@ -9,7 +9,7 @@ import { useAuditStore } from "@/lib/audit-log-state";
 import { getSession } from "@/lib/demo-auth";
 import { t } from "@/lib/i18n";
 import { formatQty } from "@/lib/utils";
-import type { DemoProduct, DemoWarehouse } from "@/lib/demo-data";
+import type { DemoProduct, DemoWarehouse, ProductApprovalOverride } from "@/lib/demo-data";
 
 function getAncestorScope(warehouseId: string, warehouses: DemoWarehouse[]): string[] {
   const ancestors: string[] = [];
@@ -71,7 +71,28 @@ function stockTier(avail: number, reorderPoint: number): 0 | 1 | 2 {
   return 0;
 }
 
-interface ProductOption { id: string; name: string; sku: string; avail: number; tier: 0 | 1 | 2; sourceKnown: boolean; }
+interface ProductOption { id: string; name: string; sku: string; avail: number; tier: 0 | 1 | 2; sourceKnown: boolean; override?: ProductApprovalOverride; }
+
+// Builds the lock-icon tooltip text for a Design-B per-product approval override.
+function overrideTooltip(o: ProductApprovalOverride): string {
+  const approver = o.approver_label ?? t("common.unknown");
+  let text: string;
+  if (o.mode === "QUANTITY") {
+    text = t("product.override_quantity")
+      .replace("{approver}", approver)
+      .replace("{threshold}", formatQty(Number(o.threshold ?? 0)));
+  } else if (o.mode === "VALUE") {
+    text = t("product.override_value")
+      .replace("{approver}", approver)
+      .replace("{threshold}", String(o.threshold ?? ""));
+  } else {
+    text = t("product.override_always")
+      .replace("{approver}", approver)
+      .replace("{transaction}", t("common.transaction"));
+  }
+  if (o.note) text += ` — ${o.note}`;
+  return text;
+}
 
 function ProductSelect({ options, value, onChange }: { options: ProductOption[]; value: string; onChange: (id: string) => void; }) {
   const [open, setOpen] = useState(false);
@@ -96,6 +117,9 @@ function ProductSelect({ options, value, onChange }: { options: ProductOption[];
               {selected.name}
             </span>
             <span className="text-gray-400 text-[11px] ml-1.5">{selected.sku}</span>
+            {selected.override && (
+              <span className="ml-1.5" title={overrideTooltip(selected.override)}>🔒</span>
+            )}
           </span>
         ) : (
           <span className="text-gray-400 flex-1">— {t("receive_panel.select_product")} —</span>
@@ -115,6 +139,9 @@ function ProductSelect({ options, value, onChange }: { options: ProductOption[];
                   {o.name}
                 </span>
                 <span className="text-gray-400 text-[11px] ml-1.5">{o.sku}</span>
+                {o.override && (
+                  <span className="ml-1.5" title={overrideTooltip(o.override)}>🔒</span>
+                )}
               </span>
               {o.sourceKnown && (
                 <span className={`text-[11px] font-bold shrink-0 px-1.5 py-0.5 rounded ${TIER_TEXT[o.tier]} ${TIER_BG[o.tier]}`}>
@@ -240,7 +267,7 @@ export function NewTransferPanel({ products, warehouses, orgSlug }: Props) {
   const estimatedValue = unitPrice && qty > 0 ? unitPrice * qty : undefined;
 
   const productOptions: ProductOption[] = [...products]
-    .map((p) => { const base = effectiveFrom ? (p.stock[effectiveFrom] ?? 0) : 0; const avail = effectiveFrom ? getAvailable(p.id, effectiveFrom, base) : 0; return { id: p.id, name: p.name, sku: p.sku, avail, tier: effectiveFrom ? stockTier(avail, p.reorderPoint) : 0, sourceKnown: !!effectiveFrom } as ProductOption; })
+    .map((p) => { const base = effectiveFrom ? (p.stock[effectiveFrom] ?? 0) : 0; const avail = effectiveFrom ? getAvailable(p.id, effectiveFrom, base) : 0; return { id: p.id, name: p.name, sku: p.sku, avail, tier: effectiveFrom ? stockTier(avail, p.reorderPoint) : 0, sourceKnown: !!effectiveFrom, override: p.approval_overrides?.[form.transferType] } as ProductOption; })
     .sort((a, b) => a.tier - b.tier || a.name.localeCompare(b.name));
 
   async function doCreate(skipStockCheck: boolean) {
@@ -334,6 +361,14 @@ export function NewTransferPanel({ products, warehouses, orgSlug }: Props) {
 
           <Field label={t("table.product")} hint={effectiveFrom ? t("transfer_panel.color_hint") : t("transfer_panel.select_source_first")}>
             <ProductSelect options={productOptions} value={form.productId} onChange={(id) => setField("productId", id)} />
+            {(() => {
+              const override = productOptions.find((o) => o.id === form.productId)?.override;
+              return override ? (
+                <p className="text-xs text-amber-700 mt-1.5 flex items-start gap-1">
+                  <span>🔒</span><span>{overrideTooltip(override)}</span>
+                </p>
+              ) : null;
+            })()}
           </Field>
 
           <Field label={isPull || isSister ? t("transfer_panel.from_supply") : t("inventory.transfer.from_warehouse")} hint={fromIsLocked ? t("transfer_panel.your_facility") : undefined}>

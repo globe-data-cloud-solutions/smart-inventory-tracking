@@ -5,7 +5,7 @@ import { useState, useRef, useEffect } from "react";
 import Link from "next/link";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { getSession, SA_ORG_SLUG } from "@/lib/demo-auth";
-import { DEMO_TENANTS, type DemoProduct, type DemoWarehouse } from "@/lib/demo-data";
+import { DEMO_TENANTS, type DemoProduct, type DemoWarehouse, type ProductApprovalOverride } from "@/lib/demo-data";
 import { NewTransferPanel } from "@/components/features/transfers/NewTransferPanel";
 import { useInventoryStore } from "@/lib/inventory-state";
 import { useAuditStore } from "@/lib/audit-log-state";
@@ -37,6 +37,7 @@ interface ApiProduct {
   id: string; sku: string; name: string; type_code: string;
   unit: string; pack_size: number; created_at: string;
   category?: string; on_hand?: number; reorder_point?: number; warehouse_id?: string | null;
+  approval_overrides?: Record<string, ProductApprovalOverride>;
 }
 
 interface ApiStockRow {
@@ -823,6 +824,7 @@ export default function TransfersPage() {
     batchTracking: false,
     reorderPoint:  p.reorder_point ?? 0,
     stock:         stockByProductId.get(p.id) ?? {},
+    approval_overrides: p.approval_overrides,
   }));
 
   // Prefer org-node list (has level_number for canPush + all nodes regardless of stock).

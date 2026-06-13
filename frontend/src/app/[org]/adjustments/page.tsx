@@ -4,7 +4,7 @@ import { useState, useMemo } from "react";
 import { useParams } from "next/navigation";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { getSession, SA_ORG_SLUG } from "@/lib/demo-auth";
-import { DEMO_TENANTS, type DemoTenant, type DemoProduct } from "@/lib/demo-data";
+import { DEMO_TENANTS, type DemoTenant, type DemoProduct, type ProductApprovalOverride } from "@/lib/demo-data";
 import { NewAdjustmentPanel } from "@/components/features/inventory/NewAdjustmentPanel";
 import { useInventoryStore } from "@/lib/inventory-state";
 import { useAuditStore } from "@/lib/audit-log-state";
@@ -19,6 +19,7 @@ type ApiProduct = {
   id: string; sku: string; name: string; unit: string; pack_size?: number;
   reorder_point?: number | null; category?: string | null;
   is_discontinued?: boolean;
+  approval_overrides?: Record<string, ProductApprovalOverride>;
 };
 
 type AdjStatus = "DRAFT" | "PENDING_APPROVAL" | "APPROVED" | "POSTED" | "REJECTED" | "CANCELLED";
@@ -203,6 +204,7 @@ export default function AdjustmentsPage() {
         batchTracking: false,
         reorderPoint: p.reorder_point ?? 0,
         stock: adjStockByProductId.get(p.id) ?? {},
+        approval_overrides: p.approval_overrides,
       }))
     : (tenant?.products ?? []);
   const panelWarehouses = isGatewayMode

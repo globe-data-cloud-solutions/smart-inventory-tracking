@@ -213,6 +213,98 @@ async def check_adjustment_self_approval(
         return False, rule.approver_role_code, None
 
 
+async def check_product_override(
+    session: AsyncSession,
+    tenant_id: Any,
+    product_id: Any,
+    transaction_type: str,
+    quantity: Decimal,
+    total_value: Decimal,
+) -> Optional[dict]:
+    """Resolve the Design-B per-product approval override for one transaction.
+
+    Reads the Design-B columns added by migration 050 on
+    product_approval_minimums (threshold_type, qty_threshold, value_threshold,
+    approver_position_id, note, is_active). This is independent of, and takes
+    precedence over, the min_authority_level authority-floor mechanism
+    (Step 1 of approval_service.resolve_approval()) — both columns live on the
+    same row but are consulted by different code paths.
+
+    Only rows with is_active = TRUE and approver_position_id IS NOT NULL
+    represent a Design-B override; rows that exist purely for
+    min_authority_level are ignored here.
+
+    Trigger evaluation:
+      ALWAYS    — always applies.
+      QUANTITY  — applies when quantity >= qty_threshold (threshold NULL → never applies).
+      VALUE     — applies when total_value >= value_threshold (threshold NULL → never applies).
+
+    Returns None if no active override is configured for this product +
+    transaction_type, or if the configured trigger does not fire for this
+    quantity/value. Otherwise returns a dict:
+      {
+        "approver_position_id": str,
+        "approver_role_code":    str | None,   # role of the position's current holder
+        "approver_user_id":      str | None,   # current PRIMARY holder, if any
+        "approver_name":         str | None,
+        "approver_title":        str,          # position title — used for audit/UI
+        "note":                  str | None,
+        "threshold_type":        str,          # ALWAYS | QUANTITY | VALUE
+    """
+    result = await session.execute(
+        text("""
+            SELECT threshold_type, qty_threshold, value_threshold,
+                   approver_position_id, note
+            FROM   product_approval_minimums
+            WHERE  tenant_id = :tid
+              AND  product_id = :pid
+              AND  transaction_type = :tx_type
+              AND  is_active = TRUE
+              AND  approver_position_id IS NOT NULL
+            LIMIT 1
+        """),
+        {"tid": str(tenant_id), "pid": str(product_id), "tx_type": transaction_type},
+    )
+    row = result.fetchone()
+    if not row:
+        return None
+
+    if row.threshold_type == "QUANTITY":
+        if row.qty_threshold is None or quantity < Decimal(str(row.qty_threshold)):
+            return None
+    elif row.threshold_type == "VALUE":
+        if row.value_threshold is None or total_value < Decimal(str(row.value_threshold)):
+            return None
+    # ALWAYS — no threshold check, always applies.
+
+    holder = (await session.execute(
+        text("""
+            SELECT u.id AS user_id, u.full_name AS user_name,
+                   p.title AS position_title, p.role_code AS position_role_code
+            FROM   positions p
+            LEFT JOIN personnel_positions pp
+                   ON  pp.position_id = p.id
+                   AND pp.is_active = TRUE
+                   AND pp.assignment_type = 'PRIMARY'
+                   AND (pp.valid_until IS NULL OR pp.valid_until >= CURRENT_DATE)
+            LEFT JOIN users u ON u.id = pp.user_id
+            WHERE  p.id = :pid
+            LIMIT 1
+        """),
+        {"pid": str(row.approver_position_id)},
+    )).fetchone()
+
+    return {
+        "approver_position_id": str(row.approver_position_id),
+        "approver_role_code":   holder.position_role_code if holder else None,
+        "approver_user_id":     str(holder.user_id) if holder and holder.user_id else None,
+        "approver_name":        holder.user_name if holder else None,
+        "approver_title":       holder.position_title if holder else None,
+        "note":                 row.note,
+        "threshold_type":       row.threshold_type,
+    }
+
+
 async def check_self_approval(
     session: AsyncSession,
     tenant_id: str,

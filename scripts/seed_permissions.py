@@ -26,6 +26,7 @@ ROLE_PERMISSION_MATRIX: dict[str, dict[str, str]] = {
         "product:create": "FULL", "product:view": "FULL", "product:list": "FULL",
         "product:update": "FULL", "product:import_bulk": "FULL",
         "product:read_next_sku": "FULL",
+        "product:manage_approval_minimums": "FULL",
         "inventory:receive": "FULL", "inventory:adjust": "CONDITIONAL",
         "inventory:transfer": "FULL", "inventory:cycle_count": "FULL",
         "inventory:view": "FULL", "inventory:view_ledger": "FULL",

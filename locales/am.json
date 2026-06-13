@@ -155,7 +155,8 @@
     "none": "None",
     "unknown": "Unknown",
     "unassigned": "Unassigned",
-    "success": "Saved successfully"
+    "success": "Saved successfully",
+    "transaction": "ግብይት"
   },
   "not_found": {
     "heading": "ገጽ አልተገኘም",
@@ -231,7 +232,19 @@
     "discontinue_has_pending": "ማስቆም አይቻልም — ያልተጠናቀቁ ዝውውሮች አሉ።",
     "discontinued_badge": "ወጥቷል",
     "reactivate_success": "ምርቱ እንደገና ንቁ ሆኗል",
-    "discontinue_success": "ምርቱ ታስቋል"
+    "discontinue_success": "ምርቱ ታስቋል",
+    "approval_override_title": "የማረጋገጫ ምስለት",
+    "approval_override_desc": "ራስ-ማረጋገጫን እና መደበኛ ሂደትን በማለፍ ከተወሰነ ሥራ ቦታ ማረጋገጫ ይጠይቁ።",
+    "enable_override": "ለዚህ የግብይት አይነት ምስለት አንቃ",
+    "trigger_always": "ሁልጊዜ ማረጋገጫ ይጠይቅ",
+    "trigger_quantity": "ብዛት ቢያንስ",
+    "trigger_value": "ዋጋ ቢያንስ",
+    "requires_approval_from": "ማረጋገጫ ያስፈልጋል ከ",
+    "override_note_placeholder": "ለአረጋጊው የሚታይ አማራጭ ማስታወሻ",
+    "ta_only_notice": "ለተከራይ አስተዳዳሪዎች ብቻ የሚታይ",
+    "override_always": "ለ{transaction} ሁልጊዜ ከ{approver} ማረጋገጫ ይጠይቃል።",
+    "override_quantity": "ብዛቱ ቢያንስ {threshold} ሲሆን ከ{approver} ማረጋገጫ ይጠይቃል።",
+    "override_value": "ዋጋው ቢያንስ {threshold} ሲሆን ከ{approver} ማረጋገጫ ይጠይቃል።"
   },
   "lang": {
     "label": "ቋንቋ",
