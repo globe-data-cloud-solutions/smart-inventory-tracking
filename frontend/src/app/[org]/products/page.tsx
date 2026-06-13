@@ -3,23 +3,36 @@
 import { useMemo, useState } from "react";
 import { useParams } from "next/navigation";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { SA_ORG_SLUG } from "@/lib/demo-auth";
+import { getSession, SA_ORG_SLUG } from "@/lib/demo-auth";
 import { DEMO_TENANTS } from "@/lib/demo-data";
 import { usePermission } from "@/hooks/usePermission";
 import { useInventoryStore } from "@/lib/inventory-state";
-import { AddProductPanel } from "@/components/features/inventory/AddProductPanel";
+import { AddProductPanel, type EditProductData } from "@/components/features/inventory/AddProductPanel";
 import { api } from "@/lib/api";
 import { t } from "@/lib/i18n";
 import { useTenantName } from "@/hooks/useTenantName";
 
-type ApiProduct = { id: string; sku: string; name: string; unit: string; pack_size: number; category?: string | null; is_discontinued?: boolean; };
+type ApiProduct = {
+  id: string; sku: string; name: string; unit: string; pack_size: number;
+  category?: string | null; is_discontinued?: boolean; is_controlled?: boolean;
+  short_name?: string | null; description?: string | null; type_code?: string | null;
+  brand?: string | null; packaging_type?: string | null; units_per_package?: number | null;
+  reorder_point?: number | string | null; unit_price?: number | string | null; currency?: string | null;
+};
 type StockItem   = { product_id: string; current_stock: string; };
-type Row        = { id: string; sku: string; name: string; category: string; unit: string; packSize: string; balance: number; batchTracking: boolean; isNew: boolean; isActive: boolean; is_discontinued: boolean; };
+type Row        = {
+  id: string; sku: string; name: string; category: string; unit: string; packSize: string;
+  balance: number; batchTracking: boolean; isNew: boolean; isActive: boolean; is_discontinued: boolean;
+  is_controlled: boolean; editData: EditProductData;
+};
 
 export default function ProductsPage() {
   const { org }  = useParams() as { org: string };
   const tenantName = useTenantName(org);
+  const session   = getSession();
   const canAdd    = usePermission("product:create");
+  const canEditProducts = usePermission("product:update");
+  const [editingProduct, setEditingProduct] = useState<Row | null>(null);
   // Subscribe to issues, receives, and transfers so the total re-renders on any mutation.
   // getOnHand is a stable function reference — subscribing to the maps is what drives reactivity.
   const issues    = useInventoryStore((s) => s.issues);
@@ -94,15 +107,31 @@ export default function ProductsPage() {
     // warehouse_id (CLAUDE.md §27: never filter by the viewing user's warehouse).
     balance: tenant.warehouses.reduce((total, wh) => total + getOnHand(p.id, wh.id, p.stock[wh.id] ?? 0), 0),
     batchTracking: p.batchTracking, isNew: false, isActive: true, is_discontinued: p.is_discontinued ?? false,
+    is_controlled: false,
+    editData: {
+      sku: p.sku, name: p.name, category: p.category, unit: p.unit,
+    },
   }));
 
   const apiRows: Row[] = apiProducts.map((p) => ({
     id: p.id, sku: p.sku, name: p.name, category: p.category ?? "—", unit: p.unit, packSize: String(p.pack_size),
     balance: isGatewayMode ? (productBalanceMap.get(p.id) ?? 0) : 0,
     batchTracking: false, isNew: !isGatewayMode, isActive: true, is_discontinued: p.is_discontinued ?? false,
+    is_controlled: p.is_controlled ?? false,
+    editData: {
+      sku: p.sku, name: p.name, short_name: p.short_name, description: p.description,
+      category: p.category, type_code: p.type_code, brand: p.brand, unit: p.unit,
+      packaging_type: p.packaging_type, units_per_package: p.units_per_package,
+      reorder_point: p.reorder_point, unit_price: p.unit_price, currency: p.currency,
+    },
   }));
 
   const allBase   = isGatewayMode ? apiRows : [...demoRows, ...apiRows];
+
+  // TA/SA may edit any product; other roles may only edit products that have
+  // no active Design-B approval override configured.
+  const canEditProduct = (row: Row): boolean =>
+    canEditProducts && (session?.role === "TA" || session?.role === "SA" || !row.is_controlled);
 
   // Sort: active first (alphabetically), discontinued at bottom (alphabetically).
   const displayProducts = useMemo(() => {
@@ -181,6 +210,9 @@ export default function ProductsPage() {
                   </td>
                   <td className="px-4 py-2.5 font-semibold text-gray-800">
                     {p.name}
+                    {p.is_controlled && (
+                      <span title={t("product.controlled_tooltip")} className="ml-1.5 text-xs">🔒</span>
+                    )}
                     {p.is_discontinued && (
                       <span className="ml-1.5 text-[10px] font-bold bg-gray-200 text-gray-500 px-1 py-0.5 rounded">
                         {t("product.discontinued_badge")}
@@ -204,6 +236,23 @@ export default function ProductsPage() {
                     </span>
                   </td>
                   <td className="px-4 py-2.5">
+                    {isGatewayMode && canEditProducts && (
+                      canEditProduct(p) ? (
+                        <button
+                          onClick={() => setEditingProduct(p)}
+                          className="text-xs cursor-pointer border-0 bg-transparent underline text-gray-600"
+                        >
+                          {t("product.edit")}
+                        </button>
+                      ) : (
+                        <span
+                          title={t("product.controlled_tooltip")}
+                          className="text-xs text-gray-300 cursor-not-allowed"
+                        >
+                          {t("product.edit")}
+                        </span>
+                      )
+                    )}
                     {canDiscontinue && isGatewayMode && (
                       <button
                         onClick={() => void handleDiscontinue(p.id, p.is_discontinued ?? false)}
@@ -223,6 +272,16 @@ export default function ProductsPage() {
       <p className="mt-3 text-xs text-gray-400">
         <strong className="text-gray-700">{t("products.balance_label")}</strong> — {t("products.balance_note")}
       </p>
+
+      {editingProduct && (
+        <AddProductPanel
+          apiBase="/api/v1/products"
+          mode="edit"
+          productId={editingProduct.id}
+          initialData={editingProduct.editData}
+          onClose={() => setEditingProduct(null)}
+        />
+      )}
     </div>
   );
 }

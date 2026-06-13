@@ -85,6 +85,60 @@ class ProductCreateRequest(BaseModel):
     def strip_sku_override(cls, v: object) -> object: return _strip_opt(v)
 
 
+class ProductUpdateRequest(BaseModel):
+    """PATCH /api/v1/products/{product_id} body.
+
+    All fields optional — only supplied (non-None) fields are updated.
+    SKU is never editable here; it is fixed at creation time.
+    """
+
+    name: Optional[str] = Field(default=None, min_length=1, max_length=255)
+    short_name: Optional[str] = Field(default=None, max_length=50)
+    description: Optional[str] = Field(default=None)
+    category: Optional[str] = Field(default=None, max_length=255)
+    type_code: Optional[str] = Field(default=None, min_length=2, max_length=10)
+    brand: Optional[str] = Field(default=None, max_length=100)
+    unit: Optional[str] = Field(default=None, min_length=1, max_length=50)
+    packaging_type: Optional[str] = Field(default=None, max_length=50)
+    units_per_package: Optional[int] = Field(default=None, ge=1)
+    reorder_point: Optional[Decimal] = Field(default=None, ge=0)
+    unit_price: Optional[Decimal] = Field(default=None, ge=0)
+    currency: Optional[str] = Field(default=None, max_length=10)
+
+    @field_validator("name", mode="before")
+    @classmethod
+    def strip_name(cls, v: object) -> object: return _strip_opt(v)
+
+    @field_validator("short_name", mode="before")
+    @classmethod
+    def strip_short_name(cls, v: object) -> object: return _strip_opt(v)
+
+    @field_validator("description", mode="before")
+    @classmethod
+    def strip_desc(cls, v: object) -> object: return _strip_opt(v)
+
+    @field_validator("category", mode="before")
+    @classmethod
+    def strip_category(cls, v: object) -> object: return _strip_opt(v)
+
+    @field_validator("type_code", mode="before")
+    @classmethod
+    def upper_type_code(cls, v: object) -> object:
+        return v.strip().upper() if isinstance(v, str) else v
+
+    @field_validator("brand", mode="before")
+    @classmethod
+    def strip_brand(cls, v: object) -> object: return _strip_opt(v)
+
+    @field_validator("unit", mode="before")
+    @classmethod
+    def strip_unit(cls, v: object) -> object: return _strip_opt(v)
+
+    @field_validator("packaging_type", mode="before")
+    @classmethod
+    def strip_pkg(cls, v: object) -> object: return _strip_opt(v)
+
+
 class ProductResponse(BaseModel):
     id: uuid.UUID
     sku: str
@@ -101,6 +155,7 @@ class ProductResponse(BaseModel):
     reorder_point: Optional[Decimal] = None
     unit_price: Optional[Decimal] = None
     currency: Optional[str] = None
+    is_controlled: bool = False
     tenant_id: uuid.UUID
     created_at: datetime
     created_by: Optional[uuid.UUID] = None

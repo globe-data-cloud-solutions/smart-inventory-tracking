@@ -40,7 +40,7 @@ from schemas.product import (
     CategoryCreateRequest, CategoryResponse,
     NextSkuResponse,
     PackagingTypeCreateRequest, PackagingTypeResponse,
-    ProductCreateRequest, ProductResponse,
+    ProductCreateRequest, ProductResponse, ProductUpdateRequest,
     TypeCodeCreateRequest, TypeCodeResponse,
     UomCreateRequest, UomResponse,
 )
@@ -177,6 +177,7 @@ async def list_products(
                     tx: o.model_dump(mode="json")
                     for tx, o in overrides_by_product.get(str(r.id), {}).items()
                 },
+                "is_controlled": bool(overrides_by_product.get(str(r.id))),
             }
             for r in rows
         ]
@@ -574,6 +575,267 @@ async def create_product(
             tenant_id=uuid.UUID(tid),
             created_at=now,
             created_by=uuid.UUID(uid) if uid else None,
+        )
+    )
+
+
+# ── PATCH /{id} ───────────────────────────────────────────────────────────────
+
+@router.patch("/{product_id}", response_model=SuccessResponse[ProductResponse])
+@require_permission(PERMISSIONS.PRODUCT_UPDATE)
+async def update_product(
+    product_id: uuid.UUID,
+    body: ProductUpdateRequest,
+    user=Depends(get_current_user),
+    db: AsyncSession = Depends(get_db_session),
+) -> SuccessResponse[ProductResponse]:
+    """Edit an existing product. SKU is immutable.
+
+    TA/SA may edit any product. NM and below may only edit a product that
+    has no active Design-B approval override (product_approval_minimums row
+    with approver_position_id IS NOT NULL AND is_active = TRUE) — such a
+    product is "controlled" and can only be edited by the Tenant Admin.
+    """
+    tid = str(user.tenant_id)
+    pid = str(product_id)
+    uid = str(user.user_id) if getattr(user, "user_id", None) else None
+    role = getattr(user, "role", None)
+
+    row = (await db.execute(
+        text(
+            "SELECT p.id, p.sku, p.name, p.short_name, p.description, "
+            "p.unit, p.pack_size, p.reorder_point, p.unit_price, p.currency, "
+            "p.category_id, p.brand_id, p.type_code_id, p.packaging_type_id, "
+            "p.tenant_id, p.created_at, p.created_by, "
+            "pc.name AS category, pb.name AS brand, ptc.code AS type_code, "
+            "ppt.name AS packaging_type, ppt.units_per_package "
+            "FROM products p "
+            "LEFT JOIN product_categories pc ON pc.id = p.category_id "
+            "LEFT JOIN product_brands pb ON pb.id = p.brand_id "
+            "LEFT JOIN product_type_codes ptc ON ptc.id = p.type_code_id "
+            "LEFT JOIN product_packaging_types ppt ON ppt.id = p.packaging_type_id "
+            "WHERE p.id = :pid AND p.tenant_id = :tid AND p.is_active = true"
+        ),
+        {"pid": pid, "tid": tid},
+    )).fetchone()
+    if not row:
+        raise HTTPException(status_code=404, detail="Product not found")
+
+    # Controlled-product check (CLAUDE.md Design-B overrides).
+    is_controlled = bool((await db.execute(
+        text(
+            "SELECT 1 FROM product_approval_minimums "
+            "WHERE tenant_id = :tid AND product_id = :pid "
+            "AND is_active = TRUE AND approver_position_id IS NOT NULL "
+            "LIMIT 1"
+        ),
+        {"tid": tid, "pid": pid},
+    )).fetchone())
+
+    if is_controlled and role not in ("TA", "SA"):
+        raise HTTPException(
+            status_code=403,
+            detail={
+                "code": "PRODUCT_CONTROLLED",
+                "message": "This product has approval overrides configured and can only be edited by the Tenant Admin.",
+            },
+        )
+
+    # Duplicate name guard (case-insensitive), excluding this product.
+    if body.name is not None and body.name.lower() != row.name.lower():
+        dup = (await db.execute(
+            text(
+                "SELECT id FROM products "
+                "WHERE tenant_id = :tid AND LOWER(name) = LOWER(:name) "
+                "AND is_active = true AND id != :pid"
+            ),
+            {"tid": tid, "name": body.name, "pid": pid},
+        )).fetchone()
+        if dup:
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "code":    "duplicate_product_name",
+                    "message": "A product with this name already exists in this tenant",
+                },
+            )
+
+    set_clauses: list[str] = ["updated_at = NOW()"]
+    params: dict[str, object] = {"pid": pid, "tid": tid}
+
+    if body.name is not None:
+        set_clauses.append("name = :name")
+        params["name"] = body.name
+    if body.short_name is not None:
+        set_clauses.append("short_name = :short_name")
+        params["short_name"] = body.short_name
+    if body.description is not None:
+        set_clauses.append("description = :description")
+        params["description"] = body.description
+    if body.reorder_point is not None:
+        set_clauses.append("reorder_point = :reorder_point")
+        params["reorder_point"] = float(body.reorder_point)
+    if body.unit_price is not None:
+        set_clauses.append("unit_price = :unit_price")
+        params["unit_price"] = float(body.unit_price)
+    if body.currency is not None:
+        set_clauses.append("currency = :currency")
+        params["currency"] = body.currency
+
+    # Category — find or create.
+    category_name = row.category
+    if body.category is not None:
+        cat_row = (await db.execute(
+            text("SELECT id, name FROM product_categories "
+                 "WHERE tenant_id = :tid AND LOWER(name) = LOWER(:n) AND is_active = true"),
+            {"tid": tid, "n": body.category},
+        )).fetchone()
+        if cat_row:
+            category_id, category_name = str(cat_row.id), cat_row.name
+        else:
+            category_id = str(uuid.uuid4())
+            category_name = body.category
+            await db.execute(
+                text("INSERT INTO product_categories (id, tenant_id, name) "
+                     "VALUES (:id, :tid, :n)"),
+                {"id": category_id, "tid": tid, "n": category_name},
+            )
+        set_clauses.append("category_id = :category_id")
+        params["category_id"] = category_id
+
+    # Brand — find or create.
+    brand_name = row.brand
+    if body.brand is not None:
+        br_row = (await db.execute(
+            text("SELECT id, name FROM product_brands "
+                 "WHERE tenant_id = :tid AND LOWER(name) = LOWER(:n) AND is_active = true"),
+            {"tid": tid, "n": body.brand},
+        )).fetchone()
+        if br_row:
+            brand_id, brand_name = str(br_row.id), br_row.name
+        else:
+            brand_id = str(uuid.uuid4())
+            brand_name = body.brand
+            await db.execute(
+                text("INSERT INTO product_brands (id, tenant_id, name) "
+                     "VALUES (:id, :tid, :n)"),
+                {"id": brand_id, "tid": tid, "n": brand_name},
+            )
+        set_clauses.append("brand_id = :brand_id")
+        params["brand_id"] = brand_id
+
+    # Type code — find or create. SKU itself is never regenerated.
+    type_code_value = row.type_code
+    if body.type_code is not None:
+        tc_row = (await db.execute(
+            text("SELECT id, code FROM product_type_codes "
+                 "WHERE tenant_id = :tid AND UPPER(code) = :code AND is_active = true"),
+            {"tid": tid, "code": body.type_code},
+        )).fetchone()
+        if tc_row:
+            type_code_id, type_code_value = str(tc_row.id), tc_row.code
+        else:
+            type_code_id = str(uuid.uuid4())
+            type_code_value = body.type_code
+            await db.execute(
+                text("INSERT INTO product_type_codes (id, tenant_id, code) "
+                     "VALUES (:id, :tid, :code)"),
+                {"id": type_code_id, "tid": tid, "code": type_code_value},
+            )
+        set_clauses.append("type_code_id = :type_code_id")
+        params["type_code_id"] = type_code_id
+
+    # Unit / UOM — find or create in product_uoms; products.unit stores the raw string.
+    unit_value = row.unit
+    if body.unit is not None:
+        unit_value = body.unit
+        uom_row = (await db.execute(
+            text("SELECT id FROM product_uoms "
+                 "WHERE tenant_id = :tid AND LOWER(name) = LOWER(:n) AND is_active = true"),
+            {"tid": tid, "n": unit_value},
+        )).fetchone()
+        if not uom_row:
+            await db.execute(
+                text("INSERT INTO product_uoms (id, tenant_id, name) VALUES (:id, :tid, :n)"),
+                {"id": str(uuid.uuid4()), "tid": tid, "n": unit_value},
+            )
+        set_clauses.append("unit = :unit")
+        set_clauses.append("unit_of_measure = :unit")
+        params["unit"] = unit_value
+
+    # Packaging type — find or create.
+    packaging_type_name = row.packaging_type
+    units_per_package = row.units_per_package
+    if body.packaging_type is not None:
+        pt_row = (await db.execute(
+            text("SELECT id, name, units_per_package FROM product_packaging_types "
+                 "WHERE tenant_id = :tid AND LOWER(name) = LOWER(:n) AND is_active = true"),
+            {"tid": tid, "n": body.packaging_type},
+        )).fetchone()
+        if pt_row:
+            packaging_type_id = str(pt_row.id)
+            packaging_type_name = pt_row.name
+            units_per_package = pt_row.units_per_package
+        else:
+            packaging_type_id = str(uuid.uuid4())
+            packaging_type_name = body.packaging_type
+            units_per_package = body.units_per_package or 1
+            await db.execute(
+                text("INSERT INTO product_packaging_types "
+                     "  (id, tenant_id, name, units_per_package) "
+                     "VALUES (:id, :tid, :n, :upp)"),
+                {"id": packaging_type_id, "tid": tid,
+                 "n": packaging_type_name, "upp": units_per_package},
+            )
+        set_clauses.append("packaging_type_id = :packaging_type_id")
+        params["packaging_type_id"] = packaging_type_id
+
+    await db.execute(
+        text(f"UPDATE products SET {', '.join(set_clauses)} WHERE id = :pid AND tenant_id = :tid"),
+        params,
+    )
+
+    # Audit log — append-only, same transaction (CLAUDE.md §7 + §14).
+    await db.execute(
+        text(
+            "INSERT INTO audit_logs "
+            "  (id, tenant_id, user_id, role, action, resource_type, "
+            "   resource_id, decision, abac_context) "
+            "VALUES "
+            "  (:id, :tid, :uid, :role, 'product:update', 'product', "
+            "   :rid, 'GRANTED', CAST(:ctx AS jsonb))"
+        ),
+        {
+            "id":   str(uuid.uuid4()),
+            "tid":  tid,
+            "uid":  uid,
+            "role": role,
+            "rid":  pid,
+            "ctx":  json.dumps(body.model_dump(mode="json", exclude_none=True)),
+        },
+    )
+
+    return SuccessResponse(
+        data=ProductResponse(
+            id=uuid.UUID(pid),
+            sku=row.sku,
+            name=body.name if body.name is not None else row.name,
+            short_name=body.short_name if body.short_name is not None else row.short_name,
+            description=body.description if body.description is not None else row.description,
+            unit=unit_value,
+            pack_size=row.pack_size,
+            category=category_name,
+            type_code=type_code_value,
+            brand=brand_name,
+            packaging_type=packaging_type_name,
+            units_per_package=units_per_package,
+            reorder_point=body.reorder_point if body.reorder_point is not None else row.reorder_point,
+            unit_price=body.unit_price if body.unit_price is not None else row.unit_price,
+            currency=body.currency if body.currency is not None else row.currency,
+            is_controlled=is_controlled,
+            tenant_id=uuid.UUID(tid),
+            created_at=row.created_at,
+            created_by=row.created_by,
         )
     )
 

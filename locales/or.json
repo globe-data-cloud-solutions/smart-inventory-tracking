@@ -239,7 +239,12 @@
     "ta_only_notice": "Bulchaa Kiraa qofaaf kan mul'atu",
     "override_always": "Daldala {transaction} hundaaf {approver} irraa mirkaneessuu gaafata.",
     "override_quantity": "Hangi yoo xiqqaate {threshold} ta'e {approver} irraa mirkaneessuu gaafata.",
-    "override_value": "Gatiin yoo xiqqaate {threshold} ta'e {approver} irraa mirkaneessuu gaafata."
+    "override_value": "Gatiin yoo xiqqaate {threshold} ta'e {approver} irraa mirkaneessuu gaafata.",
+    "edit": "Gulaali",
+    "edit_title": "Oomisha Gulaali",
+    "edit_success": "Oomishni milkaa'inaan haaromfameera",
+    "controlled_tooltip": "Oomisha Daangeffame — kan gulaaluu danda'u Bulchaa Kiraa qofa",
+    "controlled_edit_denied": "Kun oomisha sadarkaa mirkaneessuu qabu, kanaafuu kan gulaaluu danda'u Bulchaa Kiraa qofa."
   },
   "lang": {
     "label": "Afaan",

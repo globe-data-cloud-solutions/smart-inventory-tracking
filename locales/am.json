@@ -244,7 +244,12 @@
     "ta_only_notice": "ለተከራይ አስተዳዳሪዎች ብቻ የሚታይ",
     "override_always": "ለ{transaction} ሁልጊዜ ከ{approver} ማረጋገጫ ይጠይቃል።",
     "override_quantity": "ብዛቱ ቢያንስ {threshold} ሲሆን ከ{approver} ማረጋገጫ ይጠይቃል።",
-    "override_value": "ዋጋው ቢያንስ {threshold} ሲሆን ከ{approver} ማረጋገጫ ይጠይቃል።"
+    "override_value": "ዋጋው ቢያንስ {threshold} ሲሆን ከ{approver} ማረጋገጫ ይጠይቃል።",
+    "edit": "ማስተካከል",
+    "edit_title": "ምርት አስተካክል",
+    "edit_success": "ምርቱ በተሳካ ሁኔታ ተዘምኗል",
+    "controlled_tooltip": "የተገደበ ምርት — ማስተካከል የሚችለው አስተዳዳሪ ብቻ ነው",
+    "controlled_edit_denied": "ይህ ምርት የማረጋገጫ ደረጃዎች ተዘጋጅተውለታል እና በተከራዩ አስተዳዳሪ ብቻ ሊስተካከል ይችላል።"
   },
   "lang": {
     "label": "ቋንቋ",

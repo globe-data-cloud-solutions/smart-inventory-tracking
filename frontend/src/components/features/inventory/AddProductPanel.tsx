@@ -177,17 +177,45 @@ interface PackagingTypeOption { id: string; name: string; units_per_package: num
 
 // ── main component ────────────────────────────────────────────────────────────
 
-interface AddProductPanelProps { apiBase: string; onClose?: () => void; categories?: string[] }
+export interface EditProductData {
+  sku: string;
+  name: string;
+  short_name?: string | null;
+  description?: string | null;
+  category?: string | null;
+  type_code?: string | null;
+  brand?: string | null;
+  unit: string;
+  packaging_type?: string | null;
+  units_per_package?: number | null;
+  reorder_point?: number | string | null;
+  unit_price?: number | string | null;
+  currency?: string | null;
+}
 
-export function AddProductPanel({ apiBase, onClose }: AddProductPanelProps) {
+interface AddProductPanelProps {
+  apiBase: string;
+  onClose?: () => void;
+  categories?: string[];
+  mode?: "create" | "edit";
+  productId?: string;
+  initialData?: EditProductData;
+}
+
+export function AddProductPanel({ apiBase, onClose, mode = "create", productId, initialData }: AddProductPanelProps) {
   const { org = "admin" } = useParams<{ org: string }>();
   const token   = getToken();
   const session = getSession();
   const qc      = useQueryClient();
-  const { positions } = useTenantPositions(org);
+  const isEdit  = mode === "edit";
+  // Use the tenant UUID from the session, not the `org` URL slug — the
+  // backend route /tenants/{tenant_id}/positions/flat requires a UUID and
+  // 422s on a slug, leaving `positions` permanently empty (matches the
+  // working pattern in adjustments/page.tsx).
+  const { positions } = useTenantPositions(session?.tenantId ?? "");
 
   // ── form state ─────────────────────────────────────────────────────────
-  const [open, setOpen]             = useState(false);
+  const [open, setOpen]             = useState(isEdit);
   const [name, setName]             = useState("");
   const [shortName, setShortName]   = useState("");
   const [description, setDesc]      = useState("");
@@ -204,16 +232,6 @@ export function AddProductPanel({ apiBase, onClose }: AddProductPanelProps) {
   const [skuEditing, setSkuEditing] = useState(false);
 
   // ── approval minimums state ────────────────────────────────────────────
-  interface HierarchyLevelInfo {
-    level_number: number;
-    level_name: string;
-    default_role_code: string;
-    role_display_label: string;
-    is_stock_holding: boolean;
-  }
-  const ROLE_AUTH_MAP: Record<string, number> = {
-    SA: 1, TA: 1, NM: 1, RM: 2, LM: 3, WM: 4,
-  };
   const MIN_TX_TYPES = [
     { key: "PULL",       label: "PULL Transfer" },
     { key: "PUSH",       label: "PUSH Transfer" },
@@ -225,7 +243,6 @@ export function AddProductPanel({ apiBase, onClose }: AddProductPanelProps) {
   type ThresholdType = "ALWAYS" | "QUANTITY" | "VALUE";
   type MinimumRow = {
     transaction_type:     string;
-    min_authority_level:  string;
     override_enabled:     boolean;
     threshold_type:       ThresholdType;
     qty_threshold:        string;
@@ -236,7 +253,6 @@ export function AddProductPanel({ apiBase, onClose }: AddProductPanelProps) {
   const emptyMinimumRows = (): MinimumRow[] =>
     MIN_TX_TYPES.map((tx) => ({
       transaction_type:     tx.key,
-      min_authority_level:  "",
       override_enabled:     false,
       threshold_type:       "ALWAYS",
       qty_threshold:        "",
@@ -247,6 +263,26 @@ export function AddProductPanel({ apiBase, onClose }: AddProductPanelProps) {
   const [minimumRows, setMinimumRows] = useState<MinimumRow[]>(emptyMinimumRows());
   const updateMinimumRow = (i: number, patch: Partial<MinimumRow>) =>
     setMinimumRows((rows) => rows.map((r, idx) => (idx === i ? { ...r, ...patch } : r)));
+
+  // ── pre-populate from initialData in edit mode ─────────────────────────
+  useEffect(() => {
+    if (!isEdit || !initialData) return;
+    setName(initialData.name ?? "");
+    setShortName(initialData.short_name ?? "");
+    setDesc(initialData.description ?? "");
+    setCategory(initialData.category ?? "");
+    setTypeCode(initialData.type_code ?? "");
+    setBrand(initialData.brand ?? "");
+    setUnit(initialData.unit ?? "");
+    setPkgType(initialData.packaging_type ?? "");
+    setUpp(initialData.units_per_package ? String(initialData.units_per_package) : "1");
+    setReorder(initialData.reorder_point != null ? String(initialData.reorder_point) : "");
+    setCostPrice(initialData.unit_price != null ? String(initialData.unit_price) : "");
+    setCurrency(initialData.currency ?? "ETB");
+    setSkuOvr(initialData.sku ?? "");
+    setOpen(true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // ── error state ────────────────────────────────────────────────────────
   const [nameErr, setNameErr]       = useState("");
@@ -313,34 +349,6 @@ export function AddProductPanel({ apiBase, onClose }: AddProductPanelProps) {
     staleTime: 30_000,
   });
 
-  // ── Hierarchy levels for approval minimum dropdown ────────────────────
-  // NOTE: must NOT gate on `!!token` — getToken() reads a sessionStorage key
-  // that this app's demo-auth session never populates, so `token` is always
-  // null and the query never ran, leaving the dropdown permanently empty.
-  // api.get() falls back to the session JWT internally (see lib/api.ts),
-  // matching the other lookups above which use `enabled: open`.
-  const { data: hierarchyLevels = [] } = useQuery<HierarchyLevelInfo[]>({
-    queryKey:  ["hierarchy-config", org],
-    queryFn:   async () => {
-      const r = await api.get<unknown>(`/api/v1/tenants/${org}/hierarchy/config`, token ?? undefined);
-      return ((r as { data?: unknown }).data ?? r) as HierarchyLevelInfo[];
-    },
-    enabled:   open,
-    staleTime: 60_000,
-  });
-
-  // ── Tenant default approval rules for preview ──────────────────────────
-  type TenantRulePreview = { transaction_type: string; max_quantity: number | null; approver_role: string };
-  const { data: tenantDefaultRules = [] } = useQuery<TenantRulePreview[]>({
-    queryKey:  ["tenant-approval-rules", org],
-    queryFn:   async () => {
-      const r = await api.get<unknown>(`/api/v1/tenants/${org}/approval-rules`, token ?? undefined);
-      return ((r as { data?: unknown }).data ?? r) as TenantRulePreview[];
-    },
-    enabled:   open,
-    staleTime: 60_000,
-  });
-
   // ── SKU preview via /next-sku?type_code=BRD ────────────────────────────
   const { data: skuPreviewData, isFetching: skuLoading } = useQuery<{ sku: string; counter: number | null }>({
     queryKey:  ["next-sku", apiBase, typeCode],
@@ -352,19 +360,20 @@ export function AddProductPanel({ apiBase, onClose }: AddProductPanelProps) {
       );
       return ((r as { data?: unknown }).data ?? r) as { sku: string; counter: number | null };
     },
-    enabled:   open && typeCode.trim().length >= 2,
+    enabled:   open && !isEdit && typeCode.trim().length >= 2,
     staleTime: 0,
     refetchOnWindowFocus: false,
   });
 
   const generatedSku = skuPreviewData?.sku ?? "";
-  const displaySku   = skuEditing ? skuOverride : (generatedSku || "");
-  const skuOk        = displaySku.trim().length > 0;
+  // In edit mode the SKU is immutable — always show the existing SKU.
+  const displaySku   = isEdit ? (initialData?.sku ?? "") : (skuEditing ? skuOverride : (generatedSku || ""));
+  const skuOk        = isEdit ? true : displaySku.trim().length > 0;
 
   // When generated SKU changes, sync into override field if not manually editing.
   useEffect(() => {
-    if (!skuEditing && generatedSku) setSkuOvr(generatedSku);
-  }, [generatedSku, skuEditing]);
+    if (!isEdit && !skuEditing && generatedSku) setSkuOvr(generatedSku);
+  }, [generatedSku, skuEditing, isEdit]);
 
   // ── derived options ────────────────────────────────────────────────────
   const categoryOptions = (categoriesData ?? []).map((c) => c.name);
@@ -404,7 +413,7 @@ export function AddProductPanel({ apiBase, onClose }: AddProductPanelProps) {
 
   const openPanel  = () => { resetForm(); setOpen(true); };
   const closePanel = () => {
-    if ((name.trim() || typeCode.trim()) && !window.confirm(t("product.add.confirm.discard"))) return;
+    if (!isEdit && (name.trim() || typeCode.trim()) && !window.confirm(t("product.add.confirm.discard"))) return;
     resetForm(); setOpen(false); onClose?.();
   };
 
@@ -419,25 +428,54 @@ export function AddProductPanel({ apiBase, onClose }: AddProductPanelProps) {
     try {
       const reorderQty = parseFloat(reorderPoint);
       const uppVal     = parseInt(unitsPerPkg, 10);
-      const product = await api.post<{ id: string; sku: string }>(
-        apiBase,
-        {
-          name:              name.trim(),
-          short_name:        shortName.trim() || undefined,
-          description:       description.trim() || undefined,
-          category:          category.trim() || undefined,
-          type_code:         typeCode.trim().toUpperCase(),
-          brand:             brand.trim() || undefined,
-          unit:              unit.trim() || "units",
-          packaging_type:    packagingType.trim() || undefined,
-          units_per_package: packagingType.trim() && !isNaN(uppVal) && uppVal > 0 ? uppVal : undefined,
-          reorder_point:     !isNaN(reorderQty) && reorderQty > 0 ? reorderQty : undefined,
-          unit_price:        parseFloat(unitPrice) >= 0 && unitPrice !== "" ? parseFloat(unitPrice) : undefined,
-          currency:          currency.trim() || undefined,
-          sku_override:      skuEditing && skuOverride.trim() ? skuOverride.trim() : undefined,
-        },
-        token ?? undefined,
-      );
+
+      let productRefId: string;
+      let productSku: string;
+
+      if (isEdit && productId) {
+        const updated = await api.patch<{ id: string; sku: string }>(
+          `${apiBase}/${productId}`,
+          {
+            name:              name.trim(),
+            short_name:        shortName.trim() || undefined,
+            description:       description.trim() || undefined,
+            category:          category.trim() || undefined,
+            type_code:         typeCode.trim().toUpperCase() || undefined,
+            brand:             brand.trim() || undefined,
+            unit:              unit.trim() || undefined,
+            packaging_type:    packagingType.trim() || undefined,
+            units_per_package: packagingType.trim() && !isNaN(uppVal) && uppVal > 0 ? uppVal : undefined,
+            reorder_point:     !isNaN(reorderQty) && reorderQty >= 0 ? reorderQty : undefined,
+            unit_price:        parseFloat(unitPrice) >= 0 && unitPrice !== "" ? parseFloat(unitPrice) : undefined,
+            currency:          currency.trim() || undefined,
+          },
+          token ?? undefined,
+        );
+        productRefId = updated.id;
+        productSku   = updated.sku;
+      } else {
+        const created = await api.post<{ id: string; sku: string }>(
+          apiBase,
+          {
+            name:              name.trim(),
+            short_name:        shortName.trim() || undefined,
+            description:       description.trim() || undefined,
+            category:          category.trim() || undefined,
+            type_code:         typeCode.trim().toUpperCase(),
+            brand:             brand.trim() || undefined,
+            unit:              unit.trim() || "units",
+            packaging_type:    packagingType.trim() || undefined,
+            units_per_package: packagingType.trim() && !isNaN(uppVal) && uppVal > 0 ? uppVal : undefined,
+            reorder_point:     !isNaN(reorderQty) && reorderQty > 0 ? reorderQty : undefined,
+            unit_price:        parseFloat(unitPrice) >= 0 && unitPrice !== "" ? parseFloat(unitPrice) : undefined,
+            currency:          currency.trim() || undefined,
+            sku_override:      skuEditing && skuOverride.trim() ? skuOverride.trim() : undefined,
+          },
+          token ?? undefined,
+        );
+        productRefId = created.id;
+        productSku   = created.sku;
+      }
 
       // Save product-level approval minimums / overrides if any were set.
       // An override is only persisted if a position has been chosen — the
@@ -445,17 +483,16 @@ export function AddProductPanel({ apiBase, onClose }: AddProductPanelProps) {
       // IS NOT NULL, so a checked-but-unconfigured override is dropped here
       // rather than sent as a half-configured row.
       const filledMinimums = minimumRows.filter(
-        (r) => r.min_authority_level !== "" || (r.override_enabled && r.approver_position_id !== "")
+        (r) => r.override_enabled && r.approver_position_id !== ""
       );
       if (filledMinimums.length > 0) {
         await api.put<unknown>(
-          `${apiBase}/${product.id}/approval-minimums`,
+          `${apiBase}/${productRefId}/approval-minimums`,
           {
             entries: filledMinimums.map((r) => {
               const overrideActive = r.override_enabled && r.approver_position_id !== "";
               return {
                 transaction_type:     r.transaction_type,
-                min_authority_level: r.min_authority_level !== "" ? Number(r.min_authority_level) : undefined,
                 override_enabled:    overrideActive,
                 threshold_type:      r.threshold_type,
                 qty_threshold:       overrideActive && r.threshold_type === "QUANTITY" && r.qty_threshold !== ""
@@ -471,7 +508,11 @@ export function AddProductPanel({ apiBase, onClose }: AddProductPanelProps) {
         );
       }
 
-      setToast(t("product.add.success").replace("{{sku}}", product.sku));
+      setToast(
+        isEdit
+          ? t("product.edit_success")
+          : t("product.add.success").replace("{{sku}}", productSku),
+      );
       void qc.invalidateQueries({ queryKey: ["products"] });
       void qc.invalidateQueries({ queryKey: ["product-categories"] });
       void qc.invalidateQueries({ queryKey: ["product-brands"] });
@@ -485,6 +526,7 @@ export function AddProductPanel({ apiBase, onClose }: AddProductPanelProps) {
       if (e.status === 409 && e.code === "duplicate_sku") setPanelError(t("product.add.error.duplicate_sku") || `SKU '${displaySku}' already exists. Edit the SKU and try again.`);
       else if (e.status === 409) setNameErr("duplicate_name");
       else if (e.status === 429) setPanelError(t("product.add.error.sku_cap_reached"));
+      else if (e.status === 403 && e.code === "PRODUCT_CONTROLLED") setPanelError(t("product.controlled_edit_denied"));
       else setPanelError(t("product.add.error.generic"));
     } finally { setSub(false); }
   };
@@ -501,14 +543,18 @@ export function AddProductPanel({ apiBase, onClose }: AddProductPanelProps) {
   };
 
   // ── render ────────────────────────────────────────────────────────────
+  const panelTitle = isEdit ? t("product.edit_title") : t("product.add.title");
+
   return (
     <>
-      <button
-        onClick={openPanel}
-        className="px-4 py-2 bg-eth-gold text-[#0f2d1f] font-bold text-sm rounded border-0 cursor-pointer"
-      >
-        {t("product.add.button")}
-      </button>
+      {!isEdit && (
+        <button
+          onClick={openPanel}
+          className="px-4 py-2 bg-eth-gold text-[#0f2d1f] font-bold text-sm rounded border-0 cursor-pointer"
+        >
+          {t("product.add.button")}
+        </button>
+      )}
 
       {open && (
         <div
@@ -521,12 +567,12 @@ export function AddProductPanel({ apiBase, onClose }: AddProductPanelProps) {
       <aside
         role="dialog"
         aria-modal="true"
-        aria-label={t("product.add.title")}
+        aria-label={panelTitle}
         className={`fixed top-0 right-0 bottom-0 z-[101] w-[460px] bg-white shadow-2xl flex flex-col transition-transform duration-[250ms] ease-out ${open ? "translate-x-0" : "translate-x-full"}`}
       >
         {/* Header */}
         <div className="flex-shrink-0 px-5 py-4 bg-[#0f2d1f] border-b border-gray-200 flex items-center justify-between">
-          <h2 className="text-base font-bold text-white m-0">{t("product.add.title")}</h2>
+          <h2 className="text-base font-bold text-white m-0">{panelTitle}</h2>
           <button
             onClick={closePanel}
             aria-label={t("product.add.cancel")}
@@ -541,7 +587,11 @@ export function AddProductPanel({ apiBase, onClose }: AddProductPanelProps) {
           <span className="text-[11px] font-bold text-gray-500 uppercase tracking-wide shrink-0">
             {t("product.add.field.sku")}
           </span>
-          {skuEditing ? (
+          {isEdit ? (
+            <span className="font-mono text-[15px] font-extrabold flex-1 tracking-widest text-emerald-600">
+              {displaySku}
+            </span>
+          ) : skuEditing ? (
             <input
               ref={skuInputRef}
               value={skuOverride}
@@ -559,14 +609,16 @@ export function AddProductPanel({ apiBase, onClose }: AddProductPanelProps) {
                 : displaySku || (typeCode.trim().length >= 2 ? "…" : t("product.add.field.sku_placeholder"))}
             </span>
           )}
-          <button
-            type="button"
-            onClick={startSkuEdit}
-            title="Edit SKU"
-            className="px-2 py-1 border border-emerald-200 rounded bg-white text-[11px] text-emerald-600 font-semibold shrink-0 cursor-pointer"
-          >
-            ✎
-          </button>
+          {!isEdit && (
+            <button
+              type="button"
+              onClick={startSkuEdit}
+              title="Edit SKU"
+              className="px-2 py-1 border border-emerald-200 rounded bg-white text-[11px] text-emerald-600 font-semibold shrink-0 cursor-pointer"
+            >
+              ✎
+            </button>
+          )}
           <button
             type="button"
             onClick={handleCopy}
@@ -786,85 +838,15 @@ export function AddProductPanel({ apiBase, onClose }: AddProductPanelProps) {
             <div className="border border-gray-200 rounded-md overflow-hidden flex-shrink-0">
               <div className="px-3.5 py-2.5 bg-gray-50 border-b border-gray-200">
                 <span className="text-xs font-bold uppercase tracking-wide text-gray-600">
-                  {t("approval.min_level")}
+                  {t("product.approval_override_title")}
                 </span>
                 <p className="text-[11px] text-gray-400 mt-0.5">
-                  Set a floor approval level per transaction type regardless of quantity thresholds.
+                  {t("product.approval_override_desc")}
                 </p>
                 <p className="text-[10px] text-gray-400 mt-1 italic">{t("product.ta_only_notice")}</p>
               </div>
-              <div className="px-3.5 py-3 space-y-3">
-                <table className="w-full text-xs border-collapse">
-                  <thead>
-                    <tr className="text-gray-500">
-                      <th className="text-left py-1 pr-2 font-semibold w-[48%]">Transaction Type</th>
-                      <th className="text-left py-1 font-semibold">Minimum Approver</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {MIN_TX_TYPES.map((tx, i) => (
-                      <tr key={tx.key} className="border-t border-gray-100">
-                        <td className="py-1.5 pr-2 text-gray-700 font-medium">{tx.label}</td>
-                        <td className="py-1.5">
-                          <select
-                            value={minimumRows[i]?.min_authority_level ?? ""}
-                            onChange={(e) => updateMinimumRow(i, { min_authority_level: e.target.value })}
-                            className="w-full px-2 py-1 text-xs border border-gray-300 rounded bg-white outline-none cursor-pointer"
-                          >
-                            <option value="">{t("approval.use_thresholds")}</option>
-                            {hierarchyLevels.map((lv) => (
-                              <option
-                                key={lv.default_role_code}
-                                value={String(ROLE_AUTH_MAP[lv.default_role_code] ?? 4)}
-                              >
-                                {lv.level_name} ({lv.role_display_label})
-                              </option>
-                            ))}
-                          </select>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
 
-                {tenantDefaultRules.length > 0 && (
-                  <div className="pt-2 border-t border-gray-100">
-                    <p className="text-[10px] text-gray-400 font-semibold uppercase tracking-wide mb-1">
-                      {t("approval.tenant_defaults")}
-                    </p>
-                    <div className="text-[10px] text-gray-400 space-y-0.5">
-                      {(["PULL", "PUSH", "ADJUSTMENT"] as const).map((tx) => {
-                        const rules = tenantDefaultRules.filter((r) => r.transaction_type === tx);
-                        if (!rules.length) return null;
-                        const summary = rules
-                          .map((r) =>
-                            r.max_quantity != null
-                              ? `${r.approver_role} <${r.max_quantity}`
-                              : `${r.approver_role}+`
-                          )
-                          .join(" | ");
-                        return (
-                          <p key={tx}>
-                            <span className="font-medium text-gray-500">{tx}:</span> {summary}
-                          </p>
-                        );
-                      })}
-                    </div>
-                  </div>
-                )}
-              </div>
-
-              {/* ── Per-product approval overrides (Design B) ──────── */}
-              <div className="px-3.5 py-3 border-t border-gray-200 space-y-2.5">
-                <div>
-                  <span className="text-xs font-bold uppercase tracking-wide text-gray-600">
-                    {t("product.approval_override_title")}
-                  </span>
-                  <p className="text-[11px] text-gray-400 mt-0.5">
-                    {t("product.approval_override_desc")}
-                  </p>
-                </div>
-
+              <div className="px-3.5 py-3 space-y-2.5">
                 {MIN_TX_TYPES.map((tx, i) => {
                   const row = minimumRows[i];
                   if (!row) return null;

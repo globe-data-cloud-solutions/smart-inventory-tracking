@@ -250,7 +250,12 @@
     "ta_only_notice": "Visible to Tenant Admins only",
     "override_always": "Requires approval from {approver} for every {transaction}.",
     "override_quantity": "Requires approval from {approver} when quantity is at least {threshold}.",
-    "override_value": "Requires approval from {approver} when value is at least {threshold}."
+    "override_value": "Requires approval from {approver} when value is at least {threshold}.",
+    "edit": "Edit",
+    "edit_title": "Edit Product",
+    "edit_success": "Product updated successfully",
+    "controlled_tooltip": "Controlled product — only Tenant Admin can edit",
+    "controlled_edit_denied": "This product has approval overrides and can only be edited by the Tenant Admin."
   },
   "lang": {
     "label": "Language",
