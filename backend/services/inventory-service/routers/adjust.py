@@ -9,7 +9,12 @@ from dependencies import get_current_user
 from shared.permissions.middleware import require_permission
 from shared.permissions.registry import PERMISSIONS
 from shared.utils.responses import SuccessResponse
-from schemas.inventory import AdjustmentListItem, AdjustmentRequest, AdjustmentResponse
+from schemas.inventory import (
+    AdjustmentApprovalInfoResponse,
+    AdjustmentListItem,
+    AdjustmentRequest,
+    AdjustmentResponse,
+)
 from services.inventory_service import InventoryService
 
 router = APIRouter()
@@ -49,6 +54,18 @@ async def submit_adjustment(
 ) -> SuccessResponse[AdjustmentResponse]:
     svc = InventoryService(db)
     result = await svc.transition_adjustment(user, adjustment_id, "PENDING_APPROVAL")
+    return SuccessResponse(data=result)
+
+
+@router.get("/{adjustment_id}/approval-info", response_model=SuccessResponse[AdjustmentApprovalInfoResponse])
+@require_permission(PERMISSIONS.ADJUSTMENT_VIEW)
+async def get_adjustment_approval_info(
+    adjustment_id: UUID,
+    user=Depends(get_current_user),
+    db: AsyncSession = Depends(get_db_session),
+) -> SuccessResponse[AdjustmentApprovalInfoResponse]:
+    svc = InventoryService(db)
+    result = await svc.get_adjustment_approval_info(user, adjustment_id)
     return SuccessResponse(data=result)
 
 

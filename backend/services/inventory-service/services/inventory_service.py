@@ -24,6 +24,7 @@ from services.self_approval_service import (
 )
 from repositories.ledger_repo import record_transaction, write_transfer_ledger_entry
 from schemas.inventory import (
+    AdjustmentApprovalInfoResponse,
     AdjustmentListItem,
     AdjustmentRequest,
     AdjustmentResponse,
@@ -121,26 +122,60 @@ async def _apply_product_override_flag(
     )
 
 
-def _override_resolution_steps(override: dict) -> list[dict]:
+async def _override_resolution_steps(
+    session:         AsyncSession,
+    tenant_id:       str,
+    override:        dict,
+    creator_user_id: Optional[str] = None,
+) -> list[dict]:
     """Build a single-step resolved_approval_steps list from a product override.
 
     Mirrors the shape produced by approval_service.ResolvedStep.to_dict() so
     _check_can_approve() routes correctly: caller must match
     assigned_to_user_id (sequential mode), or be escalated to TA if the
     position is vacant.
+
+    If the configured approver position is vacant, OR its current holder IS
+    the requester (a self-approval conflict — the override forces
+    PENDING_APPROVAL but the only configured approver is the person who must
+    not approve their own request), escalate up the reports_to chain from the
+    override position via _escalate_vacant(), falling back to the tenant's TA
+    if the chain is exhausted or also resolves back to the creator. This
+    mirrors the self-approval escalation resolve_transfer_approvers() performs
+    for normal (non-override) routing.
     """
-    is_vacant = override.get("approver_user_id") is None
+    from services.approval_service import _escalate_vacant, _find_tenant_ta
+
+    approver_user_id = override.get("approver_user_id")
+    approver_name    = override.get("approver_name")
+    position_id      = override.get("approver_position_id")
+    escalated        = False
+
+    needs_escalation = approver_user_id is None or (
+        creator_user_id is not None and str(approver_user_id) == str(creator_user_id)
+    )
+    if needs_escalation:
+        approver_user_id, approver_name, escalated = await _escalate_vacant(
+            session, tenant_id, position_id,
+        )
+        if not approver_user_id or (
+            creator_user_id is not None and str(approver_user_id) == str(creator_user_id)
+        ):
+            approver_user_id, approver_name = await _find_tenant_ta(session, tenant_id)
+            escalated = True
+
+    is_vacant = approver_user_id is None
     return [{
         "sequence":            1,
         "position_title":      override.get("approver_title") or "Designated Approver",
-        "position_id":         override.get("approver_position_id"),
+        "position_id":         position_id,
         "node_id":             None,
-        "assigned_to_user_id": override.get("approver_user_id"),
-        "assigned_to_name":    override.get("approver_name"),
+        "assigned_to_user_id": approver_user_id,
+        "assigned_to_name":    approver_name,
         "execution_mode":      "sequential",
         "sla_hours":           None,
         "is_vacant":           is_vacant,
-        "escalated":           is_vacant,
+        "escalated":           escalated,
         "status":              "pending",
         "all_holders":         [],
         "holder_count":        0 if is_vacant else 1,
@@ -973,7 +1008,9 @@ class InventoryService:
                     await _apply_product_override_flag(
                         self.db, user, "transfer", transfer_id, _product_override_routing,
                     )
-                resolved_steps = _override_resolution_steps(_product_override_routing)
+                resolved_steps = await _override_resolution_steps(
+                    self.db, str(user.tenant_id), _product_override_routing, created_by_for_res,
+                )
             else:
                 resolution = await _resolve_approvers(
                     session=self.db,
@@ -1576,13 +1613,35 @@ class InventoryService:
                 await _apply_product_override_flag(
                     self.db, user, "adjustment", adjustment_id, _product_override_adj,
                 )
+                _override_step = (await _override_resolution_steps(
+                    self.db, str(user.tenant_id), _product_override_adj, str(row.created_by),
+                ))[0]
+                await self.db.execute(
+                    text(
+                        "UPDATE adjustment_orders "
+                        "SET required_approver_position_id = :pos_id, "
+                        "    required_approver_user_id = :user_id, "
+                        "    required_approver_name = :name, "
+                        "    approver_escalated = :escalated, "
+                        "    updated_at = now() "
+                        "WHERE id = :id"
+                    ),
+                    {
+                        "pos_id":    _override_step.get("position_id"),
+                        "user_id":   _override_step.get("assigned_to_user_id"),
+                        "name":      _override_step.get("assigned_to_name"),
+                        "escalated": _override_step.get("escalated", False),
+                        "id":        str(adjustment_id),
+                    },
+                )
                 can_self_approve = False
                 route_to = _product_override_adj.get("approver_role_code")
                 route_position = {
-                    "approver_position_id":   _product_override_adj.get("approver_position_id"),
-                    "approver_user_id":       _product_override_adj.get("approver_user_id"),
-                    "approver_name":          _product_override_adj.get("approver_name"),
+                    "approver_position_id":    _override_step.get("position_id"),
+                    "approver_user_id":        _override_step.get("assigned_to_user_id"),
+                    "approver_name":           _override_step.get("assigned_to_name"),
                     "approver_position_title": _product_override_adj.get("approver_title"),
+                    "escalated":               _override_step.get("escalated", False),
                 }
             else:
                 can_self_approve, route_to, route_position = await check_adjustment_self_approval(
@@ -1683,6 +1742,39 @@ class InventoryService:
                     f"routed_to:{route_to}",
                 )
 
+        # ── Product-override approval gate (MATRIX 1) ───────────────────────
+        # When a Design-B override routed this adjustment to a specific
+        # position/user, only that resolved approver (or, if escalated, any
+        # active TA who isn't the creator) may move it to APPROVED. Normal
+        # (non-override) adjustments keep their existing RBAC-only gate.
+        if next_state == "APPROVED" and getattr(row, "product_override_applied", False):
+            from fastapi import HTTPException
+
+            caller_uid   = str(user.user_id)
+            caller_role  = getattr(user, "role", "")
+            is_own       = str(getattr(row, "created_by", "") or "") == caller_uid
+            required_uid = (
+                str(row.required_approver_user_id) if row.required_approver_user_id else None
+            )
+            escalated = bool(getattr(row, "approver_escalated", False))
+
+            allowed = (
+                (required_uid is not None and caller_uid == required_uid and not is_own)
+                or (escalated and caller_role == "TA" and not is_own)
+            )
+            if not allowed:
+                raise HTTPException(
+                    status_code=403,
+                    detail={
+                        "code":    "NOT_REQUIRED_APPROVER",
+                        "message": (
+                            f"Only {row.required_approver_name or 'the designated approver'} "
+                            "can approve this adjustment."
+                        ),
+                        "required_approver_name": row.required_approver_name,
+                    },
+                )
+
         await self.db.execute(
             text("UPDATE adjustment_orders SET status = :s, updated_at = now() WHERE id = :id"),
             {"s": next_state, "id": str(adjustment_id)},
@@ -1709,6 +1801,72 @@ class InventoryService:
             created_at=datetime.now(timezone.utc),
             is_self_approved=bool(row.is_self_approved),
             total_value=Decimal(str(row.total_value)) if row.total_value is not None else None,
+        )
+
+    async def get_adjustment_approval_info(
+        self, user: Any, adjustment_id: UUID
+    ) -> AdjustmentApprovalInfoResponse:
+        """Return who must approve this adjustment and whether the caller can.
+
+        Mirrors GET /transfers/{id}/approval-info — when a Design-B product
+        override has routed the adjustment to a specific position/user,
+        can_approve is gated on that resolved approver (or, if escalated,
+        any active TA who isn't the creator). Adjustments without an
+        override fall back to the normal adjustment:approve RBAC grant.
+        """
+        from fastapi import HTTPException
+
+        row = (await self.db.execute(
+            text(
+                "SELECT id, status, created_by, product_override_applied, "
+                "       required_approver_user_id, required_approver_name, "
+                "       approver_escalated "
+                "FROM adjustment_orders WHERE id = :id AND tenant_id = :tid"
+            ),
+            {"id": str(adjustment_id), "tid": str(user.tenant_id)},
+        )).fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="Adjustment not found")
+
+        caller_uid   = str(user.user_id)
+        caller_role  = getattr(user, "role", "")
+        is_own       = str(row.created_by or "") == caller_uid
+        required_uid = str(row.required_approver_user_id) if row.required_approver_user_id else None
+        escalated    = bool(row.approver_escalated)
+
+        if row.product_override_applied:
+            can_approve = (
+                (required_uid is not None and caller_uid == required_uid and not is_own)
+                or (escalated and caller_role == "TA" and not is_own)
+            )
+            if escalated:
+                step_label = (
+                    f"Awaiting {row.required_approver_name or 'TA'} approval "
+                    "(escalated — creator cannot self-approve)"
+                )
+            elif required_uid:
+                step_label = f"Awaiting {row.required_approver_name} approval"
+            else:
+                step_label = "Position vacant — no available approver"
+        else:
+            from shared.permissions.middleware import check_permission
+            from shared.permissions.registry import PERMISSIONS
+
+            result = await check_permission(
+                user, PERMISSIONS.ADJUSTMENT_APPROVE, {"tenant_id": str(user.tenant_id)},
+            )
+            can_approve = bool(result.allowed) and not is_own
+            step_label = None
+
+        return AdjustmentApprovalInfoResponse(
+            adjustment_id=adjustment_id,
+            status=row.status,
+            product_override_applied=bool(row.product_override_applied),
+            required_approver_user_id=UUID(required_uid) if required_uid else None,
+            required_approver_name=row.required_approver_name,
+            approver_escalated=escalated,
+            can_approve=can_approve,
+            step_label=step_label,
         )
 
     async def create_count_session(

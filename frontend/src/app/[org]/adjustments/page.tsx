@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect, useRef } from "react";
 import { useParams } from "next/navigation";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { getSession, SA_ORG_SLUG } from "@/lib/demo-auth";
@@ -43,6 +43,18 @@ interface AdjRecord {
   created_by?: string;
   created_at: string;
   is_self_approved?: boolean;
+}
+
+// MATRIX 1: GET /adjustments/{id}/approval-info response — when a Design-B
+// product override has routed the adjustment, can_approve reflects the
+// resolved required approver (or escalated TA), not just RBAC role.
+interface AdjApprovalInfo {
+  product_override_applied: boolean;
+  required_approver_user_id?: string | null;
+  required_approver_name?: string | null;
+  approver_escalated: boolean;
+  can_approve: boolean;
+  step_label?: string | null;
 }
 
 const STATUS_CLASS: Record<AdjStatus, string> = {
@@ -242,9 +254,33 @@ export default function AdjustmentsPage() {
 
   const isApproverRole = APPROVER_ROLES.has(currentUser.role);
 
+  // MATRIX 1: prefetch approval-info for PENDING_APPROVAL adjustments so the
+  // Approve/Reject buttons honor product-override required-approver routing
+  // (not just the RBAC-only isApproverRole check below).
+  const approvalInfoCache = useRef<Map<string, AdjApprovalInfo>>(new Map());
+  useEffect(() => {
+    if (!isGatewayMode) return;
+    visibleAdj
+      .filter((a) => a.status === "PENDING_APPROVAL")
+      .forEach((a) => {
+        const id = a.adjustment_id ?? a.id;
+        if (approvalInfoCache.current.has(id)) return;
+        api.get<AdjApprovalInfo>(`/api/v1/inventory/adjustments/${id}/approval-info`)
+          .then((info) => { approvalInfoCache.current.set(id, info); })
+          .catch(() => { /* silently ignore — falls back to local canApprove */ });
+      });
+  }, [visibleAdj, isGatewayMode]);
+
   function canApprove(adj: AdjRecord): boolean {
     const isCreator = currentUser.id.toLowerCase() === (adj.created_by ?? "").toLowerCase();
+    const info = approvalInfoCache.current.get(adj.adjustment_id ?? adj.id);
+    if (info?.product_override_applied) return info.can_approve;
     return isApproverRole && !isCreator;
+  }
+
+  function approvalStepLabel(adj: AdjRecord): string | null {
+    const info = approvalInfoCache.current.get(adj.adjustment_id ?? adj.id);
+    return info?.product_override_applied ? (info.step_label ?? null) : null;
   }
 
   async function transition(id: string, action: AdjAction) {
@@ -467,6 +503,9 @@ export default function AdjustmentsPage() {
                           {t("adjustment.reject")}
                         </button>
                       </div>
+                    )}
+                    {a.status === "PENDING_APPROVAL" && !canApprove(a) && approvalStepLabel(a) && (
+                      <span className="text-[11px] text-amber-700 italic">{approvalStepLabel(a)}</span>
                     )}
                   </td>
                 </tr>

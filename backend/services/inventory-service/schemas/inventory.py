@@ -232,7 +232,25 @@ class ApprovalInfoResponse(BaseModel):
     holder_count:                    int           = 1
     all_holders:                     list[dict]    = []
     status_label:                    Optional[str] = None
-    step_label:                      Optional[str] = None
+
+
+class AdjustmentApprovalInfoResponse(BaseModel):
+    """Response for GET /adjustments/{id}/approval-info.
+
+    When a Design-B product override has routed the adjustment to a
+    specific position/user, can_approve is gated on that resolved
+    approver (or, if escalated, any active TA who isn't the creator).
+    Adjustments without an override fall back to the normal
+    adjustment:approve RBAC grant.
+    """
+    adjustment_id:             uuid.UUID
+    status:                    str
+    product_override_applied: bool           = False
+    required_approver_user_id: Optional[uuid.UUID] = None
+    required_approver_name:    Optional[str]      = None
+    approver_escalated:        bool               = False
+    can_approve:               bool
+    step_label:                Optional[str]      = None
 
 
 class AuditLogItem(BaseModel):

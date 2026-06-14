@@ -2047,5 +2047,20 @@ Items (d)–(f) were verified by code-path analysis (the relevant data is return
 
 ---
 
+---
+
+## Session 7 — Product Approval Hierarchy Matrix Test (discovery, MATRIX 0)
+
+### GAP I — `product_approval_minimums` overrides for `RECEIVE`/`ISSUE` are persisted but never enforced (no-op)
+
+**Severity:** Medium
+**Symptom:** A Tenant Admin can configure a Design-B per-product approval override (`PUT /products/{id}/approval-minimums`) with `transaction_type='RECEIVE'` or `transaction_type='ISSUE'`. The row is saved successfully and is visible via `GET /products/{id}/approval-minimums`, giving the impression that receiving/issuing this product now requires a designated approver. In practice, the override has zero effect — stock is received/issued immediately with no approval step of any kind.
+**Root cause:** `InventoryService.receive()` and `InventoryService.issue_stock()` (`backend/services/inventory-service/services/inventory_service.py`, ~lines 284–329) are single-step operations: they call `record_transaction()` directly against the immutable ledger and return. Neither has a `status` field (no DRAFT/PENDING_APPROVAL/POSTED state machine — `RECEIVE` and `ISSUE` are not in `PULL_TRANSITIONS` / `PUSH_TRANSITIONS` / `ADJUSTMENT_TRANSITIONS`), and neither calls `_resolve_product_override()` / `check_product_override()`. `check_product_override()` is only invoked from the PULL/PUSH transfer flow (`transition_transfer`, PENDING_REVIEW / PENDING_APPROVAL branches) and the ADJUSTMENT flow (`transition_adjustment`, DRAFT → PENDING_APPROVAL branch).
+**Comparison:** This is the same "known-gap pattern" as the pre-Session-6 ADJUSTMENT GAP G (`product_approval_minimums` defined but not read) — except here the table IS read for PULL/PUSH/ADJUSTMENT, but the `RECEIVE`/`ISSUE` transaction types simply have no approval workflow at all to plug the check into.
+**Phase 2 fix (not built in this pass per task scope):** Either (a) extend `receive()`/`issue_stock()` with a DRAFT → PENDING_APPROVAL → POSTED state machine (new `RECEIVE_TRANSITIONS`/`ISSUE_TRANSITIONS` per CLAUDE.md §17 conventions) that calls `check_product_override()` before posting to the ledger, or (b) until that exists, the TA-facing "Minimum Approval Level" UI for products should omit `RECEIVE`/`ISSUE` as configurable transaction types (or display a "not yet enforced" warning) to avoid implying a control that does not exist.
+**Status:** Documented only — discovery output of the Product Approval Hierarchy Matrix Test (MATRIX 0). No code changed.
+
+---
+
 *SMART Inventory Platform — Bug Report v4.0*  
 *Backend: Python 3.12 / FastAPI · Frontend: Next.js 14 / TypeScript · DB: PostgreSQL 16*
