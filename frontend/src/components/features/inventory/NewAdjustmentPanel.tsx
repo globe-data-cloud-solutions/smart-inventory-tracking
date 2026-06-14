@@ -248,13 +248,17 @@ export function NewAdjustmentPanel({ products, warehouses, orgSlug }: Props) {
               <option value="">— {t("receive_panel.select_product")} —</option>
               {products.map((p) => (
                 <option key={p.id} value={p.id}>
-                  {p.name} · {p.sku}{p.approval_overrides?.ADJUSTMENT ? " 🔒" : ""}
+                  {p.name} · {p.sku}{(p.approval_overrides && Object.keys(p.approval_overrides).length > 0) ? " 🔒" : ""}
                 </option>
               ))}
             </select>
-            {selectedP?.approval_overrides?.ADJUSTMENT && (
+            {selectedP?.approval_overrides && Object.keys(selectedP.approval_overrides).length > 0 && (
               <p className="text-xs text-amber-700 mt-1.5 flex items-start gap-1">
-                <span>🔒</span><span>{buildOverrideTooltip(selectedP.approval_overrides.ADJUSTMENT)}</span>
+                <span>🔒</span><span>
+                  {selectedP.approval_overrides.ADJUSTMENT
+                    ? buildOverrideTooltip(selectedP.approval_overrides.ADJUSTMENT)
+                    : t("product.controlled_tooltip")}
+                </span>
               </p>
             )}
           </Field>

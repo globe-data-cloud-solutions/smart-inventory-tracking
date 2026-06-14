@@ -72,7 +72,7 @@ function stockTier(avail: number, reorderPoint: number): 0 | 1 | 2 {
   return 0;
 }
 
-interface ProductOption { id: string; name: string; sku: string; avail: number; tier: 0 | 1 | 2; sourceKnown: boolean; override?: ProductApprovalOverride; }
+interface ProductOption { id: string; name: string; sku: string; avail: number; tier: 0 | 1 | 2; sourceKnown: boolean; isControlled: boolean; override?: ProductApprovalOverride; }
 
 function ProductSelect({ options, value, onChange }: { options: ProductOption[]; value: string; onChange: (id: string) => void; }) {
   const [open, setOpen] = useState(false);
@@ -97,8 +97,8 @@ function ProductSelect({ options, value, onChange }: { options: ProductOption[];
               {selected.name}
             </span>
             <span className="text-gray-400 text-[11px] ml-1.5">{selected.sku}</span>
-            {selected.override && (
-              <span className="ml-1.5" title={buildOverrideTooltip(selected.override)}>🔒</span>
+            {selected.isControlled && (
+              <span className="ml-1.5" title={selected.override ? buildOverrideTooltip(selected.override) : t("product.controlled_tooltip")}>🔒</span>
             )}
           </span>
         ) : (
@@ -119,8 +119,8 @@ function ProductSelect({ options, value, onChange }: { options: ProductOption[];
                   {o.name}
                 </span>
                 <span className="text-gray-400 text-[11px] ml-1.5">{o.sku}</span>
-                {o.override && (
-                  <span className="ml-1.5" title={buildOverrideTooltip(o.override)}>🔒</span>
+                {o.isControlled && (
+                  <span className="ml-1.5" title={o.override ? buildOverrideTooltip(o.override) : t("product.controlled_tooltip")}>🔒</span>
                 )}
               </span>
               {o.sourceKnown && (
@@ -247,7 +247,7 @@ export function NewTransferPanel({ products, warehouses, orgSlug }: Props) {
   const estimatedValue = unitPrice && qty > 0 ? unitPrice * qty : undefined;
 
   const productOptions: ProductOption[] = [...products]
-    .map((p) => { const base = effectiveFrom ? (p.stock[effectiveFrom] ?? 0) : 0; const avail = effectiveFrom ? getAvailable(p.id, effectiveFrom, base) : 0; return { id: p.id, name: p.name, sku: p.sku, avail, tier: effectiveFrom ? stockTier(avail, p.reorderPoint) : 0, sourceKnown: !!effectiveFrom, override: p.approval_overrides?.[form.transferType] } as ProductOption; })
+    .map((p) => { const base = effectiveFrom ? (p.stock[effectiveFrom] ?? 0) : 0; const avail = effectiveFrom ? getAvailable(p.id, effectiveFrom, base) : 0; return { id: p.id, name: p.name, sku: p.sku, avail, tier: effectiveFrom ? stockTier(avail, p.reorderPoint) : 0, sourceKnown: !!effectiveFrom, isControlled: !!(p.approval_overrides && Object.keys(p.approval_overrides).length > 0), override: p.approval_overrides?.[form.transferType] } as ProductOption; })
     .sort((a, b) => a.tier - b.tier || a.name.localeCompare(b.name));
 
   async function doCreate(skipStockCheck: boolean) {
