@@ -9,6 +9,7 @@ import { useAuditStore } from "@/lib/audit-log-state";
 import { getSession } from "@/lib/demo-auth";
 import { t } from "@/lib/i18n";
 import { formatQty } from "@/lib/utils";
+import { buildOverrideTooltip } from "@/components/features/inventory/ProductLabel";
 import type { DemoProduct, DemoWarehouse, ProductApprovalOverride } from "@/lib/demo-data";
 
 function getAncestorScope(warehouseId: string, warehouses: DemoWarehouse[]): string[] {
@@ -73,27 +74,6 @@ function stockTier(avail: number, reorderPoint: number): 0 | 1 | 2 {
 
 interface ProductOption { id: string; name: string; sku: string; avail: number; tier: 0 | 1 | 2; sourceKnown: boolean; override?: ProductApprovalOverride; }
 
-// Builds the lock-icon tooltip text for a Design-B per-product approval override.
-function overrideTooltip(o: ProductApprovalOverride): string {
-  const approver = o.approver_label ?? t("common.unknown");
-  let text: string;
-  if (o.mode === "QUANTITY") {
-    text = t("product.override_quantity")
-      .replace("{approver}", approver)
-      .replace("{threshold}", formatQty(Number(o.threshold ?? 0)));
-  } else if (o.mode === "VALUE") {
-    text = t("product.override_value")
-      .replace("{approver}", approver)
-      .replace("{threshold}", String(o.threshold ?? ""));
-  } else {
-    text = t("product.override_always")
-      .replace("{approver}", approver)
-      .replace("{transaction}", t("common.transaction"));
-  }
-  if (o.note) text += ` — ${o.note}`;
-  return text;
-}
-
 function ProductSelect({ options, value, onChange }: { options: ProductOption[]; value: string; onChange: (id: string) => void; }) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
@@ -118,7 +98,7 @@ function ProductSelect({ options, value, onChange }: { options: ProductOption[];
             </span>
             <span className="text-gray-400 text-[11px] ml-1.5">{selected.sku}</span>
             {selected.override && (
-              <span className="ml-1.5" title={overrideTooltip(selected.override)}>🔒</span>
+              <span className="ml-1.5" title={buildOverrideTooltip(selected.override)}>🔒</span>
             )}
           </span>
         ) : (
@@ -140,7 +120,7 @@ function ProductSelect({ options, value, onChange }: { options: ProductOption[];
                 </span>
                 <span className="text-gray-400 text-[11px] ml-1.5">{o.sku}</span>
                 {o.override && (
-                  <span className="ml-1.5" title={overrideTooltip(o.override)}>🔒</span>
+                  <span className="ml-1.5" title={buildOverrideTooltip(o.override)}>🔒</span>
                 )}
               </span>
               {o.sourceKnown && (
@@ -365,7 +345,7 @@ export function NewTransferPanel({ products, warehouses, orgSlug }: Props) {
               const override = productOptions.find((o) => o.id === form.productId)?.override;
               return override ? (
                 <p className="text-xs text-amber-700 mt-1.5 flex items-start gap-1">
-                  <span>🔒</span><span>{overrideTooltip(override)}</span>
+                  <span>🔒</span><span>{buildOverrideTooltip(override)}</span>
                 </p>
               ) : null;
             })()}

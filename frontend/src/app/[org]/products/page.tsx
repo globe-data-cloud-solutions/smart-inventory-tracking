@@ -8,6 +8,7 @@ import { DEMO_TENANTS } from "@/lib/demo-data";
 import { usePermission } from "@/hooks/usePermission";
 import { useInventoryStore } from "@/lib/inventory-state";
 import { AddProductPanel, type EditProductData } from "@/components/features/inventory/AddProductPanel";
+import { ProductLabel } from "@/components/features/inventory/ProductLabel";
 import { api } from "@/lib/api";
 import { t } from "@/lib/i18n";
 import { useTenantName } from "@/hooks/useTenantName";
@@ -214,10 +215,7 @@ export default function ProductsPage() {
                     {p.isNew && <span className="ml-1.5 text-[10px] font-bold bg-green-100 text-green-800 px-1 py-0.5 rounded">NEW</span>}
                   </td>
                   <td className="px-4 py-2.5 font-semibold text-gray-800">
-                    {p.name}
-                    {p.is_controlled && (
-                      <span title={t("product.controlled_tooltip")} className="ml-1.5 text-xs">🔒</span>
-                    )}
+                    <ProductLabel name={p.name} isControlled={p.is_controlled} />
                     {p.is_discontinued && (
                       <span className="ml-1.5 text-[10px] font-bold bg-gray-200 text-gray-500 px-1 py-0.5 rounded">
                         {t("product.discontinued_badge")}

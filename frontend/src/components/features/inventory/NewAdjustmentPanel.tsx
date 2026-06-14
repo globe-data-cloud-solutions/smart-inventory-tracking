@@ -8,8 +8,8 @@ import { t } from "@/lib/i18n";
 import { getSession } from "@/lib/demo-auth";
 import { useInventoryStore } from "@/lib/inventory-state";
 import { useAuditStore } from "@/lib/audit-log-state";
-import { formatQty } from "@/lib/utils";
-import type { DemoProduct, DemoWarehouse, ProductApprovalOverride } from "@/lib/demo-data";
+import { buildOverrideTooltip } from "@/components/features/inventory/ProductLabel";
+import type { DemoProduct, DemoWarehouse } from "@/lib/demo-data";
 
 interface Props { products: DemoProduct[]; warehouses: DemoWarehouse[]; orgSlug: string; }
 
@@ -43,27 +43,6 @@ const inputCls  = "w-full px-2.5 py-2 text-sm border border-gray-300 rounded out
 const selectCls = `${inputCls} cursor-pointer`;
 
 interface AdjResult { adjustment_id: string; status: string; quantity_delta: string }
-
-// Builds the lock-icon tooltip text for a Design-B per-product approval override.
-function overrideTooltip(o: ProductApprovalOverride): string {
-  const approver = o.approver_label ?? t("common.unknown");
-  let text: string;
-  if (o.mode === "QUANTITY") {
-    text = t("product.override_quantity")
-      .replace("{approver}", approver)
-      .replace("{threshold}", formatQty(Number(o.threshold ?? 0)));
-  } else if (o.mode === "VALUE") {
-    text = t("product.override_value")
-      .replace("{approver}", approver)
-      .replace("{threshold}", String(o.threshold ?? ""));
-  } else {
-    text = t("product.override_always")
-      .replace("{approver}", approver)
-      .replace("{transaction}", t("common.transaction"));
-  }
-  if (o.note) text += ` — ${o.note}`;
-  return text;
-}
 
 export function NewAdjustmentPanel({ products, warehouses, orgSlug }: Props) {
   const qc      = useQueryClient();
@@ -275,7 +254,7 @@ export function NewAdjustmentPanel({ products, warehouses, orgSlug }: Props) {
             </select>
             {selectedP?.approval_overrides?.ADJUSTMENT && (
               <p className="text-xs text-amber-700 mt-1.5 flex items-start gap-1">
-                <span>🔒</span><span>{overrideTooltip(selectedP.approval_overrides.ADJUSTMENT)}</span>
+                <span>🔒</span><span>{buildOverrideTooltip(selectedP.approval_overrides.ADJUSTMENT)}</span>
               </p>
             )}
           </Field>

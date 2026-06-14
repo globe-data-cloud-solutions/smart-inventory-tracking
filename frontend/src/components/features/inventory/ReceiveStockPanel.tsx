@@ -12,6 +12,7 @@ import { getSession } from "@/lib/demo-auth";
 import { t } from "@/lib/i18n";
 import { useWarehouses } from "@/hooks/useWarehouses";
 import type { DemoProduct } from "@/lib/demo-data";
+import { buildOverrideTooltip } from "@/components/features/inventory/ProductLabel";
 
 interface Props { products: DemoProduct[]; orgSlug: string; }
 
@@ -141,8 +142,21 @@ export function ReceiveStockPanel({ products, orgSlug }: Props) {
           <Field label={t("table.product")}>
             <select value={form.productId} onChange={(e) => set("productId", e.target.value)} className={selectCls} required>
               <option value="">— {t("receive_panel.select_product")} —</option>
-              {products.map((p) => <option key={p.id} value={p.id}>{p.name} · {p.sku}</option>)}
+              {products.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.name} · {p.sku}{p.approval_overrides?.RECEIVE ? " 🔒" : ""}
+                </option>
+              ))}
             </select>
+            {(() => {
+              const selectedP = products.find((p) => p.id === form.productId);
+              const override = selectedP?.approval_overrides?.RECEIVE;
+              return override ? (
+                <p className="text-xs text-amber-700 mt-1.5 flex items-start gap-1">
+                  <span>🔒</span><span>{buildOverrideTooltip(override)}</span>
+                </p>
+              ) : null;
+            })()}
           </Field>
           <Field label={t("inventory.warehouse")}>
             <div className={`${inputCls} bg-gray-50 text-gray-700 select-none`}>

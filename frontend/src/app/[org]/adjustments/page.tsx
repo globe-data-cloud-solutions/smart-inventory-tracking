@@ -6,6 +6,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { getSession, SA_ORG_SLUG } from "@/lib/demo-auth";
 import { DEMO_TENANTS, type DemoTenant, type DemoProduct, type ProductApprovalOverride } from "@/lib/demo-data";
 import { NewAdjustmentPanel } from "@/components/features/inventory/NewAdjustmentPanel";
+import { ProductLabel } from "@/components/features/inventory/ProductLabel";
 import { useInventoryStore } from "@/lib/inventory-state";
 import { useAuditStore } from "@/lib/audit-log-state";
 import { api, IS_GATEWAY_MODE } from "@/lib/api";
@@ -195,6 +196,13 @@ export default function AdjustmentsPage() {
     [apiProducts],
   );
 
+  // Lookup for the 🔒 ProductLabel on adjustment rows — adjustment records carry
+  // only product_id/product_name, not approval_overrides.
+  const productById = useMemo(
+    () => new Map(apiProducts.map((p) => [p.id, p])),
+    [apiProducts],
+  );
+
   if (org === SA_ORG_SLUG) return <p className="p-8 text-gray-500">{t("sa.select_tenant")}</p>;
   const tenant = DEMO_TENANTS.find((ten) => ten.slug === org);
   if (!tenant && !isGatewayMode) return <p className="p-8 text-gray-500">{t("common.no_data")}</p>;
@@ -348,7 +356,13 @@ export default function AdjustmentsPage() {
             {myPending.map((a) => (
               <div key={a.id} className="bg-white border border-amber-200 rounded-md px-4 py-3.5 flex items-center justify-between gap-4 flex-wrap">
                 <div>
-                  <p className="font-bold text-sm text-gray-800 m-0">{a.product_name}</p>
+                  <p className="font-bold text-sm text-gray-800 m-0">
+                    <ProductLabel
+                      name={a.product_name}
+                      approvalOverrides={productById.get(a.product_id)?.approval_overrides}
+                      transactionType="ADJUSTMENT"
+                    />
+                  </p>
                   <p className="text-xs text-gray-500 mt-0.5">
                     {a.warehouse_name} · {a.reason_code.replace(/_/g, " ")} · {(a.quantity_delta ?? 0) > 0 ? "+" : ""}{formatQty(a.quantity_delta ?? 0)} units
                   </p>
@@ -393,7 +407,13 @@ export default function AdjustmentsPage() {
                 <tr key={a.adjustment_id ?? a.id} className={`border-b border-gray-100 ${idx % 2 === 0 ? "bg-white" : "bg-gray-50"}`}>
                   <td className="px-3.5 py-2 text-gray-400 text-xs whitespace-nowrap">{new Date(a.created_at).toLocaleDateString()}</td>
                   <td className="px-3.5 py-2 font-mono text-xs text-gray-400">{a.product_sku}</td>
-                  <td className="px-3.5 py-2 font-semibold text-gray-800">{a.product_name}</td>
+                  <td className="px-3.5 py-2 font-semibold text-gray-800">
+                    <ProductLabel
+                      name={a.product_name}
+                      approvalOverrides={productById.get(a.product_id)?.approval_overrides}
+                      transactionType="ADJUSTMENT"
+                    />
+                  </td>
                   <td className="px-3.5 py-2 text-gray-700">{a.warehouse_name}</td>
                   <td className={`px-3.5 py-2 font-bold ${(a.quantity_delta ?? 0) < 0 ? "text-red-600" : "text-emerald-600"}`}>
                     {(a.quantity_delta ?? 0) > 0 ? "+" : ""}{formatQty(a.quantity_delta ?? 0)}

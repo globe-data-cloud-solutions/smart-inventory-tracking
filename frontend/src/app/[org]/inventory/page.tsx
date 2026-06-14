@@ -4,7 +4,8 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useParams } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
 import { SA_ORG_SLUG, getSession } from "@/lib/demo-auth";
-import { DEMO_TENANTS, type DemoProduct, type DemoWarehouse, type WarehouseType } from "@/lib/demo-data";
+import { DEMO_TENANTS, type DemoProduct, type DemoWarehouse, type ProductApprovalOverride, type WarehouseType } from "@/lib/demo-data";
+import { ProductLabel } from "@/components/features/inventory/ProductLabel";
 import { usePermission } from "@/hooks/usePermission";
 import { AddProductPanel } from "@/components/features/inventory/AddProductPanel";
 import { ReceiveStockPanel } from "@/components/features/inventory/ReceiveStockPanel";
@@ -32,7 +33,8 @@ type ApiProduct = {
   brand?: string | null; type_code?: string | null;
   packaging_type?: string | null; units_per_package?: number | null;
   unit_price?: number | null; currency?: string | null;
-  is_discontinued?: boolean;
+  is_discontinued?: boolean; is_controlled?: boolean;
+  approval_overrides?: Record<string, ProductApprovalOverride>;
 };
 
 type InventoryStockItem = {
@@ -354,6 +356,7 @@ export default function InventoryPage() {
         packagingType: p.packaging_type ?? undefined,
         unitsPerPackage: p.units_per_package ?? undefined,
         is_discontinued: p.is_discontinued ?? false,
+        approval_overrides: p.approval_overrides,
       }))
     : [
         ...(tenant?.products ?? []),
@@ -745,7 +748,7 @@ export default function InventoryPage() {
                       <tr key={`${p.id}:${si.warehouse_id}`} className={`border-b border-gray-100 ${idx % 2 === 0 ? "bg-white" : "bg-gray-50"}`}>
                         <td className="px-3.5 py-2.5 font-mono text-[11px] text-gray-400 whitespace-nowrap">{p.sku}</td>
                         <td className="px-3.5 py-2.5 font-semibold text-gray-800 whitespace-nowrap">
-                          {p.name}
+                          <ProductLabel name={p.name} approvalOverrides={p.approval_overrides} />
                           {p.batchTracking && (
                             <span className="ml-1.5 text-[10px] font-bold bg-violet-100 text-violet-800 px-1 py-0.5 rounded">BATCH</span>
                           )}
@@ -802,7 +805,7 @@ export default function InventoryPage() {
                   <tr key={p.id} className={`border-b border-gray-100 ${idx % 2 === 0 ? "bg-white" : "bg-gray-50"} ${isZeroRow ? "opacity-60" : ""}`}>
                     <td className="px-3.5 py-2.5 font-mono text-[11px] text-gray-400 whitespace-nowrap">{p.sku}</td>
                     <td className="px-3.5 py-2.5 whitespace-nowrap">
-                      <span className="font-semibold text-gray-800">{p.name}</span>
+                      <ProductLabel name={p.name} approvalOverrides={p.approval_overrides} className="font-semibold text-gray-800" />
                       {p.batchTracking && (
                         <span className="ml-1.5 text-[10px] font-bold bg-violet-100 text-violet-800 px-1 py-0.5 rounded">BATCH</span>
                       )}
@@ -883,7 +886,9 @@ export default function InventoryPage() {
                     {p.sku}
                     <span className="ml-1.5 text-[10px] font-bold bg-green-100 text-green-800 px-1 py-0.5 rounded">NEW</span>
                   </td>
-                  <td className="px-3.5 py-2.5 font-semibold text-gray-800">{p.name}</td>
+                  <td className="px-3.5 py-2.5 font-semibold text-gray-800">
+                    <ProductLabel name={p.name} approvalOverrides={p.approval_overrides} />
+                  </td>
                   <td className="px-3.5 py-2.5 text-xs"><span className="bg-gray-100 px-2 py-0.5 rounded font-semibold text-gray-700">—</span></td>
                   <td className="px-3.5 py-2.5 text-gray-400 text-xs">{p.unit}</td>
                   <td className="px-3.5 py-2.5 text-right font-bold text-gray-400">0</td>

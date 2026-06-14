@@ -7,6 +7,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { getSession, SA_ORG_SLUG } from "@/lib/demo-auth";
 import { DEMO_TENANTS, type DemoProduct, type DemoWarehouse, type ProductApprovalOverride } from "@/lib/demo-data";
 import { NewTransferPanel } from "@/components/features/transfers/NewTransferPanel";
+import { ProductLabel } from "@/components/features/inventory/ProductLabel";
 import { useInventoryStore } from "@/lib/inventory-state";
 import { useAuditStore } from "@/lib/audit-log-state";
 import { useOfflineSync } from "@/hooks/useOfflineSync";
@@ -826,6 +827,7 @@ export default function TransfersPage() {
     stock:         stockByProductId.get(p.id) ?? {},
     approval_overrides: p.approval_overrides,
   }));
+  const productById = new Map(mergedProducts.map((p) => [p.id, p]));
 
   // Prefer org-node list (has level_number for canPush + all nodes regardless of stock).
   // Fall back to analytics-derived list until org-node data loads.
@@ -1141,7 +1143,13 @@ export default function TransfersPage() {
                     </td>
                     <td className="px-3 py-2.5 text-gray-700 text-sm">{txn.from_warehouse_name}</td>
                     <td className="px-3 py-2.5 text-gray-700 text-sm">{txn.to_warehouse_name}</td>
-                    <td className="px-3 py-2.5 text-gray-500 text-sm">{txn.product_name}</td>
+                    <td className="px-3 py-2.5 text-gray-500 text-sm">
+                      <ProductLabel
+                        name={txn.product_name}
+                        approvalOverrides={productById.get(txn.product_id)?.approval_overrides}
+                        transactionType={txn.transfer_type}
+                      />
+                    </td>
                     <td className="px-3 py-2.5 font-semibold text-gray-900 text-sm">
                       {Number(txn.quantity ?? 0).toLocaleString()}
                       {txn.status === "PARTIALLY_RECEIVED" && (() => {
