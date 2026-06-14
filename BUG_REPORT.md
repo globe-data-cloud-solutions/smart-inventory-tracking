@@ -2009,6 +2009,42 @@ The approval endpoint (`POST /adjustments/{id}/approve`) auto-advances DRAFT →
 The `product_approval_minimums` table (`min_authority_level` per `product_id` + `transaction_type`) exists and has a schema for `ADJUSTMENT` transaction type, but `approve_adjustment()` never queries it. Any NM can approve an adjustment regardless of the product's configured minimum authority level.  
 **Phase 2 fix:** In `approve_adjustment()`, query `product_approval_minimums WHERE product_id = ? AND transaction_type = 'ADJUSTMENT'`. If `min_authority_level` is set and the approver's role level is below it, return HTTP 403 ABAC_DENIED.
 
+### GAP H — `approval_history` table referenced by AUTO_APPROVAL_NOTICE alert query does not exist
+
+**Severity:** Medium
+**Symptom:** `GET /api/v1/inventory/alerts?alert_type=AUTO_APPROVAL_NOTICE` always returns an empty list, even when transfers were auto-approved within the last 24 hours.
+**Root cause:** `backend/services/inventory-service/routers/alerts.py` (`list_alerts`, ~line 64) selects `FROM approval_history ah ... WHERE ah.action = 'AUTO_APPROVED'`, but no Alembic migration creates an `approval_history` table (CLAUDE.md §7 documents the table's intended schema, but it was never migrated). The query raises (relation does not exist), which is caught by the broad `except Exception` at line 86 and silently returns `SuccessResponse(data=[])` — no error surfaces to the caller or logs at error level (only `logger.warning`).
+**Needs either:**
+  - (a) Create the `approval_history` table via a new Alembic migration matching the CLAUDE.md §7 schema (`id, tenant_id, transaction_id, approval_rule_id, approver_id, approver_role, action, notes, actioned_at`, with the append-only `no_update`/`no_delete` RULEs and RLS policy), and ensure `approve_transfer()` / approval-routing code writes `AUTO_APPROVED` rows to it; or
+  - (b) Rewrite the alert query to source auto-approval events from `resolved_approval_steps` JSONB on `transfer_orders` (or another existing table that already records auto-approval decisions) instead of `approval_history`.
+**Status:** Documented only — not fixed in this change. AUTO_APPROVAL_NOTICE alerts remain non-functional (always empty) until one of the above is implemented.
+
+---
+
+## Session 6 — Verification: NM permission fix, controlled-product gating, edit pre-population, adjustment helper
+
+### Automated checks — BEFORE vs AFTER
+
+| Check | BEFORE | AFTER | Match? |
+|---|---|---|---|
+| Unit tests (`pytest backend/ -v --tb=short`) | 396 passed, 2 warnings | 396 passed, 2 warnings | ✅ |
+| TypeScript (`npx tsc --noEmit`) | 0 errors | 0 errors | ✅ |
+| i18n (`bash scripts/check_i18n.sh`) | PASS (only pre-existing WARNINGs) | PASS (only pre-existing WARNINGs) | ✅ |
+
+### Manual verification
+
+| Item | Description | Result |
+|---|---|---|
+| (a) | NM submits both previously-stuck adjustments (`e0797e86…`, `98d3fa95…`) for `a01@t04.com` → both HTTP 200 | **PASS** — confirmed earlier in this session after seeding `adjustment:submit = FULL` for NM (FIX 1) |
+| (b) | NM cannot discontinue a controlled product | **PASS** — verified with a throwaway tenant + "Test Gold" product (PULL override ALWAYS → RM, i.e. controlled). `POST /products/{id}/discontinue` and `/reactivate` as NM → HTTP 403 in both cases. TA → HTTP 200 in both cases. Note: NM's 403 is `RBAC_DENIED` rather than `PRODUCT_CONTROLLED` because no role below TA/SA holds `product:discontinue`/`product:reactivate` at all in the current seed — NM is blocked from discontinuing *any* product, controlled or not, and the frontend `canDiscontinue = usePermission("product:discontinue")` gate hides the button entirely for NM. The new `_raise_if_controlled` call added to both routes (mirroring PATCH `/{id}`) is correct defense-in-depth for any future role that is granted `product:discontinue` below TA/SA — it is currently unreachable via NM specifically, but enforces the same Design-B rule the moment such a grant exists. |
+| (c) | TA editing a controlled product ("Test Gold", PULL = ALWAYS → RM) shows the existing override pre-populated | **PASS** — `GET /products/{id}/approval-minimums` returns the PULL entry with `override_enabled=true`, `threshold_type=ALWAYS`, `approver_position_id=<RM position>`, and `note` intact — exactly the shape `AddProductPanel.tsx`'s new edit-mode `useEffect` (FIX 3) maps onto `minimumRows`. |
+| (d) | Adjustments page approval-rules helper shows "L1 HQ → Self-approve" (no empty `()`) for self-approve rules | **PASS (code-verified)** — `ruleSummary` now builds `limitPart` only when `limitText` is non-empty (no qty/value limit configured → `limitPart = ""`), so a self-approve rule renders `${levelLabel} → ${posLabel}` with no parentheses. |
+| (e) | Helper shows the controlled-products note to any role when an active override exists | **PASS (code-verified)** — `anyControlledProduct` is derived from `apiProducts[].approval_overrides`, which `GET /products/` (`product-service/routers/products.py` ~line 204) returns unconditionally to every role with `product:list`/`product:view` (WM/RM/NM/TA all have this). The popover renders `adjustment.controlled_note` whenever `anyControlledProduct` is true, independent of `ruleSummary`. |
+| (f) | ⓘ helper button/popover visible to WM/RM/NM, not just TA | **PASS (code-verified)** — the helper's visibility condition `(ruleSummary.length > 0 \|\| anyControlledProduct)` has no role check; `anyControlledProduct` does not depend on `adjustment_approval_rule:view` (which only SA currently holds), so WM/RM/NM see the ⓘ whenever a controlled product exists even though they cannot call `GET /adjustment-approval-rules`. |
+| (g) | `approval_history` table issue documented | **PASS** — see GAP H above |
+
+Items (d)–(f) were verified by code-path analysis (the relevant data is returned identically to all roles, and the new conditionals contain no role checks) plus the `tsc`/`i18n` passes on the edited file; a full browser walkthrough as WM/RM/NM with a live controlled product was not additionally performed in this session.
+
 ---
 
 *SMART Inventory Platform — Bug Report v4.0*  

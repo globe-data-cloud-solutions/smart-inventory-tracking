@@ -181,9 +181,19 @@ export default function AdjustmentsPage() {
           ? (r.value_limit != null ? `> ${formatQty(parseFloat(r.value_limit))}` : "")
           : (r.qty_limit != null ? `> ${formatQty(parseFloat(r.qty_limit))} units` : "");
 
-        return `${levelLabel} (${limitText}) → ${posLabel}`;
+        // Self-approve rules have no limit and no specific approver — omit the
+        // empty "()" entirely rather than rendering "L1 HQ () → Self-approve".
+        const limitPart = limitText ? ` (${limitText})` : "";
+        return `${levelLabel}${limitPart} → ${posLabel}`;
       });
   }, [adjApprovalRules, hierarchyConfig, tenantPositions]);
+
+  // Any active per-product approval override (Design-B "controlled" product) —
+  // shown to all roles regardless of whether any adjustment-approval-rules exist.
+  const anyControlledProduct = useMemo(
+    () => apiProducts.some((p) => p.approval_overrides && Object.keys(p.approval_overrides).length > 0),
+    [apiProducts],
+  );
 
   if (org === SA_ORG_SLUG) return <p className="p-8 text-gray-500">{t("sa.select_tenant")}</p>;
   const tenant = DEMO_TENANTS.find((ten) => ten.slug === org);
@@ -287,7 +297,7 @@ export default function AdjustmentsPage() {
           <p className="text-sm text-gray-500 mt-1">{tenantName ?? org} · {t("adjustment.title")}</p>
         </div>
         <div className="flex items-center gap-2">
-          {ruleSummary.length > 0 && (
+          {(ruleSummary.length > 0 || anyControlledProduct) && (
             <div className="relative group">
               <button
                 type="button"
@@ -298,14 +308,23 @@ export default function AdjustmentsPage() {
               </button>
               <div className="hidden group-hover:block absolute right-0 top-full mt-1 w-72 bg-white border border-gray-200 rounded-md shadow-lg z-50 p-3 text-xs">
                 <p className="font-bold text-gray-700 mb-1.5">{t("adjustment.rules_hint")}</p>
-                <ul className="space-y-1 text-gray-600">
-                  {ruleSummary.map((line, i) => (
-                    <li key={i}>{line}</li>
-                  ))}
-                </ul>
-                <p className="text-[11px] text-gray-400 mt-2 pt-2 border-t border-gray-100">
-                  {t("approval_rule.no_match_default")}
-                </p>
+                {ruleSummary.length > 0 && (
+                  <>
+                    <ul className="space-y-1 text-gray-600">
+                      {ruleSummary.map((line, i) => (
+                        <li key={i}>{line}</li>
+                      ))}
+                    </ul>
+                    <p className="text-[11px] text-gray-400 mt-2 pt-2 border-t border-gray-100">
+                      {t("approval_rule.no_match_default")}
+                    </p>
+                  </>
+                )}
+                {anyControlledProduct && (
+                  <p className={`text-[11px] text-gray-500 ${ruleSummary.length > 0 ? "mt-2 pt-2 border-t border-gray-100" : ""}`}>
+                    {t("adjustment.controlled_note")}
+                  </p>
+                )}
               </div>
             </div>
           )}

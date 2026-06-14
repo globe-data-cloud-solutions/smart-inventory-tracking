@@ -478,7 +478,8 @@
     "no_pending": "Sirreessiwwan eegama hin jiran",
     "no_pending_hint": "Sirreessiwwan hundi xumuramaniiru. Galmeewwan darbe ilaaluuf seenaa jijjiiraa.",
     "rules_hint": "Seerota mirkaneessaa",
-    "self_approve": "Ofiin mirkaneessuu"
+    "self_approve": "Ofiin mirkaneessuu",
+    "controlled_note": "🔒 Oomishaalee to'annoo jala jiran yeroo hunda mirkaneessaa addaa barbaadu, hangaa isaanii osoo hin ilaalle. Maqaa oomishaa irratti mallattoo 🔒 ilaali."
   },
   "transfer": {
     "status": {

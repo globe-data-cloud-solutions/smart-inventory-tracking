@@ -486,7 +486,8 @@
     "no_pending": "No pending adjustments",
     "no_pending_hint": "All adjustments are resolved. Toggle history to view past records.",
     "rules_hint": "Approval rules",
-    "self_approve": "Self-approve"
+    "self_approve": "Self-approve",
+    "controlled_note": "🔒 Controlled products always require a specific approver, regardless of quantity. Look for 🔒 on product names."
   },
   "transfer": {
     "status": {

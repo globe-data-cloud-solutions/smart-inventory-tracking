@@ -48,6 +48,34 @@ from schemas.product import (
 router = APIRouter()
 
 
+async def _raise_if_controlled(db: AsyncSession, tid: str, pid: str, role: Optional[str]) -> None:
+    """Raise PRODUCT_CONTROLLED (403) if this product has an active Design-B
+    approval override and the caller is not TA/SA.
+
+    Shared by PATCH /{id}, POST /{id}/discontinue, and POST /{id}/reactivate —
+    any state-changing action on a controlled product is Tenant-Admin-only.
+    """
+    if role in ("TA", "SA"):
+        return
+    is_controlled = bool((await db.execute(
+        text(
+            "SELECT 1 FROM product_approval_minimums "
+            "WHERE tenant_id = :tid AND product_id = :pid "
+            "AND is_active = TRUE AND approver_position_id IS NOT NULL "
+            "LIMIT 1"
+        ),
+        {"tid": tid, "pid": pid},
+    )).fetchone())
+    if is_controlled:
+        raise HTTPException(
+            status_code=403,
+            detail={
+                "code": "PRODUCT_CONTROLLED",
+                "message": "This product has approval overrides configured and can only be edited by the Tenant Admin.",
+            },
+        )
+
+
 # ── GET /next-sku — MUST appear before any /{id} route ───────────────────────
 
 @router.get("/next-sku", response_model=SuccessResponse[NextSkuResponse])
@@ -196,6 +224,10 @@ async def discontinue_product(
     """Mark a product as discontinued. Blocked if any warehouse holds stock or pending transfers exist."""
     tid = str(user.tenant_id)
     pid = str(product_id)
+    role = getattr(user, "role", None)
+
+    # Controlled-product check (CLAUDE.md Design-B overrides) — same gate as PATCH /{id}.
+    await _raise_if_controlled(db, tid, pid, role)
 
     # Check stock across all warehouses
     stock_rows = (await db.execute(
@@ -270,6 +302,11 @@ async def reactivate_product(
     """Reactivate a discontinued product."""
     tid = str(user.tenant_id)
     pid = str(product_id)
+    role = getattr(user, "role", None)
+
+    # Controlled-product check (CLAUDE.md Design-B overrides) — same gate as PATCH /{id}.
+    await _raise_if_controlled(db, tid, pid, role)
+
     await db.execute(
         text(
             "UPDATE products SET is_discontinued = FALSE, updated_at = NOW() "
@@ -622,24 +659,7 @@ async def update_product(
         raise HTTPException(status_code=404, detail="Product not found")
 
     # Controlled-product check (CLAUDE.md Design-B overrides).
-    is_controlled = bool((await db.execute(
-        text(
-            "SELECT 1 FROM product_approval_minimums "
-            "WHERE tenant_id = :tid AND product_id = :pid "
-            "AND is_active = TRUE AND approver_position_id IS NOT NULL "
-            "LIMIT 1"
-        ),
-        {"tid": tid, "pid": pid},
-    )).fetchone())
-
-    if is_controlled and role not in ("TA", "SA"):
-        raise HTTPException(
-            status_code=403,
-            detail={
-                "code": "PRODUCT_CONTROLLED",
-                "message": "This product has approval overrides configured and can only be edited by the Tenant Admin.",
-            },
-        )
+    await _raise_if_controlled(db, tid, pid, role)
 
     # Duplicate name guard (case-insensitive), excluding this product.
     if body.name is not None and body.name.lower() != row.name.lower():

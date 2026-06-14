@@ -57,7 +57,7 @@ ROLE_PERMISSION_MATRIX: dict[str, dict[str, str]] = {
         "transfer:create": "FULL", "transfer:submit": "FULL", "transfer:approve": "FULL",
         "transfer:reject": "FULL", "transfer:dispatch": "FULL",
         "transfer:view": "FULL", "transfer:list": "FULL",
-        "adjustment:create": "FULL", "adjustment:approve": "FULL",
+        "adjustment:create": "FULL", "adjustment:submit": "FULL", "adjustment:approve": "FULL",
         "adjustment:view": "FULL", "adjustment:list": "FULL",
         "dispatch:configure": "FULL", "dispatch:view_config": "FULL",
         "order:create": "FULL", "order:view": "FULL", "order:list": "FULL",

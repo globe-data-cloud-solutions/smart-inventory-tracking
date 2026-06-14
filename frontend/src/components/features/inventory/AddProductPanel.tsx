@@ -349,6 +349,48 @@ export function AddProductPanel({ apiBase, onClose, mode = "create", productId, 
     staleTime: 30_000,
   });
 
+  // ── existing per-product approval-minimum overrides (edit mode only) ────
+  type ApprovalMinimumEntry = {
+    transaction_type:     string;
+    override_enabled:     boolean;
+    threshold_type:       ThresholdType | null;
+    qty_threshold:        number | string | null;
+    value_threshold:      number | string | null;
+    approver_position_id: string | null;
+    note:                 string | null;
+  };
+  const { data: approvalMinimumsData } = useQuery<{ minimums: ApprovalMinimumEntry[] }>({
+    queryKey:  ["product-approval-minimums", productId],
+    queryFn:   async () => {
+      const r = await api.get<unknown>(`${apiBase}/${productId}/approval-minimums`, token ?? undefined);
+      return ((r as { data?: unknown }).data ?? r) as { minimums: ApprovalMinimumEntry[] };
+    },
+    enabled:   isEdit && !!productId && open,
+    staleTime: 0,
+  });
+
+  // Pre-populate the override rows from the server response. Transaction
+  // types with no existing override row stay at the emptyMinimumRows()
+  // default (override_enabled: false).
+  useEffect(() => {
+    if (!isEdit || !approvalMinimumsData) return;
+    setMinimumRows((rows) =>
+      rows.map((row) => {
+        const match = approvalMinimumsData.minimums.find((m) => m.transaction_type === row.transaction_type);
+        if (!match) return row;
+        return {
+          ...row,
+          override_enabled:     match.override_enabled,
+          threshold_type:       match.threshold_type ?? "ALWAYS",
+          qty_threshold:        match.qty_threshold != null ? String(match.qty_threshold) : "",
+          value_threshold:      match.value_threshold != null ? String(match.value_threshold) : "",
+          approver_position_id: match.approver_position_id ?? "",
+          note:                 match.note ?? "",
+        };
+      }),
+    );
+  }, [isEdit, approvalMinimumsData]);
+
   // ── SKU preview via /next-sku?type_code=BRD ────────────────────────────
   const { data: skuPreviewData, isFetching: skuLoading } = useQuery<{ sku: string; counter: number | null }>({
     queryKey:  ["next-sku", apiBase, typeCode],

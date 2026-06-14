@@ -133,6 +133,11 @@ export default function ProductsPage() {
   const canEditProduct = (row: Row): boolean =>
     canEditProducts && (session?.role === "TA" || session?.role === "SA" || !row.is_controlled);
 
+  // Discontinue/reactivate share the same controlled-product gate as Edit (CLAUDE.md
+  // Design-B overrides) — backend POST /{id}/discontinue and /reactivate enforce this too.
+  const canDiscontinueProduct = (row: Row): boolean =>
+    canDiscontinue && (session?.role === "TA" || session?.role === "SA" || !row.is_controlled);
+
   // Sort: active first (alphabetically), discontinued at bottom (alphabetically).
   const displayProducts = useMemo(() => {
     return [...allBase].sort((a, b) => {
@@ -254,12 +259,21 @@ export default function ProductsPage() {
                       )
                     )}
                     {canDiscontinue && isGatewayMode && (
-                      <button
-                        onClick={() => void handleDiscontinue(p.id, p.is_discontinued ?? false)}
-                        className={`ml-2 text-xs cursor-pointer border-0 bg-transparent underline ${p.is_discontinued ? "text-emerald-600" : "text-red-500"}`}
-                      >
-                        {p.is_discontinued ? t("product.reactivate") : t("product.discontinue")}
-                      </button>
+                      canDiscontinueProduct(p) ? (
+                        <button
+                          onClick={() => void handleDiscontinue(p.id, p.is_discontinued ?? false)}
+                          className={`ml-2 text-xs cursor-pointer border-0 bg-transparent underline ${p.is_discontinued ? "text-emerald-600" : "text-red-500"}`}
+                        >
+                          {p.is_discontinued ? t("product.reactivate") : t("product.discontinue")}
+                        </button>
+                      ) : (
+                        <span
+                          title={t("product.controlled_tooltip")}
+                          className="ml-2 text-xs text-gray-300 cursor-not-allowed"
+                        >
+                          {p.is_discontinued ? t("product.reactivate") : t("product.discontinue")}
+                        </span>
+                      )
                     )}
                   </td>
                 </tr>
