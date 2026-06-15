@@ -93,6 +93,7 @@ from product_test_data import (              # noqa: F401  (re-export for fixtur
 # intermediate that survives sys.modules restoration.
 import product_test_data as _ptd
 _ptd.get_db_session = get_db_session  # type: ignore[attr-defined]
+_ptd.get_current_user = get_current_user  # type: ignore[attr-defined]
 
 
 # ── Client fixture ────────────────────────────────────────────────────────────

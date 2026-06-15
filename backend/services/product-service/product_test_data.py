@@ -7,6 +7,7 @@ no risk of colliding with inventory-service's `tests` package.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from typing import Optional
 from unittest.mock import AsyncMock, MagicMock
 
@@ -27,6 +28,7 @@ TA_USER = _User("10000001-0000-0000-0000-000000000010", TENANT_A, "TA")
 SA_USER = _User("10000001-0000-0000-0000-000000000011", TENANT_A, "SA")
 WM_USER = _User("10000001-0000-0000-0000-000000000012", TENANT_A, "WM",
                 warehouse_id="20000001-0000-0000-0000-000000000001")
+NM_USER = _User("10000001-0000-0000-0000-000000000013", TENANT_A, "NM")
 
 # type_code is now required.  SKU format: {TYPE_CODE}-{seq:03d}
 VALID_BODY = {"name": "Test Product Alpha", "unit": "KG", "type_code": "BRD"}
@@ -149,3 +151,79 @@ def _make_db_override(db: AsyncMock):
     async def _override():
         yield db
     return _override
+
+
+def _make_product_row(**overrides: object) -> MagicMock:
+    """A row matching the SELECT in update_product() (joined product + lookups)."""
+    defaults: dict[str, object] = dict(
+        id="30000001-0000-0000-0000-000000000001",
+        sku="BRD-001",
+        name="Test Product Alpha",
+        short_name=None,
+        description="Old description",
+        unit="KG",
+        pack_size=1,
+        reorder_point=None,
+        unit_price=None,
+        currency=None,
+        category_id=None,
+        brand_id=None,
+        type_code_id="40000001-0000-0000-0000-000000000001",
+        packaging_type_id=None,
+        tenant_id=TENANT_A,
+        created_at=datetime(2026, 1, 1, tzinfo=timezone.utc),
+        created_by=TA_USER.user_id,
+        category=None,
+        brand=None,
+        type_code="BRD",
+        packaging_type=None,
+        units_per_package=None,
+    )
+    defaults.update(overrides)
+    row = MagicMock()
+    for k, v in defaults.items():
+        setattr(row, k, v)
+    return row
+
+
+def _make_update_mock_db(role: str = "TA", is_controlled: bool = False) -> AsyncMock:
+    """Build a mock AsyncSession whose execute() side_effect matches the
+    update_product() (PATCH /{product_id}) execution order, for a request
+    that only changes simple scalar fields (e.g. description) — no
+    category/brand/type_code/unit/packaging_type lookups triggered.
+
+    Execution order:
+      1  SELECT product row                                    (always)
+      2  _raise_if_controlled: SELECT 1 FROM
+         product_approval_minimums                             (only if role not TA/SA)
+         -- if is_controlled and role not TA/SA: raises 403 here, stop --
+      3  UPDATE products
+      4  INSERT audit_logs
+      5  SELECT 1 FROM product_approval_minimums (is_controlled for response)
+    """
+    db = AsyncMock()
+
+    row_res = MagicMock()
+    row_res.fetchone.return_value = _make_product_row()
+
+    controlled_res = MagicMock()
+    controlled_res.fetchone.return_value = MagicMock() if is_controlled else None
+
+    def _default() -> MagicMock:
+        m = MagicMock()
+        m.fetchone.return_value = None
+        m.scalar.return_value = 0
+        return m
+
+    if role not in ("TA", "SA") and is_controlled:
+        db.execute = AsyncMock(side_effect=[row_res, controlled_res])
+    elif role not in ("TA", "SA"):
+        db.execute = AsyncMock(
+            side_effect=[row_res, controlled_res, _default(), _default(), controlled_res]
+        )
+    else:
+        db.execute = AsyncMock(side_effect=[row_res, _default(), _default(), controlled_res])
+
+    db.commit   = AsyncMock()
+    db.rollback = AsyncMock()
+    return db

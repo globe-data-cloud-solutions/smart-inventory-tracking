@@ -835,6 +835,16 @@ async def update_product(
         },
     )
 
+    is_controlled = bool((await db.execute(
+        text(
+            "SELECT 1 FROM product_approval_minimums "
+            "WHERE tenant_id = :tid AND product_id = :pid "
+            "AND is_active = TRUE AND approver_position_id IS NOT NULL "
+            "LIMIT 1"
+        ),
+        {"tid": tid, "pid": pid},
+    )).fetchone())
+
     return SuccessResponse(
         data=ProductResponse(
             id=uuid.UUID(pid),

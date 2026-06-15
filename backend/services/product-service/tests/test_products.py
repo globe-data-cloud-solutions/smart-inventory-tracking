@@ -13,14 +13,15 @@ from httpx import AsyncClient
 
 from product_test_data import (
     TENANT_A, TENANT_B,
-    TA_USER, SA_USER, WM_USER,
+    TA_USER, SA_USER, WM_USER, NM_USER,
     VALID_BODY,
     mock_full_grant,
     _make_mock_db,
     _cap_db,
     _make_db_override,
+    _make_update_mock_db,
 )
-from dependencies import get_current_user
+from product_test_data import get_current_user  # product-service version, injected by conftest
 from product_test_data import get_db_session  # product-service version, injected by conftest
 
 
@@ -238,3 +239,112 @@ class TestCreateProduct:
         CI verifies: alembic upgrade head → downgrade -1 → upgrade head.
         """
         assert True
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+
+PRODUCT_ID = "30000001-0000-0000-0000-000000000001"
+
+
+@pytest.mark.unit
+class TestUpdateProduct:
+    """PATCH /api/v1/products/{product_id}.
+
+    Regression coverage for the NameError 'is_controlled' that made every
+    PATCH /products/{id} return 500 (introduced in 44b4021c).
+    """
+
+    # 01 — TA edits a basic field → 200, field updated ────────────────────────
+
+    async def test_update_product_basic_field(self, client: AsyncClient, product_app) -> None:
+        db = _make_update_mock_db(role="TA", is_controlled=False)
+        product_app.dependency_overrides[get_db_session] = _make_db_override(db)
+        try:
+            with _patch_perm(True), _patch_audit():
+                r = await client.patch(
+                    f"/api/v1/products/{PRODUCT_ID}",
+                    json={"description": "New description"},
+                )
+        finally:
+            product_app.dependency_overrides.pop(get_db_session, None)
+
+        assert r.status_code == 200
+        assert r.json()["data"]["description"] == "New description"
+
+    # 02 — No active override → is_controlled: false ──────────────────────────
+
+    async def test_update_product_returns_is_controlled_false_when_no_override(
+        self, client: AsyncClient, product_app
+    ) -> None:
+        db = _make_update_mock_db(role="TA", is_controlled=False)
+        product_app.dependency_overrides[get_db_session] = _make_db_override(db)
+        try:
+            with _patch_perm(True), _patch_audit():
+                r = await client.patch(
+                    f"/api/v1/products/{PRODUCT_ID}",
+                    json={"description": "New description"},
+                )
+        finally:
+            product_app.dependency_overrides.pop(get_db_session, None)
+
+        assert r.status_code == 200
+        assert r.json()["data"]["is_controlled"] is False
+
+    # 03 — Active override exists → is_controlled: true (TA editor) ───────────
+
+    async def test_update_product_returns_is_controlled_true_when_active_override_exists(
+        self, client: AsyncClient, product_app
+    ) -> None:
+        db = _make_update_mock_db(role="TA", is_controlled=True)
+        product_app.dependency_overrides[get_db_session] = _make_db_override(db)
+        try:
+            with _patch_perm(True), _patch_audit():
+                r = await client.patch(
+                    f"/api/v1/products/{PRODUCT_ID}",
+                    json={"description": "New description"},
+                )
+        finally:
+            product_app.dependency_overrides.pop(get_db_session, None)
+
+        assert r.status_code == 200
+        assert r.json()["data"]["is_controlled"] is True
+
+    # 04 — NM cannot edit a controlled product → 403 PRODUCT_CONTROLLED ───────
+
+    async def test_update_product_nm_cannot_edit_controlled(
+        self, client: AsyncClient, product_app
+    ) -> None:
+        db = _make_update_mock_db(role="NM", is_controlled=True)
+        product_app.dependency_overrides[get_db_session] = _make_db_override(db)
+        product_app.dependency_overrides[get_current_user] = lambda: NM_USER
+        try:
+            with _patch_perm(True), _patch_audit():
+                r = await client.patch(
+                    f"/api/v1/products/{PRODUCT_ID}",
+                    json={"description": "New description"},
+                )
+        finally:
+            product_app.dependency_overrides.pop(get_db_session, None)
+            product_app.dependency_overrides.pop(get_current_user, None)
+
+        assert r.status_code == 403
+        assert r.json()["detail"]["code"] == "PRODUCT_CONTROLLED"
+
+    # 05 — TA can edit a controlled product → 200 ─────────────────────────────
+
+    async def test_update_product_ta_can_edit_controlled(
+        self, client: AsyncClient, product_app
+    ) -> None:
+        db = _make_update_mock_db(role="TA", is_controlled=True)
+        product_app.dependency_overrides[get_db_session] = _make_db_override(db)
+        try:
+            with _patch_perm(True), _patch_audit():
+                r = await client.patch(
+                    f"/api/v1/products/{PRODUCT_ID}",
+                    json={"description": "New description"},
+                )
+        finally:
+            product_app.dependency_overrides.pop(get_db_session, None)
+
+        assert r.status_code == 200
+        assert r.json()["data"]["is_controlled"] is True
