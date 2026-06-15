@@ -36,6 +36,13 @@ function FieldErr({ msg }: { msg?: string }) {
   );
 }
 
+interface ApiTransferType {
+  id: string;
+  underlying_type: "PULL" | "PUSH" | "SISTER";
+  display_name: string;
+  is_active: boolean;
+}
+
 function Toast({ message, onDismiss }: { message: string; onDismiss: () => void }) {
   useEffect(() => {
     const id = setTimeout(onDismiss, 4000);
@@ -214,6 +221,20 @@ export function AddProductPanel({ apiBase, onClose, mode = "create", productId, 
   // working pattern in adjustments/page.tsx).
   const { positions } = useTenantPositions(session?.tenantId ?? "");
 
+  // Tenant's custom transfer type display names (e.g. "Request Stock" for
+  // PULL) — same query as NewTransferPanel.tsx and Org Setup Tabs 4/5.
+  const isGateway = !!process.env.NEXT_PUBLIC_API_URL;
+  const tenantId  = session?.tenantId ?? "";
+  const { data: transferTypes = [] } = useQuery<ApiTransferType[]>({
+    queryKey: ["transfer-types", tenantId],
+    queryFn:  () => api.get<ApiTransferType[]>(`/api/v1/tenants/${tenantId}/transfer-types`),
+    enabled:  isGateway && !!tenantId,
+    staleTime: 60_000,
+  });
+  const getTransferTypeLabel = (type: "PULL" | "PUSH" | "SISTER") =>
+    transferTypes.find((tt) => tt.underlying_type === type && tt.is_active)?.display_name
+    ?? t(`product.tx_type_${type.toLowerCase()}`);
+
   // ── form state ─────────────────────────────────────────────────────────
   const [open, setOpen]             = useState(isEdit);
   const [name, setName]             = useState("");
@@ -233,9 +254,9 @@ export function AddProductPanel({ apiBase, onClose, mode = "create", productId, 
 
   // ── approval minimums state ────────────────────────────────────────────
   const MIN_TX_TYPES = [
-    { key: "PULL",       label: t("product.tx_type_pull") },
-    { key: "PUSH",       label: t("product.tx_type_push") },
-    { key: "SISTER",     label: t("product.tx_type_sister") },
+    { key: "PULL",       label: getTransferTypeLabel("PULL") },
+    { key: "PUSH",       label: getTransferTypeLabel("PUSH") },
+    { key: "SISTER",     label: getTransferTypeLabel("SISTER") },
     { key: "ADJUSTMENT", label: t("product.tx_type_adjustment") },
     { key: "RECEIVE",    label: t("product.tx_type_receive") },
     { key: "ISSUE",      label: t("product.tx_type_issue") },
