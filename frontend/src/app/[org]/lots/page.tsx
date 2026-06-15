@@ -6,6 +6,7 @@ import { SA_ORG_SLUG } from "@/lib/demo-auth";
 import { DEMO_TENANTS, type DemoTenant } from "@/lib/demo-data";
 import { t } from "@/lib/i18n";
 import { useTenantName } from "@/hooks/useTenantName";
+import { formatQty } from "@/lib/utils";
 
 interface LotRecord {
   lot_number: string; product_id: string; product_name: string; product_sku: string;
@@ -164,7 +165,7 @@ export default function LotsPage() {
                   </div>
                   <div className="flex gap-5 text-xs text-gray-500 flex-wrap">
                     <span><strong className="text-gray-800">{first.product_name}</strong> · {first.product_sku}</span>
-                    <span>{t("lots.total")}: <strong className="text-eth-forest">{total.toLocaleString()}</strong> {t("lots.units")}</span>
+                    <span>{t("lots.total")}: <strong className="text-eth-forest">{formatQty(total)}</strong> {t("lots.units")}</span>
                     {first.expiry_date && (
                       <span>{t("lots.expiry")}: <strong className={expired ? "text-red-600" : "text-gray-700"}>{first.expiry_date}</strong></span>
                     )}
@@ -193,7 +194,7 @@ export default function LotsPage() {
                             <span className="text-xs font-bold bg-gray-100 text-gray-700 px-1.5 py-0.5 rounded">{wh?.type ?? "WH"}</span>
                           </td>
                           <td className={`px-3.5 py-2 font-bold ${r.quantity > 0 ? "text-eth-forest" : "text-gray-400"}`}>
-                            {r.quantity.toLocaleString()}
+                            {formatQty(r.quantity)}
                           </td>
                           <td className="px-3.5 py-2">
                             <div className="flex items-center gap-2">

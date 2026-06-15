@@ -7,6 +7,7 @@ import { api, IS_GATEWAY_MODE } from "@/lib/api";
 import { t } from "@/lib/i18n";
 import { useTenantName } from "@/hooks/useTenantName";
 import { useTenantPositions, type TenantPosition } from "@/hooks/useTenantPositions";
+import { formatQty } from "@/lib/utils";
 
 const TA_SA_ROLES = new Set(["TA", "SA"]);
 
@@ -77,10 +78,6 @@ function canInitiate(cfg: ApiTransferType, level: number): boolean {
   const perm = cfg.level_permissions.find((p) => p.level_number === level);
   if (!perm) return true;
   return perm.can_initiate;
-}
-
-function formatQty(n: number): string {
-  return n.toLocaleString();
 }
 
 function exampleLine(qtyLimit: number | null): string | null {

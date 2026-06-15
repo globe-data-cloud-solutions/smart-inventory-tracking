@@ -15,6 +15,7 @@ import { useWarehouses } from "@/hooks/useWarehouses";
 import { api, IS_GATEWAY_MODE } from "@/lib/api";
 import { t } from "@/lib/i18n";
 import { useTenantName } from "@/hooks/useTenantName";
+import { formatQty } from "@/lib/utils";
 
 type TransferType = "PULL" | "PUSH" | "SISTER";
 
@@ -949,10 +950,10 @@ export default function TransfersPage() {
         resourceRef:   transfer?.ref ?? id,
         resourceType:  "TransferOrder",
         productName:   transfer?.product_name,
-        quantityStr:   transfer ? `${transfer.quantity.toLocaleString()} ${transfer.product_name ? "units" : ""}` : undefined,
+        quantityStr:   transfer ? `${formatQty(transfer.quantity)} ${transfer.product_name ? "units" : ""}` : undefined,
         fromWarehouse: transfer?.from_warehouse_name,
         toWarehouse:   transfer?.to_warehouse_name,
-        notes:         partialQty ? `Batch received: ${partialQty.toLocaleString()} units` : undefined,
+        notes:         partialQty ? `Batch received: ${formatQty(partialQty)} units` : undefined,
         actedOnBehalfOf:
           (next === "ISSUED" || next === "IN_TRANSIT")
           && user.warehouseId?.toLowerCase() !== transfer?.from_warehouse_id?.toLowerCase()
@@ -1023,15 +1024,15 @@ export default function TransfersPage() {
               return (
                 <div className="bg-gray-50 rounded-md px-3.5 py-3 mb-4">
                   <div className="flex justify-between text-xs text-gray-500 mb-1.5">
-                    <span>{t("transfers.total_qty")}</span><strong className="text-gray-900">{total.toLocaleString()}</strong>
+                    <span>{t("transfers.total_qty")}</span><strong className="text-gray-900">{formatQty(total)}</strong>
                   </div>
                   {alreadyRecvd > 0 && (
                     <div className="flex justify-between text-xs text-gray-500 mb-1.5">
-                      <span>{t("transfers.prev_received")}</span><strong className="text-emerald-600">{alreadyRecvd.toLocaleString()}</strong>
+                      <span>{t("transfers.prev_received")}</span><strong className="text-emerald-600">{formatQty(alreadyRecvd)}</strong>
                     </div>
                   )}
                   <div className="flex justify-between text-xs text-gray-500 mb-2.5">
-                    <span>{t("transfers.still_in_transit")}</span><strong className="text-amber-800">{remaining.toLocaleString()}</strong>
+                    <span>{t("transfers.still_in_transit")}</span><strong className="text-amber-800">{formatQty(remaining)}</strong>
                   </div>
                   <label className="block text-[11px] font-bold uppercase tracking-wide text-gray-700 mb-1">
                     {t("transfers.qty_this_batch")}
@@ -1040,7 +1041,7 @@ export default function TransfersPage() {
                     type="number" min="1" max={remaining}
                     value={partialQtyInput}
                     onChange={(e) => { setPartialQtyInput(e.target.value); setPartialQtyErr(""); }}
-                    placeholder={`1 – ${remaining.toLocaleString()}`}
+                    placeholder={`1 – ${formatQty(remaining)}`}
                     autoFocus
                     className={`w-full px-2.5 py-2 text-sm rounded border outline-none ${partialQtyErr ? "border-red-600" : "border-gray-300"}`}
                   />
@@ -1060,7 +1061,7 @@ export default function TransfersPage() {
                     const storeEntry = getTransferEntry(confirmModal.id);
                     const remaining  = confirmModal.transfer.quantity - (storeEntry?.receivedQuantity ?? 0);
                     const qty        = parseFloat(partialQtyInput);
-                    if (!qty || qty <= 0 || qty > remaining) { setPartialQtyErr(`Enter a quantity between 1 and ${remaining.toLocaleString()}`); return; }
+                    if (!qty || qty <= 0 || qty > remaining) { setPartialQtyErr(`Enter a quantity between 1 and ${formatQty(remaining)}`); return; }
                     void doTransition(confirmModal.id, confirmModal.next, qty);
                   } else {
                     void doTransition(confirmModal.id, confirmModal.next);
@@ -1156,10 +1157,10 @@ export default function TransfersPage() {
                       />
                     </td>
                     <td className="px-3 py-2.5 font-semibold text-gray-900 text-sm">
-                      {Number(txn.quantity ?? 0).toLocaleString()}
+                      {formatQty(txn.quantity ?? 0)}
                       {txn.status === "PARTIALLY_RECEIVED" && (() => {
                         const e = getTransferEntry(txn.id); const rcvd = e?.receivedQuantity ?? 0;
-                        return rcvd > 0 ? <span className="block text-[10px] font-medium text-amber-800">{rcvd.toLocaleString()} rcvd · {(Number(txn.quantity ?? 0) - rcvd).toLocaleString()} rem</span> : null;
+                        return rcvd > 0 ? <span className="block text-[10px] font-medium text-amber-800">{formatQty(rcvd)} rcvd · {formatQty(Number(txn.quantity ?? 0) - rcvd)} rem</span> : null;
                       })()}
                     </td>
                     <td className="px-3 py-2.5">

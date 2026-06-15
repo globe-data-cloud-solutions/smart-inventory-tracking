@@ -10,6 +10,7 @@ import { useOfflineSync } from "@/hooks/useOfflineSync";
 import { api } from "@/lib/api";
 import { t } from "@/lib/i18n";
 import { useTenantName } from "@/hooks/useTenantName";
+import { formatQty } from "@/lib/utils";
 
 /* ── Types ──────────────────────────────────────────────────────────────── */
 type TransferType = "PULL" | "PUSH" | "SISTER";
@@ -457,7 +458,7 @@ export default function TransferDetailPage() {
     { label: t("transfers.detail.from"),     value: transfer.from_warehouse_name },
     { label: t("transfers.detail.to"),       value: transfer.to_warehouse_name },
     { label: t("transfers.detail.product"),  value: transfer.product_name },
-    { label: t("transfers.detail.quantity"), value: transfer.quantity.toLocaleString() },
+    { label: t("transfers.detail.quantity"), value: formatQty(transfer.quantity) },
     { label: t("transfers.detail.created"),  value: new Date(transfer.created_at).toLocaleString() },
   ];
 

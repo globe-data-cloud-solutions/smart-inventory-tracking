@@ -13,6 +13,7 @@ import {
 } from "@/lib/demo-data";
 import { api } from "@/lib/api";
 import { t } from "@/lib/i18n";
+import { formatQty } from "@/lib/utils";
 
 const isGatewayMode = !!process.env.NEXT_PUBLIC_API_URL;
 
@@ -156,8 +157,8 @@ function InventoryTable({ products, getQty, accentColor, title, subtitle }: {
                       >
                         <td className="px-4 py-2.5 font-mono text-xs text-gray-400">{p.sku}</td>
                         <td className="px-4 py-2.5 font-semibold text-gray-800">{p.name}</td>
-                        <td className="px-4 py-2.5 text-right font-bold text-gray-900">{qty.toLocaleString()}</td>
-                        <td className="px-4 py-2.5 text-right text-gray-400">{p.reorderPoint.toLocaleString()}</td>
+                        <td className="px-4 py-2.5 text-right font-bold text-gray-900">{formatQty(qty)}</td>
+                        <td className="px-4 py-2.5 text-right text-gray-400">{formatQty(p.reorderPoint)}</td>
                         <td className="px-4 py-2.5">
                           <span
                             className={`inline-flex items-center gap-1 text-xs font-bold px-2.5 py-0.5 rounded border ${
@@ -182,7 +183,7 @@ function InventoryTable({ products, getQty, accentColor, title, subtitle }: {
                       {items.length} {t("table.products")}
                     </td>
                     <td className="px-4 py-2.5 text-right font-extrabold text-eth-forest text-sm">
-                      {total.toLocaleString()}
+                      {formatQty(total)}
                     </td>
                     <td colSpan={2} />
                   </tr>
@@ -374,7 +375,7 @@ export default function OrgDashboard() {
                     {[
                       { l: t("dashboard.stat_locations"), v: ten.warehouses.length },
                       { l: t("table.skus"),               v: ten.products.length },
-                      { l: t("dashboard.stat_units"),     v: units.toLocaleString() },
+                      { l: t("dashboard.stat_units"),     v: formatQty(units) },
                       { l: t("alerts.low_stock"),         v: low.length, w: low.length > 0 },
                     ].map((s) => (
                       <div key={s.l}>
@@ -506,7 +507,7 @@ export default function OrgDashboard() {
                         </span>
                       </td>
                       <td className="px-4 py-2.5 text-gray-700">{wh.skuCount}</td>
-                      <td className="px-4 py-2.5 font-bold text-gray-900">{wh.totalUnits.toLocaleString()}</td>
+                      <td className="px-4 py-2.5 font-bold text-gray-900">{formatQty(wh.totalUnits)}</td>
                       <td className="px-4 py-2.5">
                         {wh.lowCount > 0 ? (
                           <span className="text-xs font-bold bg-red-50 text-red-600 border border-red-200 px-2 py-0.5 rounded">
@@ -693,7 +694,7 @@ export default function OrgDashboard() {
                     </span>
                   </td>
                   <td className="px-4 py-2.5 text-gray-700">{whSKUs}</td>
-                  <td className="px-4 py-2.5 font-bold text-gray-900">{whUnits.toLocaleString()}</td>
+                  <td className="px-4 py-2.5 font-bold text-gray-900">{formatQty(whUnits)}</td>
                   <td className="px-4 py-2.5">
                     {whLow > 0 ? (
                       <span className="text-xs font-bold bg-red-50 text-red-600 border border-red-200 px-2 py-0.5 rounded">

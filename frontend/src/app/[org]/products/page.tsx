@@ -12,6 +12,7 @@ import { ProductLabel } from "@/components/features/inventory/ProductLabel";
 import { api } from "@/lib/api";
 import { t } from "@/lib/i18n";
 import { useTenantName } from "@/hooks/useTenantName";
+import { formatQty } from "@/lib/utils";
 
 type ApiProduct = {
   id: string; sku: string; name: string; unit: string; pack_size: number;
@@ -226,7 +227,7 @@ export default function ProductsPage() {
                   <td className="px-4 py-2.5 text-gray-500">{p.unit}</td>
                   <td className="px-4 py-2.5 text-gray-500">{p.packSize}</td>
                   <td className={`px-4 py-2.5 text-right font-bold ${p.balance > 0 ? "text-gray-900" : "text-gray-400"}`}>
-                    {p.balance > 0 ? p.balance.toLocaleString() : "—"}
+                    {p.balance > 0 ? formatQty(p.balance) : "—"}
                   </td>
                   <td className="px-4 py-2.5">
                     <span className={`text-xs font-bold px-2 py-0.5 rounded ${p.batchTracking ? "bg-green-100 text-green-800" : "bg-gray-100 text-gray-500"}`}>
