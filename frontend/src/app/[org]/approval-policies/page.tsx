@@ -1,7 +1,6 @@
 "use client";
 
 import { useParams } from "next/navigation";
-import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { getSession, SA_ORG_SLUG } from "@/lib/demo-auth";
 import { api, IS_GATEWAY_MODE } from "@/lib/api";
@@ -140,7 +139,6 @@ export default function ApprovalPoliciesPage() {
   const tenantName = useTenantName(org);
   const session = getSession();
   const tenantId = session?.tenantId ?? "";
-  const [showMatrix, setShowMatrix] = useState(false);
 
   const enabled = IS_GATEWAY_MODE && org !== SA_ORG_SLUG && !!tenantId;
 
@@ -224,7 +222,8 @@ export default function ApprovalPoliciesPage() {
         </p>
       </div>
 
-      {/* ── Section 1 — Your Approval Limits ───────────────────────────── */}
+      {/* ── Section 1 — Your Approval Limits (not shown to TA/SA) ───────── */}
+      {!isTaSa && (
       <section className="mb-8">
         <h3 className="text-lg font-bold text-[#0f2d1f] mb-1">{t("approval_policies.section1_title")}</h3>
         <p className="text-sm text-gray-600 mb-3">
@@ -299,6 +298,7 @@ export default function ApprovalPoliciesPage() {
           )}
         </div>
       </section>
+      )}
 
       {/* ── Section 2 — Controlled Products ────────────────────────────── */}
       <section className="mb-8">
@@ -357,18 +357,12 @@ export default function ApprovalPoliciesPage() {
         )}
       </section>
 
-      {/* ── Section 3 — Full Policy Matrix (TA/SA only) ────────────────── */}
+      {/* ── Section 3 — Full Policy Matrix (TA/SA primary content) ──────── */}
       {isTaSa && (
         <section className="mb-8">
-          <button
-            onClick={() => setShowMatrix((v) => !v)}
-            className="text-sm font-semibold text-[#0f2d1f] bg-gray-100 hover:bg-gray-200 rounded-md px-3 py-1.5 cursor-pointer border border-gray-200"
-          >
-            {showMatrix ? t("approval_policies.hide_full_matrix") : t("approval_policies.show_full_matrix")}
-          </button>
+          <p className="text-sm text-gray-600 mb-3">{t("approval_policies.ta_intro")}</p>
 
-          {showMatrix && (
-            <div className="bg-white border border-gray-200 rounded-lg mt-3 overflow-x-auto">
+          <div className="bg-white border border-gray-200 rounded-lg overflow-x-auto">
               <h3 className="text-lg font-bold text-[#0f2d1f] px-4 pt-4 m-0">
                 {t("approval_policies.full_matrix_title")}
               </h3>
@@ -432,8 +426,7 @@ export default function ApprovalPoliciesPage() {
                     })}
                 </tbody>
               </table>
-            </div>
-          )}
+          </div>
         </section>
       )}
     </div>

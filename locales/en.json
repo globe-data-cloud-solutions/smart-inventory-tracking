@@ -1183,7 +1183,6 @@
     "higher_authority": "the next level of authority",
     "adjustment_label": "Adjustment",
     "no_limit": "no limit",
-    "show_full_matrix": "Show Full Policy Matrix",
-    "hide_full_matrix": "Hide Full Policy Matrix"
+    "ta_intro": "As Tenant Administrator, here are all approval limits across your organization:"
   }
 }
