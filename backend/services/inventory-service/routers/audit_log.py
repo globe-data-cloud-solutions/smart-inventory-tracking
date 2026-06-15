@@ -13,7 +13,10 @@ from schemas.inventory import AuditLogItem
 router = APIRouter()
 
 # Roles with tenant-wide audit visibility — no warehouse scope filter applied.
-_TENANT_WIDE_ROLES = frozenset({"NM", "TA", "SA"})
+# AU (Auditor) is included explicitly: previously AU had no warehouse_id, so it
+# fell through to tenant-wide by accident (apply_scope required warehouse_id
+# is not None). Listing it here makes that intentional and documented.
+_TENANT_WIDE_ROLES = frozenset({"NM", "TA", "SA", "AU"})
 
 # CTE that expands a facility node and all its descendants via parent_node_id.
 _SUBTREE_CTE = """
@@ -59,7 +62,7 @@ async def list_audit_logs(
     resource_type: str = Query(None),
     scope: str = Query("auto",
                        description="'auto' applies role-based scoping. "
-                                   "'all' shows the entire tenant log (NM/TA only)."),
+                                   "'all' shows the entire tenant log (NM/TA/SA/AU only)."),
     user=Depends(get_current_user),
     db: AsyncSession = Depends(get_db_session),
 ) -> SuccessResponse[List[AuditLogItem]]:
@@ -70,7 +73,7 @@ async def list_audit_logs(
     }
 
     # Determine whether to apply facility-level scoping.
-    # NM/TA/SA always see the full tenant log; scope=all is a no-op for them.
+    # NM/TA/SA/AU always see the full tenant log; scope=all is a no-op for them.
     # WM/RM/LM are always facility-scoped — scope=all is ignored to prevent
     # privilege escalation via query parameter.
     apply_scope = (
@@ -101,8 +104,10 @@ async def list_audit_logs(
     query = (
         f"{cte_prefix}"
         f"SELECT al.id, al.timestamp, al.user_id, al.role, al.action, "
-        f"       al.resource_type, al.resource_id, al.decision, al.reason, al.abac_context "
+        f"       al.resource_type, al.resource_id, al.decision, al.reason, al.abac_context, "
+        f"       u.full_name AS user_name "
         f"FROM audit_logs al "
+        f"LEFT JOIN users u ON u.id = al.user_id "
         f"WHERE {where_clause} "
         f"{scope_fragment}"
         f"ORDER BY al.timestamp DESC "
@@ -116,6 +121,7 @@ async def list_audit_logs(
             id=r.id,
             timestamp=r.timestamp,
             user_id=r.user_id,
+            user_name=r.user_name,
             role=r.role,
             action=r.action,
             resource_type=r.resource_type,

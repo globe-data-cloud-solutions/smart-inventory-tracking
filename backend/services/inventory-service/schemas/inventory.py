@@ -257,6 +257,7 @@ class AuditLogItem(BaseModel):
     id: uuid.UUID
     timestamp: datetime
     user_id: Optional[uuid.UUID] = None
+    user_name: Optional[str] = None
     role: Optional[str] = None
     action: str
     resource_type: Optional[str] = None
