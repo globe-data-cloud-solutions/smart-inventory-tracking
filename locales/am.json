@@ -403,6 +403,9 @@
     "notes": "Notes",
     "category": "Category",
     "acted_on_behalf": "በ {warehouse} ምትክ",
+    "show_view_activity": "የእይታ/ዝርዝር እንቅስቃሴን አሳይ",
+    "transfer_summary": "{type}: {from} → {to} ({product})",
+    "adjustment_summary": "{product} — {reason}",
     "actions": {
       "transfer_DRAFT": "Transfer Created",
       "transfer_PENDING_REVIEW": "Transfer Submitted for Review",

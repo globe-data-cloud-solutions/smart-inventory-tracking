@@ -40,6 +40,11 @@ interface AuditLogItem {
   decision: string;
   reason: string | null;
   abac_context: Record<string, unknown> | null;
+  transfer_type: string | null;
+  from_warehouse_name: string | null;
+  to_warehouse_name: string | null;
+  product_summary: string | null;
+  adjustment_reason_code: string | null;
 }
 
 type Category = "TRANSFER" | "INVENTORY" | "ADJUSTMENT" | "SYSTEM";
@@ -62,6 +67,22 @@ function getActedOnBehalfOf(abacContext: Record<string, unknown> | null): string
   return typeof v === "string" ? v : undefined;
 }
 
+function getEnrichmentLine(e: AuditLogItem): string | undefined {
+  if (e.resource_type === "transfer" && (e.from_warehouse_name || e.to_warehouse_name)) {
+    return t("audit.transfer_summary")
+      .replace("{type}", e.transfer_type ?? t("common.unknown"))
+      .replace("{from}", e.from_warehouse_name ?? t("common.unknown"))
+      .replace("{to}", e.to_warehouse_name ?? t("common.unknown"))
+      .replace("{product}", e.product_summary ?? t("common.unknown"));
+  }
+  if (e.resource_type === "adjustment" && (e.product_summary || e.adjustment_reason_code)) {
+    return t("audit.adjustment_summary")
+      .replace("{product}", e.product_summary ?? t("common.unknown"))
+      .replace("{reason}", e.adjustment_reason_code ?? t("common.unknown"));
+  }
+  return undefined;
+}
+
 const selectCls = "px-2.5 py-1.5 text-xs border border-gray-300 rounded-md bg-white outline-none cursor-pointer";
 
 export default function AuditLogPage() {
@@ -71,10 +92,14 @@ export default function AuditLogPage() {
   const [page, setPage] = useState(0); // zero-based for display; backend pages are 1-based
   const [categoryFilter, setCategoryFilter] = useState<"ALL" | Category>("ALL");
   const [search, setSearch] = useState("");
+  const [includeViews, setIncludeViews] = useState(false);
 
   const { data: entries = [], isLoading } = useQuery<AuditLogItem[]>({
-    queryKey: ["audit-log", org, page],
-    queryFn: () => api.get<AuditLogItem[]>(`/api/v1/audit-log/?page=${page + 1}&limit=${PAGE_SIZE}`),
+    queryKey: ["audit-log", org, page, includeViews],
+    queryFn: () =>
+      api.get<AuditLogItem[]>(
+        `/api/v1/audit-log/?page=${page + 1}&limit=${PAGE_SIZE}&include_views=${includeViews}`
+      ),
     enabled: IS_GATEWAY_MODE && org !== SA_ORG_SLUG,
     staleTime: 0,
   });
@@ -154,6 +179,16 @@ export default function AuditLogPage() {
         <span className="text-xs text-gray-400 whitespace-nowrap">
           {filtered.length} / {entries.length}
         </span>
+
+        <label className="flex items-center gap-1.5 text-xs text-gray-600 whitespace-nowrap cursor-pointer">
+          <input
+            type="checkbox"
+            checked={includeViews}
+            onChange={(e) => setIncludeViews(e.target.checked)}
+            className="cursor-pointer"
+          />
+          {t("audit.show_view_activity")}
+        </label>
       </div>
 
       {/* Scope note */}
@@ -206,6 +241,11 @@ export default function AuditLogPage() {
                       {actedOnBehalfOf && (
                         <div className="text-[10px] text-gray-400 mt-0.5 font-sans whitespace-nowrap">
                           {t("audit.acted_on_behalf").replace("{warehouse}", actedOnBehalfOf)}
+                        </div>
+                      )}
+                      {getEnrichmentLine(e) && (
+                        <div className="text-[10px] text-gray-400 mt-0.5 font-sans whitespace-nowrap">
+                          {getEnrichmentLine(e)}
                         </div>
                       )}
                     </td>

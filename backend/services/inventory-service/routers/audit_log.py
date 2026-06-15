@@ -60,6 +60,9 @@ async def list_audit_logs(
     limit: int = Query(50, ge=1, le=200),
     action: str = Query(None),
     resource_type: str = Query(None),
+    include_views: bool = Query(False,
+                                description="Include *:view and *:list actions. "
+                                            "Default false hides page-load/list-fetch noise."),
     scope: str = Query("auto",
                        description="'auto' applies role-based scoping. "
                                    "'all' shows the entire tenant log (NM/TA/SA/AU only)."),
@@ -98,6 +101,9 @@ async def list_audit_logs(
     if resource_type:
         where_parts.append("al.resource_type = :rtype")
         params["rtype"] = resource_type
+    if not include_views:
+        where_parts.append("al.action NOT LIKE '%:view'")
+        where_parts.append("al.action NOT LIKE '%:list'")
 
     where_clause = " AND ".join(where_parts)
 
@@ -105,9 +111,33 @@ async def list_audit_logs(
         f"{cte_prefix}"
         f"SELECT al.id, al.timestamp, al.user_id, al.role, al.action, "
         f"       al.resource_type, al.resource_id, al.decision, al.reason, al.abac_context, "
-        f"       u.full_name AS user_name "
+        f"       u.full_name AS user_name, "
+        f"       t_ord.transfer_type AS transfer_type, "
+        f"       from_node.name AS from_warehouse_name, "
+        f"       to_node.name AS to_warehouse_name, "
+        f"       a_ord.reason_code AS adjustment_reason_code, "
+        f"       COALESCE( "
+        f"           (SELECT CASE WHEN COUNT(*) > 1 "
+        f"                        THEN COUNT(*) || ' items' "
+        f"                        ELSE MAX(p.name) || ' (' || "
+        f"                             trim(trailing '.' from trim(trailing '0' from MAX(tol.quantity)::text)) "
+        f"                             || ')' END "
+        f"            FROM transfer_order_lines tol "
+        f"            JOIN products p ON p.id = tol.product_id "
+        f"            WHERE tol.transfer_order_id = t_ord.id), "
+        f"           CASE WHEN a_ord.id IS NOT NULL "
+        f"                THEN adj_p.name || ' (' || "
+        f"                     trim(trailing '.' from trim(trailing '0' from a_ord.quantity_delta::text)) "
+        f"                     || ')' "
+        f"                ELSE NULL END "
+        f"       ) AS product_summary "
         f"FROM audit_logs al "
         f"LEFT JOIN users u ON u.id = al.user_id "
+        f"LEFT JOIN transfer_orders t_ord ON al.resource_type = 'transfer' AND al.resource_id = t_ord.id "
+        f"LEFT JOIN adjustment_orders a_ord ON al.resource_type = 'adjustment' AND al.resource_id = a_ord.id "
+        f"LEFT JOIN organization_node from_node ON from_node.id = t_ord.from_warehouse_id "
+        f"LEFT JOIN organization_node to_node ON to_node.id = t_ord.to_warehouse_id "
+        f"LEFT JOIN products adj_p ON adj_p.id = a_ord.product_id "
         f"WHERE {where_clause} "
         f"{scope_fragment}"
         f"ORDER BY al.timestamp DESC "
@@ -129,6 +159,11 @@ async def list_audit_logs(
             decision=r.decision,
             reason=r.reason,
             abac_context=r.abac_context,
+            transfer_type=r.transfer_type,
+            from_warehouse_name=r.from_warehouse_name,
+            to_warehouse_name=r.to_warehouse_name,
+            product_summary=r.product_summary,
+            adjustment_reason_code=r.adjustment_reason_code,
         )
         for r in rows
     ])

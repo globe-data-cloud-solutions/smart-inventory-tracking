@@ -265,3 +265,8 @@ class AuditLogItem(BaseModel):
     decision: str
     reason: Optional[str] = None
     abac_context: Optional[dict] = None
+    transfer_type: Optional[str] = None
+    from_warehouse_name: Optional[str] = None
+    to_warehouse_name: Optional[str] = None
+    product_summary: Optional[str] = None
+    adjustment_reason_code: Optional[str] = None
