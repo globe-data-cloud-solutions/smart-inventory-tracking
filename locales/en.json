@@ -1183,6 +1183,24 @@
     "higher_authority": "the next level of authority",
     "adjustment_label": "Adjustment",
     "no_limit": "no limit",
-    "ta_intro": "As Tenant Administrator, here are all approval limits across your organization:"
+    "ta_intro": "As Tenant Administrator, here are all approval limits across your organization:",
+    "configured_rules": "Configured Approval Rules",
+    "self_approval_limits": "Self-Approval Limits",
+    "any_level": "Any level",
+    "any_amount": "Any amount",
+    "up_to_units": "Up to {max} units",
+    "range_units": "{min} – {max} units",
+    "no_approver_configured": "No specific approver configured — escalates per organization hierarchy.",
+    "any_one_approver": "any one approver",
+    "all_must_approve": "all approvers must agree",
+    "tenant_wide": "tenant-wide",
+    "source_warehouse": "at the source warehouse",
+    "within_hours": "within {hours} hours",
+    "single_step_approval": "{position}{qualifier} ({execution}, {sla})",
+    "multi_step_intro": "(all steps required, in order)",
+    "step_label": "Step {n}: {detail}",
+    "rule_label": "Rule {n}",
+    "an_approver": "an approver",
+    "any_level_footnote": "\"Any level\" means this rule applies regardless of the destination level."
   }
 }

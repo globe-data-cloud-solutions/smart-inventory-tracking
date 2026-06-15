@@ -71,6 +71,34 @@ interface HierarchyLevel {
   is_active: boolean;
 }
 
+interface ApprovalStepOut {
+  sequence: number;
+  position_title: string | null;
+  position_id: string | null;
+  resolution: string;
+  execution_mode: string;
+  sla_hours: number | null;
+}
+
+interface TransferApprovalRule {
+  id: string;
+  transfer_type_config_id: string;
+  transfer_type_name: string | null;
+  source_level: number | null;
+  destination_level: number | null;
+  source_level_name: string | null;
+  dest_level_name: string | null;
+  quantity_min: number;
+  quantity_max: number | null;
+  value_min: number;
+  value_max: number | null;
+  threshold_type: string;
+  currency: string | null;
+  approval_steps: ApprovalStepOut[];
+  priority: number;
+  is_active: boolean;
+}
+
 /* ── helpers ───────────────────────────────────────────────────────────── */
 
 function canInitiate(cfg: ApiTransferType, level: number): boolean {
@@ -127,6 +155,76 @@ function levelEscalationLabel(levelNumber: number, hierarchyLevels: HierarchyLev
   return t("approval_policies.higher_authority");
 }
 
+/** Quantity/value range covered by a transfer approval rule. */
+function ruleRangeText(rule: TransferApprovalRule): string {
+  if (rule.threshold_type === "VALUE") {
+    const currency = rule.currency ?? "ETB";
+    const min = `${formatQty(rule.value_min)} ${currency}`;
+    const max = rule.value_max != null ? `${formatQty(rule.value_max)} ${currency}` : "∞";
+    if (rule.value_max == null && rule.value_min === 0) return t("approval_policies.any_amount");
+    if (rule.value_min === 0) return t("approval_policies.up_to_units").replace("{max}", max);
+    return t("approval_policies.range_units").replace("{min}", min).replace("{max}", max);
+  }
+  if (rule.quantity_max == null && rule.quantity_min === 0) return t("approval_policies.any_amount");
+  if (rule.quantity_min === 0) {
+    return t("approval_policies.up_to_units").replace("{max}", formatQty(rule.quantity_max ?? 0));
+  }
+  return t("approval_policies.range_units")
+    .replace("{min}", formatQty(rule.quantity_min))
+    .replace("{max}", rule.quantity_max != null ? formatQty(rule.quantity_max) : "∞");
+}
+
+/** Render a single approval_steps entry as a plain-language description. */
+function formatStepLabel(step: ApprovalStepOut, positions: TenantPosition[]): string {
+  const label = resolvePositionLabel(
+    positions,
+    step.position_title,
+    step.position_id,
+    null,
+    step.position_title ?? t("approval_policies.an_approver")
+  );
+
+  let qualifier = "";
+  const resolution = step.resolution?.toUpperCase() ?? "";
+  if (resolution === "TENANT_WIDE") qualifier = t("approval_policies.tenant_wide");
+  else if (resolution === "SOURCE_NODE") qualifier = t("approval_policies.source_warehouse");
+
+  const mode = step.execution_mode?.toUpperCase() ?? "";
+  let execution: string;
+  if (mode === "ANY") execution = t("approval_policies.any_one_approver");
+  else if (mode === "ALL" || mode === "ALL_MUST_APPROVE") execution = t("approval_policies.all_must_approve");
+  else execution = step.execution_mode.toLowerCase();
+
+  const sla = step.sla_hours != null
+    ? t("approval_policies.within_hours").replace("{hours}", String(step.sla_hours))
+    : "";
+
+  return t("approval_policies.single_step_approval")
+    .replace("{position}", label)
+    .replace("{qualifier}", qualifier ? ` ${qualifier}` : "")
+    .replace("{execution}", execution)
+    .replace("{sla}", sla);
+}
+
+/** Plain-language description of who approves a transfer approval rule. */
+function approvalRuleLines(rule: TransferApprovalRule, positions: TenantPosition[]): string[] {
+  if (rule.approval_steps.length === 0) {
+    return [t("approval_policies.no_approver_configured")];
+  }
+  const steps = [...rule.approval_steps].sort((a, b) => a.sequence - b.sequence);
+  if (steps.length === 1) {
+    return [formatStepLabel(steps[0]!, positions)];
+  }
+  return [
+    ...steps.map((step, i) =>
+      t("approval_policies.step_label")
+        .replace("{n}", String(i + 1))
+        .replace("{detail}", formatStepLabel(step, positions))
+    ),
+    t("approval_policies.multi_step_intro"),
+  ];
+}
+
 const cardCls = "bg-white border border-gray-200 rounded-lg p-4 mb-3";
 
 /* ── page ──────────────────────────────────────────────────────────────── */
@@ -178,6 +276,13 @@ export default function ApprovalPoliciesPage() {
     staleTime: 60_000,
   });
 
+  const { data: transferApprovalRules = [] } = useQuery<TransferApprovalRule[]>({
+    queryKey: ["approval-policies-transfer-rules", tenantId],
+    queryFn: () => api.get<TransferApprovalRule[]>(`/api/v1/tenants/${tenantId}/transfer-approval-rules`),
+    enabled: enabled && isTaSa,
+    staleTime: 60_000,
+  });
+
   if (!session) return null;
   if (org === SA_ORG_SLUG) return <p className="p-8 text-gray-500">{t("sa.select_tenant")}</p>;
 
@@ -209,6 +314,28 @@ export default function ApprovalPoliciesPage() {
     : nextApproverLabel;
 
   const controlledProducts = products.filter((p) => p.is_controlled && p.approval_overrides);
+
+  // Section 3 — adjustment rows reused as-is under "Self-Approval Limits".
+  const adjustmentSelfRows = adjustmentRules
+    .filter((r) => r.is_active)
+    .map((r) => ({
+      levelNumber: r.level_number,
+      selfApprove: selfApproveText(r.qty_limit, r.value_limit, "ETB"),
+      escalatesTo: resolvePositionLabel(
+        positions,
+        r.approver_position_title,
+        r.approver_position_id,
+        r.approver_role_code,
+        levelEscalationLabel(r.level_number, hierarchyLevels)
+      ),
+      key: r.id,
+    }))
+    .sort((a, b) => a.levelNumber - b.levelNumber);
+
+  const activeTransferRules = transferApprovalRules.filter((r) => r.is_active);
+  const anyLevelUsed = activeTransferRules.some(
+    (r) => r.source_level_name == null || r.dest_level_name == null
+  );
 
   return (
     <div className="p-8 max-w-4xl">
@@ -359,71 +486,139 @@ export default function ApprovalPoliciesPage() {
         <section className="mb-8">
           <p className="text-sm text-gray-600 mb-3">{t("approval_policies.ta_intro")}</p>
 
-          <div className="bg-white border border-gray-200 rounded-lg overflow-x-auto">
-              <h3 className="text-lg font-bold text-[#0f2d1f] px-4 pt-4 m-0">
-                {t("approval_policies.full_matrix_title")}
-              </h3>
-              <p className="text-sm text-gray-600 px-4 pb-2 m-0">{t("approval_policies.full_matrix_subtitle")}</p>
-              <table className="w-full border-collapse text-sm">
-                <thead>
-                  <tr className="bg-gray-50 border-y border-gray-200">
-                    {["col_level", "col_type", "col_self_approve", "col_escalates"].map((key) => (
-                      <th
-                        key={key}
-                        className="px-4 py-2 text-left text-[11px] font-bold text-gray-500 uppercase tracking-wide"
-                      >
-                        {t(`approval_policies.${key}`)}
-                      </th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {selfApprovalPolicies
-                    .filter((p) => p.is_active)
-                    .flatMap((p) =>
-                      p.transfer_types.map((txType) => ({
-                        levelNumber: p.level_number,
-                        typeLabel:
-                          transferTypes.find((tt) => tt.underlying_type === txType)?.display_name ??
-                          t(`product.tx_type_${txType.toLowerCase()}`),
-                        selfApprove: selfApproveText(p.qty_limit, p.value_limit, "ETB"),
-                        escalatesTo: levelEscalationLabel(p.level_number, hierarchyLevels),
-                        key: `${p.id}-${txType}`,
-                      }))
-                    )
-                    .concat(
-                      adjustmentRules
-                        .filter((r) => r.is_active)
-                        .map((r) => ({
-                          levelNumber: r.level_number,
-                          typeLabel: t("approval_policies.adjustment_label"),
-                          selfApprove: selfApproveText(r.qty_limit, r.value_limit, "ETB"),
-                          escalatesTo: resolvePositionLabel(
-                            positions,
-                            r.approver_position_title,
-                            r.approver_position_id,
-                            r.approver_role_code,
-                            levelEscalationLabel(r.level_number, hierarchyLevels)
-                          ),
-                          key: r.id,
-                        }))
-                    )
-                    .sort((a, b) => a.levelNumber - b.levelNumber)
-                    .map((row) => {
+          <h3 className="text-lg font-bold text-[#0f2d1f] mb-1">{t("approval_policies.full_matrix_title")}</h3>
+          <p className="text-sm text-gray-600 mb-3">{t("approval_policies.full_matrix_subtitle")}</p>
+
+          {transferTypes
+            .filter((tt) => tt.is_active)
+            .map((tt) => {
+              const rules = activeTransferRules
+                .filter((r) => r.transfer_type_config_id === tt.id)
+                .sort((a, b) => a.priority - b.priority);
+
+              const selfRows = selfApprovalPolicies
+                .filter((p) => p.is_active && p.transfer_types.includes(tt.underlying_type))
+                .map((p) => ({
+                  levelNumber: p.level_number,
+                  selfApprove: selfApproveText(p.qty_limit, p.value_limit, "ETB"),
+                  escalatesTo: levelEscalationLabel(p.level_number, hierarchyLevels),
+                  key: `${p.id}-${tt.underlying_type}`,
+                }))
+                .sort((a, b) => a.levelNumber - b.levelNumber);
+
+              return (
+                <div key={tt.id} className="bg-white border border-gray-200 rounded-lg overflow-x-auto mb-5">
+                  <h4 className="text-base font-bold text-[#0f2d1f] px-4 pt-4 m-0">{tt.display_name}</h4>
+
+                  <div className="px-4 pt-3 pb-1">
+                    <p className="text-xs font-bold text-gray-400 uppercase tracking-wide m-0 mb-2">
+                      {t("approval_policies.configured_rules")}
+                    </p>
+                    {rules.length === 0 ? (
+                      <p className="text-sm text-gray-500 m-0 mb-3">{t("approval_policies.no_approver_configured")}</p>
+                    ) : (
+                      rules.map((rule) => {
+                        const sourceLabel = rule.source_level_name ?? t("approval_policies.any_level");
+                        const destLabel = rule.dest_level_name ?? t("approval_policies.any_level");
+                        return (
+                          <div key={rule.id} className="mb-3 pl-3 border-l-2 border-gray-200">
+                            <p className="text-sm font-semibold text-gray-800 m-0">
+                              {t("approval_policies.rule_label").replace("{n}", String(rule.priority))}: {sourceLabel} → {destLabel}
+                            </p>
+                            <p className="text-sm text-gray-700 m-0 mt-0.5">{ruleRangeText(rule)}</p>
+                            {approvalRuleLines(rule, positions).map((line, i) => (
+                              <p key={i} className="text-sm text-gray-700 m-0 mt-0.5">{line}</p>
+                            ))}
+                          </div>
+                        );
+                      })
+                    )}
+                  </div>
+
+                  <div className="px-4 pb-4">
+                    <p className="text-xs font-bold text-gray-400 uppercase tracking-wide m-0 mb-2">
+                      {t("approval_policies.self_approval_limits")}
+                    </p>
+                    {selfRows.length === 0 ? (
+                      <p className="text-sm text-gray-500 m-0">{t("approval_policies.no_limit")}</p>
+                    ) : (
+                      <table className="w-full border-collapse text-sm">
+                        <thead>
+                          <tr className="bg-gray-50 border-y border-gray-200">
+                            {["col_level", "col_self_approve", "col_escalates"].map((key) => (
+                              <th
+                                key={key}
+                                className="px-3 py-1.5 text-left text-[11px] font-bold text-gray-500 uppercase tracking-wide"
+                              >
+                                {t(`approval_policies.${key}`)}
+                              </th>
+                            ))}
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {selfRows.map((row) => {
+                            const level = hierarchyLevels.find((l) => l.level_number === row.levelNumber);
+                            const levelLabel = level?.level_name ?? `L${row.levelNumber}`;
+                            return (
+                              <tr key={row.key} className="border-b border-gray-100">
+                                <td className="px-3 py-1.5 whitespace-nowrap text-gray-700">{levelLabel}</td>
+                                <td className="px-3 py-1.5 whitespace-nowrap text-gray-700">{row.selfApprove}</td>
+                                <td className="px-3 py-1.5 whitespace-nowrap text-gray-700">{row.escalatesTo}</td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+
+          {/* Adjustment — Self-Approval Limits only, no Configured Approval Rules */}
+          <div className="bg-white border border-gray-200 rounded-lg overflow-x-auto mb-5">
+            <h4 className="text-base font-bold text-[#0f2d1f] px-4 pt-4 m-0">{t("approval_policies.adjustment_label")}</h4>
+            <div className="px-4 pb-4 pt-3">
+              <p className="text-xs font-bold text-gray-400 uppercase tracking-wide m-0 mb-2">
+                {t("approval_policies.self_approval_limits")}
+              </p>
+              {adjustmentSelfRows.length === 0 ? (
+                <p className="text-sm text-gray-500 m-0">{t("approval_policies.no_limit")}</p>
+              ) : (
+                <table className="w-full border-collapse text-sm">
+                  <thead>
+                    <tr className="bg-gray-50 border-y border-gray-200">
+                      {["col_level", "col_self_approve", "col_escalates"].map((key) => (
+                        <th
+                          key={key}
+                          className="px-3 py-1.5 text-left text-[11px] font-bold text-gray-500 uppercase tracking-wide"
+                        >
+                          {t(`approval_policies.${key}`)}
+                        </th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {adjustmentSelfRows.map((row) => {
                       const level = hierarchyLevels.find((l) => l.level_number === row.levelNumber);
                       const levelLabel = level?.level_name ?? `L${row.levelNumber}`;
                       return (
                         <tr key={row.key} className="border-b border-gray-100">
-                          <td className="px-4 py-2 whitespace-nowrap text-gray-700">{levelLabel}</td>
-                          <td className="px-4 py-2 whitespace-nowrap text-gray-700">{row.typeLabel}</td>
-                          <td className="px-4 py-2 whitespace-nowrap text-gray-700">{row.selfApprove}</td>
-                          <td className="px-4 py-2 whitespace-nowrap text-gray-700">{row.escalatesTo}</td>
+                          <td className="px-3 py-1.5 whitespace-nowrap text-gray-700">{levelLabel}</td>
+                          <td className="px-3 py-1.5 whitespace-nowrap text-gray-700">{row.selfApprove}</td>
+                          <td className="px-3 py-1.5 whitespace-nowrap text-gray-700">{row.escalatesTo}</td>
                         </tr>
                       );
                     })}
-                </tbody>
-              </table>
+                  </tbody>
+                </table>
+              )}
+            </div>
           </div>
+
+          {anyLevelUsed && (
+            <p className="text-xs text-gray-400 mt-2">ℹ️ {t("approval_policies.any_level_footnote")}</p>
+          )}
         </section>
       )}
     </div>

@@ -1187,6 +1187,24 @@
     "higher_authority": "sadarkaa aangoo itti aanu",
     "adjustment_label": "Sirreeffama",
     "no_limit": "daangaa hin qabu",
-    "ta_intro": "Akka Bulchaa Kiraa Waliigalaa, daangaa hayyama dhaabbata keessanii hundi as jiru:"
+    "ta_intro": "Akka Bulchaa Kiraa Waliigalaa, daangaa hayyama dhaabbata keessanii hundi as jiru:",
+    "configured_rules": "Seerota Hayyamaa Qindaa'an",
+    "self_approval_limits": "Daangaa Ofii-Mirkaneessuu",
+    "any_level": "Sadarkaa kamiyyuu",
+    "any_amount": "Hanga kamiyyuu",
+    "up_to_units": "Hanga unitii {max}",
+    "range_units": "Unitii {min} – {max}",
+    "no_approver_configured": "Mirkaneessaan addaa hin qindaa'amne — sadarkaa bulchiinsa dhaabbataa irratti darba.",
+    "any_one_approver": "mirkaneessaa tokko kamiyyuu",
+    "all_must_approve": "mirkaneessitoonni hundi walii galuu qabu",
+    "tenant_wide": "dhaabbata guutuu keessatti",
+    "source_warehouse": "mana kuusaa madda irratti",
+    "within_hours": "sa'aatii {hours} keessatti",
+    "single_step_approval": "{position}{qualifier} ({execution}, {sla})",
+    "multi_step_intro": "(tartiibaan, sadarkaaleen hundi barbaachisu)",
+    "step_label": "Tarkaanfii {n}: {detail}",
+    "rule_label": "Seera {n}",
+    "an_approver": "mirkaneessaa tokko",
+    "any_level_footnote": "\"Sadarkaa kamiyyuu\" jechuun seerri kun sadarkaa galmaa kamiyyuu irratti hojiirra ni oola jechuudha."
   }
 }

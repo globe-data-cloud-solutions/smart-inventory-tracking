@@ -1191,6 +1191,24 @@
     "higher_authority": "ለሚቀጥለው ስልጣን ደረጅ",
     "adjustment_label": "ማስተካከያ",
     "no_limit": "ገደብ የለም",
-    "ta_intro": "እንደ ተከራይ አስተዳዳሪ፣ በድርጅትዎ ውስጥ ያሉ ሁሉም የማፅደቅ ገደቦች እዚህ አሉ፦"
+    "ta_intro": "እንደ ተከራይ አስተዳዳሪ፣ በድርጅትዎ ውስጥ ያሉ ሁሉም የማፅደቅ ገደቦች እዚህ አሉ፦",
+    "configured_rules": "የተዋቀሩ የማረጋገጫ ህጎች",
+    "self_approval_limits": "የራስ-ማረጋገጫ ገደቦች",
+    "any_level": "ማንኛውም ደረጅ",
+    "any_amount": "ምንም መጠን",
+    "up_to_units": "እስከ {max} ዩኒቶች",
+    "range_units": "{min} – {max} ዩኒቶች",
+    "no_approver_configured": "ምንም የተወሰነ አጽዳቂ አልተዋቀረም — በድርጅት ስልጣን ቅደም ተከተል ይተላለፋል።",
+    "any_one_approver": "ማንኛውም አንድ አጽዳቂ",
+    "all_must_approve": "ሁሉም አጽዳቂዎች መስማማት አለባቸው",
+    "tenant_wide": "በመላው ተከራይ",
+    "source_warehouse": "በመነሻ መጋዘን",
+    "within_hours": "በ{hours} ሰዓታት ውስጥ",
+    "single_step_approval": "{position}{qualifier} ({execution}፣ {sla})",
+    "multi_step_intro": "(ሁሉም ደረጆች በቅደም ተከተል ያስፈልጋሉ)",
+    "step_label": "ደረጅ {n}: {detail}",
+    "rule_label": "ህግ {n}",
+    "an_approver": "አንድ አጽዳቂ",
+    "any_level_footnote": "«ማንኛውም ደረጅ» ይህ ህግ ከመድረሻ ደረጅ ውጭ ይተገበራል ማለት ነው።"
   }
 }
