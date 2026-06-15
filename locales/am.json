@@ -233,6 +233,12 @@
     "discontinued_badge": "ወጥቷል",
     "reactivate_success": "ምርቱ እንደገና ንቁ ሆኗል",
     "discontinue_success": "ምርቱ ታስቋል",
+    "tx_type_pull": "PULL ዝውውር",
+    "tx_type_push": "PUSH ዝውውር",
+    "tx_type_sister": "SISTER ዝውውር",
+    "tx_type_adjustment": "ማስተካከያ",
+    "tx_type_receive": "ክምችት ተቀበል",
+    "tx_type_issue": "ክምችት አውጣ",
     "approval_override_title": "የማረጋገጫ ምስለት",
     "approval_override_desc": "ራስ-ማረጋገጫን እና መደበኛ ሂደትን በማለፍ ከተወሰነ ሥራ ቦታ ማረጋገጫ ይጠይቁ።",
     "enable_override": "ለዚህ የግብይት አይነት ምስለት አንቃ",
@@ -492,6 +498,7 @@
     "controlled_note": "🔒 ቁጥጥር የተደረገባቸው ምርቶች ምንም ይሁን መጠናቸው ሁልጊዜ የተወሰነ አጽዳቂ ይፈልጋሉ። 🔒 ምልክትን በምርት ስም ላይ ይፈልጉ።"
   },
   "transfer": {
+    "acting_on_behalf": "በ {warehouse} ምትክ በመስራት ላይ",
     "status": {
       "DRAFT": "ረቂቅ",
       "SUBMITTED": "ቀርቧል",

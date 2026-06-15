@@ -239,6 +239,12 @@
     "discontinued_badge": "Discontinued",
     "reactivate_success": "Product reactivated successfully",
     "discontinue_success": "Product discontinued successfully",
+    "tx_type_pull": "PULL Transfer",
+    "tx_type_push": "PUSH Transfer",
+    "tx_type_sister": "SISTER Transfer",
+    "tx_type_adjustment": "Adjustment",
+    "tx_type_receive": "Receive Stock",
+    "tx_type_issue": "Issue Stock",
     "approval_override_title": "Approval Override",
     "approval_override_desc": "Bypass self-approval and normal routing — require approval from a specific position.",
     "enable_override": "Enable override for this transaction type",
@@ -490,6 +496,7 @@
     "controlled_note": "🔒 Controlled products always require a specific approver, regardless of quantity. Look for 🔒 on product names."
   },
   "transfer": {
+    "acting_on_behalf": "Acting on behalf of: {warehouse}",
     "status": {
       "DRAFT": "Draft",
       "SUBMITTED": "Submitted",

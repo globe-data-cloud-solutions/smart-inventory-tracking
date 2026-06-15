@@ -228,6 +228,12 @@
     "discontinued_badge": "Dhaabame",
     "reactivate_success": "Meeshaan hojii jalqabe",
     "discontinue_success": "Meeshaan dhaabame",
+    "tx_type_pull": "PULL Dabarsaa",
+    "tx_type_push": "PUSH Dabarsaa",
+    "tx_type_sister": "SISTER Dabarsaa",
+    "tx_type_adjustment": "Sirreessaa",
+    "tx_type_receive": "Kuusaa Fudhadhu",
+    "tx_type_issue": "Kuusaa Baasi",
     "approval_override_title": "Mirkaneessuu Cabsaa",
     "approval_override_desc": "Mirkaneessuu ofii fi karaa idileef darbii, iddoo hojii murtaa'e irraa mirkaneessuu gaafadhu.",
     "enable_override": "Gosa daldalaa kanaaf cabsaa banaa",
@@ -482,6 +488,7 @@
     "controlled_note": "🔒 Oomishaalee to'annoo jala jiran yeroo hunda mirkaneessaa addaa barbaadu, hangaa isaanii osoo hin ilaalle. Maqaa oomishaa irratti mallattoo 🔒 ilaali."
   },
   "transfer": {
+    "acting_on_behalf": "Bakka {warehouse} bu'anii hojjechaa jiru",
     "status": {
       "DRAFT": "Qophii",
       "SUBMITTED": "Dhiyaate",

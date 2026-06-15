@@ -163,6 +163,8 @@ def _session_for_dispatch(
       call 0 — SELECT transfer_orders FOR UPDATE
       call 1 — SELECT transfer_order_lines
       call 2 — UPDATE transfer_orders SET status = 'ISSUED'
+      call 3 — _get_warehouse_name (only issued when the actor's warehouse differs
+               from the transfer's source warehouse — "acted on behalf of" audit)
     Also suitable for transition_transfer() calls that fetch lines (APPROVED, CANCELLED from APPROVED).
     """
     session = AsyncMock()
@@ -170,6 +172,7 @@ def _session_for_dispatch(
         MagicMock(fetchone=MagicMock(return_value=transfer_row)),  # transfer SELECT
         MagicMock(fetchall=MagicMock(return_value=lines)),         # lines SELECT
         MagicMock(),                                                # status UPDATE
+        MagicMock(fetchone=MagicMock(return_value=None)),           # warehouse name lookup
     ])
     return session
 

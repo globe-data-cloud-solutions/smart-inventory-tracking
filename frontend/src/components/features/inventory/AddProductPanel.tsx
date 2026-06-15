@@ -233,12 +233,12 @@ export function AddProductPanel({ apiBase, onClose, mode = "create", productId, 
 
   // ── approval minimums state ────────────────────────────────────────────
   const MIN_TX_TYPES = [
-    { key: "PULL",       label: "PULL Transfer" },
-    { key: "PUSH",       label: "PUSH Transfer" },
-    { key: "SISTER",     label: "SISTER Transfer" },
-    { key: "ADJUSTMENT", label: "Adjustment" },
-    { key: "RECEIVE",    label: "Receive Stock" },
-    { key: "ISSUE",      label: "Issue Stock" },
+    { key: "PULL",       label: t("product.tx_type_pull") },
+    { key: "PUSH",       label: t("product.tx_type_push") },
+    { key: "SISTER",     label: t("product.tx_type_sister") },
+    { key: "ADJUSTMENT", label: t("product.tx_type_adjustment") },
+    { key: "RECEIVE",    label: t("product.tx_type_receive") },
+    { key: "ISSUE",      label: t("product.tx_type_issue") },
   ] as const;
   type ThresholdType = "ALWAYS" | "QUANTITY" | "VALUE";
   type MinimumRow = {

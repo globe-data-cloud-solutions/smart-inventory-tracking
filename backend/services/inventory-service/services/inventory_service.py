@@ -48,6 +48,21 @@ from shared.permissions.audit import audit_log
 _FORCE_NEGATIVE_REASONS: frozenset[str] = frozenset({"DAMAGE", "EXPIRY", "SUPPLIER_RETURN"})
 
 
+async def _get_warehouse_name(db: Any, tenant_id: str, warehouse_id: str) -> str | None:
+    """Resolve a facility's display name for audit logging (cosmetic — never raises)."""
+    result = await db.execute(
+        text(
+            "SELECT COALESCE(w.name, n.name) AS name "
+            "FROM (SELECT :wid::uuid AS id) x "
+            "LEFT JOIN warehouses w ON w.id = x.id AND w.tenant_id = :tid "
+            "LEFT JOIN organization_node n ON n.id = x.id AND n.tenant_id = :tid"
+        ),
+        {"wid": warehouse_id, "tid": tenant_id},
+    )
+    row = result.fetchone()
+    return row.name if row else None
+
+
 async def _resolve_product_override(
     db: Any,
     tenant_id: str,
@@ -1241,6 +1256,26 @@ class InventoryService:
                     line_id=str(line.id),
                 )
 
+            # CLAUDE.md §27 "Acting on behalf of": record when the dispatching user's
+            # facility differs from the transfer's source facility.
+            dispatch_audit_resource: dict[str, Any] = {
+                "resource_type": "transfer",
+                "resource_id": str(transfer_id),
+                "transfer_type": transfer_type,
+                "status_transition": "ISSUED_TO_IN_TRANSIT",
+            }
+            if user.warehouse_id and str(user.warehouse_id).lower() != str(row.from_warehouse_id).lower():
+                dispatch_audit_resource["acted_on_behalf_of"] = (
+                    await _get_warehouse_name(self.db, str(user.tenant_id), str(row.from_warehouse_id))
+                    or str(row.from_warehouse_id)
+                )
+            await audit_log(
+                user=user,
+                action="transfer:dispatch",
+                resource=dispatch_audit_resource,
+                decision="GRANTED",
+            )
+
         await self.db.execute(
             text("UPDATE transfer_orders SET status = :s, updated_at = now() WHERE id = :id"),
             {"s": next_state, "id": str(transfer_id)},
@@ -1331,6 +1366,27 @@ class InventoryService:
         await self.db.execute(
             text("UPDATE transfer_orders SET status = 'ISSUED', updated_at = now() WHERE id = :id"),
             {"id": str(transfer_id)},
+        )
+
+        # CLAUDE.md §27 "Acting on behalf of": when the issuing user's facility differs
+        # from the transfer's source facility (e.g. an L1/TA issuing for a WM), record
+        # which facility they acted on behalf of in the audit trail.
+        audit_resource: dict[str, Any] = {
+            "resource_type": "transfer",
+            "resource_id": str(transfer_id),
+            "transfer_type": transfer_type,
+            "status_transition": "APPROVED_TO_ISSUED",
+        }
+        if user.warehouse_id and str(user.warehouse_id).lower() != str(row.from_warehouse_id).lower():
+            audit_resource["acted_on_behalf_of"] = (
+                await _get_warehouse_name(self.db, str(user.tenant_id), str(row.from_warehouse_id))
+                or str(row.from_warehouse_id)
+            )
+        await audit_log(
+            user=user,
+            action="transfer:issue",
+            resource=audit_resource,
+            decision="GRANTED",
         )
 
         from datetime import datetime, timezone

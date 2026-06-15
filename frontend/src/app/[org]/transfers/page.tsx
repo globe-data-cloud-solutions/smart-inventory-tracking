@@ -1223,6 +1223,12 @@ export default function TransfersPage() {
                               {a.label}
                             </button>
                           ))}
+                          {acts.some((a) => a.next === "ISSUED" || a.next === "IN_TRANSIT")
+                            && user.warehouseId?.toLowerCase() !== txn.from_warehouse_id?.toLowerCase() && (
+                            <span className="text-[10px] text-gray-500 italic whitespace-nowrap">
+                              {t("transfer.acting_on_behalf").replace("{warehouse}", txn.from_warehouse_name ?? t("common.unknown"))}
+                            </span>
+                          )}
                         </div>
                       ) : waitMsg ? (
                         <span className="text-[11px] text-gray-400 italic leading-tight">{waitMsg}</span>
