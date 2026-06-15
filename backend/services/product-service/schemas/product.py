@@ -370,9 +370,15 @@ class ApprovalMinimumEntry(BaseModel):
 class ApprovalMinimumsUpsertRequest(BaseModel):
     """PUT /products/{product_id}/approval-minimums body.
 
-    Send an empty list to clear all product-level approval configuration.
+    entries must be non-empty unless clear_all=true — this prevents a
+    malformed or wrongly-shaped body from silently wiping all existing
+    overrides via the default empty list.
+
+    To intentionally clear all product-level approval configuration,
+    set clear_all=true (entries may be empty or omitted in that case).
     """
     entries: list[ApprovalMinimumEntry] = Field(default_factory=list)
+    clear_all: bool = False
 
 
 class ApprovalMinimumResponse(BaseModel):

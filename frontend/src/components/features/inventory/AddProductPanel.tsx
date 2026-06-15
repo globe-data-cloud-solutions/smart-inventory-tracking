@@ -519,36 +519,35 @@ export function AddProductPanel({ apiBase, onClose, mode = "create", productId, 
         productSku   = created.sku;
       }
 
-      // Save product-level approval minimums / overrides if any were set.
-      // An override is only persisted if a position has been chosen — the
-      // backend's check_product_override() requires approver_position_id
-      // IS NOT NULL, so a checked-but-unconfigured override is dropped here
-      // rather than sent as a half-configured row.
-      const filledMinimums = minimumRows.filter(
-        (r) => r.override_enabled && r.approver_position_id !== ""
+      // Save product-level approval minimums / overrides. All 6 transaction
+      // types are always sent (override_enabled=false for unconfigured
+      // rows) so entries is never empty — this satisfies the backend's
+      // EMPTY_ENTRIES validation and ensures that disabling a previously
+      // configured override actually clears it (rather than silently
+      // skipping the PUT call). An override is only persisted if a position
+      // has been chosen — the backend's check_product_override() requires
+      // approver_position_id IS NOT NULL, so a checked-but-unconfigured
+      // override is sent as override_enabled=false here.
+      await api.put<unknown>(
+        `${apiBase}/${productRefId}/approval-minimums`,
+        {
+          entries: minimumRows.map((r) => {
+            const overrideActive = r.override_enabled && r.approver_position_id !== "";
+            return {
+              transaction_type:     r.transaction_type,
+              override_enabled:    overrideActive,
+              threshold_type:      r.threshold_type,
+              qty_threshold:       overrideActive && r.threshold_type === "QUANTITY" && r.qty_threshold !== ""
+                                     ? Number(r.qty_threshold) : undefined,
+              value_threshold:     overrideActive && r.threshold_type === "VALUE" && r.value_threshold !== ""
+                                     ? Number(r.value_threshold) : undefined,
+              approver_position_id: overrideActive ? r.approver_position_id : undefined,
+              note:                 overrideActive && r.note.trim() ? r.note.trim() : undefined,
+            };
+          }),
+        },
+        token ?? undefined,
       );
-      if (filledMinimums.length > 0) {
-        await api.put<unknown>(
-          `${apiBase}/${productRefId}/approval-minimums`,
-          {
-            entries: filledMinimums.map((r) => {
-              const overrideActive = r.override_enabled && r.approver_position_id !== "";
-              return {
-                transaction_type:     r.transaction_type,
-                override_enabled:    overrideActive,
-                threshold_type:      r.threshold_type,
-                qty_threshold:       overrideActive && r.threshold_type === "QUANTITY" && r.qty_threshold !== ""
-                                       ? Number(r.qty_threshold) : undefined,
-                value_threshold:     overrideActive && r.threshold_type === "VALUE" && r.value_threshold !== ""
-                                       ? Number(r.value_threshold) : undefined,
-                approver_position_id: overrideActive ? r.approver_position_id : undefined,
-                note:                 overrideActive && r.note.trim() ? r.note.trim() : undefined,
-              };
-            }),
-          },
-          token ?? undefined,
-        );
-      }
 
       setToast(
         isEdit

@@ -1414,9 +1414,20 @@ async def upsert_product_approval_minimums(
 
     An entry is persisted only if min_authority_level is not None OR
     override_enabled is True; otherwise any existing row for that tx_type is
-    dropped. Send an empty list to clear all overrides.
+    dropped. Send entries=[] with clear_all=true to clear all overrides —
+    a missing/empty entries list without clear_all is rejected with 422 so
+    a malformed body cannot silently wipe existing configuration.
     Audit log written in the same transaction (CLAUDE.md §8, §14).
     """
+    if not body.entries and not body.clear_all:
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "code": "EMPTY_ENTRIES",
+                "message": "entries cannot be empty unless clear_all=true",
+            },
+        )
+
     tid = str(user.tenant_id)
     pid = product_id
     now = datetime.now(timezone.utc)

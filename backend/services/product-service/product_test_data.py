@@ -186,6 +186,66 @@ def _make_product_row(**overrides: object) -> MagicMock:
     return row
 
 
+def _make_pam_row(**overrides: object) -> MagicMock:
+    """A row matching the SELECT in _read_approval_minimums()."""
+    defaults: dict[str, object] = dict(
+        id="50000001-0000-0000-0000-000000000001",
+        transaction_type="PULL",
+        min_authority_level=None,
+        threshold_type="ALWAYS",
+        qty_threshold=None,
+        value_threshold=None,
+        approver_position_id="60000001-0000-0000-0000-000000000001",
+        note=None,
+        is_active=True,
+        approver_title="Regional Manager",
+        created_by=TA_USER.user_id,
+        created_at=datetime(2026, 1, 1, tzinfo=timezone.utc),
+        updated_at=datetime(2026, 1, 1, tzinfo=timezone.utc),
+    )
+    defaults.update(overrides)
+    row = MagicMock()
+    for k, v in defaults.items():
+        setattr(row, k, v)
+    return row
+
+
+def _make_approval_minimums_put_mock_db(num_inserts: int, return_rows: list) -> AsyncMock:
+    """Mock for PUT /{product_id}/approval-minimums.
+
+    Execution order: DELETE, N x INSERT (one per persisted entry),
+    INSERT audit_logs, SELECT (_read_approval_minimums).
+    """
+    db = AsyncMock()
+
+    def _default() -> MagicMock:
+        m = MagicMock()
+        m.fetchone.return_value = None
+        m.fetchall.return_value = []
+        m.scalar.return_value = 0
+        return m
+
+    read_res = MagicMock()
+    read_res.fetchall.return_value = return_rows
+
+    side_effects = [_default() for _ in range(1 + num_inserts + 1)] + [read_res]
+    db.execute = AsyncMock(side_effect=side_effects)
+    db.commit   = AsyncMock()
+    db.rollback = AsyncMock()
+    return db
+
+
+def _make_approval_minimums_get_mock_db(return_rows: list) -> AsyncMock:
+    """Mock for GET /{product_id}/approval-minimums — single SELECT."""
+    db = AsyncMock()
+    read_res = MagicMock()
+    read_res.fetchall.return_value = return_rows
+    db.execute = AsyncMock(return_value=read_res)
+    db.commit   = AsyncMock()
+    db.rollback = AsyncMock()
+    return db
+
+
 def _make_update_mock_db(role: str = "TA", is_controlled: bool = False) -> AsyncMock:
     """Build a mock AsyncSession whose execute() side_effect matches the
     update_product() (PATCH /{product_id}) execution order, for a request

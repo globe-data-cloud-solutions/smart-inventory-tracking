@@ -20,6 +20,9 @@ from product_test_data import (
     _cap_db,
     _make_db_override,
     _make_update_mock_db,
+    _make_pam_row,
+    _make_approval_minimums_put_mock_db,
+    _make_approval_minimums_get_mock_db,
 )
 from product_test_data import get_current_user  # product-service version, injected by conftest
 from product_test_data import get_db_session  # product-service version, injected by conftest
@@ -348,3 +351,126 @@ class TestUpdateProduct:
 
         assert r.status_code == 200
         assert r.json()["data"]["is_controlled"] is True
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+
+APPROVER_ID  = "60000001-0000-0000-0000-000000000001"
+ALL_TX_TYPES = ["PULL", "PUSH", "SISTER", "ADJUSTMENT", "RECEIVE", "ISSUE"]
+
+
+def _minimum_entries(override_tx: str | None = None) -> list[dict]:
+    """All 6 transaction types; only override_tx (if given) has override_enabled=True."""
+    return [
+        {
+            "transaction_type":     tx,
+            "override_enabled":     tx == override_tx,
+            "threshold_type":       "ALWAYS",
+            "approver_position_id": APPROVER_ID if tx == override_tx else None,
+        }
+        for tx in ALL_TX_TYPES
+    ]
+
+
+@pytest.mark.unit
+class TestApprovalMinimums:
+    """PUT/GET /api/v1/products/{product_id}/approval-minimums."""
+
+    # 01 — Valid entries with one override → row persisted, returned ──────────
+
+    async def test_put_approval_minimums_creates_override(self, client: AsyncClient, product_app) -> None:
+        row = _make_pam_row(transaction_type="PULL", approver_position_id=APPROVER_ID, is_active=True)
+        db = _make_approval_minimums_put_mock_db(num_inserts=1, return_rows=[row])
+        product_app.dependency_overrides[get_db_session] = _make_db_override(db)
+        try:
+            with _patch_perm(True), _patch_audit():
+                r = await client.put(
+                    f"/api/v1/products/{PRODUCT_ID}/approval-minimums",
+                    json={"entries": _minimum_entries(override_tx="PULL")},
+                )
+        finally:
+            product_app.dependency_overrides.pop(get_db_session, None)
+
+        assert r.status_code == 200
+        minimums = r.json()["data"]["minimums"]
+        assert len(minimums) == 1
+        assert minimums[0]["transaction_type"] == "PULL"
+        assert minimums[0]["approver_position_id"] == APPROVER_ID
+
+    # 02 — Re-PUT replaces old row, not duplicates (DELETE runs first) ────────
+
+    async def test_put_approval_minimums_update_existing(self, client: AsyncClient, product_app) -> None:
+        row = _make_pam_row(transaction_type="PUSH", approver_position_id=APPROVER_ID, is_active=True)
+        db = _make_approval_minimums_put_mock_db(num_inserts=1, return_rows=[row])
+        product_app.dependency_overrides[get_db_session] = _make_db_override(db)
+        try:
+            with _patch_perm(True), _patch_audit():
+                r = await client.put(
+                    f"/api/v1/products/{PRODUCT_ID}/approval-minimums",
+                    json={"entries": _minimum_entries(override_tx="PUSH")},
+                )
+        finally:
+            product_app.dependency_overrides.pop(get_db_session, None)
+
+        assert r.status_code == 200
+        first_sql = str(db.execute.call_args_list[0][0][0])
+        assert "DELETE FROM product_approval_minimums" in first_sql
+        assert r.json()["data"]["minimums"][0]["transaction_type"] == "PUSH"
+
+    # 03 — Empty entries without clear_all → 422 EMPTY_ENTRIES ────────────────
+
+    async def test_put_empty_entries_without_clear_all_returns_422(self, client: AsyncClient) -> None:
+        with _patch_perm(True), _patch_audit():
+            r = await client.put(
+                f"/api/v1/products/{PRODUCT_ID}/approval-minimums",
+                json={"entries": []},
+            )
+        assert r.status_code == 422
+        assert r.json()["detail"]["code"] == "EMPTY_ENTRIES"
+
+    # 04 — clear_all=true with empty entries → all overrides removed ──────────
+
+    async def test_put_clear_all_removes_overrides(self, client: AsyncClient, product_app) -> None:
+        db = _make_approval_minimums_put_mock_db(num_inserts=0, return_rows=[])
+        product_app.dependency_overrides[get_db_session] = _make_db_override(db)
+        try:
+            with _patch_perm(True), _patch_audit():
+                r = await client.put(
+                    f"/api/v1/products/{PRODUCT_ID}/approval-minimums",
+                    json={"entries": [], "clear_all": True},
+                )
+        finally:
+            product_app.dependency_overrides.pop(get_db_session, None)
+
+        assert r.status_code == 200
+        assert r.json()["data"]["minimums"] == []
+
+    # 05 — GET with no configured overrides → empty list ──────────────────────
+
+    async def test_get_approval_minimums_empty_when_none_configured(self, client: AsyncClient, product_app) -> None:
+        db = _make_approval_minimums_get_mock_db(return_rows=[])
+        product_app.dependency_overrides[get_db_session] = _make_db_override(db)
+        try:
+            with _patch_perm(True), _patch_audit():
+                r = await client.get(f"/api/v1/products/{PRODUCT_ID}/approval-minimums")
+        finally:
+            product_app.dependency_overrides.pop(get_db_session, None)
+
+        assert r.status_code == 200
+        assert r.json()["data"]["minimums"] == []
+
+    # 06 — NM rejected → 403 RBAC_DENIED (TA-only action) ──────────────────────
+
+    async def test_nm_cannot_put_approval_minimums(self, client: AsyncClient, product_app) -> None:
+        product_app.dependency_overrides[get_current_user] = lambda: NM_USER
+        try:
+            with _patch_perm(False), _patch_audit():
+                r = await client.put(
+                    f"/api/v1/products/{PRODUCT_ID}/approval-minimums",
+                    json={"entries": [], "clear_all": True},
+                )
+        finally:
+            product_app.dependency_overrides.pop(get_current_user, None)
+
+        assert r.status_code == 403
+        assert r.json()["detail"]["code"] == "RBAC_DENIED"
