@@ -196,6 +196,41 @@ def _session_for_receive(
 
 
 @pytest.mark.unit
+class TestGetWarehouseName:
+    """Regression tests for _get_warehouse_name() — builds the 'acted_on_behalf_of'
+    audit field in dispatch_transfer(). Previously used ':wid::uuid' inline in
+    text(), which SQLAlchemy misparses as a malformed bind parameter, raising
+    PostgresSyntaxError on every call. This turned every Issue/Dispatch where the
+    actor's facility differs from the transfer's source warehouse into a 500
+    (introduced in 9290311, never worked)."""
+
+    async def test_get_warehouse_name_valid_uuid(self) -> None:
+        from services.inventory_service import _get_warehouse_name
+
+        row = MagicMock()
+        row.name = "DZ Region-Center"
+        session = AsyncMock()
+        session.execute = AsyncMock(return_value=MagicMock(fetchone=MagicMock(return_value=row)))
+
+        result = await _get_warehouse_name(session, TENANT_ID, WAREHOUSE_A)
+
+        assert result == "DZ Region-Center"
+        # No inline :param::type casts — SQLAlchemy text() misparses these as bind params
+        sql_text = str(session.execute.call_args.args[0])
+        assert "::uuid" not in sql_text
+
+    async def test_get_warehouse_name_handles_error_gracefully(self) -> None:
+        from services.inventory_service import _get_warehouse_name
+
+        session = AsyncMock()
+        session.execute = AsyncMock(side_effect=Exception('syntax error at or near ":"'))
+
+        result = await _get_warehouse_name(session, TENANT_ID, WAREHOUSE_A)
+
+        assert result is None, "_get_warehouse_name must never raise — cosmetic audit field only"
+
+
+@pytest.mark.unit
 class TestInventoryServiceTransfers:
 
     async def test_dispatch_writes_no_ledger_entries(self) -> None:

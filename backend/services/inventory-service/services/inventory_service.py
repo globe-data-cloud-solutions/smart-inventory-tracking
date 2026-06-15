@@ -50,17 +50,21 @@ _FORCE_NEGATIVE_REASONS: frozenset[str] = frozenset({"DAMAGE", "EXPIRY", "SUPPLI
 
 async def _get_warehouse_name(db: Any, tenant_id: str, warehouse_id: str) -> str | None:
     """Resolve a facility's display name for audit logging (cosmetic — never raises)."""
-    result = await db.execute(
-        text(
-            "SELECT COALESCE(w.name, n.name) AS name "
-            "FROM (SELECT :wid::uuid AS id) x "
-            "LEFT JOIN warehouses w ON w.id = x.id AND w.tenant_id = :tid "
-            "LEFT JOIN organization_node n ON n.id = x.id AND n.tenant_id = :tid"
-        ),
-        {"wid": warehouse_id, "tid": tenant_id},
-    )
-    row = result.fetchone()
-    return row.name if row else None
+    try:
+        result = await db.execute(
+            text(
+                "SELECT COALESCE(w.name, n.name) AS name "
+                "FROM (SELECT CAST(:wid AS uuid) AS id) x "
+                "LEFT JOIN warehouses w ON w.id = x.id AND w.tenant_id = CAST(:tid AS uuid) "
+                "LEFT JOIN organization_node n ON n.id = x.id AND n.tenant_id = CAST(:tid AS uuid)"
+            ),
+            {"wid": str(warehouse_id), "tid": str(tenant_id)},
+        )
+        row = result.fetchone()
+        return row.name if row else None
+    except Exception:
+        # Cosmetic field — never let this break the transition
+        return None
 
 
 async def _resolve_product_override(
