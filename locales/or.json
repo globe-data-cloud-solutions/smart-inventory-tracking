@@ -388,6 +388,7 @@
     "to": "To",
     "notes": "Notes",
     "category": "Category",
+    "acted_on_behalf": "Bakka {warehouse} bu'anii",
     "actions": {
       "transfer_DRAFT": "Transfer Created",
       "transfer_PENDING_REVIEW": "Transfer Submitted for Review",

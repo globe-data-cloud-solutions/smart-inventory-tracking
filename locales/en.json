@@ -396,6 +396,7 @@
     "to": "To",
     "notes": "Notes",
     "category": "Category",
+    "acted_on_behalf": "On behalf of: {warehouse}",
     "actions": {
       "transfer_DRAFT": "Transfer Created",
       "transfer_PENDING_REVIEW": "Transfer Submitted for Review",

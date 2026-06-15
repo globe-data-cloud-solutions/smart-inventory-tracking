@@ -953,6 +953,11 @@ export default function TransfersPage() {
         fromWarehouse: transfer?.from_warehouse_name,
         toWarehouse:   transfer?.to_warehouse_name,
         notes:         partialQty ? `Batch received: ${partialQty.toLocaleString()} units` : undefined,
+        actedOnBehalfOf:
+          (next === "ISSUED" || next === "IN_TRANSIT")
+          && user.warehouseId?.toLowerCase() !== transfer?.from_warehouse_id?.toLowerCase()
+            ? (transfer?.from_warehouse_name ?? t("common.unknown"))
+            : undefined,
       });
       if (next === "APPROVED") {
         const approvalInfo = qc.getQueryData<ApprovalInfoResponse>(["approval-info", id]);

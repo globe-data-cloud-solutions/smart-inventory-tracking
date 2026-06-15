@@ -252,6 +252,11 @@ export default function AuditLogPage() {
                         const label = t(key);
                         return label !== key ? label : e.action;
                       })()}
+                      {e.actedOnBehalfOf && (
+                        <div className="text-[10px] text-gray-400 mt-0.5 font-sans whitespace-nowrap">
+                          {t("audit.acted_on_behalf").replace("{warehouse}", e.actedOnBehalfOf)}
+                        </div>
+                      )}
                     </td>
                     <td className="px-3 py-2 font-mono text-gray-500 text-[10px]">{e.resourceRef || "—"}</td>
                     <td className="px-3 py-2 text-gray-800 text-[11px] max-w-[160px] overflow-hidden text-ellipsis whitespace-nowrap">{e.productName || "—"}</td>

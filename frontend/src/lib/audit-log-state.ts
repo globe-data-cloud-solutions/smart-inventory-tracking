@@ -24,6 +24,9 @@ export interface AuditLogEntry {
   toWarehouse?: string;
   /** Any additional free-form notes. */
   notes?: string;
+  /** Source facility name, set when the actor's facility differs from the
+   *  transfer's source facility (mirrors backend abac_context.acted_on_behalf_of). */
+  actedOnBehalfOf?: string;
 }
 
 interface AuditLogStore {
