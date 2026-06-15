@@ -8,7 +8,8 @@
     "analytics": "Xiinxala",
     "reports": "Gabaasaalee",
     "settings": "Qindaa'ina",
-    "audit": "Galmee Dhageettii"
+    "audit": "Galmee Dhageettii",
+    "approval_policies": "Imaammata Hayyamaa"
   },
   "inventory": {
     "balance": {
@@ -1159,5 +1160,34 @@
     "contact_admin": "Jecha darbee haaromfame. Bulchaan kee ramadee booda sistamitti seenuu dandeessa.",
     "current_label_optional": "Jecha Darbee Ammaa (yoo hin beekin duwwaa dhiisi)",
     "success_redirect": "Jecha darbee haaromfame. Jecha haarawa keetiin seeni."
+  },
+  "approval_policies": {
+    "nav_label": "Imaammata Hayyamaa",
+    "title": "Imaammata Hayyamaa",
+    "subtitle": "Eenyu maal mirkaneessuu danda'u, yoom akka ta'e ibsa salphaa.",
+    "your_level": "Sadarkaa kee: {level}",
+    "section1_title": "Daangaa Hayyama Keetii",
+    "self_approve_up_to": "Hanga unitii {qty} ofiin mirkaneessuu ni dandeessa.",
+    "self_approve_up_to_value": "Hanga unitii {qty} (ykn {value} {currency}) ofiin mirkaneessuu ni dandeessa.",
+    "escalates_to": "Kana ol, mirkaneessaaf gara {approver} tti darba.",
+    "requires_approval": "Gaaffileen {type} hundi mirkaneessa {approver} barbaadu.",
+    "example_line": "Fakkeenya: unitii {half} gaafachuun yeruma sana hayyamama. Unitii {double} gaafachuun mirkaneessa barbaada.",
+    "controlled_products_title": "Oomishaalee To'annaa Jala Jiran",
+    "controlled_products_desc": "Oomishaaleen kun seera mirkaneessaa addaa kan daangaa olii kana ala jiru qabu:",
+    "no_controlled_products": "Yeroo ammaa oomishni seera mirkaneessaa addaa qabu hin jiru.",
+    "always_requires": "{type}: Yeroo hunda mirkaneessa {approver} barbaada",
+    "quantity_requires": "{type}: Gaaffiin unitii {threshold}+ mirkaneessa {approver} barbaada",
+    "value_requires": "{type}: Ajajni gatii {threshold}+ {currency} ol ta'e mirkaneessa {approver} barbaada",
+    "full_matrix_title": "Gabatee Imaammata Guutuu",
+    "full_matrix_subtitle": "Seerota ofii-mirkaneessuu fi ol-guddina sadarkaa hunda keessatti qindaa'an hunda.",
+    "col_level": "Sadarkaa",
+    "col_type": "Gosa Daldalaa",
+    "col_self_approve": "Ofiin mirkaneessi hanga",
+    "col_escalates": "Gara kana darba",
+    "higher_authority": "sadarkaa aangoo itti aanu",
+    "adjustment_label": "Sirreeffama",
+    "no_limit": "daangaa hin qabu",
+    "show_full_matrix": "Gabatee Imaammata Guutuu Argisiisi",
+    "hide_full_matrix": "Gabatee Imaammata Guutuu Dhoksi"
   }
 }

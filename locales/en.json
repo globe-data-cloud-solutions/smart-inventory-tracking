@@ -7,7 +7,8 @@
     "analytics": "Analytics",
     "reports": "Reports",
     "settings": "Settings",
-    "audit": "Audit Log"
+    "audit": "Audit Log",
+    "approval_policies": "Approval Policies"
   },
   "inventory": {
     "warehouse": "Warehouse",
@@ -1155,5 +1156,34 @@
     "contact_admin": "Password updated. Your administrator needs to assign your position before you can access the system.",
     "current_label_optional": "Current Password (leave blank if not known)",
     "success_redirect": "Password updated. Please sign in with your new password."
+  },
+  "approval_policies": {
+    "nav_label": "Approval Policies",
+    "title": "Approval Policies",
+    "subtitle": "A plain-language reference for who can approve what, and when.",
+    "your_level": "Your level: {level}",
+    "section1_title": "Your Approval Limits",
+    "self_approve_up_to": "You can self-approve up to {qty} units without review.",
+    "self_approve_up_to_value": "You can self-approve up to {qty} units (or {value} {currency}) without review.",
+    "escalates_to": "Above this, it goes to {approver} for approval.",
+    "requires_approval": "All {type} requests require approval from {approver}.",
+    "example_line": "Example: requesting {half} units is instant. Requesting {double} units needs approval.",
+    "controlled_products_title": "Controlled Products",
+    "controlled_products_desc": "These products have special approval rules that apply regardless of the limits above:",
+    "no_controlled_products": "No products currently have special approval rules.",
+    "always_requires": "{type}: Always requires {approver} approval",
+    "quantity_requires": "{type}: Requests of {threshold}+ units require {approver} approval",
+    "value_requires": "{type}: Orders worth {threshold}+ {currency} require {approver} approval",
+    "full_matrix_title": "Full Policy Matrix",
+    "full_matrix_subtitle": "Every configured self-approval and escalation rule across all levels.",
+    "col_level": "Level",
+    "col_type": "Transaction Type",
+    "col_self_approve": "Self-approve up to",
+    "col_escalates": "Escalates to",
+    "higher_authority": "the next level of authority",
+    "adjustment_label": "Adjustment",
+    "no_limit": "no limit",
+    "show_full_matrix": "Show Full Policy Matrix",
+    "hide_full_matrix": "Hide Full Policy Matrix"
   }
 }

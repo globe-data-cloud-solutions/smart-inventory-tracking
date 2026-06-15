@@ -545,6 +545,7 @@ const TENANT_NAV: NavItem[] = [
   { type: "link", icon: "📈", label: "Analytics",       page: "analytics"         },
   { type: "link", icon: "📊", label: "Reports",         page: "reports"           },
   { type: "link", icon: "📋", label: "Audit Log",       page: "audit-log"         },
+  { type: "link", icon: "📜", label: "nav.approval_policies", page: "approval-policies" },
   { type: "section", label: "Settings", roles: ["SA", "TA"] },
   { type: "link", icon: "🏢", label: "Org Setup",       page: "settings/org-setup",  roles: ["SA", "TA"] },
   { type: "link", icon: "👥", label: "Personnel",       page: "settings/personnel",  roles: ["SA", "TA"] },

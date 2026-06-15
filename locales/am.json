@@ -7,7 +7,8 @@
     "analytics": "ትንተና",
     "reports": "ሪፖርቶች",
     "settings": "ቅንጅቶች",
-    "audit": "የኦዲት ምዝግብ ማስታወሻ"
+    "audit": "የኦዲት ምዝግብ ማስታወሻ",
+    "approval_policies": "የማረጋገጫ ፖሊሲዎች"
   },
   "inventory": {
     "balance": {
@@ -1163,5 +1164,34 @@
     "contact_admin": "password ተቀይሯል። አስተዳዳሪ ቦታ ይወስናሉ።",
     "current_label_optional": "ያለፈው password (ካላወቁ ባዶ ይተዉ)",
     "success_redirect": "password ተቀይሯል። ይግቡ።"
+  },
+  "approval_policies": {
+    "nav_label": "የማረጋገጫ ፖሊሲዎች",
+    "title": "የማረጋገጫ ፖሊሲዎች",
+    "subtitle": "ማን ምን ማረጋገጥ እንደሚችል እና መቼ የሚያሳይ ቀላል ማብራሪያ።",
+    "your_level": "የእርስዎ ደረጅ: {level}",
+    "section1_title": "የእርስዎ የማረጋገጫ ገደቦች",
+    "self_approve_up_to": "እስከ {qty} ዩኒቶች ድረስ ራስ-ሰር ማረጋገጥ ይችላሉ።",
+    "self_approve_up_to_value": "እስከ {qty} ዩኒቶች (ወይም {value} {currency}) ድረስ ራስ-ሰር ማረጋገጥ ይችላሉ።",
+    "escalates_to": "ከዚህ በላይ ለ{approver} ማረጋገጫ ይተላለፋል።",
+    "requires_approval": "ሁሉም የ{type} ጥያቄዎች ከ{approver} ማረጋገጫ ይፈልጋሉ።",
+    "example_line": "ምሳሌ: {half} ዩኒቶች መጠየቅ ወዲያውኑ ይፈቀዳል። {double} ዩኒቶች መጠየቅ ማረጋገጫ ይፈልጋል።",
+    "controlled_products_title": "ቁጥጥር የተደረገባቸው ምርቶች",
+    "controlled_products_desc": "እነዚህ ምርቶች ከላይ ካሉት ገደቦች ውጭ የራሳቸው ልዩ የማረጋገጫ ህጎች አሏቸው:",
+    "no_controlled_products": "በአሁኑ ጊዜ ምንም ምርት ልዩ የማረጋገጫ ህጎች የለውም።",
+    "always_requires": "{type}: ሁልጊዜ ከ{approver} ማረጋገጫ ይፈልጋል",
+    "quantity_requires": "{type}: ከ{threshold}+ ዩኒቶች ጥያቄዎች ከ{approver} ማረጋገጫ ይፈልጋሉ",
+    "value_requires": "{type}: ከ{threshold}+ {currency} በላይ ትዕዛዞች ከ{approver} ማረጋገጫ ይፈልጋሉ",
+    "full_matrix_title": "ሙሉ የፖሊሲ ሰንጠረዥ",
+    "full_matrix_subtitle": "በሁሉም ደረጆች የተዋቀሩ ራስ-ማረጋገጫ እና ማሳደግ ህጎች ሁሉ።",
+    "col_level": "ደረጅ",
+    "col_type": "የግብይት አይነት",
+    "col_self_approve": "ራስ-ሰር እስከ",
+    "col_escalates": "ይተላለፋል ለ",
+    "higher_authority": "ለሚቀጥለው ስልጣን ደረጅ",
+    "adjustment_label": "ማስተካከያ",
+    "no_limit": "ገደብ የለም",
+    "show_full_matrix": "ሙሉ የፖሊሲ ሰንጠረዥ አሳይ",
+    "hide_full_matrix": "ሙሉ የፖሊሲ ሰንጠረዥ ደብቅ"
   }
 }
