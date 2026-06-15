@@ -1130,7 +1130,7 @@ class InventoryService:
                         user=user,
                         action="transfer:step_approved",
                         resource={
-                            "resource_type": "transfer_order",
+                            "resource_type": "transfer",
                             "resource_id": str(transfer_id),
                             "step": _cur_idx + 1,
                             "total_steps": len(_steps),
