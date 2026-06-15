@@ -60,9 +60,12 @@ async def list_audit_logs(
     limit: int = Query(50, ge=1, le=200),
     action: str = Query(None),
     resource_type: str = Query(None),
-    include_views: bool = Query(False,
-                                description="Include *:view and *:list actions. "
-                                            "Default false hides page-load/list-fetch noise."),
+    include_system: bool = Query(False,
+                                 description="Include SYSTEM-category actions (anything "
+                                             "outside transfer:*, inventory:*, adjustment:*) "
+                                             "and *:view / *:list read actions. Default false "
+                                             "hides notifications, page views, and other "
+                                             "system/read activity."),
     scope: str = Query("auto",
                        description="'auto' applies role-based scoping. "
                                    "'all' shows the entire tenant log (NM/TA/SA/AU only)."),
@@ -101,11 +104,22 @@ async def list_audit_logs(
     if resource_type:
         where_parts.append("al.resource_type = :rtype")
         params["rtype"] = resource_type
-    if not include_views:
-        where_parts.append("al.action NOT LIKE :view_suffix")
-        where_parts.append("al.action NOT LIKE :list_suffix")
-        params["view_suffix"] = "%:view"
-        params["list_suffix"] = "%:list"
+    if not include_system:
+        where_parts.append(
+            "(al.action LIKE :transfer_pfx "
+            "OR al.action LIKE :inventory_pfx "
+            "OR al.action LIKE :adjustment_pfx)"
+        )
+        params["transfer_pfx"] = "transfer:%"
+        params["inventory_pfx"] = "inventory:%"
+        params["adjustment_pfx"] = "adjustment:%"
+        # Hide read-only actions (e.g. transfer:list, transfer:view,
+        # inventory:view_balance) regardless of category — same suffix/
+        # substring noise the old include_views filter hid.
+        where_parts.append("al.action NOT LIKE :view_pattern")
+        where_parts.append("al.action NOT LIKE :list_pattern")
+        params["view_pattern"] = "%:view%"
+        params["list_pattern"] = "%:list%"
 
     where_clause = " AND ".join(where_parts)
 

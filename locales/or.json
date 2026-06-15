@@ -393,7 +393,7 @@
     "notes": "Notes",
     "category": "Category",
     "acted_on_behalf": "Bakka {warehouse} bu'anii",
-    "show_view_activity": "Sochii ilaalchaa/tarreeffamaa argisiisi",
+    "show_system_activity": "Sochii sirnaa argisiisi (beeksisaa, ilaalchaa fuula)",
     "transfer_summary": "{type}: {from} → {to} ({product})",
     "adjustment_summary": "{product} — {reason}",
     "actions": {

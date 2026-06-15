@@ -1,13 +1,20 @@
 """Regression tests for GET /api/v1/audit-log/.
 
-Covers the include_views=false (default) bind-parameter bug: the
-NOT LIKE '%:view' / '%:list' literals were misparsed by SQLAlchemy's
-text() as bind parameters named "view" and "list", which were never
-supplied, causing every default-mode request to fail with
-InvalidRequestError: A value is required for bind parameter 'view'.
+Covers:
+1. The include_views=false (default) bind-parameter bug fixed in e22b6ab —
+   NOT LIKE '%:view' / '%:list' literals were misparsed by SQLAlchemy's
+   text() as bind parameters named "view" and "list", which were never
+   supplied, causing every default-mode request to fail with
+   InvalidRequestError: A value is required for bind parameter 'view'.
 
-Same class of bug as the _get_warehouse_name fix in bc52540 — literal
-colons in raw SQL strings must be bound as parameters, not embedded.
+   That filter was replaced by category-based filtering (include_system),
+   but the same bind-param-safety principle applies — verified here via
+   construct_params() against the compiled statement.
+
+2. The include_system param: default false hides SYSTEM-category actions
+   (anything outside transfer:*, inventory:*, adjustment:*) to align with
+   the Category column grouping used by the ALL/TRANSFER/INVENTORY/
+   ADJUSTMENT tabs.
 """
 from __future__ import annotations
 
@@ -38,66 +45,50 @@ def _fake_execute_factory():
     return AsyncMock(side_effect=_execute)
 
 
-@pytest.mark.unit
-class TestAuditLogIncludeViewsBindParams:
+async def _get_audit_log(client: AsyncClient, query: str):
+    db = AsyncMock()
+    db.execute = _fake_execute_factory()
+    db.commit = AsyncMock()
+    db.rollback = AsyncMock()
 
-    async def test_default_excludes_view_list_actions_without_error(
+    from main import app
+    from dependencies import get_db_session
+
+    async def _db_gen():
+        yield db
+
+    app.dependency_overrides[get_db_session] = _db_gen
+    try:
+        with patch(
+            "shared.permissions.middleware.check_permission",
+            new_callable=AsyncMock,
+            return_value=PermissionResult(allowed=True),
+        ):
+            return await client.get(f"/api/v1/audit-log/{query}")
+    finally:
+        app.dependency_overrides.pop(get_db_session, None)
+
+
+@pytest.mark.unit
+class TestAuditLogIncludeSystemBindParams:
+
+    async def test_default_excludes_system_category_without_error(
         self, client: AsyncClient
     ) -> None:
-        """include_views unset (defaults to false) must not raise a
-        bind-parameter error — the NOT LIKE patterns must be bound params."""
-        db = AsyncMock()
-        db.execute = _fake_execute_factory()
-        db.commit = AsyncMock()
-        db.rollback = AsyncMock()
-
-        from main import app
-        from dependencies import get_db_session
-
-        async def _db_gen():
-            yield db
-
-        app.dependency_overrides[get_db_session] = _db_gen
-        try:
-            with patch(
-                "shared.permissions.middleware.check_permission",
-                new_callable=AsyncMock,
-                return_value=PermissionResult(allowed=True),
-            ):
-                resp = await client.get("/api/v1/audit-log/?page=1&limit=10")
-        finally:
-            app.dependency_overrides.pop(get_db_session, None)
+        """include_system unset (defaults to false) must not raise a
+        bind-parameter error — the category LIKE patterns must be bound params."""
+        resp = await _get_audit_log(client, "?page=1&limit=10")
 
         assert resp.status_code == 200
         body = resp.json()
         assert body["success"] is True
         assert body["data"] == []
 
-    async def test_include_views_true_returns_all_actions(
+    async def test_include_system_true_returns_all_categories(
         self, client: AsyncClient
     ) -> None:
-        """include_views=true must also succeed (no NOT LIKE clauses added)."""
-        db = AsyncMock()
-        db.execute = _fake_execute_factory()
-        db.commit = AsyncMock()
-        db.rollback = AsyncMock()
-
-        from main import app
-        from dependencies import get_db_session
-
-        async def _db_gen():
-            yield db
-
-        app.dependency_overrides[get_db_session] = _db_gen
-        try:
-            with patch(
-                "shared.permissions.middleware.check_permission",
-                new_callable=AsyncMock,
-                return_value=PermissionResult(allowed=True),
-            ):
-                resp = await client.get("/api/v1/audit-log/?page=1&limit=10&include_views=true")
-        finally:
-            app.dependency_overrides.pop(get_db_session, None)
+        """include_system=true must also succeed (no category filter added)."""
+        resp = await _get_audit_log(client, "?page=1&limit=10&include_system=true")
 
         assert resp.status_code == 200
         body = resp.json()

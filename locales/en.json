@@ -401,7 +401,7 @@
     "notes": "Notes",
     "category": "Category",
     "acted_on_behalf": "On behalf of: {warehouse}",
-    "show_view_activity": "Show view/list activity",
+    "show_system_activity": "Show system activity (notifications, page views)",
     "transfer_summary": "{type}: {from} → {to} ({product})",
     "adjustment_summary": "{product} — {reason}",
     "actions": {

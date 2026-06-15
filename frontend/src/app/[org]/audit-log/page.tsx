@@ -92,13 +92,13 @@ export default function AuditLogPage() {
   const [page, setPage] = useState(0); // zero-based for display; backend pages are 1-based
   const [categoryFilter, setCategoryFilter] = useState<"ALL" | Category>("ALL");
   const [search, setSearch] = useState("");
-  const [includeViews, setIncludeViews] = useState(false);
+  const [includeSystem, setIncludeSystem] = useState(false);
 
   const { data: entries = [], isLoading } = useQuery<AuditLogItem[]>({
-    queryKey: ["audit-log", org, page, includeViews],
+    queryKey: ["audit-log", org, page, includeSystem],
     queryFn: () =>
       api.get<AuditLogItem[]>(
-        `/api/v1/audit-log/?page=${page + 1}&limit=${PAGE_SIZE}&include_views=${includeViews}`
+        `/api/v1/audit-log/?page=${page + 1}&limit=${PAGE_SIZE}&include_system=${includeSystem}`
       ),
     enabled: IS_GATEWAY_MODE && org !== SA_ORG_SLUG,
     staleTime: 0,
@@ -183,11 +183,11 @@ export default function AuditLogPage() {
         <label className="flex items-center gap-1.5 text-xs text-gray-600 whitespace-nowrap cursor-pointer">
           <input
             type="checkbox"
-            checked={includeViews}
-            onChange={(e) => setIncludeViews(e.target.checked)}
+            checked={includeSystem}
+            onChange={(e) => setIncludeSystem(e.target.checked)}
             className="cursor-pointer"
           />
-          {t("audit.show_view_activity")}
+          {t("audit.show_system_activity")}
         </label>
       </div>
 
