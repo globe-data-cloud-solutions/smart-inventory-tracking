@@ -1396,6 +1396,62 @@ class TestGap4SimpleModeWiring:
             "NM authority is tenant-wide, not facility-scoped"
         )
 
+    async def test_nm_issue_sets_acted_on_behalf_of(self) -> None:
+        """NM (warehouse_id=None — the documented normal case for tenant-level
+        roles) issues a transfer whose source is L2's warehouse (WAREHOUSE_A).
+
+        Bug 2 fix: the old guard `if user.warehouse_id and ...` short-circuited
+        to False when user.warehouse_id is None, so acted_on_behalf_of was never
+        set for NM/TA/SA — exactly the roles this audit field targets. The fixed
+        guard `if str(user.warehouse_id or "").lower() != ...` correctly treats
+        None as "different from from_warehouse_id" and records acted_on_behalf_of.
+        """
+        from services.inventory_service import InventoryService
+
+        NM_NO_WH = _User("u-nm", TENANT_ID, None, None, "NM")
+
+        line     = _make_line(quantity=60.0)
+        xfer_row = _make_transfer_row("APPROVED", transfer_type="PULL",
+                                      from_wh=WAREHOUSE_A, to_wh=WAREHOUSE_B)
+        session  = _session_for_dispatch(xfer_row, [line])
+
+        with patch("services.inventory_service.record_transaction", new=AsyncMock()), \
+             patch("services.inventory_service.write_transfer_ledger_entry", new=AsyncMock()), \
+             patch("services.inventory_service.audit_log", new=AsyncMock()) as mock_audit:
+            result = await InventoryService(session).dispatch_transfer(NM_NO_WH, TRANSFER_ID)
+
+        assert result.status == "ISSUED"
+        issue_calls = [c for c in mock_audit.call_args_list if c.kwargs["action"] == "transfer:issue"]
+        assert len(issue_calls) == 1
+        assert "acted_on_behalf_of" in issue_calls[0].kwargs["resource"], (
+            "NM (warehouse_id=None) issuing from L2's warehouse must record "
+            "acted_on_behalf_of in the audit trail"
+        )
+
+    async def test_l2_issue_own_warehouse_no_acted_on_behalf_of(self) -> None:
+        """L2 (WM at the source warehouse) issuing their own transfer must NOT
+        record acted_on_behalf_of — no regression for the "own warehouse" case.
+        """
+        from services.inventory_service import InventoryService
+
+        line     = _make_line(quantity=60.0)
+        xfer_row = _make_transfer_row("APPROVED", transfer_type="PULL",
+                                      from_wh=WAREHOUSE_A, to_wh=WAREHOUSE_B)
+        session  = _session_for_dispatch(xfer_row, [line])
+
+        with patch("services.inventory_service.record_transaction", new=AsyncMock()), \
+             patch("services.inventory_service.write_transfer_ledger_entry", new=AsyncMock()), \
+             patch("services.inventory_service.audit_log", new=AsyncMock()) as mock_audit:
+            result = await InventoryService(session).dispatch_transfer(SRC_WM, TRANSFER_ID)
+
+        assert result.status == "ISSUED"
+        issue_calls = [c for c in mock_audit.call_args_list if c.kwargs["action"] == "transfer:issue"]
+        assert len(issue_calls) == 1
+        assert "acted_on_behalf_of" not in issue_calls[0].kwargs["resource"], (
+            "L2 issuing their own transfer (warehouse_id == from_warehouse_id) "
+            "must not record acted_on_behalf_of"
+        )
+
     async def test_nm_no_actions_at_pending_review_in_state_machine(self) -> None:
         """Backend allows PENDING_REVIEW → PENDING_APPROVAL for any authenticated user,
         but the frontend must NOT show NM the review actions at PENDING_REVIEW.

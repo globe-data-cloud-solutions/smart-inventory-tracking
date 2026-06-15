@@ -1264,7 +1264,7 @@ class InventoryService:
                 "transfer_type": transfer_type,
                 "status_transition": "ISSUED_TO_IN_TRANSIT",
             }
-            if user.warehouse_id and str(user.warehouse_id).lower() != str(row.from_warehouse_id).lower():
+            if str(user.warehouse_id or "").lower() != str(row.from_warehouse_id).lower():
                 dispatch_audit_resource["acted_on_behalf_of"] = (
                     await _get_warehouse_name(self.db, str(user.tenant_id), str(row.from_warehouse_id))
                     or str(row.from_warehouse_id)
@@ -1377,7 +1377,7 @@ class InventoryService:
             "transfer_type": transfer_type,
             "status_transition": "APPROVED_TO_ISSUED",
         }
-        if user.warehouse_id and str(user.warehouse_id).lower() != str(row.from_warehouse_id).lower():
+        if str(user.warehouse_id or "").lower() != str(row.from_warehouse_id).lower():
             audit_resource["acted_on_behalf_of"] = (
                 await _get_warehouse_name(self.db, str(user.tenant_id), str(row.from_warehouse_id))
                 or str(row.from_warehouse_id)
