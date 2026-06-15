@@ -102,8 +102,10 @@ async def list_audit_logs(
         where_parts.append("al.resource_type = :rtype")
         params["rtype"] = resource_type
     if not include_views:
-        where_parts.append("al.action NOT LIKE '%:view'")
-        where_parts.append("al.action NOT LIKE '%:list'")
+        where_parts.append("al.action NOT LIKE :view_suffix")
+        where_parts.append("al.action NOT LIKE :list_suffix")
+        params["view_suffix"] = "%:view"
+        params["list_suffix"] = "%:list"
 
     where_clause = " AND ".join(where_parts)
 
