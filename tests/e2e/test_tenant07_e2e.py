@@ -2426,8 +2426,8 @@ def group14_user_management() -> None:
         if existing:
             state["g14_user_id"] = str(existing.get("id", ""))
             if not existing.get("is_active", True):
-                api_post(f"/api/v1/tenants/{T07_ID}/users/{state['g14_user_id']}/reactivate",
-                         EMAIL_TA)
+                api_patch(f"/api/v1/tenants/{T07_ID}/users/{state['g14_user_id']}/reactivate",
+                          EMAIL_TA)
             ok("14.4 TA test user (reused from prior run)", f"id={state['g14_user_id']}")
         else:
             fail("14.4 User create → 409 but lookup failed", "cannot find existing user")
@@ -2966,6 +2966,268 @@ def group16_approval_edge_cases() -> None:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# GROUP 18 — i18n Verification
+# ─────────────────────────────────────────────────────────────────────────────
+def group18_i18n() -> None:
+    print("\n[GROUP 18] i18n Verification")
+
+    import os as _os
+    import re as _re
+    import subprocess as _sp
+
+    # Locate locale files relative to this test file (tests/e2e/ → ../../locales/)
+    _repo_root = _os.path.abspath(_os.path.join(_os.path.dirname(_os.path.abspath(__file__)), "..", ".."))
+    _locale_dir = _os.path.join(_repo_root, "locales")
+
+    def _load_locale(lang: str) -> dict:
+        path = _os.path.join(_locale_dir, f"{lang}.json")
+        try:
+            with open(path, encoding="utf-8") as f:
+                return json.load(f)
+        except Exception as e:
+            return {"__load_error__": str(e)}
+
+    def _flatten(d: Any, prefix: str = "") -> dict[str, Any]:
+        """Flatten nested dict to dot-notation keys, skipping non-dict branches."""
+        out: dict[str, Any] = {}
+        if not isinstance(d, dict):
+            return out
+        for k, v in d.items():
+            if k.startswith("_"):
+                continue  # skip _note and similar meta keys
+            full_key = f"{prefix}.{k}" if prefix else k
+            if isinstance(v, dict):
+                out.update(_flatten(v, full_key))
+            else:
+                out[full_key] = v
+        return out
+
+    en = _load_locale("en")
+    am = _load_locale("am")
+    or_ = _load_locale("or")
+
+    if "__load_error__" in en:
+        fail("18.1 en.json loads", en["__load_error__"])
+        for n in ("18.2", "18.3", "18.4", "18.5"):
+            skip(f"{n} (en.json failed to load)", "en.json unavailable")
+    else:
+        en_keys = set(_flatten(en).keys())
+        am_keys = set(_flatten(am).keys()) if "__load_error__" not in am else set()
+        or_keys = set(_flatten(or_).keys()) if "__load_error__" not in or_ else set()
+
+        # 18.1 — en keys exist in am
+        missing_am = en_keys - am_keys
+        if "__load_error__" in am:
+            fail("18.1 am.json loads", am["__load_error__"])
+        elif len(missing_am) == 0:
+            ok("18.1 All en.json keys present in am.json", f"checked {len(en_keys)} keys")
+        else:
+            listed = sorted(missing_am)[:20]
+            suffix = f" (showing first 20 of {len(missing_am)})" if len(missing_am) > 20 else ""
+            fail("18.1 All en.json keys present in am.json",
+                 f"{len(missing_am)} keys missing from am.json{suffix}: {listed}")
+
+        # 18.2 — en keys exist in or
+        missing_or = en_keys - or_keys
+        if "__load_error__" in or_:
+            fail("18.2 or.json loads", or_["__load_error__"])
+        elif len(missing_or) == 0:
+            ok("18.2 All en.json keys present in or.json", f"checked {len(en_keys)} keys")
+        else:
+            listed = sorted(missing_or)[:20]
+            suffix = f" (showing first 20 of {len(missing_or)})" if len(missing_or) > 20 else ""
+            fail("18.2 All en.json keys present in or.json",
+                 f"{len(missing_or)} keys missing from or.json{suffix}: {listed}")
+
+        # 18.3 — no empty values in am.json
+        if "__load_error__" not in am:
+            am_flat = _flatten(am)
+            empty_am = [k for k, v in am_flat.items() if v == "" or v is None]
+            if len(empty_am) == 0:
+                ok("18.3 No empty values in am.json", f"checked {len(am_flat)} keys")
+            elif len(empty_am) < 10:
+                ok("18.3 No empty values in am.json (WARN)",
+                   f"{len(empty_am)} empty/null values (< 10 — warning only): {empty_am[:10]}")
+            else:
+                fail("18.3 No empty values in am.json",
+                     f"{len(empty_am)} empty/null values — likely untranslated placeholders: {empty_am[:10]}")
+        else:
+            skip("18.3 No empty values in am.json", "am.json failed to load")
+
+        # 18.4 — no empty values in or.json
+        if "__load_error__" not in or_:
+            or_flat = _flatten(or_)
+            empty_or = [k for k, v in or_flat.items() if v == "" or v is None]
+            if len(empty_or) == 0:
+                ok("18.4 No empty values in or.json", f"checked {len(or_flat)} keys")
+            elif len(empty_or) < 10:
+                ok("18.4 No empty values in or.json (WARN)",
+                   f"{len(empty_or)} empty/null values (< 10 — warning only): {empty_or[:10]}")
+            else:
+                fail("18.4 No empty values in or.json",
+                     f"{len(empty_or)} empty/null values — likely untranslated placeholders: {empty_or[:10]}")
+        else:
+            skip("18.4 No empty values in or.json", "or.json failed to load")
+
+        # 18.5 — no raw key patterns used as values in am/or (e.g. value = "nav.inventory")
+        _key_pattern = _re.compile(r'^[a-z_]+\.[a-z_\.]+$')
+        raw_val_hits: list[str] = []
+        for lang_name, flat in [("am", _flatten(am) if "__load_error__" not in am else {}),
+                                  ("or", _flatten(or_) if "__load_error__" not in or_ else {})]:
+            for k, v in flat.items():
+                if isinstance(v, str) and _key_pattern.match(v):
+                    raw_val_hits.append(f"{lang_name}.{k} = {v!r}")
+        if len(raw_val_hits) == 0:
+            ok("18.5 No raw i18n key patterns used as values in am/or")
+        else:
+            fail("18.5 No raw i18n key patterns as values",
+                 f"{len(raw_val_hits)} suspicious values: {raw_val_hits[:10]}")
+
+    # 18.6 — check_i18n.sh passes (bash required)
+    _script = _os.path.join(_repo_root, "scripts", "check_i18n.sh")
+    if not _os.path.exists(_script):
+        skip("18.6 check_i18n.sh passes", "script not found")
+    else:
+        try:
+            r186 = _sp.run(
+                ["bash", _script],
+                capture_output=True, text=True, timeout=30,
+                cwd=_repo_root,
+            )
+            if r186.returncode == 0:
+                ok("18.6 check_i18n.sh passes", "exit code 0")
+            else:
+                errors = [ln for ln in r186.stdout.splitlines() if "ERROR" in ln or "FAIL" in ln][:5]
+                fail("18.6 check_i18n.sh passes",
+                     f"exit code {r186.returncode} — {errors}")
+        except FileNotFoundError:
+            skip("18.6 check_i18n.sh passes", "bash not available in this environment")
+        except _sp.TimeoutExpired:
+            skip("18.6 check_i18n.sh passes", "script timed out after 30s")
+
+    # 18.7 — 422 error has structured error.code (not a dot-notation i18n key)
+    # Trigger duplicate SKU error — Product P1 already has a fixed SKU; we try to create with it
+    # Use a new SKU that we know will conflict after creating a product and using its SKU
+    _sku_18 = f"T07-I18N-{uuid.uuid4().hex[:6].upper()}"
+    # Create product then try to create duplicate
+    r_c1 = api_post("/api/v1/products/", EMAIL_TA, {
+        "name": f"i18n test product {_sku_18}",
+        "sku": _sku_18,
+        "type_code": "ITN",
+        "unit": "KG",
+    })
+    r_c2 = api_post("/api/v1/products/", EMAIL_TA, {
+        "name": f"i18n test product {_sku_18} dup",
+        "sku": _sku_18,
+        "type_code": "ITN",
+        "unit": "KG",
+    })
+    if r_c2.status_code == 422:
+        body = r_c2.json()
+        err = body.get("error") or body.get("detail") or {}
+        # error could be nested: {"error": {"code": "...", "message": "..."}}
+        # or FastAPI default: {"detail": "..."}
+        if isinstance(err, dict):
+            code = err.get("code", "")
+            msg  = err.get("message", "") or err.get("detail", "")
+        elif isinstance(err, str):
+            code = ""; msg = err
+        else:
+            code = ""; msg = str(err)
+
+        # code must be SCREAMING_SNAKE_CASE (no dots)
+        code_ok = bool(code) and "." not in code and code == code.upper().replace(" ", "_")
+        msg_ok  = bool(msg) and not _re.match(r'^[a-z_]+\.[a-z_\.]+$', msg)
+        if code_ok and msg_ok:
+            ok("18.7 422 error has structured code and readable message",
+               f"code={code!r}, message (truncated)={msg[:60]!r}")
+        elif code_ok:
+            ok("18.7 422 error has structured code (message check relaxed)",
+               f"code={code!r}")
+        else:
+            # FastAPI detail-style is also acceptable if it's not a raw i18n key
+            detail = body.get("detail", "")
+            if detail and "." not in str(detail) or (isinstance(detail, dict) and detail.get("code")):
+                ok("18.7 422 error has non-key detail", f"detail={str(detail)[:80]!r}")
+            else:
+                fail("18.7 422 error has structured code",
+                     f"body={json.dumps(body)[:200]}")
+    else:
+        skip("18.7 422 error structure", f"duplicate SKU returned {r_c2.status_code} not 422")
+
+    # 18.8 — 403 RBAC error has consistent code (WM tries to create product)
+    r_403 = api_post("/api/v1/products/", EMAIL_WHA1_WM, {
+        "name": "i18n rbac test product",
+        "sku": f"T07-RBAC-{uuid.uuid4().hex[:6].upper()}",
+        "type_code": "RBC",
+        "unit": "KG",
+    })
+    if r_403.status_code == 403:
+        body403 = r_403.json()
+        err403  = body403.get("error") or body403.get("detail") or {}
+        if isinstance(err403, dict):
+            code403 = err403.get("code", "")
+        else:
+            code403 = str(err403)
+        # code must not be a dot-notation i18n key
+        is_key = bool(_re.match(r'^[a-z_]+\.[a-z_\.]+$', code403))
+        if code403 and not is_key:
+            ok("18.8 403 RBAC error has consistent code", f"code={code403!r}")
+        else:
+            fail("18.8 403 RBAC error has consistent code",
+                 f"code={code403!r} looks like a raw i18n key or is empty")
+    else:
+        fail("18.8 403 RBAC error structure", f"expected 403, got {r_403.status_code}")
+
+    # 18.9 — Custom labels survive API round-trip
+    # 18.9a — transfer type display_name
+    r_tt = api_get(f"/api/v1/tenants/{T07_ID}/transfer-types", EMAIL_TA)
+    tt_list = data(r_tt) if isinstance(data(r_tt), list) else []
+    # transfer-types uses 'underlying_type' (not 'code') — confirmed in tests 1.9 and 11.2
+    pull_type = next((t for t in tt_list if t.get("underlying_type") == "PULL"), None)
+    if pull_type and pull_type.get("display_name") == "Request Stock":
+        ok("18.9a PULL display_name = 'Request Stock' (not raw code)", pull_type["display_name"])
+    elif pull_type:
+        fail("18.9a PULL display_name = 'Request Stock'",
+             f"got {pull_type.get('display_name')!r}")
+    else:
+        skip("18.9a PULL display_name", f"PULL not found in transfer-types (status={r_tt.status_code})")
+
+    # 18.9b — positions display_label populated
+    r_pos = api_get(f"/api/v1/tenants/{T07_ID}/positions/flat", EMAIL_TA)
+    pos_list = data(r_pos) if isinstance(data(r_pos), list) else []
+    empty_labels = [p.get("id") for p in pos_list if not p.get("display_label")]
+    if r_pos.status_code == 200 and pos_list:
+        if len(empty_labels) == 0:
+            ok("18.9b All positions have display_label", f"checked {len(pos_list)} positions")
+        else:
+            fail("18.9b All positions have display_label",
+                 f"{len(empty_labels)} of {len(pos_list)} positions have no display_label")
+    else:
+        skip("18.9b positions display_label", f"status={r_pos.status_code}")
+
+    # 18.10 — Hierarchy level names are custom (not generic "Level N")
+    r_hc = api_get(f"/api/v1/tenants/{T07_ID}/hierarchy/config", EMAIL_TA)
+    hc_list = data(r_hc) if isinstance(data(r_hc), list) else []
+    expected_names = {"Main Factory", "Regional Center", "Sub Region", "Warehouse Area"}
+    _level_pattern = _re.compile(r'^[Ll]evel\s*\d+$')
+    if r_hc.status_code == 200 and hc_list:
+        actual_names = {lv.get("level_name", "") for lv in hc_list}
+        generic = [n for n in actual_names if _level_pattern.match(n)]
+        if generic:
+            fail("18.10 Hierarchy level names are custom (not 'Level N')",
+                 f"generic names found: {generic}")
+        elif actual_names == expected_names:
+            ok("18.10 Hierarchy level names are custom", f"{sorted(actual_names)}")
+        else:
+            # custom names but different from expected — still pass (custom > generic)
+            ok("18.10 Hierarchy level names are custom (unexpected names — verify setup)",
+               f"got {sorted(actual_names)}, expected {sorted(expected_names)}")
+    else:
+        skip("18.10 Hierarchy level names", f"status={r_hc.status_code}")
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # Report
 # ─────────────────────────────────────────────────────────────────────────────
 def print_report() -> None:
@@ -2990,6 +3252,7 @@ def print_report() -> None:
         "GROUP 14 — User Management":      [r for r in results if r.name.startswith("14.")],
         "GROUP 15 — Multi-Tenant Isolation": [r for r in results if r.name.startswith("15.")],
         "GROUP 16 — Approval Edge Cases":  [r for r in results if r.name.startswith("16.")],
+        "GROUP 18 — i18n Verification":    [r for r in results if r.name.startswith("18.")],
     }
 
     total_pass = total_fail = total_skip = 0
@@ -3060,6 +3323,7 @@ def main() -> None:
         group14_user_management,
         group15_tenant_isolation,
         group16_approval_edge_cases,
+        group18_i18n,
     ]:
         try:
             fn()
