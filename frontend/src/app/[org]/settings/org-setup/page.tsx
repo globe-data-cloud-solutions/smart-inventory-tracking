@@ -5,6 +5,7 @@ import { useParams } from "next/navigation";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import { getToken } from "@/lib/auth";
+import { getSession } from "@/lib/demo-auth";
 import { t } from "@/lib/i18n";
 import { useTenantPositions } from "@/hooks/useTenantPositions";
 
@@ -2549,7 +2550,6 @@ function PersonnelV2Tab({ tenantId }: { tenantId: string }) {
 
 function BrandingTab({ tenantId }: { tenantId: string }) {
   const qc = useQueryClient();
-  const token = getToken();
   const [logoUrl,   setLogoUrl]   = useState<string | null>(null);
   const [bannerUrl, setBannerUrl] = useState<string | null>(null);
   const [logoErr,   setLogoErr]   = useState("");
@@ -2587,9 +2587,10 @@ function BrandingTab({ tenantId }: { tenantId: string }) {
     try {
       const fd = new FormData();
       fd.append("file", file);
+      const uploadJwt = getSession()?.jwtToken ?? getToken();
       const res  = await fetch(
         `${process.env.NEXT_PUBLIC_API_URL ?? ""}${endpoint}`,
-        { method: "POST", headers: token ? { Authorization: `Bearer ${token}` } : {}, body: fd },
+        { method: "POST", headers: uploadJwt ? { Authorization: `Bearer ${uploadJwt}` } : {}, body: fd },
       );
       const json = await res.json() as { success?: boolean; data?: { url: string } };
       if (json.success && json.data?.url) {

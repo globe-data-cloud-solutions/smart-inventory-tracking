@@ -25,13 +25,6 @@ def upgrade() -> None:
         ("product:upload_image",   ["TA", "NM"]),
         ("tenant:upload_branding", ["TA"]),
     ]:
-        op.execute(
-            f"""
-            INSERT INTO permissions (action_id, description)
-            VALUES ('{action_id}', '{action_id}')
-            ON CONFLICT (action_id) DO NOTHING
-            """
-        )
         for role in roles:
             op.execute(
                 f"""
@@ -49,4 +42,3 @@ def downgrade() -> None:
 
     for action_id in ("product:upload_image", "tenant:upload_branding"):
         op.execute(f"DELETE FROM role_permissions WHERE action_id = '{action_id}'")
-        op.execute(f"DELETE FROM permissions WHERE action_id = '{action_id}'")

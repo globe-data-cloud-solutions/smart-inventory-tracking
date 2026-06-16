@@ -742,9 +742,10 @@ export function AddProductPanel({ apiBase, onClose, mode = "create", productId, 
                       try {
                         const fd = new FormData();
                         fd.append("file", file);
+                        const uploadJwt = getSession()?.jwtToken ?? token;
                         const res = await fetch(
                           `${process.env.NEXT_PUBLIC_API_URL ?? ""}/api/v1/upload/product-image`,
-                          { method: "POST", headers: token ? { Authorization: `Bearer ${token}` } : {}, body: fd },
+                          { method: "POST", headers: uploadJwt ? { Authorization: `Bearer ${uploadJwt}` } : {}, body: fd },
                         );
                         const json = await res.json() as { success?: boolean; data?: { url: string } };
                         if (json.success && json.data?.url) {
