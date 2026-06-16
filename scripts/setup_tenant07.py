@@ -719,6 +719,44 @@ async def main() -> None:
                     {"tid": T07_ID, "role": role_code, "lvl": level_num, "qty": qty_limit},
                 )
 
+            # --8a-adj ADJUSTMENT self-approval policies ─────────────────────
+            # Separate ADJUSTMENT-specific limits (tighter than PULL/PUSH/SISTER).
+            # Delete ADJUSTMENT-only rows first so this block is fully idempotent.
+            await s.execute(
+                text("""
+                    DELETE FROM self_approval_policies
+                    WHERE tenant_id = :tid
+                      AND transfer_types = ARRAY['ADJUSTMENT']::VARCHAR(20)[]
+                """),
+                {"tid": T07_ID},
+            )
+            adj_sap_data = [
+                # (role_code, level_number, qty_limit)  — None = unlimited
+                ("NM", 1, None),
+                ("RM", 2, 10000),
+                ("RM", 3,  5000),
+                ("WM", 4,  1000),
+            ]
+            for role_code, level_num, qty_limit in adj_sap_data:
+                await s.execute(
+                    text("""
+                        INSERT INTO self_approval_policies
+                            (tenant_id, role_code, level_number,
+                             transfer_types, threshold_type, qty_limit,
+                             is_active)
+                        VALUES
+                            (:tid, :role, :lvl,
+                             ARRAY['ADJUSTMENT']::VARCHAR(20)[],
+                             'QUANTITY', :qty, true)
+                    """),
+                    {
+                        "tid":  T07_ID,
+                        "role": role_code,
+                        "lvl":  level_num,
+                        "qty":  qty_limit,
+                    },
+                )
+
             # --8b Adjustment self-approval (adjustment_approval_rules) ───────
             # mode=GLOBAL means it applies to any reason_code
             # idx_adj_approval_unique is an expression index — delete-first is simpler
@@ -895,8 +933,8 @@ async def main() -> None:
             pull_count   = len(pull_rules)
             push_count   = len(push_rules)
             sister_count = len(sister_rules)
-            print(f"  [OK]Self-approval policies: 4 (NM/RM-L2/RM-L3/WM)")
-            print(f"  [OK]Adjustment rules: 4 (NM/RM-L2/RM-L3/WM)")
+            print(f"  [OK]Self-approval policies: 4 PULL/PUSH/SISTER + 4 ADJUSTMENT (NM/RM-L2/RM-L3/WM)")
+            print(f"  [OK]Adjustment approval rules: 4 (NM/RM-L2/RM-L3/WM)")
             print(f"  [OK]Transfer approval rules: {pull_count} PULL + {push_count} PUSH + {sister_count} SISTER")
         except Exception as e:
             abort("PART 8", e)
