@@ -16,6 +16,10 @@ SERVICE_MAP = {
     "/api/v1/auth":      os.environ.get("AUTH_SERVICE_URL",       "http://auth-service:8000"),
     "/api/v1/tenants":   os.environ.get("TENANT_SERVICE_URL",     "http://tenant-service:8000"),
     "/api/v1/products":  os.environ.get("PRODUCT_SERVICE_URL",    "http://product-service:8000"),
+    "/api/v1/upload":    os.environ.get("PRODUCT_SERVICE_URL",    "http://product-service:8000"),
+    # Uploaded static files (images) — served by product-service StaticFiles mount.
+    # No JWT required: <img> tags cannot send Authorization headers.
+    "/static":           os.environ.get("PRODUCT_SERVICE_URL",    "http://product-service:8000"),
     # All inventory endpoints (transfers, adjustments, issues, counts, analytics)
     # are mounted under /api/v1/inventory/* on the inventory service.
     # Callers must use /api/v1/inventory/transfers (not /api/v1/transfers).
@@ -64,7 +68,7 @@ async def health() -> dict:
 async def proxy(request: Request, path: str) -> Response:
     full_path = f"/{path}"
 
-    if full_path not in UNAUTHENTICATED_PATHS:
+    if full_path not in UNAUTHENTICATED_PATHS and not full_path.startswith("/static/"):
         auth_header = request.headers.get("Authorization", "")
         if not auth_header.startswith("Bearer "):
             raise HTTPException(status_code=401, detail="Missing token")

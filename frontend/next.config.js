@@ -3,6 +3,18 @@ const nextConfig = {
   // Pre-existing hooks-after-early-return violations live in component files.
   // Suppressed here rather than adding eslint-disable comments to every page.
   eslint: { ignoreDuringBuilds: true },
+  rewrites: async () => {
+    const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+    return [
+      {
+        // Proxy uploaded static files through the API gateway so the browser
+        // doesn't hit localhost:3000 (Next.js) for images served by product-service.
+        // In production replace with S3/CDN URL; no code change required.
+        source: "/static/uploads/:path*",
+        destination: `${apiUrl}/static/uploads/:path*`,
+      },
+    ];
+  },
   headers: async () => [
     {
       // Service worker must never be cached — browser checks for SW updates on

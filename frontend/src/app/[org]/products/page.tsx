@@ -9,6 +9,7 @@ import { usePermission } from "@/hooks/usePermission";
 import { useInventoryStore } from "@/lib/inventory-state";
 import { AddProductPanel, type EditProductData } from "@/components/features/inventory/AddProductPanel";
 import { ProductLabel } from "@/components/features/inventory/ProductLabel";
+import { ProductImage } from "@/components/ui/ProductImage";
 import { api } from "@/lib/api";
 import { t } from "@/lib/i18n";
 import { useTenantName } from "@/hooks/useTenantName";
@@ -20,12 +21,13 @@ type ApiProduct = {
   short_name?: string | null; description?: string | null; type_code?: string | null;
   brand?: string | null; packaging_type?: string | null; units_per_package?: number | null;
   reorder_point?: number | string | null; unit_price?: number | string | null; currency?: string | null;
+  image_url?: string | null;
 };
 type StockItem   = { product_id: string; current_stock: string; };
 type Row        = {
   id: string; sku: string; name: string; category: string; unit: string; packSize: string;
   balance: number; batchTracking: boolean; isNew: boolean; isActive: boolean; is_discontinued: boolean;
-  is_controlled: boolean; editData: EditProductData;
+  is_controlled: boolean; image_url?: string | null; editData: EditProductData;
 };
 
 export default function ProductsPage() {
@@ -120,6 +122,7 @@ export default function ProductsPage() {
     balance: isGatewayMode ? (productBalanceMap.get(p.id) ?? 0) : 0,
     batchTracking: false, isNew: !isGatewayMode, isActive: true, is_discontinued: p.is_discontinued ?? false,
     is_controlled: p.is_controlled ?? false,
+    image_url: p.image_url ?? null,
     editData: {
       sku: p.sku, name: p.name, short_name: p.short_name, description: p.description,
       category: p.category, type_code: p.type_code, brand: p.brand, unit: p.unit,
@@ -216,12 +219,17 @@ export default function ProductsPage() {
                     {p.isNew && <span className="ml-1.5 text-[10px] font-bold bg-green-100 text-green-800 px-1 py-0.5 rounded">NEW</span>}
                   </td>
                   <td className="px-4 py-2.5 font-semibold text-gray-800">
-                    <ProductLabel name={p.name} isControlled={p.is_controlled} />
-                    {p.is_discontinued && (
-                      <span className="ml-1.5 text-[10px] font-bold bg-gray-200 text-gray-500 px-1 py-0.5 rounded">
-                        {t("product.discontinued_badge")}
-                      </span>
-                    )}
+                    <div className="flex items-center gap-2">
+                      <ProductImage image_url={p.image_url} product_name={p.name} size="sm" />
+                      <div>
+                        <ProductLabel name={p.name} isControlled={p.is_controlled} />
+                        {p.is_discontinued && (
+                          <span className="ml-1.5 text-[10px] font-bold bg-gray-200 text-gray-500 px-1 py-0.5 rounded">
+                            {t("product.discontinued_badge")}
+                          </span>
+                        )}
+                      </div>
+                    </div>
                   </td>
                   <td className="px-4 py-2.5 text-gray-500">{p.category}</td>
                   <td className="px-4 py-2.5 text-gray-500">{p.unit}</td>
