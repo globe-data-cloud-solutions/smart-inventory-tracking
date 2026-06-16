@@ -14,8 +14,8 @@ dependencies = [
     "pydantic>=2.7.0",
     "python-jose[cryptography]>=3.3.0",
     "casbin>=1.36.0",
+    "casbin-async-sqlalchemy-adapter>=1.0.0",
     "celery[redis]>=5.4.0",
-    "asyncpg>=0.29.0",
     "redis>=5.0.0",
 ]
 

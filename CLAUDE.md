@@ -91,6 +91,10 @@ NEVER resolve facility authority from role code alone — always call get_author
 │  Zustand — client state                                              │
 │  React Hook Form + Zod — form handling                              │
 │  class-variance-authority (cva) — Tailwind component variants       │
+│  @hookform/resolvers — Zod resolver bridge for React Hook Form      │
+│  clsx + tailwind-merge — className utility (cn() helper)            │
+│  nanoid — idempotency key generation (offline sync)                 │
+│  @playwright/test (devDep) — frontend e2e testing                   │
 ├─────────────────────────────────────────────────────────────────────┤
 │  BACKEND                                                             │
 │  Python 3.12                                                         │
@@ -104,6 +108,10 @@ NEVER resolve facility authority from role code alone — always call get_author
 │  ruff — linting and formatting                                       │
 │  mypy — static type checking (strict)                               │
 │  pytest + pytest-asyncio + httpx — testing                          │
+│  bcrypt — password hashing (auth-service, tenant-service)           │
+│  python-multipart — FastAPI UploadFile support (product-service)    │
+│  casbin-async-sqlalchemy-adapter — SQLAlchemy adapter for casbin    │
+│  requests (test-only) — e2e test HTTP client (tests/e2e/ only)      │
 ├─────────────────────────────────────────────────────────────────────┤
 │  DATABASE                                                            │
 │  Amazon RDS for PostgreSQL 16 (primary)                             │
