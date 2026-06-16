@@ -903,18 +903,17 @@ def group5_pull_large() -> None:
 def group6_push_transfers() -> None:
     print("\n[GROUP 6] PUSH Transfers")
 
-    # 6.0 Prereq: FA_NM receives P3 at NODE_FA (idempotent)
-    prereq_key = "e2e:fa:receive:p3:v1"
+    # 6.0 Prereq: FA_NM receives P3 at NODE_FA — UUID key ensures replenishment every run
+    # (PUSH test consumes 30 P3 per run to COMPLETED; fixed key would deplete after ~10 runs)
     r = api_post("/api/v1/inventory/receive/", EMAIL_FA_NM, {
         "product_id": PROD_P3,
         "warehouse_id": NODE_FA,
         "quantity": 300,
-        "idempotency_key": prereq_key,
+        "idempotency_key": f"e2e:fa:receive:p3:{uuid.uuid4().hex[:12]}",
         "source": "E2E_TEST",
     })
-    if r.status_code in (201, 409):
-        ok("6.0 Prereq: FA_NM receives P3 at NODE_FA",
-           f"status={r.status_code} ({'already done' if r.status_code == 409 else 'new'})")
+    if r.status_code == 201:
+        ok("6.0 Prereq: FA_NM receives P3 at NODE_FA", "status=201")
     else:
         fail("6.0 Prereq: FA_NM receives P3 at NODE_FA",
              f"status={r.status_code}, body={r.text[:200]}")
@@ -1086,12 +1085,12 @@ def group7_sister_transfers() -> None:
         skip("7.2 SISTER submit", "no sister_id")
 
     # 7.3 SISTER DRAFT → PENDING_DEST_CONFIRM rejected (must go through SOURCE_CONFIRM first)
-    # Test via creating a new SISTER and trying wrong transition
+    # Test via creating a new SISTER and trying wrong transition — use P1 (abundant)
     r_new = api_post("/api/v1/inventory/transfers/", EMAIL_WHA1_WM, {
         "transfer_type": "SISTER",
         "from_warehouse_id": NODE_WHA1,
         "to_warehouse_id": NODE_WHA2,
-        "lines": [{"product_id": PROD_P2, "quantity": 5}],
+        "lines": [{"product_id": PROD_P1, "quantity": 5}],
         "notes": "State machine test",
     })
     if r_new.status_code == 201:
@@ -1219,6 +1218,15 @@ def group7_sister_transfers() -> None:
 # ─────────────────────────────────────────────────────────────────────────────
 def group8_adjustments() -> None:
     print("\n[GROUP 8] Adjustments")
+
+    # G8 Prereq: replenish P2 at WHA1 — P2 gets consumed by small adj tests each run
+    api_post("/api/v1/inventory/receive/", EMAIL_WHA1_WM, {
+        "product_id": PROD_P2,
+        "warehouse_id": NODE_WHA1,
+        "quantity": 500,
+        "idempotency_key": f"e2e:wha1:p2:g8:{uuid.uuid4().hex[:12]}",
+        "source": "E2E_TEST",
+    })
 
     # 8.1 WM creates DAMAGE adjustment (small: -5 P2 at WHA1)
     adj_key_small = f"e2e:adj:damage:small:{uuid.uuid4().hex[:8]}"
