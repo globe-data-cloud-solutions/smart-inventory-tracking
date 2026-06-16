@@ -198,6 +198,7 @@ export interface EditProductData {
   reorder_point?: number | string | null;
   unit_price?: number | string | null;
   currency?: string | null;
+  image_url?: string | null;
 }
 
 interface AddProductPanelProps {
@@ -251,6 +252,9 @@ export function AddProductPanel({ apiBase, onClose, mode = "create", productId, 
   const [currency, setCurrency]     = useState("ETB");
   const [skuOverride, setSkuOvr]    = useState("");
   const [skuEditing, setSkuEditing] = useState(false);
+  const [imageUrl, setImageUrl]     = useState<string | null>(null);
+  const [imageUploading, setImageUploading] = useState(false);
+  const [imageError, setImageError] = useState("");
 
   // ── approval minimums state ────────────────────────────────────────────
   const MIN_TX_TYPES = [
@@ -301,6 +305,7 @@ export function AddProductPanel({ apiBase, onClose, mode = "create", productId, 
     setCostPrice(initialData.unit_price != null ? String(initialData.unit_price) : "");
     setCurrency(initialData.currency ?? "ETB");
     setSkuOvr(initialData.sku ?? "");
+    setImageUrl(initialData.image_url ?? null);
     setOpen(true);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -511,6 +516,7 @@ export function AddProductPanel({ apiBase, onClose, mode = "create", productId, 
             reorder_point:     !isNaN(reorderQty) && reorderQty >= 0 ? reorderQty : undefined,
             unit_price:        parseFloat(unitPrice) >= 0 && unitPrice !== "" ? parseFloat(unitPrice) : undefined,
             currency:          currency.trim() || undefined,
+            image_url:         imageUrl ?? undefined,
           },
           token ?? undefined,
         );
@@ -698,6 +704,75 @@ export function AddProductPanel({ apiBase, onClose, mode = "create", productId, 
               {panelError}
             </div>
           )}
+
+          {/* ── Product Image ────────────────────────────────────── */}
+          <div>
+            <FieldLabel text={t("product.upload_image") || "Product Image"} />
+            <div className="flex items-center gap-3">
+              {imageUrl ? (
+                <img src={imageUrl} alt="" className="w-14 h-14 rounded object-cover border border-gray-200" />
+              ) : (
+                <div className="w-14 h-14 rounded border-2 border-dashed border-gray-300 flex items-center justify-center text-gray-400 text-xl">
+                  📷
+                </div>
+              )}
+              <div className="flex flex-col gap-1">
+                <label className="cursor-pointer">
+                  <span className="px-3 py-1.5 text-xs font-semibold bg-gray-100 border border-gray-300 rounded cursor-pointer hover:bg-gray-200">
+                    {imageUploading ? (t("product.image_uploading") || "Uploading...") : (t("product.upload_image") || "Upload Image")}
+                  </span>
+                  <input
+                    type="file"
+                    accept="image/jpeg,image/png,image/webp"
+                    className="hidden"
+                    disabled={imageUploading}
+                    onChange={async (e) => {
+                      const file = e.target.files?.[0];
+                      if (!file) return;
+                      if (file.size > 2 * 1024 * 1024) {
+                        setImageError(t("product.image_too_large") || "Image must be under 2MB");
+                        return;
+                      }
+                      if (!["image/jpeg", "image/png", "image/webp"].includes(file.type)) {
+                        setImageError(t("product.image_invalid_type") || "Only JPG, PNG, WebP accepted");
+                        return;
+                      }
+                      setImageError("");
+                      setImageUploading(true);
+                      try {
+                        const fd = new FormData();
+                        fd.append("file", file);
+                        const res = await fetch(
+                          `${process.env.NEXT_PUBLIC_API_URL ?? ""}/api/v1/upload/product-image`,
+                          { method: "POST", headers: token ? { Authorization: `Bearer ${token}` } : {}, body: fd },
+                        );
+                        const json = await res.json() as { success?: boolean; data?: { url: string } };
+                        if (json.success && json.data?.url) {
+                          setImageUrl(json.data.url);
+                        } else {
+                          setImageError("Upload failed");
+                        }
+                      } catch {
+                        setImageError("Upload failed");
+                      } finally {
+                        setImageUploading(false);
+                      }
+                    }}
+                  />
+                </label>
+                {imageUrl && (
+                  <button
+                    type="button"
+                    onClick={() => setImageUrl(null)}
+                    className="text-xs text-red-500 bg-transparent border-0 cursor-pointer text-left p-0"
+                  >
+                    {t("common.remove") || "Remove"}
+                  </button>
+                )}
+              </div>
+            </div>
+            {imageError && <p className="text-xs text-red-600 mt-1">{imageError}</p>}
+          </div>
 
           {/* ── Product Name ─────────────────────────────────────── */}
           <div>

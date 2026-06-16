@@ -257,7 +257,11 @@
     "edit_title": "ምርት አስተካክል",
     "edit_success": "ምርቱ በተሳካ ሁኔታ ተዘምኗል",
     "controlled_tooltip": "የተገደበ ምርት — ማስተካከል የሚችለው አስተዳዳሪ ብቻ ነው",
-    "controlled_edit_denied": "ይህ ምርት የማረጋገጫ ደረጃዎች ተዘጋጅተውለታል እና በተከራዩ አስተዳዳሪ ብቻ ሊስተካከል ይችላል።"
+    "controlled_edit_denied": "ይህ ምርት የማረጋገጫ ደረጃዎች ተዘጋጅተውለታል እና በተከራዩ አስተዳዳሪ ብቻ ሊስተካከል ይችላል።",
+    "upload_image": "ምስል ጫን",
+    "image_too_large": "ምስሉ ከ2MB ያንሳል",
+    "image_invalid_type": "JPG፣ PNG፣ WebP ብቻ ይፈቀዳሉ",
+    "image_uploading": "እየጫን ነው..."
   },
   "lang": {
     "label": "ቋንቋ",
@@ -1210,5 +1214,16 @@
     "rule_label": "ህግ {n}",
     "an_approver": "አንድ አጽዳቂ",
     "any_level_footnote": "«ማንኛውም ደረጅ» ይህ ህግ ከመድረሻ ደረጅ ውጭ ይተገበራል ማለት ነው።"
+  },
+  "settings": {
+    "branding": "ብራንዲንግ",
+    "tenant_logo": "የድርጅት አርማ",
+    "tenant_banner": "የድርጅት ሰሌዳ",
+    "logo_too_large": "አርማው ከ1MB ያንሳል",
+    "banner_too_large": "ሰሌዳው ከ3MB ያንሳል",
+    "upload_logo": "አርማ ጫን",
+    "upload_banner": "ሰሌዳ ጫን",
+    "branding_preview": "ቅድሚያ እይታ",
+    "branding_saved": "ብራንዲንግ ተዘምኗል"
   }
 }

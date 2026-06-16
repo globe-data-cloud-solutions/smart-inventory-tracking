@@ -15,4 +15,5 @@ node_modules/
 *.tfstate.backup
 .terraform.lock.hcl
 frontend/tsconfig.tsbuildinfo
-frontend/tsconfig.tsbuildinfo
+# Uploaded files (LocalStorageService — dev only; production uses S3)
+uploads/

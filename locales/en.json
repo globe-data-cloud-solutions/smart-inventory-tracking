@@ -263,7 +263,11 @@
     "edit_title": "Edit Product",
     "edit_success": "Product updated successfully",
     "controlled_tooltip": "Controlled product — only Tenant Admin can edit",
-    "controlled_edit_denied": "This product has approval overrides and can only be edited by the Tenant Admin."
+    "controlled_edit_denied": "This product has approval overrides and can only be edited by the Tenant Admin.",
+    "upload_image": "Upload Image",
+    "image_too_large": "Image must be under 2MB",
+    "image_invalid_type": "Only JPG, PNG, WebP accepted",
+    "image_uploading": "Uploading..."
   },
   "lang": {
     "label": "Language",
@@ -1202,5 +1206,16 @@
     "rule_label": "Rule {n}",
     "an_approver": "an approver",
     "any_level_footnote": "\"Any level\" means this rule applies regardless of the destination level."
+  },
+  "settings": {
+    "branding": "Branding",
+    "tenant_logo": "Organisation Logo",
+    "tenant_banner": "Organisation Banner",
+    "logo_too_large": "Logo must be under 1MB",
+    "banner_too_large": "Banner must be under 3MB",
+    "upload_logo": "Upload Logo",
+    "upload_banner": "Upload Banner",
+    "branding_preview": "Preview",
+    "branding_saved": "Branding updated"
   }
 }

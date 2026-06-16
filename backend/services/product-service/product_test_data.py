@@ -178,6 +178,7 @@ def _make_product_row(**overrides: object) -> MagicMock:
         type_code="BRD",
         packaging_type=None,
         units_per_package=None,
+        image_url=None,
     )
     defaults.update(overrides)
     row = MagicMock()

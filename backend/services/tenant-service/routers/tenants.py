@@ -5,6 +5,7 @@ from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Response
 from pydantic import BaseModel
+from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from dependencies import get_current_user, get_db_session
@@ -37,7 +38,6 @@ async def list_tenants(
     user=Depends(get_current_user),
     db: AsyncSession = Depends(get_db_session),
 ) -> SuccessResponse[List[TenantResponse]]:
-    from sqlalchemy import text
     result = await db.execute(
         text(
             "SELECT id, name, slug, organisation_type, onboarding_complete, default_locale, is_active "
@@ -186,8 +186,54 @@ async def get_tenant(
             onboarding_complete=row.onboarding_complete,
             default_locale=row.default_locale,
             is_active=row.is_active,
+            logo_url=getattr(row, "logo_url", None),
+            banner_url=getattr(row, "banner_url", None),
         )
     )
+
+
+# ── Branding PATCH ─────────────────────────────────────────────────────────────
+
+class BrandingUpdateRequest(BaseModel):
+    logo_url: Optional[str] = None
+    banner_url: Optional[str] = None
+
+
+@router.patch("/{tenant_id}/branding", response_model=SuccessResponse[dict])
+@require_permission(PERMISSIONS.TENANT_UPLOAD_BRANDING)
+async def update_tenant_branding(
+    tenant_id: str,
+    body: BrandingUpdateRequest,
+    user=Depends(get_current_user),
+    db: AsyncSession = Depends(get_db_session),
+) -> SuccessResponse[dict]:
+    """Persist logo_url / banner_url after an upload."""
+    resolved_id = await _resolve_tenant_id(tenant_id, db)
+    if not resolved_id:
+        raise HTTPException(status_code=404, detail="Tenant not found")
+
+    set_clauses = ["updated_at = NOW()"]
+    params: dict = {"id": resolved_id}
+    if body.logo_url is not None:
+        set_clauses.append("logo_url = :logo_url")
+        params["logo_url"] = body.logo_url
+    if body.banner_url is not None:
+        set_clauses.append("banner_url = :banner_url")
+        params["banner_url"] = body.banner_url
+
+    if len(set_clauses) > 1:
+        await db.execute(
+            text(f"UPDATE tenants SET {', '.join(set_clauses)} WHERE id = :id"),
+            params,
+        )
+
+    row = (await db.execute(
+        text("SELECT logo_url, banner_url FROM tenants WHERE id = :id"), {"id": resolved_id}
+    )).fetchone()
+    return SuccessResponse(data={
+        "logo_url": row.logo_url if row else None,
+        "banner_url": row.banner_url if row else None,
+    })
 
 
 # ── Approval rules schemas ─────────────────────────────────────────────────────

@@ -4,6 +4,7 @@ import { useState, useCallback, useMemo, useEffect, Fragment } from "react";
 import { useParams } from "next/navigation";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
+import { getToken } from "@/lib/auth";
 import { t } from "@/lib/i18n";
 import { useTenantPositions } from "@/hooks/useTenantPositions";
 
@@ -2544,7 +2545,142 @@ function PersonnelV2Tab({ tenantId }: { tenantId: string }) {
 
 /* ── Main page ─────────────────────────────────────────────────────────────── */
 
-type TabId = "levels" | "tree" | "positions" | "transfer-types" | "approval" | "personnel";
+/* ── Tab 7: Branding ─────────────────────────────────────────────────────────── */
+
+function BrandingTab({ tenantId }: { tenantId: string }) {
+  const qc = useQueryClient();
+  const token = getToken();
+  const [logoUrl,   setLogoUrl]   = useState<string | null>(null);
+  const [bannerUrl, setBannerUrl] = useState<string | null>(null);
+  const [logoErr,   setLogoErr]   = useState("");
+  const [bannerErr, setBannerErr] = useState("");
+  const [logoUploading,   setLogoUploading]   = useState(false);
+  const [bannerUploading, setBannerUploading] = useState(false);
+  const [saved, setSaved] = useState(false);
+
+  const { data: brandingData } = useQuery<{ logo_url?: string | null; banner_url?: string | null }>({
+    queryKey: ["tenant-branding", tenantId],
+    queryFn:  () => api.get(`/api/v1/tenants/${tenantId}`),
+    enabled:  !!tenantId,
+    staleTime: 120_000,
+  });
+
+  useEffect(() => {
+    if (brandingData?.logo_url !== undefined)   setLogoUrl(brandingData.logo_url ?? null);
+    if (brandingData?.banner_url !== undefined) setBannerUrl(brandingData.banner_url ?? null);
+  }, [brandingData?.logo_url, brandingData?.banner_url]);
+
+  async function uploadFile(
+    file: File,
+    maxBytes: number,
+    endpoint: string,
+    setUrl: (u: string | null) => void,
+    setErr: (e: string) => void,
+    setUploading: (v: boolean) => void,
+    errKey: string,
+  ) {
+    if (file.size > maxBytes) { setErr(t(errKey) || "File too large"); return; }
+    if (!["image/jpeg","image/png","image/webp"].includes(file.type)) {
+      setErr(t("product.image_invalid_type") || "Only JPG, PNG, WebP accepted"); return;
+    }
+    setErr(""); setUploading(true);
+    try {
+      const fd = new FormData();
+      fd.append("file", file);
+      const res  = await fetch(
+        `${process.env.NEXT_PUBLIC_API_URL ?? ""}${endpoint}`,
+        { method: "POST", headers: token ? { Authorization: `Bearer ${token}` } : {}, body: fd },
+      );
+      const json = await res.json() as { success?: boolean; data?: { url: string } };
+      if (json.success && json.data?.url) {
+        setUrl(json.data.url);
+        void qc.invalidateQueries({ queryKey: ["tenant-branding"] });
+        setSaved(true);
+        setTimeout(() => setSaved(false), 3000);
+      } else {
+        setErr("Upload failed");
+      }
+    } catch { setErr("Upload failed"); }
+    finally { setUploading(false); }
+  }
+
+  return (
+    <div className="space-y-8 max-w-xl">
+      {saved && (
+        <div className="bg-emerald-50 border border-emerald-200 rounded px-4 py-2 text-sm text-emerald-700 font-semibold">
+          {t("settings.branding_saved") || "Branding saved."}
+        </div>
+      )}
+
+      {/* Logo */}
+      <div>
+        <p className="text-sm font-bold text-gray-700 mb-2">{t("settings.tenant_logo") || "Tenant Logo"}</p>
+        <p className="text-xs text-gray-400 mb-3">JPG · PNG · WebP · max 1MB</p>
+        <div className="flex items-center gap-4">
+          {logoUrl
+            ? <img src={logoUrl} alt="" className="w-16 h-16 rounded border border-gray-200 object-contain" />
+            : <div className="w-16 h-16 rounded border-2 border-dashed border-gray-300 flex items-center justify-center text-gray-400 text-2xl">🏢</div>
+          }
+          <label className="cursor-pointer">
+            <span className="px-3 py-1.5 text-xs font-semibold bg-gray-100 border border-gray-300 rounded cursor-pointer hover:bg-gray-200">
+              {logoUploading ? "Uploading…" : (t("settings.upload_logo") || "Upload Logo")}
+            </span>
+            <input
+              type="file"
+              accept="image/jpeg,image/png,image/webp"
+              className="hidden"
+              disabled={logoUploading}
+              onChange={(e) => {
+                const f = e.target.files?.[0];
+                if (f) void uploadFile(f, 1*1024*1024, "/api/v1/upload/tenant-logo", setLogoUrl, setLogoErr, setLogoUploading, "settings.logo_too_large");
+              }}
+            />
+          </label>
+          {logoUrl && (
+            <button type="button" onClick={() => setLogoUrl(null)} className="text-xs text-red-500 bg-transparent border-0 cursor-pointer p-0">
+              {t("common.remove") || "Remove"}
+            </button>
+          )}
+        </div>
+        {logoErr && <p className="text-xs text-red-600 mt-1">{logoErr}</p>}
+      </div>
+
+      {/* Banner */}
+      <div>
+        <p className="text-sm font-bold text-gray-700 mb-2">{t("settings.tenant_banner") || "Dashboard Banner"}</p>
+        <p className="text-xs text-gray-400 mb-3">JPG · PNG · WebP · max 3MB · recommended 1200×300px</p>
+        {bannerUrl && (
+          <img src={bannerUrl} alt="" className="w-full rounded border border-gray-200 object-cover mb-3" style={{ maxHeight: "120px" }} />
+        )}
+        <div className="flex items-center gap-3">
+          <label className="cursor-pointer">
+            <span className="px-3 py-1.5 text-xs font-semibold bg-gray-100 border border-gray-300 rounded cursor-pointer hover:bg-gray-200">
+              {bannerUploading ? "Uploading…" : (t("settings.upload_banner") || "Upload Banner")}
+            </span>
+            <input
+              type="file"
+              accept="image/jpeg,image/png,image/webp"
+              className="hidden"
+              disabled={bannerUploading}
+              onChange={(e) => {
+                const f = e.target.files?.[0];
+                if (f) void uploadFile(f, 3*1024*1024, "/api/v1/upload/tenant-banner", setBannerUrl, setBannerErr, setBannerUploading, "settings.banner_too_large");
+              }}
+            />
+          </label>
+          {bannerUrl && (
+            <button type="button" onClick={() => setBannerUrl(null)} className="text-xs text-red-500 bg-transparent border-0 cursor-pointer p-0">
+              {t("common.remove") || "Remove"}
+            </button>
+          )}
+        </div>
+        {bannerErr && <p className="text-xs text-red-600 mt-1">{bannerErr}</p>}
+      </div>
+    </div>
+  );
+}
+
+type TabId = "levels" | "tree" | "positions" | "transfer-types" | "approval" | "personnel" | "branding";
 
 export default function OrgSetupPage() {
   const { org } = useParams() as { org: string };
@@ -2598,6 +2734,7 @@ export default function OrgSetupPage() {
         <button type="button" className={tabCls("transfer-types")} onClick={() => setActiveTab("transfer-types")}>{t("wizard.transfer_types_tab")}</button>
         <button type="button" className={tabCls("approval")}       onClick={() => setActiveTab("approval")}>{t("wizard.approval_rules_tab")}</button>
         <button type="button" className={tabCls("personnel")}      onClick={() => setActiveTab("personnel")}>{t("wizard.personnel_tab")}</button>
+        <button type="button" className={tabCls("branding")}       onClick={() => setActiveTab("branding")}>{t("settings.branding") || "Branding"}</button>
       </div>
 
       {activeTab === "levels"         && <LevelsTab          tenantId={tenantId} />}
@@ -2606,6 +2743,7 @@ export default function OrgSetupPage() {
       {activeTab === "transfer-types" && <TransferTypesTab    tenantId={tenantId} />}
       {activeTab === "approval"       && <ApprovalRulesV2Tab  tenantId={tenantId} />}
       {activeTab === "personnel"      && <PersonnelV2Tab      tenantId={tenantId} />}
+      {activeTab === "branding"       && <BrandingTab         tenantId={tenantId} />}
     </div>
   );
 }

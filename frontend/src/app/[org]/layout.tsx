@@ -354,11 +354,32 @@ function Sidebar({ user, org, tenantName }: { user: SessionUser; org: string; te
   );
 }
 
-/* ── Tenant name resolver ─────────────────────────��───────────────────────── */
-// Must be rendered inside QueryClientProvider so useTenantName's useQuery works.
-function TenantNameResolver({ org, onName }: { org: string; onName: (n: string | null) => void }) {
+/* ── Tenant name + branding resolver ─────────────────────────────────────── */
+// Must be rendered inside QueryClientProvider so useQuery works.
+function TenantBrandingResolver({
+  org,
+  onName,
+  onLogo,
+  onBanner,
+}: {
+  org: string;
+  onName:   (n: string | null) => void;
+  onLogo:   (u: string | null) => void;
+  onBanner: (u: string | null) => void;
+}) {
   const name = useTenantName(org);
+  const session = getSession();
+  const tenantId = session?.tenantId ?? "";
+  const { data } = useQuery<{ id: string; name: string; logo_url?: string | null; banner_url?: string | null }>({
+    queryKey: ["tenant-branding", tenantId],
+    queryFn:  () => api.get(`/api/v1/tenants/${tenantId}`),
+    enabled:  !!tenantId,
+    staleTime: 120_000,
+    retry: false,
+  });
   useEffect(() => { onName(name); }, [name, onName]);
+  useEffect(() => { onLogo(data?.logo_url ?? null); }, [data?.logo_url, onLogo]);
+  useEffect(() => { onBanner(data?.banner_url ?? null); }, [data?.banner_url, onBanner]);
   return null;
 }
 
@@ -371,7 +392,9 @@ export default function OrgLayout({ children }: { children: React.ReactNode }) {
   const [user, setUser]         = useState<SessionUser | null>(null);
   const [ready, setReady]       = useState(false);
   const [bannerDismissed, setBannerDismissed] = useState(false);
-  const [apiTenantName, setApiTenantName] = useState<string | null>(null);
+  const [apiTenantName, setApiTenantName]     = useState<string | null>(null);
+  const [apiLogoUrl,    setApiLogoUrl]         = useState<string | null>(null);
+  const [apiBannerUrl,  setApiBannerUrl]       = useState<string | null>(null);
   const setActiveTenant   = useInventoryStore((s) => s.setActiveTenant);
   const [qc] = useState(() => new QueryClient({
     defaultOptions: { queries: { retry: 1, staleTime: 30_000 } },
@@ -439,7 +462,14 @@ export default function OrgLayout({ children }: { children: React.ReactNode }) {
 
   return (
     <QueryClientProvider client={qc}>
-      {org !== SA_ORG_SLUG && <TenantNameResolver org={org} onName={setApiTenantName} />}
+      {org !== SA_ORG_SLUG && (
+        <TenantBrandingResolver
+          org={org}
+          onName={setApiTenantName}
+          onLogo={setApiLogoUrl}
+          onBanner={setApiBannerUrl}
+        />
+      )}
       <div className="min-h-screen bg-gray-100">
         {/* ── Top banner ── */}
         <header className="fixed top-0 left-0 right-0 z-[60] h-14 bg-[#0f2d1f] flex items-center px-6 gap-4 shadow-[0_2px_12px_rgba(0,0,0,0.35)]">
@@ -455,7 +485,13 @@ export default function OrgLayout({ children }: { children: React.ReactNode }) {
           <div className="flex-1 flex justify-center">
             {viewingTenant ? (
               <span className="text-sm text-white/70">
-                <span className="text-eth-gold font-semibold">{viewingTenant.logo} {viewingTenant.name}</span>
+                <span className="text-eth-gold font-semibold flex items-center gap-1.5">
+                  {apiLogoUrl
+                    ? <img src={apiLogoUrl} alt="" className="w-5 h-5 rounded object-cover shrink-0" />
+                    : <span>{viewingTenant.logo}</span>
+                  }
+                  {viewingTenant.name}
+                </span>
                 {user.warehouseName && (
                   <span className="text-emerald-300"> › {user.warehouseName}</span>
                 )}

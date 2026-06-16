@@ -104,6 +104,7 @@ class ProductUpdateRequest(BaseModel):
     reorder_point: Optional[Decimal] = Field(default=None, ge=0)
     unit_price: Optional[Decimal] = Field(default=None, ge=0)
     currency: Optional[str] = Field(default=None, max_length=10)
+    image_url: Optional[str] = Field(default=None)
 
     @field_validator("name", mode="before")
     @classmethod
@@ -155,6 +156,7 @@ class ProductResponse(BaseModel):
     reorder_point: Optional[Decimal] = None
     unit_price: Optional[Decimal] = None
     currency: Optional[str] = None
+    image_url: Optional[str] = None
     is_controlled: bool = False
     tenant_id: uuid.UUID
     created_at: datetime

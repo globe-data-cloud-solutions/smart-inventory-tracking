@@ -480,9 +480,9 @@ class TestLocalization:
 
     def test_registry_has_exactly_139_permissions(self) -> None:
         """Permission count guard — registry.py assert will catch violations at import time.
-        130 from PROMPT B + 2 product approval-rule actions + 1 product approval-minimums = 133."""
+        145 prior + 2 branding upload actions (product:upload_image, tenant:upload_branding) = 147."""
         from shared.permissions.registry import ALL_PERMISSIONS
-        assert len(ALL_PERMISSIONS) == 145
+        assert len(ALL_PERMISSIONS) == 147
 
     def test_all_permissions_have_string_ids(self) -> None:
         """Every permission ID must be a non-empty string in 'domain:action' format."""

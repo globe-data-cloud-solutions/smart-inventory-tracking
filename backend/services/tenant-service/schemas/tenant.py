@@ -42,6 +42,8 @@ class TenantResponse(BaseModel):
     onboarding_complete: bool
     default_locale: str
     is_active: bool
+    logo_url: Optional[str] = None
+    banner_url: Optional[str] = None
     # Populated when admin user was created atomically
     admin_user_id: Optional[uuid.UUID] = None
     admin_email: Optional[str] = None

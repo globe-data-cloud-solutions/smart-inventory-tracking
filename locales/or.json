@@ -252,7 +252,11 @@
     "edit_title": "Oomisha Gulaali",
     "edit_success": "Oomishni milkaa'inaan haaromfameera",
     "controlled_tooltip": "Oomisha Daangeffame — kan gulaaluu danda'u Bulchaa Kiraa qofa",
-    "controlled_edit_denied": "Kun oomisha sadarkaa mirkaneessuu qabu, kanaafuu kan gulaaluu danda'u Bulchaa Kiraa qofa."
+    "controlled_edit_denied": "Kun oomisha sadarkaa mirkaneessuu qabu, kanaafuu kan gulaaluu danda'u Bulchaa Kiraa qofa.",
+    "upload_image": "Suuraa fe'i",
+    "image_too_large": "Suuraan 2MB gadii ta'uu qaba",
+    "image_invalid_type": "JPG, PNG, WebP qofa fudhatama",
+    "image_uploading": "Fe'aa jira..."
   },
   "lang": {
     "label": "Afaan",
@@ -1206,5 +1210,16 @@
     "rule_label": "Seera {n}",
     "an_approver": "mirkaneessaa tokko",
     "any_level_footnote": "\"Sadarkaa kamiyyuu\" jechuun seerri kun sadarkaa galmaa kamiyyuu irratti hojiirra ni oola jechuudha."
+  },
+  "settings": {
+    "branding": "Braandii",
+    "tenant_logo": "Akaakuu Dhaabbata",
+    "tenant_banner": "Baneera Dhaabbata",
+    "logo_too_large": "Akaakuun 1MB gadii ta'uu qaba",
+    "banner_too_large": "Baaneeri 3MB gadii ta'uu qaba",
+    "upload_logo": "Akaakuu fe'i",
+    "upload_banner": "Baneera fe'i",
+    "branding_preview": "Ilaalcha",
+    "branding_saved": "Braandiin haaromfame"
   }
 }

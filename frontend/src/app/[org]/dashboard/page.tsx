@@ -249,11 +249,12 @@ export default function OrgDashboard() {
     refetchOnWindowFocus: true,
   });
 
-  const { data: apiTenantData } = useQuery<{ id: string; name: string }>({
-    queryKey: ["tenant-meta", org],
-    queryFn: () => api.get<{ id: string; name: string }>(`/api/v1/tenants/${org}`),
-    enabled: isGatewayMode && org !== SA_ORG_SLUG,
-    staleTime: 60_000,
+  const tenantId = user?.tenantId ?? "";
+  const { data: apiTenantData } = useQuery<{ id: string; name: string; logo_url?: string | null; banner_url?: string | null }>({
+    queryKey: ["tenant-branding", tenantId],
+    queryFn: () => api.get(`/api/v1/tenants/${tenantId}`),
+    enabled: isGatewayMode && !!tenantId && org !== SA_ORG_SLUG,
+    staleTime: 120_000,
   });
 
   interface ApiTenantRow { id: string; name: string; slug: string | null; organisation_type: string | null }
@@ -458,7 +459,17 @@ export default function OrgDashboard() {
       ? `${user.role} access`
       : `${tenantIndustry ? tenantIndustry + " · " : ""}${user.role === "SA" ? t("dashboard.sa_viewing") : t("dashboard.tenant_admin")}`;
 
+    const bannerUrl = apiTenantData?.banner_url ?? null;
     return (
+      <div>
+        {bannerUrl && (
+          <img
+            src={bannerUrl}
+            alt=""
+            className="w-full object-cover"
+            style={{ maxHeight: "180px" }}
+          />
+        )}
       <div className="p-8">
         <SummaryCard
           title={cardTitle}
@@ -576,6 +587,7 @@ export default function OrgDashboard() {
             </table>
           </div>
         )}
+      </div>
       </div>
     );
   }

@@ -56,6 +56,10 @@ class PERMISSIONS:
     PRODUCT_MANAGE_APPROVAL_RULES      = Permission("product:manage_approval_rules",      ["tenant_id", "audit_required"])
     # Per-product authority floor overrides in product_approval_minimums (PROMPT 2D)
     PRODUCT_MANAGE_APPROVAL_MINIMUMS   = Permission("product:manage_approval_minimums",   ["tenant_id", "audit_required"])
+    # Product image upload (TA and NM)
+    PRODUCT_UPLOAD_IMAGE               = Permission("product:upload_image",               ["tenant_id"])
+    # Tenant branding upload (TA only)
+    TENANT_UPLOAD_BRANDING             = Permission("tenant:upload_branding",             ["tenant_id"])
 
     # ── Domain 4 — Inventory ───────────────────────────────────────────────
     INVENTORY_RECEIVE       = Permission("inventory:receive",       ["tenant_id", "warehouse_id"])
@@ -220,7 +224,7 @@ ALL_PERMISSIONS: List[Permission] = [
     v for v in vars(PERMISSIONS).values() if isinstance(v, Permission)
 ]
 
-assert len(ALL_PERMISSIONS) == 145, (
-    f"Expected 145 permissions, found {len(ALL_PERMISSIONS)}. "
+assert len(ALL_PERMISSIONS) == 147, (
+    f"Expected 147 permissions, found {len(ALL_PERMISSIONS)}. "
     "Update registry.py and re-run seed_permissions.py."
 )

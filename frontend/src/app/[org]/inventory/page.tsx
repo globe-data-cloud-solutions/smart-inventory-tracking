@@ -6,6 +6,7 @@ import { useQuery } from "@tanstack/react-query";
 import { SA_ORG_SLUG, getSession } from "@/lib/demo-auth";
 import { DEMO_TENANTS, type DemoProduct, type DemoWarehouse, type ProductApprovalOverride, type WarehouseType } from "@/lib/demo-data";
 import { ProductLabel } from "@/components/features/inventory/ProductLabel";
+import { ProductImage } from "@/components/ui/ProductImage";
 import { usePermission } from "@/hooks/usePermission";
 import { AddProductPanel } from "@/components/features/inventory/AddProductPanel";
 import { ReceiveStockPanel } from "@/components/features/inventory/ReceiveStockPanel";
@@ -33,6 +34,7 @@ type ApiProduct = {
   brand?: string | null; type_code?: string | null;
   packaging_type?: string | null; units_per_package?: number | null;
   unit_price?: number | null; currency?: string | null;
+  image_url?: string | null;
   is_discontinued?: boolean; is_controlled?: boolean;
   approval_overrides?: Record<string, ProductApprovalOverride>;
 };
@@ -355,6 +357,7 @@ export default function InventoryPage() {
         typeCode: p.type_code ?? undefined,
         packagingType: p.packaging_type ?? undefined,
         unitsPerPackage: p.units_per_package ?? undefined,
+        image_url: p.image_url ?? null,
         is_discontinued: p.is_discontinued ?? false,
         approval_overrides: p.approval_overrides,
       }))
@@ -719,6 +722,7 @@ export default function InventoryPage() {
           <table className="w-full border-collapse">
             <thead>
               <tr className="bg-gray-50 border-b-2 border-gray-200">
+                <PlainHeader label="" />
                 <PlainHeader label={t("table.sku")} />
                 <PlainHeader label={t("table.product")} />
                 {expandedRows && <PlainHeader label={t("inventory.warehouse_col")} />}
@@ -746,6 +750,9 @@ export default function InventoryPage() {
                     const stockStatus  = onHand === 0 ? "out" : onHand <= p.reorderPoint ? "low" : "in";
                     return (
                       <tr key={`${p.id}:${si.warehouse_id}`} className={`border-b border-gray-100 ${idx % 2 === 0 ? "bg-white" : "bg-gray-50"}`}>
+                        <td className="pl-3 pr-1 py-2">
+                          <ProductImage image_url={p.image_url} product_name={p.name} size="sm" />
+                        </td>
                         <td className="px-3.5 py-2.5 font-mono text-[11px] text-gray-400 whitespace-nowrap">{p.sku}</td>
                         <td className="px-3.5 py-2.5 font-semibold text-gray-800 whitespace-nowrap">
                           <ProductLabel name={p.name} approvalOverrides={p.approval_overrides} />
@@ -803,6 +810,9 @@ export default function InventoryPage() {
 
                 return (
                   <tr key={p.id} className={`border-b border-gray-100 ${idx % 2 === 0 ? "bg-white" : "bg-gray-50"} ${isZeroRow ? "opacity-60" : ""}`}>
+                    <td className="pl-3 pr-1 py-2">
+                      <ProductImage image_url={p.image_url} product_name={p.name} size="sm" />
+                    </td>
                     <td className="px-3.5 py-2.5 font-mono text-[11px] text-gray-400 whitespace-nowrap">{p.sku}</td>
                     <td className="px-3.5 py-2.5 whitespace-nowrap">
                       <ProductLabel name={p.name} approvalOverrides={p.approval_overrides} className="font-semibold text-gray-800" />

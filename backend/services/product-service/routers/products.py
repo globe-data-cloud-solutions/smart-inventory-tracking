@@ -118,7 +118,7 @@ async def list_products(
     base_select = (
         "SELECT p.id, p.sku, p.name, p.short_name, p.description, "
         "p.unit, p.pack_size, p.reorder_point, p.unit_price, p.currency, "
-        "p.is_discontinued, "
+        "p.image_url, p.is_discontinued, "
         "pc.name AS category, "
         "pb.name AS brand, "
         "ptc.code AS type_code, "
@@ -196,6 +196,7 @@ async def list_products(
                 "unit_price":       float(r.unit_price) if getattr(r, "unit_price", None) is not None else None,
                 "currency":         getattr(r, "currency", None),
                 "is_discontinued":  bool(r.is_discontinued),
+                "image_url":        r.image_url,
                 "category":         r.category,
                 "brand":            r.brand,
                 "type_code":        r.type_code,
@@ -642,6 +643,7 @@ async def update_product(
         text(
             "SELECT p.id, p.sku, p.name, p.short_name, p.description, "
             "p.unit, p.pack_size, p.reorder_point, p.unit_price, p.currency, "
+            "p.image_url, "
             "p.category_id, p.brand_id, p.type_code_id, p.packaging_type_id, "
             "p.tenant_id, p.created_at, p.created_by, "
             "pc.name AS category, pb.name AS brand, ptc.code AS type_code, "
@@ -701,6 +703,9 @@ async def update_product(
     if body.currency is not None:
         set_clauses.append("currency = :currency")
         params["currency"] = body.currency
+    if body.image_url is not None:
+        set_clauses.append("image_url = :image_url")
+        params["image_url"] = body.image_url
 
     # Category — find or create.
     category_name = row.category
@@ -862,6 +867,7 @@ async def update_product(
             reorder_point=body.reorder_point if body.reorder_point is not None else row.reorder_point,
             unit_price=body.unit_price if body.unit_price is not None else row.unit_price,
             currency=body.currency if body.currency is not None else row.currency,
+            image_url=body.image_url if body.image_url is not None else getattr(row, "image_url", None),
             is_controlled=is_controlled,
             tenant_id=uuid.UUID(tid),
             created_at=row.created_at,

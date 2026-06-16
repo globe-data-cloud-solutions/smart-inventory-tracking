@@ -38,6 +38,7 @@ export interface DemoProduct {
   stock: Record<string, number>;
   shortName?: string;
   description?: string;
+  image_url?: string | null;
   is_discontinued?: boolean;
   approval_overrides?: Record<string, ProductApprovalOverride>;
 }
