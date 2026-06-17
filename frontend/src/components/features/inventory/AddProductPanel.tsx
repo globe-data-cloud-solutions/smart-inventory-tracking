@@ -466,7 +466,7 @@ export function AddProductPanel({ apiBase, onClose, mode = "create", productId, 
       : null;
 
   // ── validation & save ─────────────────────────────────────────────────
-  const typeCodeOk  = /^[A-Za-z]{2,10}$/.test(typeCode.trim());
+  const typeCodeOk  = /^[A-Za-z0-9]{2,10}$/.test(typeCode.trim());
   const categoryOk  = category.trim().length > 0;
   const saveDisabled = !name.trim() || !categoryOk || !typeCodeOk || !skuOk || submitting || skuLoading;
 

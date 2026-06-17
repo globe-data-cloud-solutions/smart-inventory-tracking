@@ -131,6 +131,9 @@ USR_LM         = "07000007-020c-0000-0000-000000000002"
 # Products
 CAT_RAW_MAT    = "07000007-0301-0000-0000-000000000001"
 CAT_FINISHED   = "07000007-0301-0000-0000-000000000002"
+TC_RAW         = "412837ec-f7ea-489b-8931-cc23fce37569"  # RAW — Raw Materials
+TC_FIN         = "aa965bf5-878f-4113-8193-6719e0d61023"  # FIN — Finished Goods
+TC_PKG         = "ed9779f1-de46-4a07-9e1e-fab11bd6da18"  # PKG — Packaging
 PROD_P1        = "07000007-0302-0000-0000-000000000001"  # Steel Rod A
 PROD_P2        = "07000007-0302-0000-0000-000000000002"  # Copper Wire B
 PROD_P3        = "07000007-0302-0000-0000-000000000003"  # Product Alpha
@@ -506,28 +509,46 @@ async def main() -> None:
                     {"id": cat_id, "tid": T07_ID, "name": cat_name},
                 )
 
-            # Products: (id, sku, name, uom, cat_id)
+            # Type codes — realistic codes used by products and test suite
+            for tc_id, tc_code, tc_desc in [
+                (TC_RAW, "RAW", "Raw Materials"),
+                (TC_FIN, "FIN", "Finished Goods"),
+                (TC_PKG, "PKG", "Packaging"),
+            ]:
+                await s.execute(
+                    text("""
+                        INSERT INTO product_type_codes (id, tenant_id, code, description, is_active)
+                        VALUES (:id, :tid, :code, :desc, true)
+                        ON CONFLICT (id) DO UPDATE SET
+                            code        = EXCLUDED.code,
+                            description = EXCLUDED.description
+                    """),
+                    {"id": tc_id, "tid": T07_ID, "code": tc_code, "desc": tc_desc},
+                )
+
+            # Products: (id, sku, name, uom, cat_id, tc_id)
             products = [
-                (PROD_P1, "T07-RM-001", "Steel Rod A",    "KG",    CAT_RAW_MAT),
-                (PROD_P2, "T07-RM-002", "Copper Wire B",  "Roll",  CAT_RAW_MAT),
-                (PROD_P3, "T07-FG-001", "Product Alpha",  "Unit",  CAT_FINISHED),
-                (PROD_P4, "T07-FG-002", "Secure Item X",  "Unit",  CAT_FINISHED),
-                (PROD_P5, "T07-FG-003", "Secure Item Y",  "Piece", CAT_FINISHED),
+                (PROD_P1, "T07-RM-001", "Steel Rod A",    "KG",    CAT_RAW_MAT,  TC_RAW),
+                (PROD_P2, "T07-RM-002", "Copper Wire B",  "Roll",  CAT_RAW_MAT,  TC_RAW),
+                (PROD_P3, "T07-FG-001", "Product Alpha",  "Unit",  CAT_FINISHED, TC_FIN),
+                (PROD_P4, "T07-FG-002", "Secure Item X",  "Unit",  CAT_FINISHED, TC_FIN),
+                (PROD_P5, "T07-FG-003", "Secure Item Y",  "Piece", CAT_FINISHED, TC_PKG),
             ]
-            for p_id, sku, name, uom, cat_id in products:
+            for p_id, sku, name, uom, cat_id, tc_id in products:
                 await s.execute(
                     text("""
                         INSERT INTO products
                             (id, tenant_id, sku, name, unit_of_measure,
-                             category_id, batch_tracking, expiry_tracking,
+                             category_id, type_code_id, batch_tracking, expiry_tracking,
                              is_active, created_by)
                         VALUES
                             (:id, :tid, :sku, :name, :uom,
-                             :cat, false, false,
+                             :cat, :tc, false, false,
                              true, :created_by)
                         ON CONFLICT (id) DO UPDATE SET
-                            name = EXCLUDED.name,
-                            sku  = EXCLUDED.sku
+                            name         = EXCLUDED.name,
+                            sku          = EXCLUDED.sku,
+                            type_code_id = EXCLUDED.type_code_id
                     """),
                     {
                         "id":         p_id,
@@ -536,11 +557,12 @@ async def main() -> None:
                         "name":       name,
                         "uom":        uom,
                         "cat":        cat_id,
+                        "tc":         tc_id,
                         "created_by": USR_TA,
                     },
                 )
             await s.commit()
-            print(f"  [OK]2 categories + {len(products)} products created")
+            print(f"  [OK] 2 categories + 3 type codes + {len(products)} products created")
 
             # Product approval overrides for controlled items (product_approval_minimums)
             # P4 — Secure Item X

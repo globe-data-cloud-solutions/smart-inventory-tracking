@@ -506,7 +506,7 @@ def group3_products() -> None:
         "name": "Test Product WM Attempt",
         "sku": new_sku,
         "unit": "Unit",
-        "type_code": "E2E",
+        "type_code": "RAW",
     })
     if r.status_code == 403:
         ok("3.6 WM cannot create product → 403")
@@ -519,7 +519,7 @@ def group3_products() -> None:
         "name": "Test Product AU Attempt",
         "sku": f"T07-AU-{uuid.uuid4().hex[:6].upper()}",
         "unit": "Unit",
-        "type_code": "E2E",
+        "type_code": "RAW",
     })
     if r.status_code == 403:
         ok("3.7 AU cannot create product → 403")
@@ -527,13 +527,13 @@ def group3_products() -> None:
         fail("3.7 AU cannot create product → 403", f"got {r.status_code}")
 
     # 3.8 TA can create a new product — requires type_code; field is 'unit' not 'unit_of_measure'
-    test_sku = f"T07-E2E-{uuid.uuid4().hex[:6].upper()}"
-    test_name = f"E2E Test Product {uuid.uuid4().hex[:6].upper()}"
+    test_sku = f"T07-RAW-{uuid.uuid4().hex[:6].upper()}"
+    test_name = f"Test Product {uuid.uuid4().hex[:6].upper()}"
     r = api_post("/api/v1/products/", EMAIL_TA, {
         "name": test_name,
         "sku": test_sku,
         "unit": "Unit",
-        "type_code": "E2E",
+        "type_code": "RAW",
         "description": "Created by e2e test suite",
     })
     if r.status_code == 201:
@@ -3108,18 +3108,18 @@ def group18_i18n() -> None:
     # 18.7 — 422 error has structured error.code (not a dot-notation i18n key)
     # Trigger duplicate SKU error — Product P1 already has a fixed SKU; we try to create with it
     # Use a new SKU that we know will conflict after creating a product and using its SKU
-    _sku_18 = f"T07-I18N-{uuid.uuid4().hex[:6].upper()}"
+    _sku_18 = f"T07-PKG-{uuid.uuid4().hex[:6].upper()}"
     # Create product then try to create duplicate
     r_c1 = api_post("/api/v1/products/", EMAIL_TA, {
         "name": f"i18n test product {_sku_18}",
         "sku": _sku_18,
-        "type_code": "ITN",
+        "type_code": "PKG",
         "unit": "KG",
     })
     r_c2 = api_post("/api/v1/products/", EMAIL_TA, {
         "name": f"i18n test product {_sku_18} dup",
         "sku": _sku_18,
-        "type_code": "ITN",
+        "type_code": "PKG",
         "unit": "KG",
     })
     if r_c2.status_code == 422:
