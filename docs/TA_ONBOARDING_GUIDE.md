@@ -350,6 +350,9 @@ The product is Controlled — it has special approval rules that override normal
 **Q: Can I undo a completed transfer?**
 No — the ledger is immutable for audit integrity. Create a reverse transfer or use an Adjustment with reason code `RETURN`.
 
+**Q: Can I cancel a Branch Exchange after it has been approved?**
+No — once a Branch Exchange reaches Approved status it cannot be cancelled. Both warehouse managers have confirmed and stock is committed to the transfer. If the transfer cannot physically proceed, complete the receipt at the destination and use a stock Adjustment (reason: RETURN or DAMAGE) to correct the balance. Contact your administrator for assistance.
+
 ---
 
 ## Setup Checklist

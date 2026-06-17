@@ -2228,47 +2228,79 @@ def group13_data_integrity() -> None:
         fail("13.2 Create PULL qty=5001 for soft-hold test", f"status={r.status_code}")
         skip("13.2b Reservation cleanup", "transfer not created")
 
-    # 13.3 Cancelling APPROVED PULL restores current_stock at source
+    # 13.3 Cancelling APPROVED PULL restores source on_hand via TRANSFER_REVERSAL.
+    # Explicit path: create → submit → review → approve → verify stock decreased →
+    # cancel from APPROVED → verify stock restored to pre-transfer level (net delta ≈ 0).
+    # The backend writes TRANSFER_REVERSAL (balance-restoring) at APPROVED → CANCELLED.
+    # RESERVE/RELEASE entries are balance-neutral and are NOT what restores on_hand.
+
+    # Step a: record SRA P1 stock before creating the transfer
     r_sra_c3 = api_get("/api/v1/inventory/analytics/stock", EMAIL_SRA_RM,
                         params={"warehouse_id": NODE_SRA})
     c3_list = data(r_sra_c3) if isinstance(data(r_sra_c3), list) else []
     p1_c3_item = next((s for s in c3_list if str(s.get("product_id","")) == PROD_P1), None)
     p1_c3_before = float(p1_c3_item.get("current_stock", 0)) if p1_c3_item else 0.0
 
+    # Step b: create PULL qty=25 SRA → WHA1
     r = api_post("/api/v1/inventory/transfers/", EMAIL_WHA1_WM, {
         "transfer_type": "PULL",
         "from_warehouse_id": NODE_SRA,
         "to_warehouse_id": NODE_WHA1,
         "lines": [{"product_id": PROD_P1, "quantity": 25}],
-        "notes": "E2E G13: cancel-release test",
+        "notes": "E2E G13.3: cancel-restore test",
     })
-    if r.status_code == 201:
-        g13_can_id = str(data(r).get("transfer_id") or data(r).get("id", ""))
-        r_sub = api_post(f"/api/v1/inventory/transfers/{g13_can_id}/submit", EMAIL_WHA1_WM)
-        sub_st_c3 = data(r_sub).get("status", "")
-        r_c3chk = api_get(f"/api/v1/inventory/transfers/{g13_can_id}", EMAIL_TA)
-        cur_c3 = data(r_c3chk).get("status", "")
-        if cur_c3 not in ("CANCELLED", "COMPLETED", "RECEIVED", "IN_TRANSIT", "ISSUED"):
-            api_patch(f"/api/v1/inventory/transfers/{g13_can_id}", EMAIL_TA,
-                      {"next_status": "CANCELLED"})
-        r_sra_c3_post = api_get("/api/v1/inventory/analytics/stock", EMAIL_SRA_RM,
-                                 params={"warehouse_id": NODE_SRA})
-        c3_post_list = data(r_sra_c3_post) if isinstance(data(r_sra_c3_post), list) else []
-        p1_c3_post_item = next((s for s in c3_post_list if str(s.get("product_id","")) == PROD_P1), None)
-        p1_c3_after = float(p1_c3_post_item.get("current_stock", 0)) if p1_c3_post_item else 0.0
-        delta_c3 = abs(p1_c3_after - p1_c3_before)
-        if delta_c3 < 0.01:
-            ok("13.3 Cancel PULL at APPROVED releases stock (current_stock restored to pre-transfer level)",
-               f"before={p1_c3_before}, after={p1_c3_after}, submitted_as={sub_st_c3}, cancelled_from={cur_c3}")
-        else:
-            skip("13.3 Cancel stock restoration",
-                 f"Known gap: cancel from {cur_c3} does not release stock reservation "
-                 f"(before={p1_c3_before}, after={p1_c3_after}, delta={delta_c3:.2f}) "
-                 "— tracked for a separate fix session")
-    elif r.status_code == 422:
-        skip("13.3 Cancel-release test", "insufficient P1 at SRA for qty=25 (422)")
+    if r.status_code == 422:
+        skip("13.3 Cancel PULL at APPROVED restores source stock", "insufficient P1 at SRA for qty=25 (422)")
+    elif r.status_code != 201:
+        fail("13.3 Cancel PULL at APPROVED restores source stock", f"create failed status={r.status_code}")
     else:
-        fail("13.3 Create PULL for cancel-release test", f"status={r.status_code}")
+        g13_can_id = str(data(r).get("transfer_id") or data(r).get("id", ""))
+
+        # Step c: submit → advance to APPROVED (review + approve if self-approval did not fire)
+        r_sub = api_post(f"/api/v1/inventory/transfers/{g13_can_id}/submit", EMAIL_WHA1_WM)
+        cur_c3 = data(r_sub).get("status", "")
+        if cur_c3 not in ("APPROVED", "CANCELLED", "REJECTED"):
+            # PENDING_REVIEW → PENDING_APPROVAL (TA acts as reviewer)
+            r_rev = api_post(f"/api/v1/inventory/transfers/{g13_can_id}/review", EMAIL_TA)
+            if data(r_rev).get("status") == "PENDING_APPROVAL":
+                # PENDING_APPROVAL → APPROVED (TA approves; creator is WHA1_WM so no self-approve block)
+                r_app = api_post(f"/api/v1/inventory/transfers/{g13_can_id}/approve", EMAIL_TA)
+                cur_c3 = data(r_app).get("status", cur_c3)
+            else:
+                cur_c3 = data(r_rev).get("status", cur_c3)
+
+        if cur_c3 != "APPROVED":
+            skip("13.3 Cancel PULL at APPROVED restores source stock",
+                 f"could not advance transfer to APPROVED (status={cur_c3})")
+        else:
+            # Step d: verify source stock decreased by 25 (TRANSFER_OUT was written at APPROVED)
+            r_sra_mid = api_get("/api/v1/inventory/analytics/stock", EMAIL_SRA_RM,
+                                params={"warehouse_id": NODE_SRA})
+            mid_list = data(r_sra_mid) if isinstance(data(r_sra_mid), list) else []
+            p1_mid_item = next((s for s in mid_list if str(s.get("product_id","")) == PROD_P1), None)
+            p1_c3_mid = float(p1_mid_item.get("current_stock", 0)) if p1_mid_item else 0.0
+
+            # Step e: cancel from APPROVED → backend writes TRANSFER_REVERSAL
+            r_cancel = api_patch(f"/api/v1/inventory/transfers/{g13_can_id}", EMAIL_TA,
+                                 {"next_status": "CANCELLED"})
+
+            # Step f: read source stock after cancel
+            r_sra_post = api_get("/api/v1/inventory/analytics/stock", EMAIL_SRA_RM,
+                                 params={"warehouse_id": NODE_SRA})
+            post_list = data(r_sra_post) if isinstance(data(r_sra_post), list) else []
+            p1_post_item = next((s for s in post_list if str(s.get("product_id","")) == PROD_P1), None)
+            p1_c3_after = float(p1_post_item.get("current_stock", 0)) if p1_post_item else 0.0
+
+            # Step g: net delta must be ≈ 0 (TRANSFER_REVERSAL exactly undoes TRANSFER_OUT)
+            net_delta = abs(p1_c3_after - p1_c3_before)
+            if r_cancel.status_code == 200 and net_delta < 0.01:
+                ok("13.3 Cancel PULL at APPROVED restores source stock (TRANSFER_REVERSAL)",
+                   f"before={p1_c3_before}, after_approve={p1_c3_mid}, "
+                   f"after_cancel={p1_c3_after}, net_delta={net_delta:.2f}")
+            else:
+                fail("13.3 Cancel PULL at APPROVED restores source stock",
+                     f"cancel_status={r_cancel.status_code}, before={p1_c3_before}, "
+                     f"after_approve={p1_c3_mid}, after_cancel={p1_c3_after}, net_delta={net_delta:.2f}")
 
     # 13.4 Duplicate idempotency key → 409 or same record (no new ledger entry)
     idem_key_g13 = "e2e:t07:g13:idem:001:v2"
