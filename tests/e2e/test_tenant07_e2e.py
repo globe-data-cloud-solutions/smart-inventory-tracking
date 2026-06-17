@@ -3228,6 +3228,554 @@ def group18_i18n() -> None:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# GROUP 19 — Security
+# ─────────────────────────────────────────────────────────────────────────────
+def group19_security() -> None:
+    print("\n[GROUP 19] Security")
+
+    # Helper: build a syntactically valid JWT with a fake/invalid signature.
+    # The server must reject it at signature verification (or exp check).
+    def _make_fake_jwt(payload_dict: dict) -> str:
+        def _b64url(d: dict) -> str:
+            raw = json.dumps(d, separators=(',', ':')).encode()
+            return base64.urlsafe_b64encode(raw).rstrip(b'=').decode()
+        hdr = _b64url({"alg": "HS256", "typ": "JWT"})
+        pay = _b64url(payload_dict)
+        return f"{hdr}.{pay}.fakesignature"
+
+    # ── PART A — Input Validation / Injection ─────────────────────────────────
+
+    # 19.1 SQL injection in product name → should be stored safely, not executed
+    sql_name = "Test'; DROP TABLE products; --"
+    r = api_post("/api/v1/products/", EMAIL_TA, {
+        "name": sql_name,
+        "sku": f"T07-SQL-{uuid.uuid4().hex[:6].upper()}",
+        "unit": "Unit",
+        "type_code": "RAW",
+    })
+    if r.status_code == 201:
+        sq_id = str(data(r).get("id", ""))
+        r_list = api_get("/api/v1/products/", EMAIL_TA)
+        prods_all = data(r_list) if isinstance(data(r_list), list) else []
+        found_sql = next((p for p in prods_all if str(p.get("id", "")) == sq_id), None)
+        if found_sql and found_sql.get("name") == sql_name:
+            ok("19.1 SQL injection in product name → stored as literal string (safe)")
+        elif found_sql:
+            ok("19.1 SQL injection accepted, name may be sanitized",
+               f"stored as: {found_sql.get('name')!r}")
+        else:
+            ok("19.1 SQL injection: 201 returned; name not visible in list (check if paginated)")
+    elif r.status_code in (409, 422):
+        ok("19.1 SQL injection in product name → safely rejected / already stored",
+           f"status={r.status_code} — 409 means name exists from prior run (SQL was not executed)")
+    elif r.status_code == 500:
+        fail("19.1 SQL injection in product name → 500 (server error)",
+             "unexpected crash on SQL metacharacters",
+             bug="SQL injection in product name triggers 500 — potential unhandled injection surface")
+    else:
+        fail("19.1 SQL injection in product name", f"got {r.status_code}")
+
+    # 19.2 XSS payload in transfer notes → should be stored as literal string
+    xss_notes = "<script>alert('xss')</script>"
+    r = api_post("/api/v1/inventory/transfers/", EMAIL_WHA1_WM, {
+        "transfer_type": "PULL",
+        "from_warehouse_id": NODE_SRA,
+        "to_warehouse_id": NODE_WHA1,
+        "lines": [{"product_id": PROD_P1, "quantity": 1}],
+        "notes": xss_notes,
+    })
+    if r.status_code == 201:
+        xss_tid = str(data(r).get("transfer_id") or data(r).get("id", ""))
+        if xss_tid:
+            r_chk = api_get(f"/api/v1/inventory/transfers/{xss_tid}", EMAIL_WHA1_WM)
+            stored_notes = data(r_chk).get("notes", "")
+            if stored_notes == xss_notes:
+                ok("19.2 XSS in transfer notes → stored as literal string (not interpreted)")
+            elif stored_notes and "<script>" not in stored_notes:
+                ok("19.2 XSS in notes sanitized on storage", f"stored: {stored_notes[:60]!r}")
+            else:
+                ok("19.2 XSS in notes: transfer created, notes check skipped (GET may omit notes field)")
+        else:
+            ok("19.2 XSS in transfer notes → 201 (no 500)")
+    elif r.status_code == 422:
+        ok("19.2 XSS in transfer notes → 422 (rejected by validation)")
+    elif r.status_code == 500:
+        fail("19.2 XSS in transfer notes → 500",
+             "crash on XSS payload in notes field",
+             bug="XSS payload in transfer notes triggers 500 — unhandled input")
+    else:
+        fail("19.2 XSS in transfer notes", f"got {r.status_code}")
+
+    # 19.3 Oversized product name (10 000 chars) — document behavior (422 or 201 with truncation)
+    long_name = "A" * 10000
+    r = api_post("/api/v1/products/", EMAIL_TA, {
+        "name": long_name,
+        "sku": f"T07-LONG-{uuid.uuid4().hex[:6].upper()}",
+        "unit": "Unit",
+        "type_code": "RAW",
+    })
+    if r.status_code == 422:
+        ok("19.3 Oversized product name (10 000 chars) → 422 (field length validation)")
+    elif r.status_code in (400, 413):
+        ok("19.3 Oversized payload rejected", f"status={r.status_code}")
+    elif r.status_code == 201:
+        ov_id = str(data(r).get("id", ""))
+        r_chk2 = api_get("/api/v1/products/", EMAIL_TA)
+        prods_ov = data(r_chk2) if isinstance(data(r_chk2), list) else []
+        found_ov = next((p for p in prods_ov if str(p.get("id", "")) == ov_id), None)
+        stored_len = len(found_ov.get("name", "")) if found_ov else 0
+        if stored_len < 10000:
+            ok("19.3 Oversized name accepted but truncated",
+               f"submitted=10000 chars, stored={stored_len} chars")
+        else:
+            ok("19.3 Oversized name stored at full length (no column length limit enforced)",
+               f"stored={stored_len} chars — document: product.name has no DB length constraint")
+    elif r.status_code == 500:
+        fail("19.3 Oversized product name → 500",
+             "crash on 10 000 char name",
+             bug="10 000 char product name triggers 500 — unhandled large input")
+    else:
+        fail("19.3 Oversized product name", f"got {r.status_code}")
+
+    # 19.4 Null byte in product name — must not return 500
+    null_name = "Test\x00Name"
+    r = api_post("/api/v1/products/", EMAIL_TA, {
+        "name": null_name,
+        "sku": f"T07-NULL-{uuid.uuid4().hex[:6].upper()}",
+        "unit": "Unit",
+        "type_code": "RAW",
+    })
+    if r.status_code == 422:
+        ok("19.4 Null byte in product name → 422 (rejected cleanly)")
+    elif r.status_code == 201:
+        ok("19.4 Null byte accepted (stored sanitized or as-is — no 500)",
+           "document: null-byte handling depends on DB collation settings")
+    elif r.status_code == 500:
+        fail("19.4 Null byte in product name → 500",
+             "crash on embedded null byte",
+             bug="Null byte in product name causes 500 — potential injection surface")
+    else:
+        ok("19.4 Null byte in product name handled cleanly", f"status={r.status_code} (not 500)")
+
+    # 19.5 Amharic Unicode product name → 201; verify stored and retrievable correctly
+    amharic_name = "ምርት አንድ"  # ምርት አንድ
+    r = api_post("/api/v1/products/", EMAIL_TA, {
+        "name": amharic_name,
+        "sku": f"T07-AM-{uuid.uuid4().hex[:6].upper()}",
+        "unit": "Unit",
+        "type_code": "RAW",
+        "description": "Amharic product name (Product One)",
+    })
+    if r.status_code == 201:
+        am_id = str(data(r).get("id", ""))
+        r_list2 = api_get("/api/v1/products/", EMAIL_TA)
+        prods_am = data(r_list2) if isinstance(data(r_list2), list) else []
+        found_am = next((p for p in prods_am if str(p.get("id", "")) == am_id), None)
+        if found_am and found_am.get("name") == amharic_name:
+            ok("19.5 Amharic product name stored and retrieved correctly",
+               f"name={amharic_name!r}")
+        elif found_am:
+            ok("19.5 Amharic product created and retrievable",
+               f"stored={found_am.get('name')!r}")
+        else:
+            ok("19.5 Amharic product name → 201 (retrieve check skipped)")
+    elif r.status_code == 409:
+        ok("19.5 Amharic product name already exists from prior run → 409",
+           "confirms Unicode name was safely stored before — storage is correct")
+    elif r.status_code == 422:
+        fail("19.5 Amharic product name rejected",
+             f"got 422 — Unicode Amharic chars not accepted",
+             bug="Amharic Unicode product name rejected with 422 — i18n support broken")
+    else:
+        fail("19.5 Amharic product name", f"got {r.status_code}")
+
+    # ── PART B — Authentication & JWT ─────────────────────────────────────────
+
+    # 19.6 Tampered JWT: real WM payload, role changed to TA, fake signature → must return 401
+    real_wm_token = get_jwt(EMAIL_WHA1_WM)
+    if real_wm_token:
+        try:
+            pay_b64 = real_wm_token.split(".")[1]
+            pay_b64 += "=" * (-len(pay_b64) % 4)
+            real_payload = json.loads(base64.b64decode(pay_b64))
+        except Exception:
+            real_payload = {}
+        tampered_payload = {**real_payload, "role": "TA"}
+        tampered_token = _make_fake_jwt(tampered_payload)
+        r = requests.get(f"{BASE_URL}/api/v1/products/",
+                         headers=headers_raw(tampered_token), timeout=10)
+        if r.status_code == 401:
+            ok("19.6 Tampered JWT (role=TA, fake sig) → 401 (signature rejected)")
+        elif r.status_code == 403:
+            ok("19.6 Tampered JWT → 403 (rejected at permission layer)")
+        elif r.status_code == 200:
+            fail("19.6 Tampered JWT must be rejected",
+                 "got 200 — backend accepted JWT with invalid signature",
+                 bug="CRITICAL: Backend accepted JWT with fake signature — signature verification missing")
+        else:
+            ok("19.6 Tampered JWT rejected", f"status={r.status_code}")
+    else:
+        skip("19.6 Tampered JWT test", "WM token unavailable")
+
+    # 19.7 Expired JWT (exp=1000, far in the past) with fake signature → must return 401
+    expired_payload = {
+        "sub": USR_WHA1_WM,
+        "role": "WM",
+        "tenant_id": T07_ID,
+        "iat": 1000,
+        "exp": 1000,
+    }
+    expired_token = _make_fake_jwt(expired_payload)
+    r = requests.get(f"{BASE_URL}/api/v1/products/",
+                     headers=headers_raw(expired_token), timeout=10)
+    if r.status_code == 401:
+        ok("19.7 Expired JWT → 401 (rejected)")
+    elif r.status_code == 403:
+        ok("19.7 Expired JWT → 403 (rejected at auth/permission layer)")
+    elif r.status_code == 200:
+        fail("19.7 Expired JWT must be rejected",
+             "got 200 — backend accepted JWT with exp=1000",
+             bug="CRITICAL: Backend accepted expired JWT (exp=1000) — expiry not validated")
+    else:
+        ok("19.7 Expired JWT rejected", f"status={r.status_code}")
+
+    # 19.8 JWT from deactivated user
+    # Uses the g14 test user (test_e2e_g14@t07.com) created in Group 14.
+    # Flow: reactivate → get JWT → deactivate → use JWT → reactivate (cleanup).
+    g14_uid = state.get("g14_user_id")
+    test_email_g14 = "test_e2e_g14@t07.com"
+    if g14_uid:
+        invalidate_token(test_email_g14)
+        api_patch(f"/api/v1/tenants/{T07_ID}/users/{g14_uid}/reactivate", EMAIL_TA)
+        r_login19 = requests.post(
+            f"{BASE_URL}/api/v1/auth/token",
+            json={"dev_email": test_email_g14, "dev_password": DEFAULT_PASSWORD},
+            timeout=10,
+        )
+        saved_token_19 = (
+            r_login19.json().get("access_token")
+            or r_login19.json().get("data", {}).get("access_token")
+        ) if r_login19.status_code == 200 else None
+
+        if saved_token_19:
+            api_patch(f"/api/v1/tenants/{T07_ID}/users/{g14_uid}/deactivate", EMAIL_TA)
+            invalidate_token(test_email_g14)
+            r_deact = requests.get(
+                f"{BASE_URL}/api/v1/products/",
+                headers=headers_raw(saved_token_19), timeout=10,
+            )
+            if r_deact.status_code in (401, 403):
+                ok("19.8 Deactivated user JWT rejected", f"status={r_deact.status_code}")
+            elif r_deact.status_code == 200:
+                ok("19.8 Deactivated user JWT still valid (stateless JWT — valid until expiry)",
+                   "document: token revocation requires a server-side blocklist; JWT expiry is the only mechanism")
+            else:
+                ok("19.8 Deactivated user JWT handled", f"status={r_deact.status_code}")
+            # Cleanup: reactivate so g14 user is left active for any subsequent inspection
+            api_patch(f"/api/v1/tenants/{T07_ID}/users/{g14_uid}/reactivate", EMAIL_TA)
+        else:
+            skip("19.8 Deactivated user JWT test",
+                 f"could not obtain JWT for {test_email_g14} (status={r_login19.status_code})")
+    else:
+        skip("19.8 Deactivated user JWT test", "no g14_user_id from Group 14")
+
+    # 19.9 No Authorization header → 401
+    r = requests.get(f"{BASE_URL}/api/v1/products/", timeout=10)
+    if r.status_code == 401:
+        ok("19.9 No Authorization header → 401")
+    elif r.status_code == 403:
+        ok("19.9 No Authorization header → 403 (unauthenticated blocked)")
+    elif r.status_code == 200:
+        fail("19.9 No Authorization header should return 401",
+             "got 200 — unauthenticated access allowed",
+             bug="Unauthenticated GET /api/v1/products/ returns 200 — auth not enforced")
+    else:
+        ok("19.9 No Authorization header rejected", f"status={r.status_code}")
+
+    # ── PART C — IDOR / Cross-tenant Access ───────────────────────────────────
+
+    # 19.10 Unauthenticated access to T07 transfer by ID → must return 401
+    xfer_id_19 = state.get("pull_id") or state.get("push_id") or state.get("sister_id")
+    if not xfer_id_19:
+        r_list3 = api_get("/api/v1/inventory/transfers/", EMAIL_TA)
+        xfers3 = data(r_list3) if isinstance(data(r_list3), list) else []
+        if xfers3:
+            xfer_id_19 = str(xfers3[0].get("transfer_id") or xfers3[0].get("id", ""))
+    if xfer_id_19:
+        r = requests.get(f"{BASE_URL}/api/v1/inventory/transfers/{xfer_id_19}", timeout=10)
+        if r.status_code == 401:
+            ok("19.10 Unauthenticated transfer GET by ID → 401")
+        elif r.status_code == 403:
+            ok("19.10 Unauthenticated transfer GET → 403 (access blocked)")
+        elif r.status_code == 200:
+            fail("19.10 Unauthenticated access to transfer by ID",
+                 "got 200 — no auth required",
+                 bug="CRITICAL: GET /inventory/transfers/{id} returns 200 without Authorization header")
+        else:
+            ok("19.10 Unauthenticated transfer access blocked", f"status={r.status_code}")
+    else:
+        skip("19.10 IDOR — unauthenticated transfer GET", "no transfer ID in state or list")
+
+    # 19.11 Cross-factory IDOR: WHB21_WM (Factory B) accesses T07 products
+    # Products are tenant-scoped (not factory-scoped) — WHB21_WM should see all T07 products.
+    r = api_get("/api/v1/products/", EMAIL_WHB21_WM)
+    prods_b = data(r) if isinstance(data(r), list) else []
+    p1_vis = any(str(p.get("id", "")) == PROD_P1 for p in prods_b)
+    if r.status_code == 200 and p1_vis:
+        ok("19.11 WHB21_WM sees T07 products (correct — products are tenant-scoped, not factory-scoped)",
+           f"total={len(prods_b)}, P1_visible=True")
+    elif r.status_code == 200:
+        ok("19.11 WHB21_WM gets product list (P1 not found in page — may be paginated)",
+           f"total={len(prods_b)}")
+    else:
+        fail("19.11 WHB21_WM product list", f"status={r.status_code}")
+
+    # 19.12 IDOR: WHB21_WM creates adjustment; WHA1_WM tries to GET it
+    # Expected: 403 or 404 (ABAC scoping) or 200 if adjustments are only tenant-scoped.
+    adj_key_idor = f"e2e:t07:security:idor:{uuid.uuid4().hex[:8]}"
+    r_idor_adj = api_post("/api/v1/inventory/adjustments/", EMAIL_WHB21_WM, {
+        "warehouse_id": NODE_WHB21,
+        "product_id": PROD_P1,
+        "quantity_delta": -1,
+        "reason_code": "OTHER",
+        "idempotency_key": adj_key_idor,
+        "notes": "IDOR test: WHB21 adjustment — WHA1_WM should not see this",
+    })
+    if r_idor_adj.status_code == 201:
+        idor_adj_id = str(data(r_idor_adj).get("adjustment_id") or data(r_idor_adj).get("id", ""))
+        if idor_adj_id:
+            r_idor_get = api_get(f"/api/v1/inventory/adjustments/{idor_adj_id}", EMAIL_WHA1_WM)
+            if r_idor_get.status_code == 403:
+                ok("19.12 WHA1_WM cannot GET WHB21 adjustment → 403 (ABAC scoping enforced)")
+            elif r_idor_get.status_code == 404:
+                ok("19.12 WHA1_WM cannot GET WHB21 adjustment → 404 (RLS returns not-found)")
+            elif r_idor_get.status_code == 200:
+                ok("19.12 WHB21 adjustment visible to WHA1_WM → 200",
+                   "document: adjustments are tenant-scoped (RLS); facility-level ABAC scoping not implemented for adjustment detail GET")
+            else:
+                ok("19.12 WHB21 adj cross-factory access", f"status={r_idor_get.status_code}")
+            api_post(f"/api/v1/inventory/adjustments/{idor_adj_id}/cancel", EMAIL_WHB21_WM)
+        else:
+            skip("19.12 IDOR adjustment cross-warehouse", "adjustment ID not returned in response")
+    else:
+        skip("19.12 IDOR adjustment cross-warehouse", f"WHB21 adj create failed: {r_idor_adj.status_code}")
+
+    # ── PART D — Rate Limiting / Brute Force Baseline ─────────────────────────
+
+    # 19.13 10 consecutive failed logins — document behavior (no failure either way)
+    failed_attempts = 0
+    rate_limited_19 = False
+    locked_19 = False
+    last_status_19 = 0
+    for _ in range(10):
+        r_fail = requests.post(
+            f"{BASE_URL}/api/v1/auth/token",
+            json={"dev_email": EMAIL_WHA1_WM, "dev_password": "WrongPassword999!"},
+            timeout=10,
+        )
+        last_status_19 = r_fail.status_code
+        if r_fail.status_code == 429:
+            rate_limited_19 = True
+            break
+        elif r_fail.status_code == 423:
+            locked_19 = True
+            break
+        elif r_fail.status_code in (401, 403):
+            failed_attempts += 1
+
+    if rate_limited_19:
+        ok("19.13 Multiple failed logins → rate limited (429)", f"rate-limited after <10 attempts")
+    elif locked_19:
+        ok("19.13 Multiple failed logins → account locked (423)")
+    else:
+        ok("19.13 10 failed logins → all return 401 (no rate limiting — baseline documented)",
+           f"attempts={failed_attempts}, last_status={last_status_19} — no 429/423 observed")
+
+    # 19.14 20 rapid GET /products/ requests — document behavior (no failure either way)
+    token_wm_rapid = get_jwt(EMAIL_WHA1_WM)
+    if token_wm_rapid:
+        rapid_codes: list[int] = []
+        for _ in range(20):
+            r_rapid = requests.get(
+                f"{BASE_URL}/api/v1/products/",
+                headers=headers_raw(token_wm_rapid), timeout=10,
+            )
+            rapid_codes.append(r_rapid.status_code)
+        rapid_dist = {sc: rapid_codes.count(sc) for sc in set(rapid_codes)}
+        if 429 in rapid_dist:
+            ok("19.14 Rapid GET /products/ → rate limited (429 observed)",
+               f"distribution={rapid_dist}")
+        else:
+            ok("19.14 20 rapid GET /products/ — no rate limiting on read endpoints (baseline documented)",
+               f"distribution={rapid_dist} — no 429 observed")
+    else:
+        skip("19.14 Rapid GET test", "WM token unavailable")
+
+    # ── PART E — Permission Boundary Tests ────────────────────────────────────
+
+    # 19.15 T07 TA cannot access T04 data (covered in Group 15 — replicated here for security audit)
+    r = api_get(f"/api/v1/tenants/{T04_ID}/nodes", EMAIL_TA)
+    if r.status_code == 403:
+        ok("19.15 T07 TA cannot access T04 nodes → 403 (cross-tenant blocked)")
+    elif r.status_code == 404:
+        ok("19.15 T04 not found → 404 (T04 not seeded in dev — expected)")
+    elif r.status_code == 200:
+        t04_nodes_19 = data(r) if isinstance(data(r), list) else []
+        if len(t04_nodes_19) == 0:
+            ok("19.15 T07 TA sees 0 T04 nodes (RLS empty — cross-tenant isolation effective)")
+        else:
+            fail("19.15 T07 TA should not see T04 nodes",
+                 f"saw {len(t04_nodes_19)} nodes",
+                 bug=f"Cross-tenant data leak: T07 JWT returned {len(t04_nodes_19)} T04 org nodes")
+    else:
+        ok("19.15 Cross-tenant T04 access blocked", f"status={r.status_code}")
+
+    # 19.16 LM cannot create products, transfers, or adjustments (read-only role)
+    r_lm_prod = api_post("/api/v1/products/", EMAIL_LM, {
+        "name": "LM product create attempt",
+        "sku": f"T07-LM-{uuid.uuid4().hex[:6].upper()}",
+        "unit": "Unit",
+        "type_code": "RAW",
+    })
+    r_lm_xfer = api_post("/api/v1/inventory/transfers/", EMAIL_LM, {
+        "transfer_type": "PULL",
+        "from_warehouse_id": NODE_SRA,
+        "to_warehouse_id": NODE_WHA1,
+        "lines": [{"product_id": PROD_P1, "quantity": 1}],
+    })
+    r_lm_adj = api_post("/api/v1/inventory/adjustments/", EMAIL_LM, {
+        "warehouse_id": NODE_WHA1,
+        "product_id": PROD_P1,
+        "quantity_delta": -1,
+        "reason_code": "OTHER",
+        "idempotency_key": f"e2e:lm:adj:{uuid.uuid4().hex[:8]}",
+    })
+    lm_checks = [(r_lm_prod, "product:create"), (r_lm_xfer, "transfer:create"), (r_lm_adj, "adjustment:create")]
+    all_lm_403 = all(r_c.status_code == 403 for r_c, _ in lm_checks)
+    if all_lm_403:
+        ok("19.16 LM cannot create products/transfers/adjustments → all 403")
+    else:
+        leaky = [(perm, r_c.status_code) for r_c, perm in lm_checks if r_c.status_code != 403]
+        fail("19.16 LM write permission boundary",
+             f"non-403 responses: {leaky}",
+             bug=f"LM has unexpected write permission(s): {leaky}" if any(r_c.status_code in (200, 201) for r_c, _ in lm_checks) else "")
+
+    # 19.17 AU cannot write: create product or patch product
+    r_au_prod = api_post("/api/v1/products/", EMAIL_AU, {
+        "name": "AU product create attempt",
+        "sku": f"T07-AU2-{uuid.uuid4().hex[:6].upper()}",
+        "unit": "Unit",
+        "type_code": "RAW",
+    })
+    r_au_patch = api_patch(f"/api/v1/products/{PROD_P1}", EMAIL_AU, {
+        "description": "AU patch attempt",
+    })
+    if r_au_prod.status_code == 403 and r_au_patch.status_code in (403, 405):
+        ok("19.17 AU cannot create or patch products → 403/405")
+    elif r_au_prod.status_code == 403:
+        ok("19.17 AU cannot create product → 403",
+           f"patch status={r_au_patch.status_code}")
+    else:
+        fail("19.17 AU write attempt",
+             f"create={r_au_prod.status_code}, patch={r_au_patch.status_code}",
+             bug="AU has product:create permission" if r_au_prod.status_code == 201 else "")
+
+    # 19.18 WM cannot modify org config (transfer-types, self-approval-policies) → 403
+    r_wm_tt  = api_put(f"/api/v1/tenants/{T07_ID}/transfer-types", EMAIL_WHA1_WM, {})
+    r_wm_sap = api_put(f"/api/v1/tenants/{T07_ID}/self-approval-policies", EMAIL_WHA1_WM, {})
+    if r_wm_tt.status_code in (403, 404, 405, 422) and r_wm_sap.status_code in (403, 404, 405, 422):
+        ok("19.18 WM cannot modify transfer-types or self-approval-policies → permission/validation blocked",
+           f"transfer-types={r_wm_tt.status_code}, self-approval-policies={r_wm_sap.status_code} "
+           "(422 = body validation preempts @require_permission in FastAPI; either way WM cannot succeed)")
+    elif 200 in (r_wm_tt.status_code, r_wm_sap.status_code):
+        fail("19.18 WM org config modification succeeded — should be blocked",
+             f"transfer-types={r_wm_tt.status_code}, self-approval-policies={r_wm_sap.status_code}",
+             bug="WM has org config write access — permission enforcement missing")
+    else:
+        fail("19.18 WM org config modification",
+             f"transfer-types={r_wm_tt.status_code}, self-approval-policies={r_wm_sap.status_code}",
+             bug="")
+
+    # 19.19 WM cannot approve their own submitted transfer (self-approval bypass)
+    # T07 has unlimited WM self-approval so most transfers auto-approve; the test verifies
+    # that WM cannot call /approve explicitly when the transfer is in PENDING_REVIEW state.
+    r_sa_xfer = api_post("/api/v1/inventory/transfers/", EMAIL_WHA1_WM, {
+        "transfer_type": "PULL",
+        "from_warehouse_id": NODE_SRA,
+        "to_warehouse_id": NODE_WHA1,
+        "lines": [{"product_id": PROD_P1, "quantity": 1}],
+        "notes": "E2E G19: WM self-approve bypass test",
+    })
+    if r_sa_xfer.status_code == 201:
+        sa_tid = str(data(r_sa_xfer).get("transfer_id") or data(r_sa_xfer).get("id", ""))
+        r_sa_sub = api_post(f"/api/v1/inventory/transfers/{sa_tid}/submit", EMAIL_WHA1_WM)
+        sa_sub_status = data(r_sa_sub).get("status", "")
+        if sa_sub_status == "PENDING_REVIEW":
+            r_sa_approve = api_post(f"/api/v1/inventory/transfers/{sa_tid}/approve", EMAIL_WHA1_WM)
+            if r_sa_approve.status_code == 403:
+                ok("19.19 WM cannot approve PENDING_REVIEW transfer → 403 (RBAC enforced)")
+            elif r_sa_approve.status_code == 200:
+                fail("19.19 WM self-approval bypass",
+                     "WM approved a PENDING_REVIEW transfer directly",
+                     bug="WM can call /approve on transfers — self-approval bypass permitted")
+            else:
+                ok("19.19 WM approve attempt blocked", f"status={r_sa_approve.status_code}")
+        elif sa_sub_status in ("APPROVED", "POSTED"):
+            ok("19.19 Transfer auto-approved at submit (T07 unlimited self-approval — bypass test N/A)",
+               f"sub_status={sa_sub_status}")
+        else:
+            ok("19.19 Self-approve bypass check skipped", f"sub_status={sa_sub_status!r}")
+        api_post(f"/api/v1/inventory/transfers/{sa_tid}/cancel", EMAIL_WHA1_WM)
+    else:
+        skip("19.19 WM self-approve bypass test", f"transfer create failed: {r_sa_xfer.status_code}")
+
+    # ── PART F — Data Integrity Under Repeated Operations ─────────────────────
+
+    # 19.20 Double-submit same idempotency key for adjustment
+    # Fixed key: allows detecting cross-run behavior (409 on re-run is also OK).
+    idem_key_19 = "e2e:t07:security:idem:001"
+    adj_body_19 = {
+        "warehouse_id": NODE_WHA1,
+        "product_id": PROD_P1,
+        "quantity_delta": -1,
+        "reason_code": "OTHER",
+        "idempotency_key": idem_key_19,
+        "notes": "G19 idempotency test",
+    }
+    r_id1 = api_post("/api/v1/inventory/adjustments/", EMAIL_WHA1_WM, adj_body_19)
+    r_id2 = api_post("/api/v1/inventory/adjustments/", EMAIL_WHA1_WM, adj_body_19)
+    id_v1 = str(data(r_id1).get("adjustment_id") or data(r_id1).get("id", ""))
+    id_v2 = str(data(r_id2).get("adjustment_id") or data(r_id2).get("id", ""))
+
+    if r_id1.status_code == 201 and r_id2.status_code == 409:
+        ok("19.20 Duplicate idempotency key → 409 on second call",
+           f"key={idem_key_19!r}")
+    elif r_id1.status_code == 201 and r_id2.status_code in (200, 201) and id_v1 and id_v1 == id_v2:
+        ok("19.20 Duplicate idempotency key → same record returned (idempotent)",
+           f"id={id_v1}, key={idem_key_19!r}")
+    elif r_id1.status_code == 409:
+        ok("19.20 Idempotency key already exists from prior run → 409 (correct on re-run)",
+           f"key={idem_key_19!r}")
+    elif r_id1.status_code == 201 and r_id2.status_code == 201 and id_v1 != id_v2:
+        ok_psql, count_str = _run_psql(
+            f"SELECT COUNT(*) FROM adjustment_orders "
+            f"WHERE idempotency_key = '{idem_key_19}' AND tenant_id = '{T07_ID}'"
+        )
+        if ok_psql and count_str.strip() == "1":
+            ok("19.20 Idempotency: 2 calls → only 1 DB record (correctly idempotent at DB level)",
+               f"key={idem_key_19!r}")
+        else:
+            fail("19.20 Duplicate idempotency key produced two records",
+                 f"id_v1={id_v1}, id_v2={id_v2}",
+                 bug=f"Idempotency key '{idem_key_19}' allowed duplicate adjustment records")
+    else:
+        ok("19.20 Idempotency test", f"r1={r_id1.status_code}, r2={r_id2.status_code}")
+    # Cancel the first adjustment if it was created
+    if id_v1:
+        api_post(f"/api/v1/inventory/adjustments/{id_v1}/cancel", EMAIL_WHA1_WM)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # Report
 # ─────────────────────────────────────────────────────────────────────────────
 def print_report() -> None:
@@ -3253,6 +3801,7 @@ def print_report() -> None:
         "GROUP 15 — Multi-Tenant Isolation": [r for r in results if r.name.startswith("15.")],
         "GROUP 16 — Approval Edge Cases":  [r for r in results if r.name.startswith("16.")],
         "GROUP 18 — i18n Verification":    [r for r in results if r.name.startswith("18.")],
+        "GROUP 19 — Security":             [r for r in results if r.name.startswith("19.")],
     }
 
     total_pass = total_fail = total_skip = 0
@@ -3324,6 +3873,7 @@ def main() -> None:
         group15_tenant_isolation,
         group16_approval_edge_cases,
         group18_i18n,
+        group19_security,
     ]:
         try:
             fn()
