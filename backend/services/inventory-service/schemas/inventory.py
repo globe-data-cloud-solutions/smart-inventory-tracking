@@ -6,7 +6,13 @@ from decimal import Decimal
 from enum import Enum
 from typing import List, Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
+
+
+def _no_null(v: object) -> object:
+    if isinstance(v, str) and '\x00' in v:
+        raise ValueError("Null bytes are not allowed in text fields")
+    return v
 
 
 class AdjustmentReasonCode(str, Enum):
@@ -35,6 +41,10 @@ class ReceiveStockRequest(BaseModel):
     idempotency_key: str
     source: str = "WEB"
 
+    @field_validator("lot_number", "idempotency_key", "source", mode="before")
+    @classmethod
+    def no_null_bytes(cls, v: object) -> object: return _no_null(v)
+
 
 class ReceiveStockResponse(BaseModel):
     transaction_id: uuid.UUID
@@ -52,11 +62,19 @@ class TransferOrderRequest(BaseModel):
     notes: Optional[str] = None
     transfer_type_config_id: Optional[uuid.UUID] = None
 
+    @field_validator("notes", "transfer_type", mode="before")
+    @classmethod
+    def no_null_bytes(cls, v: object) -> object: return _no_null(v)
+
 
 class TransferLineRequest(BaseModel):
     product_id: uuid.UUID
     quantity: Decimal = Field(gt=0)
     lot_number: Optional[str] = None
+
+    @field_validator("lot_number", mode="before")
+    @classmethod
+    def no_null_bytes(cls, v: object) -> object: return _no_null(v)
 
 
 class TransferOrderResponse(BaseModel):
@@ -77,6 +95,10 @@ class TransferOrderResponse(BaseModel):
 class TransferActionRequest(BaseModel):
     notes: Optional[str] = None
 
+    @field_validator("notes", mode="before")
+    @classmethod
+    def no_null_bytes(cls, v: object) -> object: return _no_null(v)
+
 
 class AdjustmentRequest(BaseModel):
     warehouse_id: uuid.UUID
@@ -86,6 +108,10 @@ class AdjustmentRequest(BaseModel):
     lot_number: Optional[str] = None
     idempotency_key: str
     notes: Optional[str] = None
+
+    @field_validator("lot_number", "idempotency_key", "notes", mode="before")
+    @classmethod
+    def no_null_bytes(cls, v: object) -> object: return _no_null(v)
 
 
 class AdjustmentResponse(BaseModel):
@@ -101,6 +127,10 @@ class CountSessionRequest(BaseModel):
     warehouse_id: uuid.UUID
     product_ids: Optional[List[uuid.UUID]] = None
     notes: Optional[str] = None
+
+    @field_validator("notes", mode="before")
+    @classmethod
+    def no_null_bytes(cls, v: object) -> object: return _no_null(v)
 
 
 class CountSessionResponse(BaseModel):
@@ -119,6 +149,10 @@ class IssueStockRequest(BaseModel):
     notes: Optional[str] = None
     idempotency_key: str
     source: str = "WEB"
+
+    @field_validator("reason_code", "issued_to", "notes", "idempotency_key", "source", mode="before")
+    @classmethod
+    def no_null_bytes(cls, v: object) -> object: return _no_null(v)
 
 
 class IssueStockResponse(BaseModel):
@@ -146,6 +180,10 @@ class AdjustStockRequest(BaseModel):
     idempotency_key: str
     source: str = "WEB"
     override_zero_floor: bool = False
+
+    @field_validator("notes", "idempotency_key", "source", mode="before")
+    @classmethod
+    def no_null_bytes(cls, v: object) -> object: return _no_null(v)
 
 
 class AdjustStockResponse(BaseModel):

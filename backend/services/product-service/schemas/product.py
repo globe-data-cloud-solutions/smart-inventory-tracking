@@ -11,10 +11,16 @@ from pydantic import BaseModel, Field, field_validator
 # ── helpers ───────────────────────────────────────────────────────────────────
 
 def _strip(v: object) -> object:
-    return v.strip() if isinstance(v, str) else v
+    if isinstance(v, str):
+        if '\x00' in v:
+            raise ValueError("Null bytes are not allowed in text fields")
+        return v.strip()
+    return v
 
 def _strip_opt(v: object) -> object:
     if isinstance(v, str):
+        if '\x00' in v:
+            raise ValueError("Null bytes are not allowed in text fields")
         s = v.strip()
         return s if s else None
     return v
