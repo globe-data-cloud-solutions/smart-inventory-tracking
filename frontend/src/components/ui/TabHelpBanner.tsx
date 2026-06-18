@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { useParams } from "next/navigation";
 
 interface TabHelpBannerProps {
   message: string;
@@ -9,15 +10,38 @@ interface TabHelpBannerProps {
   dismissible?: boolean;
 }
 
+const DISMISS_EXPIRY_MS = 7 * 24 * 60 * 60 * 1000;
+
+function getKey(org: string, storageKey: string): string {
+  return `org-setup-help-${org}-${storageKey}`;
+}
+
+function isDismissed(org: string, storageKey: string): boolean {
+  try {
+    const raw = localStorage.getItem(getKey(org, storageKey));
+    if (!raw) return false;
+    const { dismissedAt } = JSON.parse(raw) as { dismissedAt: number };
+    return Date.now() - dismissedAt < DISMISS_EXPIRY_MS;
+  } catch {
+    return false;
+  }
+}
+
+function setDismissed(org: string, storageKey: string): void {
+  localStorage.setItem(getKey(org, storageKey), JSON.stringify({ dismissedAt: Date.now() }));
+}
+
 export function TabHelpBanner({ message, tip, storageKey, dismissible = true }: TabHelpBannerProps) {
-  const fullKey = `org-setup-help-${storageKey}`;
-  const [dismissed, setDismissed] = useState(
-    () => dismissible && typeof window !== "undefined" && sessionStorage.getItem(fullKey) === "dismissed"
+  const params = useParams();
+  const org = (params?.org as string) ?? "default";
+
+  const [dismissed, setDismissedState] = useState(
+    () => dismissible && typeof window !== "undefined" && isDismissed(org, storageKey)
   );
 
   function handleDismiss() {
-    sessionStorage.setItem(fullKey, "dismissed");
-    setDismissed(true);
+    setDismissed(org, storageKey);
+    setDismissedState(true);
   }
 
   if (dismissed) return null;
