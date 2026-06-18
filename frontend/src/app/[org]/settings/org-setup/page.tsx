@@ -56,6 +56,13 @@ function defaultDisplayLabel(code: string): string {
   return ROLE_OPTIONS.find((r) => r.code === code)?.label ?? code;
 }
 
+// Resolve a role's display label for a given hierarchy level: the TA's custom
+// role_display_label if set, otherwise the system default name for the role code.
+function getRoleLabel(roleCode: string, hierarchyLevels: HierarchyLevel[], levelNumber: number): string {
+  const level = hierarchyLevels.find((l) => l.level_number === levelNumber);
+  return level?.role_display_label || defaultDisplayLabel(roleCode);
+}
+
 /* ── Helpers ───────────────────────────────────────────────────────────────── */
 
 function flattenNodes(nodes: OrgNode[]): OrgNode[] {
@@ -82,8 +89,8 @@ function LevelsTab({ tenantId }: { tenantId: string }) {
   const [renameError, setRenameError] = useState<string | null>(null);
 
   const renameMutation = useMutation({
-    mutationFn: ({ levelId, name }: { levelId: string; name: string }) =>
-      api.patch(`/api/v1/tenants/${tenantId}/hierarchy/config/${levelId}`, { level_name: name }),
+    mutationFn: ({ levelId, patch }: { levelId: string; patch: { level_name?: string; role_display_label?: string } }) =>
+      api.patch(`/api/v1/tenants/${tenantId}/hierarchy/config/${levelId}`, patch),
     onSuccess: (_data, vars) => {
       void qc.invalidateQueries({ queryKey: ["hierarchy-config", tenantId] });
       setRenameError(null);
@@ -223,7 +230,7 @@ function LevelsTab({ tenantId }: { tenantId: string }) {
               <th className="px-3 py-2 text-left text-xs font-semibold text-gray-500 w-12">No</th>
               <th className="px-3 py-2 text-left text-xs font-semibold text-gray-500">Level Name *</th>
               <th className="px-3 py-2 text-left text-xs font-semibold text-gray-500">Role *</th>
-              <th className="px-3 py-2 text-left text-xs font-semibold text-gray-500">Display Label</th>
+              <th className="px-3 py-2 text-left text-xs font-semibold text-gray-500">{t("org_setup.role_display_name")}</th>
               <th className="px-3 py-2 text-center text-xs font-semibold text-gray-500 w-24">Holds Stock</th>
             </tr>
           </thead>
@@ -245,7 +252,7 @@ function LevelsTab({ tenantId }: { tenantId: string }) {
                       onBlur={(e) => {
                         const name = e.target.value.trim();
                         if (persisted && lv.id && name.length >= 2 && name !== savedLevels.find((s) => s.id === lv.id)?.level_name) {
-                          renameMutation.mutate({ levelId: lv.id, name });
+                          renameMutation.mutate({ levelId: lv.id, patch: { level_name: name } });
                         }
                       }}
                       onKeyDown={(e) => { if (e.key === "Enter") e.currentTarget.blur(); }}
@@ -274,17 +281,32 @@ function LevelsTab({ tenantId }: { tenantId: string }) {
                     )}
                   </td>
                   <td className="px-3 py-2">
-                    {persisted ? (
-                      <span className="text-sm text-gray-600">{lv.role_display_label || defaultDisplayLabel(lv.default_role_code)}</span>
-                    ) : (
+                    <div className="flex items-center gap-2">
                       <input
                         type="text"
-                        value={lv.role_display_label}
+                        value={lv.role_display_label ?? ""}
                         onChange={(e) => updateLevel(idx, { role_display_label: e.target.value })}
+                        onBlur={(e) => {
+                          const label = e.target.value.trim();
+                          if (persisted && lv.id && label !== (savedLevels.find((s) => s.id === lv.id)?.role_display_label ?? "")) {
+                            if (label === "" || label.length >= 2) {
+                              renameMutation.mutate({ levelId: lv.id, patch: { role_display_label: label } });
+                            }
+                          }
+                        }}
+                        onKeyDown={(e) => { if (e.key === "Enter") e.currentTarget.blur(); }}
                         placeholder={defaultDisplayLabel(lv.default_role_code)}
                         className="w-full border border-gray-300 rounded px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
                       />
-                    )}
+                      <span
+                        title={t("org_setup.role_code_locked")}
+                        className="shrink-0 text-xs text-gray-400 bg-gray-100 px-1.5 py-0.5 rounded"
+                      >
+                        ({lv.default_role_code})
+                      </span>
+                    </div>
+                    <p className="text-xs text-gray-400 mt-1">{t("org_setup.role_display_name_hint")}</p>
+                    {renamedIdx === idx && <p className="text-xs text-emerald-600 mt-0.5">{t("common.saved")}</p>}
                   </td>
                   <td className="px-3 py-2 text-center">
                     <input
@@ -1436,10 +1458,11 @@ const ROLE_BADGE_COLORS: Record<string, string> = {
   SA: "bg-purple-600 text-white",
 };
 
-function RoleBadge({ role }: { role: string }) {
+function RoleBadge({ role, customLabel }: { role: string; customLabel?: string }) {
+  const display = customLabel ? `${customLabel} (${role})` : role;
   return (
     <span className={`px-2 py-0.5 rounded text-xs font-medium ${ROLE_BADGE_COLORS[role] ?? "bg-gray-300 text-gray-700"}`}>
-      {role}
+      {display}
     </span>
   );
 }
@@ -1765,7 +1788,10 @@ function PositionsTab({ tenantId }: { tenantId: string }) {
                         <p className="text-sm font-semibold text-gray-800 m-0">{pos.title}</p>
                         <p className="text-xs text-gray-500 m-0 flex items-center gap-1.5">
                           <span>{t("position.role")}:</span>
-                          <RoleBadge role={pos.role_code} />
+                          <RoleBadge
+                            role={pos.role_code}
+                            customLabel={selectedGroup ? getRoleLabel(pos.role_code, levels, selectedGroup.level_number) : undefined}
+                          />
                           {pos.reports_to_title ? <span>· Reports to: {pos.reports_to_title}</span> : null}
                         </p>
                         <p className="text-xs m-0 mt-0.5">

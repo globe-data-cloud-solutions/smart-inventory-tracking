@@ -45,14 +45,29 @@ class HierarchyLevelOut(BaseModel):
 
 
 class HierarchyLevelRename(BaseModel):
-    level_name: str
+    level_name: Optional[str] = None
+    role_display_label: Optional[str] = None
 
     @field_validator("level_name")
     @classmethod
-    def _validate_level_name(cls, v: str) -> str:
+    def _validate_level_name(cls, v: Optional[str]) -> Optional[str]:
+        if v is None:
+            return v
         v = v.strip()
         if not (2 <= len(v) <= 50):
             raise ValueError("level_name must be between 2 and 50 characters")
+        return v
+
+    @field_validator("role_display_label")
+    @classmethod
+    def _validate_role_display_label(cls, v: Optional[str]) -> Optional[str]:
+        if v is None:
+            return v
+        v = v.strip()
+        if v == "":
+            return None  # clearing reverts to the system default role name
+        if not (2 <= len(v) <= 50):
+            raise ValueError("role_display_label must be between 2 and 50 characters")
         return v
 
 
@@ -294,19 +309,36 @@ async def rename_hierarchy_level(
     user=Depends(get_current_user),
     db: AsyncSession = Depends(get_db_session_for_tenant),
 ) -> SuccessResponse[HierarchyLevelOut]:
-    """Rename a single hierarchy level. level_number, default_role_code, and
-    is_stock_holding are immutable once a level exists — only level_name can change."""
+    """Rename a level and/or set its role_display_label. level_number, default_role_code,
+    and is_stock_holding are immutable once a level exists — those never change here."""
+    fields_set = body.model_fields_set
+    set_clauses: list[str] = []
+    params: dict[str, object] = {"id": str(level_id), "tid": str(tenant_id)}
+
+    if "level_name" in fields_set:
+        if body.level_name is None:
+            raise HTTPException(status_code=422, detail="level_name cannot be cleared")
+        set_clauses.append("level_name = :name")
+        params["name"] = body.level_name
+
+    if "role_display_label" in fields_set:
+        set_clauses.append("role_display_label = :label")
+        params["label"] = body.role_display_label  # None clears it back to the system default
+
+    if not set_clauses:
+        raise HTTPException(status_code=400, detail="No fields to update")
+
     row = await db.execute(
         text(
-            """
+            f"""
             UPDATE tenant_hierarchy_config
-            SET level_name = :name, updated_at = now()
+            SET {', '.join(set_clauses)}, updated_at = now()
             WHERE id = :id AND tenant_id = :tid
             RETURNING id, tenant_id, level_number, level_name, default_role_code,
                       role_display_label, is_stock_holding, is_active
             """
         ),
-        {"name": body.level_name, "id": str(level_id), "tid": str(tenant_id)},
+        params,
     )
     updated = row.fetchone()
     if not updated:

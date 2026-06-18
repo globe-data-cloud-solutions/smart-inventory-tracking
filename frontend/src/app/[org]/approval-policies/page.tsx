@@ -149,9 +149,19 @@ function resolvePositionLabel(
   return fallback;
 }
 
+// System default names for role codes — overridden by the TA's custom role_display_label.
+const ROLE_DEFAULT_NAMES: Record<string, string> = {
+  NM: "National Manager",
+  RM: "Regional Manager",
+  WM: "Warehouse Manager",
+  LM: "Logistics Manager",
+  AU: "Auditor",
+  TA: "Tenant Administrator",
+};
+
 function levelEscalationLabel(levelNumber: number, hierarchyLevels: HierarchyLevel[]): string {
   const upper = hierarchyLevels.find((l) => l.level_number === levelNumber - 1);
-  if (upper) return upper.role_display_label || upper.level_name;
+  if (upper) return upper.role_display_label || ROLE_DEFAULT_NAMES[upper.default_role_code] || upper.level_name;
   return t("approval_policies.higher_authority");
 }
 
