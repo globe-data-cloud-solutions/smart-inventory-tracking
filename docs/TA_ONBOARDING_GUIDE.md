@@ -37,6 +37,47 @@ Have the following ready:
 
 ---
 
+## System Roles — Predefined by SMART
+
+SMART uses a fixed set of roles. These are defined by the platform and cannot be changed — you assign staff to these roles when creating positions and user accounts.
+
+| Role | Code | Scope | What They Do |
+|------|------|-------|-------------|
+| Super Admin | SA | Platform-wide | Platform operator only — manages all tenants. Not used within your organisation. |
+| Tenant Administrator | TA | Full tenant | Configures the entire tenant — org structure, approval rules, users, branding. You are this role. |
+| National Manager | NM | Full tenant | Senior operational role — approves high-value transfers, oversees all facilities, creates products. |
+| Regional Manager | RM | Regional scope | Mid-level role — approves transfers within their region, manages regional stock. |
+| Warehouse Manager | WM | Warehouse scope | Operational role — creates transfers, receives stock, submits adjustments at their warehouse. |
+| Logistics Manager | LM | Tenant-wide | Read-only operational view — monitors transfers and stock movements across the organisation. |
+| Auditor | AU | Tenant-wide | Read-only compliance role — views all audit logs, transactions, and reports. Cannot create or modify anything. |
+
+### Role Hierarchy
+TA (highest tenant authority)
+
+└── NM (National/Factory level)
+
+└── RM (Regional level)
+
+└── WM (Warehouse level)
+
+LM (cross-cutting, read-mostly)
+
+AU (cross-cutting, read-only)
+
+### How Roles Map to Your Organisation
+
+When you create a **Position** (Step 3), you assign it one of these role codes:
+
+- **L1 nodes** (top level, e.g. Main Factory) → assign **NM** positions
+- **L2 nodes** (e.g. Regional Center) → assign **RM** positions
+- **L3 nodes** (e.g. Sub Region) → assign **RM** positions
+- **L4 nodes** (e.g. Warehouse Area, stock-holding) → assign **WM** positions
+- **Tenant-wide** (not tied to a node) → **AU** and **LM** positions
+
+> **Note:** The TA role is your administrator account only — you do not create TA positions for regular staff. NM is the highest role your operational staff will use.
+
+---
+
 ## Setup Order
 
 Complete these steps in order — each step depends on the previous one.
