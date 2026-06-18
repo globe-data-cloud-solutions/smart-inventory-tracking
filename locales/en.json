@@ -1072,7 +1072,7 @@
     "role": "System Role",
     "reports_to": "Reports To",
     "holder": "Current Holder",
-    "vacant": "Vacant",
+    "vacant": "Vacant — no one assigned",
     "add": "Add Position",
     "save": "Save Position",
     "no_positions": "No positions defined for this node.",

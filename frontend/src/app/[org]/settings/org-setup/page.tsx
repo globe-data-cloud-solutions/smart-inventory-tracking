@@ -1288,6 +1288,24 @@ const POSITION_ROLES = [
   { code: "RT", label: "Retailer" },
 ] as const;
 
+const ROLE_BADGE_COLORS: Record<string, string> = {
+  NM: "bg-green-800 text-white",
+  RM: "bg-green-600 text-white",
+  WM: "bg-green-400 text-white",
+  AU: "bg-blue-500 text-white",
+  LM: "bg-gray-500 text-white",
+  TA: "bg-teal-600 text-white",
+  SA: "bg-purple-600 text-white",
+};
+
+function RoleBadge({ role }: { role: string }) {
+  return (
+    <span className={`px-2 py-0.5 rounded text-xs font-medium ${ROLE_BADGE_COLORS[role] ?? "bg-gray-300 text-gray-700"}`}>
+      {role}
+    </span>
+  );
+}
+
 /* ── Tab 3: Positions ───────────────────────────────────────────────────────── */
 
 function PositionsTab({ tenantId }: { tenantId: string }) {
@@ -1412,20 +1430,28 @@ function PositionsTab({ tenantId }: { tenantId: string }) {
     const levelLabel = levels.find((l) => l.level_number === node.hierarchy_level)?.level_name ?? `L${node.hierarchy_level}`;
     const isSelected = node.id === selectedNodeId;
     const groupCount = posGroups.find((g) => g.node_id === node.id)?.positions.length ?? 0;
+    const countBadgeColor = groupCount === 0
+      ? "bg-red-100 text-red-700"
+      : groupCount === 1
+      ? "bg-amber-100 text-amber-700"
+      : "bg-green-100 text-green-700";
     return (
       <div key={node.id}>
         <button
           type="button"
           onClick={() => { setSelectedNodeId(node.id); cancelForm(); }}
           className={`w-full text-left flex items-center gap-2 px-3 py-2 rounded-lg border text-sm transition-all ${
-            isSelected ? "border-emerald-500 bg-emerald-50 font-semibold" : "border-gray-200 bg-white hover:bg-gray-50"
+            isSelected
+              ? "border-gray-200 border-l-4 border-l-green-600 bg-green-50 font-semibold pl-2"
+              : "border-gray-200 bg-white hover:bg-gray-50"
           }`}
           style={{ marginLeft: `${depth * 16}px` }}
         >
           <span className="shrink-0">{node.is_stock_holding ? "🏭" : "📋"}</span>
-          <span className="flex-1 truncate">{node.name}</span>
+          <span className="flex-1 truncate max-w-[140px]" title={node.name}>{node.name}</span>
           <span className="text-xs text-gray-400 shrink-0">{levelLabel}</span>
-          {groupCount > 0 && <span className="text-xs bg-emerald-100 text-emerald-700 px-1.5 rounded-full shrink-0">{groupCount}</span>}
+          <span className={`text-xs rounded-full px-1.5 py-0.5 font-medium shrink-0 ${countBadgeColor}`}>{groupCount}</span>
+          {isSelected && <span className="text-green-600 shrink-0">&rsaquo;</span>}
         </button>
         {node.children.map((c) => renderTreeNode(c, depth + 1))}
       </div>
@@ -1451,7 +1477,9 @@ function PositionsTab({ tenantId }: { tenantId: string }) {
           <div className="space-y-3">
             <div className="flex items-center justify-between">
               <h3 className="text-sm font-semibold text-gray-800">
-                {t("wizard.positions_tab")}: {selectedGroup?.node_name ?? ""}
+                {t("wizard.positions_tab")} <span className="text-gray-400">&rsaquo;</span>{" "}
+                {selectedNode ? (levels.find((l) => l.level_number === selectedNode.hierarchy_level)?.level_name ?? `L${selectedNode.hierarchy_level}`) : ""}{" "}
+                <span className="text-gray-400">&rsaquo;</span> {selectedGroup?.node_name ?? ""}
               </h3>
               {!showAddForm && !editPosId && (
                 <button type="button" onClick={openAdd}
@@ -1577,7 +1605,13 @@ function PositionsTab({ tenantId }: { tenantId: string }) {
             {/* Positions list */}
             {posLoading ? <p className="text-xs text-gray-400">{t("common.loading")}</p>
               : (selectedGroup?.positions ?? []).length === 0 && !showAddForm ? (
-                <p className="text-sm text-gray-400 py-4 text-center">{t("position.no_positions")}</p>
+                <div className="text-center text-gray-400 py-12">
+                  <p>{t("position.no_positions")}</p>
+                  <button type="button" onClick={openAdd}
+                    className="mt-3 px-3 py-1 bg-emerald-600 text-white text-xs font-semibold rounded hover:bg-emerald-700">
+                    + {t("position.add")}
+                  </button>
+                </div>
               ) : (
                 <div className="space-y-2">
                   {(selectedGroup?.positions ?? []).filter((p) => p.is_active).map((pos) => (
@@ -1585,11 +1619,15 @@ function PositionsTab({ tenantId }: { tenantId: string }) {
                       editPosId === pos.id ? "border-blue-300 bg-blue-50" : "border-gray-200 bg-white"}`}>
                       <div className="min-w-0 flex-1">
                         <p className="text-sm font-semibold text-gray-800 m-0">{pos.title}</p>
-                        <p className="text-xs text-gray-500 m-0">{t("position.role")}: {pos.role_code}{pos.reports_to_title ? ` · Reports to: ${pos.reports_to_title}` : ""}</p>
+                        <p className="text-xs text-gray-500 m-0 flex items-center gap-1.5">
+                          <span>{t("position.role")}:</span>
+                          <RoleBadge role={pos.role_code} />
+                          {pos.reports_to_title ? <span>· Reports to: {pos.reports_to_title}</span> : null}
+                        </p>
                         <p className="text-xs m-0 mt-0.5">
                           {t("position.holder")}: {pos.current_holder
                             ? <span className="text-emerald-700 font-medium">{pos.current_holder.name}</span>
-                            : <span className="text-gray-400">{t("position.vacant")}</span>}
+                            : <span className="text-amber-600 font-medium">⚠️ {t("position.vacant")}</span>}
                         </p>
                       </div>
                       <div className="flex gap-1 shrink-0">
