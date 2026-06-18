@@ -11,7 +11,7 @@ import uuid
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -42,6 +42,18 @@ class HierarchyLevelOut(BaseModel):
     role_display_label: Optional[str]
     is_stock_holding: bool
     is_active: bool
+
+
+class HierarchyLevelRename(BaseModel):
+    level_name: str
+
+    @field_validator("level_name")
+    @classmethod
+    def _validate_level_name(cls, v: str) -> str:
+        v = v.strip()
+        if not (2 <= len(v) <= 50):
+            raise ValueError("level_name must be between 2 and 50 characters")
+        return v
 
 
 class OrgNodeCreate(BaseModel):
@@ -270,6 +282,50 @@ async def upsert_hierarchy_config(
     return SuccessResponse(data=levels)
 
 
+@router.patch(
+    "/{tenant_id}/hierarchy/config/{level_id}",
+    response_model=SuccessResponse[HierarchyLevelOut],
+)
+@require_permission(PERMISSIONS.TENANT_MANAGE)
+async def rename_hierarchy_level(
+    tenant_id: uuid.UUID,
+    level_id: uuid.UUID,
+    body: HierarchyLevelRename,
+    user=Depends(get_current_user),
+    db: AsyncSession = Depends(get_db_session_for_tenant),
+) -> SuccessResponse[HierarchyLevelOut]:
+    """Rename a single hierarchy level. level_number, default_role_code, and
+    is_stock_holding are immutable once a level exists — only level_name can change."""
+    row = await db.execute(
+        text(
+            """
+            UPDATE tenant_hierarchy_config
+            SET level_name = :name, updated_at = now()
+            WHERE id = :id AND tenant_id = :tid
+            RETURNING id, tenant_id, level_number, level_name, default_role_code,
+                      role_display_label, is_stock_holding, is_active
+            """
+        ),
+        {"name": body.level_name, "id": str(level_id), "tid": str(tenant_id)},
+    )
+    updated = row.fetchone()
+    if not updated:
+        raise HTTPException(status_code=404, detail="Hierarchy level not found")
+
+    return SuccessResponse(
+        data=HierarchyLevelOut(
+            id=updated.id,
+            tenant_id=updated.tenant_id,
+            level_number=updated.level_number,
+            level_name=updated.level_name,
+            default_role_code=updated.default_role_code,
+            role_display_label=updated.role_display_label,
+            is_stock_holding=updated.is_stock_holding,
+            is_active=updated.is_active,
+        )
+    )
+
+
 # ── Org node endpoints ────────────────────────────────────────────────────────
 
 @router.get(
@@ -279,6 +335,7 @@ async def upsert_hierarchy_config(
 @require_permission(PERMISSIONS.INVENTORY_VIEW)
 async def list_org_nodes(
     tenant_id: uuid.UUID,
+    include_inactive: bool = False,
     user=Depends(get_current_user),
     db: AsyncSession = Depends(get_db_session_for_tenant),
 ) -> SuccessResponse[List[OrgNodeOut]]:
@@ -286,6 +343,7 @@ async def list_org_nodes(
     # Manager = the PRIMARY personnel_position holder at the node with the highest
     # authority role (NM > RM > WM = LM > …). LATERAL subquery returns at most one
     # manager per node, ordered by role authority descending.
+    active_filter = "" if include_inactive else "AND n.is_active = true "
     rows = await db.execute(
         text(
             "SELECT n.id, n.tenant_id, n.name, n.code, n.hierarchy_level, n.parent_node_id, "
@@ -307,7 +365,7 @@ async def list_org_nodes(
             "    WHEN 'WM' THEN 6 WHEN 'SA_GT' THEN 4 ELSE 0 END DESC "
             "  LIMIT 1"
             ") mgr ON true "
-            "WHERE n.tenant_id = :tid AND n.is_active = true "
+            "WHERE n.tenant_id = :tid " + active_filter +
             "ORDER BY n.hierarchy_level, n.name"
         ),
         {"tid": str(tenant_id)},
@@ -574,6 +632,163 @@ async def delete_org_node(
         {"id": str(node_id), "tid": str(tenant_id)},
     )
     return SuccessResponse(data={"deleted": str(node_id)})
+
+
+@router.patch(
+    "/{tenant_id}/nodes/{node_id}/deactivate",
+    response_model=SuccessResponse[dict],
+)
+@require_permission(PERMISSIONS.TENANT_MANAGE)
+async def deactivate_org_node(
+    tenant_id: uuid.UUID,
+    node_id: uuid.UUID,
+    user=Depends(get_current_user),
+    db: AsyncSession = Depends(get_db_session_for_tenant),
+) -> SuccessResponse[dict]:
+    row = await db.execute(
+        text(
+            "SELECT id FROM organization_node "
+            "WHERE id = :id AND tenant_id = :tid AND is_active = true"
+        ),
+        {"id": str(node_id), "tid": str(tenant_id)},
+    )
+    if not row.fetchone():
+        raise HTTPException(status_code=404, detail="Node not found")
+
+    # CHECK 1 — no stock on hand
+    stock_row = await db.execute(
+        text(
+            "SELECT COALESCE(SUM(quantity), 0) AS total "
+            "FROM inventory_balances "
+            "WHERE warehouse_id = :wid AND tenant_id = :tid"
+        ),
+        {"wid": str(node_id), "tid": str(tenant_id)},
+    )
+    stock_total = stock_row.fetchone()
+    if stock_total and float(stock_total.total) > 0:
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "code": "NODE_HAS_STOCK",
+                "message": "Cannot deactivate — this location has stock on hand. "
+                           "Transfer or adjust stock to zero first.",
+            },
+        )
+
+    # CHECK 2 — no open transfers
+    transfer_row = await db.execute(
+        text(
+            "SELECT COUNT(*) AS cnt FROM transfer_orders "
+            "WHERE (from_warehouse_id = :wid OR to_warehouse_id = :wid) "
+            "AND status NOT IN ('COMPLETED', 'CANCELLED', 'REJECTED') "
+            "AND tenant_id = :tid"
+        ),
+        {"wid": str(node_id), "tid": str(tenant_id)},
+    )
+    transfer_count = transfer_row.fetchone()
+    if transfer_count and transfer_count.cnt > 0:
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "code": "NODE_HAS_OPEN_TRANSFERS",
+                "message": f"Cannot deactivate — this location has {transfer_count.cnt} "
+                           "open transfer(s). Complete or cancel them first.",
+            },
+        )
+
+    # CHECK 3 — no pending adjustments
+    adj_row = await db.execute(
+        text(
+            "SELECT COUNT(*) AS cnt FROM adjustment_orders "
+            "WHERE warehouse_id = :wid "
+            "AND status NOT IN ('POSTED', 'CANCELLED', 'REJECTED') "
+            "AND tenant_id = :tid"
+        ),
+        {"wid": str(node_id), "tid": str(tenant_id)},
+    )
+    adj_count = adj_row.fetchone()
+    if adj_count and adj_count.cnt > 0:
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "code": "NODE_HAS_PENDING_ADJUSTMENTS",
+                "message": f"Cannot deactivate — this location has {adj_count.cnt} "
+                           "pending adjustment(s).",
+            },
+        )
+
+    # CHECK 4 — no users whose ONLY active position is at this node
+    sole_row = await db.execute(
+        text(
+            """
+            SELECT COUNT(DISTINCT pp.user_id) AS cnt
+            FROM personnel_positions pp
+            JOIN positions p ON p.id = pp.position_id
+            WHERE pp.tenant_id = :tid
+              AND pp.is_active = true
+              AND (pp.valid_until IS NULL OR pp.valid_until >= CURRENT_DATE)
+              AND p.node_id = :wid
+              AND pp.user_id IN (
+                  SELECT user_id FROM personnel_positions
+                  WHERE tenant_id = :tid AND is_active = true
+                    AND (valid_until IS NULL OR valid_until >= CURRENT_DATE)
+                  GROUP BY user_id HAVING COUNT(*) = 1
+              )
+            """
+        ),
+        {"wid": str(node_id), "tid": str(tenant_id)},
+    )
+    sole_count = sole_row.fetchone()
+    if sole_count and sole_count.cnt > 0:
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "code": "NODE_HAS_SOLE_USERS",
+                "message": f"Cannot deactivate — {sole_count.cnt} staff member(s) have "
+                           "this as their only position. Reassign them to another "
+                           "position first.",
+            },
+        )
+
+    await db.execute(
+        text(
+            "UPDATE organization_node SET is_active = false, updated_at = now() "
+            "WHERE id = :id AND tenant_id = :tid"
+        ),
+        {"id": str(node_id), "tid": str(tenant_id)},
+    )
+    return SuccessResponse(data={"deactivated": str(node_id)})
+
+
+@router.patch(
+    "/{tenant_id}/nodes/{node_id}/reactivate",
+    response_model=SuccessResponse[dict],
+)
+@require_permission(PERMISSIONS.TENANT_MANAGE)
+async def reactivate_org_node(
+    tenant_id: uuid.UUID,
+    node_id: uuid.UUID,
+    user=Depends(get_current_user),
+    db: AsyncSession = Depends(get_db_session_for_tenant),
+) -> SuccessResponse[dict]:
+    row = await db.execute(
+        text(
+            "SELECT id FROM organization_node "
+            "WHERE id = :id AND tenant_id = :tid AND is_active = false"
+        ),
+        {"id": str(node_id), "tid": str(tenant_id)},
+    )
+    if not row.fetchone():
+        raise HTTPException(status_code=404, detail="Inactive node not found")
+
+    await db.execute(
+        text(
+            "UPDATE organization_node SET is_active = true, updated_at = now() "
+            "WHERE id = :id AND tenant_id = :tid"
+        ),
+        {"id": str(node_id), "tid": str(tenant_id)},
+    )
+    return SuccessResponse(data={"reactivated": str(node_id)})
 
 
 # ── Supply route endpoints ─────────────────────────────────────────────────────

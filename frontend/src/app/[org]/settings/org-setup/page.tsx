@@ -13,6 +13,7 @@ import { TabHelpBanner } from "@/components/ui/TabHelpBanner";
 /* ── Types ─────────────────────────────────────────────────────────────────── */
 
 interface HierarchyLevel {
+  id?: string;
   level_number: number;
   level_name: string;
   default_role_code: string;
@@ -75,6 +76,24 @@ function LevelsTab({ tenantId }: { tenantId: string }) {
     queryKey: ["hierarchy-config", tenantId],
     queryFn: () => api.get<HierarchyLevel[]>(`/api/v1/tenants/${tenantId}/hierarchy/config`),
     staleTime: 30_000,
+  });
+
+  const [renamedIdx, setRenamedIdx] = useState<number | null>(null);
+  const [renameError, setRenameError] = useState<string | null>(null);
+
+  const renameMutation = useMutation({
+    mutationFn: ({ levelId, name }: { levelId: string; name: string }) =>
+      api.patch(`/api/v1/tenants/${tenantId}/hierarchy/config/${levelId}`, { level_name: name }),
+    onSuccess: (_data, vars) => {
+      void qc.invalidateQueries({ queryKey: ["hierarchy-config", tenantId] });
+      setRenameError(null);
+      const idx = levels.findIndex((l) => l.id === vars.levelId);
+      setRenamedIdx(idx);
+      setTimeout(() => setRenamedIdx(null), 2500);
+    },
+    onError: (e: unknown) => {
+      setRenameError(e instanceof Error ? e.message : t("common.error"));
+    },
   });
 
   // Local editable copy — initialised with defaults so inputs are editable on first render
@@ -191,59 +210,81 @@ function LevelsTab({ tenantId }: { tenantId: string }) {
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-100">
-            {levels.map((lv, idx) => (
-              <tr key={lv.level_number} className="hover:bg-gray-50">
-                <td className="px-3 py-2">
-                  <span className="w-7 h-7 rounded-full bg-emerald-600 text-white text-xs font-bold flex items-center justify-center">
-                    {lv.level_number}
-                  </span>
-                </td>
-                <td className="px-3 py-2">
-                  <input
-                    type="text"
-                    value={lv.level_name}
-                    onChange={(e) => updateLevel(idx, { level_name: e.target.value })}
-                    placeholder={["Main Factory", "Region", "Warehouse", "Sub-Warehouse", "Counter"][idx] ?? ""}
-                    className="w-full border border-gray-300 rounded px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
-                  />
-                </td>
-                <td className="px-3 py-2">
-                  <select
-                    value={lv.default_role_code}
-                    onChange={(e) => updateLevel(idx, {
-                      default_role_code: e.target.value,
-                      role_display_label: lv.role_display_label || defaultDisplayLabel(e.target.value),
-                    })}
-                    className="border border-gray-300 rounded px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
-                  >
-                    {ROLE_OPTIONS.map((r) => (
-                      <option key={r.code} value={r.code}>{r.code} — {r.label}</option>
-                    ))}
-                  </select>
-                </td>
-                <td className="px-3 py-2">
-                  <input
-                    type="text"
-                    value={lv.role_display_label}
-                    onChange={(e) => updateLevel(idx, { role_display_label: e.target.value })}
-                    placeholder={defaultDisplayLabel(lv.default_role_code)}
-                    className="w-full border border-gray-300 rounded px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
-                  />
-                </td>
-                <td className="px-3 py-2 text-center">
-                  <input
-                    type="checkbox"
-                    checked={lv.is_stock_holding}
-                    onChange={(e) => updateLevel(idx, { is_stock_holding: e.target.checked })}
-                    className="w-4 h-4 rounded border-gray-300 text-emerald-600 focus:ring-emerald-500"
-                  />
-                </td>
-              </tr>
-            ))}
+            {levels.map((lv, idx) => {
+              const persisted = !!lv.id;
+              return (
+                <tr key={lv.level_number} className="hover:bg-gray-50 align-top">
+                  <td className="px-3 py-2">
+                    <span className="w-7 h-7 rounded-full bg-emerald-600 text-white text-xs font-bold flex items-center justify-center">
+                      {lv.level_number}
+                    </span>
+                  </td>
+                  <td className="px-3 py-2">
+                    <input
+                      type="text"
+                      value={lv.level_name}
+                      onChange={(e) => updateLevel(idx, { level_name: e.target.value })}
+                      onBlur={(e) => {
+                        const name = e.target.value.trim();
+                        if (persisted && lv.id && name.length >= 2 && name !== savedLevels.find((s) => s.id === lv.id)?.level_name) {
+                          renameMutation.mutate({ levelId: lv.id, name });
+                        }
+                      }}
+                      onKeyDown={(e) => { if (e.key === "Enter") e.currentTarget.blur(); }}
+                      placeholder={["Main Factory", "Region", "Warehouse", "Sub-Warehouse", "Counter"][idx] ?? ""}
+                      className="w-full border border-gray-300 rounded px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                    />
+                    <p className="text-xs text-gray-400 mt-1">{t("org_setup.level_rename_hint")}</p>
+                    {renamedIdx === idx && <p className="text-xs text-emerald-600 mt-0.5">{t("common.saved")}</p>}
+                  </td>
+                  <td className="px-3 py-2">
+                    {persisted ? (
+                      <span className="text-sm text-gray-600">{lv.default_role_code}</span>
+                    ) : (
+                      <select
+                        value={lv.default_role_code}
+                        onChange={(e) => updateLevel(idx, {
+                          default_role_code: e.target.value,
+                          role_display_label: lv.role_display_label || defaultDisplayLabel(e.target.value),
+                        })}
+                        className="border border-gray-300 rounded px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                      >
+                        {ROLE_OPTIONS.map((r) => (
+                          <option key={r.code} value={r.code}>{r.code} — {r.label}</option>
+                        ))}
+                      </select>
+                    )}
+                  </td>
+                  <td className="px-3 py-2">
+                    {persisted ? (
+                      <span className="text-sm text-gray-600">{lv.role_display_label || defaultDisplayLabel(lv.default_role_code)}</span>
+                    ) : (
+                      <input
+                        type="text"
+                        value={lv.role_display_label}
+                        onChange={(e) => updateLevel(idx, { role_display_label: e.target.value })}
+                        placeholder={defaultDisplayLabel(lv.default_role_code)}
+                        className="w-full border border-gray-300 rounded px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                      />
+                    )}
+                  </td>
+                  <td className="px-3 py-2 text-center">
+                    <input
+                      type="checkbox"
+                      checked={lv.is_stock_holding}
+                      disabled={persisted}
+                      onChange={(e) => updateLevel(idx, { is_stock_holding: e.target.checked })}
+                      className="w-4 h-4 rounded border-gray-300 text-emerald-600 focus:ring-emerald-500 disabled:opacity-60"
+                    />
+                  </td>
+                </tr>
+              );
+            })}
           </tbody>
         </table>
       </div>
 
+      {renameError && <p className="text-sm text-red-600">{renameError}</p>}
       {saveError && <p className="text-sm text-red-600">{saveError}</p>}
       {saveOk && <p className="text-sm text-emerald-600 font-medium">Levels saved.</p>}
 
@@ -385,7 +426,7 @@ function NodeForm({
             className="w-full text-sm border border-gray-300 rounded px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-blue-500"
           >
             <option value="">None</option>
-            {flat.filter((n) => n.is_stock_holding).map((n) => (
+            {flat.filter((n) => n.is_stock_holding && n.is_active).map((n) => (
               <option key={n.id} value={n.id}>
                 L{n.hierarchy_level} — {n.name}
               </option>
@@ -441,10 +482,41 @@ function TreeTab({ tenantId }: { tenantId: string }) {
     staleTime: 30_000,
   });
 
+  // include_inactive=true so TAs can see and reactivate deactivated nodes here.
+  // Distinct queryKey from the plain ["org-nodes", tenantId] used elsewhere (Positions tab,
+  // transfer/inventory dropdowns) — those must keep seeing active-only nodes by default.
   const { data: nodes = [], isLoading } = useQuery<OrgNode[]>({
-    queryKey: ["org-nodes", tenantId],
-    queryFn: () => api.get<OrgNode[]>(`/api/v1/tenants/${tenantId}/nodes`),
+    queryKey: ["org-nodes", tenantId, "all"],
+    queryFn: () => api.get<OrgNode[]>(`/api/v1/tenants/${tenantId}/nodes?include_inactive=true`),
     staleTime: 0,
+  });
+
+  const [nodeActionError, setNodeActionError] = useState<string | null>(null);
+
+  const deactivateMutation = useMutation({
+    mutationFn: (nodeId: string) =>
+      api.patch(`/api/v1/tenants/${tenantId}/nodes/${nodeId}/deactivate`, {}),
+    onSuccess: () => { setNodeActionError(null); refreshNodes(); },
+    onError: (e: unknown) => {
+      const code = (e as { code?: string })?.code;
+      const codeKeyMap: Record<string, string> = {
+        NODE_HAS_STOCK: "org_setup.node_has_stock",
+        NODE_HAS_OPEN_TRANSFERS: "org_setup.node_has_open_transfers",
+        NODE_HAS_PENDING_ADJUSTMENTS: "org_setup.node_has_pending_adjustments",
+        NODE_HAS_SOLE_USERS: "org_setup.node_has_sole_users",
+      };
+      const key = code ? codeKeyMap[code] : undefined;
+      setNodeActionError(key ? t(key) : e instanceof Error ? e.message : t("common.error"));
+    },
+  });
+
+  const reactivateMutation = useMutation({
+    mutationFn: (nodeId: string) =>
+      api.patch(`/api/v1/tenants/${tenantId}/nodes/${nodeId}/reactivate`, {}),
+    onSuccess: () => { setNodeActionError(null); refreshNodes(); },
+    onError: (e: unknown) => {
+      setNodeActionError(e instanceof Error ? e.message : t("common.error"));
+    },
   });
 
   const flat = flattenNodes(nodes);
@@ -454,20 +526,9 @@ function TreeTab({ tenantId }: { tenantId: string }) {
   // "edit node" form state — null = no form open
   const [editNodeId, setEditNodeId]   = useState<string | null>(null);
 
-  const [deleteError, setDeleteError] = useState<string | null>(null);
-
   const refreshNodes = useCallback(() => {
     void qc.invalidateQueries({ queryKey: ["org-nodes", tenantId] });
   }, [qc, tenantId]);
-
-  const deleteMutation = useMutation({
-    mutationFn: (nodeId: string) =>
-      api.delete(`/api/v1/tenants/${tenantId}/nodes/${nodeId}`),
-    onSuccess: refreshNodes,
-    onError: (e: unknown) => {
-      setDeleteError(e instanceof Error ? e.message : t("common.error"));
-    },
-  });
 
   function renderNode(node: OrgNode, depth: number): React.ReactNode {
     const levelLabel = levels.find((l) => l.level_number === node.hierarchy_level)?.level_name
@@ -481,13 +542,17 @@ function TreeTab({ tenantId }: { tenantId: string }) {
       <div key={node.id}>
         <div
           className={`flex items-center gap-2 px-3 py-2 rounded-lg border ${
-            node.is_stock_holding ? "border-emerald-200 bg-emerald-50" : "border-gray-200 bg-gray-50"
+            !node.is_active
+              ? "border-gray-200 bg-gray-100 opacity-60"
+              : node.is_stock_holding ? "border-emerald-200 bg-emerald-50" : "border-gray-200 bg-gray-50"
           }`}
           style={{ marginLeft: `${depth * 24}px` }}
         >
           <span className="text-sm shrink-0">{node.is_stock_holding ? "🏭" : "📋"}</span>
           <div className="flex-1 min-w-0">
-            <p className="text-sm font-semibold text-gray-800 m-0 truncate">{node.name}</p>
+            <p className={`text-sm font-semibold m-0 truncate ${!node.is_active ? "text-gray-400 line-through" : "text-gray-800"}`}>
+              {node.name} {!node.is_active && <span className="no-underline font-normal">{t("org_setup.node_inactive")}</span>}
+            </p>
             <p className="text-xs text-gray-400 m-0">
               {node.code} · {levelLabel}
             </p>
@@ -496,37 +561,50 @@ function TreeTab({ tenantId }: { tenantId: string }) {
             )}
           </div>
           <div className="flex items-center gap-1 shrink-0">
-            {canAddChild && (
+            {node.is_active ? (
+              <>
+                {canAddChild && (
+                  <button
+                    type="button"
+                    title="Add child node"
+                    onClick={() => { setAddParentId(node.id); setEditNodeId(null); }}
+                    className="w-6 h-6 flex items-center justify-center text-xs rounded border border-emerald-300 text-emerald-700 hover:bg-emerald-100 bg-white"
+                  >
+                    +
+                  </button>
+                )}
+                <button
+                  type="button"
+                  title="Edit node"
+                  onClick={() => { setEditNodeId(node.id); setAddParentId(null); }}
+                  className="w-6 h-6 flex items-center justify-center text-xs rounded border border-gray-300 text-gray-600 hover:bg-gray-100 bg-white"
+                >
+                  ✏
+                </button>
+                <button
+                  type="button"
+                  title={t("org_setup.deactivate_node")}
+                  onClick={() => {
+                    setNodeActionError(null);
+                    if (confirm(t("org_setup.deactivate_confirm").replace("{name}", node.name))) {
+                      deactivateMutation.mutate(node.id);
+                    }
+                  }}
+                  className="w-6 h-6 flex items-center justify-center text-xs rounded border border-red-200 text-red-500 hover:bg-red-50 bg-white"
+                >
+                  🗑
+                </button>
+              </>
+            ) : (
               <button
                 type="button"
-                title="Add child node"
-                onClick={() => { setAddParentId(node.id); setEditNodeId(null); }}
-                className="w-6 h-6 flex items-center justify-center text-xs rounded border border-emerald-300 text-emerald-700 hover:bg-emerald-100 bg-white"
+                title={t("org_setup.reactivate_node")}
+                onClick={() => { setNodeActionError(null); reactivateMutation.mutate(node.id); }}
+                className="px-2 h-6 flex items-center justify-center text-xs rounded border border-emerald-300 text-emerald-700 hover:bg-emerald-100 bg-white"
               >
-                +
+                {t("org_setup.reactivate_node")}
               </button>
             )}
-            <button
-              type="button"
-              title="Edit node"
-              onClick={() => { setEditNodeId(node.id); setAddParentId(null); }}
-              className="w-6 h-6 flex items-center justify-center text-xs rounded border border-gray-300 text-gray-600 hover:bg-gray-100 bg-white"
-            >
-              ✏
-            </button>
-            <button
-              type="button"
-              title="Delete node"
-              onClick={() => {
-                setDeleteError(null);
-                if (confirm(`Delete "${node.name}"? This cannot be undone.`)) {
-                  deleteMutation.mutate(node.id);
-                }
-              }}
-              className="w-6 h-6 flex items-center justify-center text-xs rounded border border-red-200 text-red-500 hover:bg-red-50 bg-white"
-            >
-              🗑
-            </button>
           </div>
         </div>
 
@@ -591,9 +669,9 @@ function TreeTab({ tenantId }: { tenantId: string }) {
         </div>
       )}
 
-      {deleteError && (
+      {nodeActionError && (
         <p className="text-sm text-red-600 bg-red-50 border border-red-200 rounded px-3 py-2">
-          {deleteError}
+          {nodeActionError}
         </p>
       )}
 
