@@ -559,6 +559,24 @@ async def update_org_node(
     new_stock = body.is_stock_holding if body.is_stock_holding is not None else existing.is_stock_holding
     new_address = body.address if body.address is not None else getattr(existing, "address", None)
 
+    if body.is_stock_holding is True:
+        level_row = (await db.execute(
+            text(
+                "SELECT is_stock_holding FROM tenant_hierarchy_config "
+                "WHERE tenant_id = :tid AND level_number = :lvl"
+            ),
+            {"tid": str(tenant_id), "lvl": existing.hierarchy_level},
+        )).fetchone()
+        if level_row is not None and not level_row.is_stock_holding:
+            raise HTTPException(
+                status_code=422,
+                detail={
+                    "code": "LEVEL_DOES_NOT_HOLD_STOCK",
+                    "message": "This level is not configured to hold stock. "
+                               "Update the level configuration first.",
+                },
+            )
+
     await db.execute(
         text(
             "UPDATE organization_node SET name = :name, is_stock_holding = :stock, "

@@ -521,6 +521,24 @@ class InventoryService:
     ) -> TransferOrderResponse:
         from fastapi import HTTPException
 
+        # Reject inactive (deactivated) warehouses on either side — otherwise a
+        # transfer can be created against a node that has been closed/deactivated,
+        # defeating the deactivation feature's purpose.
+        for side, wid in (("from", body.from_warehouse_id), ("to", body.to_warehouse_id)):
+            node_row = (await self.db.execute(
+                text("SELECT is_active FROM organization_node WHERE id = :nid AND tenant_id = :tid"),
+                {"nid": str(wid), "tid": str(user.tenant_id)},
+            )).fetchone()
+            if node_row is not None and not node_row.is_active:
+                raise HTTPException(
+                    status_code=422,
+                    detail={
+                        "code": "NODE_INACTIVE",
+                        "message": f"Cannot create transfer — the {side} warehouse is inactive. "
+                                   "Reactivate it first or choose a different warehouse.",
+                    },
+                )
+
         # Validate factory-specific products before any INSERT.
         for line in body.lines:
             product_row = (await self.db.execute(

@@ -1525,13 +1525,15 @@ class TestSession5TransferTypeConfig:
         CONFIG_UUID = "eeeeeeee-0000-0000-0000-000000000001"
 
         # DB calls in create_transfer (happy path with config found):
-        #  0: factory subtree check (no factory restriction)
-        #  1: auto-resolve config by underlying_type → returns config row
-        #  2: src node level (for can_initiate check) → None so perm not checked
-        #  3: dst node level → None
-        #  4: unit_price for line → None (no price)
-        #  5: INSERT transfer_orders
-        #  6: INSERT transfer_order_lines
+        #  0: from warehouse active check
+        #  1: to warehouse active check
+        #  2: factory subtree check (no factory restriction)
+        #  3: auto-resolve config by underlying_type → returns config row
+        #  4: src node level (for can_initiate check) → None so perm not checked
+        #  5: dst node level → None
+        #  6: unit_price for line → None (no price)
+        #  7: INSERT transfer_orders
+        #  8: INSERT transfer_order_lines
         config_row = MagicMock()
         config_row.id = UUID(CONFIG_UUID)
 
@@ -1540,6 +1542,8 @@ class TestSession5TransferTypeConfig:
             pd_r = MagicMock(); pd_r.pending = Decimal("0")
             session = AsyncMock()
             session.execute = AsyncMock(side_effect=[
+                MagicMock(fetchone=MagicMock(return_value=MagicMock(is_active=True))),  # from active check
+                MagicMock(fetchone=MagicMock(return_value=MagicMock(is_active=True))),  # to active check
                 MagicMock(fetchone=MagicMock(return_value=None)),        # factory check
                 MagicMock(fetchone=MagicMock(return_value=config_row)),  # config lookup
                 MagicMock(fetchone=MagicMock(return_value=None)),        # src node level
@@ -1587,6 +1591,8 @@ class TestSession5TransferTypeConfig:
 
         session = AsyncMock()
         session.execute = AsyncMock(side_effect=[
+            MagicMock(fetchone=MagicMock(return_value=MagicMock(is_active=True))),  # from active check
+            MagicMock(fetchone=MagicMock(return_value=MagicMock(is_active=True))),  # to active check
             MagicMock(fetchone=MagicMock(return_value=None)),         # factory check
             MagicMock(fetchone=MagicMock(return_value=config_row)),   # config lookup
             MagicMock(fetchone=MagicMock(return_value=src_node_row)), # src node level=3
@@ -1626,6 +1632,8 @@ class TestSession5TransferTypeConfig:
 
         session = AsyncMock()
         session.execute = AsyncMock(side_effect=[
+            MagicMock(fetchone=MagicMock(return_value=MagicMock(is_active=True))),  # from active check
+            MagicMock(fetchone=MagicMock(return_value=MagicMock(is_active=True))),  # to active check
             MagicMock(fetchone=MagicMock(return_value=None)),           # factory check
             MagicMock(fetchone=MagicMock(return_value=None)),           # no config → config_id=None
             MagicMock(fetchone=MagicMock(return_value=oh_row_tv)),      # on_hand (stock check)
@@ -1677,6 +1685,8 @@ class TestCreateTransferStockCheck:
 
         session = AsyncMock()
         session.execute = AsyncMock(side_effect=[
+            MagicMock(fetchone=MagicMock(return_value=MagicMock(is_active=True))),  # from active check
+            MagicMock(fetchone=MagicMock(return_value=MagicMock(is_active=True))),  # to active check
             MagicMock(fetchone=MagicMock(return_value=None)),          # factory check → no restriction
             MagicMock(fetchone=MagicMock(return_value=None)),          # config resolution → None
             MagicMock(fetchone=MagicMock(return_value=on_hand_row)),   # inventory_balances on_hand=50
@@ -1716,6 +1726,8 @@ class TestCreateTransferStockCheck:
 
         session = AsyncMock()
         session.execute = AsyncMock(side_effect=[
+            MagicMock(fetchone=MagicMock(return_value=MagicMock(is_active=True))),  # from active check
+            MagicMock(fetchone=MagicMock(return_value=MagicMock(is_active=True))),  # to active check
             MagicMock(fetchone=MagicMock(return_value=None)),         # factory check
             MagicMock(fetchone=MagicMock(return_value=None)),         # config resolution
             MagicMock(fetchone=MagicMock(return_value=on_hand_row)),  # on_hand=100
@@ -1742,6 +1754,73 @@ class TestCreateTransferStockCheck:
         assert result.status == "DRAFT", "transfer must be created in DRAFT status"
         assert result.total_value == Decimal("300"), "30 × ETB 10 = ETB 300"
         assert result.transfer_type_config_id is None  # no config found in this scenario
+
+
+# ── Inactive node check at creation ──────────────────────────────────────────
+
+@pytest.mark.asyncio
+class TestCreateTransferActiveNodeCheck:
+    """Regression tests for BUG: deactivated nodes could still be used as a
+    transfer source or destination, defeating the deactivation feature.
+
+    create_transfer() must reject with 422 NODE_INACTIVE when either
+    from_warehouse_id or to_warehouse_id refers to an inactive organization_node.
+    """
+
+    async def test_cannot_create_transfer_to_inactive_node(self) -> None:
+        """to_warehouse_id is inactive → 422 NODE_INACTIVE, mentions 'to' warehouse."""
+        from schemas.inventory import TransferOrderRequest, TransferLineRequest
+        from services.inventory_service import InventoryService
+
+        session = AsyncMock()
+        session.execute = AsyncMock(side_effect=[
+            MagicMock(fetchone=MagicMock(return_value=MagicMock(is_active=True))),   # from active check
+            MagicMock(fetchone=MagicMock(return_value=MagicMock(is_active=False))),  # to active check
+        ])
+
+        user = _User("u-wm", TENANT_ID, WAREHOUSE_A, None, "WM")
+
+        with pytest.raises(HTTPException) as exc:
+            await InventoryService(session).create_transfer(
+                user,
+                TransferOrderRequest(
+                    transfer_type="PULL",
+                    from_warehouse_id=UUID(WAREHOUSE_A),
+                    to_warehouse_id=UUID(WAREHOUSE_B),
+                    lines=[TransferLineRequest(product_id=UUID(PRODUCT_ID), quantity=Decimal("10"))],
+                ),
+            )
+
+        assert exc.value.status_code == 422
+        assert exc.value.detail["code"] == "NODE_INACTIVE"
+        assert "to warehouse" in exc.value.detail["message"]
+
+    async def test_cannot_create_transfer_from_inactive_node(self) -> None:
+        """from_warehouse_id is inactive → 422 NODE_INACTIVE, mentions 'from' warehouse."""
+        from schemas.inventory import TransferOrderRequest, TransferLineRequest
+        from services.inventory_service import InventoryService
+
+        session = AsyncMock()
+        session.execute = AsyncMock(side_effect=[
+            MagicMock(fetchone=MagicMock(return_value=MagicMock(is_active=False))),  # from active check
+        ])
+
+        user = _User("u-wm", TENANT_ID, WAREHOUSE_A, None, "WM")
+
+        with pytest.raises(HTTPException) as exc:
+            await InventoryService(session).create_transfer(
+                user,
+                TransferOrderRequest(
+                    transfer_type="PULL",
+                    from_warehouse_id=UUID(WAREHOUSE_A),
+                    to_warehouse_id=UUID(WAREHOUSE_B),
+                    lines=[TransferLineRequest(product_id=UUID(PRODUCT_ID), quantity=Decimal("10"))],
+                ),
+            )
+
+        assert exc.value.status_code == 422
+        assert exc.value.detail["code"] == "NODE_INACTIVE"
+        assert "from warehouse" in exc.value.detail["message"]
 
 
 # ── WMS-standard reservation timing ────────────────────────────────────────

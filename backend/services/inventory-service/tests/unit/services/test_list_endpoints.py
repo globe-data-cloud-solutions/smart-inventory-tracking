@@ -326,6 +326,8 @@ class TestFactorySpecificProductValidation:
 
         session = AsyncMock()
         session.execute = AsyncMock(side_effect=[
+            MagicMock(fetchone=MagicMock(return_value=MagicMock(is_active=True))),  # from warehouse active check
+            MagicMock(fetchone=MagicMock(return_value=MagicMock(is_active=True))),  # to warehouse active check
             MagicMock(fetchone=MagicMock(return_value=product_row)),  # products lookup
             MagicMock(fetchone=MagicMock(return_value=None)),          # config lookup → None
             MagicMock(fetchone=MagicMock(return_value=oh_row)),        # on_hand (stock check)
@@ -360,6 +362,8 @@ class TestFactorySpecificProductValidation:
 
         session = AsyncMock()
         session.execute = AsyncMock(side_effect=[
+            MagicMock(fetchone=MagicMock(return_value=MagicMock(is_active=True))),  # from warehouse active check
+            MagicMock(fetchone=MagicMock(return_value=MagicMock(is_active=True))),  # to warehouse active check
             MagicMock(fetchone=MagicMock(return_value=product_row)),  # products lookup
             subtree_result,                                            # subtree CTE
             MagicMock(fetchone=MagicMock(return_value=None)),          # config lookup → None
@@ -396,6 +400,8 @@ class TestFactorySpecificProductValidation:
 
         session = AsyncMock()
         session.execute = AsyncMock(side_effect=[
+            MagicMock(fetchone=MagicMock(return_value=MagicMock(is_active=True))),  # from warehouse active check
+            MagicMock(fetchone=MagicMock(return_value=MagicMock(is_active=True))),  # to warehouse active check
             MagicMock(fetchone=MagicMock(return_value=product_row)),       # products lookup
             subtree_result,                                                  # subtree CTE
             MagicMock(fetchone=MagicMock(return_value=factory_node_row)),   # factory name lookup
@@ -430,6 +436,8 @@ class TestFactorySpecificProductValidation:
 
         session = AsyncMock()
         session.execute = AsyncMock(side_effect=[
+            MagicMock(fetchone=MagicMock(return_value=MagicMock(is_active=True))),  # from warehouse active check
+            MagicMock(fetchone=MagicMock(return_value=MagicMock(is_active=True))),  # to warehouse active check
             MagicMock(fetchone=MagicMock(return_value=product_row)),
             subtree_result,
             MagicMock(fetchone=MagicMock(return_value=factory_node_row)),
@@ -461,6 +469,8 @@ class TestFactorySpecificProductValidation:
 
         session = AsyncMock()
         session.execute = AsyncMock(side_effect=[
+            MagicMock(fetchone=MagicMock(return_value=MagicMock(is_active=True))),  # from warehouse active check
+            MagicMock(fetchone=MagicMock(return_value=MagicMock(is_active=True))),  # to warehouse active check
             MagicMock(fetchone=MagicMock(return_value=bad_product)),
             subtree_result,
             MagicMock(fetchone=MagicMock(return_value=factory_node_row)),
@@ -484,8 +494,9 @@ class TestFactorySpecificProductValidation:
             await svc.create_transfer(user, body)
 
         assert exc_info.value.status_code == 422
-        # No INSERT should have been attempted — execute call count = 3 (product + subtree + factory name)
-        assert session.execute.call_count == 3
+        # No INSERT should have been attempted — execute call count = 5
+        # (from-active + to-active checks, product, subtree, factory name)
+        assert session.execute.call_count == 5
 
 
 @pytest.mark.unit

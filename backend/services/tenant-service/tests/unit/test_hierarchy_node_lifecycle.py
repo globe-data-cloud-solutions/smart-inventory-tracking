@@ -331,3 +331,55 @@ class TestNodeDeactivation:
             )
 
         assert "n.is_active = true" not in captured_sql[0]
+
+
+# ── Test 3: Org node update — is_stock_holding vs level config ──────────────
+
+@pytest.mark.unit
+class TestOrgNodeUpdate:
+
+    async def test_cannot_set_stock_holding_on_non_stock_level(self) -> None:
+        """PATCH /nodes/{id} with is_stock_holding=true is rejected when the node's
+        hierarchy level is configured as non-stock-holding in tenant_hierarchy_config."""
+        from routers.hierarchy import update_org_node, OrgNodeUpdate
+
+        existing_row = _row(
+            id=UUID(NODE_ID), tenant_id=UUID(TENANT_ID), name="Region A", code="RA",
+            hierarchy_level=2, parent_node_id=None, is_stock_holding=False,
+            is_active=True, address=None,
+        )
+        level_row = _row(is_stock_holding=False)
+        db = _db_seq(existing_row, level_row)
+
+        with _GRANT_ALL, pytest.raises(HTTPException) as exc_info:
+            await update_org_node(
+                tenant_id=UUID(TENANT_ID),
+                node_id=UUID(NODE_ID),
+                body=OrgNodeUpdate(is_stock_holding=True),
+                user=_Caller(),
+                db=db,
+            )
+        assert exc_info.value.status_code == 422
+        assert exc_info.value.detail["code"] == "LEVEL_DOES_NOT_HOLD_STOCK"
+
+    async def test_can_set_stock_holding_on_stock_level(self) -> None:
+        """The same PATCH succeeds when the level IS configured as stock-holding."""
+        from routers.hierarchy import update_org_node, OrgNodeUpdate
+
+        existing_row = _row(
+            id=UUID(NODE_ID), tenant_id=UUID(TENANT_ID), name="WHA4", code="WHA4",
+            hierarchy_level=4, parent_node_id=None, is_stock_holding=False,
+            is_active=True, address=None,
+        )
+        level_row = _row(is_stock_holding=True)
+        db = _db_seq(existing_row, level_row, None, None)  # existing, level check, UPDATE, _get_level_name
+
+        with _GRANT_ALL:
+            result = await update_org_node(
+                tenant_id=UUID(TENANT_ID),
+                node_id=UUID(NODE_ID),
+                body=OrgNodeUpdate(is_stock_holding=True),
+                user=_Caller(),
+                db=db,
+            )
+        assert result.data.is_stock_holding is True
