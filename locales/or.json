@@ -636,6 +636,22 @@
     "mode_banner": "Haala demo — jijjiiramni marsariitii haaromsamte haqama. Daataa dhaabbataa argachuuf backend waliin wal qabii."
   },
   "org_setup": {
+    "help": {
+      "levels_message": "Define the levels in your organisation hierarchy before building your tree. Example: Factory → Region → Warehouse.",
+      "levels_tip": "Set this carefully — you cannot change the number of levels after adding nodes to your organisation tree.",
+      "tree_message": "Build your organisation structure by adding nodes at each level. Start with your top-level node (e.g. Factory A) then add children below it.",
+      "tree_tip": "If you have multiple factories or independent branches, add each as a separate top-level node here. Each branch can have its own structure and depth.",
+      "positions_message": "Create positions for each node in your organisation tree. Positions define who holds authority at each location and are used for approval routing and audit logging.",
+      "positions_tip": "We recommend at least two positions per node (main and assistant) to ensure coverage when staff are unavailable.",
+      "transfer_types_message": "Customise the display names for the three transfer types. These names appear on all screens, reports, and approval notifications across your organisation.",
+      "transfer_types_tip": "Choose names your staff will recognise from daily operations — for example 'Stock Request' instead of 'Request Stock'.",
+      "approval_rules_message": "Configure when transfers and adjustments require approval and who must approve them. Rules are matched by quantity range and organisation level.",
+      "approval_rules_tip": "After saving your rules, visit the Approval Policies page to verify they display correctly in plain language.",
+      "personnel_message": "Add staff members and assign them to positions in your organisation. A person must be assigned to a position before they can perform operational tasks.",
+      "personnel_tip": "A person can hold multiple positions if they cover more than one area.",
+      "branding_message": "Upload your organisation logo (max 1MB, JPG/PNG/WebP — shown in navigation) and banner image (max 3MB, JPG/PNG/WebP — shown on dashboard).",
+      "branding_tip": null
+    },
     "page_title": "Organisation Setup",
     "page_subtitle": "Configure your organisation structure, facility nodes, and supply routes.",
     "skip_to_personnel": "Skip to Personnel →",

@@ -8,6 +8,7 @@ import { getToken } from "@/lib/auth";
 import { getSession } from "@/lib/demo-auth";
 import { t } from "@/lib/i18n";
 import { useTenantPositions } from "@/hooks/useTenantPositions";
+import { TabHelpBanner } from "@/components/ui/TabHelpBanner";
 
 /* ── Types ─────────────────────────────────────────────────────────────────── */
 
@@ -148,6 +149,11 @@ function LevelsTab({ tenantId }: { tenantId: string }) {
 
   return (
     <div className="space-y-6">
+      <TabHelpBanner
+        storageKey="org-levels"
+        message={t("org_setup.help.levels_message")}
+        tip={t("org_setup.help.levels_tip")}
+      />
       {/* Level count picker */}
       <div>
         <label className="block text-sm font-medium text-gray-700 mb-2">
@@ -565,6 +571,11 @@ function TreeTab({ tenantId }: { tenantId: string }) {
 
   return (
     <div className="space-y-4">
+      <TabHelpBanner
+        storageKey="org-tree"
+        message={t("org_setup.help.tree_message")}
+        tip={t("org_setup.help.tree_tip")}
+      />
       {/* Legend */}
       {levels.length > 0 && (
         <div className="flex flex-wrap gap-3 bg-gray-50 border border-gray-200 rounded-lg p-3">
@@ -1461,7 +1472,13 @@ function PositionsTab({ tenantId }: { tenantId: string }) {
   const selectedNode = flattenNodes(nodes).find((n) => n.id === selectedNodeId);
 
   return (
-    <div className="flex gap-4" style={{ minHeight: "480px" }}>
+    <div>
+      <TabHelpBanner
+        storageKey="positions"
+        message={t("org_setup.help.positions_message")}
+        tip={t("org_setup.help.positions_tip")}
+      />
+      <div className="flex gap-4" style={{ minHeight: "480px" }}>
       {/* Left: tree */}
       <div className="w-64 shrink-0 space-y-1 border-r border-gray-200 pr-4 overflow-y-auto" style={{ maxHeight: "600px" }}>
         {nodesLoading ? <p className="text-xs text-gray-400 py-4 text-center">{t("common.loading")}</p>
@@ -1643,6 +1660,7 @@ function PositionsTab({ tenantId }: { tenantId: string }) {
           </div>
         )}
       </div>
+      </div>
     </div>
   );
 }
@@ -1736,6 +1754,11 @@ function TransferTypesTab({ tenantId }: { tenantId: string }) {
 
   return (
     <div className="space-y-4">
+      <TabHelpBanner
+        storageKey="transfer-types"
+        message={t("org_setup.help.transfer_types_message")}
+        tip={t("org_setup.help.transfer_types_tip")}
+      />
       {configs.map((cfg, idx) => {
         const meta = UNDERLYING_TYPES[idx];
         return (
@@ -2264,6 +2287,11 @@ function ApprovalRulesV2Tab({ tenantId }: { tenantId: string }) {
 
   return (
     <div className="space-y-4">
+      <TabHelpBanner
+        storageKey="approval-rules"
+        message={t("org_setup.help.approval_rules_message")}
+        tip={t("org_setup.help.approval_rules_tip")}
+      />
       {/* Sub-tab nav: Transfer Rules | Adjustment Rules */}
       <div className="flex border-b border-gray-200">
         <button type="button" onClick={() => {
@@ -2501,6 +2529,11 @@ function PersonnelV2Tab({ tenantId }: { tenantId: string }) {
 
   return (
     <div className="space-y-4">
+      <TabHelpBanner
+        storageKey="personnel"
+        message={t("org_setup.help.personnel_message")}
+        tip={t("org_setup.help.personnel_tip")}
+      />
       <div className="flex items-center justify-between">
         <h3 className="text-sm font-semibold text-gray-800">{t("wizard.personnel_tab")}</h3>
         {!showCreate && (
@@ -2645,6 +2678,11 @@ function BrandingTab({ tenantId }: { tenantId: string }) {
 
   return (
     <div className="space-y-8 max-w-xl">
+      <TabHelpBanner
+        storageKey="branding"
+        message={t("org_setup.help.branding_message")}
+        dismissible={false}
+      />
       {saved && (
         <div className="bg-emerald-50 border border-emerald-200 rounded px-4 py-2 text-sm text-emerald-700 font-semibold">
           {t("settings.branding_saved") || "Branding saved."}
