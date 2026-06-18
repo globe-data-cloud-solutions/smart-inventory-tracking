@@ -123,6 +123,14 @@ function LevelsTab({ tenantId }: { tenantId: string }) {
   );
   const [saveError, setSaveError] = useState<string | null>(null);
   const [saveOk, setSaveOk]       = useState(false);
+  const [showSaveConfirm, setShowSaveConfirm] = useState(false);
+
+  const levelsAlreadySaved = savedLevels.length > 0;
+
+  // Resync the picker once the saved levels arrive (useQuery resolves after first render).
+  useEffect(() => {
+    if (savedLevels.length > 0) setLevelCount(savedLevels.length);
+  }, [savedLevels.length]);
 
   // When level count changes rebuild the levels array
   function handleCountChange(n: number) {
@@ -183,18 +191,28 @@ function LevelsTab({ tenantId }: { tenantId: string }) {
             <button
               key={n}
               type="button"
-              onClick={() => handleCountChange(n)}
+              disabled={levelsAlreadySaved}
+              onClick={() => { if (!levelsAlreadySaved) handleCountChange(n); }}
               className={`w-14 h-14 rounded-lg border-2 text-lg font-bold transition-all ${
                 levelCount === n
                   ? "border-emerald-600 bg-emerald-50 text-emerald-700"
                   : "border-gray-200 bg-white text-gray-600 hover:border-gray-400"
-              }`}
+              } ${levelsAlreadySaved ? "opacity-60 cursor-not-allowed hover:border-gray-200" : ""}`}
             >
               {n}
             </button>
           ))}
         </div>
-        <p className="text-xs text-gray-400 mt-2">{t("org_setup.level_count_hint")}</p>
+        {levelsAlreadySaved ? (
+          <>
+            <p className="text-xs text-gray-600 mt-2 font-medium">
+              {t("org_setup.levels_count_locked").replace("{count}", String(levelCount))}
+            </p>
+            <p className="text-xs text-gray-400 mt-1">{t("org_setup.levels_locked")}</p>
+          </>
+        ) : (
+          <p className="text-xs text-gray-400 mt-2">{t("org_setup.level_count_hint")}</p>
+        )}
       </div>
 
       {/* Editable levels table */}
@@ -288,14 +306,45 @@ function LevelsTab({ tenantId }: { tenantId: string }) {
       {saveError && <p className="text-sm text-red-600">{saveError}</p>}
       {saveOk && <p className="text-sm text-emerald-600 font-medium">Levels saved.</p>}
 
-      <button
-        type="button"
-        onClick={() => saveMutation.mutate()}
-        disabled={saveMutation.isPending}
-        className="px-5 py-2 bg-emerald-700 text-white text-sm font-semibold rounded-lg hover:bg-emerald-800 disabled:opacity-50"
-      >
-        {saveMutation.isPending ? t("common.saving") : "Save Levels"}
-      </button>
+      {!levelsAlreadySaved && (
+        <button
+          type="button"
+          onClick={() => setShowSaveConfirm(true)}
+          disabled={saveMutation.isPending}
+          className="px-5 py-2 bg-emerald-700 text-white text-sm font-semibold rounded-lg hover:bg-emerald-800 disabled:opacity-50"
+        >
+          {saveMutation.isPending ? t("common.saving") : "Save Levels"}
+        </button>
+      )}
+
+      {showSaveConfirm && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/40 px-4">
+          <div className="w-full max-w-md rounded-lg bg-white p-5 shadow-2xl">
+            <h3 className="text-base font-bold text-gray-900 m-0">
+              {t("org_setup.confirm_save_levels_title")}
+            </h3>
+            <p className="text-sm text-gray-600 mt-3">
+              {t("org_setup.confirm_save_levels_body").replace("{count}", String(levelCount))}
+            </p>
+            <div className="mt-5 flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setShowSaveConfirm(false)}
+                className="px-4 py-1.5 border border-gray-300 text-gray-600 text-sm font-medium rounded hover:bg-gray-50"
+              >
+                {t("common.cancel")}
+              </button>
+              <button
+                type="button"
+                onClick={() => { setShowSaveConfirm(false); saveMutation.mutate(); }}
+                className="px-4 py-1.5 bg-emerald-700 text-white text-sm font-semibold rounded hover:bg-emerald-800"
+              >
+                {t("org_setup.confirm_save")}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

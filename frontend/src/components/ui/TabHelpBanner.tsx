@@ -12,11 +12,11 @@ interface TabHelpBannerProps {
 export function TabHelpBanner({ message, tip, storageKey, dismissible = true }: TabHelpBannerProps) {
   const fullKey = `org-setup-help-${storageKey}`;
   const [dismissed, setDismissed] = useState(
-    () => dismissible && typeof window !== "undefined" && localStorage.getItem(fullKey) === "dismissed"
+    () => dismissible && typeof window !== "undefined" && sessionStorage.getItem(fullKey) === "dismissed"
   );
 
   function handleDismiss() {
-    localStorage.setItem(fullKey, "dismissed");
+    sessionStorage.setItem(fullKey, "dismissed");
     setDismissed(true);
   }
 
