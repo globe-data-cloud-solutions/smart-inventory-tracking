@@ -1,3 +1,31 @@
+# ===========================================
+# ARCHIVED — DO NOT USE OR RUN
+# ===========================================
+# This test file covers routers/personnel.py
+# which is orphaned dead code (not registered
+# in main.py, references dropped schema).
+#
+# These tests pass in isolation but test
+# unreachable production code paths —
+# they provide FALSE confidence in CI.
+#
+# Specifically:
+#   - Imports _check_role_ceiling directly
+#     from routers.personnel (line 112)
+#   - Tests user_facility_assignments
+#     which was dropped in migration 031
+#   - Does NOT test personnel_v2.py
+#     (the live implementation)
+#
+# Do not add these to pytest collection.
+# Do not restore without reviewing
+# migration 031 and personnel_v2.py first.
+#
+# To review: git log --follow -p -- \
+#   backend/services/tenant-service/\
+#   tests/unit/test_org_personnel.py
+# ===========================================
+
 """Unit tests for org hierarchy and personnel management.
 
 Tests:

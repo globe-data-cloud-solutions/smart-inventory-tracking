@@ -1,3 +1,48 @@
+# ===========================================
+# ARCHIVED — DO NOT USE
+# ===========================================
+# This file was the original personnel
+# router, superseded by personnel_v2.py
+# as part of the migration 031 architectural
+# pivot (2026-05-31).
+#
+# This file references schema that no
+# longer exists in the live database:
+#   - users.role column (dropped)
+#   - users.warehouse_id column (dropped)
+#   - user_facility_assignments table
+#     (dropped in migration 031)
+#
+# This router is NOT registered in
+# main.py and is NOT reachable in
+# production. Any accidental execution
+# would fail with UndefinedTable errors.
+#
+# Kept for reference only — to understand
+# the original design intent:
+#   A. Direct system_role assignment
+#      (AU/LM/NM without position)
+#   B. Role ceiling validation
+#      (_check_role_ceiling — prevents
+#       lower roles creating higher roles)
+#   C. user_facility_assignments
+#      (replaced by personnel_positions
+#       with PRIMARY/ACTING/DELEGATE)
+#
+# Features to port to personnel_v2.py:
+#   - AU/LM direct role assignment UI
+#   - Role ceiling validation (server-side)
+#   - ACTING assignment UI (valid_until)
+#
+# To review original implementation:
+#   git log --follow -p -- \
+#     backend/services/tenant-service/\
+#     routers/personnel.py
+#
+# See: personnel_v2.py for live code
+# See: migration 031 for schema changes
+# ===========================================
+
 """Personnel management endpoints — users and facility assignments.
 
 Users:       GET/POST /tenants/{tenant_id}/users
