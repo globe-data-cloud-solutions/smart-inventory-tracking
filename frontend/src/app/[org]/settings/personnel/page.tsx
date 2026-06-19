@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import { useParams } from "next/navigation";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
@@ -49,10 +49,13 @@ interface PositionItem {
 }
 
 
+type AddUserTrack = "position" | "tenant_wide";
+
 interface NewUserForm {
   name: string;
   email: string;
   position_id: string;
+  system_role: "" | "AU" | "LM";
   password: string;
 }
 
@@ -100,7 +103,7 @@ function todayISO(): string {
 }
 
 const EMPTY_USER: NewUserForm = {
-  name: "", email: "", position_id: "", password: "",
+  name: "", email: "", position_id: "", system_role: "", password: "",
 };
 
 function emptyActingForm(): ActingAssignmentForm {
@@ -132,6 +135,42 @@ function RoleBadge({ role }: { role: string }) {
     <span className={`px-2 py-0.5 rounded text-xs font-medium ${POSITION_ROLE_BADGE_COLORS[role] ?? "bg-gray-300 text-gray-700"}`}>
       {role}
     </span>
+  );
+}
+
+/** Bordered "radio card" — used for the Add User track selector and the
+ * tenant-wide Access Level options. Visually a radio button, but styled as
+ * a clickable card so the description text has room to breathe. */
+function SelectableCard({
+  selected,
+  onSelect,
+  title,
+  description,
+  badge,
+}: {
+  selected: boolean;
+  onSelect: () => void;
+  title: string;
+  description: string;
+  badge?: ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onSelect}
+      className={`w-full text-left rounded-lg border-2 px-3 py-2.5 transition-colors ${
+        selected ? "border-green-600 bg-green-50" : "border-gray-200 bg-white hover:border-gray-300"
+      }`}
+    >
+      <div className="flex items-center gap-2">
+        <span className={`inline-block w-3.5 h-3.5 rounded-full border-2 shrink-0 ${
+          selected ? "border-green-600 bg-green-600" : "border-gray-300 bg-white"
+        }`} />
+        {badge}
+        <span className="text-sm font-semibold text-gray-900">{title}</span>
+      </div>
+      <p className="text-xs text-gray-500 mt-1 ml-[22px]">{description}</p>
+    </button>
   );
 }
 
@@ -412,7 +451,8 @@ function AddUserPanel({
   onClose: () => void;
   onCreated: () => void;
 }) {
-  const [form, setForm] = useState<NewUserForm>({ ...EMPTY_USER });
+  const [track, setTrack] = useState<AddUserTrack>("position");
+  const [form, setForm]   = useState<NewUserForm>({ ...EMPTY_USER });
   const [saving, setSaving] = useState(false);
   const [error, setError]   = useState<string | null>(null);
 
@@ -424,20 +464,34 @@ function AddUserPanel({
     setForm((f) => ({ ...f, ...patch }));
   }
 
+  function selectTrack(next: AddUserTrack) {
+    setTrack(next);
+    // Clear the other track's selection so a stale value can't be submitted
+    // after switching — only one of position_id / system_role is ever sent.
+    if (next === "position") update({ system_role: "" });
+    else update({ position_id: "" });
+  }
+
   async function submit() {
     if (!form.name.trim() || !form.email.trim()) {
+      setError(t("personnel.fill_required_fields"));
+      return;
+    }
+    if (track === "tenant_wide" && !form.system_role) {
       setError(t("personnel.fill_required_fields"));
       return;
     }
     setSaving(true);
     setError(null);
     try {
-      // Role is never sent directly — it is derived server-side from position_id
-      // (personnel_v2.py create_user creates the PRIMARY assignment atomically).
+      // Track A: role is never sent directly — it is derived server-side from
+      // position_id (personnel_v2.py create_user creates the PRIMARY assignment
+      // atomically). Track B: position_id is never sent — system_role is direct.
       await api.post(`/api/v1/tenants/${tenantId}/users`, {
         name:        form.name.trim(),
         email:       form.email.trim().toLowerCase(),
-        position_id: form.position_id || null,
+        position_id: track === "position"    ? (form.position_id || null) : null,
+        system_role: track === "tenant_wide" ? form.system_role           : null,
         password:    form.password || undefined,
       });
       onCreated();
@@ -458,6 +512,21 @@ function AddUserPanel({
         </div>
 
         <div className="space-y-3">
+          <div className="space-y-2">
+            <SelectableCard
+              selected={track === "position"}
+              onSelect={() => selectTrack("position")}
+              title={t("personnel.track_position_title")}
+              description={t("personnel.track_position_desc")}
+            />
+            <SelectableCard
+              selected={track === "tenant_wide"}
+              onSelect={() => selectTrack("tenant_wide")}
+              title={t("personnel.track_tenant_wide_title")}
+              description={t("personnel.track_tenant_wide_desc")}
+            />
+          </div>
+
           <div>
             <label className="block text-xs font-medium text-gray-600 mb-1">{t("personnel.full_name")} *</label>
             <input
@@ -478,31 +547,53 @@ function AddUserPanel({
             />
           </div>
 
-          <div>
-            <label className="block text-xs font-medium text-gray-600 mb-1">{t("personnel.primary_position")}</label>
-            <select
-              value={form.position_id}
-              onChange={(e) => update({ position_id: e.target.value })}
-              className="w-full text-sm border border-gray-300 rounded-md px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-emerald-500"
-            >
-              <option value="">{t("personnel.no_position_assigned")}</option>
-              {positions.map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.title} ({p.role_code}) — {p.node_name}
-                </option>
-              ))}
-            </select>
-            {selectedPosition ? (
-              <div className="mt-1 flex items-center gap-2 text-sm">
-                <RoleBadge role={selectedPosition.role_code} />
-                <span className="text-gray-500">
-                  {selectedPosition.title} · {selectedPosition.node_name}
-                </span>
+          {track === "position" ? (
+            <div>
+              <label className="block text-xs font-medium text-gray-600 mb-1">{t("personnel.primary_position")}</label>
+              <select
+                value={form.position_id}
+                onChange={(e) => update({ position_id: e.target.value })}
+                className="w-full text-sm border border-gray-300 rounded-md px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+              >
+                <option value="">{t("personnel.no_position_assigned")}</option>
+                {positions.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.title} ({p.role_code}) — {p.node_name}
+                  </option>
+                ))}
+              </select>
+              {selectedPosition ? (
+                <div className="mt-1 flex items-center gap-2 text-sm">
+                  <RoleBadge role={selectedPosition.role_code} />
+                  <span className="text-gray-500">
+                    {selectedPosition.title} · {selectedPosition.node_name}
+                  </span>
+                </div>
+              ) : (
+                <p className="text-xs text-gray-500 mt-1">{t("personnel.no_position_no_role")}</p>
+              )}
+            </div>
+          ) : (
+            <div>
+              <label className="block text-xs font-medium text-gray-600 mb-1">{t("personnel.access_level")} *</label>
+              <div className="space-y-2">
+                <SelectableCard
+                  selected={form.system_role === "AU"}
+                  onSelect={() => update({ system_role: "AU" })}
+                  badge={<RoleBadge role="AU" />}
+                  title={t("personnel.role_au_title")}
+                  description={t("personnel.role_au_desc")}
+                />
+                <SelectableCard
+                  selected={form.system_role === "LM"}
+                  onSelect={() => update({ system_role: "LM" })}
+                  badge={<RoleBadge role="LM" />}
+                  title={t("personnel.role_lm_title")}
+                  description={t("personnel.role_lm_desc")}
+                />
               </div>
-            ) : (
-              <p className="text-xs text-gray-500 mt-1">{t("personnel.no_position_no_role")}</p>
-            )}
-          </div>
+            </div>
+          )}
 
           <div>
             <label className="block text-xs font-medium text-gray-600 mb-1">{t("personnel.temp_password")}</label>
@@ -510,7 +601,7 @@ function AddUserPanel({
               type="password"
               value={form.password}
               onChange={(e) => update({ password: e.target.value })}
-              placeholder={t("personnel.temp_password_hint")}
+              placeholder={t("personnel.password_optional_hint")}
               className="w-full text-sm border border-gray-300 rounded-md px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-emerald-500"
             />
           </div>

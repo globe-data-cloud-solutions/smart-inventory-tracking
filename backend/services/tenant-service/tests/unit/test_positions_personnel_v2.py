@@ -486,6 +486,78 @@ class TestPersonnelV2:
 
         assert result.data == {"deactivated": True, "user_id": USER_ID}
 
+    async def test_create_user_accepts_au_system_role(self) -> None:
+        """POST /users accepts system_role='AU' for the tenant-wide Auditor
+        track (Track B in the Add User form) — no position_id required."""
+        from routers.personnel_v2 import create_user, UserCreate
+
+        db = _db_seq(
+            None,  # no duplicate email
+            None,  # INSERT users
+        )
+
+        with _GRANT_ALL:
+            result = await create_user(
+                tenant_id=UUID(TENANT_ID),
+                body=UserCreate(
+                    name="Almaz Tesfaye",
+                    email="almaz@test.com",
+                    password="TestPass@2026",
+                    system_role="AU",
+                ),
+                user=_Caller(),
+                db=db,
+            )
+
+        assert result.data.role == "AU"
+        assert result.data.primary_position is None
+
+    async def test_create_user_accepts_lm_system_role(self) -> None:
+        """POST /users accepts system_role='LM' for the tenant-wide Logistics
+        Manager track."""
+        from routers.personnel_v2 import create_user, UserCreate
+
+        db = _db_seq(None, None)
+
+        with _GRANT_ALL:
+            result = await create_user(
+                tenant_id=UUID(TENANT_ID),
+                body=UserCreate(
+                    name="Dawit Alemu",
+                    email="dawit@test.com",
+                    password="TestPass@2026",
+                    system_role="LM",
+                ),
+                user=_Caller(),
+                db=db,
+            )
+
+        assert result.data.role == "LM"
+        assert result.data.primary_position is None
+
+    async def test_create_user_rejects_invalid_system_role(self) -> None:
+        """POST /users still rejects system_role values outside {TA, AU, LM} —
+        e.g. a facility role like WM must come from position_id, never directly."""
+        from routers.personnel_v2 import create_user, UserCreate
+
+        db = _db_seq(None)  # no duplicate email — should not get further
+
+        with _GRANT_ALL, pytest.raises(HTTPException) as exc_info:
+            await create_user(
+                tenant_id=UUID(TENANT_ID),
+                body=UserCreate(
+                    name="Invalid Role",
+                    email="invalid@test.com",
+                    password="TestPass@2026",
+                    system_role="WM",
+                ),
+                user=_Caller(),
+                db=db,
+            )
+
+        assert exc_info.value.status_code == 422
+        assert exc_info.value.detail["code"] == "INVALID_SYSTEM_ROLE"
+
 
 # ── Test 4: Transfer type config ─────────────────────────────────────────────
 

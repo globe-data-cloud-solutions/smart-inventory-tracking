@@ -31,6 +31,12 @@ from shared.utils.responses import SuccessResponse
 
 router = APIRouter()
 
+# Roles that may be set directly via system_role (no position required) —
+# tenant-wide accounts. TA is the original case; AU/LM are tenant-wide
+# auditor / logistics-manager accounts created via the "Tenant-Wide Role"
+# track in the Add User form.
+VALID_DIRECT_SYSTEM_ROLES = {"TA", "AU", "LM"}
+
 
 def _hash(password: str) -> str:
     return _bcrypt.hashpw(password.encode(), _bcrypt.gensalt()).decode()
@@ -70,7 +76,7 @@ class UserCreate(BaseModel):
     email:       EmailStr
     password:    str
     position_id: Optional[uuid.UUID] = None
-    system_role: Optional[str] = None   # "TA" for tenant-admin accounts without a position
+    system_role: Optional[str] = None   # "TA"/"AU"/"LM" for tenant-wide accounts without a position
     role:        Optional[str] = None   # Frontend compat: if "TA", maps to system_role="TA"
 
 
@@ -214,9 +220,9 @@ async def create_user(
 
     # Derive effective system_role: explicit field wins, then map role="TA" → "TA"
     effective_system_role = body.system_role or ("TA" if body.role == "TA" else None)
-    if effective_system_role and effective_system_role != "TA":
+    if effective_system_role and effective_system_role not in VALID_DIRECT_SYSTEM_ROLES:
         raise HTTPException(status_code=422, detail={"code": "INVALID_SYSTEM_ROLE",
-            "message": "system_role must be 'TA' or null."})
+            "message": "system_role must be TA, AU, or LM, or null (role comes from position)."})
 
     user_id = uuid.uuid4()
     await db.execute(
@@ -606,10 +612,11 @@ async def update_user(
     # system_role: explicit field or mapped from legacy role="TA"
     effective_sr = body.system_role or ("TA" if body.role == "TA" else None)
     if effective_sr is not None:
-        if effective_sr != "TA":
+        if effective_sr not in VALID_DIRECT_SYSTEM_ROLES:
             raise HTTPException(
                 status_code=422,
-                detail={"code": "INVALID_SYSTEM_ROLE", "message": "system_role must be 'TA' or null."},
+                detail={"code": "INVALID_SYSTEM_ROLE",
+                        "message": "system_role must be TA, AU, or LM, or null (role comes from position)."},
             )
         set_parts.append("system_role = :sr")
         params["sr"] = effective_sr
