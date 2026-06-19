@@ -423,6 +423,69 @@ class TestPersonnelV2:
 
         assert "password_hash" not in UserOut.model_fields
 
+    async def test_cannot_deactivate_self(self) -> None:
+        """PATCH /users/{id}/deactivate rejects a caller deactivating their own
+        account — checked before any row is even queried."""
+        from routers.personnel_v2 import deactivate_user
+
+        db = _db_seq()  # no DB calls should be needed — guard fires first
+
+        with _GRANT_ALL, pytest.raises(HTTPException) as exc_info:
+            await deactivate_user(
+                tenant_id=UUID(TENANT_ID),
+                user_id=UUID(USER_ID),
+                user=_Caller(user_id=USER_ID),
+                db=db,
+            )
+
+        assert exc_info.value.status_code == 422
+        assert exc_info.value.detail["code"] == "CANNOT_DEACTIVATE_SELF"
+
+    async def test_cannot_deactivate_last_ta(self) -> None:
+        """PATCH /users/{id}/deactivate rejects deactivating a TA when they are
+        the only active TA left in the tenant."""
+        from routers.personnel_v2 import deactivate_user
+
+        target_row = _row(id=USER_ID, system_role="TA")
+        db = _db_seq(
+            target_row,  # target user found, active
+            1,           # active_ta_count == 1 → only this TA exists
+        )
+
+        with _GRANT_ALL, pytest.raises(HTTPException) as exc_info:
+            await deactivate_user(
+                tenant_id=UUID(TENANT_ID),
+                user_id=UUID(USER_ID),
+                user=_Caller(user_id="caller-001"),
+                db=db,
+            )
+
+        assert exc_info.value.status_code == 422
+        assert exc_info.value.detail["code"] == "CANNOT_DEACTIVATE_LAST_TA"
+
+    async def test_can_deactivate_ta_if_another_exists(self) -> None:
+        """PATCH /users/{id}/deactivate succeeds for a TA when at least one other
+        active TA remains in the tenant."""
+        from routers.personnel_v2 import deactivate_user
+
+        target_row = _row(id=USER_ID, system_role="TA")
+        db = _db_seq(
+            target_row,  # target user found, active
+            2,           # active_ta_count == 2 → another TA exists
+            None,        # UPDATE users SET is_active=false
+            None,        # UPDATE personnel_positions SET is_active=false
+        )
+
+        with _GRANT_ALL:
+            result = await deactivate_user(
+                tenant_id=UUID(TENANT_ID),
+                user_id=UUID(USER_ID),
+                user=_Caller(user_id="caller-001"),
+                db=db,
+            )
+
+        assert result.data == {"deactivated": True, "user_id": USER_ID}
+
 
 # ── Test 4: Transfer type config ─────────────────────────────────────────────
 

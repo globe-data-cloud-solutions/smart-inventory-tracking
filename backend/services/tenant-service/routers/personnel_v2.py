@@ -445,13 +445,43 @@ async def deactivate_user(
     user=Depends(get_current_user),
     db: AsyncSession = Depends(get_db_session_for_tenant),
 ) -> SuccessResponse[dict]:
-    """Deactivate user and close all active position assignments."""
+    """Deactivate user and close all active position assignments.
+
+    Two guards prevent a tenant from locking itself out:
+      - A caller can never deactivate their own account.
+      - The last active TA in a tenant cannot be deactivated.
+    """
+    if str(user.user_id) == str(user_id):
+        raise HTTPException(
+            status_code=422,
+            detail={"code": "CANNOT_DEACTIVATE_SELF",
+                    "message": "You cannot deactivate your own account."},
+        )
+
     row = (await db.execute(
-        text("SELECT id FROM users WHERE id = :uid AND tenant_id = :tid AND is_active = true"),
+        text("SELECT id, system_role FROM users WHERE id = :uid AND tenant_id = :tid AND is_active = true"),
         {"uid": str(user_id), "tid": str(tenant_id)},
     )).fetchone()
     if not row:
         raise HTTPException(status_code=404, detail="User not found or already inactive")
+
+    if row.system_role == "TA":
+        active_ta_count = (await db.execute(
+            text("""
+                SELECT COUNT(*) FROM users
+                WHERE tenant_id = :tid AND system_role = 'TA' AND is_active = true
+            """),
+            {"tid": str(tenant_id)},
+        )).scalar() or 0
+        if active_ta_count <= 1:
+            raise HTTPException(
+                status_code=422,
+                detail={
+                    "code": "CANNOT_DEACTIVATE_LAST_TA",
+                    "message": "Cannot deactivate the last active Tenant Administrator. "
+                               "Assign another TA first or contact your platform administrator.",
+                },
+            )
 
     await db.execute(
         text("UPDATE users SET is_active = false, updated_at = now() WHERE id = :uid"),

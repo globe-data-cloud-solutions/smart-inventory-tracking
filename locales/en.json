@@ -1054,6 +1054,8 @@
     "confirm_deactivate_user": "Are you sure you want to deactivate {name}? They will not be able to log in until reactivated.",
     "user_deactivated": "User deactivated successfully",
     "user_reactivated": "User reactivated successfully",
+    "cannot_deactivate_self": "You cannot deactivate your own account",
+    "cannot_deactivate_last_ta": "Cannot deactivate the last active administrator. Assign another TA first.",
     "reset_password": "Reset Password",
     "reset_password_title": "Reset Password",
     "reset_password_body": "Set a new temporary password for {name}. They will be prompted to change it on next login.",

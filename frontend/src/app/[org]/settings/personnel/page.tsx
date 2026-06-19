@@ -342,11 +342,14 @@ function EditUserPanel({
                   </option>
                 ))}
               </select>
-              <p className="text-xs text-gray-500 mt-1">
-                {previewRoleCode
-                  ? `${t("personnel.role")}: ${roleLabel(previewRoleCode)} (${previewRoleCode})`
-                  : t("personnel.no_position_no_role")}
-              </p>
+              {previewRoleCode ? (
+                <div className="mt-1 flex items-center gap-2 text-sm">
+                  <RoleBadge role={previewRoleCode} />
+                  <span className="text-gray-500">{roleLabel(previewRoleCode)}</span>
+                </div>
+              ) : (
+                <p className="text-xs text-gray-500 mt-1">{t("personnel.no_position_no_role")}</p>
+              )}
             </div>
 
             <label className="flex items-center gap-2 cursor-pointer select-none">
@@ -1085,6 +1088,13 @@ export default function PersonnelPage() {
     }
   }
 
+  function deactivateErrorMessage(e: unknown): string {
+    const code = e instanceof Error ? (e as Error & { code?: string }).code : undefined;
+    if (code === "CANNOT_DEACTIVATE_SELF")    return t("personnel.cannot_deactivate_self");
+    if (code === "CANNOT_DEACTIVATE_LAST_TA") return t("personnel.cannot_deactivate_last_ta");
+    return e instanceof Error ? e.message : t("common.error");
+  }
+
   async function handleDeactivateConfirmed() {
     const user = confirmDeactivateUser;
     if (!user) return;
@@ -1094,7 +1104,7 @@ export default function PersonnelPage() {
       showToast(t("personnel.user_deactivated"));
       await refetchUsers();
     } catch (e) {
-      showToast(e instanceof Error ? e.message : t("common.error"), "error");
+      showToast(deactivateErrorMessage(e), "error");
     } finally {
       setActionLoadingId(null);
       setConfirmDeactivateUser(null);
@@ -1279,14 +1289,18 @@ export default function PersonnelPage() {
                         {t("personnel.reset_password")}
                       </button>
                       {u.is_active ? (
-                        <button
-                          type="button"
-                          onClick={(e) => { e.stopPropagation(); setConfirmDeactivateUser(u); }}
-                          disabled={actionLoadingId === `deactivate:${u.id}`}
-                          className="text-xs text-red-600 font-semibold border border-red-200 rounded px-2 py-1 hover:bg-red-50 disabled:opacity-50"
-                        >
-                          {t("personnel.deactivate_user")}
-                        </button>
+                        // A user can never deactivate their own account — hide the
+                        // button entirely rather than show it and let the backend 422.
+                        session?.id !== u.id && (
+                          <button
+                            type="button"
+                            onClick={(e) => { e.stopPropagation(); setConfirmDeactivateUser(u); }}
+                            disabled={actionLoadingId === `deactivate:${u.id}`}
+                            className="text-xs text-red-600 font-semibold border border-red-200 rounded px-2 py-1 hover:bg-red-50 disabled:opacity-50"
+                          >
+                            {t("personnel.deactivate_user")}
+                          </button>
+                        )
                       ) : (
                         <button
                           type="button"
