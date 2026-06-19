@@ -161,6 +161,80 @@ class TestLocalDevAuth:
         assert payload["warehouse_id"] is None
         assert payload["positions"]    == []
 
+    def test_au_user_can_login_without_position(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """AU user (system_role='AU', no position) gets role=AU and is not blocked
+        by the position-required check. Exercises the real _lookup_user_with_position
+        logic (not mocked) via a fake DB session, so the fix itself is verified —
+        previously this fell through to the position lookup and hit the 403
+        'No active position assigned' block."""
+        from unittest.mock import AsyncMock, MagicMock
+
+        fake_row = MagicMock()
+        fake_row.id                  = "au-001"
+        fake_row.email                = "au@acme.com"
+        fake_row.full_name            = "Almaz Tesfaye"
+        fake_row.tenant_id            = "aaaaaaaa-0000-0000-0000-000000000001"
+        fake_row.password_hash        = None
+        fake_row.must_reset_password  = False
+        fake_row.system_role          = "AU"
+        fake_row.is_active            = True
+        fake_row.tenant_slug          = "acme"
+
+        fake_result = MagicMock()
+        fake_result.fetchone = MagicMock(return_value=fake_row)
+
+        fake_db = AsyncMock()
+        fake_db.execute    = AsyncMock(return_value=fake_result)
+        fake_db.__aenter__ = AsyncMock(return_value=fake_db)
+        fake_db.__aexit__  = AsyncMock(return_value=None)
+
+        import shared.db.session as _sess_mod
+        monkeypatch.setattr(_sess_mod, "AsyncSessionLocal", lambda: fake_db)
+
+        resp = client.post("/api/v1/auth/token", json={"dev_email": "au@acme.com"})
+        assert resp.status_code == 200, resp.text
+        payload = jwt.decode(resp.json()["access_token"], _SECRET, algorithms=[_ALG])
+        assert payload["role"]         == "AU"
+        assert payload["tenant_id"]    == "aaaaaaaa-0000-0000-0000-000000000001"
+        assert payload["warehouse_id"] is None
+        assert payload["position_id"]  is None
+        assert payload["positions"]    == []
+
+    def test_lm_user_can_login_without_position(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """LM user (system_role='LM', no position) gets role=LM — same direct-role
+        path as AU/TA, exercised through the real lookup function."""
+        from unittest.mock import AsyncMock, MagicMock
+
+        fake_row = MagicMock()
+        fake_row.id                  = "lm-001"
+        fake_row.email                = "lm@acme.com"
+        fake_row.full_name            = "Dawit Alemu"
+        fake_row.tenant_id            = "aaaaaaaa-0000-0000-0000-000000000001"
+        fake_row.password_hash        = None
+        fake_row.must_reset_password  = False
+        fake_row.system_role          = "LM"
+        fake_row.is_active            = True
+        fake_row.tenant_slug          = "acme"
+
+        fake_result = MagicMock()
+        fake_result.fetchone = MagicMock(return_value=fake_row)
+
+        fake_db = AsyncMock()
+        fake_db.execute    = AsyncMock(return_value=fake_result)
+        fake_db.__aenter__ = AsyncMock(return_value=fake_db)
+        fake_db.__aexit__  = AsyncMock(return_value=None)
+
+        import shared.db.session as _sess_mod
+        monkeypatch.setattr(_sess_mod, "AsyncSessionLocal", lambda: fake_db)
+
+        resp = client.post("/api/v1/auth/token", json={"dev_email": "lm@acme.com"})
+        assert resp.status_code == 200, resp.text
+        payload = jwt.decode(resp.json()["access_token"], _SECRET, algorithms=[_ALG])
+        assert payload["role"]         == "LM"
+        assert payload["warehouse_id"] is None
+        assert payload["position_id"]  is None
+        assert payload["positions"]    == []
+
     def test_dev_email_unknown_returns_401(self) -> None:
         """Unknown dev_email returns 401 (was 404 before FIX A2).
         Using 401 avoids leaking whether an email exists in the system."""

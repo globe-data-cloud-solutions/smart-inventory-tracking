@@ -87,6 +87,11 @@ class UserUpdateRequest(BaseModel):
     system_role:         Optional[str]       = None
     role:                Optional[str]       = None  # Frontend compat: "TA" → system_role="TA"
     password:            Optional[str]       = None  # admin-initiated reset
+    # system_role=None means "don't touch this column" (PATCH semantics can't
+    # otherwise distinguish "not provided" from "clear it"). Set this explicitly
+    # to NULL system_role — used when switching a user from a tenant-wide role
+    # (Track B) back to a position-based one (Track A).
+    clear_system_role:   bool                = False
 
     @field_validator("password")
     @classmethod
@@ -609,17 +614,20 @@ async def update_user(
             set_parts.append("must_reset_password = :mrp")
         params["mrp"] = True
 
-    # system_role: explicit field or mapped from legacy role="TA"
-    effective_sr = body.system_role or ("TA" if body.role == "TA" else None)
-    if effective_sr is not None:
-        if effective_sr not in VALID_DIRECT_SYSTEM_ROLES:
-            raise HTTPException(
-                status_code=422,
-                detail={"code": "INVALID_SYSTEM_ROLE",
-                        "message": "system_role must be TA, AU, or LM, or null (role comes from position)."},
-            )
-        set_parts.append("system_role = :sr")
-        params["sr"] = effective_sr
+    if body.clear_system_role:
+        set_parts.append("system_role = NULL")
+    else:
+        # system_role: explicit field or mapped from legacy role="TA"
+        effective_sr = body.system_role or ("TA" if body.role == "TA" else None)
+        if effective_sr is not None:
+            if effective_sr not in VALID_DIRECT_SYSTEM_ROLES:
+                raise HTTPException(
+                    status_code=422,
+                    detail={"code": "INVALID_SYSTEM_ROLE",
+                            "message": "system_role must be TA, AU, or LM, or null (role comes from position)."},
+                )
+            set_parts.append("system_role = :sr")
+            params["sr"] = effective_sr
 
     await db.execute(
         text(f"UPDATE users SET {', '.join(set_parts)} WHERE id = :uid AND tenant_id = :tid"),

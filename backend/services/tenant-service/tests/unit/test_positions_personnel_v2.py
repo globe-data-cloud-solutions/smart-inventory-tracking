@@ -558,6 +558,38 @@ class TestPersonnelV2:
         assert exc_info.value.status_code == 422
         assert exc_info.value.detail["code"] == "INVALID_SYSTEM_ROLE"
 
+    async def test_clear_system_role_on_update(self) -> None:
+        """PATCH /users/{id} with clear_system_role=True nulls out system_role —
+        used when switching a user from a tenant-wide role (Track B) back to a
+        position-based one (Track A), so role then comes from the new position
+        instead of the stale system_role value."""
+        from routers.personnel_v2 import update_user, UserUpdateRequest
+
+        user_row = _row(id=USER_ID)
+        execute_calls: list[tuple[str, dict]] = []
+
+        async def _capture(stmt, params=None, **kw) -> MagicMock:
+            execute_calls.append((str(stmt), params or {}))
+            res = MagicMock()
+            res.fetchone = MagicMock(return_value=user_row if "SELECT id FROM users" in str(stmt) else None)
+            return res
+
+        db = AsyncMock()
+        db.execute = AsyncMock(side_effect=_capture)
+
+        with _GRANT_ALL:
+            result = await update_user(
+                tenant_id=UUID(TENANT_ID),
+                user_id=UUID(USER_ID),
+                body=UserUpdateRequest(clear_system_role=True),
+                user=_Caller(),
+                db=db,
+            )
+
+        assert result.data == {"updated": True, "user_id": USER_ID}
+        update_stmt, _ = execute_calls[-1]
+        assert "system_role = NULL" in update_stmt
+
 
 # ── Test 4: Transfer type config ─────────────────────────────────────────────
 

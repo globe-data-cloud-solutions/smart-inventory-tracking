@@ -73,19 +73,28 @@ async def _lookup_user_with_position(
             if stored is None or not _bcrypt.checkpw(password.encode(), stored.encode()):
                 raise HTTPException(status_code=401, detail="Invalid password")
 
-        # TA — has tenant, system_role='TA', no position required
-        if getattr(user_rec, "system_role", None) == "TA":
+        # Tenant-wide direct roles — system_role set, no position required.
+        # Must mirror personnel_v2.py's VALID_DIRECT_SYSTEM_ROLES (TA/AU/LM).
+        # SA is intentionally excluded here — SA accounts never populate
+        # system_role; they are identified by tenant_id IS NULL (handled below).
+        _DIRECT_ROLE_TITLES = {
+            "TA": "Tenant Administrator",
+            "AU": "Auditor",
+            "LM": "Logistics Manager",
+        }
+        direct_role = getattr(user_rec, "system_role", None)
+        if direct_role in _DIRECT_ROLE_TITLES:
             return {
                 "sub":                  str(user_rec.id),
                 "email":                str(user_rec.email),
                 "name":                 str(user_rec.full_name),
                 "tenant_id":            str(user_rec.tenant_id),
                 "tenant_slug":          str(user_rec.tenant_slug) if user_rec.tenant_slug else None,
-                "role":                 "TA",
+                "role":                 direct_role,
                 "warehouse_id":         None,
                 "warehouse_name":       None,
                 "position_id":          None,
-                "position_title":       "Tenant Administrator",
+                "position_title":       _DIRECT_ROLE_TITLES[direct_role],
                 "level_number":         1,
                 "positions":            [],
                 "must_reset_password":  bool(user_rec.must_reset_password),

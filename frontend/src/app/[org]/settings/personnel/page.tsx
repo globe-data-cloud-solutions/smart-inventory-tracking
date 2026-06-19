@@ -114,7 +114,19 @@ interface EditUserForm {
   name: string;
   email: string;
   position_id: string;
+  system_role: "" | "AU" | "LM";
   must_reset_password: boolean;
+}
+
+/** Mirrors AddUserPanel's two-track model. A user with a PRIMARY position is
+ * always Track A; a user with no position whose role is AU/LM is Track B;
+ * anyone else (unassigned, or TA — not editable via this redesign) defaults
+ * to Track A, same as a brand-new user. */
+function initialTrackFor(user: UserRecord): AddUserTrack {
+  if (!user.primary_position && (user.role === "AU" || user.role === "LM")) {
+    return "tenant_wide";
+  }
+  return "position";
 }
 
 // Color scheme matches the Positions tab (org-setup/page.tsx ROLE_BADGE_COLORS) —
@@ -255,6 +267,46 @@ function ConfirmPositionChangeModal({
   );
 }
 
+/* ── Confirm Track Switch Modal ───────────────────────────────────────────────── */
+
+function ConfirmTrackSwitchModal({
+  message,
+  saving,
+  onCancel,
+  onConfirm,
+}: {
+  message: string;
+  saving: boolean;
+  onCancel: () => void;
+  onConfirm: () => void;
+}) {
+  return (
+    <div className="fixed inset-0 z-[250] flex items-center justify-center bg-black/50 p-4">
+      <div className="bg-white rounded-xl shadow-2xl w-full max-w-sm p-6 space-y-4">
+        <p className="text-sm text-gray-700">{message}</p>
+        <div className="flex justify-end gap-2 pt-1">
+          <button
+            type="button"
+            onClick={onCancel}
+            disabled={saving}
+            className="px-4 py-1.5 text-sm text-gray-600 border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-50"
+          >
+            {t("common.cancel")}
+          </button>
+          <button
+            type="button"
+            onClick={onConfirm}
+            disabled={saving}
+            className="px-4 py-1.5 text-sm font-bold text-white bg-amber-600 rounded-lg hover:bg-amber-700 disabled:opacity-50"
+          >
+            {saving ? t("common.saving") : t("personnel.continue")}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 /* ── Edit User Panel ────────────────────────────────────────────────────────── */
 
 function EditUserPanel({
@@ -271,16 +323,20 @@ function EditUserPanel({
   onUpdated: () => void;
 }) {
   const currentPrimary = initialUser.primary_position;
+  const initialTrack   = initialTrackFor(initialUser);
 
-  const [form, setForm] = useState<EditUserForm>({
+  const [track, setTrack] = useState<AddUserTrack>(initialTrack);
+  const [form, setForm]   = useState<EditUserForm>({
     name:                initialUser.name,
     email:               initialUser.email,
     position_id:         currentPrimary?.position_id ?? "",
+    system_role:         initialTrack === "tenant_wide" ? (initialUser.role as "AU" | "LM") : "",
     must_reset_password: false,
   });
-  const [saving, setSaving]               = useState(false);
-  const [error, setError]                 = useState<string | null>(null);
+  const [saving, setSaving]                   = useState(false);
+  const [error, setError]                     = useState<string | null>(null);
   const [showConfirmSwap, setShowConfirmSwap] = useState(false);
+  const [pendingTrack, setPendingTrack]       = useState<AddUserTrack | null>(null);
 
   function update(patch: Partial<EditUserForm>) {
     setForm((f) => ({ ...f, ...patch }));
@@ -297,21 +353,56 @@ function EditUserPanel({
   const isPositionChange =
     !!form.position_id && form.position_id !== (currentPrimary?.position_id ?? "");
 
+  function applyTrackSwitch(next: AddUserTrack) {
+    setTrack(next);
+    if (next === "position") update({ system_role: "" });
+    else update({ position_id: "" });
+  }
+
+  function requestTrackSwitch(next: AddUserTrack) {
+    if (next === track) return;
+    // Only warn when the switch would actually undo something real — moving
+    // away from the user's ORIGINAL assignment, not just toggling the radio
+    // back and forth before saving.
+    const needsWarning =
+      (next === "tenant_wide" && initialTrack === "position" && !!currentPrimary) ||
+      (next === "position" && initialTrack === "tenant_wide");
+    if (needsWarning) {
+      setPendingTrack(next);
+    } else {
+      applyTrackSwitch(next);
+    }
+  }
+
   async function doSubmit() {
     setSaving(true);
     setError(null);
     try {
-      await api.patch(`/api/v1/tenants/${tenantId}/users/${initialUser.id}`, {
+      const patchBody: Record<string, unknown> = {
         name:                form.name.trim(),
         email:               form.email.trim().toLowerCase(),
         must_reset_password: form.must_reset_password,
-      });
-      if (isPositionChange) {
+      };
+      if (track === "tenant_wide") {
+        patchBody.system_role = form.system_role;
+      } else if (initialTrack === "tenant_wide") {
+        // Switching away from a tenant-wide role — clear it explicitly so role
+        // resolution falls through to the new position instead of the stale value.
+        patchBody.clear_system_role = true;
+      }
+      await api.patch(`/api/v1/tenants/${tenantId}/users/${initialUser.id}`, patchBody);
+
+      if (track === "position" && isPositionChange) {
         await api.post(`/api/v1/tenants/${tenantId}/users/${initialUser.id}/positions`, {
           position_id:     form.position_id,
           assignment_type: "PRIMARY",
         });
       }
+      if (track === "tenant_wide" && currentPrimary) {
+        // Switching from a position-based role — deactivate the old PRIMARY.
+        await api.delete(`/api/v1/tenants/${tenantId}/users/${initialUser.id}/positions/${currentPrimary.assignment_id}`);
+      }
+
       onUpdated();
       onClose();
     } catch (e: unknown) {
@@ -327,10 +418,14 @@ function EditUserPanel({
       setError(t("personnel.fill_required_fields"));
       return;
     }
+    if (track === "tenant_wide" && !form.system_role) {
+      setError(t("personnel.fill_required_fields"));
+      return;
+    }
     setError(null);
     // Swapping an existing PRIMARY position is a destructive, immediately-effective
     // change (the old assignment is deactivated) — confirm before calling the API.
-    if (isPositionChange && currentPrimary) {
+    if (track === "position" && isPositionChange && currentPrimary) {
       setShowConfirmSwap(true);
       return;
     }
@@ -347,6 +442,21 @@ function EditUserPanel({
           </div>
 
           <div className="space-y-3">
+            <div className="space-y-2">
+              <SelectableCard
+                selected={track === "position"}
+                onSelect={() => requestTrackSwitch("position")}
+                title={t("personnel.track_position_title")}
+                description={t("personnel.track_position_desc")}
+              />
+              <SelectableCard
+                selected={track === "tenant_wide"}
+                onSelect={() => requestTrackSwitch("tenant_wide")}
+                title={t("personnel.track_tenant_wide_title")}
+                description={t("personnel.track_tenant_wide_desc")}
+              />
+            </div>
+
             <div>
               <label className="block text-xs font-medium text-gray-600 mb-1">{t("personnel.full_name")} *</label>
               <input
@@ -367,29 +477,51 @@ function EditUserPanel({
               />
             </div>
 
-            <div>
-              <label className="block text-xs font-medium text-gray-600 mb-1">{t("personnel.primary_position")}</label>
-              <select
-                value={form.position_id}
-                onChange={(e) => update({ position_id: e.target.value })}
-                className="w-full text-sm border border-gray-300 rounded-md px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-emerald-500"
-              >
-                <option value="">{t("personnel.keep_existing_position")}</option>
-                {positions.map((p) => (
-                  <option key={p.id} value={p.id}>
-                    {p.title} ({p.role_code}) — {p.node_name}
-                  </option>
-                ))}
-              </select>
-              {previewRoleCode ? (
-                <div className="mt-1 flex items-center gap-2 text-sm">
-                  <RoleBadge role={previewRoleCode} />
-                  <span className="text-gray-500">{roleLabel(previewRoleCode)}</span>
+            {track === "position" ? (
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">{t("personnel.primary_position")}</label>
+                <select
+                  value={form.position_id}
+                  onChange={(e) => update({ position_id: e.target.value })}
+                  className="w-full text-sm border border-gray-300 rounded-md px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                >
+                  <option value="">{t("personnel.keep_existing_position")}</option>
+                  {positions.map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {p.title} ({p.role_code}) — {p.node_name}
+                    </option>
+                  ))}
+                </select>
+                {previewRoleCode ? (
+                  <div className="mt-1 flex items-center gap-2 text-sm">
+                    <RoleBadge role={previewRoleCode} />
+                    <span className="text-gray-500">{roleLabel(previewRoleCode)}</span>
+                  </div>
+                ) : (
+                  <p className="text-xs text-gray-500 mt-1">{t("personnel.no_position_no_role")}</p>
+                )}
+              </div>
+            ) : (
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">{t("personnel.access_level")} *</label>
+                <div className="space-y-2">
+                  <SelectableCard
+                    selected={form.system_role === "AU"}
+                    onSelect={() => update({ system_role: "AU" })}
+                    badge={<RoleBadge role="AU" />}
+                    title={t("personnel.role_au_title")}
+                    description={t("personnel.role_au_desc")}
+                  />
+                  <SelectableCard
+                    selected={form.system_role === "LM"}
+                    onSelect={() => update({ system_role: "LM" })}
+                    badge={<RoleBadge role="LM" />}
+                    title={t("personnel.role_lm_title")}
+                    description={t("personnel.role_lm_desc")}
+                  />
                 </div>
-              ) : (
-                <p className="text-xs text-gray-500 mt-1">{t("personnel.no_position_no_role")}</p>
-              )}
-            </div>
+              </div>
+            )}
 
             <label className="flex items-center gap-2 cursor-pointer select-none">
               <input
@@ -432,6 +564,22 @@ function EditUserPanel({
           saving={saving}
           onCancel={() => setShowConfirmSwap(false)}
           onConfirm={() => void doSubmit()}
+        />
+      )}
+
+      {pendingTrack && (
+        <ConfirmTrackSwitchModal
+          message={
+            pendingTrack === "tenant_wide"
+              ? t("personnel.switch_to_tenant_wide_warning").replace("{name}", initialUser.name)
+              : t("personnel.switch_to_position_warning").replace("{name}", initialUser.name)
+          }
+          saving={false}
+          onCancel={() => setPendingTrack(null)}
+          onConfirm={() => {
+            applyTrackSwitch(pendingTrack);
+            setPendingTrack(null);
+          }}
         />
       )}
     </>
