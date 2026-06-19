@@ -306,26 +306,20 @@ async def assign_position(
     if not user_row:
         raise HTTPException(status_code=404, detail="User not found in this tenant")
 
-    # Enforce single active PRIMARY
+    # Swap PRIMARY atomically: deactivate any existing active PRIMARY before
+    # inserting the new one, rather than rejecting the request. The caller
+    # (Edit User UI) confirms the swap with the user before calling this.
     if body.assignment_type == "PRIMARY":
-        existing_primary = (await db.execute(
+        await db.execute(
             text("""
-                SELECT id FROM personnel_positions
+                UPDATE personnel_positions
+                SET is_active = false
                 WHERE user_id = :uid AND assignment_type = 'PRIMARY'
                 AND is_active = true
                 AND (valid_until IS NULL OR valid_until >= CURRENT_DATE)
             """),
             {"uid": str(user_id)},
-        )).fetchone()
-        if existing_primary:
-            raise HTTPException(
-                status_code=422,
-                detail={
-                    "code":    "DUPLICATE_PRIMARY",
-                    "message": "User already has an active PRIMARY position. "
-                               "Deactivate it before assigning a new one.",
-                },
-            )
+        )
 
     # Verify position belongs to this tenant
     pos_row = (await db.execute(

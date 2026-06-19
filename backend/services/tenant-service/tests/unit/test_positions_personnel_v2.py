@@ -174,19 +174,29 @@ class TestPositionCreate:
 @pytest.mark.unit
 class TestPersonnelV2:
 
-    async def test_personnel_create_with_position(self) -> None:
-        """POST /users creates user + PRIMARY personnel_position when position_id provided."""
+    async def test_create_user_with_position(self) -> None:
+        """POST /users creates the user AND the PRIMARY personnel_position atomically —
+        a single call into create_user, with no separate POST .../positions needed."""
         from routers.personnel_v2 import create_user, UserCreate
 
         pos_row = _row(id=POSITION_ID, title="Main WH Manager", role_code="WM",
                        node_id=NODE_ID, node_name="Main WH", hierarchy_level=1)
 
-        db = _db_seq(
-            None,     # no duplicate email
-            None,     # INSERT users
-            pos_row,  # position lookup
-            None,     # INSERT personnel_positions
-        )
+        execute_calls: list[tuple[str, dict]] = []
+
+        async def _capture(stmt, params=None, **kw) -> MagicMock:
+            execute_calls.append((str(stmt), params or {}))
+            res = MagicMock()
+            if "SELECT id FROM users" in str(stmt):
+                res.fetchone = MagicMock(return_value=None)       # no duplicate email
+            elif "SELECT p.id, p.title, p.role_code" in str(stmt):
+                res.fetchone = MagicMock(return_value=pos_row)    # position lookup
+            else:
+                res.fetchone = MagicMock(return_value=None)       # INSERT statements
+            return res
+
+        db = AsyncMock()
+        db.execute = AsyncMock(side_effect=_capture)
 
         with _GRANT_ALL:
             result = await create_user(
@@ -207,17 +217,41 @@ class TestPersonnelV2:
         assert result.data.primary_position.role_code == "WM"
         assert result.data.primary_position.assignment_type == "PRIMARY"
 
-    async def test_personnel_assign_duplicate_primary_rejected(self) -> None:
-        """POST /users/{id}/positions rejects a second PRIMARY assignment."""
+        # Exactly one create_user() invocation produced both the user row and the
+        # PRIMARY assignment row — no second endpoint call was needed.
+        stmts = " ".join(s for s, _ in execute_calls)
+        assert "INSERT INTO users" in stmts
+        assert "INSERT INTO personnel_positions" in stmts
+        assert len(execute_calls) == 4, "dup-email check + INSERT user + position lookup + INSERT assignment"
+
+    async def test_swap_primary_position_success(self) -> None:
+        """POST /users/{id}/positions with assignment_type=PRIMARY deactivates the user's
+        existing PRIMARY row and inserts the new one, instead of rejecting the request —
+        the Edit User UI confirms the swap with the caller before calling this endpoint."""
         from routers.personnel_v2 import assign_position, AssignPositionRequest
 
-        user_row   = _row(id=USER_ID)
-        existing   = _row(id=str(uuid4()))  # existing PRIMARY
+        user_row = _row(id=USER_ID)
+        pos_row  = _row(id=POSITION_ID, title="Main WH Manager", role_code="WM",
+                        node_id=NODE_ID, node_name="Main WH", hierarchy_level=1)
 
-        db = _db_seq(user_row, existing)
+        execute_calls: list[tuple[str, dict]] = []
 
-        with _GRANT_ALL, pytest.raises(HTTPException) as exc_info:
-            await assign_position(
+        async def _capture(stmt, params=None, **kw) -> MagicMock:
+            execute_calls.append((str(stmt), params or {}))
+            res = MagicMock()
+            if "SELECT id FROM users" in str(stmt):
+                res.fetchone = MagicMock(return_value=user_row)
+            elif "SELECT p.id, p.title, p.role_code" in str(stmt):
+                res.fetchone = MagicMock(return_value=pos_row)
+            else:
+                res.fetchone = MagicMock(return_value=None)
+            return res
+
+        db = AsyncMock()
+        db.execute = AsyncMock(side_effect=_capture)
+
+        with _GRANT_ALL:
+            result = await assign_position(
                 tenant_id=UUID(TENANT_ID),
                 user_id=UUID(USER_ID),
                 body=AssignPositionRequest(
@@ -227,8 +261,114 @@ class TestPersonnelV2:
                 user=_Caller(),
                 db=db,
             )
+
+        assert result.data.role_code == "WM"
+        assert result.data.assignment_type == "PRIMARY"
+
+        # The deactivate-old-PRIMARY UPDATE must run before the INSERT of the new
+        # PRIMARY row, so at no point do two active PRIMARY rows coexist.
+        update_idx = next(i for i, (s, _) in enumerate(execute_calls) if "is_active = false" in s)
+        insert_idx = next(i for i, (s, _) in enumerate(execute_calls) if "INSERT INTO personnel_positions" in s)
+        assert update_idx < insert_idx
+        update_stmt, update_params = execute_calls[update_idx]
+        assert "assignment_type = 'PRIMARY'" in update_stmt
+        assert update_params["uid"] == USER_ID
+
+    async def test_swap_primary_same_position_is_a_no_op_swap(self) -> None:
+        """Documenting actual behavior: assign_position does NOT special-case
+        'new position_id equals the current PRIMARY's position_id'. It still
+        deactivates the existing row and inserts a fresh one at the same position —
+        not a 422. (The frontend already avoids calling this endpoint at all when
+        the selected position matches the current one — see isPositionChange in
+        settings/personnel/page.tsx — so this path is reachable only via direct API use.)"""
+        from routers.personnel_v2 import assign_position, AssignPositionRequest
+
+        user_row = _row(id=USER_ID)
+        pos_row  = _row(id=POSITION_ID, title="Main WH Manager", role_code="WM",
+                        node_id=NODE_ID, node_name="Main WH", hierarchy_level=1)
+
+        db = _db_seq(
+            user_row,  # user belongs to tenant
+            None,      # UPDATE — deactivate existing PRIMARY (same position)
+            pos_row,   # position lookup — same position_id as before
+            None,      # INSERT — new PRIMARY row at the same position
+        )
+
+        with _GRANT_ALL:
+            result = await assign_position(
+                tenant_id=UUID(TENANT_ID),
+                user_id=UUID(USER_ID),
+                body=AssignPositionRequest(
+                    position_id=UUID(POSITION_ID),
+                    assignment_type="PRIMARY",
+                ),
+                user=_Caller(),
+                db=db,
+            )
+
+        # No exception — a new assignment row is created even though the position
+        # didn't change. This is a documented quirk, not the happy path the UI uses.
+        assert result.data.position_id == UUID(POSITION_ID)
+        assert result.data.assignment_type == "PRIMARY"
+
+    async def test_remove_acting_assignment(self) -> None:
+        """DELETE /users/{id}/positions/{assignment_id} deactivates an ACTING row
+        without touching the user's PRIMARY assignment or requiring another PRIMARY
+        to exist (the other-PRIMARY-count guard only applies to PRIMARY removals)."""
+        from routers.personnel_v2 import remove_position_assignment
+
+        assignment_row = _row(id=POSITION_ID, assignment_type="ACTING")
+
+        execute_calls: list[tuple[str, dict]] = []
+
+        async def _capture(stmt, params=None, **kw) -> MagicMock:
+            execute_calls.append((str(stmt), params or {}))
+            res = MagicMock()
+            res.fetchone = MagicMock(return_value=assignment_row if "SELECT pp.id" in str(stmt) else None)
+            return res
+
+        db = AsyncMock()
+        db.execute = AsyncMock(side_effect=_capture)
+
+        with _GRANT_ALL:
+            result = await remove_position_assignment(
+                tenant_id=UUID(TENANT_ID),
+                user_id=UUID(USER_ID),
+                assignment_id=UUID(POSITION_ID),
+                user=_Caller(),
+                db=db,
+            )
+
+        assert result.data == {"deactivated": True, "assignment_id": POSITION_ID}
+        stmts = " ".join(s for s, _ in execute_calls)
+        assert "UPDATE personnel_positions SET is_active = false" in stmts
+        # ACTING removal never queries for other active PRIMARY rows.
+        assert "COUNT(*)" not in stmts
+
+    async def test_cannot_remove_last_primary(self) -> None:
+        """DELETE /users/{id}/positions/{assignment_id} rejects removing a user's only
+        active PRIMARY assignment — existing guard preserved by the swap change above,
+        which only touches assign_position, not remove_position_assignment."""
+        from routers.personnel_v2 import remove_position_assignment
+
+        assignment_row = _row(id=POSITION_ID, assignment_type="PRIMARY")
+
+        db = _db_seq(
+            assignment_row,  # assignment found and active
+            0,                # other_primary_count == 0 → only this PRIMARY exists
+        )
+
+        with _GRANT_ALL, pytest.raises(HTTPException) as exc_info:
+            await remove_position_assignment(
+                tenant_id=UUID(TENANT_ID),
+                user_id=UUID(USER_ID),
+                assignment_id=UUID(POSITION_ID),
+                user=_Caller(),
+                db=db,
+            )
+
         assert exc_info.value.status_code == 422
-        assert exc_info.value.detail["code"] == "DUPLICATE_PRIMARY"
+        assert exc_info.value.detail["code"] == "CANNOT_REMOVE_LAST_PRIMARY"
 
 
 # ── Test 4: Transfer type config ─────────────────────────────────────────────

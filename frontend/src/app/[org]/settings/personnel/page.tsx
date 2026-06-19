@@ -9,6 +9,20 @@ import { getSession, SA_ORG_SLUG } from "@/lib/demo-auth";
 
 /* ── Types ─────────────────────────────────────────────────────────────────── */
 
+/** Mirrors personnel_v2.py's PositionAssignmentOut — a single position assignment. */
+interface PositionRow {
+  assignment_id: string;
+  position_id: string;
+  title: string;
+  role_code: string;
+  node_id: string;
+  node_name: string;
+  level_number: number;
+  assignment_type: "PRIMARY" | "ACTING" | "DELEGATE";
+  valid_from: string | null;
+  valid_until: string | null;
+}
+
 interface UserRecord {
   id: string;
   name: string;
@@ -17,23 +31,13 @@ interface UserRecord {
   is_active: boolean;
   primary_facility_name: string | null;
   primary_facility_id: string | null;
+  primary_position: PositionRow | null;
+  acting_positions: PositionRow[];
   created_at: string;
 }
 
-interface Assignment {
-  id: string;
-  assignment_type: "PRIMARY" | "ACTING" | "DELEGATE";
-  facility_id: string;
-  facility_name: string | null;
-  role_code: string;
-  valid_from: string | null;
-  valid_until: string | null;
-  is_active: boolean;
-}
-
-interface UserDetail extends UserRecord {
-  assignments?: Assignment[];   // optional — API may omit on some paths
-}
+// GET /users/{id} returns the same UserOut shape as the list endpoint.
+type UserDetail = UserRecord;
 
 /** A position flattened from NodePositionGroupOut for dropdown use. */
 interface PositionItem {
@@ -44,31 +48,26 @@ interface PositionItem {
   node_name: string;
 }
 
-interface OrgNode {
-  id: string;
-  name: string;
-  code: string;
-  hierarchy_level: number;
-  children: OrgNode[];
-}
 
 interface NewUserForm {
   name: string;
   email: string;
-  role: string;
   position_id: string;
   password: string;
 }
 
 interface ActingAssignmentForm {
-  facility_id: string;
-  role_code: string;
+  position_id: string;
   valid_from: string;
   valid_until: string;
+  notes: string;
 }
 
 /* ── Constants ─────────────────────────────────────────────────────────────── */
 
+// Role catalog used for display (badges, the read-only "Role" filter dropdown,
+// and role-derived-from-position previews). Role is never set directly through
+// these forms — it always comes from the selected position's role_code.
 const ROLE_OPTIONS = [
   { code: "TA",    label: "Tenant Admin",        level: 9 },
   { code: "NM",    label: "National Manager",    level: 8 },
@@ -79,10 +78,6 @@ const ROLE_OPTIONS = [
   { code: "RT",    label: "Retailer",            level: 3 },
   { code: "AU",    label: "Auditor",             level: 2 },
 ] as const;
-
-const ROLE_LEVEL: Record<string, number> = {
-  SA: 10, TA: 9, NM: 8, RM: 7, WM: 6, LM: 6, SA_GT: 4, RT: 3, AU: 2, SYS: 1,
-};
 
 const ROLE_BADGE_CLASS: Record<string, string> = {
   TA:    "bg-violet-100 text-violet-700",
@@ -95,32 +90,31 @@ const ROLE_BADGE_CLASS: Record<string, string> = {
   AU:    "bg-gray-100  text-gray-600",
 };
 
+function roleLabel(code: string | null | undefined): string {
+  if (!code) return "—";
+  return ROLE_OPTIONS.find((r) => r.code === code)?.label ?? code;
+}
+
+function todayISO(): string {
+  return new Date().toISOString().slice(0, 10);
+}
+
 const EMPTY_USER: NewUserForm = {
-  name: "", email: "", role: "WM", position_id: "", password: "",
+  name: "", email: "", position_id: "", password: "",
 };
 
-const EMPTY_ACTING: ActingAssignmentForm = {
-  facility_id: "", role_code: "WM", valid_from: "", valid_until: "",
-};
+function emptyActingForm(): ActingAssignmentForm {
+  return { position_id: "", valid_from: todayISO(), valid_until: "", notes: "" };
+}
 
 interface EditUserForm {
   name: string;
   email: string;
-  role: string;
   position_id: string;
   must_reset_password: boolean;
 }
 
 /* ── Helpers ────────────────────────────────────────────────────────────────── */
-
-function flattenNodes(nodes: OrgNode[]): OrgNode[] {
-  const out: OrgNode[] = [];
-  function visit(list: OrgNode[]) {
-    for (const n of list) { out.push(n); visit(n.children); }
-  }
-  visit(nodes);
-  return out;
-}
 
 function roleBadge(role: string) {
   return (
@@ -134,9 +128,71 @@ function roleBadge(role: string) {
   );
 }
 
-function isExpired(until: string | null): boolean {
-  if (!until) return false;
-  return new Date(until) < new Date();
+/* ── Confirm Position Change Modal ────────────────────────────────────────────── */
+
+function ConfirmPositionChangeModal({
+  userName,
+  currentPosition,
+  newPosition,
+  saving,
+  onCancel,
+  onConfirm,
+}: {
+  userName: string;
+  currentPosition: PositionRow;
+  newPosition: PositionItem;
+  saving: boolean;
+  onCancel: () => void;
+  onConfirm: () => void;
+}) {
+  return (
+    <div className="fixed inset-0 z-[250] flex items-center justify-center bg-black/50 p-4">
+      <div className="bg-white rounded-xl shadow-2xl w-full max-w-sm p-6 space-y-4">
+        <h2 className="text-base font-bold text-gray-900">
+          {t("personnel.confirm_position_change_title")}
+        </h2>
+
+        <p className="text-sm text-gray-700">
+          {t("personnel.confirm_position_change_prefix")} <span className="font-semibold">{userName}</span>
+          {t("personnel.confirm_position_change_suffix")}
+        </p>
+
+        <div className="bg-gray-50 rounded-lg p-3 space-y-1.5 text-sm">
+          <p className="text-gray-600">
+            <span className="font-semibold text-gray-500">{t("personnel.confirm_position_change_from")}:</span>{" "}
+            {currentPosition.title} ({currentPosition.role_code})
+          </p>
+          <p className="text-gray-600">
+            <span className="font-semibold text-gray-500">{t("personnel.confirm_position_change_to")}:</span>{" "}
+            {newPosition.title} ({newPosition.role_code})
+          </p>
+        </div>
+
+        <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+          {t("personnel.confirm_position_change_warning")}
+        </p>
+
+        <div className="flex justify-end gap-2 pt-1">
+          <button
+            type="button"
+            onClick={onCancel}
+            disabled={saving}
+            className="px-4 py-1.5 text-sm text-gray-600 border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-50"
+          >
+            {t("common.cancel")}
+          </button>
+          <button
+            type="button"
+            onClick={onConfirm}
+            disabled={saving}
+            className="px-4 py-1.5 text-sm font-bold text-white bg-amber-600 rounded-lg hover:bg-amber-700 disabled:opacity-50"
+          >
+            {saving ? t("common.saving") : t("personnel.confirm_position_change_confirm")}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
 }
 
 /* ── Edit User Panel ────────────────────────────────────────────────────────── */
@@ -144,51 +200,53 @@ function isExpired(until: string | null): boolean {
 function EditUserPanel({
   tenantId,
   user: initialUser,
-  callerRole,
   positions,
   onClose,
   onUpdated,
 }: {
   tenantId: string;
   user: UserRecord;
-  callerRole: string;
   positions: PositionItem[];
   onClose: () => void;
   onUpdated: () => void;
 }) {
+  const currentPrimary = initialUser.primary_position;
+
   const [form, setForm] = useState<EditUserForm>({
-    name:               initialUser.name,
-    email:              initialUser.email,
-    role:               initialUser.role,
-    position_id:        "",   // re-select to change; leave blank to keep existing
+    name:                initialUser.name,
+    email:               initialUser.email,
+    position_id:         currentPrimary?.position_id ?? "",
     must_reset_password: false,
   });
-  const [saving, setSaving] = useState(false);
-  const [error, setError]   = useState<string | null>(null);
-
-  const callerLevel  = ROLE_LEVEL[callerRole] ?? 0;
-  const allowedRoles = ROLE_OPTIONS.filter((r) => r.level < callerLevel);
+  const [saving, setSaving]               = useState(false);
+  const [error, setError]                 = useState<string | null>(null);
+  const [showConfirmSwap, setShowConfirmSwap] = useState(false);
 
   function update(patch: Partial<EditUserForm>) {
     setForm((f) => ({ ...f, ...patch }));
   }
 
-  async function submit() {
-    if (!form.name.trim() || !form.email.trim()) {
-      setError(t("personnel.fill_required_fields"));
-      return;
-    }
+  // The position actually selected in the dropdown right now (for the read-only
+  // role preview) — falls back to the user's current position when untouched.
+  const selectedPosition = form.position_id
+    ? positions.find((p) => p.id === form.position_id) ?? null
+    : null;
+  const previewRoleCode = selectedPosition?.role_code ?? currentPrimary?.role_code ?? null;
+
+  // A "real" change is a non-blank selection that differs from the current PRIMARY.
+  const isPositionChange =
+    !!form.position_id && form.position_id !== (currentPrimary?.position_id ?? "");
+
+  async function doSubmit() {
     setSaving(true);
     setError(null);
     try {
       await api.patch(`/api/v1/tenants/${tenantId}/users/${initialUser.id}`, {
         name:                form.name.trim(),
         email:               form.email.trim().toLowerCase(),
-        role:                form.role,
         must_reset_password: form.must_reset_password,
       });
-      // If a new position was selected, assign it as PRIMARY
-      if (form.position_id) {
+      if (isPositionChange) {
         await api.post(`/api/v1/tenants/${tenantId}/users/${initialUser.id}/positions`, {
           position_id:     form.position_id,
           assignment_type: "PRIMARY",
@@ -200,51 +258,55 @@ function EditUserPanel({
       setError(e instanceof Error ? e.message : t("common.error"));
     } finally {
       setSaving(false);
+      setShowConfirmSwap(false);
     }
   }
 
+  function handleSaveClick() {
+    if (!form.name.trim() || !form.email.trim()) {
+      setError(t("personnel.fill_required_fields"));
+      return;
+    }
+    setError(null);
+    // Swapping an existing PRIMARY position is a destructive, immediately-effective
+    // change (the old assignment is deactivated) — confirm before calling the API.
+    if (isPositionChange && currentPrimary) {
+      setShowConfirmSwap(true);
+      return;
+    }
+    void doSubmit();
+  }
+
   return (
-    <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/50 p-4">
-      <div className="bg-white rounded-xl shadow-2xl w-full max-w-md p-6 space-y-4">
-        <div className="flex items-center justify-between">
-          <h2 className="text-base font-bold text-gray-900">{t("personnel.edit_user")}</h2>
-          <button onClick={onClose} className="text-gray-400 hover:text-gray-700 text-xl border-0 bg-transparent cursor-pointer">✕</button>
-        </div>
-
-        <div className="space-y-3">
-          <div>
-            <label className="block text-xs font-medium text-gray-600 mb-1">{t("personnel.full_name")} *</label>
-            <input
-              type="text"
-              value={form.name}
-              onChange={(e) => update({ name: e.target.value })}
-              className="w-full text-sm border border-gray-300 rounded-md px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-emerald-500"
-            />
+    <>
+      <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/50 p-4">
+        <div className="bg-white rounded-xl shadow-2xl w-full max-w-md p-6 space-y-4">
+          <div className="flex items-center justify-between">
+            <h2 className="text-base font-bold text-gray-900">{t("personnel.edit_user")}</h2>
+            <button onClick={onClose} className="text-gray-400 hover:text-gray-700 text-xl border-0 bg-transparent cursor-pointer">✕</button>
           </div>
 
-          <div>
-            <label className="block text-xs font-medium text-gray-600 mb-1">{t("personnel.email")} *</label>
-            <input
-              type="email"
-              value={form.email}
-              onChange={(e) => update({ email: e.target.value })}
-              className="w-full text-sm border border-gray-300 rounded-md px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-emerald-500"
-            />
-          </div>
-
-          <div className="grid grid-cols-2 gap-3">
+          <div className="space-y-3">
             <div>
-              <label className="block text-xs font-medium text-gray-600 mb-1">{t("personnel.role")} *</label>
-              <select
-                value={form.role}
-                onChange={(e) => update({ role: e.target.value })}
+              <label className="block text-xs font-medium text-gray-600 mb-1">{t("personnel.full_name")} *</label>
+              <input
+                type="text"
+                value={form.name}
+                onChange={(e) => update({ name: e.target.value })}
                 className="w-full text-sm border border-gray-300 rounded-md px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-emerald-500"
-              >
-                {allowedRoles.map((r) => (
-                  <option key={r.code} value={r.code}>{r.code} — {r.label}</option>
-                ))}
-              </select>
+              />
             </div>
+
+            <div>
+              <label className="block text-xs font-medium text-gray-600 mb-1">{t("personnel.email")} *</label>
+              <input
+                type="email"
+                value={form.email}
+                onChange={(e) => update({ email: e.target.value })}
+                className="w-full text-sm border border-gray-300 rounded-md px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+              />
+            </div>
+
             <div>
               <label className="block text-xs font-medium text-gray-600 mb-1">{t("personnel.primary_position")}</label>
               <select
@@ -259,41 +321,57 @@ function EditUserPanel({
                   </option>
                 ))}
               </select>
+              <p className="text-xs text-gray-500 mt-1">
+                {previewRoleCode
+                  ? `${t("personnel.role")}: ${roleLabel(previewRoleCode)} (${previewRoleCode})`
+                  : t("personnel.no_position_no_role")}
+              </p>
             </div>
+
+            <label className="flex items-center gap-2 cursor-pointer select-none">
+              <input
+                type="checkbox"
+                checked={form.must_reset_password}
+                onChange={(e) => update({ must_reset_password: e.target.checked })}
+                className="w-4 h-4 accent-emerald-600"
+              />
+              <span className="text-xs text-gray-600">{t("personnel.force_password_reset")}</span>
+            </label>
           </div>
 
-          <label className="flex items-center gap-2 cursor-pointer select-none">
-            <input
-              type="checkbox"
-              checked={form.must_reset_password}
-              onChange={(e) => update({ must_reset_password: e.target.checked })}
-              className="w-4 h-4 accent-emerald-600"
-            />
-            <span className="text-xs text-gray-600">{t("personnel.force_password_reset")}</span>
-          </label>
-        </div>
+          {error && <p className="text-xs text-red-600 font-medium">{error}</p>}
 
-        {error && <p className="text-xs text-red-600 font-medium">{error}</p>}
-
-        <div className="flex justify-end gap-2 pt-2">
-          <button
-            type="button"
-            onClick={onClose}
-            className="px-4 py-1.5 text-sm text-gray-600 border border-gray-300 rounded-lg hover:bg-gray-50"
-          >
-            {t("common.cancel")}
-          </button>
-          <button
-            type="button"
-            onClick={() => void submit()}
-            disabled={saving}
-            className="px-4 py-1.5 text-sm font-bold text-white bg-emerald-600 rounded-lg hover:bg-emerald-700 disabled:opacity-50"
-          >
-            {saving ? t("common.saving") : t("personnel.save_changes")}
-          </button>
+          <div className="flex justify-end gap-2 pt-2">
+            <button
+              type="button"
+              onClick={onClose}
+              className="px-4 py-1.5 text-sm text-gray-600 border border-gray-300 rounded-lg hover:bg-gray-50"
+            >
+              {t("common.cancel")}
+            </button>
+            <button
+              type="button"
+              onClick={handleSaveClick}
+              disabled={saving}
+              className="px-4 py-1.5 text-sm font-bold text-white bg-emerald-600 rounded-lg hover:bg-emerald-700 disabled:opacity-50"
+            >
+              {saving ? t("common.saving") : t("personnel.save_changes")}
+            </button>
+          </div>
         </div>
       </div>
-    </div>
+
+      {showConfirmSwap && currentPrimary && selectedPosition && (
+        <ConfirmPositionChangeModal
+          userName={initialUser.name}
+          currentPosition={currentPrimary}
+          newPosition={selectedPosition}
+          saving={saving}
+          onCancel={() => setShowConfirmSwap(false)}
+          onConfirm={() => void doSubmit()}
+        />
+      )}
+    </>
   );
 }
 
@@ -301,13 +379,11 @@ function EditUserPanel({
 
 function AddUserPanel({
   tenantId,
-  callerRole,
   positions,
   onClose,
   onCreated,
 }: {
   tenantId: string;
-  callerRole: string;
   positions: PositionItem[];
   onClose: () => void;
   onCreated: () => void;
@@ -316,8 +392,9 @@ function AddUserPanel({
   const [saving, setSaving] = useState(false);
   const [error, setError]   = useState<string | null>(null);
 
-  const callerLevel = ROLE_LEVEL[callerRole] ?? 0;
-  const allowedRoles = ROLE_OPTIONS.filter((r) => r.level < callerLevel);
+  const selectedPosition = form.position_id
+    ? positions.find((p) => p.id === form.position_id) ?? null
+    : null;
 
   function update(patch: Partial<NewUserForm>) {
     setForm((f) => ({ ...f, ...patch }));
@@ -331,10 +408,11 @@ function AddUserPanel({
     setSaving(true);
     setError(null);
     try {
+      // Role is never sent directly — it is derived server-side from position_id
+      // (personnel_v2.py create_user creates the PRIMARY assignment atomically).
       await api.post(`/api/v1/tenants/${tenantId}/users`, {
         name:        form.name.trim(),
         email:       form.email.trim().toLowerCase(),
-        role:        form.role,
         position_id: form.position_id || null,
         password:    form.password || undefined,
       });
@@ -376,34 +454,25 @@ function AddUserPanel({
             />
           </div>
 
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="block text-xs font-medium text-gray-600 mb-1">{t("personnel.role")} *</label>
-              <select
-                value={form.role}
-                onChange={(e) => update({ role: e.target.value })}
-                className="w-full text-sm border border-gray-300 rounded-md px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-emerald-500"
-              >
-                {allowedRoles.map((r) => (
-                  <option key={r.code} value={r.code}>{r.code} — {r.label}</option>
-                ))}
-              </select>
-            </div>
-            <div>
-              <label className="block text-xs font-medium text-gray-600 mb-1">{t("personnel.primary_position")}</label>
-              <select
-                value={form.position_id}
-                onChange={(e) => update({ position_id: e.target.value })}
-                className="w-full text-sm border border-gray-300 rounded-md px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-emerald-500"
-              >
-                <option value="">{t("personnel.no_position_assigned")}</option>
-                {positions.map((p) => (
-                  <option key={p.id} value={p.id}>
-                    {p.title} ({p.role_code}) — {p.node_name}
-                  </option>
-                ))}
-              </select>
-            </div>
+          <div>
+            <label className="block text-xs font-medium text-gray-600 mb-1">{t("personnel.primary_position")}</label>
+            <select
+              value={form.position_id}
+              onChange={(e) => update({ position_id: e.target.value })}
+              className="w-full text-sm border border-gray-300 rounded-md px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+            >
+              <option value="">{t("personnel.no_position_assigned")}</option>
+              {positions.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.title} ({p.role_code}) — {p.node_name}
+                </option>
+              ))}
+            </select>
+            <p className="text-xs text-gray-500 mt-1">
+              {selectedPosition
+                ? `${t("personnel.role")}: ${roleLabel(selectedPosition.role_code)} (${selectedPosition.role_code})`
+                : t("personnel.no_position_no_role")}
+            </p>
           </div>
 
           <div>
@@ -447,33 +516,39 @@ function AddUserPanel({
 function ActingAssignmentPanel({
   tenantId,
   userId,
-  callerRole,
-  nodes,
+  positions,
   onClose,
   onCreated,
 }: {
   tenantId: string;
   userId: string;
-  callerRole: string;
-  nodes: OrgNode[];
+  positions: PositionItem[];
   onClose: () => void;
   onCreated: () => void;
 }) {
-  const [form, setForm] = useState<ActingAssignmentForm>({ ...EMPTY_ACTING });
+  const [form, setForm] = useState<ActingAssignmentForm>(emptyActingForm);
   const [saving, setSaving] = useState(false);
   const [error, setError]   = useState<string | null>(null);
 
-  const callerLevel = ROLE_LEVEL[callerRole] ?? 0;
-  const allowedRoles = ROLE_OPTIONS.filter((r) => r.level < callerLevel);
-  const flat = flattenNodes(nodes);
+  const selectedPosition = form.position_id
+    ? positions.find((p) => p.id === form.position_id) ?? null
+    : null;
 
   function update(patch: Partial<ActingAssignmentForm>) {
     setForm((f) => ({ ...f, ...patch }));
   }
 
   async function submit() {
-    if (!form.facility_id || !form.valid_from || !form.valid_until) {
+    if (!form.position_id) {
       setError(t("personnel.acting_fill_required"));
+      return;
+    }
+    if (!form.valid_until) {
+      setError(t("personnel.acting_valid_until_required"));
+      return;
+    }
+    if (new Date(form.valid_until) <= new Date(todayISO())) {
+      setError(t("personnel.acting_valid_until_future"));
       return;
     }
     if (new Date(form.valid_until) <= new Date(form.valid_from)) {
@@ -483,12 +558,14 @@ function ActingAssignmentPanel({
     setSaving(true);
     setError(null);
     try {
-      await api.post(`/api/v1/tenants/${tenantId}/users/${userId}/assignments`, {
+      // Live model: ACTING is a time-bounded position assignment, not a raw
+      // facility+role_code grant — same endpoint as the PRIMARY assignment.
+      await api.post(`/api/v1/tenants/${tenantId}/users/${userId}/positions`, {
+        position_id:     form.position_id,
         assignment_type: "ACTING",
-        facility_id:     form.facility_id,
-        role_code:       form.role_code,
         valid_from:      form.valid_from,
         valid_until:     form.valid_until,
+        notes:           form.notes || null,
       });
       onCreated();
       onClose();
@@ -512,37 +589,30 @@ function ActingAssignmentPanel({
         </div>
 
         <div className="space-y-3">
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="block text-xs font-medium text-gray-600 mb-1">{t("personnel.acting_facility")} *</label>
-              <select
-                value={form.facility_id}
-                onChange={(e) => update({ facility_id: e.target.value })}
-                className="w-full text-sm border border-gray-300 rounded-md px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-blue-500"
-              >
-                <option value="">{t("personnel.select_facility")}</option>
-                {flat.map((n) => (
-                  <option key={n.id} value={n.id}>L{n.hierarchy_level} — {n.name}</option>
-                ))}
-              </select>
-            </div>
-            <div>
-              <label className="block text-xs font-medium text-gray-600 mb-1">{t("personnel.acting_role")} *</label>
-              <select
-                value={form.role_code}
-                onChange={(e) => update({ role_code: e.target.value })}
-                className="w-full text-sm border border-gray-300 rounded-md px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-blue-500"
-              >
-                {allowedRoles.map((r) => (
-                  <option key={r.code} value={r.code}>{r.code} — {r.label}</option>
-                ))}
-              </select>
-            </div>
+          <div>
+            <label className="block text-xs font-medium text-gray-600 mb-1">{t("personnel.acting_position")} *</label>
+            <select
+              value={form.position_id}
+              onChange={(e) => update({ position_id: e.target.value })}
+              className="w-full text-sm border border-gray-300 rounded-md px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-blue-500"
+            >
+              <option value="">{t("personnel.acting_select_position")}</option>
+              {positions.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.title} ({p.role_code}) — {p.node_name}
+                </option>
+              ))}
+            </select>
+            {selectedPosition && (
+              <p className="text-xs text-gray-500 mt-1">
+                {t("personnel.role")}: {roleLabel(selectedPosition.role_code)} ({selectedPosition.role_code})
+              </p>
+            )}
           </div>
 
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="block text-xs font-medium text-gray-600 mb-1">{t("personnel.valid_from")} *</label>
+              <label className="block text-xs font-medium text-gray-600 mb-1">{t("personnel.acting_valid_from")} *</label>
               <input
                 type="date"
                 value={form.valid_from}
@@ -551,7 +621,7 @@ function ActingAssignmentPanel({
               />
             </div>
             <div>
-              <label className="block text-xs font-medium text-gray-600 mb-1">{t("personnel.valid_until")} *</label>
+              <label className="block text-xs font-medium text-gray-600 mb-1">{t("personnel.acting_valid_until")} *</label>
               <input
                 type="date"
                 value={form.valid_until}
@@ -559,6 +629,16 @@ function ActingAssignmentPanel({
                 className="w-full text-sm border border-gray-300 rounded-md px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-blue-500"
               />
             </div>
+          </div>
+
+          <div>
+            <label className="block text-xs font-medium text-gray-600 mb-1">{t("personnel.acting_notes")}</label>
+            <input
+              type="text"
+              value={form.notes}
+              onChange={(e) => update({ notes: e.target.value })}
+              className="w-full text-sm border border-gray-300 rounded-md px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-blue-500"
+            />
           </div>
         </div>
 
@@ -591,15 +671,13 @@ function ActingAssignmentPanel({
 function UserDetailPanel({
   tenantId,
   user,
-  callerRole,
-  nodes,
+  positions,
   onClose,
   onRefresh,
 }: {
   tenantId: string;
   user: UserDetail;
-  callerRole: string;
-  nodes: OrgNode[];
+  positions: PositionItem[];
   onClose: () => void;
   onRefresh: () => void;
 }) {
@@ -626,7 +704,8 @@ function UserDetailPanel({
   async function removeAssignment(assignmentId: string) {
     setActionLoading(`del:${assignmentId}`);
     try {
-      await api.delete(`/api/v1/tenants/${tenantId}/users/${user.id}/assignments/${assignmentId}`);
+      // Live endpoint is position-based, not the dropped facility-assignment path.
+      await api.delete(`/api/v1/tenants/${tenantId}/users/${user.id}/positions/${assignmentId}`);
       onRefresh();
     } catch {
       /* surface via toast */
@@ -635,12 +714,8 @@ function UserDetailPanel({
     }
   }
 
-  const activeAssignments  = (user.assignments ?? []).filter(
-    (a) => a.is_active && !isExpired(a.valid_until)
-  );
-  const expiredAssignments = (user.assignments ?? []).filter(
-    (a) => !a.is_active || isExpired(a.valid_until)
-  );
+  const primaryPosition  = user.primary_position;
+  const actingPositions  = user.acting_positions ?? [];
 
   return (
     <>
@@ -674,23 +749,37 @@ function UserDetailPanel({
             )}
           </div>
 
-          {/* Active assignments */}
+          {/* Active assignments — primary + acting (already filtered by the
+              backend to is_active=true and not-yet-expired) */}
           <div>
             <p className="text-xs font-bold text-gray-500 uppercase tracking-wide mb-2">
-              {t("personnel.active_assignments")} ({activeAssignments.length})
+              {t("personnel.active_assignments")} ({(primaryPosition ? 1 : 0) + actingPositions.length})
             </p>
-            {activeAssignments.length === 0 ? (
+            {!primaryPosition && actingPositions.length === 0 ? (
               <p className="text-xs text-gray-400">{t("personnel.no_active_assignments")}</p>
             ) : (
               <div className="space-y-2">
-                {activeAssignments.map((a) => (
-                  <div key={a.id} className="flex items-start justify-between bg-gray-50 rounded-lg px-3 py-2">
+                {primaryPosition && (
+                  <div className="flex items-start justify-between bg-gray-50 rounded-lg px-3 py-2">
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-700">
+                          {primaryPosition.assignment_type}
+                        </span>
+                        {roleBadge(primaryPosition.role_code)}
+                      </div>
+                      <p className="text-xs text-gray-600 mt-1">
+                        {primaryPosition.title} — {primaryPosition.node_name}
+                      </p>
+                    </div>
+                  </div>
+                )}
+                {actingPositions.map((a) => (
+                  <div key={a.assignment_id} className="flex items-start justify-between bg-gray-50 rounded-lg px-3 py-2">
                     <div>
                       <div className="flex items-center gap-2">
                         <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${
-                          a.assignment_type === "PRIMARY"
-                            ? "bg-emerald-100 text-emerald-700"
-                            : a.assignment_type === "ACTING"
+                          a.assignment_type === "ACTING"
                             ? "bg-blue-100 text-blue-700"
                             : "bg-violet-100 text-violet-700"
                         }`}>
@@ -698,50 +787,26 @@ function UserDetailPanel({
                         </span>
                         {roleBadge(a.role_code)}
                       </div>
-                      <p className="text-xs text-gray-600 mt-1">{a.facility_name ?? t("common.unknown")}</p>
+                      <p className="text-xs text-gray-600 mt-1">{a.title} — {a.node_name}</p>
                       {a.valid_from && (
                         <p className="text-[10px] text-gray-400 mt-0.5">
                           {a.valid_from} → {a.valid_until ?? "∞"}
                         </p>
                       )}
                     </div>
-                    {a.assignment_type !== "PRIMARY" && (
-                      <button
-                        type="button"
-                        onClick={() => void removeAssignment(a.id)}
-                        disabled={actionLoading === `del:${a.id}`}
-                        className="text-xs text-red-400 hover:text-red-600 border-0 bg-transparent cursor-pointer disabled:opacity-50"
-                      >
-                        {t("common.remove")}
-                      </button>
-                    )}
+                    <button
+                      type="button"
+                      onClick={() => void removeAssignment(a.assignment_id)}
+                      disabled={actionLoading === `del:${a.assignment_id}`}
+                      className="text-xs text-red-400 hover:text-red-600 border-0 bg-transparent cursor-pointer disabled:opacity-50"
+                    >
+                      {t("common.remove")}
+                    </button>
                   </div>
                 ))}
               </div>
             )}
           </div>
-
-          {/* Expired/inactive assignments */}
-          {expiredAssignments.length > 0 && (
-            <div>
-              <p className="text-xs font-bold text-gray-400 uppercase tracking-wide mb-2">
-                {t("personnel.expired_assignments")}
-              </p>
-              <div className="space-y-1 opacity-50">
-                {expiredAssignments.map((a) => (
-                  <div key={a.id} className="flex items-center gap-2 bg-gray-50 rounded px-3 py-1.5">
-                    <span className="text-[10px] font-bold text-gray-400 border border-gray-300 rounded px-1">
-                      {a.assignment_type}
-                    </span>
-                    <span className="text-xs text-gray-500">{a.facility_name ?? t("common.unknown")}</span>
-                    {a.valid_until && (
-                      <span className="text-[10px] text-red-400">expired {a.valid_until}</span>
-                    )}
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
         </div>
 
         {/* Footer actions */}
@@ -784,8 +849,7 @@ function UserDetailPanel({
         <ActingAssignmentPanel
           tenantId={tenantId}
           userId={user.id}
-          callerRole={callerRole}
-          nodes={nodes}
+          positions={positions}
           onClose={() => setShowActing(false)}
           onCreated={onRefresh}
         />
@@ -829,13 +893,6 @@ export default function PersonnelPage() {
     enabled:  !!tenantId,
   });
 
-  const { data: nodes = [] } = useQuery<OrgNode[]>({
-    queryKey: ["org-nodes", tenantId],
-    queryFn:  () => api.get<OrgNode[]>(`/api/v1/tenants/${tenantId}/nodes`),
-    enabled:  !!tenantId,
-    staleTime: 60_000,
-  });
-
   // Positions flattened from node groups — used in Add/Edit user dropdowns.
   // Fetches from GET /tenants/{uuid}/positions which returns NodePositionGroupOut[].
   const { data: positions = [] } = useQuery<PositionItem[]>({
@@ -862,11 +919,10 @@ export default function PersonnelPage() {
       const detail = await api.get<UserDetail>(
         `/api/v1/tenants/${tenantId}/users/${user.id}`
       );
-      // assignments may be absent from the API response — default to []
-      setSelectedUser({ ...detail, assignments: detail.assignments ?? [] });
+      setSelectedUser(detail);
     } catch {
       // Fallback: show limited info without crashing
-      setSelectedUser({ ...user, assignments: [] });
+      setSelectedUser(user);
     }
   }
 
@@ -1031,7 +1087,6 @@ export default function PersonnelPage() {
       {showAddUser && (
         <AddUserPanel
           tenantId={tenantId}
-          callerRole={callerRole}
           positions={positions}
           onClose={() => setShowAddUser(false)}
           onCreated={() => void refetchUsers()}
@@ -1042,7 +1097,6 @@ export default function PersonnelPage() {
         <EditUserPanel
           tenantId={tenantId}
           user={editUser}
-          callerRole={callerRole}
           positions={positions}
           onClose={() => setEditUser(null)}
           onUpdated={() => { void refetchUsers(); qc.invalidateQueries({ queryKey: ["personnel-users", tenantId] }); }}
@@ -1053,8 +1107,7 @@ export default function PersonnelPage() {
         <UserDetailPanel
           tenantId={tenantId}
           user={selectedUser}
-          callerRole={callerRole}
-          nodes={nodes}
+          positions={positions}
           onClose={() => setSelectedUser(null)}
           onRefresh={() => void refetchUsers()}
         />
