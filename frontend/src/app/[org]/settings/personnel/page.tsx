@@ -114,6 +114,27 @@ interface EditUserForm {
   must_reset_password: boolean;
 }
 
+// Color scheme matches the Positions tab (org-setup/page.tsx ROLE_BADGE_COLORS) —
+// used only for the role-derived-from-position preview below, kept separate from
+// the table-wide roleBadge() below to avoid an unrelated visual change elsewhere.
+const POSITION_ROLE_BADGE_COLORS: Record<string, string> = {
+  NM: "bg-green-800 text-white",
+  RM: "bg-green-600 text-white",
+  WM: "bg-green-400 text-white",
+  AU: "bg-blue-500  text-white",
+  LM: "bg-gray-500  text-white",
+  TA: "bg-teal-600  text-white",
+  SA: "bg-purple-600 text-white",
+};
+
+function RoleBadge({ role }: { role: string }) {
+  return (
+    <span className={`px-2 py-0.5 rounded text-xs font-medium ${POSITION_ROLE_BADGE_COLORS[role] ?? "bg-gray-300 text-gray-700"}`}>
+      {role}
+    </span>
+  );
+}
+
 /* ── Helpers ────────────────────────────────────────────────────────────────── */
 
 function roleBadge(role: string) {
@@ -468,11 +489,16 @@ function AddUserPanel({
                 </option>
               ))}
             </select>
-            <p className="text-xs text-gray-500 mt-1">
-              {selectedPosition
-                ? `${t("personnel.role")}: ${roleLabel(selectedPosition.role_code)} (${selectedPosition.role_code})`
-                : t("personnel.no_position_no_role")}
-            </p>
+            {selectedPosition ? (
+              <div className="mt-1 flex items-center gap-2 text-sm">
+                <RoleBadge role={selectedPosition.role_code} />
+                <span className="text-gray-500">
+                  {selectedPosition.title} · {selectedPosition.node_name}
+                </span>
+              </div>
+            ) : (
+              <p className="text-xs text-gray-500 mt-1">{t("personnel.no_position_no_role")}</p>
+            )}
           </div>
 
           <div>
@@ -691,7 +717,8 @@ function UserDetailPanel({
     setActionLoading(activate ? "reactivate" : "deactivate");
     try {
       const endpoint = activate ? "reactivate" : "deactivate";
-      await api.post(`/api/v1/tenants/${tenantId}/users/${user.id}/${endpoint}`, {});
+      // Both routes are PATCH-only in personnel_v2.py — POST here would 405.
+      await api.patch(`/api/v1/tenants/${tenantId}/users/${user.id}/${endpoint}`, {});
       onRefresh();
       onClose();
     } catch {
@@ -858,6 +885,129 @@ function UserDetailPanel({
   );
 }
 
+/* ── Confirm Deactivate User Modal ────────────────────────────────────────────── */
+
+function ConfirmDeactivateUserModal({
+  userName,
+  saving,
+  onCancel,
+  onConfirm,
+}: {
+  userName: string;
+  saving: boolean;
+  onCancel: () => void;
+  onConfirm: () => void;
+}) {
+  return (
+    <div className="fixed inset-0 z-[250] flex items-center justify-center bg-black/50 p-4">
+      <div className="bg-white rounded-xl shadow-2xl w-full max-w-sm p-6 space-y-4">
+        <h2 className="text-base font-bold text-gray-900">{t("personnel.deactivate_user")}</h2>
+        <p className="text-sm text-gray-700">
+          {t("personnel.confirm_deactivate_user").replace("{name}", userName)}
+        </p>
+        <div className="flex justify-end gap-2 pt-1">
+          <button
+            type="button"
+            onClick={onCancel}
+            disabled={saving}
+            className="px-4 py-1.5 text-sm text-gray-600 border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-50"
+          >
+            {t("common.cancel")}
+          </button>
+          <button
+            type="button"
+            onClick={onConfirm}
+            disabled={saving}
+            className="px-4 py-1.5 text-sm font-bold text-white bg-red-600 rounded-lg hover:bg-red-700 disabled:opacity-50"
+          >
+            {saving ? t("common.saving") : t("personnel.deactivate_user")}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ── Reset Password Modal ─────────────────────────────────────────────────────── */
+
+function ResetPasswordModal({
+  tenantId,
+  user,
+  onClose,
+  onSuccess,
+}: {
+  tenantId: string;
+  user: UserRecord;
+  onClose: () => void;
+  onSuccess: (message: string) => void;
+}) {
+  const [password, setPassword] = useState("");
+  const [saving, setSaving]     = useState(false);
+  const [error, setError]       = useState<string | null>(null);
+
+  async function submit() {
+    if (password.length < 8) {
+      setError(t("personnel.password_min_length"));
+      return;
+    }
+    setSaving(true);
+    setError(null);
+    try {
+      await api.patch(`/api/v1/tenants/${tenantId}/users/${user.id}`, { password });
+      onSuccess(t("personnel.reset_password_success").replace("{name}", user.name));
+      onClose();
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : t("common.error"));
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-[250] flex items-center justify-center bg-black/50 p-4">
+      <div className="bg-white rounded-xl shadow-2xl w-full max-w-sm p-6 space-y-4">
+        <h2 className="text-base font-bold text-gray-900">{t("personnel.reset_password_title")}</h2>
+        <p className="text-sm text-gray-700">
+          {t("personnel.reset_password_body").replace("{name}", user.name)}
+        </p>
+
+        <div>
+          <label className="block text-xs font-medium text-gray-600 mb-1">
+            {t("personnel.new_temporary_password")} *
+          </label>
+          <input
+            type="password"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            className="w-full text-sm border border-gray-300 rounded-md px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+          />
+        </div>
+
+        {error && <p className="text-xs text-red-600 font-medium">{error}</p>}
+
+        <div className="flex justify-end gap-2 pt-1">
+          <button
+            type="button"
+            onClick={onClose}
+            disabled={saving}
+            className="px-4 py-1.5 text-sm text-gray-600 border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-50"
+          >
+            {t("common.cancel")}
+          </button>
+          <button
+            type="button"
+            onClick={() => void submit()}
+            disabled={saving}
+            className="px-4 py-1.5 text-sm font-bold text-white bg-emerald-600 rounded-lg hover:bg-emerald-700 disabled:opacity-50"
+          >
+            {saving ? t("common.saving") : t("personnel.reset_password")}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 /* ── Main personnel page ────────────────────────────────────────────────────── */
 
 export default function PersonnelPage() {
@@ -886,6 +1036,15 @@ export default function PersonnelPage() {
   const [showAddUser, setShowAddUser] = useState(false);
   const [editUser, setEditUser]       = useState<UserRecord | null>(null);
   const [selectedUser, setSelectedUser] = useState<UserDetail | null>(null);
+  const [confirmDeactivateUser, setConfirmDeactivateUser] = useState<UserRecord | null>(null);
+  const [resetPasswordUser, setResetPasswordUser]         = useState<UserRecord | null>(null);
+  const [actionLoadingId, setActionLoadingId]             = useState<string | null>(null);
+  const [toast, setToast] = useState<{ message: string; tone: "success" | "error" } | null>(null);
+
+  function showToast(message: string, tone: "success" | "error" = "success") {
+    setToast({ message, tone });
+    setTimeout(() => setToast(null), 4000);
+  }
 
   const { data: users = [], refetch: refetchUsers } = useQuery<UserRecord[]>({
     queryKey: ["personnel-users", tenantId],
@@ -926,6 +1085,35 @@ export default function PersonnelPage() {
     }
   }
 
+  async function handleDeactivateConfirmed() {
+    const user = confirmDeactivateUser;
+    if (!user) return;
+    setActionLoadingId(`deactivate:${user.id}`);
+    try {
+      await api.patch(`/api/v1/tenants/${tenantId}/users/${user.id}/deactivate`, {});
+      showToast(t("personnel.user_deactivated"));
+      await refetchUsers();
+    } catch (e) {
+      showToast(e instanceof Error ? e.message : t("common.error"), "error");
+    } finally {
+      setActionLoadingId(null);
+      setConfirmDeactivateUser(null);
+    }
+  }
+
+  async function handleReactivate(user: UserRecord) {
+    setActionLoadingId(`reactivate:${user.id}`);
+    try {
+      await api.patch(`/api/v1/tenants/${tenantId}/users/${user.id}/reactivate`, {});
+      showToast(t("personnel.user_reactivated"));
+      await refetchUsers();
+    } catch (e) {
+      showToast(e instanceof Error ? e.message : t("common.error"), "error");
+    } finally {
+      setActionLoadingId(null);
+    }
+  }
+
   const filtered = users.filter((u) => {
     if (statusFilter === "active"   && !u.is_active) return false;
     if (statusFilter === "inactive" && u.is_active)  return false;
@@ -949,6 +1137,15 @@ export default function PersonnelPage() {
 
   return (
     <div className="p-6 space-y-6">
+      {/* Toast */}
+      {toast && (
+        <div className={`fixed top-4 right-4 z-[300] px-4 py-2.5 rounded-lg shadow-lg text-sm font-medium ${
+          toast.tone === "success" ? "bg-emerald-600 text-white" : "bg-red-600 text-white"
+        }`}>
+          {toast.message}
+        </div>
+      )}
+
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
@@ -1073,6 +1270,33 @@ export default function PersonnelPage() {
                       >
                         ✏ {t("common.edit")}
                       </button>
+                      <button
+                        type="button"
+                        onClick={(e) => { e.stopPropagation(); setResetPasswordUser(u); }}
+                        className="text-xs text-gray-600 font-semibold hover:text-gray-800 border-0 bg-transparent cursor-pointer px-2 py-1 rounded hover:bg-gray-100"
+                        title={t("personnel.reset_password")}
+                      >
+                        {t("personnel.reset_password")}
+                      </button>
+                      {u.is_active ? (
+                        <button
+                          type="button"
+                          onClick={(e) => { e.stopPropagation(); setConfirmDeactivateUser(u); }}
+                          disabled={actionLoadingId === `deactivate:${u.id}`}
+                          className="text-xs text-red-600 font-semibold border border-red-200 rounded px-2 py-1 hover:bg-red-50 disabled:opacity-50"
+                        >
+                          {t("personnel.deactivate_user")}
+                        </button>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={(e) => { e.stopPropagation(); void handleReactivate(u); }}
+                          disabled={actionLoadingId === `reactivate:${u.id}`}
+                          className="text-xs text-green-700 font-semibold border border-green-200 rounded px-2 py-1 hover:bg-green-50 disabled:opacity-50"
+                        >
+                          {actionLoadingId === `reactivate:${u.id}` ? t("common.saving") : t("personnel.reactivate_user")}
+                        </button>
+                      )}
                       <span className="text-xs text-emerald-600 font-semibold">{t("common.view")} →</span>
                     </div>
                   </td>
@@ -1110,6 +1334,24 @@ export default function PersonnelPage() {
           positions={positions}
           onClose={() => setSelectedUser(null)}
           onRefresh={() => void refetchUsers()}
+        />
+      )}
+
+      {confirmDeactivateUser && (
+        <ConfirmDeactivateUserModal
+          userName={confirmDeactivateUser.name}
+          saving={actionLoadingId === `deactivate:${confirmDeactivateUser.id}`}
+          onCancel={() => setConfirmDeactivateUser(null)}
+          onConfirm={() => void handleDeactivateConfirmed()}
+        />
+      )}
+
+      {resetPasswordUser && (
+        <ResetPasswordModal
+          tenantId={tenantId}
+          user={resetPasswordUser}
+          onClose={() => setResetPasswordUser(null)}
+          onSuccess={(message) => showToast(message)}
         />
       )}
     </div>

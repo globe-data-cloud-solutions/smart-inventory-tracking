@@ -20,7 +20,7 @@ from typing import List, Optional
 import bcrypt as _bcrypt
 
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel, EmailStr
+from pydantic import BaseModel, EmailStr, field_validator
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -80,6 +80,14 @@ class UserUpdateRequest(BaseModel):
     must_reset_password: Optional[bool]      = None
     system_role:         Optional[str]       = None
     role:                Optional[str]       = None  # Frontend compat: "TA" → system_role="TA"
+    password:            Optional[str]       = None  # admin-initiated reset
+
+    @field_validator("password")
+    @classmethod
+    def _validate_password_length(cls, v: Optional[str]) -> Optional[str]:
+        if v is not None and len(v) < 8:
+            raise ValueError("Password must be at least 8 characters")
+        return v
 
 
 class AssignPositionRequest(BaseModel):
@@ -555,6 +563,15 @@ async def update_user(
     if body.must_reset_password is not None:
         set_parts.append("must_reset_password = :mrp")
         params["mrp"] = body.must_reset_password
+
+    if body.password is not None:
+        set_parts.append("password_hash = :ph")
+        params["ph"] = _hash(body.password)
+        # Resetting a password always forces a change on next login —
+        # overrides any explicit must_reset_password value set above.
+        if "must_reset_password = :mrp" not in set_parts:
+            set_parts.append("must_reset_password = :mrp")
+        params["mrp"] = True
 
     # system_role: explicit field or mapped from legacy role="TA"
     effective_sr = body.system_role or ("TA" if body.role == "TA" else None)
