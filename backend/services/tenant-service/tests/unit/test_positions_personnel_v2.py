@@ -620,6 +620,28 @@ class TestPersonnelV2:
         assert result.data.role == "TA"
         assert result.data.primary_position is None
 
+    async def test_ta_cannot_modify_own_role(self) -> None:
+        """PATCH /users/{id} rejects a caller changing their own system_role —
+        a TA who clears or reassigns their own role could lock themselves out
+        of admin access with no recovery path short of SA intervention. Other
+        fields (name, email, password) on the caller's own record remain
+        editable through this same endpoint."""
+        from routers.personnel_v2 import update_user, UserUpdateRequest
+
+        db = _db_seq()  # no DB calls should be needed — guard fires first
+
+        with _GRANT_ALL, pytest.raises(HTTPException) as exc_info:
+            await update_user(
+                tenant_id=UUID(TENANT_ID),
+                user_id=UUID(USER_ID),
+                body=UserUpdateRequest(system_role="AU"),
+                user=_Caller(user_id=USER_ID),
+                db=db,
+            )
+
+        assert exc_info.value.status_code == 403
+        assert exc_info.value.detail["code"] == "CANNOT_MODIFY_OWN_ROLE"
+
     async def test_clear_system_role_on_update(self) -> None:
         """PATCH /users/{id} with clear_system_role=True nulls out system_role —
         used when switching a user from a tenant-wide role (Track B) back to a

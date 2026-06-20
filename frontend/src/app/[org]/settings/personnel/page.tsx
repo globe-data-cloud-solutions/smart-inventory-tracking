@@ -324,6 +324,8 @@ function EditUserPanel({
 }) {
   const currentPrimary = initialUser.primary_position;
   const initialTrack   = initialTrackFor(initialUser);
+  const session = getSession();
+  const isSelf  = session?.id === initialUser.id;
 
   const [track, setTrack] = useState<AddUserTrack>(initialTrack);
   const [form, setForm]   = useState<EditUserForm>({
@@ -360,6 +362,7 @@ function EditUserPanel({
   }
 
   function requestTrackSwitch(next: AddUserTrack) {
+    if (isSelf) return; // cannot change one's own position/role — see read-only section below
     if (next === track) return;
     // Only warn when the switch would actually undo something real — moving
     // away from the user's ORIGINAL assignment, not just toggling the radio
@@ -383,22 +386,27 @@ function EditUserPanel({
         email:               form.email.trim().toLowerCase(),
         must_reset_password: form.must_reset_password,
       };
-      if (track === "tenant_wide") {
-        patchBody.system_role = form.system_role;
-      } else if (initialTrack === "tenant_wide") {
-        // Switching away from a tenant-wide role — clear it explicitly so role
-        // resolution falls through to the new position instead of the stale value.
-        patchBody.clear_system_role = true;
+      // A user can never change their own position or role — see the read-only
+      // section rendered below for isSelf. Skip all role/position fields and
+      // calls entirely here as a second guard (the backend rejects these too).
+      if (!isSelf) {
+        if (track === "tenant_wide") {
+          patchBody.system_role = form.system_role;
+        } else if (initialTrack === "tenant_wide") {
+          // Switching away from a tenant-wide role — clear it explicitly so role
+          // resolution falls through to the new position instead of the stale value.
+          patchBody.clear_system_role = true;
+        }
       }
       await api.patch(`/api/v1/tenants/${tenantId}/users/${initialUser.id}`, patchBody);
 
-      if (track === "position" && isPositionChange) {
+      if (!isSelf && track === "position" && isPositionChange) {
         await api.post(`/api/v1/tenants/${tenantId}/users/${initialUser.id}/positions`, {
           position_id:     form.position_id,
           assignment_type: "PRIMARY",
         });
       }
-      if (track === "tenant_wide" && currentPrimary) {
+      if (!isSelf && track === "tenant_wide" && currentPrimary) {
         // Switching from a position-based role — deactivate the old PRIMARY.
         await api.delete(`/api/v1/tenants/${tenantId}/users/${initialUser.id}/positions/${currentPrimary.assignment_id}`);
       }
@@ -418,14 +426,14 @@ function EditUserPanel({
       setError(t("personnel.fill_required_fields"));
       return;
     }
-    if (track === "tenant_wide" && !form.system_role) {
+    if (!isSelf && track === "tenant_wide" && !form.system_role) {
       setError(t("personnel.fill_required_fields"));
       return;
     }
     setError(null);
     // Swapping an existing PRIMARY position is a destructive, immediately-effective
     // change (the old assignment is deactivated) — confirm before calling the API.
-    if (track === "position" && isPositionChange && currentPrimary) {
+    if (!isSelf && track === "position" && isPositionChange && currentPrimary) {
       setShowConfirmSwap(true);
       return;
     }
@@ -442,20 +450,35 @@ function EditUserPanel({
           </div>
 
           <div className="space-y-3">
-            <div className="space-y-2">
-              <SelectableCard
-                selected={track === "position"}
-                onSelect={() => requestTrackSwitch("position")}
-                title={t("personnel.track_position_title")}
-                description={t("personnel.track_position_desc")}
-              />
-              <SelectableCard
-                selected={track === "tenant_wide"}
-                onSelect={() => requestTrackSwitch("tenant_wide")}
-                title={t("personnel.track_tenant_wide_title")}
-                description={t("personnel.track_tenant_wide_desc")}
-              />
-            </div>
+            {isSelf ? (
+              <div className="space-y-1.5">
+                <p className="text-xs font-medium text-gray-600">{t("personnel.role_and_position")}</p>
+                <div className="flex items-center gap-2 bg-gray-50 border border-gray-200 rounded-lg px-3 py-2">
+                  {previewRoleCode && <RoleBadge role={previewRoleCode} />}
+                  <span className="text-sm text-gray-600">
+                    {currentPrimary
+                      ? `${currentPrimary.title} — ${currentPrimary.node_name}`
+                      : roleLabel(initialUser.role)}
+                  </span>
+                </div>
+                <p className="text-xs text-gray-500">{t("personnel.cannot_edit_own_role_note")}</p>
+              </div>
+            ) : (
+              <div className="space-y-2">
+                <SelectableCard
+                  selected={track === "position"}
+                  onSelect={() => requestTrackSwitch("position")}
+                  title={t("personnel.track_position_title")}
+                  description={t("personnel.track_position_desc")}
+                />
+                <SelectableCard
+                  selected={track === "tenant_wide"}
+                  onSelect={() => requestTrackSwitch("tenant_wide")}
+                  title={t("personnel.track_tenant_wide_title")}
+                  description={t("personnel.track_tenant_wide_desc")}
+                />
+              </div>
+            )}
 
             <div>
               <label className="block text-xs font-medium text-gray-600 mb-1">{t("personnel.full_name")} *</label>
@@ -477,7 +500,7 @@ function EditUserPanel({
               />
             </div>
 
-            {track === "position" ? (
+            {!isSelf && (track === "position" ? (
               <div>
                 <label className="block text-xs font-medium text-gray-600 mb-1">{t("personnel.primary_position")}</label>
                 <select
@@ -521,7 +544,7 @@ function EditUserPanel({
                   />
                 </div>
               </div>
-            )}
+            ))}
 
             <label className="flex items-center gap-2 cursor-pointer select-none">
               <input

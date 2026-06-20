@@ -327,6 +327,15 @@ async def assign_position(
     if body.assignment_type not in ("PRIMARY", "ACTING", "DELEGATE"):
         raise HTTPException(status_code=422, detail="assignment_type must be PRIMARY, ACTING, or DELEGATE")
 
+    # Self-lockout guard — see update_user(). Assigning any position to oneself
+    # changes one's own effective role; only another admin may do this.
+    if str(user.user_id) == str(user_id):
+        raise HTTPException(
+            status_code=403,
+            detail={"code": "CANNOT_MODIFY_OWN_ROLE",
+                    "message": "You cannot modify your own role or position."},
+        )
+
     # Verify user belongs to this tenant
     user_row = (await db.execute(
         text("SELECT id FROM users WHERE id = :uid AND tenant_id = :tid AND is_active = true"),
@@ -414,6 +423,15 @@ async def remove_position_assignment(
 
     The last active PRIMARY assignment cannot be removed — use deactivate user instead.
     """
+    # Self-lockout guard — see update_user(). Removing one's own position
+    # assignment changes one's own effective role; only another admin may do this.
+    if str(user.user_id) == str(user_id):
+        raise HTTPException(
+            status_code=403,
+            detail={"code": "CANNOT_MODIFY_OWN_ROLE",
+                    "message": "You cannot modify your own role or position."},
+        )
+
     row = (await db.execute(
         text("""
             SELECT pp.id, pp.assignment_type
@@ -595,6 +613,19 @@ async def update_user(
     accounts (system_role='TA') which have no position. Sending role='TA' maps
     to system_role='TA' for backward compatibility with the frontend.
     """
+    # Self-lockout guard: a user (e.g. a TA) who clears or changes their own
+    # system_role could strip their own admin access with no recovery path
+    # short of SA intervention. Name/email/password fields on the caller's own
+    # record are still allowed through this same endpoint.
+    if str(user.user_id) == str(user_id) and (
+        body.system_role is not None or body.role is not None or body.clear_system_role
+    ):
+        raise HTTPException(
+            status_code=403,
+            detail={"code": "CANNOT_MODIFY_OWN_ROLE",
+                    "message": "You cannot modify your own role or position."},
+        )
+
     row = (await db.execute(
         text("SELECT id, email FROM users WHERE id = :uid AND tenant_id = :tid"),
         {"uid": str(user_id), "tid": str(tenant_id)},

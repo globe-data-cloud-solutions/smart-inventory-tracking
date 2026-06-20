@@ -763,6 +763,8 @@
     "primary_facility": "Primary Facility",
     "primary_position": "Position",
     "no_position_no_role": "No position selected — no role assigned yet.",
+    "role_and_position": "Role & Position",
+    "cannot_edit_own_role_note": "You cannot modify your own role or position. Contact your Super Admin if changes are needed.",
     "keep_existing_position": "— keep existing position —",
     "no_position_assigned": "No position assigned (assign later)",
     "select_facility": "Select facility",
