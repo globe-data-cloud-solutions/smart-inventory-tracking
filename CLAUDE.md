@@ -541,6 +541,14 @@ CREATE INDEX idx_products_tenant_sku ON products (tenant_id, sku);
 CREATE INDEX idx_products_sku ON products (sku);
 ```
 
+### Product SKU generation — `sku` vs `sku_override`
+
+```
+SKUs are server-generated from type_code + sequence. The sku field in POST /products
+is ignored. Use sku_override to supply a custom SKU — this is the only path that
+triggers the uq_products_tenant_sku uniqueness check.
+```
+
 ### RLS — apply to every tenant-scoped table in the same migration
 
 ```sql
