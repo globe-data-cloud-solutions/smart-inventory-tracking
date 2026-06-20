@@ -268,7 +268,10 @@ def group1_setup_verification() -> None:
     else:
         fail("1.3 Hierarchy config: 4 levels", f"status={r.status_code}, got {len(levels)} levels")
 
-    # 1.4 Org nodes: 14 nodes (returned as nested tree — flatten children recursively)
+    # 1.4 Org nodes: 15 nodes (returned as nested tree — flatten children recursively)
+    # Seed set is 14 nodes (Factory A and Factory B roots); WHA4 was added 2026-06-18
+    # under Subregion A, bringing the live total to 15. Two roots (Factory A, Factory B)
+    # is the correct topology — T07 is intentionally multi-root (see CLAUDE.md §28).
     r = api_get(f"/api/v1/tenants/{T07_ID}/nodes", EMAIL_TA)
     def _flatten_nodes(nl: list) -> list:
         result = []
@@ -278,10 +281,11 @@ def group1_setup_verification() -> None:
         return result
     raw_nodes = data(r) if isinstance(data(r), list) else []
     nodes = _flatten_nodes(raw_nodes)
-    if r.status_code == 200 and len(nodes) == 14:
-        ok("1.4 Org nodes: 14 nodes")
+    if r.status_code == 200 and len(nodes) == 15 and len(raw_nodes) == 2:
+        ok("1.4 Org nodes: 15 nodes, 2 roots")
     else:
-        fail("1.4 Org nodes: 14 nodes", f"status={r.status_code}, got {len(nodes)} nodes (roots={len(raw_nodes)})")
+        fail("1.4 Org nodes: 15 nodes, 2 roots",
+             f"status={r.status_code}, got {len(nodes)} nodes (roots={len(raw_nodes)})")
 
     # 1.5 Products: at least 5 products exist (API returns all tenant products; no tenant_id field in response)
     r = api_get("/api/v1/products/", EMAIL_TA)
@@ -3138,24 +3142,22 @@ def group18_i18n() -> None:
         except _sp.TimeoutExpired:
             skip("18.6 check_i18n.sh passes", "script timed out after 30s")
 
-    # 18.7 — 422 error has structured error.code (not a dot-notation i18n key)
-    # Trigger duplicate SKU error — Product P1 already has a fixed SKU; we try to create with it
-    # Use a new SKU that we know will conflict after creating a product and using its SKU
-    _sku_18 = f"T07-PKG-{uuid.uuid4().hex[:6].upper()}"
-    # Create product then try to create duplicate
-    r_c1 = api_post("/api/v1/products/", EMAIL_TA, {
-        "name": f"i18n test product {_sku_18}",
-        "sku": _sku_18,
-        "type_code": "PKG",
-        "unit": "KG",
-    })
+    # 18.7 — duplicate SKU error has structured error.code (not a dot-notation i18n key)
+    # Trigger duplicate SKU error within T07: PROD_P1's SKU ("T07-RM-001") already exists
+    # for this tenant, so creating a new product against that SKU under EMAIL_TA (T07 admin)
+    # collides with uq_products_tenant_sku (tenant_id, sku) and must 422/409.
+    # NOTE: the create-product endpoint ignores a plain "sku" field (server-generates SKUs
+    # from type_code + sequence) — only "sku_override" bypasses generation and is checked
+    # against the unique constraint. Posting "sku" here would always 201 regardless of
+    # collision, which is why the prior version of this test never actually hit the
+    # constraint.
     r_c2 = api_post("/api/v1/products/", EMAIL_TA, {
-        "name": f"i18n test product {_sku_18} dup",
-        "sku": _sku_18,
+        "name": f"i18n duplicate SKU test product {uuid.uuid4().hex[:6].upper()}",
+        "sku_override": "T07-RM-001",
         "type_code": "PKG",
         "unit": "KG",
     })
-    if r_c2.status_code == 422:
+    if r_c2.status_code in (422, 409):
         body = r_c2.json()
         err = body.get("error") or body.get("detail") or {}
         # error could be nested: {"error": {"code": "...", "message": "..."}}
@@ -3186,7 +3188,7 @@ def group18_i18n() -> None:
                 fail("18.7 422 error has structured code",
                      f"body={json.dumps(body)[:200]}")
     else:
-        skip("18.7 422 error structure", f"duplicate SKU returned {r_c2.status_code} not 422")
+        skip("18.7 422 error structure", f"duplicate SKU returned {r_c2.status_code} not 422/409")
 
     # 18.8 — 403 RBAC error has consistent code (WM tries to create product)
     r_403 = api_post("/api/v1/products/", EMAIL_WHA1_WM, {
