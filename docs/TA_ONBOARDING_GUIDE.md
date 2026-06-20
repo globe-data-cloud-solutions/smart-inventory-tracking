@@ -394,6 +394,12 @@ No — the ledger is immutable for audit integrity. Create a reverse transfer or
 **Q: Can I cancel a Branch Exchange after it has been approved?**
 No — once a Branch Exchange reaches Approved status it cannot be cancelled. Both warehouse managers have confirmed and stock is committed to the transfer. If the transfer cannot physically proceed, complete the receipt at the destination and use a stock Adjustment (reason: RETURN or DAMAGE) to correct the balance. Contact your administrator for assistance.
 
+**Q: How do I reset a user's password?**
+Go to Settings → Personnel. Click the user's row to open their detail panel. Click "Reset Password" and confirm. The user's password will be reset to a temporary credential you provide. They will be forced to change it on their next login. You can use this for forgotten passwords or to unlock a compromised account.
+
+**Q: What happens if a user gets locked out?**
+After 5 consecutive failed login attempts, the account is automatically locked for 15 minutes. The user will see a message on the login screen. They can wait 15 minutes and retry, or contact you (the Tenant Admin) to verify they are using the correct credentials. The lockout clears automatically — no admin action is required. If the user successfully resets their password, the lockout counter is also cleared immediately.
+
 ---
 
 ## Setup Checklist
