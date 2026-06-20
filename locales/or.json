@@ -734,6 +734,7 @@
     "self_approval_qty_limit": "Quantity Limit",
     "self_approval_value_limit": "Value Limit (ETB)",
     "self_approval_unlimited": "Leave empty for unlimited",
+    "no_self_approval_needed": "This role does not initiate transfers — no approval limit applies.",
     "self_approval_level_note": "Of-eeyyamuu ofii {position} — {node} (L{level}) tiif.",
     "threshold_quantity": "Quantity",
     "threshold_value": "Value",

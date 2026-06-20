@@ -558,6 +558,55 @@ class TestPersonnelV2:
         assert exc_info.value.status_code == 422
         assert exc_info.value.detail["code"] == "INVALID_SYSTEM_ROLE"
 
+    async def test_ta_cannot_create_ta(self) -> None:
+        """POST /users with system_role='TA' is rejected for a TA caller — only
+        a platform admin (SA) may create another Tenant Admin account."""
+        from routers.personnel_v2 import create_user, UserCreate
+
+        db = _db_seq(None)  # no duplicate email — should not get further
+
+        with _GRANT_ALL, pytest.raises(HTTPException) as exc_info:
+            await create_user(
+                tenant_id=UUID(TENANT_ID),
+                body=UserCreate(
+                    name="Second Admin",
+                    email="second-admin@test.com",
+                    password="TestPass@2026",
+                    system_role="TA",
+                ),
+                user=_Caller(role="TA"),
+                db=db,
+            )
+
+        assert exc_info.value.status_code == 403
+        assert exc_info.value.detail["code"] == "ROLE_CEILING_EXCEEDED"
+
+    async def test_sa_can_create_ta(self) -> None:
+        """POST /users with system_role='TA' succeeds for an SA (platform admin)
+        caller — the role ceiling only blocks TA-creating-TA, not SA."""
+        from routers.personnel_v2 import create_user, UserCreate
+
+        db = _db_seq(
+            None,  # no duplicate email
+            None,  # INSERT users
+        )
+
+        with _GRANT_ALL:
+            result = await create_user(
+                tenant_id=UUID(TENANT_ID),
+                body=UserCreate(
+                    name="Second Admin",
+                    email="second-admin@test.com",
+                    password="TestPass@2026",
+                    system_role="TA",
+                ),
+                user=_Caller(role="SA"),
+                db=db,
+            )
+
+        assert result.data.role == "TA"
+        assert result.data.primary_position is None
+
     async def test_clear_system_role_on_update(self) -> None:
         """PATCH /users/{id} with clear_system_role=True nulls out system_role —
         used when switching a user from a tenant-wide role (Track B) back to a

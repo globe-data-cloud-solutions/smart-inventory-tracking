@@ -1448,6 +1448,11 @@ const POSITION_ROLES = [
   { code: "RT", label: "Retailer" },
 ] as const;
 
+// Roles that never initiate transfers/adjustments — self-approval limits don't apply.
+// TA/SA can't actually be selected in POSITION_ROLES above (platform/tenant-admin
+// level, not position-based), but are included here for completeness per spec.
+const NO_SELF_APPROVAL_ROLES = new Set(["AU", "TA", "SA"]);
+
 const ROLE_BADGE_COLORS: Record<string, string> = {
   NM: "bg-green-800 text-white",
   RM: "bg-green-600 text-white",
@@ -1667,7 +1672,13 @@ function PositionsTab({ tenantId }: { tenantId: string }) {
                 </div>
                 <div>
                   <label className="block text-xs font-bold text-gray-700 mb-1">{t("position.role")} *</label>
-                  <select value={formRole} onChange={(e) => setFormRole(e.target.value)}
+                  <select value={formRole} onChange={(e) => {
+                    const next = e.target.value;
+                    setFormRole(next);
+                    // This role never initiates transfers — clear any stale self-approval
+                    // state so switching roles can't silently submit a leftover policy.
+                    if (NO_SELF_APPROVAL_ROLES.has(next)) setFormSAEnabled(false);
+                  }}
                     className="w-full border border-gray-300 rounded px-2.5 py-1.5 text-sm bg-white">
                     {POSITION_ROLES.map((r) => <option key={r.code} value={r.code}>{r.label} ({r.code})</option>)}
                   </select>
@@ -1687,71 +1698,77 @@ function PositionsTab({ tenantId }: { tenantId: string }) {
                 <div className="border border-blue-200 rounded-lg p-3 bg-blue-50 space-y-3">
                   <p className="text-xs font-bold uppercase text-blue-700">{t("org_setup.self_approval_title")}</p>
                   <p className="text-xs text-gray-600">{t("org_setup.self_approval_desc")}</p>
-                  {selectedGroup && (
-                    <p className="text-xs text-blue-600 bg-blue-100 rounded px-2 py-1">
-                      {t("org_setup.self_approval_level_note")
-                        .replace("{position}", `${formTitle || t("position.title")} (${formRole})`)
-                        .replace("{node}", selectedGroup.node_name)
-                        .replace("{level}", String(selectedGroup.level_number))}
-                    </p>
-                  )}
-                  <label className="flex items-center gap-2 text-sm cursor-pointer">
-                    <input type="checkbox" checked={formSAEnabled}
-                      onChange={(e) => setFormSAEnabled(e.target.checked)}
-                      className="rounded border-gray-300 text-blue-600" />
-                    <span className="text-xs font-medium text-gray-700">{t("org_setup.self_approval_enable")}</span>
-                  </label>
-                  {formSAEnabled && (
-                    <div className="space-y-3 pt-1">
-                      <div>
-                        <label className="block text-xs font-bold text-gray-700 mb-1">{t("org_setup.self_approval_transfer_types")}</label>
-                        <div className="flex gap-3">
-                          {(["PULL","PUSH","SISTER"] as const).map((tt) => (
-                            <label key={tt} className="flex items-center gap-1 text-xs cursor-pointer">
-                              <input type="checkbox"
-                                checked={formSATypes.includes(tt)}
-                                onChange={(e) => setFormSATypes(e.target.checked
-                                  ? [...formSATypes, tt]
-                                  : formSATypes.filter((x) => x !== tt))}
-                                className="rounded border-gray-300 text-blue-600" />
-                              {tt}
-                            </label>
-                          ))}
-                        </div>
-                      </div>
-                      <div>
-                        <label className="block text-xs font-bold text-gray-700 mb-1">{t("org_setup.self_approval_threshold_type")}</label>
-                        <div className="flex gap-4">
-                          {(["QUANTITY","VALUE","EITHER"] as const).map((thr) => (
-                            <label key={thr} className="flex items-center gap-1 text-xs cursor-pointer">
-                              <input type="radio" name="sa-threshold" value={thr}
-                                checked={formSAThreshold === thr}
-                                onChange={() => setFormSAThreshold(thr)}
-                                className="border-gray-300 text-blue-600" />
-                              {t(`org_setup.threshold_${thr.toLowerCase()}`)}
-                            </label>
-                          ))}
-                        </div>
-                      </div>
-                      {(formSAThreshold === "QUANTITY" || formSAThreshold === "EITHER") && (
-                        <div>
-                          <label className="block text-xs font-bold text-gray-700 mb-1">{t("org_setup.self_approval_qty_limit")}</label>
-                          <input type="number" min="0" value={formSAQtyLimit}
-                            onChange={(e) => setFormSAQtyLimit(e.target.value)}
-                            placeholder={t("org_setup.self_approval_unlimited")}
-                            className="w-full border border-gray-300 rounded px-2.5 py-1.5 text-sm" />
+                  {NO_SELF_APPROVAL_ROLES.has(formRole) ? (
+                    <p className="text-xs text-gray-400 italic">{t("org_setup.no_self_approval_needed")}</p>
+                  ) : (
+                    <>
+                      {selectedGroup && (
+                        <p className="text-xs text-blue-600 bg-blue-100 rounded px-2 py-1">
+                          {t("org_setup.self_approval_level_note")
+                            .replace("{position}", `${formTitle || t("position.title")} (${formRole})`)
+                            .replace("{node}", selectedGroup.node_name)
+                            .replace("{level}", String(selectedGroup.level_number))}
+                        </p>
+                      )}
+                      <label className="flex items-center gap-2 text-sm cursor-pointer">
+                        <input type="checkbox" checked={formSAEnabled}
+                          onChange={(e) => setFormSAEnabled(e.target.checked)}
+                          className="rounded border-gray-300 text-blue-600" />
+                        <span className="text-xs font-medium text-gray-700">{t("org_setup.self_approval_enable")}</span>
+                      </label>
+                      {formSAEnabled && (
+                        <div className="space-y-3 pt-1">
+                          <div>
+                            <label className="block text-xs font-bold text-gray-700 mb-1">{t("org_setup.self_approval_transfer_types")}</label>
+                            <div className="flex gap-3">
+                              {(["PULL","PUSH","SISTER"] as const).map((tt) => (
+                                <label key={tt} className="flex items-center gap-1 text-xs cursor-pointer">
+                                  <input type="checkbox"
+                                    checked={formSATypes.includes(tt)}
+                                    onChange={(e) => setFormSATypes(e.target.checked
+                                      ? [...formSATypes, tt]
+                                      : formSATypes.filter((x) => x !== tt))}
+                                    className="rounded border-gray-300 text-blue-600" />
+                                  {tt}
+                                </label>
+                              ))}
+                            </div>
+                          </div>
+                          <div>
+                            <label className="block text-xs font-bold text-gray-700 mb-1">{t("org_setup.self_approval_threshold_type")}</label>
+                            <div className="flex gap-4">
+                              {(["QUANTITY","VALUE","EITHER"] as const).map((thr) => (
+                                <label key={thr} className="flex items-center gap-1 text-xs cursor-pointer">
+                                  <input type="radio" name="sa-threshold" value={thr}
+                                    checked={formSAThreshold === thr}
+                                    onChange={() => setFormSAThreshold(thr)}
+                                    className="border-gray-300 text-blue-600" />
+                                  {t(`org_setup.threshold_${thr.toLowerCase()}`)}
+                                </label>
+                              ))}
+                            </div>
+                          </div>
+                          {(formSAThreshold === "QUANTITY" || formSAThreshold === "EITHER") && (
+                            <div>
+                              <label className="block text-xs font-bold text-gray-700 mb-1">{t("org_setup.self_approval_qty_limit")}</label>
+                              <input type="number" min="0" value={formSAQtyLimit}
+                                onChange={(e) => setFormSAQtyLimit(e.target.value)}
+                                placeholder={t("org_setup.self_approval_unlimited")}
+                                className="w-full border border-gray-300 rounded px-2.5 py-1.5 text-sm" />
+                            </div>
+                          )}
+                          {(formSAThreshold === "VALUE" || formSAThreshold === "EITHER") && (
+                            <div>
+                              <label className="block text-xs font-bold text-gray-700 mb-1">{t("org_setup.self_approval_value_limit")}</label>
+                              <input type="number" min="0" value={formSAValueLimit}
+                                onChange={(e) => setFormSAValueLimit(e.target.value)}
+                                placeholder={t("org_setup.self_approval_unlimited")}
+                                className="w-full border border-gray-300 rounded px-2.5 py-1.5 text-sm" />
+                            </div>
+                          )}
                         </div>
                       )}
-                      {(formSAThreshold === "VALUE" || formSAThreshold === "EITHER") && (
-                        <div>
-                          <label className="block text-xs font-bold text-gray-700 mb-1">{t("org_setup.self_approval_value_limit")}</label>
-                          <input type="number" min="0" value={formSAValueLimit}
-                            onChange={(e) => setFormSAValueLimit(e.target.value)}
-                            placeholder={t("org_setup.self_approval_unlimited")}
-                            className="w-full border border-gray-300 rounded px-2.5 py-1.5 text-sm" />
-                        </div>
-                      )}
-                    </div>
+                    </>
                   )}
                 </div>
 

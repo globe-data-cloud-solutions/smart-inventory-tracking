@@ -137,7 +137,23 @@ export async function loginWithDevEmail(email: string, password?: string): Promi
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),
     });
-    if (!res.ok) return null;
+    if (!res.ok) {
+      // 429 (login lockout) carries a specific message the login form must
+      // show verbatim — every other failure (401, etc.) stays a generic null
+      // so as not to leak whether the email exists.
+      if (res.status === 429) {
+        const errBody = (await res.json().catch(() => null)) as
+          | { detail?: { code?: string; message?: string } }
+          | null;
+        const err = new Error(
+          errBody?.detail?.message ??
+            "Too many failed login attempts. Please wait 15 minutes before trying again, or contact your administrator."
+        ) as Error & { status?: number };
+        err.status = 429;
+        throw err;
+      }
+      return null;
+    }
     const data = (await res.json()) as {
       access_token?: string;
       tenant_slug?: string | null;
@@ -189,7 +205,13 @@ export async function loginWithDevEmail(email: string, password?: string): Promi
     };
     store()?.setItem(SESSION_KEY, JSON.stringify(session));
     return session;
-  } catch {
+  } catch (err) {
+    // Login-lockout errors carry status=429 and must propagate to the caller
+    // (the login form needs the specific message) — every other failure
+    // (network error, bad JSON, etc.) stays a generic null as before.
+    if (err instanceof Error && (err as Error & { status?: number }).status === 429) {
+      throw err;
+    }
     return null;
   }
 }

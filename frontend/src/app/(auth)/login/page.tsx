@@ -11,6 +11,7 @@ export default function LoginPage() {
   const [email, setEmail]       = useState("");
   const [password, setPassword] = useState("");
   const [error, setError]       = useState("");
+  const [lockoutMessage, setLockoutMessage] = useState("");
   const [loading, setLoading]   = useState(false);
   // Show password by default so users can see SA credentials without clicking
   const [showPwd, setShowPwd]   = useState(true);
@@ -26,12 +27,22 @@ export default function LoginPage() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
+    setLockoutMessage("");
     setLoading(true);
     await new Promise((r) => setTimeout(r, 300));
     let session = login(email, password);
     if (!session) {
       // Fallback: try backend dev_email for API-created users (ENVIRONMENT=local only)
-      session = await loginWithDevEmail(email, password);
+      try {
+        session = await loginWithDevEmail(email, password);
+      } catch (err) {
+        if (err instanceof Error && (err as Error & { status?: number }).status === 429) {
+          setLockoutMessage(err.message);
+          setLoading(false);
+          return;
+        }
+        // Unexpected error shape — fall through to the generic message below.
+      }
     }
     if (!session) {
       setError("Invalid email or password.");
@@ -56,6 +67,7 @@ export default function LoginPage() {
     setEmail(em);
     setPassword(pw);
     setError("");
+    setLockoutMessage("");
   };
 
   return (
@@ -158,7 +170,12 @@ export default function LoginPage() {
                 />
               </div>
 
-              {error && (
+              {lockoutMessage ? (
+                // Rate limit, not a credential error — amber, not red.
+                <div className="rounded-lg bg-amber-50 border border-amber-200 px-4 py-3 text-sm text-amber-800">
+                  {lockoutMessage}
+                </div>
+              ) : error && (
                 <div className="rounded-lg bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-700">
                   {error}
                 </div>

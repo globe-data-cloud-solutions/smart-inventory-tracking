@@ -48,6 +48,38 @@ _ALG    = "HS256"
 client = TestClient(app)
 
 
+class _FakeRedis:
+    """In-memory stand-in for redis.asyncio.Redis — just enough of GET/INCR/
+    EXPIRE/DELETE to exercise the login-lockout logic without a real server."""
+
+    def __init__(self) -> None:
+        self.store: dict[str, int] = {}
+
+    async def get(self, key: str) -> str | None:
+        return str(self.store[key]) if key in self.store else None
+
+    async def incr(self, key: str) -> int:
+        self.store[key] = self.store.get(key, 0) + 1
+        return self.store[key]
+
+    async def expire(self, key: str, seconds: int) -> None:
+        pass  # TTL behavior is Redis's job — not simulated here
+
+    async def delete(self, key: str) -> None:
+        self.store.pop(key, None)
+
+
+@pytest.fixture(autouse=True)
+def _no_real_redis(monkeypatch: pytest.MonkeyPatch) -> _FakeRedis:
+    """Every test in this module gets a fresh in-memory fake Redis client —
+    none of them should ever touch a real server. exchange_token's dev_email
+    path now calls get_redis_client() on every request (login-lockout check),
+    so this must be autouse rather than opt-in per test."""
+    fake = _FakeRedis()
+    monkeypatch.setattr(auth_module, "get_redis_client", lambda: fake)
+    return fake
+
+
 @pytest.mark.unit
 class TestLocalDevAuth:
     def test_local_dev_auth_returns_valid_jwt(self, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -386,4 +418,93 @@ class TestLocalDevAuth:
         )
         assert resp.status_code == 200, f"Expected 200, got {resp.status_code}: {resp.text}"
         assert resp.json()["success"] is True
+
+
+@pytest.mark.unit
+class TestLoginAttemptLimiting:
+    """Fix 3 — failed dev_email logins are tracked in Redis; 5 failures lock
+    the email out for 15 minutes (429 + Retry-After). A successful login
+    resets the counter. Redis is faked (_FakeRedis) — never touches a real
+    server, consistent with this file's "no DB, no Redis, no Cognito" design."""
+
+    def test_login_lockout_after_5_attempts(
+        self, monkeypatch: pytest.MonkeyPatch, _no_real_redis: _FakeRedis
+    ) -> None:
+        async def _mock_wrong_password(email: str, password: object = None) -> dict:
+            raise auth_module.HTTPException(status_code=401, detail="Invalid password")
+
+        monkeypatch.setattr(auth_module, "_lookup_user_with_position", _mock_wrong_password)
+
+        for _ in range(5):
+            resp = client.post(
+                "/api/v1/auth/token",
+                json={"dev_email": "locktest@acme.com", "dev_password": "wrong"},
+            )
+            assert resp.status_code == 401
+
+        # The 6th attempt is blocked — 5 failures already recorded.
+        resp = client.post(
+            "/api/v1/auth/token",
+            json={"dev_email": "locktest@acme.com", "dev_password": "wrong"},
+        )
+        assert resp.status_code == 429
+        assert resp.json()["detail"]["code"] == "TOO_MANY_ATTEMPTS"
+
+    def test_lockout_includes_retry_after_header(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        async def _mock_wrong_password(email: str, password: object = None) -> dict:
+            raise auth_module.HTTPException(status_code=401, detail="Invalid password")
+
+        monkeypatch.setattr(auth_module, "_lookup_user_with_position", _mock_wrong_password)
+
+        for _ in range(5):
+            client.post(
+                "/api/v1/auth/token",
+                json={"dev_email": "locktest2@acme.com", "dev_password": "wrong"},
+            )
+
+        resp = client.post(
+            "/api/v1/auth/token",
+            json={"dev_email": "locktest2@acme.com", "dev_password": "wrong"},
+        )
+        assert resp.status_code == 429
+        assert resp.headers["retry-after"] == "900"
+
+    def test_successful_login_resets_counter(
+        self, monkeypatch: pytest.MonkeyPatch, _no_real_redis: _FakeRedis
+    ) -> None:
+        """3 wrong → 1 correct (resets counter) → wrong again → still not locked
+        out, because the successful login cleared the count back to zero."""
+        call_log: list[str] = []
+
+        async def _mock_lookup(email: str, password: object = None) -> dict | None:
+            if password == "correct":
+                call_log.append("success")
+                return {
+                    "sub": "u-1", "email": email, "name": "Test User",
+                    "tenant_id": "aaaaaaaa-0000-0000-0000-000000000001",
+                    "tenant_slug": "acme", "role": "WM",
+                    "warehouse_id": "bbbbbbbb-0000-0000-0000-000000000001",
+                    "warehouse_name": "WH1", "position_id": "cccccccc-0000-0000-0000-000000000001",
+                    "position_title": "Warehouse Manager", "level_number": 3,
+                    "positions": [], "must_reset_password": False,
+                }
+            call_log.append("fail")
+            raise auth_module.HTTPException(status_code=401, detail="Invalid password")
+
+        monkeypatch.setattr(auth_module, "_lookup_user_with_position", _mock_lookup)
+        fake_redis = _no_real_redis
+
+        email = "resettest@acme.com"
+        for _ in range(3):
+            resp = client.post("/api/v1/auth/token", json={"dev_email": email, "dev_password": "wrong"})
+            assert resp.status_code == 401
+        assert fake_redis.store[auth_module._login_attempts_key(email)] == 3
+
+        resp = client.post("/api/v1/auth/token", json={"dev_email": email, "dev_password": "correct"})
+        assert resp.status_code == 200
+        assert auth_module._login_attempts_key(email) not in fake_redis.store
+
+        # One more wrong attempt after the reset — should NOT be locked out.
+        resp = client.post("/api/v1/auth/token", json={"dev_email": email, "dev_password": "wrong"})
+        assert resp.status_code == 401
 

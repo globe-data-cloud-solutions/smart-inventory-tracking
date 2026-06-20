@@ -229,6 +229,15 @@ async def create_user(
         raise HTTPException(status_code=422, detail={"code": "INVALID_SYSTEM_ROLE",
             "message": "system_role must be TA, AU, or LM, or null (role comes from position)."})
 
+    # Role ceiling: only a platform admin (SA) may create another Tenant Admin.
+    # A TA cannot create a peer/superior account — server-side, not just UI-hidden.
+    if effective_system_role == "TA" and getattr(user, "role", None) != "SA":
+        raise HTTPException(
+            status_code=403,
+            detail={"code": "ROLE_CEILING_EXCEEDED",
+                    "message": "Only a platform administrator can create Tenant Administrator accounts."},
+        )
+
     user_id = uuid.uuid4()
     await db.execute(
         text("""
