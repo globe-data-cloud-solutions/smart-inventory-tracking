@@ -978,7 +978,8 @@
     "route_to_position": "Gara iddoo erguu",
     "no_positions_available": "Kireeffataa kanaaf iddoon hin qophoofne.",
     "self_approve_unlimited": "Ofii of-mirkaneessuu (daangaa hin qabu)",
-    "legacy_role_label": "{role} (durii — iddoon hin ramadamne)"
+    "legacy_role_label": "{role} (durii — iddoon hin ramadamne)",
+    "coverage_hint": "This rule routes to {position} at {node} (Level {level}). The following nodes at the same level have no routing rule yet: {nodes}. Consider adding rules for those nodes."
   },
   "transfer_panel": {
     "estimated_value": "Estimated value",

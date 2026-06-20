@@ -1074,7 +1074,8 @@
     "route_to_position": "ወደ ቦታ ላክ",
     "no_positions_available": "ለዚህ ተከራይ እስካሁን ምንም ቦታ አልተዋቀረም።",
     "self_approve_unlimited": "በራስ ማጽደቅ (ያለ ገደብ)",
-    "legacy_role_label": "{role} (ነባር — ምንም ቦታ አልተመደበም)"
+    "legacy_role_label": "{role} (ነባር — ምንም ቦታ አልተመደበም)",
+    "coverage_hint": "This rule routes to {position} at {node} (Level {level}). The following nodes at the same level have no routing rule yet: {nodes}. Consider adding rules for those nodes."
   },
   "transfer_panel": {
     "estimated_value": "Estimated value",

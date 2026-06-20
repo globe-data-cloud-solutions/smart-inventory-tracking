@@ -7,7 +7,7 @@ import { api } from "@/lib/api";
 import { getToken } from "@/lib/auth";
 import { getSession } from "@/lib/demo-auth";
 import { t } from "@/lib/i18n";
-import { useTenantPositions } from "@/hooks/useTenantPositions";
+import { useTenantPositions, type TenantPosition } from "@/hooks/useTenantPositions";
 import { TabHelpBanner } from "@/components/ui/TabHelpBanner";
 
 /* ── Types ─────────────────────────────────────────────────────────────────── */
@@ -2334,6 +2334,65 @@ const MODE_OPTIONS = [
   { v: "SEQUENTIAL", l: "approval_rule.mode_all" },
 ];
 
+interface CoverageHint { key: string; position: string; node: string; level: number; uncoveredNodes: string[] }
+
+// Nodes already targeted by a "Route to" position, grouped by hierarchy level,
+// across every rule of the active transfer type.
+function buildCoveredNodesByLevel(
+  rulesForType: ApprovalRuleLocal[],
+  allPositions: TenantPosition[],
+): Map<number, Set<string>> {
+  const map = new Map<number, Set<string>>();
+  for (const rule of rulesForType) {
+    for (const step of rule.steps) {
+      if (!step.position_id) continue;
+      const pos = allPositions.find((p) => p.id === step.position_id);
+      if (!pos) continue;
+      const set = map.get(pos.level_number) ?? new Set<string>();
+      set.add(pos.node_id);
+      map.set(pos.level_number, set);
+    }
+  }
+  return map;
+}
+
+// For a single rule, find any level it routes to where other active nodes at
+// that same level have no "Route to" position in any rule of this transfer type.
+function getRuleCoverageHints(
+  rule: ApprovalRuleLocal,
+  allPositions: TenantPosition[],
+  coveredByLevel: Map<number, Set<string>>,
+): CoverageHint[] {
+  const seenLevels = new Set<number>();
+  const hints: CoverageHint[] = [];
+  for (const step of rule.steps) {
+    if (!step.position_id) continue;
+    const pos = allPositions.find((p) => p.id === step.position_id);
+    if (!pos || seenLevels.has(pos.level_number)) continue;
+    seenLevels.add(pos.level_number);
+
+    const covered = coveredByLevel.get(pos.level_number) ?? new Set<string>();
+    const uncoveredNodeNames: string[] = [];
+    const seenNodes = new Set<string>([pos.node_id]);
+    for (const p of allPositions) {
+      if (p.level_number !== pos.level_number) continue;
+      if (seenNodes.has(p.node_id) || covered.has(p.node_id)) continue;
+      seenNodes.add(p.node_id);
+      uncoveredNodeNames.push(p.node_name);
+    }
+    if (uncoveredNodeNames.length > 0) {
+      hints.push({
+        key: `${rule.id}:${pos.level_number}`,
+        position: pos.title,
+        node: pos.node_name,
+        level: pos.level_number,
+        uncoveredNodes: uncoveredNodeNames,
+      });
+    }
+  }
+  return hints;
+}
+
 function ApprovalRulesV2Tab({ tenantId }: { tenantId: string }) {
   const qc = useQueryClient();
   const [subTab, setSubTab] = useState<"transfer" | "adjustment">("transfer");
@@ -2343,6 +2402,9 @@ function ApprovalRulesV2Tab({ tenantId }: { tenantId: string }) {
   const [saving, setSaving] = useState(false);
   const [saveOk, setSaveOk] = useState(false);
   const [saveErr, setSaveErr] = useState<string | null>(null);
+  // Coverage hints are a one-time post-save nudge — not persisted, cleared on tab switch.
+  const [showCoverageHints, setShowCoverageHints] = useState(false);
+  const [dismissedHints, setDismissedHints] = useState<Set<string>>(new Set());
 
   const { data: levels = [] } = useQuery<HierarchyLevel[]>({
     queryKey: ["hierarchy-config", tenantId],
@@ -2448,12 +2510,15 @@ function ApprovalRulesV2Tab({ tenantId }: { tenantId: string }) {
       await api.put(`/api/v1/tenants/${tenantId}/transfer-approval-rules`, body);
       void qc.invalidateQueries({ queryKey: ["transfer-approval-rules", tenantId] });
       setSaveOk(true);
+      setDismissedHints(new Set());
+      setShowCoverageHints(true);
     } catch (e) { setSaveErr(e instanceof Error ? e.message : t("common.error")); }
     setSaving(false);
   }
 
   const levelOptions = [{ value: null, label: t("approval_rule.any_level") }, ...levels.map((l) => ({ value: l.level_number, label: `${l.level_name} (L${l.level_number})` }))];
   const currentRules = getRules(activeType ?? "");
+  const coveredByLevel = buildCoveredNodesByLevel(currentRules, allPositions);
 
   return (
     <div className="space-y-4">
@@ -2473,7 +2538,7 @@ function ApprovalRulesV2Tab({ tenantId }: { tenantId: string }) {
           className={`px-4 py-2 text-sm font-medium transition-all ${subTab === "transfer" ? "border-b-2 border-emerald-600 text-emerald-700" : "text-gray-500 hover:text-gray-700"}`}>
           {t("approval_rule.transfer_rules_tab")}
         </button>
-        <button type="button" onClick={() => setSubTab("adjustment")}
+        <button type="button" onClick={() => { setSubTab("adjustment"); setShowCoverageHints(false); }}
           className={`px-4 py-2 text-sm font-medium transition-all ${subTab === "adjustment" ? "border-b-2 border-emerald-600 text-emerald-700" : "text-gray-500 hover:text-gray-700"}`}>
           {t("approval_rule.adj_rules_tab")}
         </button>
@@ -2490,7 +2555,7 @@ function ApprovalRulesV2Tab({ tenantId }: { tenantId: string }) {
             <div className="flex border-b border-gray-200">
               {activeTypes.map((tt) => (
                 <button key={tt.id} type="button"
-                  onClick={() => setActiveType(tt.id)}
+                  onClick={() => { setActiveType(tt.id); setShowCoverageHints(false); }}
                   className={`px-4 py-2 text-sm font-medium transition-all ${activeType === tt.id ? "border-b-2 border-emerald-600 text-emerald-700" : "text-gray-500 hover:text-gray-700"}`}>
                   {tt.display_name}
                 </button>
@@ -2519,7 +2584,8 @@ function ApprovalRulesV2Tab({ tenantId }: { tenantId: string }) {
           })()}
 
           {currentRules.map((rule, rIdx) => (
-            <div key={rule.id} className="border border-gray-200 rounded-xl p-4 bg-white space-y-3">
+            <Fragment key={rule.id}>
+            <div className="border border-gray-200 rounded-xl p-4 bg-white space-y-3">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-3">
                   <span className="text-xs font-bold uppercase text-gray-500">Rule {rIdx + 1}</span>
@@ -2620,6 +2686,24 @@ function ApprovalRulesV2Tab({ tenantId }: { tenantId: string }) {
                 </button>
               </div>
             </div>
+            {showCoverageHints && getRuleCoverageHints(rule, allPositions, coveredByLevel)
+              .filter((h) => !dismissedHints.has(h.key))
+              .map((h) => (
+                <div key={h.key} className="flex items-start gap-2 px-3 py-2.5 rounded-lg bg-blue-50 border border-blue-100 text-[11px] text-blue-700 leading-snug">
+                  <span className="shrink-0 font-bold mt-0.5">ℹ</span>
+                  <span className="flex-1">
+                    {t("approval_rule.coverage_hint")
+                      .replace("{position}", h.position)
+                      .replace("{node}", h.node)
+                      .replace("{level}", String(h.level))
+                      .replace("{nodes}", h.uncoveredNodes.join(", "))}
+                  </span>
+                  <button type="button"
+                    onClick={() => setDismissedHints((prev) => new Set(prev).add(h.key))}
+                    className="shrink-0 text-blue-400 hover:text-blue-600" aria-label="Dismiss">✕</button>
+                </div>
+              ))}
+            </Fragment>
           ))}
 
           <button type="button" onClick={() => addRule(activeType)}

@@ -1228,7 +1228,8 @@
     "route_to_position": "Route to position",
     "no_positions_available": "No positions configured for this tenant yet.",
     "self_approve_unlimited": "Self-approve (unlimited)",
-    "legacy_role_label": "{role} (legacy — no position assigned)"
+    "legacy_role_label": "{role} (legacy — no position assigned)",
+    "coverage_hint": "This rule routes to {position} at {node} (Level {level}). The following nodes at the same level have no routing rule yet: {nodes}. Consider adding rules for those nodes."
   },
   "login": {
     "quick_access": "Quick Access",
