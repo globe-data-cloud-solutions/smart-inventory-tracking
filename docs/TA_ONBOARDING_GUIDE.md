@@ -400,6 +400,9 @@ Go to Settings → Personnel. Click the user's row to open their detail panel. C
 **Q: What happens if a user gets locked out?**
 After 5 consecutive failed login attempts, the account is automatically locked for 15 minutes. The user will see a message on the login screen. They can wait 15 minutes and retry, or contact you (the Tenant Admin) to verify they are using the correct credentials. The lockout clears automatically — no admin action is required. If the user successfully resets their password, the lockout counter is also cleared immediately.
 
+**Q: Do I need to create separate adjustment rules for each warehouse or region?**
+Yes. Each adjustment rule applies to the specific node it is configured for. If your organization has multiple warehouses or regions, you must create a separate rule for each one. A rule set for WHA1 will not automatically apply to WHA2 or WHB1. Work through each node systematically to ensure full coverage. A future update will allow you to apply rules across all nodes at the same org level in one step.
+
 ---
 
 ## Setup Checklist
