@@ -25,6 +25,7 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from dependencies import get_current_user, get_db_session_for_tenant
+from shared.cache.login_lockout import _reset_login_attempts
 from shared.permissions.middleware import require_permission
 from shared.permissions.registry import PERMISSIONS
 from shared.utils.responses import SuccessResponse
@@ -595,7 +596,7 @@ async def update_user(
     to system_role='TA' for backward compatibility with the frontend.
     """
     row = (await db.execute(
-        text("SELECT id FROM users WHERE id = :uid AND tenant_id = :tid"),
+        text("SELECT id, email FROM users WHERE id = :uid AND tenant_id = :tid"),
         {"uid": str(user_id), "tid": str(tenant_id)},
     )).fetchone()
     if not row:
@@ -642,4 +643,13 @@ async def update_user(
         text(f"UPDATE users SET {', '.join(set_parts)} WHERE id = :uid AND tenant_id = :tid"),
         params,
     )
+
+    if body.password is not None:
+        # A TA-issued password reset immediately unblocks a locked-out user —
+        # no need to wait out the 15-minute Redis lockout window. Reset against
+        # the user's email AS OF BEFORE this update (the email they were
+        # actually failing login attempts under), not any new email also
+        # being set in this same request.
+        await _reset_login_attempts(row.email)
+
     return SuccessResponse(data={"updated": True, "user_id": str(user_id)})

@@ -21,6 +21,10 @@ os.environ.setdefault("DATABASE_URL",      "postgresql+asyncpg://test:x@localhos
 os.environ.setdefault("DATABASE_READ_URL", "postgresql+asyncpg://test:x@localhost/test")
 os.environ.setdefault("JWT_SECRET",        "test-secret")
 os.environ.setdefault("JWT_SECRET_KEY",    "test-secret")
+# redis.from_url() doesn't connect eagerly — this only satisfies the module-level
+# os.environ["REDIS_URL"] read in shared.cache.redis_client (personnel_v2.py now
+# imports shared.cache.login_lockout for the password-reset lockout-clear call).
+os.environ.setdefault("REDIS_URL", "redis://localhost:6379/0")
 
 # ── Scoped sys.path: guarantee tenant-service routers win the lookup ──────────
 _TENANT_ROOT = os.path.normpath(
@@ -370,23 +374,31 @@ class TestPersonnelV2:
         assert exc_info.value.status_code == 422
         assert exc_info.value.detail["code"] == "CANNOT_REMOVE_LAST_PRIMARY"
 
-    async def test_ta_can_reset_user_password(self) -> None:
+    async def test_ta_can_reset_user_password(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """PATCH /users/{id} with password hashes it into password_hash and forces
         must_reset_password=True, even if must_reset_password wasn't explicitly set —
-        the user must change the admin-issued temporary password on next login."""
+        the user must change the admin-issued temporary password on next login.
+        Also clears the user's Redis login-lockout counter immediately."""
         from routers.personnel_v2 import update_user, UserUpdateRequest
 
-        user_row = _row(id=USER_ID)
+        user_row = _row(id=USER_ID, email="locked-out@test.com")
         execute_calls: list[tuple[str, dict]] = []
 
         async def _capture(stmt, params=None, **kw) -> MagicMock:
             execute_calls.append((str(stmt), params or {}))
             res = MagicMock()
-            res.fetchone = MagicMock(return_value=user_row if "SELECT id FROM users" in str(stmt) else None)
+            res.fetchone = MagicMock(return_value=user_row if "FROM users WHERE id" in str(stmt) else None)
             return res
 
         db = AsyncMock()
         db.execute = AsyncMock(side_effect=_capture)
+
+        reset_calls: list[str] = []
+
+        async def _fake_reset(email: str) -> None:
+            reset_calls.append(email)
+
+        monkeypatch.setattr("routers.personnel_v2._reset_login_attempts", _fake_reset)
 
         with _GRANT_ALL:
             result = await update_user(
@@ -403,6 +415,7 @@ class TestPersonnelV2:
         assert "must_reset_password = :mrp" in update_stmt
         assert update_params["mrp"] is True
         assert update_params["ph"] != "NewPass@2026"  # stored as a bcrypt hash, never plaintext
+        assert reset_calls == ["locked-out@test.com"]
 
     async def test_reset_password_requires_min_length(self) -> None:
         """UserUpdateRequest rejects passwords under 8 characters at the schema
@@ -620,7 +633,7 @@ class TestPersonnelV2:
         async def _capture(stmt, params=None, **kw) -> MagicMock:
             execute_calls.append((str(stmt), params or {}))
             res = MagicMock()
-            res.fetchone = MagicMock(return_value=user_row if "SELECT id FROM users" in str(stmt) else None)
+            res.fetchone = MagicMock(return_value=user_row if "FROM users WHERE id" in str(stmt) else None)
             return res
 
         db = AsyncMock()

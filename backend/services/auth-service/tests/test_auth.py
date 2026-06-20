@@ -74,9 +74,15 @@ def _no_real_redis(monkeypatch: pytest.MonkeyPatch) -> _FakeRedis:
     """Every test in this module gets a fresh in-memory fake Redis client —
     none of them should ever touch a real server. exchange_token's dev_email
     path now calls get_redis_client() on every request (login-lockout check),
-    so this must be autouse rather than opt-in per test."""
+    so this must be autouse rather than opt-in per test.
+
+    The lockout helpers live in shared.cache.login_lockout (used by both
+    auth-service and tenant-service), so that module's get_redis_client
+    binding is what must be patched — not auth_module's, which no longer
+    holds its own reference after the functions moved out."""
     fake = _FakeRedis()
-    monkeypatch.setattr(auth_module, "get_redis_client", lambda: fake)
+    import shared.cache.login_lockout as _lockout_mod
+    monkeypatch.setattr(_lockout_mod, "get_redis_client", lambda: fake)
     return fake
 
 
