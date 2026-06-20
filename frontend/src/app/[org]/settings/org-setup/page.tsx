@@ -2019,6 +2019,10 @@ function AdjustmentRulesSection({ tenantId, onRuleCountChange }: { tenantId: str
   const [saving, setSaving] = useState(false);
   const [saveOk, setSaveOk] = useState(false);
   const [saveErr, setSaveErr] = useState<string | null>(null);
+  // Coverage hints are a one-time post-save nudge — not persisted, cleared on tab switch
+  // (this section unmounts when the parent's sub-tab switches away from "adjustment").
+  const [showCoverageHints, setShowCoverageHints] = useState(false);
+  const [dismissedHints, setDismissedHints] = useState<Set<string>>(new Set());
 
   const { data: levels = [] } = useQuery<HierarchyLevel[]>({
     queryKey: ["hierarchy-config", tenantId],
@@ -2104,11 +2108,14 @@ function AdjustmentRulesSection({ tenantId, onRuleCountChange }: { tenantId: str
       void qc.invalidateQueries({ queryKey: ["adj-approval-rules", tenantId] });
       setRuleList(null);
       setSaveOk(true);
+      setDismissedHints(new Set());
+      setShowCoverageHints(true);
     } catch (e) { setSaveErr(e instanceof Error ? e.message : t("common.error")); }
     setSaving(false);
   }
 
   const currentList = getList();
+  const coveredByLevel = buildCoveredNodesByLevel(currentList, allPositions, getAdjApproverPositionId);
 
   // Notify parent of current rule count so tab-change confirmation can gate.
   useEffect(() => { onRuleCountChange?.(currentList.length); }, [currentList.length, onRuleCountChange]);
@@ -2146,7 +2153,8 @@ function AdjustmentRulesSection({ tenantId, onRuleCountChange }: { tenantId: str
       ) : (
         <div className="space-y-3">
           {currentList.map((rule, idx) => (
-            <div key={idx} className="border border-gray-200 rounded-xl p-4 bg-white space-y-3">
+            <Fragment key={rule.id ?? `local_${idx}`}>
+            <div className="border border-gray-200 rounded-xl p-4 bg-white space-y-3">
               <div className="flex items-center justify-between">
                 <span className="text-xs font-bold uppercase text-gray-500">Rule {idx + 1}</span>
                 <div className="flex items-center gap-2">
@@ -2292,6 +2300,24 @@ function AdjustmentRulesSection({ tenantId, onRuleCountChange }: { tenantId: str
                 <span>{t("approval_rule.priority_hint")}</span>
               </div>
             </div>
+            {showCoverageHints && getRuleCoverageHints(rule, rule.id ?? `local_${idx}`, allPositions, coveredByLevel, getAdjApproverPositionId)
+              .filter((h) => !dismissedHints.has(h.key))
+              .map((h) => (
+                <div key={h.key} className="flex items-start gap-2 px-3 py-2.5 rounded-lg bg-blue-50 border border-blue-100 text-[11px] text-blue-700 leading-snug">
+                  <span className="shrink-0 font-bold mt-0.5">ℹ</span>
+                  <span className="flex-1">
+                    {t("approval_rule.coverage_hint")
+                      .replace("{position}", h.position)
+                      .replace("{node}", h.node)
+                      .replace("{level}", String(h.level))
+                      .replace("{nodes}", h.uncoveredNodes.join(", "))}
+                  </span>
+                  <button type="button"
+                    onClick={() => setDismissedHints((prev) => new Set(prev).add(h.key))}
+                    className="shrink-0 text-blue-400 hover:text-blue-600" aria-label="Dismiss">✕</button>
+                </div>
+              ))}
+            </Fragment>
           ))}
         </div>
       )}
@@ -2337,16 +2363,20 @@ const MODE_OPTIONS = [
 interface CoverageHint { key: string; position: string; node: string; level: number; uncoveredNodes: string[] }
 
 // Nodes already targeted by a "Route to" position, grouped by hierarchy level,
-// across every rule of the active transfer type.
-function buildCoveredNodesByLevel(
-  rulesForType: ApprovalRuleLocal[],
+// across every rule of the active transfer type (or every adjustment rule).
+// `getPositionIds` extracts the "Route to" position id(s) from a rule —
+// transfer rules carry a list of steps, adjustment rules carry a single
+// approver_position_id — so callers supply the right accessor for their shape.
+function buildCoveredNodesByLevel<T>(
+  rulesForType: T[],
   allPositions: TenantPosition[],
+  getPositionIds: (rule: T) => (string | null | undefined)[],
 ): Map<number, Set<string>> {
   const map = new Map<number, Set<string>>();
   for (const rule of rulesForType) {
-    for (const step of rule.steps) {
-      if (!step.position_id) continue;
-      const pos = allPositions.find((p) => p.id === step.position_id);
+    for (const positionId of getPositionIds(rule)) {
+      if (!positionId) continue;
+      const pos = allPositions.find((p) => p.id === positionId);
       if (!pos) continue;
       const set = map.get(pos.level_number) ?? new Set<string>();
       set.add(pos.node_id);
@@ -2357,17 +2387,19 @@ function buildCoveredNodesByLevel(
 }
 
 // For a single rule, find any level it routes to where other active nodes at
-// that same level have no "Route to" position in any rule of this transfer type.
-function getRuleCoverageHints(
-  rule: ApprovalRuleLocal,
+// that same level have no "Route to" position in any rule of the same set.
+function getRuleCoverageHints<T>(
+  rule: T,
+  ruleKey: string,
   allPositions: TenantPosition[],
   coveredByLevel: Map<number, Set<string>>,
+  getPositionIds: (rule: T) => (string | null | undefined)[],
 ): CoverageHint[] {
   const seenLevels = new Set<number>();
   const hints: CoverageHint[] = [];
-  for (const step of rule.steps) {
-    if (!step.position_id) continue;
-    const pos = allPositions.find((p) => p.id === step.position_id);
+  for (const positionId of getPositionIds(rule)) {
+    if (!positionId) continue;
+    const pos = allPositions.find((p) => p.id === positionId);
     if (!pos || seenLevels.has(pos.level_number)) continue;
     seenLevels.add(pos.level_number);
 
@@ -2382,7 +2414,7 @@ function getRuleCoverageHints(
     }
     if (uncoveredNodeNames.length > 0) {
       hints.push({
-        key: `${rule.id}:${pos.level_number}`,
+        key: `${ruleKey}:${pos.level_number}`,
         position: pos.title,
         node: pos.node_name,
         level: pos.level_number,
@@ -2392,6 +2424,12 @@ function getRuleCoverageHints(
   }
   return hints;
 }
+
+const getTransferStepPositionIds = (rule: ApprovalRuleLocal): (string | null | undefined)[] =>
+  rule.steps.map((s) => s.position_id);
+
+const getAdjApproverPositionId = (rule: AdjRuleLocal): (string | null | undefined)[] =>
+  [rule.approver_position_id];
 
 function ApprovalRulesV2Tab({ tenantId }: { tenantId: string }) {
   const qc = useQueryClient();
@@ -2518,7 +2556,7 @@ function ApprovalRulesV2Tab({ tenantId }: { tenantId: string }) {
 
   const levelOptions = [{ value: null, label: t("approval_rule.any_level") }, ...levels.map((l) => ({ value: l.level_number, label: `${l.level_name} (L${l.level_number})` }))];
   const currentRules = getRules(activeType ?? "");
-  const coveredByLevel = buildCoveredNodesByLevel(currentRules, allPositions);
+  const coveredByLevel = buildCoveredNodesByLevel(currentRules, allPositions, getTransferStepPositionIds);
 
   return (
     <div className="space-y-4">
@@ -2686,7 +2724,7 @@ function ApprovalRulesV2Tab({ tenantId }: { tenantId: string }) {
                 </button>
               </div>
             </div>
-            {showCoverageHints && getRuleCoverageHints(rule, allPositions, coveredByLevel)
+            {showCoverageHints && getRuleCoverageHints(rule, rule.id, allPositions, coveredByLevel, getTransferStepPositionIds)
               .filter((h) => !dismissedHints.has(h.key))
               .map((h) => (
                 <div key={h.key} className="flex items-start gap-2 px-3 py-2.5 rounded-lg bg-blue-50 border border-blue-100 text-[11px] text-blue-700 leading-snug">
