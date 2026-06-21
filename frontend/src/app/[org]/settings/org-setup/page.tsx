@@ -2771,8 +2771,142 @@ function ApprovalRulesV2Tab({ tenantId }: { tenantId: string }) {
 interface PositionAssignment { assignment_id: string; position_id: string; title: string; role_code: string; node_id: string; node_name: string; level_number: number; assignment_type: string; valid_from: string | null; valid_until: string | null }
 interface UserWithPositions { id: string; email: string; name: string; primary_position: PositionAssignment | null; acting_positions: PositionAssignment[]; is_active: boolean; must_reset_password: boolean }
 
+interface PersonnelPositionItem { id: string; title: string; role_code: string; node_name: string }
+
+function EditPersonnelPanel({
+  tenantId,
+  user,
+  positions,
+  onClose,
+  onUpdated,
+}: {
+  tenantId: string;
+  user: UserWithPositions;
+  positions: PersonnelPositionItem[];
+  onClose: () => void;
+  onUpdated: () => void;
+}) {
+  const session       = getSession();
+  const isSelf         = session?.id === user.id;
+  const currentPrimary = user.primary_position;
+
+  const [name, setName]         = useState(user.name);
+  const [email, setEmail]       = useState(user.email);
+  const [positionId, setPositionId] = useState(currentPrimary?.position_id ?? "");
+  const [saving, setSaving]     = useState(false);
+  const [error, setError]       = useState<string | null>(null);
+
+  const selectedPosition = positionId ? positions.find((p) => p.id === positionId) ?? null : null;
+  const isPositionChange  = !!positionId && positionId !== (currentPrimary?.position_id ?? "");
+
+  async function submit() {
+    if (!name.trim() || !email.trim()) { setError(t("personnel.fill_required_fields")); return; }
+    setSaving(true);
+    setError(null);
+    try {
+      await api.patch(`/api/v1/tenants/${tenantId}/users/${user.id}`, {
+        name: name.trim(), email: email.trim().toLowerCase(),
+      });
+      // isSelf: position/role can never be changed by the user on their own
+      // record — see CANNOT_MODIFY_OWN_ROLE guard in personnel_v2.py.
+      if (!isSelf && isPositionChange) {
+        await api.post(`/api/v1/tenants/${tenantId}/users/${user.id}/positions`, {
+          position_id: positionId, assignment_type: "PRIMARY",
+        });
+      }
+      onUpdated();
+      onClose();
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : t("common.error"));
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/50 p-4">
+      <div className="bg-white rounded-xl shadow-2xl w-full max-w-md p-6 space-y-4">
+        <div className="flex items-center justify-between">
+          <h2 className="text-base font-bold text-gray-900">{t("personnel.edit_user")}</h2>
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-700 text-xl border-0 bg-transparent cursor-pointer">✕</button>
+        </div>
+
+        <div className="space-y-3">
+          <div>
+            <label className="block text-xs font-medium text-gray-600 mb-1">{t("personnel.full_name")} *</label>
+            <input
+              type="text"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              className="w-full text-sm border border-gray-300 rounded-md px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+            />
+          </div>
+
+          <div>
+            <label className="block text-xs font-medium text-gray-600 mb-1">{t("personnel.email")} *</label>
+            <input
+              type="email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              className="w-full text-sm border border-gray-300 rounded-md px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+            />
+          </div>
+
+          {isSelf ? (
+            <div className="space-y-1.5">
+              <p className="text-xs font-medium text-gray-600">{t("personnel.role_and_position")}</p>
+              <div className="bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-600">
+                {currentPrimary ? `${currentPrimary.title} — ${currentPrimary.node_name}` : t("personnel.no_position_no_role")}
+              </div>
+              <p className="text-xs text-gray-500">{t("personnel.cannot_edit_own_role_note")}</p>
+            </div>
+          ) : (
+            <div>
+              <label className="block text-xs font-medium text-gray-600 mb-1">{t("personnel.primary_position")}</label>
+              <select
+                value={positionId}
+                onChange={(e) => setPositionId(e.target.value)}
+                className="w-full text-sm border border-gray-300 rounded-md px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+              >
+                <option value="">{t("personnel.keep_existing_position")}</option>
+                {positions.map((p) => (
+                  <option key={p.id} value={p.id}>{p.title} ({p.role_code}) — {p.node_name}</option>
+                ))}
+              </select>
+              {selectedPosition && (
+                <p className="text-xs text-gray-500 mt-1">{selectedPosition.title} · {selectedPosition.node_name}</p>
+              )}
+            </div>
+          )}
+        </div>
+
+        {error && <p className="text-xs text-red-600 font-medium">{error}</p>}
+
+        <div className="flex justify-end gap-2 pt-2">
+          <button
+            type="button"
+            onClick={onClose}
+            className="px-4 py-1.5 text-sm text-gray-600 border border-gray-300 rounded-lg hover:bg-gray-50"
+          >
+            {t("common.cancel")}
+          </button>
+          <button
+            type="button"
+            onClick={() => void submit()}
+            disabled={saving}
+            className="px-4 py-1.5 text-sm font-bold text-white bg-emerald-600 rounded-lg hover:bg-emerald-700 disabled:opacity-50"
+          >
+            {saving ? t("common.saving") : t("personnel.save_changes")}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function PersonnelV2Tab({ tenantId }: { tenantId: string }) {
   const qc = useQueryClient();
+  const session = getSession();
   const [showCreate, setShowCreate] = useState(false);
   const [uName, setUName]           = useState("");
   const [uEmail, setUEmail]         = useState("");
@@ -2780,6 +2914,7 @@ function PersonnelV2Tab({ tenantId }: { tenantId: string }) {
   const [uPosId, setUPosId]         = useState("");
   const [formErr, setFormErr]       = useState<string | null>(null);
   const [saving, setSaving]         = useState(false);
+  const [editUser, setEditUser]     = useState<UserWithPositions | null>(null);
 
   const { data: users = [], isLoading } = useQuery<UserWithPositions[]>({
     queryKey: ["personnel-v2", tenantId],
@@ -2795,6 +2930,9 @@ function PersonnelV2Tab({ tenantId }: { tenantId: string }) {
   });
 
   const allPositions = posGroups.flatMap((g) => g.positions);
+  const positionItems: PersonnelPositionItem[] = posGroups.flatMap((g) =>
+    g.positions.filter((p) => p.is_active).map((p) => ({ id: p.id, title: p.title, role_code: p.role_code, node_name: g.node_name }))
+  );
 
   async function createUser() {
     if (!uName.trim() || !uEmail.trim() || !uPass.trim()) { setFormErr("Name, email and password are required."); return; }
@@ -2894,14 +3032,34 @@ function PersonnelV2Tab({ tenantId }: { tenantId: string }) {
                   <p className="text-xs text-gray-400 m-0">{u.acting_positions.length} acting assignment{u.acting_positions.length > 1 ? "s" : ""}</p>
                 )}
               </div>
-              <button type="button" onClick={() => void toggleActive(u.id, u.is_active)}
-                disabled={!tenantId || isLoading}
-                className={`px-2.5 py-1 text-xs rounded border font-medium shrink-0 disabled:opacity-40 disabled:cursor-not-allowed ${u.is_active ? "border-red-200 text-red-600 hover:bg-red-50" : "border-emerald-200 text-emerald-600 hover:bg-emerald-50"}`}>
-                {u.is_active ? t("personnel.deactivate") : t("personnel.reactivate")}
-              </button>
+              <div className="flex items-center gap-1.5 shrink-0">
+                <button type="button" onClick={() => setEditUser(u)}
+                  className="px-2.5 py-1 text-xs rounded border border-gray-200 text-gray-600 font-medium hover:bg-gray-50">
+                  ✏ {t("common.edit")}
+                </button>
+                {/* No self-deactivation — hide the button entirely for one's own row rather
+                    than show it and let the backend 422 (CANNOT_DEACTIVATE_SELF). */}
+                {(!u.is_active || session?.id !== u.id) && (
+                  <button type="button" onClick={() => void toggleActive(u.id, u.is_active)}
+                    disabled={!tenantId || isLoading}
+                    className={`px-2.5 py-1 text-xs rounded border font-medium disabled:opacity-40 disabled:cursor-not-allowed ${u.is_active ? "border-red-200 text-red-600 hover:bg-red-50" : "border-emerald-200 text-emerald-600 hover:bg-emerald-50"}`}>
+                    {u.is_active ? t("personnel.deactivate") : t("personnel.reactivate")}
+                  </button>
+                )}
+              </div>
             </div>
           ))}
         </div>
+      )}
+
+      {editUser && (
+        <EditPersonnelPanel
+          tenantId={tenantId}
+          user={editUser}
+          positions={positionItems}
+          onClose={() => setEditUser(null)}
+          onUpdated={() => void qc.invalidateQueries({ queryKey: ["personnel-v2", tenantId] })}
+        />
       )}
     </div>
   );
