@@ -26,6 +26,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from dependencies import get_current_user, get_db_session_for_tenant
 from shared.cache.login_lockout import _reset_login_attempts
+from shared.permissions.audit import audit_log
 from shared.permissions.middleware import require_permission
 from shared.permissions.registry import PERMISSIONS
 from shared.utils.responses import SuccessResponse
@@ -416,13 +417,28 @@ async def remove_position_assignment(
     tenant_id: uuid.UUID,
     user_id: uuid.UUID,
     assignment_id: uuid.UUID,
+    force: bool = False,
     user=Depends(get_current_user),
     db: AsyncSession = Depends(get_db_session_for_tenant),
 ) -> SuccessResponse[dict]:
     """Deactivate a position assignment.
 
     The last active PRIMARY assignment cannot be removed — use deactivate user instead.
+
+    force=True is an SA-only escape hatch for correcting a wrong sole-PRIMARY
+    assignment (e.g. a misassigned position) without first having a replacement
+    position ready. It bypasses CANNOT_REMOVE_LAST_PRIMARY but auto-deactivates
+    the user so they are never left active with zero positions.
     """
+    # force is SA-only — any other caller (including TA) gets 403, regardless
+    # of whether the removal would otherwise be blocked.
+    if force and user.role != "SA":
+        raise HTTPException(
+            status_code=403,
+            detail={"code": "FORCE_REMOVE_SA_ONLY",
+                    "message": "The force flag may only be used by a platform administrator (SA)."},
+        )
+
     # Self-lockout guard — see update_user(). Removing one's own position
     # assignment changes one's own effective role; only another admin may do this.
     if str(user.user_id) == str(user_id):
@@ -447,7 +463,8 @@ async def remove_position_assignment(
     if not row:
         raise HTTPException(status_code=404, detail="Assignment not found or already inactive")
 
-    # Cannot remove the last active PRIMARY
+    # Cannot remove the last active PRIMARY — unless an SA explicitly forces it.
+    user_deactivated = False
     if row.assignment_type == "PRIMARY":
         other_primary_count = (await db.execute(
             text("""
@@ -459,20 +476,41 @@ async def remove_position_assignment(
             {"uid": str(user_id), "aid": str(assignment_id)},
         )).scalar() or 0
         if other_primary_count == 0:
-            raise HTTPException(
-                status_code=422,
-                detail={
-                    "code":    "CANNOT_REMOVE_LAST_PRIMARY",
-                    "message": "Cannot remove the user's only active PRIMARY assignment. "
-                               "Assign a new PRIMARY first, or deactivate the user.",
-                },
+            if not force:
+                raise HTTPException(
+                    status_code=422,
+                    detail={
+                        "code":    "CANNOT_REMOVE_LAST_PRIMARY",
+                        "message": "Cannot remove the user's only active PRIMARY assignment. "
+                                   "Assign a new PRIMARY first, or deactivate the user.",
+                    },
+                )
+            # SA force path: removing the user's only position would otherwise leave
+            # them active with zero positions — deactivate them instead of allowing
+            # that broken state, until they're given a correct reassignment.
+            await db.execute(
+                text("UPDATE users SET is_active = false, updated_at = now() WHERE id = :uid"),
+                {"uid": str(user_id)},
+            )
+            user_deactivated = True
+            await audit_log(
+                user, PERMISSIONS.USER_MANAGE.id,
+                {"resource_type": "personnel_position", "resource_id": str(assignment_id),
+                 "tenant_id": str(tenant_id), "target_user_id": str(user_id)},
+                "GRANTED",
+                "SA force-removed sole PRIMARY position — user auto-deactivated pending reassignment",
             )
 
     await db.execute(
         text("UPDATE personnel_positions SET is_active = false WHERE id = :aid"),
         {"aid": str(assignment_id)},
     )
-    return SuccessResponse(data={"deactivated": True, "assignment_id": str(assignment_id)})
+    return SuccessResponse(data={
+        "deactivated": True,
+        "assignment_id": str(assignment_id),
+        "removed": True,
+        "user_deactivated": user_deactivated,
+    })
 
 
 @router.patch("/{tenant_id}/users/{user_id}/deactivate",

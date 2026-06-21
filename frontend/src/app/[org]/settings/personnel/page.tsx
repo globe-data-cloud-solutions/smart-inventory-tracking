@@ -957,6 +957,48 @@ function ActingAssignmentPanel({
   );
 }
 
+/* ── Confirm Force-Remove (SA-only) Modal ─────────────────────────────────────── */
+
+function ConfirmForceRemoveModal({
+  saving,
+  error,
+  onCancel,
+  onConfirm,
+}: {
+  saving: boolean;
+  error: string | null;
+  onCancel: () => void;
+  onConfirm: () => void;
+}) {
+  return (
+    <div className="fixed inset-0 z-[250] flex items-center justify-center bg-black/50 p-4">
+      <div className="bg-white rounded-xl shadow-2xl w-full max-w-sm p-6 space-y-4">
+        <h2 className="text-base font-bold text-gray-900">{t("personnel.confirm_force_remove_title")}</h2>
+        <p className="text-sm text-gray-700">{t("personnel.confirm_force_remove_body")}</p>
+        {error && <p className="text-xs text-red-600 font-medium">{error}</p>}
+        <div className="flex justify-end gap-2 pt-1">
+          <button
+            type="button"
+            onClick={onCancel}
+            disabled={saving}
+            className="px-4 py-1.5 text-sm text-gray-600 border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-50"
+          >
+            {t("common.cancel")}
+          </button>
+          <button
+            type="button"
+            onClick={onConfirm}
+            disabled={saving}
+            className="px-4 py-1.5 text-sm font-bold text-white bg-red-600 rounded-lg hover:bg-red-700 disabled:opacity-50"
+          >
+            {saving ? t("common.saving") : t("personnel.confirm_force_remove_confirm")}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 /* ── User detail panel ──────────────────────────────────────────────────────── */
 
 function UserDetailPanel({
@@ -974,9 +1016,13 @@ function UserDetailPanel({
 }) {
   const [showActing, setShowActing] = useState(false);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
+  const [confirmForceRemoveId, setConfirmForceRemoveId] = useState<string | null>(null);
+  const [forceRemoveError, setForceRemoveError] = useState<string | null>(null);
+  const [forceRemoveSuccess, setForceRemoveSuccess] = useState<string | null>(null);
 
   const session = getSession();
   const isSelf = session?.id === user.id;
+  const isSA   = session?.role === "SA";
 
   async function toggleActive(activate: boolean) {
     setActionLoading(activate ? "reactivate" : "deactivate");
@@ -995,12 +1041,33 @@ function UserDetailPanel({
 
   async function removeAssignment(assignmentId: string) {
     setActionLoading(`del:${assignmentId}`);
+    setForceRemoveSuccess(null);
     try {
       // Live endpoint is position-based, not the dropped facility-assignment path.
       await api.delete(`/api/v1/tenants/${tenantId}/users/${user.id}/positions/${assignmentId}`);
       onRefresh();
-    } catch {
-      /* surface via toast */
+    } catch (e: unknown) {
+      const code = e instanceof Error ? (e as Error & { code?: string }).code : undefined;
+      // Only an SA gets the force-remove escape hatch — everyone else keeps the
+      // existing silent failure (surfaced via toast in production).
+      if (code === "CANNOT_REMOVE_LAST_PRIMARY" && isSA) {
+        setConfirmForceRemoveId(assignmentId);
+      }
+    } finally {
+      setActionLoading(null);
+    }
+  }
+
+  async function forceRemoveAssignment(assignmentId: string) {
+    setActionLoading(`del:${assignmentId}`);
+    setForceRemoveError(null);
+    try {
+      await api.delete(`/api/v1/tenants/${tenantId}/users/${user.id}/positions/${assignmentId}?force=true`);
+      setConfirmForceRemoveId(null);
+      setForceRemoveSuccess(t("personnel.force_remove_success"));
+      onRefresh();
+    } catch (e: unknown) {
+      setForceRemoveError(e instanceof Error ? e.message : t("common.error"));
     } finally {
       setActionLoading(null);
     }
@@ -1047,6 +1114,11 @@ function UserDetailPanel({
             <p className="text-xs font-bold text-gray-500 uppercase tracking-wide mb-2">
               {t("personnel.active_assignments")} ({(primaryPosition ? 1 : 0) + actingPositions.length})
             </p>
+            {forceRemoveSuccess && (
+              <p className="text-xs text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-lg px-3 py-2 font-medium mb-2">
+                {forceRemoveSuccess}
+              </p>
+            )}
             {!primaryPosition && actingPositions.length === 0 ? (
               <p className="text-xs text-gray-400">{t("personnel.no_active_assignments")}</p>
             ) : (
@@ -1064,6 +1136,16 @@ function UserDetailPanel({
                         {primaryPosition.title} — {primaryPosition.node_name}
                       </p>
                     </div>
+                    {!isSelf && (
+                      <button
+                        type="button"
+                        onClick={() => void removeAssignment(primaryPosition.assignment_id)}
+                        disabled={actionLoading === `del:${primaryPosition.assignment_id}`}
+                        className="text-xs text-red-400 hover:text-red-600 border-0 bg-transparent cursor-pointer disabled:opacity-50"
+                      >
+                        {t("common.remove")}
+                      </button>
+                    )}
                   </div>
                 )}
                 {actingPositions.map((a) => (
@@ -1144,6 +1226,15 @@ function UserDetailPanel({
           positions={positions}
           onClose={() => setShowActing(false)}
           onCreated={onRefresh}
+        />
+      )}
+
+      {confirmForceRemoveId && (
+        <ConfirmForceRemoveModal
+          saving={actionLoading === `del:${confirmForceRemoveId}`}
+          error={forceRemoveError}
+          onCancel={() => { setConfirmForceRemoveId(null); setForceRemoveError(null); }}
+          onConfirm={() => void forceRemoveAssignment(confirmForceRemoveId)}
         />
       )}
     </>

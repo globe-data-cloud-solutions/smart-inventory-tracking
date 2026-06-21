@@ -343,7 +343,10 @@ class TestPersonnelV2:
                 db=db,
             )
 
-        assert result.data == {"deactivated": True, "assignment_id": POSITION_ID}
+        assert result.data == {
+            "deactivated": True, "assignment_id": POSITION_ID,
+            "removed": True, "user_deactivated": False,
+        }
         stmts = " ".join(s for s, _ in execute_calls)
         assert "UPDATE personnel_positions SET is_active = false" in stmts
         # ACTING removal never queries for other active PRIMARY rows.
@@ -373,6 +376,56 @@ class TestPersonnelV2:
 
         assert exc_info.value.status_code == 422
         assert exc_info.value.detail["code"] == "CANNOT_REMOVE_LAST_PRIMARY"
+
+    async def test_sa_force_removes_sole_primary(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """DELETE /users/{id}/positions/{assignment_id}?force=true bypasses
+        CANNOT_REMOVE_LAST_PRIMARY for an SA caller — removes the sole PRIMARY
+        and auto-deactivates the user instead of leaving them position-less."""
+        from routers.personnel_v2 import remove_position_assignment
+
+        monkeypatch.setattr("routers.personnel_v2.audit_log", AsyncMock())
+
+        assignment_row = _row(id=POSITION_ID, assignment_type="PRIMARY")
+
+        db = _db_seq(
+            assignment_row,  # assignment found and active
+            0,                # other_primary_count == 0 → only this PRIMARY exists
+            None,             # UPDATE users SET is_active = false
+            None,             # UPDATE personnel_positions SET is_active = false
+        )
+
+        with _GRANT_ALL:
+            result = await remove_position_assignment(
+                tenant_id=UUID(TENANT_ID),
+                user_id=UUID(USER_ID),
+                assignment_id=UUID(POSITION_ID),
+                force=True,
+                user=_Caller(role="SA"),
+                db=db,
+            )
+
+        assert result.data["removed"] is True
+        assert result.data["user_deactivated"] is True
+
+    async def test_ta_force_remove_forbidden(self) -> None:
+        """DELETE /users/{id}/positions/{assignment_id}?force=true is rejected with
+        403 for a non-SA caller (e.g. TA) — force is a platform-admin-only escape hatch."""
+        from routers.personnel_v2 import remove_position_assignment
+
+        db = _db_seq()  # no DB calls should be needed — guard fires first
+
+        with _GRANT_ALL, pytest.raises(HTTPException) as exc_info:
+            await remove_position_assignment(
+                tenant_id=UUID(TENANT_ID),
+                user_id=UUID(USER_ID),
+                assignment_id=UUID(POSITION_ID),
+                force=True,
+                user=_Caller(role="TA"),
+                db=db,
+            )
+
+        assert exc_info.value.status_code == 403
+        assert exc_info.value.detail["code"] == "FORCE_REMOVE_SA_ONLY"
 
     async def test_ta_can_reset_user_password(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """PATCH /users/{id} with password hashes it into password_hash and forces
