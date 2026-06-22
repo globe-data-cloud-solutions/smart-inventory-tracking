@@ -275,13 +275,13 @@ def group1_setup_verification() -> None:
     else:
         fail("1.2 Tenant name contains 'Seven'", f"got: {tenant_name!r}")
 
-    # 1.3 Hierarchy config has 4 levels
+    # 1.3 Hierarchy config has 5 levels
     r = api_get(f"/api/v1/tenants/{T07_ID}/hierarchy/config", EMAIL_TA)
     levels = data(r) if isinstance(data(r), list) else []
-    if r.status_code == 200 and len(levels) == 4:
-        ok("1.3 Hierarchy config: 4 levels")
+    if r.status_code == 200 and len(levels) == 5:
+        ok("1.3 Hierarchy config: 5 levels")
     else:
-        fail("1.3 Hierarchy config: 4 levels", f"status={r.status_code}, got {len(levels)} levels")
+        fail("1.3 Hierarchy config: 5 levels", f"status={r.status_code}, got {len(levels)} levels")
 
     # 1.4 Org nodes: 15 nodes (returned as nested tree — flatten children recursively)
     # Seed set is 14 nodes (Factory A and Factory B roots); WHA4 was added 2026-06-18
@@ -296,10 +296,10 @@ def group1_setup_verification() -> None:
         return result
     raw_nodes = data(r) if isinstance(data(r), list) else []
     nodes = _flatten_nodes(raw_nodes)
-    if r.status_code == 200 and len(nodes) == 15 and len(raw_nodes) == 2:
-        ok("1.4 Org nodes: 15 nodes, 2 roots")
+    if r.status_code == 200 and len(nodes) == 18 and len(raw_nodes) == 2:
+        ok("1.4 Org nodes: 18 nodes, 2 roots")
     else:
-        fail("1.4 Org nodes: 15 nodes, 2 roots",
+        fail("1.4 Org nodes: 18 nodes, 2 roots",
              f"status={r.status_code}, got {len(nodes)} nodes (roots={len(raw_nodes)})")
 
     # 1.5 Products: at least 5 products exist (API returns all tenant products; no tenant_id field in response)
@@ -3895,6 +3895,7 @@ def print_report() -> None:
         "GROUP 16 — Approval Edge Cases":  [r for r in results if r.name.startswith("16.")],
         "GROUP 18 — i18n Verification":    [r for r in results if r.name.startswith("18.")],
         "GROUP 19 — Security":             [r for r in results if r.name.startswith("19.")],
+        "GROUP 20 — Satellite Depot Scope": [r for r in results if r.name.startswith("20.")],
     }
 
     total_pass = total_fail = total_skip = 0
