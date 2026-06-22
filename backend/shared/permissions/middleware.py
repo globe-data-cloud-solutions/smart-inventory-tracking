@@ -2,8 +2,10 @@ import functools
 from typing import Any, Callable
 
 from fastapi import HTTPException, Request
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from shared.permissions.audit import audit_log
+from shared.permissions.hierarchy_service import get_descendant_node_ids
 from shared.permissions.registry import Permission
 from shared.permissions.store import get_role_permission
 
@@ -24,8 +26,11 @@ async def check_permission(
     user: Any,
     action: Permission,
     resource: dict[str, Any] | None = None,
+    db: AsyncSession | None = None,
+    scope_cache: dict[str, set[str]] | None = None,
 ) -> PermissionResult:
-    resource = resource or {}
+    if resource is None:
+        resource = {}
 
     grant = await get_role_permission(user.role, action.id)
     if not grant:
@@ -50,36 +55,31 @@ async def check_permission(
             await audit_log(user, action.id, resource, "DENIED", "ABAC_DENIED: region scope")
             return PermissionResult(allowed=False, reason="ABAC_DENIED: region scope")
 
-    if "warehouse_id" in action.abac:
-        user_wh = getattr(user, "warehouse_id", None)
+    # 4. Warehouse scope — node + descendant traversal for FACILITY_SCOPED_ROLES
+    FACILITY_SCOPED_ROLES = {"WM", "LM", "SA_GT", "RT"}
+    if user.role in FACILITY_SCOPED_ROLES and user.warehouse_id:
         resource_wh = resource.get("warehouse_id")
-        # Warehouse scope is enforced for facility-scoped roles (WM, LM, SA_GT, RT).
-        # Management roles (TA, NM, RM, AU, SA) operate across warehouses within
-        # their authority — their warehouse_id JWT claim is a home facility, not a cage.
-        #
-        # LM was added here per design decision: LM should be node-scoped like WM,
-        # not tenant-wide. A node-assigned LM's warehouse_id JWT claim is the node
-        # their position belongs to (same mechanism as WM — see auth.py's
-        # _lookup_user_with_position). A tenant-wide LM (system_role="LM", no
-        # position) has warehouse_id=None, so user_wh is falsy and this check is
-        # skipped entirely — that account type intentionally keeps tenant-wide
-        # access, since there is no node to scope it to.
-        #
-        # TODO(scope-gap): this is an EXACT node match only (user_wh == resource_wh),
-        # not "node + all descendant nodes" — there is no live ancestry-walking
-        # implementation. get_authority_scope(), which would compute a node's full
-        # descendant subtree via org_node_hierarchy, exists only in archived dead
-        # code (_ARCHIVED_personnel_pre031.py) and was never wired into this
-        # function. Implementing true descendant-scoping here would require adding
-        # a db session parameter to check_permission() and every call site across
-        # all services — out of scope for this fix. Applies equally to WM, SA_GT,
-        # RT, and LM today: each sees only their own exact assigned node, not
-        # subordinate nodes beneath it.
-        FACILITY_SCOPED_ROLES = {"WM", "LM", "SA_GT", "RT"}
-        if user.role in FACILITY_SCOPED_ROLES and user_wh and resource_wh and \
-                str(user_wh).lower() != str(resource_wh).lower():
-            await audit_log(user, action.id, resource, "DENIED", "ABAC_DENIED: warehouse scope")
-            return PermissionResult(allowed=False, reason="ABAC_DENIED: warehouse scope")
+        if resource_wh and "warehouse_id" in action.abac:
+            resource_wh_str = str(resource_wh).lower()
+            user_wh_str = str(user.warehouse_id).lower()
+            # Check scope cache first
+            if scope_cache is None:
+                scope_cache = {}
+            if user_wh_str not in scope_cache:
+                if db is not None:
+                    scope_cache[user_wh_str] = {
+                        n.lower() for n in await get_descendant_node_ids(
+                            db, str(user.tenant_id), str(user.warehouse_id)
+                        )
+                    }
+                else:
+                    # No db session available — fall back to exact match
+                    scope_cache[user_wh_str] = {user_wh_str}
+            if resource_wh_str not in scope_cache[user_wh_str]:
+                await audit_log(user, action.id, resource, "DENIED",
+                                "ABAC_DENIED: warehouse scope")
+                return PermissionResult(allowed=False,
+                                        reason="ABAC_DENIED: warehouse scope")
 
     if grant.grant_type == "CONDITIONAL":
         await audit_log(user, action.id, resource, "CONDITIONAL", "APPROVAL_REQUIRED")
@@ -109,7 +109,11 @@ def require_permission(action: Permission) -> Callable:
             if body and hasattr(body, "model_dump"):
                 resource.update(body.model_dump(exclude_none=True))
 
-            result = await check_permission(user, action, resource)
+            db = kwargs.get("db")
+            _scope_cache: dict[str, set[str]] = {}
+
+            result = await check_permission(user, action, resource, db=db,
+                                            scope_cache=_scope_cache)
 
             if not result.allowed:
                 raise HTTPException(

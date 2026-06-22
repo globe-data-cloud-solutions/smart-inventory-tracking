@@ -1,10 +1,11 @@
 from typing import List
 
 from fastapi import APIRouter, Depends, Query
-from sqlalchemy import text
+from sqlalchemy import bindparam, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from dependencies import get_db_session, get_current_user
+from shared.permissions.hierarchy_service import get_descendant_node_ids
 from shared.permissions.middleware import require_permission
 from shared.permissions.registry import PERMISSIONS
 from shared.utils.responses import SuccessResponse
@@ -18,21 +19,11 @@ router = APIRouter()
 # is not None). Listing it here makes that intentional and documented.
 _TENANT_WIDE_ROLES = frozenset({"NM", "TA", "SA", "AU"})
 
-# CTE that expands a facility node and all its descendants via parent_node_id.
-_SUBTREE_CTE = """
-WITH RECURSIVE facility_subtree AS (
-    SELECT id FROM organization_node
-    WHERE id = :scope_wh AND tenant_id = :tid
-    UNION ALL
-    SELECT n.id FROM organization_node n
-    JOIN facility_subtree fs ON n.parent_node_id = fs.id
-    WHERE n.tenant_id = :tid
-)
-"""
-
 # Appended to WHERE when scoping to a facility and its children.
 # Covers: own actions, transfers where the facility is source or destination,
 # and adjustments posted against the facility.
+# :node_ids is bound as an expanding param — the facility + descendant ID set
+# is resolved in Python via get_descendant_node_ids() before this query runs.
 _SCOPE_CLAUSE = """
 AND (
     al.user_id = :scope_uid
@@ -40,14 +31,14 @@ AND (
         SELECT id FROM transfer_orders
         WHERE tenant_id = :tid
           AND (
-            from_warehouse_id IN (SELECT id FROM facility_subtree)
-            OR to_warehouse_id IN (SELECT id FROM facility_subtree)
+            from_warehouse_id IN :node_ids
+            OR to_warehouse_id IN :node_ids
           )
     )
     OR al.resource_id IN (
         SELECT id FROM adjustment_orders
         WHERE tenant_id = :tid
-          AND warehouse_id IN (SELECT id FROM facility_subtree)
+          AND warehouse_id IN :node_ids
     )
 )
 """
@@ -87,14 +78,14 @@ async def list_audit_logs(
         and user.warehouse_id is not None
     )
 
-    # Build query: prefix CTE only when scoping is active.
+    # Resolve facility + descendant node IDs only when scoping is active.
     if apply_scope:
         params["scope_uid"] = str(user.user_id)
-        params["scope_wh"] = str(user.warehouse_id)
-        cte_prefix = _SUBTREE_CTE
+        params["node_ids"] = sorted(await get_descendant_node_ids(
+            db, str(user.tenant_id), str(user.warehouse_id)
+        ))
         scope_fragment = _SCOPE_CLAUSE
     else:
-        cte_prefix = ""
         scope_fragment = ""
 
     where_parts = ["al.tenant_id = :tid"]
@@ -124,7 +115,6 @@ async def list_audit_logs(
     where_clause = " AND ".join(where_parts)
 
     query = (
-        f"{cte_prefix}"
         f"SELECT al.id, al.timestamp, al.user_id, al.role, al.action, "
         f"       al.resource_type, al.resource_id, al.decision, al.reason, al.abac_context, "
         f"       u.full_name AS user_name, "
@@ -160,7 +150,10 @@ async def list_audit_logs(
         f"LIMIT :limit OFFSET :offset"
     )
 
-    rows = (await db.execute(text(query), params)).fetchall()
+    stmt = text(query)
+    if apply_scope:
+        stmt = stmt.bindparams(bindparam("node_ids", expanding=True))
+    rows = (await db.execute(stmt, params)).fetchall()
 
     return SuccessResponse(data=[
         AuditLogItem(
