@@ -52,6 +52,57 @@ def _duplicate_title_http_exception() -> HTTPException:
     )
 
 
+# Matches max org levels (5, see CLAUDE.md §28) plus a safety margin — a real
+# reports_to chain can never legitimately be this deep, so hitting this cap
+# means existing data already contains an unexpected loop.
+_MAX_REPORTS_TO_DEPTH = 20
+
+
+async def _would_create_cycle(
+    db: AsyncSession, tenant_id: str, position_id: str, new_reports_to_id: str,
+) -> bool:
+    """Walk the reports_to chain starting from new_reports_to_id. If position_id
+    is encountered before reaching NULL, assigning new_reports_to_id as
+    position_id's reports_to would create a cycle.
+
+    The self-report edge case (position_id == new_reports_to_id) is caught on
+    the very first iteration below — current starts at new_reports_to_id, so
+    if that equals position_id the loop returns True immediately. No separate
+    check is needed.
+    """
+    visited: set[str] = set()
+    current: Optional[str] = new_reports_to_id
+    depth = 0
+    while current is not None:
+        if current == position_id:
+            return True  # cycle detected
+        if current in visited:
+            return True  # unexpected loop already present in existing data
+        visited.add(current)
+        depth += 1
+        if depth > _MAX_REPORTS_TO_DEPTH:
+            return True  # defensive cap — see _MAX_REPORTS_TO_DEPTH
+        row = (await db.execute(
+            text("SELECT reports_to_position_id FROM positions WHERE id = :id AND tenant_id = :tid"),
+            {"id": current, "tid": tenant_id},
+        )).fetchone()
+        if row is None:
+            break
+        current = str(row.reports_to_position_id) if row.reports_to_position_id else None
+    return False
+
+
+def _circular_reports_to_http_exception() -> HTTPException:
+    return HTTPException(
+        status_code=422,
+        detail={
+            "code":    "CIRCULAR_REPORTS_TO",
+            "message": "This reports-to assignment would create a circular chain. "
+                       "A position cannot report to itself or to any of its own descendants.",
+        },
+    )
+
+
 # ── Pydantic schemas ──────────────────────────────────────────────────────────
 
 class PositionCreate(BaseModel):
@@ -350,6 +401,11 @@ async def update_position(
     new_role_code  = body.role_code                if body.role_code  is not None else row.role_code
     new_reports_to = body.reports_to_position_id   if "reports_to_position_id" in body.model_fields_set \
                      else row.reports_to_position_id
+
+    if new_reports_to is not None and await _would_create_cycle(
+        db, str(tenant_id), str(position_id), str(new_reports_to)
+    ):
+        raise _circular_reports_to_http_exception()
 
     try:
         await db.execute(

@@ -47,11 +47,13 @@ import pytest
 from fastapi import HTTPException
 from sqlalchemy.exc import IntegrityError
 
-TENANT_ID   = "aaaaaaaa-0000-0000-0000-000000000001"
-NODE_ID     = "bbbbbbbb-0000-0000-0000-000000000001"
-POSITION_ID = "cccccccc-0000-0000-0000-000000000001"
-USER_ID     = "dddddddd-0000-0000-0000-000000000001"
-CONFIG_ID   = "eeeeeeee-0000-0000-0000-000000000001"
+TENANT_ID    = "aaaaaaaa-0000-0000-0000-000000000001"
+NODE_ID      = "bbbbbbbb-0000-0000-0000-000000000001"
+POSITION_ID  = "cccccccc-0000-0000-0000-000000000001"
+USER_ID      = "dddddddd-0000-0000-0000-000000000001"
+CONFIG_ID    = "eeeeeeee-0000-0000-0000-000000000001"
+POSITION_A_ID = "cccccccc-0000-0000-0000-00000000000a"
+POSITION_B_ID = "cccccccc-0000-0000-0000-00000000000b"
 
 
 @dataclass
@@ -215,6 +217,56 @@ class TestPositionCreate:
             )
         assert exc_info.value.status_code == 409
         assert exc_info.value.detail["code"] == "DUPLICATE_POSITION_TITLE"
+
+    async def test_position_update_circular_reports_to_rejected(self) -> None:
+        """PATCH B reports_to A, where A already reports_to B (set by an earlier
+        PATCH), would create a 2-node cycle — _would_create_cycle() walks A's
+        chain, finds B (the position being updated), and rejects with 422
+        CIRCULAR_REPORTS_TO instead of silently saving a broken ancestry chain."""
+        from routers.positions import update_position, PositionUpdate
+
+        b_row = _row(
+            id=POSITION_B_ID, title="Position B", role_code="WM",
+            reports_to_position_id=None, is_active=True, rp_title=None,
+        )
+        # _would_create_cycle's lookup of A's current reports_to_position_id —
+        # simulates the prior PATCH that set A.reports_to_position_id = B.
+        a_lookup_row = _row(reports_to_position_id=POSITION_B_ID)
+        db = _db_seq(b_row, a_lookup_row)
+
+        with _GRANT_ALL, pytest.raises(HTTPException) as exc_info:
+            await update_position(
+                tenant_id=UUID(TENANT_ID),
+                position_id=UUID(POSITION_B_ID),
+                body=PositionUpdate(reports_to_position_id=UUID(POSITION_A_ID)),
+                user=_Caller(),
+                db=db,
+            )
+        assert exc_info.value.status_code == 422
+        assert exc_info.value.detail["code"] == "CIRCULAR_REPORTS_TO"
+
+    async def test_position_update_self_report_rejected(self) -> None:
+        """PATCH a position to report to itself is the degenerate 1-node cycle —
+        caught on the first iteration of _would_create_cycle() with no DB lookup
+        needed, since current (== new_reports_to_id) equals position_id immediately."""
+        from routers.positions import update_position, PositionUpdate
+
+        existing_row = _row(
+            id=POSITION_ID, title="Position X", role_code="WM",
+            reports_to_position_id=None, is_active=True, rp_title=None,
+        )
+        db = _db_seq(existing_row)
+
+        with _GRANT_ALL, pytest.raises(HTTPException) as exc_info:
+            await update_position(
+                tenant_id=UUID(TENANT_ID),
+                position_id=UUID(POSITION_ID),
+                body=PositionUpdate(reports_to_position_id=UUID(POSITION_ID)),
+                user=_Caller(),
+                db=db,
+            )
+        assert exc_info.value.status_code == 422
+        assert exc_info.value.detail["code"] == "CIRCULAR_REPORTS_TO"
 
     async def test_position_delete_blocked_active_personnel(self) -> None:
         """DELETE /positions/{id} raises 422 when personnel are actively assigned."""
