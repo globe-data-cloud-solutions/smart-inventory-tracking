@@ -383,6 +383,70 @@ class TestTenantSlug:
         assert resp.data.slug == "north-addis-warehouse"
 
 
+# ── A4: organisation_type default + validation ───────────────────────────────
+# tenants.organisation_type is a NOT NULL PostgreSQL ENUM column, but the
+# request schema previously defaulted it to None — causing a 500
+# NotNullViolationError on INSERT when the caller omitted the field. Fixed by
+# defaulting TenantCreateRequest.organisation_type to "PRODUCER" and validating
+# it against VALID_ORGANISATION_TYPES in the route handler before any DB call.
+
+@pytest.mark.unit
+class TestTenantOrganisationType:
+
+    @pytest.mark.asyncio
+    async def test_organisation_type_defaults_to_producer(self):
+        """Omitting organisation_type defaults to PRODUCER and succeeds (201)."""
+        from routers.tenants import create_tenant
+        from schemas.tenant import TenantCreateRequest
+        from shared.permissions.store import RolePermissionGrant as PermissionGrant
+
+        body   = TenantCreateRequest(name="Defaulted Org Co", slug="defaulted-org-co")
+        assert body.organisation_type == "PRODUCER"   # schema-level default
+        caller = _user("SA", tenant_id=None)
+
+        db = AsyncMock()
+        db.commit = AsyncMock()
+
+        async def _execute(sql, params=None, **kw):
+            res = MagicMock()
+            res.fetchone = MagicMock(return_value=None)   # no slug collision
+            res.scalar   = MagicMock(return_value=None)
+            return res
+
+        db.execute = AsyncMock(side_effect=_execute)
+
+        grant = PermissionGrant(role="SA", action_id="tenant:create", grant_type="FULL")
+        with patch("shared.permissions.middleware.get_role_permission",
+                   new=AsyncMock(return_value=grant)):
+            with patch("shared.permissions.audit.audit_log", new=AsyncMock()):
+                resp = await create_tenant(body=body, user=caller, db=db)
+
+        assert resp.data.organisation_type == "PRODUCER"
+
+    @pytest.mark.asyncio
+    async def test_invalid_organisation_type_rejected(self):
+        """An organisation_type outside PRODUCER/RETAILER/HYBRID raises 422
+        INVALID_ORGANISATION_TYPE — before any DB call is made."""
+        from routers.tenants import create_tenant
+        from schemas.tenant import TenantCreateRequest
+        from shared.permissions.store import RolePermissionGrant as PermissionGrant
+
+        body   = TenantCreateRequest(name="Bad Org Co", organisation_type="INVALID")
+        caller = _user("SA", tenant_id=None)
+        db     = AsyncMock()
+
+        grant = PermissionGrant(role="SA", action_id="tenant:create", grant_type="FULL")
+        with patch("shared.permissions.middleware.get_role_permission",
+                   new=AsyncMock(return_value=grant)):
+            with patch("shared.permissions.audit.audit_log", new=AsyncMock()):
+                with pytest.raises(HTTPException) as exc_info:
+                    await create_tenant(body=body, user=caller, db=db)
+
+        assert exc_info.value.status_code == 422
+        assert exc_info.value.detail["code"] == "INVALID_ORGANISATION_TYPE"
+        db.execute.assert_not_called()
+
+
 # ── asynccontextmanager_like helper ──────────────────────────────────────────
 
 from contextlib import asynccontextmanager as asynccontextmanager_like  # noqa: E402

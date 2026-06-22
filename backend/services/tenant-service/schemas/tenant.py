@@ -27,7 +27,13 @@ class TenantCreateRequest(BaseModel):
     slug: Optional[str] = None               # custom URL identifier; auto-generated if omitted
     plan_id: Optional[uuid.UUID] = DEFAULT_SYSTEM_PLAN_ID
     default_locale: str = "en"
-    organisation_type: Optional[str] = None   # PRODUCER | RETAILER | HYBRID
+    # tenants.organisation_type is NOT NULL at the DB level (it's a PostgreSQL
+    # ENUM column) — defaulting here keeps the field optional from the caller's
+    # perspective without risking a NotNullViolationError on INSERT. Validity
+    # (PRODUCER | RETAILER | HYBRID) is checked in the route handler, where it
+    # can raise the structured 422 INVALID_ORGANISATION_TYPE error this codebase
+    # uses elsewhere, rather than Pydantic's generic validation-error shape.
+    organisation_type: str = "PRODUCER"
     # Optional atomic TA admin user creation
     admin_name: Optional[str] = None
     admin_email: Optional[str] = None

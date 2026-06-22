@@ -3,9 +3,11 @@ import re
 import uuid
 from typing import List, Optional
 
+import asyncpg
 from fastapi import APIRouter, Depends, HTTPException, Response
 from pydantic import BaseModel
 from sqlalchemy import text
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from dependencies import get_current_user, get_db_session
@@ -13,6 +15,10 @@ from shared.permissions.middleware import require_permission
 from shared.permissions.registry import PERMISSIONS
 from shared.utils.responses import SuccessResponse
 from schemas.tenant import TenantCreateRequest, TenantResponse
+
+# Must mirror the "organisation_type" PostgreSQL ENUM values in
+# backend/migrations/versions/001_initial_schema.py.
+VALID_ORGANISATION_TYPES = frozenset({"PRODUCER", "RETAILER", "HYBRID"})
 
 
 def _slugify(name: str) -> str:
@@ -71,6 +77,16 @@ async def create_tenant(
     from sqlalchemy import text
     tenant_id = uuid.uuid4()
 
+    if body.organisation_type not in VALID_ORGANISATION_TYPES:
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "code":    "INVALID_ORGANISATION_TYPE",
+                "message": f"organisation_type must be one of {sorted(VALID_ORGANISATION_TYPES)}, "
+                           f"got '{body.organisation_type}'.",
+            },
+        )
+
     # Slug resolution: use caller-provided slug (validated) or auto-generate from name.
     if body.slug is not None:
         candidate = body.slug.strip().lower()
@@ -101,20 +117,36 @@ async def create_tenant(
         row = await db.execute(text("SELECT id FROM tenants WHERE slug = :s"), {"s": slug})
         if row.fetchone():
             slug = f"{base_slug}-{str(tenant_id)[:8]}"
-    await db.execute(
-        text(
-            "INSERT INTO tenants (id, name, slug, plan_id, default_locale, organisation_type) "
-            "VALUES (:id, :name, :slug, :plan_id, :locale, :org_type)"
-        ),
-        {
-            "id": str(tenant_id),
-            "name": body.name,
-            "slug": slug,
-            "plan_id": str(body.plan_id),
-            "locale": body.default_locale,
-            "org_type": body.organisation_type,
-        },
-    )
+    try:
+        await db.execute(
+            text(
+                "INSERT INTO tenants (id, name, slug, plan_id, default_locale, organisation_type) "
+                "VALUES (:id, :name, :slug, :plan_id, :locale, :org_type)"
+            ),
+            {
+                "id": str(tenant_id),
+                "name": body.name,
+                "slug": slug,
+                "plan_id": str(body.plan_id),
+                "locale": body.default_locale,
+                "org_type": body.organisation_type,
+            },
+        )
+    except IntegrityError as exc:
+        # Defense-in-depth: organisation_type is validated above, but this also
+        # covers any other NOT NULL / FK / enum mismatch on this INSERT (e.g. an
+        # unrecognized plan_id) without leaking a raw 500 + SQL detail to the client.
+        orig = exc.orig
+        if isinstance(orig, asyncpg.NotNullViolationError):
+            message = f"Missing required field: '{orig.column_name}'."
+        elif isinstance(orig, asyncpg.ForeignKeyViolationError):
+            message = "Referenced plan_id does not exist."
+        else:
+            message = "Could not create tenant: one or more fields were invalid."
+        raise HTTPException(
+            status_code=422,
+            detail={"code": "TENANT_CREATE_CONSTRAINT_VIOLATION", "message": message},
+        ) from exc
 
     # Atomic TA admin user creation — same DB transaction as tenant INSERT.
     admin_user_id: Optional[uuid.UUID] = None
