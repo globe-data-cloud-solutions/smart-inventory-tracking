@@ -128,6 +128,27 @@ USR_WHB22_ASST = "07000007-020b-0000-0000-000000000004"
 USR_AU         = "07000007-020c-0000-0000-000000000001"
 USR_LM         = "07000007-020c-0000-0000-000000000002"
 
+# ── Satellite Depot nodes (L5) ──────────────────────────────
+NODE_WHA1_SAT1   = "07000007-000b-0000-0000-000000000001"  # WHA1-SAT1  (L5, under WHA1)
+NODE_WHB11_SAT1  = "07000007-000b-0000-0000-000000000002"  # WHB11-SAT1 (L5, under WHB1-1)
+NODE_WHB21_SAT1  = "07000007-000b-0000-0000-000000000003"  # WHB21-SAT1 (L5, under WHB2-1)
+
+# Satellite positions
+POS_WHA1_SAT1_WM    = "07000007-010c-0000-0000-000000000001"
+POS_WHA1_SAT1_ASST  = "07000007-010c-0000-0000-000000000002"
+POS_WHB11_SAT1_WM   = "07000007-010c-0000-0000-000000000003"
+POS_WHB11_SAT1_ASST = "07000007-010c-0000-0000-000000000004"
+POS_WHB21_SAT1_WM   = "07000007-010c-0000-0000-000000000005"
+POS_WHB21_SAT1_ASST = "07000007-010c-0000-0000-000000000006"
+
+# Satellite users
+USR_WHA1_SAT1_WM    = "07000007-020d-0000-0000-000000000001"
+USR_WHA1_SAT1_ASST  = "07000007-020d-0000-0000-000000000002"
+USR_WHB11_SAT1_WM   = "07000007-020d-0000-0000-000000000003"
+USR_WHB11_SAT1_ASST = "07000007-020d-0000-0000-000000000004"
+USR_WHB21_SAT1_WM   = "07000007-020d-0000-0000-000000000005"
+USR_WHB21_SAT1_ASST = "07000007-020d-0000-0000-000000000006"
+
 # Products
 CAT_RAW_MAT    = "07000007-0301-0000-0000-000000000001"
 CAT_FINISHED   = "07000007-0301-0000-0000-000000000002"
@@ -224,6 +245,7 @@ async def main() -> None:
                 (2, "Regional Center","RM", False),
                 (3, "Sub Region",     "RM", False),
                 (4, "Warehouse Area", "WM", True),
+                (5, "Satellite Depot", "WM", True),
             ]
             for level_number, level_name, role_code, is_stock in levels:
                 await s.execute(
@@ -275,6 +297,10 @@ async def main() -> None:
                 (NODE_RB2,   "Region B2",    "RB2",    2, NODE_FB,  False),
                 (NODE_WHB21, "WHB2-1",       "WHB2-1", 4, NODE_RB2, True),
                 (NODE_WHB22, "WHB2-2",       "WHB2-2", 4, NODE_RB2, True),
+                # Satellite Depots (L5)
+                (NODE_WHA1_SAT1,  "WHA1-SAT1",  "WHA1-S1",  5, NODE_WHA1,  True),
+                (NODE_WHB11_SAT1, "WHB11-SAT1", "WHB11-S1", 5, NODE_WHB11, True),
+                (NODE_WHB21_SAT1, "WHB21-SAT1", "WHB21-S1", 5, NODE_WHB21, True),
             ]
             for nid, name, code, level, parent, stock in nodes:
                 await s.execute(
@@ -359,6 +385,13 @@ async def main() -> None:
                 # Tenant-wide roles anchored at Factory A (L1) — schema requires node_id
                 (POS_AU,         NODE_FA,    "T07 AU",            "AU", None),
                 (POS_LM,         NODE_FA,    "T07 LM",            "LM", None),
+                # Satellite Depot positions (L5) — reports_to parent WM position
+                (POS_WHA1_SAT1_WM,    NODE_WHA1_SAT1,  "WHA1-SAT1 WM",      "WM", POS_WHA1_WM),
+                (POS_WHA1_SAT1_ASST,  NODE_WHA1_SAT1,  "WHA1-SAT1 Asst WM", "WM", POS_WHA1_SAT1_WM),
+                (POS_WHB11_SAT1_WM,   NODE_WHB11_SAT1, "WHB11-SAT1 WM",     "WM", POS_WHB11_WM),
+                (POS_WHB11_SAT1_ASST, NODE_WHB11_SAT1, "WHB11-SAT1 Asst WM","WM", POS_WHB11_SAT1_WM),
+                (POS_WHB21_SAT1_WM,   NODE_WHB21_SAT1, "WHB21-SAT1 WM",     "WM", POS_WHB21_WM),
+                (POS_WHB21_SAT1_ASST, NODE_WHB21_SAT1, "WHB21-SAT1 Asst WM","WM", POS_WHB21_SAT1_WM),
             ]
             for pid, nid, title, role_code, reports_to in positions:
                 await s.execute(
@@ -431,6 +464,13 @@ async def main() -> None:
                 # Tenant-wide
                 (USR_AU,         "au@t07.com",                "T07 Auditor",           None,  POS_AU),
                 (USR_LM,         "lm@t07.com",                "T07 Logistics",         None,  POS_LM),
+                # Satellite Depot users (L5)
+                (USR_WHA1_SAT1_WM,    "wm_wha1sat1@t07.com",    "A-WHA1-SAT1 WM",      None, POS_WHA1_SAT1_WM),
+                (USR_WHA1_SAT1_ASST,  "asst_wha1sat1@t07.com",  "A-WHA1-SAT1 Asst WM", None, POS_WHA1_SAT1_ASST),
+                (USR_WHB11_SAT1_WM,   "wm_whb11sat1@t07.com",   "B-WHB11-SAT1 WM",     None, POS_WHB11_SAT1_WM),
+                (USR_WHB11_SAT1_ASST, "asst_whb11sat1@t07.com",  "B-WHB11-SAT1 Asst WM",None, POS_WHB11_SAT1_ASST),
+                (USR_WHB21_SAT1_WM,   "wm_whb21sat1@t07.com",   "B-WHB21-SAT1 WM",     None, POS_WHB21_SAT1_WM),
+                (USR_WHB21_SAT1_ASST, "asst_whb21sat1@t07.com",  "B-WHB21-SAT1 Asst WM",None, POS_WHB21_SAT1_ASST),
             ]
 
             for uid_val, email, full_name, sys_role, pos_id in users:
@@ -792,6 +832,7 @@ async def main() -> None:
                 ("RM", 2, 10000),
                 ("RM", 3,  5000),
                 ("WM", 4,  1000),
+                ("WM", 5,   500),
             ]
             for role_code, level_num, qty_limit in adj_sap_rows:
                 await s.execute(
@@ -879,6 +920,21 @@ async def main() -> None:
                          "execution_mode": "SEQUENTIAL", "sla_hours": 24},
                     ],
                 },
+                # L5 satellite pulls from parent WH (L4) — WHA1 WM approves
+                {"ttc_id": pull_id, "src": 5, "dst": 4,
+                 "qty_min": 0, "qty_max": 500, "priority": 6,
+                 "steps": []},
+                # L5 satellite pulls from parent WH (L4) — over threshold, WHA1 WM + SRA RM
+                {"ttc_id": pull_id, "src": 5, "dst": 4,
+                 "qty_min": 501, "qty_max": None, "priority": 7,
+                 "steps": [
+                     {"sequence": 1, "position_title": "WHA1 WM",
+                      "resolution": "source_parent_node",
+                      "execution_mode": "SEQUENTIAL", "sla_hours": 24},
+                     {"sequence": 2, "position_title": "Subregion A RM",
+                      "resolution": "source_parent_node",
+                      "execution_mode": "SEQUENTIAL", "sla_hours": 24},
+                 ]},
             ]
 
             # PUSH rules
@@ -899,6 +955,18 @@ async def main() -> None:
                                "resolution": "source_parent_node",
                                "execution_mode": "SEQUENTIAL", "sla_hours": 24}],
                 },
+                # L4 WH pushes down to L5 satellite — WM self-authorizes small qty
+                {"ttc_id": push_id, "src": 4, "dst": 5,
+                 "qty_min": 0, "qty_max": 500, "priority": 3,
+                 "steps": []},
+                # L4 WH pushes large qty to satellite — RM approval required
+                {"ttc_id": push_id, "src": 4, "dst": 5,
+                 "qty_min": 501, "qty_max": None, "priority": 4,
+                 "steps": [
+                     {"sequence": 1, "position_title": "Subregion A RM",
+                      "resolution": "source_parent_node",
+                      "execution_mode": "SEQUENTIAL", "sla_hours": 24},
+                 ]},
             ]
 
             # SISTER rules
@@ -917,6 +985,18 @@ async def main() -> None:
                                "resolution": "source_parent_node",
                                "execution_mode": "SEQUENTIAL", "sla_hours": 24}],
                 },
+                # Sister transfer between two L5 satellites — small qty auto
+                {"ttc_id": sister_id, "src": 5, "dst": 5,
+                 "qty_min": 0, "qty_max": 500, "priority": 3,
+                 "steps": []},
+                # Sister between L5 satellites — larger qty needs parent WM
+                {"ttc_id": sister_id, "src": 5, "dst": 5,
+                 "qty_min": 501, "qty_max": None, "priority": 4,
+                 "steps": [
+                     {"sequence": 1, "position_title": "WHA1 WM",
+                      "resolution": "source_parent_node",
+                      "execution_mode": "SEQUENTIAL", "sla_hours": 24},
+                 ]},
             ]
 
             all_rules = pull_rules + push_rules + sister_rules

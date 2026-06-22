@@ -95,6 +95,21 @@ NODE_RB2   = "07000007-0009-0000-0000-000000000001"  # Region B2 (L1)
 NODE_WHB21 = "07000007-000a-0000-0000-000000000001"  # Warehouse B2-1 (L3)
 NODE_WHB22 = "07000007-000a-0000-0000-000000000002"  # Warehouse B2-2 (L3)
 
+# ── Satellite Depot nodes (L5) ─────────────────────────────
+NODE_WHA1_SAT1   = "07000007-000b-0000-0000-000000000001"
+NODE_WHB11_SAT1  = "07000007-000b-0000-0000-000000000002"
+NODE_WHB21_SAT1  = "07000007-000b-0000-0000-000000000003"
+
+# Satellite users
+USR_WHA1_SAT1_WM    = "07000007-020d-0000-0000-000000000001"
+USR_WHB11_SAT1_WM   = "07000007-020d-0000-0000-000000000003"
+USR_WHB21_SAT1_WM   = "07000007-020d-0000-0000-000000000005"
+
+# Satellite emails
+EMAIL_WHA1_SAT1_WM  = "wm_wha1sat1@t07.com"
+EMAIL_WHB11_SAT1_WM = "wm_whb11sat1@t07.com"
+EMAIL_WHB21_SAT1_WM = "wm_whb21sat1@t07.com"
+
 # Products
 PROD_P1 = "07000007-0302-0000-0000-000000000001"  # Steel Rod A (not controlled)
 PROD_P2 = "07000007-0302-0000-0000-000000000002"  # Copper Wire B (not controlled)
@@ -454,6 +469,19 @@ def group2_auth() -> None:
             fail(f"2.10 WM login ({email})", f"status={r.status_code}")
     if all_wm_pass:
         ok("2.10 All WH WMs login (WHA2, WHA3)")
+
+    # 2.11 Satellite WM logins succeed (all 3 satellites)
+    all_sat_pass = True
+    for email in [EMAIL_WHA1_SAT1_WM, EMAIL_WHB11_SAT1_WM, EMAIL_WHB21_SAT1_WM]:
+        r = requests.post(f"{BASE_URL}/api/v1/auth/token",
+                          json={"dev_email": email,
+                                "dev_password": DEFAULT_PASSWORD}, timeout=10)
+        if r.status_code != 200 or not _extract_token(r):
+            all_sat_pass = False
+            fail(f"2.11 Satellite WM login ({email})",
+                 f"status={r.status_code}")
+    if all_sat_pass:
+        ok("2.11 All satellite WM logins succeed")
 
 # ─────────────────────────────────────────────────────────────────────────────
 # GROUP 3 — Products
@@ -1742,7 +1770,9 @@ def group11_org_stock() -> None:
     raw_nodes_g11 = data(r) if isinstance(data(r), list) else []
     all_nodes_g11 = _flatten_nodes_g11(raw_nodes_g11)
     node_ids = {str(n.get("id", "")) for n in all_nodes_g11}
-    expected = {NODE_FA, NODE_RA, NODE_SRA, NODE_WHA1, NODE_WHA2, NODE_WHA3}
+    expected = {NODE_FA, NODE_RA, NODE_SRA,
+                NODE_WHA1, NODE_WHA2, NODE_WHA3,
+                NODE_WHA1_SAT1, NODE_WHB11_SAT1, NODE_WHB21_SAT1}
     missing = expected - node_ids
     if not missing:
         ok("11.1 Known T07 nodes present", f"checked {len(expected)} of {len(all_nodes_g11)} total")
@@ -1848,8 +1878,9 @@ def group11_org_stock() -> None:
     r = api_get(f"/api/v1/tenants/{T07_ID}/positions/flat", EMAIL_TA)
     positions = data(r) if isinstance(data(r), list) else []
     wm_positions = [p for p in positions if p.get("role_code") == "WM"]
-    if r.status_code == 200 and len(wm_positions) >= 3:
-        ok("11.11 At least 3 WM positions exist", f"count={len(wm_positions)}")
+    if r.status_code == 200 and len(wm_positions) >= 6:
+        ok("11.11 At least 6 WM positions exist (incl. satellites)",
+           f"count={len(wm_positions)}")
     else:
         fail("11.11 At least 3 WM positions", f"status={r.status_code}, wm_count={len(wm_positions)}")
 
@@ -1863,6 +1894,33 @@ def group11_org_stock() -> None:
     else:
         fail("11.12 WHA1 P5 stock ≥ 150",
              f"status={r.status_code}, p5={p5}")
+
+    # 11.13 L5 Satellite Depot level exists in hierarchy config
+    r = api_get(f"/api/v1/tenants/{T07_ID}/hierarchy/config",
+                EMAIL_TA)
+    levels = data(r) if isinstance(data(r), list) else []
+    l5 = next((lv for lv in levels
+               if lv.get("level_number") == 5), None)
+    if r.status_code == 200 and l5:
+        ok("11.13 L5 Satellite Depot level in hierarchy config",
+           f"name={l5.get('level_name')}")
+    else:
+        fail("11.13 L5 Satellite Depot level in hierarchy config",
+             f"status={r.status_code}, levels={[lv.get('level_number') for lv in levels]}")
+
+    # 11.14 Transfer approval rules include L5 satellite rules
+    r = api_get(f"/api/v1/tenants/{T07_ID}/transfer-approval-rules",
+                EMAIL_TA)
+    rules = data(r) if isinstance(data(r), list) else []
+    l5_rules = [rule for rule in rules
+                if rule.get("source_level") == 5
+                or rule.get("destination_level") == 5]
+    if r.status_code == 200 and len(l5_rules) >= 1:
+        ok("11.14 L5 transfer approval rules exist",
+           f"count={len(l5_rules)}")
+    else:
+        fail("11.14 L5 transfer approval rules exist",
+             f"status={r.status_code}, l5_count={len(l5_rules)}")
 
 # ─────────────────────────────────────────────────────────────────────────────
 # GROUP 12 — Controlled Product Transfer Routing
@@ -3873,6 +3931,150 @@ def print_report() -> None:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# GROUP 20 — Satellite Depot Scope (Phase 2 — Node+Descendant)
+# ─────────────────────────────────────────────────────────────────────────────
+def group20_satellite_scope() -> None:
+    print("\n[GROUP 20] Satellite Depot Scope (Phase 2 — Node+Descendant)")
+
+    # 20.1 Satellite WM (WHA1-SAT1) can view own node stock → 200
+    # Phase 2: satellite WM is a leaf node (no children),
+    # so scope = {own node} — same as before, but now via
+    # descendant traversal path in middleware.
+    r = api_get("/api/v1/inventory/analytics/stock",
+                EMAIL_WHA1_SAT1_WM,
+                params={"warehouse_id": NODE_WHA1_SAT1})
+    if r.status_code == 200:
+        ok("20.1 Satellite WM sees own node stock → 200")
+    else:
+        fail("20.1 Satellite WM sees own node stock → 200",
+             f"status={r.status_code}")
+
+    # 20.2 Satellite WM (WHA1-SAT1) blocked from sibling
+    # satellite node (WHB11-SAT1) → 403
+    # Validates scope isolation — descendant traversal must
+    # not grant cross-branch access.
+    r = api_get("/api/v1/inventory/analytics/stock",
+                EMAIL_WHA1_SAT1_WM,
+                params={"warehouse_id": NODE_WHB11_SAT1})
+    if r.status_code == 403:
+        ok("20.2 Satellite WM blocked from sibling satellite → 403")
+    else:
+        fail("20.2 Satellite WM blocked from sibling satellite → 403",
+             f"status={r.status_code}",
+             bug="Phase 2 scope isolation: cross-branch satellite access not denied")
+
+    # 20.3 Satellite WM (WHA1-SAT1) blocked from parent WH
+    # (WHA1) — child cannot see upward → 403
+    # Traversal is downward only (parent → children).
+    # A satellite WM must not gain visibility into its parent.
+    r = api_get("/api/v1/inventory/analytics/stock",
+                EMAIL_WHA1_SAT1_WM,
+                params={"warehouse_id": NODE_WHA1})
+    if r.status_code == 403:
+        ok("20.3 Satellite WM blocked from parent WH upward → 403")
+    else:
+        fail("20.3 Satellite WM blocked from parent WH upward → 403",
+             f"status={r.status_code}",
+             bug="Phase 2: child WM should not see parent node — traversal is downward only")
+
+    # 20.4 Parent WM (WHA1 WM) can view satellite child node
+    # stock → 200 (CORE Phase 2 assertion)
+    # This is the primary validation of node+descendant traversal.
+    # wm_wha1@t07.com is assigned to NODE_WHA1 (L4).
+    # NODE_WHA1_SAT1 (L5) is a child of NODE_WHA1.
+    # After Phase 2 fix, middleware allows this via descendant set.
+    r = api_get("/api/v1/inventory/analytics/stock",
+                EMAIL_WHA1_WM,
+                params={"warehouse_id": NODE_WHA1_SAT1})
+    if r.status_code == 200:
+        ok("20.4 Parent WM sees satellite child node stock → 200",
+           "CORE: node+descendant traversal working")
+    else:
+        fail("20.4 Parent WM sees satellite child node stock → 200",
+             f"status={r.status_code}",
+             bug="Phase 2 core: WM cannot see descendant satellite node — descendant traversal not working")
+
+    # 20.5 Parent WM (WHA1 WM) blocked from unrelated satellite
+    # (WHB11-SAT1, different branch entirely) → 403
+    r = api_get("/api/v1/inventory/analytics/stock",
+                EMAIL_WHA1_WM,
+                params={"warehouse_id": NODE_WHB11_SAT1})
+    if r.status_code == 403:
+        ok("20.5 Parent WM blocked from unrelated branch satellite → 403")
+    else:
+        fail("20.5 Parent WM blocked from unrelated branch satellite → 403",
+             f"status={r.status_code}",
+             bug="Phase 2 isolation: WM gaining access to non-descendant satellite")
+
+    # 20.6 WHB11 WM can view its own satellite (WHB11-SAT1) → 200
+    # Validates the same traversal works on Factory B branch.
+    r = api_get("/api/v1/inventory/analytics/stock",
+                EMAIL_WHB11_WM,
+                params={"warehouse_id": NODE_WHB11_SAT1})
+    if r.status_code == 200:
+        ok("20.6 WHB11 WM sees its satellite child node → 200")
+    else:
+        fail("20.6 WHB11 WM sees its satellite child node → 200",
+             f"status={r.status_code}",
+             bug="Phase 2: WHB11 WM cannot see descendant satellite — Factory B branch traversal broken")
+
+    # 20.7 WHB21 WM can view its own satellite (WHB21-SAT1) → 200
+    # Validates skip-level parent traversal (WHB21 parent is
+    # Region B2, which skips L3 — proving the recursive CTE
+    # handles non-uniform hierarchy depth correctly).
+    r = api_get("/api/v1/inventory/analytics/stock",
+                EMAIL_WHB21_WM,
+                params={"warehouse_id": NODE_WHB21_SAT1})
+    if r.status_code == 200:
+        ok("20.7 WHB21 WM sees satellite (skip-level hierarchy) → 200")
+    else:
+        fail("20.7 WHB21 WM sees satellite (skip-level hierarchy) → 200",
+             f"status={r.status_code}",
+             bug="Phase 2: skip-level hierarchy traversal broken for WHB21→WHB21-SAT1")
+
+    # 20.8 TA sees satellite node stock → 200
+    # TA is tenant-wide, bypasses all ABAC node checks.
+    # Confirms satellite nodes are accessible to admin roles.
+    r = api_get("/api/v1/inventory/analytics/stock",
+                EMAIL_TA,
+                params={"warehouse_id": NODE_WHA1_SAT1})
+    if r.status_code == 200:
+        ok("20.8 TA sees satellite node stock (tenant-wide) → 200")
+    else:
+        fail("20.8 TA sees satellite node stock (tenant-wide) → 200",
+             f"status={r.status_code}")
+
+    # 20.9 Satellite nodes appear in org tree API response
+    # Confirms the nodes are properly registered in the tree,
+    # not just in the DB but invisible to the frontend.
+    r = api_get(f"/api/v1/tenants/{T07_ID}/nodes", EMAIL_TA)
+    def _flatten_nodes_g20(nl: list) -> list:
+        result = []
+        for n in nl:
+            result.append(n)
+            result.extend(_flatten_nodes_g20(n.get("children") or []))
+        return result
+    raw = data(r) if isinstance(data(r), list) else []
+    all_node_ids = {str(n.get("id", "")) for n in _flatten_nodes_g20(raw)}
+    sat_nodes = {NODE_WHA1_SAT1, NODE_WHB11_SAT1, NODE_WHB21_SAT1}
+    missing_sat = sat_nodes - all_node_ids
+    if r.status_code == 200 and not missing_sat:
+        ok("20.9 All 3 satellite nodes in org tree",
+           f"total_nodes={len(all_node_ids)}")
+    else:
+        fail("20.9 All 3 satellite nodes in org tree",
+             f"status={r.status_code}, missing={missing_sat}")
+
+    # ── REMINDER (Option A — future session) ──────────────────
+    # Seed opening stock for satellite nodes in setup_tenant07.py
+    # so tests 20.1/20.4/20.6/20.7 can assert current_stock > 0
+    # rather than just status=200. Currently satellites have no
+    # opening stock — status=200 with empty list proves access,
+    # not stock presence. Track as pre-launch item.
+    # ──────────────────────────────────────────────────────────
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # Main
 # ─────────────────────────────────────────────────────────────────────────────
 def main() -> None:
@@ -3909,6 +4111,7 @@ def main() -> None:
         group16_approval_edge_cases,
         group18_i18n,
         group19_security,
+        group20_satellite_scope,
     ]:
         try:
             fn()
