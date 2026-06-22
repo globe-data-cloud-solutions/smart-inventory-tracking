@@ -836,9 +836,9 @@ class TestGroup8PositionEdits:
               actual=f"status={r.status_code}, reports_to_position_id={d.get('reports_to_position_id')!r}", body=r.text[:300])
 
     def test_814_circular_reports_to_rejected(self) -> None:
-        """Probe for cycle detection. update_position() does a flat UPDATE with no
-        ancestry walk, so a 200 here (A reports to B, B reports to A) is an expected
-        gap, not a tooling mistake."""
+        """Cycle detection is live (commit f2f11bd). Setting A→B then B→A must return
+        422 CIRCULAR_REPORTS_TO on the second PATCH. Reverts are applied after the probe
+        regardless of outcome to keep state clean."""
         pos_a = STATE["positions"].get("WHA1_mgr")
         pos_b = STATE["positions"].get("WHA2_mgr")
         if not (pos_a and pos_b):
@@ -849,9 +849,9 @@ class TestGroup8PositionEdits:
         api_patch(f"/api/v1/tenants/{tid()}/positions/{pos_a}", ta(), {"reports_to_position_id": None})
         api_patch(f"/api/v1/tenants/{tid()}/positions/{pos_b}", ta(), {"reports_to_position_id": STATE["positions"].get("A_REG_mgr")})
         check(self.GROUP, "8.14 Circular reports_to (A→B, B→A) → 422",
-              r2.status_code == 422,
-              expected="422 (no cycle detection exists in update_position — expected gap)",
-              actual=f"step1={r1.status_code}, step2={r2.status_code}", body=f"{r1.text[:150]} | {r2.text[:150]}")
+              r2.status_code == 422 and err_code(r2) == "CIRCULAR_REPORTS_TO",
+              expected="422, code=CIRCULAR_REPORTS_TO",
+              actual=f"step1={r1.status_code}, step2={r2.status_code}, code={err_code(r2)!r}")
 
 
 @pytest.mark.integration
