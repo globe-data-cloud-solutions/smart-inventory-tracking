@@ -52,13 +52,12 @@ SMART uses a fixed set of roles. These are defined by the platform and cannot be
 | Auditor | AU | Tenant-wide | Read-only compliance role — views all audit logs, transactions, and reports. Cannot create or modify anything. |
 
 > **Logistics Manager (LM) scope:** Logistics Managers are scoped to their assigned
-> node. An LM given a position at the factory level sees that factory's data; an LM
-> given a position at a warehouse sees only that warehouse. *(Visibility does not yet
-> extend to descendant nodes beneath the assigned node — e.g. an LM at the factory
-> level does not currently see data scoped to specific sub-warehouses below it. This
-> is a known platform limitation, tracked for a future update.)* An LM can also be
-> created **without** a position (a tenant-wide account) — that account keeps
-> unrestricted, tenant-wide read access since it has no node to scope to.
+> node and all nodes beneath it. An LM given a position at the factory level sees
+> that factory's data and all regions, warehouses, and satellite depots below it.
+> An LM given a position at a warehouse sees that warehouse and any satellite depots
+> under it. An LM can also be created **without** a position (a tenant-wide account)
+> — that account has unrestricted, tenant-wide read access since it has no node to
+> scope to.
 
 ### Role Hierarchy
 TA (highest tenant authority)
@@ -416,7 +415,7 @@ After 5 consecutive failed login attempts, the account is automatically locked f
 Yes. Each adjustment rule applies to the specific node it is configured for. If your organization has multiple warehouses or regions, you must create a separate rule for each one. A rule set for WHA1 will not automatically apply to WHA2 or WHB1. Work through each node systematically to ensure full coverage. A future update will allow you to apply rules across all nodes at the same org level in one step.
 
 **Q: What is the difference between a tenant-wide LM and a node-assigned LM?**
-When creating a Logistics Manager, you have two options. A tenant-wide LM (created without a position assignment) has read visibility across the entire organization — useful for a head logistics coordinator overseeing all warehouses. A node-assigned LM is linked to a specific position at a node and sees only that node's operations — useful for a logistics coordinator dedicated to one warehouse or satellite. Choose based on the staff member's actual operational scope.
+When creating a Logistics Manager, you have two options. A tenant-wide LM (created without a position assignment) has read visibility across the entire organization — useful for a head logistics coordinator overseeing all warehouses. A node-assigned LM is linked to a specific position at a node and sees that node and all nodes beneath it — useful for a logistics coordinator overseeing one warehouse and its satellite depots. Choose based on the staff member's actual operational scope.
 
 ---
 
