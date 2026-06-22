@@ -61,6 +61,16 @@ EMAIL_FA_NM    = "nm_factorya@t07.com"
 EMAIL_SRA_RM   = "rm_subregiona@t07.com"
 EMAIL_RA_RM    = "rm_regiona@t07.com"
 EMAIL_WHA1_WM  = "wm_wha1@t07.com"
+
+# Dedicated throwaway account for GROUP 19 brute-force test
+# This account is intentionally locked during 19.13 — never
+# use it for any other test in this suite.
+# NOTE: wm_wha2@t07.com (EMAIL_WHA2_WM) was the originally proposed
+# target but is actually used as the primary auth subject in GROUPS
+# 4, 6, 7, 11, and 16 (8 call sites) — using it would just move the
+# cascading-lockout bug from WHA1 to WHA2. wm_whb1_2@t07.com is a
+# real seeded user with zero other references anywhere in this file.
+EMAIL_LOCKOUT_TEST = "wm_whb1_2@t07.com"
 EMAIL_WHA2_WM  = "wm_wha2@t07.com"
 EMAIL_WHA3_WM  = "wm_wha3@t07.com"
 EMAIL_AU       = "au@t07.com"
@@ -3663,7 +3673,7 @@ def group19_security() -> None:
     for _ in range(10):
         r_fail = requests.post(
             f"{BASE_URL}/api/v1/auth/token",
-            json={"dev_email": EMAIL_WHA1_WM, "dev_password": "WrongPassword999!"},
+            json={"dev_email": EMAIL_LOCKOUT_TEST, "dev_password": "WrongPassword999!"},
             timeout=10,
         )
         last_status_19 = r_fail.status_code
@@ -3685,7 +3695,7 @@ def group19_security() -> None:
            f"attempts={failed_attempts}, last_status={last_status_19} — no 429/423 observed")
 
     # 19.14 20 rapid GET /products/ requests — document behavior (no failure either way)
-    token_wm_rapid = get_jwt(EMAIL_WHA1_WM)
+    token_wm_rapid = get_jwt(EMAIL_TA)
     if token_wm_rapid:
         rapid_codes: list[int] = []
         for _ in range(20):
