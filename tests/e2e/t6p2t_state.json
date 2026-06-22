@@ -1,0 +1,213 @@
+{
+  "tenant_id": "e1badc24-5bdf-4ee6-bc1c-88d7c84a1bd7",
+  "tenant_slug": "tenant-6-p2t",
+  "ta_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJjMmQ4NmJiNi04ZDQ0LTRmMDktYTc2ZC1hMjM2MTM1N2MyNWQiLCJlbWFpbCI6ImFkbWluQHQ2cDJ0LmNvbSIsIm5hbWUiOiJUNlAyVCBBZG1pbiIsInRlbmFudF9pZCI6ImUxYmFkYzI0LTViZGYtNGVlNi1iYzFjLTg4ZDdjODRhMWJkNyIsInJvbGUiOiJUQSIsIndhcmVob3VzZV9pZCI6bnVsbCwid2FyZWhvdXNlX25hbWUiOm51bGwsInBvc2l0aW9uX2lkIjpudWxsLCJwb3NpdGlvbl90aXRsZSI6IlRlbmFudCBBZG1pbmlzdHJhdG9yIiwibGV2ZWxfbnVtYmVyIjoxLCJwb3NpdGlvbnMiOltdLCJpYXQiOjE3ODIwOTU3NDIsImV4cCI6MTc4MjEyNDU0Mn0.qzxCtMzu0FKmQgbsWtyCmmSapK_oaueCYeuXyxn_rvE",
+  "sa_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIwMDAwMDAwMS0wYTAwLTAwMDAtMDAwMC0wMDAwMDAwMDAwMDEiLCJlbWFpbCI6InNtYXJ0YWRtaW5Ac21hcnQtaW52ZW50b3J5LmNvbSIsIm5hbWUiOiJTeXN0ZW0gQWRtaW5pc3RyYXRvciIsInRlbmFudF9pZCI6bnVsbCwicm9sZSI6IlNBIiwid2FyZWhvdXNlX2lkIjpudWxsLCJ3YXJlaG91c2VfbmFtZSI6bnVsbCwicG9zaXRpb25faWQiOm51bGwsInBvc2l0aW9uX3RpdGxlIjpudWxsLCJsZXZlbF9udW1iZXIiOm51bGwsInBvc2l0aW9ucyI6W10sImlhdCI6MTc4MjA5NTczMSwiZXhwIjoxNzgyMTI0NTMxfQ.jGDuUVAgcpN9OzFrKVx6NxyFecaF0BHP5BP6aiEk81E",
+  "nodes": {
+    "A_FAC": "8144e315-d662-405a-8551-74c928a17d81",
+    "B_FAC": "cc00db14-8a5d-4d80-b2ae-c5c38abaa5e6",
+    "A_REG": "f94e308a-ccc8-4871-ad2a-051d60fc37ea",
+    "B_REG": "f2df80d3-64aa-4c87-837b-be084b2fd0b3",
+    "WHA1": "c0d49f1f-4908-4d08-9b72-e327bc6a1f9c",
+    "WHA2": "708ce720-72bf-4c45-b53d-2925d741c272",
+    "WHB1": "530af1e5-242c-4c46-90f8-5b98e2646d6b",
+    "WHB2": "2bda5293-f4cc-4c31-a6e5-ce0d28b8f1f9",
+    "SAT_WHA1": "8efb2c6d-8530-4f6c-a08e-cedb38eb1ffd",
+    "SAT_WHA2": "66f81453-246f-409a-a071-2c7a2370feaf",
+    "SAT_WHB1": "42416a79-9a13-4918-acaa-a43286fbb1bd",
+    "SAT_WHB2": "c739f492-312e-4f04-982b-790ceb237a73",
+    "WHA3": "2264070d-9ef5-46a6-bcf7-90102a1ac34e"
+  },
+  "positions": {
+    "A_FAC_dir": "25c5a855-ff00-4f14-bd18-5ae64853d0fc",
+    "A_REG_mgr": "b1adb152-4f06-45ea-b5d4-e35746913e3b",
+    "WHA1_mgr": "aa89f559-0f7f-459b-acb9-9864739636ea",
+    "WHA2_mgr": "2c7871f3-2772-4182-a303-90cb898de35f",
+    "WHA3_mgr": "30f1f2e8-7253-4ace-a1b3-49486c3b0214",
+    "SAT_WHA1_lead": "ac561786-6b07-4954-913f-1239c71ccbce",
+    "SAT_WHA2_lead": "c0b94f50-f192-45ad-8430-ded49903df03",
+    "B_FAC_dir": "fc5d85c6-dba3-4ee3-a245-dd1d6a969a95",
+    "B_FAC_dir_asst": "494ed585-c232-4100-bcd9-a7e2430b1862",
+    "B_REG_mgr": "01e3055f-e6d7-4fad-a25c-eb1da50f463f",
+    "B_REG_mgr_asst": "071b300a-af06-4159-9beb-b0be87b40277",
+    "WHB1_mgr": "25d54953-d4eb-4b35-9cc5-5a8956527caa",
+    "WHB1_mgr_asst": "2f468aa7-a6b4-4e20-a068-c592d9ec67ae",
+    "WHB2_mgr": "edf71d7d-3a94-44f2-967d-3b7b4b96e391",
+    "WHB2_mgr_asst": "815e8f45-8e57-4016-bb59-a87291560276",
+    "SAT_WHB1_lead": "c3fe1954-bcd9-4bec-98f2-f467bf7102d5",
+    "SAT_WHB1_lead_asst": "29a84282-2cde-4af6-94b2-de3bb92e21df",
+    "SAT_WHB2_lead": "2ccc9b19-28c7-4b7b-8e2d-6980ad7a27fe",
+    "SAT_WHB2_lead_asst": "9a03a19c-7873-4d74-acfc-053ff24fbbda"
+  },
+  "users": {
+    "nm_addisfac": {
+      "id": "f6047090-502c-4e08-af3b-29faa0e47080",
+      "email": "nm_addisfac@t6p2t.com",
+      "password": "Test@2026",
+      "assignment_id": "9fc47b72-fcff-4dee-8a5f-76e0e0c54c83"
+    },
+    "rm_addisreg": {
+      "id": "2711f33b-87df-47fe-bdfb-3ca31bc75e76",
+      "email": "rm_addisreg@t6p2t.com",
+      "password": "Test@2026",
+      "assignment_id": "476830e1-b816-445e-b196-9d4750c2ede0"
+    },
+    "wm_wha1": {
+      "id": "34a9a8b2-a22a-4457-86c3-8b3a9c79296a",
+      "email": "wm_wha1_new@t6p2t.com",
+      "password": "NewPass@2026",
+      "assignment_id": "73475d06-f5c8-4285-8c16-f6afaf77ad9e"
+    },
+    "wm_wha2": {
+      "id": "791642c9-5ea7-4155-9b74-acda1f52f725",
+      "email": "wm_wha2@t6p2t.com",
+      "password": "Unlocked@2026",
+      "assignment_id": "874b9b49-fa4f-4462-a3b2-45c5b38f95a7"
+    },
+    "wm_wha3": {
+      "id": "67f8d8ae-3943-4df5-97a8-8bf1c53036e3",
+      "email": "wm_wha3@t6p2t.com",
+      "password": "Test@2026",
+      "assignment_id": "ffa3db94-12a6-4ba6-b8a3-f752e9cb647e"
+    },
+    "lm_satwha1": {
+      "id": "395bd950-cfd3-4088-ae3a-3835f3687143",
+      "email": "lm_satwha1@t6p2t.com",
+      "password": "Test@2026",
+      "assignment_id": "7042caa7-0b04-4317-9f80-33944eb3afb0"
+    },
+    "lm_satwha2": {
+      "id": "76a5331b-02d3-491e-b940-ee8fa923a37a",
+      "email": "lm_satwha2@t6p2t.com",
+      "password": "Test@2026",
+      "assignment_id": "9b8e79bd-184e-4666-b304-070a9b1f8fcc"
+    },
+    "nm_direfac": {
+      "id": "6b385484-a212-42e4-a42b-b22f67ee67b9",
+      "email": "nm_direfac@t6p2t.com",
+      "password": "Test@2026",
+      "assignment_id": "3ce37142-b11c-439c-9ab6-73b1bdd800ef"
+    },
+    "nm_direfac_asst": {
+      "id": "dbd9cff8-74d4-4c72-9507-7de245915340",
+      "email": "nm_direfac_asst@t6p2t.com",
+      "password": "Test@2026",
+      "assignment_id": "8e3f1acc-ebff-4877-b8a4-826ec32054ab"
+    },
+    "rm_direreg": {
+      "id": "5e83465c-6cd2-44ba-8bd8-83392fe192ad",
+      "email": "rm_direreg@t6p2t.com",
+      "password": "Test@2026",
+      "assignment_id": "98eddc3b-2748-465b-9acf-54736620d60d"
+    },
+    "rm_direreg_asst": {
+      "id": "5b8ad3a2-24e2-4910-8f7e-31f0fca4cc44",
+      "email": "rm_direreg_asst@t6p2t.com",
+      "password": "Test@2026",
+      "assignment_id": "c7e8cc88-0bfc-4c82-ab4e-518ff839372f"
+    },
+    "wm_whb1": {
+      "id": "1d1d2242-ad88-4641-80a8-fb8e1e04fcbb",
+      "email": "wm_whb1@t6p2t.com",
+      "password": "Test@2026",
+      "assignment_id": "9395255b-4fd6-43d6-85a2-a2a867737e7c"
+    },
+    "wm_whb1_asst": {
+      "id": "ddc4f3cc-968b-44ca-a3e4-1d7183d4025a",
+      "email": "wm_whb1_asst@t6p2t.com",
+      "password": "Test@2026",
+      "assignment_id": "7aff1181-63c8-48eb-a52c-5266230359d0"
+    },
+    "wm_whb2": {
+      "id": "017abdbc-e076-448d-9aca-a60c4bbc00a1",
+      "email": "wm_whb2@t6p2t.com",
+      "password": "Test@2026",
+      "assignment_id": "b97d70aa-b18c-4731-87d2-73a07fe165ba"
+    },
+    "wm_whb2_asst": {
+      "id": "f0cee7d2-eab1-4569-a60b-d389a003cfe8",
+      "email": "wm_whb2_asst@t6p2t.com",
+      "password": "Test@2026",
+      "assignment_id": "29a5cd4a-bf82-4746-9dfe-fac3c9267b29"
+    },
+    "lm_satwhb1": {
+      "id": "c18c6c2b-658b-4a78-a199-cb945af81f92",
+      "email": "lm_satwhb1@t6p2t.com",
+      "password": "Test@2026",
+      "assignment_id": "16c1a017-5750-42ac-ae76-f83ba7a981db"
+    },
+    "lm_satwhb1_asst": {
+      "id": "95632e75-6d05-461f-94ed-76f75b2d54d9",
+      "email": "lm_satwhb1_asst@t6p2t.com",
+      "password": "Test@2026",
+      "assignment_id": "56cc65d5-0529-4c08-9dbc-05763eec3f33"
+    },
+    "lm_satwhb2": {
+      "id": "b50bd95c-6fbb-4b62-b870-30b4df1a3732",
+      "email": "lm_satwhb2@t6p2t.com",
+      "password": "Test@2026",
+      "assignment_id": "3f2b9c1b-e16f-4821-9b56-a1c26a6a5f0c"
+    },
+    "lm_satwhb2_asst": {
+      "id": "43972197-b93d-4113-8d04-9d00e4244d7c",
+      "email": "lm_satwhb2_asst@t6p2t.com",
+      "password": "Test@2026",
+      "assignment_id": "a942e81c-0e27-4f2e-9de3-9d64fdb31ee3"
+    },
+    "au_t6p2t": {
+      "id": "9a1ec694-ba9c-4c8e-84b9-352bc3f0c8bc",
+      "email": "au_t6p2t@t6p2t.com",
+      "password": "Test@2026",
+      "assignment_id": null
+    },
+    "lm_tenant": {
+      "id": "0b3cc864-1af2-4de2-af44-8a99bfce6eb9",
+      "email": "lm_tenant@t6p2t.com",
+      "password": "Test@2026",
+      "assignment_id": null
+    },
+    "wm_wha1_sec": {
+      "id": "c4ef3b2f-0fd4-4b75-8e59-7849a22cc381",
+      "email": "wm_wha1_sec@t6p2t.com",
+      "password": "Test@2026",
+      "assignment_id": "da42ec04-18f6-446d-9db7-4ba8c615a0c9"
+    },
+    "rm_addisreg_sec": {
+      "id": "ec37d8f2-65f6-46d6-a4d1-ebb50b81f788",
+      "email": "rm_addisreg_sec@t6p2t.com",
+      "password": "Test@2026",
+      "assignment_id": "f6017e23-28a5-48ea-b270-e0addd40a9e5"
+    },
+    "lm_satwha1_sec": {
+      "id": "2bb456ec-80ef-470d-ab0f-e9858a90aa03",
+      "email": "lm_satwha1_sec@t6p2t.com",
+      "password": "Test@2026",
+      "assignment_id": "3cb30e60-61e9-401b-9ca2-16080491d38a"
+    },
+    "wm_wha3_sec_g8": {
+      "id": "ba071648-9501-423b-afc3-c53c402b7506",
+      "email": "wm_wha3_sec_g8_007e4d0f80@t6p2t.com",
+      "password": "Test@2026",
+      "assignment_id": "d4ea3645-2c90-4105-94e4-6fbd1da6b7ee"
+    }
+  },
+  "transfer_types": {
+    "PULL": "8f8fd3da-0dfc-493e-bf66-a7af88aaa4dc",
+    "PUSH": "53c2c47d-c898-4560-a5de-3613ce7db8aa",
+    "SISTER": "ecfbcb7c-042b-453c-bb25-8755db6bf137"
+  },
+  "ta_user_id": "c2d86bb6-8d44-4f09-a76d-a2361357c25d",
+  "sa_user_id": "00000001-0a00-0000-0000-000000000001",
+  "approval_rules": {
+    "transfer_pull_low": "af66da77-686f-4f5b-a48f-190e8e5ce12e",
+    "transfer_pull_high": "5fe7faf6-485c-4b55-a5f1-9b4ec1ff137e",
+    "transfer_push": "29e36355-938d-4f91-a645-3f64772c2441",
+    "transfer_sister": "d6482855-3c6e-4d65-8870-b79f59df22ea",
+    "adjustment_global_low": "158d9f8f-0fc4-4366-ab45-03cee6eeca29",
+    "adjustment_global_high": "c887fe84-9e83-4eb8-ba1c-dd660b445921"
+  },
+  "logo_url_1": "/static/uploads/tenants/logos/472d788ad8a44446ad0a83b473b38241_logo2.png",
+  "banner_url_1": "/static/uploads/tenants/banners/02c98d82f8cc4536b91985eec09085d7_banner.png",
+  "t07_ta_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIwNzAwMDAwNy0wMjAxLTAwMDAtMDAwMC0wMDAwMDAwMDAwMDEiLCJlbWFpbCI6ImFkbWluQHQwNy5jb20iLCJuYW1lIjoiVDA3IEFkbWluIiwidGVuYW50X2lkIjoiMDcwMDAwMDctMDAwMC0wMDAwLTAwMDAtMDAwMDAwMDAwMDAxIiwicm9sZSI6IlRBIiwid2FyZWhvdXNlX2lkIjpudWxsLCJ3YXJlaG91c2VfbmFtZSI6bnVsbCwicG9zaXRpb25faWQiOm51bGwsInBvc2l0aW9uX3RpdGxlIjoiVGVuYW50IEFkbWluaXN0cmF0b3IiLCJsZXZlbF9udW1iZXIiOjEsInBvc2l0aW9ucyI6W10sImlhdCI6MTc4MjExODMzMiwiZXhwIjoxNzgyMTQ3MTMyfQ.Wz_gXY5Xpd2rZwG14MY0V7Tky-O9QJG2_q8G0c-SksU",
+  "test_product_id": "d6838526-894d-4ae7-a899-66ce2356a7a7"
+}
