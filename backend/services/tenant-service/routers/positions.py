@@ -14,9 +14,11 @@ import json as _json
 import uuid
 from typing import List, Optional
 
+import asyncpg
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy import bindparam, text, types
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from dependencies import get_current_user, get_db_session_for_tenant
@@ -29,6 +31,25 @@ router = APIRouter()
 # Role codes that may be held via a position.
 # SA and TA are not position-based — they're platform/tenant-admin level.
 ALLOWED_POSITION_ROLE_CODES = frozenset({"NM", "RM", "LM", "WM", "AU", "RT"})
+
+
+def _is_duplicate_title_violation(exc: IntegrityError) -> bool:
+    """True if this IntegrityError wraps a uq_positions_node_title_active violation."""
+    orig = exc.orig
+    return (
+        isinstance(orig, asyncpg.UniqueViolationError)
+        and orig.constraint_name == "uq_positions_node_title_active"
+    )
+
+
+def _duplicate_title_http_exception() -> HTTPException:
+    return HTTPException(
+        status_code=409,
+        detail={
+            "code":    "DUPLICATE_POSITION_TITLE",
+            "message": "A position with this title already exists at this node.",
+        },
+    )
 
 
 # ── Pydantic schemas ──────────────────────────────────────────────────────────
@@ -252,18 +273,23 @@ async def create_position(
         raise HTTPException(status_code=404, detail="Node not found in this tenant")
 
     pos_id = uuid.uuid4()
-    await db.execute(
-        text("""
-            INSERT INTO positions
-              (id, tenant_id, node_id, title, role_code, reports_to_position_id)
-            VALUES (:id, :tid, :nid, :title, :role, :reports_to)
-        """),
-        {
-            "id": str(pos_id), "tid": str(tenant_id), "nid": str(node_id),
-            "title": body.title, "role": body.role_code,
-            "reports_to": str(body.reports_to_position_id) if body.reports_to_position_id else None,
-        },
-    )
+    try:
+        await db.execute(
+            text("""
+                INSERT INTO positions
+                  (id, tenant_id, node_id, title, role_code, reports_to_position_id)
+                VALUES (:id, :tid, :nid, :title, :role, :reports_to)
+            """),
+            {
+                "id": str(pos_id), "tid": str(tenant_id), "nid": str(node_id),
+                "title": body.title, "role": body.role_code,
+                "reports_to": str(body.reports_to_position_id) if body.reports_to_position_id else None,
+            },
+        )
+    except IntegrityError as exc:
+        if _is_duplicate_title_violation(exc):
+            raise _duplicate_title_http_exception() from exc
+        raise
 
     # Fetch reports_to title if set
     rp_title: Optional[str] = None
@@ -325,16 +351,21 @@ async def update_position(
     new_reports_to = body.reports_to_position_id   if "reports_to_position_id" in body.model_fields_set \
                      else row.reports_to_position_id
 
-    await db.execute(
-        text("""
-            UPDATE positions
-            SET title = :title, role_code = :role, reports_to_position_id = :rpt, updated_at = now()
-            WHERE id = :pid AND tenant_id = :tid
-        """),
-        {"title": new_title, "role": new_role_code,
-         "rpt": str(new_reports_to) if new_reports_to else None,
-         "pid": str(position_id), "tid": str(tenant_id)},
-    )
+    try:
+        await db.execute(
+            text("""
+                UPDATE positions
+                SET title = :title, role_code = :role, reports_to_position_id = :rpt, updated_at = now()
+                WHERE id = :pid AND tenant_id = :tid
+            """),
+            {"title": new_title, "role": new_role_code,
+             "rpt": str(new_reports_to) if new_reports_to else None,
+             "pid": str(position_id), "tid": str(tenant_id)},
+        )
+    except IntegrityError as exc:
+        if _is_duplicate_title_violation(exc):
+            raise _duplicate_title_http_exception() from exc
+        raise
 
     # Cascade title change into approval_steps JSONB so display names stay in sync
     if body.title is not None and body.title != row.title:

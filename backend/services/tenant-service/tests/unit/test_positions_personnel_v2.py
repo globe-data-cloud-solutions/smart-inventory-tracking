@@ -42,8 +42,10 @@ from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import UUID, uuid4
 
+import asyncpg
 import pytest
 from fastapi import HTTPException
+from sqlalchemy.exc import IntegrityError
 
 TENANT_ID   = "aaaaaaaa-0000-0000-0000-000000000001"
 NODE_ID     = "bbbbbbbb-0000-0000-0000-000000000001"
@@ -110,6 +112,24 @@ _GRANT_ALL = patch(
 )
 
 
+def _unique_violation(constraint_name: str) -> IntegrityError:
+    """Build a sqlalchemy IntegrityError wrapping an asyncpg UniqueViolationError,
+    matching what asyncpg+SQLAlchemy actually raise on a constraint violation."""
+    orig = asyncpg.exceptions.UniqueViolationError("duplicate key value")
+    orig.constraint_name = constraint_name
+    return IntegrityError("INSERT/UPDATE", {}, orig)
+
+
+def _db_seq_raising(*returns: Any, raises: Exception) -> AsyncMock:
+    """Like _db_seq, but the call AFTER the given `returns` raises `raises` instead
+    of returning a result — used to simulate a DB constraint violation on the
+    INSERT/UPDATE itself rather than on a preceding lookup."""
+    db = _db_seq(*returns)
+    prior_effects = list(db.execute.side_effect)
+    db.execute = AsyncMock(side_effect=prior_effects + [raises])
+    return db
+
+
 # ── Test 1 & 2: Position creation ────────────────────────────────────────────
 
 @pytest.mark.unit
@@ -154,6 +174,47 @@ class TestPositionCreate:
                 )
             assert exc_info.value.status_code == 422
             assert exc_info.value.detail["code"] == "INVALID_ROLE_CODE"
+
+    async def test_position_create_duplicate_title_returns_409(self) -> None:
+        """POST /nodes/{node_id}/positions converts the uq_positions_node_title_active
+        IntegrityError into a clean 409 DUPLICATE_POSITION_TITLE instead of a raw 500."""
+        from routers.positions import create_position, PositionCreate
+
+        node_row = _row(id=NODE_ID)
+        db = _db_seq_raising(node_row, raises=_unique_violation("uq_positions_node_title_active"))
+
+        with _GRANT_ALL, pytest.raises(HTTPException) as exc_info:
+            await create_position(
+                tenant_id=UUID(TENANT_ID),
+                node_id=UUID(NODE_ID),
+                body=PositionCreate(title="WH Manager North", role_code="WM"),
+                user=_Caller(),
+                db=db,
+            )
+        assert exc_info.value.status_code == 409
+        assert exc_info.value.detail["code"] == "DUPLICATE_POSITION_TITLE"
+
+    async def test_position_update_duplicate_title_returns_409(self) -> None:
+        """PATCH /positions/{id} renaming to an existing title at the same node hits
+        the same constraint — also converted to a clean 409, not a raw 500."""
+        from routers.positions import update_position, PositionUpdate
+
+        existing_row = _row(
+            id=POSITION_ID, title="WH Manager North", role_code="WM",
+            reports_to_position_id=None, is_active=True, rp_title=None,
+        )
+        db = _db_seq_raising(existing_row, raises=_unique_violation("uq_positions_node_title_active"))
+
+        with _GRANT_ALL, pytest.raises(HTTPException) as exc_info:
+            await update_position(
+                tenant_id=UUID(TENANT_ID),
+                position_id=UUID(POSITION_ID),
+                body=PositionUpdate(title="WH Manager South"),  # collides with an existing position
+                user=_Caller(),
+                db=db,
+            )
+        assert exc_info.value.status_code == 409
+        assert exc_info.value.detail["code"] == "DUPLICATE_POSITION_TITLE"
 
     async def test_position_delete_blocked_active_personnel(self) -> None:
         """DELETE /positions/{id} raises 422 when personnel are actively assigned."""
