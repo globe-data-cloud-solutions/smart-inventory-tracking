@@ -753,14 +753,22 @@ async def main() -> None:
         # --PART 8 — APPROVAL RULES ───────────────────────────────────────────
         print("\n[PART 8] Creating approval rules …")
         try:
-            # --8a Self-approval policies (transfers) ─────────────────────────
-            # Controls the max qty a role can self-approve without escalating
-            # unique: (tenant_id, role_code, level_number)
+            # --8a Self-approval policies (unified: transfers + adjustment) ───
+            # Controls the max qty a role can self-approve without escalating.
+            # unique: (tenant_id, role_code, level_number) — transfer_types is
+            # NOT part of the key, so one row per (role_code, level_number)
+            # covers all transfer types. Clean slate + upsert for idempotency.
+            await s.execute(
+                text("DELETE FROM self_approval_policies WHERE tenant_id = :tid"),
+                {"tid": T07_ID},
+            )
             sap_rows = [
-                ("NM", 1, 50000),
-                ("RM", 2, 20000),
-                ("RM", 3, 10000),
-                ("WM", 4,  5000),
+                # (role_code, level_number, qty_limit)  — None = unlimited
+                ("NM", 1, None),
+                ("RM", 2, 10000),
+                ("RM", 3,  5000),
+                ("WM", 4,  1000),
+                ("WM", 5,   500),
             ]
             for role_code, level_num, qty_limit in sap_rows:
                 await s.execute(
@@ -771,7 +779,7 @@ async def main() -> None:
                              is_active)
                         VALUES
                             (:tid, :role, :lvl,
-                             ARRAY['PULL','PUSH','SISTER']::VARCHAR(20)[],
+                             ARRAY['PULL','PUSH','SISTER','ADJUSTMENT']::VARCHAR(20)[],
                              'QUANTITY', :qty, true)
                         ON CONFLICT (tenant_id, role_code, level_number) DO UPDATE SET
                             qty_limit     = EXCLUDED.qty_limit,
@@ -779,44 +787,6 @@ async def main() -> None:
                             transfer_types = EXCLUDED.transfer_types
                     """),
                     {"tid": T07_ID, "role": role_code, "lvl": level_num, "qty": qty_limit},
-                )
-
-            # --8a-adj ADJUSTMENT self-approval policies ─────────────────────
-            # Separate ADJUSTMENT-specific limits (tighter than PULL/PUSH/SISTER).
-            # Delete ADJUSTMENT-only rows first so this block is fully idempotent.
-            await s.execute(
-                text("""
-                    DELETE FROM self_approval_policies
-                    WHERE tenant_id = :tid
-                      AND transfer_types = ARRAY['ADJUSTMENT']::VARCHAR(20)[]
-                """),
-                {"tid": T07_ID},
-            )
-            adj_sap_data = [
-                # (role_code, level_number, qty_limit)  — None = unlimited
-                ("NM", 1, None),
-                ("RM", 2, 10000),
-                ("RM", 3,  5000),
-                ("WM", 4,  1000),
-            ]
-            for role_code, level_num, qty_limit in adj_sap_data:
-                await s.execute(
-                    text("""
-                        INSERT INTO self_approval_policies
-                            (tenant_id, role_code, level_number,
-                             transfer_types, threshold_type, qty_limit,
-                             is_active)
-                        VALUES
-                            (:tid, :role, :lvl,
-                             ARRAY['ADJUSTMENT']::VARCHAR(20)[],
-                             'QUANTITY', :qty, true)
-                    """),
-                    {
-                        "tid":  T07_ID,
-                        "role": role_code,
-                        "lvl":  level_num,
-                        "qty":  qty_limit,
-                    },
                 )
 
             # --8b Adjustment self-approval (adjustment_approval_rules) ───────
