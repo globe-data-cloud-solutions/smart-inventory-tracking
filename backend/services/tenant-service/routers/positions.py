@@ -41,6 +41,7 @@ class PositionCreate(BaseModel):
 
 class PositionUpdate(BaseModel):
     title: Optional[str] = None
+    role_code: Optional[str] = None
     reports_to_position_id: Optional[uuid.UUID] = None
 
 
@@ -295,7 +296,7 @@ async def update_position(
     user=Depends(get_current_user),
     db: AsyncSession = Depends(get_db_session_for_tenant),
 ) -> SuccessResponse[PositionOut]:
-    """Update position title or reporting line. role_code is immutable after creation."""
+    """Update position title, role, or reporting line."""
     row = (await db.execute(
         text("""
             SELECT p.id, p.title, p.role_code, p.reports_to_position_id,
@@ -309,17 +310,29 @@ async def update_position(
     if not row:
         raise HTTPException(status_code=404, detail="Position not found")
 
+    if body.role_code is not None and body.role_code not in ALLOWED_POSITION_ROLE_CODES:
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "code":    "INVALID_ROLE_CODE",
+                "message": f"role_code '{body.role_code}' is not permitted for positions. "
+                           f"Allowed: {sorted(ALLOWED_POSITION_ROLE_CODES)}",
+            },
+        )
+
     new_title      = body.title                    if body.title      is not None else row.title
+    new_role_code  = body.role_code                if body.role_code  is not None else row.role_code
     new_reports_to = body.reports_to_position_id   if "reports_to_position_id" in body.model_fields_set \
                      else row.reports_to_position_id
 
     await db.execute(
         text("""
             UPDATE positions
-            SET title = :title, reports_to_position_id = :rpt, updated_at = now()
+            SET title = :title, role_code = :role, reports_to_position_id = :rpt, updated_at = now()
             WHERE id = :pid AND tenant_id = :tid
         """),
-        {"title": new_title, "rpt": str(new_reports_to) if new_reports_to else None,
+        {"title": new_title, "role": new_role_code,
+         "rpt": str(new_reports_to) if new_reports_to else None,
          "pid": str(position_id), "tid": str(tenant_id)},
     )
 
@@ -360,7 +373,7 @@ async def update_position(
     return SuccessResponse(data=PositionOut(
         id=row.id,
         title=new_title,
-        role_code=row.role_code,
+        role_code=new_role_code,
         reports_to_position_id=new_reports_to,
         reports_to_title=rp_title,
         current_holder=None,
