@@ -48,8 +48,17 @@ SMART uses a fixed set of roles. These are defined by the platform and cannot be
 | National Manager | NM | Full tenant | Senior operational role — approves high-value transfers, oversees all facilities, creates products. |
 | Regional Manager | RM | Regional scope | Mid-level role — approves transfers within their region, manages regional stock. |
 | Warehouse Manager | WM | Warehouse scope | Operational role — creates transfers, receives stock, submits adjustments at their warehouse. |
-| Logistics Manager | LM | Tenant-wide | Read-only operational view — monitors transfers and stock movements across the organisation. |
+| Logistics Manager | LM | Node-scoped (or tenant-wide if created without a position) | Read-only operational view — monitors transfers and stock movements. Scoped to their assigned node when given a position; see note below. |
 | Auditor | AU | Tenant-wide | Read-only compliance role — views all audit logs, transactions, and reports. Cannot create or modify anything. |
+
+> **Logistics Manager (LM) scope:** Logistics Managers are scoped to their assigned
+> node. An LM given a position at the factory level sees that factory's data; an LM
+> given a position at a warehouse sees only that warehouse. *(Visibility does not yet
+> extend to descendant nodes beneath the assigned node — e.g. an LM at the factory
+> level does not currently see data scoped to specific sub-warehouses below it. This
+> is a known platform limitation, tracked for a future update.)* An LM can also be
+> created **without** a position (a tenant-wide account) — that account keeps
+> unrestricted, tenant-wide read access since it has no node to scope to.
 
 ### Role Hierarchy
 TA (highest tenant authority)
@@ -60,7 +69,7 @@ TA (highest tenant authority)
 
 └── WM (Warehouse level)
 
-LM (cross-cutting, read-mostly)
+LM (node-scoped when assigned a position; tenant-wide read-only otherwise)
 
 AU (cross-cutting, read-only)
 
@@ -72,7 +81,10 @@ When you create a **Position** (Step 3), you assign it one of these role codes:
 - **L2 nodes** (e.g. Regional Center) → assign **RM** positions
 - **L3 nodes** (e.g. Sub Region) → assign **RM** positions
 - **L4 nodes** (e.g. Warehouse Area, stock-holding) → assign **WM** positions
-- **Tenant-wide** (not tied to a node) → **AU** and **LM** positions
+- **LM** positions can be created at **any node level** — the LM is then scoped to
+  that exact node (see note above)
+- **Tenant-wide** (not tied to a node) → **AU** positions, and **LM** accounts
+  created without a position
 
 > **Note:** The TA role is your administrator account only — you do not create TA positions for regular staff. NM is the highest role your operational staff will use.
 

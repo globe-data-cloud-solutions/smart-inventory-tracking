@@ -1347,6 +1347,41 @@ SA (10) > TA (9) > NM (8) > RM (7) > WM (6) = LM (6) > SA_GT (4) > RT (3) > AU (
 
 Users may not assign roles at or above their own level.
 
+### Role scope — facility-scoped vs tenant-wide
+
+`FACILITY_SCOPED_ROLES` in `backend/shared/permissions/middleware.py` determines which
+roles are restricted to their own assigned node for `warehouse_id`-scoped actions:
+
+```
+FACILITY_SCOPED_ROLES = {"WM", "LM", "SA_GT", "RT"}
+```
+
+```
+WM:    node-scoped. Scope = the position's assigned node (exact match only).
+LM:    node-scoped. Scope = the position's assigned node (exact match only).
+       A tenant-wide LM account (system_role="LM", created without a position)
+       has warehouse_id=None in its JWT and is NOT subject to this check at all
+       — it keeps unrestricted tenant-wide read access. Node-scoping only
+       applies once an LM is assigned a position at a specific node.
+SA_GT, RT: node-scoped. Scope = the position's assigned node (exact match only).
+TA, NM, RM, AU, SA: NOT facility-scoped — operate across all warehouses within
+       their tenant. Their warehouse_id JWT claim (if present) is a home
+       facility, not a cage.
+```
+
+> **Known gap — exact node match only, no descendant traversal.** Despite the
+> "enterprise WMS" expectation that an LM/WM at a higher hierarchy level (e.g. L1)
+> should see all descendant nodes beneath it, the live ABAC check in
+> `check_permission()` is a flat string comparison (`user.warehouse_id ==
+> resource.warehouse_id`) — it does **not** walk `org_node_hierarchy` to resolve
+> a node's descendant subtree. A `get_authority_scope()`-style function that does
+> this exists only in archived dead code
+> (`backend/services/tenant-service/routers/_ARCHIVED_personnel_pre031.py`) and
+> was never revived. `check_permission()` has no `db` parameter, so implementing
+> true descendant-scoping would require threading a db session through every
+> `@require_permission`-decorated route in every service — tracked as a follow-up,
+> not yet implemented. This applies equally to WM, LM, SA_GT, and RT today.
+
 ### JWT payload — required fields
 
 ```python

@@ -53,10 +53,29 @@ async def check_permission(
     if "warehouse_id" in action.abac:
         user_wh = getattr(user, "warehouse_id", None)
         resource_wh = resource.get("warehouse_id")
-        # Warehouse scope is only enforced for facility-scoped roles (WM, SA_GT, RT).
-        # Management roles (TA, NM, RM, LM, AU, SA) operate across warehouses within
+        # Warehouse scope is enforced for facility-scoped roles (WM, LM, SA_GT, RT).
+        # Management roles (TA, NM, RM, AU, SA) operate across warehouses within
         # their authority — their warehouse_id JWT claim is a home facility, not a cage.
-        FACILITY_SCOPED_ROLES = {"WM", "SA_GT", "RT"}
+        #
+        # LM was added here per design decision: LM should be node-scoped like WM,
+        # not tenant-wide. A node-assigned LM's warehouse_id JWT claim is the node
+        # their position belongs to (same mechanism as WM — see auth.py's
+        # _lookup_user_with_position). A tenant-wide LM (system_role="LM", no
+        # position) has warehouse_id=None, so user_wh is falsy and this check is
+        # skipped entirely — that account type intentionally keeps tenant-wide
+        # access, since there is no node to scope it to.
+        #
+        # TODO(scope-gap): this is an EXACT node match only (user_wh == resource_wh),
+        # not "node + all descendant nodes" — there is no live ancestry-walking
+        # implementation. get_authority_scope(), which would compute a node's full
+        # descendant subtree via org_node_hierarchy, exists only in archived dead
+        # code (_ARCHIVED_personnel_pre031.py) and was never wired into this
+        # function. Implementing true descendant-scoping here would require adding
+        # a db session parameter to check_permission() and every call site across
+        # all services — out of scope for this fix. Applies equally to WM, SA_GT,
+        # RT, and LM today: each sees only their own exact assigned node, not
+        # subordinate nodes beneath it.
+        FACILITY_SCOPED_ROLES = {"WM", "LM", "SA_GT", "RT"}
         if user.role in FACILITY_SCOPED_ROLES and user_wh and resource_wh and \
                 str(user_wh).lower() != str(resource_wh).lower():
             await audit_log(user, action.id, resource, "DENIED", "ABAC_DENIED: warehouse scope")

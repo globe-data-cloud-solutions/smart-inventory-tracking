@@ -40,6 +40,9 @@ OTHER_TENANT = _User("u-ot",  TENANT_B, WAREHOUSE_A, None, "WM")
 WRONG_WH     = _User("u-wwh", TENANT_A, WAREHOUSE_B, None, "WM")
 NM_USER      = _User("u-nm",  TENANT_A, None,        None, "NM")
 SYS_USER     = _User("u-sys", TENANT_A, None,        None, "SYS")
+LM_WITH_NODE    = _User("u-lm-node", TENANT_A, WAREHOUSE_A, None, "LM")  # position-assigned LM
+LM_WRONG_NODE   = _User("u-lm-wwh",  TENANT_A, WAREHOUSE_B, None, "LM")  # position-assigned, different node
+LM_TENANT_WIDE  = _User("u-lm-tw",   TENANT_A, None,        None, "LM")  # system_role="LM", no position
 
 RECEIVE_PAYLOAD = {
     "product_id": "aaaaaaaa-0000-0000-0000-000000000001",
@@ -164,6 +167,64 @@ class TestInventoryReceivePermissions:
         # WRONG_WH.warehouse_id = WAREHOUSE_B, resource.warehouse_id = WAREHOUSE_A → denied
         assert not result.allowed
         assert "warehouse" in result.reason
+
+    async def test_05b_lm_with_node_scoped_to_assigned_node(self) -> None:
+        """LM was added to FACILITY_SCOPED_ROLES — a position-assigned LM at
+        WAREHOUSE_B requesting a resource scoped to WAREHOUSE_A is denied, the
+        same way WM is denied in test_05. Confirms LM is node-scoped, not
+        tenant-wide, once given a position."""
+        from shared.permissions.middleware import check_permission
+        from shared.permissions.registry import PERMISSIONS
+
+        with patch(
+            "shared.permissions.middleware.get_role_permission",
+            new=AsyncMock(return_value=_mock_full_grant()),
+        ), patch("shared.permissions.middleware.audit_log", new=AsyncMock()):
+            result = await check_permission(
+                LM_WRONG_NODE,
+                PERMISSIONS.INVENTORY_RECEIVE,
+                {"tenant_id": TENANT_A, "warehouse_id": WAREHOUSE_A},
+            )
+        assert not result.allowed
+        assert "warehouse" in result.reason
+
+    async def test_05c_lm_with_node_allowed_at_own_node(self) -> None:
+        """The same position-assigned LM, requesting a resource scoped to their
+        OWN assigned node (WAREHOUSE_A), is allowed."""
+        from shared.permissions.middleware import check_permission
+        from shared.permissions.registry import PERMISSIONS
+
+        with patch(
+            "shared.permissions.middleware.get_role_permission",
+            new=AsyncMock(return_value=_mock_full_grant()),
+        ), patch("shared.permissions.middleware.audit_log", new=AsyncMock()):
+            result = await check_permission(
+                LM_WITH_NODE,
+                PERMISSIONS.INVENTORY_RECEIVE,
+                {"tenant_id": TENANT_A, "warehouse_id": WAREHOUSE_A},
+            )
+        assert result.allowed
+
+    async def test_05d_lm_without_node_keeps_tenant_wide_access(self) -> None:
+        """A tenant-wide LM (system_role='LM', created without a position) has
+        warehouse_id=None in its JWT. Documented/correct behavior: the warehouse
+        check is skipped entirely (user_wh is falsy), so this account type keeps
+        unrestricted tenant-wide read access — there's no node to scope it to.
+        This is graceful handling, not a bug: tenant-wide LM is a deliberate,
+        distinct account type from a node-assigned LM position."""
+        from shared.permissions.middleware import check_permission
+        from shared.permissions.registry import PERMISSIONS
+
+        with patch(
+            "shared.permissions.middleware.get_role_permission",
+            new=AsyncMock(return_value=_mock_full_grant()),
+        ), patch("shared.permissions.middleware.audit_log", new=AsyncMock()):
+            result = await check_permission(
+                LM_TENANT_WIDE,
+                PERMISSIONS.INVENTORY_RECEIVE,
+                {"tenant_id": TENANT_A, "warehouse_id": WAREHOUSE_A},
+            )
+        assert result.allowed
 
     async def test_06_abac_cross_tenant_ownership(self) -> None:
         """SA role can access any tenant; non-SA role blocked by tenant mismatch."""
