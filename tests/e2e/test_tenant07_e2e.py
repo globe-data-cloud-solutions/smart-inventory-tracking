@@ -3906,6 +3906,7 @@ def print_report() -> None:
         "GROUP 18 — i18n Verification":    [r for r in results if r.name.startswith("18.")],
         "GROUP 19 — Security":             [r for r in results if r.name.startswith("19.")],
         "GROUP 20 — Satellite Depot Scope": [r for r in results if r.name.startswith("20.")],
+        "GROUP 21 — Satellite Depot Operations": [r for r in results if r.name.startswith("21.")],
     }
 
     total_pass = total_fail = total_skip = 0
@@ -4086,6 +4087,301 @@ def group20_satellite_scope() -> None:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# GROUP 21 — Satellite Depot Operations (Phase 2)
+# ─────────────────────────────────────────────────────────────────────────────
+def group21_satellite_operations() -> None:
+    print("\n[GROUP 21] Satellite Depot Operations (Phase 2)")
+
+    # G21 prereq: replenish WHA1-SAT1 P1 before each run
+    # Random key (same pattern as GROUP 8's prereq) — always adds
+    # 500 units before the group runs, since receive is additive
+    # (not SET), compensating for prior runs' adjustment drains.
+    api_post("/api/v1/inventory/receive/", EMAIL_WHA1_SAT1_WM, {
+        "product_id": PROD_P1,
+        "warehouse_id": NODE_WHA1_SAT1,
+        "quantity": 500,
+        "idempotency_key":
+            f"e2e:sat1:p1:g21-prereq:{uuid.uuid4().hex[:12]}",
+        "source": "E2E_TEST",
+    })
+
+    # ── PART A: Stock verification after seeding ──────────────
+
+    # 21.1 WHA1-SAT1 has P1 stock ≥ 200 (seeded in PART 9)
+    r = api_get("/api/v1/inventory/analytics/stock",
+                EMAIL_WHA1_SAT1_WM,
+                params={"warehouse_id": NODE_WHA1_SAT1})
+    stock = data(r) if isinstance(data(r), list) else []
+    p1 = next((s for s in stock
+               if str(s.get("product_id","")) == PROD_P1), None)
+    if r.status_code == 200 and p1 and float(p1.get("current_stock",0)) >= 200:
+        ok("21.1 WHA1-SAT1 P1 stock ≥ 200",
+           f"current_stock={p1.get('current_stock')}")
+    else:
+        fail("21.1 WHA1-SAT1 P1 stock ≥ 200",
+             f"status={r.status_code}, p1={p1}")
+
+    # 21.2 Parent WM (WHA1) sees satellite P1 stock via
+    # descendant scope — proves scope + stock together
+    r = api_get("/api/v1/inventory/analytics/stock",
+                EMAIL_WHA1_WM,
+                params={"warehouse_id": NODE_WHA1_SAT1})
+    stock = data(r) if isinstance(data(r), list) else []
+    p1 = next((s for s in stock
+               if str(s.get("product_id","")) == PROD_P1), None)
+    if r.status_code == 200 and p1 and float(p1.get("current_stock",0)) >= 200:
+        ok("21.2 Parent WM sees satellite P1 stock ≥ 200",
+           f"current_stock={p1.get('current_stock')}")
+    else:
+        fail("21.2 Parent WM sees satellite P1 stock ≥ 200",
+             f"status={r.status_code}, p1={p1}")
+
+    # ── PART B: PULL transfer — satellite pulls from parent ───
+
+    # 21.3 Prereq: ensure WHA1 has P1 stock for satellite to pull
+    prereq_key_21 = "e2e:wha1:receive:p1:sat-prereq:v1"
+    r = api_post("/api/v1/inventory/receive/", EMAIL_WHA1_WM, {
+        "product_id": PROD_P1,
+        "warehouse_id": NODE_WHA1,
+        "quantity": 600,
+        "idempotency_key": prereq_key_21,
+        "source": "E2E_TEST",
+    })
+    if r.status_code in (201, 409):
+        ok("21.3 Prereq: WHA1 receives P1 for satellite PULL tests",
+           f"status={r.status_code}")
+    else:
+        fail("21.3 Prereq: WHA1 P1 stock",
+             f"status={r.status_code}, body={r.text[:200]}")
+
+    # 21.4 Satellite WM creates PULL from parent WH
+    # (qty=200 ≤ 500 — should auto-approve per L5 pull rule priority 6)
+    r = api_post("/api/v1/inventory/transfers/", EMAIL_WHA1_SAT1_WM, {
+        "transfer_type": "PULL",
+        "from_warehouse_id": NODE_WHA1,
+        "to_warehouse_id": NODE_WHA1_SAT1,
+        "lines": [{"product_id": PROD_P1, "quantity": 200}],
+        "notes": "E2E — satellite PULL from parent WH, small qty",
+    })
+    if r.status_code == 201:
+        state["sat_pull_id"] = str(
+            data(r).get("transfer_id") or data(r).get("id",""))
+        ok("21.4 Satellite WM creates PULL from parent WH (DRAFT)",
+           f"id={state['sat_pull_id']}")
+    else:
+        fail("21.4 Satellite WM creates PULL from parent WH",
+             f"status={r.status_code}, body={r.text[:200]}")
+        state["sat_pull_id"] = None
+
+    # 21.5 Satellite WM submits PULL
+    if state.get("sat_pull_id"):
+        r = api_post(
+            f"/api/v1/inventory/transfers/{state['sat_pull_id']}/submit",
+            EMAIL_WHA1_SAT1_WM)
+        status = data(r).get("status","")
+        if r.status_code == 200 and status in (
+                "APPROVED","PENDING_REVIEW","PENDING_APPROVAL"):
+            ok("21.5 Satellite PULL submitted", f"status={status}")
+            state["sat_pull_status"] = status
+        else:
+            fail("21.5 Satellite PULL submitted",
+                 f"status_code={r.status_code}, status={status}")
+            state["sat_pull_status"] = status
+    else:
+        skip("21.5 Submit satellite PULL", "no sat_pull_id")
+        state["sat_pull_status"] = None
+
+    # 21.6 If PULL needs review — SRA RM reviews it
+    if state.get("sat_pull_id") and \
+            state.get("sat_pull_status") == "PENDING_REVIEW":
+        r = api_post(
+            f"/api/v1/inventory/transfers/{state['sat_pull_id']}/review",
+            EMAIL_SRA_RM)
+        status = data(r).get("status","")
+        if r.status_code == 200 and status in (
+                "PENDING_APPROVAL","APPROVED"):
+            ok("21.6 SRA RM reviews satellite PULL",
+               f"status={status}")
+        else:
+            fail("21.6 SRA RM reviews satellite PULL",
+                 f"status_code={r.status_code}, status={status}")
+    elif state.get("sat_pull_status") == "APPROVED":
+        ok("21.6 Satellite PULL auto-approved (no review needed)")
+    else:
+        skip("21.6 SRA RM reviews satellite PULL",
+             f"status={state.get('sat_pull_status')}")
+
+    # ── PART C: PUSH transfer — deferred ─────────────────────
+    # PUSH-to-satellite (L4→L5) is not currently supported:
+    # - L4 WMs cannot initiate PUSH (level_perms: can_initiate=False)
+    # - L2 RMs can initiate PUSH but hold no stock (non-stock-holding nodes)
+    # The approval rule comment in setup_tenant07.py PART 8c assumed
+    # WMs could push to satellites — this conflicts with the tenant-wide
+    # level_perms model. Resolution requires a targeted permission
+    # carve-out for L4→L5 PUSH, tracked for a future session.
+    # PULL (21.4–21.6) already covers the satellite stock-replenishment
+    # workflow from the satellite's perspective.
+
+    state["sat_push_id"] = None
+    state["sat_push_large_id"] = None
+    state["sat_push_large_status"] = None
+
+    skip("21.7 PUSH from parent WH to satellite",
+         "L4→L5 PUSH not supported under current level_perms — "
+         "see PART C comment above")
+    skip("21.8 Submit parent PUSH to satellite",
+         "depends on 21.7")
+    skip("21.9 Large PUSH from parent WH to satellite",
+         "L4→L5 PUSH not supported under current level_perms")
+    skip("21.10 Submit large PUSH to satellite",
+         "depends on 21.9")
+    skip("21.11 Approve large PUSH to satellite",
+         "depends on 21.9")
+
+    # ── PART D: Adjustments at satellite ─────────────────────
+
+    # 21.12 Satellite WM creates small adjustment
+    # (qty_delta=-10, ≤500 L5 limit — should auto-approve)
+    adj_key_sat_small = f"e2e:adj:sat:small:{uuid.uuid4().hex[:8]}"
+    r = api_post("/api/v1/inventory/adjustments/", EMAIL_WHA1_SAT1_WM, {
+        "warehouse_id": NODE_WHA1_SAT1,
+        "product_id": PROD_P1,
+        "quantity_delta": -10,
+        "reason_code": "DAMAGE",
+        "idempotency_key": adj_key_sat_small,
+        "notes": "E2E — small satellite adjustment",
+    })
+    if r.status_code == 201:
+        state["sat_adj_small_id"] = str(
+            data(r).get("adjustment_id") or data(r).get("id",""))
+        ok("21.12 Satellite WM creates small adjustment (DRAFT)",
+           f"id={state['sat_adj_small_id']}")
+    else:
+        fail("21.12 Satellite WM creates small adjustment",
+             f"status={r.status_code}, body={r.text[:200]}")
+        state["sat_adj_small_id"] = None
+
+    # 21.13 Submit small satellite adjustment → auto-approve (≤500)
+    if state.get("sat_adj_small_id"):
+        r = api_post(
+            f"/api/v1/inventory/adjustments/"
+            f"{state['sat_adj_small_id']}/submit",
+            EMAIL_WHA1_SAT1_WM)
+        status = data(r).get("status","")
+        if r.status_code == 200 and status in (
+                "APPROVED","POSTED","PENDING_APPROVAL"):
+            ok("21.13 Small satellite adjustment submitted",
+               f"status={status}")
+        else:
+            fail("21.13 Small satellite adjustment submitted",
+                 f"status_code={r.status_code}, status={status}")
+    else:
+        skip("21.13 Submit small satellite adjustment",
+             "no sat_adj_small_id")
+
+    # 21.14-prereq: ensure WHA1-SAT1 has enough P1 for large
+    # adjustment test (delta=-600 needs ≥ 600 available)
+    api_post("/api/v1/inventory/receive/", EMAIL_WHA1_SAT1_WM, {
+        "product_id": PROD_P1,
+        "warehouse_id": NODE_WHA1_SAT1,
+        "quantity": 700,
+        "idempotency_key":
+            f"e2e:sat1:p1:adj-prereq:{uuid.uuid4().hex[:12]}",
+        "source": "E2E_TEST",
+    })
+
+    # 21.14 Satellite WM creates large adjustment
+    # (qty_delta=-600 > 500 L5 limit — should route to approver)
+    adj_key_sat_large = f"e2e:adj:sat:large:{uuid.uuid4().hex[:8]}"
+    r = api_post("/api/v1/inventory/adjustments/", EMAIL_WHA1_SAT1_WM, {
+        "warehouse_id": NODE_WHA1_SAT1,
+        "product_id": PROD_P1,
+        "quantity_delta": -600,
+        "reason_code": "DAMAGE",
+        "idempotency_key": adj_key_sat_large,
+        "notes": "E2E — large satellite adjustment, needs approval",
+    })
+    if r.status_code == 201:
+        state["sat_adj_large_id"] = str(
+            data(r).get("adjustment_id") or data(r).get("id",""))
+        ok("21.14 Satellite WM creates large adjustment (DRAFT)",
+           f"id={state['sat_adj_large_id']}")
+    else:
+        fail("21.14 Satellite WM creates large adjustment",
+             f"status={r.status_code}, body={r.text[:200]}")
+        state["sat_adj_large_id"] = None
+
+    # 21.15 Submit large satellite adjustment → PENDING_APPROVAL
+    if state.get("sat_adj_large_id"):
+        r = api_post(
+            f"/api/v1/inventory/adjustments/"
+            f"{state['sat_adj_large_id']}/submit",
+            EMAIL_WHA1_SAT1_WM)
+        status = data(r).get("status","")
+        if r.status_code == 200 and status in (
+                "PENDING_APPROVAL","APPROVED","POSTED"):
+            ok("21.15 Large satellite adjustment submitted",
+               f"status={status}")
+            state["sat_adj_large_status"] = status
+        else:
+            fail("21.15 Large satellite adjustment submitted",
+                 f"status_code={r.status_code}, status={status}")
+            state["sat_adj_large_status"] = None
+    else:
+        skip("21.15 Submit large satellite adjustment",
+             "no sat_adj_large_id")
+        state["sat_adj_large_status"] = None
+
+    # 21.16 RM/NM approves large satellite adjustment → POSTED
+    if state.get("sat_adj_large_id") and \
+            state.get("sat_adj_large_status") == "PENDING_APPROVAL":
+        r = api_post(
+            f"/api/v1/inventory/adjustments/"
+            f"{state['sat_adj_large_id']}/approve",
+            EMAIL_SRA_RM)
+        status = data(r).get("status","")
+        if r.status_code == 200 and status == "POSTED":
+            ok("21.16 SRA RM approves large satellite adjustment → POSTED")
+        else:
+            fail("21.16 SRA RM approves large satellite adjustment",
+                 f"status_code={r.status_code}, status={status}")
+    elif state.get("sat_adj_large_status") in ("APPROVED","POSTED"):
+        ok("21.16 Large satellite adjustment auto-approved/posted",
+           f"status={state.get('sat_adj_large_status')}")
+    else:
+        skip("21.16 Approve large satellite adjustment",
+             f"status={state.get('sat_adj_large_status')}")
+
+    # ── PART E: Cross-satellite scope checks ──────────────────
+
+    # 21.17 Satellite WM cannot create adjustment at sibling
+    # satellite (scope isolation)
+    adj_key_wrong = f"e2e:adj:sat:wrong-scope:{uuid.uuid4().hex[:8]}"
+    r = api_post("/api/v1/inventory/adjustments/", EMAIL_WHA1_SAT1_WM, {
+        "warehouse_id": NODE_WHB11_SAT1,
+        "product_id": PROD_P1,
+        "quantity_delta": -5,
+        "reason_code": "DAMAGE",
+        "idempotency_key": adj_key_wrong,
+        "notes": "E2E — scope isolation test, should be denied",
+    })
+    if r.status_code == 403:
+        ok("21.17 Satellite WM blocked from sibling satellite adjustment → 403")
+    else:
+        fail("21.17 Satellite WM blocked from sibling satellite adjustment → 403",
+             f"status={r.status_code}",
+             bug="Scope isolation: satellite WM can adjust at unrelated node")
+
+    # ── REMINDER: Add WHB11-SAT1 and WHB21-SAT1 transfer    ──
+    # ── tests once branch-specific approval rules are added. ──
+    # ── Current L5 PULL rules reference "WHA1 WM" position   ──
+    # ── title which only resolves correctly for WHA1-SAT1.   ──
+    # ── WHB11-SAT1 and WHB21-SAT1 need "WHB1-1 WM" and      ──
+    # ── "WHB2-1 WM" position titles respectively in their    ──
+    # ── approval rules. Tracked for next session.            ──
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # Main
 # ─────────────────────────────────────────────────────────────────────────────
 def main() -> None:
@@ -4123,6 +4419,7 @@ def main() -> None:
         group18_i18n,
         group19_security,
         group20_satellite_scope,
+        group21_satellite_operations,
     ]:
         try:
             fn()

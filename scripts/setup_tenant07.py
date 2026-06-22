@@ -1040,6 +1040,10 @@ async def main() -> None:
                               "T07-FG-002": 30}),
                 (NODE_WHB22, {"T07-RM-001": 180, "T07-RM-002": 60,
                               "T07-FG-003": 40}),
+                # Satellite Depots (L5) — Phase 2 operational stock
+                (NODE_WHA1_SAT1,  {"T07-RM-001": 800, "T07-FG-001": 80}),
+                (NODE_WHB11_SAT1, {"T07-RM-001": 150, "T07-FG-001": 50}),
+                (NODE_WHB21_SAT1, {"T07-RM-001": 100, "T07-FG-001": 40}),
             ]
 
             tx_count = 0
@@ -1104,7 +1108,7 @@ async def main() -> None:
             await s.commit()
             if skipped:
                 print(f"  [skip]{skipped} stock entries already existed — skipped")
-            print(f"  [OK]{tx_count} RECEIVE transactions seeded across 7 warehouses")
+            print(f"  [OK]{tx_count} RECEIVE transactions seeded across 10 nodes (7 WH + 3 satellites)")
         except Exception as e:
             abort("PART 9", e)
 
