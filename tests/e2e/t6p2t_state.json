@@ -16,7 +16,8 @@
     "SAT_WHA2": "66f81453-246f-409a-a071-2c7a2370feaf",
     "SAT_WHB1": "42416a79-9a13-4918-acaa-a43286fbb1bd",
     "SAT_WHB2": "c739f492-312e-4f04-982b-790ceb237a73",
-    "WHA3": "2264070d-9ef5-46a6-bcf7-90102a1ac34e"
+    "WHA3": "2264070d-9ef5-46a6-bcf7-90102a1ac34e",
+    "SAT_WHA3": "e1badc24-0001-0004-0000-000000000001"
   },
   "positions": {
     "A_FAC_dir": "25c5a855-ff00-4f14-bd18-5ae64853d0fc",
@@ -37,7 +38,8 @@
     "SAT_WHB1_lead": "c3fe1954-bcd9-4bec-98f2-f467bf7102d5",
     "SAT_WHB1_lead_asst": "29a84282-2cde-4af6-94b2-de3bb92e21df",
     "SAT_WHB2_lead": "2ccc9b19-28c7-4b7b-8e2d-6980ad7a27fe",
-    "SAT_WHB2_lead_asst": "9a03a19c-7873-4d74-acfc-053ff24fbbda"
+    "SAT_WHB2_lead_asst": "9a03a19c-7873-4d74-acfc-053ff24fbbda",
+    "SAT_WHA3_lead": "e1badc24-0002-0004-0000-000000000001"
   },
   "users": {
     "nm_addisfac": {
@@ -189,6 +191,12 @@
       "email": "wm_wha3_sec_g8_007e4d0f80@t6p2t.com",
       "password": "Test@2026",
       "assignment_id": "d4ea3645-2c90-4105-94e4-6fbd1da6b7ee"
+    },
+    "lm_satwha3": {
+      "id": "e1badc24-0003-0004-0000-000000000001",
+      "email": "lm_satwha3@t6p2t.com",
+      "password": "Test@2026",
+      "assignment_id": null
     }
   },
   "transfer_types": {
@@ -209,5 +217,12 @@
   "logo_url_1": "/static/uploads/tenants/logos/472d788ad8a44446ad0a83b473b38241_logo2.png",
   "banner_url_1": "/static/uploads/tenants/banners/02c98d82f8cc4536b91985eec09085d7_banner.png",
   "t07_ta_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIwNzAwMDAwNy0wMjAxLTAwMDAtMDAwMC0wMDAwMDAwMDAwMDEiLCJlbWFpbCI6ImFkbWluQHQwNy5jb20iLCJuYW1lIjoiVDA3IEFkbWluIiwidGVuYW50X2lkIjoiMDcwMDAwMDctMDAwMC0wMDAwLTAwMDAtMDAwMDAwMDAwMDAxIiwicm9sZSI6IlRBIiwid2FyZWhvdXNlX2lkIjpudWxsLCJ3YXJlaG91c2VfbmFtZSI6bnVsbCwicG9zaXRpb25faWQiOm51bGwsInBvc2l0aW9uX3RpdGxlIjoiVGVuYW50IEFkbWluaXN0cmF0b3IiLCJsZXZlbF9udW1iZXIiOjEsInBvc2l0aW9ucyI6W10sImlhdCI6MTc4MjExODMzMiwiZXhwIjoxNzgyMTQ3MTMyfQ.Wz_gXY5Xpd2rZwG14MY0V7Tky-O9QJG2_q8G0c-SksU",
-  "test_product_id": "d6838526-894d-4ae7-a899-66ce2356a7a7"
+  "test_product_id": "d6838526-894d-4ae7-a899-66ce2356a7a7",
+  "products": {
+    "P1": "e1badc24-0301-0000-0000-000000000001",
+    "P2": "e1badc24-0301-0000-0000-000000000002",
+    "P3": "e1badc24-0301-0000-0000-000000000003",
+    "P4": "e1badc24-0301-0000-0000-000000000004",
+    "P5": "e1badc24-0301-0000-0000-000000000005"
+  }
 }
