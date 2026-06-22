@@ -415,6 +415,9 @@ After 5 consecutive failed login attempts, the account is automatically locked f
 **Q: Do I need to create separate adjustment rules for each warehouse or region?**
 Yes. Each adjustment rule applies to the specific node it is configured for. If your organization has multiple warehouses or regions, you must create a separate rule for each one. A rule set for WHA1 will not automatically apply to WHA2 or WHB1. Work through each node systematically to ensure full coverage. A future update will allow you to apply rules across all nodes at the same org level in one step.
 
+**Q: What is the difference between a tenant-wide LM and a node-assigned LM?**
+When creating a Logistics Manager, you have two options. A tenant-wide LM (created without a position assignment) has read visibility across the entire organization — useful for a head logistics coordinator overseeing all warehouses. A node-assigned LM is linked to a specific position at a node and sees only that node's operations — useful for a logistics coordinator dedicated to one warehouse or satellite. Choose based on the staff member's actual operational scope.
+
 ---
 
 ## Setup Checklist
