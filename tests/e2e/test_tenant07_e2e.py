@@ -2809,12 +2809,15 @@ def group16_approval_edge_cases() -> None:
 
     created_g16: list[str] = []
 
-    # 16.1 Transfer at exact WM self-approval limit (qty=5000) → auto-approves
+    # 16.1 Transfer at exact WM self-approval limit (qty=1000) → auto-approves
+    # NODE_SRA stock comes from fixed-key prereqs in GROUP 4 (800) and GROUP 5
+    # (10000), both idempotent across runs — should comfortably cover qty=1000,
+    # but this may still skip with 422 if SRA stock is ever insufficient.
     r = api_post("/api/v1/inventory/transfers/", EMAIL_WHA1_WM, {
         "transfer_type": "PULL",
         "from_warehouse_id": NODE_SRA,
         "to_warehouse_id": NODE_WHA1,
-        "lines": [{"product_id": PROD_P1, "quantity": 5000}],
+        "lines": [{"product_id": PROD_P1, "quantity": 1000}],
         "notes": "E2E G16: boundary — exactly at WM limit",
     })
     if r.status_code == 201:
@@ -2823,24 +2826,24 @@ def group16_approval_edge_cases() -> None:
         r_sub = api_post(f"/api/v1/inventory/transfers/{tid161}/submit", EMAIL_WHA1_WM)
         sub_st_161 = data(r_sub).get("status", "")
         if sub_st_161 == "APPROVED":
-            ok("16.1 Transfer at exact WM limit (qty=5000) auto-approves → APPROVED")
+            ok("16.1 Transfer at exact WM limit (qty=1000) auto-approves → APPROVED")
         elif sub_st_161 == "PENDING_REVIEW":
             fail("16.1 Transfer at exact WM limit should auto-approve",
-                 f"got PENDING_REVIEW (qty=5000 treated as > limit)",
-                 bug="Boundary: qty=5000 at WM limit routes to review; limit may be exclusive not inclusive")
+                 f"got PENDING_REVIEW (qty=1000 treated as > limit)",
+                 bug="Boundary: qty=1000 at WM limit routes to review; limit may be exclusive not inclusive")
         else:
             ok("16.1 Boundary transfer submit", f"status={sub_st_161}")
     elif r.status_code == 422:
         skip("16.1 Boundary test at WM limit", "insufficient P1 at SRA (422)")
     else:
-        fail("16.1 Boundary transfer creation (qty=5000)", f"status={r.status_code}")
+        fail("16.1 Boundary transfer creation (qty=1000)", f"status={r.status_code}")
 
-    # 16.2 Transfer one unit above WM limit (qty=5001) → requires approval
+    # 16.2 Transfer one unit above WM limit (qty=1001) → requires approval
     r = api_post("/api/v1/inventory/transfers/", EMAIL_WHA1_WM, {
         "transfer_type": "PULL",
         "from_warehouse_id": NODE_SRA,
         "to_warehouse_id": NODE_WHA1,
-        "lines": [{"product_id": PROD_P1, "quantity": 5001}],
+        "lines": [{"product_id": PROD_P1, "quantity": 1001}],
         "notes": "E2E G16: one above WM limit",
     })
     if r.status_code == 201:
@@ -2849,18 +2852,18 @@ def group16_approval_edge_cases() -> None:
         r_sub = api_post(f"/api/v1/inventory/transfers/{tid162}/submit", EMAIL_WHA1_WM)
         sub_st_162 = data(r_sub).get("status", "")
         if sub_st_162 in ("PENDING_REVIEW", "PENDING_APPROVAL"):
-            ok("16.2 Transfer one above WM limit (qty=5001) requires approval",
+            ok("16.2 Transfer one above WM limit (qty=1001) requires approval",
                f"status={sub_st_162}")
         elif sub_st_162 == "APPROVED":
             fail("16.2 Transfer above WM limit should require approval",
-                 "got APPROVED — qty=5001 auto-approved",
-                 bug="WM self-approval limit not enforced: qty=5001 (> 5000 limit) auto-approved")
+                 "got APPROVED — qty=1001 auto-approved",
+                 bug="WM self-approval limit not enforced: qty=1001 (> 1000 limit) auto-approved")
         else:
             ok("16.2 Above-limit transfer submit", f"status={sub_st_162}")
     elif r.status_code == 422:
         skip("16.2 One-above-limit test", "insufficient P1 at SRA (422)")
     else:
-        fail("16.2 Above-limit transfer creation (qty=5001)", f"status={r.status_code}")
+        fail("16.2 Above-limit transfer creation (qty=1001)", f"status={r.status_code}")
 
     # 16.3 Reject at PENDING_APPROVAL → REJECTED; re-submit from REJECTED → 422
     r = api_post("/api/v1/inventory/transfers/", EMAIL_WHA1_WM, {
