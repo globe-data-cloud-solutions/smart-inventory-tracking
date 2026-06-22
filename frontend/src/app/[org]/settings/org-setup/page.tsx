@@ -1517,6 +1517,16 @@ function PositionsTab({ tenantId }: { tenantId: string }) {
 
   const allPositions: Position[] = posGroups.flatMap((g) => g.positions);
   const selectedGroup = posGroups.find((g) => g.node_id === selectedNodeId);
+  // position_id -> owning node's name. The "Reports To" picker lists positions
+  // tenant-wide (by design — a position can report up to a different facility),
+  // but without the node name, two same-titled positions at different facilities
+  // (e.g. "Head Manager" at both Jimma WH A and Awassa Metal) are indistinguishable,
+  // so a TA can accidentally wire a position to the wrong facility's manager.
+  const positionNodeMap = useMemo(() => {
+    const m = new Map<string, string>();
+    posGroups.forEach((g) => g.positions.forEach((p) => m.set(p.id, g.node_name)));
+    return m;
+  }, [posGroups]);
 
   const policyMap = useMemo(() => {
     const map = new Map<string, SelfApprovalPolicy>();
@@ -1689,7 +1699,7 @@ function PositionsTab({ tenantId }: { tenantId: string }) {
                     className="w-full border border-gray-300 rounded px-2.5 py-1.5 text-sm bg-white">
                     <option value="">— none —</option>
                     {allPositions.filter((p) => p.id !== editPosId).map((p) => (
-                      <option key={p.id} value={p.id}>{p.title} ({p.role_code})</option>
+                      <option key={p.id} value={p.id}>{p.title} ({p.role_code}) — {positionNodeMap.get(p.id) ?? ""}</option>
                     ))}
                   </select>
                 </div>
@@ -1809,7 +1819,14 @@ function PositionsTab({ tenantId }: { tenantId: string }) {
                             role={pos.role_code}
                             customLabel={selectedGroup ? getRoleLabel(pos.role_code, levels, selectedGroup.level_number) : undefined}
                           />
-                          {pos.reports_to_title ? <span>· Reports to: {pos.reports_to_title}</span> : null}
+                          {pos.reports_to_title ? (
+                            <span>
+                              · Reports to: {pos.reports_to_title}
+                              {pos.reports_to_position_id && positionNodeMap.get(pos.reports_to_position_id) !== selectedGroup?.node_name
+                                ? ` (${positionNodeMap.get(pos.reports_to_position_id) ?? ""})`
+                                : ""}
+                            </span>
+                          ) : null}
                         </p>
                         <p className="text-xs m-0 mt-0.5">
                           {t("position.holder")}: {pos.current_holder
@@ -3264,13 +3281,17 @@ export default function OrgSetupPage() {
         <button type="button" className={tabCls("branding")}       onClick={() => setActiveTab("branding")}>{t("settings.branding") || "Branding"}</button>
       </div>
 
-      {activeTab === "levels"         && <LevelsTab          tenantId={tenantId} />}
-      {activeTab === "tree"           && <TreeTab             tenantId={tenantId} />}
-      {activeTab === "positions"      && <PositionsTab        tenantId={tenantId} />}
-      {activeTab === "transfer-types" && <TransferTypesTab    tenantId={tenantId} />}
-      {activeTab === "approval"       && <ApprovalRulesV2Tab  tenantId={tenantId} />}
-      {activeTab === "personnel"      && <PersonnelV2Tab      tenantId={tenantId} />}
-      {activeTab === "branding"       && <BrandingTab         tenantId={tenantId} />}
+      {/* key={tenantId} on every tab: forces a full unmount/remount on tenant switch
+          so node-scoped local state (selectedNodeId in PositionsTab, addParentId/
+          editNodeId in TreeTab, etc.) can never survive into the next tenant's render —
+          see cross-tenant position leak investigation. */}
+      {activeTab === "levels"         && <LevelsTab          key={tenantId} tenantId={tenantId} />}
+      {activeTab === "tree"           && <TreeTab             key={tenantId} tenantId={tenantId} />}
+      {activeTab === "positions"      && <PositionsTab        key={tenantId} tenantId={tenantId} />}
+      {activeTab === "transfer-types" && <TransferTypesTab    key={tenantId} tenantId={tenantId} />}
+      {activeTab === "approval"       && <ApprovalRulesV2Tab  key={tenantId} tenantId={tenantId} />}
+      {activeTab === "personnel"      && <PersonnelV2Tab      key={tenantId} tenantId={tenantId} />}
+      {activeTab === "branding"       && <BrandingTab         key={tenantId} tenantId={tenantId} />}
     </div>
   );
 }
