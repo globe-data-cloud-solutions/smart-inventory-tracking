@@ -68,15 +68,11 @@ NEVER implement DIRPUSH as a named transaction type. Direct push from MWH to Sub
 NEVER call get_authority_scope() — it is archived dead code (only present in
   _ARCHIVED_personnel_pre031.py) and was never wired into the live check_permission()
   in backend/shared/permissions/middleware.py. Do not reintroduce calls to it.
-NEVER implement a new node-scoped feature assuming node+descendant traversal exists —
-  it does not yet. The live FACILITY_SCOPED_ROLES check in middleware.py is flat
-  exact-node equality (user.warehouse_id == resource.warehouse_id) with no DB call and
-  no ancestry walk. A user's warehouse_id JWT claim is their assigned
-  organization_node.id regardless of hierarchy level, but scoping stops there — it does
-  not extend to that node's descendants. True node+descendant traversal (rebuilding
-  get_authority_scope and threading a db session through check_permission and every
-  @require_permission call site) is a tracked Phase 2 item, not yet implemented.
-  See CLAUDE.md §13 "Role scope — facility-scoped vs tenant-wide" for the current detail.
+NEVER implement a new facility-scoped feature with a raw warehouse_id equality check —
+  node+descendant traversal is live (Phase 2). Any new ABAC check for a
+  FACILITY_SCOPED_ROLE must go through get_descendant_node_ids() in
+  hierarchy_service.py and resolve scope via check_permission() in middleware.py.
+  See §24 Rule 25 for the full traversal contract.
 ```
 
 ---
