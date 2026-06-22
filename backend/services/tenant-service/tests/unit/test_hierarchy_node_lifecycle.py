@@ -40,8 +40,10 @@ from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import UUID, uuid4
 
+import asyncpg
 import pytest
 from fastapi import HTTPException
+from sqlalchemy.exc import IntegrityError
 
 TENANT_ID = "aaaaaaaa-0000-0000-0000-000000000001"
 NODE_ID   = "bbbbbbbb-0000-0000-0000-000000000001"
@@ -104,6 +106,24 @@ _DENY_ALL = patch(
     "shared.permissions.middleware.check_permission",
     new=AsyncMock(return_value=MagicMock(allowed=False, reason="RBAC_DENIED")),
 )
+
+
+def _unique_violation(constraint_name: str) -> IntegrityError:
+    """Build a sqlalchemy IntegrityError wrapping an asyncpg UniqueViolationError,
+    matching what asyncpg+SQLAlchemy actually raise on a constraint violation."""
+    orig = asyncpg.exceptions.UniqueViolationError("duplicate key value")
+    orig.constraint_name = constraint_name
+    return IntegrityError("INSERT/UPDATE", {}, orig)
+
+
+def _db_seq_raising(*returns: Any, raises: Exception) -> AsyncMock:
+    """Like _db_seq, but the call AFTER the given `returns` raises `raises` instead
+    of returning a result — simulates a DB constraint violation on the statement
+    itself rather than on a preceding lookup."""
+    db = _db_seq(*returns)
+    prior_effects = list(db.execute.side_effect)
+    db.execute = AsyncMock(side_effect=prior_effects + [raises])
+    return db
 
 
 # ── Test 1: Hierarchy level rename ───────────────────────────────────────────
@@ -169,6 +189,192 @@ class TestHierarchyLevelRename:
                 db=db,
             )
         assert exc_info.value.status_code == 403
+
+
+# ── Test 1b: Hierarchy config PUT — G1/G2/G3a validation gaps ───────────────
+
+@pytest.mark.unit
+class TestHierarchyConfigUpsert:
+
+    async def test_duplicate_level_name_returns_422(self) -> None:
+        """G1: PUT /hierarchy/config converts the uq_hierarchy_config_tenant_name
+        IntegrityError into a clean 422 DUPLICATE_LEVEL_NAME instead of a raw 500."""
+        from routers.hierarchy import upsert_hierarchy_config, HierarchyLevelIn
+
+        # Call sequence: existing_count query (scalar=0), INSERT level 1
+        # (succeeds), INSERT level 2 (raises the unique-name violation).
+        call_count = 0
+
+        async def _capture(stmt, params=None, **kw) -> MagicMock:
+            nonlocal call_count
+            call_count += 1
+            if call_count == 1:
+                res = MagicMock()
+                res.scalar = MagicMock(return_value=0)
+                return res
+            if call_count == 2:
+                return MagicMock()
+            raise _unique_violation("uq_hierarchy_config_tenant_name")
+
+        db = AsyncMock()
+        db.execute = AsyncMock(side_effect=_capture)
+        db.commit = AsyncMock()
+
+        with _GRANT_ALL, pytest.raises(HTTPException) as exc_info:
+            await upsert_hierarchy_config(
+                tenant_id=UUID(TENANT_ID),
+                body=[
+                    HierarchyLevelIn(level_number=1, level_name="Factory"),
+                    HierarchyLevelIn(level_number=2, level_name="Factory"),  # duplicate name
+                ],
+                user=_Caller(),
+                db=db,
+            )
+        assert exc_info.value.status_code == 422
+        assert exc_info.value.detail["code"] == "DUPLICATE_LEVEL_NAME"
+
+    async def test_duplicate_level_number_in_payload_returns_422(self) -> None:
+        """G2: two items with the same level_number in one PUT payload are rejected
+        before any DB call, instead of silently upserting twice (last write wins)."""
+        from routers.hierarchy import upsert_hierarchy_config, HierarchyLevelIn
+
+        db = _db_seq()  # no DB calls should be needed — validation fires first
+
+        with _GRANT_ALL, pytest.raises(HTTPException) as exc_info:
+            await upsert_hierarchy_config(
+                tenant_id=UUID(TENANT_ID),
+                body=[
+                    HierarchyLevelIn(level_number=1, level_name="Factory"),
+                    HierarchyLevelIn(level_number=1, level_name="Factory Duplicate"),
+                ],
+                user=_Caller(),
+                db=db,
+            )
+        assert exc_info.value.status_code == 422
+        assert exc_info.value.detail["code"] == "DUPLICATE_LEVEL_NUMBER"
+
+    async def test_level_count_change_after_initial_save_locked(self) -> None:
+        """G3a: once 4 levels are saved, PUTting 5 is rejected — the level count
+        is locked until an SA resets it via the dedicated reset endpoint."""
+        from routers.hierarchy import upsert_hierarchy_config, HierarchyLevelIn
+
+        existing_count_res = MagicMock()
+        existing_count_res.scalar = MagicMock(return_value=4)
+        db = AsyncMock()
+        db.execute = AsyncMock(return_value=existing_count_res)  # only 1 call expected
+
+        with _GRANT_ALL, pytest.raises(HTTPException) as exc_info:
+            await upsert_hierarchy_config(
+                tenant_id=UUID(TENANT_ID),
+                body=[
+                    HierarchyLevelIn(level_number=1, level_name="Factory"),
+                    HierarchyLevelIn(level_number=2, level_name="Region"),
+                    HierarchyLevelIn(level_number=3, level_name="Warehouse"),
+                    HierarchyLevelIn(level_number=4, level_name="Satellite"),
+                    HierarchyLevelIn(level_number=5, level_name="Outpost"),
+                ],
+                user=_Caller(),
+                db=db,
+            )
+        assert exc_info.value.status_code == 422
+        assert exc_info.value.detail["code"] == "LEVEL_COUNT_LOCKED"
+
+    async def test_same_level_count_after_initial_save_allows_edit(self) -> None:
+        """G3a: PUTting the SAME count (4) as already saved is allowed — this is
+        how a TA renames/edits existing levels without changing the count."""
+        from routers.hierarchy import upsert_hierarchy_config, HierarchyLevelIn
+
+        execute_calls: list[str] = []
+
+        async def _capture(stmt, params=None, **kw) -> MagicMock:
+            execute_calls.append(str(stmt))
+            res = MagicMock()
+            res.scalar = MagicMock(return_value=4)  # existing_count
+            res.fetchall = MagicMock(return_value=[
+                _row(id=uuid4(), tenant_id=UUID(TENANT_ID), level_number=n,
+                     level_name=f"Level {n}", default_role_code=None,
+                     role_display_label=None, is_stock_holding=True, is_active=True)
+                for n in (1, 2, 3, 4)
+            ])
+            return res
+
+        db = AsyncMock()
+        db.execute = AsyncMock(side_effect=_capture)
+        db.commit = AsyncMock()
+
+        with _GRANT_ALL:
+            result = await upsert_hierarchy_config(
+                tenant_id=UUID(TENANT_ID),
+                body=[
+                    HierarchyLevelIn(level_number=1, level_name="Factory Renamed"),
+                    HierarchyLevelIn(level_number=2, level_name="Region"),
+                    HierarchyLevelIn(level_number=3, level_name="Warehouse"),
+                    HierarchyLevelIn(level_number=4, level_name="Satellite"),
+                ],
+                user=_Caller(),
+                db=db,
+            )
+
+        assert len(result.data) == 4
+        assert any("INSERT" in s for s in execute_calls)
+
+
+# ── Test 1c: SA org level reset endpoint — G3b ───────────────────────────────
+
+@pytest.mark.unit
+class TestHierarchyConfigReset:
+
+    async def test_sa_reset_blocked_when_nodes_exist(self) -> None:
+        """G3b: SA cannot reset hierarchy config while active org nodes exist."""
+        from routers.hierarchy import reset_hierarchy_config
+
+        node_count_res = MagicMock()
+        node_count_res.scalar = MagicMock(return_value=3)
+        db = AsyncMock()
+        db.execute = AsyncMock(return_value=node_count_res)  # only 1 call expected
+
+        with _GRANT_ALL, pytest.raises(HTTPException) as exc_info:
+            await reset_hierarchy_config(
+                tenant_id=UUID(TENANT_ID), user=_Caller(role="SA"), db=db,
+            )
+        assert exc_info.value.status_code == 422
+        assert exc_info.value.detail["code"] == "ORG_NODES_EXIST"
+
+    async def test_sa_reset_succeeds_when_no_nodes(self, monkeypatch: Any) -> None:
+        """G3b: SA reset clears the config and returns reset=true when no org
+        nodes exist for the tenant."""
+        from routers.hierarchy import reset_hierarchy_config
+
+        monkeypatch.setattr("routers.hierarchy.audit_log", AsyncMock())
+
+        node_count_res = MagicMock()
+        node_count_res.scalar = MagicMock(return_value=0)
+        db = AsyncMock()
+        # 2 calls happen (node_count query, then DELETE) — DELETE's return value
+        # is never read, so reusing the same mock for both calls is safe.
+        db.execute = AsyncMock(return_value=node_count_res)
+        db.commit = AsyncMock()
+
+        with _GRANT_ALL:
+            result = await reset_hierarchy_config(
+                tenant_id=UUID(TENANT_ID), user=_Caller(role="SA"), db=db,
+            )
+
+        assert result.data["reset"] is True
+
+    async def test_ta_reset_forbidden(self) -> None:
+        """G3b: a TA (non-SA caller) is rejected with 403 FORBIDDEN before any DB call,
+        even though tenant:manage itself is mocked as granted."""
+        from routers.hierarchy import reset_hierarchy_config
+
+        db = _db_seq()  # no DB calls should be needed — role check fires first
+
+        with _GRANT_ALL, pytest.raises(HTTPException) as exc_info:
+            await reset_hierarchy_config(
+                tenant_id=UUID(TENANT_ID), user=_Caller(role="TA"), db=db,
+            )
+        assert exc_info.value.status_code == 403
+        assert exc_info.value.detail["code"] == "FORBIDDEN"
 
 
 # ── Test 2: Org node deactivation / reactivation ─────────────────────────────

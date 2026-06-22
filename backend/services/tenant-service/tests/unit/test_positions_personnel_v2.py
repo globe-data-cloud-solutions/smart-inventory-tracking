@@ -885,6 +885,29 @@ class TestTransferTypeConfig:
         assert "INSERT" in stmts, "Expected INSERT for new transfer type config"
         assert len(execute_calls) >= 3, "Expected: check existing + INSERT config + INSERT level perm"
 
+    async def test_duplicate_transfer_type_code_in_payload_returns_422(self) -> None:
+        """G4: two items with the same underlying_type (the schema's unique
+        "code" field) in one PUT payload are rejected before any DB call —
+        previously the check-then-act loop would SELECT the row just inserted
+        by the first duplicate and UPDATE it for the second, silently letting
+        the last write win."""
+        from routers.transfer_types import upsert_transfer_types, TransferTypeConfigIn
+
+        db = _db_seq()  # no DB calls should be needed — validation fires first
+
+        with _GRANT_ALL, pytest.raises(HTTPException) as exc_info:
+            await upsert_transfer_types(
+                tenant_id=UUID(TENANT_ID),
+                body=[
+                    TransferTypeConfigIn(underlying_type="PULL", display_name="Pull Request A"),
+                    TransferTypeConfigIn(underlying_type="PULL", display_name="Pull Request B"),
+                ],
+                user=_Caller(),
+                db=db,
+            )
+        assert exc_info.value.status_code == 422
+        assert exc_info.value.detail["code"] == "DUPLICATE_TRANSFER_TYPE_CODE"
+
     async def test_approval_rule_upsert(self) -> None:
         """PUT /transfer-approval-rules stores approval_steps as JSONB."""
         from routers.transfer_types import upsert_approval_rules, ApprovalRuleIn, ApprovalStepIn

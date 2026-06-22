@@ -10,17 +10,39 @@ from __future__ import annotations
 import uuid
 from typing import List, Optional
 
+import asyncpg
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, field_validator
 from sqlalchemy import text
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from dependencies import get_current_user, get_db_session, get_db_session_for_tenant
+from shared.permissions.audit import audit_log
 from shared.permissions.middleware import require_permission
 from shared.permissions.registry import PERMISSIONS
 from shared.utils.responses import SuccessResponse
 
 router = APIRouter()
+
+
+def _is_duplicate_level_name_violation(exc: IntegrityError) -> bool:
+    """True if this IntegrityError wraps a uq_hierarchy_config_tenant_name violation."""
+    orig = exc.orig
+    return (
+        isinstance(orig, asyncpg.UniqueViolationError)
+        and orig.constraint_name == "uq_hierarchy_config_tenant_name"
+    )
+
+
+def _duplicate_level_name_http_exception() -> HTTPException:
+    return HTTPException(
+        status_code=422,
+        detail={
+            "code":    "DUPLICATE_LEVEL_NAME",
+            "message": "A level with this name already exists for this tenant.",
+        },
+    )
 
 
 # ── Pydantic schemas ──────────────────────────────────────────────────────────
@@ -238,6 +260,20 @@ async def upsert_hierarchy_config(
 ) -> SuccessResponse[List[HierarchyLevelOut]]:
     if not body:
         raise HTTPException(status_code=400, detail="At least one level is required")
+
+    # G2 — reject duplicate level_number values within the same payload before
+    # they reach the DB, where ON CONFLICT would otherwise upsert each one in
+    # turn and silently let the last write win.
+    level_numbers = [level.level_number for level in body]
+    if len(level_numbers) != len(set(level_numbers)):
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "code":    "DUPLICATE_LEVEL_NUMBER",
+                "message": "Each level must have a unique level number.",
+            },
+        )
+
     for level in body:
         if not (1 <= level.level_number <= 5):
             raise HTTPException(
@@ -245,32 +281,59 @@ async def upsert_hierarchy_config(
                 detail=f"level_number must be between 1 and 5, got {level.level_number}",
             )
 
-    for level in body:
-        await db.execute(
-            text(
-                """
-                INSERT INTO tenant_hierarchy_config
-                    (tenant_id, level_number, level_name, default_role_code,
-                     role_display_label, is_stock_holding, is_active)
-                VALUES (:tid, :lvl, :name, :role, :label, :stock, true)
-                ON CONFLICT (tenant_id, level_number) DO UPDATE SET
-                    level_name        = EXCLUDED.level_name,
-                    default_role_code = EXCLUDED.default_role_code,
-                    role_display_label= EXCLUDED.role_display_label,
-                    is_stock_holding  = EXCLUDED.is_stock_holding,
-                    is_active         = true,
-                    updated_at        = now()
-                """
-            ),
-            {
-                "tid": str(tenant_id),
-                "lvl": level.level_number,
-                "name": level.level_name,
-                "role": level.default_role_code,
-                "label": level.role_display_label,
-                "stock": level.is_stock_holding,
+    # G3a — level count lock: once a tenant's hierarchy has been saved at least
+    # once, the number of levels can no longer change via this endpoint (only
+    # renames/edits of the existing set). SA can lift this via the dedicated
+    # reset endpoint below, which clears the config entirely (and requires no
+    # org nodes to exist first).
+    existing_count = (await db.execute(
+        text(
+            "SELECT COUNT(*) FROM tenant_hierarchy_config "
+            "WHERE tenant_id = :tid AND is_active = true"
+        ),
+        {"tid": str(tenant_id)},
+    )).scalar() or 0
+    if existing_count > 0 and len(body) != existing_count:
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "code":    "LEVEL_COUNT_LOCKED",
+                "message": "Org level count is locked after initial setup. Contact your "
+                           "Super Admin to reset if needed before any nodes are created.",
             },
         )
+
+    try:
+        for level in body:
+            await db.execute(
+                text(
+                    """
+                    INSERT INTO tenant_hierarchy_config
+                        (tenant_id, level_number, level_name, default_role_code,
+                         role_display_label, is_stock_holding, is_active)
+                    VALUES (:tid, :lvl, :name, :role, :label, :stock, true)
+                    ON CONFLICT (tenant_id, level_number) DO UPDATE SET
+                        level_name        = EXCLUDED.level_name,
+                        default_role_code = EXCLUDED.default_role_code,
+                        role_display_label= EXCLUDED.role_display_label,
+                        is_stock_holding  = EXCLUDED.is_stock_holding,
+                        is_active         = true,
+                        updated_at        = now()
+                    """
+                ),
+                {
+                    "tid": str(tenant_id),
+                    "lvl": level.level_number,
+                    "name": level.level_name,
+                    "role": level.default_role_code,
+                    "label": level.role_display_label,
+                    "stock": level.is_stock_holding,
+                },
+            )
+    except IntegrityError as exc:
+        if _is_duplicate_level_name_violation(exc):
+            raise _duplicate_level_name_http_exception() from exc
+        raise
 
     rows = await db.execute(
         text(
@@ -328,18 +391,25 @@ async def rename_hierarchy_level(
     if not set_clauses:
         raise HTTPException(status_code=400, detail="No fields to update")
 
-    row = await db.execute(
-        text(
-            f"""
-            UPDATE tenant_hierarchy_config
-            SET {', '.join(set_clauses)}, updated_at = now()
-            WHERE id = :id AND tenant_id = :tid
-            RETURNING id, tenant_id, level_number, level_name, default_role_code,
-                      role_display_label, is_stock_holding, is_active
-            """
-        ),
-        params,
-    )
+    try:
+        row = await db.execute(
+            text(
+                f"""
+                UPDATE tenant_hierarchy_config
+                SET {', '.join(set_clauses)}, updated_at = now()
+                WHERE id = :id AND tenant_id = :tid
+                RETURNING id, tenant_id, level_number, level_name, default_role_code,
+                          role_display_label, is_stock_holding, is_active
+                """
+            ),
+            params,
+        )
+    except IntegrityError as exc:
+        # The uq_hierarchy_config_tenant_name constraint (migration 060) applies
+        # here too — a rename to an already-used name must 422, not 500.
+        if _is_duplicate_level_name_violation(exc):
+            raise _duplicate_level_name_http_exception() from exc
+        raise
     updated = row.fetchone()
     if not updated:
         raise HTTPException(status_code=404, detail="Hierarchy level not found")
@@ -356,6 +426,65 @@ async def rename_hierarchy_level(
             is_active=updated.is_active,
         )
     )
+
+
+@router.delete(
+    "/{tenant_id}/hierarchy/config/reset",
+    response_model=SuccessResponse[dict],
+)
+@require_permission(PERMISSIONS.TENANT_MANAGE)
+async def reset_hierarchy_config(
+    tenant_id: uuid.UUID,
+    user=Depends(get_current_user),
+    db: AsyncSession = Depends(get_db_session_for_tenant),
+) -> SuccessResponse[dict]:
+    """SA-only escape hatch for the level-count lock (see G3a above). Clears a
+    tenant's hierarchy config entirely so the TA can redefine it from scratch —
+    only permitted while the tenant has no org nodes, since nodes reference a
+    hierarchy_level that would otherwise become orphaned."""
+    if user.role != "SA":
+        raise HTTPException(
+            status_code=403,
+            detail={
+                "code":    "FORBIDDEN",
+                "message": "Only a platform administrator (SA) may reset org level configuration.",
+            },
+        )
+
+    node_count = (await db.execute(
+        text(
+            "SELECT COUNT(*) FROM organization_node "
+            "WHERE tenant_id = :tid AND is_active = true"
+        ),
+        {"tid": str(tenant_id)},
+    )).scalar() or 0
+    if node_count > 0:
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "code":    "ORG_NODES_EXIST",
+                "message": "Cannot reset org levels while org nodes exist. Remove all "
+                           "nodes first, then request a reset.",
+            },
+        )
+
+    await db.execute(
+        text("DELETE FROM tenant_hierarchy_config WHERE tenant_id = :tid"),
+        {"tid": str(tenant_id)},
+    )
+
+    await audit_log(
+        user, PERMISSIONS.TENANT_MANAGE.id,
+        {"resource_type": "tenant_hierarchy_config", "resource_id": str(tenant_id),
+         "tenant_id": str(tenant_id)},
+        "GRANTED",
+        "SA reset org level configuration for tenant",
+    )
+
+    return SuccessResponse(data={
+        "reset": True,
+        "message": "Org levels cleared. Tenant Admin can now redefine the org structure.",
+    })
 
 
 # ── Org node endpoints ────────────────────────────────────────────────────────

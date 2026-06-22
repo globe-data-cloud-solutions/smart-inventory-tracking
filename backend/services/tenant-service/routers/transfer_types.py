@@ -13,9 +13,11 @@ from __future__ import annotations
 import uuid
 from typing import Any, List, Optional
 
+import asyncpg
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy import bindparam, text, types
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from dependencies import get_current_user, get_db_session_for_tenant
@@ -27,6 +29,26 @@ router = APIRouter()
 
 UNDERLYING_TYPES = frozenset({"PULL", "PUSH", "SISTER"})
 THRESHOLD_TYPES  = frozenset({"QUANTITY", "VALUE", "EITHER", "BOTH"})
+
+
+def _is_duplicate_transfer_type_violation(exc: IntegrityError) -> bool:
+    """True if this IntegrityError wraps a uq_transfer_type_config_tenant_type
+    violation (the constraint added in migration 032)."""
+    orig = exc.orig
+    return (
+        isinstance(orig, asyncpg.UniqueViolationError)
+        and orig.constraint_name == "uq_transfer_type_config_tenant_type"
+    )
+
+
+def _duplicate_transfer_type_code_http_exception() -> HTTPException:
+    return HTTPException(
+        status_code=422,
+        detail={
+            "code":    "DUPLICATE_TRANSFER_TYPE_CODE",
+            "message": "Each transfer type must have a unique code.",
+        },
+    )
 
 
 # ── Pydantic schemas ──────────────────────────────────────────────────────────
@@ -192,6 +214,15 @@ async def upsert_transfer_types(
                 detail=f"underlying_type must be one of {sorted(UNDERLYING_TYPES)}",
             )
 
+    # G4 — reject duplicate codes within the same payload before they reach the
+    # DB. The schema's unique field is `underlying_type` (the spec's "code" —
+    # there is no separate `code` column on TransferTypeConfigIn). Without this,
+    # the check-then-act loop below would SELECT the row inserted by the first
+    # duplicate and UPDATE it for the second, silently letting the last write win.
+    underlying_types_in_payload = [item.underlying_type for item in body]
+    if len(underlying_types_in_payload) != len(set(underlying_types_in_payload)):
+        raise _duplicate_transfer_type_code_http_exception()
+
     result_ids: List[uuid.UUID] = []
     for item in body:
         existing = (await db.execute(
@@ -217,17 +248,25 @@ async def upsert_transfer_types(
             )
         else:
             config_id = uuid.uuid4()
-            await db.execute(
-                text("""
-                    INSERT INTO transfer_type_config
-                      (id, tenant_id, underlying_type, display_name, description,
-                       is_active, sort_order)
-                    VALUES (:id, :tid, :ut, :dn, :desc, :ia, :so)
-                """),
-                {"id": str(config_id), "tid": str(tenant_id), "ut": item.underlying_type,
-                 "dn": item.display_name, "desc": item.description,
-                 "ia": item.is_active, "so": item.sort_order},
-            )
+            try:
+                await db.execute(
+                    text("""
+                        INSERT INTO transfer_type_config
+                          (id, tenant_id, underlying_type, display_name, description,
+                           is_active, sort_order)
+                        VALUES (:id, :tid, :ut, :dn, :desc, :ia, :so)
+                    """),
+                    {"id": str(config_id), "tid": str(tenant_id), "ut": item.underlying_type,
+                     "dn": item.display_name, "desc": item.description,
+                     "ia": item.is_active, "so": item.sort_order},
+                )
+            except IntegrityError as exc:
+                # Defense-in-depth against a concurrent request inserting the same
+                # (tenant_id, underlying_type) between our SELECT above and this
+                # INSERT — same-payload duplicates are already rejected above.
+                if _is_duplicate_transfer_type_violation(exc):
+                    raise _duplicate_transfer_type_code_http_exception() from exc
+                raise
 
         # Replace level permissions
         await db.execute(
