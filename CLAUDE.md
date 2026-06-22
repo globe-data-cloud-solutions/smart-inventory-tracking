@@ -210,6 +210,7 @@ smart-platform/                        # GitHub repository root
 │   │   ├── permissions/
 │   │   │   ├── registry.py            # SINGLE SOURCE OF TRUTH — all 115 actions
 │   │   │   ├── middleware.py          # check_permission(), require_permission decorator
+│   │   │   ├── hierarchy_service.py   # node+descendant scope traversal
 │   │   │   ├── casbin_enforcer.py     # Casbin RBAC+ABAC setup
 │   │   │   └── audit.py              # audit_log() — called on every access decision
 │   │   ├── db/
@@ -1315,7 +1316,13 @@ UI-level hiding is NOT a security layer. Never rely on it alone.
 
 ```python
 # backend/shared/permissions/middleware.py
-async def check_permission(user: UserContext, action: Permission, resource: dict={}) -> PermissionResult:
+async def check_permission(
+    user: UserContext,
+    action: Permission,
+    resource: dict | None = None,
+    db: AsyncSession | None = None,
+    scope_cache: dict[str, set[str]] | None = None,
+) -> PermissionResult:
     # 1. RBAC check
     grant = await permission_store.get_role_permission(user.role, action.id)
     if not grant:
@@ -1333,11 +1340,18 @@ async def check_permission(user: UserContext, action: Permission, resource: dict
             await audit_log(user, action.id, resource, "DENIED", "ABAC_DENIED: region scope")
             return PermissionResult(allowed=False, reason="ABAC_DENIED: region scope")
 
-    # 4. Warehouse scope
-    if "warehouse_id" in action.abac and user.warehouse_id:
-        if resource.get("warehouse_id") and resource["warehouse_id"] != user.warehouse_id:
-            await audit_log(user, action.id, resource, "DENIED", "ABAC_DENIED: warehouse scope")
-            return PermissionResult(allowed=False, reason="ABAC_DENIED: warehouse scope")
+    # 4. Warehouse scope — node + descendant traversal
+    FACILITY_SCOPED_ROLES = {"WM", "LM", "SA_GT", "RT"}
+    if user.role in FACILITY_SCOPED_ROLES and user.warehouse_id:
+        resource_wh = resource.get("warehouse_id")
+        if resource_wh and "warehouse_id" in action.abac:
+            # Descendant set cached per-request in scope_cache
+            # Falls back to exact-match if db is None
+            if resource_wh_str not in scope_cache[user_wh_str]:
+                return PermissionResult(
+                    allowed=False,
+                    reason="ABAC_DENIED: warehouse scope"
+                )
 
     # 5. Conditional — route to approval workflow
     if grant.grant_type == "CONDITIONAL":
@@ -2199,9 +2213,14 @@ PRs that violate these rules do not merge.
     and run their own type-specific state machine. The parent record status is read-only —
     it is derived from the aggregate state of all legs and never set directly by application code.
 25. A user's warehouse_id JWT claim maps to organization_node.id regardless of hierarchy level.
-    Authority over child nodes is resolved by get_authority_scope() querying org_node_hierarchy —
-    it is never inferred from role alone. This rule applies to all ABAC checks involving
-    multi-level facility hierarchies.
+    For roles in FACILITY_SCOPED_ROLES (WM, LM, SA_GT, RT), warehouse-scope ABAC checks grant
+    access to the assigned node AND all active descendant nodes, resolved via recursive CTE on
+    organization_node.parent_node_id. This traversal is implemented in
+    backend/shared/permissions/hierarchy_service.py (get_descendant_node_ids()) and wired into
+    check_permission() in middleware.py. Authority is never inferred from role alone and never
+    assumed from org_node_hierarchy (that table is used for supply network topology, not scope
+    resolution). LM Track B (no node assigned, warehouse_id=None in JWT) bypasses this check
+    entirely and has tenant-wide visibility.
 26. warehouse_stock is a computed read model. Application code never issues
     UPDATE warehouse_stock SET … directly. The only permitted writer is update_running_balance()
     inside ledger_repo.py, called within the same DB transaction as the ledger INSERT.
