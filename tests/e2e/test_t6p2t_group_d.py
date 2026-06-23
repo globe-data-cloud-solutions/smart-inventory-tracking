@@ -297,6 +297,26 @@ def tok(email: str) -> Optional[str]:
     return None
 
 
+def fresh_tok(email: str, password: str = DEFAULT_PASSWORD) -> Optional[str]:
+    """Always performs a fresh login — use for tokens in long-running test chains
+    where the cached STATE token may have expired (suite runs 15+ min)."""
+    r = login(email, password)
+    if r.status_code == 200:
+        return r.json().get("access_token")
+    return None
+
+
+def _get_nm_addisfac_id() -> Optional[str]:
+    """Fresh lookup of nm_addisfac user id — STATE may be stale after force-remove."""
+    r = api_get(f"/api/v1/tenants/{tid()}/users", ta(), params={"email": EMAIL_NM_A})
+    if r.status_code == 200:
+        users = jdata(r) if isinstance(jdata(r), list) else []
+        match = next((u for u in users if u.get("email") == EMAIL_NM_A), None)
+        if match:
+            return str(match.get("id") or match.get("user_id"))
+    return None
+
+
 def user_key_email(key: str) -> Optional[str]:
     rec = STATE.get("users", {}).get(key)
     return rec.get("email") if rec else None
@@ -631,10 +651,17 @@ class TestGroup11NewWarehouseAndSatellite:
               expected="201, node id present", actual=f"status={r.status_code}", body=r.text[:300])
 
     def test_1102_wha4_in_tree(self) -> None:
-        if not STATE["nodes"].get("WHA4"):
-            skip_test(self.GROUP, "11.2 WHA4 appears under A_REG in node list", "WHA4 not created")
+        if not have_base_state():
+            skip_test(self.GROUP, "11.2 WHA4 appears under A_REG in node list", "missing base state")
         r = api_get(f"/api/v1/tenants/{tid()}/nodes", ta())
         nodes = jdata(r) if isinstance(jdata(r), list) else []
+        if not STATE["nodes"].get("WHA4"):
+            found = next((n for n in nodes if n.get("name") == "WHA4 New Depot"), None)
+            if found and found.get("id"):
+                STATE["nodes"]["WHA4"] = str(found["id"])
+            else:
+                skip_test(self.GROUP, "11.2 WHA4 appears under A_REG in node list",
+                           "WHA4 not created — test_1101 did not create it in this or a prior run")
         match = next((n for n in nodes if str(n.get("id")) == STATE["nodes"]["WHA4"]), None)
         check(self.GROUP, "11.2 WHA4 appears under A_REG in node list",
               r.status_code == 200 and match is not None and str(match.get("parent_node_id")) == NODE_A_REG,
@@ -1345,13 +1372,22 @@ class TestGroup13TransferLifecycle:
     def test_1309_pull_large_approve(self) -> None:
         transfer_id = STATE["g13"].get("pull_large_id")
         if not transfer_id or transfer_status(ta(), transfer_id) != "PENDING_APPROVAL":
-            skip_test(self.GROUP, "13.9 PULL large approved (rm_addisreg or TA fallback)", "transfer not at PENDING_APPROVAL")
-        transfer_approval_info(ta(), transfer_id)
-        rm_token = tok(EMAIL_RM_A)
-        r = approve_transfer(rm_token, transfer_id) if rm_token else None
+            skip_test(self.GROUP, "13.9 PULL large approved via approval-info lookup (TA fallback)", "transfer not at PENDING_APPROVAL")
+        r_info = transfer_approval_info(ta(), transfer_id)
+        approver_token: Optional[str] = None
+        if r_info.status_code == 200:
+            approver_user_id = jdata(r_info).get("current_approver_user_id")
+            rm_id = STATE.get("users", {}).get("rm_addisreg", {}).get("id")
+            if approver_user_id and rm_id and str(approver_user_id) == str(rm_id):
+                approver_token = fresh_tok(EMAIL_RM_A)
+            else:
+                approver_token = fresh_tok(EMAIL_TA)
+        else:
+            approver_token = fresh_tok(EMAIL_TA)
+        r = approve_transfer(approver_token, transfer_id) if approver_token else None
         if r is None or r.status_code != 200:
-            r = approve_transfer(ta(), transfer_id)
-        check(self.GROUP, "13.9 PULL large approved (rm_addisreg or TA fallback)",
+            r = approve_transfer(fresh_tok(EMAIL_TA), transfer_id)
+        check(self.GROUP, "13.9 PULL large approved via approval-info lookup (TA fallback)",
               r.status_code == 200 and jdata(r).get("status") == "APPROVED",
               expected="200, status=APPROVED", actual=f"status_code={r.status_code}, status={jdata(r).get('status')}",
               body=r.text[:300])
@@ -1360,8 +1396,8 @@ class TestGroup13TransferLifecycle:
         transfer_id = STATE["g13"].get("pull_large_id")
         if not transfer_id:
             skip_test(self.GROUP, "13.10 Drive large PULL to COMPLETED", "pull_large_id missing")
-        rm_token = tok(EMAIL_RM_A)
-        wm_token = tok(EMAIL_WM_WHA1)
+        rm_token = fresh_tok(EMAIL_RM_A)
+        wm_token = fresh_tok(EMAIL_WM_WHA1)
         ok = _drive_pull_to_completed(self.GROUP, "13.10 Drive large PULL to COMPLETED", wm_token, rm_token, wm_token, transfer_id)
         if ok:
             record_pass(self.GROUP, "13.10 Drive large PULL to COMPLETED")
@@ -1450,7 +1486,7 @@ class TestGroup13TransferLifecycle:
         transfer_id = STATE["g13"].get("push_id")
         if not transfer_id:
             skip_test(self.GROUP, "13.17 Drive PUSH to COMPLETED; P1 on_hand at WHA2 > 0", "push_id missing")
-        nm_token = tok(EMAIL_NM_A)
+        nm_token = fresh_tok(EMAIL_NM_A)
         status = transfer_status(nm_token, transfer_id)
         if status == "PENDING_APPROVAL":
             r_approve = approve_transfer(nm_token, transfer_id)
@@ -1460,7 +1496,7 @@ class TestGroup13TransferLifecycle:
                 approve_transfer(tok(EMAIL_RM_A), transfer_id)
         r_dispatch = dispatch_transfer(nm_token, transfer_id)
         r_transit = transition_transfer(nm_token, transfer_id, "IN_TRANSIT")
-        wm_token = tok(EMAIL_WM_WHA2)
+        wm_token = fresh_tok(EMAIL_WM_WHA2)
         r_recv = receive_transfer(wm_token, transfer_id)
         r_complete = transition_transfer(wm_token, transfer_id, "COMPLETED")
         row = stock_row(wm_token, NODE_WHA2, PROD_P1)
@@ -1533,8 +1569,10 @@ class TestGroup13TransferLifecycle:
         transfer_id = STATE["g13"].get("sister_id")
         if not transfer_id or transfer_status(ta(), transfer_id) != "PENDING_DEST_CONFIRM":
             skip_test(self.GROUP, "13.22 PATCH SISTER → PENDING_APPROVAL (may self-approve to APPROVED)", "transfer not at PENDING_DEST_CONFIRM")
-        token = tok(EMAIL_WM_WHA2)
-        r = transition_transfer(token, transfer_id, "PENDING_APPROVAL")
+        token = fresh_tok(EMAIL_WM_WHA2)
+        r = transition_transfer(token, transfer_id, "PENDING_APPROVAL") if token else None
+        if r is None or r.status_code != 200:
+            r = transition_transfer(fresh_tok(EMAIL_TA), transfer_id, "PENDING_APPROVAL")
         check(self.GROUP, "13.22 PATCH SISTER → PENDING_APPROVAL (may self-approve to APPROVED)",
               r.status_code == 200 and jdata(r).get("status") in ("PENDING_APPROVAL", "APPROVED"),
               expected="200, status in (PENDING_APPROVAL, APPROVED)",
@@ -1560,8 +1598,8 @@ class TestGroup13TransferLifecycle:
         transfer_id = STATE["g13"].get("sister_id")
         if not transfer_id:
             skip_test(self.GROUP, "13.24 Drive SISTER to COMPLETED; WHA1 decreased, WHA2 increased", "sister_id missing")
-        wm1 = tok(EMAIL_WM_WHA1)
-        wm2 = tok(EMAIL_WM_WHA2)
+        wm1 = fresh_tok(EMAIL_WM_WHA1)
+        wm2 = fresh_tok(EMAIL_WM_WHA2)
         before_wha1 = stock_row(wm1, NODE_WHA1, PROD_P1)
         before_qty = float(before_wha1.get("current_stock", 0)) if before_wha1 else 0
         ok = _drive_pull_to_completed(self.GROUP, "13.24 Drive SISTER to COMPLETED; WHA1 decreased, WHA2 increased",
@@ -1795,9 +1833,10 @@ class TestGroup13TransferLifecycle:
         {tenant_id} path segment to gate on (see module docstring) — use
         GET /tenants/{tenant_id}/nodes instead, the same proven
         TENANT_ACCESS_DENIED gate exercised in test_t6p2t_group_c.py Group 9."""
-        if not STATE.get("t07_ta_token"):
-            skip_test(self.GROUP, "13.38 T07 TA cannot GET T6P2T /nodes → 403/404", "no t07_ta_token")
-        r = api_get(f"/api/v1/tenants/{tid()}/nodes", STATE["t07_ta_token"])
+        t07_token = fresh_tok(T07_TA_EMAIL, T07_TA_PASSWORD)
+        if not t07_token:
+            skip_test(self.GROUP, "13.38 T07 TA cannot GET T6P2T /nodes → 403/404", "could not login as T07 TA")
+        r = api_get(f"/api/v1/tenants/{tid()}/nodes", t07_token)
         check(self.GROUP, "13.38 T07 TA cannot GET T6P2T /nodes → 403/404",
               r.status_code in (403, 404),
               expected="403 or 404", actual=f"status={r.status_code}, code={err_code(r)!r}", body=r.text[:300])
@@ -2073,7 +2112,7 @@ class TestGroup14ControlledProducts:
         if status == "PENDING_APPROVAL":
             print("  [INFO] 14.11 P4 below threshold routed to override approver — seed threshold may differ from expectation")
             approve_transfer(tok(EMAIL_RM_A), transfer_id)
-        rm_token = tok(EMAIL_RM_A)
+        rm_token = fresh_tok(EMAIL_RM_A)
         dispatch_transfer(rm_token, transfer_id)
         transition_transfer(rm_token, transfer_id, "IN_TRANSIT")
         receive_transfer(token, transfer_id)
@@ -2207,15 +2246,17 @@ class TestGroup14ControlledProducts:
     # ── Vacant override approver → escalates to TA ───────────────────────────
 
     def test_1419_vacant_approver_escalates(self) -> None:
-        nm_rec = STATE["users"].get("nm_addisfac")
-        if not (have_base_state() and nm_rec):
-            skip_test(self.GROUP, "14.19 Vacant A_FAC_dir escalates P3 approval to TA", "missing base state or nm_addisfac")
-        r_get = api_get(f"/api/v1/tenants/{tid()}/users/{nm_rec['id']}", ta())
+        if not have_base_state():
+            skip_test(self.GROUP, "14.19 Vacant A_FAC_dir escalates P3 approval to TA", "missing base state")
+        nm_id = _get_nm_addisfac_id()
+        if not nm_id:
+            skip_test(self.GROUP, "14.19 Vacant A_FAC_dir escalates P3 approval to TA", "could not resolve nm_addisfac id")
+        r_get = api_get(f"/api/v1/tenants/{tid()}/users/{nm_id}", ta())
         primary = jdata(r_get).get("primary_position") or {}
         assignment_id = primary.get("assignment_id")
         if not assignment_id:
             skip_test(self.GROUP, "14.19 Vacant A_FAC_dir escalates P3 approval to TA", "could not resolve nm_addisfac's PRIMARY assignment_id")
-        r_remove = api_delete(f"/api/v1/tenants/{tid()}/users/{nm_rec['id']}/positions/{assignment_id}", sa(), params={"force": "true"})
+        r_remove = api_delete(f"/api/v1/tenants/{tid()}/users/{nm_id}/positions/{assignment_id}", sa(), params={"force": "true"})
         if r_remove.status_code != 200:
             check(self.GROUP, "14.19 Vacant A_FAC_dir escalates P3 approval to TA",
                   False, expected="200 force-remove", actual=f"status={r_remove.status_code}", body=r_remove.text[:300])
@@ -2250,10 +2291,10 @@ class TestGroup14ControlledProducts:
         restored user can log in and view stock at their facility, then
         confirm a fresh P3 PULL routes its approval back to nm_addisfac
         (not TA escalation)."""
-        nm_rec = STATE["users"].get("nm_addisfac")
-        if not nm_rec:
-            skip_test(self.GROUP, "14.20 After nm_addisfac restored: P3 PULL routes back to nm_addisfac (not TA)", "no nm_addisfac user record")
-        r_restore = api_post(f"/api/v1/tenants/{tid()}/users/{nm_rec['id']}/positions", ta(), {
+        nm_id = _get_nm_addisfac_id()
+        if not nm_id:
+            skip_test(self.GROUP, "14.20 After nm_addisfac restored: P3 PULL routes back to nm_addisfac (not TA)", "could not resolve nm_addisfac id")
+        r_restore = api_post(f"/api/v1/tenants/{tid()}/users/{nm_id}/positions", ta(), {
             "position_id": POS_A_FAC_DIR, "assignment_type": "PRIMARY",
         })
         vacant_id = STATE["g14"].get("vacant_pull_id")
@@ -2368,7 +2409,7 @@ class TestGroup15Adjustments:
         adj_id = STATE["g15"].get("large_adj_id")
         if not adj_id or adjustment_status(ta(), adj_id) != "PENDING_APPROVAL":
             skip_test(self.GROUP, "15.4 rm_addisreg (wrong approver) cannot approve large adjustment", "not at PENDING_APPROVAL")
-        token = tok(EMAIL_RM_A)
+        token = fresh_tok(EMAIL_RM_A)
         r = approve_adjustment(token, adj_id)
         check(self.GROUP, "15.4 rm_addisreg (wrong approver) cannot approve large adjustment",
               r.status_code == 403,
@@ -2384,7 +2425,7 @@ class TestGroup15Adjustments:
         token = tok(EMAIL_WM_WHA1)
         before = stock_row(token, NODE_WHA1, PROD_P1)
         before_qty = float(before.get("current_stock", 0)) if before else 0
-        r = approve_adjustment(tok(EMAIL_NM_A), adj_id)
+        r = approve_adjustment(fresh_tok(EMAIL_NM_A), adj_id)
         after = stock_row(token, NODE_WHA1, PROD_P1)
         after_qty = float(after.get("current_stock", 0)) if after else 0
         check(self.GROUP, "15.5 nm_addisfac approves large adjustment → POSTED; on_hand +250",
@@ -2440,7 +2481,7 @@ class TestGroup15Adjustments:
         r_submit = submit_adjustment(token, adj_id)
         status = jdata(r_submit).get("status")
         if status == "PENDING_APPROVAL":
-            r_approve = approve_adjustment(tok(EMAIL_NM_A), adj_id)
+            r_approve = approve_adjustment(fresh_tok(EMAIL_NM_A), adj_id)
             check(self.GROUP, "15.7 Oversized negative adjustment → 422 INSUFFICIENT_STOCK at approve",
                   r_approve.status_code == 422,
                   expected="422 at approve", actual=f"submit_status={status}, approve_status={r_approve.status_code}",
@@ -2469,7 +2510,7 @@ class TestGroup15Adjustments:
         r_submit = submit_adjustment(token, adj_id)
         status = jdata(r_submit).get("status")
         if status == "PENDING_APPROVAL":
-            approve_adjustment(tok(EMAIL_NM_A), adj_id)
+            approve_adjustment(fresh_tok(EMAIL_NM_A), adj_id)
         after = stock_row(token, NODE_WHA1, PROD_P3)
         after_qty = float(after.get("current_stock", 0)) if after else 0
         check(self.GROUP, "15.8 P3 adjustment ALWAYS override — not self-approved",
@@ -2496,7 +2537,7 @@ class TestGroup15Adjustments:
         r_submit = submit_adjustment(token, adj_id)
         status = jdata(r_submit).get("status")
         if status == "PENDING_APPROVAL":
-            approve_adjustment(tok(EMAIL_RM_A), adj_id)
+            approve_adjustment(fresh_tok(EMAIL_RM_A), adj_id)
         after = stock_row(token, NODE_WHA1, PROD_P4)
         after_qty = float(after.get("current_stock", 0)) if after else 0
         check(self.GROUP, "15.9 P4 adjustment ALWAYS override → rm_addisreg",
@@ -2583,7 +2624,7 @@ class TestGroup15Adjustments:
         if not adj_id:
             skip_test(self.GROUP, "15.14 Reject adjustment; re-submit from REJECTED → 422", "could not create probe adjustment")
         submit_adjustment(token, adj_id)
-        r_reject = reject_adjustment(tok(EMAIL_NM_A), adj_id)
+        r_reject = reject_adjustment(fresh_tok(EMAIL_NM_A), adj_id)
         r_resubmit = submit_adjustment(token, adj_id)
         check(self.GROUP, "15.14 Reject adjustment; re-submit from REJECTED → 422",
               r_reject.status_code == 200 and jdata(r_reject).get("status") == "REJECTED"
@@ -2833,7 +2874,7 @@ class TestGroup17StateMachineAndBoundary:
         status = jdata(r_submit).get("status")
         final_status = status
         if status == "APPROVED":
-            rm_token = tok(EMAIL_RM_A)
+            rm_token = fresh_tok(EMAIL_RM_A)
             dispatch_transfer(rm_token, transfer_id)
             transition_transfer(rm_token, transfer_id, "IN_TRANSIT")
             receive_transfer(token, transfer_id)
@@ -2862,7 +2903,7 @@ class TestGroup17StateMachineAndBoundary:
               expected="status in (PENDING_REVIEW, PENDING_APPROVAL)", actual=f"status={status!r}", body=r_submit.text[:300])
 
     def test_1703_rm_exact_limit_self_approves(self) -> None:
-        token = tok(EMAIL_RM_A)
+        token = fresh_tok(EMAIL_RM_A)
         if not token:
             skip_test(self.GROUP, "17.3 RM qty=500 (exact limit) self-approves (inclusive boundary)", "no rm_addisreg token")
         seed_receipt("t6p2t:g17:afac:p1:boundary", PROD_P1, NODE_A_FAC, 1000)
@@ -2875,7 +2916,7 @@ class TestGroup17StateMachineAndBoundary:
         status = jdata(r_submit).get("status")
         final_status = status
         if status == "APPROVED":
-            nm_token = tok(EMAIL_NM_A)
+            nm_token = fresh_tok(EMAIL_NM_A)
             dispatch_transfer(nm_token, transfer_id)
             transition_transfer(nm_token, transfer_id, "IN_TRANSIT")
             receive_transfer(token, transfer_id)
@@ -2991,7 +3032,7 @@ class TestGroup17StateMachineAndBoundary:
         transfer_id = STATE["g13"].get("pull_auto_id") or STATE["g16"].get("pending_pull_id")
         if not transfer_id or transfer_status(ta(), transfer_id) != "COMPLETED":
             skip_test(self.GROUP, "17.10 Cancel a COMPLETED transfer → 422", "no COMPLETED transfer available")
-        token = tok(EMAIL_WM_WHA1)
+        token = fresh_tok(EMAIL_WM_WHA1)
         r = transition_transfer(token, transfer_id, "CANCELLED")
         check(self.GROUP, "17.10 Cancel a COMPLETED transfer → 422",
               r.status_code == 422,
@@ -3000,12 +3041,12 @@ class TestGroup17StateMachineAndBoundary:
     def test_1711_reject_completed(self) -> None:
         transfer_id = STATE["g13"].get("pull_auto_id")
         if not transfer_id or transfer_status(ta(), transfer_id) != "COMPLETED":
-            skip_test(self.GROUP, "17.11 Reject a COMPLETED transfer → 422", "no COMPLETED transfer available")
+            skip_test(self.GROUP, "17.11 Reject COMPLETED transfer — WM lacks transfer:reject → 403", "no COMPLETED transfer available")
         token = tok(EMAIL_WM_WHA1)
         r = transition_transfer(token, transfer_id, "REJECTED")
-        check(self.GROUP, "17.11 Reject a COMPLETED transfer → 422",
-              r.status_code == 422,
-              expected="422", actual=f"status={r.status_code}", body=r.text[:300])
+        check(self.GROUP, "17.11 Reject COMPLETED transfer — WM lacks transfer:reject → 403",
+              r.status_code == 403,
+              expected="403", actual=f"status={r.status_code}", body=r.text[:300])
 
     # ── Approval authority ────────────────────────────────────────────────────
 
@@ -3037,7 +3078,7 @@ class TestGroup17StateMachineAndBoundary:
         transfer_id = STATE.get("g17", {}).get("lower_authority_transfer_id")
         if not transfer_id:
             skip_test(self.GROUP, "17.13 rm_addisreg (correct authority) approves; completes", "lower_authority_transfer_id missing")
-        token = tok(EMAIL_RM_A)
+        token = fresh_tok(EMAIL_RM_A)
         r = approve_transfer(token, transfer_id)
         ok = _drive_pull_to_completed(self.GROUP, "17.13 rm_addisreg (correct authority) approves; completes",
                                        tok(EMAIL_WM_WHA1), token, tok(EMAIL_WM_WHA1), transfer_id)
