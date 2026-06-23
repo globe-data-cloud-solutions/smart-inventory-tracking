@@ -837,9 +837,9 @@ class TestGroup11NewWarehouseAndSatellite:
         within that, so submit should self-approve straight to APPROVED."""
         if not STATE["nodes"].get("WHA4") or not tok("wm_wha4@t6p2t.com"):
             skip_test(self.GROUP, "11.15 WHA4 has no transfer rules — default org-type bands apply", "missing WHA4 or wm_wha4 token")
-        ikey = "t6p2t:g11:wha4:p1:seed"
+        ikey = f"t6p2t:g11:wha4:p1:seed:{uniq()}"
         seed_receipt(ikey, PROD_P1, STATE["nodes"]["WHA4"], 100)
-        r_seed_areg = seed_receipt("t6p2t:g11:areg:p1:seed", PROD_P1, NODE_A_REG, 100)
+        r_seed_areg = seed_receipt(f"t6p2t:g11:areg:p1:seed:{uniq()}", PROD_P1, NODE_A_REG, 100)
         token = tok("wm_wha4@t6p2t.com")
         r_create = create_transfer(token, "PULL", NODE_A_REG, STATE["nodes"]["WHA4"],
                                     [{"product_id": PROD_P1, "quantity": 30}])
@@ -902,6 +902,8 @@ class TestGroup12PersonnelChanges:
                     "downgrade_user_id", "downgrade_assign_id",
                     "A_REG_deputy_id"]:
             STATE["g12"].pop(key, None)
+        STATE["positions"].pop("A_REG_deputy", None)
+        STATE["positions"].pop("WHA2_mgr_2", None)
         if not have_base_state():
             skip_test(self.GROUP, "12.1A Create relief WM for WHA2 + ACTING assignment", "missing base state")
         if STATE["g12"].get("relief_wm_id"):
@@ -1276,7 +1278,7 @@ class TestGroup13TransferLifecycle:
         STATE["g13"].pop("sister_id", None)
         STATE["g13"].pop("multi_id", None)
         STATE["g13"].pop("push_id", None)
-        r1 = seed_receipt("t6p2t:g13:afac:p1", PROD_P1, NODE_A_FAC, 500)
+        r1 = seed_receipt(f"t6p2t:g13:afac:p1:{uniq()}", PROD_P1, NODE_A_FAC, 500)
         r2 = seed_receipt(f"t6p2t:g13:areg:p1:{uniq()}", PROD_P1, NODE_A_REG, 1000)
         r3 = seed_receipt(f"t6p2t:g13:breg:p1:{uniq()}", PROD_P1, NODE_B_REG, 500)
         check(self.GROUP, "13.0 Seed P1 prereq stock at A_FAC and A_REG",
@@ -1353,7 +1355,7 @@ class TestGroup13TransferLifecycle:
     # ── PULL A-side, above WM limit (qty > 200 → routes to approver) ────────
 
     def test_1306_pull_large_draft(self) -> None:
-        seed_receipt("t6p2t:g13:areg:p1:large", PROD_P1, NODE_A_REG, 500)
+        seed_receipt(f"t6p2t:g13:areg:p1:large:{uniq()}", PROD_P1, NODE_A_REG, 500)
         token = tok(EMAIL_WM_WHA1)
         if not token:
             skip_test(self.GROUP, "13.6 wm_wha1 creates large PULL DRAFT (qty=250)", "no wm_wha1 token")
@@ -1434,7 +1436,7 @@ class TestGroup13TransferLifecycle:
         token = tok(EMAIL_WM_WHB1)
         if not token:
             skip_test(self.GROUP, "13.11 wm_whb1 creates PULL DRAFT (B_REG→WHB1, qty=60)", "no wm_whb1 token")
-        r1 = seed_receipt("t6p2t:g13:breg:p1", PROD_P1, NODE_B_REG, 200)
+        r1 = seed_receipt(f"t6p2t:g13:breg:p1:{uniq()}", PROD_P1, NODE_B_REG, 200)
         r = create_transfer(token, "PULL", NODE_B_REG, NODE_WHB1, [{"product_id": PROD_P1, "quantity": 60}])
         d = jdata(r)
         if r.status_code == 201 and d.get("transfer_id"):
@@ -1472,6 +1474,7 @@ class TestGroup13TransferLifecycle:
     # ── PUSH — NM initiates from A_FAC to WHA2 ──────────────────────────────
 
     def test_1314_push_draft(self) -> None:
+        seed_receipt(f"t6p2t:g13:afac:p1:push:{uniq()}", PROD_P1, NODE_A_FAC, 500)
         token = tok(EMAIL_NM_A)
         if not token:
             skip_test(self.GROUP, "13.14 nm_addisfac creates PUSH DRAFT (A_FAC→WHA2, qty=80)", "no nm_addisfac token")
@@ -1651,7 +1654,7 @@ class TestGroup13TransferLifecycle:
         token = tok(EMAIL_WM_WHA1)
         if not token:
             skip_test(self.GROUP, "13.25 wm_wha1 creates multi-line PULL (P1+P2)", "no wm_wha1 token")
-        r1 = seed_receipt("t6p2t:g13:areg:p2", PROD_P2, NODE_A_REG, 100)
+        r1 = seed_receipt(f"t6p2t:g13:areg:p2:{uniq()}", PROD_P2, NODE_A_REG, 100)
         seed_receipt(f"t6p2t:g13:afac:p2:{uniq()}", PROD_P2, NODE_A_FAC, 300)
         r = create_transfer(token, "PULL", NODE_A_FAC, NODE_WHA1,
                              [{"product_id": PROD_P1, "quantity": 15}, {"product_id": PROD_P2, "quantity": 10}])
@@ -1737,7 +1740,7 @@ class TestGroup13TransferLifecycle:
         nm_token = tok(EMAIL_NM_A)
         if not nm_token:
             skip_test(self.GROUP, "13.31 lm_satwha1 receives a PUSH at SAT_WHA1 (LM has transfer:receive)", "no nm_addisfac token")
-        r_seed = seed_receipt("t6p2t:g13:afac:p1:lmpush", PROD_P1, NODE_A_FAC, 50)
+        r_seed = seed_receipt(f"t6p2t:g13:afac:p1:lmpush:{uniq()}", PROD_P1, NODE_A_FAC, 50)
         r_create = create_transfer(nm_token, "PUSH", NODE_A_FAC, NODE_SAT_WHA1, [{"product_id": PROD_P1, "quantity": 10}])
         d_create = jdata(r_create)
         transfer_id = str(d_create.get("transfer_id")) if r_create.status_code == 201 else None
@@ -1966,11 +1969,11 @@ class TestGroup14ControlledProducts:
         if not have_base_state():
             skip_test(self.GROUP, "14.0 Seed P3/P4/P5 prereq stock at A_FAC and WHA1", "missing base state")
         seeds = [
-            ("t6p2t:g14:afac:p3", PROD_P3, NODE_A_FAC, 100),
-            ("t6p2t:g14:afac:p4", PROD_P4, NODE_A_FAC, 100),
-            ("t6p2t:g14:afac:p5", PROD_P5, NODE_A_FAC, 100),
-            ("t6p2t:g14:wha1:p3", PROD_P3, NODE_WHA1, 50),
-            ("t6p2t:g14:wha1:p4", PROD_P4, NODE_WHA1, 50),
+            (f"t6p2t:g14:afac:p3:{uniq()}", PROD_P3, NODE_A_FAC, 100),
+            (f"t6p2t:g14:afac:p4:{uniq()}", PROD_P4, NODE_A_FAC, 100),
+            (f"t6p2t:g14:afac:p5:{uniq()}", PROD_P5, NODE_A_FAC, 100),
+            (f"t6p2t:g14:wha1:p3:{uniq()}", PROD_P3, NODE_WHA1, 50),
+            (f"t6p2t:g14:wha1:p4:{uniq()}", PROD_P4, NODE_WHA1, 50),
         ]
         results_ok = True
         for ikey, pid, wid, qty in seeds:
@@ -1984,6 +1987,7 @@ class TestGroup14ControlledProducts:
     # ── P3 — ALWAYS override on PULL/PUSH/ADJUSTMENT → A_FAC_dir ────────────
 
     def test_1401_p3_pull_draft(self) -> None:
+        seed_receipt(f"t6p2t:g14:afac:p3:pull:{uniq()}", PROD_P3, NODE_A_FAC, 300)
         token = tok(EMAIL_WM_WHA1)
         if not token:
             skip_test(self.GROUP, "14.1 wm_wha1 creates P3 PULL DRAFT (A_FAC→WHA1, qty=10)", "no wm_wha1 token")
@@ -2133,7 +2137,7 @@ class TestGroup14ControlledProducts:
     # ── P4 — QUANTITY threshold=50 on PULL; ALWAYS on ADJUSTMENT ────────────
 
     def test_1411_p4_pull_below_threshold(self) -> None:
-        seed_receipt("t6p2t:g14:afac:p4:replenish", PROD_P4, NODE_A_FAC, 200)
+        seed_receipt(f"t6p2t:g14:afac:p4:replenish:{uniq()}", PROD_P4, NODE_A_FAC, 200)
         token = tok(EMAIL_WM_WHA1)
         if not token:
             skip_test(self.GROUP, "14.11 P4 PULL qty=20 < threshold=50 — normal WM self-approve routing", "no wm_wha1 token")
@@ -2175,7 +2179,7 @@ class TestGroup14ControlledProducts:
               expected="200, COMPLETED", actual=actual_msg)
 
     def test_1412_p4_pull_at_threshold(self) -> None:
-        seed_receipt("t6p2t:g14:afac:p4:replenish2", PROD_P4, NODE_A_FAC, 200)
+        seed_receipt(f"t6p2t:g14:afac:p4:replenish2:{uniq()}", PROD_P4, NODE_A_FAC, 200)
         token = tok(EMAIL_WM_WHA1)
         if not token:
             skip_test(self.GROUP, "14.12 P4 PULL qty=50 AT threshold → PENDING_REVIEW (override fires, review still required)", "no wm_wha1 token")
@@ -2213,6 +2217,7 @@ class TestGroup14ControlledProducts:
               expected="200, COMPLETED", actual=f"approve_status={r.status_code}")
 
     def test_1414_p4_pull_above_threshold(self) -> None:
+        seed_receipt(f"t6p2t:g14:afac:p4:above:{uniq()}", PROD_P4, NODE_A_FAC, 200)
         token = tok(EMAIL_WM_WHA1)
         if not token:
             skip_test(self.GROUP, "14.14 P4 PULL qty=80 > threshold=50 — override fires, completes", "no wm_wha1 token")
@@ -2263,6 +2268,7 @@ class TestGroup14ControlledProducts:
     # ── P5 — Factory-Specific A (source_factory_id = A_FAC) ─────────────────
 
     def test_1416_p5_valid_source_pull(self) -> None:
+        seed_receipt(f"t6p2t:g14:afac:p5:pull:{uniq()}", PROD_P5, NODE_A_FAC, 200)
         token = tok(EMAIL_WM_WHA1)
         if not token:
             skip_test(self.GROUP, "14.16 P5 valid-source PULL (A_FAC→WHA1) completes; on_hand>0", "no wm_wha1 token")
@@ -2415,9 +2421,9 @@ class TestGroup15Adjustments:
         if not have_base_state():
             skip_test(self.GROUP, "15.0 Seed P1/P3/P4 prereq stock at WHA1", "missing base state")
         seeds = [
-            ("t6p2t:g15:wha1:p1", PROD_P1, NODE_WHA1, 500),
-            ("t6p2t:g15:wha1:p3", PROD_P3, NODE_WHA1, 50),
-            ("t6p2t:g15:wha1:p4", PROD_P4, NODE_WHA1, 50),
+            (f"t6p2t:g15:wha1:p1:{uniq()}", PROD_P1, NODE_WHA1, 500),
+            (f"t6p2t:g15:wha1:p3:{uniq()}", PROD_P3, NODE_WHA1, 50),
+            (f"t6p2t:g15:wha1:p4:{uniq()}", PROD_P4, NODE_WHA1, 50),
         ]
         all_ok = True
         for ikey, pid, wid, qty in seeds:
@@ -2638,7 +2644,7 @@ class TestGroup15Adjustments:
         token = tok(EMAIL_LM_SAT_WHA1)
         if not token:
             skip_test(self.GROUP, "15.10 lm_satwha1 cannot create adjustment (LM lacks adjustment:create) → 403", "no lm_satwha1 token")
-        seed_receipt("t6p2t:g15:satwha1:p1", PROD_P1, NODE_SAT_WHA1, 200)
+        seed_receipt(f"t6p2t:g15:satwha1:p1:{uniq()}", PROD_P1, NODE_SAT_WHA1, 200)
         r_create = create_adjustment(token, PROD_P1, NODE_SAT_WHA1, 20, "COUNT_DISCREPANCY", f"t6p2t:g15:lmsmall:{uniq()}")
         check(self.GROUP, "15.10 lm_satwha1 cannot create adjustment (LM lacks adjustment:create) → 403",
               r_create.status_code == 403,
@@ -2769,7 +2775,7 @@ class TestGroup16DataIntegrity:
             skip_test(self.GROUP, "16.1 RECEIVE increases on_hand by the receipted qty", "missing base state")
         before = stock_row(ta(), NODE_WHA1, PROD_P1)
         before_qty = float(before.get("current_stock", 0)) if before else 0
-        r = seed_receipt("t6p2t:g16:receipt:check:001", PROD_P1, NODE_WHA1, 100)
+        r = seed_receipt(f"t6p2t:g16:receipt:check:001:{uniq()}", PROD_P1, NODE_WHA1, 100)
         after = stock_row(ta(), NODE_WHA1, PROD_P1)
         after_qty = float(after.get("current_stock", 0)) if after else 0
         if r.status_code == 409:
@@ -2785,7 +2791,7 @@ class TestGroup16DataIntegrity:
         token = tok(EMAIL_WM_WHA1)
         if not token:
             skip_test(self.GROUP, "16.2 PENDING_REVIEW/APPROVAL increases pending_out_qty at source", "no wm_wha1 token")
-        seed_receipt("t6p2t:g16:areg:p1", PROD_P1, NODE_A_REG, 500)
+        seed_receipt(f"t6p2t:g16:areg:p1:{uniq()}", PROD_P1, NODE_A_REG, 500)
         before = stock_row(token, NODE_A_REG, PROD_P1)
         pending_before = float(before.get("pending_out_qty", 0)) if before else 0
         r_create = create_transfer(token, "PULL", NODE_A_REG, NODE_WHA1, [{"product_id": PROD_P1, "quantity": 200}])
@@ -2954,7 +2960,7 @@ class TestGroup17StateMachineAndBoundary:
         token = tok(EMAIL_WM_WHA1)
         if not token:
             skip_test(self.GROUP, "17.1 WM qty=200 (exact limit) self-approves (inclusive boundary)", "no wm_wha1 token")
-        seed_receipt("t6p2t:g17:areg:p1:boundary", PROD_P1, NODE_A_REG, 1000)
+        seed_receipt(f"t6p2t:g17:areg:p1:boundary:{uniq()}", PROD_P1, NODE_A_REG, 1000)
         r_create = create_transfer(token, "PULL", NODE_A_REG, NODE_WHA1, [{"product_id": PROD_P1, "quantity": WM_SELF_APPROVE_LIMIT}])
         d_create = jdata(r_create)
         transfer_id = str(d_create.get("transfer_id")) if r_create.status_code == 201 else None
@@ -2998,7 +3004,7 @@ class TestGroup17StateMachineAndBoundary:
         token = tok(EMAIL_RM_A)
         if not token:
             skip_test(self.GROUP, "17.3 RM qty=500 (exact limit) self-approves (inclusive boundary)", "no rm_addisreg token")
-        seed_receipt("t6p2t:g17:afac:p1:boundary", PROD_P1, NODE_A_FAC, 1000)
+        seed_receipt(f"t6p2t:g17:afac:p1:boundary:{uniq()}", PROD_P1, NODE_A_FAC, 1000)
         r_create = create_transfer(token, "PULL", NODE_A_FAC, NODE_A_REG, [{"product_id": PROD_P1, "quantity": RM_SELF_APPROVE_LIMIT}])
         d_create = jdata(r_create)
         transfer_id = str(d_create.get("transfer_id")) if r_create.status_code == 201 else None
