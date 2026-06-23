@@ -85,10 +85,17 @@ async def review_transfer(
     Called by the reviewer (RM or NM) after inspecting a PULL request before
     it enters the formal approval queue.  This transition is only valid for PULL
     — PUSH and SISTER skip PENDING_REVIEW entirely.
-    The state machine enforces the type constraint: calling this on a PUSH or SISTER
-    transfer raises HTTP 422 INVALID_STATE_TRANSITION.
     """
     svc = InventoryService(db)
+    transfer = await svc.get_transfer(user, transfer_id)
+    if transfer.transfer_type != "PULL":
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "code": "INVALID_TRANSFER_TYPE",
+                "message": "/review is only valid for PULL transfers. PUSH and SISTER transfers have no PENDING_REVIEW state.",
+            },
+        )
     result = await svc.transition_transfer(user, transfer_id, "PENDING_APPROVAL")
     return SuccessResponse(data=result)
 

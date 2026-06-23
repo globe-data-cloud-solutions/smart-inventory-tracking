@@ -59,7 +59,7 @@ class TransferOrderRequest(BaseModel):
     from_warehouse_id: uuid.UUID
     to_warehouse_id: uuid.UUID
     lines: List[TransferLineRequest]
-    notes: Optional[str] = None
+    notes: Optional[str] = Field(None, max_length=2000)
     transfer_type_config_id: Optional[uuid.UUID] = None
 
     @field_validator("notes", "transfer_type", mode="before")
@@ -107,7 +107,7 @@ class AdjustmentRequest(BaseModel):
     reason_code: AdjustmentReasonCode
     lot_number: Optional[str] = None
     idempotency_key: str
-    notes: Optional[str] = None
+    notes: Optional[str] = Field(None, max_length=2000)
 
     @field_validator("lot_number", "idempotency_key", "notes", mode="before")
     @classmethod
