@@ -224,33 +224,36 @@ def have_base_state() -> bool:
     return bool(STATE.get("tenant_id") and STATE.get("ta_token") and STATE.get("sa_token"))
 
 
+def _creds_for_email(email: str) -> str:
+    """Look up the current password for an email from STATE["users"]; fall
+    back to DEFAULT_PASSWORD for accounts not tracked there (TA/SA)."""
+    for rec in STATE.get("users", {}).values():
+        if rec.get("email") == email:
+            return str(rec.get("password", DEFAULT_PASSWORD))
+    return DEFAULT_PASSWORD
+
+
 def _refresh_tokens() -> None:
     """Re-login at import time so tokens are always fresh regardless of
     when t6p2t_state.json was last written. JWTs expire after 60 min;
     this ensures the module-level STATE dict always holds a live token
     before any test class is collected."""
-    ta_email = "admin@t6p2t.com"
-    ta_password = "Test@2026"
-    sa_email = "smartadmin@smart-inventory.com"
-    sa_password = "Admin@2026"
-
-    try:
-        ta_resp = login(ta_email, ta_password)
-        if ta_resp.status_code == 200:
-            token = ta_resp.json().get("access_token")
-            if token:
-                STATE["ta_token"] = token
-    except Exception:
-        pass  # leave stale token in place — individual tests will surface the 401
-
-    try:
-        sa_resp = login(sa_email, sa_password)
-        if sa_resp.status_code == 200:
-            token = sa_resp.json().get("access_token")
-            if token:
-                STATE["sa_token"] = token
-    except Exception:
-        pass
+    sa_password = "Admin@2026"  # SA is not tracked in STATE["users"], so
+                                 # _creds_for_email() would otherwise fall back
+                                 # to DEFAULT_PASSWORD, which is wrong for SA
+    for email in (TA_EMAIL, SA_EMAIL):
+        password = sa_password if email == SA_EMAIL else _creds_for_email(email)
+        try:
+            r = login(email, password)
+            if r.status_code == 200:
+                token = r.json().get("access_token")
+                if token:
+                    if email == TA_EMAIL:
+                        STATE["ta_token"] = token
+                    elif email == SA_EMAIL:
+                        STATE["sa_token"] = token
+        except Exception:
+            pass  # leave stale token in place — individual tests will surface the 401
 
 
 _refresh_tokens()
@@ -270,15 +273,6 @@ def _decode_jwt_claims(token: Optional[str]) -> dict[str, Any]:
 # ── Per-user-key token cache (handles per-user passwords that have drifted
 #    from DEFAULT_PASSWORD in earlier groups, e.g. wm_wha1/wm_wha2) ──────────
 _TOKEN_CACHE: dict[str, str] = {}
-
-
-def _creds_for_email(email: str) -> str:
-    """Look up the current password for an email from STATE["users"]; fall
-    back to DEFAULT_PASSWORD for accounts not tracked there (TA/SA)."""
-    for rec in STATE.get("users", {}).values():
-        if rec.get("email") == email:
-            return str(rec.get("password", DEFAULT_PASSWORD))
-    return DEFAULT_PASSWORD
 
 
 def invalidate_token(email: str) -> None:
@@ -1335,6 +1329,7 @@ class TestGroup13TransferLifecycle:
     # ── PULL A-side, above WM limit (qty > 200 → routes to approver) ────────
 
     def test_1306_pull_large_draft(self) -> None:
+        seed_receipt("t6p2t:g13:areg:p1:large", PROD_P1, NODE_A_REG, 500)
         token = tok(EMAIL_WM_WHA1)
         if not token:
             skip_test(self.GROUP, "13.6 wm_wha1 creates large PULL DRAFT (qty=250)", "no wm_wha1 token")
@@ -1379,14 +1374,18 @@ class TestGroup13TransferLifecycle:
             approver_user_id = jdata(r_info).get("current_approver_user_id")
             rm_id = STATE.get("users", {}).get("rm_addisreg", {}).get("id")
             if approver_user_id and rm_id and str(approver_user_id) == str(rm_id):
-                approver_token = fresh_tok(EMAIL_RM_A)
+                invalidate_token(EMAIL_RM_A)
+                approver_token = tok(EMAIL_RM_A)
             else:
-                approver_token = fresh_tok(EMAIL_TA)
+                invalidate_token(EMAIL_TA)
+                approver_token = tok(EMAIL_TA)
         else:
-            approver_token = fresh_tok(EMAIL_TA)
+            invalidate_token(EMAIL_TA)
+            approver_token = tok(EMAIL_TA)
         r = approve_transfer(approver_token, transfer_id) if approver_token else None
         if r is None or r.status_code != 200:
-            r = approve_transfer(fresh_tok(EMAIL_TA), transfer_id)
+            invalidate_token(EMAIL_TA)
+            r = approve_transfer(tok(EMAIL_TA), transfer_id)
         check(self.GROUP, "13.9 PULL large approved via approval-info lookup (TA fallback)",
               r.status_code == 200 and jdata(r).get("status") == "APPROVED",
               expected="200, status=APPROVED", actual=f"status_code={r.status_code}, status={jdata(r).get('status')}",
@@ -1396,8 +1395,10 @@ class TestGroup13TransferLifecycle:
         transfer_id = STATE["g13"].get("pull_large_id")
         if not transfer_id:
             skip_test(self.GROUP, "13.10 Drive large PULL to COMPLETED", "pull_large_id missing")
-        rm_token = fresh_tok(EMAIL_RM_A)
-        wm_token = fresh_tok(EMAIL_WM_WHA1)
+        invalidate_token(EMAIL_RM_A)
+        rm_token = tok(EMAIL_RM_A)
+        invalidate_token(EMAIL_WM_WHA1)
+        wm_token = tok(EMAIL_WM_WHA1)
         ok = _drive_pull_to_completed(self.GROUP, "13.10 Drive large PULL to COMPLETED", wm_token, rm_token, wm_token, transfer_id)
         if ok:
             record_pass(self.GROUP, "13.10 Drive large PULL to COMPLETED")
@@ -1486,7 +1487,8 @@ class TestGroup13TransferLifecycle:
         transfer_id = STATE["g13"].get("push_id")
         if not transfer_id:
             skip_test(self.GROUP, "13.17 Drive PUSH to COMPLETED; P1 on_hand at WHA2 > 0", "push_id missing")
-        nm_token = fresh_tok(EMAIL_NM_A)
+        invalidate_token(EMAIL_NM_A)
+        nm_token = tok(EMAIL_NM_A)
         status = transfer_status(nm_token, transfer_id)
         if status == "PENDING_APPROVAL":
             r_approve = approve_transfer(nm_token, transfer_id)
@@ -1496,7 +1498,8 @@ class TestGroup13TransferLifecycle:
                 approve_transfer(tok(EMAIL_RM_A), transfer_id)
         r_dispatch = dispatch_transfer(nm_token, transfer_id)
         r_transit = transition_transfer(nm_token, transfer_id, "IN_TRANSIT")
-        wm_token = fresh_tok(EMAIL_WM_WHA2)
+        invalidate_token(EMAIL_WM_WHA2)
+        wm_token = tok(EMAIL_WM_WHA2)
         r_recv = receive_transfer(wm_token, transfer_id)
         r_complete = transition_transfer(wm_token, transfer_id, "COMPLETED")
         row = stock_row(wm_token, NODE_WHA2, PROD_P1)
@@ -1569,10 +1572,12 @@ class TestGroup13TransferLifecycle:
         transfer_id = STATE["g13"].get("sister_id")
         if not transfer_id or transfer_status(ta(), transfer_id) != "PENDING_DEST_CONFIRM":
             skip_test(self.GROUP, "13.22 PATCH SISTER → PENDING_APPROVAL (may self-approve to APPROVED)", "transfer not at PENDING_DEST_CONFIRM")
-        token = fresh_tok(EMAIL_WM_WHA2)
+        invalidate_token(EMAIL_WM_WHA2)
+        token = tok(EMAIL_WM_WHA2)
         r = transition_transfer(token, transfer_id, "PENDING_APPROVAL") if token else None
         if r is None or r.status_code != 200:
-            r = transition_transfer(fresh_tok(EMAIL_TA), transfer_id, "PENDING_APPROVAL")
+            invalidate_token(EMAIL_TA)
+            r = transition_transfer(tok(EMAIL_TA), transfer_id, "PENDING_APPROVAL")
         check(self.GROUP, "13.22 PATCH SISTER → PENDING_APPROVAL (may self-approve to APPROVED)",
               r.status_code == 200 and jdata(r).get("status") in ("PENDING_APPROVAL", "APPROVED"),
               expected="200, status in (PENDING_APPROVAL, APPROVED)",
@@ -1598,8 +1603,10 @@ class TestGroup13TransferLifecycle:
         transfer_id = STATE["g13"].get("sister_id")
         if not transfer_id:
             skip_test(self.GROUP, "13.24 Drive SISTER to COMPLETED; WHA1 decreased, WHA2 increased", "sister_id missing")
-        wm1 = fresh_tok(EMAIL_WM_WHA1)
-        wm2 = fresh_tok(EMAIL_WM_WHA2)
+        invalidate_token(EMAIL_WM_WHA1)
+        wm1 = tok(EMAIL_WM_WHA1)
+        invalidate_token(EMAIL_WM_WHA2)
+        wm2 = tok(EMAIL_WM_WHA2)
         before_wha1 = stock_row(wm1, NODE_WHA1, PROD_P1)
         before_qty = float(before_wha1.get("current_stock", 0)) if before_wha1 else 0
         ok = _drive_pull_to_completed(self.GROUP, "13.24 Drive SISTER to COMPLETED; WHA1 decreased, WHA2 increased",
@@ -2097,6 +2104,7 @@ class TestGroup14ControlledProducts:
     # ── P4 — QUANTITY threshold=50 on PULL; ALWAYS on ADJUSTMENT ────────────
 
     def test_1411_p4_pull_below_threshold(self) -> None:
+        seed_receipt("t6p2t:g14:afac:p4:replenish", PROD_P4, NODE_A_FAC, 200)
         token = tok(EMAIL_WM_WHA1)
         if not token:
             skip_test(self.GROUP, "14.11 P4 PULL qty=20 < threshold=50 — normal WM self-approve routing", "no wm_wha1 token")
@@ -2112,7 +2120,8 @@ class TestGroup14ControlledProducts:
         if status == "PENDING_APPROVAL":
             print("  [INFO] 14.11 P4 below threshold routed to override approver — seed threshold may differ from expectation")
             approve_transfer(tok(EMAIL_RM_A), transfer_id)
-        rm_token = fresh_tok(EMAIL_RM_A)
+        invalidate_token(EMAIL_RM_A)
+        rm_token = tok(EMAIL_RM_A)
         dispatch_transfer(rm_token, transfer_id)
         transition_transfer(rm_token, transfer_id, "IN_TRANSIT")
         receive_transfer(token, transfer_id)
@@ -2123,6 +2132,7 @@ class TestGroup14ControlledProducts:
               expected="200, COMPLETED", actual=f"status_code={r_submit.status_code}, initial_status={status}, final_status={final_status}")
 
     def test_1412_p4_pull_at_threshold(self) -> None:
+        seed_receipt("t6p2t:g14:afac:p4:replenish2", PROD_P4, NODE_A_FAC, 200)
         token = tok(EMAIL_WM_WHA1)
         if not token:
             skip_test(self.GROUP, "14.12 P4 PULL qty=50 AT threshold → PENDING_REVIEW (override fires, review still required)", "no wm_wha1 token")
@@ -2294,6 +2304,8 @@ class TestGroup14ControlledProducts:
         nm_id = _get_nm_addisfac_id()
         if not nm_id:
             skip_test(self.GROUP, "14.20 After nm_addisfac restored: P3 PULL routes back to nm_addisfac (not TA)", "could not resolve nm_addisfac id")
+        r_reactivate = api_patch(f"/api/v1/tenants/{tid()}/users/{nm_id}/reactivate", sa(), {})
+        reactivate_note = "" if r_reactivate.status_code in (200, 409) else f" (unexpected reactivate status={r_reactivate.status_code})"
         r_restore = api_post(f"/api/v1/tenants/{tid()}/users/{nm_id}/positions", ta(), {
             "position_id": POS_A_FAC_DIR, "assignment_type": "PRIMARY",
         })
@@ -2311,7 +2323,10 @@ class TestGroup14ControlledProducts:
         new_transfer_id = str(d_create.get("transfer_id")) if r_create.status_code == 201 else None
         if not new_transfer_id:
             check(self.GROUP, "14.20 After nm_addisfac restored: P3 PULL routes back to nm_addisfac (not TA)",
-                  r_restore.status_code == 201, expected="201 restore", actual=f"restore={r_restore.status_code}", body=r_restore.text[:300])
+                  r_restore.status_code == 201,
+                  expected="201 restore",
+                  actual=f"restore={r_restore.status_code}, reactivate={r_reactivate.status_code}{reactivate_note}",
+                  body=r_restore.text[:300])
             return
         submit_transfer(token, new_transfer_id)
         if transfer_status(ta(), new_transfer_id) == "PENDING_REVIEW":
@@ -2325,7 +2340,8 @@ class TestGroup14ControlledProducts:
               r_restore.status_code == 201 and r_info.status_code == 200
               and getattr(r_nm_stock, "status_code", None) == 200,
               expected="201 restore, 200 approval-info, nm_addisfac stock GET 200",
-              actual=f"restore={r_restore.status_code}, approval_info_status={r_info.status_code}, "
+              actual=f"restore={r_restore.status_code}, reactivate={r_reactivate.status_code}{reactivate_note}, "
+                     f"approval_info_status={r_info.status_code}, "
                      f"nm_stock={getattr(r_nm_stock, 'status_code', None)}, "
                      f"approver_title={approver_title!r}, approver_name={approver_name!r}",
               body=r_restore.text[:300])
@@ -2409,7 +2425,8 @@ class TestGroup15Adjustments:
         adj_id = STATE["g15"].get("large_adj_id")
         if not adj_id or adjustment_status(ta(), adj_id) != "PENDING_APPROVAL":
             skip_test(self.GROUP, "15.4 rm_addisreg (wrong approver) cannot approve large adjustment", "not at PENDING_APPROVAL")
-        token = fresh_tok(EMAIL_RM_A)
+        invalidate_token(EMAIL_RM_A)
+        token = tok(EMAIL_RM_A)
         r = approve_adjustment(token, adj_id)
         check(self.GROUP, "15.4 rm_addisreg (wrong approver) cannot approve large adjustment",
               r.status_code == 403,
@@ -2425,7 +2442,8 @@ class TestGroup15Adjustments:
         token = tok(EMAIL_WM_WHA1)
         before = stock_row(token, NODE_WHA1, PROD_P1)
         before_qty = float(before.get("current_stock", 0)) if before else 0
-        r = approve_adjustment(fresh_tok(EMAIL_NM_A), adj_id)
+        invalidate_token(EMAIL_NM_A)
+        r = approve_adjustment(tok(EMAIL_NM_A), adj_id)
         after = stock_row(token, NODE_WHA1, PROD_P1)
         after_qty = float(after.get("current_stock", 0)) if after else 0
         check(self.GROUP, "15.5 nm_addisfac approves large adjustment → POSTED; on_hand +250",
@@ -2481,7 +2499,8 @@ class TestGroup15Adjustments:
         r_submit = submit_adjustment(token, adj_id)
         status = jdata(r_submit).get("status")
         if status == "PENDING_APPROVAL":
-            r_approve = approve_adjustment(fresh_tok(EMAIL_NM_A), adj_id)
+            invalidate_token(EMAIL_NM_A)
+            r_approve = approve_adjustment(tok(EMAIL_NM_A), adj_id)
             check(self.GROUP, "15.7 Oversized negative adjustment → 422 INSUFFICIENT_STOCK at approve",
                   r_approve.status_code == 422,
                   expected="422 at approve", actual=f"submit_status={status}, approve_status={r_approve.status_code}",
@@ -2510,7 +2529,8 @@ class TestGroup15Adjustments:
         r_submit = submit_adjustment(token, adj_id)
         status = jdata(r_submit).get("status")
         if status == "PENDING_APPROVAL":
-            approve_adjustment(fresh_tok(EMAIL_NM_A), adj_id)
+            invalidate_token(EMAIL_NM_A)
+            approve_adjustment(tok(EMAIL_NM_A), adj_id)
         after = stock_row(token, NODE_WHA1, PROD_P3)
         after_qty = float(after.get("current_stock", 0)) if after else 0
         check(self.GROUP, "15.8 P3 adjustment ALWAYS override — not self-approved",
@@ -2537,7 +2557,8 @@ class TestGroup15Adjustments:
         r_submit = submit_adjustment(token, adj_id)
         status = jdata(r_submit).get("status")
         if status == "PENDING_APPROVAL":
-            approve_adjustment(fresh_tok(EMAIL_RM_A), adj_id)
+            invalidate_token(EMAIL_RM_A)
+            approve_adjustment(tok(EMAIL_RM_A), adj_id)
         after = stock_row(token, NODE_WHA1, PROD_P4)
         after_qty = float(after.get("current_stock", 0)) if after else 0
         check(self.GROUP, "15.9 P4 adjustment ALWAYS override → rm_addisreg",
@@ -2624,7 +2645,8 @@ class TestGroup15Adjustments:
         if not adj_id:
             skip_test(self.GROUP, "15.14 Reject adjustment; re-submit from REJECTED → 422", "could not create probe adjustment")
         submit_adjustment(token, adj_id)
-        r_reject = reject_adjustment(fresh_tok(EMAIL_NM_A), adj_id)
+        invalidate_token(EMAIL_NM_A)
+        r_reject = reject_adjustment(tok(EMAIL_NM_A), adj_id)
         r_resubmit = submit_adjustment(token, adj_id)
         check(self.GROUP, "15.14 Reject adjustment; re-submit from REJECTED → 422",
               r_reject.status_code == 200 and jdata(r_reject).get("status") == "REJECTED"
@@ -2874,7 +2896,8 @@ class TestGroup17StateMachineAndBoundary:
         status = jdata(r_submit).get("status")
         final_status = status
         if status == "APPROVED":
-            rm_token = fresh_tok(EMAIL_RM_A)
+            invalidate_token(EMAIL_RM_A)
+            rm_token = tok(EMAIL_RM_A)
             dispatch_transfer(rm_token, transfer_id)
             transition_transfer(rm_token, transfer_id, "IN_TRANSIT")
             receive_transfer(token, transfer_id)
@@ -2903,7 +2926,8 @@ class TestGroup17StateMachineAndBoundary:
               expected="status in (PENDING_REVIEW, PENDING_APPROVAL)", actual=f"status={status!r}", body=r_submit.text[:300])
 
     def test_1703_rm_exact_limit_self_approves(self) -> None:
-        token = fresh_tok(EMAIL_RM_A)
+        invalidate_token(EMAIL_RM_A)
+        token = tok(EMAIL_RM_A)
         if not token:
             skip_test(self.GROUP, "17.3 RM qty=500 (exact limit) self-approves (inclusive boundary)", "no rm_addisreg token")
         seed_receipt("t6p2t:g17:afac:p1:boundary", PROD_P1, NODE_A_FAC, 1000)
@@ -2916,7 +2940,8 @@ class TestGroup17StateMachineAndBoundary:
         status = jdata(r_submit).get("status")
         final_status = status
         if status == "APPROVED":
-            nm_token = fresh_tok(EMAIL_NM_A)
+            invalidate_token(EMAIL_NM_A)
+            nm_token = tok(EMAIL_NM_A)
             dispatch_transfer(nm_token, transfer_id)
             transition_transfer(nm_token, transfer_id, "IN_TRANSIT")
             receive_transfer(token, transfer_id)
@@ -3032,7 +3057,8 @@ class TestGroup17StateMachineAndBoundary:
         transfer_id = STATE["g13"].get("pull_auto_id") or STATE["g16"].get("pending_pull_id")
         if not transfer_id or transfer_status(ta(), transfer_id) != "COMPLETED":
             skip_test(self.GROUP, "17.10 Cancel a COMPLETED transfer → 422", "no COMPLETED transfer available")
-        token = fresh_tok(EMAIL_WM_WHA1)
+        invalidate_token(EMAIL_WM_WHA1)
+        token = tok(EMAIL_WM_WHA1)
         r = transition_transfer(token, transfer_id, "CANCELLED")
         check(self.GROUP, "17.10 Cancel a COMPLETED transfer → 422",
               r.status_code == 422,
@@ -3051,6 +3077,7 @@ class TestGroup17StateMachineAndBoundary:
     # ── Approval authority ────────────────────────────────────────────────────
 
     def test_1712_lower_authority_cannot_approve(self) -> None:
+        invalidate_token(EMAIL_WM_WHA1)
         token = tok(EMAIL_WM_WHA1)
         if not token:
             skip_test(self.GROUP, "17.12 WM (lower authority) cannot approve a PENDING_APPROVAL PULL routed to RM", "no wm_wha1 token")
@@ -3078,7 +3105,8 @@ class TestGroup17StateMachineAndBoundary:
         transfer_id = STATE.get("g17", {}).get("lower_authority_transfer_id")
         if not transfer_id:
             skip_test(self.GROUP, "17.13 rm_addisreg (correct authority) approves; completes", "lower_authority_transfer_id missing")
-        token = fresh_tok(EMAIL_RM_A)
+        invalidate_token(EMAIL_RM_A)
+        token = tok(EMAIL_RM_A)
         r = approve_transfer(token, transfer_id)
         ok = _drive_pull_to_completed(self.GROUP, "17.13 rm_addisreg (correct authority) approves; completes",
                                        tok(EMAIL_WM_WHA1), token, tok(EMAIL_WM_WHA1), transfer_id)
