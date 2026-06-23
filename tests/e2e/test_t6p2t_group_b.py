@@ -673,9 +673,38 @@ class TestGroup5PersonnelTenantWideAndSecondary:
                       position_id=STATE["positions"].get("WHA1_mgr"))
 
     def test_533_rm_addisreg_sec(self):
-        _create_user(self.GROUP, "rm_addisreg_sec", "rm_addisreg_sec@t6p2t.com", "RM Addis Reg Secondary",
-                      "5.33 Create user rm_addisreg_sec@t6p2t.com (2nd holder, Addis Regional Manager)",
-                      position_id=STATE["positions"].get("A_REG_mgr"))
+        """Verifies a position can have a second concurrent holder. Uses
+        ACTING, not PRIMARY — two simultaneous PRIMARY holders on one
+        position made transfer-approval routing resolve to whichever holder
+        the backend picked non-deterministically, breaking the assumption
+        (held throughout the e2e suite) that rm_addisreg is always the
+        resolved approver for Addis Regional Manager."""
+        test_name = "5.33 Create user rm_addisreg_sec@t6p2t.com (2nd holder, Addis Regional Manager)"
+        if not have_base_state():
+            skip_test(self.GROUP, test_name, "missing base state")
+        email = "rm_addisreg_sec@t6p2t.com"
+        r_create = api_post(f"/api/v1/tenants/{tid()}/users", ta(), {
+            "name": "RM Addis Reg Secondary", "email": email, "password": DEFAULT_PASSWORD,
+        })
+        d_create = jdata(r_create)
+        if not (r_create.status_code == 201 and d_create.get("id")):
+            check(self.GROUP, test_name, False,
+                  expected="201 + user id", actual=f"status={r_create.status_code}", body=r_create.text)
+            return
+        user_id = str(d_create["id"])
+        r_acting = api_post(f"/api/v1/tenants/{tid()}/users/{user_id}/positions", ta(), {
+            "position_id": STATE["positions"].get("A_REG_mgr"), "assignment_type": "ACTING",
+        })
+        d_acting = jdata(r_acting)
+        if r_acting.status_code == 201:
+            STATE["users"]["rm_addisreg_sec"] = {
+                "id": user_id, "email": email, "password": DEFAULT_PASSWORD,
+                "assignment_id": str(d_acting.get("assignment_id")),
+            }
+        check(self.GROUP, test_name,
+              r_create.status_code == 201 and r_acting.status_code == 201,
+              expected="201 create + 201 ACTING assignment",
+              actual=f"create={r_create.status_code}, acting={r_acting.status_code}", body=r_acting.text)
 
     def test_534_lm_satwha1_sec(self):
         _create_user(self.GROUP, "lm_satwha1_sec", "lm_satwha1_sec@t6p2t.com", "LM Sat WHA1 Secondary",
