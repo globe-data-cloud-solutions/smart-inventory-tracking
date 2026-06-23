@@ -102,7 +102,7 @@ ROLE_PERMISSION_MATRIX: dict[str, dict[str, str]] = {
         "inventory:issue": "FULL", "inventory:reserve": "FULL",
         "inventory:release_reservation": "FULL", "inventory:return": "FULL",
         "transfer:create": "FULL", "transfer:submit": "FULL",
-        "transfer:dispatch": "FULL", "transfer:receive": "FULL",
+        "transfer:dispatch": "FULL", "transfer:receive": "FULL", "transfer:cancel": "FULL",
         "transfer:view": "FULL", "transfer:list": "FULL",
         "adjustment:create": "FULL", "adjustment:submit": "FULL",
         "adjustment:view": "FULL", "adjustment:list": "FULL",
