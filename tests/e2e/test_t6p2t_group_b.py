@@ -204,6 +204,38 @@ def have_base_state() -> bool:
     return bool(STATE.get("tenant_id") and STATE.get("ta_token") and STATE.get("sa_token"))
 
 
+def _refresh_tokens() -> None:
+    """Re-login at import time so tokens are always fresh regardless of
+    when t6p2t_state.json was last written. JWTs expire after 60 min;
+    this ensures the module-level STATE dict always holds a live token
+    before any test class is collected."""
+    ta_email = "admin@t6p2t.com"
+    ta_password = "Test@2026"
+    sa_email = "smartadmin@smart-inventory.com"
+    sa_password = "Admin@2026"
+
+    try:
+        ta_resp = login(ta_email, ta_password)
+        if ta_resp.status_code == 200:
+            token = ta_resp.json().get("access_token")
+            if token:
+                STATE["ta_token"] = token
+    except Exception:
+        pass  # leave stale token in place — individual tests will surface the 401
+
+    try:
+        sa_resp = login(sa_email, sa_password)
+        if sa_resp.status_code == 200:
+            token = sa_resp.json().get("access_token")
+            if token:
+                STATE["sa_token"] = token
+    except Exception:
+        pass
+
+
+_refresh_tokens()
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # GROUP 3 — POSITIONS
 # ─────────────────────────────────────────────────────────────────────────────
