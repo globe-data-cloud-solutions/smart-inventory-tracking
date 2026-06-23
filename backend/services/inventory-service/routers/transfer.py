@@ -159,6 +159,20 @@ async def transition_transfer(
     All other statuses:        calls transition_transfer() — pure status update.
     """
     svc = InventoryService(db)
+
+    # Destructive transitions require elevated permissions beyond transfer:view.
+    from shared.permissions.middleware import check_permission
+    from shared.permissions.registry import PERMISSIONS as _P
+
+    if body.next_status == "REJECTED":
+        result = await check_permission(user, _P.TRANSFER_REJECT, {"tenant_id": str(user.tenant_id)}, db=db)
+        if not result.allowed:
+            raise HTTPException(status_code=403, detail={"code": result.reason, "action": _P.TRANSFER_REJECT.id})
+    elif body.next_status == "CANCELLED":
+        result = await check_permission(user, _P.TRANSFER_CANCEL, {"tenant_id": str(user.tenant_id)}, db=db)
+        if not result.allowed:
+            raise HTTPException(status_code=403, detail={"code": result.reason, "action": _P.TRANSFER_CANCEL.id})
+
     if body.next_status == "ISSUED":
         result = await svc.dispatch_transfer(user, transfer_id)
     elif body.next_status == "RECEIVED":
