@@ -1570,6 +1570,11 @@ class TestGroup13TransferLifecycle:
         d = jdata(r)
         if r.status_code == 201 and d.get("transfer_id"):
             STATE["g13"]["sister_id"] = str(d["transfer_id"])
+        # Record WHA1 on_hand before SISTER starts — used by test_1324 for balance check.
+        # Must be read here, before approval/TRANSFER_OUT fires, not in test_1324.
+        wm1_token = tok(EMAIL_WM_WHA1)
+        pre_row = stock_row(wm1_token, NODE_WHA1, PROD_P1)
+        STATE["g13"]["sister_before_wha1_qty"] = float(pre_row.get("current_stock", 0)) if pre_row else 0
         check(self.GROUP, "13.18 wm_wha1 creates SISTER DRAFT (WHA1↔WHA2, qty=20)",
               r.status_code == 201 and d.get("status") == "DRAFT",
               expected="201, status=DRAFT", actual=f"status_code={r.status_code}", body=r.text[:300])
@@ -1657,8 +1662,7 @@ class TestGroup13TransferLifecycle:
         wm1 = tok(EMAIL_WM_WHA1)
         invalidate_token(EMAIL_WM_WHA2)
         wm2 = tok(EMAIL_WM_WHA2)
-        before_wha1 = stock_row(wm1, NODE_WHA1, PROD_P1)
-        before_qty = float(before_wha1.get("current_stock", 0)) if before_wha1 else 0
+        before_qty = STATE["g13"].get("sister_before_wha1_qty", 0.0)
         ok = _drive_pull_to_completed(self.GROUP, "13.24 Drive SISTER to COMPLETED; WHA1 decreased, WHA2 increased",
                                        wm1, wm1, wm2, transfer_id)
         after_wha1 = stock_row(wm1, NODE_WHA1, PROD_P1)
