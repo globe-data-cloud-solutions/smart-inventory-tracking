@@ -1197,6 +1197,13 @@ class TestGroup12PersonnelChanges:
         if downgrade_user_id and assignment_id:
             r_remove = api_delete(f"/api/v1/tenants/{tid()}/users/{downgrade_user_id}/positions/{assignment_id}", sa(), params={"force": "true"})
 
+        # Force-remove auto-deactivates the user (same backend behavior as
+        # nm_addisfac elsewhere in this suite) — reactivate before Step B
+        # reassigns PRIMARY, otherwise the GET/POST below 404.
+        r_reactivate = None
+        if downgrade_user_id:
+            r_reactivate = api_patch(f"/api/v1/tenants/{tid()}/users/{downgrade_user_id}/reactivate", sa(), {})
+
         # Step B — only if WHA2_mgr_2 exists: reassign PRIMARY there.
         if not STATE["positions"].get("WHA2_mgr_2"):
             check(self.GROUP, "12.14D Downgrade RM→WM: A_REG_mgr cleaned up (WHA2_mgr_2 unavailable, reassignment skipped)",
@@ -1220,7 +1227,8 @@ class TestGroup12PersonnelChanges:
               and getattr(r_wha2, "status_code", None) == 200
               and getattr(r_areg, "status_code", None) == 403,
               expected="201, role=WM, warehouse_id=WHA2, WHA2=200, A_REG=403",
-              actual=f"status={r.status_code}, role={claims.get('role')}, wh={claims.get('warehouse_id')}, "
+              actual=f"status={r.status_code}, reactivate={getattr(r_reactivate, 'status_code', None)}, "
+                     f"role={claims.get('role')}, wh={claims.get('warehouse_id')}, "
                      f"WHA2={getattr(r_wha2, 'status_code', None)}, A_REG={getattr(r_areg, 'status_code', None)}",
               body=r.text[:300])
 
