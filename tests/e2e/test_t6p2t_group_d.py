@@ -1121,6 +1121,8 @@ class TestGroup12PersonnelChanges:
     # ── SCENARIO D — Role Downgrade (RM → WM) ────────────────────────────────
 
     def test_1212_create_user_for_downgrade(self) -> None:
+        STATE["g12"].pop("downgrade_user_id", None)
+        STATE["g12"].pop("downgrade_assign_id", None)
         if not have_base_state():
             skip_test(self.GROUP, "12.12D Create RM user for downgrade scenario", "missing base state")
         if STATE["g12"].get("downgrade_user_id"):
