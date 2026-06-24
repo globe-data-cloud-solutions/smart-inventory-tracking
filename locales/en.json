@@ -913,6 +913,7 @@
     "level_count": "Number of levels",
     "level_count_hint": "Between 2 and 5",
     "level_rename_hint": "You can rename this level at any time.",
+    "role_not_set": "Not set",
     "deactivate_node": "Deactivate",
     "reactivate_node": "Reactivate",
     "deactivate_confirm": "Are you sure you want to deactivate {name}? This will hide it from new transfers. You can reactivate it later.",

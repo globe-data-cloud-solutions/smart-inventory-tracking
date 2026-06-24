@@ -322,10 +322,10 @@ class TestGroup1OrgLevels:
     GROUP = "GROUP1"
 
     LEVELS = [
-        {"level_number": 1, "level_name": "Factory", "is_stock_holding": True},
-        {"level_number": 2, "level_name": "Region", "is_stock_holding": True},
-        {"level_number": 3, "level_name": "Warehouse", "is_stock_holding": True},
-        {"level_number": 4, "level_name": "Satellite", "is_stock_holding": True},
+        {"level_number": 1, "level_name": "Factory",   "default_role_code": "NM", "is_stock_holding": True},
+        {"level_number": 2, "level_name": "Region",    "default_role_code": "RM", "is_stock_holding": True},
+        {"level_number": 3, "level_name": "Warehouse", "default_role_code": "WM", "is_stock_holding": True},
+        {"level_number": 4, "level_name": "Satellite", "default_role_code": "LM", "is_stock_holding": True},
     ]
 
     def test_10_create_4_levels(self) -> None:

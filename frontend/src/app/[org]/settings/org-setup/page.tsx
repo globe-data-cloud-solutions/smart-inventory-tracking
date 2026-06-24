@@ -264,7 +264,13 @@ function LevelsTab({ tenantId }: { tenantId: string }) {
                   </td>
                   <td className="px-3 py-2">
                     {persisted ? (
-                      <span className="text-sm text-gray-600">{lv.default_role_code}</span>
+                      lv.default_role_code ? (
+                        <span className="text-sm text-gray-600">{lv.default_role_code}</span>
+                      ) : (
+                        <span className="text-xs text-amber-600 bg-amber-50 px-2 py-0.5 rounded">
+                          {t("org_setup.role_not_set")}
+                        </span>
+                      )
                     ) : (
                       <select
                         value={lv.default_role_code}
