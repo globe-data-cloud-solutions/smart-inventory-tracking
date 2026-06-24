@@ -1004,8 +1004,7 @@ class TestGroup12PersonnelChanges:
             existing = next(
                 (p for p in positions
                  if p.get("title") == "Deputy Regional Manager"
-                 and str(p.get("node_id")) == NODE_A_REG
-                 and p.get("is_active")),
+                 and str(p.get("node_id")) == NODE_A_REG),
                 None
             )
             if existing:
@@ -1161,8 +1160,7 @@ class TestGroup12PersonnelChanges:
             existing = next(
                 (p for p in positions
                  if p.get("title") == "WHA2 Second Manager"
-                 and str(p.get("node_id")) == NODE_WHA2
-                 and p.get("is_active")),
+                 and str(p.get("node_id")) == NODE_WHA2),
                 None
             )
             if existing:
@@ -2311,8 +2309,10 @@ class TestGroup14ControlledProducts:
             status = transfer_status(tok(EMAIL_NM_A), transfer_id)
         if status == "PENDING_APPROVAL":
             approve_transfer(tok(EMAIL_RM_A), transfer_id)
+        invalidate_token(EMAIL_NM_A)
+        nm_dispatcher = tok(EMAIL_NM_A)
         ok = _drive_pull_to_completed(self.GROUP, "14.14 P4 PULL qty=80 > threshold — override fires, review step, completes",
-                                       token, tok(EMAIL_RM_A), token, transfer_id)
+                                       token, nm_dispatcher, token, transfer_id)
         check(self.GROUP, "14.14 P4 PULL qty=80 > threshold — override fires, review step, completes",
               r_submit.status_code == 200 and initial_status in ("PENDING_REVIEW", "PENDING_APPROVAL") and ok,
               expected="200, status in (PENDING_REVIEW, PENDING_APPROVAL), COMPLETED",
