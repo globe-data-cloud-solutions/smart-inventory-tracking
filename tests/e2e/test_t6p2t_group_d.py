@@ -990,23 +990,31 @@ class TestGroup12PersonnelChanges:
             skip_test(self.GROUP, "12.5B Create Deputy Regional Manager position at A_REG", "missing base state")
         if STATE["positions"].get("A_REG_deputy"):
             skip_test(self.GROUP, "12.5B Create Deputy Regional Manager position at A_REG", "already created in a prior run")
-        r_list = api_get(f"/api/v1/tenants/{tid()}/nodes/{NODE_A_REG}/positions", ta())
-        existing = next(
-            (p for p in (jdata(r_list) or [])
-             if p.get("title") == "Deputy Regional Manager" and p.get("is_active")),
-            None
-        )
-        if existing:
-            STATE["positions"]["A_REG_deputy"] = str(existing["id"])
-            record_pass(self.GROUP,
-                "12.5 Deputy Regional Manager position exists (recovered from prior run)")
-            return
         r = api_post(f"/api/v1/tenants/{tid()}/nodes/{NODE_A_REG}/positions", ta(), {
             "title": "Deputy Regional Manager", "role_code": "RM",
         })
         d = jdata(r)
         if r.status_code == 201 and d.get("id"):
             STATE["positions"]["A_REG_deputy"] = str(d["id"])
+        elif r.status_code == 409:
+            r_list = api_get(f"/api/v1/tenants/{tid()}/positions/flat", ta())
+            positions = jdata(r_list) if isinstance(jdata(r_list), list) else []
+            existing = next(
+                (p for p in positions
+                 if p.get("title") == "Deputy Regional Manager"
+                 and str(p.get("node_id")) == NODE_A_REG
+                 and p.get("is_active")),
+                None
+            )
+            if existing:
+                STATE["positions"]["A_REG_deputy"] = str(existing["id"])
+                record_pass(self.GROUP,
+                    "12.5 Deputy Regional Manager position exists (recovered from prior run)")
+                return
+            check(self.GROUP, "12.5B Create Deputy Regional Manager position at A_REG",
+                  False, expected="201 or 409-with-match-in-flat-list",
+                  actual="409 but position not found in flat list", body=r.text[:300])
+            return
         check(self.GROUP, "12.5B Create Deputy Regional Manager position at A_REG",
               r.status_code == 201 and bool(d.get("id")),
               expected="201, position id present", actual=f"status={r.status_code}", body=r.text[:300])
@@ -1126,6 +1134,7 @@ class TestGroup12PersonnelChanges:
         if r.status_code == 201 and d.get("id"):
             STATE["g12"]["downgrade_user_id"] = str(d["id"])
             STATE["g12"]["downgrade_user_email"] = email
+            STATE["g12"]["downgrade_assign_id"] = primary.get("assignment_id")
         check(self.GROUP, "12.12D Create RM user for downgrade scenario",
               r.status_code == 201 and primary.get("position_id") == POS_A_REG_MGR,
               expected="201, primary_position.position_id=A_REG_mgr",
@@ -1136,31 +1145,63 @@ class TestGroup12PersonnelChanges:
             skip_test(self.GROUP, "12.13D Create second WM position at WHA2", "missing base state")
         if STATE["positions"].get("WHA2_mgr_2"):
             skip_test(self.GROUP, "12.13D Create second WM position at WHA2", "already created in a prior run")
-        r_list = api_get(f"/api/v1/tenants/{tid()}/nodes/{NODE_WHA2}/positions", ta())
-        existing = next(
-            (p for p in (jdata(r_list) or [])
-             if p.get("title") == "WHA2 Second Manager" and p.get("is_active")),
-            None
-        )
-        if existing:
-            STATE["positions"]["WHA2_mgr_2"] = str(existing["id"])
-            record_pass(self.GROUP,
-                "12.13 WHA2 Second Manager position exists (recovered from prior run)")
-            return
         r = api_post(f"/api/v1/tenants/{tid()}/nodes/{NODE_WHA2}/positions", ta(), {
             "title": "WHA2 Second Manager", "role_code": "WM",
         })
         d = jdata(r)
         if r.status_code == 201 and d.get("id"):
             STATE["positions"]["WHA2_mgr_2"] = str(d["id"])
+        elif r.status_code == 409:
+            r_list = api_get(f"/api/v1/tenants/{tid()}/positions/flat", ta())
+            positions = jdata(r_list) if isinstance(jdata(r_list), list) else []
+            existing = next(
+                (p for p in positions
+                 if p.get("title") == "WHA2 Second Manager"
+                 and str(p.get("node_id")) == NODE_WHA2
+                 and p.get("is_active")),
+                None
+            )
+            if existing:
+                STATE["positions"]["WHA2_mgr_2"] = str(existing["id"])
+                record_pass(self.GROUP,
+                    "12.13 WHA2 Second Manager position exists (recovered from prior run)")
+                return
+            check(self.GROUP, "12.13D Create second WM position at WHA2",
+                  False, expected="201 or 409-with-match-in-flat-list",
+                  actual="409 but position not found in flat list", body=r.text[:300])
+            return
         check(self.GROUP, "12.13D Create second WM position at WHA2",
               r.status_code == 201 and bool(d.get("id")),
               expected="201, position id present", actual=f"status={r.status_code}", body=r.text[:300])
 
     def test_1214_downgrade_rm_to_wm(self) -> None:
-        if not (STATE["g12"].get("downgrade_user_id") and STATE["positions"].get("WHA2_mgr_2")):
-            skip_test(self.GROUP, "12.14D Downgrade RM→WM: PRIMARY auto-swaps to WHA2_mgr_2", "missing downgrade_user_id or WHA2_mgr_2")
-        r = api_post(f"/api/v1/tenants/{tid()}/users/{STATE['g12']['downgrade_user_id']}/positions", ta(), {
+        downgrade_user_id = STATE["g12"].get("downgrade_user_id")
+        downgrade_assign_id = STATE["g12"].get("downgrade_assign_id")
+        if not downgrade_user_id and not downgrade_assign_id:
+            skip_test(self.GROUP, "12.14D Downgrade RM→WM: PRIMARY auto-swaps to WHA2_mgr_2", "missing downgrade_user_id and downgrade_assign_id — cannot clean up")
+
+        # Step A — always force-remove downgrade_user from A_REG_mgr (PRIMARY),
+        # even if Step B (reassignment to WHA2_mgr_2) cannot run, so "RM To
+        # Downgrade" never lingers on POS_A_REG_MGR for the rest of the run
+        # and blocks rm_addisreg's approval authority.
+        assignment_id = downgrade_assign_id
+        if not assignment_id and downgrade_user_id:
+            r_get_user = api_get(f"/api/v1/tenants/{tid()}/users/{downgrade_user_id}", ta())
+            primary = jdata(r_get_user).get("primary_position") or {}
+            assignment_id = primary.get("assignment_id")
+        r_remove = None
+        if downgrade_user_id and assignment_id:
+            r_remove = api_delete(f"/api/v1/tenants/{tid()}/users/{downgrade_user_id}/positions/{assignment_id}", sa(), params={"force": "true"})
+
+        # Step B — only if WHA2_mgr_2 exists: reassign PRIMARY there.
+        if not STATE["positions"].get("WHA2_mgr_2"):
+            check(self.GROUP, "12.14D Downgrade RM→WM: A_REG_mgr cleaned up (WHA2_mgr_2 unavailable, reassignment skipped)",
+                  r_remove is not None and r_remove.status_code in (200, 404),
+                  expected="200/404 force-remove from A_REG_mgr",
+                  actual=f"remove_status={getattr(r_remove, 'status_code', None)}")
+            return
+
+        r = api_post(f"/api/v1/tenants/{tid()}/users/{downgrade_user_id}/positions", ta(), {
             "position_id": STATE["positions"]["WHA2_mgr_2"], "assignment_type": "PRIMARY",
         })
         email = STATE["g12"]["downgrade_user_email"]
@@ -1822,13 +1863,13 @@ class TestGroup13TransferLifecycle:
               body=r_cancel.text[:300])
 
     def test_1334_cancel_at_approved_restores_stock(self) -> None:
-        seed_receipt(f"t6p2t:g13:afac:p1:1334:{uniq()}", PROD_P1, NODE_A_FAC, 300)
+        seed_receipt(f"t6p2t:g13:afac:p2:1334:{uniq()}", PROD_P2, NODE_A_FAC, 2000)
         token = tok(EMAIL_WM_WHA1)
         if not token:
             skip_test(self.GROUP, "13.34 Cancel APPROVED PULL restores source on_hand (TRANSFER_REVERSAL)", "no wm_wha1 token")
-        before = stock_row(token, NODE_A_FAC, PROD_P1)
+        before = stock_row(token, NODE_A_FAC, PROD_P2)
         before_qty = float(before.get("current_stock", 0)) if before else 0
-        r_create = create_transfer(token, "PULL", NODE_A_FAC, NODE_WHA1, [{"product_id": PROD_P1, "quantity": 30}])
+        r_create = create_transfer(token, "PULL", NODE_A_FAC, NODE_WHA1, [{"product_id": PROD_P2, "quantity": 30}])
         d_create = jdata(r_create)
         transfer_id = str(d_create.get("transfer_id")) if r_create.status_code == 201 else None
         if not transfer_id:
@@ -1840,10 +1881,10 @@ class TestGroup13TransferLifecycle:
             status = transfer_status(token, transfer_id)
         if status == "PENDING_APPROVAL":
             approve_transfer(tok(EMAIL_NM_A), transfer_id)
-        mid = stock_row(token, NODE_A_FAC, PROD_P1)
+        mid = stock_row(token, NODE_A_FAC, PROD_P2)
         mid_qty = float(mid.get("current_stock", 0)) if mid else 0
         r_cancel = transition_transfer(token, transfer_id, "CANCELLED")
-        after = stock_row(token, NODE_A_FAC, PROD_P1)
+        after = stock_row(token, NODE_A_FAC, PROD_P2)
         after_qty = float(after.get("current_stock", 0)) if after else 0
         check(self.GROUP, "13.34 Cancel APPROVED PULL restores source on_hand (TRANSFER_REVERSAL)",
               r_cancel.status_code == 200 and mid_qty == before_qty - 30 and after_qty == before_qty,
@@ -2855,13 +2896,13 @@ class TestGroup16DataIntegrity:
               body=r_cancel.text[:300])
 
     def test_1604_on_hand_decreases_at_approved(self) -> None:
-        seed_receipt(f"t6p2t:g16:afac:p1:1604:{uniq()}", PROD_P1, NODE_A_FAC, 300)
+        seed_receipt(f"t6p2t:g16:afac:p2:1604:{uniq()}", PROD_P2, NODE_A_FAC, 2000)
         token = tok(EMAIL_WM_WHA1)
         if not token:
             skip_test(self.GROUP, "16.4 on_hand at source decreases by qty at APPROVED (TRANSFER_OUT)", "no wm_wha1 token")
-        before = stock_row(token, NODE_A_FAC, PROD_P1)
+        before = stock_row(token, NODE_A_FAC, PROD_P2)
         before_qty = float(before.get("current_stock", 0)) if before else 0
-        r_create = create_transfer(token, "PULL", NODE_A_FAC, NODE_WHA1, [{"product_id": PROD_P1, "quantity": 40}])
+        r_create = create_transfer(token, "PULL", NODE_A_FAC, NODE_WHA1, [{"product_id": PROD_P2, "quantity": 40}])
         d_create = jdata(r_create)
         transfer_id = str(d_create.get("transfer_id")) if r_create.status_code == 201 else None
         if not transfer_id:
@@ -2874,7 +2915,7 @@ class TestGroup16DataIntegrity:
         if status == "PENDING_APPROVAL":
             approve_transfer(tok(EMAIL_NM_A), transfer_id)
         STATE["g16"]["approved_pull_id"] = transfer_id
-        after = stock_row(token, NODE_A_FAC, PROD_P1)
+        after = stock_row(token, NODE_A_FAC, PROD_P2)
         after_qty = float(after.get("current_stock", 0)) if after else 0
         check(self.GROUP, "16.4 on_hand at source decreases by qty at APPROVED (TRANSFER_OUT)",
               transfer_status(token, transfer_id) == "APPROVED" and after_qty == before_qty - 40,
@@ -2886,10 +2927,10 @@ class TestGroup16DataIntegrity:
         if not transfer_id:
             skip_test(self.GROUP, "16.5 Cancelling an APPROVED transfer restores on_hand (TRANSFER_REVERSAL)", "approved_pull_id missing")
         token = tok(EMAIL_WM_WHA1)
-        before = stock_row(token, NODE_A_FAC, PROD_P1)
+        before = stock_row(token, NODE_A_FAC, PROD_P2)
         before_qty = float(before.get("current_stock", 0)) if before else 0
         r_cancel = transition_transfer(token, transfer_id, "CANCELLED")
-        after = stock_row(token, NODE_A_FAC, PROD_P1)
+        after = stock_row(token, NODE_A_FAC, PROD_P2)
         after_qty = float(after.get("current_stock", 0)) if after else 0
         check(self.GROUP, "16.5 Cancelling an APPROVED transfer restores on_hand (TRANSFER_REVERSAL)",
               r_cancel.status_code == 200 and after_qty == before_qty + 40,
@@ -2897,15 +2938,15 @@ class TestGroup16DataIntegrity:
               actual=f"cancel_status={r_cancel.status_code}, before={before_qty}, after={after_qty}", body=r_cancel.text[:300])
 
     def test_1606_full_roundtrip_balance(self) -> None:
-        seed_receipt(f"t6p2t:g16:afac:p1:1606:{uniq()}", PROD_P1, NODE_A_FAC, 300)
+        seed_receipt(f"t6p2t:g16:afac:p2:1606:{uniq()}", PROD_P2, NODE_A_FAC, 2000)
         token = tok(EMAIL_WM_WHA1)
         if not token:
             skip_test(self.GROUP, "16.6 Full PULL roundtrip: source -25, dest +25", "no wm_wha1 token")
-        before_src = stock_row(token, NODE_A_FAC, PROD_P1)
+        before_src = stock_row(token, NODE_A_FAC, PROD_P2)
         before_src_qty = float(before_src.get("current_stock", 0)) if before_src else 0
-        before_dst = stock_row(token, NODE_WHA1, PROD_P1)
+        before_dst = stock_row(token, NODE_WHA1, PROD_P2)
         before_dst_qty = float(before_dst.get("current_stock", 0)) if before_dst else 0
-        r_create = create_transfer(token, "PULL", NODE_A_FAC, NODE_WHA1, [{"product_id": PROD_P1, "quantity": 25}])
+        r_create = create_transfer(token, "PULL", NODE_A_FAC, NODE_WHA1, [{"product_id": PROD_P2, "quantity": 25}])
         d_create = jdata(r_create)
         transfer_id = str(d_create.get("transfer_id")) if r_create.status_code == 201 else None
         if not transfer_id:
@@ -2914,9 +2955,9 @@ class TestGroup16DataIntegrity:
         invalidate_token(EMAIL_NM_A)
         nm_dispatcher = tok(EMAIL_NM_A)
         ok = _drive_pull_to_completed(self.GROUP, "16.6 Full PULL roundtrip: source -25, dest +25", token, nm_dispatcher, token, transfer_id)
-        after_src = stock_row(token, NODE_A_FAC, PROD_P1)
+        after_src = stock_row(token, NODE_A_FAC, PROD_P2)
         after_src_qty = float(after_src.get("current_stock", 0)) if after_src else 0
-        after_dst = stock_row(token, NODE_WHA1, PROD_P1)
+        after_dst = stock_row(token, NODE_WHA1, PROD_P2)
         after_dst_qty = float(after_dst.get("current_stock", 0)) if after_dst else 0
         check(self.GROUP, "16.6 Full PULL roundtrip: source -25, dest +25",
               ok and after_src_qty == before_src_qty - 25 and after_dst_qty == before_dst_qty + 25,
