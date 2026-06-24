@@ -286,6 +286,14 @@ For high-value or sensitive items that always require approval regardless of qua
 5. Select which position must approve
 6. Save — a 🔒 icon will appear on the product
 
+> **Important — Controlled products require two approver interactions per transfer:**
+> When a warehouse manager creates a PULL for a controlled product, the transfer does
+> NOT skip the normal review step. The full flow is:
+> DRAFT → Pending Review → (reviewer advances) → Pending Approval → (override approver approves) → Approved
+>
+> This means the process takes longer than a standard transfer. Communicate this to your
+> warehouse managers so they plan ahead — especially for time-sensitive stock movements.
+
 ---
 
 ## Step 8 — Opening Stock
@@ -379,6 +387,19 @@ Go to **Approval Policies** in the navigation to see:
 2. Update quantities, steps, or approver positions
 3. Save — changes take effect immediately
 
+### Known Limitations — Current Version
+
+- **Adjustment approval position enforcement:** Adjustment approval rules specify a
+  preferred approver position, but the system does not technically block other users
+  with approval permission from approving. Enforce adjustment approval as a process
+  discipline among your management team.
+
+- **Transfer notes length:** Transfer notes are limited to 2000 characters.
+
+- **PUSH /review not applicable:** PUSH and Sister transfers do not have a review
+  step. Only PULL transfers go through the PENDING_REVIEW → PENDING_APPROVAL flow.
+  Do not instruct staff to use the review action on PUSH transfers.
+
 ---
 
 ## Common Questions
@@ -416,6 +437,80 @@ Yes. Each adjustment rule applies to the specific node it is configured for. If 
 
 **Q: What is the difference between a tenant-wide LM and a node-assigned LM?**
 When creating a Logistics Manager, you have two options. A tenant-wide LM (created without a position assignment) has read visibility across the entire organization — useful for a head logistics coordinator overseeing all warehouses. A node-assigned LM is linked to a specific position at a node and sees that node and all nodes beneath it — useful for a logistics coordinator overseeing one warehouse and its satellite depots. Choose based on the staff member's actual operational scope.
+
+---
+
+**Q: What happens when I assign a second person to an approver position?**
+The system allows multiple users to hold the same position simultaneously. However, when
+a transfer or adjustment is routed to that position for approval, the system picks one
+holder — typically the most recently assigned. This means adding a second person to an
+approver position can cause approval tasks to route to the new holder instead of the
+original. If approval routing seems to go to the wrong person, check how many active
+users hold that position (Settings → Positions → view holders). Remove or adjust
+assignments so only the intended approver holds it at any time, unless both are
+genuinely co-approvers.
+
+---
+
+**Q: What happens if I deactivate a user who is an approver on pending transfers?**
+When a user is deactivated, their position assignment is removed automatically. If they
+were the designated approver on pending transfers or adjustments, those items will
+escalate to the Tenant Admin for approval. You will see them appear in your approvals
+queue. Before deactivating an approver, assign another user to their position so routing
+continues uninterrupted.
+
+---
+
+**Q: Can adjustment approval rules specify who must approve?**
+Adjustment approval rules define quantity thresholds and routing behaviour, but the
+system does not enforce which specific named position must approve at the final step —
+any user with adjustment approval permission can post a pending adjustment. If you need
+strict control over who approves adjustments, communicate this as a process requirement
+to your managers rather than relying on technical enforcement.
+
+---
+
+**Q: What can a Logistics Manager (LM) actually do in the system?**
+LM is a logistics and dispatch-focused role — not an inventory operations role.
+An LM can:
+- View stock at their assigned node and all nodes beneath it
+- View and list transfers
+- Receive and dispatch shipments
+- View adjustments and product information
+
+An LM cannot:
+- Create or submit transfers
+- Create or submit adjustments
+- Approve transfers or adjustments
+
+If you need someone with broader operational access (approvals, creating transfers),
+assign them a Warehouse Manager (WM) or Regional Manager (RM) role instead.
+Note: if created without a node assignment (tenant-wide LM), the LM can view stock
+across the entire organisation but still has the same action restrictions above.
+
+---
+
+**Q: I added a new satellite depot — do approval rules apply to it automatically?**
+No. When you add a new node (warehouse or satellite), it has no transfer or adjustment
+approval rules until you create them. Until rules are added, transfers from that node
+will route through the system's default bands, which may not match your intended policy.
+After creating any new node, go to Settings → Approval Rules and add the appropriate
+transfer and adjustment rules for that node before staff begin using it.
+
+---
+
+**Q: A staff member was promoted or moved to a different role. What do I need to do?**
+When reassigning a user to a new position:
+1. Assign them PRIMARY at the new position (their scope updates immediately on next login)
+2. Remove their old position assignment if they should no longer hold it
+   — use force-remove (SA token required for sole PRIMARY removal)
+3. If the old position had pending approvals routed to it, those will escalate to TA
+   once the holder is removed — approve them or wait for the replacement to be assigned
+
+If the user moves to a higher level (e.g. WM → RM), their old WM scope is replaced
+by the new RM scope on next login. If they move to a lower level (e.g. RM → WM), their
+access narrows accordingly. Always verify by having the user log out and back in after
+any position change.
 
 ---
 
