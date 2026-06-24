@@ -372,6 +372,7 @@ EMAIL_LM_SAT_WHA1 = "lm_satwha1@t6p2t.com"
 EMAIL_LM_SAT_WHA2 = "lm_satwha2@t6p2t.com"
 EMAIL_LM_SAT_WHB1 = "lm_satwhb1@t6p2t.com"
 EMAIL_LM_SAT_WHA3 = "lm_satwha3@t6p2t.com"
+EMAIL_WM_SAT_WHA3 = STATE["users"].get("wm_satwha3", {}).get("email", "wm_satwha3@t6p2t.com")
 EMAIL_LM_TENANT   = "lm_tenant@t6p2t.com"
 EMAIL_AU          = "au_t6p2t@t6p2t.com"
 
@@ -3466,6 +3467,149 @@ class TestGroup18Security:
         check(self.GROUP, "18.12 lm_tenant (Track B) sees the full transfer list",
               r.status_code == 200 and isinstance(rows, list) and len(rows) > 0,
               expected="200, non-empty list", actual=f"status={r.status_code}, count={len(rows)}", body=r.text[:300])
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# GROUP 20 — SATELLITE SCOPE (PHASE 2 NODE+DESCENDANT TRAVERSAL, SATELLITE DEPOT)
+# ─────────────────────────────────────────────────────────────────────────────
+@pytest.mark.integration
+class TestGroup20SatelliteScope:
+    """
+    Phase 2 node+descendant scope traversal — satellite depot coverage.
+
+    Actors:
+      wm_satwha3  — WM assigned directly to SAT_WHA3 (leaf node, no children)
+      wm_wha3     — WM at WHA3 (parent of SAT_WHA3)
+      wm_whb1     — WM at WHB1 (parent of SAT_WHB1, B-side)
+      lm_satwha1  — LM at SAT_WHA1 (validates LM in FACILITY_SCOPED_ROLES)
+      lm_tenant   — Tenant-wide LM (no warehouse_id — Track B bypass)
+
+    Node tree relevant to these tests:
+      WHA3 → SAT_WHA3          (A-side)
+      WHB1 → SAT_WHB1          (B-side)
+      WHA1 → SAT_WHA1, SAT_WHA2
+    """
+    GROUP = "GROUP20"
+
+    def test_2001_leaf_wm_sees_own_node(self) -> None:
+        """Leaf WM at SAT_WHA3 (no children) sees own node stock → 200."""
+        token = tok(EMAIL_WM_SAT_WHA3)
+        if not token:
+            skip_test(self.GROUP, "20.1 Leaf WM sees own node SAT_WHA3", "could not log in as wm_satwha3")
+        r = stock_at(token, NODE_SAT_WHA3)
+        check(self.GROUP, "20.1 Leaf WM sees own node SAT_WHA3",
+              r.status_code == 200,
+              expected="200", actual=f"status={r.status_code}", body=r.text[:200])
+
+    def test_2002_leaf_wm_blocked_from_parent(self) -> None:
+        """Leaf WM at SAT_WHA3 cannot see parent WHA3 — traversal is downward only → 403."""
+        token = tok(EMAIL_WM_SAT_WHA3)
+        if not token:
+            skip_test(self.GROUP, "20.2 Leaf WM blocked from parent WHA3", "could not log in as wm_satwha3")
+        r = stock_at(token, NODE_WHA3)
+        check(self.GROUP, "20.2 Leaf WM blocked from parent WHA3",
+              r.status_code == 403,
+              expected="403", actual=f"status={r.status_code}", body=r.text[:200])
+
+    def test_2003_leaf_wm_blocked_from_unrelated_satellite(self) -> None:
+        """Leaf WM at SAT_WHA3 cannot see unrelated SAT_WHA1 → 403."""
+        token = tok(EMAIL_WM_SAT_WHA3)
+        if not token:
+            skip_test(self.GROUP, "20.3 Leaf WM blocked from unrelated SAT_WHA1", "could not log in as wm_satwha3")
+        r = stock_at(token, NODE_SAT_WHA1)
+        check(self.GROUP, "20.3 Leaf WM blocked from unrelated SAT_WHA1",
+              r.status_code == 403,
+              expected="403", actual=f"status={r.status_code}", body=r.text[:200])
+
+    def test_2004_parent_wm_sees_child_satellite_a_side(self) -> None:
+        """CORE: Parent WM at WHA3 sees child satellite SAT_WHA3 (A-side descendant traversal) → 200."""
+        token = tok(EMAIL_WM_WHA3)
+        if not token:
+            skip_test(self.GROUP, "20.4 CORE: Parent WM WHA3 sees SAT_WHA3", "could not log in as wm_wha3")
+        r = stock_at(token, NODE_SAT_WHA3)
+        check(self.GROUP, "20.4 CORE: Parent WM WHA3 sees SAT_WHA3",
+              r.status_code == 200,
+              expected="200", actual=f"status={r.status_code}", body=r.text[:200])
+
+    def test_2005_parent_wm_blocked_from_b_side_satellite(self) -> None:
+        """Parent WM at WHA3 blocked from B-side satellite SAT_WHB1 → 403."""
+        token = tok(EMAIL_WM_WHA3)
+        if not token:
+            skip_test(self.GROUP, "20.5 Parent WM WHA3 blocked from SAT_WHB1", "could not log in as wm_wha3")
+        r = stock_at(token, NODE_SAT_WHB1)
+        check(self.GROUP, "20.5 Parent WM WHA3 blocked from SAT_WHB1",
+              r.status_code == 403,
+              expected="403", actual=f"status={r.status_code}", body=r.text[:200])
+
+    def test_2006_parent_wm_blocked_from_unrelated_wh(self) -> None:
+        """Parent WM at WHA3 blocked from unrelated WHA1 → 403."""
+        token = tok(EMAIL_WM_WHA3)
+        if not token:
+            skip_test(self.GROUP, "20.6 Parent WM WHA3 blocked from WHA1", "could not log in as wm_wha3")
+        r = stock_at(token, NODE_WHA1)
+        check(self.GROUP, "20.6 Parent WM WHA3 blocked from WHA1",
+              r.status_code == 403,
+              expected="403", actual=f"status={r.status_code}", body=r.text[:200])
+
+    def test_2007_b_side_parent_wm_sees_child_satellite(self) -> None:
+        """CORE: Parent WM at WHB1 sees child satellite SAT_WHB1 (B-side descendant traversal) → 200."""
+        token = tok(EMAIL_WM_WHB1)
+        if not token:
+            skip_test(self.GROUP, "20.7 CORE: Parent WM WHB1 sees SAT_WHB1", "could not log in as wm_whb1")
+        r = stock_at(token, NODE_SAT_WHB1)
+        check(self.GROUP, "20.7 CORE: Parent WM WHB1 sees SAT_WHB1",
+              r.status_code == 200,
+              expected="200", actual=f"status={r.status_code}", body=r.text[:200])
+
+    def test_2008_b_side_parent_wm_blocked_from_a_side_satellite(self) -> None:
+        """Parent WM at WHB1 blocked from A-side satellite SAT_WHA3 → 403."""
+        token = tok(EMAIL_WM_WHB1)
+        if not token:
+            skip_test(self.GROUP, "20.8 Parent WM WHB1 blocked from SAT_WHA3", "could not log in as wm_whb1")
+        r = stock_at(token, NODE_SAT_WHA3)
+        check(self.GROUP, "20.8 Parent WM WHB1 blocked from SAT_WHA3",
+              r.status_code == 403,
+              expected="403", actual=f"status={r.status_code}", body=r.text[:200])
+
+    def test_2009_lm_leaf_sees_own_node(self) -> None:
+        """LM at SAT_WHA1 (FACILITY_SCOPED_ROLES) sees own leaf node → 200."""
+        token = tok(EMAIL_LM_SAT_WHA1)
+        if not token:
+            skip_test(self.GROUP, "20.9 LM at SAT_WHA1 sees own node", "could not log in as lm_satwha1")
+        r = stock_at(token, NODE_SAT_WHA1)
+        check(self.GROUP, "20.9 LM at SAT_WHA1 sees own node",
+              r.status_code == 200,
+              expected="200", actual=f"status={r.status_code}", body=r.text[:200])
+
+    def test_2010_lm_leaf_blocked_from_sibling(self) -> None:
+        """LM at SAT_WHA1 blocked from sibling SAT_WHA2 → 403."""
+        token = tok(EMAIL_LM_SAT_WHA1)
+        if not token:
+            skip_test(self.GROUP, "20.10 LM at SAT_WHA1 blocked from SAT_WHA2", "could not log in as lm_satwha1")
+        r = stock_at(token, NODE_SAT_WHA2)
+        check(self.GROUP, "20.10 LM at SAT_WHA1 blocked from SAT_WHA2",
+              r.status_code == 403,
+              expected="403", actual=f"status={r.status_code}", body=r.text[:200])
+
+    def test_2011_tenant_lm_bypass_sees_satellite(self) -> None:
+        """Tenant-wide LM (no warehouse_id — Track B) bypasses scope, sees any satellite → 200."""
+        token = tok(EMAIL_LM_TENANT)
+        if not token:
+            skip_test(self.GROUP, "20.11 Tenant-wide LM sees SAT_WHA3", "could not log in as lm_tenant")
+        r = stock_at(token, NODE_SAT_WHA3)
+        check(self.GROUP, "20.11 Tenant-wide LM sees SAT_WHA3",
+              r.status_code == 200,
+              expected="200", actual=f"status={r.status_code}", body=r.text[:200])
+
+    def test_2012_tenant_lm_bypass_sees_parent_wh(self) -> None:
+        """Tenant-wide LM bypasses scope, sees any parent WH node → 200."""
+        token = tok(EMAIL_LM_TENANT)
+        if not token:
+            skip_test(self.GROUP, "20.12 Tenant-wide LM sees WHA1", "could not log in as lm_tenant")
+        r = stock_at(token, NODE_WHA1)
+        check(self.GROUP, "20.12 Tenant-wide LM sees WHA1",
+              r.status_code == 200,
+              expected="200", actual=f"status={r.status_code}", body=r.text[:200])
 
 
 # ─────────────────────────────────────────────────────────────────────────────

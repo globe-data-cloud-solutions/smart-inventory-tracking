@@ -11,6 +11,7 @@ Seeds:
   PART 4  — Self-approval policies (transfer self-approval)
   PART 5  — Adjustment approval rules
   PART 6  — SAT_WHA3 satellite node + position + user + assignment
+  PART 6b — SAT_WHA3 WM position + user + assignment
   PART 7  — Opening stock (RECEIVE ledger entries + balance upsert)
   PART 8  — tests/e2e/t6p2t_state.json update
 
@@ -83,6 +84,10 @@ POS_WHB2_MGR  = "edf71d7d-3a94-44f2-967d-3b7b4b96e391"   # WM @ WHB2
 # NEW — SAT_WHA3 position and user
 POS_SAT_WHA3_LEAD = "e1badc24-0002-0004-0000-000000000001"
 USR_SAT_WHA3_LM   = "e1badc24-0003-0004-0000-000000000001"
+
+# NEW — SAT_WHA3 WM position and user
+POS_SAT_WHA3_WM = "e1badc24-0004-0004-0000-000000000001"
+USR_SAT_WHA3_WM = "e1badc24-0005-0004-0000-000000000001"
 
 # Products (fixed UUIDs for idempotency)
 PROD_P1 = "e1badc24-0301-0000-0000-000000000001"  # Standard Bulk Item (regular)
@@ -393,6 +398,78 @@ async def main() -> None:
 
         await set_rls(s, TENANT_ID)
 
+        # ── PART 6b — SAT_WHA3 WM POSITION + USER ───────────────────────
+        print("\n[PART 6b] Creating SAT_WHA3 WM position and user …")
+        try:
+            # 6b-i. Position: WM at SAT_WHA3, reports to WHA3_mgr (parent WM)
+            await s.execute(
+                text("""
+                    INSERT INTO positions
+                        (id, tenant_id, node_id, title, role_code,
+                         reports_to_position_id, is_active)
+                    VALUES
+                        (:id, :tid, :nid, :title, 'WM',
+                         :rpts, true)
+                    ON CONFLICT (id) DO UPDATE SET
+                        title     = EXCLUDED.title,
+                        role_code = EXCLUDED.role_code
+                """),
+                {
+                    "id": POS_SAT_WHA3_WM, "tid": TENANT_ID, "nid": NODE_SAT_WHA3,
+                    "title": "SAT_WHA3 Warehouse Manager", "rpts": POS_WHA3_MGR,
+                },
+            )
+
+            # 6b-ii. User: wm_satwha3@t6p2t.com
+            email = "wm_satwha3@t6p2t.com"
+            cognito_sub = email.replace("@", "_").replace(".", "_")
+            await s.execute(
+                text("""
+                    INSERT INTO users
+                        (id, tenant_id, cognito_sub, email, full_name,
+                         locale, is_active, password_hash, must_reset_password,
+                         system_role, created_by)
+                    VALUES
+                        (:id, :tid, :sub, :email, :name,
+                         'en', true, :pw, false,
+                         NULL, :created_by)
+                    ON CONFLICT (id) DO UPDATE SET
+                        email         = EXCLUDED.email,
+                        full_name     = EXCLUDED.full_name,
+                        password_hash = EXCLUDED.password_hash
+                """),
+                {
+                    "id": USR_SAT_WHA3_WM, "tid": TENANT_ID, "sub": cognito_sub,
+                    "email": email, "name": "SAT WHA3 Warehouse Manager", "pw": PW_HASH,
+                    "created_by": TA_USER,
+                },
+            )
+
+            # 6b-iii. Personnel position assignment (PRIMARY)
+            await s.execute(
+                text("""
+                    INSERT INTO personnel_positions
+                        (id, tenant_id, user_id, position_id,
+                         assignment_type, valid_from, is_active, assigned_by)
+                    VALUES
+                        (:id, :tid, :uid, :pid,
+                         'PRIMARY', CURRENT_DATE, true, :assigned_by)
+                    ON CONFLICT (user_id)
+                    WHERE assignment_type = 'PRIMARY' AND is_active = true
+                    DO NOTHING
+                """),
+                {
+                    "id": uid(), "tid": TENANT_ID, "uid": USR_SAT_WHA3_WM,
+                    "pid": POS_SAT_WHA3_WM, "assigned_by": TA_USER,
+                },
+            )
+            await s.commit()
+            print("  [OK] SAT_WHA3 WM position + user + PRIMARY assignment created")
+        except Exception as e:
+            abort("PART 6b", e)
+
+        await set_rls(s, TENANT_ID)
+
         # ── PART 7 — OPENING STOCK ───────────────────────────────────────
         print("\n[PART 7] Seeding opening stock …")
         try:
@@ -501,6 +578,13 @@ async def main() -> None:
             "password": "Test@2026",
             "assignment_id": None,
         }
+        state["positions"]["SAT_WHA3_wm"] = POS_SAT_WHA3_WM
+        state["users"]["wm_satwha3"] = {
+            "id": USR_SAT_WHA3_WM,
+            "email": "wm_satwha3@t6p2t.com",
+            "password": "Test@2026",
+            "assignment_id": None,
+        }
         state["products"] = {
             "P1": PROD_P1,
             "P2": PROD_P2,
@@ -524,6 +608,8 @@ async def main() -> None:
     print(f"  SAT_WHA3 node   : {NODE_SAT_WHA3}")
     print(f"  SAT_WHA3 lead   : {POS_SAT_WHA3_LEAD}")
     print(f"  lm_satwha3 user : {USR_SAT_WHA3_LM}  (lm_satwha3@t6p2t.com / Test@2026)")
+    print(f"  SAT_WHA3 WM pos : {POS_SAT_WHA3_WM}")
+    print(f"  wm_satwha3 user : {USR_SAT_WHA3_WM}  (wm_satwha3@t6p2t.com / Test@2026)")
     print(f"  Products        : P1={PROD_P1} P2={PROD_P2} P3={PROD_P3} P4={PROD_P4} P5={PROD_P5}")
     print()
 
