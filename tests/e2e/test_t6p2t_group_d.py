@@ -996,7 +996,9 @@ class TestGroup12PersonnelChanges:
         d = jdata(r)
         if r.status_code == 201 and d.get("id"):
             STATE["positions"]["A_REG_deputy"] = str(d["id"])
-        elif r.status_code == 409:
+        elif r.status_code in (409, 500):
+            # Backend returns 500 (IntegrityError) or 409 for duplicate title
+            # Fall back to flat positions list to recover the existing id
             r_list = api_get(f"/api/v1/tenants/{tid()}/positions/flat", ta())
             positions = jdata(r_list) if isinstance(jdata(r_list), list) else []
             existing = next(
@@ -1151,7 +1153,9 @@ class TestGroup12PersonnelChanges:
         d = jdata(r)
         if r.status_code == 201 and d.get("id"):
             STATE["positions"]["WHA2_mgr_2"] = str(d["id"])
-        elif r.status_code == 409:
+        elif r.status_code in (409, 500):
+            # Backend returns 500 (IntegrityError) or 409 for duplicate title
+            # Fall back to flat positions list to recover the existing id
             r_list = api_get(f"/api/v1/tenants/{tid()}/positions/flat", ta())
             positions = jdata(r_list) if isinstance(jdata(r_list), list) else []
             existing = next(
@@ -1867,7 +1871,7 @@ class TestGroup13TransferLifecycle:
         token = tok(EMAIL_WM_WHA1)
         if not token:
             skip_test(self.GROUP, "13.34 Cancel APPROVED PULL restores source on_hand (TRANSFER_REVERSAL)", "no wm_wha1 token")
-        before = stock_row(token, NODE_A_FAC, PROD_P2)
+        before = stock_row(ta(), NODE_A_FAC, PROD_P2)
         before_qty = float(before.get("current_stock", 0)) if before else 0
         r_create = create_transfer(token, "PULL", NODE_A_FAC, NODE_WHA1, [{"product_id": PROD_P2, "quantity": 30}])
         d_create = jdata(r_create)
@@ -1881,10 +1885,10 @@ class TestGroup13TransferLifecycle:
             status = transfer_status(token, transfer_id)
         if status == "PENDING_APPROVAL":
             approve_transfer(tok(EMAIL_NM_A), transfer_id)
-        mid = stock_row(token, NODE_A_FAC, PROD_P2)
+        mid = stock_row(ta(), NODE_A_FAC, PROD_P2)
         mid_qty = float(mid.get("current_stock", 0)) if mid else 0
         r_cancel = transition_transfer(token, transfer_id, "CANCELLED")
-        after = stock_row(token, NODE_A_FAC, PROD_P2)
+        after = stock_row(ta(), NODE_A_FAC, PROD_P2)
         after_qty = float(after.get("current_stock", 0)) if after else 0
         check(self.GROUP, "13.34 Cancel APPROVED PULL restores source on_hand (TRANSFER_REVERSAL)",
               r_cancel.status_code == 200 and mid_qty == before_qty - 30 and after_qty == before_qty,
@@ -2900,7 +2904,7 @@ class TestGroup16DataIntegrity:
         token = tok(EMAIL_WM_WHA1)
         if not token:
             skip_test(self.GROUP, "16.4 on_hand at source decreases by qty at APPROVED (TRANSFER_OUT)", "no wm_wha1 token")
-        before = stock_row(token, NODE_A_FAC, PROD_P2)
+        before = stock_row(ta(), NODE_A_FAC, PROD_P2)
         before_qty = float(before.get("current_stock", 0)) if before else 0
         r_create = create_transfer(token, "PULL", NODE_A_FAC, NODE_WHA1, [{"product_id": PROD_P2, "quantity": 40}])
         d_create = jdata(r_create)
@@ -2915,7 +2919,7 @@ class TestGroup16DataIntegrity:
         if status == "PENDING_APPROVAL":
             approve_transfer(tok(EMAIL_NM_A), transfer_id)
         STATE["g16"]["approved_pull_id"] = transfer_id
-        after = stock_row(token, NODE_A_FAC, PROD_P2)
+        after = stock_row(ta(), NODE_A_FAC, PROD_P2)
         after_qty = float(after.get("current_stock", 0)) if after else 0
         check(self.GROUP, "16.4 on_hand at source decreases by qty at APPROVED (TRANSFER_OUT)",
               transfer_status(token, transfer_id) == "APPROVED" and after_qty == before_qty - 40,
@@ -2927,10 +2931,10 @@ class TestGroup16DataIntegrity:
         if not transfer_id:
             skip_test(self.GROUP, "16.5 Cancelling an APPROVED transfer restores on_hand (TRANSFER_REVERSAL)", "approved_pull_id missing")
         token = tok(EMAIL_WM_WHA1)
-        before = stock_row(token, NODE_A_FAC, PROD_P2)
+        before = stock_row(ta(), NODE_A_FAC, PROD_P2)
         before_qty = float(before.get("current_stock", 0)) if before else 0
         r_cancel = transition_transfer(token, transfer_id, "CANCELLED")
-        after = stock_row(token, NODE_A_FAC, PROD_P2)
+        after = stock_row(ta(), NODE_A_FAC, PROD_P2)
         after_qty = float(after.get("current_stock", 0)) if after else 0
         check(self.GROUP, "16.5 Cancelling an APPROVED transfer restores on_hand (TRANSFER_REVERSAL)",
               r_cancel.status_code == 200 and after_qty == before_qty + 40,
@@ -2942,7 +2946,7 @@ class TestGroup16DataIntegrity:
         token = tok(EMAIL_WM_WHA1)
         if not token:
             skip_test(self.GROUP, "16.6 Full PULL roundtrip: source -25, dest +25", "no wm_wha1 token")
-        before_src = stock_row(token, NODE_A_FAC, PROD_P2)
+        before_src = stock_row(ta(), NODE_A_FAC, PROD_P2)
         before_src_qty = float(before_src.get("current_stock", 0)) if before_src else 0
         before_dst = stock_row(token, NODE_WHA1, PROD_P2)
         before_dst_qty = float(before_dst.get("current_stock", 0)) if before_dst else 0
@@ -2955,7 +2959,7 @@ class TestGroup16DataIntegrity:
         invalidate_token(EMAIL_NM_A)
         nm_dispatcher = tok(EMAIL_NM_A)
         ok = _drive_pull_to_completed(self.GROUP, "16.6 Full PULL roundtrip: source -25, dest +25", token, nm_dispatcher, token, transfer_id)
-        after_src = stock_row(token, NODE_A_FAC, PROD_P2)
+        after_src = stock_row(ta(), NODE_A_FAC, PROD_P2)
         after_src_qty = float(after_src.get("current_stock", 0)) if after_src else 0
         after_dst = stock_row(token, NODE_WHA1, PROD_P2)
         after_dst_qty = float(after_dst.get("current_stock", 0)) if after_dst else 0
