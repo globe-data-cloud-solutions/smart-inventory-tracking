@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { useParams, useRouter } from "next/navigation";
+import { useParams, usePathname, useRouter } from "next/navigation";
 import Link from "next/link";
 import { QueryClient, QueryClientProvider, useQuery } from "@tanstack/react-query";
 import { getSession, logout, SA_ORG_SLUG, type SessionUser } from "@/lib/demo-auth";
@@ -221,8 +221,15 @@ function Logo({ size = 28 }: { size?: number }) {
 interface ApiTenantRow { id: string; name: string; slug: string | null; organisation_type: string | null }
 
 /* ── Sidebar nav ──────────────────────────────────────────────────────────── */
-function Sidebar({ user, org, tenantName }: { user: SessionUser; org: string; tenantName?: string }) {
-  const router = useRouter();
+function Sidebar({ user, org, tenantName, onClose, isOpen }: {
+  user: SessionUser;
+  org: string;
+  tenantName?: string;
+  onClose?: () => void;       // called when a nav link is tapped (mobile)
+  isOpen?: boolean;           // mobile slide-in state, owned by OrgLayout
+}) {
+  const router   = useRouter();
+  const pathname = usePathname();
 
   const navItems = org === SA_ORG_SLUG ? SA_NAV : TENANT_NAV;
 
@@ -239,7 +246,9 @@ function Sidebar({ user, org, tenantName }: { user: SessionUser; org: string; te
     : [];
 
   return (
-    <aside className="fixed top-[60px] left-0 bottom-0 w-60 bg-[#0f2d1f] flex flex-col z-40 border-r border-white/[0.06] overflow-hidden">
+    <aside className={`fixed top-[60px] left-0 bottom-0 w-60 bg-[#0f2d1f] flex flex-col z-40 border-r border-white/[0.06] overflow-hidden transition-transform duration-200 ${
+      isOpen ? "translate-x-0" : "-translate-x-full md:translate-x-0"
+    }`}>
       {/* User identity */}
       <div className="px-3.5 py-3 border-b border-white/[0.08] bg-white/[0.04] shrink-0">
         <div className="flex items-center gap-2">
@@ -272,12 +281,33 @@ function Sidebar({ user, org, tenantName }: { user: SessionUser; org: string; te
               </p>
             );
           }
+          if (item.disabled) {
+            return (
+              <span
+                key={idx}
+                className="flex items-center gap-2.5 px-2.5 py-2 rounded text-sm font-medium mb-px text-white/25 border-l-[3px] border-transparent cursor-not-allowed select-none"
+                title="Coming soon"
+              >
+                <span className="text-[15px] leading-none shrink-0 opacity-40">{item.icon}</span>
+                {t(item.label)}
+                <span className="ml-auto text-[9px] font-bold uppercase tracking-wide text-white/20">Soon</span>
+              </span>
+            );
+          }
           const href = `/${org}/${item.page}`;
+          const isActive = item.page === "dashboard"
+            ? pathname === `/${org}/dashboard`
+            : pathname.startsWith(`/${org}/${item.page}`);
           return (
             <Link
               key={idx}
               href={href}
-              className="flex items-center gap-2.5 px-2.5 py-2 rounded text-sm font-medium no-underline mb-px text-white/65 hover:bg-white/[0.08] hover:text-white/95 transition-all"
+              onClick={() => onClose?.()}
+              className={`flex items-center gap-2.5 px-2.5 py-2 rounded text-sm font-medium no-underline mb-px border-l-[3px] transition-all ${
+                isActive
+                  ? "bg-eth-gold/[0.12] text-eth-gold border-eth-gold"
+                  : "text-white/65 border-transparent hover:bg-white/[0.08] hover:text-white/95"
+              }`}
             >
               <span className="text-[15px] leading-none shrink-0">{item.icon}</span>
               {t(item.label)}
@@ -291,16 +321,25 @@ function Sidebar({ user, org, tenantName }: { user: SessionUser; org: string; te
             <p className="text-[10px] font-bold uppercase tracking-widest text-white/30 px-2.5 pt-3.5 pb-1 m-0">
               {t("dashboard.tenants_heading")}
             </p>
-            {apiTenants.map((ten) => (
-              <Link
-                key={ten.id}
-                href={`/${ten.slug ?? ten.id}/dashboard`}
-                className="flex items-center gap-2.5 px-2.5 py-2 rounded text-sm font-medium no-underline mb-px text-white/65 hover:bg-white/[0.08] hover:text-white/95 transition-all"
-              >
-                <span className="text-[15px] leading-none">🏢</span>
-                {ten.name}
-              </Link>
-            ))}
+            {apiTenants.map((ten) => {
+              const tenHref = `/${ten.slug ?? ten.id}/dashboard`;
+              const tenActive = pathname.startsWith(tenHref);
+              return (
+                <Link
+                  key={ten.id}
+                  href={tenHref}
+                  onClick={() => onClose?.()}
+                  className={`flex items-center gap-2.5 px-2.5 py-2 rounded text-sm font-medium no-underline mb-px border-l-[3px] transition-all ${
+                    tenActive
+                      ? "bg-eth-gold/[0.12] text-eth-gold border-eth-gold"
+                      : "text-white/65 border-transparent hover:bg-white/[0.08] hover:text-white/95"
+                  }`}
+                >
+                  <span className="text-[15px] leading-none">🏢</span>
+                  {ten.name}
+                </Link>
+              );
+            })}
           </>
         )}
 
@@ -310,16 +349,25 @@ function Sidebar({ user, org, tenantName }: { user: SessionUser; org: string; te
             <p className="text-[10px] font-bold uppercase tracking-widest text-white/30 px-2.5 pt-3.5 pb-1 m-0">
               {t("dashboard.tenants_heading")}
             </p>
-            {tenants.map((ten) => (
-              <Link
-                key={ten.id}
-                href={`/${ten.slug}/dashboard`}
-                className="flex items-center gap-2.5 px-2.5 py-2 rounded text-sm font-medium no-underline mb-px text-white/65 hover:bg-white/[0.08] hover:text-white/95 transition-all"
-              >
-                <span className="text-[15px] leading-none">{ten.logo}</span>
-                {ten.name}
-              </Link>
-            ))}
+            {tenants.map((ten) => {
+              const tenHref = `/${ten.slug}/dashboard`;
+              const tenActive = pathname.startsWith(tenHref);
+              return (
+                <Link
+                  key={ten.id}
+                  href={tenHref}
+                  onClick={() => onClose?.()}
+                  className={`flex items-center gap-2.5 px-2.5 py-2 rounded text-sm font-medium no-underline mb-px border-l-[3px] transition-all ${
+                    tenActive
+                      ? "bg-eth-gold/[0.12] text-eth-gold border-eth-gold"
+                      : "text-white/65 border-transparent hover:bg-white/[0.08] hover:text-white/95"
+                  }`}
+                >
+                  <span className="text-[15px] leading-none">{ten.logo}</span>
+                  {ten.name}
+                </Link>
+              );
+            })}
           </>
         )}
 
@@ -331,7 +379,12 @@ function Sidebar({ user, org, tenantName }: { user: SessionUser; org: string; te
             </p>
             <Link
               href={`/${SA_ORG_SLUG}/dashboard`}
-              className="flex items-center gap-2.5 px-2.5 py-2 rounded text-sm font-medium no-underline mb-px text-eth-gold hover:bg-white/[0.08] transition-all"
+              onClick={() => onClose?.()}
+              className={`flex items-center gap-2.5 px-2.5 py-2 rounded text-sm font-medium no-underline mb-px border-l-[3px] transition-all ${
+                pathname.startsWith(`/${SA_ORG_SLUG}/dashboard`)
+                  ? "bg-eth-gold/[0.12] text-eth-gold border-eth-gold"
+                  : "text-eth-gold border-transparent hover:bg-white/[0.08]"
+              }`}
             >
               <span className="text-[15px]">⬅</span>
               {t("layout.all_tenants")}
@@ -383,10 +436,30 @@ function TenantBrandingResolver({
   return null;
 }
 
+const PAGE_LABELS: Record<string, string> = {
+  dashboard:           "Dashboard",
+  products:            "Products",
+  warehouses:          "Warehouses",
+  lots:                "Lot Traceability",
+  inventory:           "Inventory",
+  transfers:           "Transfers",
+  adjustments:         "Adjustments",
+  "stock-count":       "Stock Count",
+  dispatch:            "Dispatch",
+  analytics:           "Analytics",
+  reports:             "Reports",
+  "audit-log":         "Audit Log",
+  "approval-policies": "Approval Policies",
+  "settings/org-setup":"Org Setup",
+  "settings/personnel":"Personnel",
+  permissions:         "Permissions",
+};
+
 /* ── Layout ───────────────────────────────────────────────────────────────── */
 export default function OrgLayout({ children }: { children: React.ReactNode }) {
-  const params  = useParams();
-  const router  = useRouter();
+  const params   = useParams();
+  const router   = useRouter();
+  const pathname = usePathname();
   const org     = params.org as string;
   const checked = useRef(false);
   const [user, setUser]         = useState<SessionUser | null>(null);
@@ -395,7 +468,18 @@ export default function OrgLayout({ children }: { children: React.ReactNode }) {
   const [apiTenantName, setApiTenantName]     = useState<string | null>(null);
   const [apiLogoUrl,    setApiLogoUrl]         = useState<string | null>(null);
   const [apiBannerUrl,  setApiBannerUrl]       = useState<string | null>(null);
+  const [sidebarOpen, setSidebarOpen]          = useState(false);
   const setActiveTenant   = useInventoryStore((s) => s.setActiveTenant);
+
+  // Derive page label from the path segment after /[org]/
+  const pageLabel = (() => {
+    const after = pathname.replace(`/${org}/`, "");
+    // Match longest key first (settings/org-setup before settings)
+    const key = Object.keys(PAGE_LABELS)
+      .filter(k => after === k || after.startsWith(k + "/") || after.startsWith(k))
+      .sort((a, b) => b.length - a.length)[0];
+    return key ? PAGE_LABELS[key] : null;
+  })();
   const [qc] = useState(() => new QueryClient({
     defaultOptions: { queries: { retry: 1, staleTime: 30_000 } },
   }));
@@ -473,6 +557,17 @@ export default function OrgLayout({ children }: { children: React.ReactNode }) {
       <div className="min-h-screen bg-gray-100">
         {/* ── Top banner ── */}
         <header className="fixed top-0 left-0 right-0 z-[60] h-14 bg-[#0f2d1f] flex items-center px-6 gap-4 shadow-[0_2px_12px_rgba(0,0,0,0.35)]">
+          {/* Hamburger — mobile only */}
+          <button
+            onClick={() => setSidebarOpen(prev => !prev)}
+            className="md:hidden flex flex-col justify-center items-center w-9 h-9 gap-[5px] rounded border-0 bg-transparent cursor-pointer shrink-0 hover:bg-white/[0.08] transition-all"
+            aria-label="Toggle menu"
+          >
+            <span className={`block w-5 h-0.5 bg-white/70 rounded transition-all duration-200 ${sidebarOpen ? "rotate-45 translate-y-[7px]" : ""}`} />
+            <span className={`block w-5 h-0.5 bg-white/70 rounded transition-all duration-200 ${sidebarOpen ? "opacity-0" : ""}`} />
+            <span className={`block w-5 h-0.5 bg-white/70 rounded transition-all duration-200 ${sidebarOpen ? "-rotate-45 -translate-y-[7px]" : ""}`} />
+          </button>
+
           {/* Logo */}
           <Link href={`/${user.orgSlug}/dashboard`} className="flex items-center gap-2 no-underline shrink-0">
             <Logo />
@@ -484,7 +579,7 @@ export default function OrgLayout({ children }: { children: React.ReactNode }) {
           {/* Centre: org breadcrumb */}
           <div className="flex-1 flex justify-center">
             {viewingTenant ? (
-              <span className="text-sm text-white/70">
+              <span className="text-sm text-white/70 flex items-center gap-1">
                 <span className="text-eth-gold font-semibold flex items-center gap-1.5">
                   {apiLogoUrl
                     ? <img src={apiLogoUrl} alt="" className="w-5 h-5 rounded object-cover shrink-0" />
@@ -494,6 +589,9 @@ export default function OrgLayout({ children }: { children: React.ReactNode }) {
                 </span>
                 {user.warehouseName && (
                   <span className="text-emerald-300"> › {user.warehouseName}</span>
+                )}
+                {pageLabel && (
+                  <span className="text-white/45"> › {pageLabel}</span>
                 )}
               </span>
             ) : (
@@ -529,8 +627,15 @@ export default function OrgLayout({ children }: { children: React.ReactNode }) {
 
         {/* Body */}
         <div className="flex pt-[60px]">
-          <Sidebar user={user} org={org} tenantName={apiTenantName ?? undefined} />
-          <main className="flex-1 ml-60 min-h-[calc(100vh-60px)] overflow-auto bg-gray-100">
+          {/* Mobile overlay — closes sidebar on tap */}
+          {sidebarOpen && (
+            <div
+              className="fixed inset-0 z-[39] bg-black/50 md:hidden"
+              onClick={() => setSidebarOpen(false)}
+            />
+          )}
+          <Sidebar user={user} org={org} tenantName={apiTenantName ?? undefined} onClose={() => setSidebarOpen(false)} isOpen={sidebarOpen} />
+          <main className="flex-1 md:ml-60 min-h-[calc(100vh-60px)] overflow-auto bg-gray-100">
             {process.env.NODE_ENV !== "production" && !process.env.NEXT_PUBLIC_API_URL && !bannerDismissed && (
               <div className="bg-amber-50 border-b border-amber-200 px-4 py-2 flex items-center justify-between gap-3">
                 <p className="text-xs text-amber-800 font-medium m-0">⚠ {t("demo.mode_banner")}</p>
@@ -553,14 +658,16 @@ export default function OrgLayout({ children }: { children: React.ReactNode }) {
 /* ── Nav definitions ──────────────────────────────────────────────────────── */
 type NavItem =
   | { type: "section"; label: string; roles?: string[] }
-  | { type: "link"; icon: string; label: string; page: string; roles?: string[] };
+  | { type: "link"; icon: string; label: string; page: string; roles?: string[]; disabled?: boolean };
 
 const SA_NAV: NavItem[] = [
   { type: "section", label: "Overview" },
-  { type: "link", icon: "🏠", label: "Dashboard",   page: "dashboard"   },
+  { type: "link", icon: "🏠", label: "Dashboard", page: "dashboard" },
   { type: "section", label: "System" },
-  { type: "link", icon: "🔐", label: "Permissions", page: "permissions" },
-  { type: "link", icon: "📋", label: "Audit Log",   page: "audit-log"   },
+  // These pages are planned but not yet built — links are intentionally
+  // disabled until the pages exist. Do not remove; placeholder only.
+  { type: "link", icon: "🔐", label: "Permissions", page: "dashboard", disabled: true },
+  { type: "link", icon: "📋", label: "Audit Log",   page: "dashboard", disabled: true },
 ];
 
 // NAV ORDER: Do not change without updating PRD-APPENDIX.md §A — confirmed structure.

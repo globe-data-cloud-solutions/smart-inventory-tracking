@@ -4,7 +4,6 @@ import { useEffect, useRef, useState } from "react";
 import { useRouter, usePathname } from "next/navigation";
 import Link from "next/link";
 import { getSession, logout, type SessionUser } from "@/lib/demo-auth";
-import { Sidebar } from "@/components/layout/Sidebar";
 import { t } from "@/lib/i18n";
 
 function Logo({ size = 28 }: { size?: number }) {
@@ -95,8 +94,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       />
 
       <div className="flex pt-[60px]">
-        <Sidebar user={user} />
-        <main className="flex-1 ml-60 min-h-[calc(100vh-60px)] overflow-auto bg-gray-100">
+        <main className="flex-1 min-h-[calc(100vh-60px)] overflow-auto bg-gray-100">
           {children}
         </main>
       </div>
