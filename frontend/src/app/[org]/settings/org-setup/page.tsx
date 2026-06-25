@@ -402,7 +402,7 @@ function NodeForm({
   levels: HierarchyLevel[];
   editingNode: OrgNode | null;
   defaultParentId: string;
-  onSaved: () => void;
+  onSaved: (createdLevel?: number) => void;
   onCancel: () => void;
 }) {
   const parentNode = flat.find((n) => n.id === defaultParentId) ?? null;
@@ -451,7 +451,19 @@ function NodeForm({
           }).catch(() => { /* non-fatal — user can set routes later */ });
         }
       }
-      onSaved();
+      // Auto-clone level permissions for new level (idempotent, non-fatal)
+      if (!editingNode) {
+        const allNodes = await api.get<OrgNode[]>(`/api/v1/tenants/${tenantId}/nodes`);
+        const flatNew = flattenNodes(allNodes);
+        const newNode = flatNew.find((n) => n.name === form.name.trim());
+        if (newNode) {
+          api.post(
+            `/api/v1/tenants/${tenantId}/nodes/${newNode.id}/clone-level-permissions`,
+            {}
+          ).catch(() => { /* non-fatal */ });
+        }
+      }
+      onSaved(editingNode ? undefined : form.level_number);
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : t("common.error"));
     } finally {
@@ -550,8 +562,27 @@ function NodeForm({
 
 /* ── Tab 2: Organisation Tree ─────────────────────────────────────────────── */
 
-function TreeTab({ tenantId }: { tenantId: string }) {
+type CoverageState = {
+  level: number;
+  transfer_rules_exist: boolean;
+  transfer_level_covered: boolean;
+  adj_rules_exist: boolean;
+  adj_level_covered: boolean;
+  self_approval_covered: boolean;
+  transfer_level_perms_exist: boolean;
+};
+
+function TreeTab({
+  tenantId,
+  onPrefillLevel,
+  onSwitchToApproval,
+}: {
+  tenantId: string;
+  onPrefillLevel?: (level: number | null) => void;
+  onSwitchToApproval?: () => void;
+}) {
   const qc = useQueryClient();
+  const [coverage, setCoverage] = useState<CoverageState | null>(null);
 
   const { data: levels = [] } = useQuery<HierarchyLevel[]>({
     queryKey: ["hierarchy-config", tenantId],
@@ -603,9 +634,34 @@ function TreeTab({ tenantId }: { tenantId: string }) {
   // "edit node" form state — null = no form open
   const [editNodeId, setEditNodeId]   = useState<string | null>(null);
 
-  const refreshNodes = useCallback(() => {
+  const refreshNodes = useCallback((createdLevel?: number) => {
     void qc.invalidateQueries({ queryKey: ["org-nodes", tenantId] });
+    if (createdLevel !== undefined) {
+      api.get<Omit<CoverageState, "level">>(`/api/v1/tenants/${tenantId}/approval-coverage?level=${createdLevel}`)
+        .then((data) => setCoverage({ level: createdLevel, ...data }))
+        .catch(() => setCoverage(null));
+    } else {
+      setCoverage(null);
+    }
   }, [qc, tenantId]);
+
+  // Sync coverage Variant 2 state up to OrgSetupPage so ApprovalRulesV2Tab can pre-fill
+  useEffect(() => {
+    if (!coverage) { onPrefillLevel?.(null); return; }
+    const isVariant2 = (coverage.transfer_rules_exist || coverage.adj_rules_exist) &&
+      (!coverage.transfer_level_covered || !coverage.adj_level_covered);
+    onPrefillLevel?.(isVariant2 ? coverage.level : null);
+  }, [coverage, onPrefillLevel]);
+
+  // Variant 3 auto-dismiss after 5 seconds
+  useEffect(() => {
+    if (!coverage) return;
+    const allCovered = coverage.transfer_level_covered && coverage.adj_level_covered;
+    if (allCovered) {
+      const timer = setTimeout(() => setCoverage(null), 5000);
+      return () => clearTimeout(timer);
+    }
+  }, [coverage]);
 
   function renderNode(node: OrgNode, depth: number): React.ReactNode {
     const levelLabel = levels.find((l) => l.level_number === node.hierarchy_level)?.level_name
@@ -693,7 +749,7 @@ function TreeTab({ tenantId }: { tenantId: string }) {
               levels={levels}
               editingNode={node}
               defaultParentId={node.parent_node_id ?? ""}
-              onSaved={() => { setEditNodeId(null); refreshNodes(); }}
+              onSaved={(lvl) => { setEditNodeId(null); refreshNodes(); }}
               onCancel={() => setEditNodeId(null)}
             />
           </div>
@@ -707,7 +763,7 @@ function TreeTab({ tenantId }: { tenantId: string }) {
               levels={levels}
               editingNode={null}
               defaultParentId={node.id}
-              onSaved={() => { setAddParentId(null); refreshNodes(); }}
+              onSaved={(lvl) => { setAddParentId(null); refreshNodes(lvl); }}
               onCancel={() => setAddParentId(null)}
             />
           </div>
@@ -760,7 +816,7 @@ function TreeTab({ tenantId }: { tenantId: string }) {
           levels={levels}
           editingNode={null}
           defaultParentId=""
-          onSaved={() => { setAddParentId(null); refreshNodes(); }}
+          onSaved={(lvl) => { setAddParentId(null); refreshNodes(lvl); }}
           onCancel={() => setAddParentId(null)}
         />
       ) : (
@@ -772,6 +828,48 @@ function TreeTab({ tenantId }: { tenantId: string }) {
           + Add root node (L1)
         </button>
       )}
+
+      {/* Coverage banner — shown after a new node is created */}
+      {coverage && (() => {
+        const noRules = !coverage.transfer_rules_exist && !coverage.adj_rules_exist;
+        const partialCover = (coverage.transfer_rules_exist || coverage.adj_rules_exist) &&
+          (!coverage.transfer_level_covered || !coverage.adj_level_covered);
+        const allCovered = !noRules && !partialCover;
+        return (
+          <div className={`rounded-lg border px-4 py-3 text-sm flex items-start gap-2 ${
+            noRules ? "border-amber-300 bg-amber-50 text-amber-800" :
+            partialCover ? "border-blue-300 bg-blue-50 text-blue-800" :
+            "border-emerald-300 bg-emerald-50 text-emerald-800"
+          }`}>
+            <span className="shrink-0 mt-0.5">{noRules ? "⚠" : partialCover ? "ℹ" : "✓"}</span>
+            <div className="flex-1">
+              {noRules && (
+                <>
+                  <span>{t("org_setup.coverage_no_rules")}</span>
+                  {" "}
+                  <button type="button" onClick={() => { setCoverage(null); onSwitchToApproval?.(); }}
+                    className="underline font-semibold hover:no-underline">
+                    {t("org_setup.coverage_go_to_approval")} →
+                  </button>
+                </>
+              )}
+              {partialCover && (
+                <>
+                  <span>{t("org_setup.coverage_partial")}</span>
+                  {" "}
+                  <button type="button" onClick={() => { setCoverage(null); onSwitchToApproval?.(); }}
+                    className="underline font-semibold hover:no-underline">
+                    {t("org_setup.coverage_review_approval")} →
+                  </button>
+                </>
+              )}
+              {allCovered && <span>{t("org_setup.coverage_ok")}</span>}
+            </div>
+            <button type="button" onClick={() => setCoverage(null)}
+              className="shrink-0 text-lg leading-none opacity-60 hover:opacity-100">✕</button>
+          </div>
+        );
+      })()}
 
       {/* Tree */}
       {nodes.length === 0 ? (
@@ -2454,7 +2552,7 @@ const getTransferStepPositionIds = (rule: ApprovalRuleLocal): (string | null | u
 const getAdjApproverPositionId = (rule: AdjRuleLocal): (string | null | undefined)[] =>
   [rule.approver_position_id];
 
-function ApprovalRulesV2Tab({ tenantId }: { tenantId: string }) {
+function ApprovalRulesV2Tab({ tenantId, prefillLevel }: { tenantId: string; prefillLevel?: number | null }) {
   const qc = useQueryClient();
   const [subTab, setSubTab] = useState<"transfer" | "adjustment">("transfer");
   const [adjRuleCount, setAdjRuleCount] = useState(0);
@@ -2516,6 +2614,30 @@ function ApprovalRulesV2Tab({ tenantId }: { tenantId: string }) {
   function setTypeRules(typeId: string, fn: (prev: ApprovalRuleLocal[]) => ApprovalRuleLocal[]) {
     setRules((prev) => ({ ...prev, [typeId]: fn(prev[typeId] ?? getRules(typeId)) }));
   }
+
+  // Pre-fill rules for a newly added org level (triggered by OrgTreeTab coverage Variant 2)
+  useEffect(() => {
+    if (!prefillLevel || savedRules.length === 0) return;
+    activeTypes.forEach((tt) => {
+      const existing = getRules(tt.id);
+      const alreadyCovered = existing.some(
+        (r) => r.destination_level === prefillLevel || r.source_level === prefillLevel
+      );
+      if (alreadyCovered) return;
+      const source = [...existing]
+        .filter((r) => r.destination_level !== null && r.destination_level < prefillLevel)
+        .sort((a, b) => (b.destination_level ?? 0) - (a.destination_level ?? 0))[0];
+      if (!source) return;
+      const clone: ApprovalRuleLocal = {
+        ...source,
+        id: `local_prefill_${Date.now()}_${tt.id}`,
+        destination_level: prefillLevel,
+        steps: source.steps.map((s) => ({ ...s })),
+      };
+      setTypeRules(tt.id, (prev) => [...prev, clone]);
+    });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [prefillLevel, savedRules]);
 
   function addRule(typeId: string) {
     setTypeRules(typeId, (prev) => [...prev, {
@@ -3235,6 +3357,7 @@ type TabId = "levels" | "tree" | "positions" | "transfer-types" | "approval" | "
 export default function OrgSetupPage() {
   const { org } = useParams() as { org: string };
   const [activeTab, setActiveTab] = useState<TabId>("levels");
+  const [prefillLevel, setPrefillLevel] = useState<number | null>(null);
 
   // All hierarchy/node endpoints require a UUID — resolve it from the slug (or UUID) in the URL
   const { data: tenantMeta, isLoading: metaLoading, isError: metaError } = useQuery<{ id: string; name: string }>({
@@ -3292,11 +3415,11 @@ export default function OrgSetupPage() {
           editNodeId in TreeTab, etc.) can never survive into the next tenant's render —
           see cross-tenant position leak investigation. */}
       {activeTab === "levels"         && <LevelsTab          key={tenantId} tenantId={tenantId} />}
-      {activeTab === "tree"           && <TreeTab             key={tenantId} tenantId={tenantId} />}
+      {activeTab === "tree"           && <TreeTab             key={tenantId} tenantId={tenantId} onPrefillLevel={setPrefillLevel} onSwitchToApproval={() => setActiveTab("approval")} />}
       {activeTab === "positions"      && <PositionsTab        key={tenantId} tenantId={tenantId} />}
       {activeTab === "personnel"      && <PersonnelV2Tab      key={tenantId} tenantId={tenantId} />}
       {activeTab === "transfer-types" && <TransferTypesTab    key={tenantId} tenantId={tenantId} />}
-      {activeTab === "approval"       && <ApprovalRulesV2Tab  key={tenantId} tenantId={tenantId} />}
+      {activeTab === "approval"       && <ApprovalRulesV2Tab  key={tenantId} tenantId={tenantId} prefillLevel={prefillLevel} />}
       {activeTab === "branding"       && <BrandingTab         key={tenantId} tenantId={tenantId} />}
     </div>
   );
