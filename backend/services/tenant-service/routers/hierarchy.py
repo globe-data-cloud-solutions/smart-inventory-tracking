@@ -20,6 +20,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from dependencies import get_current_user, get_db_session, get_db_session_for_tenant
 from shared.permissions.audit import audit_log
 from shared.permissions.middleware import require_permission
+from shared.permissions.plan_middleware import check_plan_create_warehouse
 from shared.permissions.registry import PERMISSIONS
 from shared.utils.responses import SuccessResponse
 
@@ -582,6 +583,8 @@ async def create_org_node(
 ) -> SuccessResponse[OrgNodeOut]:
     if not (1 <= body.level_number <= 5):
         raise HTTPException(status_code=422, detail="level_number must be between 1 and 5")
+
+    await check_plan_create_warehouse(user, db)
 
     # Validate parent exists and belongs to same tenant when provided
     if body.parent_node_id:

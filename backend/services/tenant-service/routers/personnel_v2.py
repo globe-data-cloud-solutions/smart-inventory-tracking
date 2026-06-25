@@ -23,6 +23,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, EmailStr, field_validator
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
+from shared.permissions.plan_middleware import check_plan_create_user
 
 from dependencies import get_current_user, get_db_session_for_tenant
 from shared.cache.login_lockout import _reset_login_attempts
@@ -239,6 +240,8 @@ async def create_user(
             detail={"code": "ROLE_CEILING_EXCEEDED",
                     "message": "Only a platform administrator can create Tenant Administrator accounts."},
         )
+
+    await check_plan_create_user(user, db)
 
     user_id = uuid.uuid4()
     await db.execute(
