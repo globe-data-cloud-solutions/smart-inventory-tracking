@@ -253,31 +253,35 @@ class TestHierarchyConfigUpsert:
         assert exc_info.value.status_code == 422
         assert exc_info.value.detail["code"] == "DUPLICATE_LEVEL_NUMBER"
 
-    async def test_level_count_change_after_initial_save_locked(self) -> None:
-        """G3a: once 4 levels are saved, PUTting 5 is rejected — the level count
-        is locked until an SA resets it via the dedicated reset endpoint."""
+    async def test_grow_levels_after_initial_save_allowed(self) -> None:
+        """G3a (updated): growing from 4 → 5 levels is always permitted.
+        The lock only fires when shrinking to a level below the highest
+        active node — no exception expected here."""
         from routers.hierarchy import upsert_hierarchy_config, HierarchyLevelIn
 
         existing_count_res = MagicMock()
         existing_count_res.scalar = MagicMock(return_value=4)
+        # Growing path: only the COUNT query fires; INSERT/UPDATE calls follow
         db = AsyncMock()
-        db.execute = AsyncMock(return_value=existing_count_res)  # only 1 call expected
+        db.execute = AsyncMock(return_value=existing_count_res)
 
-        with _GRANT_ALL, pytest.raises(HTTPException) as exc_info:
-            await upsert_hierarchy_config(
-                tenant_id=UUID(TENANT_ID),
-                body=[
-                    HierarchyLevelIn(level_number=1, level_name="Factory"),
-                    HierarchyLevelIn(level_number=2, level_name="Region"),
-                    HierarchyLevelIn(level_number=3, level_name="Warehouse"),
-                    HierarchyLevelIn(level_number=4, level_name="Satellite"),
-                    HierarchyLevelIn(level_number=5, level_name="Outpost"),
-                ],
-                user=_Caller(),
-                db=db,
-            )
-        assert exc_info.value.status_code == 422
-        assert exc_info.value.detail["code"] == "LEVEL_COUNT_LOCKED"
+        # Should not raise — growing is always safe
+        with _GRANT_ALL:
+            try:
+                await upsert_hierarchy_config(
+                    tenant_id=UUID(TENANT_ID),
+                    body=[
+                        HierarchyLevelIn(level_number=1, level_name="Factory"),
+                        HierarchyLevelIn(level_number=2, level_name="Region"),
+                        HierarchyLevelIn(level_number=3, level_name="Warehouse"),
+                        HierarchyLevelIn(level_number=4, level_name="Satellite"),
+                        HierarchyLevelIn(level_number=5, level_name="Outpost"),
+                    ],
+                    user=_Caller(),
+                    db=db,
+                )
+            except HTTPException as exc:
+                pytest.fail(f"Growing levels should not raise, got {exc.status_code}: {exc.detail}")
 
     async def test_same_level_count_after_initial_save_allows_edit(self) -> None:
         """G3a: PUTting the SAME count (4) as already saved is allowed — this is

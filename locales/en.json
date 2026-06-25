@@ -925,7 +925,7 @@
     "node_has_open_transfers": "Cannot deactivate — this location has open transfers. Complete or cancel them first.",
     "node_has_pending_adjustments": "Cannot deactivate — this location has pending adjustments.",
     "node_has_sole_users": "Cannot deactivate — some staff have this as their only position. Reassign them first.",
-    "levels_locked": "Level count is locked after saving. Contact support to restructure your organisation.",
+    "levels_locked": "You can add levels but cannot remove them once org nodes have been created.",
     "confirm_save_levels_title": "Confirm Organisation Levels",
     "confirm_save_levels_body": "Once saved, you will not be able to add or remove levels. You can rename levels at any time. Are you sure you want to save {count} levels?",
     "confirm_save": "Confirm & Save",

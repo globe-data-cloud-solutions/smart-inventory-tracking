@@ -282,11 +282,6 @@ async def upsert_hierarchy_config(
                 detail=f"level_number must be between 1 and 5, got {level.level_number}",
             )
 
-    # G3a — level count lock: once a tenant's hierarchy has been saved at least
-    # once, the number of levels can no longer change via this endpoint (only
-    # renames/edits of the existing set). SA can lift this via the dedicated
-    # reset endpoint below, which clears the config entirely (and requires no
-    # org nodes to exist first).
     existing_count = (await db.execute(
         text(
             "SELECT COUNT(*) FROM tenant_hierarchy_config "
@@ -294,15 +289,32 @@ async def upsert_hierarchy_config(
         ),
         {"tid": str(tenant_id)},
     )).scalar() or 0
-    if existing_count > 0 and len(body) != existing_count:
-        raise HTTPException(
-            status_code=422,
-            detail={
-                "code":    "LEVEL_COUNT_LOCKED",
-                "message": "Org level count is locked after initial setup. Contact your "
-                           "Super Admin to reset if needed before any nodes are created.",
-            },
-        )
+    # G3a — directional level lock: growing is always safe (new levels
+    # are appended below existing nodes and have no data yet).
+    # Shrinking is only blocked if nodes exist at the levels being removed.
+    if existing_count > 0 and len(body) < existing_count:
+        # Find the highest level_number currently used by any active node
+        max_used_level = (await db.execute(
+            text(
+                "SELECT COALESCE(MAX(hierarchy_level), 0) "
+                "FROM organization_node "
+                "WHERE tenant_id = :tid AND is_active = true"
+            ),
+            {"tid": str(tenant_id)},
+        )).scalar() or 0
+        if len(body) < max_used_level:
+            raise HTTPException(
+                status_code=422,
+                detail={
+                    "code":    "LEVEL_COUNT_LOCKED",
+                    "message": (
+                        f"Cannot reduce org levels below {max_used_level} — "
+                        f"active nodes exist at that level. "
+                        f"Remove those nodes first or contact your Super Admin."
+                    ),
+                },
+            )
+    # Growing (len(body) > existing_count) always passes — no check needed.
 
     try:
         for level in body:
