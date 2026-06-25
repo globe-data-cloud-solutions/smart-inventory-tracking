@@ -17,6 +17,7 @@ class WizardResult(BaseModel):
     org_type: str
     feature_flags: Dict[str, bool]
     onboarding_complete: bool
+    plan_tier: str = "GROWTH"
 
 
 DEFAULT_SYSTEM_PLAN_ID = uuid.UUID("00000000-0000-0000-0000-000000000001")

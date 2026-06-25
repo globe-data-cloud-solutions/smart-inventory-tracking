@@ -9,23 +9,44 @@ from schemas.tenant import WizardData, WizardResult
 
 FEATURE_FLAG_DEFAULTS: dict[str, dict[str, bool]] = {
     "PRODUCER": {
-        "LOGISTICS": False,
-        "AI_ANALYTICS": False,
-        "ADVANCED_BATCH_TRACKING": True,
-        "FLEET_MANAGEMENT": False,
+        "CORE_INVENTORY":      True,
+        "TRANSFERS_PULL_PUSH": True,
+        "TRANSFERS_SISTER":    False,
+        "LOT_TRACEABILITY":    True,
+        "LOGISTICS":           False,
+        "AUDIT_EXPORT":        False,
+        "CUSTOM_BRANDING":     False,
+        "AI_ANALYTICS":        False,
+        "API_ACCESS":          False,
     },
     "RETAILER": {
-        "LOGISTICS": True,
-        "AI_ANALYTICS": True,
-        "ADVANCED_BATCH_TRACKING": False,
-        "FLEET_MANAGEMENT": True,
+        "CORE_INVENTORY":      True,
+        "TRANSFERS_PULL_PUSH": True,
+        "TRANSFERS_SISTER":    True,
+        "LOT_TRACEABILITY":    False,
+        "LOGISTICS":           True,
+        "AUDIT_EXPORT":        True,
+        "CUSTOM_BRANDING":     True,
+        "AI_ANALYTICS":        True,
+        "API_ACCESS":          False,
     },
     "HYBRID": {
-        "LOGISTICS": True,
-        "AI_ANALYTICS": True,
-        "ADVANCED_BATCH_TRACKING": True,
-        "FLEET_MANAGEMENT": True,
+        "CORE_INVENTORY":      True,
+        "TRANSFERS_PULL_PUSH": True,
+        "TRANSFERS_SISTER":    True,
+        "LOT_TRACEABILITY":    True,
+        "LOGISTICS":           True,
+        "AUDIT_EXPORT":        True,
+        "CUSTOM_BRANDING":     True,
+        "AI_ANALYTICS":        True,
+        "API_ACCESS":          False,
     },
+}
+
+TIER_DEFAULTS: dict[str, dict] = {
+    "PRODUCER": {"plan_tier": "GROWTH",     "max_warehouses": 30,   "max_users": 50},
+    "RETAILER": {"plan_tier": "GROWTH",     "max_warehouses": 30,   "max_users": 50},
+    "HYBRID":   {"plan_tier": "ENTERPRISE", "max_warehouses": None, "max_users": None},
 }
 
 APPROVAL_DEFAULTS: dict[str, dict] = {
@@ -69,6 +90,24 @@ async def complete_wizard(
             {"cap": data.sku_limit, "tid": tenant_id},
         )
 
+    tier_defaults = TIER_DEFAULTS[data.org_type]
+    await db.execute(
+        text(
+            "UPDATE tenants SET "
+            "  plan_tier      = CAST(:tier AS plan_tier), "
+            "  max_warehouses = :max_wh, "
+            "  max_users      = :max_u, "
+            "  updated_at     = now() "
+            "WHERE id = :tid"
+        ),
+        {
+            "tier": tier_defaults["plan_tier"],
+            "max_wh": tier_defaults["max_warehouses"],
+            "max_u":  tier_defaults["max_users"],
+            "tid":    tenant_id,
+        },
+    )
+
     # Outbox in SAME transaction
     await write_to_outbox(
         db,
@@ -86,4 +125,5 @@ async def complete_wizard(
         org_type=data.org_type,
         feature_flags=feature_flags,
         onboarding_complete=True,
+        plan_tier=tier_defaults["plan_tier"],
     )
