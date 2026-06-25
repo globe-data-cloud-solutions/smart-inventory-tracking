@@ -228,7 +228,7 @@ async def get_hierarchy_config(
             "SELECT id, tenant_id, level_number, level_name, default_role_code, "
             "role_display_label, is_stock_holding, is_active "
             "FROM tenant_hierarchy_config "
-            "WHERE tenant_id = :tid ORDER BY level_number"
+            "WHERE tenant_id = :tid AND is_active = true ORDER BY level_number"
         ),
         {"tid": str(tenant_id)},
     )
@@ -348,12 +348,29 @@ async def upsert_hierarchy_config(
             raise _duplicate_level_name_http_exception() from exc
         raise
 
+    # Deactivate any levels in the DB that are NOT in the submitted body.
+    # This makes PUT a full replace, not an additive upsert.
+    submitted_level_numbers = [level.level_number for level in body]
+    if submitted_level_numbers:
+        placeholders = ", ".join(f":lv{i}" for i in range(len(submitted_level_numbers)))
+        params: dict = {"tid": str(tenant_id)}
+        for i, lv in enumerate(submitted_level_numbers):
+            params[f"lv{i}"] = lv
+        await db.execute(
+            text(
+                f"UPDATE tenant_hierarchy_config "
+                f"SET is_active = false, updated_at = now() "
+                f"WHERE tenant_id = :tid AND level_number NOT IN ({placeholders})"
+            ),
+            params,
+        )
+
     rows = await db.execute(
         text(
             "SELECT id, tenant_id, level_number, level_name, default_role_code, "
             "role_display_label, is_stock_holding, is_active "
             "FROM tenant_hierarchy_config "
-            "WHERE tenant_id = :tid ORDER BY level_number"
+            "WHERE tenant_id = :tid AND is_active = true ORDER BY level_number"
         ),
         {"tid": str(tenant_id)},
     )
@@ -613,9 +630,9 @@ async def clone_level_permissions(
         if src:
             await db.execute(
                 text("INSERT INTO transfer_type_level_permissions "
-                     "(transfer_type_config_id, level_number, can_initiate, can_receive) "
-                     "VALUES (:ttc, :lv, :ci, :cr)"),
-                {"ttc": ttc_id, "lv": target_level,
+                     "(tenant_id, transfer_type_config_id, level_number, can_initiate, can_receive) "
+                     "VALUES (:tid, :ttc, :lv, :ci, :cr)"),
+                {"tid": str(tenant_id), "ttc": ttc_id, "lv": target_level,
                  "ci": src.can_initiate, "cr": src.can_receive},
             )
             cloned_count += 1

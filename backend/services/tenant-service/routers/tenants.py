@@ -227,6 +227,49 @@ async def get_my_plan(
     })
 
 
+class PlanUpdateRequest(BaseModel):
+    plan_tier: str
+    max_warehouses: Optional[int] = None
+    max_users: Optional[int] = None
+
+
+@router.patch("/{tenant_id}/plan", response_model=SuccessResponse[dict])
+@require_permission(PERMISSIONS.TENANT_MANAGE)
+async def update_tenant_plan(
+    tenant_id: uuid.UUID,
+    body: PlanUpdateRequest,
+    user=Depends(get_current_user),
+    db: AsyncSession = Depends(get_db_session),
+) -> SuccessResponse[dict]:
+    """SA-only: update a tenant's plan tier and resource caps."""
+    if not user or user.role != "SA":
+        raise HTTPException(
+            status_code=403,
+            detail={"code": "FORBIDDEN", "message": "SA only"},
+        )
+    valid_tiers = {"STARTER", "GROWTH", "ENTERPRISE"}
+    if body.plan_tier not in valid_tiers:
+        raise HTTPException(
+            status_code=422,
+            detail={"code": "INVALID_TIER",
+                    "message": f"plan_tier must be one of {sorted(valid_tiers)}"},
+        )
+    await db.execute(
+        text(
+            "UPDATE tenants SET plan_tier = CAST(:tier AS plan_tier), "
+            "max_warehouses = :max_wh, max_users = :max_u, updated_at = now() "
+            "WHERE id = :id"
+        ),
+        {"tier": body.plan_tier, "max_wh": body.max_warehouses,
+         "max_u": body.max_users, "id": str(tenant_id)},
+    )
+    return SuccessResponse(data={
+        "plan_tier":      body.plan_tier,
+        "max_warehouses": body.max_warehouses,
+        "max_users":      body.max_users,
+    })
+
+
 @router.get("/{tenant_id}", response_model=SuccessResponse[TenantResponse])
 @require_permission(PERMISSIONS.TENANT_VIEW)
 async def get_tenant(
