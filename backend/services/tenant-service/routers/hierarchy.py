@@ -441,6 +441,193 @@ async def rename_hierarchy_level(
     )
 
 
+class ApprovalCoverageResponse(BaseModel):
+    transfer_rules_exist: bool
+    transfer_level_covered: bool
+    adj_rules_exist: bool
+    adj_level_covered: bool
+    self_approval_covered: bool
+    transfer_level_perms_exist: bool
+
+
+@router.get(
+    "/{tenant_id}/approval-coverage",
+    response_model=SuccessResponse[ApprovalCoverageResponse],
+)
+@require_permission(PERMISSIONS.TENANT_MANAGE)
+async def get_approval_coverage(
+    tenant_id: uuid.UUID,
+    level: int,
+    user=Depends(get_current_user),
+    db: AsyncSession = Depends(get_db_session_for_tenant),
+) -> SuccessResponse[ApprovalCoverageResponse]:
+    """Check whether a given hierarchy level has approval rule coverage.
+    Called by the frontend after a new org node is created to determine
+    whether to show a coverage warning banner."""
+    tid = str(tenant_id)
+
+    # 1. Transfer approval rules — any rules exist for this tenant?
+    transfer_total = (await db.execute(
+        text("SELECT COUNT(*) FROM transfer_approval_rules "
+             "WHERE tenant_id = :tid AND is_active = true"),
+        {"tid": tid},
+    )).scalar() or 0
+
+    # 2. Transfer approval rules — does this level have coverage?
+    # Covered if: any rule has source_level IS NULL AND dest_level IS NULL
+    # (global catch-all), OR any rule explicitly mentions this level
+    transfer_null_rule = (await db.execute(
+        text("SELECT COUNT(*) FROM transfer_approval_rules "
+             "WHERE tenant_id = :tid AND is_active = true "
+             "AND source_level IS NULL AND destination_level IS NULL"),
+        {"tid": tid},
+    )).scalar() or 0
+
+    transfer_explicit = (await db.execute(
+        text("SELECT COUNT(*) FROM transfer_approval_rules "
+             "WHERE tenant_id = :tid AND is_active = true "
+             "AND (source_level = :lv OR destination_level = :lv)"),
+        {"tid": tid, "lv": level},
+    )).scalar() or 0
+
+    transfer_level_covered = (transfer_null_rule > 0) or (transfer_explicit > 0)
+
+    # 3. Adjustment approval rules
+    adj_total = (await db.execute(
+        text("SELECT COUNT(*) FROM adjustment_approval_rules "
+             "WHERE tenant_id = :tid AND is_active = true"),
+        {"tid": tid},
+    )).scalar() or 0
+
+    adj_level = (await db.execute(
+        text("SELECT COUNT(*) FROM adjustment_approval_rules "
+             "WHERE tenant_id = :tid AND is_active = true "
+             "AND level_number = :lv"),
+        {"tid": tid, "lv": level},
+    )).scalar() or 0
+
+    # 4. Self-approval policies
+    self_appr = (await db.execute(
+        text("SELECT COUNT(*) FROM self_approval_policies "
+             "WHERE tenant_id = :tid AND level_number = :lv"),
+        {"tid": tid, "lv": level},
+    )).scalar() or 0
+
+    # 5. Transfer type level permissions
+    level_perms = (await db.execute(
+        text("SELECT COUNT(*) FROM transfer_type_level_permissions ttlp "
+             "JOIN transfer_type_config ttc ON ttc.id = ttlp.transfer_type_config_id "
+             "WHERE ttc.tenant_id = :tid AND ttlp.level_number = :lv"),
+        {"tid": tid, "lv": level},
+    )).scalar() or 0
+
+    return SuccessResponse(data=ApprovalCoverageResponse(
+        transfer_rules_exist=transfer_total > 0,
+        transfer_level_covered=transfer_level_covered,
+        adj_rules_exist=adj_total > 0,
+        adj_level_covered=adj_level > 0,
+        self_approval_covered=self_appr > 0,
+        transfer_level_perms_exist=level_perms > 0,
+    ))
+
+
+class CloneLevelPermsResponse(BaseModel):
+    cloned: bool
+    from_level: Optional[int]
+    to_level: int
+    transfer_types_updated: int
+
+
+@router.post(
+    "/{tenant_id}/nodes/{node_id}/clone-level-permissions",
+    response_model=SuccessResponse[CloneLevelPermsResponse],
+)
+@require_permission(PERMISSIONS.TENANT_MANAGE)
+async def clone_level_permissions(
+    tenant_id: uuid.UUID,
+    node_id: uuid.UUID,
+    user=Depends(get_current_user),
+    db: AsyncSession = Depends(get_db_session_for_tenant),
+) -> SuccessResponse[CloneLevelPermsResponse]:
+    """Clone transfer_type_level_permissions from the highest existing
+    level to this node's level. Idempotent — skips if row already exists."""
+    tid = str(tenant_id)
+
+    # Get this node's level
+    node_row = (await db.execute(
+        text("SELECT hierarchy_level FROM organization_node "
+             "WHERE id = :nid AND tenant_id = :tid AND is_active = true"),
+        {"nid": str(node_id), "tid": tid},
+    )).fetchone()
+    if not node_row:
+        raise HTTPException(status_code=404, detail="Node not found")
+    target_level = node_row.hierarchy_level
+
+    # Find highest existing level that has permissions rows
+    source_row = (await db.execute(
+        text("SELECT ttlp.level_number, ttlp.can_initiate, ttlp.can_receive, "
+             "       ttlp.transfer_type_config_id "
+             "FROM transfer_type_level_permissions ttlp "
+             "JOIN transfer_type_config ttc ON ttc.id = ttlp.transfer_type_config_id "
+             "WHERE ttc.tenant_id = :tid "
+             "AND ttlp.level_number < :lv "
+             "ORDER BY ttlp.level_number DESC LIMIT 1"),
+        {"tid": tid, "lv": target_level},
+    )).fetchone()
+
+    if not source_row:
+        return SuccessResponse(data=CloneLevelPermsResponse(
+            cloned=False, from_level=None,
+            to_level=target_level, transfer_types_updated=0,
+        ))
+
+    from_level = source_row.level_number
+
+    # Get all transfer_type_config_ids for this tenant
+    tt_rows = (await db.execute(
+        text("SELECT id FROM transfer_type_config "
+             "WHERE tenant_id = :tid AND is_active = true"),
+        {"tid": tid},
+    )).fetchall()
+
+    cloned_count = 0
+    for tt_row in tt_rows:
+        ttc_id = str(tt_row.id)
+        # Check if a row already exists for target_level on this transfer type
+        exists = (await db.execute(
+            text("SELECT 1 FROM transfer_type_level_permissions "
+                 "WHERE transfer_type_config_id = :ttc AND level_number = :lv"),
+            {"ttc": ttc_id, "lv": target_level},
+        )).fetchone()
+        if exists:
+            continue
+
+        # Get source level permissions for this transfer type
+        src = (await db.execute(
+            text("SELECT can_initiate, can_receive "
+                 "FROM transfer_type_level_permissions "
+                 "WHERE transfer_type_config_id = :ttc AND level_number = :src_lv"),
+            {"ttc": ttc_id, "src_lv": from_level},
+        )).fetchone()
+
+        if src:
+            await db.execute(
+                text("INSERT INTO transfer_type_level_permissions "
+                     "(transfer_type_config_id, level_number, can_initiate, can_receive) "
+                     "VALUES (:ttc, :lv, :ci, :cr)"),
+                {"ttc": ttc_id, "lv": target_level,
+                 "ci": src.can_initiate, "cr": src.can_receive},
+            )
+            cloned_count += 1
+
+    return SuccessResponse(data=CloneLevelPermsResponse(
+        cloned=cloned_count > 0,
+        from_level=from_level,
+        to_level=target_level,
+        transfer_types_updated=cloned_count,
+    ))
+
+
 @router.delete(
     "/{tenant_id}/hierarchy/config/reset",
     response_model=SuccessResponse[dict],
