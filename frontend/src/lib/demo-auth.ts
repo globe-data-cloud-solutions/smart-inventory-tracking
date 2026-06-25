@@ -152,6 +152,19 @@ export async function loginWithDevEmail(email: string, password?: string): Promi
         err.status = 429;
         throw err;
       }
+      if (res.status === 403) {
+        const errBody = (await res.json().catch(() => null)) as
+          | { detail?: { code?: string; message?: string } }
+          | null;
+        const code = errBody?.detail?.code;
+        if (code === "TENANT_SUSPENDED" || code === "TENANT_DEACTIVATED") {
+          const err = new Error(
+            errBody?.detail?.message ?? "Your account access has been restricted. Please contact your administrator."
+          ) as Error & { status?: number };
+          err.status = 403;
+          throw err;
+        }
+      }
       return null;
     }
     const data = (await res.json()) as {
@@ -209,8 +222,11 @@ export async function loginWithDevEmail(email: string, password?: string): Promi
     // Login-lockout errors carry status=429 and must propagate to the caller
     // (the login form needs the specific message) — every other failure
     // (network error, bad JSON, etc.) stays a generic null as before.
-    if (err instanceof Error && (err as Error & { status?: number }).status === 429) {
-      throw err;
+    if (err instanceof Error) {
+      const status = (err as Error & { status?: number }).status;
+      if (status === 429 || status === 403) {
+        throw err;
+      }
     }
     return null;
   }

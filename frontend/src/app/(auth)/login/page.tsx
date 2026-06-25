@@ -36,10 +36,18 @@ export default function LoginPage() {
       try {
         session = await loginWithDevEmail(email, password);
       } catch (err) {
-        if (err instanceof Error && (err as Error & { status?: number }).status === 429) {
-          setLockoutMessage(err.message);
-          setLoading(false);
-          return;
+        if (err instanceof Error) {
+          const status = (err as Error & { status?: number }).status;
+          if (status === 429) {
+            setLockoutMessage(err.message);
+            setLoading(false);
+            return;
+          }
+          if (status === 403) {
+            setError(err.message);
+            setLoading(false);
+            return;
+          }
         }
         // Unexpected error shape — fall through to the generic message below.
       }
