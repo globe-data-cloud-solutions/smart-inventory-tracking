@@ -131,12 +131,19 @@ class TestCrossTenantIsolation:
 
         mock_session = AsyncMock()
         mock_session.commit = AsyncMock()
+        mock_result = MagicMock()
+        mock_result.fetchone = MagicMock(return_value=MagicMock(status="ACTIVE"))
+        mock_session.execute = AsyncMock(return_value=mock_result)
 
         @asynccontextmanager_like
         async def _fake_session():
             yield mock_session
 
-        with patch("dependencies.AsyncSessionLocal", return_value=_fake_session()):
+        # get_db_session_for_tenant now opens AsyncSessionLocal() twice for
+        # non-SA users (status check + actual session) — side_effect gives a
+        # fresh context manager instance per call instead of a single
+        # already-exhausted one via return_value.
+        with patch("dependencies.AsyncSessionLocal", side_effect=lambda: _fake_session()):
             with patch("dependencies.set_rls_context", new=AsyncMock()):
                 try:
                     async for _ in get_db_session_for_tenant(target, ta_user):
