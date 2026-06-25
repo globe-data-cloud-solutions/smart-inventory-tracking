@@ -51,6 +51,9 @@ class TenantResponse(BaseModel):
     status: Optional[str] = None
     logo_url: Optional[str] = None
     banner_url: Optional[str] = None
+    plan_tier: Optional[str] = None
+    max_warehouses: Optional[int] = None
+    max_users: Optional[int] = None
     # Populated when admin user was created atomically
     admin_user_id: Optional[uuid.UUID] = None
     admin_email: Optional[str] = None

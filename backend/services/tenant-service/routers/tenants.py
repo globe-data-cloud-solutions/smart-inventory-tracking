@@ -52,7 +52,8 @@ async def list_tenants(
 ) -> SuccessResponse[List[TenantResponse]]:
     result = await db.execute(
         text(
-            "SELECT id, name, slug, organisation_type, onboarding_complete, default_locale, is_active, status "
+            "SELECT id, name, slug, organisation_type, onboarding_complete, default_locale, "
+            "is_active, status, plan_tier, max_warehouses, max_users "
             "FROM tenants ORDER BY created_at DESC"
         )
     )
@@ -68,6 +69,9 @@ async def list_tenants(
                 default_locale=row.default_locale,
                 is_active=row.is_active,
                 status=row.status,
+                plan_tier=getattr(row, "plan_tier", "ENTERPRISE"),
+                max_warehouses=getattr(row, "max_warehouses", None),
+                max_users=getattr(row, "max_users", None),
             )
             for row in rows
         ]
