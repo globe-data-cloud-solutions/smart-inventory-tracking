@@ -179,7 +179,7 @@ Positions link people to nodes and determine what they can do.
 
 ---
 
-## 🔒 Step 4 — Transfer Types (TA Only)
+## 🔒 Step 5 — Transfer Types (TA Only)
 
 *Org Setup → Transfer Types tab*
 
@@ -201,7 +201,7 @@ For each transfer type:
 
 ---
 
-## 🔒 Step 5 — Approval Rules (TA Only)
+## 🔒 Step 6 — Approval Rules (TA Only)
 
 *Org Setup → Approval Rules tab*
 
@@ -234,7 +234,7 @@ Set a blanket self-approval quantity per role — transfers below this limit are
 
 ---
 
-## 🔒 Step 6 — Personnel (Adding Users) (TA Only)
+## 🔒 Step 4 — Personnel (Adding Users) (TA Only)
 
 *Org Setup → Personnel tab*
 
