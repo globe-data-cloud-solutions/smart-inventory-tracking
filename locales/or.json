@@ -866,7 +866,16 @@
     }
   },
   "sa": {
-    "select_tenant": "Ragaa ilaluuf miseensa filadhu."
+    "select_tenant": "Ragaa ilaluuf miseensa filadhu.",
+    "tenant_status_active": "Active",
+    "tenant_status_suspended": "Suspended",
+    "tenant_status_deactivated": "Deactivated",
+    "action_suspend": "Suspend",
+    "action_reactivate": "Reactivate",
+    "action_deactivate": "Deactivate",
+    "confirm_suspend": "Suspend {name}? All users will be blocked from logging in immediately.",
+    "confirm_reactivate": "Reactivate {name}? Users will regain access on their next login.",
+    "confirm_deactivate": "Deactivate {name}? This is a soft delete — data is preserved but all access is blocked."
   },
   "approval": {
     "simple_mode": "Salphaa — seera wal-fakkaataa hunda",
@@ -1219,7 +1228,9 @@
     "stat_units": "Total Units",
     "stat_users": "Users",
     "stat_skus_with_stock": "SKUs with Stock",
-    "recent_transfers": "Recent Transfers"
+    "recent_transfers": "Recent Transfers",
+    "tenant_name": "Tenant Name",
+    "tenant_type": "Type"
   },
   "table": {
     "sku": "SKU",

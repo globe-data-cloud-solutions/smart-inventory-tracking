@@ -2,7 +2,8 @@
 
 import { useParams } from "next/navigation";
 import Link from "next/link";
-import { useQuery } from "@tanstack/react-query";
+import { useState } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { getSession } from "@/lib/demo-auth";
 import { SA_ORG_SLUG } from "@/lib/demo-auth";
 import {
@@ -257,7 +258,14 @@ export default function OrgDashboard() {
     staleTime: 120_000,
   });
 
-  interface ApiTenantRow { id: string; name: string; slug: string | null; organisation_type: string | null }
+  interface ApiTenantRow {
+    id: string;
+    name: string;
+    slug: string | null;
+    organisation_type: string | null;
+    status: string;
+    is_active: boolean;
+  }
   const { data: apiTenantList } = useQuery<ApiTenantRow[]>({
     queryKey: ["tenants-list"],
     queryFn: () => api.get<ApiTenantRow[]>("/api/v1/tenants/"),
@@ -266,6 +274,28 @@ export default function OrgDashboard() {
     refetchOnMount: true,
   });
 
+  // ── SA tenant management action state (hooks must run unconditionally) ────
+  const [actionLoading, setActionLoading] = useState<string | null>(null);
+  const [actionError, setActionError]     = useState<string | null>(null);
+  const [confirmModal, setConfirmModal]   = useState<{
+    tenantId: string; tenantName: string; action: "suspend" | "reactivate" | "deactivate";
+  } | null>(null);
+  const qc = useQueryClient();
+
+  async function handleTenantAction(tenantId: string, action: "suspend" | "reactivate" | "deactivate") {
+    setActionLoading(tenantId + action);
+    setActionError(null);
+    try {
+      await api.patch(`/api/v1/tenants/${tenantId}/${action}`, {});
+      void qc.invalidateQueries({ queryKey: ["tenants-list"] });
+    } catch (e: unknown) {
+      setActionError(e instanceof Error ? e.message : t("common.error"));
+    } finally {
+      setActionLoading(null);
+      setConfirmModal(null);
+    }
+  }
+
   if (!user) return null;
 
   // ── SA home (/admin/dashboard) ─────────────────────────────────────────────
@@ -273,6 +303,23 @@ export default function OrgDashboard() {
     // Gateway mode: show real API tenants
     if (isGatewayMode) {
       const tenantCount = apiTenantList?.length ?? 0;
+
+      const STATUS_BADGE: Record<string, string> = {
+        ACTIVE:      "bg-emerald-100 text-emerald-800",
+        SUSPENDED:   "bg-amber-100 text-amber-800",
+        DEACTIVATED: "bg-red-100 text-red-700",
+      };
+      const STATUS_LABEL_KEY: Record<string, string> = {
+        ACTIVE:      "sa.tenant_status_active",
+        SUSPENDED:   "sa.tenant_status_suspended",
+        DEACTIVATED: "sa.tenant_status_deactivated",
+      };
+      const CONFIRM_BODY_KEY: Record<"suspend" | "reactivate" | "deactivate", string> = {
+        suspend:    "sa.confirm_suspend",
+        reactivate: "sa.confirm_reactivate",
+        deactivate: "sa.confirm_deactivate",
+      };
+
       return (
         <div className="p-8">
           <SummaryCard
@@ -298,29 +345,135 @@ export default function OrgDashboard() {
           {(!apiTenantList || apiTenantList.length === 0) && (
             <p className="text-gray-400 text-sm">{t("common.no_data")}</p>
           )}
-          <div className="grid grid-cols-2 gap-6">
-            {(apiTenantList ?? []).map((ten) => {
-              const slug = ten.slug ?? ten.id;
-              return (
-                <Link key={ten.id} href={`/${slug}/dashboard`} className="no-underline">
-                  <div className="bg-white border border-gray-200 rounded overflow-hidden hover:shadow-md transition-shadow">
-                    <div className="px-5 py-4 flex items-center gap-3 bg-[#1B4332]">
-                      <span className="text-3xl">🏢</span>
-                      <div>
-                        <p className="font-bold text-base text-white m-0">{ten.name}</p>
-                        <p className="text-xs text-white/75 m-0">{ten.organisation_type ?? "—"}</p>
-                      </div>
-                    </div>
-                    <div className="px-5 py-2.5 border-t border-gray-100 bg-gray-50">
-                      <span className="text-xs font-bold text-emerald-700">
-                        /{slug}/dashboard →
-                      </span>
-                    </div>
-                  </div>
-                </Link>
-              );
-            })}
+          {actionError && (
+            <p className="text-sm text-red-600 bg-red-50 border border-red-200 rounded px-4 py-2 mb-4">
+              {actionError}
+            </p>
+          )}
+          <div className="bg-white border border-gray-200 rounded overflow-hidden">
+            <table className="w-full border-collapse text-sm">
+              <thead>
+                <tr className="bg-gray-50 border-b border-gray-200">
+                  {["dashboard.tenant_name", "dashboard.tenant_type", "table.status", "table.actions"].map((key) => (
+                    <th
+                      key={key}
+                      className="px-4 py-2.5 text-left text-xs font-bold text-gray-500 uppercase tracking-wide"
+                    >
+                      {t(key)}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {(apiTenantList ?? []).map((ten, idx) => {
+                  const slug   = ten.slug ?? ten.id;
+                  const status = ten.status || "ACTIVE";
+                  const badgeClass = STATUS_BADGE[status] ?? "bg-gray-100 text-gray-700";
+                  const labelKey   = STATUS_LABEL_KEY[status];
+                  return (
+                    <tr key={ten.id} className={`border-b border-gray-100 ${idx % 2 === 0 ? "bg-white" : "bg-gray-50"}`}>
+                      <td className="px-4 py-2.5 font-semibold text-gray-800">
+                        <Link href={`/${slug}/dashboard`} className="text-eth-forest hover:underline">
+                          {ten.name}
+                        </Link>
+                      </td>
+                      <td className="px-4 py-2.5 text-gray-600">{ten.organisation_type ?? "—"}</td>
+                      <td className="px-4 py-2.5">
+                        <span className={`text-xs font-bold px-2.5 py-0.5 rounded ${badgeClass}`}>
+                          {labelKey ? t(labelKey) : status}
+                        </span>
+                      </td>
+                      <td className="px-4 py-2.5">
+                        <div className="flex items-center gap-3">
+                          {status === "ACTIVE" && (
+                            <>
+                              <button
+                                type="button"
+                                disabled={actionLoading === ten.id + "suspend"}
+                                onClick={() => setConfirmModal({ tenantId: ten.id, tenantName: ten.name, action: "suspend" })}
+                                className="text-xs font-bold text-amber-700 hover:underline disabled:opacity-50"
+                              >
+                                {actionLoading === ten.id + "suspend" ? "…" : t("sa.action_suspend")}
+                              </button>
+                              <button
+                                type="button"
+                                disabled={actionLoading === ten.id + "deactivate"}
+                                onClick={() => setConfirmModal({ tenantId: ten.id, tenantName: ten.name, action: "deactivate" })}
+                                className="text-xs font-bold text-red-600 hover:underline disabled:opacity-50"
+                              >
+                                {actionLoading === ten.id + "deactivate" ? "…" : t("sa.action_deactivate")}
+                              </button>
+                            </>
+                          )}
+                          {status === "SUSPENDED" && (
+                            <>
+                              <button
+                                type="button"
+                                disabled={actionLoading === ten.id + "reactivate"}
+                                onClick={() => setConfirmModal({ tenantId: ten.id, tenantName: ten.name, action: "reactivate" })}
+                                className="text-xs font-bold text-emerald-700 hover:underline disabled:opacity-50"
+                              >
+                                {actionLoading === ten.id + "reactivate" ? "…" : t("sa.action_reactivate")}
+                              </button>
+                              <button
+                                type="button"
+                                disabled={actionLoading === ten.id + "deactivate"}
+                                onClick={() => setConfirmModal({ tenantId: ten.id, tenantName: ten.name, action: "deactivate" })}
+                                className="text-xs font-bold text-red-600 hover:underline disabled:opacity-50"
+                              >
+                                {actionLoading === ten.id + "deactivate" ? "…" : t("sa.action_deactivate")}
+                              </button>
+                            </>
+                          )}
+                          {status === "DEACTIVATED" && (
+                            <button
+                              type="button"
+                              disabled={actionLoading === ten.id + "reactivate"}
+                              onClick={() => setConfirmModal({ tenantId: ten.id, tenantName: ten.name, action: "reactivate" })}
+                              className="text-xs font-bold text-emerald-700 hover:underline disabled:opacity-50"
+                            >
+                              {actionLoading === ten.id + "reactivate" ? "…" : t("sa.action_reactivate")}
+                            </button>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
           </div>
+
+          {confirmModal && (
+            <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
+              <div className="bg-white rounded-lg shadow-lg w-full max-w-sm p-6">
+                <h4 className="text-base font-bold text-gray-900 m-0 mb-3">
+                  {t("common.confirm")} {confirmModal.action.charAt(0).toUpperCase() + confirmModal.action.slice(1)}
+                </h4>
+                <p className="text-sm text-gray-600 mb-6">
+                  {t(CONFIRM_BODY_KEY[confirmModal.action]).replace("{name}", confirmModal.tenantName)}
+                </p>
+                <div className="flex justify-end gap-3">
+                  <button
+                    type="button"
+                    onClick={() => setConfirmModal(null)}
+                    className="px-4 py-2 text-sm font-bold text-gray-600 rounded hover:bg-gray-100"
+                  >
+                    {t("common.cancel")}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleTenantAction(confirmModal.tenantId, confirmModal.action)}
+                    className={`px-4 py-2 text-sm font-bold text-white rounded ${
+                      confirmModal.action === "deactivate" ? "bg-red-600 hover:bg-red-700" : "bg-emerald-600 hover:bg-emerald-700"
+                    }`}
+                  >
+                    {actionLoading === confirmModal.tenantId + confirmModal.action ? "…" : t("common.confirm")}
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
       );
     }

@@ -16,6 +16,12 @@ from shared.permissions.registry import PERMISSIONS
 from shared.utils.responses import SuccessResponse
 from schemas.tenant import TenantCreateRequest, TenantResponse
 
+
+class TenantStatusResponse(BaseModel):
+    id: uuid.UUID
+    name: str
+    status: str
+
 # Must mirror the "organisation_type" PostgreSQL ENUM values in
 # backend/migrations/versions/001_initial_schema.py.
 VALID_ORGANISATION_TYPES = frozenset({"PRODUCER", "RETAILER", "HYBRID"})
@@ -46,8 +52,8 @@ async def list_tenants(
 ) -> SuccessResponse[List[TenantResponse]]:
     result = await db.execute(
         text(
-            "SELECT id, name, slug, organisation_type, onboarding_complete, default_locale, is_active "
-            "FROM tenants WHERE is_active = true ORDER BY created_at DESC"
+            "SELECT id, name, slug, organisation_type, onboarding_complete, default_locale, is_active, status "
+            "FROM tenants ORDER BY created_at DESC"
         )
     )
     rows = result.fetchall()
@@ -61,6 +67,7 @@ async def list_tenants(
                 onboarding_complete=row.onboarding_complete,
                 default_locale=row.default_locale,
                 is_active=row.is_active,
+                status=row.status,
             )
             for row in rows
         ]
@@ -376,3 +383,77 @@ async def delete_tenant(
         text("DELETE FROM tenants WHERE id = :id"), {"id": str(tenant_id)}
     )
     return Response(status_code=204)
+
+
+@router.patch("/{tenant_id}/suspend", response_model=SuccessResponse[TenantStatusResponse])
+async def suspend_tenant(
+    tenant_id: uuid.UUID,
+    user=Depends(get_current_user),
+    db: AsyncSession = Depends(get_db_session),
+) -> SuccessResponse[TenantStatusResponse]:
+    """SA-only: temporarily suspend a tenant. All non-SA logins blocked immediately."""
+    if not user or user.role != "SA":
+        raise HTTPException(status_code=403, detail={"code": "FORBIDDEN", "message": "SA only"})
+    row = (await db.execute(
+        text("SELECT id, name, status FROM tenants WHERE id = :id"),
+        {"id": str(tenant_id)},
+    )).fetchone()
+    if not row:
+        raise HTTPException(status_code=404, detail="Tenant not found")
+    if row.status == "SUSPENDED":
+        raise HTTPException(status_code=422, detail={"code": "ALREADY_SUSPENDED", "message": "Tenant is already suspended"})
+    if row.status == "DEACTIVATED":
+        raise HTTPException(status_code=422, detail={"code": "TENANT_DEACTIVATED", "message": "Cannot suspend a deactivated tenant. Reactivate first."})
+    await db.execute(
+        text("UPDATE tenants SET status = 'SUSPENDED', is_active = false, updated_at = now() WHERE id = :id"),
+        {"id": str(tenant_id)},
+    )
+    return SuccessResponse(data=TenantStatusResponse(id=tenant_id, name=row.name, status="SUSPENDED"))
+
+
+@router.patch("/{tenant_id}/reactivate", response_model=SuccessResponse[TenantStatusResponse])
+async def reactivate_tenant(
+    tenant_id: uuid.UUID,
+    user=Depends(get_current_user),
+    db: AsyncSession = Depends(get_db_session),
+) -> SuccessResponse[TenantStatusResponse]:
+    """SA-only: restore a suspended or deactivated tenant to ACTIVE."""
+    if not user or user.role != "SA":
+        raise HTTPException(status_code=403, detail={"code": "FORBIDDEN", "message": "SA only"})
+    row = (await db.execute(
+        text("SELECT id, name, status FROM tenants WHERE id = :id"),
+        {"id": str(tenant_id)},
+    )).fetchone()
+    if not row:
+        raise HTTPException(status_code=404, detail="Tenant not found")
+    if row.status == "ACTIVE":
+        raise HTTPException(status_code=422, detail={"code": "ALREADY_ACTIVE", "message": "Tenant is already active"})
+    await db.execute(
+        text("UPDATE tenants SET status = 'ACTIVE', is_active = true, updated_at = now() WHERE id = :id"),
+        {"id": str(tenant_id)},
+    )
+    return SuccessResponse(data=TenantStatusResponse(id=tenant_id, name=row.name, status="ACTIVE"))
+
+
+@router.patch("/{tenant_id}/deactivate", response_model=SuccessResponse[TenantStatusResponse])
+async def deactivate_tenant(
+    tenant_id: uuid.UUID,
+    user=Depends(get_current_user),
+    db: AsyncSession = Depends(get_db_session),
+) -> SuccessResponse[TenantStatusResponse]:
+    """SA-only: permanently deactivate a tenant (soft delete). Data preserved."""
+    if not user or user.role != "SA":
+        raise HTTPException(status_code=403, detail={"code": "FORBIDDEN", "message": "SA only"})
+    row = (await db.execute(
+        text("SELECT id, name, status FROM tenants WHERE id = :id"),
+        {"id": str(tenant_id)},
+    )).fetchone()
+    if not row:
+        raise HTTPException(status_code=404, detail="Tenant not found")
+    if row.status == "DEACTIVATED":
+        raise HTTPException(status_code=422, detail={"code": "ALREADY_DEACTIVATED", "message": "Tenant is already deactivated"})
+    await db.execute(
+        text("UPDATE tenants SET status = 'DEACTIVATED', is_active = false, updated_at = now() WHERE id = :id"),
+        {"id": str(tenant_id)},
+    )
+    return SuccessResponse(data=TenantStatusResponse(id=tenant_id, name=row.name, status="DEACTIVATED"))

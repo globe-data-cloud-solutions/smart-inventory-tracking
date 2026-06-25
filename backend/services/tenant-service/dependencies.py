@@ -119,6 +119,32 @@ async def get_db_session_for_tenant(
                 },
             )
 
+        # Tenant status check — block API access for suspended/deactivated tenants
+        # SA is exempt (they need access to manage the tenant itself)
+        from sqlalchemy import text
+        async with AsyncSessionLocal() as status_session:
+            status_row = (await status_session.execute(
+                text("SELECT status FROM tenants WHERE id = :tid"),
+                {"tid": str(tenant_id)},
+            )).fetchone()
+            if status_row:
+                if status_row.status == "SUSPENDED":
+                    raise _HTTPException(
+                        status_code=423,
+                        detail={
+                            "code":    "TENANT_SUSPENDED",
+                            "message": "Your account has been temporarily suspended.",
+                        },
+                    )
+                if status_row.status == "DEACTIVATED":
+                    raise _HTTPException(
+                        status_code=410,
+                        detail={
+                            "code":    "TENANT_DEACTIVATED",
+                            "message": "This account has been deactivated.",
+                        },
+                    )
+
     async with AsyncSessionLocal() as session:
         # Always set RLS to the URL's tenant_id (verified for non-SA above).
         await set_rls_context(session, str(tenant_id), user.user_id)

@@ -56,7 +56,8 @@ async def _lookup_user_with_position(
                     SELECT u.id, u.email, u.full_name, u.tenant_id,
                            u.password_hash, u.must_reset_password,
                            u.system_role, u.is_active,
-                           t.slug AS tenant_slug
+                           t.slug AS tenant_slug,
+                           t.is_active AS tenant_active, t.status AS tenant_status
                     FROM   users u
                     LEFT JOIN tenants t ON t.id = u.tenant_id
                     WHERE  lower(u.email) = lower(:email)
@@ -73,6 +74,28 @@ async def _lookup_user_with_position(
         # to avoid leaking whether an email address is registered.
         if not bool(user_rec.is_active):
             raise HTTPException(status_code=401, detail="Invalid email or password")
+
+        # Step 2b — block login for suspended or deactivated tenants
+        if user_rec.tenant_id is not None:
+            tenant_status = getattr(user_rec, "tenant_status", None)
+            if tenant_status == "SUSPENDED":
+                raise HTTPException(
+                    status_code=403,
+                    detail={
+                        "code":    "TENANT_SUSPENDED",
+                        "message": "This account has been temporarily suspended. "
+                                   "Please contact your administrator.",
+                    },
+                )
+            if tenant_status == "DEACTIVATED":
+                raise HTTPException(
+                    status_code=403,
+                    detail={
+                        "code":    "TENANT_DEACTIVATED",
+                        "message": "This account has been deactivated. "
+                                   "Please contact SMART support to retrieve your data.",
+                    },
+                )
 
         # Verify password when provided
         if password is not None:
