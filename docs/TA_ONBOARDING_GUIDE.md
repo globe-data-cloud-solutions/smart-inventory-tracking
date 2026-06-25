@@ -408,7 +408,23 @@ Go to **Approval Policies** in the navigation to see:
 Yes — you can add new nodes and positions. Existing users keep their assignments. To remove a node, reassign its users first.
 
 **Q: What if an approver is unavailable?**
-As TA, you can approve on behalf of any position. Find the pending item and approve it — the audit log records that you acted on their behalf.
+As TA, you can approve on behalf of any position. Find the pending item in the
+Transfers or Adjustments page and approve or reject it directly — the audit log
+records that you acted on their behalf.
+
+**Q: A transfer is stuck in Pending Approval and no one is actioning it — what do I do?**
+This can happen when the assigned approver position becomes vacant (user deactivated
+or reassigned) after the transfer was submitted. The system automatically escalates
+stuck transfers to the Tenant Admin. To resolve:
+1. Go to Transfers → filter by status "Pending Approval"
+2. Find the stuck transfer and open it
+3. Approve or reject it directly (the audit log records TA action)
+4. Before creating new transfers from that node, assign a user to the approver
+   position so future transfers route correctly
+
+To prevent this: before deactivating any user who holds an approver position,
+assign a replacement to that position first. The system will then route new
+transfers to the replacement automatically.
 
 **Q: Can a user have more than one position?**
 Yes. Their permissions are the union of all assigned positions — useful for managers covering multiple areas.
@@ -487,6 +503,19 @@ If you need someone with broader operational access (approvals, creating transfe
 assign them a Warehouse Manager (WM) or Regional Manager (RM) role instead.
 Note: if created without a node assignment (tenant-wide LM), the LM can view stock
 across the entire organisation but still has the same action restrictions above.
+
+---
+
+**Q: Can all users initiate PUSH (Send Stock) transfers?**
+No. PUSH transfers can only be initiated by users at Level 1 (Factory/Main) and
+Level 2 (Regional) of your org hierarchy — typically NM and RM roles. This reflects
+how stock flows in distribution: factories and regional hubs push stock downward to
+warehouses, not the other way around.
+
+Warehouse Managers (WM), Logistics Managers (LM), and satellite staff can only
+initiate PULL (Request Stock) or Sister (lateral exchange) transfers. If a WM needs
+stock sent to their warehouse, they should submit a PULL request — their NM or RM
+will see and approve it.
 
 ---
 
