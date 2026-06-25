@@ -98,9 +98,9 @@ Complete these steps in order — each step depends on the previous one.
 | 1 🔒 | Organisation Levels | Org Setup → Organisation Levels |
 | 2 🔒 | Organisation Tree | Org Setup → Organisation Tree |
 | 3 🔒 | Positions | Org Setup → Positions |
-| 4 🔒 | Transfer Types | Org Setup → Transfer Types |
-| 5 🔒 | Approval Rules | Org Setup → Approval Rules |
-| 6 🔒 | Personnel (Users) | Org Setup → Personnel |
+| 4 🔒 | Personnel (Users) | Org Setup → Personnel |
+| 5 🔒 | Transfer Types | Org Setup → Transfer Types |
+| 6 🔒 | Approval Rules | Org Setup → Approval Rules |
 | 7 | Products & Categories | Products page |
 | 8 | Opening Stock | Inventory → Receive Stock |
 | 9 🔒 | Branding (optional) | Org Setup → Branding |

@@ -3281,9 +3281,9 @@ export default function OrgSetupPage() {
         <button type="button" className={tabCls("levels")}         onClick={() => setActiveTab("levels")}>Organisation Levels</button>
         <button type="button" className={tabCls("tree")}           onClick={() => setActiveTab("tree")}>Organisation Tree</button>
         <button type="button" className={tabCls("positions")}      onClick={() => setActiveTab("positions")}>{t("wizard.positions_tab")}</button>
+        <button type="button" className={tabCls("personnel")}      onClick={() => setActiveTab("personnel")}>{t("wizard.personnel_tab")}</button>
         <button type="button" className={tabCls("transfer-types")} onClick={() => setActiveTab("transfer-types")}>{t("wizard.transfer_types_tab")}</button>
         <button type="button" className={tabCls("approval")}       onClick={() => setActiveTab("approval")}>{t("wizard.approval_rules_tab")}</button>
-        <button type="button" className={tabCls("personnel")}      onClick={() => setActiveTab("personnel")}>{t("wizard.personnel_tab")}</button>
         <button type="button" className={tabCls("branding")}       onClick={() => setActiveTab("branding")}>{t("settings.branding") || "Branding"}</button>
       </div>
 
@@ -3294,9 +3294,9 @@ export default function OrgSetupPage() {
       {activeTab === "levels"         && <LevelsTab          key={tenantId} tenantId={tenantId} />}
       {activeTab === "tree"           && <TreeTab             key={tenantId} tenantId={tenantId} />}
       {activeTab === "positions"      && <PositionsTab        key={tenantId} tenantId={tenantId} />}
+      {activeTab === "personnel"      && <PersonnelV2Tab      key={tenantId} tenantId={tenantId} />}
       {activeTab === "transfer-types" && <TransferTypesTab    key={tenantId} tenantId={tenantId} />}
       {activeTab === "approval"       && <ApprovalRulesV2Tab  key={tenantId} tenantId={tenantId} />}
-      {activeTab === "personnel"      && <PersonnelV2Tab      key={tenantId} tenantId={tenantId} />}
       {activeTab === "branding"       && <BrandingTab         key={tenantId} tenantId={tenantId} />}
     </div>
   );
