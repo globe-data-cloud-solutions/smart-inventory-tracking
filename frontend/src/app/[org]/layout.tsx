@@ -220,11 +220,20 @@ function Logo({ size = 28 }: { size?: number }) {
 
 interface ApiTenantRow { id: string; name: string; slug: string | null; organisation_type: string | null }
 
+interface PlanData {
+  plan_tier: string;
+  feature_flags: Record<string, boolean>;
+  max_warehouses: number | null;
+  max_users: number | null;
+  sku_cap: number | null;
+}
+
 /* ── Sidebar nav ──────────────────────────────────────────────────────────── */
-function Sidebar({ user, org, tenantName, onClose, isOpen }: {
+function Sidebar({ user, org, tenantName, plan, onClose, isOpen }: {
   user: SessionUser;
   org: string;
   tenantName?: string;
+  plan?: PlanData | null;
   onClose?: () => void;       // called when a nav link is tapped (mobile)
   isOpen?: boolean;           // mobile slide-in state, owned by OrgLayout
 }) {
@@ -294,6 +303,19 @@ function Sidebar({ user, org, tenantName, onClose, isOpen }: {
               </span>
             );
           }
+          if (item.type === "link" && item.planFlag && plan != null && !plan.feature_flags[item.planFlag]) {
+            return (
+              <span
+                key={idx}
+                className="flex items-center gap-2.5 px-2.5 py-2 rounded text-sm font-medium mb-px text-white/25 border-l-[3px] border-transparent cursor-not-allowed select-none"
+                title={`Upgrade to unlock ${item.planFlag}`}
+              >
+                <span className="text-[15px] leading-none shrink-0 opacity-40">{item.icon}</span>
+                {t(item.label)}
+                <span className="ml-auto text-[9px] font-bold uppercase tracking-wide bg-amber-500/20 text-amber-300 px-1.5 py-0.5 rounded">Upgrade</span>
+              </span>
+            );
+          }
           const href = `/${org}/${item.page}`;
           const isActive = item.page === "dashboard"
             ? pathname === `/${org}/dashboard`
@@ -314,6 +336,9 @@ function Sidebar({ user, org, tenantName, onClose, isOpen }: {
             </Link>
           );
         })}
+
+        {/* PLAN_GATE: LOGISTICS — render disabled when !plan?.feature_flags?.LOGISTICS */}
+        {/* PLAN_GATE: TRANSFERS_SISTER — render disabled when !plan?.feature_flags?.TRANSFERS_SISTER */}
 
         {/* SA gateway mode: real API tenants */}
         {isGatewayMode && apiTenants && apiTenants.length > 0 && (
@@ -436,6 +461,20 @@ function TenantBrandingResolver({
   return null;
 }
 
+function PlanResolver({ onPlan }: { onPlan: (p: PlanData | null) => void }) {
+  const session = getSession();
+  const tenantId = session?.tenantId ?? "";
+  const { data } = useQuery<PlanData>({
+    queryKey: ["tenant-plan", tenantId],
+    queryFn:  () => api.get<PlanData>("/api/v1/tenants/me/plan"),
+    enabled:  isGatewayMode && !!tenantId,
+    staleTime: 60_000,
+    retry: false,
+  });
+  useEffect(() => { onPlan(data ?? null); }, [data, onPlan]);
+  return null;
+}
+
 const PAGE_LABELS: Record<string, string> = {
   dashboard:           "Dashboard",
   products:            "Products",
@@ -469,6 +508,7 @@ export default function OrgLayout({ children }: { children: React.ReactNode }) {
   const [apiLogoUrl,    setApiLogoUrl]         = useState<string | null>(null);
   const [apiBannerUrl,  setApiBannerUrl]       = useState<string | null>(null);
   const [sidebarOpen, setSidebarOpen]          = useState(false);
+  const [plan, setPlan]                        = useState<PlanData | null>(null);
   const setActiveTenant   = useInventoryStore((s) => s.setActiveTenant);
 
   // Derive page label from the path segment after /[org]/
@@ -554,6 +594,7 @@ export default function OrgLayout({ children }: { children: React.ReactNode }) {
           onBanner={setApiBannerUrl}
         />
       )}
+      {org !== SA_ORG_SLUG && <PlanResolver onPlan={setPlan} />}
       <div className="min-h-screen bg-gray-100">
         {/* ── Top banner ── */}
         <header className="fixed top-0 left-0 right-0 z-[60] h-14 bg-[#0f2d1f] flex items-center px-6 gap-4 shadow-[0_2px_12px_rgba(0,0,0,0.35)]">
@@ -634,7 +675,7 @@ export default function OrgLayout({ children }: { children: React.ReactNode }) {
               onClick={() => setSidebarOpen(false)}
             />
           )}
-          <Sidebar user={user} org={org} tenantName={apiTenantName ?? undefined} onClose={() => setSidebarOpen(false)} isOpen={sidebarOpen} />
+          <Sidebar user={user} org={org} tenantName={apiTenantName ?? undefined} plan={plan} onClose={() => setSidebarOpen(false)} isOpen={sidebarOpen} />
           <main className="flex-1 md:ml-60 min-h-[calc(100vh-60px)] overflow-auto bg-gray-100">
             {process.env.NODE_ENV !== "production" && !process.env.NEXT_PUBLIC_API_URL && !bannerDismissed && (
               <div className="bg-amber-50 border-b border-amber-200 px-4 py-2 flex items-center justify-between gap-3">
@@ -658,7 +699,7 @@ export default function OrgLayout({ children }: { children: React.ReactNode }) {
 /* ── Nav definitions ──────────────────────────────────────────────────────── */
 type NavItem =
   | { type: "section"; label: string; roles?: string[] }
-  | { type: "link"; icon: string; label: string; page: string; roles?: string[]; disabled?: boolean };
+  | { type: "link"; icon: string; label: string; page: string; roles?: string[]; disabled?: boolean; planFlag?: string };
 
 const SA_NAV: NavItem[] = [
   { type: "section", label: "Overview" },
@@ -685,7 +726,7 @@ const TENANT_NAV: NavItem[] = [
   { type: "link", icon: "🔢", label: "Stock Count",     page: "stock-count"       },
   { type: "link", icon: "🚚", label: "Dispatch",        page: "dispatch"          },
   { type: "section", label: "Reports" },
-  { type: "link", icon: "📈", label: "Analytics",       page: "analytics"         },
+  { type: "link", icon: "📈", label: "Analytics",       page: "analytics",        planFlag: "AI_ANALYTICS" },
   { type: "link", icon: "📊", label: "Reports",         page: "reports"           },
   { type: "link", icon: "📋", label: "Audit Log",       page: "audit-log"         },
   { type: "link", icon: "📜", label: "nav.approval_policies", page: "approval-policies" },

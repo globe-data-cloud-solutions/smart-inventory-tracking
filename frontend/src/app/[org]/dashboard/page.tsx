@@ -265,6 +265,7 @@ export default function OrgDashboard() {
     organisation_type: string | null;
     status: string;
     is_active: boolean;
+    plan_tier?: string | null;
   }
   const { data: apiTenantList } = useQuery<ApiTenantRow[]>({
     queryKey: ["tenants-list"],
@@ -308,6 +309,11 @@ export default function OrgDashboard() {
         ACTIVE:      "bg-emerald-100 text-emerald-800",
         SUSPENDED:   "bg-amber-100 text-amber-800",
         DEACTIVATED: "bg-red-100 text-red-700",
+      };
+      const PLAN_TIER_BADGE: Record<string, string> = {
+        STARTER:    "bg-gray-100 text-gray-600",
+        GROWTH:     "bg-blue-100 text-blue-700",
+        ENTERPRISE: "bg-amber-100 text-amber-700",
       };
       const STATUS_LABEL_KEY: Record<string, string> = {
         ACTIVE:      "sa.tenant_status_active",
@@ -354,7 +360,7 @@ export default function OrgDashboard() {
             <table className="w-full border-collapse text-sm">
               <thead>
                 <tr className="bg-gray-50 border-b border-gray-200">
-                  {["dashboard.tenant_name", "dashboard.tenant_type", "table.status", "table.actions"].map((key) => (
+                  {["dashboard.tenant_name", "dashboard.tenant_type", "table.status", "table.plan", "table.actions"].map((key) => (
                     <th
                       key={key}
                       className="px-4 py-2.5 text-left text-xs font-bold text-gray-500 uppercase tracking-wide"
@@ -381,6 +387,11 @@ export default function OrgDashboard() {
                       <td className="px-4 py-2.5">
                         <span className={`text-xs font-bold px-2.5 py-0.5 rounded ${badgeClass}`}>
                           {labelKey ? t(labelKey) : status}
+                        </span>
+                      </td>
+                      <td className="px-4 py-2.5">
+                        <span className={`text-xs font-bold px-2.5 py-0.5 rounded ${PLAN_TIER_BADGE[ten.plan_tier ?? ""] ?? "bg-gray-100 text-gray-600"}`}>
+                          {ten.plan_tier ?? "—"}
                         </span>
                       </td>
                       <td className="px-4 py-2.5">

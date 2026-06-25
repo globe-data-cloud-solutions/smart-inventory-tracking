@@ -198,6 +198,35 @@ async def create_tenant(
     )
 
 
+@router.get("/me/plan", response_model=SuccessResponse[dict])
+@require_permission(PERMISSIONS.TENANT_VIEW)
+async def get_my_plan(
+    user=Depends(get_current_user),
+    db: AsyncSession = Depends(get_db_session),
+) -> SuccessResponse[dict]:
+    """Return the current tenant's plan_tier and feature_flags.
+    Used by the frontend to gate UI features."""
+    if not user or not user.tenant_id:
+        raise HTTPException(status_code=403, detail="No tenant context")
+    row = (await db.execute(
+        text(
+            "SELECT plan_tier, feature_flags, sku_cap, "
+            "       max_warehouses, max_users "
+            "FROM   tenants WHERE id = :tid"
+        ),
+        {"tid": str(user.tenant_id)},
+    )).fetchone()
+    if not row:
+        raise HTTPException(status_code=404, detail="Tenant not found")
+    return SuccessResponse(data={
+        "plan_tier":      str(row.plan_tier) if row.plan_tier else "ENTERPRISE",
+        "feature_flags":  dict(row.feature_flags) if row.feature_flags else {},
+        "sku_cap":        row.sku_cap,
+        "max_warehouses": row.max_warehouses,
+        "max_users":      row.max_users,
+    })
+
+
 @router.get("/{tenant_id}", response_model=SuccessResponse[TenantResponse])
 @require_permission(PERMISSIONS.TENANT_VIEW)
 async def get_tenant(

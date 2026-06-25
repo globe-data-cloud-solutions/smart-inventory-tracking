@@ -1238,6 +1238,7 @@
     "stock": "Stock",
     "reorder_point": "Reorder Point",
     "status": "Status",
+    "plan": "Plan",
     "skus": "SKUs",
     "products": "products",
     "location": "Location",
