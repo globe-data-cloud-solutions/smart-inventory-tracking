@@ -56,6 +56,12 @@ class TenantActivityRow(BaseModel):
 # backend/migrations/versions/001_initial_schema.py.
 VALID_ORGANISATION_TYPES = frozenset({"PRODUCER", "RETAILER", "HYBRID"})
 
+TIER_LIMITS: dict[str, dict[str, int | None]] = {
+    "STARTER":    {"max_warehouses": 3,    "max_users": 5},
+    "GROWTH":     {"max_warehouses": 10,   "max_users": 25},
+    "ENTERPRISE": {"max_warehouses": None, "max_users": None},
+}
+
 
 def _slugify(name: str) -> str:
     slug = name.lower().strip()
@@ -261,11 +267,14 @@ async def create_tenant(
         row = await db.execute(text("SELECT id FROM tenants WHERE slug = :s"), {"s": slug})
         if row.fetchone():
             slug = f"{base_slug}-{str(tenant_id)[:8]}"
+    tier_limits = TIER_LIMITS[body.plan_tier]
     try:
         await db.execute(
             text(
-                "INSERT INTO tenants (id, name, slug, plan_id, default_locale, organisation_type, plan_tier) "
-                "VALUES (:id, :name, :slug, :plan_id, :locale, :org_type, CAST(:plan_tier AS plan_tier))"
+                "INSERT INTO tenants (id, name, slug, plan_id, default_locale, organisation_type, "
+                "plan_tier, max_warehouses, max_users) "
+                "VALUES (:id, :name, :slug, :plan_id, :locale, :org_type, "
+                "CAST(:plan_tier AS plan_tier), :max_wh, :max_u)"
             ),
             {
                 "id": str(tenant_id),
@@ -275,6 +284,8 @@ async def create_tenant(
                 "locale": body.default_locale,
                 "org_type": body.organisation_type,
                 "plan_tier": body.plan_tier,
+                "max_wh": tier_limits["max_warehouses"],
+                "max_u": tier_limits["max_users"],
             },
         )
     except IntegrityError as exc:

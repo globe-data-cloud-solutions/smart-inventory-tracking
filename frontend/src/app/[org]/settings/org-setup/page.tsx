@@ -44,11 +44,9 @@ const ROLE_OPTIONS = [
   { code: "AU", label: "Auditor" },
 ] as const;
 
-// Auto-suggest role by level position (FIX 4)
+// Only pre-suggest a role for level 1 (NM); all other levels start unset.
 function suggestRole(levelNumber: number): string {
-  if (levelNumber === 1) return "NM";
-  if (levelNumber <= 3) return "RM";
-  return "WM";
+  return levelNumber === 1 ? "NM" : "";
 }
 
 // Default display label for a role code
@@ -112,7 +110,7 @@ function LevelsTab({ tenantId }: { tenantId: string }) {
         level_number: i + 1,
         level_name: "",
         default_role_code: role,
-        role_display_label: defaultDisplayLabel(role),
+        role_display_label: role ? defaultDisplayLabel(role) : "",
         is_stock_holding: i + 1 > 1,
       };
     })
@@ -151,8 +149,8 @@ function LevelsTab({ tenantId }: { tenantId: string }) {
           level_number: i + 1,
           level_name: "",
           default_role_code: role,
-          role_display_label: defaultDisplayLabel(role),
-          is_stock_holding: i + 1 > 1, // L1 is often admin-only; rest default to stock-holding
+          role_display_label: role ? defaultDisplayLabel(role) : "",
+          is_stock_holding: i + 1 > 1,
         };
       })
     );
@@ -259,7 +257,6 @@ function LevelsTab({ tenantId }: { tenantId: string }) {
                       placeholder={["Main Factory", "Region", "Warehouse", "Sub-Warehouse", "Counter"][idx] ?? ""}
                       className="w-full border border-gray-300 rounded px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
                     />
-                    <p className="text-xs text-gray-400 mt-1">{t("org_setup.level_rename_hint")}</p>
                     {renamedIdx === idx && <p className="text-xs text-emerald-600 mt-0.5">{t("common.saved")}</p>}
                   </td>
                   <td className="px-3 py-2">
@@ -276,10 +273,11 @@ function LevelsTab({ tenantId }: { tenantId: string }) {
                         value={lv.default_role_code}
                         onChange={(e) => updateLevel(idx, {
                           default_role_code: e.target.value,
-                          role_display_label: lv.role_display_label || defaultDisplayLabel(e.target.value),
+                          role_display_label: e.target.value ? defaultDisplayLabel(e.target.value) : "",
                         })}
                         className="border border-gray-300 rounded px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
                       >
+                        <option value="">— Select Role —</option>
                         {ROLE_OPTIONS.map((r) => (
                           <option key={r.code} value={r.code}>{r.code} — {r.label}</option>
                         ))}
@@ -304,12 +302,14 @@ function LevelsTab({ tenantId }: { tenantId: string }) {
                         placeholder={defaultDisplayLabel(lv.default_role_code)}
                         className="w-full border border-gray-300 rounded px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
                       />
-                      <span
-                        title={t("org_setup.role_code_locked")}
-                        className="shrink-0 text-xs text-gray-400 bg-gray-100 px-1.5 py-0.5 rounded"
-                      >
-                        ({lv.default_role_code})
-                      </span>
+                      {lv.default_role_code && (
+                        <span
+                          title={t("org_setup.role_code_locked")}
+                          className="shrink-0 text-xs text-gray-400 bg-gray-100 px-1.5 py-0.5 rounded"
+                        >
+                          ({lv.default_role_code})
+                        </span>
+                      )}
                     </div>
                     <p className="text-xs text-gray-400 mt-1">{t("org_setup.role_display_name_hint")}</p>
                     {renamedIdx === idx && <p className="text-xs text-emerald-600 mt-0.5">{t("common.saved")}</p>}
@@ -329,6 +329,8 @@ function LevelsTab({ tenantId }: { tenantId: string }) {
           </tbody>
         </table>
       </div>
+
+      <p className="text-xs text-gray-400 mt-2">* {t("org_setup.level_rename_hint")}</p>
 
       {renameError && <p className="text-sm text-red-600">{renameError}</p>}
       {saveError && <p className="text-sm text-red-600">{saveError}</p>}
