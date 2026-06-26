@@ -18,6 +18,9 @@ class PERMISSIONS:
     TENANT_DEACTIVATE       = Permission("tenant:deactivate",       ["platform_only", "audit_required"])
     # Org hierarchy node and level management (SA/TA only)
     TENANT_MANAGE           = Permission("tenant:manage",           ["tenant_id", "audit_required"])
+    # SA registry and activity log (platform_only — SA gets these via seed_permissions)
+    TENANT_REGISTRY_VIEW    = Permission("tenant:registry_view",    ["platform_only"])
+    TENANT_ACTIVITY_VIEW    = Permission("tenant:activity_view",    ["platform_only"])
 
     # ── Domain 2 — User Management ─────────────────────────────────────────
     USER_CREATE             = Permission("user:create",             ["tenant_id"])
@@ -224,7 +227,7 @@ ALL_PERMISSIONS: List[Permission] = [
     v for v in vars(PERMISSIONS).values() if isinstance(v, Permission)
 ]
 
-assert len(ALL_PERMISSIONS) == 147, (
-    f"Expected 147 permissions, found {len(ALL_PERMISSIONS)}. "
+assert len(ALL_PERMISSIONS) == 149, (
+    f"Expected 149 permissions, found {len(ALL_PERMISSIONS)}. "
     "Update registry.py and re-run seed_permissions.py."
 )
