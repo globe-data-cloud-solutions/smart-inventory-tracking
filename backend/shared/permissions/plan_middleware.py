@@ -132,14 +132,17 @@ async def check_plan_create_warehouse(
     user: Any,
     db: AsyncSession,
 ) -> None:
-    """Raise HTTP 402 if the tenant has reached its warehouse node limit.
+    """Raise HTTP 402 if the tenant has reached its sub-root node limit.
 
-    Call this from create_org_node before inserting a new node.
-    SA and TA bypass this check.
+    The L1 (root) node is always free and is never counted.
+    Only nodes at hierarchy_level > 1 count toward max_warehouses.
+
+    Call this from create_org_node / reactivate_org_node for non-L1 nodes.
+    Only SA bypasses this check — TA must stay within their tenant's plan limits.
     """
     if not user or not getattr(user, "tenant_id", None):
         return
-    if getattr(user, "role", "") in ("SA", "TA"):
+    if getattr(user, "role", "") == "SA":
         return
 
     tenant_id = str(user.tenant_id)
@@ -147,10 +150,11 @@ async def check_plan_create_warehouse(
     if not plan or plan.get("max_warehouses") is None:
         return  # unlimited
 
+    # L1 nodes are the root/factory level and are free. Only sub-root nodes count.
     current = (await db.execute(
         text(
             "SELECT COUNT(*) FROM organization_node "
-            "WHERE tenant_id = :tid AND is_active = true"
+            "WHERE tenant_id = :tid AND is_active = true AND hierarchy_level > 1"
         ),
         {"tid": tenant_id},
     )).scalar() or 0
@@ -166,8 +170,8 @@ async def check_plan_create_warehouse(
                 "plan_tier": plan["plan_tier"],
                 "upgrade_to": _UPGRADE_TO.get(plan["plan_tier"]),
                 "message": (
-                    f"Warehouse limit reached ({current}/{plan['max_warehouses']}) "
-                    f"for {plan['plan_tier']} plan."
+                    f"Node limit reached ({current}/{plan['max_warehouses']}) "
+                    f"for {plan['plan_tier']} plan. Upgrade to add more locations."
                 ),
             },
         )

@@ -191,3 +191,36 @@ async def test_user_limit_null_passes() -> None:
     db = _db_plan_only(plan)
     await check_plan_create_user(_user(), db)
     assert db.execute.call_count == 1
+
+
+# ── TA is subject to warehouse limit (not bypassed) ──────────────────────────
+
+@pytest.mark.asyncio
+async def test_ta_warehouse_limit_enforced() -> None:
+    """TA must respect the tenant's warehouse cap (only SA is exempt)."""
+    plan = _plan_result(plan_tier="STARTER", max_warehouses=3)
+    db = _db_plan_then_count(plan, count=3)
+
+    with pytest.raises(HTTPException) as exc_info:
+        await check_plan_create_warehouse(_user(role="TA"), db)
+
+    assert exc_info.value.status_code == 402
+    assert exc_info.value.detail["code"] == "PLAN_LIMIT_REACHED"
+
+
+@pytest.mark.asyncio
+async def test_ta_warehouse_limit_under_cap_passes() -> None:
+    """TA under the cap should pass (e.g. 2 non-L1 nodes, limit 3)."""
+    plan = _plan_result(plan_tier="STARTER", max_warehouses=3)
+    db = _db_plan_then_count(plan, count=2)
+    await check_plan_create_warehouse(_user(role="TA"), db)
+
+
+# ── SA still bypasses warehouse limit ────────────────────────────────────────
+
+@pytest.mark.asyncio
+async def test_sa_still_bypasses_warehouse_limit() -> None:
+    """SA manages plans and is never subject to warehouse caps."""
+    db = AsyncMock()
+    await check_plan_create_warehouse(_user(role="SA"), db)
+    db.execute.assert_not_called()

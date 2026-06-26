@@ -800,7 +800,10 @@ async def create_org_node(
     if not (1 <= body.level_number <= 5):
         raise HTTPException(status_code=422, detail="level_number must be between 1 and 5")
 
-    await check_plan_create_warehouse(user, db)
+    # L1 nodes are the root factory/org level and are always free (not counted).
+    # Plan cap only applies to sub-root nodes (level > 1).
+    if body.level_number > 1:
+        await check_plan_create_warehouse(user, db)
 
     # Validate parent exists and belongs to same tenant when provided
     if body.parent_node_id:
@@ -1171,13 +1174,18 @@ async def reactivate_org_node(
 ) -> SuccessResponse[dict]:
     row = await db.execute(
         text(
-            "SELECT id FROM organization_node "
+            "SELECT id, hierarchy_level FROM organization_node "
             "WHERE id = :id AND tenant_id = :tid AND is_active = false"
         ),
         {"id": str(node_id), "tid": str(tenant_id)},
     )
-    if not row.fetchone():
+    existing = row.fetchone()
+    if not existing:
         raise HTTPException(status_code=404, detail="Inactive node not found")
+
+    # Reactivating a non-L1 node counts toward the plan cap the same as creating one.
+    if existing.hierarchy_level > 1:
+        await check_plan_create_warehouse(user, db)
 
     await db.execute(
         text(
