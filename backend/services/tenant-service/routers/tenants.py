@@ -22,6 +22,36 @@ class TenantStatusResponse(BaseModel):
     name: str
     status: str
 
+
+class TenantRegistryRow(BaseModel):
+    id: uuid.UUID
+    name: str
+    slug: Optional[str]
+    organisation_type: Optional[str]
+    status: str
+    contact_name:   Optional[str]
+    contact_email:  Optional[str]
+    contact_phone:  Optional[str]
+    contract_start: Optional[str]   # ISO date string "YYYY-MM-DD" or None
+    contract_end:   Optional[str]
+    notes:          Optional[str]
+    user_count: int
+    node_count: int
+    created_at: str                 # ISO datetime string
+
+
+class TenantActivityRow(BaseModel):
+    id: uuid.UUID
+    tenant_id: uuid.UUID
+    actor_id: uuid.UUID
+    actor_email: Optional[str]
+    action: str
+    old_value: Optional[str]
+    new_value: Optional[str]
+    note: Optional[str]
+    created_at: str
+
+
 # Must mirror the "organisation_type" PostgreSQL ENUM values in
 # backend/migrations/versions/001_initial_schema.py.
 VALID_ORGANISATION_TYPES = frozenset({"PRODUCER", "RETAILER", "HYBRID"})
@@ -76,6 +106,99 @@ async def list_tenants(
             for row in rows
         ]
     )
+
+
+@router.get("/sa/registry", response_model=SuccessResponse[List[TenantRegistryRow]])
+@require_permission(PERMISSIONS.TENANT_REGISTRY_VIEW)
+async def sa_tenant_registry(
+    user=Depends(get_current_user),
+    db: AsyncSession = Depends(get_db_session),
+) -> SuccessResponse[List[TenantRegistryRow]]:
+    """SA-only: full tenant roster with contact, contract, and usage stats."""
+    if not user or user.role != "SA":
+        raise HTTPException(status_code=403, detail={"code": "FORBIDDEN", "message": "SA only"})
+
+    rows = (await db.execute(text("""
+        SELECT
+            t.id, t.name, t.slug, t.organisation_type, t.status,
+            t.contact_name, t.contact_email, t.contact_phone,
+            t.contract_start, t.contract_end, t.notes,
+            t.created_at,
+            (SELECT COUNT(*) FROM users u
+             WHERE u.tenant_id = t.id AND u.is_active = true)  AS user_count,
+            (SELECT COUNT(*) FROM organization_node n
+             WHERE n.tenant_id = t.id AND n.is_active = true)  AS node_count
+        FROM tenants t
+        ORDER BY t.created_at DESC
+    """))).fetchall()
+
+    return SuccessResponse(data=[
+        TenantRegistryRow(
+            id=row.id,
+            name=row.name,
+            slug=row.slug,
+            organisation_type=row.organisation_type,
+            status=row.status,
+            contact_name=row.contact_name,
+            contact_email=row.contact_email,
+            contact_phone=row.contact_phone,
+            contract_start=str(row.contract_start) if row.contract_start else None,
+            contract_end=str(row.contract_end)     if row.contract_end   else None,
+            notes=row.notes,
+            user_count=int(row.user_count),
+            node_count=int(row.node_count),
+            created_at=row.created_at.isoformat(),
+        )
+        for row in rows
+    ])
+
+
+@router.get("/sa/{tenant_id}/activity", response_model=SuccessResponse[List[TenantActivityRow]])
+@require_permission(PERMISSIONS.TENANT_ACTIVITY_VIEW)
+async def sa_tenant_activity(
+    tenant_id: uuid.UUID,
+    limit: int = 50,
+    offset: int = 0,
+    user=Depends(get_current_user),
+    db: AsyncSession = Depends(get_db_session),
+) -> SuccessResponse[List[TenantActivityRow]]:
+    """SA-only: paginated activity log for a single tenant."""
+    if not user or user.role != "SA":
+        raise HTTPException(status_code=403, detail={"code": "FORBIDDEN", "message": "SA only"})
+
+    exists = (await db.execute(
+        text("SELECT id FROM tenants WHERE id = :tid"),
+        {"tid": str(tenant_id)},
+    )).fetchone()
+    if not exists:
+        raise HTTPException(status_code=404, detail="Tenant not found")
+
+    rows = (await db.execute(
+        text("""
+            SELECT id, tenant_id, actor_id, actor_email,
+                   action, old_value, new_value, note, created_at
+            FROM tenant_activity_log
+            WHERE tenant_id = :tid
+            ORDER BY created_at DESC
+            LIMIT :lim OFFSET :off
+        """),
+        {"tid": str(tenant_id), "lim": limit, "off": offset},
+    )).fetchall()
+
+    return SuccessResponse(data=[
+        TenantActivityRow(
+            id=row.id,
+            tenant_id=row.tenant_id,
+            actor_id=row.actor_id,
+            actor_email=row.actor_email,
+            action=row.action,
+            old_value=row.old_value,
+            new_value=row.new_value,
+            note=row.note,
+            created_at=row.created_at.isoformat(),
+        )
+        for row in rows
+    ])
 
 
 @router.post("/", status_code=201, response_model=SuccessResponse[TenantResponse])
@@ -461,6 +584,39 @@ async def delete_tenant(
     return Response(status_code=204)
 
 
+async def _log_tenant_activity(
+    db: AsyncSession,
+    tenant_id: uuid.UUID,
+    actor_id: str,
+    action: str,
+    old_value: Optional[str] = None,
+    new_value: Optional[str] = None,
+    note: Optional[str] = None,
+) -> None:
+    actor_email_row = (await db.execute(
+        text("SELECT email FROM users WHERE id = :uid LIMIT 1"),
+        {"uid": actor_id},
+    )).fetchone()
+    actor_email = actor_email_row.email if actor_email_row else None
+
+    await db.execute(
+        text(
+            "INSERT INTO tenant_activity_log "
+            "(tenant_id, actor_id, actor_email, action, old_value, new_value, note) "
+            "VALUES (:tid, :aid, :aemail, :action, :old, :new, :note)"
+        ),
+        {
+            "tid":    str(tenant_id),
+            "aid":    actor_id,
+            "aemail": actor_email,
+            "action": action,
+            "old":    old_value,
+            "new":    new_value,
+            "note":   note,
+        },
+    )
+
+
 @router.patch("/{tenant_id}/suspend", response_model=SuccessResponse[TenantStatusResponse])
 async def suspend_tenant(
     tenant_id: uuid.UUID,
@@ -484,6 +640,13 @@ async def suspend_tenant(
         text("UPDATE tenants SET status = 'SUSPENDED', is_active = false, updated_at = now() WHERE id = :id"),
         {"id": str(tenant_id)},
     )
+    try:
+        await _log_tenant_activity(
+            db, tenant_id, str(user.user_id),
+            action="SUSPEND", old_value=row.status, new_value="SUSPENDED",
+        )
+    except Exception:
+        pass  # log write failure must never roll back the status change
     return SuccessResponse(data=TenantStatusResponse(id=tenant_id, name=row.name, status="SUSPENDED"))
 
 
@@ -508,6 +671,13 @@ async def reactivate_tenant(
         text("UPDATE tenants SET status = 'ACTIVE', is_active = true, updated_at = now() WHERE id = :id"),
         {"id": str(tenant_id)},
     )
+    try:
+        await _log_tenant_activity(
+            db, tenant_id, str(user.user_id),
+            action="REACTIVATE", old_value=row.status, new_value="ACTIVE",
+        )
+    except Exception:
+        pass  # log write failure must never roll back the status change
     return SuccessResponse(data=TenantStatusResponse(id=tenant_id, name=row.name, status="ACTIVE"))
 
 
@@ -532,4 +702,11 @@ async def deactivate_tenant(
         text("UPDATE tenants SET status = 'DEACTIVATED', is_active = false, updated_at = now() WHERE id = :id"),
         {"id": str(tenant_id)},
     )
+    try:
+        await _log_tenant_activity(
+            db, tenant_id, str(user.user_id),
+            action="DEACTIVATE", old_value=row.status, new_value="DEACTIVATED",
+        )
+    except Exception:
+        pass  # log write failure must never roll back the status change
     return SuccessResponse(data=TenantStatusResponse(id=tenant_id, name=row.name, status="DEACTIVATED"))
