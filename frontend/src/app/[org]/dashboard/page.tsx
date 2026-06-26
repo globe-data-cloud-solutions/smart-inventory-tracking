@@ -316,7 +316,7 @@ export default function OrgDashboard() {
   const [saTab, setSaTab] = useState<"tenants" | "registry">("tenants");
   const [activityTenantId, setActivityTenantId] = useState<string | null>(null);
 
-  const { data: apiRegistryList, isLoading: registryLoading } = useQuery<ApiRegistryRow[]>({
+  const { data: apiRegistryList, isLoading: registryLoading, isError: registryError } = useQuery<ApiRegistryRow[]>({
     queryKey: ["sa-registry"],
     queryFn: () => api.get<ApiRegistryRow[]>("/api/v1/tenants/sa/registry"),
     enabled: isGatewayMode && org === SA_ORG_SLUG && saTab === "registry",
@@ -533,10 +533,7 @@ export default function OrgDashboard() {
                 </div>
               </div>
               {registryLoading && <p className="text-gray-400 text-sm">{t("common.loading")}</p>}
-              {!registryLoading && (!apiRegistryList || apiRegistryList.length === 0) && (
-                <p className="text-gray-400 text-sm">{t("common.no_data")}</p>
-              )}
-              {!registryLoading && apiRegistryList && apiRegistryList.length > 0 && (
+              {!registryLoading && (
                 <div className="bg-white border border-gray-200 rounded overflow-x-auto">
                   <table className="w-full border-collapse text-sm min-w-[900px]">
                     <thead>
@@ -563,7 +560,21 @@ export default function OrgDashboard() {
                       </tr>
                     </thead>
                     <tbody>
-                      {apiRegistryList.map((row, idx) => {
+                      {registryError && (
+                        <tr>
+                          <td colSpan={10} className="px-4 py-8 text-center text-sm text-red-500">
+                            {t("common.error")}
+                          </td>
+                        </tr>
+                      )}
+                      {!registryError && (!apiRegistryList || apiRegistryList.length === 0) && (
+                        <tr>
+                          <td colSpan={10} className="px-4 py-8 text-center text-sm text-gray-400">
+                            {t("common.no_data")}
+                          </td>
+                        </tr>
+                      )}
+                      {(apiRegistryList ?? []).map((row, idx) => {
                         const status     = row.status || "ACTIVE";
                         const badgeClass = STATUS_BADGE[status] ?? "bg-gray-100 text-gray-700";
                         const labelKey   = STATUS_LABEL_KEY[status];
