@@ -452,15 +452,14 @@ class TestGroup1OrgLevels:
             body=r.text,
         )
 
-    def test_15_level_count_lock(self) -> None:
-        """Probe for a level-count lock after the initial 4 levels are saved. The route
-        only enforces 1<=level_number<=5 per item; there is no per-tenant lock once a
-        config exists, so a 5th level is expected to be accepted rather than rejected —
-        a discovered gap, not a tooling mistake. NOTE: there is no DELETE endpoint for
-        hierarchy levels, so if this succeeds the L5 row cannot be cleaned up afterward;
-        it does not affect Group 2, which only uses levels 1-4."""
+    def test_15_grow_to_5_levels_allowed(self) -> None:
+        """Growing from 4 to 5 levels is allowed — the directional
+        lock introduced in fix 97d54fe permits upward growth.
+        Only shrinking is blocked when nodes exist at the level
+        being removed. L5 is left in place; Group 2 only uses
+        levels 1-4 so no downstream impact."""
         if not (STATE.get("tenant_id") and STATE.get("ta_token")):
-            skip_test(self.GROUP, "1.5 Adding L5 after 4 levels saved is rejected/locked", "missing tenant_id/ta_token")
+            skip_test(self.GROUP, "1.5 Adding L5 after 4 levels saved is allowed (grow permitted)", "missing tenant_id/ta_token")
         body_with_l5 = self.LEVELS + [
             {"level_number": 5, "level_name": "Outpost", "is_stock_holding": True}
         ]
@@ -471,9 +470,9 @@ class TestGroup1OrgLevels:
         )
         check(
             self.GROUP,
-            "1.5 Adding L5 after 4 levels saved is rejected/locked",
-            r.status_code in (409, 422),
-            expected="409 or 422 (locked)",
+            "1.5 Adding L5 after 4 levels saved is allowed (grow permitted)",
+            r.status_code == 200,
+            expected="200 (growing allowed)",
             actual=f"status={r.status_code}",
             body=r.text,
         )
