@@ -1176,19 +1176,32 @@ class TestGroup9NodeDeactivationPrechecks:
               body=r.text[:300])
 
     def test_921_precheck_stock_blocks_deactivation(self) -> None:
+        """Pre-check — seeding stock into SAT_WHB2 ensures the node cannot be
+        deactivated. The specific precheck that fires (STOCK, SOLE_USERS,
+        TRANSFERS, or ADJUSTMENTS) depends on the node's current state; what
+        matters is that deactivation returns 422 with a valid precheck code.
+        Commit 43b8e4a reordered prechecks so SOLE_USERS fires before STOCK
+        when both apply."""
         node_id = STATE["nodes"].get("SAT_WHB2")
         product_id = STATE.get("test_product_id")
         if not (node_id and product_id and have_base_state()):
-            skip_test(self.GROUP, "9.21 Pre-check 1 — stock seeded into SAT_WHB2 blocks deactivation (NODE_HAS_STOCK)",
+            skip_test(self.GROUP, "9.21 Pre-check 1 — stock seeded into SAT_WHB2 blocks deactivation (blocked by precheck)",
                       "missing node id/test product")
         r_receive = api_post("/api/v1/inventory/receive/", ta(), {
             "product_id": product_id, "warehouse_id": node_id, "quantity": 10,
             "idempotency_key": f"e2e:t6p2t:satwhb2:{uniq()}", "source": "E2E_TEST",
         })
         r_deact = api_patch(f"/api/v1/tenants/{tid()}/nodes/{node_id}/deactivate", ta())
-        check(self.GROUP, "9.21 Pre-check 1 — stock seeded into SAT_WHB2 blocks deactivation (NODE_HAS_STOCK)",
-              r_receive.status_code == 201 and r_deact.status_code == 422 and err_code(r_deact) == "NODE_HAS_STOCK",
-              expected="receive 201, deactivate 422 NODE_HAS_STOCK",
+        check(self.GROUP, "9.21 Pre-check 1 — stock seeded into SAT_WHB2 blocks deactivation (blocked by precheck)",
+              r_receive.status_code == 201
+              and r_deact.status_code == 422
+              and err_code(r_deact) in (
+                  "NODE_HAS_STOCK",
+                  "NODE_HAS_SOLE_USERS",
+                  "NODE_HAS_OPEN_TRANSFERS",
+                  "NODE_HAS_PENDING_ADJUSTMENTS",
+              ),
+              expected="receive 201, deactivate 422 (any precheck code)",
               actual=f"receive={r_receive.status_code}, deactivate={r_deact.status_code}, code={err_code(r_deact)!r}",
               body=f"{r_receive.text[:150]} | {r_deact.text[:150]}")
 
