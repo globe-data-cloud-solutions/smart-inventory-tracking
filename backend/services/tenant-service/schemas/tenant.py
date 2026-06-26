@@ -23,6 +23,9 @@ class WizardResult(BaseModel):
 DEFAULT_SYSTEM_PLAN_ID = uuid.UUID("00000000-0000-0000-0000-000000000001")
 
 
+VALID_PLAN_TIERS = {"STARTER", "GROWTH", "ENTERPRISE"}
+
+
 class TenantCreateRequest(BaseModel):
     name: str
     slug: Optional[str] = None               # custom URL identifier; auto-generated if omitted
@@ -35,6 +38,7 @@ class TenantCreateRequest(BaseModel):
     # can raise the structured 422 INVALID_ORGANISATION_TYPE error this codebase
     # uses elsewhere, rather than Pydantic's generic validation-error shape.
     organisation_type: str = "PRODUCER"
+    plan_tier: str = "GROWTH"
     # Optional atomic TA admin user creation
     admin_name: Optional[str] = None
     admin_email: Optional[str] = None

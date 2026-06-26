@@ -296,6 +296,13 @@
       "ADVANCED_BATCH_TRACKING": "Hordoffii Gurmuu Olaanaa",
       "FLEET_MANAGEMENT": "Bulchiinsa Konkolaataa"
     },
+    "plan_tier":       "Sadarkaa Karoora",
+    "plan_tier_hint":  "Daangaa qabeenya hojii API irratti hojiirra oolfamu kaa'a",
+    "tier_desc": {
+      "STARTER":    "Goofa 3 karoora · fayyadamtoota 5",
+      "GROWTH":     "Goofa 10 karoora · fayyadamtoota 25",
+      "ENTERPRISE": "Karoora fi fayyadamtoota daangaa hin qabu"
+    },
     "success": "Hirkattoon milkaa'inaan seensifame!",
     "success_desc": "Hirkattoon qophaa'eera. Fayyadamtoota gaafadhu.",
     "go_to_admin": "Gara Daashboordii Bulchaa Deebi'i",

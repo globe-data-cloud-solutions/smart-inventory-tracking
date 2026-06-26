@@ -345,6 +345,13 @@
       "AI_ANALYTICS": "AI Analytics",
       "ADVANCED_BATCH_TRACKING": "Advanced Batch Tracking",
       "FLEET_MANAGEMENT": "Fleet Management"
+    },
+    "plan_tier":       "Plan Tier",
+    "plan_tier_hint":  "Sets resource limits enforced at the API layer",
+    "tier_desc": {
+      "STARTER":    "Up to 3 warehouses · 5 users",
+      "GROWTH":     "Up to 10 warehouses · 25 users",
+      "ENTERPRISE": "Unlimited warehouses and users"
     }
   },
   "count": {

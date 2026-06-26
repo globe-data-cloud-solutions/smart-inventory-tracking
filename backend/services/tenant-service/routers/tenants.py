@@ -14,7 +14,7 @@ from dependencies import get_current_user, get_db_session
 from shared.permissions.middleware import require_permission
 from shared.permissions.registry import PERMISSIONS
 from shared.utils.responses import SuccessResponse
-from schemas.tenant import TenantCreateRequest, TenantResponse
+from schemas.tenant import TenantCreateRequest, TenantResponse, VALID_PLAN_TIERS
 
 
 class TenantStatusResponse(BaseModel):
@@ -221,6 +221,16 @@ async def create_tenant(
             },
         )
 
+    if body.plan_tier not in VALID_PLAN_TIERS:
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "code":    "INVALID_TIER",
+                "message": f"plan_tier must be one of {sorted(VALID_PLAN_TIERS)}, "
+                           f"got '{body.plan_tier}'.",
+            },
+        )
+
     # Slug resolution: use caller-provided slug (validated) or auto-generate from name.
     if body.slug is not None:
         candidate = body.slug.strip().lower()
@@ -254,8 +264,8 @@ async def create_tenant(
     try:
         await db.execute(
             text(
-                "INSERT INTO tenants (id, name, slug, plan_id, default_locale, organisation_type) "
-                "VALUES (:id, :name, :slug, :plan_id, :locale, :org_type)"
+                "INSERT INTO tenants (id, name, slug, plan_id, default_locale, organisation_type, plan_tier) "
+                "VALUES (:id, :name, :slug, :plan_id, :locale, :org_type, CAST(:plan_tier AS plan_tier))"
             ),
             {
                 "id": str(tenant_id),
@@ -264,6 +274,7 @@ async def create_tenant(
                 "plan_id": str(body.plan_id),
                 "locale": body.default_locale,
                 "org_type": body.organisation_type,
+                "plan_tier": body.plan_tier,
             },
         )
     except IntegrityError as exc:
@@ -315,6 +326,7 @@ async def create_tenant(
             onboarding_complete=False,
             default_locale=body.default_locale,
             is_active=True,
+            plan_tier=body.plan_tier,
             admin_user_id=admin_user_id,
             admin_email=admin_email_out,
         )

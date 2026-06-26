@@ -10,12 +10,14 @@ import { t } from "@/lib/i18n";
 /* ── Types ───────────────────────────────────────────────────────────────── */
 type OrgType   = "PRODUCER" | "RETAILER" | "HYBRID";
 type Locale    = "en" | "am" | "or";
+type PlanTier  = "STARTER" | "GROWTH" | "ENTERPRISE";
 
 interface WizardState {
   name:                 string;
   industry:             string;
   skuLimit:             string;
   orgType:              OrgType | "";
+  planTier:             PlanTier;
   locale:               Locale;
   adminName:            string;
   adminEmail:           string;
@@ -135,7 +137,7 @@ export default function OnboardPage() {
   const [error, setError]     = useState("");
 
   const [form, setForm] = useState<WizardState>({
-    name: "", industry: "", skuLimit: "500", orgType: "", locale: "en",
+    name: "", industry: "", skuLimit: "500", orgType: "", planTier: "GROWTH", locale: "en",
     adminName: "", adminEmail: "", adminPassword: "", adminPasswordConfirm: "",
   });
 
@@ -174,6 +176,7 @@ export default function OnboardPage() {
         name:               form.name.trim(),
         default_locale:     form.locale,
         organisation_type:  form.orgType || null,
+        plan_tier:          form.planTier,
       });
       tenantId = tenantData.id;
 
@@ -256,7 +259,7 @@ export default function OnboardPage() {
               <button
                 onClick={() => {
                   setStep(1); setResult(null);
-                  setForm({ name: "", industry: "", skuLimit: "500", orgType: "", locale: "en",
+                  setForm({ name: "", industry: "", skuLimit: "500", orgType: "", planTier: "GROWTH", locale: "en",
                             adminName: "", adminEmail: "", adminPassword: "", adminPasswordConfirm: "" });
                 }}
                 className="flex-1 py-2.5 bg-gray-100 border-none rounded-md text-sm font-semibold cursor-pointer text-gray-700 hover:bg-gray-200 transition-colors"
@@ -397,6 +400,42 @@ export default function OnboardPage() {
                     />
                   </div>
                 )}
+
+                {/* ── Plan Tier ── */}
+                <div className="pt-2">
+                  <p className="font-bold text-[13px] text-gray-700 mb-1">{t("wizard.plan_tier")}</p>
+                  <p className="text-xs text-gray-400 mb-2.5">{t("wizard.plan_tier_hint")}</p>
+                  <div className="grid grid-cols-3 gap-2">
+                    {(["STARTER", "GROWTH", "ENTERPRISE"] as PlanTier[]).map((tier) => {
+                      const selected = form.planTier === tier;
+                      const colors: Record<PlanTier, { ring: string; bg: string; badge: string }> = {
+                        STARTER:    { ring: "#9CA3AF", bg: "#F9FAFB", badge: "bg-gray-100 text-gray-600" },
+                        GROWTH:     { ring: "#3B82F6", bg: "#EFF6FF", badge: "bg-blue-100 text-blue-700" },
+                        ENTERPRISE: { ring: "#D97706", bg: "#FFFBEB", badge: "bg-amber-100 text-amber-700" },
+                      };
+                      const c = colors[tier];
+                      return (
+                        <button
+                          key={tier}
+                          type="button"
+                          onClick={() => set("planTier", tier)}
+                          className="flex flex-col items-start px-3.5 py-3 rounded-lg text-left transition-all"
+                          style={{
+                            border:     selected ? `2px solid ${c.ring}` : "2px solid #E5E7EB",
+                            background: selected ? c.bg : "#fff",
+                          }}
+                        >
+                          <span className={`text-[11px] font-extrabold px-2 py-0.5 rounded mb-1.5 ${c.badge}`}>
+                            {tier}
+                          </span>
+                          <span className="text-[12px] text-gray-500 leading-tight">
+                            {t(`wizard.tier_desc.${tier}`)}
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
               </div>
             )}
 
@@ -493,6 +532,7 @@ export default function OnboardPage() {
                     { label: t("wizard.company_label"),    value: form.name },
                     { label: t("wizard.industry_label"),   value: form.industry || "—" },
                     { label: t("wizard.org_type_label"),   value: ORG_META[form.orgType].label },
+                    { label: t("wizard.plan_tier"),         value: form.planTier },
                     { label: t("wizard.language_label"),   value: `${LOCALE_META[form.locale].label} (${form.locale})` },
                     { label: t("wizard.admin_email_label"), value: form.adminEmail },
                     ...(form.orgType === "PRODUCER" ? [{ label: t("wizard.sku_limit_label_short"), value: form.skuLimit }] : []),
