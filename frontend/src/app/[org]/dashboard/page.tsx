@@ -267,6 +267,36 @@ export default function OrgDashboard() {
     is_active: boolean;
     plan_tier?: string | null;
   }
+
+  interface ApiRegistryRow {
+    id: string;
+    name: string;
+    slug: string | null;
+    organisation_type: string | null;
+    status: string;
+    contact_name:   string | null;
+    contact_email:  string | null;
+    contact_phone:  string | null;
+    contract_start: string | null;
+    contract_end:   string | null;
+    notes:          string | null;
+    user_count: number;
+    node_count: number;
+    created_at: string;
+  }
+
+  interface ApiActivityRow {
+    id: string;
+    tenant_id: string;
+    actor_id: string;
+    actor_email: string | null;
+    action: string;
+    old_value: string | null;
+    new_value: string | null;
+    note: string | null;
+    created_at: string;
+  }
+
   const { data: apiTenantList } = useQuery<ApiTenantRow[]>({
     queryKey: ["tenants-list"],
     queryFn: () => api.get<ApiTenantRow[]>("/api/v1/tenants/"),
@@ -282,6 +312,23 @@ export default function OrgDashboard() {
     tenantId: string; tenantName: string; action: "suspend" | "reactivate" | "deactivate";
   } | null>(null);
   const qc = useQueryClient();
+
+  const [saTab, setSaTab] = useState<"tenants" | "registry">("tenants");
+  const [activityTenantId, setActivityTenantId] = useState<string | null>(null);
+
+  const { data: apiRegistryList, isLoading: registryLoading } = useQuery<ApiRegistryRow[]>({
+    queryKey: ["sa-registry"],
+    queryFn: () => api.get<ApiRegistryRow[]>("/api/v1/tenants/sa/registry"),
+    enabled: isGatewayMode && org === SA_ORG_SLUG && saTab === "registry",
+    staleTime: 0,
+  });
+
+  const { data: activityLog, isLoading: activityLoading } = useQuery<ApiActivityRow[]>({
+    queryKey: ["sa-activity", activityTenantId],
+    queryFn: () => api.get<ApiActivityRow[]>(`/api/v1/tenants/sa/${activityTenantId}/activity`),
+    enabled: isGatewayMode && !!activityTenantId,
+    staleTime: 0,
+  });
 
   async function handleTenantAction(tenantId: string, action: "suspend" | "reactivate" | "deactivate") {
     setActionLoading(tenantId + action);
@@ -339,121 +386,307 @@ export default function OrgDashboard() {
               { label: t("dashboard.stat_units"),   value: "—" },
             ]}
           />
-          <div className="flex items-center justify-between mb-4">
-            <h3 className="text-base font-bold text-[#0f2d1f] m-0">{t("dashboard.tenants_heading")}</h3>
-            <Link
-              href="/onboard"
-              className="px-4 py-2 bg-eth-gold text-[#0f2d1f] font-bold text-sm rounded no-underline"
-            >
-              {t("wizard.onboard_btn")}
-            </Link>
+          <div className="flex gap-0 mb-6 border-b border-gray-200">
+            {(["tenants", "registry"] as const).map((tab) => (
+              <button
+                key={tab}
+                type="button"
+                onClick={() => setSaTab(tab)}
+                className={[
+                  "px-5 py-2.5 text-sm font-semibold border-b-2 -mb-px transition-colors",
+                  saTab === tab
+                    ? "border-[#0f2d1f] text-[#0f2d1f]"
+                    : "border-transparent text-gray-500 hover:text-gray-700",
+                ].join(" ")}
+              >
+                {t(`sa.tab_${tab}`)}
+              </button>
+            ))}
           </div>
-          {(!apiTenantList || apiTenantList.length === 0) && (
-            <p className="text-gray-400 text-sm">{t("common.no_data")}</p>
-          )}
-          {actionError && (
-            <p className="text-sm text-red-600 bg-red-50 border border-red-200 rounded px-4 py-2 mb-4">
-              {actionError}
-            </p>
-          )}
-          <div className="bg-white border border-gray-200 rounded overflow-hidden">
-            <table className="w-full border-collapse text-sm">
-              <thead>
-                <tr className="bg-gray-50 border-b border-gray-200">
-                  {["dashboard.tenant_name", "dashboard.tenant_type", "table.status", "table.plan", "table.actions"].map((key) => (
-                    <th
-                      key={key}
-                      className="px-4 py-2.5 text-left text-xs font-bold text-gray-500 uppercase tracking-wide"
-                    >
-                      {t(key)}
-                    </th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {(apiTenantList ?? []).map((ten, idx) => {
-                  const slug   = ten.slug ?? ten.id;
-                  const status = ten.status || "ACTIVE";
-                  const badgeClass = STATUS_BADGE[status] ?? "bg-gray-100 text-gray-700";
-                  const labelKey   = STATUS_LABEL_KEY[status];
-                  return (
-                    <tr key={ten.id} className={`border-b border-gray-100 ${idx % 2 === 0 ? "bg-white" : "bg-gray-50"}`}>
-                      <td className="px-4 py-2.5 font-semibold text-gray-800">
-                        <Link href={`/${slug}/dashboard`} className="text-eth-forest hover:underline">
-                          {ten.name}
-                        </Link>
-                      </td>
-                      <td className="px-4 py-2.5 text-gray-600">{ten.organisation_type ?? "—"}</td>
-                      <td className="px-4 py-2.5">
-                        <span className={`text-xs font-bold px-2.5 py-0.5 rounded ${badgeClass}`}>
-                          {labelKey ? t(labelKey) : status}
-                        </span>
-                      </td>
-                      <td className="px-4 py-2.5">
-                        <span className={`text-xs font-bold px-2.5 py-0.5 rounded ${PLAN_TIER_BADGE[ten.plan_tier ?? ""] ?? "bg-gray-100 text-gray-600"}`}>
-                          {ten.plan_tier ?? "—"}
-                        </span>
-                      </td>
-                      <td className="px-4 py-2.5">
-                        <div className="flex items-center gap-3">
-                          {status === "ACTIVE" && (
-                            <>
-                              <button
-                                type="button"
-                                disabled={actionLoading === ten.id + "suspend"}
-                                onClick={() => setConfirmModal({ tenantId: ten.id, tenantName: ten.name, action: "suspend" })}
-                                className="text-xs font-bold text-amber-700 hover:underline disabled:opacity-50"
-                              >
-                                {actionLoading === ten.id + "suspend" ? "…" : t("sa.action_suspend")}
-                              </button>
-                              <button
-                                type="button"
-                                disabled={actionLoading === ten.id + "deactivate"}
-                                onClick={() => setConfirmModal({ tenantId: ten.id, tenantName: ten.name, action: "deactivate" })}
-                                className="text-xs font-bold text-red-600 hover:underline disabled:opacity-50"
-                              >
-                                {actionLoading === ten.id + "deactivate" ? "…" : t("sa.action_deactivate")}
-                              </button>
-                            </>
-                          )}
-                          {status === "SUSPENDED" && (
-                            <>
-                              <button
-                                type="button"
-                                disabled={actionLoading === ten.id + "reactivate"}
-                                onClick={() => setConfirmModal({ tenantId: ten.id, tenantName: ten.name, action: "reactivate" })}
-                                className="text-xs font-bold text-emerald-700 hover:underline disabled:opacity-50"
-                              >
-                                {actionLoading === ten.id + "reactivate" ? "…" : t("sa.action_reactivate")}
-                              </button>
-                              <button
-                                type="button"
-                                disabled={actionLoading === ten.id + "deactivate"}
-                                onClick={() => setConfirmModal({ tenantId: ten.id, tenantName: ten.name, action: "deactivate" })}
-                                className="text-xs font-bold text-red-600 hover:underline disabled:opacity-50"
-                              >
-                                {actionLoading === ten.id + "deactivate" ? "…" : t("sa.action_deactivate")}
-                              </button>
-                            </>
-                          )}
-                          {status === "DEACTIVATED" && (
-                            <button
-                              type="button"
-                              disabled={actionLoading === ten.id + "reactivate"}
-                              onClick={() => setConfirmModal({ tenantId: ten.id, tenantName: ten.name, action: "reactivate" })}
-                              className="text-xs font-bold text-emerald-700 hover:underline disabled:opacity-50"
-                            >
-                              {actionLoading === ten.id + "reactivate" ? "…" : t("sa.action_reactivate")}
-                            </button>
-                          )}
-                        </div>
-                      </td>
+
+          {saTab === "tenants" && (
+            <>
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="text-base font-bold text-[#0f2d1f] m-0">{t("dashboard.tenants_heading")}</h3>
+                <Link
+                  href="/onboard"
+                  className="px-4 py-2 bg-eth-gold text-[#0f2d1f] font-bold text-sm rounded no-underline"
+                >
+                  {t("wizard.onboard_btn")}
+                </Link>
+              </div>
+              {(!apiTenantList || apiTenantList.length === 0) && (
+                <p className="text-gray-400 text-sm">{t("common.no_data")}</p>
+              )}
+              {actionError && (
+                <p className="text-sm text-red-600 bg-red-50 border border-red-200 rounded px-4 py-2 mb-4">
+                  {actionError}
+                </p>
+              )}
+              <div className="bg-white border border-gray-200 rounded overflow-hidden">
+                <table className="w-full border-collapse text-sm">
+                  <thead>
+                    <tr className="bg-gray-50 border-b border-gray-200">
+                      {["dashboard.tenant_name", "dashboard.tenant_type", "table.status", "table.plan", "table.actions"].map((key) => (
+                        <th
+                          key={key}
+                          className="px-4 py-2.5 text-left text-xs font-bold text-gray-500 uppercase tracking-wide"
+                        >
+                          {t(key)}
+                        </th>
+                      ))}
                     </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
+                  </thead>
+                  <tbody>
+                    {(apiTenantList ?? []).map((ten, idx) => {
+                      const slug   = ten.slug ?? ten.id;
+                      const status = ten.status || "ACTIVE";
+                      const badgeClass = STATUS_BADGE[status] ?? "bg-gray-100 text-gray-700";
+                      const labelKey   = STATUS_LABEL_KEY[status];
+                      return (
+                        <tr key={ten.id} className={`border-b border-gray-100 ${idx % 2 === 0 ? "bg-white" : "bg-gray-50"}`}>
+                          <td className="px-4 py-2.5 font-semibold text-gray-800">
+                            <Link href={`/${slug}/dashboard`} className="text-eth-forest hover:underline">
+                              {ten.name}
+                            </Link>
+                          </td>
+                          <td className="px-4 py-2.5 text-gray-600">{ten.organisation_type ?? "—"}</td>
+                          <td className="px-4 py-2.5">
+                            <span className={`text-xs font-bold px-2.5 py-0.5 rounded ${badgeClass}`}>
+                              {labelKey ? t(labelKey) : status}
+                            </span>
+                          </td>
+                          <td className="px-4 py-2.5">
+                            <span className={`text-xs font-bold px-2.5 py-0.5 rounded ${PLAN_TIER_BADGE[ten.plan_tier ?? ""] ?? "bg-gray-100 text-gray-600"}`}>
+                              {ten.plan_tier ?? "—"}
+                            </span>
+                          </td>
+                          <td className="px-4 py-2.5">
+                            <div className="flex items-center gap-3">
+                              {status === "ACTIVE" && (
+                                <>
+                                  <button
+                                    type="button"
+                                    disabled={actionLoading === ten.id + "suspend"}
+                                    onClick={() => setConfirmModal({ tenantId: ten.id, tenantName: ten.name, action: "suspend" })}
+                                    className="text-xs font-bold text-amber-700 hover:underline disabled:opacity-50"
+                                  >
+                                    {actionLoading === ten.id + "suspend" ? "…" : t("sa.action_suspend")}
+                                  </button>
+                                  <button
+                                    type="button"
+                                    disabled={actionLoading === ten.id + "deactivate"}
+                                    onClick={() => setConfirmModal({ tenantId: ten.id, tenantName: ten.name, action: "deactivate" })}
+                                    className="text-xs font-bold text-red-600 hover:underline disabled:opacity-50"
+                                  >
+                                    {actionLoading === ten.id + "deactivate" ? "…" : t("sa.action_deactivate")}
+                                  </button>
+                                </>
+                              )}
+                              {status === "SUSPENDED" && (
+                                <>
+                                  <button
+                                    type="button"
+                                    disabled={actionLoading === ten.id + "reactivate"}
+                                    onClick={() => setConfirmModal({ tenantId: ten.id, tenantName: ten.name, action: "reactivate" })}
+                                    className="text-xs font-bold text-emerald-700 hover:underline disabled:opacity-50"
+                                  >
+                                    {actionLoading === ten.id + "reactivate" ? "…" : t("sa.action_reactivate")}
+                                  </button>
+                                  <button
+                                    type="button"
+                                    disabled={actionLoading === ten.id + "deactivate"}
+                                    onClick={() => setConfirmModal({ tenantId: ten.id, tenantName: ten.name, action: "deactivate" })}
+                                    className="text-xs font-bold text-red-600 hover:underline disabled:opacity-50"
+                                  >
+                                    {actionLoading === ten.id + "deactivate" ? "…" : t("sa.action_deactivate")}
+                                  </button>
+                                </>
+                              )}
+                              {status === "DEACTIVATED" && (
+                                <button
+                                  type="button"
+                                  disabled={actionLoading === ten.id + "reactivate"}
+                                  onClick={() => setConfirmModal({ tenantId: ten.id, tenantName: ten.name, action: "reactivate" })}
+                                  className="text-xs font-bold text-emerald-700 hover:underline disabled:opacity-50"
+                                >
+                                  {actionLoading === ten.id + "reactivate" ? "…" : t("sa.action_reactivate")}
+                                </button>
+                              )}
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </>
+          )}
+
+          {saTab === "registry" && (
+            <div>
+              <div className="flex items-center justify-between mb-4">
+                <div>
+                  <h3 className="text-base font-bold text-[#0f2d1f] m-0">{t("sa.registry_heading")}</h3>
+                  <p className="text-xs text-gray-500 mt-0.5">{t("sa.registry_subtitle")}</p>
+                </div>
+              </div>
+              {registryLoading && <p className="text-gray-400 text-sm">{t("common.loading")}</p>}
+              {!registryLoading && (!apiRegistryList || apiRegistryList.length === 0) && (
+                <p className="text-gray-400 text-sm">{t("common.no_data")}</p>
+              )}
+              {!registryLoading && apiRegistryList && apiRegistryList.length > 0 && (
+                <div className="bg-white border border-gray-200 rounded overflow-x-auto">
+                  <table className="w-full border-collapse text-sm min-w-[900px]">
+                    <thead>
+                      <tr className="bg-gray-50 border-b border-gray-200">
+                        {[
+                          "dashboard.tenant_name",
+                          "dashboard.tenant_type",
+                          "table.status",
+                          "sa.col_contact",
+                          "sa.col_contract",
+                          "sa.col_users",
+                          "sa.col_nodes",
+                          "sa.col_created",
+                          "sa.col_notes",
+                          "table.actions",
+                        ].map((key) => (
+                          <th
+                            key={key}
+                            className="px-4 py-2.5 text-left text-xs font-bold text-gray-500 uppercase tracking-wide whitespace-nowrap"
+                          >
+                            {t(key)}
+                          </th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {apiRegistryList.map((row, idx) => {
+                        const status     = row.status || "ACTIVE";
+                        const badgeClass = STATUS_BADGE[status] ?? "bg-gray-100 text-gray-700";
+                        const labelKey   = STATUS_LABEL_KEY[status];
+                        return (
+                          <tr key={row.id} className={`border-b border-gray-100 ${idx % 2 === 0 ? "bg-white" : "bg-gray-50"}`}>
+                            <td className="px-4 py-2.5 font-semibold text-gray-800 whitespace-nowrap">
+                              {row.name}
+                            </td>
+                            <td className="px-4 py-2.5 text-gray-600 whitespace-nowrap">
+                              {row.organisation_type ?? "—"}
+                            </td>
+                            <td className="px-4 py-2.5 whitespace-nowrap">
+                              <span className={`text-xs font-bold px-2.5 py-0.5 rounded ${badgeClass}`}>
+                                {labelKey ? t(labelKey) : status}
+                              </span>
+                            </td>
+                            <td className="px-4 py-2.5">
+                              {row.contact_name ?? row.contact_email ? (
+                                <div>
+                                  {row.contact_name  && <p className="m-0 font-medium text-gray-800">{row.contact_name}</p>}
+                                  {row.contact_email && <p className="m-0 text-xs text-gray-500">{row.contact_email}</p>}
+                                  {row.contact_phone && <p className="m-0 text-xs text-gray-400">{row.contact_phone}</p>}
+                                </div>
+                              ) : (
+                                <span className="text-gray-400">{t("sa.no_contact")}</span>
+                              )}
+                            </td>
+                            <td className="px-4 py-2.5 text-xs text-gray-600">
+                              {row.contract_start ?? row.contract_end ? (
+                                <div>
+                                  {row.contract_start && <p className="m-0"><span className="text-gray-400">{t("sa.contract_from")}</span> {row.contract_start}</p>}
+                                  {row.contract_end   && <p className="m-0"><span className="text-gray-400">{t("sa.contract_to")}</span> {row.contract_end}</p>}
+                                </div>
+                              ) : "—"}
+                            </td>
+                            <td className="px-4 py-2.5 text-center text-gray-700">{row.user_count}</td>
+                            <td className="px-4 py-2.5 text-center text-gray-700">{row.node_count}</td>
+                            <td className="px-4 py-2.5 text-xs text-gray-500 whitespace-nowrap">
+                              {new Date(row.created_at).toLocaleDateString()}
+                            </td>
+                            <td className="px-4 py-2.5 text-xs text-gray-500 max-w-[160px]">
+                              {row.notes
+                                ? (row.notes.length > 40 ? row.notes.slice(0, 40) + "…" : row.notes)
+                                : "—"}
+                            </td>
+                            <td className="px-4 py-2.5 whitespace-nowrap">
+                              <button
+                                type="button"
+                                onClick={() => setActivityTenantId(row.id)}
+                                className="text-xs font-bold text-[#0f2d1f] hover:underline"
+                              >
+                                {t("sa.view_activity")}
+                              </button>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          )}
+
+          {activityTenantId && (
+            <>
+              <div
+                className="fixed inset-0 z-40 bg-black/30"
+                onClick={() => setActivityTenantId(null)}
+              />
+              <div className="fixed right-0 top-0 z-50 h-full w-[420px] bg-white shadow-xl flex flex-col">
+                <div className="flex items-center justify-between px-6 py-4 bg-[#0f2d1f]">
+                  <h4 className="m-0 text-base font-bold text-white">{t("sa.activity_heading")}</h4>
+                  <button
+                    type="button"
+                    onClick={() => setActivityTenantId(null)}
+                    className="text-white hover:text-gray-300 text-lg font-bold leading-none"
+                    aria-label={t("sa.activity_drawer_close")}
+                  >
+                    ×
+                  </button>
+                </div>
+                <div className="flex-1 overflow-y-auto px-6 py-4">
+                  {activityLoading && (
+                    <p className="text-gray-400 text-sm">{t("common.loading")}</p>
+                  )}
+                  {!activityLoading && (!activityLog || activityLog.length === 0) && (
+                    <p className="text-gray-400 text-sm">{t("sa.activity_empty")}</p>
+                  )}
+                  {!activityLoading && activityLog && activityLog.map((entry, idx) => (
+                    <div key={entry.id}>
+                      <div className="py-3">
+                        <p className="m-0 font-semibold text-gray-800 text-sm">
+                          {(() => {
+                            const actionKey = `sa.activity_action_${entry.action}`;
+                            const translated = t(actionKey);
+                            return translated !== actionKey ? translated : entry.action;
+                          })()}
+                        </p>
+                        {entry.old_value && entry.new_value && (
+                          <p className="m-0 text-xs text-gray-500 mt-0.5">
+                            {entry.old_value} → {entry.new_value}
+                          </p>
+                        )}
+                        <p className="m-0 text-xs text-gray-400 mt-0.5">
+                          {t("sa.activity_by")} {entry.actor_email ?? entry.actor_id}
+                        </p>
+                        <p className="m-0 text-xs text-gray-400">
+                          {new Date(entry.created_at).toLocaleString()}
+                        </p>
+                        {entry.note && (
+                          <p className="m-0 text-xs text-gray-500 italic mt-1">{entry.note}</p>
+                        )}
+                      </div>
+                      {idx < activityLog.length - 1 && (
+                        <hr className="border-gray-100 m-0" />
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </>
+          )}
 
           {confirmModal && (
             <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
