@@ -1053,27 +1053,7 @@ async def deactivate_org_node(
     if not row.fetchone():
         raise HTTPException(status_code=404, detail="Node not found")
 
-    # CHECK 1 — no stock on hand
-    stock_row = await db.execute(
-        text(
-            "SELECT COALESCE(SUM(quantity), 0) AS total "
-            "FROM inventory_balances "
-            "WHERE warehouse_id = :wid AND tenant_id = :tid"
-        ),
-        {"wid": str(node_id), "tid": str(tenant_id)},
-    )
-    stock_total = stock_row.fetchone()
-    if stock_total and float(stock_total.total) > 0:
-        raise HTTPException(
-            status_code=422,
-            detail={
-                "code": "NODE_HAS_STOCK",
-                "message": "Cannot deactivate — this location has stock on hand. "
-                           "Transfer or adjust stock to zero first.",
-            },
-        )
-
-    # CHECK 2 — no open transfers
+    # CHECK 1 — no open transfers
     transfer_row = await db.execute(
         text(
             "SELECT COUNT(*) AS cnt FROM transfer_orders "
@@ -1094,7 +1074,7 @@ async def deactivate_org_node(
             },
         )
 
-    # CHECK 3 — no pending adjustments
+    # CHECK 2 — no pending adjustments
     adj_row = await db.execute(
         text(
             "SELECT COUNT(*) AS cnt FROM adjustment_orders "
@@ -1115,7 +1095,7 @@ async def deactivate_org_node(
             },
         )
 
-    # CHECK 4 — no users whose ONLY active position is at this node
+    # CHECK 3 — no users whose ONLY active position is at this node
     sole_row = await db.execute(
         text(
             """
@@ -1145,6 +1125,26 @@ async def deactivate_org_node(
                 "message": f"Cannot deactivate — {sole_count.cnt} staff member(s) have "
                            "this as their only position. Reassign them to another "
                            "position first.",
+            },
+        )
+
+    # CHECK 4 — no stock on hand
+    stock_row = await db.execute(
+        text(
+            "SELECT COALESCE(SUM(quantity), 0) AS total "
+            "FROM inventory_balances "
+            "WHERE warehouse_id = :wid AND tenant_id = :tid"
+        ),
+        {"wid": str(node_id), "tid": str(tenant_id)},
+    )
+    stock_total = stock_row.fetchone()
+    if stock_total and float(stock_total.total) > 0:
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "code": "NODE_HAS_STOCK",
+                "message": "Cannot deactivate — this location has stock on hand. "
+                           "Transfer or adjust stock to zero first.",
             },
         )
 
