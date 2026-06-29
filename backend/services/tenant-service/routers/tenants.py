@@ -23,21 +23,72 @@ class TenantStatusResponse(BaseModel):
     status: str
 
 
+class RegistryContact(BaseModel):
+    id: str
+    is_primary: bool
+    full_name: str
+    position_title: Optional[str]
+    email: Optional[str]
+    phone: Optional[str]
+    mobile: Optional[str]
+
+
 class TenantRegistryRow(BaseModel):
     id: uuid.UUID
     name: str
     slug: Optional[str]
     organisation_type: Optional[str]
     status: str
-    contact_name:   Optional[str]
+    plan_tier:      Optional[str]
+    default_locale: str = "en"      # persisted user-facing locale preference
+    contact_name:   Optional[str]   # legacy single-contact field
     contact_email:  Optional[str]
     contact_phone:  Optional[str]
     contract_start: Optional[str]   # ISO date string "YYYY-MM-DD" or None
     contract_end:   Optional[str]
     notes:          Optional[str]
+    address_line1:  Optional[str]
+    city:           Optional[str]
+    country:        Optional[str]
+    contacts: List[RegistryContact] = []
     user_count: int
     node_count: int
     created_at: str                 # ISO datetime string
+
+
+class TenantContactIn(BaseModel):
+    is_primary: bool = False
+    full_name: str
+    position_title: Optional[str] = None
+    email: Optional[str] = None
+    phone: Optional[str] = None
+    mobile: Optional[str] = None
+
+
+class TenantAddressIn(BaseModel):
+    address_line1:  Optional[str] = None
+    address_line2:  Optional[str] = None
+    city:           Optional[str] = None
+    state_province: Optional[str] = None
+    postal_code:    Optional[str] = None
+    country:        Optional[str] = None
+
+
+class TenantContactsBulkIn(BaseModel):
+    address:  Optional[TenantAddressIn] = None
+    contacts: List[TenantContactIn] = []
+
+
+class TenantContactOut(BaseModel):
+    id: uuid.UUID
+    tenant_id: uuid.UUID
+    is_primary: bool
+    full_name: str
+    position_title: Optional[str]
+    email: Optional[str]
+    phone: Optional[str]
+    mobile: Optional[str]
+    created_at: str
 
 
 class TenantActivityRow(BaseModel):
@@ -56,11 +107,44 @@ class TenantActivityRow(BaseModel):
 # backend/migrations/versions/001_initial_schema.py.
 VALID_ORGANISATION_TYPES = frozenset({"PRODUCER", "RETAILER", "HYBRID"})
 
+# Hardcoded fallback used when platform_tier_config table is not yet available.
 TIER_LIMITS: dict[str, dict[str, int | None]] = {
     "STARTER":    {"max_warehouses": 3,    "max_users": 5},
     "GROWTH":     {"max_warehouses": 10,   "max_users": 25},
     "ENTERPRISE": {"max_warehouses": None, "max_users": None},
 }
+
+# Mirrors wizard_service.py defaults — used when org_type changes via profile edit.
+FEATURE_FLAG_DEFAULTS: dict[str, dict[str, bool]] = {
+    "PRODUCER": {"LOGISTICS": False, "AI_ANALYTICS": False, "ADVANCED_BATCH_TRACKING": True,  "FLEET_MANAGEMENT": False},
+    "RETAILER": {"LOGISTICS": True,  "AI_ANALYTICS": True,  "ADVANCED_BATCH_TRACKING": False, "FLEET_MANAGEMENT": True},
+    "HYBRID":   {"LOGISTICS": True,  "AI_ANALYTICS": True,  "ADVANCED_BATCH_TRACKING": True,  "FLEET_MANAGEMENT": True},
+}
+APPROVAL_DEFAULTS: dict[str, dict] = {
+    "PRODUCER": {"inventory:adjust": {"low": 100,  "medium": 500}},
+    "RETAILER": {"inventory:adjust": {"low": 500,  "medium": 5000}},
+    "HYBRID":   {"inventory:adjust": {"low": 250,  "medium": 2000}},
+}
+
+
+async def _get_platform_tier_limits(
+    db: AsyncSession, tier: str
+) -> dict[str, int | None]:
+    """Read limits from platform_tier_config; fall back to hardcoded TIER_LIMITS.
+
+    This indirection lets SA override defaults without a code deploy. The fallback
+    guarantees the system works before migration 068 runs or on a fresh dev DB.
+    """
+    try:
+        row = (await db.execute(
+            text("SELECT max_warehouses, max_users FROM platform_tier_config WHERE tier = :tier"),
+            {"tier": tier},
+        )).fetchone()
+        if row:
+            return {"max_warehouses": row.max_warehouses, "max_users": row.max_users}
+    except Exception:
+        pass  # table may not exist yet — fall through to defaults
+    return dict(TIER_LIMITS.get(tier, {"max_warehouses": None, "max_users": None}))
 
 
 def _slugify(name: str) -> str:
@@ -126,14 +210,29 @@ async def sa_tenant_registry(
 
     rows = (await db.execute(text("""
         SELECT
-            t.id, t.name, t.slug, t.organisation_type, t.status,
+            t.id, t.name, t.slug, t.organisation_type, t.status, t.plan_tier,
+            t.default_locale,
             t.contact_name, t.contact_email, t.contact_phone,
             t.contract_start, t.contract_end, t.notes,
+            t.address_line1, t.city, t.country,
             t.created_at,
             (SELECT COUNT(*) FROM users u
-             WHERE u.tenant_id = t.id AND u.is_active = true)  AS user_count,
+             WHERE u.tenant_id = t.id AND u.is_active = true AND u.role != 'TA')  AS user_count,
             (SELECT COUNT(*) FROM organization_node n
-             WHERE n.tenant_id = t.id AND n.is_active = true)  AS node_count
+             WHERE n.tenant_id = t.id AND n.is_active = true)  AS node_count,
+            COALESCE(
+                (SELECT json_agg(json_build_object(
+                    'id',             c.id::text,
+                    'is_primary',     c.is_primary,
+                    'full_name',      c.full_name,
+                    'position_title', c.position_title,
+                    'email',          c.email,
+                    'phone',          c.phone,
+                    'mobile',         c.mobile
+                ) ORDER BY c.is_primary DESC, c.created_at ASC)
+                 FROM tenant_contacts c WHERE c.tenant_id = t.id),
+                '[]'::json
+            ) AS contacts
         FROM tenants t
         ORDER BY t.created_at DESC
     """))).fetchall()
@@ -145,16 +244,102 @@ async def sa_tenant_registry(
             slug=row.slug,
             organisation_type=row.organisation_type,
             status=row.status,
+            plan_tier=str(row.plan_tier) if row.plan_tier else None,
+            default_locale=row.default_locale or "en",
             contact_name=row.contact_name,
             contact_email=row.contact_email,
             contact_phone=row.contact_phone,
             contract_start=str(row.contract_start) if row.contract_start else None,
             contract_end=str(row.contract_end)     if row.contract_end   else None,
             notes=row.notes,
+            address_line1=row.address_line1,
+            city=row.city,
+            country=row.country,
+            contacts=[RegistryContact(**c) for c in (row.contacts or [])],
             user_count=int(row.user_count),
             node_count=int(row.node_count),
             created_at=row.created_at.isoformat(),
         )
+        for row in rows
+    ])
+
+
+class TierConfigEntry(BaseModel):
+    tier: str
+    max_warehouses: Optional[int]  # None = unlimited
+    max_users: Optional[int]       # None = unlimited
+
+
+class TierConfigUpdateRequest(BaseModel):
+    tiers: List[TierConfigEntry]
+
+
+@router.get("/platform/tier-config", response_model=SuccessResponse[List[TierConfigEntry]])
+@require_permission(PERMISSIONS.PLATFORM_TIER_CONFIG_VIEW)
+async def get_platform_tier_config(
+    user=Depends(get_current_user),
+    db: AsyncSession = Depends(get_db_session),
+) -> SuccessResponse[List[TierConfigEntry]]:
+    """SA-only: return the current platform tier limits for all three tiers."""
+    if not user or user.role != "SA":
+        raise HTTPException(status_code=403, detail={"code": "FORBIDDEN", "message": "SA only"})
+    rows = (await db.execute(
+        text("SELECT tier, max_warehouses, max_users FROM platform_tier_config ORDER BY tier"),
+    )).fetchall()
+    if not rows:
+        # Table not yet seeded — return hardcoded defaults
+        return SuccessResponse(data=[
+            TierConfigEntry(tier=t, **v) for t, v in TIER_LIMITS.items()
+        ])
+    return SuccessResponse(data=[
+        TierConfigEntry(tier=row.tier, max_warehouses=row.max_warehouses, max_users=row.max_users)
+        for row in rows
+    ])
+
+
+@router.patch("/platform/tier-config", response_model=SuccessResponse[List[TierConfigEntry]])
+@require_permission(PERMISSIONS.PLATFORM_TIER_CONFIG_EDIT)
+async def update_platform_tier_config(
+    body: TierConfigUpdateRequest,
+    user=Depends(get_current_user),
+    db: AsyncSession = Depends(get_db_session),
+) -> SuccessResponse[List[TierConfigEntry]]:
+    """SA-only: update platform-level tier defaults.
+
+    Changes apply to the next tenant creation or plan change.
+    Existing tenant caps (stored per-tenant) are NOT retroactively changed.
+    """
+    if not user or user.role != "SA":
+        raise HTTPException(status_code=403, detail={"code": "FORBIDDEN", "message": "SA only"})
+
+    valid_tiers = {"STARTER", "GROWTH", "ENTERPRISE"}
+    for entry in body.tiers:
+        if entry.tier not in valid_tiers:
+            raise HTTPException(
+                status_code=422,
+                detail={"code": "INVALID_TIER", "message": f"Unknown tier: {entry.tier}"},
+            )
+
+    for entry in body.tiers:
+        await db.execute(
+            text(
+                "INSERT INTO platform_tier_config (tier, max_warehouses, max_users, updated_at, updated_by_id) "
+                "VALUES (:tier, :max_wh, :max_u, now(), :uid) "
+                "ON CONFLICT (tier) DO UPDATE SET "
+                "max_warehouses = EXCLUDED.max_warehouses, "
+                "max_users      = EXCLUDED.max_users, "
+                "updated_at     = now(), "
+                "updated_by_id  = EXCLUDED.updated_by_id"
+            ),
+            {"tier": entry.tier, "max_wh": entry.max_warehouses,
+             "max_u": entry.max_users, "uid": str(user.user_id)},
+        )
+
+    rows = (await db.execute(
+        text("SELECT tier, max_warehouses, max_users FROM platform_tier_config ORDER BY tier"),
+    )).fetchall()
+    return SuccessResponse(data=[
+        TierConfigEntry(tier=row.tier, max_warehouses=row.max_warehouses, max_users=row.max_users)
         for row in rows
     ])
 
@@ -267,14 +452,16 @@ async def create_tenant(
         row = await db.execute(text("SELECT id FROM tenants WHERE slug = :s"), {"s": slug})
         if row.fetchone():
             slug = f"{base_slug}-{str(tenant_id)[:8]}"
-    tier_limits = TIER_LIMITS[body.plan_tier]
+    tier_limits = await _get_platform_tier_limits(db, body.plan_tier)
+    # sku_cap is only meaningful for PRODUCER tenants; store NULL for RETAILER/HYBRID.
+    effective_sku_cap = body.sku_cap if body.organisation_type == "PRODUCER" else None
     try:
         await db.execute(
             text(
                 "INSERT INTO tenants (id, name, slug, plan_id, default_locale, organisation_type, "
-                "plan_tier, max_warehouses, max_users) "
+                "plan_tier, max_warehouses, max_users, sku_cap) "
                 "VALUES (:id, :name, :slug, :plan_id, :locale, :org_type, "
-                "CAST(:plan_tier AS plan_tier), :max_wh, :max_u)"
+                "CAST(:plan_tier AS plan_tier), :max_wh, :max_u, :sku_cap)"
             ),
             {
                 "id": str(tenant_id),
@@ -286,6 +473,7 @@ async def create_tenant(
                 "plan_tier": body.plan_tier,
                 "max_wh": tier_limits["max_warehouses"],
                 "max_u": tier_limits["max_users"],
+                "sku_cap": effective_sku_cap,
             },
         )
     except IntegrityError as exc:
@@ -375,8 +563,8 @@ async def get_my_plan(
 
 class PlanUpdateRequest(BaseModel):
     plan_tier: str
-    max_warehouses: Optional[int] = None
-    max_users: Optional[int] = None
+    max_warehouses: Optional[int] = None   # if None, auto-set from platform_tier_config
+    max_users: Optional[int] = None        # if None, auto-set from platform_tier_config
 
 
 @router.patch("/{tenant_id}/plan", response_model=SuccessResponse[dict])
@@ -400,20 +588,176 @@ async def update_tenant_plan(
             detail={"code": "INVALID_TIER",
                     "message": f"plan_tier must be one of {sorted(valid_tiers)}"},
         )
+    old_row = (await db.execute(
+        text("SELECT plan_tier FROM tenants WHERE id = :id"),
+        {"id": str(tenant_id)},
+    )).fetchone()
+    old_tier = str(old_row.plan_tier) if old_row and old_row.plan_tier else None
+
+    # Auto-compute limits from platform_tier_config when body doesn't override them.
+    # This keeps tenant caps consistent with platform-level tier defaults.
+    platform_limits = await _get_platform_tier_limits(db, body.plan_tier)
+    resolved_max_wh = body.max_warehouses if body.max_warehouses is not None else platform_limits["max_warehouses"]
+    resolved_max_u  = body.max_users      if body.max_users      is not None else platform_limits["max_users"]
+
     await db.execute(
         text(
             "UPDATE tenants SET plan_tier = CAST(:tier AS plan_tier), "
             "max_warehouses = :max_wh, max_users = :max_u, updated_at = now() "
             "WHERE id = :id"
         ),
-        {"tier": body.plan_tier, "max_wh": body.max_warehouses,
-         "max_u": body.max_users, "id": str(tenant_id)},
+        {"tier": body.plan_tier, "max_wh": resolved_max_wh,
+         "max_u": resolved_max_u, "id": str(tenant_id)},
     )
+    try:
+        await _log_tenant_activity(
+            db, tenant_id, str(user.user_id),
+            action="PLAN_CHANGE",
+            old_value=old_tier,
+            new_value=body.plan_tier,
+        )
+    except Exception:
+        pass  # log failure must not roll back the plan change
     return SuccessResponse(data={
         "plan_tier":      body.plan_tier,
-        "max_warehouses": body.max_warehouses,
-        "max_users":      body.max_users,
+        "max_warehouses": resolved_max_wh,
+        "max_users":      resolved_max_u,
     })
+
+
+class TenantProfileUpdateRequest(BaseModel):
+    name: Optional[str] = None
+    organisation_type: Optional[str] = None
+    default_locale: Optional[str] = None
+    plan_tier: Optional[str] = None
+
+
+VALID_LOCALES = frozenset({"en", "am", "or"})
+
+
+@router.patch("/{tenant_id}/profile", response_model=SuccessResponse[dict])
+@require_permission(PERMISSIONS.TENANT_PROFILE_EDIT)
+async def update_tenant_profile(
+    tenant_id: uuid.UUID,
+    body: TenantProfileUpdateRequest,
+    user=Depends(get_current_user),
+    db: AsyncSession = Depends(get_db_session),
+) -> SuccessResponse[dict]:
+    """SA-only: re-edit wizard-configurable tenant profile fields with full audit trail.
+
+    When organisation_type changes, feature_flags and approval_thresholds are reset
+    to the new type's defaults (same as the onboarding wizard does).
+    When plan_tier changes, max_warehouses/max_users are recomputed from
+    platform_tier_config (same as update_tenant_plan does).
+    """
+    if not user or user.role != "SA":
+        raise HTTPException(status_code=403, detail={"code": "FORBIDDEN", "message": "SA only"})
+
+    row = (await db.execute(
+        text(
+            "SELECT id, name, organisation_type, default_locale, plan_tier "
+            "FROM tenants WHERE id = :id"
+        ),
+        {"id": str(tenant_id)},
+    )).fetchone()
+    if not row:
+        raise HTTPException(status_code=404, detail="Tenant not found")
+
+    # Validate supplied values before touching the DB
+    if body.organisation_type is not None and body.organisation_type not in VALID_ORGANISATION_TYPES:
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "code": "INVALID_ORGANISATION_TYPE",
+                "message": f"organisation_type must be one of {sorted(VALID_ORGANISATION_TYPES)}",
+            },
+        )
+    if body.default_locale is not None and body.default_locale not in VALID_LOCALES:
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "code": "INVALID_LOCALE",
+                "message": f"default_locale must be one of {sorted(VALID_LOCALES)}",
+            },
+        )
+    if body.plan_tier is not None and body.plan_tier not in VALID_PLAN_TIERS:
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "code": "INVALID_TIER",
+                "message": f"plan_tier must be one of {sorted(VALID_PLAN_TIERS)}",
+            },
+        )
+
+    # Compute which fields actually changed so we only write and log real deltas.
+    old_name     = row.name
+    old_org_type = str(row.organisation_type) if row.organisation_type else None
+    old_locale   = row.default_locale or "en"
+    old_tier     = str(row.plan_tier) if row.plan_tier else None
+
+    changes: dict[str, tuple[str | None, str]] = {}
+    if body.name is not None and body.name.strip() and body.name.strip() != old_name:
+        changes["name"] = (old_name, body.name.strip())
+    if body.organisation_type is not None and body.organisation_type != old_org_type:
+        changes["organisation_type"] = (old_org_type, body.organisation_type)
+    if body.default_locale is not None and body.default_locale != old_locale:
+        changes["default_locale"] = (old_locale, body.default_locale)
+    if body.plan_tier is not None and body.plan_tier != old_tier:
+        changes["plan_tier"] = (old_tier, body.plan_tier)
+
+    if not changes:
+        return SuccessResponse(data={"changes": 0, "fields": []})
+
+    # Build SET clause dynamically from actual changes.
+    set_parts: list[str] = ["updated_at = now()"]
+    params: dict = {"id": str(tenant_id)}
+
+    if "name" in changes:
+        set_parts.append("name = :name")
+        params["name"] = changes["name"][1]
+
+    if "organisation_type" in changes:
+        new_org = changes["organisation_type"][1]
+        set_parts.append("organisation_type = CAST(:org_type AS organisation_type)")
+        params["org_type"] = new_org
+        # Reset feature flags and approval thresholds to match the new org type.
+        set_parts.append("feature_flags = CAST(:flags AS jsonb)")
+        set_parts.append("approval_thresholds = CAST(:thresholds AS jsonb)")
+        params["flags"]      = json.dumps(FEATURE_FLAG_DEFAULTS.get(new_org, {}))
+        params["thresholds"] = json.dumps(APPROVAL_DEFAULTS.get(new_org, {}))
+
+    if "default_locale" in changes:
+        set_parts.append("default_locale = :locale")
+        params["locale"] = changes["default_locale"][1]
+
+    if "plan_tier" in changes:
+        new_tier = changes["plan_tier"][1]
+        set_parts.append("plan_tier = CAST(:plan_tier AS plan_tier)")
+        params["plan_tier"] = new_tier
+        platform_limits = await _get_platform_tier_limits(db, new_tier)
+        set_parts.append("max_warehouses = :max_wh")
+        set_parts.append("max_users = :max_u")
+        params["max_wh"] = platform_limits["max_warehouses"]
+        params["max_u"]  = platform_limits["max_users"]
+
+    await db.execute(
+        text(f"UPDATE tenants SET {', '.join(set_parts)} WHERE id = :id"),
+        params,
+    )
+
+    # Log each changed field as its own activity row so the audit trail is granular.
+    for field, (old_val, new_val) in changes.items():
+        try:
+            await _log_tenant_activity(
+                db, tenant_id, str(user.user_id),
+                action=f"PROFILE_UPDATE_{field.upper()}",
+                old_value=old_val,
+                new_value=new_val,
+            )
+        except Exception:
+            pass  # log failure must not roll back the update
+
+    return SuccessResponse(data={"changes": len(changes), "fields": list(changes.keys())})
 
 
 @router.get("/{tenant_id}", response_model=SuccessResponse[TenantResponse])
@@ -638,6 +982,228 @@ async def _log_tenant_activity(
             "note":   note,
         },
     )
+
+
+@router.post(
+    "/{tenant_id}/contacts/bulk",
+    response_model=SuccessResponse[dict],
+    status_code=201,
+)
+@require_permission(PERMISSIONS.TENANT_CONFIGURE)
+async def save_tenant_contacts_bulk(
+    tenant_id: uuid.UUID,
+    body: TenantContactsBulkIn,
+    user=Depends(get_current_user),
+    db: AsyncSession = Depends(get_db_session),
+) -> SuccessResponse[dict]:
+    """SA-only: save/replace address + structured contacts for a tenant.
+
+    Replaces all existing tenant_contacts rows. The caller must include the
+    primary contact in the list (is_primary=True). At most one primary is
+    allowed (enforced by unique index).
+    """
+    if not user or user.role != "SA":
+        raise HTTPException(status_code=403, detail={"code": "FORBIDDEN", "message": "SA only"})
+
+    tid = str(tenant_id)
+
+    # Verify tenant exists
+    if not (await db.execute(text("SELECT id FROM tenants WHERE id = :id"), {"id": tid})).fetchone():
+        raise HTTPException(status_code=404, detail={"code": "NOT_FOUND", "message": "Tenant not found"})
+
+    primary_count = sum(1 for c in body.contacts if c.is_primary)
+    if body.contacts and primary_count != 1:
+        raise HTTPException(
+            status_code=422,
+            detail={"code": "INVALID_CONTACTS", "message": "Exactly one contact must be marked is_primary=true"},
+        )
+
+    # Update address on tenant
+    if body.address:
+        await db.execute(
+            text(
+                "UPDATE tenants SET "
+                "address_line1=:a1, address_line2=:a2, city=:city, "
+                "state_province=:sp, postal_code=:pc, country=:country "
+                "WHERE id=:tid"
+            ),
+            {
+                "a1":      body.address.address_line1,
+                "a2":      body.address.address_line2,
+                "city":    body.address.city,
+                "sp":      body.address.state_province,
+                "pc":      body.address.postal_code,
+                "country": body.address.country,
+                "tid":     tid,
+            },
+        )
+
+    # Replace contacts (delete then insert for idempotency)
+    await db.execute(
+        text("DELETE FROM tenant_contacts WHERE tenant_id = :tid"),
+        {"tid": tid},
+    )
+
+    for contact in body.contacts:
+        if not contact.full_name.strip():
+            continue
+        await db.execute(
+            text(
+                "INSERT INTO tenant_contacts "
+                "(tenant_id, is_primary, full_name, position_title, email, phone, mobile) "
+                "VALUES (:tid, :primary, :name, :title, :email, :phone, :mobile)"
+            ),
+            {
+                "tid":     tid,
+                "primary": contact.is_primary,
+                "name":    contact.full_name.strip(),
+                "title":   contact.position_title,
+                "email":   contact.email,
+                "phone":   contact.phone,
+                "mobile":  contact.mobile,
+            },
+        )
+
+    return SuccessResponse(data={"saved": len(body.contacts)})
+
+
+@router.get("/{tenant_id}/contacts", response_model=SuccessResponse[List[TenantContactOut]])
+@require_permission(PERMISSIONS.TENANT_CONFIGURE)
+async def list_tenant_contacts(
+    tenant_id: uuid.UUID,
+    user=Depends(get_current_user),
+    db: AsyncSession = Depends(get_db_session),
+) -> SuccessResponse[List[TenantContactOut]]:
+    """SA-only: list structured contacts for a tenant."""
+    if not user or user.role != "SA":
+        raise HTTPException(status_code=403, detail={"code": "FORBIDDEN", "message": "SA only"})
+
+    rows = (await db.execute(
+        text(
+            "SELECT id, tenant_id, is_primary, full_name, position_title, "
+            "email, phone, mobile, created_at "
+            "FROM tenant_contacts WHERE tenant_id = :tid "
+            "ORDER BY is_primary DESC, created_at ASC"
+        ),
+        {"tid": str(tenant_id)},
+    )).fetchall()
+
+    return SuccessResponse(data=[
+        TenantContactOut(
+            id=row.id,
+            tenant_id=row.tenant_id,
+            is_primary=row.is_primary,
+            full_name=row.full_name,
+            position_title=row.position_title,
+            email=row.email,
+            phone=row.phone,
+            mobile=row.mobile,
+            created_at=row.created_at.isoformat(),
+        )
+        for row in rows
+    ])
+
+
+class ContractUpdateRequest(BaseModel):
+    contract_start: Optional[str] = None   # "YYYY-MM-DD" or null to clear
+    contract_end:   Optional[str] = None   # "YYYY-MM-DD" or null to clear
+    note: str                              # required — mandatory audit reason
+
+
+@router.patch("/{tenant_id}/contract", response_model=SuccessResponse[dict])
+@require_permission(PERMISSIONS.TENANT_CONTRACT_EDIT)
+async def update_tenant_contract(
+    tenant_id: uuid.UUID,
+    body: ContractUpdateRequest,
+    user=Depends(get_current_user),
+    db: AsyncSession = Depends(get_db_session),
+) -> SuccessResponse[dict]:
+    """SA-only: set or update contract start/end dates with a mandatory audit note.
+
+    Resets contract_expiry_notified so milestone alerts re-fire from the new end date.
+    If the tenant was auto-suspended due to contract expiry and the new end date is
+    in the future, the tenant is automatically reactivated to ACTIVE.
+    """
+    from datetime import date as _date
+
+    if not user or user.role != "SA":
+        raise HTTPException(status_code=403, detail={"code": "FORBIDDEN", "message": "SA only"})
+
+    note = body.note.strip() if body.note else ""
+    if not note:
+        raise HTTPException(
+            status_code=422,
+            detail={"code": "NOTE_REQUIRED", "message": "A note explaining the contract change is required."},
+        )
+
+    row = (await db.execute(
+        text("SELECT id, name, status, contract_start, contract_end FROM tenants WHERE id = :id"),
+        {"id": str(tenant_id)},
+    )).fetchone()
+    if not row:
+        raise HTTPException(status_code=404, detail="Tenant not found")
+
+    # Validate date strings
+    def _parse_date(s: Optional[str]) -> Optional[str]:
+        if s is None:
+            return None
+        try:
+            _date.fromisoformat(s)
+            return s
+        except ValueError:
+            raise HTTPException(
+                status_code=422,
+                detail={"code": "INVALID_DATE", "message": f"'{s}' is not a valid ISO date (YYYY-MM-DD)."},
+            )
+
+    new_start = _parse_date(body.contract_start)
+    new_end   = _parse_date(body.contract_end)
+
+    old_start = str(row.contract_start) if row.contract_start else None
+    old_end   = str(row.contract_end)   if row.contract_end   else None
+
+    # Auto-reactivate if tenant was suspended because of expiry and new end is in the future
+    should_reactivate = (
+        str(row.status) == "SUSPENDED"
+        and new_end is not None
+        and _date.fromisoformat(new_end) >= _date.today()
+    )
+
+    await db.execute(
+        text(
+            "UPDATE tenants SET "
+            "contract_start = :cs, contract_end = :ce, "
+            "contract_expiry_notified = '[]'::jsonb, "
+            "updated_at = now() "
+            "WHERE id = :id"
+        ),
+        {"cs": new_start, "ce": new_end, "id": str(tenant_id)},
+    )
+
+    if should_reactivate:
+        await db.execute(
+            text("UPDATE tenants SET status = 'ACTIVE', is_active = true, updated_at = now() WHERE id = :id"),
+            {"id": str(tenant_id)},
+        )
+
+    try:
+        old_summary = f"start={old_start or 'none'} end={old_end or 'none'}"
+        new_summary = f"start={new_start or 'none'} end={new_end or 'none'}"
+        await _log_tenant_activity(
+            db, tenant_id, str(user.user_id),
+            action="CONTRACT_DATES_UPDATED",
+            old_value=old_summary,
+            new_value=new_summary,
+            note=note,
+        )
+    except Exception:
+        pass
+
+    return SuccessResponse(data={
+        "contract_start":  new_start,
+        "contract_end":    new_end,
+        "reactivated":     should_reactivate,
+    })
 
 
 @router.patch("/{tenant_id}/suspend", response_model=SuccessResponse[TenantStatusResponse])

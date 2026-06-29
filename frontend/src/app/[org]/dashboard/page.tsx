@@ -268,12 +268,30 @@ export default function OrgDashboard() {
     plan_tier?: string | null;
   }
 
+  interface TierConfigEntry {
+    tier: string;
+    max_warehouses: number | null;
+    max_users: number | null;
+  }
+
+  interface ApiRegistryContact {
+    id: string;
+    is_primary: boolean;
+    full_name: string;
+    position_title: string | null;
+    email: string | null;
+    phone: string | null;
+    mobile: string | null;
+  }
+
   interface ApiRegistryRow {
     id: string;
     name: string;
     slug: string | null;
     organisation_type: string | null;
     status: string;
+    plan_tier:      string | null;
+    default_locale: string;
     contact_name:   string | null;
     contact_email:  string | null;
     contact_phone:  string | null;
@@ -283,6 +301,10 @@ export default function OrgDashboard() {
     user_count: number;
     node_count: number;
     created_at: string;
+    address_line1: string | null;
+    city:          string | null;
+    country:       string | null;
+    contacts:      ApiRegistryContact[];
   }
 
   interface ApiActivityRow {
@@ -305,22 +327,44 @@ export default function OrgDashboard() {
     refetchOnMount: true,
   });
 
-  // ── SA tenant management action state (hooks must run unconditionally) ────
+  // ── SA tenant management action state ─────────────────────────────────────
   const [actionLoading, setActionLoading] = useState<string | null>(null);
-  const [actionError, setActionError]     = useState<string | null>(null);
-  const [confirmModal, setConfirmModal]   = useState<{
-    tenantId: string; tenantName: string; action: "suspend" | "reactivate" | "deactivate";
-  } | null>(null);
   const qc = useQueryClient();
 
-  const [saTab, setSaTab] = useState<"tenants" | "registry">("tenants");
+  const [saTab, setSaTab] = useState<"tenants" | "registry" | "admin">("tenants");
   const [activityTenantId, setActivityTenantId] = useState<string | null>(null);
+
+  const [tierConfigOpen, setTierConfigOpen]   = useState(false);
+  const [tierConfigForm, setTierConfigForm]   = useState<TierConfigEntry[]>([]);
+  const [tierConfigSaving, setTierConfigSaving] = useState(false);
+  const [tierConfigError, setTierConfigError]   = useState<string | null>(null);
+  const [tierConfigSaved, setTierConfigSaved]   = useState(false);
+
+  // ── Tenant Admin tab state ─────────────────────────────────────────────────
+  const [adminTenantId, setAdminTenantId]       = useState<string>("");
+  const [adminSubTab, setAdminSubTab]           = useState<"profile" | "plan" | "contract" | "status" | "levels">("profile");
+  const [adminSaving, setAdminSaving]           = useState(false);
+  const [adminError, setAdminError]             = useState<string | null>(null);
+  const [adminSuccess, setAdminSuccess]         = useState<string | null>(null);
+  const [adminConfirm, setAdminConfirm]         = useState<string | null>(null);
+  const [adminProfile, setAdminProfile]         = useState({ name: "", organisation_type: "", default_locale: "", plan_tier: "" });
+  const [adminInitProfile, setAdminInitProfile] = useState({ name: "", organisation_type: "", default_locale: "", plan_tier: "" });
+  const [adminPlanTier, setAdminPlanTier]       = useState<string>("");
+  const [adminContract, setAdminContract]       = useState({ start: "", end: "", note: "" });
+
+  const { data: platformTierConfig, refetch: refetchTierConfig } = useQuery<TierConfigEntry[]>({
+    queryKey: ["platform-tier-config"],
+    queryFn: () => api.get<TierConfigEntry[]>("/api/v1/tenants/platform/tier-config"),
+    enabled: isGatewayMode && org === SA_ORG_SLUG,
+    staleTime: 60_000,
+  });
 
   const { data: apiRegistryList, isLoading: registryLoading, isError: registryError } = useQuery<ApiRegistryRow[]>({
     queryKey: ["sa-registry"],
     queryFn: () => api.get<ApiRegistryRow[]>("/api/v1/tenants/sa/registry"),
-    enabled: isGatewayMode && org === SA_ORG_SLUG && saTab === "registry",
+    enabled: isGatewayMode && org === SA_ORG_SLUG,
     staleTime: 0,
+    refetchOnMount: true,
   });
 
   const { data: activityLog, isLoading: activityLoading } = useQuery<ApiActivityRow[]>({
@@ -330,18 +374,120 @@ export default function OrgDashboard() {
     staleTime: 0,
   });
 
-  async function handleTenantAction(tenantId: string, action: "suspend" | "reactivate" | "deactivate") {
-    setActionLoading(tenantId + action);
-    setActionError(null);
+  // Tier defaults used for the "Reset to Defaults" button only.
+  const TIER_DEFAULTS: Record<string, TierConfigEntry> = {
+    STARTER:    { tier: "STARTER",    max_warehouses: 3,    max_users: 5    },
+    GROWTH:     { tier: "GROWTH",     max_warehouses: 10,   max_users: 25   },
+    ENTERPRISE: { tier: "ENTERPRISE", max_warehouses: null, max_users: null },
+  };
+
+  async function handleTierConfigSave() {
+    setTierConfigSaving(true);
+    setTierConfigError(null);
+    setTierConfigSaved(false);
     try {
-      await api.patch(`/api/v1/tenants/${tenantId}/${action}`, {});
+      await api.patch("/api/v1/tenants/platform/tier-config", { tiers: tierConfigForm });
+      await refetchTierConfig();
+      setTierConfigSaved(true);
+    } catch (e: unknown) {
+      setTierConfigError(e instanceof Error ? e.message : t("common.error"));
+    } finally {
+      setTierConfigSaving(false);
+    }
+  }
+
+  // ── Tenant Admin tab helpers ───────────────────────────────────────────────
+  function selectAdminTenant(id: string) {
+    const ten = apiRegistryList?.find((r) => r.id === id);
+    if (ten) {
+      const prof = {
+        name:              ten.name,
+        organisation_type: ten.organisation_type ?? "",
+        default_locale:    ten.default_locale    ?? "en",
+        plan_tier:         ten.plan_tier          ?? "",
+      };
+      setAdminProfile(prof);
+      setAdminInitProfile(prof);
+      setAdminPlanTier(ten.plan_tier ?? "");
+      setAdminContract({ start: ten.contract_start ?? "", end: ten.contract_end ?? "", note: "" });
+    }
+    setAdminTenantId(id);
+    setAdminSubTab("profile");
+    setAdminConfirm(null);
+    setAdminError(null);
+    setAdminSuccess(null);
+  }
+
+  async function doAdminSave(apiFn: () => Promise<unknown>) {
+    setAdminSaving(true);
+    setAdminError(null);
+    setAdminSuccess(null);
+    try {
+      await apiFn();
+      setAdminSuccess(t("sa.admin_saved"));
+      setAdminConfirm(null);
+      void qc.invalidateQueries({ queryKey: ["sa-registry"] });
       void qc.invalidateQueries({ queryKey: ["tenants-list"] });
     } catch (e: unknown) {
-      setActionError(e instanceof Error ? e.message : t("common.error"));
+      setAdminError(e instanceof Error ? e.message : t("common.error"));
     } finally {
-      setActionLoading(null);
-      setConfirmModal(null);
+      setAdminSaving(false);
     }
+  }
+
+  async function handleAdminProfileSave() {
+    const body: Record<string, string> = {};
+    if (adminProfile.name.trim() !== adminInitProfile.name && adminProfile.name.trim())
+      body.name = adminProfile.name.trim();
+    if (adminProfile.organisation_type !== adminInitProfile.organisation_type && adminProfile.organisation_type)
+      body.organisation_type = adminProfile.organisation_type;
+    if (adminProfile.default_locale !== adminInitProfile.default_locale)
+      body.default_locale = adminProfile.default_locale;
+    if (adminProfile.plan_tier !== adminInitProfile.plan_tier && adminProfile.plan_tier)
+      body.plan_tier = adminProfile.plan_tier;
+    if (Object.keys(body).length === 0) {
+      setAdminConfirm(null);
+      setAdminSuccess(t("sa.admin_no_changes"));
+      return;
+    }
+    await doAdminSave(async () => {
+      await api.patch(`/api/v1/tenants/${adminTenantId}/profile`, body);
+      setAdminInitProfile({ ...adminProfile, name: adminProfile.name.trim() });
+    });
+  }
+
+  async function handleAdminPlanSave() {
+    const currentTier = apiRegistryList?.find((r) => r.id === adminTenantId)?.plan_tier ?? "";
+    if (adminPlanTier === currentTier || !adminPlanTier) {
+      setAdminConfirm(null);
+      setAdminSuccess(t("sa.admin_no_changes"));
+      return;
+    }
+    await doAdminSave(() => api.patch(`/api/v1/tenants/${adminTenantId}/plan`, { plan_tier: adminPlanTier }));
+  }
+
+  async function handleAdminContractSave() {
+    const note = adminContract.note.trim();
+    if (!note) {
+      setAdminError(t("sa.edit_contract_note_required"));
+      setAdminConfirm(null);
+      return;
+    }
+    await doAdminSave(() =>
+      api.patch(`/api/v1/tenants/${adminTenantId}/contract`, {
+        contract_start: adminContract.start || null,
+        contract_end:   adminContract.end   || null,
+        note,
+      })
+    );
+  }
+
+  async function handleAdminStatusAction(action: "suspend" | "reactivate" | "deactivate") {
+    setActionLoading(adminTenantId + action);
+    await doAdminSave(async () => {
+      await api.patch(`/api/v1/tenants/${adminTenantId}/${action}`, {});
+    });
+    setActionLoading(null);
   }
 
   if (!user) return null;
@@ -350,7 +496,7 @@ export default function OrgDashboard() {
   if (org === SA_ORG_SLUG) {
     // Gateway mode: show real API tenants
     if (isGatewayMode) {
-      const tenantCount = apiTenantList?.length ?? 0;
+      const tenantCount = apiRegistryList?.length ?? 0;
 
       const STATUS_BADGE: Record<string, string> = {
         ACTIVE:      "bg-emerald-100 text-emerald-800",
@@ -387,7 +533,7 @@ export default function OrgDashboard() {
             ]}
           />
           <div className="flex gap-0 mb-6 border-b border-gray-200">
-            {(["tenants", "registry"] as const).map((tab) => (
+            {(["tenants", "registry", "admin"] as const).map((tab) => (
               <button
                 key={tab}
                 type="button"
@@ -408,119 +554,106 @@ export default function OrgDashboard() {
             <>
               <div className="flex items-center justify-between mb-4">
                 <h3 className="text-base font-bold text-[#0f2d1f] m-0">{t("dashboard.tenants_heading")}</h3>
-                <Link
-                  href="/onboard"
-                  className="px-4 py-2 bg-eth-gold text-[#0f2d1f] font-bold text-sm rounded no-underline"
-                >
-                  {t("wizard.onboard_btn")}
-                </Link>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const current = platformTierConfig ?? Object.values(TIER_DEFAULTS);
+                      setTierConfigForm(
+                        ["STARTER", "GROWTH", "ENTERPRISE"].map((tier) =>
+                          current.find((c) => c.tier === tier) ?? TIER_DEFAULTS[tier] ?? { tier, max_warehouses: null, max_users: null }
+                        )
+                      );
+                      setTierConfigError(null);
+                      setTierConfigSaved(false);
+                      setTierConfigOpen(true);
+                    }}
+                    className="px-3 py-2 text-xs font-bold rounded bg-gray-100 text-gray-700 border border-gray-200 hover:bg-gray-200 transition-colors flex items-center gap-1.5"
+                  >
+                    ⚙ {t("sa.tier_config_btn")}
+                  </button>
+                  <Link
+                    href="/onboard"
+                    className="px-4 py-2 bg-eth-gold text-[#0f2d1f] font-bold text-sm rounded no-underline"
+                  >
+                    {t("wizard.onboard_btn")}
+                  </Link>
+                </div>
               </div>
-              {(!apiTenantList || apiTenantList.length === 0) && (
+              {registryLoading && <p className="text-gray-400 text-sm">{t("common.loading")}</p>}
+              {!registryLoading && (!apiRegistryList || apiRegistryList.length === 0) && (
                 <p className="text-gray-400 text-sm">{t("common.no_data")}</p>
               )}
-              {actionError && (
-                <p className="text-sm text-red-600 bg-red-50 border border-red-200 rounded px-4 py-2 mb-4">
-                  {actionError}
-                </p>
+              {!registryLoading && apiRegistryList && apiRegistryList.length > 0 && (
+                <div className="bg-white border border-gray-200 rounded overflow-x-auto">
+                  <table className="w-full border-collapse text-sm min-w-[900px]">
+                    <thead>
+                      <tr className="bg-gray-50 border-b border-gray-200">
+                        {[
+                          "dashboard.tenant_name",
+                          "dashboard.tenant_type",
+                          "table.status",
+                          "table.plan",
+                          "sa.col_users",
+                          "sa.col_nodes",
+                          "sa.col_created",
+                          "sa.col_end_date",
+                        ].map((key) => (
+                          <th
+                            key={key}
+                            className="px-4 py-2.5 text-left text-xs font-bold text-gray-500 uppercase tracking-wide whitespace-nowrap"
+                          >
+                            {t(key)}
+                          </th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {apiRegistryList.map((ten, idx) => {
+                        const slug   = ten.slug ?? ten.id;
+                        const status = ten.status || "ACTIVE";
+                        const badgeClass = STATUS_BADGE[status] ?? "bg-gray-100 text-gray-700";
+                        const labelKey   = STATUS_LABEL_KEY[status];
+                        const isEndedSoon = ten.contract_end
+                          ? new Date(ten.contract_end) <= new Date(Date.now() + 30 * 24 * 60 * 60 * 1000)
+                          : false;
+                        return (
+                          <tr key={ten.id} className={`border-b border-gray-100 ${idx % 2 === 0 ? "bg-white" : "bg-gray-50"}`}>
+                            <td className="px-4 py-2.5 font-semibold text-gray-800 whitespace-nowrap">
+                              <Link href={`/${slug}/dashboard`} className="text-eth-forest hover:underline">
+                                {ten.name}
+                              </Link>
+                            </td>
+                            <td className="px-4 py-2.5 text-gray-600 whitespace-nowrap">{ten.organisation_type ?? "—"}</td>
+                            <td className="px-4 py-2.5">
+                              <span className={`text-xs font-bold px-2.5 py-0.5 rounded ${badgeClass}`}>
+                                {labelKey ? t(labelKey) : status}
+                              </span>
+                            </td>
+                            <td className="px-4 py-2.5">
+                              <span className={`text-xs font-bold px-2.5 py-0.5 rounded ${PLAN_TIER_BADGE[ten.plan_tier ?? ""] ?? "bg-gray-100 text-gray-600"}`}>
+                                {ten.plan_tier ?? "—"}
+                              </span>
+                            </td>
+                            <td className="px-4 py-2.5 text-center text-gray-700">{ten.user_count}</td>
+                            <td className="px-4 py-2.5 text-center text-gray-700">{ten.node_count}</td>
+                            <td className="px-4 py-2.5 text-xs text-gray-500 whitespace-nowrap">
+                              {new Date(ten.created_at).toLocaleDateString()}
+                            </td>
+                            <td className="px-4 py-2.5 text-xs whitespace-nowrap">
+                              {ten.contract_end ? (
+                                <span className={isEndedSoon ? "text-amber-700 font-semibold" : "text-gray-500"}>
+                                  {ten.contract_end}
+                                </span>
+                              ) : "—"}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
               )}
-              <div className="bg-white border border-gray-200 rounded overflow-hidden">
-                <table className="w-full border-collapse text-sm">
-                  <thead>
-                    <tr className="bg-gray-50 border-b border-gray-200">
-                      {["dashboard.tenant_name", "dashboard.tenant_type", "table.status", "table.plan", "table.actions"].map((key) => (
-                        <th
-                          key={key}
-                          className="px-4 py-2.5 text-left text-xs font-bold text-gray-500 uppercase tracking-wide"
-                        >
-                          {t(key)}
-                        </th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {(apiTenantList ?? []).map((ten, idx) => {
-                      const slug   = ten.slug ?? ten.id;
-                      const status = ten.status || "ACTIVE";
-                      const badgeClass = STATUS_BADGE[status] ?? "bg-gray-100 text-gray-700";
-                      const labelKey   = STATUS_LABEL_KEY[status];
-                      return (
-                        <tr key={ten.id} className={`border-b border-gray-100 ${idx % 2 === 0 ? "bg-white" : "bg-gray-50"}`}>
-                          <td className="px-4 py-2.5 font-semibold text-gray-800">
-                            <Link href={`/${slug}/dashboard`} className="text-eth-forest hover:underline">
-                              {ten.name}
-                            </Link>
-                          </td>
-                          <td className="px-4 py-2.5 text-gray-600">{ten.organisation_type ?? "—"}</td>
-                          <td className="px-4 py-2.5">
-                            <span className={`text-xs font-bold px-2.5 py-0.5 rounded ${badgeClass}`}>
-                              {labelKey ? t(labelKey) : status}
-                            </span>
-                          </td>
-                          <td className="px-4 py-2.5">
-                            <span className={`text-xs font-bold px-2.5 py-0.5 rounded ${PLAN_TIER_BADGE[ten.plan_tier ?? ""] ?? "bg-gray-100 text-gray-600"}`}>
-                              {ten.plan_tier ?? "—"}
-                            </span>
-                          </td>
-                          <td className="px-4 py-2.5">
-                            <div className="flex items-center gap-3">
-                              {status === "ACTIVE" && (
-                                <>
-                                  <button
-                                    type="button"
-                                    disabled={actionLoading === ten.id + "suspend"}
-                                    onClick={() => setConfirmModal({ tenantId: ten.id, tenantName: ten.name, action: "suspend" })}
-                                    className="text-xs font-bold text-amber-700 hover:underline disabled:opacity-50"
-                                  >
-                                    {actionLoading === ten.id + "suspend" ? "…" : t("sa.action_suspend")}
-                                  </button>
-                                  <button
-                                    type="button"
-                                    disabled={actionLoading === ten.id + "deactivate"}
-                                    onClick={() => setConfirmModal({ tenantId: ten.id, tenantName: ten.name, action: "deactivate" })}
-                                    className="text-xs font-bold text-red-600 hover:underline disabled:opacity-50"
-                                  >
-                                    {actionLoading === ten.id + "deactivate" ? "…" : t("sa.action_deactivate")}
-                                  </button>
-                                </>
-                              )}
-                              {status === "SUSPENDED" && (
-                                <>
-                                  <button
-                                    type="button"
-                                    disabled={actionLoading === ten.id + "reactivate"}
-                                    onClick={() => setConfirmModal({ tenantId: ten.id, tenantName: ten.name, action: "reactivate" })}
-                                    className="text-xs font-bold text-emerald-700 hover:underline disabled:opacity-50"
-                                  >
-                                    {actionLoading === ten.id + "reactivate" ? "…" : t("sa.action_reactivate")}
-                                  </button>
-                                  <button
-                                    type="button"
-                                    disabled={actionLoading === ten.id + "deactivate"}
-                                    onClick={() => setConfirmModal({ tenantId: ten.id, tenantName: ten.name, action: "deactivate" })}
-                                    className="text-xs font-bold text-red-600 hover:underline disabled:opacity-50"
-                                  >
-                                    {actionLoading === ten.id + "deactivate" ? "…" : t("sa.action_deactivate")}
-                                  </button>
-                                </>
-                              )}
-                              {status === "DEACTIVATED" && (
-                                <button
-                                  type="button"
-                                  disabled={actionLoading === ten.id + "reactivate"}
-                                  onClick={() => setConfirmModal({ tenantId: ten.id, tenantName: ten.name, action: "reactivate" })}
-                                  className="text-xs font-bold text-emerald-700 hover:underline disabled:opacity-50"
-                                >
-                                  {actionLoading === ten.id + "reactivate" ? "…" : t("sa.action_reactivate")}
-                                </button>
-                              )}
-                            </div>
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
             </>
           )}
 
@@ -535,7 +668,7 @@ export default function OrgDashboard() {
               {registryLoading && <p className="text-gray-400 text-sm">{t("common.loading")}</p>}
               {!registryLoading && (
                 <div className="bg-white border border-gray-200 rounded overflow-x-auto">
-                  <table className="w-full border-collapse text-sm min-w-[900px]">
+                  <table className="w-full border-collapse text-sm min-w-[700px]">
                     <thead>
                       <tr className="bg-gray-50 border-b border-gray-200">
                         {[
@@ -544,9 +677,6 @@ export default function OrgDashboard() {
                           "table.status",
                           "sa.col_contact",
                           "sa.col_contract",
-                          "sa.col_users",
-                          "sa.col_nodes",
-                          "sa.col_created",
                           "sa.col_notes",
                           "table.actions",
                         ].map((key) => (
@@ -562,14 +692,14 @@ export default function OrgDashboard() {
                     <tbody>
                       {registryError && (
                         <tr>
-                          <td colSpan={10} className="px-4 py-8 text-center text-sm text-red-500">
+                          <td colSpan={7} className="px-4 py-8 text-center text-sm text-red-500">
                             {t("common.error")}
                           </td>
                         </tr>
                       )}
                       {!registryError && (!apiRegistryList || apiRegistryList.length === 0) && (
                         <tr>
-                          <td colSpan={10} className="px-4 py-8 text-center text-sm text-gray-400">
+                          <td colSpan={7} className="px-4 py-8 text-center text-sm text-gray-400">
                             {t("common.no_data")}
                           </td>
                         </tr>
@@ -592,15 +722,35 @@ export default function OrgDashboard() {
                               </span>
                             </td>
                             <td className="px-4 py-2.5">
-                              {row.contact_name ?? row.contact_email ? (
-                                <div>
-                                  {row.contact_name  && <p className="m-0 font-medium text-gray-800">{row.contact_name}</p>}
-                                  {row.contact_email && <p className="m-0 text-xs text-gray-500">{row.contact_email}</p>}
-                                  {row.contact_phone && <p className="m-0 text-xs text-gray-400">{row.contact_phone}</p>}
-                                </div>
-                              ) : (
-                                <span className="text-gray-400">{t("sa.no_contact")}</span>
-                              )}
+                              {(() => {
+                                const primary = row.contacts?.find((c) => c.is_primary) ?? null;
+                                const extra   = (row.contacts ?? []).filter((c) => !c.is_primary).length;
+                                if (primary) {
+                                  return (
+                                    <div>
+                                      <p className="m-0 font-medium text-gray-800 text-[13px]">{primary.full_name}</p>
+                                      {primary.position_title && <p className="m-0 text-[11px] text-gray-400">{primary.position_title}</p>}
+                                      {primary.email && <p className="m-0 text-xs text-gray-500">{primary.email}</p>}
+                                      {(primary.phone ?? primary.mobile) && (
+                                        <p className="m-0 text-xs text-gray-400">{primary.phone ?? primary.mobile}</p>
+                                      )}
+                                      {extra > 0 && (
+                                        <p className="m-0 text-[11px] text-gray-400">+{extra} more</p>
+                                      )}
+                                    </div>
+                                  );
+                                }
+                                if (row.contact_name ?? row.contact_email) {
+                                  return (
+                                    <div>
+                                      {row.contact_name  && <p className="m-0 font-medium text-gray-800">{row.contact_name}</p>}
+                                      {row.contact_email && <p className="m-0 text-xs text-gray-500">{row.contact_email}</p>}
+                                      {row.contact_phone && <p className="m-0 text-xs text-gray-400">{row.contact_phone}</p>}
+                                    </div>
+                                  );
+                                }
+                                return <span className="text-gray-400">{t("sa.no_contact")}</span>;
+                              })()}
                             </td>
                             <td className="px-4 py-2.5 text-xs text-gray-600">
                               {row.contract_start ?? row.contract_end ? (
@@ -609,11 +759,6 @@ export default function OrgDashboard() {
                                   {row.contract_end   && <p className="m-0"><span className="text-gray-400">{t("sa.contract_to")}</span> {row.contract_end}</p>}
                                 </div>
                               ) : "—"}
-                            </td>
-                            <td className="px-4 py-2.5 text-center text-gray-700">{row.user_count}</td>
-                            <td className="px-4 py-2.5 text-center text-gray-700">{row.node_count}</td>
-                            <td className="px-4 py-2.5 text-xs text-gray-500 whitespace-nowrap">
-                              {new Date(row.created_at).toLocaleDateString()}
                             </td>
                             <td className="px-4 py-2.5 text-xs text-gray-500 max-w-[160px]">
                               {row.notes
@@ -636,6 +781,337 @@ export default function OrgDashboard() {
                   </table>
                 </div>
               )}
+            </div>
+          )}
+
+          {saTab === "admin" && (
+            <div>
+              {/* Tenant selector */}
+              <div className="mb-6 max-w-xs">
+                <label className="block text-xs font-bold text-gray-500 uppercase tracking-wide mb-1.5">
+                  {t("sa.admin_select_tenant")}
+                </label>
+                <select
+                  value={adminTenantId}
+                  onChange={(e) => selectAdminTenant(e.target.value)}
+                  className="w-full px-3 py-2 text-sm border border-gray-300 rounded-md bg-white outline-none focus:border-[#0f2d1f] focus:ring-1 focus:ring-[#0f2d1f]"
+                >
+                  <option value="">{t("sa.admin_select_placeholder")}</option>
+                  {apiRegistryList?.map((ten) => (
+                    <option key={ten.id} value={ten.id}>{ten.name}</option>
+                  ))}
+                </select>
+              </div>
+
+              {adminTenantId && (() => {
+                const selTen = apiRegistryList?.find((r) => r.id === adminTenantId);
+                if (!selTen) return null;
+                const selStatus = selTen.status || "ACTIVE";
+                const selSlug   = selTen.slug ?? selTen.id;
+                const ADMIN_SUBTABS = ["profile", "plan", "contract", "status", "levels"] as const;
+                return (
+                  <div>
+                    <p className="text-sm font-semibold text-[#0f2d1f] mb-3">{selTen.name}</p>
+
+                    {/* Sub-tab bar */}
+                    <div className="flex gap-0 border-b border-gray-200 mb-6">
+                      {ADMIN_SUBTABS.map((sub) => (
+                        <button
+                          key={sub}
+                          type="button"
+                          onClick={() => {
+                            setAdminSubTab(sub);
+                            setAdminConfirm(null);
+                            setAdminError(null);
+                            setAdminSuccess(null);
+                          }}
+                          className={[
+                            "px-4 py-2 text-sm font-semibold border-b-2 -mb-px transition-colors",
+                            adminSubTab === sub
+                              ? "border-[#0f2d1f] text-[#0f2d1f]"
+                              : "border-transparent text-gray-500 hover:text-gray-700",
+                          ].join(" ")}
+                        >
+                          {t(`sa.admin_sub_${sub}`)}
+                        </button>
+                      ))}
+                    </div>
+
+                    {/* Feedback */}
+                    {adminError && (
+                      <p className="text-sm text-red-600 bg-red-50 border border-red-200 rounded px-4 py-2 mb-4">{adminError}</p>
+                    )}
+                    {adminSuccess && (
+                      <p className="text-sm text-emerald-700 bg-emerald-50 border border-emerald-200 rounded px-4 py-2 mb-4">{adminSuccess}</p>
+                    )}
+
+                    {/* ── Profile ─────────────────────────────────────────── */}
+                    {adminSubTab === "profile" && (
+                      <div className="max-w-md">
+                        <div className="flex flex-col gap-4 mb-5">
+                          <div>
+                            <label className="block text-[12px] font-semibold text-gray-600 mb-1">{t("sa.edit_profile_field_name")}</label>
+                            <input
+                              type="text"
+                              value={adminProfile.name}
+                              onChange={(e) => { setAdminProfile((p) => ({ ...p, name: e.target.value })); setAdminSuccess(null); }}
+                              className="w-full px-3 py-2 text-sm border border-gray-300 rounded-md outline-none focus:border-[#0f2d1f] focus:ring-1 focus:ring-[#0f2d1f]"
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-[12px] font-semibold text-gray-600 mb-1">{t("sa.edit_profile_field_org_type")}</label>
+                            <select
+                              value={adminProfile.organisation_type}
+                              onChange={(e) => { setAdminProfile((p) => ({ ...p, organisation_type: e.target.value })); setAdminSuccess(null); }}
+                              className="w-full px-3 py-2 text-sm border border-gray-300 rounded-md outline-none focus:border-[#0f2d1f] bg-white"
+                            >
+                              <option value="PRODUCER">PRODUCER</option>
+                              <option value="RETAILER">RETAILER</option>
+                              <option value="HYBRID">HYBRID</option>
+                            </select>
+                            {adminProfile.organisation_type !== adminInitProfile.organisation_type && adminProfile.organisation_type && (
+                              <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded px-3 py-2 mt-2">
+                                {t("sa.edit_profile_org_type_warning")}
+                              </p>
+                            )}
+                          </div>
+                          <div>
+                            <label className="block text-[12px] font-semibold text-gray-600 mb-1">{t("sa.edit_profile_field_locale")}</label>
+                            <select
+                              value={adminProfile.default_locale}
+                              onChange={(e) => { setAdminProfile((p) => ({ ...p, default_locale: e.target.value })); setAdminSuccess(null); }}
+                              className="w-full px-3 py-2 text-sm border border-gray-300 rounded-md outline-none focus:border-[#0f2d1f] bg-white"
+                            >
+                              <option value="en">English (en)</option>
+                              <option value="am">Amharic / አማርኛ (am)</option>
+                              <option value="or">Oromifa / Afaan Oromoo (or)</option>
+                            </select>
+                          </div>
+                          <div>
+                            <label className="block text-[12px] font-semibold text-gray-600 mb-2">{t("sa.edit_profile_field_plan_tier")}</label>
+                            <div className="flex gap-2">
+                              {(["STARTER", "GROWTH", "ENTERPRISE"] as const).map((tier) => (
+                                <button
+                                  key={tier}
+                                  type="button"
+                                  onClick={() => { setAdminProfile((p) => ({ ...p, plan_tier: tier })); setAdminSuccess(null); }}
+                                  className={[
+                                    "flex-1 py-2 rounded border-2 text-xs font-bold transition-colors",
+                                    adminProfile.plan_tier === tier
+                                      ? "border-[#0f2d1f] bg-[#0f2d1f] text-white"
+                                      : "border-gray-200 text-gray-600 hover:border-gray-400",
+                                  ].join(" ")}
+                                >
+                                  {tier}
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+                        </div>
+                        {adminConfirm === "save" ? (
+                          <div className="flex items-center gap-3 p-3 bg-gray-50 rounded border border-gray-200">
+                            <span className="text-sm text-gray-700 flex-1">{t("sa.admin_confirm_prompt")}</span>
+                            <button type="button" disabled={adminSaving} onClick={() => void handleAdminProfileSave()}
+                              className="px-3 py-1.5 text-xs font-bold text-white bg-[#0f2d1f] rounded hover:bg-[#1a4d35] disabled:opacity-50">
+                              {adminSaving ? "…" : t("sa.admin_confirm_yes")}
+                            </button>
+                            <button type="button" disabled={adminSaving} onClick={() => setAdminConfirm(null)}
+                              className="px-3 py-1.5 text-xs font-bold text-gray-600 rounded hover:bg-gray-200">
+                              {t("sa.admin_confirm_no")}
+                            </button>
+                          </div>
+                        ) : (
+                          <button type="button" onClick={() => { setAdminConfirm("save"); setAdminSuccess(null); setAdminError(null); }}
+                            className="px-4 py-2 text-sm font-bold text-white bg-[#0f2d1f] rounded hover:bg-[#1a4d35]">
+                            {t("sa.admin_save_btn")}
+                          </button>
+                        )}
+                      </div>
+                    )}
+
+                    {/* ── Plan ────────────────────────────────────────────── */}
+                    {adminSubTab === "plan" && (
+                      <div className="max-w-md">
+                        <p className="text-xs text-gray-500 mb-4">
+                          {t("sa.plan_modal_current")}:{" "}
+                          <span className={`font-bold px-1.5 py-0.5 rounded text-xs ${PLAN_TIER_BADGE[selTen.plan_tier ?? ""] ?? "bg-gray-100 text-gray-600"}`}>
+                            {selTen.plan_tier ?? "—"}
+                          </span>
+                        </p>
+                        <p className="text-xs font-bold text-gray-700 uppercase tracking-wide mb-2">{t("sa.plan_modal_new")}</p>
+                        <div className="flex gap-3 mb-3">
+                          {(["STARTER", "GROWTH", "ENTERPRISE"] as const).map((tier) => (
+                            <button key={tier} type="button"
+                              onClick={() => { setAdminPlanTier(tier); setAdminSuccess(null); }}
+                              className={[
+                                "flex-1 py-3 rounded border-2 text-sm font-bold transition-colors",
+                                adminPlanTier === tier
+                                  ? "border-[#0f2d1f] bg-[#0f2d1f] text-white"
+                                  : "border-gray-200 text-gray-700 hover:border-gray-400",
+                              ].join(" ")}
+                            >
+                              {tier}
+                              {tier === (selTen.plan_tier ?? "") && (
+                                <span className="block text-xs font-normal opacity-70 mt-0.5">{t("sa.plan_modal_current").toLowerCase()}</span>
+                              )}
+                            </button>
+                          ))}
+                        </div>
+                        <p className="text-xs text-gray-400 mb-3">{t("sa.plan_modal_caps")}</p>
+                        {adminPlanTier !== (selTen.plan_tier ?? "") && adminPlanTier && (
+                          <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded px-3 py-2 mb-3">
+                            {t("sa.plan_modal_downgrade_note")}
+                          </p>
+                        )}
+                        {adminConfirm === "save" ? (
+                          <div className="flex items-center gap-3 p-3 bg-gray-50 rounded border border-gray-200">
+                            <span className="text-sm text-gray-700 flex-1">{t("sa.admin_confirm_prompt")}</span>
+                            <button type="button" disabled={adminSaving} onClick={() => void handleAdminPlanSave()}
+                              className="px-3 py-1.5 text-xs font-bold text-white bg-[#0f2d1f] rounded hover:bg-[#1a4d35] disabled:opacity-50">
+                              {adminSaving ? "…" : t("sa.admin_confirm_yes")}
+                            </button>
+                            <button type="button" disabled={adminSaving} onClick={() => setAdminConfirm(null)}
+                              className="px-3 py-1.5 text-xs font-bold text-gray-600 rounded hover:bg-gray-200">
+                              {t("sa.admin_confirm_no")}
+                            </button>
+                          </div>
+                        ) : (
+                          <button type="button"
+                            disabled={!adminPlanTier || adminPlanTier === (selTen.plan_tier ?? "")}
+                            onClick={() => { setAdminConfirm("save"); setAdminSuccess(null); setAdminError(null); }}
+                            className="px-4 py-2 text-sm font-bold text-white bg-[#0f2d1f] rounded hover:bg-[#1a4d35] disabled:opacity-50">
+                            {t("sa.admin_save_btn")}
+                          </button>
+                        )}
+                      </div>
+                    )}
+
+                    {/* ── Contract ─────────────────────────────────────────── */}
+                    {adminSubTab === "contract" && (
+                      <div className="max-w-md">
+                        <div className="flex flex-col gap-4 mb-5">
+                          <div className="grid grid-cols-2 gap-3">
+                            <div>
+                              <label className="block text-[12px] font-semibold text-gray-600 mb-1">{t("wizard.contract_start")}</label>
+                              <input type="date" value={adminContract.start}
+                                onChange={(e) => { setAdminContract((c) => ({ ...c, start: e.target.value })); setAdminSuccess(null); }}
+                                className="w-full px-3 py-2 text-sm border border-gray-300 rounded-md outline-none focus:border-sky-500 focus:ring-1 focus:ring-sky-500"
+                              />
+                            </div>
+                            <div>
+                              <label className="block text-[12px] font-semibold text-gray-600 mb-1">{t("wizard.contract_end")}</label>
+                              <input type="date" value={adminContract.end}
+                                onChange={(e) => { setAdminContract((c) => ({ ...c, end: e.target.value })); setAdminSuccess(null); }}
+                                className="w-full px-3 py-2 text-sm border border-gray-300 rounded-md outline-none focus:border-sky-500 focus:ring-1 focus:ring-sky-500"
+                              />
+                            </div>
+                          </div>
+                          {adminContract.end && adminContract.end < new Date().toISOString().slice(0, 10) && (
+                            <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded px-3 py-2">
+                              {t("sa.edit_contract_warning_past")}
+                            </p>
+                          )}
+                          <div>
+                            <label className="block text-[12px] font-semibold text-gray-600 mb-1">
+                              {t("sa.edit_contract_note_label")} <span className="text-red-500">*</span>
+                            </label>
+                            <textarea rows={3} value={adminContract.note}
+                              placeholder={t("sa.edit_contract_note_placeholder")}
+                              onChange={(e) => { setAdminContract((c) => ({ ...c, note: e.target.value })); setAdminSuccess(null); }}
+                              className="w-full px-3 py-2 text-sm border border-gray-300 rounded-md outline-none focus:border-sky-500 focus:ring-1 focus:ring-sky-500 resize-none"
+                            />
+                          </div>
+                        </div>
+                        {adminConfirm === "save" ? (
+                          <div className="flex items-center gap-3 p-3 bg-gray-50 rounded border border-gray-200">
+                            <span className="text-sm text-gray-700 flex-1">{t("sa.admin_confirm_prompt")}</span>
+                            <button type="button" disabled={adminSaving} onClick={() => void handleAdminContractSave()}
+                              className="px-3 py-1.5 text-xs font-bold text-white bg-sky-600 rounded hover:bg-sky-700 disabled:opacity-50">
+                              {adminSaving ? "…" : t("sa.admin_confirm_yes")}
+                            </button>
+                            <button type="button" disabled={adminSaving} onClick={() => setAdminConfirm(null)}
+                              className="px-3 py-1.5 text-xs font-bold text-gray-600 rounded hover:bg-gray-200">
+                              {t("sa.admin_confirm_no")}
+                            </button>
+                          </div>
+                        ) : (
+                          <button type="button"
+                            onClick={() => { setAdminConfirm("save"); setAdminSuccess(null); setAdminError(null); }}
+                            className="px-4 py-2 text-sm font-bold text-white bg-sky-600 rounded hover:bg-sky-700">
+                            {t("sa.admin_save_btn")}
+                          </button>
+                        )}
+                      </div>
+                    )}
+
+                    {/* ── Status ───────────────────────────────────────────── */}
+                    {adminSubTab === "status" && (
+                      <div className="max-w-md">
+                        <div className="mb-5">
+                          <p className="text-xs font-bold text-gray-500 uppercase tracking-wide mb-2">{t("sa.admin_status_heading")}</p>
+                          <span className={`text-xs font-bold px-2.5 py-0.5 rounded ${STATUS_BADGE[selStatus] ?? "bg-gray-100 text-gray-700"}`}>
+                            {STATUS_LABEL_KEY[selStatus] ? t(STATUS_LABEL_KEY[selStatus] as string) : selStatus}
+                          </span>
+                        </div>
+                        <div className="flex gap-3 mb-5">
+                          {selStatus === "ACTIVE" && (
+                            <button type="button"
+                              onClick={() => { setAdminConfirm("suspend"); setAdminSuccess(null); setAdminError(null); }}
+                              className="px-4 py-2 text-sm font-bold text-white bg-amber-500 rounded hover:bg-amber-600">
+                              {t("sa.action_suspend")}
+                            </button>
+                          )}
+                          {selStatus !== "ACTIVE" && (
+                            <button type="button"
+                              onClick={() => { setAdminConfirm("reactivate"); setAdminSuccess(null); setAdminError(null); }}
+                              className="px-4 py-2 text-sm font-bold text-white bg-emerald-600 rounded hover:bg-emerald-700">
+                              {t("sa.action_reactivate")}
+                            </button>
+                          )}
+                          {selStatus !== "DEACTIVATED" && (
+                            <button type="button"
+                              onClick={() => { setAdminConfirm("deactivate"); setAdminSuccess(null); setAdminError(null); }}
+                              className="px-4 py-2 text-sm font-bold text-white bg-red-600 rounded hover:bg-red-700">
+                              {t("sa.action_deactivate")}
+                            </button>
+                          )}
+                        </div>
+                        {(adminConfirm === "suspend" || adminConfirm === "reactivate" || adminConfirm === "deactivate") && (
+                          <div className="flex items-center gap-3 p-3 bg-gray-50 rounded border border-gray-200">
+                            <span className="text-sm text-gray-700 flex-1">
+                              {t(CONFIRM_BODY_KEY[adminConfirm as "suspend" | "reactivate" | "deactivate"]).replace("{name}", selTen.name)}
+                            </span>
+                            <button type="button" disabled={adminSaving}
+                              onClick={() => void handleAdminStatusAction(adminConfirm as "suspend" | "reactivate" | "deactivate")}
+                              className={`px-3 py-1.5 text-xs font-bold text-white rounded disabled:opacity-50 ${
+                                adminConfirm === "deactivate" ? "bg-red-600 hover:bg-red-700" : "bg-emerald-600 hover:bg-emerald-700"
+                              }`}>
+                              {adminSaving ? "…" : t("sa.admin_confirm_yes")}
+                            </button>
+                            <button type="button" disabled={adminSaving} onClick={() => setAdminConfirm(null)}
+                              className="px-3 py-1.5 text-xs font-bold text-gray-600 rounded hover:bg-gray-200">
+                              {t("sa.admin_confirm_no")}
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    {/* ── Levels ───────────────────────────────────────────── */}
+                    {adminSubTab === "levels" && (
+                      <div className="max-w-md">
+                        <p className="text-sm text-gray-600 mb-4">{t("sa.admin_levels_description")}</p>
+                        <Link
+                          href={`/${selSlug}/settings/org-setup`}
+                          className="inline-flex items-center gap-2 px-4 py-2 text-sm font-bold rounded bg-indigo-600 text-white hover:bg-indigo-700 no-underline"
+                        >
+                          {t("sa.admin_levels_open_btn")}
+                        </Link>
+                      </div>
+                    )}
+                  </div>
+                );
+              })()}
             </div>
           )}
 
@@ -699,36 +1175,117 @@ export default function OrgDashboard() {
             </>
           )}
 
-          {confirmModal && (
+          {tierConfigOpen && (
             <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
-              <div className="bg-white rounded-lg shadow-lg w-full max-w-sm p-6">
-                <h4 className="text-base font-bold text-gray-900 m-0 mb-3">
-                  {t("common.confirm")} {confirmModal.action.charAt(0).toUpperCase() + confirmModal.action.slice(1)}
-                </h4>
-                <p className="text-sm text-gray-600 mb-6">
-                  {t(CONFIRM_BODY_KEY[confirmModal.action]).replace("{name}", confirmModal.tenantName)}
-                </p>
-                <div className="flex justify-end gap-3">
+              <div className="bg-white rounded-lg shadow-lg w-full max-w-lg p-6">
+                <h4 className="text-base font-bold text-gray-900 m-0 mb-0.5">{t("sa.tier_config_title")}</h4>
+                <p className="text-xs text-gray-500 mb-5">{t("sa.tier_config_subtitle")}</p>
+
+                <table className="w-full text-sm border-collapse mb-2">
+                  <thead>
+                    <tr className="bg-gray-50 border-b border-gray-200">
+                      <th className="px-3 py-2 text-left text-xs font-bold text-gray-500 uppercase tracking-wide w-28">{t("sa.tier_config_tier")}</th>
+                      <th className="px-3 py-2 text-left text-xs font-bold text-gray-500 uppercase tracking-wide">{t("sa.tier_config_max_wh")}</th>
+                      <th className="px-3 py-2 text-left text-xs font-bold text-gray-500 uppercase tracking-wide">{t("sa.tier_config_max_users")}</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {tierConfigForm.map((entry, idx) => {
+                      const TIER_BADGE: Record<string, string> = {
+                        STARTER:    "bg-gray-100 text-gray-600",
+                        GROWTH:     "bg-blue-100 text-blue-700",
+                        ENTERPRISE: "bg-amber-100 text-amber-700",
+                      };
+                      return (
+                        <tr key={entry.tier} className="border-b border-gray-100">
+                          <td className="px-3 py-3">
+                            <span className={`text-xs font-extrabold px-2 py-0.5 rounded ${TIER_BADGE[entry.tier] ?? "bg-gray-100 text-gray-600"}`}>
+                              {entry.tier}
+                            </span>
+                          </td>
+                          <td className="px-3 py-3">
+                            <div className="flex items-center gap-2">
+                              <input
+                                type="number"
+                                min={1}
+                                value={entry.max_warehouses ?? ""}
+                                placeholder={t("sa.tier_config_unlimited")}
+                                onChange={(e) => {
+                                  const v = e.target.value === "" ? null : parseInt(e.target.value, 10);
+                                  setTierConfigForm((f) => f.map((r, i) => i === idx ? { ...r, max_warehouses: v } : r));
+                                }}
+                                className="w-24 px-2 py-1.5 text-sm border border-gray-300 rounded outline-none focus:border-[#1B4332] focus:ring-1 focus:ring-[#1B4332]"
+                              />
+                              {entry.max_warehouses === null && (
+                                <span className="text-xs text-gray-400">{t("sa.tier_config_unlimited")}</span>
+                              )}
+                            </div>
+                          </td>
+                          <td className="px-3 py-3">
+                            <div className="flex items-center gap-2">
+                              <input
+                                type="number"
+                                min={1}
+                                value={entry.max_users ?? ""}
+                                placeholder={t("sa.tier_config_unlimited")}
+                                onChange={(e) => {
+                                  const v = e.target.value === "" ? null : parseInt(e.target.value, 10);
+                                  setTierConfigForm((f) => f.map((r, i) => i === idx ? { ...r, max_users: v } : r));
+                                }}
+                                className="w-24 px-2 py-1.5 text-sm border border-gray-300 rounded outline-none focus:border-[#1B4332] focus:ring-1 focus:ring-[#1B4332]"
+                              />
+                              {entry.max_users === null && (
+                                <span className="text-xs text-gray-400">{t("sa.tier_config_unlimited")}</span>
+                              )}
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+
+                <p className="text-[11px] text-gray-400 mb-3">{t("sa.tier_config_note")}</p>
+
+                {tierConfigError && (
+                  <p className="text-sm text-red-600 bg-red-50 border border-red-200 rounded px-3 py-2 mb-3">{tierConfigError}</p>
+                )}
+                {tierConfigSaved && (
+                  <p className="text-sm text-emerald-700 bg-emerald-50 border border-emerald-200 rounded px-3 py-2 mb-3">{t("sa.tier_config_saved")}</p>
+                )}
+
+                <div className="flex items-center justify-between mt-2">
                   <button
                     type="button"
-                    onClick={() => setConfirmModal(null)}
-                    className="px-4 py-2 text-sm font-bold text-gray-600 rounded hover:bg-gray-100"
+                    onClick={() => setTierConfigForm(
+                      ["STARTER", "GROWTH", "ENTERPRISE"].map((tier) => TIER_DEFAULTS[tier] ?? { tier, max_warehouses: null, max_users: null })
+                    )}
+                    className="text-xs font-semibold text-gray-500 hover:text-gray-700 underline"
                   >
-                    {t("common.cancel")}
+                    {t("sa.tier_config_reset")}
                   </button>
-                  <button
-                    type="button"
-                    onClick={() => handleTenantAction(confirmModal.tenantId, confirmModal.action)}
-                    className={`px-4 py-2 text-sm font-bold text-white rounded ${
-                      confirmModal.action === "deactivate" ? "bg-red-600 hover:bg-red-700" : "bg-emerald-600 hover:bg-emerald-700"
-                    }`}
-                  >
-                    {actionLoading === confirmModal.tenantId + confirmModal.action ? "…" : t("common.confirm")}
-                  </button>
+                  <div className="flex gap-3">
+                    <button
+                      type="button"
+                      onClick={() => { setTierConfigOpen(false); setTierConfigSaved(false); }}
+                      className="px-4 py-2 text-sm font-bold text-gray-600 rounded hover:bg-gray-100"
+                    >
+                      {t("common.cancel")}
+                    </button>
+                    <button
+                      type="button"
+                      disabled={tierConfigSaving}
+                      onClick={() => void handleTierConfigSave()}
+                      className="px-4 py-2 text-sm font-bold text-white bg-[#0f2d1f] rounded hover:bg-[#1a4d35] disabled:opacity-50"
+                    >
+                      {tierConfigSaving ? t("sa.tier_config_saving") : t("sa.tier_config_save")}
+                    </button>
+                  </div>
                 </div>
               </div>
             </div>
           )}
+
         </div>
       );
     }

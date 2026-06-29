@@ -21,6 +21,13 @@ class PERMISSIONS:
     # SA registry and activity log (platform_only — SA gets these via seed_permissions)
     TENANT_REGISTRY_VIEW    = Permission("tenant:registry_view",    ["platform_only"])
     TENANT_ACTIVITY_VIEW    = Permission("tenant:activity_view",    ["platform_only"])
+    # SA contract date management (platform_only — TA cannot set contract dates)
+    TENANT_CONTRACT_EDIT    = Permission("tenant:contract_edit",    ["platform_only"])
+    # SA wizard re-edit of existing tenant profile fields (platform_only)
+    TENANT_PROFILE_EDIT     = Permission("tenant:profile_edit",     ["platform_only"])
+    # SA platform tier configuration (platform_only)
+    PLATFORM_TIER_CONFIG_VIEW = Permission("platform:tier_config_view", ["platform_only"])
+    PLATFORM_TIER_CONFIG_EDIT = Permission("platform:tier_config_edit", ["platform_only"])
 
     # ── Domain 2 — User Management ─────────────────────────────────────────
     USER_CREATE             = Permission("user:create",             ["tenant_id"])
@@ -227,7 +234,7 @@ ALL_PERMISSIONS: List[Permission] = [
     v for v in vars(PERMISSIONS).values() if isinstance(v, Permission)
 ]
 
-assert len(ALL_PERMISSIONS) == 149, (
-    f"Expected 149 permissions, found {len(ALL_PERMISSIONS)}. "
+assert len(ALL_PERMISSIONS) == 153, (
+    f"Expected 153 permissions, found {len(ALL_PERMISSIONS)}. "
     "Update registry.py and re-run seed_permissions.py."
 )

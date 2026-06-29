@@ -39,6 +39,8 @@ class TenantCreateRequest(BaseModel):
     # uses elsewhere, rather than Pydantic's generic validation-error shape.
     organisation_type: str = "PRODUCER"
     plan_tier: str = "GROWTH"
+    # PRODUCER-only: maximum active SKUs allowed. NULL = unlimited (RETAILER/HYBRID).
+    sku_cap: Optional[int] = None
     # Optional atomic TA admin user creation
     admin_name: Optional[str] = None
     admin_email: Optional[str] = None

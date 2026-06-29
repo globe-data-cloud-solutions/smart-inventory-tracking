@@ -23,6 +23,26 @@ interface WizardState {
   adminEmail:           string;
   adminPassword:        string;
   adminPasswordConfirm: string;
+  contractStart:        string;
+  contractEnd:          string;
+}
+
+interface ContactEntry {
+  id:             string;
+  full_name:      string;
+  position_title: string;
+  email:          string;
+  phone:          string;
+  mobile:         string;
+}
+
+interface AddressState {
+  line1:    string;
+  line2:    string;
+  city:     string;
+  state:    string;
+  postal:   string;
+  country:  string;
 }
 
 interface WizardResult {
@@ -61,7 +81,15 @@ const LOCALE_META: Record<Locale, { label: string; native: string }> = {
   or: { label: "Oromifa (Afaan Oromoo)", native: "Afaan Oromoo" },
 };
 
-const TOTAL_STEPS = 5;
+const TOTAL_STEPS = 6;
+
+function blankContact(): ContactEntry {
+  return { id: Math.random().toString(36).slice(2), full_name: "", position_title: "", email: "", phone: "", mobile: "" };
+}
+
+function blankAddress(): AddressState {
+  return { line1: "", line2: "", city: "", state: "", postal: "", country: "" };
+}
 
 /* ── Logo ────────────────────────────────────────────────────────────────── */
 function Logo() {
@@ -82,6 +110,7 @@ function StepBar({ current }: { current: number }) {
     t("wizard.step2_title"),
     t("wizard.step3_title"),
     t("wizard.step_admin_title"),
+    t("wizard.step_contacts_title"),
     t("wizard.step4_title"),
   ];
   return (
@@ -100,7 +129,7 @@ function StepBar({ current }: { current: number }) {
               }`}>
                 {done ? "✓" : n}
               </div>
-              <span className={`text-[11px] whitespace-nowrap ${active ? "font-bold text-[#1B4332]" : "font-medium text-gray-400"}`}>
+              <span className={`text-[10px] whitespace-nowrap ${active ? "font-bold text-[#1B4332]" : "font-medium text-gray-400"}`}>
                 {label}
               </span>
             </div>
@@ -139,7 +168,12 @@ export default function OnboardPage() {
   const [form, setForm] = useState<WizardState>({
     name: "", industry: "", skuLimit: "500", orgType: "", planTier: "GROWTH", locale: "en",
     adminName: "", adminEmail: "", adminPassword: "", adminPasswordConfirm: "",
+    contractStart: "", contractEnd: "",
   });
+
+  const [address, setAddress]                       = useState<AddressState>(blankAddress());
+  const [primaryContact, setPrimaryContact]         = useState<ContactEntry>(blankContact());
+  const [additionalContacts, setAdditionalContacts] = useState<ContactEntry[]>([]);
 
   useEffect(() => {
     const session = getSession();
@@ -153,6 +187,29 @@ export default function OnboardPage() {
     setError("");
   }
 
+  function setAddr(k: keyof AddressState, v: string) {
+    setAddress((a) => ({ ...a, [k]: v }));
+    setError("");
+  }
+
+  function setPrimary(k: keyof ContactEntry, v: string) {
+    setPrimaryContact((c) => ({ ...c, [k]: v }));
+    setError("");
+  }
+
+  function setAdditional(id: string, k: keyof ContactEntry, v: string) {
+    setAdditionalContacts((cs) => cs.map((c) => c.id === id ? { ...c, [k]: v } : c));
+    setError("");
+  }
+
+  function addAdditionalContact() {
+    setAdditionalContacts((cs) => [...cs, blankContact()]);
+  }
+
+  function removeAdditionalContact(id: string) {
+    setAdditionalContacts((cs) => cs.filter((c) => c.id !== id));
+  }
+
   function nextStep() {
     if (step === 1 && !form.name.trim()) { setError(t("wizard.company_required")); return; }
     if (step === 2 && !form.orgType)     { setError(t("wizard.select_org_type"));  return; }
@@ -161,6 +218,12 @@ export default function OnboardPage() {
       if (!form.adminEmail.trim())                       { setError(t("wizard.admin_email_required"));     return; }
       if (form.adminPassword.length < 8)                 { setError(t("wizard.admin_password_required")); return; }
       if (form.adminPassword !== form.adminPasswordConfirm) { setError(t("wizard.admin_password_mismatch")); return; }
+    }
+    if (step === 5) {
+      if (!primaryContact.full_name.trim() || !primaryContact.email.trim()) {
+        setError(t("wizard.contact_primary_required"));
+        return;
+      }
     }
     setError("");
     setStep((s) => Math.min(s + 1, TOTAL_STEPS));
@@ -177,6 +240,10 @@ export default function OnboardPage() {
         default_locale:     form.locale,
         organisation_type:  form.orgType || null,
         plan_tier:          form.planTier,
+        // Only PRODUCER tenants have a SKU cap; RETAILER/HYBRID get NULL (unlimited).
+        ...(form.orgType === "PRODUCER" && form.skuLimit
+          ? { sku_cap: parseInt(form.skuLimit, 10) }
+          : {}),
       });
       tenantId = tenantData.id;
 
@@ -194,6 +261,57 @@ export default function OnboardPage() {
         throw userErr;
       }
 
+      // Step 3: Save contract dates (best-effort)
+      if (form.contractStart || form.contractEnd) {
+        try {
+          await api.patch(`/api/v1/tenants/${tenantId}/contract`, {
+            contract_start: form.contractStart || null,
+            contract_end:   form.contractEnd   || null,
+            note:           "Set during onboarding wizard",
+          });
+        } catch { /* non-fatal */ }
+      }
+
+      // Step 4: Save contacts (best-effort — don't roll back tenant if this fails)
+      if (primaryContact.full_name.trim() && primaryContact.email.trim()) {
+        const contactRows = [
+          {
+            is_primary:     true,
+            full_name:      primaryContact.full_name.trim(),
+            position_title: primaryContact.position_title.trim() || null,
+            email:          primaryContact.email.trim(),
+            phone:          primaryContact.phone.trim() || null,
+            mobile:         primaryContact.mobile.trim() || null,
+          },
+          ...additionalContacts
+            .filter((c) => c.full_name.trim())
+            .map((c) => ({
+              is_primary:     false,
+              full_name:      c.full_name.trim(),
+              position_title: c.position_title.trim() || null,
+              email:          c.email.trim() || null,
+              phone:          c.phone.trim() || null,
+              mobile:         c.mobile.trim() || null,
+            })),
+        ];
+
+        // Include address fields if any are filled
+        const hasAddress = Object.values(address).some((v) => v.trim());
+        try {
+          await api.post(`/api/v1/tenants/${tenantId}/contacts/bulk`, {
+            contacts: contactRows,
+            ...(hasAddress ? {
+              address_line1:    address.line1.trim() || null,
+              address_line2:    address.line2.trim() || null,
+              city:             address.city.trim()  || null,
+              state_province:   address.state.trim() || null,
+              postal_code:      address.postal.trim() || null,
+              country:          address.country.trim() || null,
+            } : {}),
+          });
+        } catch { /* non-fatal — contacts can be added later via SA registry */ }
+      }
+
       setResult({
         id:            tenantData.id,
         name:          tenantData.name,
@@ -202,7 +320,7 @@ export default function OnboardPage() {
         feature_flags: FLAG_DEFAULTS[form.orgType as OrgType],
         adminEmail:    form.adminEmail.trim(),
       });
-      setStep(6);
+      setStep(7);
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "Unexpected error");
     } finally {
@@ -226,7 +344,7 @@ export default function OnboardPage() {
   const inputClass = "w-full px-3 py-2.5 text-sm border border-gray-300 rounded-md outline-none bg-white focus:border-[#1B4332] focus:ring-1 focus:ring-[#1B4332]";
 
   /* ── Success screen ── */
-  if (step === 6 && result) {
+  if (step === 7 && result) {
     return (
       <div className="min-h-screen bg-gray-100 flex items-center justify-center p-8">
         <div className="bg-white rounded-xl p-12 max-w-[480px] w-full text-center shadow-lg">
@@ -260,7 +378,11 @@ export default function OnboardPage() {
                 onClick={() => {
                   setStep(1); setResult(null);
                   setForm({ name: "", industry: "", skuLimit: "500", orgType: "", planTier: "GROWTH", locale: "en",
-                            adminName: "", adminEmail: "", adminPassword: "", adminPasswordConfirm: "" });
+                            adminName: "", adminEmail: "", adminPassword: "", adminPasswordConfirm: "",
+                            contractStart: "", contractEnd: "" });
+                  setAddress(blankAddress());
+                  setPrimaryContact(blankContact());
+                  setAdditionalContacts([]);
                 }}
                 className="flex-1 py-2.5 bg-gray-100 border-none rounded-md text-sm font-semibold cursor-pointer text-gray-700 hover:bg-gray-200 transition-colors"
               >
@@ -302,7 +424,7 @@ export default function OnboardPage() {
         style={{ background: "linear-gradient(to right,#078930 0% 33.33%,#FCDD09 33.33% 66.66%,#DA121A 66.66% 100%)" }}
       />
 
-      <div className="max-w-[680px] mx-auto mt-12 px-4 pb-12">
+      <div className="max-w-[740px] mx-auto mt-12 px-4 pb-12">
         <StepBar current={step} />
 
         <div className="bg-white rounded-xl shadow-md overflow-hidden">
@@ -313,7 +435,8 @@ export default function OnboardPage() {
               {step === 2 && t("wizard.step2_title")}
               {step === 3 && t("wizard.step3_title")}
               {step === 4 && t("wizard.step_admin_title")}
-              {step === 5 && t("wizard.step4_title")}
+              {step === 5 && t("wizard.step_contacts_title")}
+              {step === 6 && t("wizard.step4_title")}
             </p>
             <p className="text-xs text-emerald-300 mt-1 mb-0">
               {t("wizard.step_of")} {step} {t("wizard.of")} {TOTAL_STEPS}
@@ -345,6 +468,33 @@ export default function OnboardPage() {
                     onChange={(e) => set("industry", e.target.value)}
                     className={inputClass}
                   />
+                </div>
+                {/* Contract dates */}
+                <div className="pt-1 border-t border-gray-100">
+                  <p className="font-bold text-[13px] text-gray-700 mb-0.5">{t("wizard.contract_dates_heading")}</p>
+                  <p className="text-[11px] text-gray-400 mb-2.5">{t("wizard.contract_dates_optional")}</p>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-[12px] font-semibold text-gray-600 mb-1">
+                        {t("wizard.contract_start")}
+                      </label>
+                      <input
+                        type="date" value={form.contractStart}
+                        onChange={(e) => set("contractStart", e.target.value)}
+                        className={inputClass}
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[12px] font-semibold text-gray-600 mb-1">
+                        {t("wizard.contract_end")}
+                      </label>
+                      <input
+                        type="date" value={form.contractEnd}
+                        onChange={(e) => set("contractEnd", e.target.value)}
+                        className={inputClass}
+                      />
+                    </div>
+                  </div>
                 </div>
               </div>
             )}
@@ -524,8 +674,211 @@ export default function OnboardPage() {
               </div>
             )}
 
-            {/* ── Step 5: Review ── */}
-            {step === 5 && form.orgType && (
+            {/* ── Step 5: Tenant Contacts ── */}
+            {step === 5 && (
+              <div className="flex flex-col gap-7">
+
+                {/* Address */}
+                <div>
+                  <p className="font-bold text-[13px] text-gray-700 mb-3 uppercase tracking-wider">
+                    {t("wizard.contacts_address_heading")}
+                    <span className="ml-2 text-[11px] font-normal normal-case tracking-normal text-gray-400">
+                      ({t("common.optional")})
+                    </span>
+                  </p>
+                  <div className="flex flex-col gap-3">
+                    <input
+                      type="text" value={address.line1}
+                      placeholder={t("wizard.address_line1")}
+                      onChange={(e) => setAddr("line1", e.target.value)}
+                      className={inputClass}
+                    />
+                    <input
+                      type="text" value={address.line2}
+                      placeholder={`${t("wizard.address_line2")} (${t("common.optional")})`}
+                      onChange={(e) => setAddr("line2", e.target.value)}
+                      className={inputClass}
+                    />
+                    <div className="grid grid-cols-2 gap-3">
+                      <input
+                        type="text" value={address.city}
+                        placeholder={t("wizard.address_city")}
+                        onChange={(e) => setAddr("city", e.target.value)}
+                        className={inputClass}
+                      />
+                      <input
+                        type="text" value={address.state}
+                        placeholder={t("wizard.address_state_province")}
+                        onChange={(e) => setAddr("state", e.target.value)}
+                        className={inputClass}
+                      />
+                    </div>
+                    <div className="grid grid-cols-2 gap-3">
+                      <input
+                        type="text" value={address.postal}
+                        placeholder={t("wizard.address_postal_code")}
+                        onChange={(e) => setAddr("postal", e.target.value)}
+                        className={inputClass}
+                      />
+                      <input
+                        type="text" value={address.country}
+                        placeholder={t("wizard.address_country")}
+                        onChange={(e) => setAddr("country", e.target.value)}
+                        className={inputClass}
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                {/* Primary contact */}
+                <div>
+                  <p className="font-bold text-[13px] text-gray-700 mb-3 uppercase tracking-wider">
+                    {t("wizard.contacts_primary_heading")}
+                    <span className="ml-2 text-[11px] font-normal normal-case tracking-normal text-red-500">*</span>
+                  </p>
+                  <div className="p-4 border border-[#1B4332] rounded-lg bg-green-50 flex flex-col gap-3">
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <label className="block text-[12px] font-semibold text-gray-600 mb-1">
+                          {t("wizard.contact_full_name")} <span className="text-red-500">*</span>
+                        </label>
+                        <input
+                          type="text" value={primaryContact.full_name}
+                          onChange={(e) => setPrimary("full_name", e.target.value)}
+                          className={inputClass}
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-[12px] font-semibold text-gray-600 mb-1">
+                          {t("wizard.contact_position_title")}
+                        </label>
+                        <input
+                          type="text" value={primaryContact.position_title}
+                          onChange={(e) => setPrimary("position_title", e.target.value)}
+                          className={inputClass}
+                        />
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <label className="block text-[12px] font-semibold text-gray-600 mb-1">
+                          {t("wizard.contact_email")} <span className="text-red-500">*</span>
+                        </label>
+                        <input
+                          type="email" value={primaryContact.email}
+                          onChange={(e) => setPrimary("email", e.target.value)}
+                          className={inputClass}
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-[12px] font-semibold text-gray-600 mb-1">
+                          {t("wizard.contact_phone")}
+                        </label>
+                        <input
+                          type="tel" value={primaryContact.phone}
+                          onChange={(e) => setPrimary("phone", e.target.value)}
+                          className={inputClass}
+                        />
+                      </div>
+                    </div>
+                    <div>
+                      <label className="block text-[12px] font-semibold text-gray-600 mb-1">
+                        {t("wizard.contact_mobile")}
+                        <span className="ml-1 text-[11px] font-normal text-gray-400">({t("common.optional")})</span>
+                      </label>
+                      <input
+                        type="tel" value={primaryContact.mobile}
+                        onChange={(e) => setPrimary("mobile", e.target.value)}
+                        className={`${inputClass} max-w-[260px]`}
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                {/* Additional contacts */}
+                <div>
+                  <p className="font-bold text-[13px] text-gray-700 mb-3 uppercase tracking-wider">
+                    {t("wizard.contacts_additional_heading")}
+                    <span className="ml-2 text-[11px] font-normal normal-case tracking-normal text-gray-400">
+                      ({t("common.optional")})
+                    </span>
+                  </p>
+                  <div className="flex flex-col gap-3">
+                    {additionalContacts.map((c) => (
+                      <div key={c.id} className="p-4 border border-gray-200 rounded-lg bg-gray-50 flex flex-col gap-3">
+                        <div className="grid grid-cols-2 gap-3">
+                          <div>
+                            <label className="block text-[12px] font-semibold text-gray-600 mb-1">
+                              {t("wizard.contact_full_name")}
+                            </label>
+                            <input
+                              type="text" value={c.full_name}
+                              onChange={(e) => setAdditional(c.id, "full_name", e.target.value)}
+                              className={inputClass}
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-[12px] font-semibold text-gray-600 mb-1">
+                              {t("wizard.contact_position_title")}
+                            </label>
+                            <input
+                              type="text" value={c.position_title}
+                              onChange={(e) => setAdditional(c.id, "position_title", e.target.value)}
+                              className={inputClass}
+                            />
+                          </div>
+                        </div>
+                        <div className="grid grid-cols-2 gap-3">
+                          <div>
+                            <label className="block text-[12px] font-semibold text-gray-600 mb-1">
+                              {t("wizard.contact_email")}
+                            </label>
+                            <input
+                              type="email" value={c.email}
+                              onChange={(e) => setAdditional(c.id, "email", e.target.value)}
+                              className={inputClass}
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-[12px] font-semibold text-gray-600 mb-1">
+                              {t("wizard.contact_phone")}
+                            </label>
+                            <input
+                              type="tel" value={c.phone}
+                              onChange={(e) => setAdditional(c.id, "phone", e.target.value)}
+                              className={inputClass}
+                            />
+                          </div>
+                        </div>
+                        <div className="flex justify-end">
+                          <button
+                            type="button"
+                            onClick={() => removeAdditionalContact(c.id)}
+                            className="text-[12px] font-semibold text-red-500 hover:text-red-700 transition-colors"
+                          >
+                            {t("wizard.contacts_remove_btn")}
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                    <button
+                      type="button"
+                      onClick={addAdditionalContact}
+                      className="self-start text-[13px] font-semibold text-[#1B4332] hover:text-[#0f2d1f] transition-colors"
+                    >
+                      {t("wizard.contacts_add_btn")}
+                    </button>
+                  </div>
+                </div>
+
+                <p className="text-[12px] text-gray-400 m-0 -mt-2">
+                  {t("wizard.contacts_optional_note")}
+                </p>
+              </div>
+            )}
+
+            {/* ── Step 6: Review ── */}
+            {step === 6 && form.orgType && (
               <div className="flex flex-col gap-5">
                 <div className="grid grid-cols-2 gap-3">
                   {[
@@ -536,6 +889,8 @@ export default function OnboardPage() {
                     { label: t("wizard.language_label"),   value: `${LOCALE_META[form.locale].label} (${form.locale})` },
                     { label: t("wizard.admin_email_label"), value: form.adminEmail },
                     ...(form.orgType === "PRODUCER" ? [{ label: t("wizard.sku_limit_label_short"), value: form.skuLimit }] : []),
+                    ...(form.contractStart ? [{ label: t("wizard.contract_start"), value: form.contractStart }] : []),
+                    ...(form.contractEnd   ? [{ label: t("wizard.contract_end"),   value: form.contractEnd   }] : []),
                   ].map(({ label, value }) => (
                     <div key={label} className="px-3.5 py-2.5 bg-gray-50 rounded-md border border-gray-200">
                       <p className="text-[11px] font-bold uppercase tracking-wider text-gray-400 m-0">{label}</p>
@@ -543,6 +898,31 @@ export default function OnboardPage() {
                     </div>
                   ))}
                 </div>
+
+                {/* Primary contact summary */}
+                {primaryContact.full_name.trim() && (
+                  <div>
+                    <p className="font-bold text-[13px] text-gray-700 m-0 mb-2">
+                      {t("wizard.contacts_primary_heading")}
+                    </p>
+                    <div className="px-3.5 py-2.5 bg-green-50 rounded-md border border-green-200">
+                      <p className="text-sm font-semibold text-gray-900 m-0">{primaryContact.full_name}</p>
+                      {primaryContact.position_title && (
+                        <p className="text-[12px] text-gray-500 m-0">{primaryContact.position_title}</p>
+                      )}
+                      <p className="text-[12px] text-gray-500 m-0">{primaryContact.email}</p>
+                      {primaryContact.phone && (
+                        <p className="text-[12px] text-gray-500 m-0">{primaryContact.phone}</p>
+                      )}
+                    </div>
+                    {additionalContacts.filter((c) => c.full_name.trim()).length > 0 && (
+                      <p className="text-[12px] text-gray-400 mt-1.5 m-0">
+                        +{additionalContacts.filter((c) => c.full_name.trim()).length}{" "}
+                        {t("wizard.contacts_additional_heading").toLowerCase()}
+                      </p>
+                    )}
+                  </div>
+                )}
 
                 {flags && (
                   <div>
