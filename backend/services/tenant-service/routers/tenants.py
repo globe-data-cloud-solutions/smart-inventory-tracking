@@ -217,7 +217,7 @@ async def sa_tenant_registry(
             t.address_line1, t.city, t.country,
             t.created_at,
             (SELECT COUNT(*) FROM users u
-             WHERE u.tenant_id = t.id AND u.is_active = true AND u.role != 'TA')  AS user_count,
+             WHERE u.tenant_id = t.id AND u.is_active = true AND u.system_role != 'TA')  AS user_count,
             (SELECT COUNT(*) FROM organization_node n
              WHERE n.tenant_id = t.id AND n.is_active = true)  AS node_count,
             COALESCE(
