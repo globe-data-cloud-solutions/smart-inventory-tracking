@@ -54,6 +54,8 @@ class TenantRegistryRow(BaseModel):
     user_count: int
     node_count: int
     created_at: str                 # ISO datetime string
+    ta_name:  Optional[str] = None  # TA admin user name
+    ta_email: Optional[str] = None  # TA admin user email
 
 
 class TenantContactIn(BaseModel):
@@ -232,7 +234,13 @@ async def sa_tenant_registry(
                 ) ORDER BY c.is_primary DESC, c.created_at ASC)
                  FROM tenant_contacts c WHERE c.tenant_id = t.id),
                 '[]'::json
-            ) AS contacts
+            ) AS contacts,
+            (SELECT u.full_name FROM users u
+             WHERE u.tenant_id = t.id AND u.system_role = 'TA' AND u.is_active = true
+             ORDER BY u.created_at ASC LIMIT 1) AS ta_name,
+            (SELECT u.email FROM users u
+             WHERE u.tenant_id = t.id AND u.system_role = 'TA' AND u.is_active = true
+             ORDER BY u.created_at ASC LIMIT 1) AS ta_email
         FROM tenants t
         ORDER BY t.created_at DESC
     """))).fetchall()
@@ -259,6 +267,8 @@ async def sa_tenant_registry(
             user_count=int(row.user_count),
             node_count=int(row.node_count),
             created_at=row.created_at.isoformat(),
+            ta_name=row.ta_name,
+            ta_email=row.ta_email,
         )
         for row in rows
     ])

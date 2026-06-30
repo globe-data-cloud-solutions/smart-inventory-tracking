@@ -116,6 +116,19 @@ class ProductCreatedPayload(BasePayload):
     created_by: str
 
 
+class ContractExpiryAlertPayload(BasePayload):
+    """Fired by the daily contract-expiry Celery beat task.
+
+    days_remaining: 0 means the contract has already expired (auto-suspend fired).
+    Milestone values: 90, 30, 14, 5, 2, 1, 0.
+    """
+    event_type: Literal["ContractExpiryAlert"] = "ContractExpiryAlert"
+    tenant_id: str
+    tenant_name: str
+    contract_end: str   # ISO date "YYYY-MM-DD"
+    days_remaining: int  # 0 = expired today or earlier
+
+
 PAYLOAD_TYPES = {
     "InventoryUpdated":    InventoryUpdatedPayload,
     "StockTransferred":    StockTransferredPayload,
@@ -128,4 +141,5 @@ PAYLOAD_TYPES = {
     "TransferRequested":   TransferRequestedPayload,
     "ProductCreated":      ProductCreatedPayload,
     "AutoApprovalNotice":  AutoApprovalNoticePayload,
+    "ContractExpiryAlert": ContractExpiryAlertPayload,
 }

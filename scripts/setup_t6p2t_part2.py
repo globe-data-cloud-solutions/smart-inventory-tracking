@@ -48,38 +48,38 @@ Session = async_sessionmaker(bind=engine, expire_on_commit=False)
 # ══════════════════════════════════════════════════════════════════════════
 # PART 1 — CONSTANTS
 # ══════════════════════════════════════════════════════════════════════════
-TENANT_ID = "e1badc24-5bdf-4ee6-bc1c-88d7c84a1bd7"
+TENANT_ID = "aed68cc5-789f-4cb0-9ef5-9b6404267e42"
 SA_USER   = "00000001-0a00-0000-0000-000000000001"  # platform SA — RLS context user
-TA_USER   = "c2d86bb6-8d44-4f09-a76d-a2361357c25d"   # T6P2T TA — created_by attribution
+TA_USER   = "75960e66-39d1-4fa0-a4da-9fe4537f11fc"   # T6P2T TA — created_by attribution
 
 # Nodes (from t6p2t_state.json)
-NODE_A_FAC    = "8144e315-d662-405a-8551-74c928a17d81"   # L1
-NODE_B_FAC    = "cc00db14-8a5d-4d80-b2ae-c5c38abaa5e6"   # L1
-NODE_A_REG    = "f94e308a-ccc8-4871-ad2a-051d60fc37ea"   # L2
-NODE_B_REG    = "f2df80d3-64aa-4c87-837b-be084b2fd0b3"   # L2
-NODE_WHA1     = "c0d49f1f-4908-4d08-9b72-e327bc6a1f9c"   # L3, parent=A_REG
-NODE_WHA2     = "708ce720-72bf-4c45-b53d-2925d741c272"   # L3, parent=A_REG
-NODE_WHA3     = "2264070d-9ef5-46a6-bcf7-90102a1ac34e"   # L3, parent=A_REG
-NODE_WHB1     = "530af1e5-242c-4c46-90f8-5b98e2646d6b"   # L3, parent=B_REG
-NODE_WHB2     = "2bda5293-f4cc-4c31-a6e5-ce0d28b8f1f9"   # L3, parent=B_REG
-NODE_SAT_WHA1 = "8efb2c6d-8530-4f6c-a08e-cedb38eb1ffd"   # L4, parent=WHA1
-NODE_SAT_WHA2 = "66f81453-246f-409a-a071-2c7a2370feaf"   # L4, parent=WHA1
-NODE_SAT_WHB1 = "42416a79-9a13-4918-acaa-a43286fbb1bd"   # L4, parent=WHB1
-NODE_SAT_WHB2 = "c739f492-312e-4f04-982b-790ceb237a73"   # L4, parent=WHB2
+NODE_A_FAC    = "bb874f9f-cc49-40a3-a814-ebeab83ffa25"   # L1
+NODE_B_FAC    = "1fad3251-aba0-4930-b26c-e3e152577c5d"   # L1
+NODE_A_REG    = "630aee08-424d-4146-b7c4-fab6e4cc208a"   # L2
+NODE_B_REG    = "c678c8ea-595b-4f6a-9edd-a66b67557050"   # L2
+NODE_WHA1     = "1eb94c52-4963-4355-8e54-0d9810eafb02"   # L3, parent=A_REG
+NODE_WHA2     = "3996ffc4-4821-49ed-8717-d9c98025c695"   # L3, parent=A_REG
+NODE_WHA3     = "266557a4-b2fb-438a-910e-c149bf35c8e9"   # L3, parent=A_REG
+NODE_WHB1     = "c53b1fb3-10fa-453b-986b-6581c855d557"   # L3, parent=B_REG
+NODE_WHB2     = "aeebb033-8594-44b5-932d-7bfd4411cdba"   # L3, parent=B_REG
+NODE_SAT_WHA1 = "4ca4ea2a-512a-48a4-b01c-e72d20af3aff"   # L4, parent=WHA1
+NODE_SAT_WHA2 = "80d2ba11-ac76-42ca-b834-f34913da58e3"   # L4, parent=WHA1
+NODE_SAT_WHB1 = "7f0c4007-1488-4890-a551-12cc496ea289"   # L4, parent=WHB1
+NODE_SAT_WHB2 = "230e9afa-d694-46f7-9eda-22ed9bc3dab3"   # L4, parent=WHB2
 
 # NEW — SAT_WHA3 under WHA3 (L4 Satellite)
 NODE_SAT_WHA3 = "e1badc24-0001-0004-0000-000000000001"
 
 # Positions (from t6p2t_state.json)
-POS_A_FAC_DIR = "25c5a855-ff00-4f14-bd18-5ae64853d0fc"   # NM @ A_FAC
-POS_A_REG_MGR = "b1adb152-4f06-45ea-b5d4-e35746913e3b"   # RM @ A_REG
-POS_WHA1_MGR  = "aa89f559-0f7f-459b-acb9-9864739636ea"   # WM @ WHA1
-POS_WHA2_MGR  = "2c7871f3-2772-4182-a303-90cb898de35f"   # WM @ WHA2
-POS_WHA3_MGR  = "30f1f2e8-7253-4ace-a1b3-49486c3b0214"   # WM @ WHA3
-POS_B_FAC_DIR = "fc5d85c6-dba3-4ee3-a245-dd1d6a969a95"   # NM @ B_FAC
-POS_B_REG_MGR = "01e3055f-e6d7-4fad-a25c-eb1da50f463f"   # RM @ B_REG
-POS_WHB1_MGR  = "25d54953-d4eb-4b35-9cc5-5a8956527caa"   # WM @ WHB1
-POS_WHB2_MGR  = "edf71d7d-3a94-44f2-967d-3b7b4b96e391"   # WM @ WHB2
+POS_A_FAC_DIR = "0f1bd8cc-5ce3-4bab-b40c-03777fc2ad6c"   # NM @ A_FAC
+POS_A_REG_MGR = "ce9e1ab6-d594-4dd9-aecd-4934fadfa432"   # RM @ A_REG
+POS_WHA1_MGR  = "88d54a15-7a1f-4a0d-a597-e6518f1344bb"   # WM @ WHA1
+POS_WHA2_MGR  = "c81e9288-5db1-4bbf-8ba8-5fa57a503cfa"   # WM @ WHA2
+POS_WHA3_MGR  = "639a6396-edb8-4d48-86e0-df4a9650839e"   # WM @ WHA3
+POS_B_FAC_DIR = "706c839a-d9ba-41e1-b1f5-b6445a3a50d4"   # NM @ B_FAC
+POS_B_REG_MGR = "4ffbbb0f-f1ae-4271-a421-02aa1216f017"   # RM @ B_REG
+POS_WHB1_MGR  = "78d8c59f-27e7-4365-b282-b8ef3a4af79b"   # WM @ WHB1
+POS_WHB2_MGR  = "fdbe07cb-5650-4bad-b22d-799f5770b60f"   # WM @ WHB2
 
 # NEW — SAT_WHA3 position and user
 POS_SAT_WHA3_LEAD = "e1badc24-0002-0004-0000-000000000001"

@@ -132,13 +132,12 @@ async def check_plan_create_warehouse(
     user: Any,
     db: AsyncSession,
 ) -> None:
-    """Raise HTTP 402 if the tenant has reached its sub-root node limit.
+    """Raise HTTP 402 if the tenant has reached its total node limit.
 
-    The L1 (root) node is always free and is never counted.
-    Only nodes at hierarchy_level > 1 count toward max_warehouses.
+    One L1 (root) node is always free. All active nodes (every level) count
+    toward the total, so: total_allowed = max_warehouses + 1 (the free root slot).
 
-    Call this from create_org_node / reactivate_org_node for non-L1 nodes.
-    Only SA bypasses this check — TA must stay within their tenant's plan limits.
+    Call this for EVERY new node creation including L1. Only SA bypasses.
     """
     if not user or not getattr(user, "tenant_id", None):
         return
@@ -150,16 +149,17 @@ async def check_plan_create_warehouse(
     if not plan or plan.get("max_warehouses") is None:
         return  # unlimited
 
-    # L1 nodes are the root/factory level and are free. Only sub-root nodes count.
+    # Count ALL active nodes — one root is always free, so total_allowed = limit + 1.
     current = (await db.execute(
         text(
             "SELECT COUNT(*) FROM organization_node "
-            "WHERE tenant_id = :tid AND is_active = true AND hierarchy_level > 1"
+            "WHERE tenant_id = :tid AND is_active = true"
         ),
         {"tid": tenant_id},
     )).scalar() or 0
 
-    if int(current) >= plan["max_warehouses"]:
+    total_allowed = plan["max_warehouses"] + 1  # +1 for the free root node
+    if int(current) >= total_allowed:
         raise HTTPException(
             status_code=402,
             detail={
@@ -170,8 +170,9 @@ async def check_plan_create_warehouse(
                 "plan_tier": plan["plan_tier"],
                 "upgrade_to": _UPGRADE_TO.get(plan["plan_tier"]),
                 "message": (
-                    f"Node limit reached ({current}/{plan['max_warehouses']}) "
-                    f"for {plan['plan_tier']} plan. Upgrade to add more locations."
+                    f"Node limit reached ({current}/{total_allowed} total; "
+                    f"1 free root + {plan['max_warehouses']} from {plan['plan_tier']} plan). "
+                    f"Upgrade to add more locations."
                 ),
             },
         )
@@ -183,12 +184,13 @@ async def check_plan_create_user(
 ) -> None:
     """Raise HTTP 402 if the tenant has reached its user limit.
 
-    Call this from create_user before inserting a new user.
-    SA and TA bypass this check.
+    The Tenant Admin (TA) account is never counted toward the limit — it is the
+    primary admin and always free. Only SA bypasses the check entirely.
+    TA role users are now subject to the limit when creating non-TA accounts.
     """
     if not user or not getattr(user, "tenant_id", None):
         return
-    if getattr(user, "role", "") in ("SA", "TA"):
+    if getattr(user, "role", "") == "SA":
         return
 
     tenant_id = str(user.tenant_id)
@@ -196,10 +198,11 @@ async def check_plan_create_user(
     if not plan or plan.get("max_users") is None:
         return  # unlimited
 
+    # Exclude TA accounts from the count — the primary admin is always free.
     current = (await db.execute(
         text(
             "SELECT COUNT(*) FROM users "
-            "WHERE tenant_id = :tid AND is_active = true"
+            "WHERE tenant_id = :tid AND is_active = true AND role != 'TA'"
         ),
         {"tid": tenant_id},
     )).scalar() or 0

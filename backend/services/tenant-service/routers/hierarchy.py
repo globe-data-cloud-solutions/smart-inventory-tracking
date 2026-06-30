@@ -800,10 +800,8 @@ async def create_org_node(
     if not (1 <= body.level_number <= 5):
         raise HTTPException(status_code=422, detail="level_number must be between 1 and 5")
 
-    # L1 nodes are the root factory/org level and are always free (not counted).
-    # Plan cap only applies to sub-root nodes (level > 1).
-    if body.level_number > 1:
-        await check_plan_create_warehouse(user, db)
+    # All nodes count toward the plan cap (check_plan_create_warehouse gives 1 free root).
+    await check_plan_create_warehouse(user, db)
 
     # Validate parent exists and belongs to same tenant when provided
     if body.parent_node_id:

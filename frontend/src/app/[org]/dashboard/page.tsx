@@ -305,6 +305,8 @@ export default function OrgDashboard() {
     city:          string | null;
     country:       string | null;
     contacts:      ApiRegistryContact[];
+    ta_name:  string | null;
+    ta_email: string | null;
   }
 
   interface ApiActivityRow {
@@ -333,6 +335,7 @@ export default function OrgDashboard() {
 
   const [saTab, setSaTab] = useState<"tenants" | "registry" | "admin">("tenants");
   const [activityTenantId, setActivityTenantId] = useState<string | null>(null);
+  const [personnelModalRow, setPersonnelModalRow] = useState<ApiRegistryRow | null>(null);
 
   const [tierConfigOpen, setTierConfigOpen]   = useState(false);
   const [tierConfigForm, setTierConfigForm]   = useState<TierConfigEntry[]>([]);
@@ -499,15 +502,38 @@ export default function OrgDashboard() {
   }
 
   async function handleAdminContactsSave() {
-    const primaryCount = adminContacts.filter((c) => c.is_primary).length;
-    if (adminContacts.length > 0 && primaryCount !== 1) {
+    // Auto-commit any open inline form that has a name filled in.
+    // This prevents the second (or later) contact being silently dropped when
+    // the user fills the form and clicks the main Save without closing the form first.
+    let contacts = adminContacts;
+    if (adminContactFormOpen && adminContactForm.full_name.trim()) {
+      const pending: ApiRegistryContact = {
+        id:             adminContactEditIdx !== null ? (adminContacts[adminContactEditIdx]?.id ?? "") : "",
+        is_primary:     adminContactForm.is_primary,
+        full_name:      adminContactForm.full_name.trim(),
+        position_title: adminContactForm.position_title.trim() || null,
+        email:          adminContactForm.email.trim() || null,
+        phone:          adminContactForm.phone.trim() || null,
+        mobile:         adminContactForm.mobile.trim() || null,
+      };
+      contacts = adminContactEditIdx !== null
+        ? adminContacts.map((c, i) => i === adminContactEditIdx ? pending : c)
+        : [...adminContacts, pending];
+      setAdminContacts(contacts);
+      setAdminContactFormOpen(false);
+      setAdminContactEditIdx(null);
+      setAdminContactForm({ is_primary: false, full_name: "", position_title: "", email: "", phone: "", mobile: "" });
+    }
+
+    const primaryCount = contacts.filter((c) => c.is_primary).length;
+    if (contacts.length > 0 && primaryCount !== 1) {
       setAdminError(t("sa.contacts_need_primary"));
       setAdminConfirm(null);
       return;
     }
     await doAdminSave(() =>
       api.post(`/api/v1/tenants/${adminTenantId}/contacts/bulk`, {
-        contacts: adminContacts.map((c) => ({
+        contacts: contacts.map((c) => ({
           is_primary:     c.is_primary,
           full_name:      c.full_name,
           position_title: c.position_title ?? null,
@@ -697,12 +723,15 @@ export default function OrgDashboard() {
               {registryLoading && <p className="text-gray-400 text-sm">{t("common.loading")}</p>}
               {!registryLoading && (
                 <div className="bg-white border border-gray-200 rounded overflow-x-auto">
-                  <table className="w-full border-collapse text-sm min-w-[700px]">
+                  <table className="w-full border-collapse text-sm min-w-[900px]">
                     <thead>
                       <tr className="bg-gray-50 border-b border-gray-200">
                         {[
                           "dashboard.tenant_name",
-                          "sa.col_contact",
+                          "sa.col_contact_name",
+                          "sa.col_contact_email",
+                          "sa.col_contact_phone",
+                          "sa.col_personnel",
                           "sa.col_contract",
                           "sa.col_notes",
                           "table.actions",
@@ -719,74 +748,71 @@ export default function OrgDashboard() {
                     <tbody>
                       {registryError && (
                         <tr>
-                          <td colSpan={5} className="px-4 py-8 text-center text-sm text-red-500">
+                          <td colSpan={8} className="px-4 py-8 text-center text-sm text-red-500">
                             {t("common.error")}
                           </td>
                         </tr>
                       )}
                       {!registryError && (!apiRegistryList || apiRegistryList.length === 0) && (
                         <tr>
-                          <td colSpan={5} className="px-4 py-8 text-center text-sm text-gray-400">
+                          <td colSpan={8} className="px-4 py-8 text-center text-sm text-gray-400">
                             {t("common.no_data")}
                           </td>
                         </tr>
                       )}
                       {(apiRegistryList ?? []).map((row, idx) => {
+                        const primary = row.contacts?.find((c) => c.is_primary) ?? null;
+                        const totalContacts = (row.contacts ?? []).length;
+                        const primaryName  = primary?.full_name  ?? row.contact_name  ?? null;
+                        const primaryEmail = primary?.email      ?? row.contact_email ?? null;
+                        const primaryPhone = primary?.phone ?? primary?.mobile ?? row.contact_phone ?? null;
                         return (
                           <tr key={row.id} className={`border-b border-gray-100 ${idx % 2 === 0 ? "bg-white" : "bg-gray-50"}`}>
+                            {/* Tenant Name */}
                             <td className="px-4 py-2.5 font-semibold text-gray-800 whitespace-nowrap">
                               {row.name}
                             </td>
-                            <td className="px-4 py-2.5">
-                              {(() => {
-                                const primary = row.contacts?.find((c) => c.is_primary) ?? null;
-                                const extra   = (row.contacts ?? []).filter((c) => !c.is_primary).length;
-                                if (primary) {
-                                  return (
-                                    <div>
-                                      <p className="m-0 font-medium text-gray-800 text-[13px]">{primary.full_name}</p>
-                                      {primary.position_title && <p className="m-0 text-[11px] text-gray-400">{primary.position_title}</p>}
-                                      {primary.email && <p className="m-0 text-xs text-gray-500">{primary.email}</p>}
-                                      {(primary.phone ?? primary.mobile) && (
-                                        <p className="m-0 text-xs text-gray-400">{primary.phone ?? primary.mobile}</p>
-                                      )}
-                                      {extra > 0 && (
-                                        <p className="m-0 text-[11px] text-gray-400">+{extra} {t("sa.contacts_more")}</p>
-                                      )}
-                                      <button type="button"
-                                        onClick={() => { selectAdminTenant(row.id, "contacts"); setSaTab("admin"); }}
-                                        className="mt-1 text-[11px] font-bold text-[#0f2d1f] hover:underline"
-                                      >
-                                        {t("sa.contacts_edit_link")}
-                                      </button>
-                                    </div>
-                                  );
-                                }
-                                if (row.contact_name ?? row.contact_email) {
-                                  return (
-                                    <div>
-                                      {row.contact_name  && <p className="m-0 font-medium text-gray-800">{row.contact_name}</p>}
-                                      {row.contact_email && <p className="m-0 text-xs text-gray-500">{row.contact_email}</p>}
-                                      {row.contact_phone && <p className="m-0 text-xs text-gray-400">{row.contact_phone}</p>}
-                                      <button type="button"
-                                        onClick={() => { selectAdminTenant(row.id, "contacts"); setSaTab("admin"); }}
-                                        className="mt-1 text-[11px] font-bold text-[#0f2d1f] hover:underline"
-                                      >
-                                        {t("sa.contacts_edit_link")}
-                                      </button>
-                                    </div>
-                                  );
-                                }
-                                return (
-                                  <button type="button"
-                                    onClick={() => { selectAdminTenant(row.id, "contacts"); setSaTab("admin"); }}
-                                    className="text-[11px] font-bold text-[#0f2d1f] hover:underline"
-                                  >
-                                    {t("sa.contacts_add_btn")}
-                                  </button>
-                                );
-                              })()}
+                            {/* Contact Name */}
+                            <td className="px-4 py-2.5 text-sm text-gray-700 whitespace-nowrap">
+                              {primaryName ? (
+                                <button
+                                  type="button"
+                                  onClick={() => { selectAdminTenant(row.id, "contacts"); setSaTab("admin"); }}
+                                  className="font-medium text-gray-800 hover:text-[#0f2d1f] hover:underline text-left"
+                                >
+                                  {primaryName}
+                                </button>
+                              ) : (
+                                <button
+                                  type="button"
+                                  onClick={() => { selectAdminTenant(row.id, "contacts"); setSaTab("admin"); }}
+                                  className="text-[11px] font-bold text-[#0f2d1f] hover:underline"
+                                >
+                                  {t("sa.contacts_add_btn")}
+                                </button>
+                              )}
                             </td>
+                            {/* Contact Email */}
+                            <td className="px-4 py-2.5 text-xs text-gray-500">
+                              {primaryEmail ?? <span className="text-gray-300">—</span>}
+                            </td>
+                            {/* Contact Phone */}
+                            <td className="px-4 py-2.5 text-xs text-gray-500 whitespace-nowrap">
+                              {primaryPhone ?? <span className="text-gray-300">—</span>}
+                            </td>
+                            {/* Personnel icon */}
+                            <td className="px-4 py-2.5 text-center">
+                              <button
+                                type="button"
+                                onClick={() => setPersonnelModalRow(row)}
+                                title={t("sa.col_personnel")}
+                                className="inline-flex items-center gap-1 px-2 py-1 rounded text-xs font-semibold text-gray-600 bg-gray-100 hover:bg-gray-200 transition-colors"
+                              >
+                                <span>👥</span>
+                                {totalContacts > 0 && <span>{totalContacts}</span>}
+                              </button>
+                            </td>
+                            {/* Contract */}
                             <td className="px-4 py-2.5 text-xs text-gray-600">
                               {row.contract_start ?? row.contract_end ? (
                                 <div>
@@ -795,11 +821,13 @@ export default function OrgDashboard() {
                                 </div>
                               ) : "—"}
                             </td>
-                            <td className="px-4 py-2.5 text-xs text-gray-500 max-w-[160px]">
+                            {/* Notes */}
+                            <td className="px-4 py-2.5 text-xs text-gray-500 max-w-[140px]">
                               {row.notes
-                                ? (row.notes.length > 40 ? row.notes.slice(0, 40) + "…" : row.notes)
+                                ? (row.notes.length > 35 ? row.notes.slice(0, 35) + "…" : row.notes)
                                 : "—"}
                             </td>
+                            {/* Actions */}
                             <td className="px-4 py-2.5 whitespace-nowrap">
                               <button
                                 type="button"
@@ -1382,6 +1410,119 @@ export default function OrgDashboard() {
                       )}
                     </div>
                   ))}
+                </div>
+              </div>
+            </>
+          )}
+
+          {/* ── Personnel modal ─────────────────────────────────────────────── */}
+          {personnelModalRow && (
+            <>
+              <div
+                className="fixed inset-0 z-40 bg-black/30"
+                onClick={() => setPersonnelModalRow(null)}
+              />
+              <div className="fixed inset-0 z-50 flex items-center justify-center p-4 pointer-events-none">
+                <div className="pointer-events-auto bg-white rounded-lg shadow-xl w-full max-w-md overflow-hidden">
+                  <div className="flex items-center justify-between px-5 py-4 bg-[#0f2d1f]">
+                    <div>
+                      <h4 className="m-0 text-sm font-bold text-white">{personnelModalRow.name}</h4>
+                      <p className="m-0 text-xs text-emerald-300 mt-0.5">{t("sa.col_personnel")}</p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setPersonnelModalRow(null)}
+                      className="text-white hover:text-gray-300 text-xl font-bold leading-none"
+                      aria-label={t("sa.personnel_modal_close")}
+                    >
+                      ×
+                    </button>
+                  </div>
+                  <div className="px-5 py-4 max-h-[60vh] overflow-y-auto space-y-3">
+                    {/* TA admin — always shown first, gray tint */}
+                    {(personnelModalRow.ta_name ?? personnelModalRow.ta_email) && (
+                      <div className="flex items-start gap-3 p-3 border border-gray-200 rounded-lg bg-gray-100">
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <p className="m-0 font-semibold text-gray-500 text-sm">
+                              {personnelModalRow.ta_name ?? "—"}
+                            </p>
+                            <span className="text-[10px] font-bold bg-gray-200 text-gray-500 px-1.5 py-0.5 rounded uppercase">
+                              TA
+                            </span>
+                          </div>
+                          {personnelModalRow.ta_email && (
+                            <p className="m-0 text-xs text-gray-400 mt-1">
+                              <span>✉ </span>{personnelModalRow.ta_email}
+                            </p>
+                          )}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Structured contacts */}
+                    {(personnelModalRow.contacts && personnelModalRow.contacts.length > 0
+                      ? personnelModalRow.contacts
+                      : (personnelModalRow.contact_name ?? personnelModalRow.contact_email)
+                        ? [{
+                            id: "legacy",
+                            is_primary: true,
+                            full_name: personnelModalRow.contact_name ?? "",
+                            position_title: null,
+                            email: personnelModalRow.contact_email,
+                            phone: personnelModalRow.contact_phone,
+                            mobile: null,
+                          }]
+                        : []
+                    ).map((c, i) => (
+                      <div key={c.id || i} className="flex items-start gap-3 p-3 border border-gray-100 rounded-lg bg-gray-50">
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <p className="m-0 font-semibold text-gray-800 text-sm">{c.full_name || "—"}</p>
+                            {c.is_primary && (
+                              <span className="text-[10px] font-bold bg-emerald-100 text-emerald-700 px-1.5 py-0.5 rounded uppercase">
+                                {t("sa.contacts_primary")}
+                              </span>
+                            )}
+                          </div>
+                          {c.position_title && <p className="m-0 text-xs text-gray-500 mt-0.5">{c.position_title}</p>}
+                          {c.email && (
+                            <p className="m-0 text-xs text-gray-600 mt-1">
+                              <span className="text-gray-400">✉ </span>{c.email}
+                            </p>
+                          )}
+                          {(c.phone ?? c.mobile) && (
+                            <p className="m-0 text-xs text-gray-600 mt-0.5">
+                              <span className="text-gray-400">☎ </span>{c.phone ?? c.mobile}
+                            </p>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+
+                    {/* Empty state — only when no TA and no contacts */}
+                    {!personnelModalRow.ta_name && !personnelModalRow.ta_email &&
+                     (!personnelModalRow.contacts || personnelModalRow.contacts.length === 0) &&
+                     !personnelModalRow.contact_name && !personnelModalRow.contact_email && (
+                      <p className="text-sm text-gray-400">{t("sa.personnel_no_contacts")}</p>
+                    )}
+                  </div>
+                  <div className="px-5 py-3 border-t border-gray-100 flex justify-between items-center">
+                    <button
+                      type="button"
+                      onClick={() => { setPersonnelModalRow(null); selectAdminTenant(personnelModalRow.id, "contacts"); setSaTab("admin"); }}
+                      className="text-xs font-bold text-[#0f2d1f] hover:underline"
+                    >
+                      {t("sa.contacts_edit_link")}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setPersonnelModalRow(null)}
+                      className="px-3 py-1.5 text-xs font-semibold text-gray-600 rounded bg-gray-100 hover:bg-gray-200"
+                    >
+                      {t("sa.personnel_modal_close")}
+                    </button>
+                  </div>
                 </div>
               </div>
             </>
