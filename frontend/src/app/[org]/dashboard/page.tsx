@@ -1021,6 +1021,24 @@ export default function OrgDashboard() {
                           ))}
                         </div>
                         <p className="text-xs text-gray-400 mb-3">{t("sa.plan_modal_caps")}</p>
+                        {/* Contract dates summary — edit via Contract sub-tab */}
+                        {(selTen.contract_start || selTen.contract_end) && (
+                          <div className="mb-3 px-3 py-2 bg-gray-50 border border-gray-200 rounded text-xs text-gray-600">
+                            <span className="font-semibold text-gray-700">{t("sa.contract_dates_label")}: </span>
+                            {selTen.contract_start && <span>{selTen.contract_start}</span>}
+                            {selTen.contract_start && selTen.contract_end && <span className="mx-1 text-gray-400">→</span>}
+                            {selTen.contract_end && (
+                              <span className={new Date(selTen.contract_end) < new Date() ? "text-red-600 font-semibold" : ""}>
+                                {selTen.contract_end}
+                              </span>
+                            )}
+                            <button
+                              type="button"
+                              onClick={() => setAdminSubTab("contract")}
+                              className="ml-2 text-sky-600 hover:underline"
+                            >{t("common.edit")}</button>
+                          </div>
+                        )}
                         {adminPlanTier !== (selTen.plan_tier ?? "") && adminPlanTier && (
                           <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded px-3 py-2 mb-3">
                             {t("sa.plan_modal_downgrade_note")}

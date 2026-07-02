@@ -1028,7 +1028,8 @@
     "contacts_add_btn": "Qunnamtii Dabaali",
     "contacts_update_btn": "Haaromsi",
     "contacts_need_primary": "Osoo hin olkaa'in qunnamtii tokkoo akka ijoo mallatteessi.",
-    "contacts_edit_link": "Qunnamtiwwan gulaali →"
+    "contacts_edit_link": "Qunnamtiwwan gulaali →",
+    "contract_dates_label": "Kontiraatii"
   },
   "approval": {
     "simple_mode": "Salphaa — seera wal-fakkaataa hunda",
@@ -1361,7 +1362,9 @@
     "sign_out": "Sign out",
     "welcome": "Welcome",
     "admin_section": "Admin",
-    "all_tenants": "All Tenants"
+    "all_tenants": "All Tenants",
+    "contract_expired": "Kontiraatiin dhumee jira",
+    "contract_expiring_soon": "Kontiraatiin dhumuu dhiyaateera"
   },
   "dashboard": {
     "platform_overview": "Platform Overview",

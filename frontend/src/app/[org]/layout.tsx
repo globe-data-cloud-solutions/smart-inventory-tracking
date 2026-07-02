@@ -226,6 +226,8 @@ interface PlanData {
   max_warehouses: number | null;
   max_users: number | null;
   sku_cap: number | null;
+  contract_start: string | null;
+  contract_end: string | null;
 }
 
 /* ── Sidebar nav ──────────────────────────────────────────────────────────── */
@@ -417,6 +419,22 @@ function Sidebar({ user, org, tenantName, plan, onClose, isOpen }: {
           </>
         )}
       </nav>
+
+      {/* Contract expiry notice — shown to TA when contract_end is set */}
+      {user.role === "TA" && plan?.contract_end && (() => {
+        const endDate   = new Date(plan.contract_end);
+        const today     = new Date();
+        const daysLeft  = Math.ceil((endDate.getTime() - today.getTime()) / 86_400_000);
+        const expired   = daysLeft < 0;
+        const warnSoon  = daysLeft >= 0 && daysLeft <= 30;
+        if (!expired && !warnSoon) return null;
+        return (
+          <div className={`mx-2 mb-1 px-2.5 py-2 rounded text-[11px] ${expired ? "bg-red-900/60 text-red-200" : "bg-amber-800/50 text-amber-200"}`}>
+            <p className="font-bold m-0">{expired ? t("layout.contract_expired") : t("layout.contract_expiring_soon")}</p>
+            <p className="m-0 opacity-80">{plan.contract_end}{!expired && ` · ${daysLeft}d`}</p>
+          </div>
+        );
+      })()}
 
       {/* Sign out */}
       <div className="px-2 py-2.5 border-t border-white/[0.08] shrink-0">

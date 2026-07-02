@@ -61,6 +61,9 @@ class TenantResponse(BaseModel):
     plan_tier: Optional[str] = None
     max_warehouses: Optional[int] = None
     max_users: Optional[int] = None
+    # Contract dates — readable by TA (read-only); editable only by SA via PATCH /contract
+    contract_start: Optional[str] = None
+    contract_end: Optional[str] = None
     # Populated when admin user was created atomically
     admin_user_id: Optional[uuid.UUID] = None
     admin_email: Optional[str] = None

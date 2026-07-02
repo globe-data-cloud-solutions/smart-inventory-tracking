@@ -41,6 +41,36 @@ def register_handler(event_type: str) -> Callable:
     return decorator
 
 
+@register_handler("ContractExpiryAlert")
+async def handle_contract_expiry_alert(
+    payload: ContractExpiryAlertPayload, tenant_id: str
+) -> None:
+    """Log contract expiry alerts.
+
+    Phase 3: wire to notification-service for email / push delivery.
+    For now this handler acknowledges the event so it is not silently dropped
+    and surfaces the alert in CloudWatch logs for SA monitoring.
+    """
+    days = payload.days_remaining
+    if days is None or days < 0:
+        log_level, label = logging.ERROR, "EXPIRED"
+    elif days == 0:
+        log_level, label = logging.ERROR, "EXPIRED TODAY"
+    elif days <= 5:
+        log_level, label = logging.WARNING, f"expires in {days} day(s)"
+    else:
+        log_level, label = logging.INFO, f"expires in {days} day(s)"
+
+    logger.log(
+        log_level,
+        "ContractExpiryAlert: tenant_id=%s name=%s contract_end=%s status=%s",
+        tenant_id,
+        payload.tenant_name,
+        payload.contract_end,
+        label,
+    )
+
+
 @app.task(bind=True, max_retries=5, default_retry_delay=30)
 def process_outbox_row(self, row_id: str) -> None:  # type: ignore[override]
     """Always check status before processing — tasks must be idempotent."""

@@ -555,7 +555,8 @@ async def get_my_plan(
     row = (await db.execute(
         text(
             "SELECT plan_tier, feature_flags, sku_cap, "
-            "       max_warehouses, max_users "
+            "       max_warehouses, max_users, "
+            "       contract_start, contract_end "
             "FROM   tenants WHERE id = :tid"
         ),
         {"tid": str(user.tenant_id)},
@@ -563,11 +564,13 @@ async def get_my_plan(
     if not row:
         raise HTTPException(status_code=404, detail="Tenant not found")
     return SuccessResponse(data={
-        "plan_tier":      str(row.plan_tier) if row.plan_tier else "ENTERPRISE",
-        "feature_flags":  dict(row.feature_flags) if row.feature_flags else {},
-        "sku_cap":        row.sku_cap,
-        "max_warehouses": row.max_warehouses,
-        "max_users":      row.max_users,
+        "plan_tier":       str(row.plan_tier) if row.plan_tier else "ENTERPRISE",
+        "feature_flags":   dict(row.feature_flags) if row.feature_flags else {},
+        "sku_cap":         row.sku_cap,
+        "max_warehouses":  row.max_warehouses,
+        "max_users":       row.max_users,
+        "contract_start":  str(row.contract_start) if row.contract_start else None,
+        "contract_end":    str(row.contract_end)   if row.contract_end   else None,
     })
 
 
@@ -801,8 +804,14 @@ async def get_tenant(
             onboarding_complete=row.onboarding_complete,
             default_locale=row.default_locale,
             is_active=row.is_active,
+            status=getattr(row, "status", None),
             logo_url=getattr(row, "logo_url", None),
             banner_url=getattr(row, "banner_url", None),
+            plan_tier=str(row.plan_tier) if getattr(row, "plan_tier", None) else None,
+            max_warehouses=getattr(row, "max_warehouses", None),
+            max_users=getattr(row, "max_users", None),
+            contract_start=str(row.contract_start) if getattr(row, "contract_start", None) else None,
+            contract_end=str(row.contract_end)   if getattr(row, "contract_end",   None) else None,
         )
     )
 
