@@ -199,10 +199,13 @@ async def check_plan_create_user(
         return  # unlimited
 
     # Exclude TA accounts from the count — the primary admin is always free.
+    # IS DISTINCT FROM handles NULL correctly: regular users have system_role = NULL
+    # and NULL != 'TA' is NULL in SQL (not TRUE), so != would silently exclude them.
     current = (await db.execute(
         text(
             "SELECT COUNT(*) FROM users "
-            "WHERE tenant_id = :tid AND is_active = true AND role != 'TA'"
+            "WHERE tenant_id = :tid AND is_active = true "
+            "AND system_role IS DISTINCT FROM 'TA'"
         ),
         {"tid": tenant_id},
     )).scalar() or 0

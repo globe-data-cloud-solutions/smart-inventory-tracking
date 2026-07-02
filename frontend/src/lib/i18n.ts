@@ -1,7 +1,6 @@
-// Canonical locale file lives at smart-platform/locales/en.json.
-// The @/lib/locales/en.json copy is a stale snapshot — import the
-// authoritative source directly so the static fallback is always current.
-import enFallback from "../../../locales/en.json";
+// English fallback — kept in sync with smart-platform/locales/en.json.
+// Imported from the local copy so webpack stays within the frontend project root.
+import enFallback from "./locales/en.json";
 
 type Locale = "en" | "am" | "or";
 

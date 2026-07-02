@@ -585,11 +585,15 @@ async def reactivate_user(
 ) -> SuccessResponse[dict]:
     """Reactivate a deactivated user (does not restore position assignments)."""
     row = (await db.execute(
-        text("SELECT id FROM users WHERE id = :uid AND tenant_id = :tid AND is_active = false"),
+        text("SELECT id, system_role FROM users WHERE id = :uid AND tenant_id = :tid AND is_active = false"),
         {"uid": str(user_id), "tid": str(tenant_id)},
     )).fetchone()
     if not row:
         raise HTTPException(status_code=404, detail="User not found or already active")
+
+    # Enforce the plan user cap — reactivating a non-TA counts the same as creating one.
+    if row.system_role != "TA":
+        await check_plan_create_user(user, db)
 
     await db.execute(
         text("UPDATE users SET is_active = true, updated_at = now() WHERE id = :uid"),
