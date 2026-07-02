@@ -41,6 +41,7 @@ class TenantCreateRequest(BaseModel):
     plan_tier: str = "GROWTH"
     # PRODUCER-only: maximum active SKUs allowed. NULL = unlimited (RETAILER/HYBRID).
     sku_cap: Optional[int] = None
+    industry: Optional[str] = None
     # Optional atomic TA admin user creation
     admin_name: Optional[str] = None
     admin_email: Optional[str] = None

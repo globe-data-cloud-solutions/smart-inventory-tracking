@@ -60,6 +60,9 @@ class TenantRegistryRow(BaseModel):
     created_at: str                 # ISO datetime string
     ta_name:  Optional[str] = None  # TA admin user name
     ta_email: Optional[str] = None  # TA admin user email
+    ta_user_id: Optional[str] = None  # TA admin user UUID (for edit link)
+    industry: Optional[str] = None
+    feature_flags: dict = {}
 
 
 class TenantContactIn(BaseModel):
@@ -222,6 +225,8 @@ async def sa_tenant_registry(
             t.contract_start, t.contract_end, t.notes,
             t.sku_cap, t.address_line1, t.address_line2,
             t.city, t.state_province, t.postal_code, t.country,
+            t.industry,
+            COALESCE(t.feature_flags, '{}'::jsonb) AS feature_flags,
             t.created_at,
             (SELECT COUNT(*) FROM users u
              WHERE u.tenant_id = t.id AND u.is_active = true AND u.system_role != 'TA')  AS user_count,
@@ -245,7 +250,10 @@ async def sa_tenant_registry(
              ORDER BY u.created_at ASC LIMIT 1) AS ta_name,
             (SELECT u.email FROM users u
              WHERE u.tenant_id = t.id AND u.system_role = 'TA' AND u.is_active = true
-             ORDER BY u.created_at ASC LIMIT 1) AS ta_email
+             ORDER BY u.created_at ASC LIMIT 1) AS ta_email,
+            (SELECT u.id::text FROM users u
+             WHERE u.tenant_id = t.id AND u.system_role = 'TA' AND u.is_active = true
+             ORDER BY u.created_at ASC LIMIT 1) AS ta_user_id
         FROM tenants t
         ORDER BY t.created_at DESC
     """))).fetchall()
@@ -278,6 +286,9 @@ async def sa_tenant_registry(
             created_at=row.created_at.isoformat(),
             ta_name=row.ta_name,
             ta_email=row.ta_email,
+            ta_user_id=row.ta_user_id,
+            industry=row.industry,
+            feature_flags=dict(row.feature_flags) if row.feature_flags else {},
         )
         for row in rows
     ])
@@ -478,9 +489,9 @@ async def create_tenant(
         await db.execute(
             text(
                 "INSERT INTO tenants (id, name, slug, plan_id, default_locale, organisation_type, "
-                "plan_tier, max_warehouses, max_users, sku_cap) "
+                "plan_tier, max_warehouses, max_users, sku_cap, industry) "
                 "VALUES (:id, :name, :slug, :plan_id, :locale, :org_type, "
-                "CAST(:plan_tier AS plan_tier), :max_wh, :max_u, :sku_cap)"
+                "CAST(:plan_tier AS plan_tier), :max_wh, :max_u, :sku_cap, :industry)"
             ),
             {
                 "id": str(tenant_id),
@@ -493,6 +504,7 @@ async def create_tenant(
                 "max_wh": tier_limits["max_warehouses"],
                 "max_u": tier_limits["max_users"],
                 "sku_cap": effective_sku_cap,
+                "industry": body.industry,
             },
         )
     except IntegrityError as exc:
@@ -658,6 +670,7 @@ class TenantProfileUpdateRequest(BaseModel):
     default_locale: Optional[str] = None
     plan_tier: Optional[str] = None
     notes: Optional[str] = None
+    industry: Optional[str] = None
     # Company address — all fields updated atomically when any is provided
     address_line1: Optional[str] = None
     address_line2: Optional[str] = None
@@ -691,7 +704,7 @@ async def update_tenant_profile(
     row = (await db.execute(
         text(
             "SELECT id, name, organisation_type, default_locale, plan_tier, "
-            "notes, address_line1, address_line2, city, state_province, postal_code, country "
+            "notes, industry, address_line1, address_line2, city, state_province, postal_code, country "
             "FROM tenants WHERE id = :id"
         ),
         {"id": str(tenant_id)},
@@ -742,6 +755,8 @@ async def update_tenant_profile(
         changes["plan_tier"] = (old_tier, body.plan_tier)
     if "notes" in body.model_fields_set and body.notes != row.notes:
         changes["notes"] = (row.notes, body.notes)
+    if "industry" in body.model_fields_set and body.industry != getattr(row, "industry", None):
+        changes["industry"] = (getattr(row, "industry", None), body.industry)
 
     # Address — treated as one atomic block; log as single entry if any field changed
     _ADDR_FIELDS = ("address_line1", "address_line2", "city", "state_province", "postal_code", "country")
@@ -793,6 +808,10 @@ async def update_tenant_profile(
     if "notes" in changes:
         set_parts.append("notes = :notes")
         params["notes"] = changes["notes"][1]
+
+    if "industry" in changes:
+        set_parts.append("industry = :industry")
+        params["industry"] = changes["industry"][1]
 
     if "address" in changes:
         for f in _ADDR_FIELDS:
@@ -1363,3 +1382,165 @@ async def deactivate_tenant(
     except Exception:
         pass  # log write failure must never roll back the status change
     return SuccessResponse(data=TenantStatusResponse(id=tenant_id, name=row.name, status="DEACTIVATED"))
+
+
+# ── TA Admin User ────────────────────────────────────────────────────────────
+
+class TaUserOut(BaseModel):
+    id: str
+    full_name: Optional[str]
+    email: str
+
+
+class TaUserUpdateRequest(BaseModel):
+    full_name: Optional[str] = None
+    email: Optional[str] = None
+
+
+@router.get("/{tenant_id}/admin-user", response_model=SuccessResponse[TaUserOut])
+@require_permission(PERMISSIONS.TENANT_MANAGE)
+async def get_tenant_admin_user(
+    tenant_id: uuid.UUID,
+    user=Depends(get_current_user),
+    db: AsyncSession = Depends(get_db_session),
+) -> SuccessResponse[TaUserOut]:
+    """SA-only: return the primary TA user for a tenant."""
+    if not user or user.role != "SA":
+        raise HTTPException(status_code=403, detail={"code": "FORBIDDEN", "message": "SA only"})
+    row = (await db.execute(
+        text(
+            "SELECT id, full_name, email FROM users "
+            "WHERE tenant_id = :tid AND system_role = 'TA' AND is_active = true "
+            "ORDER BY created_at ASC LIMIT 1"
+        ),
+        {"tid": str(tenant_id)},
+    )).fetchone()
+    if not row:
+        raise HTTPException(status_code=404, detail="No active TA user found for this tenant")
+    return SuccessResponse(data=TaUserOut(id=str(row.id), full_name=row.full_name, email=row.email))
+
+
+@router.patch("/{tenant_id}/admin-user", response_model=SuccessResponse[dict])
+@require_permission(PERMISSIONS.TENANT_MANAGE)
+async def update_tenant_admin_user(
+    tenant_id: uuid.UUID,
+    body: TaUserUpdateRequest,
+    user=Depends(get_current_user),
+    db: AsyncSession = Depends(get_db_session),
+) -> SuccessResponse[dict]:
+    """SA-only: update the TA user's name and/or email."""
+    if not user or user.role != "SA":
+        raise HTTPException(status_code=403, detail={"code": "FORBIDDEN", "message": "SA only"})
+
+    row = (await db.execute(
+        text(
+            "SELECT id, full_name, email FROM users "
+            "WHERE tenant_id = :tid AND system_role = 'TA' AND is_active = true "
+            "ORDER BY created_at ASC LIMIT 1"
+        ),
+        {"tid": str(tenant_id)},
+    )).fetchone()
+    if not row:
+        raise HTTPException(status_code=404, detail="No active TA user found for this tenant")
+
+    set_parts: list[str] = ["updated_at = now()"]
+    params: dict = {"uid": str(row.id)}
+    changes: dict = {}
+
+    if body.full_name is not None and body.full_name.strip() != (row.full_name or ""):
+        set_parts.append("full_name = :full_name")
+        params["full_name"] = body.full_name.strip()
+        changes["ta_full_name"] = (row.full_name, body.full_name.strip())
+
+    if body.email is not None and body.email.lower() != row.email.lower():
+        # Check uniqueness across all tenants
+        existing = (await db.execute(
+            text("SELECT id FROM users WHERE email = :email AND id != :uid"),
+            {"email": body.email.lower(), "uid": str(row.id)},
+        )).fetchone()
+        if existing:
+            raise HTTPException(
+                status_code=409,
+                detail={"code": "EMAIL_CONFLICT", "message": "Email already in use by another account"},
+            )
+        set_parts.append("email = :email")
+        params["email"] = body.email.lower()
+        changes["ta_email"] = (row.email, body.email.lower())
+
+    if not changes:
+        return SuccessResponse(data={"changes": 0, "fields": []})
+
+    await db.execute(
+        text(f"UPDATE users SET {', '.join(set_parts)} WHERE id = :uid"),
+        params,
+    )
+    for field, (old_val, new_val) in changes.items():
+        try:
+            await _log_tenant_activity(
+                db, tenant_id, str(user.user_id),
+                action=f"PROFILE_UPDATE_{field.upper()}",
+                old_value=old_val,
+                new_value=new_val,
+            )
+        except Exception:
+            pass
+    return SuccessResponse(data={"changes": len(changes), "fields": list(changes.keys())})
+
+
+# ── Feature Flags ────────────────────────────────────────────────────────────
+
+class FeatureFlagsUpdateRequest(BaseModel):
+    feature_flags: dict  # e.g. {"LOGISTICS": true, "AI_ANALYTICS": false}
+
+
+@router.patch("/{tenant_id}/feature-flags", response_model=SuccessResponse[dict])
+@require_permission(PERMISSIONS.TENANT_MANAGE)
+async def update_feature_flags(
+    tenant_id: uuid.UUID,
+    body: FeatureFlagsUpdateRequest,
+    user=Depends(get_current_user),
+    db: AsyncSession = Depends(get_db_session),
+) -> SuccessResponse[dict]:
+    """SA-only: update individual feature flag toggles without resetting all flags."""
+    if not user or user.role != "SA":
+        raise HTTPException(status_code=403, detail={"code": "FORBIDDEN", "message": "SA only"})
+
+    row = (await db.execute(
+        text("SELECT id, name, COALESCE(feature_flags, '{}'::jsonb) AS feature_flags FROM tenants WHERE id = :id"),
+        {"id": str(tenant_id)},
+    )).fetchone()
+    if not row:
+        raise HTTPException(status_code=404, detail="Tenant not found")
+
+    current_flags: dict = dict(row.feature_flags) if row.feature_flags else {}
+    # Merge: only update keys supplied in body; unknown keys are silently ignored
+    KNOWN_FLAGS = {"LOGISTICS", "AI_ANALYTICS", "ADVANCED_BATCH_TRACKING", "FLEET_MANAGEMENT"}
+    merged = dict(current_flags)
+    changes: dict = {}
+    for flag, val in body.feature_flags.items():
+        flag_upper = flag.upper()
+        if flag_upper not in KNOWN_FLAGS:
+            continue
+        if not isinstance(val, bool):
+            continue
+        if merged.get(flag_upper) != val:
+            changes[flag_upper] = (merged.get(flag_upper), val)
+            merged[flag_upper] = val
+
+    if not changes:
+        return SuccessResponse(data={"changes": 0, "feature_flags": current_flags})
+
+    await db.execute(
+        text("UPDATE tenants SET feature_flags = CAST(:flags AS jsonb), updated_at = now() WHERE id = :id"),
+        {"flags": json.dumps(merged), "id": str(tenant_id)},
+    )
+    try:
+        await _log_tenant_activity(
+            db, tenant_id, str(user.user_id),
+            action="FEATURE_FLAGS_UPDATE",
+            old_value=json.dumps({k: v[0] for k, v in changes.items()}),
+            new_value=json.dumps({k: v[1] for k, v in changes.items()}),
+        )
+    except Exception:
+        pass
+    return SuccessResponse(data={"changes": len(changes), "feature_flags": merged})

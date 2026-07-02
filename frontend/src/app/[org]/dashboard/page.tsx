@@ -309,8 +309,11 @@ export default function OrgDashboard() {
     postal_code:    string | null;
     country:        string | null;
     contacts:      ApiRegistryContact[];
-    ta_name:  string | null;
-    ta_email: string | null;
+    ta_name:    string | null;
+    ta_email:   string | null;
+    ta_user_id: string | null;
+    industry:      string | null;
+    feature_flags: Record<string, boolean>;
   }
 
   interface ApiActivityRow {
@@ -349,12 +352,12 @@ export default function OrgDashboard() {
 
   // ── Tenant Admin tab state ─────────────────────────────────────────────────
   const [adminTenantId, setAdminTenantId]       = useState<string>("");
-  const [adminSubTab, setAdminSubTab]           = useState<"profile" | "plan" | "contract" | "status" | "levels" | "contacts">("profile");
+  const [adminSubTab, setAdminSubTab]           = useState<"profile" | "plan" | "contract" | "status" | "levels" | "contacts" | "features" | "admin-user">("profile");
   const [adminSaving, setAdminSaving]           = useState(false);
   const [adminError, setAdminError]             = useState<string | null>(null);
   const [adminSuccess, setAdminSuccess]         = useState<string | null>(null);
   const [adminConfirm, setAdminConfirm]         = useState<string | null>(null);
-  const EMPTY_PROFILE = { name: "", organisation_type: "", default_locale: "", plan_tier: "", notes: "", address_line1: "", address_line2: "", city: "", state_province: "", postal_code: "", country: "" };
+  const EMPTY_PROFILE = { name: "", organisation_type: "", default_locale: "", plan_tier: "", notes: "", industry: "", address_line1: "", address_line2: "", city: "", state_province: "", postal_code: "", country: "" };
   const [adminProfile, setAdminProfile]         = useState(EMPTY_PROFILE);
   const [adminInitProfile, setAdminInitProfile] = useState(EMPTY_PROFILE);
   const [adminPlanTier, setAdminPlanTier]       = useState<string>("");
@@ -364,6 +367,9 @@ export default function OrgDashboard() {
   const [adminContactFormOpen, setAdminContactFormOpen] = useState(false);
   const [adminContactEditIdx, setAdminContactEditIdx]   = useState<number | null>(null);
   const [adminContactForm, setAdminContactForm]         = useState({ is_primary: false, full_name: "", position_title: "", email: "", phone: "", mobile: "" });
+  const [adminTaUser, setAdminTaUser]           = useState<{ id: string; full_name: string; email: string } | null>(null);
+  const [adminTaForm, setAdminTaForm]           = useState({ full_name: "", email: "" });
+  const [adminFeatureFlags, setAdminFeatureFlags] = useState<Record<string, boolean>>({});
 
   const { data: platformTierConfig, refetch: refetchTierConfig } = useQuery<TierConfigEntry[]>({
     queryKey: ["platform-tier-config"],
@@ -410,7 +416,7 @@ export default function OrgDashboard() {
   }
 
   // ── Tenant Admin tab helpers ───────────────────────────────────────────────
-  function selectAdminTenant(id: string, subTab?: "profile" | "plan" | "contract" | "status" | "levels" | "contacts") {
+  function selectAdminTenant(id: string, subTab?: "profile" | "plan" | "contract" | "status" | "levels" | "contacts" | "features" | "admin-user") {
     const ten = apiRegistryList?.find((r) => r.id === id);
     if (ten) {
       const prof = {
@@ -419,6 +425,7 @@ export default function OrgDashboard() {
         default_locale:    ten.default_locale    ?? "en",
         plan_tier:         ten.plan_tier          ?? "",
         notes:             ten.notes             ?? "",
+        industry:          ten.industry           ?? "",
         address_line1:     ten.address_line1     ?? "",
         address_line2:     ten.address_line2     ?? "",
         city:              ten.city              ?? "",
@@ -432,6 +439,15 @@ export default function OrgDashboard() {
       setAdminSkuCap(ten.sku_cap ?? null);
       setAdminContract({ start: ten.contract_start ?? "", end: ten.contract_end ?? "", note: "" });
       setAdminContacts(ten.contacts ?? []);
+      setAdminFeatureFlags(ten.feature_flags ?? {});
+      // Seed TA user from registry data; GET /admin-user will refresh if the user navigates there
+      if (ten.ta_user_id && ten.ta_name !== undefined) {
+        setAdminTaUser({ id: ten.ta_user_id, full_name: ten.ta_name ?? "", email: ten.ta_email ?? "" });
+        setAdminTaForm({ full_name: ten.ta_name ?? "", email: ten.ta_email ?? "" });
+      } else {
+        setAdminTaUser(null);
+        setAdminTaForm({ full_name: "", email: "" });
+      }
     }
     setAdminTenantId(id);
     setAdminSubTab(subTab ?? "profile");
@@ -472,6 +488,8 @@ export default function OrgDashboard() {
       body.plan_tier = adminProfile.plan_tier;
     if (adminProfile.notes !== adminInitProfile.notes)
       body.notes = adminProfile.notes || null;
+    if (adminProfile.industry !== adminInitProfile.industry)
+      body.industry = adminProfile.industry || null;
     const addrFields = ["address_line1", "address_line2", "city", "state_province", "postal_code", "country"] as const;
     const addrChanged = addrFields.some((f) => adminProfile[f] !== adminInitProfile[f]);
     if (addrChanged) {
@@ -504,6 +522,40 @@ export default function OrgDashboard() {
       plan_tier: adminPlanTier,
       sku_cap:   adminSkuCap,
     }));
+  }
+
+  async function handleAdminFeatureFlagsSave() {
+    const currentRow  = apiRegistryList?.find((r) => r.id === adminTenantId);
+    const currentFlags = currentRow?.feature_flags ?? {};
+    const hasChange = Object.entries(adminFeatureFlags).some(
+      ([k, v]) => currentFlags[k] !== v
+    );
+    if (!hasChange) {
+      setAdminConfirm(null);
+      setAdminSuccess(t("sa.admin_no_changes"));
+      return;
+    }
+    await doAdminSave(() => api.patch(`/api/v1/tenants/${adminTenantId}/feature-flags`, {
+      feature_flags: adminFeatureFlags,
+    }));
+  }
+
+  async function handleAdminTaUserSave() {
+    if (!adminTaUser) return;
+    const nameChanged  = adminTaForm.full_name.trim() !== adminTaUser.full_name;
+    const emailChanged = adminTaForm.email.trim().toLowerCase() !== adminTaUser.email.toLowerCase();
+    if (!nameChanged && !emailChanged) {
+      setAdminConfirm(null);
+      setAdminSuccess(t("sa.admin_no_changes"));
+      return;
+    }
+    const body: Record<string, string> = {};
+    if (nameChanged)  body.full_name = adminTaForm.full_name.trim();
+    if (emailChanged) body.email     = adminTaForm.email.trim();
+    await doAdminSave(async () => {
+      await api.patch(`/api/v1/tenants/${adminTenantId}/admin-user`, body);
+      setAdminTaUser({ ...adminTaUser, ...body });
+    });
   }
 
   async function handleAdminContractSave() {
@@ -911,7 +963,7 @@ export default function OrgDashboard() {
                 if (!selTen) return null;
                 const selStatus = selTen.status || "ACTIVE";
                 const selSlug   = selTen.slug ?? selTen.id;
-                const ADMIN_SUBTABS = ["profile", "plan", "contract", "status", "levels", "contacts"] as const;
+                const ADMIN_SUBTABS = ["profile", "plan", "contract", "status", "levels", "contacts", "features", "admin-user"] as const;
                 return (
                   <div>
                     <p className="text-sm font-semibold text-[#0f2d1f] mb-3">{selTen.name}</p>
@@ -1010,6 +1062,15 @@ export default function OrgDashboard() {
                               ))}
                             </div>
                           </div>
+                        </div>
+                        {/* Industry */}
+                        <div className="mb-4 mt-4 border-t border-gray-100 pt-4">
+                          <label className="block text-[12px] font-semibold text-gray-600 mb-1">{t("sa.edit_profile_field_industry")}</label>
+                          <input type="text" value={adminProfile.industry}
+                            onChange={(e) => { setAdminProfile((p) => ({ ...p, industry: e.target.value })); setAdminSuccess(null); }}
+                            placeholder={t("sa.edit_profile_industry_placeholder")}
+                            className="w-full px-3 py-2 text-sm border border-gray-300 rounded-md outline-none focus:border-[#0f2d1f] focus:ring-1 focus:ring-[#0f2d1f]"
+                          />
                         </div>
                         {/* Company Address */}
                         <p className="text-[11px] font-bold text-gray-500 uppercase tracking-wide mt-5 mb-3 border-t border-gray-100 pt-4">{t("sa.edit_profile_section_company")}</p>
@@ -1479,6 +1540,104 @@ export default function OrgDashboard() {
                           >
                             {t("sa.admin_save_btn")}
                           </button>
+                        )}
+                      </div>
+                    )}
+
+                    {/* ── Features ────────────────────────────────────────── */}
+                    {adminSubTab === "features" && (
+                      <div className="max-w-md">
+                        <p className="text-xs text-gray-500 mb-5">{t("sa.features_hint")}</p>
+                        <div className="flex flex-col gap-4 mb-6">
+                          {(["LOGISTICS", "AI_ANALYTICS", "ADVANCED_BATCH_TRACKING", "FLEET_MANAGEMENT"] as const).map((flag) => (
+                            <label key={flag} className="flex items-center justify-between cursor-pointer">
+                              <span className="text-sm font-medium text-gray-700">{t(`sa.feature_${flag}`)}</span>
+                              <button
+                                type="button"
+                                onClick={() => { setAdminFeatureFlags((prev) => ({ ...prev, [flag]: !prev[flag] })); setAdminSuccess(null); }}
+                                className={[
+                                  "relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none",
+                                  adminFeatureFlags[flag] ? "bg-[#0f2d1f]" : "bg-gray-300",
+                                ].join(" ")}
+                                aria-pressed={!!adminFeatureFlags[flag]}
+                              >
+                                <span className={[
+                                  "inline-block h-4 w-4 transform rounded-full bg-white transition-transform",
+                                  adminFeatureFlags[flag] ? "translate-x-6" : "translate-x-1",
+                                ].join(" ")} />
+                              </button>
+                            </label>
+                          ))}
+                        </div>
+                        {adminConfirm === "save" ? (
+                          <div className="flex items-center gap-3 p-3 bg-gray-50 rounded border border-gray-200">
+                            <span className="text-sm text-gray-700 flex-1">{t("sa.admin_confirm_prompt")}</span>
+                            <button type="button" disabled={adminSaving} onClick={() => void handleAdminFeatureFlagsSave()}
+                              className="px-3 py-1.5 text-xs font-bold text-white bg-[#0f2d1f] rounded hover:bg-[#1a4d35] disabled:opacity-50">
+                              {adminSaving ? "…" : t("sa.admin_confirm_yes")}
+                            </button>
+                            <button type="button" disabled={adminSaving} onClick={() => setAdminConfirm(null)}
+                              className="px-3 py-1.5 text-xs font-bold text-gray-600 rounded hover:bg-gray-200">
+                              {t("sa.admin_confirm_no")}
+                            </button>
+                          </div>
+                        ) : (
+                          <button type="button"
+                            onClick={() => { setAdminConfirm("save"); setAdminSuccess(null); setAdminError(null); }}
+                            className="px-4 py-2 text-sm font-bold text-white bg-[#0f2d1f] rounded hover:bg-[#1a4d35]"
+                          >
+                            {t("sa.features_save_btn")}
+                          </button>
+                        )}
+                      </div>
+                    )}
+
+                    {/* ── Admin User ───────────────────────────────────────── */}
+                    {adminSubTab === "admin-user" && (
+                      <div className="max-w-md">
+                        <p className="text-xs font-bold text-gray-500 uppercase tracking-wide mb-4">{t("sa.admin_user_heading")}</p>
+                        {!adminTaUser ? (
+                          <p className="text-sm text-gray-400 italic">{t("sa.admin_user_no_ta")}</p>
+                        ) : (
+                          <>
+                            <div className="flex flex-col gap-3 mb-6">
+                              <div>
+                                <label className="block text-[12px] font-semibold text-gray-600 mb-1">{t("sa.admin_user_name_label")}</label>
+                                <input type="text" value={adminTaForm.full_name}
+                                  onChange={(e) => { setAdminTaForm((p) => ({ ...p, full_name: e.target.value })); setAdminSuccess(null); }}
+                                  className="w-full px-3 py-2 text-sm border border-gray-300 rounded-md outline-none focus:border-[#0f2d1f] focus:ring-1 focus:ring-[#0f2d1f]"
+                                />
+                              </div>
+                              <div>
+                                <label className="block text-[12px] font-semibold text-gray-600 mb-1">{t("sa.admin_user_email_label")}</label>
+                                <input type="email" value={adminTaForm.email}
+                                  onChange={(e) => { setAdminTaForm((p) => ({ ...p, email: e.target.value })); setAdminSuccess(null); }}
+                                  className="w-full px-3 py-2 text-sm border border-gray-300 rounded-md outline-none focus:border-[#0f2d1f] focus:ring-1 focus:ring-[#0f2d1f]"
+                                />
+                              </div>
+                            </div>
+                            {adminConfirm === "save" ? (
+                              <div className="flex items-center gap-3 p-3 bg-gray-50 rounded border border-gray-200">
+                                <span className="text-sm text-gray-700 flex-1">{t("sa.admin_confirm_prompt")}</span>
+                                <button type="button" disabled={adminSaving} onClick={() => void handleAdminTaUserSave()}
+                                  className="px-3 py-1.5 text-xs font-bold text-white bg-[#0f2d1f] rounded hover:bg-[#1a4d35] disabled:opacity-50">
+                                  {adminSaving ? "…" : t("sa.admin_confirm_yes")}
+                                </button>
+                                <button type="button" disabled={adminSaving} onClick={() => setAdminConfirm(null)}
+                                  className="px-3 py-1.5 text-xs font-bold text-gray-600 rounded hover:bg-gray-200">
+                                  {t("sa.admin_confirm_no")}
+                                </button>
+                              </div>
+                            ) : (
+                              <button type="button"
+                                onClick={() => { setAdminConfirm("save"); setAdminSuccess(null); setAdminError(null); }}
+                                disabled={adminTaForm.full_name === adminTaUser.full_name && adminTaForm.email.toLowerCase() === adminTaUser.email.toLowerCase()}
+                                className="px-4 py-2 text-sm font-bold text-white bg-[#0f2d1f] rounded hover:bg-[#1a4d35] disabled:opacity-40"
+                              >
+                                {t("sa.admin_user_save_btn")}
+                              </button>
+                            )}
+                          </>
                         )}
                       </div>
                     )}

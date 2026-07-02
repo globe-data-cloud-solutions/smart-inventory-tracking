@@ -240,6 +240,7 @@ export default function OnboardPage() {
         default_locale:     form.locale,
         organisation_type:  form.orgType || null,
         plan_tier:          form.planTier,
+        ...(form.industry.trim() ? { industry: form.industry.trim() } : {}),
         // Only PRODUCER tenants have a SKU cap; RETAILER/HYBRID get NULL (unlimited).
         ...(form.orgType === "PRODUCER" && form.skuLimit
           ? { sku_cap: parseInt(form.skuLimit, 10) }
