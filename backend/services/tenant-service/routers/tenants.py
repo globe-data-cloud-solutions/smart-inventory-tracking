@@ -1162,13 +1162,12 @@ async def update_tenant_contract(
     if not row:
         raise HTTPException(status_code=404, detail="Tenant not found")
 
-    # Validate date strings
-    def _parse_date(s: Optional[str]) -> Optional[str]:
+    # Validate date strings and convert to datetime.date for asyncpg
+    def _parse_date(s: Optional[str]) -> Optional[_date]:
         if s is None:
             return None
         try:
-            _date.fromisoformat(s)
-            return s
+            return _date.fromisoformat(s)
         except ValueError:
             raise HTTPException(
                 status_code=422,
@@ -1185,7 +1184,7 @@ async def update_tenant_contract(
     should_reactivate = (
         str(row.status) == "SUSPENDED"
         and new_end is not None
-        and _date.fromisoformat(new_end) >= _date.today()
+        and new_end >= _date.today()
     )
 
     await db.execute(
