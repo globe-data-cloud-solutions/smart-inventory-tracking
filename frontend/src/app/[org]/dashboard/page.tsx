@@ -291,6 +291,7 @@ export default function OrgDashboard() {
     organisation_type: string | null;
     status: string;
     plan_tier:      string | null;
+    sku_cap:        number | null;
     default_locale: string;
     contact_name:   string | null;
     contact_email:  string | null;
@@ -301,9 +302,12 @@ export default function OrgDashboard() {
     user_count: number;
     node_count: number;
     created_at: string;
-    address_line1: string | null;
-    city:          string | null;
-    country:       string | null;
+    address_line1:  string | null;
+    address_line2:  string | null;
+    city:           string | null;
+    state_province: string | null;
+    postal_code:    string | null;
+    country:        string | null;
     contacts:      ApiRegistryContact[];
     ta_name:  string | null;
     ta_email: string | null;
@@ -350,9 +354,11 @@ export default function OrgDashboard() {
   const [adminError, setAdminError]             = useState<string | null>(null);
   const [adminSuccess, setAdminSuccess]         = useState<string | null>(null);
   const [adminConfirm, setAdminConfirm]         = useState<string | null>(null);
-  const [adminProfile, setAdminProfile]         = useState({ name: "", organisation_type: "", default_locale: "", plan_tier: "" });
-  const [adminInitProfile, setAdminInitProfile] = useState({ name: "", organisation_type: "", default_locale: "", plan_tier: "" });
+  const EMPTY_PROFILE = { name: "", organisation_type: "", default_locale: "", plan_tier: "", notes: "", address_line1: "", address_line2: "", city: "", state_province: "", postal_code: "", country: "" };
+  const [adminProfile, setAdminProfile]         = useState(EMPTY_PROFILE);
+  const [adminInitProfile, setAdminInitProfile] = useState(EMPTY_PROFILE);
   const [adminPlanTier, setAdminPlanTier]       = useState<string>("");
+  const [adminSkuCap, setAdminSkuCap]           = useState<number | null>(null);
   const [adminContract, setAdminContract]       = useState({ start: "", end: "", note: "" });
   const [adminContacts, setAdminContacts]       = useState<ApiRegistryContact[]>([]);
   const [adminContactFormOpen, setAdminContactFormOpen] = useState(false);
@@ -412,10 +418,18 @@ export default function OrgDashboard() {
         organisation_type: ten.organisation_type ?? "",
         default_locale:    ten.default_locale    ?? "en",
         plan_tier:         ten.plan_tier          ?? "",
+        notes:             ten.notes             ?? "",
+        address_line1:     ten.address_line1     ?? "",
+        address_line2:     ten.address_line2     ?? "",
+        city:              ten.city              ?? "",
+        state_province:    ten.state_province    ?? "",
+        postal_code:       ten.postal_code       ?? "",
+        country:           ten.country           ?? "",
       };
       setAdminProfile(prof);
       setAdminInitProfile(prof);
       setAdminPlanTier(ten.plan_tier ?? "");
+      setAdminSkuCap(ten.sku_cap ?? null);
       setAdminContract({ start: ten.contract_start ?? "", end: ten.contract_end ?? "", note: "" });
       setAdminContacts(ten.contacts ?? []);
     }
@@ -447,7 +461,7 @@ export default function OrgDashboard() {
   }
 
   async function handleAdminProfileSave() {
-    const body: Record<string, string> = {};
+    const body: Record<string, string | null> = {};
     if (adminProfile.name.trim() !== adminInitProfile.name && adminProfile.name.trim())
       body.name = adminProfile.name.trim();
     if (adminProfile.organisation_type !== adminInitProfile.organisation_type && adminProfile.organisation_type)
@@ -456,6 +470,13 @@ export default function OrgDashboard() {
       body.default_locale = adminProfile.default_locale;
     if (adminProfile.plan_tier !== adminInitProfile.plan_tier && adminProfile.plan_tier)
       body.plan_tier = adminProfile.plan_tier;
+    if (adminProfile.notes !== adminInitProfile.notes)
+      body.notes = adminProfile.notes || null;
+    const addrFields = ["address_line1", "address_line2", "city", "state_province", "postal_code", "country"] as const;
+    const addrChanged = addrFields.some((f) => adminProfile[f] !== adminInitProfile[f]);
+    if (addrChanged) {
+      for (const f of addrFields) body[f] = adminProfile[f] || null;
+    }
     if (Object.keys(body).length === 0) {
       setAdminConfirm(null);
       setAdminSuccess(t("sa.admin_no_changes"));
@@ -468,13 +489,21 @@ export default function OrgDashboard() {
   }
 
   async function handleAdminPlanSave() {
-    const currentTier = apiRegistryList?.find((r) => r.id === adminTenantId)?.plan_tier ?? "";
-    if (adminPlanTier === currentTier || !adminPlanTier) {
+    const currentRow  = apiRegistryList?.find((r) => r.id === adminTenantId);
+    const currentTier = currentRow?.plan_tier ?? "";
+    const currentCap  = currentRow?.sku_cap   ?? null;
+    const tierChanged = adminPlanTier && adminPlanTier !== currentTier;
+    const capChanged  = adminSkuCap !== currentCap;
+    if (!tierChanged && !capChanged) {
       setAdminConfirm(null);
       setAdminSuccess(t("sa.admin_no_changes"));
       return;
     }
-    await doAdminSave(() => api.patch(`/api/v1/tenants/${adminTenantId}/plan`, { plan_tier: adminPlanTier }));
+    if (!adminPlanTier) return;
+    await doAdminSave(() => api.patch(`/api/v1/tenants/${adminTenantId}/plan`, {
+      plan_tier: adminPlanTier,
+      sku_cap:   adminSkuCap,
+    }));
   }
 
   async function handleAdminContractSave() {
@@ -649,6 +678,7 @@ export default function OrgDashboard() {
                           "dashboard.tenant_type",
                           "table.status",
                           "table.plan",
+                          "sa.col_sku_cap",
                           "sa.col_users",
                           "sa.col_nodes",
                           "sa.col_created",
@@ -689,6 +719,9 @@ export default function OrgDashboard() {
                               <span className={`text-xs font-bold px-2.5 py-0.5 rounded ${PLAN_TIER_BADGE[ten.plan_tier ?? ""] ?? "bg-gray-100 text-gray-600"}`}>
                                 {ten.plan_tier ?? "—"}
                               </span>
+                            </td>
+                            <td className="px-4 py-2.5 text-center text-xs text-gray-600">
+                              {ten.sku_cap != null ? ten.sku_cap.toLocaleString() : <span className="text-gray-400">∞</span>}
                             </td>
                             <td className="px-4 py-2.5 text-center text-gray-700">{ten.user_count}</td>
                             <td className="px-4 py-2.5 text-center text-gray-700">{ten.node_count}</td>
@@ -732,7 +765,8 @@ export default function OrgDashboard() {
                           "sa.col_contact_email",
                           "sa.col_contact_phone",
                           "sa.col_personnel",
-                          "sa.col_contract",
+                          "sa.col_contract_from",
+                          "sa.col_contract_to",
                           "sa.col_notes",
                           "table.actions",
                         ].map((key) => (
@@ -748,14 +782,14 @@ export default function OrgDashboard() {
                     <tbody>
                       {registryError && (
                         <tr>
-                          <td colSpan={8} className="px-4 py-8 text-center text-sm text-red-500">
+                          <td colSpan={9} className="px-4 py-8 text-center text-sm text-red-500">
                             {t("common.error")}
                           </td>
                         </tr>
                       )}
                       {!registryError && (!apiRegistryList || apiRegistryList.length === 0) && (
                         <tr>
-                          <td colSpan={8} className="px-4 py-8 text-center text-sm text-gray-400">
+                          <td colSpan={9} className="px-4 py-8 text-center text-sm text-gray-400">
                             {t("common.no_data")}
                           </td>
                         </tr>
@@ -768,9 +802,12 @@ export default function OrgDashboard() {
                         const primaryPhone = primary?.phone ?? primary?.mobile ?? row.contact_phone ?? null;
                         return (
                           <tr key={row.id} className={`border-b border-gray-100 ${idx % 2 === 0 ? "bg-white" : "bg-gray-50"}`}>
-                            {/* Tenant Name */}
-                            <td className="px-4 py-2.5 font-semibold text-gray-800 whitespace-nowrap">
-                              {row.name}
+                            {/* Tenant Name + location */}
+                            <td className="px-4 py-2.5 whitespace-nowrap">
+                              <p className="font-semibold text-gray-800 m-0">{row.name}</p>
+                              {(row.city || row.country) && (
+                                <p className="text-[11px] text-gray-400 m-0">{[row.city, row.country].filter(Boolean).join(", ")}</p>
+                              )}
                             </td>
                             {/* Contact Name */}
                             <td className="px-4 py-2.5 text-sm text-gray-700 whitespace-nowrap">
@@ -812,14 +849,17 @@ export default function OrgDashboard() {
                                 {totalContacts > 0 && <span>{totalContacts}</span>}
                               </button>
                             </td>
-                            {/* Contract */}
-                            <td className="px-4 py-2.5 text-xs text-gray-600">
-                              {row.contract_start ?? row.contract_end ? (
-                                <div>
-                                  {row.contract_start && <p className="m-0"><span className="text-gray-400">{t("sa.contract_from")}</span> {row.contract_start}</p>}
-                                  {row.contract_end   && <p className="m-0"><span className="text-gray-400">{t("sa.contract_to")}</span> {row.contract_end}</p>}
-                                </div>
-                              ) : "—"}
+                            {/* Contract From */}
+                            <td className="px-4 py-2.5 text-xs text-gray-600 whitespace-nowrap">
+                              {row.contract_start ?? <span className="text-gray-300">—</span>}
+                            </td>
+                            {/* Contract To */}
+                            <td className="px-4 py-2.5 text-xs whitespace-nowrap">
+                              {row.contract_end ? (
+                                <span className={new Date(row.contract_end) < new Date() ? "text-red-600 font-semibold" : "text-gray-600"}>
+                                  {row.contract_end}
+                                </span>
+                              ) : <span className="text-gray-300">—</span>}
                             </td>
                             {/* Notes */}
                             <td className="px-4 py-2.5 text-xs text-gray-500 max-w-[140px]">
@@ -971,6 +1011,64 @@ export default function OrgDashboard() {
                             </div>
                           </div>
                         </div>
+                        {/* Company Address */}
+                        <p className="text-[11px] font-bold text-gray-500 uppercase tracking-wide mt-5 mb-3 border-t border-gray-100 pt-4">{t("sa.edit_profile_section_company")}</p>
+                        <div className="flex flex-col gap-3 mb-4">
+                          <div>
+                            <label className="block text-[12px] font-semibold text-gray-600 mb-1">{t("sa.edit_profile_field_address1")}</label>
+                            <input type="text" value={adminProfile.address_line1}
+                              onChange={(e) => { setAdminProfile((p) => ({ ...p, address_line1: e.target.value })); setAdminSuccess(null); }}
+                              className="w-full px-3 py-2 text-sm border border-gray-300 rounded-md outline-none focus:border-[#0f2d1f] focus:ring-1 focus:ring-[#0f2d1f]"
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-[12px] font-semibold text-gray-600 mb-1">{t("sa.edit_profile_field_address2")}</label>
+                            <input type="text" value={adminProfile.address_line2}
+                              onChange={(e) => { setAdminProfile((p) => ({ ...p, address_line2: e.target.value })); setAdminSuccess(null); }}
+                              className="w-full px-3 py-2 text-sm border border-gray-300 rounded-md outline-none focus:border-[#0f2d1f] focus:ring-1 focus:ring-[#0f2d1f]"
+                            />
+                          </div>
+                          <div className="grid grid-cols-2 gap-3">
+                            <div>
+                              <label className="block text-[12px] font-semibold text-gray-600 mb-1">{t("sa.edit_profile_field_city")}</label>
+                              <input type="text" value={adminProfile.city}
+                                onChange={(e) => { setAdminProfile((p) => ({ ...p, city: e.target.value })); setAdminSuccess(null); }}
+                                className="w-full px-3 py-2 text-sm border border-gray-300 rounded-md outline-none focus:border-[#0f2d1f] focus:ring-1 focus:ring-[#0f2d1f]"
+                              />
+                            </div>
+                            <div>
+                              <label className="block text-[12px] font-semibold text-gray-600 mb-1">{t("sa.edit_profile_field_state")}</label>
+                              <input type="text" value={adminProfile.state_province}
+                                onChange={(e) => { setAdminProfile((p) => ({ ...p, state_province: e.target.value })); setAdminSuccess(null); }}
+                                className="w-full px-3 py-2 text-sm border border-gray-300 rounded-md outline-none focus:border-[#0f2d1f] focus:ring-1 focus:ring-[#0f2d1f]"
+                              />
+                            </div>
+                          </div>
+                          <div className="grid grid-cols-2 gap-3">
+                            <div>
+                              <label className="block text-[12px] font-semibold text-gray-600 mb-1">{t("sa.edit_profile_field_postal")}</label>
+                              <input type="text" value={adminProfile.postal_code}
+                                onChange={(e) => { setAdminProfile((p) => ({ ...p, postal_code: e.target.value })); setAdminSuccess(null); }}
+                                className="w-full px-3 py-2 text-sm border border-gray-300 rounded-md outline-none focus:border-[#0f2d1f] focus:ring-1 focus:ring-[#0f2d1f]"
+                              />
+                            </div>
+                            <div>
+                              <label className="block text-[12px] font-semibold text-gray-600 mb-1">{t("sa.edit_profile_field_country")}</label>
+                              <input type="text" value={adminProfile.country}
+                                onChange={(e) => { setAdminProfile((p) => ({ ...p, country: e.target.value })); setAdminSuccess(null); }}
+                                className="w-full px-3 py-2 text-sm border border-gray-300 rounded-md outline-none focus:border-[#0f2d1f] focus:ring-1 focus:ring-[#0f2d1f]"
+                              />
+                            </div>
+                          </div>
+                          <div>
+                            <label className="block text-[12px] font-semibold text-gray-600 mb-1">{t("sa.edit_profile_field_notes")}</label>
+                            <textarea rows={3} value={adminProfile.notes}
+                              onChange={(e) => { setAdminProfile((p) => ({ ...p, notes: e.target.value })); setAdminSuccess(null); }}
+                              className="w-full px-3 py-2 text-sm border border-gray-300 rounded-md outline-none focus:border-[#0f2d1f] focus:ring-1 focus:ring-[#0f2d1f] resize-none"
+                              placeholder={t("sa.edit_profile_notes_placeholder")}
+                            />
+                          </div>
+                        </div>
                         {adminConfirm === "save" ? (
                           <div className="flex items-center gap-3 p-3 bg-gray-50 rounded border border-gray-200">
                             <span className="text-sm text-gray-700 flex-1">{t("sa.admin_confirm_prompt")}</span>
@@ -1020,7 +1118,24 @@ export default function OrgDashboard() {
                             </button>
                           ))}
                         </div>
-                        <p className="text-xs text-gray-400 mb-3">{t("sa.plan_modal_caps")}</p>
+                        <p className="text-xs text-gray-400 mb-4">{t("sa.plan_modal_caps")}</p>
+                        {/* SKU Cap */}
+                        <div className="mb-4">
+                          <label className="block text-[12px] font-semibold text-gray-600 mb-1">{t("sa.plan_sku_cap_label")}</label>
+                          <input
+                            type="number"
+                            min={0}
+                            placeholder={t("sa.plan_sku_cap_unlimited")}
+                            value={adminSkuCap ?? ""}
+                            onChange={(e) => {
+                              const v = e.target.value;
+                              setAdminSkuCap(v === "" ? null : Math.max(0, parseInt(v, 10)));
+                              setAdminSuccess(null);
+                            }}
+                            className="w-full px-3 py-2 text-sm border border-gray-300 rounded-md outline-none focus:border-[#0f2d1f] focus:ring-1 focus:ring-[#0f2d1f]"
+                          />
+                          <p className="text-[11px] text-gray-400 mt-1">{t("sa.plan_sku_cap_hint")}</p>
+                        </div>
                         {/* Contract dates summary — edit via Contract sub-tab */}
                         {(selTen.contract_start || selTen.contract_end) && (
                           <div className="mb-3 px-3 py-2 bg-gray-50 border border-gray-200 rounded text-xs text-gray-600">
@@ -1058,7 +1173,7 @@ export default function OrgDashboard() {
                           </div>
                         ) : (
                           <button type="button"
-                            disabled={!adminPlanTier || adminPlanTier === (selTen.plan_tier ?? "")}
+                            disabled={!adminPlanTier || (adminPlanTier === (selTen.plan_tier ?? "") && adminSkuCap === (selTen.sku_cap ?? null))}
                             onClick={() => { setAdminConfirm("save"); setAdminSuccess(null); setAdminError(null); }}
                             className="px-4 py-2 text-sm font-bold text-white bg-[#0f2d1f] rounded hover:bg-[#1a4d35] disabled:opacity-50">
                             {t("sa.admin_save_btn")}

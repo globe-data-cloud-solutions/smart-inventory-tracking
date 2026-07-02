@@ -47,8 +47,12 @@ class TenantRegistryRow(BaseModel):
     contract_start: Optional[str]   # ISO date string "YYYY-MM-DD" or None
     contract_end:   Optional[str]
     notes:          Optional[str]
+    sku_cap:        Optional[int]
     address_line1:  Optional[str]
+    address_line2:  Optional[str]
     city:           Optional[str]
+    state_province: Optional[str]
+    postal_code:    Optional[str]
     country:        Optional[str]
     contacts: List[RegistryContact] = []
     user_count: int
@@ -216,7 +220,8 @@ async def sa_tenant_registry(
             t.default_locale,
             t.contact_name, t.contact_email, t.contact_phone,
             t.contract_start, t.contract_end, t.notes,
-            t.address_line1, t.city, t.country,
+            t.sku_cap, t.address_line1, t.address_line2,
+            t.city, t.state_province, t.postal_code, t.country,
             t.created_at,
             (SELECT COUNT(*) FROM users u
              WHERE u.tenant_id = t.id AND u.is_active = true AND u.system_role != 'TA')  AS user_count,
@@ -260,8 +265,12 @@ async def sa_tenant_registry(
             contract_start=str(row.contract_start) if row.contract_start else None,
             contract_end=str(row.contract_end)     if row.contract_end   else None,
             notes=row.notes,
+            sku_cap=row.sku_cap,
             address_line1=row.address_line1,
+            address_line2=row.address_line2,
             city=row.city,
+            state_province=row.state_province,
+            postal_code=row.postal_code,
             country=row.country,
             contacts=[RegistryContact(**c) for c in (row.contacts or [])],
             user_count=int(row.user_count),
@@ -578,6 +587,7 @@ class PlanUpdateRequest(BaseModel):
     plan_tier: str
     max_warehouses: Optional[int] = None   # if None, auto-set from platform_tier_config
     max_users: Optional[int] = None        # if None, auto-set from platform_tier_config
+    sku_cap: Optional[int] = None          # None = unlimited; only updated when key present in body
 
 
 @router.patch("/{tenant_id}/plan", response_model=SuccessResponse[dict])
@@ -613,15 +623,19 @@ async def update_tenant_plan(
     resolved_max_wh = body.max_warehouses if body.max_warehouses is not None else platform_limits["max_warehouses"]
     resolved_max_u  = body.max_users      if body.max_users      is not None else platform_limits["max_users"]
 
-    await db.execute(
-        text(
-            "UPDATE tenants SET plan_tier = CAST(:tier AS plan_tier), "
-            "max_warehouses = :max_wh, max_users = :max_u, updated_at = now() "
-            "WHERE id = :id"
-        ),
-        {"tier": body.plan_tier, "max_wh": resolved_max_wh,
-         "max_u": resolved_max_u, "id": str(tenant_id)},
+    plan_set = (
+        "UPDATE tenants SET plan_tier = CAST(:tier AS plan_tier), "
+        "max_warehouses = :max_wh, max_users = :max_u, updated_at = now()"
     )
+    plan_params: dict = {
+        "tier": body.plan_tier, "max_wh": resolved_max_wh,
+        "max_u": resolved_max_u, "id": str(tenant_id),
+    }
+    if "sku_cap" in body.model_fields_set:
+        plan_set += ", sku_cap = :sku_cap"
+        plan_params["sku_cap"] = body.sku_cap
+    plan_set += " WHERE id = :id"
+    await db.execute(text(plan_set), plan_params)
     try:
         await _log_tenant_activity(
             db, tenant_id, str(user.user_id),
@@ -643,6 +657,14 @@ class TenantProfileUpdateRequest(BaseModel):
     organisation_type: Optional[str] = None
     default_locale: Optional[str] = None
     plan_tier: Optional[str] = None
+    notes: Optional[str] = None
+    # Company address — all fields updated atomically when any is provided
+    address_line1: Optional[str] = None
+    address_line2: Optional[str] = None
+    city: Optional[str] = None
+    state_province: Optional[str] = None
+    postal_code: Optional[str] = None
+    country: Optional[str] = None
 
 
 VALID_LOCALES = frozenset({"en", "am", "or"})
@@ -668,7 +690,8 @@ async def update_tenant_profile(
 
     row = (await db.execute(
         text(
-            "SELECT id, name, organisation_type, default_locale, plan_tier "
+            "SELECT id, name, organisation_type, default_locale, plan_tier, "
+            "notes, address_line1, address_line2, city, state_province, postal_code, country "
             "FROM tenants WHERE id = :id"
         ),
         {"id": str(tenant_id)},
@@ -708,7 +731,7 @@ async def update_tenant_profile(
     old_locale   = row.default_locale or "en"
     old_tier     = str(row.plan_tier) if row.plan_tier else None
 
-    changes: dict[str, tuple[str | None, str]] = {}
+    changes: dict[str, tuple[str | None, str | None]] = {}
     if body.name is not None and body.name.strip() and body.name.strip() != old_name:
         changes["name"] = (old_name, body.name.strip())
     if body.organisation_type is not None and body.organisation_type != old_org_type:
@@ -717,6 +740,20 @@ async def update_tenant_profile(
         changes["default_locale"] = (old_locale, body.default_locale)
     if body.plan_tier is not None and body.plan_tier != old_tier:
         changes["plan_tier"] = (old_tier, body.plan_tier)
+    if "notes" in body.model_fields_set and body.notes != row.notes:
+        changes["notes"] = (row.notes, body.notes)
+
+    # Address — treated as one atomic block; log as single entry if any field changed
+    _ADDR_FIELDS = ("address_line1", "address_line2", "city", "state_province", "postal_code", "country")
+    addr_provided = any(f in body.model_fields_set for f in _ADDR_FIELDS)
+    addr_changed = addr_provided and any(
+        getattr(body, f) != getattr(row, f) for f in _ADDR_FIELDS
+    )
+    if addr_changed:
+        changes["address"] = (
+            f"{row.address_line1 or ''}, {row.city or ''}, {row.country or ''}".strip(", "),
+            f"{body.address_line1 or ''}, {body.city or ''}, {body.country or ''}".strip(", "),
+        )
 
     if not changes:
         return SuccessResponse(data={"changes": 0, "fields": []})
@@ -752,6 +789,15 @@ async def update_tenant_profile(
         set_parts.append("max_users = :max_u")
         params["max_wh"] = platform_limits["max_warehouses"]
         params["max_u"]  = platform_limits["max_users"]
+
+    if "notes" in changes:
+        set_parts.append("notes = :notes")
+        params["notes"] = changes["notes"][1]
+
+    if "address" in changes:
+        for f in _ADDR_FIELDS:
+            set_parts.append(f"{f} = :{f}")
+            params[f] = getattr(body, f)
 
     await db.execute(
         text(f"UPDATE tenants SET {', '.join(set_parts)} WHERE id = :id"),
