@@ -1174,7 +1174,8 @@
     "activity_action_PROFILE_UPDATE_INDUSTRY": "ኢንዱስትሪ ተዘምኗል",
     "activity_action_PROFILE_UPDATE_TA_FULL_NAME": "የአስተዳዳሪ ስም ተዘምኗል",
     "activity_action_PROFILE_UPDATE_TA_EMAIL": "የአስተዳዳሪ ኢሜይል ተዘምኗል",
-    "activity_action_FEATURE_FLAGS_UPDATE": "የባህሪ ምልክቶች ተዘምነዋል"
+    "activity_action_FEATURE_FLAGS_UPDATE": "የባህሪ ምልክቶች ተዘምነዋል",
+    "admin_sub_admin-user": "አስተዳዳሪ ተጨቃሚ"
   },
   "approval": {
     "simple_mode": "ቀላል — ለሁሉም ዓይነቶች ተመሳሳይ ደንቦች",

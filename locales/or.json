@@ -1067,7 +1067,8 @@
     "activity_action_PROFILE_UPDATE_INDUSTRY": "Industirii haaromfame",
     "activity_action_PROFILE_UPDATE_TA_FULL_NAME": "Maqaan fayyadamaa bulchaa haaromfame",
     "activity_action_PROFILE_UPDATE_TA_EMAIL": "Imeelii fayyadamaa bulchaa haaromfame",
-    "activity_action_FEATURE_FLAGS_UPDATE": "Mallattoowwan fedhii haaromfaman"
+    "activity_action_FEATURE_FLAGS_UPDATE": "Mallattoowwan fedhii haaromfaman",
+    "admin_sub_admin-user": "Fayyadamaa Bulchaa"
   },
   "approval": {
     "simple_mode": "Salphaa — seera wal-fakkaataa hunda",

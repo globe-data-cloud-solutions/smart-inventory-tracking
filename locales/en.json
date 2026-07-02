@@ -1322,7 +1322,8 @@
     "activity_action_PROFILE_UPDATE_INDUSTRY": "Industry updated",
     "activity_action_PROFILE_UPDATE_TA_FULL_NAME": "Admin user name updated",
     "activity_action_PROFILE_UPDATE_TA_EMAIL": "Admin user email updated",
-    "activity_action_FEATURE_FLAGS_UPDATE": "Feature flags updated"
+    "activity_action_FEATURE_FLAGS_UPDATE": "Feature flags updated",
+    "admin_sub_admin-user": "Admin User"
   },
   "approval": {
     "simple_mode": "Simple — same rules for all",
