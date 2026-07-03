@@ -109,9 +109,12 @@ async def check_plan(
     upgrade_to    = _UPGRADE_TO.get(plan_tier)
 
     # ── Feature flag check ────────────────────────────────────────────────────
+    # A flag absent from feature_flags is treated as "not yet enforced" → allow.
+    # Only an explicit False blocks (402). This preserves backward compatibility
+    # for tenants whose feature_flags were never initialised per-tier.
     required_flag = _required_flag(action)
     if required_flag is not None:
-        if not feature_flags.get(required_flag, False):
+        if required_flag in feature_flags and not feature_flags[required_flag]:
             raise HTTPException(
                 status_code=402,
                 detail={

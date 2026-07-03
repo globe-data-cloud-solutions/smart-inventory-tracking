@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from dependencies import get_db_session
 from dependencies import get_current_user
 from shared.permissions.middleware import require_permission
+from shared.permissions.plan_middleware import check_plan
 from shared.permissions.registry import PERMISSIONS
 from shared.utils.responses import SuccessResponse
 from schemas.inventory import (
@@ -49,6 +50,8 @@ async def create_transfer(
     user=Depends(get_current_user),
     db: AsyncSession = Depends(get_db_session),
 ) -> SuccessResponse[TransferOrderResponse]:
+    if body.transfer_type == "SISTER":
+        await check_plan(user, "transfer:sister", db)
     svc = InventoryService(db)
     result = await svc.create_transfer(user, body)
     return SuccessResponse(data=result)

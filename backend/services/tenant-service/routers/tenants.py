@@ -123,6 +123,15 @@ TIER_LIMITS: dict[str, dict[str, int | None]] = {
     "ENTERPRISE": {"max_warehouses": None, "max_users": None},
 }
 
+# Feature flags that are explicitly toggled by plan tier.
+# Merged (via JSONB ||) into the tenant's feature_flags on every Plan PATCH.
+# Only keys listed here are overwritten; other flags are left unchanged.
+PLAN_TIER_FEATURE_DEFAULTS: dict[str, dict[str, bool]] = {
+    "STARTER":    {"TRANSFERS_SISTER": False},
+    "GROWTH":     {"TRANSFERS_SISTER": True},
+    "ENTERPRISE": {"TRANSFERS_SISTER": True},
+}
+
 # Mirrors wizard_service.py defaults — used when org_type changes via profile edit.
 FEATURE_FLAG_DEFAULTS: dict[str, dict[str, bool]] = {
     "PRODUCER": {"LOGISTICS": False, "AI_ANALYTICS": False, "ADVANCED_BATCH_TRACKING": True,  "FLEET_MANAGEMENT": False},
@@ -635,6 +644,9 @@ async def update_tenant_plan(
     resolved_max_wh = body.max_warehouses if body.max_warehouses is not None else platform_limits["max_warehouses"]
     resolved_max_u  = body.max_users      if body.max_users      is not None else platform_limits["max_users"]
 
+    # Merge tier-gated feature flags in the same UPDATE as the plan_tier change
+    # so they commit atomically and check_plan always sees a consistent state.
+    tier_features = PLAN_TIER_FEATURE_DEFAULTS.get(body.plan_tier, {})
     plan_set = (
         "UPDATE tenants SET plan_tier = CAST(:tier AS plan_tier), "
         "max_warehouses = :max_wh, max_users = :max_u, updated_at = now()"
@@ -646,8 +658,12 @@ async def update_tenant_plan(
     if "sku_cap" in body.model_fields_set:
         plan_set += ", sku_cap = :sku_cap"
         plan_params["sku_cap"] = body.sku_cap
+    if tier_features:
+        plan_set += ", feature_flags = COALESCE(feature_flags, '{}'::jsonb) || CAST(:tier_flags AS jsonb)"
+        plan_params["tier_flags"] = json.dumps(tier_features)
     plan_set += " WHERE id = :id"
     await db.execute(text(plan_set), plan_params)
+
     try:
         await _log_tenant_activity(
             db, tenant_id, str(user.user_id),

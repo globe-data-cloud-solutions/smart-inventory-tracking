@@ -232,11 +232,13 @@ EMAIL_WM_WHA1 = STATE["users"].get("wm_wha1", {}).get("email", "wm_wha1_new@t6p2
 
 # ── URL constants ─────────────────────────────────────────────────────────────
 _T = STATE["tenant_id"]
-PLAN_URL    = f"/api/v1/tenants/{_T}/plan"
-HIER_URL    = f"/api/v1/tenants/{_T}/hierarchy/config"
-NODES_URL   = f"/api/v1/tenants/{_T}/nodes"
-COV_URL     = f"/api/v1/tenants/{_T}/approval-coverage"
-MY_PLAN_URL = "/api/v1/tenants/me/plan"
+PLAN_URL      = f"/api/v1/tenants/{_T}/plan"
+HIER_URL      = f"/api/v1/tenants/{_T}/hierarchy/config"
+NODES_URL     = f"/api/v1/tenants/{_T}/nodes"
+COV_URL       = f"/api/v1/tenants/{_T}/approval-coverage"
+MY_PLAN_URL   = "/api/v1/tenants/me/plan"
+TRANSFERS_URL = "/api/v1/inventory/transfers"
+PROD_P1       = STATE["products"]["P1"]
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -312,10 +314,45 @@ class TestGroup21PlanTier:
                       f" wh={data.get('max_warehouses') if isinstance(data, dict) else '?'}"),
               body=r.text[:300])
 
-    def test_2107_skip_transfer_flag_not_wired(self) -> None:
-        """TRANSFERS_SISTER feature flag not yet wired into transfer creation endpoint."""
-        skip_test(self.GROUP, "21.07 TRANSFERS_SISTER flag enforcement",
-                  "plan_middleware not yet wired into transfer creation endpoint")
+    def test_2107_transfer_sister_flag_enforced(self) -> None:
+        """TRANSFERS_SISTER flag gates SISTER transfer creation: GROWTH allows, STARTER blocks with 402."""
+        wm_token = tok(EMAIL_WM_WHA1)
+        if not wm_token:
+            skip_test(self.GROUP, "21.07 TRANSFERS_SISTER flag enforcement",
+                      "could not log in as wm_wha1")
+
+        # Part A — currently GROWTH tier (set by test_2104), SISTER should succeed.
+        r = api_post(TRANSFERS_URL, wm_token, {
+            "transfer_type": "SISTER",
+            "from_warehouse_id": NODE_WHA1,
+            "to_warehouse_id": NODE_WHA2,
+            "lines": [{"product_id": PROD_P1, "quantity": 1}],
+        })
+        check(self.GROUP, "21.07a SISTER transfer succeeds on GROWTH (TRANSFERS_SISTER=True)",
+              r.status_code == 201,
+              expected="201", actual=f"status={r.status_code}", body=r.text[:300])
+
+        # Part B — flip to STARTER (sets TRANSFERS_SISTER=False), SISTER should now 402.
+        r_plan = api_patch(PLAN_URL, sa(), {"plan_tier": "STARTER", "max_warehouses": 3,
+                                             "max_users": 2})
+        check(self.GROUP, "21.07b SA PATCH plan to STARTER (setup for negative case)",
+              r_plan.status_code == 200,
+              expected="200", actual=f"status={r_plan.status_code}", body=r_plan.text[:300])
+
+        r2 = api_post(TRANSFERS_URL, wm_token, {
+            "transfer_type": "SISTER",
+            "from_warehouse_id": NODE_WHA1,
+            "to_warehouse_id": NODE_WHA2,
+            "lines": [{"product_id": PROD_P1, "quantity": 1}],
+        })
+        detail2 = r2.json().get("detail", {}) if r2.status_code == 402 else {}
+        check(self.GROUP, "21.07c SISTER transfer blocked on STARTER (TRANSFERS_SISTER=False) → 402",
+              r2.status_code == 402
+              and err_code(r2) == "FEATURE_NOT_IN_PLAN"
+              and detail2.get("feature") == "TRANSFERS_SISTER",
+              expected="402, code=FEATURE_NOT_IN_PLAN, feature=TRANSFERS_SISTER",
+              actual=f"status={r2.status_code} code={err_code(r2)} detail={detail2}",
+              body=r2.text[:300])
 
     def test_2108_sa_patch_plan_to_starter_tight_cap(self) -> None:
         """SA sets T6P2T to STARTER, max_warehouses=3, max_users=2 → 200."""
