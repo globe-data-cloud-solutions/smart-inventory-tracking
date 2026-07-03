@@ -15,8 +15,8 @@ from shared.outbox.schemas import PAYLOAD_TYPES, ContractExpiryAlertPayload
 
 logger = logging.getLogger(__name__)
 
-app = Celery("smart", broker=os.environ.get("CELERY_BROKER_URL", ""))
-app.conf.result_backend = os.environ.get("CELERY_RESULT_BACKEND", "")
+app = Celery("smart", broker=os.environ["CELERY_BROKER_URL"])
+app.conf.result_backend = os.environ["CELERY_RESULT_BACKEND"]
 
 # Beat schedule — all times UTC
 app.conf.beat_schedule = {
