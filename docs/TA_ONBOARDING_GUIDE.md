@@ -107,6 +107,30 @@ Complete these steps in order — each step depends on the previous one.
 
 ---
 
+## Plan Tiers
+
+SMART tenants are on one of three plan tiers: **Starter**, **Growth**, or **Enterprise**. Your tier is assigned by your SMART administrator (the platform operator) and can only be changed by them — you cannot change your own tier from within the application.
+
+| Tier | What it affects |
+|------|----------------|
+| Starter | Limited number of warehouses and staff accounts; Branch Exchange (Sister) transfers not available |
+| Growth | Higher limits on warehouses and staff accounts; Branch Exchange transfers enabled |
+| Enterprise | Highest limits; all features enabled |
+
+**Specific limits** (maximum warehouses, maximum staff accounts) depend on your contract — ask your SMART administrator for the exact figures that apply to your organisation.
+
+> **Branch Exchange (Sister) transfers — Starter tier restriction:** Lateral transfers
+> between warehouses at the same level are not available on the Starter tier. If staff
+> attempt to create one they will receive a plan-limit error. If this feature is
+> required, contact your SMART administrator about upgrading to Growth or Enterprise.
+
+> **Hitting a limit during setup:** If you receive an error when trying to add a
+> warehouse (Step 2) or a staff account (Step 4), you have likely reached your plan
+> limit. Contact your SMART administrator to request a tier upgrade rather than
+> assuming it is a bug.
+
+---
+
 ## 🔒 Step 1 — Organisation Levels (TA Only)
 
 *Org Setup → Organisation Levels tab*
@@ -149,6 +173,7 @@ Create the actual nodes (factories, offices, warehouses) using the levels from S
 - Not all branches need the same depth (mixed-depth structures are supported)
 - Use consistent, official names — they appear in reports and audit logs
 - You can add more nodes later as your organisation grows
+- Node creation is subject to your plan tier's warehouse limit — if you receive an error when adding a node, contact your SMART administrator to request more capacity rather than assuming it is a bug (see [Plan Tiers](#plan-tiers))
 
 `[SCREENSHOT: Organisation Tree showing two-factory structure]`
 
@@ -179,6 +204,28 @@ Positions link people to nodes and determine what they can do.
 
 ---
 
+## 🔒 Step 4 — Personnel (Adding Users) (TA Only)
+
+*Org Setup → Personnel tab*
+
+1. Click "+ Add Person" and enter name and email
+2. Select their system role (NM / RM / WM / LM / AU)
+3. Assign them to a position (links them to their org node)
+4. Set an initial password (they'll be prompted to change on first login)
+5. Repeat for all staff
+
+**Email format suggestion:** `role_locationname@yourcompany.com`
+- Example: `wm_warehouse1@company.com`
+- Example: `rm_region_a@company.com`
+
+👥 **Note:** A person can be assigned to multiple positions — their permissions are the combination of all assigned positions.
+
+> **Staff account limit:** Adding accounts is subject to your plan tier's user limit. If you receive an error when adding a new person, you have reached your plan cap — contact your SMART administrator to request an upgrade rather than assuming it is a bug (see [Plan Tiers](#plan-tiers)).
+
+`[SCREENSHOT: Personnel tab showing user list with positions assigned]`
+
+---
+
 ## 🔒 Step 5 — Transfer Types (TA Only)
 
 *Org Setup → Transfer Types tab*
@@ -189,7 +236,7 @@ Customise the display names for the three transfer types.
 |------------|-------------|---------------|
 | PULL | Request Stock | Warehouse requests from a higher level |
 | PUSH | Send Stock | Higher level pushes stock down |
-| SISTER | Branch Exchange | Lateral transfer between warehouses |
+| SISTER | Branch Exchange | Lateral transfer between warehouses — **requires Growth tier or higher**; not available on Starter |
 
 For each transfer type:
 1. Enter your organisation's preferred display name
@@ -231,26 +278,6 @@ Set a blanket self-approval quantity per role — transfers below this limit are
 | Factory Manager (NM) | Unlimited — all transfers self-approved |
 
 💡 **Tip:** After setting up rules, check the **Approval Policies** page for a plain-language summary.
-
----
-
-## 🔒 Step 4 — Personnel (Adding Users) (TA Only)
-
-*Org Setup → Personnel tab*
-
-1. Click "+ Add Person" and enter name and email
-2. Select their system role (NM / RM / WM / LM / AU)
-3. Assign them to a position (links them to their org node)
-4. Set an initial password (they'll be prompted to change on first login)
-5. Repeat for all staff
-
-**Email format suggestion:** `role_locationname@yourcompany.com`
-- Example: `wm_warehouse1@company.com`
-- Example: `rm_region_a@company.com`
-
-👥 **Note:** A person can be assigned to multiple positions — their permissions are the combination of all assigned positions.
-
-`[SCREENSHOT: Personnel tab showing user list with positions assigned]`
 
 ---
 
@@ -381,6 +408,11 @@ Go to **Approval Policies** in the navigation to see:
 2. Account is immediately locked
 
 > **⚠️ Note:** If a deactivated user has pending approvals, contact your SMART administrator. Automatic re-routing is coming in a future update.
+
+### 🔒 Reactivating a User (TA Only)
+1. Personnel list → find the inactive user → toggle Active back on
+2. Their previous primary position is automatically restored — no need to manually reassign them
+3. If they held additional positions (acting or delegate assignments), only the primary position is restored automatically; reassign any acting or delegate positions manually if still needed
 
 ### 🔒 Adjusting Approval Rules (TA Only)
 1. Org Setup → Approval Rules → find and edit the rule
@@ -547,6 +579,9 @@ any position change.
 
 ### 🔒 Tenant Administrator Checklist
 
+**Plan & Limits:**
+- [ ] Confirmed your plan tier and limits with your SMART administrator before beginning setup
+
 **Organisation Structure:**
 - [ ] Organisation levels defined
 - [ ] Organisation tree complete — all nodes created
@@ -578,4 +613,4 @@ any position change.
 
 ---
 
-*Document Version: 1.0 | Last Updated: June 2026 | Maintained by: Development team*
+*Document Version: 1.1 | Last Updated: July 2026 | Maintained by: Development team*
