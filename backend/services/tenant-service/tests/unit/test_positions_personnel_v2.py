@@ -841,6 +841,142 @@ class TestPersonnelV2:
         assert "system_role = NULL" in update_stmt
 
 
+
+# ── Test 3b: Reactivate with position restore ─────────────────────────────────
+
+ASSIGNMENT_ID_OLD = "ffffffff-0000-0000-0000-000000000001"
+ASSIGNMENT_ID_NEW = "ffffffff-0000-0000-0000-000000000002"
+
+
+@pytest.mark.unit
+class TestReactivateUserPositionRestore:
+    """Verifies the restore_position behavior of reactivate_user().
+
+    Three cases:
+      1. Default (restore_position=True)   — PRIMARY row restored, response confirms it.
+      2. Opt-out (restore_position=False)  — PRIMARY row untouched, response confirms it.
+      3. Disambiguation (two historical PRIMARY rows) — only the newest row is restored,
+         the older swapped-out row is never touched.
+    """
+
+    async def test_reactivate_restores_primary_position_by_default(self) -> None:
+        """PATCH /users/{id}/reactivate without restore_position param defaults to True:
+        the user's most recent inactive PRIMARY position row is set back to is_active=true,
+        and the response includes position_restored=True."""
+        from routers.personnel_v2 import reactivate_user
+
+        user_row = _row(id=USER_ID, system_role=None)
+        pos_row  = _row(id=ASSIGNMENT_ID_NEW, is_active=False, valid_until=None)
+        db = _db_seq(
+            user_row,   # SELECT users WHERE is_active=false
+            None,       # UPDATE users SET is_active=true
+            pos_row,    # SELECT personnel_positions ORDER BY created_at DESC LIMIT 1
+            None,       # UPDATE personnel_positions SET is_active=true
+        )
+
+        with _GRANT_ALL:
+            result = await reactivate_user(
+                tenant_id=UUID(TENANT_ID),
+                user_id=UUID(USER_ID),
+                # restore_position not passed — default True must apply
+                user=_Caller(),
+                db=db,
+            )
+
+        assert result.data["reactivated"]       is True
+        assert result.data["user_id"]           == USER_ID
+        assert result.data["position_restored"] is True
+        assert db.execute.call_count            == 4  # user SELECT + user UPDATE + pos SELECT + pos UPDATE
+
+    async def test_reactivate_skips_restore_when_opted_out(self) -> None:
+        """PATCH /users/{id}/reactivate?restore_position=False reactivates the account
+        but leaves the PRIMARY position row untouched (is_active stays false) and
+        reports position_restored=False."""
+        from routers.personnel_v2 import reactivate_user
+
+        user_row = _row(id=USER_ID, system_role=None)
+        db = _db_seq(
+            user_row,  # SELECT users WHERE is_active=false
+            None,      # UPDATE users SET is_active=true
+            # No position SELECT or UPDATE — restore_position=False short-circuits
+        )
+
+        with _GRANT_ALL:
+            result = await reactivate_user(
+                tenant_id=UUID(TENANT_ID),
+                user_id=UUID(USER_ID),
+                restore_position=False,
+                user=_Caller(),
+                db=db,
+            )
+
+        assert result.data["reactivated"]       is True
+        assert result.data["position_restored"] is False
+        assert db.execute.call_count            == 2  # only the two user-scoped DB calls
+
+    async def test_reactivate_restores_only_newest_primary_row(self) -> None:
+        """When a user has two historical PRIMARY rows (an older swapped-out one and a
+        newer one), reactivate must restore ONLY the newest row (ORDER BY created_at DESC
+        LIMIT 1). The older row must never appear in any UPDATE call.
+
+        This test verifies the disambiguation SQL and confirms the UPDATE targets
+        ASSIGNMENT_ID_NEW, never ASSIGNMENT_ID_OLD."""
+        from routers.personnel_v2 import reactivate_user
+
+        user_row  = _row(id=USER_ID, system_role=None)
+        # Simulate the DB correctly returning the newer row from the ORDER BY DESC query
+        newer_pos = _row(id=ASSIGNMENT_ID_NEW, is_active=False, valid_until=None)
+
+        execute_calls: list[tuple[str, dict]] = []
+
+        async def _capture(stmt, params=None, **kw) -> MagicMock:
+            sql = str(stmt)
+            execute_calls.append((sql, params or {}))
+            res = MagicMock()
+            if "FROM users" in sql:
+                res.fetchone = MagicMock(return_value=user_row)
+            elif "personnel_positions" in sql and "ORDER" in sql:
+                # The disambiguation SELECT — returns newer row as ORDER BY created_at DESC would
+                res.fetchone = MagicMock(return_value=newer_pos)
+            else:
+                res.fetchone = MagicMock(return_value=None)
+            res.scalar = MagicMock(return_value=0)
+            return res
+
+        db = AsyncMock()
+        db.execute = AsyncMock(side_effect=_capture)
+
+        with _GRANT_ALL:
+            result = await reactivate_user(
+                tenant_id=UUID(TENANT_ID),
+                user_id=UUID(USER_ID),
+                user=_Caller(),
+                db=db,
+            )
+
+        assert result.data["position_restored"] is True
+
+        # Verify the SELECT uses ORDER BY created_at DESC (not ASC) with LIMIT 1
+        pos_select = next(
+            (sql for sql, _ in execute_calls if "personnel_positions" in sql and "ORDER" in sql),
+            None,
+        )
+        assert pos_select is not None, "Expected a SELECT on personnel_positions"
+        assert "created_at DESC" in pos_select, "SELECT must order by created_at DESC to get newest row"
+        assert "LIMIT" in pos_select
+
+        # The UPDATE must target the NEWER row's id only
+        pos_updates = [(sql, p) for sql, p in execute_calls if "UPDATE personnel_positions" in sql]
+        assert len(pos_updates) == 1, "Expected exactly one UPDATE on personnel_positions"
+        _, update_params = pos_updates[0]
+        assert update_params.get("pid") == ASSIGNMENT_ID_NEW, (
+            "UPDATE must target the newest PRIMARY row"
+        )
+        assert update_params.get("pid") != ASSIGNMENT_ID_OLD, (
+            "Older swapped-out PRIMARY row must never be touched"
+        )
+
+
 # ── Test 4: Transfer type config ─────────────────────────────────────────────
 
 @pytest.mark.unit

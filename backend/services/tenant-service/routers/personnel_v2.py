@@ -580,10 +580,22 @@ async def deactivate_user(
 async def reactivate_user(
     tenant_id: uuid.UUID,
     user_id: uuid.UUID,
+    restore_position: bool = True,
     user=Depends(get_current_user),
     db: AsyncSession = Depends(get_db_session_for_tenant),
 ) -> SuccessResponse[dict]:
-    """Reactivate a deactivated user (does not restore position assignments)."""
+    """Reactivate a deactivated user.
+
+    By default (restore_position=True) the user's most recent PRIMARY
+    personnel_positions row is restored alongside the user record, provided
+    it is currently inactive and has not legitimately expired (valid_until IS NULL
+    OR valid_until >= today). Only the newest PRIMARY row (by created_at DESC) is
+    considered — older swapped-out PRIMARY rows are left untouched. ACTING and
+    DELEGATE rows are never restored by this endpoint.
+
+    Pass restore_position=False to reactivate the user account only, leaving
+    position reassignment to a follow-up POST /positions call.
+    """
     row = (await db.execute(
         text("SELECT id, system_role FROM users WHERE id = :uid AND tenant_id = :tid AND is_active = false"),
         {"uid": str(user_id), "tid": str(tenant_id)},
@@ -599,7 +611,37 @@ async def reactivate_user(
         text("UPDATE users SET is_active = true, updated_at = now() WHERE id = :uid"),
         {"uid": str(user_id)},
     )
-    return SuccessResponse(data={"reactivated": True, "user_id": str(user_id)})
+
+    pos_restored = False
+    if restore_position:
+        pp_row = (await db.execute(
+            text("""
+                SELECT id, is_active, valid_until
+                FROM   personnel_positions
+                WHERE  user_id         = :uid
+                AND    tenant_id       = :tid
+                AND    assignment_type = 'PRIMARY'
+                ORDER  BY created_at DESC
+                LIMIT  1
+            """),
+            {"uid": str(user_id), "tid": str(tenant_id)},
+        )).fetchone()
+        if (
+            pp_row is not None
+            and not pp_row.is_active
+            and (pp_row.valid_until is None or pp_row.valid_until >= date.today())
+        ):
+            await db.execute(
+                text("UPDATE personnel_positions SET is_active = true WHERE id = :pid"),
+                {"pid": str(pp_row.id)},
+            )
+            pos_restored = True
+
+    return SuccessResponse(data={
+        "reactivated": True,
+        "user_id": str(user_id),
+        "position_restored": pos_restored,
+    })
 
 
 @router.get("/{tenant_id}/users/{user_id}",
