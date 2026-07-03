@@ -1,3 +1,4 @@
+import os
 import traceback
 from contextlib import asynccontextmanager
 
@@ -15,7 +16,12 @@ async def lifespan(app: FastAPI):  # type: ignore[type-arg]
 
 app = FastAPI(title="SMART Tenant Service", version="1.0.0", lifespan=lifespan)
 
-app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=os.environ.get("CORS_ORIGINS", "http://localhost:3000").split(","),
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 
 @app.exception_handler(Exception)
