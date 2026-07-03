@@ -28,6 +28,9 @@ import os
 import sys
 import pytest
 
+os.environ.setdefault("JWT_SECRET",     "test-secret-for-unit-tests")
+os.environ.setdefault("JWT_SECRET_KEY", "test-secret-for-unit-tests")
+
 _TENANT_SVC_ROOT = os.path.normpath(
     os.path.join(os.path.dirname(__file__), "..", "..")
 )
