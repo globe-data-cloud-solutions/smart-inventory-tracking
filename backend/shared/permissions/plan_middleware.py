@@ -114,7 +114,7 @@ async def check_plan(
     # for tenants whose feature_flags were never initialised per-tier.
     required_flag = _required_flag(action)
     if required_flag is not None:
-        if required_flag in feature_flags and not feature_flags[required_flag]:
+        if not feature_flags.get(required_flag, False):
             raise HTTPException(
                 status_code=402,
                 detail={
