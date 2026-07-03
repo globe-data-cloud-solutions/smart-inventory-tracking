@@ -414,22 +414,24 @@ class TestGroup21PlanTier:
               r.status_code == 200,
               expected="200", actual=f"status={r.status_code}", body=r.text[:300])
 
-    def test_2109_ta_bypasses_warehouse_cap(self) -> None:
-        """TA creates org node despite max_warehouses=3 (T6P2T has 16 nodes): TA bypass confirmed → 201."""
+    def test_2109_ta_warehouse_cap_enforced(self) -> None:
+        """TA is NOT exempt from the warehouse node cap (only SA is) — fixed in 1d6c172.
+        T6P2T has 18 active nodes; max_warehouses=3 (set by test_2108) allows 4 total.
+        TA attempt to create a node must 402, not succeed."""
         r = api_post(NODES_URL, ta(), {
             "level_number": 3,
             "name": f"Test Node G21 {uniq()}",
             "parent_node_id": NODE_A_REG,
             "is_stock_holding": True,
         })
-        data = jdata(r)
-        node_id = data.get("id") if isinstance(data, dict) else None
-        if node_id:
-            STATE["g21"]["test_node_id"] = str(node_id)
-        check(self.GROUP, "21.09 TA creates node despite warehouse cap (bypass) → 201",
-              r.status_code == 201,
-              expected="201 (TA bypasses plan cap)",
-              actual=f"status={r.status_code}", body=r.text[:300])
+        detail = r.json().get("detail", {}) if r.status_code == 402 else {}
+        check(self.GROUP, "21.09 TA blocked by warehouse cap (only SA bypasses) → 402",
+              r.status_code == 402
+              and err_code(r) == "PLAN_LIMIT_REACHED"
+              and detail.get("resource") == "warehouses",
+              expected="402, code=PLAN_LIMIT_REACHED, resource=warehouses",
+              actual=f"status={r.status_code} code={err_code(r)} detail={detail}",
+              body=r.text[:300])
 
     def test_2110_cleanup_restore_enterprise(self) -> None:
         """Cleanup: delete G21 test node + restore plan to ENTERPRISE with null limits."""
