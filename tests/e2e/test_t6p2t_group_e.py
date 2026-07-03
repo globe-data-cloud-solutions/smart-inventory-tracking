@@ -294,10 +294,59 @@ class TestGroup21PlanTier:
               actual=f"status={r.status_code} tier={data.get('plan_tier') if isinstance(data, dict) else data}",
               body=r.text[:300])
 
-    def test_2105_skip_user_cap_enforcement(self) -> None:
-        """User cap enforcement cannot be exercised: only TA can create users, TA bypasses plan checks."""
-        skip_test(self.GROUP, "21.05 user cap enforcement",
-                  "only TA can create users, TA bypasses plan checks — 402 unreachable in this path")
+    def test_2105_user_cap_enforcement(self) -> None:
+        """User cap enforcement: creating a non-TA user beyond max_users → 402.
+
+        Covers the NULL system_role exclusion bug fixed in b121690: regular users
+        have system_role=NULL, which the old != 'TA' comparison silently excluded
+        from the count (NULL != 'TA' is NULL in SQL, not TRUE). The fix uses
+        IS DISTINCT FROM 'TA', which correctly counts all non-TA active users.
+        TA role is NOT SA and therefore does hit check_plan_create_user.
+        """
+        # Part A — query current active non-TA count, tighten cap to that number.
+        r_list = api_get(f"/api/v1/tenants/{tid()}/users", ta())
+        check(self.GROUP, "21.05a GET /users for cap introspection → 200",
+              r_list.status_code == 200,
+              expected="200", actual=f"status={r_list.status_code}", body=r_list.text[:300])
+        users_data = jdata(r_list)
+        active_non_ta = sum(
+            1 for u in (users_data if isinstance(users_data, list) else [])
+            if u.get("is_active") and u.get("role") != "TA"
+        )
+        r_plan = api_patch(PLAN_URL, sa(), {
+            "plan_tier": "GROWTH",
+            "max_warehouses": 20,
+            "max_users": active_non_ta,
+        })
+        check(self.GROUP,
+              f"21.05b SA sets max_users={active_non_ta} (current active non-TA count, GROWTH)",
+              r_plan.status_code == 200,
+              expected="200", actual=f"status={r_plan.status_code}", body=r_plan.text[:300])
+
+        # Part B — attempt to create one more non-TA user; must 402 because count == limit.
+        r_create = api_post(f"/api/v1/tenants/{tid()}/users", ta(), {
+            "name": "Cap Test User",
+            "email": f"cap_test_{uniq()}@t6p2t.com",
+            "password": "Test@2026",
+        })
+        detail = r_create.json().get("detail", {}) if r_create.status_code == 402 else {}
+        check(self.GROUP, "21.05c Create user beyond max_users → 402 PLAN_LIMIT_REACHED",
+              r_create.status_code == 402
+              and err_code(r_create) == "PLAN_LIMIT_REACHED"
+              and detail.get("resource") == "users",
+              expected="402, code=PLAN_LIMIT_REACHED, resource=users",
+              actual=f"status={r_create.status_code} code={err_code(r_create)} detail={detail}",
+              body=r_create.text[:300])
+
+        # Part C — restore max_users=50 so test_2106 sees GROWTH/max_warehouses=20.
+        r_restore = api_patch(PLAN_URL, sa(), {
+            "plan_tier": "GROWTH",
+            "max_warehouses": 20,
+            "max_users": 50,
+        })
+        check(self.GROUP, "21.05d Restore max_users=50 for test_2106",
+              r_restore.status_code == 200,
+              expected="200", actual=f"status={r_restore.status_code}", body=r_restore.text[:300])
 
     def test_2106_ta_plan_reflects_growth(self) -> None:
         """TA reads /me/plan → plan_tier=GROWTH, max_warehouses=20 after SA change."""
