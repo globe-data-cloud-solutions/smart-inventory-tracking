@@ -391,11 +391,11 @@ class TestNodeDeactivation:
         from routers.hierarchy import deactivate_org_node
 
         node_row     = _row(id=UUID(NODE_ID))
-        stock_row    = _row(total=0)
         transfer_row = _row(cnt=0)
         adj_row      = _row(cnt=0)
         sole_row     = _row(cnt=0)
-        db = _db_seq(node_row, stock_row, transfer_row, adj_row, sole_row, None)
+        stock_row    = _row(total=0)
+        db = _db_seq(node_row, transfer_row, adj_row, sole_row, stock_row, None)
 
         with _GRANT_ALL:
             result = await deactivate_org_node(
@@ -410,7 +410,8 @@ class TestNodeDeactivation:
 
         node_row  = _row(id=UUID(NODE_ID))
         stock_row = _row(total=50)
-        db = _db_seq(node_row, stock_row)
+        # Production order: transfer(0) → adj(0) → sole(0) → stock(50 → 422)
+        db = _db_seq(node_row, _row(cnt=0), _row(cnt=0), _row(cnt=0), stock_row)
 
         with _GRANT_ALL, pytest.raises(HTTPException) as exc_info:
             await deactivate_org_node(
@@ -424,9 +425,9 @@ class TestNodeDeactivation:
         from routers.hierarchy import deactivate_org_node
 
         node_row     = _row(id=UUID(NODE_ID))
-        stock_row    = _row(total=0)
         transfer_row = _row(cnt=2)
-        db = _db_seq(node_row, stock_row, transfer_row)
+        # Transfer is check #1 — raises 422 immediately, no further DB calls
+        db = _db_seq(node_row, transfer_row)
 
         with _GRANT_ALL, pytest.raises(HTTPException) as exc_info:
             await deactivate_org_node(
@@ -440,10 +441,10 @@ class TestNodeDeactivation:
         from routers.hierarchy import deactivate_org_node
 
         node_row     = _row(id=UUID(NODE_ID))
-        stock_row    = _row(total=0)
         transfer_row = _row(cnt=0)
         adj_row      = _row(cnt=1)
-        db = _db_seq(node_row, stock_row, transfer_row, adj_row)
+        # Transfer(0) passes, adj(1) raises 422 immediately
+        db = _db_seq(node_row, transfer_row, adj_row)
 
         with _GRANT_ALL, pytest.raises(HTTPException) as exc_info:
             await deactivate_org_node(
@@ -457,11 +458,11 @@ class TestNodeDeactivation:
         from routers.hierarchy import deactivate_org_node
 
         node_row     = _row(id=UUID(NODE_ID))
-        stock_row    = _row(total=0)
         transfer_row = _row(cnt=0)
         adj_row      = _row(cnt=0)
         sole_row     = _row(cnt=1)
-        db = _db_seq(node_row, stock_row, transfer_row, adj_row, sole_row)
+        # Transfer(0) and adj(0) pass, sole(1) raises 422 immediately
+        db = _db_seq(node_row, transfer_row, adj_row, sole_row)
 
         with _GRANT_ALL, pytest.raises(HTTPException) as exc_info:
             await deactivate_org_node(
@@ -474,7 +475,7 @@ class TestNodeDeactivation:
         """A deactivated node can be reactivated with no pre-checks."""
         from routers.hierarchy import reactivate_org_node
 
-        node_row = _row(id=UUID(NODE_ID))
+        node_row = _row(id=UUID(NODE_ID), hierarchy_level=1)
         db = _db_seq(node_row, None)
 
         with _GRANT_ALL:
