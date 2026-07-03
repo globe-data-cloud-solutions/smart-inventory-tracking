@@ -403,6 +403,93 @@ class TestGroup21PlanTier:
               actual=f"status={r2.status_code} code={err_code(r2)} detail={detail2}",
               body=r2.text[:300])
 
+    def test_2107b_user_cap_relaxed_by_upgrade(self) -> None:
+        """Live tier upgrade unblocks a previously-capped user creation within one test.
+
+        Sequence:
+          1. Query current active non-TA count; SA patches plan to STARTER with
+             max_users equal to that count, guaranteeing the next creation fails.
+          2. TA attempts to create a throwaway user → 402 PLAN_LIMIT_REACHED.
+          3. SA upgrades plan to GROWTH with max_users = count + 10.
+          4. TA retries the same user-creation payload → 201.
+          5. SA deactivates the test user (soft-delete only — hard-delete is
+             prohibited by §28 NEVER DELETE USER rule; FK and audit integrity
+             require is_active=False only). User remains a known test artifact if
+             deactivation returns non-2xx.
+          6. Plan is left at GROWTH; test_2108 patches to STARTER explicitly so
+             there is no ordering conflict with the 2108–2110 cleanup sequence.
+        """
+        if not have_base_state():
+            skip_test(self.GROUP, "21.07b tier upgrade unblocks capped user creation",
+                      "missing base state")
+
+        # ── Step 1: query active non-TA count; set cap exactly at that count ────
+        r_list = api_get(f"/api/v1/tenants/{tid()}/users", ta())
+        check(self.GROUP, "21.07b-1 GET /users for cap calculation → 200",
+              r_list.status_code == 200,
+              expected="200", actual=f"status={r_list.status_code}", body=r_list.text[:300])
+        users_data = jdata(r_list)
+        active_non_ta = sum(
+            1 for u in (users_data if isinstance(users_data, list) else [])
+            if u.get("is_active") and u.get("role") != "TA"
+        )
+        r_cap = api_patch(PLAN_URL, sa(), {
+            "plan_tier": "STARTER",
+            "max_warehouses": 3,
+            "max_users": active_non_ta,
+        })
+        check(self.GROUP,
+              f"21.07b-2 SA sets STARTER max_users={active_non_ta} (current count) → 200",
+              r_cap.status_code == 200,
+              expected="200", actual=f"status={r_cap.status_code}", body=r_cap.text[:300])
+
+        # ── Step 2: creation at exact cap — must 402 ────────────────────────────
+        throwaway_email = f"cap_upgrade_{uniq()}@t6p2t.com"
+        user_payload = {
+            "name": "Cap Upgrade Test",
+            "email": throwaway_email,
+            "password": DEFAULT_PASSWORD,
+        }
+        r_blocked = api_post(f"/api/v1/tenants/{tid()}/users", ta(), user_payload)
+        check(self.GROUP, "21.07b-3 create user at cap → 402 PLAN_LIMIT_REACHED",
+              r_blocked.status_code == 402 and err_code(r_blocked) == "PLAN_LIMIT_REACHED",
+              expected="402, PLAN_LIMIT_REACHED",
+              actual=f"status={r_blocked.status_code} code={err_code(r_blocked)}",
+              body=r_blocked.text[:300])
+
+        # ── Step 3: upgrade to GROWTH with 10-user headroom ─────────────────────
+        r_upgrade = api_patch(PLAN_URL, sa(), {
+            "plan_tier": "GROWTH",
+            "max_users": active_non_ta + 10,
+            "max_warehouses": 20,
+        })
+        check(self.GROUP, "21.07b-4 SA upgrades plan to GROWTH → 200",
+              r_upgrade.status_code == 200,
+              expected="200", actual=f"status={r_upgrade.status_code}", body=r_upgrade.text[:300])
+
+        # ── Step 4: retry same payload — must now 201 ───────────────────────────
+        r_create = api_post(f"/api/v1/tenants/{tid()}/users", ta(), user_payload)
+        created_data = jdata(r_create) if r_create.status_code == 201 else {}
+        new_user_id = created_data.get("id") if isinstance(created_data, dict) else None
+        check(self.GROUP, "21.07b-5 same creation succeeds after upgrade → 201",
+              r_create.status_code == 201 and new_user_id is not None,
+              expected="201, id present",
+              actual=f"status={r_create.status_code} id={new_user_id}",
+              body=r_create.text[:300])
+
+        # ── Step 5: deactivate test user (soft-delete only) ─────────────────────
+        if new_user_id:
+            r_deact = api_patch(
+                f"/api/v1/tenants/{tid()}/users/{new_user_id}/deactivate", ta()
+            )
+            soft_check(self.GROUP, "21.07b-6 deactivate test user → 200/204",
+                       r_deact.status_code in (200, 204),
+                       expected="200 or 204",
+                       actual=f"status={r_deact.status_code}",
+                       body=r_deact.text[:300])
+        # If deactivation returns non-2xx, the user is a known test artifact
+        # left is_active=True — matches Group 12 throwaway user handling.
+
     def test_2108_sa_patch_plan_to_starter_tight_cap(self) -> None:
         """SA sets T6P2T to STARTER, max_warehouses=3, max_users=2 → 200."""
         r = api_patch(PLAN_URL, sa(), {
