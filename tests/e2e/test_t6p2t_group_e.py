@@ -329,6 +329,12 @@ class TestGroup21PlanTier:
             "email": f"cap_test_{uniq()}@t6p2t.com",
             "password": "Test@2026",
         })
+        # Cleanup: deactivate if cap check malfunctioned and the user was created.
+        # Runs before the assertion so leftover users don't accumulate across runs.
+        if r_create.status_code == 201:
+            cap_data = jdata(r_create)
+            if cap_data.get("id"):
+                api_patch(f"/api/v1/tenants/{tid()}/users/{cap_data['id']}/deactivate", ta())
         detail = r_create.json().get("detail", {}) if r_create.status_code == 402 else {}
         check(self.GROUP, "21.05c Create user beyond max_users → 402 PLAN_LIMIT_REACHED",
               r_create.status_code == 402

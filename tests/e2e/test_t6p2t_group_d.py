@@ -901,7 +901,7 @@ class TestGroup12PersonnelChanges:
         for key in ["relief_wm_id", "relief_wm_email", "relief_assignment_id",
                     "lateral_wm_id", "lateral_wm_email",
                     "downgrade_user_id", "downgrade_assign_id",
-                    "A_REG_deputy_id"]:
+                    "A_REG_deputy_id", "acting_exp_user_id"]:
             STATE["g12"].pop(key, None)
         STATE["positions"].pop("A_REG_deputy", None)
         STATE["positions"].pop("WHA2_mgr_2", None)
@@ -1252,6 +1252,7 @@ class TestGroup12PersonnelChanges:
                   False, expected="201 create", actual=f"status={r_create.status_code}", body=r_create.text[:300])
             return
         user_id = str(d_create["id"])
+        STATE["g12"]["acting_exp_user_id"] = user_id
         valid_until = (date.today() + timedelta(days=1)).isoformat()
         r_acting = api_post(f"/api/v1/tenants/{tid()}/users/{user_id}/positions", ta(), {
             "position_id": POS_WHA3_MGR, "assignment_type": "ACTING", "valid_until": valid_until,
@@ -1310,6 +1311,38 @@ class TestGroup12PersonnelChanges:
               expected="200, DELEGATE removed, PRIMARY still A_FAC_dir",
               actual=f"status={r.status_code}, acting={d_get.get('acting_positions')}, primary={d_get.get('primary_position')}",
               body=r.text[:300])
+
+    def test_1299_cleanup_group12_users(self) -> None:
+        """Deactivate the four throwaway users created by this class so they
+        don't accumulate across runs and push the tenant over its user cap."""
+        cleanup_keys = [
+            "relief_wm_id", "lateral_wm_id", "downgrade_user_id", "acting_exp_user_id",
+        ]
+        all_ok = True
+        for key in cleanup_keys:
+            uid = STATE["g12"].get(key)
+            if not uid:
+                continue
+            try:
+                r = api_patch(f"/api/v1/tenants/{tid()}/users/{uid}/deactivate", ta())
+                ok = soft_check(
+                    self.GROUP, f"12.99 deactivate {key} → 200",
+                    r.status_code in (200, 204),
+                    expected="200 or 204",
+                    actual=f"status={r.status_code}", body=r.text[:200],
+                )
+                if not ok:
+                    all_ok = False
+            except Exception as exc:
+                record_fail(self.GROUP, f"12.99 deactivate {key}",
+                            expected="200 or 204", actual=f"exception: {exc}")
+                all_ok = False
+        check(
+            self.GROUP, "12.99 cleanup Group 12 throwaway users",
+            all_ok,
+            expected="all created users deactivated",
+            actual="see soft_check results above",
+        )
 
 
 # ─────────────────────────────────────────────────────────────────────────────

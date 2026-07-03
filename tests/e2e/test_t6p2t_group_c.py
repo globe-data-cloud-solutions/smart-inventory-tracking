@@ -1408,6 +1408,11 @@ class TestGroup9SaSuperset:
         })
         check(self.GROUP, "9.52 SA creates user in T6P2T → 201", r.status_code == 201,
               expected="201", actual=f"status={r.status_code}", body=r.text[:300])
+        if r.status_code == 201:
+            probe_data = jdata(r)
+            probe_id = probe_data.get("id")
+            if probe_id:
+                api_patch(f"/api/v1/tenants/{tid()}/users/{probe_id}/deactivate", ta())
 
     def test_953_non_sa_force_remove_still_rejected(self) -> None:
         """Re-verifies the FORCE_REMOVE_SA_ONLY guard from a fresh angle: TA attempts
