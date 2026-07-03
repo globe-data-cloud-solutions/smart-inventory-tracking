@@ -9,7 +9,12 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, Response
 from jose import JWTError, jwt
 
-JWT_SECRET    = os.environ.get("JWT_SECRET", "")
+JWT_SECRET = os.environ.get("JWT_SECRET") or os.environ.get("JWT_SECRET_KEY")
+if not JWT_SECRET:
+    raise RuntimeError(
+        "JWT_SECRET (or JWT_SECRET_KEY) must be set — refusing to start with an "
+        "empty signing secret."
+    )
 JWT_ALGORITHM = os.environ.get("JWT_ALGORITHM", "HS256")
 
 SERVICE_MAP = {

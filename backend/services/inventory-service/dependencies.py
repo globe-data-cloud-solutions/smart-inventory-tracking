@@ -19,7 +19,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from shared.db.rls import set_rls_context
 from shared.db.session import AsyncReadSessionLocal, AsyncSessionLocal
 
-JWT_SECRET    = os.environ.get("JWT_SECRET", os.environ.get("JWT_SECRET_KEY", ""))
+JWT_SECRET = os.environ.get("JWT_SECRET") or os.environ.get("JWT_SECRET_KEY")
+if not JWT_SECRET:
+    raise RuntimeError(
+        "JWT_SECRET (or JWT_SECRET_KEY) must be set — refusing to start with an "
+        "empty signing secret."
+    )
 JWT_ALGORITHM = os.environ.get("JWT_ALGORITHM", "HS256")
 
 # Authority tier (lower = higher authority).  Mirrors approval_service.py.
