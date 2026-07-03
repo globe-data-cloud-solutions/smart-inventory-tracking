@@ -1258,6 +1258,12 @@ class TestGroup9NodeDeactivationPrechecks:
               expected="adjustment 201, deactivate 422 NODE_HAS_PENDING_ADJUSTMENTS",
               actual=f"adjustment={r_adj.status_code}, deactivate={r_deact.status_code}, code={err_code(r_deact)!r}",
               body=f"{r_adj.text[:150]} | {r_deact.text[:150]}")
+        # Cancel the adjustment so it doesn't persist as a DRAFT row across runs.
+        # Leftover DRAFTs cause test_801 (GROUP8, runs before this test on the next
+        # run) to see NODE_HAS_PENDING_ADJUSTMENTS instead of NODE_HAS_SOLE_USERS.
+        adj_id = jdata(r_adj).get("adjustment_id")
+        if adj_id:
+            api_post(f"/api/v1/inventory/adjustments/{adj_id}/cancel", ta())
 
     def test_924_precheck_sole_position_blocks_deactivation(self) -> None:
         """SAT_WHB1 (not SAT_WHB2 — that one was deliberately given stock in 9.21)
