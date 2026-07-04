@@ -152,6 +152,13 @@ async def check_plan_create_warehouse(
     if not plan or plan.get("max_warehouses") is None:
         return  # unlimited
 
+    # Lock the tenant row to serialize concurrent cap checks (prevents TOCTOU race
+    # where two requests both pass the count check before either INSERT commits).
+    await db.execute(
+        text("SELECT id FROM tenants WHERE id = :tid FOR UPDATE"),
+        {"tid": tenant_id},
+    )
+
     # Count ALL active nodes — one root is always free, so total_allowed = limit + 1.
     current = (await db.execute(
         text(
@@ -200,6 +207,13 @@ async def check_plan_create_user(
     plan = await _get_tenant_plan(db, tenant_id)
     if not plan or plan.get("max_users") is None:
         return  # unlimited
+
+    # Lock the tenant row to serialize concurrent cap checks (prevents TOCTOU race
+    # where two requests both pass the count check before either INSERT commits).
+    await db.execute(
+        text("SELECT id FROM tenants WHERE id = :tid FOR UPDATE"),
+        {"tid": tenant_id},
+    )
 
     # Exclude TA accounts from the count — the primary admin is always free.
     # IS DISTINCT FROM handles NULL correctly: regular users have system_role = NULL

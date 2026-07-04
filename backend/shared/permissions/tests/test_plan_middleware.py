@@ -45,11 +45,12 @@ def _db_plan_only(plan_result: MagicMock) -> AsyncMock:
 
 
 def _db_plan_then_count(plan_result: MagicMock, count: int) -> AsyncMock:
-    """DB mock for two execute calls: plan fetch then COUNT(*)."""
+    """DB mock for three execute calls: plan fetch, tenant FOR UPDATE lock, COUNT(*)."""
+    lock_result = MagicMock()
     count_result = MagicMock()
     count_result.scalar.return_value = count
     db = AsyncMock()
-    db.execute.side_effect = [plan_result, count_result]
+    db.execute.side_effect = [plan_result, lock_result, count_result]
     return db
 
 
