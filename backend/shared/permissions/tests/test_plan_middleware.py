@@ -78,10 +78,14 @@ async def test_sa_bypasses_warehouse_limit() -> None:
 
 
 @pytest.mark.asyncio
-async def test_ta_bypasses_user_limit() -> None:
-    db = AsyncMock()
+async def test_ta_not_bypassed_unlimited_plan_passes() -> None:
+    # TA is NOT bypassed by check_plan_create_user (only SA is exempt).
+    # With max_users=None (unlimited plan) the function fetches the plan
+    # and returns early — no lock or count query issued.
+    plan = _plan_result(plan_tier="ENTERPRISE", max_users=None)
+    db = _db_plan_only(plan)
     await check_plan_create_user(_user(role="TA"), db)
-    db.execute.assert_not_called()
+    assert db.execute.call_count == 1
 
 
 # ── tenant_id None → SA platform action bypass ────────────────────────────────
@@ -141,8 +145,10 @@ async def test_unmapped_action_passes_regardless_of_flags() -> None:
 
 @pytest.mark.asyncio
 async def test_warehouse_limit_reached_raises_402() -> None:
+    # max_warehouses=30 → total_allowed = 30 + 1 = 31 (1 free root slot).
+    # count=31 exactly hits the cap (31 >= 31). count=30 would NOT trigger it.
     plan = _plan_result(plan_tier="GROWTH", max_warehouses=30)
-    db = _db_plan_then_count(plan, count=30)
+    db = _db_plan_then_count(plan, count=31)
 
     with pytest.raises(HTTPException) as exc_info:
         await check_plan_create_warehouse(_user(), db)
@@ -151,7 +157,7 @@ async def test_warehouse_limit_reached_raises_402() -> None:
     detail = exc_info.value.detail
     assert detail["code"] == "PLAN_LIMIT_REACHED"
     assert detail["resource"] == "warehouses"
-    assert detail["current"] == 30
+    assert detail["current"] == 31
     assert detail["limit"] == 30
 
 
@@ -199,8 +205,9 @@ async def test_user_limit_null_passes() -> None:
 @pytest.mark.asyncio
 async def test_ta_warehouse_limit_enforced() -> None:
     """TA must respect the tenant's warehouse cap (only SA is exempt)."""
+    # max_warehouses=3 → total_allowed = 3 + 1 = 4. count=4 hits the cap.
     plan = _plan_result(plan_tier="STARTER", max_warehouses=3)
-    db = _db_plan_then_count(plan, count=3)
+    db = _db_plan_then_count(plan, count=4)
 
     with pytest.raises(HTTPException) as exc_info:
         await check_plan_create_warehouse(_user(role="TA"), db)
