@@ -22,11 +22,16 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with: { version: 9 }
       - uses: actions/setup-node@v4
-        with: { node-version: "20" }
-      - run: cd frontend && npm ci
-      - run: cd frontend && npx tsc --noEmit
-      - run: cd frontend && npm run lint
+        with:
+          node-version: "20"
+          cache: "pnpm"
+          cache-dependency-path: frontend/pnpm-lock.yaml
+      - run: cd frontend && pnpm install --frozen-lockfile
+      - run: cd frontend && pnpm tsc --noEmit
+      - run: cd frontend && pnpm lint
 
   permission-drift-check:
     runs-on: ubuntu-latest
@@ -94,10 +99,15 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with: { version: 9 }
       - uses: actions/setup-node@v4
-        with: { node-version: "20" }
-      - run: cd frontend && npm ci
-      - run: cd frontend && npm test -- --coverage --passWithNoTests
+        with:
+          node-version: "20"
+          cache: "pnpm"
+          cache-dependency-path: frontend/pnpm-lock.yaml
+      - run: cd frontend && pnpm install --frozen-lockfile
+      - run: cd frontend && pnpm test -- --coverage --passWithNoTests
 
   migration-round-trip:
     runs-on: ubuntu-latest

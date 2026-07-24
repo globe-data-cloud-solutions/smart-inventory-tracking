@@ -1,5 +1,24 @@
 terraform {
-  workspace = "dev"
+  required_version = ">= 1.7.0"
+  required_providers {
+    aws = {
+      source  = "hashicorp/aws"
+      version = "~> 5.50"
+    }
+  }
+  # Partial backend config — remaining values supplied via -backend-config in CI
+  backend "s3" {}
+}
+
+provider "aws" {
+  region = "us-east-1"
+  default_tags {
+    tags = {
+      Project     = "smart-platform"
+      Environment = "dev"
+      ManagedBy   = "terraform"
+    }
+  }
 }
 
 module "networking" {
