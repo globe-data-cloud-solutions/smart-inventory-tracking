@@ -1,55 +1,159 @@
 name: Deploy — Dev
+
+# Triggers automatically on every push to the develop branch.
+# Builds all service images in parallel, runs Alembic migrations, then
+# performs a rolling ECS update and waits for services to stabilise.
+
 on:
   push:
     branches: [develop]
 
 permissions:
-  id-token: write
   contents: read
 
+env:
+  ECR_REGISTRY: ${{ vars.AWS_ACCOUNT_ID }}.dkr.ecr.${{ vars.AWS_REGION }}.amazonaws.com
+  ENV: dev
+  CLUSTER: smart-dev
+
 jobs:
-  deploy-dev:
+  # ── Build & push all Docker images in parallel ───────────────────────────────
+  build:
+    name: Build — ${{ matrix.service }}
     runs-on: ubuntu-latest
-    environment: dev
+    strategy:
+      fail-fast: false
+      matrix:
+        service:
+          - api-gateway
+          - auth-service
+          - tenant-service
+          - product-service
+          - inventory-service
+          - order-service
+          - logistics-service
+          - analytics-service
+          - notification-service
+          - sync-service
+
     steps:
       - uses: actions/checkout@v4
 
       - uses: aws-actions/configure-aws-credentials@v4
         with:
-          role-to-assume: arn:aws:iam::${{ vars.AWS_ACCOUNT_ID }}:role/smart-github-actions-ci
-          aws-region: us-east-1
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ vars.AWS_REGION }}
 
       - name: Login to ECR
         run: |
-          aws ecr get-login-password | docker login --username AWS \
-            --password-stdin ${{ vars.AWS_ACCOUNT_ID }}.dkr.ecr.us-east-1.amazonaws.com
+          aws ecr get-login-password | \
+            docker login --username AWS --password-stdin ${{ env.ECR_REGISTRY }}
 
-      - name: Build and push images
+      - name: Build and push ${{ matrix.service }}
         run: |
-          SERVICES="api-gateway auth-service tenant-service product-service inventory-service order-service logistics-service analytics-service notification-service sync-service"
-          for svc in $SERVICES; do
-            docker build -t smart-$svc -f backend/services/$svc/Dockerfile .
-            docker tag smart-$svc:latest \
-              ${{ vars.AWS_ACCOUNT_ID }}.dkr.ecr.us-east-1.amazonaws.com/smart-$svc:dev-${{ github.sha }}
-            docker push ${{ vars.AWS_ACCOUNT_ID }}.dkr.ecr.us-east-1.amazonaws.com/smart-$svc:dev-${{ github.sha }}
-          done
+          IMAGE="${{ env.ECR_REGISTRY }}/smart-${{ matrix.service }}"
+          docker build \
+            -t "$IMAGE:${{ env.ENV }}-${{ github.sha }}" \
+            -t "$IMAGE:${{ env.ENV }}-latest" \
+            -f backend/services/${{ matrix.service }}/Dockerfile \
+            --cache-from "$IMAGE:${{ env.ENV }}-latest" \
+            .
+          docker push "$IMAGE:${{ env.ENV }}-${{ github.sha }}"
+          docker push "$IMAGE:${{ env.ENV }}-latest"
 
-      - name: Run Alembic migrations on dev
+  # ── Run Alembic migrations ───────────────────────────────────────────────────
+  migrate:
+    name: Alembic migration — dev
+    runs-on: ubuntu-latest
+    needs: [build]
+    environment: dev
+
+    steps:
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ vars.AWS_REGION }}
+
+      - name: Get network config from Secrets Manager
         run: |
-          aws ecs run-task \
-            --cluster smart-dev \
-            --task-definition smart-dev-migration \
-            --overrides '{"containerOverrides":[{"name":"migration","command":["alembic","-c","backend/migrations/alembic.ini","upgrade","head"]}]}' \
+          echo "PRIVATE_SUBNETS=$(aws secretsmanager get-secret-value \
+            --secret-id smart/${{ env.ENV }}/vpc/private-subnet-ids \
+            --query SecretString --output text)" >> $GITHUB_ENV
+          echo "ECS_SG=$(aws secretsmanager get-secret-value \
+            --secret-id smart/${{ env.ENV }}/ecs/security-group-id \
+            --query SecretString --output text)" >> $GITHUB_ENV
+
+      - name: Run migration ECS task
+        run: |
+          TASK_ARN=$(aws ecs run-task \
+            --cluster ${{ env.CLUSTER }} \
+            --task-definition smart-${{ env.ENV }}-migration \
             --launch-type FARGATE \
-            --network-configuration "awsvpcConfiguration={subnets=[${{ vars.PRIVATE_SUBNET_IDS }}],securityGroups=[${{ vars.ECS_SECURITY_GROUP }}]}" \
-            --wait
+            --network-configuration "awsvpcConfiguration={subnets=[${{ env.PRIVATE_SUBNETS }}],securityGroups=[${{ env.ECS_SG }}],assignPublicIp=DISABLED}" \
+            --overrides '{"containerOverrides":[{"name":"migration","command":["alembic","-c","backend/migrations/alembic.ini","upgrade","head"]}]}' \
+            --query 'tasks[0].taskArn' --output text)
 
-      - name: Update ECS services
+          echo "Migration task: $TASK_ARN"
+          aws ecs wait tasks-stopped \
+            --cluster ${{ env.CLUSTER }} \
+            --tasks "$TASK_ARN"
+
+          EXIT_CODE=$(aws ecs describe-tasks \
+            --cluster ${{ env.CLUSTER }} \
+            --tasks "$TASK_ARN" \
+            --query 'tasks[0].containers[0].exitCode' --output text)
+
+          if [ "$EXIT_CODE" != "0" ]; then
+            echo "❌ Migration failed with exit code $EXIT_CODE"
+            exit 1
+          fi
+          echo "✅ Migration completed successfully"
+
+  # ── Rolling ECS deploy ───────────────────────────────────────────────────────
+  deploy:
+    name: Deploy ECS services — dev
+    runs-on: ubuntu-latest
+    needs: [migrate]
+    environment: dev
+
+    steps:
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ vars.AWS_REGION }}
+
+      - name: Force new deployment on all services
         run: |
-          SERVICES="api-gateway tenant inventory order logistics analytics notification sync"
+          SERVICES="api-gateway auth-service tenant-service product-service \
+                    inventory-service order-service logistics-service \
+                    analytics-service notification-service sync-service"
           for svc in $SERVICES; do
             aws ecs update-service \
-              --cluster smart-dev \
-              --service smart-dev-$svc \
-              --force-new-deployment
+              --cluster ${{ env.CLUSTER }} \
+              --service smart-${{ env.ENV }}-$svc \
+              --force-new-deployment \
+              --no-cli-pager
+            echo "Triggered: smart-${{ env.ENV }}-$svc"
           done
+
+      - name: Wait for services to stabilise
+        run: |
+          SERVICES="api-gateway auth-service tenant-service product-service \
+                    inventory-service order-service logistics-service \
+                    analytics-service notification-service sync-service"
+          SERVICE_ARGS=""
+          for svc in $SERVICES; do
+            SERVICE_ARGS="$SERVICE_ARGS smart-${{ env.ENV }}-$svc"
+          done
+          aws ecs wait services-stable \
+            --cluster ${{ env.CLUSTER }} \
+            --services $SERVICE_ARGS
+          echo "✅ All services stable in ${{ env.ENV }}"
+
+      - name: Summary
+        run: |
+          echo "## ✅ Deployed to \`dev\`" >> $GITHUB_STEP_SUMMARY
+          echo "Commit: \`${{ github.sha }}\` | Actor: ${{ github.actor }}" >> $GITHUB_STEP_SUMMARY
