@@ -1917,9 +1917,12 @@ class TestIMTSAlerts:
 
 ## 22. CI/CD — GitHub Actions
 
-> All CI jobs authenticate to AWS via **GitHub OIDC** — no `AWS_ACCESS_KEY_ID` stored in
-> GitHub Secrets. Test jobs connect to the **dev AWS environment** (RDS + ElastiCache).
-> There are no inline `postgres` or `redis` service containers.
+> **Three workflows only, all manually triggered (`workflow_dispatch`):**
+> `ci.yml` (quality gate), `infrastructure.yml` (Terraform), `deploy.yml` (app rollout).
+> During the bootstrap phase they authenticate to AWS with access-key **secrets**
+> (`AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY`) plus repo **vars** `AWS_REGION` and
+> `AWS_ACCOUNT_ID`. Migrating to GitHub OIDC (below) is the target once the
+> `smart-github-actions-*` IAM roles exist. No PR auto-runs; no inline service containers.
 
 ### OIDC trust — required GitHub Actions setup
 
@@ -1935,11 +1938,10 @@ class TestIMTSAlerts:
 ```yaml
 name: CI
 on:
-  pull_request:
-    branches: [develop, main]
+  # Manual only — PR auto-runs are disabled. Trigger from the Actions tab.
+  workflow_dispatch:
 
 permissions:
-  id-token: write   # required for OIDC
   contents: read
 
 jobs:
@@ -2037,134 +2039,86 @@ jobs:
               with open(f'locales/{l}.json') as f: data=json.load(f)
               print(f'{l}: {len(data)} top-level keys — OK')
           "
-
-  openapi-types:
-    runs-on: ubuntu-latest
-    needs: [test-backend]
-    steps:
-      - uses: actions/checkout@v4
-      - uses: aws-actions/configure-aws-credentials@v4
-        with:
-          role-to-assume: arn:aws:iam::<account>:role/smart-github-actions-ci
-          aws-region: us-east-1
-      - run: npx openapi-typescript https://api.dev.smart-platform.com/openapi.json \
-               -o frontend/src/types/api.ts
-      - run: cd frontend && pnpm tsc --noEmit
 ```
 
-### `.github/workflows/deploy-dev.yml`
+> Note: the `test-backend` and `migration-round-trip` jobs above are shown with the
+> **target** OIDC `role-to-assume` form. The live jobs currently use access-key
+> secrets and fetch `smart/dev/*` from Secrets Manager. The `id-token: write`
+> permission and OIDC role are added when the IAM role is provisioned.
+
+### `.github/workflows/infrastructure.yml` — one Terraform pipeline for all environments
+
+Manually triggered. Two parameters:
+
+```
+environment:  dev | stg | prd     # mapped to envs/dev | envs/stage | envs/prod
+stage:        validate | plan | apply | delete
+```
 
 ```yaml
-name: Deploy — Dev
 on:
-  push:
-    branches: [develop]
-
-permissions:
-  id-token: write
-  contents: read
-
-jobs:
-  deploy-dev:
-    runs-on: ubuntu-latest
-    environment: dev
-    steps:
-      - uses: actions/checkout@v4
-      - uses: aws-actions/configure-aws-credentials@v4
-        with:
-          role-to-assume: arn:aws:iam::<account>:role/smart-github-actions-ci
-          aws-region: us-east-1
-      - name: Build and push image to ECR
-        run: |
-          aws ecr get-login-password | docker login --username AWS \
-            --password-stdin <account>.dkr.ecr.us-east-1.amazonaws.com
-          docker build -t smart-backend .
-          docker tag smart-backend:latest \
-            <account>.dkr.ecr.us-east-1.amazonaws.com/smart-backend:dev-${{ github.sha }}
-          docker push <account>.dkr.ecr.us-east-1.amazonaws.com/smart-backend:dev-${{ github.sha }}
-      - name: Run Alembic migrations on dev
-        run: |
-          aws ecs run-task --cluster smart-dev \
-            --task-definition smart-dev-migration \
-            --overrides '{"containerOverrides":[{"name":"migration",
-              "command":["alembic","upgrade","head"]}]}' \
-            --launch-type FARGATE --wait
-      - name: Update ECS services on dev
-        run: |
-          for svc in api-gateway tenant inventory order logistics analytics notification sync; do
-            aws ecs update-service --cluster smart-dev \
-              --service smart-dev-$svc \
-              --force-new-deployment
-          done
+  workflow_dispatch:
+    inputs:
+      environment: { type: choice, options: [dev, stg, prd] }
+      stage:       { type: choice, options: [validate, plan, apply, delete] }
 ```
 
-### `.github/workflows/deploy-staging.yml`
-
-```yaml
-name: Deploy — Stage
-on:
-  push:
-    branches: [main]
-
-permissions:
-  id-token: write
-  contents: read
-
-jobs:
-  deploy-stage:
-    runs-on: ubuntu-latest
-    environment: stage          # GitHub environment — requires reviewer approval
-    steps:
-      - uses: actions/checkout@v4
-      - uses: aws-actions/configure-aws-credentials@v4
-        with:
-          role-to-assume: arn:aws:iam::<account>:role/smart-github-actions-deploy-stage
-          aws-region: us-east-1
-      - name: Build, push, migrate, deploy (stage)
-        run: |
-          # Same pattern as deploy-dev — targets smart-stage cluster
-          # Smoke tests run automatically after deploy via ECS health checks
-```
-
-### `.github/workflows/deploy-prod.yml`
-
-```yaml
-name: Deploy — Prod
-on:
-  push:
-    tags: ['v*']               # Release tag triggers prod deploy
-
-permissions:
-  id-token: write
-  contents: read
-
-jobs:
-  deploy-prod:
-    runs-on: ubuntu-latest
-    environment: prod           # GitHub environment — requires named approver sign-off
-    steps:
-      - uses: actions/checkout@v4
-      - uses: aws-actions/configure-aws-credentials@v4
-        with:
-          role-to-assume: arn:aws:iam::<account>:role/smart-github-actions-deploy-prod
-          aws-region: us-east-1
-      - name: Build, push, migrate, deploy (prod)
-        run: |
-          # Same pattern — targets smart-prod cluster
-          # Terraform plan is run first; apply only if plan shows no destructive changes
-```
-
-### Deploy pipeline summary
+Behaviour per `stage`:
 
 ```
-PR opened          → CI runs (lint, test, drift-check, migration round-trip)
-Merge to develop   → Auto-deploy to dev environment
-Merge to main      → Deploy to stage (GitHub environment approval gate)
-Release tag vX.Y.Z → Deploy to prod (named approver required in GitHub environment)
+validate → terraform init -backend=false && terraform validate   (offline; no AWS creds)
+plan     → terraform init (static S3 backend) && terraform plan
+apply    → terraform init && terraform apply -auto-approve
+delete   → terraform init && terraform destroy -auto-approve
+```
 
-All deployments:   Terraform plan → ECR push → Alembic migrate → ECS rolling update
-All auth:          GitHub OIDC → scoped IAM role per environment
-All secrets:       AWS Secrets Manager — never in GitHub Secrets or workflow files
+- A `setup` job maps `dev/stg/prd` → the `envs/<dir>` directory name (`dev/stage/prod`).
+- `plan/apply/delete` configure AWS creds and use the **static** S3 backend baked into
+  each `envs/<env>/main.tf` (no `-backend-config`). `validate` runs fully offline.
+- The job is gated by the GitHub Environment `infra-<env>` — add reviewers on
+  `infra-stage` / `infra-prod` to require approval before `apply`/`delete`.
+- Assumes the S3 state bucket (`gdc-smart-terraform-state`) and DynamoDB lock table
+  (`smart-terraform-locks`) already exist.
+
+### `.github/workflows/deploy.yml` — one application deployment pipeline
+
+Manually triggered. One parameter:
+
+```
+environment:  dev | stg | prd     # mapped to the smart-<env> ECS cluster
+```
+
+Jobs:
+
+```
+setup       → resolve dev/stg/prd → dev/stage/prod
+build-push  → matrix over all 10 services: docker build backend/services/<svc>,
+              push to ECR repo smart-<svc>, tags <env>-<sha> and <env>-latest
+deploy      → run Alembic migrations via one-off ECS task (smart-<env>-migration),
+              then `aws ecs update-service --force-new-deployment` for each
+              smart-<env>-<svc>. Gated by GitHub Environment deploy-<env>.
+```
+
+- ECR repos are `smart-<service>` (NOT env-prefixed — created by the `ecs` Terraform
+  module; images are differentiated by the `<env>-<sha>` tag).
+- **Known gap:** the `ecs` module does not yet define `aws_ecs_service` or task
+  definitions. Until it does, the migration + rollout steps **warn and skip** rather
+  than fail. Image build/push works today; rollout becomes effective once those
+  resources exist in Terraform.
+
+### Pipeline summary
+
+```
+Quality gate   → run CI manually (Actions tab): lint, tests, permission-drift,
+                 migration round-trip, locale-check.
+Infrastructure → run infrastructure.yml with (environment, stage).
+                 validate is safe anytime; apply/delete gated by infra-<env> reviewers.
+Deploy app     → run deploy.yml with (environment): build+push images, migrate, roll out.
+
+Auth:     access-key secrets during bootstrap (target: GitHub OIDC per environment).
+Secrets:  AWS Secrets Manager — never in GitHub Secrets or workflow files.
+Backend:  static S3 (gdc-smart-terraform-state) + DynamoDB (smart-terraform-locks),
+          state key smart-inventory-platform/<env>/terraform.tfstate.
 ```
 
 ---
