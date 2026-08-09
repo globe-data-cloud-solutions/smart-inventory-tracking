@@ -1,7 +1,10 @@
 variable "env"        { type = string }
 variable "vpc_id"    { type = string }
 variable "subnet_ids" { type = list(string) }
-variable "node_type"  { type = string default = "cache.t4g.small" }
+variable "node_type" {
+  type    = string
+  default = "cache.t4g.small"
+}
 
 resource "aws_elasticache_subnet_group" "main" {
   name       = "smart-${var.env}-redis"
