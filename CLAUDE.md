@@ -255,11 +255,10 @@ smart-platform/                        # GitHub repository root
 │       │   ├── secrets/               # Secrets Manager secrets (references only)
 │       │   ├── observability/         # AMP, AMG, X-Ray, CloudWatch alarms
 │       │   └── networking/            # VPC, subnets, security groups
-│       ├── envs/
-│       │   ├── dev/                   # Dev environment workspace
-│       │   ├── stage/                 # Stage environment workspace
-│       │   └── prod/                  # Prod environment workspace
-│       └── backend.tf                 # Remote state: S3 bucket + DynamoDB lock table
+│       └── envs/                      # Each env is its own root module with a
+│           ├── dev/                   #   STATIC backend "s3" block (only the state
+│           ├── stage/                 #   key differs per env). Remote state:
+│           └── prod/                  #   S3 smart-terraform-state + DynamoDB smart-terraform-locks
 │
 ├── scripts/
 │   ├── seed_permissions.py            # Seeds all 115 actions from registry.py
@@ -277,8 +276,8 @@ smart-platform/                        # GitHub repository root
 ### Branches
 
 ```
-main          protected — production-ready, no direct pushes
-develop       integration branch — all features target here
+main          production-ready. Direct pushes ARE allowed — see below.
+develop       integration branch — features may target here
 feature/<ticket>-<slug>   e.g. feature/SMART-42-fefo-dispatch
 fix/<ticket>-<slug>       e.g. fix/SMART-88-rls-context
 chore/<slug>              e.g. chore/add-oromifa-locale
@@ -286,8 +285,24 @@ chore/<slug>              e.g. chore/add-oromifa-locale
 
 ### Branch protection rules
 
-- `main` and `develop`: 1 reviewer minimum, all CI checks must pass
-- `CODEOWNERS` requires a second reviewer for `backend/shared/permissions/` and `backend/migrations/`
+> **Current reality (2026-08):** the repositories are private on a free GitHub
+> plan, where server-side branch protection / rulesets are unavailable. There is
+> **no enforced protection on `main`** in either repo
+> (`abiygit/smart-inventory-tracking` and
+> `globe-data-cloud-solutions/smart-inventory-tracking`).
+
+- **Direct pushes to `main` are allowed** in both repos. A PR is not always
+  required — small, low-risk, or infra/CI changes may be committed to a branch
+  and pushed, or pushed straight to `main`, at the author's discretion.
+- Opening a PR remains the **preferred** path for non-trivial or reviewable
+  changes, but it is a convention, not a hard gate.
+- The reviewer/CI expectations below are **aspirational policy** to re-enable if
+  the repos move to a plan that supports protection (GitHub Pro or public):
+  - `main` and `develop`: 1 reviewer minimum, all CI checks pass
+  - `CODEOWNERS` second reviewer for `backend/shared/permissions/` and `backend/migrations/`
+- Note: `ci.yml` no longer auto-runs on pull requests (trigger is
+  `workflow_dispatch`); run it manually from the Actions tab when verification
+  is wanted.
 
 ### PR checklist — `.github/PULL_REQUEST_TEMPLATE.md`
 
