@@ -1,0 +1,157 @@
+name: Deploy Application
+run-name: Deploy app — ${{ inputs.environment }} (by ${{ github.actor }})
+
+# Single application deployment pipeline for all environments.
+# Manual trigger. One parameter: environment (dev | stg | prd), mapped to
+# the smart-<env> ECS cluster and smart-<env>-<service> services.
+#
+# Flow:
+#   1. Build + push a Docker image per service to its ECR repo (smart-<service>),
+#      tagged <env>-<sha> and <env>-latest.
+#   2. Run Alembic migrations via a one-off ECS task.
+#   3. Force a new ECS deployment for each service so it pulls the new image.
+#
+# Requirements / assumptions:
+#   - ECR repos (smart-<service>) exist — created by the ecs Terraform module.
+#   - AWS_ACCOUNT_ID and AWS_REGION are set as repo variables; AWS_ACCESS_KEY_ID /
+#     AWS_SECRET_ACCESS_KEY as secrets.
+#   - NOTE: the ecs module does not yet define aws_ecs_service / task definitions,
+#     so the migration + update-service steps only take effect once those exist.
+#     Until then those steps warn instead of failing the run.
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Target environment to deploy'
+        required: true
+        type: choice
+        options: [dev, stg, prd]
+
+permissions:
+  contents: read
+
+env:
+  SERVICES: >-
+    api-gateway auth-service tenant-service product-service inventory-service
+    order-service logistics-service analytics-service notification-service sync-service
+
+jobs:
+  # ── Resolve dev/stg/prd → envs directory / cluster suffix ─────────────────────
+  setup:
+    name: Resolve environment
+    runs-on: ubuntu-latest
+    outputs:
+      env: ${{ steps.map.outputs.env }}
+    steps:
+      - id: map
+        run: |
+          case "${{ inputs.environment }}" in
+            dev) echo "env=dev"   >> "$GITHUB_OUTPUT" ;;
+            stg) echo "env=stage" >> "$GITHUB_OUTPUT" ;;
+            prd) echo "env=prod"  >> "$GITHUB_OUTPUT" ;;
+            *)   echo "❌ Unknown environment: ${{ inputs.environment }}"; exit 1 ;;
+          esac
+
+  # ── Build + push one image per service ────────────────────────────────────────
+  build-push:
+    name: Build & push — ${{ matrix.service }}
+    runs-on: ubuntu-latest
+    needs: [setup]
+    strategy:
+      fail-fast: false
+      matrix:
+        service:
+          - api-gateway
+          - auth-service
+          - tenant-service
+          - product-service
+          - inventory-service
+          - order-service
+          - logistics-service
+          - analytics-service
+          - notification-service
+          - sync-service
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ vars.AWS_REGION }}
+
+      - name: Build and push image to ECR
+        env:
+          ENV: ${{ needs.setup.outputs.env }}
+          REGISTRY: ${{ vars.AWS_ACCOUNT_ID }}.dkr.ecr.${{ vars.AWS_REGION }}.amazonaws.com
+          SERVICE: ${{ matrix.service }}
+        run: |
+          aws ecr get-login-password --region "${{ vars.AWS_REGION }}" \
+            | docker login --username AWS --password-stdin "$REGISTRY"
+
+          REPO="$REGISTRY/smart-$SERVICE"
+          docker build -t "$REPO:$ENV-${{ github.sha }}" -t "$REPO:$ENV-latest" \
+            backend/services/"$SERVICE"
+          docker push "$REPO:$ENV-${{ github.sha }}"
+          docker push "$REPO:$ENV-latest"
+          echo "Pushed smart-$SERVICE:$ENV-${{ github.sha }}"
+
+  # ── Migrate DB + roll out ECS services ────────────────────────────────────────
+  deploy:
+    name: Migrate & roll out — ${{ needs.setup.outputs.env }}
+    runs-on: ubuntu-latest
+    needs: [setup, build-push]
+    # GitHub Environment gate — add reviewers on deploy-stage / deploy-prod for approval.
+    environment: deploy-${{ needs.setup.outputs.env }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ vars.AWS_REGION }}
+
+      - name: Run Alembic migrations (one-off ECS task)
+        env:
+          ENV: ${{ needs.setup.outputs.env }}
+        run: |
+          if aws ecs describe-task-definition --task-definition "smart-$ENV-migration" >/dev/null 2>&1; then
+            aws ecs run-task \
+              --cluster "smart-$ENV" \
+              --task-definition "smart-$ENV-migration" \
+              --launch-type FARGATE \
+              --overrides '{"containerOverrides":[{"name":"migration","command":["alembic","-c","backend/migrations/alembic.ini","upgrade","head"]}]}'
+            echo "Migration task started on smart-$ENV."
+          else
+            echo "::warning::Task definition smart-$ENV-migration not found — skipping migrations (define it in Terraform)."
+          fi
+
+      - name: Force new deployment for each service
+        env:
+          ENV: ${{ needs.setup.outputs.env }}
+        run: |
+          for svc in $SERVICES; do
+            if aws ecs describe-services --cluster "smart-$ENV" --services "smart-$ENV-$svc" \
+                 --query 'services[0].status' --output text 2>/dev/null | grep -q ACTIVE; then
+              aws ecs update-service --cluster "smart-$ENV" --service "smart-$ENV-$svc" --force-new-deployment >/dev/null
+              echo "✅ Rolled out smart-$ENV-$svc"
+            else
+              echo "::warning::Service smart-$ENV-$svc not found or inactive — skipped (define it in Terraform)."
+            fi
+          done
+
+      - name: Summary
+        if: always()
+        run: |
+          {
+            echo "## Deploy — \`${{ needs.setup.outputs.env }}\`"
+            echo ""
+            echo "| Field | Value |"
+            echo "|-------|-------|"
+            echo "| Environment | ${{ inputs.environment }} → ${{ needs.setup.outputs.env }} |"
+            echo "| Image tag | ${{ needs.setup.outputs.env }}-${{ github.sha }} |"
+            echo "| Triggered by | ${{ github.actor }} |"
+            echo "| Result | ${{ job.status }} |"
+          } >> "$GITHUB_STEP_SUMMARY"

@@ -8,8 +8,8 @@ terraform {
   }
   # Static remote state backend. Only `key` differs per environment.
   backend "s3" {
-    bucket         = "smart-terraform-state"
-    key            = "smart-platform/stage/terraform.tfstate"
+    bucket         = "gdc-smart-terraform-state"
+    key            = "smart-inventory-platform/stage/terraform.tfstate"
     region         = "us-east-1"
     dynamodb_table = "smart-terraform-locks"
     encrypt        = true
