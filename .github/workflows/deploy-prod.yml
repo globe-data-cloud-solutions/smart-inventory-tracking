@@ -40,14 +40,8 @@ jobs:
 
       - name: Terraform Init
         working-directory: infra/terraform/envs/prod
-        run: |
-          terraform init \
-            -backend-config="bucket=${{ vars.TF_STATE_BUCKET }}" \
-            -backend-config="key=smart-platform/prod/terraform.tfstate" \
-            -backend-config="region=${{ vars.AWS_REGION }}" \
-            -backend-config="dynamodb_table=${{ vars.TF_STATE_LOCK_TABLE }}" \
-            -backend-config="encrypt=true" \
-            -input=false
+        # Backend is statically configured in envs/prod/main.tf — no -backend-config needed.
+        run: terraform init -input=false
 
       - name: Terraform Plan
         working-directory: infra/terraform/envs/prod
