@@ -21,3 +21,13 @@ node_modules/
 frontend/tsconfig.tsbuildinfo
 # Uploaded files (LocalStorageService — dev only; production uses S3)
 uploads/
+
+# Local scratch / one-off dev scripts (never committed)
+backend/_count_tmp.py
+scripts/_check_positions_schema.py
+scripts/_check_roles.py
+scripts/_rebuild_state.py
+scripts/_refresh_tokens.py
+scripts/_seed_t6p2t.py
+scripts/_swap_positions.py
+scripts/_write_state.py
