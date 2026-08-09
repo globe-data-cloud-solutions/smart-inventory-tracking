@@ -1,7 +1,8 @@
 name: CI
 on:
-  pull_request:
-    branches: [develop, main]
+  # PR auto-runs disabled — CI no longer runs on pull requests.
+  # Still runnable manually from the Actions tab if needed.
+  workflow_dispatch:
 
 permissions:
   contents: read

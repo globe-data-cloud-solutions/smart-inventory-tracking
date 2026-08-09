@@ -23,8 +23,9 @@ jobs:
 
       - name: Create S3 state bucket
         run: |
-          BUCKET="${{ vars.TF_STATE_BUCKET }}"
-          REGION="${{ vars.AWS_REGION }}"
+          # Must match the static backend "s3" block in envs/<env>/main.tf
+          BUCKET="smart-terraform-state"
+          REGION="us-east-1"
           if aws s3api head-bucket --bucket "$BUCKET" 2>/dev/null; then
             echo "✅ Bucket $BUCKET already exists — skipping."
           else
@@ -43,7 +44,8 @@ jobs:
 
       - name: Create DynamoDB lock table
         run: |
-          TABLE="${{ vars.TF_STATE_LOCK_TABLE }}"
+          # Must match the static backend "s3" block in envs/<env>/main.tf
+          TABLE="smart-terraform-locks"
           if aws dynamodb describe-table --table-name "$TABLE" 2>/dev/null; then
             echo "✅ DynamoDB table $TABLE already exists — skipping."
           else
@@ -85,8 +87,8 @@ jobs:
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "| Resource | Name |" >> $GITHUB_STEP_SUMMARY
           echo "|----------|------|" >> $GITHUB_STEP_SUMMARY
-          echo "| S3 state bucket | ${{ vars.TF_STATE_BUCKET }} |" >> $GITHUB_STEP_SUMMARY
-          echo "| DynamoDB lock table | ${{ vars.TF_STATE_LOCK_TABLE }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| S3 state bucket | smart-terraform-state |" >> $GITHUB_STEP_SUMMARY
+          echo "| DynamoDB lock table | smart-terraform-locks |" >> $GITHUB_STEP_SUMMARY
           echo "| ECR repos | smart-{service} x10 |" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "**Next step:** Run **Infra — Terraform Apply** for the \`dev\` environment." >> $GITHUB_STEP_SUMMARY

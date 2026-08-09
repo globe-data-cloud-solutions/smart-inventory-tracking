@@ -6,7 +6,14 @@ terraform {
       version = "~> 5.50"
     }
   }
-  backend "s3" {}
+  # Static remote state backend. Only `key` differs per environment.
+  backend "s3" {
+    bucket         = "smart-terraform-state"
+    key            = "smart-platform/stage/terraform.tfstate"
+    region         = "us-east-1"
+    dynamodb_table = "smart-terraform-locks"
+    encrypt        = true
+  }
 }
 
 provider "aws" {
