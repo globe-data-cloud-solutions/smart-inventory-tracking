@@ -48,6 +48,7 @@ resource "aws_db_instance" "primary" {
 }
 
 resource "aws_db_instance" "read_replica" {
+  count                  = var.env == "prod" ? 1 : 0
   identifier             = "smart-${var.env}-replica"
   replicate_source_db    = aws_db_instance.primary.identifier
   instance_class         = var.instance_class
@@ -67,4 +68,4 @@ resource "aws_db_parameter_group" "pg16" {
 }
 
 output "primary_endpoint" { value = aws_db_instance.primary.endpoint }
-output "replica_endpoint"  { value = aws_db_instance.read_replica.endpoint }
+output "replica_endpoint"  { value = var.env == "prod" ? aws_db_instance.read_replica[0].endpoint : null }
