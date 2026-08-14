@@ -36,7 +36,7 @@ resource "aws_db_instance" "primary" {
   storage_encrypted      = true
   db_name                = "smart_inventory"
   username               = "smart_app"
-  manage_master_user_password = var.env == "prod" ? true : false
+  manage_master_user_password = true
   db_subnet_group_name   = aws_db_subnet_group.main.name
   vpc_security_group_ids = [aws_security_group.rds.id]
   multi_az               = var.env == "prod" ? true : false
