@@ -25,7 +25,7 @@ resource "aws_security_group" "redis" {
 
 resource "aws_elasticache_replication_group" "main" {
   replication_group_id = "smart-${var.env}-redis"
-  description          = "SMART ${var.env} — Celery broker + session cache"
+  description          = "SMART ${var.env} - Celery broker + session cache"
   node_type            = var.node_type
   num_cache_clusters   = var.env == "prod" ? 2 : 1
   port                 = 6379

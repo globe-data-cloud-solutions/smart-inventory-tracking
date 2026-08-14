@@ -14,6 +14,10 @@ resource "aws_cognito_user_pool" "main" {
 
   mfa_configuration = var.env == "prod" ? "ON" : "OPTIONAL"
 
+  software_token_mfa_configuration {
+    enabled = true
+  }
+
   schema {
     name                     = "tenant_id"
     attribute_data_type      = "String"

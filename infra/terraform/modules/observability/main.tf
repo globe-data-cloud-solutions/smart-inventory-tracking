@@ -1,6 +1,28 @@
 variable "env"        { type = string }
 variable "account_id" { type = string }
 
+# IAM role for Grafana to assume
+resource "aws_iam_role" "grafana" {
+  name               = "smart-${var.env}-grafana-role"
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Principal = {
+          Service = "grafana.amazonaws.com"
+        }
+        Action = "sts:AssumeRole"
+      }
+    ]
+  })
+}
+
+resource "aws_iam_role_policy_attachment" "grafana" {
+  role       = aws_iam_role.grafana.name
+  policy_arn = "arn:aws:iam::aws:policy/CloudWatchAgentServerPolicy"
+}
+
 # Amazon Managed Service for Prometheus (AMP)
 resource "aws_prometheus_workspace" "main" {
   alias = "smart-${var.env}"
@@ -13,6 +35,7 @@ resource "aws_grafana_workspace" "main" {
   authentication_providers = ["AWS_SSO"]
   permission_type          = "SERVICE_MANAGED"
   data_sources             = ["PROMETHEUS", "CLOUDWATCH", "XRAY"]
+  role_arn                 = aws_iam_role.grafana.arn
 }
 
 # CloudWatch alarms for outbox health
