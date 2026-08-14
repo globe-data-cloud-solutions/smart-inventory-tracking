@@ -43,6 +43,7 @@ resource "aws_db_instance" "primary" {
   backup_retention_period = var.env == "prod" ? 14 : 7
   skip_final_snapshot    = var.env != "prod"
   deletion_protection    = var.env == "prod"
+  manage_master_user_password = var.env == "prod" ? true : false
 
   parameter_group_name = aws_db_parameter_group.pg16.name
 }

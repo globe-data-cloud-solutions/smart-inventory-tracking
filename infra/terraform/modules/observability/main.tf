@@ -32,7 +32,7 @@ resource "aws_prometheus_workspace" "main" {
 resource "aws_grafana_workspace" "main" {
   name                     = "smart-${var.env}"
   account_access_type      = "CURRENT_ACCOUNT"
-  authentication_providers = ["AWS_SSO"]
+  authentication_providers = ["SAML"]
   permission_type          = "SERVICE_MANAGED"
   data_sources             = ["PROMETHEUS", "CLOUDWATCH", "XRAY"]
   role_arn                 = aws_iam_role.grafana.arn
