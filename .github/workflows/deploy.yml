@@ -88,11 +88,16 @@ jobs:
           SERVICE: ${{ matrix.service }}
           DOCKER_BUILDKIT: 0
         run: |
+          # Debug: check files
+          echo "Checking backend files..."
+          ls -la backend/shared/ | head -5
+          ls -la backend/services/"$SERVICE"/ | head -5
+
           aws ecr get-login-password --region "${{ vars.AWS_REGION }}" \
             | docker login --username AWS --password-stdin "$REGISTRY"
 
           REPO="$REGISTRY/smart-$SERVICE"
-          docker build --no-cache -t "$REPO:$ENV-${{ github.sha }}" -t "$REPO:$ENV-latest" \
+          docker build --progress=plain --no-cache -t "$REPO:$ENV-${{ github.sha }}" -t "$REPO:$ENV-latest" \
             -f backend/services/"$SERVICE"/Dockerfile .
           docker push "$REPO:$ENV-${{ github.sha }}"
           docker push "$REPO:$ENV-latest"
