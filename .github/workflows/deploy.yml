@@ -91,7 +91,7 @@ jobs:
             | docker login --username AWS --password-stdin "$REGISTRY"
 
           REPO="$REGISTRY/smart-$SERVICE"
-          docker build -t "$REPO:$ENV-${{ github.sha }}" -t "$REPO:$ENV-latest" \
+          docker build --no-cache -t "$REPO:$ENV-${{ github.sha }}" -t "$REPO:$ENV-latest" \
             -f backend/services/"$SERVICE"/Dockerfile .
           docker push "$REPO:$ENV-${{ github.sha }}"
           docker push "$REPO:$ENV-latest"
