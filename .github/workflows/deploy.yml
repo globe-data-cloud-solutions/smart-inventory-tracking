@@ -92,7 +92,7 @@ jobs:
 
           REPO="$REGISTRY/smart-$SERVICE"
           docker build -t "$REPO:$ENV-${{ github.sha }}" -t "$REPO:$ENV-latest" \
-            backend/services/"$SERVICE"
+            -f backend/services/"$SERVICE"/Dockerfile .
           docker push "$REPO:$ENV-${{ github.sha }}"
           docker push "$REPO:$ENV-latest"
           echo "Pushed smart-$SERVICE:$ENV-${{ github.sha }}"
