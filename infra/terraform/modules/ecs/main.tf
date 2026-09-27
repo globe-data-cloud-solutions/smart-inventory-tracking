@@ -13,19 +13,19 @@ resource "aws_ecs_cluster" "main" {
   }
 }
 
-resource "aws_ecr_repository" "services" {
-  for_each             = toset(var.services)
-  name                 = "smart-${each.key}"
-  image_tag_mutability = "MUTABLE"
-
-  image_scanning_configuration {
-    scan_on_push = true
-  }
-
-  lifecycle {
-    prevent_destroy = true
-  }
-}
+# ECR repositories are created and managed separately to avoid conflicts
+# when repositories contain images during destroy. See infra/terraform/docs/ECR_MANAGEMENT.md
+# To manually delete ECR repositories:
+#   aws ecr delete-repository --repository-name smart-<service> --force --region us-east-1
+# resource "aws_ecr_repository" "services" {
+#   for_each             = toset(var.services)
+#   name                 = "smart-${each.key}"
+#   image_tag_mutability = "MUTABLE"
+#
+#   image_scanning_configuration {
+#     scan_on_push = true
+#   }
+# }
 
 resource "aws_iam_role" "ecs_task_execution" {
   name = "smart-${var.env}-ecs-task-execution"
