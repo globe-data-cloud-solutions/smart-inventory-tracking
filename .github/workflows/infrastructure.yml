@@ -100,6 +100,22 @@ jobs:
         if: inputs.stage == 'apply'
         run: terraform apply -auto-approve -input=false
 
+      - name: Delete ECR repositories (pre-destroy cleanup)
+        if: inputs.stage == 'delete'
+        run: |
+          echo "Cleaning up ECR repositories before Terraform destroy..."
+          SERVICES="api-gateway auth-service tenant-service product-service inventory-service order-service logistics-service analytics-service notification-service sync-service"
+          for service in $SERVICES; do
+            repo_name="smart-$service"
+            if aws ecr describe-repositories --repository-names "$repo_name" --region ${{ vars.AWS_REGION || 'us-east-1' }} >/dev/null 2>&1; then
+              echo "Deleting ECR repository: $repo_name"
+              aws ecr delete-repository --repository-name "$repo_name" --force --region ${{ vars.AWS_REGION || 'us-east-1' }} || echo "⚠️  Failed to delete $repo_name (may not exist)"
+            else
+              echo "ECR repository not found: $repo_name"
+            fi
+          done
+          echo "ECR cleanup complete."
+
       - name: Terraform Destroy
         if: inputs.stage == 'delete'
         run: terraform destroy -auto-approve -input=false
