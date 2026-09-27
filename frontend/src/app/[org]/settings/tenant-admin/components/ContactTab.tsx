@@ -60,6 +60,19 @@ export function ContactTab({ tenantId, isLoading }: TabProps) {
     },
   });
 
+  const deleteMutation = useMutation({
+    mutationFn: (contactId: string) => api.delete(`/api/v1/tenants/me/contacts/${contactId}`),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ["tenant-admin-contacts", tenantId] });
+      setSuccess("Contact deleted successfully!");
+      setError(null);
+      setTimeout(() => setSuccess(null), 3000);
+    },
+    onError: (e: unknown) => {
+      setError(e instanceof Error ? e.message : t("common.error"));
+    },
+  });
+
   const resetForm = () => {
     setFormData({ is_primary: false, full_name: "", email: "", phone: "", position_title: "" });
     setEditingId(null);
@@ -114,12 +127,25 @@ export function ContactTab({ tenantId, isLoading }: TabProps) {
                       {contact.is_primary && <p className="text-xs text-amber-600">Primary Contact</p>}
                     </div>
                   </div>
-                  <button
-                    onClick={() => handleEdit(contact)}
-                    className="text-sm font-medium text-blue-600 hover:text-blue-700"
-                  >
-                    Edit
-                  </button>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => handleEdit(contact)}
+                      className="text-sm font-medium text-blue-600 hover:text-blue-700"
+                    >
+                      Edit
+                    </button>
+                    <button
+                      onClick={() => {
+                        if (confirm("Delete this contact?")) {
+                          deleteMutation.mutate(contact.id);
+                        }
+                      }}
+                      disabled={deleteMutation.isPending}
+                      className="text-sm font-medium text-red-600 hover:text-red-700 disabled:opacity-50"
+                    >
+                      Delete
+                    </button>
+                  </div>
                 </div>
                 <div className="text-sm text-gray-600">
                   <p>Email: {contact.email}</p>
