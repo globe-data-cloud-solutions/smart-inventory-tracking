@@ -1564,6 +1564,7 @@ async def update_feature_flags(
 # ── TA Self-Service Endpoints ────────────────────────────────────────────────
 
 @router.get("/me/profile", response_model=SuccessResponse[TenantResponse])
+@require_permission(PERMISSIONS.TENANT_VIEW)
 async def get_my_profile(
     user=Depends(get_current_user),
     db: AsyncSession = Depends(get_db_session),
@@ -1612,6 +1613,7 @@ class TAProfileUpdateRequest(BaseModel):
 
 
 @router.patch("/me/profile", response_model=SuccessResponse[dict])
+@require_permission(PERMISSIONS.TENANT_CONFIGURE)
 async def update_my_profile(
     body: TAProfileUpdateRequest,
     user=Depends(get_current_user),
@@ -1660,6 +1662,7 @@ async def update_my_profile(
 
 
 @router.patch("/me/contract", response_model=SuccessResponse[dict])
+@require_permission(PERMISSIONS.TENANT_CONTRACT_EDIT)
 async def update_my_contract(
     body: ContractUpdateRequest,
     user=Depends(get_current_user),
@@ -1752,6 +1755,7 @@ async def update_my_contract(
 
 
 @router.get("/me/contacts", response_model=SuccessResponse[List[TenantContactOut]])
+@require_permission(PERMISSIONS.TENANT_VIEW)
 async def get_my_contacts(
     user=Depends(get_current_user),
     db: AsyncSession = Depends(get_db_session),
@@ -1787,6 +1791,7 @@ async def get_my_contacts(
 
 
 @router.post("/me/contacts", status_code=201, response_model=SuccessResponse[TenantContactOut])
+@require_permission(PERMISSIONS.TENANT_CONFIGURE)
 async def create_my_contact(
     body: TenantContactIn,
     user=Depends(get_current_user),
@@ -1838,6 +1843,7 @@ async def create_my_contact(
 
 
 @router.patch("/me/contacts/{contact_id}", response_model=SuccessResponse[TenantContactOut])
+@require_permission(PERMISSIONS.TENANT_CONFIGURE)
 async def update_my_contact(
     contact_id: uuid.UUID,
     body: TenantContactIn,
@@ -1896,6 +1902,7 @@ async def update_my_contact(
 
 
 @router.delete("/me/contacts/{contact_id}", status_code=204)
+@require_permission(PERMISSIONS.TENANT_CONFIGURE)
 async def delete_my_contact(
     contact_id: uuid.UUID,
     user=Depends(get_current_user),
