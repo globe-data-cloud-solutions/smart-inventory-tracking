@@ -25,8 +25,8 @@ const FEATURE_DESCRIPTIONS: Record<string, string> = {
 
 export function PlanTab({ tenantId, isLoading }: TabProps) {
   const { data: plan, isLoading: loadingPlan } = useQuery<PlanData>({
-    queryKey: ["tenant-admin-plan", tenantId],
-    queryFn: () => api.get<PlanData>(`/api/v1/tenants/${tenantId}/me/plan`),
+    queryKey: ["tenant-admin-plan"],
+    queryFn: () => api.get<PlanData>(`/api/v1/tenants/me/plan`),
     staleTime: 30_000,
   });
 

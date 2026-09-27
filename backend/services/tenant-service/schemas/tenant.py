@@ -24,6 +24,7 @@ DEFAULT_SYSTEM_PLAN_ID = uuid.UUID("00000000-0000-0000-0000-000000000001")
 
 
 VALID_PLAN_TIERS = {"STARTER", "GROWTH", "ENTERPRISE"}
+VALID_LOCALES = {"en", "am", "or"}
 
 
 class TenantCreateRequest(BaseModel):

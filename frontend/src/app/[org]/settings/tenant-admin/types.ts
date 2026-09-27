@@ -32,13 +32,14 @@ export interface PlanData {
 
 export interface TenantContact {
   id: string;
-  contact_type: "primary" | "billing" | "technical";
-  name: string;
+  tenant_id: string;
+  is_primary: boolean;
+  full_name: string;
   email: string;
   phone?: string | null;
-  role?: string | null;
+  position_title?: string | null;
+  mobile?: string | null;
   created_at: string;
-  updated_at: string;
 }
 
 export interface TabProps {

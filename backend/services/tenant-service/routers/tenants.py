@@ -14,7 +14,7 @@ from dependencies import get_current_user, get_db_session
 from shared.permissions.middleware import require_permission
 from shared.permissions.registry import PERMISSIONS
 from shared.utils.responses import SuccessResponse
-from schemas.tenant import TenantCreateRequest, TenantResponse, VALID_PLAN_TIERS
+from schemas.tenant import TenantCreateRequest, TenantResponse, VALID_PLAN_TIERS, VALID_LOCALES
 
 
 class TenantStatusResponse(BaseModel):
@@ -1559,4 +1559,360 @@ async def update_feature_flags(
         )
     except Exception:
         pass
+
+
+# ── TA Self-Service Endpoints ────────────────────────────────────────────────
+
+@router.get("/me/profile", response_model=SuccessResponse[TenantResponse])
+async def get_my_profile(
+    user=Depends(get_current_user),
+    db: AsyncSession = Depends(get_db_session),
+) -> SuccessResponse[TenantResponse]:
+    """TA: get their own tenant profile. SA can use /{tenant_id} instead."""
+    if not user or not user.tenant_id:
+        raise HTTPException(status_code=403, detail="No tenant context")
+
+    row = (await db.execute(
+        text(
+            "SELECT id, name, slug, organisation_type, onboarding_complete, "
+            "default_locale, is_active, status, logo_url, banner_url, "
+            "plan_tier, max_warehouses, max_users, "
+            "contract_start, contract_end, admin_user_id, admin_email "
+            "FROM tenants WHERE id = :id"
+        ),
+        {"id": str(user.tenant_id)},
+    )).fetchone()
+    if not row:
+        raise HTTPException(status_code=404, detail="Tenant not found")
+
+    return SuccessResponse(data=TenantResponse(
+        id=row.id,
+        name=row.name,
+        slug=row.slug,
+        organisation_type=row.organisation_type,
+        onboarding_complete=row.onboarding_complete,
+        default_locale=row.default_locale,
+        is_active=row.is_active,
+        status=row.status,
+        logo_url=row.logo_url,
+        banner_url=row.banner_url,
+        plan_tier=row.plan_tier,
+        max_warehouses=row.max_warehouses,
+        max_users=row.max_users,
+        contract_start=str(row.contract_start) if row.contract_start else None,
+        contract_end=str(row.contract_end) if row.contract_end else None,
+        admin_user_id=row.admin_user_id,
+        admin_email=row.admin_email,
+    ))
+
+
+class TAProfileUpdateRequest(BaseModel):
+    """TA can only update specific fields of their own profile."""
+    default_locale: Optional[str] = None
+
+
+@router.patch("/me/profile", response_model=SuccessResponse[dict])
+async def update_my_profile(
+    body: TAProfileUpdateRequest,
+    user=Depends(get_current_user),
+    db: AsyncSession = Depends(get_db_session),
+) -> SuccessResponse[dict]:
+    """TA: update limited fields of their own tenant profile (locale only)."""
+    if not user or not user.tenant_id:
+        raise HTTPException(status_code=403, detail="No tenant context")
+
+    if body.default_locale is not None and body.default_locale not in VALID_LOCALES:
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "code": "INVALID_LOCALE",
+                "message": f"default_locale must be one of {sorted(VALID_LOCALES)}",
+            },
+        )
+
+    if body.default_locale is None:
+        return SuccessResponse(data={"changes": 0})
+
+    old_locale = (await db.execute(
+        text("SELECT default_locale FROM tenants WHERE id = :id"),
+        {"id": str(user.tenant_id)},
+    )).scalar() or "en"
+
+    if body.default_locale == old_locale:
+        return SuccessResponse(data={"changes": 0})
+
+    await db.execute(
+        text("UPDATE tenants SET default_locale = :locale, updated_at = now() WHERE id = :id"),
+        {"locale": body.default_locale, "id": str(user.tenant_id)},
+    )
+
+    try:
+        await _log_tenant_activity(
+            db, user.tenant_id, str(user.user_id),
+            action="PROFILE_UPDATE",
+            old_value=old_locale,
+            new_value=body.default_locale,
+        )
+    except Exception:
+        pass
+
+    return SuccessResponse(data={"default_locale": body.default_locale})
+
+
+@router.patch("/me/contract", response_model=SuccessResponse[dict])
+async def update_my_contract(
+    body: ContractUpdateRequest,
+    user=Depends(get_current_user),
+    db: AsyncSession = Depends(get_db_session),
+) -> SuccessResponse[dict]:
+    """TA: update their own contract with mandatory note for audit trail."""
+    from datetime import date as _date
+
+    if not user or not user.tenant_id:
+        raise HTTPException(status_code=403, detail="No tenant context")
+
+    note = body.note.strip() if body.note else ""
+    if not note:
+        raise HTTPException(
+            status_code=422,
+            detail={"code": "NOTE_REQUIRED", "message": "A note explaining the contract change is required."},
+        )
+
+    row = (await db.execute(
+        text("SELECT id, status, contract_start, contract_end FROM tenants WHERE id = :id"),
+        {"id": str(user.tenant_id)},
+    )).fetchone()
+    if not row:
+        raise HTTPException(status_code=404, detail="Tenant not found")
+
+    def _parse_date(s: Optional[str]) -> Optional[_date]:
+        if s is None:
+            return None
+        try:
+            return _date.fromisoformat(s)
+        except ValueError:
+            raise HTTPException(
+                status_code=422,
+                detail={"code": "INVALID_DATE", "message": f"'{s}' is not a valid ISO date (YYYY-MM-DD)."},
+            )
+
+    new_start = _parse_date(body.contract_start)
+    new_end   = _parse_date(body.contract_end)
+
+    old_start = str(row.contract_start) if row.contract_start else None
+    old_end   = str(row.contract_end) if row.contract_end else None
+
+    # Auto-reactivate if tenant was suspended and new end is in future
+    should_reactivate = (
+        str(row.status) == "SUSPENDED"
+        and new_end is not None
+        and new_end >= _date.today()
+    )
+
+    if not any(x for x in [new_start, new_end, should_reactivate] if x):
+        return SuccessResponse(data={"changes": 0})
+
+    set_parts = ["updated_at = now()"]
+    params = {"id": str(user.tenant_id)}
+
+    if body.contract_start is not None:
+        set_parts.append("contract_start = :start")
+        params["start"] = new_start
+
+    if body.contract_end is not None:
+        set_parts.append("contract_end = :end")
+        set_parts.append("contract_expiry_notified = '{}'::jsonb")
+        params["end"] = new_end
+
+    if should_reactivate:
+        set_parts.append("status = 'ACTIVE'")
+        set_parts.append("is_active = true")
+
+    await db.execute(
+        text(f"UPDATE tenants SET {', '.join(set_parts)} WHERE id = :id"),
+        params,
+    )
+
+    try:
+        await _log_tenant_activity(
+            db, user.tenant_id, str(user.user_id),
+            action="CONTRACT_RENEWAL",
+            old_value=f"start:{old_start}, end:{old_end}",
+            new_value=f"start:{body.contract_start}, end:{body.contract_end}",
+            note=note,
+        )
+    except Exception:
+        pass
+
+    return SuccessResponse(data={
+        "contract_start": body.contract_start,
+        "contract_end": body.contract_end,
+        "reactivated": should_reactivate,
+    })
+
+
+@router.get("/me/contacts", response_model=SuccessResponse[List[TenantContactOut]])
+async def get_my_contacts(
+    user=Depends(get_current_user),
+    db: AsyncSession = Depends(get_db_session),
+) -> SuccessResponse[List[TenantContactOut]]:
+    """TA: get their own tenant's contacts."""
+    if not user or not user.tenant_id:
+        raise HTTPException(status_code=403, detail="No tenant context")
+
+    rows = (await db.execute(
+        text(
+            "SELECT id, tenant_id, is_primary, full_name, position_title, "
+            "email, phone, mobile, created_at "
+            "FROM tenant_contacts WHERE tenant_id = :tid "
+            "ORDER BY is_primary DESC, created_at ASC"
+        ),
+        {"tid": str(user.tenant_id)},
+    )).fetchall()
+
+    return SuccessResponse(data=[
+        TenantContactOut(
+            id=row.id,
+            tenant_id=row.tenant_id,
+            is_primary=row.is_primary,
+            full_name=row.full_name,
+            position_title=row.position_title,
+            email=row.email,
+            phone=row.phone,
+            mobile=row.mobile,
+            created_at=row.created_at.isoformat(),
+        )
+        for row in rows
+    ])
+
+
+@router.post("/me/contacts", status_code=201, response_model=SuccessResponse[TenantContactOut])
+async def create_my_contact(
+    body: TenantContactIn,
+    user=Depends(get_current_user),
+    db: AsyncSession = Depends(get_db_session),
+) -> SuccessResponse[TenantContactOut]:
+    """TA: create a contact for their own tenant."""
+    from datetime import datetime
+
+    if not user or not user.tenant_id:
+        raise HTTPException(status_code=403, detail="No tenant context")
+
+    if not body.full_name or not body.full_name.strip():
+        raise HTTPException(status_code=422, detail="full_name is required")
+
+    contact_id = uuid.uuid4()
+    now = datetime.utcnow().isoformat()
+
+    await db.execute(
+        text(
+            "INSERT INTO tenant_contacts "
+            "(id, tenant_id, is_primary, full_name, position_title, email, phone, mobile, created_at) "
+            "VALUES (:id, :tid, :primary, :name, :title, :email, :phone, :mobile, :now)"
+        ),
+        {
+            "id": contact_id,
+            "tid": str(user.tenant_id),
+            "primary": body.is_primary,
+            "name": body.full_name.strip(),
+            "title": body.position_title,
+            "email": body.email,
+            "phone": body.phone,
+            "mobile": body.mobile,
+            "now": now,
+        },
+    )
+    await db.commit()
+
+    return SuccessResponse(data=TenantContactOut(
+        id=contact_id,
+        tenant_id=user.tenant_id,
+        is_primary=body.is_primary,
+        full_name=body.full_name.strip(),
+        position_title=body.position_title,
+        email=body.email,
+        phone=body.phone,
+        mobile=body.mobile,
+        created_at=now,
+    ))
+
+
+@router.patch("/me/contacts/{contact_id}", response_model=SuccessResponse[TenantContactOut])
+async def update_my_contact(
+    contact_id: uuid.UUID,
+    body: TenantContactIn,
+    user=Depends(get_current_user),
+    db: AsyncSession = Depends(get_db_session),
+) -> SuccessResponse[TenantContactOut]:
+    """TA: update a contact in their own tenant."""
+    if not user or not user.tenant_id:
+        raise HTTPException(status_code=403, detail="No tenant context")
+
+    if not body.full_name or not body.full_name.strip():
+        raise HTTPException(status_code=422, detail="full_name is required")
+
+    row = (await db.execute(
+        text(
+            "SELECT id, tenant_id, is_primary, full_name, position_title, "
+            "email, phone, mobile, created_at "
+            "FROM tenant_contacts WHERE id = :id AND tenant_id = :tid"
+        ),
+        {"id": contact_id, "tid": str(user.tenant_id)},
+    )).fetchone()
+    if not row:
+        raise HTTPException(status_code=404, detail="Contact not found")
+
+    await db.execute(
+        text(
+            "UPDATE tenant_contacts SET "
+            "is_primary = :primary, full_name = :name, position_title = :title, "
+            "email = :email, phone = :phone, mobile = :mobile "
+            "WHERE id = :id AND tenant_id = :tid"
+        ),
+        {
+            "id": contact_id,
+            "tid": str(user.tenant_id),
+            "primary": body.is_primary,
+            "name": body.full_name.strip(),
+            "title": body.position_title,
+            "email": body.email,
+            "phone": body.phone,
+            "mobile": body.mobile,
+        },
+    )
+    await db.commit()
+
+    return SuccessResponse(data=TenantContactOut(
+        id=contact_id,
+        tenant_id=user.tenant_id,
+        is_primary=body.is_primary,
+        full_name=body.full_name.strip(),
+        position_title=body.position_title,
+        email=body.email,
+        phone=body.phone,
+        mobile=body.mobile,
+        created_at=row.created_at.isoformat(),
+    ))
+
+
+@router.delete("/me/contacts/{contact_id}", status_code=204)
+async def delete_my_contact(
+    contact_id: uuid.UUID,
+    user=Depends(get_current_user),
+    db: AsyncSession = Depends(get_db_session),
+) -> Response:
+    """TA: delete a contact from their own tenant."""
+    if not user or not user.tenant_id:
+        raise HTTPException(status_code=403, detail="No tenant context")
+
+    result = await db.execute(
+        text("DELETE FROM tenant_contacts WHERE id = :id AND tenant_id = :tid"),
+        {"id": contact_id, "tid": str(user.tenant_id)},
+    )
+    await db.commit()
+
+    if result.rowcount == 0:
+        raise HTTPException(status_code=404, detail="Contact not found")
+
+    return Response(status_code=204)
     return SuccessResponse(data={"changes": len(changes), "feature_flags": merged})

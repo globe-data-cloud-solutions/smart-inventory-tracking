@@ -19,13 +19,13 @@ export function ContractTab({ tenantId, isLoading }: TabProps) {
 
   const { data: tenant, isLoading: loadingTenant } = useQuery<TenantAdminData>({
     queryKey: ["tenant-admin-contract", tenantId],
-    queryFn: () => api.get<TenantAdminData>(`/api/v1/tenants/${tenantId}`),
+    queryFn: () => api.get<TenantAdminData>(`/api/v1/tenants/me/profile`),
     staleTime: 30_000,
   });
 
   const renewalMutation = useMutation({
     mutationFn: (data: { contract_end: string; note: string }) =>
-      api.patch(`/api/v1/tenants/${tenantId}/contract`, data),
+      api.patch(`/api/v1/tenants/me/contract`, data),
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: ["tenant-admin-contract", tenantId] });
       setSuccess("Contract renewed successfully!");

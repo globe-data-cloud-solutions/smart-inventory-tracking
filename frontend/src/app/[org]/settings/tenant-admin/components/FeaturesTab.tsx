@@ -55,8 +55,8 @@ const FEATURE_MATRIX: Record<string, { name: string; description: string; tiers:
 
 export function FeaturesTab({ tenantId, isLoading }: TabProps) {
   const { data: plan, isLoading: loadingPlan } = useQuery<PlanData>({
-    queryKey: ["tenant-admin-features", tenantId],
-    queryFn: () => api.get<PlanData>(`/api/v1/tenants/${tenantId}/me/plan`),
+    queryKey: ["tenant-admin-features"],
+    queryFn: () => api.get<PlanData>(`/api/v1/tenants/me/plan`),
     staleTime: 30_000,
   });
 

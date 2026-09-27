@@ -7,17 +7,17 @@ import { t } from "@/lib/i18n";
 import { TabProps, TenantContact } from "../types";
 
 const CONTACT_TYPES = {
-  primary: { label: "Primary Contact", icon: "👤" },
-  billing: { label: "Billing Contact", icon: "💳" },
-  technical: { label: "Technical Contact", icon: "🔧" },
+  "Primary": { label: "Primary Contact", icon: "👤" },
+  "Billing": { label: "Billing Contact", icon: "💳" },
+  "Technical": { label: "Technical Contact", icon: "🔧" },
 };
 
 interface ContactForm {
-  contact_type: "primary" | "billing" | "technical";
-  name: string;
+  is_primary: boolean;
+  full_name: string;
   email: string;
   phone?: string;
-  role?: string;
+  position_title?: string;
 }
 
 export function ContactTab({ tenantId, isLoading }: TabProps) {
@@ -28,25 +28,25 @@ export function ContactTab({ tenantId, isLoading }: TabProps) {
   const [success, setSuccess] = useState<string | null>(null);
 
   const [formData, setFormData] = useState<ContactForm>({
-    contact_type: "primary",
-    name: "",
+    is_primary: false,
+    full_name: "",
     email: "",
     phone: "",
-    role: "",
+    position_title: "",
   });
 
   const { data: contacts = [], isLoading: loadingContacts } = useQuery<TenantContact[]>({
     queryKey: ["tenant-admin-contacts", tenantId],
-    queryFn: () => api.get<TenantContact[]>(`/api/v1/tenants/${tenantId}/contacts`),
+    queryFn: () => api.get<TenantContact[]>(`/api/v1/tenants/me/contacts`),
     staleTime: 30_000,
   });
 
   const saveMutation = useMutation({
     mutationFn: (data: ContactForm) => {
       if (editingId) {
-        return api.patch(`/api/v1/tenants/${tenantId}/contacts/${editingId}`, data);
+        return api.patch(`/api/v1/tenants/me/contacts/${editingId}`, data);
       }
-      return api.post(`/api/v1/tenants/${tenantId}/contacts`, data);
+      return api.post(`/api/v1/tenants/me/contacts`, data);
     },
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: ["tenant-admin-contacts", tenantId] });
@@ -61,24 +61,24 @@ export function ContactTab({ tenantId, isLoading }: TabProps) {
   });
 
   const resetForm = () => {
-    setFormData({ contact_type: "primary", name: "", email: "", phone: "", role: "" });
+    setFormData({ is_primary: false, full_name: "", email: "", phone: "", position_title: "" });
     setEditingId(null);
     setShowAddForm(false);
   };
 
   const handleEdit = (contact: TenantContact) => {
     setFormData({
-      contact_type: contact.contact_type,
-      name: contact.name,
+      is_primary: contact.is_primary ?? false,
+      full_name: contact.full_name,
       email: contact.email,
       phone: contact.phone ?? "",
-      role: contact.role ?? "",
+      position_title: contact.position_title ?? "",
     });
     setEditingId(contact.id);
     setShowAddForm(false);
   };
 
-  const isValidForm = formData.name && formData.email;
+  const isValidForm = formData.full_name && formData.email;
 
   if (loadingContacts || isLoading) {
     return <div className="flex items-center justify-center py-12 text-gray-500">{t("common.loading")}</div>;
@@ -108,10 +108,10 @@ export function ContactTab({ tenantId, isLoading }: TabProps) {
               <div key={contact.id} className="p-4 border border-gray-200 rounded-lg">
                 <div className="flex items-start justify-between mb-2">
                   <div className="flex items-center gap-2">
-                    <span className="text-xl">{CONTACT_TYPES[contact.contact_type].icon}</span>
+                    <span className="text-xl">{contact.is_primary ? "⭐" : "👤"}</span>
                     <div>
-                      <p className="font-semibold text-gray-800">{contact.name}</p>
-                      <p className="text-xs text-gray-500">{CONTACT_TYPES[contact.contact_type].label}</p>
+                      <p className="font-semibold text-gray-800">{contact.full_name}</p>
+                      {contact.is_primary && <p className="text-xs text-amber-600">Primary Contact</p>}
                     </div>
                   </div>
                   <button
@@ -124,7 +124,7 @@ export function ContactTab({ tenantId, isLoading }: TabProps) {
                 <div className="text-sm text-gray-600">
                   <p>Email: {contact.email}</p>
                   {contact.phone && <p>Phone: {contact.phone}</p>}
-                  {contact.role && <p>Role: {contact.role}</p>}
+                  {contact.position_title && <p>Title: {contact.position_title}</p>}
                 </div>
               </div>
             ))
@@ -141,32 +141,25 @@ export function ContactTab({ tenantId, isLoading }: TabProps) {
 
           <div className="space-y-4">
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Contact Type <span className="text-red-600">*</span>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                <input
+                  type="checkbox"
+                  checked={formData.is_primary}
+                  onChange={(e) => setFormData({ ...formData, is_primary: e.target.checked })}
+                  className="mr-2"
+                />
+                Set as primary contact
               </label>
-              <select
-                value={formData.contact_type}
-                onChange={(e) =>
-                  setFormData({ ...formData, contact_type: e.target.value as "primary" | "billing" | "technical" })
-                }
-                className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm"
-              >
-                {Object.entries(CONTACT_TYPES).map(([key, val]) => (
-                  <option key={key} value={key}>
-                    {val.label}
-                  </option>
-                ))}
-              </select>
             </div>
 
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
-                Name <span className="text-red-600">*</span>
+                Full Name <span className="text-red-600">*</span>
               </label>
               <input
                 type="text"
-                value={formData.name}
-                onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                value={formData.full_name}
+                onChange={(e) => setFormData({ ...formData, full_name: e.target.value })}
                 className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm"
                 placeholder="Full name"
               />
@@ -197,11 +190,11 @@ export function ContactTab({ tenantId, isLoading }: TabProps) {
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Role/Title</label>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Position/Title</label>
               <input
                 type="text"
-                value={formData.role}
-                onChange={(e) => setFormData({ ...formData, role: e.target.value })}
+                value={formData.position_title}
+                onChange={(e) => setFormData({ ...formData, position_title: e.target.value })}
                 className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm"
                 placeholder="e.g., Account Manager"
               />

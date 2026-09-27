@@ -20,7 +20,7 @@ export function ProfileTab({ tenantId, isLoading }: TabProps) {
 
   const { data: tenant, isLoading: loadingTenant } = useQuery<TenantAdminData>({
     queryKey: ["tenant-admin-profile", tenantId],
-    queryFn: () => api.get<TenantAdminData>(`/api/v1/tenants/${tenantId}`),
+    queryFn: () => api.get<TenantAdminData>(`/api/v1/tenants/me/profile`),
     staleTime: 30_000,
   });
 
@@ -30,7 +30,7 @@ export function ProfileTab({ tenantId, isLoading }: TabProps) {
 
   const updateMutation = useMutation({
     mutationFn: (data: { default_locale: string }) =>
-      api.patch(`/api/v1/tenants/${tenantId}/profile`, data),
+      api.patch(`/api/v1/tenants/me/profile`, data),
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: ["tenant-admin-profile", tenantId] });
       setSuccess(t("common.saved_successfully"));
