@@ -509,6 +509,7 @@ const PAGE_LABELS: Record<string, string> = {
   "approval-policies": "Approval Policies",
   "settings/org-setup":"Org Setup",
   "settings/personnel":"Personnel",
+  "settings/tenant-admin":"Tenant Admin",
   permissions:         "Permissions",
 };
 
@@ -751,4 +752,5 @@ const TENANT_NAV: NavItem[] = [
   { type: "section", label: "Settings", roles: ["SA", "TA"] },
   { type: "link", icon: "🏢", label: "Org Setup",       page: "settings/org-setup",  roles: ["SA", "TA"] },
   { type: "link", icon: "👥", label: "Personnel",       page: "settings/personnel",  roles: ["SA", "TA"] },
+  { type: "link", icon: "⚙️",  label: "Tenant Admin",   page: "settings/tenant-admin", roles: ["TA"] },
 ];
