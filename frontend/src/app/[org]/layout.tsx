@@ -685,7 +685,7 @@ export default function OrgLayout({ children }: { children: React.ReactNode }) {
         />
 
         {/* Body */}
-        <div className="flex pt-[60px]">
+        <div className="relative w-full pt-[60px]">
           {/* Mobile overlay — closes sidebar on tap */}
           {sidebarOpen && (
             <div
@@ -694,7 +694,7 @@ export default function OrgLayout({ children }: { children: React.ReactNode }) {
             />
           )}
           <Sidebar user={user} org={org} tenantName={apiTenantName ?? undefined} plan={plan} onClose={() => setSidebarOpen(false)} isOpen={sidebarOpen} />
-          <main className="flex-1 md:ml-60 min-h-[calc(100vh-60px)] overflow-auto bg-gray-100">
+          <main className="md:ml-60 min-h-[calc(100vh-60px)] overflow-auto bg-gray-100">
             {process.env.NODE_ENV !== "production" && !process.env.NEXT_PUBLIC_API_URL && !bannerDismissed && (
               <div className="bg-amber-50 border-b border-amber-200 px-4 py-2 flex items-center justify-between gap-3">
                 <p className="text-xs text-amber-800 font-medium m-0">⚠ {t("demo.mode_banner")}</p>
