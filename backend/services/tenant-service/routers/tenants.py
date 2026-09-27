@@ -1569,42 +1569,37 @@ async def get_my_profile(
     user=Depends(get_current_user),
     db: AsyncSession = Depends(get_db_session),
 ) -> SuccessResponse[TenantResponse]:
-    """TA: get their own tenant profile. SA can use /{tenant_id} instead."""
+    """TA: get their own tenant profile. Mirrors SA /{tenant_id} endpoint."""
     if not user or not user.tenant_id:
         raise HTTPException(status_code=403, detail="No tenant context")
 
-    row = (await db.execute(
-        text(
-            "SELECT id, name, slug, organisation_type, onboarding_complete, "
-            "default_locale, is_active, status, logo_url, banner_url, "
-            "plan_tier, max_warehouses, max_users, "
-            "contract_start, contract_end, admin_user_id, admin_email "
-            "FROM tenants WHERE id = :id"
-        ),
-        {"id": str(user.tenant_id)},
-    )).fetchone()
+    result = await db.execute(
+        text("SELECT * FROM tenants WHERE id = :id"),
+        {"id": str(user.tenant_id)}
+    )
+    row = result.fetchone()
     if not row:
         raise HTTPException(status_code=404, detail="Tenant not found")
 
-    return SuccessResponse(data=TenantResponse(
-        id=row.id,
-        name=row.name,
-        slug=row.slug,
-        organisation_type=row.organisation_type,
-        onboarding_complete=row.onboarding_complete,
-        default_locale=row.default_locale,
-        is_active=row.is_active,
-        status=row.status,
-        logo_url=row.logo_url,
-        banner_url=row.banner_url,
-        plan_tier=row.plan_tier,
-        max_warehouses=row.max_warehouses,
-        max_users=row.max_users,
-        contract_start=str(row.contract_start) if row.contract_start else None,
-        contract_end=str(row.contract_end) if row.contract_end else None,
-        admin_user_id=row.admin_user_id,
-        admin_email=row.admin_email,
-    ))
+    return SuccessResponse(
+        data=TenantResponse(
+            id=row.id,
+            name=row.name,
+            slug=getattr(row, "slug", None),
+            organisation_type=row.organisation_type,
+            onboarding_complete=row.onboarding_complete,
+            default_locale=row.default_locale,
+            is_active=row.is_active,
+            status=getattr(row, "status", None),
+            logo_url=getattr(row, "logo_url", None),
+            banner_url=getattr(row, "banner_url", None),
+            plan_tier=str(row.plan_tier) if getattr(row, "plan_tier", None) else None,
+            max_warehouses=getattr(row, "max_warehouses", None),
+            max_users=getattr(row, "max_users", None),
+            contract_start=str(row.contract_start) if getattr(row, "contract_start", None) else None,
+            contract_end=str(row.contract_end) if getattr(row, "contract_end", None) else None,
+        )
+    )
 
 
 class TAProfileUpdateRequest(BaseModel):
