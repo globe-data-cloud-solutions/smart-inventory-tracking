@@ -6,6 +6,7 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+cd "$ROOT"
 SRC="$ROOT/frontend/src/app"
 COMPONENTS="$ROOT/frontend/src/components"
 EXIT=0
@@ -38,69 +39,77 @@ else
 fi
 
 # ── ERROR Check 2: t() calls with keys missing from en.json ───────────────
+# Runs from $ROOT (cd'd above) using repo-relative paths only — the embedded
+# Python is native Windows Python under Git Bash and cannot open the
+# POSIX-style absolute paths ("/c/...") that `pwd` produces there.
 echo ""
 echo "Checking for t() calls with missing en.json keys..."
 
-MISSING=$(python3 -c "
+CHECK2_SCRIPT="$(mktemp)"
+cat > "$CHECK2_SCRIPT" <<'PYEOF'
 import re, os, json, sys
 
-try:
-    with open('$ROOT/locales/en.json', encoding='utf-8') as f:
-        en = json.load(f)
-except Exception as e:
-    print(f'Cannot open en.json: {e}', file=sys.stderr)
-    sys.exit(0)
+with open('locales/en.json', encoding='utf-8') as f:
+    en = json.load(f)
 
 def key_exists(d, key_path):
     parts = key_path.split('.')
     cur = d
     for p in parts:
-        if not isinstance(cur, dict) or p not in cur: return False
+        if not isinstance(cur, dict) or p not in cur:
+            return False
         cur = cur[p]
     return True
 
-pattern = re.compile(r\"t\([\\\"']([\w.]+)[\\\"']\)\")
+pattern = re.compile(r"t\([\"']([\w.]+)[\"']\)")
 missing = set()
+scanned = 0
 
-for root, dirs, files in os.walk('$SRC'):
-    dirs[:] = [d for d in dirs if d not in ['node_modules', '.next']]
-    for fn in files:
-        if not fn.endswith(('.tsx', '.ts')): continue
-        try:
-            content = open(os.path.join(root, fn), encoding='utf-8').read()
-        except: continue
-        for m in pattern.finditer(content):
-            key = m.group(1)
-            if '.' in key and len(key) > 4 and not key.startswith('.'):
-                if not key_exists(en, key):
-                    missing.add(key)
+for base in ('frontend/src/app', 'frontend/src/components'):
+    for root, dirs, files in os.walk(base):
+        dirs[:] = [d for d in dirs if d not in ('node_modules', '.next')]
+        for fn in files:
+            if not fn.endswith(('.tsx', '.ts')):
+                continue
+            scanned += 1
+            path = os.path.join(root, fn)
+            content = open(path, encoding='utf-8').read()
+            for m in pattern.finditer(content):
+                key = m.group(1)
+                if '.' in key and len(key) > 4 and not key.startswith('.'):
+                    if not key_exists(en, key):
+                        missing.add(key)
 
-for root, dirs, files in os.walk('$COMPONENTS'):
-    dirs[:] = [d for d in dirs if d not in ['node_modules', '.next']]
-    for fn in files:
-        if not fn.endswith(('.tsx', '.ts')): continue
-        try:
-            content = open(os.path.join(root, fn), encoding='utf-8').read()
-        except: continue
-        for m in pattern.finditer(content):
-            key = m.group(1)
-            if '.' in key and len(key) > 4 and not key.startswith('.'):
-                if not key_exists(en, key):
-                    missing.add(key)
-
+print(f'__SCANNED__ {scanned}')
 for k in sorted(missing):
     print(k)
-" 2>/dev/null || true)
+PYEOF
 
-if [ -n "$MISSING" ]; then
+set +e
+CHECK2_OUTPUT="$(python3 "$CHECK2_SCRIPT" 2>&1)"
+CHECK2_EXIT=$?
+set -e
+rm -f "$CHECK2_SCRIPT"
+
+if [ "$CHECK2_EXIT" -ne 0 ]; then
   echo ""
-  echo "ERROR: t() calls with missing en.json keys:"
-  echo "$MISSING"
-  echo ""
-  echo "Fix: add these keys to locales/en.json (then sync to am.json and or.json)."
+  echo "ERROR: i18n checker crashed"
+  echo "$CHECK2_OUTPUT"
   EXIT=1
 else
-  echo "  PASS: All static t() keys found in en.json."
+  SCANNED=$(echo "$CHECK2_OUTPUT" | grep '^__SCANNED__ ' | awk '{print $2}' || true)
+  MISSING=$(echo "$CHECK2_OUTPUT" | grep -v '^__SCANNED__ ' || true)
+  echo "  scanned $SCANNED files"
+  if [ -n "$MISSING" ]; then
+    echo ""
+    echo "ERROR: t() calls with missing en.json keys:"
+    echo "$MISSING"
+    echo ""
+    echo "Fix: add these keys to locales/en.json (then sync to am.json and or.json)."
+    EXIT=1
+  else
+    echo "  PASS: All static t() keys found in en.json."
+  fi
 fi
 
 # ── WARNING Check 3: Dynamic template literal t() calls ───────────────────
