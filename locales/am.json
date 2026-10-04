@@ -1534,6 +1534,57 @@
     "help_banner": {
       "content": "የድርጅትዎን መገለጫ፣ ዕቅድ፣ የውል ዝርዝሮች፣ እና እውቂያዎች ያስተዳድሩ። የዕቅድ ማሻሻያ ይጠይቁ ወይም ውልዎን ያድሱ።"
     },
+    "plan": {
+      "tier": {
+        "STARTER": "Starter",
+        "GROWTH": "Growth",
+        "ENTERPRISE": "Enterprise"
+      },
+      "max_warehouses": "ከፍተኛ መጋዘኖች",
+      "max_users": "ከፍተኛ ተጠቃሚዎች",
+      "sku_cap": "የSKU ወሰን",
+      "unlimited": "ያልተገደበ",
+      "upgrade_hint": "ተጨማሪ ሀብት ይፈልጋሉ? ተጨማሪ አቅም ለመክፈት ድጋፍን ያነጋግሩ ወይም ማሻሻል ይጠይቁ።",
+      "available_features": "የሚገኙ ባህሪያት",
+      "ready_to_upgrade": "ለማሻሻል ዝግጁ ነዎት?",
+      "upgrade_cta_text": "ተጨማሪ ባህሪያት፣ ተጠቃሚዎች፣ እና መጋዘኖችን ለመክፈት የዕቅድ ማሻሻያ ይጠይቁ።",
+      "request_upgrade_btn": "የዕቅድ ማሻሻያ ይጠይቁ"
+    },
+    "features": {
+      "flag": {
+        "CORE_INVENTORY": "የኮር ክምችት አስተዳደር",
+        "TRANSFERS_PULL_PUSH": "መጎተት እና መግፋት ዝውውሮች",
+        "TRANSFERS_SISTER": "የእህት ዝውውሮች",
+        "LOT_TRACEABILITY": "የሎት እና ባች ክትትል",
+        "LOGISTICS": "ሎጂስቲክስ እና ፍሊት አስተዳደር",
+        "AUDIT_EXPORT": "የኦዲት ምዝገባ ወጪ",
+        "CUSTOM_BRANDING": "ብጁ ብራንዲንግ",
+        "AI_ANALYTICS": "AI ትንበያ እና ትንተና",
+        "API_ACCESS": "API መዳረሻ"
+      },
+      "flag_desc": {
+        "CORE_INVENTORY": "ክምችትን በቋሚ መዝገብ ይቀበሉ፣ ያስተላልፉ፣ ይስጡ፣ እና ይቁጠሩ",
+        "TRANSFERS_PULL_PUSH": "በፈቃድ ሂደቶች መገልገያዎች መካከል ክምችትን ያስተላልፉ",
+        "TRANSFERS_SISTER": "በተመሳሳይ ደረጃ ባሉ መገልገያዎች መካከል የጎን ዝውውሮች",
+        "LOT_TRACEABILITY": "የባች ቁጥሮችን፣ የማምረት ቀኖችን፣ እና የማብቂያ ቀን ክትትልን ይከታተሉ",
+        "LOGISTICS": "ሹፈሮችን፣ ተሽከርካሪዎችን፣ እና የማድረስ መስመሮችን ያስተዳድሩ",
+        "AUDIT_EXPORT": "ለተስማሚነት እና ምዝገባ የኦዲት ምዝገባዎችን ይላኩ",
+        "CUSTOM_BRANDING": "አርማዎን፣ ባነርዎን፣ እና ብጁ ቀለሞችን ይጨምሩ",
+        "AI_ANALYTICS": "የፍላጎት ትንበያ፣ የመሙላት ምክሮች፣ እና ግንዛቤዎች",
+        "API_ACCESS": "SMARTን ከውጫዊ ስርዓቶችዎ ጋር በREST API በኩል አንድ ያድርጉ"
+      },
+      "current_plan": "የአሁኑ ዕቅድ፡ {tier}",
+      "count_available": "{n} ባህሪያት ይገኛሉ",
+      "view_pricing_btn": "ዋጋ ይመልክቱ",
+      "want_more_title": "ተጨማሪ ባህሪያት ይፈልጋሉ?",
+      "upgrade_text": "እንደ AI ትንተና፣ ብጁ ብራንዲንግ፣ እና API መዳረሻ የላቁ ባህሪያትን ለመክፈት ያሻሽሉ።",
+      "request_upgrade_btn": "ማሻሻል ይጠይቁ",
+      "view_plans_btn": "ዕቅዶችን ይመልክቱ",
+      "need_help_prefix": "ዕቅድ ለመምረጥ እገዛ ይፈልጋሉ?",
+      "compare_plans_link": "ዕቅዶችን ያወዳድሩ",
+      "or_word": "ወይም",
+      "contact_support_link": "ድጋፍን ያነጋግሩ"
+    },
     "contract": {
       "status_title": "የውል ሁኔታ",
       "start_date": "መጀመሪያ ቀን",

@@ -1524,6 +1524,57 @@
     "help_banner": {
       "content": "Manage your organization's profile, plan, contract details, and contacts. Request plan upgrades or renew your contract."
     },
+    "plan": {
+      "tier": {
+        "STARTER": "Starter",
+        "GROWTH": "Growth",
+        "ENTERPRISE": "Enterprise"
+      },
+      "max_warehouses": "Max Warehouses",
+      "max_users": "Max Users",
+      "sku_cap": "SKU Cap",
+      "unlimited": "Unlimited",
+      "upgrade_hint": "Need more resources? Contact support or request an upgrade to unlock additional capacity.",
+      "available_features": "Available Features",
+      "ready_to_upgrade": "Ready to Upgrade?",
+      "upgrade_cta_text": "Request a plan upgrade to unlock more features, users, and warehouses.",
+      "request_upgrade_btn": "Request Plan Upgrade"
+    },
+    "features": {
+      "flag": {
+        "CORE_INVENTORY": "Core Inventory Management",
+        "TRANSFERS_PULL_PUSH": "Pull & Push Transfers",
+        "TRANSFERS_SISTER": "Sister Transfers",
+        "LOT_TRACEABILITY": "Lot & Batch Traceability",
+        "LOGISTICS": "Logistics & Fleet Management",
+        "AUDIT_EXPORT": "Audit Log Export",
+        "CUSTOM_BRANDING": "Custom Branding",
+        "AI_ANALYTICS": "AI Forecasting & Analytics",
+        "API_ACCESS": "API Access"
+      },
+      "flag_desc": {
+        "CORE_INVENTORY": "Receive, transfer, issue, and count inventory with immutable ledger",
+        "TRANSFERS_PULL_PUSH": "Transfer inventory between facilities with approval workflows",
+        "TRANSFERS_SISTER": "Lateral transfers between facilities at the same level",
+        "LOT_TRACEABILITY": "Track batch numbers, manufacture dates, and expiry tracking",
+        "LOGISTICS": "Manage drivers, vehicles, and delivery routes",
+        "AUDIT_EXPORT": "Export audit logs for compliance and record-keeping",
+        "CUSTOM_BRANDING": "Add your logo, banner, and custom colors",
+        "AI_ANALYTICS": "Demand forecasting, replenishment recommendations, and insights",
+        "API_ACCESS": "Integrate SMART with your external systems via REST API"
+      },
+      "current_plan": "Current Plan: {tier}",
+      "count_available": "{n} features available",
+      "view_pricing_btn": "View Pricing",
+      "want_more_title": "Want More Features?",
+      "upgrade_text": "Upgrade to unlock advanced features like AI analytics, custom branding, and API access.",
+      "request_upgrade_btn": "Request Upgrade",
+      "view_plans_btn": "View Plans",
+      "need_help_prefix": "Need help choosing a plan?",
+      "compare_plans_link": "Compare plans",
+      "or_word": "or",
+      "contact_support_link": "contact support"
+    },
     "contract": {
       "status_title": "Haala Kontiraatii",
       "start_date": "Guyyaa Jalqabaa",

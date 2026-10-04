@@ -5,53 +5,29 @@ import { api } from "@/lib/api";
 import { t } from "@/lib/i18n";
 import { TabProps, PlanData } from "../types";
 
-const FEATURE_MATRIX: Record<string, { name: string; description: string; tiers: string[] }> = {
-  CORE_INVENTORY: {
-    name: "Core Inventory Management",
-    description: "Receive, transfer, issue, and count inventory with immutable ledger",
-    tiers: ["STARTER", "GROWTH", "ENTERPRISE"],
-  },
-  TRANSFERS_PULL_PUSH: {
-    name: "Pull & Push Transfers",
-    description: "Transfer inventory between facilities with approval workflows",
-    tiers: ["STARTER", "GROWTH", "ENTERPRISE"],
-  },
-  TRANSFERS_SISTER: {
-    name: "Sister Transfers",
-    description: "Lateral transfers between facilities at the same level",
-    tiers: ["GROWTH", "ENTERPRISE"],
-  },
-  LOT_TRACEABILITY: {
-    name: "Lot & Batch Traceability",
-    description: "Track batch numbers, manufacture dates, and expiry tracking",
-    tiers: ["STARTER", "GROWTH", "ENTERPRISE"],
-  },
-  LOGISTICS: {
-    name: "Logistics & Fleet Management",
-    description: "Manage drivers, vehicles, and delivery routes",
-    tiers: ["GROWTH", "ENTERPRISE"],
-  },
-  AUDIT_EXPORT: {
-    name: "Audit Log Export",
-    description: "Export audit logs for compliance and record-keeping",
-    tiers: ["GROWTH", "ENTERPRISE"],
-  },
-  CUSTOM_BRANDING: {
-    name: "Custom Branding",
-    description: "Add your logo, banner, and custom colors",
-    tiers: ["GROWTH", "ENTERPRISE"],
-  },
-  AI_ANALYTICS: {
-    name: "AI Forecasting & Analytics",
-    description: "Demand forecasting, replenishment recommendations, and insights",
-    tiers: ["GROWTH", "ENTERPRISE"],
-  },
-  API_ACCESS: {
-    name: "API Access",
-    description: "Integrate SMART with your external systems via REST API",
-    tiers: ["ENTERPRISE"],
-  },
+// name/description keys shared with PlanTab.tsx — see tenant_admin.features.flag.* / flag_desc.* in locales/en.json
+const FEATURE_MATRIX: Record<string, { tiers: string[] }> = {
+  CORE_INVENTORY: { tiers: ["STARTER", "GROWTH", "ENTERPRISE"] },
+  TRANSFERS_PULL_PUSH: { tiers: ["STARTER", "GROWTH", "ENTERPRISE"] },
+  TRANSFERS_SISTER: { tiers: ["GROWTH", "ENTERPRISE"] },
+  LOT_TRACEABILITY: { tiers: ["STARTER", "GROWTH", "ENTERPRISE"] },
+  LOGISTICS: { tiers: ["GROWTH", "ENTERPRISE"] },
+  AUDIT_EXPORT: { tiers: ["GROWTH", "ENTERPRISE"] },
+  CUSTOM_BRANDING: { tiers: ["GROWTH", "ENTERPRISE"] },
+  AI_ANALYTICS: { tiers: ["GROWTH", "ENTERPRISE"] },
+  API_ACCESS: { tiers: ["ENTERPRISE"] },
 };
+
+const PLAN_TIER_KEYS: Record<string, string> = {
+  STARTER: "tenant_admin.plan.tier.STARTER",
+  GROWTH: "tenant_admin.plan.tier.GROWTH",
+  ENTERPRISE: "tenant_admin.plan.tier.ENTERPRISE",
+};
+
+function tierLabel(code: string): string {
+  const key = PLAN_TIER_KEYS[code];
+  return key ? t(key) : code;
+}
 
 export function FeaturesTab({ tenantId, isLoading }: TabProps) {
   const { data: plan, isLoading: loadingPlan } = useQuery<PlanData>({
@@ -68,19 +44,24 @@ export function FeaturesTab({ tenantId, isLoading }: TabProps) {
     return <div className="flex items-center justify-center py-12 text-red-600">{t("common.error")}</div>;
   }
 
+  const planTierLabel = tierLabel(plan.plan_tier);
+  const availableCount = Object.values(FEATURE_MATRIX).filter((f) => f.tiers.includes(plan.plan_tier)).length;
+
   return (
     <div className="space-y-6">
       {/* Plan Tier Summary */}
       <div className="bg-gradient-to-r from-blue-50 to-indigo-50 rounded-lg border border-blue-200 p-6">
         <div className="flex items-center justify-between">
           <div>
-            <h3 className="text-lg font-semibold text-gray-800 mb-1">Current Plan: {plan.plan_tier}</h3>
+            <h3 className="text-lg font-semibold text-gray-800 mb-1">
+              {t("tenant_admin.features.current_plan").replace("{tier}", planTierLabel)}
+            </h3>
             <p className="text-sm text-gray-600">
-              {Object.values(FEATURE_MATRIX).filter((f) => f.tiers.includes(plan.plan_tier)).length} features available
+              {t("tenant_admin.features.count_available").replace("{n}", String(availableCount))}
             </p>
           </div>
           <button className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded hover:bg-blue-700">
-            View Pricing
+            {t("tenant_admin.features.view_pricing_btn")}
           </button>
         </div>
       </div>
@@ -107,8 +88,8 @@ export function FeaturesTab({ tenantId, isLoading }: TabProps) {
                   {isIncluded ? "✅" : isAvailableInCurrentTier ? "✓" : "🔒"}
                 </span>
                 <div className="flex-1">
-                  <h4 className="font-semibold text-gray-800 mb-1">{feature.name}</h4>
-                  <p className="text-sm text-gray-600 mb-2">{feature.description}</p>
+                  <h4 className="font-semibold text-gray-800 mb-1">{t(`tenant_admin.features.flag.${key}`)}</h4>
+                  <p className="text-sm text-gray-600 mb-2">{t(`tenant_admin.features.flag_desc.${key}`)}</p>
                   <div className="flex flex-wrap gap-1">
                     {feature.tiers.map((tier) => (
                       <span
@@ -119,7 +100,7 @@ export function FeaturesTab({ tenantId, isLoading }: TabProps) {
                             : "bg-gray-200 text-gray-700"
                         }`}
                       >
-                        {tier}
+                        {tierLabel(tier)}
                       </span>
                     ))}
                   </div>
@@ -132,16 +113,16 @@ export function FeaturesTab({ tenantId, isLoading }: TabProps) {
 
       {/* Upgrade CTA */}
       <div className="bg-gradient-to-r from-emerald-50 to-teal-50 rounded-lg border border-emerald-200 p-6">
-        <h4 className="font-semibold text-gray-800 mb-2">🚀 Want More Features?</h4>
+        <h4 className="font-semibold text-gray-800 mb-2">🚀 {t("tenant_admin.features.want_more_title")}</h4>
         <p className="text-sm text-gray-700 mb-4">
-          Upgrade to unlock advanced features like AI analytics, custom branding, and API access.
+          {t("tenant_admin.features.upgrade_text")}
         </p>
         <div className="flex gap-3">
           <button className="px-4 py-2 text-sm font-medium text-white bg-emerald-600 rounded hover:bg-emerald-700">
-            Request Upgrade
+            {t("tenant_admin.features.request_upgrade_btn")}
           </button>
           <button className="px-4 py-2 text-sm font-medium text-emerald-600 bg-white border border-emerald-600 rounded hover:bg-emerald-50">
-            View Plans
+            {t("tenant_admin.features.view_plans_btn")}
           </button>
         </div>
       </div>
@@ -149,13 +130,13 @@ export function FeaturesTab({ tenantId, isLoading }: TabProps) {
       {/* Plan Comparison Link */}
       <div className="p-4 bg-gray-50 rounded-lg border border-gray-200 text-center">
         <p className="text-sm text-gray-600">
-          Need help choosing a plan?{" "}
+          {t("tenant_admin.features.need_help_prefix")}{" "}
           <a href="#" className="font-semibold text-blue-600 hover:text-blue-700">
-            Compare plans
+            {t("tenant_admin.features.compare_plans_link")}
           </a>{" "}
-          or{" "}
+          {t("tenant_admin.features.or_word")}{" "}
           <a href="#" className="font-semibold text-blue-600 hover:text-blue-700">
-            contact support
+            {t("tenant_admin.features.contact_support_link")}
           </a>
         </p>
       </div>
