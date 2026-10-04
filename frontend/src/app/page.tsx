@@ -96,9 +96,14 @@ export default function HomePage() {
               </a>
             ))}
           </div>
-          <Link href="/login" className="btn-signin">
-            Sign in
-          </Link>
+          <div className="flex items-center gap-3">
+            <Link href="/login" className="btn-signin">
+              Sign in
+            </Link>
+            <Link href="/signup" className="px-4 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-medium transition-colors">
+              Create Account
+            </Link>
+          </div>
         </div>
       </nav>
 
@@ -135,8 +140,8 @@ export default function HomePage() {
             </span>
           </div>
           <div className="mt-8 flex gap-3 justify-center flex-wrap">
-            <Link href="/login" className="btn-cta-primary">Open Dashboard →</Link>
-            <a href="#features" className="btn-hero-outline">Explore Features</a>
+            <Link href="/signup" className="btn-cta-primary">Get Started Free →</Link>
+            <Link href="/login" className="btn-hero-outline">Sign In</Link>
           </div>
           <p className="mt-8 text-xs font-mono text-emerald-300 bg-black/25 border border-white/10 rounded px-5 py-2.5 inline-block">
             System Administrator: smartadmin@smart-inventory.com / Admin@2026
@@ -198,6 +203,76 @@ export default function HomePage() {
       <Wave from="#fff" to="#F3F4F6" flip />
       <Stripe h={4} />
 
+      {/* ════ TWO PATHS ════════════════════════════════════════════════════ */}
+      <section className="bg-gradient-to-b from-gray-100 to-white px-6 py-20">
+        <div className="max-w-[1200px] mx-auto">
+          <div className="text-center mb-12">
+            <span className="inline-block text-[11px] font-bold uppercase tracking-[0.1em] text-[#2D6A4F] bg-emerald-100 px-3 py-1 rounded-full mb-3">
+              Two Ways to Get Started
+            </span>
+            <h2 className="text-[2rem] font-extrabold text-[#0f2d1f] m-0">
+              Choose your path
+            </h2>
+          </div>
+          <div className="grid grid-cols-2 gap-8">
+            {/* Self-Service Path */}
+            <div className="p-8 rounded-2xl bg-gradient-to-br from-emerald-50 to-emerald-100 border-2 border-emerald-300">
+              <div className="text-4xl mb-4">🚀</div>
+              <h3 className="text-xl font-bold text-[#0f2d1f] m-0 mb-2">Self-Service Signup</h3>
+              <p className="text-sm text-gray-600 mb-6">
+                Create your company account, configure your warehouse hierarchy, and start managing inventory right away.
+              </p>
+              <ul className="text-sm text-gray-700 space-y-2 mb-6">
+                <li className="flex items-center gap-2">
+                  <span>✓</span> Instant account creation
+                </li>
+                <li className="flex items-center gap-2">
+                  <span>✓</span> Choose your plan tier
+                </li>
+                <li className="flex items-center gap-2">
+                  <span>✓</span> Built-in onboarding wizard
+                </li>
+                <li className="flex items-center gap-2">
+                  <span>✓</span> Support included
+                </li>
+              </ul>
+              <Link href="/signup" className="block w-full text-center bg-emerald-600 hover:bg-emerald-700 text-white font-medium py-3 rounded-lg transition-colors">
+                Create Free Account →
+              </Link>
+            </div>
+
+            {/* System Admin Path */}
+            <div className="p-8 rounded-2xl bg-gradient-to-br from-blue-50 to-blue-100 border-2 border-blue-300">
+              <div className="text-4xl mb-4">👨‍💼</div>
+              <h3 className="text-xl font-bold text-[#0f2d1f] m-0 mb-2">System Administrator</h3>
+              <p className="text-sm text-gray-600 mb-6">
+                Sign in as SA to create and manage multiple tenant accounts, configure organization structures, and oversee your implementation.
+              </p>
+              <ul className="text-sm text-gray-700 space-y-2 mb-6">
+                <li className="flex items-center gap-2">
+                  <span>✓</span> Multi-tenant management
+                </li>
+                <li className="flex items-center gap-2">
+                  <span>✓</span> Advanced configuration
+                </li>
+                <li className="flex items-center gap-2">
+                  <span>✓</span> Plan & contract management
+                </li>
+                <li className="flex items-center gap-2">
+                  <span>✓</span> Full platform access
+                </li>
+              </ul>
+              <Link href="/login" className="block w-full text-center bg-blue-600 hover:bg-blue-700 text-white font-medium py-3 rounded-lg transition-colors">
+                System Admin Login →
+              </Link>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <Stripe h={4} />
+      <Wave from="#fff" to="#F3F4F6" flip />
+
       {/* ════ GET STARTED ═══════════════════════════════════════════════════ */}
       <section id="tenants" className="bg-gray-100 px-6 py-20">
         <div className="max-w-[760px] mx-auto text-center">
@@ -205,10 +280,10 @@ export default function HomePage() {
             Get Started
           </span>
           <h2 className="text-[2rem] font-extrabold text-[#0f2d1f] m-0">
-            Welcome to SMART Inventory
+            Ready to streamline your inventory?
           </h2>
           <p className="text-sm text-gray-500 mt-2 mb-8">
-            Sign in as System Administrator to create your first tenant and configure the org hierarchy.
+            Create your account today and set up your first warehouse in minutes.
           </p>
           <div className="grid grid-cols-3 gap-4 text-left mb-8">
             {SETUP_STEPS.map((s, i) => (
@@ -219,9 +294,14 @@ export default function HomePage() {
               </div>
             ))}
           </div>
-          <Link href="/login" className="btn-cta-primary">
-            Sign In as Admin
-          </Link>
+          <div className="flex gap-3 justify-center flex-wrap">
+            <Link href="/signup" className="btn-cta-primary">
+              Create Your Account →
+            </Link>
+            <Link href="/login" className="btn-hero-outline">
+              Sign In
+            </Link>
+          </div>
         </div>
       </section>
 
@@ -229,25 +309,55 @@ export default function HomePage() {
       <Wave from="#F3F4F6" to={BG} flip />
 
       {/* ════ CREDENTIALS CTA ═══════════════════════════════════════════════ */}
-      <section id="credentials" className="bg-[#0f2d1f] px-6 py-20 text-center">
-        <div className="max-w-[560px] mx-auto">
-          <h2 className="text-[2rem] font-extrabold text-white m-0">
-            System Administrator Login
+      <section id="credentials" className="bg-[#0f2d1f] px-6 py-20">
+        <div className="max-w-[1200px] mx-auto">
+          <h2 className="text-[2rem] font-extrabold text-white m-0 text-center mb-12">
+            Demo Credentials & Quick Start
           </h2>
-          <p className="text-sm text-emerald-300 mt-2 mb-8">
-            Use the SA account to create tenants and onboard your first company.
-          </p>
-          <div className="p-5 rounded-xl bg-white/[0.05] border border-white/10 text-left mb-8">
-            <div className="flex items-center gap-2 mb-3">
-              <span className="text-[11px] font-bold text-white px-1.5 py-0.5 rounded bg-red-600">SA</span>
-              <span className="text-xs text-emerald-300">System Administrator</span>
+          <div className="grid grid-cols-2 gap-8">
+            {/* System Admin Demo */}
+            <div className="p-8 rounded-xl bg-white/[0.05] border border-white/10">
+              <div className="flex items-center gap-2 mb-4">
+                <span className="text-[11px] font-bold text-white px-2 py-1 rounded bg-red-600">SA</span>
+                <span className="text-sm text-emerald-300 font-semibold">System Administrator (Demo)</span>
+              </div>
+              <p className="text-sm text-emerald-200 mb-4">
+                Test the full platform as a system admin. Create tenants, manage organizations, and configure permissions.
+              </p>
+              <div className="p-4 rounded-lg bg-black/30 mb-4">
+                <p className="text-xs text-gray-400 mb-1">Email</p>
+                <p className="text-xs font-mono text-[#a7f3d0]">smartadmin@smart-inventory.com</p>
+                <p className="text-xs text-gray-400 mt-3 mb-1">Password</p>
+                <p className="text-xs font-mono text-emerald-300">Admin@2026</p>
+              </div>
+              <Link href="/login" className="block w-full text-center bg-red-600 hover:bg-red-700 text-white font-medium py-2 rounded-lg transition-colors text-sm">
+                Demo Login →
+              </Link>
             </div>
-            <p className="text-xs font-mono text-[#a7f3d0] m-0 mb-1">smartadmin@smart-inventory.com</p>
-            <p className="text-xs font-mono text-emerald-300 m-0">Admin@2026</p>
+
+            {/* Self-Service Signup */}
+            <div className="p-8 rounded-xl bg-gradient-to-br from-emerald-900/40 to-emerald-800/40 border border-emerald-600/50">
+              <div className="flex items-center gap-2 mb-4">
+                <span className="text-[11px] font-bold text-white px-2 py-1 rounded bg-emerald-600">NEW</span>
+                <span className="text-sm text-emerald-200 font-semibold">Self-Service Signup</span>
+              </div>
+              <p className="text-sm text-emerald-200 mb-4">
+                Create your own company account instantly. No demo required — get started with your real organization.
+              </p>
+              <div className="p-4 rounded-lg bg-white/5 mb-4">
+                <p className="text-xs text-gray-300 mb-2">✨ Features:</p>
+                <ul className="text-xs text-gray-300 space-y-1">
+                  <li>• Instant account creation</li>
+                  <li>• Choose your plan tier</li>
+                  <li>• Email verification</li>
+                  <li>• Onboarding wizard included</li>
+                </ul>
+              </div>
+              <Link href="/signup" className="block w-full text-center bg-emerald-600 hover:bg-emerald-700 text-white font-medium py-2 rounded-lg transition-colors text-sm">
+                Create Free Account →
+              </Link>
+            </div>
           </div>
-          <Link href="/login" className="btn-cta-primary">
-            Sign in to dashboard
-          </Link>
         </div>
       </section>
 
