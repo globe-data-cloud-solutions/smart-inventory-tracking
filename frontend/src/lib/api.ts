@@ -1,4 +1,5 @@
 const BASE_URL = process.env.NEXT_PUBLIC_API_URL ?? "";
+const USE_MOCK_DATA = process.env.NEXT_PUBLIC_USE_MOCK_DATA === "true";
 
 /**
  * True when a real backend URL is configured (NEXT_PUBLIC_API_URL is set and non-empty).
@@ -9,8 +10,9 @@ const BASE_URL = process.env.NEXT_PUBLIC_API_URL ?? "";
  *                added on top of API values or stock will be doubled.
  * Demo mode:     No backend; BFF routes (Next.js /api/v1/*) handle requests in-process
  *                and Zustand tracks session-time movements.
+ * Mock mode:     Frontend-only with mock data (set NEXT_PUBLIC_USE_MOCK_DATA=true).
  */
-export const IS_GATEWAY_MODE = !!BASE_URL;
+export const IS_GATEWAY_MODE = !!BASE_URL && !USE_MOCK_DATA;
 
 type Method = "GET" | "POST" | "PATCH" | "DELETE" | "PUT";
 
@@ -79,6 +81,18 @@ async function request<T>(
   body?: unknown,
   token?: string
 ): Promise<T> {
+  // Mock mode: intercept requests and return mock data
+  if (USE_MOCK_DATA) {
+    const { getMockResponse, createMockApiResponse } = await import("./mock-data");
+    const mockData = getMockResponse<T>(path, method, body);
+    if (mockData !== null) {
+      // Simulate network latency
+      await new Promise((resolve) => setTimeout(resolve, 300));
+      return mockData;
+    }
+    // If no mock, fall through to real request (for unmocked endpoints)
+  }
+
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
   };

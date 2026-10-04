@@ -171,7 +171,10 @@
     "unknown": "Unknown",
     "unassigned": "Unassigned",
     "success": "Saved successfully",
-    "transaction": "transaction"
+    "transaction": "transaction",
+    "access_denied": "Access Denied",
+    "permission_required": "Permission Required",
+    "saved_successfully": "Saved successfully"
   },
   "product": {
     "add": {
@@ -375,7 +378,8 @@
     "contract_start": "Contract Start Date",
     "contract_end": "Contract End Date",
     "contract_dates_heading": "Contract Dates",
-    "contract_dates_optional": "Optional — leave blank if no fixed contract period"
+    "contract_dates_optional": "Optional — leave blank if no fixed contract period",
+    "org_type": "Organization Type"
   },
   "count": {
     "title": "Stock Count",
@@ -874,7 +878,8 @@
     "admin_section": "Admin",
     "all_tenants": "All Tenants",
     "contract_expired": "Contract Expired",
-    "contract_expiring_soon": "Contract Expiring Soon"
+    "contract_expiring_soon": "Contract Expiring Soon",
+    "profile": "Profile"
   },
   "dashboard": {
     "platform_overview": "Platform Overview",
@@ -1508,6 +1513,7 @@
     "upload_logo": "Upload Logo",
     "upload_banner": "Upload Banner",
     "branding_preview": "Preview",
-    "branding_saved": "Branding updated"
+    "branding_saved": "Branding updated",
+    "default_language": "Default Language"
   }
 }

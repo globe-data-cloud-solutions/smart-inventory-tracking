@@ -874,7 +874,8 @@
     "admin_section": "Admin",
     "all_tenants": "All Tenants",
     "contract_expired": "Contract Expired",
-    "contract_expiring_soon": "Contract Expiring Soon"
+    "contract_expiring_soon": "Contract Expiring Soon",
+    "profile": "Profile"
   },
   "dashboard": {
     "platform_overview": "Platform Overview",

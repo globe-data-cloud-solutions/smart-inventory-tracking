@@ -1372,6 +1372,18 @@ export default function PersonnelPage() {
   const callerRole = session?.role ?? "WM";
   const qc = useQueryClient();
 
+  // Permission guard: only TA and SA can view personnel
+  if (callerRole !== "TA" && callerRole !== "SA") {
+    return (
+      <div className="p-8 text-center">
+        <h2 className="text-xl font-bold text-red-600 mb-2">{t("common.access_denied")}</h2>
+        <p className="text-gray-600">
+          {t("common.permission_required")} Personnel management is available only to Tenant Admins.
+        </p>
+      </div>
+    );
+  }
+
   // BUG 4 fix: SA JWT has tenant_id=null. When SA visits another tenant's page,
   // resolve the correct tenant UUID from the org slug via the API.
   const isSAViewing = callerRole === "SA" && org !== SA_ORG_SLUG;

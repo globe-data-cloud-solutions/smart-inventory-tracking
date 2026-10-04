@@ -28,7 +28,7 @@ export default function TenantAdminPage() {
   const router = useRouter();
   const org = params.org as string;
   const checked = useRef(false);
-  const [user, setUser] = useState(null);
+  const [user, setUser] = useState<any>(null);
   const [ready, setReady] = useState(false);
   const [activeTab, setActiveTab] = useState<TabId>("profile");
 
@@ -77,9 +77,11 @@ export default function TenantAdminPage() {
       </div>
 
       {/* Help Banner */}
-      <TabHelpBanner title="Tenant Admin Settings">
-        Manage your organization's profile, plan, contract details, and contacts. Request plan upgrades or renew your contract.
-      </TabHelpBanner>
+      <TabHelpBanner
+        message="Manage your organization's profile, plan, contract details, and contacts. Request plan upgrades or renew your contract."
+        storageKey="tenant-admin-help-banner"
+        dismissible={true}
+      />
 
       {/* Tabs Navigation */}
       <div className="bg-white border-b border-gray-200 px-6">

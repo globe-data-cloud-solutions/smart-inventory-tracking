@@ -81,6 +81,7 @@ export const SA_USER: DemoUser = {
 };
 
 // ── Empty exports — all real data lives in the database ───────────────────────
+// Demo tenants were cleared. Use real database via API (gateway mode).
 
 export const DEMO_TENANTS: DemoTenant[] = [];
 
