@@ -65,13 +65,9 @@ export default function SignupPage() {
         plan_tier: planTier,
       });
 
-      if (response.success) {
-        setTenantId(response.data.tenant_id);
-        setOtpExpiry(response.data.otp_expires_in_minutes);
-        setStep("verify");
-      } else {
-        setError(response.error?.message || "Signup failed");
-      }
+      setTenantId(response.tenant_id);
+      setOtpExpiry(response.otp_expires_in_minutes);
+      setStep("verify");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Signup failed");
     } finally {
@@ -98,19 +94,15 @@ export default function SignupPage() {
         password,
       });
 
-      if (response.success) {
-        // Store token
-        localStorage.setItem("access_token", response.data.access_token);
-        localStorage.setItem("tenant_slug", response.data.tenant_slug);
-        setStep("complete");
+      // Store token
+      localStorage.setItem("access_token", response.access_token);
+      localStorage.setItem("tenant_slug", response.tenant_slug);
+      setStep("complete");
 
-        // Redirect to onboarding after 2 seconds
-        setTimeout(() => {
-          router.push(`/${response.data.tenant_slug}/onboard`);
-        }, 2000);
-      } else {
-        setError(response.error?.message || "Verification failed");
-      }
+      // Redirect to onboarding after 2 seconds
+      setTimeout(() => {
+        router.push(`/${response.tenant_slug}/onboard`);
+      }, 2000);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Verification failed");
     } finally {
