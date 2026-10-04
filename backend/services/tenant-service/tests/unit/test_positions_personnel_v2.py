@@ -840,6 +840,117 @@ class TestPersonnelV2:
         update_stmt, _ = execute_calls[-1]
         assert "system_role = NULL" in update_stmt
 
+    # ── S2c: global case-insensitive duplicate email → 409 ──────────────────
+
+    async def test_create_user_duplicate_email_in_another_tenant_returns_409(self) -> None:
+        """POST /users' duplicate-email check is GLOBAL (not per-tenant) — an
+        email already used by a user in a DIFFERENT tenant also returns 409,
+        and the message never reveals which tenant owns it."""
+        from routers.personnel_v2 import create_user, UserCreate
+
+        existing_in_other_tenant = _row(id="zzzzzzzz-0000-0000-0000-000000000099")
+        db = _db_seq(existing_in_other_tenant)  # dup-email check finds a match
+
+        with _GRANT_ALL, pytest.raises(HTTPException) as exc_info:
+            await create_user(
+                tenant_id=UUID(TENANT_ID),
+                body=UserCreate(
+                    name="Clash",
+                    email="shared@test.com",
+                    password="TestPass@2026",
+                ),
+                user=_Caller(),
+                db=db,
+            )
+
+        assert exc_info.value.status_code == 409
+        assert exc_info.value.detail["code"] == "DUPLICATE_EMAIL"
+        assert "tenant" not in exc_info.value.detail["message"].lower()
+
+    async def test_create_user_integrity_error_backstop_returns_409(self) -> None:
+        """A race (two concurrent creates) that slips past the pre-check and
+        hits uq_users_email_lower on the INSERT itself is still converted to
+        a clean 409, not a raw 500."""
+        from routers.personnel_v2 import create_user, UserCreate
+
+        db = _db_seq_raising(None, raises=_unique_violation("uq_users_email_lower"))
+
+        with _GRANT_ALL, pytest.raises(HTTPException) as exc_info:
+            await create_user(
+                tenant_id=UUID(TENANT_ID),
+                body=UserCreate(
+                    name="Race",
+                    email="race@test.com",
+                    password="TestPass@2026",
+                ),
+                user=_Caller(),
+                db=db,
+            )
+
+        assert exc_info.value.status_code == 409
+        assert exc_info.value.detail["code"] == "DUPLICATE_EMAIL"
+
+    async def test_update_user_email_to_another_users_email_different_case_returns_409(self) -> None:
+        """PATCH /users/{id} changing email to one already used by someone else,
+        even with different casing, returns 409 instead of a raw 500."""
+        from routers.personnel_v2 import update_user, UserUpdateRequest
+
+        current_row = _row(id=USER_ID, email="old@test.com")
+        clash_row = _row(id="zzzzzzzz-0000-0000-0000-000000000099")
+        db = _db_seq(current_row, clash_row)
+
+        with _GRANT_ALL, pytest.raises(HTTPException) as exc_info:
+            await update_user(
+                tenant_id=UUID(TENANT_ID),
+                user_id=UUID(USER_ID),
+                body=UserUpdateRequest(email="OTHER@Test.com"),
+                user=_Caller(),
+                db=db,
+            )
+
+        assert exc_info.value.status_code == 409
+        assert exc_info.value.detail["code"] == "DUPLICATE_EMAIL"
+
+    async def test_update_user_email_to_own_email_returns_200_no_dup_check(self) -> None:
+        """PATCH /users/{id} with the caller's own current email (any casing)
+        is a no-op on email — it must not run the duplicate check at all."""
+        from routers.personnel_v2 import update_user, UserUpdateRequest
+
+        current_row = _row(id=USER_ID, email="same@test.com")
+        db = _db_seq(current_row, None)  # SELECT, then UPDATE — no dup-check SELECT
+
+        with _GRANT_ALL:
+            result = await update_user(
+                tenant_id=UUID(TENANT_ID),
+                user_id=UUID(USER_ID),
+                body=UserUpdateRequest(email="SAME@Test.com"),
+                user=_Caller(),
+                db=db,
+            )
+
+        assert result.data == {"updated": True, "user_id": USER_ID}
+        assert db.execute.call_count == 2
+
+    async def test_update_user_email_integrity_error_backstop_returns_409(self) -> None:
+        """A race that slips past update_user's pre-check and hits
+        uq_users_email_lower on the UPDATE itself is still a clean 409."""
+        from routers.personnel_v2 import update_user, UserUpdateRequest
+
+        current_row = _row(id=USER_ID, email="old@test.com")
+        db = _db_seq_raising(current_row, None, raises=_unique_violation("uq_users_email_lower"))
+
+        with _GRANT_ALL, pytest.raises(HTTPException) as exc_info:
+            await update_user(
+                tenant_id=UUID(TENANT_ID),
+                user_id=UUID(USER_ID),
+                body=UserUpdateRequest(email="new@test.com"),
+                user=_Caller(),
+                db=db,
+            )
+
+        assert exc_info.value.status_code == 409
+        assert exc_info.value.detail["code"] == "DUPLICATE_EMAIL"
+
 
 
 # ── Test 3b: Reactivate with position restore ─────────────────────────────────

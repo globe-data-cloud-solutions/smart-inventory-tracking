@@ -17,11 +17,13 @@ import uuid
 from datetime import date
 from typing import List, Optional
 
+import asyncpg
 import bcrypt as _bcrypt
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, EmailStr, field_validator
 from sqlalchemy import text
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from shared.permissions.plan_middleware import check_plan_create_user
 
@@ -43,6 +45,23 @@ VALID_DIRECT_SYSTEM_ROLES = {"TA", "AU", "LM"}
 
 def _hash(password: str) -> str:
     return _bcrypt.hashpw(password.encode(), _bcrypt.gensalt()).decode()
+
+
+def _is_duplicate_email_violation(exc: IntegrityError) -> bool:
+    """True if this IntegrityError wraps a uq_users_email_lower violation."""
+    orig = exc.orig
+    return (
+        isinstance(orig, asyncpg.UniqueViolationError)
+        and orig.constraint_name == "uq_users_email_lower"
+    )
+
+
+def _duplicate_email_http_exception() -> HTTPException:
+    # Never reveal which tenant already owns the email.
+    return HTTPException(
+        status_code=409,
+        detail={"code": "DUPLICATE_EMAIL", "message": "This email address is already in use."},
+    )
 
 
 # ── Pydantic schemas ──────────────────────────────────────────────────────────
@@ -215,16 +234,17 @@ async def create_user(
 
     If position_id is provided, a PRIMARY personnel_position is created immediately.
     """
-    # Check for duplicate email within tenant
+    normalized_email = str(body.email).strip().lower()
+
+    # Email is globally unique (uq_users_email_lower, migration 070) — check
+    # across ALL tenants, not just this one, and never reveal which tenant
+    # already owns it.
     existing = (await db.execute(
-        text("SELECT id FROM users WHERE lower(email) = lower(:email) AND tenant_id = :tid"),
-        {"email": body.email, "tid": str(tenant_id)},
+        text("SELECT id FROM users WHERE lower(email) = :email"),
+        {"email": normalized_email},
     )).fetchone()
     if existing:
-        raise HTTPException(
-            status_code=409,
-            detail={"code": "DUPLICATE_EMAIL", "message": f"Email '{body.email}' already exists."},
-        )
+        raise _duplicate_email_http_exception()
 
     # Derive effective system_role: explicit field wins, then map role="TA" → "TA"
     effective_system_role = body.system_role or ("TA" if body.role == "TA" else None)
@@ -244,20 +264,25 @@ async def create_user(
     await check_plan_create_user(user, db)
 
     user_id = uuid.uuid4()
-    await db.execute(
-        text("""
-            INSERT INTO users
-              (id, tenant_id, email, full_name, password_hash,
-               is_active, must_reset_password, system_role)
-            VALUES (:id, :tid, :email, :name, :hash, true, true, :sysrole)
-        """),
-        {
-            "id": str(user_id), "tid": str(tenant_id),
-            "email": body.email, "name": body.name,
-            "hash": _hash(body.password),
-            "sysrole": effective_system_role,
-        },
-    )
+    try:
+        await db.execute(
+            text("""
+                INSERT INTO users
+                  (id, tenant_id, email, full_name, password_hash,
+                   is_active, must_reset_password, system_role)
+                VALUES (:id, :tid, :email, :name, :hash, true, true, :sysrole)
+            """),
+            {
+                "id": str(user_id), "tid": str(tenant_id),
+                "email": normalized_email, "name": body.name,
+                "hash": _hash(body.password),
+                "sysrole": effective_system_role,
+            },
+        )
+    except IntegrityError as exc:
+        if _is_duplicate_email_violation(exc):
+            raise _duplicate_email_http_exception() from exc
+        raise
 
     # Optionally assign primary position
     primary: Optional[PositionAssignmentOut] = None
@@ -300,7 +325,7 @@ async def create_user(
 
     return SuccessResponse(data=UserOut(
         id=user_id,
-        email=body.email,
+        email=normalized_email,
         name=body.name,
         role=effective_system_role or (primary.role_code if primary else "—"),
         primary_facility_id=primary.node_id if primary else None,
@@ -727,8 +752,18 @@ async def update_user(
         set_parts.append("full_name = :name")
         params["name"] = body.name.strip()
     if body.email is not None:
+        normalized_email = str(body.email).strip().lower()
+        if normalized_email != row.email.strip().lower():
+            # Email is globally unique (uq_users_email_lower) — check across
+            # ALL tenants, excluding this user's own row.
+            existing = (await db.execute(
+                text("SELECT id FROM users WHERE lower(email) = :email AND id != :uid"),
+                {"email": normalized_email, "uid": str(user_id)},
+            )).fetchone()
+            if existing:
+                raise _duplicate_email_http_exception()
         set_parts.append("email = :email")
-        params["email"] = str(body.email).lower()
+        params["email"] = normalized_email
     if body.must_reset_password is not None:
         set_parts.append("must_reset_password = :mrp")
         params["mrp"] = body.must_reset_password
@@ -757,10 +792,15 @@ async def update_user(
             set_parts.append("system_role = :sr")
             params["sr"] = effective_sr
 
-    await db.execute(
-        text(f"UPDATE users SET {', '.join(set_parts)} WHERE id = :uid AND tenant_id = :tid"),
-        params,
-    )
+    try:
+        await db.execute(
+            text(f"UPDATE users SET {', '.join(set_parts)} WHERE id = :uid AND tenant_id = :tid"),
+            params,
+        )
+    except IntegrityError as exc:
+        if _is_duplicate_email_violation(exc):
+            raise _duplicate_email_http_exception() from exc
+        raise
 
     if body.password is not None:
         # A TA-issued password reset immediately unblocks a locked-out user —

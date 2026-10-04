@@ -118,6 +118,24 @@ class TenantActivityRow(BaseModel):
 # backend/migrations/versions/001_initial_schema.py.
 VALID_ORGANISATION_TYPES = frozenset({"PRODUCER", "RETAILER", "HYBRID"})
 
+
+def _is_duplicate_email_violation(exc: IntegrityError) -> bool:
+    """True if this IntegrityError wraps a uq_users_email_lower violation."""
+    orig = exc.orig
+    return (
+        isinstance(orig, asyncpg.UniqueViolationError)
+        and orig.constraint_name == "uq_users_email_lower"
+    )
+
+
+def _duplicate_email_http_exception() -> HTTPException:
+    # Never reveal which tenant already owns the email.
+    return HTTPException(
+        status_code=409,
+        detail={"code": "DUPLICATE_EMAIL", "message": "This email address is already in use."},
+    )
+
+
 def _slugify(name: str) -> str:
     slug = name.lower().strip()
     slug = re.sub(r"[^\w\s-]", "", slug)
@@ -549,22 +567,38 @@ async def create_tenant(
         import bcrypt as _bcrypt
         pw_hash = _bcrypt.hashpw(body.admin_password.encode(), _bcrypt.gensalt()).decode()
         admin_user_id = uuid.uuid4()
-        admin_email_out = body.admin_email
-        await db.execute(
-            text(
-                "INSERT INTO users "
-                "  (id, tenant_id, email, full_name, password_hash, "
-                "   is_active, must_reset_password, system_role) "
-                "VALUES (:id, :tid, :email, :name, :hash, true, true, 'TA')"
-            ),
-            {
-                "id":    str(admin_user_id),
-                "tid":   str(tenant_id),
-                "email": body.admin_email,
-                "name":  body.admin_name or body.admin_email,
-                "hash":  pw_hash,
-            },
-        )
+        normalized_admin_email = body.admin_email.strip().lower()
+        admin_email_out = normalized_admin_email
+
+        # Email is globally unique (uq_users_email_lower, migration 070) —
+        # check across ALL tenants, never reveal which tenant owns it.
+        existing = (await db.execute(
+            text("SELECT id FROM users WHERE lower(email) = :email"),
+            {"email": normalized_admin_email},
+        )).fetchone()
+        if existing:
+            raise _duplicate_email_http_exception()
+
+        try:
+            await db.execute(
+                text(
+                    "INSERT INTO users "
+                    "  (id, tenant_id, email, full_name, password_hash, "
+                    "   is_active, must_reset_password, system_role) "
+                    "VALUES (:id, :tid, :email, :name, :hash, true, true, 'TA')"
+                ),
+                {
+                    "id":    str(admin_user_id),
+                    "tid":   str(tenant_id),
+                    "email": normalized_admin_email,
+                    "name":  body.admin_name or body.admin_email,
+                    "hash":  pw_hash,
+                },
+            )
+        except IntegrityError as exc:
+            if _is_duplicate_email_violation(exc):
+                raise _duplicate_email_http_exception() from exc
+            raise
 
     return SuccessResponse(
         data=TenantResponse(
@@ -1841,28 +1875,34 @@ async def update_tenant_admin_user(
         params["full_name"] = body.full_name.strip()
         changes["ta_full_name"] = (row.full_name, body.full_name.strip())
 
-    if body.email is not None and body.email.lower() != row.email.lower():
-        # Check uniqueness across all tenants
-        existing = (await db.execute(
-            text("SELECT id FROM users WHERE email = :email AND id != :uid"),
-            {"email": body.email.lower(), "uid": str(row.id)},
-        )).fetchone()
-        if existing:
-            raise HTTPException(
-                status_code=409,
-                detail={"code": "EMAIL_CONFLICT", "message": "Email already in use by another account"},
-            )
-        set_parts.append("email = :email")
-        params["email"] = body.email.lower()
-        changes["ta_email"] = (row.email, body.email.lower())
+    if body.email is not None:
+        normalized_email = body.email.strip().lower()
+        if normalized_email != row.email.strip().lower():
+            # Email is globally unique (uq_users_email_lower) — check across
+            # ALL tenants, excluding this user's own row. Never reveal which
+            # tenant already owns the email.
+            existing = (await db.execute(
+                text("SELECT id FROM users WHERE lower(email) = :email AND id != :uid"),
+                {"email": normalized_email, "uid": str(row.id)},
+            )).fetchone()
+            if existing:
+                raise _duplicate_email_http_exception()
+            set_parts.append("email = :email")
+            params["email"] = normalized_email
+            changes["ta_email"] = (row.email, normalized_email)
 
     if not changes:
         return SuccessResponse(data={"changes": 0, "fields": []})
 
-    await db.execute(
-        text(f"UPDATE users SET {', '.join(set_parts)} WHERE id = :uid"),
-        params,
-    )
+    try:
+        await db.execute(
+            text(f"UPDATE users SET {', '.join(set_parts)} WHERE id = :uid"),
+            params,
+        )
+    except IntegrityError as exc:
+        if _is_duplicate_email_violation(exc):
+            raise _duplicate_email_http_exception() from exc
+        raise
     for field, (old_val, new_val) in changes.items():
         try:
             await _log_tenant_activity(
