@@ -2085,5 +2085,17 @@ Items (d)–(f) were verified by code-path analysis (the relevant data is return
 
 ---
 
+## 21. DATA FIX: duplicate email `wm_wha1_new@t6p2t.com` (2026-10-04, pre-migration-070)
+
+**Symptom:** migration 070's step-0 recon (`SELECT lower(email), count(*) FROM users GROUP BY 1 HAVING count(*) > 1`) found two active user rows sharing `wm_wha1_new@t6p2t.com`, both under tenant `tenant-6-p2t`.
+
+**Cause:** Group C test 8.21 re-run on an already-populated tenant, recreating the `wm_wha1` fixture user instead of reusing the existing row.
+
+**Fix:** `2bc422aa-87ba-434b-a298-3e9ad9af44ba` (created 2026-06-26, the older row) renamed to `wm_wha1_new+retired-2bc422aa@t6p2t.com` and deactivated (`is_active=false`) on 2026-10-04, in its own transaction, before migration 070 ran. `cf26465e-88b7-442b-b970-ab75355e7fed` (created 2026-07-04, the one referenced as `wm_wha1` in `tests/e2e/t6p2t_state.json`) kept unchanged as the live account. No hard delete (CLAUDE.md §28).
+
+**Follow-up:** user create/update endpoints must return 409 on duplicate email instead of allowing silent duplicates — scheduled in S2.
+
+---
+
 *SMART Inventory Platform — Bug Report v4.0*  
 *Backend: Python 3.12 / FastAPI · Frontend: Next.js 14 / TypeScript · DB: PostgreSQL 16*

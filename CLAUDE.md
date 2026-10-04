@@ -1226,13 +1226,17 @@ export class BarcodeScanner {
 
 ## 12. Localization — English, Amharic, Oromifa
 
+> **Status (2026-10):** Phase 1 ships **English + Amharic**. Oromifa is **deferred**
+> (STOCKBALANCE.md §8): `or.json` is a scaffold — every new key is added with the ENGLISH value
+> so the file stays complete; no Oromifa translation until a native-speaker review is staffed.
+
 ### Three supported languages from Phase 1
 
 | Code | Language | Notes |
 |---|---|---|
 | `en` | English | Default — loaded when no preference is set |
 | `am` | Amharic (አማርኛ) | Required from Phase 1 |
-| `or` | Oromifa (Afaan Oromoo) | Added in v4.0 — required from Phase 1 |
+| `or` | Oromifa (Afaan Oromoo) | Deferred — scaffold only |
 
 ### Language selection priority
 
@@ -1585,6 +1589,8 @@ POST /api/v1/{tenant}/transfers/sister   # Sister transfer — uses SISTER_TRANS
 > `platform_tier_config` table (STARTER 3/5, GROWTH 10/25, ENTERPRISE unlimited) and is
 > being replaced by the plan catalog (migration 070). Feature flags are owned by the plan;
 > organisation_type sets approval thresholds only.
+> Since migration 070 the package catalog lives in platform_tier_config (limits, sku_cap,
+> feature_flags) with prices in append-only package_prices and SA changes in platform_config_log.
 
 The wizard (`POST /tenants/{tenant_id}/wizard`) configures three sets of org-type-dependent defaults:
 feature flags, plan tier/resource limits, and approval workflow thresholds.
@@ -2591,6 +2597,7 @@ NEVER reuse a revision ID. The next migration number = highest existing + 1
 down_revision MUST equal the current single head.
 Before committing a migration:  alembic heads  -> must print exactly ONE head.
 Two heads, or "Revision X is present more than once", = STOP and fix.
+The migration graph is unit-tested (backend/migrations/tests/test_migration_graph.py).
 ```
 
 ### Diagnosing "data is missing" / 500 from the gateway
