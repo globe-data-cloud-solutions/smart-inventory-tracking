@@ -37,7 +37,12 @@ SERVICE_MAP = {
     "/api/v1/analytics": os.environ.get("ANALYTICS_SERVICE_URL",  "http://analytics-service:8000"),
 }
 
-UNAUTHENTICATED_PATHS = {"/api/v1/auth/token", "/health"}
+UNAUTHENTICATED_PATHS = {
+    "/api/v1/auth/token",
+    "/api/v1/auth/signup",
+    "/api/v1/auth/signup/verify",
+    "/health",
+}
 
 
 @asynccontextmanager
