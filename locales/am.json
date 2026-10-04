@@ -1534,6 +1534,9 @@
     "help_banner": {
       "content": "የድርጅትዎን መገለጫ፣ ዕቅድ፣ የውል ዝርዝሮች፣ እና እውቂያዎች ያስተዳድሩ። የዕቅድ ማሻሻያ ይጠይቁ ወይም ውልዎን ያድሱ።"
     },
+    "profile": {
+      "slug": "Slug"
+    },
     "plan": {
       "tier": {
         "STARTER": "Starter",

@@ -6,10 +6,11 @@ import { api } from "@/lib/api";
 import { t } from "@/lib/i18n";
 import { TabProps, TenantAdminData } from "../types";
 
+// Endonyms — each language shown in its own script, not translated (CLAUDE.md §12)
 const LOCALES = [
   { code: "en", label: "English" },
-  { code: "am", label: "አማርኛ (Amharic)" },
-  { code: "or", label: "Afaan Oromoo (Oromifa)" },
+  { code: "am", label: "አማርኛ" },
+  { code: "or", label: "Afaan Oromoo" },
 ];
 
 export function ProfileTab({ tenantId, isLoading }: TabProps) {
@@ -81,7 +82,7 @@ export function ProfileTab({ tenantId, isLoading }: TabProps) {
 
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">
-              Slug
+              {t("tenant_admin.profile.slug")}
             </label>
             <p className="text-sm text-gray-600">{tenant.slug || "—"}</p>
           </div>
@@ -95,7 +96,7 @@ export function ProfileTab({ tenantId, isLoading }: TabProps) {
 
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">
-              Status
+              {t("table.status")}
             </label>
             <p className="text-sm">
               <span
@@ -107,7 +108,7 @@ export function ProfileTab({ tenantId, isLoading }: TabProps) {
                       : "bg-green-100 text-green-800"
                 }`}
               >
-                {tenant.status || "ACTIVE"}
+                {t(`sa.tenant_status_${(tenant.status || "ACTIVE").toLowerCase()}`)}
               </span>
             </p>
           </div>

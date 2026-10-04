@@ -1524,6 +1524,9 @@
     "help_banner": {
       "content": "Manage your organization's profile, plan, contract details, and contacts. Request plan upgrades or renew your contract."
     },
+    "profile": {
+      "slug": "Slug"
+    },
     "plan": {
       "tier": {
         "STARTER": "Starter",
