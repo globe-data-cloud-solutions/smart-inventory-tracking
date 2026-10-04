@@ -19,7 +19,6 @@ export default function SignupPage() {
   const [tenantId, setTenantId] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
-  const [otpExpiry, setOtpExpiry] = useState(15);
 
   const handleSignup = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -61,20 +60,19 @@ export default function SignupPage() {
         }),
       });
 
+      const data = await response.json();
+
       if (!response.ok) {
-        const errorData = await response.json();
         setError(
-          errorData.error?.message ||
-            errorData.detail?.message ||
+          data.error?.message ||
+            data.detail?.message ||
             "Signup failed"
         );
         setLoading(false);
         return;
       }
 
-      const data = await response.json();
       setTenantId(data.data.tenant_id);
-      setOtpExpiry(data.data.otp_expires_in_minutes);
       setStep("verify");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Signup failed");
@@ -107,18 +105,18 @@ export default function SignupPage() {
         }),
       });
 
+      const data = await response.json();
+
       if (!response.ok) {
-        const errorData = await response.json();
         setError(
-          errorData.error?.message ||
-            errorData.detail?.message ||
+          data.error?.message ||
+            data.detail?.message ||
             "Verification failed"
         );
         setLoading(false);
         return;
       }
 
-      const data = await response.json();
       localStorage.setItem("access_token", data.data.access_token);
       localStorage.setItem("tenant_slug", data.data.tenant_slug);
       setStep("complete");
@@ -133,92 +131,148 @@ export default function SignupPage() {
     }
   };
 
+  const containerStyle: React.CSSProperties = {
+    minHeight: "100vh",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#1a1a1a",
+    padding: "1rem",
+  };
+
+  const cardStyle: React.CSSProperties = {
+    width: "100%",
+    maxWidth: "400px",
+    backgroundColor: "#2a2a2a",
+    border: "1px solid #444",
+    borderRadius: "8px",
+    padding: "2rem",
+  };
+
+  const headingStyle: React.CSSProperties = {
+    fontSize: "28px",
+    fontWeight: "bold",
+    color: "#fff",
+    marginBottom: "8px",
+    textAlign: "center",
+  };
+
+  const subheadingStyle: React.CSSProperties = {
+    fontSize: "14px",
+    color: "#aaa",
+    textAlign: "center",
+    marginBottom: "2rem",
+  };
+
+  const inputStyle: React.CSSProperties = {
+    width: "100%",
+    padding: "8px 12px",
+    marginBottom: "1rem",
+    backgroundColor: "#333",
+    border: "1px solid #555",
+    borderRadius: "4px",
+    color: "#fff",
+    fontSize: "14px",
+    boxSizing: "border-box",
+  };
+
+  const labelStyle: React.CSSProperties = {
+    display: "block",
+    fontSize: "13px",
+    fontWeight: "500",
+    color: "#fff",
+    marginBottom: "4px",
+  };
+
+  const buttonStyle: React.CSSProperties = {
+    width: "100%",
+    padding: "10px",
+    backgroundColor: "#0066cc",
+    color: "#fff",
+    border: "none",
+    borderRadius: "4px",
+    fontSize: "14px",
+    fontWeight: "500",
+    cursor: "pointer",
+    marginTop: "1rem",
+  };
+
+  const errorStyle: React.CSSProperties = {
+    padding: "10px",
+    backgroundColor: "#663333",
+    color: "#ffcccc",
+    borderRadius: "4px",
+    fontSize: "13px",
+    marginBottom: "1rem",
+  };
+
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 flex items-center justify-center p-4">
-      <div className="w-full max-w-md">
-        <div className="text-center mb-8">
-          <h1 className="text-3xl font-bold text-white mb-2">SMART Inventory</h1>
-          <p className="text-slate-300">
-            {step === "info"
-              ? "Create your account"
-              : step === "verify"
-                ? "Verify your email"
-                : "Welcome to SMART"}
-          </p>
-        </div>
+    <div style={containerStyle}>
+      <div style={cardStyle}>
+        <h1 style={headingStyle}>SMART Inventory</h1>
+        <p style={subheadingStyle}>
+          {step === "info"
+            ? "Create your account"
+            : step === "verify"
+              ? "Verify your email"
+              : "Welcome to SMART"}
+        </p>
+
+        {error && <div style={errorStyle}>{error}</div>}
 
         {step === "info" && (
-          <form
-            onSubmit={handleSignup}
-            className="bg-slate-800 border border-slate-700 rounded-lg p-6 space-y-4"
-          >
-            {error && (
-              <div className="p-3 bg-red-600 text-white rounded text-sm">
-                {error}
-              </div>
-            )}
-
+          <form onSubmit={handleSignup}>
             <div>
-              <label className="block text-sm font-medium text-white mb-2">
-                Company Name
-              </label>
+              <label style={labelStyle}>Company Name</label>
               <input
                 type="text"
                 value={companyName}
                 onChange={(e) => setCompanyName(e.target.value)}
-                className="w-full px-4 py-2 bg-slate-700 border border-slate-600 rounded text-white placeholder-slate-400 focus:outline-none focus:border-blue-500"
+                style={inputStyle}
                 placeholder="Your Company"
               />
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-white mb-2">
-                Email
-              </label>
+              <label style={labelStyle}>Email</label>
               <input
                 type="email"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                className="w-full px-4 py-2 bg-slate-700 border border-slate-600 rounded text-white placeholder-slate-400 focus:outline-none focus:border-blue-500"
+                style={inputStyle}
                 placeholder="you@example.com"
               />
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-white mb-2">
-                Password
-              </label>
+              <label style={labelStyle}>Password</label>
               <input
                 type="password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                className="w-full px-4 py-2 bg-slate-700 border border-slate-600 rounded text-white placeholder-slate-400 focus:outline-none focus:border-blue-500"
+                style={inputStyle}
                 placeholder="Minimum 8 characters"
               />
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-white mb-2">
-                Confirm Password
-              </label>
+              <label style={labelStyle}>Confirm Password</label>
               <input
                 type="password"
                 value={confirmPassword}
                 onChange={(e) => setConfirmPassword(e.target.value)}
-                className="w-full px-4 py-2 bg-slate-700 border border-slate-600 rounded text-white placeholder-slate-400 focus:outline-none focus:border-blue-500"
+                style={inputStyle}
                 placeholder="Re-enter password"
               />
             </div>
 
-            <div className="grid grid-cols-2 gap-4">
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px", marginBottom: "1rem" }}>
               <div>
-                <label className="block text-sm font-medium text-white mb-2">
-                  Organization Type
-                </label>
+                <label style={labelStyle}>Organization Type</label>
                 <select
                   value={orgType}
                   onChange={(e) => setOrgType(e.target.value)}
-                  className="w-full px-4 py-2 bg-slate-700 border border-slate-600 rounded text-white focus:outline-none focus:border-blue-500"
+                  style={inputStyle}
                 >
                   <option value="PRODUCER">Producer</option>
                   <option value="RETAILER">Retailer</option>
@@ -226,13 +280,11 @@ export default function SignupPage() {
                 </select>
               </div>
               <div>
-                <label className="block text-sm font-medium text-white mb-2">
-                  Plan Tier
-                </label>
+                <label style={labelStyle}>Plan Tier</label>
                 <select
                   value={planTier}
                   onChange={(e) => setPlanTier(e.target.value)}
-                  className="w-full px-4 py-2 bg-slate-700 border border-slate-600 rounded text-white focus:outline-none focus:border-blue-500"
+                  style={inputStyle}
                 >
                   <option value="STARTER">Starter</option>
                   <option value="GROWTH">Growth</option>
@@ -244,14 +296,17 @@ export default function SignupPage() {
             <button
               type="submit"
               disabled={loading}
-              className="w-full px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded font-medium transition-colors disabled:opacity-50"
+              style={{
+                ...buttonStyle,
+                opacity: loading ? 0.5 : 1,
+              }}
             >
               {loading ? "Creating account..." : "Continue"}
             </button>
 
-            <p className="text-center text-sm text-slate-400">
+            <p style={{ textAlign: "center", fontSize: "13px", color: "#aaa", marginTop: "1rem" }}>
               Already have an account?{" "}
-              <Link href="/login" className="text-blue-400 hover:text-blue-300">
+              <Link href="/login" style={{ color: "#0066cc" }}>
                 Sign in
               </Link>
             </p>
@@ -259,43 +314,38 @@ export default function SignupPage() {
         )}
 
         {step === "verify" && (
-          <form
-            onSubmit={handleVerify}
-            className="bg-slate-800 border border-slate-700 rounded-lg p-6 space-y-4"
-          >
-            {error && (
-              <div className="p-3 bg-red-600 text-white rounded text-sm">
-                {error}
-              </div>
-            )}
-
-            <div className="p-3 bg-blue-900 text-blue-100 rounded text-sm">
+          <form onSubmit={handleVerify}>
+            <div style={{ padding: "10px", backgroundColor: "#334466", color: "#aaddff", borderRadius: "4px", fontSize: "13px", marginBottom: "1rem" }}>
               A verification code has been sent to <strong>{email}</strong>
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-white mb-2">
-                Verification Code
-              </label>
+              <label style={labelStyle}>Verification Code</label>
               <input
                 type="text"
                 maxLength={6}
                 value={otp}
-                onChange={(e) =>
-                  setOtp(e.target.value.replace(/[^\d]/g, ""))
-                }
-                className="w-full px-4 py-2 text-center text-2xl tracking-widest bg-slate-700 border border-slate-600 rounded text-white placeholder-slate-400 focus:outline-none focus:border-blue-500"
+                onChange={(e) => setOtp(e.target.value.replace(/[^\d]/g, ""))}
+                style={{
+                  ...inputStyle,
+                  textAlign: "center",
+                  fontSize: "24px",
+                  letterSpacing: "8px",
+                }}
                 placeholder="000000"
               />
-              <p className="text-xs text-slate-400 mt-2">
-                Expires in {otpExpiry} minutes
+              <p style={{ fontSize: "12px", color: "#777", marginTop: "-8px", marginBottom: "1rem" }}>
+                Expires in 15 minutes
               </p>
             </div>
 
             <button
               type="submit"
               disabled={loading}
-              className="w-full px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded font-medium transition-colors disabled:opacity-50"
+              style={{
+                ...buttonStyle,
+                opacity: loading ? 0.5 : 1,
+              }}
             >
               {loading ? "Verifying..." : "Verify Email"}
             </button>
@@ -303,7 +353,11 @@ export default function SignupPage() {
             <button
               type="button"
               onClick={() => setStep("info")}
-              className="w-full px-4 py-2 bg-slate-700 hover:bg-slate-600 text-white rounded font-medium transition-colors"
+              style={{
+                ...buttonStyle,
+                backgroundColor: "#555",
+                marginBottom: 0,
+              }}
             >
               Back
             </button>
@@ -311,10 +365,12 @@ export default function SignupPage() {
         )}
 
         {step === "complete" && (
-          <div className="bg-green-900 border border-green-700 rounded-lg p-6 text-center space-y-4">
-            <div className="text-4xl">✅</div>
-            <h2 className="text-xl font-bold text-white">Welcome to SMART!</h2>
-            <p className="text-green-100">
+          <div style={{ textAlign: "center", padding: "2rem 0" }}>
+            <div style={{ fontSize: "48px", marginBottom: "1rem" }}>✅</div>
+            <h2 style={{ fontSize: "20px", fontWeight: "bold", color: "#fff", marginBottom: "0.5rem" }}>
+              Welcome to SMART!
+            </h2>
+            <p style={{ color: "#aaa", fontSize: "13px" }}>
               Your email has been verified. Redirecting to setup...
             </p>
           </div>
