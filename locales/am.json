@@ -1351,7 +1351,7 @@
   },
   "bulk_import": {
     "title": "ከፍ ብሎ ማስገቢያ",
-    "full_title": "Bulk Import — Opening Balances",
+    "full_title": "ከፍ ብሎ ማስገቢያ — የቀደምት ሚዛኖች",
     "subtitle": "ብዙ ምርቶችን ባንድ ቡድን ለማስጀመር CSV ውሂብ ለጥፉ",
     "csv_columns": "የCSV ቅጽ ዓምዶች",
     "header_label": "ርዕስ:",
@@ -1396,9 +1396,9 @@
     "error_mfg": "ለባች-ተከታትሎ ምርቶች ዉፍረት ቀን ያስፈልጋል።"
   },
   "add_product": {
-    "new_category": "+ Add new category…",
+    "new_category": "+ አዲስ ምድብ ጨምር…",
     "back": "ተመለስ",
-    "initial_stock": "Initial Stock — optional",
+    "initial_stock": "የመጀመሪያ ክምችት — አማራጭ",
     "computed": "ሲሰላ",
     "avail_hint": "በእጅ ያለ ከተጠበቀ ሲቀነስ",
     "no_wh_note": "ክምችት በምርቱ ምዝገባ ይቀመጣል። ወደ ልዩ መጋዘን ለማስገባት በክምችት ገጽ ላይ ቀደምት ሚዛን ይጠቀሙ።",
@@ -1523,5 +1523,20 @@
     "upload_banner": "ሰሌዳ ጫን",
     "branding_preview": "ቅድሚያ እይታ",
     "branding_saved": "ብራንዲንግ ተዘምኗል"
+  },
+  "tenant_admin": {
+    "contract": {
+      "status_title": "የውል ሁኔታ",
+      "start_date": "መጀመሪያ ቀን",
+      "end_date": "ማብቂያ ቀን",
+      "days_remaining": "የቀሩ ቀናት",
+      "duration": "ቆይታ",
+      "expired_days_ago": "ከ{n} ቀናት በፊት አልቋል",
+      "days_suffix": "{n} ቀናት",
+      "years_suffix": "{n} ዓመት",
+      "expired_warning": "⚠️ የእርስዎ ውል አልቋል። ሙሉ መዳረሻን ለማደስ ወዲያውኑ ያድሱ።",
+      "expiring_soon_warning": "⏰ የእርስዎ ውል በ{n} ቀናት ውስጥ ያልቃል። የአገልግሎት ማቋረጥን ለማስቀረት አሁን ያድሱ።",
+      "managed_by_platform": "የውል ቀናት በ SMART አስተዳዳሪዎ ይተዳደራሉ እና ከደንበኝነት ምዝገባዎ ጋር በራስ-ሰር ይዘምናሉ። ለመቀየር ድጋፍን ያነጋግሩ።"
+    }
   }
 }

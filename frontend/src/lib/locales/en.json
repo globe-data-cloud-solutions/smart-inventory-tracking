@@ -1509,5 +1509,20 @@
     "upload_banner": "Upload Banner",
     "branding_preview": "Preview",
     "branding_saved": "Branding updated"
+  },
+  "tenant_admin": {
+    "contract": {
+      "status_title": "Contract Status",
+      "start_date": "Start Date",
+      "end_date": "End Date",
+      "days_remaining": "Days Remaining",
+      "duration": "Duration",
+      "expired_days_ago": "Expired {n} days ago",
+      "days_suffix": "{n} days",
+      "years_suffix": "{n} years",
+      "expired_warning": "⚠️ Your contract has expired. Please renew immediately to restore full access.",
+      "expiring_soon_warning": "⏰ Your contract is expiring in {n} days. Renew now to avoid service interruption.",
+      "managed_by_platform": "Contract dates are managed by your SMART administrator and update automatically with your subscription. Contact support to change them."
+    }
   }
 }
