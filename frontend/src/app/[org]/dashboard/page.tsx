@@ -371,7 +371,12 @@ export default function OrgDashboard() {
   const [adminTaForm, setAdminTaForm]           = useState({ full_name: "", email: "" });
   const [adminFeatureFlags, setAdminFeatureFlags] = useState<Record<string, boolean>>({});
 
-  const { data: platformTierConfig, refetch: refetchTierConfig } = useQuery<TierConfigEntry[]>({
+  const {
+    data: platformTierConfig,
+    isLoading: tierConfigFetching,
+    isError: tierConfigFetchFailed,
+    refetch: refetchTierConfig,
+  } = useQuery<TierConfigEntry[]>({
     queryKey: ["platform-tier-config"],
     queryFn: () => api.get<TierConfigEntry[]>("/api/v1/tenants/platform/tier-config"),
     enabled: isGatewayMode && org === SA_ORG_SLUG,
@@ -392,13 +397,6 @@ export default function OrgDashboard() {
     enabled: isGatewayMode && !!activityTenantId,
     staleTime: 0,
   });
-
-  // Tier defaults used for the "Reset to Defaults" button only.
-  const TIER_DEFAULTS: Record<string, TierConfigEntry> = {
-    STARTER:    { tier: "STARTER",    max_warehouses: 3,    max_users: 5    },
-    GROWTH:     { tier: "GROWTH",     max_warehouses: 10,   max_users: 25   },
-    ENTERPRISE: { tier: "ENTERPRISE", max_warehouses: null, max_users: null },
-  };
 
   async function handleTierConfigSave() {
     setTierConfigSaving(true);
@@ -693,18 +691,26 @@ export default function OrgDashboard() {
                 <div className="flex items-center gap-2">
                   <button
                     type="button"
+                    disabled={!platformTierConfig || platformTierConfig.length === 0}
+                    title={
+                      tierConfigFetching
+                        ? t("common.loading")
+                        : tierConfigFetchFailed
+                          ? t("common.error")
+                          : undefined
+                    }
                     onClick={() => {
-                      const current = platformTierConfig ?? Object.values(TIER_DEFAULTS);
+                      if (!platformTierConfig || platformTierConfig.length === 0) return;
                       setTierConfigForm(
                         ["STARTER", "GROWTH", "ENTERPRISE"].map((tier) =>
-                          current.find((c) => c.tier === tier) ?? TIER_DEFAULTS[tier] ?? { tier, max_warehouses: null, max_users: null }
+                          platformTierConfig.find((c) => c.tier === tier) ?? { tier, max_warehouses: null, max_users: null }
                         )
                       );
                       setTierConfigError(null);
                       setTierConfigSaved(false);
                       setTierConfigOpen(true);
                     }}
-                    className="px-3 py-2 text-xs font-bold rounded bg-gray-100 text-gray-700 border border-gray-200 hover:bg-gray-200 transition-colors flex items-center gap-1.5"
+                    className="px-3 py-2 text-xs font-bold rounded bg-gray-100 text-gray-700 border border-gray-200 hover:bg-gray-200 transition-colors flex items-center gap-1.5 disabled:opacity-50 disabled:cursor-not-allowed"
                   >
                     ⚙ {t("sa.tier_config_btn")}
                   </button>
@@ -1903,7 +1909,9 @@ export default function OrgDashboard() {
                   <button
                     type="button"
                     onClick={() => setTierConfigForm(
-                      ["STARTER", "GROWTH", "ENTERPRISE"].map((tier) => TIER_DEFAULTS[tier] ?? { tier, max_warehouses: null, max_users: null })
+                      ["STARTER", "GROWTH", "ENTERPRISE"].map((tier) =>
+                        platformTierConfig?.find((c) => c.tier === tier) ?? { tier, max_warehouses: null, max_users: null }
+                      )
                     )}
                     className="text-xs font-semibold text-gray-500 hover:text-gray-700 underline"
                   >

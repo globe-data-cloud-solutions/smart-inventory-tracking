@@ -1582,161 +1582,43 @@ POST /api/v1/{tenant}/transfers/sister   # Sister transfer — uses SISTER_TRANS
 
 ## 15. Tenant Profile & Onboarding Wizard
 
-### Onboarding Wizard Sets Per-org-type Defaults
+### Package Catalog is the Single Source of Plan Limits and Flags
 
 > **Status (2026-10):** no frontend screen calls `POST /tenants/{id}/wizard`; tenants are
-> created via `POST /tenants/` (SA). `TIER_DEFAULTS` below conflicts with the SA-editable
-> `platform_tier_config` table (STARTER 3/5, GROWTH 10/25, ENTERPRISE unlimited) and is
-> being replaced by the plan catalog (migration 070). Feature flags are owned by the plan;
-> organisation_type sets approval thresholds only.
-> Since migration 070 the package catalog lives in platform_tier_config (limits, sku_cap,
-> feature_flags) with prices in append-only package_prices and SA changes in platform_config_log.
+> created via `POST /tenants/` (SA). Since migration 070, the package catalog lives in
+> `platform_tier_config` (limits, sku_cap, feature_flags), prices in append-only
+> `package_prices`, and every SA change to either in append-only `platform_config_log`.
 
-The wizard (`POST /tenants/{tenant_id}/wizard`) configures three sets of org-type-dependent defaults:
-feature flags, plan tier/resource limits, and approval workflow thresholds.
-
-```python
-# backend/services/tenant-service/services/wizard_service.py
-
-# ── Feature Flags (determines which features are gated for the org) ────────────
-FEATURE_FLAG_DEFAULTS = {
-    "PRODUCER": {
-        "CORE_INVENTORY":      True,
-        "TRANSFERS_PULL_PUSH": True,
-        "TRANSFERS_SISTER":    False,        # producers don't do sister transfers
-        "LOT_TRACEABILITY":    True,         # critical for manufacturing tracking
-        "LOGISTICS":           False,        # logistics module not in PRODUCER plan
-        "AUDIT_EXPORT":        False,
-        "CUSTOM_BRANDING":     False,
-        "AI_ANALYTICS":        False,
-        "API_ACCESS":          False,
-    },
-    "RETAILER": {
-        "CORE_INVENTORY":      True,
-        "TRANSFERS_PULL_PUSH": True,
-        "TRANSFERS_SISTER":    True,         # retailers do inter-store transfers
-        "LOT_TRACEABILITY":    False,        # not typical for retail
-        "LOGISTICS":           True,         # retailers have delivery logistics
-        "AUDIT_EXPORT":        True,         # retailers need audit trail export
-        "CUSTOM_BRANDING":     True,         # retailers want white-label
-        "AI_ANALYTICS":        True,         # retailers benefit from demand forecasting
-        "API_ACCESS":          False,
-    },
-    "HYBRID": {
-        "CORE_INVENTORY":      True,
-        "TRANSFERS_PULL_PUSH": True,
-        "TRANSFERS_SISTER":    True,
-        "LOT_TRACEABILITY":    True,
-        "LOGISTICS":           True,
-        "AUDIT_EXPORT":        True,
-        "CUSTOM_BRANDING":     True,
-        "AI_ANALYTICS":        True,
-        "API_ACCESS":          False,
-    },
-}
-
-# ── Plan Tier & Resource Limits (enforced at warehouse & user creation) ────────
-TIER_DEFAULTS = {
-    "PRODUCER": {"plan_tier": "GROWTH",     "max_warehouses": 30,   "max_users": 50},
-    "RETAILER": {"plan_tier": "GROWTH",     "max_warehouses": 30,   "max_users": 50},
-    "HYBRID":   {"plan_tier": "ENTERPRISE", "max_warehouses": None, "max_users": None},
-}
-
-# ── Approval Workflow Thresholds (for inventory:adjust transactions) ───────────
-APPROVAL_DEFAULTS = {
-    "PRODUCER": {"inventory:adjust": {"low": 100, "medium": 500}},
-    "RETAILER": {"inventory:adjust": {"low": 500, "medium": 5000}},
-    "HYBRID":   {"inventory:adjust": {"low": 250, "medium": 2000}},
-}
-
-async def complete_wizard(
-    db: AsyncSession, tenant_id: str, data: WizardData, changed_by: str
-) -> WizardResult:
-    """Complete the onboarding wizard.
-
-    Sets organisation_type (immutable after first wizard run), feature_flags,
-    approval_thresholds, plan_tier, max_warehouses, max_users based on org_type.
-    sku_cap is set only for PRODUCER orgs if data.sku_limit is provided.
-
-    All changes committed atomically in one transaction; writes to outbox
-    to trigger TenantOrgTypeChanged event (no side effects in Phase 0).
-    """
-    feature_flags = FEATURE_FLAG_DEFAULTS[data.org_type]
-    approval_thresholds = APPROVAL_DEFAULTS[data.org_type]
-
-    # Set organisation_type, feature flags, approval rules, locale
-    await db.execute(
-        text(
-            "UPDATE tenants SET "
-            "  organisation_type   = :org_type, "
-            "  feature_flags       = CAST(:flags AS jsonb), "
-            "  approval_thresholds = CAST(:thresholds AS jsonb), "
-            "  default_locale      = :locale, "
-            "  onboarding_complete = true, "
-            "  updated_at          = now() "
-            "WHERE id = :tid"
-        ),
-        {
-            "org_type": data.org_type,
-            "flags": json.dumps(feature_flags),
-            "thresholds": json.dumps(approval_thresholds),
-            "locale": data.default_locale,
-            "tid": tenant_id,
-        },
-    )
-
-    # PRODUCER-only: set SKU cap from wizard input
-    if data.org_type == "PRODUCER" and data.sku_limit:
-        await db.execute(
-            text("UPDATE tenants SET sku_cap = :cap WHERE id = :tid"),
-            {"cap": data.sku_limit, "tid": tenant_id},
-        )
-
-    # Set plan tier and resource limits based on org_type defaults
-    tier_defaults = TIER_DEFAULTS[data.org_type]
-    await db.execute(
-        text(
-            "UPDATE tenants SET "
-            "  plan_tier      = CAST(:tier AS plan_tier), "
-            "  max_warehouses = :max_wh, "
-            "  max_users      = :max_u, "
-            "  updated_at     = now() "
-            "WHERE id = :tid"
-        ),
-        {
-            "tier": tier_defaults["plan_tier"],
-            "max_wh": tier_defaults["max_warehouses"],
-            "max_u":  tier_defaults["max_users"],
-            "tid":    tenant_id,
-        },
-    )
-
-    # Outbox in SAME transaction (Phase 0: event not yet consumed by workers)
-    await write_to_outbox(
-        db,
-        tenant_id,
-        "TenantOrgTypeChanged",
-        TenantOrgTypeChangedPayload(
-            from_type=None,
-            to_type=data.org_type,
-            changed_by=changed_by,
-        ),
-    )
-
-    return WizardResult(
-        tenant_id=tenant_id,
-        org_type=data.org_type,
-        feature_flags=feature_flags,
-        onboarding_complete=True,
-        plan_tier=tier_defaults["plan_tier"],
-    )
-```
+- **`backend/shared/plans/catalog.py`** is the only place plan defaults are read or written:
+  `get_package()` / `list_packages()` read `platform_tier_config`; `apply_package_to_tenant()`
+  sets a tenant's `plan_tier`, `max_warehouses`, `max_users`, `sku_cap` from the package and
+  **replaces** `feature_flags` with the package's full flag set (an explicit override wins only
+  for a field the caller actually sent). `get_tenant_entitlements()` reads a tenant's current
+  effective values. No tier defaults are hardcoded anywhere else in the backend or frontend.
+- Tenant create (`POST /tenants/`), SA plan change (`PATCH /{tenant_id}/plan`), and profile plan
+  change (`PATCH /{tenant_id}/profile`) all call `apply_package_to_tenant()` — never set
+  `max_warehouses`/`max_users`/`sku_cap`/`feature_flags` directly.
+- `organisation_type` changes (profile edit or wizard) reset `approval_thresholds` only — they
+  never touch `feature_flags`, which are owned by the plan/package.
+- All plan enforcement (`check_plan`, `check_plan_create_user`, `check_plan_create_warehouse` in
+  `shared/permissions/plan_middleware.py`) reads a tenant's effective values via
+  `get_tenant_entitlements()`, never the package catalog directly and never a hardcoded table.
+- **SKU cap applies to every organisation_type** — the product-service create-product check is no
+  longer PRODUCER-only; it fires whenever `tenant.sku_cap` is set, regardless of org type.
+- The onboarding wizard (`POST /tenants/{tenant_id}/wizard`, currently uncalled by any frontend
+  screen) sets `organisation_type`, `approval_thresholds`, and `default_locale` only — no plan
+  tier, no feature flags. Those are set once at tenant creation via `apply_package_to_tenant()`.
 
 ### Feature Flag Enforcement
 
 Feature flags are checked at the API layer by `check_plan()` in `shared/permissions/plan_middleware.py`.
 Actions are mapped to required flags: Sister transfers → `TRANSFERS_SISTER`, lot/batch operations → `LOT_TRACEABILITY`, etc.
 Raises HTTP 402 with upgrade path when a feature is disabled (flag=False) for non-SA/non-TA users.
+
+> **Known gap (2026-10):** `check_plan()` feature-flag enforcement is currently wired only for
+> sister transfers (`inventory-service/routers/transfer.py`). Other flagged features
+> (`LOGISTICS`, `AUDIT_EXPORT`, `CUSTOM_BRANDING`, `AI_ANALYTICS`, `API_ACCESS`,
+> `LOT_TRACEABILITY`) are not yet gated server-side anywhere a route handles them.
 
 ### Plan Cap Enforcement
 
