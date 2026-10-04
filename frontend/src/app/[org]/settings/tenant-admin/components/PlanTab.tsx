@@ -6,9 +6,9 @@ import { t } from "@/lib/i18n";
 import { TabProps, PlanData } from "../types";
 
 const PLAN_TIERS = {
-  STARTER: { name: "Starter", color: "blue" },
-  GROWTH: { name: "Growth", color: "emerald" },
-  ENTERPRISE: { name: "Enterprise", color: "purple" },
+  STARTER: { name: "Starter", color: "blue", className: "bg-blue-600" },
+  GROWTH: { name: "Growth", color: "emerald", className: "bg-emerald-600" },
+  ENTERPRISE: { name: "Enterprise", color: "purple", className: "bg-purple-600" },
 };
 
 const FEATURE_DESCRIPTIONS: Record<string, string> = {
@@ -38,7 +38,7 @@ export function PlanTab({ tenantId, isLoading }: TabProps) {
     return <div className="flex items-center justify-center py-12 text-red-600">{t("common.error")}</div>;
   }
 
-  const tier = PLAN_TIERS[plan.plan_tier as keyof typeof PLAN_TIERS] || { name: plan.plan_tier, color: "gray" };
+  const tier = PLAN_TIERS[plan.plan_tier as keyof typeof PLAN_TIERS] || { name: plan.plan_tier, color: "gray", className: "bg-gray-600" };
 
   return (
     <div className="space-y-6">
@@ -47,7 +47,7 @@ export function PlanTab({ tenantId, isLoading }: TabProps) {
         <h3 className="text-lg font-semibold text-gray-800 mb-6">{t("wizard.plan_tier")}</h3>
 
         <div className="mb-6">
-          <div className={`inline-block px-4 py-2 rounded-lg font-bold text-white bg-${tier.color}-600`}>
+          <div className={`inline-block px-4 py-2 rounded-lg font-bold text-white ${tier.className}`}>
             {tier.name}
           </div>
         </div>
@@ -96,7 +96,6 @@ export function PlanTab({ tenantId, isLoading }: TabProps) {
                   <p className={`text-sm font-medium ${enabled ? "text-gray-800" : "text-gray-500"}`}>
                     {desc}
                   </p>
-                  <p className="text-xs text-gray-500">{key}</p>
                 </div>
               </div>
             );
