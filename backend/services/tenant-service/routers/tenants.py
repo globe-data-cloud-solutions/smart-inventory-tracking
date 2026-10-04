@@ -652,6 +652,12 @@ async def get_my_profile(
     )
 
 
+class ContractUpdateRequest(BaseModel):
+    contract_start: Optional[str] = None   # "YYYY-MM-DD" or null to clear
+    contract_end:   Optional[str] = None   # "YYYY-MM-DD" or null to clear
+    note: str                              # required — mandatory audit reason
+
+
 class TAProfileUpdateRequest(BaseModel):
     """TA can only update specific fields of their own profile."""
     default_locale: Optional[str] = None
@@ -1560,12 +1566,6 @@ async def list_tenant_contacts(
         )
         for row in rows
     ])
-
-
-class ContractUpdateRequest(BaseModel):
-    contract_start: Optional[str] = None   # "YYYY-MM-DD" or null to clear
-    contract_end:   Optional[str] = None   # "YYYY-MM-DD" or null to clear
-    note: str                              # required — mandatory audit reason
 
 
 @router.patch("/{tenant_id}/contract", response_model=SuccessResponse[dict])
