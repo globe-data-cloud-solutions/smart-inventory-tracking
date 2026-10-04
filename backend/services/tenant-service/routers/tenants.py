@@ -14,6 +14,7 @@ from dependencies import get_current_user, get_db_session
 from services.wizard_service import APPROVAL_DEFAULTS
 from shared.permissions.middleware import require_permission
 from shared.permissions.registry import PERMISSIONS
+from shared.plans.catalog import UNSET, apply_package_to_tenant
 from shared.utils.responses import SuccessResponse
 from schemas.tenant import TenantCreateRequest, TenantResponse, VALID_PLAN_TIERS, VALID_LOCALES
 
@@ -116,43 +117,6 @@ class TenantActivityRow(BaseModel):
 # Must mirror the "organisation_type" PostgreSQL ENUM values in
 # backend/migrations/versions/001_initial_schema.py.
 VALID_ORGANISATION_TYPES = frozenset({"PRODUCER", "RETAILER", "HYBRID"})
-
-# Hardcoded fallback used when platform_tier_config table is not yet available.
-TIER_LIMITS: dict[str, dict[str, int | None]] = {
-    "STARTER":    {"max_warehouses": 3,    "max_users": 5},
-    "GROWTH":     {"max_warehouses": 10,   "max_users": 25},
-    "ENTERPRISE": {"max_warehouses": None, "max_users": None},
-}
-
-# Feature flags that are explicitly toggled by plan tier.
-# Merged (via JSONB ||) into the tenant's feature_flags on every Plan PATCH.
-# Only keys listed here are overwritten; other flags are left unchanged.
-PLAN_TIER_FEATURE_DEFAULTS: dict[str, dict[str, bool]] = {
-    "STARTER":    {"TRANSFERS_SISTER": False},
-    "GROWTH":     {"TRANSFERS_SISTER": True},
-    "ENTERPRISE": {"TRANSFERS_SISTER": True},
-}
-
-
-async def _get_platform_tier_limits(
-    db: AsyncSession, tier: str
-) -> dict[str, int | None]:
-    """Read limits from platform_tier_config; fall back to hardcoded TIER_LIMITS.
-
-    This indirection lets SA override defaults without a code deploy. The fallback
-    guarantees the system works before migration 068 runs or on a fresh dev DB.
-    """
-    try:
-        row = (await db.execute(
-            text("SELECT max_warehouses, max_users FROM platform_tier_config WHERE tier = :tier"),
-            {"tier": tier},
-        )).fetchone()
-        if row:
-            return {"max_warehouses": row.max_warehouses, "max_users": row.max_users}
-    except Exception:
-        pass  # table may not exist yet — fall through to defaults
-    return dict(TIER_LIMITS.get(tier, {"max_warehouses": None, "max_users": None}))
-
 
 def _slugify(name: str) -> str:
     slug = name.lower().strip()
@@ -294,8 +258,15 @@ async def sa_tenant_registry(
 
 class TierConfigEntry(BaseModel):
     tier: str
-    max_warehouses: Optional[int]  # None = unlimited
-    max_users: Optional[int]       # None = unlimited
+    max_warehouses: Optional[int] = None   # None = unlimited
+    max_users: Optional[int] = None        # None = unlimited
+    # Read-only catalog fields (migration 070) — optional so existing clients
+    # that only send/expect max_warehouses/max_users keep working.
+    display_name: Optional[str] = None
+    sku_cap: Optional[int] = None
+    feature_flags: Optional[dict] = None
+    is_public: Optional[bool] = None
+    sort_order: Optional[int] = None
 
 
 class TierConfigUpdateRequest(BaseModel):
@@ -308,19 +279,31 @@ async def get_platform_tier_config(
     user=Depends(get_current_user),
     db: AsyncSession = Depends(get_db_session),
 ) -> SuccessResponse[List[TierConfigEntry]]:
-    """SA-only: return the current platform tier limits for all three tiers."""
+    """SA-only: return the full package catalog (platform_tier_config) for all tiers.
+
+    Reads the table only — no hardcoded fallback. The table is seeded by
+    migrations 068/070 and is never expected to be empty.
+    """
     if not user or user.role != "SA":
         raise HTTPException(status_code=403, detail={"code": "FORBIDDEN", "message": "SA only"})
     rows = (await db.execute(
-        text("SELECT tier, max_warehouses, max_users FROM platform_tier_config ORDER BY tier"),
+        text(
+            "SELECT tier, max_warehouses, max_users, display_name, sku_cap, "
+            "       feature_flags, is_public, sort_order "
+            "FROM platform_tier_config ORDER BY sort_order"
+        ),
     )).fetchall()
-    if not rows:
-        # Table not yet seeded — return hardcoded defaults
-        return SuccessResponse(data=[
-            TierConfigEntry(tier=t, **v) for t, v in TIER_LIMITS.items()
-        ])
     return SuccessResponse(data=[
-        TierConfigEntry(tier=row.tier, max_warehouses=row.max_warehouses, max_users=row.max_users)
+        TierConfigEntry(
+            tier=row.tier,
+            max_warehouses=row.max_warehouses,
+            max_users=row.max_users,
+            display_name=row.display_name,
+            sku_cap=row.sku_cap,
+            feature_flags=dict(row.feature_flags) if row.feature_flags else {},
+            is_public=row.is_public,
+            sort_order=row.sort_order,
+        )
         for row in rows
     ])
 
@@ -332,10 +315,12 @@ async def update_platform_tier_config(
     user=Depends(get_current_user),
     db: AsyncSession = Depends(get_db_session),
 ) -> SuccessResponse[List[TierConfigEntry]]:
-    """SA-only: update platform-level tier defaults.
+    """SA-only: update platform-level tier limits (max_warehouses / max_users only).
 
-    Changes apply to the next tenant creation or plan change.
-    Existing tenant caps (stored per-tenant) are NOT retroactively changed.
+    Price and flag/sku_cap editing come with the SA Plans & Pricing screen later.
+    Changes apply to the next tenant creation or plan change. Existing tenant
+    caps (stored per-tenant) are NOT retroactively changed. Every field whose
+    value actually changes is logged to platform_config_log.
     """
     if not user or user.role != "SA":
         raise HTTPException(status_code=403, detail={"code": "FORBIDDEN", "message": "SA only"})
@@ -348,7 +333,14 @@ async def update_platform_tier_config(
                 detail={"code": "INVALID_TIER", "message": f"Unknown tier: {entry.tier}"},
             )
 
+    actor_email = getattr(user, "email", None)
+
     for entry in body.tiers:
+        old_row = (await db.execute(
+            text("SELECT max_warehouses, max_users FROM platform_tier_config WHERE tier = :tier"),
+            {"tier": entry.tier},
+        )).fetchone()
+
         await db.execute(
             text(
                 "INSERT INTO platform_tier_config (tier, max_warehouses, max_users, updated_at, updated_by_id) "
@@ -362,6 +354,27 @@ async def update_platform_tier_config(
             {"tier": entry.tier, "max_wh": entry.max_warehouses,
              "max_u": entry.max_users, "uid": str(user.user_id)},
         )
+
+        for field, old_val, new_val in (
+            ("max_warehouses", old_row.max_warehouses if old_row else None, entry.max_warehouses),
+            ("max_users", old_row.max_users if old_row else None, entry.max_users),
+        ):
+            if old_val != new_val:
+                await db.execute(
+                    text(
+                        "INSERT INTO platform_config_log "
+                        "  (entity_type, entity_key, field, old_value, new_value, "
+                        "   reason, actor_id, actor_email) "
+                        "VALUES ('PACKAGE', :tier, :field, :old, :new, "
+                        "        'SA tier-config edit', :actor_id, :actor_email)"
+                    ),
+                    {
+                        "tier": entry.tier, "field": field,
+                        "old": str(old_val) if old_val is not None else None,
+                        "new": str(new_val) if new_val is not None else None,
+                        "actor_id": str(user.user_id), "actor_email": actor_email,
+                    },
+                )
 
     rows = (await db.execute(
         text("SELECT tier, max_warehouses, max_users FROM platform_tier_config ORDER BY tier"),
@@ -480,16 +493,13 @@ async def create_tenant(
         row = await db.execute(text("SELECT id FROM tenants WHERE slug = :s"), {"s": slug})
         if row.fetchone():
             slug = f"{base_slug}-{str(tenant_id)[:8]}"
-    tier_limits = await _get_platform_tier_limits(db, body.plan_tier)
-    # sku_cap is only meaningful for PRODUCER tenants; store NULL for RETAILER/HYBRID.
-    effective_sku_cap = body.sku_cap if body.organisation_type == "PRODUCER" else None
     try:
         await db.execute(
             text(
                 "INSERT INTO tenants (id, name, slug, plan_id, default_locale, organisation_type, "
-                "plan_tier, max_warehouses, max_users, sku_cap, industry) "
+                "plan_tier, industry) "
                 "VALUES (:id, :name, :slug, :plan_id, :locale, :org_type, "
-                "CAST(:plan_tier AS plan_tier), :max_wh, :max_u, :sku_cap, :industry)"
+                "CAST(:plan_tier AS plan_tier), :industry)"
             ),
             {
                 "id": str(tenant_id),
@@ -499,9 +509,6 @@ async def create_tenant(
                 "locale": body.default_locale,
                 "org_type": body.organisation_type,
                 "plan_tier": body.plan_tier,
-                "max_wh": tier_limits["max_warehouses"],
-                "max_u": tier_limits["max_users"],
-                "sku_cap": effective_sku_cap,
                 "industry": body.industry,
             },
         )
@@ -519,6 +526,20 @@ async def create_tenant(
         raise HTTPException(
             status_code=422,
             detail={"code": "TENANT_CREATE_CONSTRAINT_VIOLATION", "message": message},
+        ) from exc
+
+    # Package catalog is the single source of limits/sku_cap/flags (CLAUDE.md §15).
+    # sku_cap applies to every organisation type — only overridden when the
+    # caller explicitly sent it.
+    try:
+        await apply_package_to_tenant(
+            db, tenant_id, body.plan_tier,
+            sku_cap=body.sku_cap if "sku_cap" in body.model_fields_set else UNSET,
+        )
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=422,
+            detail={"code": "INVALID_TIER", "message": str(exc)},
         ) from exc
 
     # Atomic TA admin user creation — same DB transaction as tenant INSERT.
@@ -991,31 +1012,21 @@ async def update_tenant_plan(
     )).fetchone()
     old_tier = str(old_row.plan_tier) if old_row and old_row.plan_tier else None
 
-    # Auto-compute limits from platform_tier_config when body doesn't override them.
-    # This keeps tenant caps consistent with platform-level tier defaults.
-    platform_limits = await _get_platform_tier_limits(db, body.plan_tier)
-    resolved_max_wh = body.max_warehouses if body.max_warehouses is not None else platform_limits["max_warehouses"]
-    resolved_max_u  = body.max_users      if body.max_users      is not None else platform_limits["max_users"]
-
-    # Merge tier-gated feature flags in the same UPDATE as the plan_tier change
-    # so they commit atomically and check_plan always sees a consistent state.
-    tier_features = PLAN_TIER_FEATURE_DEFAULTS.get(body.plan_tier, {})
-    plan_set = (
-        "UPDATE tenants SET plan_tier = CAST(:tier AS plan_tier), "
-        "max_warehouses = :max_wh, max_users = :max_u, updated_at = now()"
-    )
-    plan_params: dict = {
-        "tier": body.plan_tier, "max_wh": resolved_max_wh,
-        "max_u": resolved_max_u, "id": str(tenant_id),
-    }
-    if "sku_cap" in body.model_fields_set:
-        plan_set += ", sku_cap = :sku_cap"
-        plan_params["sku_cap"] = body.sku_cap
-    if tier_features:
-        plan_set += ", feature_flags = COALESCE(feature_flags, '{}'::jsonb) || CAST(:tier_flags AS jsonb)"
-        plan_params["tier_flags"] = json.dumps(tier_features)
-    plan_set += " WHERE id = :id"
-    await db.execute(text(plan_set), plan_params)
+    # Package catalog is the single source of limits/sku_cap/flags (CLAUDE.md §15).
+    # Applying it REPLACES feature_flags with the package's full flag set; an
+    # explicit override wins only for fields the caller actually sent.
+    try:
+        effective = await apply_package_to_tenant(
+            db, tenant_id, body.plan_tier,
+            max_warehouses=body.max_warehouses if "max_warehouses" in body.model_fields_set else UNSET,
+            max_users=body.max_users if "max_users" in body.model_fields_set else UNSET,
+            sku_cap=body.sku_cap if "sku_cap" in body.model_fields_set else UNSET,
+        )
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=422,
+            detail={"code": "INVALID_TIER", "message": str(exc)},
+        ) from exc
 
     try:
         await _log_tenant_activity(
@@ -1027,9 +1038,9 @@ async def update_tenant_plan(
     except Exception:
         pass  # log failure must not roll back the plan change
     return SuccessResponse(data={
-        "plan_tier":      body.plan_tier,
-        "max_warehouses": resolved_max_wh,
-        "max_users":      resolved_max_u,
+        "plan_tier":      effective["plan_tier"],
+        "max_warehouses": effective["max_warehouses"],
+        "max_users":      effective["max_users"],
     })
 
 
@@ -1051,6 +1062,52 @@ class TenantProfileUpdateRequest(BaseModel):
 
 VALID_LOCALES = frozenset({"en", "am", "or"})
 
+_PROFILE_ADDR_FIELDS = ("address_line1", "address_line2", "city", "state_province", "postal_code", "country")
+
+
+def _build_profile_update_set_clause(
+    changes: dict[str, tuple[str | None, str | None]],
+    body: TenantProfileUpdateRequest,
+) -> tuple[list[str], dict]:
+    """Pure: build the SET clause + params for update_tenant_profile from the
+    already-computed `changes` map — everything EXCEPT plan_tier, which needs
+    an async package lookup via apply_package_to_tenant and is handled by the
+    caller. Org-type change sets approval_thresholds only — feature flags are
+    owned by the plan/package (CLAUDE.md §15) and are never touched here.
+    """
+    set_parts: list[str] = ["updated_at = now()"]
+    params: dict = {}
+
+    if "name" in changes:
+        set_parts.append("name = :name")
+        params["name"] = changes["name"][1]
+
+    if "organisation_type" in changes:
+        new_org = changes["organisation_type"][1]
+        set_parts.append("organisation_type = CAST(:org_type AS organisation_type)")
+        params["org_type"] = new_org
+        set_parts.append("approval_thresholds = CAST(:thresholds AS jsonb)")
+        params["thresholds"] = json.dumps(APPROVAL_DEFAULTS.get(new_org, {}))
+
+    if "default_locale" in changes:
+        set_parts.append("default_locale = :locale")
+        params["locale"] = changes["default_locale"][1]
+
+    if "notes" in changes:
+        set_parts.append("notes = :notes")
+        params["notes"] = changes["notes"][1]
+
+    if "industry" in changes:
+        set_parts.append("industry = :industry")
+        params["industry"] = changes["industry"][1]
+
+    if "address" in changes:
+        for f in _PROFILE_ADDR_FIELDS:
+            set_parts.append(f"{f} = :{f}")
+            params[f] = getattr(body, f)
+
+    return set_parts, params
+
 
 @router.patch("/{tenant_id}/profile", response_model=SuccessResponse[dict])
 @require_permission(PERMISSIONS.TENANT_PROFILE_EDIT)
@@ -1062,10 +1119,10 @@ async def update_tenant_profile(
 ) -> SuccessResponse[dict]:
     """SA-only: re-edit wizard-configurable tenant profile fields with full audit trail.
 
-    When organisation_type changes, feature_flags and approval_thresholds are reset
-    to the new type's defaults (same as the onboarding wizard does).
-    When plan_tier changes, max_warehouses/max_users are recomputed from
-    platform_tier_config (same as update_tenant_plan does).
+    When organisation_type changes, only approval_thresholds reset to the new
+    type's defaults — feature flags are owned by the plan/package, not org type.
+    When plan_tier changes, limits/sku_cap/feature_flags are applied from the
+    package catalog via apply_package_to_tenant (same as update_tenant_plan does).
     """
     if not user or user.role != "SA":
         raise HTTPException(status_code=403, detail={"code": "FORBIDDEN", "message": "SA only"})
@@ -1128,10 +1185,9 @@ async def update_tenant_profile(
         changes["industry"] = (getattr(row, "industry", None), body.industry)
 
     # Address — treated as one atomic block; log as single entry if any field changed
-    _ADDR_FIELDS = ("address_line1", "address_line2", "city", "state_province", "postal_code", "country")
-    addr_provided = any(f in body.model_fields_set for f in _ADDR_FIELDS)
+    addr_provided = any(f in body.model_fields_set for f in _PROFILE_ADDR_FIELDS)
     addr_changed = addr_provided and any(
-        getattr(body, f) != getattr(row, f) for f in _ADDR_FIELDS
+        getattr(body, f) != getattr(row, f) for f in _PROFILE_ADDR_FIELDS
     )
     if addr_changed:
         changes["address"] = (
@@ -1142,54 +1198,25 @@ async def update_tenant_profile(
     if not changes:
         return SuccessResponse(data={"changes": 0, "fields": []})
 
-    # Build SET clause dynamically from actual changes.
-    set_parts: list[str] = ["updated_at = now()"]
-    params: dict = {"id": str(tenant_id)}
-
-    if "name" in changes:
-        set_parts.append("name = :name")
-        params["name"] = changes["name"][1]
-
-    if "organisation_type" in changes:
-        new_org = changes["organisation_type"][1]
-        set_parts.append("organisation_type = CAST(:org_type AS organisation_type)")
-        params["org_type"] = new_org
-        # Org type change resets approval thresholds only. Feature flags are owned by the
-        # plan/package (CLAUDE.md §15) and are never reset by an org-type change.
-        set_parts.append("approval_thresholds = CAST(:thresholds AS jsonb)")
-        params["thresholds"] = json.dumps(APPROVAL_DEFAULTS.get(new_org, {}))
-
-    if "default_locale" in changes:
-        set_parts.append("default_locale = :locale")
-        params["locale"] = changes["default_locale"][1]
-
-    if "plan_tier" in changes:
-        new_tier = changes["plan_tier"][1]
-        set_parts.append("plan_tier = CAST(:plan_tier AS plan_tier)")
-        params["plan_tier"] = new_tier
-        platform_limits = await _get_platform_tier_limits(db, new_tier)
-        set_parts.append("max_warehouses = :max_wh")
-        set_parts.append("max_users = :max_u")
-        params["max_wh"] = platform_limits["max_warehouses"]
-        params["max_u"]  = platform_limits["max_users"]
-
-    if "notes" in changes:
-        set_parts.append("notes = :notes")
-        params["notes"] = changes["notes"][1]
-
-    if "industry" in changes:
-        set_parts.append("industry = :industry")
-        params["industry"] = changes["industry"][1]
-
-    if "address" in changes:
-        for f in _ADDR_FIELDS:
-            set_parts.append(f"{f} = :{f}")
-            params[f] = getattr(body, f)
-
+    # Build SET clause for everything except plan_tier via the pure helper.
+    set_parts, params = _build_profile_update_set_clause(changes, body)
+    params["id"] = str(tenant_id)
     await db.execute(
         text(f"UPDATE tenants SET {', '.join(set_parts)} WHERE id = :id"),
         params,
     )
+
+    # plan_tier goes through the package catalog — applying it REPLACES
+    # feature_flags with the package's full flag set (CLAUDE.md §15).
+    if "plan_tier" in changes:
+        new_tier = changes["plan_tier"][1]
+        try:
+            await apply_package_to_tenant(db, tenant_id, new_tier)
+        except ValueError as exc:
+            raise HTTPException(
+                status_code=422,
+                detail={"code": "INVALID_TIER", "message": str(exc)},
+            ) from exc
 
     # Log each changed field as its own activity row so the audit trail is granular.
     for field, (old_val, new_val) in changes.items():

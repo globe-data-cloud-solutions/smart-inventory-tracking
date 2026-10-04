@@ -40,6 +40,28 @@ def _user(role: str, tenant_id: str | None = TENANT_A):
     )
 
 
+_CATALOG_LIMITS = {
+    "STARTER":    {"max_warehouses": 3,    "max_users": 5,    "sku_cap": 500},
+    "GROWTH":     {"max_warehouses": 10,   "max_users": 25,   "sku_cap": 1500},
+    "ENTERPRISE": {"max_warehouses": None, "max_users": None, "sku_cap": None},
+}
+
+
+def _catalog_row(tier: str = "GROWTH") -> MagicMock:
+    """A platform_tier_config row, for mocking shared.plans.catalog.get_package()."""
+    limits = _CATALOG_LIMITS.get(tier, _CATALOG_LIMITS["GROWTH"])
+    row = MagicMock()
+    row.tier = tier
+    row.display_name = tier.capitalize()
+    row.max_warehouses = limits["max_warehouses"]
+    row.max_users = limits["max_users"]
+    row.sku_cap = limits["sku_cap"]
+    row.feature_flags = {"CORE_INVENTORY": True}
+    row.is_public = True
+    row.sort_order = 1
+    return row
+
+
 # ── FIX A1: Cross-tenant isolation ───────────────────────────────────────────
 
 @pytest.mark.unit
@@ -288,6 +310,10 @@ class TestTenantSlug:
         db.commit = AsyncMock()
 
         async def _execute(sql, params=None, **kw):
+            if "platform_tier_config" in str(sql):
+                res = MagicMock()
+                res.fetchone = MagicMock(return_value=_catalog_row(body.plan_tier))
+                return res
             res = MagicMock()
             res.fetchone = MagicMock(return_value=None)   # no collision
             res.scalar   = MagicMock(return_value=None)
@@ -374,6 +400,10 @@ class TestTenantSlug:
         db.commit = AsyncMock()
 
         async def _execute(sql, params=None, **kw):
+            if "platform_tier_config" in str(sql):
+                res = MagicMock()
+                res.fetchone = MagicMock(return_value=_catalog_row(body.plan_tier))
+                return res
             res = MagicMock()
             res.fetchone = MagicMock(return_value=None)
             res.scalar   = MagicMock(return_value=None)
@@ -415,6 +445,10 @@ class TestTenantOrganisationType:
         db.commit = AsyncMock()
 
         async def _execute(sql, params=None, **kw):
+            if "platform_tier_config" in str(sql):
+                res = MagicMock()
+                res.fetchone = MagicMock(return_value=_catalog_row(body.plan_tier))
+                return res
             res = MagicMock()
             res.fetchone = MagicMock(return_value=None)   # no slug collision
             res.scalar   = MagicMock(return_value=None)

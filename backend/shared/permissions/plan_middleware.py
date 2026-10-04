@@ -25,6 +25,8 @@ from fastapi import HTTPException
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from shared.plans.catalog import get_tenant_entitlements
+
 # ── Feature flag gate map ─────────────────────────────────────────────────────
 # Maps action strings (or action prefixes) to the feature flag that must be True.
 # Actions not listed here are not feature-gated (always allowed if RBAC passes).
@@ -62,24 +64,12 @@ def _required_flag(action: str) -> Optional[str]:
 async def _get_tenant_plan(
     db: AsyncSession, tenant_id: str
 ) -> dict[str, Any]:
-    """Fetch plan_tier, feature_flags, sku_cap, max_warehouses, max_users."""
-    row = (await db.execute(
-        text(
-            "SELECT plan_tier, feature_flags, sku_cap, "
-            "       max_warehouses, max_users "
-            "FROM   tenants WHERE id = :tid"
-        ),
-        {"tid": tenant_id},
-    )).fetchone()
-    if not row:
-        return {}
-    return {
-        "plan_tier":      str(row.plan_tier) if row.plan_tier else "ENTERPRISE",
-        "feature_flags":  dict(row.feature_flags) if row.feature_flags else {},
-        "sku_cap":        row.sku_cap,
-        "max_warehouses": row.max_warehouses,
-        "max_users":      row.max_users,
-    }
+    """Thin wrapper kept so callers don't change — delegates to
+    shared.plans.catalog.get_tenant_entitlements(), the single source of a
+    tenant's effective plan_tier, feature_flags, sku_cap, max_warehouses,
+    max_users.
+    """
+    return await get_tenant_entitlements(db, tenant_id)
 
 
 async def check_plan(
