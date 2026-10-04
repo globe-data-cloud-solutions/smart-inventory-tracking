@@ -506,9 +506,9 @@ async def signup(body: SignupRequest) -> SignupResponse:
     import uuid
     import re
     from shared.db.session import AsyncSessionLocal
-    from shared.email import get_email_provider
-    from shared.email.templates import signup_verification_email
     from shared.email.otp import generate_and_send_otp
+    from shared.email.templates import signup_verification_email
+    from shared.email import get_email_provider
 
     # Validate input
     if len(body.password) < 8:
