@@ -604,6 +604,169 @@ async def get_my_plan(
     })
 
 
+class PlanUpgradeRequest(BaseModel):
+    """TA self-service plan upgrade request."""
+
+    new_plan_tier: str  # STARTER | GROWTH | ENTERPRISE
+    note: Optional[str] = None
+
+
+@router.patch("/me/plan", response_model=SuccessResponse[dict])
+@require_permission(PERMISSIONS.TENANT_VIEW)
+async def upgrade_my_plan(
+    body: PlanUpgradeRequest,
+    user=Depends(get_current_user),
+    db: AsyncSession = Depends(get_db_session),
+) -> SuccessResponse[dict]:
+    """TA: request a plan upgrade (self-service, immediate).
+
+    Option C: Hybrid self-service plan management
+    - TA can upgrade to higher tier immediately (revenue-positive)
+    - TA cannot downgrade (SA approval required via separate endpoint)
+    - Upgrades are tracked in plan_changes table with status=APPLIED
+    - Feature flags are merged atomically with plan_tier update
+    """
+    if not user or not user.tenant_id:
+        raise HTTPException(status_code=403, detail="No tenant context")
+
+    valid_tiers = {"STARTER", "GROWTH", "ENTERPRISE"}
+    if body.new_plan_tier not in valid_tiers:
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "code": "INVALID_TIER",
+                "message": f"new_plan_tier must be one of {sorted(valid_tiers)}",
+            },
+        )
+
+    # Tier hierarchy: STARTER (0) < GROWTH (1) < ENTERPRISE (2)
+    tier_hierarchy = {"STARTER": 0, "GROWTH": 1, "ENTERPRISE": 2}
+
+    # Get current plan
+    row = (await db.execute(
+        text(
+            "SELECT id, plan_tier, max_warehouses, max_users, sku_cap, status "
+            "FROM tenants WHERE id = :tid"
+        ),
+        {"tid": str(user.tenant_id)},
+    )).fetchone()
+
+    if not row:
+        raise HTTPException(status_code=404, detail="Tenant not found")
+
+    # Check tenant is not suspended
+    if row.status == "SUSPENDED":
+        raise HTTPException(
+            status_code=403,
+            detail={
+                "code": "TENANT_SUSPENDED",
+                "message": "Cannot upgrade plan while tenant is suspended",
+            },
+        )
+
+    old_tier = str(row.plan_tier) if row.plan_tier else "STARTER"
+    old_hierarchy = tier_hierarchy.get(old_tier, 0)
+    new_hierarchy = tier_hierarchy.get(body.new_plan_tier, 0)
+
+    # Only allow upgrades (or same tier = no-op)
+    if new_hierarchy < old_hierarchy:
+        raise HTTPException(
+            status_code=403,
+            detail={
+                "code": "DOWNGRADE_NOT_ALLOWED",
+                "message": "Plan downgrades require System Administrator approval. "
+                "Please contact support.",
+            },
+        )
+
+    if new_hierarchy == old_hierarchy:
+        return SuccessResponse(data={
+            "plan_tier": old_tier,
+            "message": "Already on this plan tier",
+            "change_applied": False,
+        })
+
+    # Get new tier limits from platform config
+    platform_limits = await _get_platform_tier_limits(db, body.new_plan_tier)
+    new_max_wh = platform_limits["max_warehouses"]
+    new_max_u = platform_limits["max_users"]
+    new_sku_cap = platform_limits.get("sku_cap")
+
+    # Merge tier-gated feature flags
+    tier_features = PLAN_TIER_FEATURE_DEFAULTS.get(body.new_plan_tier, {})
+
+    plan_change_id = str(uuid.uuid4())
+
+    # Update plan and create audit record in single transaction
+    await db.execute(
+        text("""
+            UPDATE tenants
+            SET plan_tier = CAST(:tier AS plan_tier),
+                max_warehouses = :max_wh,
+                max_users = :max_u,
+                feature_flags = COALESCE(feature_flags, '{}'::jsonb) || CAST(:tier_flags AS jsonb),
+                updated_at = now()
+            WHERE id = :tid
+        """),
+        {
+            "tier": body.new_plan_tier,
+            "max_wh": new_max_wh,
+            "max_u": new_max_u,
+            "tier_flags": json.dumps(tier_features),
+            "tid": str(user.tenant_id),
+        },
+    )
+
+    # Create plan_changes record
+    await db.execute(
+        text("""
+            INSERT INTO plan_changes
+            (id, tenant_id, old_tier, new_tier, old_max_warehouses, new_max_warehouses,
+             old_max_users, new_max_users, old_sku_cap, new_sku_cap,
+             initiated_by, status, applied_at, created_at, updated_at)
+            VALUES (:id, :tid, :old_tier, :new_tier, :old_max_wh, :new_max_wh,
+                    :old_max_u, :new_max_u, :old_sku_cap, :new_sku_cap,
+                    'TA', 'APPLIED', now(), now(), now())
+        """),
+        {
+            "id": plan_change_id,
+            "tid": str(user.tenant_id),
+            "old_tier": old_tier,
+            "new_tier": body.new_plan_tier,
+            "old_max_wh": row.max_warehouses,
+            "new_max_wh": new_max_wh,
+            "old_max_u": row.max_users,
+            "new_max_u": new_max_u,
+            "old_sku_cap": row.sku_cap,
+            "new_sku_cap": new_sku_cap,
+        },
+    )
+
+    try:
+        await _log_tenant_activity(
+            db,
+            user.tenant_id,
+            str(user.user_id),
+            action="PLAN_UPGRADE",
+            old_value=old_tier,
+            new_value=body.new_plan_tier,
+            note=body.note or "Self-service upgrade via Option C",
+        )
+    except Exception:
+        pass  # log failure must not roll back the plan change
+
+    return SuccessResponse(data={
+        "plan_change_id": plan_change_id,
+        "old_plan_tier": old_tier,
+        "new_plan_tier": body.new_plan_tier,
+        "max_warehouses": new_max_wh,
+        "max_users": new_max_u,
+        "feature_flags": tier_features,
+        "change_applied": True,
+        "message": f"Plan upgraded from {old_tier} to {body.new_plan_tier}",
+    })
+
+
 class PlanUpdateRequest(BaseModel):
     plan_tier: str
     max_warehouses: Optional[int] = None   # if None, auto-set from platform_tier_config
