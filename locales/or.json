@@ -1515,6 +1515,15 @@
     "branding_saved": "Braandiin haaromfame"
   },
   "tenant_admin": {
+    "page": {
+      "subtitle": "Manage your organization's profile, plan, contract, and features"
+    },
+    "tabs": {
+      "contact": "Qunnamtii"
+    },
+    "help_banner": {
+      "content": "Manage your organization's profile, plan, contract details, and contacts. Request plan upgrades or renew your contract."
+    },
     "contract": {
       "status_title": "Haala Kontiraatii",
       "start_date": "Guyyaa Jalqabaa",

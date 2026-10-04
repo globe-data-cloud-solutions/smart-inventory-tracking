@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { getSession, SA_ORG_SLUG } from "@/lib/demo-auth";
+import { getSession, SA_ORG_SLUG, SessionUser } from "@/lib/demo-auth";
 import { t } from "@/lib/i18n";
 import { TabHelpBanner } from "@/components/ui/TabHelpBanner";
 import { ProfileTab } from "./components/ProfileTab";
@@ -13,11 +13,11 @@ import { FeaturesTab } from "./components/FeaturesTab";
 
 /* ── Tab definitions ──────────────────────────────────────────────────────── */
 const TABS = [
-  { id: "profile", label: "Profile", icon: "👤" },
-  { id: "plan", label: "Plan", icon: "📊" },
-  { id: "contract", label: "Contract", icon: "📋" },
-  { id: "contact", label: "Contact", icon: "👥" },
-  { id: "features", label: "Features", icon: "✨" },
+  { id: "profile", labelKey: "sa.admin_sub_profile", icon: "👤" },
+  { id: "plan", labelKey: "sa.admin_sub_plan", icon: "📊" },
+  { id: "contract", labelKey: "sa.admin_sub_contract", icon: "📋" },
+  { id: "contact", labelKey: "tenant_admin.tabs.contact", icon: "👥" },
+  { id: "features", labelKey: "sa.admin_sub_features", icon: "✨" },
 ] as const;
 
 type TabId = (typeof TABS)[number]["id"];
@@ -28,7 +28,7 @@ export default function TenantAdminPage() {
   const router = useRouter();
   const org = params.org as string;
   const checked = useRef(false);
-  const [user, setUser] = useState(null);
+  const [user, setUser] = useState<SessionUser | null>(null);
   const [ready, setReady] = useState(false);
   const [activeTab, setActiveTab] = useState<TabId>("profile");
 
@@ -68,18 +68,19 @@ export default function TenantAdminPage() {
       <div className="bg-white border-b border-gray-200 px-6 py-6">
         <div className="flex items-center justify-between">
           <div>
-            <h1 className="text-2xl font-bold text-gray-900">Tenant Admin</h1>
+            <h1 className="text-2xl font-bold text-gray-900">{t("dashboard.tenant_admin")}</h1>
             <p className="text-sm text-gray-600 mt-1">
-              Manage your organization's profile, plan, contract, and features
+              {t("tenant_admin.page.subtitle")}
             </p>
           </div>
         </div>
       </div>
 
       {/* Help Banner */}
-      <TabHelpBanner title="Tenant Admin Settings">
-        Manage your organization's profile, plan, contract details, and contacts. Request plan upgrades or renew your contract.
-      </TabHelpBanner>
+      <TabHelpBanner
+        storageKey="tenant-admin"
+        message={t("tenant_admin.help_banner.content")}
+      />
 
       {/* Tabs Navigation */}
       <div className="bg-white border-b border-gray-200 px-6">
@@ -95,7 +96,7 @@ export default function TenantAdminPage() {
               }`}
             >
               <span className="mr-2">{tab.icon}</span>
-              {tab.label}
+              {t(tab.labelKey)}
             </button>
           ))}
         </div>

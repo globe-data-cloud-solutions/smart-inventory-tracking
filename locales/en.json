@@ -1511,6 +1511,15 @@
     "branding_saved": "Branding updated"
   },
   "tenant_admin": {
+    "page": {
+      "subtitle": "Manage your organization's profile, plan, contract, and features"
+    },
+    "tabs": {
+      "contact": "Contact"
+    },
+    "help_banner": {
+      "content": "Manage your organization's profile, plan, contract details, and contacts. Request plan upgrades or renew your contract."
+    },
     "contract": {
       "status_title": "Contract Status",
       "start_date": "Start Date",
