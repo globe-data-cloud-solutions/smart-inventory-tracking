@@ -74,9 +74,13 @@ async def health() -> dict:
     return {"status": "ok", "service": "api-gateway"}
 
 
-@app.api_route("/{path:path}", methods=["GET", "POST", "PATCH", "DELETE", "PUT"])
+@app.api_route("/{path:path}", methods=["GET", "POST", "PATCH", "DELETE", "PUT", "OPTIONS"])
 async def proxy(request: Request, path: str) -> Response:
     full_path = f"/{path}"
+
+    # Handle CORS preflight requests
+    if request.method == "OPTIONS":
+        return Response(status_code=200)
 
     if full_path not in UNAUTHENTICATED_PATHS and not full_path.startswith("/static/"):
         auth_header = request.headers.get("Authorization", "")
