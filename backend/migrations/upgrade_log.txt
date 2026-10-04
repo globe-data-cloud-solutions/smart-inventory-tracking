@@ -1,0 +1,13 @@
+﻿alembic : INFO  [alembic.runtime.migration] Context impl PostgresqlImpl.
+At line:9 char:1
++ alembic upgrade heads 2>&1 | Tee-Object -FilePath upgrade_log.txt
++ ~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (INFO  [alembic....PostgresqlImpl.:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+INFO  [alembic.runtime.migration] Will assume transactional DDL.
+C:\Users\abiya\AppData\Local\Programs\Python\Python312\Lib\site-packages\alembic\script\revision.py:213: UserWarning: 
+Revision 017 is present more than once
+  util.warn(
+ERROR [alembic.util.messaging] Requested revision 069 overlaps with other requested revisions 017
+FAILED: Requested revision 069 overlaps with other requested revisions 017

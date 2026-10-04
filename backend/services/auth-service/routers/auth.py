@@ -505,6 +505,7 @@ async def signup(body: SignupRequest) -> SignupResponse:
     """
     import uuid
     import re
+    from sqlalchemy import text as sa_text
     from shared.db.session import AsyncSessionLocal
     from shared.email.otp import generate_and_send_otp
     from shared.email.templates import signup_verification_email
