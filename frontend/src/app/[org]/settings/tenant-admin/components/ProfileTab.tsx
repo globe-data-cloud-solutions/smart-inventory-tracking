@@ -34,7 +34,7 @@ export function ProfileTab({ tenantId, isLoading }: TabProps) {
       api.patch(`/api/v1/tenants/me/profile`, data),
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: ["tenant-admin-profile", tenantId] });
-      setSuccess(t("common.saved_successfully"));
+      setSuccess(t("common.success"));
       setEditMode(false);
       setError(null);
       setTimeout(() => setSuccess(null), 3000);
@@ -57,7 +57,7 @@ export function ProfileTab({ tenantId, isLoading }: TabProps) {
     <div className="space-y-6">
       <div className="bg-white rounded-lg border border-gray-200 p-6">
         <div className="flex items-center justify-between mb-6">
-          <h3 className="text-lg font-semibold text-gray-800">{t("layout.profile")}</h3>
+          <h3 className="text-lg font-semibold text-gray-800">{t("sa.admin_sub_profile")}</h3>
           {!editMode && (
             <button
               onClick={() => {
@@ -89,9 +89,11 @@ export function ProfileTab({ tenantId, isLoading }: TabProps) {
 
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">
-              {t("wizard.org_type")}
+              {t("sa.edit_profile_field_org_type")}
             </label>
-            <p className="text-sm text-gray-600">{tenant.organisation_type || "—"}</p>
+            <p className="text-sm text-gray-600">
+              {tenant.organisation_type ? t(`wizard.org_types.${tenant.organisation_type}`) : "—"}
+            </p>
           </div>
 
           <div>
@@ -117,7 +119,7 @@ export function ProfileTab({ tenantId, isLoading }: TabProps) {
           {editMode ? (
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">
-                {t("settings.default_language")}
+                {t("sa.edit_profile_field_locale")}
               </label>
               <select
                 value={formData.default_locale}
@@ -134,7 +136,7 @@ export function ProfileTab({ tenantId, isLoading }: TabProps) {
           ) : (
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
-                {t("settings.default_language")}
+                {t("sa.edit_profile_field_locale")}
               </label>
               <p className="text-sm text-gray-600">
                 {LOCALES.find((l) => l.code === tenant.default_locale)?.label}
