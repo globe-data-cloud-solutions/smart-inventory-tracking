@@ -52,6 +52,14 @@ start_service() {
   echo ""
   echo "▶ Starting $name on port $port …"
 
+  # Archive the previous log if it exists and is non-empty
+  if [[ -f "$log_file" && -s "$log_file" ]]; then
+    local archive_dir="$LOGS_DIR/archive"
+    mkdir -p "$archive_dir"
+    local timestamp=$(date +%Y%m%d-%H%M%S)
+    mv "$log_file" "$archive_dir/$name.$timestamp.log"
+  fi
+
   # Kill any existing process on this port before starting
   free_port "$port"
   sleep 0.5
@@ -60,7 +68,7 @@ start_service() {
   (
     cd "$svc_dir"
     py -3.12 -m uvicorn main:app --host 0.0.0.0 --port "$port" \
-      >> "$log_file" 2>&1
+      > "$log_file" 2>&1
   ) &
   local pid=$!
   echo "  PID $pid → log: $log_file"
@@ -74,7 +82,9 @@ start_service() {
     echo -n "."
     if [[ $attempts -ge 60 ]]; then
       echo ""
-      echo "✖ $name failed to start within 60 s — check $log_file"
+      echo "✖ $name failed to start within 60 s"
+      echo "Last 40 lines of log:"
+      tail -40 "$log_file" || true
       exit 1
     fi
   done
