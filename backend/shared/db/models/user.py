@@ -1,7 +1,7 @@
 import uuid
 from typing import Optional
 
-from sqlalchemy import Enum, ForeignKey, String
+from sqlalchemy import Boolean, Enum, ForeignKey, String
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -31,3 +31,6 @@ class User(Base, TimestampMixin, SoftDeleteMixin):
     warehouse_id: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True), nullable=True)
     locale: Mapped[str] = mapped_column(LocaleEnum, nullable=False, server_default="en")
     created_by: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True), nullable=True)
+    is_account_owner: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, server_default="false"
+    )

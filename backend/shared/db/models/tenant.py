@@ -36,5 +36,8 @@ class Tenant(Base, TimestampMixin, SoftDeleteMixin):
     onboarding_complete: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=False
     )
+    signup_source: Mapped[str] = mapped_column(
+        String(20), nullable=False, server_default="SA"
+    )
 
     children = relationship("Tenant", backref="parent", remote_side=[id])
