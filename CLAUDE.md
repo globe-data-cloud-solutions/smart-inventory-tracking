@@ -206,7 +206,7 @@ smart-platform/                        # GitHub repository root
 ├── backend/
 │   ├── shared/                        # Shared Python packages (editable installs)
 │   │   ├── permissions/
-│   │   │   ├── registry.py            # SINGLE SOURCE OF TRUTH — all 115 actions
+│   │   │   ├── registry.py            # SINGLE SOURCE OF TRUTH — all 153 actions
 │   │   │   ├── middleware.py          # check_permission(), require_permission decorator
 │   │   │   ├── hierarchy_service.py   # node+descendant scope traversal
 │   │   │   ├── casbin_enforcer.py     # Casbin RBAC+ABAC setup
@@ -263,7 +263,7 @@ smart-platform/                        # GitHub repository root
 │           └── prod/                  #   S3 smart-terraform-state + DynamoDB smart-terraform-locks
 │
 ├── scripts/
-│   ├── seed_permissions.py            # Seeds all 115 actions from registry.py
+│   ├── seed_permissions.py            # Seeds all 153 actions from registry.py
 │   ├── ci_drift_check.py             # Fails CI if any route lacks @require_permission
 │   └── create_partitions.py          # Monthly inventory_transactions partitions
 │
@@ -1312,7 +1312,7 @@ class PERMISSIONS:
     DISPATCH_CONFIGURE     = Permission("dispatch:configure",     ["tenant_id"])
     DISPATCH_FEFO_OVERRIDE = Permission("dispatch:fefo_override", ["tenant_id","override_permission","reason_required"])
 
-    # ... all 115 entries
+    # ... all 153 entries
 ```
 
 ### Three-layer enforcement — all three layers are mandatory
@@ -1393,30 +1393,20 @@ FACILITY_SCOPED_ROLES = {"WM", "LM", "SA_GT", "RT"}
 ```
 
 ```
-WM:    node-scoped. Scope = the position's assigned node (exact match only).
-LM:    node-scoped. Scope = the position's assigned node (exact match only).
+WM:    node-scoped. Scope = the position's assigned node (assigned node + active descendants, §24 Rule 25).
+LM:    node-scoped. Scope = the position's assigned node (assigned node + active descendants, §24 Rule 25).
        A tenant-wide LM account (system_role="LM", created without a position)
        has warehouse_id=None in its JWT and is NOT subject to this check at all
        — it keeps unrestricted tenant-wide read access. Node-scoping only
        applies once an LM is assigned a position at a specific node.
-SA_GT, RT: node-scoped. Scope = the position's assigned node (exact match only).
+SA_GT, RT: node-scoped. Scope = the position's assigned node (assigned node + active descendants, §24 Rule 25).
 TA, NM, RM, AU, SA: NOT facility-scoped — operate across all warehouses within
        their tenant. Their warehouse_id JWT claim (if present) is a home
        facility, not a cage.
 ```
 
-> **Known gap — exact node match only, no descendant traversal.** Despite the
-> "enterprise WMS" expectation that an LM/WM at a higher hierarchy level (e.g. L1)
-> should see all descendant nodes beneath it, the live ABAC check in
-> `check_permission()` is a flat string comparison (`user.warehouse_id ==
-> resource.warehouse_id`) — it does **not** walk `org_node_hierarchy` to resolve
-> a node's descendant subtree. A `get_authority_scope()`-style function that does
-> this exists only in archived dead code
-> (`backend/services/tenant-service/routers/_ARCHIVED_personnel_pre031.py`) and
-> was never revived. `check_permission()` has no `db` parameter, so implementing
-> true descendant-scoping would require threading a db session through every
-> `@require_permission`-decorated route in every service — tracked as a follow-up,
-> not yet implemented. This applies equally to WM, LM, SA_GT, and RT today.
+> Node + descendant traversal is live — see §24 Rule 25 (`get_descendant_node_ids()` in
+> `backend/shared/permissions/hierarchy_service.py`, wired into `check_permission()`).
 
 ### JWT payload — required fields
 
@@ -1427,8 +1417,8 @@ class JWTPayload(BaseModel):
     tenant_id:    str
     region_id:    str | None
     warehouse_id: str | None     # maps to organization_node.id (facility_id) regardless of hierarchy level
-                                 # IMTS: authority over child nodes resolved via get_authority_scope()
-                                 # against org_node_hierarchy — never assumed from role alone
+                                 # Facility scope for FACILITY_SCOPED_ROLES resolved via get_descendant_node_ids()
+                                 # (organization_node.parent_node_id) — see §24 Rule 25
     iat:          int
     exp:          int            # max JWT_EXPIRE_MINUTES (60 min)
 ```
@@ -1497,6 +1487,10 @@ async def set_balance(db, product_id, qty):
 ```
 
 ### IMTS: Authority scope resolution
+
+> **ARCHIVED — do not implement or call.** `get_authority_scope()` is dead code (see §1).
+> Scope resolution uses `get_descendant_node_ids()` — §24 Rule 25. The sample below is
+> kept for history only; `get_suggested_sources()` remains valid.
 
 ```python
 # backend/services/inventory-service/services/hierarchy_service.py
@@ -1585,6 +1579,12 @@ POST /api/v1/{tenant}/transfers/sister   # Sister transfer — uses SISTER_TRANS
 ## 15. Tenant Profile & Onboarding Wizard
 
 ### Onboarding Wizard Sets Per-org-type Defaults
+
+> **Status (2026-10):** no frontend screen calls `POST /tenants/{id}/wizard`; tenants are
+> created via `POST /tenants/` (SA). `TIER_DEFAULTS` below conflicts with the SA-editable
+> `platform_tier_config` table (STARTER 3/5, GROWTH 10/25, ENTERPRISE unlimited) and is
+> being replaced by the plan catalog (migration 070). Feature flags are owned by the plan;
+> organisation_type sets approval thresholds only.
 
 The wizard (`POST /tenants/{tenant_id}/wizard`) configures three sets of org-type-dependent defaults:
 feature flags, plan tier/resource limits, and approval workflow thresholds.
@@ -2367,7 +2367,7 @@ These cannot be retrofitted after production data exists without significant dow
 
 | Phase | Duration | Producer / Importer | Retailer / Distributor |
 |---|---|---|---|
-| **Phase 0 — Foundation** | Months 1–3 | Infrastructure only — no user onboarding. Multi-tenant core, RBAC+ABAC (115 actions), immutable ledger (partitioned), RLS, Transactional Outbox + Celery, onboarding wizard, dispatch config tables, PWA + service worker + IndexedDB, language packs (en/am/or), parent_tenant_id placeholder, GitHub Actions CI/CD, permission drift check. Terraform provisions all three AWS environments (dev/stage/prod). | Same foundation. Retailer profile: unlimited SKU flag, full role set, logistics module, Amazon OpenSearch (conditional) implemented. |
+| **Phase 0 — Foundation** | Months 1–3 | Infrastructure only — no user onboarding. Multi-tenant core, RBAC+ABAC (153 actions), immutable ledger (partitioned), RLS, Transactional Outbox + Celery, onboarding wizard, dispatch config tables, PWA + service worker + IndexedDB, language packs (en/am/or), parent_tenant_id placeholder, GitHub Actions CI/CD, permission drift check. Terraform provisions all three AWS environments (dev/stage/prod). | Same foundation. Retailer profile: unlimited SKU flag, full role set, logistics module, Amazon OpenSearch (conditional) implemented. |
 | **Phase 1 — Producer MVP** | Months 4–7 | Onboard first **4–6 Producer/Importer companies**. Receiving, transfer, issue, adjustment, stock count, batch/lot traceability, FEFO/FIFO dispatch engine, approval workflows (WM→RM→NM), state machines, low-stock + expiry alerts, role-scoped dashboards, offline (camera scanning, IndexedDB sync, conflict resolution), English + Amharic + Oromifa, full audit trail. | No Retailer tenants onboarded. Retailer features tested internally. |
 | **Phase 2 — Retailer Onboarding** | Months 7–11 | Remaining Producer tenants settled. Supplier delivery analytics. Read replica routing validated. Additional language packs. | Onboard first **4–6 Retailer/Distributor companies**. Unlimited SKU + pg_trgm at scale, multi-branch dispatch, cycle count scheduling, SKU bulk import, Retailer dashboards, logistics module. Load test: 200-device concurrent offline sync. |
 | **Phase 3 — AI & Scale** | Months 11–16 | Production Demand Forecast AI (PRODUCER cohort — needs 3–4 months history from Phase 1). Route optimisation. POS integration if grocery segment acceleration warranted. ElastiCache Streams evaluation if Celery fan-out shows limits. | Replenishment Recommendations AI (RETAILER cohort). Dead-stock detection. SKU-level forecast caching. POS integration. Flutter native app if scan reliability issues reported. |
@@ -2491,8 +2491,8 @@ Every organization_node has is_stock_holding BOOLEAN.
   is_stock_holding=false nodes participate in the approval chain only —
   they hold no inventory, appear in no balance queries, and cannot be a
   PULL/PUSH source or destination.
-Authority scope is always resolved via get_authority_scope() querying
-  org_node_hierarchy — never inferred from role code alone (see §14, Rule 25).
+Authority scope is always resolved via get_descendant_node_ids()
+  (organization_node.parent_node_id) — never inferred from role code alone (§24 Rule 25).
 ```
 
 ### Product Scoping Rules
@@ -2562,6 +2562,8 @@ These rules exist because each one caused a real outage. Follow them on every ch
 
 ### Before every commit that touches backend Python
 
+Shortcut: `bash scripts/check_imports.sh`
+
 ```
 1. Every touched service must import cleanly:
      cd backend/services/<service> && py -3.12 -c "import main"
@@ -2596,7 +2598,7 @@ Two heads, or "Revision X is present more than once", = STOP and fix.
 ```
 1. Check every service is listening FIRST:
      curl -s http://localhost:<port>/health   for ports 8000-8004
-   The gateway currently returns 500 (not 503) when a downstream service is down.
+   The gateway returns 503 SERVICE_UNAVAILABLE / 504 UPSTREAM_TIMEOUT when a downstream service is down (A2).
 2. Service logs in logs/services/*.log are APPEND-ONLY. Read the END of the file
    and check timestamps — older tracebacks in the same file are unrelated.
 3. NEVER add mock/demo data or frontend fallbacks to make a screen "work".
