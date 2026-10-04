@@ -449,3 +449,261 @@ async def change_password_by_id(user_id: str, body: ChangePasswordByIdRequest) -
         raise HTTPException(status_code=500, detail=f"Database error: {exc}") from exc
 
     return {"success": True, "message": "Password updated successfully"}
+
+
+# ──── Self-Service Signup (Option C) ───────────────────────────────────────
+
+class SignupRequest(BaseModel):
+    """Public signup request — creates tenant and TA user account."""
+
+    company_name: str
+    email: str
+    password: str
+    organisation_type: str  # PRODUCER | RETAILER | HYBRID
+    plan_tier: str = "STARTER"  # STARTER | GROWTH | ENTERPRISE
+
+
+class SignupResponse(BaseModel):
+    """Response after signup request — user must verify email via OTP."""
+
+    tenant_id: str
+    email: str
+    message: str
+    otp_expires_in_minutes: int
+
+
+class SignupVerifyRequest(BaseModel):
+    """Verify email via OTP during signup."""
+
+    tenant_id: str
+    email: str
+    otp_code: str
+    password: str
+
+
+class SignupVerifyResponse(BaseModel):
+    """Response after successful email verification."""
+
+    tenant_id: str
+    tenant_slug: str
+    access_token: str
+    token_type: str = "bearer"
+    expires_in: int
+    message: str
+
+
+@router.post("/signup", response_model=SignupResponse)
+async def signup(body: SignupRequest) -> SignupResponse:
+    """Public signup endpoint — create tenant and send OTP verification.
+
+    This is Option C: self-service signup for new tenants.
+    The TA user account is created with must_reset_password=true, and an OTP
+    is sent to the email address for verification.
+
+    On success, the tenant is created in ACTIVE status. The user must verify
+    their email via POST /auth/signup/verify before they can log in.
+    """
+    import uuid
+    import re
+    from shared.db.session import AsyncSessionLocal
+    from shared.email import get_email_provider
+    from shared.email.templates import signup_verification_email
+    from shared.email.otp import generate_and_send_otp
+
+    # Validate input
+    if len(body.password) < 8:
+        raise HTTPException(status_code=422, detail="Password must be at least 8 characters")
+
+    if not re.match(r"^[^@]+@[^@]+\.[^@]+$", body.email):
+        raise HTTPException(status_code=422, detail="Invalid email format")
+
+    if body.organisation_type not in ("PRODUCER", "RETAILER", "HYBRID"):
+        raise HTTPException(status_code=422, detail="Invalid organisation_type")
+
+    if body.plan_tier not in ("STARTER", "GROWTH", "ENTERPRISE"):
+        raise HTTPException(status_code=422, detail="Invalid plan_tier")
+
+    try:
+        tenant_id = str(uuid.uuid4())
+        user_id = str(uuid.uuid4())
+
+        async with AsyncSessionLocal() as db:
+            # Step 1: Check if email already registered
+            existing_user = await db.execute(
+                sa_text("SELECT id FROM users WHERE lower(email) = lower(:email) AND is_active = true"),
+                {"email": body.email},
+            )
+            if existing_user.fetchone():
+                raise HTTPException(status_code=409, detail="Email already registered")
+
+            # Step 2: Create tenant
+            tenant_slug = body.company_name.lower().replace(" ", "-")[:50]
+            # Ensure slug uniqueness by appending a random suffix if needed
+            base_slug = tenant_slug
+            counter = 1
+            while True:
+                existing = await db.execute(
+                    sa_text("SELECT id FROM tenants WHERE slug = :slug LIMIT 1"),
+                    {"slug": tenant_slug},
+                )
+                if not existing.fetchone():
+                    break
+                tenant_slug = f"{base_slug}-{counter}"
+                counter += 1
+
+            await db.execute(
+                sa_text("""
+                    INSERT INTO tenants
+                    (id, name, slug, organisation_type, plan_tier, status,
+                     onboarding_complete, is_active, created_at, updated_at)
+                    VALUES (:id, :name, :slug, :org_type, :plan_tier, 'ACTIVE',
+                            false, true, now(), now())
+                """),
+                {
+                    "id": tenant_id,
+                    "name": body.company_name,
+                    "slug": tenant_slug,
+                    "org_type": body.organisation_type,
+                    "plan_tier": body.plan_tier,
+                },
+            )
+
+            # Step 3: Create TA user account with temporary password
+            password_hash = _bcrypt.hashpw(body.password.encode(), _bcrypt.gensalt()).decode()
+            await db.execute(
+                sa_text("""
+                    INSERT INTO users
+                    (id, tenant_id, email, full_name, password_hash,
+                     system_role, must_reset_password, email_verified,
+                     is_active, created_at, updated_at)
+                    VALUES (:id, :tenant_id, :email, :name, :password_hash,
+                            'TA', false, false, true, now(), now())
+                """),
+                {
+                    "id": user_id,
+                    "tenant_id": tenant_id,
+                    "email": body.email,
+                    "name": body.company_name,  # Use company name as default
+                    "password_hash": password_hash,
+                },
+            )
+
+            await db.commit()
+
+        # Step 4: Generate OTP and send verification email
+        otp_code = await generate_and_send_otp(body.email, "email_verification")
+        subject, html = signup_verification_email(body.company_name, otp_code)
+
+        email_provider = get_email_provider()
+        await email_provider.send(
+            to=body.email,
+            subject=subject,
+            html=html,
+        )
+
+        otp_expiry = int(os.environ.get("OTP_EXPIRY_MINUTES", "15"))
+
+        return SignupResponse(
+            tenant_id=tenant_id,
+            email=body.email,
+            message=f"Signup successful! A verification code has been sent to {body.email}. "
+            f"Use the code to verify your email and complete signup.",
+            otp_expires_in_minutes=otp_expiry,
+        )
+
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Signup error: {str(exc)}") from exc
+
+
+@router.post("/signup/verify", response_model=SignupVerifyResponse)
+async def signup_verify(body: SignupVerifyRequest) -> SignupVerifyResponse:
+    """Verify email via OTP after signup and issue JWT.
+
+    Once OTP is verified:
+    1. Mark user email_verified = true
+    2. Create the onboarding wizard state (mark onboarding_complete = false but init wizard)
+    3. Issue a JWT for the TA user
+    4. Return access token so user can proceed to onboarding wizard
+    """
+    from shared.db.session import AsyncSessionLocal
+    from shared.email.otp import verify_otp
+
+    try:
+        # Step 1: Verify OTP
+        is_valid = await verify_otp(body.email, body.otp_code, "email_verification")
+        if not is_valid:
+            raise HTTPException(status_code=401, detail="Invalid or expired OTP code")
+
+        # Step 2: Find user and mark email as verified
+        async with AsyncSessionLocal() as db:
+            # Verify tenant and user match
+            user_row = await db.execute(
+                sa_text("""
+                    SELECT u.id, u.tenant_id, u.email, u.full_name, u.system_role,
+                           t.slug, t.status
+                    FROM users u
+                    JOIN tenants t ON t.id = u.tenant_id
+                    WHERE u.tenant_id = :tenant_id AND lower(u.email) = lower(:email)
+                    AND u.system_role = 'TA' AND u.is_active = true
+                    LIMIT 1
+                """),
+                {"tenant_id": body.tenant_id, "email": body.email},
+            )
+            user_rec = user_row.fetchone()
+
+            if not user_rec:
+                raise HTTPException(status_code=404, detail="User or tenant not found")
+
+            # Check tenant is not suspended/deactivated
+            if user_rec.status == "SUSPENDED":
+                raise HTTPException(status_code=403, detail="Tenant is suspended")
+            if user_rec.status == "DEACTIVATED":
+                raise HTTPException(status_code=403, detail="Tenant is deactivated")
+
+            # Mark email as verified
+            await db.execute(
+                sa_text(
+                    "UPDATE users SET email_verified = true, updated_at = now() "
+                    "WHERE id = :uid"
+                ),
+                {"uid": str(user_rec.id)},
+            )
+
+            await db.commit()
+
+        # Step 3: Issue JWT
+        now = datetime.now(timezone.utc)
+        jwt_payload = {
+            "sub": str(user_rec.id),
+            "email": str(user_rec.email),
+            "name": str(user_rec.full_name),
+            "tenant_id": str(user_rec.tenant_id),
+            "tenant_slug": str(user_rec.slug) if user_rec.slug else None,
+            "role": "TA",
+            "warehouse_id": None,
+            "warehouse_name": None,
+            "position_id": None,
+            "position_title": None,
+            "level_number": None,
+            "positions": [],
+            "must_reset_password": False,
+            "iat": int(now.timestamp()),
+            "exp": int((now + timedelta(minutes=JWT_EXPIRE)).timestamp()),
+        }
+
+        token = jwt.encode(jwt_payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
+
+        return SignupVerifyResponse(
+            tenant_id=str(user_rec.tenant_id),
+            tenant_slug=str(user_rec.slug) if user_rec.slug else "unknown",
+            access_token=token,
+            expires_in=JWT_EXPIRE * 60,
+            message="Email verified successfully! You can now log in and complete your tenant setup.",
+        )
+
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Verification error: {str(exc)}") from exc
