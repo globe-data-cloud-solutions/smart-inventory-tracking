@@ -1,4 +1,5 @@
 """API Gateway — JWT validation, rate limiting, plan cap enforcement, request routing."""
+import logging
 import os
 from contextlib import asynccontextmanager
 from typing import Any
@@ -8,6 +9,8 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, Response
 from jose import JWTError, jwt
+
+logger = logging.getLogger("api-gateway")
 
 JWT_SECRET = os.environ.get("JWT_SECRET") or os.environ.get("JWT_SECRET_KEY")
 if not JWT_SECRET:
@@ -88,14 +91,47 @@ async def proxy(request: Request, path: str) -> Response:
     if not target_base:
         raise HTTPException(status_code=404, detail="Route not found")
 
+    matched_prefix = next((p for p in SERVICE_MAP.keys() if full_path.startswith(p)), "")
     target_url = f"{target_base}{full_path}"
-    async with httpx.AsyncClient() as client:
-        resp = await client.request(
-            method=request.method,
-            url=target_url,
-            headers=dict(request.headers),
-            content=await request.body(),
-            params=dict(request.query_params),
+
+    try:
+        async with httpx.AsyncClient() as client:
+            resp = await client.request(
+                method=request.method,
+                url=target_url,
+                headers=dict(request.headers),
+                content=await request.body(),
+                params=dict(request.query_params),
+            )
+    except (httpx.ConnectError, httpx.ConnectTimeout):
+        logger.warning(
+            f"Upstream service for {matched_prefix} is unavailable: "
+            f"{request.method} {full_path}"
+        )
+        return JSONResponse(
+            status_code=503,
+            content={
+                "success": False,
+                "error": {
+                    "code": "SERVICE_UNAVAILABLE",
+                    "message": f"Upstream service for {matched_prefix} is unavailable",
+                },
+            },
+        )
+    except httpx.TimeoutException:
+        logger.warning(
+            f"Upstream service for {matched_prefix} timed out: "
+            f"{request.method} {full_path}"
+        )
+        return JSONResponse(
+            status_code=504,
+            content={
+                "success": False,
+                "error": {
+                    "code": "UPSTREAM_TIMEOUT",
+                    "message": f"Upstream service for {matched_prefix} timed out",
+                },
+            },
         )
 
     return Response(
