@@ -2062,5 +2062,28 @@ Items (d)–(f) were verified by code-path analysis (the relevant data is return
 
 ---
 
+## 20. INCIDENT: tenant-service could not start (2026-09-27 → 2026-10-04)
+
+**Symptom:** SA dashboard showed no tenants; Tenant Admin page, personnel and all `/api/v1/tenants/*` calls failed with 500. Self-signup work (branch `feature/option-c-self-service-signup`) appeared to "break" the SA view repeatedly.
+
+**Root cause:** Commit 58754ee (2026-09-27, "correctly place /me/* routes before /{tenant_id} routes") moved `PATCH /me/contract` to line ~712 but left `ContractUpdateRequest` defined at line ~1565. Importing `routers/tenants.py` raised `NameError`, so tenant-service never started. The API gateway returned 500 on connection refused, masking the real cause.
+
+**Contributing factors:**
+- No import/startup check before commit; unit tests for other services passed.
+- Append-only service logs made a June traceback look current.
+- Signup branch work layered fixes (mock data, CORS, gateway) on a broken base.
+- Signup branch added migration "017" duplicating an existing revision (two Alembic heads).
+
+**Fix:** cda6e78 — `ContractUpdateRequest` moved above `TAProfileUpdateRequest` (move only, no logic change). Verified: service imports (70 routes), tenant-service unit tests 90/90, full backend 392/392, SA `GET /tenants/`, `/sa/registry`, `/{id}` and TA `/me/profile`, `/me/plan` all 200 with 4 tenants.
+
+**Rollback / preservation (nothing deleted):**
+- `archive/option-c-attempt-1` → 86c66ac (15 unpushed signup commits; contains duplicate migration 017 — do NOT merge; salvage pieces selectively)
+- `archive/stash-wip-145a92a` → stash commit (mock-data api.ts, personnel guard, locale strings; also deletes lockfiles — do NOT apply wholesale)
+- `stash@{0}` retained.
+
+**Follow-ups (scheduled in cleanup step):** gateway 503 on downstream failure; per-run service logs in start_backend.sh; personnel assign_position missing valid_from (NotNullViolation); service import smoke check; self-signup to be rebuilt per agreed design starting with migration 070.
+
+---
+
 *SMART Inventory Platform — Bug Report v4.0*  
 *Backend: Python 3.12 / FastAPI · Frontend: Next.js 14 / TypeScript · DB: PostgreSQL 16*
