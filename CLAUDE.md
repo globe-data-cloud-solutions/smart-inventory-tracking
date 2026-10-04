@@ -34,6 +34,8 @@
 25. [Phase 0 — Must Exist Before Any User Is Onboarded](#25-phase-0--must-exist-before-any-user-is-onboarded)
 26. [Phase Roadmap](#26-phase-roadmap)
 27. [UI/UX Rules](#27-uiux-rules)
+28. [Org Hierarchy Configuration](#28-org-hierarchy-configuration)
+29. [Engineering Guardrails — Lessons from Incidents](#29-engineering-guardrails--lessons-from-incidents)
 
 ---
 
@@ -2550,6 +2552,73 @@ NEVER hardcode level names, role display labels, or level-to-role mappings
   tenant_hierarchy_config at runtime and included in API responses.
   Hardcoded labels produce incorrect UX for every tenant that uses
   non-default naming (e.g. "General Manager" vs "National Manager").
+```
+
+---
+
+## 29. Engineering Guardrails — Lessons from Incidents
+
+These rules exist because each one caused a real outage. Follow them on every change.
+
+### Before every commit that touches backend Python
+
+```
+1. Every touched service must import cleanly:
+     cd backend/services/<service> && py -3.12 -c "import main"
+   Route handlers are evaluated at import time. A Pydantic model referenced in a
+   route signature MUST be defined ABOVE that route in the file. Moving routes
+   (e.g. placing /me/* above /{tenant_id}) requires moving their request/response
+   models too. (Incident 2026-09-27 -> 2026-10-04: ContractUpdateRequest defined
+   850 lines below its first use; tenant-service could not start for 7 days.)
+2. Run the service's unit tests AND restart the service; confirm GET /health = 200.
+   A passing test run does not prove the service starts.
+```
+
+### Route ordering in FastAPI routers
+
+```
+Fixed paths (/me/..., /sa/..., /platform/...) MUST be declared before any
+parameterised path (/{tenant_id}...). FastAPI matches in declaration order.
+```
+
+### Alembic migrations
+
+```
+NEVER reuse a revision ID. The next migration number = highest existing + 1
+(check: ls backend/migrations/versions | sort | tail -3).
+down_revision MUST equal the current single head.
+Before committing a migration:  alembic heads  -> must print exactly ONE head.
+Two heads, or "Revision X is present more than once", = STOP and fix.
+```
+
+### Diagnosing "data is missing" / 500 from the gateway
+
+```
+1. Check every service is listening FIRST:
+     curl -s http://localhost:<port>/health   for ports 8000-8004
+   The gateway currently returns 500 (not 503) when a downstream service is down.
+2. Service logs in logs/services/*.log are APPEND-ONLY. Read the END of the file
+   and check timestamps — older tracebacks in the same file are unrelated.
+3. NEVER add mock/demo data or frontend fallbacks to make a screen "work".
+   Mock data hides backend failures and caused a week of false "fixes".
+```
+
+### Local development (current reality)
+
+```
+Despite §5, development currently runs locally: PostgreSQL 18 (smart_dev),
+Redis, services started via scripts/start_backend.sh (ports 8000-8004),
+secrets in the untracked root .env. Always `set -a; source .env; set +a`
+before alembic/psql/pytest. Use `psql -w` with PGPASSWORD — psql otherwise
+waits silently for a password prompt and looks like a hang.
+```
+
+### Git hygiene
+
+```
+NEVER `git stash pop` / `apply` a stash wholesale without reviewing
+`git stash show -p` first. Never commit deletion of package-lock.json or
+pnpm-lock.yaml. Abandoned work is ARCHIVED (archive/<name> branch), never deleted.
 ```
 
 ---
