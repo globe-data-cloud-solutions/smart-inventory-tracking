@@ -11,6 +11,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from dependencies import get_current_user, get_db_session
+from services.wizard_service import APPROVAL_DEFAULTS
 from shared.permissions.middleware import require_permission
 from shared.permissions.registry import PERMISSIONS
 from shared.utils.responses import SuccessResponse
@@ -130,18 +131,6 @@ PLAN_TIER_FEATURE_DEFAULTS: dict[str, dict[str, bool]] = {
     "STARTER":    {"TRANSFERS_SISTER": False},
     "GROWTH":     {"TRANSFERS_SISTER": True},
     "ENTERPRISE": {"TRANSFERS_SISTER": True},
-}
-
-# Mirrors wizard_service.py defaults — used when org_type changes via profile edit.
-FEATURE_FLAG_DEFAULTS: dict[str, dict[str, bool]] = {
-    "PRODUCER": {"LOGISTICS": False, "AI_ANALYTICS": False, "ADVANCED_BATCH_TRACKING": True,  "FLEET_MANAGEMENT": False},
-    "RETAILER": {"LOGISTICS": True,  "AI_ANALYTICS": True,  "ADVANCED_BATCH_TRACKING": False, "FLEET_MANAGEMENT": True},
-    "HYBRID":   {"LOGISTICS": True,  "AI_ANALYTICS": True,  "ADVANCED_BATCH_TRACKING": True,  "FLEET_MANAGEMENT": True},
-}
-APPROVAL_DEFAULTS: dict[str, dict] = {
-    "PRODUCER": {"inventory:adjust": {"low": 100,  "medium": 500}},
-    "RETAILER": {"inventory:adjust": {"low": 500,  "medium": 5000}},
-    "HYBRID":   {"inventory:adjust": {"low": 250,  "medium": 2000}},
 }
 
 
@@ -1165,10 +1154,9 @@ async def update_tenant_profile(
         new_org = changes["organisation_type"][1]
         set_parts.append("organisation_type = CAST(:org_type AS organisation_type)")
         params["org_type"] = new_org
-        # Reset feature flags and approval thresholds to match the new org type.
-        set_parts.append("feature_flags = CAST(:flags AS jsonb)")
+        # Org type change resets approval thresholds only. Feature flags are owned by the
+        # plan/package (CLAUDE.md §15) and are never reset by an org-type change.
         set_parts.append("approval_thresholds = CAST(:thresholds AS jsonb)")
-        params["flags"]      = json.dumps(FEATURE_FLAG_DEFAULTS.get(new_org, {}))
         params["thresholds"] = json.dumps(APPROVAL_DEFAULTS.get(new_org, {}))
 
     if "default_locale" in changes:
