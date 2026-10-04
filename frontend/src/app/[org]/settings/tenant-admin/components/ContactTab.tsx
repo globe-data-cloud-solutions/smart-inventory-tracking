@@ -6,10 +6,12 @@ import { api } from "@/lib/api";
 import { t } from "@/lib/i18n";
 import { TabProps, TenantContact } from "../types";
 
+// Unused by this component today — kept for a future contact-type selector.
+// Labels stored as i18n keys per CLAUDE.md §1; call t() at render time.
 const CONTACT_TYPES = {
-  "Primary": { label: "Primary Contact", icon: "👤" },
-  "Billing": { label: "Billing Contact", icon: "💳" },
-  "Technical": { label: "Technical Contact", icon: "🔧" },
+  Primary: { labelKey: "tenant_admin.contact.type.Primary", icon: "👤" },
+  Billing: { labelKey: "tenant_admin.contact.type.Billing", icon: "💳" },
+  Technical: { labelKey: "tenant_admin.contact.type.Technical", icon: "🔧" },
 };
 
 interface ContactForm {
@@ -50,7 +52,7 @@ export function ContactTab({ tenantId, isLoading }: TabProps) {
     },
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: ["tenant-admin-contacts", tenantId] });
-      setSuccess(editingId ? "Contact updated successfully!" : "Contact added successfully!");
+      setSuccess(editingId ? t("tenant_admin.contact.updated_success") : t("tenant_admin.contact.added_success"));
       resetForm();
       setError(null);
       setTimeout(() => setSuccess(null), 3000);
@@ -64,7 +66,7 @@ export function ContactTab({ tenantId, isLoading }: TabProps) {
     mutationFn: (contactId: string) => api.delete(`/api/v1/tenants/me/contacts/${contactId}`),
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: ["tenant-admin-contacts", tenantId] });
-      setSuccess("Contact deleted successfully!");
+      setSuccess(t("tenant_admin.contact.deleted_success"));
       setError(null);
       setTimeout(() => setSuccess(null), 3000);
     },
@@ -102,20 +104,20 @@ export function ContactTab({ tenantId, isLoading }: TabProps) {
       {/* Contacts List */}
       <div className="bg-white rounded-lg border border-gray-200">
         <div className="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
-          <h3 className="text-lg font-semibold text-gray-800">Contacts</h3>
+          <h3 className="text-lg font-semibold text-gray-800">{t("sa.admin_sub_contacts")}</h3>
           {!showAddForm && !editingId && (
             <button
               onClick={() => setShowAddForm(true)}
               className="text-sm font-semibold text-blue-600 hover:text-blue-700"
             >
-              + Add Contact
+              + {t("sa.contacts_add_btn")}
             </button>
           )}
         </div>
 
         <div className="p-6 space-y-4">
           {contacts.length === 0 ? (
-            <p className="text-sm text-gray-500 text-center py-8">No contacts added yet.</p>
+            <p className="text-sm text-gray-500 text-center py-8">{t("sa.contacts_empty")}</p>
           ) : (
             contacts.map((contact) => (
               <div key={contact.id} className="p-4 border border-gray-200 rounded-lg">
@@ -124,7 +126,7 @@ export function ContactTab({ tenantId, isLoading }: TabProps) {
                     <span className="text-xl">{contact.is_primary ? "⭐" : "👤"}</span>
                     <div>
                       <p className="font-semibold text-gray-800">{contact.full_name}</p>
-                      {contact.is_primary && <p className="text-xs text-amber-600">Primary Contact</p>}
+                      {contact.is_primary && <p className="text-xs text-amber-600">{t("tenant_admin.contact.primary_badge")}</p>}
                     </div>
                   </div>
                   <div className="flex gap-2">
@@ -132,25 +134,25 @@ export function ContactTab({ tenantId, isLoading }: TabProps) {
                       onClick={() => handleEdit(contact)}
                       className="text-sm font-medium text-blue-600 hover:text-blue-700"
                     >
-                      Edit
+                      {t("common.edit")}
                     </button>
                     <button
                       onClick={() => {
-                        if (confirm("Delete this contact?")) {
+                        if (confirm(t("tenant_admin.contact.confirm_delete"))) {
                           deleteMutation.mutate(contact.id);
                         }
                       }}
                       disabled={deleteMutation.isPending}
                       className="text-sm font-medium text-red-600 hover:text-red-700 disabled:opacity-50"
                     >
-                      Delete
+                      {t("common.delete")}
                     </button>
                   </div>
                 </div>
                 <div className="text-sm text-gray-600">
-                  <p>Email: {contact.email}</p>
-                  {contact.phone && <p>Phone: {contact.phone}</p>}
-                  {contact.position_title && <p>Title: {contact.position_title}</p>}
+                  <p>{t("sa.contacts_field_email")}: {contact.email}</p>
+                  {contact.phone && <p>{t("sa.contacts_field_phone")}: {contact.phone}</p>}
+                  {contact.position_title && <p>{t("tenant_admin.contact.title_label")}: {contact.position_title}</p>}
                 </div>
               </div>
             ))
@@ -162,7 +164,7 @@ export function ContactTab({ tenantId, isLoading }: TabProps) {
       {(showAddForm || editingId) && (
         <div className="bg-white rounded-lg border border-gray-200 p-6">
           <h3 className="text-lg font-semibold text-gray-800 mb-4">
-            {editingId ? "Edit Contact" : "Add New Contact"}
+            {editingId ? t("sa.contacts_edit_title") : t("tenant_admin.contact.form_add_title")}
           </h3>
 
           <div className="space-y-4">
@@ -174,55 +176,55 @@ export function ContactTab({ tenantId, isLoading }: TabProps) {
                   onChange={(e) => setFormData({ ...formData, is_primary: e.target.checked })}
                   className="mr-2"
                 />
-                Set as primary contact
+                {t("tenant_admin.contact.set_primary_checkbox")}
               </label>
             </div>
 
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
-                Full Name <span className="text-red-600">*</span>
+                {t("tenant_admin.contact.form_name_label")} <span className="text-red-600">*</span>
               </label>
               <input
                 type="text"
                 value={formData.full_name}
                 onChange={(e) => setFormData({ ...formData, full_name: e.target.value })}
                 className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm"
-                placeholder="Full name"
+                placeholder={t("sa.contacts_field_name")}
               />
             </div>
 
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
-                Email <span className="text-red-600">*</span>
+                {t("sa.contacts_field_email")} <span className="text-red-600">*</span>
               </label>
               <input
                 type="email"
                 value={formData.email}
                 onChange={(e) => setFormData({ ...formData, email: e.target.value })}
                 className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm"
-                placeholder="email@example.com"
+                placeholder={t("tenant_admin.contact.form_email_placeholder")}
               />
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Phone</label>
+              <label className="block text-sm font-medium text-gray-700 mb-1">{t("sa.contacts_field_phone")}</label>
               <input
                 type="tel"
                 value={formData.phone}
                 onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
                 className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm"
-                placeholder="+1 (555) 000-0000"
+                placeholder={t("tenant_admin.contact.form_phone_placeholder")}
               />
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Position/Title</label>
+              <label className="block text-sm font-medium text-gray-700 mb-1">{t("tenant_admin.contact.form_position_label")}</label>
               <input
                 type="text"
                 value={formData.position_title}
                 onChange={(e) => setFormData({ ...formData, position_title: e.target.value })}
                 className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm"
-                placeholder="e.g., Account Manager"
+                placeholder={t("tenant_admin.contact.form_position_placeholder")}
               />
             </div>
 
@@ -237,12 +239,12 @@ export function ContactTab({ tenantId, isLoading }: TabProps) {
                 onClick={resetForm}
                 className="flex-1 px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded hover:bg-gray-50"
               >
-                Cancel
+                {t("common.cancel")}
               </button>
               <button
                 onClick={() => {
                   if (!isValidForm) {
-                    setError("Please fill in name and email");
+                    setError(t("tenant_admin.contact.form_validation_error"));
                     return;
                   }
                   saveMutation.mutate(formData);
@@ -250,7 +252,7 @@ export function ContactTab({ tenantId, isLoading }: TabProps) {
                 disabled={!isValidForm || saveMutation.isPending}
                 className="flex-1 px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded hover:bg-blue-700 disabled:opacity-50"
               >
-                {saveMutation.isPending ? "Saving..." : "Save Contact"}
+                {saveMutation.isPending ? t("common.saving") : t("tenant_admin.contact.form_save_btn")}
               </button>
             </div>
           </div>

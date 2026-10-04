@@ -1527,6 +1527,28 @@
     "profile": {
       "slug": "Slug"
     },
+    "contact": {
+      "type": {
+        "Primary": "Primary Contact",
+        "Billing": "Billing Contact",
+        "Technical": "Technical Contact"
+      },
+      "primary_badge": "Primary Contact",
+      "confirm_delete": "Delete this contact?",
+      "title_label": "Title",
+      "form_add_title": "Add New Contact",
+      "set_primary_checkbox": "Set as primary contact",
+      "form_name_label": "Full Name",
+      "form_email_placeholder": "email@example.com",
+      "form_phone_placeholder": "+1 (555) 000-0000",
+      "form_position_label": "Position/Title",
+      "form_position_placeholder": "e.g., Account Manager",
+      "form_validation_error": "Please fill in name and email",
+      "form_save_btn": "Save Contact",
+      "updated_success": "Contact updated successfully!",
+      "added_success": "Contact added successfully!",
+      "deleted_success": "Contact deleted successfully!"
+    },
     "plan": {
       "tier": {
         "STARTER": "Starter",

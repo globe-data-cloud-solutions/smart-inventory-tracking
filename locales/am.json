@@ -1537,6 +1537,28 @@
     "profile": {
       "slug": "Slug"
     },
+    "contact": {
+      "type": {
+        "Primary": "ዋና ያገናኝ",
+        "Billing": "የክፍያ ያገናኝ",
+        "Technical": "ቴክኒካል ያገናኝ"
+      },
+      "primary_badge": "ዋና ያገናኝ",
+      "confirm_delete": "ይህን ያገናኝ መሰረዝ ይፈልጋሉ?",
+      "title_label": "ርዕስ",
+      "form_add_title": "አዲስ ያገናኝ ጨምር",
+      "set_primary_checkbox": "እንደ ዋና ያገናኝ አድርግ",
+      "form_name_label": "ሙሉ ስም",
+      "form_email_placeholder": "email@example.com",
+      "form_phone_placeholder": "+1 (555) 000-0000",
+      "form_position_label": "ቦታ/ርዕስ",
+      "form_position_placeholder": "ለምሳሌ፦ የሂሳብ ሥራ አስኪያጅ",
+      "form_validation_error": "እባክዎ ስም እና ኢሜይል ይሙሉ።",
+      "form_save_btn": "ያገናኝ አስቀምጥ",
+      "updated_success": "ያገናኝ በተሳካ ሁኔታ ተዘምኗል!",
+      "added_success": "ያገናኝ በተሳካ ሁኔታ ተጨምሯል!",
+      "deleted_success": "ያገናኝ በተሳካ ሁኔታ ተሰርዟል!"
+    },
     "plan": {
       "tier": {
         "STARTER": "Starter",
