@@ -181,13 +181,48 @@ class TestCreateProduct:
         assert body["detail"]["code"]           == "sku_cap_reached"
         assert body["detail"]["upgrade_prompt"] is True
 
+    # 11b — SKU cap reached (RETAILER) → 429 ──────────────────────────────────
+    # sku_cap applies to every organisation type, not just PRODUCER (CLAUDE.md §24 rule 16).
+
+    async def test_11b_sku_cap_reached_applies_to_retailer_too(
+        self, client: AsyncClient, product_app
+    ) -> None:
+        db = _cap_db(cap=10, current_count=10, org_type="RETAILER")
+        product_app.dependency_overrides[get_db_session] = _make_db_override(db)
+        try:
+            with _patch_perm(True), _patch_audit():
+                r = await client.post("/api/v1/products/", json=VALID_BODY)
+        finally:
+            product_app.dependency_overrides.pop(get_db_session, None)
+
+        assert r.status_code == 429
+        body = r.json()
+        assert body["detail"]["code"]           == "sku_cap_reached"
+        assert body["detail"]["upgrade_prompt"] is True
+
     # 12 — RETAILER not capped ────────────────────────────────────────────────
 
     async def test_12_retailer_not_capped(self) -> None:
-        """RETAILER has sku_cap = NULL — cap guard is skipped entirely."""
+        """RETAILER with sku_cap = NULL — cap guard is skipped because sku_cap
+        is falsy, not because of organisation_type (which no longer gates it)."""
         tenant = MagicMock(organisation_type="RETAILER", sku_cap=None)
-        skipped = not (tenant.organisation_type == "PRODUCER" and tenant.sku_cap)
+        skipped = not tenant.sku_cap
         assert skipped
+
+    # 12b — RETAILER with sku_cap NULL → create succeeds (unlimited) ─────────
+
+    async def test_12b_retailer_sku_cap_null_create_succeeds(
+        self, client: AsyncClient, product_app
+    ) -> None:
+        db = _make_mock_db(org_type="RETAILER", sku_cap=None)
+        product_app.dependency_overrides[get_db_session] = _make_db_override(db)
+        try:
+            with _patch_perm(True), _patch_audit():
+                r = await client.post("/api/v1/products/", json=VALID_BODY)
+        finally:
+            product_app.dependency_overrides.pop(get_db_session, None)
+
+        assert r.status_code == 201
 
     # 13 — Audit log written on every successful create ───────────────────────
 

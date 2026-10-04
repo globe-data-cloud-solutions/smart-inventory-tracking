@@ -340,7 +340,7 @@ async def create_product(
       403  RBAC_DENIED / ABAC_DENIED
       409  duplicate_product_name | duplicate_sku
       422  invalid_type_code
-      429  sku_cap_reached (PRODUCER tenants only)
+      429  sku_cap_reached (applies whenever tenant.sku_cap is set, any organisation_type)
     """
     tid = str(user.tenant_id)
     uid = str(user.user_id) if getattr(user, "user_id", None) else None
@@ -356,8 +356,8 @@ async def create_product(
     if not tenant:
         raise HTTPException(status_code=404, detail="Tenant not found")
 
-    # 2. SKU cap — PRODUCER tenants only.
-    if tenant.organisation_type == "PRODUCER" and tenant.sku_cap:
+    # 2. SKU cap — applies to every organisation type (CLAUDE.md §24 rule 16).
+    if tenant.sku_cap:
         count_result = await db.execute(
             text("SELECT COUNT(*) FROM products WHERE tenant_id = :tid AND is_active = true"),
             {"tid": tid},
