@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import { t } from "@/lib/i18n";
@@ -103,16 +104,124 @@ export function PlanTab({ tenantId, isLoading }: TabProps) {
         </div>
       </div>
 
-      {/* Request Upgrade CTA */}
-      <div className="bg-gradient-to-r from-emerald-50 to-blue-50 rounded-lg border border-emerald-200 p-6">
-        <h4 className="font-semibold text-gray-800 mb-2">Ready to Upgrade?</h4>
-        <p className="text-sm text-gray-700 mb-4">
-          Request a plan upgrade to unlock more features, users, and warehouses.
-        </p>
-        <button className="px-4 py-2 text-sm font-medium text-white bg-emerald-600 rounded hover:bg-emerald-700">
-          Request Plan Upgrade
-        </button>
-      </div>
+      {/* Upgrade CTA */}
+      <UpgradeSection currentTier={tier.name} />
     </div>
   );
 }
+
+function UpgradeSection({ currentTier }: { currentTier: string }) {
+  const [showModal, setShowModal] = useState(false);
+  const [selectedTier, setSelectedTier] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+
+  const UPGRADE_PATHS = {
+    Starter: [{ tier: "GROWTH", label: "Growth" }, { tier: "ENTERPRISE", label: "Enterprise" }],
+    Growth: [{ tier: "ENTERPRISE", label: "Enterprise" }],
+    Enterprise: [],
+  } as const;
+
+  const upgrades = UPGRADE_PATHS[currentTier as keyof typeof UPGRADE_PATHS] || [];
+
+  if (upgrades.length === 0) {
+    return (
+      <div className="bg-gradient-to-r from-blue-50 to-emerald-50 rounded-lg border border-blue-200 p-6">
+        <h4 className="font-semibold text-gray-800 mb-2">Enterprise Plan</h4>
+        <p className="text-sm text-gray-700">You're on our highest plan tier. Contact support for custom arrangements.</p>
+      </div>
+    );
+  }
+
+  const handleUpgrade = async () => {
+    if (!selectedTier) return;
+    setError("");
+    setLoading(true);
+
+    try {
+      const response = await fetch("/api/v1/tenants/me/plan", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ new_plan_tier: selectedTier }),
+      });
+
+      const data = await response.json();
+      if (!response.ok) {
+        setError(data.error?.message || "Upgrade failed");
+        return;
+      }
+
+      setShowModal(false);
+      window.location.reload(); // Reload to show new plan
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Upgrade failed");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <>
+      <div className="bg-gradient-to-r from-emerald-50 to-blue-50 rounded-lg border border-emerald-200 p-6">
+        <h4 className="font-semibold text-gray-800 mb-2">Ready to Upgrade?</h4>
+        <p className="text-sm text-gray-700 mb-4">
+          Upgrade to unlock more features, users, and warehouses.
+        </p>
+        <button
+          onClick={() => setShowModal(true)}
+          className="px-4 py-2 text-sm font-medium text-white bg-emerald-600 rounded hover:bg-emerald-700"
+        >
+          Upgrade Plan
+        </button>
+      </div>
+
+      {/* Upgrade Modal */}
+      {showModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-lg max-w-md w-full p-6 space-y-4">
+            <h3 className="text-lg font-semibold text-gray-800">Upgrade Your Plan</h3>
+
+            {error && (
+              <div className="p-3 bg-red-50 border border-red-200 text-red-700 rounded text-sm">{error}</div>
+            )}
+
+            <div className="space-y-2">
+              {upgrades.map((option) => (
+                <button
+                  key={option.tier}
+                  onClick={() => setSelectedTier(option.tier)}
+                  className={`w-full p-3 text-left rounded border-2 transition-colors ${
+                    selectedTier === option.tier
+                      ? "border-emerald-600 bg-emerald-50"
+                      : "border-gray-200 bg-white hover:bg-gray-50"
+                  }`}
+                >
+                  <p className="font-medium text-gray-800">{option.label}</p>
+                  <p className="text-xs text-gray-500">Higher limits and more features</p>
+                </button>
+              ))}
+            </div>
+
+            <div className="flex gap-2 pt-4">
+              <button
+                onClick={() => setShowModal(false)}
+                disabled={loading}
+                className="flex-1 px-4 py-2 text-sm font-medium bg-gray-100 text-gray-800 rounded hover:bg-gray-200 disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleUpgrade}
+                disabled={!selectedTier || loading}
+                className="flex-1 px-4 py-2 text-sm font-medium text-white bg-emerald-600 rounded hover:bg-emerald-700 disabled:opacity-50"
+              >
+                {loading ? "Upgrading..." : "Confirm"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </>
+  );
+}
+

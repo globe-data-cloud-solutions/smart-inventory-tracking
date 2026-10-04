@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import { login, loginWithDevEmail } from "@/lib/demo-auth";
 import { SA_USER } from "@/lib/demo-data";
 import { t } from "@/lib/i18n";
@@ -202,6 +203,14 @@ export default function LoginPage() {
                 ) : "Sign in →"}
               </button>
             </form>
+
+            {/* Signup link */}
+            <p className="text-center text-slate-400 text-sm mt-6">
+              Don't have an account?{" "}
+              <Link href="/signup" className="text-brand-400 hover:text-brand-300 font-medium">
+                Sign up
+              </Link>
+            </p>
 
             {/* Mobile credentials hint */}
             <div className="mt-6 p-4 rounded-lg bg-brand-50 border border-brand-100 lg:hidden">
