@@ -70,10 +70,14 @@ async def consume_verification_token(db: AsyncSession, raw: str) -> Optional[str
 
 
 def send_verification_email(email: str, raw_token: str) -> None:
-    """EMAIL_DELIVERY_MODE=log (default): logs the verification link — this is
-    the dev-mode sender, the only place the raw token is ever written anywhere.
-    Any other value: SES is not wired up yet (comes with the AWS deploy)."""
-    mode = os.environ.get("EMAIL_DELIVERY_MODE", "log")
+    """EMAIL_DELIVERY_MODE default depends on ENVIRONMENT: "log" (the dev-mode
+    sender, the only place the raw token is ever written anywhere) only when
+    ENVIRONMENT=local; everything else (including an unset ENVIRONMENT, as on
+    AWS) defaults to "disabled" so a misconfigured deploy never writes a live
+    verification link to CloudWatch. "disabled" or any other value: SES is not
+    wired up yet (comes with the AWS deploy)."""
+    default_mode = "log" if os.environ.get("ENVIRONMENT", "") == "local" else "disabled"
+    mode = os.environ.get("EMAIL_DELIVERY_MODE", default_mode)
     if mode == "log":
         # warning, not info: nothing in this codebase raises the root logger
         # level above the default (WARNING), so info() here would be silently

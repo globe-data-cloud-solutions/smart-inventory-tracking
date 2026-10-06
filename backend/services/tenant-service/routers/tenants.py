@@ -1728,6 +1728,7 @@ async def update_tenant_contract(
 
 
 @router.patch("/{tenant_id}/suspend", response_model=SuccessResponse[TenantStatusResponse])
+@require_permission(PERMISSIONS.TENANT_DEACTIVATE)
 async def suspend_tenant(
     tenant_id: uuid.UUID,
     user=Depends(get_current_user),
@@ -1761,6 +1762,7 @@ async def suspend_tenant(
 
 
 @router.patch("/{tenant_id}/reactivate", response_model=SuccessResponse[TenantStatusResponse])
+@require_permission(PERMISSIONS.TENANT_DEACTIVATE)
 async def reactivate_tenant(
     tenant_id: uuid.UUID,
     user=Depends(get_current_user),
@@ -1792,6 +1794,7 @@ async def reactivate_tenant(
 
 
 @router.patch("/{tenant_id}/deactivate", response_model=SuccessResponse[TenantStatusResponse])
+@require_permission(PERMISSIONS.TENANT_DEACTIVATE)
 async def deactivate_tenant(
     tenant_id: uuid.UUID,
     user=Depends(get_current_user),

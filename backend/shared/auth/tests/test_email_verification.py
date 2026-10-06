@@ -1,5 +1,6 @@
-"""Unit tests for shared.auth.email_verification — token issuance and
-single-use consumption. DB access is mocked; no real connection required."""
+"""Unit tests for shared.auth.email_verification — token issuance,
+single-use consumption, and the ENVIRONMENT-aware delivery-mode default.
+DB access is mocked; no real connection required."""
 from __future__ import annotations
 
 from unittest.mock import AsyncMock, MagicMock
@@ -10,6 +11,7 @@ from shared.auth.email_verification import (
     _hash_token,
     consume_verification_token,
     issue_verification_token,
+    send_verification_email,
 )
 
 
@@ -72,3 +74,34 @@ async def test_consume_garbage_token_returns_none() -> None:
 
     result = await consume_verification_token(db, "not-a-real-token")
     assert result is None
+
+
+def test_send_verification_email_disabled_by_default_off_local(monkeypatch) -> None:
+    """An unset ENVIRONMENT (as a misconfigured AWS deploy would have) must
+    never fall back to writing the live verification link to CloudWatch."""
+    monkeypatch.delenv("ENVIRONMENT", raising=False)
+    monkeypatch.delenv("EMAIL_DELIVERY_MODE", raising=False)
+    with pytest.raises(NotImplementedError):
+        send_verification_email("user@example.com", "raw-token")
+
+
+def test_send_verification_email_disabled_when_environment_not_local(monkeypatch) -> None:
+    monkeypatch.setenv("ENVIRONMENT", "stage")
+    monkeypatch.delenv("EMAIL_DELIVERY_MODE", raising=False)
+    with pytest.raises(NotImplementedError):
+        send_verification_email("user@example.com", "raw-token")
+
+
+def test_send_verification_email_logs_when_environment_local(monkeypatch, caplog) -> None:
+    monkeypatch.setenv("ENVIRONMENT", "local")
+    monkeypatch.delenv("EMAIL_DELIVERY_MODE", raising=False)
+    send_verification_email("user@example.com", "raw-token")
+    assert "[DEV EMAIL]" in caplog.text
+
+
+def test_send_verification_email_explicit_mode_overrides_environment(monkeypatch, caplog) -> None:
+    """An explicit EMAIL_DELIVERY_MODE always wins over the ENVIRONMENT-derived default."""
+    monkeypatch.setenv("ENVIRONMENT", "stage")
+    monkeypatch.setenv("EMAIL_DELIVERY_MODE", "log")
+    send_verification_email("user@example.com", "raw-token")
+    assert "[DEV EMAIL]" in caplog.text

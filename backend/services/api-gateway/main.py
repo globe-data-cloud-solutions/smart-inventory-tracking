@@ -20,6 +20,13 @@ if not JWT_SECRET:
     )
 JWT_ALGORITHM = os.environ.get("JWT_ALGORITHM", "HS256")
 
+# Behind an ALB, request.client.host is the load balancer, not the caller —
+# every user would otherwise share one rate-limit bucket. 0 (default, today's
+# local behaviour) trusts the direct connection; n>0 reads the n-th entry from
+# the RIGHT of the incoming X-Forwarded-For (the ALB appends the real client
+# IP as the first hop, so counting from the right skips any hops it added).
+TRUSTED_PROXY_HOPS = int(os.environ.get("TRUSTED_PROXY_HOPS", "0"))
+
 SERVICE_MAP = {
     "/api/v1/auth":      os.environ.get("AUTH_SERVICE_URL",       "http://auth-service:8000"),
     "/api/v1/tenants":   os.environ.get("TENANT_SERVICE_URL",     "http://tenant-service:8000"),
@@ -66,6 +73,20 @@ app.add_middleware(
 )
 
 
+def _resolve_client_ip(request: Request) -> str:
+    """The real caller IP, trusted only to the configured proxy depth.
+    Incoming X-Real-IP is never trusted (handled by the caller, which always
+    overwrites it) — this only decides what to overwrite it WITH."""
+    direct = request.client.host if request.client else "unknown"
+    if TRUSTED_PROXY_HOPS <= 0:
+        return direct
+    forwarded_for = request.headers.get("X-Forwarded-For", "")
+    hops = [h.strip() for h in forwarded_for.split(",") if h.strip()]
+    if len(hops) < TRUSTED_PROXY_HOPS:
+        return direct
+    return hops[-TRUSTED_PROXY_HOPS]
+
+
 def _decode_jwt(token: str) -> dict[str, Any]:
     try:
         return jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
@@ -106,7 +127,7 @@ async def proxy(request: Request, path: str) -> Response:
     # downstream — always set it from the actual connection, overwriting any
     # incoming value so a caller cannot spoof another IP's rate limit.
     proxied_headers = {k: v for k, v in request.headers.items() if k.lower() != "x-real-ip"}
-    proxied_headers["X-Real-IP"] = request.client.host if request.client else "unknown"
+    proxied_headers["X-Real-IP"] = _resolve_client_ip(request)
 
     try:
         async with httpx.AsyncClient() as client:
