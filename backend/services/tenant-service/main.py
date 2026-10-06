@@ -6,7 +6,7 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from routers import adjustment_approval, hierarchy, personnel_v2, positions, self_approval, tenants, transfer_types, wizard
+from routers import adjustment_approval, hierarchy, personnel_v2, positions, public_signup, self_approval, tenants, transfer_types, wizard
 
 
 @asynccontextmanager
@@ -32,6 +32,7 @@ async def unhandled_exception_handler(request: Request, exc: Exception) -> JSONR
         content={"success": False, "error": {"code": "INTERNAL_ERROR", "message": str(exc)}},
     )
 
+app.include_router(public_signup.router,  prefix="/api/v1/tenants", tags=["public-signup"])
 app.include_router(tenants.router,        prefix="/api/v1/tenants", tags=["tenants"])
 app.include_router(wizard.router,         prefix="/api/v1/tenants", tags=["wizard"])
 app.include_router(hierarchy.router,      prefix="/api/v1/tenants", tags=["hierarchy"])

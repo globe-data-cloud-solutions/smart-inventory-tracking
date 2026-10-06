@@ -29,6 +29,14 @@ ALLOWLISTED_PUBLIC_ROUTES: dict[str, list[str]] = {
         "refresh_token",
         # Local-dev password change endpoint — protected by ENVIRONMENT=local guard, not JWT.
         "change_password_by_id",
+        # Public email verification (S4) — no SMART JWT exists until the user signs in.
+        "verify_email",
+        "resend_verification",
+    ],
+    "backend/services/tenant-service/routers/public_signup.py": [
+        # Public self sign-up (S4) — no SMART JWT exists until the account is created.
+        "list_public_packages",
+        "public_signup",
     ],
 }
 

@@ -40,7 +40,15 @@ SERVICE_MAP = {
     "/api/v1/analytics": os.environ.get("ANALYTICS_SERVICE_URL",  "http://analytics-service:8000"),
 }
 
-UNAUTHENTICATED_PATHS = {"/api/v1/auth/token", "/health"}
+UNAUTHENTICATED_PATHS = {
+    "/api/v1/auth/token",
+    "/health",
+    # Public sign-up (S4) — exact-match only, never a prefix.
+    "/api/v1/tenants/public/packages",
+    "/api/v1/tenants/public/signup",
+    "/api/v1/auth/verify-email",
+    "/api/v1/auth/resend-verification",
+}
 
 
 @asynccontextmanager
@@ -94,12 +102,18 @@ async def proxy(request: Request, path: str) -> Response:
     matched_prefix = next((p for p in SERVICE_MAP.keys() if full_path.startswith(p)), "")
     target_url = f"{target_base}{full_path}"
 
+    # X-Real-IP is the rate-limit key for public sign-up/verification endpoints
+    # downstream — always set it from the actual connection, overwriting any
+    # incoming value so a caller cannot spoof another IP's rate limit.
+    proxied_headers = {k: v for k, v in request.headers.items() if k.lower() != "x-real-ip"}
+    proxied_headers["X-Real-IP"] = request.client.host if request.client else "unknown"
+
     try:
         async with httpx.AsyncClient() as client:
             resp = await client.request(
                 method=request.method,
                 url=target_url,
-                headers=dict(request.headers),
+                headers=proxied_headers,
                 content=await request.body(),
                 params=dict(request.query_params),
             )

@@ -75,7 +75,11 @@ def send_verification_email(email: str, raw_token: str) -> None:
     Any other value: SES is not wired up yet (comes with the AWS deploy)."""
     mode = os.environ.get("EMAIL_DELIVERY_MODE", "log")
     if mode == "log":
-        logger.info(
+        # warning, not info: nothing in this codebase raises the root logger
+        # level above the default (WARNING), so info() here would be silently
+        # swallowed and this dev-mode line is the only way to retrieve the
+        # token locally.
+        logger.warning(
             "[DEV EMAIL] verify %s: %s/verify-email?token=%s", email, APP_BASE_URL, raw_token
         )
         return
