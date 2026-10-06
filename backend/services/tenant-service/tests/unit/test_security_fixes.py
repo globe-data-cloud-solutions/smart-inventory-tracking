@@ -19,6 +19,7 @@ _TENANT_ROOT = os.path.normpath(os.path.join(os.path.dirname(__file__), "..", ".
 if _TENANT_ROOT not in sys.path:
     sys.path.insert(0, _TENANT_ROOT)
 
+from decimal import Decimal
 from uuid import UUID, uuid4
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -59,6 +60,22 @@ def _catalog_row(tier: str = "GROWTH") -> MagicMock:
     row.feature_flags = {"CORE_INVENTORY": True}
     row.is_public = True
     row.sort_order = 1
+    return row
+
+
+_ANNUAL_PRICES = {
+    "STARTER": "1000.00", "GROWTH": "2000.00", "ENTERPRISE": "3000.00",
+}
+
+
+def _price_row(tier: str = "GROWTH") -> MagicMock:
+    """A package_prices row, for mocking shared.billing.subscriptions.get_current_price()."""
+    row = MagicMock()
+    row.id = f"price-{tier.lower()}-annual"
+    row.tier = tier
+    row.billing_period = "ANNUAL"
+    row.currency = "ETB"
+    row.amount = Decimal(_ANNUAL_PRICES.get(tier, _ANNUAL_PRICES["GROWTH"]))
     return row
 
 
@@ -314,6 +331,10 @@ class TestTenantSlug:
                 res = MagicMock()
                 res.fetchone = MagicMock(return_value=_catalog_row(body.plan_tier))
                 return res
+            if "package_prices" in str(sql):
+                res = MagicMock()
+                res.fetchone = MagicMock(return_value=_price_row(body.plan_tier))
+                return res
             res = MagicMock()
             res.fetchone = MagicMock(return_value=None)   # no collision
             res.scalar   = MagicMock(return_value=None)
@@ -404,6 +425,10 @@ class TestTenantSlug:
                 res = MagicMock()
                 res.fetchone = MagicMock(return_value=_catalog_row(body.plan_tier))
                 return res
+            if "package_prices" in str(sql):
+                res = MagicMock()
+                res.fetchone = MagicMock(return_value=_price_row(body.plan_tier))
+                return res
             res = MagicMock()
             res.fetchone = MagicMock(return_value=None)
             res.scalar   = MagicMock(return_value=None)
@@ -448,6 +473,10 @@ class TestTenantOrganisationType:
             if "platform_tier_config" in str(sql):
                 res = MagicMock()
                 res.fetchone = MagicMock(return_value=_catalog_row(body.plan_tier))
+                return res
+            if "package_prices" in str(sql):
+                res = MagicMock()
+                res.fetchone = MagicMock(return_value=_price_row(body.plan_tier))
                 return res
             res = MagicMock()
             res.fetchone = MagicMock(return_value=None)   # no slug collision

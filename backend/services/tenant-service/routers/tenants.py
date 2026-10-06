@@ -14,6 +14,7 @@ from dependencies import get_current_user, get_db_session
 from services.wizard_service import APPROVAL_DEFAULTS
 from shared.permissions.middleware import require_permission
 from shared.permissions.registry import PERMISSIONS
+from shared.billing.subscriptions import start_subscription
 from shared.plans.catalog import UNSET, apply_package_to_tenant
 from shared.utils.responses import SuccessResponse
 from schemas.tenant import TenantCreateRequest, TenantResponse, VALID_PLAN_TIERS, VALID_LOCALES
@@ -560,6 +561,20 @@ async def create_tenant(
             detail={"code": "INVALID_TIER", "message": str(exc)},
         ) from exc
 
+    # Package catalog set the entitlements above; this snapshots the current
+    # price and starts the tenant's contract (CLAUDE.md §15). signup_source
+    # stays the column default 'SA'.
+    try:
+        await start_subscription(
+            db, tenant_id, body.plan_tier, "ANNUAL",
+            status="ACTIVE", provider="MANUAL", created_by=user.user_id,
+        )
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=422,
+            detail={"code": "PRICE_NOT_AVAILABLE", "message": str(exc)},
+        ) from exc
+
     # Atomic TA admin user creation — same DB transaction as tenant INSERT.
     admin_user_id: Optional[uuid.UUID] = None
     admin_email_out: Optional[str] = None
@@ -584,8 +599,8 @@ async def create_tenant(
                 text(
                     "INSERT INTO users "
                     "  (id, tenant_id, email, full_name, password_hash, "
-                    "   is_active, must_reset_password, system_role) "
-                    "VALUES (:id, :tid, :email, :name, :hash, true, true, 'TA')"
+                    "   is_active, must_reset_password, system_role, is_account_owner) "
+                    "VALUES (:id, :tid, :email, :name, :hash, true, true, 'TA', true)"
                 ),
                 {
                     "id":    str(admin_user_id),
