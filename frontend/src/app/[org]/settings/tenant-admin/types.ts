@@ -43,7 +43,14 @@ export interface TenantContact {
 }
 
 export interface TabProps {
-  tenantId: string;
+  /**
+   * Real tenant UUID — present only when an SA is viewing another tenant's
+   * settings (frontend/src/app/[org]/settings/tenants/[tenantId]/page.tsx).
+   * When set, every tab calls the SA by-tenant endpoint (/api/v1/tenants/{tenantId}/...)
+   * instead of the TA self-service one (/api/v1/tenants/me/...) and enables
+   * SA-only controls. The TA's own page (tenant-admin/page.tsx) never passes this.
+   */
+  tenantId?: string;
   isLoading?: boolean;
   readonly?: boolean;
 }

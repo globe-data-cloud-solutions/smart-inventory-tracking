@@ -945,6 +945,7 @@
     "activity_action_CONTACT_UPDATED": "Contact updated",
     "activity_by": "by",
     "activity_drawer_close": "Close",
+    "open_tenant": "Open",
     "view_activity": "Activity",
     "col_end_date": "End Date",
     "col_contact_count": "Contacts",
@@ -1670,6 +1671,44 @@
         "FAILED": "Failed",
         "CANCELLED": "Cancelled"
       }
+    }
+  },
+  "sa_tenant": {
+    "open_dashboard_admin_link": "Open in SA dashboard → Admin tab",
+    "restricted": "You don't have access to this page.",
+    "back_to_registry": "← Back to Tenant Registry",
+    "help_banner": {
+      "content": "You're viewing this tenant's settings as a System Admin. Reads come from this tenant's own data; some edits (plan tier, contract dates) stay on the SA dashboard's Admin tab and are linked from here."
+    },
+    "plan": {
+      "change_elsewhere": "To change this tenant's plan tier or SKU cap, use the SA dashboard's Admin tab."
+    },
+    "contract": {
+      "edit_elsewhere": "To edit this tenant's contract dates, use the SA dashboard's Admin tab."
+    },
+    "billing": {
+      "raise_invoice_btn": "Raise Invoice",
+      "raise_invoice_confirm": "Raise a new invoice for the next billing period?",
+      "raise_invoice_already_pending": "This subscription already has a pending invoice — raising a new one will fail.",
+      "raise_invoice_success": "Invoice raised for {period}, total {total}.",
+      "confirm_yes": "Yes",
+      "confirm_no": "No",
+      "mark_paid_btn": "Mark Paid",
+      "cancel_invoice_btn": "Cancel",
+      "mark_paid_confirm": "Mark this invoice paid? Amount: {amount}. This moves the tenant's contract end date to {contract_end}.",
+      "mark_paid_success": "Payment marked paid.",
+      "cancel_success": "Invoice cancelled.",
+      "provider_reference_label": "Reference (optional)",
+      "note_optional_label": "Note (optional)",
+      "note_required_label": "Note (required)"
+    },
+    "billing_error": {
+      "INVOICE_ALREADY_PENDING": "This subscription already has a pending invoice.",
+      "NO_LIVE_SUBSCRIPTION": "This tenant has no active subscription.",
+      "INVALID_PAYMENT_STATE": "That payment is not in a state this action can be applied to.",
+      "WRONG_PROVIDER": "Only manually-invoiced payments can be marked paid here.",
+      "PRICE_NOT_AVAILABLE": "No price is configured for this plan and billing period.",
+      "PAYMENT_NOT_FOUND": "That payment could not be found."
     }
   },
   "platform_plans": {

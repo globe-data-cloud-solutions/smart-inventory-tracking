@@ -1,14 +1,17 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
+import Link from "next/link";
 import { api } from "@/lib/api";
 import { t } from "@/lib/i18n";
 import { TabProps, TenantAdminData } from "../types";
 
 export function ContractTab({ tenantId, isLoading }: TabProps) {
+  const readPath = tenantId ? `/api/v1/tenants/${tenantId}` : `/api/v1/tenants/me/profile`;
+
   const { data: tenant, isLoading: loadingTenant } = useQuery<TenantAdminData>({
-    queryKey: ["tenant-admin-contract", tenantId],
-    queryFn: () => api.get<TenantAdminData>(`/api/v1/tenants/me/profile`),
+    queryKey: ["tenant-admin-contract", tenantId ?? "me"],
+    queryFn: () => api.get<TenantAdminData>(readPath),
     staleTime: 30_000,
   });
 
@@ -84,9 +87,18 @@ export function ContractTab({ tenantId, isLoading }: TabProps) {
         </div>
       </div>
 
-      {/* Info Note — contract dates are platform-managed, TA has no write path */}
+      {/* Info Note — contract dates are platform-managed; TA has no write path here.
+          SA edits contract dates from the SA dashboard's Admin tab (PATCH /{tenant_id}/contract) —
+          link there rather than duplicating that edit form (CLAUDE.md §15). */}
       <div className="p-4 bg-blue-50 border border-blue-200 rounded-lg">
-        <p className="text-sm text-blue-900">{t("tenant_admin.contract.managed_by_platform")}</p>
+        <p className="text-sm text-blue-900">
+          {tenantId ? t("sa_tenant.contract.edit_elsewhere") : t("tenant_admin.contract.managed_by_platform")}
+        </p>
+        {tenantId && (
+          <Link href="/admin/dashboard" className="text-sm font-semibold text-blue-700 hover:underline mt-1 inline-block">
+            {t("sa_tenant.open_dashboard_admin_link")}
+          </Link>
+        )}
       </div>
     </div>
   );

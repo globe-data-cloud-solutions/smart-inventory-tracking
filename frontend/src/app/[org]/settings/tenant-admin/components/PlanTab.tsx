@@ -1,7 +1,8 @@
 "use client";
 
 import { Fragment, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import Link from "next/link";
 import { api } from "@/lib/api";
 import { t } from "@/lib/i18n";
 import { formatCurrency } from "@/lib/utils";
@@ -40,6 +41,23 @@ const PAYMENT_BADGE: Record<string, "success" | "warning" | "danger" | "neutral"
   FAILED: "danger",
   CANCELLED: "neutral",
 };
+
+// Error codes billing.py's _map_value_error / inline checks can raise on the
+// SA invoice/payment actions below — mapped to sa_tenant.billing_error.<code>.
+const BILLING_ERROR_CODES = new Set([
+  "INVOICE_ALREADY_PENDING",
+  "NO_LIVE_SUBSCRIPTION",
+  "INVALID_PAYMENT_STATE",
+  "WRONG_PROVIDER",
+  "PRICE_NOT_AVAILABLE",
+  "PAYMENT_NOT_FOUND",
+]);
+
+function billingErrorMessage(e: unknown): string {
+  const code = (e as { code?: string } | undefined)?.code;
+  if (code && BILLING_ERROR_CODES.has(code)) return t(`sa_tenant.billing_error.${code}`);
+  return e instanceof Error ? e.message : t("common.error");
+}
 
 interface PaymentLineItem {
   item_type: string;
@@ -85,15 +103,40 @@ interface CheckoutOut {
   checkout: { type: string; instructions_key?: string; url?: string };
 }
 
-function SubscriptionAndInvoices({ tenantId }: { tenantId: string }) {
+interface RaiseInvoiceResult {
+  payment_id: string;
+  period_start: string;
+  period_end: string;
+  total: string;
+  // create_invoice()'s response omits currency (ETB is the platform's only
+  // currency today) — formatCurrency() defaults to "ETB" when undefined.
+  currency?: string;
+}
+
+function SubscriptionAndInvoices({ tenantId }: { tenantId?: string }) {
+  const qc = useQueryClient();
+  const subPath = tenantId ? `/api/v1/tenants/${tenantId}/subscription` : `/api/v1/tenants/me/subscription`;
+  const subscriptionQueryKey = ["tenant-admin-subscription", tenantId ?? "me"];
+
+  // ── TA-only: "how to pay" checkout instructions for a PENDING invoice ──────
   const [checkoutFor, setCheckoutFor] = useState<string | null>(null);
   const [checkoutInfo, setCheckoutInfo] = useState<CheckoutOut["checkout"] | null>(null);
   const [checkoutError, setCheckoutError] = useState<string | null>(null);
   const [loadingCheckout, setLoadingCheckout] = useState(false);
 
+  // ── SA-only: raise / mark-paid / cancel invoice actions ────────────────────
+  const [raiseConfirm, setRaiseConfirm] = useState(false);
+  const [raiseResult, setRaiseResult] = useState<RaiseInvoiceResult | null>(null);
+  const [raiseError, setRaiseError] = useState<string | null>(null);
+  const [actionRow, setActionRow] = useState<{ paymentId: string; type: "markPaid" | "cancel" } | null>(null);
+  const [actionRef, setActionRef] = useState("");
+  const [actionNote, setActionNote] = useState("");
+  const [actionError, setActionError] = useState<string | null>(null);
+  const [actionSuccess, setActionSuccess] = useState<string | null>(null);
+
   const { data: subscription, isLoading, isError } = useQuery<SubscriptionOut>({
-    queryKey: ["tenant-admin-subscription", tenantId],
-    queryFn: () => api.get<SubscriptionOut>("/api/v1/tenants/me/subscription"),
+    queryKey: subscriptionQueryKey,
+    queryFn: () => api.get<SubscriptionOut>(subPath),
     staleTime: 30_000,
   });
 
@@ -116,6 +159,57 @@ function SubscriptionAndInvoices({ tenantId }: { tenantId: string }) {
     }
   }
 
+  const invalidateSubscription = () => void qc.invalidateQueries({ queryKey: subscriptionQueryKey });
+
+  const raiseMutation = useMutation({
+    mutationFn: () => api.post<RaiseInvoiceResult>(`/api/v1/tenants/${tenantId}/invoices`, {}),
+    onSuccess: (data) => {
+      setRaiseConfirm(false);
+      setRaiseError(null);
+      setRaiseResult(data);
+      invalidateSubscription();
+    },
+    onError: (e: unknown) => setRaiseError(billingErrorMessage(e)),
+  });
+
+  const markPaidMutation = useMutation({
+    mutationFn: (paymentId: string) =>
+      api.post(`/api/v1/tenants/${tenantId}/payments/${paymentId}/mark-paid`, {
+        provider_reference: actionRef.trim() || undefined,
+        note: actionNote.trim() || undefined,
+      }),
+    onSuccess: () => {
+      setActionRow(null);
+      setActionRef("");
+      setActionNote("");
+      setActionError(null);
+      setActionSuccess(t("sa_tenant.billing.mark_paid_success"));
+      invalidateSubscription();
+    },
+    onError: (e: unknown) => setActionError(billingErrorMessage(e)),
+  });
+
+  const cancelMutation = useMutation({
+    mutationFn: (paymentId: string) =>
+      api.post(`/api/v1/tenants/${tenantId}/payments/${paymentId}/cancel`, { note: actionNote.trim() }),
+    onSuccess: () => {
+      setActionRow(null);
+      setActionNote("");
+      setActionError(null);
+      setActionSuccess(t("sa_tenant.billing.cancel_success"));
+      invalidateSubscription();
+    },
+    onError: (e: unknown) => setActionError(billingErrorMessage(e)),
+  });
+
+  function toggleAction(paymentId: string, type: "markPaid" | "cancel") {
+    setActionRow((cur) => (cur?.paymentId === paymentId && cur.type === type ? null : { paymentId, type }));
+    setActionRef("");
+    setActionNote("");
+    setActionError(null);
+    setActionSuccess(null);
+  }
+
   if (isLoading) {
     return <div className="flex items-center justify-center py-8 text-gray-500">{t("common.loading")}</div>;
   }
@@ -133,6 +227,7 @@ function SubscriptionAndInvoices({ tenantId }: { tenantId: string }) {
 
   const badgeVariant = SUBSCRIPTION_BADGE[subscription.status ?? ""] ?? "neutral";
   const periodLabelKey = subscription.billing_period === "ANNUAL" ? "tenant_admin.billing.annual" : "tenant_admin.billing.monthly";
+  const pendingPayment = subscription.payments.find((p) => p.status === "PENDING") ?? null;
 
   return (
     <>
@@ -182,7 +277,59 @@ function SubscriptionAndInvoices({ tenantId }: { tenantId: string }) {
 
       {/* Invoices Card */}
       <div className="bg-white rounded-lg border border-gray-200 p-6">
-        <h3 className="text-lg font-semibold text-gray-800 mb-4">{t("tenant_admin.billing.invoices_heading")}</h3>
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="text-lg font-semibold text-gray-800">{t("tenant_admin.billing.invoices_heading")}</h3>
+          {tenantId && (
+            <div className="text-right">
+              {raiseConfirm ? (
+                <div className="flex items-center gap-2 p-2 bg-gray-50 rounded border border-gray-200">
+                  <span className="text-xs text-gray-700">
+                    {pendingPayment
+                      ? t("sa_tenant.billing.raise_invoice_already_pending")
+                      : t("sa_tenant.billing.raise_invoice_confirm")}
+                  </span>
+                  <button
+                    type="button"
+                    disabled={raiseMutation.isPending}
+                    onClick={() => raiseMutation.mutate()}
+                    className="px-2.5 py-1 text-xs font-bold text-white bg-[#0f2d1f] rounded hover:bg-[#1a4d35] disabled:opacity-50"
+                  >
+                    {raiseMutation.isPending ? "…" : t("sa_tenant.billing.confirm_yes")}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setRaiseConfirm(false)}
+                    className="px-2.5 py-1 text-xs font-bold text-gray-600 rounded hover:bg-gray-200"
+                  >
+                    {t("sa_tenant.billing.confirm_no")}
+                  </button>
+                </div>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => { setRaiseConfirm(true); setRaiseResult(null); setRaiseError(null); }}
+                  className="px-3 py-1.5 text-xs font-bold text-white bg-[#0f2d1f] rounded hover:bg-[#1a4d35]"
+                >
+                  {t("sa_tenant.billing.raise_invoice_btn")}
+                </button>
+              )}
+            </div>
+          )}
+        </div>
+
+        {raiseError && <p className="text-xs text-red-600 mb-3">{raiseError}</p>}
+        {raiseResult && (
+          <p className="text-xs text-emerald-700 bg-emerald-50 border border-emerald-200 rounded px-3 py-2 mb-3">
+            {t("sa_tenant.billing.raise_invoice_success")
+              .replace("{period}", `${raiseResult.period_start} → ${raiseResult.period_end}`)
+              .replace("{total}", formatCurrency(raiseResult.total, raiseResult.currency))}
+          </p>
+        )}
+        {actionSuccess && (
+          <p className="text-xs text-emerald-700 bg-emerald-50 border border-emerald-200 rounded px-3 py-2 mb-3">
+            {actionSuccess}
+          </p>
+        )}
 
         {subscription.payments.length === 0 ? (
           <p className="text-sm text-gray-500">{t("tenant_admin.billing.no_invoices")}</p>
@@ -214,7 +361,7 @@ function SubscriptionAndInvoices({ tenantId }: { tenantId: string }) {
                       </td>
                       <td className="px-3 py-2 whitespace-nowrap text-gray-500">{p.paid_at ?? "—"}</td>
                       <td className="px-3 py-2 whitespace-nowrap">
-                        {p.status === "PENDING" && (
+                        {!tenantId && p.status === "PENDING" && (
                           <button
                             type="button"
                             onClick={() => void handleHowToPay(p.id)}
@@ -222,6 +369,24 @@ function SubscriptionAndInvoices({ tenantId }: { tenantId: string }) {
                           >
                             {t("tenant_admin.billing.how_to_pay_btn")}
                           </button>
+                        )}
+                        {tenantId && p.status === "PENDING" && (
+                          <div className="flex gap-2 justify-end">
+                            <button
+                              type="button"
+                              onClick={() => toggleAction(p.id, "markPaid")}
+                              className="text-xs font-semibold text-emerald-600 hover:text-emerald-700 underline"
+                            >
+                              {t("sa_tenant.billing.mark_paid_btn")}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => toggleAction(p.id, "cancel")}
+                              className="text-xs font-semibold text-red-600 hover:text-red-700 underline"
+                            >
+                              {t("sa_tenant.billing.cancel_invoice_btn")}
+                            </button>
+                          </div>
                         )}
                       </td>
                     </tr>
@@ -241,6 +406,92 @@ function SubscriptionAndInvoices({ tenantId }: { tenantId: string }) {
                         </td>
                       </tr>
                     )}
+                    {actionRow?.paymentId === p.id && actionRow.type === "markPaid" && (
+                      <tr className="border-b border-gray-100 bg-emerald-50">
+                        <td colSpan={7} className="px-3 py-3">
+                          <p className="text-xs text-emerald-900 mb-2">
+                            {t("sa_tenant.billing.mark_paid_confirm")
+                              .replace("{amount}", formatCurrency(p.total, p.currency))
+                              .replace("{contract_end}", p.period_end)}
+                          </p>
+                          <div className="flex flex-wrap gap-2 items-end">
+                            <div>
+                              <label className="block text-[11px] font-semibold text-gray-600 mb-1">
+                                {t("sa_tenant.billing.provider_reference_label")}
+                              </label>
+                              <input
+                                type="text"
+                                value={actionRef}
+                                onChange={(e) => setActionRef(e.target.value)}
+                                className="px-2 py-1 text-xs border border-gray-300 rounded-md outline-none focus:border-emerald-600"
+                              />
+                            </div>
+                            <div className="flex-1 min-w-[160px]">
+                              <label className="block text-[11px] font-semibold text-gray-600 mb-1">
+                                {t("sa_tenant.billing.note_optional_label")}
+                              </label>
+                              <input
+                                type="text"
+                                value={actionNote}
+                                onChange={(e) => setActionNote(e.target.value)}
+                                className="w-full px-2 py-1 text-xs border border-gray-300 rounded-md outline-none focus:border-emerald-600"
+                              />
+                            </div>
+                            <button
+                              type="button"
+                              disabled={markPaidMutation.isPending}
+                              onClick={() => markPaidMutation.mutate(p.id)}
+                              className="px-3 py-1.5 text-xs font-bold text-white bg-emerald-600 rounded hover:bg-emerald-700 disabled:opacity-50"
+                            >
+                              {markPaidMutation.isPending ? "…" : t("sa_tenant.billing.confirm_yes")}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setActionRow(null)}
+                              className="px-3 py-1.5 text-xs font-bold text-gray-600 rounded hover:bg-gray-200"
+                            >
+                              {t("sa_tenant.billing.confirm_no")}
+                            </button>
+                          </div>
+                          {actionError && <p className="text-xs text-red-600 mt-2">{actionError}</p>}
+                        </td>
+                      </tr>
+                    )}
+                    {actionRow?.paymentId === p.id && actionRow.type === "cancel" && (
+                      <tr className="border-b border-gray-100 bg-red-50">
+                        <td colSpan={7} className="px-3 py-3">
+                          <div className="flex flex-wrap gap-2 items-end">
+                            <div className="flex-1 min-w-[200px]">
+                              <label className="block text-[11px] font-semibold text-gray-600 mb-1">
+                                {t("sa_tenant.billing.note_required_label")}
+                              </label>
+                              <input
+                                type="text"
+                                value={actionNote}
+                                onChange={(e) => setActionNote(e.target.value)}
+                                className="w-full px-2 py-1 text-xs border border-gray-300 rounded-md outline-none focus:border-red-600"
+                              />
+                            </div>
+                            <button
+                              type="button"
+                              disabled={cancelMutation.isPending || !actionNote.trim()}
+                              onClick={() => cancelMutation.mutate(p.id)}
+                              className="px-3 py-1.5 text-xs font-bold text-white bg-red-600 rounded hover:bg-red-700 disabled:opacity-50"
+                            >
+                              {cancelMutation.isPending ? "…" : t("sa_tenant.billing.confirm_yes")}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setActionRow(null)}
+                              className="px-3 py-1.5 text-xs font-bold text-gray-600 rounded hover:bg-gray-200"
+                            >
+                              {t("sa_tenant.billing.confirm_no")}
+                            </button>
+                          </div>
+                          {actionError && <p className="text-xs text-red-600 mt-2">{actionError}</p>}
+                        </td>
+                      </tr>
+                    )}
                   </Fragment>
                 ))}
               </tbody>
@@ -253,9 +504,10 @@ function SubscriptionAndInvoices({ tenantId }: { tenantId: string }) {
 }
 
 export function PlanTab({ tenantId, isLoading }: TabProps) {
+  const planPath = tenantId ? `/api/v1/tenants/${tenantId}/plan` : `/api/v1/tenants/me/plan`;
   const { data: plan, isLoading: loadingPlan } = useQuery<PlanData>({
-    queryKey: ["tenant-admin-plan"],
-    queryFn: () => api.get<PlanData>(`/api/v1/tenants/me/plan`),
+    queryKey: ["tenant-admin-plan", tenantId ?? "me"],
+    queryFn: () => api.get<PlanData>(planPath),
     staleTime: 30_000,
   });
 
@@ -304,12 +556,20 @@ export function PlanTab({ tenantId, isLoading }: TabProps) {
           </div>
         </div>
 
-        {/* Upgrade Info */}
-        <div className="p-4 bg-blue-50 border border-blue-200 rounded-lg">
-          <p className="text-sm text-blue-900">
-            💡 {t("tenant_admin.plan.upgrade_hint")}
-          </p>
-        </div>
+        {tenantId ? (
+          /* SA mode: plan tier CHANGE stays on the SA dashboard's Admin tab —
+             link there instead of a second plan-change UI (CLAUDE.md §15 S8). */
+          <div className="p-4 bg-blue-50 border border-blue-200 rounded-lg">
+            <p className="text-sm text-blue-900 mb-1">{t("sa_tenant.plan.change_elsewhere")}</p>
+            <Link href="/admin/dashboard" className="text-sm font-semibold text-blue-700 hover:underline">
+              {t("sa_tenant.open_dashboard_admin_link")}
+            </Link>
+          </div>
+        ) : (
+          <div className="p-4 bg-blue-50 border border-blue-200 rounded-lg">
+            <p className="text-sm text-blue-900">💡 {t("tenant_admin.plan.upgrade_hint")}</p>
+          </div>
+        )}
       </div>
 
       <SubscriptionAndInvoices tenantId={tenantId} />
@@ -335,16 +595,18 @@ export function PlanTab({ tenantId, isLoading }: TabProps) {
         </div>
       </div>
 
-      {/* Request Upgrade CTA */}
-      <div className="bg-gradient-to-r from-emerald-50 to-blue-50 rounded-lg border border-emerald-200 p-6">
-        <h4 className="font-semibold text-gray-800 mb-2">{t("tenant_admin.plan.ready_to_upgrade")}</h4>
-        <p className="text-sm text-gray-700 mb-4">
-          {t("tenant_admin.plan.upgrade_cta_text")}
-        </p>
-        <button className="px-4 py-2 text-sm font-medium text-white bg-emerald-600 rounded hover:bg-emerald-700">
-          {t("tenant_admin.plan.request_upgrade_btn")}
-        </button>
-      </div>
+      {/* Request Upgrade CTA — TA only; an SA managing the tenant has no one to ask */}
+      {!tenantId && (
+        <div className="bg-gradient-to-r from-emerald-50 to-blue-50 rounded-lg border border-emerald-200 p-6">
+          <h4 className="font-semibold text-gray-800 mb-2">{t("tenant_admin.plan.ready_to_upgrade")}</h4>
+          <p className="text-sm text-gray-700 mb-4">
+            {t("tenant_admin.plan.upgrade_cta_text")}
+          </p>
+          <button className="px-4 py-2 text-sm font-medium text-white bg-emerald-600 rounded hover:bg-emerald-700">
+            {t("tenant_admin.plan.request_upgrade_btn")}
+          </button>
+        </div>
+      )}
     </div>
   );
 }

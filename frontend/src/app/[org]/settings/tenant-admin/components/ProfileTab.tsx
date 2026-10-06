@@ -19,9 +19,14 @@ export function ProfileTab({ tenantId, isLoading }: TabProps) {
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
 
+  // SA viewing another tenant: GET /{tenantId} already returns every field this
+  // tab needs, so there is no separate /{tenantId}/profile read route (CLAUDE.md §15).
+  const readPath = tenantId ? `/api/v1/tenants/${tenantId}` : `/api/v1/tenants/me/profile`;
+  const writePath = tenantId ? `/api/v1/tenants/${tenantId}/profile` : `/api/v1/tenants/me/profile`;
+
   const { data: tenant, isLoading: loadingTenant } = useQuery<TenantAdminData>({
-    queryKey: ["tenant-admin-profile", tenantId],
-    queryFn: () => api.get<TenantAdminData>(`/api/v1/tenants/me/profile`),
+    queryKey: ["tenant-admin-profile", tenantId ?? "me"],
+    queryFn: () => api.get<TenantAdminData>(readPath),
     staleTime: 30_000,
   });
 
@@ -30,10 +35,9 @@ export function ProfileTab({ tenantId, isLoading }: TabProps) {
   });
 
   const updateMutation = useMutation({
-    mutationFn: (data: { default_locale: string }) =>
-      api.patch(`/api/v1/tenants/me/profile`, data),
+    mutationFn: (data: { default_locale: string }) => api.patch(writePath, data),
     onSuccess: () => {
-      void qc.invalidateQueries({ queryKey: ["tenant-admin-profile", tenantId] });
+      void qc.invalidateQueries({ queryKey: ["tenant-admin-profile", tenantId ?? "me"] });
       setSuccess(t("common.success"));
       setEditMode(false);
       setError(null);

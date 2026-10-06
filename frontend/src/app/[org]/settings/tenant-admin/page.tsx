@@ -105,11 +105,11 @@ export default function TenantAdminPage() {
       {/* Tab Content */}
       <div className="p-6">
         <div className="max-w-4xl">
-          {activeTab === "profile" && <ProfileTab tenantId={org} />}
-          {activeTab === "plan" && <PlanTab tenantId={org} />}
-          {activeTab === "contract" && <ContractTab tenantId={org} />}
-          {activeTab === "contact" && <ContactTab tenantId={org} />}
-          {activeTab === "features" && <FeaturesTab tenantId={org} />}
+          {activeTab === "profile" && <ProfileTab />}
+          {activeTab === "plan" && <PlanTab />}
+          {activeTab === "contract" && <ContractTab />}
+          {activeTab === "contact" && <ContactTab />}
+          {activeTab === "features" && <FeaturesTab />}
         </div>
       </div>
     </div>

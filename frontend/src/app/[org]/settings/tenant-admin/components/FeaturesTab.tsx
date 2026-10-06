@@ -30,9 +30,10 @@ function tierLabel(code: string): string {
 }
 
 export function FeaturesTab({ tenantId, isLoading }: TabProps) {
+  const planPath = tenantId ? `/api/v1/tenants/${tenantId}/plan` : `/api/v1/tenants/me/plan`;
   const { data: plan, isLoading: loadingPlan } = useQuery<PlanData>({
-    queryKey: ["tenant-admin-features"],
-    queryFn: () => api.get<PlanData>(`/api/v1/tenants/me/plan`),
+    queryKey: ["tenant-admin-features", tenantId ?? "me"],
+    queryFn: () => api.get<PlanData>(planPath),
     staleTime: 30_000,
   });
 

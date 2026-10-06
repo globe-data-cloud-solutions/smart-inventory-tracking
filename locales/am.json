@@ -1046,6 +1046,7 @@
     "activity_action_CONTACT_UPDATED": "እውቂያ ተዘምኗል",
     "activity_by": "በ",
     "activity_drawer_close": "ዝጋ",
+    "open_tenant": "ክፈት",
     "view_activity": "እንቅስቃሴ",
     "dashboard": {
       "stat_users": "ተጠቃሚዎች",
@@ -1680,6 +1681,44 @@
         "FAILED": "አልተሳካም",
         "CANCELLED": "ተሰርዟል"
       }
+    }
+  },
+  "sa_tenant": {
+    "open_dashboard_admin_link": "በ SA ዳሽቦርድ ውስጥ ይክፈቱ → የአስተዳዳሪ ትር",
+    "restricted": "ወደዚህ ገጽ መድረስ አይችሉም።",
+    "back_to_registry": "← ወደ ተቀጥላ ምዝገባ ተመለስ",
+    "help_banner": {
+      "content": "ይህን ተቀጥላ ቅንብሮች እንደ ሲስተም አስተዳዳሪ እየተመለከቱ ነው። ንባቦች ከዚህ ተቀጥላ ውሂብ ይመጣሉ፤ አንዳንድ ማስተካከያዎች (የእቅድ ደረጃ፣ የውል ቀናት) በ SA ዳሽቦርድ የአስተዳዳሪ ትር ላይ ይቀራሉ እና ከዚህ ይገናኛሉ።"
+    },
+    "plan": {
+      "change_elsewhere": "የዚህን ተቀጥላ የእቅድ ደረጃ ወይም የ SKU ገደብ ለመቀየር የ SA ዳሽቦርድን የአስተዳዳሪ ትር ይጠቀሙ።"
+    },
+    "contract": {
+      "edit_elsewhere": "የዚህን ተቀጥላ የውል ቀናት ለማስተካከል የ SA ዳሽቦርድን የአስተዳዳሪ ትር ይጠቀሙ።"
+    },
+    "billing": {
+      "raise_invoice_btn": "ደረሰኝ ይፍጠሩ",
+      "raise_invoice_confirm": "ለሚቀጥለው የክፍያ ጊዜ አዲስ ደረሰኝ ይፍጠሩ?",
+      "raise_invoice_already_pending": "ይህ ደንበኝነት በመጠባበቅ ላይ ያለ ደረሰኝ አለው — አዲስ መፍጠር ይሳናል።",
+      "raise_invoice_success": "ደረሰኝ ለ {period} ተፍጥሯል፣ ጠቅላላ {total}።",
+      "confirm_yes": "አዎ",
+      "confirm_no": "አይ",
+      "mark_paid_btn": "እንደተከፈለ ምልክት ያድርጉ",
+      "cancel_invoice_btn": "ይቅር",
+      "mark_paid_confirm": "ይህ ደረሰኝ እንደተከፈለ ይመልክት? መጠን፡ {amount}። ይህ የተቀጥላውን የውል ማብቂያ ቀን ወደ {contract_end} ያንቀሳቅሳል።",
+      "mark_paid_success": "ክፍያው እንደተከፈለ ተመልክቷል።",
+      "cancel_success": "ደረሰኝ ተሰርዟል።",
+      "provider_reference_label": "ማጣቀሻ (አማራጭ)",
+      "note_optional_label": "ማስታወሻ (አማራጭ)",
+      "note_required_label": "ማስታወሻ (ያስፈልጋል)"
+    },
+    "billing_error": {
+      "INVOICE_ALREADY_PENDING": "ይህ ደንበኝነት በመጠባበቅ ላይ ያለ ደረሰኝ አለው።",
+      "NO_LIVE_SUBSCRIPTION": "ለዚህ ተቀጥላ ምንም ገባር ደንበኝነት የለም።",
+      "INVALID_PAYMENT_STATE": "ይህ ክፍያ ይህ ተግባር ሊተገበርበት የሚችል ሁኔታ ላይ አይደለም።",
+      "WRONG_PROVIDER": "በእጅ የተደረጉ ክፍያዎች ብቻ እዚህ እንደተከፈሉ ሊመለከቱ ይችላሉ።",
+      "PRICE_NOT_AVAILABLE": "ለዚህ እቅድ እና የክፍያ ጊዜ ምንም ዋጋ አልተዋቀረም።",
+      "PAYMENT_NOT_FOUND": "ያ ክፍያ ሊገኝ አልቻለም።"
     }
   },
   "platform_plans": {

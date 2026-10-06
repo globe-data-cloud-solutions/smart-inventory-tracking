@@ -37,21 +37,23 @@ export function ContactTab({ tenantId, isLoading }: TabProps) {
     position_title: "",
   });
 
+  const base = tenantId ? `/api/v1/tenants/${tenantId}/contacts` : `/api/v1/tenants/me/contacts`;
+
   const { data: contacts = [], isLoading: loadingContacts } = useQuery<TenantContact[]>({
-    queryKey: ["tenant-admin-contacts", tenantId],
-    queryFn: () => api.get<TenantContact[]>(`/api/v1/tenants/me/contacts`),
+    queryKey: ["tenant-admin-contacts", tenantId ?? "me"],
+    queryFn: () => api.get<TenantContact[]>(base),
     staleTime: 30_000,
   });
 
   const saveMutation = useMutation({
     mutationFn: (data: ContactForm) => {
       if (editingId) {
-        return api.patch(`/api/v1/tenants/me/contacts/${editingId}`, data);
+        return api.patch(`${base}/${editingId}`, data);
       }
-      return api.post(`/api/v1/tenants/me/contacts`, data);
+      return api.post(base, data);
     },
     onSuccess: () => {
-      void qc.invalidateQueries({ queryKey: ["tenant-admin-contacts", tenantId] });
+      void qc.invalidateQueries({ queryKey: ["tenant-admin-contacts", tenantId ?? "me"] });
       setSuccess(editingId ? t("tenant_admin.contact.updated_success") : t("tenant_admin.contact.added_success"));
       resetForm();
       setError(null);
@@ -62,10 +64,11 @@ export function ContactTab({ tenantId, isLoading }: TabProps) {
     },
   });
 
+  // No by-tenant DELETE route exists yet — SA mode only offers create/edit (CLAUDE.md §15 S8).
   const deleteMutation = useMutation({
     mutationFn: (contactId: string) => api.delete(`/api/v1/tenants/me/contacts/${contactId}`),
     onSuccess: () => {
-      void qc.invalidateQueries({ queryKey: ["tenant-admin-contacts", tenantId] });
+      void qc.invalidateQueries({ queryKey: ["tenant-admin-contacts", tenantId ?? "me"] });
       setSuccess(t("tenant_admin.contact.deleted_success"));
       setError(null);
       setTimeout(() => setSuccess(null), 3000);
@@ -136,17 +139,19 @@ export function ContactTab({ tenantId, isLoading }: TabProps) {
                     >
                       {t("common.edit")}
                     </button>
-                    <button
-                      onClick={() => {
-                        if (confirm(t("tenant_admin.contact.confirm_delete"))) {
-                          deleteMutation.mutate(contact.id);
-                        }
-                      }}
-                      disabled={deleteMutation.isPending}
-                      className="text-sm font-medium text-red-600 hover:text-red-700 disabled:opacity-50"
-                    >
-                      {t("common.delete")}
-                    </button>
+                    {!tenantId && (
+                      <button
+                        onClick={() => {
+                          if (confirm(t("tenant_admin.contact.confirm_delete"))) {
+                            deleteMutation.mutate(contact.id);
+                          }
+                        }}
+                        disabled={deleteMutation.isPending}
+                        className="text-sm font-medium text-red-600 hover:text-red-700 disabled:opacity-50"
+                      >
+                        {t("common.delete")}
+                      </button>
+                    )}
                   </div>
                 </div>
                 <div className="text-sm text-gray-600">

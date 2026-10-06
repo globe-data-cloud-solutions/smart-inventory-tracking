@@ -915,13 +915,21 @@ export default function OrgDashboard() {
                             </td>
                             {/* Actions */}
                             <td className="px-4 py-2.5 whitespace-nowrap">
-                              <button
-                                type="button"
-                                onClick={() => setActivityTenantId(row.id)}
-                                className="text-xs font-bold text-[#0f2d1f] hover:underline"
-                              >
-                                {t("sa.view_activity")}
-                              </button>
+                              <div className="flex gap-3">
+                                <Link
+                                  href={`/admin/settings/tenants/${row.id}`}
+                                  className="text-xs font-bold text-[#0f2d1f] hover:underline"
+                                >
+                                  {t("sa.open_tenant")}
+                                </Link>
+                                <button
+                                  type="button"
+                                  onClick={() => setActivityTenantId(row.id)}
+                                  className="text-xs font-bold text-[#0f2d1f] hover:underline"
+                                >
+                                  {t("sa.view_activity")}
+                                </button>
+                              </div>
                             </td>
                           </tr>
                         );
