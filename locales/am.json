@@ -159,7 +159,8 @@
     "unknown": "ያልታወቀ",
     "unassigned": "ያልተሰጠ",
     "success": "በተሳካ ሁኔታ ተቀምጧል",
-    "transaction": "ግብይት"
+    "transaction": "ግብይት",
+    "all": "ሁሉም"
   },
   "not_found": {
     "heading": "ገጽ አልተገኘም",
@@ -1175,7 +1176,12 @@
     "activity_action_PROFILE_UPDATE_TA_FULL_NAME": "የአስተዳዳሪ ስም ተዘምኗል",
     "activity_action_PROFILE_UPDATE_TA_EMAIL": "የአስተዳዳሪ ኢሜይል ተዘምኗል",
     "activity_action_FEATURE_FLAGS_UPDATE": "የባህሪ ምልክቶች ተዘምነዋል",
-    "admin_sub_admin-user": "አስተዳዳሪ ተጨቃሚ"
+    "admin_sub_admin-user": "አስተዳዳሪ ተጨቃሚ",
+    "col_source": "ምንጭ",
+    "col_subscription": "ደንበኝነት",
+    "source_self_signup": "በራስ ምዝገባ",
+    "source_sa": "አስተዳዳሪ",
+    "nav_plans_pricing": "እቅዶች እና ዋጋዎች"
   },
   "approval": {
     "simple_mode": "ቀላል — ለሁሉም ዓይነቶች ተመሳሳይ ደንቦች",
@@ -1623,5 +1629,54 @@
       "expiring_soon_warning": "⏰ የእርስዎ ውል በ{n} ቀናት ውስጥ ያልቃል። የአገልግሎት ማቋረጥን ለማስቀረት አሁን ያድሱ።",
       "managed_by_platform": "የውል ቀናት በ SMART አስተዳዳሪዎ ይተዳደራሉ እና ከደንበኝነት ምዝገባዎ ጋር በራስ-ሰር ይዘምናሉ። ለመቀየር ድጋፍን ያነጋግሩ።"
     }
+  },
+  "platform_plans": {
+    "title": "እቅዶች እና ዋጋዎች",
+    "subtitle": "የጥቅል ገደቦችን፣ ባህሪያትን፣ ዋጋዎችን እና የለውጥ ታሪክን ያስተዳድሩ።",
+    "tab_packages": "ጥቅሎች",
+    "tab_prices": "ዋጋዎች",
+    "tab_history": "የለውጥ ታሪክ",
+    "restricted": "መዳረሻ ለሲስተም አስተዳዳሪ ብቻ የተገደበ ነው።",
+    "reason_label": "የለውጥ ምክንያት",
+    "reason_placeholder": "ይህን ለውጥ ለምን እያደረጉ ነው?",
+    "packages_note": "ለውጦች ለአዲስ ምዝገባዎች እና የእቅድ ለውጦች ተፈጻሚ ይሆናሉ፤ ያሉ ተከራዮች የአሁኑን ገደባቸውን ይይዛሉ።",
+    "field_display_name": "የሚታይ ስም",
+    "field_max_warehouses": "ከፍተኛ የመጋዘኖች ብዛት",
+    "field_max_users": "ከፍተኛ የተጠቃሚዎች ብዛት",
+    "field_sku_cap": "የSKU ገደብ",
+    "field_is_public": "በይፋ የሚታይ",
+    "field_sort_order": "የቅደም ተከተል",
+    "unlimited": "ያልተገደበ",
+    "save_btn": "አስቀምጥ",
+    "saving": "በማስቀመጥ ላይ...",
+    "saved": "ተቀምጧል",
+    "reset_btn": "ዳግም አስጀምር",
+    "features_heading": "ባህሪያት",
+    "prices_current": "የአሁኑ",
+    "prices_scheduled": "የተያዘ",
+    "prices_history": "ታሪክ",
+    "prices_since": "ከ",
+    "prices_vat_total": "ከቫት ጋር",
+    "prices_set_new": "አዲስ ዋጋ ያስቀምጡ",
+    "prices_tier_label": "እርከን",
+    "prices_period_label": "የክፍያ ጊዜ",
+    "prices_amount_label": "መጠን",
+    "prices_effective_label": "የሚጀምርበት ቀን",
+    "prices_submit_btn": "ዋጋ ይለጥፉ",
+    "prices_note": "ያሉ ደንበኝነት ምዝገባዎች አዲሱን ዋጋ ከሚቀጥለው ዕድሳታቸው ጀምሮ ይከፍላሉ።",
+    "prices_no_current": "የአሁኑ ዋጋ የለም",
+    "prices_no_scheduled": "የተያዘ ዋጋ የለም",
+    "prices_monthly": "ወርሃዊ",
+    "prices_annual": "ዓመታዊ",
+    "history_filter_entity_type": "የዓይነት ማጣሪያ",
+    "history_filter_entity_key": "የመለያ ቁልፍ",
+    "history_col_date": "ቀን",
+    "history_col_entity": "አካል",
+    "history_col_field": "መስክ",
+    "history_col_old": "የቀድሞ",
+    "history_col_new": "አዲስ",
+    "history_col_reason": "ምክንያት",
+    "history_col_by": "በ",
+    "error_generic": "የሆነ ስህተት ተከስቷል።"
   }
 }

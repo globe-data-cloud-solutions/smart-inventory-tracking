@@ -724,6 +724,7 @@ const SA_NAV: NavItem[] = [
   { type: "section", label: "Overview" },
   { type: "link", icon: "🏠", label: "Dashboard", page: "dashboard" },
   { type: "section", label: "System" },
+  { type: "link", icon: "💳", label: "sa.nav_plans_pricing", page: "settings/plans" },
   // These pages are planned but not yet built — links are intentionally
   // disabled until the pages exist. Do not remove; placeholder only.
   { type: "link", icon: "🔐", label: "Permissions", page: "dashboard", disabled: true },

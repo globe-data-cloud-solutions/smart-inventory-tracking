@@ -160,7 +160,8 @@
     "unknown": "Unknown",
     "unassigned": "Unassigned",
     "success": "Saved successfully",
-    "transaction": "daldala"
+    "transaction": "daldala",
+    "all": "All"
   },
   "product": {
     "add": {
@@ -1068,7 +1069,12 @@
     "activity_action_PROFILE_UPDATE_TA_FULL_NAME": "Maqaan fayyadamaa bulchaa haaromfame",
     "activity_action_PROFILE_UPDATE_TA_EMAIL": "Imeelii fayyadamaa bulchaa haaromfame",
     "activity_action_FEATURE_FLAGS_UPDATE": "Mallattoowwan fedhii haaromfaman",
-    "admin_sub_admin-user": "Fayyadamaa Bulchaa"
+    "admin_sub_admin-user": "Fayyadamaa Bulchaa",
+    "col_source": "Source",
+    "col_subscription": "Subscription",
+    "source_self_signup": "Self sign-up",
+    "source_sa": "SA",
+    "nav_plans_pricing": "Plans & Pricing"
   },
   "approval": {
     "simple_mode": "Salphaa — seera wal-fakkaataa hunda",
@@ -1613,5 +1619,54 @@
       "expiring_soon_warning": "⏰ Your contract is expiring in {n} days. Renew now to avoid service interruption.",
       "managed_by_platform": "Contract dates are managed by your SMART administrator and update automatically with your subscription. Contact support to change them."
     }
+  },
+  "platform_plans": {
+    "title": "Plans & Pricing",
+    "subtitle": "Manage package limits, features, pricing and the change history.",
+    "tab_packages": "Packages",
+    "tab_prices": "Prices",
+    "tab_history": "Change history",
+    "restricted": "Access restricted to System Admin.",
+    "reason_label": "Reason for change",
+    "reason_placeholder": "Why are you making this change?",
+    "packages_note": "Changes apply to new sign-ups and plan changes; existing tenants keep their current limits.",
+    "field_display_name": "Display name",
+    "field_max_warehouses": "Max warehouses",
+    "field_max_users": "Max users",
+    "field_sku_cap": "SKU cap",
+    "field_is_public": "Publicly visible",
+    "field_sort_order": "Sort order",
+    "unlimited": "Unlimited",
+    "save_btn": "Save",
+    "saving": "Saving…",
+    "saved": "Saved",
+    "reset_btn": "Reset",
+    "features_heading": "Features",
+    "prices_current": "Current",
+    "prices_scheduled": "Scheduled",
+    "prices_history": "History",
+    "prices_since": "since",
+    "prices_vat_total": "incl. VAT",
+    "prices_set_new": "Set new price",
+    "prices_tier_label": "Tier",
+    "prices_period_label": "Billing period",
+    "prices_amount_label": "Amount",
+    "prices_effective_label": "Effective from",
+    "prices_submit_btn": "Post price",
+    "prices_note": "Existing subscriptions pay the new price from their next renewal.",
+    "prices_no_current": "No current price",
+    "prices_no_scheduled": "None scheduled",
+    "prices_monthly": "Monthly",
+    "prices_annual": "Annual",
+    "history_filter_entity_type": "Entity type",
+    "history_filter_entity_key": "Entity key",
+    "history_col_date": "Date",
+    "history_col_entity": "Entity",
+    "history_col_field": "Field",
+    "history_col_old": "Old",
+    "history_col_new": "New",
+    "history_col_reason": "Reason",
+    "history_col_by": "By",
+    "error_generic": "Something went wrong."
   }
 }

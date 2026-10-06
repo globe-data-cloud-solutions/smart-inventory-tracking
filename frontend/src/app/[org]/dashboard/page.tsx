@@ -268,12 +268,6 @@ export default function OrgDashboard() {
     plan_tier?: string | null;
   }
 
-  interface TierConfigEntry {
-    tier: string;
-    max_warehouses: number | null;
-    max_users: number | null;
-  }
-
   interface ApiRegistryContact {
     id: string;
     is_primary: boolean;
@@ -314,6 +308,11 @@ export default function OrgDashboard() {
     ta_user_id: string | null;
     industry:      string | null;
     feature_flags: Record<string, boolean>;
+    signup_source: string;
+    subscription_status: string | null;
+    billing_period: string | null;
+    current_period_end: string | null;
+    last_payment_status: string | null;
   }
 
   interface ApiActivityRow {
@@ -344,12 +343,6 @@ export default function OrgDashboard() {
   const [activityTenantId, setActivityTenantId] = useState<string | null>(null);
   const [personnelModalRow, setPersonnelModalRow] = useState<ApiRegistryRow | null>(null);
 
-  const [tierConfigOpen, setTierConfigOpen]   = useState(false);
-  const [tierConfigForm, setTierConfigForm]   = useState<TierConfigEntry[]>([]);
-  const [tierConfigSaving, setTierConfigSaving] = useState(false);
-  const [tierConfigError, setTierConfigError]   = useState<string | null>(null);
-  const [tierConfigSaved, setTierConfigSaved]   = useState(false);
-
   // ── Tenant Admin tab state ─────────────────────────────────────────────────
   const [adminTenantId, setAdminTenantId]       = useState<string>("");
   const [adminSubTab, setAdminSubTab]           = useState<"profile" | "plan" | "contract" | "status" | "levels" | "contacts" | "features" | "admin-user">("profile");
@@ -371,18 +364,6 @@ export default function OrgDashboard() {
   const [adminTaForm, setAdminTaForm]           = useState({ full_name: "", email: "" });
   const [adminFeatureFlags, setAdminFeatureFlags] = useState<Record<string, boolean>>({});
 
-  const {
-    data: platformTierConfig,
-    isLoading: tierConfigFetching,
-    isError: tierConfigFetchFailed,
-    refetch: refetchTierConfig,
-  } = useQuery<TierConfigEntry[]>({
-    queryKey: ["platform-tier-config"],
-    queryFn: () => api.get<TierConfigEntry[]>("/api/v1/tenants/platform/tier-config"),
-    enabled: isGatewayMode && org === SA_ORG_SLUG,
-    staleTime: 60_000,
-  });
-
   const { data: apiRegistryList, isLoading: registryLoading, isError: registryError } = useQuery<ApiRegistryRow[]>({
     queryKey: ["sa-registry"],
     queryFn: () => api.get<ApiRegistryRow[]>("/api/v1/tenants/sa/registry"),
@@ -398,20 +379,6 @@ export default function OrgDashboard() {
     staleTime: 0,
   });
 
-  async function handleTierConfigSave() {
-    setTierConfigSaving(true);
-    setTierConfigError(null);
-    setTierConfigSaved(false);
-    try {
-      await api.patch("/api/v1/tenants/platform/tier-config", { tiers: tierConfigForm });
-      await refetchTierConfig();
-      setTierConfigSaved(true);
-    } catch (e: unknown) {
-      setTierConfigError(e instanceof Error ? e.message : t("common.error"));
-    } finally {
-      setTierConfigSaving(false);
-    }
-  }
 
   // ── Tenant Admin tab helpers ───────────────────────────────────────────────
   function selectAdminTenant(id: string, subTab?: "profile" | "plan" | "contract" | "status" | "levels" | "contacts" | "features" | "admin-user") {
@@ -689,31 +656,12 @@ export default function OrgDashboard() {
               <div className="flex items-center justify-between mb-4">
                 <h3 className="text-base font-bold text-[#0f2d1f] m-0">{t("dashboard.tenants_heading")}</h3>
                 <div className="flex items-center gap-2">
-                  <button
-                    type="button"
-                    disabled={!platformTierConfig || platformTierConfig.length === 0}
-                    title={
-                      tierConfigFetching
-                        ? t("common.loading")
-                        : tierConfigFetchFailed
-                          ? t("common.error")
-                          : undefined
-                    }
-                    onClick={() => {
-                      if (!platformTierConfig || platformTierConfig.length === 0) return;
-                      setTierConfigForm(
-                        ["STARTER", "GROWTH", "ENTERPRISE"].map((tier) =>
-                          platformTierConfig.find((c) => c.tier === tier) ?? { tier, max_warehouses: null, max_users: null }
-                        )
-                      );
-                      setTierConfigError(null);
-                      setTierConfigSaved(false);
-                      setTierConfigOpen(true);
-                    }}
-                    className="px-3 py-2 text-xs font-bold rounded bg-gray-100 text-gray-700 border border-gray-200 hover:bg-gray-200 transition-colors flex items-center gap-1.5 disabled:opacity-50 disabled:cursor-not-allowed"
+                  <Link
+                    href={`/${org}/settings/plans`}
+                    className="px-3 py-2 text-xs font-bold rounded bg-gray-100 text-gray-700 border border-gray-200 hover:bg-gray-200 transition-colors flex items-center gap-1.5 no-underline"
                   >
-                    ⚙ {t("sa.tier_config_btn")}
-                  </button>
+                    ⚙ {t("sa.nav_plans_pricing")}
+                  </Link>
                   <Link
                     href="/onboard"
                     className="px-4 py-2 bg-eth-gold text-[#0f2d1f] font-bold text-sm rounded no-underline"
@@ -819,6 +767,8 @@ export default function OrgDashboard() {
                       <tr className="bg-gray-50 border-b border-gray-200">
                         {[
                           "dashboard.tenant_name",
+                          "sa.col_source",
+                          "sa.col_subscription",
                           "sa.col_contact_name",
                           "sa.col_contact_email",
                           "sa.col_contact_phone",
@@ -840,14 +790,14 @@ export default function OrgDashboard() {
                     <tbody>
                       {registryError && (
                         <tr>
-                          <td colSpan={9} className="px-4 py-8 text-center text-sm text-red-500">
+                          <td colSpan={11} className="px-4 py-8 text-center text-sm text-red-500">
                             {t("common.error")}
                           </td>
                         </tr>
                       )}
                       {!registryError && (!apiRegistryList || apiRegistryList.length === 0) && (
                         <tr>
-                          <td colSpan={9} className="px-4 py-8 text-center text-sm text-gray-400">
+                          <td colSpan={11} className="px-4 py-8 text-center text-sm text-gray-400">
                             {t("common.no_data")}
                           </td>
                         </tr>
@@ -865,6 +815,44 @@ export default function OrgDashboard() {
                               <p className="font-semibold text-gray-800 m-0">{row.name}</p>
                               {(row.city || row.country) && (
                                 <p className="text-[11px] text-gray-400 m-0">{[row.city, row.country].filter(Boolean).join(", ")}</p>
+                              )}
+                            </td>
+                            {/* Source */}
+                            <td className="px-4 py-2.5 whitespace-nowrap">
+                              <span className={`text-[11px] font-bold px-2 py-0.5 rounded ${
+                                row.signup_source === "SELF_SIGNUP" ? "bg-blue-100 text-blue-700" : "bg-gray-100 text-gray-600"
+                              }`}>
+                                {row.signup_source === "SELF_SIGNUP" ? t("sa.source_self_signup") : t("sa.source_sa")}
+                              </span>
+                            </td>
+                            {/* Subscription */}
+                            <td className="px-4 py-2.5 whitespace-nowrap">
+                              {row.subscription_status ? (
+                                <div>
+                                  <span className={`text-[11px] font-bold px-2 py-0.5 rounded ${
+                                    row.subscription_status === "ACTIVE"
+                                      ? "bg-emerald-100 text-emerald-700"
+                                      : row.subscription_status === "PAST_DUE"
+                                        ? "bg-red-100 text-red-700"
+                                        : "bg-amber-100 text-amber-700"
+                                  }`}>
+                                    {row.subscription_status}
+                                  </span>
+                                  {row.current_period_end && (
+                                    <p className="text-[11px] text-gray-400 m-0 mt-0.5">{row.current_period_end}</p>
+                                  )}
+                                  {row.last_payment_status && (
+                                    <span className={`inline-block mt-0.5 text-[10px] font-semibold px-1.5 py-0.5 rounded ${
+                                      row.last_payment_status === "PAID"
+                                        ? "bg-emerald-50 text-emerald-600"
+                                        : "bg-gray-100 text-gray-500"
+                                    }`}>
+                                      {row.last_payment_status}
+                                    </span>
+                                  )}
+                                </div>
+                              ) : (
+                                <span className="text-gray-300">—</span>
                               )}
                             </td>
                             {/* Contact Name */}
@@ -1824,119 +1812,6 @@ export default function OrgDashboard() {
                 </div>
               </div>
             </>
-          )}
-
-          {tierConfigOpen && (
-            <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
-              <div className="bg-white rounded-lg shadow-lg w-full max-w-lg p-6">
-                <h4 className="text-base font-bold text-gray-900 m-0 mb-0.5">{t("sa.tier_config_title")}</h4>
-                <p className="text-xs text-gray-500 mb-5">{t("sa.tier_config_subtitle")}</p>
-
-                <table className="w-full text-sm border-collapse mb-2">
-                  <thead>
-                    <tr className="bg-gray-50 border-b border-gray-200">
-                      <th className="px-3 py-2 text-left text-xs font-bold text-gray-500 uppercase tracking-wide w-28">{t("sa.tier_config_tier")}</th>
-                      <th className="px-3 py-2 text-left text-xs font-bold text-gray-500 uppercase tracking-wide">{t("sa.tier_config_max_wh")}</th>
-                      <th className="px-3 py-2 text-left text-xs font-bold text-gray-500 uppercase tracking-wide">{t("sa.tier_config_max_users")}</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {tierConfigForm.map((entry, idx) => {
-                      const TIER_BADGE: Record<string, string> = {
-                        STARTER:    "bg-gray-100 text-gray-600",
-                        GROWTH:     "bg-blue-100 text-blue-700",
-                        ENTERPRISE: "bg-amber-100 text-amber-700",
-                      };
-                      return (
-                        <tr key={entry.tier} className="border-b border-gray-100">
-                          <td className="px-3 py-3">
-                            <span className={`text-xs font-extrabold px-2 py-0.5 rounded ${TIER_BADGE[entry.tier] ?? "bg-gray-100 text-gray-600"}`}>
-                              {entry.tier}
-                            </span>
-                          </td>
-                          <td className="px-3 py-3">
-                            <div className="flex items-center gap-2">
-                              <input
-                                type="number"
-                                min={1}
-                                value={entry.max_warehouses ?? ""}
-                                placeholder={t("sa.tier_config_unlimited")}
-                                onChange={(e) => {
-                                  const v = e.target.value === "" ? null : parseInt(e.target.value, 10);
-                                  setTierConfigForm((f) => f.map((r, i) => i === idx ? { ...r, max_warehouses: v } : r));
-                                }}
-                                className="w-24 px-2 py-1.5 text-sm border border-gray-300 rounded outline-none focus:border-[#1B4332] focus:ring-1 focus:ring-[#1B4332]"
-                              />
-                              {entry.max_warehouses === null && (
-                                <span className="text-xs text-gray-400">{t("sa.tier_config_unlimited")}</span>
-                              )}
-                            </div>
-                          </td>
-                          <td className="px-3 py-3">
-                            <div className="flex items-center gap-2">
-                              <input
-                                type="number"
-                                min={1}
-                                value={entry.max_users ?? ""}
-                                placeholder={t("sa.tier_config_unlimited")}
-                                onChange={(e) => {
-                                  const v = e.target.value === "" ? null : parseInt(e.target.value, 10);
-                                  setTierConfigForm((f) => f.map((r, i) => i === idx ? { ...r, max_users: v } : r));
-                                }}
-                                className="w-24 px-2 py-1.5 text-sm border border-gray-300 rounded outline-none focus:border-[#1B4332] focus:ring-1 focus:ring-[#1B4332]"
-                              />
-                              {entry.max_users === null && (
-                                <span className="text-xs text-gray-400">{t("sa.tier_config_unlimited")}</span>
-                              )}
-                            </div>
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-
-                <p className="text-[11px] text-gray-400 mb-3">{t("sa.tier_config_note")}</p>
-
-                {tierConfigError && (
-                  <p className="text-sm text-red-600 bg-red-50 border border-red-200 rounded px-3 py-2 mb-3">{tierConfigError}</p>
-                )}
-                {tierConfigSaved && (
-                  <p className="text-sm text-emerald-700 bg-emerald-50 border border-emerald-200 rounded px-3 py-2 mb-3">{t("sa.tier_config_saved")}</p>
-                )}
-
-                <div className="flex items-center justify-between mt-2">
-                  <button
-                    type="button"
-                    onClick={() => setTierConfigForm(
-                      ["STARTER", "GROWTH", "ENTERPRISE"].map((tier) =>
-                        platformTierConfig?.find((c) => c.tier === tier) ?? { tier, max_warehouses: null, max_users: null }
-                      )
-                    )}
-                    className="text-xs font-semibold text-gray-500 hover:text-gray-700 underline"
-                  >
-                    {t("sa.tier_config_reset")}
-                  </button>
-                  <div className="flex gap-3">
-                    <button
-                      type="button"
-                      onClick={() => { setTierConfigOpen(false); setTierConfigSaved(false); }}
-                      className="px-4 py-2 text-sm font-bold text-gray-600 rounded hover:bg-gray-100"
-                    >
-                      {t("common.cancel")}
-                    </button>
-                    <button
-                      type="button"
-                      disabled={tierConfigSaving}
-                      onClick={() => void handleTierConfigSave()}
-                      className="px-4 py-2 text-sm font-bold text-white bg-[#0f2d1f] rounded hover:bg-[#1a4d35] disabled:opacity-50"
-                    >
-                      {tierConfigSaving ? t("sa.tier_config_saving") : t("sa.tier_config_save")}
-                    </button>
-                  </div>
-                </div>
-              </div>
-            </div>
           )}
 
         </div>
