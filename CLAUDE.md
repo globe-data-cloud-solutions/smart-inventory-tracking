@@ -1844,9 +1844,7 @@ separate `/{tenant_id}/profile` route — that endpoint doesn't exist, since
 writes via `PATCH /{tenant_id}/profile`.
 
 SA-only additions, each linking to the existing edit surface rather than
-duplicating it (plan tier change and contract-date edits both stay on the SA
-dashboard's Admin tab — `PlanTab`/`ContractTab` link there instead of a
-second edit UI):
+duplicating it:
 - **Plan tab**: raise invoice (`POST /{tenant_id}/invoices`), mark paid
   (`POST .../payments/{id}/mark-paid` — the confirm step shows the amount and
   the invoice's `period_end`, which becomes the tenant's new contract end,
@@ -1855,10 +1853,12 @@ second edit UI):
   Billing error codes (`INVOICE_ALREADY_PENDING`, `NO_LIVE_SUBSCRIPTION`,
   `INVALID_PAYMENT_STATE`, `WRONG_PROVIDER`, `PRICE_NOT_AVAILABLE`,
   `PAYMENT_NOT_FOUND`) map to `sa_tenant.billing_error.<code>` i18n keys.
+  **Since S9, this tab also has the tier-change + SKU-cap form** — see below.
 - **Contacts tab**: full create/edit via `POST`/`PATCH /{tenant_id}/
   contacts(/{id})` (added in S8-1). No delete in SA mode — no by-tenant
   delete route exists.
-- **Features tab**: read-only in both modes, just a different `GET` path.
+- **Features tab**: read-only plan-granted matrix in both modes, plus
+  **since S9** an SA-only "Feature overrides" editor — see below.
 
 `DELETE /{tenant_id}` always returns `409 USE_DEACTIVATE` — tenants are never
 hard-deleted (§1, §28). Its one caller, the onboarding wizard's rollback on a
@@ -1867,6 +1867,75 @@ and its TA admin atomically in one DB transaction (`admin_name`/
 `admin_email`/`admin_password`), so `frontend/src/app/onboard/page.tsx`'s
 `launch()` sends those fields in its single step-1 call instead of a separate
 `POST /{tenantId}/users` step — there is nothing left to roll back.
+
+### S9 — contract vs. billing period, and the SA tenant page absorbs the dashboard's Admin tab
+
+**Decision B — contract and billing period are independent.** The CONTRACT
+(`tenants.contract_start`/`contract_end`) is the commercial agreement; the
+SUBSCRIPTION's billing period (`subscriptions.billing_period`,
+`current_period_start`/`end`) is the billing cycle. A 2-year contract can run
+on monthly billing; they are unrelated except that the subscription's first
+period starts on the contract start (or today, if no contract start is
+given). `POST /api/v1/tenants/` (`TenantCreateRequest`) accepts optional
+`contract_start`, `contract_end`, and `billing_period` (default `ANNUAL`);
+`contract_end` defaults to the subscription's own computed period end when
+only `contract_start` is sent. `start_subscription()`
+(`shared/billing/subscriptions.py`) still only fills
+`contract_start`/`contract_end` when both are NULL — an explicit contract in
+the create call always wins outright. `PATCH /{tenant_id}/contract` remains
+contract-only and never touches the subscription (regression-tested).
+`mark_paid()`'s GREATEST rule — paying never moves `contract_end` backwards —
+is unchanged and is not re-litigated by this decision. The onboarding wizard
+(`frontend/src/app/onboard/page.tsx`) sends `contract_start`/`contract_end`/
+`billing_period` in the same `POST /api/v1/tenants/` call — there is no
+longer a separate `PATCH .../contract` step after create.
+
+**The SA tenant page (`[org]/settings/tenants/[tenantId]/page.tsx`) is now
+the single place every per-tenant SA action lives**, folded in from the old
+dashboard "Tenant Admin" tab (which is now a picker only — see below). Nine
+tabs: Profile, Plan, Contract, Status, Levels (a link to org-setup), Contact,
+Features, Admin User, Activity. `Plan`, `Contract`, and `Features` are the
+shared `tenant-admin/components/*.tsx` used by both the TA's own page and
+this one (switched to SA-by-tenant endpoints via `tenantId`); `Status`,
+`Admin User`, and `Activity` are SA-only components under this page's own
+`components/` directory (no TA equivalent — these actions have no TA-facing
+form). **Plan limits shown anywhere in this UI are always read live from
+`GET /api/v1/tenants/platform/tier-config`** (`PlanTab`'s tier-change buttons,
+the onboarding wizard's tier cards) — never a hardcoded or translated string;
+`wizard.tier_desc.*` and `sa.plan_modal_caps` (the old hardcoded "STARTER: ...
+GROWTH: ... ENTERPRISE: ..." caption) were deleted for this reason. The
+Contract tab shows the billing period as a separate, clearly-labelled
+read-only line (`tenant_admin.contract.billing_period_label`) next to the
+contract dates, in both SA and TA mode — the two are never merged into one
+field, per decision B above.
+
+**Feature overrides** (`FeaturesTab`'s SA-only section, the old dashboard
+tab's `LOGISTICS`/`AI_ANALYTICS`/`ADVANCED_BATCH_TRACKING`/`FLEET_MANAGEMENT`
+toggles) are per-tenant and stored in the same `tenants.feature_flags` JSONB
+column the package catalog writes — so `apply_package_to_tenant()` (any plan
+change) **replaces the whole column**, wiping any override. The UI carries a
+visible warning for this (`sa_tenant.features.overrides_warning`). Nothing
+in this phase prevents that reset; making overrides survive a plan change
+(as persistent per-tenant add-ons) is future work, not yet started.
+
+The dashboard's "Tenant Admin" tab (`saTab === "admin"`, `[org]/dashboard/
+page.tsx`) is now a tenant picker only: selecting a tenant navigates straight
+to `/settings/tenants/[tenantId]`. All of its old inline sub-tab JSX, state,
+and handlers (`selectAdminTenant`, `doAdminSave`,
+`handleAdminProfileSave`/`PlanSave`/`ContractSave`/`StatusAction`/
+`FeatureFlagsSave`/`TaUserSave`/`ContactsSave`) were deleted — 933 lines.
+Cross-links that used to jump straight into the old inline Contacts sub-tab
+(a registry row's contact name, the personnel modal's "no contacts" CTA) now
+navigate to the tenant's settings page instead.
+
+**Bug found and fixed during this work**: `PATCH /{tenant_id}/feature-flags`
+(`update_feature_flags` in `tenants.py`) had no `return` after a successful
+change — it fell off the end of the function and returned `None`, which
+FastAPI's `response_model` validation rejected with a 500 (surfaced to the
+user as a raw Pydantic traceback). This had been broken since the route was
+written; nothing exercised the "real change" branch until the new Feature
+overrides UI did. Fixed with a regression test
+(`tests/unit/test_feature_flags.py`).
 
 ---
 
@@ -2751,6 +2820,30 @@ waits silently for a password prompt and looks like a hang.
 NEVER `git stash pop` / `apply` a stash wholesale without reviewing
 `git stash show -p` first. Never commit deletion of package-lock.json or
 pnpm-lock.yaml. Abandoned work is ARCHIVED (archive/<name> branch), never deleted.
+```
+
+### Browser verification
+
+```
+Any change to a frontend screen is verified with Playwright, headless
+Chromium ONLY, against http://localhost:3000 — never Claude in Chrome and
+never the user's own browser (those are for the user's own driving, not
+automated verification). If headless Chromium will not launch, STOP and
+report the error — never silently skip the browser check or substitute curl.
+
+Screenshots go to frontend/test-results/screens/<step>/ — gitignored, never
+committed. Cover both English and Amharic (switch locale via
+localStorage.setItem("locale","am") + reload, or the in-app language
+switcher) for any screen whose text changed.
+
+Collect console errors on every page the spec visits
+(page.on("console", ...) filtered to type "error", plus page.on("pageerror"))
+and print them raw at the end of the run — a step fails if an error appears
+that the change under test introduced. A one-time 401 immediately after a
+fresh demo login is a known, harmless race (the SMART JWT is patched into
+the session fire-and-forget after login() returns — see
+frontend/tests/s9-sa-tenant.spec.ts's loginAs() helper, which waits for the
+token to land before navigating further); do not chase that one down.
 ```
 
 ---
