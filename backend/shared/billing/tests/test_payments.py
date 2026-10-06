@@ -172,8 +172,8 @@ def _payment(*, id="payment-1", tenant_id="tenant-1", subscription_id="sub-1",
 
 async def test_mark_paid_activates_subscription_and_extends_contract() -> None:
     payment = _payment(status="PENDING")
-    line_item = MagicMock(price_id="price-1", amount=Decimal("200.00"))
-    subscription = MagicMock(id="sub-1", price_id="price-1")
+    line_item = MagicMock(price_id="price-1", amount=Decimal("200.00"), price_tier="GROWTH")
+    subscription = MagicMock(id="sub-1", tier="GROWTH", price_id="price-1")
 
     db = _db([
         _result(fetchone=payment),       # SELECT payments FOR UPDATE
@@ -211,10 +211,11 @@ async def test_mark_paid_invalid_state_for_failed_payment_raises() -> None:
 
 async def test_mark_paid_renewal_at_new_price_updates_subscription_price() -> None:
     """The payment's line item price differs from the subscription's current
-    price_id -> the subscription moves onto the new price at renewal."""
+    price_id, but both are the SAME tier (a price change, not a plan change)
+    -> the subscription moves onto the new price at renewal."""
     payment = _payment(status="PENDING")
-    line_item = MagicMock(price_id="price-2", amount=Decimal("250.00"))
-    subscription = MagicMock(id="sub-1", price_id="price-1")  # old price
+    line_item = MagicMock(price_id="price-2", amount=Decimal("250.00"), price_tier="GROWTH")
+    subscription = MagicMock(id="sub-1", tier="GROWTH", price_id="price-1")  # old price, same tier
 
     db = _db([
         _result(fetchone=payment),
@@ -241,8 +242,8 @@ async def test_mark_paid_contract_end_never_moves_backwards() -> None:
     is the mechanism — this test asserts the literal clause is present so a
     future edit can't silently drop it and start overwriting later dates."""
     payment = _payment(status="PENDING", period_end=date(2026, 11, 6))
-    line_item = MagicMock(price_id="price-1", amount=Decimal("200.00"))
-    subscription = MagicMock(id="sub-1", price_id="price-1")
+    line_item = MagicMock(price_id="price-1", amount=Decimal("200.00"), price_tier="GROWTH")
+    subscription = MagicMock(id="sub-1", tier="GROWTH", price_id="price-1")
 
     db = _db([
         _result(fetchone=payment),
@@ -258,6 +259,36 @@ async def test_mark_paid_contract_end_never_moves_backwards() -> None:
     update_tenants_call = db.execute.call_args_list[5]
     sql_text = str(update_tenants_call.args[0])
     assert "GREATEST(COALESCE(contract_end" in sql_text
+
+
+async def test_mark_paid_tier_changed_after_invoice_keeps_current_tier_price() -> None:
+    """Exact bug sequence: an invoice is raised at tier STARTER, the plan is then
+    changed to GROWTH (update_live_subscription_tier already moved the subscription
+    onto GROWTH's price_id), and only THEN is the invoice paid. The line item's price
+    belongs to STARTER, a tier the subscription has since left — mark_paid must NOT
+    adopt it. It keeps the subscription's current (GROWTH) price and amount, moving
+    only the period + status."""
+    payment = _payment(status="PENDING")
+    line_item = MagicMock(price_id="price-starter", amount=Decimal("100.00"), price_tier="STARTER")
+    subscription = MagicMock(id="sub-1", tier="GROWTH", price_id="price-growth", amount=Decimal("200.00"))
+
+    db = _db([
+        _result(fetchone=payment),       # SELECT payments FOR UPDATE
+        _result(),                       # UPDATE payments
+        _result(fetchone=line_item),     # SELECT payment_line_items JOIN package_prices
+        _result(fetchone=subscription),  # SELECT subscriptions FOR UPDATE
+        _result(),                       # UPDATE subscriptions (period/status only)
+        _result(),                       # UPDATE tenants contract dates
+    ])
+
+    out = await mark_paid(db, "payment-1", provider="MANUAL")
+    assert out["already_paid"] is False
+
+    update_subscriptions_call = db.execute.call_args_list[4]
+    sql_text = str(update_subscriptions_call.args[0])
+    params = update_subscriptions_call.args[1]
+    assert "price_id" not in sql_text  # price/amount left untouched — tier mismatch guard
+    assert params["sid"] == "sub-1"
 
 
 async def test_mark_paid_unknown_payment_raises_not_found() -> None:

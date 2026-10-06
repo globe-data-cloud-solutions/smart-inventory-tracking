@@ -33,13 +33,17 @@ def vat_breakdown(amount: Decimal) -> dict[str, Any]:
 async def get_current_price(db: AsyncSession, tier: str, billing_period: str) -> Optional[Any]:
     """The latest package_prices row for tier+billing_period with
     effective_from <= now(), or None if no price exists. Callers must never
-    substitute a hardcoded amount when this returns None."""
+    substitute a hardcoded amount when this returns None.
+
+    Tie-break on created_at DESC: prices are append-only, so posting a correcting
+    price with the SAME effective_from as a wrong one is the only way to fix it —
+    the more-recently-created row must win."""
     return (await db.execute(
         text(
             "SELECT id, tier, billing_period, currency, amount, effective_from "
             "FROM package_prices "
             "WHERE tier = :tier AND billing_period = :period AND effective_from <= now() "
-            "ORDER BY effective_from DESC LIMIT 1"
+            "ORDER BY effective_from DESC, created_at DESC LIMIT 1"
         ),
         {"tier": tier, "period": billing_period},
     )).fetchone()

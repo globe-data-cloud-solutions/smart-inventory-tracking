@@ -12,7 +12,7 @@ Design (agreed, S5):
 """
 from __future__ import annotations
 
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 from decimal import Decimal
 from typing import Any, Optional
 
@@ -196,7 +196,7 @@ async def mark_paid(
     if payment.status != "PENDING":
         raise ValueError("INVALID_PAYMENT_STATE")
 
-    paid_at = paid_at or datetime.now()
+    paid_at = paid_at or datetime.now(timezone.utc)
 
     await db.execute(
         text(
@@ -214,17 +214,32 @@ async def mark_paid(
     )
 
     line_item = (await db.execute(
-        text("SELECT price_id, amount FROM payment_line_items WHERE payment_id = :pid LIMIT 1"),
+        text(
+            "SELECT pli.price_id, pli.amount, pp.tier AS price_tier "
+            "FROM payment_line_items pli "
+            "JOIN package_prices pp ON pp.id = pli.price_id "
+            "WHERE pli.payment_id = :pid LIMIT 1"
+        ),
         {"pid": str(payment.id)},
     )).fetchone()
 
     subscription = (await db.execute(
-        text("SELECT id, price_id FROM subscriptions WHERE id = :sid FOR UPDATE"),
+        text("SELECT id, tier, price_id FROM subscriptions WHERE id = :sid FOR UPDATE"),
         {"sid": str(payment.subscription_id)},
     )).fetchone()
 
-    if line_item is not None and str(line_item.price_id) != str(subscription.price_id):
-        # Renewal at a new price — the subscription moves onto the new snapshot.
+    # Adopt the invoice's line-item price onto the subscription ONLY when that price
+    # row's tier still matches the subscription's CURRENT tier. If the plan was changed
+    # between invoicing and payment, the line item belongs to a tier the subscription has
+    # since moved away from — adopting it would silently overwrite the new tier's price
+    # with the old tier's. In that case we keep the subscription's current price and only
+    # move the period + status (the else branch below).
+    if (
+        line_item is not None
+        and str(line_item.price_id) != str(subscription.price_id)
+        and line_item.price_tier == subscription.tier
+    ):
+        # Renewal at a new price within the same tier — the subscription moves onto the new snapshot.
         await db.execute(
             text(
                 "UPDATE subscriptions SET status = 'ACTIVE', "

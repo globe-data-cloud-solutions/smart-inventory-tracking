@@ -10,7 +10,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from shared.billing.subscriptions import period_end, update_live_subscription_tier, vat_breakdown
+from shared.billing.subscriptions import get_current_price, period_end, update_live_subscription_tier, vat_breakdown
 
 
 def test_vat_breakdown_1000_annual() -> None:
@@ -47,6 +47,20 @@ def test_period_end_december_wraps_to_next_year() -> None:
 def test_period_end_unknown_billing_period_raises() -> None:
     with pytest.raises(ValueError):
         period_end(date(2026, 1, 1), "WEEKLY")
+
+
+@pytest.mark.asyncio
+async def test_get_current_price_tie_break_on_created_at_favors_most_recent() -> None:
+    """Prices are append-only, so correcting a wrong scheduled price means posting a
+    new row with the SAME effective_from — the ORDER BY must break the tie on
+    created_at DESC so the correcting (more recently created) row wins."""
+    db = AsyncMock()
+    db.execute = AsyncMock(return_value=MagicMock(fetchone=MagicMock(return_value=MagicMock())))
+
+    await get_current_price(db, "GROWTH", "MONTHLY")
+
+    sql_text = str(db.execute.call_args.args[0])
+    assert "ORDER BY effective_from DESC, created_at DESC" in sql_text
 
 
 def _db(side_effect: list) -> AsyncMock:

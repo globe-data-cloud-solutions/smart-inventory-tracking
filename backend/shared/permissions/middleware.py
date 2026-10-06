@@ -105,6 +105,13 @@ def require_permission(action: Permission) -> Callable:
                 "region_id": getattr(user, "region_id", None),
             }
 
+            # Stash the route's PATH tenant_id (e.g. /{tenant_id}/plan) separately from
+            # the actor's own tenant_id — an SA has no tenant_id of its own, so this is
+            # how audit_log() attributes an SA decision to the tenant being acted on.
+            path_tenant_id = kwargs.get("tenant_id")
+            if path_tenant_id is not None and "target_tenant_id" not in resource:
+                resource["target_tenant_id"] = str(path_tenant_id)
+
             body = kwargs.get("body")
             if body and hasattr(body, "model_dump"):
                 resource.update(body.model_dump(exclude_none=True))
