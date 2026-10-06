@@ -2,8 +2,10 @@
 
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import { login, loginWithDevEmail } from "@/lib/demo-auth";
 import { SA_USER } from "@/lib/demo-data";
+import { rawPost } from "@/lib/api";
 import { t } from "@/lib/i18n";
 
 export default function LoginPage() {
@@ -15,6 +17,9 @@ export default function LoginPage() {
   const [loading, setLoading]   = useState(false);
   // Show password by default so users can see SA credentials without clicking
   const [showPwd, setShowPwd]   = useState(true);
+  const [emailNotVerified, setEmailNotVerified] = useState(false);
+  const [resendSent, setResendSent] = useState(false);
+  const [resending, setResending]   = useState(false);
 
   // Read URL params client-side only to avoid SSR/hydration mismatch.
   // useSearchParams() requires <Suspense> in Next.js 14; window.location is safer here.
@@ -22,12 +27,29 @@ export default function LoginPage() {
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     setSessionExpired(params.get("reason") === "session_expired");
+    const prefill = params.get("email");
+    if (prefill) setEmail(prefill);
   }, []);
+
+  const handleResend = async () => {
+    if (!email.trim()) return;
+    setResending(true);
+    try {
+      await rawPost("/api/v1/auth/resend-verification", { email: email.trim() });
+    } catch {
+      // Always shows the same message regardless of outcome — never reveals account existence.
+    } finally {
+      setResending(false);
+      setResendSent(true);
+    }
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
     setLockoutMessage("");
+    setEmailNotVerified(false);
+    setResendSent(false);
     setLoading(true);
     await new Promise((r) => setTimeout(r, 300));
     let session = login(email, password);
@@ -38,8 +60,14 @@ export default function LoginPage() {
       } catch (err) {
         if (err instanceof Error) {
           const status = (err as Error & { status?: number }).status;
+          const code   = (err as Error & { code?: string }).code;
           if (status === 429) {
             setLockoutMessage(err.message);
+            setLoading(false);
+            return;
+          }
+          if (status === 403 && code === "EMAIL_NOT_VERIFIED") {
+            setEmailNotVerified(true);
             setLoading(false);
             return;
           }
@@ -53,7 +81,7 @@ export default function LoginPage() {
       }
     }
     if (!session) {
-      setError("Invalid email or password.");
+      setError(t("login.invalid_credentials"));
       setLoading(false);
       return;
     }
@@ -89,7 +117,7 @@ export default function LoginPage() {
 
         <div className="mb-6">
           <p className="text-xs text-slate-400 uppercase tracking-wider font-semibold mb-2">
-            System Administrator
+            {t("login.system_admin_heading")}
           </p>
           {/* Clicking anywhere on the card except the eye icon fills both fields */}
           <div
@@ -126,7 +154,7 @@ export default function LoginPage() {
 
         <div className="mt-auto border-t border-white/10 pt-4">
           <p className="text-xs text-slate-500">
-            To add tenant accounts, sign in as SA and use Settings → Personnel.
+            {t("login.personnel_hint")}
           </p>
         </div>
       </div>
@@ -136,20 +164,20 @@ export default function LoginPage() {
         <div className="w-full max-w-md">
           <div className="bg-white rounded-2xl shadow-2xl p-8">
             <div className="mb-7">
-              <h1 className="text-2xl font-bold text-gray-900">Sign in</h1>
-              <p className="text-gray-500 text-sm mt-1">Access your inventory dashboard</p>
+              <h1 className="text-2xl font-bold text-gray-900">{t("login.title")}</h1>
+              <p className="text-gray-500 text-sm mt-1">{t("login.subtitle")}</p>
             </div>
 
             {sessionExpired && (
               <div className="mb-5 rounded-lg bg-amber-50 border border-amber-200 px-4 py-3 text-sm text-amber-800">
-                Your session has expired. Please sign in again to continue.
+                {t("login.session_expired")}
               </div>
             )}
 
             <form onSubmit={handleSubmit} className="space-y-5">
               <div>
                 <label htmlFor="email" className="block text-sm font-medium text-gray-700 mb-1.5">
-                  Email address
+                  {t("login.email_label")}
                 </label>
                 <input
                   id="email"
@@ -158,13 +186,13 @@ export default function LoginPage() {
                   onChange={(e) => setEmail(e.target.value)}
                   required
                   autoComplete="email"
-                  placeholder="you@company.com"
+                  placeholder={t("login.email_placeholder")}
                   className="w-full rounded-lg border border-gray-300 px-4 py-2.5 text-sm text-gray-900 placeholder-gray-400 focus:border-brand-500 focus:ring-2 focus:ring-brand-200 outline-none transition"
                 />
               </div>
               <div>
                 <label htmlFor="password" className="block text-sm font-medium text-gray-700 mb-1.5">
-                  Password
+                  {t("login.password_label")}
                 </label>
                 <input
                   id="password"
@@ -173,7 +201,7 @@ export default function LoginPage() {
                   onChange={(e) => setPassword(e.target.value)}
                   required
                   autoComplete="off"
-                  placeholder="enter your password"
+                  placeholder={t("login.password_placeholder")}
                   className="w-full rounded-lg border border-gray-300 px-4 py-2.5 text-sm text-gray-900 placeholder-gray-400 focus:border-brand-500 focus:ring-2 focus:ring-brand-200 outline-none transition"
                 />
               </div>
@@ -182,6 +210,22 @@ export default function LoginPage() {
                 // Rate limit, not a credential error — amber, not red.
                 <div className="rounded-lg bg-amber-50 border border-amber-200 px-4 py-3 text-sm text-amber-800">
                   {lockoutMessage}
+                </div>
+              ) : emailNotVerified ? (
+                <div className="rounded-lg bg-amber-50 border border-amber-200 px-4 py-3 text-sm text-amber-800 space-y-2">
+                  <p>{t("login.email_not_verified")}</p>
+                  {resendSent ? (
+                    <p className="text-emerald-700">{t("verify_email.resend_sent")}</p>
+                  ) : (
+                    <button
+                      type="button"
+                      disabled={resending}
+                      onClick={() => void handleResend()}
+                      className="font-semibold underline disabled:opacity-60"
+                    >
+                      {t("verify_email.resend_btn")}
+                    </button>
+                  )}
                 </div>
               ) : error && (
                 <div className="rounded-lg bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-700">
@@ -197,22 +241,28 @@ export default function LoginPage() {
                 {loading ? (
                   <>
                     <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                    Signing in…
+                    {t("login.signing_in")}
                   </>
-                ) : "Sign in →"}
+                ) : t("login.submit_btn")}
               </button>
             </form>
 
+            <p className="text-center text-sm text-gray-500 mt-5">
+              <Link href="/signup" className="font-semibold text-brand-600 hover:text-brand-700">
+                {t("login.create_account")}
+              </Link>
+            </p>
+
             {/* Mobile credentials hint */}
             <div className="mt-6 p-4 rounded-lg bg-brand-50 border border-brand-100 lg:hidden">
-              <p className="text-xs font-semibold text-brand-700 mb-2">System Admin</p>
+              <p className="text-xs font-semibold text-brand-700 mb-2">{t("login.mobile_system_admin")}</p>
               <p className="text-xs font-mono text-brand-800">{SA_USER.email}</p>
               <p className="text-xs font-mono text-brand-800">{SA_USER.password}</p>
             </div>
           </div>
 
           <p className="text-center text-slate-400 text-xs mt-6">
-            SMART Inventory Tracker · RBAC + ABAC · 3 languages
+            {t("login.footer_tagline")}
           </p>
         </div>
       </div>

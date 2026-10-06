@@ -157,11 +157,12 @@ export async function loginWithDevEmail(email: string, password?: string): Promi
           | { detail?: { code?: string; message?: string } }
           | null;
         const code = errBody?.detail?.code;
-        if (code === "TENANT_SUSPENDED" || code === "TENANT_DEACTIVATED") {
+        if (code === "TENANT_SUSPENDED" || code === "TENANT_DEACTIVATED" || code === "EMAIL_NOT_VERIFIED") {
           const err = new Error(
             errBody?.detail?.message ?? "Your account access has been restricted. Please contact your administrator."
-          ) as Error & { status?: number };
+          ) as Error & { status?: number; code?: string };
           err.status = 403;
+          err.code = code;
           throw err;
         }
       }

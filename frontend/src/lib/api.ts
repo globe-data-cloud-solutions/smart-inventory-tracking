@@ -149,3 +149,30 @@ export const api = {
   patch:  <T>(path: string, body: unknown, token?: string) => request<T>("PATCH",  path, body, token),
   delete: <T>(path: string, token?: string) => request<T>("DELETE", path, undefined, token),
 };
+
+/**
+ * POST to an endpoint that returns a raw JSON body (not the {success, data, ...}
+ * envelope) — e.g. auth-service's /verify-email and /resend-verification, which
+ * predate the SuccessResponse convention and carry no SMART JWT. Never use `api.post`
+ * for these: it throws on any response lacking `success: true`, which these never set.
+ */
+export async function rawPost<T>(path: string, body: unknown): Promise<T> {
+  const res = await fetch(`${BASE_URL}${path}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  const json = (await res.json().catch(() => null)) as
+    | { detail?: { code?: string; message?: string } | string }
+    | null;
+  if (!res.ok) {
+    const det = json?.detail;
+    const detObj = typeof det === "object" ? det : null;
+    const message = detObj?.message ?? (typeof det === "string" ? det : `HTTP ${res.status}`);
+    const err = new Error(message) as Error & { status: number; code?: string };
+    err.status = res.status;
+    err.code = detObj?.code;
+    throw err;
+  }
+  return json as T;
+}
