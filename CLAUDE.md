@@ -1824,6 +1824,50 @@ remains the durable record for those changes. A DB failure during the audit
 write is caught and `logger.exception`'d, never raised — this must never
 break the primary request.
 
+### SA Tenant View (S8) — reusing the TA tabs in SA mode
+
+`frontend/src/app/[org]/settings/tenants/[tenantId]/page.tsx` — SA-only (same
+inline not-authorised pattern as `[org]/settings/plans/page.tsx`: a plain
+restricted message, no redirect). Opened via an "Open" action on each row of
+the SA registry table (`[org]/dashboard/page.tsx`). The header (name, slug,
+status, signup_source) is read from the existing `GET /sa/registry` list —
+no new backend field was added for it.
+
+The five TA tenant-admin tab components (`[org]/settings/tenant-admin/
+components/*.tsx`) are **reused, not copied**: `TabProps.tenantId` is now
+optional. Absent (the TA's own page) → every tab calls `/api/v1/tenants/
+me/...`. Present (this SA view, the real tenant UUID) → every tab calls the
+matching `/api/v1/tenants/{tenantId}/...` by-tenant endpoint instead, and
+SA-only controls appear. `ProfileTab` reads via `GET /{tenant_id}` (not a
+separate `/{tenant_id}/profile` route — that endpoint doesn't exist, since
+`GET /{tenant_id}` already returns every field the tab needs) but still
+writes via `PATCH /{tenant_id}/profile`.
+
+SA-only additions, each linking to the existing edit surface rather than
+duplicating it (plan tier change and contract-date edits both stay on the SA
+dashboard's Admin tab — `PlanTab`/`ContractTab` link there instead of a
+second edit UI):
+- **Plan tab**: raise invoice (`POST /{tenant_id}/invoices`), mark paid
+  (`POST .../payments/{id}/mark-paid` — the confirm step shows the amount and
+  the invoice's `period_end`, which becomes the tenant's new contract end,
+  using data already loaded by `GET /{tenant_id}/subscription`, before
+  submitting), cancel (`POST .../payments/{id}/cancel`, note required).
+  Billing error codes (`INVOICE_ALREADY_PENDING`, `NO_LIVE_SUBSCRIPTION`,
+  `INVALID_PAYMENT_STATE`, `WRONG_PROVIDER`, `PRICE_NOT_AVAILABLE`,
+  `PAYMENT_NOT_FOUND`) map to `sa_tenant.billing_error.<code>` i18n keys.
+- **Contacts tab**: full create/edit via `POST`/`PATCH /{tenant_id}/
+  contacts(/{id})` (added in S8-1). No delete in SA mode — no by-tenant
+  delete route exists.
+- **Features tab**: read-only in both modes, just a different `GET` path.
+
+`DELETE /{tenant_id}` always returns `409 USE_DEACTIVATE` — tenants are never
+hard-deleted (§1, §28). Its one caller, the onboarding wizard's rollback on a
+failed signup, is gone: `POST /api/v1/tenants/` already creates the tenant
+and its TA admin atomically in one DB transaction (`admin_name`/
+`admin_email`/`admin_password`), so `frontend/src/app/onboard/page.tsx`'s
+`launch()` sends those fields in its single step-1 call instead of a separate
+`POST /{tenantId}/users` step — there is nothing left to roll back.
+
 ---
 
 ## 16. Dispatch Strategy Engine
