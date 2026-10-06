@@ -376,7 +376,9 @@
     "contract_start": "Contract Start Date",
     "contract_end": "Contract End Date",
     "contract_dates_heading": "Contract Dates",
-    "contract_dates_optional": "Optional — leave blank if no fixed contract period"
+    "contract_dates_optional": "Optional — leave blank if no fixed contract period",
+    "duplicate_email_error": "This email address is already in use by another account.",
+    "slug_exists_error": "That company URL is already taken. Try a different company name."
   },
   "count": {
     "title": "Stock Count",

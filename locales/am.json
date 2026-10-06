@@ -378,7 +378,9 @@
     "contract_start": "የውል መጀመሪያ ቀን",
     "contract_end": "የውል ማብቂያ ቀን",
     "contract_dates_heading": "የውል ቀናት",
-    "contract_dates_optional": "አማራጭ — ቋሚ የውል ጊዜ ከሌለ ባዶ ይተው"
+    "contract_dates_optional": "አማራጭ — ቋሚ የውል ጊዜ ከሌለ ባዶ ይተው",
+    "duplicate_email_error": "ይህ ኢሜይል አድራሻ በሌላ አካውንት ውስጥ ጥቅም ላይ ውሏል።",
+    "slug_exists_error": "ይህ የድርጅት URL ተይዟል። የተለየ የድርጅት ስም ይሞክሩ።"
   },
   "count": {
     "title": "የክምችት ቆጠራ",

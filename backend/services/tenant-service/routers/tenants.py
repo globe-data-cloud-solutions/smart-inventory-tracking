@@ -1021,6 +1021,31 @@ async def create_tenant(
     )
 
 
+async def _get_tenant_plan_data(db: AsyncSession, tenant_id: uuid.UUID | str) -> dict:
+    """Shared by GET /me/plan (TA) and GET /{tenant_id}/plan (SA) — same shape.
+    plan_tier is None, never a hardcoded tier, when the tenant has none set (CLAUDE.md §15)."""
+    row = (await db.execute(
+        text(
+            "SELECT plan_tier, feature_flags, sku_cap, "
+            "       max_warehouses, max_users, "
+            "       contract_start, contract_end "
+            "FROM   tenants WHERE id = :tid"
+        ),
+        {"tid": str(tenant_id)},
+    )).fetchone()
+    if not row:
+        raise HTTPException(status_code=404, detail="Tenant not found")
+    return {
+        "plan_tier":       str(row.plan_tier) if row.plan_tier else None,
+        "feature_flags":   dict(row.feature_flags) if row.feature_flags else {},
+        "sku_cap":         row.sku_cap,
+        "max_warehouses":  row.max_warehouses,
+        "max_users":       row.max_users,
+        "contract_start":  str(row.contract_start) if row.contract_start else None,
+        "contract_end":    str(row.contract_end)   if row.contract_end   else None,
+    }
+
+
 @router.get("/me/plan", response_model=SuccessResponse[dict])
 @require_permission(PERMISSIONS.TENANT_VIEW)
 async def get_my_plan(
@@ -1031,26 +1056,7 @@ async def get_my_plan(
     Used by the frontend to gate UI features."""
     if not user or not user.tenant_id:
         raise HTTPException(status_code=403, detail="No tenant context")
-    row = (await db.execute(
-        text(
-            "SELECT plan_tier, feature_flags, sku_cap, "
-            "       max_warehouses, max_users, "
-            "       contract_start, contract_end "
-            "FROM   tenants WHERE id = :tid"
-        ),
-        {"tid": str(user.tenant_id)},
-    )).fetchone()
-    if not row:
-        raise HTTPException(status_code=404, detail="Tenant not found")
-    return SuccessResponse(data={
-        "plan_tier":       str(row.plan_tier) if row.plan_tier else "ENTERPRISE",
-        "feature_flags":   dict(row.feature_flags) if row.feature_flags else {},
-        "sku_cap":         row.sku_cap,
-        "max_warehouses":  row.max_warehouses,
-        "max_users":       row.max_users,
-        "contract_start":  str(row.contract_start) if row.contract_start else None,
-        "contract_end":    str(row.contract_end)   if row.contract_end   else None,
-    })
+    return SuccessResponse(data=await _get_tenant_plan_data(db, user.tenant_id))
 
 
 class PlanUpdateRequest(BaseModel):
@@ -1290,24 +1296,17 @@ async def get_my_contacts(
     ])
 
 
-@router.post("/me/contacts", status_code=201, response_model=SuccessResponse[TenantContactOut])
-@require_permission(PERMISSIONS.TENANT_CONFIGURE)
-async def create_my_contact(
-    body: TenantContactIn,
-    user=Depends(get_current_user),
-    db: AsyncSession = Depends(get_db_session),
-) -> SuccessResponse[TenantContactOut]:
-    """TA: create a contact for their own tenant."""
+async def _create_tenant_contact(
+    db: AsyncSession, tenant_id: uuid.UUID | str, body: TenantContactIn,
+) -> TenantContactOut:
+    """Shared by POST /me/contacts (TA) and POST /{tenant_id}/contacts (SA)."""
     from datetime import datetime
-
-    if not user or not user.tenant_id:
-        raise HTTPException(status_code=403, detail="No tenant context")
 
     if not body.full_name or not body.full_name.strip():
         raise HTTPException(status_code=422, detail="full_name is required")
 
     contact_id = uuid.uuid4()
-    now = datetime.utcnow().isoformat()
+    now_dt = datetime.utcnow()
 
     await db.execute(
         text(
@@ -1317,43 +1316,36 @@ async def create_my_contact(
         ),
         {
             "id": contact_id,
-            "tid": str(user.tenant_id),
+            "tid": str(tenant_id),
             "primary": body.is_primary,
             "name": body.full_name.strip(),
             "title": body.position_title,
             "email": body.email,
             "phone": body.phone,
             "mobile": body.mobile,
-            "now": now,
+            "now": now_dt,
         },
     )
     await db.commit()
 
-    return SuccessResponse(data=TenantContactOut(
+    return TenantContactOut(
         id=contact_id,
-        tenant_id=user.tenant_id,
+        tenant_id=tenant_id,
         is_primary=body.is_primary,
         full_name=body.full_name.strip(),
         position_title=body.position_title,
         email=body.email,
         phone=body.phone,
         mobile=body.mobile,
-        created_at=now,
-    ))
+        created_at=now_dt.isoformat(),
+    )
 
 
-@router.patch("/me/contacts/{contact_id}", response_model=SuccessResponse[TenantContactOut])
-@require_permission(PERMISSIONS.TENANT_CONFIGURE)
-async def update_my_contact(
-    contact_id: uuid.UUID,
-    body: TenantContactIn,
-    user=Depends(get_current_user),
-    db: AsyncSession = Depends(get_db_session),
-) -> SuccessResponse[TenantContactOut]:
-    """TA: update a contact in their own tenant."""
-    if not user or not user.tenant_id:
-        raise HTTPException(status_code=403, detail="No tenant context")
-
+async def _update_tenant_contact(
+    db: AsyncSession, tenant_id: uuid.UUID | str, contact_id: uuid.UUID, body: TenantContactIn,
+) -> TenantContactOut:
+    """Shared by PATCH /me/contacts/{id} (TA) and PATCH /{tenant_id}/contacts/{id} (SA).
+    Raises 404 if the contact does not belong to tenant_id."""
     if not body.full_name or not body.full_name.strip():
         raise HTTPException(status_code=422, detail="full_name is required")
 
@@ -1363,7 +1355,7 @@ async def update_my_contact(
             "email, phone, mobile, created_at "
             "FROM tenant_contacts WHERE id = :id AND tenant_id = :tid"
         ),
-        {"id": contact_id, "tid": str(user.tenant_id)},
+        {"id": contact_id, "tid": str(tenant_id)},
     )).fetchone()
     if not row:
         raise HTTPException(status_code=404, detail="Contact not found")
@@ -1377,7 +1369,7 @@ async def update_my_contact(
         ),
         {
             "id": contact_id,
-            "tid": str(user.tenant_id),
+            "tid": str(tenant_id),
             "primary": body.is_primary,
             "name": body.full_name.strip(),
             "title": body.position_title,
@@ -1388,9 +1380,9 @@ async def update_my_contact(
     )
     await db.commit()
 
-    return SuccessResponse(data=TenantContactOut(
+    return TenantContactOut(
         id=contact_id,
-        tenant_id=user.tenant_id,
+        tenant_id=tenant_id,
         is_primary=body.is_primary,
         full_name=body.full_name.strip(),
         position_title=body.position_title,
@@ -1398,7 +1390,34 @@ async def update_my_contact(
         phone=body.phone,
         mobile=body.mobile,
         created_at=row.created_at.isoformat(),
-    ))
+    )
+
+
+@router.post("/me/contacts", status_code=201, response_model=SuccessResponse[TenantContactOut])
+@require_permission(PERMISSIONS.TENANT_CONFIGURE)
+async def create_my_contact(
+    body: TenantContactIn,
+    user=Depends(get_current_user),
+    db: AsyncSession = Depends(get_db_session),
+) -> SuccessResponse[TenantContactOut]:
+    """TA: create a contact for their own tenant."""
+    if not user or not user.tenant_id:
+        raise HTTPException(status_code=403, detail="No tenant context")
+    return SuccessResponse(data=await _create_tenant_contact(db, user.tenant_id, body))
+
+
+@router.patch("/me/contacts/{contact_id}", response_model=SuccessResponse[TenantContactOut])
+@require_permission(PERMISSIONS.TENANT_CONFIGURE)
+async def update_my_contact(
+    contact_id: uuid.UUID,
+    body: TenantContactIn,
+    user=Depends(get_current_user),
+    db: AsyncSession = Depends(get_db_session),
+) -> SuccessResponse[TenantContactOut]:
+    """TA: update a contact in their own tenant."""
+    if not user or not user.tenant_id:
+        raise HTTPException(status_code=403, detail="No tenant context")
+    return SuccessResponse(data=await _update_tenant_contact(db, user.tenant_id, contact_id, body))
 
 
 @router.delete("/me/contacts/{contact_id}", status_code=204)
@@ -1422,6 +1441,19 @@ async def delete_my_contact(
         raise HTTPException(status_code=404, detail="Contact not found")
 
     return Response(status_code=204)
+
+
+@router.get("/{tenant_id}/plan", response_model=SuccessResponse[dict])
+@require_permission(PERMISSIONS.TENANT_MANAGE)
+async def get_tenant_plan(
+    tenant_id: uuid.UUID,
+    user=Depends(get_current_user),
+    db: AsyncSession = Depends(get_db_session),
+) -> SuccessResponse[dict]:
+    """SA-only: same data/shape as GET /me/plan, for any tenant."""
+    if not user or user.role != "SA":
+        raise HTTPException(status_code=403, detail={"code": "FORBIDDEN", "message": "SA only"})
+    return SuccessResponse(data=await _get_tenant_plan_data(db, tenant_id))
 
 
 @router.patch("/{tenant_id}/plan", response_model=SuccessResponse[dict])
@@ -1902,16 +1934,16 @@ async def delete_tenant(
     user=Depends(get_current_user),
     db: AsyncSession = Depends(get_db_session),
 ) -> Response:
-    from sqlalchemy import text
-    result = await db.execute(
-        text("SELECT id FROM tenants WHERE id = :id"), {"id": str(tenant_id)}
+    """Tenants are never hard-deleted (CLAUDE.md §1, §28) — use PATCH /{tenant_id}/deactivate.
+    The onboarding wizard used to call this to roll back a failed signup; it now creates
+    the tenant and its TA admin atomically in one POST / request, so no caller remains."""
+    raise HTTPException(
+        status_code=409,
+        detail={
+            "code": "USE_DEACTIVATE",
+            "message": "Tenants are never deleted; use PATCH /{tenant_id}/deactivate.",
+        },
     )
-    if not result.fetchone():
-        raise HTTPException(status_code=404, detail="Tenant not found")
-    await db.execute(
-        text("DELETE FROM tenants WHERE id = :id"), {"id": str(tenant_id)}
-    )
-    return Response(status_code=204)
 
 
 async def _log_tenant_activity(
@@ -2065,6 +2097,54 @@ async def list_tenant_contacts(
         )
         for row in rows
     ])
+
+
+@router.post("/{tenant_id}/contacts", status_code=201, response_model=SuccessResponse[TenantContactOut])
+@require_permission(PERMISSIONS.TENANT_MANAGE)
+async def create_tenant_contact(
+    tenant_id: uuid.UUID,
+    body: TenantContactIn,
+    user=Depends(get_current_user),
+    db: AsyncSession = Depends(get_db_session),
+) -> SuccessResponse[TenantContactOut]:
+    """SA-only: create a contact for any tenant. Same validation as POST /me/contacts."""
+    if not user or user.role != "SA":
+        raise HTTPException(status_code=403, detail={"code": "FORBIDDEN", "message": "SA only"})
+    result = await _create_tenant_contact(db, tenant_id, body)
+    try:
+        await _log_tenant_activity(
+            db, tenant_id, str(user.user_id),
+            action="CONTACT_CREATED",
+            new_value=result.full_name,
+        )
+    except Exception:
+        pass
+    return SuccessResponse(data=result)
+
+
+@router.patch("/{tenant_id}/contacts/{contact_id}", response_model=SuccessResponse[TenantContactOut])
+@require_permission(PERMISSIONS.TENANT_MANAGE)
+async def update_tenant_contact(
+    tenant_id: uuid.UUID,
+    contact_id: uuid.UUID,
+    body: TenantContactIn,
+    user=Depends(get_current_user),
+    db: AsyncSession = Depends(get_db_session),
+) -> SuccessResponse[TenantContactOut]:
+    """SA-only: update a contact belonging to any tenant. 404 if the contact
+    does not belong to tenant_id. Same validation as PATCH /me/contacts/{id}."""
+    if not user or user.role != "SA":
+        raise HTTPException(status_code=403, detail={"code": "FORBIDDEN", "message": "SA only"})
+    result = await _update_tenant_contact(db, tenant_id, contact_id, body)
+    try:
+        await _log_tenant_activity(
+            db, tenant_id, str(user.user_id),
+            action="CONTACT_UPDATED",
+            new_value=result.full_name,
+        )
+    except Exception:
+        pass
+    return SuccessResponse(data=result)
 
 
 @router.patch("/{tenant_id}/contract", response_model=SuccessResponse[dict])

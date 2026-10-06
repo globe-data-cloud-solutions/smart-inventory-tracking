@@ -232,37 +232,25 @@ export default function OnboardPage() {
   async function launch() {
     setLoading(true);
     setError("");
-    let tenantId: string | null = null;
     try {
-      // Step 1: Create the tenant
+      // Step 1: Create the tenant AND its TA admin user atomically — one DB
+      // transaction server-side (CLAUDE.md §29: no rollback path is needed
+      // because there is nothing left to roll back).
       const tenantData = await api.post<TenantCreateResponse>("/api/v1/tenants/", {
         name:               form.name.trim(),
         default_locale:     form.locale,
         organisation_type:  form.orgType || null,
         plan_tier:          form.planTier,
         ...(form.industry.trim() ? { industry: form.industry.trim() } : {}),
-        // Only PRODUCER tenants have a SKU cap; RETAILER/HYBRID get NULL (unlimited).
-        ...(form.orgType === "PRODUCER" && form.skuLimit
-          ? { sku_cap: parseInt(form.skuLimit, 10) }
-          : {}),
+        // SKU cap applies to every organisation_type, not just PRODUCER (CLAUDE.md §15).
+        ...(form.skuLimit ? { sku_cap: parseInt(form.skuLimit, 10) } : {}),
+        admin_name:     form.adminName.trim(),
+        admin_email:    form.adminEmail.trim(),
+        admin_password: form.adminPassword,
       });
-      tenantId = tenantData.id;
+      const tenantId = tenantData.id;
 
-      // Step 2: Create the TA admin user
-      try {
-        await api.post(`/api/v1/tenants/${tenantId}/users`, {
-          name:     form.adminName.trim(),
-          email:    form.adminEmail.trim(),
-          role:     "TA",
-          password: form.adminPassword,
-        });
-      } catch (userErr: unknown) {
-        // Rollback: remove the orphaned tenant
-        try { await api.delete(`/api/v1/tenants/${tenantId}`); } catch { /* ignore rollback errors */ }
-        throw userErr;
-      }
-
-      // Step 3: Save contract dates (best-effort)
+      // Step 2: Save contract dates (best-effort)
       if (form.contractStart || form.contractEnd) {
         try {
           await api.patch(`/api/v1/tenants/${tenantId}/contract`, {
@@ -273,7 +261,7 @@ export default function OnboardPage() {
         } catch { /* non-fatal */ }
       }
 
-      // Step 4: Save contacts (best-effort — don't roll back tenant if this fails)
+      // Step 3: Save contacts (best-effort — don't roll back tenant if this fails)
       if (primaryContact.full_name.trim() && primaryContact.email.trim()) {
         const contactRows = [
           {
@@ -323,7 +311,14 @@ export default function OnboardPage() {
       });
       setStep(7);
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : "Unexpected error");
+      const code = (err as { code?: string } | undefined)?.code;
+      if (code === "DUPLICATE_EMAIL") {
+        setError(t("wizard.duplicate_email_error"));
+      } else if (code === "SLUG_ALREADY_EXISTS") {
+        setError(t("wizard.slug_exists_error"));
+      } else {
+        setError(err instanceof Error ? err.message : "Unexpected error");
+      }
     } finally {
       setLoading(false);
     }
