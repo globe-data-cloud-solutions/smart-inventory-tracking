@@ -481,6 +481,13 @@ OUTBOX_POLL_INTERVAL_SECONDS=30
 OUTBOX_MAX_RETRIES=5
 OUTBOX_ALERT_THRESHOLD=500     # CloudWatch alarm fires when PENDING depth exceeds this
 
+# ── Gateway ──────────────────────────────────────────────────────────────────
+TRUSTED_PROXY_HOPS=0           # 0 (default/local) = direct connection; set to 1 behind the ALB so
+                                # X-Real-IP is read from the right end of X-Forwarded-For, not the ALB's own IP
+
+# ── Billing (S5) ─────────────────────────────────────────────────────────────
+STUB_WEBHOOK_SECRET            # HMAC-SHA256 secret for the STUB payment provider's webhook — from Secrets Manager
+
 # ── Auth ─────────────────────────────────────────────────────────────────────
 JWT_SECRET            # min 64 random chars — from Secrets Manager
 JWT_ALGORITHM=HS256
@@ -1659,10 +1666,13 @@ prices include 15% VAT via `vat_breakdown()`.
 Env flags (local `.env`, never committed):
 
 ```
-EMAIL_DELIVERY_MODE=log           # "log" writes [DEV EMAIL] lines; anything else raises NotImplementedError until SES is wired up
+EMAIL_DELIVERY_MODE=log           # default: "log" only when ENVIRONMENT=local, else "disabled" (raises
+                                   # NotImplementedError until SES is wired up) — an explicit value always wins
 EMAIL_VERIFICATION_REQUIRED=false # /token's EMAIL_NOT_VERIFIED gate is off until SES is live
 APP_BASE_URL=http://localhost:3000
 TERMS_VERSION=2026-10
+TRUSTED_PROXY_HOPS=0               # set to 1 once behind the ALB — see §6 env var reference
+STUB_WEBHOOK_SECRET=               # HMAC secret for the STUB payment provider's webhook (§15 Billing)
 ```
 
 > **Known gap (2026-10):** on AWS, sign-in goes through Cognito, which has no
@@ -1670,6 +1680,55 @@ TERMS_VERSION=2026-10
 > bypasses this via `dev_email`/`dev_password` on `/token`. This must be
 > resolved alongside the Cognito/SES work (CLAUDE.md §2) before self sign-up
 > can go live outside local dev.
+
+### Billing (S5) — invoices, payments, providers
+
+Schema (migration 071): `subscriptions` (one live row per tenant — `status IN
+('ACTIVE','PENDING_PAYMENT','PAST_DUE')`), `payments`, append-only
+`payment_line_items`. `backend/shared/billing/payments.py` is the only writer
+of payment state transitions; `backend/shared/billing/providers/` is the
+provider registry.
+
+- **Invoice pricing** (`next_invoice_period()` / `create_invoice()`): a
+  subscription's **first** invoice (still `PENDING_PAYMENT`, no `PAID`
+  payment yet) bills the current period at the subscription's own **price
+  snapshot**. Every invoice after that is a **renewal** — `start =
+  current_period_end`, priced at the **current** package price at invoice
+  time. A price change therefore applies at the next renewal, never
+  retroactively. One `PENDING` payment per subscription at a time
+  (`INVOICE_ALREADY_PENDING`, HTTP 409).
+- **`mark_paid()`** is idempotent (a second call returns `already_paid:
+  true` and touches nothing else), activates the subscription onto the
+  paid period/price, and extends `tenants.contract_end` via
+  `GREATEST(COALESCE(contract_end, …), …)` — it only ever moves forward,
+  never backwards, and `contract_start` is set only if still unset.
+  **Paying extends the contract; nothing is enforced on non-payment yet** —
+  there is no suspension/dunning logic in this phase.
+- **Providers** (`backend/shared/billing/providers/`): `MANUAL` (SA marks a
+  payment paid by hand; no webhook) and `STUB` (a fake gateway for testing
+  the webhook path — HMAC-SHA256 over `STUB_WEBHOOK_SECRET`, header
+  `X-Stub-Signature`; missing secret or bad signature always rejects, never
+  falls back to trusting an unsigned body). `get_provider(name)` is the slot
+  a real gateway (Chapa, Telebirr, …) plugs into later — implement
+  `PaymentProvider.checkout()` / `.parse_webhook()` and register it; nothing
+  else changes.
+- **Public webhook**: `POST /api/v1/tenants/public/payments/webhook/stub` —
+  no SMART JWT (allowlisted in api-gateway's `UNAUTHENTICATED_PATHS` and in
+  `scripts/ci_drift_check.py`); the HMAC signature **is** the auth check.
+  Rate-limited 120/60s per IP. Idempotent on replay (`mark_paid()`'s own
+  idempotency + `uq_payments_provider_reference`).
+- **Plan change = no proration**: `PATCH /{tenant_id}/plan` (SA) and the TA
+  profile plan change both call `update_live_subscription_tier()` in the
+  same transaction as `apply_package_to_tenant()` — the live subscription's
+  `tier`/`price_id`/`amount` update **immediately** (entitlements change
+  now), `current_period_start`/`end` and contract dates are **untouched**;
+  the new price is charged starting from the next invoice. No live
+  subscription → left as-is, a warning is logged, one is never created here.
+- **Permissions**: `billing:view` (SA, platform-wide read), `billing:manage`
+  (SA, invoice/payment writes, audit-required), `billing:view_own` (TA,
+  its own tenant, read-only). Endpoints: SA
+  `GET/POST /{tenant_id}/subscription|invoices|payments/{id}/mark-paid|cancel`;
+  TA `GET /me/subscription`, `GET /me/invoices/{payment_id}/checkout`.
 
 ---
 
