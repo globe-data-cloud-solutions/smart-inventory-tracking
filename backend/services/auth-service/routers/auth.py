@@ -13,16 +13,23 @@ from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 import bcrypt as _bcrypt
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Request
 from jose import jwt
 from pydantic import BaseModel
 
+from shared.auth.email_verification import (
+    consume_verification_token,
+    issue_verification_token,
+    send_verification_email,
+    verification_required,
+)
 from shared.cache.login_lockout import (
     _check_login_lockout,
     _login_attempts_key,
     _record_failed_login,
     _reset_login_attempts,
 )
+from shared.cache.rate_limit import client_ip, hit as rate_limit_hit
 
 router = APIRouter()
 
@@ -60,7 +67,7 @@ async def _lookup_user_with_position(
                 sa_text("""
                     SELECT u.id, u.email, u.full_name, u.tenant_id,
                            u.password_hash, u.must_reset_password,
-                           u.system_role, u.is_active,
+                           u.system_role, u.is_active, u.email_verified_at,
                            t.slug AS tenant_slug,
                            t.is_active AS tenant_active, t.status AS tenant_status
                     FROM   users u
@@ -133,6 +140,7 @@ async def _lookup_user_with_position(
                 "level_number":         1,
                 "positions":            [],
                 "must_reset_password":  bool(user_rec.must_reset_password),
+                "email_verified_at":    user_rec.email_verified_at,
             }
 
         # SA — no tenant, no position; return hardcoded SA claims
@@ -151,6 +159,7 @@ async def _lookup_user_with_position(
                 "level_number":         None,
                 "positions":            [],
                 "must_reset_password":  bool(user_rec.must_reset_password),
+                "email_verified_at":    user_rec.email_verified_at,
             }
 
         async with AsyncSessionLocal() as db:
@@ -202,6 +211,7 @@ async def _lookup_user_with_position(
                         "level_number":        None,
                         "positions":           [],
                         "must_reset_password": True,
+                        "email_verified_at":   user_rec.email_verified_at,
                     }
                 # User has no position and no pending password reset → hard block.
                 raise HTTPException(
@@ -254,6 +264,7 @@ async def _lookup_user_with_position(
                 for pos in all_positions
             ],
             "must_reset_password":  bool(user_rec.must_reset_password),
+            "email_verified_at":    user_rec.email_verified_at,
         }
 
     except HTTPException:
@@ -316,6 +327,15 @@ async def exchange_token(body: TokenRequest) -> TokenResponse:
             raise HTTPException(status_code=401, detail="Invalid email or password")
 
         await _reset_login_attempts(body.dev_email)
+
+        if verification_required() and claims.get("email_verified_at") is None:
+            raise HTTPException(
+                status_code=403,
+                detail={
+                    "code": "EMAIL_NOT_VERIFIED",
+                    "message": "Please verify your email address before signing in.",
+                },
+            )
 
         tenant_slug          = claims.get("tenant_slug")
         must_reset_password  = bool(claims.get("must_reset_password", False))
@@ -449,3 +469,69 @@ async def change_password_by_id(user_id: str, body: ChangePasswordByIdRequest) -
         raise HTTPException(status_code=500, detail=f"Database error: {exc}") from exc
 
     return {"success": True, "message": "Password updated successfully"}
+
+
+# ── Email verification (S4) ───────────────────────────────────────────────────
+
+class VerifyEmailRequest(BaseModel):
+    token: str
+
+
+class ResendVerificationRequest(BaseModel):
+    email: str
+
+
+@router.post("/verify-email")
+async def verify_email(body: VerifyEmailRequest, request: Request) -> dict:
+    """Consume a single-use email-verification token. No SMART JWT exists at
+    this point (the user may not even have signed in yet), so this route
+    carries no @require_permission — it is allowlisted in ci_drift_check.py.
+    """
+    await rate_limit_hit("verify", client_ip(request), limit=20, window_seconds=3600)
+
+    from shared.db.session import AsyncSessionLocal
+
+    async with AsyncSessionLocal() as db:
+        async with db.begin():
+            user_id = await consume_verification_token(db, body.token)
+
+    if user_id is None:
+        raise HTTPException(
+            status_code=400,
+            detail={"code": "INVALID_OR_EXPIRED_TOKEN", "message": "This verification link is invalid or has expired."},
+        )
+    return {"verified": True}
+
+
+@router.post("/resend-verification", status_code=202)
+async def resend_verification(body: ResendVerificationRequest, request: Request) -> dict:
+    """Always answers 202 with the same body, whether or not the email
+    belongs to a real, active, unverified account — never reveals account
+    existence. No @require_permission — allowlisted in ci_drift_check.py.
+    """
+    email = body.email.strip().lower()
+    await rate_limit_hit("resend", client_ip(request), limit=3, window_seconds=3600)
+    await rate_limit_hit("resend", email, limit=3, window_seconds=3600)
+
+    from shared.db.session import AsyncSessionLocal
+    from sqlalchemy import text as sa_text
+
+    async with AsyncSessionLocal() as db:
+        async with db.begin():
+            row = (await db.execute(
+                sa_text(
+                    "SELECT id FROM users "
+                    "WHERE lower(email) = :email AND is_active = true AND email_verified_at IS NULL"
+                ),
+                {"email": email},
+            )).fetchone()
+            raw_token = await issue_verification_token(db, str(row.id)) if row else None
+
+    if raw_token is not None:
+        try:
+            send_verification_email(email, raw_token)
+        except Exception as exc:  # noqa: BLE001 — best-effort, response is unconditional
+            import logging
+            logging.getLogger(__name__).warning("Failed to send verification email: %s", exc)
+
+    return {"sent": True}
