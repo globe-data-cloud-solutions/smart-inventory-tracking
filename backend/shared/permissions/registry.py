@@ -28,6 +28,10 @@ class PERMISSIONS:
     # SA platform tier configuration (platform_only)
     PLATFORM_TIER_CONFIG_VIEW = Permission("platform:tier_config_view", ["platform_only"])
     PLATFORM_TIER_CONFIG_EDIT = Permission("platform:tier_config_edit", ["platform_only"])
+    # Billing (S5) — SA invoice/payment management, TA read-only on its own tenant
+    BILLING_VIEW             = Permission("billing:view",             ["platform_only"])
+    BILLING_MANAGE           = Permission("billing:manage",           ["platform_only", "audit_required"])
+    BILLING_VIEW_OWN         = Permission("billing:view_own",         ["tenant_id"])
 
     # ── Domain 2 — User Management ─────────────────────────────────────────
     USER_CREATE             = Permission("user:create",             ["tenant_id"])
@@ -234,7 +238,7 @@ ALL_PERMISSIONS: List[Permission] = [
     v for v in vars(PERMISSIONS).values() if isinstance(v, Permission)
 ]
 
-assert len(ALL_PERMISSIONS) == 153, (
-    f"Expected 153 permissions, found {len(ALL_PERMISSIONS)}. "
+assert len(ALL_PERMISSIONS) == 156, (
+    f"Expected 156 permissions, found {len(ALL_PERMISSIONS)}. "
     "Update registry.py and re-run seed_permissions.py."
 )

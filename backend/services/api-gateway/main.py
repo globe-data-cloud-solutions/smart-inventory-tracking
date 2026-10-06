@@ -55,6 +55,8 @@ UNAUTHENTICATED_PATHS = {
     "/api/v1/tenants/public/signup",
     "/api/v1/auth/verify-email",
     "/api/v1/auth/resend-verification",
+    # Public STUB payment webhook (S5) — no SMART JWT on a gateway callback.
+    "/api/v1/tenants/public/payments/webhook/stub",
 }
 
 

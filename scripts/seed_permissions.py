@@ -1,4 +1,4 @@
-"""Seed all 115 actions from registry.py into the role_permissions table.
+"""Seed all 156 actions from registry.py into the role_permissions table.
 Run after every Alembic upgrade when new permissions are added.
 """
 from __future__ import annotations
@@ -46,6 +46,7 @@ ROLE_PERMISSION_MATRIX: dict[str, dict[str, str]] = {
         "search:products": "FULL", "search:inventory": "FULL",
         "ai:forecast_view": "FULL", "analytics:dashboard_view": "FULL",
         "locale:view": "FULL",
+        "billing:view_own": "FULL",
     },
     "NM": {
         "product:create": "FULL", "product:view": "FULL", "product:list": "FULL",

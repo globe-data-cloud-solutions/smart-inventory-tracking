@@ -1,13 +1,16 @@
-"""Unit tests for shared.billing.subscriptions — pure VAT math and
-period-end calculation. No DB connection required."""
+"""Unit tests for shared.billing.subscriptions — pure VAT math, period-end
+calculation, and update_live_subscription_tier's plan-change contract (no
+proration; current_period dates and contract dates untouched). The pure
+functions need no DB; update_live_subscription_tier uses a mocked session."""
 from __future__ import annotations
 
 from datetime import date
 from decimal import Decimal
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from shared.billing.subscriptions import period_end, vat_breakdown
+from shared.billing.subscriptions import period_end, update_live_subscription_tier, vat_breakdown
 
 
 def test_vat_breakdown_1000_annual() -> None:
@@ -44,3 +47,70 @@ def test_period_end_december_wraps_to_next_year() -> None:
 def test_period_end_unknown_billing_period_raises() -> None:
     with pytest.raises(ValueError):
         period_end(date(2026, 1, 1), "WEEKLY")
+
+
+def _db(side_effect: list) -> AsyncMock:
+    db = AsyncMock()
+    db.execute = AsyncMock(side_effect=side_effect)
+    return db
+
+
+def _result(fetchone=None) -> MagicMock:
+    result = MagicMock()
+    result.fetchone = MagicMock(return_value=fetchone)
+    return result
+
+
+@pytest.mark.asyncio
+async def test_update_live_subscription_tier_updates_tier_and_price() -> None:
+    sub = MagicMock(id="sub-1", tier="GROWTH", billing_period="MONTHLY", amount=Decimal("200.00"))
+    new_price = MagicMock(id="price-ent", amount=Decimal("500.00"))
+    db = _db([
+        _result(fetchone=sub),        # SELECT live subscription
+        _result(fetchone=new_price),  # get_current_price()
+        _result(),                    # UPDATE subscriptions
+    ])
+
+    out = await update_live_subscription_tier(db, "tenant-1", "ENTERPRISE")
+
+    assert out == {
+        "old_tier": "GROWTH", "new_tier": "ENTERPRISE",
+        "old_amount": Decimal("200.00"), "new_amount": Decimal("500.00"),
+    }
+    update_call = db.execute.call_args_list[2]
+    sql_text, params = str(update_call.args[0]), update_call.args[1]
+    assert "UPDATE subscriptions" in sql_text
+    assert params["tier"] == "ENTERPRISE"
+    assert params["price_id"] == "price-ent"
+    assert params["amount"] == Decimal("500.00")
+    # Only tier/price/amount/updated_at are touched — never the period or
+    # contract dates (no proration; those move only via mark_paid()).
+    assert "current_period_start" not in sql_text
+    assert "current_period_end" not in sql_text
+    assert "contract_start" not in sql_text
+    assert "contract_end" not in sql_text
+
+
+@pytest.mark.asyncio
+async def test_update_live_subscription_tier_no_live_subscription_returns_none() -> None:
+    db = _db([_result(fetchone=None)])
+    out = await update_live_subscription_tier(db, "tenant-1", "ENTERPRISE")
+    assert out is None
+    assert db.execute.call_count == 1  # no price lookup, no UPDATE
+
+
+@pytest.mark.asyncio
+async def test_update_live_subscription_tier_unchanged_tier_is_a_noop() -> None:
+    sub = MagicMock(id="sub-1", tier="GROWTH", billing_period="MONTHLY", amount=Decimal("200.00"))
+    db = _db([_result(fetchone=sub)])
+    out = await update_live_subscription_tier(db, "tenant-1", "GROWTH")
+    assert out is None
+    assert db.execute.call_count == 1
+
+
+@pytest.mark.asyncio
+async def test_update_live_subscription_tier_no_price_raises() -> None:
+    sub = MagicMock(id="sub-1", tier="GROWTH", billing_period="MONTHLY", amount=Decimal("200.00"))
+    db = _db([_result(fetchone=sub), _result(fetchone=None)])
+    with pytest.raises(ValueError, match="PRICE_NOT_AVAILABLE"):
+        await update_live_subscription_tier(db, "tenant-1", "ENTERPRISE")

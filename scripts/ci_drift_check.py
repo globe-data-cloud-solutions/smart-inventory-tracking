@@ -38,6 +38,11 @@ ALLOWLISTED_PUBLIC_ROUTES: dict[str, list[str]] = {
         "list_public_packages",
         "public_signup",
     ],
+    "backend/services/tenant-service/routers/billing.py": [
+        # Public STUB payment webhook (S5) — a payment gateway's server-to-server
+        # callback carries no SMART JWT; its HMAC signature IS the auth check.
+        "stub_payment_webhook",
+    ],
 }
 
 

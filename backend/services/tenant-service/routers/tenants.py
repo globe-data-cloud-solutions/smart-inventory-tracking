@@ -1,4 +1,5 @@
 import json
+import logging
 import re
 import uuid
 from typing import List, Optional
@@ -14,10 +15,12 @@ from dependencies import get_current_user, get_db_session
 from services.wizard_service import APPROVAL_DEFAULTS
 from shared.permissions.middleware import require_permission
 from shared.permissions.registry import PERMISSIONS
-from shared.billing.subscriptions import start_subscription
+from shared.billing.subscriptions import start_subscription, update_live_subscription_tier
 from shared.plans.catalog import UNSET, apply_package_to_tenant
 from shared.utils.responses import SuccessResponse
 from schemas.tenant import TenantCreateRequest, TenantResponse, VALID_PLAN_TIERS, VALID_LOCALES
+
+logger = logging.getLogger(__name__)
 
 
 class TenantStatusResponse(BaseModel):
@@ -1077,6 +1080,19 @@ async def update_tenant_plan(
             detail={"code": "INVALID_TIER", "message": str(exc)},
         ) from exc
 
+    # Plan change updates the live subscription immediately (entitlements now,
+    # new price from the NEXT invoice — no proration). No live subscription
+    # -> leave as today and log a warning; never create one here.
+    try:
+        subscription_change = await update_live_subscription_tier(db, tenant_id, body.plan_tier)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=422,
+            detail={"code": "PRICE_NOT_AVAILABLE", "message": str(exc)},
+        ) from exc
+    if subscription_change is None:
+        logger.warning("update_tenant_plan: no live subscription for tenant %s — not created here", tenant_id)
+
     try:
         await _log_tenant_activity(
             db, tenant_id, str(user.user_id),
@@ -1084,6 +1100,13 @@ async def update_tenant_plan(
             old_value=old_tier,
             new_value=body.plan_tier,
         )
+        if subscription_change is not None:
+            await _log_tenant_activity(
+                db, tenant_id, str(user.user_id),
+                action="SUBSCRIPTION_TIER_CHANGE",
+                old_value=f"{subscription_change['old_tier']}/{subscription_change['old_amount']}",
+                new_value=f"{subscription_change['new_tier']}/{subscription_change['new_amount']}",
+            )
     except Exception:
         pass  # log failure must not roll back the plan change
     return SuccessResponse(data={
@@ -1257,6 +1280,7 @@ async def update_tenant_profile(
 
     # plan_tier goes through the package catalog — applying it REPLACES
     # feature_flags with the package's full flag set (CLAUDE.md §15).
+    subscription_change = None
     if "plan_tier" in changes:
         new_tier = changes["plan_tier"][1]
         try:
@@ -1267,6 +1291,19 @@ async def update_tenant_profile(
                 detail={"code": "INVALID_TIER", "message": str(exc)},
             ) from exc
 
+        # Updates the live subscription immediately (same rule as SA PATCH
+        # /plan — update_tenant_plan() above): no proration, new price from
+        # the NEXT invoice. No live subscription -> log a warning, don't create one.
+        try:
+            subscription_change = await update_live_subscription_tier(db, tenant_id, new_tier)
+        except ValueError as exc:
+            raise HTTPException(
+                status_code=422,
+                detail={"code": "PRICE_NOT_AVAILABLE", "message": str(exc)},
+            ) from exc
+        if subscription_change is None:
+            logger.warning("update_tenant_profile: no live subscription for tenant %s — not created here", tenant_id)
+
     # Log each changed field as its own activity row so the audit trail is granular.
     for field, (old_val, new_val) in changes.items():
         try:
@@ -1275,6 +1312,17 @@ async def update_tenant_profile(
                 action=f"PROFILE_UPDATE_{field.upper()}",
                 old_value=old_val,
                 new_value=new_val,
+            )
+        except Exception:
+            pass  # log failure must not roll back the update
+
+    if subscription_change is not None:
+        try:
+            await _log_tenant_activity(
+                db, tenant_id, str(user.user_id),
+                action="SUBSCRIPTION_TIER_CHANGE",
+                old_value=f"{subscription_change['old_tier']}/{subscription_change['old_amount']}",
+                new_value=f"{subscription_change['new_tier']}/{subscription_change['new_amount']}",
             )
         except Exception:
             pass  # log failure must not roll back the update

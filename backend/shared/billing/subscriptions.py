@@ -123,3 +123,47 @@ async def start_subscription(
         "current_period_end": end,
         **vat_breakdown(price.amount),
     }
+
+
+async def update_live_subscription_tier(
+    db: AsyncSession, tenant_id: str, new_tier: str
+) -> Optional[dict[str, Any]]:
+    """Plan change (SA PATCH /plan or TA profile plan change) updates the
+    tenant's LIVE subscription tier and price snapshot immediately —
+    entitlements change now, no proration. The new price is charged starting
+    from the NEXT invoice; current_period_start/end and contract dates are
+    untouched here.
+
+    Returns {"old_tier", "new_tier", "old_amount", "new_amount"} for activity
+    logging, or None if the tenant has no live subscription (caller logs a
+    warning and does not create one here) or the tier is unchanged.
+
+    Raises ValueError("PRICE_NOT_AVAILABLE") if no current price exists for
+    new_tier at the subscription's billing_period.
+    """
+    sub = (await db.execute(
+        text(
+            "SELECT id, tier, billing_period, amount FROM subscriptions "
+            "WHERE tenant_id = :tid AND status IN ('ACTIVE', 'PENDING_PAYMENT', 'PAST_DUE') "
+            "LIMIT 1"
+        ),
+        {"tid": str(tenant_id)},
+    )).fetchone()
+    if sub is None or sub.tier == new_tier:
+        return None
+
+    price = await get_current_price(db, new_tier, sub.billing_period)
+    if price is None:
+        raise ValueError("PRICE_NOT_AVAILABLE")
+
+    await db.execute(
+        text(
+            "UPDATE subscriptions SET tier = :tier, price_id = :price_id, "
+            "       amount = :amount, updated_at = now() WHERE id = :sid"
+        ),
+        {"tier": new_tier, "price_id": str(price.id), "amount": price.amount, "sid": str(sub.id)},
+    )
+    return {
+        "old_tier": sub.tier, "new_tier": new_tier,
+        "old_amount": sub.amount, "new_amount": price.amount,
+    }

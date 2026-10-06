@@ -206,7 +206,7 @@ smart-platform/                        # GitHub repository root
 ├── backend/
 │   ├── shared/                        # Shared Python packages (editable installs)
 │   │   ├── permissions/
-│   │   │   ├── registry.py            # SINGLE SOURCE OF TRUTH — all 153 actions
+│   │   │   ├── registry.py            # SINGLE SOURCE OF TRUTH — all 156 actions
 │   │   │   ├── middleware.py          # check_permission(), require_permission decorator
 │   │   │   ├── hierarchy_service.py   # node+descendant scope traversal
 │   │   │   ├── casbin_enforcer.py     # Casbin RBAC+ABAC setup
@@ -263,7 +263,7 @@ smart-platform/                        # GitHub repository root
 │           └── prod/                  #   S3 smart-terraform-state + DynamoDB smart-terraform-locks
 │
 ├── scripts/
-│   ├── seed_permissions.py            # Seeds all 153 actions from registry.py
+│   ├── seed_permissions.py            # Seeds all 156 actions from registry.py
 │   ├── ci_drift_check.py             # Fails CI if any route lacks @require_permission
 │   └── create_partitions.py          # Monthly inventory_transactions partitions
 │
@@ -1316,7 +1316,7 @@ class PERMISSIONS:
     DISPATCH_CONFIGURE     = Permission("dispatch:configure",     ["tenant_id"])
     DISPATCH_FEFO_OVERRIDE = Permission("dispatch:fefo_override", ["tenant_id","override_permission","reason_required"])
 
-    # ... all 153 entries
+    # ... all 156 entries
 ```
 
 ### Three-layer enforcement — all three layers are mandatory
@@ -2299,7 +2299,7 @@ These cannot be retrofitted after production data exists without significant dow
 
 | Phase | Duration | Producer / Importer | Retailer / Distributor |
 |---|---|---|---|
-| **Phase 0 — Foundation** | Months 1–3 | Infrastructure only — no user onboarding. Multi-tenant core, RBAC+ABAC (153 actions), immutable ledger (partitioned), RLS, Transactional Outbox + Celery, onboarding wizard, dispatch config tables, PWA + service worker + IndexedDB, language packs (en/am/or), parent_tenant_id placeholder, GitHub Actions CI/CD, permission drift check. Terraform provisions all three AWS environments (dev/stage/prod). | Same foundation. Retailer profile: unlimited SKU flag, full role set, logistics module, Amazon OpenSearch (conditional) implemented. |
+| **Phase 0 — Foundation** | Months 1–3 | Infrastructure only — no user onboarding. Multi-tenant core, RBAC+ABAC (156 actions), immutable ledger (partitioned), RLS, Transactional Outbox + Celery, onboarding wizard, dispatch config tables, PWA + service worker + IndexedDB, language packs (en/am/or), parent_tenant_id placeholder, GitHub Actions CI/CD, permission drift check. Terraform provisions all three AWS environments (dev/stage/prod). | Same foundation. Retailer profile: unlimited SKU flag, full role set, logistics module, Amazon OpenSearch (conditional) implemented. |
 | **Phase 1 — Producer MVP** | Months 4–7 | Onboard first **4–6 Producer/Importer companies**. Receiving, transfer, issue, adjustment, stock count, batch/lot traceability, FEFO/FIFO dispatch engine, approval workflows (WM→RM→NM), state machines, low-stock + expiry alerts, role-scoped dashboards, offline (camera scanning, IndexedDB sync, conflict resolution), English + Amharic + Oromifa, full audit trail. | No Retailer tenants onboarded. Retailer features tested internally. |
 | **Phase 2 — Retailer Onboarding** | Months 7–11 | Remaining Producer tenants settled. Supplier delivery analytics. Read replica routing validated. Additional language packs. | Onboard first **4–6 Retailer/Distributor companies**. Unlimited SKU + pg_trgm at scale, multi-branch dispatch, cycle count scheduling, SKU bulk import, Retailer dashboards, logistics module. Load test: 200-device concurrent offline sync. |
 | **Phase 3 — AI & Scale** | Months 11–16 | Production Demand Forecast AI (PRODUCER cohort — needs 3–4 months history from Phase 1). Route optimisation. POS integration if grocery segment acceleration warranted. ElastiCache Streams evaluation if Celery fan-out shows limits. | Replenishment Recommendations AI (RETAILER cohort). Dead-stock detection. SKU-level forecast caching. POS integration. Flutter native app if scan reliability issues reported. |
