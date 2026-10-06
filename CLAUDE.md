@@ -1730,6 +1730,79 @@ provider registry.
   `GET/POST /{tenant_id}/subscription|invoices|payments/{id}/mark-paid|cancel`;
   TA `GET /me/subscription`, `GET /me/invoices/{payment_id}/checkout`.
 
+### Plans & Pricing (S6) — SA package editing, price history, config log
+
+Endpoints live in `backend/services/tenant-service/routers/tenants.py`, grouped
+with the existing `/platform/tier-config` routes (fixed paths, declared above any
+`/{tenant_id}` route). No new permissions — all reuse `PLATFORM_TIER_CONFIG_VIEW`
+/ `PLATFORM_TIER_CONFIG_EDIT` (SA only, inline role check matches the existing
+tier-config routes).
+
+- **`PATCH /platform/tier-config`** — partial update. Each entry in `tiers[]`
+  changes ONLY the fields present in that entry's JSON body
+  (`model_fields_set`); an omitted field on an existing tier is left untouched.
+  This is why the legacy dashboard modal body (`{tier, max_warehouses,
+  max_users}`, no `reason`) still works unchanged — `reason` defaults to `"SA
+  tier-config edit"` when not supplied. Editable fields: `max_warehouses`,
+  `max_users`, `display_name` (1-60 chars), `sku_cap` (int ≥ 1 or `null` =
+  unlimited), `is_public`, `sort_order`, `feature_flags` (full replace, not a
+  merge — every key must be one of `KNOWN_FEATURE_FLAGS` in
+  `backend/shared/plans/catalog.py`, the single source of valid flag codes;
+  an unknown key is 422 `UNKNOWN_FEATURE_FLAG`). At least one tier must remain
+  `is_public=true` across the whole catalog after the request, checked BEFORE
+  any write, or 422 `NO_PUBLIC_PACKAGE`. Every field that actually changes value
+  is logged to `platform_config_log`, one row per field, under the request's
+  `reason`. **Changes apply to new tenant creation and future plan changes
+  only — existing tenants' effective limits/flags (stored per-tenant on
+  `tenants`) are never retroactively changed.**
+- **`GET /platform/packages/prices[?tier=]`** — per tier + `billing_period`:
+  `current` (the same row `get_current_price()` would pick, with its VAT
+  breakdown), `scheduled` (`effective_from` in the future), and `history`
+  (every row, newest first).
+- **`POST /platform/packages/{tier}/prices`** — posts a new, append-only
+  `package_prices` row. `reason` is required (non-empty after trim).
+  `effective_from` defaults to now and must not be more than 5 minutes in the
+  past (422 `EFFECTIVE_FROM_IN_PAST`), guarding against silently back-dating a
+  price. **To correct a wrong scheduled price**, post a new row with the SAME
+  `effective_from` — `get_current_price()`'s tie-break is `ORDER BY
+  effective_from DESC, created_at DESC` (CLAUDE.md §14/subscriptions.py), so
+  the newer (correcting) row always wins as "current" once its
+  `effective_from` is reached. Existing subscriptions are untouched by a new
+  price — it applies only at each subscription's next renewal
+  (`next_invoice_period()`), same as the S5 "no proration" rule above. Every
+  post is also logged to `platform_config_log` (`entity_type='PRICE'`,
+  `entity_key='<tier>/<billing_period>'`).
+- **`GET /platform/config-log?entity_type=&entity_key=&limit=`** — newest
+  first, `limit` capped at 500.
+- **`GET /sa/registry`** adds `signup_source`, `subscription_status`,
+  `billing_period`, `current_period_end`, `last_payment_status` (latest
+  payment by `created_at`, or `null`) per tenant, via one query with
+  `LEFT JOIN LATERAL` on `subscriptions` and `payments` — no N+1.
+- **Frontend**: `frontend/src/app/[org]/settings/plans/page.tsx`, SA-only
+  (`sa.nav_plans_pricing` in `SA_NAV`, `frontend/src/app/[org]/layout.tsx`).
+  Non-SA sessions see the same inline not-authorised pattern as
+  `[org]/permissions/page.tsx` (a plain restricted message, no redirect) —
+  this is the project's existing convention for role-gated pages that don't
+  redirect. The dashboard's old tier-config modal (state, mutation, and JSX)
+  was removed; its button is now a link to this screen.
+
+### Audit rule for SA decisions (target tenant vs. platform-level)
+
+`shared.permissions.audit.audit_log()` writes to `audit_logs`, whose
+`tenant_id` column is `NOT NULL` — but an SA actor has no `tenant_id` of its
+own. Tenant attribution is resolved in this priority order: the actor's own
+`tenant_id`, then `resource["tenant_id"]`, then `resource["target_tenant_id"]`.
+`require_permission()` (`backend/shared/permissions/middleware.py`) stashes a
+route's PATH `tenant_id` (e.g. `/{tenant_id}/plan`) into
+`resource["target_tenant_id"]` automatically, so an SA decision on a specific
+tenant is stored under THAT tenant. When none of the three resolve — a
+platform-wide SA action such as `/platform/tier-config` with no path
+tenant — the row is **not inserted** (there is no tenant to attach it to);
+`audit_log()` logs a `logger.warning` instead, and `platform_config_log`
+remains the durable record for those changes. A DB failure during the audit
+write is caught and `logger.exception`'d, never raised — this must never
+break the primary request.
+
 ---
 
 ## 16. Dispatch Strategy Engine
