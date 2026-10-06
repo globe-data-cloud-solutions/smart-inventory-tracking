@@ -1627,6 +1627,50 @@ Raises HTTP 402 with upgrade path when a feature is disabled (flag=False) for no
 
 Both raise HTTP 402 when the cap is reached and include an `upgrade_to` hint in the error response.
 
+### Self Sign-Up (S4)
+
+Four public, unauthenticated paths exist — exact-match entries in api-gateway's
+`UNAUTHENTICATED_PATHS` and allowlisted by name in `scripts/ci_drift_check.py`:
+
+```
+GET  /api/v1/tenants/public/packages          tenant-service — public package list + current prices
+POST /api/v1/tenants/public/signup            tenant-service — self sign-up
+POST /api/v1/auth/verify-email                auth-service   — consume a verification token
+POST /api/v1/auth/resend-verification         auth-service   — always 202 (no account enumeration)
+```
+
+`POST /public/signup` runs as ONE DB transaction, `set_rls_context()` called
+first, in this order: (1) INSERT tenants (`signup_source='SELF_SIGNUP'`),
+(2) `apply_package_to_tenant()`, (3) INSERT the TA user
+(`is_account_owner=true`), (4) INSERT the primary `tenant_contacts` row,
+(5) `start_subscription(..., status="PENDING_PAYMENT")`, (6) INSERT
+`terms_acceptances`, (7) INSERT `tenant_activity_log`, (8)
+`issue_verification_token()`. The verification email is sent only AFTER
+commit — a send failure never rolls back or fails the sign-up.
+
+A `PENDING_PAYMENT` subscription means the tenant is fully usable immediately;
+there is no payment enforcement anywhere yet — that arrives once a real
+payment provider is connected (see §15 package catalog). `start_subscription()`
+(`shared/billing/subscriptions.py`) is the ONLY writer of new `subscriptions`
+rows and of a tenant's `contract_start`/`contract_end` (and only when those
+are still unset — it never overwrites dates an SA already set by hand). All
+prices include 15% VAT via `vat_breakdown()`.
+
+Env flags (local `.env`, never committed):
+
+```
+EMAIL_DELIVERY_MODE=log           # "log" writes [DEV EMAIL] lines; anything else raises NotImplementedError until SES is wired up
+EMAIL_VERIFICATION_REQUIRED=false # /token's EMAIL_NOT_VERIFIED gate is off until SES is live
+APP_BASE_URL=http://localhost:3000
+TERMS_VERSION=2026-10
+```
+
+> **Known gap (2026-10):** on AWS, sign-in goes through Cognito, which has no
+> user for a self-signed-up TA — only a `users` row exists locally. Local dev
+> bypasses this via `dev_email`/`dev_password` on `/token`. This must be
+> resolved alongside the Cognito/SES work (CLAUDE.md §2) before self sign-up
+> can go live outside local dev.
+
 ---
 
 ## 16. Dispatch Strategy Engine
