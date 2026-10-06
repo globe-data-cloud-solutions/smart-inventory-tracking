@@ -319,3 +319,31 @@ test.describe("S9-2 onboarding wizard", () => {
     else for (const e of errors) console.log(e);
   });
 });
+
+test.describe("S9-3 dashboard picker", () => {
+  test("09 - Tenant Admin tab is a picker that navigates to the SA tenant page", async ({ page }) => {
+    const errors = collectConsoleErrors(page);
+    await loginAs(page, SA_EMAIL, SA_PASSWORD);
+    await page.goto(`${BASE_URL}/admin/dashboard`);
+
+    await page.getByRole("button", { name: /Tenant Admin/i }).click();
+    const select = page.locator("select").first();
+    await select.waitFor({ state: "visible", timeout: 20_000 });
+    await page.screenshot({ path: "test-results/screens/s9/22-admin-picker.png", fullPage: true });
+
+    await select.selectOption({ label: T6P2T_NAME });
+    await page.waitForURL(new RegExp(`/admin/settings/tenants/${T6P2T_ID}`), { timeout: 20_000 });
+    await expect(page.getByRole("heading", { name: T6P2T_NAME })).toBeVisible();
+    await page.screenshot({ path: "test-results/screens/s9/23-admin-picker-landed.png", fullPage: true });
+
+    // Registry tab still works after the refactor
+    await page.goto(`${BASE_URL}/admin/dashboard`);
+    await page.getByRole("button", { name: /Registry/i }).click();
+    await page.getByText(T6P2T_NAME).first().waitFor({ state: "visible", timeout: 20_000 });
+    await page.screenshot({ path: "test-results/screens/s9/24-registry-still-works.png", fullPage: true });
+
+    console.log("=== S9-3 console/page errors (raw) ===");
+    if (errors.length === 0) console.log("none");
+    else for (const e of errors) console.log(e);
+  });
+});
