@@ -2,6 +2,8 @@ import json
 import logging
 import re
 import uuid
+from datetime import datetime, timedelta, timezone
+from decimal import Decimal
 from typing import List, Optional
 
 import asyncpg
@@ -15,8 +17,8 @@ from dependencies import get_current_user, get_db_session
 from services.wizard_service import APPROVAL_DEFAULTS
 from shared.permissions.middleware import require_permission
 from shared.permissions.registry import PERMISSIONS
-from shared.billing.subscriptions import start_subscription, update_live_subscription_tier
-from shared.plans.catalog import UNSET, apply_package_to_tenant
+from shared.billing.subscriptions import get_current_price, start_subscription, update_live_subscription_tier, vat_breakdown
+from shared.plans.catalog import KNOWN_FEATURE_FLAGS, UNSET, apply_package_to_tenant
 from shared.utils.responses import SuccessResponse
 from schemas.tenant import TenantCreateRequest, TenantResponse, VALID_PLAN_TIERS, VALID_LOCALES
 
@@ -69,6 +71,12 @@ class TenantRegistryRow(BaseModel):
     ta_user_id: Optional[str] = None  # TA admin user UUID (for edit link)
     industry: Optional[str] = None
     feature_flags: dict = {}
+    # S6: billing/subscription summary columns
+    signup_source: str = "SA"               # 'SA' or 'SELF_SIGNUP'
+    subscription_status: Optional[str] = None     # live subscription status, or None
+    billing_period: Optional[str] = None          # 'MONTHLY' | 'ANNUAL', or None
+    current_period_end: Optional[str] = None      # ISO date string, or None
+    last_payment_status: Optional[str] = None     # latest payment's status, or None
 
 
 class TenantContactIn(BaseModel):
@@ -212,6 +220,11 @@ async def sa_tenant_registry(
             t.industry,
             COALESCE(t.feature_flags, '{}'::jsonb) AS feature_flags,
             t.created_at,
+            t.signup_source,
+            sub.status AS subscription_status,
+            sub.billing_period,
+            sub.current_period_end,
+            pay.status AS last_payment_status,
             (SELECT COUNT(*) FROM users u
              WHERE u.tenant_id = t.id AND u.is_active = true AND u.system_role != 'TA')  AS user_count,
             (SELECT COUNT(*) FROM organization_node n
@@ -239,6 +252,18 @@ async def sa_tenant_registry(
              WHERE u.tenant_id = t.id AND u.system_role = 'TA' AND u.is_active = true
              ORDER BY u.created_at ASC LIMIT 1) AS ta_user_id
         FROM tenants t
+        LEFT JOIN LATERAL (
+            SELECT s.status, s.billing_period, s.current_period_end
+            FROM subscriptions s
+            WHERE s.tenant_id = t.id AND s.status IN ('ACTIVE', 'PENDING_PAYMENT', 'PAST_DUE')
+            ORDER BY s.created_at DESC LIMIT 1
+        ) sub ON true
+        LEFT JOIN LATERAL (
+            SELECT p.status
+            FROM payments p
+            WHERE p.tenant_id = t.id
+            ORDER BY p.created_at DESC LIMIT 1
+        ) pay ON true
         ORDER BY t.created_at DESC
     """))).fetchall()
 
@@ -273,6 +298,11 @@ async def sa_tenant_registry(
             ta_user_id=row.ta_user_id,
             industry=row.industry,
             feature_flags=dict(row.feature_flags) if row.feature_flags else {},
+            signup_source=row.signup_source,
+            subscription_status=row.subscription_status,
+            billing_period=row.billing_period,
+            current_period_end=str(row.current_period_end) if row.current_period_end else None,
+            last_payment_status=row.last_payment_status,
         )
         for row in rows
     ])
@@ -293,6 +323,7 @@ class TierConfigEntry(BaseModel):
 
 class TierConfigUpdateRequest(BaseModel):
     tiers: List[TierConfigEntry]
+    reason: Optional[str] = None
 
 
 @router.get("/platform/tier-config", response_model=SuccessResponse[List[TierConfigEntry]])
@@ -330,6 +361,12 @@ async def get_platform_tier_config(
     ])
 
 
+_EDITABLE_TIER_FIELDS = (
+    "max_warehouses", "max_users", "display_name", "sku_cap",
+    "is_public", "sort_order", "feature_flags",
+)
+
+
 @router.patch("/platform/tier-config", response_model=SuccessResponse[List[TierConfigEntry]])
 @require_permission(PERMISSIONS.PLATFORM_TIER_CONFIG_EDIT)
 async def update_platform_tier_config(
@@ -337,12 +374,24 @@ async def update_platform_tier_config(
     user=Depends(get_current_user),
     db: AsyncSession = Depends(get_db_session),
 ) -> SuccessResponse[List[TierConfigEntry]]:
-    """SA-only: update platform-level tier limits (max_warehouses / max_users only).
+    """SA-only: partially update the package catalog (platform_tier_config).
 
-    Price and flag/sku_cap editing come with the SA Plans & Pricing screen later.
-    Changes apply to the next tenant creation or plan change. Existing tenant
-    caps (stored per-tenant) are NOT retroactively changed. Every field whose
-    value actually changes is logged to platform_config_log.
+    Each entry updates ONLY the fields explicitly present in its request body —
+    an omitted field on an existing tier is left untouched. This keeps the legacy
+    dashboard modal body ({tier, max_warehouses, max_users}, no `reason`) working
+    unchanged: `reason` defaults to "SA tier-config edit" when not supplied, and
+    display_name/sku_cap/feature_flags/is_public/sort_order are simply not touched
+    when the caller doesn't send them.
+
+    feature_flags, when sent, fully REPLACES the tier's flag set (not a merge) and
+    every key must be one of KNOWN_FEATURE_FLAGS — an unknown key is 422
+    UNKNOWN_FEATURE_FLAG. At least one tier must remain is_public=true across the
+    whole catalog after this request, or 422 NO_PUBLIC_PACKAGE.
+
+    Changes apply to new tenant creation and future plan changes only — existing
+    tenants' effective limits/flags (stored per-tenant) are NOT retroactively
+    changed. Every field whose value actually changes is logged to
+    platform_config_log.
     """
     if not user or user.role != "SA":
         raise HTTPException(status_code=403, detail={"code": "FORBIDDEN", "message": "SA only"})
@@ -354,55 +403,393 @@ async def update_platform_tier_config(
                 status_code=422,
                 detail={"code": "INVALID_TIER", "message": f"Unknown tier: {entry.tier}"},
             )
+        fields_set = entry.model_fields_set
+        if "display_name" in fields_set:
+            name = entry.display_name
+            if name is None or not (1 <= len(name) <= 60):
+                raise HTTPException(
+                    status_code=422,
+                    detail={"code": "INVALID_DISPLAY_NAME",
+                            "message": "display_name must be 1-60 characters."},
+                )
+        if "sku_cap" in fields_set and entry.sku_cap is not None and entry.sku_cap < 1:
+            raise HTTPException(
+                status_code=422,
+                detail={"code": "INVALID_SKU_CAP",
+                        "message": "sku_cap must be >= 1, or null for unlimited."},
+            )
+        if "feature_flags" in fields_set and entry.feature_flags:
+            unknown = sorted(set(entry.feature_flags) - KNOWN_FEATURE_FLAGS)
+            if unknown:
+                raise HTTPException(
+                    status_code=422,
+                    detail={"code": "UNKNOWN_FEATURE_FLAG",
+                            "message": f"Unknown feature flag(s): {', '.join(unknown)}"},
+                )
+
+    reason = (body.reason or "").strip() or "SA tier-config edit"
+
+    # At least one tier must remain publicly visible across the WHOLE catalog —
+    # checked BEFORE any write, using each tier's current DB value for tiers this
+    # request doesn't touch.
+    current_rows = (await db.execute(
+        text("SELECT tier, is_public FROM platform_tier_config"),
+    )).fetchall()
+    by_tier = {entry.tier: entry for entry in body.tiers}
+    still_public = False
+    for row in current_rows:
+        entry = by_tier.get(row.tier)
+        effective_public = (
+            entry.is_public if entry is not None and "is_public" in entry.model_fields_set
+            else row.is_public
+        )
+        if effective_public:
+            still_public = True
+            break
+    if not still_public:
+        raise HTTPException(
+            status_code=422,
+            detail={"code": "NO_PUBLIC_PACKAGE",
+                    "message": "At least one package must remain publicly visible."},
+        )
 
     actor_email = getattr(user, "email", None)
 
     for entry in body.tiers:
+        editable = [f for f in _EDITABLE_TIER_FIELDS if f in entry.model_fields_set]
+        if not editable:
+            continue
+
         old_row = (await db.execute(
-            text("SELECT max_warehouses, max_users FROM platform_tier_config WHERE tier = :tier"),
+            text(
+                "SELECT max_warehouses, max_users, display_name, sku_cap, "
+                "       feature_flags, is_public, sort_order "
+                "FROM platform_tier_config WHERE tier = :tier"
+            ),
             {"tier": entry.tier},
         )).fetchone()
 
+        set_parts = ["updated_at = now()", "updated_by_id = :uid"]
+        params: dict = {"tier": entry.tier, "uid": str(user.user_id)}
+        for field in editable:
+            value = getattr(entry, field)
+            if field == "feature_flags":
+                set_parts.append("feature_flags = CAST(:feature_flags AS jsonb)")
+                params["feature_flags"] = json.dumps(value or {})
+            else:
+                set_parts.append(f"{field} = :{field}")
+                params[field] = value
+
         await db.execute(
-            text(
-                "INSERT INTO platform_tier_config (tier, max_warehouses, max_users, updated_at, updated_by_id) "
-                "VALUES (:tier, :max_wh, :max_u, now(), :uid) "
-                "ON CONFLICT (tier) DO UPDATE SET "
-                "max_warehouses = EXCLUDED.max_warehouses, "
-                "max_users      = EXCLUDED.max_users, "
-                "updated_at     = now(), "
-                "updated_by_id  = EXCLUDED.updated_by_id"
-            ),
-            {"tier": entry.tier, "max_wh": entry.max_warehouses,
-             "max_u": entry.max_users, "uid": str(user.user_id)},
+            text(f"UPDATE platform_tier_config SET {', '.join(set_parts)} WHERE tier = :tier"),
+            params,
         )
 
-        for field, old_val, new_val in (
-            ("max_warehouses", old_row.max_warehouses if old_row else None, entry.max_warehouses),
-            ("max_users", old_row.max_users if old_row else None, entry.max_users),
-        ):
-            if old_val != new_val:
-                await db.execute(
-                    text(
-                        "INSERT INTO platform_config_log "
-                        "  (entity_type, entity_key, field, old_value, new_value, "
-                        "   reason, actor_id, actor_email) "
-                        "VALUES ('PACKAGE', :tier, :field, :old, :new, "
-                        "        'SA tier-config edit', :actor_id, :actor_email)"
-                    ),
-                    {
-                        "tier": entry.tier, "field": field,
-                        "old": str(old_val) if old_val is not None else None,
-                        "new": str(new_val) if new_val is not None else None,
-                        "actor_id": str(user.user_id), "actor_email": actor_email,
-                    },
-                )
+        for field in editable:
+            new_val = getattr(entry, field)
+            old_val = getattr(old_row, field) if old_row else None
+            if field == "feature_flags":
+                old_cmp = dict(old_val) if old_val else {}
+                new_cmp = new_val or {}
+                if old_cmp == new_cmp:
+                    continue
+                old_str, new_str = json.dumps(old_cmp), json.dumps(new_cmp)
+            elif old_val != new_val:
+                old_str = str(old_val) if old_val is not None else None
+                new_str = str(new_val) if new_val is not None else None
+            else:
+                continue
+
+            await db.execute(
+                text(
+                    "INSERT INTO platform_config_log "
+                    "  (entity_type, entity_key, field, old_value, new_value, "
+                    "   reason, actor_id, actor_email) "
+                    "VALUES ('PACKAGE', :tier, :field, :old, :new, :reason, :actor_id, :actor_email)"
+                ),
+                {
+                    "tier": entry.tier, "field": field,
+                    "old": old_str, "new": new_str,
+                    "reason": reason, "actor_id": str(user.user_id), "actor_email": actor_email,
+                },
+            )
 
     rows = (await db.execute(
-        text("SELECT tier, max_warehouses, max_users FROM platform_tier_config ORDER BY tier"),
+        text(
+            "SELECT tier, max_warehouses, max_users, display_name, sku_cap, "
+            "       feature_flags, is_public, sort_order "
+            "FROM platform_tier_config ORDER BY sort_order"
+        ),
     )).fetchall()
     return SuccessResponse(data=[
-        TierConfigEntry(tier=row.tier, max_warehouses=row.max_warehouses, max_users=row.max_users)
+        TierConfigEntry(
+            tier=row.tier,
+            max_warehouses=row.max_warehouses,
+            max_users=row.max_users,
+            display_name=row.display_name,
+            sku_cap=row.sku_cap,
+            feature_flags=dict(row.feature_flags) if row.feature_flags else {},
+            is_public=row.is_public,
+            sort_order=row.sort_order,
+        )
+        for row in rows
+    ])
+
+
+class PriceHistoryEntry(BaseModel):
+    id: str
+    amount: Decimal
+    currency: str
+    effective_from: str
+    reason: str
+    created_by: Optional[str] = None
+    created_by_email: Optional[str] = None
+    created_at: str
+
+
+class PriceSnapshot(BaseModel):
+    id: str
+    amount: Decimal
+    currency: str
+    effective_from: str
+    subtotal: Decimal
+    vat_rate: Decimal
+    vat_amount: Decimal
+    total: Decimal
+
+
+class TierPricing(BaseModel):
+    tier: str
+    billing_period: str
+    current: Optional[PriceSnapshot] = None
+    scheduled: List[PriceHistoryEntry] = []
+    history: List[PriceHistoryEntry] = []
+
+
+_VALID_TIERS = ("STARTER", "GROWTH", "ENTERPRISE")
+_VALID_BILLING_PERIODS = ("MONTHLY", "ANNUAL")
+
+
+@router.get("/platform/packages/prices", response_model=SuccessResponse[List[TierPricing]])
+@require_permission(PERMISSIONS.PLATFORM_TIER_CONFIG_VIEW)
+async def get_platform_package_prices(
+    tier: Optional[str] = None,
+    user=Depends(get_current_user),
+    db: AsyncSession = Depends(get_db_session),
+) -> SuccessResponse[List[TierPricing]]:
+    """SA-only: price history per tier + billing_period.
+
+    package_prices is append-only. For each (tier, billing_period): "current" is the
+    latest row with effective_from <= now() (the same row get_current_price() would
+    pick), "scheduled" are rows with effective_from in the future, and "history" is
+    every row for that tier/period, newest first.
+    """
+    if not user or user.role != "SA":
+        raise HTTPException(status_code=403, detail={"code": "FORBIDDEN", "message": "SA only"})
+
+    if tier is not None and tier not in _VALID_TIERS:
+        raise HTTPException(
+            status_code=422,
+            detail={"code": "INVALID_TIER", "message": f"Unknown tier: {tier}"},
+        )
+    tiers = [tier] if tier else list(_VALID_TIERS)
+
+    now = datetime.now(timezone.utc)
+    result: List[TierPricing] = []
+    for t in tiers:
+        for period in _VALID_BILLING_PERIODS:
+            rows = (await db.execute(
+                text(
+                    "SELECT pp.id, pp.amount, pp.currency, pp.effective_from, pp.reason, "
+                    "       pp.created_by, pp.created_at, u.email AS created_by_email "
+                    "FROM package_prices pp "
+                    "LEFT JOIN users u ON u.id = pp.created_by "
+                    "WHERE pp.tier = :tier AND pp.billing_period = :period "
+                    "ORDER BY pp.effective_from DESC, pp.created_at DESC"
+                ),
+                {"tier": t, "period": period},
+            )).fetchall()
+
+            history = [
+                PriceHistoryEntry(
+                    id=str(r.id), amount=r.amount, currency=r.currency,
+                    effective_from=r.effective_from.isoformat(), reason=r.reason,
+                    created_by=str(r.created_by) if r.created_by else None,
+                    created_by_email=r.created_by_email,
+                    created_at=r.created_at.isoformat(),
+                )
+                for r in rows
+            ]
+            scheduled = [h for h, r in zip(history, rows) if r.effective_from > now]
+            current_row = next((r for r in rows if r.effective_from <= now), None)
+            current = None
+            if current_row is not None:
+                breakdown = vat_breakdown(Decimal(current_row.amount))
+                current = PriceSnapshot(
+                    id=str(current_row.id), amount=current_row.amount, currency=current_row.currency,
+                    effective_from=current_row.effective_from.isoformat(),
+                    subtotal=breakdown["subtotal"], vat_rate=breakdown["vat_rate"],
+                    vat_amount=breakdown["vat_amount"], total=breakdown["total"],
+                )
+
+            result.append(TierPricing(
+                tier=t, billing_period=period,
+                current=current, scheduled=scheduled, history=history,
+            ))
+
+    return SuccessResponse(data=result)
+
+
+class PriceCreateRequest(BaseModel):
+    billing_period: str
+    amount: Decimal
+    effective_from: Optional[datetime] = None
+    reason: str
+
+
+@router.post("/platform/packages/{tier}/prices", response_model=SuccessResponse[dict], status_code=201)
+@require_permission(PERMISSIONS.PLATFORM_TIER_CONFIG_EDIT)
+async def create_platform_package_price(
+    tier: str,
+    body: PriceCreateRequest,
+    user=Depends(get_current_user),
+    db: AsyncSession = Depends(get_db_session),
+) -> SuccessResponse[dict]:
+    """SA-only: post a new (append-only) price for tier + billing_period.
+
+    Existing subscriptions are untouched — a price change applies only at each
+    subscription's next renewal (shared.billing.payments.next_invoice_period), never
+    retroactively to the currently-invoiced period.
+
+    effective_from defaults to now() and must not be more than 5 minutes in the past.
+    Posting a correcting price with the SAME effective_from as a wrong one is
+    supported: get_current_price()'s tie-break on created_at DESC means the newer
+    (correcting) row becomes current.
+    """
+    if not user or user.role != "SA":
+        raise HTTPException(status_code=403, detail={"code": "FORBIDDEN", "message": "SA only"})
+
+    if tier not in _VALID_TIERS:
+        raise HTTPException(
+            status_code=422,
+            detail={"code": "INVALID_TIER", "message": f"Unknown tier: {tier}"},
+        )
+    if body.billing_period not in _VALID_BILLING_PERIODS:
+        raise HTTPException(
+            status_code=422,
+            detail={"code": "INVALID_BILLING_PERIOD",
+                    "message": f"billing_period must be one of {list(_VALID_BILLING_PERIODS)}"},
+        )
+    if body.amount < 0 or -body.amount.as_tuple().exponent > 2:
+        raise HTTPException(
+            status_code=422,
+            detail={"code": "INVALID_AMOUNT",
+                    "message": "amount must be >= 0 with at most 2 decimal places."},
+        )
+
+    reason = body.reason.strip() if body.reason else ""
+    if not reason:
+        raise HTTPException(status_code=422, detail={"code": "REASON_REQUIRED", "message": "reason is required."})
+
+    now = datetime.now(timezone.utc)
+    effective_from = body.effective_from or now
+    if effective_from.tzinfo is None:
+        effective_from = effective_from.replace(tzinfo=timezone.utc)
+    if effective_from < now - timedelta(minutes=5):
+        raise HTTPException(
+            status_code=422,
+            detail={"code": "EFFECTIVE_FROM_IN_PAST",
+                    "message": "effective_from must not be more than 5 minutes in the past."},
+        )
+
+    old_price = await get_current_price(db, tier, body.billing_period)
+
+    new_id = (await db.execute(
+        text(
+            "INSERT INTO package_prices (tier, billing_period, amount, effective_from, reason, created_by) "
+            "VALUES (:tier, :period, :amount, :eff, :reason, :uid) RETURNING id"
+        ),
+        {"tier": tier, "period": body.billing_period, "amount": body.amount,
+         "eff": effective_from, "reason": reason, "uid": str(user.user_id)},
+    )).scalar_one()
+
+    await db.execute(
+        text(
+            "INSERT INTO platform_config_log "
+            "  (entity_type, entity_key, field, old_value, new_value, reason, actor_id, actor_email) "
+            "VALUES ('PRICE', :key, 'amount', :old, :new, :reason, :actor_id, :actor_email)"
+        ),
+        {
+            "key": f"{tier}/{body.billing_period}",
+            "old": str(old_price.amount) if old_price else None,
+            "new": f"{body.amount} from {effective_from.isoformat()}",
+            "reason": reason, "actor_id": str(user.user_id), "actor_email": getattr(user, "email", None),
+        },
+    )
+
+    return SuccessResponse(data={
+        "id": str(new_id),
+        "tier": tier,
+        "billing_period": body.billing_period,
+        "amount": body.amount,
+        "effective_from": effective_from.isoformat(),
+        "message": "Existing subscriptions pay this price starting from their next renewal.",
+    })
+
+
+class ConfigLogEntry(BaseModel):
+    id: str
+    entity_type: str
+    entity_key: str
+    field: Optional[str] = None
+    old_value: Optional[str] = None
+    new_value: Optional[str] = None
+    reason: Optional[str] = None
+    actor_email: Optional[str] = None
+    created_at: str
+
+
+@router.get("/platform/config-log", response_model=SuccessResponse[List[ConfigLogEntry]])
+@require_permission(PERMISSIONS.PLATFORM_TIER_CONFIG_VIEW)
+async def get_platform_config_log(
+    entity_type: Optional[str] = None,
+    entity_key: Optional[str] = None,
+    limit: int = 100,
+    user=Depends(get_current_user),
+    db: AsyncSession = Depends(get_db_session),
+) -> SuccessResponse[List[ConfigLogEntry]]:
+    """SA-only: platform_config_log listing, newest first, optionally filtered."""
+    if not user or user.role != "SA":
+        raise HTTPException(status_code=403, detail={"code": "FORBIDDEN", "message": "SA only"})
+
+    limit = min(max(limit, 1), 500)
+    conditions = []
+    params: dict = {"limit": limit}
+    if entity_type:
+        conditions.append("entity_type = :entity_type")
+        params["entity_type"] = entity_type
+    if entity_key:
+        conditions.append("entity_key = :entity_key")
+        params["entity_key"] = entity_key
+    where_clause = f"WHERE {' AND '.join(conditions)}" if conditions else ""
+
+    rows = (await db.execute(
+        text(
+            f"SELECT id, entity_type, entity_key, field, old_value, new_value, "
+            f"       reason, actor_email, created_at "
+            f"FROM platform_config_log {where_clause} "
+            f"ORDER BY created_at DESC LIMIT :limit"
+        ),
+        params,
+    )).fetchall()
+
+    return SuccessResponse(data=[
+        ConfigLogEntry(
+            id=str(row.id), entity_type=row.entity_type, entity_key=row.entity_key,
+            field=row.field, old_value=row.old_value, new_value=row.new_value,
+            reason=row.reason, actor_email=row.actor_email,
+            created_at=row.created_at.isoformat(),
+        )
         for row in rows
     ])
 

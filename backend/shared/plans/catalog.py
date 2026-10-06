@@ -24,6 +24,22 @@ class _Unset:
 # from an explicit override of None (which means "unlimited" for max_*/sku_cap).
 UNSET: Any = _Unset()
 
+# The complete, fixed set of feature flag codes a package's feature_flags dict may use.
+# Single source of truth — SA package editing (PATCH /platform/tier-config) rejects any
+# other key with 422 UNKNOWN_FEATURE_FLAG. Keep in sync with locales/en.json's
+# tenant_admin.features.flag.* keys (frontend FeaturesTab.tsx FEATURE_MATRIX).
+KNOWN_FEATURE_FLAGS: frozenset[str] = frozenset({
+    "CORE_INVENTORY",
+    "TRANSFERS_PULL_PUSH",
+    "TRANSFERS_SISTER",
+    "LOT_TRACEABILITY",
+    "LOGISTICS",
+    "AUDIT_EXPORT",
+    "CUSTOM_BRANDING",
+    "AI_ANALYTICS",
+    "API_ACCESS",
+})
+
 
 def _row_to_package(row: Any) -> dict[str, Any]:
     return {
