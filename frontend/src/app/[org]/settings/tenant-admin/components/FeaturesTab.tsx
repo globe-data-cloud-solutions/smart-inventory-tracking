@@ -1,9 +1,93 @@
 "use client";
 
-import { useQuery } from "@tanstack/react-query";
+import { useState } from "react";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import { t } from "@/lib/i18n";
 import { TabProps, PlanData } from "../types";
+
+// Tenant-specific overrides — distinct from the 9-code package feature matrix
+// below (FEATURE_MATRIX): these 4 toggle operational features on top of
+// whatever the tenant's plan already grants, and are reset whenever the plan
+// changes (shared.plans.catalog.apply_package_to_tenant REPLACES feature_flags).
+const OVERRIDE_FLAGS = ["LOGISTICS", "AI_ANALYTICS", "ADVANCED_BATCH_TRACKING", "FLEET_MANAGEMENT"] as const;
+
+function FeatureOverrides({ tenantId, flags }: { tenantId: string; flags: Record<string, boolean> }) {
+  const qc = useQueryClient();
+  const [draft, setDraft] = useState<Record<string, boolean>>(() =>
+    Object.fromEntries(OVERRIDE_FLAGS.map((f) => [f, flags[f] ?? false]))
+  );
+  const [confirm, setConfirm] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [success, setSuccess] = useState<string | null>(null);
+
+  const saveMutation = useMutation({
+    mutationFn: () => api.patch(`/api/v1/tenants/${tenantId}/feature-flags`, { feature_flags: draft }),
+    onSuccess: () => {
+      setConfirm(false);
+      setError(null);
+      setSuccess(t("common.success"));
+      void qc.invalidateQueries({ queryKey: ["tenant-admin-features", tenantId] });
+      void qc.invalidateQueries({ queryKey: ["sa-registry-header"] });
+    },
+    onError: (e: unknown) => setError(e instanceof Error ? e.message : t("common.error")),
+  });
+
+  const hasChanges = OVERRIDE_FLAGS.some((f) => draft[f] !== (flags[f] ?? false));
+
+  return (
+    <div className="bg-white rounded-lg border border-gray-200 p-6">
+      <h3 className="text-lg font-semibold text-gray-800 mb-2">{t("sa_tenant.features.overrides_heading")}</h3>
+      <p className="text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded px-3 py-2 mb-4">
+        {t("sa_tenant.features.overrides_warning")}
+      </p>
+      <p className="text-xs text-gray-500 mb-5">{t("sa.features_hint")}</p>
+
+      <div className="flex flex-col gap-4 mb-6">
+        {OVERRIDE_FLAGS.map((flag) => (
+          <label key={flag} className="flex items-center justify-between cursor-pointer">
+            <span className="text-sm font-medium text-gray-700">{t(`sa.feature_${flag}`)}</span>
+            <button
+              type="button"
+              onClick={() => { setDraft((prev) => ({ ...prev, [flag]: !prev[flag] })); setSuccess(null); }}
+              className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none ${
+                draft[flag] ? "bg-[#0f2d1f]" : "bg-gray-300"
+              }`}
+              aria-pressed={!!draft[flag]}
+            >
+              <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                draft[flag] ? "translate-x-6" : "translate-x-1"
+              }`} />
+            </button>
+          </label>
+        ))}
+      </div>
+
+      {error && <p className="text-sm text-red-600 mb-3">{error}</p>}
+      {success && <p className="text-sm text-emerald-700 mb-3">{success}</p>}
+
+      {confirm ? (
+        <div className="flex items-center gap-3 p-3 bg-gray-50 rounded border border-gray-200">
+          <span className="text-sm text-gray-700 flex-1">{t("sa.admin_confirm_prompt")}</span>
+          <button type="button" disabled={saveMutation.isPending} onClick={() => saveMutation.mutate()}
+            className="px-3 py-1.5 text-xs font-bold text-white bg-[#0f2d1f] rounded hover:bg-[#1a4d35] disabled:opacity-50">
+            {saveMutation.isPending ? "…" : t("sa.admin_confirm_yes")}
+          </button>
+          <button type="button" disabled={saveMutation.isPending} onClick={() => setConfirm(false)}
+            className="px-3 py-1.5 text-xs font-bold text-gray-600 rounded hover:bg-gray-200">
+            {t("sa.admin_confirm_no")}
+          </button>
+        </div>
+      ) : (
+        <button type="button" disabled={!hasChanges}
+          onClick={() => { setConfirm(true); setSuccess(null); setError(null); }}
+          className="px-4 py-2 text-sm font-bold text-white bg-[#0f2d1f] rounded hover:bg-[#1a4d35] disabled:opacity-50">
+          {t("sa.features_save_btn")}
+        </button>
+      )}
+    </div>
+  );
+}
 
 // name/description keys shared with PlanTab.tsx — see tenant_admin.features.flag.* / flag_desc.* in locales/en.json
 const FEATURE_MATRIX: Record<string, { tiers: string[] }> = {
@@ -111,6 +195,9 @@ export function FeaturesTab({ tenantId, isLoading }: TabProps) {
           );
         })}
       </div>
+
+      {/* SA mode: per-tenant feature overrides (CLAUDE.md §15 S9) */}
+      {tenantId && <FeatureOverrides tenantId={tenantId} flags={plan.feature_flags} />}
 
       {/* Upgrade CTA */}
       <div className="bg-gradient-to-r from-emerald-50 to-teal-50 rounded-lg border border-emerald-200 p-6">

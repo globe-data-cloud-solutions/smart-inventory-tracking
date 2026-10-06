@@ -2,7 +2,6 @@
 
 import { Fragment, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import Link from "next/link";
 import { api } from "@/lib/api";
 import { t } from "@/lib/i18n";
 import { formatCurrency } from "@/lib/utils";
@@ -14,6 +13,126 @@ const PLAN_TIERS = {
   GROWTH: { nameKey: "tenant_admin.plan.tier.GROWTH", className: "bg-emerald-600" },
   ENTERPRISE: { nameKey: "tenant_admin.plan.tier.ENTERPRISE", className: "bg-purple-600" },
 };
+
+const SELECTABLE_TIERS = ["STARTER", "GROWTH", "ENTERPRISE"] as const;
+
+// Live per-tier limits — never hardcoded (CLAUDE.md §15). Only the fields this
+// form needs; the full catalog shape lives in settings/plans/page.tsx.
+interface TierConfigEntry {
+  tier: string;
+  max_warehouses: number | null;
+  max_users: number | null;
+  sku_cap: number | null;
+}
+
+function limitText(n: number | null): string {
+  return n === null ? t("tenant_admin.plan.unlimited") : String(n);
+}
+
+function TierChangeForm({ tenantId, plan }: { tenantId: string; plan: PlanData }) {
+  const qc = useQueryClient();
+  const [selectedTier, setSelectedTier] = useState(plan.plan_tier);
+  const [skuCap, setSkuCap] = useState<number | null>(plan.sku_cap);
+  const [confirm, setConfirm] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [success, setSuccess] = useState<string | null>(null);
+
+  const { data: tierConfig } = useQuery<TierConfigEntry[]>({
+    queryKey: ["platform-tier-config"],
+    queryFn: () => api.get<TierConfigEntry[]>("/api/v1/tenants/platform/tier-config"),
+    staleTime: 30_000,
+  });
+
+  const saveMutation = useMutation({
+    mutationFn: () => api.patch(`/api/v1/tenants/${tenantId}/plan`, { plan_tier: selectedTier, sku_cap: skuCap }),
+    onSuccess: () => {
+      setConfirm(false);
+      setError(null);
+      setSuccess(t("common.success"));
+      void qc.invalidateQueries({ queryKey: ["tenant-admin-plan", tenantId] });
+      void qc.invalidateQueries({ queryKey: ["tenant-admin-features", tenantId] });
+      void qc.invalidateQueries({ queryKey: ["sa-registry-header"] });
+    },
+    onError: (e: unknown) => setError(e instanceof Error ? e.message : t("common.error")),
+  });
+
+  const hasChanges = selectedTier !== plan.plan_tier || skuCap !== plan.sku_cap;
+
+  return (
+    <div className="bg-white rounded-lg border border-gray-200 p-6">
+      <h3 className="text-lg font-semibold text-gray-800 mb-4">{t("sa.admin_sub_plan")}</h3>
+
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-5">
+        {SELECTABLE_TIERS.map((tier) => {
+          const entry = tierConfig?.find((e) => e.tier === tier);
+          const selected = selectedTier === tier;
+          return (
+            <button
+              key={tier}
+              type="button"
+              onClick={() => { setSelectedTier(tier); setSuccess(null); }}
+              className={`flex flex-col items-start px-4 py-3 rounded-lg text-left border-2 transition-colors ${
+                selected ? "border-[#0f2d1f] bg-emerald-50" : "border-gray-200 bg-white hover:border-gray-300"
+              }`}
+            >
+              <span className="text-sm font-bold text-gray-800">{tier}</span>
+              {entry ? (
+                <span className="text-xs text-gray-500 mt-1">
+                  {t("tenant_admin.plan.max_warehouses")}: {limitText(entry.max_warehouses)} · {t("tenant_admin.plan.max_users")}: {limitText(entry.max_users)}
+                </span>
+              ) : (
+                <span className="text-xs text-gray-400 mt-1">{t("common.loading")}</span>
+              )}
+            </button>
+          );
+        })}
+      </div>
+
+      <div className="mb-5 max-w-xs">
+        <label className="block text-sm font-medium text-gray-700 mb-1">{t("sa.plan_sku_cap_label")}</label>
+        <input
+          type="number"
+          min={0}
+          placeholder={t("sa.plan_sku_cap_unlimited")}
+          value={skuCap ?? ""}
+          onChange={(e) => {
+            const v = e.target.value;
+            setSkuCap(v === "" ? null : Math.max(0, parseInt(v, 10)));
+            setSuccess(null);
+          }}
+          className="w-full px-3 py-2 text-sm border border-gray-300 rounded-md outline-none focus:border-[#0f2d1f] focus:ring-1 focus:ring-[#0f2d1f]"
+        />
+        <p className="text-xs text-gray-400 mt-1">{t("sa.plan_sku_cap_hint")}</p>
+      </div>
+
+      {error && <p className="text-sm text-red-600 mb-3">{error}</p>}
+      {success && <p className="text-sm text-emerald-700 mb-3">{success}</p>}
+
+      {confirm ? (
+        <div className="flex items-center gap-3 p-3 bg-gray-50 rounded border border-gray-200">
+          <span className="text-sm text-gray-700 flex-1">{t("sa.admin_confirm_prompt")}</span>
+          <button type="button" disabled={saveMutation.isPending} onClick={() => saveMutation.mutate()}
+            className="px-3 py-1.5 text-xs font-bold text-white bg-[#0f2d1f] rounded hover:bg-[#1a4d35] disabled:opacity-50">
+            {saveMutation.isPending ? "…" : t("sa.admin_confirm_yes")}
+          </button>
+          <button type="button" disabled={saveMutation.isPending} onClick={() => setConfirm(false)}
+            className="px-3 py-1.5 text-xs font-bold text-gray-600 rounded hover:bg-gray-200">
+            {t("sa.admin_confirm_no")}
+          </button>
+        </div>
+      ) : (
+        <button
+          type="button"
+          disabled={!hasChanges}
+          onClick={() => { setConfirm(true); setSuccess(null); setError(null); }}
+          className="px-4 py-2 text-sm font-bold text-white bg-[#0f2d1f] rounded hover:bg-[#1a4d35] disabled:opacity-50"
+        >
+          {t("sa.admin_save_btn")}
+        </button>
+      )}
+    </div>
+  );
+}
 
 // Keys shared with FeaturesTab.tsx — see tenant_admin.features.flag.* / flag_desc.* in locales/en.json
 const FEATURE_FLAG_CODES = [
@@ -556,21 +675,15 @@ export function PlanTab({ tenantId, isLoading }: TabProps) {
           </div>
         </div>
 
-        {tenantId ? (
-          /* SA mode: plan tier CHANGE stays on the SA dashboard's Admin tab —
-             link there instead of a second plan-change UI (CLAUDE.md §15 S8). */
-          <div className="p-4 bg-blue-50 border border-blue-200 rounded-lg">
-            <p className="text-sm text-blue-900 mb-1">{t("sa_tenant.plan.change_elsewhere")}</p>
-            <Link href="/admin/dashboard" className="text-sm font-semibold text-blue-700 hover:underline">
-              {t("sa_tenant.open_dashboard_admin_link")}
-            </Link>
-          </div>
-        ) : (
+        {!tenantId && (
           <div className="p-4 bg-blue-50 border border-blue-200 rounded-lg">
             <p className="text-sm text-blue-900">💡 {t("tenant_admin.plan.upgrade_hint")}</p>
           </div>
         )}
       </div>
+
+      {/* SA mode: tier change + SKU cap, above billing (CLAUDE.md §15 S9) */}
+      {tenantId && <TierChangeForm tenantId={tenantId} plan={plan} />}
 
       <SubscriptionAndInvoices tenantId={tenantId} />
 

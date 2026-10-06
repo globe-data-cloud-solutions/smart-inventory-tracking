@@ -2,15 +2,17 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
+import { useQuery } from "@tanstack/react-query";
 import Link from "next/link";
 import { getSession } from "@/lib/demo-auth";
 import { api } from "@/lib/api";
 import { t } from "@/lib/i18n";
 
 /* ── Types ───────────────────────────────────────────────────────────────── */
-type OrgType   = "PRODUCER" | "RETAILER" | "HYBRID";
-type Locale    = "en" | "am" | "or";
-type PlanTier  = "STARTER" | "GROWTH" | "ENTERPRISE";
+type OrgType       = "PRODUCER" | "RETAILER" | "HYBRID";
+type Locale        = "en" | "am" | "or";
+type PlanTier      = "STARTER" | "GROWTH" | "ENTERPRISE";
+type BillingPeriod = "MONTHLY" | "ANNUAL";
 
 interface WizardState {
   name:                 string;
@@ -18,6 +20,7 @@ interface WizardState {
   skuLimit:             string;
   orgType:              OrgType | "";
   planTier:             PlanTier;
+  billingPeriod:        BillingPeriod;
   locale:               Locale;
   adminName:            string;
   adminEmail:           string;
@@ -25,6 +28,18 @@ interface WizardState {
   adminPasswordConfirm: string;
   contractStart:        string;
   contractEnd:          string;
+}
+
+// Live per-tier limits — never hardcoded (CLAUDE.md §15).
+interface TierConfigEntry {
+  tier: string;
+  max_warehouses: number | null;
+  max_users: number | null;
+  sku_cap: number | null;
+}
+
+function limitText(n: number | null): string {
+  return n === null ? t("tenant_admin.plan.unlimited") : String(n);
 }
 
 interface ContactEntry {
@@ -166,9 +181,15 @@ export default function OnboardPage() {
   const [error, setError]     = useState("");
 
   const [form, setForm] = useState<WizardState>({
-    name: "", industry: "", skuLimit: "500", orgType: "", planTier: "GROWTH", locale: "en",
+    name: "", industry: "", skuLimit: "500", orgType: "", planTier: "GROWTH", billingPeriod: "ANNUAL", locale: "en",
     adminName: "", adminEmail: "", adminPassword: "", adminPasswordConfirm: "",
     contractStart: "", contractEnd: "",
+  });
+
+  const { data: tierConfig } = useQuery<TierConfigEntry[]>({
+    queryKey: ["platform-tier-config"],
+    queryFn: () => api.get<TierConfigEntry[]>("/api/v1/tenants/platform/tier-config"),
+    staleTime: 30_000,
   });
 
   const [address, setAddress]                       = useState<AddressState>(blankAddress());
@@ -241,27 +262,22 @@ export default function OnboardPage() {
         default_locale:     form.locale,
         organisation_type:  form.orgType || null,
         plan_tier:          form.planTier,
+        billing_period:     form.billingPeriod,
         ...(form.industry.trim() ? { industry: form.industry.trim() } : {}),
         // SKU cap applies to every organisation_type, not just PRODUCER (CLAUDE.md §15).
         ...(form.skuLimit ? { sku_cap: parseInt(form.skuLimit, 10) } : {}),
+        // Contract (the commercial agreement) is independent of the billing
+        // period above (CLAUDE.md §15 decision B) — sent in the same create
+        // call, no separate PATCH /contract step needed.
+        ...(form.contractStart ? { contract_start: form.contractStart } : {}),
+        ...(form.contractEnd   ? { contract_end:   form.contractEnd   } : {}),
         admin_name:     form.adminName.trim(),
         admin_email:    form.adminEmail.trim(),
         admin_password: form.adminPassword,
       });
       const tenantId = tenantData.id;
 
-      // Step 2: Save contract dates (best-effort)
-      if (form.contractStart || form.contractEnd) {
-        try {
-          await api.patch(`/api/v1/tenants/${tenantId}/contract`, {
-            contract_start: form.contractStart || null,
-            contract_end:   form.contractEnd   || null,
-            note:           "Set during onboarding wizard",
-          });
-        } catch { /* non-fatal */ }
-      }
-
-      // Step 3: Save contacts (best-effort — don't roll back tenant if this fails)
+      // Step 2: Save contacts (best-effort — don't roll back tenant if this fails)
       if (primaryContact.full_name.trim() && primaryContact.email.trim()) {
         const contactRows = [
           {
@@ -373,7 +389,7 @@ export default function OnboardPage() {
               <button
                 onClick={() => {
                   setStep(1); setResult(null);
-                  setForm({ name: "", industry: "", skuLimit: "500", orgType: "", planTier: "GROWTH", locale: "en",
+                  setForm({ name: "", industry: "", skuLimit: "500", orgType: "", planTier: "GROWTH", billingPeriod: "ANNUAL", locale: "en",
                             adminName: "", adminEmail: "", adminPassword: "", adminPasswordConfirm: "",
                             contractStart: "", contractEnd: "" });
                   setAddress(blankAddress());
@@ -533,27 +549,27 @@ export default function OnboardPage() {
                     </button>
                   );
                 })}
-                {form.orgType === "PRODUCER" && (
-                  <div className="p-4 bg-green-50 rounded-lg border border-green-200">
-                    <label className="block font-bold text-[13px] text-gray-700 mb-1.5">
-                      {t("wizard.sku_limit")}{" "}
-                      <span className="text-xs font-normal text-gray-400">{t("wizard.sku_limit_hint")}</span>
-                    </label>
-                    <input
-                      type="number" min={1} value={form.skuLimit}
-                      onChange={(e) => set("skuLimit", e.target.value)}
-                      className={`${inputClass} max-w-[180px]`}
-                    />
-                  </div>
-                )}
+                {/* SKU cap applies to every organisation_type, not just PRODUCER (CLAUDE.md §15) */}
+                <div className="p-4 bg-green-50 rounded-lg border border-green-200">
+                  <label className="block font-bold text-[13px] text-gray-700 mb-1.5">
+                    {t("wizard.sku_limit")}{" "}
+                    <span className="text-xs font-normal text-gray-400">{t("wizard.sku_limit_hint")}</span>
+                  </label>
+                  <input
+                    type="number" min={1} value={form.skuLimit}
+                    onChange={(e) => set("skuLimit", e.target.value)}
+                    className={`${inputClass} max-w-[180px]`}
+                  />
+                </div>
 
-                {/* ── Plan Tier ── */}
+                {/* ── Plan Tier — limits read live from the package catalog, never hardcoded ── */}
                 <div className="pt-2">
                   <p className="font-bold text-[13px] text-gray-700 mb-1">{t("wizard.plan_tier")}</p>
                   <p className="text-xs text-gray-400 mb-2.5">{t("wizard.plan_tier_hint")}</p>
                   <div className="grid grid-cols-3 gap-2">
                     {(["STARTER", "GROWTH", "ENTERPRISE"] as PlanTier[]).map((tier) => {
                       const selected = form.planTier === tier;
+                      const entry = tierConfig?.find((e) => e.tier === tier);
                       const colors: Record<PlanTier, { ring: string; bg: string; badge: string }> = {
                         STARTER:    { ring: "#9CA3AF", bg: "#F9FAFB", badge: "bg-gray-100 text-gray-600" },
                         GROWTH:     { ring: "#3B82F6", bg: "#EFF6FF", badge: "bg-blue-100 text-blue-700" },
@@ -575,8 +591,32 @@ export default function OnboardPage() {
                             {tier}
                           </span>
                           <span className="text-[12px] text-gray-500 leading-tight">
-                            {t(`wizard.tier_desc.${tier}`)}
+                            {entry
+                              ? `${limitText(entry.max_warehouses)} ${t("tenant_admin.plan.max_warehouses")} · ${limitText(entry.max_users)} ${t("tenant_admin.plan.max_users")}`
+                              : t("common.loading")}
                           </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* ── Billing Period ── */}
+                <div className="pt-2">
+                  <p className="font-bold text-[13px] text-gray-700 mb-1">{t("wizard.billing_period")}</p>
+                  <div className="grid grid-cols-2 gap-2 max-w-xs">
+                    {(["MONTHLY", "ANNUAL"] as BillingPeriod[]).map((period) => {
+                      const selected = form.billingPeriod === period;
+                      return (
+                        <button
+                          key={period}
+                          type="button"
+                          onClick={() => set("billingPeriod", period)}
+                          className={`px-3.5 py-2.5 rounded-lg text-sm font-semibold transition-all ${
+                            selected ? "border-2 border-[#1B4332] bg-green-50 text-[#1B4332]" : "border-2 border-gray-200 bg-white text-gray-600"
+                          }`}
+                        >
+                          {t(`wizard.billing_period_${period.toLowerCase()}`)}
                         </button>
                       );
                     })}

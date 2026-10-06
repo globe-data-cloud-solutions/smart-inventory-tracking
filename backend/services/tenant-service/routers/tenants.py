@@ -2559,3 +2559,4 @@ async def update_feature_flags(
         )
     except Exception:
         pass
+    return SuccessResponse(data={"changes": len(changes), "feature_flags": merged})

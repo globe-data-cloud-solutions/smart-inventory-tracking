@@ -285,7 +285,7 @@
     "industry": "ዘርፍ",
     "industry_placeholder": "ለምሳሌ፦ የታሸገ ውሃ፣ ሲሚንቶ",
     "sku_limit": "የSKU ወሰን",
-    "sku_limit_hint": "ለአምራቾች ብቻ — በዕቅድ ላይ የተዘጋጀ",
+    "sku_limit_hint": "ለዚህ ተቀጥላ ከፍተኛው ገባሪ SKU ቁጥር",
     "org_types": {
       "PRODUCER": "አምራች / አስመጪ",
       "RETAILER": "ችርቻሮ / አከፋፋይ",
@@ -304,11 +304,9 @@
     },
     "plan_tier": "የዕቅድ ደረጃ",
     "plan_tier_hint": "በ API ንብርብር የሚተገበሩ የሃብት ገደቦችን ያዘጋጃል",
-    "tier_desc": {
-      "STARTER": "1 ነፃ ሥር + 3 አንጓዎች · 5 ተጠቃሚዎች",
-      "GROWTH": "1 ነፃ ሥር + 10 አንጓዎች · 25 ተጠቃሚዎች",
-      "ENTERPRISE": "ያልተገደበ አንጓዎችና ተጠቃሚዎች"
-    },
+    "billing_period": "የክፍያ ጊዜ",
+    "billing_period_monthly": "ወርሃዊ",
+    "billing_period_annual": "ዓመታዊ",
     "success": "ተከራዩ በተሳካ ሁኔታ ተሰጥቷል!",
     "success_desc": "ተከራዩ ዝግጁ ነው። ተጠቃሚዎችን ከአስተዳዳሪ ዳሽቦርድ ጋብዝ።",
     "go_to_admin": "ወደ አስተዳዳሪ ዳሽቦርድ ተመለስ",
@@ -1144,7 +1142,7 @@
     "col_contract_from": "ከ (ኮንትራት)",
     "col_contract_to": "እስከ (ኮንትራት)",
     "col_sku_cap": "የSKU ገደብ",
-    "plan_sku_cap_label": "የSKU ገደብ (ለአምራቾች ብቻ)",
+    "plan_sku_cap_label": "የSKU ገደብ",
     "plan_sku_cap_hint": "ምንም ካልተሞላ ያልተወሰነ ነው",
     "plan_sku_cap_unlimited": "ያልተወሰነ",
     "edit_profile_section_company": "የኩባንያ መረጃ",
@@ -1160,6 +1158,7 @@
     "activity_action_PROFILE_UPDATE_ADDRESS": "የኩባንያ አድራሻ ተዘምኗል",
     "admin_sub_features": "ባህሪያት",
     "admin_sub_admin_user": "አስተዳዳሪ ተጠቃሚ",
+    "admin_sub_activity": "እንቅስቃሴ",
     "edit_profile_field_industry": "ኢንዱስትሪ",
     "edit_profile_industry_placeholder": "ለምሳሌ፡ ጤና፣ ግብርና፣ ችርቻሮ",
     "col_industry": "ኢንዱስትሪ",
@@ -1641,12 +1640,13 @@
       "end_date": "ማብቂያ ቀን",
       "days_remaining": "የቀሩ ቀናት",
       "duration": "ቆይታ",
+      "billing_period_label": "የክፍያ ጊዜ",
       "expired_days_ago": "ከ{n} ቀናት በፊት አልቋል",
       "days_suffix": "{n} ቀናት",
       "years_suffix": "{n} ዓመት",
       "expired_warning": "⚠️ የእርስዎ ውል አልቋል። ሙሉ መዳረሻን ለማደስ ወዲያውኑ ያድሱ።",
       "expiring_soon_warning": "⏰ የእርስዎ ውል በ{n} ቀናት ውስጥ ያልቃል። የአገልግሎት ማቋረጥን ለማስቀረት አሁን ያድሱ።",
-      "managed_by_platform": "የውል ቀናት በ SMART አስተዳዳሪዎ ይተዳደራሉ እና ከደንበኝነት ምዝገባዎ ጋር በራስ-ሰር ይዘምናሉ። ለመቀየር ድጋፍን ያነጋግሩ።"
+      "managed_by_platform": "የውል ቀናት በ SMART አስተዳዳሪዎ ይተዳደራሉ። ለመቀየር ድጋፍን ያነጋግሩ።"
     },
     "billing": {
       "subscription_heading": "ደንበኝነት",
@@ -1684,17 +1684,10 @@
     }
   },
   "sa_tenant": {
-    "open_dashboard_admin_link": "በ SA ዳሽቦርድ ውስጥ ይክፈቱ → የአስተዳዳሪ ትር",
     "restricted": "ወደዚህ ገጽ መድረስ አይችሉም።",
     "back_to_registry": "← ወደ ተቀጥላ ምዝገባ ተመለስ",
     "help_banner": {
-      "content": "ይህን ተቀጥላ ቅንብሮች እንደ ሲስተም አስተዳዳሪ እየተመለከቱ ነው። ንባቦች ከዚህ ተቀጥላ ውሂብ ይመጣሉ፤ አንዳንድ ማስተካከያዎች (የእቅድ ደረጃ፣ የውል ቀናት) በ SA ዳሽቦርድ የአስተዳዳሪ ትር ላይ ይቀራሉ እና ከዚህ ይገናኛሉ።"
-    },
-    "plan": {
-      "change_elsewhere": "የዚህን ተቀጥላ የእቅድ ደረጃ ወይም የ SKU ገደብ ለመቀየር የ SA ዳሽቦርድን የአስተዳዳሪ ትር ይጠቀሙ።"
-    },
-    "contract": {
-      "edit_elsewhere": "የዚህን ተቀጥላ የውል ቀናት ለማስተካከል የ SA ዳሽቦርድን የአስተዳዳሪ ትር ይጠቀሙ።"
+      "content": "ይህን ተቀጥላ ቅንብሮች እንደ ሲስተም አስተዳዳሪ እየተመለከቱ ነው። ሁሉም ንባቦችና ማስተካከያዎች በቀጥታ በዚህ ተቀጥላ ላይ ይሠራሉ።"
     },
     "billing": {
       "raise_invoice_btn": "ደረሰኝ ይፍጠሩ",
@@ -1719,6 +1712,10 @@
       "WRONG_PROVIDER": "በእጅ የተደረጉ ክፍያዎች ብቻ እዚህ እንደተከፈሉ ሊመለከቱ ይችላሉ።",
       "PRICE_NOT_AVAILABLE": "ለዚህ እቅድ እና የክፍያ ጊዜ ምንም ዋጋ አልተዋቀረም።",
       "PAYMENT_NOT_FOUND": "ያ ክፍያ ሊገኝ አልቻለም።"
+    },
+    "features": {
+      "overrides_heading": "የባህሪ ማስተካከያዎች",
+      "overrides_warning": "እቅዱ ሲቀየር ማስተካከያዎች ይደምሳሉ።"
     }
   },
   "platform_plans": {

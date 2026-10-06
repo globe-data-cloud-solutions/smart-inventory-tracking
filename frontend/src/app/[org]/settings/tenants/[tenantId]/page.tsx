@@ -13,15 +13,24 @@ import { PlanTab } from "../../tenant-admin/components/PlanTab";
 import { ContractTab } from "../../tenant-admin/components/ContractTab";
 import { ContactTab } from "../../tenant-admin/components/ContactTab";
 import { FeaturesTab } from "../../tenant-admin/components/FeaturesTab";
+import { StatusTab } from "./components/StatusTab";
+import { AdminUserTab } from "./components/AdminUserTab";
+import { ActivityTab } from "./components/ActivityTab";
 
-/* ── Tab definitions — same five tabs as the TA's own tenant-admin page,
-   reused here (not copied) in SA mode via the tenantId prop. ── */
+/* ── Tab definitions — the first five are shared with the TA's own
+   tenant-admin page (reused, not copied, via the tenantId prop); the rest
+   are SA-only, folded in from the old dashboard "Tenant Admin" tab
+   (CLAUDE.md §15 S9). ── */
 const TABS = [
   { id: "profile", labelKey: "sa.admin_sub_profile", icon: "👤" },
   { id: "plan", labelKey: "sa.admin_sub_plan", icon: "📊" },
   { id: "contract", labelKey: "sa.admin_sub_contract", icon: "📋" },
+  { id: "status", labelKey: "sa.admin_sub_status", icon: "🔌" },
+  { id: "levels", labelKey: "sa.admin_sub_levels", icon: "🏷️" },
   { id: "contact", labelKey: "tenant_admin.tabs.contact", icon: "👥" },
   { id: "features", labelKey: "sa.admin_sub_features", icon: "✨" },
+  { id: "admin-user", labelKey: "sa.admin_sub_admin_user", icon: "🔑" },
+  { id: "activity", labelKey: "sa.admin_sub_activity", icon: "🕒" },
 ] as const;
 
 type TabId = (typeof TABS)[number]["id"];
@@ -126,8 +135,22 @@ export default function SaTenantViewPage() {
           {activeTab === "profile" && <ProfileTab tenantId={tenantId} />}
           {activeTab === "plan" && <PlanTab tenantId={tenantId} />}
           {activeTab === "contract" && <ContractTab tenantId={tenantId} />}
+          {activeTab === "status" && <StatusTab tenantId={tenantId} />}
+          {activeTab === "levels" && (
+            <div className="bg-white rounded-lg border border-gray-200 p-6">
+              <p className="text-sm text-gray-600 mb-4">{t("sa.admin_levels_description")}</p>
+              <Link
+                href={`/${tenant?.slug ?? tenantId}/settings/org-setup`}
+                className="inline-flex items-center gap-2 px-4 py-2 text-sm font-bold rounded bg-indigo-600 text-white hover:bg-indigo-700 no-underline"
+              >
+                {t("sa.admin_levels_open_btn")}
+              </Link>
+            </div>
+          )}
           {activeTab === "contact" && <ContactTab tenantId={tenantId} />}
           {activeTab === "features" && <FeaturesTab tenantId={tenantId} />}
+          {activeTab === "admin-user" && <AdminUserTab tenantId={tenantId} />}
+          {activeTab === "activity" && <ActivityTab tenantId={tenantId} />}
         </div>
       </div>
     </div>

@@ -280,7 +280,7 @@
     "industry": "Aanalee",
     "industry_placeholder": "fkl. Bishaanii, Simintoo, FMCG",
     "sku_limit": "Daangaa SKU",
-    "sku_limit_hint": "Omishtoota qofa — karaa karoora",
+    "sku_limit_hint": "Maximum active SKUs for this tenant",
     "org_types": {
       "PRODUCER": "Omishaa / Galchituu",
       "RETAILER": "Gurgurtaa xiqqaa / Raabsituu",
@@ -299,11 +299,9 @@
     },
     "plan_tier": "Sadarkaa Karoora",
     "plan_tier_hint": "Daangaa qabeenya hojii API irratti hojiirra oolfamu kaa'a",
-    "tier_desc": {
-      "STARTER": "1 free root + 3 nodes · 5 users",
-      "GROWTH": "1 free root + 10 nodes · 25 users",
-      "ENTERPRISE": "Unlimited nodes and users"
-    },
+    "billing_period": "Billing Period",
+    "billing_period_monthly": "Monthly",
+    "billing_period_annual": "Annual",
     "success": "Hirkattoon milkaa'inaan seensifame!",
     "success_desc": "Hirkattoon qophaa'eera. Fayyadamtoota gaafadhu.",
     "go_to_admin": "Gara Daashboordii Bulchaa Deebi'i",
@@ -1037,7 +1035,7 @@
     "col_contract_from": "Irraa (Kontiraatii)",
     "col_contract_to": "Hanga (Kontiraatii)",
     "col_sku_cap": "Daangaa SKU",
-    "plan_sku_cap_label": "Daangaa SKU (Omishtoota qofa)",
+    "plan_sku_cap_label": "SKU Cap",
     "plan_sku_cap_hint": "Duwwaa yoo dhiiste, daangaa hin qabu",
     "plan_sku_cap_unlimited": "Daangaa Hin Qabu",
     "edit_profile_section_company": "Odeeffannoo Dhaabbataa",
@@ -1053,6 +1051,7 @@
     "activity_action_PROFILE_UPDATE_ADDRESS": "Teessoon dhaabbataa haaromfame",
     "admin_sub_features": "Fedhii",
     "admin_sub_admin_user": "Fayyadamaa Bulchaa",
+    "admin_sub_activity": "Activity",
     "edit_profile_field_industry": "Industirii",
     "edit_profile_industry_placeholder": "Fakk. Fayyaa, Qonnaa, Daldalaa",
     "col_industry": "Industirii",
@@ -1631,12 +1630,13 @@
       "end_date": "Guyyaa Dhumaa",
       "days_remaining": "Days Remaining",
       "duration": "Duration",
+      "billing_period_label": "Billing Period",
       "expired_days_ago": "Expired {n} days ago",
       "days_suffix": "{n} days",
       "years_suffix": "{n} years",
       "expired_warning": "⚠️ Your contract has expired. Please renew immediately to restore full access.",
       "expiring_soon_warning": "⏰ Your contract is expiring in {n} days. Renew now to avoid service interruption.",
-      "managed_by_platform": "Contract dates are managed by your SMART administrator and update automatically with your subscription. Contact support to change them."
+      "managed_by_platform": "Contract dates are managed by your SMART administrator. Contact support to change them."
     },
     "billing": {
       "subscription_heading": "Subscription",
@@ -1674,17 +1674,10 @@
     }
   },
   "sa_tenant": {
-    "open_dashboard_admin_link": "Open in SA dashboard → Admin tab",
     "restricted": "You don't have access to this page.",
     "back_to_registry": "← Back to Tenant Registry",
     "help_banner": {
-      "content": "You're viewing this tenant's settings as a System Admin. Reads come from this tenant's own data; some edits (plan tier, contract dates) stay on the SA dashboard's Admin tab and are linked from here."
-    },
-    "plan": {
-      "change_elsewhere": "To change this tenant's plan tier or SKU cap, use the SA dashboard's Admin tab."
-    },
-    "contract": {
-      "edit_elsewhere": "To edit this tenant's contract dates, use the SA dashboard's Admin tab."
+      "content": "You're viewing this tenant's settings as a System Admin. All reads and edits here act on this tenant directly."
     },
     "billing": {
       "raise_invoice_btn": "Raise Invoice",
@@ -1709,6 +1702,10 @@
       "WRONG_PROVIDER": "Only manually-invoiced payments can be marked paid here.",
       "PRICE_NOT_AVAILABLE": "No price is configured for this plan and billing period.",
       "PAYMENT_NOT_FOUND": "That payment could not be found."
+    },
+    "features": {
+      "overrides_heading": "Feature overrides",
+      "overrides_warning": "Overrides are reset when the plan changes."
     }
   },
   "platform_plans": {
