@@ -2,7 +2,7 @@ import json
 import logging
 import re
 import uuid
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
 from typing import List, Optional
 
@@ -17,7 +17,7 @@ from dependencies import get_current_user, get_db_session
 from services.wizard_service import APPROVAL_DEFAULTS
 from shared.permissions.middleware import require_permission
 from shared.permissions.registry import PERMISSIONS
-from shared.billing.subscriptions import get_current_price, start_subscription, update_live_subscription_tier, vat_breakdown
+from shared.billing.subscriptions import get_current_price, period_end, start_subscription, update_live_subscription_tier, vat_breakdown
 from shared.plans.catalog import KNOWN_FEATURE_FLAGS, UNSET, apply_package_to_tenant
 from shared.utils.responses import SuccessResponse
 from schemas.tenant import TenantCreateRequest, TenantResponse, VALID_PLAN_TIERS, VALID_LOCALES
@@ -872,6 +872,37 @@ async def create_tenant(
             },
         )
 
+    if body.billing_period not in _VALID_BILLING_PERIODS:
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "code":    "INVALID_BILLING_PERIOD",
+                "message": f"billing_period must be one of {list(_VALID_BILLING_PERIODS)}, "
+                           f"got '{body.billing_period}'.",
+            },
+        )
+
+    def _parse_contract_date(s: Optional[str], field: str) -> Optional[date]:
+        if s is None:
+            return None
+        try:
+            return date.fromisoformat(s)
+        except ValueError:
+            raise HTTPException(
+                status_code=422,
+                detail={"code": "INVALID_CONTRACT_DATES",
+                        "message": f"'{field}' must be a valid ISO date (YYYY-MM-DD)."},
+            )
+
+    contract_start_parsed = _parse_contract_date(body.contract_start, "contract_start")
+    contract_end_parsed   = _parse_contract_date(body.contract_end, "contract_end")
+    if contract_start_parsed and contract_end_parsed and contract_end_parsed <= contract_start_parsed:
+        raise HTTPException(
+            status_code=422,
+            detail={"code": "INVALID_CONTRACT_DATES",
+                    "message": "contract_end must be after contract_start."},
+        )
+
     # Slug resolution: use caller-provided slug (validated) or auto-generate from name.
     if body.slug is not None:
         candidate = body.slug.strip().lower()
@@ -952,18 +983,39 @@ async def create_tenant(
         ) from exc
 
     # Package catalog set the entitlements above; this snapshots the current
-    # price and starts the tenant's contract (CLAUDE.md §15). signup_source
-    # stays the column default 'SA'.
+    # price and starts the subscription's first billing period (CLAUDE.md §15
+    # decision B). signup_source stays the column default 'SA'. The subscription's
+    # first period starts on the contract start (or today if none given);
+    # start_subscription() only fills tenants.contract_start/end when both are
+    # still NULL, so an explicit contract below always wins.
     try:
-        await start_subscription(
-            db, tenant_id, body.plan_tier, "ANNUAL",
+        subscription_result = await start_subscription(
+            db, tenant_id, body.plan_tier, body.billing_period,
             status="ACTIVE", provider="MANUAL", created_by=user.user_id,
+            start=contract_start_parsed,
         )
     except ValueError as exc:
         raise HTTPException(
             status_code=422,
             detail={"code": "PRICE_NOT_AVAILABLE", "message": str(exc)},
         ) from exc
+
+    # Contract (the commercial agreement) is independent of the billing period
+    # (CLAUDE.md §15 decision B) — when the caller sent contract dates, they win
+    # outright over whatever start_subscription() derived. contract_end defaults
+    # to the subscription's own period end when only contract_start was sent.
+    if contract_start_parsed is not None or contract_end_parsed is not None:
+        effective_start = contract_start_parsed or date.today()
+        effective_end = contract_end_parsed or period_end(effective_start, body.billing_period)
+        await db.execute(
+            text("UPDATE tenants SET contract_start = :cs, contract_end = :ce WHERE id = :id"),
+            {"cs": effective_start, "ce": effective_end, "id": str(tenant_id)},
+        )
+        contract_start_out = str(effective_start)
+        contract_end_out   = str(effective_end)
+    else:
+        contract_start_out = str(subscription_result["current_period_start"])
+        contract_end_out   = str(subscription_result["current_period_end"])
 
     # Atomic TA admin user creation — same DB transaction as tenant INSERT.
     admin_user_id: Optional[uuid.UUID] = None
@@ -1015,6 +1067,8 @@ async def create_tenant(
             default_locale=body.default_locale,
             is_active=True,
             plan_tier=body.plan_tier,
+            contract_start=contract_start_out,
+            contract_end=contract_end_out,
             admin_user_id=admin_user_id,
             admin_email=admin_email_out,
         )

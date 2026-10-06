@@ -22,6 +22,10 @@ frontend/tsconfig.tsbuildinfo
 # Uploaded files (LocalStorageService — dev only; production uses S3)
 uploads/
 
+# Playwright output (screenshots, HTML reports) — never committed
+frontend/test-results/
+frontend/playwright-report/
+
 # Local scratch / one-off dev scripts (never committed)
 backend/_count_tmp.py
 scripts/_check_positions_schema.py

@@ -48,6 +48,13 @@ class TenantCreateRequest(BaseModel):
     admin_name: Optional[str] = None
     admin_email: Optional[str] = None
     admin_password: Optional[str] = None
+    # Contract (the commercial agreement) is independent of the billing period
+    # (the subscription's billing cycle) — CLAUDE.md §15 decision B. Both optional;
+    # when omitted the contract defaults to the subscription's first period, exactly
+    # as before this field existed.
+    contract_start: Optional[str] = None   # YYYY-MM-DD
+    contract_end: Optional[str] = None     # YYYY-MM-DD
+    billing_period: str = "ANNUAL"         # MONTHLY | ANNUAL
 
 
 class TenantResponse(BaseModel):
