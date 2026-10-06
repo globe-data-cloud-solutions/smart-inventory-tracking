@@ -1681,6 +1681,27 @@ STUB_WEBHOOK_SECRET=               # HMAC secret for the STUB payment provider's
 > resolved alongside the Cognito/SES work (CLAUDE.md §2) before self sign-up
 > can go live outside local dev.
 
+**Frontend (S7):** `frontend/src/app/(auth)/signup/page.tsx` — a three-step
+page (package selection with monthly/annual toggle → company/admin details
+form → summary) that calls only the four public endpoints above, finishing
+with a "sign in with {email}" confirmation and no auto-login.
+`frontend/src/app/(auth)/verify-email/page.tsx` consumes `?token=` once
+(guarded against React Strict Mode's double effect invocation) and shows
+verified / invalid-or-expired (with a resend form) states. `frontend/src/app/
+(auth)/login/page.tsx` links to `/signup`, prefills `?email=`, and shows a
+resend form on `EMAIL_NOT_VERIFIED` (403). Both new pages require gateway
+mode (`NEXT_PUBLIC_API_URL` set) — without it they show
+`t("signup.unavailable")` rather than falling back to mock data.
+`/verify-email` and `/resend-verification` return a raw JSON body, not the
+`{success,data,...}` envelope every other endpoint uses — the frontend calls
+them via `rawPost()` in `lib/api.ts`, never the enveloped `api.post()`.
+
+> **Known gaps (2026-10):** no Terms of Service page exists yet — the signup
+> checkbox links nowhere, only an i18n key placeholder; the TA Plan tab's
+> "How to pay" instructions for a MANUAL invoice are generic placeholder text
+> with no real bank details (`billing.manual_instructions`); and the
+> Cognito/SES gap noted above still blocks self sign-up outside local dev.
+
 ### Billing (S5) — invoices, payments, providers
 
 Schema (migration 071): `subscriptions` (one live row per tenant — `status IN
