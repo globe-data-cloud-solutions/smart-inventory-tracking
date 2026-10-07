@@ -1909,14 +1909,10 @@ read-only line (`tenant_admin.contract.billing_period_label`) next to the
 contract dates, in both SA and TA mode — the two are never merged into one
 field, per decision B above.
 
-**Feature overrides** (`FeaturesTab`'s SA-only section, the old dashboard
-tab's `LOGISTICS`/`AI_ANALYTICS`/`ADVANCED_BATCH_TRACKING`/`FLEET_MANAGEMENT`
-toggles) are per-tenant and stored in the same `tenants.feature_flags` JSONB
-column the package catalog writes — so `apply_package_to_tenant()` (any plan
-change) **replaces the whole column**, wiping any override. The UI carries a
-visible warning for this (`sa_tenant.features.overrides_warning`). Nothing
-in this phase prevents that reset; making overrides survive a plan change
-(as persistent per-tenant add-ons) is future work, not yet started.
+**Feature overrides became add-ons in S10** — see the dedicated S10 section
+below. The raw `tenants.feature_flags` toggle UI this paragraph used to
+describe (and its plan-change-wipes-it caveat) is gone; `PATCH
+/{tenant_id}/feature-flags` now always 409s `USE_ADDONS`.
 
 The dashboard's "Tenant Admin" tab (`saTab === "admin"`, `[org]/dashboard/
 page.tsx`) is now a tenant picker only: selecting a tenant navigates straight
@@ -1936,6 +1932,70 @@ user as a raw Pydantic traceback). This had been broken since the route was
 written; nothing exercised the "real change" branch until the new Feature
 overrides UI did. Fixed with a regression test
 (`tests/unit/test_feature_flags.py`).
+
+### S10 — add-ons: per-tenant feature overrides survive a plan change
+
+Migration 072 adds three tables. **`platform_addons`** is the platform-level
+catalog (no `tenant_id`, no RLS) — one row per feature flag that is NOT
+`true` in every package tier (`CORE_INVENTORY`, `LOT_TRACEABILITY`,
+`TRANSFERS_PULL_PUSH` are excluded since every package already grants them).
+**`addon_prices`** is append-only, same shape and rules as `package_prices`
+(SA posts a new price; a correction reuses the same `effective_from`, newest
+`created_at` wins). **`tenant_addons`** is tenant-scoped (RLS, no FORCE) —
+one row per grant: `source` is `OVERRIDE` (free, `amount=0`, note required)
+or `PURCHASED` (priced from the tenant's live subscription's
+`billing_period`, snapshotting `price_id`/`amount` at grant time); `status`
+is `ACTIVE`/`CANCELLED` — a grant is never deleted, only cancelled.
+
+`get_tenant_entitlements()` (`shared/plans/catalog.py`) is what makes a
+grant take effect: `feature_flags` = the tenant's package flags **OR**'d
+with every currently-`ACTIVE`, in-window (`starts_on <= today`, `ends_on`
+NULL or in the future) `tenant_addons` row — an add-on only ever adds a
+flag, never removes one the package already grants. The result also carries
+`addons: [codes]`. `apply_package_to_tenant()` (a plan change) still
+replaces `tenants.feature_flags` wholesale but **never touches
+`tenant_addons`**, so a granted add-on survives a plan change by
+construction — this is the S10 fix for the S9 "overrides reset on plan
+change" gap. Every feature-display and enforcement path (`check_plan`,
+`GET /me/plan`, `GET /{tenant_id}/plan`) reads through this function.
+
+`PATCH /{tenant_id}/feature-flags` (the raw per-tenant toggle route from S9)
+is gone as a working endpoint — it always returns `409 {"code":"USE_ADDONS"}`
+now. The route and its permission stay registered only so the CI drift check
+still sees a `@require_permission`'d action for it.
+
+**Endpoints** (`backend/shared/billing/addons.py` is the single writer of
+`tenant_addons`): SA catalog — `GET`/`PATCH /platform/addons[/{code}]`,
+`POST /platform/addons/{code}/prices` (`tenants.py`, grouped with the
+package catalog routes, same reason/`platform_config_log` rules, entities
+`ADDON`/`ADDON_PRICE`). Tenant grants (`billing.py`, same file as
+subscriptions/payments) — `POST`/`GET /{tenant_id}/addons`,
+`POST /{tenant_id}/addons/{id}/cancel` (SA, `billing:manage`/`billing:view`),
+`GET /me/addons` (TA, `billing:view_own`). `grant_addon()` raises
+`FEATURE_ALREADY_IN_PACKAGE` (422) if the tenant's package already grants
+the flag, `ADDON_ALREADY_ACTIVE` (409) if one is already live, and for
+`PURCHASED`, `NO_LIVE_SUBSCRIPTION` (409) / `ADDON_PRICE_NOT_AVAILABLE` (422)
+if no current price exists for the subscription's billing period.
+
+**Invoices**: `create_invoice()` adds one `ADDON` line item per `ACTIVE`
+`PURCHASED` add-on (`amount > 0`), priced by the same is-renewal rule as the
+`PACKAGE` line — the subscription's first invoice bills each add-on at its
+own grant-time snapshot, a renewal re-prices it at the add-on's *current*
+price for that billing period (falling back to the last known snapshot if
+that add-on has no current price, so one add-on never blocks invoicing the
+rest). `mark_paid()`'s price-adoption read is scoped to `item_type =
+'PACKAGE'` explicitly, and separately adopts each `ADDON` line's price onto
+its `tenant_addons` row. No proration, same as packages: an add-on added
+mid-period is billed starting from the next invoice.
+
+**Frontend**: the SA tenant page's Features tab replaces the old raw
+override toggles with a full Add-ons section (grant free override / add
+purchased add-on with a next-invoice price preview / cancel) and every
+package feature now shows its source — Package / Add-on / Not included.
+SA Plans & Pricing gained an Add-ons tab (catalog + pricing, mirrors the
+Packages/Prices tabs). The TA's own Plan tab shows add-ons read-only plus
+invoice line items; its Features tab shows the same source labels,
+read-only (no management controls there).
 
 ---
 
@@ -2839,15 +2899,32 @@ switcher) for any screen whose text changed.
 Collect console errors on every page the spec visits
 (page.on("console", ...) filtered to type "error", plus page.on("pageerror"))
 and print them raw at the end of the run — a step fails if an error appears
-that the change under test introduced. A one-time 401 immediately after a
-fresh demo login is a known bug, not expected behavior: the SMART JWT is
-patched into the session fire-and-forget after login() returns, so the first
-API call can race that exchange and go out with no Authorization header.
-frontend/tests/s9-sa-tenant.spec.ts's loginAs() helper works around it by
-waiting for the token to land before navigating further — that workaround
-stays in test code only. Fix pending (S10): block the first gateway call
-until the JWT exchange resolves (or await it inline in login()) so the race
-cannot happen outside tests either.
+that the change under test introduced. The post-login 401 race (login()
+patching the JWT into the session without the first API call waiting for
+it) is fixed as of S10: demo-auth.ts's login() tracks the in-flight exchange
+via getPendingJWTExchange(), api.ts's request() awaits it before reading the
+session, and the login page awaits it before navigating — so a fresh login
+no longer races its first authenticated call. frontend/tests/s9-sa-tenant.
+spec.ts's loginAs() still contains the old wait-for-token workaround as
+defensive redundancy; it is harmless and not required by new specs.
+```
+
+### Permanent E2E TA test account
+
+```
+frontend/tests/helpers/e2e-ta.ts exports E2E_TA_EMAIL ("e2e-ta@probe.local")
+and e2eTaPasswordOrSkip(test) — every spec that needs a real TA login must
+use these, never a hardcoded credential. The password is read ONLY from the
+E2E_TA_PASSWORD environment variable (never committed); a test that needs a
+TA session calls e2eTaPasswordOrSkip(test) at its top, which calls
+test.skip() with a clear message when the env var is unset, so the suite
+still runs (skipping just that test) for anyone without the password.
+
+The account itself is tenant slug zz-e2e-ta ("E2E TA Test", STARTER,
+MONTHLY), created once via the public sign-up endpoint. Unlike every other
+z-prefixed probe tenant (all DEACTIVATED after their test run), zz-e2e-ta
+stays ACTIVE always — it exists specifically so tests always have a known,
+working TA login available without needing to create one ad hoc.
 ```
 
 ---
