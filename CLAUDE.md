@@ -2927,6 +2927,22 @@ stays ACTIVE always — it exists specifically so tests always have a known,
 working TA login available without needing to create one ad hoc.
 ```
 
+### Known gaps
+
+```
+§5's "pytest backend/ -v -m 'unit'" (local, no-DB unit run) silently SKIPS
+every test file that has no explicit @pytest.mark.unit marker or pytestmark —
+this includes all of backend/shared/billing/tests/ (test_payments.py,
+test_addons.py, test_providers.py, test_subscriptions.py) and others. The
+real CI test-backend job runs the FULL unfiltered suite ("pytest backend/
+-v --tb=short --cov=backend", no -m filter) and does catch them. Don't trust
+a green "-m unit" run alone as proof nothing broke — run the full unfiltered
+suite (discovered 2026-10-07 during S10: two billing-test regressions from
+an entitlements signature change were invisible under -m unit and only
+surfaced on the full run). Fix pending: either mark every test file
+consistently or stop filtering locally and just run the full suite.
+```
+
 ---
 
 # SMART Inventory — Claude Prompts for Initial Stock Entry
