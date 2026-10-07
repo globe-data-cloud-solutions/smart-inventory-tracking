@@ -1520,11 +1520,8 @@
       "max_users": "Max Users",
       "sku_cap": "SKU Cap",
       "unlimited": "Unlimited",
-      "upgrade_hint": "Need more resources? Contact support or request an upgrade to unlock additional capacity.",
+      "contact_sa_to_change": "Package changes are made by SMART. Contact your SMART administrator to change your plan.",
       "available_features": "Available Features",
-      "ready_to_upgrade": "Ready to Upgrade?",
-      "upgrade_cta_text": "Request a plan upgrade to unlock more features, users, and warehouses.",
-      "request_upgrade_btn": "Request Plan Upgrade",
       "addons_heading": "Add-ons"
     },
     "features": {

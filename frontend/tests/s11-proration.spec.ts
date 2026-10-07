@@ -66,6 +66,15 @@ test.describe("S11 proration — SA tenant page", () => {
     // invoice, plus the one created via direct API call earlier in this session).
     await expect(page.getByText("Proration", { exact: true }).first()).toBeVisible({ timeout: 10_000 });
 
+    // Cleanup — cancel the PRORATION invoice this run just raised (newest
+    // row, since the backend orders payments by created_at DESC) so repeated
+    // runs stop piling up PENDING invoices on zz-s11-probe (CLAUDE.md §15 S12).
+    const newInvoiceRow = page.locator("tr", { hasText: "Proration" }).first();
+    await newInvoiceRow.getByRole("button", { name: "Cancel" }).click();
+    await page.locator("tr.bg-red-50 input[type=\"text\"]").fill("e2e cleanup");
+    await page.getByRole("button", { name: "Yes" }).click();
+    await page.waitForLoadState("networkidle");
+
     console.log("--- upgrade preview/confirm console errors ---");
     for (const e of consoleErrors) console.log(e);
     expect(consoleErrors, "zero console errors on the upgrade preview/confirm flow").toHaveLength(0);

@@ -1,6 +1,8 @@
-"""Unit tests for the S11 proration-preview routes:
-GET /me/proration-preview (TA, billing:view_own) and
+"""Unit tests for the proration-preview route:
 GET /{tenant_id}/proration-preview (SA, tenant:manage + inline SA check).
+
+GET /me/proration-preview (the TA-side preview) was removed in S12 — no UI
+ever called it (CLAUDE.md §15 S12); package/plan changes are SA-only now.
 
 Mocked session + mocked permission store throughout — no real DB
 connection required. preview_upgrade()/preview_addon() (shared.billing.
@@ -56,54 +58,6 @@ _PREVIEW = {
 }
 
 
-async def test_ta_proration_preview_tier_serializes_decimals_and_dates() -> None:
-    from routers.tenants import get_my_proration_preview
-
-    ta = _user("TA", str(TENANT_A))
-    with patch("shared.permissions.middleware.get_role_permission", new=AsyncMock(return_value=_full_grant())), \
-         patch("shared.permissions.middleware.audit_log", new=AsyncMock()), \
-         patch("routers.tenants.preview_upgrade", new=AsyncMock(return_value=_PREVIEW)) as mock_preview:
-        out = await get_my_proration_preview(tier="GROWTH", addon=None, user=ta, db=AsyncMock())
-
-    assert mock_preview.call_args.args[1] == str(TENANT_A)
-    assert mock_preview.call_args.args[2] == "GROWTH"
-    assert out.data["subtotal"] == "700.00"
-    assert out.data["total"] == "805.00"
-    assert out.data["free_until"] == "2026-06-15"
-    assert out.data["period_end"] == "2027-01-15"
-    assert out.data["will_invoice"] is True
-
-
-async def test_ta_proration_preview_addon() -> None:
-    from routers.tenants import get_my_proration_preview
-
-    ta = _user("TA", str(TENANT_A))
-    addon_preview = {**_PREVIEW, "old_amount": None}
-    with patch("shared.permissions.middleware.get_role_permission", new=AsyncMock(return_value=_full_grant())), \
-         patch("shared.permissions.middleware.audit_log", new=AsyncMock()), \
-         patch("routers.tenants.preview_addon", new=AsyncMock(return_value=addon_preview)) as mock_preview:
-        out = await get_my_proration_preview(tier=None, addon="LOGISTICS", user=ta, db=AsyncMock())
-
-    assert mock_preview.call_args.args[1] == str(TENANT_A)
-    assert mock_preview.call_args.args[2] == "LOGISTICS"
-    assert out.data["old_amount"] is None
-
-
-async def test_ta_proration_preview_requires_exactly_one_of_tier_addon() -> None:
-    from routers.tenants import get_my_proration_preview
-
-    ta = _user("TA", str(TENANT_A))
-    with patch("shared.permissions.middleware.get_role_permission", new=AsyncMock(return_value=_full_grant())), \
-         patch("shared.permissions.middleware.audit_log", new=AsyncMock()):
-        with pytest.raises(HTTPException) as exc_info:
-            await get_my_proration_preview(tier="GROWTH", addon="LOGISTICS", user=ta, db=AsyncMock())
-        assert exc_info.value.status_code == 422
-
-        with pytest.raises(HTTPException) as exc_info2:
-            await get_my_proration_preview(tier=None, addon=None, user=ta, db=AsyncMock())
-        assert exc_info2.value.status_code == 422
-
-
 async def test_sa_proration_preview_for_any_tenant() -> None:
     from routers.tenants import get_tenant_proration_preview
 
@@ -115,19 +69,6 @@ async def test_sa_proration_preview_for_any_tenant() -> None:
 
     assert mock_preview.call_args.args[1] == str(TENANT_A)
     assert out.data["will_invoice"] is True
-
-
-async def test_ta_proration_preview_denied_rbac() -> None:
-    from routers.tenants import get_my_proration_preview
-
-    ta = _user("TA", str(TENANT_A))
-    with patch("shared.permissions.middleware.get_role_permission", new=AsyncMock(return_value=None)), \
-         patch("shared.permissions.middleware.audit_log", new=AsyncMock()):
-        with pytest.raises(HTTPException) as exc_info:
-            await get_my_proration_preview(tier="GROWTH", addon=None, user=ta, db=AsyncMock())
-
-    assert exc_info.value.status_code == 403
-    assert exc_info.value.detail["code"] == "RBAC_DENIED"
 
 
 async def test_sa_proration_preview_denied_for_non_sa() -> None:

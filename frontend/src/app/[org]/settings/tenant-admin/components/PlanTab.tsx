@@ -801,8 +801,8 @@ export function PlanTab({ tenantId, isLoading }: TabProps) {
         </div>
 
         {!tenantId && (
-          <div className="p-4 bg-blue-50 border border-blue-200 rounded-lg">
-            <p className="text-sm text-blue-900">💡 {t("tenant_admin.plan.upgrade_hint")}</p>
+          <div className="p-4 bg-gray-50 border border-gray-200 rounded-lg">
+            <p className="text-sm text-gray-600">{t("tenant_admin.plan.contact_sa_to_change")}</p>
           </div>
         )}
       </div>
@@ -835,18 +835,6 @@ export function PlanTab({ tenantId, isLoading }: TabProps) {
         </div>
       </div>
 
-      {/* Request Upgrade CTA — TA only; an SA managing the tenant has no one to ask */}
-      {!tenantId && (
-        <div className="bg-gradient-to-r from-emerald-50 to-blue-50 rounded-lg border border-emerald-200 p-6">
-          <h4 className="font-semibold text-gray-800 mb-2">{t("tenant_admin.plan.ready_to_upgrade")}</h4>
-          <p className="text-sm text-gray-700 mb-4">
-            {t("tenant_admin.plan.upgrade_cta_text")}
-          </p>
-          <button className="px-4 py-2 text-sm font-medium text-white bg-emerald-600 rounded hover:bg-emerald-700">
-            {t("tenant_admin.plan.request_upgrade_btn")}
-          </button>
-        </div>
-      )}
     </div>
   );
 }

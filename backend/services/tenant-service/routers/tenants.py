@@ -7,7 +7,7 @@ from decimal import Decimal
 from typing import List, Optional
 
 import asyncpg
-from fastapi import APIRouter, Depends, HTTPException, Response
+from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from pydantic import BaseModel
 from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError
@@ -1403,29 +1403,6 @@ def _serialize_preview(preview: dict) -> dict:
     return out
 
 
-@router.get("/me/proration-preview", response_model=SuccessResponse[dict])
-@require_permission(PERMISSIONS.BILLING_VIEW_OWN)
-async def get_my_proration_preview(
-    tier: Optional[str] = None,
-    addon: Optional[str] = None,
-    user=Depends(get_current_user),
-    db: AsyncSession = Depends(get_db_session),
-) -> SuccessResponse[dict]:
-    """TA: read-only proration preview for its own tenant's plan change
-    (?tier=) or PURCHASED add-on grant (?addon=) — no writes. Exactly one of
-    `tier`/`addon` must be given."""
-    if not user or not user.tenant_id:
-        raise HTTPException(status_code=403, detail="No tenant context")
-    if bool(tier) == bool(addon):
-        raise HTTPException(
-            status_code=422,
-            detail={"code": "INVALID_REQUEST", "message": "Pass exactly one of tier or addon"},
-        )
-    preview = await (preview_upgrade(db, str(user.tenant_id), tier) if tier
-                      else preview_addon(db, str(user.tenant_id), addon))
-    return SuccessResponse(data=_serialize_preview(preview))
-
-
 class PlanUpdateRequest(BaseModel):
     plan_tier: str
     max_warehouses: Optional[int] = None   # if None, auto-set from platform_tier_config
@@ -1485,9 +1462,18 @@ class TAProfileUpdateRequest(BaseModel):
     default_locale: Optional[str] = None
 
 
+# Package changes are SA-only (CLAUDE.md §15 S12) — any of these present in a
+# PATCH /me/profile body is rejected before any write, even though
+# TAProfileUpdateRequest has no field for them (Pydantic would otherwise just
+# silently drop them). SA PATCH /{tenant_id}/plan and /{tenant_id}/profile
+# are unaffected by this check.
+PLAN_BILLING_FIELDS = {"plan_tier", "max_warehouses", "max_users", "sku_cap", "feature_flags", "billing_period"}
+
+
 @router.patch("/me/profile", response_model=SuccessResponse[dict])
 @require_permission(PERMISSIONS.TENANT_CONFIGURE)
 async def update_my_profile(
+    request: Request,
     body: TAProfileUpdateRequest,
     user=Depends(get_current_user),
     db: AsyncSession = Depends(get_db_session),
@@ -1495,6 +1481,16 @@ async def update_my_profile(
     """TA: update limited fields of their own tenant profile (locale only)."""
     if not user or not user.tenant_id:
         raise HTTPException(status_code=403, detail="No tenant context")
+
+    raw_body = await request.json()
+    if isinstance(raw_body, dict) and PLAN_BILLING_FIELDS & raw_body.keys():
+        raise HTTPException(
+            status_code=403,
+            detail={
+                "code": "PLAN_CHANGE_SA_ONLY",
+                "message": "Package changes are made by SMART. Contact your SMART administrator.",
+            },
+        )
 
     if body.default_locale is not None and body.default_locale not in VALID_LOCALES:
         raise HTTPException(

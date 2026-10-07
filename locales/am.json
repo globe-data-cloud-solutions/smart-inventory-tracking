@@ -1530,11 +1530,8 @@
       "max_users": "ከፍተኛ ተጠቃሚዎች",
       "sku_cap": "የSKU ወሰን",
       "unlimited": "ያልተገደበ",
-      "upgrade_hint": "ተጨማሪ ሀብት ይፈልጋሉ? ተጨማሪ አቅም ለመክፈት ድጋፍን ያነጋግሩ ወይም ማሻሻል ይጠይቁ።",
+      "contact_sa_to_change": "የጥቅል ለውጦች የሚደረጉት በ SMART ነው። የዕቅድ ለውጥ ለማድረግ የSMART አስተዳዳሪዎን ያነጋግሩ።",
       "available_features": "የሚገኙ ባህሪያት",
-      "ready_to_upgrade": "ለማሻሻል ዝግጁ ነዎት?",
-      "upgrade_cta_text": "ተጨማሪ ባህሪያት፣ ተጠቃሚዎች፣ እና መጋዘኖችን ለመክፈት የዕቅድ ማሻሻያ ይጠይቁ።",
-      "request_upgrade_btn": "የዕቅድ ማሻሻያ ይጠይቁ",
       "addons_heading": "ተጨማሪዎች"
     },
     "features": {
