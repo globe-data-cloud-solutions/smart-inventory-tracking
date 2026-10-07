@@ -5,7 +5,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import { t } from "@/lib/i18n";
 import { formatCurrency } from "@/lib/utils";
-import { TabProps, PlanData, TenantAddonOut } from "../types";
+import { TabProps, PlanData, TenantAddonOut, ProrationPreview, ProrationInvoiceOut } from "../types";
 
 interface AddonCatalogEntry {
   code: string;
@@ -17,7 +17,7 @@ interface AddonCatalogEntry {
 const ADDON_ERROR_CODES = new Set([
   "ADDON_NOT_FOUND", "ADDON_INACTIVE", "FEATURE_ALREADY_IN_PACKAGE", "ADDON_ALREADY_ACTIVE",
   "NOTE_REQUIRED", "NO_LIVE_SUBSCRIPTION", "ADDON_PRICE_NOT_AVAILABLE",
-  "ADDON_GRANT_NOT_FOUND", "ADDON_NOT_ACTIVE", "INVALID_SOURCE",
+  "ADDON_GRANT_NOT_FOUND", "ADDON_NOT_ACTIVE", "INVALID_SOURCE", "INVOICE_PENDING_SETTLE_FIRST",
 ]);
 
 function addonErrorMessage(e: unknown): string {
@@ -52,9 +52,19 @@ function TenantAddonsSection({ tenantId }: { tenantId: string }) {
 
   const [grantForm, setGrantForm] = useState<{ source: "OVERRIDE" | "PURCHASED"; code: string; note: string } | null>(null);
   const [grantError, setGrantError] = useState<string | null>(null);
+  const [grantedInvoice, setGrantedInvoice] = useState<ProrationInvoiceOut | null>(null);
   const [cancelRow, setCancelRow] = useState<string | null>(null);
   const [cancelNote, setCancelNote] = useState("");
   const [cancelError, setCancelError] = useState<string | null>(null);
+
+  const { data: addonPreview, isLoading: loadingAddonPreview } = useQuery<ProrationPreview>({
+    queryKey: ["proration-preview", tenantId, "addon", grantForm?.code],
+    queryFn: () => api.get<ProrationPreview>(
+      `/api/v1/tenants/${tenantId}/proration-preview?addon=${encodeURIComponent(grantForm!.code)}`,
+    ),
+    enabled: grantForm?.source === "PURCHASED" && !!grantForm.code,
+    staleTime: 10_000,
+  });
 
   function invalidate() {
     void qc.invalidateQueries({ queryKey: addonsQueryKey });
@@ -64,8 +74,13 @@ function TenantAddonsSection({ tenantId }: { tenantId: string }) {
 
   const grantMutation = useMutation({
     mutationFn: (body: { addon_code: string; source: string; note?: string }) =>
-      api.post(`/api/v1/tenants/${tenantId}/addons`, body),
-    onSuccess: () => { setGrantForm(null); setGrantError(null); invalidate(); },
+      api.post<{ proration_invoice: ProrationInvoiceOut | null }>(`/api/v1/tenants/${tenantId}/addons`, body),
+    onSuccess: (data) => {
+      setGrantForm(null);
+      setGrantError(null);
+      setGrantedInvoice(data.proration_invoice ?? null);
+      invalidate();
+    },
     onError: (e: unknown) => setGrantError(addonErrorMessage(e)),
   });
 
@@ -86,6 +101,7 @@ function TenantAddonsSection({ tenantId }: { tenantId: string }) {
   function startGrant(source: "OVERRIDE" | "PURCHASED") {
     setGrantForm({ source, code: pickable[0]?.code ?? "", note: "" });
     setGrantError(null);
+    setGrantedInvoice(null);
   }
 
   return (
@@ -137,6 +153,13 @@ function TenantAddonsSection({ tenantId }: { tenantId: string }) {
         </div>
       )}
       {cancelError && <p className="text-xs text-red-600 mb-3">{cancelError}</p>}
+      {grantedInvoice && (
+        <p className="text-xs text-blue-800 bg-blue-50 border border-blue-200 rounded px-3 py-2 mb-3">
+          {t("billing.proration.invoice_raised")
+            .replace("{period}", `${grantedInvoice.period_start} → ${grantedInvoice.period_end}`)
+            .replace("{total}", formatCurrency(grantedInvoice.total, "ETB"))}
+        </p>
+      )}
 
       {cancelled.length > 0 && (
         <>
@@ -172,17 +195,41 @@ function TenantAddonsSection({ tenantId }: { tenantId: string }) {
             />
           </div>
           {grantForm.source === "PURCHASED" && (
-            <p className="text-xs text-gray-500">
-              {previewPrice
-                ? t("sa_tenant.addons.price_preview").replace("{amount}", formatCurrency(previewPrice.amount, previewPrice.currency))
-                : t("sa_tenant.addons.price_unavailable")}
-            </p>
+            <>
+              <p className="text-xs text-gray-500">
+                {previewPrice
+                  ? t("sa_tenant.addons.price_preview").replace("{amount}", formatCurrency(previewPrice.amount, previewPrice.currency))
+                  : t("sa_tenant.addons.price_unavailable")}
+              </p>
+              {loadingAddonPreview ? (
+                <p className="text-xs text-gray-400">{t("common.loading")}</p>
+              ) : addonPreview?.blocked_code ? (
+                <p className="text-xs font-semibold text-red-700 bg-red-50 border border-red-200 rounded px-2 py-1.5">
+                  {t(`billing.proration.blocked.${addonPreview.blocked_code}`)}
+                </p>
+              ) : addonPreview?.will_invoice ? (
+                <p className="text-xs text-gray-700 bg-blue-50 border border-blue-200 rounded px-2 py-1.5">
+                  {t("billing.proration.preview_charge")
+                    .replace("{free_until}", addonPreview.free_until ?? "")
+                    .replace("{months}", String(addonPreview.remaining_months))
+                    .replace("{subtotal}", formatCurrency(addonPreview.subtotal, addonPreview.currency ?? "ETB"))
+                    .replace("{vat}", formatCurrency(addonPreview.vat, addonPreview.currency ?? "ETB"))
+                    .replace("{total}", formatCurrency(addonPreview.total, addonPreview.currency ?? "ETB"))}
+                </p>
+              ) : addonPreview ? (
+                <p className="text-xs text-gray-500">{t("billing.proration.no_charge_now")}</p>
+              ) : null}
+            </>
           )}
           {grantError && <p className="text-xs text-red-600">{grantError}</p>}
           <div className="flex gap-2">
             <button
               type="button"
-              disabled={grantMutation.isPending || !grantForm.code || (grantForm.source === "OVERRIDE" && !grantForm.note.trim())}
+              disabled={
+                grantMutation.isPending || !grantForm.code ||
+                (grantForm.source === "OVERRIDE" && !grantForm.note.trim()) ||
+                (grantForm.source === "PURCHASED" && addonPreview?.blocked_code != null)
+              }
               onClick={() => grantMutation.mutate({ addon_code: grantForm.code, source: grantForm.source, note: grantForm.note.trim() || undefined })}
               className="px-3 py-1.5 text-xs font-bold text-white bg-[#0f2d1f] rounded hover:bg-[#1a4d35] disabled:opacity-50"
             >

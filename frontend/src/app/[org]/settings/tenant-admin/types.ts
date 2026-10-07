@@ -50,6 +50,37 @@ export interface TenantAddonOut {
   cancelled_at: string | null;
 }
 
+/** GET /{tenant_id}/proration-preview or /me/proration-preview (S11) —
+ * read-only preview of a mid-period proration invoice an upgrade or
+ * PURCHASED add-on grant would raise. Decimal/date fields are already
+ * serialized to strings by the backend (routers.tenants._serialize_preview). */
+export interface ProrationPreview {
+  remaining_months: number;
+  free_until: string | null;
+  period_end: string | null;
+  old_amount: string | null;
+  new_amount: string | null;
+  subtotal: string;
+  vat: string;
+  total: string;
+  currency: string | null;
+  will_invoice: boolean;
+  blocked_code: string | null;
+}
+
+/** The "proration_invoice" field PATCH .../plan and POST .../addons return
+ * alongside their normal result (S11) — null when no invoice was raised. */
+export interface ProrationInvoiceOut {
+  payment_id: string;
+  status: string;
+  invoice_kind: "PRORATION";
+  period_start: string;
+  period_end: string;
+  subtotal: string;
+  vat_amount: string;
+  total: string;
+}
+
 export interface TenantContact {
   id: string;
   tenant_id: string;

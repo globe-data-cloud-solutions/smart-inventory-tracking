@@ -60,6 +60,7 @@ class PaymentLineItemOut(BaseModel):
 class PaymentOut(BaseModel):
     id: str
     status: str
+    invoice_kind: str
     currency: str
     subtotal: Decimal
     vat_rate: Decimal
@@ -156,7 +157,7 @@ async def _load_subscription_view(db: AsyncSession, tenant_id: str) -> Subscript
 
     payment_rows = (await db.execute(
         text(
-            "SELECT id, status, currency, subtotal, vat_rate, vat_amount, total, "
+            "SELECT id, status, invoice_kind, currency, subtotal, vat_rate, vat_amount, total, "
             "       period_start, period_end, provider, provider_reference, paid_at, created_at "
             "FROM payments WHERE subscription_id = :sid ORDER BY created_at DESC"
         ),
@@ -173,7 +174,7 @@ async def _load_subscription_view(db: AsyncSession, tenant_id: str) -> Subscript
             {"pid": str(p.id)},
         )).fetchall()
         payments.append(PaymentOut(
-            id=str(p.id), status=p.status, currency=p.currency,
+            id=str(p.id), status=p.status, invoice_kind=p.invoice_kind, currency=p.currency,
             subtotal=p.subtotal, vat_rate=p.vat_rate, vat_amount=p.vat_amount, total=p.total,
             period_start=_dt(p.period_start), period_end=_dt(p.period_end),
             provider=p.provider, provider_reference=p.provider_reference,

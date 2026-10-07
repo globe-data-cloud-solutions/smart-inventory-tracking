@@ -1644,7 +1644,8 @@
       "INVALID_PAYMENT_STATE": "That payment is not in a state this action can be applied to.",
       "WRONG_PROVIDER": "Only manually-invoiced payments can be marked paid here.",
       "PRICE_NOT_AVAILABLE": "No price is configured for this plan and billing period.",
-      "PAYMENT_NOT_FOUND": "That payment could not be found."
+      "PAYMENT_NOT_FOUND": "That payment could not be found.",
+      "INVOICE_PENDING_SETTLE_FIRST": "A pending invoice must be settled (marked paid or cancelled) before this change can proceed."
     },
     "features": {
       "overrides_heading": "Feature overrides",
@@ -1677,7 +1678,8 @@
       "ADDON_PRICE_NOT_AVAILABLE": "No price is set for this add-on's billing period yet.",
       "ADDON_GRANT_NOT_FOUND": "Add-on grant not found.",
       "ADDON_NOT_ACTIVE": "This add-on grant is not active.",
-      "INVALID_SOURCE": "Invalid add-on source."
+      "INVALID_SOURCE": "Invalid add-on source.",
+      "INVOICE_PENDING_SETTLE_FIRST": "A pending invoice must be settled (marked paid or cancelled) before this change can proceed."
     }
   },
   "platform_plans": {
@@ -1823,6 +1825,16 @@
     "back_to_login": "Back to sign in"
   },
   "billing": {
-    "manual_instructions": "Pay by bank transfer or cash at the SMART office and send the receipt to support. Your administrator will confirm the payment."
+    "manual_instructions": "Pay by bank transfer or cash at the SMART office and send the receipt to support. Your administrator will confirm the payment.",
+    "proration": {
+      "badge": "Proration",
+      "no_charge_now": "No charge now — billed at your next renewal.",
+      "preview_charge": "Free until {free_until}; {months} months charged now: {subtotal} + {vat} VAT = {total}",
+      "downgrade_no_refund": "Downgrading takes effect immediately. No refund or credit is given for the remainder of the current billing period.",
+      "invoice_raised": "A proration invoice for {period} totaling {total} has been raised and is pending payment.",
+      "blocked": {
+        "INVOICE_PENDING_SETTLE_FIRST": "A pending invoice must be marked paid or cancelled before this change can proceed."
+      }
+    }
   }
 }

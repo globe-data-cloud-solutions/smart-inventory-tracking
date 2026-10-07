@@ -6,7 +6,7 @@ import { api } from "@/lib/api";
 import { t } from "@/lib/i18n";
 import { formatCurrency } from "@/lib/utils";
 import { Badge } from "@/components/ui/Badge";
-import { TabProps, PlanData, TenantAddonOut } from "../types";
+import { TabProps, PlanData, TenantAddonOut, ProrationPreview, ProrationInvoiceOut } from "../types";
 
 const PLAN_TIERS = {
   STARTER: { nameKey: "tenant_admin.plan.tier.STARTER", className: "bg-blue-600" },
@@ -15,6 +15,7 @@ const PLAN_TIERS = {
 };
 
 const SELECTABLE_TIERS = ["STARTER", "GROWTH", "ENTERPRISE"] as const;
+const TIER_ORDER = ["STARTER", "GROWTH", "ENTERPRISE"];
 
 // Live per-tier limits — never hardcoded (CLAUDE.md §15). Only the fields this
 // form needs; the full catalog shape lives in settings/plans/page.tsx.
@@ -29,6 +30,35 @@ function limitText(n: number | null): string {
   return n === null ? t("tenant_admin.plan.unlimited") : String(n);
 }
 
+// S11: the "no charge now" phrasing covers monthly plans, downgrades, and
+// never-paid subscriptions alike — the preview itself does not distinguish
+// which; it just says will_invoice: false.
+function ProrationPreviewNote({ preview, isLoading }: { preview: ProrationPreview | undefined; isLoading: boolean }) {
+  if (isLoading) return <p className="text-xs text-gray-400">{t("common.loading")}</p>;
+  if (!preview) return null;
+  if (preview.blocked_code) {
+    return (
+      <p className="text-xs font-semibold text-red-700 bg-red-50 border border-red-200 rounded px-2 py-1.5">
+        {t(`billing.proration.blocked.${preview.blocked_code}`)}
+      </p>
+    );
+  }
+  if (!preview.will_invoice) {
+    return <p className="text-xs text-gray-500">{t("billing.proration.no_charge_now")}</p>;
+  }
+  const currency = preview.currency ?? "ETB";
+  return (
+    <p className="text-xs text-gray-700 bg-blue-50 border border-blue-200 rounded px-2 py-1.5">
+      {t("billing.proration.preview_charge")
+        .replace("{free_until}", preview.free_until ?? "")
+        .replace("{months}", String(preview.remaining_months))
+        .replace("{subtotal}", formatCurrency(preview.subtotal, currency))
+        .replace("{vat}", formatCurrency(preview.vat, currency))
+        .replace("{total}", formatCurrency(preview.total, currency))}
+    </p>
+  );
+}
+
 function TierChangeForm({ tenantId, plan }: { tenantId: string; plan: PlanData }) {
   const qc = useQueryClient();
   const [selectedTier, setSelectedTier] = useState(plan.plan_tier);
@@ -36,6 +66,7 @@ function TierChangeForm({ tenantId, plan }: { tenantId: string; plan: PlanData }
   const [confirm, setConfirm] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
+  const [prorationInvoice, setProrationInvoice] = useState<ProrationInvoiceOut | null>(null);
 
   const { data: tierConfig } = useQuery<TierConfigEntry[]>({
     queryKey: ["platform-tier-config"],
@@ -43,15 +74,29 @@ function TierChangeForm({ tenantId, plan }: { tenantId: string; plan: PlanData }
     staleTime: 30_000,
   });
 
+  const isTierChange = selectedTier !== plan.plan_tier;
+  const { data: preview, isLoading: loadingPreview } = useQuery<ProrationPreview>({
+    queryKey: ["proration-preview", tenantId, "tier", selectedTier],
+    queryFn: () => api.get<ProrationPreview>(
+      `/api/v1/tenants/${tenantId}/proration-preview?tier=${encodeURIComponent(selectedTier)}`,
+    ),
+    enabled: confirm && isTierChange,
+    staleTime: 10_000,
+  });
+
   const saveMutation = useMutation({
-    mutationFn: () => api.patch(`/api/v1/tenants/${tenantId}/plan`, { plan_tier: selectedTier, sku_cap: skuCap }),
-    onSuccess: () => {
+    mutationFn: () => api.patch<{ proration_invoice: ProrationInvoiceOut | null }>(
+      `/api/v1/tenants/${tenantId}/plan`, { plan_tier: selectedTier, sku_cap: skuCap },
+    ),
+    onSuccess: (data) => {
       setConfirm(false);
       setError(null);
       setSuccess(t("common.success"));
+      setProrationInvoice(data.proration_invoice ?? null);
       void qc.invalidateQueries({ queryKey: ["tenant-admin-plan", tenantId] });
       void qc.invalidateQueries({ queryKey: ["tenant-admin-features", tenantId] });
       void qc.invalidateQueries({ queryKey: ["sa-registry-header"] });
+      void qc.invalidateQueries({ queryKey: ["tenant-admin-subscription", tenantId] });
     },
     onError: (e: unknown) => setError(e instanceof Error ? e.message : t("common.error")),
   });
@@ -70,7 +115,7 @@ function TierChangeForm({ tenantId, plan }: { tenantId: string; plan: PlanData }
             <button
               key={tier}
               type="button"
-              onClick={() => { setSelectedTier(tier); setSuccess(null); }}
+              onClick={() => { setSelectedTier(tier); setSuccess(null); setProrationInvoice(null); }}
               className={`flex flex-col items-start px-4 py-3 rounded-lg text-left border-2 transition-colors ${
                 selected ? "border-[#0f2d1f] bg-emerald-50" : "border-gray-200 bg-white hover:border-gray-300"
               }`}
@@ -107,18 +152,38 @@ function TierChangeForm({ tenantId, plan }: { tenantId: string; plan: PlanData }
 
       {error && <p className="text-sm text-red-600 mb-3">{error}</p>}
       {success && <p className="text-sm text-emerald-700 mb-3">{success}</p>}
+      {prorationInvoice && (
+        <p className="text-xs text-blue-800 bg-blue-50 border border-blue-200 rounded px-3 py-2 mb-3">
+          {t("billing.proration.invoice_raised")
+            .replace("{period}", `${prorationInvoice.period_start} → ${prorationInvoice.period_end}`)
+            .replace("{total}", formatCurrency(prorationInvoice.total, "ETB"))}
+        </p>
+      )}
 
       {confirm ? (
-        <div className="flex items-center gap-3 p-3 bg-gray-50 rounded border border-gray-200">
-          <span className="text-sm text-gray-700 flex-1">{t("sa.admin_confirm_prompt")}</span>
-          <button type="button" disabled={saveMutation.isPending} onClick={() => saveMutation.mutate()}
-            className="px-3 py-1.5 text-xs font-bold text-white bg-[#0f2d1f] rounded hover:bg-[#1a4d35] disabled:opacity-50">
-            {saveMutation.isPending ? "…" : t("sa.admin_confirm_yes")}
-          </button>
-          <button type="button" disabled={saveMutation.isPending} onClick={() => setConfirm(false)}
-            className="px-3 py-1.5 text-xs font-bold text-gray-600 rounded hover:bg-gray-200">
-            {t("sa.admin_confirm_no")}
-          </button>
+        <div className="space-y-2 p-3 bg-gray-50 rounded border border-gray-200">
+          {isTierChange && (
+            TIER_ORDER.indexOf(selectedTier) < TIER_ORDER.indexOf(plan.plan_tier) ? (
+              <p className="text-xs text-gray-500">{t("billing.proration.downgrade_no_refund")}</p>
+            ) : (
+              <ProrationPreviewNote preview={preview} isLoading={loadingPreview} />
+            )
+          )}
+          <div className="flex items-center gap-3">
+            <span className="text-sm text-gray-700 flex-1">{t("sa.admin_confirm_prompt")}</span>
+            <button
+              type="button"
+              disabled={saveMutation.isPending || preview?.blocked_code != null}
+              onClick={() => saveMutation.mutate()}
+              className="px-3 py-1.5 text-xs font-bold text-white bg-[#0f2d1f] rounded hover:bg-[#1a4d35] disabled:opacity-50"
+            >
+              {saveMutation.isPending ? "…" : t("sa.admin_confirm_yes")}
+            </button>
+            <button type="button" disabled={saveMutation.isPending} onClick={() => setConfirm(false)}
+              className="px-3 py-1.5 text-xs font-bold text-gray-600 rounded hover:bg-gray-200">
+              {t("sa.admin_confirm_no")}
+            </button>
+          </div>
         </div>
       ) : (
         <button
@@ -170,6 +235,7 @@ const BILLING_ERROR_CODES = new Set([
   "WRONG_PROVIDER",
   "PRICE_NOT_AVAILABLE",
   "PAYMENT_NOT_FOUND",
+  "INVOICE_PENDING_SETTLE_FIRST",
 ]);
 
 function billingErrorMessage(e: unknown): string {
@@ -190,6 +256,7 @@ interface PaymentLineItem {
 interface PaymentOut {
   id: string;
   status: string;
+  invoice_kind: "PERIOD" | "PRORATION";
   currency: string;
   subtotal: string;
   vat_rate: string;
@@ -470,7 +537,12 @@ function SubscriptionAndInvoices({ tenantId }: { tenantId?: string }) {
                   <Fragment key={p.id}>
                     <tr className="border-b border-gray-100">
                       <td className="px-3 py-2 whitespace-nowrap text-gray-700">
-                        <p>{p.period_start} → {p.period_end}</p>
+                        <p className="flex items-center gap-1.5">
+                          {p.period_start} → {p.period_end}
+                          {p.invoice_kind === "PRORATION" && (
+                            <Badge variant="neutral">{t("billing.proration.badge")}</Badge>
+                          )}
+                        </p>
                         <ul className="mt-1 space-y-0.5">
                           {p.line_items.map((li) => (
                             <li key={`${li.item_type}-${li.item_key}`} className="text-[11px] text-gray-400 font-normal">

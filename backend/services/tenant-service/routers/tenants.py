@@ -18,7 +18,7 @@ from services.wizard_service import APPROVAL_DEFAULTS
 from shared.permissions.middleware import require_permission
 from shared.permissions.registry import PERMISSIONS
 from shared.billing.subscriptions import get_current_addon_price, get_current_price, period_end, start_subscription, vat_breakdown
-from shared.billing.proration import apply_plan_change_with_proration
+from shared.billing.proration import apply_plan_change_with_proration, preview_addon, preview_upgrade
 from shared.plans.catalog import KNOWN_FEATURE_FLAGS, UNSET, apply_package_to_tenant, get_tenant_entitlements
 from shared.utils.responses import SuccessResponse
 from schemas.tenant import TenantCreateRequest, TenantResponse, VALID_PLAN_TIERS, VALID_LOCALES
@@ -1389,6 +1389,43 @@ async def get_my_plan(
     return SuccessResponse(data=await _get_tenant_plan_data(db, user.tenant_id))
 
 
+def _serialize_preview(preview: dict) -> dict:
+    """proration.preview_upgrade()/preview_addon() return Decimal/date values
+    — JSON-serialize them the same way every other response in this router
+    does (str()), rather than relying on FastAPI's default encoder."""
+    out = dict(preview)
+    for key in ("old_amount", "new_amount", "subtotal", "vat", "total"):
+        if out.get(key) is not None:
+            out[key] = str(out[key])
+    for key in ("free_until", "period_end"):
+        if out.get(key) is not None:
+            out[key] = out[key].isoformat()
+    return out
+
+
+@router.get("/me/proration-preview", response_model=SuccessResponse[dict])
+@require_permission(PERMISSIONS.BILLING_VIEW_OWN)
+async def get_my_proration_preview(
+    tier: Optional[str] = None,
+    addon: Optional[str] = None,
+    user=Depends(get_current_user),
+    db: AsyncSession = Depends(get_db_session),
+) -> SuccessResponse[dict]:
+    """TA: read-only proration preview for its own tenant's plan change
+    (?tier=) or PURCHASED add-on grant (?addon=) — no writes. Exactly one of
+    `tier`/`addon` must be given."""
+    if not user or not user.tenant_id:
+        raise HTTPException(status_code=403, detail="No tenant context")
+    if bool(tier) == bool(addon):
+        raise HTTPException(
+            status_code=422,
+            detail={"code": "INVALID_REQUEST", "message": "Pass exactly one of tier or addon"},
+        )
+    preview = await (preview_upgrade(db, str(user.tenant_id), tier) if tier
+                      else preview_addon(db, str(user.tenant_id), addon))
+    return SuccessResponse(data=_serialize_preview(preview))
+
+
 class PlanUpdateRequest(BaseModel):
     plan_tier: str
     max_warehouses: Optional[int] = None   # if None, auto-set from platform_tier_config
@@ -1784,6 +1821,28 @@ async def get_tenant_plan(
     if not user or user.role != "SA":
         raise HTTPException(status_code=403, detail={"code": "FORBIDDEN", "message": "SA only"})
     return SuccessResponse(data=await _get_tenant_plan_data(db, tenant_id))
+
+
+@router.get("/{tenant_id}/proration-preview", response_model=SuccessResponse[dict])
+@require_permission(PERMISSIONS.TENANT_MANAGE)
+async def get_tenant_proration_preview(
+    tenant_id: uuid.UUID,
+    tier: Optional[str] = None,
+    addon: Optional[str] = None,
+    user=Depends(get_current_user),
+    db: AsyncSession = Depends(get_db_session),
+) -> SuccessResponse[dict]:
+    """SA-only: same preview as GET /me/proration-preview, for any tenant."""
+    if not user or user.role != "SA":
+        raise HTTPException(status_code=403, detail={"code": "FORBIDDEN", "message": "SA only"})
+    if bool(tier) == bool(addon):
+        raise HTTPException(
+            status_code=422,
+            detail={"code": "INVALID_REQUEST", "message": "Pass exactly one of tier or addon"},
+        )
+    preview = await (preview_upgrade(db, str(tenant_id), tier) if tier
+                      else preview_addon(db, str(tenant_id), addon))
+    return SuccessResponse(data=_serialize_preview(preview))
 
 
 @router.patch("/{tenant_id}/plan", response_model=SuccessResponse[dict])

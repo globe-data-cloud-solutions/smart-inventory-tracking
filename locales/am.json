@@ -1654,7 +1654,8 @@
       "INVALID_PAYMENT_STATE": "ይህ ክፍያ ይህ ተግባር ሊተገበርበት የሚችል ሁኔታ ላይ አይደለም።",
       "WRONG_PROVIDER": "በእጅ የተደረጉ ክፍያዎች ብቻ እዚህ እንደተከፈሉ ሊመለከቱ ይችላሉ።",
       "PRICE_NOT_AVAILABLE": "ለዚህ እቅድ እና የክፍያ ጊዜ ምንም ዋጋ አልተዋቀረም።",
-      "PAYMENT_NOT_FOUND": "ያ ክፍያ ሊገኝ አልቻለም።"
+      "PAYMENT_NOT_FOUND": "ያ ክፍያ ሊገኝ አልቻለም።",
+      "INVOICE_PENDING_SETTLE_FIRST": "ይህ ለውጥ ከመቀጠሉ በፊት በመጠባበቅ ላይ ያለው ደረሰኝ ተከፍሎ መመልክት ወይም መሰረዝ አለበት።"
     },
     "features": {
       "overrides_heading": "የባህሪ ማስተካከያዎች",
@@ -1687,7 +1688,8 @@
       "ADDON_PRICE_NOT_AVAILABLE": "ለዚህ ተጨማሪ የክፍያ ጊዜ ገና ዋጋ አልተቀመጠም።",
       "ADDON_GRANT_NOT_FOUND": "የተጨማሪ ፈቃድ አልተገኘም።",
       "ADDON_NOT_ACTIVE": "ይህ የተጨማሪ ፈቃድ ንቁ አይደለም።",
-      "INVALID_SOURCE": "ልክ ያልሆነ የተጨማሪ ምንጭ።"
+      "INVALID_SOURCE": "ልክ ያልሆነ የተጨማሪ ምንጭ።",
+      "INVOICE_PENDING_SETTLE_FIRST": "ይህ ለውጥ ከመቀጠሉ በፊት በመጠባበቅ ላይ ያለው ደረሰኝ ተከፍሎ መመልክት ወይም መሰረዝ አለበት።"
     }
   },
   "platform_plans": {
@@ -1833,6 +1835,16 @@
     "back_to_login": "ወደ መግቢያ ተመለስ"
   },
   "billing": {
-    "manual_instructions": "በባንክ ዝውውር ወይም በገንዘብ በSMART ቢሮ ይክፈሉና ደረሰኙን ለድጋፍ ይላኩ። አስተዳዳሪዎ ክፍያውን ያረጋግጣል።"
+    "manual_instructions": "በባንክ ዝውውር ወይም በገንዘብ በSMART ቢሮ ይክፈሉና ደረሰኙን ለድጋፍ ይላኩ። አስተዳዳሪዎ ክፍያውን ያረጋግጣል።",
+    "proration": {
+      "badge": "ተመጣጣኝ ክፍያ",
+      "no_charge_now": "አሁን ክፍያ የለም — በሚቀጥለው ዕድሳት ይከፈላል።",
+      "preview_charge": "እስከ {free_until} ድረስ ነፃ ነው፤ {months} ወራት አሁን ይከፈላሉ፦ {subtotal} + {vat} ተእታ = {total}",
+      "downgrade_no_refund": "ዝቅ ማድረግ አሁኑኑ ተግባራዊ ይሆናል። ለቀሪው የክፍያ ጊዜ ምንም ተመላሽ ወይም ክሬዲት አይሰጥም።",
+      "invoice_raised": "ለ{period} የተመጣጣኝ ክፍያ ደረሰኝ በ{total} ተፈጥሯል እና ክፍያ በመጠባበቅ ላይ ነው።",
+      "blocked": {
+        "INVOICE_PENDING_SETTLE_FIRST": "ይህ ለውጥ ከመቀጠሉ በፊት በመጠባበቅ ላይ ያለው ደረሰኝ ተከፍሎ መመልክት ወይም መሰረዝ አለበት።"
+      }
+    }
   }
 }
