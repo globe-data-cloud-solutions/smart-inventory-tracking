@@ -162,6 +162,29 @@ async def test_create_invoice_already_pending_raises() -> None:
         await create_invoice(db, "tenant-1")
 
 
+async def test_create_invoice_pending_check_is_scoped_to_period_invoice_kind() -> None:
+    """S11: a PENDING PRORATION invoice must never block a normal PERIOD
+    invoice (rule 6 is one-directional) — the existing-pending query is
+    scoped to invoice_kind = 'PERIOD'."""
+    sub = _subscription(status="PENDING_PAYMENT", price_id="price-1", amount=Decimal("200.00"))
+    snapshot_price = _price(id="price-1", amount=Decimal("200.00"))
+    db = _db([
+        _result(fetchone=sub),               # _get_live_subscription
+        _result(fetchone=None),               # existing-pending lookup (mocked: none found)
+        _result(fetchone=None),               # no existing PAID payment (first invoice)
+        _result(fetchone=snapshot_price),     # package_prices by id
+        _result(fetchall=[]),                 # _active_purchased_addons
+        _result(scalar_one="payment-1"),      # INSERT payments
+        _result(fetchone=MagicMock(display_name="Growth")),
+        _result(),                            # INSERT payment_line_items
+    ])
+
+    await create_invoice(db, "tenant-1")
+
+    pending_check_call = db.execute.call_args_list[1]
+    assert "invoice_kind = 'PERIOD'" in str(pending_check_call.args[0])
+
+
 # ── create_invoice + add-ons (S10) ──────────────────────────────────────────────
 
 def _addon_row(*, addon_code="LOGISTICS", price_id="addon-price-1", amount=Decimal("50.00"),

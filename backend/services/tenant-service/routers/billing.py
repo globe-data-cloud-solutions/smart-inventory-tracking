@@ -22,8 +22,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from dependencies import get_current_user, get_db_session, get_db_session_for_tenant
 from routers.tenants import _log_tenant_activity
-from shared.billing.addons import cancel_addon, grant_addon
+from shared.billing.addons import cancel_addon
 from shared.billing.payments import cancel_invoice, create_invoice, mark_failed, mark_paid
+from shared.billing.proration import apply_addon_grant_with_proration
 from shared.billing.providers import get_provider
 from shared.cache.rate_limit import client_ip, hit as rate_limit_hit
 from shared.db.rls import set_rls_context
@@ -221,6 +222,7 @@ def _map_value_error(exc: ValueError) -> HTTPException:
         "ADDON_PRICE_NOT_AVAILABLE": 422,
         "ADDON_GRANT_NOT_FOUND": 404,
         "ADDON_NOT_ACTIVE": 422,
+        "INVOICE_PENDING_SETTLE_FIRST": 409,
     }
     return HTTPException(status_code=status_map.get(code, 422), detail={"code": code, "message": code})
 
@@ -469,17 +471,24 @@ async def grant_tenant_addon(
     the tenant's live subscription's billing_period, snapshotting price_id +
     amount at grant time. Either way the grant takes effect immediately via
     get_tenant_entitlements() and survives any later plan change.
+
+    A PURCHASED grant on an ANNUAL, already-paid subscription also raises a
+    PRORATION invoice for the whole remaining billing months, in this same
+    transaction (CLAUDE.md §15 S11); it is blocked (409) while a PENDING
+    PERIOD invoice exists for the subscription.
     """
     starts_on = date.fromisoformat(body.starts_on) if body.starts_on else None
     ends_on = date.fromisoformat(body.ends_on) if body.ends_on else None
     try:
-        result = await grant_addon(
+        outcome = await apply_addon_grant_with_proration(
             db, str(tenant_id), body.addon_code, body.source,
             note=body.note, starts_on=starts_on, ends_on=ends_on,
             created_by=str(user.user_id),
         )
     except ValueError as exc:
         raise _map_value_error(exc)
+    result = outcome["grant"]
+    proration_invoice = outcome["proration_invoice"]
 
     await _log_tenant_activity(
         db, tenant_id, str(user.user_id),
@@ -487,7 +496,13 @@ async def grant_tenant_addon(
         new_value=f"addon={body.addon_code} source={body.source} amount={result['amount']}",
         note=body.note,
     )
-    return SuccessResponse(data=result)
+    if proration_invoice is not None:
+        await _log_tenant_activity(
+            db, tenant_id, str(user.user_id),
+            action="PRORATION_INVOICE_RAISED",
+            new_value=f"payment={proration_invoice['payment_id']} total={proration_invoice['total']}",
+        )
+    return SuccessResponse(data={**result, "proration_invoice": proration_invoice})
 
 
 @router.post("/{tenant_id}/addons/{addon_id}/cancel", response_model=SuccessResponse[dict])

@@ -270,13 +270,17 @@ async def test_sa_grant_tenant_addon_allowed() -> None:
     body = AddonGrantRequest(addon_code="LOGISTICS", source="OVERRIDE", note="pilot customer")
     with patch("shared.permissions.middleware.get_role_permission", new=AsyncMock(return_value=_full_grant())), \
          patch("shared.permissions.middleware.audit_log", new=AsyncMock()), \
-         patch("routers.billing.grant_addon", new=AsyncMock(
-             return_value={"id": "ta-1", "addon_code": "LOGISTICS", "source": "OVERRIDE",
-                           "status": "ACTIVE", "amount": "0", "price_id": None})), \
+         patch("routers.billing.apply_addon_grant_with_proration", new=AsyncMock(
+             return_value={
+                 "grant": {"id": "ta-1", "addon_code": "LOGISTICS", "source": "OVERRIDE",
+                           "status": "ACTIVE", "amount": "0", "price_id": None},
+                 "proration_invoice": None,
+             })), \
          patch("routers.billing._log_tenant_activity", new=AsyncMock()):
         out = await grant_tenant_addon(tenant_id=TENANT_A, body=body, user=sa, db=AsyncMock())
 
     assert out.data["addon_code"] == "LOGISTICS"
+    assert out.data["proration_invoice"] is None
 
 
 async def test_ta_grant_tenant_addon_denied_rbac() -> None:
@@ -300,7 +304,8 @@ async def test_sa_grant_tenant_addon_feature_already_in_package_422() -> None:
     body = AddonGrantRequest(addon_code="LOT_TRACEABILITY", source="OVERRIDE", note="x")
     with patch("shared.permissions.middleware.get_role_permission", new=AsyncMock(return_value=_full_grant())), \
          patch("shared.permissions.middleware.audit_log", new=AsyncMock()), \
-         patch("routers.billing.grant_addon", new=AsyncMock(side_effect=ValueError("FEATURE_ALREADY_IN_PACKAGE"))):
+         patch("routers.billing.apply_addon_grant_with_proration",
+               new=AsyncMock(side_effect=ValueError("FEATURE_ALREADY_IN_PACKAGE"))):
         with pytest.raises(HTTPException) as exc_info:
             await grant_tenant_addon(tenant_id=TENANT_A, body=body, user=sa, db=AsyncMock())
 
@@ -315,12 +320,32 @@ async def test_sa_grant_tenant_addon_already_active_409() -> None:
     body = AddonGrantRequest(addon_code="LOGISTICS", source="OVERRIDE", note="x")
     with patch("shared.permissions.middleware.get_role_permission", new=AsyncMock(return_value=_full_grant())), \
          patch("shared.permissions.middleware.audit_log", new=AsyncMock()), \
-         patch("routers.billing.grant_addon", new=AsyncMock(side_effect=ValueError("ADDON_ALREADY_ACTIVE"))):
+         patch("routers.billing.apply_addon_grant_with_proration",
+               new=AsyncMock(side_effect=ValueError("ADDON_ALREADY_ACTIVE"))):
         with pytest.raises(HTTPException) as exc_info:
             await grant_tenant_addon(tenant_id=TENANT_A, body=body, user=sa, db=AsyncMock())
 
     assert exc_info.value.status_code == 409
     assert exc_info.value.detail["code"] == "ADDON_ALREADY_ACTIVE"
+
+
+async def test_sa_grant_tenant_addon_blocked_pending_period_invoice_409() -> None:
+    """S11: a PURCHASED grant blocked by a PENDING PERIOD invoice -> 409
+    INVOICE_PENDING_SETTLE_FIRST, same _map_value_error path as the other
+    ValueError codes above."""
+    from routers.billing import AddonGrantRequest, grant_tenant_addon
+
+    sa = _user("SA", None)
+    body = AddonGrantRequest(addon_code="LOGISTICS", source="PURCHASED")
+    with patch("shared.permissions.middleware.get_role_permission", new=AsyncMock(return_value=_full_grant())), \
+         patch("shared.permissions.middleware.audit_log", new=AsyncMock()), \
+         patch("routers.billing.apply_addon_grant_with_proration",
+               new=AsyncMock(side_effect=ValueError("INVOICE_PENDING_SETTLE_FIRST"))):
+        with pytest.raises(HTTPException) as exc_info:
+            await grant_tenant_addon(tenant_id=TENANT_A, body=body, user=sa, db=AsyncMock())
+
+    assert exc_info.value.status_code == 409
+    assert exc_info.value.detail["code"] == "INVOICE_PENDING_SETTLE_FIRST"
 
 
 async def test_sa_cancel_tenant_addon_allowed() -> None:

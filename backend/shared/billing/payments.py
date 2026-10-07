@@ -109,14 +109,19 @@ async def create_invoice(
 
     Raises ValueError("NO_LIVE_SUBSCRIPTION") if the tenant has no live
     subscription, or ValueError("INVOICE_ALREADY_PENDING") if one PENDING
-    payment already exists for it.
+    PERIOD payment already exists for it. A PENDING PRORATION invoice
+    (S11, shared.billing.proration) never blocks a period invoice — the two
+    invoice_kinds are independent.
     """
     subscription = await _get_live_subscription(db, tenant_id)
     if subscription is None:
         raise ValueError("NO_LIVE_SUBSCRIPTION")
 
     existing_pending = (await db.execute(
-        text("SELECT id FROM payments WHERE subscription_id = :sid AND status = 'PENDING' LIMIT 1"),
+        text(
+            "SELECT id FROM payments WHERE subscription_id = :sid "
+            "AND status = 'PENDING' AND invoice_kind = 'PERIOD' LIMIT 1"
+        ),
         {"sid": str(subscription.id)},
     )).fetchone()
     if existing_pending is not None:
@@ -144,10 +149,10 @@ async def create_invoice(
         text(
             "INSERT INTO payments ("
             "  tenant_id, subscription_id, status, currency, subtotal, vat_rate, "
-            "  vat_amount, total, period_start, period_end, provider, recorded_by, note"
+            "  vat_amount, total, period_start, period_end, provider, invoice_kind, recorded_by, note"
             ") VALUES ("
             "  :tid, :sid, 'PENDING', :currency, :subtotal, :vat_rate, "
-            "  :vat_amount, :total, :start, :end, :provider, :recorded_by, :note"
+            "  :vat_amount, :total, :start, :end, :provider, 'PERIOD', :recorded_by, :note"
             ") RETURNING id"
         ),
         {
@@ -234,13 +239,19 @@ async def mark_paid(
     it to the paid period/price, and extends tenants.contract_end (never
     backwards; contract_start is set only if still unset).
 
+    A PRORATION invoice (S11, shared.billing.proration) is the exception:
+    paying it only flips status/paid_at/provider — it never touches the
+    subscription, the contract, or tenant_addons (rule 8). It is raised
+    alongside a PERIOD invoice, not instead of one, so this never skips the
+    period-invoice logic below for a normal invoice.
+
     Raises ValueError("PAYMENT_NOT_FOUND") if no such payment, or
     ValueError("INVALID_PAYMENT_STATE") if it is not PENDING or already PAID
     (i.e. FAILED/CANCELLED/REFUNDED).
     """
     payment = (await db.execute(
         text(
-            "SELECT id, tenant_id, subscription_id, status, period_start, period_end "
+            "SELECT id, tenant_id, subscription_id, status, invoice_kind, period_start, period_end "
             "FROM payments WHERE id = :pid FOR UPDATE"
         ),
         {"pid": str(payment_id)},
@@ -269,6 +280,9 @@ async def mark_paid(
             "note": note, "pid": str(payment.id),
         },
     )
+
+    if payment.invoice_kind == "PRORATION":
+        return {"payment_id": str(payment.id), "status": "PAID", "already_paid": False}
 
     line_item = (await db.execute(
         text(

@@ -17,7 +17,8 @@ from dependencies import get_current_user, get_db_session
 from services.wizard_service import APPROVAL_DEFAULTS
 from shared.permissions.middleware import require_permission
 from shared.permissions.registry import PERMISSIONS
-from shared.billing.subscriptions import get_current_addon_price, get_current_price, period_end, start_subscription, update_live_subscription_tier, vat_breakdown
+from shared.billing.subscriptions import get_current_addon_price, get_current_price, period_end, start_subscription, vat_breakdown
+from shared.billing.proration import apply_plan_change_with_proration
 from shared.plans.catalog import KNOWN_FEATURE_FLAGS, UNSET, apply_package_to_tenant, get_tenant_entitlements
 from shared.utils.responses import SuccessResponse
 from schemas.tenant import TenantCreateRequest, TenantResponse, VALID_PLAN_TIERS, VALID_LOCALES
@@ -1829,15 +1830,25 @@ async def update_tenant_plan(
         ) from exc
 
     # Plan change updates the live subscription immediately (entitlements now,
-    # new price from the NEXT invoice — no proration). No live subscription
-    # -> leave as today and log a warning; never create one here.
+    # new price from the NEXT invoice). No live subscription -> leave as
+    # today and log a warning; never create one here. An ANNUAL upgrade that
+    # has already been paid at least once also raises a PRORATION invoice
+    # for the whole remaining billing months, in this same transaction
+    # (CLAUDE.md §15 S11) — downgrades, MONTHLY plans, and never-paid
+    # subscriptions are unchanged (no proration invoice).
     try:
-        subscription_change = await update_live_subscription_tier(db, tenant_id, body.plan_tier)
+        plan_change = await apply_plan_change_with_proration(
+            db, tenant_id, body.plan_tier, recorded_by=str(user.user_id),
+        )
     except ValueError as exc:
+        code = str(exc)
+        status_code = 409 if code == "INVOICE_PENDING_SETTLE_FIRST" else 422
         raise HTTPException(
-            status_code=422,
-            detail={"code": "PRICE_NOT_AVAILABLE", "message": str(exc)},
+            status_code=status_code,
+            detail={"code": code, "message": str(exc)},
         ) from exc
+    subscription_change = plan_change["subscription_change"]
+    proration_invoice = plan_change["proration_invoice"]
     if subscription_change is None:
         logger.warning("update_tenant_plan: no live subscription for tenant %s — not created here", tenant_id)
 
@@ -1855,12 +1866,19 @@ async def update_tenant_plan(
                 old_value=f"{subscription_change['old_tier']}/{subscription_change['old_amount']}",
                 new_value=f"{subscription_change['new_tier']}/{subscription_change['new_amount']}",
             )
+        if proration_invoice is not None:
+            await _log_tenant_activity(
+                db, tenant_id, str(user.user_id),
+                action="PRORATION_INVOICE_RAISED",
+                new_value=f"payment={proration_invoice['payment_id']} total={proration_invoice['total']}",
+            )
     except Exception:
         pass  # log failure must not roll back the plan change
     return SuccessResponse(data={
-        "plan_tier":      effective["plan_tier"],
-        "max_warehouses": effective["max_warehouses"],
-        "max_users":      effective["max_users"],
+        "plan_tier":          effective["plan_tier"],
+        "max_warehouses":     effective["max_warehouses"],
+        "max_users":          effective["max_users"],
+        "proration_invoice":  proration_invoice,
     })
 
 
@@ -2029,6 +2047,7 @@ async def update_tenant_profile(
     # plan_tier goes through the package catalog — applying it REPLACES
     # feature_flags with the package's full flag set (CLAUDE.md §15).
     subscription_change = None
+    proration_invoice = None
     if "plan_tier" in changes:
         new_tier = changes["plan_tier"][1]
         try:
@@ -2040,15 +2059,23 @@ async def update_tenant_profile(
             ) from exc
 
         # Updates the live subscription immediately (same rule as SA PATCH
-        # /plan — update_tenant_plan() above): no proration, new price from
-        # the NEXT invoice. No live subscription -> log a warning, don't create one.
+        # /plan — update_tenant_plan() above), new price from the NEXT
+        # invoice, plus the S11 proration invoice for an ANNUAL, already-paid
+        # upgrade (CLAUDE.md §15 S11). No live subscription -> log a warning,
+        # don't create one.
         try:
-            subscription_change = await update_live_subscription_tier(db, tenant_id, new_tier)
+            plan_change = await apply_plan_change_with_proration(
+                db, tenant_id, new_tier, recorded_by=str(user.user_id),
+            )
         except ValueError as exc:
+            code = str(exc)
+            status_code = 409 if code == "INVOICE_PENDING_SETTLE_FIRST" else 422
             raise HTTPException(
-                status_code=422,
-                detail={"code": "PRICE_NOT_AVAILABLE", "message": str(exc)},
+                status_code=status_code,
+                detail={"code": code, "message": str(exc)},
             ) from exc
+        subscription_change = plan_change["subscription_change"]
+        proration_invoice = plan_change["proration_invoice"]
         if subscription_change is None:
             logger.warning("update_tenant_profile: no live subscription for tenant %s — not created here", tenant_id)
 
@@ -2075,7 +2102,20 @@ async def update_tenant_profile(
         except Exception:
             pass  # log failure must not roll back the update
 
-    return SuccessResponse(data={"changes": len(changes), "fields": list(changes.keys())})
+    if proration_invoice is not None:
+        try:
+            await _log_tenant_activity(
+                db, tenant_id, str(user.user_id),
+                action="PRORATION_INVOICE_RAISED",
+                new_value=f"payment={proration_invoice['payment_id']} total={proration_invoice['total']}",
+            )
+        except Exception:
+            pass  # log failure must not roll back the update
+
+    return SuccessResponse(data={
+        "changes": len(changes), "fields": list(changes.keys()),
+        "proration_invoice": proration_invoice,
+    })
 
 
 @router.get("/{tenant_id}", response_model=SuccessResponse[TenantResponse])
