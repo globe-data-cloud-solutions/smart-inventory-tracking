@@ -902,6 +902,15 @@ async def create_tenant(
             detail={"code": "INVALID_CONTRACT_DATES",
                     "message": "contract_end must be after contract_start."},
         )
+    # contract_end given WITHOUT contract_start implicitly starts the contract
+    # today (see effective_start below) — it must still land in the future,
+    # or the contract would already be expired at creation.
+    if contract_start_parsed is None and contract_end_parsed is not None and contract_end_parsed <= date.today():
+        raise HTTPException(
+            status_code=422,
+            detail={"code": "INVALID_CONTRACT_DATES",
+                    "message": "contract_end must be after today when contract_start is not given."},
+        )
 
     # Slug resolution: use caller-provided slug (validated) or auto-generate from name.
     if body.slug is not None:

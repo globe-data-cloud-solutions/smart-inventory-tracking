@@ -175,6 +175,46 @@ class TestContractIndependentOfBillingPeriod:
         assert exc_info.value.detail["code"] == "INVALID_CONTRACT_DATES"
         db.execute.assert_not_called()
 
+    async def test_contract_end_only_in_past_rejected(self):
+        """contract_end given WITHOUT contract_start implicitly starts the
+        contract today — a past/today contract_end must be rejected with 422
+        INVALID_CONTRACT_DATES before any DB call (S10-1b)."""
+        from routers.tenants import create_tenant
+        from schemas.tenant import TenantCreateRequest
+
+        body = TenantCreateRequest(
+            name="Past End Co", organisation_type="PRODUCER",
+            contract_end="2020-01-01",
+        )
+        caller = _user("SA")
+        db = AsyncMock()
+
+        with patch("shared.permissions.middleware.get_role_permission", new=AsyncMock(return_value=_grant())):
+            with patch("shared.permissions.audit.audit_log", new=AsyncMock()):
+                with pytest.raises(HTTPException) as exc_info:
+                    await create_tenant(body=body, user=caller, db=db)
+
+        assert exc_info.value.status_code == 422
+        assert exc_info.value.detail["code"] == "INVALID_CONTRACT_DATES"
+        db.execute.assert_not_called()
+
+    async def test_contract_end_only_in_future_accepted(self):
+        """contract_end given WITHOUT contract_start, in the future -> accepted,
+        effective_start defaults to today (S10-1b)."""
+        from schemas.tenant import TenantCreateRequest
+        from datetime import timedelta
+
+        future_end = (date.today() + timedelta(days=365)).isoformat()
+        body = TenantCreateRequest(
+            name="Future End Co", organisation_type="PRODUCER",
+            contract_end=future_end,
+        )
+        calls: list = []
+        resp, calls = await _create(body, calls)
+
+        assert resp.data.contract_start == str(date.today())
+        assert resp.data.contract_end == future_end
+
     async def test_invalid_billing_period_rejected(self):
         """billing_period outside MONTHLY/ANNUAL -> 422 INVALID_BILLING_PERIOD,
         before any DB call is made."""

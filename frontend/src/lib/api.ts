@@ -1,3 +1,5 @@
+import { getPendingJWTExchange } from "@/lib/demo-auth";
+
 const BASE_URL = process.env.NEXT_PUBLIC_API_URL ?? "";
 
 /**
@@ -79,10 +81,16 @@ async function request<T>(
   body?: unknown,
   token?: string
 ): Promise<T> {
+  // If a login's JWT exchange is still in flight, wait for it so this call
+  // never goes out with a stale/missing Authorization header — see
+  // getPendingJWTExchange() in demo-auth.ts.
+  const pending = getPendingJWTExchange();
+  if (pending) await pending;
+
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
   };
-  // JWT from session (stored after login's fire-and-forget _exchangeJWT call).
+  // JWT from session (stored after login's tracked _exchangeJWT call).
   // An explicit token argument always wins; falls back to the session JWT.
   const session = _readSession();
   const bearer = token ?? session.jwtToken;

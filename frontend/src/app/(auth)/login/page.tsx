@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { login, loginWithDevEmail } from "@/lib/demo-auth";
+import { login, loginWithDevEmail, getPendingJWTExchange } from "@/lib/demo-auth";
 import { SA_USER } from "@/lib/demo-data";
 import { rawPost } from "@/lib/api";
 import { t } from "@/lib/i18n";
@@ -85,6 +85,11 @@ export default function LoginPage() {
       setLoading(false);
       return;
     }
+    // Wait for the JWT exchange (login()'s demo-user path kicks this off in the
+    // background) before navigating, so the dashboard's first API call never
+    // races ahead of the token landing in localStorage.
+    const pendingExchange = getPendingJWTExchange();
+    if (pendingExchange) await pendingExchange;
     // Force password reset before proceeding
     if (session.mustResetPassword) {
       router.push(`/change-password?userId=${session.id}`);

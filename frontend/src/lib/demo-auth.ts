@@ -41,6 +41,18 @@ export const SA_ORG_SLUG = "admin";
 
 const SESSION_KEY = "smart_demo_session";
 
+/**
+ * In-flight JWT exchange promise, set by login() and cleared when it settles.
+ * api.ts's request() awaits this (if present) before reading the session, so
+ * the first authenticated API call cannot race ahead of the token landing in
+ * localStorage. The login page also awaits it directly before navigating.
+ */
+let _pendingExchange: Promise<void> | null = null;
+
+export function getPendingJWTExchange(): Promise<void> | null {
+  return _pendingExchange;
+}
+
 function store(): Storage | null {
   if (typeof window === "undefined") return null;
   try { return window.localStorage; } catch { return null; }
@@ -271,9 +283,11 @@ export function login(email: string, password: string): SessionUser | null {
 
   store()?.setItem(SESSION_KEY, JSON.stringify(session));
 
-  // Fire-and-forget JWT exchange — token will be in localStorage before the
-  // first dashboard API call (login triggers a router.push and a brief re-render)
-  void _exchangeJWT(session);
+  // Track the exchange so api.ts's request() and the login page can await it
+  // instead of racing it — see getPendingJWTExchange().
+  _pendingExchange = _exchangeJWT(session).finally(() => {
+    _pendingExchange = null;
+  });
 
   return session;
 }

@@ -158,7 +158,7 @@ async def get_tenant_entitlements(db: AsyncSession, tenant_id: str) -> dict[str,
     if not row:
         return {}
     return {
-        "plan_tier": str(row.plan_tier) if row.plan_tier else "ENTERPRISE",
+        "plan_tier": str(row.plan_tier) if row.plan_tier else None,
         "feature_flags": dict(row.feature_flags) if row.feature_flags else {},
         "sku_cap": row.sku_cap,
         "max_warehouses": row.max_warehouses,
