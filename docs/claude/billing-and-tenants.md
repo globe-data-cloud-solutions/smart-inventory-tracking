@@ -196,10 +196,11 @@ provider registry.
     backfilled; `'PRORATION'` new). Its downgrade refuses while any
     `PRORATION` row exists (payments is never deleted).
 
-  > **Known gap (2026-10):** a downgrade takes effect immediately (new,
-  > lower entitlements right away) with no credit or refund for the unused
-  > part of the current billing period — there is no "schedule this
-  > downgrade for the next renewal" option yet. Future work, not S11 scope.
+  > **Resolved by S13 (2026-10-07):** a *paid* downgrade now defaults to
+  > scheduling at the next renewal instead of applying immediately — see
+  > the S13 section below. Immediate application is still available as an
+  > explicit SA override (`effective=IMMEDIATE`), and a never-paid
+  > subscription is still immediate always. No refund/credit either way.
 - **Permissions**: `billing:view` (SA, platform-wide read), `billing:manage`
   (SA, invoice/payment writes, audit-required), `billing:view_own` (TA,
   its own tenant, read-only). Endpoints: SA
@@ -544,4 +545,97 @@ annual period is charged again in full with no credit for the earlier
 downgrade (§15 S11's existing "downgrade gives no credit" rule, now also
 reachable only by SA since S12 — SA should avoid toggling a tenant's tier
 back and forth within one billing period).
+
+### S13 — Scheduled downgrades (2026-10-07)
+
+**Decisions (Alex, final):**
+- Downgrade = the new tier's current price (same `billing_period`) is less
+  than `subscriptions.amount`.
+- A paid-at-least-once subscription + downgrade + `effective=RENEWAL`
+  (the default) → **SCHEDULE only** — nothing else changes now.
+- `effective=IMMEDIATE` (SA override) → today's immediate behaviour. No
+  refund, no credit.
+- A never-paid subscription → always immediate, same as today.
+- Same rule for MONTHLY and ANNUAL.
+- The switch happens when the renewal PERIOD invoice priced at
+  `scheduled_tier` is marked PAID.
+- Any immediate change (an upgrade, `effective=IMMEDIATE`, or re-setting the
+  CURRENT tier) clears a scheduled downgrade — a tenant never has both an
+  immediate change AND a pending schedule.
+- Above-cap data is kept; only new creation is blocked (existing caps logic,
+  unchanged by this).
+
+**Schema** (migration 074): `subscriptions.scheduled_tier` (nullable FK to
+`platform_tier_config.tier`), `scheduled_at`, `scheduled_by`, plus
+`ck_sub_scheduled_tier_differs` (`scheduled_tier <> tier` when set) and
+`ck_sub_scheduled_fields_together` (`scheduled_tier`/`scheduled_at` are both
+null or both set). No RLS/FORCE/RULE change — the existing `subscriptions`
+policy already covers the new columns.
+
+**`shared/billing/plan_change.py`** is the new single entry point for a plan
+change — `change_plan(db, tenant_id, new_tier, *, effective="RENEWAL",
+recorded_by, max_warehouses=UNSET, max_users=UNSET, sku_cap=UNSET)`:
+- Same tier, no cap overrides → `{"mode": "UNCHANGED", "scheduled_cleared":
+  bool}` (clears a schedule if one existed). A cap override on the same
+  tier falls through to IMMEDIATE instead.
+- `effective="RENEWAL"` + downgrade + already paid at least once →
+  `{"mode": "SCHEDULED", "plan_tier", "scheduled_tier", "effective_at",
+  "pending_renewal_invoice_id"}` — a cap override sent alongside raises
+  `CAP_OVERRIDE_NOT_ALLOWED_WHEN_SCHEDULING` (422); scheduling and resizing
+  caps in the same call is not supported, by design.
+  `pending_renewal_invoice_id` surfaces a PENDING PERIOD invoice already
+  raised at the OLD tier price *before* this downgrade was scheduled — it
+  will need re-raising or cancelling once the renewal at the new tier is
+  actually due.
+- Otherwise (upgrade, `effective=IMMEDIATE`, never-paid, or no live
+  subscription) → `{"mode": "IMMEDIATE", "effective", "subscription_change",
+  "proration_invoice"}` — clears any existing schedule first, then runs
+  EXACTLY today's sequence (`apply_package_to_tenant()` +
+  `apply_plan_change_with_proration()`, S11 unchanged).
+- `cancel_scheduled_downgrade(db, tenant_id)` clears a schedule on its own
+  (SA changed their mind, no new tier chosen) — raises
+  `NO_SCHEDULED_CHANGE` (404) if nothing is scheduled.
+
+**The switch itself** happens in `payments.mark_paid()` (PERIOD invoices
+only — a PRORATION invoice is still untouched by any of this, rule 8): if
+the subscription has a `scheduled_tier` and the paid invoice's PACKAGE line
+item is priced at a `package_prices` row whose `tier` equals
+`scheduled_tier`, ONE UPDATE moves `tier`/`price_id`/`amount`/period/status
+and clears `scheduled_tier`/`scheduled_at`/`scheduled_by`, then
+`apply_package_to_tenant()` re-applies caps/flags for the new tier. The
+returned dict's `"downgrade_applied"` is that tier, or `None` otherwise. A
+PENDING PERIOD invoice still priced at the OLD tier (raised before the
+downgrade was scheduled) does **not** match and is paid as a normal
+same-tier renewal — see `pending_renewal_invoice_id` above; `next_invoice_
+period()`'s renewal branch prices a *new* invoice at
+`COALESCE(scheduled_tier, tier)` so the next one raised is correct, but an
+already-existing old-tier PENDING invoice is not retroactively repriced.
+
+**API** (`tenants.py`): `PATCH /{tenant_id}/plan` gained `effective:
+"RENEWAL"|"IMMEDIATE" = "RENEWAL"` and now calls `change_plan()` instead of
+`apply_package_to_tenant()` + `apply_plan_change_with_proration()`
+directly; its response gained `mode`, `scheduled_tier`, `effective_at`,
+`pending_renewal_invoice_id` (existing keys kept; for `mode=SCHEDULED`,
+`plan_tier`/`max_warehouses`/`max_users` reflect the tenant's CURRENT,
+unchanged values). `PATCH /{tenant_id}/profile`'s `plan_tier` path goes
+through `change_plan(effective="RENEWAL")` the same way — this endpoint has
+no SA override field, so a paid downgrade always schedules; use
+`PATCH /{tenant_id}/plan` with `effective=IMMEDIATE` for that. New `DELETE
+/{tenant_id}/plan/scheduled` (`tenant:manage`, SA-only) cancels a pending
+schedule → 404 `NO_SCHEDULED_CHANGE` if none exists. `GET
+/{tenant_id}/subscription` and `GET /me/subscription` (`billing.py`) gained
+`scheduled_tier`/`scheduled_at` on `SubscriptionOut`.
+
+**Activity log actions**: `PLAN_DOWNGRADE_SCHEDULED` (old=current tier,
+new=scheduled tier), `PLAN_DOWNGRADE_CANCELLED` (SA explicitly cancelled,
+or re-setting the current tier implicitly cleared one), `PLAN_DOWNGRADE_
+APPLIED` (new=tier — logged from both `mark_paid()` call sites in
+`billing.py` when `downgrade_applied` is set). Immediate-path logging
+(`PLAN_CHANGE`, `SUBSCRIPTION_TIER_CHANGE`, `PRORATION_INVOICE_RAISED`) is
+unchanged.
+
+**Policy text** (for payment instructions / SA Operations Manual / ToS,
+once those exist — §15's other known gaps): *"Downgrades take effect at the
+next renewal; no refunds or credits. The SA may apply a downgrade
+immediately on customer request (no refund)."*
 

@@ -85,6 +85,8 @@ class SubscriptionOut(BaseModel):
     currency: Optional[str]
     current_period_start: Optional[str]
     current_period_end: Optional[str]
+    scheduled_tier: Optional[str]
+    scheduled_at: Optional[str]
     payments: list[PaymentOut]
 
 
@@ -140,7 +142,7 @@ async def _load_subscription_view(db: AsyncSession, tenant_id: str) -> Subscript
     sub = (await db.execute(
         text(
             "SELECT id, tier, billing_period, status, provider, amount, currency, "
-            "       current_period_start, current_period_end "
+            "       current_period_start, current_period_end, scheduled_tier, scheduled_at "
             "FROM subscriptions WHERE tenant_id = :tid "
             "ORDER BY (status IN ('ACTIVE', 'PENDING_PAYMENT', 'PAST_DUE')) DESC, "
             "         created_at DESC LIMIT 1"
@@ -152,6 +154,7 @@ async def _load_subscription_view(db: AsyncSession, tenant_id: str) -> Subscript
         return SubscriptionOut(
             id=None, tier=None, billing_period=None, status=None, provider=None,
             amount=None, currency=None, current_period_start=None, current_period_end=None,
+            scheduled_tier=None, scheduled_at=None,
             payments=[],
         )
 
@@ -192,6 +195,7 @@ async def _load_subscription_view(db: AsyncSession, tenant_id: str) -> Subscript
         id=str(sub.id), tier=sub.tier, billing_period=sub.billing_period, status=sub.status,
         provider=sub.provider, amount=sub.amount, currency=sub.currency,
         current_period_start=_dt(sub.current_period_start), current_period_end=_dt(sub.current_period_end),
+        scheduled_tier=sub.scheduled_tier, scheduled_at=_dt(sub.scheduled_at),
         payments=payments,
     )
 
@@ -336,6 +340,15 @@ async def stub_payment_webhook(request: Request) -> dict:
                         recorded_by=SYSTEM_ACTOR_ID,
                         note="STUB webhook",
                     )
+                    if result.get("downgrade_applied"):
+                        try:
+                            await _log_tenant_activity(
+                                db, payment_row.tenant_id, SYSTEM_ACTOR_ID,
+                                action="PLAN_DOWNGRADE_APPLIED",
+                                new_value=result["downgrade_applied"],
+                            )
+                        except Exception:
+                            pass  # log failure must not roll back the payment
                 else:
                     result = await mark_failed(
                         db, event.payment_id,
@@ -419,6 +432,12 @@ async def mark_tenant_payment_paid(
         new_value=f"payment={payment_id} ref={body.provider_reference or ''}",
         note=body.note,
     )
+    if result.get("downgrade_applied"):
+        await _log_tenant_activity(
+            db, tenant_id, str(user.user_id),
+            action="PLAN_DOWNGRADE_APPLIED",
+            new_value=result["downgrade_applied"],
+        )
     return SuccessResponse(data=result)
 
 

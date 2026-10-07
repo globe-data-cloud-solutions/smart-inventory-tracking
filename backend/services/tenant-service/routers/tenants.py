@@ -5,7 +5,7 @@ import re
 import uuid
 from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
-from typing import List, Optional
+from typing import List, Literal, Optional
 
 import asyncpg
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
@@ -19,7 +19,8 @@ from services.wizard_service import APPROVAL_DEFAULTS
 from shared.permissions.middleware import require_permission
 from shared.permissions.registry import PERMISSIONS
 from shared.billing.subscriptions import get_current_addon_price, get_current_price, period_end, start_subscription, vat_breakdown
-from shared.billing.proration import apply_plan_change_with_proration, preview_addon, preview_upgrade
+from shared.billing.proration import preview_addon, preview_upgrade
+from shared.billing.plan_change import cancel_scheduled_downgrade, change_plan
 from shared.plans.catalog import KNOWN_FEATURE_FLAGS, UNSET, apply_package_to_tenant, get_tenant_entitlements
 from shared.utils.responses import SuccessResponse
 from schemas.tenant import TenantCreateRequest, TenantResponse, VALID_PLAN_TIERS, VALID_LOCALES
@@ -1452,6 +1453,7 @@ class PlanUpdateRequest(BaseModel):
     max_warehouses: Optional[int] = None   # if None, auto-set from platform_tier_config
     max_users: Optional[int] = None        # if None, auto-set from platform_tier_config
     sku_cap: Optional[int] = None          # None = unlimited; only updated when key present in body
+    effective: Literal["RENEWAL", "IMMEDIATE"] = "RENEWAL"  # S13 — SA override with IMMEDIATE
 
 
 # ── TA Self-Service Endpoints ────────────────────────────────────────────────
@@ -1925,32 +1927,18 @@ async def update_tenant_plan(
     )).fetchone()
     old_tier = str(old_row.plan_tier) if old_row and old_row.plan_tier else None
 
-    # Package catalog is the single source of limits/sku_cap/flags (CLAUDE.md §15).
-    # Applying it REPLACES feature_flags with the package's full flag set; an
-    # explicit override wins only for fields the caller actually sent.
+    # A paid downgrade defaults to SCHEDULE-at-renewal (S13) — nothing else
+    # changes now. effective="IMMEDIATE" is the SA override for today's
+    # immediate behaviour. An ANNUAL upgrade that has already been paid at
+    # least once also raises a PRORATION invoice for the whole remaining
+    # billing months on the IMMEDIATE path (CLAUDE.md §15 S11).
     try:
-        effective = await apply_package_to_tenant(
+        plan_change = await change_plan(
             db, tenant_id, body.plan_tier,
+            effective=body.effective, recorded_by=str(user.user_id),
             max_warehouses=body.max_warehouses if "max_warehouses" in body.model_fields_set else UNSET,
             max_users=body.max_users if "max_users" in body.model_fields_set else UNSET,
             sku_cap=body.sku_cap if "sku_cap" in body.model_fields_set else UNSET,
-        )
-    except ValueError as exc:
-        raise HTTPException(
-            status_code=422,
-            detail={"code": "INVALID_TIER", "message": str(exc)},
-        ) from exc
-
-    # Plan change updates the live subscription immediately (entitlements now,
-    # new price from the NEXT invoice). No live subscription -> leave as
-    # today and log a warning; never create one here. An ANNUAL upgrade that
-    # has already been paid at least once also raises a PRORATION invoice
-    # for the whole remaining billing months, in this same transaction
-    # (CLAUDE.md §15 S11) — downgrades, MONTHLY plans, and never-paid
-    # subscriptions are unchanged (no proration invoice).
-    try:
-        plan_change = await apply_plan_change_with_proration(
-            db, tenant_id, body.plan_tier, recorded_by=str(user.user_id),
         )
     except ValueError as exc:
         code = str(exc)
@@ -1959,39 +1947,106 @@ async def update_tenant_plan(
             status_code=status_code,
             detail={"code": code, "message": str(exc)},
         ) from exc
-    subscription_change = plan_change["subscription_change"]
-    proration_invoice = plan_change["proration_invoice"]
-    if subscription_change is None:
+
+    mode = plan_change["mode"]
+    proration_invoice = plan_change.get("proration_invoice")
+    subscription_change = plan_change.get("subscription_change")
+    if mode == "IMMEDIATE" and subscription_change is None:
         logger.warning("update_tenant_plan: no live subscription for tenant %s — not created here", tenant_id)
+
+    try:
+        if mode == "SCHEDULED":
+            await _log_tenant_activity(
+                db, tenant_id, str(user.user_id),
+                action="PLAN_DOWNGRADE_SCHEDULED",
+                old_value=plan_change["plan_tier"],
+                new_value=plan_change["scheduled_tier"],
+            )
+        else:
+            await _log_tenant_activity(
+                db, tenant_id, str(user.user_id),
+                action="PLAN_CHANGE",
+                old_value=old_tier,
+                new_value=body.plan_tier,
+            )
+            if mode == "UNCHANGED" and plan_change.get("scheduled_cleared"):
+                await _log_tenant_activity(
+                    db, tenant_id, str(user.user_id),
+                    action="PLAN_DOWNGRADE_CANCELLED",
+                    old_value=body.plan_tier,
+                )
+            if subscription_change is not None:
+                await _log_tenant_activity(
+                    db, tenant_id, str(user.user_id),
+                    action="SUBSCRIPTION_TIER_CHANGE",
+                    old_value=f"{subscription_change['old_tier']}/{subscription_change['old_amount']}",
+                    new_value=f"{subscription_change['new_tier']}/{subscription_change['new_amount']}",
+                )
+            if proration_invoice is not None:
+                await _log_tenant_activity(
+                    db, tenant_id, str(user.user_id),
+                    action="PRORATION_INVOICE_RAISED",
+                    new_value=f"payment={proration_invoice['payment_id']} total={proration_invoice['total']}",
+                )
+    except Exception:
+        pass  # log failure must not roll back the plan change
+
+    effective_package = plan_change.get("effective")
+    if effective_package is None:
+        # SCHEDULED / UNCHANGED — nothing was applied; show the tenant's current values.
+        current = await get_tenant_entitlements(db, tenant_id)
+        plan_tier_out = plan_change.get("plan_tier", current.get("plan_tier"))
+        max_wh_out = current.get("max_warehouses")
+        max_u_out = current.get("max_users")
+    else:
+        plan_tier_out = effective_package["plan_tier"]
+        max_wh_out = effective_package["max_warehouses"]
+        max_u_out = effective_package["max_users"]
+
+    return SuccessResponse(data={
+        "mode":                        mode,
+        "plan_tier":                   plan_tier_out,
+        "max_warehouses":              max_wh_out,
+        "max_users":                   max_u_out,
+        "proration_invoice":           proration_invoice,
+        "scheduled_tier":              plan_change.get("scheduled_tier"),
+        "effective_at":                plan_change.get("effective_at"),
+        "pending_renewal_invoice_id":  plan_change.get("pending_renewal_invoice_id"),
+    })
+
+
+@router.delete("/{tenant_id}/plan/scheduled", response_model=SuccessResponse[dict])
+@require_permission(PERMISSIONS.TENANT_MANAGE)
+async def cancel_tenant_scheduled_downgrade(
+    tenant_id: uuid.UUID,
+    user=Depends(get_current_user),
+    db: AsyncSession = Depends(get_db_session),
+) -> SuccessResponse[dict]:
+    """SA-only: cancel a pending scheduled downgrade (S13) — the tenant
+    keeps its current tier at the next renewal."""
+    if not user or user.role != "SA":
+        raise HTTPException(status_code=403, detail={"code": "FORBIDDEN", "message": "SA only"})
+
+    try:
+        result = await cancel_scheduled_downgrade(db, tenant_id)
+    except ValueError as exc:
+        code = str(exc)
+        status_code = 404 if code == "NO_SCHEDULED_CHANGE" else 422
+        raise HTTPException(
+            status_code=status_code,
+            detail={"code": code, "message": str(exc)},
+        ) from exc
 
     try:
         await _log_tenant_activity(
             db, tenant_id, str(user.user_id),
-            action="PLAN_CHANGE",
-            old_value=old_tier,
-            new_value=body.plan_tier,
+            action="PLAN_DOWNGRADE_CANCELLED",
+            old_value=result["cancelled_tier"],
         )
-        if subscription_change is not None:
-            await _log_tenant_activity(
-                db, tenant_id, str(user.user_id),
-                action="SUBSCRIPTION_TIER_CHANGE",
-                old_value=f"{subscription_change['old_tier']}/{subscription_change['old_amount']}",
-                new_value=f"{subscription_change['new_tier']}/{subscription_change['new_amount']}",
-            )
-        if proration_invoice is not None:
-            await _log_tenant_activity(
-                db, tenant_id, str(user.user_id),
-                action="PRORATION_INVOICE_RAISED",
-                new_value=f"payment={proration_invoice['payment_id']} total={proration_invoice['total']}",
-            )
     except Exception:
-        pass  # log failure must not roll back the plan change
-    return SuccessResponse(data={
-        "plan_tier":          effective["plan_tier"],
-        "max_warehouses":     effective["max_warehouses"],
-        "max_users":          effective["max_users"],
-        "proration_invoice":  proration_invoice,
-    })
+        pass  # log failure must not roll back the cancellation
+
+    return SuccessResponse(data=result)
 
 
 class TenantProfileUpdateRequest(BaseModel):
@@ -2071,8 +2126,8 @@ async def update_tenant_profile(
 
     When organisation_type changes, only approval_thresholds reset to the new
     type's defaults — feature flags are owned by the plan/package, not org type.
-    When plan_tier changes, limits/sku_cap/feature_flags are applied from the
-    package catalog via apply_package_to_tenant (same as update_tenant_plan does).
+    When plan_tier changes, it goes through change_plan() (S13, effective=
+    RENEWAL always here) — same as update_tenant_plan does for SA PATCH /plan.
     """
     if not user or user.role != "SA":
         raise HTTPException(status_code=403, detail={"code": "FORBIDDEN", "message": "SA only"})
@@ -2156,28 +2211,22 @@ async def update_tenant_profile(
         params,
     )
 
-    # plan_tier goes through the package catalog — applying it REPLACES
-    # feature_flags with the package's full flag set (CLAUDE.md §15).
+    # plan_tier goes through change_plan (S13) — a paid downgrade SCHEDULEs
+    # at the next renewal; anything else (upgrade, same-tier cap override,
+    # never-paid downgrade) applies immediately via the package catalog,
+    # which REPLACES feature_flags with the package's full flag set
+    # (CLAUDE.md §15), plus the S11 proration invoice for an ANNUAL,
+    # already-paid upgrade. No live subscription -> log a warning, don't
+    # create one. This profile endpoint has no "effective" override — always
+    # RENEWAL (SA uses PATCH /{tenant_id}/plan for an IMMEDIATE downgrade).
+    plan_mode = None
     subscription_change = None
     proration_invoice = None
     if "plan_tier" in changes:
         new_tier = changes["plan_tier"][1]
         try:
-            await apply_package_to_tenant(db, tenant_id, new_tier)
-        except ValueError as exc:
-            raise HTTPException(
-                status_code=422,
-                detail={"code": "INVALID_TIER", "message": str(exc)},
-            ) from exc
-
-        # Updates the live subscription immediately (same rule as SA PATCH
-        # /plan — update_tenant_plan() above), new price from the NEXT
-        # invoice, plus the S11 proration invoice for an ANNUAL, already-paid
-        # upgrade (CLAUDE.md §15 S11). No live subscription -> log a warning,
-        # don't create one.
-        try:
-            plan_change = await apply_plan_change_with_proration(
-                db, tenant_id, new_tier, recorded_by=str(user.user_id),
+            plan_change = await change_plan(
+                db, tenant_id, new_tier, effective="RENEWAL", recorded_by=str(user.user_id),
             )
         except ValueError as exc:
             code = str(exc)
@@ -2186,9 +2235,10 @@ async def update_tenant_profile(
                 status_code=status_code,
                 detail={"code": code, "message": str(exc)},
             ) from exc
-        subscription_change = plan_change["subscription_change"]
-        proration_invoice = plan_change["proration_invoice"]
-        if subscription_change is None:
+        plan_mode = plan_change["mode"]
+        subscription_change = plan_change.get("subscription_change")
+        proration_invoice = plan_change.get("proration_invoice")
+        if plan_mode == "IMMEDIATE" and subscription_change is None:
             logger.warning("update_tenant_profile: no live subscription for tenant %s — not created here", tenant_id)
 
     # Log each changed field as its own activity row so the audit trail is granular.
@@ -2224,9 +2274,21 @@ async def update_tenant_profile(
         except Exception:
             pass  # log failure must not roll back the update
 
+    if plan_mode == "SCHEDULED":
+        try:
+            await _log_tenant_activity(
+                db, tenant_id, str(user.user_id),
+                action="PLAN_DOWNGRADE_SCHEDULED",
+                old_value=changes["plan_tier"][0],
+                new_value=changes["plan_tier"][1],
+            )
+        except Exception:
+            pass  # log failure must not roll back the update
+
     return SuccessResponse(data={
         "changes": len(changes), "fields": list(changes.keys()),
         "proration_invoice": proration_invoice,
+        "mode": plan_mode,
     })
 
 
