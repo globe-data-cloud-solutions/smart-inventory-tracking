@@ -50,11 +50,29 @@ Create Date: 2026-10-07
 from __future__ import annotations
 
 from alembic import op
+from sqlalchemy import text
 
 revision = "072"
 down_revision = "071"
 branch_labels = None
 depends_on = None
+
+
+def _refuse_if_addon_lines_exist() -> None:
+    """payment_line_items is append-only — downgrade cannot delete ADDON rows
+    (071's no_update_/no_delete_payment_line_items RULEs silently no-op any
+    attempt) and must not strip addon_price_id out from under them either,
+    since that is their only price reference. Raises instead of silently
+    producing orphaned/under-constrained rows."""
+    bind = op.get_bind()
+    count = bind.execute(
+        text("SELECT count(*) FROM payment_line_items WHERE item_type = 'ADDON'")
+    ).scalar()
+    if count:
+        raise RuntimeError(
+            f"072 downgrade blocked: {count} ADDON invoice lines exist; "
+            "payment_line_items is append-only"
+        )
 
 
 def upgrade() -> None:
@@ -244,14 +262,14 @@ def upgrade() -> None:
 def downgrade() -> None:
     # payment_line_items is append-only (071's no_update_/no_delete_
     # payment_line_items RULEs) — any ADDON-type rows that exist by the time
-    # this runs are real billing history and are never deleted, consistent
-    # with that append-only guarantee. Downgrading only removes the SCHEMA
-    # capability this migration added: the CHECK and the addon_price_id
-    # column itself. price_id and its FK to package_prices (071) were never
-    # touched by upgrade() and need no restoration here. (A fresh upgrade
-    # path never encounters pre-existing ADDON rows — the feature does not
-    # exist before this migration — so this is purely a defensive note for
-    # a downgrade run after the feature has seen real use.)
+    # this runs are real billing history and cannot be deleted (the RULEs
+    # silently no-op the attempt) or stripped of their only price reference.
+    # Refuse outright rather than drop addon_price_id/the CHECK underneath
+    # them. A fresh upgrade path never encounters pre-existing ADDON rows —
+    # the feature does not exist before this migration — so this only
+    # triggers on a downgrade run after the feature has seen real use.
+    _refuse_if_addon_lines_exist()
+
     op.execute("ALTER TABLE payment_line_items DROP CONSTRAINT IF EXISTS chk_line_item_price_ref")
     op.execute("ALTER TABLE payment_line_items DROP COLUMN IF EXISTS addon_price_id")
 
