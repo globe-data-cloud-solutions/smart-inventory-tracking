@@ -1738,13 +1738,57 @@ provider registry.
   `scripts/ci_drift_check.py`); the HMAC signature **is** the auth check.
   Rate-limited 120/60s per IP. Idempotent on replay (`mark_paid()`'s own
   idempotency + `uq_payments_provider_reference`).
-- **Plan change = no proration**: `PATCH /{tenant_id}/plan` (SA) and the TA
-  profile plan change both call `update_live_subscription_tier()` in the
-  same transaction as `apply_package_to_tenant()` — the live subscription's
-  `tier`/`price_id`/`amount` update **immediately** (entitlements change
-  now), `current_period_start`/`end` and contract dates are **untouched**;
-  the new price is charged starting from the next invoice. No live
-  subscription → left as-is, a warning is logged, one is never created here.
+- **Plan change — entitlements now, billing months later (S11 supersedes the
+  original S5 "no proration" rule for this one case)**: `PATCH /{tenant_id}/plan`
+  (SA) and the TA profile plan change both call `apply_plan_change_with_proration()`
+  (`shared/billing/proration.py`) in the same transaction as
+  `apply_package_to_tenant()` — the live subscription's `tier`/`price_id`/`amount`
+  update **immediately** (entitlements change now), `current_period_start`/`end`
+  and contract dates are **untouched**; the new price is charged starting from
+  the next invoice. No live subscription → left as-is, a warning is logged, one
+  is never created here. **On top of that**, an ANNUAL subscription that has
+  already been paid at least once, upgrading (new tier's current annual price >
+  the old price snapshot), also raises a second, automatic PENDING invoice —
+  `payments.invoice_kind = 'PRORATION'` — in the SAME transaction:
+  - Billing months, not calendar days: the current period is split into
+    +1-month steps from `current_period_start` (`remaining_billing_months()`,
+    absolute-from-start so a day-29/30/31 start never drifts — see the
+    function's own docstring). The partial billing month the change falls in
+    is FREE (on the boundary day itself, the NEW month starting there is the
+    free one). Whole remaining months are charged at the annual rate:
+    `(new_annual_price − old_annual_snapshot) × remaining_months / 12` for an
+    upgrade, `addon_annual_price × remaining_months / 12` for a PURCHASED
+    add-on grant (`apply_addon_grant_with_proration()`), VAT on top
+    (`prorate()` + `vat_breakdown()`).
+  - MONTHLY subscriptions, downgrades/same-or-lower price, OVERRIDE add-ons,
+    and a subscription that has never been paid (still `PENDING_PAYMENT`, no
+    PAID payment) never raise a PRORATION invoice — **a downgrade gives no
+    credit or refund for the unused part of the old tier**, by design.
+  - **Blocked (409 `INVOICE_PENDING_SETTLE_FIRST`)**: an upgrade or a
+    PURCHASED add-on grant is refused — no write at all — while a PENDING
+    `invoice_kind='PERIOD'` invoice exists for the subscription
+    (`check_not_blocked_by_pending_period_invoice()`); a PENDING PRORATION
+    invoice never blocks anything, in either direction (`create_invoice()`'s
+    own `INVOICE_ALREADY_PENDING` check is scoped to `invoice_kind='PERIOD'`).
+  - **Paying or cancelling a PRORATION invoice changes nothing else** —
+    `mark_paid()` flips only status/paid_at/provider for one and returns
+    immediately, before touching the subscription, the contract, or
+    `tenant_addons` (rule 8); cancelling (SA, note required) leaves the
+    tier/add-on change in place.
+  - **Previews** (no writes): `GET /{tenant_id}/proration-preview?tier=|addon=`
+    (SA, `tenant:manage` + inline SA check) and
+    `GET /me/proration-preview?tier=|addon=` (TA, `billing:view_own`) —
+    exactly one of `tier`/`addon` — return `{remaining_months, free_until,
+    period_end, old_amount, new_amount, subtotal, vat, total, currency,
+    will_invoice, blocked_code}`, driving the SA/TA confirm dialogs.
+  - Migration 073 adds `payments.invoice_kind` (`'PERIOD'` default,
+    backfilled; `'PRORATION'` new). Its downgrade refuses while any
+    `PRORATION` row exists (payments is never deleted).
+
+  > **Known gap (2026-10):** a downgrade takes effect immediately (new,
+  > lower entitlements right away) with no credit or refund for the unused
+  > part of the current billing period — there is no "schedule this
+  > downgrade for the next renewal" option yet. Future work, not S11 scope.
 - **Permissions**: `billing:view` (SA, platform-wide read), `billing:manage`
   (SA, invoice/payment writes, audit-required), `billing:view_own` (TA,
   its own tenant, read-only). Endpoints: SA

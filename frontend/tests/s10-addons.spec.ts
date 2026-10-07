@@ -9,9 +9,13 @@
  *   npx playwright test tests/s10-addons.spec.ts
  */
 import { test, expect, type Page, type ConsoleMessage } from "@playwright/test";
-import { E2E_TA_EMAIL, e2eTaPasswordOrSkip } from "./helpers/e2e-ta";
+import { E2E_TA_EMAIL, E2E_TA_SLUG, e2eTaPasswordOrSkip } from "./helpers/e2e-ta";
 
 const BASE_URL = process.env.BASE_URL ?? "http://localhost:3000";
+// The gateway is a separate port from the Next.js dev server — never derived
+// from BASE_URL by string substitution (that breaks the moment BASE_URL
+// isn't literally "...3000"). GATEWAY_URL overrides for non-default setups.
+const GATEWAY_URL = process.env.GATEWAY_URL ?? "http://localhost:8000";
 const SA_EMAIL = "smartadmin@smart-inventory.com";
 const SA_PASSWORD = "Admin@2026";
 
@@ -77,19 +81,39 @@ test.describe("S10-1 permanent e2e TA account", () => {
 
 // ── S10-4 frontend: add-on catalog, tenant add-ons, feature sources ──────────
 
-const E2E_TA_TENANT_ID = "5e60ea08-d596-4a46-b63e-ddd7c373f3f0"; // zz-e2e-ta
-
-async function reactivateE2ETa() {
-  const tokenRes = await fetch(`${BASE_URL.replace("3000", "8000")}/api/v1/auth/token`, {
+async function getSaToken(): Promise<string> {
+  const tokenRes = await fetch(`${GATEWAY_URL}/api/v1/auth/token`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ dev_email: "smartadmin@smart-inventory.com" }),
+    body: JSON.stringify({ dev_email: SA_EMAIL }),
   });
   const { access_token } = (await tokenRes.json()) as { access_token: string };
+  return access_token;
+}
+
+// Resolved once per run by slug via the SA registry, rather than a hardcoded
+// UUID that silently goes stale if the probe tenant is ever recreated.
+let cachedE2ETaTenantId: string | null = null;
+async function resolveE2ETaTenantId(): Promise<string> {
+  if (cachedE2ETaTenantId) return cachedE2ETaTenantId;
+  const token = await getSaToken();
+  const registryRes = await fetch(`${GATEWAY_URL}/api/v1/tenants/sa/registry`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  const { data } = (await registryRes.json()) as { data: { id: string; slug: string | null }[] };
+  const row = data.find((t) => t.slug === E2E_TA_SLUG);
+  if (!row) throw new Error(`Tenant with slug "${E2E_TA_SLUG}" not found in SA registry`);
+  cachedE2ETaTenantId = row.id;
+  return row.id;
+}
+
+async function reactivateE2ETa() {
+  const token = await getSaToken();
+  const tenantId = await resolveE2ETaTenantId();
   // zz-e2e-ta stays ACTIVE always (CLAUDE.md §29) — this is a no-op guard, not a real reactivate need.
-  await fetch(`${BASE_URL.replace("3000", "8000")}/api/v1/tenants/${E2E_TA_TENANT_ID}/reactivate`, {
+  await fetch(`${GATEWAY_URL}/api/v1/tenants/${tenantId}/reactivate`, {
     method: "PATCH",
-    headers: { "Content-Type": "application/json", Authorization: `Bearer ${access_token}` },
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
     body: JSON.stringify({}),
   }).catch(() => {});
 }
@@ -143,7 +167,7 @@ test.describe("S10-4 SA tenant page — Features Add-ons + plan-change persisten
 
     await reactivateE2ETa();
     await login(page, SA_EMAIL, SA_PASSWORD);
-    await page.goto(`${BASE_URL}/admin/settings/tenants/${E2E_TA_TENANT_ID}`);
+    await page.goto(`${BASE_URL}/admin/settings/tenants/${await resolveE2ETaTenantId()}`);
     await page.getByRole("button", { name: /^.?.?\s*Features$/i }).first().click();
     await page.waitForLoadState("networkidle");
 
@@ -198,7 +222,7 @@ test.describe("S10-4 SA tenant page — Features Add-ons + plan-change persisten
     page.on("console", (msg) => { if (msg.type() === "error") consoleErrors.push(msg.text()); });
 
     await login(page, SA_EMAIL, SA_PASSWORD);
-    await page.goto(`${BASE_URL}/admin/settings/tenants/${E2E_TA_TENANT_ID}`);
+    await page.goto(`${BASE_URL}/admin/settings/tenants/${await resolveE2ETaTenantId()}`);
     await page.getByRole("button", { name: /^.?.?\s*Features$/i }).first().click();
     await page.waitForLoadState("networkidle");
 
@@ -283,7 +307,7 @@ test.describe("S10-4 TA views (real login)", () => {
     // TA must never reach the SA-only tenant settings page — the org-slug
     // mismatch in [org]/layout.tsx redirects it straight back to its own
     // dashboard before the page's own role check ever runs.
-    await page.goto(`${BASE_URL}/admin/settings/tenants/${E2E_TA_TENANT_ID}`);
+    await page.goto(`${BASE_URL}/admin/settings/tenants/${await resolveE2ETaTenantId()}`);
     await page.waitForLoadState("networkidle");
     await expect(page).toHaveURL(/\/zz-e2e-ta\/dashboard/, { timeout: 10_000 });
     await page.screenshot({ path: "test-results/screens/s10/ta-settings-restricted-en.png", fullPage: true });
