@@ -236,7 +236,7 @@ async def test_create_invoice_renewal_reprices_addon_at_current_price() -> None:
     assert out["subtotal"] == Decimal("260.00")  # 200 + 60 (NOT 200 + 40)
 
     addon_line_call = db.execute.call_args_list[8]
-    assert addon_line_call.args[1]["price_id"] == "addon-price-NEW"
+    assert addon_line_call.args[1]["addon_price_id"] == "addon-price-NEW"
     assert addon_line_call.args[1]["amount"] == Decimal("60.00")
 
 
@@ -383,7 +383,7 @@ async def test_mark_paid_reads_package_line_only_and_updates_addon_snapshots() -
     payment = _payment(status="PENDING")
     package_line = MagicMock(price_id="price-1", amount=Decimal("200.00"), price_tier="GROWTH")
     subscription = MagicMock(id="sub-1", tier="GROWTH", price_id="price-1")
-    addon_line = MagicMock(addon_code="LOGISTICS", price_id="addon-price-NEW", amount=Decimal("60.00"))
+    addon_line = MagicMock(addon_code="LOGISTICS", addon_price_id="addon-price-NEW", amount=Decimal("60.00"))
 
     db = _db([
         _result(fetchone=payment),            # SELECT payments FOR UPDATE

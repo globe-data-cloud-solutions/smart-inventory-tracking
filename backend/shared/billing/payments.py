@@ -192,17 +192,17 @@ async def create_invoice(
             text(
                 "INSERT INTO payment_line_items ("
                 "  tenant_id, payment_id, item_type, item_key, description, "
-                "  price_id, quantity, unit_amount, amount"
+                "  addon_price_id, quantity, unit_amount, amount"
                 ") VALUES ("
                 "  :tid, :pid, 'ADDON', :item_key, :description, "
-                "  :price_id, 1, :amount, :amount"
+                "  :addon_price_id, 1, :amount, :amount"
                 ")"
             ),
             {
                 "tid": str(tenant_id), "pid": str(payment_id),
                 "item_key": line["addon_code"],
                 "description": f"{line['display_name']} — {subscription.billing_period}",
-                "price_id": line["price_id"],
+                "addon_price_id": line["price_id"],
                 "amount": line["amount"],
             },
         )
@@ -337,7 +337,7 @@ async def mark_paid(
     # renewal's re-priced add-on (create_invoice) sticks once actually paid.
     addon_lines = (await db.execute(
         text(
-            "SELECT item_key AS addon_code, price_id, amount "
+            "SELECT item_key AS addon_code, addon_price_id, amount "
             "FROM payment_line_items WHERE payment_id = :pid AND item_type = 'ADDON'"
         ),
         {"pid": str(payment.id)},
@@ -350,7 +350,7 @@ async def mark_paid(
                 "  AND source = 'PURCHASED'"
             ),
             {
-                "price_id": str(line.price_id), "amount": line.amount,
+                "price_id": str(line.addon_price_id), "amount": line.amount,
                 "tid": str(payment.tenant_id), "code": line.addon_code,
             },
         )

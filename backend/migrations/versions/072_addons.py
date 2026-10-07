@@ -35,6 +35,14 @@ tenant's feature_flags BEFORE any write in this migration, so downgrade()
 restores the exact prior JSON regardless of which of the steps above actually
 changed it.
 
+payment_line_items (071) gets a new nullable addon_price_id column, FK'd to
+addon_prices, alongside its existing price_id (FK'd to package_prices,
+untouched). A CHECK constraint ties each column to the row's own item_type
+so a PACKAGE line always has price_id set and addon_price_id NULL, and an
+ADDON line the reverse — the DB enforces referential integrity against
+whichever price table actually applies, instead of relaxing price_id to
+point at either table ambiguously.
+
 Revision ID: 072
 Revises:     071
 Create Date: 2026-10-07
@@ -109,12 +117,24 @@ def upgrade() -> None:
     op.execute("CREATE RULE no_delete_addon_prices AS ON DELETE TO addon_prices DO INSTEAD NOTHING")
     # No seed prices — SA sets them via POST /platform/addons/{code}/prices (S10-3).
 
-    # ── B2) payment_line_items.price_id (071) was FK'd to package_prices only.
-    #      An ADDON line item's price_id now points to addon_prices instead —
-    #      drop the single-table FK so price_id can reference either table,
-    #      distinguished by the row's own item_type.
+    # ── B2) payment_line_items grows a second, distinct FK column for ADDON
+    #      lines rather than relaxing price_id's existing FK to package_prices.
+    #      price_id (071) is untouched — a PACKAGE line still sets it and only
+    #      it. addon_price_id is new, nullable, FK'd to addon_prices — an
+    #      ADDON line sets only this one. The CHECK enforces exactly one of
+    #      the two is set, matching the row's own item_type, so the DB itself
+    #      rejects a line item with the wrong kind of price reference (or both,
+    #      or neither) — referential integrity for both price tables at once.
     op.execute(
-        "ALTER TABLE payment_line_items DROP CONSTRAINT IF EXISTS payment_line_items_price_id_fkey"
+        "ALTER TABLE payment_line_items ADD COLUMN addon_price_id UUID NULL REFERENCES addon_prices(id)"
+    )
+    op.execute(
+        """
+        ALTER TABLE payment_line_items ADD CONSTRAINT chk_line_item_price_ref CHECK (
+          (item_type = 'PACKAGE' AND price_id IS NOT NULL AND addon_price_id IS NULL) OR
+          (item_type = 'ADDON'   AND addon_price_id IS NOT NULL AND price_id IS NULL)
+        )
+        """
     )
 
     # ── C) tenant_addons — tenant-scoped, RLS (no FORCE — app role owns these
@@ -222,16 +242,18 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    # ADDON-type line items exist only because of this migration's feature —
-    # remove them before restoring the single-table FK so the ALTER cannot
-    # fail against rows whose price_id points at the (about to be dropped)
-    # addon_prices table.
-    op.execute("DELETE FROM payment_line_items WHERE item_type = 'ADDON'")
-    op.execute("ALTER TABLE payment_line_items DROP CONSTRAINT IF EXISTS payment_line_items_price_id_fkey")
-    op.execute(
-        "ALTER TABLE payment_line_items ADD CONSTRAINT payment_line_items_price_id_fkey "
-        "FOREIGN KEY (price_id) REFERENCES package_prices(id)"
-    )
+    # payment_line_items is append-only (071's no_update_/no_delete_
+    # payment_line_items RULEs) — any ADDON-type rows that exist by the time
+    # this runs are real billing history and are never deleted, consistent
+    # with that append-only guarantee. Downgrading only removes the SCHEMA
+    # capability this migration added: the CHECK and the addon_price_id
+    # column itself. price_id and its FK to package_prices (071) were never
+    # touched by upgrade() and need no restoration here. (A fresh upgrade
+    # path never encounters pre-existing ADDON rows — the feature does not
+    # exist before this migration — so this is purely a defensive note for
+    # a downgrade run after the feature has seen real use.)
+    op.execute("ALTER TABLE payment_line_items DROP CONSTRAINT IF EXISTS chk_line_item_price_ref")
+    op.execute("ALTER TABLE payment_line_items DROP COLUMN IF EXISTS addon_price_id")
 
     op.execute(
         """
