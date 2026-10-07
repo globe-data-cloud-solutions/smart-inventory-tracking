@@ -455,8 +455,14 @@ export default function SignupPage() {
             <label className="flex items-start gap-2 text-sm text-gray-700 pt-2">
               <input type="checkbox" {...form.register("accept_terms")} className="mt-0.5" />
               <span>
-                {t("signup.accept_terms").replace("{v}", catalog?.terms_version ?? "")}{" "}
-                <span className="text-gray-400">{t("signup.terms_no_page_yet")}</span>
+                {t("signup.accept_terms_prefix")}{" "}
+                <Link href="/terms" target="_blank" rel="noopener noreferrer" className="underline text-brand-600 hover:text-brand-700">
+                  {t("signup.terms_link_text").replace("{v}", catalog?.terms_version ?? "")}
+                </Link>
+                {" "}{t("signup.and")}{" "}
+                <Link href="/privacy" target="_blank" rel="noopener noreferrer" className="underline text-brand-600 hover:text-brand-700">
+                  {t("signup.privacy_link_text")}
+                </Link>
               </span>
             </label>
             <FieldError message={form.formState.errors.accept_terms?.message} />
@@ -522,6 +528,16 @@ export default function SignupPage() {
             </div>
           </div>
         )}
+
+        <p className="text-center text-xs text-gray-400 mt-6">
+          <Link href="/terms" target="_blank" rel="noopener noreferrer" className="underline hover:text-gray-600">
+            {t("legal.terms_title")}
+          </Link>
+          {" · "}
+          <Link href="/privacy" target="_blank" rel="noopener noreferrer" className="underline hover:text-gray-600">
+            {t("legal.privacy_title")}
+          </Link>
+        </p>
       </div>
     </div>
   );

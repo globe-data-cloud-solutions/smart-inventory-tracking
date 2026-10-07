@@ -1500,6 +1500,13 @@
     "profile": {
       "slug": "Slug"
     },
+    "terms": {
+      "label": "የአገልግሎት ውሎች",
+      "accepted_line": "የአገልግሎት ውሎች ስሪት {version} በ{date} በ{email} ተቀብሏል።",
+      "view_link": "ይመልከቱ",
+      "no_record": "የአገልግሎት ውሎች ተቀባይነት ምዝገባ የለም።",
+      "outdated_notice": "ከተቀበሉ በኋላ የአገልግሎት ውሎች ተሻሽለዋል።"
+    },
     "contact": {
       "type": {
         "Primary": "ዋና ያገናኝ",
@@ -1780,8 +1787,10 @@
     "password_hint": "ቢያንስ 8 ቁምፊዎች።",
     "password_confirm_label": "የይለፍ ቃል ያረጋግጡ",
     "phone_label": "ስልክ (አማራጭ)",
-    "accept_terms": "የ{v} የአገልግሎት ውሎችን እቀበላለሁ",
-    "terms_no_page_yet": "(የአገልግሎት ውሎች ገጽ በቅርቡ ይገኛል)",
+    "accept_terms_prefix": "እቀበላለሁ፦",
+    "terms_link_text": "{v} የአገልግሎት ውሎች",
+    "and": "እና",
+    "privacy_link_text": "የግላዊነት ፖሊሲ",
     "back_btn": "ተመለስ",
     "continue_btn": "ይቀጥሉ",
     "submit_btn": "መለያ ይፍጠሩ",
@@ -1887,5 +1896,10 @@
         "summary": "በSMART ላይ ምን አዲስ ነገር እንደተጨመረ።"
       }
     }
+  },
+  "legal": {
+    "terms_title": "የአገልግሎት ውሎች",
+    "privacy_title": "የግላዊነት ፖሊሲ",
+    "draft_banner": "ረቂቅ — እስካሁን ተግባራዊ አልሆነም። የመጨረሻው ጽሑፍ ከመጀመሪያው በፊት ይታተማል።"
   }
 }

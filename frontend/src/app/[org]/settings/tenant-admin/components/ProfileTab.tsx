@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import { t } from "@/lib/i18n";
@@ -12,6 +13,52 @@ const LOCALES = [
   { code: "am", label: "አማርኛ" },
   { code: "or", label: "Afaan Oromoo" },
 ];
+
+interface TermsAcceptanceOut {
+  accepted_version: string | null;
+  accepted_at: string | null;
+  accepted_by_email: string | null;
+  current_version: string;
+}
+
+function TermsAcceptanceLine({ tenantId }: { tenantId?: string }) {
+  const path = tenantId ? `/api/v1/tenants/${tenantId}/terms-acceptance` : `/api/v1/tenants/me/terms-acceptance`;
+  const { data } = useQuery<TermsAcceptanceOut>({
+    queryKey: ["tenant-admin-terms-acceptance", tenantId ?? "me"],
+    queryFn: () => api.get<TermsAcceptanceOut>(path),
+    staleTime: 30_000,
+  });
+
+  if (!data) return null;
+
+  return (
+    <div>
+      <label className="block text-sm font-medium text-gray-700 mb-1">
+        {t("tenant_admin.terms.label")}
+      </label>
+      {data.accepted_version ? (
+        <>
+          <p className="text-sm text-gray-600">
+            {t("tenant_admin.terms.accepted_line")
+              .replace("{version}", data.accepted_version)
+              .replace("{date}", data.accepted_at ? data.accepted_at.slice(0, 10) : "—")
+              .replace("{email}", data.accepted_by_email ?? "—")}{" "}
+            <Link href="/terms" target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:text-blue-700 underline">
+              ({t("tenant_admin.terms.view_link")})
+            </Link>
+          </p>
+          {data.accepted_version !== data.current_version && (
+            <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded px-2 py-1 mt-1">
+              {t("tenant_admin.terms.outdated_notice")}
+            </p>
+          )}
+        </>
+      ) : (
+        <p className="text-sm text-gray-500">{t("tenant_admin.terms.no_record")}</p>
+      )}
+    </div>
+  );
+}
 
 export function ProfileTab({ tenantId, isLoading }: TabProps) {
   const qc = useQueryClient();
@@ -147,6 +194,8 @@ export function ProfileTab({ tenantId, isLoading }: TabProps) {
               </p>
             </div>
           )}
+
+          <TermsAcceptanceLine tenantId={tenantId} />
         </div>
 
         {/* Action Buttons (Edit Mode) */}

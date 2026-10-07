@@ -1486,6 +1486,13 @@
     "profile": {
       "slug": "Slug"
     },
+    "terms": {
+      "label": "Terms of Service",
+      "accepted_line": "Terms of Service version {version} accepted on {date} by {email}.",
+      "view_link": "View",
+      "no_record": "No Terms of Service acceptance on record.",
+      "outdated_notice": "The Terms of Service have been updated since you accepted them."
+    },
     "contact": {
       "type": {
         "Primary": "Primary Contact",
@@ -1766,8 +1773,10 @@
     "password_hint": "At least 8 characters.",
     "password_confirm_label": "Confirm password",
     "phone_label": "Phone (optional)",
-    "accept_terms": "I agree to the {v} Terms of Service",
-    "terms_no_page_yet": "(Terms of Service page coming soon)",
+    "accept_terms_prefix": "I agree to the",
+    "terms_link_text": "{v} Terms of Service",
+    "and": "and",
+    "privacy_link_text": "Privacy Policy",
     "back_btn": "Back",
     "continue_btn": "Continue",
     "submit_btn": "Create account",
@@ -1873,5 +1882,10 @@
         "summary": "What's new in SMART."
       }
     }
+  },
+  "legal": {
+    "terms_title": "Terms of Service",
+    "privacy_title": "Privacy Policy",
+    "draft_banner": "Draft — not yet in effect. The final text will be published before launch."
   }
 }

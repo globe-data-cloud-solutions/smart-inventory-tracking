@@ -1,5 +1,6 @@
 import json
 import logging
+import os
 import re
 import uuid
 from datetime import date, datetime, timedelta, timezone
@@ -1389,6 +1390,49 @@ async def get_my_plan(
     return SuccessResponse(data=await _get_tenant_plan_data(db, user.tenant_id))
 
 
+class TermsAcceptanceOut(BaseModel):
+    accepted_version: Optional[str] = None
+    accepted_at: Optional[str] = None
+    accepted_by_email: Optional[str] = None
+    current_version: str
+
+
+async def _get_terms_acceptance(db: AsyncSession, tenant_id) -> TermsAcceptanceOut:
+    """terms_acceptances is written only by public_signup.py (CLAUDE.md §15
+    S4) — an SA-created tenant (POST /tenants/) never gets a row here, which
+    is expected, not an error. Newest acceptance wins if a tenant somehow
+    has more than one (it shouldn't, today)."""
+    current_version = os.environ.get("TERMS_VERSION", "2026-10")
+    row = (await db.execute(
+        text(
+            "SELECT ta.terms_version, ta.accepted_at, u.email "
+            "FROM terms_acceptances ta JOIN users u ON u.id = ta.user_id "
+            "WHERE ta.tenant_id = :tid ORDER BY ta.accepted_at DESC LIMIT 1"
+        ),
+        {"tid": str(tenant_id)},
+    )).fetchone()
+    if not row:
+        return TermsAcceptanceOut(current_version=current_version)
+    return TermsAcceptanceOut(
+        accepted_version=row.terms_version,
+        accepted_at=row.accepted_at.isoformat() if row.accepted_at else None,
+        accepted_by_email=row.email,
+        current_version=current_version,
+    )
+
+
+@router.get("/me/terms-acceptance", response_model=SuccessResponse[TermsAcceptanceOut])
+@require_permission(PERMISSIONS.TENANT_VIEW)
+async def get_my_terms_acceptance(
+    user=Depends(get_current_user),
+    db: AsyncSession = Depends(get_db_session),
+) -> SuccessResponse[TermsAcceptanceOut]:
+    """TA: read-only terms-acceptance record for its own tenant."""
+    if not user or not user.tenant_id:
+        raise HTTPException(status_code=403, detail="No tenant context")
+    return SuccessResponse(data=await _get_terms_acceptance(db, user.tenant_id))
+
+
 def _serialize_preview(preview: dict) -> dict:
     """proration.preview_upgrade()/preview_addon() return Decimal/date values
     — JSON-serialize them the same way every other response in this router
@@ -1817,6 +1861,19 @@ async def get_tenant_plan(
     if not user or user.role != "SA":
         raise HTTPException(status_code=403, detail={"code": "FORBIDDEN", "message": "SA only"})
     return SuccessResponse(data=await _get_tenant_plan_data(db, tenant_id))
+
+
+@router.get("/{tenant_id}/terms-acceptance", response_model=SuccessResponse[TermsAcceptanceOut])
+@require_permission(PERMISSIONS.TENANT_MANAGE)
+async def get_tenant_terms_acceptance(
+    tenant_id: uuid.UUID,
+    user=Depends(get_current_user),
+    db: AsyncSession = Depends(get_db_session),
+) -> SuccessResponse[TermsAcceptanceOut]:
+    """SA-only: same data/shape as GET /me/terms-acceptance, for any tenant."""
+    if not user or user.role != "SA":
+        raise HTTPException(status_code=403, detail={"code": "FORBIDDEN", "message": "SA only"})
+    return SuccessResponse(data=await _get_terms_acceptance(db, tenant_id))
 
 
 @router.get("/{tenant_id}/proration-preview", response_model=SuccessResponse[dict])
