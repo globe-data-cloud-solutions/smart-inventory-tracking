@@ -432,6 +432,12 @@ the flag, `ADDON_ALREADY_ACTIVE` (409) if one is already live, and for
 `PURCHASED`, `NO_LIVE_SUBSCRIPTION` (409) / `ADDON_PRICE_NOT_AVAILABLE` (422)
 if no current price exists for the subscription's billing period.
 
+**Enforcement (2026-10-07):** `require_permission` auto-gates any action in
+`ACTION_FLAG_MAP` via `check_plan` → `402 FEATURE_NOT_IN_PLAN`. Only SA
+bypasses; TA is gated. Gating covers actions, not display — existing
+branding stays visible after downgrade. New paid-feature actions must be
+added to `ACTION_FLAG_MAP` (drift test enforces registry match).
+
 **Invoices**: `create_invoice()` adds one `ADDON` line item per `ACTIVE`
 `PURCHASED` add-on (`amount > 0`), priced by the same is-renewal rule as the
 `PACKAGE` line — the subscription's first invoice bills each add-on at its

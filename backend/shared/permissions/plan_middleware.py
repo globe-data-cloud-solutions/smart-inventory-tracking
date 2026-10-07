@@ -32,17 +32,11 @@ from shared.plans.catalog import get_tenant_entitlements
 # Actions not listed here are not feature-gated (always allowed if RBAC passes).
 
 ACTION_FLAG_MAP: dict[str, str] = {
-    "transfer:create_sister":   "TRANSFERS_SISTER",
-    "transfer:sister":          "TRANSFERS_SISTER",
-    "lot:":                     "LOT_TRACEABILITY",
-    "batch:":                   "LOT_TRACEABILITY",
+    "transfer:sister":          "TRANSFERS_SISTER",   # kept for the explicit call in transfer.py
+    "tenant:upload_branding":   "CUSTOM_BRANDING",
     "logistics:":               "LOGISTICS",
-    "fleet:":                   "LOGISTICS",
     "audit:export":             "AUDIT_EXPORT",
-    "branding:":                "CUSTOM_BRANDING",
-    "analytics:ai":             "AI_ANALYTICS",
-    "forecast:":                "AI_ANALYTICS",
-    "api_access:":              "API_ACCESS",
+    "ai:":                      "AI_ANALYTICS",
 }
 
 # ── Upgrade path ──────────────────────────────────────────────────────────────
@@ -72,6 +66,11 @@ async def _get_tenant_plan(
     return await get_tenant_entitlements(db, tenant_id)
 
 
+def requires_flag(action_id: str) -> bool:
+    """True if this action is feature-gated (has an entry in ACTION_FLAG_MAP)."""
+    return _required_flag(action_id) is not None
+
+
 async def check_plan(
     user: Any,
     action: str,
@@ -79,14 +78,15 @@ async def check_plan(
 ) -> None:
     """Raise HTTP 402 if the tenant's plan does not permit this action.
 
-    SA and TA roles bypass plan checks entirely — they always have full
-    access regardless of plan tier (SA manages plans, TA needs visibility).
+    Only SA bypasses plan checks — SA manages plans and always has full
+    access regardless of plan tier. TA and all tenant users are gated like
+    anyone else. Resource caps (warehouses/users) are unchanged.
 
     Skipped when user has no tenant_id (SA platform-level actions).
     """
     if not user or not getattr(user, "tenant_id", None):
         return
-    if getattr(user, "role", "") in ("SA", "TA"):
+    if getattr(user, "role", "") == "SA":
         return
 
     tenant_id = str(user.tenant_id)

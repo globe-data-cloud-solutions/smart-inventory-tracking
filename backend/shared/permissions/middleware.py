@@ -128,6 +128,16 @@ def require_permission(action: Permission) -> Callable:
                     detail={"code": result.reason, "action": action.id},
                 )
 
+            from shared.permissions.plan_middleware import check_plan, requires_flag
+
+            if requires_flag(action.id):
+                if db is None:
+                    raise HTTPException(
+                        status_code=500,
+                        detail={"code": "PLAN_CHECK_NO_DB", "action": action.id},
+                    )
+                await check_plan(user, action.id, db)
+
             return await func(*args, **kwargs)
 
         wrapper.__permission__ = action  # type: ignore[attr-defined]
