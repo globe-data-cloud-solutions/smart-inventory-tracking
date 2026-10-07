@@ -7,10 +7,12 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from routers import adjustment_approval, billing, hierarchy, personnel_v2, positions, public_signup, self_approval, tenants, transfer_types, wizard
+from shared.utils.env_guard import assert_safe_environment
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):  # type: ignore[type-arg]
+    assert_safe_environment()
     yield
 
 

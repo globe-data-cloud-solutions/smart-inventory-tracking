@@ -5,10 +5,12 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from routers import auth
+from shared.utils.env_guard import assert_safe_environment
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):  # type: ignore[type-arg]
+    assert_safe_environment()
     yield
 
 

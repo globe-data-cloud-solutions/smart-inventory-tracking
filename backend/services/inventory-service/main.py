@@ -7,10 +7,12 @@ from fastapi.responses import JSONResponse
 
 from shared.utils.responses import ErrorResponse, ErrorDetail
 from routers import adjust, alerts, analytics, audit_log, count, issue, receive, transfer, transfer_requests
+from shared.utils.env_guard import assert_safe_environment
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):  # type: ignore[type-arg]
+    assert_safe_environment()
     yield
 
 

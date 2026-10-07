@@ -6,6 +6,7 @@ from fastapi import FastAPI
 from routers import notifications
 from shared.outbox.worker import app as celery_app, register_handler
 from shared.outbox.schemas import InventoryUpdatedPayload
+from shared.utils.env_guard import assert_safe_environment
 
 
 @register_handler("InventoryUpdated")
@@ -16,6 +17,7 @@ async def handle_inventory_updated(payload: InventoryUpdatedPayload, tenant_id: 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):  # type: ignore[type-arg]
+    assert_safe_environment()
     yield
 
 

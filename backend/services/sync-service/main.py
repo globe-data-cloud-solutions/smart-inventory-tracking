@@ -4,10 +4,12 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 
 from routers import sync
+from shared.utils.env_guard import assert_safe_environment
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):  # type: ignore[type-arg]
+    assert_safe_environment()
     yield
 
 

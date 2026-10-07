@@ -9,6 +9,7 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, Response
 from jose import JWTError, jwt
+from shared.utils.env_guard import assert_safe_environment
 
 logger = logging.getLogger("api-gateway")
 
@@ -62,6 +63,7 @@ UNAUTHENTICATED_PATHS = {
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):  # type: ignore[type-arg]
+    assert_safe_environment()
     yield
 
 
