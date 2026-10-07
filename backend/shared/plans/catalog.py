@@ -144,8 +144,16 @@ async def apply_package_to_tenant(
 async def get_tenant_entitlements(db: AsyncSession, tenant_id: str) -> dict[str, Any]:
     """Return the tenant's EFFECTIVE plan values. This is the function all
     enforcement (check_plan, check_plan_create_user, check_plan_create_warehouse)
+    and every feature-display endpoint (GET /me/plan, GET /{tenant_id}/plan)
     reads — never the package catalog directly, since a tenant's values may
     have been overridden by SA past what its package assigns.
+
+    feature_flags is the tenant's package flags OR'd with any currently
+    ACTIVE tenant_addons row (starts_on <= today, ends_on NULL or in the
+    future) for this tenant — an add-on only ever adds a flag, never removes
+    one the package already grants. apply_package_to_tenant() (a plan change)
+    replaces the package flags but never touches tenant_addons, so a granted
+    add-on survives a plan change by construction (migration 072, S10).
     """
     row = (await db.execute(
         text(
@@ -157,10 +165,27 @@ async def get_tenant_entitlements(db: AsyncSession, tenant_id: str) -> dict[str,
     )).fetchone()
     if not row:
         return {}
+
+    addon_rows = (await db.execute(
+        text(
+            "SELECT addon_code FROM tenant_addons "
+            "WHERE tenant_id = :tid AND status = 'ACTIVE' "
+            "AND starts_on <= CURRENT_DATE "
+            "AND (ends_on IS NULL OR ends_on >= CURRENT_DATE)"
+        ),
+        {"tid": str(tenant_id)},
+    )).fetchall()
+    active_addons = [r.addon_code for r in addon_rows]
+
+    feature_flags = dict(row.feature_flags) if row.feature_flags else {}
+    for code in active_addons:
+        feature_flags[code] = True
+
     return {
         "plan_tier": str(row.plan_tier) if row.plan_tier else None,
-        "feature_flags": dict(row.feature_flags) if row.feature_flags else {},
+        "feature_flags": feature_flags,
         "sku_cap": row.sku_cap,
         "max_warehouses": row.max_warehouses,
         "max_users": row.max_users,
+        "addons": active_addons,
     }

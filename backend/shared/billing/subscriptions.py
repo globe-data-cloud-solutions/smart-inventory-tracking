@@ -49,6 +49,21 @@ async def get_current_price(db: AsyncSession, tier: str, billing_period: str) ->
     )).fetchone()
 
 
+async def get_current_addon_price(db: AsyncSession, addon_code: str, billing_period: str) -> Optional[Any]:
+    """The latest addon_prices row for addon_code+billing_period with
+    effective_from <= now(), or None if no price exists (S10). Same
+    append-only / tie-break semantics as get_current_price() above."""
+    return (await db.execute(
+        text(
+            "SELECT id, addon_code, billing_period, currency, amount, effective_from "
+            "FROM addon_prices "
+            "WHERE addon_code = :code AND billing_period = :period AND effective_from <= now() "
+            "ORDER BY effective_from DESC, created_at DESC LIMIT 1"
+        ),
+        {"code": addon_code, "period": billing_period},
+    )).fetchone()
+
+
 def period_end(start: date, billing_period: str) -> date:
     """MONTHLY: +1 calendar month, clamping the day (Jan 31 -> Feb 28/29).
     ANNUAL: +1 year, clamping Feb 29 -> Feb 28 on a non-leap target year."""

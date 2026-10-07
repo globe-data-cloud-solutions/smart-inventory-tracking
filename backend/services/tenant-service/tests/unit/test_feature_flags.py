@@ -1,13 +1,19 @@
-"""PATCH /{tenant_id}/feature-flags — regression test for a missing `return`
-after a successful update (the handler fell off the end on any real change,
-returning None and failing FastAPI's response_model validation with a 500).
-Surfaced by the SA tenant page's Feature overrides toggle (CLAUDE.md §15 S9).
+"""PATCH /{tenant_id}/feature-flags — removed in S10 (CLAUDE.md §15): direct
+per-tenant feature-flag overrides are replaced by the add-on endpoints
+(POST /{tenant_id}/addons, migration 072) so a grant survives a plan change
+and can carry a price. The route and its permission stay registered — only
+for the CI permission-drift check — and now always 409s USE_ADDONS.
+
+(History: this file previously regression-tested a missing `return` after a
+successful update, which fell off the end and returned None, failing
+response_model validation with a 500 — CLAUDE.md §15 S9. That code path no
+longer exists at all, so that bug is structurally impossible now.)
 """
 from __future__ import annotations
 
 import os
 import sys
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, patch
 
 os.environ.setdefault("DATABASE_URL",      "postgresql+asyncpg://test:x@localhost/test")
 os.environ.setdefault("DATABASE_READ_URL", "postgresql+asyncpg://test:x@localhost/test")
@@ -20,6 +26,7 @@ if _TENANT_ROOT not in sys.path:
     sys.path.insert(0, _TENANT_ROOT)
 
 import pytest
+from fastapi import HTTPException
 
 pytestmark = pytest.mark.asyncio
 
@@ -35,59 +42,35 @@ def _grant():
 
 
 @pytest.mark.unit
-class TestUpdateFeatureFlagsReturnsResponse:
+class TestUpdateFeatureFlagsAlwaysRejects:
 
-    async def test_successful_change_returns_success_response_not_none(self):
-        """A real change must return SuccessResponse — not fall off the end
-        and return None (which fails response_model validation with a 500)."""
+    async def test_always_409_use_addons(self):
         from routers.tenants import update_feature_flags, FeatureFlagsUpdateRequest
 
-        tenant_row = MagicMock()
-        tenant_row.id = "t-1"
-        tenant_row.name = "Probe Co"
-        tenant_row.feature_flags = {"LOGISTICS": False}
-
         db = AsyncMock()
-
-        async def _execute(sql, params=None, **kw):
-            res = MagicMock()
-            res.fetchone = MagicMock(return_value=tenant_row)
-            return res
-
-        db.execute = AsyncMock(side_effect=_execute)
-
         body = FeatureFlagsUpdateRequest(feature_flags={"LOGISTICS": True})
+
         with patch("shared.permissions.middleware.get_role_permission", new=AsyncMock(return_value=_grant())):
             with patch("shared.permissions.audit.audit_log", new=AsyncMock()):
-                with patch("routers.tenants._log_tenant_activity", new=AsyncMock()):
-                    resp = await update_feature_flags(tenant_id="t-1", body=body, user=_user(), db=db)
+                with pytest.raises(HTTPException) as exc_info:
+                    await update_feature_flags(tenant_id="t-1", body=body, user=_user(), db=db)
 
-        assert resp is not None
-        assert resp.data["changes"] == 1
-        assert resp.data["feature_flags"]["LOGISTICS"] is True
+        assert exc_info.value.status_code == 409
+        assert exc_info.value.detail["code"] == "USE_ADDONS"
+        db.execute.assert_not_called()
 
-    async def test_no_change_still_returns_success_response(self):
-        """Already-covered path (no changes) — same shape, no regression."""
+    async def test_409_even_with_empty_flags(self):
+        """Even a no-op body (empty dict) gets 409 — the route never inspects
+        the body before rejecting."""
         from routers.tenants import update_feature_flags, FeatureFlagsUpdateRequest
 
-        tenant_row = MagicMock()
-        tenant_row.id = "t-1"
-        tenant_row.name = "Probe Co"
-        tenant_row.feature_flags = {"LOGISTICS": True}
-
         db = AsyncMock()
+        body = FeatureFlagsUpdateRequest(feature_flags={})
 
-        async def _execute(sql, params=None, **kw):
-            res = MagicMock()
-            res.fetchone = MagicMock(return_value=tenant_row)
-            return res
-
-        db.execute = AsyncMock(side_effect=_execute)
-
-        body = FeatureFlagsUpdateRequest(feature_flags={"LOGISTICS": True})
         with patch("shared.permissions.middleware.get_role_permission", new=AsyncMock(return_value=_grant())):
             with patch("shared.permissions.audit.audit_log", new=AsyncMock()):
-                resp = await update_feature_flags(tenant_id="t-1", body=body, user=_user(), db=db)
+                with pytest.raises(HTTPException) as exc_info:
+                    await update_feature_flags(tenant_id="t-1", body=body, user=_user(), db=db)
 
-        assert resp is not None
-        assert resp.data["changes"] == 0
+        assert exc_info.value.status_code == 409
+        assert exc_info.value.detail["code"] == "USE_ADDONS"

@@ -29,11 +29,12 @@ def _db(side_effect: list) -> AsyncMock:
     return db
 
 
-def _result(fetchone=None, scalar_one=None) -> MagicMock:
+def _result(fetchone=None, scalar_one=None, fetchall=None) -> MagicMock:
     result = MagicMock()
     result.fetchone = MagicMock(return_value=fetchone)
     if scalar_one is not None:
         result.scalar_one = MagicMock(return_value=scalar_one)
+    result.fetchall = MagicMock(return_value=fetchall if fetchall is not None else [])
     return result
 
 
@@ -128,9 +129,10 @@ async def test_create_invoice_first_invoice_vat_on_200_is_30_and_230() -> None:
         _result(fetchone=None),             # no existing PENDING payment
         _result(fetchone=None),             # no existing PAID payment (first invoice)
         _result(fetchone=snapshot_price),   # package_prices by id
+        _result(fetchall=[]),               # _active_purchased_addons -> none
         _result(scalar_one="payment-1"),    # INSERT payments RETURNING id
         _result(fetchone=tier_row),         # platform_tier_config.display_name
-        _result(),                          # INSERT payment_line_items
+        _result(),                          # INSERT payment_line_items (PACKAGE)
     ])
 
     out = await create_invoice(db, "tenant-1", recorded_by="user-1")
@@ -160,6 +162,84 @@ async def test_create_invoice_already_pending_raises() -> None:
         await create_invoice(db, "tenant-1")
 
 
+# ── create_invoice + add-ons (S10) ──────────────────────────────────────────────
+
+def _addon_row(*, addon_code="LOGISTICS", price_id="addon-price-1", amount=Decimal("50.00"),
+                display_name="Logistics & Fleet Management") -> MagicMock:
+    row = MagicMock()
+    row.addon_code, row.price_id, row.amount, row.display_name = addon_code, price_id, amount, display_name
+    return row
+
+
+async def test_create_invoice_package_plus_two_addons_correct_subtotal_vat_total() -> None:
+    """First invoice: package (200) + two PURCHASED add-ons (50 + 20) at their
+    grant-time snapshot prices -> subtotal 270, VAT 15% = 40.50, total 310.50."""
+    sub = _subscription(status="PENDING_PAYMENT", price_id="price-1", amount=Decimal("200.00"))
+    snapshot_price = _price(id="price-1", amount=Decimal("200.00"))
+    tier_row = MagicMock(display_name="Growth")
+    addon1 = _addon_row(addon_code="LOGISTICS", price_id="addon-price-1", amount=Decimal("50.00"))
+    addon2 = _addon_row(addon_code="AUDIT_EXPORT", price_id="addon-price-2", amount=Decimal("20.00"),
+                         display_name="Audit Log Export")
+
+    db = _db([
+        _result(fetchone=sub),                       # _get_live_subscription
+        _result(fetchone=None),                       # no existing PENDING payment
+        _result(fetchone=None),                       # no existing PAID payment (first invoice)
+        _result(fetchone=snapshot_price),              # package_prices by id
+        _result(fetchall=[addon1, addon2]),            # _active_purchased_addons
+        _result(scalar_one="payment-1"),               # INSERT payments RETURNING id
+        _result(fetchone=tier_row),                    # platform_tier_config.display_name
+        _result(),                                      # INSERT payment_line_items (PACKAGE)
+        _result(),                                      # INSERT payment_line_items (ADDON LOGISTICS)
+        _result(),                                      # INSERT payment_line_items (ADDON AUDIT_EXPORT)
+    ])
+
+    out = await create_invoice(db, "tenant-1", recorded_by="user-1")
+
+    assert out["subtotal"] == Decimal("270.00")
+    assert out["vat_amount"] == Decimal("40.50")
+    assert out["total"] == Decimal("310.50")
+
+    addon_line_calls = db.execute.call_args_list[8:10]
+    item_keys = {c.args[1]["item_key"] for c in addon_line_calls}
+    assert item_keys == {"LOGISTICS", "AUDIT_EXPORT"}
+
+
+async def test_create_invoice_renewal_reprices_addon_at_current_price() -> None:
+    """Renewal invoice: a PURCHASED add-on's stale grant-time snapshot (price
+    addon-price-OLD, 40.00) is NOT used — the add-on's CURRENT price for the
+    subscription's billing_period (addon-price-NEW, 60.00) is billed instead,
+    same rule as the package itself."""
+    sub = _subscription(status="ACTIVE", tier="GROWTH", billing_period="MONTHLY",
+                         current_period_end=date(2026, 11, 6))
+    current_package_price = _price(id="price-growth-nov", amount=Decimal("200.00"))
+    current_addon_price = MagicMock(id="addon-price-NEW", amount=Decimal("60.00"))
+    tier_row = MagicMock(display_name="Growth")
+    stale_addon = _addon_row(addon_code="AI_ANALYTICS", price_id="addon-price-OLD", amount=Decimal("40.00"),
+                              display_name="AI Forecasting & Analytics")
+
+    db = _db([
+        _result(fetchone=sub),                        # _get_live_subscription
+        _result(fetchone=None),                        # no existing PENDING payment
+        _result(fetchone=current_package_price),       # next_invoice_period renewal: get_current_price
+        _result(fetchall=[stale_addon]),                # _active_purchased_addons
+        _result(fetchone=current_addon_price),          # get_current_addon_price (renewal re-price)
+        _result(scalar_one="payment-2"),                # INSERT payments RETURNING id
+        _result(fetchone=tier_row),                     # platform_tier_config.display_name
+        _result(),                                       # INSERT payment_line_items (PACKAGE)
+        _result(),                                       # INSERT payment_line_items (ADDON)
+    ])
+
+    out = await create_invoice(db, "tenant-1")
+
+    assert out["is_renewal"] is True
+    assert out["subtotal"] == Decimal("260.00")  # 200 + 60 (NOT 200 + 40)
+
+    addon_line_call = db.execute.call_args_list[8]
+    assert addon_line_call.args[1]["price_id"] == "addon-price-NEW"
+    assert addon_line_call.args[1]["amount"] == Decimal("60.00")
+
+
 # ── mark_paid ─────────────────────────────────────────────────────────────────
 
 def _payment(*, id="payment-1", tenant_id="tenant-1", subscription_id="sub-1",
@@ -178,10 +258,11 @@ async def test_mark_paid_activates_subscription_and_extends_contract() -> None:
     db = _db([
         _result(fetchone=payment),       # SELECT payments FOR UPDATE
         _result(),                       # UPDATE payments
-        _result(fetchone=line_item),     # SELECT payment_line_items
+        _result(fetchone=line_item),     # SELECT payment_line_items (PACKAGE)
         _result(fetchone=subscription),  # SELECT subscriptions FOR UPDATE
         _result(),                       # UPDATE subscriptions (same price branch)
         _result(),                       # UPDATE tenants contract dates
+        _result(fetchall=[]),            # SELECT payment_line_items (ADDON) -> none
     ])
 
     out = await mark_paid(db, "payment-1", provider="MANUAL", provider_reference="RCPT-1", recorded_by="sa-1")
@@ -224,6 +305,7 @@ async def test_mark_paid_renewal_at_new_price_updates_subscription_price() -> No
         _result(fetchone=subscription),
         _result(),  # UPDATE subscriptions ... price_id = 'price-2'
         _result(),  # UPDATE tenants
+        _result(fetchall=[]),  # SELECT payment_line_items (ADDON) -> none
     ])
 
     out = await mark_paid(db, "payment-1", provider="MANUAL")
@@ -252,6 +334,7 @@ async def test_mark_paid_contract_end_never_moves_backwards() -> None:
         _result(fetchone=subscription),
         _result(),
         _result(),
+        _result(fetchall=[]),  # SELECT payment_line_items (ADDON) -> none
     ])
 
     await mark_paid(db, "payment-1", provider="MANUAL")
@@ -279,6 +362,7 @@ async def test_mark_paid_tier_changed_after_invoice_keeps_current_tier_price() -
         _result(fetchone=subscription),  # SELECT subscriptions FOR UPDATE
         _result(),                       # UPDATE subscriptions (period/status only)
         _result(),                       # UPDATE tenants contract dates
+        _result(fetchall=[]),            # SELECT payment_line_items (ADDON) -> none
     ])
 
     out = await mark_paid(db, "payment-1", provider="MANUAL")
@@ -289,6 +373,45 @@ async def test_mark_paid_tier_changed_after_invoice_keeps_current_tier_price() -
     params = update_subscriptions_call.args[1]
     assert "price_id" not in sql_text  # price/amount left untouched — tier mismatch guard
     assert params["sid"] == "sub-1"
+
+
+async def test_mark_paid_reads_package_line_only_and_updates_addon_snapshots() -> None:
+    """mark_paid's price-adoption read must be scoped to item_type='PACKAGE'
+    (S10 fix — a payment can now also carry ADDON lines, which must never be
+    mistaken for the package line), and separately updates each ACTIVE
+    PURCHASED tenant_addons row to the ADDON line item's price snapshot."""
+    payment = _payment(status="PENDING")
+    package_line = MagicMock(price_id="price-1", amount=Decimal("200.00"), price_tier="GROWTH")
+    subscription = MagicMock(id="sub-1", tier="GROWTH", price_id="price-1")
+    addon_line = MagicMock(addon_code="LOGISTICS", price_id="addon-price-NEW", amount=Decimal("60.00"))
+
+    db = _db([
+        _result(fetchone=payment),            # SELECT payments FOR UPDATE
+        _result(),                            # UPDATE payments
+        _result(fetchone=package_line),       # SELECT payment_line_items (PACKAGE)
+        _result(fetchone=subscription),       # SELECT subscriptions FOR UPDATE
+        _result(),                            # UPDATE subscriptions
+        _result(),                            # UPDATE tenants contract dates
+        _result(fetchall=[addon_line]),       # SELECT payment_line_items (ADDON)
+        _result(),                            # UPDATE tenant_addons (LOGISTICS snapshot)
+    ])
+
+    out = await mark_paid(db, "payment-1", provider="MANUAL")
+    assert out["already_paid"] is False
+
+    package_line_call = db.execute.call_args_list[2]
+    assert "item_type = 'PACKAGE'" in str(package_line_call.args[0])
+
+    addon_lines_call = db.execute.call_args_list[6]
+    assert "item_type = 'ADDON'" in str(addon_lines_call.args[0])
+
+    addon_update_call = db.execute.call_args_list[7]
+    sql_text = str(addon_update_call.args[0])
+    params = addon_update_call.args[1]
+    assert "UPDATE tenant_addons" in sql_text
+    assert params["code"] == "LOGISTICS"
+    assert params["price_id"] == "addon-price-NEW"
+    assert params["amount"] == Decimal("60.00")
 
 
 async def test_mark_paid_unknown_payment_raises_not_found() -> None:

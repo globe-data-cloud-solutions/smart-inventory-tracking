@@ -17,8 +17,8 @@ from dependencies import get_current_user, get_db_session
 from services.wizard_service import APPROVAL_DEFAULTS
 from shared.permissions.middleware import require_permission
 from shared.permissions.registry import PERMISSIONS
-from shared.billing.subscriptions import get_current_price, period_end, start_subscription, update_live_subscription_tier, vat_breakdown
-from shared.plans.catalog import KNOWN_FEATURE_FLAGS, UNSET, apply_package_to_tenant
+from shared.billing.subscriptions import get_current_addon_price, get_current_price, period_end, start_subscription, update_live_subscription_tier, vat_breakdown
+from shared.plans.catalog import KNOWN_FEATURE_FLAGS, UNSET, apply_package_to_tenant, get_tenant_entitlements
 from shared.utils.responses import SuccessResponse
 from schemas.tenant import TenantCreateRequest, TenantResponse, VALID_PLAN_TIERS, VALID_LOCALES
 
@@ -794,6 +794,272 @@ async def get_platform_config_log(
     ])
 
 
+# ── Add-on catalog (S10) — mirrors the package tier-config/prices routes ────
+
+class AddonPricing(BaseModel):
+    billing_period: str
+    current: Optional[PriceSnapshot] = None
+    scheduled: List[PriceHistoryEntry] = []
+    history: List[PriceHistoryEntry] = []
+
+
+class AddonCatalogEntry(BaseModel):
+    code: str
+    display_name: str
+    description: Optional[str] = None
+    is_active: bool
+    is_public: bool
+    sort_order: int
+    prices: List[AddonPricing]
+
+
+async def _addon_pricing(db: AsyncSession, addon_code: str) -> List[AddonPricing]:
+    now = datetime.now(timezone.utc)
+    result: List[AddonPricing] = []
+    for period in _VALID_BILLING_PERIODS:
+        rows = (await db.execute(
+            text(
+                "SELECT ap.id, ap.amount, ap.currency, ap.effective_from, ap.reason, "
+                "       ap.created_by, ap.created_at, u.email AS created_by_email "
+                "FROM addon_prices ap "
+                "LEFT JOIN users u ON u.id = ap.created_by "
+                "WHERE ap.addon_code = :code AND ap.billing_period = :period "
+                "ORDER BY ap.effective_from DESC, ap.created_at DESC"
+            ),
+            {"code": addon_code, "period": period},
+        )).fetchall()
+
+        history = [
+            PriceHistoryEntry(
+                id=str(r.id), amount=r.amount, currency=r.currency,
+                effective_from=r.effective_from.isoformat(), reason=r.reason,
+                created_by=str(r.created_by) if r.created_by else None,
+                created_by_email=r.created_by_email,
+                created_at=r.created_at.isoformat(),
+            )
+            for r in rows
+        ]
+        scheduled = [h for h, r in zip(history, rows) if r.effective_from > now]
+        current_row = next((r for r in rows if r.effective_from <= now), None)
+        current = None
+        if current_row is not None:
+            breakdown = vat_breakdown(Decimal(current_row.amount))
+            current = PriceSnapshot(
+                id=str(current_row.id), amount=current_row.amount, currency=current_row.currency,
+                effective_from=current_row.effective_from.isoformat(),
+                subtotal=breakdown["subtotal"], vat_rate=breakdown["vat_rate"],
+                vat_amount=breakdown["vat_amount"], total=breakdown["total"],
+            )
+        result.append(AddonPricing(billing_period=period, current=current, scheduled=scheduled, history=history))
+    return result
+
+
+@router.get("/platform/addons", response_model=SuccessResponse[List[AddonCatalogEntry]])
+@require_permission(PERMISSIONS.PLATFORM_TIER_CONFIG_VIEW)
+async def get_platform_addons(
+    user=Depends(get_current_user),
+    db: AsyncSession = Depends(get_db_session),
+) -> SuccessResponse[List[AddonCatalogEntry]]:
+    """SA-only: the add-on catalog with current/scheduled/history prices per
+    billing_period, same shape as GET /platform/packages/prices."""
+    if not user or user.role != "SA":
+        raise HTTPException(status_code=403, detail={"code": "FORBIDDEN", "message": "SA only"})
+
+    rows = (await db.execute(
+        text(
+            "SELECT code, display_name, description, is_active, is_public, sort_order "
+            "FROM platform_addons ORDER BY sort_order"
+        ),
+    )).fetchall()
+    return SuccessResponse(data=[
+        AddonCatalogEntry(
+            code=row.code, display_name=row.display_name, description=row.description,
+            is_active=row.is_active, is_public=row.is_public, sort_order=row.sort_order,
+            prices=await _addon_pricing(db, row.code),
+        )
+        for row in rows
+    ])
+
+
+class AddonUpdateRequest(BaseModel):
+    display_name: Optional[str] = None
+    description: Optional[str] = None
+    is_active: Optional[bool] = None
+    is_public: Optional[bool] = None
+    sort_order: Optional[int] = None
+    reason: str
+
+
+_EDITABLE_ADDON_FIELDS = ("display_name", "description", "is_active", "is_public", "sort_order")
+
+
+@router.patch("/platform/addons/{code}", response_model=SuccessResponse[AddonCatalogEntry])
+@require_permission(PERMISSIONS.PLATFORM_TIER_CONFIG_EDIT)
+async def update_platform_addon(
+    code: str,
+    body: AddonUpdateRequest,
+    user=Depends(get_current_user),
+    db: AsyncSession = Depends(get_db_session),
+) -> SuccessResponse[AddonCatalogEntry]:
+    """SA-only: partial update of one add-on's catalog entry. `reason` is
+    required; every field that actually changes is logged to
+    platform_config_log (entity_type='ADDON')."""
+    if not user or user.role != "SA":
+        raise HTTPException(status_code=403, detail={"code": "FORBIDDEN", "message": "SA only"})
+
+    reason = (body.reason or "").strip()
+    if not reason:
+        raise HTTPException(status_code=422, detail={"code": "REASON_REQUIRED", "message": "reason is required."})
+
+    old_row = (await db.execute(
+        text(
+            "SELECT display_name, description, is_active, is_public, sort_order "
+            "FROM platform_addons WHERE code = :code"
+        ),
+        {"code": code},
+    )).fetchone()
+    if old_row is None:
+        raise HTTPException(status_code=404, detail={"code": "ADDON_NOT_FOUND", "message": "Unknown add-on."})
+
+    if "display_name" in body.model_fields_set:
+        name = body.display_name
+        if name is None or not (1 <= len(name) <= 60):
+            raise HTTPException(
+                status_code=422,
+                detail={"code": "INVALID_DISPLAY_NAME", "message": "display_name must be 1-60 characters."},
+            )
+
+    editable = [f for f in _EDITABLE_ADDON_FIELDS if f in body.model_fields_set]
+    if editable:
+        set_parts = ["updated_at = now()", "updated_by_id = :uid"]
+        params: dict = {"code": code, "uid": str(user.user_id)}
+        for field in editable:
+            set_parts.append(f"{field} = :{field}")
+            params[field] = getattr(body, field)
+        await db.execute(
+            text(f"UPDATE platform_addons SET {', '.join(set_parts)} WHERE code = :code"),
+            params,
+        )
+
+        for field in editable:
+            new_val = getattr(body, field)
+            old_val = getattr(old_row, field)
+            if old_val == new_val:
+                continue
+            await db.execute(
+                text(
+                    "INSERT INTO platform_config_log "
+                    "  (entity_type, entity_key, field, old_value, new_value, "
+                    "   reason, actor_id, actor_email) "
+                    "VALUES ('ADDON', :code, :field, :old, :new, :reason, :actor_id, :actor_email)"
+                ),
+                {
+                    "code": code, "field": field,
+                    "old": str(old_val) if old_val is not None else None,
+                    "new": str(new_val) if new_val is not None else None,
+                    "reason": reason, "actor_id": str(user.user_id),
+                    "actor_email": getattr(user, "email", None),
+                },
+            )
+
+    row = (await db.execute(
+        text(
+            "SELECT code, display_name, description, is_active, is_public, sort_order "
+            "FROM platform_addons WHERE code = :code"
+        ),
+        {"code": code},
+    )).fetchone()
+    return SuccessResponse(data=AddonCatalogEntry(
+        code=row.code, display_name=row.display_name, description=row.description,
+        is_active=row.is_active, is_public=row.is_public, sort_order=row.sort_order,
+        prices=await _addon_pricing(db, row.code),
+    ))
+
+
+@router.post("/platform/addons/{code}/prices", response_model=SuccessResponse[dict], status_code=201)
+@require_permission(PERMISSIONS.PLATFORM_TIER_CONFIG_EDIT)
+async def create_platform_addon_price(
+    code: str,
+    body: PriceCreateRequest,
+    user=Depends(get_current_user),
+    db: AsyncSession = Depends(get_db_session),
+) -> SuccessResponse[dict]:
+    """SA-only: post a new (append-only) price for an add-on + billing_period.
+    Same rules as POST /platform/packages/{tier}/prices: reason required,
+    effective_from not more than 5 minutes in the past, append-only so a
+    correction posts a new row with the same effective_from."""
+    if not user or user.role != "SA":
+        raise HTTPException(status_code=403, detail={"code": "FORBIDDEN", "message": "SA only"})
+
+    addon_row = (await db.execute(
+        text("SELECT code FROM platform_addons WHERE code = :code"), {"code": code},
+    )).fetchone()
+    if addon_row is None:
+        raise HTTPException(status_code=404, detail={"code": "ADDON_NOT_FOUND", "message": "Unknown add-on."})
+
+    if body.billing_period not in _VALID_BILLING_PERIODS:
+        raise HTTPException(
+            status_code=422,
+            detail={"code": "INVALID_BILLING_PERIOD",
+                    "message": f"billing_period must be one of {list(_VALID_BILLING_PERIODS)}"},
+        )
+    if body.amount < 0 or -body.amount.as_tuple().exponent > 2:
+        raise HTTPException(
+            status_code=422,
+            detail={"code": "INVALID_AMOUNT",
+                    "message": "amount must be >= 0 with at most 2 decimal places."},
+        )
+
+    reason = body.reason.strip() if body.reason else ""
+    if not reason:
+        raise HTTPException(status_code=422, detail={"code": "REASON_REQUIRED", "message": "reason is required."})
+
+    now = datetime.now(timezone.utc)
+    effective_from = body.effective_from or now
+    if effective_from.tzinfo is None:
+        effective_from = effective_from.replace(tzinfo=timezone.utc)
+    if effective_from < now - timedelta(minutes=5):
+        raise HTTPException(
+            status_code=422,
+            detail={"code": "EFFECTIVE_FROM_IN_PAST",
+                    "message": "effective_from must not be more than 5 minutes in the past."},
+        )
+
+    old_price = await get_current_addon_price(db, code, body.billing_period)
+
+    new_id = (await db.execute(
+        text(
+            "INSERT INTO addon_prices (addon_code, billing_period, amount, effective_from, reason, created_by) "
+            "VALUES (:code, :period, :amount, :eff, :reason, :uid) RETURNING id"
+        ),
+        {"code": code, "period": body.billing_period, "amount": body.amount,
+         "eff": effective_from, "reason": reason, "uid": str(user.user_id)},
+    )).scalar_one()
+
+    await db.execute(
+        text(
+            "INSERT INTO platform_config_log "
+            "  (entity_type, entity_key, field, old_value, new_value, reason, actor_id, actor_email) "
+            "VALUES ('ADDON_PRICE', :key, 'amount', :old, :new, :reason, :actor_id, :actor_email)"
+        ),
+        {
+            "key": f"{code}/{body.billing_period}",
+            "old": str(old_price.amount) if old_price else None,
+            "new": f"{body.amount} from {effective_from.isoformat()}",
+            "reason": reason, "actor_id": str(user.user_id), "actor_email": getattr(user, "email", None),
+        },
+    )
+
+    return SuccessResponse(data={
+        "id": str(new_id),
+        "addon_code": code,
+        "billing_period": body.billing_period,
+        "amount": body.amount,
+        "effective_from": effective_from.isoformat(),
+        "message": "Existing purchased add-ons pay this price starting from their next renewal invoice.",
+    })
+
+
 @router.get("/sa/{tenant_id}/activity", response_model=SuccessResponse[List[TenantActivityRow]])
 @require_permission(PERMISSIONS.TENANT_ACTIVITY_VIEW)
 async def sa_tenant_activity(
@@ -1086,26 +1352,26 @@ async def create_tenant(
 
 async def _get_tenant_plan_data(db: AsyncSession, tenant_id: uuid.UUID | str) -> dict:
     """Shared by GET /me/plan (TA) and GET /{tenant_id}/plan (SA) — same shape.
-    plan_tier is None, never a hardcoded tier, when the tenant has none set (CLAUDE.md §15)."""
+    plan_tier is None, never a hardcoded tier, when the tenant has none set (CLAUDE.md §15).
+    feature_flags/addons come from get_tenant_entitlements() — the single source
+    of a tenant's effective plan (package flags OR'd with active add-ons, S10)."""
+    entitlements = await get_tenant_entitlements(db, str(tenant_id))
+    if not entitlements:
+        raise HTTPException(status_code=404, detail="Tenant not found")
+
     row = (await db.execute(
-        text(
-            "SELECT plan_tier, feature_flags, sku_cap, "
-            "       max_warehouses, max_users, "
-            "       contract_start, contract_end "
-            "FROM   tenants WHERE id = :tid"
-        ),
+        text("SELECT contract_start, contract_end FROM tenants WHERE id = :tid"),
         {"tid": str(tenant_id)},
     )).fetchone()
-    if not row:
-        raise HTTPException(status_code=404, detail="Tenant not found")
     return {
-        "plan_tier":       str(row.plan_tier) if row.plan_tier else None,
-        "feature_flags":   dict(row.feature_flags) if row.feature_flags else {},
-        "sku_cap":         row.sku_cap,
-        "max_warehouses":  row.max_warehouses,
-        "max_users":       row.max_users,
-        "contract_start":  str(row.contract_start) if row.contract_start else None,
-        "contract_end":    str(row.contract_end)   if row.contract_end   else None,
+        "plan_tier":       entitlements["plan_tier"],
+        "feature_flags":   entitlements["feature_flags"],
+        "sku_cap":         entitlements["sku_cap"],
+        "max_warehouses":  entitlements["max_warehouses"],
+        "max_users":       entitlements["max_users"],
+        "addons":          entitlements["addons"],
+        "contract_start":  str(row.contract_start) if row and row.contract_start else None,
+        "contract_end":    str(row.contract_end)   if row and row.contract_end   else None,
     }
 
 
@@ -2526,46 +2792,16 @@ async def update_feature_flags(
     user=Depends(get_current_user),
     db: AsyncSession = Depends(get_db_session),
 ) -> SuccessResponse[dict]:
-    """SA-only: update individual feature flag toggles without resetting all flags."""
-    if not user or user.role != "SA":
-        raise HTTPException(status_code=403, detail={"code": "FORBIDDEN", "message": "SA only"})
-
-    row = (await db.execute(
-        text("SELECT id, name, COALESCE(feature_flags, '{}'::jsonb) AS feature_flags FROM tenants WHERE id = :id"),
-        {"id": str(tenant_id)},
-    )).fetchone()
-    if not row:
-        raise HTTPException(status_code=404, detail="Tenant not found")
-
-    current_flags: dict = dict(row.feature_flags) if row.feature_flags else {}
-    # Merge: only update keys supplied in body; unknown keys are silently ignored
-    KNOWN_FLAGS = {"LOGISTICS", "AI_ANALYTICS", "ADVANCED_BATCH_TRACKING", "FLEET_MANAGEMENT"}
-    merged = dict(current_flags)
-    changes: dict = {}
-    for flag, val in body.feature_flags.items():
-        flag_upper = flag.upper()
-        if flag_upper not in KNOWN_FLAGS:
-            continue
-        if not isinstance(val, bool):
-            continue
-        if merged.get(flag_upper) != val:
-            changes[flag_upper] = (merged.get(flag_upper), val)
-            merged[flag_upper] = val
-
-    if not changes:
-        return SuccessResponse(data={"changes": 0, "feature_flags": current_flags})
-
-    await db.execute(
-        text("UPDATE tenants SET feature_flags = CAST(:flags AS jsonb), updated_at = now() WHERE id = :id"),
-        {"flags": json.dumps(merged), "id": str(tenant_id)},
+    """Removed (S10): per-tenant feature overrides now go through the add-on
+    endpoints (POST /{tenant_id}/addons) so a grant survives a plan change and
+    can carry a price. The route and its permission stay registered — only for
+    the CI permission-drift check — and always 409s. See CLAUDE.md §15."""
+    raise HTTPException(
+        status_code=409,
+        detail={
+            "code": "USE_ADDONS",
+            "message": "Direct feature-flag overrides are no longer supported. "
+                       "Grant a free override or purchased add-on via POST "
+                       "/{tenant_id}/addons instead.",
+        },
     )
-    try:
-        await _log_tenant_activity(
-            db, tenant_id, str(user.user_id),
-            action="FEATURE_FLAGS_UPDATE",
-            old_value=json.dumps({k: v[0] for k, v in changes.items()}),
-            new_value=json.dumps({k: v[1] for k, v in changes.items()}),
-        )
-    except Exception:
-        pass
-    return SuccessResponse(data={"changes": len(changes), "feature_flags": merged})

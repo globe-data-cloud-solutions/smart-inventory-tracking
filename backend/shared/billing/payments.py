@@ -19,7 +19,7 @@ from typing import Any, Optional
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from shared.billing.subscriptions import get_current_price, period_end, vat_breakdown
+from shared.billing.subscriptions import get_current_addon_price, get_current_price, period_end, vat_breakdown
 
 _LIVE_SUBSCRIPTION_STATUSES = ("ACTIVE", "PENDING_PAYMENT", "PAST_DUE")
 
@@ -75,6 +75,20 @@ async def next_invoice_period(
     return start, end, price, True
 
 
+async def _active_purchased_addons(db: AsyncSession, tenant_id: str) -> list[Any]:
+    """ACTIVE, PURCHASED, billable (amount > 0) tenant_addons rows for a tenant."""
+    return (await db.execute(
+        text(
+            "SELECT ta.id, ta.addon_code, ta.price_id, ta.amount, pa.display_name "
+            "FROM tenant_addons ta "
+            "JOIN platform_addons pa ON pa.code = ta.addon_code "
+            "WHERE ta.tenant_id = :tid AND ta.status = 'ACTIVE' "
+            "  AND ta.source = 'PURCHASED' AND ta.amount > 0"
+        ),
+        {"tid": str(tenant_id)},
+    )).fetchall()
+
+
 async def create_invoice(
     db: AsyncSession,
     tenant_id: str,
@@ -82,8 +96,16 @@ async def create_invoice(
     recorded_by: Optional[str] = None,
     note: Optional[str] = None,
 ) -> dict[str, Any]:
-    """Raise a new PENDING invoice (payment + one PACKAGE line item) for the
-    tenant's live subscription.
+    """Raise a new PENDING invoice (payment + one PACKAGE line item, plus one
+    ADDON line item per ACTIVE PURCHASED add-on) for the tenant's live
+    subscription.
+
+    Add-on pricing follows the SAME is_renewal rule as the package: the
+    subscription's first invoice bills each add-on at its own grant-time
+    snapshot (ta.price_id/ta.amount); a renewal re-prices each add-on at its
+    CURRENT price for the subscription's billing_period — falling back to the
+    add-on's last known snapshot if that add-on no longer has a current price,
+    so one add-on losing its price never blocks invoicing the rest (S10).
 
     Raises ValueError("NO_LIVE_SUBSCRIPTION") if the tenant has no live
     subscription, or ValueError("INVOICE_ALREADY_PENDING") if one PENDING
@@ -101,7 +123,22 @@ async def create_invoice(
         raise ValueError("INVOICE_ALREADY_PENDING")
 
     start, end, price, is_renewal = await next_invoice_period(db, subscription)
-    breakdown = vat_breakdown(Decimal(price.amount))
+
+    addon_rows = await _active_purchased_addons(db, tenant_id)
+    addon_lines: list[dict[str, Any]] = []
+    for a in addon_rows:
+        addon_price_id, addon_amount = str(a.price_id), Decimal(a.amount)
+        if is_renewal:
+            current = await get_current_addon_price(db, a.addon_code, subscription.billing_period)
+            if current is not None:
+                addon_price_id, addon_amount = str(current.id), Decimal(current.amount)
+        addon_lines.append({
+            "addon_code": a.addon_code, "display_name": a.display_name,
+            "price_id": addon_price_id, "amount": addon_amount,
+        })
+
+    combined_subtotal = Decimal(price.amount) + sum((l["amount"] for l in addon_lines), Decimal("0"))
+    breakdown = vat_breakdown(combined_subtotal)
 
     payment_id = (await db.execute(
         text(
@@ -146,9 +183,29 @@ async def create_invoice(
             "item_key": subscription.tier,
             "description": f"{display_name} — {subscription.billing_period}",
             "price_id": str(price.id),
-            "amount": breakdown["subtotal"],
+            "amount": price.amount,
         },
     )
+
+    for line in addon_lines:
+        await db.execute(
+            text(
+                "INSERT INTO payment_line_items ("
+                "  tenant_id, payment_id, item_type, item_key, description, "
+                "  price_id, quantity, unit_amount, amount"
+                ") VALUES ("
+                "  :tid, :pid, 'ADDON', :item_key, :description, "
+                "  :price_id, 1, :amount, :amount"
+                ")"
+            ),
+            {
+                "tid": str(tenant_id), "pid": str(payment_id),
+                "item_key": line["addon_code"],
+                "description": f"{line['display_name']} — {subscription.billing_period}",
+                "price_id": line["price_id"],
+                "amount": line["amount"],
+            },
+        )
 
     return {
         "payment_id": str(payment_id),
@@ -218,7 +275,7 @@ async def mark_paid(
             "SELECT pli.price_id, pli.amount, pp.tier AS price_tier "
             "FROM payment_line_items pli "
             "JOIN package_prices pp ON pp.id = pli.price_id "
-            "WHERE pli.payment_id = :pid LIMIT 1"
+            "WHERE pli.payment_id = :pid AND pli.item_type = 'PACKAGE' LIMIT 1"
         ),
         {"pid": str(payment.id)},
     )).fetchone()
@@ -274,6 +331,29 @@ async def mark_paid(
         ),
         {"start": payment.period_start, "end": payment.period_end, "tid": str(payment.tenant_id)},
     )
+
+    # Adopt each ADDON line item's price onto the matching ACTIVE tenant_addons
+    # row — same snapshot-on-payment pattern as the PACKAGE line above, so a
+    # renewal's re-priced add-on (create_invoice) sticks once actually paid.
+    addon_lines = (await db.execute(
+        text(
+            "SELECT item_key AS addon_code, price_id, amount "
+            "FROM payment_line_items WHERE payment_id = :pid AND item_type = 'ADDON'"
+        ),
+        {"pid": str(payment.id)},
+    )).fetchall()
+    for line in addon_lines:
+        await db.execute(
+            text(
+                "UPDATE tenant_addons SET price_id = :price_id, amount = :amount "
+                "WHERE tenant_id = :tid AND addon_code = :code AND status = 'ACTIVE' "
+                "  AND source = 'PURCHASED'"
+            ),
+            {
+                "price_id": str(line.price_id), "amount": line.amount,
+                "tid": str(payment.tenant_id), "code": line.addon_code,
+            },
+        )
 
     return {"payment_id": str(payment.id), "status": "PAID", "already_paid": False}
 

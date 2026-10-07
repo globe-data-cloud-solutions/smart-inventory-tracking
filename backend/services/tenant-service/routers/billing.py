@@ -3,7 +3,10 @@ tenant, and the public STUB provider webhook.
 
 Fixed paths (/me/..., /public/...) are declared before any parameterised
 path (/{tenant_id}/...), per CLAUDE.md §29 route-ordering rule. Included in
-main.py BEFORE tenants.router (matter of policy — paths never collide).
+main.py AFTER tenants.router (S10): tenants.router owns the fixed
+/platform/addons[...] paths, which would otherwise be shadowed by this
+router's parameterised /{tenant_id}/addons — Starlette matches routes in
+registration order across the whole app, not just within one router.
 """
 from __future__ import annotations
 
@@ -19,6 +22,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from dependencies import get_current_user, get_db_session, get_db_session_for_tenant
 from routers.tenants import _log_tenant_activity
+from shared.billing.addons import cancel_addon, grant_addon
 from shared.billing.payments import cancel_invoice, create_invoice, mark_failed, mark_paid
 from shared.billing.providers import get_provider
 from shared.cache.rate_limit import client_ip, hit as rate_limit_hit
@@ -101,6 +105,33 @@ class CheckoutOut(BaseModel):
     checkout: dict
 
 
+class TenantAddonOut(BaseModel):
+    id: str
+    addon_code: str
+    display_name: str
+    source: str
+    status: str
+    amount: Decimal
+    currency: str = "ETB"
+    starts_on: str
+    ends_on: Optional[str]
+    note: Optional[str]
+    created_at: str
+    cancelled_at: Optional[str]
+
+
+class AddonGrantRequest(BaseModel):
+    addon_code: str
+    source: str                      # 'OVERRIDE' | 'PURCHASED'
+    starts_on: Optional[str] = None  # default today
+    ends_on: Optional[str] = None
+    note: Optional[str] = None       # required when source=OVERRIDE
+
+
+class AddonCancelRequest(BaseModel):
+    note: str
+
+
 # ── Shared helpers ────────────────────────────────────────────────────────────
 
 async def _load_subscription_view(db: AsyncSession, tenant_id: str) -> SubscriptionOut:
@@ -181,8 +212,40 @@ def _map_value_error(exc: ValueError) -> HTTPException:
         "INVALID_PAYMENT_STATE": 422,
         "PAYMENT_NOT_FOUND": 404,
         "PRICE_NOT_AVAILABLE": 422,
+        "INVALID_SOURCE": 422,
+        "ADDON_NOT_FOUND": 404,
+        "ADDON_INACTIVE": 422,
+        "FEATURE_ALREADY_IN_PACKAGE": 422,
+        "ADDON_ALREADY_ACTIVE": 409,
+        "NOTE_REQUIRED": 422,
+        "ADDON_PRICE_NOT_AVAILABLE": 422,
+        "ADDON_GRANT_NOT_FOUND": 404,
+        "ADDON_NOT_ACTIVE": 422,
     }
     return HTTPException(status_code=status_map.get(code, 422), detail={"code": code, "message": code})
+
+
+async def _load_tenant_addons(db: AsyncSession, tenant_id: str) -> list[TenantAddonOut]:
+    rows = (await db.execute(
+        text(
+            "SELECT ta.id, ta.addon_code, pa.display_name, ta.source, ta.status, "
+            "       ta.amount, ta.starts_on, ta.ends_on, ta.note, ta.created_at, ta.cancelled_at "
+            "FROM tenant_addons ta "
+            "JOIN platform_addons pa ON pa.code = ta.addon_code "
+            "WHERE ta.tenant_id = :tid "
+            "ORDER BY (ta.status = 'ACTIVE') DESC, ta.created_at DESC"
+        ),
+        {"tid": str(tenant_id)},
+    )).fetchall()
+    return [
+        TenantAddonOut(
+            id=str(r.id), addon_code=r.addon_code, display_name=r.display_name,
+            source=r.source, status=r.status, amount=r.amount,
+            starts_on=r.starts_on.isoformat(), ends_on=_dt(r.ends_on), note=r.note,
+            created_at=r.created_at.isoformat(), cancelled_at=_dt(r.cancelled_at),
+        )
+        for r in rows
+    ]
 
 
 # ── TA self-service — fixed paths ────────────────────────────────────────────
@@ -197,6 +260,18 @@ async def get_my_subscription(
     if not user or not user.tenant_id:
         raise HTTPException(status_code=403, detail="No tenant context")
     return SuccessResponse(data=await _load_subscription_view(db, str(user.tenant_id)))
+
+
+@router.get("/me/addons", response_model=SuccessResponse[list[TenantAddonOut]])
+@require_permission(PERMISSIONS.BILLING_VIEW_OWN)
+async def get_my_addons(
+    user=Depends(get_current_user),
+    db: AsyncSession = Depends(get_db_session),
+) -> SuccessResponse[list[TenantAddonOut]]:
+    """TA: read-only view of its own tenant's add-ons (active + cancelled)."""
+    if not user or not user.tenant_id:
+        raise HTTPException(status_code=403, detail="No tenant context")
+    return SuccessResponse(data=await _load_tenant_addons(db, str(user.tenant_id)))
 
 
 @router.get("/me/invoices/{payment_id}/checkout", response_model=SuccessResponse[CheckoutOut])
@@ -364,6 +439,76 @@ async def cancel_tenant_payment(
         db, tenant_id, str(user.user_id),
         action="INVOICE_CANCELLED",
         new_value=f"payment={payment_id}",
+        note=body.note,
+    )
+    return SuccessResponse(data=result)
+
+
+@router.get("/{tenant_id}/addons", response_model=SuccessResponse[list[TenantAddonOut]])
+@require_permission(PERMISSIONS.BILLING_VIEW)
+async def get_tenant_addons(
+    tenant_id: uuid.UUID,
+    user=Depends(get_current_user),
+    db: AsyncSession = Depends(get_db_session_for_tenant),
+) -> SuccessResponse[list[TenantAddonOut]]:
+    """SA: a tenant's add-ons — active and cancelled."""
+    return SuccessResponse(data=await _load_tenant_addons(db, str(tenant_id)))
+
+
+@router.post("/{tenant_id}/addons", status_code=201, response_model=SuccessResponse[dict])
+@require_permission(PERMISSIONS.BILLING_MANAGE)
+async def grant_tenant_addon(
+    tenant_id: uuid.UUID,
+    body: AddonGrantRequest,
+    user=Depends(get_current_user),
+    db: AsyncSession = Depends(get_db_session_for_tenant),
+) -> SuccessResponse[dict]:
+    """SA: grant a free OVERRIDE or priced PURCHASED add-on to a tenant.
+
+    OVERRIDE is free (amount=0) and requires `note`. PURCHASED is priced from
+    the tenant's live subscription's billing_period, snapshotting price_id +
+    amount at grant time. Either way the grant takes effect immediately via
+    get_tenant_entitlements() and survives any later plan change.
+    """
+    starts_on = date.fromisoformat(body.starts_on) if body.starts_on else None
+    ends_on = date.fromisoformat(body.ends_on) if body.ends_on else None
+    try:
+        result = await grant_addon(
+            db, str(tenant_id), body.addon_code, body.source,
+            note=body.note, starts_on=starts_on, ends_on=ends_on,
+            created_by=str(user.user_id),
+        )
+    except ValueError as exc:
+        raise _map_value_error(exc)
+
+    await _log_tenant_activity(
+        db, tenant_id, str(user.user_id),
+        action="ADDON_GRANTED",
+        new_value=f"addon={body.addon_code} source={body.source} amount={result['amount']}",
+        note=body.note,
+    )
+    return SuccessResponse(data=result)
+
+
+@router.post("/{tenant_id}/addons/{addon_id}/cancel", response_model=SuccessResponse[dict])
+@require_permission(PERMISSIONS.BILLING_MANAGE)
+async def cancel_tenant_addon(
+    tenant_id: uuid.UUID,
+    addon_id: uuid.UUID,
+    body: AddonCancelRequest,
+    user=Depends(get_current_user),
+    db: AsyncSession = Depends(get_db_session_for_tenant),
+) -> SuccessResponse[dict]:
+    """SA: cancel an ACTIVE add-on grant. Never deletes the row."""
+    try:
+        result = await cancel_addon(db, str(tenant_id), str(addon_id), cancelled_by=str(user.user_id))
+    except ValueError as exc:
+        raise _map_value_error(exc)
+
+    await _log_tenant_activity(
+        db, tenant_id, str(user.user_id),
+        action="ADDON_CANCELLED",
+        new_value=f"addon={result['addon_code']}",
         note=body.note,
     )
     return SuccessResponse(data=result)

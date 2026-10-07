@@ -33,8 +33,12 @@ async def unhandled_exception_handler(request: Request, exc: Exception) -> JSONR
     )
 
 app.include_router(public_signup.router,  prefix="/api/v1/tenants", tags=["public-signup"])
-app.include_router(billing.router,        prefix="/api/v1/tenants", tags=["billing"])
+# tenants.router MUST precede billing.router: tenants.router's fixed
+# /platform/addons[...] paths (S10) would otherwise be shadowed by billing
+# .router's parameterised /{tenant_id}/addons — Starlette matches routes in
+# registration order across the whole app, not just within one router.
 app.include_router(tenants.router,        prefix="/api/v1/tenants", tags=["tenants"])
+app.include_router(billing.router,        prefix="/api/v1/tenants", tags=["billing"])
 app.include_router(wizard.router,         prefix="/api/v1/tenants", tags=["wizard"])
 app.include_router(hierarchy.router,      prefix="/api/v1/tenants", tags=["hierarchy"])
 app.include_router(positions.router,      prefix="/api/v1/tenants", tags=["positions"])

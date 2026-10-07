@@ -37,20 +37,27 @@ def _plan_result(
     return result
 
 
-def _db_plan_only(plan_result: MagicMock) -> AsyncMock:
-    """DB mock that only needs one execute call (plan fetch, no count)."""
+def _addon_result(codes: list[str] | None = None) -> MagicMock:
+    """get_tenant_entitlements()'s second query: ACTIVE tenant_addons codes."""
+    result = MagicMock()
+    result.fetchall.return_value = [MagicMock(addon_code=c) for c in (codes or [])]
+    return result
+
+
+def _db_plan_only(plan_result: MagicMock, addon_codes: list[str] | None = None) -> AsyncMock:
+    """DB mock for two execute calls: plan fetch + the entitlements addon query."""
     db = AsyncMock()
-    db.execute.return_value = plan_result
+    db.execute.side_effect = [plan_result, _addon_result(addon_codes)]
     return db
 
 
-def _db_plan_then_count(plan_result: MagicMock, count: int) -> AsyncMock:
-    """DB mock for three execute calls: plan fetch, tenant FOR UPDATE lock, COUNT(*)."""
+def _db_plan_then_count(plan_result: MagicMock, count: int, addon_codes: list[str] | None = None) -> AsyncMock:
+    """DB mock for four execute calls: plan fetch, addon query, tenant FOR UPDATE lock, COUNT(*)."""
     lock_result = MagicMock()
     count_result = MagicMock()
     count_result.scalar.return_value = count
     db = AsyncMock()
-    db.execute.side_effect = [plan_result, lock_result, count_result]
+    db.execute.side_effect = [plan_result, _addon_result(addon_codes), lock_result, count_result]
     return db
 
 
@@ -81,11 +88,12 @@ async def test_sa_bypasses_warehouse_limit() -> None:
 async def test_ta_not_bypassed_unlimited_plan_passes() -> None:
     # TA is NOT bypassed by check_plan_create_user (only SA is exempt).
     # With max_users=None (unlimited plan) the function fetches the plan
+    # (now two calls: tenant row + get_tenant_entitlements()'s addon query)
     # and returns early — no lock or count query issued.
     plan = _plan_result(plan_tier="ENTERPRISE", max_users=None)
     db = _db_plan_only(plan)
     await check_plan_create_user(_user(role="TA"), db)
-    assert db.execute.call_count == 1
+    assert db.execute.call_count == 2
 
 
 # ── tenant_id None → SA platform action bypass ────────────────────────────────
@@ -116,6 +124,24 @@ async def test_feature_flag_false_raises_402() -> None:
     assert detail["feature"] == "TRANSFERS_SISTER"
     assert detail["plan_tier"] == "GROWTH"
     assert detail["upgrade_to"] == "ENTERPRISE"
+
+
+# ── Feature flag MISSING (not just False) → 402, deny-by-default (S10) ───────
+
+@pytest.mark.asyncio
+async def test_feature_flag_missing_key_raises_402() -> None:
+    """A flag absent from feature_flags entirely (not even an explicit False)
+    must deny exactly like False — feature_flags.get(flag, False) is
+    deny-by-default, not "not yet enforced" (see plan_middleware.py comment
+    fixed in S10)."""
+    plan = _plan_result(plan_tier="GROWTH", feature_flags={})
+    db = _db_plan_only(plan)
+
+    with pytest.raises(HTTPException) as exc_info:
+        await check_plan(_user(), "transfer:create_sister", db)
+
+    assert exc_info.value.status_code == 402
+    assert exc_info.value.detail["code"] == "FEATURE_NOT_IN_PLAN"
 
 
 # ── Feature flag True → passes ────────────────────────────────────────────────
@@ -168,8 +194,8 @@ async def test_warehouse_limit_null_passes() -> None:
     plan = _plan_result(plan_tier="ENTERPRISE", max_warehouses=None)
     db = _db_plan_only(plan)
     await check_plan_create_warehouse(_user(), db)
-    # Only one execute call (plan fetch); count query never issued
-    assert db.execute.call_count == 1
+    # Plan fetch + entitlements addon query; count query never issued
+    assert db.execute.call_count == 2
 
 
 # ── User limit reached → 402 ─────────────────────────────────────────────────
@@ -197,7 +223,7 @@ async def test_user_limit_null_passes() -> None:
     plan = _plan_result(plan_tier="ENTERPRISE", max_users=None)
     db = _db_plan_only(plan)
     await check_plan_create_user(_user(), db)
-    assert db.execute.call_count == 1
+    assert db.execute.call_count == 2
 
 
 # ── TA is subject to warehouse limit (not bypassed) ──────────────────────────

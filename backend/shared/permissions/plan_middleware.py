@@ -99,9 +99,13 @@ async def check_plan(
     upgrade_to    = _UPGRADE_TO.get(plan_tier)
 
     # ── Feature flag check ────────────────────────────────────────────────────
-    # A flag absent from feature_flags is treated as "not yet enforced" → allow.
-    # Only an explicit False blocks (402). This preserves backward compatibility
-    # for tenants whose feature_flags were never initialised per-tier.
+    # feature_flags.get(required_flag, False) denies by default: a flag that is
+    # MISSING from the dict is treated exactly like an explicit False. This is
+    # safe because migration 072 (S10) normalised every tenant's feature_flags
+    # to carry every KNOWN_FEATURE_FLAGS key from its package, so "missing" no
+    # longer happens in practice — but the deny-by-default code is intentional
+    # defence in depth, not a gap: a tenant somehow missing a key must never be
+    # silently granted a flag it was never assigned.
     required_flag = _required_flag(action)
     if required_flag is not None:
         if not feature_flags.get(required_flag, False):

@@ -109,6 +109,14 @@ def upgrade() -> None:
     op.execute("CREATE RULE no_delete_addon_prices AS ON DELETE TO addon_prices DO INSTEAD NOTHING")
     # No seed prices — SA sets them via POST /platform/addons/{code}/prices (S10-3).
 
+    # ── B2) payment_line_items.price_id (071) was FK'd to package_prices only.
+    #      An ADDON line item's price_id now points to addon_prices instead —
+    #      drop the single-table FK so price_id can reference either table,
+    #      distinguished by the row's own item_type.
+    op.execute(
+        "ALTER TABLE payment_line_items DROP CONSTRAINT IF EXISTS payment_line_items_price_id_fkey"
+    )
+
     # ── C) tenant_addons — tenant-scoped, RLS (no FORCE — app role owns these
     #      rows and FORCE would block SA cross-tenant reads, CLAUDE.md §7) ────
     op.execute(
@@ -214,6 +222,17 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
+    # ADDON-type line items exist only because of this migration's feature —
+    # remove them before restoring the single-table FK so the ALTER cannot
+    # fail against rows whose price_id points at the (about to be dropped)
+    # addon_prices table.
+    op.execute("DELETE FROM payment_line_items WHERE item_type = 'ADDON'")
+    op.execute("ALTER TABLE payment_line_items DROP CONSTRAINT IF EXISTS payment_line_items_price_id_fkey")
+    op.execute(
+        "ALTER TABLE payment_line_items ADD CONSTRAINT payment_line_items_price_id_fkey "
+        "FOREIGN KEY (price_id) REFERENCES package_prices(id)"
+    )
+
     op.execute(
         """
         UPDATE tenants t

@@ -261,6 +261,136 @@ async def test_ta_cannot_mark_paid_rbac() -> None:
     assert exc_info.value.status_code == 403
 
 
+# ── Tenant add-ons (S10, billing:manage / billing:view / billing:view_own) ───
+
+async def test_sa_grant_tenant_addon_allowed() -> None:
+    from routers.billing import AddonGrantRequest, grant_tenant_addon
+
+    sa = _user("SA", None)
+    body = AddonGrantRequest(addon_code="LOGISTICS", source="OVERRIDE", note="pilot customer")
+    with patch("shared.permissions.middleware.get_role_permission", new=AsyncMock(return_value=_full_grant())), \
+         patch("shared.permissions.middleware.audit_log", new=AsyncMock()), \
+         patch("routers.billing.grant_addon", new=AsyncMock(
+             return_value={"id": "ta-1", "addon_code": "LOGISTICS", "source": "OVERRIDE",
+                           "status": "ACTIVE", "amount": "0", "price_id": None})), \
+         patch("routers.billing._log_tenant_activity", new=AsyncMock()):
+        out = await grant_tenant_addon(tenant_id=TENANT_A, body=body, user=sa, db=AsyncMock())
+
+    assert out.data["addon_code"] == "LOGISTICS"
+
+
+async def test_ta_grant_tenant_addon_denied_rbac() -> None:
+    from routers.billing import AddonGrantRequest, grant_tenant_addon
+
+    ta = _user("TA", str(TENANT_A))
+    body = AddonGrantRequest(addon_code="LOGISTICS", source="OVERRIDE", note="x")
+    with patch("shared.permissions.middleware.get_role_permission", new=AsyncMock(return_value=None)), \
+         patch("shared.permissions.middleware.audit_log", new=AsyncMock()):
+        with pytest.raises(HTTPException) as exc_info:
+            await grant_tenant_addon(tenant_id=TENANT_A, body=body, user=ta, db=AsyncMock())
+
+    assert exc_info.value.status_code == 403
+    assert exc_info.value.detail["code"] == "RBAC_DENIED"
+
+
+async def test_sa_grant_tenant_addon_feature_already_in_package_422() -> None:
+    from routers.billing import AddonGrantRequest, grant_tenant_addon
+
+    sa = _user("SA", None)
+    body = AddonGrantRequest(addon_code="LOT_TRACEABILITY", source="OVERRIDE", note="x")
+    with patch("shared.permissions.middleware.get_role_permission", new=AsyncMock(return_value=_full_grant())), \
+         patch("shared.permissions.middleware.audit_log", new=AsyncMock()), \
+         patch("routers.billing.grant_addon", new=AsyncMock(side_effect=ValueError("FEATURE_ALREADY_IN_PACKAGE"))):
+        with pytest.raises(HTTPException) as exc_info:
+            await grant_tenant_addon(tenant_id=TENANT_A, body=body, user=sa, db=AsyncMock())
+
+    assert exc_info.value.status_code == 422
+    assert exc_info.value.detail["code"] == "FEATURE_ALREADY_IN_PACKAGE"
+
+
+async def test_sa_grant_tenant_addon_already_active_409() -> None:
+    from routers.billing import AddonGrantRequest, grant_tenant_addon
+
+    sa = _user("SA", None)
+    body = AddonGrantRequest(addon_code="LOGISTICS", source="OVERRIDE", note="x")
+    with patch("shared.permissions.middleware.get_role_permission", new=AsyncMock(return_value=_full_grant())), \
+         patch("shared.permissions.middleware.audit_log", new=AsyncMock()), \
+         patch("routers.billing.grant_addon", new=AsyncMock(side_effect=ValueError("ADDON_ALREADY_ACTIVE"))):
+        with pytest.raises(HTTPException) as exc_info:
+            await grant_tenant_addon(tenant_id=TENANT_A, body=body, user=sa, db=AsyncMock())
+
+    assert exc_info.value.status_code == 409
+    assert exc_info.value.detail["code"] == "ADDON_ALREADY_ACTIVE"
+
+
+async def test_sa_cancel_tenant_addon_allowed() -> None:
+    from routers.billing import AddonCancelRequest, cancel_tenant_addon
+
+    sa = _user("SA", None)
+    body = AddonCancelRequest(note="no longer needed")
+    with patch("shared.permissions.middleware.get_role_permission", new=AsyncMock(return_value=_full_grant())), \
+         patch("shared.permissions.middleware.audit_log", new=AsyncMock()), \
+         patch("routers.billing.cancel_addon", new=AsyncMock(
+             return_value={"id": "ta-1", "addon_code": "LOGISTICS", "status": "CANCELLED"})), \
+         patch("routers.billing._log_tenant_activity", new=AsyncMock()):
+        out = await cancel_tenant_addon(tenant_id=TENANT_A, addon_id=uuid.uuid4(), body=body, user=sa, db=AsyncMock())
+
+    assert out.data["status"] == "CANCELLED"
+
+
+async def test_ta_cancel_tenant_addon_denied_rbac() -> None:
+    from routers.billing import AddonCancelRequest, cancel_tenant_addon
+
+    ta = _user("TA", str(TENANT_A))
+    body = AddonCancelRequest(note="x")
+    with patch("shared.permissions.middleware.get_role_permission", new=AsyncMock(return_value=None)), \
+         patch("shared.permissions.middleware.audit_log", new=AsyncMock()):
+        with pytest.raises(HTTPException) as exc_info:
+            await cancel_tenant_addon(tenant_id=TENANT_A, addon_id=uuid.uuid4(), body=body, user=ta, db=AsyncMock())
+
+    assert exc_info.value.status_code == 403
+    assert exc_info.value.detail["code"] == "RBAC_DENIED"
+
+
+async def test_sa_get_tenant_addons_allowed() -> None:
+    from routers.billing import get_tenant_addons
+
+    sa = _user("SA", None)
+    with patch("shared.permissions.middleware.get_role_permission", new=AsyncMock(return_value=_full_grant())), \
+         patch("shared.permissions.middleware.audit_log", new=AsyncMock()), \
+         patch("routers.billing._load_tenant_addons", new=AsyncMock(return_value=[])):
+        out = await get_tenant_addons(tenant_id=TENANT_A, user=sa, db=AsyncMock())
+
+    assert out.data == []
+
+
+async def test_ta_get_my_addons_allowed() -> None:
+    from routers.billing import get_my_addons
+
+    ta = _user("TA", str(TENANT_A))
+    with patch("shared.permissions.middleware.get_role_permission", new=AsyncMock(return_value=_full_grant())), \
+         patch("shared.permissions.middleware.audit_log", new=AsyncMock()), \
+         patch("routers.billing._load_tenant_addons", new=AsyncMock(return_value=[])):
+        out = await get_my_addons(user=ta, db=AsyncMock())
+
+    assert out.data == []
+
+
+async def test_ta_get_tenant_addons_denied_rbac() -> None:
+    """TA lacks billing:view (platform_only) on the by-tenant endpoint —
+    must use GET /me/addons instead."""
+    from routers.billing import get_tenant_addons
+
+    ta = _user("TA", str(TENANT_A))
+    with patch("shared.permissions.middleware.get_role_permission", new=AsyncMock(return_value=None)), \
+         patch("shared.permissions.middleware.audit_log", new=AsyncMock()):
+        with pytest.raises(HTTPException) as exc_info:
+            await get_tenant_addons(tenant_id=TENANT_A, user=ta, db=AsyncMock())
+
+    assert exc_info.value.status_code == 403
+    assert exc_info.value.detail["code"] == "RBAC_DENIED"
+
+
 # ── Public STUB webhook ───────────────────────────────────────────────────────
 
 def _fake_request(headers: dict, body: bytes):
