@@ -8,7 +8,9 @@
     "reports": "Reports",
     "settings": "Settings",
     "audit": "Audit Log",
-    "approval_policies": "Approval Policies"
+    "approval_policies": "Approval Policies",
+    "help": "Help",
+    "help_section": "Help"
   },
   "inventory": {
     "warehouse": "Warehouse",
@@ -1827,6 +1829,48 @@
       "invoice_raised": "A proration invoice for {period} totaling {total} has been raised and is pending payment.",
       "blocked": {
         "INVOICE_PENDING_SETTLE_FIRST": "A pending invoice must be marked paid or cancelled before this change can proceed."
+      }
+    }
+  },
+  "help": {
+    "title": "Help & Documents",
+    "subtitle": "Guides and policies for your role.",
+    "restricted": "You do not have access to this page.",
+    "not_found": "That document was not found, or is not available to your role.",
+    "coming_soon": "Coming soon",
+    "back_to_help": "Back to Help",
+    "print_btn": "Print",
+    "version_label": "Version {v}",
+    "updated_label": "Updated {d}",
+    "english_only_notice": "This document is currently available in English only.",
+    "doc": {
+      "ta_onboarding_guide": {
+        "title": "TA Onboarding Guide",
+        "summary": "Step-by-step setup for Tenant Administrators: organisation levels, personnel, approval rules, and opening stock."
+      },
+      "terms": {
+        "title": "Terms of Service",
+        "summary": "The agreement covering use of SMART."
+      },
+      "privacy": {
+        "title": "Privacy Policy",
+        "summary": "How SMART collects, uses, and protects your data."
+      },
+      "sa_operations_manual": {
+        "title": "SA Operations Manual",
+        "summary": "Platform administration reference for SMART staff."
+      },
+      "warehouse_manager_guide": {
+        "title": "Warehouse Manager Guide",
+        "summary": "Day-to-day operations for warehouse and logistics managers."
+      },
+      "staff_quick_guide": {
+        "title": "Staff Quick Guide",
+        "summary": "A short reference for day-to-day warehouse staff tasks."
+      },
+      "release_notes": {
+        "title": "Release Notes",
+        "summary": "What's new in SMART."
       }
     }
   }

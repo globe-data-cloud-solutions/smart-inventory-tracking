@@ -729,6 +729,7 @@ const SA_NAV: NavItem[] = [
   // disabled until the pages exist. Do not remove; placeholder only.
   { type: "link", icon: "🔐", label: "Permissions", page: "dashboard", disabled: true },
   { type: "link", icon: "📋", label: "Audit Log",   page: "dashboard", disabled: true },
+  { type: "link", icon: "❓", label: "nav.help",    page: "help" },
 ];
 
 // NAV ORDER: Do not change without updating PRD-APPENDIX.md §A — confirmed structure.
@@ -754,4 +755,6 @@ const TENANT_NAV: NavItem[] = [
   { type: "link", icon: "🏢", label: "Org Setup",       page: "settings/org-setup",  roles: ["SA", "TA"] },
   { type: "link", icon: "👥", label: "Personnel",       page: "settings/personnel",  roles: ["SA", "TA"] },
   { type: "link", icon: "⚙️",  label: "Tenant Admin",   page: "settings/tenant-admin", roles: ["TA"] },
+  { type: "section", label: "nav.help_section" },
+  { type: "link", icon: "❓", label: "nav.help",       page: "help" },
 ];

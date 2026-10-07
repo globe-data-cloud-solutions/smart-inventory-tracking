@@ -8,7 +8,9 @@
     "reports": "ሪፖርቶች",
     "settings": "ቅንጅቶች",
     "audit": "የኦዲት ምዝግብ ማስታወሻ",
-    "approval_policies": "የማረጋገጫ ፖሊሲዎች"
+    "approval_policies": "የማረጋገጫ ፖሊሲዎች",
+    "help": "እገዛ",
+    "help_section": "እገዛ"
   },
   "inventory": {
     "balance": {
@@ -1841,6 +1843,48 @@
       "invoice_raised": "ለ{period} የተመጣጣኝ ክፍያ ደረሰኝ በ{total} ተፈጥሯል እና ክፍያ በመጠባበቅ ላይ ነው።",
       "blocked": {
         "INVOICE_PENDING_SETTLE_FIRST": "ይህ ለውጥ ከመቀጠሉ በፊት በመጠባበቅ ላይ ያለው ደረሰኝ ተከፍሎ መመልክት ወይም መሰረዝ አለበት።"
+      }
+    }
+  },
+  "help": {
+    "title": "እገዛ እና ሰነዶች",
+    "subtitle": "ለእርስዎ ሚና የሚሆኑ መመሪያዎች እና ፖሊሲዎች።",
+    "restricted": "ወደዚህ ገጽ መድረስ አይችሉም።",
+    "not_found": "ይህ ሰነድ አልተገኘም፣ ወይም ለእርስዎ ሚና አይገኝም።",
+    "coming_soon": "በቅርቡ ይመጣል",
+    "back_to_help": "ወደ እገዛ ተመለስ",
+    "print_btn": "አትም",
+    "version_label": "ስሪት {v}",
+    "updated_label": "የተሻሻለው {d}",
+    "english_only_notice": "ይህ ሰነድ በአሁኑ ጊዜ በእንግሊዝኛ ብቻ ይገኛል።",
+    "doc": {
+      "ta_onboarding_guide": {
+        "title": "የTA አቀማመጥ መመሪያ",
+        "summary": "ለተከራይ አስተዳዳሪዎች ደረጀ በደረጀ ማቀናበሪያ፦ የድርጅት ደረጆች፣ ሰራተኞች፣ የማረጋገጫ ህጎች እና የመጀመሪያ ክምችት።"
+      },
+      "terms": {
+        "title": "የአገልግሎት ውሎች",
+        "summary": "SMARTን ለመጠቀም የሚያስተዳድረው ስምምነት።"
+      },
+      "privacy": {
+        "title": "የግላዊነት ፖሊሲ",
+        "summary": "SMART የእርስዎን ውሂብ እንዴት እንደሚሰበስብ፣ እንደሚጠቀም እና እንደሚጠብቅ።"
+      },
+      "sa_operations_manual": {
+        "title": "የSA ኦፕሬሽኖች መመሪያ",
+        "summary": "ለSMART ሰራተኞች የመድረክ አስተዳደር ማጣቀሻ።"
+      },
+      "warehouse_manager_guide": {
+        "title": "የመጋዘን አስተዳዳሪ መመሪያ",
+        "summary": "ለመጋዘን እና ለሎጂስቲክስ አስተዳዳሪዎች የቀን ተቀን ክንዋኔዎች።"
+      },
+      "staff_quick_guide": {
+        "title": "የሰራተኛ ፈጣን መመሪያ",
+        "summary": "ለቀን ተቀን የመጋዘን ሰራተኛ ተግባራት አጭር ማጣቀሻ።"
+      },
+      "release_notes": {
+        "title": "የስሪት ማስታወሻዎች",
+        "summary": "በSMART ላይ ምን አዲስ ነገር እንደተጨመረ።"
       }
     }
   }

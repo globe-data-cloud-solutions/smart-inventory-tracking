@@ -1,6 +1,6 @@
 # SMART Inventory — User Setup & Onboarding Guide
 
-**Version:** 1.0 | **Updated:** June 2026 | **Audience:** Tenant Administrators & Organisation Managers
+**Version:** 1.3 | **Updated:** October 2026 | **Audience:** Tenant Administrators & Organisation Managers
 
 > **Pre-Launch Reminder:** Replace all `[SCREENSHOT PLACEHOLDER]` notes with real screenshots before sharing with customers.
 
@@ -30,10 +30,44 @@ Have the following ready:
 - Product list (names, SKUs, units of measure, categories)
 - Organisation logo and banner image (optional, for branding)
 
+### Getting your account — two ways in
+
+**Option A — Sign up yourself (self sign-up)**
+
+1. Open the SMART Inventory sign-in page and click **Create an account**.
+2. **Choose a package** — Starter, Growth or Enterprise — and a billing period
+   (**Monthly** or **Annual**). Each card shows the limits, the included features and the
+   price, with 15% VAT and the total shown separately.
+3. **Enter your details** — company name, organisation type (Producer, Retailer or Hybrid),
+   industry (optional), language, an optional custom web address for your workspace,
+   and your own name, email and password (at least 8 characters).
+4. **Accept the Terms of Service**, review the summary and submit.
+5. You will see **"Sign in with {your email}"**. Go to the sign-in page and use the email
+   and password you just chose.
+
+The person who signs up becomes the **Tenant Administrator (TA)** and the **account owner**
+of the workspace. Your workspace is usable immediately — you do not have to wait for
+payment before starting setup (see [Your Plan, Subscription & Invoices](#-your-plan-subscription--invoices-ta-only)).
+
+**Option B — Onboarded by SMART**
+
+Your SMART administrator creates the workspace and your TA account and sends you:
+- **URL:** your SMART Inventory web address
+- **TA Email:** the email address registered for you
+- **Initial Password:** a temporary password — you will be asked to change it at first sign-in
+
+### Verifying your email
+
+After self sign-up, SMART sends a **verification link** to your email address. Open it within
+**48 hours**. If the link has expired or you did not receive it, use **Resend link** on the
+verification page or on the sign-in page.
+
+> **Current version:** email verification is being rolled out. Until it is switched on,
+> you can sign in before verifying — but verify anyway so your account is ready when it is enforced.
+
 ### Login
-- **URL:** Your SMART Inventory URL (provided by your administrator)
-- **TA Email:** `admin@your-slug.com`
-- **Initial Password:** Provided during onboarding
+- Sign in with your email and password.
+- After 5 failed attempts the account is locked for 15 minutes (see Common Questions).
 
 ---
 
@@ -107,17 +141,67 @@ Complete these steps in order — each step depends on the previous one.
 
 ---
 
-## Plan Tiers
+## Plan Tiers (Packages)
 
-SMART tenants are on one of three plan tiers: **Starter**, **Growth**, or **Enterprise**. Your tier is assigned by your SMART administrator (the platform operator) and can only be changed by them — you cannot change your own tier from within the application.
+SMART workspaces are on one of three packages: **Starter**, **Growth**, or **Enterprise**.
+You choose a package when you sign up, or your SMART administrator assigns one when they
+onboard you. To **change** package later, contact your SMART administrator — you cannot
+change it yourself from within the application.
 
-| Tier | What it affects |
-|------|----------------|
-| Starter | Limited number of warehouses and staff accounts; Branch Exchange (Sister) transfers not available |
-| Growth | Higher limits on warehouses and staff accounts; Branch Exchange transfers enabled |
-| Enterprise | Highest limits; all features enabled |
+Each package sets your limits and which features are included. Typical defaults:
 
-**Specific limits** (maximum warehouses, maximum staff accounts) depend on your contract — ask your SMART administrator for the exact figures that apply to your organisation.
+| | Starter | Growth | Enterprise |
+|---|---|---|---|
+| Warehouses / org nodes | 3 | 10 | Unlimited |
+| Staff accounts | 5 | 25 | Unlimited |
+| Products (SKUs) | 500 | 1,500 | Unlimited |
+| Core Inventory Management | ✓ | ✓ | ✓ |
+| Pull & Push Transfers | ✓ | ✓ | ✓ |
+| Lot & Batch Traceability | ✓ | ✓ | ✓ |
+| Sister (Branch Exchange) Transfers | — | ✓ | ✓ |
+| Logistics & Fleet Management | — | ✓ | ✓ |
+| Audit Log Export | — | ✓ | ✓ |
+| Custom Branding | — | ✓ | ✓ |
+| AI Forecasting & Analytics | — | — | ✓ |
+| API Access | — | — | ✓ |
+
+> **The figures above are defaults and may be revised.** The sign-up page always shows the
+> current package contents and prices, and **Settings → Tenant Admin → Plan** shows the
+> exact limits and features that apply to *your* workspace. Packages are revised from time
+> to time; a revision applies to new sign-ups and plan changes, and does not change an
+> existing workspace's limits by itself.
+
+**One warehouse and the TA account are free.** Your first top-level org node and your own TA
+account do not count toward the warehouse and staff-account limits.
+
+**Prices.** Every package has a monthly and an annual price. Prices are shown before VAT,
+with **15% VAT** and the total shown separately. A price change applies to your
+**next renewal**; it never changes an invoice you have already received.
+
+**Changing package.** Package changes are made by your SMART administrator. The new limits
+and features apply **immediately**, and the new price is charged from your **next invoice**.
+
+- **Monthly billing:** nothing extra is charged for the rest of the current month.
+- **Annual billing — upgrade:** the rest of the month you upgrade in is free. For the
+  **whole months left** in your current year, you receive an invoice for the
+  **difference** between the new and old annual prices, pro-rated by month, plus VAT.
+  *Example:* Starter 1,000 → Growth 2,000 with 7 whole months left:
+  (2,000 − 1,000) × 7 ÷ 12 = 583.33 + 87.50 VAT = **670.83 ETB**.
+- **Downgrade:** the lower limits apply immediately. There is **no refund or credit** for the
+  current period; the lower price applies from your next invoice.
+
+This upgrade invoice is marked **Proration** in your invoice list. Paying it does not change
+your contract or billing dates.
+
+**Add-ons.** A feature that is not in your package (for example API Access) can be added
+on its own by your SMART administrator. It works immediately and is billed with your package
+from the next invoice. On **annual** billing you also receive a **Proration** invoice for the
+whole months left in your current year at the add-on's annual price (pro-rated by month,
+plus VAT); the rest of the current month is free. Cancelling an add-on stops it immediately,
+with no refund.
+
+> While an ordinary invoice is waiting for payment, package and add-on changes are paused
+> until it is paid or cancelled, so that invoice is never issued at the wrong price.
 
 > **Branch Exchange (Sister) transfers — Starter tier restriction:** Lateral transfers
 > between warehouses at the same level are not available on the Starter tier. If staff
@@ -125,9 +209,58 @@ SMART tenants are on one of three plan tiers: **Starter**, **Growth**, or **Ente
 > required, contact your SMART administrator about upgrading to Growth or Enterprise.
 
 > **Hitting a limit during setup:** If you receive an error when trying to add a
-> warehouse (Step 2) or a staff account (Step 4), you have likely reached your plan
-> limit. Contact your SMART administrator to request a tier upgrade rather than
-> assuming it is a bug.
+> warehouse (Step 2), a staff account (Step 4) or a product (Step 7), you have likely
+> reached your plan limit. Contact your SMART administrator to request a tier upgrade
+> rather than assuming it is a bug.
+
+---
+
+## 🔒 Your Plan, Subscription & Invoices (TA Only)
+
+*Settings → Tenant Admin*
+
+The Tenant Admin page has five tabs:
+
+| Tab | What you can do |
+|-----|-----------------|
+| **Profile** | View and update your organisation's details |
+| **Plan** | See your package, limits, features, subscription and invoices |
+| **Contract** | See your contract start and end dates (read-only) |
+| **Contact** | Manage your organisation's contact people |
+| **Features** | See which features your package includes |
+
+### Subscription status
+
+The **Plan** tab shows your subscription — package, billing period, current period and the
+amount including VAT — with one of these statuses:
+
+| Status | Meaning |
+|--------|---------|
+| **Pending payment** | Your workspace is fully active. Your first invoice has not been paid yet. |
+| **Active** | Your current period is paid. |
+| **Past due** | A renewal is overdue. Contact SMART to settle it. |
+| **Cancelled** | The subscription has ended. |
+
+> **Current version:** SMART does not restrict or suspend a workspace for unpaid invoices.
+> This may change once online payment is introduced; you will be told in advance.
+
+### Invoices and how to pay
+
+SMART issues your invoices; they appear in the **Invoices** list on the Plan tab with the
+period, subtotal, VAT, total and status (Pending, Paid, Failed, Cancelled).
+
+For a **Pending** invoice, click **How to pay** for the payment instructions.
+
+`[PAYMENT INSTRUCTIONS PLACEHOLDER — bank name, account name and number, reference to quote, and where to send the receipt. To be supplied before go-live.]`
+
+When SMART confirms your payment, the invoice shows **Paid**, your subscription becomes
+**Active**, and your **contract end date moves forward** to the end of the paid period.
+
+### Contract dates
+
+Your contract runs from your sign-up (or onboarding) date for one billing period, and is
+extended each time a payment is confirmed. The Contract tab is **read-only**; contract dates
+are managed by SMART. Contact SMART to change them.
 
 ---
 
@@ -436,6 +569,24 @@ Go to **Approval Policies** in the navigation to see:
 
 ## Common Questions
 
+**Q: How do I upgrade or change my package?**
+Contact your SMART administrator — package changes are made by SMART, not from your own
+Tenant Admin page. New limits and features apply as soon as the change is made. On annual
+billing an upgrade also produces a pro-rated **Proration** invoice for the months left in your
+year (see [Plan Tiers](#plan-tiers)); a downgrade has no refund.
+
+**Q: What is a "Proration" invoice?**
+A one-off invoice for an upgrade or add-on made part-way through an annual billing year. It
+covers only the whole months left in that year; the month the change was made in is free.
+
+**Q: I signed up but never received the verification email.**
+Use **Resend link** on the sign-in page or the verification page. Links expire after 48 hours.
+If it still does not arrive, check your spam folder or contact SMART support.
+
+**Q: Who is the "account owner"?**
+The person who signed the workspace up (or the first TA created by SMART). They are the
+main contact for the subscription and invoices.
+
 **Q: Can I change the org structure after adding users?**
 Yes — you can add new nodes and positions. Existing users keep their assignments. To remove a node, reassign its users first.
 
@@ -579,8 +730,11 @@ any position change.
 
 ### 🔒 Tenant Administrator Checklist
 
-**Plan & Limits:**
-- [ ] Confirmed your plan tier and limits with your SMART administrator before beginning setup
+**Account & Plan:**
+- [ ] Email address verified (self sign-up)
+- [ ] Settings → Tenant Admin → Plan reviewed — package, limits and features as expected
+- [ ] Organisation profile and contact people completed (Profile and Contact tabs)
+- [ ] First invoice reviewed and payment arranged (if issued)
 
 **Organisation Structure:**
 - [ ] Organisation levels defined
@@ -613,4 +767,6 @@ any position change.
 
 ---
 
-*Document Version: 1.1 | Last Updated: July 2026 | Maintained by: Development team*
+*Document Version: 1.3 | Last Updated: October 2026 | Maintained by: Development team*
+*1.3 — pro-rated upgrades and add-ons on annual billing; package changes are made by SMART only.*
+*1.2 — self sign-up, email verification, packages with prices and VAT, subscription and invoices, read-only contract.*
