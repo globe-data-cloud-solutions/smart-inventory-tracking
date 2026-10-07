@@ -2840,10 +2840,14 @@ Collect console errors on every page the spec visits
 (page.on("console", ...) filtered to type "error", plus page.on("pageerror"))
 and print them raw at the end of the run — a step fails if an error appears
 that the change under test introduced. A one-time 401 immediately after a
-fresh demo login is a known, harmless race (the SMART JWT is patched into
-the session fire-and-forget after login() returns — see
-frontend/tests/s9-sa-tenant.spec.ts's loginAs() helper, which waits for the
-token to land before navigating further); do not chase that one down.
+fresh demo login is a known bug, not expected behavior: the SMART JWT is
+patched into the session fire-and-forget after login() returns, so the first
+API call can race that exchange and go out with no Authorization header.
+frontend/tests/s9-sa-tenant.spec.ts's loginAs() helper works around it by
+waiting for the token to land before navigating further — that workaround
+stays in test code only. Fix pending (S10): block the first gateway call
+until the JWT exchange resolves (or await it inline in login()) so the race
+cannot happen outside tests either.
 ```
 
 ---
