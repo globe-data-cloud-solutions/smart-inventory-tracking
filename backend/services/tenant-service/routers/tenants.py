@@ -2242,7 +2242,12 @@ async def update_tenant_profile(
             logger.warning("update_tenant_profile: no live subscription for tenant %s — not created here", tenant_id)
 
     # Log each changed field as its own activity row so the audit trail is granular.
+    # plan_tier is skipped here when nothing was actually applied (SCHEDULED
+    # logs its own PLAN_DOWNGRADE_SCHEDULED below; UNCHANGED means the live
+    # subscription's tier already matched, so there is nothing to report).
     for field, (old_val, new_val) in changes.items():
+        if field == "plan_tier" and plan_mode in ("SCHEDULED", "UNCHANGED"):
+            continue
         try:
             await _log_tenant_activity(
                 db, tenant_id, str(user.user_id),
@@ -2285,8 +2290,12 @@ async def update_tenant_profile(
         except Exception:
             pass  # log failure must not roll back the update
 
+    reported_fields = [
+        f for f in changes
+        if not (f == "plan_tier" and plan_mode in ("SCHEDULED", "UNCHANGED"))
+    ]
     return SuccessResponse(data={
-        "changes": len(changes), "fields": list(changes.keys()),
+        "changes": len(reported_fields), "fields": reported_fields,
         "proration_invoice": proration_invoice,
         "mode": plan_mode,
     })
