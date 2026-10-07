@@ -39,7 +39,7 @@ NEVER implement a new facility-scoped feature with a raw warehouse_id equality c
   node+descendant traversal is live (Phase 2). Any new ABAC check for a
   FACILITY_SCOPED_ROLE must go through get_descendant_node_ids() in
   hierarchy_service.py and resolve scope via check_permission() in middleware.py.
-  See §24 Rule 25 for the full traversal contract.
+  See Rule 25 in docs/claude/business-rules.md for the full traversal contract.
 ```
 
 ---
@@ -74,7 +74,7 @@ infra/terraform/{modules,envs/{dev,stage,prod}}              # all infra as code
 scripts/{seed_permissions,ci_drift_check,create_partitions}.py
 docs/claude/*.md    docs/prompts/*.md    CLAUDE.md            # this file
 ```
-No `.env.example` committed — secrets via AWS Secrets Manager (local-dev exception: see §Env rules below).
+No `.env.example` committed — secrets via AWS Secrets Manager (local-dev exception: see §8).
 
 ---
 
@@ -145,8 +145,13 @@ No `.env.example` committed — secrets via AWS Secrets Manager (local-dev excep
 - Never alter a PostgreSQL `RULE` outside of an Alembic migration.
 - Never reset a real user's password.
 - Probe/test account passwords may be printed in plain output.
-- Database backups are taken via `pg_dump`, run by Alex — not by Claude.
+- Alex runs `pg_dump` himself before ANY migration — Claude never takes backups and never uses the postgres superuser password.
 - Never add mock/demo data to a screen to make it appear to work (see §7).
+- Root `.env` is local-only and untracked — never commit it; load with `set -a; source .env; set +a`. Holds E2E_TA_PASSWORD for the permanent `zz-e2e-ta` tenant.
+- Never toggle FORCE ROW LEVEL SECURITY on any table outside an Alembic migration.
+- Probe/test tenants are deactivated after use, never hard-deleted.
+- Never set `ENVIRONMENT=local` anywhere but a developer machine — it enables the passwordless dev_email login (auth.py). Must never reach ECS.
+- Plan/package changes are SA-only (TA → 403 PLAN_CHANGE_SA_ONLY); TA can view, not change.
 
 ---
 
