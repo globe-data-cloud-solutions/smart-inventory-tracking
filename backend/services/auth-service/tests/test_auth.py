@@ -291,6 +291,24 @@ class TestLocalDevAuth:
         )
         assert resp.status_code == 403
 
+    def test_cognito_token_blocked_in_non_local(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """cognito_token is rejected with 403 when ENVIRONMENT != 'local'."""
+        monkeypatch.setattr(auth_module, "ENVIRONMENT", "production")
+        resp = client.post(
+            "/api/v1/auth/token",
+            json={"cognito_token": "demo", "demo_role": "SA"},
+        )
+        assert resp.status_code == 403
+
+    def test_cognito_token_blocked_when_environment_unset(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """cognito_token is rejected with 403 when ENVIRONMENT is unset (as on ECS)."""
+        monkeypatch.setattr(auth_module, "ENVIRONMENT", "")
+        resp = client.post(
+            "/api/v1/auth/token",
+            json={"cognito_token": "demo"},
+        )
+        assert resp.status_code == 403
+
     def test_cognito_demo_path_still_works(self) -> None:
         """Existing cognito_token + demo_* path still issues a valid JWT (backward compat)."""
         resp = client.post(

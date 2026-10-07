@@ -358,6 +358,11 @@ async def exchange_token(body: TokenRequest) -> TokenResponse:
 
     # ── Path 2/3: cognito_token ──────��─────────────────────────────────────
     elif body.cognito_token is not None:
+        if ENVIRONMENT != "local":
+            # SECURITY: token is not verified against Cognito JWKS yet and claims come
+            # from the request body. Local only until real verification lands (open item 3).
+            raise HTTPException(status_code=403,
+                detail="cognito_token login is not available until Cognito verification is implemented")
         sub          = body.demo_sub          or "00000000-0000-0000-0000-000000000001"
         role         = body.demo_role         or "WM"
         tenant_id    = body.demo_tenant_id    or "10000000-0000-0000-0000-000000000001"
