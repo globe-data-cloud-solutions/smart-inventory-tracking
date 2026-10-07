@@ -4,86 +4,207 @@ import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import { t } from "@/lib/i18n";
-import { TabProps, PlanData } from "../types";
+import { formatCurrency } from "@/lib/utils";
+import { TabProps, PlanData, TenantAddonOut } from "../types";
 
-// Tenant-specific overrides — distinct from the 9-code package feature matrix
-// below (FEATURE_MATRIX): these 4 toggle operational features on top of
-// whatever the tenant's plan already grants, and are reset whenever the plan
-// changes (shared.plans.catalog.apply_package_to_tenant REPLACES feature_flags).
-const OVERRIDE_FLAGS = ["LOGISTICS", "AI_ANALYTICS", "ADVANCED_BATCH_TRACKING", "FLEET_MANAGEMENT"] as const;
+interface AddonCatalogEntry {
+  code: string;
+  display_name: string;
+  is_active: boolean;
+  prices: { billing_period: string; current: { amount: string; currency: string } | null }[];
+}
 
-function FeatureOverrides({ tenantId, flags }: { tenantId: string; flags: Record<string, boolean> }) {
+const ADDON_ERROR_CODES = new Set([
+  "ADDON_NOT_FOUND", "ADDON_INACTIVE", "FEATURE_ALREADY_IN_PACKAGE", "ADDON_ALREADY_ACTIVE",
+  "NOTE_REQUIRED", "NO_LIVE_SUBSCRIPTION", "ADDON_PRICE_NOT_AVAILABLE",
+  "ADDON_GRANT_NOT_FOUND", "ADDON_NOT_ACTIVE", "INVALID_SOURCE",
+]);
+
+function addonErrorMessage(e: unknown): string {
+  const code = (e as { code?: string } | undefined)?.code;
+  if (code && ADDON_ERROR_CODES.has(code)) return t(`sa_tenant.addon_error.${code}`);
+  return e instanceof Error ? e.message : t("common.error");
+}
+
+// SA-only (tenantId present): replaces the old raw feature-flag override
+// toggles (PATCH /{tenant_id}/feature-flags, removed S10) — overrides are now
+// expressed as free OVERRIDE or priced PURCHASED add-ons (migration 072),
+// which survive a plan change by construction (get_tenant_entitlements()).
+function TenantAddonsSection({ tenantId }: { tenantId: string }) {
   const qc = useQueryClient();
-  const [draft, setDraft] = useState<Record<string, boolean>>(() =>
-    Object.fromEntries(OVERRIDE_FLAGS.map((f) => [f, flags[f] ?? false]))
-  );
-  const [confirm, setConfirm] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [success, setSuccess] = useState<string | null>(null);
+  const addonsQueryKey = ["tenant-addons", tenantId];
 
-  const saveMutation = useMutation({
-    mutationFn: () => api.patch(`/api/v1/tenants/${tenantId}/feature-flags`, { feature_flags: draft }),
-    onSuccess: () => {
-      setConfirm(false);
-      setError(null);
-      setSuccess(t("common.success"));
-      void qc.invalidateQueries({ queryKey: ["tenant-admin-features", tenantId] });
-      void qc.invalidateQueries({ queryKey: ["sa-registry-header"] });
-    },
-    onError: (e: unknown) => setError(e instanceof Error ? e.message : t("common.error")),
+  const { data: addons } = useQuery<TenantAddonOut[]>({
+    queryKey: addonsQueryKey,
+    queryFn: () => api.get<TenantAddonOut[]>(`/api/v1/tenants/${tenantId}/addons`),
+    staleTime: 10_000,
+  });
+  const { data: catalog } = useQuery<AddonCatalogEntry[]>({
+    queryKey: ["platform-addons-catalog"],
+    queryFn: () => api.get<AddonCatalogEntry[]>("/api/v1/tenants/platform/addons"),
+    staleTime: 60_000,
+  });
+  const { data: subscription } = useQuery<{ billing_period: string | null }>({
+    queryKey: ["tenant-admin-subscription", tenantId],
+    queryFn: () => api.get(`/api/v1/tenants/${tenantId}/subscription`),
+    staleTime: 30_000,
   });
 
-  const hasChanges = OVERRIDE_FLAGS.some((f) => draft[f] !== (flags[f] ?? false));
+  const [grantForm, setGrantForm] = useState<{ source: "OVERRIDE" | "PURCHASED"; code: string; note: string } | null>(null);
+  const [grantError, setGrantError] = useState<string | null>(null);
+  const [cancelRow, setCancelRow] = useState<string | null>(null);
+  const [cancelNote, setCancelNote] = useState("");
+  const [cancelError, setCancelError] = useState<string | null>(null);
+
+  function invalidate() {
+    void qc.invalidateQueries({ queryKey: addonsQueryKey });
+    void qc.invalidateQueries({ queryKey: ["tenant-admin-features", tenantId] });
+    void qc.invalidateQueries({ queryKey: ["tenant-admin-plan", tenantId] });
+  }
+
+  const grantMutation = useMutation({
+    mutationFn: (body: { addon_code: string; source: string; note?: string }) =>
+      api.post(`/api/v1/tenants/${tenantId}/addons`, body),
+    onSuccess: () => { setGrantForm(null); setGrantError(null); invalidate(); },
+    onError: (e: unknown) => setGrantError(addonErrorMessage(e)),
+  });
+
+  const cancelMutation = useMutation({
+    mutationFn: (id: string) => api.post(`/api/v1/tenants/${tenantId}/addons/${id}/cancel`, { note: cancelNote.trim() }),
+    onSuccess: () => { setCancelRow(null); setCancelNote(""); setCancelError(null); invalidate(); },
+    onError: (e: unknown) => setCancelError(addonErrorMessage(e)),
+  });
+
+  const active = (addons ?? []).filter((a) => a.status === "ACTIVE");
+  const cancelled = (addons ?? []).filter((a) => a.status === "CANCELLED");
+  const activeCodes = new Set(active.map((a) => a.addon_code));
+  const pickable = (catalog ?? []).filter((c) => c.is_active && !activeCodes.has(c.code));
+
+  const previewEntry = grantForm?.source === "PURCHASED" ? catalog?.find((c) => c.code === grantForm.code) : null;
+  const previewPrice = previewEntry?.prices.find((p) => p.billing_period === subscription?.billing_period)?.current ?? null;
+
+  function startGrant(source: "OVERRIDE" | "PURCHASED") {
+    setGrantForm({ source, code: pickable[0]?.code ?? "", note: "" });
+    setGrantError(null);
+  }
 
   return (
     <div className="bg-white rounded-lg border border-gray-200 p-6">
-      <h3 className="text-lg font-semibold text-gray-800 mb-2">{t("sa_tenant.features.overrides_heading")}</h3>
-      <p className="text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded px-3 py-2 mb-4">
-        {t("sa_tenant.features.overrides_warning")}
-      </p>
-      <p className="text-xs text-gray-500 mb-5">{t("sa.features_hint")}</p>
+      <h3 className="text-lg font-semibold text-gray-800 mb-4">{t("sa_tenant.addons.heading")}</h3>
 
-      <div className="flex flex-col gap-4 mb-6">
-        {OVERRIDE_FLAGS.map((flag) => (
-          <label key={flag} className="flex items-center justify-between cursor-pointer">
-            <span className="text-sm font-medium text-gray-700">{t(`sa.feature_${flag}`)}</span>
+      <p className="text-xs font-bold text-gray-500 uppercase mb-2">{t("sa_tenant.addons.active_heading")}</p>
+      {active.length === 0 ? (
+        <p className="text-sm text-gray-500 mb-4">{t("sa_tenant.addons.empty")}</p>
+      ) : (
+        <div className="space-y-2 mb-4">
+          {active.map((a) => (
+            <div key={a.id} className="flex items-center justify-between border border-gray-200 rounded px-3 py-2">
+              <div>
+                <p className="text-sm font-semibold text-gray-800">{a.display_name}</p>
+                <p className="text-xs text-gray-500">
+                  {a.source === "OVERRIDE" ? t("sa_tenant.addons.source_override") : t("sa_tenant.addons.source_purchased")}
+                  {" · "}{t("sa_tenant.addons.since_label")} {a.starts_on}
+                  {a.source === "PURCHASED" && ` · ${formatCurrency(a.amount, a.currency)}`}
+                </p>
+              </div>
+              {cancelRow === a.id ? (
+                <div className="flex items-center gap-2">
+                  <input
+                    type="text"
+                    value={cancelNote}
+                    onChange={(e) => setCancelNote(e.target.value)}
+                    placeholder={t("sa_tenant.addons.note_required_label")}
+                    className="px-2 py-1 text-xs border border-gray-300 rounded outline-none focus:border-red-600"
+                  />
+                  <button type="button" disabled={cancelMutation.isPending || !cancelNote.trim()}
+                    onClick={() => cancelMutation.mutate(a.id)}
+                    className="px-2.5 py-1 text-xs font-bold text-white bg-red-600 rounded hover:bg-red-700 disabled:opacity-50">
+                    {t("sa_tenant.billing.confirm_yes")}
+                  </button>
+                  <button type="button" onClick={() => { setCancelRow(null); setCancelError(null); }}
+                    className="px-2.5 py-1 text-xs font-bold text-gray-600 rounded hover:bg-gray-200">
+                    {t("sa_tenant.billing.confirm_no")}
+                  </button>
+                </div>
+              ) : (
+                <button type="button" onClick={() => { setCancelRow(a.id); setCancelNote(""); setCancelError(null); }}
+                  className="text-xs font-semibold text-red-600 hover:text-red-700 underline">
+                  {t("sa_tenant.addons.cancel_btn")}
+                </button>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+      {cancelError && <p className="text-xs text-red-600 mb-3">{cancelError}</p>}
+
+      {cancelled.length > 0 && (
+        <>
+          <p className="text-xs font-bold text-gray-400 uppercase mb-2">{t("sa_tenant.addons.cancelled_heading")}</p>
+          <div className="space-y-1 mb-4">
+            {cancelled.map((a) => (
+              <p key={a.id} className="text-xs text-gray-400">
+                {a.display_name} — {t("sa_tenant.addons.since_label")} {a.starts_on} {t("sa_tenant.addons.until_label")} {a.cancelled_at?.slice(0, 10) ?? "—"}
+              </p>
+            ))}
+          </div>
+        </>
+      )}
+
+      {grantForm ? (
+        <div className="p-3 bg-gray-50 rounded border border-gray-200 space-y-2">
+          <div className="flex gap-2">
+            <select
+              value={grantForm.code}
+              onChange={(e) => setGrantForm((f) => (f ? { ...f, code: e.target.value } : f))}
+              className="px-2 py-1.5 text-xs border border-gray-300 rounded outline-none"
+            >
+              {pickable.map((c) => (
+                <option key={c.code} value={c.code}>{c.display_name}</option>
+              ))}
+            </select>
+            <input
+              type="text"
+              value={grantForm.note}
+              onChange={(e) => setGrantForm((f) => (f ? { ...f, note: e.target.value } : f))}
+              placeholder={grantForm.source === "OVERRIDE" ? t("sa_tenant.addons.note_required_label") : t("sa_tenant.addons.note_optional_label")}
+              className="flex-1 px-2 py-1.5 text-xs border border-gray-300 rounded outline-none"
+            />
+          </div>
+          {grantForm.source === "PURCHASED" && (
+            <p className="text-xs text-gray-500">
+              {previewPrice
+                ? t("sa_tenant.addons.price_preview").replace("{amount}", formatCurrency(previewPrice.amount, previewPrice.currency))
+                : t("sa_tenant.addons.price_unavailable")}
+            </p>
+          )}
+          {grantError && <p className="text-xs text-red-600">{grantError}</p>}
+          <div className="flex gap-2">
             <button
               type="button"
-              onClick={() => { setDraft((prev) => ({ ...prev, [flag]: !prev[flag] })); setSuccess(null); }}
-              className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none ${
-                draft[flag] ? "bg-[#0f2d1f]" : "bg-gray-300"
-              }`}
-              aria-pressed={!!draft[flag]}
+              disabled={grantMutation.isPending || !grantForm.code || (grantForm.source === "OVERRIDE" && !grantForm.note.trim())}
+              onClick={() => grantMutation.mutate({ addon_code: grantForm.code, source: grantForm.source, note: grantForm.note.trim() || undefined })}
+              className="px-3 py-1.5 text-xs font-bold text-white bg-[#0f2d1f] rounded hover:bg-[#1a4d35] disabled:opacity-50"
             >
-              <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
-                draft[flag] ? "translate-x-6" : "translate-x-1"
-              }`} />
+              {grantMutation.isPending ? "…" : t("sa_tenant.billing.confirm_yes")}
             </button>
-          </label>
-        ))}
-      </div>
-
-      {error && <p className="text-sm text-red-600 mb-3">{error}</p>}
-      {success && <p className="text-sm text-emerald-700 mb-3">{success}</p>}
-
-      {confirm ? (
-        <div className="flex items-center gap-3 p-3 bg-gray-50 rounded border border-gray-200">
-          <span className="text-sm text-gray-700 flex-1">{t("sa.admin_confirm_prompt")}</span>
-          <button type="button" disabled={saveMutation.isPending} onClick={() => saveMutation.mutate()}
-            className="px-3 py-1.5 text-xs font-bold text-white bg-[#0f2d1f] rounded hover:bg-[#1a4d35] disabled:opacity-50">
-            {saveMutation.isPending ? "…" : t("sa.admin_confirm_yes")}
-          </button>
-          <button type="button" disabled={saveMutation.isPending} onClick={() => setConfirm(false)}
-            className="px-3 py-1.5 text-xs font-bold text-gray-600 rounded hover:bg-gray-200">
-            {t("sa.admin_confirm_no")}
-          </button>
+            <button type="button" onClick={() => { setGrantForm(null); setGrantError(null); }}
+              className="px-3 py-1.5 text-xs font-bold text-gray-600 rounded hover:bg-gray-200">
+              {t("sa_tenant.billing.confirm_no")}
+            </button>
+          </div>
         </div>
       ) : (
-        <button type="button" disabled={!hasChanges}
-          onClick={() => { setConfirm(true); setSuccess(null); setError(null); }}
-          className="px-4 py-2 text-sm font-bold text-white bg-[#0f2d1f] rounded hover:bg-[#1a4d35] disabled:opacity-50">
-          {t("sa.features_save_btn")}
-        </button>
+        <div className="flex gap-2">
+          <button type="button" disabled={pickable.length === 0} onClick={() => startGrant("OVERRIDE")}
+            className="px-3 py-1.5 text-xs font-bold text-white bg-[#0f2d1f] rounded hover:bg-[#1a4d35] disabled:opacity-50">
+            {t("sa_tenant.addons.grant_override_btn")}
+          </button>
+          <button type="button" disabled={pickable.length === 0} onClick={() => startGrant("PURCHASED")}
+            className="px-3 py-1.5 text-xs font-bold text-white bg-blue-600 rounded hover:bg-blue-700 disabled:opacity-50">
+            {t("sa_tenant.addons.add_purchased_btn")}
+          </button>
+        </div>
       )}
     </div>
   );
@@ -156,6 +277,12 @@ export function FeaturesTab({ tenantId, isLoading }: TabProps) {
         {Object.entries(FEATURE_MATRIX).map(([key, feature]) => {
           const isIncluded = plan.feature_flags[key] ?? false;
           const isAvailableInCurrentTier = feature.tiers.includes(plan.plan_tier);
+          const isFromAddon = plan.addons.includes(key);
+          const sourceLabel = isFromAddon
+            ? t("tenant_admin.features.source_addon")
+            : isIncluded
+              ? t("tenant_admin.features.source_package")
+              : t("tenant_admin.features.source_not_included");
 
           return (
             <div
@@ -173,7 +300,14 @@ export function FeaturesTab({ tenantId, isLoading }: TabProps) {
                   {isIncluded ? "✅" : isAvailableInCurrentTier ? "✓" : "🔒"}
                 </span>
                 <div className="flex-1">
-                  <h4 className="font-semibold text-gray-800 mb-1">{t(`tenant_admin.features.flag.${key}`)}</h4>
+                  <div className="flex items-center gap-2 mb-1">
+                    <h4 className="font-semibold text-gray-800">{t(`tenant_admin.features.flag.${key}`)}</h4>
+                    <span className={`text-[11px] font-bold px-1.5 py-0.5 rounded ${
+                      isFromAddon ? "bg-indigo-100 text-indigo-700" : isIncluded ? "bg-blue-100 text-blue-700" : "bg-gray-100 text-gray-500"
+                    }`}>
+                      {sourceLabel}
+                    </span>
+                  </div>
                   <p className="text-sm text-gray-600 mb-2">{t(`tenant_admin.features.flag_desc.${key}`)}</p>
                   <div className="flex flex-wrap gap-1">
                     {feature.tiers.map((tier) => (
@@ -196,8 +330,8 @@ export function FeaturesTab({ tenantId, isLoading }: TabProps) {
         })}
       </div>
 
-      {/* SA mode: per-tenant feature overrides (CLAUDE.md §15 S9) */}
-      {tenantId && <FeatureOverrides tenantId={tenantId} flags={plan.feature_flags} />}
+      {/* SA mode: per-tenant add-ons (CLAUDE.md §15 S10 — replaces the S9 raw override toggles) */}
+      {tenantId && <TenantAddonsSection tenantId={tenantId} />}
 
       {/* Upgrade CTA */}
       <div className="bg-gradient-to-r from-emerald-50 to-teal-50 rounded-lg border border-emerald-200 p-6">

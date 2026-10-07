@@ -6,7 +6,7 @@ import { api } from "@/lib/api";
 import { t } from "@/lib/i18n";
 import { formatCurrency } from "@/lib/utils";
 import { Badge } from "@/components/ui/Badge";
-import { TabProps, PlanData } from "../types";
+import { TabProps, PlanData, TenantAddonOut } from "../types";
 
 const PLAN_TIERS = {
   STARTER: { nameKey: "tenant_admin.plan.tier.STARTER", className: "bg-blue-600" },
@@ -469,7 +469,17 @@ function SubscriptionAndInvoices({ tenantId }: { tenantId?: string }) {
                 {subscription.payments.map((p) => (
                   <Fragment key={p.id}>
                     <tr className="border-b border-gray-100">
-                      <td className="px-3 py-2 whitespace-nowrap text-gray-700">{p.period_start} → {p.period_end}</td>
+                      <td className="px-3 py-2 whitespace-nowrap text-gray-700">
+                        <p>{p.period_start} → {p.period_end}</p>
+                        <ul className="mt-1 space-y-0.5">
+                          {p.line_items.map((li) => (
+                            <li key={`${li.item_type}-${li.item_key}`} className="text-[11px] text-gray-400 font-normal">
+                              {li.item_type === "ADDON" ? t("tenant_admin.billing.line_item_addon_prefix") : t("tenant_admin.billing.line_item_package_prefix")}
+                              {" "}{li.description ?? li.item_key} — {formatCurrency(li.amount, p.currency)}
+                            </li>
+                          ))}
+                        </ul>
+                      </td>
                       <td className="px-3 py-2 whitespace-nowrap text-gray-700">{formatCurrency(p.subtotal, p.currency)}</td>
                       <td className="px-3 py-2 whitespace-nowrap text-gray-700">{formatCurrency(p.vat_amount, p.currency)}</td>
                       <td className="px-3 py-2 whitespace-nowrap font-semibold text-gray-800">{formatCurrency(p.total, p.currency)}</td>
@@ -622,6 +632,49 @@ function SubscriptionAndInvoices({ tenantId }: { tenantId?: string }) {
   );
 }
 
+// Read-only in both TA and SA modes — management (grant/cancel) lives on the
+// Features tab's TenantAddonsSection (SA only). See CLAUDE.md §15 S10.
+function AddonsReadOnlySection({ tenantId }: { tenantId?: string }) {
+  const path = tenantId ? `/api/v1/tenants/${tenantId}/addons` : `/api/v1/tenants/me/addons`;
+  const { data: addons, isLoading } = useQuery<TenantAddonOut[]>({
+    queryKey: ["tenant-addons-readonly", tenantId ?? "me"],
+    queryFn: () => api.get<TenantAddonOut[]>(path),
+    staleTime: 10_000,
+  });
+
+  if (isLoading) return null;
+
+  const active = (addons ?? []).filter((a) => a.status === "ACTIVE");
+  const cancelled = (addons ?? []).filter((a) => a.status === "CANCELLED");
+
+  return (
+    <div className="bg-white rounded-lg border border-gray-200 p-6">
+      <h3 className="text-lg font-semibold text-gray-800 mb-4">{t("tenant_admin.plan.addons_heading")}</h3>
+      {active.length === 0 && cancelled.length === 0 ? (
+        <p className="text-sm text-gray-500">{t("sa_tenant.addons.empty")}</p>
+      ) : (
+        <div className="space-y-2">
+          {active.map((a) => (
+            <div key={a.id} className="flex items-center justify-between border border-gray-200 rounded px-3 py-2">
+              <p className="text-sm font-semibold text-gray-800">{a.display_name}</p>
+              <p className="text-xs text-gray-500">
+                {a.source === "OVERRIDE" ? t("sa_tenant.addons.source_override") : t("sa_tenant.addons.source_purchased")}
+                {" · "}{t("sa_tenant.addons.since_label")} {a.starts_on}
+                {a.source === "PURCHASED" && ` · ${formatCurrency(a.amount, a.currency)}`}
+              </p>
+            </div>
+          ))}
+          {cancelled.map((a) => (
+            <p key={a.id} className="text-xs text-gray-400">
+              {a.display_name} — {t("sa_tenant.addons.since_label")} {a.starts_on} {t("sa_tenant.addons.until_label")} {a.cancelled_at?.slice(0, 10) ?? "—"}
+            </p>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function PlanTab({ tenantId, isLoading }: TabProps) {
   const planPath = tenantId ? `/api/v1/tenants/${tenantId}/plan` : `/api/v1/tenants/me/plan`;
   const { data: plan, isLoading: loadingPlan } = useQuery<PlanData>({
@@ -686,6 +739,8 @@ export function PlanTab({ tenantId, isLoading }: TabProps) {
       {tenantId && <TierChangeForm tenantId={tenantId} plan={plan} />}
 
       <SubscriptionAndInvoices tenantId={tenantId} />
+
+      <AddonsReadOnlySection tenantId={tenantId} />
 
       {/* Features Card */}
       <div className="bg-white rounded-lg border border-gray-200 p-6">

@@ -1520,7 +1520,8 @@
       "available_features": "Available Features",
       "ready_to_upgrade": "Ready to Upgrade?",
       "upgrade_cta_text": "Request a plan upgrade to unlock more features, users, and warehouses.",
-      "request_upgrade_btn": "Request Plan Upgrade"
+      "request_upgrade_btn": "Request Plan Upgrade",
+      "addons_heading": "Add-ons"
     },
     "features": {
       "flag": {
@@ -1555,7 +1556,10 @@
       "need_help_prefix": "Need help choosing a plan?",
       "compare_plans_link": "Compare plans",
       "or_word": "or",
-      "contact_support_link": "contact support"
+      "contact_support_link": "contact support",
+      "source_package": "Package",
+      "source_addon": "Add-on",
+      "source_not_included": "Not included"
     },
     "contract": {
       "status_title": "Contract Status",
@@ -1603,7 +1607,9 @@
         "PAID": "Paid",
         "FAILED": "Failed",
         "CANCELLED": "Cancelled"
-      }
+      },
+      "line_item_addon_prefix": "Add-on:",
+      "line_item_package_prefix": "Package:"
     }
   },
   "sa_tenant": {
@@ -1639,6 +1645,35 @@
     "features": {
       "overrides_heading": "Feature overrides",
       "overrides_warning": "Overrides are reset when the plan changes."
+    },
+    "addons": {
+      "heading": "Add-ons",
+      "active_heading": "Active",
+      "cancelled_heading": "Cancelled",
+      "empty": "No add-ons yet.",
+      "source_override": "Free override",
+      "source_purchased": "Purchased",
+      "since_label": "Since",
+      "until_label": "Until",
+      "grant_override_btn": "Grant free override",
+      "add_purchased_btn": "Add purchased add-on",
+      "cancel_btn": "Cancel",
+      "note_required_label": "Note (required)",
+      "note_optional_label": "Note (optional)",
+      "price_preview": "Will be billed {amount} starting from the next invoice.",
+      "price_unavailable": "No price set for this billing period yet."
+    },
+    "addon_error": {
+      "ADDON_NOT_FOUND": "Unknown add-on.",
+      "ADDON_INACTIVE": "This add-on is not currently offered.",
+      "FEATURE_ALREADY_IN_PACKAGE": "This tenant's plan already includes this feature.",
+      "ADDON_ALREADY_ACTIVE": "This add-on is already active for this tenant.",
+      "NOTE_REQUIRED": "A note is required for a free override.",
+      "NO_LIVE_SUBSCRIPTION": "This tenant has no active subscription to price the add-on against.",
+      "ADDON_PRICE_NOT_AVAILABLE": "No price is set for this add-on's billing period yet.",
+      "ADDON_GRANT_NOT_FOUND": "Add-on grant not found.",
+      "ADDON_NOT_ACTIVE": "This add-on grant is not active.",
+      "INVALID_SOURCE": "Invalid add-on source."
     }
   },
   "platform_plans": {
@@ -1688,7 +1723,14 @@
     "history_col_new": "New",
     "history_col_reason": "Reason",
     "history_col_by": "By",
-    "error_generic": "Something went wrong."
+    "error_generic": "Something went wrong.",
+    "tab_addons": "Add-ons",
+    "addons_note": "Add-ons extend a tenant's plan with individual features — free overrides or priced purchases that survive plan changes.",
+    "addons_set_price": "Set new price",
+    "addons_code_label": "Add-on",
+    "addons_price_saved": "Existing purchased add-ons pay the new price from their next renewal invoice.",
+    "addons_description_label": "Description",
+    "addons_is_active": "Active"
   },
   "signup": {
     "title": "Create your SMART account",

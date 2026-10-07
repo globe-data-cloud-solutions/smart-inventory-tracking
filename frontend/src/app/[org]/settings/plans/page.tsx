@@ -49,6 +49,23 @@ interface TierPricing {
   history: PriceHistoryEntry[];
 }
 
+interface AddonPricing {
+  billing_period: string;
+  current: PriceSnapshot | null;
+  scheduled: PriceHistoryEntry[];
+  history: PriceHistoryEntry[];
+}
+
+interface AddonCatalogEntry {
+  code: string;
+  display_name: string;
+  description: string | null;
+  is_active: boolean;
+  is_public: boolean;
+  sort_order: number;
+  prices: AddonPricing[];
+}
+
 interface ConfigLogEntry {
   id: string;
   entity_type: string;
@@ -81,7 +98,7 @@ function money(amount: string, currency: string): string {
 
 /* ── Main page ─────────────────────────────────────────────────────────────── */
 
-type TabId = "packages" | "prices" | "history";
+type TabId = "packages" | "prices" | "addons" | "history";
 
 export default function PlansAndPricingPage() {
   const session = getSession();
@@ -100,7 +117,7 @@ export default function PlansAndPricingPage() {
 
       <div className="bg-white border-b border-gray-200 px-6">
         <div className="flex gap-8">
-          {(["packages", "prices", "history"] as const).map((id) => (
+          {(["packages", "prices", "addons", "history"] as const).map((id) => (
             <button
               key={id}
               type="button"
@@ -118,6 +135,7 @@ export default function PlansAndPricingPage() {
       <div className="p-6 max-w-5xl mx-auto">
         {tab === "packages" && <PackagesTab />}
         {tab === "prices" && <PricesTab />}
+        {tab === "addons" && <AddonsTab />}
         {tab === "history" && <HistoryTab />}
       </div>
     </div>
@@ -489,7 +507,289 @@ function PricesTab() {
   );
 }
 
-/* ── Tab 3: Change history ────────────────────────────────────────────────── */
+/* ── Tab 3: Add-ons ───────────────────────────────────────────────────────── */
+
+function AddonsTab() {
+  const qc = useQueryClient();
+  const { data, isLoading, isError } = useQuery<AddonCatalogEntry[]>({
+    queryKey: ["platform-addons"],
+    queryFn: () => api.get<AddonCatalogEntry[]>("/api/v1/tenants/platform/addons"),
+    staleTime: 0,
+  });
+
+  const [drafts, setDrafts] = useState<Record<string, AddonCatalogEntry>>({});
+  const [catalogReason, setCatalogReason] = useState("");
+  const [savingCode, setSavingCode] = useState<string | null>(null);
+  const [errorByCode, setErrorByCode] = useState<Record<string, string>>({});
+  const [savedCode, setSavedCode] = useState<string | null>(null);
+  const initialized = useRef(false);
+
+  const [priceForm, setPriceForm] = useState({
+    addon_code: "",
+    billing_period: "MONTHLY" as string,
+    amount: "",
+    effective_from: new Date().toISOString().slice(0, 10),
+    reason: "",
+  });
+  const [priceSubmitting, setPriceSubmitting] = useState(false);
+  const [priceError, setPriceError] = useState<string | null>(null);
+  const [priceSuccess, setPriceSuccess] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (data && !initialized.current) {
+      setDrafts(Object.fromEntries(data.map((row) => [row.code, row])));
+      if (data.length > 0) setPriceForm((f) => ({ ...f, addon_code: data[0]!.code }));
+      initialized.current = true;
+    }
+  }, [data]);
+
+  function updateDraft(code: string, patch: Partial<AddonCatalogEntry>) {
+    setDrafts((d) => ({ ...d, [code]: { ...d[code]!, ...patch } }));
+  }
+
+  async function handleSaveCatalog(code: string) {
+    const draft = drafts[code];
+    if (!draft || !catalogReason.trim()) return;
+    setSavingCode(code);
+    setErrorByCode((e) => ({ ...e, [code]: "" }));
+    setSavedCode(null);
+    try {
+      await api.patch(`/api/v1/tenants/platform/addons/${code}`, {
+        display_name: draft.display_name,
+        description: draft.description,
+        is_active: draft.is_active,
+        is_public: draft.is_public,
+        sort_order: draft.sort_order,
+        reason: catalogReason,
+      });
+      await qc.invalidateQueries({ queryKey: ["platform-addons"] });
+      await qc.invalidateQueries({ queryKey: ["platform-config-log"] });
+      setSavedCode(code);
+    } catch (e: unknown) {
+      setErrorByCode((err) => ({ ...err, [code]: e instanceof Error ? e.message : t("platform_plans.error_generic") }));
+    } finally {
+      setSavingCode(null);
+    }
+  }
+
+  async function handleSubmitPrice() {
+    setPriceSubmitting(true);
+    setPriceError(null);
+    setPriceSuccess(null);
+    try {
+      await api.post(`/api/v1/tenants/platform/addons/${priceForm.addon_code}/prices`, {
+        billing_period: priceForm.billing_period,
+        amount: priceForm.amount,
+        effective_from: priceForm.effective_from,
+        reason: priceForm.reason,
+      });
+      await qc.invalidateQueries({ queryKey: ["platform-addons"] });
+      await qc.invalidateQueries({ queryKey: ["platform-config-log"] });
+      setPriceSuccess(t("platform_plans.addons_price_saved"));
+      setPriceForm((f) => ({ ...f, amount: "", reason: "" }));
+    } catch (e: unknown) {
+      setPriceError(e instanceof Error ? e.message : t("platform_plans.error_generic"));
+    } finally {
+      setPriceSubmitting(false);
+    }
+  }
+
+  if (isLoading) return <p className="text-gray-400 text-sm">{t("common.loading")}</p>;
+  if (isError || !data) return <p className="text-red-500 text-sm">{t("common.error")}</p>;
+
+  const sorted = [...data].sort((a, b) => a.sort_order - b.sort_order);
+
+  return (
+    <div className="space-y-6">
+      <p className="text-xs text-gray-500">{t("platform_plans.addons_note")}</p>
+
+      {/* Set new price */}
+      <div className="bg-white border border-gray-200 rounded-lg p-4">
+        <h3 className="text-sm font-bold text-gray-800 mb-3">{t("platform_plans.addons_set_price")}</h3>
+        <div className="grid grid-cols-2 md:grid-cols-5 gap-3 items-end">
+          <div>
+            <label className="block text-[11px] font-bold text-gray-500 mb-1">{t("platform_plans.addons_code_label")}</label>
+            <select
+              value={priceForm.addon_code}
+              onChange={(e) => setPriceForm((f) => ({ ...f, addon_code: e.target.value }))}
+              className="w-full px-2 py-1.5 text-sm border border-gray-300 rounded outline-none"
+            >
+              {sorted.map((a) => (
+                <option key={a.code} value={a.code}>{a.display_name}</option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label className="block text-[11px] font-bold text-gray-500 mb-1">{t("platform_plans.prices_period_label")}</label>
+            <select
+              value={priceForm.billing_period}
+              onChange={(e) => setPriceForm((f) => ({ ...f, billing_period: e.target.value }))}
+              className="w-full px-2 py-1.5 text-sm border border-gray-300 rounded outline-none"
+            >
+              <option value="MONTHLY">{t("platform_plans.prices_monthly")}</option>
+              <option value="ANNUAL">{t("platform_plans.prices_annual")}</option>
+            </select>
+          </div>
+          <div>
+            <label className="block text-[11px] font-bold text-gray-500 mb-1">{t("platform_plans.prices_amount_label")}</label>
+            <input
+              type="number"
+              min={0}
+              step="0.01"
+              value={priceForm.amount}
+              onChange={(e) => setPriceForm((f) => ({ ...f, amount: e.target.value }))}
+              className="w-full px-2 py-1.5 text-sm border border-gray-300 rounded outline-none"
+            />
+          </div>
+          <div>
+            <label className="block text-[11px] font-bold text-gray-500 mb-1">{t("platform_plans.prices_effective_label")}</label>
+            <input
+              type="date"
+              value={priceForm.effective_from}
+              onChange={(e) => setPriceForm((f) => ({ ...f, effective_from: e.target.value }))}
+              className="w-full px-2 py-1.5 text-sm border border-gray-300 rounded outline-none"
+            />
+          </div>
+          <div>
+            <label className="block text-[11px] font-bold text-gray-500 mb-1">{t("platform_plans.reason_label")}</label>
+            <input
+              type="text"
+              value={priceForm.reason}
+              onChange={(e) => setPriceForm((f) => ({ ...f, reason: e.target.value }))}
+              placeholder={t("platform_plans.reason_placeholder")}
+              className="w-full px-2 py-1.5 text-sm border border-gray-300 rounded outline-none"
+            />
+          </div>
+        </div>
+        {priceError && <p className="text-xs text-red-600 bg-red-50 border border-red-200 rounded px-2 py-1.5 mt-2">{priceError}</p>}
+        {priceSuccess && <p className="text-xs text-emerald-700 bg-emerald-50 border border-emerald-200 rounded px-2 py-1.5 mt-2">{priceSuccess}</p>}
+        <div className="flex justify-end mt-3">
+          <button
+            type="button"
+            disabled={priceSubmitting || !priceForm.amount || !priceForm.reason.trim() || !priceForm.addon_code}
+            onClick={() => void handleSubmitPrice()}
+            className="px-4 py-2 text-xs font-bold text-white bg-[#0f2d1f] rounded hover:bg-[#1a4d35] disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {priceSubmitting ? t("platform_plans.saving") : t("platform_plans.prices_submit_btn")}
+          </button>
+        </div>
+      </div>
+
+      {/* Catalog edit reason */}
+      <div>
+        <label className="block text-xs font-bold text-gray-600 mb-1">
+          {t("platform_plans.reason_label")} <span className="text-red-500">*</span>
+        </label>
+        <input
+          type="text"
+          value={catalogReason}
+          onChange={(e) => setCatalogReason(e.target.value)}
+          placeholder={t("platform_plans.reason_placeholder")}
+          className="w-full max-w-md px-3 py-2 text-sm border border-gray-300 rounded outline-none focus:border-[#1B4332] focus:ring-1 focus:ring-[#1B4332]"
+        />
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        {sorted.map((row) => {
+          const draft = drafts[row.code] ?? row;
+          const err = errorByCode[row.code];
+          return (
+            <div key={row.code} className="bg-white border border-gray-200 rounded-lg p-4 space-y-3">
+              <span className="text-xs font-extrabold px-2 py-0.5 rounded bg-indigo-100 text-indigo-700">{row.code}</span>
+
+              <div>
+                <label className="block text-[11px] font-bold text-gray-500 mb-1">{t("platform_plans.field_display_name")}</label>
+                <input
+                  type="text"
+                  value={draft.display_name}
+                  onChange={(e) => updateDraft(row.code, { display_name: e.target.value })}
+                  className="w-full px-2 py-1.5 text-sm border border-gray-300 rounded outline-none focus:border-[#1B4332] focus:ring-1 focus:ring-[#1B4332]"
+                />
+              </div>
+
+              <div>
+                <label className="block text-[11px] font-bold text-gray-500 mb-1">{t("platform_plans.addons_description_label")}</label>
+                <input
+                  type="text"
+                  value={draft.description ?? ""}
+                  onChange={(e) => updateDraft(row.code, { description: e.target.value })}
+                  className="w-full px-2 py-1.5 text-sm border border-gray-300 rounded outline-none focus:border-[#1B4332] focus:ring-1 focus:ring-[#1B4332]"
+                />
+              </div>
+
+              <div>
+                <label className="block text-[11px] font-bold text-gray-500 mb-1">{t("platform_plans.field_sort_order")}</label>
+                <input
+                  type="number"
+                  value={draft.sort_order}
+                  onChange={(e) => updateDraft(row.code, { sort_order: parseInt(e.target.value, 10) || 0 })}
+                  className="w-full px-2 py-1.5 text-sm border border-gray-300 rounded outline-none focus:border-[#1B4332] focus:ring-1 focus:ring-[#1B4332]"
+                />
+              </div>
+
+              <div className="flex gap-4">
+                <label className="flex items-center gap-2 text-xs font-semibold text-gray-600">
+                  <input
+                    type="checkbox"
+                    checked={draft.is_active}
+                    onChange={(e) => updateDraft(row.code, { is_active: e.target.checked })}
+                  />
+                  {t("platform_plans.addons_is_active")}
+                </label>
+                <label className="flex items-center gap-2 text-xs font-semibold text-gray-600">
+                  <input
+                    type="checkbox"
+                    checked={draft.is_public}
+                    onChange={(e) => updateDraft(row.code, { is_public: e.target.checked })}
+                  />
+                  {t("platform_plans.field_is_public")}
+                </label>
+              </div>
+
+              <div className="border-t border-gray-100 pt-2">
+                {row.prices.map((p) => (
+                  <div key={p.billing_period} className="text-xs text-gray-600 mb-1">
+                    <span className="font-bold text-gray-500">
+                      {p.billing_period === "MONTHLY" ? t("platform_plans.prices_monthly") : t("platform_plans.prices_annual")}:
+                    </span>{" "}
+                    {p.current
+                      ? money(p.current.amount, p.current.currency)
+                      : t("platform_plans.prices_no_current")}
+                    {p.scheduled.length > 0 && (
+                      <span className="text-gray-400">
+                        {" "}· {t("platform_plans.prices_scheduled")}: {money(p.scheduled[0]!.amount, p.scheduled[0]!.currency)}
+                      </span>
+                    )}
+                  </div>
+                ))}
+              </div>
+
+              {err && <p className="text-xs text-red-600 bg-red-50 border border-red-200 rounded px-2 py-1.5">{err}</p>}
+              {savedCode === row.code && (
+                <p className="text-xs text-emerald-700 bg-emerald-50 border border-emerald-200 rounded px-2 py-1.5">
+                  {t("platform_plans.saved")}
+                </p>
+              )}
+
+              <div className="flex justify-end pt-1">
+                <button
+                  type="button"
+                  disabled={savingCode === row.code || !catalogReason.trim()}
+                  onClick={() => void handleSaveCatalog(row.code)}
+                  className="px-3 py-1.5 text-xs font-bold text-white bg-[#0f2d1f] rounded hover:bg-[#1a4d35] disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {savingCode === row.code ? t("platform_plans.saving") : t("platform_plans.save_btn")}
+                </button>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+/* ── Tab 4: Change history ────────────────────────────────────────────────── */
 
 function HistoryTab() {
   const [entityType, setEntityType] = useState("");
@@ -519,6 +819,8 @@ function HistoryTab() {
             <option value="">{t("common.all")}</option>
             <option value="PACKAGE">PACKAGE</option>
             <option value="PRICE">PRICE</option>
+            <option value="ADDON">ADDON</option>
+            <option value="ADDON_PRICE">ADDON_PRICE</option>
           </select>
         </div>
         <div>

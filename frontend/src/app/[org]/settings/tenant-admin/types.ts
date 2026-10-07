@@ -28,6 +28,26 @@ export interface PlanData {
   sku_cap: number | null;
   contract_start: string | null;
   contract_end: string | null;
+  /** Codes currently granted via an ACTIVE tenant_addons row (S10) —
+   * get_tenant_entitlements() OR's these into feature_flags, so a code here
+   * means the flag is true because of an add-on, not necessarily the package. */
+  addons: string[];
+}
+
+/** One grant from GET /{tenant_id}/addons or /me/addons (S10). */
+export interface TenantAddonOut {
+  id: string;
+  addon_code: string;
+  display_name: string;
+  source: "OVERRIDE" | "PURCHASED";
+  status: "ACTIVE" | "CANCELLED";
+  amount: string;
+  currency: string;
+  starts_on: string;
+  ends_on: string | null;
+  note: string | null;
+  created_at: string;
+  cancelled_at: string | null;
 }
 
 export interface TenantContact {

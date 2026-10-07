@@ -1534,7 +1534,8 @@
       "available_features": "የሚገኙ ባህሪያት",
       "ready_to_upgrade": "ለማሻሻል ዝግጁ ነዎት?",
       "upgrade_cta_text": "ተጨማሪ ባህሪያት፣ ተጠቃሚዎች፣ እና መጋዘኖችን ለመክፈት የዕቅድ ማሻሻያ ይጠይቁ።",
-      "request_upgrade_btn": "የዕቅድ ማሻሻያ ይጠይቁ"
+      "request_upgrade_btn": "የዕቅድ ማሻሻያ ይጠይቁ",
+      "addons_heading": "ተጨማሪዎች"
     },
     "features": {
       "flag": {
@@ -1569,7 +1570,10 @@
       "need_help_prefix": "ዕቅድ ለመምረጥ እገዛ ይፈልጋሉ?",
       "compare_plans_link": "ዕቅዶችን ያወዳድሩ",
       "or_word": "ወይም",
-      "contact_support_link": "ድጋፍን ያነጋግሩ"
+      "contact_support_link": "ድጋፍን ያነጋግሩ",
+      "source_package": "ጥቅል",
+      "source_addon": "ተጨማሪ",
+      "source_not_included": "አልተካተተም"
     },
     "contract": {
       "status_title": "የውል ሁኔታ",
@@ -1617,7 +1621,9 @@
         "PAID": "ተከፍሏል",
         "FAILED": "አልተሳካም",
         "CANCELLED": "ተሰርዟል"
-      }
+      },
+      "line_item_addon_prefix": "ተጨማሪ፦",
+      "line_item_package_prefix": "ጥቅል፦"
     }
   },
   "sa_tenant": {
@@ -1653,6 +1659,35 @@
     "features": {
       "overrides_heading": "የባህሪ ማስተካከያዎች",
       "overrides_warning": "እቅዱ ሲቀየር ማስተካከያዎች ይደምሳሉ።"
+    },
+    "addons": {
+      "heading": "ተጨማሪዎች",
+      "active_heading": "ንቁ",
+      "cancelled_heading": "የተሰረዙ",
+      "empty": "እስካሁን ምንም ተጨማሪዎች የሉም።",
+      "source_override": "ነፃ ፈቃድ",
+      "source_purchased": "የተገዛ",
+      "since_label": "ጀምሮ",
+      "until_label": "እስከ",
+      "grant_override_btn": "ነፃ ፈቃድ ይስጡ",
+      "add_purchased_btn": "የተገዛ ተጨማሪ ይጨምሩ",
+      "cancel_btn": "ይቅር",
+      "note_required_label": "ማስታወሻ (ያስፈልጋል)",
+      "note_optional_label": "ማስታወሻ (አማራጭ)",
+      "price_preview": "ከሚቀጥለው ደረሰኝ ጀምሮ {amount} ይከፈላል።",
+      "price_unavailable": "ለዚህ የክፍያ ጊዜ ገና ዋጋ አልተቀመጠም።"
+    },
+    "addon_error": {
+      "ADDON_NOT_FOUND": "ያልታወቀ ተጨማሪ።",
+      "ADDON_INACTIVE": "ይህ ተጨማሪ በአሁኑ ጊዜ አይቀርብም።",
+      "FEATURE_ALREADY_IN_PACKAGE": "የዚህ ተከራይ እቅድ ይህን ባህሪ አስቀድሞ ያካትታል።",
+      "ADDON_ALREADY_ACTIVE": "ይህ ተጨማሪ ለዚህ ተከራይ አስቀድሞ ንቁ ነው።",
+      "NOTE_REQUIRED": "ለነፃ ፈቃድ ማስታወሻ ያስፈልጋል።",
+      "NO_LIVE_SUBSCRIPTION": "ይህ ተከራይ ተጨማሪውን ለመተመን የሚያስችል ንቁ ምዝገባ የለውም።",
+      "ADDON_PRICE_NOT_AVAILABLE": "ለዚህ ተጨማሪ የክፍያ ጊዜ ገና ዋጋ አልተቀመጠም።",
+      "ADDON_GRANT_NOT_FOUND": "የተጨማሪ ፈቃድ አልተገኘም።",
+      "ADDON_NOT_ACTIVE": "ይህ የተጨማሪ ፈቃድ ንቁ አይደለም።",
+      "INVALID_SOURCE": "ልክ ያልሆነ የተጨማሪ ምንጭ።"
     }
   },
   "platform_plans": {
@@ -1702,7 +1737,14 @@
     "history_col_new": "አዲስ",
     "history_col_reason": "ምክንያት",
     "history_col_by": "በ",
-    "error_generic": "የሆነ ስህተት ተከስቷል።"
+    "error_generic": "የሆነ ስህተት ተከስቷል።",
+    "tab_addons": "ተጨማሪዎች",
+    "addons_note": "ተጨማሪዎች የተከራዩን እቅድ በነጠላ ባህሪያት ያሰፋሉ — እቅድ ሲቀየር የሚቀጥሉ ነፃ ፈቃዶች ወይም የሚከፈልባቸው ግዢዎች።",
+    "addons_set_price": "አዲስ ዋጋ ያስቀምጡ",
+    "addons_code_label": "ተጨማሪ",
+    "addons_price_saved": "ነባር የተገዙ ተጨማሪዎች ከሚቀጥለው የእድሳት ደረሰኝ ጀምሮ አዲሱን ዋጋ ይከፍላሉ።",
+    "addons_description_label": "መግለጫ",
+    "addons_is_active": "ንቁ"
   },
   "signup": {
     "title": "የSMART መለያዎን ይፍጠሩ",
