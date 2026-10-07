@@ -2041,6 +2041,93 @@ Packages/Prices tabs). The TA's own Plan tab shows add-ons read-only plus
 invoice line items; its Features tab shows the same source labels,
 read-only (no management controls there).
 
+### S12 — plan changes are SA-only; Help & Documents; draft public legal pages
+
+**Plan changes are SA-only.** `PATCH /api/v1/tenants/me/profile` now rejects
+a body containing any plan/billing field (`plan_tier`, `max_warehouses`,
+`max_users`, `sku_cap`, `feature_flags`, `billing_period`) with `403
+PLAN_CHANGE_SA_ONLY` — checked against the raw JSON body (`request.json()`),
+since `TAProfileUpdateRequest` has no field for them and Pydantic would
+otherwise just silently drop them rather than reject the request. Every
+other field (`default_locale`) is unaffected. SA's `PATCH /{tenant_id}/plan`
+and `/{tenant_id}/profile` are unchanged — they are the only way a tenant's
+package changes. `GET /me/proration-preview` is removed (no UI ever called
+it — `PlanTab.tsx`'s `TierChangeForm` only renders when an SA is viewing a
+tenant by id; the TA's own Plan tab never had a tier-change control). The
+SA-by-tenant `GET /{tenant_id}/proration-preview` is unaffected. The TA
+Plan tab's old "Ready to Upgrade?" card (a button with no handler) and
+`upgrade_hint` box are both replaced by one line of plain text,
+`tenant_admin.plan.contact_sa_to_change` — no control that looks clickable.
+
+**Help & Documents** (`frontend/src/app/[org]/help/`): a typed manifest
+(`frontend/src/lib/help/manifest.ts`, `HELP_MANIFEST`) lists every document
+— `id`, `titleKey`/`summaryKey`, `audience` (`SA`/`TA`/`MANAGER`/`STAFF`/
+`ALL`), `file` (served from `frontend/public/help/`) or `link` (an external
+path like `/terms`), and `status` (`published`/`coming_soon`).
+`roleToAudience()` maps SA→SA, TA→TA, NM/RM/WM/LM→MANAGER, everything
+else→STAFF; `isDocVisibleToRole()` additionally makes **SA see every
+audience** — the one role-mapping exception. `/[org]/help` lists only the
+docs visible to the viewer (coming-soon cards show a badge and are not
+links); `/[org]/help/[docId]` fetches `file` from `/help/<file>` and renders
+it with `DocumentRenderer` (`frontend/src/components/features/help/
+DocumentRenderer.tsx`) — `react-markdown` + `remark-gfm`, **no `rehype-raw`**
+so markdown-authored HTML never executes, Tailwind classes via the
+`components` prop, a small GitHub-style slug function on headings (lowercase,
+drop anything not `[a-z0-9 _-]`, turn each space into one hyphen — no
+collapsing, matching the anchors already written into
+`TA_ONBOARDING_GUIDE.md`) so `#anchor` links scroll, and images rendered as
+`[alt text]` rather than an `<img>` request. **`frontend/public/` is served
+with no login check** — never point a manifest `file` at anything
+SA-internal; the SA Operations Manual entry has no `file` for exactly this
+reason and will need an authenticated backend route once it's written.
+
+`docs/TA_ONBOARDING_GUIDE.md` stays the single source of truth;
+`scripts/sync_help_docs.sh` copies it to `frontend/public/help/
+ta-onboarding-guide.md` and `scripts/check_help_docs.sh` (wired into
+`frontend/package.json`'s `build` script, alongside `check_i18n.sh`) fails
+CI if the two drift apart. Help nav entry (`nav.help`) added to both
+`SA_NAV` and `TENANT_NAV` in `[org]/layout.tsx`.
+
+**Public draft `/terms` and `/privacy`** (`frontend/src/app/(auth)/terms/`,
+`.../privacy/`, both built on the shared `LegalDocPage` component): no
+session required, same gradient/card shell as `/signup`, a language picker,
+and a DRAFT banner (`legal.draft_banner`). Content is `frontend/public/
+legal/{terms|privacy}-<version>.md` — **headings only, every section reads
+"[To be supplied]"**; per this task's own instruction, no ToS/Privacy
+clause text is invented anywhere in this codebase. `<version>` is read from
+the public packages endpoint's existing `terms_version` field (no new
+public endpoint). `/signup`'s terms checkbox and the `/login`/`/signup`
+footers link to both.
+
+**Terms acceptance is shown, read-only, to TA and SA**:
+`GET /api/v1/tenants/me/terms-acceptance` (TA, `tenant:view` — the same
+permission `GET /me/profile` uses, since this is tenant data, not billing)
+and `GET /{tenant_id}/terms-acceptance` (SA, `tenant:manage` + the usual
+inline SA-only check) both return `{accepted_version, accepted_at,
+accepted_by_email, current_version}`, reading the newest row (there should
+only ever be one) from `terms_acceptances` joined to `users` for the email.
+`terms_acceptances` is written only by `public_signup.py` (§15 S4) — an
+SA-created tenant (`POST /tenants/`) never gets a row, which these routes
+report as all-null fields, not an error. The TA/SA-shared `ProfileTab.tsx`
+(`tenant-admin/components/`) shows "Terms of Service version {v} accepted
+on {date} by {email}" with a `(View)` link to `/terms`, or "No Terms of
+Service acceptance on record" when there's no row; when
+`accepted_version != current_version` an info-only note is added — no
+blocking, no re-accept flow (future work).
+
+**Known gaps (2026-10):** the real, lawyer-reviewed Terms of Service and
+Privacy Policy text does not exist yet — both pages are an outline only; no
+re-accept flow exists for when `TERMS_VERSION` changes (the TA/SA acceptance
+line just notes it's outdated); the SA Operations Manual is SA-internal and
+has no file yet, and when written must be served by an authenticated
+backend route rather than a `frontend/public/` file; every Help document's
+body is English-only (the chrome translates, `help.english_only_notice`
+covers the body); and a downgrade followed by a re-upgrade within the same
+annual period is charged again in full with no credit for the earlier
+downgrade (§15 S11's existing "downgrade gives no credit" rule, now also
+reachable only by SA since S12 — SA should avoid toggling a tenant's tier
+back and forth within one billing period).
+
 ---
 
 ## 16. Dispatch Strategy Engine
