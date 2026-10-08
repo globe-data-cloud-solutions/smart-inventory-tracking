@@ -1440,6 +1440,17 @@
     "success_title": "Password Updated",
     "back_to_signin": "Back to Sign in"
   },
+  "accept_terms": {
+    "page_title": "Terms of Service Update",
+    "page_subtitle": "Please review and accept the current terms to continue.",
+    "current_version_label": "Current version",
+    "previously_accepted_label": "You last accepted",
+    "no_prior_acceptance": "No prior acceptance on record",
+    "load_error": "Failed to load terms acceptance status.",
+    "generic_error": "Failed to record acceptance. Please try again.",
+    "accept_btn": "Accept and Continue",
+    "accepting": "Accepting…"
+  },
   "approval_policies": {
     "nav_label": "Imaammata Hayyamaa",
     "title": "Imaammata Hayyamaa",

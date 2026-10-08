@@ -1450,6 +1450,17 @@
     "success_title": "የይለፍ ቃል ተቀይሯል",
     "back_to_signin": "ወደ መግቢያ ይመለሱ"
   },
+  "accept_terms": {
+    "page_title": "የአገልግሎት ውሎች ዝማኔ",
+    "page_subtitle": "ለመቀጠል እባክዎ የአሁኑን ውሎች ይከልሱ እና ይቀበሉ።",
+    "current_version_label": "የአሁኑ ስሪት",
+    "previously_accepted_label": "ቀደም ሲል የተቀበሉት",
+    "no_prior_acceptance": "ምንም ቀደም ያለ ተቀባይነት የለም",
+    "load_error": "የውሎች ተቀባይነት ሁኔታን መጫን አልተሳካም።",
+    "generic_error": "ተቀባይነትን መመዝገብ አልተሳካም። እባክዎ እንደገና ይሞክሩ።",
+    "accept_btn": "ተቀብለው ይቀጥሉ",
+    "accepting": "በመቀበል ላይ…"
+  },
   "approval_policies": {
     "nav_label": "የማረጋገጫ ፖሊሲዎች",
     "title": "የማረጋገጫ ፖሊሲዎች",

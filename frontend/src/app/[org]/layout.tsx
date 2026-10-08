@@ -562,6 +562,10 @@ export default function OrgLayout({ children }: { children: React.ReactNode }) {
     if (session.role === "PENDING_SETUP" || (session.mustResetPassword && session.role !== "SA")) {
       router.replace(`/change-password?userId=${session.id}`); return;
     }
+    // Account-owner terms re-acceptance gate — checked after mustResetPassword.
+    if (session.termsAcceptanceRequired) {
+      router.replace("/accept-terms"); return;
+    }
 
     if (org === SA_ORG_SLUG && session.role !== "SA") {
       router.replace(`/${session.orgSlug}/dashboard`); return;

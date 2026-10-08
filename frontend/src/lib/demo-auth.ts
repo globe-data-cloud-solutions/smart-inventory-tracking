@@ -34,6 +34,9 @@ export interface SessionUser {
   jwtToken?: string;
   /** When true the user must change their password before proceeding. */
   mustResetPassword?: boolean;
+  /** When true the account owner must re-accept the current terms version
+   * before proceeding (checked after mustResetPassword, never before). */
+  termsAcceptanceRequired?: boolean;
 }
 
 /** SA org slug — used as the first path segment for system administrators. */
@@ -122,6 +125,7 @@ export async function loginWithPassword(email: string, password: string): Promis
       access_token?: string;
       tenant_slug?: string | null;
       must_reset_password?: boolean;
+      terms_acceptance_required?: boolean;
     };
     if (!data.access_token) return null;
 
@@ -166,6 +170,7 @@ export async function loginWithPassword(email: string, password: string): Promis
       positions,
       jwtToken:          data.access_token,
       mustResetPassword: data.must_reset_password ?? false,
+      termsAcceptanceRequired: data.terms_acceptance_required ?? false,
     };
     store()?.setItem(SESSION_KEY, JSON.stringify(session));
     return session;

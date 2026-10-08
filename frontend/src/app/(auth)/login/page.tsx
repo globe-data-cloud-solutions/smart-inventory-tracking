@@ -92,6 +92,12 @@ export default function LoginPage() {
       router.push(`/change-password?userId=${session.id}`);
       return;
     }
+    // Terms re-acceptance comes after a forced password reset (the user logs
+    // in again afterward, re-evaluating this flag fresh at that point).
+    if (session.termsAcceptanceRequired) {
+      router.push("/accept-terms");
+      return;
+    }
     // Return to the intended URL, or route to the user's org dashboard
     const params = new URLSearchParams(window.location.search);
     const from   = params.get("from");
