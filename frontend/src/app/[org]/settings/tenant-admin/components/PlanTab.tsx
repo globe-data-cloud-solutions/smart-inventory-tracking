@@ -6,6 +6,7 @@ import { api } from "@/lib/api";
 import { t } from "@/lib/i18n";
 import { formatCurrency } from "@/lib/utils";
 import { Badge } from "@/components/ui/Badge";
+import { tierLabel as planTierLabel } from "@/lib/planError";
 import { TabProps, PlanData, TenantAddonOut, ProrationPreview, ProrationInvoiceOut } from "../types";
 
 const PLAN_TIERS = {
@@ -64,8 +65,10 @@ function TierChangeForm({ tenantId, plan }: { tenantId: string; plan: PlanData }
   const [selectedTier, setSelectedTier] = useState(plan.plan_tier);
   const [skuCap, setSkuCap] = useState<number | null>(plan.sku_cap);
   const [confirm, setConfirm] = useState(false);
+  const [effective, setEffective] = useState<"RENEWAL" | "IMMEDIATE">("RENEWAL");
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
+  const [warning, setWarning] = useState<string | null>(null);
   const [prorationInvoice, setProrationInvoice] = useState<ProrationInvoiceOut | null>(null);
 
   const { data: tierConfig } = useQuery<TierConfigEntry[]>({
@@ -85,13 +88,19 @@ function TierChangeForm({ tenantId, plan }: { tenantId: string; plan: PlanData }
   });
 
   const saveMutation = useMutation({
-    mutationFn: () => api.patch<{ proration_invoice: ProrationInvoiceOut | null }>(
-      `/api/v1/tenants/${tenantId}/plan`, { plan_tier: selectedTier, sku_cap: skuCap },
+    mutationFn: () => api.patch<{
+      proration_invoice: ProrationInvoiceOut | null;
+      mode: "SCHEDULED" | "IMMEDIATE" | "UNCHANGED";
+      scheduled_tier: string | null;
+      pending_renewal_invoice_id: string | null;
+    }>(
+      `/api/v1/tenants/${tenantId}/plan`, { plan_tier: selectedTier, sku_cap: skuCap, effective },
     ),
     onSuccess: (data) => {
       setConfirm(false);
       setError(null);
-      setSuccess(t("common.success"));
+      setSuccess(data.mode === "SCHEDULED" ? t("plan.downgrade_scheduled_ok") : t("common.success"));
+      setWarning(data.pending_renewal_invoice_id ? t("plan.pending_renewal_invoice_warning") : null);
       setProrationInvoice(data.proration_invoice ?? null);
       void qc.invalidateQueries({ queryKey: ["tenant-admin-plan", tenantId] });
       void qc.invalidateQueries({ queryKey: ["tenant-admin-features", tenantId] });
@@ -115,7 +124,7 @@ function TierChangeForm({ tenantId, plan }: { tenantId: string; plan: PlanData }
             <button
               key={tier}
               type="button"
-              onClick={() => { setSelectedTier(tier); setSuccess(null); setProrationInvoice(null); }}
+              onClick={() => { setSelectedTier(tier); setSuccess(null); setWarning(null); setProrationInvoice(null); setEffective("RENEWAL"); }}
               className={`flex flex-col items-start px-4 py-3 rounded-lg text-left border-2 transition-colors ${
                 selected ? "border-[#0f2d1f] bg-emerald-50" : "border-gray-200 bg-white hover:border-gray-300"
               }`}
@@ -152,6 +161,11 @@ function TierChangeForm({ tenantId, plan }: { tenantId: string; plan: PlanData }
 
       {error && <p className="text-sm text-red-600 mb-3">{error}</p>}
       {success && <p className="text-sm text-emerald-700 mb-3">{success}</p>}
+      {warning && (
+        <p className="text-xs font-semibold text-amber-700 bg-amber-50 border border-amber-200 rounded px-3 py-2 mb-3">
+          {warning}
+        </p>
+      )}
       {prorationInvoice && (
         <p className="text-xs text-blue-800 bg-blue-50 border border-blue-200 rounded px-3 py-2 mb-3">
           {t("billing.proration.invoice_raised")
@@ -164,7 +178,23 @@ function TierChangeForm({ tenantId, plan }: { tenantId: string; plan: PlanData }
         <div className="space-y-2 p-3 bg-gray-50 rounded border border-gray-200">
           {isTierChange && (
             TIER_ORDER.indexOf(selectedTier) < TIER_ORDER.indexOf(plan.plan_tier) ? (
-              <p className="text-xs text-gray-500">{t("billing.proration.downgrade_no_refund")}</p>
+              <div className="space-y-2">
+                <div className="flex flex-col gap-1.5">
+                  <label className="flex items-center gap-2 text-xs text-gray-700 cursor-pointer">
+                    <input type="radio" name="effective" checked={effective === "RENEWAL"}
+                      onChange={() => setEffective("RENEWAL")} />
+                    {t("plan.effective_at_renewal")}
+                  </label>
+                  <label className="flex items-center gap-2 text-xs text-gray-700 cursor-pointer">
+                    <input type="radio" name="effective" checked={effective === "IMMEDIATE"}
+                      onChange={() => setEffective("IMMEDIATE")} />
+                    {t("plan.effective_immediate")}
+                  </label>
+                </div>
+                {effective === "IMMEDIATE" && (
+                  <p className="text-xs text-gray-500">{t("billing.proration.downgrade_no_refund")}</p>
+                )}
+              </div>
             ) : (
               <ProrationPreviewNote preview={preview} isLoading={loadingPreview} />
             )
@@ -282,6 +312,8 @@ interface SubscriptionOut {
   current_period_start: string | null;
   current_period_end: string | null;
   payments: PaymentOut[];
+  scheduled_tier: string | null;
+  scheduled_at: string | null;
 }
 
 interface CheckoutOut {
@@ -319,6 +351,9 @@ function SubscriptionAndInvoices({ tenantId }: { tenantId?: string }) {
   const [actionNote, setActionNote] = useState("");
   const [actionError, setActionError] = useState<string | null>(null);
   const [actionSuccess, setActionSuccess] = useState<string | null>(null);
+
+  // ── SA-only: cancel a pending scheduled downgrade (S13) ───────────────────
+  const [cancelScheduledError, setCancelScheduledError] = useState<string | null>(null);
 
   const { data: subscription, isLoading, isError } = useQuery<SubscriptionOut>({
     queryKey: subscriptionQueryKey,
@@ -386,6 +421,16 @@ function SubscriptionAndInvoices({ tenantId }: { tenantId?: string }) {
       invalidateSubscription();
     },
     onError: (e: unknown) => setActionError(billingErrorMessage(e)),
+  });
+
+  const cancelScheduledMutation = useMutation({
+    mutationFn: () => api.delete(`/api/v1/tenants/${tenantId}/plan/scheduled`),
+    onSuccess: () => {
+      setCancelScheduledError(null);
+      invalidateSubscription();
+      void qc.invalidateQueries({ queryKey: ["tenant-admin-plan", tenantId] });
+    },
+    onError: (e: unknown) => setCancelScheduledError(e instanceof Error ? e.message : t("common.error")),
   });
 
   function toggleAction(paymentId: string, type: "markPaid" | "cancel") {
@@ -459,6 +504,27 @@ function SubscriptionAndInvoices({ tenantId }: { tenantId?: string }) {
             <p className="text-sm text-amber-900">{t("tenant_admin.billing.pending_note")}</p>
           </div>
         )}
+
+        {subscription.scheduled_tier && (
+          <div className="mt-4 p-4 bg-amber-50 border border-amber-200 rounded-lg flex items-center justify-between gap-3 flex-wrap">
+            <p className="text-sm text-amber-900">
+              {t("plan.downgrade_scheduled")
+                .replace("{tier}", planTierLabel(subscription.scheduled_tier))
+                .replace("{date}", subscription.scheduled_at ? new Date(subscription.scheduled_at).toLocaleDateString() : "—")}
+            </p>
+            {tenantId && (
+              <button
+                type="button"
+                disabled={cancelScheduledMutation.isPending}
+                onClick={() => cancelScheduledMutation.mutate()}
+                className="px-3 py-1.5 text-xs font-bold text-amber-900 bg-white border border-amber-300 rounded hover:bg-amber-100 disabled:opacity-50 shrink-0"
+              >
+                {cancelScheduledMutation.isPending ? "…" : t("plan.cancel_scheduled_downgrade_btn")}
+              </button>
+            )}
+          </div>
+        )}
+        {cancelScheduledError && <p className="text-xs text-red-600 mt-2">{cancelScheduledError}</p>}
       </div>
 
       {/* Invoices Card */}

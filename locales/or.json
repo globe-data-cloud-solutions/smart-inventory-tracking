@@ -1889,6 +1889,16 @@
       }
     }
   },
+  "plan": {
+    "feature_not_in_plan": "This feature is not available on your current plan.",
+    "upgrade_to": "Upgrade to {tier} to unlock it.",
+    "downgrade_scheduled": "Your plan is scheduled to downgrade to {tier} on {date}.",
+    "downgrade_scheduled_ok": "Downgrade scheduled for the next renewal.",
+    "pending_renewal_invoice_warning": "An unpaid renewal invoice exists at the old tier — cancel and reissue it.",
+    "cancel_scheduled_downgrade_btn": "Cancel scheduled downgrade",
+    "effective_at_renewal": "At renewal (default)",
+    "effective_immediate": "Apply now (no refund)"
+  },
   "help": {
     "title": "Help & Documents",
     "subtitle": "Guides and policies for your role.",

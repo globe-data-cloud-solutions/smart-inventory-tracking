@@ -7,6 +7,7 @@ import { api } from "@/lib/api";
 import { getToken } from "@/lib/auth";
 import { getSession } from "@/lib/demo-auth";
 import { t } from "@/lib/i18n";
+import { planFeatureErrorMessage, PLAN_UPGRADE_TO } from "@/lib/planError";
 import { useTenantPositions, type TenantPosition } from "@/hooks/useTenantPositions";
 import { TabHelpBanner } from "@/components/ui/TabHelpBanner";
 
@@ -3233,6 +3234,23 @@ function BrandingTab({ tenantId }: { tenantId: string }) {
     staleTime: 120_000,
   });
 
+  // GET /{tenant_id} (above) carries no feature_flags (schemas/tenant.py's
+  // TenantResponse) — this page loads none elsewhere, so a dedicated plan
+  // query is the only source for CUSTOM_BRANDING. GET /{tenant_id}/plan is
+  // SA-only (hard role check in tenants.py) so a TA viewing their own org-setup
+  // page must use /me/plan instead — same shape, just scoped to the caller's
+  // own tenant_id. SA bypasses plan checks server-side (plan_middleware.check_plan)
+  // and never needs this query at all.
+  const isSA = getSession()?.role === "SA";
+  const { data: plan } = useQuery<{ plan_tier: string; feature_flags: Record<string, boolean> }>({
+    queryKey: ["branding-plan-flags", tenantId],
+    queryFn:  () => api.get(`/api/v1/tenants/me/plan`),
+    enabled:  !!tenantId && !isSA,
+    staleTime: 30_000,
+  });
+  const brandingAllowed = isSA || !!plan?.feature_flags?.CUSTOM_BRANDING;
+  const upgradeMessage = plan ? planFeatureErrorMessage({ feature: "CUSTOM_BRANDING", upgradeTo: PLAN_UPGRADE_TO[plan.plan_tier] ?? null }) : "";
+
   useEffect(() => {
     if (brandingData?.logo_url !== undefined)   setLogoUrl(brandingData.logo_url ?? null);
     if (brandingData?.banner_url !== undefined) setBannerUrl(brandingData.banner_url ?? null);
@@ -3260,16 +3278,25 @@ function BrandingTab({ tenantId }: { tenantId: string }) {
         `${process.env.NEXT_PUBLIC_API_URL ?? ""}${endpoint}`,
         { method: "POST", headers: uploadJwt ? { Authorization: `Bearer ${uploadJwt}` } : {}, body: fd },
       );
-      const json = await res.json() as { success?: boolean; data?: { url: string } };
+      const json = await res.json() as {
+        success?: boolean; data?: { url: string };
+        detail?: { code?: string; feature?: string; upgrade_to?: string | null };
+      };
+      if (res.status === 402) {
+        setErr(planFeatureErrorMessage({
+          code: json.detail?.code, feature: json.detail?.feature, upgradeTo: json.detail?.upgrade_to ?? null,
+        }));
+        return;
+      }
       if (json.success && json.data?.url) {
         setUrl(json.data.url);
         void qc.invalidateQueries({ queryKey: ["tenant-branding"] });
         setSaved(true);
         setTimeout(() => setSaved(false), 3000);
       } else {
-        setErr("Upload failed");
+        setErr(t("common.error"));
       }
-    } catch { setErr("Upload failed"); }
+    } catch { setErr(t("common.error")); }
     finally { setUploading(false); }
   }
 
@@ -3285,6 +3312,11 @@ function BrandingTab({ tenantId }: { tenantId: string }) {
           {t("settings.branding_saved") || "Branding saved."}
         </div>
       )}
+      {!brandingAllowed && (
+        <div className="bg-amber-50 border border-amber-200 rounded px-4 py-2 text-sm text-amber-800 font-semibold">
+          {upgradeMessage}
+        </div>
+      )}
 
       {/* Logo */}
       <div>
@@ -3295,7 +3327,7 @@ function BrandingTab({ tenantId }: { tenantId: string }) {
             ? <img src={logoUrl} alt="" className="w-16 h-16 rounded border border-gray-200 object-contain" />
             : <div className="w-16 h-16 rounded border-2 border-dashed border-gray-300 flex items-center justify-center text-gray-400 text-2xl">🏢</div>
           }
-          <label className="cursor-pointer">
+          <label className={brandingAllowed ? "cursor-pointer" : "cursor-not-allowed opacity-50"}>
             <span className="px-3 py-1.5 text-xs font-semibold bg-gray-100 border border-gray-300 rounded cursor-pointer hover:bg-gray-200">
               {logoUploading ? "Uploading…" : (t("settings.upload_logo") || "Upload Logo")}
             </span>
@@ -3303,7 +3335,7 @@ function BrandingTab({ tenantId }: { tenantId: string }) {
               type="file"
               accept="image/jpeg,image/png,image/webp"
               className="hidden"
-              disabled={logoUploading}
+              disabled={logoUploading || !brandingAllowed}
               onChange={(e) => {
                 const f = e.target.files?.[0];
                 if (f) void uploadFile(f, 1*1024*1024, "/api/v1/upload/tenant-logo", setLogoUrl, setLogoErr, setLogoUploading, "settings.logo_too_large");
@@ -3311,7 +3343,7 @@ function BrandingTab({ tenantId }: { tenantId: string }) {
             />
           </label>
           {logoUrl && (
-            <button type="button" onClick={() => setLogoUrl(null)} className="text-xs text-red-500 bg-transparent border-0 cursor-pointer p-0">
+            <button type="button" disabled={!brandingAllowed} onClick={() => setLogoUrl(null)} className="text-xs text-red-500 bg-transparent border-0 cursor-pointer p-0 disabled:opacity-50 disabled:cursor-not-allowed">
               {t("common.remove") || "Remove"}
             </button>
           )}
@@ -3327,7 +3359,7 @@ function BrandingTab({ tenantId }: { tenantId: string }) {
           <img src={bannerUrl} alt="" className="w-full rounded border border-gray-200 object-cover mb-3" style={{ maxHeight: "120px" }} />
         )}
         <div className="flex items-center gap-3">
-          <label className="cursor-pointer">
+          <label className={brandingAllowed ? "cursor-pointer" : "cursor-not-allowed opacity-50"}>
             <span className="px-3 py-1.5 text-xs font-semibold bg-gray-100 border border-gray-300 rounded cursor-pointer hover:bg-gray-200">
               {bannerUploading ? "Uploading…" : (t("settings.upload_banner") || "Upload Banner")}
             </span>
@@ -3335,7 +3367,7 @@ function BrandingTab({ tenantId }: { tenantId: string }) {
               type="file"
               accept="image/jpeg,image/png,image/webp"
               className="hidden"
-              disabled={bannerUploading}
+              disabled={bannerUploading || !brandingAllowed}
               onChange={(e) => {
                 const f = e.target.files?.[0];
                 if (f) void uploadFile(f, 3*1024*1024, "/api/v1/upload/tenant-banner", setBannerUrl, setBannerErr, setBannerUploading, "settings.banner_too_large");
@@ -3343,7 +3375,7 @@ function BrandingTab({ tenantId }: { tenantId: string }) {
             />
           </label>
           {bannerUrl && (
-            <button type="button" onClick={() => setBannerUrl(null)} className="text-xs text-red-500 bg-transparent border-0 cursor-pointer p-0">
+            <button type="button" disabled={!brandingAllowed} onClick={() => setBannerUrl(null)} className="text-xs text-red-500 bg-transparent border-0 cursor-pointer p-0 disabled:opacity-50 disabled:cursor-not-allowed">
               {t("common.remove") || "Remove"}
             </button>
           )}

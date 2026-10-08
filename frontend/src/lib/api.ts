@@ -127,15 +127,29 @@ async function request<T>(
     const err = json as ApiError;
     // FastAPI HTTPException returns {"detail": {...}} instead of {"error": {...}}.
     // Fall back to the detail field so the error code and message are not lost.
-    type DetObj = { code?: string; message?: string; detail?: string; locations?: Array<{ warehouse: string; on_hand: number }> };
+    type DetObj = {
+      code?: string; message?: string; detail?: string;
+      locations?: Array<{ warehouse: string; on_hand: number }>;
+      feature?: string; upgrade_to?: string | null;
+    };
     const raw   = json as unknown as { detail?: DetObj | string };
     const det   = typeof raw.detail === "object" ? raw.detail : null;
     const detMsg = det?.message ?? det?.detail ?? (typeof raw.detail === "string" ? raw.detail : "");
     const detCode = det?.code ?? "";
-    const apiErr = new Error(err.error?.message ?? (detMsg || `HTTP ${res.status}`)) as Error & { status: number; code: string; locations?: Array<{ warehouse: string; on_hand: number }> };
+    const apiErr = new Error(err.error?.message ?? (detMsg || `HTTP ${res.status}`)) as Error & {
+      status: number; code: string; locations?: Array<{ warehouse: string; on_hand: number }>;
+      feature?: string; upgradeTo?: string | null;
+    };
     apiErr.status    = res.status;
     apiErr.code      = err.error?.code ?? detCode;
     if (det?.locations) apiErr.locations = det.locations;
+    // FEATURE_NOT_IN_PLAN (402, plan_middleware.py) — carried as typed fields so
+    // callers can render the upgrade message via lib/planError.ts instead of
+    // showing the raw error / [object Object].
+    if (res.status === 402 && det?.feature) {
+      apiErr.feature = det.feature;
+      apiErr.upgradeTo = det.upgrade_to ?? null;
+    }
     throw apiErr;
   }
 

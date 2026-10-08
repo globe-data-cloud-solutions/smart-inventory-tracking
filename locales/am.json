@@ -1899,6 +1899,16 @@
       }
     }
   },
+  "plan": {
+    "feature_not_in_plan": "ይህ ባህሪ በአሁኑ የደንበኝነት ምዝገባዎ ውስጥ አይገኝም።",
+    "upgrade_to": "ይህንን ለመክፈት ወደ {tier} ያሻሽሉ።",
+    "downgrade_scheduled": "የደንበኝነት ምዝገባዎ በ{date} ወደ {tier} ዝቅ እንዲል ተይዟል።",
+    "downgrade_scheduled_ok": "ዝቅ ማድረጊያው ለሚቀጥለው ዕድሳት ተይዟል።",
+    "pending_renewal_invoice_warning": "በቀድሞው ደረጃ ያልተከፈለ የዕድሳት ደረሰኝ አለ — ይህንን ይሰርዙና እንደገና ያውጡ።",
+    "cancel_scheduled_downgrade_btn": "የተያዘውን ዝቅ ማድረግ ይሰርዙ",
+    "effective_at_renewal": "በዕድሳት ጊዜ (ነባር)",
+    "effective_immediate": "አሁን ተግባራዊ ያድርጉ (ተመላሽ የለም)"
+  },
   "help": {
     "title": "እገዛ እና ሰነዶች",
     "subtitle": "ለእርስዎ ሚና የሚሆኑ መመሪያዎች እና ፖሊሲዎች።",
