@@ -86,11 +86,10 @@ TRUSTED_PROXY_HOPS=0               # set to 1 once behind the ALB — see §6 en
 STUB_WEBHOOK_SECRET=               # HMAC secret for the STUB payment provider's webhook (§15 Billing)
 ```
 
-> **Known gap (2026-10):** on AWS, sign-in goes through Cognito, which has no
-> user for a self-signed-up TA — only a `users` row exists locally. Local dev
-> bypasses this via `dev_email`/`dev_password` on `/token`. This must be
-> resolved alongside the Cognito/SES work (CLAUDE.md §2) before self sign-up
-> can go live outside local dev.
+> **Resolved (2026-10, Option B):** SMART owns password login — Cognito is
+> not used at launch. A self-signed-up TA signs in via `POST /auth/token
+> {email, password}` in every environment; `dev_email`/`dev_password` remains
+> a local-only, password-optional shortcut for scripts/e2e.
 
 **Frontend (S7):** `frontend/src/app/(auth)/signup/page.tsx` — a three-step
 page (package selection with monthly/annual toggle → company/admin details
@@ -108,10 +107,9 @@ mode (`NEXT_PUBLIC_API_URL` set) — without it they show
 them via `rawPost()` in `lib/api.ts`, never the enveloped `api.post()`.
 
 > **Known gaps (2026-10):** no Terms of Service page exists yet — the signup
-> checkbox links nowhere, only an i18n key placeholder; the TA Plan tab's
+> checkbox links nowhere, only an i18n key placeholder; and the TA Plan tab's
 > "How to pay" instructions for a MANUAL invoice are generic placeholder text
-> with no real bank details (`billing.manual_instructions`); and the
-> Cognito/SES gap noted above still blocks self sign-up outside local dev.
+> with no real bank details (`billing.manual_instructions`).
 
 ### Billing (S5) — invoices, payments, providers
 

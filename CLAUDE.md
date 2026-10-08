@@ -150,7 +150,7 @@ No `.env.example` committed — secrets via AWS Secrets Manager (local-dev excep
 - Root `.env` is local-only and untracked — never commit it; load with `set -a; source .env; set +a`. Holds E2E_TA_PASSWORD for the permanent `zz-e2e-ta` tenant.
 - Never toggle FORCE ROW LEVEL SECURITY on any table outside an Alembic migration.
 - Probe/test tenants are deactivated after use, never hard-deleted.
-- Never set `ENVIRONMENT=local` anywhere but a developer machine — it enables the passwordless dev_email login (auth.py). Must never reach ECS.
+- Never set `ENVIRONMENT=local` anywhere but a developer machine — it enables the password-optional dev_email shortcut (auth.py). Production login is POST /auth/token {email, password}.
 - Plan/package changes are SA-only (TA → 403 PLAN_CHANGE_SA_ONLY); TA can view, not change.
 
 ---

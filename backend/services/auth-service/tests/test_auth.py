@@ -48,6 +48,13 @@ _ALG    = "HS256"
 client = TestClient(app)
 
 
+def _bearer_for(sub: str) -> dict[str, str]:
+    """Build an Authorization header carrying a SMART JWT with the given sub,
+    for exercising the authenticated PATCH /password/{user_id} route."""
+    token = jwt.encode({"sub": sub}, _SECRET, algorithm=_ALG)
+    return {"Authorization": f"Bearer {token}"}
+
+
 class _FakeRedis:
     """In-memory stand-in for redis.asyncio.Redis — just enough of GET/INCR/
     EXPIRE/DELETE to exercise the login-lockout logic without a real server."""
@@ -291,45 +298,83 @@ class TestLocalDevAuth:
         )
         assert resp.status_code == 403
 
-    def test_cognito_token_blocked_in_non_local(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        """cognito_token is rejected with 403 when ENVIRONMENT != 'local'."""
+    def test_email_password_login_success_in_production(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """email+password works in every environment, including production."""
         monkeypatch.setattr(auth_module, "ENVIRONMENT", "production")
+
+        async def _mock_wm(email: str, password: object = None) -> dict:
+            return {
+                "sub":                 "wm-001",
+                "email":               email.lower(),
+                "name":                "Warehouse Manager",
+                "tenant_id":           "aaaaaaaa-0000-0000-0000-000000000001",
+                "tenant_slug":         "acme",
+                "role":                "WM",
+                "warehouse_id":        "bbbbbbbb-0000-0000-0000-000000000001",
+                "warehouse_name":      "WH1",
+                "position_id":         "cccccccc-0000-0000-0000-000000000001",
+                "position_title":      "Warehouse Manager",
+                "level_number":        3,
+                "positions":           [],
+                "must_reset_password": False,
+            }
+
+        monkeypatch.setattr(auth_module, "_lookup_user_with_position", _mock_wm)
+
         resp = client.post(
             "/api/v1/auth/token",
-            json={"cognito_token": "demo", "demo_role": "SA"},
+            json={"email": "wm@acme.com", "password": "Correct@2026"},
         )
-        assert resp.status_code == 403
+        assert resp.status_code == 200, resp.text
+        payload = jwt.decode(resp.json()["access_token"], _SECRET, algorithms=[_ALG])
+        assert payload["role"]      == "WM"
+        assert payload["tenant_id"] == "aaaaaaaa-0000-0000-0000-000000000001"
 
-    def test_cognito_token_blocked_when_environment_unset(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        """cognito_token is rejected with 403 when ENVIRONMENT is unset (as on ECS)."""
-        monkeypatch.setattr(auth_module, "ENVIRONMENT", "")
+    def test_email_without_password_returns_422(self) -> None:
+        """email provided but password missing/empty returns 422 PASSWORD_REQUIRED."""
+        resp = client.post("/api/v1/auth/token", json={"email": "wm@acme.com"})
+        assert resp.status_code == 422
+        assert resp.json()["detail"]["code"] == "PASSWORD_REQUIRED"
+
+        resp2 = client.post("/api/v1/auth/token", json={"email": "wm@acme.com", "password": ""})
+        assert resp2.status_code == 422
+        assert resp2.json()["detail"]["code"] == "PASSWORD_REQUIRED"
+
+    def test_email_wrong_password_returns_invalid_credentials(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Wrong password on the email path returns the generic 401 INVALID_CREDENTIALS."""
+
+        async def _mock_wrong_password(email: str, password: object = None) -> dict:
+            raise auth_module.HTTPException(status_code=401, detail="Invalid password")
+
+        monkeypatch.setattr(auth_module, "_lookup_user_with_position", _mock_wrong_password)
+
+        resp = client.post(
+            "/api/v1/auth/token",
+            json={"email": "wm@acme.com", "password": "wrong"},
+        )
+        assert resp.status_code == 401
+        assert resp.json()["detail"]["code"] == "INVALID_CREDENTIALS"
+
+    def test_email_unknown_returns_invalid_credentials(self) -> None:
+        """Unknown email on the email path returns the same generic 401
+        INVALID_CREDENTIALS as a wrong password — no account enumeration."""
+        resp = client.post(
+            "/api/v1/auth/token",
+            json={"email": "nobody@unknown.com", "password": "whatever"},
+        )
+        assert resp.status_code == 401
+        assert resp.json()["detail"]["code"] == "INVALID_CREDENTIALS"
+
+    def test_cognito_token_only_returns_422(self) -> None:
+        """A body with only the removed cognito_token field matches no path — 422."""
         resp = client.post(
             "/api/v1/auth/token",
             json={"cognito_token": "demo"},
         )
-        assert resp.status_code == 403
-
-    def test_cognito_demo_path_still_works(self) -> None:
-        """Existing cognito_token + demo_* path still issues a valid JWT (backward compat)."""
-        resp = client.post(
-            "/api/v1/auth/token",
-            json={
-                "cognito_token":    "demo",
-                "demo_sub":          "aaaa-1111",
-                "demo_role":         "NM",
-                "demo_tenant_id":    "tttt-2222",
-                "demo_warehouse_id": None,
-            },
-        )
-        assert resp.status_code == 200
-        payload = jwt.decode(resp.json()["access_token"], _SECRET, algorithms=[_ALG])
-        assert payload["sub"]          == "aaaa-1111"
-        assert payload["role"]         == "NM"
-        assert payload["tenant_id"]    == "tttt-2222"
-        assert payload["warehouse_id"] is None
+        assert resp.status_code == 422
 
     def test_empty_body_returns_422(self) -> None:
-        """Empty body with neither dev_email nor cognito_token returns 422."""
+        """Empty body with neither email nor dev_email returns 422."""
         resp = client.post("/api/v1/auth/token", json={})
         assert resp.status_code == 422
 
@@ -439,8 +484,100 @@ class TestLocalDevAuth:
                 "new_password": "NewSecure@2026!",
                 # current_password intentionally omitted
             },
+            headers=_bearer_for("user-pending-003"),
         )
         assert resp.status_code == 200, f"Expected 200, got {resp.status_code}: {resp.text}"
+        assert resp.json()["success"] is True
+
+    def test_change_password_no_bearer_returns_401(self) -> None:
+        """PATCH /password/{id} with no Authorization header returns 401."""
+        resp = client.patch(
+            "/api/v1/auth/password/some-user-id",
+            json={"user_id": "some-user-id", "new_password": "NewSecure@2026!"},
+        )
+        assert resp.status_code == 401
+
+    def test_change_password_bearer_for_other_user_returns_403(self) -> None:
+        """A valid bearer token whose sub != the path user_id returns 403."""
+        resp = client.patch(
+            "/api/v1/auth/password/some-user-id",
+            json={"user_id": "some-user-id", "new_password": "NewSecure@2026!"},
+            headers=_bearer_for("a-different-user-id"),
+        )
+        assert resp.status_code == 403
+
+    def test_change_password_wrong_current_password_returns_401(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """A normal (non-must_reset) user supplying the wrong current_password
+        gets 401, even with ENVIRONMENT=production."""
+        from unittest.mock import AsyncMock, MagicMock
+
+        monkeypatch.setattr(auth_module, "ENVIRONMENT", "production")
+
+        import bcrypt as _bcrypt
+        fake_hash = _bcrypt.hashpw(b"ActualPass@2026", _bcrypt.gensalt()).decode()
+        fake_row  = MagicMock()
+        fake_row.id                  = "user-normal-001"
+        fake_row.password_hash       = fake_hash
+        fake_row.must_reset_password = False
+
+        fake_result = MagicMock()
+        fake_result.fetchone = MagicMock(return_value=fake_row)
+
+        fake_db = AsyncMock()
+        fake_db.execute    = AsyncMock(return_value=fake_result)
+        fake_db.__aenter__ = AsyncMock(return_value=fake_db)
+        fake_db.__aexit__  = AsyncMock(return_value=None)
+
+        import shared.db.session as _sess_mod
+        monkeypatch.setattr(_sess_mod, "AsyncSessionLocal", lambda: fake_db)
+
+        resp = client.patch(
+            "/api/v1/auth/password/user-normal-001",
+            json={
+                "user_id":          "user-normal-001",
+                "current_password": "wrong",
+                "new_password":     "NewSecure@2026!",
+            },
+            headers=_bearer_for("user-normal-001"),
+        )
+        assert resp.status_code == 401
+
+    def test_change_password_works_in_production(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """A normal user with the correct current_password can change it with
+        ENVIRONMENT=production — the local-only gate is gone."""
+        from unittest.mock import AsyncMock, MagicMock
+
+        monkeypatch.setattr(auth_module, "ENVIRONMENT", "production")
+
+        import bcrypt as _bcrypt
+        fake_hash = _bcrypt.hashpw(b"ActualPass@2026", _bcrypt.gensalt()).decode()
+        fake_row  = MagicMock()
+        fake_row.id                  = "user-normal-002"
+        fake_row.password_hash       = fake_hash
+        fake_row.must_reset_password = False
+
+        fake_result = MagicMock()
+        fake_result.fetchone = MagicMock(return_value=fake_row)
+
+        fake_db = AsyncMock()
+        fake_db.execute    = AsyncMock(return_value=fake_result)
+        fake_db.commit     = AsyncMock()
+        fake_db.__aenter__ = AsyncMock(return_value=fake_db)
+        fake_db.__aexit__  = AsyncMock(return_value=None)
+
+        import shared.db.session as _sess_mod
+        monkeypatch.setattr(_sess_mod, "AsyncSessionLocal", lambda: fake_db)
+
+        resp = client.patch(
+            "/api/v1/auth/password/user-normal-002",
+            json={
+                "user_id":          "user-normal-002",
+                "current_password": "ActualPass@2026",
+                "new_password":     "NewSecure@2026!",
+            },
+            headers=_bearer_for("user-normal-002"),
+        )
+        assert resp.status_code == 200, resp.text
         assert resp.json()["success"] is True
 
 

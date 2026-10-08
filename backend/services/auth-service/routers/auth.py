@@ -14,7 +14,7 @@ from typing import Optional
 
 import bcrypt as _bcrypt
 from fastapi import APIRouter, HTTPException, Request
-from jose import jwt
+from jose import JWTError, jwt
 from pydantic import BaseModel
 
 from shared.auth.email_verification import (
@@ -274,11 +274,8 @@ async def _lookup_user_with_position(
 
 
 class TokenRequest(BaseModel):
-    cognito_token:  str | None = None
-    demo_sub:       str | None = None
-    demo_role:      str | None = None
-    demo_tenant_id: str | None = None
-    demo_warehouse_id: str | None = None
+    email:          str | None = None
+    password:       str | None = None
     dev_email:      str | None = None
     dev_password:   str | None = None
 
@@ -291,101 +288,106 @@ class TokenResponse(BaseModel):
     must_reset_password: bool = False
 
 
+async def _password_login(email: str, password: Optional[str]) -> dict:
+    """Shared login flow used by both the email/password and dev_email paths:
+    lockout check, DB lookup + password verification, failed-attempt
+    tracking, success reset, and the email-verification gate.
+
+    Raises HTTPException on failure (401 from _lookup_user_with_position,
+    429 from the lockout check, 403 EMAIL_NOT_VERIFIED). Returns the JWT
+    claims dict on success.
+    """
+    await _check_login_lockout(email)
+
+    try:
+        claims = await _lookup_user_with_position(email, password)
+    except HTTPException as exc:
+        if exc.status_code == 401:
+            await _record_failed_login(email)
+        raise
+    if claims is None:
+        await _record_failed_login(email)
+        raise HTTPException(status_code=401, detail="Invalid email or password")
+
+    await _reset_login_attempts(email)
+
+    if verification_required() and claims.get("email_verified_at") is None:
+        raise HTTPException(
+            status_code=403,
+            detail={
+                "code": "EMAIL_NOT_VERIFIED",
+                "message": "Please verify your email address before signing in.",
+            },
+        )
+
+    return claims
+
+
 @router.post("/token", response_model=TokenResponse)
 async def exchange_token(body: TokenRequest) -> TokenResponse:
     """Issue a SMART JWT.
 
-    Path 1 — dev_email (ENVIRONMENT=local only):
-      Looks up user from DB, queries primary position, builds position-aware JWT.
-      SA users get hardcoded SA claims (no position required).
+    Path 1 — email/password (every environment, password required):
+      Looks up user from DB, queries primary position, builds position-aware
+      JWT. SA users get hardcoded SA claims (no position required). Unknown
+      email and wrong password both return the same generic 401
+      INVALID_CREDENTIALS — no account enumeration.
 
-    Path 2/3 — cognito_token (demo overrides or production Cognito):
-      Not yet migrated to position model; passes demo_* claims through.
+    Path 2 — dev_email (ENVIRONMENT=local only):
+      Same lookup/position logic, password optional — local scripts/e2e shortcut.
+
+    Cognito is not used at launch.
     """
     now = datetime.now(timezone.utc)
-    tenant_slug:         str | None = None
-    must_reset_password: bool       = False
 
-    # ── Path 1: local dev bypass ───────────────────────────────────────────
-    if body.dev_email is not None:
+    if body.email is not None:
+        if not body.password:
+            raise HTTPException(
+                status_code=422,
+                detail={"code": "PASSWORD_REQUIRED", "message": "Password is required"},
+            )
+        try:
+            claims = await _password_login(body.email, body.password)
+        except HTTPException as exc:
+            if exc.status_code == 401:
+                raise HTTPException(
+                    status_code=401,
+                    detail={"code": "INVALID_CREDENTIALS", "message": "Invalid email or password"},
+                ) from None
+            raise
+
+    elif body.dev_email is not None:
         if ENVIRONMENT != "local":
             raise HTTPException(
                 status_code=403,
                 detail="dev_email bypass is only available when ENVIRONMENT=local",
             )
+        claims = await _password_login(body.dev_email, body.dev_password)
 
-        await _check_login_lockout(body.dev_email)
-
-        try:
-            claims = await _lookup_user_with_position(body.dev_email, body.dev_password)
-        except HTTPException as exc:
-            if exc.status_code == 401:
-                await _record_failed_login(body.dev_email)
-            raise
-        if claims is None:
-            await _record_failed_login(body.dev_email)
-            raise HTTPException(status_code=401, detail="Invalid email or password")
-
-        await _reset_login_attempts(body.dev_email)
-
-        if verification_required() and claims.get("email_verified_at") is None:
-            raise HTTPException(
-                status_code=403,
-                detail={
-                    "code": "EMAIL_NOT_VERIFIED",
-                    "message": "Please verify your email address before signing in.",
-                },
-            )
-
-        tenant_slug          = claims.get("tenant_slug")
-        must_reset_password  = bool(claims.get("must_reset_password", False))
-
-        payload: dict = {
-            "sub":            claims["sub"],
-            "email":          claims["email"],
-            "name":           claims["name"],
-            "tenant_id":      claims["tenant_id"],
-            "role":           claims["role"],
-            "warehouse_id":   claims["warehouse_id"],
-            "warehouse_name": claims["warehouse_name"],
-            "position_id":    claims["position_id"],
-            "position_title": claims["position_title"],
-            "level_number":   claims["level_number"],
-            "positions":      claims["positions"],
-            "iat":            int(now.timestamp()),
-            "exp":            int((now + timedelta(minutes=JWT_EXPIRE)).timestamp()),
-        }
-
-    # ── Path 2/3: cognito_token ──────��─────────────────────────────────────
-    elif body.cognito_token is not None:
-        if ENVIRONMENT != "local":
-            # SECURITY: token is not verified against Cognito JWKS yet and claims come
-            # from the request body. Local only until real verification lands (open item 3).
-            raise HTTPException(status_code=403,
-                detail="cognito_token login is not available until Cognito verification is implemented")
-        sub          = body.demo_sub          or "00000000-0000-0000-0000-000000000001"
-        role         = body.demo_role         or "WM"
-        tenant_id    = body.demo_tenant_id    or "10000000-0000-0000-0000-000000000001"
-        warehouse_id = body.demo_warehouse_id
-
-        payload = {
-            "sub":            sub,
-            "role":           role,
-            "tenant_id":      tenant_id,
-            "warehouse_id":   warehouse_id,
-            "warehouse_name": None,
-            "position_id":    None,
-            "position_title": None,
-            "level_number":   None,
-            "positions":      [],
-            "iat":            int(now.timestamp()),
-            "exp":            int((now + timedelta(minutes=JWT_EXPIRE)).timestamp()),
-        }
     else:
         raise HTTPException(
             status_code=422,
-            detail="Provide dev_email (local only) or cognito_token",
+            detail="Provide email and password",
         )
+
+    tenant_slug          = claims.get("tenant_slug")
+    must_reset_password  = bool(claims.get("must_reset_password", False))
+
+    payload: dict = {
+        "sub":            claims["sub"],
+        "email":          claims["email"],
+        "name":           claims["name"],
+        "tenant_id":      claims["tenant_id"],
+        "role":           claims["role"],
+        "warehouse_id":   claims["warehouse_id"],
+        "warehouse_name": claims["warehouse_name"],
+        "position_id":    claims["position_id"],
+        "position_title": claims["position_title"],
+        "level_number":   claims["level_number"],
+        "positions":      claims["positions"],
+        "iat":            int(now.timestamp()),
+        "exp":            int((now + timedelta(minutes=JWT_EXPIRE)).timestamp()),
+    }
 
     token = jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
     return TokenResponse(
@@ -408,16 +410,28 @@ class ChangePasswordByIdRequest(BaseModel):
 
 
 @router.patch("/password/{user_id}", response_model=dict)
-async def change_password_by_id(user_id: str, body: ChangePasswordByIdRequest) -> dict:
+async def change_password_by_id(user_id: str, body: ChangePasswordByIdRequest, request: Request) -> dict:
     """Change password for a user identified by user_id.
+
+    Requires a valid SMART Bearer JWT whose sub == user_id — available in
+    every environment.
 
     For users with must_reset_password=true (PENDING_SETUP role — new accounts
     awaiting position assignment), current_password may be omitted because the
     user may have been given a temporary password they cannot verify without
     first logging in.  All other active users must supply current_password.
     """
-    if ENVIRONMENT != "local":
-        raise HTTPException(status_code=403, detail="Only available when ENVIRONMENT=local")
+    auth_header = request.headers.get("Authorization", "")
+    if not auth_header.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail="Missing or invalid Authorization header")
+    token = auth_header.removeprefix("Bearer ")
+    try:
+        token_payload = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
+    except JWTError:
+        raise HTTPException(status_code=401, detail="Invalid or expired token")
+    if str(token_payload.get("sub", "")) != user_id:
+        raise HTTPException(status_code=403, detail="Cannot change another user's password")
+
     if len(body.new_password) < 8:
         raise HTTPException(status_code=422, detail="New password must be at least 8 characters")
 

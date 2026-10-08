@@ -2,8 +2,8 @@ import os
 
 
 def assert_safe_environment() -> None:
-    """Refuse to start if ENVIRONMENT=local on AWS ECS (local enables passwordless
-    dev_email login and unverified cognito_token login in auth-service)."""
+    """Refuse to start if ENVIRONMENT=local on AWS ECS (local enables the
+    password-optional dev_email login shortcut in auth-service)."""
     env = os.environ.get("ENVIRONMENT", "")
     on_ecs = bool(os.environ.get("ECS_CONTAINER_METADATA_URI_V4")
                   or os.environ.get("ECS_CONTAINER_METADATA_URI")
