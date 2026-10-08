@@ -6,7 +6,6 @@ dev-mode sender below; only its SHA-256 hash lives in the database.
 from __future__ import annotations
 
 import hashlib
-import logging
 import os
 import secrets
 from datetime import datetime, timedelta, timezone
@@ -15,10 +14,10 @@ from typing import Optional
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-logger = logging.getLogger(__name__)
+from shared.email.sender import send_email
+from shared.email.templates import password_reset_template
 
 TOKEN_TTL_MINUTES = 60
-APP_BASE_URL = os.environ.get("APP_BASE_URL", "http://localhost:3000")
 
 
 def _hash_token(raw: str) -> str:
@@ -71,17 +70,11 @@ async def consume_reset_token(db: AsyncSession, raw: str) -> Optional[str]:
 
 
 def send_reset_email(email: str, raw_token: str) -> None:
-    """EMAIL_DELIVERY_MODE default depends on ENVIRONMENT: "log" (the dev-mode
-    sender, the only place the raw token is ever written anywhere) only when
-    ENVIRONMENT=local; everything else (including an unset ENVIRONMENT, as on
-    AWS) defaults to "disabled" so a misconfigured deploy never writes a live
-    reset link to CloudWatch. "disabled" or any other value: SES is not wired
-    up yet (comes with the AWS deploy)."""
-    default_mode = "log" if os.environ.get("ENVIRONMENT", "") == "local" else "disabled"
-    mode = os.environ.get("EMAIL_DELIVERY_MODE", default_mode)
-    if mode == "log":
-        logger.warning(
-            "[DEV EMAIL] reset %s: %s/reset-password?token=%s", email, APP_BASE_URL, raw_token
-        )
-        return
-    raise NotImplementedError("SES delivery not configured")
+    """Thin wrapper over shared.email: builds the password-reset template
+    and sends it via the configured delivery mode (log/ses/disabled)."""
+    subject, text_body, html_body = password_reset_template(raw_token)
+    app_base_url = os.environ.get("APP_BASE_URL", "http://localhost:3000")
+    send_email(
+        email, subject, text_body, html_body,
+        log_line=f"[DEV EMAIL] reset {email}: {app_base_url}/reset-password?token={raw_token}",
+    )

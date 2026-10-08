@@ -235,6 +235,18 @@ JWT_SECRET            # min 64 random chars — from Secrets Manager
 JWT_ALGORITHM=HS256
 JWT_EXPIRE_MINUTES=60
 
+# ── Email (shared/email) ─────────────────────────────────────────────────────
+# Pluggable sender for verification + password-reset emails: log | ses | disabled.
+# Default (no EMAIL_DELIVERY_MODE set): "log" only when ENVIRONMENT=local, else
+# "disabled" — a misconfigured deploy never writes a live link to CloudWatch.
+# Production config guard (refuse EMAIL_DELIVERY_MODE=disabled in prod) is
+# tracked under I4, not yet implemented.
+EMAIL_DELIVERY_MODE=ses
+EMAIL_FROM=no-reply@<domain>   # domain TBD — must be SES-verified
+AWS_REGION                    # also read by the SES client (see AWS section below)
+APP_BASE_URL                  # used to build verify-email / reset-password links
+# IAM: ECS task role for auth-service and tenant-service needs ses:SendEmail.
+
 # ── AWS ──────────────────────────────────────────────────────────────────────
 AWS_REGION=us-east-1
 AWS_S3_BUCKET=smart-{env}-attachments

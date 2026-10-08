@@ -14,6 +14,7 @@ yet to derive a session from.
 """
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import uuid
@@ -377,7 +378,7 @@ async def public_signup(body: SignupRequest, request: Request) -> SuccessRespons
     # The transaction above has committed. A send failure here must never
     # roll back or fail the sign-up — just log it.
     try:
-        send_verification_email(body.admin_email, raw_token)
+        await asyncio.to_thread(send_verification_email, body.admin_email, raw_token)
     except Exception as exc:  # noqa: BLE001 — best-effort, sign-up already succeeded
         logging.getLogger(__name__).warning("Failed to send verification email: %s", exc)
 

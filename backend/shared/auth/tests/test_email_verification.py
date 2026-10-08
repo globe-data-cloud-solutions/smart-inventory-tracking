@@ -76,20 +76,22 @@ async def test_consume_garbage_token_returns_none() -> None:
     assert result is None
 
 
-def test_send_verification_email_disabled_by_default_off_local(monkeypatch) -> None:
+def test_send_verification_email_disabled_by_default_off_local(monkeypatch, caplog) -> None:
     """An unset ENVIRONMENT (as a misconfigured AWS deploy would have) must
     never fall back to writing the live verification link to CloudWatch."""
     monkeypatch.delenv("ENVIRONMENT", raising=False)
     monkeypatch.delenv("EMAIL_DELIVERY_MODE", raising=False)
-    with pytest.raises(NotImplementedError):
-        send_verification_email("user@example.com", "raw-token")
+    send_verification_email("user@example.com", "raw-token")
+    assert "[DEV EMAIL]" not in caplog.text
+    assert "disabled" in caplog.text.lower()
 
 
-def test_send_verification_email_disabled_when_environment_not_local(monkeypatch) -> None:
+def test_send_verification_email_disabled_when_environment_not_local(monkeypatch, caplog) -> None:
     monkeypatch.setenv("ENVIRONMENT", "stage")
     monkeypatch.delenv("EMAIL_DELIVERY_MODE", raising=False)
-    with pytest.raises(NotImplementedError):
-        send_verification_email("user@example.com", "raw-token")
+    send_verification_email("user@example.com", "raw-token")
+    assert "[DEV EMAIL]" not in caplog.text
+    assert "disabled" in caplog.text.lower()
 
 
 def test_send_verification_email_logs_when_environment_local(monkeypatch, caplog) -> None:

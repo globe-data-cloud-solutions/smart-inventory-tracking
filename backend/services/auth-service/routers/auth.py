@@ -8,6 +8,7 @@ longer columns on the users table.
 SA accounts (tenant_id IS NULL) bypass position lookup and receive a
 hardcoded SA claim set.
 """
+import asyncio
 import os
 from datetime import datetime, timedelta, timezone
 from typing import Optional
@@ -585,7 +586,7 @@ async def resend_verification(body: ResendVerificationRequest, request: Request)
 
     if raw_token is not None:
         try:
-            send_verification_email(email, raw_token)
+            await asyncio.to_thread(send_verification_email, email, raw_token)
         except Exception as exc:  # noqa: BLE001 — best-effort, response is unconditional
             import logging
             logging.getLogger(__name__).warning("Failed to send verification email: %s", exc)
@@ -630,7 +631,7 @@ async def forgot_password(body: ForgotPasswordRequest, request: Request) -> dict
 
     if raw_token is not None:
         try:
-            send_reset_email(email, raw_token)
+            await asyncio.to_thread(send_reset_email, email, raw_token)
         except Exception as exc:  # noqa: BLE001 — best-effort, response is unconditional
             import logging
             logging.getLogger(__name__).warning("Failed to send reset email: %s", exc)
