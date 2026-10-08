@@ -669,3 +669,60 @@ class TestLoginAttemptLimiting:
         resp = client.post("/api/v1/auth/token", json={"dev_email": email, "dev_password": "wrong"})
         assert resp.status_code == 401
 
+
+@pytest.mark.unit
+class TestSuspendedTenantPasswordOrdering:
+    """Password must be verified BEFORE the tenant SUSPENDED/DEACTIVATED check,
+    so a 403 (which confirms the tenant's existence and status) is only ever
+    returned to a caller who has already proven they know the password.
+    Exercises the real _lookup_user_with_position via a fake DB — not mocked."""
+
+    def _fake_db_for_suspended_tenant(self):
+        import bcrypt
+        from unittest.mock import AsyncMock, MagicMock
+
+        fake_row = MagicMock()
+        fake_row.id                 = "ta-001"
+        fake_row.email               = "ta@suspended.com"
+        fake_row.full_name           = "Suspended TA"
+        fake_row.tenant_id           = "aaaaaaaa-0000-0000-0000-000000000099"
+        fake_row.password_hash       = bcrypt.hashpw(b"CorrectPass123", bcrypt.gensalt()).decode()
+        fake_row.must_reset_password = False
+        fake_row.system_role         = "TA"
+        fake_row.is_active           = True
+        fake_row.email_verified_at   = None
+        fake_row.tenant_slug         = "suspended-co"
+        fake_row.tenant_active       = True
+        fake_row.tenant_status       = "SUSPENDED"
+
+        fake_result = MagicMock()
+        fake_result.fetchone = MagicMock(return_value=fake_row)
+
+        fake_db = AsyncMock()
+        fake_db.execute    = AsyncMock(return_value=fake_result)
+        fake_db.__aenter__ = AsyncMock(return_value=fake_db)
+        fake_db.__aexit__  = AsyncMock(return_value=None)
+        return fake_db
+
+    def test_wrong_password_returns_401_not_403(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        import shared.db.session as _sess_mod
+        monkeypatch.setattr(_sess_mod, "AsyncSessionLocal", lambda: self._fake_db_for_suspended_tenant())
+
+        resp = client.post(
+            "/api/v1/auth/token",
+            json={"email": "ta@suspended.com", "password": "WrongPassword"},
+        )
+        assert resp.status_code == 401
+        assert resp.json()["detail"]["code"] == "INVALID_CREDENTIALS"
+
+    def test_right_password_returns_403_tenant_suspended(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        import shared.db.session as _sess_mod
+        monkeypatch.setattr(_sess_mod, "AsyncSessionLocal", lambda: self._fake_db_for_suspended_tenant())
+
+        resp = client.post(
+            "/api/v1/auth/token",
+            json={"email": "ta@suspended.com", "password": "CorrectPass123"},
+        )
+        assert resp.status_code == 403
+        assert resp.json()["detail"]["code"] == "TENANT_SUSPENDED"
+

@@ -32,6 +32,9 @@ ALLOWLISTED_PUBLIC_ROUTES: dict[str, list[str]] = {
         # Public email verification (S4) — no SMART JWT exists until the user signs in.
         "verify_email",
         "resend_verification",
+        # Public password reset (B2) — no SMART JWT exists until the user signs in.
+        "forgot_password",
+        "reset_password",
     ],
     "backend/services/tenant-service/routers/public_signup.py": [
         # Public self sign-up (S4) — no SMART JWT exists until the account is created.

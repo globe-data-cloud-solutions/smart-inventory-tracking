@@ -111,6 +111,34 @@ them via `rawPost()` in `lib/api.ts`, never the enveloped `api.post()`.
 > "How to pay" instructions for a MANUAL invoice are generic placeholder text
 > with no real bank details (`billing.manual_instructions`).
 
+### Password reset (B2)
+
+Two more public, unauthenticated paths, same allowlisting convention as the
+sign-up endpoints above:
+
+```
+POST /api/v1/auth/forgot-password   auth-service — always 202 (no account enumeration)
+POST /api/v1/auth/reset-password    auth-service — consume a reset token, set new password
+```
+
+`password_reset_tokens` (migration 076) mirrors `email_verification_tokens`:
+platform-level, no `tenant_id`/RLS. Tokens are random, SHA-256 hashed at
+rest, single-use, 60-minute TTL (`shared/auth/password_reset.py`); issuing a
+new token invalidates the user's earlier unused ones. Tokens are issued for
+any `is_active` user (SA included) — a suspended/deactivated tenant still
+gets a token, since login itself stays blocked by tenant status regardless.
+On success (`reset-password`), in one transaction: new bcrypt hash,
+`must_reset_password=false`, `email_verified_at=COALESCE(email_verified_at,
+now())` (the link proves mailbox ownership), then the login-lockout counter
+for that email is cleared.
+
+> **Known gap:** existing JWTs are not revoked on reset — they stay valid
+> until their own expiry. No revocation list exists; documented, not built.
+
+Dev/local sends the same way as email verification: `[DEV EMAIL] reset
+<email>: <APP_BASE_URL>/reset-password?token=<raw>`, logged at WARNING by
+`send_reset_email()`. Real SES sending is out of scope.
+
 ### Billing (S5) — invoices, payments, providers
 
 Schema (migration 071): `subscriptions` (one live row per tenant — `status IN

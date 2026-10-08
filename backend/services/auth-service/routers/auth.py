@@ -23,6 +23,11 @@ from shared.auth.email_verification import (
     send_verification_email,
     verification_required,
 )
+from shared.auth.password_reset import (
+    consume_reset_token,
+    issue_reset_token,
+    send_reset_email,
+)
 from shared.cache.login_lockout import (
     _check_login_lockout,
     _login_attempts_key,
@@ -87,7 +92,17 @@ async def _lookup_user_with_position(
         if not bool(user_rec.is_active):
             raise HTTPException(status_code=401, detail="Invalid email or password")
 
-        # Step 2b — block login for suspended or deactivated tenants
+        # Step 2b — verify password BEFORE the tenant status checks below, so a
+        # SUSPENDED/DEACTIVATED 403 (which confirms the tenant's existence and
+        # state) is only ever returned to a caller who has already proven they
+        # know the password. When password is None (dev_email local path),
+        # there is nothing to verify here — unchanged behaviour.
+        if password is not None:
+            stored = user_rec.password_hash
+            if stored is None or not _bcrypt.checkpw(password.encode(), stored.encode()):
+                raise HTTPException(status_code=401, detail="Invalid password")
+
+        # Step 2c — block login for suspended or deactivated tenants
         if user_rec.tenant_id is not None:
             tenant_status = getattr(user_rec, "tenant_status", None)
             if tenant_status == "SUSPENDED":
@@ -108,12 +123,6 @@ async def _lookup_user_with_position(
                                    "Please contact SMART support to retrieve your data.",
                     },
                 )
-
-        # Verify password when provided
-        if password is not None:
-            stored = user_rec.password_hash
-            if stored is None or not _bcrypt.checkpw(password.encode(), stored.encode()):
-                raise HTTPException(status_code=401, detail="Invalid password")
 
         # Tenant-wide direct roles — system_role set, no position required.
         # Must mirror personnel_v2.py's VALID_DIRECT_SYSTEM_ROLES (TA/AU/LM).
@@ -554,3 +563,97 @@ async def resend_verification(body: ResendVerificationRequest, request: Request)
             logging.getLogger(__name__).warning("Failed to send verification email: %s", exc)
 
     return {"sent": True}
+
+
+# ── Password reset (S4 / B2) ──────────────────────────────────────────────────
+
+class ForgotPasswordRequest(BaseModel):
+    email: str
+
+
+class ResetPasswordRequest(BaseModel):
+    token:        str
+    new_password: str
+
+
+@router.post("/forgot-password", status_code=202)
+async def forgot_password(body: ForgotPasswordRequest, request: Request) -> dict:
+    """Always answers 202 with the same body, whether or not the email
+    belongs to a real, active account — never reveals account existence.
+    Tokens are issued for any is_active user (SA included); suspended/
+    deactivated tenants still get a token — login stays blocked by tenant
+    status, unchanged. No @require_permission — allowlisted in
+    ci_drift_check.py.
+    """
+    email = body.email.strip().lower()
+    await rate_limit_hit("forgot", client_ip(request), limit=3, window_seconds=3600)
+    await rate_limit_hit("forgot", email, limit=3, window_seconds=3600)
+
+    from shared.db.session import AsyncSessionLocal
+    from sqlalchemy import text as sa_text
+
+    async with AsyncSessionLocal() as db:
+        async with db.begin():
+            row = (await db.execute(
+                sa_text("SELECT id FROM users WHERE lower(email) = :email AND is_active = true"),
+                {"email": email},
+            )).fetchone()
+            raw_token = await issue_reset_token(db, str(row.id)) if row else None
+
+    if raw_token is not None:
+        try:
+            send_reset_email(email, raw_token)
+        except Exception as exc:  # noqa: BLE001 — best-effort, response is unconditional
+            import logging
+            logging.getLogger(__name__).warning("Failed to send reset email: %s", exc)
+
+    return {"sent": True}
+
+
+@router.post("/reset-password")
+async def reset_password(body: ResetPasswordRequest, request: Request) -> dict:
+    """Consume a single-use password-reset token and set a new password.
+    No SMART JWT exists at this point, so this route carries no
+    @require_permission — allowlisted in ci_drift_check.py.
+    """
+    await rate_limit_hit("reset", client_ip(request), limit=10, window_seconds=3600)
+
+    if len(body.new_password) < 8:
+        raise HTTPException(
+            status_code=422,
+            detail={"code": "PASSWORD_TOO_SHORT", "message": "New password must be at least 8 characters"},
+        )
+
+    from shared.db.session import AsyncSessionLocal
+    from sqlalchemy import text as sa_text
+
+    email_for_lockout: Optional[str] = None
+
+    async with AsyncSessionLocal() as db:
+        async with db.begin():
+            user_id = await consume_reset_token(db, body.token)
+            if user_id is None:
+                raise HTTPException(
+                    status_code=400,
+                    detail={"code": "INVALID_OR_EXPIRED_TOKEN", "message": "This reset link is invalid or has expired."},
+                )
+
+            new_hash = _bcrypt.hashpw(body.new_password.encode(), _bcrypt.gensalt()).decode()
+            await db.execute(
+                sa_text(
+                    "UPDATE users SET password_hash = :ph, must_reset_password = false, "
+                    "email_verified_at = COALESCE(email_verified_at, now()), updated_at = now() "
+                    "WHERE id = :uid"
+                ),
+                {"ph": new_hash, "uid": user_id},
+            )
+            email_row = (await db.execute(
+                sa_text("SELECT email FROM users WHERE id = :uid"),
+                {"uid": user_id},
+            )).fetchone()
+            email_for_lockout = str(email_row.email) if email_row else None
+
+    if email_for_lockout is not None:
+        await _reset_login_attempts(email_for_lockout)
+
+    return {"reset": True}
