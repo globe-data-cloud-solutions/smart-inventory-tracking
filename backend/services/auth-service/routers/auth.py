@@ -36,6 +36,7 @@ from shared.cache.login_lockout import (
 )
 from shared.cache.rate_limit import client_ip, hit_bucket as rate_limit_hit
 from shared.cache.token_revocation import revoke_user_tokens
+from shared.utils.terms import get_terms_version
 
 router = APIRouter()
 
@@ -74,6 +75,7 @@ async def _lookup_user_with_position(
                     SELECT u.id, u.email, u.full_name, u.tenant_id,
                            u.password_hash, u.must_reset_password,
                            u.system_role, u.is_active, u.email_verified_at,
+                           u.is_account_owner,
                            t.slug AS tenant_slug,
                            t.is_active AS tenant_active, t.status AS tenant_status
                     FROM   users u
@@ -125,6 +127,25 @@ async def _lookup_user_with_position(
                     },
                 )
 
+        # Account-owner terms re-acceptance gate — only the account owner is
+        # ever asked, and only when they have a tenant. No acceptance row at
+        # all (e.g. an SA-created tenant, which never runs public_signup)
+        # counts as required, same as a stale version.
+        terms_acceptance_required = False
+        if user_rec.tenant_id is not None and bool(user_rec.is_account_owner):
+            async with AsyncSessionLocal() as db:
+                terms_row = await db.execute(
+                    sa_text(
+                        "SELECT terms_version FROM terms_acceptances "
+                        "WHERE tenant_id = :tid ORDER BY accepted_at DESC LIMIT 1"
+                    ),
+                    {"tid": str(user_rec.tenant_id)},
+                )
+                latest_terms = terms_row.fetchone()
+            terms_acceptance_required = (
+                latest_terms is None or latest_terms.terms_version != get_terms_version()
+            )
+
         # Tenant-wide direct roles — system_role set, no position required.
         # Must mirror personnel_v2.py's VALID_DIRECT_SYSTEM_ROLES (TA/AU/LM).
         # SA is intentionally excluded here — SA accounts never populate
@@ -151,6 +172,7 @@ async def _lookup_user_with_position(
                 "positions":            [],
                 "must_reset_password":  bool(user_rec.must_reset_password),
                 "email_verified_at":    user_rec.email_verified_at,
+                "terms_acceptance_required": terms_acceptance_required,
             }
 
         # SA — no tenant, no position; return hardcoded SA claims
@@ -170,6 +192,7 @@ async def _lookup_user_with_position(
                 "positions":            [],
                 "must_reset_password":  bool(user_rec.must_reset_password),
                 "email_verified_at":    user_rec.email_verified_at,
+                "terms_acceptance_required": False,
             }
 
         async with AsyncSessionLocal() as db:
@@ -222,6 +245,7 @@ async def _lookup_user_with_position(
                         "positions":           [],
                         "must_reset_password": True,
                         "email_verified_at":   user_rec.email_verified_at,
+                        "terms_acceptance_required": terms_acceptance_required,
                     }
                 # User has no position and no pending password reset → hard block.
                 raise HTTPException(
@@ -275,6 +299,7 @@ async def _lookup_user_with_position(
             ],
             "must_reset_password":  bool(user_rec.must_reset_password),
             "email_verified_at":    user_rec.email_verified_at,
+            "terms_acceptance_required": terms_acceptance_required,
         }
 
     except HTTPException:
@@ -296,6 +321,7 @@ class TokenResponse(BaseModel):
     expires_in:         int
     tenant_slug:        str | None = None
     must_reset_password: bool = False
+    terms_acceptance_required: bool = False
 
 
 async def _password_login(email: str, password: Optional[str]) -> dict:
@@ -384,6 +410,7 @@ async def exchange_token(body: TokenRequest, request: Request) -> TokenResponse:
 
     tenant_slug          = claims.get("tenant_slug")
     must_reset_password  = bool(claims.get("must_reset_password", False))
+    terms_acceptance_required = bool(claims.get("terms_acceptance_required", False))
 
     payload: dict = {
         "sub":            claims["sub"],
@@ -407,6 +434,7 @@ async def exchange_token(body: TokenRequest, request: Request) -> TokenResponse:
         expires_in=JWT_EXPIRE * 60,
         tenant_slug=tenant_slug,
         must_reset_password=must_reset_password,
+        terms_acceptance_required=terms_acceptance_required,
     )
 
 

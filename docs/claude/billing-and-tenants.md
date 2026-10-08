@@ -597,10 +597,50 @@ Service acceptance on record" when there's no row; when
 `accepted_version != current_version` an info-only note is added — no
 blocking, no re-accept flow (future work).
 
+### Terms re-acceptance (account owner only)
+
+When `TERMS_VERSION` changes, the tenant's **account owner** (`users.is_account_owner`,
+not the TA role generally) is forced to re-accept before continuing — this is
+a frontend-only gate, not an API-wide block, and it targets only the owner,
+never every TA/user in the tenant.
+
+`get_terms_version()` (`shared/utils/terms.py`) is the single source of the
+current version, read from `TERMS_VERSION` at call time (never cached at
+import time) — both `public_signup.py` and the login check pick up a runtime
+override of `TERMS_VERSION` on the service start command without a restart
+race.
+
+On `POST /api/v1/auth/token`, `_lookup_user_with_position()` compares the
+caller's tenant's newest `terms_acceptances.terms_version` against the
+current version. The flag is `true` only when `is_account_owner=true` **and**
+(no row exists, or the newest row's version differs from current); it is
+`false` for every non-owner user and for every SA account. It travels in
+`TokenResponse.terms_acceptance_required` alongside `must_reset_password` —
+**never in the JWT itself**, since it reflects live DB state, not an
+identity claim.
+
+The frontend login flow checks `mustResetPassword` first (unchanged); only
+if that's false does it check `termsAcceptanceRequired` and route to
+`/accept-terms`. After a forced password change the user logs in again, so
+the flag is re-evaluated fresh at that next login.
+
+`POST /api/v1/tenants/me/terms-acceptance` (`tenant:configure`) lets the
+owner record acceptance of the *current* version for their own tenant: 403
+`NOT_ACCOUNT_OWNER` for anyone else, otherwise an INSERT into
+`terms_acceptances` identical in shape to `public_signup.py`'s own insert
+(tenant_id, user_id, current version, caller IP, truncated User-Agent), plus
+a `TERMS_ACCEPTED` tenant-activity-log entry. Idempotent: if the latest row
+already matches the current version, it's returned unchanged with no second
+insert. An SA-created tenant (`POST /tenants/`, no `public_signup.py` row
+ever written) is treated the same as a stale version — the owner accepts at
+their first login, same as every other owner.
+
+No migration was needed — this reuses the existing `terms_acceptances` table
+and `TENANT_CONFIGURE` permission.
+
 **Known gaps (2026-10):** the real, lawyer-reviewed Terms of Service and
-Privacy Policy text does not exist yet — both pages are an outline only; no
-re-accept flow exists for when `TERMS_VERSION` changes (the TA/SA acceptance
-line just notes it's outdated); the SA Operations Manual is SA-internal and
+Privacy Policy text does not exist yet — both pages are an outline only; the
+SA Operations Manual is SA-internal and
 has no file yet, and when written must be served by an authenticated
 backend route rather than a `frontend/public/` file; every Help document's
 body is English-only (the chrome translates, `help.english_only_notice`

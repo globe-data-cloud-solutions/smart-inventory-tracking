@@ -1,6 +1,5 @@
 import json
 import logging
-import os
 import re
 import uuid
 from datetime import date, datetime, timedelta, timezone
@@ -16,6 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from dependencies import get_current_user, get_db_session
 from services.wizard_service import APPROVAL_DEFAULTS
+from shared.cache.rate_limit import client_ip
 from shared.cache.token_revocation import revoke_tenant_tokens
 from shared.permissions.middleware import require_permission
 from shared.permissions.registry import PERMISSIONS
@@ -24,6 +24,7 @@ from shared.billing.proration import preview_addon, preview_upgrade
 from shared.billing.plan_change import cancel_scheduled_downgrade, change_plan
 from shared.plans.catalog import KNOWN_FEATURE_FLAGS, UNSET, apply_package_to_tenant, get_tenant_entitlements
 from shared.utils.responses import SuccessResponse
+from shared.utils.terms import get_terms_version
 from schemas.tenant import TenantCreateRequest, TenantResponse, VALID_PLAN_TIERS, VALID_LOCALES
 
 logger = logging.getLogger(__name__)
@@ -1404,7 +1405,7 @@ async def _get_terms_acceptance(db: AsyncSession, tenant_id) -> TermsAcceptanceO
     S4) — an SA-created tenant (POST /tenants/) never gets a row here, which
     is expected, not an error. Newest acceptance wins if a tenant somehow
     has more than one (it shouldn't, today)."""
-    current_version = os.environ.get("TERMS_VERSION", "2026-10")
+    current_version = get_terms_version()
     row = (await db.execute(
         text(
             "SELECT ta.terms_version, ta.accepted_at, u.email "
@@ -1432,6 +1433,59 @@ async def get_my_terms_acceptance(
     """TA: read-only terms-acceptance record for its own tenant."""
     if not user or not user.tenant_id:
         raise HTTPException(status_code=403, detail="No tenant context")
+    return SuccessResponse(data=await _get_terms_acceptance(db, user.tenant_id))
+
+
+@router.post("/me/terms-acceptance", response_model=SuccessResponse[TermsAcceptanceOut])
+@require_permission(PERMISSIONS.TENANT_CONFIGURE)
+async def accept_current_terms(
+    request: Request,
+    user=Depends(get_current_user),
+    db: AsyncSession = Depends(get_db_session),
+) -> SuccessResponse[TermsAcceptanceOut]:
+    """Account-owner-only: record acceptance of the CURRENT terms version for
+    the caller's own tenant. Idempotent — a repeat call when the latest
+    acceptance already matches the current version returns it unchanged
+    rather than inserting a duplicate row."""
+    if not user or not user.tenant_id:
+        raise HTTPException(status_code=403, detail="No tenant context")
+
+    owner_row = (await db.execute(
+        text("SELECT is_account_owner FROM users WHERE id = :uid"),
+        {"uid": user.user_id},
+    )).fetchone()
+    if not owner_row or not owner_row.is_account_owner:
+        raise HTTPException(
+            status_code=403,
+            detail={"code": "NOT_ACCOUNT_OWNER", "message": "Only the account owner can accept terms."},
+        )
+
+    current = await _get_terms_acceptance(db, user.tenant_id)
+    if current.accepted_version == current.current_version:
+        return SuccessResponse(data=current)
+
+    user_agent = (request.headers.get("User-Agent") or "")[:500]
+    await db.execute(
+        text(
+            "INSERT INTO terms_acceptances (tenant_id, user_id, terms_version, ip_address, user_agent) "
+            "VALUES (:tid, :uid, :tv, :ip, :ua)"
+        ),
+        {
+            "tid": str(user.tenant_id), "uid": user.user_id,
+            "tv": current.current_version, "ip": client_ip(request), "ua": user_agent,
+        },
+    )
+
+    try:
+        await _log_tenant_activity(
+            db, user.tenant_id, user.user_id,
+            action="TERMS_ACCEPTED",
+            old_value=current.accepted_version,
+            new_value=current.current_version,
+        )
+    except Exception:
+        pass
+
     return SuccessResponse(data=await _get_terms_acceptance(db, user.tenant_id))
 
 

@@ -140,6 +140,24 @@ async def test_terms_version_mismatch_returns_422() -> None:
     assert exc_info.value.detail["code"] == "TERMS_VERSION_MISMATCH"
 
 
+async def test_terms_version_mismatch_after_runtime_env_change(monkeypatch: pytest.MonkeyPatch) -> None:
+    """get_terms_version() reads TERMS_VERSION at call time, not at import
+    time — a request sent with the version that was current a moment ago
+    must be rejected once the env var changes underneath the running
+    process (service restarted with a new TERMS_VERSION on the command
+    line, no code change)."""
+    monkeypatch.setenv("TERMS_VERSION", "2026-11")
+
+    async def _execute(sql, params=None, **kw):
+        raise AssertionError("must not reach the DB")
+
+    with pytest.raises(HTTPException) as exc_info:
+        await _call_signup(_signup_kwargs(terms_version="2026-10"), _execute)
+    assert exc_info.value.status_code == 422
+    assert exc_info.value.detail["code"] == "TERMS_VERSION_MISMATCH"
+    assert exc_info.value.detail["message"] == "The current terms version is 2026-11."
+
+
 # ── DB-backed validation ──────────────────────────────────────────────────────
 
 async def test_non_public_tier_returns_422_invalid_tier() -> None:

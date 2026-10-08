@@ -16,7 +16,6 @@ from __future__ import annotations
 
 import json
 import logging
-import os
 import uuid
 from datetime import date
 from decimal import Decimal
@@ -50,10 +49,10 @@ from shared.db.rls import set_rls_context
 from shared.db.session import AsyncSessionLocal
 from shared.plans.catalog import apply_package_to_tenant, get_package, list_packages
 from shared.utils.responses import SuccessResponse
+from shared.utils.terms import get_terms_version
 
 router = APIRouter()
 
-TERMS_VERSION = os.environ.get("TERMS_VERSION", "2026-10")
 VALID_BILLING_PERIODS = frozenset({"MONTHLY", "ANNUAL"})
 
 
@@ -167,7 +166,7 @@ async def list_public_packages(request: Request) -> SuccessResponse[PackagesList
                 prices=prices,
             ))
 
-    return SuccessResponse(data=PackagesListOut(packages=out, terms_version=TERMS_VERSION))
+    return SuccessResponse(data=PackagesListOut(packages=out, terms_version=get_terms_version()))
 
 
 # ── POST /public/signup ───────────────────────────────────────────────────────
@@ -200,12 +199,13 @@ async def public_signup(body: SignupRequest, request: Request) -> SuccessRespons
             status_code=422,
             detail={"code": "TERMS_NOT_ACCEPTED", "message": "You must accept the terms to sign up."},
         )
-    if body.terms_version != TERMS_VERSION:
+    current_terms_version = get_terms_version()
+    if body.terms_version != current_terms_version:
         raise HTTPException(
             status_code=422,
             detail={
                 "code": "TERMS_VERSION_MISMATCH",
-                "message": f"The current terms version is {TERMS_VERSION}.",
+                "message": f"The current terms version is {current_terms_version}.",
             },
         )
 
