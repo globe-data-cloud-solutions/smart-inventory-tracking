@@ -146,7 +146,7 @@ All secrets live in AWS Secrets Manager under the path:
   smart/{env}/{service}/{secret-name}
   e.g.  smart/dev/db/primary-url
         smart/dev/elasticache/redis-url
-        smart/dev/cognito/client-secret
+        smart/dev/jwt/secret
         smart/prod/jwt/signing-key
 
 ECS task definitions reference secrets by ARN — injected as env vars at container startup.
@@ -184,9 +184,6 @@ Examples:
   smart/dev/elasticache/celery-broker   → CELERY_BROKER_URL
   smart/dev/elasticache/celery-backend  → CELERY_RESULT_BACKEND
   smart/dev/jwt/secret                  → JWT_SECRET
-  smart/dev/cognito/user-pool-id        → AWS_COGNITO_USER_POOL_ID
-  smart/dev/cognito/client-id           → AWS_COGNITO_CLIENT_ID
-  smart/dev/cognito/client-secret       → AWS_COGNITO_CLIENT_SECRET
   smart/prod/opensearch/url             → OPENSEARCH_URL  (conditional — if triggered)
 ```
 
@@ -232,13 +229,11 @@ RATE_LIMIT_<BUCKET>            # optional per-bucket override, "<limit>/<window_
 STUB_WEBHOOK_SECRET            # HMAC-SHA256 secret for the STUB payment provider's webhook — from Secrets Manager
 
 # ── Auth ─────────────────────────────────────────────────────────────────────
+# Cognito: archived (infra/terraform/_archived/cognito) — login is SMART-owned
+# via POST /auth/token (Option B). No AWS_COGNITO_* env vars are injected.
 JWT_SECRET            # min 64 random chars — from Secrets Manager
 JWT_ALGORITHM=HS256
 JWT_EXPIRE_MINUTES=60
-AWS_COGNITO_REGION=us-east-1
-AWS_COGNITO_USER_POOL_ID      # from Secrets Manager
-AWS_COGNITO_CLIENT_ID         # from Secrets Manager
-AWS_COGNITO_CLIENT_SECRET     # from Secrets Manager
 
 # ── AWS ──────────────────────────────────────────────────────────────────────
 AWS_REGION=us-east-1

@@ -50,12 +50,6 @@ module "elasticache" {
   node_type  = "cache.r7g.large"
 }
 
-module "cognito" {
-  source        = "../../modules/cognito"
-  env           = "prod"
-  callback_urls = ["https://app.smart-platform.com/auth/callback"]
-}
-
 module "s3" {
   source = "../../modules/s3"
   env    = "prod"

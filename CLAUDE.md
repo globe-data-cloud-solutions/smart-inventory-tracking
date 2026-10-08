@@ -57,7 +57,8 @@ NEVER implement a new facility-scoped feature with a raw warehouse_id equality c
 - **Async**: Transactional Outbox Pattern replaces Kafka — outbox table + pg_notify +
   Celery workers + beat fallback polling.
 - **Infra**: GitHub + GitHub Actions, AWS ECS Fargate (all envs), Terraform (S3+DynamoDB
-  remote state), AWS Cognito, S3, Secrets Manager (all secrets), CloudWatch.
+  remote state), S3, Secrets Manager (all secrets), CloudWatch. Cognito: archived
+  (infra/terraform/_archived/cognito) — login is SMART-owned via POST /auth/token (Option B).
 - **Observability**: Amazon Managed Prometheus/Grafana, OpenTelemetry → X-Ray (ADOT).
 - **Search**: pg_trgm by default; Amazon OpenSearch only on explicit tenant request.
 - **NOT in stack**: Kafka, RabbitMQ, Zookeeper, ERP systems, Docker Compose, self-hosted

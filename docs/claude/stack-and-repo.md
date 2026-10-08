@@ -105,7 +105,8 @@
 │  Terraform — all infrastructure as code                             │
 │    — remote state: AWS S3 + DynamoDB locking                        │
 │    — one workspace per environment                                   │
-│  AWS Cognito — identity provider                                     │
+│  Cognito: archived (infra/terraform/_archived/cognito) — login is   │
+│    SMART-owned via POST /auth/token (Option B)                       │
 │  AWS S3 — attachments, documents, language pack JSON files          │
 │  AWS Secrets Manager — ALL secrets in all environments              │
 │    — injected into ECS task definitions at startup                  │
@@ -187,7 +188,8 @@ smart-platform/                        # GitHub repository root
 │   │
 │   ├── services/
 │   │   ├── api-gateway/               # FastAPI — JWT, rate limiting, plan cap
-│   │   ├── auth-service/              # Cognito integration, token issuance
+│   │   ├── auth-service/              # Cognito: archived (infra/terraform/_archived/cognito) —
+│   │   │                              #   login is SMART-owned via POST /auth/token (Option B)
 │   │   ├── tenant-service/            # Tenant CRUD, wizard, org_type
 │   │   ├── product-service/           # Products, SKU, dispatch strategy config
 │   │   ├── inventory-service/         # Ledger, balances, receive, transfer, issue
@@ -213,7 +215,6 @@ smart-platform/                        # GitHub repository root
 │       │   ├── ecs/                   # ECS Fargate cluster, task definitions, services
 │       │   ├── rds/                   # RDS PostgreSQL primary + read replica
 │       │   ├── elasticache/           # ElastiCache for Redis
-│       │   ├── cognito/               # Cognito user pool + app client
 │       │   ├── s3/                    # S3 buckets (attachments, locales)
 │       │   ├── secrets/               # Secrets Manager secrets (references only)
 │       │   ├── observability/         # AMP, AMG, X-Ray, CloudWatch alarms

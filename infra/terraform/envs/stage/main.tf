@@ -49,12 +49,6 @@ module "elasticache" {
   node_type  = "cache.t4g.medium"
 }
 
-module "cognito" {
-  source        = "../../modules/cognito"
-  env           = "stage"
-  callback_urls = ["https://app.stage.smart-platform.com/auth/callback"]
-}
-
 module "s3" {
   source = "../../modules/s3"
   env    = "stage"
