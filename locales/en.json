@@ -1887,5 +1887,81 @@
     "terms_title": "Terms of Service",
     "privacy_title": "Privacy Policy",
     "draft_banner": "Draft — not yet in effect. The final text will be published before launch."
+  },
+  "landing": {
+    "nav": {
+      "features": "Features",
+      "get_started_anchor": "Get started",
+      "credentials": "Credentials",
+      "sign_in": "Sign in",
+      "get_started_cta": "Get started"
+    },
+    "hero": {
+      "subtitle": "Real-time stock ledger · FEFO dispatch · Offline barcode scanning · 3-layer security — built for Ethiopian producers and distributors.",
+      "badge_suffix": "Offline-ready · Multi-tenant",
+      "cta_primary": "Choose a plan",
+      "cta_explore": "Explore features"
+    },
+    "stats": {
+      "actions_label": "Permission Actions",
+      "actions_sub": "RBAC + ABAC enforcement",
+      "services_label": "Microservices",
+      "services_sub": "FastAPI + Next.js 14",
+      "languages_label": "Languages",
+      "languages_sub": "EN · አማርኛ · Oromoo",
+      "uptime_label": "Uptime SLA",
+      "uptime_sub": "AWS ECS Fargate"
+    },
+    "features": {
+      "section_badge": "Platform Capabilities",
+      "heading": "Everything your warehouse team needs",
+      "subheading": "From barcode scanning on the warehouse floor to AI-powered demand forecasting.",
+      "ledger": {
+        "title": "Immutable Inventory Ledger",
+        "desc": "Every stock movement is an append-only INSERT. Balances are derived — nothing is ever overwritten or deleted."
+      },
+      "rbac": {
+        "title": "RBAC + ABAC Security",
+        "desc": "115 permission actions enforced at 3 layers: API Gateway, service level, and PostgreSQL Row-Level Security."
+      },
+      "hierarchy": {
+        "title": "Multi-Location Hierarchy",
+        "desc": "Production centers, warehouses, and sub-centers in a parent–child tree. Users are auto-scoped to their location."
+      },
+      "offline": {
+        "title": "Offline PWA + Barcode Scan",
+        "desc": "Record movements offline via camera scan. IndexedDB queue syncs automatically when connectivity returns."
+      },
+      "dispatch": {
+        "title": "FEFO Dispatch Engine",
+        "desc": "Auto-enforced when expiry tracking is active. Override requires explicit permission + reason code + audit trail."
+      },
+      "i18n": {
+        "title": "EN · Amharic · Oromifa",
+        "desc": "Language packs served from S3 CDN, cached by service worker. Switch per-user. Native speaker review for Oromifa."
+      }
+    },
+    "get_started": {
+      "section_badge": "Get Started",
+      "heading": "Start managing your inventory",
+      "subheading": "Three steps to go live — choose your plan, create your account, then verify and configure your organisation.",
+      "step1_title": "Choose a plan",
+      "step1_desc": "Starter, Growth or Enterprise — billed monthly or annually.",
+      "step2_title": "Create your account",
+      "step2_desc": "Add your company details and admin login.",
+      "step3_title": "Verify & set up",
+      "step3_desc": "Confirm your email, then configure your organisation.",
+      "already_customer": "Already a customer?"
+    },
+    "credentials": {
+      "heading": "System Administrator Login",
+      "subheading": "Use the SA account to create tenants and onboard your first company.",
+      "badge": "SA",
+      "role_label": "System Administrator",
+      "cta": "Sign in to dashboard"
+    },
+    "footer": {
+      "stack": "FastAPI · Next.js 14 · PostgreSQL 16 · AWS ECS Fargate"
+    }
   }
 }

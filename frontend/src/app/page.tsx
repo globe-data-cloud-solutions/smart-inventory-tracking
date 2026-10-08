@@ -1,4 +1,9 @@
+"use client";
+
+import { useEffect, useState } from "react";
 import Link from "next/link";
+import { t, getCurrentLocale, loadLocale } from "@/lib/i18n";
+import { AuthLangSwitcher } from "@/components/features/auth/AuthLangSwitcher";
 
 const BG   = "#0f2d1f";
 const GOLD = "#FCDD09";
@@ -77,6 +82,23 @@ function HeroLines() {
 }
 
 export default function HomePage() {
+  // This page has no other post-mount state change to piggyback a re-render on
+  // (unlike signup's useQuery), so re-read the locale here too, same pattern as
+  // Providers.tsx / AuthLangSwitcher, so a non-"en" locale actually shows.
+  const [, setLocaleTick] = useState(0);
+  useEffect(() => {
+    const loc = getCurrentLocale();
+    if (loc !== "en") {
+      loadLocale(loc).then(() => setLocaleTick((n) => n + 1)).catch(() => {});
+    }
+  }, []);
+
+  const NAV_ANCHORS = [
+    { href: "#features",    key: "landing.nav.features" },
+    { href: "#get-started", key: "landing.nav.get_started_anchor" },
+    { href: "#credentials", key: "landing.nav.credentials" },
+  ];
+
   return (
     <div className="min-h-screen bg-white overflow-x-hidden">
 
@@ -89,16 +111,24 @@ export default function HomePage() {
               SMART <span className="text-[#2D6A4F] font-medium">Inventory</span>
             </span>
           </Link>
-          <div className="flex items-center gap-8 mx-auto">
-            {(["#features", "#tenants", "#credentials"] as const).map((href, i) => (
-              <a key={i} href={href} className="nav-link">
-                {["Features", "Tenants", "Credentials"][i]}
+          <div className="hidden md:flex items-center gap-8 mx-auto">
+            {NAV_ANCHORS.map((a) => (
+              <a key={a.href} href={a.href} className="nav-link">
+                {t(a.key)}
               </a>
             ))}
           </div>
-          <Link href="/login" className="btn-signin">
-            Sign in
-          </Link>
+          <div className="flex items-center gap-3 ml-auto md:ml-0">
+            <div className="hidden sm:flex">
+              <AuthLangSwitcher />
+            </div>
+            <Link href="/login" className="btn-signin hidden sm:inline-block">
+              {t("landing.nav.sign_in")}
+            </Link>
+            <Link href="/signup" className="btn-nav-primary">
+              {t("landing.nav.get_started_cta")}
+            </Link>
+          </div>
         </div>
       </nav>
 
@@ -125,34 +155,31 @@ export default function HomePage() {
             className="mt-5 text-[rgba(240,253,244,0.85)] leading-relaxed max-w-[540px] mx-auto"
             style={{ fontSize: "clamp(1rem, 2vw, 1.2rem)" }}
           >
-            Real-time stock ledger · FEFO dispatch · Offline barcode scanning ·
-            3-layer security — built for Ethiopian producers and distributors.
+            {t("landing.hero.subtitle")}
           </p>
           <div className="mt-6 flex justify-center">
             <span className="inline-flex items-center gap-2 px-4 py-1.5 bg-white/[0.08] border border-white/[0.18] rounded-full text-xs font-medium text-[rgba(200,240,220,0.9)]">
               <span className="w-2 h-2 rounded-full bg-green-400 animate-pulse" />
-              🇪🇹 &nbsp;English · አማርኛ · Afaan Oromoo · Offline-ready · Multi-tenant
+              🇪🇹 &nbsp;English · አማርኛ · Afaan Oromoo · {t("landing.hero.badge_suffix")}
             </span>
           </div>
           <div className="mt-8 flex gap-3 justify-center flex-wrap">
-            <Link href="/login" className="btn-cta-primary">Open Dashboard →</Link>
-            <a href="#features" className="btn-hero-outline">Explore Features</a>
+            <Link href="/signup" className="btn-cta-primary">{t("landing.hero.cta_primary")}</Link>
+            <Link href="/login" className="btn-hero-outline">{t("landing.nav.sign_in")}</Link>
+            <a href="#features" className="btn-hero-outline">{t("landing.hero.cta_explore")}</a>
           </div>
-          <p className="mt-8 text-xs font-mono text-emerald-300 bg-black/25 border border-white/10 rounded px-5 py-2.5 inline-block">
-            System Administrator: smartadmin@smart-inventory.com / Admin@2026
-          </p>
         </div>
         <Stripe h={6} />
       </section>
 
       {/* ════ STATS ═════════════════════════════════════════════════════════ */}
       <section className="bg-[#1B4332] px-6 py-10">
-        <div className="max-w-[1000px] mx-auto grid grid-cols-4 gap-8 text-center">
+        <div className="max-w-[1000px] mx-auto grid grid-cols-2 md:grid-cols-4 gap-8 text-center">
           {STATS.map((s) => (
-            <div key={s.label}>
+            <div key={s.labelKey}>
               <p className="text-[2.25rem] font-extrabold text-[#FCDD09] m-0">{s.value}</p>
-              <p className="text-[13px] font-semibold text-white mt-1">{s.label}</p>
-              <p className="text-[11px] text-green-300 mt-0.5">{s.sub}</p>
+              <p className="text-[13px] font-semibold text-white mt-1">{t(s.labelKey)}</p>
+              <p className="text-[11px] text-green-300 mt-0.5">{t(s.subKey)}</p>
             </div>
           ))}
         </div>
@@ -165,19 +192,19 @@ export default function HomePage() {
         <div className="max-w-[1200px] mx-auto">
           <div className="text-center mb-14">
             <span className="inline-block text-[11px] font-bold uppercase tracking-[0.1em] text-[#2D6A4F] bg-emerald-100 px-3 py-1 rounded-full mb-3">
-              Platform Capabilities
+              {t("landing.features.section_badge")}
             </span>
             <h2 className="text-[2rem] font-extrabold text-[#0f2d1f] m-0">
-              Everything your warehouse team needs
+              {t("landing.features.heading")}
             </h2>
             <p className="text-[15px] text-gray-500 mt-2 max-w-[520px] mx-auto">
-              From barcode scanning on the warehouse floor to AI-powered demand forecasting.
+              {t("landing.features.subheading")}
             </p>
           </div>
-          <div className="grid grid-cols-3 border border-gray-300">
+          <div className="grid grid-cols-1 md:grid-cols-3 border border-gray-300">
             {FEATURES.map((f, i) => (
               <div
-                key={f.title}
+                key={f.titleKey}
                 className="cap-card"
                 style={{
                   borderRight:  i % 3 === 2 ? "none" : "1px solid #D1D5DB",
@@ -187,8 +214,8 @@ export default function HomePage() {
                 {/* Per-feature accent color — runtime data value */}
                 <div className="h-[3px] rounded-sm mb-6" style={{ background: f.accent }} />
                 <div className="text-[1.75rem] mb-3">{f.icon}</div>
-                <h3 className="text-[15px] font-bold text-[#0f2d1f] m-0 mb-2">{f.title}</h3>
-                <p className="text-[13px] text-gray-500 leading-relaxed m-0">{f.desc}</p>
+                <h3 className="text-[15px] font-bold text-[#0f2d1f] m-0 mb-2">{t(f.titleKey)}</h3>
+                <p className="text-[13px] text-gray-500 leading-relaxed m-0">{t(f.descKey)}</p>
               </div>
             ))}
           </div>
@@ -199,29 +226,35 @@ export default function HomePage() {
       <Stripe h={4} />
 
       {/* ════ GET STARTED ═══════════════════════════════════════════════════ */}
-      <section id="tenants" className="bg-gray-100 px-6 py-20">
+      <section id="get-started" className="bg-gray-100 px-6 py-20">
         <div className="max-w-[760px] mx-auto text-center">
           <span className="inline-block text-[11px] font-bold uppercase tracking-[0.1em] text-[#2D6A4F] bg-emerald-100 px-3 py-1 rounded-full mb-3">
-            Get Started
+            {t("landing.get_started.section_badge")}
           </span>
           <h2 className="text-[2rem] font-extrabold text-[#0f2d1f] m-0">
-            Welcome to SMART Inventory
+            {t("landing.get_started.heading")}
           </h2>
           <p className="text-sm text-gray-500 mt-2 mb-8">
-            Sign in as System Administrator to create your first tenant and configure the org hierarchy.
+            {t("landing.get_started.subheading")}
           </p>
-          <div className="grid grid-cols-3 gap-4 text-left mb-8">
-            {SETUP_STEPS.map((s, i) => (
-              <div key={i} className="p-4 rounded-xl bg-white border border-gray-200">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-left mb-8">
+            {SETUP_STEPS.map((s) => (
+              <div key={s.titleKey} className="p-4 rounded-xl bg-white border border-gray-200">
                 <p className="text-[1.5rem] mb-2">{s.icon}</p>
-                <p className="text-sm font-bold text-[#0f2d1f] m-0">{s.title}</p>
-                <p className="text-[12px] text-gray-500 mt-1 m-0">{s.desc}</p>
+                <p className="text-sm font-bold text-[#0f2d1f] m-0">{t(s.titleKey)}</p>
+                <p className="text-[12px] text-gray-500 mt-1 m-0">{t(s.descKey)}</p>
               </div>
             ))}
           </div>
-          <Link href="/login" className="btn-cta-primary">
-            Sign In as Admin
+          <Link href="/signup" className="btn-cta-primary">
+            {t("landing.hero.cta_primary")}
           </Link>
+          <p className="text-xs text-gray-500 mt-4">
+            {t("landing.get_started.already_customer")}{" "}
+            <Link href="/login" className="underline text-[#2D6A4F] hover:text-[#1B4332]">
+              {t("landing.nav.sign_in")}
+            </Link>
+          </p>
         </div>
       </section>
 
@@ -229,24 +262,26 @@ export default function HomePage() {
       <Wave from="#F3F4F6" to={BG} flip />
 
       {/* ════ CREDENTIALS CTA ═══════════════════════════════════════════════ */}
+      {/* TEMP: remove before go-live + reset SA password (Alex) */}
       <section id="credentials" className="bg-[#0f2d1f] px-6 py-20 text-center">
         <div className="max-w-[560px] mx-auto">
           <h2 className="text-[2rem] font-extrabold text-white m-0">
-            System Administrator Login
+            {t("landing.credentials.heading")}
           </h2>
           <p className="text-sm text-emerald-300 mt-2 mb-8">
-            Use the SA account to create tenants and onboard your first company.
+            {t("landing.credentials.subheading")}
           </p>
+          {/* TEMP: remove before go-live + reset SA password (Alex) */}
           <div className="p-5 rounded-xl bg-white/[0.05] border border-white/10 text-left mb-8">
             <div className="flex items-center gap-2 mb-3">
-              <span className="text-[11px] font-bold text-white px-1.5 py-0.5 rounded bg-red-600">SA</span>
-              <span className="text-xs text-emerald-300">System Administrator</span>
+              <span className="text-[11px] font-bold text-white px-1.5 py-0.5 rounded bg-red-600">{t("landing.credentials.badge")}</span>
+              <span className="text-xs text-emerald-300">{t("landing.credentials.role_label")}</span>
             </div>
             <p className="text-xs font-mono text-[#a7f3d0] m-0 mb-1">smartadmin@smart-inventory.com</p>
             <p className="text-xs font-mono text-emerald-300 m-0">Admin@2026</p>
           </div>
           <Link href="/login" className="btn-cta-primary">
-            Sign in to dashboard
+            {t("landing.credentials.cta")}
           </Link>
         </div>
       </section>
@@ -257,12 +292,9 @@ export default function HomePage() {
         <div className="max-w-[1200px] mx-auto flex flex-wrap items-center justify-between gap-4">
           <div className="flex items-center gap-2">
             <Logo size={24} />
-            <div>
-              <p className="font-bold text-sm text-white m-0">SMART Inventory Tracker</p>
-              <p className="text-[11px] text-green-900 m-0">PRD v4.0 · Phase 0</p>
-            </div>
+            <p className="font-bold text-sm text-white m-0">SMART Inventory Tracker</p>
           </div>
-          <p className="text-xs text-green-900">FastAPI · Next.js 14 · PostgreSQL 16 · AWS ECS Fargate</p>
+          <p className="text-xs text-green-900">{t("landing.footer.stack")}</p>
           <p className="text-xs text-green-900">🇪🇹 EN · አማርኛ · Afaan Oromoo</p>
         </div>
       </footer>
@@ -273,23 +305,23 @@ export default function HomePage() {
 /* ─── Static data ────────────────────────────────────────────────────────── */
 
 const STATS = [
-  { value: "115",   label: "Permission Actions", sub: "RBAC + ABAC enforcement" },
-  { value: "10",    label: "Microservices",       sub: "FastAPI + Next.js 14"   },
-  { value: "3",     label: "Languages",           sub: "EN · አማርኛ · Oromoo"    },
-  { value: "99.9%", label: "Uptime SLA",          sub: "AWS ECS Fargate"        },
+  { value: "115",   labelKey: "landing.stats.actions_label",   subKey: "landing.stats.actions_sub" },
+  { value: "10",    labelKey: "landing.stats.services_label",  subKey: "landing.stats.services_sub" },
+  { value: "3",     labelKey: "landing.stats.languages_label", subKey: "landing.stats.languages_sub" },
+  { value: "99.9%", labelKey: "landing.stats.uptime_label",    subKey: "landing.stats.uptime_sub" },
 ];
 
 const FEATURES = [
-  { icon: "📦", accent: "#40916C", title: "Immutable Inventory Ledger",   desc: "Every stock movement is an append-only INSERT. Balances are derived — nothing is ever overwritten or deleted." },
-  { icon: "🔐", accent: "#FCDD09", title: "RBAC + ABAC Security",         desc: "115 permission actions enforced at 3 layers: API Gateway, service level, and PostgreSQL Row-Level Security." },
-  { icon: "🏭", accent: "#DA121A", title: "Multi-Location Hierarchy",     desc: "Production centers, warehouses, and sub-centers in a parent–child tree. Users are auto-scoped to their location." },
-  { icon: "📱", accent: "#0891B2", title: "Offline PWA + Barcode Scan",   desc: "Record movements offline via camera scan. IndexedDB queue syncs automatically when connectivity returns." },
-  { icon: "⚡", accent: "#7C3AED", title: "FEFO Dispatch Engine",         desc: "Auto-enforced when expiry tracking is active. Override requires explicit permission + reason code + audit trail." },
-  { icon: "🌍", accent: "#078930", title: "EN · Amharic · Oromifa",       desc: "Language packs served from S3 CDN, cached by service worker. Switch per-user. Native speaker review for Oromifa." },
+  { icon: "📦", accent: "#40916C", titleKey: "landing.features.ledger.title",    descKey: "landing.features.ledger.desc" },
+  { icon: "🔐", accent: "#FCDD09", titleKey: "landing.features.rbac.title",      descKey: "landing.features.rbac.desc" },
+  { icon: "🏭", accent: "#DA121A", titleKey: "landing.features.hierarchy.title", descKey: "landing.features.hierarchy.desc" },
+  { icon: "📱", accent: "#0891B2", titleKey: "landing.features.offline.title",   descKey: "landing.features.offline.desc" },
+  { icon: "⚡", accent: "#7C3AED", titleKey: "landing.features.dispatch.title",  descKey: "landing.features.dispatch.desc" },
+  { icon: "🌍", accent: "#078930", titleKey: "landing.features.i18n.title",      descKey: "landing.features.i18n.desc" },
 ];
 
 const SETUP_STEPS = [
-  { icon: "🏢", title: "Create Tenant",      desc: "Register your company and set the organisation type (Producer / Retailer)." },
-  { icon: "🌳", title: "Configure Hierarchy", desc: "Define levels, nodes, positions, and supply routes in the org setup wizard." },
-  { icon: "👥", title: "Add Users",           desc: "Create users, assign positions, and configure approval rules for transfers." },
+  { icon: "🏢", titleKey: "landing.get_started.step1_title", descKey: "landing.get_started.step1_desc" },
+  { icon: "👤", titleKey: "landing.get_started.step2_title", descKey: "landing.get_started.step2_desc" },
+  { icon: "✅", titleKey: "landing.get_started.step3_title", descKey: "landing.get_started.step3_desc" },
 ];

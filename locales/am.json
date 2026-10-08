@@ -1901,5 +1901,81 @@
     "terms_title": "የአገልግሎት ውሎች",
     "privacy_title": "የግላዊነት ፖሊሲ",
     "draft_banner": "ረቂቅ — እስካሁን ተግባራዊ አልሆነም። የመጨረሻው ጽሑፍ ከመጀመሪያው በፊት ይታተማል።"
+  },
+  "landing": {
+    "nav": {
+      "features": "ባህሪዎች",
+      "get_started_anchor": "ይጀምሩ",
+      "credentials": "መታወቂያ",
+      "sign_in": "ይግቡ",
+      "get_started_cta": "ይጀምሩ"
+    },
+    "hero": {
+      "subtitle": "ቅጽበታዊ የክምችት መዝገብ · FEFO ልውውጥ · ከመስመር ውጭ ባርኮድ ስካን · የ3-ደረጃ ጥበቃ — ለኢትዮጲያ አምራቾችና አከፋፋዮች የተሰራ።",
+      "badge_suffix": "ከመስመር ውጭ ዝግጁ · ባለብዙ ተከራይ",
+      "cta_primary": "የዕቅድ ይምረጡ",
+      "cta_explore": "ባህሪዎችን ይመልከቱ"
+    },
+    "stats": {
+      "actions_label": "የፈቃድ ድርጊቶች",
+      "actions_sub": "RBAC + ABAC ተፈጻሚነት",
+      "services_label": "ማይክሮ-አገልግሎቶች",
+      "services_sub": "FastAPI + Next.js 14",
+      "languages_label": "ቋንቋዎች",
+      "languages_sub": "EN · አማርኛ · Oromoo",
+      "uptime_label": "የአገልግሎት ጊዜ SLA",
+      "uptime_sub": "AWS ECS Fargate"
+    },
+    "features": {
+      "section_badge": "የመድረክ አቅሞች",
+      "heading": "የመጋዘን ቡድንዎ የሚፈልገው ሁሉ",
+      "subheading": "ከመጋዘን ወስፍ ባርኮድ ስካን እስከ AI የተጠናከረ የፍላጎት ትንበያ።",
+      "ledger": {
+        "title": "የማይለወጥ የክምችት መዝገብ",
+        "desc": "እያንዳንዱ የክምችት እንቅስቃሴ INSERT ብቻ ነው፤ ቀሪ ሂሳብ ይሰላል — በፍጹም አይሰረዝም አይለወጥም።"
+      },
+      "rbac": {
+        "title": "RBAC + ABAC ጥበቃ",
+        "desc": "115 የፈቃድ ድርጊቶች በ3 ደረጃዎች ይተገበራሉ፦ API Gateway፣ የአገልግሎት ደረጃ እና PostgreSQL Row-Level Security።"
+      },
+      "hierarchy": {
+        "title": "ባለብዙ አካባቢ ተዋረድ",
+        "desc": "የምርት ማዕከላት፣ መጋዘኖች እና ንዑስ ማዕከላት በወላጅ-ልጅ መዋቅር። ተጠቃሚዎች ራስ-ሰር በቦታቸው ይገደባሉ።"
+      },
+      "offline": {
+        "title": "ከመስመር ውጭ PWA + ባርኮድ ስካን",
+        "desc": "ከመስመር ውጭ በካሜራ ስካን ያድርጉ። IndexedDB ወረፋ ግንኙነት ሲመለስ በራስ-ሰር ይመሳሰላል።"
+      },
+      "dispatch": {
+        "title": "FEFO የክፍፍል ሞተር",
+        "desc": "የጊዜ ገደብ ክትትል ሲነቃ በራስ-ሰር ይተገበራል። ማለፍ ግልጽ ፈቃድ + ምክንያት ኮድ + ኦዲት ይጠይቃል።"
+      },
+      "i18n": {
+        "title": "እንግሊዝኛ · አማርኛ · ኦሮምኛ",
+        "desc": "የቋንቋ ፓኮች ከ S3 CDN ይቀርባሉ፤ በአገልግሎት ሰራተኛ ይቀመጣሉ። በተጠቃሚ ይቀየራል።"
+      }
+    },
+    "get_started": {
+      "section_badge": "ይጀምሩ",
+      "heading": "የክምችት አያያዝዎን ይጀምሩ",
+      "subheading": "ለመጀመር ሶስት ደረጃዎች — ዕቅድ ይምረጡ፣ መለያ ይፍጠሩ፣ እና ድርጅትዎን ያረጋግጡና ያዋቅሩ።",
+      "step1_title": "የዕቅድ ይምረጡ",
+      "step1_desc": "ስታርተር፣ ግሮውት ወይም ኢንተርፕራይዝ — በወር ወይም በዓመት ክፍያ።",
+      "step2_title": "መለያዎን ይፍጠሩ",
+      "step2_desc": "የኩባንያዎን ዝርዝር እና የአስተዳዳሪ መግቢያ ያክሉ።",
+      "step3_title": "ያረጋግጡና ያዋቅሩ",
+      "step3_desc": "ኢሜይልዎን ያረጋግጡ፣ ከዚያም ድርጅትዎን ያዋቅሩ።",
+      "already_customer": "አስቀድመው ተጠቃሚ ነዎት?"
+    },
+    "credentials": {
+      "heading": "የስርዓት አስተዳዳሪ መግቢያ",
+      "subheading": "የSA መለያን ተከራዮችን ለመፍጠር እና ኩባንያዎን ለማስገባት ይጠቀሙ።",
+      "badge": "SA",
+      "role_label": "የስርዓት አስተዳዳሪ",
+      "cta": "ወደ ዳሽቦርድ ይግቡ"
+    },
+    "footer": {
+      "stack": "FastAPI · Next.js 14 · PostgreSQL 16 · AWS ECS Fargate"
+    }
   }
 }

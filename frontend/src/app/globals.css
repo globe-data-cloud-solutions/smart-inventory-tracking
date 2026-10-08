@@ -77,6 +77,20 @@ body {
 }
 .btn-signin:hover { background: #E5E7EB; }
 
+/* ── Navbar primary CTA (small gold button) ──────────────────────────────── */
+.btn-nav-primary {
+  padding: 8px 20px;
+  background: #FCDD09;
+  color: #0f2d1f;
+  font-size: 13px;
+  font-weight: 700;
+  border-radius: 4px;
+  text-decoration: none;
+  white-space: nowrap;
+  transition: opacity 0.15s;
+}
+.btn-nav-primary:hover { opacity: 0.88; }
+
 /* ── Tenant cards ────────────────────────────────────────────────────────── */
 .tenant-card {
   background: #fff;
