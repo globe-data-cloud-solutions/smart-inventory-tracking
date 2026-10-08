@@ -44,6 +44,31 @@ def test_public_signup_passes_without_token(api_gateway_app) -> None:
     mock_request.assert_called_once()
 
 
+def test_forgot_password_passes_without_token(api_gateway_app) -> None:
+    client = TestClient(api_gateway_app)
+
+    with patch("httpx.AsyncClient.request", new_callable=AsyncMock) as mock_request:
+        mock_request.return_value = httpx.Response(202, json={"sent": True})
+        response = client.post("/api/v1/auth/forgot-password", json={"email": "probe@example.com"})
+
+    assert response.status_code == 202
+    mock_request.assert_called_once()
+
+
+def test_reset_password_passes_without_token(api_gateway_app) -> None:
+    client = TestClient(api_gateway_app)
+
+    with patch("httpx.AsyncClient.request", new_callable=AsyncMock) as mock_request:
+        mock_request.return_value = httpx.Response(200, json={"reset": True})
+        response = client.post(
+            "/api/v1/auth/reset-password",
+            json={"token": "probe-token", "new_password": "Probe@2026"},
+        )
+
+    assert response.status_code == 200
+    mock_request.assert_called_once()
+
+
 def test_tenants_root_still_requires_token(api_gateway_app) -> None:
     """/api/v1/tenants/ (not /public/*) is unaffected — still 401 without a token."""
     client = TestClient(api_gateway_app)

@@ -50,12 +50,16 @@ SERVICE_MAP = {
 
 UNAUTHENTICATED_PATHS = {
     "/api/v1/auth/token",
+    "/api/v1/auth/refresh",
     "/health",
     # Public sign-up (S4) — exact-match only, never a prefix.
     "/api/v1/tenants/public/packages",
     "/api/v1/tenants/public/signup",
     "/api/v1/auth/verify-email",
     "/api/v1/auth/resend-verification",
+    # Password reset (B2) — exact-match only, never a prefix.
+    "/api/v1/auth/forgot-password",
+    "/api/v1/auth/reset-password",
     # Public STUB payment webhook (S5) — no SMART JWT on a gateway callback.
     "/api/v1/tenants/public/payments/webhook/stub",
 }
