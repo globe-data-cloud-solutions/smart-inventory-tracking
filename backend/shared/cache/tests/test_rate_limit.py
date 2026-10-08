@@ -87,7 +87,7 @@ async def test_hit_bucket_uses_configured_limit(monkeypatch: pytest.MonkeyPatch)
     assert exc_info.value.status_code == 429
 
 
-def test_client_ip_ignores_x_real_ip(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_client_ip_ignores_x_real_ip_when_trust_proxy_headers_unset(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("TRUST_PROXY_HEADERS", raising=False)
     request = MagicMock()
     request.headers = {"X-Real-IP": "9.9.9.9"}
@@ -95,30 +95,36 @@ def test_client_ip_ignores_x_real_ip(monkeypatch: pytest.MonkeyPatch) -> None:
     assert client_ip(request) == "127.0.0.1"
 
 
-def test_client_ip_ignores_xff_when_trust_proxy_headers_unset(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.delenv("TRUST_PROXY_HEADERS", raising=False)
+def test_client_ip_uses_x_real_ip_when_trust_proxy_headers_true(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("TRUST_PROXY_HEADERS", "true")
     request = MagicMock()
-    request.headers = {"X-Forwarded-For": "1.1.1.1, 2.2.2.2"}
+    request.headers = {"X-Real-IP": "9.9.9.9"}
+    request.client.host = "127.0.0.1"
+    assert client_ip(request) == "9.9.9.9"
+
+
+def test_client_ip_falls_back_to_request_client_host_when_trusted_but_x_real_ip_empty(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("TRUST_PROXY_HEADERS", "true")
+    request = MagicMock()
+    request.headers = {"X-Real-IP": ""}
     request.client.host = "127.0.0.1"
     assert client_ip(request) == "127.0.0.1"
 
 
-def test_client_ip_uses_last_xff_entry_when_trust_proxy_headers_true(
+def test_client_ip_ignores_xff_even_when_trust_proxy_headers_true(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """Downstream services never parse X-Forwarded-For — only the gateway
+    does, and it overwrites X-Real-IP with the resolved value. A caller
+    sending X-Forwarded-For directly to a downstream service (bypassing the
+    gateway) must not be able to spoof its rate-limit bucket through it."""
     monkeypatch.setenv("TRUST_PROXY_HEADERS", "true")
     request = MagicMock()
     request.headers = {"X-Forwarded-For": "1.1.1.1, 2.2.2.2, 3.3.3.3"}
-    request.client.host = "127.0.0.1"
-    assert client_ip(request) == "3.3.3.3"
-
-
-def test_client_ip_falls_back_to_request_client_host_when_trusted_but_no_xff(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    monkeypatch.setenv("TRUST_PROXY_HEADERS", "true")
-    request = MagicMock()
-    request.headers = {}
     request.client.host = "127.0.0.1"
     assert client_ip(request) == "127.0.0.1"
 

@@ -92,16 +92,26 @@ async def hit_bucket(bucket: str, key: str) -> None:
 
 
 def client_ip(request: Request) -> str:
-    """Caller IP for rate-limiting. Proxy headers (X-Forwarded-For) are only
-    trusted when TRUST_PROXY_HEADERS=true (set on ECS behind the ALB) — in
-    that case the LAST entry of X-Forwarded-For is used, since that's the one
-    the ALB itself appended. X-Real-IP is never read: it is not set by the
-    ALB and trusting it from an untrusted client would let callers spoof
-    their rate-limit bucket."""
+    """Caller IP for rate-limiting.
+
+    api-gateway is the ONLY component that resolves the real client IP: it
+    reads X-Forwarded-For itself (trusted to TRUSTED_PROXY_HOPS, set to 1
+    behind the ALB), then overwrites the X-Real-IP header with that resolved
+    value before proxying to a downstream service. Downstream services never
+    see the original connection — they are only reachable via the gateway
+    (enforced by security groups) — so the gateway's X-Real-IP is the trust
+    boundary, not a second hop of proxy-header parsing. Downstream services
+    therefore never parse X-Forwarded-For themselves: it would just be
+    whatever the original, untrusted caller sent.
+
+    X-Real-IP is trusted only when TRUST_PROXY_HEADERS=true (set on every
+    downstream service behind the gateway — ECS, and local gateway mode —
+    but never on the gateway itself) and non-empty; otherwise this falls
+    back to request.client.host, which is correct for a service that is NOT
+    reachable except via the gateway (local dev without the gateway, or a
+    future deployment where that invariant doesn't hold)."""
     if os.environ.get("TRUST_PROXY_HEADERS", "").lower() == "true":
-        xff = request.headers.get("X-Forwarded-For")
-        if xff:
-            last = xff.split(",")[-1].strip()
-            if last:
-                return last
+        real_ip = request.headers.get("X-Real-IP")
+        if real_ip:
+            return real_ip
     return request.client.host if request.client else "unknown"

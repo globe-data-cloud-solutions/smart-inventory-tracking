@@ -208,15 +208,22 @@ OUTBOX_POLL_INTERVAL_SECONDS=30
 OUTBOX_MAX_RETRIES=5
 OUTBOX_ALERT_THRESHOLD=500     # CloudWatch alarm fires when PENDING depth exceeds this
 
-# ── Gateway ──────────────────────────────────────────────────────────────────
+# ── Gateway (api-gateway ONLY — the sole component that resolves client IP) ──
 TRUSTED_PROXY_HOPS=0           # 0 (default/local) = direct connection; set to 1 behind the ALB so
-                                # X-Real-IP is read from the right end of X-Forwarded-For, not the ALB's own IP
+                                # X-Forwarded-For is read from the right hop, not the ALB's own IP. The
+                                # gateway then overwrites the X-Real-IP header with that resolved value
+                                # before proxying downstream — never set TRUST_PROXY_HEADERS on the gateway.
 
 # ── Rate limiting (B3) — read by shared/cache/rate_limit.py in every downstream
-#    service (auth-service, tenant-service), not by the gateway itself ────────
-TRUST_PROXY_HEADERS=true       # MUST be true on ECS behind the ALB — client_ip() then uses the LAST
-                                # X-Forwarded-For entry as the rate-limit key; false/unset (local default)
-                                # uses request.client.host. X-Real-IP is never read by client_ip().
+#    service (auth-service, tenant-service), NEVER by the gateway itself ────
+TRUST_PROXY_HEADERS=true       # MUST be true on every downstream service behind the gateway (ECS, and
+                                # local gateway mode) — client_ip() then trusts the gateway-set X-Real-IP
+                                # header (non-empty) as the rate-limit key; false/unset (e.g. a service hit
+                                # directly, bypassing the gateway) falls back to request.client.host.
+                                # Downstream services never parse X-Forwarded-For themselves — only the
+                                # gateway does. This is only safe because downstream services are not
+                                # reachable except via the gateway (security groups) — otherwise X-Real-IP
+                                # would be spoofable directly by any caller.
 RATE_LIMIT_<BUCKET>            # optional per-bucket override, "<limit>/<window_s>" — local/test only,
                                 # e.g. RATE_LIMIT_SIGNUP=100/3600. Invalid value logs a warning and falls
                                 # back to the default — see docs/claude/billing-and-tenants.md "Rate limits (B3)".

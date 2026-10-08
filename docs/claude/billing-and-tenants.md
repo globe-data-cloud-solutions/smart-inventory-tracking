@@ -163,10 +163,19 @@ override value is logged as a warning and the default is used — it never
 crashes the service. The table above is the production defaults; overrides
 are for local/test tuning only. Redis outage still fails open (unchanged).
 
-`client_ip(request)` ignores `X-Real-IP` and `X-Forwarded-For` unless
-`TRUST_PROXY_HEADERS=true` — set that on ECS behind the ALB. When true, the
-rate-limit key is the LAST entry of `X-Forwarded-For` (the hop the ALB itself
-appended); otherwise it's `request.client.host`. `X-Real-IP` is never read.
+**api-gateway is the only component that resolves the client IP.** It reads
+`X-Forwarded-For` itself (trusted to `TRUSTED_PROXY_HOPS`, set to 1 behind
+the ALB), then overwrites the `X-Real-IP` header with that resolved value
+before proxying to a downstream service. Downstream services (auth-service,
+tenant-service) never parse `X-Forwarded-For` — they are only reachable via
+the gateway (enforced by security groups), so the gateway's `X-Real-IP` is
+the trust boundary: `client_ip(request)` there reads `X-Real-IP` only when
+`TRUST_PROXY_HEADERS=true` (set on every downstream service behind the
+gateway — ECS, and local gateway mode — never on the gateway itself) and
+non-empty; otherwise it falls back to `request.client.host`. If a service
+were ever reachable except via the gateway, `X-Real-IP` would be directly
+spoofable by any caller — the security-group rule is load-bearing, not just
+routing hygiene.
 
 ### Billing (S5) — invoices, payments, providers
 
