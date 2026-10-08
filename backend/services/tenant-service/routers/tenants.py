@@ -16,6 +16,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from dependencies import get_current_user, get_db_session
 from services.wizard_service import APPROVAL_DEFAULTS
+from shared.cache.token_revocation import revoke_tenant_tokens
 from shared.permissions.middleware import require_permission
 from shared.permissions.registry import PERMISSIONS
 from shared.billing.subscriptions import get_current_addon_price, get_current_price, period_end, start_subscription, vat_breakdown
@@ -2818,6 +2819,7 @@ async def suspend_tenant(
         text("UPDATE tenants SET status = 'SUSPENDED', is_active = false, updated_at = now() WHERE id = :id"),
         {"id": str(tenant_id)},
     )
+    await revoke_tenant_tokens(str(tenant_id))
     try:
         await _log_tenant_activity(
             db, tenant_id, str(user.user_id),
@@ -2882,6 +2884,7 @@ async def deactivate_tenant(
         text("UPDATE tenants SET status = 'DEACTIVATED', is_active = false, updated_at = now() WHERE id = :id"),
         {"id": str(tenant_id)},
     )
+    await revoke_tenant_tokens(str(tenant_id))
     try:
         await _log_tenant_activity(
             db, tenant_id, str(user.user_id),

@@ -9,6 +9,7 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, Response
 from jose import JWTError, jwt
+from shared.cache.token_revocation import is_token_revoked
 from shared.utils.env_guard import assert_safe_environment
 
 logger = logging.getLogger("api-gateway")
@@ -116,7 +117,9 @@ async def proxy(request: Request, path: str) -> Response:
         auth_header = request.headers.get("Authorization", "")
         if not auth_header.startswith("Bearer "):
             raise HTTPException(status_code=401, detail="Missing token")
-        _decode_jwt(auth_header.removeprefix("Bearer "))
+        payload = _decode_jwt(auth_header.removeprefix("Bearer "))
+        if await is_token_revoked(payload):
+            raise HTTPException(status_code=401, detail="TOKEN_REVOKED")
 
     target_base: str | None = None
     for prefix, url in SERVICE_MAP.items():

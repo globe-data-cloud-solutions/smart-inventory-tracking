@@ -583,6 +583,47 @@ class TestLocalDevAuth:
         assert resp.status_code == 200, resp.text
         assert resp.json()["success"] is True
 
+    def test_change_password_revokes_user_tokens(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """A successful password change calls revoke_user_tokens for that user
+        so every previously-issued JWT stops working."""
+        from unittest.mock import AsyncMock, MagicMock
+
+        monkeypatch.setattr(auth_module, "ENVIRONMENT", "production")
+
+        import bcrypt as _bcrypt
+        fake_hash = _bcrypt.hashpw(b"ActualPass@2026", _bcrypt.gensalt()).decode()
+        fake_row  = MagicMock()
+        fake_row.id                  = "user-normal-003"
+        fake_row.password_hash       = fake_hash
+        fake_row.must_reset_password = False
+
+        fake_result = MagicMock()
+        fake_result.fetchone = MagicMock(return_value=fake_row)
+
+        fake_db = AsyncMock()
+        fake_db.execute    = AsyncMock(return_value=fake_result)
+        fake_db.commit     = AsyncMock()
+        fake_db.__aenter__ = AsyncMock(return_value=fake_db)
+        fake_db.__aexit__  = AsyncMock(return_value=None)
+
+        import shared.db.session as _sess_mod
+        monkeypatch.setattr(_sess_mod, "AsyncSessionLocal", lambda: fake_db)
+
+        mock_revoke = AsyncMock()
+        monkeypatch.setattr(auth_module, "revoke_user_tokens", mock_revoke)
+
+        resp = client.patch(
+            "/api/v1/auth/password/user-normal-003",
+            json={
+                "user_id":          "user-normal-003",
+                "current_password": "ActualPass@2026",
+                "new_password":     "NewSecure@2026!",
+            },
+            headers=_bearer_for("user-normal-003"),
+        )
+        assert resp.status_code == 200, resp.text
+        mock_revoke.assert_awaited_once_with("user-normal-003")
+
 
 @pytest.mark.unit
 class TestLoginAttemptLimiting:

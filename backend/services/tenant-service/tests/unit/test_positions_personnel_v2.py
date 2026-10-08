@@ -520,6 +520,36 @@ class TestPersonnelV2:
         assert result.data["removed"] is True
         assert result.data["user_deactivated"] is True
 
+    async def test_sa_force_remove_sole_primary_revokes_user_tokens(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """The auto-deactivate path in a force-removal of the sole PRIMARY
+        assignment also revokes the user's tokens."""
+        from routers.personnel_v2 import remove_position_assignment
+
+        monkeypatch.setattr("routers.personnel_v2.audit_log", AsyncMock())
+        mock_revoke = AsyncMock()
+        monkeypatch.setattr("routers.personnel_v2.revoke_user_tokens", mock_revoke)
+
+        assignment_row = _row(id=POSITION_ID, assignment_type="PRIMARY")
+
+        db = _db_seq(
+            assignment_row,
+            0,
+            None,
+            None,
+        )
+
+        with _GRANT_ALL:
+            await remove_position_assignment(
+                tenant_id=UUID(TENANT_ID),
+                user_id=UUID(USER_ID),
+                assignment_id=UUID(POSITION_ID),
+                force=True,
+                user=_Caller(role="SA"),
+                db=db,
+            )
+
+        mock_revoke.assert_awaited_once_with(USER_ID)
+
     async def test_ta_force_remove_forbidden(self) -> None:
         """DELETE /users/{id}/positions/{assignment_id}?force=true is rejected with
         403 for a non-SA caller (e.g. TA) — force is a platform-admin-only escape hatch."""
@@ -582,6 +612,64 @@ class TestPersonnelV2:
         assert update_params["mrp"] is True
         assert update_params["ph"] != "NewPass@2026"  # stored as a bcrypt hash, never plaintext
         assert reset_calls == ["locked-out@test.com"]
+
+    async def test_ta_password_reset_revokes_user_tokens(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """PATCH /users/{id} with password also revokes the target user's tokens,
+        but only when password_hash is actually being set."""
+        from routers.personnel_v2 import update_user, UserUpdateRequest
+
+        user_row = _row(id=USER_ID, email="locked-out@test.com")
+
+        async def _capture(stmt, params=None, **kw) -> MagicMock:
+            res = MagicMock()
+            res.fetchone = MagicMock(return_value=user_row if "FROM users WHERE id" in str(stmt) else None)
+            return res
+
+        db = AsyncMock()
+        db.execute = AsyncMock(side_effect=_capture)
+
+        monkeypatch.setattr("routers.personnel_v2._reset_login_attempts", AsyncMock())
+        mock_revoke = AsyncMock()
+        monkeypatch.setattr("routers.personnel_v2.revoke_user_tokens", mock_revoke)
+
+        with _GRANT_ALL:
+            await update_user(
+                tenant_id=UUID(TENANT_ID),
+                user_id=UUID(USER_ID),
+                body=UserUpdateRequest(password="NewPass@2026"),
+                user=_Caller(),
+                db=db,
+            )
+
+        mock_revoke.assert_awaited_once_with(USER_ID)
+
+    async def test_update_user_without_password_does_not_revoke_tokens(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """PATCH /users/{id} with no password field never touches token revocation."""
+        from routers.personnel_v2 import update_user, UserUpdateRequest
+
+        user_row = _row(id=USER_ID, email="user@test.com")
+
+        async def _capture(stmt, params=None, **kw) -> MagicMock:
+            res = MagicMock()
+            res.fetchone = MagicMock(return_value=user_row if "FROM users WHERE id" in str(stmt) else None)
+            return res
+
+        db = AsyncMock()
+        db.execute = AsyncMock(side_effect=_capture)
+
+        mock_revoke = AsyncMock()
+        monkeypatch.setattr("routers.personnel_v2.revoke_user_tokens", mock_revoke)
+
+        with _GRANT_ALL:
+            await update_user(
+                tenant_id=UUID(TENANT_ID),
+                user_id=UUID(USER_ID),
+                body=UserUpdateRequest(system_role="AU"),
+                user=_Caller(),
+                db=db,
+            )
+
+        mock_revoke.assert_not_called()
 
     async def test_reset_password_requires_min_length(self) -> None:
         """UserUpdateRequest rejects passwords under 8 characters at the schema
@@ -664,6 +752,31 @@ class TestPersonnelV2:
             )
 
         assert result.data == {"deactivated": True, "user_id": USER_ID}
+
+    async def test_deactivate_user_revokes_tokens(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """PATCH /users/{id}/deactivate revokes the deactivated user's tokens."""
+        from routers.personnel_v2 import deactivate_user
+
+        mock_revoke = AsyncMock()
+        monkeypatch.setattr("routers.personnel_v2.revoke_user_tokens", mock_revoke)
+
+        target_row = _row(id=USER_ID, system_role="TA")
+        db = _db_seq(
+            target_row,
+            2,
+            None,
+            None,
+        )
+
+        with _GRANT_ALL:
+            await deactivate_user(
+                tenant_id=UUID(TENANT_ID),
+                user_id=UUID(USER_ID),
+                user=_Caller(user_id="caller-001"),
+                db=db,
+            )
+
+        mock_revoke.assert_awaited_once_with(USER_ID)
 
     async def test_create_user_accepts_au_system_role(self) -> None:
         """POST /users accepts system_role='AU' for the tenant-wide Auditor

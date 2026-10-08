@@ -35,6 +35,7 @@ from shared.cache.login_lockout import (
     _reset_login_attempts,
 )
 from shared.cache.rate_limit import client_ip, hit_bucket as rate_limit_hit
+from shared.cache.token_revocation import revoke_user_tokens
 
 router = APIRouter()
 
@@ -493,6 +494,8 @@ async def change_password_by_id(user_id: str, body: ChangePasswordByIdRequest, r
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"Database error: {exc}") from exc
 
+    await revoke_user_tokens(user_id)
+
     return {"success": True, "message": "Password updated successfully"}
 
 
@@ -649,6 +652,8 @@ async def reset_password(body: ResetPasswordRequest, request: Request) -> dict:
                 {"uid": user_id},
             )).fetchone()
             email_for_lockout = str(email_row.email) if email_row else None
+
+    await revoke_user_tokens(user_id)
 
     if email_for_lockout is not None:
         await _reset_login_attempts(email_for_lockout)

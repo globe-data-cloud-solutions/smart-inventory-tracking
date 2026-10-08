@@ -3,6 +3,8 @@ import importlib.util
 import os
 from unittest.mock import AsyncMock, patch
 
+import time
+
 import httpx
 import pytest
 from fastapi.testclient import TestClient
@@ -17,6 +19,7 @@ def valid_jwt_token():
         "sub": "test-user-id",
         "role": "SA",
         "tenant_id": "test-tenant-id",
+        "iat": int(time.time()),
     }
     return jwt.encode(payload, secret, algorithm="HS256")
 

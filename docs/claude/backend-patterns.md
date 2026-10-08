@@ -223,6 +223,37 @@ class JWTPayload(BaseModel):
     exp:          int            # max JWT_EXPIRE_MINUTES (60 min)
 ```
 
+### Token revocation
+
+A JWT is normally valid for its full lifetime even after the event that
+should invalidate it — `backend/shared/cache/token_revocation.py` closes that
+gap with Redis "revoked-before" timestamps, checked once at the gateway.
+
+- **Keys**: `revoked_before:user:{user_id}` and `revoked_before:tenant:{tenant_id}`
+  (ids lower-cased). Value is the epoch second the revoke happened.
+- **TTL**: `JWT_EXPIRE_MINUTES * 60 + 300` — a token can't outlive the key
+  that would revoke it.
+- **Triggers**: `revoke_user_tokens(user_id)` after password change
+  (`PATCH /auth/password/{id}`), password reset (`POST /auth/reset-password`),
+  a TA-issued password reset (`PATCH /tenants/{tid}/users/{uid}` with
+  `password` set), user deactivation, and the auto-deactivate path when an SA
+  force-removes a user's sole PRIMARY assignment. `revoke_tenant_tokens(tenant_id)`
+  after tenant suspend and tenant deactivate — **not** reactivate (reactivating
+  a tenant never restores sessions that were already invalidated).
+- **Check**: the gateway's `proxy()` calls `is_token_revoked(payload)` right
+  after `_decode_jwt()`, for every authenticated request — downstream
+  services never check this themselves; enforcement relies on service
+  security groups accepting traffic only from the gateway.
+- **Fail-open / fail-safe**: mirrors `shared.cache.rate_limit`'s pattern.
+  `revoke_*` swallows any Redis error (logs and returns — the business
+  operation must never fail because Redis is down). `is_token_revoked` fails
+  OPEN (returns not-revoked) on a Redis error, but treats a missing/non-int
+  `iat` claim as revoked.
+- **Redis-loss window**: if Redis is unreachable at revoke time, the revoke
+  is silently dropped — any token issued before that point stays valid until
+  it naturally expires (≤ `JWT_EXPIRE_MINUTES`). This is a known, accepted
+  gap, not a bug to fix reactively.
+
 
 ## 14. Inventory Ledger — Immutable Rules
 

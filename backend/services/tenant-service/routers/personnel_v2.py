@@ -29,6 +29,7 @@ from shared.permissions.plan_middleware import check_plan_create_user
 
 from dependencies import get_current_user, get_db_session_for_tenant
 from shared.cache.login_lockout import _reset_login_attempts
+from shared.cache.token_revocation import revoke_user_tokens
 from shared.permissions.audit import audit_log
 from shared.permissions.middleware import require_permission
 from shared.permissions.registry import PERMISSIONS
@@ -521,6 +522,7 @@ async def remove_position_assignment(
                 {"uid": str(user_id)},
             )
             user_deactivated = True
+            await revoke_user_tokens(str(user_id))
             await audit_log(
                 user, PERMISSIONS.USER_MANAGE.id,
                 {"resource_type": "personnel_position", "resource_id": str(assignment_id),
@@ -596,6 +598,7 @@ async def deactivate_user(
         text("UPDATE personnel_positions SET is_active = false WHERE user_id = :uid AND tenant_id = :tid"),
         {"uid": str(user_id), "tid": str(tenant_id)},
     )
+    await revoke_user_tokens(str(user_id))
     return SuccessResponse(data={"deactivated": True, "user_id": str(user_id)})
 
 
@@ -809,5 +812,6 @@ async def update_user(
         # actually failing login attempts under), not any new email also
         # being set in this same request.
         await _reset_login_attempts(row.email)
+        await revoke_user_tokens(str(user_id))
 
     return SuccessResponse(data={"updated": True, "user_id": str(user_id)})

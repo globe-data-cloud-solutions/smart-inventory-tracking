@@ -184,6 +184,23 @@ class TestResetPassword:
         assert resp.status_code == 422
         assert resp.json()["detail"]["code"] == "PASSWORD_TOO_SHORT"
 
+    def test_reset_password_revokes_user_tokens(self) -> None:
+        """A successful reset calls revoke_user_tokens for the resolved user_id
+        so any JWT issued before the reset stops working."""
+        import shared.db.session as _sess_mod
+
+        mock_revoke = AsyncMock()
+        with _no_rate_limit(), \
+             patch.object(auth_module, "consume_reset_token", new=AsyncMock(return_value="user-1")), \
+             patch.object(_sess_mod, "AsyncSessionLocal", lambda: self._fake_reset_db()), \
+             patch.object(auth_module, "revoke_user_tokens", mock_revoke):
+            resp = client.post(
+                "/api/v1/auth/reset-password",
+                json={"token": "a-real-token", "new_password": "NewPass123"},
+            )
+        assert resp.status_code == 200
+        mock_revoke.assert_awaited_once_with("user-1")
+
     def test_second_forgot_invalidates_earlier_token(self) -> None:
         """issue_reset_token is responsible for invalidating earlier unused
         tokens — verified here at the auth.py integration level: two
