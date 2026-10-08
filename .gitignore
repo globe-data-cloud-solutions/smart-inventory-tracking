@@ -36,3 +36,5 @@ scripts/_refresh_tokens.py
 scripts/_seed_t6p2t.py
 scripts/_swap_positions.py
 scripts/_write_state.py
+.coverage
+.coverage.*
