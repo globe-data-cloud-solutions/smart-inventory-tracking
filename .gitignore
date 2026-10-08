@@ -19,6 +19,7 @@ node_modules/
 *.tfstate.backup
 .terraform.lock.hcl
 frontend/tsconfig.tsbuildinfo
+backend/celerybeat-schedule*
 # Uploaded files (LocalStorageService — dev only; production uses S3)
 uploads/
 
