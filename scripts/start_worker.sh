@@ -10,6 +10,8 @@
 # Logs are written to logs/services/ (created if absent).
 # PIDs are printed so you can kill the processes with: kill <PID>
 
+export PYTHONIOENCODING=utf-8
+
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
