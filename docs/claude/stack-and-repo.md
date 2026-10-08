@@ -65,7 +65,8 @@
 │  @playwright/test (devDep) — frontend e2e testing                   │
 ├─────────────────────────────────────────────────────────────────────┤
 │  BACKEND                                                             │
-│  Python 3.12                                                         │
+│  Python 3.12 (Docker/ECS target)                                     │
+│  local dev currently runs 3.14 — code stays 3.12-compatible          │
 │  FastAPI — REST API framework                                        │
 │  SQLAlchemy 2.x (async) + asyncpg — ORM and PostgreSQL driver       │
 │  Alembic — versioned, reversible database migrations                │

@@ -49,8 +49,9 @@ NEVER implement a new facility-scoped feature with a raw warehouse_id equality c
 - **Frontend**: React 18 + Next.js 14 (App Router), TypeScript 5 strict, Tailwind 3, PWA
   (service worker + offline queue), @zxing/browser scanning, idb, Zod, TanStack Query,
   Zustand, React Hook Form, cva, Playwright (e2e).
-- **Backend**: Python 3.12, FastAPI, SQLAlchemy 2 (async) + asyncpg, Alembic, Pydantic v2,
-  python-casbin (RBAC+ABAC), python-jose (JWT), Celery, ruff, mypy, pytest.
+- **Backend**: Python 3.12 (Docker/ECS target); local dev currently runs 3.14 — code must
+  stay 3.12-compatible (no 3.13+ only syntax/stdlib). FastAPI, SQLAlchemy 2 (async) + asyncpg,
+  Alembic, Pydantic v2, python-casbin (RBAC+ABAC), python-jose (JWT), Celery, ruff, mypy, pytest.
 - **Database**: Amazon RDS PostgreSQL 16 primary + read replica (ledger, RLS, outbox,
   JSONB, pg_trgm). Amazon ElastiCache for Redis (Celery broker, sessions, AI cache).
 - **Async**: Transactional Outbox Pattern replaces Kafka — outbox table + pg_notify +
