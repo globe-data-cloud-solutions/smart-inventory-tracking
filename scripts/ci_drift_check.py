@@ -18,15 +18,12 @@ SERVICES_DIR = ROOT / "backend" / "services"
 # Rationale for each entry:
 #   auth-service/routers/auth.py::exchange_token  — POST /token exchanges a Cognito
 #     IdToken for a SMART JWT.  No SMART JWT exists yet, so requiring one is circular.
-#   auth-service/routers/auth.py::refresh_token   — POST /refresh delegates entirely
-#     to the Cognito refresh flow; no SMART JWT is present or needed.
 #
 # Adding a function here is a deliberate decision that must be reviewed and approved.
 # Any new entry that is NOT in this list will still fail CI if it lacks the decorator.
 ALLOWLISTED_PUBLIC_ROUTES: dict[str, list[str]] = {
     "backend/services/auth-service/routers/auth.py": [
         "exchange_token",
-        "refresh_token",
         # Local-dev password change endpoint — protected by ENVIRONMENT=local guard, not JWT.
         "change_password_by_id",
         # Public email verification (S4) — no SMART JWT exists until the user signs in.

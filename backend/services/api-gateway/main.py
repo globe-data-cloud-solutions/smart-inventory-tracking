@@ -50,7 +50,6 @@ SERVICE_MAP = {
 
 UNAUTHENTICATED_PATHS = {
     "/api/v1/auth/token",
-    "/api/v1/auth/refresh",
     "/health",
     # Public sign-up (S4) — exact-match only, never a prefix.
     "/api/v1/tenants/public/packages",

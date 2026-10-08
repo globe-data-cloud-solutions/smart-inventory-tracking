@@ -409,11 +409,6 @@ async def exchange_token(body: TokenRequest, request: Request) -> TokenResponse:
     )
 
 
-@router.post("/refresh")
-async def refresh_token() -> dict:
-    return {"message": "use Cognito refresh flow"}
-
-
 class ChangePasswordByIdRequest(BaseModel):
     user_id:          str
     current_password: Optional[str] = None   # optional for must_reset users
