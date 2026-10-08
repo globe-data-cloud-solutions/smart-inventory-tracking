@@ -163,7 +163,8 @@
     "unassigned": "Unassigned",
     "success": "Saved successfully",
     "transaction": "daldala",
-    "all": "All"
+    "all": "All",
+    "rate_limited": "Too many attempts. Please try again later."
   },
   "product": {
     "add": {
@@ -1414,7 +1415,8 @@
     "mobile_system_admin": "System Admin",
     "personnel_hint": "To add tenant accounts, sign in as SA and use Settings → Personnel.",
     "footer_tagline": "SMART Inventory Tracker · RBAC + ABAC · 3 languages",
-    "auth_unavailable": "Sign-in is temporarily unavailable. Please try again later."
+    "auth_unavailable": "Sign-in is temporarily unavailable. Please try again later.",
+    "forgot_link": "Forgot password?"
   },
   "change_password": {
     "contact_admin": "Jecha darbee haaromfame. Bulchaan kee ramadee booda sistamitti seenuu dandeessa.",
@@ -1849,6 +1851,30 @@
     "resend_btn": "Resend verification link",
     "resend_sent": "If an account exists for this email, a verification link has been sent.",
     "back_to_login": "Back to sign in"
+  },
+  "forgot_password": {
+    "title": "Forgot your password?",
+    "subtitle": "Enter your email and we'll send you a link to reset your password.",
+    "email_label": "Email address",
+    "submit_btn": "Send reset link",
+    "submitting": "Sending…",
+    "sent": "If an account exists for that email, a reset link was sent.",
+    "back_to_login": "Back to sign in"
+  },
+  "reset_password": {
+    "title": "Reset your password",
+    "new_label": "New password",
+    "confirm_label": "Confirm new password",
+    "password_too_short": "Password must be at least 8 characters.",
+    "passwords_mismatch": "Passwords do not match.",
+    "submit_btn": "Reset password",
+    "submitting": "Resetting…",
+    "success_title": "Password reset!",
+    "success_body": "Your password has been changed. You can now sign in.",
+    "go_to_login_btn": "Go to sign in",
+    "invalid_title": "Link invalid or expired",
+    "invalid_body": "This reset link is invalid or has expired. Request a new one below.",
+    "request_new_btn": "Request a new link"
   },
   "billing": {
     "manual_instructions": "Pay by bank transfer or cash at the SMART office and send the receipt to support. Your administrator will confirm the payment.",

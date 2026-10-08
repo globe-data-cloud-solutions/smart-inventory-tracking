@@ -162,7 +162,8 @@
     "unassigned": "ያልተሰጠ",
     "success": "በተሳካ ሁኔታ ተቀምጧል",
     "transaction": "ግብይት",
-    "all": "ሁሉም"
+    "all": "ሁሉም",
+    "rate_limited": "በጣም ብዙ ሙከራዎች። እባክዎ ቆይተው ይሞክሩ።"
   },
   "not_found": {
     "heading": "ገጽ አልተገኘም",
@@ -1424,7 +1425,8 @@
     "mobile_system_admin": "የስርዓት አስተዳዳሪ",
     "personnel_hint": "የተከራይ መለያዎችን ለማከል፣ እንደ SA ይግቡና ማስተለኯት → ሰራተኞችን ይጠቀሙ።",
     "footer_tagline": "SMART የክምችት መከታተያ · RBAC + ABAC · 3 ቋንቋዎች",
-    "auth_unavailable": "ይግባ ለጊዜው አይገኝም። እባክዎ ትንሽ ቆይተው ይሞክሩ።"
+    "auth_unavailable": "ይግባ ለጊዜው አይገኝም። እባክዎ ትንሽ ቆይተው ይሞክሩ።",
+    "forgot_link": "የይለፍ ቃል ረስተዋል?"
   },
   "change_password": {
     "contact_admin": "password ተቀይሯል። አስተዳዳሪ ቦታ ይወስናሉ።",
@@ -1859,6 +1861,30 @@
     "resend_btn": "የማረጋገጫ ማስፈንጠሪያ ዳግም ይላኩ",
     "resend_sent": "ለዚህ ኢሜይል መለያ ካለ፣ የማረጋገጫ ማስፈንጠሪያ ተልኳል።",
     "back_to_login": "ወደ መግቢያ ተመለስ"
+  },
+  "forgot_password": {
+    "title": "የይለፍ ቃልዎን ረስተዋል?",
+    "subtitle": "ኢሜይልዎን ያስገቡ፣ የይለፍ ቃል ለመቀየሪያ ማስፈንጠሪያ እንልክልዎታለን።",
+    "email_label": "የኢሜይል አድራሻ",
+    "submit_btn": "የመቀየሪያ ማስፈንጠሪያ ይላኩ",
+    "submitting": "በመላክ ላይ…",
+    "sent": "ለዚህ ኢሜይል መለያ ካለ፣ የይለፍ ቃል መቀየሪያ ማስፈንጠሪያ ተልኳል።",
+    "back_to_login": "ወደ መግቢያ ተመለስ"
+  },
+  "reset_password": {
+    "title": "የይለፍ ቃልዎን ይቀይሩ",
+    "new_label": "አዲስ የይለፍ ቃል",
+    "confirm_label": "አዲሱን የይለፍ ቃል ያረጋግጡ",
+    "password_too_short": "የይለፍ ቃል ቢያንስ 8 ፊደላት መሆን አለበት።",
+    "passwords_mismatch": "የይለፍ ቃሎቹ አይመሳሰሉም።",
+    "submit_btn": "የይለፍ ቃል ይቀይሩ",
+    "submitting": "በመቀየር ላይ…",
+    "success_title": "የይለፍ ቃል ተቀይሯል!",
+    "success_body": "የይለፍ ቃልዎ ተቀይሯል። አሁን መግባት ይችላሉ።",
+    "go_to_login_btn": "ወደ መግቢያ ይሂዱ",
+    "invalid_title": "ማስፈንጠሪያው ልክ ያልሆነ ወይም ጊዜው ያለፈበት ነው",
+    "invalid_body": "ይህ የመቀየሪያ ማስፈንጠሪያ ልክ ያልሆነ ወይም ጊዜው ያለፈበት ነው። ከዚህ በታች አዲስ ይጠይቁ።",
+    "request_new_btn": "አዲስ ማስፈንጠሪያ ይጠይቁ"
   },
   "billing": {
     "manual_instructions": "በባንክ ዝውውር ወይም በገንዘብ በSMART ቢሮ ይክፈሉና ደረሰኙን ለድጋፍ ይላኩ። አስተዳዳሪዎ ክፍያውን ያረጋግጣል።",

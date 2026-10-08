@@ -206,6 +206,12 @@ export default function LoginPage() {
                   placeholder={t("login.password_placeholder")}
                   className="w-full rounded-lg border border-gray-300 px-4 py-2.5 text-sm text-gray-900 placeholder-gray-400 focus:border-brand-500 focus:ring-2 focus:ring-brand-200 outline-none transition"
                 />
+                <Link
+                  href={`/forgot-password${email ? `?email=${encodeURIComponent(email)}` : ""}`}
+                  className="mt-1.5 inline-block text-sm font-semibold text-brand-600 hover:text-brand-700"
+                >
+                  {t("login.forgot_link")}
+                </Link>
               </div>
 
               {lockoutMessage ? (
