@@ -116,3 +116,53 @@ Set CloudWatch alarms when:
 - Any row has `attempts >= 4` (approaching max retries)
 - Any row has been PENDING for > 5 minutes
 
+### Running the worker (2026-10-07)
+
+Local dev — two commands, run from the repo root:
+
+```bash
+bash scripts/start_worker.sh
+```
+
+This loads `.env`, checks Redis is reachable, then starts (in the background,
+logs under `logs/services/`):
+
+```bash
+celery -A shared.outbox.worker worker --pool=solo --loglevel=INFO   # celery_worker.log
+celery -A shared.outbox.worker beat --loglevel=INFO                  # celery_beat.log
+```
+
+`--pool=solo` is a Windows/Git-Bash accommodation only. The `notify.py`
+LISTEN/NOTIFY module exists but is **not** run locally — the beat-driven
+30-second poll (`poll_pending_outbox`) is the only dispatch path in dev.
+
+Future ECS deployment: two services, same image/env/secrets as
+`notification-service`.
+
+| Service | Command | Desired count |
+|---|---|---|
+| `outbox-worker` | `celery -A shared.outbox.worker worker --loglevel=INFO` (default prefork pool) | ≥ 1 |
+| `outbox-beat` | `celery -A shared.outbox.worker beat --loglevel=INFO` | exactly 1 |
+
+The `notify.py` listener is not deployed at launch — the beat poll is the
+sole dispatch path in production too, for now.
+
+**Contract expiry is alerts-only** (decided by Alex, 2026-10-07): the daily
+`check_contract_expiry` task never suspends a tenant. An expired contract
+(`contract_end < today`) fires exactly one `"0d"` `ContractExpiryAlert`
+(negative `days_remaining` is expected) and stops there — the SA suspends
+the tenant manually. For tenants not yet expired, pre-expiry milestones
+(90/30/14/5/2/1 days) use a catch-up rule: if a beat run is missed and
+several milestones have elapsed, only the smallest un-notified milestone
+still `>= days_left` fires once, and every larger milestone key is marked
+notified at the same time — so a missed day can never double-fire once the
+gap closes.
+
+**Known gap:** event handlers registered via `@register_handler` in each
+service's `main.py` (e.g. inventory-service's handlers) are not imported by
+the standalone `shared.outbox.worker` Celery process — only handlers defined
+in `worker.py` itself (currently `ContractExpiryAlert`) actually run. Wiring
+service-level handlers into the worker process is unresolved; events for
+other types still reach `PROCESSED` (no handler = no-op), they just don't
+trigger any side effect yet.
+

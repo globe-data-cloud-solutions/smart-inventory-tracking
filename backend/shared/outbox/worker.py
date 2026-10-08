@@ -1,10 +1,11 @@
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import os
-from datetime import date, timedelta
-from typing import Awaitable, Callable
+from datetime import date
+from typing import Awaitable, Callable, Coroutine, TypeVar
 
 from celery import Celery
 from celery.schedules import crontab
@@ -14,6 +15,22 @@ from shared.db.session import AsyncSessionLocal
 from shared.outbox.schemas import PAYLOAD_TYPES, ContractExpiryAlertPayload
 
 logger = logging.getLogger(__name__)
+
+T = TypeVar("T")
+
+# One dedicated event loop per process, created lazily and reused across tasks —
+# the asyncpg pool backing AsyncSessionLocal is bound to whichever loop first
+# created it, so each call must run on the SAME loop (not a fresh one per call).
+_loop: asyncio.AbstractEventLoop | None = None
+
+
+def _run(coro: Coroutine[object, object, T]) -> T:
+    global _loop
+    if _loop is None or _loop.is_closed():
+        _loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(_loop)
+    return _loop.run_until_complete(coro)
+
 
 app = Celery("smart", broker=os.environ["CELERY_BROKER_URL"])
 app.conf.result_backend = os.environ["CELERY_RESULT_BACKEND"]
@@ -74,9 +91,7 @@ async def handle_contract_expiry_alert(
 @app.task(bind=True, max_retries=5, default_retry_delay=30)
 def process_outbox_row(self, row_id: str) -> None:  # type: ignore[override]
     """Always check status before processing — tasks must be idempotent."""
-    import asyncio
-
-    asyncio.get_event_loop().run_until_complete(_process(self, row_id))
+    _run(_process(self, row_id))
 
 
 async def _process(task: object, row_id: str) -> None:
@@ -108,7 +123,10 @@ async def _process(task: object, row_id: str) -> None:
             return
 
         await session.execute(
-            text("UPDATE outbox SET status = 'PROCESSING' WHERE id = :id"),
+            text(
+                "UPDATE outbox SET status = 'PROCESSING', processing_started_at = now() "
+                "WHERE id = :id"
+            ),
             {"id": row_id},
         )
         await session.commit()
@@ -123,8 +141,8 @@ async def _process(task: object, row_id: str) -> None:
         async with AsyncSessionLocal() as session:
             await session.execute(
                 text(
-                    "UPDATE outbox SET status = 'PROCESSED', processed_at = now() "
-                    "WHERE id = :id"
+                    "UPDATE outbox SET status = 'PROCESSED', processed_at = now(), "
+                    "processing_started_at = NULL WHERE id = :id"
                 ),
                 {"id": row_id},
             )
@@ -135,7 +153,7 @@ async def _process(task: object, row_id: str) -> None:
             await session.execute(
                 text(
                     "UPDATE outbox SET status = 'FAILED', attempts = attempts + 1, "
-                    "last_error = :e WHERE id = :id"
+                    "last_error = :e, processing_started_at = NULL WHERE id = :id"
                 ),
                 {"e": str(exc), "id": row_id},
             )
@@ -153,9 +171,7 @@ def poll_pending_outbox() -> None:
     workers. Reset happens before the dispatch query so recovered rows are included
     in the current poll cycle.
     """
-    import asyncio
-
-    asyncio.get_event_loop().run_until_complete(_poll())
+    _run(_poll())
 
 
 async def _poll() -> None:
@@ -167,9 +183,9 @@ async def _poll() -> None:
     async with AsyncSessionLocal() as session:
         await session.execute(
             text(
-                "UPDATE outbox SET status = 'PENDING' "
+                "UPDATE outbox SET status = 'PENDING', processing_started_at = NULL "
                 "WHERE status = 'PROCESSING' "
-                "AND created_at < now() - interval '10 minutes'"
+                "AND processing_started_at < now() - interval '10 minutes'"
             )
         )
         await session.commit()
@@ -189,23 +205,26 @@ async def _poll() -> None:
         process_outbox_row.delay(row_id)
 
 
-# Alert milestone days before expiry. "0" means expired (auto-suspend).
+# Alert milestone days before expiry. Catch-up rule: if a run is missed and
+# several milestones have elapsed, only the smallest un-notified milestone
+# still >= days_left fires, and every larger milestone key is also marked
+# notified so a missed day never double-fires once the gap is closed.
 _EXPIRY_MILESTONES = [90, 30, 14, 5, 2, 1]
 
 
 @app.task
 def check_contract_expiry() -> None:
-    """Daily beat task — auto-suspends expired tenants and fires pre-expiry alerts.
+    """Daily beat task — alerts only; SA suspends manually (Alex 2026-10-07).
 
     For each tenant with a contract_end date:
-      - If contract_end < today AND status is not SUSPENDED/DEACTIVATED → suspend.
-      - For each milestone in _EXPIRY_MILESTONES where (contract_end - today) == days:
-        fire a ContractExpiryAlert outbox event if the milestone has not been
-        notified yet (tracked in contract_expiry_notified JSONB column).
+      - If contract_end < today: fire a single "0d" ContractExpiryAlert
+        (days_remaining = days_left, negative is OK) if not already notified.
+        No status/is_active change is made — contract expiry is alerts-only.
+      - Otherwise, catch-up milestone alerts: the smallest milestone in
+        _EXPIRY_MILESTONES that is >= days_left and not yet notified fires once,
+        marking that key and every larger milestone key as notified.
     """
-    import asyncio
-
-    asyncio.get_event_loop().run_until_complete(_check_contracts())
+    _run(_check_contracts())
 
 
 async def _check_contracts() -> None:
@@ -216,7 +235,8 @@ async def _check_contracts() -> None:
             text(
                 "SELECT id, name, contract_end, status, contract_expiry_notified "
                 "FROM tenants "
-                "WHERE contract_end IS NOT NULL AND is_active = true OR status = 'ACTIVE'"
+                "WHERE contract_end IS NOT NULL AND is_active = true "
+                "AND coalesce(status, 'ACTIVE') NOT IN ('SUSPENDED', 'DEACTIVATED')"
             )
         )).fetchall()
 
@@ -227,96 +247,80 @@ async def _check_contracts() -> None:
 
         notified: list[str] = list(row.contract_expiry_notified or [])
         days_left: int = (contract_end - today).days
-        status: str = str(row.status) if row.status else "ACTIVE"
         tid = str(row.id)
         tname = str(row.name)
 
-        # ── Auto-suspend if contract expired ─────────────────────────────────
-        if days_left < 0 and status not in ("SUSPENDED", "DEACTIVATED"):
+        # ── Expired: alerts only, no auto-suspend ────────────────────────────
+        if days_left < 0:
+            if "0d" in notified:
+                continue
             async with AsyncSessionLocal() as session:
                 await session.execute(
                     text(
-                        "UPDATE tenants SET status = 'SUSPENDED', is_active = false, "
-                        "updated_at = now() WHERE id = :id"
+                        "INSERT INTO outbox (tenant_id, event_type, payload, payload_ver) "
+                        "VALUES (:tid, :etype, CAST(:payload AS jsonb), '1.0')"
                     ),
-                    {"id": tid},
+                    {
+                        "tid":     tid,
+                        "etype":   "ContractExpiryAlert",
+                        "payload": json.dumps(ContractExpiryAlertPayload(
+                            tenant_id=tid,
+                            tenant_name=tname,
+                            contract_end=contract_end.isoformat(),
+                            days_remaining=days_left,
+                        ).model_dump()),
+                    },
                 )
                 await session.execute(
                     text(
-                        "INSERT INTO tenant_activity_log "
-                        "(tenant_id, actor_id, actor_email, action, old_value, new_value, note) "
-                        "VALUES (:tid, :aid, :ae, :action, :old, :new, :note)"
+                        "UPDATE tenants SET "
+                        "contract_expiry_notified = contract_expiry_notified || CAST(:key AS jsonb) "
+                        "WHERE id = :id"
                     ),
-                    {
-                        "tid":    tid,
-                        "aid":    "00000000-0000-0000-0000-000000000000",  # system actor
-                        "ae":     "system@smart-platform",
-                        "action": "AUTO_SUSPEND_EXPIRED",
-                        "old":    status,
-                        "new":    "SUSPENDED",
-                        "note":   f"Contract ended {contract_end.isoformat()}. Auto-suspended by system.",
-                    },
+                    {"key": json.dumps("0d"), "id": tid},
                 )
-                # Write outbox alert (days_remaining=0 means expired)
-                if "0d" not in notified:
-                    await session.execute(
-                        text(
-                            "INSERT INTO outbox (tenant_id, event_type, payload, payload_ver) "
-                            "VALUES (:tid, :etype, :payload::jsonb, '1.0')"
-                        ),
-                        {
-                            "tid":     tid,
-                            "etype":   "ContractExpiryAlert",
-                            "payload": json.dumps(ContractExpiryAlertPayload(
-                                tenant_id=tid,
-                                tenant_name=tname,
-                                contract_end=contract_end.isoformat(),
-                                days_remaining=0,
-                            ).model_dump()),
-                        },
-                    )
-                    await session.execute(
-                        text(
-                            "UPDATE tenants SET "
-                            "contract_expiry_notified = contract_expiry_notified || '\"0d\"'::jsonb "
-                            "WHERE id = :id"
-                        ),
-                        {"id": tid},
-                    )
                 await session.commit()
-            continue  # no milestone alerts for an already-expired tenant
+            logger.error(
+                "ContractExpiryAlert fired: tenant=%s milestone=0d days_left=%d",
+                tid, days_left,
+            )
+            continue
 
-        # ── Pre-expiry milestone alerts ───────────────────────────────────────
-        for milestone in _EXPIRY_MILESTONES:
-            key = f"{milestone}d"
-            if days_left == milestone and key not in notified:
-                async with AsyncSessionLocal() as session:
-                    await session.execute(
-                        text(
-                            "INSERT INTO outbox (tenant_id, event_type, payload, payload_ver) "
-                            "VALUES (:tid, :etype, :payload::jsonb, '1.0')"
-                        ),
-                        {
-                            "tid":     tid,
-                            "etype":   "ContractExpiryAlert",
-                            "payload": json.dumps(ContractExpiryAlertPayload(
-                                tenant_id=tid,
-                                tenant_name=tname,
-                                contract_end=contract_end.isoformat(),
-                                days_remaining=milestone,
-                            ).model_dump()),
-                        },
-                    )
-                    await session.execute(
-                        text(
-                            "UPDATE tenants SET "
-                            "contract_expiry_notified = contract_expiry_notified || :key::jsonb "
-                            "WHERE id = :id"
-                        ),
-                        {"key": json.dumps(key), "id": tid},
-                    )
-                    await session.commit()
-                logger.info(
-                    "ContractExpiryAlert fired: tenant=%s milestone=%s days_left=%d",
-                    tid, key, days_left,
-                )
+        # ── Pre-expiry milestone alerts, with catch-up for missed runs ───────
+        candidates = [m for m in _EXPIRY_MILESTONES if m >= days_left and f"{m}d" not in notified]
+        if not candidates:
+            continue
+        milestone = min(candidates)
+        key = f"{milestone}d"
+        marked_keys = [f"{m}d" for m in _EXPIRY_MILESTONES if m >= milestone and f"{m}d" not in notified]
+
+        async with AsyncSessionLocal() as session:
+            await session.execute(
+                text(
+                    "INSERT INTO outbox (tenant_id, event_type, payload, payload_ver) "
+                    "VALUES (:tid, :etype, CAST(:payload AS jsonb), '1.0')"
+                ),
+                {
+                    "tid":     tid,
+                    "etype":   "ContractExpiryAlert",
+                    "payload": json.dumps(ContractExpiryAlertPayload(
+                        tenant_id=tid,
+                        tenant_name=tname,
+                        contract_end=contract_end.isoformat(),
+                        days_remaining=days_left,
+                    ).model_dump()),
+                },
+            )
+            await session.execute(
+                text(
+                    "UPDATE tenants SET "
+                    "contract_expiry_notified = contract_expiry_notified || CAST(:keys AS jsonb) "
+                    "WHERE id = :id"
+                ),
+                {"keys": json.dumps(marked_keys), "id": tid},
+            )
+            await session.commit()
+        logger.info(
+            "ContractExpiryAlert fired: tenant=%s milestone=%s days_left=%d marked=%s",
+            tid, key, days_left, marked_keys,
+        )
