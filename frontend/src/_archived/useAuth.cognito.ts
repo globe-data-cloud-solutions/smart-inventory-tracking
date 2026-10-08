@@ -1,5 +1,8 @@
 "use client";
 
+// Archived (unused): called POST /auth/token with cognito_token, which was
+// removed from the backend in 68b3cf8. Excluded from tsc via tsconfig.json.
+
 import { useCallback, useEffect, useState } from "react";
 import { api } from "@/lib/api";
 import {

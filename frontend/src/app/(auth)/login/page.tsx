@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { login, loginWithDevEmail, getPendingJWTExchange } from "@/lib/demo-auth";
+import { loginWithPassword } from "@/lib/demo-auth";
 import { SA_USER } from "@/lib/demo-data";
 import { rawPost } from "@/lib/api";
 import { t } from "@/lib/i18n";
@@ -52,44 +52,41 @@ export default function LoginPage() {
     setResendSent(false);
     setLoading(true);
     await new Promise((r) => setTimeout(r, 300));
-    let session = login(email, password);
-    if (!session) {
-      // Fallback: try backend dev_email for API-created users (ENVIRONMENT=local only)
-      try {
-        session = await loginWithDevEmail(email, password);
-      } catch (err) {
-        if (err instanceof Error) {
-          const status = (err as Error & { status?: number }).status;
-          const code   = (err as Error & { code?: string }).code;
-          if (status === 429) {
-            setLockoutMessage(err.message);
-            setLoading(false);
-            return;
-          }
-          if (status === 403 && code === "EMAIL_NOT_VERIFIED") {
-            setEmailNotVerified(true);
-            setLoading(false);
-            return;
-          }
-          if (status === 403) {
-            setError(err.message);
-            setLoading(false);
-            return;
-          }
+    let session;
+    try {
+      session = await loginWithPassword(email, password);
+    } catch (err) {
+      if (err instanceof Error) {
+        const status = (err as Error & { status?: number }).status;
+        const code   = (err as Error & { code?: string }).code;
+        if (code === "AUTH_NOT_CONFIGURED") {
+          setError(t("login.auth_unavailable"));
+          setLoading(false);
+          return;
         }
-        // Unexpected error shape — fall through to the generic message below.
+        if (status === 429) {
+          setLockoutMessage(err.message);
+          setLoading(false);
+          return;
+        }
+        if (status === 403 && code === "EMAIL_NOT_VERIFIED") {
+          setEmailNotVerified(true);
+          setLoading(false);
+          return;
+        }
+        if (status === 403) {
+          setError(err.message);
+          setLoading(false);
+          return;
+        }
       }
+      // Unexpected error shape — fall through to the generic message below.
     }
     if (!session) {
       setError(t("login.invalid_credentials"));
       setLoading(false);
       return;
     }
-    // Wait for the JWT exchange (login()'s demo-user path kicks this off in the
-    // background) before navigating, so the dashboard's first API call never
-    // races ahead of the token landing in localStorage.
-    const pendingExchange = getPendingJWTExchange();
-    if (pendingExchange) await pendingExchange;
     // Force password reset before proceeding
     if (session.mustResetPassword) {
       router.push(`/change-password?userId=${session.id}`);

@@ -44,11 +44,11 @@ function ChangePasswordForm() {
     e.preventDefault();
     setError("");
     if (newPassword.length < 8) {
-      setError("New password must be at least 8 characters.");
+      setError(t("change_password.password_too_short"));
       return;
     }
     if (newPassword !== confirmPassword) {
-      setError("Passwords do not match.");
+      setError(t("change_password.passwords_mismatch"));
       return;
     }
     setLoading(true);
@@ -70,8 +70,25 @@ function ChangePasswordForm() {
         }),
       });
       if (!res.ok) {
-        const body = (await res.json().catch(() => ({}))) as { detail?: string };
-        setError(body.detail ?? "Failed to update password.");
+        if (res.status === 401) {
+          setError(t("change_password.wrong_current"));
+          return;
+        }
+        if (res.status === 403) {
+          // Stale/mismatched session — the bearer JWT's sub no longer matches
+          // this user_id. Show why, then send them to sign in again.
+          setError(t("change_password.session_mismatch"));
+          logout();
+          router.push("/login");
+          return;
+        }
+        const body = (await res.json().catch(() => ({}))) as {
+          detail?: string | { code?: string; message?: string };
+        };
+        const det = body.detail;
+        const detMessage =
+          typeof det === "string" ? det : (typeof det === "object" && det !== null ? det.message : undefined);
+        setError(detMessage ?? t("change_password.generic_error"));
         return;
       }
 
@@ -95,7 +112,7 @@ function ChangePasswordForm() {
         router.push("/login");
       }
     } catch {
-      setError("Network error — please try again.");
+      setError(t("change_password.network_error"));
     } finally {
       setLoading(false);
     }
@@ -110,7 +127,7 @@ function ChangePasswordForm() {
       <div className="min-h-screen bg-[#0f2d1f] flex items-center justify-center p-8">
         <div className="bg-white rounded-xl shadow-2xl max-w-md w-full overflow-hidden">
           <div className="bg-[#1B4332] px-8 py-5">
-            <h2 className="text-lg font-bold text-white m-0">Password Updated</h2>
+            <h2 className="text-lg font-bold text-white m-0">{t("change_password.success_title")}</h2>
           </div>
           <div className="p-8 space-y-5">
             <div className="rounded-lg bg-emerald-50 border border-emerald-200 px-4 py-4 text-sm text-emerald-800">
@@ -121,7 +138,7 @@ function ChangePasswordForm() {
               onClick={() => router.push("/login")}
               className="w-full py-2.5 bg-emerald-700 text-white text-sm font-bold rounded-md hover:bg-emerald-800 transition-colors"
             >
-              Back to Sign in
+              {t("change_password.back_to_signin")}
             </button>
           </div>
         </div>
@@ -133,9 +150,9 @@ function ChangePasswordForm() {
     <div className="min-h-screen bg-[#0f2d1f] flex items-center justify-center p-8">
       <div className="bg-white rounded-xl shadow-2xl max-w-md w-full overflow-hidden">
         <div className="bg-[#1B4332] px-8 py-5">
-          <h2 className="text-lg font-bold text-white m-0">Set Your Password</h2>
+          <h2 className="text-lg font-bold text-white m-0">{t("change_password.page_title")}</h2>
           <p className="text-xs text-emerald-300 mt-1 mb-0">
-            Your account requires a password change before you can continue.
+            {t("change_password.page_subtitle")}
           </p>
         </div>
 
@@ -145,7 +162,7 @@ function ChangePasswordForm() {
             <label className="block text-sm font-semibold text-gray-700 mb-1.5">
               {isMustReset
                 ? t("change_password.current_label_optional")
-                : "Current Password"}
+                : t("change_password.current_label")}
             </label>
             <input
               type="password"
@@ -153,28 +170,28 @@ function ChangePasswordForm() {
               onChange={(e) => setCurrentPassword(e.target.value)}
               required={!isMustReset}
               autoFocus
-              placeholder={isMustReset ? "Optional — leave blank if not known" : ""}
+              placeholder={isMustReset ? t("change_password.current_placeholder_optional") : ""}
               className={inputClass}
             />
           </div>
 
           <div>
             <label className="block text-sm font-semibold text-gray-700 mb-1.5">
-              New Password <span className="text-red-500">*</span>
+              {t("change_password.new_label")} <span className="text-red-500">*</span>
             </label>
             <input
               type="password"
               value={newPassword}
               onChange={(e) => setNewPassword(e.target.value)}
               required
-              placeholder="Minimum 8 characters"
+              placeholder={t("change_password.new_placeholder")}
               className={inputClass}
             />
           </div>
 
           <div>
             <label className="block text-sm font-semibold text-gray-700 mb-1.5">
-              Confirm New Password <span className="text-red-500">*</span>
+              {t("change_password.confirm_label")} <span className="text-red-500">*</span>
             </label>
             <input
               type="password"
@@ -196,7 +213,7 @@ function ChangePasswordForm() {
             disabled={loading}
             className="w-full py-2.5 bg-emerald-700 text-white text-sm font-bold rounded-md hover:bg-emerald-800 disabled:opacity-50 transition-colors"
           >
-            {loading ? "Updating…" : "Set New Password →"}
+            {loading ? t("change_password.submitting") : t("change_password.submit_btn")}
           </button>
         </form>
       </div>

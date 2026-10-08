@@ -1413,12 +1413,30 @@
     "system_admin_heading": "System Administrator",
     "mobile_system_admin": "System Admin",
     "personnel_hint": "To add tenant accounts, sign in as SA and use Settings → Personnel.",
-    "footer_tagline": "SMART Inventory Tracker · RBAC + ABAC · 3 languages"
+    "footer_tagline": "SMART Inventory Tracker · RBAC + ABAC · 3 languages",
+    "auth_unavailable": "Sign-in is temporarily unavailable. Please try again later."
   },
   "change_password": {
     "contact_admin": "Jecha darbee haaromfame. Bulchaan kee ramadee booda sistamitti seenuu dandeessa.",
     "current_label_optional": "Jecha Darbee Ammaa (yoo hin beekin duwwaa dhiisi)",
-    "success_redirect": "Jecha darbee haaromfame. Jecha haarawa keetiin seeni."
+    "success_redirect": "Jecha darbee haaromfame. Jecha haarawa keetiin seeni.",
+    "wrong_current": "Current password is incorrect.",
+    "session_mismatch": "Your session no longer matches this account. Please sign in again.",
+    "generic_error": "Failed to update password.",
+    "page_title": "Set Your Password",
+    "page_subtitle": "Your account requires a password change before you can continue.",
+    "current_label": "Current Password",
+    "current_placeholder_optional": "Optional — leave blank if not known",
+    "new_label": "New Password",
+    "confirm_label": "Confirm New Password",
+    "new_placeholder": "Minimum 8 characters",
+    "password_too_short": "New password must be at least 8 characters.",
+    "passwords_mismatch": "Passwords do not match.",
+    "network_error": "Network error — please try again.",
+    "submit_btn": "Set New Password →",
+    "submitting": "Updating…",
+    "success_title": "Password Updated",
+    "back_to_signin": "Back to Sign in"
   },
   "approval_policies": {
     "nav_label": "Imaammata Hayyamaa",

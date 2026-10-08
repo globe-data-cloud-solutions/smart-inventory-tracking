@@ -1423,12 +1423,30 @@
     "system_admin_heading": "የስርዓት አስተዳዳሪ",
     "mobile_system_admin": "የስርዓት አስተዳዳሪ",
     "personnel_hint": "የተከራይ መለያዎችን ለማከል፣ እንደ SA ይግቡና ማስተለኯት → ሰራተኞችን ይጠቀሙ።",
-    "footer_tagline": "SMART የክምችት መከታተያ · RBAC + ABAC · 3 ቋንቋዎች"
+    "footer_tagline": "SMART የክምችት መከታተያ · RBAC + ABAC · 3 ቋንቋዎች",
+    "auth_unavailable": "ይግባ ለጊዜው አይገኝም። እባክዎ ትንሽ ቆይተው ይሞክሩ።"
   },
   "change_password": {
     "contact_admin": "password ተቀይሯል። አስተዳዳሪ ቦታ ይወስናሉ።",
     "current_label_optional": "ያለፈው password (ካላወቁ ባዶ ይተዉ)",
-    "success_redirect": "password ተቀይሯል። ይግቡ።"
+    "success_redirect": "password ተቀይሯል። ይግቡ።",
+    "wrong_current": "የወቅቱ የይለፍ ቃል ትክክል አይደለም።",
+    "session_mismatch": "ክፍለ ጊዜዎ ከዚህ መለያ ጋር አይዛመድም። እባክዎ እንደገና ይግቡ።",
+    "generic_error": "የይለፍ ቃል ማዘመን አልተሳካም።",
+    "page_title": "የይለፍ ቃልዎን ያዘጋጁ",
+    "page_subtitle": "ከመቀጠልዎ በፊት መለያዎ የይለፍ ቃል ለውጥ ይፈልጋል።",
+    "current_label": "ያለፈው የይለፍ ቃል",
+    "current_placeholder_optional": "አማራጭ — ካላወቁ ባዶ ይተዉ",
+    "new_label": "አዲስ የይለፍ ቃል",
+    "confirm_label": "አዲሱን የይለፍ ቃል ያረጋግጡ",
+    "new_placeholder": "ቢያንስ 8 ፊደላት",
+    "password_too_short": "አዲሱ የይለፍ ቃል ቢያንስ 8 ፊደላት መሆን አለበት።",
+    "passwords_mismatch": "የይለፍ ቃሎቹ አይመሳሰሉም።",
+    "network_error": "የአውታረ መረብ ስህተት — እባክዎ ደግመው ይሞክሩ።",
+    "submit_btn": "አዲስ የይለፍ ቃል ያዘጋጁ →",
+    "submitting": "በማዘመን ላይ…",
+    "success_title": "የይለፍ ቃል ተቀይሯል",
+    "back_to_signin": "ወደ መግቢያ ይመለሱ"
   },
   "approval_policies": {
     "nav_label": "የማረጋገጫ ፖሊሲዎች",

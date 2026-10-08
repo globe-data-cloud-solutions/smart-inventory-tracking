@@ -1,6 +1,6 @@
 "use client";
 
-import { ALL_DEMO_USERS, DEMO_TENANTS, type Role } from "@/lib/demo-data";
+import { type Role } from "@/lib/demo-data";
 
 /** One active position from the user's personnel_positions record. */
 export interface ActivePosition {
@@ -41,18 +41,6 @@ export const SA_ORG_SLUG = "admin";
 
 const SESSION_KEY = "smart_demo_session";
 
-/**
- * In-flight JWT exchange promise, set by login() and cleared when it settles.
- * api.ts's request() awaits this (if present) before reading the session, so
- * the first authenticated API call cannot race ahead of the token landing in
- * localStorage. The login page also awaits it directly before navigating.
- */
-let _pendingExchange: Promise<void> | null = null;
-
-export function getPendingJWTExchange(): Promise<void> | null {
-  return _pendingExchange;
-}
-
 function store(): Storage | null {
   if (typeof window === "undefined") return null;
   try { return window.localStorage; } catch { return null; }
@@ -70,89 +58,39 @@ function decodeJwtPayload(token: string): Record<string, unknown> | null {
 }
 
 /**
- * Exchange a SMART JWT for a demo session.
- * Called fire-and-forget after login() so the token is ready before the first
- * authenticated API call.
+ * Sign in via POST /api/v1/auth/token {email, password} — the only login
+ * path (works in every environment; auth-service requires a password).
  *
- * Routing:
- *   NEXT_PUBLIC_AUTH_URL set  → call real auth-service with dev_email (Phase 4B Step 1+)
- *   NEXT_PUBLIC_API_URL set   → fallback for gateway mode without dedicated auth URL
- *   Both empty                → BFF-only mode, no JWT needed
+ * Error mapping:
+ *   429 (lockout)                          → throws Error (status=429), message is user-facing
+ *   403 TENANT_SUSPENDED/DEACTIVATED/
+ *       EMAIL_NOT_VERIFIED                 → throws Error (status=403, code=<code>)
+ *   401 INVALID_CREDENTIALS / 422 PASSWORD_REQUIRED / anything else → null (generic message on the form)
  *
- * The dev_email path returns a JWT with exact seed UUIDs matching the database.
+ * Throws an Error with code=AUTH_NOT_CONFIGURED if no auth base URL is set —
+ * there is no client-only fallback.
  */
-async function _exchangeJWT(session: SessionUser): Promise<void> {
+export async function loginWithPassword(email: string, password: string): Promise<SessionUser | null> {
   const authBase =
     process.env.NEXT_PUBLIC_AUTH_URL ??
     process.env.NEXT_PUBLIC_API_URL ??
     "";
-  if (!authBase) return; // BFF mode — no gateway, no JWT needed
-
-  try {
-    const res = await fetch(`${authBase}/api/v1/auth/token`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ dev_email: session.email }),
-    });
-    if (!res.ok) return;
-    const data = (await res.json()) as { access_token?: string };
-    if (!data.access_token) return;
-
-    // Patch the stored session with the JWT and position-derived claims
-    const raw = store()?.getItem(SESSION_KEY);
-    if (!raw) return;
-    const stored = JSON.parse(raw) as SessionUser;
-    stored.jwtToken = data.access_token;
-    const claims = decodeJwtPayload(data.access_token);
-    if (claims) {
-      if (claims.tenant_id)      stored.tenantId      = String(claims.tenant_id);
-      if (claims.warehouse_id)   stored.warehouseId   = String(claims.warehouse_id);
-      if (claims.warehouse_name) stored.warehouseName = String(claims.warehouse_name);
-      if (claims.position_id)    stored.positionId    = String(claims.position_id);
-      if (claims.position_title) stored.positionTitle = String(claims.position_title);
-      if (typeof claims.level_number === "number") stored.levelNumber = claims.level_number;
-      if (Array.isArray(claims.positions)) {
-        stored.positions = (claims.positions as Record<string, unknown>[]).map((p) => ({
-          positionId:     String(p["position_id"]     ?? ""),
-          roleCode:       String(p["role_code"]       ?? ""),
-          nodeId:         String(p["node_id"]         ?? ""),
-          nodeName:       String(p["node_name"]       ?? ""),
-          levelNumber:    typeof p["level_number"] === "number" ? p["level_number"] : 0,
-          assignmentType: String(p["assignment_type"] ?? "PRIMARY") as ActivePosition["assignmentType"],
-        }));
-      }
-    }
-    store()?.setItem(SESSION_KEY, JSON.stringify(stored));
-  } catch {
-    // Auth service unreachable — continue without JWT (BFF routes handle it)
+  if (!authBase) {
+    const err = new Error("Auth service is not configured") as Error & { code?: string };
+    err.code = "AUTH_NOT_CONFIGURED";
+    throw err;
   }
-}
-
-/**
- * Login path for backend-created users not present in ALL_DEMO_USERS.
- * Calls dev_email endpoint; uses tenant_id UUID as the orgSlug so the
- * URL becomes /{tenant_id}/dashboard.
- * Only works when ENVIRONMENT=local on the auth-service side.
- */
-export async function loginWithDevEmail(email: string, password?: string): Promise<SessionUser | null> {
-  const authBase =
-    process.env.NEXT_PUBLIC_AUTH_URL ??
-    process.env.NEXT_PUBLIC_API_URL ??
-    "";
-  if (!authBase) return null;
 
   try {
-    const body: Record<string, string> = { dev_email: email };
-    if (password) body.dev_password = password;
     const res = await fetch(`${authBase}/api/v1/auth/token`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body),
+      body: JSON.stringify({ email, password }),
     });
     if (!res.ok) {
       // 429 (login lockout) carries a specific message the login form must
-      // show verbatim — every other failure (401, etc.) stays a generic null
-      // so as not to leak whether the email exists.
+      // show verbatim — every other failure (401, 422, etc.) stays a generic
+      // null so as not to leak whether the email exists.
       if (res.status === 429) {
         const errBody = (await res.json().catch(() => null)) as
           | { detail?: { code?: string; message?: string } }
@@ -232,9 +170,10 @@ export async function loginWithDevEmail(email: string, password?: string): Promi
     store()?.setItem(SESSION_KEY, JSON.stringify(session));
     return session;
   } catch (err) {
-    // Login-lockout errors carry status=429 and must propagate to the caller
-    // (the login form needs the specific message) — every other failure
-    // (network error, bad JSON, etc.) stays a generic null as before.
+    // Lockout and restricted-account errors carry status=429/403 and must
+    // propagate to the caller (the login form needs the specific message) —
+    // every other failure (network error, bad JSON, etc.) stays a generic
+    // null as before.
     if (err instanceof Error) {
       const status = (err as Error & { status?: number }).status;
       if (status === 429 || status === 403) {
@@ -243,53 +182,6 @@ export async function loginWithDevEmail(email: string, password?: string): Promi
     }
     return null;
   }
-}
-
-export function login(email: string, password: string): SessionUser | null {
-  const found = ALL_DEMO_USERS.find(
-    (u) => u.email.toLowerCase() === email.toLowerCase() && u.password === password
-  );
-  if (!found) return null;
-
-  let tenantId: string | undefined;
-  let tenantName: string | undefined;
-  let tenantSlug: string | undefined;
-  let orgSlug = SA_ORG_SLUG;
-
-  if (found.role !== "SA") {
-    const tenant = DEMO_TENANTS.find((t) => t.users.some((u) => u.id === found.id));
-    tenantId   = tenant?.id;
-    tenantName = tenant?.name;
-    tenantSlug = tenant?.slug;
-    orgSlug    = tenant?.slug ?? SA_ORG_SLUG;
-  }
-
-  const session: SessionUser = {
-    id:    found.id,
-    email: found.email,
-    name:  found.name,
-    role:  found.role as Role,
-    orgSlug,
-    tenantId,
-    tenantName,
-    tenantSlug,
-    warehouseId:   "warehouseId"   in found
-      ? (found as { warehouseId: string }).warehouseId
-      : undefined,
-    warehouseName: "warehouseName" in found
-      ? (found as { warehouseName: string }).warehouseName
-      : undefined,
-  };
-
-  store()?.setItem(SESSION_KEY, JSON.stringify(session));
-
-  // Track the exchange so api.ts's request() and the login page can await it
-  // instead of racing it — see getPendingJWTExchange().
-  _pendingExchange = _exchangeJWT(session).finally(() => {
-    _pendingExchange = null;
-  });
-
-  return session;
 }
 
 export function getSession(): SessionUser | null {
