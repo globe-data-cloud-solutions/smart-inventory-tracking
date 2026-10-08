@@ -377,6 +377,9 @@ async def mark_paid(
             "UPDATE tenants SET "
             "  contract_start = COALESCE(contract_start, :start), "
             "  contract_end   = GREATEST(COALESCE(contract_end, :end), :end), "
+            "  contract_expiry_notified = CASE "
+            "    WHEN :end > COALESCE(contract_end, DATE '0001-01-01') "
+            "    THEN '[]'::jsonb ELSE contract_expiry_notified END, "
             "  updated_at = now() "
             "WHERE id = :tid"
         ),

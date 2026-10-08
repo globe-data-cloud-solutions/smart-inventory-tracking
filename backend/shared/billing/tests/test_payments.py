@@ -403,6 +403,43 @@ async def test_mark_paid_contract_end_never_moves_backwards() -> None:
     assert "GREATEST(COALESCE(contract_end" in sql_text
 
 
+async def test_mark_paid_contract_expiry_notified_reset_clause_present() -> None:
+    """A renewal that extends contract_end must reset contract_expiry_notified
+    to '[]' so milestone alerts re-fire against the new end date; a payment
+    that doesn't extend it must leave the existing notified keys untouched.
+    Both branches are the SAME CASE expression evaluated server-side against
+    the OLD contract_end, so this asserts the clause itself: the CASE compares
+    :end to COALESCE(contract_end, DATE '0001-01-01') and the THEN/ELSE arms
+    are '[]'::jsonb / contract_expiry_notified respectively — a future edit
+    can't silently drop the reset or use '{}' (an object, not the jsonb array
+    this column actually stores)."""
+    payment = _payment(status="PENDING", period_end=date(2026, 11, 6))
+    line_item = MagicMock(price_id="price-1", amount=Decimal("200.00"), price_tier="GROWTH")
+    subscription = MagicMock(id="sub-1", tier="GROWTH", price_id="price-1", scheduled_tier=None)
+
+    db = _db([
+        _result(fetchone=payment),
+        _result(),
+        _result(fetchone=line_item),
+        _result(fetchone=subscription),
+        _result(),
+        _result(),
+        _result(fetchall=[]),  # SELECT payment_line_items (ADDON) -> none
+    ])
+
+    await mark_paid(db, "payment-1", provider="MANUAL")
+
+    update_tenants_call = db.execute.call_args_list[5]
+    sql_text = str(update_tenants_call.args[0])
+    params = update_tenants_call.args[1]
+
+    assert "contract_expiry_notified = CASE" in sql_text
+    assert ":end > COALESCE(contract_end, DATE '0001-01-01')" in sql_text
+    assert "THEN '[]'::jsonb ELSE contract_expiry_notified END" in sql_text
+    assert "'{}'" not in sql_text
+    assert params["end"] == payment.period_end
+
+
 async def test_mark_paid_tier_changed_after_invoice_keeps_current_tier_price() -> None:
     """Exact bug sequence: an invoice is raised at tier STARTER, the plan is then
     changed to GROWTH (update_live_subscription_tier already moved the subscription

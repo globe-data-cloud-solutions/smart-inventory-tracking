@@ -1639,7 +1639,7 @@ async def update_my_contract(
 
     if body.contract_end is not None:
         set_parts.append("contract_end = :end")
-        set_parts.append("contract_expiry_notified = '{}'::jsonb")
+        set_parts.append("contract_expiry_notified = '[]'::jsonb")
         params["end"] = new_end
 
     if should_reactivate:
