@@ -545,6 +545,13 @@ HTTP status codes:
 Standard envelope:
   { "success":true,  "data":{...},                          "request_id":"...", "timestamp":"..." }
   { "success":false, "error":{"code":"RBAC_DENIED","message":"..."}, "request_id":"...", "timestamp":"..." }
+
+Exception — auth-service public endpoints (/auth/token, verify-email, resend-verification,
+forgot-password, reset-password, PATCH /auth/password/{id}) return flat JSON (OAuth-style
+token response), NOT the {success,data} envelope above. ~30 scripts/e2e scripts and the
+frontend auth helpers depend on this flat shape. Errors on these endpoints still use
+{"detail":{"code","message"}}, not the error envelope. This is intentional — do not change
+the response shape of these endpoints to match the standard envelope.
 ```
 
 ---
