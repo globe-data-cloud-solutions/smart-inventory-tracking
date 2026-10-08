@@ -17,10 +17,9 @@
  */
 import { test, expect, type Page, type ConsoleMessage } from "@playwright/test";
 import { E2E_TA_EMAIL, e2eTaPasswordOrSkip } from "./helpers/e2e-ta";
+import { SA_EMAIL, SA_PASSWORD } from "./helpers/sa-credentials";
 
 const BASE_URL = process.env.BASE_URL ?? "http://localhost:3000";
-const SA_EMAIL = "smartadmin@smart-inventory.com";
-const SA_PASSWORD = "Admin@2026";
 
 function collectConsoleErrors(page: Page): string[] {
   const lines: string[] = [];

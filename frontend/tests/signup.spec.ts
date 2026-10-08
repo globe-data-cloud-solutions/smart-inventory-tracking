@@ -13,13 +13,58 @@
  *   npx playwright test tests/signup.spec.ts
  */
 
-import { test, expect } from "@playwright/test";
+import { test, expect, type APIRequestContext } from "@playwright/test";
+import { SA_EMAIL, SA_PASSWORD } from "./helpers/sa-credentials";
 
 const BASE_URL = process.env.BASE_URL ?? "http://localhost:3000";
+const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 
 function uniqueHandle(): string {
   return `zz-s7-e2e-${Date.now()}`;
 }
+
+// Every slug this spec creates a real tenant for — deactivated in afterAll.
+const createdSlugs: string[] = [];
+
+/** SA-only: resolve a tenant's UUID from its slug via the registry, then
+ * deactivate it (soft delete — never a hard delete, per CLAUDE.md §8). */
+async function deactivateBySlug(request: APIRequestContext, slug: string): Promise<void> {
+  const tokenResp = await request.post(`${API_BASE}/api/v1/auth/token`, {
+    data: { email: SA_EMAIL, password: SA_PASSWORD },
+  });
+  if (!tokenResp.ok()) {
+    console.warn(`signup.spec cleanup: SA login failed (${tokenResp.status()}) — could not deactivate ${slug}`);
+    return;
+  }
+  const { access_token } = (await tokenResp.json()) as { access_token: string };
+  const authHeaders = { Authorization: `Bearer ${access_token}` };
+
+  const registryResp = await request.get(`${API_BASE}/api/v1/tenants/sa/registry`, { headers: authHeaders });
+  if (!registryResp.ok()) {
+    console.warn(`signup.spec cleanup: registry fetch failed (${registryResp.status()}) — could not deactivate ${slug}`);
+    return;
+  }
+  const { data: tenants } = (await registryResp.json()) as { data: Array<{ id: string; slug: string }> };
+  const tenant = tenants.find((t) => t.slug === slug);
+  if (!tenant) {
+    console.warn(`signup.spec cleanup: no tenant found for slug ${slug}`);
+    return;
+  }
+
+  const deactivateResp = await request.patch(`${API_BASE}/api/v1/tenants/${tenant.id}/deactivate`, {
+    headers: authHeaders,
+  });
+  if (!deactivateResp.ok() && deactivateResp.status() !== 422) {
+    // 422 ALREADY_DEACTIVATED is fine — idempotent cleanup.
+    console.warn(`signup.spec cleanup: deactivate failed for ${slug} (${deactivateResp.status()})`);
+  }
+}
+
+test.afterAll(async ({ request }) => {
+  for (const slug of createdSlugs) {
+    await deactivateBySlug(request, slug);
+  }
+});
 
 test.describe("Public sign-up", () => {
   test("packages render from the API", async ({ page }) => {
@@ -70,6 +115,7 @@ test.describe("Public sign-up", () => {
 
   test("successful sign-up shows 'sign in with {email}'", async ({ page }) => {
     const handle = uniqueHandle();
+    createdSlugs.push(handle);
     await page.goto(`${BASE_URL}/signup`);
 
     const starterCard = page.getByTestId("package-card-STARTER");
@@ -88,6 +134,7 @@ test.describe("Public sign-up", () => {
 
   test("duplicate email shows the DUPLICATE_EMAIL message", async ({ page }) => {
     const handle = uniqueHandle();
+    createdSlugs.push(handle);
     await page.goto(`${BASE_URL}/signup`);
 
     const starterCard = page.getByTestId("package-card-STARTER");
