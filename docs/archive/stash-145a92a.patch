@@ -1,0 +1,168 @@
+# Archived stash diffs
+# Stash SHA: 0b0b2d4e053faf5f35264acf7d3fdee5f6b7cd67
+# Base: 145a92a
+# Date: 2026-10-08
+# archived per Alex 2026-10-08 — never apply wholesale: original stash also deleted both dependency lockfiles and touched the local env file and the TS build-info cache, which are intentionally EXCLUDED here
+diff --git a/frontend/src/app/[org]/settings/personnel/page.tsx b/frontend/src/app/[org]/settings/personnel/page.tsx
+index 9a95582..b779267 100644
+--- a/frontend/src/app/[org]/settings/personnel/page.tsx
++++ b/frontend/src/app/[org]/settings/personnel/page.tsx
+@@ -1372,6 +1372,18 @@ export default function PersonnelPage() {
+   const callerRole = session?.role ?? "WM";
+   const qc = useQueryClient();
+ 
++  // Permission guard: only TA and SA can view personnel
++  if (callerRole !== "TA" && callerRole !== "SA") {
++    return (
++      <div className="p-8 text-center">
++        <h2 className="text-xl font-bold text-red-600 mb-2">{t("common.access_denied")}</h2>
++        <p className="text-gray-600">
++          {t("common.permission_required")} Personnel management is available only to Tenant Admins.
++        </p>
++      </div>
++    );
++  }
++
+   // BUG 4 fix: SA JWT has tenant_id=null. When SA visits another tenant's page,
+   // resolve the correct tenant UUID from the org slug via the API.
+   const isSAViewing = callerRole === "SA" && org !== SA_ORG_SLUG;
+diff --git a/frontend/src/app/[org]/settings/tenant-admin/page.tsx b/frontend/src/app/[org]/settings/tenant-admin/page.tsx
+index 3d74e52..2bf6070 100644
+--- a/frontend/src/app/[org]/settings/tenant-admin/page.tsx
++++ b/frontend/src/app/[org]/settings/tenant-admin/page.tsx
+@@ -28,7 +28,7 @@ export default function TenantAdminPage() {
+   const router = useRouter();
+   const org = params.org as string;
+   const checked = useRef(false);
+-  const [user, setUser] = useState(null);
++  const [user, setUser] = useState<any>(null);
+   const [ready, setReady] = useState(false);
+   const [activeTab, setActiveTab] = useState<TabId>("profile");
+ 
+@@ -77,9 +77,11 @@ export default function TenantAdminPage() {
+       </div>
+ 
+       {/* Help Banner */}
+-      <TabHelpBanner title="Tenant Admin Settings">
+-        Manage your organization's profile, plan, contract details, and contacts. Request plan upgrades or renew your contract.
+-      </TabHelpBanner>
++      <TabHelpBanner
++        message="Manage your organization's profile, plan, contract details, and contacts. Request plan upgrades or renew your contract."
++        storageKey="tenant-admin-help-banner"
++        dismissible={true}
++      />
+ 
+       {/* Tabs Navigation */}
+       <div className="bg-white border-b border-gray-200 px-6">
+diff --git a/frontend/src/lib/api.ts b/frontend/src/lib/api.ts
+index cda4a10..35d7159 100644
+--- a/frontend/src/lib/api.ts
++++ b/frontend/src/lib/api.ts
+@@ -1,4 +1,5 @@
+ const BASE_URL = process.env.NEXT_PUBLIC_API_URL ?? "";
++const USE_MOCK_DATA = process.env.NEXT_PUBLIC_USE_MOCK_DATA === "true";
+ 
+ /**
+  * True when a real backend URL is configured (NEXT_PUBLIC_API_URL is set and non-empty).
+@@ -9,8 +10,9 @@ const BASE_URL = process.env.NEXT_PUBLIC_API_URL ?? "";
+  *                added on top of API values or stock will be doubled.
+  * Demo mode:     No backend; BFF routes (Next.js /api/v1/*) handle requests in-process
+  *                and Zustand tracks session-time movements.
++ * Mock mode:     Frontend-only with mock data (set NEXT_PUBLIC_USE_MOCK_DATA=true).
+  */
+-export const IS_GATEWAY_MODE = !!BASE_URL;
++export const IS_GATEWAY_MODE = !!BASE_URL && !USE_MOCK_DATA;
+ 
+ type Method = "GET" | "POST" | "PATCH" | "DELETE" | "PUT";
+ 
+@@ -79,6 +81,18 @@ async function request<T>(
+   body?: unknown,
+   token?: string
+ ): Promise<T> {
++  // Mock mode: intercept requests and return mock data
++  if (USE_MOCK_DATA) {
++    const { getMockResponse, createMockApiResponse } = await import("./mock-data");
++    const mockData = getMockResponse<T>(path, method, body);
++    if (mockData !== null) {
++      // Simulate network latency
++      await new Promise((resolve) => setTimeout(resolve, 300));
++      return mockData;
++    }
++    // If no mock, fall through to real request (for unmocked endpoints)
++  }
++
+   const headers: Record<string, string> = {
+     "Content-Type": "application/json",
+   };
+diff --git a/frontend/src/lib/demo-data.ts b/frontend/src/lib/demo-data.ts
+index 6de6dbf..318499c 100644
+--- a/frontend/src/lib/demo-data.ts
++++ b/frontend/src/lib/demo-data.ts
+@@ -81,6 +81,7 @@ export const SA_USER: DemoUser = {
+ };
+ 
+ // ── Empty exports — all real data lives in the database ───────────────────────
++// Demo tenants were cleared. Use real database via API (gateway mode).
+ 
+ export const DEMO_TENANTS: DemoTenant[] = [];
+ 
+diff --git a/frontend/src/lib/locales/en.json b/frontend/src/lib/locales/en.json
+index 5de6503..680f8d9 100644
+--- a/frontend/src/lib/locales/en.json
++++ b/frontend/src/lib/locales/en.json
+@@ -874,7 +874,8 @@
+     "admin_section": "Admin",
+     "all_tenants": "All Tenants",
+     "contract_expired": "Contract Expired",
+-    "contract_expiring_soon": "Contract Expiring Soon"
++    "contract_expiring_soon": "Contract Expiring Soon",
++    "profile": "Profile"
+   },
+   "dashboard": {
+     "platform_overview": "Platform Overview",
+diff --git a/locales/en.json b/locales/en.json
+index 5de6503..47d0354 100644
+--- a/locales/en.json
++++ b/locales/en.json
+@@ -171,7 +171,10 @@
+     "unknown": "Unknown",
+     "unassigned": "Unassigned",
+     "success": "Saved successfully",
+-    "transaction": "transaction"
++    "transaction": "transaction",
++    "access_denied": "Access Denied",
++    "permission_required": "Permission Required",
++    "saved_successfully": "Saved successfully"
+   },
+   "product": {
+     "add": {
+@@ -375,7 +378,8 @@
+     "contract_start": "Contract Start Date",
+     "contract_end": "Contract End Date",
+     "contract_dates_heading": "Contract Dates",
+-    "contract_dates_optional": "Optional — leave blank if no fixed contract period"
++    "contract_dates_optional": "Optional — leave blank if no fixed contract period",
++    "org_type": "Organization Type"
+   },
+   "count": {
+     "title": "Stock Count",
+@@ -874,7 +878,8 @@
+     "admin_section": "Admin",
+     "all_tenants": "All Tenants",
+     "contract_expired": "Contract Expired",
+-    "contract_expiring_soon": "Contract Expiring Soon"
++    "contract_expiring_soon": "Contract Expiring Soon",
++    "profile": "Profile"
+   },
+   "dashboard": {
+     "platform_overview": "Platform Overview",
+@@ -1508,6 +1513,7 @@
+     "upload_logo": "Upload Logo",
+     "upload_banner": "Upload Banner",
+     "branding_preview": "Preview",
+-    "branding_saved": "Branding updated"
++    "branding_saved": "Branding updated",
++    "default_language": "Default Language"
+   }
+ }
+\ No newline at end of file
