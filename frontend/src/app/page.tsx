@@ -107,7 +107,7 @@ export default function HomePage() {
         <div className="max-w-[1200px] mx-auto px-6 h-14 flex items-center gap-6">
           <Link href="/" className="flex items-center gap-2 no-underline">
             <Logo size={32} />
-            <span className="font-bold text-[15px] text-[#0f2d1f] whitespace-nowrap">
+            <span className="hidden sm:inline font-bold text-[15px] text-[#0f2d1f] whitespace-nowrap">
               SMART <span className="text-[#2D6A4F] font-medium">Inventory</span>
             </span>
           </Link>
@@ -119,9 +119,7 @@ export default function HomePage() {
             ))}
           </div>
           <div className="flex items-center gap-3 ml-auto md:ml-0">
-            <div className="hidden sm:flex">
-              <AuthLangSwitcher />
-            </div>
+            <AuthLangSwitcher />
             <Link href="/login" className="btn-signin hidden sm:inline-block">
               {t("landing.nav.sign_in")}
             </Link>

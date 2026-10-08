@@ -85,4 +85,28 @@ test.describe("Landing page (mobile)", () => {
     const scrollWidth = await page.evaluate(() => document.documentElement.scrollWidth);
     expect(scrollWidth).toBeLessThanOrEqual(375);
   });
+
+  test("language switcher is visible and AM switch works at 375px", async ({ page }) => {
+    const errors = await collectErrors(page);
+    await page.setViewportSize({ width: 375, height: 812 });
+    await page.goto(`${BASE_URL}/`);
+
+    const switcherAm = page.locator("nav").getByRole("button", { name: "AM" });
+    await expect(switcherAm).toBeVisible();
+
+    const enSubtitle = await page.locator("h1 + p").innerText();
+    const reloadPromise = page.waitForEvent("load");
+    await switcherAm.click();
+    await reloadPromise;
+
+    await expect(page.locator("h1 + p")).not.toHaveText(enSubtitle);
+
+    const scrollWidth = await page.evaluate(() => document.documentElement.scrollWidth);
+    expect(scrollWidth).toBeLessThanOrEqual(375);
+
+    const bodyText = await page.locator("body").innerText();
+    expect(bodyText).not.toMatch(/landing\.[a-z_]+\.[a-z_]+/);
+
+    expect(errors).toEqual([]);
+  });
 });
