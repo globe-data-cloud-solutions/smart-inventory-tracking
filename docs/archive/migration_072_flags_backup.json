@@ -1,0 +1,94 @@
+[
+  {
+    "feature_flags": "{\"LOGISTICS\": true, \"API_ACCESS\": false, \"AI_ANALYTICS\": false, \"AUDIT_EXPORT\": true, \"CORE_INVENTORY\": true, \"CUSTOM_BRANDING\": true, \"LOT_TRACEABILITY\": true, \"TRANSFERS_SISTER\": true, \"TRANSFERS_PULL_PUSH\": true}",
+    "tenant_id": "b561dc37-74ba-42a2-a2d6-3c30d6094d21"
+  },
+  {
+    "feature_flags": "{\"LOGISTICS\": false, \"API_ACCESS\": false, \"AI_ANALYTICS\": false, \"AUDIT_EXPORT\": false, \"CORE_INVENTORY\": true, \"CUSTOM_BRANDING\": false, \"LOT_TRACEABILITY\": true, \"TRANSFERS_SISTER\": false, \"TRANSFERS_PULL_PUSH\": true}",
+    "tenant_id": "e809c34c-a18f-47bc-8fdb-f8fffa5c09f6"
+  },
+  {
+    "feature_flags": "{\"LOGISTICS\": false, \"API_ACCESS\": false, \"AI_ANALYTICS\": false, \"AUDIT_EXPORT\": false, \"CORE_INVENTORY\": true, \"CUSTOM_BRANDING\": false, \"LOT_TRACEABILITY\": true, \"TRANSFERS_SISTER\": false, \"TRANSFERS_PULL_PUSH\": true}",
+    "tenant_id": "3958d846-5a32-4594-a28d-2ecd7dd15a3b"
+  },
+  {
+    "feature_flags": "{\"LOGISTICS\": false, \"API_ACCESS\": false, \"AI_ANALYTICS\": false, \"AUDIT_EXPORT\": false, \"CORE_INVENTORY\": true, \"CUSTOM_BRANDING\": false, \"LOT_TRACEABILITY\": true, \"TRANSFERS_SISTER\": false, \"TRANSFERS_PULL_PUSH\": true}",
+    "tenant_id": "fef7ff07-1bab-4ede-80b5-a2b01230e8b0"
+  },
+  {
+    "feature_flags": "{\"LOGISTICS\": false, \"API_ACCESS\": false, \"AI_ANALYTICS\": false, \"AUDIT_EXPORT\": false, \"CORE_INVENTORY\": true, \"CUSTOM_BRANDING\": false, \"LOT_TRACEABILITY\": true, \"TRANSFERS_SISTER\": false, \"TRANSFERS_PULL_PUSH\": true}",
+    "tenant_id": "37d15976-79f7-47fa-a285-d1f5f4cdab8a"
+  },
+  {
+    "feature_flags": "{\"TRANSFERS_SISTER\": true}",
+    "tenant_id": "aed68cc5-789f-4cb0-9ef5-9b6404267e42"
+  },
+  {
+    "feature_flags": "{\"LOGISTICS\": false, \"API_ACCESS\": false, \"AI_ANALYTICS\": false, \"AUDIT_EXPORT\": false, \"CORE_INVENTORY\": true, \"CUSTOM_BRANDING\": false, \"LOT_TRACEABILITY\": true, \"TRANSFERS_SISTER\": false, \"TRANSFERS_PULL_PUSH\": true}",
+    "tenant_id": "d48c64ff-e367-4cde-a94c-90a082df4fe5"
+  },
+  {
+    "feature_flags": "{\"LOGISTICS\": true, \"API_ACCESS\": false, \"AI_ANALYTICS\": false, \"AUDIT_EXPORT\": true, \"CORE_INVENTORY\": true, \"CUSTOM_BRANDING\": true, \"LOT_TRACEABILITY\": true, \"TRANSFERS_SISTER\": true, \"TRANSFERS_PULL_PUSH\": true}",
+    "tenant_id": "1d13d166-1dd4-4e33-b393-7dd7e643447c"
+  },
+  {
+    "feature_flags": "{\"LOGISTICS\": false, \"API_ACCESS\": false, \"AI_ANALYTICS\": false, \"AUDIT_EXPORT\": false, \"CORE_INVENTORY\": true, \"CUSTOM_BRANDING\": false, \"LOT_TRACEABILITY\": true, \"TRANSFERS_SISTER\": false, \"TRANSFERS_PULL_PUSH\": true}",
+    "tenant_id": "62aaf311-c2b5-4ab9-b3e1-ee32a2e54e72"
+  },
+  {
+    "feature_flags": "{\"LOGISTICS\": true, \"API_ACCESS\": false, \"AI_ANALYTICS\": false, \"AUDIT_EXPORT\": true, \"CORE_INVENTORY\": true, \"CUSTOM_BRANDING\": true, \"LOT_TRACEABILITY\": true, \"TRANSFERS_SISTER\": true, \"TRANSFERS_PULL_PUSH\": true}",
+    "tenant_id": "aa8c3194-5211-4b4a-b803-05eec8d9ecd0"
+  },
+  {
+    "feature_flags": "{\"LOGISTICS\": false, \"API_ACCESS\": false, \"AI_ANALYTICS\": false, \"AUDIT_EXPORT\": false, \"CORE_INVENTORY\": true, \"CUSTOM_BRANDING\": false, \"LOT_TRACEABILITY\": true, \"TRANSFERS_SISTER\": false, \"TRANSFERS_PULL_PUSH\": true}",
+    "tenant_id": "5e60ea08-d596-4a46-b63e-ddd7c373f3f0"
+  },
+  {
+    "feature_flags": "{\"LOGISTICS\": false, \"API_ACCESS\": false, \"AI_ANALYTICS\": false, \"AUDIT_EXPORT\": false, \"CORE_INVENTORY\": true, \"CUSTOM_BRANDING\": false, \"LOT_TRACEABILITY\": true, \"TRANSFERS_SISTER\": false, \"TRANSFERS_PULL_PUSH\": true}",
+    "tenant_id": "10fb91c3-46a1-4fbd-8a94-506a09a452ca"
+  },
+  {
+    "feature_flags": "{\"LOGISTICS\": false, \"API_ACCESS\": false, \"AI_ANALYTICS\": false, \"AUDIT_EXPORT\": false, \"CORE_INVENTORY\": true, \"CUSTOM_BRANDING\": false, \"LOT_TRACEABILITY\": true, \"TRANSFERS_SISTER\": false, \"TRANSFERS_PULL_PUSH\": true}",
+    "tenant_id": "1b042a2d-0ed8-4d04-87d6-abf46934d240"
+  },
+  {
+    "feature_flags": "{\"LOGISTICS\": true, \"API_ACCESS\": false, \"AI_ANALYTICS\": false, \"AUDIT_EXPORT\": true, \"CORE_INVENTORY\": true, \"CUSTOM_BRANDING\": true, \"LOT_TRACEABILITY\": true, \"TRANSFERS_SISTER\": true, \"TRANSFERS_PULL_PUSH\": true}",
+    "tenant_id": "1e5b7e76-c4d9-4626-a326-c4a76e3b1287"
+  },
+  {
+    "feature_flags": "{\"LOGISTICS\": false, \"API_ACCESS\": false, \"AI_ANALYTICS\": false, \"AUDIT_EXPORT\": false, \"CORE_INVENTORY\": true, \"CUSTOM_BRANDING\": false, \"LOT_TRACEABILITY\": true, \"TRANSFERS_SISTER\": false, \"TRANSFERS_PULL_PUSH\": true}",
+    "tenant_id": "1e0e5f06-3399-466c-a506-16fa6866214e"
+  },
+  {
+    "feature_flags": "{\"LOGISTICS\": false, \"API_ACCESS\": false, \"AI_ANALYTICS\": false, \"AUDIT_EXPORT\": false, \"CORE_INVENTORY\": true, \"CUSTOM_BRANDING\": false, \"LOT_TRACEABILITY\": true, \"TRANSFERS_SISTER\": false, \"TRANSFERS_PULL_PUSH\": true}",
+    "tenant_id": "5d1c9fca-67c6-48f3-94f2-c1d3caccb2d7"
+  },
+  {
+    "feature_flags": "{\"LOGISTICS\": false, \"API_ACCESS\": false, \"AI_ANALYTICS\": false, \"AUDIT_EXPORT\": false, \"CORE_INVENTORY\": true, \"CUSTOM_BRANDING\": false, \"LOT_TRACEABILITY\": true, \"TRANSFERS_SISTER\": false, \"TRANSFERS_PULL_PUSH\": true}",
+    "tenant_id": "2346f043-0664-4f0d-86d7-a44c5a230924"
+  },
+  {
+    "feature_flags": "{\"LOGISTICS\": true, \"API_ACCESS\": false, \"AI_ANALYTICS\": false, \"AUDIT_EXPORT\": true, \"CORE_INVENTORY\": true, \"CUSTOM_BRANDING\": true, \"FLEET_MANAGEMENT\": false, \"LOT_TRACEABILITY\": true, \"TRANSFERS_SISTER\": true, \"TRANSFERS_PULL_PUSH\": true, \"ADVANCED_BATCH_TRACKING\": false}",
+    "tenant_id": "1ed1ab02-989c-442d-80ac-e66a7a21b36e"
+  },
+  {
+    "feature_flags": "{}",
+    "tenant_id": "07000007-0000-0000-0000-000000000001"
+  },
+  {
+    "feature_flags": "{\"LOGISTICS\": false, \"API_ACCESS\": false, \"AI_ANALYTICS\": false, \"AUDIT_EXPORT\": false, \"CORE_INVENTORY\": true, \"CUSTOM_BRANDING\": false, \"LOT_TRACEABILITY\": true, \"TRANSFERS_SISTER\": false, \"TRANSFERS_PULL_PUSH\": true}",
+    "tenant_id": "a97816b0-8301-487d-8ce9-53eabcab7c4f"
+  },
+  {
+    "feature_flags": "{}",
+    "tenant_id": "ed9ee3f0-4fa9-4054-ac57-433c2ba1b3ef"
+  },
+  {
+    "feature_flags": "{\"LOGISTICS\": false, \"API_ACCESS\": false, \"AI_ANALYTICS\": false, \"AUDIT_EXPORT\": false, \"CORE_INVENTORY\": true, \"CUSTOM_BRANDING\": false, \"LOT_TRACEABILITY\": true, \"TRANSFERS_SISTER\": false, \"TRANSFERS_PULL_PUSH\": true}",
+    "tenant_id": "3a2dcc6c-fd91-43b9-8304-67b2a76368e2"
+  },
+  {
+    "feature_flags": "{}",
+    "tenant_id": "0e898780-9aa2-4f63-b39f-258f45ed161e"
+  }
+]
