@@ -25,11 +25,3 @@ target-version = "py312"
 [tool.mypy]
 strict = true
 python_version = "3.12"
-
-[tool.pytest.ini_options]
-asyncio_mode = "auto"
-testpaths = ["tests"]
-markers = [
-    "unit: fast in-process tests that do not require a real database or external services",
-    "integration: tests that connect to a live RDS/ElastiCache dev environment",
-]

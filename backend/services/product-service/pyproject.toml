@@ -26,11 +26,3 @@ target-version = "py312"
 [tool.mypy]
 strict = true
 python_version = "3.12"
-
-[tool.pytest.ini_options]
-asyncio_mode = "auto"
-testpaths = ["tests"]
-markers = [
-    "unit: fast unit tests — no DB, no network required",
-    "integration: requires dev AWS RDS and ElastiCache — CI only",
-]

@@ -26,7 +26,3 @@ target-version = "py312"
 [tool.mypy]
 strict = true
 python_version = "3.12"
-
-[tool.pytest.ini_options]
-asyncio_mode = "auto"
-testpaths = ["tests"]
