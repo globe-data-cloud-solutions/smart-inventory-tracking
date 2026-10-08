@@ -139,6 +139,35 @@ Dev/local sends the same way as email verification: `[DEV EMAIL] reset
 <email>: <APP_BASE_URL>/reset-password?token=<raw>`, logged at WARNING by
 `send_reset_email()`. Real SES sending is out of scope.
 
+### Rate limits (B3)
+
+One central limit table, `backend/shared/cache/rate_limit.py` — call sites
+pass a bucket name to `hit_bucket(bucket, key)`; the limit/window per bucket
+comes from `limit_for(bucket)`:
+
+```
+bucket          limit/window     call site
+packages        60/60s           GET  /api/v1/tenants/public/packages
+signup          5/3600s          POST /api/v1/tenants/public/signup
+verify          20/3600s         POST /api/v1/auth/verify-email
+resend          3/3600s          POST /api/v1/auth/resend-verification
+forgot          3/3600s          POST /api/v1/auth/forgot-password
+reset           10/3600s         POST /api/v1/auth/reset-password
+stub-webhook    120/60s          POST /api/v1/tenants/public/payments/webhook/stub
+login           20/900s          POST /api/v1/auth/token (email/password path only — never dev_email)
+```
+
+Override any bucket locally with `RATE_LIMIT_<BUCKET>=<limit>/<window_s>`
+(bucket upper-cased, `-` → `_`, e.g. `RATE_LIMIT_SIGNUP=100/3600`). An invalid
+override value is logged as a warning and the default is used — it never
+crashes the service. The table above is the production defaults; overrides
+are for local/test tuning only. Redis outage still fails open (unchanged).
+
+`client_ip(request)` ignores `X-Real-IP` and `X-Forwarded-For` unless
+`TRUST_PROXY_HEADERS=true` — set that on ECS behind the ALB. When true, the
+rate-limit key is the LAST entry of `X-Forwarded-For` (the hop the ALB itself
+appended); otherwise it's `request.client.host`. `X-Real-IP` is never read.
+
 ### Billing (S5) — invoices, payments, providers
 
 Schema (migration 071): `subscriptions` (one live row per tenant — `status IN

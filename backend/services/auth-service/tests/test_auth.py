@@ -81,15 +81,18 @@ def _no_real_redis(monkeypatch: pytest.MonkeyPatch) -> _FakeRedis:
     """Every test in this module gets a fresh in-memory fake Redis client —
     none of them should ever touch a real server. exchange_token's dev_email
     path now calls get_redis_client() on every request (login-lockout check),
-    so this must be autouse rather than opt-in per test.
+    and the email/password path also calls the "login" rate-limit bucket, so
+    this must be autouse rather than opt-in per test.
 
     The lockout helpers live in shared.cache.login_lockout (used by both
-    auth-service and tenant-service), so that module's get_redis_client
-    binding is what must be patched — not auth_module's, which no longer
-    holds its own reference after the functions moved out."""
+    auth-service and tenant-service), and the login rate limit lives in
+    shared.cache.rate_limit — both modules hold their own get_redis_client
+    binding, so both must be patched to the same fake."""
     fake = _FakeRedis()
     import shared.cache.login_lockout as _lockout_mod
+    import shared.cache.rate_limit as _rate_limit_mod
     monkeypatch.setattr(_lockout_mod, "get_redis_client", lambda: fake)
+    monkeypatch.setattr(_rate_limit_mod, "get_redis_client", lambda: fake)
     return fake
 
 
@@ -668,6 +671,66 @@ class TestLoginAttemptLimiting:
         # One more wrong attempt after the reset — should NOT be locked out.
         resp = client.post("/api/v1/auth/token", json={"dev_email": email, "dev_password": "wrong"})
         assert resp.status_code == 401
+
+
+@pytest.mark.unit
+class TestLoginPerIpRateLimit:
+    """B3: the "login" rate-limit bucket is hit on the email/password path of
+    /auth/token (per-IP, before the lockout check) and never on the dev_email
+    path — dev_email is a local-only scripts/e2e shortcut, not a public,
+    attacker-reachable surface."""
+
+    def test_email_password_path_429_once_login_bucket_exhausted(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        async def _mock_wrong_password(email: str, password: object = None) -> dict:
+            raise auth_module.HTTPException(status_code=401, detail="Invalid password")
+
+        monkeypatch.setattr(auth_module, "_lookup_user_with_position", _mock_wrong_password)
+
+        async def _mock_rate_limit_hit(bucket: str, key: str) -> None:
+            if bucket == "login":
+                raise auth_module.HTTPException(
+                    status_code=429,
+                    detail={"code": "RATE_LIMITED", "message": "Too many requests. Please try again later."},
+                )
+
+        monkeypatch.setattr(auth_module, "rate_limit_hit", _mock_rate_limit_hit)
+
+        resp = client.post(
+            "/api/v1/auth/token",
+            json={"email": "ratelimited@acme.com", "password": "wrong"},
+        )
+        assert resp.status_code == 429
+        assert resp.json()["detail"]["code"] == "RATE_LIMITED"
+
+    def test_dev_email_path_is_never_rate_limited(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """dev_email must not call the "login" bucket at all — asserting via a
+        rate_limit_hit mock that always raises 429 makes this unambiguous: if
+        the dev_email path ever starts hitting it, this test fails."""
+
+        async def _mock_pending(email: str, password: object = None) -> dict:
+            return {
+                "sub": "u-dev", "email": email, "name": "Dev User",
+                "tenant_id": "aaaaaaaa-0000-0000-0000-000000000001",
+                "tenant_slug": "acme", "role": "WM",
+                "warehouse_id": "bbbbbbbb-0000-0000-0000-000000000001",
+                "warehouse_name": "WH1", "position_id": "cccccccc-0000-0000-0000-000000000001",
+                "position_title": "Warehouse Manager", "level_number": 3,
+                "positions": [], "must_reset_password": False,
+            }
+
+        async def _mock_rate_limit_hit_always_429(bucket: str, key: str) -> None:
+            raise auth_module.HTTPException(status_code=429, detail={"code": "RATE_LIMITED"})
+
+        monkeypatch.setattr(auth_module, "_lookup_user_with_position", _mock_pending)
+        monkeypatch.setattr(auth_module, "rate_limit_hit", _mock_rate_limit_hit_always_429)
+
+        resp = client.post(
+            "/api/v1/auth/token",
+            json={"dev_email": "devpath@acme.com"},
+        )
+        assert resp.status_code == 200, resp.text
 
 
 @pytest.mark.unit

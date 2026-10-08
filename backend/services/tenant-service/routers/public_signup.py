@@ -45,7 +45,7 @@ from shared.auth.email_verification import (
     verification_required,
 )
 from shared.billing.subscriptions import get_current_price, start_subscription, vat_breakdown
-from shared.cache.rate_limit import client_ip, hit as rate_limit_hit
+from shared.cache.rate_limit import client_ip, hit_bucket as rate_limit_hit
 from shared.db.rls import set_rls_context
 from shared.db.session import AsyncSessionLocal
 from shared.plans.catalog import apply_package_to_tenant, get_package, list_packages
@@ -145,7 +145,7 @@ class SignupOut(BaseModel):
 
 @router.get("/public/packages", response_model=SuccessResponse[PackagesListOut])
 async def list_public_packages(request: Request) -> SuccessResponse[PackagesListOut]:
-    await rate_limit_hit("packages", client_ip(request), limit=60, window_seconds=60)
+    await rate_limit_hit("packages", client_ip(request))
 
     async with AsyncSessionLocal() as db:
         packages = await list_packages(db, public_only=True)
@@ -177,7 +177,7 @@ async def public_signup(body: SignupRequest, request: Request) -> SuccessRespons
     ip = client_ip(request)
     # Counted BEFORE validation — an attacker spamming invalid bodies still
     # burns their quota.
-    await rate_limit_hit("signup", ip, limit=5, window_seconds=3600)
+    await rate_limit_hit("signup", ip)
 
     if body.organisation_type not in VALID_ORGANISATION_TYPES:
         raise HTTPException(

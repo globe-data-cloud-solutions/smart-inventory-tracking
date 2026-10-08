@@ -26,7 +26,7 @@ from shared.billing.addons import cancel_addon
 from shared.billing.payments import cancel_invoice, create_invoice, mark_failed, mark_paid
 from shared.billing.proration import apply_addon_grant_with_proration
 from shared.billing.providers import get_provider
-from shared.cache.rate_limit import client_ip, hit as rate_limit_hit
+from shared.cache.rate_limit import client_ip, hit_bucket as rate_limit_hit
 from shared.db.rls import set_rls_context
 from shared.db.session import AsyncSessionLocal
 from shared.permissions.middleware import require_permission
@@ -312,7 +312,7 @@ async def stub_payment_webhook(request: Request) -> dict:
     """Allowlisted in scripts/ci_drift_check.py and api-gateway's
     UNAUTHENTICATED_PATHS — no SMART JWT exists for a payment gateway's
     server-to-server callback. Signature verification IS the auth check."""
-    await rate_limit_hit("stub-webhook", client_ip(request), limit=120, window_seconds=60)
+    await rate_limit_hit("stub-webhook", client_ip(request))
 
     body = await request.body()
     try:

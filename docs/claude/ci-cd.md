@@ -212,6 +212,15 @@ OUTBOX_ALERT_THRESHOLD=500     # CloudWatch alarm fires when PENDING depth excee
 TRUSTED_PROXY_HOPS=0           # 0 (default/local) = direct connection; set to 1 behind the ALB so
                                 # X-Real-IP is read from the right end of X-Forwarded-For, not the ALB's own IP
 
+# ── Rate limiting (B3) — read by shared/cache/rate_limit.py in every downstream
+#    service (auth-service, tenant-service), not by the gateway itself ────────
+TRUST_PROXY_HEADERS=true       # MUST be true on ECS behind the ALB — client_ip() then uses the LAST
+                                # X-Forwarded-For entry as the rate-limit key; false/unset (local default)
+                                # uses request.client.host. X-Real-IP is never read by client_ip().
+RATE_LIMIT_<BUCKET>            # optional per-bucket override, "<limit>/<window_s>" — local/test only,
+                                # e.g. RATE_LIMIT_SIGNUP=100/3600. Invalid value logs a warning and falls
+                                # back to the default — see docs/claude/billing-and-tenants.md "Rate limits (B3)".
+
 # ── Billing (S5) ─────────────────────────────────────────────────────────────
 STUB_WEBHOOK_SECRET            # HMAC-SHA256 secret for the STUB payment provider's webhook — from Secrets Manager
 

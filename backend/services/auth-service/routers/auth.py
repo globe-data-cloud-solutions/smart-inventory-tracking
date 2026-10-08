@@ -34,7 +34,7 @@ from shared.cache.login_lockout import (
     _record_failed_login,
     _reset_login_attempts,
 )
-from shared.cache.rate_limit import client_ip, hit as rate_limit_hit
+from shared.cache.rate_limit import client_ip, hit_bucket as rate_limit_hit
 
 router = APIRouter()
 
@@ -333,7 +333,7 @@ async def _password_login(email: str, password: Optional[str]) -> dict:
 
 
 @router.post("/token", response_model=TokenResponse)
-async def exchange_token(body: TokenRequest) -> TokenResponse:
+async def exchange_token(body: TokenRequest, request: Request) -> TokenResponse:
     """Issue a SMART JWT.
 
     Path 1 — email/password (every environment, password required):
@@ -355,6 +355,8 @@ async def exchange_token(body: TokenRequest) -> TokenResponse:
                 status_code=422,
                 detail={"code": "PASSWORD_REQUIRED", "message": "Password is required"},
             )
+        # Per-IP login limit — email/password path only, never dev_email.
+        await rate_limit_hit("login", client_ip(request))
         try:
             claims = await _password_login(body.email, body.password)
         except HTTPException as exc:
@@ -515,7 +517,7 @@ async def verify_email(body: VerifyEmailRequest, request: Request) -> dict:
     this point (the user may not even have signed in yet), so this route
     carries no @require_permission — it is allowlisted in ci_drift_check.py.
     """
-    await rate_limit_hit("verify", client_ip(request), limit=20, window_seconds=3600)
+    await rate_limit_hit("verify", client_ip(request))
 
     from shared.db.session import AsyncSessionLocal
 
@@ -538,8 +540,8 @@ async def resend_verification(body: ResendVerificationRequest, request: Request)
     existence. No @require_permission — allowlisted in ci_drift_check.py.
     """
     email = body.email.strip().lower()
-    await rate_limit_hit("resend", client_ip(request), limit=3, window_seconds=3600)
-    await rate_limit_hit("resend", email, limit=3, window_seconds=3600)
+    await rate_limit_hit("resend", client_ip(request))
+    await rate_limit_hit("resend", email)
 
     from shared.db.session import AsyncSessionLocal
     from sqlalchemy import text as sa_text
@@ -586,8 +588,8 @@ async def forgot_password(body: ForgotPasswordRequest, request: Request) -> dict
     ci_drift_check.py.
     """
     email = body.email.strip().lower()
-    await rate_limit_hit("forgot", client_ip(request), limit=3, window_seconds=3600)
-    await rate_limit_hit("forgot", email, limit=3, window_seconds=3600)
+    await rate_limit_hit("forgot", client_ip(request))
+    await rate_limit_hit("forgot", email)
 
     from shared.db.session import AsyncSessionLocal
     from sqlalchemy import text as sa_text
@@ -616,7 +618,7 @@ async def reset_password(body: ResetPasswordRequest, request: Request) -> dict:
     No SMART JWT exists at this point, so this route carries no
     @require_permission — allowlisted in ci_drift_check.py.
     """
-    await rate_limit_hit("reset", client_ip(request), limit=10, window_seconds=3600)
+    await rate_limit_hit("reset", client_ip(request))
 
     if len(body.new_password) < 8:
         raise HTTPException(
