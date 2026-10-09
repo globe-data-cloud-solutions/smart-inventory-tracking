@@ -14,12 +14,18 @@ Hierarchy layout:
     Level 1 (NM):  Harar Production Center, Ambo Production Center  [FACTORY]
     Level 2 (WM):  Kombolcha WH, Mekele WH, Dire Dawa WH, Hawassa WH  [RETAIL]
 
+These demo tenants are only created by scripts/seed_demo_data.py, never by a
+migration — on a fresh database (e.g. CI) neither tenant row exists yet, and
+every INSERT below would violate the tenant_id foreign key. Each tenant's
+seed block is guarded on that tenant already existing.
+
 Revision ID: 017
 Revises: 016
 Create Date: 2026-05-26
 """
 from __future__ import annotations
 
+import sqlalchemy as sa
 from alembic import op
 
 revision = "017"
@@ -74,139 +80,163 @@ _U_SA     = "00000001-0a00-0000-0000-000000000001"
 _SYS_USER = "00000000-0000-0000-0000-000000000001"
 
 
+def _tenant_exists(bind: sa.engine.Connection, tenant_id: str) -> bool:
+    return bind.execute(
+        sa.text("SELECT 1 FROM tenants WHERE id = :tid"), {"tid": tenant_id}
+    ).first() is not None
+
+
 def upgrade() -> None:
     # ── RLS context: disable for seed (system migration, not tenant request) ──
     op.execute("SELECT set_config('app.current_tenant_id', '', false)")
 
+    bind = op.get_bind()
+    t1_exists = _tenant_exists(bind, _T1)
+    t2_exists = _tenant_exists(bind, _T2)
+    if not t1_exists:
+        print(f"017: demo tenant {_T1} absent — seed skipped")
+    if not t2_exists:
+        print(f"017: demo tenant {_T2} absent — seed skipped")
+
     # ── tenant_hierarchy_config ───────────────────────────────────────────────
     # Addis Water: 3 levels
-    op.execute(f"""
-        INSERT INTO tenant_hierarchy_config
-            (tenant_id, level_number, level_name, default_role_code, role_display_label,
-             is_stock_holding, is_active)
-        VALUES
-          ('{_T1}', 1, 'Production Center', 'NM', 'Production Manager',   true,  true),
-          ('{_T1}', 2, 'Regional Warehouse', 'WM', 'Warehouse Manager',    true,  true),
-          ('{_T1}', 3, 'Sub-Warehouse',      'WM', 'Sub-Warehouse Manager',true,  true)
-        ON CONFLICT (tenant_id, level_number) DO NOTHING
-    """)
+    if t1_exists:
+        op.execute(f"""
+            INSERT INTO tenant_hierarchy_config
+                (tenant_id, level_number, level_name, default_role_code, role_display_label,
+                 is_stock_holding, is_active)
+            VALUES
+              ('{_T1}', 1, 'Production Center', 'NM', 'Production Manager',   true,  true),
+              ('{_T1}', 2, 'Regional Warehouse', 'WM', 'Warehouse Manager',    true,  true),
+              ('{_T1}', 3, 'Sub-Warehouse',      'WM', 'Sub-Warehouse Manager',true,  true)
+            ON CONFLICT (tenant_id, level_number) DO NOTHING
+        """)
+
+        # ── organization_node — Addis Water nodes ─────────────────────────────
+        # Uses the same IDs as the warehouses table so users.warehouse_id is valid here too.
+        op.execute(f"""
+            INSERT INTO organization_node
+                (id, tenant_id, name, code, hierarchy_level, parent_node_id, is_stock_holding, is_active)
+            VALUES
+              ('{_T1_MAIN}',  '{_T1}', 'Main Production Center', 'AW-MAIN',  1, NULL,        true, true),
+              ('{_T1_NORTH}', '{_T1}', 'North WH',               'AW-NORTH', 2, NULL,        true, true),
+              ('{_T1_NSUB}',  '{_T1}', 'North-Subcenter WH',     'AW-NSUB',  3, '{_T1_NORTH}',true,true),
+              ('{_T1_SOUTH}', '{_T1}', 'South WH',               'AW-SOUTH', 2, NULL,        true, true),
+              ('{_T1_EAST}',  '{_T1}', 'East WH',                'AW-EAST',  2, NULL,        true, true),
+              ('{_T1_WEST}',  '{_T1}', 'West WH',                'AW-WEST',  2, NULL,        true, true)
+            ON CONFLICT (id) DO NOTHING
+        """)
+
+        # ── org_node_hierarchy — PRIMARY_REPORTS_TO — Addis Water ─────────────
+        # Level-2 WHs report to Main Production Center; level-3 sub-WH reports to North WH.
+        op.execute(f"""
+            INSERT INTO org_node_hierarchy
+                (tenant_id, from_node_id, to_node_id, relationship_type, is_preferred)
+            VALUES
+              ('{_T1}', '{_T1_NORTH}', '{_T1_MAIN}',  'PRIMARY_REPORTS_TO', false),
+              ('{_T1}', '{_T1_SOUTH}', '{_T1_MAIN}',  'PRIMARY_REPORTS_TO', false),
+              ('{_T1}', '{_T1_EAST}',  '{_T1_MAIN}',  'PRIMARY_REPORTS_TO', false),
+              ('{_T1}', '{_T1_WEST}',  '{_T1_MAIN}',  'PRIMARY_REPORTS_TO', false),
+              ('{_T1}', '{_T1_NSUB}',  '{_T1_NORTH}', 'PRIMARY_REPORTS_TO', false)
+            ON CONFLICT DO NOTHING
+        """)
+
+        # ── org_node_hierarchy — SUPPLY_FROM — Addis Water ────────────────────
+        # WHs pull from Main Production Center by default.
+        op.execute(f"""
+            INSERT INTO org_node_hierarchy
+                (tenant_id, from_node_id, to_node_id, relationship_type, is_preferred)
+            VALUES
+              ('{_T1}', '{_T1_NORTH}', '{_T1_MAIN}',  'SUPPLY_FROM', true),
+              ('{_T1}', '{_T1_SOUTH}', '{_T1_MAIN}',  'SUPPLY_FROM', true),
+              ('{_T1}', '{_T1_EAST}',  '{_T1_MAIN}',  'SUPPLY_FROM', true),
+              ('{_T1}', '{_T1_WEST}',  '{_T1_MAIN}',  'SUPPLY_FROM', true),
+              ('{_T1}', '{_T1_NSUB}',  '{_T1_NORTH}', 'SUPPLY_FROM', true)
+            ON CONFLICT DO NOTHING
+        """)
+
+        # ── user_facility_assignments — Addis Water WMs ───────────────────────
+        # TA users have no warehouse — skip them (they operate tenant-wide via role).
+        op.execute(f"""
+            INSERT INTO user_facility_assignments
+                (tenant_id, user_id, facility_id, assignment_type, role_code,
+                 valid_from, valid_until, created_by, is_active)
+            VALUES
+              ('{_T1}', '{_U_AW_NM}',  '{_T1_MAIN}',  'PRIMARY', 'NM', now(), NULL, '{_SYS_USER}', true),
+              ('{_T1}', '{_U_AW_WM1}', '{_T1_NORTH}', 'PRIMARY', 'WM', now(), NULL, '{_SYS_USER}', true),
+              ('{_T1}', '{_U_AW_WM2}', '{_T1_NSUB}',  'PRIMARY', 'WM', now(), NULL, '{_SYS_USER}', true),
+              ('{_T1}', '{_U_AW_WM3}', '{_T1_SOUTH}', 'PRIMARY', 'WM', now(), NULL, '{_SYS_USER}', true),
+              ('{_T1}', '{_U_AW_WM4}', '{_T1_EAST}',  'PRIMARY', 'WM', now(), NULL, '{_SYS_USER}', true),
+              ('{_T1}', '{_U_AW_WM5}', '{_T1_WEST}',  'PRIMARY', 'WM', now(), NULL, '{_SYS_USER}', true)
+            ON CONFLICT DO NOTHING
+        """)
+
     # Muger Cement: 2 levels
-    op.execute(f"""
-        INSERT INTO tenant_hierarchy_config
-            (tenant_id, level_number, level_name, default_role_code, role_display_label,
-             is_stock_holding, is_active)
-        VALUES
-          ('{_T2}', 1, 'Production Center', 'NM', 'Production Manager', true, true),
-          ('{_T2}', 2, 'Regional Warehouse','WM', 'Warehouse Manager',  true, true)
-        ON CONFLICT (tenant_id, level_number) DO NOTHING
-    """)
+    if t2_exists:
+        op.execute(f"""
+            INSERT INTO tenant_hierarchy_config
+                (tenant_id, level_number, level_name, default_role_code, role_display_label,
+                 is_stock_holding, is_active)
+            VALUES
+              ('{_T2}', 1, 'Production Center', 'NM', 'Production Manager', true, true),
+              ('{_T2}', 2, 'Regional Warehouse','WM', 'Warehouse Manager',  true, true)
+            ON CONFLICT (tenant_id, level_number) DO NOTHING
+        """)
 
-    # ── organization_node ─────────────────────────────────────────────────────
-    # Uses the same IDs as the warehouses table so users.warehouse_id is valid here too.
-    # Addis Water nodes
-    op.execute(f"""
-        INSERT INTO organization_node
-            (id, tenant_id, name, code, hierarchy_level, parent_node_id, is_stock_holding, is_active)
-        VALUES
-          ('{_T1_MAIN}',  '{_T1}', 'Main Production Center', 'AW-MAIN',  1, NULL,        true, true),
-          ('{_T1_NORTH}', '{_T1}', 'North WH',               'AW-NORTH', 2, NULL,        true, true),
-          ('{_T1_NSUB}',  '{_T1}', 'North-Subcenter WH',     'AW-NSUB',  3, '{_T1_NORTH}',true,true),
-          ('{_T1_SOUTH}', '{_T1}', 'South WH',               'AW-SOUTH', 2, NULL,        true, true),
-          ('{_T1_EAST}',  '{_T1}', 'East WH',                'AW-EAST',  2, NULL,        true, true),
-          ('{_T1_WEST}',  '{_T1}', 'West WH',                'AW-WEST',  2, NULL,        true, true)
-        ON CONFLICT (id) DO NOTHING
-    """)
-    # Muger Cement nodes
-    op.execute(f"""
-        INSERT INTO organization_node
-            (id, tenant_id, name, code, hierarchy_level, parent_node_id, is_stock_holding, is_active)
-        VALUES
-          ('{_T2_HARAR}',     '{_T2}', 'Harar Production Center', 'MC-HARAR', 1, NULL, true, true),
-          ('{_T2_AMBO}',      '{_T2}', 'Ambo Production Center',  'MC-AMBO',  1, NULL, true, true),
-          ('{_T2_KOMBOLCHA}', '{_T2}', 'Kombolcha WH',            'MC-KOM',   2, NULL, true, true),
-          ('{_T2_MEKELE}',    '{_T2}', 'Mekele WH',               'MC-MEK',   2, NULL, true, true),
-          ('{_T2_DIREDAWA}',  '{_T2}', 'Dire Dawa WH',            'MC-DDW',   2, NULL, true, true),
-          ('{_T2_HAWASSA}',   '{_T2}', 'Hawassa WH',              'MC-HAW',   2, NULL, true, true)
-        ON CONFLICT (id) DO NOTHING
-    """)
+        # ── organization_node — Muger Cement nodes ────────────────────────────
+        op.execute(f"""
+            INSERT INTO organization_node
+                (id, tenant_id, name, code, hierarchy_level, parent_node_id, is_stock_holding, is_active)
+            VALUES
+              ('{_T2_HARAR}',     '{_T2}', 'Harar Production Center', 'MC-HARAR', 1, NULL, true, true),
+              ('{_T2_AMBO}',      '{_T2}', 'Ambo Production Center',  'MC-AMBO',  1, NULL, true, true),
+              ('{_T2_KOMBOLCHA}', '{_T2}', 'Kombolcha WH',            'MC-KOM',   2, NULL, true, true),
+              ('{_T2_MEKELE}',    '{_T2}', 'Mekele WH',               'MC-MEK',   2, NULL, true, true),
+              ('{_T2_DIREDAWA}',  '{_T2}', 'Dire Dawa WH',            'MC-DDW',   2, NULL, true, true),
+              ('{_T2_HAWASSA}',   '{_T2}', 'Hawassa WH',              'MC-HAW',   2, NULL, true, true)
+            ON CONFLICT (id) DO NOTHING
+        """)
 
-    # ── org_node_hierarchy — PRIMARY_REPORTS_TO relationships ────────────────
-    # Addis Water: level-2 WHs report to Main Production Center;
-    # level-3 sub-WH reports to North WH.
-    op.execute(f"""
-        INSERT INTO org_node_hierarchy
-            (tenant_id, from_node_id, to_node_id, relationship_type, is_preferred)
-        VALUES
-          ('{_T1}', '{_T1_NORTH}', '{_T1_MAIN}',  'PRIMARY_REPORTS_TO', false),
-          ('{_T1}', '{_T1_SOUTH}', '{_T1_MAIN}',  'PRIMARY_REPORTS_TO', false),
-          ('{_T1}', '{_T1_EAST}',  '{_T1_MAIN}',  'PRIMARY_REPORTS_TO', false),
-          ('{_T1}', '{_T1_WEST}',  '{_T1_MAIN}',  'PRIMARY_REPORTS_TO', false),
-          ('{_T1}', '{_T1_NSUB}',  '{_T1_NORTH}', 'PRIMARY_REPORTS_TO', false)
-        ON CONFLICT DO NOTHING
-    """)
-    # Muger Cement: Kombolcha+Mekele report to Harar; Dire Dawa+Hawassa report to Ambo.
-    op.execute(f"""
-        INSERT INTO org_node_hierarchy
-            (tenant_id, from_node_id, to_node_id, relationship_type, is_preferred)
-        VALUES
-          ('{_T2}', '{_T2_KOMBOLCHA}', '{_T2_HARAR}', 'PRIMARY_REPORTS_TO', false),
-          ('{_T2}', '{_T2_MEKELE}',    '{_T2_HARAR}', 'PRIMARY_REPORTS_TO', false),
-          ('{_T2}', '{_T2_DIREDAWA}',  '{_T2_AMBO}',  'PRIMARY_REPORTS_TO', false),
-          ('{_T2}', '{_T2_HAWASSA}',   '{_T2_AMBO}',  'PRIMARY_REPORTS_TO', false)
-        ON CONFLICT DO NOTHING
-    """)
+        # ── org_node_hierarchy — PRIMARY_REPORTS_TO — Muger Cement ────────────
+        # Kombolcha+Mekele report to Harar; Dire Dawa+Hawassa report to Ambo.
+        op.execute(f"""
+            INSERT INTO org_node_hierarchy
+                (tenant_id, from_node_id, to_node_id, relationship_type, is_preferred)
+            VALUES
+              ('{_T2}', '{_T2_KOMBOLCHA}', '{_T2_HARAR}', 'PRIMARY_REPORTS_TO', false),
+              ('{_T2}', '{_T2_MEKELE}',    '{_T2_HARAR}', 'PRIMARY_REPORTS_TO', false),
+              ('{_T2}', '{_T2_DIREDAWA}',  '{_T2_AMBO}',  'PRIMARY_REPORTS_TO', false),
+              ('{_T2}', '{_T2_HAWASSA}',   '{_T2_AMBO}',  'PRIMARY_REPORTS_TO', false)
+            ON CONFLICT DO NOTHING
+        """)
 
-    # ── org_node_hierarchy — SUPPLY_FROM (preferred supply source = direct parent) ──
-    # Addis Water: WHs pull from Main Production Center by default
-    op.execute(f"""
-        INSERT INTO org_node_hierarchy
-            (tenant_id, from_node_id, to_node_id, relationship_type, is_preferred)
-        VALUES
-          ('{_T1}', '{_T1_NORTH}', '{_T1_MAIN}',  'SUPPLY_FROM', true),
-          ('{_T1}', '{_T1_SOUTH}', '{_T1_MAIN}',  'SUPPLY_FROM', true),
-          ('{_T1}', '{_T1_EAST}',  '{_T1_MAIN}',  'SUPPLY_FROM', true),
-          ('{_T1}', '{_T1_WEST}',  '{_T1_MAIN}',  'SUPPLY_FROM', true),
-          ('{_T1}', '{_T1_NSUB}',  '{_T1_NORTH}', 'SUPPLY_FROM', true)
-        ON CONFLICT DO NOTHING
-    """)
-    # Muger Cement: WHs pull from their respective production centers
-    op.execute(f"""
-        INSERT INTO org_node_hierarchy
-            (tenant_id, from_node_id, to_node_id, relationship_type, is_preferred)
-        VALUES
-          ('{_T2}', '{_T2_KOMBOLCHA}', '{_T2_HARAR}', 'SUPPLY_FROM', true),
-          ('{_T2}', '{_T2_MEKELE}',    '{_T2_HARAR}', 'SUPPLY_FROM', true),
-          ('{_T2}', '{_T2_DIREDAWA}',  '{_T2_AMBO}',  'SUPPLY_FROM', true),
-          ('{_T2}', '{_T2_HAWASSA}',   '{_T2_AMBO}',  'SUPPLY_FROM', true)
-        ON CONFLICT DO NOTHING
-    """)
+        # ── org_node_hierarchy — SUPPLY_FROM — Muger Cement ───────────────────
+        # WHs pull from their respective production centers.
+        op.execute(f"""
+            INSERT INTO org_node_hierarchy
+                (tenant_id, from_node_id, to_node_id, relationship_type, is_preferred)
+            VALUES
+              ('{_T2}', '{_T2_KOMBOLCHA}', '{_T2_HARAR}', 'SUPPLY_FROM', true),
+              ('{_T2}', '{_T2_MEKELE}',    '{_T2_HARAR}', 'SUPPLY_FROM', true),
+              ('{_T2}', '{_T2_DIREDAWA}',  '{_T2_AMBO}',  'SUPPLY_FROM', true),
+              ('{_T2}', '{_T2_HAWASSA}',   '{_T2_AMBO}',  'SUPPLY_FROM', true)
+            ON CONFLICT DO NOTHING
+        """)
 
-    # ── user_facility_assignments — PRIMARY assignment per user ───────────────
-    # TA users have no warehouse — skip them (they operate tenant-wide via role).
-    # NM at Main Production Center / Harar / Ambo.
-    # WM at their respective WH.
-    # System-level SA user: no facility assignment.
-    op.execute(f"""
-        INSERT INTO user_facility_assignments
-            (tenant_id, user_id, facility_id, assignment_type, role_code,
-             valid_from, valid_until, created_by, is_active)
-        VALUES
-          -- Addis Water WMs
-          ('{_T1}', '{_U_AW_NM}',  '{_T1_MAIN}',  'PRIMARY', 'NM', now(), NULL, '{_SYS_USER}', true),
-          ('{_T1}', '{_U_AW_WM1}', '{_T1_NORTH}', 'PRIMARY', 'WM', now(), NULL, '{_SYS_USER}', true),
-          ('{_T1}', '{_U_AW_WM2}', '{_T1_NSUB}',  'PRIMARY', 'WM', now(), NULL, '{_SYS_USER}', true),
-          ('{_T1}', '{_U_AW_WM3}', '{_T1_SOUTH}', 'PRIMARY', 'WM', now(), NULL, '{_SYS_USER}', true),
-          ('{_T1}', '{_U_AW_WM4}', '{_T1_EAST}',  'PRIMARY', 'WM', now(), NULL, '{_SYS_USER}', true),
-          ('{_T1}', '{_U_AW_WM5}', '{_T1_WEST}',  'PRIMARY', 'WM', now(), NULL, '{_SYS_USER}', true),
-          -- Muger Cement NMs + WMs
-          ('{_T2}', '{_U_MC_NM1}', '{_T2_HARAR}',     'PRIMARY', 'NM', now(), NULL, '{_SYS_USER}', true),
-          ('{_T2}', '{_U_MC_NM2}', '{_T2_AMBO}',      'PRIMARY', 'NM', now(), NULL, '{_SYS_USER}', true),
-          ('{_T2}', '{_U_MC_WM1}', '{_T2_KOMBOLCHA}', 'PRIMARY', 'WM', now(), NULL, '{_SYS_USER}', true),
-          ('{_T2}', '{_U_MC_WM2}', '{_T2_MEKELE}',    'PRIMARY', 'WM', now(), NULL, '{_SYS_USER}', true),
-          ('{_T2}', '{_U_MC_WM3}', '{_T2_DIREDAWA}',  'PRIMARY', 'WM', now(), NULL, '{_SYS_USER}', true),
-          ('{_T2}', '{_U_MC_WM4}', '{_T2_HAWASSA}',   'PRIMARY', 'WM', now(), NULL, '{_SYS_USER}', true)
-        ON CONFLICT DO NOTHING
-    """)
+        # ── user_facility_assignments — Muger Cement NMs + WMs ────────────────
+        op.execute(f"""
+            INSERT INTO user_facility_assignments
+                (tenant_id, user_id, facility_id, assignment_type, role_code,
+                 valid_from, valid_until, created_by, is_active)
+            VALUES
+              ('{_T2}', '{_U_MC_NM1}', '{_T2_HARAR}',     'PRIMARY', 'NM', now(), NULL, '{_SYS_USER}', true),
+              ('{_T2}', '{_U_MC_NM2}', '{_T2_AMBO}',      'PRIMARY', 'NM', now(), NULL, '{_SYS_USER}', true),
+              ('{_T2}', '{_U_MC_WM1}', '{_T2_KOMBOLCHA}', 'PRIMARY', 'WM', now(), NULL, '{_SYS_USER}', true),
+              ('{_T2}', '{_U_MC_WM2}', '{_T2_MEKELE}',    'PRIMARY', 'WM', now(), NULL, '{_SYS_USER}', true),
+              ('{_T2}', '{_U_MC_WM3}', '{_T2_DIREDAWA}',  'PRIMARY', 'WM', now(), NULL, '{_SYS_USER}', true),
+              ('{_T2}', '{_U_MC_WM4}', '{_T2_HAWASSA}',   'PRIMARY', 'WM', now(), NULL, '{_SYS_USER}', true)
+            ON CONFLICT DO NOTHING
+        """)
 
     op.execute("SELECT set_config('app.current_tenant_id', '', false)")
 

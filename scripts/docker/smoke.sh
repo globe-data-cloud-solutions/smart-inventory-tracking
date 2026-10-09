@@ -230,11 +230,12 @@ docker run -d --name outbox-worker --network "$NETWORK" --env-file "$ENV_FILE" \
 STARTED_CONTAINERS+=("outbox-worker")
 ready=0
 for _ in $(seq 1 23); do
-  if docker logs outbox-worker 2>&1 | grep -qi "ready"; then ready=1; break; fi
+  worker_logs="$(docker logs outbox-worker 2>&1)"
+  if grep -qi "ready" <<<"$worker_logs"; then ready=1; break; fi
   sleep 2
 done
 if [ "$ready" -eq 1 ]; then
-  docker logs outbox-worker 2>&1 | grep -i "ready" | tail -1
+  grep -i "ready" <<<"$worker_logs" | tail -1
 else
   fail "outbox worker did not report ready within 45s"
   docker logs --tail 60 outbox-worker || true
@@ -245,11 +246,12 @@ docker run -d --name outbox-beat --network "$NETWORK" --env-file "$ENV_FILE" \
 STARTED_CONTAINERS+=("outbox-beat")
 ready=0
 for _ in $(seq 1 23); do
-  if docker logs outbox-beat 2>&1 | grep -qi "ready\|beat.*starting\|Scheduler"; then ready=1; break; fi
+  beat_logs="$(docker logs outbox-beat 2>&1)"
+  if grep -qi "ready\|beat.*starting\|Scheduler" <<<"$beat_logs"; then ready=1; break; fi
   sleep 2
 done
 if [ "$ready" -eq 1 ]; then
-  docker logs outbox-beat 2>&1 | grep -i "ready\|beat.*starting\|Scheduler" | tail -1
+  grep -i "ready\|beat.*starting\|Scheduler" <<<"$beat_logs" | tail -1
 else
   fail "outbox beat did not report ready within 45s"
   docker logs --tail 60 outbox-beat || true
