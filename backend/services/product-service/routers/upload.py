@@ -4,8 +4,8 @@ POST /api/v1/upload/product-image  → product:upload_image (TA, NM)
 POST /api/v1/upload/tenant-logo    → tenant:upload_branding (TA)
 POST /api/v1/upload/tenant-banner  → tenant:upload_branding (TA)
 
-Files are saved by LocalStorageService (uploads/ on disk, served as /static/uploads/).
-In production swap LocalStorageService for S3StorageService — same interface.
+Files are saved via get_storage() — LocalStorageService (disk) or S3StorageService,
+selected by STORAGE_BACKEND. Both are served as /static/uploads/... (see main.py).
 """
 from __future__ import annotations
 
@@ -16,12 +16,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from dependencies import get_current_user, get_db_session
 from shared.permissions.middleware import require_permission
 from shared.permissions.registry import PERMISSIONS
-from shared.storage import LocalStorageService
+from shared.storage import get_storage
 from shared.utils.responses import SuccessResponse
 
 router = APIRouter()
 
-_storage = LocalStorageService()
+_storage = get_storage()
 
 _ACCEPTED_IMAGE_TYPES = {"image/jpeg", "image/png", "image/webp"}
 _MAX_PRODUCT_IMAGE_BYTES = 2 * 1024 * 1024   # 2 MB

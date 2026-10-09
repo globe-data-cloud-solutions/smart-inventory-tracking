@@ -252,6 +252,19 @@ AWS_REGION=us-east-1
 AWS_S3_BUCKET=smart-{env}-attachments
 AWS_S3_LOCALE_PATH=locales/   # en.json, am.json, or.json live here
 
+# ── Storage (product-service uploads: product images, tenant logo/banner) ────
+# Pluggable backend: local (disk, served by StaticFiles — dev default) | s3.
+STORAGE_BACKEND=s3
+STORAGE_S3_BUCKET=smart-{env}-attachments   # bucket stays private — never public-read
+# STORAGE_S3_ENDPOINT_URL — leave UNSET on AWS. Only set in the CI smoke test,
+# pointing at the throwaway MinIO container (scripts/docker/smoke.sh), never in
+# any real dev/stage/prod task definition.
+# IAM: product-service ECS task role needs s3:GetObject/PutObject/DeleteObject
+# on arn:aws:s3:::smart-{env}-attachments/uploads/*.
+# Existing local-disk images are NOT migrated when switching an environment to
+# STORAGE_BACKEND=s3 — a fresh AWS deploy's DB has no uploads yet, so this is a
+# day-one setting, not a cutover.
+
 # ── Search (conditional — only present if OpenSearch tenant request triggered) ─
 OPENSEARCH_URL        # https://<opensearch-domain-endpoint>
 

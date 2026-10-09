@@ -46,6 +46,15 @@ STARTED_CONTAINERS+=("$PG_NAME")
 docker run -d --name "$REDIS_NAME" --network "$NETWORK" redis:7 >/dev/null
 STARTED_CONTAINERS+=("$REDIS_NAME")
 
+MINIO_NAME="smoke-minio"
+MINIO_BUCKET="smart-smoke-attachments"
+MINIO_ROOT_USER="smokeminioaccess"
+MINIO_ROOT_PASSWORD="smokeminiosecret"
+docker run -d --name "$MINIO_NAME" --network "$NETWORK" \
+  -e MINIO_ROOT_USER="$MINIO_ROOT_USER" -e MINIO_ROOT_PASSWORD="$MINIO_ROOT_PASSWORD" \
+  minio/minio server /data >/dev/null
+STARTED_CONTAINERS+=("$MINIO_NAME")
+
 wait_for() {
   local desc="$1"; shift
   local -i t=0
@@ -62,6 +71,25 @@ wait_for() {
 }
 wait_for "postgres" docker exec "$PG_NAME" pg_isready -U smoke
 wait_for "redis" bash -c "docker exec $REDIS_NAME redis-cli ping | grep -q PONG"
+
+bucket_ready=0
+for _ in $(seq 1 30); do
+  if docker run --rm --network "$NETWORK" --entrypoint sh minio/mc -c \
+      "mc alias set smokeminio http://${MINIO_NAME}:9000 ${MINIO_ROOT_USER} ${MINIO_ROOT_PASSWORD} && mc mb smokeminio/${MINIO_BUCKET}" \
+      >/tmp/minio-mb.log 2>&1; then
+    bucket_ready=1
+    break
+  fi
+  sleep 2
+done
+if [ "$bucket_ready" -eq 1 ]; then
+  log "minio ready, bucket created: $MINIO_BUCKET"
+else
+  fail "minio did not become ready / bucket creation failed within 60s"
+  tail -40 /tmp/minio-mb.log || true
+  docker logs --tail 60 "$MINIO_NAME" || true
+fi
+[ "$FAILED" -eq 0 ] || exit 1
 
 # ── b. build every service image ─────────────────────────────────────────
 section "Image builds"
@@ -136,6 +164,11 @@ TRUST_PROXY_HEADERS=true
 TRUSTED_PROXY_HOPS=0
 APP_BASE_URL=http://localhost:8080
 AWS_REGION=us-east-1
+STORAGE_BACKEND=s3
+STORAGE_S3_BUCKET=${MINIO_BUCKET}
+STORAGE_S3_ENDPOINT_URL=http://${MINIO_NAME}:9000
+AWS_ACCESS_KEY_ID=${MINIO_ROOT_USER}
+AWS_SECRET_ACCESS_KEY=${MINIO_ROOT_PASSWORD}
 STUB_WEBHOOK_SECRET=smoke-webhook-secret
 EMAIL_VERIFICATION_REQUIRED=false
 AUTH_SERVICE_URL=http://auth-service:8000
@@ -214,6 +247,34 @@ resp="$(curl -s -w '\n%{http_code}' -H "Authorization: Bearer ${token}" http://l
 code="$(tail -1 <<<"$resp")"; body="$(sed '$d' <<<"$resp")"
 show "GET /api/v1/tenants/me/plan" "$code" "$body"
 [ "$code" = "200" ] || fail "tenants/me/plan expected 200, got $code"
+[ "$FAILED" -eq 0 ] || exit 1
+
+# ── f2. S3 upload via MinIO (product-service STORAGE_BACKEND=s3) ────────────
+section "S3 upload via MinIO"
+log "endpoint used: POST /api/v1/upload/product-image (tier: STARTER — product:upload_image is not plan-gated)"
+
+PNG_B64="iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII="
+PNG_FILE="$TMP_ENV_DIR/test-upload.png"
+printf '%s' "$PNG_B64" | base64 -d > "$PNG_FILE"
+LOCAL_SHA="$(sha256sum "$PNG_FILE" | cut -d' ' -f1)"
+
+resp="$(curl -s -w '\n%{http_code}' -H "Authorization: Bearer ${token}" \
+  -F "file=@${PNG_FILE};type=image/png" http://localhost:8080/api/v1/upload/product-image)"
+code="$(tail -1 <<<"$resp")"; body="$(sed '$d' <<<"$resp")"
+show "POST /api/v1/upload/product-image" "$code" "$body"
+[ "$code" = "200" ] || fail "product-image upload expected 200, got $code"
+upload_url="$(python3 -c "import json,sys; print(json.load(sys.stdin).get('data',{}).get('url',''))" <<<"$body" 2>/dev/null || true)"
+log "uploaded URL: $upload_url"
+
+if [ -n "$upload_url" ]; then
+  get_code="$(curl -s -o "$TMP_ENV_DIR/fetched.png" -w '%{http_code}' "http://localhost:8080${upload_url}")"
+  REMOTE_SHA="$(sha256sum "$TMP_ENV_DIR/fetched.png" | cut -d' ' -f1)"
+  log "GET $upload_url -> $get_code; sha256 local=$LOCAL_SHA remote=$REMOTE_SHA"
+  [ "$get_code" = "200" ] || fail "fetch uploaded file expected 200, got $get_code"
+  [ "$LOCAL_SHA" = "$REMOTE_SHA" ] || fail "sha256 mismatch between uploaded and fetched file"
+else
+  fail "could not parse uploaded URL from upload response"
+fi
 [ "$FAILED" -eq 0 ] || exit 1
 
 # ── g. outbox worker (+ beat) ────────────────────────────────────────────────

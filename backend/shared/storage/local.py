@@ -1,3 +1,4 @@
+import mimetypes
 import uuid
 from pathlib import Path
 
@@ -39,3 +40,10 @@ class LocalStorageService(StorageService):
             path = _BASE_PATH / rel
             if path.exists():
                 path.unlink()
+
+    async def get(self, rel_path: str) -> tuple[bytes, str] | None:
+        path = _BASE_PATH / rel_path
+        if not path.exists():
+            return None
+        content_type, _ = mimetypes.guess_type(path.name)
+        return path.read_bytes(), content_type or "application/octet-stream"
