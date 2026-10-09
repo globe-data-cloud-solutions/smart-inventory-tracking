@@ -15,4 +15,5 @@ RUN if [ -f /app/pyproject.toml ]; then uv pip install --system -e /app; fi
 ENV PYTHONPATH=/app
 EXPOSE 8000
 
+ENTRYPOINT ["sh", "-c", "python -m shared.utils.env_guard && exec \"$@\"", "guard"]
 CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "4"]

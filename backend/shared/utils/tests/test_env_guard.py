@@ -1,11 +1,17 @@
 """Unit tests for shared.utils.env_guard.assert_safe_environment."""
 from __future__ import annotations
 
+import os
+import subprocess
+import sys
+from pathlib import Path
+
 import pytest
 
 from shared.utils.env_guard import assert_safe_environment
 
 GOOD_SECRET = "0123456789abcdef" * 4  # 64 chars, 22 distinct
+BACKEND_DIR = Path(__file__).resolve().parents[3]
 
 
 def _clear_guard_env(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -161,3 +167,41 @@ def test_jwt_secret_value_never_in_error_message(monkeypatch: pytest.MonkeyPatch
     with pytest.raises(RuntimeError) as exc_info:
         assert_safe_environment()
     assert secret not in str(exc_info.value)
+
+
+def test_main_module_unsafe_config_exits_1_with_fatal_on_stderr() -> None:
+    env = dict(os.environ)
+    for key in list(env):
+        if key.startswith("RATE_LIMIT_"):
+            del env[key]
+    env["PYTHONPATH"] = str(BACKEND_DIR)
+    env["ENVIRONMENT"] = "prod"
+    env["JWT_SECRET"] = "short"
+    env.pop("EMAIL_DELIVERY_MODE", None)
+    env.pop("EMAIL_FROM", None)
+    result = subprocess.run(
+        [sys.executable, "-m", "shared.utils.env_guard"],
+        cwd=BACKEND_DIR,
+        env=env,
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 1
+    assert "FATAL: unsafe production config" in result.stderr
+
+
+def test_main_module_unset_environment_exits_0() -> None:
+    env = dict(os.environ)
+    env.pop("ENVIRONMENT", None)
+    for key in list(env):
+        if key.startswith("ECS_CONTAINER_METADATA_URI") or key.startswith("AWS_EXECUTION_ENV"):
+            del env[key]
+    env["PYTHONPATH"] = str(BACKEND_DIR)
+    result = subprocess.run(
+        [sys.executable, "-m", "shared.utils.env_guard"],
+        cwd=BACKEND_DIR,
+        env=env,
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0

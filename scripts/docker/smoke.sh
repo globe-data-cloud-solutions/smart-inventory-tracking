@@ -315,7 +315,7 @@ log "worker command: $WORKER_CMD"
 log "beat command: $BEAT_CMD"
 
 docker run -d --name outbox-worker --network "$NETWORK" --env-file "$ENV_FILE" \
-  --entrypoint bash "smart-tenant-service:smoke" -c "$WORKER_CMD" >/dev/null
+  "smart-tenant-service:smoke" bash -c "$WORKER_CMD" >/dev/null
 STARTED_CONTAINERS+=("outbox-worker")
 ready=0
 for _ in $(seq 1 23); do
@@ -331,7 +331,7 @@ else
 fi
 
 docker run -d --name outbox-beat --network "$NETWORK" --env-file "$ENV_FILE" \
-  --entrypoint bash "smart-tenant-service:smoke" -c "$BEAT_CMD" >/dev/null
+  "smart-tenant-service:smoke" bash -c "$BEAT_CMD" >/dev/null
 STARTED_CONTAINERS+=("outbox-beat")
 ready=0
 for _ in $(seq 1 23); do
@@ -347,28 +347,35 @@ else
 fi
 
 # ── g2. negative check: production config guard refuses unsafe prod config ──
-section "Production config guard (negative check)"
-docker run -d --name guard-check --network "$NETWORK" --env-file "$ENV_FILE" \
-  -e ENVIRONMENT=prod "smart-auth-service:smoke" >/dev/null
-STARTED_CONTAINERS+=("guard-check")
-
-guard_exit=""
-for _ in $(seq 1 15); do
-  status="$(docker inspect -f '{{.State.Status}}' guard-check 2>/dev/null || echo unknown)"
-  if [ "$status" = "exited" ]; then
-    guard_exit="$(docker inspect -f '{{.State.ExitCode}}' guard-check)"
-    break
+# PASS requires exit code == 1 (not just nonzero — proves the ENTRYPOINT
+# pre-flight ran and exited cleanly, not e.g. a crashed uvicorn --workers
+# parent, which exits 0 even when a child worker fails to start) AND the
+# FATAL line present exactly once (proves the pre-flight short-circuited
+# before uvicorn/celery ever started, not a later in-process re-check).
+check_guard_refuses() {
+  local name="$1" image="$2"; shift 2
+  docker run -d --name "$name" --network "$NETWORK" --env-file "$ENV_FILE" \
+    -e ENVIRONMENT=prod "$image" "$@" >/dev/null
+  STARTED_CONTAINERS+=("$name")
+  local exit_code
+  exit_code="$(timeout 30 docker wait "$name" 2>/dev/null || echo "")"
+  local logs; logs="$(docker logs "$name" 2>&1 || true)"
+  local fatal_count; fatal_count="$(grep -c "FATAL: unsafe production config" <<<"$logs" || true)"
+  if [ "$exit_code" = "1" ] && [ "$fatal_count" = "1" ]; then
+    log "PASS: $name exited 1 with FATAL: unsafe production config (x1)"
+  else
+    fail "$name did not refuse to start as expected (exit=${exit_code:-none}, fatal_count=$fatal_count)"
+    log "${logs: -2000}"
   fi
-  sleep 2
-done
+}
 
-guard_logs="$(docker logs guard-check 2>&1 || true)"
-if [ -n "$guard_exit" ] && [ "$guard_exit" != "0" ] && grep -q "FATAL: unsafe production config" <<<"$guard_logs"; then
-  log "PASS: guard-check exited $guard_exit with FATAL: unsafe production config"
-else
-  fail "production config guard did not refuse to start (exit=${guard_exit:-did-not-exit})"
-  log "${guard_logs: -2000}"
-fi
+section "Production config guard (negative check — auth-service)"
+check_guard_refuses "guard-check-auth" "smart-auth-service:smoke"
+
+section "Production config guard (negative check — outbox worker)"
+check_guard_refuses "guard-check-worker" "smart-tenant-service:smoke" \
+  bash -c "$WORKER_CMD"
+
 [ "$FAILED" -eq 0 ] || exit 1
 
 # ── h. summary ───────────────────────────────────────────────────────────────

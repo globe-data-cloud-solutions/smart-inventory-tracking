@@ -326,6 +326,14 @@ signals. It collects every problem found and raises one `RuntimeError` prefixed
 | `dev` / `stage` / `prod` (or any ECS run) | `JWT_SECRET`/`JWT_SECRET_KEY`, if set: ≥ 64 chars and ≥ 10 distinct chars. No `RATE_LIMIT_*` env vars (local/test only). `JWT_EXPIRE_MINUTES` (default 60) must be an int in `[1, 60]`. |
 | `stage` / `prod` only | `EMAIL_DELIVERY_MODE` must be `ses`; `EMAIL_FROM` must be non-empty. |
 
+Every service image also runs the guard as an `ENTRYPOINT` pre-flight
+(`python -m shared.utils.env_guard`, exit 1 on failure) before `exec`-ing the
+image's `CMD` or any command override (covers `celery ... worker`/`beat` too)
+— the in-process `lifespan`/`worker_init`/`beat_init` check above remains as a
+second layer. Why both: a `uvicorn --workers N` parent process exits 0 when a
+worker fails during startup (lifespan raising included), so the lifespan
+check alone does not fail the container.
+
 ---
 
 ## 22. CI/CD — GitHub Actions

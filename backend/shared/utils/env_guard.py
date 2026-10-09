@@ -1,4 +1,5 @@
 import os
+import sys
 
 # assert_safe_environment() refuses to start a service with an unsafe production
 # config. Rules (docs/claude/ci-cd.md §6):
@@ -75,3 +76,16 @@ def assert_safe_environment() -> None:
         raise RuntimeError(
             "FATAL: unsafe production config — refusing to start: " + "; ".join(problems)
         )
+
+
+if __name__ == "__main__":
+    # Container ENTRYPOINT pre-flight (see docs/claude/ci-cd.md §6): a uvicorn
+    # --workers parent process exits 0 when a worker fails during startup
+    # (e.g. the lifespan guard raising), so the lifespan check alone does not
+    # fail the container. Running this module as a pre-flight step guarantees
+    # a non-zero exit before uvicorn/celery ever starts.
+    try:
+        assert_safe_environment()
+    except RuntimeError as exc:
+        print(str(exc), file=sys.stderr)
+        sys.exit(1)
