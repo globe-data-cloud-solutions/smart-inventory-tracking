@@ -6,6 +6,8 @@ Mocked session throughout (no real DB connection)."""
 from __future__ import annotations
 
 import logging
+import uuid
+from datetime import datetime, timezone
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -77,6 +79,27 @@ async def test_platform_level_action_with_no_resolvable_tenant_is_not_inserted(
     db.execute.assert_not_called()
     assert "platform-level decision not stored" in caplog.text
     assert "platform:tier_config_edit" in caplog.text
+
+
+async def test_resource_with_uuid_and_datetime_serializes_without_error() -> None:
+    """abac_context frequently carries raw UUID/datetime values (e.g. warehouse_id,
+    occurred_at) copied straight from ORM objects — json.dumps must not raise on
+    those or the row is silently dropped (caught by the except Exception below,
+    never reaching the INSERT)."""
+    user = _user(tenant_id="tenant-1", role="TA")
+    db = _fake_db()
+    resource = {
+        "warehouse_id": uuid.uuid4(),
+        "occurred_at": datetime(2026, 1, 1, tzinfo=timezone.utc),
+    }
+
+    import shared.permissions.audit as audit_module
+    with patch.object(audit_module, "AsyncSessionLocal", lambda: db):
+        await audit_log(user, "inventory:receive", resource, "GRANTED")
+
+    db.execute.assert_called_once()
+    params = db.execute.call_args.args[1]
+    assert "abac_context" in params
 
 
 async def test_db_error_is_logged_and_never_raised(caplog: pytest.LogCaptureFixture) -> None:

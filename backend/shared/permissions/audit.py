@@ -60,7 +60,7 @@ async def audit_log(
                     "resource_id": resource.get("resource_id"),
                     "decision": decision,
                     "reason": reason or None,
-                    "abac_context": __import__("json").dumps(resource),
+                    "abac_context": __import__("json").dumps(resource, default=str),
                 },
             )
             await session.commit()
