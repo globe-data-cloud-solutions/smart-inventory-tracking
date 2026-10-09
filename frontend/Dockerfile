@@ -1,6 +1,6 @@
 # Build context: repo root (see scripts/docker/smoke.sh / container-smoke.yml)
 FROM node:20-slim AS deps-build
-RUN apt-get update && apt-get install -y --no-install-recommends bash && rm -rf /var/lib/apt/lists/*
+RUN apt-get update && apt-get install -y --no-install-recommends bash python3 && rm -rf /var/lib/apt/lists/*
 RUN corepack enable && corepack prepare pnpm@9 --activate
 WORKDIR /app
 

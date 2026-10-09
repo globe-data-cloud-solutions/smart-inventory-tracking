@@ -380,7 +380,7 @@ check_guard_refuses "guard-check-worker" "smart-tenant-service:smoke" \
 # ── g3. frontend container image (standalone Next.js) ───────────────────────
 section "Frontend container image"
 start=$(date +%s)
-if docker build -q -f frontend/Dockerfile -t smart-frontend:smoke \
+if docker build --progress=plain -f frontend/Dockerfile -t smart-frontend:smoke \
     --build-arg NEXT_PUBLIC_API_URL=http://localhost:8080 "$REPO_ROOT" >/tmp/build-frontend.log 2>&1; then
   secs=$(( $(date +%s) - start ))
   size=$(docker images --format '{{.Size}}' smart-frontend:smoke | head -1)
@@ -388,7 +388,7 @@ if docker build -q -f frontend/Dockerfile -t smart-frontend:smoke \
 else
   secs=$(( $(date +%s) - start ))
   printf '%-20s %-6s %6s %10s\n' "frontend" "FAIL" "${secs}s" "-"
-  tail -40 /tmp/build-frontend.log
+  tail -80 /tmp/build-frontend.log
   fail "image build: frontend"
 fi
 [ "$FAILED" -eq 0 ] || exit 1
