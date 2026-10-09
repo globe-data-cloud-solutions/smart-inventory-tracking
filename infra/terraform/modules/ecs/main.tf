@@ -1,9 +1,3 @@
-variable "env"          { type = string }
-variable "vpc_id"       { type = string }
-variable "subnet_ids"   { type = list(string) }
-variable "services"     { type = list(string) }
-variable "account_id"   { type = string }
-
 resource "aws_ecs_cluster" "main" {
   name = "smart-${var.env}"
 
@@ -18,7 +12,7 @@ resource "aws_ecs_cluster" "main" {
 # To manually delete ECR repositories:
 #   aws ecr delete-repository --repository-name smart-<service> --force --region us-east-1
 # resource "aws_ecr_repository" "services" {
-#   for_each             = toset(var.services)
+#   for_each             = toset(var.enabled_services)
 #   name                 = "smart-${each.key}"
 #   image_tag_mutability = "MUTABLE"
 #
@@ -54,16 +48,52 @@ resource "aws_iam_role_policy" "secrets_access" {
     Statement = [{
       Effect   = "Allow"
       Action   = ["secretsmanager:GetSecretValue"]
-      Resource = "arn:aws:secretsmanager:us-east-1:${var.account_id}:secret:smart/${var.env}/*"
+      Resource = "arn:aws:secretsmanager:${var.region}:${var.account_id}:secret:smart/${var.env}/*"
     }]
   })
 }
 
 resource "aws_cloudwatch_log_group" "services" {
-  for_each          = toset(var.services)
+  for_each          = toset(var.enabled_services)
   name              = "/ecs/smart-${var.env}/${each.key}"
   retention_in_days = var.env == "prod" ? 90 : 30
 }
 
-output "cluster_name"             { value = aws_ecs_cluster.main.name }
-output "task_execution_role_arn"  { value = aws_iam_role.ecs_task_execution.arn }
+resource "aws_cloudwatch_log_group" "outbox_worker" {
+  name              = "/ecs/smart-${var.env}/outbox-worker"
+  retention_in_days = var.env == "prod" ? 90 : 30
+}
+
+resource "aws_cloudwatch_log_group" "outbox_beat" {
+  name              = "/ecs/smart-${var.env}/outbox-beat"
+  retention_in_days = var.env == "prod" ? 90 : 30
+}
+
+# Service Connect namespace — every enabled service is a server under this
+# namespace with client_alias dns_name = <service name>, so existing
+# http://<service>:8000 URLs (gateway env, smoke.sh) keep working unchanged.
+resource "aws_service_discovery_http_namespace" "main" {
+  name = "smart-${var.env}"
+}
+
+# ALB ingress is added in I3b — this group only governs inter-task traffic.
+resource "aws_security_group" "tasks" {
+  name        = "smart-${var.env}-tasks-sg"
+  description = "ECS task-to-task traffic for smart-${var.env} (ALB ingress added in I3b)"
+  vpc_id      = var.vpc_id
+
+  egress {
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+}
+
+resource "aws_vpc_security_group_ingress_rule" "tasks_self" {
+  security_group_id            = aws_security_group.tasks.id
+  referenced_security_group_id = aws_security_group.tasks.id
+  ip_protocol                  = "tcp"
+  from_port                    = 8000
+  to_port                      = 8000
+}

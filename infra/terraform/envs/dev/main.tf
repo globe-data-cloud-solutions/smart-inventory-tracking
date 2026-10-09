@@ -55,14 +55,28 @@ module "s3" {
 }
 
 module "ecs" {
-  source     = "../../modules/ecs"
-  env        = "dev"
-  vpc_id     = module.networking.vpc_id
-  subnet_ids = module.networking.private_subnet_ids
-  account_id = data.aws_caller_identity.current.account_id
-  services   = ["api-gateway","auth-service","tenant-service","product-service",
-                "inventory-service","order-service","logistics-service",
-                "analytics-service","notification-service","sync-service"]
+  source             = "../../modules/ecs"
+  env                = "dev"
+  vpc_id             = module.networking.vpc_id
+  private_subnet_ids = module.networking.private_subnet_ids
+  account_id         = data.aws_caller_identity.current.account_id
+
+  # order/logistics/analytics/notification/sync are stubs — add here to deploy.
+  enabled_services = ["api-gateway", "auth-service", "tenant-service", "product-service",
+  "inventory-service"]
+
+  service_sizing = {
+    default     = { cpu = 256, memory = 512, desired_count = 1, web_concurrency = 1 }
+    api-gateway = { cpu = 512, memory = 1024, desired_count = 1, web_concurrency = 2 }
+  }
+  worker_sizing = { cpu = 256, memory = 512 }
+  beat_sizing   = { cpu = 256, memory = 512 }
+
+  email_delivery_mode = "log"
+  email_from          = "no-reply@dev.local"
+  storage_bucket      = module.s3.bucket_name
+  terms_version       = "2026-10"
+  app_base_url        = "" # set in I3b
 }
 
 module "observability" {
