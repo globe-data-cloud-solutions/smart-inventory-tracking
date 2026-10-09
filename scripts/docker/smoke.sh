@@ -139,26 +139,25 @@ for d in backend/services/*/; do
     fail "image build: $name"
   fi
 done
+start=$(date +%s)
+if docker build -q -f backend/migrations/Dockerfile -t smart-migration:smoke "$REPO_ROOT" >/tmp/build-migration.log 2>&1; then
+  secs=$(( $(date +%s) - start ))
+  size=$(docker images --format '{{.Size}}' smart-migration:smoke | head -1)
+  printf '%-20s %-6s %6s %10s\n' "migration" "OK" "${secs}s" "$size"
+else
+  secs=$(( $(date +%s) - start ))
+  printf '%-20s %-6s %6s %10s\n' "migration" "FAIL" "${secs}s" "-"
+  tail -40 /tmp/build-migration.log
+  fail "image build: migration"
+fi
 [ "$FAILED" -eq 0 ] || { log "SUMMARY: build failures present, aborting before container run"; exit 1; }
 
 # ── c. fresh-DB migrations + permission seed ────────────────────────────────
 section "Fresh-DB migrations"
 DB_URL="postgresql+asyncpg://smoke:smoke@${PG_NAME}:5432/smart_inventory"
 if docker run --rm --network "$NETWORK" \
-    -v "$REPO_ROOT":/repo:ro \
     -e DATABASE_URL="$DB_URL" -e DATABASE_READ_URL="$DB_URL" \
-    -e PYTHONPATH=/repo/backend \
-    -w /repo/backend/migrations \
-    python:3.12-slim bash -c '
-      set -e
-      pip install --no-cache-dir -q uv
-      uv pip install --system -q -e /repo/backend/shared
-      alembic upgrade head
-      echo "--- alembic current ---"
-      alembic current
-      cd /repo/scripts
-      python seed_permissions.py
-    '; then
+    smart-migration:smoke; then
   log "migrations + permission seed: OK"
 else
   fail "migrations + permission seed"
