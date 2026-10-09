@@ -4,8 +4,9 @@
  * Content for a "file" entry lives in frontend/public/help/*.md — everything
  * under frontend/public is readable without login, so NEVER point `file` at
  * anything SA-internal. The SA Operations Manual below has no `file` for
- * exactly this reason: when it's written, it must be served by an
- * authenticated backend route, not a public static file.
+ * exactly this reason: it is served by the authenticated backend route
+ * GET /api/v1/tenants/sa/docs/operations-manual (sa:docs_view, SA only)
+ * via `apiPath`, never a public static file.
  */
 
 export type Audience = "SA" | "TA" | "MANAGER" | "STAFF" | "ALL";
@@ -17,6 +18,8 @@ export interface HelpDoc {
   audience: Audience[];
   /** Filename under frontend/public/help/ — rendered at /[org]/help/[docId]. */
   file?: string;
+  /** Authenticated backend route returning markdown; use for anything not public. */
+  apiPath?: string;
   /** External path (e.g. /terms) — the card links straight there instead of /help/[docId]. */
   link?: string;
   status: "published" | "coming_soon";
@@ -56,7 +59,8 @@ export const HELP_MANIFEST: HelpDoc[] = [
     titleKey: "help.doc.sa_operations_manual.title",
     summaryKey: "help.doc.sa_operations_manual.summary",
     audience: ["SA"],
-    status: "coming_soon",
+    apiPath: "/api/v1/tenants/sa/docs/operations-manual",
+    status: "published",
   },
   {
     id: "warehouse-manager-guide",
