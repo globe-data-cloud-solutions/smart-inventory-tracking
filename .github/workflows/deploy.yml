@@ -118,13 +118,13 @@ jobs:
           REPO="$REGISTRY/smart-$SERVICE"
           BUILD_ARGS=()
           if [ "$SERVICE" = "frontend" ]; then
-            ALB_DNS="$(aws elbv2 describe-load-balancers --names "smart-$ENV-alb" \
-              --query 'LoadBalancers[0].DNSName' --output text)"
-            if [ -z "$ALB_DNS" ] || [ "$ALB_DNS" = "None" ]; then
-              echo "::error::Could not resolve ALB DNS name for smart-$ENV-alb — deploy infra first."
+            CF_DOMAIN="$(aws cloudfront list-distributions \
+              --query "DistributionList.Items[?Comment=='smart-$ENV'].DomainName | [0]" --output text)"
+            if [ -z "$CF_DOMAIN" ] || [ "$CF_DOMAIN" = "None" ]; then
+              echo "::error::Could not resolve CloudFront domain for smart-$ENV — deploy infra first."
               exit 1
             fi
-            BUILD_ARGS=(--build-arg "NEXT_PUBLIC_API_URL=http://$ALB_DNS")
+            BUILD_ARGS=(--build-arg "NEXT_PUBLIC_API_URL=https://$CF_DOMAIN")
           fi
 
           docker build --no-cache "${BUILD_ARGS[@]}" -t "$REPO:$ENV-${{ github.sha }}" -t "$REPO:$ENV-latest" \

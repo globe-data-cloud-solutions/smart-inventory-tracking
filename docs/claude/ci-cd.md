@@ -211,17 +211,29 @@ OUTBOX_MAX_RETRIES=5
 OUTBOX_ALERT_THRESHOLD=500     # CloudWatch alarm fires when PENDING depth exceeds this
 
 # ── Gateway (api-gateway ONLY — the sole component that resolves client IP) ──
-TRUSTED_PROXY_HOPS=0           # 0 (default/local) = direct connection; set to 1 behind the ALB so
-                                # X-Forwarded-For is read from the right hop, not the ALB's own IP. The
-                                # gateway then overwrites the X-Real-IP header with that resolved value
-                                # before proxying downstream — never set TRUST_PROXY_HEADERS on the gateway.
+TRUSTED_PROXY_HOPS=0           # 0 (default/local) = direct connection; set to 2 behind
+                                # CloudFront+ALB so X-Forwarded-For is read from the right
+                                # hop, not the ALB's own IP. CloudFront sets XFF=client, then
+                                # the ALB appends the CloudFront IP before forwarding — the
+                                # gateway then overwrites X-Real-IP with that resolved value
+                                # before proxying downstream — never set TRUST_PROXY_HEADERS
+                                # on the gateway. Set via the ecs module's trusted_proxy_hops
+                                # variable (default 2), not directly.
 
-# ── ALB (infra/terraform/modules/alb) ───────────────────────────────────────
-# One internet-facing ALB per env, forwarding only to api-gateway's target
-# group — every other service stays reachable only inside the tasks SG via
-# Service Connect. HTTPS turns on by setting certificate_arn (HTTP:80 then
-# redirects to HTTPS:443); until then it's plain HTTP:80 -> target group.
-# This is the gateway's single proxy hop, matching TRUSTED_PROXY_HOPS=1 above.
+# ── CloudFront → ALB (infra/terraform/modules/cloudfront, modules/alb) ──────
+# CloudFront terminates HTTPS at the edge (*.cloudfront.net, default cert) and
+# is the only intended entry point. The ALB's SG allows ingress only from
+# AWS's com.amazonaws.global.cloudfront.origin-facing prefix list, and every
+# ALB listener rule additionally requires the X-Origin-Verify header
+# CloudFront injects on the origin request (value = a random_password per env,
+# held in TF state) — the listener's default action is a plain 403, so a
+# request that reaches the ALB directly (bypassing CloudFront) is rejected
+# before it reaches any target group. The ALB forwards only to api-gateway's
+# and frontend's target groups — every other service stays reachable only
+# inside the tasks SG via Service Connect. HTTPS ALB-side turns on by setting
+# certificate_arn (HTTP:80 then redirects to HTTPS:443); until then the
+# ALB origin is plain HTTP:80, with CloudFront still terminating TLS for the
+# viewer.
 
 # ── Rate limiting (B3) — read by shared/cache/rate_limit.py in every downstream
 #    service (auth-service, tenant-service), NEVER by the gateway itself ────
@@ -516,32 +528,56 @@ delete   → terraform init && terraform destroy -auto-approve
   `infra-stage` / `infra-prod` to require approval before `apply`/`delete`.
 - Assumes the S3 state bucket (`gdc-smart-terraform-state`) and DynamoDB lock table
   (`smart-terraform-locks`) already exist.
-- `dev` `plan`/`apply`/`delete` export `TF_VAR_alb_allowed_cidrs` from the repo
-  variable `DEV_ALB_ALLOWED_CIDRS` (a JSON list string, e.g. `["1.2.3.4/32"]`) —
+- `dev` `plan`/`apply`/`delete` export `TF_VAR_allowed_cidrs` from the repo
+  variable `DEV_ALLOWED_CIDRS` (a JSON list string, e.g. `["1.2.3.4/32"]`) —
   the job fails with `::error::` before init if that repo variable is unset. Set
-  it under repo Settings → Secrets and variables → Actions → Variables.
-  `stage`/`prod` hardcode `allowed_cidrs = ["0.0.0.0/0"]` (tightened by
-  CloudFront in I2b).
+  it under repo Settings → Secrets and variables → Actions → Variables. This
+  list is embedded (at plan time) in a CloudFront Function attached to every
+  cache behavior, which 403s any viewer IP that doesn't match — IPv4 only.
+  `stage`/`prod` pass `allowed_cidrs = []`, which skips attaching the function
+  (open to all viewers at the edge).
+
+#### CloudFront caching (`infra/terraform/modules/cloudfront`)
+
+One distribution per env, default cert on `*.cloudfront.net`, origin = the
+env's ALB (HTTP-only to the origin, `X-Origin-Verify` custom header attached).
+Cache behaviors by path:
+
+```
+/_next/static/*          → Managed-CachingOptimized                (static build assets)
+/api/*, /static/*        → Managed-CachingDisabled + Managed-AllViewer  (dynamic, needs Authorization)
+default (pages)          → Managed-CachingDisabled + Managed-AllViewer
+```
 
 #### ALB routing (`infra/terraform/modules/alb`)
 
-One internet-facing ALB per env; the active listener (HTTP:80 with no cert,
-HTTPS:443 once `certificate_arn` is set — HTTP:80 then becomes redirect-only)
-evaluates rules by priority, falling through to its default action:
+One internet-facing ALB per env, locked to CloudFront (see above); the active
+listener (HTTP:80 with no cert, HTTPS:443 once `certificate_arn` is set —
+HTTP:80 then becomes redirect-only) evaluates rules by priority, falling
+through to a 403 default action if nothing matches (including the
+X-Origin-Verify header check present on every rule):
 
 ```
 priority 10  path /api/locales, /api/locales/*   → frontend target group (3000)
 priority 20  path /api/*, /static/*, /health     → gateway target group (8000)
-default      (everything else)                   → frontend target group (3000)
+priority 30  path /*                             → frontend target group (3000)
+default      (header missing, or no path match)  → 403 Forbidden
 ```
 
-Frontend owns `/api/locales` (language packs) so that rule must outrank the
-general `/api/*` → gateway rule. The frontend ECS service
-(`smart-<env>-frontend`) is always deployed — it is not part of
-`enabled_services`. A destroyed/recreated env has an empty ALB DNS name until
-the next `deploy.yml` run, since the frontend image is built per env with
-that env's ALB address baked in as `NEXT_PUBLIC_API_URL` (see below) — a
-fresh env therefore needs a deploy, which already rebuilds it.
+ALB target group health checks hit targets directly and are unaffected by
+these listener rules. Frontend owns `/api/locales` (language packs) so that
+rule must outrank the general `/api/*` → gateway rule. The frontend ECS
+service (`smart-<env>-frontend`) is always deployed — it is not part of
+`enabled_services`. A destroyed/recreated env has no CloudFront distribution
+(so no domain to resolve) until the next `deploy.yml` run, since the frontend
+image is built per env with that env's CloudFront domain baked in as
+`NEXT_PUBLIC_API_URL` (see below) — a fresh env therefore needs a deploy,
+which already rebuilds it.
+
+HTTPS on a custom domain (replacing the default `*.cloudfront.net` cert)
+means an ACM certificate in `us-east-1` attached to the CloudFront
+distribution's `viewer_certificate`, plus (optionally) a second regional ACM
+cert on the ALB's `certificate_arn` for the CloudFront→ALB leg.
 
 ### `.github/workflows/deploy.yml` — one application deployment pipeline
 
@@ -560,11 +596,11 @@ build-push  → matrix over all 10 services + migration + frontend: ensures the
               docker build (backend/services/<svc>/Dockerfile,
               backend/migrations/Dockerfile for migration, or
               frontend/Dockerfile for frontend), push to ECR, tags <env>-<sha>
-              and <env>-latest. frontend only: first resolves the env's ALB
-              DNS name (aws elbv2 describe-load-balancers --names
-              smart-<env>-alb) and fails with ::error:: if empty — apply infra
-              before deploying — then passes it as
-              --build-arg NEXT_PUBLIC_API_URL=http://<alb-dns>.
+              and <env>-latest. frontend only: first resolves the env's
+              CloudFront domain (aws cloudfront list-distributions, filtered
+              on Comment=='smart-<env>') and fails with ::error:: if
+              empty/None — apply infra before deploying — then passes it as
+              --build-arg NEXT_PUBLIC_API_URL=https://<cloudfront-domain>.
 deploy      → run Alembic migrations + permission seed via one-off ECS task
               (smart-<env>-migration), reading network config (subnets/SGs) from
               the running smart-<env>-api-gateway service; FAILS the run if the

@@ -87,15 +87,15 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ vars.AWS_REGION || 'us-east-1' }}
 
-      - name: Set dev ALB allow-list
+      - name: Set dev CloudFront allow-list
         if: inputs.stage != 'validate' && needs.setup.outputs.env == 'dev'
         run: |
-          CIDRS='${{ vars.DEV_ALB_ALLOWED_CIDRS }}'
+          CIDRS='${{ vars.DEV_ALLOWED_CIDRS }}'
           if [ -z "$CIDRS" ]; then
-            echo "::error::set repo variable DEV_ALB_ALLOWED_CIDRS"
+            echo "::error::set repo variable DEV_ALLOWED_CIDRS"
             exit 1
           fi
-          echo "TF_VAR_alb_allowed_cidrs=$CIDRS" >> "$GITHUB_ENV"
+          echo "TF_VAR_allowed_cidrs=$CIDRS" >> "$GITHUB_ENV"
 
       - name: Terraform Init (S3 backend)
         if: inputs.stage != 'validate'
