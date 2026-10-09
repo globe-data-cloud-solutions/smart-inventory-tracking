@@ -195,6 +195,11 @@ DATABASE_URL          # RDS primary — postgresql+asyncpg://<host>:5432/smart_i
 DATABASE_READ_URL     # RDS read replica — postgresql+asyncpg://<host>:5432/smart_inventory
 DATABASE_POOL_SIZE=20
 
+# ── Concurrency ──────────────────────────────────────────────────────────────
+WEB_CONCURRENCY       # uvicorn workers per task (CMD no longer hardcodes --workers 4 —
+                      # uvicorn reads this env var, default 1 if unset). Set per service
+                      # in Terraform via the ecs module's service_sizing map.
+
 # ── Cache / Celery (Amazon ElastiCache for Redis) ───────────────────────────
 REDIS_URL             # redis://<elasticache-endpoint>:6379/0
 CELERY_BROKER_URL     # redis://<elasticache-endpoint>:6379/1
