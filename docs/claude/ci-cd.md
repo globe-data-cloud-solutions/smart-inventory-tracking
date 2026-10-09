@@ -239,8 +239,8 @@ JWT_EXPIRE_MINUTES=60
 # Pluggable sender for verification + password-reset emails: log | ses | disabled.
 # Default (no EMAIL_DELIVERY_MODE set): "log" only when ENVIRONMENT=local, else
 # "disabled" — a misconfigured deploy never writes a live link to CloudWatch.
-# Production config guard (refuse EMAIL_DELIVERY_MODE=disabled in prod) is
-# tracked under I4, not yet implemented.
+# Production config guard (refuse EMAIL_DELIVERY_MODE != ses in stage/prod) is
+# implemented — see "Startup config guard" below.
 EMAIL_DELIVERY_MODE=ses
 EMAIL_FROM=no-reply@<domain>   # domain TBD — must be SES-verified
 AWS_REGION                    # also read by the SES client (see AWS section below)
@@ -311,8 +311,22 @@ NEVER hardcode secret values in Terraform files or ECS task definition JSON.
 NEVER log environment variable values — mask all secrets in CloudWatch log groups.
 ```
 
----
+### Startup config guard — `assert_safe_environment()` (I4)
 
+Every service calls `shared.utils.env_guard.assert_safe_environment()` in its FastAPI
+`lifespan`; the outbox Celery worker and beat call it via `worker_init`/`beat_init`
+signals. It collects every problem found and raises one `RuntimeError` prefixed
+`FATAL: unsafe production config — refusing to start: ` — never a secret value.
+
+| `ENVIRONMENT` | Rule |
+|---|---|
+| `local` | Forbidden on ECS (always); otherwise exempt. |
+| unset, not on ECS | Exempt (unit tests / tooling). |
+| on ECS | Must be `dev`, `stage`, or `prod`. |
+| `dev` / `stage` / `prod` (or any ECS run) | `JWT_SECRET`/`JWT_SECRET_KEY`, if set: ≥ 64 chars and ≥ 10 distinct chars. No `RATE_LIMIT_*` env vars (local/test only). `JWT_EXPIRE_MINUTES` (default 60) must be an int in `[1, 60]`. |
+| `stage` / `prod` only | `EMAIL_DELIVERY_MODE` must be `ses`; `EMAIL_FROM` must be non-empty. |
+
+---
 
 ## 22. CI/CD — GitHub Actions
 

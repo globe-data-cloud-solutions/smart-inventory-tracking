@@ -155,6 +155,7 @@ No `.env.example` committed — secrets via AWS Secrets Manager (local-dev excep
 - Never set `ENVIRONMENT=local` anywhere but a developer machine — it enables the password-optional dev_email shortcut (auth.py). Production login is POST /auth/token {email, password}.
 - Plan/package changes are SA-only (TA → 403 PLAN_CHANGE_SA_ONLY); TA can view, not change.
 - Exception to the RULE policy: scripts/delete_tenant.py drops and recreates append-only RULEs inside its single purge transaction (local dev only). No other code may alter RULEs outside Alembic.
+- Services refuse to start on unsafe config (weak JWT secret, RATE_LIMIT_* overrides, JWT_EXPIRE_MINUTES>60 outside local; stage/prod require EMAIL_DELIVERY_MODE=ses) — see ci-cd.md §6.
 
 ---
 

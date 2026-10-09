@@ -9,12 +9,20 @@ from typing import Awaitable, Callable, Coroutine, TypeVar
 
 from celery import Celery
 from celery.schedules import crontab
+from celery.signals import beat_init, worker_init
 from sqlalchemy import text
 
 from shared.db.session import AsyncSessionLocal
 from shared.outbox.schemas import PAYLOAD_TYPES, ContractExpiryAlertPayload
+from shared.utils.env_guard import assert_safe_environment
 
 logger = logging.getLogger(__name__)
+
+
+@worker_init.connect
+@beat_init.connect
+def _check_safe_environment(**kwargs: object) -> None:
+    assert_safe_environment()
 
 T = TypeVar("T")
 

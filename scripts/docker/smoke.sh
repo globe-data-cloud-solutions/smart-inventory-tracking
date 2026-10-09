@@ -346,6 +346,31 @@ else
   docker logs --tail 60 outbox-beat || true
 fi
 
+# ── g2. negative check: production config guard refuses unsafe prod config ──
+section "Production config guard (negative check)"
+docker run -d --name guard-check --network "$NETWORK" --env-file "$ENV_FILE" \
+  -e ENVIRONMENT=prod "smart-auth-service:smoke" >/dev/null
+STARTED_CONTAINERS+=("guard-check")
+
+guard_exit=""
+for _ in $(seq 1 15); do
+  status="$(docker inspect -f '{{.State.Status}}' guard-check 2>/dev/null || echo unknown)"
+  if [ "$status" = "exited" ]; then
+    guard_exit="$(docker inspect -f '{{.State.ExitCode}}' guard-check)"
+    break
+  fi
+  sleep 2
+done
+
+guard_logs="$(docker logs guard-check 2>&1 || true)"
+if [ -n "$guard_exit" ] && [ "$guard_exit" != "0" ] && grep -q "FATAL: unsafe production config" <<<"$guard_logs"; then
+  log "PASS: guard-check exited $guard_exit with FATAL: unsafe production config"
+else
+  fail "production config guard did not refuse to start (exit=${guard_exit:-did-not-exit})"
+  log "${guard_logs: -2000}"
+fi
+[ "$FAILED" -eq 0 ] || exit 1
+
 # ── h. summary ───────────────────────────────────────────────────────────────
 section "SUMMARY"
 if [ "$FAILED" -eq 0 ]; then

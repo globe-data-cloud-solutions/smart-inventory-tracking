@@ -24,6 +24,12 @@ import pytest
 import shared.outbox.worker as worker
 
 
+def test_worker_and_beat_init_call_safe_environment_guard() -> None:
+    with patch("shared.outbox.worker.assert_safe_environment") as guard:
+        worker._check_safe_environment()
+    guard.assert_called_once_with()
+
+
 @pytest.fixture(autouse=True)
 def _reset_loop():
     """Each test gets a clean module-level loop so tests don't leak state."""
