@@ -18,19 +18,14 @@ resource "aws_security_group" "alb" {
   }
 }
 
-resource "aws_vpc_security_group_ingress_rule" "http" {
+# Single rule spanning 80-443 rather than one rule per port: the CloudFront
+# origin-facing prefix list counts ~55 entries against the 60-rules SG quota,
+# so two rules (80 + 443) would exceed it once certificate_arn is set. Only
+# ALB listeners sit behind this SG.
+resource "aws_vpc_security_group_ingress_rule" "cloudfront" {
   security_group_id = aws_security_group.alb.id
   ip_protocol       = "tcp"
   from_port         = 80
-  to_port           = 80
-  prefix_list_id    = data.aws_ec2_managed_prefix_list.cloudfront.id
-}
-
-resource "aws_vpc_security_group_ingress_rule" "https" {
-  count             = var.certificate_arn != "" ? 1 : 0
-  security_group_id = aws_security_group.alb.id
-  ip_protocol       = "tcp"
-  from_port         = 443
   to_port           = 443
   prefix_list_id    = data.aws_ec2_managed_prefix_list.cloudfront.id
 }

@@ -21,11 +21,13 @@ resource "aws_cloudfront_function" "allowlist" {
 }
 
 resource "aws_cloudfront_distribution" "this" {
-  comment         = "smart-${var.env}"
-  enabled         = true
-  price_class     = "PriceClass_All"
-  http_version    = "http2and3"
-  is_ipv6_enabled = true
+  comment      = "smart-${var.env}"
+  enabled      = true
+  price_class  = "PriceClass_All"
+  http_version = "http2and3"
+  # The allow-list function is IPv4-only; with IPv6 off, dual-stack browsers
+  # fall back to IPv4 instead of being rejected.
+  is_ipv6_enabled = length(var.allowed_cidrs) == 0
 
   origin {
     domain_name = var.alb_dns_name
