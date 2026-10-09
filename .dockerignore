@@ -1,6 +1,5 @@
 .git
 **/node_modules
-frontend/
 .env
 .env.*
 **/__pycache__
@@ -9,6 +8,8 @@ frontend/
 .coverage.*
 **/.pytest_cache
 **/test-results
-docs/
+frontend/.next
+frontend/coverage
+frontend/playwright-report
 infra/
 tests/e2e/

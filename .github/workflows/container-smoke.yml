@@ -6,6 +6,8 @@ on:
     branches: [main]
     paths:
       - "backend/**"
+      - "frontend/**"
+      - "locales/**"
       - "scripts/docker/**"
       - ".dockerignore"
       - ".github/workflows/container-smoke.yml"

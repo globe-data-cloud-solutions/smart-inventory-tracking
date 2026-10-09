@@ -377,10 +377,58 @@ check_guard_refuses "guard-check-worker" "smart-tenant-service:smoke" \
 
 [ "$FAILED" -eq 0 ] || exit 1
 
+# ── g3. frontend container image (standalone Next.js) ───────────────────────
+section "Frontend container image"
+start=$(date +%s)
+if docker build -q -f frontend/Dockerfile -t smart-frontend:smoke \
+    --build-arg NEXT_PUBLIC_API_URL=http://localhost:8080 "$REPO_ROOT" >/tmp/build-frontend.log 2>&1; then
+  secs=$(( $(date +%s) - start ))
+  size=$(docker images --format '{{.Size}}' smart-frontend:smoke | head -1)
+  printf '%-20s %-6s %6s %10s\n' "frontend" "OK" "${secs}s" "$size"
+else
+  secs=$(( $(date +%s) - start ))
+  printf '%-20s %-6s %6s %10s\n' "frontend" "FAIL" "${secs}s" "-"
+  tail -40 /tmp/build-frontend.log
+  fail "image build: frontend"
+fi
+[ "$FAILED" -eq 0 ] || exit 1
+
+docker run -d --name frontend-smoke --network "$NETWORK" -p 3000:3000 smart-frontend:smoke >/dev/null
+STARTED_CONTAINERS+=("frontend-smoke")
+
+ok=0
+for _ in $(seq 1 30); do
+  code="$(curl -s -o /dev/null -w '%{http_code}' http://localhost:3000/ || echo 000)"
+  if [ "$code" -ge 200 ] 2>/dev/null && [ "$code" -lt 400 ] 2>/dev/null; then ok=1; break; fi
+  sleep 2
+done
+if [ "$ok" -eq 1 ]; then
+  log "GET / -> $code"
+else
+  log "GET / -> $code"
+  docker logs --tail 60 frontend-smoke || true
+  fail "frontend GET / did not return 2xx/3xx"
+fi
+
+for locale in en am; do
+  resp="$(curl -s -w '\n%{http_code}' "http://localhost:3000/api/locales/${locale}")"
+  code="$(tail -1 <<<"$resp")"; body="$(sed '$d' <<<"$resp")"
+  log "GET /api/locales/${locale} -> ${code}; body: $(printf '%s' "$body" | head -c 80)"
+  [ "$code" = "200" ] || fail "locales/${locale} expected 200, got $code"
+done
+
+uid="$(docker exec frontend-smoke id -u 2>/dev/null || echo "")"
+if [ -n "$uid" ] && [ "$uid" != "0" ]; then
+  log "PASS: container user is non-root (uid=$uid)"
+else
+  fail "container user is root or uid could not be determined (uid=${uid:-none})"
+fi
+[ "$FAILED" -eq 0 ] || exit 1
+
 # ── h. summary ───────────────────────────────────────────────────────────────
 section "SUMMARY"
 if [ "$FAILED" -eq 0 ]; then
-  log "All image builds, migrations, health checks, e2e calls, and the outbox worker/beat succeeded."
+  log "All image builds, migrations, health checks, e2e calls, the outbox worker/beat, and the frontend container checks succeeded."
   exit 0
 else
   log "One or more steps FAILED — see output above."

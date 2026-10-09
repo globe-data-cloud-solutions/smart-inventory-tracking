@@ -1,5 +1,7 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
+  // standalone only in the container build (frontend/Dockerfile sets NEXT_OUTPUT); local Windows builds can't create pnpm symlinks for it
+  output: process.env.NEXT_OUTPUT === "standalone" ? "standalone" : undefined,
   // Pre-existing hooks-after-early-return violations live in component files.
   // Suppressed here rather than adding eslint-disable comments to every page.
   eslint: { ignoreDuringBuilds: true },
