@@ -54,6 +54,14 @@ variable "cors_origins" {
 }
 
 variable "frontend_target_group_arn" { type = string }
+
+# CloudFront sets XFF=client, then the ALB appends the CloudFront IP before
+# forwarding — so the real client is 2 hops back from the gateway's own
+# perspective, not 1.
+variable "trusted_proxy_hops" {
+  type    = number
+  default = 2
+}
 variable "frontend_sizing" {
   type = object({
     cpu           = number

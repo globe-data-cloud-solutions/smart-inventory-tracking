@@ -5,6 +5,10 @@ terraform {
       source  = "hashicorp/aws"
       version = "~> 5.50"
     }
+    random = {
+      source  = "hashicorp/random"
+      version = "~> 3.6"
+    }
   }
   # Static remote state backend. Only `key` differs per environment.
   backend "s3" {
@@ -54,13 +58,27 @@ module "s3" {
   env    = "stage"
 }
 
+# Lives in TF state — rotate by tainting.
+resource "random_password" "origin_verify" {
+  length  = 48
+  special = false
+}
+
 module "alb" {
-  source            = "../../modules/alb"
-  env               = "stage"
-  vpc_id            = module.networking.vpc_id
-  public_subnet_ids = module.networking.public_subnet_ids
-  certificate_arn   = ""            # set once ACM cert exists — enables HTTPS + redirect
-  allowed_cidrs     = ["0.0.0.0/0"] # tightened by CloudFront in I2b
+  source               = "../../modules/alb"
+  env                  = "stage"
+  vpc_id               = module.networking.vpc_id
+  public_subnet_ids    = module.networking.public_subnet_ids
+  certificate_arn      = "" # set once ACM cert exists — enables HTTPS + redirect
+  origin_verify_secret = random_password.origin_verify.result
+}
+
+module "cloudfront" {
+  source               = "../../modules/cloudfront"
+  env                  = "stage"
+  alb_dns_name         = module.alb.alb_dns_name
+  origin_verify_secret = random_password.origin_verify.result
+  allowed_cidrs        = []
 }
 
 module "ecs" {
@@ -73,7 +91,7 @@ module "ecs" {
   alb_security_group_id     = module.alb.alb_security_group_id
   gateway_target_group_arn  = module.alb.gateway_target_group_arn
   frontend_target_group_arn = module.alb.frontend_target_group_arn
-  cors_origins              = "http://${module.alb.alb_dns_name}" # same-origin behind the ALB; → https://<CloudFront|domain> in I2b
+  cors_origins              = "https://${module.cloudfront.domain_name}"
 
   # order/logistics/analytics/notification/sync are stubs — add here to deploy.
   enabled_services = ["api-gateway", "auth-service", "tenant-service", "product-service",
@@ -92,7 +110,7 @@ module "ecs" {
   storage_bucket      = module.s3.bucket_name
   storage_bucket_arn  = module.s3.bucket_arn
   terms_version       = "2026-10"
-  app_base_url        = "http://${module.alb.alb_dns_name}" # same-origin behind the ALB; → https://<CloudFront|domain> in I2b
+  app_base_url        = "https://${module.cloudfront.domain_name}"
 }
 
 module "observability" {
@@ -104,6 +122,7 @@ module "observability" {
 data "aws_caller_identity" "current" {}
 
 output "alb_dns_name" { value = module.alb.alb_dns_name }
+output "cloudfront_domain_name" { value = module.cloudfront.domain_name }
 
 # No default — plan must fail until the SES-verified sending domain is decided.
 variable "email_from" { type = string }

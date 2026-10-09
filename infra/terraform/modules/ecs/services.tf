@@ -46,7 +46,7 @@ locals {
       local.common_env,
       { WEB_CONCURRENCY = tostring(local.service_sizing_resolved[svc].web_concurrency) },
       svc == "api-gateway" ? merge(
-        { TRUSTED_PROXY_HOPS = "1" },
+        { TRUSTED_PROXY_HOPS = tostring(var.trusted_proxy_hops) },
         local.gateway_service_urls,
         # Gateway falls back to its own local default when unset.
         var.cors_origins != "" ? { CORS_ORIGINS = var.cors_origins } : {}

@@ -1,6 +1,13 @@
+# ALB is locked to CloudFront: ingress only from CloudFront's origin-facing
+# prefix list, and every forwarding rule also requires the X-Origin-Verify
+# header CloudFront injects. Direct requests to the ALB get the default 403.
+data "aws_ec2_managed_prefix_list" "cloudfront" {
+  name = "com.amazonaws.global.cloudfront.origin-facing"
+}
+
 resource "aws_security_group" "alb" {
   name        = "smart-${var.env}-alb-sg"
-  description = "Internet-facing ALB ingress for smart-${var.env}"
+  description = "CloudFront-only ingress for smart-${var.env}"
   vpc_id      = var.vpc_id
 
   egress {
@@ -12,21 +19,20 @@ resource "aws_security_group" "alb" {
 }
 
 resource "aws_vpc_security_group_ingress_rule" "http" {
-  for_each          = toset(var.allowed_cidrs)
   security_group_id = aws_security_group.alb.id
   ip_protocol       = "tcp"
   from_port         = 80
   to_port           = 80
-  cidr_ipv4         = each.value
+  prefix_list_id    = data.aws_ec2_managed_prefix_list.cloudfront.id
 }
 
 resource "aws_vpc_security_group_ingress_rule" "https" {
-  for_each          = var.certificate_arn != "" ? toset(var.allowed_cidrs) : toset([])
+  count             = var.certificate_arn != "" ? 1 : 0
   security_group_id = aws_security_group.alb.id
   ip_protocol       = "tcp"
   from_port         = 443
   to_port           = 443
-  cidr_ipv4         = each.value
+  prefix_list_id    = data.aws_ec2_managed_prefix_list.cloudfront.id
 }
 
 resource "aws_lb" "main" {
@@ -80,14 +86,20 @@ resource "aws_lb_listener" "http" {
   port              = 80
   protocol          = "HTTP"
 
+  # No cert: this is the only listener — default to 403, same as HTTPS below.
   dynamic "default_action" {
     for_each = var.certificate_arn == "" ? [1] : []
     content {
-      type             = "forward"
-      target_group_arn = aws_lb_target_group.frontend.arn
+      type = "fixed-response"
+      fixed_response {
+        content_type = "text/plain"
+        message_body = "Forbidden"
+        status_code  = "403"
+      }
     }
   }
 
+  # Cert present: HTTP is redirect-only, HTTPS below holds the real rules.
   dynamic "default_action" {
     for_each = var.certificate_arn != "" ? [1] : []
     content {
@@ -110,8 +122,12 @@ resource "aws_lb_listener" "https" {
   certificate_arn   = var.certificate_arn
 
   default_action {
-    type             = "forward"
-    target_group_arn = aws_lb_target_group.frontend.arn
+    type = "fixed-response"
+    fixed_response {
+      content_type = "text/plain"
+      message_body = "Forbidden"
+      status_code  = "403"
+    }
   }
 }
 
@@ -120,6 +136,9 @@ resource "aws_lb_listener" "https" {
 locals {
   active_listener_arn = var.certificate_arn == "" ? aws_lb_listener.http.arn : aws_lb_listener.https[0].arn
 }
+
+# ALB target group health checks bypass listener rules entirely (they hit the
+# target directly), so the X-Origin-Verify requirement below never affects them.
 
 resource "aws_lb_listener_rule" "locales" {
   listener_arn = local.active_listener_arn
@@ -133,6 +152,13 @@ resource "aws_lb_listener_rule" "locales" {
   condition {
     path_pattern {
       values = ["/api/locales", "/api/locales/*"]
+    }
+  }
+
+  condition {
+    http_header {
+      http_header_name = "X-Origin-Verify"
+      values           = [var.origin_verify_secret]
     }
   }
 
@@ -151,6 +177,36 @@ resource "aws_lb_listener_rule" "gateway" {
   condition {
     path_pattern {
       values = ["/api/*", "/static/*", "/health"]
+    }
+  }
+
+  condition {
+    http_header {
+      http_header_name = "X-Origin-Verify"
+      values           = [var.origin_verify_secret]
+    }
+  }
+}
+
+resource "aws_lb_listener_rule" "root" {
+  listener_arn = local.active_listener_arn
+  priority     = 30
+
+  action {
+    type             = "forward"
+    target_group_arn = aws_lb_target_group.frontend.arn
+  }
+
+  condition {
+    path_pattern {
+      values = ["/*"]
+    }
+  }
+
+  condition {
+    http_header {
+      http_header_name = "X-Origin-Verify"
+      values           = [var.origin_verify_secret]
     }
   }
 }
