@@ -61,9 +61,12 @@ test.describe("S12-2 Help & Documents", () => {
     await expect(page.getByText("Release Notes")).toBeVisible();
     await expect(page.getByText("Coming soon").first()).toBeVisible();
 
-    // Coming-soon cards are not clickable links.
+    // SAM-2: SA Operations Manual is now "published" (served via the
+    // authenticated sa:docs_view route), so its card is clickable — unlike
+    // the other SA/MANAGER/STAFF docs below it, still "coming_soon".
+    // Opening it and checking the fetched content is Alex's manual SA-login check.
     const saManualCard = page.locator("a", { hasText: "SA Operations Manual" });
-    await expect(saManualCard).toHaveCount(0);
+    await expect(saManualCard).toHaveCount(1);
 
     await page.screenshot({ path: "test-results/screens/s12/sa-help-list-en.png", fullPage: true });
 
@@ -92,8 +95,11 @@ test.describe("S12-2 Help & Documents", () => {
     await expect(page.getByRole("heading", { name: /SMART Inventory/i })).toBeVisible();
 
     // Table renders (the Audience | Sections table near the top of the guide).
+    // Scoped to a table cell — the guide now repeats "Tenant Administrator" in
+    // several places (checklist heading, FAQ, role-lock text), which makes the
+    // old bare getByText ambiguous (strict-mode violation).
     await expect(page.getByRole("table").first()).toBeVisible();
-    await expect(page.getByText("Tenant Administrator")).toBeVisible();
+    await expect(page.getByRole("cell", { name: "Tenant Administrator", exact: true })).toBeVisible();
 
     // Internal anchor link scrolls to its heading (same algorithm as the
     // link's own target — see DocumentRenderer.slugifyHeading).
@@ -109,6 +115,41 @@ test.describe("S12-2 Help & Documents", () => {
     for (const e of consoleErrors) console.log(e);
     expect(consoleErrors, "zero console errors on TA help doc").toHaveLength(0);
   });
+
+  for (const locale of ["en", "am"] as const) {
+    test(`SAM-2: e2e TA cannot reach the SA Operations Manual (${locale})`, async ({ page }) => {
+      const password = e2eTaPasswordOrSkip(test);
+      const consoleErrors = collectConsoleErrors(page);
+      const saDocRequests: string[] = [];
+      page.on("request", (req) => {
+        if (req.url().includes("/api/v1/tenants/sa/docs/")) saDocRequests.push(req.url());
+      });
+
+      await login(page, E2E_TA_EMAIL, password);
+      if (locale === "am") await page.evaluate(() => localStorage.setItem("locale", "am"));
+
+      // (a) no SA Operations Manual card on the help list.
+      await page.goto(`${BASE_URL}/${E2E_TA_SLUG}/help`);
+      await page.waitForLoadState("networkidle");
+      await expect(page.getByText("SA Operations Manual")).toHaveCount(0);
+
+      // (b) direct navigation shows help.not_found and never calls the SA route.
+      await page.goto(`${BASE_URL}/${E2E_TA_SLUG}/help/sa-operations-manual`);
+      await page.waitForLoadState("networkidle");
+      await expect(page.getByText(/not found|not available|አልተገኘም/i)).toBeVisible();
+
+      expect(saDocRequests, "no request to the SA docs route was made").toHaveLength(0);
+
+      await page.screenshot({
+        path: `test-results/screens/s12/ta-sa-manual-blocked-${locale}.png`,
+        fullPage: true,
+      });
+
+      console.log(`--- TA SA-manual-blocked (${locale}) console errors ---`);
+      for (const e of consoleErrors) console.log(e);
+      expect(consoleErrors, `zero console errors (${locale})`).toHaveLength(0);
+    });
+  }
 
   test("WM sees MANAGER + ALL only; the TA guide is not authorised", async ({ page }) => {
     test.skip(

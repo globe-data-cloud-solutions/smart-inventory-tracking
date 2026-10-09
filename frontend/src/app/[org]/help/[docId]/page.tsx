@@ -7,6 +7,7 @@ import { getSession } from "@/lib/demo-auth";
 import { t, getCurrentLocale } from "@/lib/i18n";
 import { getHelpDoc, isDocVisibleToRole } from "@/lib/help/manifest";
 import { DocumentRenderer } from "@/components/features/help/DocumentRenderer";
+import { getText } from "@/lib/api";
 
 export default function HelpDocPage() {
   const { org, docId } = useParams() as { org: string; docId: string };
@@ -15,20 +16,22 @@ export default function HelpDocPage() {
   const [error, setError] = useState(false);
 
   const doc = getHelpDoc(docId);
-  const allowed = !!session && !!doc && doc.status === "published" && !!doc.file && isDocVisibleToRole(doc, session.role);
+  const allowed = !!session && !!doc && doc.status === "published" && !!(doc.file || doc.apiPath) && isDocVisibleToRole(doc, session.role);
 
   useEffect(() => {
-    if (!allowed || !doc?.file) return;
+    if (!allowed || !doc) return;
     let cancelled = false;
-    fetch(`/help/${doc.file}`)
-      .then((res) => {
-        if (!res.ok) throw new Error("fetch failed");
-        return res.text();
-      })
+    const fetchText = doc.apiPath
+      ? getText(doc.apiPath, session?.jwtToken)
+      : fetch(`/help/${doc.file}`).then((res) => {
+          if (!res.ok) throw new Error("fetch failed");
+          return res.text();
+        });
+    fetchText
       .then((text) => { if (!cancelled) setMarkdown(text); })
       .catch(() => { if (!cancelled) setError(true); });
     return () => { cancelled = true; };
-  }, [allowed, doc?.file]);
+  }, [allowed, doc, session?.jwtToken]);
 
   if (!session) {
     return <p className="p-8 text-gray-500">{t("help.restricted")}</p>;

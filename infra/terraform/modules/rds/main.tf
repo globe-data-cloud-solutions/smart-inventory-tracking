@@ -9,6 +9,7 @@ variable "allocated_storage" {
   type    = number
   default = 100
 }
+variable "allowed_security_group_ids" { type = list(string) }
 
 resource "aws_db_subnet_group" "main" {
   name       = "smart-${var.env}-db-subnet"
@@ -20,10 +21,11 @@ resource "aws_security_group" "rds" {
   vpc_id = var.vpc_id
 
   ingress {
-    from_port   = 5432
-    to_port     = 5432
-    protocol    = "tcp"
-    cidr_blocks = ["10.0.0.0/8"]
+    from_port       = 5432
+    to_port         = 5432
+    protocol        = "tcp"
+    security_groups = var.allowed_security_group_ids
+    description     = "Postgres from ECS tasks"
   }
 }
 
@@ -69,3 +71,4 @@ resource "aws_db_parameter_group" "pg16" {
 
 output "primary_endpoint" { value = aws_db_instance.primary.endpoint }
 output "replica_endpoint" { value = var.env == "prod" ? aws_db_instance.read_replica[0].endpoint : null }
+output "security_group_id" { value = aws_security_group.rds.id }

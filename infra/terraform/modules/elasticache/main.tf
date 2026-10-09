@@ -5,6 +5,7 @@ variable "node_type" {
   type    = string
   default = "cache.t4g.small"
 }
+variable "allowed_security_group_ids" { type = list(string) }
 
 resource "aws_elasticache_subnet_group" "main" {
   name       = "smart-${var.env}-redis"
@@ -16,10 +17,11 @@ resource "aws_security_group" "redis" {
   vpc_id = var.vpc_id
 
   ingress {
-    from_port   = 6379
-    to_port     = 6379
-    protocol    = "tcp"
-    cidr_blocks = ["10.0.0.0/8"]
+    from_port       = 6379
+    to_port         = 6379
+    protocol        = "tcp"
+    security_groups = var.allowed_security_group_ids
+    description     = "Redis from ECS tasks"
   }
 }
 
@@ -39,3 +41,4 @@ resource "aws_elasticache_replication_group" "main" {
 output "primary_endpoint" {
   value = aws_elasticache_replication_group.main.primary_endpoint_address
 }
+output "security_group_id" { value = aws_security_group.redis.id }

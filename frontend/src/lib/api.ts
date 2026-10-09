@@ -190,3 +190,28 @@ export async function rawPost<T>(path: string, body: unknown): Promise<T> {
   }
   return json as T;
 }
+
+/**
+ * GET an endpoint that returns a raw text/markdown body (not the {success, data, ...}
+ * envelope) — e.g. the SA Operations Manual route. No retries, no fallback: on
+ * !res.ok, throws an Error carrying .status.
+ */
+export async function getText(path: string, token?: string): Promise<string> {
+  const headers: Record<string, string> = {};
+  const session = _readSession();
+  const bearer = token ?? session.jwtToken;
+  if (bearer) headers["Authorization"] = `Bearer ${bearer}`;
+
+  const res = await fetch(`${BASE_URL}${path}`, {
+    method: "GET",
+    headers,
+  });
+
+  if (!res.ok) {
+    const err = new Error(`HTTP ${res.status}`) as Error & { status: number };
+    err.status = res.status;
+    throw err;
+  }
+
+  return res.text();
+}

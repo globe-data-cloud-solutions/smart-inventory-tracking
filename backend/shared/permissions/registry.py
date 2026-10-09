@@ -233,12 +233,15 @@ class PERMISSIONS:
     SEARCH_PRODUCTS         = Permission("search:products",         ["tenant_id"])
     SEARCH_INVENTORY        = Permission("search:inventory",        ["tenant_id"])
 
+    # SA Operations Manual (platform_only — SA-internal doc, not for TA)
+    SA_DOCS_VIEW            = Permission("sa:docs_view",            ["platform_only"])
+
 
 ALL_PERMISSIONS: List[Permission] = [
     v for v in vars(PERMISSIONS).values() if isinstance(v, Permission)
 ]
 
-assert len(ALL_PERMISSIONS) == 156, (
-    f"Expected 156 permissions, found {len(ALL_PERMISSIONS)}. "
+assert len(ALL_PERMISSIONS) == 157, (
+    f"Expected 157 permissions, found {len(ALL_PERMISSIONS)}. "
     "Update registry.py and re-run seed_permissions.py."
 )

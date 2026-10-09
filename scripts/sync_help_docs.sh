@@ -19,3 +19,9 @@ mkdir -p frontend/public/help
 cp docs/TA_ONBOARDING_GUIDE.md frontend/public/help/ta-onboarding-guide.md
 
 echo "Synced docs/TA_ONBOARDING_GUIDE.md -> frontend/public/help/ta-onboarding-guide.md"
+
+# SA-internal, backend-only, never frontend/public.
+mkdir -p backend/services/tenant-service/static
+cp docs/SA_OPERATIONS_MANUAL.md backend/services/tenant-service/static/sa_operations_manual.md
+
+echo "Synced docs/SA_OPERATIONS_MANUAL.md -> backend/services/tenant-service/static/sa_operations_manual.md"

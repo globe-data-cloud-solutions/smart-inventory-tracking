@@ -11,6 +11,15 @@ on:
       - "scripts/docker/**"
       - ".dockerignore"
       - ".github/workflows/container-smoke.yml"
+  pull_request:
+    branches: [main]
+    paths:
+      - "backend/**"
+      - "frontend/**"
+      - "locales/**"
+      - "scripts/docker/**"
+      - ".dockerignore"
+      - ".github/workflows/container-smoke.yml"
 
 permissions:
   contents: read

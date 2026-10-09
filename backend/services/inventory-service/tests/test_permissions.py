@@ -544,12 +544,11 @@ class TestLocalization:
         # Actual test is documented here; full test runs in frontend jest suite
         assert True, "i18n contract: t('missing.key') == 'missing.key' — see lib/i18n.ts"
 
-    def test_registry_has_exactly_156_permissions(self) -> None:
+    def test_registry_has_exactly_157_permissions(self) -> None:
         """Permission count guard — registry.py assert will catch violations at import time.
-        153 prior + 3 S5 billing actions (billing:view, billing:manage,
-        billing:view_own) = 156."""
+        156 prior + 1 SAM-1 SA Operations Manual action (sa:docs_view) = 157."""
         from shared.permissions.registry import ALL_PERMISSIONS
-        assert len(ALL_PERMISSIONS) == 156
+        assert len(ALL_PERMISSIONS) == 157
 
     def test_all_permissions_have_string_ids(self) -> None:
         """Every permission ID must be a non-empty string in 'domain:action' format."""

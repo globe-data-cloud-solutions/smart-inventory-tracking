@@ -52,6 +52,14 @@ Builds Docker images, pushes to ECR, runs migrations, and deploys to ECS.
 gh workflow run deploy.yml -f environment=dev
 ```
 
+### 4. **Container Smoke Test** (`container-smoke.yml`)
+Runs `scripts/docker/smoke.sh` on push to `main` and also on pull requests targeting `main`,
+when backend/frontend/locales/docker-related paths change.
+
+### 5. **Terraform Check** (`terraform-check.yml`)
+PR-only offline check for `infra/terraform/**` changes: `terraform fmt -check` plus
+`init -backend=false` + `validate` for dev/stage/prod. No AWS credentials, no plan/apply.
+
 ---
 
 ## Prerequisites

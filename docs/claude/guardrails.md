@@ -62,8 +62,8 @@ waits silently for a password prompt and looks like a hang.
 
 ```
 NEVER `git stash pop` / `apply` a stash wholesale without reviewing
-`git stash show -p` first. Never commit deletion of package-lock.json or
-pnpm-lock.yaml. Abandoned work is ARCHIVED (archive/<name> branch), never deleted.
+`git stash show -p` first. Never commit deletion of frontend/pnpm-lock.yaml (pnpm is the only
+package manager; the old npm package-lock.json is archived in docs/archive/). Abandoned work is ARCHIVED (archive/<name> branch), never deleted.
 ```
 
 ### Browser verification

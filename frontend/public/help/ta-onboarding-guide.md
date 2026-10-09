@@ -1,6 +1,6 @@
 # SMART Inventory — User Setup & Onboarding Guide
 
-**Version:** 1.3 | **Updated:** October 2026 | **Audience:** Tenant Administrators & Organisation Managers
+**Version:** 1.4 | **Updated:** October 2026 | **Audience:** Tenant Administrators & Organisation Managers
 
 > **Pre-Launch Reminder:** Replace all `[SCREENSHOT PLACEHOLDER]` notes with real screenshots before sharing with customers.
 
@@ -597,8 +597,9 @@ records that you acted on their behalf.
 
 **Q: A transfer is stuck in Pending Approval and no one is actioning it — what do I do?**
 This can happen when the assigned approver position becomes vacant (user deactivated
-or reassigned) after the transfer was submitted. The system automatically escalates
-stuck transfers to the Tenant Admin. To resolve:
+or reassigned) after the transfer was submitted. The system does not alert you
+automatically yet — check Transfers filtered by "Pending Approval" regularly. As TA
+you can approve or reject any transfer you did not create yourself. To resolve:
 1. Go to Transfers → filter by status "Pending Approval"
 2. Find the stuck transfer and open it
 3. Approve or reject it directly (the audit log records TA action)
@@ -625,8 +626,17 @@ No — the ledger is immutable for audit integrity. Create a reverse transfer or
 **Q: Can I cancel a Branch Exchange after it has been approved?**
 No — once a Branch Exchange reaches Approved status it cannot be cancelled. Both warehouse managers have confirmed and stock is committed to the transfer. If the transfer cannot physically proceed, complete the receipt at the destination and use a stock Adjustment (reason: RETURN or DAMAGE) to correct the balance. Contact your administrator for assistance.
 
+**Q: I forgot my password — can I reset it myself?**
+Yes. On the sign-in page, click **Forgot password?** and enter your email address.
+If the address matches an account, you'll receive a reset link by email — the
+link is valid for 60 minutes and can only be used once. Opening it lets you set
+a new password. Once set, all of your other active sessions are signed out, and
+any login lockout on your account is cleared immediately. If no email arrives,
+ask your Tenant Administrator to reset it for you instead (see the next
+question).
+
 **Q: How do I reset a user's password?**
-Go to Settings → Personnel. Click the user's row to open their detail panel. Click "Reset Password" and confirm. The user's password will be reset to a temporary credential you provide. They will be forced to change it on their next login. You can use this for forgotten passwords or to unlock a compromised account.
+Go to Settings → Personnel. Click the user's row to open their detail panel. Click "Reset Password" and confirm. The user's password will be reset to a temporary credential you provide. They will be forced to change it on their next login. This also signs the user out of all their existing sessions. You can use this for forgotten passwords or to unlock a compromised account.
 
 **Q: What happens if a user gets locked out?**
 After 5 consecutive failed login attempts, the account is automatically locked for 15 minutes. The user will see a message on the login screen. They can wait 15 minutes and retry, or contact you (the Tenant Admin) to verify they are using the correct credentials. The lockout clears automatically — no admin action is required. If the user successfully resets their password, the lockout counter is also cleared immediately.
@@ -652,11 +662,16 @@ genuinely co-approvers.
 ---
 
 **Q: What happens if I deactivate a user who is an approver on pending transfers?**
-When a user is deactivated, their position assignment is removed automatically. If they
-were the designated approver on pending transfers or adjustments, those items will
-escalate to the Tenant Admin for approval. You will see them appear in your approvals
-queue. Before deactivating an approver, assign another user to their position so routing
-continues uninterrupted.
+When a user is deactivated, their position assignment is removed automatically. The
+system does not alert you automatically yet — pending transfers routed to that user
+still show that user as the approver, so you need to check Transfers filtered by
+"Pending Approval" yourself. As TA you can approve or reject any transfer you did not
+create yourself. Adjustments: ordinary adjustments can be approved by you as usual. An
+adjustment where a product approval minimum applied is locked to the specific person it
+was routed to; if that person is deactivated it cannot be approved by anyone — reject
+it, and ask the creator to resubmit so it routes to an active approver. Reassigning the
+position does not move an already-submitted adjustment. Before deactivating an
+approver, assign another user to their position so routing continues uninterrupted.
 
 ---
 
@@ -716,8 +731,13 @@ When reassigning a user to a new position:
 1. Assign them PRIMARY at the new position (their scope updates immediately on next login)
 2. Remove their old position assignment if they should no longer hold it
    — use force-remove (SA token required for sole PRIMARY removal)
-3. If the old position had pending approvals routed to it, those will escalate to TA
-   once the holder is removed — approve them or wait for the replacement to be assigned
+3. If the old position had pending approvals routed to it, those are not escalated
+   automatically — check Transfers/Adjustments filtered by "Pending Approval" yourself.
+   Pending transfers you can approve or reject directly as TA. Pending adjustments can
+   also be approved as usual, unless a product approval minimum locked the adjustment to
+   that specific person — in that case it cannot be approved by anyone and must be
+   rejected, with the creator resubmitting so it routes to an active approver. Assigning
+   the replacement first avoids all of this for anything submitted afterward.
 
 If the user moves to a higher level (e.g. WM → RM), their old WM scope is replaced
 by the new RM scope on next login. If they move to a lower level (e.g. RM → WM), their

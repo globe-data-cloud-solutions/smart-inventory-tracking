@@ -38,19 +38,21 @@ module "networking" {
 }
 
 module "rds" {
-  source         = "../../modules/rds"
-  env            = "stage"
-  vpc_id         = module.networking.vpc_id
-  subnet_ids     = module.networking.private_subnet_ids
-  instance_class = "db.t4g.large"
+  source                     = "../../modules/rds"
+  env                        = "stage"
+  vpc_id                     = module.networking.vpc_id
+  subnet_ids                 = module.networking.private_subnet_ids
+  instance_class             = "db.t4g.large"
+  allowed_security_group_ids = [module.ecs.tasks_security_group_id]
 }
 
 module "elasticache" {
-  source     = "../../modules/elasticache"
-  env        = "stage"
-  vpc_id     = module.networking.vpc_id
-  subnet_ids = module.networking.private_subnet_ids
-  node_type  = "cache.t4g.medium"
+  source                     = "../../modules/elasticache"
+  env                        = "stage"
+  vpc_id                     = module.networking.vpc_id
+  subnet_ids                 = module.networking.private_subnet_ids
+  node_type                  = "cache.t4g.medium"
+  allowed_security_group_ids = [module.ecs.tasks_security_group_id]
 }
 
 module "s3" {
