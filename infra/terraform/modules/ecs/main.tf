@@ -76,7 +76,9 @@ resource "aws_iam_role_policy" "product_service_s3" {
   name = "smart-${var.env}-product-service-s3"
   role = aws_iam_role.product_service_task.id
 
-  # _KEY_PREFIX in backend/shared/storage/s3.py = "uploads/"
+  # No prefix condition: S3's implicit ListBucket check on GetObject of a
+  # missing key carries no s3:prefix, so a prefix-conditioned grant still
+  # yields 403 instead of 404. Object read/write stays limited to uploads/*.
   policy = jsonencode({
     Version = "2012-10-17"
     Statement = [
@@ -89,9 +91,6 @@ resource "aws_iam_role_policy" "product_service_s3" {
         Effect   = "Allow"
         Action   = ["s3:ListBucket"]
         Resource = var.storage_bucket_arn
-        Condition = {
-          StringLike = { "s3:prefix" = "uploads/*" }
-        }
       }
     ]
   })
