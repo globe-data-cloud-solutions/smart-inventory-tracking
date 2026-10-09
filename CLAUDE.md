@@ -151,9 +151,10 @@ No `.env.example` committed — secrets via AWS Secrets Manager (local-dev excep
 - Never add mock/demo data to a screen to make it appear to work (see §7).
 - Root `.env` is local-only and untracked — never commit it; load with `set -a; source .env; set +a`. Holds E2E_TA_PASSWORD for the permanent `zz-e2e-ta` tenant.
 - Never toggle FORCE ROW LEVEL SECURITY on any table outside an Alembic migration.
-- Probe/test tenants are deactivated after use, never hard-deleted.
+- Probe/test tenants are deactivated after use. Local dev only: they may be purged with scripts/delete_tenant.py (dry-run first, YES confirmation, after Alex's pg_dump). Never hard-delete tenants in staging or prod.
 - Never set `ENVIRONMENT=local` anywhere but a developer machine — it enables the password-optional dev_email shortcut (auth.py). Production login is POST /auth/token {email, password}.
 - Plan/package changes are SA-only (TA → 403 PLAN_CHANGE_SA_ONLY); TA can view, not change.
+- Exception to the RULE policy: scripts/delete_tenant.py drops and recreates append-only RULEs inside its single purge transaction (local dev only). No other code may alter RULEs outside Alembic.
 
 ---
 
