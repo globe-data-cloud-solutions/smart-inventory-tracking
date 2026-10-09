@@ -302,12 +302,16 @@ NEVER log environment variable values — mask all secrets in CloudWatch log gro
 
 ## 22. CI/CD — GitHub Actions
 
-> **Three workflows only, all manually triggered (`workflow_dispatch`):**
-> `ci.yml` (quality gate), `infrastructure.yml` (Terraform), `deploy.yml` (app rollout).
-> During the bootstrap phase they authenticate to AWS with access-key **secrets**
-> (`AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY`) plus repo **vars** `AWS_REGION` and
-> `AWS_ACCOUNT_ID`. Migrating to GitHub OIDC (below) is the target once the
-> `smart-github-actions-*` IAM roles exist. No PR auto-runs; no inline service containers.
+> **Four workflows, all manually triggerable (`workflow_dispatch`):**
+> `ci.yml` (quality gate), `infrastructure.yml` (Terraform), `deploy.yml` (app rollout),
+> and `container-smoke.yml` (container image/health/e2e smoke test — see below; the
+> only one of the four that also auto-runs, on push to `main` for backend/docker-path
+> changes). During the bootstrap phase the AWS-touching workflows authenticate with
+> access-key **secrets** (`AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY`) plus repo
+> **vars** `AWS_REGION` and `AWS_ACCOUNT_ID`. Migrating to GitHub OIDC (below) is the
+> target once the `smart-github-actions-*` IAM roles exist. No PR auto-runs on the
+> other three; `container-smoke.yml` needs no AWS credentials at all (throwaway
+> Postgres/Redis containers only) and uses no inline service containers.
 
 ### OIDC trust — required GitHub Actions setup
 
@@ -505,4 +509,52 @@ Secrets:  AWS Secrets Manager — never in GitHub Secrets or workflow files.
 Backend:  static S3 (gdc-smart-terraform-state) + DynamoDB (smart-terraform-locks),
           state key smart-inventory-platform/<env>/terraform.tfstate.
 ```
+
+### Container smoke test (CI)
+
+`.github/workflows/container-smoke.yml` runs `scripts/docker/smoke.sh` on
+`workflow_dispatch` and automatically on push to `main` touching `backend/**`,
+`scripts/docker/**`, `.dockerignore`, or the workflow file itself. No AWS
+credentials or secrets involved — every dependency is a throwaway container.
+
+What `smoke.sh` proves:
+
+- **Python 3.12 image compatibility** — every `backend/services/*/Dockerfile`
+  (all `python:3.12-slim`-based) builds cleanly from a repo-root context.
+- **Fresh-DB migrations** — a disposable `postgres:16` container gets
+  `alembic upgrade head` run against it from a bare `python:3.12-slim` container
+  with `backend/shared` installed editable (repo mounted read-only,
+  `PYTHONPATH=/repo/backend`), followed by `scripts/seed_permissions.py`.
+  `alembic current` is printed and expected to show the current head revision.
+- **Service health** — every built image is run on a shared `smart-smoke`
+  Docker network against the throwaway Postgres/Redis, container names matching
+  `api-gateway`'s `SERVICE_MAP` defaults (`auth-service`, `tenant-service`, …);
+  each container's `/health` is polled for up to 60s.
+- **E2E through the gateway** — `GET /api/v1/tenants/public/packages`,
+  `POST /api/v1/tenants/public/signup` (tier `STARTER`, a timestamped
+  `zz-smoke-*` tenant), `POST /api/v1/auth/token`, and
+  `GET /api/v1/tenants/me/plan`, all via the gateway's host port.
+- **Outbox worker + beat** — `celery -A shared.outbox.worker worker` and
+  `celery -A shared.outbox.worker beat` (derived from the `Celery("smart", ...)`
+  app and its `beat_schedule` in `backend/shared/outbox/worker.py`), run from the
+  `tenant-service` image, each checked for a "ready" line in its logs.
+
+What it does **not** prove:
+
+- **Row-Level Security** — the migrations container connects as the Postgres
+  superuser (`smoke`/`smoke`, the container's own `POSTGRES_USER`), so RLS
+  policies are never exercised. RLS correctness still has to come from
+  `pytest backend/ --cov=backend`, not this smoke test.
+- Anything AWS-specific (Secrets Manager, SES, ElastiCache, RDS read-replica
+  behavior) — all of that is stubbed or simulated locally.
+
+Running it locally later (once Docker is available on a dev machine):
+
+```bash
+bash scripts/docker/smoke.sh
+```
+
+It is self-contained — it creates and tears down its own `smart-smoke` network,
+Postgres/Redis containers, service containers, and a temp env file (deleted on
+exit via a `trap ... EXIT`); built images (`smart-<service>:smoke`) are kept.
 

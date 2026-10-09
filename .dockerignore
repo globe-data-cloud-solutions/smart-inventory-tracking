@@ -1,0 +1,14 @@
+.git
+**/node_modules
+frontend/
+.env
+.env.*
+**/__pycache__
+**/*.pyc
+.coverage
+.coverage.*
+**/.pytest_cache
+**/test-results
+docs/
+infra/
+tests/e2e/
