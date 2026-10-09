@@ -53,6 +53,13 @@ locals {
       ) : { TRUST_PROXY_HEADERS = "true" }
     )
   }
+
+  # task_role_arn per service — only where a role exists (product-service: S3
+  # uploads; auth/tenant-service: SES send). Everything else gets none.
+  service_task_role_arns = merge(
+    { "product-service" = aws_iam_role.product_service_task.arn },
+    { for svc, role in aws_iam_role.ses_senders : svc => role.arn }
+  )
 }
 
 resource "aws_ecs_task_definition" "services" {
@@ -63,7 +70,7 @@ resource "aws_ecs_task_definition" "services" {
   cpu                      = tostring(local.service_sizing_resolved[each.key].cpu)
   memory                   = tostring(local.service_sizing_resolved[each.key].memory)
   execution_role_arn       = aws_iam_role.ecs_task_execution.arn
-  # task_role_arn (runtime AWS perms — S3, SES): scoped in I3b/I3c, not this PR.
+  task_role_arn            = lookup(local.service_task_role_arns, each.key, null)
 
   container_definitions = jsonencode([
     {

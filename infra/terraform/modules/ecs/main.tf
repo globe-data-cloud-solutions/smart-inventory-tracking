@@ -53,6 +53,85 @@ resource "aws_iam_role_policy" "secrets_access" {
   })
 }
 
+# ── Per-service task roles (runtime AWS perms, least privilege) ──────────
+# Only services that actually call an AWS API get a task_role_arn. All other
+# services, the outbox worker/beat, and the migration task make no AWS API
+# calls (grep: only backend/shared/storage/s3.py and backend/shared/email/
+# sender.py construct boto3 clients outside tests) and get none.
+
+resource "aws_iam_role" "product_service_task" {
+  name = "smart-${var.env}-product-service-task"
+
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Action    = "sts:AssumeRole"
+      Effect    = "Allow"
+      Principal = { Service = "ecs-tasks.amazonaws.com" }
+    }]
+  })
+}
+
+resource "aws_iam_role_policy" "product_service_s3" {
+  name = "smart-${var.env}-product-service-s3"
+  role = aws_iam_role.product_service_task.id
+
+  # _KEY_PREFIX in backend/shared/storage/s3.py = "uploads/"
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect   = "Allow"
+        Action   = ["s3:PutObject", "s3:GetObject", "s3:DeleteObject"]
+        Resource = "${var.storage_bucket_arn}/uploads/*"
+      },
+      {
+        Effect   = "Allow"
+        Action   = ["s3:ListBucket"]
+        Resource = var.storage_bucket_arn
+        Condition = {
+          StringLike = { "s3:prefix" = "uploads/*" }
+        }
+      }
+    ]
+  })
+}
+
+resource "aws_iam_role" "ses_senders" {
+  for_each = toset(["auth-service", "tenant-service"])
+  name     = "smart-${var.env}-${each.key}-task"
+
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Action    = "sts:AssumeRole"
+      Effect    = "Allow"
+      Principal = { Service = "ecs-tasks.amazonaws.com" }
+    }]
+  })
+}
+
+resource "aws_iam_role_policy" "ses_send" {
+  for_each = aws_iam_role.ses_senders
+  name     = "smart-${var.env}-${each.key}-ses"
+  role     = each.value.id
+
+  # Resource is "*" because SES send-email actions don't support resource-level
+  # permissions scoped to an identity ARN; tighten to the SES identity ARN via
+  # Condition once the sending domain is verified.
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect   = "Allow"
+      Action   = "ses:SendEmail"
+      Resource = "*"
+      Condition = {
+        StringEquals = { "ses:FromAddress" = var.email_from }
+      }
+    }]
+  })
+}
+
 resource "aws_cloudwatch_log_group" "services" {
   for_each          = toset(var.enabled_services)
   name              = "/ecs/smart-${var.env}/${each.key}"

@@ -43,6 +43,7 @@ variable "app_base_url" {
   default = ""
 }
 variable "storage_bucket" { type = string }
+variable "storage_bucket_arn" { type = string }
 variable "terms_version" { type = string }
 
 variable "alb_security_group_id" { type = string }
