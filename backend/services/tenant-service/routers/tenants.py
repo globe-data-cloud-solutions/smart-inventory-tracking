@@ -4,6 +4,7 @@ import re
 import uuid
 from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
+from pathlib import Path
 from typing import List, Literal, Optional
 
 import asyncpg
@@ -311,6 +312,35 @@ async def sa_tenant_registry(
         )
         for row in rows
     ])
+
+
+_SA_MANUAL_PATH = Path(__file__).resolve().parent.parent / "static" / "sa_operations_manual.md"
+
+
+@router.get("/sa/docs/operations-manual")
+@require_permission(PERMISSIONS.SA_DOCS_VIEW)
+async def sa_docs_operations_manual(
+    user=Depends(get_current_user),
+    db: AsyncSession = Depends(get_db_session),
+) -> Response:
+    """SA-only: serves the SA Operations Manual (SA-internal, never frontend/public)."""
+    if not user or user.role != "SA":
+        raise HTTPException(status_code=403, detail={"code": "FORBIDDEN", "message": "SA only"})
+
+    try:
+        content = _SA_MANUAL_PATH.read_text(encoding="utf-8")
+    except FileNotFoundError:
+        logger.error("SA Operations Manual missing at %s", _SA_MANUAL_PATH)
+        raise HTTPException(
+            status_code=500,
+            detail={"code": "SA_MANUAL_MISSING", "message": "SA Operations Manual file not found"},
+        )
+
+    return Response(
+        content=content,
+        media_type="text/markdown; charset=utf-8",
+        headers={"Cache-Control": "no-store"},
+    )
 
 
 class TierConfigEntry(BaseModel):
