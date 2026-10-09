@@ -143,6 +143,42 @@ resource "aws_ecs_service" "services" {
   }
 }
 
+# ── Migration task (alembic upgrade head + permission seed) ───────────────
+# No aws_ecs_service — run on demand via `aws ecs run-task` from the deploy
+# workflow, before any service rollout.
+
+resource "aws_ecs_task_definition" "migration" {
+  family                   = "smart-${var.env}-migration"
+  requires_compatibilities = ["FARGATE"]
+  network_mode             = "awsvpc"
+  cpu                      = "256"
+  memory                   = "512"
+  execution_role_arn       = aws_iam_role.ecs_task_execution.arn
+
+  container_definitions = jsonencode([
+    {
+      name      = "migration"
+      image     = "${var.account_id}.dkr.ecr.${var.region}.amazonaws.com/smart-migration:${var.env}-latest"
+      essential = true
+      environment = [
+        { name = "ENVIRONMENT", value = var.env }
+      ]
+      secrets = [
+        for s in local.common_secrets : s
+        if contains(["DATABASE_URL", "DATABASE_READ_URL"], s.name)
+      ]
+      logConfiguration = {
+        logDriver = "awslogs"
+        options = {
+          "awslogs-group"         = aws_cloudwatch_log_group.migration.name
+          "awslogs-region"        = var.region
+          "awslogs-stream-prefix" = "migration"
+        }
+      }
+    }
+  ])
+}
+
 # ── Outbox worker + beat (shared.outbox.worker Celery app) ────────────────
 # Both run the tenant-service image (matches scripts/docker/smoke.sh); the
 # image ENTRYPOINT still runs the env_guard pre-flight before celery starts.

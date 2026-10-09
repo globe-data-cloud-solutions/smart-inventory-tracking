@@ -104,7 +104,7 @@ jobs:
         if: inputs.stage == 'delete'
         run: |
           echo "Cleaning up ECR repositories before Terraform destroy..."
-          SERVICES="api-gateway auth-service tenant-service product-service inventory-service order-service logistics-service analytics-service notification-service sync-service"
+          SERVICES="api-gateway auth-service tenant-service product-service inventory-service order-service logistics-service analytics-service notification-service sync-service migration"
           for service in $SERVICES; do
             repo_name="smart-$service"
             if aws ecr describe-repositories --repository-names "$repo_name" --region ${{ vars.AWS_REGION || 'us-east-1' }} >/dev/null 2>&1; then

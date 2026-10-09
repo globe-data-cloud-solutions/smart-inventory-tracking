@@ -69,6 +69,11 @@ resource "aws_cloudwatch_log_group" "outbox_beat" {
   retention_in_days = var.env == "prod" ? 90 : 30
 }
 
+resource "aws_cloudwatch_log_group" "migration" {
+  name              = "/ecs/smart-${var.env}/migration"
+  retention_in_days = var.env == "prod" ? 90 : 30
+}
+
 # Service Connect namespace — every enabled service is a server under this
 # namespace with client_alias dns_name = <service name>, so existing
 # http://<service>:8000 URLs (gateway env, smoke.sh) keep working unchanged.

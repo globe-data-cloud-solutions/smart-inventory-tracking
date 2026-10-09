@@ -529,19 +529,28 @@ Jobs:
 
 ```
 setup       → resolve dev/stg/prd → dev/stage/prod
-build-push  → matrix over all 10 services: docker build backend/services/<svc>,
-              push to ECR repo smart-<svc>, tags <env>-<sha> and <env>-latest
-deploy      → run Alembic migrations via one-off ECS task (smart-<env>-migration),
-              then `aws ecs update-service --force-new-deployment` for each
-              smart-<env>-<svc>. Gated by GitHub Environment deploy-<env>.
+build-push  → matrix over all 10 services + migration: ensures the ECR repo
+              smart-<svc> exists (create-repository on first push), docker build
+              (backend/services/<svc>/Dockerfile, or backend/migrations/Dockerfile
+              for migration), push to ECR, tags <env>-<sha> and <env>-latest
+deploy      → run Alembic migrations + permission seed via one-off ECS task
+              (smart-<env>-migration), reading network config (subnets/SGs) from
+              the running smart-<env>-api-gateway service; FAILS the run if the
+              task def is missing, the network config can't be read, or the task
+              exits non-zero (stoppedReason + log group printed). Rollout never
+              starts on a failed migration. Then `aws ecs update-service
+              --force-new-deployment` for each smart-<env>-<svc> plus
+              outbox-worker and outbox-beat (stub services not yet in Terraform:
+              warn and skip), followed by `aws ecs wait services-stable` for
+              whichever were actually updated. Gated by GitHub Environment
+              deploy-<env>.
 ```
 
-- ECR repos are `smart-<service>` (NOT env-prefixed — created by the `ecs` Terraform
-  module; images are differentiated by the `<env>-<sha>` tag).
-- **Known gap:** the `ecs` module does not yet define `aws_ecs_service` or task
-  definitions. Until it does, the migration + rollout steps **warn and skip** rather
-  than fail. Image build/push works today; rollout becomes effective once those
-  resources exist in Terraform.
+Deploy order: build+push all images (incl. migration) → migration task must exit 0
+→ force-new-deployment of services + outbox-worker + outbox-beat → wait stable.
+
+- ECR repos are `smart-<service>` (NOT env-prefixed — created on first push by the
+  workflow itself; images are differentiated by the `<env>-<sha>` tag).
 
 ### Pipeline summary
 
