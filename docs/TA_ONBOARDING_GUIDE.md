@@ -666,12 +666,12 @@ When a user is deactivated, their position assignment is removed automatically. 
 system does not alert you automatically yet — pending transfers routed to that user
 still show that user as the approver, so you need to check Transfers filtered by
 "Pending Approval" yourself. As TA you can approve or reject any transfer you did not
-create yourself. For adjustments, a TA can approve on a deactivated user's behalf only
-when the adjustment was flagged as escalated at the time it was submitted (the
-self-approval-prevention case) — deactivating the approver afterward does not add that
-flag, so an adjustment routed to a now-inactive approver stays assigned to them until
-you reassign the position. Before deactivating an approver, assign another user to
-their position so routing continues uninterrupted.
+create yourself. Adjustments: ordinary adjustments can be approved by you as usual. An
+adjustment where a product approval minimum applied is locked to the specific person it
+was routed to; if that person is deactivated it cannot be approved by anyone — reject
+it, and ask the creator to resubmit so it routes to an active approver. Reassigning the
+position does not move an already-submitted adjustment. Before deactivating an
+approver, assign another user to their position so routing continues uninterrupted.
 
 ---
 
@@ -732,9 +732,12 @@ When reassigning a user to a new position:
 2. Remove their old position assignment if they should no longer hold it
    — use force-remove (SA token required for sole PRIMARY removal)
 3. If the old position had pending approvals routed to it, those are not escalated
-   automatically — check Transfers/Adjustments filtered by "Pending Approval" and
-   approve or reject them yourself as TA, or assign the replacement first so they
-   route correctly going forward
+   automatically — check Transfers/Adjustments filtered by "Pending Approval" yourself.
+   Pending transfers you can approve or reject directly as TA. Pending adjustments can
+   also be approved as usual, unless a product approval minimum locked the adjustment to
+   that specific person — in that case it cannot be approved by anyone and must be
+   rejected, with the creator resubmitting so it routes to an active approver. Assigning
+   the replacement first avoids all of this for anything submitted afterward.
 
 If the user moves to a higher level (e.g. WM → RM), their old WM scope is replaced
 by the new RM scope on next login. If they move to a lower level (e.g. RM → WM), their
