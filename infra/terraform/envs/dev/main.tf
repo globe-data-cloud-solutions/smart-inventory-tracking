@@ -59,7 +59,8 @@ module "alb" {
   env               = "dev"
   vpc_id            = module.networking.vpc_id
   public_subnet_ids = module.networking.public_subnet_ids
-  certificate_arn   = "" # set once ACM cert exists — enables HTTPS + redirect
+  certificate_arn   = ""                    # set once ACM cert exists — enables HTTPS + redirect
+  allowed_cidrs     = var.alb_allowed_cidrs # dev fails closed — set via TF_VAR_alb_allowed_cidrs
 }
 
 module "ecs" {
@@ -69,9 +70,10 @@ module "ecs" {
   private_subnet_ids = module.networking.private_subnet_ids
   account_id         = data.aws_caller_identity.current.account_id
 
-  alb_security_group_id    = module.alb.alb_security_group_id
-  gateway_target_group_arn = module.alb.gateway_target_group_arn
-  cors_origins             = ""
+  alb_security_group_id     = module.alb.alb_security_group_id
+  gateway_target_group_arn  = module.alb.gateway_target_group_arn
+  frontend_target_group_arn = module.alb.frontend_target_group_arn
+  cors_origins              = "http://${module.alb.alb_dns_name}" # same-origin behind the ALB; → https://<CloudFront|domain> in I2b
 
   # order/logistics/analytics/notification/sync are stubs — add here to deploy.
   enabled_services = ["api-gateway", "auth-service", "tenant-service", "product-service",
@@ -81,15 +83,16 @@ module "ecs" {
     default     = { cpu = 256, memory = 512, desired_count = 1, web_concurrency = 1 }
     api-gateway = { cpu = 512, memory = 1024, desired_count = 1, web_concurrency = 2 }
   }
-  worker_sizing = { cpu = 256, memory = 512 }
-  beat_sizing   = { cpu = 256, memory = 512 }
+  worker_sizing   = { cpu = 256, memory = 512 }
+  beat_sizing     = { cpu = 256, memory = 512 }
+  frontend_sizing = { cpu = 256, memory = 512, desired_count = 1 }
 
   email_delivery_mode = "log"
   email_from          = "no-reply@dev.local"
   storage_bucket      = module.s3.bucket_name
   storage_bucket_arn  = module.s3.bucket_arn
   terms_version       = "2026-10"
-  app_base_url        = "" # set in I3b
+  app_base_url        = "http://${module.alb.alb_dns_name}" # same-origin behind the ALB; → https://<CloudFront|domain> in I2b
 }
 
 module "observability" {
@@ -101,3 +104,7 @@ module "observability" {
 data "aws_caller_identity" "current" {}
 
 output "alb_dns_name" { value = module.alb.alb_dns_name }
+
+# No default — dev fails closed; set via TF_VAR_alb_allowed_cidrs from the
+# GitHub repo variable DEV_ALB_ALLOWED_CIDRS.
+variable "alb_allowed_cidrs" { type = list(string) }

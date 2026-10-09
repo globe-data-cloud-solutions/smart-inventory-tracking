@@ -9,3 +9,4 @@ variable "idle_timeout" {
   type    = number
   default = 60
 }
+variable "allowed_cidrs" { type = list(string) }

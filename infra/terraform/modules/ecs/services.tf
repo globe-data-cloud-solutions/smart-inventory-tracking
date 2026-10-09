@@ -150,6 +150,81 @@ resource "aws_ecs_service" "services" {
   }
 }
 
+# ── Frontend (standalone Next.js) ──────────────────────────────────────────
+# Always deployed — not part of enabled_services. NEXT_PUBLIC_API_URL is
+# baked into the image at build time; no backend secrets or task role.
+
+resource "aws_ecs_task_definition" "frontend" {
+  family                   = "smart-${var.env}-frontend"
+  requires_compatibilities = ["FARGATE"]
+  network_mode             = "awsvpc"
+  cpu                      = tostring(var.frontend_sizing.cpu)
+  memory                   = tostring(var.frontend_sizing.memory)
+  execution_role_arn       = aws_iam_role.ecs_task_execution.arn
+
+  container_definitions = jsonencode([
+    {
+      name      = "frontend"
+      image     = "${var.account_id}.dkr.ecr.${var.region}.amazonaws.com/smart-frontend:${var.env}-latest"
+      essential = true
+      portMappings = [
+        { name = "http", containerPort = 3000, protocol = "tcp" }
+      ]
+      environment = [
+        { name = "NODE_ENV", value = "production" },
+        { name = "PORT", value = "3000" },
+        { name = "HOSTNAME", value = "0.0.0.0" }
+      ]
+      logConfiguration = {
+        logDriver = "awslogs"
+        options = {
+          "awslogs-group"         = aws_cloudwatch_log_group.frontend.name
+          "awslogs-region"        = var.region
+          "awslogs-stream-prefix" = "frontend"
+        }
+      }
+      healthCheck = {
+        command     = ["CMD-SHELL", "node -e \"fetch('http://localhost:3000/').then(r=>process.exit(r.status<500?0:1)).catch(()=>process.exit(1))\""]
+        interval    = 30
+        retries     = 3
+        startPeriod = 30
+        timeout     = 5
+      }
+    }
+  ])
+}
+
+resource "aws_ecs_service" "frontend" {
+  name            = "smart-${var.env}-frontend"
+  cluster         = aws_ecs_cluster.main.id
+  task_definition = aws_ecs_task_definition.frontend.arn
+  desired_count   = var.frontend_sizing.desired_count
+  launch_type     = "FARGATE"
+
+  network_configuration {
+    subnets          = var.private_subnet_ids
+    security_groups  = [aws_security_group.tasks.id]
+    assign_public_ip = false
+  }
+
+  load_balancer {
+    target_group_arn = var.frontend_target_group_arn
+    container_name   = "frontend"
+    container_port   = 3000
+  }
+
+  health_check_grace_period_seconds = 60
+
+  deployment_circuit_breaker {
+    enable   = true
+    rollback = true
+  }
+
+  lifecycle {
+    ignore_changes = [desired_count]
+  }
+}
+
 # ── Migration task (alembic upgrade head + permission seed) ───────────────
 # No aws_ecs_service — run on demand via `aws ecs run-task` from the deploy
 # workflow, before any service rollout.

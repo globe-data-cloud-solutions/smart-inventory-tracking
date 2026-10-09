@@ -152,6 +152,11 @@ resource "aws_cloudwatch_log_group" "migration" {
   retention_in_days = var.env == "prod" ? 90 : 30
 }
 
+resource "aws_cloudwatch_log_group" "frontend" {
+  name              = "/ecs/smart-${var.env}/frontend"
+  retention_in_days = var.env == "prod" ? 90 : 30
+}
+
 # Service Connect namespace — every enabled service is a server under this
 # namespace with client_alias dns_name = <service name>, so existing
 # http://<service>:8000 URLs (gateway env, smoke.sh) keep working unchanged.
@@ -186,4 +191,12 @@ resource "aws_vpc_security_group_ingress_rule" "tasks_from_alb" {
   ip_protocol                  = "tcp"
   from_port                    = 8000
   to_port                      = 8000
+}
+
+resource "aws_vpc_security_group_ingress_rule" "tasks_from_alb_frontend" {
+  security_group_id            = aws_security_group.tasks.id
+  referenced_security_group_id = var.alb_security_group_id
+  ip_protocol                  = "tcp"
+  from_port                    = 3000
+  to_port                      = 3000
 }

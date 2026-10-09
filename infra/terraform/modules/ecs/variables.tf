@@ -52,3 +52,12 @@ variable "cors_origins" {
   type    = string
   default = ""
 }
+
+variable "frontend_target_group_arn" { type = string }
+variable "frontend_sizing" {
+  type = object({
+    cpu           = number
+    memory        = number
+    desired_count = number
+  })
+}
