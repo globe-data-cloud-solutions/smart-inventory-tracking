@@ -132,8 +132,8 @@ On success (`reset-password`), in one transaction: new bcrypt hash,
 now())` (the link proves mailbox ownership), then the login-lockout counter
 for that email is cleared.
 
-> **Known gap:** existing JWTs are not revoked on reset — they stay valid
-> until their own expiry. No revocation list exists; documented, not built.
+> Since commit 387189c, a successful reset revokes the user's existing
+> tokens (`revoke_user_tokens()`, Redis revoked-before timestamp).
 
 Dev/local sends the same way as email verification: `[DEV EMAIL] reset
 <email>: <APP_BASE_URL>/reset-password?token=<raw>`, logged at WARNING by

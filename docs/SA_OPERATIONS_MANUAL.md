@@ -63,7 +63,7 @@ This call accepts and sets, in one request:
   if only `contract_start` is given, `contract_end` defaults to the
   subscription's own computed period end. Contract dates and the billing
   period are independent of each other (a 2-year contract can run on
-  monthly billing) — see §4.
+  monthly billing) — see §8.
 - `account_owner` — the TA admin created in the same call becomes the
   account owner (`users.is_account_owner = true`).
 
@@ -74,7 +74,7 @@ and feature flags are set once, at tenant creation, via
 `apply_package_to_tenant()` — never by the wizard.
 
 `DELETE /{tenant_id}` always returns `409 USE_DEACTIVATE` — tenants are
-never hard-deleted through the API (see §8).
+never hard-deleted through the API (see §9).
 
 ### 3.2 Tenant self sign-up — `POST /api/v1/tenants/public/signup`
 UI: `frontend/src/app/(auth)/signup/page.tsx`, a public, unauthenticated
@@ -87,7 +87,7 @@ activity-log insert → verification token issued. The verification email is
 sent only AFTER commit — an email send failure never rolls back the sign-up.
 
 A `PENDING_PAYMENT` subscription is fully usable immediately — there is no
-payment enforcement anywhere yet (see §6). Rate-limited 5 signups/hour per IP
+payment enforcement anywhere yet (see §7). Rate-limited 5 signups/hour per IP
 (`signup` bucket).
 
 ### 3.3 What distinguishes the two paths
@@ -98,7 +98,7 @@ payment enforcement anywhere yet (see §6). Rate-limited 5 signups/hour per IP
   subscription status.
 - Self sign-up writes a `terms_acceptances` row at signup time; an
   SA-created tenant does not — its account owner is prompted to accept at
-  first login instead (see §9).
+  first login instead (see §10).
 
 ## 4. Plans & Pricing
 
@@ -270,7 +270,10 @@ subscription.
 contract_expiry_notified` JSONB column (migration 067) tracks which
 pre-expiry alert milestones have already been dispatched for a tenant — this
 is alerting only. The SA decides manually whether/when to suspend a tenant
-whose contract has lapsed, using the Suspend action in §9.
+whose contract has lapsed, using the Suspend action in the Suspending /
+Deactivating a Tenant section below.
+
+**Decided policy (2026-10):** alerts only; no automatic suspension.
 
 ## 9. Suspending / Deactivating a Tenant
 
@@ -314,12 +317,17 @@ a tenant in staging or prod.**
     SHA-256-hashed, 60-minute-TTL token. On success: new password hash,
     `must_reset_password=false`, `email_verified_at` set if unset, and the
     failed-login lockout counter for that email is cleared. Issuing a new
-    reset token invalidates the user's earlier unused ones. **Existing JWTs
-    are not revoked on reset** — they remain valid until their own expiry;
-    there is no revocation list for this path (documented gap, not built).
+    reset token invalidates the user's earlier unused ones. All of the
+    user's existing login tokens are revoked on a successful reset
+    (`revoke_user_tokens()`), so every open session is logged out.
   - TA-initiated: TA resets a user's password from the Personnel tab
     (temporary password, forced change at next login); this also clears
     that user's login-lockout counter immediately.
+  - Other TA actions that also revoke a user's tokens
+    (`personnel_v2.py`, `revoke_user_tokens()`): setting a new password for
+    a user via Personnel → edit user (~line 815); deactivating a user
+    (~line 601); and an SA force-removing a user's sole PRIMARY position,
+    which deactivates the user as a side effect (~line 525).
 - **Account lockout:** real and automatic, not merely a rate limit. After 5
   failed login attempts for one email, further attempts to that email are
   rejected with `429 TOO_MANY_ATTEMPTS` for 15 minutes from the **first**
@@ -351,8 +359,9 @@ a tenant in staging or prod.**
 
 ## 12. Go-Live Checklist (SA)
 
-- [ ] Remove the credentials section from the public landing page (if one
-  still exists for demo/dev purposes).
+- [ ] Remove the `#credentials` section from the public landing page
+  (`frontend/src/app/page.tsx`) and remove `SA_USER.password` from
+  `frontend/src/lib/demo-data.ts` (both still present).
 - [ ] Reset the SA password used during development to a fresh, strong
   credential.
 - [ ] Confirm branch protection / review requirements — **current reality
@@ -379,8 +388,6 @@ a tenant in staging or prod.**
   reviews these as a lawyer; outline only today**.
 - Account credit / Ethiopian VAT credit-note handling for downgrades —
   **TBD — accountant**; no credit is given today regardless.
-- Automatic suspension on contract expiry — **TBD — Alex** (not built;
-  today it is alert-only, manual decision).
 - Payment gateway (Chapa, Telebirr, or similar) integration — not started;
   `MANUAL` and `STUB` are the only providers implemented today.
 - This document's own publishing route — **TBD** (needs an authenticated
