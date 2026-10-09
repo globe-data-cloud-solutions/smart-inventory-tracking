@@ -516,6 +516,32 @@ delete   → terraform init && terraform destroy -auto-approve
   `infra-stage` / `infra-prod` to require approval before `apply`/`delete`.
 - Assumes the S3 state bucket (`gdc-smart-terraform-state`) and DynamoDB lock table
   (`smart-terraform-locks`) already exist.
+- `dev` `plan`/`apply`/`delete` export `TF_VAR_alb_allowed_cidrs` from the repo
+  variable `DEV_ALB_ALLOWED_CIDRS` (a JSON list string, e.g. `["1.2.3.4/32"]`) —
+  the job fails with `::error::` before init if that repo variable is unset. Set
+  it under repo Settings → Secrets and variables → Actions → Variables.
+  `stage`/`prod` hardcode `allowed_cidrs = ["0.0.0.0/0"]` (tightened by
+  CloudFront in I2b).
+
+#### ALB routing (`infra/terraform/modules/alb`)
+
+One internet-facing ALB per env; the active listener (HTTP:80 with no cert,
+HTTPS:443 once `certificate_arn` is set — HTTP:80 then becomes redirect-only)
+evaluates rules by priority, falling through to its default action:
+
+```
+priority 10  path /api/locales, /api/locales/*   → frontend target group (3000)
+priority 20  path /api/*, /static/*, /health     → gateway target group (8000)
+default      (everything else)                   → frontend target group (3000)
+```
+
+Frontend owns `/api/locales` (language packs) so that rule must outrank the
+general `/api/*` → gateway rule. The frontend ECS service
+(`smart-<env>-frontend`) is always deployed — it is not part of
+`enabled_services`. A destroyed/recreated env has an empty ALB DNS name until
+the next `deploy.yml` run, since the frontend image is built per env with
+that env's ALB address baked in as `NEXT_PUBLIC_API_URL` (see below) — a
+fresh env therefore needs a deploy, which already rebuilds it.
 
 ### `.github/workflows/deploy.yml` — one application deployment pipeline
 
@@ -529,10 +555,16 @@ Jobs:
 
 ```
 setup       → resolve dev/stg/prd → dev/stage/prod
-build-push  → matrix over all 10 services + migration: ensures the ECR repo
-              smart-<svc> exists (create-repository on first push), docker build
-              (backend/services/<svc>/Dockerfile, or backend/migrations/Dockerfile
-              for migration), push to ECR, tags <env>-<sha> and <env>-latest
+build-push  → matrix over all 10 services + migration + frontend: ensures the
+              ECR repo smart-<svc> exists (create-repository on first push),
+              docker build (backend/services/<svc>/Dockerfile,
+              backend/migrations/Dockerfile for migration, or
+              frontend/Dockerfile for frontend), push to ECR, tags <env>-<sha>
+              and <env>-latest. frontend only: first resolves the env's ALB
+              DNS name (aws elbv2 describe-load-balancers --names
+              smart-<env>-alb) and fails with ::error:: if empty — apply infra
+              before deploying — then passes it as
+              --build-arg NEXT_PUBLIC_API_URL=http://<alb-dns>.
 deploy      → run Alembic migrations + permission seed via one-off ECS task
               (smart-<env>-migration), reading network config (subnets/SGs) from
               the running smart-<env>-api-gateway service; FAILS the run if the

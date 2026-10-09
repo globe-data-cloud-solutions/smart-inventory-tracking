@@ -37,6 +37,7 @@ env:
   SERVICES: >-
     api-gateway auth-service tenant-service product-service inventory-service
     order-service logistics-service analytics-service notification-service sync-service
+    frontend
 
 jobs:
   # ── Resolve dev/stg/prd → envs directory / cluster suffix ─────────────────────
@@ -75,6 +76,7 @@ jobs:
           - notification-service
           - sync-service
           - migration
+          - frontend
     steps:
       - uses: actions/checkout@v4
 
@@ -104,6 +106,8 @@ jobs:
         run: |
           if [ "$SERVICE" = "migration" ]; then
             DOCKERFILE="backend/migrations/Dockerfile"
+          elif [ "$SERVICE" = "frontend" ]; then
+            DOCKERFILE="frontend/Dockerfile"
           else
             DOCKERFILE="backend/services/$SERVICE/Dockerfile"
           fi
@@ -112,7 +116,18 @@ jobs:
             | docker login --username AWS --password-stdin "$REGISTRY"
 
           REPO="$REGISTRY/smart-$SERVICE"
-          docker build --no-cache -t "$REPO:$ENV-${{ github.sha }}" -t "$REPO:$ENV-latest" \
+          BUILD_ARGS=()
+          if [ "$SERVICE" = "frontend" ]; then
+            ALB_DNS="$(aws elbv2 describe-load-balancers --names "smart-$ENV-alb" \
+              --query 'LoadBalancers[0].DNSName' --output text)"
+            if [ -z "$ALB_DNS" ] || [ "$ALB_DNS" = "None" ]; then
+              echo "::error::Could not resolve ALB DNS name for smart-$ENV-alb — deploy infra first."
+              exit 1
+            fi
+            BUILD_ARGS=(--build-arg "NEXT_PUBLIC_API_URL=http://$ALB_DNS")
+          fi
+
+          docker build --no-cache "${BUILD_ARGS[@]}" -t "$REPO:$ENV-${{ github.sha }}" -t "$REPO:$ENV-latest" \
             -f "$DOCKERFILE" .
           docker push "$REPO:$ENV-${{ github.sha }}"
           docker push "$REPO:$ENV-latest"

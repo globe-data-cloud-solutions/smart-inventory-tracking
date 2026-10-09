@@ -87,6 +87,16 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ vars.AWS_REGION || 'us-east-1' }}
 
+      - name: Set dev ALB allow-list
+        if: inputs.stage != 'validate' && needs.setup.outputs.env == 'dev'
+        run: |
+          CIDRS='${{ vars.DEV_ALB_ALLOWED_CIDRS }}'
+          if [ -z "$CIDRS" ]; then
+            echo "::error::set repo variable DEV_ALB_ALLOWED_CIDRS"
+            exit 1
+          fi
+          echo "TF_VAR_alb_allowed_cidrs=$CIDRS" >> "$GITHUB_ENV"
+
       - name: Terraform Init (S3 backend)
         if: inputs.stage != 'validate'
         # Backend is statically configured in envs/<env>/main.tf — no -backend-config.
@@ -104,7 +114,7 @@ jobs:
         if: inputs.stage == 'delete'
         run: |
           echo "Cleaning up ECR repositories before Terraform destroy..."
-          SERVICES="api-gateway auth-service tenant-service product-service inventory-service order-service logistics-service analytics-service notification-service sync-service migration"
+          SERVICES="api-gateway auth-service tenant-service product-service inventory-service order-service logistics-service analytics-service notification-service sync-service migration frontend"
           for service in $SERVICES; do
             repo_name="smart-$service"
             if aws ecr describe-repositories --repository-names "$repo_name" --region ${{ vars.AWS_REGION || 'us-east-1' }} >/dev/null 2>&1; then
