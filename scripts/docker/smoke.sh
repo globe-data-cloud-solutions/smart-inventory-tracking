@@ -46,14 +46,14 @@ STARTED_CONTAINERS+=("$PG_NAME")
 docker run -d --name "$REDIS_NAME" --network "$NETWORK" redis:7 >/dev/null
 STARTED_CONTAINERS+=("$REDIS_NAME")
 
-MINIO_NAME="smoke-minio"
-MINIO_BUCKET="smart-smoke-attachments"
-MINIO_ROOT_USER="smokeminioaccess"
-MINIO_ROOT_PASSWORD="smokeminiosecret"
-docker run -d --name "$MINIO_NAME" --network "$NETWORK" \
-  -e MINIO_ROOT_USER="$MINIO_ROOT_USER" -e MINIO_ROOT_PASSWORD="$MINIO_ROOT_PASSWORD" \
-  minio/minio server /data >/dev/null
-STARTED_CONTAINERS+=("$MINIO_NAME")
+S3_NAME="smoke-s3"
+S3_BUCKET="smart-smoke-attachments"
+# Moto's moto_server — the prior S3-compatible test image is no longer
+# publicly pullable, so this smoke test now installs a pure-Python
+# S3-compatible mock fresh via pip into python:3.12-slim instead.
+docker run -d --name "$S3_NAME" --network "$NETWORK" python:3.12-slim \
+  bash -c 'pip install -q "moto[server]" && moto_server -H 0.0.0.0 -p 5000' >/dev/null
+STARTED_CONTAINERS+=("$S3_NAME")
 
 wait_for() {
   local desc="$1"; shift
@@ -72,22 +72,50 @@ wait_for() {
 wait_for "postgres" docker exec "$PG_NAME" pg_isready -U smoke
 wait_for "redis" bash -c "docker exec $REDIS_NAME redis-cli ping | grep -q PONG"
 
-bucket_ready=0
-for _ in $(seq 1 30); do
-  if docker run --rm --network "$NETWORK" --entrypoint sh minio/mc -c \
-      "mc alias set smokeminio http://${MINIO_NAME}:9000 ${MINIO_ROOT_USER} ${MINIO_ROOT_PASSWORD} && mc mb smokeminio/${MINIO_BUCKET}" \
-      >/tmp/minio-mb.log 2>&1; then
-    bucket_ready=1
+# moto_server needs `pip install` to finish inside the container first, so
+# give it up to 90s (vs. the 60s budget above) before declaring it unready.
+s3_ready=0
+for _ in $(seq 1 45); do
+  code="$(docker run --rm --network "$NETWORK" -e S3_URL="http://${S3_NAME}:5000/" \
+      python:3.12-slim python3 -c '
+import os, urllib.request
+try:
+    print(urllib.request.urlopen(os.environ["S3_URL"], timeout=3).status)
+except Exception:
+    print(0)
+' 2>/dev/null)"
+  if [ "$code" = "200" ]; then
+    s3_ready=1
     break
   fi
   sleep 2
 done
-if [ "$bucket_ready" -eq 1 ]; then
-  log "minio ready, bucket created: $MINIO_BUCKET"
+if [ "$s3_ready" -eq 1 ]; then
+  log "moto S3 server ready: $S3_NAME"
 else
-  fail "minio did not become ready / bucket creation failed within 60s"
-  tail -40 /tmp/minio-mb.log || true
-  docker logs --tail 60 "$MINIO_NAME" || true
+  fail "moto S3 server did not become ready within 90s"
+  s3_logs="$(docker logs "$S3_NAME" 2>&1)"
+  log "${s3_logs: -2000}"
+fi
+[ "$FAILED" -eq 0 ] || exit 1
+
+if docker run --rm --network "$NETWORK" \
+    -e AWS_ACCESS_KEY_ID=testing -e AWS_SECRET_ACCESS_KEY=testing -e AWS_DEFAULT_REGION=us-east-1 \
+    -e S3_ENDPOINT="http://${S3_NAME}:5000" -e S3_BUCKET="$S3_BUCKET" \
+    python:3.12-slim bash -c '
+      set -e
+      pip install -q boto3
+      python3 -c "
+import os, boto3
+s3 = boto3.client(\"s3\", endpoint_url=os.environ[\"S3_ENDPOINT\"], region_name=\"us-east-1\")
+s3.create_bucket(Bucket=os.environ[\"S3_BUCKET\"])
+print(\"bucket created:\", os.environ[\"S3_BUCKET\"])
+"
+    ' >/tmp/moto-bucket.log 2>&1; then
+  log "bucket created: $S3_BUCKET"
+else
+  fail "moto bucket creation failed"
+  tail -40 /tmp/moto-bucket.log || true
 fi
 [ "$FAILED" -eq 0 ] || exit 1
 
@@ -165,10 +193,10 @@ TRUSTED_PROXY_HOPS=0
 APP_BASE_URL=http://localhost:8080
 AWS_REGION=us-east-1
 STORAGE_BACKEND=s3
-STORAGE_S3_BUCKET=${MINIO_BUCKET}
-STORAGE_S3_ENDPOINT_URL=http://${MINIO_NAME}:9000
-AWS_ACCESS_KEY_ID=${MINIO_ROOT_USER}
-AWS_SECRET_ACCESS_KEY=${MINIO_ROOT_PASSWORD}
+STORAGE_S3_BUCKET=${S3_BUCKET}
+STORAGE_S3_ENDPOINT_URL=http://${S3_NAME}:5000
+AWS_ACCESS_KEY_ID=testing
+AWS_SECRET_ACCESS_KEY=testing
 STUB_WEBHOOK_SECRET=smoke-webhook-secret
 EMAIL_VERIFICATION_REQUIRED=false
 AUTH_SERVICE_URL=http://auth-service:8000
@@ -249,8 +277,8 @@ show "GET /api/v1/tenants/me/plan" "$code" "$body"
 [ "$code" = "200" ] || fail "tenants/me/plan expected 200, got $code"
 [ "$FAILED" -eq 0 ] || exit 1
 
-# ── f2. S3 upload via MinIO (product-service STORAGE_BACKEND=s3) ────────────
-section "S3 upload via MinIO"
+# ── f2. S3 upload via Moto (product-service STORAGE_BACKEND=s3) ─────────────
+section "S3 upload via Moto"
 log "endpoint used: POST /api/v1/upload/product-image (tier: STARTER — product:upload_image is not plan-gated)"
 
 PNG_B64="iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII="

@@ -257,8 +257,9 @@ AWS_S3_LOCALE_PATH=locales/   # en.json, am.json, or.json live here
 STORAGE_BACKEND=s3
 STORAGE_S3_BUCKET=smart-{env}-attachments   # bucket stays private — never public-read
 # STORAGE_S3_ENDPOINT_URL — leave UNSET on AWS. Only set in the CI smoke test,
-# pointing at the throwaway MinIO container (scripts/docker/smoke.sh), never in
-# any real dev/stage/prod task definition.
+# pointing at the throwaway Moto S3 server (scripts/docker/smoke.sh — moto_server;
+# the prior S3-compatible test image used here is no longer publicly pullable),
+# never in any real dev/stage/prod task definition.
 # IAM: product-service ECS task role needs s3:GetObject/PutObject/DeleteObject
 # on arn:aws:s3:::smart-{env}-attachments/uploads/*.
 # Existing local-disk images are NOT migrated when switching an environment to
