@@ -1,5 +1,5 @@
-variable "env"        { type = string }
-variable "vpc_id"    { type = string }
+variable "env" { type = string }
+variable "vpc_id" { type = string }
 variable "subnet_ids" { type = list(string) }
 variable "node_type" {
   type    = string
@@ -24,13 +24,13 @@ resource "aws_security_group" "redis" {
 }
 
 resource "aws_elasticache_replication_group" "main" {
-  replication_group_id = "smart-${var.env}-redis"
-  description          = "SMART ${var.env} - Celery broker + session cache"
-  node_type            = var.node_type
-  num_cache_clusters   = var.env == "prod" ? 2 : 1
-  port                 = 6379
-  subnet_group_name    = aws_elasticache_subnet_group.main.name
-  security_group_ids   = [aws_security_group.redis.id]
+  replication_group_id       = "smart-${var.env}-redis"
+  description                = "SMART ${var.env} - Celery broker + session cache"
+  node_type                  = var.node_type
+  num_cache_clusters         = var.env == "prod" ? 2 : 1
+  port                       = 6379
+  subnet_group_name          = aws_elasticache_subnet_group.main.name
+  security_group_ids         = [aws_security_group.redis.id]
   at_rest_encryption_enabled = true
   transit_encryption_enabled = true
   automatic_failover_enabled = var.env == "prod" ? true : false

@@ -1,6 +1,6 @@
-variable "env"               { type = string }
-variable "vpc_id"            { type = string }
-variable "subnet_ids"        { type = list(string) }
+variable "env" { type = string }
+variable "vpc_id" { type = string }
+variable "subnet_ids" { type = list(string) }
 variable "instance_class" {
   type    = string
   default = "db.t4g.medium"
@@ -28,21 +28,21 @@ resource "aws_security_group" "rds" {
 }
 
 resource "aws_db_instance" "primary" {
-  identifier             = "smart-${var.env}-primary"
-  engine                 = "postgres"
-  engine_version         = "16.3"
-  instance_class         = var.instance_class
-  allocated_storage      = var.allocated_storage
-  storage_encrypted      = true
-  db_name                = "smart_inventory"
-  username               = "smart_app"
+  identifier                  = "smart-${var.env}-primary"
+  engine                      = "postgres"
+  engine_version              = "16.3"
+  instance_class              = var.instance_class
+  allocated_storage           = var.allocated_storage
+  storage_encrypted           = true
+  db_name                     = "smart_inventory"
+  username                    = "smart_app"
   manage_master_user_password = true
-  db_subnet_group_name   = aws_db_subnet_group.main.name
-  vpc_security_group_ids = [aws_security_group.rds.id]
-  multi_az               = var.env == "prod" ? true : false
-  backup_retention_period = var.env == "prod" ? 14 : 7
-  skip_final_snapshot    = var.env != "prod"
-  deletion_protection    = var.env == "prod"
+  db_subnet_group_name        = aws_db_subnet_group.main.name
+  vpc_security_group_ids      = [aws_security_group.rds.id]
+  multi_az                    = var.env == "prod" ? true : false
+  backup_retention_period     = var.env == "prod" ? 14 : 7
+  skip_final_snapshot         = var.env != "prod"
+  deletion_protection         = var.env == "prod"
 
   parameter_group_name = aws_db_parameter_group.pg16.name
 }
@@ -68,4 +68,4 @@ resource "aws_db_parameter_group" "pg16" {
 }
 
 output "primary_endpoint" { value = aws_db_instance.primary.endpoint }
-output "replica_endpoint"  { value = var.env == "prod" ? aws_db_instance.read_replica[0].endpoint : null }
+output "replica_endpoint" { value = var.env == "prod" ? aws_db_instance.read_replica[0].endpoint : null }

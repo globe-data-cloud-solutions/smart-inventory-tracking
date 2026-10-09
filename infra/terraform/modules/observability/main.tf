@@ -1,9 +1,9 @@
-variable "env"        { type = string }
+variable "env" { type = string }
 variable "account_id" { type = string }
 
 # IAM role for Grafana to assume
 resource "aws_iam_role" "grafana" {
-  name               = "smart-${var.env}-grafana-role"
+  name = "smart-${var.env}-grafana-role"
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
     Statement = [
@@ -70,4 +70,4 @@ resource "aws_sns_topic" "alerts" {
 }
 
 output "prometheus_workspace_id" { value = aws_prometheus_workspace.main.id }
-output "grafana_workspace_id"    { value = aws_grafana_workspace.main.id }
+output "grafana_workspace_id" { value = aws_grafana_workspace.main.id }

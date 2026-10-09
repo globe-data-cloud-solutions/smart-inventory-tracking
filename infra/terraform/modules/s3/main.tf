@@ -26,12 +26,12 @@ resource "aws_s3_bucket_public_access_block" "attachments" {
 
 # Language packs: en.json, am.json, or.json — uploaded separately, not managed by Terraform
 resource "aws_s3_object" "locale_placeholder" {
-  for_each = toset(["en", "am", "or"])
-  bucket   = aws_s3_bucket.attachments.id
-  key      = "locales/${each.key}.json"
-  content  = jsonencode({ "_placeholder": "upload real locale file" })
+  for_each     = toset(["en", "am", "or"])
+  bucket       = aws_s3_bucket.attachments.id
+  key          = "locales/${each.key}.json"
+  content      = jsonencode({ "_placeholder" : "upload real locale file" })
   content_type = "application/json"
 }
 
 output "bucket_name" { value = aws_s3_bucket.attachments.id }
-output "bucket_arn"  { value = aws_s3_bucket.attachments.arn }
+output "bucket_arn" { value = aws_s3_bucket.attachments.arn }
