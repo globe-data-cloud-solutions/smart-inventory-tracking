@@ -1,10 +1,10 @@
 # Build context: repo root (see scripts/docker/smoke.sh / container-smoke.yml)
-FROM node:20-slim AS deps-build
+FROM node:22-slim AS deps-build
 RUN apt-get update && apt-get install -y --no-install-recommends bash python3 && rm -rf /var/lib/apt/lists/*
-RUN corepack enable && corepack prepare pnpm@9 --activate
+RUN corepack enable
 WORKDIR /app
 
-COPY frontend/package.json frontend/pnpm-lock.yaml ./frontend/
+COPY frontend/package.json frontend/pnpm-lock.yaml frontend/pnpm-workspace.yaml ./frontend/
 RUN cd frontend && pnpm install --frozen-lockfile
 
 COPY scripts/check_i18n.sh scripts/check_help_docs.sh ./scripts/
@@ -18,7 +18,7 @@ ENV NEXT_OUTPUT=standalone
 
 RUN cd frontend && pnpm run build
 
-FROM node:20-slim AS runner
+FROM node:22-slim AS runner
 ENV NODE_ENV=production
 ENV PORT=3000
 ENV HOSTNAME=0.0.0.0
