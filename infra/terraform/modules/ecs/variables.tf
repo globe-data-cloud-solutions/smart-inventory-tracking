@@ -44,3 +44,10 @@ variable "app_base_url" {
 }
 variable "storage_bucket" { type = string }
 variable "terms_version" { type = string }
+
+variable "alb_security_group_id" { type = string }
+variable "gateway_target_group_arn" { type = string }
+variable "cors_origins" {
+  type    = string
+  default = ""
+}

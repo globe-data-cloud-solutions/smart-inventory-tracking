@@ -216,6 +216,13 @@ TRUSTED_PROXY_HOPS=0           # 0 (default/local) = direct connection; set to 1
                                 # gateway then overwrites the X-Real-IP header with that resolved value
                                 # before proxying downstream — never set TRUST_PROXY_HEADERS on the gateway.
 
+# ── ALB (infra/terraform/modules/alb) ───────────────────────────────────────
+# One internet-facing ALB per env, forwarding only to api-gateway's target
+# group — every other service stays reachable only inside the tasks SG via
+# Service Connect. HTTPS turns on by setting certificate_arn (HTTP:80 then
+# redirects to HTTPS:443); until then it's plain HTTP:80 -> target group.
+# This is the gateway's single proxy hop, matching TRUSTED_PROXY_HOPS=1 above.
+
 # ── Rate limiting (B3) — read by shared/cache/rate_limit.py in every downstream
 #    service (auth-service, tenant-service), NEVER by the gateway itself ────
 TRUST_PROXY_HEADERS=true       # MUST be true on every downstream service behind the gateway (ECS, and

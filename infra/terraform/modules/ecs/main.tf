@@ -76,10 +76,9 @@ resource "aws_service_discovery_http_namespace" "main" {
   name = "smart-${var.env}"
 }
 
-# ALB ingress is added in I3b — this group only governs inter-task traffic.
 resource "aws_security_group" "tasks" {
   name        = "smart-${var.env}-tasks-sg"
-  description = "ECS task-to-task traffic for smart-${var.env} (ALB ingress added in I3b)"
+  description = "ECS task-to-task traffic for smart-${var.env}, plus ALB ingress to api-gateway"
   vpc_id      = var.vpc_id
 
   egress {
@@ -93,6 +92,14 @@ resource "aws_security_group" "tasks" {
 resource "aws_vpc_security_group_ingress_rule" "tasks_self" {
   security_group_id            = aws_security_group.tasks.id
   referenced_security_group_id = aws_security_group.tasks.id
+  ip_protocol                  = "tcp"
+  from_port                    = 8000
+  to_port                      = 8000
+}
+
+resource "aws_vpc_security_group_ingress_rule" "tasks_from_alb" {
+  security_group_id            = aws_security_group.tasks.id
+  referenced_security_group_id = var.alb_security_group_id
   ip_protocol                  = "tcp"
   from_port                    = 8000
   to_port                      = 8000

@@ -1,13 +1,17 @@
 locals {
-  secret_arn_prefix = "arn:aws:secretsmanager:${var.region}:${var.account_id}:secret:smart/${var.env}"
+  # Plain secret NAMEs, not ARNs: a partial ARN ending "-" + 6 chars (e.g.
+  # elasticache/celery-broker) is parsed by ECS as a random-suffix marker and
+  # fails to resolve. ECS resolves a bare name against the execution role's
+  # wildcard policy (smart/${var.env}/* below) just as well as a full ARN.
+  secret_name_prefix = "smart/${var.env}"
 
   common_secrets = [
-    { name = "DATABASE_URL", valueFrom = "${local.secret_arn_prefix}/db/primary-url" },
-    { name = "DATABASE_READ_URL", valueFrom = "${local.secret_arn_prefix}/db/read-replica-url" },
-    { name = "REDIS_URL", valueFrom = "${local.secret_arn_prefix}/elasticache/redis-url" },
-    { name = "CELERY_BROKER_URL", valueFrom = "${local.secret_arn_prefix}/elasticache/celery-broker" },
-    { name = "CELERY_RESULT_BACKEND", valueFrom = "${local.secret_arn_prefix}/elasticache/celery-backend" },
-    { name = "JWT_SECRET", valueFrom = "${local.secret_arn_prefix}/jwt/secret" },
+    { name = "DATABASE_URL", valueFrom = "${local.secret_name_prefix}/db/primary-url" },
+    { name = "DATABASE_READ_URL", valueFrom = "${local.secret_name_prefix}/db/read-replica-url" },
+    { name = "REDIS_URL", valueFrom = "${local.secret_name_prefix}/elasticache/redis-url" },
+    { name = "CELERY_BROKER_URL", valueFrom = "${local.secret_name_prefix}/elasticache/celery-broker" },
+    { name = "CELERY_RESULT_BACKEND", valueFrom = "${local.secret_name_prefix}/elasticache/celery-backend" },
+    { name = "JWT_SECRET", valueFrom = "${local.secret_name_prefix}/jwt/secret" },
   ]
 
   common_env = {
@@ -43,7 +47,9 @@ locals {
       { WEB_CONCURRENCY = tostring(local.service_sizing_resolved[svc].web_concurrency) },
       svc == "api-gateway" ? merge(
         { TRUSTED_PROXY_HOPS = "1" },
-        local.gateway_service_urls
+        local.gateway_service_urls,
+        # Gateway falls back to its own local default when unset.
+        var.cors_origins != "" ? { CORS_ORIGINS = var.cors_origins } : {}
       ) : { TRUST_PROXY_HEADERS = "true" }
     )
   }
@@ -106,6 +112,17 @@ resource "aws_ecs_service" "services" {
     enable   = true
     rollback = true
   }
+
+  dynamic "load_balancer" {
+    for_each = each.key == "api-gateway" ? [1] : []
+    content {
+      target_group_arn = var.gateway_target_group_arn
+      container_name   = "api-gateway"
+      container_port   = 8000
+    }
+  }
+
+  health_check_grace_period_seconds = each.key == "api-gateway" ? 60 : null
 
   service_connect_configuration {
     enabled   = true

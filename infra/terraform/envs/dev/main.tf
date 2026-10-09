@@ -54,12 +54,24 @@ module "s3" {
   env    = "dev"
 }
 
+module "alb" {
+  source            = "../../modules/alb"
+  env               = "dev"
+  vpc_id            = module.networking.vpc_id
+  public_subnet_ids = module.networking.public_subnet_ids
+  certificate_arn   = "" # set once ACM cert exists — enables HTTPS + redirect
+}
+
 module "ecs" {
   source             = "../../modules/ecs"
   env                = "dev"
   vpc_id             = module.networking.vpc_id
   private_subnet_ids = module.networking.private_subnet_ids
   account_id         = data.aws_caller_identity.current.account_id
+
+  alb_security_group_id    = module.alb.alb_security_group_id
+  gateway_target_group_arn = module.alb.gateway_target_group_arn
+  cors_origins             = ""
 
   # order/logistics/analytics/notification/sync are stubs — add here to deploy.
   enabled_services = ["api-gateway", "auth-service", "tenant-service", "product-service",
@@ -86,3 +98,5 @@ module "observability" {
 }
 
 data "aws_caller_identity" "current" {}
+
+output "alb_dns_name" { value = module.alb.alb_dns_name }
