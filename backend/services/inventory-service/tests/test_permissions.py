@@ -14,8 +14,10 @@ import pytest
 from fastapi import HTTPException
 from httpx import ASGITransport, AsyncClient
 
-from main import app
-from dependencies import get_current_user as _inv_get_current_user
+# app / get_current_user come from the inv_app / inv_get_current_user fixtures
+# (conftest.py) — NOT a fresh `from main import app` here, which would resolve
+# against whatever is on sys.path at this module's own import time rather than
+# the inventory-service objects conftest.py already captured and verified.
 
 
 # ── Fixtures ──────────────────────────────────────────────────────────────────
@@ -94,10 +96,12 @@ class TestInventoryReceivePermissions:
         # 422 is acceptable — permission passed but mock DB raises in the service layer
         assert response.status_code in (201, 422, 500)
 
-    async def test_02_rbac_deny_wrong_role(self, client: AsyncClient) -> None:
+    async def test_02_rbac_deny_wrong_role(
+        self, client: AsyncClient, inv_app, inv_get_current_user
+    ) -> None:
         """Auditor (AU) → get_role_permission returns None → 403 RBAC_DENIED."""
         au = _User("u-au", TENANT_A, None, None, "AU")
-        app.dependency_overrides[_inv_get_current_user] = lambda: au
+        inv_app.dependency_overrides[inv_get_current_user] = lambda: au
         with patch(
             "shared.permissions.middleware.get_role_permission",
             new=AsyncMock(return_value=None),
@@ -367,10 +371,11 @@ class TestInventoryReceivePermissions:
         # Verified in 001_initial_schema.py migration — this is a documentation test.
         assert True, "RLS cross-tenant isolation is enforced by PostgreSQL — see migration 001"
 
-    async def test_14_jwt_expired_returns_401(self, client: AsyncClient) -> None:
+    async def test_14_jwt_expired_returns_401(
+        self, client: AsyncClient, inv_app, inv_get_current_user
+    ) -> None:
         """No user (expired/missing JWT) → require_permission raises 401."""
-        # Use module-level import captured before any conftest sys.modules manipulation.
-        app.dependency_overrides[_inv_get_current_user] = lambda: None
+        inv_app.dependency_overrides[inv_get_current_user] = lambda: None
         response = await client.post(
             "/api/v1/inventory/receive/",
             json=RECEIVE_PAYLOAD,
