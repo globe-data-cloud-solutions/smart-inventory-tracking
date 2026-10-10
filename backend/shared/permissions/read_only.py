@@ -44,11 +44,13 @@ READ_ACTIONS: frozenset[str] = frozenset({
     "role:view_assignments",
     "search:products", "search:inventory",
     "sa:docs_view",
+    "tenant:view_contract_status",
 })
 
 ALLOWED_WRITE_ACTIONS: frozenset[str] = frozenset({
     "notification:dismiss",
     "tenant:profile_edit",
+    "tenant:renewal_request",
 })
 
 
