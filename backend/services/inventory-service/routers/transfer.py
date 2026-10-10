@@ -148,7 +148,7 @@ async def receive_transfer(
 
 
 @router.patch("/{transfer_id}", response_model=SuccessResponse[TransferOrderResponse])
-@require_permission(PERMISSIONS.TRANSFER_VIEW)
+@require_permission(PERMISSIONS.TRANSFER_VIEW, read_only_force_write=True)
 async def transition_transfer(
     transfer_id: UUID,
     body: TransferTransitionRequest,

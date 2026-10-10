@@ -89,8 +89,18 @@ async def check_permission(
     return PermissionResult(allowed=True)
 
 
-def require_permission(action: Permission, read_only_exempt: bool = False) -> Callable:
+def require_permission(
+    action: Permission,
+    read_only_exempt: bool = False,
+    read_only_force_write: bool = False,
+) -> Callable:
     """Decorator for FastAPI route handlers. Injects permission check before handler executes."""
+
+    if read_only_exempt and read_only_force_write:
+        raise ValueError(
+            "require_permission: read_only_exempt and read_only_force_write "
+            "are mutually exclusive"
+        )
 
     def decorator(func: Callable) -> Callable:
         @functools.wraps(func)
@@ -131,7 +141,7 @@ def require_permission(action: Permission, read_only_exempt: bool = False) -> Ca
             if user.role not in ("SA", "SYS") and getattr(user, "tenant_id", None):
                 from shared.permissions.read_only import is_blocked_in_read_only
 
-                if is_blocked_in_read_only(action.id, read_only_exempt):
+                if is_blocked_in_read_only(action.id, read_only_exempt, read_only_force_write):
                     if db is None:
                         raise HTTPException(
                             status_code=500,

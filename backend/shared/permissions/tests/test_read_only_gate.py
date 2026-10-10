@@ -48,6 +48,14 @@ def test_route_exempt_overrides_write_classification() -> None:
     assert is_blocked_in_read_only("inventory:receive", route_exempt=True) is False
 
 
+def test_force_write_blocks_even_a_read_classified_action() -> None:
+    assert is_blocked_in_read_only("inventory:view", force_write=True) is True
+
+
+def test_route_exempt_overrides_force_write() -> None:
+    assert is_blocked_in_read_only("inventory:view", route_exempt=True, force_write=True) is False
+
+
 # ── require_permission() decorator wiring ───────────────────────────────────
 
 def _user(role: str = "WM", tenant_id: str | None = "tenant-1") -> MagicMock:
@@ -173,3 +181,37 @@ async def test_no_db_raises_500_for_gated_write(mock_check) -> None:
         await _call_decorated(PERMISSIONS.INVENTORY_RECEIVE, user=_user(), db=None)
     assert exc_info.value.status_code == 500
     assert exc_info.value.detail["code"] == "CONTRACT_CHECK_NO_DB"
+
+
+# ── read_only_force_write ────────────────────────────────────────────────────
+
+@patch("shared.permissions.middleware.check_permission", new_callable=AsyncMock)
+async def test_force_write_blocks_a_nominally_read_action_when_read_only(mock_check) -> None:
+    mock_check.return_value = _allowed_result()
+    db = AsyncMock()
+
+    @require_permission(PERMISSIONS.INVENTORY_VIEW, read_only_force_write=True)
+    async def handler(*, user, db=None) -> str:
+        return "ok"
+
+    with patch(
+        "shared.billing.contract_stage.get_tenant_contract_stage",
+        new_callable=AsyncMock,
+    ) as mock_stage:
+        mock_stage.return_value = {
+            "stage": "READ_ONLY", "contract_end": None, "read_only_since": None,
+        }
+        with pytest.raises(HTTPException) as exc_info:
+            await handler(user=_user(), db=db)
+
+    assert exc_info.value.status_code == 402
+    assert exc_info.value.detail["code"] == "CONTRACT_EXPIRED_READ_ONLY"
+
+
+def test_exempt_and_force_write_together_raises_value_error() -> None:
+    with pytest.raises(ValueError):
+        require_permission(
+            PERMISSIONS.INVENTORY_VIEW,
+            read_only_exempt=True,
+            read_only_force_write=True,
+        )

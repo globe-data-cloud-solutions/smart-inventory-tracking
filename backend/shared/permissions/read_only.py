@@ -52,10 +52,22 @@ ALLOWED_WRITE_ACTIONS: frozenset[str] = frozenset({
 })
 
 
-def is_blocked_in_read_only(action_id: str, route_exempt: bool = False) -> bool:
-    """True if this action must be denied while a tenant is READ_ONLY."""
+def is_blocked_in_read_only(
+    action_id: str,
+    route_exempt: bool = False,
+    force_write: bool = False,
+) -> bool:
+    """True if this action must be denied while a tenant is READ_ONLY.
+
+    force_write=True skips the READ_ACTIONS/ALLOWED_WRITE_ACTIONS lookup
+    entirely — the route is treated as a write regardless of the permission
+    action it is decorated with (e.g. a mutating route gated behind a
+    nominally read-only action id). route_exempt still wins over force_write.
+    """
     if route_exempt:
         return False
+    if force_write:
+        return True
     if action_id in READ_ACTIONS or action_id in ALLOWED_WRITE_ACTIONS:
         return False
     return True
