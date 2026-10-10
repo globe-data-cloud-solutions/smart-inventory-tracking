@@ -28,7 +28,9 @@ from dependencies import get_current_user, get_db_session
 from shared.outbox.schemas import ProductCreatedPayload
 from shared.outbox.writer import write_to_outbox
 from shared.permissions.middleware import require_permission
+from shared.permissions.plan_middleware import _UPGRADE_TO
 from shared.permissions.registry import PERMISSIONS
+from shared.plans.usage import count_active_skus
 from shared.utils.responses import SuccessResponse
 from schemas.product import (
     ApprovalMinimumEntry, ApprovalMinimumResponse,
@@ -340,7 +342,9 @@ async def create_product(
       403  RBAC_DENIED / ABAC_DENIED
       409  duplicate_product_name | duplicate_sku
       422  invalid_type_code
-      429  sku_cap_reached (applies whenever tenant.sku_cap is set, any organisation_type)
+      402  PLAN_LIMIT_REACHED, resource=skus (applies whenever tenant.sku_cap is
+           set, any organisation_type) — same shape as the users/warehouses
+           plan-limit errors in shared/permissions/plan_middleware.py.
     """
     tid = str(user.tenant_id)
     uid = str(user.user_id) if getattr(user, "user_id", None) else None
@@ -348,7 +352,7 @@ async def create_product(
     # 1. Lock tenant row for SKU cap check (CLAUDE.md §24 rule 16).
     tenant_result = await db.execute(
         text(
-            "SELECT organisation_type, sku_cap FROM tenants WHERE id = :tid FOR UPDATE"
+            "SELECT organisation_type, sku_cap, plan_tier FROM tenants WHERE id = :tid FOR UPDATE"
         ),
         {"tid": tid},
     )
@@ -358,17 +362,22 @@ async def create_product(
 
     # 2. SKU cap — applies to every organisation type (CLAUDE.md §24 rule 16).
     if tenant.sku_cap:
-        count_result = await db.execute(
-            text("SELECT COUNT(*) FROM products WHERE tenant_id = :tid AND is_active = true"),
-            {"tid": tid},
-        )
-        if (count_result.scalar() or 0) >= tenant.sku_cap:
+        current = await count_active_skus(db, tid)
+        if current >= tenant.sku_cap:
+            plan_tier = str(tenant.plan_tier) if tenant.plan_tier else None
             raise HTTPException(
-                status_code=429,
+                status_code=402,
                 detail={
-                    "code":           "sku_cap_reached",
-                    "upgrade_prompt": True,
-                    "message":        "SKU cap reached for this tenant's plan",
+                    "code":       "PLAN_LIMIT_REACHED",
+                    "resource":   "skus",
+                    "current":    current,
+                    "limit":      tenant.sku_cap,
+                    "plan_tier":  plan_tier,
+                    "upgrade_to": _UPGRADE_TO.get(plan_tier),
+                    "message": (
+                        f"SKU limit reached ({current}/{tenant.sku_cap}). "
+                        f"Upgrade to add more products."
+                    ),
                 },
             )
 
