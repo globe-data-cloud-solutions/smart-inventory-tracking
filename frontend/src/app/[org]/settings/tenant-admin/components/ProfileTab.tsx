@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import { t } from "@/lib/i18n";
+import { useWriteGuard, guardProps } from "@/hooks/useWriteGuard";
 import { TabProps, TenantAdminData } from "../types";
 
 // Endonyms — each language shown in its own script, not translated (CLAUDE.md §12)
@@ -65,6 +66,8 @@ export function ProfileTab({ tenantId, isLoading }: TabProps) {
   const [editMode, setEditMode] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
+  const writeGuard = useWriteGuard();
+  const gp = guardProps(writeGuard);
 
   // SA viewing another tenant: GET /{tenantId} already returns every field this
   // tab needs, so there is no separate /{tenantId}/profile read route (CLAUDE.md §15).
@@ -115,7 +118,8 @@ export function ProfileTab({ tenantId, isLoading }: TabProps) {
                 setFormData({ default_locale: tenant.default_locale ?? "en" });
                 setEditMode(true);
               }}
-              className="text-sm font-semibold text-blue-600 hover:text-blue-700"
+              {...gp}
+              className="text-sm font-semibold text-blue-600 hover:text-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {t("common.edit")}
             </button>
@@ -201,6 +205,11 @@ export function ProfileTab({ tenantId, isLoading }: TabProps) {
         {/* Action Buttons (Edit Mode) */}
         {editMode && (
           <div className="flex gap-3 mt-6 pt-6 border-t border-gray-200">
+            {gp.title && (
+              <p className="text-xs font-semibold text-red-600 bg-red-50 border border-red-200 rounded px-3 py-2 w-full">
+                {gp.title}
+              </p>
+            )}
             <button
               onClick={() => {
                 setFormData({ default_locale: tenant.default_locale ?? "en" });
@@ -213,7 +222,8 @@ export function ProfileTab({ tenantId, isLoading }: TabProps) {
             </button>
             <button
               onClick={() => updateMutation.mutate(formData)}
-              disabled={updateMutation.isPending}
+              disabled={updateMutation.isPending || gp.disabled}
+              title={gp.title}
               className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded hover:bg-blue-700 disabled:opacity-50"
             >
               {updateMutation.isPending ? t("common.saving") : t("common.save")}

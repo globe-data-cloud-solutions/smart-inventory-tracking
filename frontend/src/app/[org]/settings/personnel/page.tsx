@@ -6,6 +6,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import { t } from "@/lib/i18n";
 import { getSession, SA_ORG_SLUG } from "@/lib/demo-auth";
+import { useWriteGuard, guardProps } from "@/hooks/useWriteGuard";
 
 /* ── Types ─────────────────────────────────────────────────────────────────── */
 
@@ -339,6 +340,8 @@ function EditUserPanel({
   const [error, setError]                     = useState<string | null>(null);
   const [showConfirmSwap, setShowConfirmSwap] = useState(false);
   const [pendingTrack, setPendingTrack]       = useState<AddUserTrack | null>(null);
+  const writeGuard = useWriteGuard();
+  const gp = guardProps(writeGuard);
 
   function update(patch: Partial<EditUserForm>) {
     setForm((f) => ({ ...f, ...patch }));
@@ -557,6 +560,11 @@ function EditUserPanel({
             </label>
           </div>
 
+          {gp.title && (
+            <p className="text-xs font-semibold text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">
+              {gp.title}
+            </p>
+          )}
           {error && <p className="text-xs text-red-600 font-medium">{error}</p>}
 
           <div className="flex justify-end gap-2 pt-2">
@@ -570,7 +578,8 @@ function EditUserPanel({
             <button
               type="button"
               onClick={handleSaveClick}
-              disabled={saving}
+              disabled={saving || gp.disabled}
+              title={gp.title}
               className="px-4 py-1.5 text-sm font-bold text-white bg-emerald-600 rounded-lg hover:bg-emerald-700 disabled:opacity-50"
             >
               {saving ? t("common.saving") : t("personnel.save_changes")}
@@ -626,6 +635,8 @@ function AddUserPanel({
   const [form, setForm]   = useState<NewUserForm>({ ...EMPTY_USER });
   const [saving, setSaving] = useState(false);
   const [error, setError]   = useState<string | null>(null);
+  const writeGuard = useWriteGuard();
+  const gp = guardProps(writeGuard, "users");
 
   const selectedPosition = form.position_id
     ? positions.find((p) => p.id === form.position_id) ?? null
@@ -778,6 +789,11 @@ function AddUserPanel({
           </div>
         </div>
 
+        {gp.title && (
+          <p className="text-xs font-semibold text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">
+            {gp.title}
+          </p>
+        )}
         {error && <p className="text-xs text-red-600 font-medium">{error}</p>}
 
         <div className="flex justify-end gap-2 pt-2">
@@ -791,7 +807,8 @@ function AddUserPanel({
           <button
             type="button"
             onClick={() => void submit()}
-            disabled={saving}
+            disabled={saving || gp.disabled}
+            title={gp.title}
             className="px-4 py-1.5 text-sm font-bold text-white bg-emerald-600 rounded-lg hover:bg-emerald-700 disabled:opacity-50"
           >
             {saving ? t("common.saving") : t("personnel.create_user")}
@@ -820,6 +837,8 @@ function ActingAssignmentPanel({
   const [form, setForm] = useState<ActingAssignmentForm>(emptyActingForm);
   const [saving, setSaving] = useState(false);
   const [error, setError]   = useState<string | null>(null);
+  const writeGuard = useWriteGuard();
+  const gp = guardProps(writeGuard);
 
   const selectedPosition = form.position_id
     ? positions.find((p) => p.id === form.position_id) ?? null
@@ -933,6 +952,11 @@ function ActingAssignmentPanel({
           </div>
         </div>
 
+        {gp.title && (
+          <p className="text-xs font-semibold text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">
+            {gp.title}
+          </p>
+        )}
         {error && <p className="text-xs text-red-600 font-medium">{error}</p>}
 
         <div className="flex justify-end gap-2 pt-2">
@@ -946,7 +970,8 @@ function ActingAssignmentPanel({
           <button
             type="button"
             onClick={() => void submit()}
-            disabled={saving}
+            disabled={saving || gp.disabled}
+            title={gp.title}
             className="px-4 py-1.5 text-sm font-bold text-white bg-blue-600 rounded-lg hover:bg-blue-700 disabled:opacity-50"
           >
             {saving ? t("common.saving") : t("personnel.create_assignment")}
@@ -1019,6 +1044,11 @@ function UserDetailPanel({
   const [confirmForceRemoveId, setConfirmForceRemoveId] = useState<string | null>(null);
   const [forceRemoveError, setForceRemoveError] = useState<string | null>(null);
   const [forceRemoveSuccess, setForceRemoveSuccess] = useState<string | null>(null);
+  const writeGuard = useWriteGuard();
+  // Reactivate goes through user:manage (not in ALLOWED_WRITE_ACTIONS) — guarded.
+  // Deactivate goes through user:deactivate, which IS allowed in READ_ONLY
+  // (CLAUDE.md §29 P6) — left fully enabled below, no guard.
+  const gp = guardProps(writeGuard);
 
   const session = getSession();
   const isSelf = session?.id === user.id;
@@ -1140,7 +1170,8 @@ function UserDetailPanel({
                       <button
                         type="button"
                         onClick={() => void removeAssignment(primaryPosition.assignment_id)}
-                        disabled={actionLoading === `del:${primaryPosition.assignment_id}`}
+                        disabled={actionLoading === `del:${primaryPosition.assignment_id}` || gp.disabled}
+                        title={gp.title}
                         className="text-xs text-red-400 hover:text-red-600 border-0 bg-transparent cursor-pointer disabled:opacity-50"
                       >
                         {t("common.remove")}
@@ -1171,7 +1202,8 @@ function UserDetailPanel({
                     <button
                       type="button"
                       onClick={() => void removeAssignment(a.assignment_id)}
-                      disabled={actionLoading === `del:${a.assignment_id}`}
+                      disabled={actionLoading === `del:${a.assignment_id}` || gp.disabled}
+                      title={gp.title}
                       className="text-xs text-red-400 hover:text-red-600 border-0 bg-transparent cursor-pointer disabled:opacity-50"
                     >
                       {t("common.remove")}
@@ -1185,11 +1217,18 @@ function UserDetailPanel({
 
         {/* Footer actions */}
         <div className="px-5 py-4 border-t border-gray-100 space-y-2 shrink-0">
+          {gp.title && (
+            <p className="text-xs font-semibold text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">
+              {gp.title}
+            </p>
+          )}
           {user.is_active && (
             <button
               type="button"
-              onClick={() => setShowActing(true)}
-              className="w-full py-2 text-sm font-semibold text-blue-700 bg-blue-50 border border-blue-200 rounded-lg hover:bg-blue-100"
+              onClick={() => { if (!gp.disabled) setShowActing(true); }}
+              disabled={gp.disabled}
+              title={gp.title}
+              className="w-full py-2 text-sm font-semibold text-blue-700 bg-blue-50 border border-blue-200 rounded-lg hover:bg-blue-100 disabled:opacity-50 disabled:cursor-not-allowed"
             >
               + {t("personnel.add_acting_assignment")}
             </button>
@@ -1197,6 +1236,8 @@ function UserDetailPanel({
 
           {!isSelf && (
             user.is_active ? (
+              // user:deactivate is allowed in READ_ONLY (CLAUDE.md §29 P6) —
+              // always enabled, no guard.
               <button
                 type="button"
                 onClick={() => void toggleActive(false)}
@@ -1206,10 +1247,12 @@ function UserDetailPanel({
                 {actionLoading === "deactivate" ? t("common.saving") : t("personnel.deactivate")}
               </button>
             ) : (
+              // Reactivate goes through user:manage, not exempted — guarded.
               <button
                 type="button"
                 onClick={() => void toggleActive(true)}
-                disabled={actionLoading === "reactivate"}
+                disabled={actionLoading === "reactivate" || gp.disabled}
+                title={gp.title}
                 className="w-full py-2 text-sm font-semibold text-green-700 bg-green-50 border border-green-200 rounded-lg hover:bg-green-100 disabled:opacity-50"
               >
                 {actionLoading === "reactivate" ? t("common.saving") : t("personnel.reactivate")}
@@ -1396,6 +1439,12 @@ export default function PersonnelPage() {
   const [resetPasswordUser, setResetPasswordUser]         = useState<UserRecord | null>(null);
   const [actionLoadingId, setActionLoadingId]             = useState<string | null>(null);
   const [toast, setToast] = useState<{ message: string; tone: "success" | "error" } | null>(null);
+  const writeGuard = useWriteGuard();
+  // Add User creates a new user — counts against the "users" plan cap.
+  const addUserGp = guardProps(writeGuard, "users");
+  // Edit/Reactivate — read-only guard only. Reset password and Deactivate
+  // are NOT guarded here — both stay allowed in READ_ONLY (CLAUDE.md §29 P6).
+  const rowGp = guardProps(writeGuard);
 
   function showToast(message: string, tone: "success" | "error" = "success") {
     setToast({ message, tone });
@@ -1517,8 +1566,9 @@ export default function PersonnelPage() {
         </div>
         <button
           type="button"
-          onClick={() => setShowAddUser(true)}
-          className="px-4 py-2 text-sm font-bold text-white bg-emerald-600 rounded-lg hover:bg-emerald-700"
+          onClick={() => { if (!addUserGp.disabled) setShowAddUser(true); }}
+          {...addUserGp}
+          className="px-4 py-2 text-sm font-bold text-white bg-emerald-600 rounded-lg hover:bg-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed"
         >
           + {t("personnel.add_user")}
         </button>
@@ -1627,12 +1677,14 @@ export default function PersonnelPage() {
                     <div className="flex items-center justify-end gap-2">
                       <button
                         type="button"
-                        onClick={(e) => { e.stopPropagation(); setEditUser(u); }}
-                        className="text-xs text-blue-600 font-semibold hover:text-blue-800 border-0 bg-transparent cursor-pointer px-2 py-1 rounded hover:bg-blue-50"
-                        title={t("personnel.edit_user")}
+                        onClick={(e) => { e.stopPropagation(); if (!rowGp.disabled) setEditUser(u); }}
+                        disabled={rowGp.disabled}
+                        title={rowGp.title ?? t("personnel.edit_user")}
+                        className="text-xs text-blue-600 font-semibold hover:text-blue-800 border-0 bg-transparent cursor-pointer px-2 py-1 rounded hover:bg-blue-50 disabled:opacity-50 disabled:cursor-not-allowed"
                       >
                         ✏ {t("common.edit")}
                       </button>
+                      {/* user:reset_password is allowed in READ_ONLY (CLAUDE.md §29 P6) — never guarded. */}
                       <button
                         type="button"
                         onClick={(e) => { e.stopPropagation(); setResetPasswordUser(u); }}
@@ -1644,6 +1696,7 @@ export default function PersonnelPage() {
                       {u.is_active ? (
                         // A user can never deactivate their own account — hide the
                         // button entirely rather than show it and let the backend 422.
+                        // user:deactivate is allowed in READ_ONLY — never guarded.
                         session?.id !== u.id && (
                           <button
                             type="button"
@@ -1655,10 +1708,12 @@ export default function PersonnelPage() {
                           </button>
                         )
                       ) : (
+                        // Reactivate goes through user:manage, not exempted — guarded.
                         <button
                           type="button"
-                          onClick={(e) => { e.stopPropagation(); void handleReactivate(u); }}
-                          disabled={actionLoadingId === `reactivate:${u.id}`}
+                          onClick={(e) => { e.stopPropagation(); if (!rowGp.disabled) void handleReactivate(u); }}
+                          disabled={actionLoadingId === `reactivate:${u.id}` || rowGp.disabled}
+                          title={rowGp.title}
                           className="text-xs text-green-700 font-semibold border border-green-200 rounded px-2 py-1 hover:bg-green-50 disabled:opacity-50"
                         >
                           {actionLoadingId === `reactivate:${u.id}` ? t("common.saving") : t("personnel.reactivate_user")}
