@@ -28,6 +28,12 @@ for pair in "${PAIRS[@]}"; do
   SRC="${pair%%:*}"
   COPY="${pair##*:}"
 
+  if [ ! -f "$SRC" ]; then
+    echo "FAIL: source $SRC is missing (not copied into this build?)"
+    EXIT=1
+    continue
+  fi
+
   if [ ! -f "$COPY" ]; then
     echo "FAIL: $COPY does not exist."
     EXIT=1
