@@ -5,6 +5,7 @@ import { useParams } from "next/navigation";
 import { SA_ORG_SLUG } from "@/lib/demo-auth";
 import { DEMO_TENANTS, getTotalStock, type DemoProduct } from "@/lib/demo-data";
 import { useScanner } from "@/hooks/useScanner";
+import { useWriteGuard, guardProps } from "@/hooks/useWriteGuard";
 import { t } from "@/lib/i18n";
 import { useTenantName } from "@/hooks/useTenantName";
 
@@ -84,6 +85,8 @@ export default function StockCountPage() {
   const [selectedWH, setSelectedWH]       = useState("");
   const [scannerOpen, setScannerOpen]     = useState(false);
   const [scanHint, setScanHint]           = useState("");
+  const guard = useWriteGuard();
+  const gp = guardProps(guard);
 
   if (org === SA_ORG_SLUG) return <p className="p-8 text-gray-500">{t("sa.select_tenant")}</p>;
   const tenant = DEMO_TENANTS.find((ten) => ten.slug === org);
@@ -139,9 +142,16 @@ export default function StockCountPage() {
           <div className="px-3.5 py-3 bg-green-50 rounded-md border border-emerald-200 mb-5 text-sm text-green-800">
             {selectedWH ? `${products.length} ${t("count.products_to_count")} ${warehouse?.name}` : `${products.length} ${t("count.products_across")} ${warehouses.length} ${t("warehouses.locations")}`}
           </div>
+          {gp.title && (
+            <p className="text-xs font-semibold text-red-600 bg-red-50 border border-red-200 rounded px-3 py-2 mb-3">
+              {gp.title}
+            </p>
+          )}
           <button
-            onClick={() => setSessionActive(true)}
-            className="w-full py-3 bg-eth-forest text-eth-gold font-bold text-sm rounded-md border-0 cursor-pointer"
+            onClick={() => { if (!gp.disabled) setSessionActive(true); }}
+            disabled={gp.disabled}
+            title={gp.title}
+            className={`w-full py-3 font-bold text-sm rounded-md border-0 ${gp.disabled ? "bg-gray-200 text-gray-400 cursor-not-allowed" : "bg-eth-forest text-eth-gold cursor-pointer"}`}
           >
             {t("count.start_session")}
           </button>
@@ -152,6 +162,11 @@ export default function StockCountPage() {
 
   return (
     <div className="p-8">
+      {gp.title && (
+        <div className="mb-4 bg-red-50 border border-red-200 rounded px-4 py-2.5 text-sm text-red-600">
+          {gp.title}
+        </div>
+      )}
       <div className="mb-6 flex items-start justify-between flex-wrap gap-3">
         <div>
           <h2 className="text-2xl font-bold text-[#0f2d1f] m-0">{t("count.session_active")}</h2>
@@ -168,8 +183,11 @@ export default function StockCountPage() {
             className="px-4 py-2 bg-gray-100 border border-gray-200 rounded text-sm font-semibold cursor-pointer text-gray-700">
             {t("common.cancel")}
           </button>
-          <button onClick={() => setSubmitted(true)} disabled={filledCount === 0}
-            className={`px-4 py-2 font-bold text-sm rounded border-0 ${filledCount > 0 ? "bg-emerald-600 text-white cursor-pointer" : "bg-gray-200 text-gray-400 cursor-not-allowed"}`}>
+          <button
+            onClick={() => { if (!gp.disabled) setSubmitted(true); }}
+            disabled={filledCount === 0 || gp.disabled}
+            title={gp.title}
+            className={`px-4 py-2 font-bold text-sm rounded border-0 ${(filledCount > 0 && !gp.disabled) ? "bg-emerald-600 text-white cursor-pointer" : "bg-gray-200 text-gray-400 cursor-not-allowed"}`}>
             {t("count.submit_session")} ({filledCount})
           </button>
         </div>

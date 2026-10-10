@@ -7,6 +7,7 @@ import { api } from "@/lib/api";
 import { useInventoryStore, type TransferEntry } from "@/lib/inventory-state";
 import { useAuditStore } from "@/lib/audit-log-state";
 import { getSession } from "@/lib/demo-auth";
+import { useWriteGuard, guardProps } from "@/hooks/useWriteGuard";
 import { t } from "@/lib/i18n";
 import { formatQty } from "@/lib/utils";
 import { buildOverrideTooltip } from "@/components/features/inventory/ProductLabel";
@@ -143,6 +144,8 @@ export function NewTransferPanel({ products, warehouses, orgSlug }: Props) {
 
   const user     = getSession();
   const tenantId = user?.tenantId ?? "";
+  const guard    = useWriteGuard();
+  const gp       = guardProps(guard);
 
   // ── Fetch tenant transfer type configs (gateway mode only) ─────────────────
   const isGateway = !!process.env.NEXT_PUBLIC_API_URL;
@@ -252,6 +255,8 @@ export function NewTransferPanel({ products, warehouses, orgSlug }: Props) {
 
   async function doCreate(skipStockCheck: boolean) {
     setError("");
+    const blockedReason = guard.reason();
+    if (blockedReason) { setError(blockedReason); return; }
     if (!form.productId)  { setError(t("receive_panel.error_product"));   return; }
     if (!effectiveFrom)   { setError(t("transfer_panel.error_from"));     return; }
     if (!effectiveTo)     { setError(t("transfer_panel.error_to"));       return; }
@@ -295,7 +300,12 @@ export function NewTransferPanel({ products, warehouses, orgSlug }: Props) {
 
   return (
     <>
-      <button onClick={() => { reset(); setOpen(true); }} className="px-4 py-2 bg-eth-gold text-[#0f2d1f] font-bold text-sm rounded border-0 cursor-pointer">
+      <button
+        onClick={() => { if (gp.disabled) return; reset(); setOpen(true); }}
+        disabled={gp.disabled}
+        title={gp.title}
+        className={`px-4 py-2 font-bold text-sm rounded border-0 ${gp.disabled ? "bg-gray-200 text-gray-400 cursor-not-allowed" : "bg-eth-gold text-[#0f2d1f] cursor-pointer"}`}
+      >
         + {t("inventory.transfer.title")}
       </button>
 
@@ -311,6 +321,12 @@ export function NewTransferPanel({ products, warehouses, orgSlug }: Props) {
         </div>
 
         <form onSubmit={onSubmit} className="flex-1 overflow-y-auto p-6">
+          {gp.title && (
+            <div className="bg-red-50 border border-red-200 rounded p-3 text-sm text-red-600 mb-4">
+              {gp.title}
+            </div>
+          )}
+
           <Field label={t("transfer_panel.type_label")}>
             <select
               value={form.transferType}
@@ -401,7 +417,7 @@ export function NewTransferPanel({ products, warehouses, orgSlug }: Props) {
               </div>
               {stockAlert.canForce ? (
                 <div className="mt-2.5 flex gap-2">
-                  <button type="button" onClick={() => { setStockAlert(null); void doCreate(true); }} className="flex-1 py-1.5 px-3 bg-red-600 text-white font-bold text-xs rounded border-0 cursor-pointer">{t("transfer_panel.proceed_anyway")}</button>
+                  <button type="button" disabled={gp.disabled} title={gp.title} onClick={() => { setStockAlert(null); void doCreate(true); }} className={`flex-1 py-1.5 px-3 text-white font-bold text-xs rounded border-0 ${gp.disabled ? "bg-gray-300 cursor-not-allowed" : "bg-red-600 cursor-pointer"}`}>{t("transfer_panel.proceed_anyway")}</button>
                   <button type="button" onClick={() => setStockAlert(null)} className="py-1.5 px-3 bg-gray-100 text-gray-700 font-semibold text-xs rounded border border-gray-300 cursor-pointer">{t("common.cancel")}</button>
                 </div>
               ) : (
@@ -416,7 +432,7 @@ export function NewTransferPanel({ products, warehouses, orgSlug }: Props) {
 
         <div className="px-6 py-4 border-t border-gray-200 flex gap-2.5">
           <button type="button" onClick={() => setOpen(false)} className="flex-1 py-2.5 bg-gray-100 border border-gray-200 rounded text-sm font-semibold text-gray-700 cursor-pointer">{t("common.cancel")}</button>
-          <button onClick={onSubmit as unknown as React.MouseEventHandler} disabled={loading} className={`flex-[2] py-2.5 bg-[#0f2d1f] text-eth-gold font-bold text-sm rounded border-0 ${loading ? "opacity-70 cursor-not-allowed" : "cursor-pointer"}`}>
+          <button onClick={onSubmit as unknown as React.MouseEventHandler} disabled={loading || gp.disabled} title={gp.title} className={`flex-[2] py-2.5 bg-[#0f2d1f] text-eth-gold font-bold text-sm rounded border-0 ${(loading || gp.disabled) ? "opacity-70 cursor-not-allowed" : "cursor-pointer"}`}>
             {loading ? t("common.loading") : t("inventory.transfer.submit")}
           </button>
         </div>

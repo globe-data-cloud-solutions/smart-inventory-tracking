@@ -6,6 +6,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { getSession, SA_ORG_SLUG } from "@/lib/demo-auth";
 import { DEMO_TENANTS, type DemoProduct } from "@/lib/demo-data";
 import { usePermission } from "@/hooks/usePermission";
+import { useWriteGuard, guardProps } from "@/hooks/useWriteGuard";
 import { api } from "@/lib/api";
 import { t } from "@/lib/i18n";
 import { useTenantName } from "@/hooks/useTenantName";
@@ -26,6 +27,8 @@ const STRATEGY_CLASS: Record<Strategy, string> = {
 function FefoOverrideModal({ productName, onClose }: { productName: string; onClose: () => void }) {
   const [reason, setReason]       = useState("");
   const [submitted, setSubmitted] = useState(false);
+  const guard = useWriteGuard();
+  const gp = guardProps(guard);
 
   return (
     <>
@@ -46,6 +49,11 @@ function FefoOverrideModal({ productName, onClose }: { productName: string; onCl
             <p className="text-sm text-gray-500 mb-5">
               {t("dispatch.override_warning")} <strong>{productName}</strong>. {t("dispatch.override_audit_note")}
             </p>
+            {gp.title && (
+              <p className="text-xs font-semibold text-red-600 bg-red-50 border border-red-200 rounded px-3 py-2 mb-4">
+                {gp.title}
+              </p>
+            )}
             <label className="block text-xs font-bold uppercase tracking-wide text-gray-700 mb-1.5">
               {t("dispatch.override_reason")} *
             </label>
@@ -57,9 +65,10 @@ function FefoOverrideModal({ productName, onClose }: { productName: string; onCl
             <div className="flex gap-2.5">
               <button onClick={onClose} className="flex-1 py-2 bg-gray-100 border-0 rounded-md text-sm font-semibold cursor-pointer">{t("common.cancel")}</button>
               <button
-                disabled={!reason.trim()}
+                disabled={!reason.trim() || gp.disabled}
+                title={gp.title}
                 onClick={() => setSubmitted(true)}
-                className={`flex-[2] py-2 border-0 rounded-md text-sm font-bold ${reason.trim() ? "bg-amber-800 text-white cursor-pointer" : "bg-gray-200 text-gray-400 cursor-not-allowed"}`}
+                className={`flex-[2] py-2 border-0 rounded-md text-sm font-bold ${(reason.trim() && !gp.disabled) ? "bg-amber-800 text-white cursor-pointer" : "bg-gray-200 text-gray-400 cursor-not-allowed"}`}
               >
                 {t("dispatch.override_submit")}
               </button>
@@ -81,6 +90,8 @@ export default function DispatchPage() {
   const [overrideProduct, setOverrideProduct] = useState<string | null>(null);
   const [saving, setSaving] = useState<string | null>(null);
   const [toast, setToast]   = useState("");
+  const guard = useWriteGuard();
+  const gp = guardProps(guard);
 
   const { data: configs = [] } = useQuery<DispatchConfig[]>({
     queryKey: ["dispatch-config", org],
@@ -110,6 +121,7 @@ export default function DispatchPage() {
   }
 
   async function setStrategy(productId: string, productName: string, productSku: string, strategy: Strategy) {
+    if (guard.reason()) return;  // guardProps already disables the triggering button
     setSaving(productId);
     try {
       await api.post("/api/v1/dispatch-config", { product_id: productId, product_name: productName, product_sku: productSku, scope: "PRODUCT", strategy });
@@ -133,6 +145,12 @@ export default function DispatchPage() {
         <h2 className="text-2xl font-bold text-[#0f2d1f] m-0">{t("dispatch.title")}</h2>
         <p className="text-sm text-gray-500 mt-1">{tenantName ?? org} · {t("dispatch.subtitle")}</p>
       </div>
+
+      {gp.title && (
+        <div className="mb-4 bg-red-50 border border-red-200 rounded px-4 py-2.5 text-sm text-red-600">
+          {gp.title}
+        </div>
+      )}
 
       {/* Strategy legend */}
       <div className="grid grid-cols-3 gap-3 mb-6">
@@ -193,10 +211,11 @@ export default function DispatchPage() {
                           {(["FEFO", "FIFO", "LIFO"] as Strategy[]).map((strat) => {
                             const active = strategy === strat;
                             const sc = STRATEGY_CLASS[strat]!;
+                            const rowBlocked = isSaving || active || gp.disabled;
                             return (
-                              <button key={strat} disabled={isSaving || active}
+                              <button key={strat} disabled={rowBlocked} title={gp.title}
                                 onClick={() => void setStrategy(p.id, p.name, p.sku, strat)}
-                                className={`text-xs font-bold px-2.5 py-1 rounded border transition-all ${active ? sc : "border-gray-200 bg-white text-gray-400"} ${(isSaving || active) ? "opacity-50 cursor-not-allowed" : "cursor-pointer"}`}
+                                className={`text-xs font-bold px-2.5 py-1 rounded border transition-all ${active ? sc : "border-gray-200 bg-white text-gray-400"} ${rowBlocked ? "opacity-50 cursor-not-allowed" : "cursor-pointer"}`}
                               >
                                 {strat}
                               </button>
@@ -210,8 +229,10 @@ export default function DispatchPage() {
                     <td className="px-3.5 py-2">
                       {(strategy === "FEFO" || isAutoFefo) ? (
                         <button
-                          onClick={() => setOverrideProduct(p.name)}
-                          className="text-xs font-bold px-2.5 py-1 rounded border border-yellow-200 bg-yellow-50 text-amber-800 cursor-pointer"
+                          disabled={gp.disabled}
+                          title={gp.title}
+                          onClick={() => { if (!gp.disabled) setOverrideProduct(p.name); }}
+                          className={`text-xs font-bold px-2.5 py-1 rounded border ${gp.disabled ? "border-gray-200 bg-gray-100 text-gray-400 cursor-not-allowed" : "border-yellow-200 bg-yellow-50 text-amber-800 cursor-pointer"}`}
                         >
                           {t("dispatch.override_btn")}
                         </button>

@@ -6,6 +6,7 @@ import { nanoid } from "nanoid";
 import { api, IS_GATEWAY_MODE } from "@/lib/api";
 import { t } from "@/lib/i18n";
 import { getSession } from "@/lib/demo-auth";
+import { useWriteGuard, guardProps } from "@/hooks/useWriteGuard";
 import { useInventoryStore } from "@/lib/inventory-state";
 import { useAuditStore } from "@/lib/audit-log-state";
 import { buildOverrideTooltip } from "@/components/features/inventory/ProductLabel";
@@ -47,6 +48,8 @@ interface AdjResult { adjustment_id: string; status: string; quantity_delta: str
 export function NewAdjustmentPanel({ products, warehouses, orgSlug }: Props) {
   const qc      = useQueryClient();
   const session = getSession();
+  const guard   = useWriteGuard();
+  const gp      = guardProps(guard);
   // Auto-assign warehouse from JWT for any role that has a specific facility
   // assignment (WM, RM, LM). Only NM/TA who have no warehouseId in their JWT
   // see the dropdown so they can choose which facility to adjust.
@@ -134,6 +137,8 @@ export function NewAdjustmentPanel({ products, warehouses, orgSlug }: Props) {
 
   async function doSubmit(bypassZeroFloor = false) {
     setError("");
+    const blockedReason = guard.reason();
+    if (blockedReason) { setError(blockedReason); return; }
 
     if (!productId)            { setError(t("receive_panel.error_product"));   return; }
     if (!effectiveWarehouseId) { setError(t("receive_panel.error_warehouse")); return; }
@@ -219,7 +224,12 @@ export function NewAdjustmentPanel({ products, warehouses, orgSlug }: Props) {
 
   return (
     <>
-      <button onClick={() => { reset(); setOpen(true); }} className="px-4 py-2 bg-cyan-600 text-white font-bold text-sm rounded border-0 cursor-pointer">
+      <button
+        onClick={() => { if (gp.disabled) return; reset(); setOpen(true); }}
+        disabled={gp.disabled}
+        title={gp.title}
+        className={`px-4 py-2 font-bold text-sm rounded border-0 ${gp.disabled ? "bg-gray-200 text-gray-400 cursor-not-allowed" : "bg-cyan-600 text-white cursor-pointer"}`}
+      >
         {t("adjustment.new_btn")}
       </button>
 
@@ -235,6 +245,12 @@ export function NewAdjustmentPanel({ products, warehouses, orgSlug }: Props) {
         </div>
 
         <form onSubmit={onFormSubmit} className="flex-1 overflow-y-auto p-6">
+          {gp.title && (
+            <div className="bg-red-50 border border-red-200 rounded p-3 text-sm text-red-600 mb-4">
+              {gp.title}
+            </div>
+          )}
+
           {/* Bug 6: toast replaces full-screen result */}
           {toast && (
             <div className={`mb-4 px-4 py-3 rounded-md text-sm font-semibold flex items-center gap-2 ${toast.applied ? "bg-green-50 text-green-800 border border-green-200" : "bg-amber-50 text-amber-800 border border-amber-200"}`}>
@@ -362,7 +378,7 @@ export function NewAdjustmentPanel({ products, warehouses, orgSlug }: Props) {
                 <button type="button" onClick={() => setZeroWarn(false)} className="px-3 py-1.5 bg-white border border-amber-300 rounded text-xs font-semibold cursor-pointer">
                   {t("common.cancel")}
                 </button>
-                <button type="button" onClick={() => void doSubmit(true)} className="px-3 py-1.5 bg-amber-700 text-white rounded text-xs font-bold cursor-pointer">
+                <button type="button" disabled={gp.disabled} title={gp.title} onClick={() => void doSubmit(true)} className={`px-3 py-1.5 text-white rounded text-xs font-bold ${gp.disabled ? "bg-gray-300 cursor-not-allowed" : "bg-amber-700 cursor-pointer"}`}>
                   {t("adjustment.zero_floor_proceed")}
                 </button>
               </div>
@@ -375,8 +391,9 @@ export function NewAdjustmentPanel({ products, warehouses, orgSlug }: Props) {
           <button
             type="button"
             onClick={() => void doSubmit()}
-            disabled={loading || zeroWarn}
-            className={`flex-[2] py-2.5 bg-cyan-600 text-white font-bold text-sm rounded border-0 ${(loading || zeroWarn) ? "opacity-70 cursor-not-allowed" : "cursor-pointer"}`}
+            disabled={loading || zeroWarn || gp.disabled}
+            title={gp.title}
+            className={`flex-[2] py-2.5 bg-cyan-600 text-white font-bold text-sm rounded border-0 ${(loading || zeroWarn || gp.disabled) ? "opacity-70 cursor-not-allowed" : "cursor-pointer"}`}
           >
             {loading ? t("common.loading") : t("adjustment.submit")}
           </button>
