@@ -163,7 +163,8 @@
     "success": "በተሳካ ሁኔታ ተቀምጧል",
     "transaction": "ግብይት",
     "all": "ሁሉም",
-    "rate_limited": "በጣም ብዙ ሙከራዎች። እባክዎ ቆይተው ይሞክሩ።"
+    "rate_limited": "በጣም ብዙ ሙከራዎች። እባክዎ ቆይተው ይሞክሩ።",
+    "too_many_requests": "በጣም ብዙ ጥያቄዎች። እባክዎ ትንሽ ቆይተው እንደገና ይሞክሩ።"
   },
   "not_found": {
     "heading": "ገጽ አልተገኘም",
@@ -683,7 +684,8 @@
     "admin_section": "አስተዳዳሪ",
     "all_tenants": "ሁሉም ተኪራዮች",
     "contract_expired": "ኮንትራቱ ጊዜ አልቋል",
-    "contract_expiring_soon": "ኮንትራቱ ቶሎ ያልቃል"
+    "contract_expiring_soon": "ኮንትራቱ ቶሎ ያልቃል",
+    "contract_ends_days": "ውልው በ{date} ያበቃል · {n} ቀናት"
   },
   "dashboard": {
     "platform_overview": "የፕላትፎርም ዳሰሳ",
@@ -1123,7 +1125,27 @@
     "col_subscription": "ደንበኝነት",
     "source_self_signup": "በራስ ምዝገባ",
     "source_sa": "አስተዳዳሪ",
-    "nav_plans_pricing": "እቅዶች እና ዋጋዎች"
+    "nav_plans_pricing": "እቅዶች እና ዋጋዎች",
+    "tab_renewals": "ማደሶች",
+    "renewal_stage_EXPIRING": "እያበቃ",
+    "renewal_stage_GRACE": "የእፎይታ ጊዜ",
+    "renewal_stage_READ_ONLY": "ለንባብ ብቻ",
+    "renewals_count_expiring": "በ14 ቀናት ውስጥ የሚያበቃ",
+    "renewals_count_grace": "የእፎይታ ጊዜ",
+    "renewals_count_read_only": "ለንባብ ብቻ",
+    "col_days_left": "የቀሩ ቀናት",
+    "col_stage": "ደረጃ",
+    "col_open_request": "ክፍት ጥያቄ",
+    "renewals_tenants_empty": "በአሁኑ ጊዜ የሚያበቁ፣ በእፎይታ ጊዜ ወይም ለንባብ ብቻ የሆኑ ተከራዮች የለም።",
+    "renewals_open_requests_heading": "ክፍት የማደስ ጥያቄዎች",
+    "renewals_empty": "የማደስ ጥያቄዎች የለም።",
+    "renewals_requested_by": "ጠያቂ",
+    "renewals_message_label": "መልእክት",
+    "renewals_mark_handled_btn": "እንደተከናወነ ምልክት አድርግ",
+    "renewals_cancel_btn": "ሰርዝ",
+    "renewals_note_label": "ማስታወሻ (አማራጭ)",
+    "renewals_confirm_btn": "አረጋግጥ",
+    "renewals_dismiss_btn": "አሰናብት"
   },
   "approval": {
     "simple_mode": "ቀላል — ለሁሉም ዓይነቶች ተመሳሳይ ደንቦች",
@@ -1572,7 +1594,22 @@
       "unlimited": "ያልተገደበ",
       "contact_sa_to_change": "የጥቅል ለውጦች የሚደረጉት በ SMART ነው። የዕቅድ ለውጥ ለማድረግ የSMART አስተዳዳሪዎን ያነጋግሩ።",
       "available_features": "የሚገኙ ባህሪያት",
-      "addons_heading": "ተጨማሪዎች"
+      "addons_heading": "ተጨማሪዎች",
+      "renewal": {
+        "heading": "ማደስ",
+        "message_label": "መልእክት (አማራጭ)",
+        "message_placeholder": "ለ SMART ዝርዝሮችን ያክሉ",
+        "char_counter": "{used}/{max}",
+        "submit_btn": "የማደስ ጥያቄ አቅርብ",
+        "open_notice": "የማደስ ጥያቄ በ{date} ቀርቧል — SMART ያገኝዎታል።",
+        "recent_heading": "የቅርብ ጊዜ ጥያቄዎች",
+        "empty": "እስካሁን የማደስ ጥያቄዎች የለም።",
+        "status": {
+          "OPEN": "ክፍት",
+          "HANDLED": "ተከናውኗል",
+          "CANCELLED": "ተሰርዟል"
+        }
+      }
     },
     "features": {
       "flag": {
@@ -1918,7 +1955,12 @@
     "pending_renewal_invoice_warning": "በቀድሞው ደረጃ ያልተከፈለ የዕድሳት ደረሰኝ አለ — ይህንን ይሰርዙና እንደገና ያውጡ።",
     "cancel_scheduled_downgrade_btn": "የተያዘውን ዝቅ ማድረግ ይሰርዙ",
     "effective_at_renewal": "በዕድሳት ጊዜ (ነባር)",
-    "effective_immediate": "አሁን ተግባራዊ ያድርጉ (ተመላሽ የለም)"
+    "effective_immediate": "አሁን ተግባራዊ ያድርጉ (ተመላሽ የለም)",
+    "limit_reached": {
+      "skus": "የSKU ወሰን ለእቅድዎ ደርሷል። ለማሻሻል SMART ን ያነጋግሩ።",
+      "users": "የተጠቃሚ ወሰን ለእቅድዎ ደርሷል። ለማሻሻል SMART ን ያነጋግሩ።",
+      "warehouses": "የመጋዘን ወሰን ለእቅድዎ ደርሷል። ለማሻሻል SMART ን ያነጋግሩ።"
+    }
   },
   "help": {
     "title": "እገዛ እና ሰነዶች",
@@ -2042,5 +2084,11 @@
     "footer": {
       "stack": "FastAPI · Next.js 14 · PostgreSQL 16 · AWS ECS Fargate"
     }
+  },
+  "contract": {
+    "read_only_error": "ውልዎ አልቋል — የስራ ቦታው ለንባብ ብቻ ነው። ለማደስ SMART ን ያነጋግሩ።",
+    "banner_grace": "ውልዎ በ{date} አልቋል። የስራ ቦታው በ{read_only_since} ለንባብ ብቻ ይሆናል።",
+    "banner_read_only": "ለንባብ ብቻ፦ ውሉ በ{date} አልቋል። መመልከት እና ማውጣት ይችላሉ፤ ለውጦች ተሰናክለዋል።",
+    "request_renewal_link": "የማደስ ጥያቄ አቅርብ"
   }
 }
