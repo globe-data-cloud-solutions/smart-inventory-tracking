@@ -9,7 +9,8 @@ RUN cd frontend && pnpm install --frozen-lockfile
 
 COPY scripts/check_i18n.sh scripts/check_help_docs.sh ./scripts/
 COPY locales ./locales
-COPY docs/TA_ONBOARDING_GUIDE.md ./docs/TA_ONBOARDING_GUIDE.md
+COPY docs/TA_ONBOARDING_GUIDE.md docs/GETTING_STARTED.md ./docs/
+COPY docs/legal ./docs/legal
 COPY frontend ./frontend
 
 ARG NEXT_PUBLIC_API_URL

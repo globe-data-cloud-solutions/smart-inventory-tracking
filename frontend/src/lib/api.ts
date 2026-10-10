@@ -1,3 +1,6 @@
+import { t } from "@/lib/i18n";
+import { tierLabel } from "@/lib/planError";
+
 const BASE_URL = process.env.NEXT_PUBLIC_API_URL ?? "";
 
 /**
@@ -131,14 +134,36 @@ async function request<T>(
       code?: string; message?: string; detail?: string;
       locations?: Array<{ warehouse: string; on_hand: number }>;
       feature?: string; upgrade_to?: string | null;
+      resource?: string; limit?: number | null;
+      contract_end?: string | null; read_only_since?: string | null;
     };
     const raw   = json as unknown as { detail?: DetObj | string };
     const det   = typeof raw.detail === "object" ? raw.detail : null;
     const detMsg = det?.message ?? det?.detail ?? (typeof raw.detail === "string" ? raw.detail : "");
     const detCode = det?.code ?? "";
-    const apiErr = new Error(err.error?.message ?? (detMsg || `HTTP ${res.status}`)) as Error & {
+
+    // Friendly, translated messages for the read-only / plan-limit / rate-limit
+    // codes — computed here so every screen benefits without a per-screen change.
+    // These override detMsg; every other code falls back to it unchanged.
+    let friendlyMessage: string | null = null;
+    if (res.status === 402 && detCode === "CONTRACT_EXPIRED_READ_ONLY") {
+      friendlyMessage = t("contract.read_only_error");
+    } else if (res.status === 402 && detCode === "PLAN_LIMIT_REACHED" && det?.resource) {
+      friendlyMessage = t(`plan.limit_reached.${det.resource}`);
+      if (det.upgrade_to) {
+        friendlyMessage += " " + t("plan.upgrade_to").replace("{tier}", tierLabel(det.upgrade_to));
+      }
+    } else if (res.status === 429 && !detMsg) {
+      friendlyMessage = t("common.too_many_requests");
+    }
+
+    const apiErr = new Error(
+      friendlyMessage ?? (err.error?.message ?? (detMsg || `HTTP ${res.status}`))
+    ) as Error & {
       status: number; code: string; locations?: Array<{ warehouse: string; on_hand: number }>;
       feature?: string; upgradeTo?: string | null;
+      resource?: string; limit?: number | null;
+      contractEnd?: string | null; readOnlySince?: string | null;
     };
     apiErr.status    = res.status;
     apiErr.code      = err.error?.code ?? detCode;
@@ -149,6 +174,14 @@ async function request<T>(
     if (res.status === 402 && det?.feature) {
       apiErr.feature = det.feature;
       apiErr.upgradeTo = det.upgrade_to ?? null;
+    }
+    if (res.status === 402 && detCode === "PLAN_LIMIT_REACHED") {
+      apiErr.resource = det?.resource;
+      apiErr.limit    = det?.limit ?? null;
+    }
+    if (res.status === 402 && detCode === "CONTRACT_EXPIRED_READ_ONLY") {
+      apiErr.contractEnd    = det?.contract_end ?? null;
+      apiErr.readOnlySince  = det?.read_only_since ?? null;
     }
     throw apiErr;
   }

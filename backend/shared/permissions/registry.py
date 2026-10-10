@@ -236,12 +236,17 @@ class PERMISSIONS:
     # SA Operations Manual (platform_only — SA-internal doc, not for TA)
     SA_DOCS_VIEW            = Permission("sa:docs_view",            ["platform_only"])
 
+    # ── Domain 23 — Contract Renewal (P2) ─────────────────────────────────
+    TENANT_RENEWAL_REQUEST     = Permission("tenant:renewal_request",     ["tenant_id"])
+    TENANT_RENEWAL_MANAGE      = Permission("tenant:renewal_manage",      ["platform_only"])
+    TENANT_VIEW_CONTRACT_STATUS = Permission("tenant:view_contract_status", ["tenant_id"])
+
 
 ALL_PERMISSIONS: List[Permission] = [
     v for v in vars(PERMISSIONS).values() if isinstance(v, Permission)
 ]
 
-assert len(ALL_PERMISSIONS) == 157, (
-    f"Expected 157 permissions, found {len(ALL_PERMISSIONS)}. "
+assert len(ALL_PERMISSIONS) == 160, (
+    f"Expected 160 permissions, found {len(ALL_PERMISSIONS)}. "
     "Update registry.py and re-run seed_permissions.py."
 )

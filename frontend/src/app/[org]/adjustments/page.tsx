@@ -15,6 +15,7 @@ import { formatQty } from "@/lib/utils";
 import { useTenantName } from "@/hooks/useTenantName";
 import { useWarehouses } from "@/hooks/useWarehouses";
 import { useTenantPositions } from "@/hooks/useTenantPositions";
+import { useWriteGuard, guardProps } from "@/hooks/useWriteGuard";
 
 type ApiProduct = {
   id: string; sku: string; name: string; unit: string; pack_size?: number;
@@ -103,6 +104,8 @@ export default function AdjustmentsPage() {
   const qc             = useQueryClient();
   const [showHistory, setShowHistory] = useState(false);
   const isGatewayMode  = IS_GATEWAY_MODE;
+  const guard = useWriteGuard();
+  const gp = guardProps(guard);
 
   // All hooks called unconditionally — before any early returns
   const { data: apiAdj = [] } = useQuery<AdjRecord[]>({
@@ -284,6 +287,7 @@ export default function AdjustmentsPage() {
   }
 
   async function transition(id: string, action: AdjAction) {
+    if (guard.reason()) return;  // guardProps already disables the triggering button
     // IMPORTANT: search allAdj — not visibleAdj. visibleAdj is display-only (WM-scoped).
     // Approvers (RM/NM/TA) must find the adjustment record regardless of which WH created it.
     const adj = allAdj.find((a) => (a.adjustment_id ?? a.id) === id);
@@ -382,6 +386,12 @@ export default function AdjustmentsPage() {
         </div>
       </div>
 
+      {gp.title && (
+        <div className="mb-4 bg-red-50 border border-red-200 rounded px-4 py-2.5 text-sm text-red-600">
+          {gp.title}
+        </div>
+      )}
+
       {/* Approval queue — visible to RM/NM/TA/SA */}
       {myPending.length > 0 && (
         <div className="bg-amber-50 border border-amber-200 rounded-md px-5 py-4 mb-6">
@@ -406,14 +416,18 @@ export default function AdjustmentsPage() {
                 </div>
                 <div className="flex gap-2">
                   <button
+                    disabled={gp.disabled}
+                    title={gp.title}
                     onClick={() => void transition(a.adjustment_id ?? a.id,"approve")}
-                    className="px-3.5 py-1.5 bg-green-100 text-green-800 border border-emerald-200 rounded text-xs font-bold cursor-pointer"
+                    className={`px-3.5 py-1.5 bg-green-100 text-green-800 border border-emerald-200 rounded text-xs font-bold ${gp.disabled ? "opacity-50 cursor-not-allowed" : "cursor-pointer"}`}
                   >
                     {t("adjustment.approve")}
                   </button>
                   <button
+                    disabled={gp.disabled}
+                    title={gp.title}
                     onClick={() => void transition(a.adjustment_id ?? a.id,"reject")}
-                    className="px-3.5 py-1.5 bg-red-100 text-red-900 border border-red-200 rounded text-xs font-bold cursor-pointer"
+                    className={`px-3.5 py-1.5 bg-red-100 text-red-900 border border-red-200 rounded text-xs font-bold ${gp.disabled ? "opacity-50 cursor-not-allowed" : "cursor-pointer"}`}
                   >
                     {t("adjustment.reject")}
                   </button>
@@ -475,14 +489,18 @@ export default function AdjustmentsPage() {
                     {a.status === "DRAFT" && currentUser.id.toLowerCase() === (a.created_by ?? "").toLowerCase() && (
                       <div className="flex gap-1.5">
                         <button
+                          disabled={gp.disabled}
+                          title={gp.title}
                           onClick={() => void transition(a.adjustment_id ?? a.id,"submit")}
-                          className="px-2.5 py-1 bg-blue-100 text-blue-800 border border-blue-200 rounded text-xs font-bold cursor-pointer hover:bg-blue-200"
+                          className={`px-2.5 py-1 bg-blue-100 text-blue-800 border border-blue-200 rounded text-xs font-bold ${gp.disabled ? "opacity-50 cursor-not-allowed" : "cursor-pointer hover:bg-blue-200"}`}
                         >
                           {t("adjustment.submit")}
                         </button>
                         <button
+                          disabled={gp.disabled}
+                          title={gp.title}
                           onClick={() => void transition(a.adjustment_id ?? a.id,"cancel")}
-                          className="px-2.5 py-1 bg-gray-100 text-gray-600 border border-gray-200 rounded text-xs font-bold cursor-pointer hover:bg-gray-200"
+                          className={`px-2.5 py-1 bg-gray-100 text-gray-600 border border-gray-200 rounded text-xs font-bold ${gp.disabled ? "opacity-50 cursor-not-allowed" : "cursor-pointer hover:bg-gray-200"}`}
                         >
                           {t("adjustment.cancel")}
                         </button>
@@ -491,14 +509,18 @@ export default function AdjustmentsPage() {
                     {a.status === "PENDING_APPROVAL" && canApprove(a) && (
                       <div className="flex gap-1.5">
                         <button
+                          disabled={gp.disabled}
+                          title={gp.title}
                           onClick={() => void transition(a.adjustment_id ?? a.id,"approve")}
-                          className="px-2.5 py-1 bg-green-100 text-green-800 border border-emerald-200 rounded text-xs font-bold cursor-pointer hover:bg-green-200"
+                          className={`px-2.5 py-1 bg-green-100 text-green-800 border border-emerald-200 rounded text-xs font-bold ${gp.disabled ? "opacity-50 cursor-not-allowed" : "cursor-pointer hover:bg-green-200"}`}
                         >
                           {t("adjustment.approve")}
                         </button>
                         <button
+                          disabled={gp.disabled}
+                          title={gp.title}
                           onClick={() => void transition(a.adjustment_id ?? a.id,"reject")}
-                          className="px-2.5 py-1 bg-red-100 text-red-900 border border-red-200 rounded text-xs font-bold cursor-pointer hover:bg-red-200"
+                          className={`px-2.5 py-1 bg-red-100 text-red-900 border border-red-200 rounded text-xs font-bold ${gp.disabled ? "opacity-50 cursor-not-allowed" : "cursor-pointer hover:bg-red-200"}`}
                         >
                           {t("adjustment.reject")}
                         </button>

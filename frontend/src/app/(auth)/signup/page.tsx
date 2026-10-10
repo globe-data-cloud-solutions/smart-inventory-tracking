@@ -238,6 +238,11 @@ export default function SignupPage() {
           <AuthLangSwitcher />
         </div>
 
+        <p className="text-xs text-gray-500 mb-2">
+          <Link href="/getting-started" target="_blank" rel="noopener noreferrer" className="underline text-brand-600 hover:text-brand-700">
+            {t("signup.getting_started_note")}
+          </Link>
+        </p>
         <p className="text-xs font-semibold text-gray-400 mb-6">{t("signup.step_of").replace("{n}", String(step))}</p>
 
         {/* ── Step 1: package selection ── */}
@@ -259,6 +264,7 @@ export default function SignupPage() {
                 </button>
               ))}
             </div>
+            <p className="text-xs text-gray-400 mb-6 -mt-4">{t("signup.billing_period_hint")}</p>
 
             {loadingCatalog && <p className="text-gray-400 text-sm">{t("common.loading")}</p>}
             {catalogError && <p className="text-red-500 text-sm">{t("common.error")}</p>}
@@ -321,6 +327,7 @@ export default function SignupPage() {
                 })}
               </div>
             )}
+            <p className="text-xs text-gray-400 mt-3">{t("signup.package_hint")}</p>
 
             <div className="flex justify-between items-center mt-6">
               <Link href="/login" className="text-sm font-semibold text-gray-500 hover:text-gray-700">
@@ -364,6 +371,7 @@ export default function SignupPage() {
                     <option key={ot} value={ot}>{t(`wizard.org_types.${ot}`)}</option>
                   ))}
                 </select>
+                <p className="mt-1 text-xs text-gray-400">{t("signup.org_type_hint")}</p>
               </div>
 
               <div>
@@ -385,6 +393,7 @@ export default function SignupPage() {
                   <option value="am">{t("lang.am")}</option>
                   <option value="or">{t("lang.or")}</option>
                 </select>
+                <p className="mt-1 text-xs text-gray-400">{t("signup.language_hint")}</p>
               </div>
 
               <div className="md:col-span-2">
@@ -398,6 +407,7 @@ export default function SignupPage() {
                   />
                 </div>
                 <p className="mt-1 text-xs text-gray-400">{t("signup.slug_hint")}</p>
+                <p className="text-xs text-gray-400">{t("signup.slug_permanent_hint")}</p>
                 <FieldError message={form.formState.errors.slug?.message} />
               </div>
 

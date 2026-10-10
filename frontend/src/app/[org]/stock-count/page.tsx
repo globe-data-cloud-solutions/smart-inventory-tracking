@@ -5,8 +5,11 @@ import { useParams } from "next/navigation";
 import { SA_ORG_SLUG } from "@/lib/demo-auth";
 import { DEMO_TENANTS, getTotalStock, type DemoProduct } from "@/lib/demo-data";
 import { useScanner } from "@/hooks/useScanner";
+import { useWriteGuard, guardProps } from "@/hooks/useWriteGuard";
 import { t } from "@/lib/i18n";
 import { useTenantName } from "@/hooks/useTenantName";
+
+const isGatewayMode = !!process.env.NEXT_PUBLIC_API_URL;
 
 function ScannerToggle({ products, warehouseId, open, hint, onToggle, onHint, onCount }: {
   products: DemoProduct[];
@@ -84,6 +87,16 @@ export default function StockCountPage() {
   const [selectedWH, setSelectedWH]       = useState("");
   const [scannerOpen, setScannerOpen]     = useState(false);
   const [scanHint, setScanHint]           = useState("");
+  const guard = useWriteGuard();
+  // Start Session has a real backend route (POST /api/v1/inventory/counts/)
+  // — read-only guard only, never "coming soon" (CLAUDE.md §29 P6).
+  const gp = guardProps(guard);
+  // Submit Session has no backend route at all yet (local state only) —
+  // disabled with a "coming soon" tooltip in gateway mode, regardless of
+  // contract stage.
+  const submitGp = isGatewayMode
+    ? { disabled: true, title: t("common.coming_soon_hint") }
+    : guardProps(guard);
 
   if (org === SA_ORG_SLUG) return <p className="p-8 text-gray-500">{t("sa.select_tenant")}</p>;
   const tenant = DEMO_TENANTS.find((ten) => ten.slug === org);
@@ -139,9 +152,16 @@ export default function StockCountPage() {
           <div className="px-3.5 py-3 bg-green-50 rounded-md border border-emerald-200 mb-5 text-sm text-green-800">
             {selectedWH ? `${products.length} ${t("count.products_to_count")} ${warehouse?.name}` : `${products.length} ${t("count.products_across")} ${warehouses.length} ${t("warehouses.locations")}`}
           </div>
+          {gp.title && (
+            <p className="text-xs font-semibold text-red-600 bg-red-50 border border-red-200 rounded px-3 py-2 mb-3">
+              {gp.title}
+            </p>
+          )}
           <button
-            onClick={() => setSessionActive(true)}
-            className="w-full py-3 bg-eth-forest text-eth-gold font-bold text-sm rounded-md border-0 cursor-pointer"
+            onClick={() => { if (!gp.disabled) setSessionActive(true); }}
+            disabled={gp.disabled}
+            title={gp.title}
+            className={`w-full py-3 font-bold text-sm rounded-md border-0 ${gp.disabled ? "bg-gray-200 text-gray-400 cursor-not-allowed" : "bg-eth-forest text-eth-gold cursor-pointer"}`}
           >
             {t("count.start_session")}
           </button>
@@ -152,6 +172,11 @@ export default function StockCountPage() {
 
   return (
     <div className="p-8">
+      {submitGp.title && (
+        <div className="mb-4 bg-red-50 border border-red-200 rounded px-4 py-2.5 text-sm text-red-600">
+          {submitGp.title}
+        </div>
+      )}
       <div className="mb-6 flex items-start justify-between flex-wrap gap-3">
         <div>
           <h2 className="text-2xl font-bold text-[#0f2d1f] m-0">{t("count.session_active")}</h2>
@@ -168,9 +193,17 @@ export default function StockCountPage() {
             className="px-4 py-2 bg-gray-100 border border-gray-200 rounded text-sm font-semibold cursor-pointer text-gray-700">
             {t("common.cancel")}
           </button>
-          <button onClick={() => setSubmitted(true)} disabled={filledCount === 0}
-            className={`px-4 py-2 font-bold text-sm rounded border-0 ${filledCount > 0 ? "bg-emerald-600 text-white cursor-pointer" : "bg-gray-200 text-gray-400 cursor-not-allowed"}`}>
+          <button
+            onClick={() => { if (!submitGp.disabled) setSubmitted(true); }}
+            disabled={filledCount === 0 || submitGp.disabled}
+            title={submitGp.title}
+            className={`px-4 py-2 font-bold text-sm rounded border-0 ${(filledCount > 0 && !submitGp.disabled) ? "bg-emerald-600 text-white cursor-pointer" : "bg-gray-200 text-gray-400 cursor-not-allowed"}`}>
             {t("count.submit_session")} ({filledCount})
+            {isGatewayMode && (
+              <span className="ml-1.5 text-[9px] font-bold uppercase tracking-wide bg-gray-300 text-gray-600 px-1 py-0.5 rounded">
+                {t("common.coming_soon_badge")}
+              </span>
+            )}
           </button>
         </div>
       </div>

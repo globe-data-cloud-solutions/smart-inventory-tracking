@@ -266,14 +266,62 @@ agreement; it is independent of the subscription's billing period (§3.1).
 `PATCH /{tenant_id}/contract` only ever touches the contract, never the
 subscription.
 
-**There is no automatic suspension on contract expiry.** A `tenants.
-contract_expiry_notified` JSONB column (migration 067) tracks which
-pre-expiry alert milestones have already been dispatched for a tenant — this
-is alerting only. The SA decides manually whether/when to suspend a tenant
-whose contract has lapsed, using the Suspend action in the Suspending /
-Deactivating a Tenant section below.
+**SA is never restricted by any of this.** Contract stage and the
+read-only gate below apply only to a tenant's own staff — an SA session is
+always full access, regardless of any tenant's contract state.
 
-**Decided policy (2026-10):** alerts only; no automatic suspension.
+### Contract stages
+
+Four stages, derived automatically from `tenants.contract_end` (no stored
+status column — always computed fresh):
+
+| Stage | When | Access |
+|---|---|---|
+| **Active** | No contract date set, or more than 14 days left | Full access |
+| **Expiring** | ≤14 days left | Full access; warning banners |
+| **Grace** | ≤14 days past `contract_end` | Full access; banners |
+| **Read-only** | More than 14 days past `contract_end` | View + export only; all changes blocked |
+
+**Read-only is a real, automatic restriction** — not alerting only. Once a
+tenant is in Read-only, every write request from that tenant's own staff is
+rejected with `402 CONTRACT_EXPIRED_READ_ONLY`, except for the narrow set
+still allowed: own password change, Terms acceptance, managing contacts,
+sending a renewal request, staff password reset, and staff deactivation
+(a leaver's access must still be revocable, and a locked-out staff member
+must still be able to get back in, even while the tenant itself is
+read-only).
+
+**Renewal lifts read-only immediately.** Renewal means the SA records a
+payment (`POST .../payments/{id}/mark-paid`, §7) or otherwise extends
+`contract_end` (`PATCH /{tenant_id}/contract`) — either moves `contract_end`
+forward, and the very next request re-derives the stage from the new date,
+so there is no separate "restore access" step. **Suspension stays a
+separate, manual SA decision** (§9) — read-only and Suspended are
+independent states; renewing a read-only tenant does not touch a
+suspension, and suspending a tenant is unrelated to its contract stage.
+
+**Expiry alerts still only reach server logs** (CloudWatch, via the outbox
+`ContractExpiryAlert` handler) — there is no email yet. Emailed expiry
+reminders depend on `EMAIL_DELIVERY_MODE=ses` going live and that handler
+being wired to notification-service (§11); do not tell a customer to
+expect an email reminder until then.
+
+### Renewals tab — `[org]/dashboard` → Renewals (SA-only, deep link `?tab=renewals`)
+
+- **Stage counts** — Expiring / Grace / Read-only, tenant-wide.
+- **Contracts list** — every non-deactivated tenant currently in one of
+  those three stages, soonest-expiring first, with its current open
+  renewal request (if any).
+- **Open requests queue** — renewal requests a TA submitted from their own
+  Plan tab (at any contract stage, including Read-only — it is one of the
+  writes still allowed there). One open request per tenant at a time; a TA
+  submitting a second request while one is already open is just shown the
+  existing one, not a duplicate.
+- **Mark handled / Cancel** — resolves a request (a short note is
+  required either way). This does not itself change the contract or renew
+  anything — the SA still records the actual payment/extension (§7) as a
+  separate step; marking a request handled is bookkeeping for the queue,
+  not a renewal action in itself.
 
 ## 9. Suspending / Deactivating a Tenant
 
@@ -374,9 +422,11 @@ a tenant in staging or prod.**
   a check, not a fix).
 - [ ] Confirm real bank/payment instructions are supplied (§7) before
   relying on invoices for collection.
-- [ ] Confirm the real Terms of Service / Privacy Policy text is in place —
-  both `/terms` and `/privacy` are currently outline-only placeholders
-  (`[To be supplied]`).
+- [ ] Confirm the Terms of Service / Privacy Policy text is finalised —
+  `/terms` and `/privacy` now serve Alex's draft v0.2 (`docs/legal/*.md`),
+  still marked DRAFT with open COUNSEL NOTE items (data localisation,
+  pricing/VAT, SLA, liability cap, arbitration, Amharic translation); it
+  is not yet lawyer-reviewed or ready to be accepted as final.
 
 ## 13. Open Items / TBD List
 
@@ -384,8 +434,11 @@ a tenant in staging or prod.**
 - Email sender domain for `EMAIL_FROM` — **TBD — Alex**.
 - Whether to upgrade the GitHub plan for branch protection before go-live —
   **TBD — Alex**.
-- Real Terms of Service / Privacy Policy legal text — **TBD — whoever
-  reviews these as a lawyer; outline only today**.
+- Terms of Service / Privacy Policy — draft v0.2 text is live on `/terms`
+  and `/privacy` (`docs/legal/*.md`), but still **TBD — Ethiopian counsel
+  and GDC management** on the open COUNSEL NOTE items in those drafts
+  (data localisation under the PDP Proclamation is flagged high-priority),
+  before it can be published as final.
 - Account credit / Ethiopian VAT credit-note handling for downgrades —
   **TBD — accountant**; no credit is given today regardless.
 - Payment gateway (Chapa, Telebirr, or similar) integration — not started;

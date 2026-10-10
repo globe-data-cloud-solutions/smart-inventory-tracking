@@ -26,6 +26,7 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from shared.plans.catalog import get_tenant_entitlements
+from shared.plans.usage import count_active_warehouses, count_billable_users
 
 # ── Feature flag gate map ─────────────────────────────────────────────────────
 # Maps action strings (or action prefixes) to the feature flag that must be True.
@@ -154,13 +155,7 @@ async def check_plan_create_warehouse(
     )
 
     # Count ALL active nodes — one root is always free, so total_allowed = limit + 1.
-    current = (await db.execute(
-        text(
-            "SELECT COUNT(*) FROM organization_node "
-            "WHERE tenant_id = :tid AND is_active = true"
-        ),
-        {"tid": tenant_id},
-    )).scalar() or 0
+    current = await count_active_warehouses(db, tenant_id)
 
     total_allowed = plan["max_warehouses"] + 1  # +1 for the free root node
     if int(current) >= total_allowed:
@@ -212,14 +207,7 @@ async def check_plan_create_user(
     # Exclude TA accounts from the count — the primary admin is always free.
     # IS DISTINCT FROM handles NULL correctly: regular users have system_role = NULL
     # and NULL != 'TA' is NULL in SQL (not TRUE), so != would silently exclude them.
-    current = (await db.execute(
-        text(
-            "SELECT COUNT(*) FROM users "
-            "WHERE tenant_id = :tid AND is_active = true "
-            "AND system_role IS DISTINCT FROM 'TA'"
-        ),
-        {"tid": tenant_id},
-    )).scalar() or 0
+    current = await count_billable_users(db, tenant_id)
 
     if int(current) >= plan["max_users"]:
         raise HTTPException(

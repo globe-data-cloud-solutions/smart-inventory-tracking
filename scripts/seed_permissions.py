@@ -1,4 +1,4 @@
-"""Seed all 156 actions from registry.py into the role_permissions table.
+"""Seed all 160 actions from registry.py into the role_permissions table.
 Run after every Alembic upgrade when new permissions are added.
 """
 from __future__ import annotations
@@ -47,6 +47,7 @@ ROLE_PERMISSION_MATRIX: dict[str, dict[str, str]] = {
         "ai:forecast_view": "FULL", "analytics:dashboard_view": "FULL",
         "locale:view": "FULL",
         "billing:view_own": "FULL",
+        "tenant:renewal_request": "FULL", "tenant:view_contract_status": "FULL",
     },
     "NM": {
         "product:create": "FULL", "product:view": "FULL", "product:list": "FULL",
@@ -71,6 +72,8 @@ ROLE_PERMISSION_MATRIX: dict[str, dict[str, str]] = {
         "analytics:dashboard_view": "FULL", "analytics:report_view": "FULL",
         "notification:view": "FULL", "search:products": "FULL", "search:inventory": "FULL",
         "locale:view": "FULL", "position:view": "FULL",
+        "tenant:view_contract_status": "FULL",
+        "plan:view_usage": "FULL",
     },
     "RM": {
         "product:list": "FULL", "product:view": "FULL",
@@ -94,6 +97,7 @@ ROLE_PERMISSION_MATRIX: dict[str, dict[str, str]] = {
         "locale:view": "FULL", "position:view": "FULL",
         "tenant:self_approval_view": "FULL", "adjustment_approval_rule:view": "FULL",
         "transfer_approval_rule:view": "FULL",
+        "tenant:view_contract_status": "FULL",
     },
     "WM": {
         "product:list": "FULL", "product:view": "FULL",
@@ -116,6 +120,7 @@ ROLE_PERMISSION_MATRIX: dict[str, dict[str, str]] = {
         "locale:view": "FULL", "position:view": "FULL",
         "tenant:self_approval_view": "FULL", "adjustment_approval_rule:view": "FULL",
         "transfer_approval_rule:view": "FULL",
+        "tenant:view_contract_status": "FULL",
     },
     "LM": {
         "product:list": "FULL", "product:view": "FULL",
@@ -130,6 +135,7 @@ ROLE_PERMISSION_MATRIX: dict[str, dict[str, str]] = {
         "tenant:self_approval_view": "FULL", "adjustment_approval_rule:view": "FULL",
         "transfer_approval_rule:view": "FULL",
         "adjustment:list": "READ_ONLY", "adjustment:view": "READ_ONLY",
+        "tenant:view_contract_status": "FULL",
     },
     "SA_GT": {
         "scan:barcode_lookup": "FULL", "scan:batch_receive": "FULL",
@@ -137,12 +143,14 @@ ROLE_PERMISSION_MATRIX: dict[str, dict[str, str]] = {
         "inventory:view_balance": "READ_ONLY",
         "sync:offline_queue_view": "FULL",
         "notification:view": "FULL", "locale:view": "FULL", "position:view": "FULL",
+        "tenant:view_contract_status": "FULL",
     },
     "RT": {
         "inventory:view_balance": "READ_ONLY",
         "report:low_stock": "READ_ONLY",
         "scan:barcode_lookup": "FULL",
         "notification:view": "FULL", "locale:view": "FULL", "position:view": "FULL",
+        "tenant:view_contract_status": "FULL",
     },
     "AU": {
         "audit:view_logs": "FULL", "audit:export_logs": "FULL",
@@ -164,6 +172,7 @@ ROLE_PERMISSION_MATRIX: dict[str, dict[str, str]] = {
         "adjustment_approval_rule:view": "READ_ONLY",
         "transfer_type:view": "READ_ONLY",
         "notification:view": "FULL",
+        "tenant:view_contract_status": "FULL",
     },
     "SYS": {
         "ai:model_run": "FULL",

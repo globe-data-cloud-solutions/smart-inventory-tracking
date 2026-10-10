@@ -7,6 +7,7 @@ import { getSession, SA_ORG_SLUG } from "@/lib/demo-auth";
 import { DEMO_TENANTS } from "@/lib/demo-data";
 import { useInventoryStore } from "@/lib/inventory-state";
 import { useOfflineSync } from "@/hooks/useOfflineSync";
+import { useWriteGuard, guardProps } from "@/hooks/useWriteGuard";
 import { api } from "@/lib/api";
 import { t } from "@/lib/i18n";
 import { useTenantName } from "@/hooks/useTenantName";
@@ -362,6 +363,8 @@ export default function TransferDetailPage() {
   const user         = getSession();
   const qc           = useQueryClient();
   const { isOnline } = useOfflineSync();
+  const guard = useWriteGuard();
+  const gp = guardProps(guard);
   const { updateTransferStatus, addTransfer, getTransferEntry } = useInventoryStore();
 
   const [toast, setToast]     = useState("");
@@ -384,6 +387,13 @@ export default function TransferDetailPage() {
     if (!isOnline) {
       setConfirm(null);
       setToast(t("transfers.offline_action_blocked"));
+      setTimeout(() => setToast(""), 5000);
+      return;
+    }
+    const blockedReason = guard.reason();
+    if (blockedReason) {
+      setConfirm(null);
+      setToast(blockedReason);
       setTimeout(() => setToast(""), 5000);
       return;
     }
@@ -481,6 +491,11 @@ export default function TransferDetailPage() {
               {confirm.label} {t("transfers.confirm_transfer")} <strong>{transfer.ref}</strong>?{" "}
               {t("transfers.status_will_change")} <strong>{confirm.next.replace(/_/g, " ")}</strong>.
             </p>
+            {gp.title && (
+              <p className="text-xs font-semibold text-red-600 bg-red-50 border border-red-200 rounded px-3 py-2 mb-4">
+                {gp.title}
+              </p>
+            )}
             <div className="flex gap-2.5">
               <button
                 onClick={() => setConfirm(null)}
@@ -489,8 +504,10 @@ export default function TransferDetailPage() {
                 {t("common.cancel")}
               </button>
               <button
+                disabled={gp.disabled}
+                title={gp.title}
                 onClick={() => doTransition(confirm.next)}
-                className="flex-[2] py-2 bg-[#1B4332] text-[#FCDD09] border-none rounded-md text-sm font-bold cursor-pointer hover:bg-[#0f2d1f] transition-colors"
+                className={`flex-[2] py-2 bg-[#1B4332] text-[#FCDD09] border-none rounded-md text-sm font-bold transition-colors ${gp.disabled ? "opacity-50 cursor-not-allowed" : "cursor-pointer hover:bg-[#0f2d1f]"}`}
               >
                 {t("common.confirm")}
               </button>
@@ -581,23 +598,27 @@ export default function TransferDetailPage() {
                 {loading ? (
                   <span className="text-sm text-gray-400">{t("transfers.updating")}</span>
                 ) : (
-                  roleActs.map((a) => (
+                  roleActs.map((a) => {
+                    const rowBlocked = !isOnline || gp.disabled;
+                    return (
                     <button
                       key={a.next}
-                      disabled={!isOnline}
+                      disabled={rowBlocked}
+                      title={!isOnline ? t("errors.OFFLINE") : gp.title}
                       onClick={() => setConfirm({ next: a.next, label: a.label })}
                       style={{
                         border:     `1.5px solid ${a.color}40`,
-                        background: isOnline ? `${a.color}10` : undefined,
-                        color:      isOnline ? a.color : undefined,
+                        background: !rowBlocked ? `${a.color}10` : undefined,
+                        color:      !rowBlocked ? a.color : undefined,
                       }}
                       className={`px-6 py-2.5 rounded-md font-bold text-sm transition-opacity ${
-                        isOnline ? "cursor-pointer opacity-100" : "cursor-not-allowed opacity-50 bg-gray-100 text-gray-400"
+                        !rowBlocked ? "cursor-pointer opacity-100" : "cursor-not-allowed opacity-50 bg-gray-100 text-gray-400"
                       }`}
                     >
                       {a.label}
                     </button>
-                  ))
+                    );
+                  })
                 )}
               </div>
             </div>

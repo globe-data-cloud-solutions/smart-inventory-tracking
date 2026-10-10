@@ -16,7 +16,8 @@ const ROLE_HIERARCHY: Record<string, number> = {
 
 const ROLE_PERMISSIONS: Record<string, string[]> = {
   SA:  ["*"], // all actions
-  TA:  ["tenant:*", "user:*", "product:*", "inventory:*", "order:*", "report:*", "audit:*"],
+  TA:  ["tenant:*", "user:*", "product:*", "inventory:*", "order:*", "report:*", "audit:*",
+        "dispatch:configure", "dispatch:view_config"],
   NM:  ["product:*", "inventory:*", "order:*", "report:*", "dispatch:configure"],
   RM:  ["inventory:*", "transfer:*", "adjustment:approve", "order:*", "report:*"],
   WM:  ["inventory:receive", "inventory:adjust", "inventory:transfer", "inventory:cycle_count",

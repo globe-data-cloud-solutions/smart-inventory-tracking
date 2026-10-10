@@ -7,6 +7,7 @@ import { api } from "@/lib/api";
 import { useInventoryStore } from "@/lib/inventory-state";
 import { useAuditStore } from "@/lib/audit-log-state";
 import { getSession } from "@/lib/demo-auth";
+import { useWriteGuard, guardProps } from "@/hooks/useWriteGuard";
 import { t } from "@/lib/i18n";
 import type { DemoProduct, DemoWarehouse } from "@/lib/demo-data";
 
@@ -42,6 +43,8 @@ export function OpeningBalancePanel({ products, warehouses, orgSlug }: Props) {
   const [error, setError]     = useState("");
   const [success, setSuccess] = useState("");
   const [loading, setLoading] = useState(false);
+  const writeGuard = useWriteGuard();
+  const gp = guardProps(writeGuard);
 
   const availableWarehouses = warehouses;
   const selectedProduct    = products.find((p) => p.id === form.productId);
@@ -52,6 +55,7 @@ export function OpeningBalancePanel({ products, warehouses, orgSlug }: Props) {
 
   const onSubmit = async (e: React.FormEvent) => {
     e.preventDefault(); setError("");
+    if (gp.disabled) return;
     if (!user)             { setError(t("opening_balance.error_session"));   return; }
     if (!form.warehouseId) { setError(t("receive_panel.error_warehouse")); return; }
     if (!form.productId)   { setError(t("receive_panel.error_product"));   return; }
@@ -90,7 +94,7 @@ export function OpeningBalancePanel({ products, warehouses, orgSlug }: Props) {
 
   return (
     <>
-      <button onClick={() => { reset(); setOpen(true); }} className="px-4 py-2 bg-blue-800 text-white font-bold text-sm rounded border-0 cursor-pointer">
+      <button onClick={() => { reset(); setOpen(true); }} {...gp} className="px-4 py-2 bg-blue-800 text-white font-bold text-sm rounded border-0 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed">
         + {t("opening_balance.title")}
       </button>
 
@@ -107,6 +111,11 @@ export function OpeningBalancePanel({ products, warehouses, orgSlug }: Props) {
         </div>
 
         <form onSubmit={onSubmit} className="flex-1 overflow-y-auto p-6">
+          {gp.disabled && gp.title && (
+            <div role="alert" className="bg-amber-50 border border-amber-200 rounded px-3.5 py-2.5 text-sm text-amber-800 mb-4">
+              {gp.title}
+            </div>
+          )}
           <div className="bg-blue-50 border border-blue-200 rounded-md px-3 py-2.5 text-xs text-blue-800 mb-5 leading-relaxed">
             <strong>{t("opening_balance.title")}:</strong> {t("opening_balance.info")}
           </div>
@@ -165,7 +174,7 @@ export function OpeningBalancePanel({ products, warehouses, orgSlug }: Props) {
 
         <div className="px-6 py-4 border-t border-gray-200 flex gap-2.5">
           <button type="button" onClick={() => { reset(); setOpen(false); }} className="flex-1 py-2.5 bg-gray-100 border border-gray-200 rounded text-sm font-semibold text-gray-700 cursor-pointer">{t("common.cancel")}</button>
-          <button onClick={onSubmit as unknown as React.MouseEventHandler} disabled={loading} className={`flex-[2] py-2.5 bg-blue-800 text-white font-bold text-sm rounded border-0 ${loading ? "opacity-70 cursor-not-allowed" : "cursor-pointer"}`}>
+          <button onClick={onSubmit as unknown as React.MouseEventHandler} disabled={loading || gp.disabled} title={gp.title} className={`flex-[2] py-2.5 bg-blue-800 text-white font-bold text-sm rounded border-0 ${loading || gp.disabled ? "opacity-70 cursor-not-allowed" : "cursor-pointer"}`}>
             {loading ? t("common.loading") : t("opening_balance.submit")}
           </button>
         </div>

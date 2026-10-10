@@ -1,9 +1,9 @@
 "use client";
 
-import { useParams, useRouter } from "next/navigation";
+import { useParams, useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { useState } from "react";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { getSession } from "@/lib/demo-auth";
 import { SA_ORG_SLUG } from "@/lib/demo-auth";
 import {
@@ -219,6 +219,7 @@ const STATUS_CLASS: Record<string, string> = {
 export default function OrgDashboard() {
   const { org } = useParams() as { org: string };
   const router = useRouter();
+  const searchParams = useSearchParams();
   const user = getSession();
 
   // ── Hooks (called unconditionally, disabled for SA/demo modes) ─────────────
@@ -328,6 +329,39 @@ export default function OrgDashboard() {
     created_at: string;
   }
 
+  interface ContractsOverviewRow {
+    tenant_id: string;
+    name: string;
+    slug: string | null;
+    plan_tier: string | null;
+    contract_end: string | null;
+    days_left: number | null;
+    stage: "EXPIRING" | "GRACE" | "READ_ONLY";
+    open_request_id: string | null;
+  }
+
+  interface ContractsOverviewOut {
+    tenants: ContractsOverviewRow[];
+    counts: { EXPIRING: number; GRACE: number; READ_ONLY: number };
+  }
+
+  interface SARenewalRequestRow {
+    id: string;
+    tenant_id: string;
+    tenant_name: string;
+    tenant_slug: string | null;
+    plan_tier: string | null;
+    contract_end: string | null;
+    requested_by: string;
+    requested_by_email: string | null;
+    message: string | null;
+    status: "OPEN" | "HANDLED" | "CANCELLED";
+    handled_by: string | null;
+    handled_note: string | null;
+    handled_at: string | null;
+    created_at: string;
+  }
+
   const { data: apiTenantList } = useQuery<ApiTenantRow[]>({
     queryKey: ["tenants-list"],
     queryFn: () => api.get<ApiTenantRow[]>("/api/v1/tenants/"),
@@ -340,7 +374,13 @@ export default function OrgDashboard() {
   const [actionLoading, setActionLoading] = useState<string | null>(null);
   const qc = useQueryClient();
 
-  const [saTab, setSaTab] = useState<"tenants" | "registry" | "admin">("tenants");
+  // Deep-link support: /admin/dashboard?tab=renewals (used by the SA nav badge).
+  const tabParam = searchParams.get("tab");
+  const SA_TABS = ["tenants", "registry", "admin", "renewals"] as const;
+  const initialSaTab = (SA_TABS as readonly string[]).includes(tabParam ?? "")
+    ? (tabParam as typeof SA_TABS[number])
+    : "tenants";
+  const [saTab, setSaTab] = useState<typeof SA_TABS[number]>(initialSaTab);
   const [activityTenantId, setActivityTenantId] = useState<string | null>(null);
   const [personnelModalRow, setPersonnelModalRow] = useState<ApiRegistryRow | null>(null);
 
@@ -352,6 +392,49 @@ export default function OrgDashboard() {
     staleTime: 0,
     refetchOnMount: true,
   });
+
+  const { data: contractsOverview, isLoading: contractsOverviewLoading } = useQuery<ContractsOverviewOut>({
+    queryKey: ["sa-contracts-overview"],
+    queryFn: () => api.get<ContractsOverviewOut>("/api/v1/tenants/sa/contracts/overview"),
+    enabled: isGatewayMode && org === SA_ORG_SLUG,
+    staleTime: 0,
+    refetchOnMount: true,
+  });
+
+  const { data: openRenewalRequests, isLoading: openRenewalRequestsLoading } = useQuery<SARenewalRequestRow[]>({
+    queryKey: ["sa-renewal-requests", "OPEN"],
+    queryFn: () => api.get<SARenewalRequestRow[]>("/api/v1/tenants/sa/renewal-requests?status=OPEN"),
+    enabled: isGatewayMode && org === SA_ORG_SLUG,
+    staleTime: 0,
+    refetchOnMount: true,
+  });
+
+  // ── SA renewals tab action state ────────────────────────────────────────────
+  const [renewalActionRow, setRenewalActionRow] = useState<{ id: string; type: "handle" | "cancel" } | null>(null);
+  const [renewalNote, setRenewalNote] = useState("");
+  const [renewalActionError, setRenewalActionError] = useState<string | null>(null);
+
+  const handleRenewalMutation = useMutation({
+    mutationFn: (vars: { id: string; status: "HANDLED" | "CANCELLED"; note?: string }) =>
+      api.patch(`/api/v1/tenants/sa/renewal-requests/${vars.id}`, {
+        status: vars.status,
+        note: vars.note?.trim() || undefined,
+      }),
+    onSuccess: () => {
+      setRenewalActionRow(null);
+      setRenewalNote("");
+      setRenewalActionError(null);
+      void qc.invalidateQueries({ queryKey: ["sa-renewal-requests"] });
+      void qc.invalidateQueries({ queryKey: ["sa-contracts-overview"] });
+    },
+    onError: (e: unknown) => setRenewalActionError(e instanceof Error ? e.message : t("common.error")),
+  });
+
+  function toggleRenewalAction(id: string, type: "handle" | "cancel") {
+    setRenewalActionRow((cur) => (cur?.id === id && cur.type === type ? null : { id, type }));
+    setRenewalNote("");
+    setRenewalActionError(null);
+  }
 
   const { data: activityLog, isLoading: activityLoading } = useQuery<ApiActivityRow[]>({
     queryKey: ["sa-activity", activityTenantId],
@@ -397,7 +480,7 @@ export default function OrgDashboard() {
             ]}
           />
           <div className="flex gap-0 mb-6 border-b border-gray-200">
-            {(["tenants", "registry", "admin"] as const).map((tab) => (
+            {SA_TABS.map((tab) => (
               <button
                 key={tab}
                 type="button"
@@ -724,6 +807,161 @@ export default function OrgDashboard() {
                   ))}
                 </select>
               </div>
+            </div>
+          )}
+
+          {saTab === "renewals" && (
+            <div>
+              {/* Stage counts */}
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-6">
+                {([
+                  ["EXPIRING", "sa.renewals_count_expiring", "bg-amber-50 text-amber-800 border-amber-200"],
+                  ["GRACE", "sa.renewals_count_grace", "bg-orange-50 text-orange-800 border-orange-200"],
+                  ["READ_ONLY", "sa.renewals_count_read_only", "bg-red-50 text-red-800 border-red-200"],
+                ] as const).map(([stage, labelKey, cls]) => (
+                  <div key={stage} className={`rounded-lg border p-4 ${cls}`}>
+                    <p className="text-xs font-bold uppercase tracking-wide m-0">{t(labelKey)}</p>
+                    <p className="text-2xl font-bold m-0 mt-1">
+                      {contractsOverviewLoading ? "…" : contractsOverview?.counts[stage] ?? 0}
+                    </p>
+                  </div>
+                ))}
+              </div>
+
+              {/* Tenants in EXPIRING/GRACE/READ_ONLY */}
+              <h3 className="text-base font-bold text-[#0f2d1f] mb-3">{t("dashboard.tenants_heading")}</h3>
+              {contractsOverviewLoading && <p className="text-gray-400 text-sm">{t("common.loading")}</p>}
+              {!contractsOverviewLoading && (!contractsOverview || contractsOverview.tenants.length === 0) && (
+                <p className="text-gray-400 text-sm mb-6">{t("sa.renewals_tenants_empty")}</p>
+              )}
+              {!contractsOverviewLoading && contractsOverview && contractsOverview.tenants.length > 0 && (
+                <div className="bg-white border border-gray-200 rounded overflow-x-auto mb-6">
+                  <table className="w-full border-collapse text-sm min-w-[700px]">
+                    <thead>
+                      <tr className="bg-gray-50 border-b border-gray-200">
+                        {[
+                          "dashboard.tenant_name", "table.plan", "sa.col_end_date",
+                          "sa.col_days_left", "sa.col_stage", "sa.col_open_request", "table.actions",
+                        ].map((key) => (
+                          <th key={key} className="px-4 py-2.5 text-left text-xs font-bold text-gray-500 uppercase tracking-wide whitespace-nowrap">
+                            {t(key)}
+                          </th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {contractsOverview.tenants.map((ten, idx) => (
+                        <tr key={ten.tenant_id} className={`border-b border-gray-100 ${idx % 2 === 0 ? "bg-white" : "bg-gray-50"}`}>
+                          <td className="px-4 py-2.5 font-semibold text-gray-800 whitespace-nowrap">{ten.name}</td>
+                          <td className="px-4 py-2.5 text-gray-600 whitespace-nowrap">{ten.plan_tier ?? "—"}</td>
+                          <td className="px-4 py-2.5 text-gray-600 whitespace-nowrap">{ten.contract_end ?? "—"}</td>
+                          <td className="px-4 py-2.5 text-gray-600 whitespace-nowrap">{ten.days_left ?? "—"}</td>
+                          <td className="px-4 py-2.5 whitespace-nowrap">
+                            <span className="text-xs font-bold px-2.5 py-0.5 rounded bg-gray-100 text-gray-700">
+                              {t(`sa.renewal_stage_${ten.stage}`)}
+                            </span>
+                          </td>
+                          <td className="px-4 py-2.5 text-center whitespace-nowrap">{ten.open_request_id ? "✓" : "—"}</td>
+                          <td className="px-4 py-2.5 whitespace-nowrap">
+                            <Link
+                              href={`/${org}/settings/tenants/${ten.tenant_id}`}
+                              className="text-xs font-semibold text-eth-forest hover:underline"
+                            >
+                              {t("sa.open_tenant")}
+                            </Link>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+
+              {/* Open renewal requests */}
+              <h3 className="text-base font-bold text-[#0f2d1f] mb-3">{t("sa.renewals_open_requests_heading")}</h3>
+              {openRenewalRequestsLoading && <p className="text-gray-400 text-sm">{t("common.loading")}</p>}
+              {!openRenewalRequestsLoading && (!openRenewalRequests || openRenewalRequests.length === 0) && (
+                <p className="text-gray-400 text-sm">{t("sa.renewals_empty")}</p>
+              )}
+              {!openRenewalRequestsLoading && openRenewalRequests && openRenewalRequests.length > 0 && (
+                <div className="space-y-3">
+                  {openRenewalRequests.map((r) => (
+                    <div key={r.id} className="bg-white border border-gray-200 rounded p-4">
+                      <div className="flex items-start justify-between gap-3 flex-wrap">
+                        <div className="min-w-0">
+                          <p className="m-0 font-semibold text-gray-800">
+                            <Link href={`/${org}/settings/tenants/${r.tenant_id}`} className="text-eth-forest hover:underline">
+                              {r.tenant_name}
+                            </Link>
+                            {r.plan_tier && <span className="text-xs text-gray-500 font-normal"> · {r.plan_tier}</span>}
+                          </p>
+                          <p className="m-0 text-xs text-gray-400 mt-0.5">
+                            {t("sa.renewals_requested_by")} {r.requested_by_email ?? r.requested_by} · {new Date(r.created_at).toLocaleDateString()}
+                          </p>
+                          {r.message && (
+                            <p className="m-0 text-xs text-gray-600 mt-1.5">
+                              <span className="font-semibold">{t("sa.renewals_message_label")}:</span> {r.message}
+                            </p>
+                          )}
+                        </div>
+                        <div className="flex gap-2 shrink-0">
+                          <button
+                            type="button"
+                            onClick={() => toggleRenewalAction(r.id, "handle")}
+                            className="text-xs font-semibold text-emerald-600 hover:text-emerald-700 underline"
+                          >
+                            {t("sa.renewals_mark_handled_btn")}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => toggleRenewalAction(r.id, "cancel")}
+                            className="text-xs font-semibold text-red-600 hover:text-red-700 underline"
+                          >
+                            {t("sa.renewals_cancel_btn")}
+                          </button>
+                        </div>
+                      </div>
+                      {renewalActionRow?.id === r.id && (
+                        <div className="mt-3 pt-3 border-t border-gray-100 flex flex-wrap gap-2 items-end">
+                          <div className="flex-1 min-w-[200px]">
+                            <label className="block text-[11px] font-semibold text-gray-600 mb-1">
+                              {t("sa.renewals_note_label")}
+                            </label>
+                            <input
+                              type="text"
+                              value={renewalNote}
+                              onChange={(e) => setRenewalNote(e.target.value)}
+                              className="w-full px-2 py-1 text-xs border border-gray-300 rounded-md outline-none focus:border-[#0f2d1f]"
+                            />
+                          </div>
+                          <button
+                            type="button"
+                            disabled={handleRenewalMutation.isPending}
+                            onClick={() => handleRenewalMutation.mutate({
+                              id: r.id,
+                              status: renewalActionRow.type === "handle" ? "HANDLED" : "CANCELLED",
+                              note: renewalNote,
+                            })}
+                            className="px-3 py-1.5 text-xs font-bold text-white bg-[#0f2d1f] rounded hover:bg-[#1a4d35] disabled:opacity-50"
+                          >
+                            {handleRenewalMutation.isPending ? "…" : t("sa.renewals_confirm_btn")}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setRenewalActionRow(null)}
+                            className="px-3 py-1.5 text-xs font-bold text-gray-600 rounded hover:bg-gray-200"
+                          >
+                            {t("sa.renewals_dismiss_btn")}
+                          </button>
+                        </div>
+                      )}
+                      {renewalActionRow?.id === r.id && renewalActionError && (
+                        <p className="text-xs text-red-600 mt-2">{renewalActionError}</p>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           )}
 

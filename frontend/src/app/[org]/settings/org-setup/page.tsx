@@ -8,6 +8,7 @@ import { getToken } from "@/lib/auth";
 import { getSession } from "@/lib/demo-auth";
 import { t } from "@/lib/i18n";
 import { planFeatureErrorMessage, PLAN_UPGRADE_TO } from "@/lib/planError";
+import { useWriteGuard, guardProps } from "@/hooks/useWriteGuard";
 import { useTenantPositions, type TenantPosition } from "@/hooks/useTenantPositions";
 import { TabHelpBanner } from "@/components/ui/TabHelpBanner";
 
@@ -77,6 +78,8 @@ function flattenNodes(nodes: OrgNode[]): OrgNode[] {
 
 function LevelsTab({ tenantId }: { tenantId: string }) {
   const qc = useQueryClient();
+  const writeGuard = useWriteGuard();
+  const gp = guardProps(writeGuard);
 
   const { data: savedLevels = [], isLoading } = useQuery<HierarchyLevel[]>({
     queryKey: ["hierarchy-config", tenantId],
@@ -249,6 +252,7 @@ function LevelsTab({ tenantId }: { tenantId: string }) {
                       value={lv.level_name}
                       onChange={(e) => updateLevel(idx, { level_name: e.target.value })}
                       onBlur={(e) => {
+                        if (gp.disabled) return;
                         const name = e.target.value.trim();
                         if (persisted && lv.id && name.length >= 2 && name !== savedLevels.find((s) => s.id === lv.id)?.level_name) {
                           renameMutation.mutate({ levelId: lv.id, patch: { level_name: name } });
@@ -256,7 +260,9 @@ function LevelsTab({ tenantId }: { tenantId: string }) {
                       }}
                       onKeyDown={(e) => { if (e.key === "Enter") e.currentTarget.blur(); }}
                       placeholder={["Main Factory", "Region", "Warehouse", "Sub-Warehouse", "Counter"][idx] ?? ""}
-                      className="w-full border border-gray-300 rounded px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                      disabled={persisted && gp.disabled}
+                      title={persisted ? gp.title : undefined}
+                      className="w-full border border-gray-300 rounded px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 disabled:opacity-60 disabled:cursor-not-allowed"
                     />
                     {renamedIdx === idx && <p className="text-xs text-emerald-600 mt-0.5">{t("common.saved")}</p>}
                   </td>
@@ -292,6 +298,7 @@ function LevelsTab({ tenantId }: { tenantId: string }) {
                         value={lv.role_display_label ?? ""}
                         onChange={(e) => updateLevel(idx, { role_display_label: e.target.value })}
                         onBlur={(e) => {
+                          if (gp.disabled) return;
                           const label = e.target.value.trim();
                           if (persisted && lv.id && label !== (savedLevels.find((s) => s.id === lv.id)?.role_display_label ?? "")) {
                             if (label === "" || label.length >= 2) {
@@ -301,7 +308,9 @@ function LevelsTab({ tenantId }: { tenantId: string }) {
                         }}
                         onKeyDown={(e) => { if (e.key === "Enter") e.currentTarget.blur(); }}
                         placeholder={defaultDisplayLabel(lv.default_role_code)}
-                        className="w-full border border-gray-300 rounded px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                        disabled={persisted && gp.disabled}
+                        title={persisted ? gp.title : undefined}
+                        className="w-full border border-gray-300 rounded px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 disabled:opacity-60 disabled:cursor-not-allowed"
                       />
                       {lv.default_role_code && (
                         <span
@@ -341,7 +350,8 @@ function LevelsTab({ tenantId }: { tenantId: string }) {
         <button
           type="button"
           onClick={() => setShowSaveConfirm(true)}
-          disabled={saveMutation.isPending}
+          disabled={saveMutation.isPending || gp.disabled}
+          title={gp.title}
           className="px-5 py-2 bg-emerald-700 text-white text-sm font-semibold rounded-lg hover:bg-emerald-800 disabled:opacity-50"
         >
           {saveMutation.isPending ? t("common.saving") : "Save Levels"}
@@ -357,6 +367,11 @@ function LevelsTab({ tenantId }: { tenantId: string }) {
             <p className="text-sm text-gray-600 mt-3">
               {t("org_setup.confirm_save_levels_body").replace("{count}", String(levelCount))}
             </p>
+            {gp.title && (
+              <p className="text-xs font-semibold text-red-600 bg-red-50 border border-red-200 rounded px-3 py-2 mt-3">
+                {gp.title}
+              </p>
+            )}
             <div className="mt-5 flex justify-end gap-2">
               <button
                 type="button"
@@ -368,7 +383,9 @@ function LevelsTab({ tenantId }: { tenantId: string }) {
               <button
                 type="button"
                 onClick={() => { setShowSaveConfirm(false); saveMutation.mutate(); }}
-                className="px-4 py-1.5 bg-emerald-700 text-white text-sm font-semibold rounded hover:bg-emerald-800"
+                disabled={gp.disabled}
+                title={gp.title}
+                className="px-4 py-1.5 bg-emerald-700 text-white text-sm font-semibold rounded hover:bg-emerald-800 disabled:opacity-50"
               >
                 {t("org_setup.confirm_save")}
               </button>
@@ -421,8 +438,14 @@ function NodeForm({
   }));
   const [saving, setSaving] = useState(false);
   const [error, setError]   = useState<string | null>(null);
+  const writeGuard = useWriteGuard();
+  // check_plan_create_warehouse (backend/shared/permissions/plan_middleware.py)
+  // counts EVERY active node toward max_warehouses, regardless of
+  // is_stock_holding — so any new node (not an edit) counts against the cap.
+  const gp = guardProps(writeGuard, editingNode ? undefined : "warehouses");
 
   async function save() {
+    if (gp.disabled) return;
     if (!form.name.trim()) { setError("Name is required."); return; }
     setSaving(true);
     setError(null);
@@ -540,13 +563,15 @@ function NodeForm({
         </label>
       )}
 
+      {gp.title && <p className="text-xs font-semibold text-red-600 bg-red-50 border border-red-200 rounded px-3 py-2">{gp.title}</p>}
       {error && <p className="text-xs text-red-600">{error}</p>}
 
       <div className="flex gap-2">
         <button
           type="button"
           onClick={() => void save()}
-          disabled={saving}
+          disabled={saving || gp.disabled}
+          title={gp.title}
           className="px-4 py-1.5 bg-blue-600 text-white text-sm font-semibold rounded hover:bg-blue-700 disabled:opacity-50"
         >
           {saving ? t("common.saving") : "Save Node"}
@@ -586,6 +611,12 @@ function TreeTab({
 }) {
   const qc = useQueryClient();
   const [coverage, setCoverage] = useState<CoverageState | null>(null);
+  const writeGuard = useWriteGuard();
+  // Adding a node (root or child) counts against max_warehouses regardless of
+  // is_stock_holding — see NodeForm above. Edit/deactivate/reactivate are
+  // read-only guarded only.
+  const addGp  = guardProps(writeGuard, "warehouses");
+  const editGp = guardProps(writeGuard);
 
   const { data: levels = [] } = useQuery<HierarchyLevel[]>({
     queryKey: ["hierarchy-config", tenantId],
@@ -702,31 +733,34 @@ function TreeTab({
                 {canAddChild && (
                   <button
                     type="button"
-                    title="Add child node"
+                    title={addGp.title ?? "Add child node"}
+                    disabled={addGp.disabled}
                     onClick={() => { setAddParentId(node.id); setEditNodeId(null); }}
-                    className="w-6 h-6 flex items-center justify-center text-xs rounded border border-emerald-300 text-emerald-700 hover:bg-emerald-100 bg-white"
+                    className="w-6 h-6 flex items-center justify-center text-xs rounded border border-emerald-300 text-emerald-700 hover:bg-emerald-100 bg-white disabled:opacity-40 disabled:cursor-not-allowed"
                   >
                     +
                   </button>
                 )}
                 <button
                   type="button"
-                  title="Edit node"
+                  title={editGp.title ?? "Edit node"}
+                  disabled={editGp.disabled}
                   onClick={() => { setEditNodeId(node.id); setAddParentId(null); }}
-                  className="w-6 h-6 flex items-center justify-center text-xs rounded border border-gray-300 text-gray-600 hover:bg-gray-100 bg-white"
+                  className="w-6 h-6 flex items-center justify-center text-xs rounded border border-gray-300 text-gray-600 hover:bg-gray-100 bg-white disabled:opacity-40 disabled:cursor-not-allowed"
                 >
                   ✏
                 </button>
                 <button
                   type="button"
-                  title={t("org_setup.deactivate_node")}
+                  title={editGp.title ?? t("org_setup.deactivate_node")}
+                  disabled={editGp.disabled}
                   onClick={() => {
                     setNodeActionError(null);
                     if (confirm(t("org_setup.deactivate_confirm").replace("{name}", node.name))) {
                       deactivateMutation.mutate(node.id);
                     }
                   }}
-                  className="w-6 h-6 flex items-center justify-center text-xs rounded border border-red-200 text-red-500 hover:bg-red-50 bg-white"
+                  className="w-6 h-6 flex items-center justify-center text-xs rounded border border-red-200 text-red-500 hover:bg-red-50 bg-white disabled:opacity-40 disabled:cursor-not-allowed"
                 >
                   🗑
                 </button>
@@ -734,9 +768,10 @@ function TreeTab({
             ) : (
               <button
                 type="button"
-                title={t("org_setup.reactivate_node")}
+                title={editGp.title ?? t("org_setup.reactivate_node")}
+                disabled={editGp.disabled}
                 onClick={() => { setNodeActionError(null); reactivateMutation.mutate(node.id); }}
-                className="px-2 h-6 flex items-center justify-center text-xs rounded border border-emerald-300 text-emerald-700 hover:bg-emerald-100 bg-white"
+                className="px-2 h-6 flex items-center justify-center text-xs rounded border border-emerald-300 text-emerald-700 hover:bg-emerald-100 bg-white disabled:opacity-40 disabled:cursor-not-allowed"
               >
                 {t("org_setup.reactivate_node")}
               </button>
@@ -826,7 +861,9 @@ function TreeTab({
         <button
           type="button"
           onClick={() => { setAddParentId(""); setEditNodeId(null); }}
-          className="px-4 py-2 border-2 border-dashed border-emerald-300 text-emerald-700 text-sm font-medium rounded-lg hover:bg-emerald-50 w-full"
+          disabled={addGp.disabled}
+          title={addGp.title}
+          className="px-4 py-2 border-2 border-dashed border-emerald-300 text-emerald-700 text-sm font-medium rounded-lg hover:bg-emerald-50 w-full disabled:opacity-40 disabled:cursor-not-allowed"
         >
           + Add root node (L1)
         </button>
@@ -1583,6 +1620,8 @@ function RoleBadge({ role, customLabel }: { role: string; customLabel?: string }
 
 function PositionsTab({ tenantId }: { tenantId: string }) {
   const qc = useQueryClient();
+  const writeGuard = useWriteGuard();
+  const gp = guardProps(writeGuard);
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
   const [showAddForm, setShowAddForm]         = useState(false);
   const [editPosId, setEditPosId]             = useState<string | null>(null);
@@ -1664,6 +1703,7 @@ function PositionsTab({ tenantId }: { tenantId: string }) {
   function cancelForm() { setShowAddForm(false); setEditPosId(null); resetSAState(); }
 
   async function savePosition() {
+    if (gp.disabled) return;
     if (!formTitle.trim()) { setFormErr(t("position.title") + " is required."); return; }
     setSaving(true); setFormErr(null);
     try {
@@ -1701,6 +1741,7 @@ function PositionsTab({ tenantId }: { tenantId: string }) {
   }
 
   async function deletePosition(posId: string, title: string) {
+    if (gp.disabled) return;
     if (!confirm(`Delete position "${title}"?`)) return;
     try {
       await api.delete(`/api/v1/tenants/${tenantId}/positions/${posId}`);
@@ -1771,8 +1812,8 @@ function PositionsTab({ tenantId }: { tenantId: string }) {
                 <span className="text-gray-400">&rsaquo;</span> {selectedGroup?.node_name ?? ""}
               </h3>
               {!showAddForm && !editPosId && (
-                <button type="button" onClick={openAdd}
-                  className="px-3 py-1 bg-emerald-600 text-white text-xs font-semibold rounded hover:bg-emerald-700">
+                <button type="button" onClick={openAdd} disabled={gp.disabled} title={gp.title}
+                  className="px-3 py-1 bg-emerald-600 text-white text-xs font-semibold rounded hover:bg-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed">
                   + {t("position.add")}
                 </button>
               )}
@@ -1889,9 +1930,10 @@ function PositionsTab({ tenantId }: { tenantId: string }) {
                   )}
                 </div>
 
+                {gp.title && <p className="text-xs font-semibold text-red-600 bg-red-50 border border-red-200 rounded px-3 py-2">{gp.title}</p>}
                 {formErr && <p className="text-xs text-red-600">{formErr}</p>}
                 <div className="flex gap-2">
-                  <button type="button" onClick={() => void savePosition()} disabled={saving}
+                  <button type="button" onClick={() => void savePosition()} disabled={saving || gp.disabled} title={gp.title}
                     className="px-3 py-1.5 bg-emerald-600 text-white text-xs font-semibold rounded hover:bg-emerald-700 disabled:opacity-50">
                     {saving ? t("common.saving") : t("position.save")}
                   </button>
@@ -1908,8 +1950,8 @@ function PositionsTab({ tenantId }: { tenantId: string }) {
               : (selectedGroup?.positions ?? []).length === 0 && !showAddForm ? (
                 <div className="text-center text-gray-400 py-12">
                   <p>{t("position.no_positions")}</p>
-                  <button type="button" onClick={openAdd}
-                    className="mt-3 px-3 py-1 bg-emerald-600 text-white text-xs font-semibold rounded hover:bg-emerald-700">
+                  <button type="button" onClick={openAdd} disabled={gp.disabled} title={gp.title}
+                    className="mt-3 px-3 py-1 bg-emerald-600 text-white text-xs font-semibold rounded hover:bg-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed">
                     + {t("position.add")}
                   </button>
                 </div>
@@ -1942,10 +1984,10 @@ function PositionsTab({ tenantId }: { tenantId: string }) {
                         </p>
                       </div>
                       <div className="flex gap-1 shrink-0">
-                        <button type="button" onClick={() => openEdit(pos)}
-                          className="w-6 h-6 flex items-center justify-center text-xs rounded border border-gray-300 text-gray-600 hover:bg-gray-100 bg-white">✏</button>
-                        <button type="button" onClick={() => void deletePosition(pos.id, pos.title)}
-                          className="w-6 h-6 flex items-center justify-center text-xs rounded border border-red-200 text-red-500 hover:bg-red-50 bg-white">🗑</button>
+                        <button type="button" onClick={() => openEdit(pos)} disabled={gp.disabled} title={gp.title}
+                          className="w-6 h-6 flex items-center justify-center text-xs rounded border border-gray-300 text-gray-600 hover:bg-gray-100 bg-white disabled:opacity-40 disabled:cursor-not-allowed">✏</button>
+                        <button type="button" onClick={() => void deletePosition(pos.id, pos.title)} disabled={gp.disabled} title={gp.title}
+                          className="w-6 h-6 flex items-center justify-center text-xs rounded border border-red-200 text-red-500 hover:bg-red-50 bg-white disabled:opacity-40 disabled:cursor-not-allowed">🗑</button>
                       </div>
                     </div>
                   ))}
@@ -1972,6 +2014,8 @@ const UNDERLYING_TYPES: Array<{ key: "PULL" | "PUSH" | "SISTER"; labelKey: strin
 
 function TransferTypesTab({ tenantId }: { tenantId: string }) {
   const qc = useQueryClient();
+  const writeGuard = useWriteGuard();
+  const gp = guardProps(writeGuard);
   const [saving, setSaving] = useState(false);
   const [saveOk, setSaveOk] = useState(false);
   const [saveErr, setSaveErr] = useState<string | null>(null);
@@ -2027,6 +2071,7 @@ function TransferTypesTab({ tenantId }: { tenantId: string }) {
   }
 
   async function save() {
+    if (gp.disabled) return;
     setSaving(true); setSaveOk(false); setSaveErr(null);
     try {
       const body = configs.map((c) => ({
@@ -2103,9 +2148,10 @@ function TransferTypesTab({ tenantId }: { tenantId: string }) {
           </div>
         );
       })}
+      {gp.title && <p className="text-xs font-semibold text-red-600 bg-red-50 border border-red-200 rounded px-3 py-2">{gp.title}</p>}
       {saveErr && <p className="text-sm text-red-600">{saveErr}</p>}
       {saveOk && <p className="text-sm text-emerald-600 font-medium">✓ {t("common.save")}d</p>}
-      <button type="button" onClick={() => void save()} disabled={saving}
+      <button type="button" onClick={() => void save()} disabled={saving || gp.disabled} title={gp.title}
         className="px-4 py-2 bg-blue-600 text-white text-sm font-semibold rounded hover:bg-blue-700 disabled:opacity-50">
         {saving ? t("common.saving") : t("transfer_type.save")}
       </button>
@@ -2138,6 +2184,8 @@ interface AdjRuleLocal {
 
 function AdjustmentRulesSection({ tenantId, onRuleCountChange }: { tenantId: string; onRuleCountChange?: (n: number) => void }) {
   const qc = useQueryClient();
+  const writeGuard = useWriteGuard();
+  const gp = guardProps(writeGuard);
   const [adjMode, setAdjMode] = useState<"GLOBAL" | "PER_CODE">("GLOBAL");
   const [ruleList, setRuleList] = useState<AdjRuleLocal[] | null>(null);
   const [saving, setSaving] = useState(false);
@@ -2213,6 +2261,7 @@ function AdjustmentRulesSection({ tenantId, onRuleCountChange }: { tenantId: str
   }
 
   async function save() {
+    if (gp.disabled) return;
     setSaving(true); setSaveOk(false); setSaveErr(null);
     try {
       const body = getList().map((r) => ({
@@ -2453,9 +2502,10 @@ function AdjustmentRulesSection({ tenantId, onRuleCountChange }: { tenantId: str
 
       <p className="text-xs text-gray-400 italic">{t("approval_rule.adj_rules_note")}</p>
 
+      {gp.title && <p className="text-xs font-semibold text-red-600 bg-red-50 border border-red-200 rounded px-3 py-2">{gp.title}</p>}
       {saveErr && <p className="text-sm text-red-600">{saveErr}</p>}
       {saveOk && <p className="text-sm text-emerald-600 font-medium">✓ {t("approval_rule.save")}</p>}
-      <button type="button" onClick={() => void save()} disabled={saving}
+      <button type="button" onClick={() => void save()} disabled={saving || gp.disabled} title={gp.title}
         className="px-4 py-2 bg-blue-600 text-white text-sm font-semibold rounded hover:bg-blue-700 disabled:opacity-50">
         {saving ? t("common.saving") : t("approval_rule.save")}
       </button>
@@ -2557,6 +2607,8 @@ const getAdjApproverPositionId = (rule: AdjRuleLocal): (string | null | undefine
 
 function ApprovalRulesV2Tab({ tenantId, prefillLevel }: { tenantId: string; prefillLevel?: number | null }) {
   const qc = useQueryClient();
+  const writeGuard = useWriteGuard();
+  const gp = guardProps(writeGuard);
   const [subTab, setSubTab] = useState<"transfer" | "adjustment">("transfer");
   const [adjRuleCount, setAdjRuleCount] = useState(0);
   const [activeType, setActiveType] = useState<string | null>(null);
@@ -2675,6 +2727,7 @@ function ApprovalRulesV2Tab({ tenantId, prefillLevel }: { tenantId: string; pref
   }
 
   async function save() {
+    if (gp.disabled) return;
     setSaving(true); setSaveOk(false); setSaveErr(null);
     try {
       const body = activeTypes.flatMap((tt) => {
@@ -2899,9 +2952,10 @@ function ApprovalRulesV2Tab({ tenantId, prefillLevel }: { tenantId: string; pref
         </div>
       )}
 
+          {gp.title && <p className="text-xs font-semibold text-red-600 bg-red-50 border border-red-200 rounded px-3 py-2">{gp.title}</p>}
           {saveErr && <p className="text-sm text-red-600">{saveErr}</p>}
           {saveOk && <p className="text-sm text-emerald-600 font-medium">✓ Saved</p>}
-          <button type="button" onClick={() => void save()} disabled={saving}
+          <button type="button" onClick={() => void save()} disabled={saving || gp.disabled} title={gp.title}
             className="px-4 py-2 bg-blue-600 text-white text-sm font-semibold rounded hover:bg-blue-700 disabled:opacity-50">
             {saving ? t("common.saving") : t("approval_rule.save")}
           </button>
@@ -2943,11 +2997,14 @@ function EditPersonnelPanel({
   const [positionId, setPositionId] = useState(currentPrimary?.position_id ?? "");
   const [saving, setSaving]     = useState(false);
   const [error, setError]       = useState<string | null>(null);
+  const writeGuard = useWriteGuard();
+  const gp = guardProps(writeGuard);
 
   const selectedPosition = positionId ? positions.find((p) => p.id === positionId) ?? null : null;
   const isPositionChange  = !!positionId && positionId !== (currentPrimary?.position_id ?? "");
 
   async function submit() {
+    if (gp.disabled) return;
     if (!name.trim() || !email.trim()) { setError(t("personnel.fill_required_fields")); return; }
     setSaving(true);
     setError(null);
@@ -3028,6 +3085,7 @@ function EditPersonnelPanel({
           )}
         </div>
 
+        {gp.title && <p className="text-xs font-semibold text-red-600 bg-red-50 border border-red-200 rounded px-3 py-2">{gp.title}</p>}
         {error && <p className="text-xs text-red-600 font-medium">{error}</p>}
 
         <div className="flex justify-end gap-2 pt-2">
@@ -3041,7 +3099,8 @@ function EditPersonnelPanel({
           <button
             type="button"
             onClick={() => void submit()}
-            disabled={saving}
+            disabled={saving || gp.disabled}
+            title={gp.title}
             className="px-4 py-1.5 text-sm font-bold text-white bg-emerald-600 rounded-lg hover:bg-emerald-700 disabled:opacity-50"
           >
             {saving ? t("common.saving") : t("personnel.save_changes")}
@@ -3063,6 +3122,12 @@ function PersonnelV2Tab({ tenantId }: { tenantId: string }) {
   const [formErr, setFormErr]       = useState<string | null>(null);
   const [saving, setSaving]         = useState(false);
   const [editUser, setEditUser]     = useState<UserWithPositions | null>(null);
+  const writeGuard = useWriteGuard();
+  const createGp = guardProps(writeGuard, "users");
+  const editGp   = guardProps(writeGuard);
+  // user:reset_password and user:deactivate stay ENABLED in READ_ONLY
+  // (CLAUDE.md §29 P6 — security actions remain available) — toggleActive
+  // (deactivate/reactivate) is intentionally never guarded here.
 
   const { data: users = [], isLoading } = useQuery<UserWithPositions[]>({
     queryKey: ["personnel-v2", tenantId],
@@ -3083,6 +3148,7 @@ function PersonnelV2Tab({ tenantId }: { tenantId: string }) {
   );
 
   async function createUser() {
+    if (createGp.disabled) return;
     if (!uName.trim() || !uEmail.trim() || !uPass.trim()) { setFormErr("Name, email and password are required."); return; }
     setSaving(true); setFormErr(null);
     try {
@@ -3115,8 +3181,8 @@ function PersonnelV2Tab({ tenantId }: { tenantId: string }) {
       <div className="flex items-center justify-between">
         <h3 className="text-sm font-semibold text-gray-800">{t("wizard.personnel_tab")}</h3>
         {!showCreate && (
-          <button type="button" onClick={() => setShowCreate(true)}
-            className="px-3 py-1 bg-emerald-600 text-white text-xs font-semibold rounded hover:bg-emerald-700">
+          <button type="button" onClick={() => setShowCreate(true)} disabled={createGp.disabled} title={createGp.title}
+            className="px-3 py-1 bg-emerald-600 text-white text-xs font-semibold rounded hover:bg-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed">
             + {t("personnel.add_user")}
           </button>
         )}
@@ -3149,9 +3215,10 @@ function PersonnelV2Tab({ tenantId }: { tenantId: string }) {
               </select>
             </div>
           </div>
+          {createGp.title && <p className="text-xs font-semibold text-red-600 bg-red-50 border border-red-200 rounded px-3 py-2">{createGp.title}</p>}
           {formErr && <p className="text-xs text-red-600">{formErr}</p>}
           <div className="flex gap-2">
-            <button type="button" onClick={() => void createUser()} disabled={saving}
+            <button type="button" onClick={() => void createUser()} disabled={saving || createGp.disabled} title={createGp.title}
               className="px-3 py-1.5 bg-emerald-600 text-white text-xs font-semibold rounded hover:bg-emerald-700 disabled:opacity-50">
               {saving ? t("common.saving") : t("personnel.create_user")}
             </button>
@@ -3181,8 +3248,8 @@ function PersonnelV2Tab({ tenantId }: { tenantId: string }) {
                 )}
               </div>
               <div className="flex items-center gap-1.5 shrink-0">
-                <button type="button" onClick={() => setEditUser(u)}
-                  className="px-2.5 py-1 text-xs rounded border border-gray-200 text-gray-600 font-medium hover:bg-gray-50">
+                <button type="button" onClick={() => setEditUser(u)} disabled={editGp.disabled} title={editGp.title}
+                  className="px-2.5 py-1 text-xs rounded border border-gray-200 text-gray-600 font-medium hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed">
                   ✏ {t("common.edit")}
                 </button>
                 {/* No self-deactivation — hide the button entirely for one's own row rather
@@ -3219,6 +3286,8 @@ function PersonnelV2Tab({ tenantId }: { tenantId: string }) {
 
 function BrandingTab({ tenantId }: { tenantId: string }) {
   const qc = useQueryClient();
+  const writeGuard = useWriteGuard();
+  const gp = guardProps(writeGuard);
   const [logoUrl,   setLogoUrl]   = useState<string | null>(null);
   const [bannerUrl, setBannerUrl] = useState<string | null>(null);
   const [logoErr,   setLogoErr]   = useState("");
@@ -3265,6 +3334,7 @@ function BrandingTab({ tenantId }: { tenantId: string }) {
     setUploading: (v: boolean) => void,
     errKey: string,
   ) {
+    if (gp.disabled) return;
     if (file.size > maxBytes) { setErr(t(errKey) || "File too large"); return; }
     if (!["image/jpeg","image/png","image/webp"].includes(file.type)) {
       setErr(t("product.image_invalid_type") || "Only JPG, PNG, WebP accepted"); return;
@@ -3317,6 +3387,11 @@ function BrandingTab({ tenantId }: { tenantId: string }) {
           {upgradeMessage}
         </div>
       )}
+      {gp.title && (
+        <div className="bg-red-50 border border-red-200 rounded px-4 py-2 text-sm text-red-600 font-semibold">
+          {gp.title}
+        </div>
+      )}
 
       {/* Logo */}
       <div>
@@ -3327,7 +3402,7 @@ function BrandingTab({ tenantId }: { tenantId: string }) {
             ? <img src={logoUrl} alt="" className="w-16 h-16 rounded border border-gray-200 object-contain" />
             : <div className="w-16 h-16 rounded border-2 border-dashed border-gray-300 flex items-center justify-center text-gray-400 text-2xl">🏢</div>
           }
-          <label className={brandingAllowed ? "cursor-pointer" : "cursor-not-allowed opacity-50"}>
+          <label className={(brandingAllowed && !gp.disabled) ? "cursor-pointer" : "cursor-not-allowed opacity-50"} title={gp.title}>
             <span className="px-3 py-1.5 text-xs font-semibold bg-gray-100 border border-gray-300 rounded cursor-pointer hover:bg-gray-200">
               {logoUploading ? "Uploading…" : (t("settings.upload_logo") || "Upload Logo")}
             </span>
@@ -3335,7 +3410,7 @@ function BrandingTab({ tenantId }: { tenantId: string }) {
               type="file"
               accept="image/jpeg,image/png,image/webp"
               className="hidden"
-              disabled={logoUploading || !brandingAllowed}
+              disabled={logoUploading || !brandingAllowed || gp.disabled}
               onChange={(e) => {
                 const f = e.target.files?.[0];
                 if (f) void uploadFile(f, 1*1024*1024, "/api/v1/upload/tenant-logo", setLogoUrl, setLogoErr, setLogoUploading, "settings.logo_too_large");
@@ -3343,7 +3418,7 @@ function BrandingTab({ tenantId }: { tenantId: string }) {
             />
           </label>
           {logoUrl && (
-            <button type="button" disabled={!brandingAllowed} onClick={() => setLogoUrl(null)} className="text-xs text-red-500 bg-transparent border-0 cursor-pointer p-0 disabled:opacity-50 disabled:cursor-not-allowed">
+            <button type="button" disabled={!brandingAllowed || gp.disabled} title={gp.title} onClick={() => setLogoUrl(null)} className="text-xs text-red-500 bg-transparent border-0 cursor-pointer p-0 disabled:opacity-50 disabled:cursor-not-allowed">
               {t("common.remove") || "Remove"}
             </button>
           )}
@@ -3359,7 +3434,7 @@ function BrandingTab({ tenantId }: { tenantId: string }) {
           <img src={bannerUrl} alt="" className="w-full rounded border border-gray-200 object-cover mb-3" style={{ maxHeight: "120px" }} />
         )}
         <div className="flex items-center gap-3">
-          <label className={brandingAllowed ? "cursor-pointer" : "cursor-not-allowed opacity-50"}>
+          <label className={(brandingAllowed && !gp.disabled) ? "cursor-pointer" : "cursor-not-allowed opacity-50"} title={gp.title}>
             <span className="px-3 py-1.5 text-xs font-semibold bg-gray-100 border border-gray-300 rounded cursor-pointer hover:bg-gray-200">
               {bannerUploading ? "Uploading…" : (t("settings.upload_banner") || "Upload Banner")}
             </span>
@@ -3367,7 +3442,7 @@ function BrandingTab({ tenantId }: { tenantId: string }) {
               type="file"
               accept="image/jpeg,image/png,image/webp"
               className="hidden"
-              disabled={bannerUploading || !brandingAllowed}
+              disabled={bannerUploading || !brandingAllowed || gp.disabled}
               onChange={(e) => {
                 const f = e.target.files?.[0];
                 if (f) void uploadFile(f, 3*1024*1024, "/api/v1/upload/tenant-banner", setBannerUrl, setBannerErr, setBannerUploading, "settings.banner_too_large");
@@ -3375,7 +3450,7 @@ function BrandingTab({ tenantId }: { tenantId: string }) {
             />
           </label>
           {bannerUrl && (
-            <button type="button" disabled={!brandingAllowed} onClick={() => setBannerUrl(null)} className="text-xs text-red-500 bg-transparent border-0 cursor-pointer p-0 disabled:opacity-50 disabled:cursor-not-allowed">
+            <button type="button" disabled={!brandingAllowed || gp.disabled} title={gp.title} onClick={() => setBannerUrl(null)} className="text-xs text-red-500 bg-transparent border-0 cursor-pointer p-0 disabled:opacity-50 disabled:cursor-not-allowed">
               {t("common.remove") || "Remove"}
             </button>
           )}

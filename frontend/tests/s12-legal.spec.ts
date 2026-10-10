@@ -38,7 +38,7 @@ async function login(page: Page, email: string, password: string) {
 test.describe.configure({ mode: "serial" });
 
 test.describe("S12-3 public legal pages + acceptance line", () => {
-  test("/terms loads with no session, DRAFT banner, English", async ({ page }) => {
+  test("/terms loads with no session, real draft text, English", async ({ page }) => {
     const consoleErrors = collectConsoleErrors(page);
 
     await page.goto(`${BASE_URL}/terms`);
@@ -46,8 +46,11 @@ test.describe("S12-3 public legal pages + acceptance line", () => {
 
     await expect(page.getByText(/Draft — not yet in effect/)).toBeVisible();
     await expect(page.getByRole("heading", { name: "Terms of Service", exact: true }).first()).toBeVisible();
-    await expect(page.getByText("[To be supplied]").first()).toBeVisible();
-    await expect(page.getByRole("heading", { name: "Governing law" })).toBeVisible();
+    await expect(page.getByText(/GDC\/LEGAL REVIEW PENDING/)).toBeVisible();
+    await expect(page.getByRole("heading", { name: /Governing law and dispute resolution/ })).toBeVisible();
+    // Word-mirror artefacts (backslash-escaped brackets, raw HTML) must not leak through.
+    await expect(page.getByText(/\\\[/)).toHaveCount(0);
+    await expect(page.locator("body")).not.toContainText("<table>");
 
     await page.screenshot({ path: "test-results/screens/s12/terms-en.png", fullPage: true });
 
@@ -56,7 +59,7 @@ test.describe("S12-3 public legal pages + acceptance line", () => {
     expect(consoleErrors, "zero console errors on /terms").toHaveLength(0);
   });
 
-  test("/privacy loads with no session, DRAFT banner, Amharic", async ({ page }) => {
+  test("/privacy loads with no session, real draft text, Amharic", async ({ page }) => {
     const consoleErrors = collectConsoleErrors(page);
 
     await page.goto(`${BASE_URL}/privacy`);
@@ -65,7 +68,11 @@ test.describe("S12-3 public legal pages + acceptance line", () => {
     await page.waitForLoadState("networkidle");
 
     await expect(page.getByText(/ረቂቅ/)).toBeVisible();
-    await expect(page.getByRole("heading", { name: "Privacy Policy", exact: true }).first()).toBeVisible();
+    // Page shell title is translated (am.json legal.privacy_title); the markdown body stays English.
+    await expect(page.getByRole("heading", { name: "የግላዊነት ፖሊሲ", exact: true }).first()).toBeVisible();
+    await expect(page.getByText(/GDC\/LEGAL REVIEW PENDING/)).toBeVisible();
+    await expect(page.getByRole("heading", { name: /Your rights/ })).toBeVisible();
+    await expect(page.getByText(/\\\[/)).toHaveCount(0);
 
     await page.screenshot({ path: "test-results/screens/s12/privacy-am.png", fullPage: true });
 

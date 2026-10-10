@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
-import { useParams, useRouter } from "next/navigation";
+import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { getSession, SA_ORG_SLUG, SessionUser } from "@/lib/demo-auth";
 import { t } from "@/lib/i18n";
 import { TabHelpBanner } from "@/components/ui/TabHelpBanner";
@@ -26,11 +26,16 @@ type TabId = (typeof TABS)[number]["id"];
 export default function TenantAdminPage() {
   const params = useParams();
   const router = useRouter();
+  const searchParams = useSearchParams();
   const org = params.org as string;
   const checked = useRef(false);
   const [user, setUser] = useState<SessionUser | null>(null);
   const [ready, setReady] = useState(false);
-  const [activeTab, setActiveTab] = useState<TabId>("profile");
+  // Deep-link support: /settings/tenant-admin?tab=plan (used by the
+  // grace/read-only banners' "Request renewal" link in app/[org]/layout.tsx).
+  const tabParam = searchParams.get("tab");
+  const initialTab: TabId = TABS.some((tab) => tab.id === tabParam) ? (tabParam as TabId) : "profile";
+  const [activeTab, setActiveTab] = useState<TabId>(initialTab);
 
   /* ── Auth guard: TA only ─────────────────────────────────────────────── */
   useEffect(() => {

@@ -12,6 +12,7 @@ import { useInventoryStore } from "@/lib/inventory-state";
 import { useAuditStore } from "@/lib/audit-log-state";
 import { useOfflineSync } from "@/hooks/useOfflineSync";
 import { useWarehouses } from "@/hooks/useWarehouses";
+import { useWriteGuard, guardProps } from "@/hooks/useWriteGuard";
 import { api, IS_GATEWAY_MODE } from "@/lib/api";
 import { t } from "@/lib/i18n";
 import { useTenantName } from "@/hooks/useTenantName";
@@ -570,6 +571,11 @@ function ApprovalPendingActions({
     staleTime: 30_000,
   });
 
+  const guard = useWriteGuard();
+  const gp = guardProps(guard);
+  const blocked = !isOnline || gp.disabled;
+  const blockedTitle = !isOnline ? t("errors.OFFLINE") : gp.title;
+
   if (isLoading) {
     return <span className="text-xs text-gray-400">…</span>;
   }
@@ -583,16 +589,17 @@ function ApprovalPendingActions({
         {fallbackActions.map((a) => (
           <button
             key={a.next}
-            disabled={!isOnline}
+            disabled={blocked}
+            title={blockedTitle}
             onClick={() =>
               a.next === "APPROVED" ? onApprove(a.label) : onReject()
             }
             className="text-[11px] font-bold px-2.5 py-1 rounded whitespace-nowrap border"
             style={{
               borderColor: `${a.color}30`,
-              background:  isOnline ? `${a.color}15` : "#F3F4F6",
-              color:       isOnline ? a.color : "#9CA3AF",
-              cursor:      isOnline ? "pointer" : "not-allowed",
+              background:  !blocked ? `${a.color}15` : "#F3F4F6",
+              color:       !blocked ? a.color : "#9CA3AF",
+              cursor:      !blocked ? "pointer" : "not-allowed",
             }}
           >
             {a.label}
@@ -609,27 +616,29 @@ function ApprovalPendingActions({
     return (
       <div className="flex gap-1.5 flex-nowrap">
         <button
-          disabled={!isOnline}
+          disabled={blocked}
+          title={blockedTitle}
           onClick={() => onApprove(approveLabel)}
           className="text-[11px] font-bold px-2.5 py-1 rounded whitespace-nowrap border"
           style={{
             borderColor: "#05996930",
-            background:  isOnline ? "#05996915" : "#F3F4F6",
-            color:       isOnline ? "#059669" : "#9CA3AF",
-            cursor:      isOnline ? "pointer" : "not-allowed",
+            background:  !blocked ? "#05996915" : "#F3F4F6",
+            color:       !blocked ? "#059669" : "#9CA3AF",
+            cursor:      !blocked ? "pointer" : "not-allowed",
           }}
         >
           {approveLabel}
         </button>
         <button
-          disabled={!isOnline}
+          disabled={blocked}
+          title={blockedTitle}
           onClick={onReject}
           className="text-[11px] font-bold px-2.5 py-1 rounded whitespace-nowrap border"
           style={{
             borderColor: "#991B1B30",
-            background:  isOnline ? "#991B1B15" : "#F3F4F6",
-            color:       isOnline ? "#991B1B" : "#9CA3AF",
-            cursor:      isOnline ? "pointer" : "not-allowed",
+            background:  !blocked ? "#991B1B15" : "#F3F4F6",
+            color:       !blocked ? "#991B1B" : "#9CA3AF",
+            cursor:      !blocked ? "pointer" : "not-allowed",
           }}
         >
           Reject
@@ -661,6 +670,8 @@ export default function TransfersPage() {
   const user = getSession();
   const qc   = useQueryClient();
   const { isOnline } = useOfflineSync();
+  const guard = useWriteGuard();
+  const gp = guardProps(guard);
   const { updateTransferStatus, partialReceive, getTransferEntry, addTransfer } = useInventoryStore();
   const logAudit = useAuditStore((s) => s.log);
   const [transitioning, setTransitioning] = useState<string | null>(null);
@@ -853,6 +864,13 @@ export default function TransfersPage() {
       setTimeout(() => setToast(""), 5000);
       return;
     }
+    const blockedReason = guard.reason();
+    if (blockedReason) {
+      setConfirmModal(null);
+      setToast(blockedReason);
+      setTimeout(() => setToast(""), 5000);
+      return;
+    }
     const transfer = allTransfers.find((t) => t.id === id);
     setIsSubmitting(true);
     setTransitioning(id);
@@ -1016,6 +1034,12 @@ export default function TransfersPage() {
               {confirmModal.label} — {t("transfers.status_will_change")} <strong>{confirmModal.next.replace(/_/g, " ")}</strong>.
             </p>
 
+            {gp.title && (
+              <p className="text-xs font-semibold text-red-600 bg-red-50 border border-red-200 rounded px-3 py-2 mb-4">
+                {gp.title}
+              </p>
+            )}
+
             {confirmModal.requiresQty && (() => {
               const storeEntry   = getTransferEntry(confirmModal.id);
               const alreadyRecvd = storeEntry?.receivedQuantity ?? 0;
@@ -1055,7 +1079,8 @@ export default function TransfersPage() {
                 {t("common.cancel")}
               </button>
               <button
-                disabled={isSubmitting}
+                disabled={isSubmitting || gp.disabled}
+                title={gp.title}
                 onClick={() => {
                   if (confirmModal.requiresQty) {
                     const storeEntry = getTransferEntry(confirmModal.id);
@@ -1211,24 +1236,28 @@ export default function TransfersPage() {
                       ) : acts.length > 0 ? (
                         <div className="flex gap-1.5 flex-nowrap items-center">
                           {!isOnline && <span title={t("errors.OFFLINE")} className="text-[11px] text-gray-400">offline</span>}
-                          {acts.map((a) => (
+                          {acts.map((a) => {
+                            const rowBlocked = !isOnline || gp.disabled;
+                            return (
                             <button
                               key={a.next}
-                              disabled={!isOnline}
+                              disabled={rowBlocked}
+                              title={!isOnline ? t("errors.OFFLINE") : gp.title}
                               onClick={() => { setPartialQtyInput(""); setPartialQtyErr(""); setConfirmModal({ id: txn.id, next: a.next, label: a.label, transfer: txn, requiresQty: a.requiresQty }); }}
                               className="text-[11px] font-bold px-2.5 py-1 rounded whitespace-nowrap border"
                               /* action button colors are per-action (a.color) — dynamic, must stay as style */
                               style={{
                                 borderColor: `${a.color}30`,
-                                cursor:      isOnline ? "pointer" : "not-allowed",
-                                background:  isOnline ? `${a.color}15` : "#F3F4F6",
-                                color:       isOnline ? a.color : "#9CA3AF",
-                                opacity:     isOnline ? 1 : 0.5,
+                                cursor:      !rowBlocked ? "pointer" : "not-allowed",
+                                background:  !rowBlocked ? `${a.color}15` : "#F3F4F6",
+                                color:       !rowBlocked ? a.color : "#9CA3AF",
+                                opacity:     !rowBlocked ? 1 : 0.5,
                               }}
                             >
                               {a.label}
                             </button>
-                          ))}
+                            );
+                          })}
                           {acts.some((a) => a.next === "ISSUED" || a.next === "IN_TRANSIT")
                             && user.warehouseId?.toLowerCase() !== txn.from_warehouse_id?.toLowerCase() && (
                             <span className="text-[10px] text-gray-500 italic whitespace-nowrap">

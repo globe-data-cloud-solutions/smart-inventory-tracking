@@ -26,7 +26,7 @@ class SyncResult(BaseModel):
 
 
 @router.post("/batch", response_model=SuccessResponse[List[SyncResult]])
-@require_permission(PERMISSIONS.SYNC_QUEUE_VIEW)
+@require_permission(PERMISSIONS.SYNC_QUEUE_VIEW, read_only_force_write=True)
 async def sync_batch(
     items: List[OfflineSyncItem],
     user=Depends(lambda: None),

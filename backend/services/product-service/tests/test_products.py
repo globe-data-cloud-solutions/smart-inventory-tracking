@@ -165,9 +165,9 @@ class TestCreateProduct:
         """
         assert True  # contract: enforced by functional index in migration 005
 
-    # 11 — SKU cap reached (PRODUCER) → 429 ───────────────────────────────────
+    # 11 — SKU cap reached (PRODUCER) → 402 ───────────────────────────────────
 
-    async def test_11_sku_cap_producer_returns_429(self, client: AsyncClient, product_app) -> None:
+    async def test_11_sku_cap_producer_returns_402(self, client: AsyncClient, product_app) -> None:
         db = _cap_db(cap=10, current_count=10, org_type="PRODUCER")
         product_app.dependency_overrides[get_db_session] = _make_db_override(db)
         try:
@@ -176,12 +176,13 @@ class TestCreateProduct:
         finally:
             product_app.dependency_overrides.pop(get_db_session, None)
 
-        assert r.status_code == 429
+        assert r.status_code == 402
         body = r.json()
-        assert body["detail"]["code"]           == "sku_cap_reached"
-        assert body["detail"]["upgrade_prompt"] is True
+        assert body["detail"]["code"]     == "PLAN_LIMIT_REACHED"
+        assert body["detail"]["resource"] == "skus"
+        assert body["detail"]["limit"]    == 10
 
-    # 11b — SKU cap reached (RETAILER) → 429 ──────────────────────────────────
+    # 11b — SKU cap reached (RETAILER) → 402 ──────────────────────────────────
     # sku_cap applies to every organisation type, not just PRODUCER (CLAUDE.md §24 rule 16).
 
     async def test_11b_sku_cap_reached_applies_to_retailer_too(
@@ -195,10 +196,10 @@ class TestCreateProduct:
         finally:
             product_app.dependency_overrides.pop(get_db_session, None)
 
-        assert r.status_code == 429
+        assert r.status_code == 402
         body = r.json()
-        assert body["detail"]["code"]           == "sku_cap_reached"
-        assert body["detail"]["upgrade_prompt"] is True
+        assert body["detail"]["code"]     == "PLAN_LIMIT_REACHED"
+        assert body["detail"]["resource"] == "skus"
 
     # 12 — RETAILER not capped ────────────────────────────────────────────────
 

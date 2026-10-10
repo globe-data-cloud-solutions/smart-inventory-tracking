@@ -11,6 +11,7 @@ import { useAuditStore } from "@/lib/audit-log-state";
 import { getSession } from "@/lib/demo-auth";
 import { t } from "@/lib/i18n";
 import { useWarehouses } from "@/hooks/useWarehouses";
+import { useWriteGuard, guardProps } from "@/hooks/useWriteGuard";
 import type { DemoProduct } from "@/lib/demo-data";
 import { buildOverrideTooltip } from "@/components/features/inventory/ProductLabel";
 
@@ -64,6 +65,8 @@ export function ReceiveStockPanel({ products, orgSlug }: Props) {
   const [error, setError]     = useState("");
   const [success, setSuccess] = useState("");
   const [loading, setLoading] = useState(false);
+  const writeGuard = useWriteGuard();
+  const gp = guardProps(writeGuard);
 
   const onScan = useCallback((code: string) => {
     const found = products.find((p) => p.sku === code || p.sku.toLowerCase() === code.toLowerCase());
@@ -79,6 +82,7 @@ export function ReceiveStockPanel({ products, orgSlug }: Props) {
 
   const onSubmit = async (e: React.FormEvent) => {
     e.preventDefault(); setError("");
+    if (gp.disabled) return; // defense in depth — form's native Enter-to-submit bypasses the button's disabled attr
     if (!form.productId)     { setError(t("receive_panel.error_product"));   return; }
     if (!warehouseId)        { setError(t("receive_panel.error_warehouse")); return; }
     if (!form.referenceType) { setError(t("receive_panel.error_ref_type")); return; }
@@ -106,7 +110,7 @@ export function ReceiveStockPanel({ products, orgSlug }: Props) {
 
   return (
     <>
-      <button onClick={() => { reset(); setOpen(true); }} className="px-4 py-2 bg-eth-forest text-eth-gold font-bold text-sm rounded border-0 cursor-pointer">
+      <button onClick={() => { reset(); setOpen(true); }} {...gp} className="px-4 py-2 bg-eth-forest text-eth-gold font-bold text-sm rounded border-0 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed">
         + {t("inventory.receive.title")}
       </button>
 
@@ -122,6 +126,11 @@ export function ReceiveStockPanel({ products, orgSlug }: Props) {
         </div>
 
         <form onSubmit={onSubmit} className="flex-1 overflow-y-auto p-6">
+          {gp.disabled && gp.title && (
+            <div role="alert" className="bg-amber-50 border border-amber-200 rounded px-3.5 py-2.5 text-sm text-amber-800 mb-4">
+              {gp.title}
+            </div>
+          )}
           <div className="mb-4">
             <button type="button" onClick={toggleScanner}
               className={`w-full py-2.5 rounded cursor-pointer border-2 border-dashed text-sm font-semibold flex items-center justify-center gap-2 ${scannerOpen ? "border-emerald-600 bg-green-50 text-emerald-600" : "border-gray-300 bg-gray-50 text-gray-500"}`}>
@@ -185,8 +194,8 @@ export function ReceiveStockPanel({ products, orgSlug }: Props) {
 
         <div className="px-6 py-4 border-t border-gray-200 flex gap-2.5">
           <button type="button" onClick={() => setOpen(false)} className="flex-1 py-2.5 bg-gray-100 border border-gray-200 rounded text-sm font-semibold text-gray-700 cursor-pointer">{t("common.cancel")}</button>
-          <button onClick={onSubmit as unknown as React.MouseEventHandler} disabled={loading}
-            className={`flex-[2] py-2.5 font-bold text-sm rounded border-0 text-eth-gold ${loading ? "opacity-70 cursor-not-allowed" : "cursor-pointer"} ${isOnline ? "bg-eth-forest" : "bg-amber-800"}`}>
+          <button onClick={onSubmit as unknown as React.MouseEventHandler} disabled={loading || gp.disabled} title={gp.title}
+            className={`flex-[2] py-2.5 font-bold text-sm rounded border-0 text-eth-gold ${loading || gp.disabled ? "opacity-70 cursor-not-allowed" : "cursor-pointer"} ${isOnline ? "bg-eth-forest" : "bg-amber-800"}`}>
             {loading ? t("common.loading") : isOnline ? t("inventory.receive.submit") : t("inventory.receive.queue_offline")}
           </button>
         </div>

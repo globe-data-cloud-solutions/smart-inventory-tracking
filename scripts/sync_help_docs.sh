@@ -20,8 +20,21 @@ cp docs/TA_ONBOARDING_GUIDE.md frontend/public/help/ta-onboarding-guide.md
 
 echo "Synced docs/TA_ONBOARDING_GUIDE.md -> frontend/public/help/ta-onboarding-guide.md"
 
+cp docs/GETTING_STARTED.md frontend/public/help/getting-started.md
+
+echo "Synced docs/GETTING_STARTED.md -> frontend/public/help/getting-started.md"
+
 # SA-internal, backend-only, never frontend/public.
 mkdir -p backend/services/tenant-service/static
 cp docs/SA_OPERATIONS_MANUAL.md backend/services/tenant-service/static/sa_operations_manual.md
 
 echo "Synced docs/SA_OPERATIONS_MANUAL.md -> backend/services/tenant-service/static/sa_operations_manual.md"
+
+# Legal drafts (docs/legal/ = source of truth, Alex's text). Public filenames
+# carry TERMS_VERSION/PRIVACY_VERSION (currently 2026-10) — never rename them
+# without bumping the version, or owners won't be asked to re-accept.
+mkdir -p frontend/public/legal
+cp docs/legal/GDC_SMART_Terms_of_Service_DRAFT_v0.2.md frontend/public/legal/terms-2026-10.md
+cp docs/legal/GDC_SMART_Privacy_Statement_DRAFT_v0.2.md frontend/public/legal/privacy-2026-10.md
+
+echo "Synced docs/legal/*.md -> frontend/public/legal/{terms,privacy}-2026-10.md"

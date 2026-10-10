@@ -115,6 +115,31 @@ class PERMISSIONS:
     # ... all 156 entries
 ```
 
+### Every new permission must be classified for read-only (2026-10-10)
+
+A tenant whose contract has gone `READ_ONLY` (see `shared/billing/
+contract_stage.py`, docs/claude/billing-and-tenants.md §S14) still passes
+RBAC/ABAC normally — the read-only check is a separate layer on top, in
+`shared/permissions/read_only.py`. **Adding a new action to the registry is
+not enough**: until it is classified, it is blocked by that layer's
+fail-closed default whenever a tenant is `READ_ONLY`, which silently breaks
+even a GET route if nobody remembers this step.
+
+- A route that only ever reads → add its action id to `READ_ACTIONS`.
+- A write that must keep working in `READ_ONLY` (narrow — see
+  `ALLOWED_WRITE_ACTIONS`'s existing members for the bar) → add it there
+  instead.
+- A GET route that happens to be gated behind an action id that *looks*
+  like a write → decorate the route with `@require_permission(...,
+  read_only_exempt=True)` rather than reclassifying the action (the action
+  id may still correctly describe a write elsewhere).
+- A mutating route gated behind an action id that *looks* like a read →
+  decorate it with `@require_permission(..., read_only_force_write=True)`
+  instead of reclassifying the action. `read_only_exempt` and
+  `read_only_force_write` are mutually exclusive on the same route.
+- Everything else (the common case: a genuine write, correctly named) needs
+  no change — it is blocked in `READ_ONLY` by default, which is correct.
+
 ### Three-layer enforcement — all three layers are mandatory
 
 ```

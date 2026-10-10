@@ -8,8 +8,8 @@ from pathlib import Path
 from typing import List, Literal, Optional
 
 import asyncpg
-from fastapi import APIRouter, Depends, HTTPException, Request, Response
-from pydantic import BaseModel
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
+from pydantic import BaseModel, Field
 from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -20,15 +20,93 @@ from shared.cache.rate_limit import client_ip
 from shared.cache.token_revocation import revoke_tenant_tokens
 from shared.permissions.middleware import require_permission
 from shared.permissions.registry import PERMISSIONS
+from shared.billing.contract_stage import compute_contract_stage, get_tenant_contract_stage
 from shared.billing.subscriptions import get_current_addon_price, get_current_price, period_end, start_subscription, vat_breakdown
 from shared.billing.proration import preview_addon, preview_upgrade
 from shared.billing.plan_change import cancel_scheduled_downgrade, change_plan
 from shared.plans.catalog import KNOWN_FEATURE_FLAGS, UNSET, apply_package_to_tenant, get_tenant_entitlements
+from shared.plans.usage import get_plan_usage
 from shared.utils.responses import SuccessResponse
 from shared.utils.terms import get_terms_version
 from schemas.tenant import TenantCreateRequest, TenantResponse, VALID_PLAN_TIERS, VALID_LOCALES
 
 logger = logging.getLogger(__name__)
+
+
+# ── Contract renewal requests (P2) ───────────────────────────────────────────
+
+class RenewalRequestIn(BaseModel):
+    message: Optional[str] = Field(default=None, max_length=500)
+
+
+class RenewalRequestOut(BaseModel):
+    id: uuid.UUID
+    tenant_id: uuid.UUID
+    requested_by: uuid.UUID
+    requested_by_email: Optional[str]
+    message: Optional[str]
+    status: str
+    handled_by: Optional[uuid.UUID]
+    handled_note: Optional[str]
+    handled_at: Optional[str]
+    created_at: str
+
+
+class RenewalRequestHandleIn(BaseModel):
+    status: Literal["HANDLED", "CANCELLED"]
+    note: Optional[str] = Field(default=None, max_length=500)
+
+
+class SARenewalRequestRow(RenewalRequestOut):
+    tenant_name: str
+    tenant_slug: Optional[str]
+    plan_tier: Optional[str]
+    contract_end: Optional[str]
+
+
+class ContractStatusOpenRequest(BaseModel):
+    id: uuid.UUID
+    created_at: str
+
+
+class ContractStatusOut(BaseModel):
+    stage: str
+    contract_end: Optional[str]
+    days_left: Optional[int]
+    grace_ends: Optional[str]
+    read_only_since: Optional[str]
+    open_request: Optional[ContractStatusOpenRequest]
+
+
+class ContractsOverviewRow(BaseModel):
+    tenant_id: uuid.UUID
+    name: str
+    slug: Optional[str]
+    plan_tier: Optional[str]
+    contract_end: Optional[str]
+    days_left: Optional[int]
+    stage: str
+    open_request_id: Optional[uuid.UUID]
+
+
+class ContractsOverviewOut(BaseModel):
+    tenants: List[ContractsOverviewRow]
+    counts: dict
+
+
+def _renewal_row_to_out(row) -> RenewalRequestOut:
+    return RenewalRequestOut(
+        id=row.id,
+        tenant_id=row.tenant_id,
+        requested_by=row.requested_by,
+        requested_by_email=row.requested_by_email,
+        message=row.message,
+        status=row.status,
+        handled_by=row.handled_by,
+        handled_note=row.handled_note,
+        handled_at=row.handled_at.isoformat() if row.handled_at else None,
+        created_at=row.created_at.isoformat(),
+    )
 
 
 class TenantStatusResponse(BaseModel):
@@ -1143,6 +1221,148 @@ async def sa_tenant_activity(
     ])
 
 
+@router.get("/sa/renewal-requests", response_model=SuccessResponse[List[SARenewalRequestRow]])
+@require_permission(PERMISSIONS.TENANT_RENEWAL_MANAGE)
+async def sa_list_renewal_requests(
+    status: str = Query("OPEN", pattern="^(OPEN|HANDLED|ALL)$"),
+    user=Depends(get_current_user),
+    db: AsyncSession = Depends(get_db_session),
+) -> SuccessResponse[List[SARenewalRequestRow]]:
+    """SA-only: renewal request queue, newest first. Same cross-tenant read
+    pattern as sa_tenant_registry() above — the app's DB role owns these
+    RLS-enabled tables and isn't FORCE-restricted, so a plain cross-tenant
+    JOIN works without any special RLS bypass."""
+    if not user or user.role != "SA":
+        raise HTTPException(status_code=403, detail={"code": "FORBIDDEN", "message": "SA only"})
+
+    where = ""
+    if status == "OPEN":
+        where = "WHERE r.status = 'OPEN'"
+    elif status == "HANDLED":
+        where = "WHERE r.status IN ('HANDLED', 'CANCELLED')"
+    # status == "ALL" -> no filter
+
+    rows = (await db.execute(text(f"""
+        SELECT r.id, r.tenant_id, t.name AS tenant_name, t.slug AS tenant_slug,
+               t.plan_tier, t.contract_end,
+               r.requested_by, r.requested_by_email, r.message, r.status,
+               r.handled_by, r.handled_note, r.handled_at, r.created_at
+        FROM tenant_renewal_requests r
+        JOIN tenants t ON t.id = r.tenant_id
+        {where}
+        ORDER BY r.created_at DESC
+    """))).fetchall()
+
+    return SuccessResponse(data=[
+        SARenewalRequestRow(
+            id=row.id, tenant_id=row.tenant_id,
+            tenant_name=row.tenant_name, tenant_slug=row.tenant_slug,
+            plan_tier=row.plan_tier,
+            contract_end=str(row.contract_end) if row.contract_end else None,
+            requested_by=row.requested_by, requested_by_email=row.requested_by_email,
+            message=row.message, status=row.status,
+            handled_by=row.handled_by, handled_note=row.handled_note,
+            handled_at=row.handled_at.isoformat() if row.handled_at else None,
+            created_at=row.created_at.isoformat(),
+        )
+        for row in rows
+    ])
+
+
+@router.patch("/sa/renewal-requests/{request_id}", response_model=SuccessResponse[RenewalRequestOut])
+@require_permission(PERMISSIONS.TENANT_RENEWAL_MANAGE)
+async def sa_handle_renewal_request(
+    request_id: uuid.UUID,
+    body: RenewalRequestHandleIn,
+    user=Depends(get_current_user),
+    db: AsyncSession = Depends(get_db_session),
+) -> SuccessResponse[RenewalRequestOut]:
+    """SA-only: mark a renewal request HANDLED or CANCELLED. Only an OPEN
+    request can be transitioned — any other current status is a 409."""
+    if not user or user.role != "SA":
+        raise HTTPException(status_code=403, detail={"code": "FORBIDDEN", "message": "SA only"})
+
+    existing = (await db.execute(
+        text("SELECT id, tenant_id, status FROM tenant_renewal_requests WHERE id = :id"),
+        {"id": str(request_id)},
+    )).fetchone()
+    if not existing:
+        raise HTTPException(status_code=404, detail="Renewal request not found")
+    if existing.status != "OPEN":
+        raise HTTPException(
+            status_code=409,
+            detail={"code": "RENEWAL_REQUEST_NOT_OPEN", "status": existing.status},
+        )
+
+    updated = (await db.execute(
+        text(
+            "UPDATE tenant_renewal_requests "
+            "SET status = :status, handled_by = :hb, handled_note = :note, handled_at = now() "
+            "WHERE id = :id "
+            "RETURNING id, tenant_id, requested_by, requested_by_email, message, "
+            "status, handled_by, handled_note, handled_at, created_at"
+        ),
+        {
+            "status": body.status, "hb": str(user.user_id),
+            "note": body.note, "id": str(request_id),
+        },
+    )).fetchone()
+
+    action = "RENEWAL_HANDLED" if body.status == "HANDLED" else "RENEWAL_CANCELLED"
+    await _log_tenant_activity(
+        db, existing.tenant_id, str(user.user_id),
+        action=action,
+        old_value="OPEN",
+        new_value=body.status,
+        note=body.note,
+    )
+
+    return SuccessResponse(data=_renewal_row_to_out(updated))
+
+
+@router.get("/sa/contracts/overview", response_model=SuccessResponse[ContractsOverviewOut])
+@require_permission(PERMISSIONS.TENANT_RENEWAL_MANAGE)
+async def sa_contracts_overview(
+    user=Depends(get_current_user),
+    db: AsyncSession = Depends(get_db_session),
+) -> SuccessResponse[ContractsOverviewOut]:
+    """SA-only: every non-DEACTIVATED tenant whose contract stage is
+    EXPIRING, GRACE, or READ_ONLY, soonest-expiring first, plus per-stage
+    counts. Same cross-tenant read pattern as sa_tenant_registry() above."""
+    if not user or user.role != "SA":
+        raise HTTPException(status_code=403, detail={"code": "FORBIDDEN", "message": "SA only"})
+
+    rows = (await db.execute(text("""
+        SELECT t.id, t.name, t.slug, t.plan_tier, t.contract_end,
+               (SELECT r.id FROM tenant_renewal_requests r
+                WHERE r.tenant_id = t.id AND r.status = 'OPEN'
+                ORDER BY r.created_at DESC LIMIT 1) AS open_request_id
+        FROM tenants t
+        WHERE t.status != 'DEACTIVATED'
+    """))).fetchall()
+
+    today = datetime.utcnow().date()
+    counts = {"EXPIRING": 0, "GRACE": 0, "READ_ONLY": 0}
+    overview_rows: List[ContractsOverviewRow] = []
+
+    for row in rows:
+        stage = compute_contract_stage(row.contract_end, today)
+        if stage not in counts:
+            continue
+        days_left = (row.contract_end - today).days if row.contract_end else None
+        counts[stage] += 1
+        overview_rows.append(ContractsOverviewRow(
+            tenant_id=row.id, name=row.name, slug=row.slug, plan_tier=row.plan_tier,
+            contract_end=str(row.contract_end) if row.contract_end else None,
+            days_left=days_left, stage=stage,
+            open_request_id=row.open_request_id,
+        ))
+
+    overview_rows.sort(key=lambda r: r.days_left if r.days_left is not None else 10**9)
+
+    return SuccessResponse(data=ContractsOverviewOut(tenants=overview_rows, counts=counts))
+
+
 @router.post("/", status_code=201, response_model=SuccessResponse[TenantResponse])
 @require_permission(PERMISSIONS.TENANT_CREATE)
 async def create_tenant(
@@ -1423,6 +1643,23 @@ async def get_my_plan(
     return SuccessResponse(data=await _get_tenant_plan_data(db, user.tenant_id))
 
 
+@router.get("/me/plan-usage", response_model=SuccessResponse[dict])
+@require_permission(PERMISSIONS.PLAN_VIEW_USAGE)
+async def get_my_plan_usage(
+    user=Depends(get_current_user),
+    db: AsyncSession = Depends(get_db_session),
+) -> SuccessResponse[dict]:
+    """Return the current tenant's plan_tier plus used/limit for skus, users,
+    warehouses — shared/plans/usage.py's get_plan_usage(), the same counts
+    that gate create_product / check_plan_create_user / check_plan_create_warehouse."""
+    if not user or not user.tenant_id:
+        raise HTTPException(status_code=403, detail="No tenant context")
+    usage = await get_plan_usage(db, str(user.tenant_id))
+    if not usage:
+        raise HTTPException(status_code=404, detail="Tenant not found")
+    return SuccessResponse(data=usage)
+
+
 class TermsAcceptanceOut(BaseModel):
     accepted_version: Optional[str] = None
     accepted_at: Optional[str] = None
@@ -1467,7 +1704,7 @@ async def get_my_terms_acceptance(
 
 
 @router.post("/me/terms-acceptance", response_model=SuccessResponse[TermsAcceptanceOut])
-@require_permission(PERMISSIONS.TENANT_CONFIGURE)
+@require_permission(PERMISSIONS.TENANT_CONFIGURE, read_only_exempt=True)
 async def accept_current_terms(
     request: Request,
     user=Depends(get_current_user),
@@ -1754,6 +1991,130 @@ async def update_my_contract(
     })
 
 
+@router.get("/me/contract-status", response_model=SuccessResponse[ContractStatusOut])
+@require_permission(PERMISSIONS.TENANT_VIEW_CONTRACT_STATUS)
+async def get_my_contract_status(
+    user=Depends(get_current_user),
+    db: AsyncSession = Depends(get_db_session),
+) -> SuccessResponse[ContractStatusOut]:
+    """TA and tenant staff: this tenant's current contract stage, plus any
+    OPEN renewal request already on file."""
+    if not user or not user.tenant_id:
+        raise HTTPException(status_code=403, detail="No tenant context")
+
+    stage_info = await get_tenant_contract_stage(db, str(user.tenant_id))
+    contract_end = stage_info["contract_end"]
+    today = datetime.utcnow().date()
+    days_left = (contract_end - today).days if contract_end else None
+
+    open_row = (await db.execute(
+        text(
+            "SELECT id, created_at FROM tenant_renewal_requests "
+            "WHERE tenant_id = :tid AND status = 'OPEN' "
+            "ORDER BY created_at DESC LIMIT 1"
+        ),
+        {"tid": str(user.tenant_id)},
+    )).fetchone()
+    open_request = (
+        ContractStatusOpenRequest(id=open_row.id, created_at=open_row.created_at.isoformat())
+        if open_row else None
+    )
+
+    return SuccessResponse(data=ContractStatusOut(
+        stage=stage_info["stage"],
+        contract_end=str(contract_end) if contract_end else None,
+        days_left=days_left,
+        grace_ends=str(stage_info["grace_ends"]) if stage_info["grace_ends"] else None,
+        read_only_since=(
+            str(stage_info["read_only_since"]) if stage_info["read_only_since"] else None
+        ),
+        open_request=open_request,
+    ))
+
+
+@router.post("/me/renewal-requests", status_code=201, response_model=SuccessResponse[RenewalRequestOut])
+@require_permission(PERMISSIONS.TENANT_RENEWAL_REQUEST)
+async def create_my_renewal_request(
+    body: RenewalRequestIn,
+    user=Depends(get_current_user),
+    db: AsyncSession = Depends(get_db_session),
+) -> SuccessResponse[RenewalRequestOut]:
+    """TA: request a contract renewal. Allowed at ANY contract stage (the
+    action is in read_only.ALLOWED_WRITE_ACTIONS) — one OPEN request per
+    tenant at a time; a second attempt returns the existing request's id."""
+    if not user or not user.tenant_id:
+        raise HTTPException(status_code=403, detail="No tenant context")
+
+    existing = (await db.execute(
+        text(
+            "SELECT id FROM tenant_renewal_requests "
+            "WHERE tenant_id = :tid AND status = 'OPEN'"
+        ),
+        {"tid": str(user.tenant_id)},
+    )).fetchone()
+    if existing:
+        raise HTTPException(
+            status_code=409,
+            detail={"code": "RENEWAL_REQUEST_OPEN", "id": str(existing.id)},
+        )
+
+    email_row = (await db.execute(
+        text("SELECT email FROM users WHERE id = :uid LIMIT 1"),
+        {"uid": str(user.user_id)},
+    )).fetchone()
+    requested_by_email = email_row.email if email_row else None
+
+    row = (await db.execute(
+        text(
+            "INSERT INTO tenant_renewal_requests "
+            "(tenant_id, requested_by, requested_by_email, message) "
+            "VALUES (:tid, :uid, :email, :message) "
+            "RETURNING id, tenant_id, requested_by, requested_by_email, message, "
+            "status, handled_by, handled_note, handled_at, created_at"
+        ),
+        {
+            "tid": str(user.tenant_id),
+            "uid": str(user.user_id),
+            "email": requested_by_email,
+            "message": body.message,
+        },
+    )).fetchone()
+
+    await _log_tenant_activity(
+        db, user.tenant_id, str(user.user_id),
+        action="RENEWAL_REQUESTED",
+        note=body.message,
+    )
+
+    # SA email delivery comes later with SES — for now, surface in the logs.
+    logger.warning("RenewalRequested tenant=%s by=%s", user.tenant_id, user.user_id)
+
+    return SuccessResponse(data=_renewal_row_to_out(row))
+
+
+@router.get("/me/renewal-requests", response_model=SuccessResponse[List[RenewalRequestOut]])
+@require_permission(PERMISSIONS.TENANT_RENEWAL_REQUEST)
+async def list_my_renewal_requests(
+    user=Depends(get_current_user),
+    db: AsyncSession = Depends(get_db_session),
+) -> SuccessResponse[List[RenewalRequestOut]]:
+    """TA: the 10 most recent renewal requests for their own tenant."""
+    if not user or not user.tenant_id:
+        raise HTTPException(status_code=403, detail="No tenant context")
+
+    rows = (await db.execute(
+        text(
+            "SELECT id, tenant_id, requested_by, requested_by_email, message, "
+            "status, handled_by, handled_note, handled_at, created_at "
+            "FROM tenant_renewal_requests WHERE tenant_id = :tid "
+            "ORDER BY created_at DESC LIMIT 10"
+        ),
+        {"tid": str(user.tenant_id)},
+    )).fetchall()
+
+    return SuccessResponse(data=[_renewal_row_to_out(r) for r in rows])
+
+
 @router.get("/me/contacts", response_model=SuccessResponse[List[TenantContactOut]])
 @require_permission(PERMISSIONS.TENANT_VIEW)
 async def get_my_contacts(
@@ -1888,7 +2249,7 @@ async def _update_tenant_contact(
 
 
 @router.post("/me/contacts", status_code=201, response_model=SuccessResponse[TenantContactOut])
-@require_permission(PERMISSIONS.TENANT_CONFIGURE)
+@require_permission(PERMISSIONS.TENANT_CONFIGURE, read_only_exempt=True)
 async def create_my_contact(
     body: TenantContactIn,
     user=Depends(get_current_user),
@@ -1901,7 +2262,7 @@ async def create_my_contact(
 
 
 @router.patch("/me/contacts/{contact_id}", response_model=SuccessResponse[TenantContactOut])
-@require_permission(PERMISSIONS.TENANT_CONFIGURE)
+@require_permission(PERMISSIONS.TENANT_CONFIGURE, read_only_exempt=True)
 async def update_my_contact(
     contact_id: uuid.UUID,
     body: TenantContactIn,
@@ -1915,7 +2276,7 @@ async def update_my_contact(
 
 
 @router.delete("/me/contacts/{contact_id}", status_code=204)
-@require_permission(PERMISSIONS.TENANT_CONFIGURE)
+@require_permission(PERMISSIONS.TENANT_CONFIGURE, read_only_exempt=True)
 async def delete_my_contact(
     contact_id: uuid.UUID,
     user=Depends(get_current_user),
@@ -1938,7 +2299,7 @@ async def delete_my_contact(
 
 
 @router.get("/{tenant_id}/plan", response_model=SuccessResponse[dict])
-@require_permission(PERMISSIONS.TENANT_MANAGE)
+@require_permission(PERMISSIONS.TENANT_MANAGE, read_only_exempt=True)
 async def get_tenant_plan(
     tenant_id: uuid.UUID,
     user=Depends(get_current_user),
@@ -1951,7 +2312,7 @@ async def get_tenant_plan(
 
 
 @router.get("/{tenant_id}/terms-acceptance", response_model=SuccessResponse[TermsAcceptanceOut])
-@require_permission(PERMISSIONS.TENANT_MANAGE)
+@require_permission(PERMISSIONS.TENANT_MANAGE, read_only_exempt=True)
 async def get_tenant_terms_acceptance(
     tenant_id: uuid.UUID,
     user=Depends(get_current_user),
@@ -1964,7 +2325,7 @@ async def get_tenant_terms_acceptance(
 
 
 @router.get("/{tenant_id}/proration-preview", response_model=SuccessResponse[dict])
-@require_permission(PERMISSIONS.TENANT_MANAGE)
+@require_permission(PERMISSIONS.TENANT_MANAGE, read_only_exempt=True)
 async def get_tenant_proration_preview(
     tenant_id: uuid.UUID,
     tier: Optional[str] = None,
@@ -2700,7 +3061,7 @@ async def save_tenant_contacts_bulk(
 
 
 @router.get("/{tenant_id}/contacts", response_model=SuccessResponse[List[TenantContactOut]])
-@require_permission(PERMISSIONS.TENANT_CONFIGURE)
+@require_permission(PERMISSIONS.TENANT_CONFIGURE, read_only_exempt=True)
 async def list_tenant_contacts(
     tenant_id: uuid.UUID,
     user=Depends(get_current_user),
@@ -2993,7 +3354,7 @@ class TaUserUpdateRequest(BaseModel):
 
 
 @router.get("/{tenant_id}/admin-user", response_model=SuccessResponse[TaUserOut])
-@require_permission(PERMISSIONS.TENANT_MANAGE)
+@require_permission(PERMISSIONS.TENANT_MANAGE, read_only_exempt=True)
 async def get_tenant_admin_user(
     tenant_id: uuid.UUID,
     user=Depends(get_current_user),

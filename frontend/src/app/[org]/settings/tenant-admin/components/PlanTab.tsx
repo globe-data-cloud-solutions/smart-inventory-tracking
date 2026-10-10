@@ -229,6 +229,131 @@ function TierChangeForm({ tenantId, plan }: { tenantId: string; plan: PlanData }
   );
 }
 
+interface RenewalRequestOut {
+  id: string;
+  tenant_id: string;
+  requested_by: string;
+  requested_by_email: string | null;
+  message: string | null;
+  status: "OPEN" | "HANDLED" | "CANCELLED";
+  handled_by: string | null;
+  handled_note: string | null;
+  handled_at: string | null;
+  created_at: string;
+}
+
+const RENEWAL_MESSAGE_MAX = 500;
+
+const RENEWAL_STATUS_BADGE: Record<RenewalRequestOut["status"], "success" | "warning" | "neutral"> = {
+  OPEN: "warning",
+  HANDLED: "success",
+  CANCELLED: "neutral",
+};
+
+// TA-only, always visible at any contract stage (CLAUDE.md §29 P4) — lets the
+// TA ask SMART for a renewal without waiting for the grace/read-only stage.
+function RenewalCard() {
+  const qc = useQueryClient();
+  const [message, setMessage] = useState("");
+  const [error, setError] = useState<string | null>(null);
+
+  const { data: requests, isLoading } = useQuery<RenewalRequestOut[]>({
+    queryKey: ["tenant-renewal-requests"],
+    queryFn: () => api.get<RenewalRequestOut[]>("/api/v1/tenants/me/renewal-requests"),
+    staleTime: 10_000,
+  });
+
+  const openRequest = (requests ?? []).find((r) => r.status === "OPEN") ?? null;
+
+  const submitMutation = useMutation({
+    mutationFn: () => api.post<RenewalRequestOut>("/api/v1/tenants/me/renewal-requests", {
+      message: message.trim() || undefined,
+    }),
+    onSuccess: () => {
+      setMessage("");
+      setError(null);
+      void qc.invalidateQueries({ queryKey: ["tenant-renewal-requests"] });
+    },
+    onError: (e: unknown) => {
+      // 409 RENEWAL_REQUEST_OPEN — another request is already open; refetch
+      // and show it instead of a raw error (same outcome as a fresh submit).
+      const code = (e as { code?: string } | undefined)?.code;
+      if (code === "RENEWAL_REQUEST_OPEN") {
+        void qc.invalidateQueries({ queryKey: ["tenant-renewal-requests"] });
+        return;
+      }
+      setError(e instanceof Error ? e.message : t("common.error"));
+    },
+  });
+
+  return (
+    <div className="bg-white rounded-lg border border-gray-200 p-6">
+      <h3 className="text-lg font-semibold text-gray-800 mb-4">{t("tenant_admin.plan.renewal.heading")}</h3>
+
+      {openRequest ? (
+        <p className="text-sm text-emerald-700 bg-emerald-50 border border-emerald-200 rounded px-3 py-2">
+          {t("tenant_admin.plan.renewal.open_notice")
+            .replace("{date}", new Date(openRequest.created_at).toLocaleDateString())}
+        </p>
+      ) : (
+        <div className="space-y-2">
+          <label className="block text-sm font-medium text-gray-700">
+            {t("tenant_admin.plan.renewal.message_label")}
+          </label>
+          <textarea
+            value={message}
+            onChange={(e) => setMessage(e.target.value.slice(0, RENEWAL_MESSAGE_MAX))}
+            placeholder={t("tenant_admin.plan.renewal.message_placeholder")}
+            maxLength={RENEWAL_MESSAGE_MAX}
+            rows={3}
+            className="w-full px-3 py-2 text-sm border border-gray-300 rounded-md outline-none focus:border-[#0f2d1f] focus:ring-1 focus:ring-[#0f2d1f] resize-none"
+          />
+          <p className="text-xs text-gray-400 text-right m-0">
+            {t("tenant_admin.plan.renewal.char_counter")
+              .replace("{used}", String(message.length))
+              .replace("{max}", String(RENEWAL_MESSAGE_MAX))}
+          </p>
+          {error && <p className="text-sm text-red-600">{error}</p>}
+          <button
+            type="button"
+            disabled={submitMutation.isPending}
+            onClick={() => submitMutation.mutate()}
+            className="px-4 py-2 text-sm font-bold text-white bg-[#0f2d1f] rounded hover:bg-[#1a4d35] disabled:opacity-50"
+          >
+            {submitMutation.isPending ? "…" : t("tenant_admin.plan.renewal.submit_btn")}
+          </button>
+        </div>
+      )}
+
+      <div className="mt-5 pt-4 border-t border-gray-100">
+        <h4 className="text-sm font-semibold text-gray-600 mb-2">{t("tenant_admin.plan.renewal.recent_heading")}</h4>
+        {isLoading && <p className="text-xs text-gray-400">{t("common.loading")}</p>}
+        {!isLoading && (requests ?? []).length === 0 && (
+          <p className="text-xs text-gray-400">{t("tenant_admin.plan.renewal.empty")}</p>
+        )}
+        {!isLoading && (requests ?? []).length > 0 && (
+          <div className="space-y-2">
+            {(requests ?? []).map((r) => (
+              <div key={r.id} className="flex items-start justify-between gap-3 text-xs border border-gray-100 rounded px-3 py-2">
+                <div className="min-w-0">
+                  <p className="m-0 text-gray-700">{new Date(r.created_at).toLocaleDateString()}</p>
+                  {r.message && <p className="m-0 text-gray-500 mt-0.5 italic">{r.message}</p>}
+                  {r.handled_note && (
+                    <p className="m-0 text-gray-500 mt-0.5">{r.handled_note}</p>
+                  )}
+                </div>
+                <Badge variant={RENEWAL_STATUS_BADGE[r.status]}>
+                  {t(`tenant_admin.plan.renewal.status.${r.status}`)}
+                </Badge>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 // Keys shared with FeaturesTab.tsx — see tenant_admin.features.flag.* / flag_desc.* in locales/en.json
 const FEATURE_FLAG_CODES = [
   "CORE_INVENTORY",
@@ -875,6 +1000,9 @@ export function PlanTab({ tenantId, isLoading }: TabProps) {
 
       {/* SA mode: tier change + SKU cap, above billing (CLAUDE.md §15 S9) */}
       {tenantId && <TierChangeForm tenantId={tenantId} plan={plan} />}
+
+      {/* TA mode: renewal request card, always visible at any contract stage */}
+      {!tenantId && <RenewalCard />}
 
       <SubscriptionAndInvoices tenantId={tenantId} />
 

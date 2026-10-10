@@ -7,7 +7,7 @@ router = APIRouter()
 
 
 @router.get("/fleet", response_model=SuccessResponse[list])
-@require_permission(PERMISSIONS.LOGISTICS_FLEET_MANAGE)
+@require_permission(PERMISSIONS.LOGISTICS_FLEET_MANAGE, read_only_exempt=True)
 async def list_fleet(user=Depends(lambda: None)) -> SuccessResponse[list]:
     return SuccessResponse(data=[])
 

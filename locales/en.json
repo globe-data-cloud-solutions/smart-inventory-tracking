@@ -175,7 +175,10 @@
     "unassigned": "Unassigned",
     "success": "Saved successfully",
     "transaction": "transaction",
-    "rate_limited": "Too many attempts. Please try again later."
+    "rate_limited": "Too many attempts. Please try again later.",
+    "too_many_requests": "Too many requests. Please wait a moment and try again.",
+    "coming_soon_badge": "Coming soon",
+    "coming_soon_hint": "This feature is not available yet."
   },
   "product": {
     "add": {
@@ -878,7 +881,8 @@
     "admin_section": "Admin",
     "all_tenants": "All Tenants",
     "contract_expired": "Contract Expired",
-    "contract_expiring_soon": "Contract Expiring Soon"
+    "contract_expiring_soon": "Contract Expiring Soon",
+    "contract_ends_days": "Contract ends {date} · {n} days"
   },
   "dashboard": {
     "platform_overview": "Platform Overview",
@@ -1172,6 +1176,7 @@
     "confirm_deactivate": "Deactivate {name}? This is a soft delete — data is preserved but all access is blocked.",
     "tab_tenants": "Tenants & Plan",
     "tab_registry": "Registry",
+    "tab_renewals": "Renewals",
     "registry_heading": "Tenant Registry — Contact Information",
     "registry_subtitle": "Full roster with contact details and contract dates",
     "col_contact": "Contact",
@@ -1271,7 +1276,26 @@
     "activity_action_PROFILE_UPDATE_INDUSTRY": "Industry updated",
     "activity_action_PROFILE_UPDATE_TA_FULL_NAME": "Admin user name updated",
     "activity_action_PROFILE_UPDATE_TA_EMAIL": "Admin user email updated",
-    "activity_action_FEATURE_FLAGS_UPDATE": "Feature flags updated"
+    "activity_action_FEATURE_FLAGS_UPDATE": "Feature flags updated",
+    "renewal_stage_EXPIRING": "Expiring",
+    "renewal_stage_GRACE": "Grace",
+    "renewal_stage_READ_ONLY": "Read-only",
+    "renewals_count_expiring": "Expiring ≤14d",
+    "renewals_count_grace": "Grace",
+    "renewals_count_read_only": "Read-only",
+    "col_days_left": "Days Left",
+    "col_stage": "Stage",
+    "col_open_request": "Open Request",
+    "renewals_tenants_empty": "No tenants currently expiring, in grace, or read-only.",
+    "renewals_open_requests_heading": "Open Renewal Requests",
+    "renewals_empty": "No renewal requests.",
+    "renewals_requested_by": "Requested by",
+    "renewals_message_label": "Message",
+    "renewals_mark_handled_btn": "Mark handled",
+    "renewals_cancel_btn": "Cancel",
+    "renewals_note_label": "Note (optional)",
+    "renewals_confirm_btn": "Confirm",
+    "renewals_dismiss_btn": "Dismiss"
   },
   "approval": {
     "simple_mode": "Simple — same rules for all",
@@ -1406,6 +1430,7 @@
     "signing_in": "Signing in…",
     "submit_btn": "Sign in →",
     "create_account": "Create an account",
+    "getting_started_link": "Getting started",
     "email_not_verified": "Please verify your email address before signing in.",
     "system_admin_heading": "System Administrator",
     "mobile_system_admin": "System Admin",
@@ -1558,7 +1583,22 @@
       "unlimited": "Unlimited",
       "contact_sa_to_change": "Package changes are made by SMART. Contact your SMART administrator to change your plan.",
       "available_features": "Available Features",
-      "addons_heading": "Add-ons"
+      "addons_heading": "Add-ons",
+      "renewal": {
+        "heading": "Renewal",
+        "message_label": "Message (optional)",
+        "message_placeholder": "Add any details for SMART",
+        "char_counter": "{used}/{max}",
+        "submit_btn": "Request renewal",
+        "open_notice": "Renewal requested on {date} — SMART will contact you.",
+        "recent_heading": "Recent requests",
+        "empty": "No renewal requests yet.",
+        "status": {
+          "OPEN": "Open",
+          "HANDLED": "Handled",
+          "CANCELLED": "Cancelled"
+        }
+      }
     },
     "features": {
       "flag": {
@@ -1776,7 +1816,10 @@
     "subtitle": "Set up your company workspace in a few minutes.",
     "unavailable": "Sign-up is not available right now. Please try again later or contact support.",
     "step_of": "Step {n} of 3",
+    "getting_started_note": "New to SMART? Read Getting started first.",
     "step1_title": "Choose your package",
+    "billing_period_hint": "Switching between monthly and annual isn't available yet — contact SMART.",
+    "package_hint": "Package changes are handled by SMART.",
     "step2_title": "Company & admin details",
     "step3_title": "Review & confirm",
     "monthly": "Monthly",
@@ -1789,13 +1832,16 @@
     "company_name_label": "Company name",
     "company_name_placeholder": "e.g. Addis Water Bottling",
     "organisation_type_label": "Organisation type",
+    "org_type_hint": "Sets your approval thresholds. Only SMART can change it later.",
     "industry_label": "Industry (optional)",
     "industry_placeholder": "e.g. bottled water, cement",
     "language_label": "Default language",
+    "language_hint": "You can change this later in Settings → Tenant Admin → Profile.",
     "slug_label": "Custom URL (optional)",
     "slug_placeholder": "my-company",
     "slug_preview_prefix": "…/",
     "slug_hint": "3-50 characters: lowercase letters, numbers and hyphens, starting and ending with a letter or digit.",
+    "slug_permanent_hint": "Permanent — can't be changed after sign-up.",
     "admin_name_label": "Your full name",
     "admin_name_placeholder": "e.g. Abebe Kebede",
     "admin_email_label": "Work email",
@@ -1904,7 +1950,18 @@
     "pending_renewal_invoice_warning": "An unpaid renewal invoice exists at the old tier — cancel and reissue it.",
     "cancel_scheduled_downgrade_btn": "Cancel scheduled downgrade",
     "effective_at_renewal": "At renewal (default)",
-    "effective_immediate": "Apply now (no refund)"
+    "effective_immediate": "Apply now (no refund)",
+    "limit_reached": {
+      "skus": "SKU limit reached for your plan. Contact SMART to upgrade.",
+      "users": "User limit reached for your plan. Contact SMART to upgrade.",
+      "warehouses": "Warehouse limit reached for your plan. Contact SMART to upgrade."
+    }
+  },
+  "contract": {
+    "read_only_error": "Your contract has expired — the workspace is read-only. Contact SMART to renew.",
+    "banner_grace": "Your contract ended on {date}. The workspace becomes read-only on {read_only_since}.",
+    "banner_read_only": "Read-only: the contract ended on {date}. You can view and export; changes are disabled.",
+    "request_renewal_link": "Request renewal"
   },
   "help": {
     "title": "Help & Documents",
@@ -1918,6 +1975,10 @@
     "updated_label": "Updated {d}",
     "english_only_notice": "This document is currently available in English only.",
     "doc": {
+      "getting_started": {
+        "title": "Getting Started",
+        "summary": "Before you sign up: what to prepare, how to get an account, system roles, and plan tiers."
+      },
       "ta_onboarding_guide": {
         "title": "TA Onboarding Guide",
         "summary": "Step-by-step setup for Tenant Administrators: organisation levels, personnel, approval rules, and opening stock."
@@ -1953,19 +2014,26 @@
     "privacy_title": "Privacy Policy",
     "draft_banner": "Draft — not yet in effect. The final text will be published before launch."
   },
+  "getting_started": {
+    "title": "Getting Started",
+    "print_btn": "Printable checklist",
+    "cta_create_account": "Create an account"
+  },
   "landing": {
     "nav": {
       "features": "Features",
       "get_started_anchor": "Get started",
       "credentials": "Credentials",
       "sign_in": "Sign in",
-      "get_started_cta": "Get started"
+      "get_started_cta": "Get started",
+      "getting_started": "Getting started"
     },
     "hero": {
       "subtitle": "Real-time stock ledger · FEFO dispatch · Offline barcode scanning · 3-layer security — built for Ethiopian producers and distributors.",
       "badge_suffix": "Offline-ready · Multi-tenant",
       "cta_primary": "Choose a plan",
-      "cta_explore": "Explore features"
+      "cta_explore": "Explore features",
+      "cta_getting_started": "Getting started"
     },
     "stats": {
       "actions_label": "Permission Actions",

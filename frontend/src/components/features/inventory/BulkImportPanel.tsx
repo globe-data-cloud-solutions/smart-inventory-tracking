@@ -7,9 +7,12 @@ import { api } from "@/lib/api";
 import { useInventoryStore } from "@/lib/inventory-state";
 import { useAuditStore } from "@/lib/audit-log-state";
 import { getSession } from "@/lib/demo-auth";
+import { useWriteGuard, guardProps } from "@/hooks/useWriteGuard";
 import { t } from "@/lib/i18n";
 import type { DemoProduct, DemoWarehouse } from "@/lib/demo-data";
 import type { ImportBatch } from "@/app/api/v1/imports/_demo-state";
+
+const isGatewayMode = !!process.env.NEXT_PUBLIC_API_URL;
 
 interface Props { products: DemoProduct[]; warehouses: DemoWarehouse[]; orgSlug: string; }
 
@@ -80,6 +83,15 @@ export function BulkImportPanel({ products, warehouses, orgSlug }: Props) {
   const [success, setSuccess]       = useState("");
   const [importRef, setImportRef]   = useState("");
   const [loading, setLoading]       = useState(false);
+  // Bulk-imports opening quantities for EXISTING skus (looked up by sku_code)
+  // — it never creates a new product, so read-only gating only, no "skus" cap.
+  const writeGuard = useWriteGuard();
+  // POST /api/v1/imports/opening-balance has no backend route yet (demo-only
+  // BFF handler) — disabled with a "coming soon" tooltip in gateway mode,
+  // regardless of contract stage (CLAUDE.md §29 P6). Demo mode unaffected.
+  const gp = isGatewayMode
+    ? { disabled: true, title: t("common.coming_soon_hint") }
+    : guardProps(writeGuard);
 
   function reset() { setCsvText(""); setParsedRows(null); setError(""); setSuccess(""); setImportRef(""); }
 
@@ -124,8 +136,13 @@ export function BulkImportPanel({ products, warehouses, orgSlug }: Props) {
 
   return (
     <>
-      <button onClick={() => { reset(); setOpen(true); }} className="px-4 py-2 bg-violet-600 text-white font-bold text-sm rounded border-0 cursor-pointer">
+      <button onClick={() => { reset(); setOpen(true); }} {...gp} className="px-4 py-2 bg-violet-600 text-white font-bold text-sm rounded border-0 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed">
         ↑ {t("bulk_import.title")}
+        {isGatewayMode && (
+          <span className="ml-1.5 text-[9px] font-bold uppercase tracking-wide bg-white/20 px-1 py-0.5 rounded">
+            {t("common.coming_soon_badge")}
+          </span>
+        )}
       </button>
 
       {open && <div onClick={() => setOpen(false)} className="fixed inset-0 bg-black/35 z-[100] backdrop-blur-sm" />}
@@ -141,6 +158,11 @@ export function BulkImportPanel({ products, warehouses, orgSlug }: Props) {
         </div>
 
         <div className="flex-1 overflow-y-auto p-6">
+          {gp.disabled && gp.title && (
+            <div role="alert" className="bg-amber-50 border border-amber-200 rounded px-3.5 py-2.5 text-sm text-amber-800 mb-4">
+              {gp.title}
+            </div>
+          )}
           {success && (
             <div className="bg-violet-50 border border-violet-200 rounded-md px-4 py-3.5 text-violet-800 mb-4 leading-relaxed">
               <p className="font-bold mb-1.5 text-sm">✓ {t("bulk_import.submitted")}</p>
@@ -224,8 +246,8 @@ export function BulkImportPanel({ products, warehouses, orgSlug }: Props) {
                 </div>
               </div>
 
-              <button type="button" onClick={handleSubmit} disabled={hasErrors || loading}
-                className={`w-full py-2.5 font-bold text-sm rounded border-0 mb-2 ${hasErrors ? "bg-gray-200 text-gray-400 cursor-not-allowed" : `bg-violet-600 text-white ${loading ? "opacity-70 cursor-not-allowed" : "cursor-pointer"}`}`}>
+              <button type="button" onClick={handleSubmit} disabled={hasErrors || loading || gp.disabled} title={gp.title}
+                className={`w-full py-2.5 font-bold text-sm rounded border-0 mb-2 ${hasErrors || gp.disabled ? "bg-gray-200 text-gray-400 cursor-not-allowed" : `bg-violet-600 text-white ${loading ? "opacity-70 cursor-not-allowed" : "cursor-pointer"}`}`}>
                 {loading ? t("common.loading") : hasErrors ? `${t("bulk_import.cannot_submit")} — ${errorRows} ${t("bulk_import.error_row_label")}` : `${t("bulk_import.submit_btn")} (${validRows + warningRows} ${t("bulk_import.rows_label")})`}
               </button>
 
@@ -237,7 +259,7 @@ export function BulkImportPanel({ products, warehouses, orgSlug }: Props) {
         <div className="px-6 py-3.5 border-t border-gray-200 flex gap-2.5">
           <button type="button" onClick={() => { reset(); setOpen(false); }} className="flex-1 py-2.5 bg-gray-100 border border-gray-200 rounded text-sm font-semibold text-gray-700 cursor-pointer">{t("common.cancel")}</button>
           {parsedRows && !hasErrors && !success && (
-            <button type="button" onClick={handleSubmit} disabled={loading} className={`flex-[2] py-2.5 bg-violet-600 text-white font-bold text-sm rounded border-0 ${loading ? "opacity-70 cursor-not-allowed" : "cursor-pointer"}`}>
+            <button type="button" onClick={handleSubmit} disabled={loading || gp.disabled} title={gp.title} className={`flex-[2] py-2.5 bg-violet-600 text-white font-bold text-sm rounded border-0 ${loading || gp.disabled ? "opacity-70 cursor-not-allowed" : "cursor-pointer"}`}>
               {loading ? t("common.loading") : t("bulk_import.submit_btn")}
             </button>
           )}

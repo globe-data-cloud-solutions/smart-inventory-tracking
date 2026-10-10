@@ -89,8 +89,18 @@ async def check_permission(
     return PermissionResult(allowed=True)
 
 
-def require_permission(action: Permission) -> Callable:
+def require_permission(
+    action: Permission,
+    read_only_exempt: bool = False,
+    read_only_force_write: bool = False,
+) -> Callable:
     """Decorator for FastAPI route handlers. Injects permission check before handler executes."""
+
+    if read_only_exempt and read_only_force_write:
+        raise ValueError(
+            "require_permission: read_only_exempt and read_only_force_write "
+            "are mutually exclusive"
+        )
 
     def decorator(func: Callable) -> Callable:
         @functools.wraps(func)
@@ -127,6 +137,36 @@ def require_permission(action: Permission) -> Callable:
                     status_code=403,
                     detail={"code": result.reason, "action": action.id},
                 )
+
+            if user.role not in ("SA", "SYS") and getattr(user, "tenant_id", None):
+                from shared.permissions.read_only import is_blocked_in_read_only
+
+                if is_blocked_in_read_only(action.id, read_only_exempt, read_only_force_write):
+                    if db is None:
+                        raise HTTPException(
+                            status_code=500,
+                            detail={"code": "CONTRACT_CHECK_NO_DB", "action": action.id},
+                        )
+
+                    from shared.billing.contract_stage import get_tenant_contract_stage
+
+                    contract = await get_tenant_contract_stage(db, str(user.tenant_id))
+                    if contract["stage"] == "READ_ONLY":
+                        raise HTTPException(
+                            status_code=402,
+                            detail={
+                                "code": "CONTRACT_EXPIRED_READ_ONLY",
+                                "action": action.id,
+                                "contract_end": (
+                                    contract["contract_end"].isoformat()
+                                    if contract["contract_end"] else None
+                                ),
+                                "read_only_since": (
+                                    contract["read_only_since"].isoformat()
+                                    if contract["read_only_since"] else None
+                                ),
+                            },
+                        )
 
             from shared.permissions.plan_middleware import check_plan, requires_flag
 

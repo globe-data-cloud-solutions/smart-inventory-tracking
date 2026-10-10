@@ -329,6 +329,13 @@ async def _product_create_handler(user=None, db=None) -> str:
     return "handler ran"
 
 
+# The read-only (contract stage) gate runs BEFORE the plan gate inside
+# require_permission() and queries the DB itself — patch it to ACTIVE in
+# these plan-gate-focused tests so it never consumes from the plan/addon
+# db.execute side_effect queues below.
+_ACTIVE_STAGE = {"stage": "ACTIVE", "contract_end": None, "read_only_since": None}
+
+
 @pytest.mark.asyncio
 async def test_require_permission_ta_gated_by_flag_false() -> None:
     plan = _plan_result(
@@ -338,6 +345,9 @@ async def test_require_permission_ta_gated_by_flag_false() -> None:
     with patch(
         "shared.permissions.middleware.check_permission",
         AsyncMock(return_value=PermissionResult(allowed=True)),
+    ), patch(
+        "shared.billing.contract_stage.get_tenant_contract_stage",
+        AsyncMock(return_value=_ACTIVE_STAGE),
     ):
         with pytest.raises(HTTPException) as exc_info:
             await _branding_handler(user=_user(role="TA"), db=db)
@@ -354,6 +364,9 @@ async def test_require_permission_ta_passes_when_flag_true() -> None:
     with patch(
         "shared.permissions.middleware.check_permission",
         AsyncMock(return_value=PermissionResult(allowed=True)),
+    ), patch(
+        "shared.billing.contract_stage.get_tenant_contract_stage",
+        AsyncMock(return_value=_ACTIVE_STAGE),
     ):
         result = await _branding_handler(user=_user(role="TA"), db=db)
     assert result == "handler ran"
@@ -386,6 +399,9 @@ async def test_require_permission_rbac_denied_is_403_not_402() -> None:
 
 @pytest.mark.asyncio
 async def test_require_permission_mapped_action_no_db_raises_500() -> None:
+    # The read-only gate now runs before the plan gate and also needs a db
+    # session for a non-exempt write action — with db=None it raises its own
+    # CONTRACT_CHECK_NO_DB before PLAN_CHECK_NO_DB is ever reached.
     with patch(
         "shared.permissions.middleware.check_permission",
         AsyncMock(return_value=PermissionResult(allowed=True)),
@@ -393,16 +409,23 @@ async def test_require_permission_mapped_action_no_db_raises_500() -> None:
         with pytest.raises(HTTPException) as exc_info:
             await _branding_handler(user=_user(role="TA"), db=None)
     assert exc_info.value.status_code == 500
-    assert exc_info.value.detail["code"] == "PLAN_CHECK_NO_DB"
+    assert exc_info.value.detail["code"] == "CONTRACT_CHECK_NO_DB"
 
 
 @pytest.mark.asyncio
 async def test_require_permission_unmapped_action_skips_entitlements() -> None:
+    # product:create is a write action (not read_only_exempt), so the
+    # read-only gate still issues ONE db.execute (contract stage lookup)
+    # even though the plan gate itself skips entitlements for this action.
     db = AsyncMock()
     with patch(
         "shared.permissions.middleware.check_permission",
         AsyncMock(return_value=PermissionResult(allowed=True)),
-    ):
+    ), patch(
+        "shared.billing.contract_stage.get_tenant_contract_stage",
+        AsyncMock(return_value=_ACTIVE_STAGE),
+    ) as mock_stage:
         result = await _product_create_handler(user=_user(role="TA"), db=db)
     assert result == "handler ran"
+    mock_stage.assert_awaited_once()
     db.execute.assert_not_called()
