@@ -11,6 +11,7 @@ import { getCurrentLocale, setLocale, loadLocale, t } from "@/lib/i18n";
 import { useInventoryStore } from "@/lib/inventory-state";
 import { useAuditStore } from "@/lib/audit-log-state";
 import { useTenantName } from "@/hooks/useTenantName";
+import { useContractStatus } from "@/hooks/useContractStatus";
 
 type Locale = "en" | "am" | "or";
 
@@ -241,6 +242,7 @@ function Sidebar({ user, org, tenantName, plan, onClose, isOpen }: {
 }) {
   const router   = useRouter();
   const pathname = usePathname();
+  const { contractStatus } = useContractStatus();
 
   const navItems = org === SA_ORG_SLUG ? SA_NAV : TENANT_NAV;
 
@@ -255,6 +257,17 @@ function Sidebar({ user, org, tenantName, plan, onClose, isOpen }: {
   const tenants = org === SA_ORG_SLUG
     ? (isGatewayMode && apiTenants ? [] : DEMO_TENANTS)   // SA sidebar uses API or demo
     : [];
+
+  // Open renewal-requests count — badges the SA nav item that leads to the
+  // Renewals tab (hidden when 0).
+  const { data: openRenewalRequests } = useQuery<unknown[]>({
+    queryKey: ["sa-renewal-requests", "OPEN"],
+    queryFn: () => api.get<unknown[]>("/api/v1/tenants/sa/renewal-requests?status=OPEN"),
+    enabled: isGatewayMode && org === SA_ORG_SLUG && user.role === "SA",
+    staleTime: 0,
+    refetchOnMount: true,
+  });
+  const renewalsOpenCount = openRenewalRequests?.length ?? 0;
 
   return (
     <aside className={`fixed top-[60px] left-0 bottom-0 w-60 bg-[#0f2d1f] flex flex-col z-40 border-r border-white/[0.06] overflow-hidden transition-transform duration-200 ${
@@ -335,6 +348,11 @@ function Sidebar({ user, org, tenantName, plan, onClose, isOpen }: {
             >
               <span className="text-[15px] leading-none shrink-0">{item.icon}</span>
               {t(item.label)}
+              {item.badge === "renewalsOpenCount" && renewalsOpenCount > 0 && (
+                <span className="ml-auto text-[10px] font-bold bg-red-500 text-white rounded-full px-1.5 py-0.5 min-w-[18px] text-center shrink-0">
+                  {renewalsOpenCount}
+                </span>
+              )}
             </Link>
           );
         })}
@@ -420,21 +438,18 @@ function Sidebar({ user, org, tenantName, plan, onClose, isOpen }: {
         )}
       </nav>
 
-      {/* Contract expiry notice — shown to TA when contract_end is set */}
-      {user.role === "TA" && plan?.contract_end && (() => {
-        const endDate   = new Date(plan.contract_end);
-        const today     = new Date();
-        const daysLeft  = Math.ceil((endDate.getTime() - today.getTime()) / 86_400_000);
-        const expired   = daysLeft < 0;
-        const warnSoon  = daysLeft >= 0 && daysLeft <= 30;
-        if (!expired && !warnSoon) return null;
-        return (
-          <div className={`mx-2 mb-1 px-2.5 py-2 rounded text-[11px] ${expired ? "bg-red-900/60 text-red-200" : "bg-amber-800/50 text-amber-200"}`}>
-            <p className="font-bold m-0">{expired ? t("layout.contract_expired") : t("layout.contract_expiring_soon")}</p>
-            <p className="m-0 opacity-80">{plan.contract_end}{!expired && ` · ${daysLeft}d`}</p>
-          </div>
-        );
-      })()}
+      {/* Contract expiry notice — TA only, EXPIRING stage only (GRACE/READ_ONLY
+          get the top banner shown to all tenant users instead; see OrgLayout). */}
+      {user.role === "TA" && contractStatus?.stage === "EXPIRING" && contractStatus.contract_end && (
+        <div className="mx-2 mb-1 px-2.5 py-2 rounded text-[11px] bg-amber-800/50 text-amber-200">
+          <p className="font-bold m-0">{t("layout.contract_expiring_soon")}</p>
+          <p className="m-0 opacity-80">
+            {t("layout.contract_ends_days")
+              .replace("{date}", contractStatus.contract_end)
+              .replace("{n}", String(contractStatus.days_left ?? ""))}
+          </p>
+        </div>
+      )}
 
       {/* Sign out */}
       <div className="px-2 py-2.5 border-t border-white/[0.08] shrink-0">
@@ -529,6 +544,7 @@ export default function OrgLayout({ children }: { children: React.ReactNode }) {
   const [sidebarOpen, setSidebarOpen]          = useState(false);
   const [plan, setPlan]                        = useState<PlanData | null>(null);
   const setActiveTenant   = useInventoryStore((s) => s.setActiveTenant);
+  const { contractStatus } = useContractStatus();
 
   // Derive page label from the path segment after /[org]/
   const pageLabel = (() => {
@@ -711,6 +727,39 @@ export default function OrgLayout({ children }: { children: React.ReactNode }) {
                 </button>
               </div>
             )}
+            {/* Contract grace/read-only banners — all tenant users, never SA. */}
+            {org !== SA_ORG_SLUG && contractStatus?.stage === "GRACE" && (
+              <div className="bg-amber-50 border-b border-amber-200 px-4 py-2.5 flex flex-wrap items-center justify-between gap-2">
+                <p className="text-xs text-amber-900 font-medium m-0 flex-1 min-w-0">
+                  ⚠ {t("contract.banner_grace")
+                    .replace("{date}", contractStatus.contract_end ?? "")
+                    .replace("{read_only_since}", contractStatus.read_only_since ?? "")}
+                </p>
+                {user.role === "TA" && (
+                  <Link
+                    href={`/${org}/settings/tenant-admin?tab=plan`}
+                    className="text-xs font-bold text-amber-900 underline shrink-0 whitespace-nowrap"
+                  >
+                    {t("contract.request_renewal_link")}
+                  </Link>
+                )}
+              </div>
+            )}
+            {org !== SA_ORG_SLUG && contractStatus?.stage === "READ_ONLY" && (
+              <div className="bg-red-50 border-b border-red-200 px-4 py-2.5 flex flex-wrap items-center justify-between gap-2">
+                <p className="text-xs text-red-900 font-medium m-0 flex-1 min-w-0">
+                  ⛔ {t("contract.banner_read_only").replace("{date}", contractStatus.contract_end ?? "")}
+                </p>
+                {user.role === "TA" && (
+                  <Link
+                    href={`/${org}/settings/tenant-admin?tab=plan`}
+                    className="text-xs font-bold text-red-900 underline shrink-0 whitespace-nowrap"
+                  >
+                    {t("contract.request_renewal_link")}
+                  </Link>
+                )}
+              </div>
+            )}
             {children}
           </main>
         </div>
@@ -722,11 +771,12 @@ export default function OrgLayout({ children }: { children: React.ReactNode }) {
 /* ── Nav definitions ──────────────────────────────────────────────────────── */
 type NavItem =
   | { type: "section"; label: string; roles?: string[] }
-  | { type: "link"; icon: string; label: string; page: string; roles?: string[]; disabled?: boolean; planFlag?: string };
+  | { type: "link"; icon: string; label: string; page: string; roles?: string[]; disabled?: boolean; planFlag?: string; badge?: "renewalsOpenCount" };
 
 const SA_NAV: NavItem[] = [
   { type: "section", label: "Overview" },
   { type: "link", icon: "🏠", label: "Dashboard", page: "dashboard" },
+  { type: "link", icon: "🔔", label: "sa.tab_renewals", page: "dashboard?tab=renewals", badge: "renewalsOpenCount" },
   { type: "section", label: "System" },
   { type: "link", icon: "💳", label: "sa.nav_plans_pricing", page: "settings/plans" },
   // These pages are planned but not yet built — links are intentionally
