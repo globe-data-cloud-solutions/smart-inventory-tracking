@@ -591,9 +591,10 @@ export function AddProductPanel({ apiBase, onClose, mode = "create", productId, 
       resetForm(); setOpen(false); onClose?.();
     } catch (err) {
       const e = err as Error & { status?: number; code?: string };
-      if (e.status === 409 && e.code === "duplicate_sku") setPanelError(t("product.add.error.duplicate_sku") || `SKU '${displaySku}' already exists. Edit the SKU and try again.`);
+      if (e.status === 409 && e.code === "duplicate_sku") setPanelError(t("product.add.error.duplicate_sku"));
       else if (e.status === 409) setNameErr("duplicate_name");
-      else if (e.status === 429) setPanelError(t("product.add.error.sku_cap_reached"));
+      else if (e.status === 402 && e.code === "PLAN_LIMIT_REACHED") setPanelError(t("product.add.error.sku_cap_reached"));
+      else if (e.status === 429) setPanelError(t("common.rate_limited"));
       else if (e.status === 403 && e.code === "PRODUCT_CONTROLLED") setPanelError(t("product.controlled_edit_denied"));
       else setPanelError(t("product.add.error.generic"));
     } finally { setSub(false); }
