@@ -119,6 +119,9 @@ export default function HomePage() {
             ))}
           </div>
           <div className="flex items-center gap-3 ml-auto md:ml-0">
+            <Link href="/getting-started" className="nav-link hidden md:inline-block">
+              {t("landing.nav.getting_started")}
+            </Link>
             <AuthLangSwitcher />
             <Link href="/login" className="btn-signin hidden sm:inline-block">
               {t("landing.nav.sign_in")}
@@ -165,6 +168,7 @@ export default function HomePage() {
             <Link href="/signup" className="btn-cta-primary">{t("landing.hero.cta_primary")}</Link>
             <Link href="/login" className="btn-hero-outline">{t("landing.nav.sign_in")}</Link>
             <a href="#features" className="btn-hero-outline">{t("landing.hero.cta_explore")}</a>
+            <Link href="/getting-started" className="btn-hero-outline">{t("landing.hero.cta_getting_started")}</Link>
           </div>
         </div>
         <Stripe h={6} />

@@ -29,6 +29,14 @@ export interface HelpDoc {
 
 export const HELP_MANIFEST: HelpDoc[] = [
   {
+    id: "getting-started",
+    titleKey: "help.doc.getting_started.title",
+    summaryKey: "help.doc.getting_started.summary",
+    audience: ["ALL"],
+    link: "/getting-started",
+    status: "published",
+  },
+  {
     id: "ta-onboarding-guide",
     titleKey: "help.doc.ta_onboarding_guide.title",
     summaryKey: "help.doc.ta_onboarding_guide.summary",

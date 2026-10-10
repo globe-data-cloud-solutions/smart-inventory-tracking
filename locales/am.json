@@ -1450,7 +1450,8 @@
     "personnel_hint": "የተከራይ መለያዎችን ለማከል፣ እንደ SA ይግቡና ማስተለኯት → ሰራተኞችን ይጠቀሙ።",
     "footer_tagline": "SMART የክምችት መከታተያ · RBAC + ABAC · 3 ቋንቋዎች",
     "auth_unavailable": "ይግባ ለጊዜው አይገኝም። እባክዎ ትንሽ ቆይተው ይሞክሩ።",
-    "forgot_link": "የይለፍ ቃል ረስተዋል?"
+    "forgot_link": "የይለፍ ቃል ረስተዋል?",
+    "getting_started_link": "መጀመር"
   },
   "change_password": {
     "contact_admin": "password ተቀይሯል። አስተዳዳሪ ቦታ ይወስናሉ።",
@@ -1897,7 +1898,13 @@
       "RATE_LIMITED": "በጣም ብዙ ሙከራዎች። እባክዎ ቆይተው ይሞክሩ።",
       "INVALID_ORGANISATION_TYPE": "ትክክለኛ የድርጅት አይነት ይምረጡ።",
       "NETWORK": "ወደ አገልጋዩ መድረስ አልተቻለም። እባክዎ ዳግም ይሞክሩ።"
-    }
+    },
+    "getting_started_note": "ለSMART አዲስ ነዎት? መጀመር ያለውን መረጃ ቅድሚያ ያንብቡ።",
+    "billing_period_hint": "በወርሃዊ እና አመታዊ መካከል መቀየር እስካሁን አይገኝም — SMART ን ያነጋግሩ።",
+    "package_hint": "የፓኬጅ ለውጦች በ SMART ይከናወናሉ።",
+    "org_type_hint": "የማፅደቅ ገደቦችዎን ይወስናል። በኋላ መቀየር የሚችለው SMART ብቻ ነው።",
+    "language_hint": "በኋላ በቅንብሮች → የተከራይ አስተዳዳሪ → መገለጫ ውስጥ ይህን መቀየር ይችላሉ።",
+    "slug_permanent_hint": "ቋሚ ነው — ከተመዘገቡ በኋላ መቀየር አይቻልም።"
   },
   "verify_email": {
     "title": "ኢሜይልዎን ያረጋግጡ",
@@ -2003,6 +2010,10 @@
       "release_notes": {
         "title": "የስሪት ማስታወሻዎች",
         "summary": "በSMART ላይ ምን አዲስ ነገር እንደተጨመረ።"
+      },
+      "getting_started": {
+        "title": "መጀመር",
+        "summary": "ከመመዝገብዎ በፊት፦ ምን ማዘጋጀት እንዳለብዎ፣ መለያ እንዴት እንደሚያገኙ፣ የስርዓት ሚናዎች እና የእቅድ ደረጃዎች።"
       }
     }
   },
@@ -2017,13 +2028,15 @@
       "get_started_anchor": "ይጀምሩ",
       "credentials": "መታወቂያ",
       "sign_in": "ይግቡ",
-      "get_started_cta": "ይጀምሩ"
+      "get_started_cta": "ይጀምሩ",
+      "getting_started": "መጀመር"
     },
     "hero": {
       "subtitle": "ቅጽበታዊ የክምችት መዝገብ · FEFO ልውውጥ · ከመስመር ውጭ ባርኮድ ስካን · የ3-ደረጃ ጥበቃ — ለኢትዮጲያ አምራቾችና አከፋፋዮች የተሰራ።",
       "badge_suffix": "ከመስመር ውጭ ዝግጁ · ባለብዙ ተከራይ",
       "cta_primary": "የዕቅድ ይምረጡ",
-      "cta_explore": "ባህሪዎችን ይመልከቱ"
+      "cta_explore": "ባህሪዎችን ይመልከቱ",
+      "cta_getting_started": "መጀመር"
     },
     "stats": {
       "actions_label": "የፈቃድ ድርጊቶች",
@@ -2092,5 +2105,10 @@
     "banner_grace": "ውልዎ በ{date} አልቋል። የስራ ቦታው በ{read_only_since} ለንባብ ብቻ ይሆናል።",
     "banner_read_only": "ለንባብ ብቻ፦ ውሉ በ{date} አልቋል። መመልከት እና ማውጣት ይችላሉ፤ ለውጦች ተሰናክለዋል።",
     "request_renewal_link": "የማደስ ጥያቄ አቅርብ"
+  },
+  "getting_started": {
+    "title": "መጀመር",
+    "print_btn": "የሚታተም ዝርዝር",
+    "cta_create_account": "መለያ ይፍጠሩ"
   }
 }

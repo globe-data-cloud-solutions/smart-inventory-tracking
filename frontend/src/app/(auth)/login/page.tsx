@@ -276,6 +276,10 @@ export default function LoginPage() {
           </div>
 
           <p className="text-center text-slate-400 text-xs mt-6">
+            <Link href="/getting-started" className="underline hover:text-slate-300">
+              {t("login.getting_started_link")}
+            </Link>
+            {" · "}
             <Link href="/terms" target="_blank" rel="noopener noreferrer" className="underline hover:text-slate-300">
               {t("legal.terms_title")}
             </Link>

@@ -1440,7 +1440,8 @@
     "personnel_hint": "To add tenant accounts, sign in as SA and use Settings → Personnel.",
     "footer_tagline": "SMART Inventory Tracker · RBAC + ABAC · 3 languages",
     "auth_unavailable": "Sign-in is temporarily unavailable. Please try again later.",
-    "forgot_link": "Forgot password?"
+    "forgot_link": "Forgot password?",
+    "getting_started_link": "Getting started"
   },
   "change_password": {
     "contact_admin": "Jecha darbee haaromfame. Bulchaan kee ramadee booda sistamitti seenuu dandeessa.",
@@ -1887,7 +1888,13 @@
       "RATE_LIMITED": "Too many attempts. Please try again later.",
       "INVALID_ORGANISATION_TYPE": "Choose a valid organisation type.",
       "NETWORK": "Could not reach the server. Please try again."
-    }
+    },
+    "getting_started_note": "New to SMART? Read Getting started first.",
+    "billing_period_hint": "Switching between monthly and annual isn't available yet — contact SMART.",
+    "package_hint": "Package changes are handled by SMART.",
+    "org_type_hint": "Sets your approval thresholds. Only SMART can change it later.",
+    "language_hint": "You can change this later in Settings → Tenant Admin → Profile.",
+    "slug_permanent_hint": "Permanent — can't be changed after sign-up."
   },
   "verify_email": {
     "title": "Verify your email",
@@ -1993,6 +2000,10 @@
       "release_notes": {
         "title": "Release Notes",
         "summary": "What's new in SMART."
+      },
+      "getting_started": {
+        "title": "Getting Started",
+        "summary": "Before you sign up: what to prepare, how to get an account, system roles, and plan tiers."
       }
     }
   },
@@ -2007,13 +2018,15 @@
       "get_started_anchor": "Get started",
       "credentials": "Credentials",
       "sign_in": "Sign in",
-      "get_started_cta": "Get started"
+      "get_started_cta": "Get started",
+      "getting_started": "Getting started"
     },
     "hero": {
       "subtitle": "Real-time stock ledger · FEFO dispatch · Offline barcode scanning · 3-layer security — built for Ethiopian producers and distributors.",
       "badge_suffix": "Offline-ready · Multi-tenant",
       "cta_primary": "Choose a plan",
-      "cta_explore": "Explore features"
+      "cta_explore": "Explore features",
+      "cta_getting_started": "Getting started"
     },
     "stats": {
       "actions_label": "Permission Actions",
@@ -2082,5 +2095,10 @@
     "banner_grace": "Your contract ended on {date}. The workspace becomes read-only on {read_only_since}.",
     "banner_read_only": "Read-only: the contract ended on {date}. You can view and export; changes are disabled.",
     "request_renewal_link": "Request renewal"
+  },
+  "getting_started": {
+    "title": "Getting Started",
+    "print_btn": "Printable checklist",
+    "cta_create_account": "Create an account"
   }
 }
