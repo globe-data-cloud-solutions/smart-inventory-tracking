@@ -164,7 +164,9 @@
     "transaction": "ግብይት",
     "all": "ሁሉም",
     "rate_limited": "በጣም ብዙ ሙከራዎች። እባክዎ ቆይተው ይሞክሩ።",
-    "too_many_requests": "በጣም ብዙ ጥያቄዎች። እባክዎ ትንሽ ቆይተው እንደገና ይሞክሩ።"
+    "too_many_requests": "በጣም ብዙ ጥያቄዎች። እባክዎ ትንሽ ቆይተው እንደገና ይሞክሩ።",
+    "coming_soon_badge": "በቅርቡ ይመጣል",
+    "coming_soon_hint": "ይህ ባህሪ እስካሁን አይገኝም።"
   },
   "not_found": {
     "heading": "ገጽ አልተገኘም",

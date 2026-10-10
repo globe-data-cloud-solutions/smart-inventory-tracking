@@ -12,6 +12,8 @@ import { t } from "@/lib/i18n";
 import type { DemoProduct, DemoWarehouse } from "@/lib/demo-data";
 import type { ImportBatch } from "@/app/api/v1/imports/_demo-state";
 
+const isGatewayMode = !!process.env.NEXT_PUBLIC_API_URL;
+
 interface Props { products: DemoProduct[]; warehouses: DemoWarehouse[]; orgSlug: string; }
 
 type ValidationSeverity = "ERROR" | "WARNING";
@@ -84,7 +86,12 @@ export function BulkImportPanel({ products, warehouses, orgSlug }: Props) {
   // Bulk-imports opening quantities for EXISTING skus (looked up by sku_code)
   // — it never creates a new product, so read-only gating only, no "skus" cap.
   const writeGuard = useWriteGuard();
-  const gp = guardProps(writeGuard);
+  // POST /api/v1/imports/opening-balance has no backend route yet (demo-only
+  // BFF handler) — disabled with a "coming soon" tooltip in gateway mode,
+  // regardless of contract stage (CLAUDE.md §29 P6). Demo mode unaffected.
+  const gp = isGatewayMode
+    ? { disabled: true, title: t("common.coming_soon_hint") }
+    : guardProps(writeGuard);
 
   function reset() { setCsvText(""); setParsedRows(null); setError(""); setSuccess(""); setImportRef(""); }
 
@@ -131,6 +138,11 @@ export function BulkImportPanel({ products, warehouses, orgSlug }: Props) {
     <>
       <button onClick={() => { reset(); setOpen(true); }} {...gp} className="px-4 py-2 bg-violet-600 text-white font-bold text-sm rounded border-0 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed">
         ↑ {t("bulk_import.title")}
+        {isGatewayMode && (
+          <span className="ml-1.5 text-[9px] font-bold uppercase tracking-wide bg-white/20 px-1 py-0.5 rounded">
+            {t("common.coming_soon_badge")}
+          </span>
+        )}
       </button>
 
       {open && <div onClick={() => setOpen(false)} className="fixed inset-0 bg-black/35 z-[100] backdrop-blur-sm" />}

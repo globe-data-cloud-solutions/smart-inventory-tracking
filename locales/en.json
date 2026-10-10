@@ -176,7 +176,9 @@
     "success": "Saved successfully",
     "transaction": "transaction",
     "rate_limited": "Too many attempts. Please try again later.",
-    "too_many_requests": "Too many requests. Please wait a moment and try again."
+    "too_many_requests": "Too many requests. Please wait a moment and try again.",
+    "coming_soon_badge": "Coming soon",
+    "coming_soon_hint": "This feature is not available yet."
   },
   "product": {
     "add": {

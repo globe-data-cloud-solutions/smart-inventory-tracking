@@ -9,6 +9,8 @@ import { useWriteGuard, guardProps } from "@/hooks/useWriteGuard";
 import { t } from "@/lib/i18n";
 import { useTenantName } from "@/hooks/useTenantName";
 
+const isGatewayMode = !!process.env.NEXT_PUBLIC_API_URL;
+
 function ScannerToggle({ products, warehouseId, open, hint, onToggle, onHint, onCount }: {
   products: DemoProduct[];
   warehouseId: string;
@@ -86,7 +88,15 @@ export default function StockCountPage() {
   const [scannerOpen, setScannerOpen]     = useState(false);
   const [scanHint, setScanHint]           = useState("");
   const guard = useWriteGuard();
+  // Start Session has a real backend route (POST /api/v1/inventory/counts/)
+  // — read-only guard only, never "coming soon" (CLAUDE.md §29 P6).
   const gp = guardProps(guard);
+  // Submit Session has no backend route at all yet (local state only) —
+  // disabled with a "coming soon" tooltip in gateway mode, regardless of
+  // contract stage.
+  const submitGp = isGatewayMode
+    ? { disabled: true, title: t("common.coming_soon_hint") }
+    : guardProps(guard);
 
   if (org === SA_ORG_SLUG) return <p className="p-8 text-gray-500">{t("sa.select_tenant")}</p>;
   const tenant = DEMO_TENANTS.find((ten) => ten.slug === org);
@@ -162,9 +172,9 @@ export default function StockCountPage() {
 
   return (
     <div className="p-8">
-      {gp.title && (
+      {submitGp.title && (
         <div className="mb-4 bg-red-50 border border-red-200 rounded px-4 py-2.5 text-sm text-red-600">
-          {gp.title}
+          {submitGp.title}
         </div>
       )}
       <div className="mb-6 flex items-start justify-between flex-wrap gap-3">
@@ -184,11 +194,16 @@ export default function StockCountPage() {
             {t("common.cancel")}
           </button>
           <button
-            onClick={() => { if (!gp.disabled) setSubmitted(true); }}
-            disabled={filledCount === 0 || gp.disabled}
-            title={gp.title}
-            className={`px-4 py-2 font-bold text-sm rounded border-0 ${(filledCount > 0 && !gp.disabled) ? "bg-emerald-600 text-white cursor-pointer" : "bg-gray-200 text-gray-400 cursor-not-allowed"}`}>
+            onClick={() => { if (!submitGp.disabled) setSubmitted(true); }}
+            disabled={filledCount === 0 || submitGp.disabled}
+            title={submitGp.title}
+            className={`px-4 py-2 font-bold text-sm rounded border-0 ${(filledCount > 0 && !submitGp.disabled) ? "bg-emerald-600 text-white cursor-pointer" : "bg-gray-200 text-gray-400 cursor-not-allowed"}`}>
             {t("count.submit_session")} ({filledCount})
+            {isGatewayMode && (
+              <span className="ml-1.5 text-[9px] font-bold uppercase tracking-wide bg-gray-300 text-gray-600 px-1 py-0.5 rounded">
+                {t("common.coming_soon_badge")}
+              </span>
+            )}
           </button>
         </div>
       </div>

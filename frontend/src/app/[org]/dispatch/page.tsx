@@ -11,6 +11,8 @@ import { api } from "@/lib/api";
 import { t } from "@/lib/i18n";
 import { useTenantName } from "@/hooks/useTenantName";
 
+const isGatewayMode = !!process.env.NEXT_PUBLIC_API_URL;
+
 type Strategy = "FEFO" | "FIFO" | "LIFO";
 
 interface DispatchConfig {
@@ -91,7 +93,12 @@ export default function DispatchPage() {
   const [saving, setSaving] = useState<string | null>(null);
   const [toast, setToast]   = useState("");
   const guard = useWriteGuard();
-  const gp = guardProps(guard);
+  // POST /api/v1/dispatch-config has no backend route yet (demo-only BFF
+  // handler) — the strategy-set buttons are disabled with a "coming soon"
+  // tooltip in gateway mode, regardless of contract stage (CLAUDE.md §29 P6).
+  const gp = isGatewayMode
+    ? { disabled: true, title: t("common.coming_soon_hint") }
+    : guardProps(guard);
 
   const { data: configs = [] } = useQuery<DispatchConfig[]>({
     queryKey: ["dispatch-config", org],
@@ -178,7 +185,14 @@ export default function DispatchPage() {
               {["table.sku", "table.product", "dispatch.batch_tracking", "dispatch.current_strategy",
                 ...(canConfigure ? ["dispatch.set_strategy"] : []),
                 ...(canOverride  ? ["dispatch.override_col"] : [])].map((key) => (
-                <th key={key} className="px-3.5 py-2.5 text-left text-[11px] font-bold text-gray-500 uppercase tracking-wide">{t(key)}</th>
+                <th key={key} className="px-3.5 py-2.5 text-left text-[11px] font-bold text-gray-500 uppercase tracking-wide">
+                  {t(key)}
+                  {key === "dispatch.set_strategy" && isGatewayMode && (
+                    <span className="ml-1.5 text-[9px] font-bold uppercase tracking-wide bg-gray-200 text-gray-500 px-1 py-0.5 rounded">
+                      {t("common.coming_soon_badge")}
+                    </span>
+                  )}
+                </th>
               ))}
             </tr>
           </thead>
