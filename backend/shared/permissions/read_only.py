@@ -51,6 +51,11 @@ ALLOWED_WRITE_ACTIONS: frozenset[str] = frozenset({
     "notification:dismiss",
     "tenant:profile_edit",
     "tenant:renewal_request",
+    # Security actions stay available in READ_ONLY — a staff member must
+    # still be able to get back in to view/export, and a leaver's access
+    # must still be revocable, even while the tenant itself is read-only.
+    "user:reset_password",
+    "user:deactivate",
 })
 
 

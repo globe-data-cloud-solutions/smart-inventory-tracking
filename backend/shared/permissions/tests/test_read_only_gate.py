@@ -144,6 +144,57 @@ async def test_notification_dismiss_allowed_when_read_only(mock_check) -> None:
 
 
 @patch("shared.permissions.middleware.check_permission", new_callable=AsyncMock)
+async def test_reset_password_allowed_when_read_only(mock_check) -> None:
+    """Security actions stay available in READ_ONLY (CLAUDE.md §29 P6) — a
+    staff member must still be able to get back in."""
+    mock_check.return_value = _allowed_result()
+    db = AsyncMock()
+    with patch(
+        "shared.billing.contract_stage.get_tenant_contract_stage",
+        new_callable=AsyncMock,
+    ) as mock_stage:
+        mock_stage.return_value = {
+            "stage": "READ_ONLY", "contract_end": None, "read_only_since": None,
+        }
+        result = await _call_decorated(PERMISSIONS.USER_RESET_PASSWORD, user=_user(), db=db)
+    assert result == "ok"
+
+
+@patch("shared.permissions.middleware.check_permission", new_callable=AsyncMock)
+async def test_deactivate_user_allowed_when_read_only(mock_check) -> None:
+    """A leaver's access must still be revocable while the tenant is read-only."""
+    mock_check.return_value = _allowed_result()
+    db = AsyncMock()
+    with patch(
+        "shared.billing.contract_stage.get_tenant_contract_stage",
+        new_callable=AsyncMock,
+    ) as mock_stage:
+        mock_stage.return_value = {
+            "stage": "READ_ONLY", "contract_end": None, "read_only_since": None,
+        }
+        result = await _call_decorated(PERMISSIONS.USER_DEACTIVATE, user=_user(), db=db)
+    assert result == "ok"
+
+
+@patch("shared.permissions.middleware.check_permission", new_callable=AsyncMock)
+async def test_create_user_still_blocked_when_read_only(mock_check) -> None:
+    """user:create is NOT a security action — it must stay blocked (fail-closed)."""
+    mock_check.return_value = _allowed_result()
+    db = AsyncMock()
+    with patch(
+        "shared.billing.contract_stage.get_tenant_contract_stage",
+        new_callable=AsyncMock,
+    ) as mock_stage:
+        mock_stage.return_value = {
+            "stage": "READ_ONLY", "contract_end": None, "read_only_since": None,
+        }
+        with pytest.raises(HTTPException) as exc_info:
+            await _call_decorated(PERMISSIONS.USER_CREATE, user=_user(), db=db)
+    assert exc_info.value.status_code == 402
+    assert exc_info.value.detail["code"] == "CONTRACT_EXPIRED_READ_ONLY"
+
+
+@patch("shared.permissions.middleware.check_permission", new_callable=AsyncMock)
 async def test_sa_bypasses_gate_entirely(mock_check) -> None:
     mock_check.return_value = _allowed_result()
     db = AsyncMock()
