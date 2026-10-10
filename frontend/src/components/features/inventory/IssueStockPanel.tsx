@@ -11,6 +11,7 @@ import { useAuditStore } from "@/lib/audit-log-state";
 import { getSession } from "@/lib/demo-auth";
 import { t } from "@/lib/i18n";
 import { useWarehouses } from "@/hooks/useWarehouses";
+import { useWriteGuard, guardProps } from "@/hooks/useWriteGuard";
 import type { DemoProduct } from "@/lib/demo-data";
 
 interface Props { products: DemoProduct[]; orgSlug: string; }
@@ -71,6 +72,8 @@ export function IssueStockPanel({ products, orgSlug }: Props) {
   const [error, setError]           = useState("");
   const [success, setSuccess]       = useState("");
   const [loading, setLoading]       = useState(false);
+  const writeGuard = useWriteGuard();
+  const gp = guardProps(writeGuard);
 
   const destMeta = reasonCode ? DESTINATION_META[reasonCode] : null;
 
@@ -83,6 +86,7 @@ export function IssueStockPanel({ products, orgSlug }: Props) {
 
   const onSubmit = async (e: React.FormEvent) => {
     e.preventDefault(); setError("");
+    if (gp.disabled) return;
     if (!productId)   { setError(t("receive_panel.error_product"));   return; }
     if (!warehouseId) { setError(t("receive_panel.error_warehouse")); return; }
     if (!reasonCode)  { setError(t("issue.error_reason")); return; }
@@ -111,7 +115,7 @@ export function IssueStockPanel({ products, orgSlug }: Props) {
 
   return (
     <>
-      <button onClick={() => { reset(); setOpen(true); }} className="px-4 py-2 bg-violet-600 text-white font-bold text-sm rounded border-0 cursor-pointer">
+      <button onClick={() => { reset(); setOpen(true); }} {...gp} className="px-4 py-2 bg-violet-600 text-white font-bold text-sm rounded border-0 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed">
         {t("issue.title")}
       </button>
 
@@ -127,6 +131,11 @@ export function IssueStockPanel({ products, orgSlug }: Props) {
         </div>
 
         <form onSubmit={onSubmit} className="flex-1 overflow-y-auto p-6">
+          {gp.disabled && gp.title && (
+            <div role="alert" className="bg-amber-50 border border-amber-200 rounded px-3.5 py-2.5 text-sm text-amber-800 mb-4">
+              {gp.title}
+            </div>
+          )}
           <Field label={t("table.product")}>
             <select value={productId} onChange={(e) => setProductId(e.target.value)} className={selectCls} required>
               <option value="">— {t("receive_panel.select_product")} —</option>
@@ -173,7 +182,7 @@ export function IssueStockPanel({ products, orgSlug }: Props) {
 
         <div className="px-6 py-4 border-t border-gray-200 flex gap-2.5">
           <button type="button" onClick={() => setOpen(false)} className="flex-1 py-2.5 bg-gray-100 border border-gray-200 rounded text-sm font-semibold text-gray-700 cursor-pointer">{t("common.cancel")}</button>
-          <button onClick={onSubmit as unknown as React.MouseEventHandler} disabled={loading} className={`flex-[2] py-2.5 bg-violet-600 text-white font-bold text-sm rounded border-0 ${loading ? "opacity-70 cursor-not-allowed" : "cursor-pointer"}`}>
+          <button onClick={onSubmit as unknown as React.MouseEventHandler} disabled={loading || gp.disabled} title={gp.title} className={`flex-[2] py-2.5 bg-violet-600 text-white font-bold text-sm rounded border-0 ${loading || gp.disabled ? "opacity-70 cursor-not-allowed" : "cursor-pointer"}`}>
             {loading ? t("common.loading") : t("issue.submit")}
           </button>
         </div>

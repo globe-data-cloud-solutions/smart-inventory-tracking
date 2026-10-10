@@ -7,6 +7,7 @@ import { api } from "@/lib/api";
 import { getToken } from "@/lib/auth";
 import { getSession } from "@/lib/demo-auth";
 import { useTenantPositions } from "@/hooks/useTenantPositions";
+import { useWriteGuard, guardProps } from "@/hooks/useWriteGuard";
 import { t } from "@/lib/i18n";
 
 // ── small presentational helpers ─────────────────────────────────────────────
@@ -221,6 +222,12 @@ export function AddProductPanel({ apiBase, onClose, mode = "create", productId, 
   // 422s on a slug, leaving `positions` permanently empty (matches the
   // working pattern in adjustments/page.tsx).
   const { positions } = useTenantPositions(session?.tenantId ?? "");
+  // Create counts against the SKU cap; editing an existing product never does.
+  const writeGuard = useWriteGuard();
+  const gp = guardProps(writeGuard, isEdit ? undefined : "skus");
+  // Image upload is its own write (POST /upload/product-image) but never
+  // counts against the SKU cap — read-only gating only.
+  const uploadGp = guardProps(writeGuard);
 
   // Tenant's custom transfer type display names (e.g. "Request Stock" for
   // PULL) — same query as NewTransferPanel.tsx and Org Setup Tabs 4/5.
@@ -619,7 +626,8 @@ export function AddProductPanel({ apiBase, onClose, mode = "create", productId, 
       {!isEdit && (
         <button
           onClick={openPanel}
-          className="px-4 py-2 bg-eth-gold text-[#0f2d1f] font-bold text-sm rounded border-0 cursor-pointer"
+          {...gp}
+          className="px-4 py-2 bg-eth-gold text-[#0f2d1f] font-bold text-sm rounded border-0 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
         >
           {t("product.add.button")}
         </button>
@@ -700,6 +708,11 @@ export function AddProductPanel({ apiBase, onClose, mode = "create", productId, 
 
         {/* Form body */}
         <div className="flex-1 min-h-0 overflow-y-auto p-5 flex flex-col gap-4">
+          {gp.disabled && gp.title && (
+            <div role="alert" className="bg-amber-50 border border-amber-200 rounded px-3.5 py-2.5 text-sm text-amber-800">
+              {gp.title}
+            </div>
+          )}
           {panelError && (
             <div role="alert" className="bg-red-50 border border-red-200 rounded px-3.5 py-2.5 text-sm text-red-600">
               {panelError}
@@ -718,15 +731,15 @@ export function AddProductPanel({ apiBase, onClose, mode = "create", productId, 
                 </div>
               )}
               <div className="flex flex-col gap-1">
-                <label className="cursor-pointer">
-                  <span className="px-3 py-1.5 text-xs font-semibold bg-gray-100 border border-gray-300 rounded cursor-pointer hover:bg-gray-200">
+                <label className="cursor-pointer" title={uploadGp.title}>
+                  <span className={`px-3 py-1.5 text-xs font-semibold bg-gray-100 border border-gray-300 rounded cursor-pointer hover:bg-gray-200 ${uploadGp.disabled ? "opacity-50 cursor-not-allowed" : ""}`}>
                     {imageUploading ? (t("product.image_uploading") || "Uploading...") : (t("product.upload_image") || "Upload Image")}
                   </span>
                   <input
                     type="file"
                     accept="image/jpeg,image/png,image/webp"
                     className="hidden"
-                    disabled={imageUploading}
+                    disabled={imageUploading || uploadGp.disabled}
                     onChange={async (e) => {
                       const file = e.target.files?.[0];
                       if (!file) return;
@@ -1093,8 +1106,9 @@ export function AddProductPanel({ apiBase, onClose, mode = "create", productId, 
           <button
             type="button"
             onClick={handleSave}
-            disabled={saveDisabled}
-            className={`px-4 py-2 rounded border-0 text-sm font-bold flex items-center gap-2 ${saveDisabled ? "bg-gray-300 text-gray-400 cursor-not-allowed" : "bg-[#0f2d1f] text-eth-gold cursor-pointer"}`}
+            disabled={saveDisabled || gp.disabled}
+            title={gp.title}
+            className={`px-4 py-2 rounded border-0 text-sm font-bold flex items-center gap-2 ${saveDisabled || gp.disabled ? "bg-gray-300 text-gray-400 cursor-not-allowed" : "bg-[#0f2d1f] text-eth-gold cursor-pointer"}`}
           >
             {submitting && (
               <span className="w-3.5 h-3.5 rounded-full border-2 border-eth-gold/30 border-t-eth-gold animate-spin inline-block" />

@@ -14,6 +14,7 @@ import { api } from "@/lib/api";
 import { t } from "@/lib/i18n";
 import { useTenantName } from "@/hooks/useTenantName";
 import { formatQty } from "@/lib/utils";
+import { useWriteGuard, guardProps } from "@/hooks/useWriteGuard";
 
 type ApiProduct = {
   id: string; sku: string; name: string; unit: string; pack_size: number;
@@ -37,6 +38,8 @@ export default function ProductsPage() {
   const canAdd    = usePermission("product:create");
   const canEditProducts = usePermission("product:update");
   const [editingProduct, setEditingProduct] = useState<Row | null>(null);
+  const writeGuard = useWriteGuard();
+  const writeGp = guardProps(writeGuard);
   // Subscribe to issues, receives, and transfers so the total re-renders on any mutation.
   // getOnHand is a stable function reference — subscribing to the maps is what drives reactivity.
   const issues    = useInventoryStore((s) => s.issues);
@@ -252,7 +255,8 @@ export default function ProductsPage() {
                       canEditProduct(p) ? (
                         <button
                           onClick={() => setEditingProduct(p)}
-                          className="text-xs cursor-pointer border-0 bg-transparent underline text-gray-600"
+                          {...writeGp}
+                          className="text-xs cursor-pointer border-0 bg-transparent underline text-gray-600 disabled:opacity-40 disabled:cursor-not-allowed"
                         >
                           {t("product.edit")}
                         </button>
@@ -269,7 +273,8 @@ export default function ProductsPage() {
                       canDiscontinueProduct(p) ? (
                         <button
                           onClick={() => void handleDiscontinue(p.id, p.is_discontinued ?? false)}
-                          className={`ml-2 text-xs cursor-pointer border-0 bg-transparent underline ${p.is_discontinued ? "text-emerald-600" : "text-red-500"}`}
+                          {...writeGp}
+                          className={`ml-2 text-xs cursor-pointer border-0 bg-transparent underline disabled:opacity-40 disabled:cursor-not-allowed ${p.is_discontinued ? "text-emerald-600" : "text-red-500"}`}
                         >
                           {p.is_discontinued ? t("product.reactivate") : t("product.discontinue")}
                         </button>

@@ -37,3 +37,22 @@ export function useWriteGuard(): WriteGuard {
 
   return { readOnly, atLimit, reason };
 }
+
+export interface GuardProps {
+  disabled: boolean;
+  title?: string;
+  "aria-disabled"?: true;
+}
+
+/**
+ * Spreadable props for a single write control: `<button {...guardProps(guard)}>`.
+ * disabled mirrors the existing disabled styling already on these controls —
+ * this never introduces new CSS, only decides when disabled applies. A
+ * disabled control must never open its panel/modal; a panel already open
+ * must show guard.reason() at the top and disable its own submit the same way.
+ */
+export function guardProps(guard: WriteGuard, resource?: PlanResource): GuardProps {
+  const reason = guard.reason(resource);
+  if (!reason) return { disabled: false };
+  return { disabled: true, title: reason, "aria-disabled": true };
+}
