@@ -1467,7 +1467,7 @@ async def get_my_terms_acceptance(
 
 
 @router.post("/me/terms-acceptance", response_model=SuccessResponse[TermsAcceptanceOut])
-@require_permission(PERMISSIONS.TENANT_CONFIGURE)
+@require_permission(PERMISSIONS.TENANT_CONFIGURE, read_only_exempt=True)
 async def accept_current_terms(
     request: Request,
     user=Depends(get_current_user),
@@ -1888,7 +1888,7 @@ async def _update_tenant_contact(
 
 
 @router.post("/me/contacts", status_code=201, response_model=SuccessResponse[TenantContactOut])
-@require_permission(PERMISSIONS.TENANT_CONFIGURE)
+@require_permission(PERMISSIONS.TENANT_CONFIGURE, read_only_exempt=True)
 async def create_my_contact(
     body: TenantContactIn,
     user=Depends(get_current_user),
@@ -1901,7 +1901,7 @@ async def create_my_contact(
 
 
 @router.patch("/me/contacts/{contact_id}", response_model=SuccessResponse[TenantContactOut])
-@require_permission(PERMISSIONS.TENANT_CONFIGURE)
+@require_permission(PERMISSIONS.TENANT_CONFIGURE, read_only_exempt=True)
 async def update_my_contact(
     contact_id: uuid.UUID,
     body: TenantContactIn,
@@ -1915,7 +1915,7 @@ async def update_my_contact(
 
 
 @router.delete("/me/contacts/{contact_id}", status_code=204)
-@require_permission(PERMISSIONS.TENANT_CONFIGURE)
+@require_permission(PERMISSIONS.TENANT_CONFIGURE, read_only_exempt=True)
 async def delete_my_contact(
     contact_id: uuid.UUID,
     user=Depends(get_current_user),
@@ -1938,7 +1938,7 @@ async def delete_my_contact(
 
 
 @router.get("/{tenant_id}/plan", response_model=SuccessResponse[dict])
-@require_permission(PERMISSIONS.TENANT_MANAGE)
+@require_permission(PERMISSIONS.TENANT_MANAGE, read_only_exempt=True)
 async def get_tenant_plan(
     tenant_id: uuid.UUID,
     user=Depends(get_current_user),
@@ -1951,7 +1951,7 @@ async def get_tenant_plan(
 
 
 @router.get("/{tenant_id}/terms-acceptance", response_model=SuccessResponse[TermsAcceptanceOut])
-@require_permission(PERMISSIONS.TENANT_MANAGE)
+@require_permission(PERMISSIONS.TENANT_MANAGE, read_only_exempt=True)
 async def get_tenant_terms_acceptance(
     tenant_id: uuid.UUID,
     user=Depends(get_current_user),
@@ -1964,7 +1964,7 @@ async def get_tenant_terms_acceptance(
 
 
 @router.get("/{tenant_id}/proration-preview", response_model=SuccessResponse[dict])
-@require_permission(PERMISSIONS.TENANT_MANAGE)
+@require_permission(PERMISSIONS.TENANT_MANAGE, read_only_exempt=True)
 async def get_tenant_proration_preview(
     tenant_id: uuid.UUID,
     tier: Optional[str] = None,
@@ -2700,7 +2700,7 @@ async def save_tenant_contacts_bulk(
 
 
 @router.get("/{tenant_id}/contacts", response_model=SuccessResponse[List[TenantContactOut]])
-@require_permission(PERMISSIONS.TENANT_CONFIGURE)
+@require_permission(PERMISSIONS.TENANT_CONFIGURE, read_only_exempt=True)
 async def list_tenant_contacts(
     tenant_id: uuid.UUID,
     user=Depends(get_current_user),
@@ -2993,7 +2993,7 @@ class TaUserUpdateRequest(BaseModel):
 
 
 @router.get("/{tenant_id}/admin-user", response_model=SuccessResponse[TaUserOut])
-@require_permission(PERMISSIONS.TENANT_MANAGE)
+@require_permission(PERMISSIONS.TENANT_MANAGE, read_only_exempt=True)
 async def get_tenant_admin_user(
     tenant_id: uuid.UUID,
     user=Depends(get_current_user),
