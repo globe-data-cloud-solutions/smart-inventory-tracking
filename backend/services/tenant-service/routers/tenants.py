@@ -25,6 +25,7 @@ from shared.billing.subscriptions import get_current_addon_price, get_current_pr
 from shared.billing.proration import preview_addon, preview_upgrade
 from shared.billing.plan_change import cancel_scheduled_downgrade, change_plan
 from shared.plans.catalog import KNOWN_FEATURE_FLAGS, UNSET, apply_package_to_tenant, get_tenant_entitlements
+from shared.plans.usage import get_plan_usage
 from shared.utils.responses import SuccessResponse
 from shared.utils.terms import get_terms_version
 from schemas.tenant import TenantCreateRequest, TenantResponse, VALID_PLAN_TIERS, VALID_LOCALES
@@ -1640,6 +1641,23 @@ async def get_my_plan(
     if not user or not user.tenant_id:
         raise HTTPException(status_code=403, detail="No tenant context")
     return SuccessResponse(data=await _get_tenant_plan_data(db, user.tenant_id))
+
+
+@router.get("/me/plan-usage", response_model=SuccessResponse[dict])
+@require_permission(PERMISSIONS.PLAN_VIEW_USAGE)
+async def get_my_plan_usage(
+    user=Depends(get_current_user),
+    db: AsyncSession = Depends(get_db_session),
+) -> SuccessResponse[dict]:
+    """Return the current tenant's plan_tier plus used/limit for skus, users,
+    warehouses — shared/plans/usage.py's get_plan_usage(), the same counts
+    that gate create_product / check_plan_create_user / check_plan_create_warehouse."""
+    if not user or not user.tenant_id:
+        raise HTTPException(status_code=403, detail="No tenant context")
+    usage = await get_plan_usage(db, str(user.tenant_id))
+    if not usage:
+        raise HTTPException(status_code=404, detail="Tenant not found")
+    return SuccessResponse(data=usage)
 
 
 class TermsAcceptanceOut(BaseModel):

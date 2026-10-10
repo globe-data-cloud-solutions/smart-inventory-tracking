@@ -73,6 +73,7 @@ ROLE_PERMISSION_MATRIX: dict[str, dict[str, str]] = {
         "notification:view": "FULL", "search:products": "FULL", "search:inventory": "FULL",
         "locale:view": "FULL", "position:view": "FULL",
         "tenant:view_contract_status": "FULL",
+        "plan:view_usage": "FULL",
     },
     "RM": {
         "product:list": "FULL", "product:view": "FULL",
