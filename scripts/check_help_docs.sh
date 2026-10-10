@@ -16,6 +16,8 @@ cd "$ROOT"
 PAIRS=(
   "docs/TA_ONBOARDING_GUIDE.md:frontend/public/help/ta-onboarding-guide.md"
   "docs/GETTING_STARTED.md:frontend/public/help/getting-started.md"
+  "docs/legal/GDC_SMART_Terms_of_Service_DRAFT_v0.2.md:frontend/public/legal/terms-2026-10.md"
+  "docs/legal/GDC_SMART_Privacy_Statement_DRAFT_v0.2.md:frontend/public/legal/privacy-2026-10.md"
 )
 
 echo "=== SMART Help Docs Check ==="
