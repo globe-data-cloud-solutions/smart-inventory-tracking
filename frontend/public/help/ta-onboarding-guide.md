@@ -143,8 +143,10 @@ amount including VAT — with one of these statuses:
 | **Past due** | A renewal is overdue. Contact SMART to settle it. |
 | **Cancelled** | The subscription has ended. |
 
-> **Current version:** SMART does not restrict or suspend a workspace for unpaid invoices.
-> This may change once online payment is introduced; you will be told in advance.
+> **Current version:** an unpaid invoice by itself does not restrict or suspend your
+> workspace. What does restrict it is your **contract end date** passing without renewal
+> — see [Contract dates](#contract-dates) and
+> [What happens when our contract ends?](#common-questions) below.
 
 ### Invoices and how to pay
 
@@ -163,6 +165,23 @@ When SMART confirms your payment, the invoice shows **Paid**, your subscription 
 Your contract runs from your sign-up (or onboarding) date for one billing period, and is
 extended each time a payment is confirmed. The Contract tab is **read-only**; contract dates
 are managed by SMART. Contact SMART to change them.
+
+Your workspace moves through four stages as your contract end date approaches and passes:
+
+| Stage | When | What you can do |
+|-------|------|------------------|
+| **Active** | More than 14 days before your contract end date | Everything, as normal |
+| **Expiring** | 14 days or less before your contract end date | Everything, as normal — with a warning banner |
+| **Grace** | Up to 14 days after your contract end date | Everything, as normal — with a banner |
+| **Read-only** | More than 14 days after your contract end date | View and export only — see below |
+
+**Read-only** blocks every new transaction, approval, edit or upload. You can still: log in,
+view and export your data, change your own password, accept Terms updates, manage your
+contacts, reset a staff member's password, and deactivate a staff account. Everything else
+is blocked until SMART records your renewal — see
+[How do I request renewal?](#common-questions) below. Your account being read-only is
+separate from **suspension**, which only happens if SMART deliberately suspends your
+workspace (see your SMART contact) — a lapsed contract alone does not suspend you.
 
 ---
 
@@ -467,6 +486,12 @@ Go to **Approval Policies** in the navigation to see:
   step. Only PULL transfers go through the PENDING_REVIEW → PENDING_APPROVAL flow.
   Do not instruct staff to use the review action on PUSH transfers.
 
+- **Coming soon:** bulk CSV import (for products or opening stock), dispatch strategy
+  configuration (FEFO/FIFO/LIFO), and stock-count submission are visible in the product
+  but marked **Coming soon** — the screens are there, but there is no backend behind them
+  yet. If a button in your workspace is greyed out, hover over it: it will tell you whether
+  it is a Coming soon feature, a plan limit, or your workspace being read-only.
+
 ---
 
 ## Common Questions
@@ -524,6 +549,24 @@ The product is Controlled — it has special approval rules that override normal
 
 **Q: Can I undo a completed transfer?**
 No — the ledger is immutable for audit integrity. Create a reverse transfer or use an Adjustment with reason code `RETURN`.
+
+**Q: What happens when our contract ends?**
+Nothing happens immediately. You get a 14-day **Expiring** warning before the end date,
+then a 14-day **Grace** period after it — full access both times, just with a banner. Only
+after that, if it still has not been renewed, does your workspace go **Read-only**: you can
+still log in, view and export everything, but no new transactions, approvals, edits or
+uploads. See [Contract dates](#contract-dates) above for the full stage table.
+
+**Q: How do I request renewal?**
+From your Plan tab, at any time — including while your workspace is already Read-only
+(this is one of the few actions still available then). SMART's team sees your request and
+will follow up to arrange payment; once SMART records it, full access returns immediately.
+
+**Q: Why is a button greyed out?**
+Three possible reasons: your workspace is **Read-only** (contract lapsed — see above), you
+have hit a **plan limit** (e.g. your SKU cap), or the feature is marked **Coming soon** (not
+built yet — see [Known Limitations](#known-limitations-current-version)). Hover over the
+button — it tells you which one applies.
 
 **Q: Can I cancel a Branch Exchange after it has been approved?**
 No — once a Branch Exchange reaches Approved status it cannot be cancelled. Both warehouse managers have confirmed and stock is committed to the transfer. If the transfer cannot physically proceed, complete the receipt at the destination and use a stock Adjustment (reason: RETURN or DAMAGE) to correct the balance. Contact your administrator for assistance.
@@ -690,6 +733,9 @@ any position change.
 ---
 
 *Document Version: 1.5 | Last Updated: October 2026 | Maintained by: Development team*
+*1.5 (2026-10-10) — added contract stages (Active/Expiring/Grace/Read-only), the
+read-only access gate, how to request a renewal, and Coming soon status for bulk CSV
+import, dispatch strategy and stock-count submission.*
 *1.5 — split into two parts: Getting Started (before sign-up) is now its own document;
 this guide is Part 2, covering workspace setup from Plan Tiers onward.*
 *1.3 — pro-rated upgrades and add-ons on annual billing; package changes are made by SMART only.*
