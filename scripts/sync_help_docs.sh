@@ -20,6 +20,10 @@ cp docs/TA_ONBOARDING_GUIDE.md frontend/public/help/ta-onboarding-guide.md
 
 echo "Synced docs/TA_ONBOARDING_GUIDE.md -> frontend/public/help/ta-onboarding-guide.md"
 
+cp docs/GETTING_STARTED.md frontend/public/help/getting-started.md
+
+echo "Synced docs/GETTING_STARTED.md -> frontend/public/help/getting-started.md"
+
 # SA-internal, backend-only, never frontend/public.
 mkdir -p backend/services/tenant-service/static
 cp docs/SA_OPERATIONS_MANUAL.md backend/services/tenant-service/static/sa_operations_manual.md

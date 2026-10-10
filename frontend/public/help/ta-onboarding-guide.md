@@ -1,6 +1,11 @@
-# SMART Inventory — User Setup & Onboarding Guide
+# SMART Inventory — TA Onboarding Guide
 
-**Version:** 1.4 | **Updated:** October 2026 | **Audience:** Tenant Administrators & Organisation Managers
+**Version:** 1.5 | **Updated:** October 2026 | **Audience:** Tenant Administrators & Organisation Managers
+
+**Part 2 of 2 — Setting up your workspace.** New here? Read
+[Getting Started](GETTING_STARTED.md) (Part 1) first — before you begin, getting your
+account, verifying your email, login, system roles, setup order, and plan tiers all live
+there.
 
 > **Pre-Launch Reminder:** Replace all `[SCREENSHOT PLACEHOLDER]` notes with real screenshots before sharing with customers.
 
@@ -19,125 +24,22 @@ This guide covers two audiences:
 
 **Estimated setup time:** 45–90 minutes for initial configuration.
 
----
-
-## Before You Begin
-
-Have the following ready:
-- Your organisation chart (levels, names, locations)
-- List of all staff with their roles and locations
-- Transfer and approval policies (who approves what, at what quantities)
-- Product list (names, SKUs, units of measure, categories)
-- Organisation logo and banner image (optional, for branding)
-
-### Getting your account — two ways in
-
-**Option A — Sign up yourself (self sign-up)**
-
-1. Open the SMART Inventory sign-in page and click **Create an account**.
-2. **Choose a package** — Starter, Growth or Enterprise — and a billing period
-   (**Monthly** or **Annual**). Each card shows the limits, the included features and the
-   price, with 15% VAT and the total shown separately.
-3. **Enter your details** — company name, organisation type (Producer, Retailer or Hybrid),
-   industry (optional), language, an optional custom web address for your workspace,
-   and your own name, email and password (at least 8 characters).
-4. **Accept the Terms of Service**, review the summary and submit.
-5. You will see **"Sign in with {your email}"**. Go to the sign-in page and use the email
-   and password you just chose.
-
-The person who signs up becomes the **Tenant Administrator (TA)** and the **account owner**
-of the workspace. Your workspace is usable immediately — you do not have to wait for
-payment before starting setup (see [Your Plan, Subscription & Invoices](#-your-plan-subscription--invoices-ta-only)).
-
-**Option B — Onboarded by SMART**
-
-Your SMART administrator creates the workspace and your TA account and sends you:
-- **URL:** your SMART Inventory web address
-- **TA Email:** the email address registered for you
-- **Initial Password:** a temporary password — you will be asked to change it at first sign-in
-
-### Verifying your email
-
-After self sign-up, SMART sends a **verification link** to your email address. Open it within
-**48 hours**. If the link has expired or you did not receive it, use **Resend link** on the
-verification page or on the sign-in page.
-
-> **Current version:** email verification is being rolled out. Until it is switched on,
-> you can sign in before verifying — but verify anyway so your account is ready when it is enforced.
-
-### Login
-- Sign in with your email and password.
-- After 5 failed attempts the account is locked for 15 minutes (see Common Questions).
-
----
-
-## System Roles — Predefined by SMART
-
-SMART uses a fixed set of roles. These are defined by the platform and cannot be changed — you assign staff to these roles when creating positions and user accounts.
-
-| Role | Code | Scope | What They Do |
-|------|------|-------|-------------|
-| Super Admin | SA | Platform-wide | Platform operator only — manages all tenants. Not used within your organisation. |
-| Tenant Administrator | TA | Full tenant | Configures the entire tenant — org structure, approval rules, users, branding. You are this role. |
-| National Manager | NM | Full tenant | Senior operational role — approves high-value transfers, oversees all facilities, creates products. |
-| Regional Manager | RM | Regional scope | Mid-level role — approves transfers within their region, manages regional stock. |
-| Warehouse Manager | WM | Warehouse scope | Operational role — creates transfers, receives stock, submits adjustments at their warehouse. |
-| Logistics Manager | LM | Node-scoped (or tenant-wide if created without a position) | Read-only operational view — monitors transfers and stock movements. Scoped to their assigned node when given a position; see note below. |
-| Auditor | AU | Tenant-wide | Read-only compliance role — views all audit logs, transactions, and reports. Cannot create or modify anything. |
-
-> **Logistics Manager (LM) scope:** Logistics Managers are scoped to their assigned
-> node and all nodes beneath it. An LM given a position at the factory level sees
-> that factory's data and all regions, warehouses, and satellite depots below it.
-> An LM given a position at a warehouse sees that warehouse and any satellite depots
-> under it. An LM can also be created **without** a position (a tenant-wide account)
-> — that account has unrestricted, tenant-wide read access since it has no node to
-> scope to.
-
-### Role Hierarchy
-TA (highest tenant authority)
-
-└── NM (National/Factory level)
-
-└── RM (Regional level)
-
-└── WM (Warehouse level)
-
-LM (node-scoped when assigned a position; tenant-wide read-only otherwise)
-
-AU (cross-cutting, read-only)
-
 ### How Roles Map to Your Organisation
 
-When you create a **Position** (Step 3), you assign it one of these role codes:
+When you create a **Position** (Step 3), you assign it one of SMART's predefined role
+codes (see [Getting Started → System Roles](GETTING_STARTED.md#system-roles-summary) for
+the full list):
 
 - **L1 nodes** (top level, e.g. Main Factory) → assign **NM** positions
 - **L2 nodes** (e.g. Regional Center) → assign **RM** positions
 - **L3 nodes** (e.g. Sub Region) → assign **RM** positions
 - **L4 nodes** (e.g. Warehouse Area, stock-holding) → assign **WM** positions
 - **LM** positions can be created at **any node level** — the LM is then scoped to
-  that exact node (see note above)
+  that exact node
 - **Tenant-wide** (not tied to a node) → **AU** positions, and **LM** accounts
   created without a position
 
 > **Note:** The TA role is your administrator account only — you do not create TA positions for regular staff. NM is the highest role your operational staff will use.
-
----
-
-## Setup Order
-
-Complete these steps in order — each step depends on the previous one.
-
-| Step | What | Where |
-|------|------|-------|
-| 1 🔒 | Organisation Levels | Org Setup → Organisation Levels |
-| 2 🔒 | Organisation Tree | Org Setup → Organisation Tree |
-| 3 🔒 | Positions | Org Setup → Positions |
-| 4 🔒 | Personnel (Users) | Org Setup → Personnel |
-| 5 🔒 | Transfer Types | Org Setup → Transfer Types |
-| 6 🔒 | Approval Rules | Org Setup → Approval Rules |
-| 7 | Products & Categories | Products page |
-| 8 | Opening Stock | Inventory → Receive Stock |
-| 9 🔒 | Branding (optional) | Org Setup → Branding |
 
 ---
 
@@ -787,6 +689,8 @@ any position change.
 
 ---
 
-*Document Version: 1.3 | Last Updated: October 2026 | Maintained by: Development team*
+*Document Version: 1.5 | Last Updated: October 2026 | Maintained by: Development team*
+*1.5 — split into two parts: Getting Started (before sign-up) is now its own document;
+this guide is Part 2, covering workspace setup from Plan Tiers onward.*
 *1.3 — pro-rated upgrades and add-ons on annual billing; package changes are made by SMART only.*
 *1.2 — self sign-up, email verification, packages with prices and VAT, subscription and invoices, read-only contract.*
