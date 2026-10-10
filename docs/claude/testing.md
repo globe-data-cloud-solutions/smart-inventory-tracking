@@ -86,3 +86,45 @@ class TestIMTSAlerts:
     async def test_in_transit_overdue_alert_fires(self):          ...  # estimated_arrival_date past X days
 ```
 
+### Backend testing lessons (2026-10-10)
+
+- **Contract-stage fixture is autouse.** `backend/conftest.py`'s
+  `_default_contract_stage_active` patches `shared.billing.contract_stage.
+  get_tenant_contract_stage()` to always return `ACTIVE` for every test, so
+  `require_permission()`'s `READ_ONLY` gate never issues its own
+  `db.execute()` and shift a mocked db's `execute.side_effect` queue out
+  from under a pre-existing test. A test that specifically wants to
+  exercise `EXPIRING`/`GRACE`/`READ_ONLY` behaviour patches
+  `get_tenant_contract_stage` explicitly inside its own `with patch(...)`
+  block — that patch wins for its duration and does not need to restore
+  the autouse default afterward.
+- **tenant-service has no HTTP test client yet.** Its tests call router
+  handler functions directly (no `TestClient`/`AsyncClient`/`httpx`
+  anywhere under `backend/services/tenant-service/tests/`) — write new
+  tests the same way (handler-level, mocked `db`/`user`), not against a
+  running app instance.
+- **Run the full unfiltered suite, not `-m unit`.** Restated from CLAUDE.md
+  §7: `pytest backend/ --cov=backend` is the real gate. `-m unit` silently
+  skips every unmarked test file, which has hidden whole suites before
+  (e.g. all of `backend/shared/billing/tests/`).
+
+### Frontend testing lessons (2026-10-10)
+
+- **`t()` is non-reactive.** `frontend/src/lib/i18n.ts`'s `t()` reads a
+  module-level `translations` object, not React state — switching locale
+  (`setLocale()`/`loadLocale()`) does not by itself re-render components
+  already on screen. Playwright specs that switch locale mid-test must
+  `page.reload()` after setting it (see `s12-legal.spec.ts`'s Amharic
+  case) rather than asserting translated text right after the switch.
+- **Block the service worker when intercepting requests.** A spec that
+  uses `page.route()` to mock an API response (e.g. to force
+  `402 CONTRACT_EXPIRED_READ_ONLY` or a `GRACE`/`READ_ONLY` banner without
+  a real expired tenant) must call `test.use({ serviceWorkers: "block" })`
+  for that file — otherwise the PWA service worker can serve its own
+  cached/offline response before Playwright's route interception ever
+  sees the request. See `p4-contract-renewal.spec.ts`,
+  `p5-write-guard.spec.ts`, `p6-settings-guard.spec.ts`.
+- **Playwright runs in the foreground only** (CLAUDE.md §7/§8) — a
+  background run does not survive a session pause, and its pass/fail
+  result and console-error output must be read directly, not assumed.
+

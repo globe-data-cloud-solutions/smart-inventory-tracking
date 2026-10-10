@@ -743,3 +743,98 @@ once those exist — §15's other known gaps): *"Downgrades take effect at the
 next renewal; no refunds or credits. The SA may apply a downgrade
 immediately on customer request (no refund)."*
 
+### S14 — Contract stages, the read-only gate, and renewal requests (2026-10-10)
+
+Supersedes the old "alerts only, no automatic restriction" policy (§8 of a
+prior SA Operations Manual draft) — contract expiry now carries a real,
+automatic access restriction. SA is never restricted by any of this.
+
+**`shared/billing/contract_stage.py`** — `compute_contract_stage(contract_end,
+today)` is a pure function deriving one of four stages from
+`tenants.contract_end`:
+- `ACTIVE` — no contract date set, or more than 14 days left.
+- `EXPIRING` — ≤14 days left (`EXPIRING_WARN_DAYS`).
+- `GRACE` — ≤14 days past `contract_end` (`CONTRACT_GRACE_DAYS`); full access,
+  banners only.
+- `READ_ONLY` — more than 14 days past `contract_end`.
+
+`get_tenant_contract_stage(db, tenant_id)` loads `contract_end` and returns
+`{stage, contract_end, grace_ends, read_only_since}`.
+
+**`shared/permissions/read_only.py`** — classifies every permission action
+for what remains usable in `READ_ONLY`:
+- `READ_ACTIONS` — view/list/export-shaped actions, always allowed.
+- `ALLOWED_WRITE_ACTIONS` — the small set of writes that must still work in
+  `READ_ONLY`: `tenant:profile_edit` (own password), `tenant:renewal_request`,
+  `user:reset_password`, `user:deactivate` (staff must still be able to get
+  back in, and a leaver's access must still be revocable).
+- **Fail-closed default**: any action id in neither set is treated as a
+  write and blocked. A newly added permission is blocked in `READ_ONLY`
+  until someone explicitly classifies it — see the backend-patterns.md rule
+  below.
+- `is_blocked_in_read_only(action_id, route_exempt, force_write)` — `
+  route_exempt` wins over everything (GET route nominally gated by a write
+  action); `force_write` skips the lookup and always blocks (write route
+  nominally gated by a read action).
+
+**Wiring** (`shared/permissions/middleware.py::require_permission`) —
+after RBAC/ABAC passes, for any non-SA/SYS user with a `tenant_id`: look up
+the tenant's contract stage, and if `READ_ONLY` and the action is blocked,
+raise `402 CONTRACT_EXPIRED_READ_ONLY` (`action`, `contract_end`,
+`read_only_since` in the detail). `@require_permission(...,
+read_only_exempt=True)` and `read_only_force_write=True` are mutually
+exclusive decorator params a route passes to override the default
+classification.
+
+**Renewal requests** (migration 078, `tenant_renewal_requests`, RLS
+tenant-scoped, no FORCE — SA cross-tenant reads need the app role to see
+every tenant's rows): at most one `OPEN` request per tenant (partial unique
+index on `tenant_id WHERE status='OPEN'`); a second `POST
+/me/renewal-requests` while one is already `OPEN` returns the existing
+request's id (`409 RENEWAL_REQUEST_OPEN`) rather than creating a duplicate.
+TA endpoints: `POST`/`GET /me/renewal-requests` (`tenant:renewal_request`,
+in `ALLOWED_WRITE_ACTIONS` — works at any stage, including `READ_ONLY`).
+SA endpoints: `GET /sa/renewal-requests?status=`, `PATCH
+/sa/renewal-requests/{id}` (`HANDLED`/`CANCELLED`, note required) — both
+`tenant:renewal_manage`. `GET /sa/contracts/overview` (`tenant:
+renewal_manage`): every non-`DEACTIVATED` tenant whose stage is
+`EXPIRING`/`GRACE`/`READ_ONLY`, soonest-expiring first, plus per-stage
+counts and each tenant's current open-request id (if any). `GET
+/me/contract-status` (`tenant:view_contract_status`, a `READ_ACTIONS`
+entry): the caller's own stage, `grace_ends`, `read_only_since`, and any
+`OPEN` request on file.
+
+**Recording a payment lifts read-only immediately** — `mark_paid()`
+extends `contract_end` forward (`GREATEST`, never backwards; §7's existing
+rule), and the next permission check re-derives the stage from the new
+`contract_end` — there is no separate "un-read-only" step. Suspension (an
+explicit SA action, §9 of the SA Operations Manual) stays manual and
+separate from contract stage.
+
+**SA Renewals tab** (`[org]/dashboard`, `?tab=renewals` deep link, SA-only):
+stage counts (`EXPIRING`/`GRACE`/`READ_ONLY`) from `GET
+/sa/contracts/overview`, the same contracts list, and the open
+renewal-requests queue (`GET /sa/renewal-requests?status=OPEN`) with
+mark-handled / cancel actions (note required) against `PATCH
+/sa/renewal-requests/{id}`.
+
+**`/me/plan-usage`** (`plan:view_usage`, `READ_ACTIONS`) —
+`shared/plans/usage.py::get_plan_usage()`: current `plan_tier` plus
+used/limit for skus, users, warehouses — the same counts
+`create_product`/`check_plan_create_user`/`check_plan_create_warehouse`
+already gate on. The SKU cap itself returns `402 PLAN_LIMIT_REACHED`
+(`resource=skus`, `current`, `limit`) from `product-service/routers/
+products.py`'s `create_product` — same shape as the users/warehouses
+plan-limit errors in `shared/permissions/plan_middleware.py`.
+
+**Expiry alerts are still log-only** — `shared/outbox/worker.py`'s
+`handle_contract_expiry_alert()` (event type `ContractExpiryAlert`) logs to
+CloudWatch at INFO/WARNING/ERROR by days-remaining; it does not email
+anyone. Wiring it to `notification-service` for real delivery is a Phase 3
+item — do not describe expiry alerts as emailed anywhere until
+`EMAIL_DELIVERY_MODE=ses` is live and this handler is updated to use it.
+
+**Phase II (not built):** switching an existing subscription between
+monthly and annual billing mid-term. Today the billing period is fixed at
+signup/onboarding (§S9) and `change_plan()` never changes it.
+
