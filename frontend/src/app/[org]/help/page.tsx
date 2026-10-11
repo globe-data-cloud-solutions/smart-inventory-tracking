@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { getSession } from "@/lib/demo-auth";
@@ -7,6 +8,7 @@ import { t, getCurrentLocale } from "@/lib/i18n";
 import { HELP_MANIFEST, isDocVisibleToRole } from "@/lib/help/manifest";
 import { useContactInfo } from "@/hooks/useContactInfo";
 import { pickLocalized } from "@/lib/billing-types";
+import { ContactModal } from "@/components/features/contact/ContactModal";
 
 export default function HelpPage() {
   const { org } = useParams() as { org: string };
@@ -71,6 +73,7 @@ export default function HelpPage() {
 function ContactHelpCard() {
   const { contact } = useContactInfo();
   const locale = getCurrentLocale();
+  const [contactOpen, setContactOpen] = useState(false);
 
   if (!contact?.configured) return null;
 
@@ -84,9 +87,14 @@ function ContactHelpCard() {
         {contact.phone && <p className="m-0">{contact.phone}</p>}
         {hours && <p className="m-0">{hours}</p>}
       </div>
-      <Link href="/contact" className="mt-2 inline-block text-sm font-semibold text-[#0f2d1f] hover:underline">
+      <button
+        type="button"
+        onClick={() => setContactOpen(true)}
+        className="mt-2 inline-block text-sm font-semibold text-[#0f2d1f] hover:underline"
+      >
         {t("contact.footer_link")}
-      </Link>
+      </button>
+      <ContactModal open={contactOpen} onClose={() => setContactOpen(false)} />
     </div>
   );
 }

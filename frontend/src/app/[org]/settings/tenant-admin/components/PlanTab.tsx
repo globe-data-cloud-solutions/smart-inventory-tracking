@@ -8,6 +8,7 @@ import { formatCurrency } from "@/lib/utils";
 import { Badge } from "@/components/ui/Badge";
 import { tierLabel as planTierLabel } from "@/lib/planError";
 import { PublicContactLink } from "@/components/features/auth/PublicContactLink";
+import { ContactModal } from "@/components/features/contact/ContactModal";
 import { useContactInfo } from "@/hooks/useContactInfo";
 import { TabProps, PlanData, TenantAddonOut, ProrationPreview, ProrationInvoiceOut } from "../types";
 
@@ -261,6 +262,7 @@ function RenewalCard() {
   const { contact } = useContactInfo();
   const [message, setMessage] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [contactOpen, setContactOpen] = useState(false);
 
   const { data: requests, isLoading } = useQuery<RenewalRequestOut[]>({
     queryKey: ["tenant-renewal-requests"],
@@ -345,9 +347,11 @@ function RenewalCard() {
           <PublicContactLink
             className="font-semibold text-brand-600 hover:text-brand-700 underline"
             prefix={`${t("tenant_admin.plan.renewal.contact_prefix")} `}
+            onClick={() => setContactOpen(true)}
           />
         </p>
       )}
+      <ContactModal open={contactOpen} onClose={() => setContactOpen(false)} />
 
       <div className="mt-5 pt-4 border-t border-gray-100">
         <h4 className="text-sm font-semibold text-gray-600 mb-2">{t("tenant_admin.plan.renewal.recent_heading")}</h4>

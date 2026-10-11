@@ -17,6 +17,7 @@ import { t, getCurrentLocale } from "@/lib/i18n";
 import { formatQty } from "@/lib/utils";
 import { useContactInfo } from "@/hooks/useContactInfo";
 import { pickLocalized } from "@/lib/billing-types";
+import { ContactModal } from "@/components/features/contact/ContactModal";
 
 const isGatewayMode = !!process.env.NEXT_PUBLIC_API_URL;
 
@@ -62,6 +63,7 @@ interface ApiTransferRow {
 function NeedHelpCard() {
   const { contact } = useContactInfo();
   const locale = getCurrentLocale();
+  const [contactOpen, setContactOpen] = useState(false);
 
   if (!contact?.configured) return null;
 
@@ -75,9 +77,14 @@ function NeedHelpCard() {
           {[contact.support_email, contact.phone, hours].filter(Boolean).join(" · ")}
         </p>
       </div>
-      <Link href="/contact" className="text-xs font-bold text-[#0f2d1f] underline shrink-0 whitespace-nowrap">
+      <button
+        type="button"
+        onClick={() => setContactOpen(true)}
+        className="text-xs font-bold text-[#0f2d1f] underline shrink-0 whitespace-nowrap"
+      >
         {t("dashboard.need_help_all_contact")}
-      </Link>
+      </button>
+      <ContactModal open={contactOpen} onClose={() => setContactOpen(false)} />
     </div>
   );
 }

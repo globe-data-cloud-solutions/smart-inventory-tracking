@@ -136,37 +136,86 @@ for (const locale of ["en", "am"] as const) {
   });
 }
 
-// ── 3) TA placements: dashboard card, Help card, Features tab link ─────────
-test.describe("TA placements (intercepted, configured)", () => {
-  test("dashboard Need-help card, Help page card, Features tab contact link all visible", async ({ page }) => {
-    const taPassword = e2eTaPasswordOrSkip(test);
-    const consoleErrors = collectConsoleErrors(page);
-    await page.route(PUBLIC_CONTACT_PATH, (route) => fulfillContact(route, CONFIGURED_FIXTURE));
+// ── 3) TA placements: dashboard card, Help card, Features tab, Plan tab —
+//      all open the in-app Contact modal (no navigation), closable via
+//      ✕ / Esc / the footer Close button, with no Getting started/Sign up
+//      links inside it. Public /contact is unaffected (still a real page).
+for (const locale of ["en", "am"] as const) {
+  test.describe(`In-app Contact modal (intercepted, configured, ${locale})`, () => {
+    test(`dashboard card, Help card, Features tab, Plan tab all open the modal (${locale})`, async ({ page }) => {
+      const taPassword = e2eTaPasswordOrSkip(test);
+      const consoleErrors = collectConsoleErrors(page);
+      await page.route(PUBLIC_CONTACT_PATH, (route) => fulfillContact(route, CONFIGURED_FIXTURE));
 
-    await login(page, E2E_TA_EMAIL, taPassword);
-    await page.waitForLoadState("networkidle");
+      await page.addInitScript((loc) => window.localStorage.setItem("locale", loc), locale);
+      await login(page, E2E_TA_EMAIL, taPassword);
+      await page.waitForLoadState("networkidle");
 
-    await expect(page.getByText("Need help?")).toBeVisible({ timeout: 10_000 });
-    await expect(page.getByRole("link", { name: "All contact details" })).toBeVisible();
-    await page.screenshot({ path: "test-results/p5/dashboard-need-help.png", fullPage: true });
+      // footer_link / contact_support_link / need_help_all_contact button text
+      // differs by locale — look up each rather than guessing a shared regex.
+      const footerLinkName = locale === "am" ? "SMART ያግኙ" : "Contact SMART";
+      const featuresLinkName = locale === "am" ? "ድጋፍን ያግኙ" : "contact support";
+      const dashboardLinkName = locale === "am" ? "ሁሉም የእውቂያ ዝርዝሮች" : "All contact details";
+      const needHelpTitle = locale === "am" ? "እገዛ ይፈልጋሉ?" : "Need help?";
+      const dialog = page.getByRole("dialog");
 
-    await page.goto(`${BASE_URL}/${E2E_TA_SLUG}/help`);
-    await page.waitForLoadState("networkidle");
-    await expect(page.getByText("Contact SMART").first()).toBeVisible();
-    await page.screenshot({ path: "test-results/p5/help-contact-card.png", fullPage: true });
+      // Dashboard "Need help?" card — opens modal, URL unchanged, ✕ closes it.
+      await expect(page.getByText(needHelpTitle)).toBeVisible({ timeout: 10_000 });
+      const dashboardUrl = page.url();
+      await page.getByRole("button", { name: dashboardLinkName }).click();
+      await expect(dialog).toBeVisible();
+      expect(page.url()).toBe(dashboardUrl);
+      await expect(dialog.getByRole("link", { name: /Getting started/i })).toHaveCount(0);
+      await expect(dialog.getByRole("link", { name: /Sign up/i })).toHaveCount(0);
+      await page.screenshot({ path: `test-results/p5/dashboard-contact-modal-${locale}.png`, fullPage: true });
+      await dialog.locator("button").first().click(); // ✕ in the header
+      await expect(dialog).toBeHidden();
 
-    await page.goto(`${BASE_URL}/${E2E_TA_SLUG}/settings/tenant-admin?tab=features`);
-    await page.waitForLoadState("networkidle");
-    await expect(page.getByRole("link", { name: "contact support" })).toBeVisible({ timeout: 10_000 });
+      // Help page card — opens modal, Esc closes it.
+      await page.goto(`${BASE_URL}/${E2E_TA_SLUG}/help`);
+      await page.waitForLoadState("networkidle");
+      const helpUrl = page.url();
+      await page.getByRole("button", { name: footerLinkName }).click();
+      await expect(dialog).toBeVisible();
+      expect(page.url()).toBe(helpUrl);
+      await page.keyboard.press("Escape");
+      await expect(dialog).toBeHidden();
 
-    await assertNoRawKeysOrHrefHash(page);
-    await page.screenshot({ path: "test-results/p5/features-contact-link.png", fullPage: true });
+      // Features tab "contact support" link — opens modal, footer Close button closes it.
+      await page.goto(`${BASE_URL}/${E2E_TA_SLUG}/settings/tenant-admin?tab=features`);
+      await page.waitForLoadState("networkidle");
+      const featuresUrl = page.url();
+      await page.getByRole("button", { name: featuresLinkName }).click({ timeout: 10_000 });
+      await expect(dialog).toBeVisible();
+      expect(page.url()).toBe(featuresUrl);
+      await page.screenshot({ path: `test-results/p5/features-contact-modal-${locale}.png`, fullPage: true });
+      await dialog.locator("button").last().click(); // footer Close button
+      await expect(dialog).toBeHidden();
 
-    console.log("--- TA placements console errors ---");
-    for (const e of consoleErrors) console.log(e);
-    expect(consoleErrors, "zero console errors").toHaveLength(0);
+      // Plan tab "Contact SMART" link — opens modal, footer Close button closes it.
+      await page.goto(`${BASE_URL}/${E2E_TA_SLUG}/settings/tenant-admin?tab=plan`);
+      await page.waitForLoadState("networkidle");
+      const planUrl = page.url();
+      await page.getByRole("button", { name: footerLinkName }).click();
+      await expect(dialog).toBeVisible();
+      expect(page.url()).toBe(planUrl);
+      await dialog.locator("button").last().click();
+      await expect(dialog).toBeHidden();
+
+      await assertNoRawKeysOrHrefHash(page);
+
+      // Public /contact is unaffected — still a real page with its own links.
+      await page.goto(`${BASE_URL}/contact`);
+      await page.waitForLoadState("networkidle");
+      await expect(page.getByText("support@smart-inventory.example")).toBeVisible();
+      await expect(page.getByRole("link", { name: /^(Getting started|መጀመር)$/ })).toBeVisible();
+
+      console.log(`--- in-app Contact modal (${locale}) console errors ---`);
+      for (const e of consoleErrors) console.log(e);
+      expect(consoleErrors, `zero console errors (${locale})`).toHaveLength(0);
+    });
   });
-});
+}
 
 // ── 4) SA editor guard — TA cannot access /settings/contact ─────────────────
 test.describe("SA-only guard on /settings/contact", () => {

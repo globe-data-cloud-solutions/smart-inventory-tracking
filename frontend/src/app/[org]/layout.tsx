@@ -13,6 +13,7 @@ import { useAuditStore } from "@/lib/audit-log-state";
 import { useTenantName } from "@/hooks/useTenantName";
 import { useContractStatus } from "@/hooks/useContractStatus";
 import { PublicContactLink } from "@/components/features/auth/PublicContactLink";
+import { ContactModal } from "@/components/features/contact/ContactModal";
 
 type Locale = "en" | "am" | "or";
 
@@ -543,6 +544,7 @@ export default function OrgLayout({ children }: { children: React.ReactNode }) {
   const [apiLogoUrl,    setApiLogoUrl]         = useState<string | null>(null);
   const [apiBannerUrl,  setApiBannerUrl]       = useState<string | null>(null);
   const [sidebarOpen, setSidebarOpen]          = useState(false);
+  const [contactOpen, setContactOpen]          = useState(false);
   const [plan, setPlan]                        = useState<PlanData | null>(null);
   const setActiveTenant   = useInventoryStore((s) => s.setActiveTenant);
   const { contractStatus } = useContractStatus();
@@ -745,7 +747,11 @@ export default function OrgLayout({ children }: { children: React.ReactNode }) {
                   </Link>
                 )}
                 {user.role === "TA" && (
-                  <PublicContactLink className="text-xs font-bold text-amber-900 underline shrink-0 whitespace-nowrap" prefix=" · " />
+                  <PublicContactLink
+                    className="text-xs font-bold text-amber-900 underline shrink-0 whitespace-nowrap"
+                    prefix=" · "
+                    onClick={() => setContactOpen(true)}
+                  />
                 )}
               </div>
             )}
@@ -763,7 +769,11 @@ export default function OrgLayout({ children }: { children: React.ReactNode }) {
                   </Link>
                 )}
                 {user.role === "TA" && (
-                  <PublicContactLink className="text-xs font-bold text-red-900 underline shrink-0 whitespace-nowrap" prefix=" · " />
+                  <PublicContactLink
+                    className="text-xs font-bold text-red-900 underline shrink-0 whitespace-nowrap"
+                    prefix=" · "
+                    onClick={() => setContactOpen(true)}
+                  />
                 )}
               </div>
             )}
@@ -771,6 +781,7 @@ export default function OrgLayout({ children }: { children: React.ReactNode }) {
           </main>
         </div>
       </div>
+      <ContactModal open={contactOpen} onClose={() => setContactOpen(false)} />
     </QueryClientProvider>
   );
 }

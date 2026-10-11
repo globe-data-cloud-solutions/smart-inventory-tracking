@@ -7,6 +7,7 @@ import { t } from "@/lib/i18n";
 import { formatCurrency } from "@/lib/utils";
 import { PlanComparisonModal } from "@/components/features/billing/PlanComparisonModal";
 import { PublicContactLink } from "@/components/features/auth/PublicContactLink";
+import { ContactModal } from "@/components/features/contact/ContactModal";
 import { TabProps, PlanData, TenantAddonOut, ProrationPreview, ProrationInvoiceOut } from "../types";
 
 const TIER_ORDER = ["STARTER", "GROWTH", "ENTERPRISE"];
@@ -457,6 +458,7 @@ export function FeaturesTab({ tenantId, isLoading }: TabProps) {
   });
 
   const [compareOpen, setCompareOpen] = useState(false);
+  const [contactOpen, setContactOpen] = useState(false);
 
   if (loadingPlan || isLoading) {
     return <div className="flex items-center justify-center py-12 text-gray-500">{t("common.loading")}</div>;
@@ -586,11 +588,13 @@ export function FeaturesTab({ tenantId, isLoading }: TabProps) {
             className="font-semibold text-blue-600 hover:text-blue-700"
             prefix={`${t("tenant_admin.features.or_contact_support_prefix")} `}
             labelKey="tenant_admin.features.contact_support_link"
+            onClick={() => setContactOpen(true)}
           />
         </p>
       </div>
 
       <PlanComparisonModal open={compareOpen} onClose={() => setCompareOpen(false)} currentTier={plan.plan_tier} />
+      <ContactModal open={contactOpen} onClose={() => setContactOpen(false)} />
     </div>
   );
 }
