@@ -1139,7 +1139,7 @@
     "col_stage": "ደረጃ",
     "col_open_request": "ክፍት ጥያቄ",
     "renewals_tenants_empty": "በአሁኑ ጊዜ የሚያበቁ፣ በእፎይታ ጊዜ ወይም ለንባብ ብቻ የሆኑ ተከራዮች የለም።",
-    "renewals_open_requests_heading": "ክፍት የማደስ ጥያቄዎች",
+    "renewals_open_requests_heading": "ክፍት ጥያቄዎች",
     "renewals_empty": "የማደስ ጥያቄዎች የለም።",
     "renewals_requested_by": "ጠያቂ",
     "renewals_message_label": "መልእክት",
@@ -1147,7 +1147,10 @@
     "renewals_cancel_btn": "ሰርዝ",
     "renewals_note_label": "ማስታወሻ (አማራጭ)",
     "renewals_confirm_btn": "አረጋግጥ",
-    "renewals_dismiss_btn": "አሰናብት"
+    "renewals_dismiss_btn": "አሰናብት",
+    "renewals_type_renewal": "ማደስ",
+    "renewals_type_upgrade": "ማሻሻል → {tier}",
+    "renewals_upgrade_hint": "በዚህ ተከራይ የዕቅድ ትር ውስጥ ዕቅዱን ይቀይሩ፣ ከዚያ እንደተከናወነ ምልክት ያድርጉ።"
   },
   "approval": {
     "simple_mode": "ቀላል — ለሁሉም ዓይነቶች ተመሳሳይ ደንቦች",
@@ -1611,7 +1614,8 @@
           "OPEN": "ክፍት",
           "HANDLED": "ተከናውኗል",
           "CANCELLED": "ተሰርዟል"
-        }
+        },
+        "upgrade_line": "ማሻሻል ወደ {tier} በ{date} ተጠይቋል"
       }
     },
     "features": {
@@ -1650,7 +1654,18 @@
       "contact_support_link": "ድጋፍን ያነጋግሩ",
       "source_package": "ጥቅል",
       "source_addon": "ተጨማሪ",
-      "source_not_included": "አልተካተተም"
+      "source_not_included": "አልተካተተም",
+      "top_plan_note": "በከፍተኛው ዕቅድ ላይ ነዎት — ተጨማሪ የሚከፍት ነገር የለም።",
+      "upgrade_open_notice": "ማሻሻል ወደ {tier} በ{date} ተጠይቋል — SMART ያገኝዎታል።",
+      "upgrade_dialog_title": "ማሻሻል ይጠይቁ",
+      "upgrade_dialog_tier_label": "ማሻሻል ወደ",
+      "upgrade_dialog_message_label": "መልእክት (አማራጭ)",
+      "upgrade_dialog_message_placeholder": "ለ SMART ዝርዝሮችን ያክሉ",
+      "upgrade_dialog_submit_btn": "ጥያቄ አቅርብ",
+      "upgrade_error": {
+        "NOT_AN_UPGRADE": "ይህ ከአሁኑ ዕቅድዎ ማሻሻል አይደለም።",
+        "REQUESTED_TIER_REQUIRED": "ለማሻሻል ዕቅድ ይምረጡ።"
+      }
     },
     "contract": {
       "status_title": "የውል ሁኔታ",
@@ -1957,6 +1972,12 @@
       "blocked": {
         "INVOICE_PENDING_SETTLE_FIRST": "ይህ ለውጥ ከመቀጠሉ በፊት በመጠባበቅ ላይ ያለው ደረሰኝ ተከፍሎ መመልክት ወይም መሰረዝ አለበት።"
       }
+    },
+    "compare": {
+      "title": "ዕቅዶችን አወዳድር",
+      "unavailable": "የዕቅድ ማወዳደር በማሳያ ሁነታ አይገኝም።",
+      "note": "ዋጋዎች 15% ተእታ ያካትታሉ። የጥቅል ለውጦች የሚደረጉት በ SMART ነው።",
+      "your_plan_badge": "የእርስዎ ዕቅድ"
     }
   },
   "plan": {

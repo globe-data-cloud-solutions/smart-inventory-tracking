@@ -235,6 +235,8 @@ interface RenewalRequestOut {
   requested_by: string;
   requested_by_email: string | null;
   message: string | null;
+  request_type: "RENEWAL" | "UPGRADE";
+  requested_tier: string | null;
   status: "OPEN" | "HANDLED" | "CANCELLED";
   handled_by: string | null;
   handled_note: string | null;
@@ -263,10 +265,12 @@ function RenewalCard() {
     staleTime: 10_000,
   });
 
-  const openRequest = (requests ?? []).find((r) => r.status === "OPEN") ?? null;
+  const openRequest = (requests ?? []).find((r) => r.status === "OPEN" && r.request_type === "RENEWAL") ?? null;
+  const openUpgradeRequest = (requests ?? []).find((r) => r.status === "OPEN" && r.request_type === "UPGRADE") ?? null;
 
   const submitMutation = useMutation({
     mutationFn: () => api.post<RenewalRequestOut>("/api/v1/tenants/me/renewal-requests", {
+      request_type: "RENEWAL",
       message: message.trim() || undefined,
     }),
     onSuccess: () => {
@@ -323,6 +327,14 @@ function RenewalCard() {
             {submitMutation.isPending ? "…" : t("tenant_admin.plan.renewal.submit_btn")}
           </button>
         </div>
+      )}
+
+      {openUpgradeRequest && (
+        <p className="mt-3 text-xs text-gray-600">
+          {t("tenant_admin.plan.renewal.upgrade_line")
+            .replace("{tier}", planTierLabel(openUpgradeRequest.requested_tier ?? ""))
+            .replace("{date}", new Date(openUpgradeRequest.created_at).toLocaleDateString())}
+        </p>
       )}
 
       <div className="mt-5 pt-4 border-t border-gray-100">

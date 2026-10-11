@@ -11,32 +11,9 @@ import { api, IS_GATEWAY_MODE } from "@/lib/api";
 import { t } from "@/lib/i18n";
 import { formatCurrency } from "@/lib/utils";
 import { AuthLangSwitcher } from "@/components/features/auth/AuthLangSwitcher";
+import { BillingPeriod, PackagesListOut } from "@/lib/billing-types";
 
-type BillingPeriod = "MONTHLY" | "ANNUAL";
 type OrgType = "PRODUCER" | "RETAILER" | "HYBRID";
-
-interface PriceOut {
-  subtotal: string;
-  vat_rate: string;
-  vat_amount: string;
-  total: string;
-  currency: string;
-}
-
-interface PackageOut {
-  tier: string;
-  display_name: string | null;
-  max_warehouses: number | null;
-  max_users: number | null;
-  sku_cap: number | null;
-  feature_flags: Record<string, boolean>;
-  prices: Partial<Record<BillingPeriod, PriceOut>>;
-}
-
-interface PackagesListOut {
-  packages: PackageOut[];
-  terms_version: string;
-}
 
 interface SignupOut {
   tenant_id: string;

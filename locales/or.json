@@ -1031,7 +1031,7 @@
     "col_stage": "Stage",
     "col_open_request": "Open Request",
     "renewals_tenants_empty": "No tenants currently expiring, in grace, or read-only.",
-    "renewals_open_requests_heading": "Open Renewal Requests",
+    "renewals_open_requests_heading": "Open requests",
     "renewals_empty": "No renewal requests.",
     "renewals_requested_by": "Requested by",
     "renewals_message_label": "Message",
@@ -1039,7 +1039,10 @@
     "renewals_cancel_btn": "Cancel",
     "renewals_note_label": "Note (optional)",
     "renewals_confirm_btn": "Confirm",
-    "renewals_dismiss_btn": "Dismiss"
+    "renewals_dismiss_btn": "Dismiss",
+    "renewals_type_renewal": "Renewal",
+    "renewals_type_upgrade": "Upgrade → {tier}",
+    "renewals_upgrade_hint": "Change the plan in this tenant's Plan tab, then mark handled."
   },
   "approval": {
     "simple_mode": "Salphaa — seera wal-fakkaataa hunda",
@@ -1601,7 +1604,8 @@
           "OPEN": "Open",
           "HANDLED": "Handled",
           "CANCELLED": "Cancelled"
-        }
+        },
+        "upgrade_line": "Upgrade to {tier} requested on {date}"
       }
     },
     "features": {
@@ -1640,7 +1644,18 @@
       "contact_support_link": "contact support",
       "source_package": "Package",
       "source_addon": "Add-on",
-      "source_not_included": "Not included"
+      "source_not_included": "Not included",
+      "top_plan_note": "You're on our top plan — there's nothing more to unlock.",
+      "upgrade_open_notice": "Upgrade to {tier} requested on {date} — SMART will contact you.",
+      "upgrade_dialog_title": "Request an upgrade",
+      "upgrade_dialog_tier_label": "Upgrade to",
+      "upgrade_dialog_message_label": "Message (optional)",
+      "upgrade_dialog_message_placeholder": "Add any details for SMART",
+      "upgrade_dialog_submit_btn": "Submit request",
+      "upgrade_error": {
+        "NOT_AN_UPGRADE": "That isn't an upgrade from your current plan.",
+        "REQUESTED_TIER_REQUIRED": "Choose a plan to upgrade to."
+      }
     },
     "contract": {
       "status_title": "Haala Kontiraatii",
@@ -1947,6 +1962,12 @@
       "blocked": {
         "INVOICE_PENDING_SETTLE_FIRST": "A pending invoice must be marked paid or cancelled before this change can proceed."
       }
+    },
+    "compare": {
+      "title": "Compare plans",
+      "unavailable": "Plan comparison is unavailable in demo mode.",
+      "note": "Prices include 15% VAT. Package changes are handled by SMART.",
+      "your_plan_badge": "Your plan"
     }
   },
   "plan": {

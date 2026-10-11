@@ -355,6 +355,8 @@ export default function OrgDashboard() {
     requested_by: string;
     requested_by_email: string | null;
     message: string | null;
+    request_type: "RENEWAL" | "UPGRADE";
+    requested_tier: string | null;
     status: "OPEN" | "HANDLED" | "CANCELLED";
     handled_by: string | null;
     handled_note: string | null;
@@ -889,11 +891,16 @@ export default function OrgDashboard() {
                     <div key={r.id} className="bg-white border border-gray-200 rounded p-4">
                       <div className="flex items-start justify-between gap-3 flex-wrap">
                         <div className="min-w-0">
-                          <p className="m-0 font-semibold text-gray-800">
+                          <p className="m-0 font-semibold text-gray-800 flex items-center gap-2 flex-wrap">
                             <Link href={`/${org}/settings/tenants/${r.tenant_id}`} className="text-eth-forest hover:underline">
                               {r.tenant_name}
                             </Link>
                             {r.plan_tier && <span className="text-xs text-gray-500 font-normal"> · {r.plan_tier}</span>}
+                            <span className="text-[11px] font-bold px-1.5 py-0.5 rounded bg-indigo-100 text-indigo-700">
+                              {r.request_type === "UPGRADE"
+                                ? t("sa.renewals_type_upgrade").replace("{tier}", r.requested_tier ?? "")
+                                : t("sa.renewals_type_renewal")}
+                            </span>
                           </p>
                           <p className="m-0 text-xs text-gray-400 mt-0.5">
                             {t("sa.renewals_requested_by")} {r.requested_by_email ?? r.requested_by} · {new Date(r.created_at).toLocaleDateString()}
@@ -902,6 +909,9 @@ export default function OrgDashboard() {
                             <p className="m-0 text-xs text-gray-600 mt-1.5">
                               <span className="font-semibold">{t("sa.renewals_message_label")}:</span> {r.message}
                             </p>
+                          )}
+                          {r.request_type === "UPGRADE" && (
+                            <p className="m-0 text-xs text-amber-700 mt-1.5">{t("sa.renewals_upgrade_hint")}</p>
                           )}
                         </div>
                         <div className="flex gap-2 shrink-0">
