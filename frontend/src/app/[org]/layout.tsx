@@ -12,6 +12,7 @@ import { useInventoryStore } from "@/lib/inventory-state";
 import { useAuditStore } from "@/lib/audit-log-state";
 import { useTenantName } from "@/hooks/useTenantName";
 import { useContractStatus } from "@/hooks/useContractStatus";
+import { PublicContactLink } from "@/components/features/auth/PublicContactLink";
 
 type Locale = "en" | "am" | "or";
 
@@ -743,6 +744,9 @@ export default function OrgLayout({ children }: { children: React.ReactNode }) {
                     {t("contract.request_renewal_link")}
                   </Link>
                 )}
+                {user.role === "TA" && (
+                  <PublicContactLink className="text-xs font-bold text-amber-900 underline shrink-0 whitespace-nowrap" prefix=" · " />
+                )}
               </div>
             )}
             {org !== SA_ORG_SLUG && contractStatus?.stage === "READ_ONLY" && (
@@ -757,6 +761,9 @@ export default function OrgLayout({ children }: { children: React.ReactNode }) {
                   >
                     {t("contract.request_renewal_link")}
                   </Link>
+                )}
+                {user.role === "TA" && (
+                  <PublicContactLink className="text-xs font-bold text-red-900 underline shrink-0 whitespace-nowrap" prefix=" · " />
                 )}
               </div>
             )}
@@ -779,6 +786,7 @@ const SA_NAV: NavItem[] = [
   { type: "link", icon: "🔔", label: "sa.tab_renewals", page: "dashboard?tab=renewals", badge: "renewalsOpenCount" },
   { type: "section", label: "System" },
   { type: "link", icon: "💳", label: "sa.nav_plans_pricing", page: "settings/plans" },
+  { type: "link", icon: "☎️", label: "sa.nav_contact", page: "settings/contact" },
   // These pages are planned but not yet built — links are intentionally
   // disabled until the pages exist. Do not remove; placeholder only.
   { type: "link", icon: "🔐", label: "Permissions", page: "dashboard", disabled: true },

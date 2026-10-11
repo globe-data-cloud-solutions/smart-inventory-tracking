@@ -12,6 +12,7 @@ import { t } from "@/lib/i18n";
 import { formatCurrency } from "@/lib/utils";
 import { AuthLangSwitcher } from "@/components/features/auth/AuthLangSwitcher";
 import { BillingPeriod, PackagesListOut } from "@/lib/billing-types";
+import { PublicContactLink } from "@/components/features/auth/PublicContactLink";
 
 type OrgType = "PRODUCER" | "RETAILER" | "HYBRID";
 
@@ -524,6 +525,7 @@ export default function SignupPage() {
           <Link href="/privacy" target="_blank" rel="noopener noreferrer" className="underline hover:text-gray-600">
             {t("legal.privacy_title")}
           </Link>
+          <PublicContactLink className="underline hover:text-gray-600" prefix=" · " />
         </p>
       </div>
     </div>

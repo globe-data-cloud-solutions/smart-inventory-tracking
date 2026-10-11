@@ -5,6 +5,7 @@ import Link from "next/link";
 import { t } from "@/lib/i18n";
 import { AuthLangSwitcher } from "@/components/features/auth/AuthLangSwitcher";
 import { DocumentRenderer } from "@/components/features/help/DocumentRenderer";
+import { PublicContactLink } from "@/components/features/auth/PublicContactLink";
 
 /**
  * Public /getting-started page (CLAUDE.md §15 S12) — no session required,
@@ -53,6 +54,7 @@ export default function GettingStartedPage() {
           >
             {t("getting_started.cta_create_account")}
           </Link>
+          <PublicContactLink className="px-4 py-2 text-sm font-semibold text-gray-700 underline self-center" />
         </div>
       </div>
     </div>

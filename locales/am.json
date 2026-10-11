@@ -709,7 +709,9 @@
     "stat_skus_with_stock": "ክምችት ያላቸው SKUዎች",
     "recent_transfers": "የቅርብ ጊዜ ዝውውሮች",
     "tenant_name": "የተከፋይ ስም",
-    "tenant_type": "አይነት"
+    "tenant_type": "አይነት",
+    "need_help_title": "እገዛ ይፈልጋሉ?",
+    "need_help_all_contact": "ሁሉም የእውቂያ ዝርዝሮች"
   },
   "table": {
     "sku": "SKU",
@@ -1150,7 +1152,8 @@
     "renewals_dismiss_btn": "አሰናብት",
     "renewals_type_renewal": "ማደስ",
     "renewals_type_upgrade": "ማሻሻል → {tier}",
-    "renewals_upgrade_hint": "በዚህ ተከራይ የዕቅድ ትር ውስጥ ዕቅዱን ይቀይሩ፣ ከዚያ እንደተከናወነ ምልክት ያድርጉ።"
+    "renewals_upgrade_hint": "በዚህ ተከራይ የዕቅድ ትር ውስጥ ዕቅዱን ይቀይሩ፣ ከዚያ እንደተከናወነ ምልክት ያድርጉ።",
+    "nav_contact": "የእውቂያ ዝርዝሮች"
   },
   "approval": {
     "simple_mode": "ቀላል — ለሁሉም ዓይነቶች ተመሳሳይ ደንቦች",
@@ -1615,7 +1618,8 @@
           "HANDLED": "ተከናውኗል",
           "CANCELLED": "ተሰርዟል"
         },
-        "upgrade_line": "ማሻሻል ወደ {tier} በ{date} ተጠይቋል"
+        "upgrade_line": "ማሻሻል ወደ {tier} በ{date} ተጠይቋል",
+        "contact_prefix": "ጥያቄዎች አሉዎት?"
       }
     },
     "features": {
@@ -1651,7 +1655,7 @@
       "need_help_prefix": "ዕቅድ ለመምረጥ እገዛ ይፈልጋሉ?",
       "compare_plans_link": "ዕቅዶችን ያወዳድሩ",
       "or_word": "ወይም",
-      "contact_support_link": "ድጋፍን ያነጋግሩ",
+      "contact_support_link": "ድጋፍን ያግኙ",
       "source_package": "ጥቅል",
       "source_addon": "ተጨማሪ",
       "source_not_included": "አልተካተተም",
@@ -1665,7 +1669,8 @@
       "upgrade_error": {
         "NOT_AN_UPGRADE": "ይህ ከአሁኑ ዕቅድዎ ማሻሻል አይደለም።",
         "REQUESTED_TIER_REQUIRED": "ለማሻሻል ዕቅድ ይምረጡ።"
-      }
+      },
+      "or_contact_support_prefix": "ወይም"
     },
     "contract": {
       "status_title": "የውል ሁኔታ",
@@ -2039,6 +2044,9 @@
         "title": "መጀመር",
         "summary": "ከመመዝገብዎ በፊት፦ ምን ማዘጋጀት እንዳለብዎ፣ መለያ እንዴት እንደሚያገኙ፣ የስርዓት ሚናዎች እና የእቅድ ደረጃዎች።"
       }
+    },
+    "contact": {
+      "title": "SMART ያግኙ"
     }
   },
   "legal": {
@@ -2053,7 +2061,8 @@
       "credentials": "መታወቂያ",
       "sign_in": "ይግቡ",
       "get_started_cta": "ይጀምሩ",
-      "getting_started": "መጀመር"
+      "getting_started": "መጀመር",
+      "contact": "እውቂያ"
     },
     "hero": {
       "subtitle": "ቅጽበታዊ የክምችት መዝገብ · FEFO ልውውጥ · ከመስመር ውጭ ባርኮድ ስካን · የ3-ደረጃ ጥበቃ — ለኢትዮጲያ አምራቾችና አከፋፋዮች የተሰራ።",
@@ -2134,5 +2143,45 @@
     "title": "መጀመር",
     "print_btn": "የሚታተም ዝርዝር",
     "cta_create_account": "መለያ ይፍጠሩ"
+  },
+  "contact": {
+    "footer_link": "SMART ያግኙ",
+    "title": "SMART ያግኙ",
+    "coming_soon": "የእውቂያ ዝርዝሮች በቅርቡ ይመጣሉ። ይህ በእንዲህ እንዳለ፣ እኛን ለማግኘት የመመስገብ ወይም የመጀመሪያ ገጾችን ይጠቀሙ።",
+    "email_label": "ኢሜይል",
+    "phone_label": "ስልክ",
+    "whatsapp_label": "ዋትስአፕ",
+    "address_label": "አድራሻ",
+    "hours_label": "ስራ ሰዓት",
+    "back_getting_started_link": "መጀመር",
+    "back_signup_link": "ይመስገቡ"
+  },
+  "platform_contact": {
+    "title": "የእውቂያ ዝርዝሮች",
+    "subtitle": "ለደንበኞች እና ጎብኝዎች የሚታዩ የህዝብ እውቂያ ዝርዝሮችን ያስተዳድሩ።",
+    "restricted": "መዳረሻ ለሲስተም አስተዳዳሪ ብቻ የተገደበ ነው።",
+    "support_email_label": "የድጋፍ ኢሜይል",
+    "phone_label": "ስልክ",
+    "whatsapp_label": "ዋትስአፕ",
+    "address_en_label": "አድራሻ (እንግሊዝኛ)",
+    "address_am_label": "አድራሻ (አማርኛ)",
+    "hours_en_label": "ስራ ሰዓት (እንግሊዝኛ)",
+    "hours_am_label": "ስራ ሰዓት (አማርኛ)",
+    "note_en_label": "ማስታወሻ (እንግሊዝኛ)",
+    "note_am_label": "ማስታወሻ (አማርኛ)",
+    "reason_label": "የለውጥ ምክንያት",
+    "reason_placeholder": "ይህን ለውጥ ለምን እያደረጉ ነው?",
+    "save_btn": "አስቀምጥ",
+    "saving": "በማስቀመጥ ላይ…",
+    "saved": "ተቀምጧል",
+    "preview_heading": "ቀጥታ ቅድመ እይታ",
+    "preview_locale_en": "እንግሊዝኛ",
+    "preview_locale_am": "አማርኛ",
+    "error_generic": "የሆነ ስህተት ተከስቷል።",
+    "error": {
+      "REASON_REQUIRED": "ምክንያት ያስፈልጋል።",
+      "INVALID_PHONE": "ትክክለኛ የስልክ ቁጥር ያስገቡ።",
+      "FIELD_TOO_LONG": "ያ መስክ በጣም ረጅም ነው።"
+    }
   }
 }

@@ -25,3 +25,26 @@ export interface PackagesListOut {
   packages: PackageOut[];
   terms_version: string;
 }
+
+// Mirrors backend/services/tenant-service/routers/platform_contact.py's ContactOut.
+export interface LocalizedText {
+  en: string | null;
+  am: string | null;
+}
+
+export interface ContactInfo {
+  configured: boolean;
+  support_email: string | null;
+  phone: string | null;
+  whatsapp: string | null;
+  address: LocalizedText;
+  hours: LocalizedText;
+  note: LocalizedText;
+  updated_at: string;
+}
+
+/** am -> am value falling back to en; en/or -> en, per the i18n loader's locale fallback order. */
+export function pickLocalized(text: LocalizedText, locale: string): string | null {
+  if (locale === "am") return text.am ?? text.en ?? null;
+  return text.en ?? null;
+}

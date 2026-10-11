@@ -13,8 +13,10 @@ import {
   type DemoProduct,
 } from "@/lib/demo-data";
 import { api } from "@/lib/api";
-import { t } from "@/lib/i18n";
+import { t, getCurrentLocale } from "@/lib/i18n";
 import { formatQty } from "@/lib/utils";
+import { useContactInfo } from "@/hooks/useContactInfo";
+import { pickLocalized } from "@/lib/billing-types";
 
 const isGatewayMode = !!process.env.NEXT_PUBLIC_API_URL;
 
@@ -53,6 +55,31 @@ interface ApiTransferRow {
   to_warehouse_name: string;
   created_at: string;
   lines: ApiTransferLine[];
+}
+
+// Need help? card — TA dashboard only, hidden until platform contact details
+// are configured (useContactInfo: demo mode always resolves to not-configured).
+function NeedHelpCard() {
+  const { contact } = useContactInfo();
+  const locale = getCurrentLocale();
+
+  if (!contact?.configured) return null;
+
+  const hours = pickLocalized(contact.hours, locale);
+
+  return (
+    <div className="bg-white border border-gray-200 rounded p-4 mb-6 flex items-center justify-between gap-4 flex-wrap">
+      <div>
+        <p className="font-bold text-sm text-gray-800 m-0">{t("dashboard.need_help_title")}</p>
+        <p className="text-xs text-gray-500 mt-0.5">
+          {[contact.support_email, contact.phone, hours].filter(Boolean).join(" · ")}
+        </p>
+      </div>
+      <Link href="/contact" className="text-xs font-bold text-[#0f2d1f] underline shrink-0 whitespace-nowrap">
+        {t("dashboard.need_help_all_contact")}
+      </Link>
+    </div>
+  );
 }
 
 // ── Summary card ────────────────────────────────────────────────────────────────
@@ -1309,6 +1336,8 @@ export default function OrgDashboard() {
             { label: t("alerts.low_stock"),               value: lowStockCount, warn: lowStockCount > 0 },
           ]}
         />
+
+        {user.role === "TA" && <NeedHelpCard />}
 
         {/* Warehouse breakdown — TA/NM only */}
         {warehouseRows.length > 0 && (

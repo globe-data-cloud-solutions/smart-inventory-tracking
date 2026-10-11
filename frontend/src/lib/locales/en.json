@@ -904,7 +904,9 @@
     "stat_skus_with_stock": "SKUs with Stock",
     "recent_transfers": "Recent Transfers",
     "tenant_name": "Tenant Name",
-    "tenant_type": "Type"
+    "tenant_type": "Type",
+    "need_help_title": "Need help?",
+    "need_help_all_contact": "All contact details"
   },
   "table": {
     "sku": "SKU",
@@ -1298,7 +1300,8 @@
     "renewals_dismiss_btn": "Dismiss",
     "renewals_type_renewal": "Renewal",
     "renewals_type_upgrade": "Upgrade → {tier}",
-    "renewals_upgrade_hint": "Change the plan in this tenant's Plan tab, then mark handled."
+    "renewals_upgrade_hint": "Change the plan in this tenant's Plan tab, then mark handled.",
+    "nav_contact": "Contact details"
   },
   "approval": {
     "simple_mode": "Simple — same rules for all",
@@ -1601,7 +1604,8 @@
           "HANDLED": "Handled",
           "CANCELLED": "Cancelled"
         },
-        "upgrade_line": "Upgrade to {tier} requested on {date}"
+        "upgrade_line": "Upgrade to {tier} requested on {date}",
+        "contact_prefix": "Questions?"
       }
     },
     "features": {
@@ -1651,7 +1655,8 @@
       "upgrade_error": {
         "NOT_AN_UPGRADE": "That isn't an upgrade from your current plan.",
         "REQUESTED_TIER_REQUIRED": "Choose a plan to upgrade to."
-      }
+      },
+      "or_contact_support_prefix": "or"
     },
     "contract": {
       "status_title": "Contract Status",
@@ -2031,6 +2036,9 @@
         "title": "Release Notes",
         "summary": "What's new in SMART."
       }
+    },
+    "contact": {
+      "title": "Contact SMART"
     }
   },
   "legal": {
@@ -2050,7 +2058,8 @@
       "credentials": "Credentials",
       "sign_in": "Sign in",
       "get_started_cta": "Get started",
-      "getting_started": "Getting started"
+      "getting_started": "Getting started",
+      "contact": "Contact"
     },
     "hero": {
       "subtitle": "Real-time stock ledger · FEFO dispatch · Offline barcode scanning · 3-layer security — built for Ethiopian producers and distributors.",
@@ -2119,6 +2128,46 @@
     },
     "footer": {
       "stack": "FastAPI · Next.js 14 · PostgreSQL 16 · AWS ECS Fargate"
+    }
+  },
+  "contact": {
+    "footer_link": "Contact SMART",
+    "title": "Contact SMART",
+    "coming_soon": "Contact details are coming soon. In the meantime, use the sign-up or getting-started pages to reach us.",
+    "email_label": "Email",
+    "phone_label": "Phone",
+    "whatsapp_label": "WhatsApp",
+    "address_label": "Address",
+    "hours_label": "Hours",
+    "back_getting_started_link": "Getting started",
+    "back_signup_link": "Sign up"
+  },
+  "platform_contact": {
+    "title": "Contact details",
+    "subtitle": "Manage the public contact details shown to tenants and visitors.",
+    "restricted": "Access restricted to System Admin.",
+    "support_email_label": "Support email",
+    "phone_label": "Phone",
+    "whatsapp_label": "WhatsApp",
+    "address_en_label": "Address (English)",
+    "address_am_label": "Address (Amharic)",
+    "hours_en_label": "Hours (English)",
+    "hours_am_label": "Hours (Amharic)",
+    "note_en_label": "Note (English)",
+    "note_am_label": "Note (Amharic)",
+    "reason_label": "Reason for change",
+    "reason_placeholder": "Why are you making this change?",
+    "save_btn": "Save",
+    "saving": "Saving…",
+    "saved": "Saved",
+    "preview_heading": "Live preview",
+    "preview_locale_en": "English",
+    "preview_locale_am": "Amharic",
+    "error_generic": "Something went wrong.",
+    "error": {
+      "REASON_REQUIRED": "A reason is required.",
+      "INVALID_PHONE": "Enter a valid phone number.",
+      "FIELD_TOO_LONG": "That field is too long."
     }
   }
 }

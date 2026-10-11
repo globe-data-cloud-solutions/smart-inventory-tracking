@@ -7,6 +7,7 @@ import { loginWithPassword } from "@/lib/demo-auth";
 import { SA_USER } from "@/lib/demo-data";
 import { rawPost } from "@/lib/api";
 import { t } from "@/lib/i18n";
+import { PublicContactLink } from "@/components/features/auth/PublicContactLink";
 
 export default function LoginPage() {
   const router = useRouter();
@@ -287,6 +288,7 @@ export default function LoginPage() {
             <Link href="/privacy" target="_blank" rel="noopener noreferrer" className="underline hover:text-slate-300">
               {t("legal.privacy_title")}
             </Link>
+            <PublicContactLink className="underline hover:text-slate-300" prefix=" · " />
           </p>
           <p className="text-center text-slate-400 text-xs mt-2">
             {t("login.footer_tagline")}

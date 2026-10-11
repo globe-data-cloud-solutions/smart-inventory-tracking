@@ -3,8 +3,10 @@
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { getSession } from "@/lib/demo-auth";
-import { t } from "@/lib/i18n";
+import { t, getCurrentLocale } from "@/lib/i18n";
 import { HELP_MANIFEST, isDocVisibleToRole } from "@/lib/help/manifest";
+import { useContactInfo } from "@/hooks/useContactInfo";
+import { pickLocalized } from "@/lib/billing-types";
 
 export default function HelpPage() {
   const { org } = useParams() as { org: string };
@@ -60,6 +62,31 @@ export default function HelpPage() {
           );
         })}
       </div>
+
+      <ContactHelpCard />
+    </div>
+  );
+}
+
+function ContactHelpCard() {
+  const { contact } = useContactInfo();
+  const locale = getCurrentLocale();
+
+  if (!contact?.configured) return null;
+
+  const hours = pickLocalized(contact.hours, locale);
+
+  return (
+    <div className="mt-6 rounded-lg border border-gray-200 bg-white p-4">
+      <p className="font-semibold text-gray-800 m-0">{t("help.contact.title")}</p>
+      <div className="mt-2 space-y-0.5 text-sm text-gray-600">
+        {contact.support_email && <p className="m-0">{contact.support_email}</p>}
+        {contact.phone && <p className="m-0">{contact.phone}</p>}
+        {hours && <p className="m-0">{hours}</p>}
+      </div>
+      <Link href="/contact" className="mt-2 inline-block text-sm font-semibold text-[#0f2d1f] hover:underline">
+        {t("contact.footer_link")}
+      </Link>
     </div>
   );
 }

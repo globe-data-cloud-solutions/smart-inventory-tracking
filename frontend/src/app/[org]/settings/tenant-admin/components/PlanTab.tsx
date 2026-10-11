@@ -7,6 +7,8 @@ import { t } from "@/lib/i18n";
 import { formatCurrency } from "@/lib/utils";
 import { Badge } from "@/components/ui/Badge";
 import { tierLabel as planTierLabel } from "@/lib/planError";
+import { PublicContactLink } from "@/components/features/auth/PublicContactLink";
+import { useContactInfo } from "@/hooks/useContactInfo";
 import { TabProps, PlanData, TenantAddonOut, ProrationPreview, ProrationInvoiceOut } from "../types";
 
 const PLAN_TIERS = {
@@ -256,6 +258,7 @@ const RENEWAL_STATUS_BADGE: Record<RenewalRequestOut["status"], "success" | "war
 // TA ask SMART for a renewal without waiting for the grace/read-only stage.
 function RenewalCard() {
   const qc = useQueryClient();
+  const { contact } = useContactInfo();
   const [message, setMessage] = useState("");
   const [error, setError] = useState<string | null>(null);
 
@@ -334,6 +337,15 @@ function RenewalCard() {
           {t("tenant_admin.plan.renewal.upgrade_line")
             .replace("{tier}", planTierLabel(openUpgradeRequest.requested_tier ?? ""))
             .replace("{date}", new Date(openUpgradeRequest.created_at).toLocaleDateString())}
+        </p>
+      )}
+
+      {contact?.configured && (
+        <p className="mt-3 text-xs text-gray-400">
+          <PublicContactLink
+            className="font-semibold text-brand-600 hover:text-brand-700 underline"
+            prefix={`${t("tenant_admin.plan.renewal.contact_prefix")} `}
+          />
         </p>
       )}
 
