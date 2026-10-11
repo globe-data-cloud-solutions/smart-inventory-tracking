@@ -39,8 +39,38 @@ async function login(page: Page, email: string, password: string) {
 }
 
 const RENEWAL_REQUESTS_PATH = "**/api/v1/tenants/me/renewal-requests";
+const PUBLIC_CONTACT_PATH = "**/api/v1/tenants/public/contact";
+
+// Forces PublicContactLink's "contact support" link to not render — the real
+// platform_contact row's configured state is not this spec's concern, and
+// relying on it being unconfigured made the "no contact support link"
+// assertion below depend on live DB state (CLAUDE.md §29: no SQL writes
+// here to force that state instead).
+const UNCONFIGURED_CONTACT = {
+  configured: false,
+  support_email: null,
+  phone: null,
+  whatsapp: null,
+  address: { en: null, am: null },
+  hours: { en: null, am: null },
+  note: { en: null, am: null },
+  updated_at: "2026-01-01T00:00:00Z",
+};
 
 function fulfillList(route: Route, data: unknown[]) {
+  return route.fulfill({
+    status: 200,
+    contentType: "application/json",
+    body: JSON.stringify({
+      success: true,
+      data,
+      request_id: "test-request-id",
+      timestamp: new Date().toISOString(),
+    }),
+  });
+}
+
+function fulfillContact(route: Route, data: Record<string, unknown>) {
   return route.fulfill({
     status: 200,
     contentType: "application/json",
@@ -63,6 +93,7 @@ for (const locale of ["en", "am"] as const) {
     test(`View pricing / View plans / Compare plans all open the modal (${locale})`, async ({ page }) => {
       const taPassword = e2eTaPasswordOrSkip(test);
       const consoleErrors = collectConsoleErrors(page);
+      await page.route(PUBLIC_CONTACT_PATH, (route) => fulfillContact(route, UNCONFIGURED_CONTACT));
 
       await page.addInitScript((loc) => window.localStorage.setItem("locale", loc), locale);
       await login(page, E2E_TA_EMAIL, taPassword);

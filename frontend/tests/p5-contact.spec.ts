@@ -62,17 +62,32 @@ const CONFIGURED_FIXTURE = {
   updated_at: "2026-10-01T00:00:00Z",
 };
 
+const UNCONFIGURED_FIXTURE = {
+  configured: false,
+  support_email: null,
+  phone: null,
+  whatsapp: null,
+  address: { en: null, am: null },
+  hours: { en: null, am: null },
+  note: { en: null, am: null },
+  updated_at: "2026-01-01T00:00:00Z",
+};
+
 async function assertNoRawKeysOrHrefHash(page: Page) {
   await expect(page.locator('a[href="#"]')).toHaveCount(0);
   await expect(page.getByText(/\bcontact\.[a-z_]+\b/)).toHaveCount(0);
   await expect(page.getByText(/\bplatform_contact\.[a-z_]+\b/)).toHaveCount(0);
 }
 
-// ── 1) Unconfigured backend — coming-soon text; no landing link ────────────
+// ── 1) Unconfigured backend (stubbed) — coming-soon text; no landing link ──
+// Intercepted rather than relying on a live DB row being unconfigured — the
+// real platform_contact row may have been configured by other work in this
+// environment (CLAUDE.md §29: no SQL writes here to "fix" that).
 for (const locale of ["en", "am"] as const) {
   test.describe(`Unconfigured contact (${locale})`, () => {
     test(`/contact shows coming-soon; landing has no Contact link (${locale})`, async ({ page }) => {
       const consoleErrors = collectConsoleErrors(page);
+      await page.route(PUBLIC_CONTACT_PATH, (route) => fulfillContact(route, UNCONFIGURED_FIXTURE));
 
       await page.addInitScript((loc) => window.localStorage.setItem("locale", loc), locale);
       await page.goto(`${BASE_URL}/contact`);
