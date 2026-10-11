@@ -143,6 +143,7 @@ async def test_create_renewal_request_happy_path() -> None:
         _one(_row(
             id=REQUEST_ID, tenant_id=TENANT_A, requested_by=uuid.UUID(int=1),
             requested_by_email="ta@example.com", message="please renew",
+            request_type="RENEWAL", requested_tier=None,
             status="OPEN", handled_by=None, handled_note=None, handled_at=None,
             created_at=datetime(2026, 10, 9, tzinfo=timezone.utc),
         )),
@@ -156,6 +157,7 @@ async def test_create_renewal_request_happy_path() -> None:
 
     assert out.data.id == REQUEST_ID
     assert out.data.status == "OPEN"
+    assert out.data.request_type == "RENEWAL"
 
 
 async def test_create_renewal_request_second_open_returns_409() -> None:
@@ -186,6 +188,7 @@ async def test_create_renewal_request_allowed_when_read_only() -> None:
         _one(_row(
             id=REQUEST_ID, tenant_id=TENANT_A, requested_by=uuid.UUID(int=1),
             requested_by_email="ta@example.com", message=None,
+            request_type="RENEWAL", requested_tier=None,
             status="OPEN", handled_by=None, handled_note=None, handled_at=None,
             created_at=datetime(2026, 10, 9, tzinfo=timezone.utc),
         )),
@@ -258,6 +261,7 @@ async def test_list_my_renewal_requests_happy_path() -> None:
         _row(
             id=REQUEST_ID, tenant_id=TENANT_A, requested_by=uuid.UUID(int=1),
             requested_by_email="ta@example.com", message="renew please",
+            request_type="RENEWAL", requested_tier=None,
             status="OPEN", handled_by=None, handled_note=None, handled_at=None,
             created_at=datetime(2026, 10, 9, tzinfo=timezone.utc),
         ),
@@ -283,7 +287,8 @@ async def test_sa_list_renewal_requests_happy_path() -> None:
             id=REQUEST_ID, tenant_id=TENANT_A, tenant_name="Acme", tenant_slug="acme",
             plan_tier="GROWTH", contract_end=date(2026, 10, 15),
             requested_by=uuid.UUID(int=1), requested_by_email="ta@example.com",
-            message="renew please", status="OPEN",
+            message="renew please", request_type="RENEWAL", requested_tier=None,
+            status="OPEN",
             handled_by=None, handled_note=None, handled_at=None,
             created_at=datetime(2026, 10, 9, tzinfo=timezone.utc),
         ),
@@ -291,7 +296,7 @@ async def test_sa_list_renewal_requests_happy_path() -> None:
 
     with patch("shared.permissions.middleware.get_role_permission", new=AsyncMock(return_value=_full_grant())), \
          patch("shared.permissions.middleware.audit_log", new=AsyncMock()):
-        out = await sa_list_renewal_requests(status="OPEN", user=_user(role="SA", tenant_id=None), db=db)
+        out = await sa_list_renewal_requests(status="OPEN", type="ALL", user=_user(role="SA", tenant_id=None), db=db)
 
     assert len(out.data) == 1
     assert out.data[0].tenant_name == "Acme"
@@ -318,10 +323,11 @@ async def test_sa_handle_renewal_request_happy_path() -> None:
 
     db = AsyncMock()
     db.execute.side_effect = [
-        _one(_row(id=REQUEST_ID, tenant_id=TENANT_A, status="OPEN")),
+        _one(_row(id=REQUEST_ID, tenant_id=TENANT_A, status="OPEN", request_type="RENEWAL")),
         _one(_row(
             id=REQUEST_ID, tenant_id=TENANT_A, requested_by=uuid.UUID(int=1),
             requested_by_email="ta@example.com", message="renew please",
+            request_type="RENEWAL", requested_tier=None,
             status="HANDLED", handled_by=uuid.UUID(int=2), handled_note="done",
             handled_at=datetime(2026, 10, 9, tzinfo=timezone.utc),
             created_at=datetime(2026, 10, 1, tzinfo=timezone.utc),
@@ -330,7 +336,7 @@ async def test_sa_handle_renewal_request_happy_path() -> None:
 
     with patch("shared.permissions.middleware.get_role_permission", new=AsyncMock(return_value=_full_grant())), \
          patch("shared.permissions.middleware.audit_log", new=AsyncMock()), \
-         patch("routers.tenants._log_tenant_activity", new=AsyncMock()):
+         patch("routers.tenants._log_tenant_activity", new=AsyncMock()) as mock_log:
         out = await sa_handle_renewal_request(
             request_id=REQUEST_ID,
             body=RenewalRequestHandleIn(status="HANDLED", note="done"),
@@ -338,6 +344,7 @@ async def test_sa_handle_renewal_request_happy_path() -> None:
         )
 
     assert out.data.status == "HANDLED"
+    assert mock_log.call_args.kwargs["action"] == "RENEWAL_HANDLED"
 
 
 async def test_sa_handle_non_open_renewal_request_returns_409() -> None:
@@ -382,6 +389,260 @@ async def test_sa_contracts_overview_happy_path() -> None:
     assert len(out.data.tenants) == 1
     assert out.data.tenants[0].name == "Acme"
     assert out.data.counts["EXPIRING"] == 1
+
+
+# ── Route order: /me and /sa before /{tenant_id} ─────────────────────────────
+
+async def test_create_upgrade_request_happy_path() -> None:
+    from routers.tenants import create_my_renewal_request, RenewalRequestIn
+
+    db = AsyncMock()
+    db.execute.side_effect = [
+        _one(_row(plan_tier="STARTER")),                       # current tier lookup
+        _one(None),                                            # no existing OPEN upgrade
+        _one(_row(email="ta@example.com")),                    # requester email lookup
+        _one(_row(
+            id=REQUEST_ID, tenant_id=TENANT_A, requested_by=uuid.UUID(int=1),
+            requested_by_email="ta@example.com", message=None,
+            request_type="UPGRADE", requested_tier="GROWTH",
+            status="OPEN", handled_by=None, handled_note=None, handled_at=None,
+            created_at=datetime(2026, 10, 9, tzinfo=timezone.utc),
+        )),
+    ]
+
+    with patch("shared.permissions.middleware.get_role_permission", new=AsyncMock(return_value=_full_grant())), \
+         patch("shared.permissions.middleware.audit_log", new=AsyncMock()), \
+         patch("shared.billing.contract_stage.get_tenant_contract_stage", new=AsyncMock(return_value=_active_stage())), \
+         patch("routers.tenants._log_tenant_activity", new=AsyncMock()):
+        out = await create_my_renewal_request(
+            body=RenewalRequestIn(request_type="UPGRADE", requested_tier="GROWTH"),
+            user=_user(), db=db,
+        )
+
+    assert out.data.request_type == "UPGRADE"
+    assert out.data.requested_tier == "GROWTH"
+
+
+async def test_create_upgrade_request_requires_tier() -> None:
+    from routers.tenants import create_my_renewal_request, RenewalRequestIn
+
+    db = AsyncMock()
+
+    with patch("shared.permissions.middleware.get_role_permission", new=AsyncMock(return_value=_full_grant())), \
+         patch("shared.permissions.middleware.audit_log", new=AsyncMock()), \
+         patch("shared.billing.contract_stage.get_tenant_contract_stage", new=AsyncMock(return_value=_active_stage())):
+        with pytest.raises(HTTPException) as exc_info:
+            await create_my_renewal_request(
+                body=RenewalRequestIn(request_type="UPGRADE"), user=_user(), db=db,
+            )
+
+    assert exc_info.value.status_code == 422
+    assert exc_info.value.detail["code"] == "REQUESTED_TIER_REQUIRED"
+    db.execute.assert_not_called()
+
+
+async def test_create_renewal_request_tier_not_allowed() -> None:
+    from routers.tenants import create_my_renewal_request, RenewalRequestIn
+
+    db = AsyncMock()
+
+    with patch("shared.permissions.middleware.get_role_permission", new=AsyncMock(return_value=_full_grant())), \
+         patch("shared.permissions.middleware.audit_log", new=AsyncMock()), \
+         patch("shared.billing.contract_stage.get_tenant_contract_stage", new=AsyncMock(return_value=_active_stage())):
+        with pytest.raises(HTTPException) as exc_info:
+            await create_my_renewal_request(
+                body=RenewalRequestIn(request_type="RENEWAL", requested_tier="GROWTH"),
+                user=_user(), db=db,
+            )
+
+    assert exc_info.value.status_code == 422
+    assert exc_info.value.detail["code"] == "REQUESTED_TIER_NOT_ALLOWED"
+    db.execute.assert_not_called()
+
+
+@pytest.mark.parametrize("current_tier,requested_tier", [
+    ("ENTERPRISE", "GROWTH"),   # lower tier
+    ("GROWTH", "GROWTH"),       # same tier
+])
+async def test_create_upgrade_request_not_an_upgrade(current_tier, requested_tier) -> None:
+    from routers.tenants import create_my_renewal_request, RenewalRequestIn
+
+    db = AsyncMock()
+    db.execute.side_effect = [_one(_row(plan_tier=current_tier))]
+
+    with patch("shared.permissions.middleware.get_role_permission", new=AsyncMock(return_value=_full_grant())), \
+         patch("shared.permissions.middleware.audit_log", new=AsyncMock()), \
+         patch("shared.billing.contract_stage.get_tenant_contract_stage", new=AsyncMock(return_value=_active_stage())):
+        with pytest.raises(HTTPException) as exc_info:
+            await create_my_renewal_request(
+                body=RenewalRequestIn(request_type="UPGRADE", requested_tier=requested_tier),
+                user=_user(), db=db,
+            )
+
+    assert exc_info.value.status_code == 422
+    assert exc_info.value.detail["code"] == "NOT_AN_UPGRADE"
+
+
+async def test_renewal_and_upgrade_open_at_same_time_both_succeed() -> None:
+    """A RENEWAL request stays open while a separate UPGRADE request is created
+    for the same tenant — the one-open-per-type index allows both."""
+    from routers.tenants import create_my_renewal_request, RenewalRequestIn
+
+    db = AsyncMock()
+    db.execute.side_effect = [
+        _one(_row(plan_tier="STARTER")),
+        _one(None),  # no existing OPEN upgrade (a RENEWAL may already be open, untouched)
+        _one(_row(email="ta@example.com")),
+        _one(_row(
+            id=REQUEST_ID, tenant_id=TENANT_A, requested_by=uuid.UUID(int=1),
+            requested_by_email="ta@example.com", message=None,
+            request_type="UPGRADE", requested_tier="GROWTH",
+            status="OPEN", handled_by=None, handled_note=None, handled_at=None,
+            created_at=datetime(2026, 10, 9, tzinfo=timezone.utc),
+        )),
+    ]
+
+    with patch("shared.permissions.middleware.get_role_permission", new=AsyncMock(return_value=_full_grant())), \
+         patch("shared.permissions.middleware.audit_log", new=AsyncMock()), \
+         patch("shared.billing.contract_stage.get_tenant_contract_stage", new=AsyncMock(return_value=_active_stage())), \
+         patch("routers.tenants._log_tenant_activity", new=AsyncMock()):
+        out = await create_my_renewal_request(
+            body=RenewalRequestIn(request_type="UPGRADE", requested_tier="GROWTH"),
+            user=_user(), db=db,
+        )
+
+    assert out.data.status == "OPEN"
+    assert out.data.request_type == "UPGRADE"
+
+
+async def test_create_upgrade_request_second_open_returns_409_upgrade_code() -> None:
+    from routers.tenants import create_my_renewal_request, RenewalRequestIn
+
+    db = AsyncMock()
+    db.execute.side_effect = [
+        _one(_row(plan_tier="STARTER")),
+        _one(_row(id=REQUEST_ID)),  # existing OPEN upgrade found
+    ]
+
+    with patch("shared.permissions.middleware.get_role_permission", new=AsyncMock(return_value=_full_grant())), \
+         patch("shared.permissions.middleware.audit_log", new=AsyncMock()), \
+         patch("shared.billing.contract_stage.get_tenant_contract_stage", new=AsyncMock(return_value=_active_stage())):
+        with pytest.raises(HTTPException) as exc_info:
+            await create_my_renewal_request(
+                body=RenewalRequestIn(request_type="UPGRADE", requested_tier="GROWTH"),
+                user=_user(), db=db,
+            )
+
+    assert exc_info.value.status_code == 409
+    assert exc_info.value.detail["code"] == "UPGRADE_REQUEST_OPEN"
+    assert exc_info.value.detail["id"] == str(REQUEST_ID)
+
+
+async def test_get_contract_status_ignores_open_upgrade() -> None:
+    """An OPEN UPGRADE request must not surface as a renewal open_request."""
+    from routers.tenants import get_my_contract_status
+
+    db = AsyncMock()
+    db.execute.side_effect = [_one(None)]  # the RENEWAL-filtered query finds nothing
+
+    with patch("shared.permissions.middleware.get_role_permission", new=AsyncMock(return_value=_full_grant())), \
+         patch("shared.permissions.middleware.audit_log", new=AsyncMock()), \
+         patch("routers.tenants.get_tenant_contract_stage", new=AsyncMock(return_value=_active_stage())):
+        out = await get_my_contract_status(user=_user(), db=db)
+
+    assert out.data.open_request is None
+
+
+async def test_sa_list_renewal_requests_type_filter() -> None:
+    from routers.tenants import sa_list_renewal_requests
+
+    db = AsyncMock()
+    db.execute.return_value = _many([
+        _row(
+            id=REQUEST_ID, tenant_id=TENANT_A, tenant_name="Acme", tenant_slug="acme",
+            plan_tier="STARTER", contract_end=date(2026, 10, 15),
+            requested_by=uuid.UUID(int=1), requested_by_email="ta@example.com",
+            message=None, request_type="UPGRADE", requested_tier="GROWTH",
+            status="OPEN",
+            handled_by=None, handled_note=None, handled_at=None,
+            created_at=datetime(2026, 10, 9, tzinfo=timezone.utc),
+        ),
+    ])
+
+    with patch("shared.permissions.middleware.get_role_permission", new=AsyncMock(return_value=_full_grant())), \
+         patch("shared.permissions.middleware.audit_log", new=AsyncMock()):
+        out = await sa_list_renewal_requests(status="ALL", type="UPGRADE", user=_user(role="SA", tenant_id=None), db=db)
+
+    assert len(out.data) == 1
+    assert out.data[0].request_type == "UPGRADE"
+    assert out.data[0].requested_tier == "GROWTH"
+
+
+async def test_sa_handle_upgrade_request_logs_upgrade_handled_and_leaves_plan_unchanged() -> None:
+    from routers.tenants import sa_handle_renewal_request, RenewalRequestHandleIn
+
+    db = AsyncMock()
+    db.execute.side_effect = [
+        _one(_row(id=REQUEST_ID, tenant_id=TENANT_A, status="OPEN", request_type="UPGRADE")),
+        _one(_row(
+            id=REQUEST_ID, tenant_id=TENANT_A, requested_by=uuid.UUID(int=1),
+            requested_by_email="ta@example.com", message=None,
+            request_type="UPGRADE", requested_tier="GROWTH",
+            status="HANDLED", handled_by=uuid.UUID(int=2), handled_note="approved",
+            handled_at=datetime(2026, 10, 9, tzinfo=timezone.utc),
+            created_at=datetime(2026, 10, 1, tzinfo=timezone.utc),
+        )),
+    ]
+
+    with patch("shared.permissions.middleware.get_role_permission", new=AsyncMock(return_value=_full_grant())), \
+         patch("shared.permissions.middleware.audit_log", new=AsyncMock()), \
+         patch("routers.tenants._log_tenant_activity", new=AsyncMock()) as mock_log:
+        out = await sa_handle_renewal_request(
+            request_id=REQUEST_ID,
+            body=RenewalRequestHandleIn(status="HANDLED", note="approved"),
+            user=_user(role="SA", tenant_id=None), db=db,
+        )
+
+    assert out.data.status == "HANDLED"
+    assert mock_log.call_args.kwargs["action"] == "UPGRADE_HANDLED"
+    # No plan-change call is made: only the two expected db.execute() calls (lookup + update).
+    assert db.execute.call_count == 2
+
+
+async def test_create_renewal_request_allowed_when_read_only_stage_for_upgrade() -> None:
+    """tenant:renewal_request is in ALLOWED_WRITE_ACTIONS -> an UPGRADE request
+    is also allowed at the READ_ONLY stage."""
+    from routers.tenants import create_my_renewal_request, RenewalRequestIn
+
+    db = AsyncMock()
+    db.execute.side_effect = [
+        _one(_row(plan_tier="STARTER")),
+        _one(None),
+        _one(_row(email="ta@example.com")),
+        _one(_row(
+            id=REQUEST_ID, tenant_id=TENANT_A, requested_by=uuid.UUID(int=1),
+            requested_by_email="ta@example.com", message=None,
+            request_type="UPGRADE", requested_tier="GROWTH",
+            status="OPEN", handled_by=None, handled_note=None, handled_at=None,
+            created_at=datetime(2026, 10, 9, tzinfo=timezone.utc),
+        )),
+    ]
+
+    with patch("shared.permissions.middleware.get_role_permission", new=AsyncMock(return_value=_full_grant())), \
+         patch("shared.permissions.middleware.audit_log", new=AsyncMock()), \
+         patch(
+             "shared.billing.contract_stage.get_tenant_contract_stage",
+             new=AsyncMock(return_value={
+                 "stage": "READ_ONLY", "contract_end": None, "read_only_since": None, "grace_ends": None,
+             }),
+         ), patch("routers.tenants._log_tenant_activity", new=AsyncMock()):
+        out = await create_my_renewal_request(
+            body=RenewalRequestIn(request_type="UPGRADE", requested_tier="GROWTH"),
+            user=_user(), db=db,
+        )
+
+    assert out.data.status == "OPEN"
+    assert out.data.request_type == "UPGRADE"
 
 
 # ── Route order: /me and /sa before /{tenant_id} ─────────────────────────────
