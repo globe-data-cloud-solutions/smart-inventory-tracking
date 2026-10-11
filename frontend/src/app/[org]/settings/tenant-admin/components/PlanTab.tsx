@@ -439,6 +439,8 @@ interface SubscriptionOut {
   payments: PaymentOut[];
   scheduled_tier: string | null;
   scheduled_at: string | null;
+  contract_start: string | null;
+  contract_end: string | null;
 }
 
 interface CheckoutOut {
@@ -584,6 +586,8 @@ function SubscriptionAndInvoices({ tenantId }: { tenantId?: string }) {
   const badgeVariant = SUBSCRIPTION_BADGE[subscription.status ?? ""] ?? "neutral";
   const periodLabelKey = subscription.billing_period === "ANNUAL" ? "tenant_admin.billing.annual" : "tenant_admin.billing.monthly";
   const pendingPayment = subscription.payments.find((p) => p.status === "PENDING") ?? null;
+  const todayLocal = new Date().toLocaleDateString("en-CA"); // YYYY-MM-DD, local time
+  const billingPeriodEnded = !!subscription.current_period_end && subscription.current_period_end < todayLocal;
 
   return (
     <>
@@ -609,10 +613,15 @@ function SubscriptionAndInvoices({ tenantId }: { tenantId?: string }) {
             </Badge>
           </div>
           <div>
-            <p className="text-sm text-gray-500">{t("tenant_admin.billing.current_period_label")}</p>
+            <p className="text-sm text-gray-500">{t("tenant_admin.billing.billing_dates_label")}</p>
             <p className="font-semibold text-gray-800">
               {subscription.current_period_start ?? "—"} → {subscription.current_period_end ?? "—"}
             </p>
+            {billingPeriodEnded && (
+              <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded px-2 py-1 mt-1.5">
+                {t("tenant_admin.billing.billing_period_ended_hint")}
+              </p>
+            )}
           </div>
           <div>
             <p className="text-sm text-gray-500">{t("tenant_admin.billing.amount_label")}</p>
@@ -621,6 +630,13 @@ function SubscriptionAndInvoices({ tenantId }: { tenantId?: string }) {
                 ? formatCurrency(subscription.amount, subscription.currency ?? "ETB")
                 : "—"}
             </p>
+          </div>
+          <div>
+            <p className="text-sm text-gray-500">{t("tenant_admin.billing.contract_label")}</p>
+            <p className="font-semibold text-gray-800">
+              {subscription.contract_start ?? "—"} → {subscription.contract_end ?? "—"}
+            </p>
+            <p className="text-xs text-gray-400 mt-1">{t("tenant_admin.billing.contract_helper")}</p>
           </div>
         </div>
 
