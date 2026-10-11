@@ -87,6 +87,8 @@ class SubscriptionOut(BaseModel):
     current_period_end: Optional[str]
     scheduled_tier: Optional[str]
     scheduled_at: Optional[str]
+    contract_start: Optional[str] = None
+    contract_end: Optional[str] = None
     payments: list[PaymentOut]
 
 
@@ -139,6 +141,13 @@ class AddonCancelRequest(BaseModel):
 # ── Shared helpers ────────────────────────────────────────────────────────────
 
 async def _load_subscription_view(db: AsyncSession, tenant_id: str) -> SubscriptionOut:
+    tenant_row = (await db.execute(
+        text("SELECT contract_start, contract_end FROM tenants WHERE id = :tid"),
+        {"tid": str(tenant_id)},
+    )).fetchone()
+    contract_start = _dt(tenant_row.contract_start) if tenant_row else None
+    contract_end = _dt(tenant_row.contract_end) if tenant_row else None
+
     sub = (await db.execute(
         text(
             "SELECT id, tier, billing_period, status, provider, amount, currency, "
@@ -155,6 +164,7 @@ async def _load_subscription_view(db: AsyncSession, tenant_id: str) -> Subscript
             id=None, tier=None, billing_period=None, status=None, provider=None,
             amount=None, currency=None, current_period_start=None, current_period_end=None,
             scheduled_tier=None, scheduled_at=None,
+            contract_start=contract_start, contract_end=contract_end,
             payments=[],
         )
 
@@ -196,6 +206,7 @@ async def _load_subscription_view(db: AsyncSession, tenant_id: str) -> Subscript
         provider=sub.provider, amount=sub.amount, currency=sub.currency,
         current_period_start=_dt(sub.current_period_start), current_period_end=_dt(sub.current_period_end),
         scheduled_tier=sub.scheduled_tier, scheduled_at=_dt(sub.scheduled_at),
+        contract_start=contract_start, contract_end=contract_end,
         payments=payments,
     )
 

@@ -16,6 +16,8 @@ import json
 import os
 import sys
 import uuid
+from datetime import date
+from decimal import Decimal
 
 os.environ.setdefault("DATABASE_URL",      "postgresql+asyncpg://test:x@localhost/test")
 os.environ.setdefault("DATABASE_READ_URL", "postgresql+asyncpg://test:x@localhost/test")
@@ -50,9 +52,10 @@ def _full_grant():
     return grant
 
 
-def _result(fetchone=None):
+def _result(fetchone=None, fetchall=None):
     result = MagicMock()
     result.fetchone = MagicMock(return_value=fetchone)
+    result.fetchall = MagicMock(return_value=fetchall or [])
     return result
 
 
@@ -139,6 +142,52 @@ async def test_me_subscription_without_tenant_context_403() -> None:
             await get_my_subscription(user=sa_with_no_tenant, db=AsyncMock())
 
     assert exc_info.value.status_code == 403
+
+
+# ── _load_subscription_view — contract dates on both return paths ────────────
+
+async def test_load_subscription_view_includes_contract_dates_no_subscription() -> None:
+    from routers.billing import _load_subscription_view
+
+    tenant_row = MagicMock(contract_start=date(2026, 1, 1), contract_end=date(2026, 12, 31))
+    fake_db = AsyncMock()
+    fake_db.execute = AsyncMock(side_effect=[
+        _result(fetchone=tenant_row),   # tenants contract dates
+        _result(fetchone=None),         # no live/past subscription row
+    ])
+
+    out = await _load_subscription_view(fake_db, str(TENANT_A))
+
+    assert out.id is None
+    assert out.contract_start == "2026-01-01"
+    assert out.contract_end == "2026-12-31"
+
+
+async def test_load_subscription_view_includes_contract_dates_full_path() -> None:
+    from routers.billing import _load_subscription_view
+
+    tenant_row = MagicMock(contract_start=date(2026, 2, 1), contract_end=date(2027, 1, 31))
+    sub_row = MagicMock(
+        id=uuid.uuid4(), tier="GROWTH", billing_period="MONTHLY", status="ACTIVE",
+        provider="STUB", amount=Decimal("1000.00"), currency="ETB",
+        current_period_start=date(2026, 10, 1), current_period_end=date(2026, 10, 31),
+        scheduled_tier=None, scheduled_at=None,
+    )
+    fake_db = AsyncMock()
+    fake_db.execute = AsyncMock(side_effect=[
+        _result(fetchone=tenant_row),   # tenants contract dates
+        _result(fetchone=sub_row),      # subscriptions row
+        _result(fetchall=[]),           # payments
+    ])
+
+    out = await _load_subscription_view(fake_db, str(TENANT_A))
+
+    assert out.current_period_start == "2026-10-01"
+    assert out.current_period_end == "2026-10-31"
+    assert out.contract_start == "2026-02-01"
+    assert out.contract_end == "2027-01-31"
+    assert out.contract_start != out.current_period_start
+    assert out.contract_end != out.current_period_end
 
 
 # ── SA invoice/payment management (billing:manage) ────────────────────────────
