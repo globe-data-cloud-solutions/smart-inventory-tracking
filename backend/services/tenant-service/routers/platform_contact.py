@@ -15,8 +15,9 @@ from __future__ import annotations
 import re
 from typing import Optional
 
+from email_validator import EmailNotValidError, validate_email
 from fastapi import APIRouter, Depends, HTTPException, Request
-from pydantic import BaseModel, EmailStr, field_validator
+from pydantic import BaseModel, field_validator
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -95,7 +96,7 @@ async def get_public_contact(request: Request) -> SuccessResponse[ContactOut]:
 # ── PUT /platform/contact ─────────────────────────────────────────────────
 
 class ContactUpdateRequest(BaseModel):
-    support_email: Optional[EmailStr] = None
+    support_email: Optional[str] = None
     phone: Optional[str] = None
     whatsapp: Optional[str] = None
     address_en: Optional[str] = None
@@ -107,7 +108,7 @@ class ContactUpdateRequest(BaseModel):
     reason: str
 
     @field_validator(
-        "phone", "whatsapp", "address_en", "address_am",
+        "support_email", "phone", "whatsapp", "address_en", "address_am",
         "hours_en", "hours_am", "note_en", "note_am",
         mode="before",
     )
@@ -142,6 +143,15 @@ async def update_platform_contact(
     reason = body.reason.strip() if body.reason else ""
     if not reason:
         raise HTTPException(status_code=422, detail={"code": "REASON_REQUIRED", "message": "reason is required."})
+
+    if body.support_email is not None:
+        try:
+            validate_email(body.support_email, check_deliverability=False)
+        except EmailNotValidError:
+            raise HTTPException(
+                status_code=422,
+                detail={"code": "INVALID_EMAIL", "message": "support_email must be a valid email address."},
+            )
 
     for field in ("phone", "whatsapp"):
         value = getattr(body, field)

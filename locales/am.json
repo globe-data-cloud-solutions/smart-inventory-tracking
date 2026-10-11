@@ -2181,6 +2181,7 @@
     "error": {
       "REASON_REQUIRED": "ምክንያት ያስፈልጋል።",
       "INVALID_PHONE": "ትክክለኛ የስልክ ቁጥር ያስገቡ።",
+      "INVALID_EMAIL": "ትክክለኛ የኢሜይል አድራሻ ያስገቡ።",
       "FIELD_TOO_LONG": "ያ መስክ በጣም ረጅም ነው።"
     }
   }

@@ -25,7 +25,7 @@ const EMPTY_FORM: ContactForm = {
   address_en: "", address_am: "", hours_en: "", hours_am: "", note_en: "", note_am: "",
 };
 
-const KNOWN_ERROR_CODES = new Set(["REASON_REQUIRED", "INVALID_PHONE", "FIELD_TOO_LONG"]);
+const KNOWN_ERROR_CODES = new Set(["REASON_REQUIRED", "INVALID_PHONE", "INVALID_EMAIL", "FIELD_TOO_LONG"]);
 
 function errorMessage(e: unknown): string {
   const code = (e as { code?: string } | undefined)?.code;

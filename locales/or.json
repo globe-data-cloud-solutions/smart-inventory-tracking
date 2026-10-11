@@ -2171,6 +2171,7 @@
     "error": {
       "REASON_REQUIRED": "A reason is required.",
       "INVALID_PHONE": "Enter a valid phone number.",
+      "INVALID_EMAIL": "Enter a valid email address.",
       "FIELD_TOO_LONG": "That field is too long."
     }
   }

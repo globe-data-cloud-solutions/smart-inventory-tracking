@@ -26,7 +26,6 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from fastapi import HTTPException
-from pydantic import ValidationError
 
 
 def _user(role: str = "SA"):
@@ -120,11 +119,24 @@ class TestUpdatePlatformContact:
         assert exc_info.value.status_code == 422
         assert exc_info.value.detail["code"] == "INVALID_PHONE"
 
-    def test_bad_email_rejected_by_pydantic(self):
-        from routers.platform_contact import ContactUpdateRequest
+    @pytest.mark.asyncio
+    async def test_bad_email_rejected(self):
+        from routers.platform_contact import ContactUpdateRequest, update_platform_contact
+        from shared.permissions.store import RolePermissionGrant as PermissionGrant
 
-        with pytest.raises(ValidationError):
-            ContactUpdateRequest(support_email="not-an-email", reason="fix email")
+        caller = _user("SA")
+        body = ContactUpdateRequest(support_email="not-an-email", reason="fix email")
+        db = AsyncMock()
+        db.execute = AsyncMock(side_effect=AssertionError("must not query the DB before validation"))
+
+        grant = PermissionGrant(role="SA", action_id="platform:contact_edit", grant_type="FULL")
+        with patch("shared.permissions.middleware.get_role_permission", new=AsyncMock(return_value=grant)):
+            with patch("shared.permissions.audit.audit_log", new=AsyncMock()):
+                with pytest.raises(HTTPException) as exc_info:
+                    await update_platform_contact(body=body, user=caller, db=db)
+
+        assert exc_info.value.status_code == 422
+        assert exc_info.value.detail["code"] == "INVALID_EMAIL"
 
     def test_empty_string_coerced_to_none(self):
         from routers.platform_contact import ContactUpdateRequest
