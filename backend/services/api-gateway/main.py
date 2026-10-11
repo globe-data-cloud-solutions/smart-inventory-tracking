@@ -55,6 +55,7 @@ UNAUTHENTICATED_PATHS = {
     # Public sign-up (S4) — exact-match only, never a prefix.
     "/api/v1/tenants/public/packages",
     "/api/v1/tenants/public/signup",
+    "/api/v1/tenants/public/contact",
     "/api/v1/auth/verify-email",
     "/api/v1/auth/resend-verification",
     # Password reset (B2) — exact-match only, never a prefix.

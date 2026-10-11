@@ -858,3 +858,24 @@ item — do not describe expiry alerts as emailed anywhere until
 monthly and annual billing mid-term. Today the billing period is fixed at
 signup/onboarding (§S9) and `change_plan()` never changes it.
 
+### Platform contact (080)
+
+`platform_contact` (migration 080) — a single-row (`id=1`), platform-level
+table, no `tenant_id`, no RLS (same rationale as the 070 package catalog
+tables): support email/phone/whatsapp, bilingual address/hours/note,
+`updated_at`/`updated_by`.
+
+- `GET /api/v1/tenants/public/contact` — unauthenticated, allowlisted in
+  `scripts/ci_drift_check.py` and `api-gateway`'s `UNAUTHENTICATED_PATHS`
+  next to `/public/packages`. Returns `configured` (`true` if
+  `support_email` or `phone` is set) plus every field, nulls when unset.
+- `PUT /api/v1/tenants/platform/contact` (`platform:contact_edit`,
+  `platform_only`, SA-only) — every field optional/nullable, empty string
+  coerced to NULL, `phone`/`whatsapp` validated against
+  `^[+0-9 ()-]{6,30}$`, `reason` required. Every changed field gets one
+  `platform_config_log` row (`entity_type='CONTACT'`, `entity_key='platform'`)
+  — unchanged fields are not logged. Not classified in
+  `shared/permissions/read_only.py`: it needs no entry because
+  `require_permission()` only applies the `READ_ONLY` gate to non-SA/SYS
+  users, and this action is `platform_only` (SA-only) by construction.
+

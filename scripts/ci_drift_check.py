@@ -38,6 +38,10 @@ ALLOWLISTED_PUBLIC_ROUTES: dict[str, list[str]] = {
         "list_public_packages",
         "public_signup",
     ],
+    "backend/services/tenant-service/routers/platform_contact.py": [
+        # Public platform contact details (080) — no SMART JWT required to view.
+        "get_public_contact",
+    ],
     "backend/services/tenant-service/routers/billing.py": [
         # Public STUB payment webhook (S5) — a payment gateway's server-to-server
         # callback carries no SMART JWT; its HMAC signature IS the auth check.
