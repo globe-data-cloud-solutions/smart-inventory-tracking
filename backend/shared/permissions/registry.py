@@ -241,12 +241,15 @@ class PERMISSIONS:
     TENANT_RENEWAL_MANAGE      = Permission("tenant:renewal_manage",      ["platform_only"])
     TENANT_VIEW_CONTRACT_STATUS = Permission("tenant:view_contract_status", ["tenant_id"])
 
+    # ── Domain 24 — Platform Contact (P4 / 080) ───────────────────────────
+    PLATFORM_CONTACT_EDIT      = Permission("platform:contact_edit",      ["platform_only"])
+
 
 ALL_PERMISSIONS: List[Permission] = [
     v for v in vars(PERMISSIONS).values() if isinstance(v, Permission)
 ]
 
-assert len(ALL_PERMISSIONS) == 160, (
-    f"Expected 160 permissions, found {len(ALL_PERMISSIONS)}. "
+assert len(ALL_PERMISSIONS) == 161, (
+    f"Expected 161 permissions, found {len(ALL_PERMISSIONS)}. "
     "Update registry.py and re-run seed_permissions.py."
 )

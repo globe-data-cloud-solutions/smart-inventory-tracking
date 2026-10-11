@@ -13,8 +13,11 @@ import {
   type DemoProduct,
 } from "@/lib/demo-data";
 import { api } from "@/lib/api";
-import { t } from "@/lib/i18n";
+import { t, getCurrentLocale } from "@/lib/i18n";
 import { formatQty } from "@/lib/utils";
+import { useContactInfo } from "@/hooks/useContactInfo";
+import { pickLocalized } from "@/lib/billing-types";
+import { ContactModal } from "@/components/features/contact/ContactModal";
 
 const isGatewayMode = !!process.env.NEXT_PUBLIC_API_URL;
 
@@ -53,6 +56,37 @@ interface ApiTransferRow {
   to_warehouse_name: string;
   created_at: string;
   lines: ApiTransferLine[];
+}
+
+// Need help? card — TA dashboard only, hidden until platform contact details
+// are configured (useContactInfo: demo mode always resolves to not-configured).
+function NeedHelpCard() {
+  const { contact } = useContactInfo();
+  const locale = getCurrentLocale();
+  const [contactOpen, setContactOpen] = useState(false);
+
+  if (!contact?.configured) return null;
+
+  const hours = pickLocalized(contact.hours, locale);
+
+  return (
+    <div className="bg-white border border-gray-200 rounded p-4 mb-6 flex items-center justify-between gap-4 flex-wrap">
+      <div>
+        <p className="font-bold text-sm text-gray-800 m-0">{t("dashboard.need_help_title")}</p>
+        <p className="text-xs text-gray-500 mt-0.5">
+          {[contact.support_email, contact.phone, hours].filter(Boolean).join(" · ")}
+        </p>
+      </div>
+      <button
+        type="button"
+        onClick={() => setContactOpen(true)}
+        className="text-xs font-bold text-[#0f2d1f] underline shrink-0 whitespace-nowrap"
+      >
+        {t("dashboard.need_help_all_contact")}
+      </button>
+      <ContactModal open={contactOpen} onClose={() => setContactOpen(false)} />
+    </div>
+  );
 }
 
 // ── Summary card ────────────────────────────────────────────────────────────────
@@ -355,6 +389,8 @@ export default function OrgDashboard() {
     requested_by: string;
     requested_by_email: string | null;
     message: string | null;
+    request_type: "RENEWAL" | "UPGRADE";
+    requested_tier: string | null;
     status: "OPEN" | "HANDLED" | "CANCELLED";
     handled_by: string | null;
     handled_note: string | null;
@@ -889,11 +925,16 @@ export default function OrgDashboard() {
                     <div key={r.id} className="bg-white border border-gray-200 rounded p-4">
                       <div className="flex items-start justify-between gap-3 flex-wrap">
                         <div className="min-w-0">
-                          <p className="m-0 font-semibold text-gray-800">
+                          <p className="m-0 font-semibold text-gray-800 flex items-center gap-2 flex-wrap">
                             <Link href={`/${org}/settings/tenants/${r.tenant_id}`} className="text-eth-forest hover:underline">
                               {r.tenant_name}
                             </Link>
                             {r.plan_tier && <span className="text-xs text-gray-500 font-normal"> · {r.plan_tier}</span>}
+                            <span className="text-[11px] font-bold px-1.5 py-0.5 rounded bg-indigo-100 text-indigo-700">
+                              {r.request_type === "UPGRADE"
+                                ? t("sa.renewals_type_upgrade").replace("{tier}", r.requested_tier ?? "")
+                                : t("sa.renewals_type_renewal")}
+                            </span>
                           </p>
                           <p className="m-0 text-xs text-gray-400 mt-0.5">
                             {t("sa.renewals_requested_by")} {r.requested_by_email ?? r.requested_by} · {new Date(r.created_at).toLocaleDateString()}
@@ -902,6 +943,9 @@ export default function OrgDashboard() {
                             <p className="m-0 text-xs text-gray-600 mt-1.5">
                               <span className="font-semibold">{t("sa.renewals_message_label")}:</span> {r.message}
                             </p>
+                          )}
+                          {r.request_type === "UPGRADE" && (
+                            <p className="m-0 text-xs text-amber-700 mt-1.5">{t("sa.renewals_upgrade_hint")}</p>
                           )}
                         </div>
                         <div className="flex gap-2 shrink-0">
@@ -1299,6 +1343,8 @@ export default function OrgDashboard() {
             { label: t("alerts.low_stock"),               value: lowStockCount, warn: lowStockCount > 0 },
           ]}
         />
+
+        {user.role === "TA" && <NeedHelpCard />}
 
         {/* Warehouse breakdown — TA/NM only */}
         {warehouseRows.length > 0 && (

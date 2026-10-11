@@ -142,6 +142,8 @@ subtotal, everywhere a price appears (signup, invoices, proration previews).
 append-only price-history pattern as packages). See §5 for how a grant is
 applied to one tenant.
 
+### Contact details: edit in SA settings → Contact; every change needs a reason and is logged
+
 ## 5. Plan Changes (SA-only)
 
 **TA cannot change their own plan.** `PATCH /api/v1/tenants/me/profile`

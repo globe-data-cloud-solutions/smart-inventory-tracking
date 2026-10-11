@@ -6,7 +6,7 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from routers import adjustment_approval, billing, hierarchy, personnel_v2, positions, public_signup, self_approval, tenants, transfer_types, wizard
+from routers import adjustment_approval, billing, hierarchy, personnel_v2, platform_contact, positions, public_signup, self_approval, tenants, transfer_types, wizard
 from shared.utils.env_guard import assert_safe_environment
 
 
@@ -35,6 +35,7 @@ async def unhandled_exception_handler(request: Request, exc: Exception) -> JSONR
     )
 
 app.include_router(public_signup.router,  prefix="/api/v1/tenants", tags=["public-signup"])
+app.include_router(platform_contact.router, prefix="/api/v1/tenants", tags=["platform-contact"])
 # tenants.router MUST precede billing.router: tenants.router's fixed
 # /platform/addons[...] paths (S10) would otherwise be shadowed by billing
 # .router's parameterised /{tenant_id}/addons — Starlette matches routes in

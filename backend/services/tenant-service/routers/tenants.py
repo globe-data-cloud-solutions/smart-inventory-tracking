@@ -37,6 +37,8 @@ logger = logging.getLogger(__name__)
 
 class RenewalRequestIn(BaseModel):
     message: Optional[str] = Field(default=None, max_length=500)
+    request_type: Literal["RENEWAL", "UPGRADE"] = "RENEWAL"
+    requested_tier: Optional[Literal["STARTER", "GROWTH", "ENTERPRISE"]] = None
 
 
 class RenewalRequestOut(BaseModel):
@@ -45,6 +47,8 @@ class RenewalRequestOut(BaseModel):
     requested_by: uuid.UUID
     requested_by_email: Optional[str]
     message: Optional[str]
+    request_type: str
+    requested_tier: Optional[str]
     status: str
     handled_by: Optional[uuid.UUID]
     handled_note: Optional[str]
@@ -101,6 +105,8 @@ def _renewal_row_to_out(row) -> RenewalRequestOut:
         requested_by=row.requested_by,
         requested_by_email=row.requested_by_email,
         message=row.message,
+        request_type=row.request_type,
+        requested_tier=row.requested_tier,
         status=row.status,
         handled_by=row.handled_by,
         handled_note=row.handled_note,
@@ -1225,33 +1231,41 @@ async def sa_tenant_activity(
 @require_permission(PERMISSIONS.TENANT_RENEWAL_MANAGE)
 async def sa_list_renewal_requests(
     status: str = Query("OPEN", pattern="^(OPEN|HANDLED|ALL)$"),
+    type: str = Query("ALL", pattern="^(RENEWAL|UPGRADE|ALL)$"),
     user=Depends(get_current_user),
     db: AsyncSession = Depends(get_db_session),
 ) -> SuccessResponse[List[SARenewalRequestRow]]:
-    """SA-only: renewal request queue, newest first. Same cross-tenant read
-    pattern as sa_tenant_registry() above — the app's DB role owns these
+    """SA-only: renewal/upgrade request queue, newest first. Same cross-tenant
+    read pattern as sa_tenant_registry() above — the app's DB role owns these
     RLS-enabled tables and isn't FORCE-restricted, so a plain cross-tenant
     JOIN works without any special RLS bypass."""
     if not user or user.role != "SA":
         raise HTTPException(status_code=403, detail={"code": "FORBIDDEN", "message": "SA only"})
 
-    where = ""
+    conditions = []
     if status == "OPEN":
-        where = "WHERE r.status = 'OPEN'"
+        conditions.append("r.status = 'OPEN'")
     elif status == "HANDLED":
-        where = "WHERE r.status IN ('HANDLED', 'CANCELLED')"
+        conditions.append("r.status IN ('HANDLED', 'CANCELLED')")
     # status == "ALL" -> no filter
+    if type != "ALL":
+        conditions.append("r.request_type = :rtype")
+    where = f"WHERE {' AND '.join(conditions)}" if conditions else ""
 
-    rows = (await db.execute(text(f"""
-        SELECT r.id, r.tenant_id, t.name AS tenant_name, t.slug AS tenant_slug,
-               t.plan_tier, t.contract_end,
-               r.requested_by, r.requested_by_email, r.message, r.status,
-               r.handled_by, r.handled_note, r.handled_at, r.created_at
-        FROM tenant_renewal_requests r
-        JOIN tenants t ON t.id = r.tenant_id
-        {where}
-        ORDER BY r.created_at DESC
-    """))).fetchall()
+    rows = (await db.execute(
+        text(f"""
+            SELECT r.id, r.tenant_id, t.name AS tenant_name, t.slug AS tenant_slug,
+                   t.plan_tier, t.contract_end,
+                   r.requested_by, r.requested_by_email, r.message,
+                   r.request_type, r.requested_tier, r.status,
+                   r.handled_by, r.handled_note, r.handled_at, r.created_at
+            FROM tenant_renewal_requests r
+            JOIN tenants t ON t.id = r.tenant_id
+            {where}
+            ORDER BY r.created_at DESC
+        """),
+        {"rtype": type} if type != "ALL" else {},
+    )).fetchall()
 
     return SuccessResponse(data=[
         SARenewalRequestRow(
@@ -1260,7 +1274,8 @@ async def sa_list_renewal_requests(
             plan_tier=row.plan_tier,
             contract_end=str(row.contract_end) if row.contract_end else None,
             requested_by=row.requested_by, requested_by_email=row.requested_by_email,
-            message=row.message, status=row.status,
+            message=row.message, request_type=row.request_type, requested_tier=row.requested_tier,
+            status=row.status,
             handled_by=row.handled_by, handled_note=row.handled_note,
             handled_at=row.handled_at.isoformat() if row.handled_at else None,
             created_at=row.created_at.isoformat(),
@@ -1277,13 +1292,15 @@ async def sa_handle_renewal_request(
     user=Depends(get_current_user),
     db: AsyncSession = Depends(get_db_session),
 ) -> SuccessResponse[RenewalRequestOut]:
-    """SA-only: mark a renewal request HANDLED or CANCELLED. Only an OPEN
-    request can be transitioned — any other current status is a 409."""
+    """SA-only: mark a renewal or upgrade request HANDLED or CANCELLED. Only
+    an OPEN request can be transitioned — any other current status is a 409.
+    This never changes the tenant's plan; the plan change itself goes through
+    the existing tier-change endpoint (S13)."""
     if not user or user.role != "SA":
         raise HTTPException(status_code=403, detail={"code": "FORBIDDEN", "message": "SA only"})
 
     existing = (await db.execute(
-        text("SELECT id, tenant_id, status FROM tenant_renewal_requests WHERE id = :id"),
+        text("SELECT id, tenant_id, status, request_type FROM tenant_renewal_requests WHERE id = :id"),
         {"id": str(request_id)},
     )).fetchone()
     if not existing:
@@ -1300,7 +1317,7 @@ async def sa_handle_renewal_request(
             "SET status = :status, handled_by = :hb, handled_note = :note, handled_at = now() "
             "WHERE id = :id "
             "RETURNING id, tenant_id, requested_by, requested_by_email, message, "
-            "status, handled_by, handled_note, handled_at, created_at"
+            "request_type, requested_tier, status, handled_by, handled_note, handled_at, created_at"
         ),
         {
             "status": body.status, "hb": str(user.user_id),
@@ -1308,7 +1325,10 @@ async def sa_handle_renewal_request(
         },
     )).fetchone()
 
-    action = "RENEWAL_HANDLED" if body.status == "HANDLED" else "RENEWAL_CANCELLED"
+    if existing.request_type == "UPGRADE":
+        action = "UPGRADE_HANDLED" if body.status == "HANDLED" else "UPGRADE_CANCELLED"
+    else:
+        action = "RENEWAL_HANDLED" if body.status == "HANDLED" else "RENEWAL_CANCELLED"
     await _log_tenant_activity(
         db, existing.tenant_id, str(user.user_id),
         action=action,
@@ -1335,7 +1355,7 @@ async def sa_contracts_overview(
     rows = (await db.execute(text("""
         SELECT t.id, t.name, t.slug, t.plan_tier, t.contract_end,
                (SELECT r.id FROM tenant_renewal_requests r
-                WHERE r.tenant_id = t.id AND r.status = 'OPEN'
+                WHERE r.tenant_id = t.id AND r.status = 'OPEN' AND r.request_type = 'RENEWAL'
                 ORDER BY r.created_at DESC LIMIT 1) AS open_request_id
         FROM tenants t
         WHERE t.status != 'DEACTIVATED'
@@ -2010,7 +2030,7 @@ async def get_my_contract_status(
     open_row = (await db.execute(
         text(
             "SELECT id, created_at FROM tenant_renewal_requests "
-            "WHERE tenant_id = :tid AND status = 'OPEN' "
+            "WHERE tenant_id = :tid AND status = 'OPEN' AND request_type = 'RENEWAL' "
             "ORDER BY created_at DESC LIMIT 1"
         ),
         {"tid": str(user.tenant_id)},
@@ -2039,23 +2059,42 @@ async def create_my_renewal_request(
     user=Depends(get_current_user),
     db: AsyncSession = Depends(get_db_session),
 ) -> SuccessResponse[RenewalRequestOut]:
-    """TA: request a contract renewal. Allowed at ANY contract stage (the
-    action is in read_only.ALLOWED_WRITE_ACTIONS) — one OPEN request per
-    tenant at a time; a second attempt returns the existing request's id."""
+    """TA: request a contract renewal or upgrade. Allowed at ANY contract
+    stage (the action is in read_only.ALLOWED_WRITE_ACTIONS) — one OPEN
+    request per (tenant, request_type) at a time; a second attempt on the
+    same type returns the existing request's id."""
     if not user or not user.tenant_id:
         raise HTTPException(status_code=403, detail="No tenant context")
+
+    if body.request_type == "UPGRADE" and body.requested_tier is None:
+        raise HTTPException(status_code=422, detail={"code": "REQUESTED_TIER_REQUIRED"})
+    if body.request_type == "RENEWAL" and body.requested_tier is not None:
+        raise HTTPException(status_code=422, detail={"code": "REQUESTED_TIER_NOT_ALLOWED"})
+
+    if body.request_type == "UPGRADE":
+        tenant_row = (await db.execute(
+            text("SELECT plan_tier FROM tenants WHERE id = :tid"),
+            {"tid": str(user.tenant_id)},
+        )).fetchone()
+        current_tier = str(tenant_row.plan_tier) if tenant_row and tenant_row.plan_tier else None
+        if (
+            current_tier not in _VALID_TIERS
+            or _VALID_TIERS.index(body.requested_tier) <= _VALID_TIERS.index(current_tier)
+        ):
+            raise HTTPException(status_code=422, detail={"code": "NOT_AN_UPGRADE"})
 
     existing = (await db.execute(
         text(
             "SELECT id FROM tenant_renewal_requests "
-            "WHERE tenant_id = :tid AND status = 'OPEN'"
+            "WHERE tenant_id = :tid AND request_type = :rtype AND status = 'OPEN'"
         ),
-        {"tid": str(user.tenant_id)},
+        {"tid": str(user.tenant_id), "rtype": body.request_type},
     )).fetchone()
     if existing:
+        open_code = "RENEWAL_REQUEST_OPEN" if body.request_type == "RENEWAL" else "UPGRADE_REQUEST_OPEN"
         raise HTTPException(
             status_code=409,
-            detail={"code": "RENEWAL_REQUEST_OPEN", "id": str(existing.id)},
+            detail={"code": open_code, "id": str(existing.id)},
         )
 
     email_row = (await db.execute(
@@ -2067,27 +2106,32 @@ async def create_my_renewal_request(
     row = (await db.execute(
         text(
             "INSERT INTO tenant_renewal_requests "
-            "(tenant_id, requested_by, requested_by_email, message) "
-            "VALUES (:tid, :uid, :email, :message) "
+            "(tenant_id, requested_by, requested_by_email, message, request_type, requested_tier) "
+            "VALUES (:tid, :uid, :email, :message, :rtype, :rtier) "
             "RETURNING id, tenant_id, requested_by, requested_by_email, message, "
-            "status, handled_by, handled_note, handled_at, created_at"
+            "request_type, requested_tier, status, handled_by, handled_note, handled_at, created_at"
         ),
         {
             "tid": str(user.tenant_id),
             "uid": str(user.user_id),
             "email": requested_by_email,
             "message": body.message,
+            "rtype": body.request_type,
+            "rtier": body.requested_tier,
         },
     )).fetchone()
 
+    action = "RENEWAL_REQUESTED" if body.request_type == "RENEWAL" else "UPGRADE_REQUESTED"
     await _log_tenant_activity(
         db, user.tenant_id, str(user.user_id),
-        action="RENEWAL_REQUESTED",
+        action=action,
+        new_value=body.requested_tier if body.request_type == "UPGRADE" else None,
         note=body.message,
     )
 
     # SA email delivery comes later with SES — for now, surface in the logs.
-    logger.warning("RenewalRequested tenant=%s by=%s", user.tenant_id, user.user_id)
+    log_label = "RenewalRequested" if body.request_type == "RENEWAL" else "UpgradeRequested"
+    logger.warning("%s tenant=%s by=%s", log_label, user.tenant_id, user.user_id)
 
     return SuccessResponse(data=_renewal_row_to_out(row))
 
@@ -2105,7 +2149,7 @@ async def list_my_renewal_requests(
     rows = (await db.execute(
         text(
             "SELECT id, tenant_id, requested_by, requested_by_email, message, "
-            "status, handled_by, handled_note, handled_at, created_at "
+            "request_type, requested_tier, status, handled_by, handled_note, handled_at, created_at "
             "FROM tenant_renewal_requests WHERE tenant_id = :tid "
             "ORDER BY created_at DESC LIMIT 10"
         ),

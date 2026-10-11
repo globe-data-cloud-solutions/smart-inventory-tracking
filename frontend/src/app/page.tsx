@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { t, getCurrentLocale, loadLocale } from "@/lib/i18n";
 import { AuthLangSwitcher } from "@/components/features/auth/AuthLangSwitcher";
+import { useContactInfo } from "@/hooks/useContactInfo";
 
 const BG   = "#0f2d1f";
 const GOLD = "#FCDD09";
@@ -93,6 +94,9 @@ export default function HomePage() {
     }
   }, []);
 
+  const { contact } = useContactInfo();
+  const contactConfigured = contact?.configured ?? false;
+
   const NAV_ANCHORS = [
     { href: "#features",    key: "landing.nav.features" },
     { href: "#get-started", key: "landing.nav.get_started_anchor" },
@@ -122,6 +126,11 @@ export default function HomePage() {
             <Link href="/getting-started" className="nav-link hidden md:inline-block">
               {t("landing.nav.getting_started")}
             </Link>
+            {contactConfigured && (
+              <Link href="/contact" className="nav-link hidden md:inline-block">
+                {t("landing.nav.contact")}
+              </Link>
+            )}
             <AuthLangSwitcher />
             <Link href="/login" className="btn-signin hidden sm:inline-block">
               {t("landing.nav.sign_in")}
@@ -297,6 +306,11 @@ export default function HomePage() {
             <p className="font-bold text-sm text-white m-0">SMART Inventory Tracker</p>
           </div>
           <p className="text-xs text-green-900">{t("landing.footer.stack")}</p>
+          {contactConfigured && (
+            <Link href="/contact" className="text-xs text-green-300 underline hover:text-green-100">
+              {t("landing.nav.contact")}
+            </Link>
+          )}
           <p className="text-xs text-green-900">🇪🇹 EN · አማርኛ · Afaan Oromoo</p>
         </div>
       </footer>

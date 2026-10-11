@@ -804,6 +804,26 @@ counts and each tenant's current open-request id (if any). `GET
 entry): the caller's own stage, `grace_ends`, `read_only_since`, and any
 `OPEN` request on file.
 
+**Upgrade requests (079)**: `tenant_renewal_requests` also carries TA-initiated
+upgrade requests via `request_type` (`'RENEWAL'` | `'UPGRADE'`, default
+`'RENEWAL'`) and `requested_tier` (set only for `UPGRADE`, must rank above
+the tenant's current `plan_tier` in `STARTER < GROWTH < ENTERPRISE` order, or
+`422 NOT_AN_UPGRADE`). The 078 one-open-per-tenant index became one-open-
+*per-type* (`uq_tenant_renewal_requests_one_open_per_type` on `(tenant_id,
+request_type) WHERE status='OPEN'`), so a tenant can have a `RENEWAL` and an
+`UPGRADE` request open at the same time; a second open attempt on the same
+type returns its id (`409 RENEWAL_REQUEST_OPEN` / `409
+UPGRADE_REQUEST_OPEN`). `POST /me/renewal-requests` requires `requested_tier`
+for `UPGRADE` (`422 REQUESTED_TIER_REQUIRED`) and rejects it for `RENEWAL`
+(`422 REQUESTED_TIER_NOT_ALLOWED`). `GET /me/contract-status` and `GET
+/sa/contracts/overview` only ever surface an open `RENEWAL` request — an open
+`UPGRADE` request doesn't count as a renewal request. `GET
+/sa/renewal-requests` takes an additional `type=RENEWAL|UPGRADE|ALL` filter
+(default `ALL`). `PATCH /sa/renewal-requests/{id}` on an `UPGRADE` row logs
+`UPGRADE_HANDLED`/`UPGRADE_CANCELLED` instead of `RENEWAL_*`, and — same as
+for `RENEWAL` — never changes `tenants.plan_tier` itself; the SA applies the
+upgrade afterwards through the existing tier-change endpoint (S13).
+
 **Recording a payment lifts read-only immediately** — `mark_paid()`
 extends `contract_end` forward (`GREATEST`, never backwards; §7's existing
 rule), and the next permission check re-derives the stage from the new
@@ -837,4 +857,25 @@ item — do not describe expiry alerts as emailed anywhere until
 **Phase II (not built):** switching an existing subscription between
 monthly and annual billing mid-term. Today the billing period is fixed at
 signup/onboarding (§S9) and `change_plan()` never changes it.
+
+### Platform contact (080)
+
+`platform_contact` (migration 080) — a single-row (`id=1`), platform-level
+table, no `tenant_id`, no RLS (same rationale as the 070 package catalog
+tables): support email/phone/whatsapp, bilingual address/hours/note,
+`updated_at`/`updated_by`.
+
+- `GET /api/v1/tenants/public/contact` — unauthenticated, allowlisted in
+  `scripts/ci_drift_check.py` and `api-gateway`'s `UNAUTHENTICATED_PATHS`
+  next to `/public/packages`. Returns `configured` (`true` if
+  `support_email` or `phone` is set) plus every field, nulls when unset.
+- `PUT /api/v1/tenants/platform/contact` (`platform:contact_edit`,
+  `platform_only`, SA-only) — every field optional/nullable, empty string
+  coerced to NULL, `phone`/`whatsapp` validated against
+  `^[+0-9 ()-]{6,30}$`, `reason` required. Every changed field gets one
+  `platform_config_log` row (`entity_type='CONTACT'`, `entity_key='platform'`)
+  — unchanged fields are not logged. Not classified in
+  `shared/permissions/read_only.py`: it needs no entry because
+  `require_permission()` only applies the `READ_ONLY` gate to non-SA/SYS
+  users, and this action is `platform_only` (SA-only) by construction.
 

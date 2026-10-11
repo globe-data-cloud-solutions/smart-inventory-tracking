@@ -7,6 +7,9 @@ import { t } from "@/lib/i18n";
 import { formatCurrency } from "@/lib/utils";
 import { Badge } from "@/components/ui/Badge";
 import { tierLabel as planTierLabel } from "@/lib/planError";
+import { PublicContactLink } from "@/components/features/auth/PublicContactLink";
+import { ContactModal } from "@/components/features/contact/ContactModal";
+import { useContactInfo } from "@/hooks/useContactInfo";
 import { TabProps, PlanData, TenantAddonOut, ProrationPreview, ProrationInvoiceOut } from "../types";
 
 const PLAN_TIERS = {
@@ -235,6 +238,8 @@ interface RenewalRequestOut {
   requested_by: string;
   requested_by_email: string | null;
   message: string | null;
+  request_type: "RENEWAL" | "UPGRADE";
+  requested_tier: string | null;
   status: "OPEN" | "HANDLED" | "CANCELLED";
   handled_by: string | null;
   handled_note: string | null;
@@ -254,8 +259,10 @@ const RENEWAL_STATUS_BADGE: Record<RenewalRequestOut["status"], "success" | "war
 // TA ask SMART for a renewal without waiting for the grace/read-only stage.
 function RenewalCard() {
   const qc = useQueryClient();
+  const { contact } = useContactInfo();
   const [message, setMessage] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [contactOpen, setContactOpen] = useState(false);
 
   const { data: requests, isLoading } = useQuery<RenewalRequestOut[]>({
     queryKey: ["tenant-renewal-requests"],
@@ -263,10 +270,12 @@ function RenewalCard() {
     staleTime: 10_000,
   });
 
-  const openRequest = (requests ?? []).find((r) => r.status === "OPEN") ?? null;
+  const openRequest = (requests ?? []).find((r) => r.status === "OPEN" && r.request_type === "RENEWAL") ?? null;
+  const openUpgradeRequest = (requests ?? []).find((r) => r.status === "OPEN" && r.request_type === "UPGRADE") ?? null;
 
   const submitMutation = useMutation({
     mutationFn: () => api.post<RenewalRequestOut>("/api/v1/tenants/me/renewal-requests", {
+      request_type: "RENEWAL",
       message: message.trim() || undefined,
     }),
     onSuccess: () => {
@@ -324,6 +333,25 @@ function RenewalCard() {
           </button>
         </div>
       )}
+
+      {openUpgradeRequest && (
+        <p className="mt-3 text-xs text-gray-600">
+          {t("tenant_admin.plan.renewal.upgrade_line")
+            .replace("{tier}", planTierLabel(openUpgradeRequest.requested_tier ?? ""))
+            .replace("{date}", new Date(openUpgradeRequest.created_at).toLocaleDateString())}
+        </p>
+      )}
+
+      {contact?.configured && (
+        <p className="mt-3 text-xs text-gray-400">
+          <PublicContactLink
+            className="font-semibold text-brand-600 hover:text-brand-700 underline"
+            prefix={`${t("tenant_admin.plan.renewal.contact_prefix")} `}
+            onClick={() => setContactOpen(true)}
+          />
+        </p>
+      )}
+      <ContactModal open={contactOpen} onClose={() => setContactOpen(false)} />
 
       <div className="mt-5 pt-4 border-t border-gray-100">
         <h4 className="text-sm font-semibold text-gray-600 mb-2">{t("tenant_admin.plan.renewal.recent_heading")}</h4>
@@ -439,6 +467,8 @@ interface SubscriptionOut {
   payments: PaymentOut[];
   scheduled_tier: string | null;
   scheduled_at: string | null;
+  contract_start: string | null;
+  contract_end: string | null;
 }
 
 interface CheckoutOut {
@@ -584,6 +614,8 @@ function SubscriptionAndInvoices({ tenantId }: { tenantId?: string }) {
   const badgeVariant = SUBSCRIPTION_BADGE[subscription.status ?? ""] ?? "neutral";
   const periodLabelKey = subscription.billing_period === "ANNUAL" ? "tenant_admin.billing.annual" : "tenant_admin.billing.monthly";
   const pendingPayment = subscription.payments.find((p) => p.status === "PENDING") ?? null;
+  const todayLocal = new Date().toLocaleDateString("en-CA"); // YYYY-MM-DD, local time
+  const billingPeriodEnded = !!subscription.current_period_end && subscription.current_period_end < todayLocal;
 
   return (
     <>
@@ -609,10 +641,15 @@ function SubscriptionAndInvoices({ tenantId }: { tenantId?: string }) {
             </Badge>
           </div>
           <div>
-            <p className="text-sm text-gray-500">{t("tenant_admin.billing.current_period_label")}</p>
+            <p className="text-sm text-gray-500">{t("tenant_admin.billing.billing_dates_label")}</p>
             <p className="font-semibold text-gray-800">
               {subscription.current_period_start ?? "—"} → {subscription.current_period_end ?? "—"}
             </p>
+            {billingPeriodEnded && (
+              <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded px-2 py-1 mt-1.5">
+                {t("tenant_admin.billing.billing_period_ended_hint")}
+              </p>
+            )}
           </div>
           <div>
             <p className="text-sm text-gray-500">{t("tenant_admin.billing.amount_label")}</p>
@@ -621,6 +658,13 @@ function SubscriptionAndInvoices({ tenantId }: { tenantId?: string }) {
                 ? formatCurrency(subscription.amount, subscription.currency ?? "ETB")
                 : "—"}
             </p>
+          </div>
+          <div>
+            <p className="text-sm text-gray-500">{t("tenant_admin.billing.contract_label")}</p>
+            <p className="font-semibold text-gray-800">
+              {subscription.contract_start ?? "—"} → {subscription.contract_end ?? "—"}
+            </p>
+            <p className="text-xs text-gray-400 mt-1">{t("tenant_admin.billing.contract_helper")}</p>
           </div>
         </div>
 

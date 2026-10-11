@@ -12,6 +12,8 @@ import { useInventoryStore } from "@/lib/inventory-state";
 import { useAuditStore } from "@/lib/audit-log-state";
 import { useTenantName } from "@/hooks/useTenantName";
 import { useContractStatus } from "@/hooks/useContractStatus";
+import { PublicContactLink } from "@/components/features/auth/PublicContactLink";
+import { ContactModal } from "@/components/features/contact/ContactModal";
 
 type Locale = "en" | "am" | "or";
 
@@ -542,6 +544,7 @@ export default function OrgLayout({ children }: { children: React.ReactNode }) {
   const [apiLogoUrl,    setApiLogoUrl]         = useState<string | null>(null);
   const [apiBannerUrl,  setApiBannerUrl]       = useState<string | null>(null);
   const [sidebarOpen, setSidebarOpen]          = useState(false);
+  const [contactOpen, setContactOpen]          = useState(false);
   const [plan, setPlan]                        = useState<PlanData | null>(null);
   const setActiveTenant   = useInventoryStore((s) => s.setActiveTenant);
   const { contractStatus } = useContractStatus();
@@ -743,6 +746,13 @@ export default function OrgLayout({ children }: { children: React.ReactNode }) {
                     {t("contract.request_renewal_link")}
                   </Link>
                 )}
+                {user.role === "TA" && (
+                  <PublicContactLink
+                    className="text-xs font-bold text-amber-900 underline shrink-0 whitespace-nowrap"
+                    prefix=" · "
+                    onClick={() => setContactOpen(true)}
+                  />
+                )}
               </div>
             )}
             {org !== SA_ORG_SLUG && contractStatus?.stage === "READ_ONLY" && (
@@ -758,12 +768,20 @@ export default function OrgLayout({ children }: { children: React.ReactNode }) {
                     {t("contract.request_renewal_link")}
                   </Link>
                 )}
+                {user.role === "TA" && (
+                  <PublicContactLink
+                    className="text-xs font-bold text-red-900 underline shrink-0 whitespace-nowrap"
+                    prefix=" · "
+                    onClick={() => setContactOpen(true)}
+                  />
+                )}
               </div>
             )}
             {children}
           </main>
         </div>
       </div>
+      <ContactModal open={contactOpen} onClose={() => setContactOpen(false)} />
     </QueryClientProvider>
   );
 }
@@ -779,6 +797,7 @@ const SA_NAV: NavItem[] = [
   { type: "link", icon: "🔔", label: "sa.tab_renewals", page: "dashboard?tab=renewals", badge: "renewalsOpenCount" },
   { type: "section", label: "System" },
   { type: "link", icon: "💳", label: "sa.nav_plans_pricing", page: "settings/plans" },
+  { type: "link", icon: "☎️", label: "sa.nav_contact", page: "settings/contact" },
   // These pages are planned but not yet built — links are intentionally
   // disabled until the pages exist. Do not remove; placeholder only.
   { type: "link", icon: "🔐", label: "Permissions", page: "dashboard", disabled: true },

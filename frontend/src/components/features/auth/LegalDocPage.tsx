@@ -6,6 +6,7 @@ import { api, IS_GATEWAY_MODE } from "@/lib/api";
 import { t } from "@/lib/i18n";
 import { AuthLangSwitcher } from "@/components/features/auth/AuthLangSwitcher";
 import { DocumentRenderer } from "@/components/features/help/DocumentRenderer";
+import { PublicContactLink } from "@/components/features/auth/PublicContactLink";
 
 interface PackagesListOut {
   terms_version: string;
@@ -63,6 +64,10 @@ export function LegalDocPage({ kind }: { kind: "terms" | "privacy" }) {
         {error && <p className="text-sm text-red-600">{t("common.error")}</p>}
         {!error && markdown === null && <p className="text-sm text-gray-500">{t("common.loading")}</p>}
         {!error && markdown !== null && <DocumentRenderer markdown={markdown} />}
+
+        <div className="mt-6 text-center">
+          <PublicContactLink className="text-xs underline text-gray-400 hover:text-gray-600" />
+        </div>
       </div>
     </div>
   );

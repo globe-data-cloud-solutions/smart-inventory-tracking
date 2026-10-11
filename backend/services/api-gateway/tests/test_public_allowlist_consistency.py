@@ -22,6 +22,7 @@ ROUTER_PREFIXES = {
     "backend/services/auth-service/routers/auth.py": "/api/v1/auth",
     "backend/services/tenant-service/routers/public_signup.py": "/api/v1/tenants",
     "backend/services/tenant-service/routers/billing.py": "/api/v1/tenants",
+    "backend/services/tenant-service/routers/platform_contact.py": "/api/v1/tenants",
 }
 
 # Parameterized paths (contain a {...} segment) can never be exact-matched in
