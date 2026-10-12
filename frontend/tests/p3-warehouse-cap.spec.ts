@@ -74,6 +74,7 @@ function localeStrings(locale: "en" | "am") {
     requestUpgrade: d.tenant_admin.features.request_upgrade_btn as string,
     limitReachedWarehouses: d.plan.limit_reached.warehouses as string,
     reactivateBtn: d.org_setup.reactivate_node as string,
+    levelApprovalOnlyHint: d.org_setup.level_approval_only_hint as string,
   };
 }
 
@@ -88,9 +89,15 @@ const CLONE_PERMS_PATH = /\/clone-level-permissions(\?.*)?$/;
 
 const FAKE_TENANT_ID = "aaaaaaaa-1111-1111-1111-000000000001";
 
+// Root nodes always land on L1 (NodeForm's childLevel is 1 when there is no
+// parent — see "Add root node (L1)" in org-setup/page.tsx), so L1 must hold
+// stock for these warehouse-cap scenarios to exercise a stock-holding node.
+// L2 is deliberately approval-only (is_stock_holding: false) to cover the
+// level holds-stock guard: a node added under an L1 parent must default to
+// a disabled, unchecked "Holds stock" checkbox with its hint.
 const LEVELS = [
-  { id: "lvl-1", level_number: 1, level_name: "Head Office", default_role_code: "NM", role_display_label: "National Manager", is_stock_holding: false },
-  { id: "lvl-2", level_number: 2, level_name: "Warehouse", default_role_code: "WM", role_display_label: "Warehouse Manager", is_stock_holding: true },
+  { id: "lvl-1", level_number: 1, level_name: "Warehouse", default_role_code: "WM", role_display_label: "Warehouse Manager", is_stock_holding: true },
+  { id: "lvl-2", level_number: 2, level_name: "Regional Office", default_role_code: "RM", role_display_label: "Regional Manager", is_stock_holding: false },
 ];
 
 function rootNode(overrides: Partial<Record<string, unknown>> = {}) {
@@ -101,7 +108,7 @@ function rootNode(overrides: Partial<Record<string, unknown>> = {}) {
     address: null,
     hierarchy_level: 1,
     parent_node_id: null,
-    is_stock_holding: false,
+    is_stock_holding: true,
     is_active: true,
     children: [],
     ...overrides,
@@ -315,6 +322,15 @@ for (const locale of ["en", "am"] as const) {
       await gotoOrgTree(page);
 
       await expect(page.getByText(strings.unlimited)).toBeVisible({ timeout: 10_000 });
+
+      // Approval-only level (L2, added under the L1 root): "Holds stock" is
+      // disabled + unchecked, with the approval-only hint — the level
+      // holds-stock guard, not the plan cap, is what's driving this state.
+      await page.getByTitle("Add child node").first().click();
+      const childHoldsStockCheckbox = page.getByText(strings.isStockHolding).last().locator("xpath=..").locator('input[type="checkbox"]');
+      await expect(childHoldsStockCheckbox).toBeDisabled();
+      await expect(childHoldsStockCheckbox).not.toBeChecked();
+      await expect(page.getByText(strings.levelApprovalOnlyHint)).toBeVisible();
 
       console.log(`--- unlimited plan (${locale}) console errors ---`);
       for (const e of consoleErrors) console.log(e);
