@@ -34,6 +34,10 @@ class AdjustmentReasonCode(str, Enum):
 ALLOWED_RECEIVE_SOURCES = frozenset({"WEB", "OPENING_BALANCE"})
 
 
+class FeatureFlagsResponse(BaseModel):
+    lot_tracking: bool
+
+
 class ReceiveStockRequest(BaseModel):
     product_id: uuid.UUID
     warehouse_id: uuid.UUID
