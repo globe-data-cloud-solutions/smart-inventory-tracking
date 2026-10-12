@@ -72,6 +72,57 @@ async def get_or_create_lot(
     return str(row.id)
 
 
+async def create_auto_lot(
+    session: AsyncSession,
+    tenant_id: str,
+    product_id: str,
+    expiry_date: Optional[date],
+    performed_by: str,
+) -> tuple[str, str]:
+    """Create a brand-new lot numbered YYMMDD-NNN (today's date; NNN = 1 +
+    the count of that product's lots already sharing that date prefix).
+
+    Always creates a new lot — never merges with an existing one. Retries
+    on a lot_number collision (concurrent auto-lot creation for the same
+    product/date) by incrementing NNN, up to 5 attempts.
+    """
+    prefix = date.today().strftime("%y%m%d")
+
+    result = await session.execute(
+        text(
+            "SELECT COUNT(*) AS cnt FROM stock_lots "
+            "WHERE tenant_id = :tid AND product_id = :pid AND lot_number LIKE :prefix"
+        ),
+        {"tid": tenant_id, "pid": product_id, "prefix": f"{prefix}-%"},
+    )
+    seq = result.fetchone().cnt + 1
+
+    for _ in range(5):
+        lot_number = f"{prefix}-{seq:03d}"
+        result = await session.execute(
+            text(
+                "INSERT INTO stock_lots "
+                "(tenant_id, product_id, lot_number, expiry_date, created_by) "
+                "VALUES (:tid, :pid, :lot, :exp, :uid) "
+                "ON CONFLICT (tenant_id, product_id, lot_number) DO NOTHING "
+                "RETURNING id"
+            ),
+            {
+                "tid": tenant_id,
+                "pid": product_id,
+                "lot": lot_number,
+                "exp": expiry_date,
+                "uid": performed_by,
+            },
+        )
+        row = result.fetchone()
+        if row is not None:
+            return str(row.id), lot_number
+        seq += 1
+
+    raise HTTPException(status_code=500, detail={"code": "LOT_NUMBER_GENERATION_FAILED"})
+
+
 async def _get_lot_balance(
     session: AsyncSession,
     tenant_id: str,
