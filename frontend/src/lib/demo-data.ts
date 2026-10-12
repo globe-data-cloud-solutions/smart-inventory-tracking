@@ -34,6 +34,7 @@ export interface DemoProduct {
   category: string;
   unit: string;
   batchTracking: boolean;
+  expiryTracking?: boolean;
   reorderPoint: number;
   stock: Record<string, number>;
   shortName?: string;

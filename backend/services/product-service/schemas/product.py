@@ -164,6 +164,9 @@ class ProductResponse(BaseModel):
     currency: Optional[str] = None
     image_url: Optional[str] = None
     is_controlled: bool = False
+    batch_tracking: bool = False
+    expiry_tracking: bool = False
+    dispatch_strategy: Optional[str] = None
     tenant_id: uuid.UUID
     created_at: datetime
     created_by: Optional[uuid.UUID] = None

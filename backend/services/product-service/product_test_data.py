@@ -179,6 +179,9 @@ def _make_product_row(**overrides: object) -> MagicMock:
         packaging_type=None,
         units_per_package=None,
         image_url=None,
+        batch_tracking=False,
+        expiry_tracking=False,
+        dispatch_strategy=None,
     )
     defaults.update(overrides)
     row = MagicMock()
@@ -247,7 +250,9 @@ def _make_approval_minimums_get_mock_db(return_rows: list) -> AsyncMock:
     return db
 
 
-def _make_update_mock_db(role: str = "TA", is_controlled: bool = False) -> AsyncMock:
+def _make_update_mock_db(
+    role: str = "TA", is_controlled: bool = False, row_overrides: dict | None = None
+) -> AsyncMock:
     """Build a mock AsyncSession whose execute() side_effect matches the
     update_product() (PATCH /{product_id}) execution order, for a request
     that only changes simple scalar fields (e.g. description) — no
@@ -265,7 +270,7 @@ def _make_update_mock_db(role: str = "TA", is_controlled: bool = False) -> Async
     db = AsyncMock()
 
     row_res = MagicMock()
-    row_res.fetchone.return_value = _make_product_row()
+    row_res.fetchone.return_value = _make_product_row(**(row_overrides or {}))
 
     controlled_res = MagicMock()
     controlled_res.fetchone.return_value = MagicMock() if is_controlled else None

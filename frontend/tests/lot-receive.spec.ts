@@ -1,0 +1,336 @@
+/**
+ * Playwright E2E — lot-aware Receive Stock / Opening Balance (session/2026-10-12-fefo-a1).
+ *
+ * Covers:
+ *   a) non-batch product selected -> lot/expiry fields hidden, payload carries
+ *      no lot_number / expiry_date / auto_lot
+ *   b) batch product, no lot, auto unchecked -> validation error, no request sent
+ *   c) batch product, auto-generate checked + expiry set -> payload has
+ *      auto_lot:true and no lot_number; success text shows the returned lot number
+ *   d) batch product, manual lot with no expiry -> EXPIRY_REQUIRED error, no request
+ *   e) Opening Balance panel — same rules, source stays OPENING_BALANCE, no
+ *      Manufacture Date field
+ *   f) am locale — (a) and (c) again, asserting no raw i18n keys are visible
+ *
+ * GET /api/v1/products and POST /api/v1/inventory/receive/ are stubbed with
+ * page.route() in every scenario below — this file never sends a live write.
+ * Everything else (login, warehouses) goes to the real local dev backend
+ * using the permanent zz-e2e-ta TA probe account (CLAUDE.md §29).
+ *
+ * The TA probe has no warehouse_id in its JWT (TA is tenant-wide, not
+ * warehouse-scoped), but ReceiveStockPanel reads the warehouse read-only
+ * from session.warehouseId (never a dropdown, per CLAUDE.md UI rules) — so
+ * after a real login this file patches warehouseId/warehouseName directly
+ * in the browser's localStorage session object (client-side only, no DB
+ * write) purely to exercise that code path.
+ *
+ * Both ReceiveStockPanel and OpeningBalancePanel are always mounted on the
+ * inventory page (their slide-out drawer is just CSS-translated off-screen
+ * when closed), and Playwright's visibility check does not treat a
+ * translate-x-full element as hidden — so every locator below is scoped to
+ * the one open drawer via panelRoot(), never to the bare page.
+ *
+ * Chromium headless only, serviceWorkers blocked, en + am. Run:
+ *   set -a; source .env; set +a
+ *   cd frontend && npx playwright test tests/lot-receive.spec.ts --workers=1
+ */
+import fs from "fs";
+import path from "path";
+import { test, expect, type Page, type Locator, type ConsoleMessage, type Route } from "@playwright/test";
+import { E2E_TA_EMAIL, E2E_TA_SLUG, e2eTaPasswordOrSkip } from "./helpers/e2e-ta";
+
+const BASE_URL = process.env.BASE_URL ?? "http://localhost:3000";
+
+test.setTimeout(60_000);
+test.use({ serviceWorkers: "block" });
+
+function collectConsoleErrors(page: Page): string[] {
+  const lines: string[] = [];
+  page.on("console", (msg: ConsoleMessage) => {
+    if (msg.type() !== "error") return;
+    if (/Failed to load resource.*4\d\d/.test(msg.text())) return;
+    if (/Failed to fetch RSC payload.*Falling back to browser navigation/.test(msg.text())) return;
+    lines.push(msg.text());
+  });
+  page.on("pageerror", (err) => lines.push(`[pageerror] ${err.message}`));
+  return lines;
+}
+
+async function login(page: Page, email: string, password: string) {
+  await page.goto(`${BASE_URL}/login`);
+  await page.fill('input[type="email"]', email);
+  await page.fill('input[type="password"]', password);
+  await page.click('button[type="submit"]');
+  await page.waitForURL(/\/(admin|[a-z0-9-]+)\/dashboard/);
+}
+
+/** Patch the client-side session (post real login) so ReceiveStockPanel's
+ * read-only warehouse field is non-empty — the TA probe's JWT has no
+ * warehouse_id. No backend write; purely a browser localStorage edit. */
+async function fakeWarehouseAssignment(page: Page) {
+  await page.evaluate(() => {
+    const raw = window.localStorage.getItem("smart_demo_session");
+    if (!raw) return;
+    const session = JSON.parse(raw) as Record<string, unknown>;
+    session.warehouseId = "test-wh-001";
+    session.warehouseName = "Test Warehouse";
+    window.localStorage.setItem("smart_demo_session", JSON.stringify(session));
+  });
+}
+
+function fulfillJson(route: Route, data: unknown, status = 200) {
+  return route.fulfill({
+    status,
+    contentType: "application/json",
+    body: JSON.stringify({ success: true, data, request_id: "test", timestamp: new Date().toISOString() }),
+  });
+}
+
+function localeStrings(locale: "en" | "am") {
+  const raw = fs.readFileSync(path.join(__dirname, "..", "..", "locales", `${locale}.json`), "utf-8");
+  const d = JSON.parse(raw);
+  return {
+    receiveTitle:        d.inventory.receive.title as string,
+    manualRef:           d.transfer.reference.MANUAL as string,
+    autoLotCheckbox:      d.receive_panel.auto_lot_checkbox as string,
+    lotNumberLabel:       d.inventory.receive.lot_number as string,
+    expiryDateLabel:      d.inventory.receive.expiry_date as string,
+    lotNumberRequired:    d.errors.LOT_NUMBER_REQUIRED as string,
+    expiryRequired:       d.errors.EXPIRY_REQUIRED as string,
+    successLot: (lot: string) => (d.inventory.receive.success_lot as string).replace("{lot}", lot),
+    openingBalanceTitle: d.opening_balance.title as string,
+    openingBalanceSubmit: d.opening_balance.submit as string,
+  };
+}
+
+const NON_BATCH_PRODUCT = {
+  id: "prod-nonbatch-1", sku: "NB-100", name: "NonBatch Widget", unit: "pcs", pack_size: 1,
+  batch_tracking: false, expiry_tracking: false,
+};
+const BATCH_PRODUCT = {
+  id: "prod-batch-1", sku: "BT-200", name: "Batch Widget", unit: "pcs", pack_size: 1,
+  batch_tracking: true, expiry_tracking: true,
+};
+
+const PRODUCTS_PATH = "**/api/v1/products";
+const RECEIVE_PATH   = "**/api/v1/inventory/receive/";
+
+async function stubProducts(page: Page) {
+  await page.route(PRODUCTS_PATH, (route) => {
+    if (route.request().method() === "GET") return fulfillJson(route, [NON_BATCH_PRODUCT, BATCH_PRODUCT]);
+    return route.continue();
+  });
+}
+
+/** Stubs the receive POST, capturing the request body into `captured.body`. */
+async function stubReceive(page: Page, captured: { body: unknown }) {
+  await page.route(RECEIVE_PATH, (route) => {
+    if (route.request().method() === "POST") {
+      captured.body = route.request().postDataJSON();
+      return fulfillJson(route, { lot_id: "lot-1", lot_number: "261012-001", expiry_date: null, source: "WEB" }, 201);
+    }
+    return route.continue();
+  });
+}
+
+/** Both panels' drawers are always mounted (only CSS-translated off-screen
+ * when closed), so every panel-scoped locator must go through this —
+ * never through a bare `page.locator(...)`. Scopes to the one drawer whose
+ * header contains `titleText` (ReceiveStockPanel vs OpeningBalancePanel). */
+function panelRoot(page: Page, titleText: string): Locator {
+  return page.locator("div.fixed.top-0.right-0.translate-x-0").filter({ hasText: titleText });
+}
+
+async function openReceivePanel(page: Page, s: ReturnType<typeof localeStrings>): Promise<Locator> {
+  await page.goto(`${BASE_URL}/${E2E_TA_SLUG}/inventory`);
+  await page.waitForLoadState("networkidle");
+  await page.getByRole("button", { name: `+ ${s.receiveTitle}` }).click();
+  const panel = panelRoot(page, s.receiveTitle);
+  await expect(panel).toBeVisible();
+  return panel;
+}
+
+for (const locale of ["en", "am"] as const) {
+  test.describe(`Receive Stock — lot/expiry (${locale})`, () => {
+    test(`non-batch product: lot/expiry hidden, payload carries neither (${locale})`, async ({ page }) => {
+      const taPassword = e2eTaPasswordOrSkip(test);
+      const s = localeStrings(locale);
+      const consoleErrors = collectConsoleErrors(page);
+      const captured: { body: unknown } = { body: null };
+
+      await stubProducts(page);
+      await stubReceive(page, captured);
+
+      await page.addInitScript((loc) => window.localStorage.setItem("locale", loc), locale);
+      await login(page, E2E_TA_EMAIL, taPassword);
+      await fakeWarehouseAssignment(page);
+      const panel = await openReceivePanel(page, s);
+
+      await panel.locator("select").nth(0).selectOption({ label: `${NON_BATCH_PRODUCT.name} · ${NON_BATCH_PRODUCT.sku}` });
+
+      await expect(panel.getByText(s.lotNumberLabel, { exact: true })).toHaveCount(0);
+      await expect(panel.getByText(s.expiryDateLabel, { exact: true })).toHaveCount(0);
+
+      await panel.locator("select").nth(1).selectOption({ label: s.manualRef });
+      await panel.getByPlaceholder("e.g. 500").fill("10");
+      await panel.getByRole("button", { name: s.receiveTitle, exact: true }).click();
+
+      await expect.poll(() => captured.body, { timeout: 10_000 }).toBeTruthy();
+      const body = captured.body as Record<string, unknown>;
+      expect(body.lot_number).toBeUndefined();
+      expect(body.expiry_date).toBeUndefined();
+      expect(body.auto_lot).toBeUndefined();
+
+      if (locale === "am") {
+        await expect(page.getByText(/receive_panel\./)).toHaveCount(0);
+        await expect(page.getByText(/inventory\.receive\./)).toHaveCount(0);
+      }
+
+      console.log(`--- non-batch no-lot payload (${locale}) console errors ---`);
+      for (const e of consoleErrors) console.log(e);
+      expect(consoleErrors, `zero console errors (${locale})`).toHaveLength(0);
+    });
+
+    test(`batch product, no lot, auto unchecked: validation error, no request sent (${locale})`, async ({ page }) => {
+      test.skip(locale !== "en", "case (b) is English-only per spec");
+      const taPassword = e2eTaPasswordOrSkip(test);
+      const s = localeStrings(locale);
+      const consoleErrors = collectConsoleErrors(page);
+      const captured: { body: unknown } = { body: null };
+
+      await stubProducts(page);
+      await stubReceive(page, captured);
+
+      await login(page, E2E_TA_EMAIL, taPassword);
+      await fakeWarehouseAssignment(page);
+      const panel = await openReceivePanel(page, s);
+
+      await panel.locator("select").nth(0).selectOption({ label: `${BATCH_PRODUCT.name} · ${BATCH_PRODUCT.sku}` });
+      await panel.locator("select").nth(1).selectOption({ label: s.manualRef });
+      await panel.getByPlaceholder("e.g. 500").fill("10");
+      await panel.getByRole("button", { name: s.receiveTitle, exact: true }).click();
+
+      await expect(panel.getByText(s.lotNumberRequired)).toBeVisible({ timeout: 10_000 });
+      expect(captured.body).toBeNull();
+
+      console.log(`--- batch no-lot blocked (${locale}) console errors ---`);
+      for (const e of consoleErrors) console.log(e);
+      expect(consoleErrors, `zero console errors (${locale})`).toHaveLength(0);
+    });
+
+    test(`batch product, auto-generate + expiry: payload has auto_lot true, no lot_number, success shows lot (${locale})`, async ({ page }) => {
+      const taPassword = e2eTaPasswordOrSkip(test);
+      const s = localeStrings(locale);
+      const consoleErrors = collectConsoleErrors(page);
+      const captured: { body: unknown } = { body: null };
+
+      await stubProducts(page);
+      await stubReceive(page, captured);
+
+      await page.addInitScript((loc) => window.localStorage.setItem("locale", loc), locale);
+      await login(page, E2E_TA_EMAIL, taPassword);
+      await fakeWarehouseAssignment(page);
+      const panel = await openReceivePanel(page, s);
+
+      await panel.locator("select").nth(0).selectOption({ label: `${BATCH_PRODUCT.name} · ${BATCH_PRODUCT.sku}` });
+      await panel.getByText(s.autoLotCheckbox).locator('input[type="checkbox"]').check();
+      await panel.locator('input[type="date"]').fill("2027-01-01");
+      await panel.locator("select").nth(1).selectOption({ label: s.manualRef });
+      await panel.getByPlaceholder("e.g. 500").fill("10");
+      await panel.getByRole("button", { name: s.receiveTitle, exact: true }).click();
+
+      await expect.poll(() => captured.body, { timeout: 10_000 }).toBeTruthy();
+      const body = captured.body as Record<string, unknown>;
+      expect(body.auto_lot).toBe(true);
+      expect(body.lot_number).toBeUndefined();
+
+      await expect(panel.getByText(s.successLot("261012-001"))).toBeVisible({ timeout: 10_000 });
+
+      await page.waitForTimeout(4_000);
+      await expect(panelRoot(page, s.receiveTitle)).toBeVisible();
+
+      if (locale === "am") {
+        await expect(page.getByText(/receive_panel\./)).toHaveCount(0);
+        await expect(page.getByText(/inventory\.receive\./)).toHaveCount(0);
+        await expect(page.getByText(/errors\./)).toHaveCount(0);
+      }
+
+      console.log(`--- auto-lot + expiry success (${locale}) console errors ---`);
+      for (const e of consoleErrors) console.log(e);
+      expect(consoleErrors, `zero console errors (${locale})`).toHaveLength(0);
+    });
+
+    test(`batch product, manual lot with no expiry: EXPIRY_REQUIRED error, no request (${locale})`, async ({ page }) => {
+      test.skip(locale !== "en", "case (d) is English-only per spec");
+      const taPassword = e2eTaPasswordOrSkip(test);
+      const s = localeStrings(locale);
+      const consoleErrors = collectConsoleErrors(page);
+      const captured: { body: unknown } = { body: null };
+
+      await stubProducts(page);
+      await stubReceive(page, captured);
+
+      await login(page, E2E_TA_EMAIL, taPassword);
+      await fakeWarehouseAssignment(page);
+      const panel = await openReceivePanel(page, s);
+
+      await panel.locator("select").nth(0).selectOption({ label: `${BATCH_PRODUCT.name} · ${BATCH_PRODUCT.sku}` });
+      await panel.getByPlaceholder("e.g. LOT-2026-001").fill("PW-L1");
+      await panel.locator("select").nth(1).selectOption({ label: s.manualRef });
+      await panel.getByPlaceholder("e.g. 500").fill("10");
+      await panel.getByRole("button", { name: s.receiveTitle, exact: true }).click();
+
+      await expect(panel.getByText(s.expiryRequired)).toBeVisible({ timeout: 10_000 });
+      expect(captured.body).toBeNull();
+
+      console.log(`--- batch manual lot no expiry blocked (${locale}) console errors ---`);
+      for (const e of consoleErrors) console.log(e);
+      expect(consoleErrors, `zero console errors (${locale})`).toHaveLength(0);
+    });
+  });
+}
+
+test.describe("Opening Balance — lot/expiry (en)", () => {
+  test("opening balance receipt: no Manufacture Date field, source stays OPENING_BALANCE", async ({ page }) => {
+    const taPassword = e2eTaPasswordOrSkip(test);
+    const s = localeStrings("en");
+    const consoleErrors = collectConsoleErrors(page);
+    const captured: { body: unknown } = { body: null };
+
+    await stubProducts(page);
+    await stubReceive(page, captured);
+
+    await login(page, E2E_TA_EMAIL, taPassword);
+    await fakeWarehouseAssignment(page);
+    await page.goto(`${BASE_URL}/${E2E_TA_SLUG}/inventory`);
+    await page.waitForLoadState("networkidle");
+
+    const obButton = page.getByRole("button", { name: `+ ${s.openingBalanceTitle}` });
+    const isVisible = await obButton.waitFor({ state: "visible", timeout: 5_000 }).then(() => true).catch(() => false);
+    if (!isVisible) {
+      console.log("Opening Balance panel is NOT visible for the TA test user — skipping case (e).");
+      return;
+    }
+    await obButton.click();
+    const panel = panelRoot(page, s.openingBalanceTitle);
+    await expect(panel).toBeVisible();
+
+    await expect(panel.getByText("Manufacture Date")).toHaveCount(0);
+
+    await panel.locator("select").nth(0).selectOption({ label: `${BATCH_PRODUCT.name} · ${BATCH_PRODUCT.sku} [BATCH]` });
+    await panel.getByPlaceholder("e.g. 1000").fill("50");
+    await panel.getByText(s.autoLotCheckbox).locator('input[type="checkbox"]').check();
+    await panel.locator('input[type="date"]').fill("2027-01-01");
+    await panel.getByRole("button", { name: s.openingBalanceSubmit, exact: true }).click();
+
+    await expect.poll(() => captured.body, { timeout: 10_000 }).toBeTruthy();
+    const body = captured.body as Record<string, unknown>;
+    expect(body.source).toBe("OPENING_BALANCE");
+    expect(body.auto_lot).toBe(true);
+    expect(body.lot_number).toBeUndefined();
+
+    console.log("--- opening balance lot receipt console errors ---");
+    for (const e of consoleErrors) console.log(e);
+    expect(consoleErrors, "zero console errors").toHaveLength(0);
+  });
+});

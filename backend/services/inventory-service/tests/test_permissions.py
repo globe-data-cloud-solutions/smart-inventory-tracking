@@ -93,8 +93,9 @@ class TestInventoryReceivePermissions:
                 json=RECEIVE_PAYLOAD,
                 headers={"Authorization": "Bearer dummy"},
             )
-        # 422 is acceptable — permission passed but mock DB raises in the service layer
-        assert response.status_code in (201, 422, 500)
+        # 422/404 are acceptable — permission passed but mock DB has no matching
+        # product/raises in the service layer (receive() now looks up the product first)
+        assert response.status_code in (201, 404, 422, 500)
 
     async def test_02_rbac_deny_wrong_role(
         self, client: AsyncClient, inv_app, inv_get_current_user

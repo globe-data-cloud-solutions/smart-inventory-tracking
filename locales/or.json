@@ -30,7 +30,8 @@
       "expiry_date": "Guyyaa Dhumaa",
       "submit": "Kuusaa Fudhadhu",
       "queue_offline": "Booda Turu (Sarara Alatti)",
-      "success": "Kuusaan milkaa'inaan fudhataame"
+      "success": "Kuusaan milkaa'inaan fudhataame",
+      "success_lot": "Received into lot {lot}. Mark this number on the cartons."
     },
     "adjust": {
       "title": "Kuusaa Sirreessi",
@@ -668,7 +669,17 @@
     "ABAC_DENIED": "Heeyyama dhorkaame — qabeenya daangaa keessan alatti.",
     "INTERNAL_ERROR": "Dogoggorri hin eegamne uumame. Maaloo irra deebi'ii yaali.",
     "OFFLINE": "Sarara alatti jirta. Hojiin kun iddoo eeggaatti galcha.",
-    "DUPLICATE_TRANSACTION": "This transaction was already submitted."
+    "DUPLICATE_TRANSACTION": "This transaction was already submitted.",
+    "LOT_NUMBER_REQUIRED": "A lot number is required.",
+    "LOT_EXPIRY_MISMATCH": "This lot number already exists with a different expiry date.",
+    "INSUFFICIENT_LOT_STOCK": "Not enough stock in this lot to complete the request.",
+    "LOT_NOT_TRACKED": "This product does not track lots — lot number, expiry date, or auto-lot cannot be supplied.",
+    "LOT_INPUT_CONFLICT": "Provide either a lot number or auto-generate one, not both.",
+    "EXPIRY_REQUIRED": "An expiry date is required for this product.",
+    "EXPIRY_IN_PAST": "Expiry date cannot be in the past.",
+    "INVALID_SOURCE": "This source is not allowed for receiving stock.",
+    "LOT_NUMBER_GENERATION_FAILED": "Could not generate a unique lot number. Please try again.",
+    "PRODUCT_NOT_FOUND": "Product not found."
   },
   "demo": {
     "mode_banner": "Haala demo — jijjiiramni marsariitii haaromsamte haqama. Daataa dhaabbataa argachuuf backend waliin wal qabii."
@@ -1324,14 +1335,11 @@
     "info": "Receipts are used to initialise stock levels at go-live or when adding a new product. They require National Manager sign-off before posting.",
     "opening_qty": "Opening Quantity",
     "batch_required": "BATCH TRACKED — lot details required",
-    "manufacture_date": "Manufacture Date",
     "required": "required",
     "ref_doc": "Reference Document",
     "submit": "Submit Opening Balance",
     "success": "Opening Balance receipt created — status: PENDING_APPROVAL.",
-    "error_session": "No session found — please log in again.",
-    "error_lot": "Lot / Batch Number is required for batch-tracked products.",
-    "error_mfg": "Manufacture Date is required for batch-tracked products."
+    "error_session": "No session found — please log in again."
   },
   "add_product": {
     "new_category": "+ Add new category…",
@@ -1354,7 +1362,9 @@
     "error_product": "Please select a product.",
     "error_warehouse": "Please select a warehouse.",
     "error_ref_type": "Please select a reference type.",
-    "error_qty": "Quantity must be a positive number."
+    "error_qty": "Quantity must be a positive number.",
+    "auto_lot_checkbox": "Auto-generate lot number",
+    "auto_lot_offline_blocked": "Auto lot numbers need a connection — the lot number has to be shown to the receiver right away."
   },
   "report": {
     "inv_valuation_desc": "Current stock value across all locations",
