@@ -130,12 +130,14 @@ async def check_plan_create_warehouse(
     user: Any,
     db: AsyncSession,
 ) -> None:
-    """Raise HTTP 402 if the tenant has reached its total node limit.
+    """Raise HTTP 402 if the tenant has reached its warehouse limit.
 
-    One L1 (root) node is always free. All active nodes (every level) count
-    toward the total, so: total_allowed = max_warehouses + 1 (the free root slot).
+    A "warehouse" is an active organization_node with is_stock_holding = true.
+    Approval-only nodes (is_stock_holding = false) never count toward the cap,
+    at any level. total_allowed = max_warehouses exactly — no free root slot.
 
-    Call this for EVERY new node creation including L1. Only SA bypasses.
+    Call this only when the node being created/updated/reactivated will be
+    stock-holding. Only SA bypasses.
     """
     if not user or not getattr(user, "tenant_id", None):
         return
@@ -154,11 +156,9 @@ async def check_plan_create_warehouse(
         {"tid": tenant_id},
     )
 
-    # Count ALL active nodes — one root is always free, so total_allowed = limit + 1.
     current = await count_active_warehouses(db, tenant_id)
 
-    total_allowed = plan["max_warehouses"] + 1  # +1 for the free root node
-    if int(current) >= total_allowed:
+    if int(current) >= plan["max_warehouses"]:
         raise HTTPException(
             status_code=402,
             detail={
@@ -169,9 +169,9 @@ async def check_plan_create_warehouse(
                 "plan_tier": plan["plan_tier"],
                 "upgrade_to": _UPGRADE_TO.get(plan["plan_tier"]),
                 "message": (
-                    f"Node limit reached ({current}/{total_allowed} total; "
-                    f"1 free root + {plan['max_warehouses']} from {plan['plan_tier']} plan). "
-                    f"Upgrade to add more locations."
+                    f"Warehouse limit reached ({current}/{plan['max_warehouses']} "
+                    f"on the {plan['plan_tier']} plan). Approval-only locations "
+                    f"(not holding stock) don't count."
                 ),
             },
         )

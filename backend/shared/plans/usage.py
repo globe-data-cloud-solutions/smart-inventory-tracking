@@ -41,12 +41,13 @@ async def count_billable_users(db: AsyncSession, tenant_id: str) -> int:
 
 
 async def count_active_warehouses(db: AsyncSession, tenant_id: str) -> int:
-    """Active org nodes — the exact count check_plan_create_warehouse enforces
-    against max_warehouses + 1 (one free root node)."""
+    """Active stock-holding org nodes — the exact count check_plan_create_warehouse
+    enforces against max_warehouses. Approval-only nodes (is_stock_holding = false)
+    never count toward the cap."""
     result = await db.execute(
         text(
             "SELECT COUNT(*) FROM organization_node "
-            "WHERE tenant_id = :tid AND is_active = true"
+            "WHERE tenant_id = :tid AND is_active = true AND is_stock_holding = true"
         ),
         {"tid": str(tenant_id)},
     )
@@ -58,8 +59,8 @@ async def get_plan_usage(db: AsyncSession, tenant_id: str) -> dict[str, Any]:
 
     limit is the effective cap from get_tenant_entitlements() — None means
     unlimited. For warehouses, the displayed limit is max_warehouses as
-    stored (the free root node is not added here; check_plan_create_warehouse
-    adds +1 only for its own total_allowed comparison).
+    stored — identical to what check_plan_create_warehouse enforces; there
+    is no free root node.
 
     sku_cap: get_tenant_entitlements()["sku_cap"] is read from the SAME
     tenants.sku_cap column product-service's create_product reads directly

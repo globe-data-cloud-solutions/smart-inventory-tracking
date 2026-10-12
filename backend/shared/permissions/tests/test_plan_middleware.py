@@ -186,10 +186,9 @@ async def test_unmapped_action_passes_regardless_of_flags() -> None:
 
 @pytest.mark.asyncio
 async def test_warehouse_limit_reached_raises_402() -> None:
-    # max_warehouses=30 → total_allowed = 30 + 1 = 31 (1 free root slot).
-    # count=31 exactly hits the cap (31 >= 31). count=30 would NOT trigger it.
+    # max_warehouses=30 is the exact cap — no free root slot. count=30 hits it.
     plan = _plan_result(plan_tier="GROWTH", max_warehouses=30)
-    db = _db_plan_then_count(plan, count=31)
+    db = _db_plan_then_count(plan, count=30)
 
     with pytest.raises(HTTPException) as exc_info:
         await check_plan_create_warehouse(_user(), db)
@@ -198,7 +197,7 @@ async def test_warehouse_limit_reached_raises_402() -> None:
     detail = exc_info.value.detail
     assert detail["code"] == "PLAN_LIMIT_REACHED"
     assert detail["resource"] == "warehouses"
-    assert detail["current"] == 31
+    assert detail["current"] == 30
     assert detail["limit"] == 30
 
 
@@ -246,9 +245,9 @@ async def test_user_limit_null_passes() -> None:
 @pytest.mark.asyncio
 async def test_ta_warehouse_limit_enforced() -> None:
     """TA must respect the tenant's warehouse cap (only SA is exempt)."""
-    # max_warehouses=3 → total_allowed = 3 + 1 = 4. count=4 hits the cap.
+    # max_warehouses=3 is the exact cap — no free root slot. count=3 hits it.
     plan = _plan_result(plan_tier="STARTER", max_warehouses=3)
-    db = _db_plan_then_count(plan, count=4)
+    db = _db_plan_then_count(plan, count=3)
 
     with pytest.raises(HTTPException) as exc_info:
         await check_plan_create_warehouse(_user(role="TA"), db)
@@ -259,7 +258,7 @@ async def test_ta_warehouse_limit_enforced() -> None:
 
 @pytest.mark.asyncio
 async def test_ta_warehouse_limit_under_cap_passes() -> None:
-    """TA under the cap should pass (e.g. 2 non-L1 nodes, limit 3)."""
+    """TA under the cap should pass (e.g. 2 stock-holding nodes, limit 3)."""
     plan = _plan_result(plan_tier="STARTER", max_warehouses=3)
     db = _db_plan_then_count(plan, count=2)
     await check_plan_create_warehouse(_user(role="TA"), db)

@@ -472,10 +472,10 @@ class TestNodeDeactivation:
         assert exc_info.value.detail["code"] == "NODE_HAS_SOLE_USERS"
 
     async def test_reactivate_node(self) -> None:
-        """A deactivated node can be reactivated with no pre-checks."""
+        """A deactivated approval-only node reactivates with no plan-cap pre-check."""
         from routers.hierarchy import reactivate_org_node
 
-        node_row = _row(id=UUID(NODE_ID), hierarchy_level=1)
+        node_row = _row(id=UUID(NODE_ID), hierarchy_level=1, is_stock_holding=False)
         db = _db_seq(node_row, None)
 
         with _GRANT_ALL:
@@ -483,6 +483,23 @@ class TestNodeDeactivation:
                 tenant_id=UUID(TENANT_ID), node_id=UUID(NODE_ID), user=_Caller(), db=db,
             )
 
+        assert result.data == {"reactivated": NODE_ID}
+
+    async def test_reactivate_stock_holding_node_checks_plan_cap(self) -> None:
+        """Reactivating a stock-holding node (any level) runs the plan-cap check."""
+        from routers.hierarchy import reactivate_org_node
+
+        node_row = _row(id=UUID(NODE_ID), hierarchy_level=1, is_stock_holding=True)
+        db = _db_seq(node_row, None)
+
+        with _GRANT_ALL, patch(
+            "routers.hierarchy.check_plan_create_warehouse", new=AsyncMock()
+        ) as mock_check:
+            result = await reactivate_org_node(
+                tenant_id=UUID(TENANT_ID), node_id=UUID(NODE_ID), user=_Caller(), db=db,
+            )
+
+        mock_check.assert_awaited_once()
         assert result.data == {"reactivated": NODE_ID}
 
     async def test_non_ta_cannot_deactivate(self) -> None:
@@ -585,7 +602,9 @@ class TestOrgNodeUpdate:
         level_row = _row(is_stock_holding=True)
         db = _db_seq(existing_row, level_row, None, None)  # existing, level check, UPDATE, _get_level_name
 
-        with _GRANT_ALL:
+        with _GRANT_ALL, patch(
+            "routers.hierarchy.check_plan_create_warehouse", new=AsyncMock()
+        ) as mock_check:
             result = await update_org_node(
                 tenant_id=UUID(TENANT_ID),
                 node_id=UUID(NODE_ID),
@@ -593,4 +612,5 @@ class TestOrgNodeUpdate:
                 user=_Caller(),
                 db=db,
             )
+        mock_check.assert_awaited_once()
         assert result.data.is_stock_holding is True

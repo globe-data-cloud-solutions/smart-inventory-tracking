@@ -77,8 +77,9 @@ Each package sets your limits and which features are included. Typical defaults:
 > to time; a revision applies to new sign-ups and plan changes, and does not change an
 > existing workspace's limits by itself.
 
-**One warehouse and the TA account are free.** Your first top-level org node and your own TA
-account do not count toward the warehouse and staff-account limits.
+**The TA account is free.** Your own TA account does not count toward the staff-account
+limit. **Warehouses = locations that hold stock; approval-only locations are free** — an org
+node only counts toward the warehouse limit if it holds stock (`is_stock_holding = true`).
 
 **Prices.** Every package has a monthly and an annual price. Prices are shown before VAT,
 with **15% VAT** and the total shown separately. A price change applies to your

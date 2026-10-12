@@ -810,8 +810,9 @@ async def create_org_node(
     if not (1 <= body.level_number <= 5):
         raise HTTPException(status_code=422, detail="level_number must be between 1 and 5")
 
-    # All nodes count toward the plan cap (check_plan_create_warehouse gives 1 free root).
-    await check_plan_create_warehouse(user, db)
+    # Only a stock-holding node counts toward the plan cap — approval-only nodes are free.
+    if body.is_stock_holding:
+        await check_plan_create_warehouse(user, db)
 
     # Validate parent exists and belongs to same tenant when provided
     if body.parent_node_id:
@@ -935,6 +936,11 @@ async def update_org_node(
                                "Update the level configuration first.",
                 },
             )
+
+    # Flipping a node from approval-only to stock-holding counts toward the plan
+    # cap the same as creating a new warehouse — close the flip loophole.
+    if not existing.is_stock_holding and new_stock:
+        await check_plan_create_warehouse(user, db)
 
     await db.execute(
         text(
@@ -1182,7 +1188,7 @@ async def reactivate_org_node(
 ) -> SuccessResponse[dict]:
     row = await db.execute(
         text(
-            "SELECT id, hierarchy_level FROM organization_node "
+            "SELECT id, hierarchy_level, is_stock_holding FROM organization_node "
             "WHERE id = :id AND tenant_id = :tid AND is_active = false"
         ),
         {"id": str(node_id), "tid": str(tenant_id)},
@@ -1191,8 +1197,9 @@ async def reactivate_org_node(
     if not existing:
         raise HTTPException(status_code=404, detail="Inactive node not found")
 
-    # Reactivating a non-L1 node counts toward the plan cap the same as creating one.
-    if existing.hierarchy_level > 1:
+    # Reactivating a stock-holding node counts toward the plan cap the same as
+    # creating one — approval-only nodes never count, at any level.
+    if existing.is_stock_holding:
         await check_plan_create_warehouse(user, db)
 
     await db.execute(
