@@ -37,6 +37,7 @@ type ApiProduct = {
   image_url?: string | null;
   is_discontinued?: boolean; is_controlled?: boolean;
   approval_overrides?: Record<string, ProductApprovalOverride>;
+  batch_tracking?: boolean; expiry_tracking?: boolean; dispatch_strategy?: string | null;
 };
 
 type InventoryStockItem = {
@@ -348,7 +349,8 @@ export default function InventoryPage() {
         id: p.id, sku: p.sku, name: p.name,
         category: p.category ?? "—",
         unit: p.unit,
-        batchTracking: false,
+        batchTracking: p.batch_tracking === true,
+        expiryTracking: p.expiry_tracking === true,
         reorderPoint: p.reorder_point != null ? safeFloat(p.reorder_point) : 0,
         stock: stockByProductId.get(p.id) ?? {},
         shortName: p.short_name ?? undefined,
