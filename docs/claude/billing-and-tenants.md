@@ -40,7 +40,7 @@ Raises HTTP 402 with upgrade path when a feature is disabled (flag=False) for no
 
 ### Plan Cap Enforcement
 
-- **`check_plan_create_warehouse()`** — enforces `max_warehouses` cap when creating org nodes. One L1 (root) node is always free; all other active nodes count toward the limit.
+- **`check_plan_create_warehouse()`** — enforces `max_warehouses` cap when creating, updating (flipping approval-only → stock-holding), or reactivating org nodes. Warehouses = locations that hold stock; approval-only locations (`is_stock_holding = false`, any level) are free and never count.
 - **`check_plan_create_user()`** — enforces `max_users` cap when creating users. The TA (Tenant Admin) account is always free; all other active users count toward the limit.
 
 Both raise HTTP 402 when the cap is reached and include an `upgrade_to` hint in the error response.

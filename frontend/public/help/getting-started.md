@@ -20,6 +20,10 @@ You don't need all of this on day one — setup can proceed in stages — but ha
 ready speeds up the ~45–90 minutes of initial configuration (see
 [What happens after you submit](#what-happens-after-you-submit) below).
 
+Not sure how many org levels you need? Choose more rather than fewer: levels you don't use yet
+cost nothing, and you can always add one at the bottom later. Inserting a level in the middle
+later needs SMART's help.
+
 ---
 
 ## Getting your account — two ways in

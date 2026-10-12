@@ -7,10 +7,13 @@ import { api } from "@/lib/api";
 import { getToken } from "@/lib/auth";
 import { getSession } from "@/lib/demo-auth";
 import { t } from "@/lib/i18n";
-import { planFeatureErrorMessage, PLAN_UPGRADE_TO } from "@/lib/planError";
+import { planFeatureErrorMessage, PLAN_UPGRADE_TO, tierLabel } from "@/lib/planError";
 import { useWriteGuard, guardProps } from "@/hooks/useWriteGuard";
+import { usePlanUsage } from "@/hooks/usePlanUsage";
 import { useTenantPositions, type TenantPosition } from "@/hooks/useTenantPositions";
 import { TabHelpBanner } from "@/components/ui/TabHelpBanner";
+import { PlanComparisonModal } from "@/components/features/billing/PlanComparisonModal";
+import { RequestUpgradeSection } from "@/components/features/billing/RequestUpgradeSection";
 
 /* ── Types ─────────────────────────────────────────────────────────────────── */
 
@@ -76,10 +79,19 @@ function flattenNodes(nodes: OrgNode[]): OrgNode[] {
 
 /* ── Tab 1: Organisation Levels ───────────────────────────────────────────── */
 
-function LevelsTab({ tenantId }: { tenantId: string }) {
+function LevelsTab({
+  tenantId,
+  onSwitchTab,
+}: {
+  tenantId: string;
+  onSwitchTab?: (tab: "tree" | "approval" | "transfer-types") => void;
+}) {
   const qc = useQueryClient();
   const writeGuard = useWriteGuard();
   const gp = guardProps(writeGuard);
+  const { planUsage } = usePlanUsage();
+  const session = getSession();
+  const [compareOpen, setCompareOpen] = useState(false);
 
   const { data: savedLevels = [], isLoading } = useQuery<HierarchyLevel[]>({
     queryKey: ["hierarchy-config", tenantId],
@@ -89,19 +101,35 @@ function LevelsTab({ tenantId }: { tenantId: string }) {
 
   const [renamedIdx, setRenamedIdx] = useState<number | null>(null);
   const [renameError, setRenameError] = useState<string | null>(null);
+  const [stockToggleConfirm, setStockToggleConfirm] = useState<{ levelId: string; idx: number } | null>(null);
 
   const renameMutation = useMutation({
-    mutationFn: ({ levelId, patch }: { levelId: string; patch: { level_name?: string; role_display_label?: string } }) =>
+    mutationFn: ({ levelId, patch }: {
+      levelId: string;
+      patch: { level_name?: string; role_display_label?: string; is_stock_holding?: boolean };
+    }) =>
       api.patch(`/api/v1/tenants/${tenantId}/hierarchy/config/${levelId}`, patch),
     onSuccess: (_data, vars) => {
       void qc.invalidateQueries({ queryKey: ["hierarchy-config", tenantId] });
+      if ("is_stock_holding" in vars.patch) {
+        void qc.invalidateQueries({ queryKey: ["plan-usage"] });
+        void qc.invalidateQueries({ queryKey: ["org-nodes", tenantId] });
+      }
       setRenameError(null);
       const idx = levels.findIndex((l) => l.id === vars.levelId);
       setRenamedIdx(idx);
       setTimeout(() => setRenamedIdx(null), 2500);
     },
     onError: (e: unknown) => {
-      setRenameError(e instanceof Error ? e.message : t("common.error"));
+      const code = (e as { code?: string })?.code;
+      if (code === "LEVEL_HAS_STOCK_NODES") {
+        const nodeNames = ((e as { nodes?: Array<{ id: string; name: string }> }).nodes ?? [])
+          .map((n) => n.name)
+          .join(", ");
+        setRenameError(t("org_setup.level_has_stock_nodes").replace("{names}", nodeNames));
+      } else {
+        setRenameError(e instanceof Error ? e.message : t("common.error"));
+      }
     },
   });
 
@@ -135,6 +163,78 @@ function LevelsTab({ tenantId }: { tenantId: string }) {
   const [showSaveConfirm, setShowSaveConfirm] = useState(false);
 
   const levelsAlreadySaved = savedLevels.length > 0;
+
+  // Post-save level management — add a level below the current bottom level,
+  // or remove the bottom level (only when empty of org nodes; backend 422s
+  // with LEVEL_COUNT_LOCKED otherwise).
+  const [addingLevel, setAddingLevel] = useState(false);
+  const [newLevel, setNewLevel] = useState<{
+    level_name: string; default_role_code: string; role_display_label: string; is_stock_holding: boolean;
+  }>({ level_name: "", default_role_code: "", role_display_label: "", is_stock_holding: true });
+  const [addLevelError, setAddLevelError] = useState<string | null>(null);
+  const [showAddConfirm, setShowAddConfirm] = useState(false);
+  const [showRemoveConfirm, setShowRemoveConfirm] = useState(false);
+  const [removeError, setRemoveError] = useState<string | null>(null);
+  const [addedInfoLevel, setAddedInfoLevel] = useState<number | null>(null);
+
+  const bottomLevel = levels.length > 0 ? levels[levels.length - 1] : undefined;
+  // Roles must be strictly lower authority than the level above (ROLE_OPTIONS is
+  // already ordered highest→lowest authority, matching the canonical NM>RM>LM=WM
+  // privilege order); an unrecognised/unset role above imposes no restriction.
+  const aboveRoleRank = bottomLevel
+    ? ROLE_OPTIONS.findIndex((r) => r.code === bottomLevel.default_role_code)
+    : -1;
+  const allowedNewRoleOptions = aboveRoleRank === -1
+    ? ROLE_OPTIONS
+    : ROLE_OPTIONS.filter((_, i) => i > aboveRoleRank);
+
+  const addLevelMutation = useMutation({
+    mutationFn: () => {
+      const nextLevelNumber = levels.length + 1;
+      const payload = [
+        ...levels,
+        {
+          level_number: nextLevelNumber,
+          level_name: newLevel.level_name.trim(),
+          default_role_code: newLevel.default_role_code || null,
+          role_display_label: newLevel.role_display_label.trim() || null,
+          is_stock_holding: newLevel.is_stock_holding,
+        },
+      ];
+      return api.put<HierarchyLevel[]>(`/api/v1/tenants/${tenantId}/hierarchy/config`, payload);
+    },
+    onSuccess: (data) => {
+      setLevels(data);
+      setAddingLevel(false);
+      setAddedInfoLevel(data.length);
+      setNewLevel({ level_name: "", default_role_code: "", role_display_label: "", is_stock_holding: true });
+      setAddLevelError(null);
+      void qc.invalidateQueries({ queryKey: ["hierarchy-config", tenantId] });
+    },
+    onError: (e: unknown) => {
+      setAddLevelError(e instanceof Error ? e.message : t("common.error"));
+    },
+  });
+
+  const removeLevelMutation = useMutation({
+    mutationFn: () => {
+      const payload = levels.slice(0, -1);
+      return api.put<HierarchyLevel[]>(`/api/v1/tenants/${tenantId}/hierarchy/config`, payload);
+    },
+    onSuccess: (data) => {
+      setLevels(data);
+      setRemoveError(null);
+      void qc.invalidateQueries({ queryKey: ["hierarchy-config", tenantId] });
+    },
+    onError: (e: unknown) => {
+      const code = (e as { code?: string })?.code;
+      setRemoveError(
+        code === "LEVEL_COUNT_LOCKED"
+          ? t("org_setup.remove_level_blocked")
+          : e instanceof Error ? e.message : t("common.error")
+      );
+    },
+  });
 
   // Resync the picker once the saved levels arrive (useQuery resolves after first render).
   useEffect(() => {
@@ -183,6 +283,13 @@ function LevelsTab({ tenantId }: { tenantId: string }) {
     return <p className="text-sm text-gray-400 py-8 text-center">{t("common.loading")}</p>;
   }
 
+  // Levels currently shown/edited on screen, including an unsaved new bottom
+  // level while its form is open — matches what Save would actually submit.
+  const stockHoldingCount = levels.filter((l) => l.is_stock_holding).length
+    + (addingLevel && newLevel.is_stock_holding ? 1 : 0);
+  const warehouseLimit = planUsage?.warehouses.limit ?? null;
+  const overCapacity = !!planUsage && warehouseLimit !== null && stockHoldingCount > warehouseLimit;
+
   return (
     <div className="space-y-6">
       <TabHelpBanner
@@ -190,39 +297,267 @@ function LevelsTab({ tenantId }: { tenantId: string }) {
         message={t("org_setup.help.levels_message")}
         tip={t("org_setup.help.levels_tip")}
       />
-      {/* Level count picker */}
-      <div>
-        <label className="block text-sm font-medium text-gray-700 mb-2">
-          {t("org_setup.level_count")}
-        </label>
-        <div className="flex gap-3">
-          {[2, 3, 4, 5].map((n) => (
-            <button
-              key={n}
-              type="button"
-              disabled={levelsAlreadySaved}
-              onClick={() => { if (!levelsAlreadySaved) handleCountChange(n); }}
-              className={`w-14 h-14 rounded-lg border-2 text-lg font-bold transition-all ${
-                levelCount === n
-                  ? "border-emerald-600 bg-emerald-50 text-emerald-700"
-                  : "border-gray-200 bg-white text-gray-600 hover:border-gray-400"
-              } ${levelsAlreadySaved ? "opacity-60 cursor-not-allowed hover:border-gray-200" : ""}`}
-            >
-              {n}
-            </button>
-          ))}
+
+      {planUsage && (
+        <div className="space-y-2">
+          <p className="text-xs text-gray-500">
+            {warehouseLimit === null
+              ? t("org_setup.warehouse_limit_info_line_unlimited")
+              : t("org_setup.warehouse_limit_info_line")
+                  .replace("{tier}", tierLabel(planUsage.plan_tier ?? ""))
+                  .replace("{limit}", String(warehouseLimit))}
+          </p>
+          {overCapacity && (
+            <div className="text-xs font-semibold text-amber-800 bg-amber-50 border border-amber-200 rounded px-3 py-2 space-y-2">
+              <p className="m-0 flex items-start gap-1.5">
+                <span className="shrink-0">⚠</span>
+                <span>
+                  {t("org_setup.levels_over_capacity_warning")
+                    .replace("{n}", String(stockHoldingCount))
+                    .replace("{n}", String(stockHoldingCount))
+                    .replace("{tier}", tierLabel(planUsage.plan_tier ?? ""))
+                    .replace("{limit}", String(warehouseLimit))}
+                </span>
+              </p>
+              <div className="flex gap-3 flex-wrap items-center font-normal">
+                <button type="button" onClick={() => setCompareOpen(true)} className="underline font-semibold hover:no-underline">
+                  {t("tenant_admin.features.compare_plans_link")}
+                </button>
+                {session?.role === "TA" && planUsage.plan_tier && (
+                  <RequestUpgradeSection planTier={planUsage.plan_tier} />
+                )}
+              </div>
+            </div>
+          )}
         </div>
-        {levelsAlreadySaved ? (
-          <>
-            <p className="text-xs text-gray-600 mt-2 font-medium">
-              {t("org_setup.levels_count_locked").replace("{count}", String(levelCount))}
-            </p>
-            <p className="text-xs text-gray-400 mt-1">{t("org_setup.levels_locked")}</p>
-          </>
-        ) : (
+      )}
+      <PlanComparisonModal open={compareOpen} onClose={() => setCompareOpen(false)} currentTier={planUsage?.plan_tier ?? "STARTER"} />
+
+      {/* Level count picker — pre-save only. Once levels are saved, level count is
+          managed via Add/Remove below instead of this picker. */}
+      {!levelsAlreadySaved ? (
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-2">
+            {t("org_setup.level_count")}
+          </label>
+          <div className="flex gap-3">
+            {[2, 3, 4, 5].map((n) => (
+              <button
+                key={n}
+                type="button"
+                onClick={() => handleCountChange(n)}
+                className={`w-14 h-14 rounded-lg border-2 text-lg font-bold transition-all ${
+                  levelCount === n
+                    ? "border-emerald-600 bg-emerald-50 text-emerald-700"
+                    : "border-gray-200 bg-white text-gray-600 hover:border-gray-400"
+                }`}
+              >
+                {n}
+              </button>
+            ))}
+          </div>
           <p className="text-xs text-gray-400 mt-2">{t("org_setup.level_count_hint")}</p>
-        )}
-      </div>
+        </div>
+      ) : (
+        <div>
+          <p className="text-xs text-gray-600 font-medium">
+            {t("org_setup.levels_count_locked").replace("{count}", String(levels.length))}
+          </p>
+          <p className="text-xs text-gray-400 mt-1">{t("org_setup.levels_locked")}</p>
+          <div className="flex flex-wrap items-center gap-3 mt-3">
+            {levels.length < 5 && !addingLevel && (
+              <button
+                type="button"
+                disabled={gp.disabled}
+                title={gp.title}
+                onClick={() => { setAddingLevel(true); setAddLevelError(null); }}
+                className="px-3 py-1.5 text-sm font-medium rounded border-2 border-dashed border-emerald-300 text-emerald-700 hover:bg-emerald-50 disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                {t("org_setup.add_level_below").replace("{n}", String(levels.length))}
+              </button>
+            )}
+            {levels.length > 2 && !addingLevel && (
+              <button
+                type="button"
+                disabled={gp.disabled}
+                title={gp.title}
+                onClick={() => { setShowRemoveConfirm(true); setRemoveError(null); }}
+                className="px-3 py-1.5 text-sm font-medium rounded border border-red-200 text-red-600 hover:bg-red-50 disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                {t("org_setup.remove_level").replace("{n}", String(levels.length))}
+              </button>
+            )}
+          </div>
+          {removeError && <p className="text-sm text-red-600 mt-2">{removeError}</p>}
+
+          {addingLevel && (
+            <div className="mt-3 bg-emerald-50 border border-emerald-200 rounded-lg p-4 space-y-3">
+              <p className="text-xs font-semibold text-emerald-800">
+                {t("org_setup.new_level_heading").replace("{n}", String(levels.length + 1))}
+              </p>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">
+                    {t("org_setup.level_label")} *
+                  </label>
+                  <input
+                    type="text"
+                    value={newLevel.level_name}
+                    onChange={(e) => setNewLevel((f) => ({ ...f, level_name: e.target.value }))}
+                    autoFocus
+                    className="w-full text-sm border border-gray-300 rounded px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">
+                    {t("org_setup.default_role")}
+                  </label>
+                  <select
+                    value={newLevel.default_role_code}
+                    onChange={(e) => setNewLevel((f) => ({
+                      ...f,
+                      default_role_code: e.target.value,
+                      role_display_label: e.target.value ? defaultDisplayLabel(e.target.value) : "",
+                    }))}
+                    className="w-full border border-gray-300 rounded px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                  >
+                    <option value="">{t("org_setup.no_default_role")}</option>
+                    {allowedNewRoleOptions.map((r) => (
+                      <option key={r.code} value={r.code}>{r.code} — {r.label}</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">
+                    {t("org_setup.role_display_name")}
+                  </label>
+                  <input
+                    type="text"
+                    value={newLevel.role_display_label}
+                    onChange={(e) => setNewLevel((f) => ({ ...f, role_display_label: e.target.value }))}
+                    placeholder={t("org_setup.role_display_name_placeholder")}
+                    className="w-full text-sm border border-gray-300 rounded px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                  />
+                </div>
+                <div className="mt-5">
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={newLevel.is_stock_holding}
+                      onChange={(e) => setNewLevel((f) => ({ ...f, is_stock_holding: e.target.checked }))}
+                      className="w-4 h-4 rounded border-gray-300 text-emerald-600"
+                    />
+                    <span className="text-xs text-gray-700">{t("org_setup.is_stock_holding")}</span>
+                  </label>
+                  <p className="text-[10px] text-gray-400 mt-1 ml-6">
+                    {t("org_setup.level_stock_holding_plan_hint")}
+                  </p>
+                </div>
+              </div>
+              {addLevelError && <p className="text-xs text-red-600">{addLevelError}</p>}
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  disabled={newLevel.level_name.trim().length < 2 || addLevelMutation.isPending}
+                  onClick={() => setShowAddConfirm(true)}
+                  className="px-4 py-1.5 bg-emerald-700 text-white text-sm font-semibold rounded hover:bg-emerald-800 disabled:opacity-50"
+                >
+                  {addLevelMutation.isPending ? t("common.saving") : t("common.save")}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => { setAddingLevel(false); setAddLevelError(null); }}
+                  className="px-4 py-1.5 border border-gray-300 text-gray-600 text-sm font-medium rounded hover:bg-gray-50"
+                >
+                  {t("common.cancel")}
+                </button>
+              </div>
+            </div>
+          )}
+
+          {addedInfoLevel !== null && (
+            <div className="mt-3 rounded-lg border border-blue-300 bg-blue-50 px-4 py-3 text-sm text-blue-800 flex items-start gap-2">
+              <span className="shrink-0 mt-0.5">ℹ</span>
+              <div className="flex-1">
+                <p className="m-0">{t("org_setup.next_steps_new_level").replace("{n}", String(addedInfoLevel))}</p>
+                <div className="flex flex-wrap gap-3 mt-2">
+                  <button type="button" onClick={() => onSwitchTab?.("tree")} className="underline font-semibold hover:no-underline">
+                    {t("org_setup.go_to_org_tree")} →
+                  </button>
+                  <button type="button" onClick={() => onSwitchTab?.("approval")} className="underline font-semibold hover:no-underline">
+                    {t("org_setup.coverage_review_approval")} →
+                  </button>
+                  <button type="button" onClick={() => onSwitchTab?.("transfer-types")} className="underline font-semibold hover:no-underline">
+                    {t("org_setup.go_to_transfer_types")} →
+                  </button>
+                </div>
+              </div>
+              <button type="button" onClick={() => setAddedInfoLevel(null)}
+                className="shrink-0 text-lg leading-none opacity-60 hover:opacity-100">✕</button>
+            </div>
+          )}
+
+          {showRemoveConfirm && (
+            <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/40 px-4">
+              <div className="w-full max-w-md rounded-lg bg-white p-5 shadow-2xl">
+                <h3 className="text-base font-bold text-gray-900 m-0">
+                  {t("org_setup.confirm_remove_level_title")}
+                </h3>
+                <p className="text-sm text-gray-600 mt-3">
+                  {t("org_setup.confirm_remove_level_body").replace("{n}", String(levels.length))}
+                </p>
+                <div className="mt-5 flex justify-end gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setShowRemoveConfirm(false)}
+                    className="px-4 py-1.5 border border-gray-300 text-gray-600 text-sm font-medium rounded hover:bg-gray-50"
+                  >
+                    {t("common.cancel")}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => { setShowRemoveConfirm(false); removeLevelMutation.mutate(); }}
+                    className="px-4 py-1.5 bg-red-600 text-white text-sm font-semibold rounded hover:bg-red-700"
+                  >
+                    {t("org_setup.confirm_save")}
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {showAddConfirm && (
+            <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/40 px-4">
+              <div className="w-full max-w-md rounded-lg bg-white p-5 shadow-2xl">
+                <h3 className="text-base font-bold text-gray-900 m-0">
+                  {t("org_setup.confirm_add_level_title").replace("{n}", String(levels.length + 1))}
+                </h3>
+                <p className="text-sm text-gray-600 mt-3">
+                  {t("org_setup.confirm_add_level_body")
+                    .replace("{n}", String(levels.length + 1))
+                    .replace("{name}", bottomLevel?.level_name || `Level ${levels.length}`)}
+                </p>
+                <div className="mt-5 flex justify-end gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setShowAddConfirm(false)}
+                    className="px-4 py-1.5 border border-gray-300 text-gray-600 text-sm font-medium rounded hover:bg-gray-50"
+                  >
+                    {t("common.cancel")}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => { setShowAddConfirm(false); addLevelMutation.mutate(); }}
+                    className="px-4 py-1.5 bg-emerald-700 text-white text-sm font-semibold rounded hover:bg-emerald-800"
+                  >
+                    {t("org_setup.confirm_save")}
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Editable levels table */}
       <div className="overflow-x-auto rounded-lg border border-gray-200">
@@ -328,10 +663,25 @@ function LevelsTab({ tenantId }: { tenantId: string }) {
                     <input
                       type="checkbox"
                       checked={lv.is_stock_holding}
-                      disabled={persisted}
-                      onChange={(e) => updateLevel(idx, { is_stock_holding: e.target.checked })}
+                      disabled={persisted && (gp.disabled || renameMutation.isPending)}
+                      title={persisted ? gp.title : undefined}
+                      onChange={(e) => {
+                        if (!persisted) {
+                          updateLevel(idx, { is_stock_holding: e.target.checked });
+                          return;
+                        }
+                        if (gp.disabled || !lv.id) return;
+                        if (e.target.checked) {
+                          setStockToggleConfirm({ levelId: lv.id, idx });
+                        } else {
+                          renameMutation.mutate({ levelId: lv.id, patch: { is_stock_holding: false } });
+                        }
+                      }}
                       className="w-4 h-4 rounded border-gray-300 text-emerald-600 focus:ring-emerald-500 disabled:opacity-60"
                     />
+                    <p className="text-[10px] text-gray-400 mt-1 leading-tight">
+                      {t("org_setup.level_stock_holding_plan_hint")}
+                    </p>
                   </td>
                 </tr>
               );
@@ -346,6 +696,41 @@ function LevelsTab({ tenantId }: { tenantId: string }) {
       {saveError && <p className="text-sm text-red-600">{saveError}</p>}
       {saveOk && <p className="text-sm text-emerald-600 font-medium">Levels saved.</p>}
 
+      {stockToggleConfirm && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/40 px-4">
+          <div className="w-full max-w-md rounded-lg bg-white p-5 shadow-2xl">
+            <h3 className="text-base font-bold text-gray-900 m-0">
+              {t("org_setup.confirm_level_on_title")}
+            </h3>
+            <p className="text-sm text-gray-600 mt-3">
+              {t("org_setup.confirm_level_on_body")}
+            </p>
+            <div className="mt-5 flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setStockToggleConfirm(null)}
+                className="px-4 py-1.5 border border-gray-300 text-gray-600 text-sm font-medium rounded hover:bg-gray-50"
+              >
+                {t("common.cancel")}
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  renameMutation.mutate({
+                    levelId: stockToggleConfirm.levelId,
+                    patch: { is_stock_holding: true },
+                  });
+                  setStockToggleConfirm(null);
+                }}
+                className="px-4 py-1.5 bg-emerald-700 text-white text-sm font-semibold rounded hover:bg-emerald-800"
+              >
+                {t("org_setup.confirm_save")}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {!levelsAlreadySaved && (
         <button
           type="button"
@@ -354,7 +739,7 @@ function LevelsTab({ tenantId }: { tenantId: string }) {
           title={gp.title}
           className="px-5 py-2 bg-emerald-700 text-white text-sm font-semibold rounded-lg hover:bg-emerald-800 disabled:opacity-50"
         >
-          {saveMutation.isPending ? t("common.saving") : "Save Levels"}
+          {saveMutation.isPending ? t("common.saving") : t("org_setup.save_levels")}
         </button>
       )}
 
@@ -425,24 +810,51 @@ function NodeForm({
   onSaved: (createdLevel?: number) => void;
   onCancel: () => void;
 }) {
+  const qc = useQueryClient();
   const parentNode = flat.find((n) => n.id === defaultParentId) ?? null;
   const childLevel = parentNode ? parentNode.hierarchy_level + 1 : 1;
 
-  const [form, setForm] = useState<NodeFormState>(() => ({
-    name:              editingNode?.name ?? "",
-    location:          editingNode?.address ?? "",
-    parent_node_id:    editingNode?.parent_node_id ?? defaultParentId,
-    primary_source_id: "",
-    is_stock_holding:  editingNode?.is_stock_holding ?? true,
-    level_number:      editingNode?.hierarchy_level ?? childLevel,
-  }));
+  const [form, setForm] = useState<NodeFormState>(() => {
+    const defaultLevelNumber = editingNode?.hierarchy_level ?? childLevel;
+    // A new node defaults to its level's own stock-holding setting, not a
+    // hardcoded true — otherwise a disabled (approval-only) checkbox would
+    // still submit is_stock_holding=true.
+    const defaultLevelHoldsStock = levels.find((l) => l.level_number === defaultLevelNumber)?.is_stock_holding ?? true;
+    return {
+      name:              editingNode?.name ?? "",
+      location:          editingNode?.address ?? "",
+      parent_node_id:    editingNode?.parent_node_id ?? defaultParentId,
+      primary_source_id: "",
+      is_stock_holding:  editingNode?.is_stock_holding ?? defaultLevelHoldsStock,
+      level_number:      defaultLevelNumber,
+    };
+  });
   const [saving, setSaving] = useState(false);
   const [error, setError]   = useState<string | null>(null);
+  const [compareOpen, setCompareOpen] = useState(false);
   const writeGuard = useWriteGuard();
+  const { planUsage } = usePlanUsage();
+  const session = getSession();
   // check_plan_create_warehouse (backend/shared/permissions/plan_middleware.py)
-  // counts EVERY active node toward max_warehouses, regardless of
-  // is_stock_holding — so any new node (not an edit) counts against the cap.
-  const gp = guardProps(writeGuard, editingNode ? undefined : "warehouses");
+  // counts a node toward max_warehouses when it will be (or becomes)
+  // stock-holding — a node that's already stock-holding, or an approval-only
+  // one staying that way, is never blocked, regardless of the cap.
+  const readOnlyGp = guardProps(writeGuard);
+  const turningStockHoldingOn = editingNode
+    ? !editingNode.is_stock_holding && form.is_stock_holding
+    : form.is_stock_holding;
+  const atWarehouseCap = turningStockHoldingOn && writeGuard.atLimit("warehouses");
+  const levelHoldsStock = levels.find((l) => l.level_number === form.level_number)?.is_stock_holding ?? true;
+  const capNotice = atWarehouseCap && planUsage
+    ? t("org_setup.warehouse_cap_notice")
+        .replace("{tier}", tierLabel(planUsage.plan_tier ?? ""))
+        .replace("{limit}", String(planUsage.warehouses.limit ?? ""))
+    : null;
+  const gp = readOnlyGp.disabled
+    ? readOnlyGp
+    : atWarehouseCap
+      ? { disabled: true, title: capNotice ?? t(`plan.limit_reached.warehouses`), "aria-disabled": true as const }
+      : { disabled: false };
 
   async function save() {
     if (gp.disabled) return;
@@ -454,6 +866,7 @@ function NodeForm({
         await api.patch(`/api/v1/tenants/${tenantId}/nodes/${editingNode.id}`, {
           name: form.name.trim(),
           address: form.location.trim() || null,
+          is_stock_holding: form.is_stock_holding,
         });
       } else {
         await api.post(`/api/v1/tenants/${tenantId}/nodes`, {
@@ -489,9 +902,20 @@ function NodeForm({
           ).catch(() => { /* non-fatal */ });
         }
       }
+      void qc.invalidateQueries({ queryKey: ["plan-usage"] });
       onSaved(editingNode ? undefined : form.level_number);
     } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : t("common.error"));
+      const code = (e as { code?: string })?.code;
+      if (code === "NODE_STOCK_ACTIVITY") {
+        const reason = (e as { reason?: string })?.reason;
+        const key = reason === "NODE_HAS_OPEN_TRANSFERS" ? "node_stock_activity_open_transfers"
+          : reason === "NODE_HAS_PENDING_ADJUSTMENTS" ? "node_stock_activity_pending_adjustments"
+          : reason === "NODE_HAS_STOCK" ? "node_stock_activity_stock"
+          : "node_stock_activity_generic";
+        setError(t(`org_setup.${key}`));
+      } else {
+        setError(e instanceof Error ? e.message : t("common.error"));
+      }
     } finally {
       setSaving(false);
     }
@@ -551,20 +975,41 @@ function NodeForm({
       )}
 
       {/* Holds stock */}
-      {!editingNode && (
-        <label className="flex items-center gap-2 cursor-pointer">
+      <div>
+        <label className={`flex items-center gap-2 ${levelHoldsStock ? "cursor-pointer" : "cursor-not-allowed"}`}>
           <input
             type="checkbox"
             checked={form.is_stock_holding}
+            disabled={!levelHoldsStock}
+            title={!levelHoldsStock ? t("org_setup.level_approval_only_hint") : undefined}
             onChange={(e) => setForm((f) => ({ ...f, is_stock_holding: e.target.checked }))}
-            className="w-4 h-4 rounded border-gray-300 text-blue-600"
+            className="w-4 h-4 rounded border-gray-300 text-blue-600 disabled:opacity-60"
           />
           <span className="text-xs text-gray-700">{t("org_setup.is_stock_holding")}</span>
         </label>
-      )}
+        <p className="text-xs text-gray-400 mt-1 ml-6">
+          {levelHoldsStock ? t("org_setup.is_stock_holding_plan_hint") : t("org_setup.level_approval_only_hint")}
+        </p>
+      </div>
 
-      {gp.title && <p className="text-xs font-semibold text-red-600 bg-red-50 border border-red-200 rounded px-3 py-2">{gp.title}</p>}
+      {atWarehouseCap && capNotice && (
+        <div className="text-xs font-semibold text-red-600 bg-red-50 border border-red-200 rounded px-3 py-2 space-y-2">
+          <p className="m-0">{capNotice}</p>
+          <div className="flex gap-3 flex-wrap items-center font-normal">
+            <button type="button" onClick={() => setCompareOpen(true)} className="underline font-semibold hover:no-underline">
+              {t("tenant_admin.features.compare_plans_link")}
+            </button>
+            {session?.role === "TA" && planUsage?.plan_tier && (
+              <RequestUpgradeSection planTier={planUsage.plan_tier} />
+            )}
+          </div>
+        </div>
+      )}
+      {!atWarehouseCap && gp.title && (
+        <p className="text-xs font-semibold text-red-600 bg-red-50 border border-red-200 rounded px-3 py-2">{gp.title}</p>
+      )}
       {error && <p className="text-xs text-red-600">{error}</p>}
+      <PlanComparisonModal open={compareOpen} onClose={() => setCompareOpen(false)} currentTier={planUsage?.plan_tier ?? "STARTER"} />
 
       <div className="flex gap-2">
         <button
@@ -611,12 +1056,17 @@ function TreeTab({
 }) {
   const qc = useQueryClient();
   const [coverage, setCoverage] = useState<CoverageState | null>(null);
+  const [compareOpen, setCompareOpen] = useState(false);
   const writeGuard = useWriteGuard();
-  // Adding a node (root or child) counts against max_warehouses regardless of
-  // is_stock_holding — see NodeForm above. Edit/deactivate/reactivate are
-  // read-only guarded only.
-  const addGp  = guardProps(writeGuard, "warehouses");
+  const { planUsage } = usePlanUsage();
+  const session = getSession();
+  // Opening the add-node form is never blocked by the warehouse cap — an
+  // approval-only node is always free (NodeForm gates its own Save button
+  // only when "Holds stock" is on and the cap is reached). Read-only mode
+  // still blocks everything.
+  const addGp  = guardProps(writeGuard);
   const editGp = guardProps(writeGuard);
+  const atWarehouseCap = writeGuard.atLimit("warehouses");
 
   const { data: levels = [] } = useQuery<HierarchyLevel[]>({
     queryKey: ["hierarchy-config", tenantId],
@@ -638,7 +1088,11 @@ function TreeTab({
   const deactivateMutation = useMutation({
     mutationFn: (nodeId: string) =>
       api.patch(`/api/v1/tenants/${tenantId}/nodes/${nodeId}/deactivate`, {}),
-    onSuccess: () => { setNodeActionError(null); refreshNodes(); },
+    onSuccess: () => {
+      setNodeActionError(null);
+      refreshNodes();
+      void qc.invalidateQueries({ queryKey: ["plan-usage"] });
+    },
     onError: (e: unknown) => {
       const code = (e as { code?: string })?.code;
       const codeKeyMap: Record<string, string> = {
@@ -655,9 +1109,18 @@ function TreeTab({
   const reactivateMutation = useMutation({
     mutationFn: (nodeId: string) =>
       api.patch(`/api/v1/tenants/${tenantId}/nodes/${nodeId}/reactivate`, {}),
-    onSuccess: () => { setNodeActionError(null); refreshNodes(); },
+    onSuccess: () => {
+      setNodeActionError(null);
+      refreshNodes();
+      void qc.invalidateQueries({ queryKey: ["plan-usage"] });
+    },
     onError: (e: unknown) => {
-      setNodeActionError(e instanceof Error ? e.message : t("common.error"));
+      const code = (e as { code?: string })?.code;
+      setNodeActionError(
+        code === "PLAN_LIMIT_REACHED"
+          ? t("plan.limit_reached.warehouses")
+          : e instanceof Error ? e.message : t("common.error")
+      );
     },
   });
 
@@ -825,6 +1288,54 @@ function TreeTab({
         message={t("org_setup.help.tree_message")}
         tip={t("org_setup.help.tree_tip")}
       />
+
+      {/* Warehouse usage counter */}
+      {planUsage && (
+        <div className="flex flex-wrap items-center gap-2 text-xs">
+          <span
+            className={`font-semibold px-2 py-1 rounded ${
+              planUsage.warehouses.limit === null
+                ? "bg-gray-100 text-gray-600"
+                : planUsage.warehouses.used >= planUsage.warehouses.limit
+                  ? "bg-red-100 text-red-700"
+                  : planUsage.warehouses.used >= planUsage.warehouses.limit - 1
+                    ? "bg-amber-100 text-amber-700"
+                    : "bg-gray-100 text-gray-600"
+            }`}
+          >
+            {planUsage.warehouses.limit === null
+              ? t("org_setup.warehouse_usage_counter")
+                  .replace("{used}", String(planUsage.warehouses.used))
+                  .replace("{limit}", t("org_setup.warehouse_usage_unlimited"))
+                  .replace("{tier}", tierLabel(planUsage.plan_tier ?? ""))
+              : t("org_setup.warehouse_usage_counter")
+                  .replace("{used}", String(planUsage.warehouses.used))
+                  .replace("{limit}", String(planUsage.warehouses.limit))
+                  .replace("{tier}", tierLabel(planUsage.plan_tier ?? ""))}
+          </span>
+          <span className="text-gray-400">{t("org_setup.warehouse_usage_note")}</span>
+        </div>
+      )}
+
+      {atWarehouseCap && planUsage && (
+        <div className="text-xs font-semibold text-red-600 bg-red-50 border border-red-200 rounded px-3 py-2 space-y-2">
+          <p className="m-0">
+            {t("org_setup.warehouse_cap_notice")
+              .replace("{tier}", tierLabel(planUsage.plan_tier ?? ""))
+              .replace("{limit}", String(planUsage.warehouses.limit ?? ""))}
+          </p>
+          <div className="flex gap-3 flex-wrap items-center font-normal">
+            <button type="button" onClick={() => setCompareOpen(true)} className="underline font-semibold hover:no-underline">
+              {t("tenant_admin.features.compare_plans_link")}
+            </button>
+            {session?.role === "TA" && planUsage.plan_tier && (
+              <RequestUpgradeSection planTier={planUsage.plan_tier} />
+            )}
+          </div>
+        </div>
+      )}
+      <PlanComparisonModal open={compareOpen} onClose={() => setCompareOpen(false)} currentTier={planUsage?.plan_tier ?? "STARTER"} />
+
       {/* Legend */}
       {levels.length > 0 && (
         <div className="flex flex-wrap gap-3 bg-gray-50 border border-gray-200 rounded-lg p-3">
@@ -3523,7 +4034,7 @@ export default function OrgSetupPage() {
           so node-scoped local state (selectedNodeId in PositionsTab, addParentId/
           editNodeId in TreeTab, etc.) can never survive into the next tenant's render —
           see cross-tenant position leak investigation. */}
-      {activeTab === "levels"         && <LevelsTab          key={tenantId} tenantId={tenantId} />}
+      {activeTab === "levels"         && <LevelsTab          key={tenantId} tenantId={tenantId} onSwitchTab={setActiveTab} />}
       {activeTab === "tree"           && <TreeTab             key={tenantId} tenantId={tenantId} onPrefillLevel={setPrefillLevel} onSwitchToApproval={() => setActiveTab("approval")} />}
       {activeTab === "positions"      && <PositionsTab        key={tenantId} tenantId={tenantId} />}
       {activeTab === "personnel"      && <PersonnelV2Tab      key={tenantId} tenantId={tenantId} />}

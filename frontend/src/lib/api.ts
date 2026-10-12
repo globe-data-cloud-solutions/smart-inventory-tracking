@@ -136,6 +136,7 @@ async function request<T>(
       feature?: string; upgrade_to?: string | null;
       resource?: string; limit?: number | null;
       contract_end?: string | null; read_only_since?: string | null;
+      reason?: string; nodes?: Array<{ id: string; name: string }>;
     };
     const raw   = json as unknown as { detail?: DetObj | string };
     const det   = typeof raw.detail === "object" ? raw.detail : null;
@@ -164,10 +165,13 @@ async function request<T>(
       feature?: string; upgradeTo?: string | null;
       resource?: string; limit?: number | null;
       contractEnd?: string | null; readOnlySince?: string | null;
+      reason?: string; nodes?: Array<{ id: string; name: string }>;
     };
     apiErr.status    = res.status;
     apiErr.code      = err.error?.code ?? detCode;
     if (det?.locations) apiErr.locations = det.locations;
+    if (det?.reason) apiErr.reason = det.reason;
+    if (det?.nodes)  apiErr.nodes  = det.nodes;
     // FEATURE_NOT_IN_PLAN (402, plan_middleware.py) — carried as typed fields so
     // callers can render the upgrade message via lib/planError.ts instead of
     // showing the raw error / [object Object].
