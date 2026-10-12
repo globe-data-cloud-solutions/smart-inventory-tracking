@@ -68,7 +68,7 @@ function localeStrings(locale: "en" | "am") {
     levelHint: org.level_stock_holding_plan_hint as string,
     comparePlans: d.tenant_admin.features.compare_plans_link as string,
     requestUpgrade: d.tenant_admin.features.request_upgrade_btn as string,
-    saveLevels: "Save Levels",
+    saveLevels: org.save_levels as string,
   };
 }
 

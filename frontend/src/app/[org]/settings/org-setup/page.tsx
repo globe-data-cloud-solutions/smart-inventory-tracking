@@ -101,19 +101,35 @@ function LevelsTab({
 
   const [renamedIdx, setRenamedIdx] = useState<number | null>(null);
   const [renameError, setRenameError] = useState<string | null>(null);
+  const [stockToggleConfirm, setStockToggleConfirm] = useState<{ levelId: string; idx: number } | null>(null);
 
   const renameMutation = useMutation({
-    mutationFn: ({ levelId, patch }: { levelId: string; patch: { level_name?: string; role_display_label?: string } }) =>
+    mutationFn: ({ levelId, patch }: {
+      levelId: string;
+      patch: { level_name?: string; role_display_label?: string; is_stock_holding?: boolean };
+    }) =>
       api.patch(`/api/v1/tenants/${tenantId}/hierarchy/config/${levelId}`, patch),
     onSuccess: (_data, vars) => {
       void qc.invalidateQueries({ queryKey: ["hierarchy-config", tenantId] });
+      if ("is_stock_holding" in vars.patch) {
+        void qc.invalidateQueries({ queryKey: ["plan-usage"] });
+        void qc.invalidateQueries({ queryKey: ["org-nodes", tenantId] });
+      }
       setRenameError(null);
       const idx = levels.findIndex((l) => l.id === vars.levelId);
       setRenamedIdx(idx);
       setTimeout(() => setRenamedIdx(null), 2500);
     },
     onError: (e: unknown) => {
-      setRenameError(e instanceof Error ? e.message : t("common.error"));
+      const code = (e as { code?: string })?.code;
+      if (code === "LEVEL_HAS_STOCK_NODES") {
+        const nodeNames = ((e as { nodes?: Array<{ id: string; name: string }> }).nodes ?? [])
+          .map((n) => n.name)
+          .join(", ");
+        setRenameError(t("org_setup.level_has_stock_nodes").replace("{names}", nodeNames));
+      } else {
+        setRenameError(e instanceof Error ? e.message : t("common.error"));
+      }
     },
   });
 
@@ -647,8 +663,20 @@ function LevelsTab({
                     <input
                       type="checkbox"
                       checked={lv.is_stock_holding}
-                      disabled={persisted}
-                      onChange={(e) => updateLevel(idx, { is_stock_holding: e.target.checked })}
+                      disabled={persisted && (gp.disabled || renameMutation.isPending)}
+                      title={persisted ? gp.title : undefined}
+                      onChange={(e) => {
+                        if (!persisted) {
+                          updateLevel(idx, { is_stock_holding: e.target.checked });
+                          return;
+                        }
+                        if (gp.disabled || !lv.id) return;
+                        if (e.target.checked) {
+                          setStockToggleConfirm({ levelId: lv.id, idx });
+                        } else {
+                          renameMutation.mutate({ levelId: lv.id, patch: { is_stock_holding: false } });
+                        }
+                      }}
                       className="w-4 h-4 rounded border-gray-300 text-emerald-600 focus:ring-emerald-500 disabled:opacity-60"
                     />
                     <p className="text-[10px] text-gray-400 mt-1 leading-tight">
@@ -668,6 +696,41 @@ function LevelsTab({
       {saveError && <p className="text-sm text-red-600">{saveError}</p>}
       {saveOk && <p className="text-sm text-emerald-600 font-medium">Levels saved.</p>}
 
+      {stockToggleConfirm && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/40 px-4">
+          <div className="w-full max-w-md rounded-lg bg-white p-5 shadow-2xl">
+            <h3 className="text-base font-bold text-gray-900 m-0">
+              {t("org_setup.confirm_level_on_title")}
+            </h3>
+            <p className="text-sm text-gray-600 mt-3">
+              {t("org_setup.confirm_level_on_body")}
+            </p>
+            <div className="mt-5 flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setStockToggleConfirm(null)}
+                className="px-4 py-1.5 border border-gray-300 text-gray-600 text-sm font-medium rounded hover:bg-gray-50"
+              >
+                {t("common.cancel")}
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  renameMutation.mutate({
+                    levelId: stockToggleConfirm.levelId,
+                    patch: { is_stock_holding: true },
+                  });
+                  setStockToggleConfirm(null);
+                }}
+                className="px-4 py-1.5 bg-emerald-700 text-white text-sm font-semibold rounded hover:bg-emerald-800"
+              >
+                {t("org_setup.confirm_save")}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {!levelsAlreadySaved && (
         <button
           type="button"
@@ -676,7 +739,7 @@ function LevelsTab({
           title={gp.title}
           className="px-5 py-2 bg-emerald-700 text-white text-sm font-semibold rounded-lg hover:bg-emerald-800 disabled:opacity-50"
         >
-          {saveMutation.isPending ? t("common.saving") : "Save Levels"}
+          {saveMutation.isPending ? t("common.saving") : t("org_setup.save_levels")}
         </button>
       )}
 
@@ -751,14 +814,21 @@ function NodeForm({
   const parentNode = flat.find((n) => n.id === defaultParentId) ?? null;
   const childLevel = parentNode ? parentNode.hierarchy_level + 1 : 1;
 
-  const [form, setForm] = useState<NodeFormState>(() => ({
-    name:              editingNode?.name ?? "",
-    location:          editingNode?.address ?? "",
-    parent_node_id:    editingNode?.parent_node_id ?? defaultParentId,
-    primary_source_id: "",
-    is_stock_holding:  editingNode?.is_stock_holding ?? true,
-    level_number:      editingNode?.hierarchy_level ?? childLevel,
-  }));
+  const [form, setForm] = useState<NodeFormState>(() => {
+    const defaultLevelNumber = editingNode?.hierarchy_level ?? childLevel;
+    // A new node defaults to its level's own stock-holding setting, not a
+    // hardcoded true — otherwise a disabled (approval-only) checkbox would
+    // still submit is_stock_holding=true.
+    const defaultLevelHoldsStock = levels.find((l) => l.level_number === defaultLevelNumber)?.is_stock_holding ?? true;
+    return {
+      name:              editingNode?.name ?? "",
+      location:          editingNode?.address ?? "",
+      parent_node_id:    editingNode?.parent_node_id ?? defaultParentId,
+      primary_source_id: "",
+      is_stock_holding:  editingNode?.is_stock_holding ?? defaultLevelHoldsStock,
+      level_number:      defaultLevelNumber,
+    };
+  });
   const [saving, setSaving] = useState(false);
   const [error, setError]   = useState<string | null>(null);
   const [compareOpen, setCompareOpen] = useState(false);
@@ -766,10 +836,15 @@ function NodeForm({
   const { planUsage } = usePlanUsage();
   const session = getSession();
   // check_plan_create_warehouse (backend/shared/permissions/plan_middleware.py)
-  // only counts a NEW node toward max_warehouses when it will be stock-holding
-  // — an approval-only node is never blocked, regardless of the cap.
+  // counts a node toward max_warehouses when it will be (or becomes)
+  // stock-holding — a node that's already stock-holding, or an approval-only
+  // one staying that way, is never blocked, regardless of the cap.
   const readOnlyGp = guardProps(writeGuard);
-  const atWarehouseCap = !editingNode && form.is_stock_holding && writeGuard.atLimit("warehouses");
+  const turningStockHoldingOn = editingNode
+    ? !editingNode.is_stock_holding && form.is_stock_holding
+    : form.is_stock_holding;
+  const atWarehouseCap = turningStockHoldingOn && writeGuard.atLimit("warehouses");
+  const levelHoldsStock = levels.find((l) => l.level_number === form.level_number)?.is_stock_holding ?? true;
   const capNotice = atWarehouseCap && planUsage
     ? t("org_setup.warehouse_cap_notice")
         .replace("{tier}", tierLabel(planUsage.plan_tier ?? ""))
@@ -791,6 +866,7 @@ function NodeForm({
         await api.patch(`/api/v1/tenants/${tenantId}/nodes/${editingNode.id}`, {
           name: form.name.trim(),
           address: form.location.trim() || null,
+          is_stock_holding: form.is_stock_holding,
         });
       } else {
         await api.post(`/api/v1/tenants/${tenantId}/nodes`, {
@@ -829,7 +905,17 @@ function NodeForm({
       void qc.invalidateQueries({ queryKey: ["plan-usage"] });
       onSaved(editingNode ? undefined : form.level_number);
     } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : t("common.error"));
+      const code = (e as { code?: string })?.code;
+      if (code === "NODE_STOCK_ACTIVITY") {
+        const reason = (e as { reason?: string })?.reason;
+        const key = reason === "NODE_HAS_OPEN_TRANSFERS" ? "node_stock_activity_open_transfers"
+          : reason === "NODE_HAS_PENDING_ADJUSTMENTS" ? "node_stock_activity_pending_adjustments"
+          : reason === "NODE_HAS_STOCK" ? "node_stock_activity_stock"
+          : "node_stock_activity_generic";
+        setError(t(`org_setup.${key}`));
+      } else {
+        setError(e instanceof Error ? e.message : t("common.error"));
+      }
     } finally {
       setSaving(false);
     }
@@ -889,20 +975,22 @@ function NodeForm({
       )}
 
       {/* Holds stock */}
-      {!editingNode && (
-        <div>
-          <label className="flex items-center gap-2 cursor-pointer">
-            <input
-              type="checkbox"
-              checked={form.is_stock_holding}
-              onChange={(e) => setForm((f) => ({ ...f, is_stock_holding: e.target.checked }))}
-              className="w-4 h-4 rounded border-gray-300 text-blue-600"
-            />
-            <span className="text-xs text-gray-700">{t("org_setup.is_stock_holding")}</span>
-          </label>
-          <p className="text-xs text-gray-400 mt-1 ml-6">{t("org_setup.is_stock_holding_plan_hint")}</p>
-        </div>
-      )}
+      <div>
+        <label className={`flex items-center gap-2 ${levelHoldsStock ? "cursor-pointer" : "cursor-not-allowed"}`}>
+          <input
+            type="checkbox"
+            checked={form.is_stock_holding}
+            disabled={!levelHoldsStock}
+            title={!levelHoldsStock ? t("org_setup.level_approval_only_hint") : undefined}
+            onChange={(e) => setForm((f) => ({ ...f, is_stock_holding: e.target.checked }))}
+            className="w-4 h-4 rounded border-gray-300 text-blue-600 disabled:opacity-60"
+          />
+          <span className="text-xs text-gray-700">{t("org_setup.is_stock_holding")}</span>
+        </label>
+        <p className="text-xs text-gray-400 mt-1 ml-6">
+          {levelHoldsStock ? t("org_setup.is_stock_holding_plan_hint") : t("org_setup.level_approval_only_hint")}
+        </p>
+      </div>
 
       {atWarehouseCap && capNotice && (
         <div className="text-xs font-semibold text-red-600 bg-red-50 border border-red-200 rounded px-3 py-2 space-y-2">

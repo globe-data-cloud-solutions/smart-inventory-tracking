@@ -1,6 +1,10 @@
 # SMART Inventory — TA Onboarding Guide
 
-**Version:** 1.6 | **Updated:** October 2026 | **Audience:** Tenant Administrators & Organisation Managers
+**Version:** 1.7 | **Updated:** October 2026 | **Audience:** Tenant Administrators & Organisation Managers
+
+**v1.7 changelog:** Step 1 (Organisation Levels) and Step 2 (Organisation Tree) now cover
+switching "Holds stock" on an already-saved level or an existing location, and what blocks
+that switch.
 
 **v1.6 changelog:** Step 1 (Organisation Levels) and the "Can I change org levels later?" FAQ
 now reflect the ability to add a level below the bottom level, or remove it while empty,
@@ -77,8 +81,9 @@ Each package sets your limits and which features are included. Typical defaults:
 > to time; a revision applies to new sign-ups and plan changes, and does not change an
 > existing workspace's limits by itself.
 
-**One warehouse and the TA account are free.** Your first top-level org node and your own TA
-account do not count toward the warehouse and staff-account limits.
+**The TA account is free.** Your own TA account does not count toward the staff-account
+limit. **Warehouses = locations that hold stock; approval-only locations are free** — an org
+node only counts toward the warehouse limit if it holds stock (`is_stock_holding = true`).
 
 **Prices.** Every package has a monthly and an annual price. Prices are shown before VAT,
 with **15% VAT** and the total shown separately. A price change applies to your
@@ -205,6 +210,11 @@ Define how many levels your organisation has and what each level is called.
 bottom level if it has no org nodes yet. Inserting or removing a level in the middle of the
 stack is not self-service — contact SMART support for that.
 
+**Switching "Holds stock" on a saved level:** turning it **on** is always allowed — existing
+locations at that level stay as they are; switch each one individually afterward if it
+should hold stock. Turning it **off** is only allowed while no active location at that level
+still holds stock — if any do, you'll be shown which ones to switch to approval-only first.
+
 Example 4-level structure:
 
 | Level | Example Name | Notes |
@@ -234,6 +244,10 @@ Create the actual nodes (factories, offices, warehouses) using the levels from S
 - Use consistent, official names — they appear in reports and audit logs
 - You can add more nodes later as your organisation grows
 - Node creation is subject to your plan tier's warehouse limit — if you receive an error when adding a node, contact your SMART administrator to request more capacity rather than assuming it is a bug (see [Plan Tiers](#plan-tiers))
+- You can switch an existing location's "Holds stock" setting from its edit form. Turning it
+  off is blocked while that location has open transfers, pending adjustments, or stock on
+  hand — clear those first, then switch it. The toggle itself is disabled if its level is
+  approval-only; turn on "Holds stock" for the level first (Step 1).
 
 `[SCREENSHOT: Organisation Tree showing two-factory structure]`
 
