@@ -2,15 +2,18 @@
 from __future__ import annotations
 
 from datetime import date
+from decimal import Decimal
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from fastapi import HTTPException
 
 
-TENANT_ID  = "10000000-0000-0000-0000-000000000001"
-PRODUCT_ID = "aaaaaaaa-0000-0000-0000-000000000001"
-USER_ID    = "u-wm-01"
+TENANT_ID    = "10000000-0000-0000-0000-000000000001"
+PRODUCT_ID   = "aaaaaaaa-0000-0000-0000-000000000001"
+USER_ID      = "u-wm-01"
+LOT_ID       = "lot-id-001"
+WAREHOUSE_ID = "wh-id-001"
 
 
 def _make_session(existing_expiry) -> AsyncMock:
@@ -103,3 +106,69 @@ class TestGetOrCreateLot:
 
         insert_call = session.execute.call_args_list[0]
         assert insert_call.args[1]["lot"] == "LOT-A1"
+
+
+@pytest.mark.unit
+class TestUpdateLotBalance:
+
+    async def test_positive_delta_upserts(self) -> None:
+        from repositories.lot_repo import _update_lot_balance
+
+        session = AsyncMock()
+        session.execute = AsyncMock(return_value=MagicMock())
+
+        await _update_lot_balance(
+            session, TENANT_ID, LOT_ID, PRODUCT_ID, WAREHOUSE_ID, Decimal("10")
+        )
+
+        assert session.execute.await_count == 1
+        sql = str(session.execute.call_args.args[0])
+        assert "ON CONFLICT" in sql
+
+    async def test_negative_delta_updates_only(self) -> None:
+        from repositories.lot_repo import _update_lot_balance
+
+        result = MagicMock()
+        result.fetchone.return_value = MagicMock(quantity=Decimal("7"))
+        session = AsyncMock()
+        session.execute = AsyncMock(return_value=result)
+
+        await _update_lot_balance(
+            session, TENANT_ID, LOT_ID, PRODUCT_ID, WAREHOUSE_ID, Decimal("-3")
+        )
+
+        assert session.execute.await_count == 1
+        sql = str(session.execute.call_args.args[0]).strip()
+        assert sql.startswith("UPDATE")
+        assert "INSERT" not in sql
+
+    async def test_negative_delta_no_row_raises_422(self) -> None:
+        from repositories.lot_repo import _update_lot_balance
+
+        result = MagicMock()
+        result.fetchone.return_value = None
+        session = AsyncMock()
+        session.execute = AsyncMock(return_value=result)
+
+        with pytest.raises(HTTPException) as exc_info:
+            await _update_lot_balance(
+                session, TENANT_ID, LOT_ID, PRODUCT_ID, WAREHOUSE_ID, Decimal("-20")
+            )
+
+        assert exc_info.value.status_code == 422
+        assert exc_info.value.detail["code"] == "INSUFFICIENT_LOT_STOCK"
+        assert exc_info.value.detail["lot_id"] == LOT_ID
+        assert exc_info.value.detail["warehouse_id"] == WAREHOUSE_ID
+        assert exc_info.value.detail["available"] == "0"
+        assert exc_info.value.detail["requested"] == "20"
+
+    async def test_zero_delta_no_execute(self) -> None:
+        from repositories.lot_repo import _update_lot_balance
+
+        session = AsyncMock()
+
+        await _update_lot_balance(
+            session, TENANT_ID, LOT_ID, PRODUCT_ID, WAREHOUSE_ID, Decimal("0")
+        )
+
+        session.execute.assert_not_awaited()

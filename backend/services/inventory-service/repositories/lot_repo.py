@@ -102,34 +102,32 @@ async def _update_lot_balance(
     warehouse_id: str,
     delta: Decimal,
 ) -> None:
-    """Upsert lot_balances by delta.
+    """Write lot_balances by delta. ONLY writer to lot_balances. Called only
+    from record_transaction(), in the same DB transaction as the
+    inventory_transactions INSERT, which already holds a FOR UPDATE lock on
+    the product's balance row — serializing concurrent callers for this
+    product before either branch below runs.
 
-    ONLY writer to lot_balances. Called only from record_transaction(), in the
-    same DB transaction as the inventory_transactions INSERT, which already
-    holds a FOR UPDATE lock on the product's balance row — serializing
-    concurrent callers for this product before either statement below runs.
-
-    UPDATE-first, INSERT-on-no-match — NOT "INSERT ... ON CONFLICT DO UPDATE".
-    Postgres evaluates a CHECK constraint on an ON CONFLICT DO UPDATE against
-    the raw proposed (speculative) insert tuple before the conflict/merge is
-    resolved, so `quantity >= 0` would reject a negative delta even when the
-    existing row has plenty of balance (e.g. 10 + (-3) = 7 is valid, but the
-    speculative tuple's raw quantity=-3 fails the CHECK first). A plain UPDATE
-    evaluates the CHECK against the real post-arithmetic value, so it doesn't
-    have this problem; INSERT only runs for a genuinely new (lot, warehouse).
+    Credits (delta > 0) upsert via INSERT ... ON CONFLICT DO UPDATE — safe
+    because the CHECK (quantity >= 0) constraint is evaluated against the
+    proposed INSERT row before conflict resolution, and a positive delta
+    always satisfies it on its own. Debits (delta < 0) always target an
+    existing row, so they use a plain UPDATE instead: an ON CONFLICT DO
+    UPDATE's CHECK would be evaluated against the raw negative speculative
+    insert tuple (failing even when the existing balance covers it, e.g.
+    10 + (-3) = 7), whereas a plain UPDATE's CHECK sees the real
+    post-arithmetic value.
     """
-    result = await session.execute(
-        text(
-            "UPDATE lot_balances SET quantity = quantity + :qty, updated_at = now() "
-            "WHERE tenant_id = :tid AND lot_id = :lid AND warehouse_id = :wid"
-        ),
-        {"tid": tenant_id, "lid": lot_id, "wid": warehouse_id, "qty": str(delta)},
-    )
-    if result.rowcount == 0:
+    if delta == 0:
+        return
+
+    if delta > 0:
         await session.execute(
             text(
                 "INSERT INTO lot_balances (tenant_id, lot_id, product_id, warehouse_id, quantity) "
-                "VALUES (:tid, :lid, :pid, :wid, :qty)"
+                "VALUES (:tid, :lid, :pid, :wid, :qty) "
+                "ON CONFLICT (tenant_id, lot_id, warehouse_id) "
+                "DO UPDATE SET quantity = lot_balances.quantity + EXCLUDED.quantity, updated_at = now()"
             ),
             {
                 "tid": tenant_id,
@@ -137,6 +135,27 @@ async def _update_lot_balance(
                 "pid": product_id,
                 "wid": warehouse_id,
                 "qty": str(delta),
+            },
+        )
+        return
+
+    result = await session.execute(
+        text(
+            "UPDATE lot_balances SET quantity = quantity + :qty, updated_at = now() "
+            "WHERE tenant_id = :tid AND lot_id = :lid AND warehouse_id = :wid "
+            "RETURNING quantity"
+        ),
+        {"tid": tenant_id, "lid": lot_id, "wid": warehouse_id, "qty": str(delta)},
+    )
+    if result.fetchone() is None:
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "code": "INSUFFICIENT_LOT_STOCK",
+                "lot_id": lot_id,
+                "warehouse_id": warehouse_id,
+                "available": "0",
+                "requested": str(-delta),
             },
         )
 
