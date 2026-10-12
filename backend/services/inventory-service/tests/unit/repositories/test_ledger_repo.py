@@ -53,6 +53,48 @@ def _make_session(balance: float = 100.0) -> AsyncMock:
     return session
 
 
+def _make_lot_session(balance: float = 100.0, lot_balance: float = 100.0) -> AsyncMock:
+    """Same as _make_session but with an extra lot-balance SELECT FOR UPDATE
+    inserted between the product balance lock and the ledger INSERT (call 2),
+    for use when lot_id is given and the type is not neutral:
+      call 0 — idempotency INSERT
+      call 1 — SELECT product balance FOR UPDATE
+      call 2 — SELECT lot balance FOR UPDATE
+      call 3 — INSERT inventory_transactions
+      call 4 — INSERT inventory_balances (update_running_balance)
+      call 5 — INSERT outbox
+    (_update_lot_balance is patched separately, so no extra call slot is needed for it.)
+    """
+    balance_row = MagicMock()
+    balance_row.qty = balance
+
+    balance_result = MagicMock()
+    balance_result.fetchone.return_value = balance_row
+
+    lot_balance_row = MagicMock()
+    lot_balance_row.qty = lot_balance
+
+    lot_balance_result = MagicMock()
+    lot_balance_result.fetchone.return_value = lot_balance_row
+
+    idem_result = MagicMock()
+    idem_result.rowcount = 1
+
+    generic_result = MagicMock()
+    generic_result.fetchone.return_value = None
+
+    session = AsyncMock()
+    session.execute = AsyncMock(side_effect=[
+        idem_result,
+        balance_result,
+        lot_balance_result,
+        generic_result,
+        generic_result,
+        generic_result,
+    ])
+    return session
+
+
 @pytest.mark.unit
 class TestLedgerRepo:
 
@@ -291,6 +333,161 @@ class TestLedgerRepo:
             "TRANSFER_REVERSAL must call _update_running_balance to restore on_hand "
             "after APPROVED→CANCELLED"
         )
+
+    async def test_lot_id_none_makes_same_execute_calls_as_before(self) -> None:
+        """A non-lot call (lot_id=None) must make exactly the same session.execute
+        calls, in the same order, as before lot support was added."""
+        from repositories.ledger_repo import record_transaction
+
+        session = _make_session(balance=50.0)
+
+        with patch("repositories.ledger_repo._update_running_balance", new=AsyncMock()), \
+             patch("repositories.ledger_repo._update_lot_balance", new=AsyncMock()) as mock_lot, \
+             patch("repositories.ledger_repo._get_lot_balance", new=AsyncMock()) as mock_get_lot, \
+             patch("repositories.ledger_repo.write_to_outbox", new=AsyncMock()):
+            await record_transaction(
+                session,
+                tenant_id=TENANT_ID,
+                transaction_type="RECEIVE",
+                product_id=PRODUCT_ID,
+                warehouse_id=WAREHOUSE_ID,
+                quantity=Decimal("25"),
+                performed_by=USER_ID,
+                idempotency_key=IDEM_KEY,
+            )
+
+        assert session.execute.await_count == 3, (
+            "lot_id=None must not add any extra session.execute calls "
+            "(idempotency INSERT, balance SELECT, ledger INSERT — "
+            "_update_running_balance/write_to_outbox are mocked out here)"
+        )
+        mock_get_lot.assert_not_awaited()
+        mock_lot.assert_not_awaited()
+
+    async def test_lot_receipt_updates_both_balances(self) -> None:
+        """A RECEIVE with lot_id must update both the product balance and the
+        lot balance, in the same transaction."""
+        from repositories.ledger_repo import record_transaction
+
+        session = _make_lot_session(balance=100.0, lot_balance=10.0)
+
+        with patch("repositories.ledger_repo._update_running_balance",
+                   new=AsyncMock()) as mock_running, \
+             patch("repositories.ledger_repo._update_lot_balance",
+                   new=AsyncMock()) as mock_lot, \
+             patch("repositories.ledger_repo.write_to_outbox", new=AsyncMock()):
+            await record_transaction(
+                session,
+                tenant_id=TENANT_ID,
+                transaction_type="RECEIVE",
+                product_id=PRODUCT_ID,
+                warehouse_id=WAREHOUSE_ID,
+                quantity=Decimal("10"),
+                performed_by=USER_ID,
+                idempotency_key=IDEM_KEY,
+                lot_id="lot-001",
+                lot_number="LOT-A1",
+            )
+
+        mock_running.assert_awaited_once()
+        mock_lot.assert_awaited_once()
+        lot_call = mock_lot.call_args
+        assert lot_call.args[2] == "lot-001"
+        assert lot_call.args[5] == Decimal("10")
+
+    async def test_lot_issue_beyond_lot_balance_raises_insufficient_lot_stock(self) -> None:
+        """An ISSUE that would drive the LOT balance negative must raise
+        INSUFFICIENT_LOT_STOCK even though the product-level total is enough."""
+        from repositories.ledger_repo import record_transaction
+
+        # Product total is 100 (plenty), but this lot only has 5.
+        session = _make_lot_session(balance=100.0, lot_balance=5.0)
+
+        with patch("repositories.ledger_repo._update_running_balance",
+                   new=AsyncMock()) as mock_running, \
+             patch("repositories.ledger_repo._update_lot_balance",
+                   new=AsyncMock()) as mock_lot, \
+             patch("repositories.ledger_repo.write_to_outbox", new=AsyncMock()):
+            with pytest.raises(HTTPException) as exc_info:
+                await record_transaction(
+                    session,
+                    tenant_id=TENANT_ID,
+                    transaction_type="ISSUE",
+                    product_id=PRODUCT_ID,
+                    warehouse_id=WAREHOUSE_ID,
+                    quantity=Decimal("-10"),
+                    performed_by=USER_ID,
+                    idempotency_key=IDEM_KEY,
+                    lot_id="lot-001",
+                )
+
+        assert exc_info.value.status_code == 422
+        assert exc_info.value.detail["code"] == "INSUFFICIENT_LOT_STOCK"
+        mock_running.assert_not_awaited()
+        mock_lot.assert_not_awaited()
+
+    async def test_neutral_type_with_lot_id_writes_ledger_row_not_lot_balance(self) -> None:
+        """A balance-neutral type (e.g. RESERVE) with lot_id must still write the
+        lot columns onto the ledger row, but must never touch lot_balances."""
+        from repositories.ledger_repo import record_transaction
+
+        session = _make_session(balance=100.0)
+
+        with patch("repositories.ledger_repo._update_running_balance",
+                   new=AsyncMock()) as mock_running, \
+             patch("repositories.ledger_repo._update_lot_balance",
+                   new=AsyncMock()) as mock_lot, \
+             patch("repositories.ledger_repo._get_lot_balance",
+                   new=AsyncMock()) as mock_get_lot, \
+             patch("repositories.ledger_repo.write_to_outbox", new=AsyncMock()):
+            await record_transaction(
+                session,
+                tenant_id=TENANT_ID,
+                transaction_type="RESERVE",
+                product_id=PRODUCT_ID,
+                warehouse_id=WAREHOUSE_ID,
+                quantity=Decimal("50"),
+                performed_by=USER_ID,
+                idempotency_key=IDEM_KEY,
+                lot_id="lot-001",
+                lot_number="LOT-A1",
+            )
+
+        mock_get_lot.assert_not_awaited()
+        mock_lot.assert_not_awaited()
+        mock_running.assert_not_awaited()
+
+        all_sql = [str(c.args[0]) for c in session.execute.call_args_list]
+        assert any("INSERT INTO inventory_transactions" in sql for sql in all_sql)
+
+        ledger_call = session.execute.call_args_list[2]
+        assert ledger_call.args[1]["lot_id"] == "lot-001"
+        assert ledger_call.args[1]["lot_number"] == "LOT-A1"
+
+    async def test_lot_columns_passed_into_insert_params(self) -> None:
+        """The inventory_transactions INSERT must carry lot_id/lot_number/expiry_date
+        (NULL when not given)."""
+        from repositories.ledger_repo import record_transaction
+
+        session = _make_session(balance=100.0)
+
+        with patch("repositories.ledger_repo._update_running_balance", new=AsyncMock()), \
+             patch("repositories.ledger_repo.write_to_outbox", new=AsyncMock()):
+            await record_transaction(
+                session,
+                tenant_id=TENANT_ID,
+                transaction_type="RECEIVE",
+                product_id=PRODUCT_ID,
+                warehouse_id=WAREHOUSE_ID,
+                quantity=Decimal("25"),
+                performed_by=USER_ID,
+                idempotency_key=IDEM_KEY,
+            )
+
+        ledger_call = session.execute.call_args_list[2]
+        assert ledger_call.args[1]["lot_id"] is None
+        assert ledger_call.args[1]["lot_number"] is None
+        assert ledger_call.args[1]["expiry_date"] is None
 
 
 # ── write_transfer_ledger_entry tests ────────────────────────────────────────
