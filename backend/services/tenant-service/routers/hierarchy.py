@@ -70,6 +70,7 @@ class HierarchyLevelOut(BaseModel):
 class HierarchyLevelRename(BaseModel):
     level_name: Optional[str] = None
     role_display_label: Optional[str] = None
+    is_stock_holding: Optional[bool] = None
 
     @field_validator("level_name")
     @classmethod
@@ -211,6 +212,73 @@ def _derive_code(tenant_id: str, name: str, level: int) -> str:
     return f"{prefix}{level}"
 
 
+async def _node_stock_activity_blocker(
+    db: AsyncSession,
+    tenant_id: str,
+    node_id: str,
+    checks: tuple[str, ...] = ("transfers", "adjustments", "stock"),
+) -> Optional[dict]:
+    """Runs the requested subset of open-transfers / pending-adjustments / stock-on-hand
+    checks, in that order, and returns the first 422 detail dict hit, or None if every
+    requested check passes. `checks` lets deactivate_org_node split this around its
+    sole-user check (which has no equivalent here) to keep its existing check order,
+    while update_org_node's stock-holding true→false guard runs all three in one call."""
+    if "transfers" in checks:
+        transfer_row = await db.execute(
+            text(
+                "SELECT COUNT(*) AS cnt FROM transfer_orders "
+                "WHERE (from_warehouse_id = :wid OR to_warehouse_id = :wid) "
+                "AND status NOT IN ('COMPLETED', 'CANCELLED', 'REJECTED') "
+                "AND tenant_id = :tid"
+            ),
+            {"wid": node_id, "tid": tenant_id},
+        )
+        transfer_count = transfer_row.fetchone()
+        if transfer_count and transfer_count.cnt > 0:
+            return {
+                "code": "NODE_HAS_OPEN_TRANSFERS",
+                "message": f"Cannot deactivate — this location has {transfer_count.cnt} "
+                           "open transfer(s). Complete or cancel them first.",
+            }
+
+    if "adjustments" in checks:
+        adj_row = await db.execute(
+            text(
+                "SELECT COUNT(*) AS cnt FROM adjustment_orders "
+                "WHERE warehouse_id = :wid "
+                "AND status NOT IN ('POSTED', 'CANCELLED', 'REJECTED') "
+                "AND tenant_id = :tid"
+            ),
+            {"wid": node_id, "tid": tenant_id},
+        )
+        adj_count = adj_row.fetchone()
+        if adj_count and adj_count.cnt > 0:
+            return {
+                "code": "NODE_HAS_PENDING_ADJUSTMENTS",
+                "message": f"Cannot deactivate — this location has {adj_count.cnt} "
+                           "pending adjustment(s).",
+            }
+
+    if "stock" in checks:
+        stock_row = await db.execute(
+            text(
+                "SELECT COALESCE(SUM(quantity), 0) AS total "
+                "FROM inventory_balances "
+                "WHERE warehouse_id = :wid AND tenant_id = :tid"
+            ),
+            {"wid": node_id, "tid": tenant_id},
+        )
+        stock_total = stock_row.fetchone()
+        if stock_total and float(stock_total.total) > 0:
+            return {
+                "code": "NODE_HAS_STOCK",
+                "message": "Cannot deactivate — this location has stock on hand. "
+                           "Transfer or adjust stock to zero first.",
+            }
+
+    return None
+
+
 # ── Hierarchy config endpoints ─────────────────────────────────────────────────
 
 @router.get(
@@ -326,6 +394,41 @@ async def upsert_hierarchy_config(
             )
     # Growing (len(body) > existing_count) always passes — no check needed.
 
+    # G4 — for every EXISTING active level whose is_stock_holding would flip
+    # true → false in this replace, block if any active stock-holding node
+    # still sits at that level. Mirrors the PATCH guard below so the full-replace
+    # path can't bypass it. New levels in this payload are unaffected.
+    if existing_count > 0:
+        existing_levels_rows = (await db.execute(
+            text(
+                "SELECT level_number, is_stock_holding FROM tenant_hierarchy_config "
+                "WHERE tenant_id = :tid AND is_active = true"
+            ),
+            {"tid": str(tenant_id)},
+        )).fetchall()
+        existing_stock_by_level = {r.level_number: r.is_stock_holding for r in existing_levels_rows}
+
+        for level in body:
+            was_stock_holding = existing_stock_by_level.get(level.level_number)
+            if was_stock_holding is True and level.is_stock_holding is False:
+                blocked_nodes = (await db.execute(
+                    text(
+                        "SELECT id, name FROM organization_node "
+                        "WHERE tenant_id = :tid AND hierarchy_level = :lvl "
+                        "AND is_active = true AND is_stock_holding = true"
+                    ),
+                    {"tid": str(tenant_id), "lvl": level.level_number},
+                )).fetchall()
+                if blocked_nodes:
+                    raise HTTPException(
+                        status_code=422,
+                        detail={
+                            "code":    "LEVEL_HAS_STOCK_NODES",
+                            "nodes":   [{"id": str(n.id), "name": n.name} for n in blocked_nodes],
+                            "message": "Switch these locations to approval-only first.",
+                        },
+                    )
+
     try:
         for level in body:
             await db.execute(
@@ -412,8 +515,8 @@ async def rename_hierarchy_level(
     user=Depends(get_current_user),
     db: AsyncSession = Depends(get_db_session_for_tenant),
 ) -> SuccessResponse[HierarchyLevelOut]:
-    """Rename a level and/or set its role_display_label. level_number, default_role_code,
-    and is_stock_holding are immutable once a level exists — those never change here."""
+    """Rename a level, set its role_display_label, and/or toggle is_stock_holding.
+    level_number and default_role_code stay immutable once a level exists."""
     fields_set = body.model_fields_set
     set_clauses: list[str] = []
     params: dict[str, object] = {"id": str(level_id), "tid": str(tenant_id)}
@@ -427,6 +530,38 @@ async def rename_hierarchy_level(
     if "role_display_label" in fields_set:
         set_clauses.append("role_display_label = :label")
         params["label"] = body.role_display_label  # None clears it back to the system default
+
+    if "is_stock_holding" in fields_set:
+        # true → false is only allowed if no active node at this level still
+        # holds stock. false → true is always allowed — nodes are unaffected.
+        if body.is_stock_holding is False:
+            current_row = (await db.execute(
+                text(
+                    "SELECT level_number, is_stock_holding FROM tenant_hierarchy_config "
+                    "WHERE id = :id AND tenant_id = :tid"
+                ),
+                {"id": str(level_id), "tid": str(tenant_id)},
+            )).fetchone()
+            if current_row is not None and current_row.is_stock_holding:
+                blocked_nodes = (await db.execute(
+                    text(
+                        "SELECT id, name FROM organization_node "
+                        "WHERE tenant_id = :tid AND hierarchy_level = :lvl "
+                        "AND is_active = true AND is_stock_holding = true"
+                    ),
+                    {"tid": str(tenant_id), "lvl": current_row.level_number},
+                )).fetchall()
+                if blocked_nodes:
+                    raise HTTPException(
+                        status_code=422,
+                        detail={
+                            "code":    "LEVEL_HAS_STOCK_NODES",
+                            "nodes":   [{"id": str(n.id), "name": n.name} for n in blocked_nodes],
+                            "message": "Switch these locations to approval-only first.",
+                        },
+                    )
+        set_clauses.append("is_stock_holding = :stock_holding")
+        params["stock_holding"] = body.is_stock_holding
 
     if not set_clauses:
         raise HTTPException(status_code=400, detail="No fields to update")
@@ -937,6 +1072,20 @@ async def update_org_node(
                 },
             )
 
+    if existing.is_stock_holding and body.is_stock_holding is False:
+        blocker = await _node_stock_activity_blocker(db, str(tenant_id), str(node_id))
+        if blocker:
+            raise HTTPException(
+                status_code=422,
+                detail={
+                    "code": "NODE_STOCK_ACTIVITY",
+                    "reason": blocker["code"],
+                    "message": "Move or issue the remaining stock and close open "
+                               "transfers/adjustments before making this an "
+                               "approval-only location.",
+                },
+            )
+
     # Flipping a node from approval-only to stock-holding counts toward the plan
     # cap the same as creating a new warehouse — close the flip loophole.
     if not existing.is_stock_holding and new_stock:
@@ -1070,47 +1219,12 @@ async def deactivate_org_node(
     if not row.fetchone():
         raise HTTPException(status_code=404, detail="Node not found")
 
-    # CHECK 1 — no open transfers
-    transfer_row = await db.execute(
-        text(
-            "SELECT COUNT(*) AS cnt FROM transfer_orders "
-            "WHERE (from_warehouse_id = :wid OR to_warehouse_id = :wid) "
-            "AND status NOT IN ('COMPLETED', 'CANCELLED', 'REJECTED') "
-            "AND tenant_id = :tid"
-        ),
-        {"wid": str(node_id), "tid": str(tenant_id)},
+    # CHECKS 1 & 2 — no open transfers, no pending adjustments
+    blocker = await _node_stock_activity_blocker(
+        db, str(tenant_id), str(node_id), checks=("transfers", "adjustments"),
     )
-    transfer_count = transfer_row.fetchone()
-    if transfer_count and transfer_count.cnt > 0:
-        raise HTTPException(
-            status_code=422,
-            detail={
-                "code": "NODE_HAS_OPEN_TRANSFERS",
-                "message": f"Cannot deactivate — this location has {transfer_count.cnt} "
-                           "open transfer(s). Complete or cancel them first.",
-            },
-        )
-
-    # CHECK 2 — no pending adjustments
-    adj_row = await db.execute(
-        text(
-            "SELECT COUNT(*) AS cnt FROM adjustment_orders "
-            "WHERE warehouse_id = :wid "
-            "AND status NOT IN ('POSTED', 'CANCELLED', 'REJECTED') "
-            "AND tenant_id = :tid"
-        ),
-        {"wid": str(node_id), "tid": str(tenant_id)},
-    )
-    adj_count = adj_row.fetchone()
-    if adj_count and adj_count.cnt > 0:
-        raise HTTPException(
-            status_code=422,
-            detail={
-                "code": "NODE_HAS_PENDING_ADJUSTMENTS",
-                "message": f"Cannot deactivate — this location has {adj_count.cnt} "
-                           "pending adjustment(s).",
-            },
-        )
+    if blocker:
+        raise HTTPException(status_code=422, detail=blocker)
 
     # CHECK 3 — no users whose ONLY active position is at this node
     sole_row = await db.execute(
@@ -1146,24 +1260,11 @@ async def deactivate_org_node(
         )
 
     # CHECK 4 — no stock on hand
-    stock_row = await db.execute(
-        text(
-            "SELECT COALESCE(SUM(quantity), 0) AS total "
-            "FROM inventory_balances "
-            "WHERE warehouse_id = :wid AND tenant_id = :tid"
-        ),
-        {"wid": str(node_id), "tid": str(tenant_id)},
+    blocker = await _node_stock_activity_blocker(
+        db, str(tenant_id), str(node_id), checks=("stock",),
     )
-    stock_total = stock_row.fetchone()
-    if stock_total and float(stock_total.total) > 0:
-        raise HTTPException(
-            status_code=422,
-            detail={
-                "code": "NODE_HAS_STOCK",
-                "message": "Cannot deactivate — this location has stock on hand. "
-                           "Transfer or adjust stock to zero first.",
-            },
-        )
+    if blocker:
+        raise HTTPException(status_code=422, detail=blocker)
 
     await db.execute(
         text(

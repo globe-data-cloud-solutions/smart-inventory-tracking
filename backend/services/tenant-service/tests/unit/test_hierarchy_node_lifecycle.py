@@ -614,3 +614,310 @@ class TestOrgNodeUpdate:
             )
         mock_check.assert_awaited_once()
         assert result.data.is_stock_holding is True
+
+    async def test_node_off_blocked_by_open_transfers(self) -> None:
+        """PATCH is_stock_holding=false is rejected with NODE_STOCK_ACTIVITY /
+        NODE_HAS_OPEN_TRANSFERS when the node has open transfers."""
+        from routers.hierarchy import update_org_node, OrgNodeUpdate
+
+        existing_row = _row(
+            id=UUID(NODE_ID), tenant_id=UUID(TENANT_ID), name="WHA4", code="WHA4",
+            hierarchy_level=4, parent_node_id=None, is_stock_holding=True,
+            is_active=True, address=None,
+        )
+        db = _db_seq(existing_row, _row(cnt=2))
+
+        with _GRANT_ALL, pytest.raises(HTTPException) as exc_info:
+            await update_org_node(
+                tenant_id=UUID(TENANT_ID), node_id=UUID(NODE_ID),
+                body=OrgNodeUpdate(is_stock_holding=False), user=_Caller(), db=db,
+            )
+        assert exc_info.value.status_code == 422
+        assert exc_info.value.detail["code"] == "NODE_STOCK_ACTIVITY"
+        assert exc_info.value.detail["reason"] == "NODE_HAS_OPEN_TRANSFERS"
+
+    async def test_node_off_blocked_by_pending_adjustments(self) -> None:
+        """PATCH is_stock_holding=false is rejected with NODE_STOCK_ACTIVITY /
+        NODE_HAS_PENDING_ADJUSTMENTS when the node has pending adjustments."""
+        from routers.hierarchy import update_org_node, OrgNodeUpdate
+
+        existing_row = _row(
+            id=UUID(NODE_ID), tenant_id=UUID(TENANT_ID), name="WHA4", code="WHA4",
+            hierarchy_level=4, parent_node_id=None, is_stock_holding=True,
+            is_active=True, address=None,
+        )
+        db = _db_seq(existing_row, _row(cnt=0), _row(cnt=1))
+
+        with _GRANT_ALL, pytest.raises(HTTPException) as exc_info:
+            await update_org_node(
+                tenant_id=UUID(TENANT_ID), node_id=UUID(NODE_ID),
+                body=OrgNodeUpdate(is_stock_holding=False), user=_Caller(), db=db,
+            )
+        assert exc_info.value.status_code == 422
+        assert exc_info.value.detail["code"] == "NODE_STOCK_ACTIVITY"
+        assert exc_info.value.detail["reason"] == "NODE_HAS_PENDING_ADJUSTMENTS"
+
+    async def test_node_off_blocked_by_stock(self) -> None:
+        """PATCH is_stock_holding=false is rejected with NODE_STOCK_ACTIVITY /
+        NODE_HAS_STOCK when the node has stock on hand."""
+        from routers.hierarchy import update_org_node, OrgNodeUpdate
+
+        existing_row = _row(
+            id=UUID(NODE_ID), tenant_id=UUID(TENANT_ID), name="WHA4", code="WHA4",
+            hierarchy_level=4, parent_node_id=None, is_stock_holding=True,
+            is_active=True, address=None,
+        )
+        db = _db_seq(existing_row, _row(cnt=0), _row(cnt=0), _row(total=50))
+
+        with _GRANT_ALL, pytest.raises(HTTPException) as exc_info:
+            await update_org_node(
+                tenant_id=UUID(TENANT_ID), node_id=UUID(NODE_ID),
+                body=OrgNodeUpdate(is_stock_holding=False), user=_Caller(), db=db,
+            )
+        assert exc_info.value.status_code == 422
+        assert exc_info.value.detail["code"] == "NODE_STOCK_ACTIVITY"
+        assert exc_info.value.detail["reason"] == "NODE_HAS_STOCK"
+
+    async def test_node_off_allowed_when_clean(self) -> None:
+        """PATCH is_stock_holding=false succeeds when the node has no open
+        transfers, pending adjustments, or stock on hand."""
+        from routers.hierarchy import update_org_node, OrgNodeUpdate
+
+        existing_row = _row(
+            id=UUID(NODE_ID), tenant_id=UUID(TENANT_ID), name="WHA4", code="WHA4",
+            hierarchy_level=4, parent_node_id=None, is_stock_holding=True,
+            is_active=True, address=None,
+        )
+        db = _db_seq(existing_row, _row(cnt=0), _row(cnt=0), _row(total=0), None, None)
+
+        with _GRANT_ALL:
+            result = await update_org_node(
+                tenant_id=UUID(TENANT_ID), node_id=UUID(NODE_ID),
+                body=OrgNodeUpdate(is_stock_holding=False), user=_Caller(), db=db,
+            )
+        assert result.data.is_stock_holding is False
+
+
+# ── Test 4: Hierarchy level PATCH — is_stock_holding guard ──────────────────
+
+@pytest.mark.unit
+class TestHierarchyLevelStockToggle:
+
+    async def test_level_off_blocked_with_stock_nodes(self) -> None:
+        """PATCH is_stock_holding=false on a level is rejected with
+        LEVEL_HAS_STOCK_NODES when an active node at that level still holds stock."""
+        from routers.hierarchy import rename_hierarchy_level, HierarchyLevelRename
+
+        current_row = _row(level_number=3, is_stock_holding=True)
+        blocked_node = _row(id=UUID(NODE_ID), name="WH South")
+        db = _db_seq(current_row, [blocked_node])
+
+        with _GRANT_ALL, pytest.raises(HTTPException) as exc_info:
+            await rename_hierarchy_level(
+                tenant_id=UUID(TENANT_ID), level_id=UUID(LEVEL_ID),
+                body=HierarchyLevelRename(is_stock_holding=False),
+                user=_Caller(), db=db,
+            )
+        assert exc_info.value.status_code == 422
+        assert exc_info.value.detail["code"] == "LEVEL_HAS_STOCK_NODES"
+        assert exc_info.value.detail["nodes"] == [{"id": NODE_ID, "name": "WH South"}]
+
+    async def test_level_off_allowed_with_no_stock_nodes(self) -> None:
+        """PATCH is_stock_holding=false succeeds when no active node at that
+        level currently holds stock."""
+        from routers.hierarchy import rename_hierarchy_level, HierarchyLevelRename
+
+        current_row = _row(level_number=3, is_stock_holding=True)
+        updated_row = _row(
+            id=UUID(LEVEL_ID), tenant_id=UUID(TENANT_ID), level_number=3,
+            level_name="Warehouse", default_role_code=None, role_display_label=None,
+            is_stock_holding=False, is_active=True,
+        )
+        db = _db_seq(current_row, [], updated_row)
+
+        with _GRANT_ALL:
+            result = await rename_hierarchy_level(
+                tenant_id=UUID(TENANT_ID), level_id=UUID(LEVEL_ID),
+                body=HierarchyLevelRename(is_stock_holding=False),
+                user=_Caller(), db=db,
+            )
+        assert result.data.is_stock_holding is False
+
+    async def test_level_off_allowed_when_already_approval_only(self) -> None:
+        """PATCH is_stock_holding=false on a level that's already approval-only
+        skips the node lookup entirely and just saves."""
+        from routers.hierarchy import rename_hierarchy_level, HierarchyLevelRename
+
+        current_row = _row(level_number=3, is_stock_holding=False)
+        updated_row = _row(
+            id=UUID(LEVEL_ID), tenant_id=UUID(TENANT_ID), level_number=3,
+            level_name="Warehouse", default_role_code=None, role_display_label=None,
+            is_stock_holding=False, is_active=True,
+        )
+        db = _db_seq(current_row, updated_row)
+
+        with _GRANT_ALL:
+            result = await rename_hierarchy_level(
+                tenant_id=UUID(TENANT_ID), level_id=UUID(LEVEL_ID),
+                body=HierarchyLevelRename(is_stock_holding=False),
+                user=_Caller(), db=db,
+            )
+        assert result.data.is_stock_holding is False
+
+    async def test_level_on_always_allowed(self) -> None:
+        """PATCH is_stock_holding=true never checks nodes — existing nodes at
+        that level are left unchanged, only the level's own flag flips."""
+        from routers.hierarchy import rename_hierarchy_level, HierarchyLevelRename
+
+        updated_row = _row(
+            id=UUID(LEVEL_ID), tenant_id=UUID(TENANT_ID), level_number=3,
+            level_name="Warehouse", default_role_code=None, role_display_label=None,
+            is_stock_holding=True, is_active=True,
+        )
+        db = _db_seq(updated_row)  # single call — no node lookup for true->true/false->true
+
+        with _GRANT_ALL:
+            result = await rename_hierarchy_level(
+                tenant_id=UUID(TENANT_ID), level_id=UUID(LEVEL_ID),
+                body=HierarchyLevelRename(is_stock_holding=True),
+                user=_Caller(), db=db,
+            )
+        assert result.data.is_stock_holding is True
+
+
+# ── Test 5: Hierarchy config PUT — closes the unguarded stock-toggle path ────
+
+@pytest.mark.unit
+class TestHierarchyConfigPutStockGuard:
+
+    async def test_put_blocks_level_true_to_false_with_stock_nodes(self) -> None:
+        """A full-replace PUT that flips an existing level's is_stock_holding
+        true→false is blocked the same way the PATCH guard is, when an active
+        stock-holding node still sits at that level."""
+        from routers.hierarchy import upsert_hierarchy_config, HierarchyLevelIn
+
+        existing_count_res = MagicMock()
+        existing_count_res.scalar = MagicMock(return_value=2)
+
+        existing_levels_res = MagicMock()
+        existing_levels_res.fetchall = MagicMock(return_value=[
+            _row(level_number=1, is_stock_holding=True),
+            _row(level_number=2, is_stock_holding=True),
+        ])
+
+        blocked_nodes_res = MagicMock()
+        blocked_nodes_res.fetchall = MagicMock(return_value=[_row(id=UUID(NODE_ID), name="WH North")])
+
+        call_count = 0
+
+        async def _capture(stmt, params=None, **kw) -> MagicMock:
+            nonlocal call_count
+            call_count += 1
+            if call_count == 1:
+                return existing_count_res
+            if call_count == 2:
+                return existing_levels_res
+            if call_count == 3:
+                return blocked_nodes_res
+            pytest.fail("unexpected extra db.execute call before the guard raises")
+
+        db = AsyncMock()
+        db.execute = AsyncMock(side_effect=_capture)
+
+        with _GRANT_ALL, pytest.raises(HTTPException) as exc_info:
+            await upsert_hierarchy_config(
+                tenant_id=UUID(TENANT_ID),
+                body=[
+                    HierarchyLevelIn(level_number=1, level_name="Factory", is_stock_holding=True),
+                    HierarchyLevelIn(level_number=2, level_name="Warehouse", is_stock_holding=False),
+                ],
+                user=_Caller(), db=db,
+            )
+        assert exc_info.value.status_code == 422
+        assert exc_info.value.detail["code"] == "LEVEL_HAS_STOCK_NODES"
+        assert exc_info.value.detail["nodes"] == [{"id": NODE_ID, "name": "WH North"}]
+
+    async def test_put_allows_level_true_to_false_without_stock_nodes(self) -> None:
+        """Same true→false flip via PUT succeeds when no active node at that
+        level currently holds stock."""
+        from routers.hierarchy import upsert_hierarchy_config, HierarchyLevelIn
+
+        existing_count_res = MagicMock()
+        existing_count_res.scalar = MagicMock(return_value=2)
+
+        existing_levels_res = MagicMock()
+        existing_levels_res.fetchall = MagicMock(return_value=[
+            _row(level_number=1, is_stock_holding=True),
+            _row(level_number=2, is_stock_holding=True),
+        ])
+
+        blocked_nodes_res = MagicMock()
+        blocked_nodes_res.fetchall = MagicMock(return_value=[])
+
+        final_rows_res = MagicMock()
+        final_rows_res.fetchall = MagicMock(return_value=[
+            _row(id=uuid4(), tenant_id=UUID(TENANT_ID), level_number=1, level_name="Factory",
+                 default_role_code=None, role_display_label=None, is_stock_holding=True, is_active=True),
+            _row(id=uuid4(), tenant_id=UUID(TENANT_ID), level_number=2, level_name="Warehouse",
+                 default_role_code=None, role_display_label=None, is_stock_holding=False, is_active=True),
+        ])
+
+        call_count = 0
+
+        async def _capture(stmt, params=None, **kw) -> MagicMock:
+            nonlocal call_count
+            call_count += 1
+            if call_count == 1:
+                return existing_count_res
+            if call_count == 2:
+                return existing_levels_res
+            if call_count == 3:
+                return blocked_nodes_res
+            if call_count in (4, 5, 6):  # two INSERT upserts + deactivate-missing-levels UPDATE
+                return MagicMock()
+            return final_rows_res
+
+        db = AsyncMock()
+        db.execute = AsyncMock(side_effect=_capture)
+
+        with _GRANT_ALL:
+            result = await upsert_hierarchy_config(
+                tenant_id=UUID(TENANT_ID),
+                body=[
+                    HierarchyLevelIn(level_number=1, level_name="Factory", is_stock_holding=True),
+                    HierarchyLevelIn(level_number=2, level_name="Warehouse", is_stock_holding=False),
+                ],
+                user=_Caller(), db=db,
+            )
+        assert len(result.data) == 2
+        assert result.data[1].is_stock_holding is False
+
+    async def test_put_new_level_unaffected_by_stock_guard(self) -> None:
+        """A brand-new level (not in existing config) is never subject to the
+        true→false node guard, regardless of its submitted is_stock_holding."""
+        from routers.hierarchy import upsert_hierarchy_config, HierarchyLevelIn
+
+        existing_count_res = MagicMock()
+        existing_count_res.scalar = MagicMock(return_value=0)
+
+        call_count = 0
+
+        async def _capture(stmt, params=None, **kw) -> MagicMock:
+            nonlocal call_count
+            call_count += 1
+            if call_count == 1:
+                return existing_count_res
+            return MagicMock()  # INSERT / deactivate-missing-levels / final SELECT
+
+        db = AsyncMock()
+        db.execute = AsyncMock(side_effect=_capture)
+
+        with _GRANT_ALL:
+            try:
+                await upsert_hierarchy_config(
+                    tenant_id=UUID(TENANT_ID),
+                    body=[HierarchyLevelIn(level_number=1, level_name="Factory", is_stock_holding=False)],
+                    user=_Caller(), db=db,
+                )
+            except HTTPException as exc:
+                pytest.fail(f"New level should never trigger the stock guard, got {exc.detail}")
