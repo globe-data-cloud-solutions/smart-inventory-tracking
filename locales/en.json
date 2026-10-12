@@ -76,7 +76,8 @@
       "expiry_date": "Expiry Date",
       "submit": "Receive Stock",
       "queue_offline": "Queue for Later (Offline)",
-      "success": "Stock received successfully"
+      "success": "Stock received successfully",
+      "success_lot": "Received into lot {lot}. Mark this number on the cartons."
     },
     "adjust": {
       "title": "Adjust Stock",
@@ -778,14 +779,11 @@
     "info": "Receipts are used to initialise stock levels at go-live or when adding a new product. They require National Manager sign-off before posting.",
     "opening_qty": "Opening Quantity",
     "batch_required": "BATCH TRACKED — lot details required",
-    "manufacture_date": "Manufacture Date",
     "required": "required",
     "ref_doc": "Reference Document",
     "submit": "Submit Opening Balance",
     "success": "Opening Balance receipt created — status: PENDING_APPROVAL.",
-    "error_session": "No session found — please log in again.",
-    "error_lot": "Lot / Batch Number is required for batch-tracked products.",
-    "error_mfg": "Manufacture Date is required for batch-tracked products."
+    "error_session": "No session found — please log in again."
   },
   "add_product": {
     "new_category": "+ Add new category…",
@@ -838,7 +836,9 @@
     "error_product": "Please select a product.",
     "error_warehouse": "Please select a warehouse.",
     "error_ref_type": "Please select a reference type.",
-    "error_qty": "Quantity must be a positive number."
+    "error_qty": "Quantity must be a positive number.",
+    "auto_lot_checkbox": "Auto-generate lot number",
+    "auto_lot_offline_blocked": "Auto lot numbers need a connection — the lot number has to be shown to the receiver right away."
   },
   "report": {
     "inv_valuation_desc": "Current stock value across all locations",

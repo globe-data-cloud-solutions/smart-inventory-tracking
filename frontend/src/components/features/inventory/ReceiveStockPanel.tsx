@@ -14,6 +14,12 @@ import { useWarehouses } from "@/hooks/useWarehouses";
 import { useWriteGuard, guardProps } from "@/hooks/useWriteGuard";
 import type { DemoProduct } from "@/lib/demo-data";
 import { buildOverrideTooltip } from "@/components/features/inventory/ProductLabel";
+import { LotFields } from "@/components/features/inventory/LotFields";
+
+const LOT_ERROR_CODES = new Set([
+  "LOT_NOT_TRACKED", "LOT_INPUT_CONFLICT", "LOT_NUMBER_REQUIRED",
+  "EXPIRY_REQUIRED", "EXPIRY_IN_PAST", "LOT_EXPIRY_MISMATCH", "INSUFFICIENT_LOT_STOCK",
+]);
 
 interface Props { products: DemoProduct[]; orgSlug: string; }
 
@@ -27,7 +33,7 @@ const REFERENCE_TYPES = [
 
 type FormState = {
   productId: string; referenceType: string;
-  quantity: string; lotNumber: string; expiryDate: string;
+  quantity: string; lotNumber: string; expiryDate: string; autoLot: boolean;
 };
 
 function Field({ label, hint, children }: { label: string; hint?: string; children: React.ReactNode }) {
@@ -61,7 +67,7 @@ export function ReceiveStockPanel({ products, orgSlug }: Props) {
   const [open, setOpen]               = useState(false);
   const [scannerOpen, setScannerOpen] = useState(false);
   const [scanHint, setScanHint]       = useState("");
-  const [form, setForm] = useState<FormState>({ productId: "", referenceType: "", quantity: "", lotNumber: "", expiryDate: "" });
+  const [form, setForm] = useState<FormState>({ productId: "", referenceType: "", quantity: "", lotNumber: "", expiryDate: "", autoLot: false });
   const [error, setError]     = useState("");
   const [success, setSuccess] = useState("");
   const [loading, setLoading] = useState(false);
@@ -76,9 +82,14 @@ export function ReceiveStockPanel({ products, orgSlug }: Props) {
 
   const { videoRef, isActive: scanActive, error: scanError, start: startScan, stop: stopScan } = useScanner(onScan);
 
-  function reset() { setForm({ productId: "", referenceType: "", quantity: "", lotNumber: "", expiryDate: "" }); setError(""); setSuccess(""); setScanHint(""); setScannerOpen(false); stopScan(); }
-  function set(key: keyof FormState, val: string) { setForm((f) => ({ ...f, [key]: val })); setError(""); }
+  function reset() { setForm({ productId: "", referenceType: "", quantity: "", lotNumber: "", expiryDate: "", autoLot: false }); setError(""); setSuccess(""); setScanHint(""); setScannerOpen(false); stopScan(); }
+  function set(key: "productId" | "referenceType" | "quantity" | "lotNumber" | "expiryDate", val: string) { setForm((f) => ({ ...f, [key]: val })); setError(""); }
+  function setAutoLot(val: boolean) { setForm((f) => ({ ...f, autoLot: val, lotNumber: val ? "" : f.lotNumber })); setError(""); }
   function toggleScanner() { if (scannerOpen) { stopScan(); setScannerOpen(false); } else { setScannerOpen(true); void startScan(); } }
+
+  const selectedProduct = products.find((p) => p.id === form.productId);
+  const isBatchProduct  = selectedProduct?.batchTracking === true;
+  const expiryRequired  = isBatchProduct && selectedProduct?.expiryTracking === true;
 
   const onSubmit = async (e: React.FormEvent) => {
     e.preventDefault(); setError("");
@@ -88,23 +99,38 @@ export function ReceiveStockPanel({ products, orgSlug }: Props) {
     if (!form.referenceType) { setError(t("receive_panel.error_ref_type")); return; }
     const qty = parseFloat(form.quantity);
     if (!qty || qty <= 0) { setError(t("receive_panel.error_qty")); return; }
-    const product = products.find((p) => p.id === form.productId);
+    if (isBatchProduct) {
+      if (form.autoLot && !isOnline) { setError(t("receive_panel.auto_lot_offline_blocked")); return; }
+      if (!form.autoLot && !form.lotNumber) { setError(t("errors.LOT_NUMBER_REQUIRED")); return; }
+      if (expiryRequired && !form.expiryDate) { setError(t("errors.EXPIRY_REQUIRED")); return; }
+    }
+    const product = selectedProduct;
     const key = `receive:${form.productId}:${warehouseId}:${Date.now()}:${nanoid(8)}`;
-    const payload = { product_id: form.productId, warehouse_id: warehouseId, reference_type: form.referenceType, quantity: qty.toFixed(4), lot_number: form.lotNumber || undefined, expiry_date: form.expiryDate || undefined, idempotency_key: key };
+    const payload = {
+      product_id: form.productId, warehouse_id: warehouseId, reference_type: form.referenceType,
+      quantity: qty.toFixed(4), idempotency_key: key,
+      ...(isBatchProduct
+        ? { auto_lot: form.autoLot, lot_number: form.autoLot ? undefined : form.lotNumber, expiry_date: form.expiryDate || undefined }
+        : {}),
+    };
     setLoading(true);
     try {
       if (!isOnline) {
         await enqueueOfflineTransaction({ idempotencyKey: key, action: "inventory:receive", payload });
         setSuccess(t("inventory.receive.queue_offline"));
       } else {
-        await api.post("/api/v1/inventory/receive/", payload);
+        const resp = await api.post<{ lot_number?: string | null }>("/api/v1/inventory/receive/", payload);
         if (user) logAudit({ tenantSlug: orgSlug, userEmail: user.email, userName: user.name, role: user.role, action: "inventory:receive", category: "INVENTORY", resourceRef: product?.sku ?? form.productId, resourceType: "InventoryTransaction", productName: product?.name, quantityStr: `+${qty.toLocaleString()} ${product?.unit ?? "units"}`, toWarehouse: warehouseName, notes: t(`transfer.reference.${form.referenceType}`) });
-        setSuccess(t("inventory.receive.success"));
+        setSuccess(resp.lot_number ? t("inventory.receive.success_lot").replace("{lot}", resp.lot_number) : t("inventory.receive.success"));
         void qc.invalidateQueries({ queryKey: ["products", orgSlug] });
         void qc.invalidateQueries({ queryKey: ["inventory-stock", orgSlug] });
       }
       reset(); setTimeout(() => { setSuccess(""); setOpen(false); }, 2500);
-    } catch (err: unknown) { setError(err instanceof Error ? err.message : t("errors.INTERNAL_ERROR")); }
+    } catch (err: unknown) {
+      const code = (err as { code?: string } | undefined)?.code ?? "";
+      if (LOT_ERROR_CODES.has(code)) setError(t(`errors.${code}`));
+      else setError(err instanceof Error ? err.message : t("errors.INTERNAL_ERROR"));
+    }
     finally { setLoading(false); }
   };
 
@@ -149,7 +175,10 @@ export function ReceiveStockPanel({ products, orgSlug }: Props) {
           </div>
 
           <Field label={t("table.product")}>
-            <select value={form.productId} onChange={(e) => set("productId", e.target.value)} className={selectCls} required>
+            <select
+              value={form.productId}
+              onChange={(e) => setForm((f) => ({ ...f, productId: e.target.value, lotNumber: "", expiryDate: "", autoLot: false }))}
+              className={selectCls} required>
               <option value="">— {t("receive_panel.select_product")} —</option>
               {products.map((p) => (
                 <option key={p.id} value={p.id}>
@@ -157,15 +186,11 @@ export function ReceiveStockPanel({ products, orgSlug }: Props) {
                 </option>
               ))}
             </select>
-            {(() => {
-              const selectedP = products.find((p) => p.id === form.productId);
-              const override = selectedP?.approval_overrides?.RECEIVE;
-              return override ? (
-                <p className="text-xs text-amber-700 mt-1.5 flex items-start gap-1">
-                  <span>🔒</span><span>{buildOverrideTooltip(override)}</span>
-                </p>
-              ) : null;
-            })()}
+            {selectedProduct?.approval_overrides?.RECEIVE ? (
+              <p className="text-xs text-amber-700 mt-1.5 flex items-start gap-1">
+                <span>🔒</span><span>{buildOverrideTooltip(selectedProduct.approval_overrides.RECEIVE)}</span>
+              </p>
+            ) : null}
           </Field>
           <Field label={t("inventory.warehouse")}>
             <div className={`${inputCls} bg-gray-50 text-gray-700 select-none`}>
@@ -181,12 +206,17 @@ export function ReceiveStockPanel({ products, orgSlug }: Props) {
           <Field label={t("inventory.receive.quantity")}>
             <input type="number" min="0.0001" step="any" value={form.quantity} onChange={(e) => set("quantity", e.target.value)} placeholder="e.g. 500" className={inputCls} required />
           </Field>
-          <Field label={t("inventory.receive.lot_number")} hint={`(${t("receive_panel.optional")})`}>
-            <input type="text" value={form.lotNumber} onChange={(e) => set("lotNumber", e.target.value)} placeholder="e.g. LOT-2026-001" className={inputCls} />
-          </Field>
-          <Field label={t("inventory.receive.expiry_date")} hint={`(${t("receive_panel.optional")})`}>
-            <input type="date" value={form.expiryDate} onChange={(e) => set("expiryDate", e.target.value)} className={inputCls} />
-          </Field>
+          {isBatchProduct && (
+            <LotFields
+              lotNumber={form.lotNumber}
+              expiryDate={form.expiryDate}
+              autoLot={form.autoLot}
+              expiryRequired={!!expiryRequired}
+              onLotNumberChange={(v) => set("lotNumber", v)}
+              onExpiryDateChange={(v) => set("expiryDate", v)}
+              onAutoLotChange={setAutoLot}
+            />
+          )}
 
           {error   && <div className="bg-red-50 border border-red-200 rounded p-3 text-sm text-red-600 mb-3">{error}</div>}
           {success && <div className="bg-green-50 border border-emerald-200 rounded p-3 text-sm text-emerald-600 mb-3">✓ {success}</div>}
