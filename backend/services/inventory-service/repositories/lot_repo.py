@@ -105,24 +105,40 @@ async def _update_lot_balance(
     """Upsert lot_balances by delta.
 
     ONLY writer to lot_balances. Called only from record_transaction(), in the
-    same DB transaction as the inventory_transactions INSERT.
+    same DB transaction as the inventory_transactions INSERT, which already
+    holds a FOR UPDATE lock on the product's balance row — serializing
+    concurrent callers for this product before either statement below runs.
+
+    UPDATE-first, INSERT-on-no-match — NOT "INSERT ... ON CONFLICT DO UPDATE".
+    Postgres evaluates a CHECK constraint on an ON CONFLICT DO UPDATE against
+    the raw proposed (speculative) insert tuple before the conflict/merge is
+    resolved, so `quantity >= 0` would reject a negative delta even when the
+    existing row has plenty of balance (e.g. 10 + (-3) = 7 is valid, but the
+    speculative tuple's raw quantity=-3 fails the CHECK first). A plain UPDATE
+    evaluates the CHECK against the real post-arithmetic value, so it doesn't
+    have this problem; INSERT only runs for a genuinely new (lot, warehouse).
     """
-    await session.execute(
+    result = await session.execute(
         text(
-            "INSERT INTO lot_balances (tenant_id, lot_id, product_id, warehouse_id, quantity) "
-            "VALUES (:tid, :lid, :pid, :wid, :qty) "
-            "ON CONFLICT (tenant_id, lot_id, warehouse_id) "
-            "DO UPDATE SET quantity   = lot_balances.quantity + EXCLUDED.quantity, "
-            "             updated_at = now()"
+            "UPDATE lot_balances SET quantity = quantity + :qty, updated_at = now() "
+            "WHERE tenant_id = :tid AND lot_id = :lid AND warehouse_id = :wid"
         ),
-        {
-            "tid": tenant_id,
-            "lid": lot_id,
-            "pid": product_id,
-            "wid": warehouse_id,
-            "qty": str(delta),
-        },
+        {"tid": tenant_id, "lid": lot_id, "wid": warehouse_id, "qty": str(delta)},
     )
+    if result.rowcount == 0:
+        await session.execute(
+            text(
+                "INSERT INTO lot_balances (tenant_id, lot_id, product_id, warehouse_id, quantity) "
+                "VALUES (:tid, :lid, :pid, :wid, :qty)"
+            ),
+            {
+                "tid": tenant_id,
+                "lid": lot_id,
+                "pid": product_id,
+                "wid": warehouse_id,
+                "qty": str(delta),
+            },
+        )
 
 
 async def lot_totals_mismatch(
