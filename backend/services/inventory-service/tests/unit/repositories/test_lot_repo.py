@@ -109,6 +109,95 @@ class TestGetOrCreateLot:
 
 
 @pytest.mark.unit
+class TestCreateAutoLot:
+
+    async def test_format_is_yymmdd_seq(self) -> None:
+        from repositories.lot_repo import create_auto_lot
+
+        count_result = MagicMock()
+        count_result.fetchone.return_value = MagicMock(cnt=0)
+
+        insert_result = MagicMock()
+        insert_result.fetchone.return_value = MagicMock(id="new-lot-id")
+
+        session = AsyncMock()
+        session.execute = AsyncMock(side_effect=[count_result, insert_result])
+
+        lot_id, lot_number = await create_auto_lot(
+            session, TENANT_ID, PRODUCT_ID, date(2027, 1, 1), USER_ID
+        )
+
+        today_prefix = date.today().strftime("%y%m%d")
+        assert lot_id == "new-lot-id"
+        assert lot_number == f"{today_prefix}-001"
+
+    async def test_existing_lots_bump_the_sequence(self) -> None:
+        from repositories.lot_repo import create_auto_lot
+
+        count_result = MagicMock()
+        count_result.fetchone.return_value = MagicMock(cnt=4)
+
+        insert_result = MagicMock()
+        insert_result.fetchone.return_value = MagicMock(id="new-lot-id")
+
+        session = AsyncMock()
+        session.execute = AsyncMock(side_effect=[count_result, insert_result])
+
+        _, lot_number = await create_auto_lot(
+            session, TENANT_ID, PRODUCT_ID, None, USER_ID
+        )
+
+        today_prefix = date.today().strftime("%y%m%d")
+        assert lot_number == f"{today_prefix}-005"
+
+    async def test_conflict_retries_with_next_number(self) -> None:
+        from repositories.lot_repo import create_auto_lot
+
+        count_result = MagicMock()
+        count_result.fetchone.return_value = MagicMock(cnt=0)
+
+        conflict_result = MagicMock()
+        conflict_result.fetchone.return_value = None  # DO NOTHING — no row returned
+
+        insert_result = MagicMock()
+        insert_result.fetchone.return_value = MagicMock(id="new-lot-id")
+
+        session = AsyncMock()
+        session.execute = AsyncMock(
+            side_effect=[count_result, conflict_result, insert_result]
+        )
+
+        _, lot_number = await create_auto_lot(
+            session, TENANT_ID, PRODUCT_ID, None, USER_ID
+        )
+
+        today_prefix = date.today().strftime("%y%m%d")
+        assert lot_number == f"{today_prefix}-002"
+        assert session.execute.await_count == 3
+
+    async def test_five_conflicts_raise_500(self) -> None:
+        from repositories.lot_repo import create_auto_lot
+
+        count_result = MagicMock()
+        count_result.fetchone.return_value = MagicMock(cnt=0)
+
+        conflict_result = MagicMock()
+        conflict_result.fetchone.return_value = None
+
+        session = AsyncMock()
+        session.execute = AsyncMock(
+            side_effect=[count_result] + [conflict_result] * 5
+        )
+
+        with pytest.raises(HTTPException) as exc_info:
+            await create_auto_lot(session, TENANT_ID, PRODUCT_ID, None, USER_ID)
+
+        assert exc_info.value.status_code == 500
+        assert exc_info.value.detail["code"] == "LOT_NUMBER_GENERATION_FAILED"
+        assert session.execute.await_count == 6
+
+
+@pytest.mark.unit
 class TestUpdateLotBalance:
 
     async def test_positive_delta_upserts(self) -> None:

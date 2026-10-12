@@ -388,6 +388,36 @@ class TestUpdateProduct:
         assert r.status_code == 200
         assert r.json()["data"]["is_controlled"] is True
 
+    # 06 — response includes batch/expiry/dispatch_strategy flags ─────────────
+
+    async def test_update_product_response_includes_lot_flags(
+        self, client: AsyncClient, product_app
+    ) -> None:
+        db = _make_update_mock_db(
+            role="TA",
+            is_controlled=False,
+            row_overrides={
+                "batch_tracking": True,
+                "expiry_tracking": True,
+                "dispatch_strategy": "FEFO",
+            },
+        )
+        product_app.dependency_overrides[get_db_session] = _make_db_override(db)
+        try:
+            with _patch_perm(True), _patch_audit():
+                r = await client.patch(
+                    f"/api/v1/products/{PRODUCT_ID}",
+                    json={"description": "New description"},
+                )
+        finally:
+            product_app.dependency_overrides.pop(get_db_session, None)
+
+        assert r.status_code == 200
+        data = r.json()["data"]
+        assert data["batch_tracking"] is True
+        assert data["expiry_tracking"] is True
+        assert data["dispatch_strategy"] == "FEFO"
+
 
 # ─────────────────────────────────────────────────────────────────────────────
 

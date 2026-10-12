@@ -489,6 +489,56 @@ class TestLedgerRepo:
         assert ledger_call.args[1]["lot_number"] is None
         assert ledger_call.args[1]["expiry_date"] is None
 
+    async def test_source_and_unit_cost_default_to_web_and_none(self) -> None:
+        """With no source/unit_cost given, the ledger INSERT must carry the
+        same defaults as before these params existed."""
+        from repositories.ledger_repo import record_transaction
+
+        session = _make_session(balance=100.0)
+
+        with patch("repositories.ledger_repo._update_running_balance", new=AsyncMock()), \
+             patch("repositories.ledger_repo.write_to_outbox", new=AsyncMock()):
+            await record_transaction(
+                session,
+                tenant_id=TENANT_ID,
+                transaction_type="RECEIVE",
+                product_id=PRODUCT_ID,
+                warehouse_id=WAREHOUSE_ID,
+                quantity=Decimal("25"),
+                performed_by=USER_ID,
+                idempotency_key=IDEM_KEY,
+            )
+
+        ledger_call = session.execute.call_args_list[2]
+        assert ledger_call.args[1]["source"] == "WEB"
+        assert ledger_call.args[1]["unit_cost"] is None
+
+    async def test_source_and_unit_cost_reach_the_insert(self) -> None:
+        """A caller-supplied source/unit_cost must reach the ledger INSERT params
+        unchanged (unit_cost is stringified for the DB param, as quantity is)."""
+        from repositories.ledger_repo import record_transaction
+
+        session = _make_session(balance=100.0)
+
+        with patch("repositories.ledger_repo._update_running_balance", new=AsyncMock()), \
+             patch("repositories.ledger_repo.write_to_outbox", new=AsyncMock()):
+            await record_transaction(
+                session,
+                tenant_id=TENANT_ID,
+                transaction_type="RECEIVE",
+                product_id=PRODUCT_ID,
+                warehouse_id=WAREHOUSE_ID,
+                quantity=Decimal("25"),
+                performed_by=USER_ID,
+                idempotency_key=IDEM_KEY,
+                source="OPENING_BALANCE",
+                unit_cost=Decimal("3.25"),
+            )
+
+        ledger_call = session.execute.call_args_list[2]
+        assert ledger_call.args[1]["source"] == "OPENING_BALANCE"
+        assert ledger_call.args[1]["unit_cost"] == "3.25"
+
 
 # ── write_transfer_ledger_entry tests ────────────────────────────────────────
 
