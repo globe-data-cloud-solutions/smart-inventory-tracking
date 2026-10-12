@@ -198,6 +198,67 @@ class TestCreateAutoLot:
 
 
 @pytest.mark.unit
+class TestCreateOpeningLot:
+
+    async def test_creates_new_opening_lot(self) -> None:
+        from repositories.lot_repo import create_opening_lot
+
+        insert_result = MagicMock()
+        insert_result.fetchone.return_value = MagicMock(id="opening-lot-id")
+
+        session = AsyncMock()
+        session.execute = AsyncMock(return_value=insert_result)
+
+        lot_id, lot_number = await create_opening_lot(
+            session, TENANT_ID, PRODUCT_ID, "OPENING-MWH", USER_ID
+        )
+
+        assert lot_id == "opening-lot-id"
+        assert lot_number == "OPENING-MWH"
+        insert_call = session.execute.call_args
+        assert insert_call.args[1]["lot"] == "OPENING-MWH"
+        assert "is_opening" in str(insert_call.args[0]) or "true" in str(insert_call.args[0])
+
+    async def test_collision_appends_suffix(self) -> None:
+        """Re-enabling after a disable: the first OPENING-<code> already exists,
+        so the new opening lot gets the "-2" suffix."""
+        from repositories.lot_repo import create_opening_lot
+
+        conflict_result = MagicMock()
+        conflict_result.fetchone.return_value = None  # DO NOTHING — collision
+
+        insert_result = MagicMock()
+        insert_result.fetchone.return_value = MagicMock(id="opening-lot-id-2")
+
+        session = AsyncMock()
+        session.execute = AsyncMock(side_effect=[conflict_result, insert_result])
+
+        lot_id, lot_number = await create_opening_lot(
+            session, TENANT_ID, PRODUCT_ID, "OPENING-MWH", USER_ID
+        )
+
+        assert lot_id == "opening-lot-id-2"
+        assert lot_number == "OPENING-MWH-2"
+        second_call = session.execute.call_args_list[1]
+        assert second_call.args[1]["lot"] == "OPENING-MWH-2"
+
+    async def test_all_collisions_raise_500(self) -> None:
+        from repositories.lot_repo import create_opening_lot
+
+        conflict_result = MagicMock()
+        conflict_result.fetchone.return_value = None
+
+        session = AsyncMock()
+        session.execute = AsyncMock(return_value=conflict_result)
+
+        with pytest.raises(HTTPException) as exc_info:
+            await create_opening_lot(session, TENANT_ID, PRODUCT_ID, "OPENING-MWH", USER_ID)
+
+        assert exc_info.value.status_code == 500
+        assert exc_info.value.detail["code"] == "LOT_NUMBER_GENERATION_FAILED"
+
+
+@pytest.mark.unit
 class TestUpdateLotBalance:
 
     async def test_positive_delta_upserts(self) -> None:

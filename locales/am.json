@@ -690,7 +690,12 @@
     "EXPIRY_IN_PAST": "የማብቂያ ቀን ያለፈ ሊሆን አይችልም።",
     "INVALID_SOURCE": "ይህ ምንጭ ክምችት ለመቀበል አይፈቀድም።",
     "LOT_NUMBER_GENERATION_FAILED": "ልዩ የሎት ቁጥር ማመንጥ አልተቻለም። እባክዎ እንደገና ይሞክሩ።",
-    "PRODUCT_NOT_FOUND": "ምርት አልተገኘም።"
+    "PRODUCT_NOT_FOUND": "ምርት አልተገኘም።",
+    "FEATURE_NOT_ENABLED": "ይህ ባህሪ ለአካባቢዎ አልነቃም።",
+    "EXPIRY_NEEDS_BATCH": "የማብቂያ ቀን መከታተል እንዲሰራ የሎት መከታተል መብራት አለበት።",
+    "INVALID_DISPATCH_STRATEGY": "ይህ የማሰናዳት ስልት ለተመረጡት ቅንብሮች ልክ አይደለም።",
+    "BATCH_TRACKING_IN_USE": "ሎት ክምችት እስካለው ድረስ የሎት መከታተል ማጥፋት አይቻልም።",
+    "LOT_CONVERSION_MISMATCH": "የመክፈቻ ሎት ድምር ከያዘው ክምችት ጋር አልተዛመደም። ለውጡ አልተቀመጠም።"
   },
   "layout": {
     "sign_out": "ውጣ",

@@ -123,6 +123,41 @@ async def create_auto_lot(
     raise HTTPException(status_code=500, detail={"code": "LOT_NUMBER_GENERATION_FAILED"})
 
 
+async def create_opening_lot(
+    session: AsyncSession,
+    tenant_id: str,
+    product_id: str,
+    lot_number: str,
+    performed_by: str,
+) -> tuple[str, str]:
+    """Create a new is_opening lot for a batch-tracking conversion.
+
+    expiry_date is always NULL — opening lots never carry an expiry, even when
+    expiry tracking is turned on in the same request. If lot_number already
+    exists for this product, append "-2", "-3", ... until a free one is found.
+    """
+    candidate = lot_number
+    suffix = 1
+    for _ in range(50):
+        result = await session.execute(
+            text(
+                "INSERT INTO stock_lots "
+                "(tenant_id, product_id, lot_number, expiry_date, is_opening, created_by) "
+                "VALUES (:tid, :pid, :lot, NULL, true, :uid) "
+                "ON CONFLICT (tenant_id, product_id, lot_number) DO NOTHING "
+                "RETURNING id"
+            ),
+            {"tid": tenant_id, "pid": product_id, "lot": candidate, "uid": performed_by},
+        )
+        row = result.fetchone()
+        if row is not None:
+            return str(row.id), candidate
+        suffix += 1
+        candidate = f"{lot_number}-{suffix}"
+
+    raise HTTPException(status_code=500, detail={"code": "LOT_NUMBER_GENERATION_FAILED"})
+
+
 async def _get_lot_balance(
     session: AsyncSession,
     tenant_id: str,

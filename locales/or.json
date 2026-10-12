@@ -680,7 +680,12 @@
     "EXPIRY_IN_PAST": "Expiry date cannot be in the past.",
     "INVALID_SOURCE": "This source is not allowed for receiving stock.",
     "LOT_NUMBER_GENERATION_FAILED": "Could not generate a unique lot number. Please try again.",
-    "PRODUCT_NOT_FOUND": "Product not found."
+    "PRODUCT_NOT_FOUND": "Product not found.",
+    "FEATURE_NOT_ENABLED": "This feature is not enabled for your environment.",
+    "EXPIRY_NEEDS_BATCH": "Expiry tracking requires batch tracking to be turned on.",
+    "INVALID_DISPATCH_STRATEGY": "This dispatch strategy is not valid for the selected settings.",
+    "BATCH_TRACKING_IN_USE": "Batch tracking cannot be turned off while a lot still holds stock.",
+    "LOT_CONVERSION_MISMATCH": "Opening lot totals did not match on-hand stock. The change was not saved."
   },
   "demo": {
     "mode_banner": "Haala demo — jijjiiramni marsariitii haaromsamte haqama. Daataa dhaabbataa argachuuf backend waliin wal qabii."
