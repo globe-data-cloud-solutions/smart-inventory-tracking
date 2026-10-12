@@ -282,6 +282,17 @@ async def upsert_hierarchy_config(
                 detail=f"level_number must be between 1 and 5, got {level.level_number}",
             )
 
+    # Contiguity guard — submitted level_numbers must be exactly 1..len(body),
+    # no gaps or duplicates, before any write happens.
+    if sorted(level_numbers) != list(range(1, len(body) + 1)):
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "code":    "LEVELS_NOT_CONTIGUOUS",
+                "message": "Level numbers must be contiguous, starting at 1 with no gaps.",
+            },
+        )
+
     existing_count = (await db.execute(
         text(
             "SELECT COUNT(*) FROM tenant_hierarchy_config "
@@ -308,9 +319,8 @@ async def upsert_hierarchy_config(
                 detail={
                     "code":    "LEVEL_COUNT_LOCKED",
                     "message": (
-                        f"Cannot reduce org levels below {max_used_level} — "
-                        f"active nodes exist at that level. "
-                        f"Remove those nodes first or contact your Super Admin."
+                        f"Cannot remove level {max_used_level} — active org nodes "
+                        f"exist at that level. Remove or move those nodes first."
                     ),
                 },
             )

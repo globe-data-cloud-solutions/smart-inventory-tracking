@@ -76,7 +76,13 @@ function flattenNodes(nodes: OrgNode[]): OrgNode[] {
 
 /* ── Tab 1: Organisation Levels ───────────────────────────────────────────── */
 
-function LevelsTab({ tenantId }: { tenantId: string }) {
+function LevelsTab({
+  tenantId,
+  onSwitchTab,
+}: {
+  tenantId: string;
+  onSwitchTab?: (tab: "tree" | "approval" | "transfer-types") => void;
+}) {
   const qc = useQueryClient();
   const writeGuard = useWriteGuard();
   const gp = guardProps(writeGuard);
@@ -136,6 +142,78 @@ function LevelsTab({ tenantId }: { tenantId: string }) {
 
   const levelsAlreadySaved = savedLevels.length > 0;
 
+  // Post-save level management — add a level below the current bottom level,
+  // or remove the bottom level (only when empty of org nodes; backend 422s
+  // with LEVEL_COUNT_LOCKED otherwise).
+  const [addingLevel, setAddingLevel] = useState(false);
+  const [newLevel, setNewLevel] = useState<{
+    level_name: string; default_role_code: string; role_display_label: string; is_stock_holding: boolean;
+  }>({ level_name: "", default_role_code: "", role_display_label: "", is_stock_holding: true });
+  const [addLevelError, setAddLevelError] = useState<string | null>(null);
+  const [showAddConfirm, setShowAddConfirm] = useState(false);
+  const [showRemoveConfirm, setShowRemoveConfirm] = useState(false);
+  const [removeError, setRemoveError] = useState<string | null>(null);
+  const [addedInfoLevel, setAddedInfoLevel] = useState<number | null>(null);
+
+  const bottomLevel = levels.length > 0 ? levels[levels.length - 1] : undefined;
+  // Roles must be strictly lower authority than the level above (ROLE_OPTIONS is
+  // already ordered highest→lowest authority, matching the canonical NM>RM>LM=WM
+  // privilege order); an unrecognised/unset role above imposes no restriction.
+  const aboveRoleRank = bottomLevel
+    ? ROLE_OPTIONS.findIndex((r) => r.code === bottomLevel.default_role_code)
+    : -1;
+  const allowedNewRoleOptions = aboveRoleRank === -1
+    ? ROLE_OPTIONS
+    : ROLE_OPTIONS.filter((_, i) => i > aboveRoleRank);
+
+  const addLevelMutation = useMutation({
+    mutationFn: () => {
+      const nextLevelNumber = levels.length + 1;
+      const payload = [
+        ...levels,
+        {
+          level_number: nextLevelNumber,
+          level_name: newLevel.level_name.trim(),
+          default_role_code: newLevel.default_role_code || null,
+          role_display_label: newLevel.role_display_label.trim() || null,
+          is_stock_holding: newLevel.is_stock_holding,
+        },
+      ];
+      return api.put<HierarchyLevel[]>(`/api/v1/tenants/${tenantId}/hierarchy/config`, payload);
+    },
+    onSuccess: (data) => {
+      setLevels(data);
+      setAddingLevel(false);
+      setAddedInfoLevel(data.length);
+      setNewLevel({ level_name: "", default_role_code: "", role_display_label: "", is_stock_holding: true });
+      setAddLevelError(null);
+      void qc.invalidateQueries({ queryKey: ["hierarchy-config", tenantId] });
+    },
+    onError: (e: unknown) => {
+      setAddLevelError(e instanceof Error ? e.message : t("common.error"));
+    },
+  });
+
+  const removeLevelMutation = useMutation({
+    mutationFn: () => {
+      const payload = levels.slice(0, -1);
+      return api.put<HierarchyLevel[]>(`/api/v1/tenants/${tenantId}/hierarchy/config`, payload);
+    },
+    onSuccess: (data) => {
+      setLevels(data);
+      setRemoveError(null);
+      void qc.invalidateQueries({ queryKey: ["hierarchy-config", tenantId] });
+    },
+    onError: (e: unknown) => {
+      const code = (e as { code?: string })?.code;
+      setRemoveError(
+        code === "LEVEL_COUNT_LOCKED"
+          ? t("org_setup.remove_level_blocked")
+          : e instanceof Error ? e.message : t("common.error")
+      );
+    },
+  });
+
   // Resync the picker once the saved levels arrive (useQuery resolves after first render).
   useEffect(() => {
     if (savedLevels.length > 0) setLevelCount(savedLevels.length);
@@ -190,39 +268,226 @@ function LevelsTab({ tenantId }: { tenantId: string }) {
         message={t("org_setup.help.levels_message")}
         tip={t("org_setup.help.levels_tip")}
       />
-      {/* Level count picker */}
-      <div>
-        <label className="block text-sm font-medium text-gray-700 mb-2">
-          {t("org_setup.level_count")}
-        </label>
-        <div className="flex gap-3">
-          {[2, 3, 4, 5].map((n) => (
-            <button
-              key={n}
-              type="button"
-              disabled={levelsAlreadySaved}
-              onClick={() => { if (!levelsAlreadySaved) handleCountChange(n); }}
-              className={`w-14 h-14 rounded-lg border-2 text-lg font-bold transition-all ${
-                levelCount === n
-                  ? "border-emerald-600 bg-emerald-50 text-emerald-700"
-                  : "border-gray-200 bg-white text-gray-600 hover:border-gray-400"
-              } ${levelsAlreadySaved ? "opacity-60 cursor-not-allowed hover:border-gray-200" : ""}`}
-            >
-              {n}
-            </button>
-          ))}
-        </div>
-        {levelsAlreadySaved ? (
-          <>
-            <p className="text-xs text-gray-600 mt-2 font-medium">
-              {t("org_setup.levels_count_locked").replace("{count}", String(levelCount))}
-            </p>
-            <p className="text-xs text-gray-400 mt-1">{t("org_setup.levels_locked")}</p>
-          </>
-        ) : (
+      {/* Level count picker — pre-save only. Once levels are saved, level count is
+          managed via Add/Remove below instead of this picker. */}
+      {!levelsAlreadySaved ? (
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-2">
+            {t("org_setup.level_count")}
+          </label>
+          <div className="flex gap-3">
+            {[2, 3, 4, 5].map((n) => (
+              <button
+                key={n}
+                type="button"
+                onClick={() => handleCountChange(n)}
+                className={`w-14 h-14 rounded-lg border-2 text-lg font-bold transition-all ${
+                  levelCount === n
+                    ? "border-emerald-600 bg-emerald-50 text-emerald-700"
+                    : "border-gray-200 bg-white text-gray-600 hover:border-gray-400"
+                }`}
+              >
+                {n}
+              </button>
+            ))}
+          </div>
           <p className="text-xs text-gray-400 mt-2">{t("org_setup.level_count_hint")}</p>
-        )}
-      </div>
+        </div>
+      ) : (
+        <div>
+          <p className="text-xs text-gray-600 font-medium">
+            {t("org_setup.levels_count_locked").replace("{count}", String(levels.length))}
+          </p>
+          <p className="text-xs text-gray-400 mt-1">{t("org_setup.levels_locked")}</p>
+          <div className="flex flex-wrap items-center gap-3 mt-3">
+            {levels.length < 5 && !addingLevel && (
+              <button
+                type="button"
+                disabled={gp.disabled}
+                title={gp.title}
+                onClick={() => { setAddingLevel(true); setAddLevelError(null); }}
+                className="px-3 py-1.5 text-sm font-medium rounded border-2 border-dashed border-emerald-300 text-emerald-700 hover:bg-emerald-50 disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                {t("org_setup.add_level_below").replace("{n}", String(levels.length))}
+              </button>
+            )}
+            {levels.length > 2 && !addingLevel && (
+              <button
+                type="button"
+                disabled={gp.disabled}
+                title={gp.title}
+                onClick={() => { setShowRemoveConfirm(true); setRemoveError(null); }}
+                className="px-3 py-1.5 text-sm font-medium rounded border border-red-200 text-red-600 hover:bg-red-50 disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                {t("org_setup.remove_level").replace("{n}", String(levels.length))}
+              </button>
+            )}
+          </div>
+          {removeError && <p className="text-sm text-red-600 mt-2">{removeError}</p>}
+
+          {addingLevel && (
+            <div className="mt-3 bg-emerald-50 border border-emerald-200 rounded-lg p-4 space-y-3">
+              <p className="text-xs font-semibold text-emerald-800">
+                {t("org_setup.new_level_heading").replace("{n}", String(levels.length + 1))}
+              </p>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">
+                    {t("org_setup.level_label")} *
+                  </label>
+                  <input
+                    type="text"
+                    value={newLevel.level_name}
+                    onChange={(e) => setNewLevel((f) => ({ ...f, level_name: e.target.value }))}
+                    autoFocus
+                    className="w-full text-sm border border-gray-300 rounded px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">
+                    {t("org_setup.default_role")}
+                  </label>
+                  <select
+                    value={newLevel.default_role_code}
+                    onChange={(e) => setNewLevel((f) => ({
+                      ...f,
+                      default_role_code: e.target.value,
+                      role_display_label: e.target.value ? defaultDisplayLabel(e.target.value) : "",
+                    }))}
+                    className="w-full border border-gray-300 rounded px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                  >
+                    <option value="">{t("org_setup.no_default_role")}</option>
+                    {allowedNewRoleOptions.map((r) => (
+                      <option key={r.code} value={r.code}>{r.code} — {r.label}</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">
+                    {t("org_setup.role_display_name")}
+                  </label>
+                  <input
+                    type="text"
+                    value={newLevel.role_display_label}
+                    onChange={(e) => setNewLevel((f) => ({ ...f, role_display_label: e.target.value }))}
+                    placeholder={t("org_setup.role_display_name_placeholder")}
+                    className="w-full text-sm border border-gray-300 rounded px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                  />
+                </div>
+                <label className="flex items-center gap-2 cursor-pointer mt-5">
+                  <input
+                    type="checkbox"
+                    checked={newLevel.is_stock_holding}
+                    onChange={(e) => setNewLevel((f) => ({ ...f, is_stock_holding: e.target.checked }))}
+                    className="w-4 h-4 rounded border-gray-300 text-emerald-600"
+                  />
+                  <span className="text-xs text-gray-700">{t("org_setup.is_stock_holding")}</span>
+                </label>
+              </div>
+              {addLevelError && <p className="text-xs text-red-600">{addLevelError}</p>}
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  disabled={newLevel.level_name.trim().length < 2 || addLevelMutation.isPending}
+                  onClick={() => setShowAddConfirm(true)}
+                  className="px-4 py-1.5 bg-emerald-700 text-white text-sm font-semibold rounded hover:bg-emerald-800 disabled:opacity-50"
+                >
+                  {addLevelMutation.isPending ? t("common.saving") : t("common.save")}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => { setAddingLevel(false); setAddLevelError(null); }}
+                  className="px-4 py-1.5 border border-gray-300 text-gray-600 text-sm font-medium rounded hover:bg-gray-50"
+                >
+                  {t("common.cancel")}
+                </button>
+              </div>
+            </div>
+          )}
+
+          {addedInfoLevel !== null && (
+            <div className="mt-3 rounded-lg border border-blue-300 bg-blue-50 px-4 py-3 text-sm text-blue-800 flex items-start gap-2">
+              <span className="shrink-0 mt-0.5">ℹ</span>
+              <div className="flex-1">
+                <p className="m-0">{t("org_setup.next_steps_new_level").replace("{n}", String(addedInfoLevel))}</p>
+                <div className="flex flex-wrap gap-3 mt-2">
+                  <button type="button" onClick={() => onSwitchTab?.("tree")} className="underline font-semibold hover:no-underline">
+                    {t("org_setup.go_to_org_tree")} →
+                  </button>
+                  <button type="button" onClick={() => onSwitchTab?.("approval")} className="underline font-semibold hover:no-underline">
+                    {t("org_setup.coverage_review_approval")} →
+                  </button>
+                  <button type="button" onClick={() => onSwitchTab?.("transfer-types")} className="underline font-semibold hover:no-underline">
+                    {t("org_setup.go_to_transfer_types")} →
+                  </button>
+                </div>
+              </div>
+              <button type="button" onClick={() => setAddedInfoLevel(null)}
+                className="shrink-0 text-lg leading-none opacity-60 hover:opacity-100">✕</button>
+            </div>
+          )}
+
+          {showRemoveConfirm && (
+            <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/40 px-4">
+              <div className="w-full max-w-md rounded-lg bg-white p-5 shadow-2xl">
+                <h3 className="text-base font-bold text-gray-900 m-0">
+                  {t("org_setup.confirm_remove_level_title")}
+                </h3>
+                <p className="text-sm text-gray-600 mt-3">
+                  {t("org_setup.confirm_remove_level_body").replace("{n}", String(levels.length))}
+                </p>
+                <div className="mt-5 flex justify-end gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setShowRemoveConfirm(false)}
+                    className="px-4 py-1.5 border border-gray-300 text-gray-600 text-sm font-medium rounded hover:bg-gray-50"
+                  >
+                    {t("common.cancel")}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => { setShowRemoveConfirm(false); removeLevelMutation.mutate(); }}
+                    className="px-4 py-1.5 bg-red-600 text-white text-sm font-semibold rounded hover:bg-red-700"
+                  >
+                    {t("org_setup.confirm_save")}
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {showAddConfirm && (
+            <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/40 px-4">
+              <div className="w-full max-w-md rounded-lg bg-white p-5 shadow-2xl">
+                <h3 className="text-base font-bold text-gray-900 m-0">
+                  {t("org_setup.confirm_add_level_title").replace("{n}", String(levels.length + 1))}
+                </h3>
+                <p className="text-sm text-gray-600 mt-3">
+                  {t("org_setup.confirm_add_level_body")
+                    .replace("{n}", String(levels.length + 1))
+                    .replace("{name}", bottomLevel?.level_name || `Level ${levels.length}`)}
+                </p>
+                <div className="mt-5 flex justify-end gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setShowAddConfirm(false)}
+                    className="px-4 py-1.5 border border-gray-300 text-gray-600 text-sm font-medium rounded hover:bg-gray-50"
+                  >
+                    {t("common.cancel")}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => { setShowAddConfirm(false); addLevelMutation.mutate(); }}
+                    className="px-4 py-1.5 bg-emerald-700 text-white text-sm font-semibold rounded hover:bg-emerald-800"
+                  >
+                    {t("org_setup.confirm_save")}
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Editable levels table */}
       <div className="overflow-x-auto rounded-lg border border-gray-200">
@@ -3523,7 +3788,7 @@ export default function OrgSetupPage() {
           so node-scoped local state (selectedNodeId in PositionsTab, addParentId/
           editNodeId in TreeTab, etc.) can never survive into the next tenant's render —
           see cross-tenant position leak investigation. */}
-      {activeTab === "levels"         && <LevelsTab          key={tenantId} tenantId={tenantId} />}
+      {activeTab === "levels"         && <LevelsTab          key={tenantId} tenantId={tenantId} onSwitchTab={setActiveTab} />}
       {activeTab === "tree"           && <TreeTab             key={tenantId} tenantId={tenantId} onPrefillLevel={setPrefillLevel} onSwitchToApproval={() => setActiveTab("approval")} />}
       {activeTab === "positions"      && <PositionsTab        key={tenantId} tenantId={tenantId} />}
       {activeTab === "personnel"      && <PersonnelV2Tab      key={tenantId} tenantId={tenantId} />}

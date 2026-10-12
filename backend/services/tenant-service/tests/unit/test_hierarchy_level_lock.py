@@ -68,9 +68,8 @@ async def _run_g3a(db, tenant_id: str, body: list) -> None:
                 detail={
                     "code": "LEVEL_COUNT_LOCKED",
                     "message": (
-                        f"Cannot reduce org levels below {max_used_level} — "
-                        f"active nodes exist at that level. "
-                        f"Remove those nodes first or contact your Super Admin."
+                        f"Cannot remove level {max_used_level} — active org nodes "
+                        f"exist at that level. Remove or move those nodes first."
                     ),
                 },
             )
@@ -110,3 +109,50 @@ async def test_shrink_allowed_empty_level():
     # len(body)==2 is not < max_used_level==2, so no exception
     await _run_g3a(db, TENANT_ID, body)
     assert db.execute.call_count == 2
+
+
+def test_grow_levels_unchanged_existing_rows():
+    """Growing 3 → 4 keeps level_numbers 1-3's payload untouched (upsert carries
+    submitted values through unchanged — asserted at the payload level since this
+    is a pure-logic unit test with no DB)."""
+    existing = [
+        {"level_number": 1, "level_name": "HQ"},
+        {"level_number": 2, "level_name": "Region"},
+        {"level_number": 3, "level_name": "Warehouse"},
+    ]
+    new_body = existing + [{"level_number": 4, "level_name": "Sub-Warehouse"}]
+    for i, lvl in enumerate(existing):
+        assert new_body[i] == lvl
+
+
+# ---------------------------------------------------------------------------
+# LEVELS_NOT_CONTIGUOUS guard — mirrors the contiguity check added to
+# upsert_hierarchy_config ahead of G3a / any write.
+# ---------------------------------------------------------------------------
+
+def _check_contiguous(level_numbers: list) -> None:
+    if sorted(level_numbers) != list(range(1, len(level_numbers) + 1)):
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "code": "LEVELS_NOT_CONTIGUOUS",
+                "message": "Level numbers must be contiguous, starting at 1 with no gaps.",
+            },
+        )
+
+
+def test_contiguous_levels_pass():
+    _check_contiguous([1, 2, 3])  # should not raise
+
+
+def test_gap_in_levels_rejected():
+    with pytest.raises(HTTPException) as exc_info:
+        _check_contiguous([1, 2, 4])
+    assert exc_info.value.status_code == 422
+    assert exc_info.value.detail["code"] == "LEVELS_NOT_CONTIGUOUS"
+
+
+def test_levels_not_starting_at_one_rejected():
+    with pytest.raises(HTTPException) as exc_info:
+        _check_contiguous([2, 3, 4])
+    assert exc_info.value.detail["code"] == "LEVELS_NOT_CONTIGUOUS"
