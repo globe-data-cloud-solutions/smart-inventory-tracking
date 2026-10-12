@@ -1,6 +1,10 @@
 # SMART Inventory — TA Onboarding Guide
 
-**Version:** 1.5 | **Updated:** October 2026 | **Audience:** Tenant Administrators & Organisation Managers
+**Version:** 1.6 | **Updated:** October 2026 | **Audience:** Tenant Administrators & Organisation Managers
+
+**v1.6 changelog:** Step 1 (Organisation Levels) and the "Can I change org levels later?" FAQ
+now reflect the ability to add a level below the bottom level, or remove it while empty,
+after the initial save.
 
 **Part 2 of 2 — Setting up your workspace.** New here? Read
 [Getting Started](GETTING_STARTED.md) (Part 1) first — before you begin, getting your
@@ -195,9 +199,11 @@ Define how many levels your organisation has and what each level is called.
 2. Enter the number of levels (typically 3–5)
 3. Name each level in plain language
 4. Mark the lowest level as **Stock Holding** — this is where physical stock is tracked
-5. Save — you **cannot** change level count after adding org nodes
+5. Save
 
-**⚠️ Set this carefully — it cannot be changed once you start building the org tree.**
+**After saving**, you can still add a level below the current bottom level, or remove the
+bottom level if it has no org nodes yet. Inserting or removing a level in the middle of the
+stack is not self-service — contact SMART support for that.
 
 Example 4-level structure:
 
@@ -517,6 +523,12 @@ main contact for the subscription and invoices.
 **Q: Can I change the org structure after adding users?**
 Yes — you can add new nodes and positions. Existing users keep their assignments. To remove a node, reassign its users first.
 
+**Q: Can I change org levels later?**
+You can add a level below your current bottom level at any time, and remove the bottom
+level as long as it has no org nodes yet — the Organisation Levels tab shows both options
+once you've saved your initial levels. Inserting or removing a level in the middle of the
+stack is not self-service; contact SMART support if you need that.
+
 **Q: What if an approver is unavailable?**
 As TA, you can approve on behalf of any position. Find the pending item in the
 Transfers or Adjustments page and approve or reject it directly — the audit log
@@ -732,7 +744,7 @@ any position change.
 
 ---
 
-*Document Version: 1.5 | Last Updated: October 2026 | Maintained by: Development team*
+*Document Version: 1.6 | Last Updated: October 2026 | Maintained by: Development team*
 *1.5 (2026-10-10) — added contract stages (Active/Expiring/Grace/Read-only), the
 read-only access gate, how to request a renewal, and Coming soon status for bulk CSV
 import, dispatch strategy and stock-count submission.*
