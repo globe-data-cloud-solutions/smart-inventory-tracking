@@ -57,7 +57,8 @@ export function OpeningBalancePanel({ products, warehouses, orgSlug }: Props) {
   const requiresBatch      = selectedProduct?.batchTracking === true;
   const expiryRequired     = requiresBatch && selectedProduct?.expiryTracking === true;
 
-  function reset() { setForm({ warehouseId: lockedWarehouseId, productId: "", quantity: "", lotNumber: "", autoLot: false, expiryDate: "", notes: "", referenceDocument: "" }); setError(""); setSuccess(""); }
+  function clearForm() { setForm({ warehouseId: lockedWarehouseId, productId: "", quantity: "", lotNumber: "", autoLot: false, expiryDate: "", notes: "", referenceDocument: "" }); setError(""); }
+  function reset() { clearForm(); setSuccess(""); }
   function set(key: "warehouseId" | "productId" | "quantity" | "lotNumber" | "expiryDate" | "notes" | "referenceDocument", val: string) { setForm((f) => ({ ...f, [key]: val })); setError(""); }
   function setAutoLot(val: boolean) { setForm((f) => ({ ...f, autoLot: val, lotNumber: val ? "" : f.lotNumber })); setError(""); }
 
@@ -93,8 +94,13 @@ export function OpeningBalancePanel({ products, warehouses, orgSlug }: Props) {
       logAudit({ tenantSlug: orgSlug, userEmail: user.email, userName: user.name, role: user.role, action: "inventory:opening_balance", category: "INVENTORY", resourceRef: product?.sku ?? form.productId, resourceType: "OpeningBalanceReceipt", productName: product?.name, quantityStr: `+${qty.toLocaleString()} ${product?.unit ?? "units"}`, toWarehouse: warehouse?.name ?? form.warehouseId, notes: form.notes || undefined });
       void qc.invalidateQueries({ queryKey: ["products", orgSlug] });
       void qc.invalidateQueries({ queryKey: ["receipts", orgSlug] });
-      setSuccess(resp.lot_number ? t("inventory.receive.success_lot").replace("{lot}", resp.lot_number) : t("opening_balance.success"));
-      reset(); setTimeout(() => { setSuccess(""); setOpen(false); }, 3000);
+      clearForm();
+      if (resp.lot_number) {
+        setSuccess(t("inventory.receive.success_lot").replace("{lot}", resp.lot_number));
+      } else {
+        setSuccess(t("opening_balance.success"));
+        setTimeout(() => { setSuccess(""); setOpen(false); }, 3000);
+      }
     } catch (err: unknown) {
       const code = (err as { code?: string } | undefined)?.code ?? "";
       if (LOT_ERROR_CODES.has(code)) setError(t(`errors.${code}`));

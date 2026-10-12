@@ -82,7 +82,8 @@ export function ReceiveStockPanel({ products, orgSlug }: Props) {
 
   const { videoRef, isActive: scanActive, error: scanError, start: startScan, stop: stopScan } = useScanner(onScan);
 
-  function reset() { setForm({ productId: "", referenceType: "", quantity: "", lotNumber: "", expiryDate: "", autoLot: false }); setError(""); setSuccess(""); setScanHint(""); setScannerOpen(false); stopScan(); }
+  function clearForm() { setForm({ productId: "", referenceType: "", quantity: "", lotNumber: "", expiryDate: "", autoLot: false }); setError(""); setScanHint(""); setScannerOpen(false); stopScan(); }
+  function reset() { clearForm(); setSuccess(""); }
   function set(key: "productId" | "referenceType" | "quantity" | "lotNumber" | "expiryDate", val: string) { setForm((f) => ({ ...f, [key]: val })); setError(""); }
   function setAutoLot(val: boolean) { setForm((f) => ({ ...f, autoLot: val, lotNumber: val ? "" : f.lotNumber })); setError(""); }
   function toggleScanner() { if (scannerOpen) { stopScan(); setScannerOpen(false); } else { setScannerOpen(true); void startScan(); } }
@@ -117,15 +118,22 @@ export function ReceiveStockPanel({ products, orgSlug }: Props) {
     try {
       if (!isOnline) {
         await enqueueOfflineTransaction({ idempotencyKey: key, action: "inventory:receive", payload });
+        clearForm();
         setSuccess(t("inventory.receive.queue_offline"));
+        setTimeout(() => { setSuccess(""); setOpen(false); }, 2500);
       } else {
         const resp = await api.post<{ lot_number?: string | null }>("/api/v1/inventory/receive/", payload);
         if (user) logAudit({ tenantSlug: orgSlug, userEmail: user.email, userName: user.name, role: user.role, action: "inventory:receive", category: "INVENTORY", resourceRef: product?.sku ?? form.productId, resourceType: "InventoryTransaction", productName: product?.name, quantityStr: `+${qty.toLocaleString()} ${product?.unit ?? "units"}`, toWarehouse: warehouseName, notes: t(`transfer.reference.${form.referenceType}`) });
-        setSuccess(resp.lot_number ? t("inventory.receive.success_lot").replace("{lot}", resp.lot_number) : t("inventory.receive.success"));
+        clearForm();
+        if (resp.lot_number) {
+          setSuccess(t("inventory.receive.success_lot").replace("{lot}", resp.lot_number));
+        } else {
+          setSuccess(t("inventory.receive.success"));
+          setTimeout(() => { setSuccess(""); setOpen(false); }, 2500);
+        }
         void qc.invalidateQueries({ queryKey: ["products", orgSlug] });
         void qc.invalidateQueries({ queryKey: ["inventory-stock", orgSlug] });
       }
-      reset(); setTimeout(() => { setSuccess(""); setOpen(false); }, 2500);
     } catch (err: unknown) {
       const code = (err as { code?: string } | undefined)?.code ?? "";
       if (LOT_ERROR_CODES.has(code)) setError(t(`errors.${code}`));
