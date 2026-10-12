@@ -614,12 +614,19 @@ class TestInventoryServiceTransfers:
             recorded.append(kw)
             return _TX
 
+        product_row = MagicMock(batch_tracking=False, expiry_tracking=False)
+
+        def _make_db() -> AsyncMock:
+            db = AsyncMock()
+            db.execute = AsyncMock(return_value=MagicMock(fetchone=MagicMock(return_value=product_row)))
+            return db
+
         with patch(
             "services.inventory_service.record_transaction",
             new=AsyncMock(side_effect=_record),
         ):
-            await InventoryService(AsyncMock()).receive(SRC_WM, body_a)
-            await InventoryService(AsyncMock()).receive(DST_WM, body_b)
+            await InventoryService(_make_db()).receive(SRC_WM, body_a)
+            await InventoryService(_make_db()).receive(DST_WM, body_b)
 
         wh_ids = {r["warehouse_id"] for r in recorded}
         assert WAREHOUSE_A in wh_ids and WAREHOUSE_B in wh_ids

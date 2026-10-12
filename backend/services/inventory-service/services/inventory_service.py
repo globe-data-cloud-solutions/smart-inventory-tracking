@@ -23,6 +23,7 @@ from services.self_approval_service import (
     get_self_approval_decision,
 )
 from repositories.ledger_repo import record_transaction, write_transfer_ledger_entry
+from repositories.lot_repo import create_auto_lot, get_or_create_lot
 from schemas.inventory import (
     AdjustmentApprovalInfoResponse,
     AdjustmentListItem,
@@ -336,6 +337,63 @@ class InventoryService:
         self.db = db
 
     async def receive(self, user: Any, body: ReceiveStockRequest) -> ReceiveStockResponse:
+        from datetime import date as _date, datetime, timezone
+        from fastapi import HTTPException
+
+        from schemas.inventory import ALLOWED_RECEIVE_SOURCES
+
+        if body.source not in ALLOWED_RECEIVE_SOURCES:
+            raise HTTPException(
+                status_code=422,
+                detail={"code": "INVALID_SOURCE", "source": body.source},
+            )
+
+        product_row = (await self.db.execute(
+            text(
+                "SELECT batch_tracking, expiry_tracking FROM products "
+                "WHERE id = :pid AND tenant_id = :tid"
+            ),
+            {"pid": str(body.product_id), "tid": str(user.tenant_id)},
+        )).fetchone()
+        if product_row is None:
+            raise HTTPException(status_code=404, detail={"code": "PRODUCT_NOT_FOUND"})
+
+        lot_id: Optional[str] = None
+        lot_number = body.lot_number
+        expiry_date = body.expiry_date
+
+        if not product_row.batch_tracking:
+            if lot_number or expiry_date or body.auto_lot:
+                raise HTTPException(status_code=422, detail={"code": "LOT_NOT_TRACKED"})
+        else:
+            if lot_number and body.auto_lot:
+                raise HTTPException(status_code=422, detail={"code": "LOT_INPUT_CONFLICT"})
+            if not lot_number and not body.auto_lot:
+                raise HTTPException(status_code=422, detail={"code": "LOT_NUMBER_REQUIRED"})
+
+            if product_row.expiry_tracking and not expiry_date:
+                raise HTTPException(status_code=422, detail={"code": "EXPIRY_REQUIRED"})
+            if expiry_date is not None and expiry_date < _date.today():
+                raise HTTPException(status_code=422, detail={"code": "EXPIRY_IN_PAST"})
+
+            if body.auto_lot:
+                lot_id, lot_number = await create_auto_lot(
+                    self.db,
+                    tenant_id=str(user.tenant_id),
+                    product_id=str(body.product_id),
+                    expiry_date=expiry_date,
+                    performed_by=str(user.user_id),
+                )
+            else:
+                lot_id = await get_or_create_lot(
+                    self.db,
+                    tenant_id=str(user.tenant_id),
+                    product_id=str(body.product_id),
+                    lot_number=lot_number,
+                    expiry_date=expiry_date,
+                    performed_by=str(user.user_id),
+                )
+
         tx_id = await record_transaction(
             self.db,
             tenant_id=str(user.tenant_id),
@@ -345,15 +403,23 @@ class InventoryService:
             quantity=body.quantity,
             performed_by=str(user.user_id),
             idempotency_key=body.idempotency_key,
+            lot_id=lot_id,
+            lot_number=lot_number,
+            expiry_date=expiry_date,
+            source=body.source,
+            unit_cost=body.unit_cost,
         )
 
-        from datetime import datetime, timezone
         return ReceiveStockResponse(
             transaction_id=UUID(tx_id),
             product_id=body.product_id,
             warehouse_id=body.warehouse_id,
             quantity=body.quantity,
             created_at=datetime.now(timezone.utc),
+            lot_id=UUID(lot_id) if lot_id else None,
+            lot_number=lot_number,
+            expiry_date=expiry_date,
+            source=body.source,
         )
 
     async def issue_stock(self, user: Any, body: IssueStockRequest) -> IssueStockResponse:

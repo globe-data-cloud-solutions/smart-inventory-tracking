@@ -31,6 +31,9 @@ class AdjustmentReasonCode(str, Enum):
     SYSTEM_CORRECTION = "SYSTEM_CORRECTION"
 
 
+ALLOWED_RECEIVE_SOURCES = frozenset({"WEB", "OPENING_BALANCE"})
+
+
 class ReceiveStockRequest(BaseModel):
     product_id: uuid.UUID
     warehouse_id: uuid.UUID
@@ -38,12 +41,19 @@ class ReceiveStockRequest(BaseModel):
     unit_cost: Optional[Decimal] = None
     lot_number: Optional[str] = None
     expiry_date: Optional[date] = None
+    auto_lot: bool = False
     idempotency_key: str
     source: str = "WEB"
 
     @field_validator("lot_number", "idempotency_key", "source", mode="before")
     @classmethod
     def no_null_bytes(cls, v: object) -> object: return _no_null(v)
+
+    @field_validator("lot_number", mode="after")
+    @classmethod
+    def empty_to_none(cls, v: Optional[str]) -> Optional[str]:
+        stripped = v.strip() if v else ""
+        return stripped or None
 
 
 class ReceiveStockResponse(BaseModel):
@@ -52,6 +62,10 @@ class ReceiveStockResponse(BaseModel):
     warehouse_id: uuid.UUID
     quantity: Decimal
     created_at: datetime
+    lot_id: Optional[uuid.UUID] = None
+    lot_number: Optional[str] = None
+    expiry_date: Optional[date] = None
+    source: str
 
 
 class TransferOrderRequest(BaseModel):

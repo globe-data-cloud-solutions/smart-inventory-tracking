@@ -681,7 +681,14 @@
     "DUPLICATE_TRANSACTION": "ይህ ግብይት አስቀድሞ ቀርቧል።",
     "LOT_NUMBER_REQUIRED": "የሎት ቁጥር ያስፈልጋል።",
     "LOT_EXPIRY_MISMATCH": "ይህ የሎት ቁጥር ከሌላ የማብቂያ ቀን ጋር አስቀድሞ ተመዝግቧል።",
-    "INSUFFICIENT_LOT_STOCK": "ይህን ጥያቄ ለማሟላት በዚህ ሎት ውስጥ በቂ ክምችት የለም።"
+    "INSUFFICIENT_LOT_STOCK": "ይህን ጥያቄ ለማሟላት በዚህ ሎት ውስጥ በቂ ክምችት የለም።",
+    "LOT_NOT_TRACKED": "ይህ ምርት ሎት አይከታተልም — የሎት ቁጥር፣ የማብቂያ ቀን ወይም አውቶ-ሎት መስጠት አይቻልም።",
+    "LOT_INPUT_CONFLICT": "የሎት ቁጥር ያቅርቡ ወይም በራስ-ሰር ያመንጁ፣ ሁለቱንም በአንድ ላይ አይደለም።",
+    "EXPIRY_REQUIRED": "ለዚህ ምርት የማብቂያ ቀን ያስፈልጋል።",
+    "EXPIRY_IN_PAST": "የማብቂያ ቀን ያለፈ ሊሆን አይችልም።",
+    "INVALID_SOURCE": "ይህ ምንጭ ክምችት ለመቀበል አይፈቀድም።",
+    "LOT_NUMBER_GENERATION_FAILED": "ልዩ የሎት ቁጥር ማመንጥ አልተቻለም። እባክዎ እንደገና ይሞክሩ።",
+    "PRODUCT_NOT_FOUND": "ምርት አልተገኘም።"
   },
   "layout": {
     "sign_out": "ውጣ",

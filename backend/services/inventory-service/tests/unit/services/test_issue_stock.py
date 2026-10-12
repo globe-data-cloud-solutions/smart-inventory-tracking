@@ -305,6 +305,9 @@ class TestWarehouseFromJWT:
             idempotency_key="receive:jwt-wh:001",
         )
 
+        product_row = MagicMock(batch_tracking=False, expiry_tracking=False)
+        svc.db.execute = AsyncMock(return_value=MagicMock(fetchone=MagicMock(return_value=product_row)))
+
         with patch(
             "services.inventory_service.record_transaction",
             new_callable=AsyncMock,
