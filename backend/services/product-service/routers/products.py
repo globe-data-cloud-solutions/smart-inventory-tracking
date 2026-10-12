@@ -121,6 +121,7 @@ async def list_products(
         "SELECT p.id, p.sku, p.name, p.short_name, p.description, "
         "p.unit, p.pack_size, p.reorder_point, p.unit_price, p.currency, "
         "p.image_url, p.is_discontinued, "
+        "p.batch_tracking, p.expiry_tracking, p.dispatch_strategy, "
         "pc.name AS category, "
         "pb.name AS brand, "
         "ptc.code AS type_code, "
@@ -204,6 +205,9 @@ async def list_products(
                 "type_code":        r.type_code,
                 "packaging_type":   r.packaging_type,
                 "units_per_package": r.units_per_package,
+                "batch_tracking":   bool(r.batch_tracking),
+                "expiry_tracking":  bool(r.expiry_tracking),
+                "dispatch_strategy": r.dispatch_strategy,
                 "approval_overrides": {
                     tx: o.model_dump(mode="json")
                     for tx, o in overrides_by_product.get(str(r.id), {}).items()
@@ -619,6 +623,9 @@ async def create_product(
             reorder_point=body.reorder_point,
             unit_price=body.unit_price,
             currency=body.currency,
+            batch_tracking=False,
+            expiry_tracking=False,
+            dispatch_strategy=None,
             tenant_id=uuid.UUID(tid),
             created_at=now,
             created_by=uuid.UUID(uid) if uid else None,
@@ -653,6 +660,7 @@ async def update_product(
             "SELECT p.id, p.sku, p.name, p.short_name, p.description, "
             "p.unit, p.pack_size, p.reorder_point, p.unit_price, p.currency, "
             "p.image_url, "
+            "p.batch_tracking, p.expiry_tracking, p.dispatch_strategy, "
             "p.category_id, p.brand_id, p.type_code_id, p.packaging_type_id, "
             "p.tenant_id, p.created_at, p.created_by, "
             "pc.name AS category, pb.name AS brand, ptc.code AS type_code, "
@@ -878,6 +886,9 @@ async def update_product(
             currency=body.currency if body.currency is not None else row.currency,
             image_url=body.image_url if body.image_url is not None else getattr(row, "image_url", None),
             is_controlled=is_controlled,
+            batch_tracking=bool(row.batch_tracking),
+            expiry_tracking=bool(row.expiry_tracking),
+            dispatch_strategy=row.dispatch_strategy,
             tenant_id=uuid.UUID(tid),
             created_at=row.created_at,
             created_by=row.created_by,

@@ -179,6 +179,9 @@ def _make_product_row(**overrides: object) -> MagicMock:
         packaging_type=None,
         units_per_package=None,
         image_url=None,
+        batch_tracking=False,
+        expiry_tracking=False,
+        dispatch_strategy=None,
     )
     defaults.update(overrides)
     row = MagicMock()
