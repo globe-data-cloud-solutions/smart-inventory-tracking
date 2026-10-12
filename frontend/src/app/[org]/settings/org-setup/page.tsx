@@ -89,6 +89,9 @@ function LevelsTab({
   const qc = useQueryClient();
   const writeGuard = useWriteGuard();
   const gp = guardProps(writeGuard);
+  const { planUsage } = usePlanUsage();
+  const session = getSession();
+  const [compareOpen, setCompareOpen] = useState(false);
 
   const { data: savedLevels = [], isLoading } = useQuery<HierarchyLevel[]>({
     queryKey: ["hierarchy-config", tenantId],
@@ -264,6 +267,13 @@ function LevelsTab({
     return <p className="text-sm text-gray-400 py-8 text-center">{t("common.loading")}</p>;
   }
 
+  // Levels currently shown/edited on screen, including an unsaved new bottom
+  // level while its form is open — matches what Save would actually submit.
+  const stockHoldingCount = levels.filter((l) => l.is_stock_holding).length
+    + (addingLevel && newLevel.is_stock_holding ? 1 : 0);
+  const warehouseLimit = planUsage?.warehouses.limit ?? null;
+  const overCapacity = !!planUsage && warehouseLimit !== null && stockHoldingCount > warehouseLimit;
+
   return (
     <div className="space-y-6">
       <TabHelpBanner
@@ -271,6 +281,42 @@ function LevelsTab({
         message={t("org_setup.help.levels_message")}
         tip={t("org_setup.help.levels_tip")}
       />
+
+      {planUsage && (
+        <div className="space-y-2">
+          <p className="text-xs text-gray-500">
+            {warehouseLimit === null
+              ? t("org_setup.warehouse_limit_info_line_unlimited")
+              : t("org_setup.warehouse_limit_info_line")
+                  .replace("{tier}", tierLabel(planUsage.plan_tier ?? ""))
+                  .replace("{limit}", String(warehouseLimit))}
+          </p>
+          {overCapacity && (
+            <div className="text-xs font-semibold text-amber-800 bg-amber-50 border border-amber-200 rounded px-3 py-2 space-y-2">
+              <p className="m-0 flex items-start gap-1.5">
+                <span className="shrink-0">⚠</span>
+                <span>
+                  {t("org_setup.levels_over_capacity_warning")
+                    .replace("{n}", String(stockHoldingCount))
+                    .replace("{n}", String(stockHoldingCount))
+                    .replace("{tier}", tierLabel(planUsage.plan_tier ?? ""))
+                    .replace("{limit}", String(warehouseLimit))}
+                </span>
+              </p>
+              <div className="flex gap-3 flex-wrap items-center font-normal">
+                <button type="button" onClick={() => setCompareOpen(true)} className="underline font-semibold hover:no-underline">
+                  {t("tenant_admin.features.compare_plans_link")}
+                </button>
+                {session?.role === "TA" && planUsage.plan_tier && (
+                  <RequestUpgradeSection planTier={planUsage.plan_tier} />
+                )}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+      <PlanComparisonModal open={compareOpen} onClose={() => setCompareOpen(false)} currentTier={planUsage?.plan_tier ?? "STARTER"} />
+
       {/* Level count picker — pre-save only. Once levels are saved, level count is
           managed via Add/Remove below instead of this picker. */}
       {!levelsAlreadySaved ? (
@@ -377,15 +423,20 @@ function LevelsTab({
                     className="w-full text-sm border border-gray-300 rounded px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-emerald-500"
                   />
                 </div>
-                <label className="flex items-center gap-2 cursor-pointer mt-5">
-                  <input
-                    type="checkbox"
-                    checked={newLevel.is_stock_holding}
-                    onChange={(e) => setNewLevel((f) => ({ ...f, is_stock_holding: e.target.checked }))}
-                    className="w-4 h-4 rounded border-gray-300 text-emerald-600"
-                  />
-                  <span className="text-xs text-gray-700">{t("org_setup.is_stock_holding")}</span>
-                </label>
+                <div className="mt-5">
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={newLevel.is_stock_holding}
+                      onChange={(e) => setNewLevel((f) => ({ ...f, is_stock_holding: e.target.checked }))}
+                      className="w-4 h-4 rounded border-gray-300 text-emerald-600"
+                    />
+                    <span className="text-xs text-gray-700">{t("org_setup.is_stock_holding")}</span>
+                  </label>
+                  <p className="text-[10px] text-gray-400 mt-1 ml-6">
+                    {t("org_setup.level_stock_holding_plan_hint")}
+                  </p>
+                </div>
               </div>
               {addLevelError && <p className="text-xs text-red-600">{addLevelError}</p>}
               <div className="flex gap-2">
@@ -600,6 +651,9 @@ function LevelsTab({
                       onChange={(e) => updateLevel(idx, { is_stock_holding: e.target.checked })}
                       className="w-4 h-4 rounded border-gray-300 text-emerald-600 focus:ring-emerald-500 disabled:opacity-60"
                     />
+                    <p className="text-[10px] text-gray-400 mt-1 leading-tight">
+                      {t("org_setup.level_stock_holding_plan_hint")}
+                    </p>
                   </td>
                 </tr>
               );
