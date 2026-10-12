@@ -676,7 +676,10 @@
     "ABAC_DENIED": "Access denied — resource outside your scope.",
     "INTERNAL_ERROR": "An unexpected error occurred. Please try again.",
     "OFFLINE": "You are offline. This action has been queued.",
-    "DUPLICATE_TRANSACTION": "This transaction was already submitted."
+    "DUPLICATE_TRANSACTION": "This transaction was already submitted.",
+    "LOT_NUMBER_REQUIRED": "A lot number is required.",
+    "LOT_EXPIRY_MISMATCH": "This lot number already exists with a different expiry date.",
+    "INSUFFICIENT_LOT_STOCK": "Not enough stock in this lot to complete the request."
   },
   "transfers": {
     "transfers_heading": "Transfers",

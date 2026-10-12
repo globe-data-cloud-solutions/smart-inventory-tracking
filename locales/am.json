@@ -678,7 +678,10 @@
     "ABAC_DENIED": "መዳረሻ ተከልክሏል — ሀብቱ ከወሰንዎ ውጪ ነው።",
     "INTERNAL_ERROR": "ያልተጠበቀ ስህተት ተከስቷል። እባክዎ እንደገና ይሞክሩ።",
     "OFFLINE": "ከመስመር ውጪ ነዎት። ይህ ድርጊት ወደ ጠብቅ ተጨምሯል።",
-    "DUPLICATE_TRANSACTION": "ይህ ግብይት አስቀድሞ ቀርቧል።"
+    "DUPLICATE_TRANSACTION": "ይህ ግብይት አስቀድሞ ቀርቧል።",
+    "LOT_NUMBER_REQUIRED": "የሎት ቁጥር ያስፈልጋል።",
+    "LOT_EXPIRY_MISMATCH": "ይህ የሎት ቁጥር ከሌላ የማብቂያ ቀን ጋር አስቀድሞ ተመዝግቧል።",
+    "INSUFFICIENT_LOT_STOCK": "ይህን ጥያቄ ለማሟላት በዚህ ሎት ውስጥ በቂ ክምችት የለም።"
   },
   "layout": {
     "sign_out": "ውጣ",
