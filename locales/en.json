@@ -681,6 +681,7 @@
     "LOT_NUMBER_REQUIRED": "A lot number is required.",
     "LOT_EXPIRY_MISMATCH": "This lot number already exists with a different expiry date.",
     "INSUFFICIENT_LOT_STOCK": "Not enough stock in this lot to complete the request.",
+    "LOT_REQUIRED": "A lot must be selected for this transaction.",
     "LOT_NOT_TRACKED": "This product does not track lots — lot number, expiry date, or auto-lot cannot be supplied.",
     "LOT_INPUT_CONFLICT": "Provide either a lot number or auto-generate one, not both.",
     "EXPIRY_REQUIRED": "An expiry date is required for this product.",

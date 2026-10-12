@@ -22,13 +22,14 @@ USER_ID      = "u-wm-01"
 IDEM_KEY     = "test-idem-key-001"
 
 
-def _make_session(balance: float = 100.0) -> AsyncMock:
+def _make_session(balance: float = 100.0, batch_tracking: bool = False) -> AsyncMock:
     """Return a mock AsyncSession whose execute() simulates:
       call 0 — idempotency INSERT (rowcount=1 = success)
       call 1 — SELECT balance FOR UPDATE (returns balance row)
-      call 2 — INSERT inventory_transactions
-      call 3 — INSERT inventory_balances ... ON CONFLICT DO UPDATE (_update_running_balance)
-      call 4 — INSERT outbox (write_to_outbox)
+      call 2 — SELECT batch_tracking FROM products FOR SHARE (Step 2b lot guard)
+      call 3 — INSERT inventory_transactions
+      call 4 — INSERT inventory_balances ... ON CONFLICT DO UPDATE (_update_running_balance)
+      call 5 — INSERT outbox (write_to_outbox)
     """
     balance_row  = MagicMock()
     balance_row.qty = balance
@@ -39,6 +40,11 @@ def _make_session(balance: float = 100.0) -> AsyncMock:
     idem_result = MagicMock()
     idem_result.rowcount = 1        # INSERT succeeded — key is new
 
+    batch_row = MagicMock()
+    batch_row.batch_tracking = batch_tracking
+    batch_result = MagicMock()
+    batch_result.fetchone.return_value = batch_row
+
     generic_result = MagicMock()
     generic_result.fetchone.return_value = None
 
@@ -46,6 +52,7 @@ def _make_session(balance: float = 100.0) -> AsyncMock:
     session.execute = AsyncMock(side_effect=[
         idem_result,     # idempotency INSERT
         balance_result,  # SELECT balance FOR UPDATE
+        batch_result,    # SELECT batch_tracking FOR SHARE (Step 2b)
         generic_result,  # INSERT inventory_transactions
         generic_result,  # INSERT inventory_balances (update_running_balance)
         generic_result,  # INSERT outbox
@@ -53,16 +60,20 @@ def _make_session(balance: float = 100.0) -> AsyncMock:
     return session
 
 
-def _make_lot_session(balance: float = 100.0, lot_balance: float = 100.0) -> AsyncMock:
-    """Same as _make_session but with an extra lot-balance SELECT FOR UPDATE
-    inserted between the product balance lock and the ledger INSERT (call 2),
-    for use when lot_id is given and the type is not neutral:
+def _make_lot_session(
+    balance: float = 100.0, lot_balance: float = 100.0, batch_tracking: bool = True,
+) -> AsyncMock:
+    """Same as _make_session but with an extra batch_tracking SELECT (Step 2b)
+    and lot-balance SELECT FOR UPDATE inserted between the product balance
+    lock and the ledger INSERT, for use when lot_id is given and the type is
+    not neutral:
       call 0 — idempotency INSERT
       call 1 — SELECT product balance FOR UPDATE
-      call 2 — SELECT lot balance FOR UPDATE
-      call 3 — INSERT inventory_transactions
-      call 4 — INSERT inventory_balances (update_running_balance)
-      call 5 — INSERT outbox
+      call 2 — SELECT batch_tracking FROM products FOR SHARE (Step 2b)
+      call 3 — SELECT lot balance FOR UPDATE
+      call 4 — INSERT inventory_transactions
+      call 5 — INSERT inventory_balances (update_running_balance)
+      call 6 — INSERT outbox
     (_update_lot_balance is patched separately, so no extra call slot is needed for it.)
     """
     balance_row = MagicMock()
@@ -70,6 +81,11 @@ def _make_lot_session(balance: float = 100.0, lot_balance: float = 100.0) -> Asy
 
     balance_result = MagicMock()
     balance_result.fetchone.return_value = balance_row
+
+    batch_row = MagicMock()
+    batch_row.batch_tracking = batch_tracking
+    batch_result = MagicMock()
+    batch_result.fetchone.return_value = batch_row
 
     lot_balance_row = MagicMock()
     lot_balance_row.qty = lot_balance
@@ -87,6 +103,7 @@ def _make_lot_session(balance: float = 100.0, lot_balance: float = 100.0) -> Asy
     session.execute = AsyncMock(side_effect=[
         idem_result,
         balance_result,
+        batch_result,
         lot_balance_result,
         generic_result,
         generic_result,
@@ -226,6 +243,7 @@ class TestLedgerRepo:
         # must reflect that order (no idempotency INSERT at position 0).
         balance_row = MagicMock()
         balance_row.qty = 10.0
+        balance_row.batch_tracking = False  # same mock answers the Step 2b lot-guard SELECT too
         balance_result = MagicMock()
         balance_result.fetchone.return_value = balance_row
 
@@ -335,11 +353,12 @@ class TestLedgerRepo:
         )
 
     async def test_lot_id_none_makes_same_execute_calls_as_before(self) -> None:
-        """A non-lot call (lot_id=None) must make exactly the same session.execute
-        calls, in the same order, as before lot support was added."""
+        """A non-lot call (lot_id=None) on a non-batch-tracked product must make
+        no lot-balance calls — only the Step 2b batch_tracking lookup is added
+        on top of the pre-lot-support call set."""
         from repositories.ledger_repo import record_transaction
 
-        session = _make_session(balance=50.0)
+        session = _make_session(balance=50.0, batch_tracking=False)
 
         with patch("repositories.ledger_repo._update_running_balance", new=AsyncMock()), \
              patch("repositories.ledger_repo._update_lot_balance", new=AsyncMock()) as mock_lot, \
@@ -356,9 +375,9 @@ class TestLedgerRepo:
                 idempotency_key=IDEM_KEY,
             )
 
-        assert session.execute.await_count == 3, (
-            "lot_id=None must not add any extra session.execute calls "
-            "(idempotency INSERT, balance SELECT, ledger INSERT — "
+        assert session.execute.await_count == 4, (
+            "lot_id=None must not add any lot-balance session.execute calls "
+            "(idempotency INSERT, balance SELECT, batch_tracking SELECT, ledger INSERT — "
             "_update_running_balance/write_to_outbox are mocked out here)"
         )
         mock_get_lot.assert_not_awaited()
@@ -484,7 +503,7 @@ class TestLedgerRepo:
                 idempotency_key=IDEM_KEY,
             )
 
-        ledger_call = session.execute.call_args_list[2]
+        ledger_call = session.execute.call_args_list[3]
         assert ledger_call.args[1]["lot_id"] is None
         assert ledger_call.args[1]["lot_number"] is None
         assert ledger_call.args[1]["expiry_date"] is None
@@ -509,7 +528,7 @@ class TestLedgerRepo:
                 idempotency_key=IDEM_KEY,
             )
 
-        ledger_call = session.execute.call_args_list[2]
+        ledger_call = session.execute.call_args_list[3]
         assert ledger_call.args[1]["source"] == "WEB"
         assert ledger_call.args[1]["unit_cost"] is None
 
@@ -535,9 +554,287 @@ class TestLedgerRepo:
                 unit_cost=Decimal("3.25"),
             )
 
-        ledger_call = session.execute.call_args_list[2]
+        ledger_call = session.execute.call_args_list[3]
         assert ledger_call.args[1]["source"] == "OPENING_BALANCE"
         assert ledger_call.args[1]["unit_cost"] == "3.25"
+
+
+# ── Step 2b lot guard + LOT_OPENING tests ───────────────────────────────────
+
+LOT_ID = "lot-001"
+
+
+@pytest.mark.unit
+class TestLotGuardAndLotOpening:
+
+    async def test_batch_product_issue_without_lot_raises_lot_required(self) -> None:
+        """A batch-tracked product's ISSUE with no lot_id must raise 422 LOT_REQUIRED."""
+        from repositories.ledger_repo import record_transaction
+
+        session = _make_session(balance=100.0, batch_tracking=True)
+
+        with patch("repositories.ledger_repo._update_running_balance",
+                   new=AsyncMock()) as mock_running, \
+             patch("repositories.ledger_repo.write_to_outbox", new=AsyncMock()):
+            with pytest.raises(HTTPException) as exc_info:
+                await record_transaction(
+                    session,
+                    tenant_id=TENANT_ID,
+                    transaction_type="ISSUE",
+                    product_id=PRODUCT_ID,
+                    warehouse_id=WAREHOUSE_ID,
+                    quantity=Decimal("-10"),
+                    performed_by=USER_ID,
+                    idempotency_key=IDEM_KEY,
+                )
+
+        assert exc_info.value.status_code == 422
+        assert exc_info.value.detail["code"] == "LOT_REQUIRED"
+        mock_running.assert_not_awaited()
+
+    async def test_batch_product_issue_with_lot_drops_both_balances(self) -> None:
+        """A batch-tracked product's ISSUE with lot_id must drop both the
+        product total and the lot balance."""
+        from repositories.ledger_repo import record_transaction
+
+        session = _make_lot_session(balance=100.0, lot_balance=50.0, batch_tracking=True)
+
+        with patch("repositories.ledger_repo._update_running_balance",
+                   new=AsyncMock()) as mock_running, \
+             patch("repositories.ledger_repo._update_lot_balance",
+                   new=AsyncMock()) as mock_lot, \
+             patch("repositories.ledger_repo.write_to_outbox", new=AsyncMock()):
+            await record_transaction(
+                session,
+                tenant_id=TENANT_ID,
+                transaction_type="ISSUE",
+                product_id=PRODUCT_ID,
+                warehouse_id=WAREHOUSE_ID,
+                quantity=Decimal("-10"),
+                performed_by=USER_ID,
+                idempotency_key=IDEM_KEY,
+                lot_id=LOT_ID,
+            )
+
+        mock_running.assert_awaited_once()
+        assert mock_running.call_args.args[4] == Decimal("-10")
+        mock_lot.assert_awaited_once()
+        assert mock_lot.call_args.args[5] == Decimal("-10")
+
+    async def test_batch_product_adjustment_and_transfer_out_without_lot_raise(self) -> None:
+        """ADJUSTMENT and TRANSFER_OUT on a batch-tracked product both require
+        a lot_id, same as ISSUE."""
+        from repositories.ledger_repo import record_transaction
+
+        for tx_type in ("ADJUSTMENT", "TRANSFER_OUT"):
+            session = _make_session(balance=100.0, batch_tracking=True)
+            with patch("repositories.ledger_repo._update_running_balance", new=AsyncMock()), \
+                 patch("repositories.ledger_repo.write_to_outbox", new=AsyncMock()):
+                with pytest.raises(HTTPException) as exc_info:
+                    await record_transaction(
+                        session,
+                        tenant_id=TENANT_ID,
+                        transaction_type=tx_type,
+                        product_id=PRODUCT_ID,
+                        warehouse_id=WAREHOUSE_ID,
+                        quantity=Decimal("-5"),
+                        performed_by=USER_ID,
+                        idempotency_key=f"{IDEM_KEY}-{tx_type}",
+                    )
+            assert exc_info.value.status_code == 422
+            assert exc_info.value.detail["code"] == "LOT_REQUIRED", (
+                f"{tx_type} on a batch-tracked product must require a lot"
+            )
+
+    async def test_batch_product_reserve_without_lot_is_allowed(self) -> None:
+        """RESERVE is balance-neutral, so it stays allowed without a lot even
+        on a batch-tracked product."""
+        from repositories.ledger_repo import record_transaction
+
+        session = _make_session(balance=100.0, batch_tracking=True)
+
+        with patch("repositories.ledger_repo._update_running_balance",
+                   new=AsyncMock()) as mock_running, \
+             patch("repositories.ledger_repo.write_to_outbox", new=AsyncMock()):
+            await record_transaction(
+                session,
+                tenant_id=TENANT_ID,
+                transaction_type="RESERVE",
+                product_id=PRODUCT_ID,
+                warehouse_id=WAREHOUSE_ID,
+                quantity=Decimal("20"),
+                performed_by=USER_ID,
+                idempotency_key=IDEM_KEY,
+            )
+
+        mock_running.assert_not_awaited()
+
+    async def test_non_batch_product_issue_without_lot_is_unchanged(self) -> None:
+        """A non-batch product's ISSUE with no lot_id keeps working exactly as
+        before lot support existed."""
+        from repositories.ledger_repo import record_transaction
+
+        session = _make_session(balance=100.0, batch_tracking=False)
+
+        with patch("repositories.ledger_repo._update_running_balance",
+                   new=AsyncMock()) as mock_running, \
+             patch("repositories.ledger_repo.write_to_outbox", new=AsyncMock()):
+            await record_transaction(
+                session,
+                tenant_id=TENANT_ID,
+                transaction_type="ISSUE",
+                product_id=PRODUCT_ID,
+                warehouse_id=WAREHOUSE_ID,
+                quantity=Decimal("-10"),
+                performed_by=USER_ID,
+                idempotency_key=IDEM_KEY,
+            )
+
+        mock_running.assert_awaited_once()
+
+    async def test_non_batch_product_issue_with_lot_raises_lot_not_tracked(self) -> None:
+        """A non-batch product's ISSUE with a lot_id must be rejected — defence
+        in depth behind the receive API's own LOT_NOT_TRACKED check."""
+        from repositories.ledger_repo import record_transaction
+
+        session = _make_session(balance=100.0, batch_tracking=False)
+
+        with patch("repositories.ledger_repo._update_running_balance",
+                   new=AsyncMock()) as mock_running, \
+             patch("repositories.ledger_repo.write_to_outbox", new=AsyncMock()):
+            with pytest.raises(HTTPException) as exc_info:
+                await record_transaction(
+                    session,
+                    tenant_id=TENANT_ID,
+                    transaction_type="ISSUE",
+                    product_id=PRODUCT_ID,
+                    warehouse_id=WAREHOUSE_ID,
+                    quantity=Decimal("-10"),
+                    performed_by=USER_ID,
+                    idempotency_key=IDEM_KEY,
+                    lot_id=LOT_ID,
+                )
+
+        assert exc_info.value.status_code == 422
+        assert exc_info.value.detail["code"] == "LOT_NOT_TRACKED"
+        mock_running.assert_not_awaited()
+
+    async def test_lot_opening_without_lot_raises_lot_required(self) -> None:
+        """LOT_OPENING always requires a lot_id, independent of batch_tracking."""
+        from repositories.ledger_repo import record_transaction
+
+        session = _make_session(balance=0.0)
+
+        with patch("repositories.ledger_repo._update_running_balance",
+                   new=AsyncMock()) as mock_running, \
+             patch("repositories.ledger_repo._update_lot_balance",
+                   new=AsyncMock()) as mock_lot, \
+             patch("repositories.ledger_repo.write_to_outbox", new=AsyncMock()):
+            with pytest.raises(HTTPException) as exc_info:
+                await record_transaction(
+                    session,
+                    tenant_id=TENANT_ID,
+                    transaction_type="LOT_OPENING",
+                    product_id=PRODUCT_ID,
+                    warehouse_id=WAREHOUSE_ID,
+                    quantity=Decimal("30"),
+                    performed_by=USER_ID,
+                    idempotency_key=IDEM_KEY,
+                )
+
+        assert exc_info.value.status_code == 422
+        assert exc_info.value.detail["code"] == "LOT_REQUIRED"
+        mock_running.assert_not_awaited()
+        mock_lot.assert_not_awaited()
+
+    async def test_lot_opening_with_lot_credits_lot_balance_only(self) -> None:
+        """LOT_OPENING with a lot_id must credit lot_balances by the full
+        quantity and write an immutable ledger row, while leaving
+        inventory_balances (the product running total) untouched."""
+        from repositories.ledger_repo import record_transaction
+
+        # Custom session: idem INSERT, product balance SELECT (step 2),
+        # lot balance SELECT FOR UPDATE (step 3b), ledger INSERT (step 4).
+        # LOT_OPENING skips the Step 2b batch_tracking SELECT entirely (it is
+        # in _LOT_ONLY_TYPES, checked before the batch_tracking branch).
+        balance_row = MagicMock()
+        balance_row.qty = 0.0
+        balance_result = MagicMock()
+        balance_result.fetchone.return_value = balance_row
+
+        lot_balance_row = MagicMock()
+        lot_balance_row.qty = 0.0
+        lot_balance_result = MagicMock()
+        lot_balance_result.fetchone.return_value = lot_balance_row
+
+        idem_result = MagicMock()
+        idem_result.rowcount = 1
+
+        generic_result = MagicMock()
+        generic_result.fetchone.return_value = None
+
+        session = AsyncMock()
+        session.execute = AsyncMock(side_effect=[
+            idem_result, balance_result, lot_balance_result, generic_result,
+        ])
+
+        with patch("repositories.ledger_repo._update_running_balance",
+                   new=AsyncMock()) as mock_running, \
+             patch("repositories.ledger_repo._update_lot_balance",
+                   new=AsyncMock()) as mock_lot, \
+             patch("repositories.ledger_repo.write_to_outbox", new=AsyncMock()):
+            await record_transaction(
+                session,
+                tenant_id=TENANT_ID,
+                transaction_type="LOT_OPENING",
+                product_id=PRODUCT_ID,
+                warehouse_id=WAREHOUSE_ID,
+                quantity=Decimal("30"),
+                performed_by=USER_ID,
+                idempotency_key=IDEM_KEY,
+                lot_id=LOT_ID,
+                lot_number="LOT-A1",
+            )
+
+        # inventory_balances (product total) must NOT be touched
+        mock_running.assert_not_awaited()
+
+        # lot_balances must be credited by the full quantity
+        mock_lot.assert_awaited_once()
+        assert mock_lot.call_args.args[2] == LOT_ID
+        assert mock_lot.call_args.args[5] == Decimal("30")
+
+        # the ledger row must still be written
+        all_sql = [str(c.args[0]) for c in session.execute.call_args_list]
+        assert any("INSERT INTO inventory_transactions" in sql for sql in all_sql)
+        ledger_call = session.execute.call_args_list[3]
+        assert ledger_call.args[1]["type"] == "LOT_OPENING"
+        assert ledger_call.args[1]["lot_id"] == LOT_ID
+
+    async def test_lot_totals_mismatch_clears_after_matching_lot_opening(self) -> None:
+        """lot_totals_mismatch() must return None once SUM(lot_balances) equals
+        the product's inventory_balances total — the state after a LOT_OPENING
+        that matches the existing product total."""
+        from repositories.lot_repo import lot_totals_mismatch
+
+        inventory_row = MagicMock()
+        inventory_row.qty = 30.0
+        inventory_result = MagicMock()
+        inventory_result.fetchone.return_value = inventory_row
+
+        lot_sum_row = MagicMock()
+        lot_sum_row.qty = 30.0
+        lot_sum_result = MagicMock()
+        lot_sum_result.fetchone.return_value = lot_sum_row
+
+        session = AsyncMock()
+        session.execute = AsyncMock(side_effect=[inventory_result, lot_sum_result])
+
+        mismatch = await lot_totals_mismatch(
+            session, TENANT_ID, PRODUCT_ID, WAREHOUSE_ID,
+        )
+
+        assert mismatch is None
 
 
 # ── write_transfer_ledger_entry tests ────────────────────────────────────────
