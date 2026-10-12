@@ -7,10 +7,13 @@ import { api } from "@/lib/api";
 import { getToken } from "@/lib/auth";
 import { getSession } from "@/lib/demo-auth";
 import { t } from "@/lib/i18n";
-import { planFeatureErrorMessage, PLAN_UPGRADE_TO } from "@/lib/planError";
+import { planFeatureErrorMessage, PLAN_UPGRADE_TO, tierLabel } from "@/lib/planError";
 import { useWriteGuard, guardProps } from "@/hooks/useWriteGuard";
+import { usePlanUsage } from "@/hooks/usePlanUsage";
 import { useTenantPositions, type TenantPosition } from "@/hooks/useTenantPositions";
 import { TabHelpBanner } from "@/components/ui/TabHelpBanner";
+import { PlanComparisonModal } from "@/components/features/billing/PlanComparisonModal";
+import { RequestUpgradeSection } from "@/components/features/billing/RequestUpgradeSection";
 
 /* ── Types ─────────────────────────────────────────────────────────────────── */
 
@@ -690,6 +693,7 @@ function NodeForm({
   onSaved: (createdLevel?: number) => void;
   onCancel: () => void;
 }) {
+  const qc = useQueryClient();
   const parentNode = flat.find((n) => n.id === defaultParentId) ?? null;
   const childLevel = parentNode ? parentNode.hierarchy_level + 1 : 1;
 
@@ -703,11 +707,25 @@ function NodeForm({
   }));
   const [saving, setSaving] = useState(false);
   const [error, setError]   = useState<string | null>(null);
+  const [compareOpen, setCompareOpen] = useState(false);
   const writeGuard = useWriteGuard();
+  const { planUsage } = usePlanUsage();
+  const session = getSession();
   // check_plan_create_warehouse (backend/shared/permissions/plan_middleware.py)
-  // counts EVERY active node toward max_warehouses, regardless of
-  // is_stock_holding — so any new node (not an edit) counts against the cap.
-  const gp = guardProps(writeGuard, editingNode ? undefined : "warehouses");
+  // only counts a NEW node toward max_warehouses when it will be stock-holding
+  // — an approval-only node is never blocked, regardless of the cap.
+  const readOnlyGp = guardProps(writeGuard);
+  const atWarehouseCap = !editingNode && form.is_stock_holding && writeGuard.atLimit("warehouses");
+  const capNotice = atWarehouseCap && planUsage
+    ? t("org_setup.warehouse_cap_notice")
+        .replace("{tier}", tierLabel(planUsage.plan_tier ?? ""))
+        .replace("{limit}", String(planUsage.warehouses.limit ?? ""))
+    : null;
+  const gp = readOnlyGp.disabled
+    ? readOnlyGp
+    : atWarehouseCap
+      ? { disabled: true, title: capNotice ?? t(`plan.limit_reached.warehouses`), "aria-disabled": true as const }
+      : { disabled: false };
 
   async function save() {
     if (gp.disabled) return;
@@ -754,6 +772,7 @@ function NodeForm({
           ).catch(() => { /* non-fatal */ });
         }
       }
+      void qc.invalidateQueries({ queryKey: ["plan-usage"] });
       onSaved(editingNode ? undefined : form.level_number);
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : t("common.error"));
@@ -817,19 +836,38 @@ function NodeForm({
 
       {/* Holds stock */}
       {!editingNode && (
-        <label className="flex items-center gap-2 cursor-pointer">
-          <input
-            type="checkbox"
-            checked={form.is_stock_holding}
-            onChange={(e) => setForm((f) => ({ ...f, is_stock_holding: e.target.checked }))}
-            className="w-4 h-4 rounded border-gray-300 text-blue-600"
-          />
-          <span className="text-xs text-gray-700">{t("org_setup.is_stock_holding")}</span>
-        </label>
+        <div>
+          <label className="flex items-center gap-2 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={form.is_stock_holding}
+              onChange={(e) => setForm((f) => ({ ...f, is_stock_holding: e.target.checked }))}
+              className="w-4 h-4 rounded border-gray-300 text-blue-600"
+            />
+            <span className="text-xs text-gray-700">{t("org_setup.is_stock_holding")}</span>
+          </label>
+          <p className="text-xs text-gray-400 mt-1 ml-6">{t("org_setup.is_stock_holding_plan_hint")}</p>
+        </div>
       )}
 
-      {gp.title && <p className="text-xs font-semibold text-red-600 bg-red-50 border border-red-200 rounded px-3 py-2">{gp.title}</p>}
+      {atWarehouseCap && capNotice && (
+        <div className="text-xs font-semibold text-red-600 bg-red-50 border border-red-200 rounded px-3 py-2 space-y-2">
+          <p className="m-0">{capNotice}</p>
+          <div className="flex gap-3 flex-wrap items-center font-normal">
+            <button type="button" onClick={() => setCompareOpen(true)} className="underline font-semibold hover:no-underline">
+              {t("tenant_admin.features.compare_plans_link")}
+            </button>
+            {session?.role === "TA" && planUsage?.plan_tier && (
+              <RequestUpgradeSection planTier={planUsage.plan_tier} />
+            )}
+          </div>
+        </div>
+      )}
+      {!atWarehouseCap && gp.title && (
+        <p className="text-xs font-semibold text-red-600 bg-red-50 border border-red-200 rounded px-3 py-2">{gp.title}</p>
+      )}
       {error && <p className="text-xs text-red-600">{error}</p>}
+      <PlanComparisonModal open={compareOpen} onClose={() => setCompareOpen(false)} currentTier={planUsage?.plan_tier ?? "STARTER"} />
 
       <div className="flex gap-2">
         <button
@@ -876,12 +914,17 @@ function TreeTab({
 }) {
   const qc = useQueryClient();
   const [coverage, setCoverage] = useState<CoverageState | null>(null);
+  const [compareOpen, setCompareOpen] = useState(false);
   const writeGuard = useWriteGuard();
-  // Adding a node (root or child) counts against max_warehouses regardless of
-  // is_stock_holding — see NodeForm above. Edit/deactivate/reactivate are
-  // read-only guarded only.
-  const addGp  = guardProps(writeGuard, "warehouses");
+  const { planUsage } = usePlanUsage();
+  const session = getSession();
+  // Opening the add-node form is never blocked by the warehouse cap — an
+  // approval-only node is always free (NodeForm gates its own Save button
+  // only when "Holds stock" is on and the cap is reached). Read-only mode
+  // still blocks everything.
+  const addGp  = guardProps(writeGuard);
   const editGp = guardProps(writeGuard);
+  const atWarehouseCap = writeGuard.atLimit("warehouses");
 
   const { data: levels = [] } = useQuery<HierarchyLevel[]>({
     queryKey: ["hierarchy-config", tenantId],
@@ -903,7 +946,11 @@ function TreeTab({
   const deactivateMutation = useMutation({
     mutationFn: (nodeId: string) =>
       api.patch(`/api/v1/tenants/${tenantId}/nodes/${nodeId}/deactivate`, {}),
-    onSuccess: () => { setNodeActionError(null); refreshNodes(); },
+    onSuccess: () => {
+      setNodeActionError(null);
+      refreshNodes();
+      void qc.invalidateQueries({ queryKey: ["plan-usage"] });
+    },
     onError: (e: unknown) => {
       const code = (e as { code?: string })?.code;
       const codeKeyMap: Record<string, string> = {
@@ -920,9 +967,18 @@ function TreeTab({
   const reactivateMutation = useMutation({
     mutationFn: (nodeId: string) =>
       api.patch(`/api/v1/tenants/${tenantId}/nodes/${nodeId}/reactivate`, {}),
-    onSuccess: () => { setNodeActionError(null); refreshNodes(); },
+    onSuccess: () => {
+      setNodeActionError(null);
+      refreshNodes();
+      void qc.invalidateQueries({ queryKey: ["plan-usage"] });
+    },
     onError: (e: unknown) => {
-      setNodeActionError(e instanceof Error ? e.message : t("common.error"));
+      const code = (e as { code?: string })?.code;
+      setNodeActionError(
+        code === "PLAN_LIMIT_REACHED"
+          ? t("plan.limit_reached.warehouses")
+          : e instanceof Error ? e.message : t("common.error")
+      );
     },
   });
 
@@ -1090,6 +1146,54 @@ function TreeTab({
         message={t("org_setup.help.tree_message")}
         tip={t("org_setup.help.tree_tip")}
       />
+
+      {/* Warehouse usage counter */}
+      {planUsage && (
+        <div className="flex flex-wrap items-center gap-2 text-xs">
+          <span
+            className={`font-semibold px-2 py-1 rounded ${
+              planUsage.warehouses.limit === null
+                ? "bg-gray-100 text-gray-600"
+                : planUsage.warehouses.used >= planUsage.warehouses.limit
+                  ? "bg-red-100 text-red-700"
+                  : planUsage.warehouses.used >= planUsage.warehouses.limit - 1
+                    ? "bg-amber-100 text-amber-700"
+                    : "bg-gray-100 text-gray-600"
+            }`}
+          >
+            {planUsage.warehouses.limit === null
+              ? t("org_setup.warehouse_usage_counter")
+                  .replace("{used}", String(planUsage.warehouses.used))
+                  .replace("{limit}", t("org_setup.warehouse_usage_unlimited"))
+                  .replace("{tier}", tierLabel(planUsage.plan_tier ?? ""))
+              : t("org_setup.warehouse_usage_counter")
+                  .replace("{used}", String(planUsage.warehouses.used))
+                  .replace("{limit}", String(planUsage.warehouses.limit))
+                  .replace("{tier}", tierLabel(planUsage.plan_tier ?? ""))}
+          </span>
+          <span className="text-gray-400">{t("org_setup.warehouse_usage_note")}</span>
+        </div>
+      )}
+
+      {atWarehouseCap && planUsage && (
+        <div className="text-xs font-semibold text-red-600 bg-red-50 border border-red-200 rounded px-3 py-2 space-y-2">
+          <p className="m-0">
+            {t("org_setup.warehouse_cap_notice")
+              .replace("{tier}", tierLabel(planUsage.plan_tier ?? ""))
+              .replace("{limit}", String(planUsage.warehouses.limit ?? ""))}
+          </p>
+          <div className="flex gap-3 flex-wrap items-center font-normal">
+            <button type="button" onClick={() => setCompareOpen(true)} className="underline font-semibold hover:no-underline">
+              {t("tenant_admin.features.compare_plans_link")}
+            </button>
+            {session?.role === "TA" && planUsage.plan_tier && (
+              <RequestUpgradeSection planTier={planUsage.plan_tier} />
+            )}
+          </div>
+        </div>
+      )}
+      <PlanComparisonModal open={compareOpen} onClose={() => setCompareOpen(false)} currentTier={planUsage?.plan_tier ?? "STARTER"} />
+
       {/* Legend */}
       {levels.length > 0 && (
         <div className="flex flex-wrap gap-3 bg-gray-50 border border-gray-200 rounded-lg p-3">
