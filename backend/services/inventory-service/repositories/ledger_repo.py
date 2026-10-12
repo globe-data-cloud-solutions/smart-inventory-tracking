@@ -100,6 +100,8 @@ async def record_transaction(
     notes: Optional[str] = None,
     lot_number: Optional[str] = None,
     expiry_date: Optional[date] = None,
+    source: str = "WEB",
+    unit_cost: Optional[Decimal] = None,
 ) -> str:
     """Record an immutable ledger entry and conditionally update the running balance.
 
@@ -188,9 +190,9 @@ async def record_transaction(
             "INSERT INTO inventory_transactions "
             "(id, transaction_date, tenant_id, type, product_id, warehouse_id, "
             " quantity, idempotency_key, reference_id, source, created_by, "
-            " lot_id, lot_number, expiry_date) "
+            " lot_id, lot_number, expiry_date, unit_cost) "
             "VALUES (:id, :td, :tid, :type, :pid, :wid, :qty, "
-            "        :ikey, :ref, 'WEB', :uid, :lot_id, :lot_number, :expiry_date)"
+            "        :ikey, :ref, :source, :uid, :lot_id, :lot_number, :expiry_date, :unit_cost)"
         ),
         {
             "id":   tx_id,
@@ -202,10 +204,12 @@ async def record_transaction(
             "qty":  str(quantity),
             "ikey": idempotency_key,
             "ref":  reference_id,
+            "source": source,
             "uid":  performed_by,
             "lot_id":      lot_id,
             "lot_number":  lot_number,
             "expiry_date": expiry_date,
+            "unit_cost":   str(unit_cost) if unit_cost is not None else None,
         },
     )
 
