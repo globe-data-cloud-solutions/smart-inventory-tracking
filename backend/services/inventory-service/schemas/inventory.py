@@ -216,6 +216,31 @@ class LotSelection(BaseModel):
     strategy_applied: str
 
 
+class LotChoice(BaseModel):
+    """One line of a user's manual lot selection (dispatch_service.validate_manual_selection)."""
+    lot_id: uuid.UUID
+    quantity: Decimal = Field(gt=0)
+
+
+class AllocationLineOut(BaseModel):
+    lot_id: uuid.UUID
+    lot_number: str
+    expiry_date: Optional[date] = None
+    quantity: Decimal
+
+
+class DispatchPreviewResponse(BaseModel):
+    product_id: uuid.UUID
+    warehouse_id: uuid.UUID
+    quantity: Decimal
+    strategy: Optional[str] = None
+    strategy_source: str
+    lines: List[AllocationLineOut]
+    shortfall: Decimal
+    expired_skipped: List[AllocationLineOut]
+    available_total: Decimal
+
+
 class AdjustStockRequest(BaseModel):
     product_id: uuid.UUID
     warehouse_id: uuid.UUID

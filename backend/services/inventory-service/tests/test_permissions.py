@@ -524,20 +524,10 @@ class TestOutboxPattern:
 @pytest.mark.unit
 class TestDispatch:
     async def test_fefo_auto_enforced_when_expiry_tracking_active(self) -> None:
-        """When batch_tracking=True AND expiry_tracking=True, FEFO is returned without DB lookup."""
+        """When batch_tracking=True AND expiry_tracking=True, FEFO is forced."""
         from services.dispatch_service import resolve_strategy
 
-        mock_db = AsyncMock()
-        result = await resolve_strategy(
-            db=mock_db,
-            tenant_id="t1",
-            product_id="p1",
-            category_id=None,
-            batch_tracking=True,
-            expiry_tracking=True,
-        )
-        assert result == "FEFO"
-        mock_db.execute.assert_not_awaited()
+        assert resolve_strategy(True, True, None) == ("FEFO", "FORCED")
 
     async def test_fefo_override_requires_reason_abac_attribute(self) -> None:
         """dispatch:fefo_override permission has 'reason_required' in ABAC attributes."""
@@ -546,23 +536,10 @@ class TestDispatch:
         assert "reason_required" in PERMISSIONS.DISPATCH_FEFO_OVERRIDE.abac
 
     async def test_fifo_returned_as_default_when_no_config(self) -> None:
-        """No product or category config → default is FIFO."""
+        """Batch-tracked product with no strategy set → default is FIFO."""
         from services.dispatch_service import resolve_strategy
 
-        mock_result = MagicMock()
-        mock_result.fetchone.return_value = None
-        mock_db = AsyncMock()
-        mock_db.execute = AsyncMock(return_value=mock_result)
-
-        result = await resolve_strategy(
-            db=mock_db,
-            tenant_id="t1",
-            product_id="p1",
-            category_id=None,
-            batch_tracking=False,
-            expiry_tracking=False,
-        )
-        assert result == "FIFO"
+        assert resolve_strategy(True, False, None) == ("FIFO", "DEFAULT")
 
     async def test_invalid_transfer_transition_raises(self) -> None:
         """PULL COMPLETED → PENDING_REVIEW is not a valid transition → InvalidStateTransitionError."""
