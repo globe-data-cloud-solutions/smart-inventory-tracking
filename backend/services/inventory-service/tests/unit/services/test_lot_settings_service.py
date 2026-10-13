@@ -137,6 +137,7 @@ class TestStrategyValidation:
     async def test_expiry_forces_fefo(self) -> None:
         execs = [
             _result(fetchone=_product_row()),  # SELECT product
+            _result(fetchone=MagicMock(open_count=0)),  # COUNT open transfers
             _result(),                          # UPDATE products
             _result(fetchall=[]),               # SELECT balances (no conversion needed, old=batch already? )
             _result(),                           # INSERT audit_logs
@@ -154,6 +155,7 @@ class TestStrategyValidation:
     async def test_batch_without_expiry_defaults_to_fifo(self) -> None:
         execs = [
             _result(fetchone=_product_row()),
+            _result(fetchone=MagicMock(open_count=0)),
             _result(),
             _result(fetchall=[]),
             _result(),
@@ -236,6 +238,7 @@ class TestConversion:
 
         execs = [
             _result(fetchone=_product_row(batch_tracking=False)),  # SELECT product
+            _result(fetchone=MagicMock(open_count=0)),              # COUNT open transfers
             _result(),                                              # UPDATE products
             _result(fetchall=[bal1, bal2]),                         # SELECT balances
             _result(),                                              # INSERT audit_logs
@@ -286,6 +289,7 @@ class TestConversion:
 
         execs = [
             _result(fetchone=_product_row(batch_tracking=False)),
+            _result(fetchone=MagicMock(open_count=0)),
             _result(),
             _result(fetchall=[bal1]),
         ]
@@ -317,3 +321,110 @@ class TestConversion:
 
         assert exc_info.value.status_code == 500
         assert exc_info.value.detail["code"] == "LOT_CONVERSION_MISMATCH"
+
+
+@pytest.mark.unit
+class TestBatchTrackingOnWithOpenTransfers:
+
+    async def test_blocked_while_transfer_in_transit(self) -> None:
+        from services.lot_settings_service import update_lot_settings
+
+        execs = [
+            _result(fetchone=_product_row(batch_tracking=False)),  # SELECT product
+            _result(fetchone=MagicMock(open_count=1)),              # COUNT open transfers (IN_TRANSIT line)
+        ]
+        session = AsyncMock()
+        session.execute = AsyncMock(side_effect=execs)
+
+        with patch(
+            "services.lot_settings_service.create_opening_lot",
+            new=AsyncMock(),
+        ) as mock_create_lot, patch(
+            "services.lot_settings_service.record_transaction",
+            new=AsyncMock(),
+        ) as mock_record_tx:
+            with pytest.raises(HTTPException) as exc_info:
+                await update_lot_settings(
+                    session,
+                    tenant_id=TENANT_ID,
+                    product_id=PRODUCT_ID,
+                    user_id=USER_ID,
+                    role="TA",
+                    feature_enabled=True,
+                    batch_tracking=True,
+                    expiry_tracking=False,
+                    dispatch_strategy=None,
+                )
+
+        assert exc_info.value.status_code == 409
+        assert exc_info.value.detail == {
+            "code": "BATCH_TRACKING_TRANSFERS_OPEN",
+            "open_transfers": 1,
+        }
+        mock_create_lot.assert_not_awaited()
+        mock_record_tx.assert_not_awaited()
+        # Only the product SELECT and the count ran — no UPDATE products, no audit row.
+        assert session.execute.await_count == 2
+
+    async def test_count_query_only_blocks_post_approval_statuses(self) -> None:
+        """A transfer that is only PENDING_APPROVAL is not counted, so batch on is allowed."""
+        from services.lot_settings_service import update_lot_settings
+
+        execs = [
+            _result(fetchone=_product_row(batch_tracking=False)),  # SELECT product
+            _result(fetchone=MagicMock(open_count=0)),              # COUNT — PENDING_APPROVAL not matched
+            _result(),                                              # UPDATE products
+            _result(fetchall=[]),                                   # SELECT balances
+            _result(),                                              # INSERT audit_logs
+        ]
+        session = AsyncMock()
+        session.execute = AsyncMock(side_effect=execs)
+
+        result = await update_lot_settings(
+            session,
+            tenant_id=TENANT_ID,
+            product_id=PRODUCT_ID,
+            user_id=USER_ID,
+            role="TA",
+            feature_enabled=True,
+            batch_tracking=True,
+            expiry_tracking=False,
+            dispatch_strategy=None,
+        )
+
+        assert result.batch_tracking is True
+        count_sql = str(session.execute.await_args_list[1].args[0])
+        assert "transfer_order_lines" in count_sql
+        assert "PENDING_APPROVAL" not in count_sql
+        for status in ("APPROVED", "ADVISED", "ISSUED", "IN_TRANSIT", "PARTIALLY_RECEIVED"):
+            assert f"'{status}'" in count_sql
+
+    async def test_check_skipped_when_already_batch_tracked(self) -> None:
+        """Turning expiry on for a batch-tracked product never queries transfers."""
+        from services.lot_settings_service import update_lot_settings
+
+        execs = [
+            _result(fetchone=_product_row(batch_tracking=True, dispatch_strategy="FIFO")),  # SELECT product
+            _result(),                                                                       # UPDATE products
+            _result(),                                                                       # INSERT audit_logs
+        ]
+        session = AsyncMock()
+        session.execute = AsyncMock(side_effect=execs)
+
+        result = await update_lot_settings(
+            session,
+            tenant_id=TENANT_ID,
+            product_id=PRODUCT_ID,
+            user_id=USER_ID,
+            role="TA",
+            feature_enabled=True,
+            batch_tracking=True,
+            expiry_tracking=True,
+            dispatch_strategy=None,
+        )
+
+        assert result.expiry_tracking is True
+        assert result.dispatch_strategy == "FEFO"
+        assert session.execute.await_count == 3
+        for call in session.execute.await_args_list:
+            assert "transfer_order_lines" not in str(call.args[0])

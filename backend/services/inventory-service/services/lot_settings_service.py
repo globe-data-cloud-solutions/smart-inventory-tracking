@@ -76,6 +76,25 @@ async def update_lot_settings(
         if Decimal(str(lot_sum.qty)) > 0:
             raise HTTPException(status_code=409, detail={"code": "BATCH_TRACKING_IN_USE"})
 
+    # batch false -> true: block while a transfer of this product is past approval.
+    # Transfers still waiting for approval are fine — their lots are picked at approval.
+    if not old_batch_tracking and batch_tracking:
+        open_row = (await session.execute(
+            text(
+                "SELECT count(*) AS open_count FROM transfer_order_lines l "
+                "JOIN transfer_orders o ON o.id = l.transfer_order_id "
+                "WHERE l.tenant_id = :tid AND l.product_id = :pid "
+                "AND o.status IN ('APPROVED','ADVISED','ISSUED','IN_TRANSIT','PARTIALLY_RECEIVED')"
+            ),
+            {"tid": tenant_id, "pid": product_id},
+        )).fetchone()
+        open_transfers = int(open_row.open_count)
+        if open_transfers > 0:
+            raise HTTPException(
+                status_code=409,
+                detail={"code": "BATCH_TRACKING_TRANSFERS_OPEN", "open_transfers": open_transfers},
+            )
+
     await session.execute(
         text(
             "UPDATE products SET batch_tracking = :bt, expiry_tracking = :et, "

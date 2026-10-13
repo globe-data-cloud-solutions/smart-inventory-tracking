@@ -49,6 +49,33 @@ SRC_WM = _User(USER_ID, TENANT_ID, WAREHOUSE_A, None, "WM")
 DST_WM = _User("u-wm-dst", TENANT_ID, WAREHOUSE_B, None, "WM")
 
 
+@pytest.fixture(autouse=True)
+def _non_batch_transfer_lots():
+    """Every transfer in this file moves a NON-batch product with no stored lot
+    allocations — the lot flow has its own file (test_transfer_lots.py).
+
+    services.transfer_lots then posts the single TRANSFER_OUT per line these
+    tests assert on. Its ledger call is routed to
+    services.inventory_service.record_transaction, so each test's existing
+    patch on that name still observes the call.
+    """
+    import services.inventory_service as inv
+    from services.dispatch_service import ProductDispatchInfo
+
+    async def _record(*args: Any, **kwargs: Any) -> Any:
+        return await inv.record_transaction(*args, **kwargs)
+
+    with patch(
+        "services.transfer_lots.load_allocations", new=AsyncMock(return_value={}),
+    ), patch(
+        "services.transfer_lots.load_product",
+        new=AsyncMock(return_value=ProductDispatchInfo(False, False, None)),
+    ), patch(
+        "services.transfer_lots.record_transaction", new=_record,
+    ):
+        yield
+
+
 # ── State machine unit tests (tests 1–4) ─────────────────────────────────────
 
 @pytest.mark.unit
