@@ -859,6 +859,19 @@
       "status": {
         "OPEN": "ክፍት"
       }
+    },
+    "preview": {
+      "strategy": "የማውጫ ቅደም ተከተል፦ {strategy}",
+      "strategies": {
+        "FEFO": "FEFO (ቀድሞ የሚያበቃ ቀድሞ ይወጣል)",
+        "FIFO": "FIFO (ቀድሞ የገባ ቀድሞ ይወጣል)",
+        "LIFO": "LIFO (መጨረሻ የገባ ቀድሞ ይወጣል)"
+      },
+      "likely_lots": "ሊወጡ የሚችሉ ሎቶች፦",
+      "expiry": "የሚያበቃው {date}",
+      "note": "ሎቶች በማጽደቅ ጊዜ ይረጋገጣሉ። አሁን ምንም አልተያዘም።",
+      "shortfall": "{qty} ይጎድላል፦ በምንጩ መጋዘን በቂ ጥቅም ላይ የሚውል ክምችት የለም።",
+      "expired_skipped": "ጊዜያቸው ባለፈ ሎቶች ውስጥ ያለ {qty} ተዘሏል።"
     }
   },
   "demo": {

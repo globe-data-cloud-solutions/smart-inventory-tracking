@@ -804,6 +804,19 @@
       "status": {
         "OPEN": "Open"
       }
+    },
+    "preview": {
+      "strategy": "Dispatch order: {strategy}",
+      "strategies": {
+        "FEFO": "FEFO (first expired, first out)",
+        "FIFO": "FIFO (first in, first out)",
+        "LIFO": "LIFO (last in, first out)"
+      },
+      "likely_lots": "Likely lots:",
+      "expiry": "expires {date}",
+      "note": "Lots are confirmed at approval. Nothing is reserved now.",
+      "shortfall": "Short by {qty}: not enough usable stock at the source.",
+      "expired_skipped": "{qty} in expired lots was skipped."
     }
   },
   "products": {

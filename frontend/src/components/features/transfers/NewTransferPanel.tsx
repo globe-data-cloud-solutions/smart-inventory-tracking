@@ -11,6 +11,7 @@ import { useWriteGuard, guardProps } from "@/hooks/useWriteGuard";
 import { t } from "@/lib/i18n";
 import { formatQty } from "@/lib/utils";
 import { buildOverrideTooltip } from "@/components/features/inventory/ProductLabel";
+import { DispatchPreviewInfo, fetchDispatchPreview, type DispatchPreviewApi } from "@/components/features/transfers/DispatchPreview";
 import type { DemoProduct, DemoWarehouse, ProductApprovalOverride } from "@/lib/demo-data";
 
 function getAncestorScope(warehouseId: string, warehouses: DemoWarehouse[]): string[] {
@@ -249,6 +250,22 @@ export function NewTransferPanel({ products, warehouses, orgSlug }: Props) {
   const qty = parseFloat(form.quantity);
   const estimatedValue = unitPrice && qty > 0 ? unitPrice * qty : undefined;
 
+  // Dispatch preview — information only. Never blocks the request and nothing
+  // from it is sent with the request; lots are allocated at approval.
+  const [preview, setPreview] = useState<DispatchPreviewApi | null>(null);
+  const previewProductId = form.productId;
+  useEffect(() => {
+    setPreview(null);
+    if (!open || !previewProductId || !effectiveFrom || !(qty > 0)) return;
+    let stale = false;
+    const timer = setTimeout(() => {
+      fetchDispatchPreview(previewProductId, effectiveFrom, qty)
+        .then((data) => { if (!stale) setPreview(data); })
+        .catch((err: unknown) => { if (!stale) console.warn("[NewTransferPanel] dispatch preview failed:", err); });
+    }, 400);
+    return () => { stale = true; clearTimeout(timer); };
+  }, [open, previewProductId, effectiveFrom, qty]);
+
   const productOptions: ProductOption[] = [...products]
     .map((p) => { const base = effectiveFrom ? (p.stock[effectiveFrom] ?? 0) : 0; const avail = effectiveFrom ? getAvailable(p.id, effectiveFrom, base) : 0; return { id: p.id, name: p.name, sku: p.sku, avail, tier: effectiveFrom ? stockTier(avail, p.reorderPoint) : 0, sourceKnown: !!effectiveFrom, isControlled: !!(p.approval_overrides && Object.keys(p.approval_overrides).length > 0), override: p.approval_overrides?.[form.transferType] } as ProductOption; })
     .sort((a, b) => a.tier - b.tier || a.name.localeCompare(b.name));
@@ -397,6 +414,8 @@ export function NewTransferPanel({ products, warehouses, orgSlug }: Props) {
               </p>
             )}
           </Field>
+
+          {preview && <DispatchPreviewInfo preview={preview} />}
 
           <Field label={t("audit.notes")} hint={`(${t("receive_panel.optional")})`}>
             <textarea value={form.notes} onChange={(e) => setField("notes", e.target.value)} placeholder={t("transfer_panel.notes_placeholder")} rows={3} className={`${inputCls} resize-y`} />
