@@ -27,6 +27,7 @@ WAREHOUSE_A  = "20000000-0000-0000-0000-000000000001"
 WAREHOUSE_B  = "20000000-0000-0000-0000-000000000002"
 PRODUCT_ID   = "aaaaaaaa-0000-0000-0000-000000000001"
 TRANSFER_ID  = "cccccccc-0000-0000-0000-000000000001"
+LINE_ID      = "eeeeeeee-0000-0000-0000-000000000001"
 ADJ_ID       = "dddddddd-0000-0000-0000-000000000001"
 
 
@@ -61,6 +62,7 @@ def _make_transfer_row() -> MagicMock:
 
 def _make_line_row() -> MagicMock:
     row = MagicMock()
+    row.line_id       = UUID(LINE_ID)
     row.product_id    = UUID(PRODUCT_ID)
     row.product_name  = "Cement 50kg"
     row.sku           = "CEM-50"
@@ -175,6 +177,22 @@ class TestListTransfersScopedByRole:
         assert item.lines[0].product_name == "Cement 50kg"
         assert item.lines[0].sku          == "CEM-50"
         assert item.lines[0].quantity     == Decimal("100")
+
+    async def test_list_transfers_lines_carry_line_id(self) -> None:
+        """Every line of a list item carries its transfer_order_lines id — the
+        receive form sends it back as line_id."""
+        session = AsyncMock()
+        session.execute = AsyncMock(side_effect=[
+            MagicMock(fetchall=MagicMock(return_value=[_make_transfer_row()])),
+            MagicMock(fetchall=MagicMock(return_value=[_make_line_row()])),
+        ])
+
+        svc = InventoryService(session)
+        results = await svc.list_transfers(NM_USER)
+
+        assert [line.line_id for line in results[0].lines] == [UUID(LINE_ID)]
+        lines_sql = str(session.execute.call_args_list[1].args[0])
+        assert "tol.id" in lines_sql and "AS line_id" in lines_sql
 
     async def test_list_transfers_empty_returns_empty_list(self) -> None:
         """Empty transfer_orders table returns an empty list, not an error."""

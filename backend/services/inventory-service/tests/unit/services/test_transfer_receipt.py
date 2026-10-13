@@ -111,6 +111,19 @@ class _World:
                 )
                 for line_id, lot_id, qty in self.allocations
             ]
+        elif "FROM transfer_order_lines tol" in sql:
+            # list / detail line items (joined to products)
+            result.fetchall.return_value = [
+                SimpleNamespace(
+                    line_id=line.id,
+                    product_id=line.product_id,
+                    product_name=f"Product {line.product_id}",
+                    sku=f"SKU-{line.product_id}",
+                    quantity=line.quantity,
+                    uom="bags",
+                )
+                for line in self.lines
+            ]
         elif "FROM transfer_order_lines" in sql:
             result.fetchall.return_value = self.lines
         elif "UPDATE transfer_orders" in sql:
@@ -429,6 +442,22 @@ class TestReceiptConfirmation:
         ] == [(LINE_1, PRODUCT_ID, LOT_B, "LOT-B", Decimal("40"), Decimal("38"),
                Decimal("2"), "SHORT", "OPEN")]
         assert len(result.lot_allocations) == 2
+
+    async def test_get_transfer_returns_lines_with_line_id(self) -> None:
+        """GET /{id} lists every line with its line_id — batch and non-batch alike."""
+        from services.inventory_service import InventoryService
+
+        world = _World()
+        result = await InventoryService(world.db()).get_transfer(DST_WM, TRANSFER_ID)
+
+        assert [(str(l.line_id), str(l.product_id), l.quantity) for l in result.lines] == [
+            (LINE_1, PRODUCT_ID, Decimal("100")),
+            (LINE_2, PRODUCT_2, Decimal("30")),
+        ]
+        # every allocation points at a returned line
+        assert {str(a.line_id) for a in result.lot_allocations} <= {
+            str(l.line_id) for l in result.lines
+        }
 
 
 # ── endpoints ────────────────────────────────────────────────────────────────

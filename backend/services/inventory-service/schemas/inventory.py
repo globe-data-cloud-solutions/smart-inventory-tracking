@@ -167,6 +167,15 @@ class TransferDiscrepancyOut(BaseModel):
     created_at: datetime
 
 
+class TransferLineItem(BaseModel):
+    line_id: uuid.UUID
+    product_id: uuid.UUID
+    product_name: str
+    sku: str
+    quantity: Decimal
+    uom: str
+
+
 class TransferOrderResponse(BaseModel):
     transfer_id: uuid.UUID
     transfer_type: str
@@ -180,6 +189,7 @@ class TransferOrderResponse(BaseModel):
     is_self_approved: bool = False
     current_approval_step: Optional[int] = None
     resolved_approval_steps: Optional[list] = None
+    lines: List[TransferLineItem] = []
     lot_allocations: list[TransferLotAllocation] = []
     discrepancies: list[TransferDiscrepancyOut] = []
 
@@ -332,14 +342,6 @@ class AdjustStockResponse(BaseModel):
 
 
 # ── List response schemas ──────────────────────────────────────────────────────
-
-class TransferLineItem(BaseModel):
-    product_id: uuid.UUID
-    product_name: str
-    sku: str
-    quantity: Decimal
-    uom: str
-
 
 class TransferListItem(BaseModel):
     transfer_id: uuid.UUID

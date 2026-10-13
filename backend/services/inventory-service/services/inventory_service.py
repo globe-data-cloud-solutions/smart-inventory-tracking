@@ -1804,6 +1804,7 @@ class InventoryService:
             to_warehouse_id=row.to_warehouse_id,
             created_at=datetime.now(timezone.utc),
             is_self_approved=bool(row.is_self_approved),
+            lines=await self._transfer_line_items(transfer_id),
             lot_allocations=[
                 TransferLotAllocation(
                     line_id=line_id,
@@ -2249,6 +2250,35 @@ class InventoryService:
             created_at=datetime.now(timezone.utc),
         )
 
+    async def _transfer_line_items(self, transfer_id: Any) -> list[TransferLineItem]:
+        """The lines of one transfer with product name/SKU, for list and detail responses."""
+        line_rows = (await self.db.execute(
+            text("""
+                SELECT
+                    tol.id               AS line_id,
+                    tol.product_id,
+                    p.name               AS product_name,
+                    p.sku,
+                    tol.quantity,
+                    COALESCE(p.unit, '') AS uom
+                FROM transfer_order_lines tol
+                JOIN products p ON p.id = tol.product_id
+                WHERE tol.transfer_order_id = :xfer_id
+            """),
+            {"xfer_id": str(transfer_id)},
+        )).fetchall()
+        return [
+            TransferLineItem(
+                line_id=line.line_id,
+                product_id=line.product_id,
+                product_name=line.product_name,
+                sku=line.sku,
+                quantity=Decimal(str(line.quantity)),
+                uom=line.uom,
+            )
+            for line in line_rows
+        ]
+
     async def list_transfers(
         self, user: Any, page: int = 1, limit: int = 50
     ) -> list[TransferListItem]:
@@ -2296,21 +2326,6 @@ class InventoryService:
         results: list[TransferListItem] = []
 
         for r in rows:
-            lines_sql = text("""
-                SELECT
-                    tol.product_id,
-                    p.name               AS product_name,
-                    p.sku,
-                    tol.quantity,
-                    COALESCE(p.unit, '') AS uom
-                FROM transfer_order_lines tol
-                JOIN products p ON p.id = tol.product_id
-                WHERE tol.transfer_order_id = :xfer_id
-            """)
-            line_rows = (
-                await self.db.execute(lines_sql, {"xfer_id": str(r.transfer_id)})
-            ).fetchall()
-
             _rs = r.resolved_approval_steps
             if isinstance(_rs, str):
                 try:
@@ -2335,16 +2350,7 @@ class InventoryService:
                     is_self_approved=bool(r.is_self_approved),
                     current_step=r.current_approval_step or 1,
                     total_steps=_total_steps,
-                    lines=[
-                        TransferLineItem(
-                            product_id=line.product_id,
-                            product_name=line.product_name,
-                            sku=line.sku,
-                            quantity=Decimal(str(line.quantity)),
-                            uom=line.uom,
-                        )
-                        for line in line_rows
-                    ],
+                    lines=await self._transfer_line_items(r.transfer_id),
                 )
             )
 

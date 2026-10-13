@@ -134,6 +134,19 @@ class _World:
                 SimpleNamespace(id=k, lot_number=v[0], expiry_date=v[1])
                 for k, v in self.lots.items()
             ]
+        elif "FROM transfer_order_lines tol" in sql:
+            # list / detail line items (joined to products)
+            result.fetchall.return_value = [
+                SimpleNamespace(
+                    line_id=line.id,
+                    product_id=line.product_id,
+                    product_name=f"Product {line.product_id}",
+                    sku=f"SKU-{line.product_id}",
+                    quantity=line.quantity,
+                    uom="bags",
+                )
+                for line in self.lines
+            ]
         elif "FROM transfer_order_lines" in sql:
             result.fetchall.return_value = self.lines
         elif "FROM transfer_orders" in sql:
