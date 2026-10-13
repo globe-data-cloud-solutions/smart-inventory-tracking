@@ -435,6 +435,23 @@ CREATE INDEX idx_transfer_discrepancies_tenant_status
 ALTER TABLE transfer_discrepancies ENABLE ROW LEVEL SECURITY;
 CREATE POLICY tenant_isolation ON transfer_discrepancies
   USING (tenant_id = current_setting('app.current_tenant_id', true)::uuid);
+
+-- ── adjustment_orders — lot columns (migration 087) ──────────────────────────
+-- An adjustment on a batch-tracked product names the lot it posts against.
+-- Removal: lot_id (an existing lot with stock at the warehouse).
+-- Addition: exactly one of lot_id (existing lot) | lot_number (+ expiry_date,
+-- a new lot) | auto_lot (a new auto-numbered lot).
+-- A new lot is created only at posting; lot_id is then set to the posted lot.
+-- RLS was already enabled on adjustment_orders — no policy added in 087.
+ALTER TABLE adjustment_orders
+  ADD COLUMN lot_id       UUID NULL REFERENCES stock_lots(id),
+  ADD COLUMN lot_number   VARCHAR(100) NULL,   -- new lot number entered by the user
+  ADD COLUMN expiry_date  DATE NULL,           -- expiry for that new lot
+  ADD COLUMN auto_lot     BOOLEAN NOT NULL DEFAULT false,
+  ADD CONSTRAINT ck_adjustment_orders_auto_lot_no_number
+    CHECK (NOT (auto_lot AND lot_number IS NOT NULL));
+CREATE INDEX ix_adjustment_orders_tenant_lot
+  ON adjustment_orders (tenant_id, lot_id);
 ```
 
 ### Alembic migration rules
