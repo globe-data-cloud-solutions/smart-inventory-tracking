@@ -1,7 +1,8 @@
-from typing import List
+from typing import List, Optional
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Body, Depends, HTTPException, Query
+from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from dependencies import get_db_session
@@ -12,6 +13,7 @@ from shared.permissions.registry import PERMISSIONS
 from shared.utils.responses import SuccessResponse
 from schemas.inventory import (
     ApprovalInfoResponse,
+    TransferApproveRequest,
     TransferListItem,
     TransferOrderRequest,
     TransferOrderResponse,
@@ -107,11 +109,51 @@ async def review_transfer(
 @require_permission(PERMISSIONS.TRANSFER_APPROVE)
 async def approve_transfer(
     transfer_id: UUID,
+    body: Optional[TransferApproveRequest] = Body(None),
     user=Depends(get_current_user),
     db: AsyncSession = Depends(get_db_session),
 ) -> SuccessResponse[TransferOrderResponse]:
+    """Approve a transfer. The optional body lets the FINAL approver choose lots.
+
+    A selection that differs from the engine's order is an override: FEFO needs
+    dispatch:fefo_override (and a reason), FIFO/LIFO needs dispatch:lot_select at
+    the source warehouse. Both are resolved here and enforced in transfer_lots.
+    """
     svc = InventoryService(db)
-    result = await svc.transition_transfer(user, transfer_id, "APPROVED")
+    if body is None or not body.lot_selections:
+        result = await svc.transition_transfer(user, transfer_id, "APPROVED")
+        return SuccessResponse(data=result)
+
+    tid = str(user.tenant_id)
+    transfer_row = (await db.execute(
+        text("SELECT from_warehouse_id FROM transfer_orders WHERE id = :id AND tenant_id = :tid"),
+        {"id": str(transfer_id), "tid": tid},
+    )).fetchone()
+    if not transfer_row:
+        raise HTTPException(status_code=404, detail="Transfer not found")
+
+    from shared.permissions.middleware import check_permission
+
+    # A CONDITIONAL grant returns allowed=True; the FEFO reason rule covers it.
+    can_fefo_override = (await check_permission(
+        user, PERMISSIONS.DISPATCH_FEFO_OVERRIDE, {"tenant_id": tid}, db=db
+    )).allowed
+    can_lot_select = (await check_permission(
+        user,
+        PERMISSIONS.DISPATCH_LOT_SELECT,
+        {"tenant_id": tid, "warehouse_id": str(transfer_row.from_warehouse_id)},
+        db=db,
+    )).allowed
+
+    result = await svc.transition_transfer(
+        user,
+        transfer_id,
+        "APPROVED",
+        lot_selections=body.lot_selections,
+        override_reason=body.override_reason,
+        can_fefo_override=can_fefo_override,
+        can_lot_select=can_lot_select,
+    )
     return SuccessResponse(data=result)
 
 

@@ -149,6 +149,25 @@ class TransferOrderResponse(BaseModel):
     lot_allocations: list[TransferLotAllocation] = []
 
 
+class LotPick(BaseModel):
+    lot_id: uuid.UUID
+    quantity: Decimal = Field(gt=0)
+
+
+class LineLotSelection(BaseModel):
+    line_id: uuid.UUID
+    lots: List[LotPick] = Field(min_length=1)
+
+
+class TransferApproveRequest(BaseModel):
+    lot_selections: Optional[List[LineLotSelection]] = None
+    override_reason: Optional[str] = Field(None, max_length=500)
+
+    @field_validator("override_reason", mode="before")
+    @classmethod
+    def no_null_bytes(cls, v: object) -> object: return _no_null(v)
+
+
 class TransferActionRequest(BaseModel):
     notes: Optional[str] = None
 
