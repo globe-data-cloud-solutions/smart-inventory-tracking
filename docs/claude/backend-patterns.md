@@ -485,6 +485,53 @@ non-batch product (`strategy: null`, `NOT_BATCH`, no lines) is a 200, not an err
 
 Real-DB proof: `python scripts/smoke_dispatch_engine.py` (rollback-only).
 
+### Transfers
+
+`backend/services/inventory-service/services/transfer_lots.py` (migration 085,
+`transfer_line_allocations`). A batch-tracked transfer line is split into lots
+ONCE — at final approval or self-approval — and every later step replays that
+split rather than re-allocating.
+
+- **Allocation timing**: `post_transfer_out()` allocates (or accepts the
+  approver's manual selection) the first time a line is posted, INSERTs one
+  `transfer_line_allocations` row per lot, then posts one `TRANSFER_OUT` per
+  lot. A replay with the same `key_prefix` finds the stored rows and reuses
+  them — nothing is allocated twice, and a lot whose `TRANSFER_OUT` already
+  exists (409 on the ledger insert) is skipped as an idempotent no-op.
+- **Ledger keys**: a batch line's entries key as
+  `<key_prefix>:line:<line_id>:lot:<lot_id>`; a non-batch line keeps the old
+  `<key_prefix>:line:<line_id>` key (no allocation rows for non-batch lines).
+- **Lock order**: same as `record_transaction()` — the product's
+  `inventory_balances` row `FOR UPDATE` first, then the lot rows (`allocate()`
+  locks `lot_balances` `ORDER BY lot_id`).
+- **Overrides**: only at `POST /transfers/{id}/approve` (the final approval
+  step). The router resolves both checks up front and passes them in — a FEFO
+  override needs `DISPATCH_FEFO_OVERRIDE` plus a non-blank reason
+  (`OVERRIDE_REASON_REQUIRED` otherwise); a FIFO/LIFO override needs
+  `DISPATCH_LOT_SELECT` — both scoped at the source warehouse. An override
+  without the matching permission raises `OVERRIDE_NOT_PERMITTED` (403).
+- **Transit audit vs. receipt credit**: `post_lot_audit()` writes
+  `TRANSIT_OUT` / `TRANSIT_IN` / `TRANSIT_CLEAR` / `TRANSFER_REVERSAL` entries
+  per allocation — audit only, no balance effect beyond what `TRANSFER_OUT`
+  already moved. `post_transfer_in()` credits the destination with one
+  `TRANSFER_IN` per allocation on the **same `lot_id`** the source was debited
+  on, so `stock_lots.lot_number`, `expiry_date` and `first_received_at` carry
+  over unchanged.
+- **Cancel after approval**: reverses each allocation at the source via
+  `post_lot_audit(..., transaction_type="TRANSFER_REVERSAL", sign=1)`.
+- **Batch-tracking toggle guard**: `lot_settings_service.py` blocks turning
+  batch tracking OFF while any lot still carries a positive balance
+  (`BATCH_TRACKING_IN_USE`, 409), and blocks turning it ON while any transfer
+  of the product is past approval — status in `APPROVED`, `ADVISED`,
+  `ISSUED`, `IN_TRANSIT` or `PARTIALLY_RECEIVED`
+  (`BATCH_TRACKING_TRANSFERS_OPEN`, 409). Transfers still waiting on approval
+  don't block the toggle — their lots haven't been picked yet.
+- **Not built yet (Phase C2)**: per-lot received quantities and discrepancies
+  at receipt — `post_transfer_in()` currently credits the full allocated
+  quantity per lot with no partial-receipt or variance path.
+
+Real-DB proof: `python scripts/smoke_transfer_lots.py` (rollback-only).
+
 
 ## 17. Workflow State Machines
 
