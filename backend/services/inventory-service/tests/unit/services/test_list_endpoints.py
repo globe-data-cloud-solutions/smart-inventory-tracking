@@ -85,6 +85,10 @@ def _make_adj_row() -> MagicMock:
     row.created_by     = "u-wm"
     row.created_at     = _NOW
     row.notes          = None
+    row.lot_id         = None
+    row.lot_number     = None
+    row.expiry_date    = None
+    row.auto_lot       = False
     return row
 
 

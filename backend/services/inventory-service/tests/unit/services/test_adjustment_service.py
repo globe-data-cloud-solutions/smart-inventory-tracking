@@ -49,7 +49,13 @@ TA  = _User("u-ta-001",  TENANT_ID, "",            "TA")   # Tenant Admin — no
 
 @pytest.fixture()
 def db() -> AsyncMock:
-    return AsyncMock()
+    # Row lookups find nothing: approve_adjustment() then posts without a lot,
+    # as it does for a non-batch product.
+    mock_db = AsyncMock()
+    mock_db.execute = AsyncMock(
+        return_value=MagicMock(fetchone=MagicMock(return_value=None))
+    )
+    return mock_db
 
 
 @pytest.fixture()
