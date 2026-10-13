@@ -4,7 +4,7 @@ import uuid
 from datetime import date, datetime
 from decimal import Decimal
 from enum import Enum
-from typing import List, Optional
+from typing import List, Literal, Optional
 
 from pydantic import BaseModel, Field, field_validator
 
@@ -133,6 +133,40 @@ class TransferLotAllocation(BaseModel):
     is_override: bool = False
 
 
+class ReceiptLineIn(BaseModel):
+    """What arrived for one transfer line (non-batch) or one lot of a line (batch)."""
+    line_id: uuid.UUID
+    lot_id: Optional[uuid.UUID] = None
+    # 4 decimal places = NUMERIC(15,4) on transfer_discrepancies.
+    received_quantity: Decimal = Field(ge=0, max_digits=15, decimal_places=4)
+    reason: Optional[Literal["SHORT", "DAMAGED", "WRONG_LOT"]] = None
+    note: Optional[str] = Field(None, max_length=500)
+
+    @field_validator("note", mode="before")
+    @classmethod
+    def no_null_bytes(cls, v: object) -> object: return _no_null(v)
+
+
+class ReceiveTransferRequest(BaseModel):
+    lines: List[ReceiptLineIn] = Field(min_length=1)
+
+
+class TransferDiscrepancyOut(BaseModel):
+    """One shortfall recorded at receipt (transfer_discrepancies)."""
+    id: uuid.UUID
+    transfer_line_id: uuid.UUID
+    product_id: uuid.UUID
+    lot_id: Optional[uuid.UUID] = None
+    lot_number: Optional[str] = None
+    sent_quantity: Decimal
+    received_quantity: Decimal
+    missing_quantity: Decimal
+    reason: str
+    note: Optional[str] = None
+    status: str
+    created_at: datetime
+
+
 class TransferOrderResponse(BaseModel):
     transfer_id: uuid.UUID
     transfer_type: str
@@ -147,6 +181,7 @@ class TransferOrderResponse(BaseModel):
     current_approval_step: Optional[int] = None
     resolved_approval_steps: Optional[list] = None
     lot_allocations: list[TransferLotAllocation] = []
+    discrepancies: list[TransferDiscrepancyOut] = []
 
 
 class LotPick(BaseModel):
