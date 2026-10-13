@@ -526,11 +526,56 @@ split rather than re-allocating.
   `ISSUED`, `IN_TRANSIT` or `PARTIALLY_RECEIVED`
   (`BATCH_TRACKING_TRANSFERS_OPEN`, 409). Transfers still waiting on approval
   don't block the toggle — their lots haven't been picked yet.
-- **Not built yet (Phase C2)**: per-lot received quantities and discrepancies
-  at receipt — `post_transfer_in()` currently credits the full allocated
-  quantity per lot with no partial-receipt or variance path.
 
 Real-DB proof: `python scripts/smoke_transfer_lots.py` (rollback-only).
+
+#### Receipt confirmation (C2)
+
+`InventoryService.receive_transfer()` +
+`backend/services/inventory-service/services/transfer_discrepancies.py`
+(migration 086, `transfer_discrepancies`). The destination confirms what
+actually arrived — per allocated lot for a batch line, per line for a
+non-batch line.
+
+- **One receipt event, always RECEIVED**: a transfer is received once and ends
+  in `RECEIVED`, short or not. `PARTIALLY_RECEIVED` is kept in the state
+  machine but is unreachable — `PATCH /transfers/{id}` to it returns 422
+  `PARTIAL_RECEIPT_NOT_SUPPORTED`.
+- **Optional body**: `POST /transfers/{id}/receive` takes an optional
+  `ReceiveTransferRequest` (`lines: [{line_id, lot_id?, received_quantity,
+  reason?, note?}]`). No body — and `PATCH` to `RECEIVED` — is a full receipt
+  with the same ledger entries and idempotency keys as before C2.
+- **What the ledger gets**: `TRANSFER_IN` credits only what arrived (same
+  `lot_id` as the source, key `transfer:<id>:receive:in:line:<line_id>` plus
+  `:lot:<lot_id>` for a batch line). `TRANSIT_CLEAR` always clears the full
+  sent quantity at source and destination. A received quantity of 0 writes no
+  `TRANSFER_IN` (and no `StockTransferred` event) at all.
+- **Where the shortfall lives**: only in `transfer_discrepancies` — one row
+  per short lot (batch) or line (non-batch), `status = 'OPEN'`,
+  `missing = sent - received`. Record-only: no ledger entry carries the
+  missing quantity. Append-only by code — `insert_discrepancy()` is the only
+  write path; there is no update or delete function. Resolution (write-off, or
+  return to the source lot) is a later phase.
+- **Validation — all before any write**: `validate_receipt()` checks the whole
+  body against `expected_entries()` (one entry per allocation of a batch line,
+  one `lot_id = NULL` entry per non-batch line) before the first ledger entry.
+  All four codes are HTTP 422:
+
+  | Code | When |
+  |---|---|
+  | `RECEIPT_LINES_MISMATCH` | the body does not list every expected (line, lot) entry exactly once |
+  | `RECEIPT_EXCEEDS_SENT` | `received_quantity` is above what was sent |
+  | `RECEIPT_REASON_REQUIRED` | `received_quantity` is below what was sent and `reason` is missing (`SHORT` \| `DAMAGED` \| `WRONG_LOT`) |
+  | `PARTIAL_RECEIPT_NOT_SUPPORTED` | `PATCH` to `PARTIALLY_RECEIVED` (router) |
+
+- **In-transit analytics**: `in_transit_out` / `in_transit_in` in
+  `inventory_analytics.get_stock()` are driven by transfer status, so both
+  drop to 0 at `RECEIVED` — a shortfall never stays "in transit".
+- **Read side**: `receive_transfer()` and `get_transfer()` return
+  `discrepancies` (`TransferDiscrepancyOut`, with `lot_number` joined from
+  `stock_lots`).
+
+Real-DB proof: `python scripts/smoke_transfer_receipt.py` (rollback-only).
 
 
 ## 17. Workflow State Machines
