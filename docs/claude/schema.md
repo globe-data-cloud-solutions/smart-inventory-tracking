@@ -345,6 +345,31 @@ CREATE INDEX idx_threshold_tenant_facility ON stock_threshold (tenant_id, facili
 ALTER TABLE stock_threshold ENABLE ROW LEVEL SECURITY;
 CREATE POLICY tenant_isolation ON stock_threshold
   USING (tenant_id = current_setting('app.current_tenant_id', true)::uuid);
+
+-- ── lot_allocation_overrides (migration 083) ─────────────────────────────────
+-- One row per dispatch where the user's lot selection differed from the engine's
+-- suggestion. Append-only BY CODE: dispatch_service.record_override() is the only
+-- writer and no update/delete function exists (no PostgreSQL RULE on this table).
+CREATE TABLE lot_allocation_overrides (
+  id             UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  tenant_id      UUID NOT NULL,
+  product_id     UUID NOT NULL REFERENCES products(id),
+  warehouse_id   UUID NOT NULL,
+  strategy       dispatch_strategy NOT NULL,     -- existing enum
+  movement_type  VARCHAR(30) NOT NULL,           -- e.g. ISSUE, TRANSFER, ADJUSTMENT
+  reference_id   UUID,                           -- the movement/transfer id, set by the caller
+  requested_qty  NUMERIC(15,4) NOT NULL CHECK (requested_qty > 0),
+  suggested      JSONB NOT NULL,                 -- [{lot_id, lot_number, quantity}] engine order
+  chosen         JSONB NOT NULL,                 -- [{lot_id, lot_number, quantity}] user choice
+  reason         TEXT,                           -- required by code for FEFO overrides
+  overridden_by  UUID NOT NULL,
+  created_at     TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX idx_lot_allocation_overrides_tenant_product_created
+  ON lot_allocation_overrides (tenant_id, product_id, created_at);
+ALTER TABLE lot_allocation_overrides ENABLE ROW LEVEL SECURITY;
+CREATE POLICY tenant_isolation ON lot_allocation_overrides
+  USING (tenant_id = current_setting('app.current_tenant_id', true)::uuid);
 ```
 
 ### Alembic migration rules

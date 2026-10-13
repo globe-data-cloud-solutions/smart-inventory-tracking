@@ -432,37 +432,58 @@ POST /api/v1/{tenant}/transfers/sister   # Sister transfer — uses SISTER_TRANS
 
 ## 16. Dispatch Strategy Engine
 
-```python
-# backend/services/inventory-service/services/dispatch_service.py
-async def resolve_strategy(db, tenant_id, product_id, category_id,
-                           batch_tracking: bool, expiry_tracking: bool) -> str:
-    # Auto-FEFO when both batch tracking AND expiry date are active
-    if batch_tracking and expiry_tracking:
-        return "FEFO"
-    cfg = await get_dispatch_config(db, tenant_id, "PRODUCT", product_id)
-    if cfg: return cfg.strategy
-    cfg = await get_dispatch_config(db, tenant_id, "CATEGORY", category_id)
-    if cfg: return cfg.strategy
-    return "FIFO"   # system default
+`backend/services/inventory-service/services/dispatch_service.py` (Phase B). It only
+decides WHICH lots a movement draws from (`lot_balances` JOIN `stock_lots`); it never
+writes a balance — deductions still go through `record_transaction()`.
 
-async def select_lots(db, tenant_id, product_id, warehouse_id,
-                      required_qty: Decimal, strategy: str) -> list:
-    lots = await get_available_lots(db, tenant_id, product_id, warehouse_id)
-    if   strategy == "FEFO": lots.sort(key=lambda l: l.expiry_date)
-    elif strategy == "FIFO": lots.sort(key=lambda l: l.received_at)
-    else:                    lots.sort(key=lambda l: l.received_at, reverse=True)
+**Strategy resolution** — `resolve_strategy(batch_tracking, expiry_tracking, product_strategy)`
+returns `(strategy, source)`, pure, first match wins:
 
-    selections, remaining = [], required_qty
-    for lot in lots:
-        if remaining <= 0: break
-        take = min(lot.available_quantity, remaining)
-        selections.append(LotSelection(lot_id=lot.id, lot_number=lot.lot_number,
-                                       quantity=take, strategy_applied=strategy))
-        remaining -= take
-    if remaining > 0:
-        raise InsufficientStockError(product_id, required_qty, required_qty - remaining)
-    return selections
-```
+| Condition | Result |
+|---|---|
+| not batch-tracked | `(None, "NOT_BATCH")` |
+| expiry-tracked | `("FEFO", "FORCED")` |
+| `products.dispatch_strategy` set | `(it, "PRODUCT")` |
+| otherwise | `("FIFO", "DEFAULT")` |
+
+Category strategy is **parked**: the engine never reads categories or the archived
+`dispatch_strategy_configs` table.
+
+**Sort keys** (`sort_lots`, deterministic):
+
+- FEFO: lots with NO expiry first (OPENING and pre-expiry-tracking lots), then
+  `expiry_date` asc, `first_received_at` asc, `lot_number` asc.
+- FIFO: `first_received_at` asc, `lot_number` asc.
+- LIFO: `first_received_at` desc, `lot_number` asc.
+
+**Allocation** — `plan_allocation(lots, qty, strategy, today)` returns
+`Allocation(lines, shortfall, expired_skipped)` and never raises. Lots with
+`expiry_date < today` are NEVER allocated under any strategy (reported in
+`expired_skipped`); zero-quantity lots are ignored.
+
+**Locking** — `load_candidate_lots(..., lock=True)` first locks the product's
+`lot_balances` rows in that warehouse `ORDER BY lot_id FOR UPDATE` (fixed order, no
+deadlocks), then reads. `allocate()` (write paths, Phase C) always locks and raises
+`InsufficientStockError` on shortfall. The preview never locks.
+
+**Manual selection + override** — `validate_manual_selection()` returns
+`(plan, is_override)` and raises `DispatchError(code)` — a domain error, not an
+HTTPException — with `LOT_NOT_IN_WAREHOUSE`, `LOT_EXPIRED`, `INSUFFICIENT_LOT_STOCK`
+or `SELECTION_QTY_MISMATCH`. `is_override` is true when the chosen lot/quantity set
+differs from the plan (order within the selection is irrelevant).
+`record_override()` INSERTs one `lot_allocation_overrides` row (append-only by code —
+no update/delete function). A FEFO override needs a non-blank reason
+(`OVERRIDE_REASON_REQUIRED`); for FIFO/LIFO it is optional. The CALLER must check
+`PERMISSIONS.DISPATCH_FEFO_OVERRIDE` for FEFO overrides and
+`PERMISSIONS.DISPATCH_LOT_SELECT` for FIFO/LIFO overrides — Phase C wires the callers.
+
+**Preview** — `GET /api/v1/inventory/dispatch/preview?product_id&warehouse_id&quantity`
+(`routers/dispatch.py`, read replica, `inventory:view_balance`, same `warehouse_id`
+ABAC scoping as `GET /lots`). Returns `{product_id, warehouse_id, quantity, strategy,
+strategy_source, lines, shortfall, expired_skipped, available_total}`; a shortfall or a
+non-batch product (`strategy: null`, `NOT_BATCH`, no lines) is a 200, not an error.
+
+Real-DB proof: `python scripts/smoke_dispatch_engine.py` (rollback-only).
 
 
 ## 17. Workflow State Machines
