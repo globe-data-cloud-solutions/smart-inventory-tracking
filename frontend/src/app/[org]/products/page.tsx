@@ -23,6 +23,7 @@ type ApiProduct = {
   brand?: string | null; packaging_type?: string | null; units_per_package?: number | null;
   reorder_point?: number | string | null; unit_price?: number | string | null; currency?: string | null;
   image_url?: string | null;
+  batch_tracking?: boolean; expiry_tracking?: boolean; dispatch_strategy?: string | null;
 };
 type StockItem   = { product_id: string; current_stock: string; };
 type Row        = {
@@ -123,7 +124,7 @@ export default function ProductsPage() {
   const apiRows: Row[] = apiProducts.map((p) => ({
     id: p.id, sku: p.sku, name: p.name, category: p.category ?? "—", unit: p.unit, packSize: String(p.pack_size),
     balance: isGatewayMode ? (productBalanceMap.get(p.id) ?? 0) : 0,
-    batchTracking: false, isNew: !isGatewayMode, isActive: true, is_discontinued: p.is_discontinued ?? false,
+    batchTracking: p.batch_tracking ?? false, isNew: !isGatewayMode, isActive: true, is_discontinued: p.is_discontinued ?? false,
     is_controlled: p.is_controlled ?? false,
     image_url: p.image_url ?? null,
     editData: {
@@ -131,6 +132,8 @@ export default function ProductsPage() {
       category: p.category, type_code: p.type_code, brand: p.brand, unit: p.unit,
       packaging_type: p.packaging_type, units_per_package: p.units_per_package,
       reorder_point: p.reorder_point, unit_price: p.unit_price, currency: p.currency,
+      batch_tracking: p.batch_tracking ?? false, expiry_tracking: p.expiry_tracking ?? false,
+      dispatch_strategy: p.dispatch_strategy ?? null,
     },
   }));
 
@@ -305,6 +308,7 @@ export default function ProductsPage() {
           mode="edit"
           productId={editingProduct.id}
           initialData={editingProduct.editData}
+          onHandBalance={editingProduct.balance}
           onClose={() => setEditingProduct(null)}
         />
       )}
