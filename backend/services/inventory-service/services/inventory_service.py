@@ -39,9 +39,12 @@ from schemas.inventory import (
     ReceiveStockResponse,
     TransferLineItem,
     TransferListItem,
+    TransferLotAllocation,
     TransferOrderRequest,
     TransferOrderResponse,
 )
+from services import transfer_lots
+from services.dispatch_service import DispatchError, InsufficientStockError
 from services.state_machine import InvalidStateTransitionError, validate_transition
 from shared.permissions.audit import audit_log
 
@@ -824,7 +827,14 @@ class InventoryService:
         )
 
     async def transition_transfer(
-        self, user: Any, transfer_id: UUID, next_state: str
+        self,
+        user: Any,
+        transfer_id: UUID,
+        next_state: str,
+        lot_selections: Optional[list] = None,
+        override_reason: Optional[str] = None,
+        can_fefo_override: bool = False,
+        can_lot_select: bool = False,
     ) -> TransferOrderResponse:
         result = await self.db.execute(
             text("SELECT * FROM transfer_orders WHERE id = :id FOR UPDATE"),
@@ -844,6 +854,11 @@ class InventoryService:
                 status_code=422,
                 detail={"code": "INVALID_STATE_TRANSITION", "detail": str(exc)},
             ) from exc
+
+        # Lots are chosen only on the call that posts TRANSFER_OUT (final approval).
+        if lot_selections and next_state != "APPROVED":
+            from fastapi import HTTPException
+            raise HTTPException(status_code=422, detail={"code": "LOT_SELECTION_NOT_ALLOWED"})
 
         _lines_query = text(
             "SELECT * FROM transfer_order_lines "
@@ -903,17 +918,18 @@ class InventoryService:
                         status_transition="DRAFT_TO_SELF_APPROVED_RESERVE",
                         line_id=str(line.id),
                     )
-                    await record_transaction(
+                try:
+                    await transfer_lots.post_transfer_out(
                         self.db,
                         tenant_id=str(user.tenant_id),
-                        transaction_type="TRANSFER_OUT",
-                        product_id=str(line.product_id),
-                        warehouse_id=str(row.from_warehouse_id),
-                        quantity=-Decimal(str(line.quantity)),
-                        performed_by=str(user.user_id),
-                        idempotency_key=f"transfer:{transfer_id}:self_approve:out:line:{line.id}",
-                        reference_id=str(transfer_id),
+                        user_id=str(user.user_id),
+                        transfer_id=str(transfer_id),
+                        from_warehouse_id=str(row.from_warehouse_id),
+                        lines=lines,
+                        key_prefix=f"transfer:{transfer_id}:self_approve:out",
                     )
+                except (DispatchError, InsufficientStockError) as e:
+                    raise transfer_lots.http_from_engine(e) from e
                 await self.db.execute(
                     text(
                         "UPDATE transfer_orders "
@@ -1008,17 +1024,18 @@ class InventoryService:
                             status_transition="DRAFT_TO_SELF_APPROVED_RESERVE",
                             line_id=str(line.id),
                         )
-                        await record_transaction(
+                    try:
+                        await transfer_lots.post_transfer_out(
                             self.db,
                             tenant_id=str(user.tenant_id),
-                            transaction_type="TRANSFER_OUT",
-                            product_id=str(line.product_id),
-                            warehouse_id=str(row.from_warehouse_id),
-                            quantity=-Decimal(str(line.quantity)),
-                            performed_by=str(user.user_id),
-                            idempotency_key=f"transfer:{transfer_id}:self_approve:out:line:{line.id}",
-                            reference_id=str(transfer_id),
+                            user_id=str(user.user_id),
+                            transfer_id=str(transfer_id),
+                            from_warehouse_id=str(row.from_warehouse_id),
+                            lines=lines,
+                            key_prefix=f"transfer:{transfer_id}:self_approve:out",
                         )
+                    except (DispatchError, InsufficientStockError) as e:
+                        raise transfer_lots.http_from_engine(e) from e
                     await self.db.execute(
                         text(
                             "UPDATE transfer_orders "
@@ -1196,6 +1213,11 @@ class InventoryService:
                 if _next_idx < len(_steps):
                     # More steps remain — advance counter, stay PENDING_APPROVAL.
                     # Do NOT fire TRANSFER_OUT; return early before the fall-through.
+                    if lot_selections:
+                        from fastapi import HTTPException
+                        raise HTTPException(
+                            status_code=422, detail={"code": "LOT_SELECTION_NOT_ALLOWED"}
+                        )
                     await self.db.execute(
                         text(
                             "UPDATE transfer_orders "
@@ -1248,18 +1270,22 @@ class InventoryService:
                         {"steps": _steps, "id": str(transfer_id)},
                     )
 
-            for line in lines:
-                await record_transaction(
+            try:
+                await transfer_lots.post_transfer_out(
                     self.db,
                     tenant_id=str(user.tenant_id),
-                    transaction_type="TRANSFER_OUT",
-                    product_id=str(line.product_id),
-                    warehouse_id=str(row.from_warehouse_id),
-                    quantity=-Decimal(str(line.quantity)),
-                    performed_by=str(user.user_id),
-                    idempotency_key=f"transfer:{transfer_id}:approve:out:line:{line.id}",
-                    reference_id=str(transfer_id),
+                    user_id=str(user.user_id),
+                    transfer_id=str(transfer_id),
+                    from_warehouse_id=str(row.from_warehouse_id),
+                    lines=lines,
+                    key_prefix=f"transfer:{transfer_id}:approve:out",
+                    selections=lot_selections,
+                    can_fefo_override=can_fefo_override,
+                    can_lot_select=can_lot_select,
+                    reason=override_reason,
                 )
+            except (DispatchError, InsufficientStockError) as e:
+                raise transfer_lots.http_from_engine(e) from e
 
             # Notify higher authority levels when the band auto-approves (PROMPT 2B).
             if decision.is_auto_approved:
@@ -1301,7 +1327,23 @@ class InventoryService:
         # CANCELLED from APPROVED/ADVISED: restore source on_hand (deducted at APPROVED).
         elif next_state == "CANCELLED" and row.status in ("APPROVED", "ADVISED"):
             lines = (await self.db.execute(_lines_query, _lines_params)).fetchall()
+            _allocs = await transfer_lots.load_allocations(self.db, user.tenant_id, transfer_id)
             for line in lines:
+                if _allocs.get(str(line.id)):
+                    # Batch line: put each lot back at the source.
+                    await transfer_lots.post_lot_audit(
+                        self.db,
+                        tenant_id=str(user.tenant_id),
+                        user_id=str(user.user_id),
+                        transfer_id=str(transfer_id),
+                        line=line,
+                        allocs=_allocs[str(line.id)],
+                        transaction_type="TRANSFER_REVERSAL",
+                        warehouse_id=str(row.from_warehouse_id),
+                        sign=1,
+                        status_transition="APPROVED_TO_CANCELLED",
+                    )
+                    continue
                 await write_transfer_ledger_entry(
                     session=self.db,
                     transfer_id=str(transfer_id),
@@ -1318,7 +1360,26 @@ class InventoryService:
         # IN_TRANSIT: confirm source dispatch + record destination inbound.
         elif next_state == "IN_TRANSIT":
             lines = (await self.db.execute(_lines_query, _lines_params)).fetchall()
+            _allocs = await transfer_lots.load_allocations(self.db, user.tenant_id, transfer_id)
             for line in lines:
+                if _allocs.get(str(line.id)):
+                    for _type, _wh in (
+                        ("TRANSIT_OUT", row.from_warehouse_id),
+                        ("TRANSIT_IN", row.to_warehouse_id),
+                    ):
+                        await transfer_lots.post_lot_audit(
+                            self.db,
+                            tenant_id=str(user.tenant_id),
+                            user_id=str(user.user_id),
+                            transfer_id=str(transfer_id),
+                            line=line,
+                            allocs=_allocs[str(line.id)],
+                            transaction_type=_type,
+                            warehouse_id=str(_wh),
+                            sign=1,
+                            status_transition="ISSUED_TO_IN_TRANSIT",
+                        )
+                    continue
                 await write_transfer_ledger_entry(
                     session=self.db,
                     transfer_id=str(transfer_id),
@@ -1437,7 +1498,22 @@ class InventoryService:
 
         # Source on_hand was already deducted at APPROVED via TRANSFER_OUT.
         # Record physical dispatch in the audit ledger (does not affect on_hand again).
+        _allocs = await transfer_lots.load_allocations(self.db, user.tenant_id, transfer_id)
         for line in lines:
+            if _allocs.get(str(line.id)):
+                await transfer_lots.post_lot_audit(
+                    self.db,
+                    tenant_id=str(user.tenant_id),
+                    user_id=str(user.user_id),
+                    transfer_id=str(transfer_id),
+                    line=line,
+                    allocs=_allocs[str(line.id)],
+                    transaction_type="TRANSIT_OUT",
+                    warehouse_id=str(row.from_warehouse_id),
+                    sign=1,
+                    status_transition="APPROVED_TO_ISSUED",
+                )
+                continue
             await write_transfer_ledger_entry(
                 session=self.db,
                 transfer_id=str(transfer_id),
@@ -1542,44 +1618,73 @@ class InventoryService:
             {"tid_order": str(transfer_id), "tid": str(user.tenant_id)},
         )).fetchall()
 
+        _allocs = await transfer_lots.load_allocations(self.db, user.tenant_id, transfer_id)
         for line in lines:
-            # Clear in-transit tracking at both source and destination.
-            await write_transfer_ledger_entry(
-                session=self.db,
-                transfer_id=str(transfer_id),
-                transaction_type="TRANSIT_CLEAR",
-                quantity=-Decimal(str(line.quantity)),
-                warehouse_id=str(row.from_warehouse_id),
-                product_id=str(line.product_id),
-                tenant_id=str(user.tenant_id),
-                performed_by=str(user.user_id),
-                status_transition="IN_TRANSIT_TO_RECEIVED",
-                line_id=str(line.id),
-            )
-            await write_transfer_ledger_entry(
-                session=self.db,
-                transfer_id=str(transfer_id),
-                transaction_type="TRANSIT_CLEAR",
-                quantity=-Decimal(str(line.quantity)),
-                warehouse_id=str(row.to_warehouse_id),
-                product_id=str(line.product_id),
-                tenant_id=str(user.tenant_id),
-                performed_by=str(user.user_id),
-                status_transition="IN_TRANSIT_TO_RECEIVED",
-                line_id=f"{line.id}:dest",
-            )
-            # Credit destination on_hand — stock physically received.
-            await record_transaction(
-                self.db,
-                tenant_id=str(user.tenant_id),
-                transaction_type="TRANSFER_IN",
-                product_id=str(line.product_id),
-                warehouse_id=str(row.to_warehouse_id),
-                quantity=Decimal(str(line.quantity)),  # positive: credit to destination
-                performed_by=str(user.user_id),
-                idempotency_key=f"transfer:{transfer_id}:receive:in:line:{line.id}",
-                reference_id=str(transfer_id),
-            )
+            _line_allocs = _allocs.get(str(line.id))
+            if _line_allocs:
+                # Batch line: clear transit and credit the destination per lot,
+                # on the same lot_ids the source was debited on.
+                for _wh, _dest in ((row.from_warehouse_id, False), (row.to_warehouse_id, True)):
+                    await transfer_lots.post_lot_audit(
+                        self.db,
+                        tenant_id=str(user.tenant_id),
+                        user_id=str(user.user_id),
+                        transfer_id=str(transfer_id),
+                        line=line,
+                        allocs=_line_allocs,
+                        transaction_type="TRANSIT_CLEAR",
+                        warehouse_id=str(_wh),
+                        sign=-1,
+                        status_transition="IN_TRANSIT_TO_RECEIVED",
+                        dest=_dest,
+                    )
+                await transfer_lots.post_transfer_in(
+                    self.db,
+                    tenant_id=str(user.tenant_id),
+                    user_id=str(user.user_id),
+                    transfer_id=str(transfer_id),
+                    to_warehouse_id=str(row.to_warehouse_id),
+                    line=line,
+                    allocs=_line_allocs,
+                )
+            else:
+                # Clear in-transit tracking at both source and destination.
+                await write_transfer_ledger_entry(
+                    session=self.db,
+                    transfer_id=str(transfer_id),
+                    transaction_type="TRANSIT_CLEAR",
+                    quantity=-Decimal(str(line.quantity)),
+                    warehouse_id=str(row.from_warehouse_id),
+                    product_id=str(line.product_id),
+                    tenant_id=str(user.tenant_id),
+                    performed_by=str(user.user_id),
+                    status_transition="IN_TRANSIT_TO_RECEIVED",
+                    line_id=str(line.id),
+                )
+                await write_transfer_ledger_entry(
+                    session=self.db,
+                    transfer_id=str(transfer_id),
+                    transaction_type="TRANSIT_CLEAR",
+                    quantity=-Decimal(str(line.quantity)),
+                    warehouse_id=str(row.to_warehouse_id),
+                    product_id=str(line.product_id),
+                    tenant_id=str(user.tenant_id),
+                    performed_by=str(user.user_id),
+                    status_transition="IN_TRANSIT_TO_RECEIVED",
+                    line_id=f"{line.id}:dest",
+                )
+                # Credit destination on_hand — stock physically received.
+                await record_transaction(
+                    self.db,
+                    tenant_id=str(user.tenant_id),
+                    transaction_type="TRANSFER_IN",
+                    product_id=str(line.product_id),
+                    warehouse_id=str(row.to_warehouse_id),
+                    quantity=Decimal(str(line.quantity)),  # positive: credit to destination
+                    performed_by=str(user.user_id),
+                    idempotency_key=f"transfer:{transfer_id}:receive:in:line:{line.id}",
+                    reference_id=str(transfer_id),
+                )
 
             # StockTransferred is an additional event beyond the InventoryUpdated
             # that record_transaction() already fired — both in the same transaction.
@@ -1621,6 +1726,8 @@ class InventoryService:
             from fastapi import HTTPException
             raise HTTPException(status_code=404, detail="Transfer not found")
 
+        _allocs = await transfer_lots.load_allocations(self.db, row.tenant_id, transfer_id)
+
         from datetime import datetime, timezone
         return TransferOrderResponse(
             transfer_id=transfer_id,
@@ -1630,6 +1737,19 @@ class InventoryService:
             to_warehouse_id=row.to_warehouse_id,
             created_at=datetime.now(timezone.utc),
             is_self_approved=bool(row.is_self_approved),
+            lot_allocations=[
+                TransferLotAllocation(
+                    line_id=line_id,
+                    product_id=a.product_id,
+                    lot_id=a.lot_id,
+                    lot_number=a.lot_number,
+                    expiry_date=a.expiry_date,
+                    quantity=a.quantity,
+                    is_override=a.is_override,
+                )
+                for line_id, line_allocs in _allocs.items()
+                for a in line_allocs
+            ],
         )
 
     async def create_adjustment(

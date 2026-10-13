@@ -53,6 +53,7 @@ class Alloc:
     expiry_date: Optional[date]
     quantity: Decimal
     is_override: bool = False
+    product_id: Optional[str] = None
 
 
 def _get(item: Any, name: str) -> Any:
@@ -72,7 +73,7 @@ async def load_allocations(
     result = await db.execute(
         text(
             "SELECT a.transfer_line_id, a.lot_id, sl.lot_number, sl.expiry_date, "
-            "       a.quantity, a.is_override "
+            "       a.quantity, a.is_override, a.product_id "
             "FROM transfer_line_allocations a "
             "JOIN stock_lots sl ON sl.id = a.lot_id AND sl.tenant_id = a.tenant_id "
             "WHERE a.tenant_id = :tid AND a.transfer_order_id = :xfer_id "
@@ -89,6 +90,7 @@ async def load_allocations(
                 expiry_date=r.expiry_date,
                 quantity=Decimal(str(r.quantity)),
                 is_override=bool(r.is_override),
+                product_id=str(r.product_id),
             )
         )
     return allocations

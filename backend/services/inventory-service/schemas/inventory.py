@@ -122,6 +122,17 @@ class TransferLineRequest(BaseModel):
     def no_null_bytes(cls, v: object) -> object: return _no_null(v)
 
 
+class TransferLotAllocation(BaseModel):
+    """One lot a transfer line was split into at approval (transfer_line_allocations)."""
+    line_id: uuid.UUID
+    product_id: uuid.UUID
+    lot_id: uuid.UUID
+    lot_number: Optional[str] = None
+    expiry_date: Optional[date] = None
+    quantity: Decimal
+    is_override: bool = False
+
+
 class TransferOrderResponse(BaseModel):
     transfer_id: uuid.UUID
     transfer_type: str
@@ -135,6 +146,7 @@ class TransferOrderResponse(BaseModel):
     is_self_approved: bool = False
     current_approval_step: Optional[int] = None
     resolved_approval_steps: Optional[list] = None
+    lot_allocations: list[TransferLotAllocation] = []
 
 
 class TransferActionRequest(BaseModel):
