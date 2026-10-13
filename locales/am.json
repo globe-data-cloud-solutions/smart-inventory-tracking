@@ -713,7 +713,11 @@
     "EXPIRY_NEEDS_BATCH": "የማብቂያ ቀን መከታተል እንዲሰራ የሎት መከታተል መብራት አለበት።",
     "INVALID_DISPATCH_STRATEGY": "ይህ የማሰናዳት ስልት ለተመረጡት ቅንብሮች ልክ አይደለም።",
     "BATCH_TRACKING_IN_USE": "ሎት ክምችት እስካለው ድረስ የሎት መከታተል ማጥፋት አይቻልም።",
-    "LOT_CONVERSION_MISMATCH": "የመክፈቻ ሎት ድምር ከያዘው ክምችት ጋር አልተዛመደም። ለውጡ አልተቀመጠም።"
+    "LOT_CONVERSION_MISMATCH": "የመክፈቻ ሎት ድምር ከያዘው ክምችት ጋር አልተዛመደም። ለውጡ አልተቀመጠም።",
+    "RECEIPT_LINES_MISMATCH": "የመቀበያ ዝርዝሩ በዚህ ዝውውር ላይ ያለውን እያንዳንዱን መስመር እና ሎት በትክክል አንድ ጊዜ መያዝ አለበት።",
+    "RECEIPT_EXCEEDS_SENT": "የተቀበሉት መጠን ከተላከው መጠን መብለጥ አይችልም።",
+    "RECEIPT_REASON_REQUIRED": "ለጎደለው መጠን ምክንያት ይምረጡ።",
+    "PARTIAL_RECEIPT_NOT_SUPPORTED": "በምትኩ የተቀበሉትን መጠኖች በመቀበያ ቅጹ ላይ ያስገቡ።"
   },
   "layout": {
     "sign_out": "ውጣ",

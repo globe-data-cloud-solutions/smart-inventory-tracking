@@ -711,7 +711,11 @@
     "LOT_SELECTION_NOT_ALLOWED": "Lots can only be chosen at the final approval step.",
     "INSUFFICIENT_STOCK": "Not enough usable stock. Expired lots are not counted.",
     "BATCH_TRACKING_TRANSFERS_OPEN": "Lot tracking can't be switched on while transfers of this product are approved or in transit.",
-    "PRODUCT_NOT_FOUND": "Product not found."
+    "PRODUCT_NOT_FOUND": "Product not found.",
+    "RECEIPT_LINES_MISMATCH": "The receipt must list every line and lot on this transfer exactly once.",
+    "RECEIPT_EXCEEDS_SENT": "The received quantity can't be more than the quantity sent.",
+    "RECEIPT_REASON_REQUIRED": "Choose a reason for the missing quantity.",
+    "PARTIAL_RECEIPT_NOT_SUPPORTED": "Enter the received quantities on the receive form instead."
   },
   "transfers": {
     "transfers_heading": "Transfers",

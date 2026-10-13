@@ -703,7 +703,11 @@
     "EXPIRY_NEEDS_BATCH": "Expiry tracking requires batch tracking to be turned on.",
     "INVALID_DISPATCH_STRATEGY": "This dispatch strategy is not valid for the selected settings.",
     "BATCH_TRACKING_IN_USE": "Batch tracking cannot be turned off while a lot still holds stock.",
-    "LOT_CONVERSION_MISMATCH": "Opening lot totals did not match on-hand stock. The change was not saved."
+    "LOT_CONVERSION_MISMATCH": "Opening lot totals did not match on-hand stock. The change was not saved.",
+    "RECEIPT_LINES_MISMATCH": "The receipt must list every line and lot on this transfer exactly once.",
+    "RECEIPT_EXCEEDS_SENT": "The received quantity can't be more than the quantity sent.",
+    "RECEIPT_REASON_REQUIRED": "Choose a reason for the missing quantity.",
+    "PARTIAL_RECEIPT_NOT_SUPPORTED": "Enter the received quantities on the receive form instead."
   },
   "demo": {
     "mode_banner": "Haala demo — jijjiiramni marsariitii haaromsamte haqama. Daataa dhaabbataa argachuuf backend waliin wal qabii."
