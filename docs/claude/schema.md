@@ -370,6 +370,33 @@ CREATE INDEX idx_lot_allocation_overrides_tenant_product_created
 ALTER TABLE lot_allocation_overrides ENABLE ROW LEVEL SECURITY;
 CREATE POLICY tenant_isolation ON lot_allocation_overrides
   USING (tenant_id = current_setting('app.current_tenant_id', true)::uuid);
+
+-- ── transfer_line_allocations (migration 085) ────────────────────────────────
+-- One row per lot a transfer line was split into at approval. Lot identity
+-- (number, expiry, first receipt date) stays on stock_lots, so the destination
+-- credits the same lot_id. Append-only BY CODE (no PostgreSQL RULE on this table).
+CREATE TABLE transfer_line_allocations (
+  id                 UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  tenant_id          UUID NOT NULL,
+  transfer_order_id  UUID NOT NULL REFERENCES transfer_orders(id),
+  transfer_line_id   UUID NOT NULL REFERENCES transfer_order_lines(id),
+  product_id         UUID NOT NULL REFERENCES products(id),
+  lot_id             UUID NOT NULL REFERENCES stock_lots(id),
+  from_warehouse_id  UUID NOT NULL,
+  quantity           NUMERIC(15,4) NOT NULL CHECK (quantity > 0),
+  is_override        BOOLEAN NOT NULL DEFAULT false,  -- selection differed from the engine order
+  override_id        UUID REFERENCES lot_allocation_overrides(id),
+  created_by         UUID NOT NULL,
+  created_at         TIMESTAMPTZ NOT NULL DEFAULT now(),
+  UNIQUE (transfer_line_id, lot_id)
+);
+CREATE INDEX idx_transfer_line_allocations_tenant_order
+  ON transfer_line_allocations (tenant_id, transfer_order_id);
+CREATE INDEX idx_transfer_line_allocations_tenant_lot
+  ON transfer_line_allocations (tenant_id, lot_id);
+ALTER TABLE transfer_line_allocations ENABLE ROW LEVEL SECURITY;
+CREATE POLICY tenant_isolation ON transfer_line_allocations
+  USING (tenant_id = current_setting('app.current_tenant_id', true)::uuid);
 ```
 
 ### Alembic migration rules
