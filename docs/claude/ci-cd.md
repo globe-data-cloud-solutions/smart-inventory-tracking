@@ -249,6 +249,14 @@ RATE_LIMIT_<BUCKET>            # optional per-bucket override, "<limit>/<window_
                                 # e.g. RATE_LIMIT_SIGNUP=100/3600. Invalid value logs a warning and falls
                                 # back to the default — see docs/claude/billing-and-tenants.md "Rate limits (B3)".
 
+# ── Inventory (lot tracking, Phase C) ────────────────────────────────────────
+FEATURE_LOT_TRACKING           # inventory-service only. Truthy ("1"/"true"/"yes", case-insensitive) enables
+                                # GET /api/v1/inventory/features -> {"lot_tracking": true} and the
+                                # PUT /api/v1/inventory/products/{id}/lot-settings conversion endpoint;
+                                # anything else (including unset) is OFF, which the endpoint enforces with
+                                # 403 FEATURE_NOT_ENABLED. Default off; set to "true" in local dev; turn on
+                                # per environment when Phase C ships.
+
 # ── Billing (S5) ─────────────────────────────────────────────────────────────
 STUB_WEBHOOK_SECRET            # HMAC-SHA256 secret for the STUB payment provider's webhook — from Secrets Manager
 

@@ -265,6 +265,16 @@
     "edit": "ማስተካከል",
     "edit_title": "ምርት አስተካክል",
     "edit_success": "ምርቱ በተሳካ ሁኔታ ተዘምኗል",
+    "lot_settings": {
+      "title": "ባች ቁጥጥር",
+      "batch_tracking": "ባች መከታተል",
+      "expiry_tracking": "የማብቂያ ቀን መከታተል",
+      "dispatch_strategy": "የማሰናበቻ ስልት",
+      "fefo_hint": "የማብቂያ ቀን መከታተል ሁልጊዜ FEFO (መጀመሪያ የሚያበቃው መጀመሪያ ይወጣል) ይጠቀማል።",
+      "confirm_conversion": "በእያንዳንዱ መጋዘን ያለው ነባር ክምችት ራስ-ሰር ወደ መክፈቻ ባች ይገባል። ይቀጥል?",
+      "confirm_conversion_ok": "ወደ ባች ቁጥጥር ቀይር",
+      "conversion_success": "ነባር ክምችት ወደ እነዚህ መክፈቻ ባቾች ተቀይሯል፦"
+    },
     "controlled_tooltip": "የተገደበ ምርት — ማስተካከል የሚችለው አስተዳዳሪ ብቻ ነው",
     "controlled_edit_denied": "ይህ ምርት የማረጋገጫ ደረጃዎች ተዘጋጅተውለታል እና በተከራዩ አስተዳዳሪ ብቻ ሊስተካከል ይችላል።",
     "upload_image": "ምስል ጫን",
@@ -683,13 +693,19 @@
     "LOT_NUMBER_REQUIRED": "የሎት ቁጥር ያስፈልጋል።",
     "LOT_EXPIRY_MISMATCH": "ይህ የሎት ቁጥር ከሌላ የማብቂያ ቀን ጋር አስቀድሞ ተመዝግቧል።",
     "INSUFFICIENT_LOT_STOCK": "ይህን ጥያቄ ለማሟላት በዚህ ሎት ውስጥ በቂ ክምችት የለም።",
+    "LOT_REQUIRED": "ለዚህ ግብይት ሎት መመረጥ አለበት።",
     "LOT_NOT_TRACKED": "ይህ ምርት ሎት አይከታተልም — የሎት ቁጥር፣ የማብቂያ ቀን ወይም አውቶ-ሎት መስጠት አይቻልም።",
     "LOT_INPUT_CONFLICT": "የሎት ቁጥር ያቅርቡ ወይም በራስ-ሰር ያመንጁ፣ ሁለቱንም በአንድ ላይ አይደለም።",
     "EXPIRY_REQUIRED": "ለዚህ ምርት የማብቂያ ቀን ያስፈልጋል።",
     "EXPIRY_IN_PAST": "የማብቂያ ቀን ያለፈ ሊሆን አይችልም።",
     "INVALID_SOURCE": "ይህ ምንጭ ክምችት ለመቀበል አይፈቀድም።",
     "LOT_NUMBER_GENERATION_FAILED": "ልዩ የሎት ቁጥር ማመንጥ አልተቻለም። እባክዎ እንደገና ይሞክሩ።",
-    "PRODUCT_NOT_FOUND": "ምርት አልተገኘም።"
+    "PRODUCT_NOT_FOUND": "ምርት አልተገኘም።",
+    "FEATURE_NOT_ENABLED": "ይህ ባህሪ ለአካባቢዎ አልነቃም።",
+    "EXPIRY_NEEDS_BATCH": "የማብቂያ ቀን መከታተል እንዲሰራ የሎት መከታተል መብራት አለበት።",
+    "INVALID_DISPATCH_STRATEGY": "ይህ የማሰናዳት ስልት ለተመረጡት ቅንብሮች ልክ አይደለም።",
+    "BATCH_TRACKING_IN_USE": "ሎት ክምችት እስካለው ድረስ የሎት መከታተል ማጥፋት አይቻልም።",
+    "LOT_CONVERSION_MISMATCH": "የመክፈቻ ሎት ድምር ከያዘው ክምችት ጋር አልተዛመደም። ለውጡ አልተቀመጠም።"
   },
   "layout": {
     "sign_out": "ውጣ",

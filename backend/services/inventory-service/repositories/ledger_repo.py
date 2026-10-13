@@ -108,8 +108,13 @@ async def record_transaction(
     Single entry point for all inventory mutations. Sequence within ONE transaction:
       1. Idempotency guard  — HTTP 409 on duplicate key
       2. Pessimistic lock   — FOR UPDATE on balance row prevents concurrent races
+      2b. Lot guard         — when the product is batch_tracking and the type is not
+                             balance-neutral: HTTP 422 LOT_REQUIRED if lot_id is missing;
+                             HTTP 422 LOT_NOT_TRACKED if lot_id is given for a non-batch
+                             product. SKIPPED for _BALANCE_NEUTRAL_TYPES.
       3. Stock floor check  — HTTP 422 when balance + quantity would go negative
                              SKIPPED for _BALANCE_NEUTRAL_TYPES (audit-only entries)
+                             and for _LOT_ONLY_TYPES (product total unaffected)
       3b. Lot floor check   — when lot_id is given and the type is not neutral: lock
                              the lot_balances row FOR UPDATE and reject with HTTP 422
                              INSUFFICIENT_LOT_STOCK if it would go negative. The
@@ -118,16 +123,22 @@ async def record_transaction(
                              always carries lot_id/lot_number/expiry_date (NULL if unset)
       5. Balance update     — _update_running_balance() is the ONLY writer to inventory_balances
                              SKIPPED for _BALANCE_NEUTRAL_TYPES (must not affect on_hand)
+                             and for _LOT_ONLY_TYPES (product total seeded separately)
       5b. Lot balance update — _update_lot_balance() is the ONLY writer to lot_balances,
                              called when lot_id is given and the type is not neutral.
                              Neutral types with lot_id write the lot columns onto the
-                             ledger row but never touch lot_balances.
+                             ledger row but never touch lot_balances. _LOT_ONLY_TYPES
+                             always update the lot balance (lot_id is required for them).
       6. Outbox event       — InventoryUpdated fired in the SAME transaction
 
     _BALANCE_NEUTRAL_TYPES (RESERVE, RELEASE, TRANSIT_OUT, TRANSIT_IN, TRANSIT_CLEAR)
     write an audit-trail ledger row but never mutate inventory_balances.
     This prevents RESERVE entries written at PENDING_REVIEW from falsely inflating
     the On Hand balance that inventory_analytics.py reads from inventory_balances.
+
+    _LOT_ONLY_TYPES (LOT_OPENING) capture a lot's opening quantity: they require
+    a lot_id, update only lot_balances, and never touch inventory_balances — the
+    product-level total is seeded separately (RECEIVE/ADJUSTMENT/opening import).
 
     Returns the new transaction UUID string.
     """
@@ -147,11 +158,56 @@ async def record_transaction(
         session, tenant_id, product_id, warehouse_id, lock=True
     )
 
-    # Step 3 — stock floor: skip for audit-only types that don't mutate on_hand.
+    # Step 2b — lot guard: batch-tracked products must carry a lot_id for any
+    # type that isn't balance-neutral (RESERVE/RELEASE/TRANSIT_* stay allowed
+    # without a lot); non-batch products must never carry one.
+    if transaction_type in _LOT_ONLY_TYPES:
+        if lot_id is None:
+            raise HTTPException(
+                status_code=422,
+                detail={
+                    "code": "LOT_REQUIRED",
+                    "product_id": product_id,
+                    "transaction_type": transaction_type,
+                },
+            )
+    elif transaction_type not in _BALANCE_NEUTRAL_TYPES:
+        product_row = (
+            await session.execute(
+                text(
+                    "SELECT batch_tracking FROM products "
+                    "WHERE id = :pid AND tenant_id = :tid FOR SHARE"
+                ),
+                {"pid": product_id, "tid": tenant_id},
+            )
+        ).fetchone()
+        batch_tracking = bool(product_row.batch_tracking) if product_row else False
+
+        if batch_tracking and lot_id is None:
+            raise HTTPException(
+                status_code=422,
+                detail={
+                    "code": "LOT_REQUIRED",
+                    "product_id": product_id,
+                    "transaction_type": transaction_type,
+                },
+            )
+        if not batch_tracking and lot_id is not None:
+            raise HTTPException(
+                status_code=422,
+                detail={
+                    "code": "LOT_NOT_TRACKED",
+                    "product_id": product_id,
+                    "transaction_type": transaction_type,
+                },
+            )
+
+    # Step 3 — stock floor: skip for audit-only types that don't mutate on_hand,
+    # and for lot-only types whose product total is unaffected.
     # RESERVE (positive) would falsely inflate balance; TRANSIT_CLEAR (negative)
     # would cause a spurious INSUFFICIENT_STOCK error because it doesn't represent
     # a real stock deduction — the TRANSFER_OUT already happened at APPROVED.
-    if transaction_type not in _BALANCE_NEUTRAL_TYPES:
+    if transaction_type not in _BALANCE_NEUTRAL_TYPES and transaction_type not in _LOT_ONLY_TYPES:
         balance_after = balance_before + quantity
         if balance_after < Decimal("0"):
             raise HTTPException(
@@ -213,14 +269,23 @@ async def record_transaction(
         },
     )
 
-    # Step 5 — update running balance (skip for audit-only types that must not affect on_hand)
-    if transaction_type not in _BALANCE_NEUTRAL_TYPES:
+    # Step 5 — update running balance (skip for audit-only types that must not
+    # affect on_hand, and for lot-only types whose product total is seeded
+    # separately)
+    if (
+        transaction_type not in _BALANCE_NEUTRAL_TYPES
+        and transaction_type not in _LOT_ONLY_TYPES
+    ):
         await _update_running_balance(session, tenant_id, product_id, warehouse_id, quantity)
 
         # Step 5b — update lot balance (skip for neutral types; they write the
         # lot columns on the ledger row above but never touch lot_balances)
         if lot_id is not None:
             await _update_lot_balance(session, tenant_id, lot_id, product_id, warehouse_id, quantity)
+    elif transaction_type in _LOT_ONLY_TYPES:
+        # Lot-only types always carry a lot_id (enforced in Step 2b) and only
+        # ever touch lot_balances — the product total is unaffected.
+        await _update_lot_balance(session, tenant_id, lot_id, product_id, warehouse_id, quantity)
 
     # Step 6 — outbox event in the SAME transaction (atomicity with ledger INSERT)
     await write_to_outbox(
@@ -247,6 +312,13 @@ _BALANCE_NEUTRAL_TYPES: frozenset[str] = frozenset({
     "TRANSIT_OUT",   # dispatch audit at ISSUED: on_hand already deducted at APPROVED
     "TRANSIT_IN",    # inbound audit at IN_TRANSIT: stock not received yet
     "TRANSIT_CLEAR", # clear-transit audit at RECEIVED: TRANSFER_IN handles credit
+})
+
+# Lot-only types: always require a lot_id, write the ledger row and update
+# lot_balances, but never touch inventory_balances — the product total is
+# seeded separately (RECEIVE/ADJUSTMENT/opening import).
+_LOT_ONLY_TYPES: frozenset[str] = frozenset({
+    "LOT_OPENING",   # captures a lot's opening quantity; product total unchanged
 })
 
 _TRANSFER_LEDGER_TYPES: frozenset[str] = frozenset({

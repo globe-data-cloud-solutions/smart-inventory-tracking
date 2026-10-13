@@ -12,6 +12,7 @@ from shared.db.models.base import Base, TimestampMixin
 TxTypeEnum = Enum(
     "RECEIVE", "TRANSFER_OUT", "TRANSFER_IN", "ISSUE",
     "ADJUSTMENT", "RESERVE", "RELEASE", "RETURN", "COUNT_VARIANCE",
+    "LOT_OPENING",
     name="transaction_type", create_type=False,
 )
 TransferStatusEnum = Enum(

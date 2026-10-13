@@ -33,6 +33,37 @@ class AdjustmentReasonCode(str, Enum):
 
 ALLOWED_RECEIVE_SOURCES = frozenset({"WEB", "OPENING_BALANCE"})
 
+ALLOWED_DISPATCH_STRATEGIES = frozenset({"FEFO", "FIFO", "LIFO"})
+
+
+class FeatureFlagsResponse(BaseModel):
+    lot_tracking: bool
+
+
+class LotSettingsRequest(BaseModel):
+    batch_tracking: bool
+    expiry_tracking: bool
+    dispatch_strategy: Optional[str] = None
+
+    @field_validator("dispatch_strategy", mode="before")
+    @classmethod
+    def upper_strategy(cls, v: object) -> object:
+        return v.strip().upper() if isinstance(v, str) else v
+
+
+class OpeningLotItem(BaseModel):
+    warehouse_id: uuid.UUID
+    lot_id: uuid.UUID
+    lot_number: str
+    quantity: Decimal
+
+
+class LotSettingsResponse(BaseModel):
+    batch_tracking: bool
+    expiry_tracking: bool
+    dispatch_strategy: Optional[str] = None
+    opening_lots: List[OpeningLotItem]
+
 
 class ReceiveStockRequest(BaseModel):
     product_id: uuid.UUID

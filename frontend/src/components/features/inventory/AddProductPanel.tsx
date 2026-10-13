@@ -8,7 +8,20 @@ import { getToken } from "@/lib/auth";
 import { getSession } from "@/lib/demo-auth";
 import { useTenantPositions } from "@/hooks/useTenantPositions";
 import { useWriteGuard, guardProps } from "@/hooks/useWriteGuard";
+import { useFeatures } from "@/hooks/useFeatures";
+import { usePermission } from "@/hooks/usePermission";
 import { t } from "@/lib/i18n";
+
+const LOT_SETTINGS_ERROR_CODES = new Set([
+  "FEATURE_NOT_ENABLED", "EXPIRY_NEEDS_BATCH", "INVALID_DISPATCH_STRATEGY",
+  "BATCH_TRACKING_IN_USE", "LOT_CONVERSION_MISMATCH",
+]);
+
+interface OpeningLotItem { warehouse_id: string; lot_id: string; lot_number: string; quantity: number | string; }
+interface LotSettingsResponse {
+  batch_tracking: boolean; expiry_tracking: boolean; dispatch_strategy: string | null;
+  opening_lots: OpeningLotItem[];
+}
 
 // ── small presentational helpers ─────────────────────────────────────────────
 
@@ -200,6 +213,9 @@ export interface EditProductData {
   unit_price?: number | string | null;
   currency?: string | null;
   image_url?: string | null;
+  batch_tracking?: boolean;
+  expiry_tracking?: boolean;
+  dispatch_strategy?: string | null;
 }
 
 interface AddProductPanelProps {
@@ -209,9 +225,14 @@ interface AddProductPanelProps {
   mode?: "create" | "edit";
   productId?: string;
   initialData?: EditProductData;
+  /** Tenant-wide on-hand balance for this product — drives the batch-tracking
+   * conversion confirm dialog (edit mode only; undefined/0 in create mode). */
+  onHandBalance?: number;
 }
 
-export function AddProductPanel({ apiBase, onClose, mode = "create", productId, initialData }: AddProductPanelProps) {
+export function AddProductPanel({
+  apiBase, onClose, mode = "create", productId, initialData, onHandBalance,
+}: AddProductPanelProps) {
   const { org = "admin" } = useParams<{ org: string }>();
   const token   = getToken();
   const session = getSession();
@@ -228,6 +249,9 @@ export function AddProductPanel({ apiBase, onClose, mode = "create", productId, 
   // Image upload is its own write (POST /upload/product-image) but never
   // counts against the SKU cap — read-only gating only.
   const uploadGp = guardProps(writeGuard);
+  const { lotTracking } = useFeatures();
+  const canUpdateProducts = usePermission("product:update");
+  const showLotSection = lotTracking && canUpdateProducts;
 
   // Tenant's custom transfer type display names (e.g. "Request Stock" for
   // PULL) — same query as NewTransferPanel.tsx and Org Setup Tabs 4/5.
@@ -262,6 +286,32 @@ export function AddProductPanel({ apiBase, onClose, mode = "create", productId, 
   const [imageUrl, setImageUrl]     = useState<string | null>(null);
   const [imageUploading, setImageUploading] = useState(false);
   const [imageError, setImageError] = useState("");
+
+  // ── lot tracking state ─────────────────────────────────────────────────
+  const [batchTracking, setBatchTrackingState] = useState(false);
+  const [expiryTracking, setExpiryTracking]    = useState(false);
+  const [dispatchStrategy, setDispatchStrategy] = useState<"FIFO" | "LIFO" | "FEFO">("FIFO");
+  const [lotConfirmOpen, setLotConfirmOpen]     = useState(false);
+  const [lotSettingsError, setLotSettingsError] = useState("");
+  const [openingLots, setOpeningLots]           = useState<OpeningLotItem[] | null>(null);
+
+  const initialBatchTracking    = initialData?.batch_tracking ?? false;
+  const initialExpiryTracking   = initialData?.expiry_tracking ?? false;
+  const initialDispatchStrategy = initialBatchTracking ? (initialData?.dispatch_strategy ?? "FIFO") : null;
+
+  // Turning batch tracking ON for an edited product that already carries
+  // on-hand stock triggers the opening-lot-conversion confirm dialog instead
+  // of flipping the toggle immediately.
+  const setBatchTracking = (checked: boolean) => {
+    if (checked && !batchTracking && isEdit && (onHandBalance ?? 0) > 0) {
+      setLotConfirmOpen(true);
+      return;
+    }
+    setBatchTrackingState(checked);
+    if (!checked) { setExpiryTracking(false); setDispatchStrategy("FIFO"); }
+  };
+  const confirmBatchTrackingOn = () => { setBatchTrackingState(true); setLotConfirmOpen(false); };
+  const cancelBatchTrackingOn  = () => setLotConfirmOpen(false);
 
   // ── approval minimums state ────────────────────────────────────────────
   const MIN_TX_TYPES = [
@@ -313,6 +363,9 @@ export function AddProductPanel({ apiBase, onClose, mode = "create", productId, 
     setCurrency(initialData.currency ?? "ETB");
     setSkuOvr(initialData.sku ?? "");
     setImageUrl(initialData.image_url ?? null);
+    setBatchTrackingState(initialData.batch_tracking ?? false);
+    setExpiryTracking(initialData.expiry_tracking ?? false);
+    setDispatchStrategy((initialData.dispatch_strategy as "FIFO" | "LIFO" | "FEFO" | null) ?? "FIFO");
     setOpen(true);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -484,6 +537,8 @@ export function AddProductPanel({ apiBase, onClose, mode = "create", productId, 
     setCostPrice(""); setCurrency("ETB");
     setNameErr(""); setTcErr(""); setCatErr(""); setPanelError("");
     setMinimumRows(emptyMinimumRows());
+    setBatchTrackingState(false); setExpiryTracking(false); setDispatchStrategy("FIFO");
+    setLotConfirmOpen(false); setLotSettingsError(""); setOpeningLots(null);
   };
 
   const openPanel  = () => { resetForm(); setOpen(true); };
@@ -553,6 +608,44 @@ export function AddProductPanel({ apiBase, onClose, mode = "create", productId, 
         productSku   = created.sku;
       }
 
+      // Lot tracking settings — a separate endpoint from the product PATCH/POST.
+      const effectiveStrategy = batchTracking ? dispatchStrategy : null;
+      const lotSettingsChanged =
+        batchTracking !== initialBatchTracking ||
+        expiryTracking !== initialExpiryTracking ||
+        effectiveStrategy !== initialDispatchStrategy;
+
+      let newOpeningLots: OpeningLotItem[] | null = null;
+      let createLotSettingsFailed = false;
+
+      if (isEdit && lotSettingsChanged) {
+        // Let a failure here (e.g. 409 BATCH_TRACKING_IN_USE) fall through to the
+        // outer catch — the product PATCH already succeeded, so the form stays
+        // open with the translated error, same as any other save failure.
+        const lotResult = await api.put<LotSettingsResponse>(
+          `/api/v1/inventory/products/${productRefId}/lot-settings`,
+          { batch_tracking: batchTracking, expiry_tracking: expiryTracking, dispatch_strategy: effectiveStrategy },
+          token ?? undefined,
+        );
+        if (lotResult.opening_lots.length > 0) newOpeningLots = lotResult.opening_lots;
+      } else if (!isEdit && batchTracking) {
+        // Create mode: a brand-new product has no stock to convert, so failure
+        // here never rolls back the product that was just created.
+        try {
+          await api.put<LotSettingsResponse>(
+            `/api/v1/inventory/products/${productRefId}/lot-settings`,
+            { batch_tracking: true, expiry_tracking: expiryTracking, dispatch_strategy: effectiveStrategy },
+            token ?? undefined,
+          );
+        } catch (lotErr) {
+          const le = lotErr as Error & { code?: string };
+          createLotSettingsFailed = true;
+          setLotSettingsError(
+            le.code && LOT_SETTINGS_ERROR_CODES.has(le.code) ? t(`errors.${le.code}`) : t("errors.INTERNAL_ERROR"),
+          );
+        }
+      }
+
       // Save product-level approval minimums / overrides. All 6 transaction
       // types are always sent (override_enabled=false for unconfigured
       // rows) so entries is never empty — this satisfies the backend's
@@ -583,11 +676,6 @@ export function AddProductPanel({ apiBase, onClose, mode = "create", productId, 
         token ?? undefined,
       );
 
-      setToast(
-        isEdit
-          ? t("product.edit_success")
-          : t("product.add.success").replace("{{sku}}", productSku),
-      );
       void qc.invalidateQueries({ queryKey: ["products"] });
       void qc.invalidateQueries({ queryKey: ["product-categories"] });
       void qc.invalidateQueries({ queryKey: ["product-brands"] });
@@ -595,10 +683,23 @@ export function AddProductPanel({ apiBase, onClose, mode = "create", productId, 
       void qc.invalidateQueries({ queryKey: ["product-uoms"] });
       void qc.invalidateQueries({ queryKey: ["product-packaging-types"] });
       void qc.invalidateQueries({ queryKey: ["next-sku"] });
-      resetForm(); setOpen(false); onClose?.();
+
+      if (newOpeningLots) {
+        // A batch-tracking conversion just ran — list the opening lots and
+        // keep the panel open until the user closes it themselves.
+        setOpeningLots(newOpeningLots);
+      } else {
+        setToast(
+          isEdit
+            ? t("product.edit_success")
+            : t("product.add.success").replace("{{sku}}", productSku),
+        );
+        if (!createLotSettingsFailed) { resetForm(); setOpen(false); onClose?.(); }
+      }
     } catch (err) {
       const e = err as Error & { status?: number; code?: string };
-      if (e.status === 409 && e.code === "duplicate_sku") setPanelError(t("product.add.error.duplicate_sku"));
+      if (e.code && LOT_SETTINGS_ERROR_CODES.has(e.code)) setPanelError(t(`errors.${e.code}`));
+      else if (e.status === 409 && e.code === "duplicate_sku") setPanelError(t("product.add.error.duplicate_sku"));
       else if (e.status === 409) setNameErr("duplicate_name");
       else if (e.status === 402 && e.code === "PLAN_LIMIT_REACHED") setPanelError(t("product.add.error.sku_cap_reached"));
       else if (e.status === 429) setPanelError(t("common.rate_limited"));
@@ -1092,6 +1193,93 @@ export function AddProductPanel({ apiBase, onClose, mode = "create", productId, 
               </div>
             </div>
           )}
+
+          {/* ── Lot tracking (FEATURE_LOT_TRACKING + product:update) ──── */}
+          {showLotSection && (
+            <div className="border border-gray-200 rounded-md overflow-hidden flex-shrink-0">
+              <div className="px-3.5 py-2.5 bg-gray-50 border-b border-gray-200">
+                <span className="text-xs font-bold uppercase tracking-wide text-gray-600">
+                  {t("product.lot_settings.title")}
+                </span>
+              </div>
+
+              <div className="px-3.5 py-3 space-y-3">
+                {openingLots ? (
+                  <div className="text-xs text-emerald-700 bg-emerald-50 border border-emerald-200 rounded p-2.5 space-y-1">
+                    <p className="font-semibold">{t("product.lot_settings.conversion_success")}</p>
+                    <ul className="list-disc pl-4">
+                      {openingLots.map((ol) => (
+                        <li key={ol.lot_id}>
+                          {ol.lot_number} — {String(ol.quantity)}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                ) : (
+                  <>
+                    <label className="flex items-center gap-2 text-xs font-semibold text-gray-700 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={batchTracking}
+                        onChange={(e) => setBatchTracking(e.target.checked)}
+                      />
+                      {t("product.lot_settings.batch_tracking")}
+                    </label>
+
+                    <label
+                      className={`flex items-center gap-2 text-xs font-semibold cursor-pointer ${
+                        batchTracking ? "text-gray-700" : "text-gray-400"
+                      }`}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={expiryTracking}
+                        disabled={!batchTracking}
+                        onChange={(e) => {
+                          const checked = e.target.checked;
+                          setExpiryTracking(checked);
+                          setDispatchStrategy(checked ? "FEFO" : "FIFO");
+                        }}
+                      />
+                      {t("product.lot_settings.expiry_tracking")}
+                    </label>
+
+                    {batchTracking && (
+                      <div>
+                        <FieldLabel text={t("product.lot_settings.dispatch_strategy")} />
+                        <div className="flex gap-3">
+                          {(["FEFO", "FIFO", "LIFO"] as const).map((strategy) => (
+                            <label
+                              key={strategy}
+                              className={`flex items-center gap-1.5 text-xs ${
+                                (strategy === "FEFO") !== expiryTracking ? "text-gray-400" : "text-gray-700"
+                              }`}
+                            >
+                              <input
+                                type="radio"
+                                name="dispatch-strategy"
+                                checked={dispatchStrategy === strategy}
+                                disabled={expiryTracking ? strategy !== "FEFO" : strategy === "FEFO"}
+                                onChange={() => setDispatchStrategy(strategy)}
+                              />
+                              {strategy}
+                            </label>
+                          ))}
+                        </div>
+                        {expiryTracking && (
+                          <p className="text-[11px] text-gray-400 mt-1">{t("product.lot_settings.fefo_hint")}</p>
+                        )}
+                      </div>
+                    )}
+
+                    {lotSettingsError && (
+                      <p role="alert" className="text-xs text-red-600">{lotSettingsError}</p>
+                    )}
+                  </>
+                )}
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Footer */}
@@ -1117,6 +1305,30 @@ export function AddProductPanel({ apiBase, onClose, mode = "create", productId, 
           </button>
         </div>
       </aside>
+
+      {lotConfirmOpen && (
+        <div className="fixed inset-0 z-[9998] bg-black/40 flex items-center justify-center">
+          <div className="bg-white rounded-md shadow-xl p-5 max-w-sm space-y-3">
+            <p className="text-sm text-gray-700">{t("product.lot_settings.confirm_conversion")}</p>
+            <div className="flex justify-end gap-2.5">
+              <button
+                type="button"
+                onClick={cancelBatchTrackingOn}
+                className="px-3.5 py-1.5 rounded border border-gray-300 bg-white text-sm font-semibold text-gray-700 cursor-pointer"
+              >
+                {t("product.add.cancel")}
+              </button>
+              <button
+                type="button"
+                onClick={confirmBatchTrackingOn}
+                className="px-3.5 py-1.5 rounded border-0 bg-[#0f2d1f] text-eth-gold text-sm font-bold cursor-pointer"
+              >
+                {t("product.lot_settings.confirm_conversion_ok")}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {toast && <Toast message={toast} onDismiss={() => setToast(null)} />}
     </>

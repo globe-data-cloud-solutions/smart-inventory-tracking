@@ -271,6 +271,16 @@
     "edit": "Edit",
     "edit_title": "Edit Product",
     "edit_success": "Product updated successfully",
+    "lot_settings": {
+      "title": "Lot tracking",
+      "batch_tracking": "Batch tracking",
+      "expiry_tracking": "Expiry tracking",
+      "dispatch_strategy": "Dispatch strategy",
+      "fefo_hint": "Expiry tracking always uses FEFO (first-expiry, first-out).",
+      "confirm_conversion": "Existing stock in each warehouse will be placed into an automatic OPENING lot. Continue?",
+      "confirm_conversion_ok": "Convert to batch tracking",
+      "conversion_success": "Existing stock was converted into these opening lots:"
+    },
     "controlled_tooltip": "Controlled product — only Tenant Admin can edit",
     "controlled_edit_denied": "This product has approval overrides and can only be edited by the Tenant Admin.",
     "upload_image": "Upload Image",
@@ -684,7 +694,16 @@
     "LOT_NOT_TRACKED": "This product does not track lots — lot number, expiry date, or auto-lot cannot be supplied.",
     "LOT_INPUT_CONFLICT": "Provide either a lot number or auto-generate one, not both.",
     "EXPIRY_REQUIRED": "An expiry date is required for this product.",
-    "EXPIRY_IN_PAST": "Expiry date cannot be in the past."
+    "EXPIRY_IN_PAST": "Expiry date cannot be in the past.",
+    "FEATURE_NOT_ENABLED": "This feature is not enabled for your environment.",
+    "EXPIRY_NEEDS_BATCH": "Expiry tracking requires batch tracking to be turned on.",
+    "INVALID_DISPATCH_STRATEGY": "This dispatch strategy is not valid for the selected settings.",
+    "BATCH_TRACKING_IN_USE": "Batch tracking cannot be turned off while a lot still holds stock.",
+    "LOT_CONVERSION_MISMATCH": "Opening lot totals did not match on-hand stock. The change was not saved.",
+    "INVALID_SOURCE": "This source is not allowed for receiving stock.",
+    "LOT_NUMBER_GENERATION_FAILED": "Could not generate a unique lot number. Please try again.",
+    "LOT_REQUIRED": "A lot must be selected for this transaction.",
+    "PRODUCT_NOT_FOUND": "Product not found."
   },
   "transfers": {
     "transfers_heading": "Transfers",

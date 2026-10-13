@@ -105,3 +105,18 @@ class WarehouseOut(BaseModel):
     warehouse_type: Optional[str] = None
     address: Optional[str] = None
     manager_name: Optional[str] = None
+
+
+class LotOut(BaseModel):
+    lot_id: uuid.UUID
+    lot_number: str
+    product_id: uuid.UUID
+    product_name: str
+    product_sku: str
+    warehouse_id: uuid.UUID
+    warehouse_name: str
+    quantity: Decimal
+    expiry_date: Optional[date] = None
+    first_received_at: datetime
+    is_opening: bool
+    status: str
