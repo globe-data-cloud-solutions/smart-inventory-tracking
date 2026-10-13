@@ -30,6 +30,7 @@ from schemas.analytics import (
     CrossWarehouseStockOut,
     ForecastOut,
     InventoryStockOut,
+    LotOut,
     ReorderAlertOut,
     TransferHistoryItem,
 )
@@ -361,6 +362,96 @@ async def get_transfer_history(
             quantity=Decimal(str(r.quantity)),
             status=r.status,
             created_at=r.created_at,
+        )
+        for r in rows
+    ]
+
+
+# ── Lots ────────────────────────────────────────────────────────────────────
+
+async def get_lots(
+    session: AsyncSession,
+    tenant_id: Optional[uuid.UUID],
+    product_id: Optional[uuid.UUID] = None,
+    warehouse_id: Optional[uuid.UUID] = None,
+    status: Optional[str] = None,
+    include_depleted: bool = False,
+    limit: int = 200,
+    offset: int = 0,
+) -> List[LotOut]:
+    """Return one row per (lot, warehouse) with a computed status.
+
+    status: quantity = 0 -> DEPLETED; expiry_date < today -> EXPIRED; else ACTIVE.
+    DEPLETED lots are hidden unless include_depleted=True.
+    """
+    tenant_clause    = "AND lb.tenant_id = :tid AND sl.tenant_id = :tid" if tenant_id else ""
+    product_clause   = "AND sl.product_id = :pid" if product_id else ""
+    warehouse_clause = "AND lb.warehouse_id = :wid" if warehouse_id else ""
+
+    sql = text(f"""
+        WITH lot_rows AS (
+            SELECT
+                sl.id                AS lot_id,
+                sl.lot_number,
+                sl.product_id,
+                p.name                AS product_name,
+                p.sku                  AS product_sku,
+                lb.warehouse_id,
+                w.name                 AS warehouse_name,
+                lb.quantity,
+                sl.expiry_date,
+                sl.first_received_at,
+                sl.is_opening,
+                CASE
+                    WHEN lb.quantity = 0 THEN 'DEPLETED'
+                    WHEN sl.expiry_date < CURRENT_DATE THEN 'EXPIRED'
+                    ELSE 'ACTIVE'
+                END AS status
+            FROM lot_balances lb
+            JOIN stock_lots sl ON sl.id = lb.lot_id
+            JOIN products   p  ON p.id  = sl.product_id
+            JOIN warehouses w  ON w.id  = lb.warehouse_id
+            WHERE 1 = 1
+              {tenant_clause}
+              {product_clause}
+              {warehouse_clause}
+        )
+        SELECT * FROM lot_rows
+        WHERE (CAST(:status AS text) IS NULL OR status = CAST(:status AS text))
+          AND (CAST(:include_depleted AS boolean) OR status != 'DEPLETED')
+        ORDER BY product_name, expiry_date NULLS LAST, first_received_at
+        LIMIT :limit OFFSET :offset
+    """)
+
+    params: dict = {
+        "status": status,
+        "include_depleted": include_depleted,
+        "limit": limit,
+        "offset": offset,
+    }
+    if tenant_id:
+        params["tid"] = str(tenant_id)
+    if product_id:
+        params["pid"] = str(product_id)
+    if warehouse_id:
+        params["wid"] = str(warehouse_id)
+
+    rows = (await session.execute(sql, params)).fetchall()
+
+    return [
+        LotOut(
+            lot_id=r.lot_id,
+            lot_number=r.lot_number,
+            product_id=r.product_id,
+            product_name=r.product_name,
+            product_sku=r.product_sku,
+            warehouse_id=r.warehouse_id,
+            warehouse_name=r.warehouse_name,
+            quantity=Decimal(str(r.quantity)),
+            expiry_date=r.expiry_date,
+            first_received_at=r.first_received_at,
+            is_opening=r.is_opening,
+            status=r.status,
         )
         for r in rows
     ]

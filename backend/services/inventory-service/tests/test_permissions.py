@@ -402,6 +402,48 @@ class TestInventoryReceivePermissions:
 
 
 @pytest.mark.unit
+class TestLotsScoping:
+    """GET /api/v1/inventory/lots reuses PERMISSIONS.INVENTORY_VIEW_BALANCE —
+    the same action/decorator as GET /analytics/stock — so it goes through
+    the identical check_permission() ABAC path. No dedicated route-level
+    scoping test exists for /analytics/stock itself, so this mirrors the
+    general check_permission scoping pattern above (test_05) against that
+    same permission, confirming the lots route denies a facility-scoped
+    user a warehouse outside their own node the same way /stock would."""
+
+    async def test_facility_scoped_user_denied_other_warehouse(self) -> None:
+        from shared.permissions.middleware import check_permission
+        from shared.permissions.registry import PERMISSIONS
+
+        with patch(
+            "shared.permissions.middleware.get_role_permission",
+            new=AsyncMock(return_value=_mock_full_grant()),
+        ), patch("shared.permissions.middleware.audit_log", new=AsyncMock()):
+            result = await check_permission(
+                WRONG_WH,  # WM scoped to WAREHOUSE_B
+                PERMISSIONS.INVENTORY_VIEW_BALANCE,
+                {"tenant_id": TENANT_A, "warehouse_id": WAREHOUSE_A},
+            )
+        assert not result.allowed
+        assert "warehouse" in result.reason
+
+    async def test_facility_scoped_user_allowed_own_warehouse(self) -> None:
+        from shared.permissions.middleware import check_permission
+        from shared.permissions.registry import PERMISSIONS
+
+        with patch(
+            "shared.permissions.middleware.get_role_permission",
+            new=AsyncMock(return_value=_mock_full_grant()),
+        ), patch("shared.permissions.middleware.audit_log", new=AsyncMock()):
+            result = await check_permission(
+                WM_USER,  # WM scoped to WAREHOUSE_A
+                PERMISSIONS.INVENTORY_VIEW_BALANCE,
+                {"tenant_id": TENANT_A, "warehouse_id": WAREHOUSE_A},
+            )
+        assert result.allowed
+
+
+@pytest.mark.unit
 class TestOutboxPattern:
     async def test_outbox_written_in_same_transaction(self) -> None:
         """write_to_outbox must be called on the same session as the primary INSERT."""

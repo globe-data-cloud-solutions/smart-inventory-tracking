@@ -6,7 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from shared.utils.responses import ErrorResponse, ErrorDetail
-from routers import adjust, alerts, analytics, audit_log, count, issue, lot_settings, receive, transfer, transfer_requests
+from routers import adjust, alerts, analytics, audit_log, count, issue, lot_settings, lots, receive, transfer, transfer_requests
 from shared.utils.env_guard import assert_safe_environment
 
 
@@ -39,6 +39,7 @@ app.include_router(count.router,              prefix="/api/v1/inventory/counts",
 app.include_router(analytics.router,          prefix="/api/v1/inventory/analytics",         tags=["analytics"])
 app.include_router(transfer_requests.router,  prefix="/api/v1/inventory/transfer-requests", tags=["transfer-requests"])
 app.include_router(lot_settings.router,       prefix="/api/v1/inventory",                  tags=["lot-settings"])
+app.include_router(lots.router,               prefix="/api/v1/inventory/lots",             tags=["lots"])
 
 
 @app.exception_handler(Exception)
