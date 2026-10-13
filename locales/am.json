@@ -872,6 +872,25 @@
       "note": "ሎቶች በማጽደቅ ጊዜ ይረጋገጣሉ። አሁን ምንም አልተያዘም።",
       "shortfall": "{qty} ይጎድላል፦ በምንጩ መጋዘን በቂ ጥቅም ላይ የሚውል ክምችት የለም።",
       "expired_skipped": "ጊዜያቸው ባለፈ ሎቶች ውስጥ ያለ {qty} ተዘሏል።"
+    },
+    "approve": {
+      "title": "ዝውውር {ref}ን አጽድቅ",
+      "intro": "ይህ የመጨረሻ ማጽደቅ ነው። ሎቶች ከታች እንደሚታየው ከምንጩ መጋዘን ይወሰዳሉ።",
+      "suggested": "የተጠቆሙ ሎቶች",
+      "line_quantity": "መጠን፦ {qty}",
+      "change_lots": "ሎቶችን ቀይር",
+      "use_suggested": "የተጠቆሙ ሎቶችን ተጠቀም",
+      "col_available": "ያለ መጠን",
+      "no_active_lots": "በምንጩ መጋዘን ንቁ ሎቶች የሉም።",
+      "lots_load_failed": "ሎቶቹን መጫን አልተቻለም። እባክዎ እንደገና ይሞክሩ።",
+      "err_quantity": "0 ወይም ከዚያ በላይ፣ እስከ ያለው {available} ድረስ ያስገቡ።",
+      "err_total": "ከ{required} ውስጥ {chosen} ተመርጧል። መጠኖቹ በትክክል መደመር አለባቸው።",
+      "reason_label": "ሎቶቹን የመቀየር ምክንያት",
+      "reason_required": "ግዴታ",
+      "reason_placeholder": "ለምን የተለዩ ሎቶች ጥቅም ላይ ይውላሉ?",
+      "submit": "አጽድቅ",
+      "submit_changed": "በተመረጡ ሎቶች አጽድቅ",
+      "stock_detail": "ጥቅም ላይ የሚውል፦ {usable} · ጊዜው ያለፈ፦ {expired}"
     }
   },
   "demo": {

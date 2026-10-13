@@ -166,12 +166,16 @@ async function request<T>(
       resource?: string; limit?: number | null;
       contractEnd?: string | null; readOnlySince?: string | null;
       reason?: string; nodes?: Array<{ id: string; name: string }>;
+      detail?: Record<string, unknown>;
     };
     apiErr.status    = res.status;
     apiErr.code      = err.error?.code ?? detCode;
     if (det?.locations) apiErr.locations = det.locations;
     if (det?.reason) apiErr.reason = det.reason;
     if (det?.nodes)  apiErr.nodes  = det.nodes;
+    // Full FastAPI detail object, for codes that carry extra fields
+    // (e.g. INSUFFICIENT_STOCK: available / expired_qty).
+    if (det) apiErr.detail = det as Record<string, unknown>;
     // FEATURE_NOT_IN_PLAN (402, plan_middleware.py) — carried as typed fields so
     // callers can render the upgrade message via lib/planError.ts instead of
     // showing the raw error / [object Object].

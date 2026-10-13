@@ -1373,6 +1373,25 @@
       "note": "Lots are confirmed at approval. Nothing is reserved now.",
       "shortfall": "Short by {qty}: not enough usable stock at the source.",
       "expired_skipped": "{qty} in expired lots was skipped."
+    },
+    "approve": {
+      "title": "Approve transfer {ref}",
+      "intro": "This is the final approval. Lots are taken from the source warehouse as shown below.",
+      "suggested": "Suggested lots",
+      "line_quantity": "Quantity: {qty}",
+      "change_lots": "Change lots",
+      "use_suggested": "Use suggested lots",
+      "col_available": "Available",
+      "no_active_lots": "No active lots at the source warehouse.",
+      "lots_load_failed": "Could not load the lots. Please try again.",
+      "err_quantity": "Enter 0 or more, up to the available {available}.",
+      "err_total": "Chosen {chosen} of {required}. The quantities must add up exactly.",
+      "reason_label": "Reason for changing the lots",
+      "reason_required": "required",
+      "reason_placeholder": "Why are different lots being used?",
+      "submit": "Approve",
+      "submit_changed": "Approve with chosen lots",
+      "stock_detail": "Usable: {usable} · Expired: {expired}"
     }
   },
   "products": {

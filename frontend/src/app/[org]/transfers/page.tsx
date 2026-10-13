@@ -8,7 +8,9 @@ import { getSession, SA_ORG_SLUG } from "@/lib/demo-auth";
 import { DEMO_TENANTS, type DemoProduct, type DemoWarehouse, type ProductApprovalOverride } from "@/lib/demo-data";
 import { NewTransferPanel } from "@/components/features/transfers/NewTransferPanel";
 import { ReceiveTransferPanel } from "@/components/features/transfers/ReceiveTransferPanel";
-import { TransferRowDetails, hasLotSplit, transferDetailKey } from "@/components/features/transfers/TransferLotDetails";
+import { TransferRowDetails, hasLotSplit, transferDetailKey, type TransferReceiptDetail } from "@/components/features/transfers/TransferLotDetails";
+import { ApproveLotsPanel, approveFailure, type ApproveFailure, type ApproveLine, type ApproveLotsBody } from "@/components/features/transfers/ApproveLotsPanel";
+import { fetchDispatchPreview } from "@/components/features/transfers/DispatchPreview";
 import { ProductLabel } from "@/components/features/inventory/ProductLabel";
 import { useInventoryStore } from "@/lib/inventory-state";
 import { useAuditStore } from "@/lib/audit-log-state";
@@ -688,6 +690,7 @@ export default function TransfersPage() {
   const [partialQtyErr, setPartialQtyErr] = useState("");
   const [toast, setToast] = useState("");
   const [receiveFor, setReceiveFor] = useState<ApiTransfer | null>(null);
+  const [approveFor, setApproveFor] = useState<{ transfer: ApiTransfer; lines: ApproveLine[] } | null>(null);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
 
   const tenantId = user?.tenantId ?? "";
@@ -861,21 +864,73 @@ export default function TransfersPage() {
   const visibleTransfers = scopedTransfers.filter((t) => !TERMINAL.includes(t.status));
   const archivedCount = scopedTransfers.filter((t) => TERMINAL.includes(t.status)).length;
 
-  async function doTransition(id: string, next: TransferStatus, partialQty?: number) {
-    if (!user) return;
-    if (isSubmitting) return;  // prevent double-submit
+  // Approve clicked: the final approver of a transfer with a batch-tracked line gets
+  // the lot picker; every other case keeps the plain confirm → PATCH approve.
+  async function openApprove(txn: ApiTransfer, label: string) {
+    const plainApprove = () => {
+      setPartialQtyInput(""); setPartialQtyErr("");
+      setConfirmModal({ id: txn.id, next: "APPROVED", label, transfer: txn });
+    };
+    if (txn.is_self_approved) { plainApprove(); return; }
+    setTransitioning(txn.id);
+    try {
+      const info = await qc.fetchQuery<ApprovalInfoResponse>({
+        queryKey: ["approval-info", txn.id],
+        queryFn:  () => api.get<ApprovalInfoResponse>(`/api/v1/inventory/transfers/${txn.id}/approval-info`),
+        staleTime: 0,
+      });
+      const isFinalStep = (info.current_step ?? 1) === (info.total_steps ?? 1);
+      if (info.is_auto_approve || !isFinalStep) { plainApprove(); return; }
+
+      const detail = await api.get<TransferReceiptDetail>(`/api/v1/inventory/transfers/${txn.id}`);
+      const previewed = await Promise.all(
+        (detail.lines ?? []).map(async (line) => ({
+          line,
+          preview: await fetchDispatchPreview(line.product_id, txn.from_warehouse_id, line.quantity),
+        })),
+      );
+      // A null strategy means the line's product is not batch-tracked: no picker for it.
+      const batchLines: ApproveLine[] = previewed
+        .filter(({ preview }) => preview.strategy !== null)
+        .map(({ line, preview }) => ({
+          lineId:      line.line_id,
+          productId:   line.product_id,
+          productName: line.product_name,
+          quantity:    Number(line.quantity),
+          preview,
+        }));
+      if (batchLines.length === 0) { plainApprove(); return; }
+      setApproveFor({ transfer: txn, lines: batchLines });
+    } catch (err: unknown) {
+      console.warn("[openApprove] lot picker unavailable, using plain approve:", err);
+      plainApprove();
+    } finally {
+      setTransitioning(null);
+    }
+  }
+
+  // approve (lot picker only): failures are returned for the panel to show instead of
+  // a toast; approve.body switches the request to POST /approve with the chosen lots.
+  async function doTransition(
+    id: string,
+    next: TransferStatus,
+    partialQty?: number,
+    approve?: { body: ApproveLotsBody | null },
+  ): Promise<ApproveFailure | null> {
+    if (!user) return null;
+    if (isSubmitting) return null;  // prevent double-submit
     if (!isOnline) {
       setConfirmModal(null);
       setToast(t("transfers.offline_error"));
       setTimeout(() => setToast(""), 5000);
-      return;
+      return null;
     }
     const blockedReason = guard.reason();
     if (blockedReason) {
       setConfirmModal(null);
       setToast(blockedReason);
       setTimeout(() => setToast(""), 5000);
-      return;
+      return null;
     }
     const transfer = allTransfers.find((t) => t.id === id);
     setIsSubmitting(true);
@@ -915,7 +970,7 @@ export default function TransfersPage() {
           await qc.invalidateQueries({ queryKey: ["transfers", org] });
           setToast(`Status changed to ${freshStatus.replace(/_/g, " ")} — list refreshed. Please try again.`);
           setTimeout(() => setToast(""), 5000);
-          return;
+          return null;
         }
       } catch (prefetchErr: unknown) {
         const pErr = prefetchErr as { status?: number };
@@ -925,15 +980,20 @@ export default function TransfersPage() {
           await qc.invalidateQueries({ queryKey: ["transfers", org] });
           setToast("Transfer state changed — refreshed. Please try again.");
           setTimeout(() => setToast(""), 5000);
-          return;
+          return null;
         }
         // Non-422 failures (network, 404): proceed to the PATCH and handle any error there
         console.warn("[doTransition] pre-fetch GET failed:", prefetchErr);
       }
       // ───────────────────────────────────────────────────────────────────────
 
-      console.log("[doTransition] sending PATCH:", { id, next_status: next, cachedStatus: transfer?.status });
-      await api.patch(`/api/v1/inventory/transfers/${id}`, { next_status: next });
+      if (approve?.body) {
+        // Final approver chose different lots — the server decides if that is permitted.
+        await api.post(`/api/v1/inventory/transfers/${id}/approve`, approve.body);
+      } else {
+        console.log("[doTransition] sending PATCH:", { id, next_status: next, cachedStatus: transfer?.status });
+        await api.patch(`/api/v1/inventory/transfers/${id}`, { next_status: next });
+      }
 
       // FIX 4: Optimistic update — reflect new status in the table immediately,
       // before the background refetch arrives.
@@ -945,6 +1005,7 @@ export default function TransfersPage() {
       // Refresh inventory balances immediately so On Hand / Available on the
       // Inventory page reflect the new ledger state without waiting for the 30 s poll.
       void qc.invalidateQueries({ queryKey: ["inventory-stock", org] });
+      if (approve) void qc.invalidateQueries({ queryKey: transferDetailKey(id) });
 
       if (transfer && !getTransferEntry(id)) {
         addTransfer({
@@ -993,6 +1054,7 @@ export default function TransfersPage() {
         setToast(`Status updated to ${next.replace(/_/g, " ")}`);
       }
       setTimeout(() => setToast(""), 3000);
+      return null;
     } catch (err: unknown) {
       const apiErr = err as { status?: number; message?: string; code?: string };
       const is422  = apiErr.status === 422;
@@ -1000,6 +1062,11 @@ export default function TransfersPage() {
       const msg    = apiErr.message ?? "Transition failed.";
       // Log full error so browser console shows the exact backend code + message
       console.error("[doTransition] transition failed:", { id, next, status: apiErr.status, code, message: msg, raw: err });
+      if (approve) {
+        // Lot picker is open: it shows the translated error and keeps the approver's input.
+        void qc.invalidateQueries({ queryKey: ["transfers", org] });
+        return approveFailure(err);
+      }
       const toastMsg = is422
         ? `Invalid transition${code ? ` (${code})` : ""} — refreshing status…`
         : (msg.length <= 80 ? msg : "Transition failed — check permissions.");
@@ -1007,6 +1074,7 @@ export default function TransfersPage() {
       setTimeout(() => setToast(""), 5000);
       // Always refresh on error so the UI reflects the actual backend state
       void qc.invalidateQueries({ queryKey: ["transfers", org] });
+      return null;
     } finally {
       setTransitioning(null);
       setIsSubmitting(false);
@@ -1137,6 +1205,20 @@ export default function TransfersPage() {
           basePath="/api/v1/inventory/transfers"
           onClose={() => setReceiveFor(null)}
           onReceived={(total, count) => onReceived(receiveFor.id, total, count)}
+        />
+      )}
+
+      {approveFor && (
+        <ApproveLotsPanel
+          transferRef={approveFor.transfer.ref}
+          sourceWarehouseId={approveFor.transfer.from_warehouse_id}
+          lines={approveFor.lines}
+          onClose={() => setApproveFor(null)}
+          onSubmit={async (body) => {
+            const failure = await doTransition(approveFor.transfer.id, "APPROVED", undefined, { body });
+            if (!failure) setApproveFor(null);
+            return failure;
+          }}
         />
       )}
 
@@ -1275,10 +1357,7 @@ export default function TransfersPage() {
                         <ApprovalPendingActions
                           transferId={txn.id}
                           isOnline={isOnline}
-                          onApprove={(label) => {
-                            setPartialQtyInput(""); setPartialQtyErr("");
-                            setConfirmModal({ id: txn.id, next: "APPROVED", label, transfer: txn });
-                          }}
+                          onApprove={(label) => void openApprove(txn, label)}
                           onReject={() => {
                             setPartialQtyInput(""); setPartialQtyErr("");
                             setConfirmModal({ id: txn.id, next: "REJECTED", label: "Reject", transfer: txn });
