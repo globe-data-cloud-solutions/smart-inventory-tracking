@@ -270,10 +270,22 @@ class IssueStockRequest(BaseModel):
     notes: Optional[str] = None
     idempotency_key: str
     source: str = "WEB"
+    lot_selections: Optional[List[LotPick]] = None
+    override_reason: Optional[str] = Field(None, max_length=500)
 
-    @field_validator("reason_code", "issued_to", "notes", "idempotency_key", "source", mode="before")
+    @field_validator(
+        "reason_code", "issued_to", "notes", "idempotency_key", "source", "override_reason",
+        mode="before",
+    )
     @classmethod
     def no_null_bytes(cls, v: object) -> object: return _no_null(v)
+
+
+class IssuedLot(BaseModel):
+    lot_id: uuid.UUID
+    lot_number: Optional[str] = None
+    expiry_date: Optional[date] = None
+    quantity: Decimal
 
 
 class IssueStockResponse(BaseModel):
@@ -283,6 +295,8 @@ class IssueStockResponse(BaseModel):
     quantity: Decimal
     reason_code: str
     created_at: datetime
+    lots: List[IssuedLot] = []
+    is_override: bool = False
 
 
 class LotSelection(BaseModel):

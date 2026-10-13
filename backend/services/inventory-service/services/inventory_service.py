@@ -33,6 +33,7 @@ from schemas.inventory import (
     AdjustStockResponse,
     CountSessionRequest,
     CountSessionResponse,
+    IssuedLot,
     IssueStockRequest,
     IssueStockResponse,
     ReceiveStockRequest,
@@ -45,7 +46,17 @@ from schemas.inventory import (
     TransferOrderResponse,
 )
 from services import transfer_discrepancies, transfer_lots
-from services.dispatch_service import DispatchError, InsufficientStockError
+from services.dispatch_service import (
+    DispatchError,
+    InsufficientStockError,
+    allocate,
+    load_candidate_lots,
+    load_product,
+    plan_allocation,
+    record_override,
+    resolve_strategy,
+    validate_manual_selection,
+)
 from services.state_machine import InvalidStateTransitionError, validate_transition
 from shared.permissions.audit import audit_log
 
@@ -426,33 +437,231 @@ class InventoryService:
             source=body.source,
         )
 
-    async def issue_stock(self, user: Any, body: IssueStockRequest) -> IssueStockResponse:
+    async def _issued_rows(self, tenant_id: str, issue_ref: str) -> list[Any]:
+        """ISSUE ledger rows already posted for this issue_ref, ordered by lot_id."""
+        return list((await self.db.execute(
+            text(
+                "SELECT id, lot_id, lot_number, expiry_date, quantity "
+                "FROM inventory_transactions "
+                "WHERE tenant_id = :tid AND type = 'ISSUE' AND reference_id = :ref "
+                "ORDER BY lot_id"
+            ),
+            {"tid": tenant_id, "ref": issue_ref},
+        )).fetchall())
+
+    async def _issue_replay(
+        self, tenant_id: str, issue_ref: str, body: IssueStockRequest, rows: list[Any]
+    ) -> IssueStockResponse:
+        """The response of an Issue that was already posted — nothing is written."""
+        from datetime import datetime, timezone
+
+        override_row = (await self.db.execute(
+            text(
+                "SELECT id FROM lot_allocation_overrides "
+                "WHERE tenant_id = :tid AND movement_type = 'ISSUE' AND reference_id = :ref "
+                "LIMIT 1"
+            ),
+            {"tid": tenant_id, "ref": issue_ref},
+        )).fetchone()
+        lots = [
+            IssuedLot(
+                lot_id=r.lot_id,
+                lot_number=r.lot_number,
+                expiry_date=r.expiry_date,
+                quantity=abs(Decimal(str(r.quantity))),
+            )
+            for r in rows
+        ]
+        return IssueStockResponse(
+            transaction_id=UUID(str(rows[0].id)),
+            product_id=body.product_id,
+            warehouse_id=body.warehouse_id,
+            quantity=sum((l.quantity for l in lots), Decimal("0")),
+            reason_code=body.reason_code,
+            created_at=datetime.now(timezone.utc),
+            lots=lots,
+            is_override=override_row is not None,
+        )
+
+    async def issue_stock(
+        self,
+        user: Any,
+        body: IssueStockRequest,
+        *,
+        can_fefo_override: bool = False,
+        can_lot_select: bool = False,
+    ) -> IssueStockResponse:
         """Issue stock out of a warehouse — direct On Hand deduction, no reservation step.
 
-        ISSUE is always a single ledger INSERT with a negative quantity.
         No RESERVE transaction is created at any point in the workflow.
         If quantity exceeds the tenant approval threshold, the caller must
         route through the adjustment approval workflow instead.
+
+        Non-batch product: a single ISSUE ledger INSERT with a negative quantity,
+        key = body.idempotency_key. lot_selections → 422 LOT_NOT_TRACKED.
+
+        Batch product: one ISSUE row per lot, sorted by lot_id, key
+        f"{body.idempotency_key}:lot:{lot_id}", all sharing reference_id =
+        issue_ref (uuid5 of tenant + idempotency_key). The lots come from the
+        dispatch engine (allocate) or from body.lot_selections. A selection that
+        differs from the engine's order is an override: FEFO needs
+        can_fefo_override (and a reason), FIFO/LIFO needs can_lot_select; it is
+        logged in lot_allocation_overrides with movement_type="ISSUE". A replay
+        (ISSUE rows already exist for issue_ref) returns those rows and writes
+        nothing.
+
+        Lock order is the same as record_transaction(): the product balance row
+        first, then the lot_balances rows (ORDER BY lot_id).
+
+        PERMISSIONS: the override flags are resolved by the router.
         """
-        tx_id = await record_transaction(
-            self.db,
-            tenant_id=str(user.tenant_id),
-            transaction_type="ISSUE",
-            product_id=str(body.product_id),
-            warehouse_id=str(body.warehouse_id),
-            quantity=-abs(body.quantity),   # always a deduction
-            performed_by=str(user.user_id),
-            idempotency_key=body.idempotency_key,
+        from datetime import datetime, timezone
+
+        tenant_id, user_id = str(user.tenant_id), str(user.user_id)
+        product_id, warehouse_id = str(body.product_id), str(body.warehouse_id)
+        qty = abs(body.quantity)
+
+        product = await load_product(self.db, tenant_id, product_id)
+
+        if not product.batch_tracking:
+            if body.lot_selections:
+                raise transfer_lots.http_from_engine(DispatchError("LOT_NOT_TRACKED"))
+            tx_id = await record_transaction(
+                self.db,
+                tenant_id=tenant_id,
+                transaction_type="ISSUE",
+                product_id=product_id,
+                warehouse_id=warehouse_id,
+                quantity=-qty,   # always a deduction
+                performed_by=user_id,
+                idempotency_key=body.idempotency_key,
+            )
+            return IssueStockResponse(
+                transaction_id=UUID(tx_id),
+                product_id=body.product_id,
+                warehouse_id=body.warehouse_id,
+                quantity=body.quantity,
+                reason_code=body.reason_code,
+                created_at=datetime.now(timezone.utc),
+            )
+
+        # Stable per request: every lot row of this Issue carries it as reference_id.
+        issue_ref = str(
+            uuid.uuid5(uuid.NAMESPACE_URL, f"issue:{tenant_id}:{body.idempotency_key}")
         )
 
-        from datetime import datetime, timezone
+        # Replay check first — an Issue already posted is returned as it was.
+        posted = await self._issued_rows(tenant_id, issue_ref)
+        if posted:
+            return await self._issue_replay(tenant_id, issue_ref, body, posted)
+
+        # Same lock order as record_transaction(): balance row first, then lots.
+        await self.db.execute(
+            text(
+                "SELECT id FROM inventory_balances "
+                "WHERE tenant_id = :tid AND product_id = :pid AND warehouse_id = :wid FOR UPDATE"
+            ),
+            {"tid": tenant_id, "pid": product_id, "wid": warehouse_id},
+        )
+
+        # A concurrent request with the same key may have posted while this one
+        # waited for the lock — look again before allocating a second time.
+        posted = await self._issued_rows(tenant_id, issue_ref)
+        if posted:
+            return await self._issue_replay(tenant_id, issue_ref, body, posted)
+
+        strategy, _ = resolve_strategy(
+            product.batch_tracking, product.expiry_tracking, product.dispatch_strategy
+        )
+        chosen = body.lot_selections or None
+        is_override = False
+
+        try:
+            if chosen is None:
+                try:
+                    plan = await allocate(
+                        self.db, tenant_id, product_id, warehouse_id, qty, strategy
+                    )
+                except InsufficientStockError as exc:
+                    # Tell the caller how much of the shortfall is sitting in expired lots.
+                    lots = await load_candidate_lots(
+                        self.db, tenant_id, product_id, warehouse_id, lock=False
+                    )
+                    exc.expired_qty = sum(  # type: ignore[attr-defined]
+                        (l.quantity for l in plan_allocation(lots, qty, strategy).expired_skipped),
+                        Decimal("0"),
+                    )
+                    raise
+                allocs = sorted(
+                    (
+                        transfer_lots.Alloc(l.lot_id, l.lot_number, l.expiry_date, l.quantity)
+                        for l in plan.lines
+                    ),
+                    key=lambda a: a.lot_id,
+                )
+            else:
+                plan, is_override = await validate_manual_selection(
+                    self.db, tenant_id, product_id, warehouse_id, qty, chosen, strategy, lock=True
+                )
+                if is_override:
+                    permitted = can_fefo_override if strategy == "FEFO" else can_lot_select
+                    if not permitted:
+                        raise DispatchError("OVERRIDE_NOT_PERMITTED", strategy=strategy)
+                    await record_override(
+                        self.db,
+                        tenant_id=tenant_id,
+                        user_id=user_id,
+                        product_id=product_id,
+                        warehouse_id=warehouse_id,
+                        strategy=strategy,
+                        movement_type="ISSUE",
+                        reference_id=issue_ref,
+                        qty=qty,
+                        plan=plan,
+                        chosen=chosen,
+                        reason=body.override_reason,
+                    )
+                # The lots posted are the user's chosen lots, not the plan.
+                allocs = await transfer_lots._chosen_allocs(
+                    self.db, tenant_id, product_id, chosen
+                )
+        except (DispatchError, InsufficientStockError) as e:
+            raise transfer_lots.http_from_engine(e) from e
+
+        tx_ids: list[str] = []
+        for alloc in allocs:   # sorted by lot_id
+            tx_ids.append(await record_transaction(
+                self.db,
+                tenant_id=tenant_id,
+                transaction_type="ISSUE",
+                product_id=product_id,
+                warehouse_id=warehouse_id,
+                quantity=-alloc.quantity,   # always a deduction
+                performed_by=user_id,
+                idempotency_key=f"{body.idempotency_key}:lot:{alloc.lot_id}",
+                reference_id=issue_ref,
+                lot_id=alloc.lot_id,
+                lot_number=alloc.lot_number,
+                expiry_date=alloc.expiry_date,
+            ))
+
         return IssueStockResponse(
-            transaction_id=UUID(tx_id),
+            transaction_id=UUID(tx_ids[0]),
             product_id=body.product_id,
             warehouse_id=body.warehouse_id,
             quantity=body.quantity,
             reason_code=body.reason_code,
             created_at=datetime.now(timezone.utc),
+            lots=[
+                IssuedLot(
+                    lot_id=UUID(a.lot_id),
+                    lot_number=a.lot_number,
+                    expiry_date=a.expiry_date,
+                    quantity=a.quantity,
+                )
+                for a in allocs
+            ],
+            is_override=is_override,
         )
 
     async def adjust(self, user: Any, body: AdjustStockRequest) -> AdjustStockResponse:

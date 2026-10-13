@@ -542,7 +542,16 @@ class TestIssueStockBelowZeroBlocked:
         session = AsyncMock()
         svc = InventoryService(session)
 
+        from services.dispatch_service import ProductDispatchInfo
+
+        # issue_stock() loads the product first — a non-batch product here.
         with patch(
+            "services.inventory_service.load_product",
+            new_callable=AsyncMock,
+            return_value=ProductDispatchInfo(
+                batch_tracking=False, expiry_tracking=False, dispatch_strategy=None
+            ),
+        ), patch(
             "services.inventory_service.record_transaction",
             new_callable=AsyncMock,
             side_effect=insufficient_stock_error,
