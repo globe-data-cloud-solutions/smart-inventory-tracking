@@ -397,6 +397,44 @@ CREATE INDEX idx_transfer_line_allocations_tenant_lot
 ALTER TABLE transfer_line_allocations ENABLE ROW LEVEL SECURITY;
 CREATE POLICY tenant_isolation ON transfer_line_allocations
   USING (tenant_id = current_setting('app.current_tenant_id', true)::uuid);
+
+-- ── transfer_discrepancies (migration 086) ───────────────────────────────────
+-- One row per shortfall found at transfer receipt: a line (non-batch, lot_id NULL)
+-- or one lot of a line (batch) where the destination received less than was sent.
+-- Record-only — TRANSFER_IN credits received_quantity; the missing quantity lives
+-- here and nowhere else. Append-only BY CODE (insert_discrepancy() is the only
+-- write path; no PostgreSQL RULE on this table). Status is OPEN until a later
+-- phase adds resolution (write-off / return).
+CREATE TABLE transfer_discrepancies (
+  id                 UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  tenant_id          UUID NOT NULL,
+  transfer_order_id  UUID NOT NULL REFERENCES transfer_orders(id),
+  transfer_line_id   UUID NOT NULL REFERENCES transfer_order_lines(id),
+  product_id         UUID NOT NULL REFERENCES products(id),
+  lot_id             UUID NULL REFERENCES stock_lots(id),   -- NULL for a non-batch line
+  to_warehouse_id    UUID NOT NULL,
+  sent_quantity      NUMERIC(15,4) NOT NULL CHECK (sent_quantity > 0),
+  received_quantity  NUMERIC(15,4) NOT NULL CHECK (received_quantity >= 0),
+  missing_quantity   NUMERIC(15,4) NOT NULL CHECK (missing_quantity > 0),
+  reason             VARCHAR(20) NOT NULL
+                     CHECK (reason IN ('SHORT','DAMAGED','WRONG_LOT')),
+  note               TEXT NULL,
+  status             VARCHAR(20) NOT NULL DEFAULT 'OPEN' CHECK (status IN ('OPEN')),
+  created_by         UUID NOT NULL,
+  created_at         TIMESTAMPTZ NOT NULL DEFAULT now(),
+  CHECK (received_quantity + missing_quantity = sent_quantity)
+);
+-- One row per (line, lot); a NULL lot (non-batch line) counts as one value.
+CREATE UNIQUE INDEX uq_transfer_discrepancies_line_lot
+  ON transfer_discrepancies
+  (transfer_line_id, COALESCE(lot_id, '00000000-0000-0000-0000-000000000000'::uuid));
+CREATE INDEX idx_transfer_discrepancies_tenant_order
+  ON transfer_discrepancies (tenant_id, transfer_order_id);
+CREATE INDEX idx_transfer_discrepancies_tenant_status
+  ON transfer_discrepancies (tenant_id, status);
+ALTER TABLE transfer_discrepancies ENABLE ROW LEVEL SECURITY;
+CREATE POLICY tenant_isolation ON transfer_discrepancies
+  USING (tenant_id = current_setting('app.current_tenant_id', true)::uuid);
 ```
 
 ### Alembic migration rules

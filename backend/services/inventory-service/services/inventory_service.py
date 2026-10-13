@@ -37,13 +37,14 @@ from schemas.inventory import (
     IssueStockResponse,
     ReceiveStockRequest,
     ReceiveStockResponse,
+    ReceiveTransferRequest,
     TransferLineItem,
     TransferListItem,
     TransferLotAllocation,
     TransferOrderRequest,
     TransferOrderResponse,
 )
-from services import transfer_lots
+from services import transfer_discrepancies, transfer_lots
 from services.dispatch_service import DispatchError, InsufficientStockError
 from services.state_machine import InvalidStateTransitionError, validate_transition
 from shared.permissions.audit import audit_log
@@ -1563,7 +1564,12 @@ class InventoryService:
             created_at=datetime.now(timezone.utc),
         )
 
-    async def receive_transfer(self, user: Any, transfer_id: UUID) -> TransferOrderResponse:
+    async def receive_transfer(
+        self,
+        user: Any,
+        transfer_id: UUID,
+        receipt: Optional[ReceiveTransferRequest] = None,
+    ) -> TransferOrderResponse:
         """Advance an IN_TRANSIT transfer to RECEIVED.
 
         Writes a TRANSFER_IN ledger entry for every line and credits the destination
@@ -1571,6 +1577,12 @@ class InventoryService:
         user.warehouse_id must equal transfer.to_warehouse_id.
 
         Writes a StockTransferred outbox event per line in the same transaction.
+
+        receipt (optional) confirms a received quantity per allocated lot (batch
+        line) or per line (non-batch line). TRANSFER_IN then credits the received
+        quantity only and every shortfall becomes an OPEN transfer_discrepancies
+        row; TRANSIT_CLEAR still clears the full sent quantity and the transfer
+        still ends in RECEIVED. Without it every line is received in full.
         """
         result = await self.db.execute(
             text("SELECT * FROM transfer_orders WHERE id = :id AND tenant_id = :tid FOR UPDATE"),
@@ -1619,11 +1631,28 @@ class InventoryService:
         )).fetchall()
 
         _allocs = await transfer_lots.load_allocations(self.db, user.tenant_id, transfer_id)
+
+        # Receipt confirmation: the whole body is checked before anything is written.
+        _expected: dict = {}
+        _receipt: Optional[dict] = None
+        if receipt is not None:
+            _expected = transfer_discrepancies.expected_entries(lines, _allocs)
+            _receipt = transfer_discrepancies.validate_receipt(_expected, receipt.lines)
+
         for line in lines:
             _line_allocs = _allocs.get(str(line.id))
+            # Credited at the destination for this line (the full line without a receipt).
+            _line_received = Decimal(str(line.quantity))
             if _line_allocs:
                 # Batch line: clear transit and credit the destination per lot,
                 # on the same lot_ids the source was debited on.
+                _received_by_lot: Optional[dict[str, Decimal]] = None
+                if _receipt is not None:
+                    _received_by_lot = {
+                        a.lot_id: _receipt[(str(line.id), a.lot_id)].received_quantity
+                        for a in _line_allocs
+                    }
+                    _line_received = sum(_received_by_lot.values(), Decimal("0"))
                 for _wh, _dest in ((row.from_warehouse_id, False), (row.to_warehouse_id, True)):
                     await transfer_lots.post_lot_audit(
                         self.db,
@@ -1646,8 +1675,11 @@ class InventoryService:
                     to_warehouse_id=str(row.to_warehouse_id),
                     line=line,
                     allocs=_line_allocs,
+                    received_by_lot=_received_by_lot,
                 )
             else:
+                if _receipt is not None:
+                    _line_received = _receipt[(str(line.id), None)].received_quantity
                 # Clear in-transit tracking at both source and destination.
                 await write_transfer_ledger_entry(
                     session=self.db,
@@ -1674,37 +1706,68 @@ class InventoryService:
                     line_id=f"{line.id}:dest",
                 )
                 # Credit destination on_hand — stock physically received.
-                await record_transaction(
-                    self.db,
-                    tenant_id=str(user.tenant_id),
-                    transaction_type="TRANSFER_IN",
-                    product_id=str(line.product_id),
-                    warehouse_id=str(row.to_warehouse_id),
-                    quantity=Decimal(str(line.quantity)),  # positive: credit to destination
-                    performed_by=str(user.user_id),
-                    idempotency_key=f"transfer:{transfer_id}:receive:in:line:{line.id}",
-                    reference_id=str(transfer_id),
-                )
+                # Nothing received on this line: no zero-quantity TRANSFER_IN.
+                if _line_received > 0:
+                    await record_transaction(
+                        self.db,
+                        tenant_id=str(user.tenant_id),
+                        transaction_type="TRANSFER_IN",
+                        product_id=str(line.product_id),
+                        warehouse_id=str(row.to_warehouse_id),
+                        quantity=_line_received,  # positive: credit to destination
+                        performed_by=str(user.user_id),
+                        idempotency_key=f"transfer:{transfer_id}:receive:in:line:{line.id}",
+                        reference_id=str(transfer_id),
+                    )
+
+            # One OPEN discrepancy per lot (batch) or line (non-batch) that came up short.
+            if _receipt is not None:
+                for (_line_id, _lot_id), _sent in _expected.items():
+                    _entry = _receipt[(_line_id, _lot_id)]
+                    if _line_id != str(line.id) or _entry.received_quantity >= _sent:
+                        continue
+                    await transfer_discrepancies.insert_discrepancy(
+                        self.db,
+                        tenant_id=str(user.tenant_id),
+                        transfer_id=str(transfer_id),
+                        line_id=_line_id,
+                        product_id=str(line.product_id),
+                        lot_id=_lot_id,
+                        to_warehouse_id=str(row.to_warehouse_id),
+                        sent_quantity=_sent,
+                        received_quantity=_entry.received_quantity,
+                        reason=_entry.reason,
+                        note=_entry.note,
+                        created_by=str(user.user_id),
+                    )
 
             # StockTransferred is an additional event beyond the InventoryUpdated
             # that record_transaction() already fired — both in the same transaction.
-            await write_to_outbox(
-                self.db,
-                str(user.tenant_id),
-                "StockTransferred",
-                StockTransferredPayload(
-                    from_warehouse_id=str(row.from_warehouse_id),
-                    to_warehouse_id=str(row.to_warehouse_id),
-                    product_id=str(line.product_id),
-                    quantity=float(line.quantity),
-                    transfer_order_id=str(transfer_id),
-                ),
-            )
+            # It carries what was received; a line that received nothing fires none.
+            if _line_received > 0:
+                await write_to_outbox(
+                    self.db,
+                    str(user.tenant_id),
+                    "StockTransferred",
+                    StockTransferredPayload(
+                        from_warehouse_id=str(row.from_warehouse_id),
+                        to_warehouse_id=str(row.to_warehouse_id),
+                        product_id=str(line.product_id),
+                        quantity=float(_line_received),
+                        transfer_order_id=str(transfer_id),
+                    ),
+                )
 
         await self.db.execute(
             text("UPDATE transfer_orders SET status = 'RECEIVED', updated_at = now() WHERE id = :id"),
             {"id": str(transfer_id)},
         )
+
+        _discrepancies: list = []
+        if _receipt is not None:
+            _discrepancies = await transfer_discrepancies.load_discrepancies(
+                self.db, user.tenant_id, transfer_id
+            )
 
         from datetime import datetime, timezone
         return TransferOrderResponse(
@@ -1714,6 +1777,7 @@ class InventoryService:
             from_warehouse_id=row.from_warehouse_id,
             to_warehouse_id=row.to_warehouse_id,
             created_at=datetime.now(timezone.utc),
+            discrepancies=_discrepancies,
         )
 
     async def get_transfer(self, user: Any, transfer_id: UUID) -> TransferOrderResponse:
@@ -1727,6 +1791,9 @@ class InventoryService:
             raise HTTPException(status_code=404, detail="Transfer not found")
 
         _allocs = await transfer_lots.load_allocations(self.db, row.tenant_id, transfer_id)
+        _discrepancies = await transfer_discrepancies.load_discrepancies(
+            self.db, row.tenant_id, transfer_id
+        )
 
         from datetime import datetime, timezone
         return TransferOrderResponse(
@@ -1737,6 +1804,7 @@ class InventoryService:
             to_warehouse_id=row.to_warehouse_id,
             created_at=datetime.now(timezone.utc),
             is_self_approved=bool(row.is_self_approved),
+            lines=await self._transfer_line_items(transfer_id),
             lot_allocations=[
                 TransferLotAllocation(
                     line_id=line_id,
@@ -1750,6 +1818,7 @@ class InventoryService:
                 for line_id, line_allocs in _allocs.items()
                 for a in line_allocs
             ],
+            discrepancies=_discrepancies,
         )
 
     async def create_adjustment(
@@ -2181,6 +2250,35 @@ class InventoryService:
             created_at=datetime.now(timezone.utc),
         )
 
+    async def _transfer_line_items(self, transfer_id: Any) -> list[TransferLineItem]:
+        """The lines of one transfer with product name/SKU, for list and detail responses."""
+        line_rows = (await self.db.execute(
+            text("""
+                SELECT
+                    tol.id               AS line_id,
+                    tol.product_id,
+                    p.name               AS product_name,
+                    p.sku,
+                    tol.quantity,
+                    COALESCE(p.unit, '') AS uom
+                FROM transfer_order_lines tol
+                JOIN products p ON p.id = tol.product_id
+                WHERE tol.transfer_order_id = :xfer_id
+            """),
+            {"xfer_id": str(transfer_id)},
+        )).fetchall()
+        return [
+            TransferLineItem(
+                line_id=line.line_id,
+                product_id=line.product_id,
+                product_name=line.product_name,
+                sku=line.sku,
+                quantity=Decimal(str(line.quantity)),
+                uom=line.uom,
+            )
+            for line in line_rows
+        ]
+
     async def list_transfers(
         self, user: Any, page: int = 1, limit: int = 50
     ) -> list[TransferListItem]:
@@ -2228,21 +2326,6 @@ class InventoryService:
         results: list[TransferListItem] = []
 
         for r in rows:
-            lines_sql = text("""
-                SELECT
-                    tol.product_id,
-                    p.name               AS product_name,
-                    p.sku,
-                    tol.quantity,
-                    COALESCE(p.unit, '') AS uom
-                FROM transfer_order_lines tol
-                JOIN products p ON p.id = tol.product_id
-                WHERE tol.transfer_order_id = :xfer_id
-            """)
-            line_rows = (
-                await self.db.execute(lines_sql, {"xfer_id": str(r.transfer_id)})
-            ).fetchall()
-
             _rs = r.resolved_approval_steps
             if isinstance(_rs, str):
                 try:
@@ -2267,16 +2350,7 @@ class InventoryService:
                     is_self_approved=bool(r.is_self_approved),
                     current_step=r.current_approval_step or 1,
                     total_steps=_total_steps,
-                    lines=[
-                        TransferLineItem(
-                            product_id=line.product_id,
-                            product_name=line.product_name,
-                            sku=line.sku,
-                            quantity=Decimal(str(line.quantity)),
-                            uom=line.uom,
-                        )
-                        for line in line_rows
-                    ],
+                    lines=await self._transfer_line_items(r.transfer_id),
                 )
             )
 

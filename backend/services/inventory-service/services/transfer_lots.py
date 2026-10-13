@@ -8,7 +8,8 @@ in transfer_line_allocations (085) and every later step reads it back:
                       allocation rows, post one TRANSFER_OUT per lot
   post_lot_audit      TRANSIT_OUT / TRANSIT_IN / TRANSIT_CLEAR / TRANSFER_REVERSAL
                       per allocation
-  post_transfer_in    one TRANSFER_IN per allocation on the SAME lot_id
+  post_transfer_in    one TRANSFER_IN per allocation on the SAME lot_id (for the
+                      received quantity when the receipt confirms one)
 
 Non-batch lines post exactly as before (one TRANSFER_OUT, no allocation rows).
 
@@ -24,7 +25,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import date
 from decimal import Decimal
-from typing import Any, Optional, Sequence
+from typing import Any, Mapping, Optional, Sequence
 from uuid import UUID
 
 from fastapi import HTTPException
@@ -387,20 +388,28 @@ async def post_transfer_in(
     to_warehouse_id: UUID | str,
     line: Any,
     allocs: Sequence[Alloc],
+    received_by_lot: Optional[Mapping[str, Decimal]] = None,
 ) -> None:
     """Credit the destination: one TRANSFER_IN per allocation.
 
     The credit upserts lot_balances on the SAME lot_id the source was debited
     on, so lot number, expiry and first_received_at carry over unchanged.
+
+    received_by_lot ({lot_id: quantity}, receipt confirmation) credits that
+    quantity instead of the allocated one; a lot that received 0 gets no
+    TRANSFER_IN. Without it every lot is credited in full.
     """
     for alloc in allocs:
+        quantity = alloc.quantity if received_by_lot is None else received_by_lot[alloc.lot_id]
+        if quantity <= 0:
+            continue
         await record_transaction(
             db,
             tenant_id=str(tenant_id),
             transaction_type="TRANSFER_IN",
             product_id=str(line.product_id),
             warehouse_id=str(to_warehouse_id),
-            quantity=alloc.quantity,
+            quantity=quantity,
             performed_by=str(user_id),
             idempotency_key=f"transfer:{transfer_id}:receive:in:line:{line.id}:lot:{alloc.lot_id}",
             reference_id=str(transfer_id),

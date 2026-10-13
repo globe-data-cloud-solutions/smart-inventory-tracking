@@ -12,6 +12,16 @@ import { api } from "@/lib/api";
 import { t } from "@/lib/i18n";
 import { useTenantName } from "@/hooks/useTenantName";
 import { formatQty } from "@/lib/utils";
+import { ReceiveTransferPanel } from "@/components/features/transfers/ReceiveTransferPanel";
+import {
+  TransferDiscrepancies,
+  TransferLotSplit,
+  hasLotSplit,
+  transferDetailKey,
+  type TransferDiscrepancyApi,
+  type TransferLineApi,
+  type TransferLotAllocationApi,
+} from "@/components/features/transfers/TransferLotDetails";
 
 /* ── Types ──────────────────────────────────────────────────────────────── */
 type TransferType = "PULL" | "PUSH" | "SISTER";
@@ -46,12 +56,16 @@ interface TransferDetail {
   notes: string;
   status: TransferStatus;
   created_at: string;
+  lines?: TransferLineApi[];
+  lot_allocations?: TransferLotAllocationApi[];
+  discrepancies?: TransferDiscrepancyApi[];
 }
 
 interface Action {
   next: TransferStatus;
   label: string;
   color: string;
+  opensReceive?: boolean; // Receive — opens the per-lot receive form (POST /receive)
 }
 
 /* ── Status / type Tailwind maps ────────────────────────────────────────── */
@@ -98,8 +112,9 @@ function getAvailableActions(
   const issue:      Action = { next: "ISSUED",                 label: "Issue Stock",           color: "#065F46" };
   const dispatch:   Action = { next: "IN_TRANSIT",             label: "Dispatch",             color: "#92400E" };
   const advise:     Action = { next: "ADVISED",                label: "Advise",               color: "#059669" };
-  const partRecv:   Action = { next: "PARTIALLY_RECEIVED",     label: "Partially Received",   color: "#713F12" };
-  const markRecv:   Action = { next: "RECEIVED",               label: "Mark as Received",     color: "#059669" };
+  // Receive opens the receive form (C2). The separate "Partially Received" action is gone:
+  // a short receipt is entered on the form and recorded server-side as a discrepancy.
+  const receive:    Action = { next: "RECEIVED",               label: t("transfers.receive.action"), color: "#059669", opensReceive: true };
   const complete:   Action = { next: "COMPLETED",              label: "Complete Transfer",    color: "#374151" };
   const review:     Action = { next: "PENDING_REVIEW",         label: "Submit for Review",    color: "#5B21B6" };
   const toApproval: Action = { next: "PENDING_APPROVAL",       label: "Send for Approval",    color: "#1E40AF" };
@@ -115,8 +130,8 @@ function getAvailableActions(
         PENDING_APPROVAL:   [approve, reject, cancel],
         APPROVED:           [issue, cancel],
         ISSUED:             [dispatch],
-        IN_TRANSIT:         [partRecv, markRecv],
-        PARTIALLY_RECEIVED: [markRecv],
+        IN_TRANSIT:         [receive],
+        PARTIALLY_RECEIVED: [receive],
         RECEIVED:           [complete],
       };
       return map[status] ?? [];
@@ -128,8 +143,8 @@ function getAvailableActions(
         APPROVED:           [advise, issue, cancel],
         ADVISED:            [issue, cancel],
         ISSUED:             [dispatch],
-        IN_TRANSIT:         [partRecv, markRecv],
-        PARTIALLY_RECEIVED: [markRecv],
+        IN_TRANSIT:         [receive],
+        PARTIALLY_RECEIVED: [receive],
         RECEIVED:           [complete],
       };
       return map[status] ?? [];
@@ -142,8 +157,8 @@ function getAvailableActions(
         PENDING_APPROVAL:       [approve, reject, cancel],
         APPROVED:               [issue, cancel],
         ISSUED:                 [dispatch],
-        IN_TRANSIT:             [partRecv, markRecv],
-        PARTIALLY_RECEIVED:     [markRecv],
+        IN_TRANSIT:             [receive],
+        PARTIALLY_RECEIVED:     [receive],
         RECEIVED:               [complete],
       };
       return map[status] ?? [];
@@ -159,8 +174,8 @@ function getAvailableActions(
       if (isDestWM) {
         const map: Partial<Record<TransferStatus, Action[]>> = {
           DRAFT:              [review, cancel],
-          IN_TRANSIT:         [partRecv, markRecv],
-          PARTIALLY_RECEIVED: [markRecv],
+          IN_TRANSIT:         [receive],
+          PARTIALLY_RECEIVED: [receive],
           RECEIVED:           [complete],
         };
         return map[status] ?? [];
@@ -177,8 +192,8 @@ function getAvailableActions(
     if (type === "PUSH") {
       if (isDestWM) {
         const map: Partial<Record<TransferStatus, Action[]>> = {
-          IN_TRANSIT:         [partRecv, markRecv],
-          PARTIALLY_RECEIVED: [markRecv],
+          IN_TRANSIT:         [receive],
+          PARTIALLY_RECEIVED: [receive],
           RECEIVED:           [complete],
         };
         return map[status] ?? [];
@@ -198,8 +213,8 @@ function getAvailableActions(
         const map: Partial<Record<TransferStatus, Action[]>> = {
           DRAFT:                [submitReq, cancel],
           PENDING_DEST_CONFIRM: [confirmInt, reject, cancel],
-          IN_TRANSIT:           [partRecv, markRecv],
-          PARTIALLY_RECEIVED:   [markRecv],
+          IN_TRANSIT:           [receive],
+          PARTIALLY_RECEIVED:   [receive],
           RECEIVED:             [complete],
         };
         return map[status] ?? [];
@@ -370,6 +385,7 @@ export default function TransferDetailPage() {
   const [toast, setToast]     = useState("");
   const [loading, setLoading] = useState(false);
   const [confirm, setConfirm] = useState<{ next: TransferStatus; label: string } | null>(null);
+  const [receiveOpen, setReceiveOpen] = useState(false);
 
   const { data: transfer, isLoading, error } = useQuery<TransferDetail>({
     queryKey: ["transfer", id],
@@ -427,6 +443,23 @@ export default function TransferDetailPage() {
     } finally {
       setLoading(false);
     }
+  }
+
+  // Receive form submitted: refresh this transfer, the list and the stock balances.
+  function onReceived(receivedTotal: number, discrepancyCount: number) {
+    setReceiveOpen(false);
+    void qc.invalidateQueries({ queryKey: ["transfer", id] });
+    void qc.invalidateQueries({ queryKey: transferDetailKey(id) });
+    void qc.invalidateQueries({ queryKey: ["transfers", org] });
+    void qc.invalidateQueries({ queryKey: ["inventory-stock", org] });
+    let msg = t("transfers.receive.toast_received").replace("{qty}", formatQty(receivedTotal));
+    if (discrepancyCount === 1) {
+      msg += ` · ${t("transfers.receive.toast_discrepancy_one")}`;
+    } else if (discrepancyCount > 1) {
+      msg += ` · ${t("transfers.receive.toast_discrepancies").replace("{count}", String(discrepancyCount))}`;
+    }
+    setToast(msg);
+    setTimeout(() => setToast(""), 5000);
   }
 
   if (isLoading) {
@@ -516,6 +549,17 @@ export default function TransferDetailPage() {
         </>
       )}
 
+      {/* Receive form — posts to the same transfers base path this page already uses */}
+      {receiveOpen && (
+        <ReceiveTransferPanel
+          transferId={id}
+          transferRef={transfer.ref}
+          basePath="/api/v1/transfers"
+          onClose={() => setReceiveOpen(false)}
+          onReceived={onReceived}
+        />
+      )}
+
       {/* Back link */}
       <button
         onClick={() => router.back()}
@@ -565,6 +609,18 @@ export default function TransferDetailPage() {
             </div>
           )}
 
+          {/* Lot split (from APPROVED onward) and receipt discrepancies */}
+          {hasLotSplit(transfer.status) && (
+            <div className="mb-6">
+              <TransferLotSplit lines={transfer.lines ?? []} allocations={transfer.lot_allocations ?? []} />
+            </div>
+          )}
+          {(transfer.discrepancies?.length ?? 0) > 0 && (
+            <div className="mb-6">
+              <TransferDiscrepancies discrepancies={transfer.discrepancies ?? []} />
+            </div>
+          )}
+
           {/* DEBUG PANEL — remove after confirming ISSUE button appears for source WM */}
           <div className="mb-4 px-3.5 py-3 bg-slate-900 rounded-md font-mono text-[11px] leading-relaxed text-emerald-300 border border-slate-700">
             <p className="text-slate-400 font-bold uppercase tracking-widest text-[9px] mb-2">⚙ DEBUG — action visibility (remove after testing)</p>
@@ -605,7 +661,10 @@ export default function TransferDetailPage() {
                       key={a.next}
                       disabled={rowBlocked}
                       title={!isOnline ? t("errors.OFFLINE") : gp.title}
-                      onClick={() => setConfirm({ next: a.next, label: a.label })}
+                      onClick={() => {
+                        if (a.opensReceive) { setReceiveOpen(true); return; }
+                        setConfirm({ next: a.next, label: a.label });
+                      }}
                       style={{
                         border:     `1.5px solid ${a.color}40`,
                         background: !rowBlocked ? `${a.color}10` : undefined,

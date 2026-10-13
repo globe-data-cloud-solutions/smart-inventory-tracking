@@ -711,7 +711,12 @@
     "LOT_SELECTION_NOT_ALLOWED": "Lots can only be chosen at the final approval step.",
     "INSUFFICIENT_STOCK": "Not enough usable stock. Expired lots are not counted.",
     "BATCH_TRACKING_TRANSFERS_OPEN": "Lot tracking can't be switched on while transfers of this product are approved or in transit.",
-    "PRODUCT_NOT_FOUND": "Product not found."
+    "PRODUCT_NOT_FOUND": "Product not found.",
+    "RECEIPT_LINES_MISMATCH": "The receipt must list every line and lot on this transfer exactly once.",
+    "RECEIPT_EXCEEDS_SENT": "The received quantity can't be more than the quantity sent.",
+    "RECEIPT_REASON_REQUIRED": "Choose a reason for the missing quantity.",
+    "PARTIAL_RECEIPT_NOT_SUPPORTED": "Enter the received quantities on the receive form instead.",
+    "INVALID_STATE_TRANSITION": "This transfer's status has changed. Refresh and try again."
   },
   "transfers": {
     "transfers_heading": "Transfers",
@@ -752,7 +757,86 @@
       "created": "Created",
       "notes": "Notes"
     },
-    "offline_error": "Transfer status changes require an internet connection. Please reconnect and try again."
+    "offline_error": "Transfer status changes require an internet connection. Please reconnect and try again.",
+    "receive": {
+      "action": "Receive",
+      "title": "Receive transfer {ref}",
+      "intro": "Confirm what arrived. Anything less than what was sent is recorded as a discrepancy.",
+      "col_item": "Item",
+      "col_lot": "Lot",
+      "col_expiry": "Expiry",
+      "col_sent": "Sent",
+      "col_received": "Received",
+      "col_reason": "Reason",
+      "col_note": "Note",
+      "reason_placeholder": "Select a reason",
+      "note_placeholder": "Optional note",
+      "err_range": "Enter a quantity between 0 and {sent} (up to 4 decimals).",
+      "submit": "Confirm receipt",
+      "load_failed": "Could not load this transfer's lines. Please try again.",
+      "toast_received": "Received {qty}",
+      "toast_discrepancy_one": "1 discrepancy recorded",
+      "toast_discrepancies": "{count} discrepancies recorded"
+    },
+    "lots": {
+      "title": "Lot split",
+      "toggle": "Show lot split and receipt details",
+      "none": "No lots allocated for this transfer.",
+      "col_product": "Product",
+      "col_lot": "Lot",
+      "col_expiry": "Expiry",
+      "col_quantity": "Quantity"
+    },
+    "discrepancies": {
+      "title": "Receipt discrepancies",
+      "col_lot": "Lot",
+      "col_sent": "Sent",
+      "col_received": "Received",
+      "col_missing": "Missing",
+      "col_reason": "Reason",
+      "col_note": "Note",
+      "col_status": "Status",
+      "reason": {
+        "SHORT": "Short",
+        "DAMAGED": "Damaged",
+        "WRONG_LOT": "Wrong lot"
+      },
+      "status": {
+        "OPEN": "Open"
+      }
+    },
+    "preview": {
+      "strategy": "Dispatch order: {strategy}",
+      "strategies": {
+        "FEFO": "FEFO (first expired, first out)",
+        "FIFO": "FIFO (first in, first out)",
+        "LIFO": "LIFO (last in, first out)"
+      },
+      "likely_lots": "Likely lots:",
+      "expiry": "expires {date}",
+      "note": "Lots are confirmed at approval. Nothing is reserved now.",
+      "shortfall": "Short by {qty}: not enough usable stock at the source.",
+      "expired_skipped": "{qty} in expired lots was skipped."
+    },
+    "approve": {
+      "title": "Approve transfer {ref}",
+      "intro": "This is the final approval. Lots are taken from the source warehouse as shown below.",
+      "suggested": "Suggested lots",
+      "line_quantity": "Quantity: {qty}",
+      "change_lots": "Change lots",
+      "use_suggested": "Use suggested lots",
+      "col_available": "Available",
+      "no_active_lots": "No active lots at the source warehouse.",
+      "lots_load_failed": "Could not load the lots. Please try again.",
+      "err_quantity": "Enter 0 or more, up to the available {available}.",
+      "err_total": "Chosen {chosen} of {required}. The quantities must add up exactly.",
+      "reason_label": "Reason for changing the lots",
+      "reason_required": "required",
+      "reason_placeholder": "Why are different lots being used?",
+      "submit": "Approve",
+      "submit_changed": "Approve with chosen lots",
+      "stock_detail": "Usable: {usable} · Expired: {expired}"
+    }
   },
   "products": {
     "col_name": "Product Name",

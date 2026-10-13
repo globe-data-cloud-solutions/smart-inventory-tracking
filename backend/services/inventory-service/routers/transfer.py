@@ -13,6 +13,7 @@ from shared.permissions.registry import PERMISSIONS
 from shared.utils.responses import SuccessResponse
 from schemas.inventory import (
     ApprovalInfoResponse,
+    ReceiveTransferRequest,
     TransferApproveRequest,
     TransferListItem,
     TransferOrderRequest,
@@ -177,15 +178,23 @@ async def dispatch_transfer(
 @require_permission(PERMISSIONS.TRANSFER_RECEIVE)
 async def receive_transfer(
     transfer_id: UUID,
+    body: Optional[ReceiveTransferRequest] = Body(None),
     user=Depends(get_current_user),
     db: AsyncSession = Depends(get_db_session),
 ) -> SuccessResponse[TransferOrderResponse]:
     """Advance IN_TRANSIT → RECEIVED. Destination warehouse only (warehouse_id ABAC).
     Writes TRANSFER_IN ledger entries, credits destination balance, and fires
     StockTransferred outbox events — all in the same database transaction.
+
+    No body: every line is received in full. The optional body confirms the
+    received quantity per allocated lot (batch line) or per line (non-batch
+    line) and must list each exactly once. A quantity below what was sent needs
+    a reason (SHORT | DAMAGED | WRONG_LOT): only the received quantity is
+    credited and the shortfall is returned in `discrepancies`. The transfer
+    ends in RECEIVED either way.
     """
     svc = InventoryService(db)
-    result = await svc.receive_transfer(user, transfer_id)
+    result = await svc.receive_transfer(user, transfer_id, body)
     return SuccessResponse(data=result)
 
 
@@ -200,9 +209,20 @@ async def transition_transfer(
     """Generic state transition — delegates to specialized methods for ledger-writing states.
 
     next_status == "ISSUED":   calls dispatch_transfer() — ABAC check, no ledger entries.
-    next_status == "RECEIVED": calls receive_transfer()  — books TRANSFER_IN at destination.
+    next_status == "RECEIVED": calls receive_transfer()  — books TRANSFER_IN at destination
+                               (always a full receipt; quantities go through POST /receive).
+    next_status == "PARTIALLY_RECEIVED": 422 — a short receipt is POST /receive with a body.
     All other statuses:        calls transition_transfer() — pure status update.
     """
+    if body.next_status == "PARTIALLY_RECEIVED":
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "code": "PARTIAL_RECEIPT_NOT_SUPPORTED",
+                "detail": "Use POST /transfers/{id}/receive with the received quantities.",
+            },
+        )
+
     svc = InventoryService(db)
 
     # Destructive transitions require elevated permissions beyond transfer:view.

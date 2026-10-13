@@ -713,7 +713,12 @@
     "EXPIRY_NEEDS_BATCH": "የማብቂያ ቀን መከታተል እንዲሰራ የሎት መከታተል መብራት አለበት።",
     "INVALID_DISPATCH_STRATEGY": "ይህ የማሰናዳት ስልት ለተመረጡት ቅንብሮች ልክ አይደለም።",
     "BATCH_TRACKING_IN_USE": "ሎት ክምችት እስካለው ድረስ የሎት መከታተል ማጥፋት አይቻልም።",
-    "LOT_CONVERSION_MISMATCH": "የመክፈቻ ሎት ድምር ከያዘው ክምችት ጋር አልተዛመደም። ለውጡ አልተቀመጠም።"
+    "LOT_CONVERSION_MISMATCH": "የመክፈቻ ሎት ድምር ከያዘው ክምችት ጋር አልተዛመደም። ለውጡ አልተቀመጠም።",
+    "RECEIPT_LINES_MISMATCH": "የመቀበያ ዝርዝሩ በዚህ ዝውውር ላይ ያለውን እያንዳንዱን መስመር እና ሎት በትክክል አንድ ጊዜ መያዝ አለበት።",
+    "RECEIPT_EXCEEDS_SENT": "የተቀበሉት መጠን ከተላከው መጠን መብለጥ አይችልም።",
+    "RECEIPT_REASON_REQUIRED": "ለጎደለው መጠን ምክንያት ይምረጡ።",
+    "PARTIAL_RECEIPT_NOT_SUPPORTED": "በምትኩ የተቀበሉትን መጠኖች በመቀበያ ቅጹ ላይ ያስገቡ።",
+    "INVALID_STATE_TRANSITION": "የዚህ ዝውውር ሁኔታ ተቀይሯል። እባክዎ ያድሱና እንደገና ይሞክሩ።"
   },
   "layout": {
     "sign_out": "ውጣ",
@@ -807,7 +812,86 @@
       "created": "ተፈጥሯል",
       "notes": "ማስታወሻዎች"
     },
-    "offline_error": "የዝውውር ሁኔታ ለውጦች የበይነ መረብ ግንኙነት ያስፈልጋቸዋል። እባክዎ ዳግም ይገናኙ እና ይሞክሩ።"
+    "offline_error": "የዝውውር ሁኔታ ለውጦች የበይነ መረብ ግንኙነት ያስፈልጋቸዋል። እባክዎ ዳግም ይገናኙ እና ይሞክሩ።",
+    "receive": {
+      "action": "ተቀበል",
+      "title": "ዝውውር {ref} መቀበል",
+      "intro": "የደረሰውን ያረጋግጡ። ከተላከው ያነሰ ማንኛውም መጠን እንደ ልዩነት ይመዘገባል።",
+      "col_item": "ዕቃ",
+      "col_lot": "ሎት",
+      "col_expiry": "የአገልግሎት ማብቂያ ቀን",
+      "col_sent": "የተላከ",
+      "col_received": "የተቀበሉት",
+      "col_reason": "ምክንያት",
+      "col_note": "ማስታወሻ",
+      "reason_placeholder": "ምክንያት ይምረጡ",
+      "note_placeholder": "አማራጭ ማስታወሻ",
+      "err_range": "ከ0 እስከ {sent} ያለ መጠን ያስገቡ (እስከ 4 አስርዮሽ አሃዞች)።",
+      "submit": "መቀበሉን አረጋግጥ",
+      "load_failed": "የዚህን ዝውውር መስመሮች መጫን አልተቻለም። እባክዎ እንደገና ይሞክሩ።",
+      "toast_received": "{qty} ተቀብለዋል",
+      "toast_discrepancy_one": "1 ልዩነት ተመዝግቧል",
+      "toast_discrepancies": "{count} ልዩነቶች ተመዝግበዋል"
+    },
+    "lots": {
+      "title": "የሎት ክፍፍል",
+      "toggle": "የሎት ክፍፍል እና የመቀበያ ዝርዝሮችን አሳይ",
+      "none": "ለዚህ ዝውውር የተመደበ ሎት የለም።",
+      "col_product": "ምርት",
+      "col_lot": "ሎት",
+      "col_expiry": "የአገልግሎት ማብቂያ ቀን",
+      "col_quantity": "መጠን"
+    },
+    "discrepancies": {
+      "title": "የመቀበያ ልዩነቶች",
+      "col_lot": "ሎት",
+      "col_sent": "የተላከ",
+      "col_received": "የተቀበሉት",
+      "col_missing": "የጎደለ",
+      "col_reason": "ምክንያት",
+      "col_note": "ማስታወሻ",
+      "col_status": "ሁኔታ",
+      "reason": {
+        "SHORT": "ጎድሏል",
+        "DAMAGED": "ተበላሽቷል",
+        "WRONG_LOT": "የተሳሳተ ሎት"
+      },
+      "status": {
+        "OPEN": "ክፍት"
+      }
+    },
+    "preview": {
+      "strategy": "የማውጫ ቅደም ተከተል፦ {strategy}",
+      "strategies": {
+        "FEFO": "FEFO (ቀድሞ የሚያበቃ ቀድሞ ይወጣል)",
+        "FIFO": "FIFO (ቀድሞ የገባ ቀድሞ ይወጣል)",
+        "LIFO": "LIFO (መጨረሻ የገባ ቀድሞ ይወጣል)"
+      },
+      "likely_lots": "ሊወጡ የሚችሉ ሎቶች፦",
+      "expiry": "የሚያበቃው {date}",
+      "note": "ሎቶች በማጽደቅ ጊዜ ይረጋገጣሉ። አሁን ምንም አልተያዘም።",
+      "shortfall": "{qty} ይጎድላል፦ በምንጩ መጋዘን በቂ ጥቅም ላይ የሚውል ክምችት የለም።",
+      "expired_skipped": "ጊዜያቸው ባለፈ ሎቶች ውስጥ ያለ {qty} ተዘሏል።"
+    },
+    "approve": {
+      "title": "ዝውውር {ref}ን አጽድቅ",
+      "intro": "ይህ የመጨረሻ ማጽደቅ ነው። ሎቶች ከታች እንደሚታየው ከምንጩ መጋዘን ይወሰዳሉ።",
+      "suggested": "የተጠቆሙ ሎቶች",
+      "line_quantity": "መጠን፦ {qty}",
+      "change_lots": "ሎቶችን ቀይር",
+      "use_suggested": "የተጠቆሙ ሎቶችን ተጠቀም",
+      "col_available": "ያለ መጠን",
+      "no_active_lots": "በምንጩ መጋዘን ንቁ ሎቶች የሉም።",
+      "lots_load_failed": "ሎቶቹን መጫን አልተቻለም። እባክዎ እንደገና ይሞክሩ።",
+      "err_quantity": "0 ወይም ከዚያ በላይ፣ እስከ ያለው {available} ድረስ ያስገቡ።",
+      "err_total": "ከ{required} ውስጥ {chosen} ተመርጧል። መጠኖቹ በትክክል መደመር አለባቸው።",
+      "reason_label": "ሎቶቹን የመቀየር ምክንያት",
+      "reason_required": "ግዴታ",
+      "reason_placeholder": "ለምን የተለዩ ሎቶች ጥቅም ላይ ይውላሉ?",
+      "submit": "አጽድቅ",
+      "submit_changed": "በተመረጡ ሎቶች አጽድቅ",
+      "stock_detail": "ጥቅም ላይ የሚውል፦ {usable} · ጊዜው ያለፈ፦ {expired}"
+    }
   },
   "demo": {
     "mode_banner": "ዴሞ ሁኔታ — ለውጦቹ ሲያስነሱ ይጠፋሉ። ለቋሚ መረጃ ከ backend ጋር ይያያዙ።"
