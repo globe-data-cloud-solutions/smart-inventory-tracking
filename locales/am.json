@@ -696,6 +696,7 @@
     "LOT_REQUIRED": "ለዚህ ግብይት ሎት መመረጥ አለበት።",
     "LOT_EXPIRED": "ይህ ሎት ጊዜው አልፎበታል፤ ሊላክ አይችልም።",
     "LOT_NOT_IN_WAREHOUSE": "ይህ ሎት በምንጭ መጋዘኑ ውስጥ የዚህ ምርት ክምችት የለውም።",
+    "LOT_NOT_FOUND": "ይህ ሎት ለዚህ ምርት አልተገኘም።",
     "SELECTION_QTY_MISMATCH": "የሎቶቹ መጠኖች ድምር ከመስመሩ መጠን ጋር እኩል መሆን አለበት።",
     "OVERRIDE_REASON_REQUIRED": "የFEFO የሎት ቅደም ተከተልን ለመቀየር ምክንያት ያስፈልጋል።",
     "OVERRIDE_NOT_PERMITTED": "የሎት ቅደም ተከተልን ለመቀየር ፈቃድ የለዎትም።",
