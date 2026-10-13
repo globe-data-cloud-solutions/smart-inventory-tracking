@@ -1,73 +1,79 @@
 #!/usr/bin/env python3
-"""
-check_locale_parity.py — Verify that am.json and or.json have the same keys as en.json
-(keys may have different values, but the structure must match for fallback to work).
-Run: python3 scripts/check_locale_parity.py (returns 0 if all match, 1 if mismatch)
-"""
+"""Locale key parity checks. Exits 1 if any check fails.
 
+1. EN fallback: every key in locales/en.json must exist in
+   frontend/src/lib/locales/en.json (the frontend's bundled English copy).
+   A missing key shows users a raw code instead of English text.
+2. Translations: every key in locales/en.json must exist in
+   locales/am.json and locales/or.json.
+
+Run: python3 scripts/check_locale_parity.py   (scripts/check_i18n.sh runs it too)
+"""
 import json
+import os
 import sys
-from pathlib import Path
 
-def load_locale(path: str) -> dict:
-    """Load a locale JSON file."""
-    with open(path, 'r', encoding='utf-8') as f:
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+ROOT_EN = os.path.join(ROOT, "locales", "en.json")
+FRONTEND_EN = os.path.join(ROOT, "frontend", "src", "lib", "locales", "en.json")
+TRANSLATIONS = {
+    "am": os.path.join(ROOT, "locales", "am.json"),
+    "or": os.path.join(ROOT, "locales", "or.json"),
+}
+
+
+def load(path):
+    with open(path, encoding="utf-8") as f:
         return json.load(f)
 
-def get_all_keys(d: dict, prefix: str = '') -> set:
-    """Recursively extract all dotted keys from a nested dict."""
+
+def flatten(d, prefix=""):
     keys = set()
     for k, v in d.items():
-        full_key = f"{prefix}{k}" if not prefix else f"{prefix}.{k}"
+        full_key = f"{prefix}.{k}" if prefix else k
         if isinstance(v, dict):
-            keys.update(get_all_keys(v, full_key))
+            keys |= flatten(v, full_key)
         else:
             keys.add(full_key)
     return keys
 
+
+def report(label, missing):
+    if missing:
+        print(f"MISSING KEYS ({label}):")
+        for key in missing:
+            print(f"  {key}")
+        return False
+    print(f"  PASS: {label}")
+    return True
+
+
 def main():
-    base_path = Path(__file__).parent.parent
-    en_path = base_path / 'locales' / 'en.json'
-    am_path = base_path / 'locales' / 'am.json'
-    or_path = base_path / 'locales' / 'or.json'
-    
     try:
-        en = load_locale(str(en_path))
-        am = load_locale(str(am_path))
-        or_locale = load_locale(str(or_path))
-    except FileNotFoundError as e:
-        print(f"ERROR: Missing locale file: {e}")
+        root_keys = flatten(load(ROOT_EN))
+        frontend_keys = flatten(load(FRONTEND_EN))
+        translated = {lang: flatten(load(path)) for lang, path in TRANSLATIONS.items()}
+    except (OSError, json.JSONDecodeError) as e:
+        print(f"ERROR: cannot read a locale file: {e}")
         return 1
-    except json.JSONDecodeError as e:
-        print(f"ERROR: Invalid JSON in locale file: {e}")
-        return 1
-    
-    en_keys = get_all_keys(en)
-    am_keys = get_all_keys(am)
-    or_keys = get_all_keys(or_locale)
-    
-    errors = []
 
-    # Check am.json — warn if missing keys from en.json (for fallback to work)
-    missing_in_am = en_keys - am_keys
-    if missing_in_am:
-        errors.append(f"  am.json missing keys: {', '.join(sorted(missing_in_am))}")
+    # Section 1 — EN fallback (the original check from 65a5139)
+    ok = report(
+        "in locales/en.json but not in frontend/src/lib/locales/en.json",
+        sorted(root_keys - frontend_keys),
+    )
+    # Section 2 — Amharic / Oromo translations
+    for lang, keys in translated.items():
+        ok = report(
+            f"in locales/en.json but not in locales/{lang}.json",
+            sorted(root_keys - keys),
+        ) and ok
 
-    # Check or.json — warn if missing keys from en.json (for fallback to work)
-    missing_in_or = en_keys - or_keys
-    if missing_in_or:
-        errors.append(f"  or.json missing keys: {', '.join(sorted(missing_in_or))}")
-    
-    if errors:
-        print("ERROR: Locale key parity mismatch:")
-        for err in errors:
-            print(err)
-        print()
-        print("Fix: Ensure all keys from en.json are present in am.json and or.json.")
-        return 1
-    
-    print("  PASS: All locales have matching key structure.")
-    return 0
+    if ok:
+        print("PARITY PASS")
+        return 0
+    return 1
 
-if __name__ == '__main__':
+
+if __name__ == "__main__":
     sys.exit(main())
