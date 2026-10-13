@@ -184,6 +184,13 @@ else
   echo "  PASS: No suspicious raw ID displays."
 fi
 
+# ── ERROR Check 6: EN fallback parity (root locales/en.json vs frontend) ──
+echo ""
+echo "Checking EN fallback parity..."
+if ! python3 scripts/check_locale_parity.py; then
+  EXIT=1
+fi
+
 # ── Summary ───────────────────────────────────────────────────────────────
 echo ""
 echo "─────────────────────────────────────────"

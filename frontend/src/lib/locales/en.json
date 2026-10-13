@@ -699,7 +699,11 @@
     "EXPIRY_NEEDS_BATCH": "Expiry tracking requires batch tracking to be turned on.",
     "INVALID_DISPATCH_STRATEGY": "This dispatch strategy is not valid for the selected settings.",
     "BATCH_TRACKING_IN_USE": "Batch tracking cannot be turned off while a lot still holds stock.",
-    "LOT_CONVERSION_MISMATCH": "Opening lot totals did not match on-hand stock. The change was not saved."
+    "LOT_CONVERSION_MISMATCH": "Opening lot totals did not match on-hand stock. The change was not saved.",
+    "INVALID_SOURCE": "This source is not allowed for receiving stock.",
+    "LOT_NUMBER_GENERATION_FAILED": "Could not generate a unique lot number. Please try again.",
+    "LOT_REQUIRED": "A lot must be selected for this transaction.",
+    "PRODUCT_NOT_FOUND": "Product not found."
   },
   "transfers": {
     "transfers_heading": "Transfers",
