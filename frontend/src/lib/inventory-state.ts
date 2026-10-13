@@ -203,6 +203,7 @@ export const useInventoryStore = create<InventoryStore>()(
           transfers: s.transfers.map((t) => (t.id === transferId ? { ...t, status: newStatus } : t)),
         })),
 
+      // archived: partial receipts are server-side since C2
       partialReceive: (transferId, additionalQty) =>
         set((s) => ({
           transfers: s.transfers.map((t) =>

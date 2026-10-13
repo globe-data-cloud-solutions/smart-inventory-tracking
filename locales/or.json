@@ -707,7 +707,8 @@
     "RECEIPT_LINES_MISMATCH": "The receipt must list every line and lot on this transfer exactly once.",
     "RECEIPT_EXCEEDS_SENT": "The received quantity can't be more than the quantity sent.",
     "RECEIPT_REASON_REQUIRED": "Choose a reason for the missing quantity.",
-    "PARTIAL_RECEIPT_NOT_SUPPORTED": "Enter the received quantities on the receive form instead."
+    "PARTIAL_RECEIPT_NOT_SUPPORTED": "Enter the received quantities on the receive form instead.",
+    "INVALID_STATE_TRANSITION": "This transfer's status has changed. Refresh and try again."
   },
   "demo": {
     "mode_banner": "Haala demo — jijjiiramni marsariitii haaromsamte haqama. Daataa dhaabbataa argachuuf backend waliin wal qabii."
@@ -1312,7 +1313,54 @@
       "created": "Created",
       "notes": "Notes"
     },
-    "offline_error": "Transfer status changes require an internet connection. Please reconnect and try again."
+    "offline_error": "Transfer status changes require an internet connection. Please reconnect and try again.",
+    "receive": {
+      "action": "Receive",
+      "title": "Receive transfer {ref}",
+      "intro": "Confirm what arrived. Anything less than what was sent is recorded as a discrepancy.",
+      "col_item": "Item",
+      "col_lot": "Lot",
+      "col_expiry": "Expiry",
+      "col_sent": "Sent",
+      "col_received": "Received",
+      "col_reason": "Reason",
+      "col_note": "Note",
+      "reason_placeholder": "Select a reason",
+      "note_placeholder": "Optional note",
+      "err_range": "Enter a quantity between 0 and {sent} (up to 4 decimals).",
+      "submit": "Confirm receipt",
+      "load_failed": "Could not load this transfer's lines. Please try again.",
+      "toast_received": "Received {qty}",
+      "toast_discrepancy_one": "1 discrepancy recorded",
+      "toast_discrepancies": "{count} discrepancies recorded"
+    },
+    "lots": {
+      "title": "Lot split",
+      "toggle": "Show lot split and receipt details",
+      "none": "No lots allocated for this transfer.",
+      "col_product": "Product",
+      "col_lot": "Lot",
+      "col_expiry": "Expiry",
+      "col_quantity": "Quantity"
+    },
+    "discrepancies": {
+      "title": "Receipt discrepancies",
+      "col_lot": "Lot",
+      "col_sent": "Sent",
+      "col_received": "Received",
+      "col_missing": "Missing",
+      "col_reason": "Reason",
+      "col_note": "Note",
+      "col_status": "Status",
+      "reason": {
+        "SHORT": "Short",
+        "DAMAGED": "Damaged",
+        "WRONG_LOT": "Wrong lot"
+      },
+      "status": {
+        "OPEN": "Open"
+      }
+    }
   },
   "products": {
     "col_name": "Product Name",

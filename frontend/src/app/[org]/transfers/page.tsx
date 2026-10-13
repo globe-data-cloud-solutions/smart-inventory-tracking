@@ -1,12 +1,14 @@
 "use client";
 
 import { useParams } from "next/navigation";
-import { useState, useRef, useEffect } from "react";
+import { Fragment, useState, useRef, useEffect } from "react";
 import Link from "next/link";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { getSession, SA_ORG_SLUG } from "@/lib/demo-auth";
 import { DEMO_TENANTS, type DemoProduct, type DemoWarehouse, type ProductApprovalOverride } from "@/lib/demo-data";
 import { NewTransferPanel } from "@/components/features/transfers/NewTransferPanel";
+import { ReceiveTransferPanel } from "@/components/features/transfers/ReceiveTransferPanel";
+import { TransferRowDetails, hasLotSplit, transferDetailKey } from "@/components/features/transfers/TransferLotDetails";
 import { ProductLabel } from "@/components/features/inventory/ProductLabel";
 import { useInventoryStore } from "@/lib/inventory-state";
 import { useAuditStore } from "@/lib/audit-log-state";
@@ -221,6 +223,7 @@ interface Action {
   label: string;
   color: string;
   requiresQty?: boolean; // true for PARTIALLY_RECEIVED — opens qty input
+  opensReceive?: boolean; // true for Receive — opens the per-lot receive form (POST /receive)
 }
 
 const STATUS_CLASS: Record<TransferStatus, string> = {
@@ -391,10 +394,10 @@ function getAvailableActions(
   const cancel    : Action = { next: "CANCELLED",              label: "Cancel",             color: "#991B1B" };
   const issue     : Action = { next: "ISSUED",                 label: "Issue",              color: "#065F46" };
   const dispatch  : Action = { next: "IN_TRANSIT",             label: "Dispatch",           color: "#92400E" };
-  // PARTIAL_RECEIVE: hidden pending full implementation. State machine entry kept
-  // for data integrity. Re-enable by adding partialReceive back to IN_TRANSIT actions.
-  // See BUG_REPORT.md §deferred
-  const markRecv  : Action = { next: "RECEIVED",               label: "Mark Received",      color: "#059669" };
+  // Receive opens the receive form (C2): quantities are confirmed per lot / per line
+  // and posted to POST /receive; a short receipt becomes a server-side discrepancy.
+  // There is no separate "Partially Received" action.
+  const receive   : Action = { next: "RECEIVED",               label: t("transfers.receive.action"), color: "#059669", opensReceive: true };
   const complete  : Action = { next: "COMPLETED",              label: "Complete",           color: "#374151" };
   const review    : Action = { next: "PENDING_REVIEW",         label: "Submit for Review",  color: "#5B21B6" };
   const toApproval: Action = { next: "PENDING_APPROVAL",       label: "Send for Approval",  color: "#1E40AF" };
@@ -435,8 +438,8 @@ function getAvailableActions(
     // pullDst excludes isTenantMgr so NM (source) never gets receive/complete.
     const pullDst = isDstWH || isCreator;
     if (pullDst) {
-      map.IN_TRANSIT         = [markRecv];
-      map.PARTIALLY_RECEIVED = [markRecv];
+      map.IN_TRANSIT         = [receive];
+      map.PARTIALLY_RECEIVED = [receive];
       map.RECEIVED           = [complete];
     }
 
@@ -472,8 +475,8 @@ function getAvailableActions(
     // IN_TRANSIT/RECEIVED: strictly destination-side — exact warehouse match only
     const pushDst = isDstWH;
     if (pushDst) {
-      map.IN_TRANSIT         = [markRecv];
-      map.PARTIALLY_RECEIVED = [markRecv];
+      map.IN_TRANSIT         = [receive];
+      map.PARTIALLY_RECEIVED = [receive];
       map.RECEIVED           = [complete];
     }
 
@@ -511,8 +514,8 @@ function getAvailableActions(
 
     // IN_TRANSIT/RECEIVED: destination WM receives — exact warehouse match only
     if (isDstWH) {
-      map.IN_TRANSIT         = [markRecv];
-      map.PARTIALLY_RECEIVED = [markRecv];
+      map.IN_TRANSIT         = [receive];
+      map.PARTIALLY_RECEIVED = [receive];
       map.RECEIVED           = [complete];
     }
 
@@ -672,7 +675,8 @@ export default function TransfersPage() {
   const { isOnline } = useOfflineSync();
   const guard = useWriteGuard();
   const gp = guardProps(guard);
-  const { updateTransferStatus, partialReceive, getTransferEntry, addTransfer } = useInventoryStore();
+  // partialReceive (store) is archived: partial receipts are server-side since C2.
+  const { updateTransferStatus, getTransferEntry, addTransfer } = useInventoryStore();
   const logAudit = useAuditStore((s) => s.log);
   const [transitioning, setTransitioning] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting]   = useState(false);
@@ -683,6 +687,8 @@ export default function TransfersPage() {
   const [partialQtyInput, setPartialQtyInput] = useState("");
   const [partialQtyErr, setPartialQtyErr] = useState("");
   const [toast, setToast] = useState("");
+  const [receiveFor, setReceiveFor] = useState<ApiTransfer | null>(null);
+  const [expanded, setExpanded] = useState<Set<string>>(new Set());
 
   const tenantId = user?.tenantId ?? "";
   const isGateway = !!process.env.NEXT_PUBLIC_API_URL;
@@ -955,9 +961,8 @@ export default function TransfersPage() {
         });
       }
       updateTransferStatus(id, next);
-      if (next === "PARTIALLY_RECEIVED" && partialQty) {
-        partialReceive(id, partialQty);
-      }
+      // archived: the client-only partialReceive(id, partialQty) store call that used to
+      // follow here — partial receipts are server-side since C2 (receive form → POST /receive).
       logAudit({
         tenantSlug:    org,
         userEmail:     user.email,
@@ -1006,6 +1011,30 @@ export default function TransfersPage() {
       setTransitioning(null);
       setIsSubmitting(false);
     }
+  }
+
+  function toggleExpanded(id: string) {
+    setExpanded((prev) => {
+      const nextSet = new Set(prev);
+      if (nextSet.has(id)) nextSet.delete(id); else nextSet.add(id);
+      return nextSet;
+    });
+  }
+
+  // Receive form submitted: refresh the same queries doTransition refreshes.
+  function onReceived(id: string, receivedTotal: number, discrepancyCount: number) {
+    setReceiveFor(null);
+    void qc.invalidateQueries({ queryKey: ["transfers", org] });
+    void qc.invalidateQueries({ queryKey: transferDetailKey(id) });
+    void qc.invalidateQueries({ queryKey: ["inventory-stock", org] });
+    let msg = t("transfers.receive.toast_received").replace("{qty}", formatQty(receivedTotal));
+    if (discrepancyCount === 1) {
+      msg += ` · ${t("transfers.receive.toast_discrepancy_one")}`;
+    } else if (discrepancyCount > 1) {
+      msg += ` · ${t("transfers.receive.toast_discrepancies").replace("{count}", String(discrepancyCount))}`;
+    }
+    setToast(msg);
+    setTimeout(() => setToast(""), 5000);
   }
 
   const stats = {
@@ -1101,6 +1130,16 @@ export default function TransfersPage() {
         </>
       )}
 
+      {receiveFor && (
+        <ReceiveTransferPanel
+          transferId={receiveFor.id}
+          transferRef={receiveFor.ref}
+          basePath="/api/v1/inventory/transfers"
+          onClose={() => setReceiveFor(null)}
+          onReceived={(total, count) => onReceived(receiveFor.id, total, count)}
+        />
+      )}
+
       <div className="mb-6 flex items-start justify-between flex-wrap gap-3">
         <div>
           <h2 className="text-2xl font-bold text-[#0f2d1f] m-0">{t("nav.inventory")} — {t("transfers.transfers_heading")}</h2>
@@ -1162,9 +1201,24 @@ export default function TransfersPage() {
                 const acts    = getAvailableActions(user.role, txn.transfer_type, txn.status, user.warehouseId, txn.from_warehouse_id, txn.to_warehouse_id, txn.quantity, user.id, txn.created_by, txn.created_by_authority_level, cachedApprInfo?.can_approve, hierarchyLevels);
                 const waitMsg = acts.length === 0 ? getWaitingMessage(txn.status, txn.from_warehouse_name, txn.to_warehouse_name, txn.created_by_authority_level, getLevelName, txn.transfer_type, hierarchyLevels) : null;
                 const busy    = transitioning === txn.id;
+                const canExpand  = hasLotSplit(txn.status);
+                const isExpanded = canExpand && expanded.has(txn.id);
                 return (
-                  <tr key={txn.id} className={`border-b border-gray-100 ${idx % 2 === 0 ? "bg-white" : "bg-gray-50"}`}>
-                    <td className="px-3 py-2.5">
+                  <Fragment key={txn.id}>
+                  <tr className={`border-b border-gray-100 ${idx % 2 === 0 ? "bg-white" : "bg-gray-50"}`}>
+                    <td className="px-3 py-2.5 whitespace-nowrap">
+                      {canExpand && (
+                        <button
+                          type="button"
+                          onClick={() => toggleExpanded(txn.id)}
+                          aria-expanded={isExpanded}
+                          aria-label={t("transfers.lots.toggle")}
+                          title={t("transfers.lots.toggle")}
+                          className="mr-1.5 text-xs text-gray-500 bg-transparent border-0 cursor-pointer p-0 w-4"
+                        >
+                          {isExpanded ? "▾" : "▸"}
+                        </button>
+                      )}
                       <Link href={`/${org}/transfers/${txn.id}`} className="font-mono text-xs font-semibold no-underline" style={{ color: tenant?.color ?? "#1B4332" }}>
                         {txn.ref} →
                       </Link>
@@ -1243,7 +1297,10 @@ export default function TransfersPage() {
                               key={a.next}
                               disabled={rowBlocked}
                               title={!isOnline ? t("errors.OFFLINE") : gp.title}
-                              onClick={() => { setPartialQtyInput(""); setPartialQtyErr(""); setConfirmModal({ id: txn.id, next: a.next, label: a.label, transfer: txn, requiresQty: a.requiresQty }); }}
+                              onClick={() => {
+                                if (a.opensReceive) { setReceiveFor(txn); return; }
+                                setPartialQtyInput(""); setPartialQtyErr(""); setConfirmModal({ id: txn.id, next: a.next, label: a.label, transfer: txn, requiresQty: a.requiresQty });
+                              }}
                               className="text-[11px] font-bold px-2.5 py-1 rounded whitespace-nowrap border"
                               /* action button colors are per-action (a.color) — dynamic, must stay as style */
                               style={{
@@ -1272,6 +1329,14 @@ export default function TransfersPage() {
                       )}
                     </td>
                   </tr>
+                  {isExpanded && (
+                    <tr className="border-b border-gray-100 bg-gray-50">
+                      <td colSpan={COLS.length} className="px-8 py-3">
+                        <TransferRowDetails transferId={txn.id} basePath="/api/v1/inventory/transfers" />
+                      </td>
+                    </tr>
+                  )}
+                  </Fragment>
                 );
               })}
             </tbody>
