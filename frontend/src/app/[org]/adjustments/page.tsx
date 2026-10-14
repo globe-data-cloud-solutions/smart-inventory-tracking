@@ -11,6 +11,7 @@ import { useInventoryStore } from "@/lib/inventory-state";
 import { useAuditStore } from "@/lib/audit-log-state";
 import { api, IS_GATEWAY_MODE } from "@/lib/api";
 import { t } from "@/lib/i18n";
+import { lotErrorMessage } from "@/lib/lotErrors";
 import { formatQty } from "@/lib/utils";
 import { useTenantName } from "@/hooks/useTenantName";
 import { useWarehouses } from "@/hooks/useWarehouses";
@@ -27,12 +28,6 @@ type ApiProduct = {
 };
 
 type AdjStatus = "DRAFT" | "PENDING_APPROVAL" | "APPROVED" | "POSTED" | "REJECTED" | "CANCELLED";
-// Lot-related backend codes that have a translated errors.<CODE> entry.
-const LOT_ERROR_CODES = new Set([
-  "LOT_NUMBER_REQUIRED", "LOT_EXPIRY_MISMATCH", "INSUFFICIENT_LOT_STOCK", "LOT_REQUIRED",
-  "LOT_EXPIRED", "LOT_NOT_IN_WAREHOUSE", "LOT_NOT_FOUND",
-]);
-
 type AdjAction  = "submit" | "approve" | "reject" | "cancel";
 
 // Bug 2: added product_id and warehouse_id for scoping and balance update (Bug 9)
@@ -321,10 +316,10 @@ export default function AdjustmentsPage() {
     try {
       await api.post(`/api/v1/inventory/adjustments/${id}/${action}`, {});
     } catch (err: unknown) {
-      const code = (err as { code?: string } | undefined)?.code ?? "";
-      if (LOT_ERROR_CODES.has(code)) {
+      const lotError = lotErrorMessage(err);
+      if (lotError !== null) {
         // Real lot failure at posting — show it translated and do not touch local stock.
-        setActionError(t(`errors.${code}`));
+        setActionError(lotError);
         return;
       }
       /* seed adjustments return 404 — fall through to state updates below */
