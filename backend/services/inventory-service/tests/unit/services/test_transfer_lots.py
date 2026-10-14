@@ -436,6 +436,26 @@ class TestApproveWithLots:
         assert exc_info.value.detail == {"code": "OVERRIDE_REASON_REQUIRED"}
         assert world.ledger == [] and world.overrides == [] and world.allocations == []
 
+    async def test_selection_of_expired_lot_is_rejected_at_approve(self, world_patches) -> None:
+        """A manual pick of an expired lot is refused even for an approver who
+        holds both dispatch:fefo_override and dispatch:lot_select."""
+        world = _World(expiry=True, lots={
+            LOT_A: ("LOT-A", TODAY - timedelta(days=1), 0, "60"),
+            LOT_B: ("LOT-B", TODAY + timedelta(days=90), 1, "80"),
+        })
+        world.transfer_row, world.lines = _transfer_row("PENDING_APPROVAL"), [_line(qty="50")]
+
+        with _Patched(world_patches(world)):
+            with pytest.raises(HTTPException) as exc_info:
+                await _approve(
+                    world, lot_selections=_pick(LOT_A, "50"),
+                    override_reason="customer asked", can_fefo_override=True, can_lot_select=True,
+                )
+
+        assert exc_info.value.status_code == 422
+        assert exc_info.value.detail == {"code": "LOT_EXPIRED", "lot_id": LOT_A, "lot_number": "LOT-A"}
+        assert world.ledger == [] and world.overrides == [] and world.allocations == []
+
     async def test_fifo_override_with_lot_select_needs_no_reason(self, world_patches) -> None:
         """FIFO: dispatch:lot_select is enough and the reason is optional. The
         override is logged and the CHOSEN lot is posted, not the plan."""
