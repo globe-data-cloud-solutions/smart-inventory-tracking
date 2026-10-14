@@ -26,6 +26,7 @@ import traceback
 import uuid
 from datetime import date, timedelta
 from decimal import Decimal
+from types import SimpleNamespace
 from typing import Any, Optional
 
 # Importing the template sets FEATURE_LOT_TRACKING, the backend sys.path, and
@@ -60,6 +61,20 @@ from schemas.inventory import (  # noqa: E402
     LotPick,
 )
 from services.inventory_service import InventoryService  # noqa: E402
+
+
+# A8 needs a user whose (role_code, level_number) matches a temporary
+# adjustment_approval_rules row — check_adjustment_self_approval() returns
+# (False, None, None) immediately when level_number is None (USER, imported
+# above, has level_number=None). Same real user_id as USER — only role/level
+# differ, and nothing else in the create/submit/approve path branches on them.
+A8_USER = SimpleNamespace(
+    tenant_id=E2E_TENANT_ID,
+    user_id=E2E_USER_ID,
+    role="WM",
+    warehouse_id=None,
+    level_number=99,
+)
 
 
 def _issue_ref(idempotency_key: str) -> str:
@@ -530,6 +545,98 @@ async def _adj_a7_non_batch(session, svc, wh, suffix) -> None:
            f"A7) without lot fields: posts as before (status {posted.status}, lot_id {posted.lot_id})")
 
 
+async def _install_temp_self_approval_rule(session, suffix: str) -> None:
+    """INSERT one temporary adjustment_approval_rules row so A8_USER's
+    (role_code='WM', level_number=99) self-approves any reason, generously,
+    for this rolled-back session only. GLOBAL (reason_code NULL) matches
+    check_adjustment_self_approval()'s "(reason_code = :reason OR reason_code
+    IS NULL)" clause for every reason code A8 uses.
+    """
+    await session.execute(
+        text(
+            "INSERT INTO adjustment_approval_rules "
+            "(tenant_id, role_code, level_number, mode, reason_code, "
+            " threshold_type, qty_limit, value_limit, approver_role_code, "
+            " approver_position_id, created_by) "
+            "VALUES (:tid, 'WM', 99, 'GLOBAL', NULL, "
+            "        'EITHER', 1000, 1000000, NULL, NULL, :uid)"
+        ),
+        {"tid": E2E_TENANT_ID, "uid": E2E_USER_ID},
+    )
+    print(f"     installed temporary adjustment_approval_rules row "
+          f"(tenant={E2E_TENANT_ID}, role=WM, level=99, suffix={suffix})")
+
+
+async def _adj_a8_self_approve(session, svc, wh, suffix) -> None:
+    # ── A8a: negative (DAMAGE) on a chosen lot, self-approved at submit ──
+    product_a = await _make_product(session, suffix, "ADJ8A", batch=True)
+    lot_a = await _stock(session, product_a, wh, "10", "LOT-A8A", 30)
+
+    body_a = AdjustmentRequest(
+        warehouse_id=wh, product_id=product_a, quantity_delta=_d("4"),
+        reason_code=AdjustmentReasonCode.DAMAGE, lot_id=lot_a,
+        idempotency_key=f"smoke:adj:a8a:{suffix}",
+    )
+    created_a = await svc.create_adjustment(A8_USER, body_a)
+    _check(created_a.status == "DRAFT", "A8a) create: DRAFT")
+
+    posted_a = await svc.transition_adjustment(A8_USER, created_a.adjustment_id, "PENDING_APPROVAL")
+    _check(
+        posted_a.status == "POSTED" and posted_a.is_self_approved,
+        f"A8a) submit self-approves: status POSTED, is_self_approved=True "
+        f"(got status={posted_a.status}, is_self_approved={posted_a.is_self_approved})",
+    )
+    _check(posted_a.quantity_delta == _d("-4"),
+           f"A8a) DAMAGE forces negative: posted -4 (got {posted_a.quantity_delta})")
+
+    ledger_a = await _adjustment_ledger_rows(session, created_a.adjustment_id)
+    _check(
+        len(ledger_a) == 1 and str(ledger_a[0].lot_id) == lot_a
+        and Decimal(str(ledger_a[0].quantity)) == _d("-4"),
+        f"A8a) ADJUSTMENT ledger row carries lot_id and -4 "
+        f"(got {[(str(r.lot_id), str(r.quantity)) for r in ledger_a]})",
+    )
+    balance_a = (await _lot_balances(session, product_a, wh)).get(lot_a)
+    _check(balance_a == _d("6"), f"A8a) lot balance down by 4, now 6 (got {balance_a})")
+
+    mismatch_a = await lot_totals_mismatch(session, E2E_TENANT_ID, product_a, wh)
+    _check(mismatch_a is None, f"A8a) lot_totals_mismatch returns nothing (got {mismatch_a})")
+
+    # ── A8b: positive, new lot by number, self-approved at submit ──
+    product_b = await _make_product(session, suffix, "ADJ8B", batch=True)
+    lot_number_b = f"SMK-A8B-{suffix}"
+    expiry_b = date.today() + timedelta(days=45)
+
+    body_b = AdjustmentRequest(
+        warehouse_id=wh, product_id=product_b, quantity_delta=_d("6"),
+        reason_code=AdjustmentReasonCode.RETURN, lot_number=lot_number_b,
+        expiry_date=expiry_b, idempotency_key=f"smoke:adj:a8b:{suffix}",
+    )
+    created_b = await svc.create_adjustment(A8_USER, body_b)
+    before_lot_b = await _stock_lot_by_number(session, product_b, lot_number_b)
+    _check(before_lot_b is None, "A8b) create: no stock_lots row yet")
+
+    posted_b = await svc.transition_adjustment(A8_USER, created_b.adjustment_id, "PENDING_APPROVAL")
+    _check(
+        posted_b.status == "POSTED" and posted_b.is_self_approved,
+        f"A8b) submit self-approves: status POSTED, is_self_approved=True "
+        f"(got status={posted_b.status}, is_self_approved={posted_b.is_self_approved})",
+    )
+    after_lot_b = await _stock_lot_by_number(session, product_b, lot_number_b)
+    _check(after_lot_b is not None, "A8b) the lot was created at the self-approve moment")
+    row_b = await _adjustment_row(session, created_b.adjustment_id)
+    _check(
+        after_lot_b is not None and str(row_b.lot_id) == str(after_lot_b.id),
+        f"A8b) adjustment_orders.lot_id points to it (got {row_b.lot_id} vs "
+        f"{after_lot_b.id if after_lot_b else None})",
+    )
+    balance_b = (await _lot_balances(session, product_b, wh)).get(str(after_lot_b.id)) if after_lot_b else None
+    _check(balance_b == _d("6"), f"A8b) lot balance equals the quantity, 6 (got {balance_b})")
+
+    mismatch_b = await lot_totals_mismatch(session, E2E_TENANT_ID, product_b, wh)
+    _check(mismatch_b is None, f"A8b) lot_totals_mismatch returns nothing (got {mismatch_b})")
+
+
 async def _run(session, suffix: str) -> None:
     await set_rls_context(session, E2E_TENANT_ID, E2E_USER_ID)
 
@@ -557,11 +664,12 @@ async def _run(session, suffix: str) -> None:
     await _issue_i5_non_batch(session, svc, wh, suffix)
 
     print("--- Adjustment ---")
-    print("     NOTE: zz-e2e-ta has no adjustment_approval_rules rows, so "
-          "check_adjustment_self_approval() always returns (False, None, None) "
-          "— self-approval at submit is structurally impossible for this tenant. "
-          "Every A-scenario below posts via the approve-route "
-          "(submit -> APPROVED -> approve_adjustment), never the self-approve path.")
+    print("     NOTE: zz-e2e-ta has no adjustment_approval_rules rows of its own, so "
+          "check_adjustment_self_approval() returns (False, None, None) for its real "
+          "users — self-approval at submit never fires for them. A1-A7 below all post "
+          "via the approve-route (submit -> APPROVED -> approve_adjustment). A8 installs "
+          "a temporary rule (rolled back with everything else) to exercise the "
+          "self-approve-at-submit path too, under a user built for that rule.")
     await _adj_a1_expiry(session, svc, wh, suffix)
     await _adj_a2_new_lot_by_number(session, svc, wh, suffix)
     await _adj_a3_auto_lot(session, svc, wh, suffix)
@@ -569,6 +677,9 @@ async def _run(session, suffix: str) -> None:
     await _adj_a5_insufficient(session, svc, wh, suffix)
     await _adj_a6_lot_required(session, svc, wh, suffix)
     await _adj_a7_non_batch(session, svc, wh, suffix)
+
+    await _install_temp_self_approval_rule(session, suffix)
+    await _adj_a8_self_approve(session, svc, wh, suffix)
 
 
 async def main() -> int:

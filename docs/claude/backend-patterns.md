@@ -644,11 +644,16 @@ on `adjustment_orders`).
   uses depends entirely on whether `adjustment_approval_rules` has a matching
   active row for the submitter's `(role_code, level_number, reason_code)` —
   `check_adjustment_self_approval()` returns `(False, None, None)` with no
-  match, which routes to PENDING_APPROVAL every time. The permanent
-  `zz-e2e-ta` smoke tenant has no `adjustment_approval_rules` rows at all, so
-  self-approval is structurally unreachable there and
-  `scripts/smoke_issue_adjust_lots.py` exercises only the approve-route path
-  — see that script's run output for the explicit note.
+  match (or immediately, if `level_number` is `None`), which routes to
+  PENDING_APPROVAL every time. The permanent `zz-e2e-ta` smoke tenant has no
+  `adjustment_approval_rules` rows of its own, so its real users (`level_number
+  = None`) never self-approve — `scripts/smoke_issue_adjust_lots.py` scenarios
+  A1-A7 all post via the approve-route for that reason. The script's A8
+  scenario installs one temporary `adjustment_approval_rules` row (`role_code
+  = 'WM'`, `level_number = 99`, `reason_code` NULL/GLOBAL, generous limits —
+  rolled back with everything else) and calls `create_adjustment()` /
+  `transition_adjustment()` under a matching user, so the self-approve-at-submit
+  path is exercised too, end to end.
 
 Real-DB proof: `python scripts/smoke_issue_adjust_lots.py` (rollback-only).
 
