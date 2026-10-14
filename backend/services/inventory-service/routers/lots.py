@@ -161,7 +161,7 @@ async def lot_override_summary(
     return SuccessResponse(data=data)
 
 
-@router.patch("/{lot_id}/expiry",response_model=SuccessResponse[SetLotExpiryOut])
+@router.patch("/{lot_id}/expiry", response_model=SuccessResponse[SetLotExpiryOut])
 @require_permission(PERMISSIONS.PRODUCT_UPDATE)
 async def patch_lot_expiry(
     lot_id: uuid.UUID,
