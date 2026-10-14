@@ -43,6 +43,10 @@ def _transfer_row(tenant_id: str = TENANT_A) -> MagicMock:
     row.from_warehouse_id = WAREHOUSE_A
     row.to_warehouse_id   = WAREHOUSE_B
     row.is_self_approved  = False
+    row.reference_number  = "TR-0001"
+    row.from_warehouse_name = "Source"
+    row.to_warehouse_name   = "Destination"
+    row.created_at        = datetime(2026, 9, 1, tzinfo=timezone.utc)
     return row
 
 
@@ -53,7 +57,7 @@ def _db(row: MagicMock) -> AsyncMock:
 
     async def execute(stmt: Any, params: dict | None = None) -> MagicMock:
         sql, params = str(stmt), params or {}
-        if "FROM transfer_orders WHERE id = :id" in sql:
+        if "FROM transfer_orders WHERE id = :id" in sql or "WHERE to_.id = :id" in sql:
             found = params.get("id") == str(row.id) and (
                 "tenant_id = :tid" not in sql or params.get("tid") == str(row.tenant_id)
             )
@@ -146,6 +150,7 @@ def _scoped_row(transfer_id: UUID, from_wh: str, to_wh: str) -> SimpleNamespace:
         created_by="u-creator", created_by_authority_level=4,
         created_at=_CREATED_AT, updated_at=_CREATED_AT,
         is_self_approved=False, current_approval_step=1, resolved_approval_steps=None,
+        reference_number=f"TR-{str(transfer_id)[-2:].upper()}",
     )
 
 
@@ -173,7 +178,7 @@ class _World:
                     if str(r.from_warehouse_id) in sub or str(r.to_warehouse_id) in sub
                 ]
             return MagicMock(fetchall=MagicMock(return_value=rows))
-        if "FROM transfer_orders WHERE id = :id" in sql:
+        if "WHERE to_.id = :id" in sql:
             row = next((r for r in self.rows if str(r.id) == params.get("id")), None)
             if row is not None and str(row.tenant_id) != params.get("tid"):
                 row = None
@@ -299,3 +304,37 @@ class TestTransferDetailScope:
     async def test_other_tenant_is_still_404_not_403(self, scoped) -> None:
         other_wm = _User("u-wm-b", TENANT_B, WH_A, None, "WM")
         assert await _get(scoped, other_wm, T_AB) == (404, "Transfer not found")
+
+
+# ── Transfer detail response fields ──────────────────────────────────────────
+
+@pytest.mark.unit
+class TestTransferDetailFields:
+
+    async def test_detail_returns_names_and_reference_number(self, scoped) -> None:
+        result = await _get(scoped, TA_A, T_CA)
+        assert (result.reference_number, result.from_warehouse_name, result.to_warehouse_name) == (
+            "TR-CA", "name-0c", "name-0a",
+        )
+
+    async def test_detail_created_at_is_the_row_value(self, scoped) -> None:
+        assert (await _get(scoped, TA_A, T_AB)).created_at == _CREATED_AT
+
+    async def test_detail_names_come_from_warehouses_then_organization_node(self, scoped) -> None:
+        from services.inventory_service import InventoryService
+
+        db = scoped.db()
+        await InventoryService(db).get_transfer(TA_A, T_AB)
+        sql = str(db.execute.call_args_list[0].args[0])
+        assert "COALESCE(fw.name, fw_n.name) AS from_warehouse_name" in sql
+        assert "COALESCE(tw.name, tw_n.name) AS to_warehouse_name" in sql
+        assert "LEFT JOIN organization_node fw_n" in sql
+
+    def test_new_fields_default_to_none_for_other_callers(self) -> None:
+        from schemas.inventory import TransferOrderResponse
+
+        r = TransferOrderResponse(
+            transfer_id=T_AB, transfer_type="PULL", status="DRAFT",
+            from_warehouse_id=UUID(WH_A), to_warehouse_id=UUID(WH_B), created_at=_CREATED_AT,
+        )
+        assert (r.reference_number, r.from_warehouse_name, r.to_warehouse_name) == (None, None, None)

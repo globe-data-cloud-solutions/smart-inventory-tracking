@@ -63,6 +63,10 @@ class _World:
             tenant_id=TENANT_ID,
             created_by="u-creator",
             is_self_approved=False,
+            reference_number=None,
+            from_warehouse_name=None,
+            to_warehouse_name=None,
+            created_at=datetime(2026, 9, 1, tzinfo=timezone.utc),
         )
         self.lines = [
             SimpleNamespace(id=LINE_1, product_id=PRODUCT_ID, quantity=Decimal("100")),

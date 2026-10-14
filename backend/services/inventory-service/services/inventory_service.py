@@ -2002,8 +2002,20 @@ class InventoryService:
         )
 
     async def get_transfer(self, user: Any, transfer_id: UUID) -> TransferOrderResponse:
+        # Facility names: same COALESCE(warehouses, organization_node) as list_transfers.
         result = await self.db.execute(
-            text("SELECT * FROM transfer_orders WHERE id = :id AND tenant_id = :tid"),
+            text("""
+                SELECT
+                    to_.*,
+                    COALESCE(fw.name, fw_n.name) AS from_warehouse_name,
+                    COALESCE(tw.name, tw_n.name) AS to_warehouse_name
+                FROM transfer_orders to_
+                LEFT JOIN warehouses fw          ON fw.id       = to_.from_warehouse_id
+                LEFT JOIN organization_node fw_n ON fw_n.id    = to_.from_warehouse_id
+                LEFT JOIN warehouses tw          ON tw.id       = to_.to_warehouse_id
+                LEFT JOIN organization_node tw_n ON tw_n.id    = to_.to_warehouse_id
+                WHERE to_.id = :id AND to_.tenant_id = :tid
+            """),
             {"id": str(transfer_id), "tid": str(user.tenant_id)},
         )
         row = result.fetchone()
@@ -2023,14 +2035,16 @@ class InventoryService:
             self.db, row.tenant_id, transfer_id
         )
 
-        from datetime import datetime, timezone
         return TransferOrderResponse(
             transfer_id=transfer_id,
             transfer_type=row.transfer_type,
             status=row.status,
+            reference_number=row.reference_number,
             from_warehouse_id=row.from_warehouse_id,
+            from_warehouse_name=row.from_warehouse_name,
             to_warehouse_id=row.to_warehouse_id,
-            created_at=datetime.now(timezone.utc),
+            to_warehouse_name=row.to_warehouse_name,
+            created_at=row.created_at,
             is_self_approved=bool(row.is_self_approved),
             lines=await self._transfer_line_items(transfer_id),
             lot_allocations=[

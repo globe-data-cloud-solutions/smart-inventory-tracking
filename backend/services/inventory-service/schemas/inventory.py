@@ -225,6 +225,10 @@ class TransferOrderResponse(BaseModel):
     from_warehouse_id: uuid.UUID
     to_warehouse_id: uuid.UUID
     created_at: datetime
+    # Filled by get_transfer only; other callers leave them None.
+    reference_number: Optional[str] = None
+    from_warehouse_name: Optional[str] = None
+    to_warehouse_name: Optional[str] = None
     total_value: Optional[Decimal] = None
     currency: Optional[str] = None
     transfer_type_config_id: Optional[uuid.UUID] = None
