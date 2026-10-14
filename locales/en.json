@@ -917,6 +917,39 @@
       "submit": "Approve",
       "submit_changed": "Approve with chosen lots",
       "stock_detail": "Usable: {usable} · Expired: {expired}"
+    },
+    "view": {
+      "not_found": "Transfer not found.",
+      "out_of_scope": "You don't have access to this transfer.",
+      "load_failed": "Could not load this transfer. Please try again.",
+      "untitled": "{type} transfer · {date}",
+      "lines_title": "Transfer lines",
+      "col_product": "Product",
+      "col_sku": "SKU",
+      "col_quantity": "Quantity",
+      "col_unit": "Unit",
+      "no_lines": "This transfer has no lines.",
+      "type": {
+        "PULL": "Pull request",
+        "PUSH": "Push",
+        "SISTER": "Sister transfer"
+      },
+      "status": {
+        "DRAFT": "Draft",
+        "PENDING_REVIEW": "Pending review",
+        "PENDING_APPROVAL": "Pending approval",
+        "PENDING_SOURCE_CONFIRM": "Pending source confirmation",
+        "PENDING_DEST_CONFIRM": "Pending destination confirmation",
+        "APPROVED": "Approved",
+        "ADVISED": "Advised",
+        "ISSUED": "Issued",
+        "IN_TRANSIT": "In transit",
+        "PARTIALLY_RECEIVED": "Partially received",
+        "RECEIVED": "Received",
+        "COMPLETED": "Completed",
+        "REJECTED": "Rejected",
+        "CANCELLED": "Cancelled"
+      }
     }
   },
   "products": {
