@@ -1058,8 +1058,8 @@ class InventoryService:
         can_lot_select: bool = False,
     ) -> TransferOrderResponse:
         result = await self.db.execute(
-            text("SELECT * FROM transfer_orders WHERE id = :id FOR UPDATE"),
-            {"id": str(transfer_id)},
+            text("SELECT * FROM transfer_orders WHERE id = :id AND tenant_id = :tid FOR UPDATE"),
+            {"id": str(transfer_id), "tid": str(user.tenant_id)},
         )
         row = result.fetchone()
         if not row:
@@ -1315,8 +1315,8 @@ class InventoryService:
                 )
             tv_row = (await self.db.execute(
                 text("SELECT transfer_type_config_id, total_value, created_by "
-                     "FROM transfer_orders WHERE id = :id"),
-                {"id": str(transfer_id)},
+                     "FROM transfer_orders WHERE id = :id AND tenant_id = :tid"),
+                {"id": str(transfer_id), "tid": str(user.tenant_id)},
             )).fetchone()
             config_id_for_res = str(tv_row.transfer_type_config_id) if tv_row and tv_row.transfer_type_config_id else None
             tv_for_res = Decimal(str(tv_row.total_value)) if tv_row and tv_row.total_value else None
@@ -2002,8 +2002,8 @@ class InventoryService:
 
     async def get_transfer(self, user: Any, transfer_id: UUID) -> TransferOrderResponse:
         result = await self.db.execute(
-            text("SELECT * FROM transfer_orders WHERE id = :id"),
-            {"id": str(transfer_id)},
+            text("SELECT * FROM transfer_orders WHERE id = :id AND tenant_id = :tid"),
+            {"id": str(transfer_id), "tid": str(user.tenant_id)},
         )
         row = result.fetchone()
         if not row:
