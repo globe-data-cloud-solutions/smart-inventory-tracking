@@ -1047,6 +1047,59 @@
         "REJECTED": "ውድቅ ተደርጓል",
         "CANCELLED": "ተሰርዟል"
       }
+    },
+    "col": {
+      "reference": "ማጣቀሻ",
+      "type": "አይነት",
+      "from": "ከ",
+      "to": "ወደ",
+      "product": "ምርት",
+      "qty": "መጠን",
+      "status": "ሁኔታ",
+      "date": "ቀን",
+      "actions": "ድርጊቶች"
+    },
+    "action": {
+      "approve": "አጽድቅ",
+      "reject": "ውድቅ አድርግ",
+      "cancel": "ሰርዝ",
+      "issue": "አውጣ",
+      "dispatch": "ላክ",
+      "complete": "አጠናቅቅ",
+      "submit_review": "ለግምገማ አቅርብ",
+      "send_approval": "ለማጽደቅ ላክ",
+      "submit_request": "ጥያቄ አቅርብ",
+      "confirm_supply": "አቅርቦትን አረጋግጥ",
+      "confirm_escalate": "አረጋግጥ እና ወደ ላይ አስተላልፍ",
+      "approve_auto": "✓ አጽድቅ (በራስ-ሰር — በእርስዎ ስልጣን ውስጥ)"
+    },
+    "wait": {
+      "draft": "{name} እንዲያቀርብ በመጠባበቅ ላይ",
+      "review_level": "የ{level} ግምገማ በመጠባበቅ ላይ",
+      "review": "ግምገማ በመጠባበቅ ላይ",
+      "approval": "ፍቃድ በመጠባበቅ ላይ",
+      "source_confirm": "የ{name} ማረጋገጫ በመጠባበቅ ላይ",
+      "dest_confirm": "የ{name} ማረጋገጫ በመጠባበቅ ላይ",
+      "approved": "{name} እንዲያወጣ በመጠባበቅ ላይ",
+      "advised": "{name} እንዲያወጣ በመጠባበቅ ላይ (ተመክሯል)",
+      "issued": "{name} እንዲልክ በመጠባበቅ ላይ",
+      "in_transit": "በመጓጓዝ ላይ → {name}",
+      "approver": "{position}: {name}{step} በመጠባበቅ ላይ",
+      "level_fallback": "የደረጃ {n} ሥራ አስኪያጅ"
+    },
+    "toast": {
+      "status_changed": "ሁኔታው ወደ {status} ተቀይሯል — ዝርዝሩ ታድሷል። እባክዎ እንደገና ይሞክሩ።",
+      "state_changed": "የዝውውሩ ሁኔታ ተቀይሯል — ታድሷል። እባክዎ እንደገና ይሞክሩ።",
+      "auto_approved": "ዝውውሩ በራስ-ሰር ጸድቋል። {role} ተነግሯል።",
+      "status_updated": "ሁኔታው ወደ {status} ተሻሽሏል",
+      "invalid_transition": "ልክ ያልሆነ ሽግግር — ሁኔታውን በማደስ ላይ…",
+      "invalid_transition_code": "ልክ ያልሆነ ሽግግር ({code}) — ሁኔታውን በማደስ ላይ…",
+      "check_permissions": "ሽግግር አልተሳካም — ፈቃዶችን ያረጋግጡ።",
+      "qty_range": "ከ1 እስከ {max} ያለ መጠን ያስገቡ"
+    },
+    "list": {
+      "offline": "ከመስመር ውጪ",
+      "rcvd_rem": "{rcvd} ተቀብሏል · {rem} ቀሪ"
     }
   },
   "demo": {

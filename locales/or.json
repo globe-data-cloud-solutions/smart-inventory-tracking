@@ -1544,6 +1544,59 @@
         "REJECTED": "Rejected",
         "CANCELLED": "Cancelled"
       }
+    },
+    "col": {
+      "reference": "Reference",
+      "type": "Type",
+      "from": "From",
+      "to": "To",
+      "product": "Product",
+      "qty": "Qty",
+      "status": "Status",
+      "date": "Date",
+      "actions": "Actions"
+    },
+    "action": {
+      "approve": "Approve",
+      "reject": "Reject",
+      "cancel": "Cancel",
+      "issue": "Issue",
+      "dispatch": "Dispatch",
+      "complete": "Complete",
+      "submit_review": "Submit for Review",
+      "send_approval": "Send for Approval",
+      "submit_request": "Submit Request",
+      "confirm_supply": "Confirm Supply",
+      "confirm_escalate": "Confirm & Escalate",
+      "approve_auto": "✓ Approve (auto — within your authority)"
+    },
+    "wait": {
+      "draft": "Waiting for {name} to submit",
+      "review_level": "Awaiting {level} review",
+      "review": "Awaiting review",
+      "approval": "Awaiting approval",
+      "source_confirm": "Awaiting {name} confirmation",
+      "dest_confirm": "Awaiting {name} confirmation",
+      "approved": "Waiting for {name} to issue",
+      "advised": "Waiting for {name} to issue (advised)",
+      "issued": "Waiting for {name} to dispatch",
+      "in_transit": "In transit → {name}",
+      "approver": "Awaiting {position}: {name}{step}",
+      "level_fallback": "Level {n} Manager"
+    },
+    "toast": {
+      "status_changed": "Status changed to {status} — list refreshed. Please try again.",
+      "state_changed": "Transfer state changed — refreshed. Please try again.",
+      "auto_approved": "Transfer auto-approved. {role} has been notified.",
+      "status_updated": "Status updated to {status}",
+      "invalid_transition": "Invalid transition — refreshing status…",
+      "invalid_transition_code": "Invalid transition ({code}) — refreshing status…",
+      "check_permissions": "Transition failed — check permissions.",
+      "qty_range": "Enter a quantity between 1 and {max}"
+    },
+    "list": {
+      "offline": "offline",
+      "rcvd_rem": "{rcvd} rcvd · {rem} rem"
     }
   },
   "products": {

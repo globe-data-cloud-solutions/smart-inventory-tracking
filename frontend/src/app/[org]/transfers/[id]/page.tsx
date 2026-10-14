@@ -12,7 +12,6 @@ import { formatQty } from "@/lib/utils";
 import {
   TransferDiscrepancies,
   TransferLotSplit,
-  codeLabel,
   hasLotSplit,
   transferDetailKey,
   type TransferDiscrepancyApi,
@@ -20,6 +19,7 @@ import {
   type TransferLotAllocationApi,
 } from "@/components/features/transfers/TransferLotDetails";
 import { openDiscrepanciesKey } from "@/components/features/transfers/transferQueryKeys";
+import { transferStatusLabel, transferTypeLabel, useTransferTypes } from "@/components/features/transfers/transferLabels";
 
 /* ── GET /api/v1/inventory/transfers/{id} (TransferOrderResponse) ────────── */
 interface TransferOrderResponse {
@@ -97,6 +97,8 @@ export default function TransferDetailPage() {
   });
 
   const canResolve = usePermission("transfer:resolve_discrepancy", user?.role ?? "");
+  // The tenant's own name for the transfer type (same query as the list page).
+  const transferTypes = useTransferTypes(user?.tenantId ?? "");
 
   if (org === SA_ORG_SLUG) return <p className="p-8 text-gray-500">{t("transfers.select_tenant")}</p>;
   if (!user) return <p className="p-8 text-gray-500">{t("transfers.not_found")}</p>;
@@ -125,8 +127,8 @@ export default function TransferDetailPage() {
   }
 
   const lines = transfer.lines ?? [];
-  const typeLabel = codeLabel("transfers.view.type", transfer.transfer_type);
-  const statusLabel = codeLabel("transfers.view.status", transfer.status);
+  const typeLabel = transferTypeLabel(transfer.transfer_type, transferTypes);
+  const statusLabel = transferStatusLabel(transfer.status);
   const createdAt = new Date(transfer.created_at).toLocaleString();
   const title = transfer.reference_number
     ?? t("transfers.view.untitled")
