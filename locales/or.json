@@ -685,7 +685,7 @@
     "INSUFFICIENT_LOT_STOCK": "Not enough stock in this lot to complete the request.",
     "LOT_REQUIRED": "A lot must be selected for this transaction.",
     "LOT_EXPIRED": "This lot has expired and cannot be dispatched.",
-    "LOT_NOT_IN_WAREHOUSE": "This lot has no stock of this product in the source warehouse.",
+    "LOT_NOT_IN_WAREHOUSE": "This lot has no stock in this warehouse.",
     "LOT_NOT_FOUND": "This lot was not found for this product.",
     "SELECTION_QTY_MISMATCH": "The lot quantities must add up to the line quantity.",
     "OVERRIDE_REASON_REQUIRED": "A reason is required to change the FEFO lot order.",
