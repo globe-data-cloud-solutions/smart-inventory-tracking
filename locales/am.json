@@ -753,6 +753,7 @@
     "RECEIPT_LINES_MISMATCH": "የመቀበያ ዝርዝሩ በዚህ ዝውውር ላይ ያለውን እያንዳንዱን መስመር እና ሎት በትክክል አንድ ጊዜ መያዝ አለበት።",
     "RECEIPT_EXCEEDS_SENT": "የተቀበሉት መጠን ከተላከው መጠን መብለጥ አይችልም።",
     "RECEIPT_REASON_REQUIRED": "ለጎደለው መጠን ምክንያት ይምረጡ።",
+    "WRONG_LOT_NOT_BATCH": "የተሳሳተ ሎት የሚመለከተው በሎት ለሚከታተሉ ምርቶች ብቻ ነው። ጎድሏል ወይም ተበላሽቷል የሚለውን ይምረጡ።",
     "PARTIAL_RECEIPT_NOT_SUPPORTED": "በምትኩ የተቀበሉትን መጠኖች በመቀበያ ቅጹ ላይ ያስገቡ።",
     "INVALID_STATE_TRANSITION": "የዚህ ዝውውር ሁኔታ ተቀይሯል። እባክዎ ያድሱና እንደገና ይሞክሩ።",
     "LOT_EXPIRY_ALREADY_SET": "ይህ ሎት አስቀድሞ የማብቂያ ቀን አለው፤ ሊቀየር አይችልም።",

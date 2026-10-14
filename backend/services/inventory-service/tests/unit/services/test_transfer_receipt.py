@@ -338,11 +338,12 @@ class TestReceiptConfirmation:
             for d in world.discrepancies
         ] == [(LINE_1, LOT_A, "60", "0", "60", "DAMAGED", None)]
 
-    async def test_non_batch_line_short_wrong_lot_has_null_lot_id(self) -> None:
-        """Non-batch line 25 of 30, WRONG_LOT: TRANSFER_IN 25 with the line key,
-        discrepancy with lot_id NULL."""
+    async def test_non_batch_line_short_damaged_has_null_lot_id(self) -> None:
+        """Non-batch line 25 of 30, DAMAGED: TRANSFER_IN 25 with the line key,
+        discrepancy with lot_id NULL. (WRONG_LOT is refused on a non-batch
+        line — test_wrong_lot_on_non_batch_line_is_422_and_nothing_is_written.)"""
         world = _World()
-        result = await _receive(world, _body(line2="25", extra={"line2": {"reason": "WRONG_LOT"}}))
+        result = await _receive(world, _body(line2="25", extra={"line2": {"reason": "DAMAGED"}}))
 
         assert world.transfer_in()[2] == (None, Decimal("25"), f"{IN_KEY}:{LINE_2}")
         assert "lot_id" not in world.ledger[2]
@@ -350,7 +351,7 @@ class TestReceiptConfirmation:
         assert [
             (d["line_id"], d["pid"], d["lot_id"], d["sent"], d["received"], d["missing"], d["reason"])
             for d in world.discrepancies
-        ] == [(LINE_2, PRODUCT_2, None, "30", "25", "5", "WRONG_LOT")]
+        ] == [(LINE_2, PRODUCT_2, None, "30", "25", "5", "DAMAGED")]
         assert result.discrepancies[0].lot_id is None
         assert result.discrepancies[0].lot_number is None
 
@@ -410,6 +411,34 @@ class TestReceiptConfirmation:
             "code": "RECEIPT_REASON_REQUIRED", "line_id": LINE_2, "lot_id": None,
         }
         assert world.nothing_written()
+
+    async def test_wrong_lot_on_non_batch_line_is_422_and_nothing_is_written(self) -> None:
+        """WRONG_LOT needs a lot — on a non-batch entry (lot_id None) it is refused."""
+        world = _World()
+        with pytest.raises(HTTPException) as exc_info:
+            await _receive(world, _body(line2="29", extra={"line2": {"reason": "WRONG_LOT"}}))
+
+        assert exc_info.value.status_code == 422
+        assert exc_info.value.detail == {
+            "code": "WRONG_LOT_NOT_BATCH", "line_id": LINE_2, "lot_id": None,
+        }
+        assert world.nothing_written()
+
+    async def test_non_batch_line_with_short_is_accepted(self) -> None:
+        world = _World()
+        await _receive(world, _body(line2="29", extra={"line2": {"reason": "SHORT"}}))
+
+        assert [(d["line_id"], d["lot_id"], d["reason"]) for d in world.discrepancies] == [
+            (LINE_2, None, "SHORT"),
+        ]
+
+    async def test_batch_line_with_wrong_lot_is_accepted(self) -> None:
+        world = _World()
+        await _receive(world, _body(b="38", extra={"b": {"reason": "WRONG_LOT"}}))
+
+        assert [(d["line_id"], d["lot_id"], d["reason"]) for d in world.discrepancies] == [
+            (LINE_1, LOT_B, "WRONG_LOT"),
+        ]
 
     async def test_outbox_quantity_is_the_received_total_and_zero_fires_no_event(self) -> None:
         """StockTransferred carries the line's received total (60 + 38 = 98); a

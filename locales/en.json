@@ -751,6 +751,7 @@
     "RECEIPT_LINES_MISMATCH": "The receipt must list every line and lot on this transfer exactly once.",
     "RECEIPT_EXCEEDS_SENT": "The received quantity can't be more than the quantity sent.",
     "RECEIPT_REASON_REQUIRED": "Choose a reason for the missing quantity.",
+    "WRONG_LOT_NOT_BATCH": "Wrong lot only applies to lot-tracked products. Choose Short or Damaged.",
     "PARTIAL_RECEIPT_NOT_SUPPORTED": "Enter the received quantities on the receive form instead.",
     "INVALID_STATE_TRANSITION": "This transfer's status has changed. Refresh and try again.",
     "LOT_EXPIRY_ALREADY_SET": "This lot already has an expiry date and it cannot be changed.",
