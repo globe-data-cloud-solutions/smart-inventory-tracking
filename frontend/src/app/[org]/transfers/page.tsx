@@ -194,6 +194,10 @@ function getAuthorityScope(warehouseId: string, warehouses: DemoWarehouse[]): st
 /**
  * Filters the transfer list to only those the current user should see.
  *
+ * DEMO MODE ONLY. In gateway mode the server scopes GET /inventory/transfers
+ * itself (node subtree plus approvers named on a transfer's approval steps),
+ * so re-filtering client-side would hide transfers a WM / facility NM must approve.
+ *
  * Visibility rules (per CLAUDE.md §13 ABAC + IMTS hierarchy):
  *   TA / SA         → all transfers (platform / tenant admin)
  *   RM / LM / AU   → all transfers (no specific facility assignment)
@@ -867,7 +871,9 @@ export default function TransfersPage() {
   const productById = new Map(mergedProducts.map((p) => [p.id, p]));
 
   // Apply hierarchy + role scoping
-  const scopedTransfers = scopeTransfers(allTransfers, user.role, user.warehouseId, effectiveWarehouses);
+  const scopedTransfers = isGatewayMode
+    ? allTransfers
+    : scopeTransfers(allTransfers, user.role, user.warehouseId, effectiveWarehouses);
 
   // Bug 4: terminal statuses drop to the Audit Log; only active transfers shown here
   const TERMINAL: TransferStatus[] = ["COMPLETED", "CANCELLED", "REJECTED"];
