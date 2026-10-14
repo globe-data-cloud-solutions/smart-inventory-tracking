@@ -899,7 +899,49 @@
         "WRONG_LOT": "የተሳሳተ ሎት"
       },
       "status": {
-        "OPEN": "ክፍት"
+        "OPEN": "ክፍት",
+        "RESOLVED": "ተፈትቷል"
+      },
+      "col_action": "እርምጃ",
+      "col_transfer": "ዝውውር",
+      "col_product": "ዕቃ",
+      "col_received_on": "የተመዘገበበት ቀን",
+      "resolve": "ፍታ",
+      "resolution_note_label": "የመፍትሔ ማስታወሻ",
+      "resolution": {
+        "WRITTEN_OFF": "እንደ ኪሳራ ተሰርዟል",
+        "RETURNED": "ወደ ምንጭ ሎት ተመልሷል",
+        "ARRIVED_LATE": "ዘግይቶ ደርሷል",
+        "RECEIVED_AS_LOT": "እንደ ሌላ ሎት ተቀብሏል"
+      },
+      "help": {
+        "WRITTEN_OFF": "የክምችት ለውጥ የለም፤ መዝገቡን ይዘጋል",
+        "RETURNED": "የጎደለውን መጠን ወደ ምንጭ ሎት መልሶ ይጨምራል",
+        "ARRIVED_LATE": "ወደ መድረሻ መጋዘን ይጨምረዋል",
+        "RECEIVED_AS_LOT": "ከምንጭ መጋዘን ከተመረጠው ሎት ወደ መድረሻ መጋዘን ያዛውረዋል"
+      },
+      "dialog_title": "ልዩነትን መፍታት",
+      "receiver_note": "የተቀባዩ ማስታወሻ",
+      "outcome_label": "ውጤት",
+      "note_label": "ማስታወሻ",
+      "note_placeholder": "ማስታወሻ ያስገቡ (ከ500 ቁምፊ አይበልጥም)",
+      "lot_label": "የደረሰው ሎት (ከምንጭ መጋዘን)",
+      "lot_placeholder": "ሎት ይምረጡ",
+      "lots_loading": "ሎቶችን በመጫን ላይ...",
+      "lots_none": "በምንጭ መጋዘን የዚህ ዕቃ ሌላ ሎት የለም።",
+      "lots_failed": "ሎቶችን መጫን አልተቻለም። እባክዎ እንደገና ይሞክሩ።",
+      "lot_option": "{lot} · ማብቂያ {expiry} · ቀሪ {qty}",
+      "panel_title": "ክፍት ልዩነቶች ({count})",
+      "toast_resolved": "ልዩነቱ ተፈትቷል",
+      "errors": {
+        "DISCREPANCY_ALREADY_RESOLVED": "ይህ ልዩነት አስቀድሞ ተፈትቷል።",
+        "RESOLUTION_NOT_ALLOWED": "ይህ ውጤት ለዚህ ምክንያት አይፈቀድም።",
+        "RESOLUTION_NOTE_REQUIRED": "ልዩነትን እንደ ኪሳራ ለመሰረዝ ማስታወሻ ያስፈልጋል።",
+        "RESOLUTION_LOT_INVALID": "የተመረጠው ሎት ለዚህ ልዩነት ተቀባይነት የለውም።",
+        "DISCREPANCY_OUT_OF_SCOPE": "ይህ ልዩነት ከእርስዎ ሥልጣን ወሰን ውጭ ነው፤ ስለዚህ መፍታት አይችሉም።",
+        "DISCREPANCY_NOT_FOUND": "ይህ ልዩነት አልተገኘም።",
+        "INSUFFICIENT_LOT_STOCK": "የተመረጠው ሎት በምንጭ መጋዘን በቂ ክምችት የለውም።",
+        "GENERIC": "ልዩነቱን መፍታት አልተቻለም። እባክዎ እንደገና ይሞክሩ።"
       }
     },
     "preview": {

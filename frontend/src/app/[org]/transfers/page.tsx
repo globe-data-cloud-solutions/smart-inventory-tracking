@@ -11,6 +11,7 @@ import { ReceiveTransferPanel } from "@/components/features/transfers/ReceiveTra
 import { TransferRowDetails, hasLotSplit, transferDetailKey, type TransferReceiptDetail } from "@/components/features/transfers/TransferLotDetails";
 import { ApproveLotsPanel, approveFailure, type ApproveFailure, type ApproveLine, type ApproveLotsBody } from "@/components/features/transfers/ApproveLotsPanel";
 import { fetchDispatchPreview } from "@/components/features/transfers/DispatchPreview";
+import { OpenDiscrepanciesPanel } from "@/components/features/transfers/OpenDiscrepanciesPanel";
 import { ProductLabel } from "@/components/features/inventory/ProductLabel";
 import { useInventoryStore } from "@/lib/inventory-state";
 import { useAuditStore } from "@/lib/audit-log-state";
@@ -1105,8 +1106,16 @@ export default function TransfersPage() {
     setTimeout(() => setToast(""), 5000);
   }
 
+  // Discrepancy resolve (D2): TA / NM / SA tenant-wide, RM within its node subtree.
+  // Explicit role check — lib/permissions.ts is out of date. The backend decides scope.
+  const canResolve = user.role === "TA" || user.role === "NM" || user.role === "SA" || user.role === "RM";
+  function onDiscrepancyResolved() {
+    setToast(t("transfers.discrepancies.toast_resolved"));
+    setTimeout(() => setToast(""), 5000);
+  }
+
   const stats = {
-    draft:      visibleTransfers.filter((t) => t.status === "DRAFT").length,
+    draft:     visibleTransfers.filter((t) => t.status === "DRAFT").length,
     inTransit:  visibleTransfers.filter((t) => ["IN_TRANSIT", "PARTIALLY_RECEIVED"].includes(t.status)).length,
     pending:    visibleTransfers.filter((t) => ["PENDING_REVIEW", "PENDING_APPROVAL", "PENDING_SOURCE_CONFIRM", "PENDING_DEST_CONFIRM"].includes(t.status)).length,
     approved:   visibleTransfers.filter((t) => ["APPROVED", "ADVISED", "ISSUED"].includes(t.status)).length,
@@ -1249,6 +1258,14 @@ export default function TransfersPage() {
           </div>
         ))}
       </div>
+
+      <OpenDiscrepanciesPanel
+        org={org}
+        basePath="/api/v1/inventory/transfers"
+        canResolve={canResolve}
+        productName={(id) => productById.get(id)?.name}
+        onResolved={onDiscrepancyResolved}
+      />
 
       <div className="bg-white border border-gray-200 rounded overflow-hidden">
         <div className="h-[3px]" style={{ background: tenant?.color ?? "#1B4332" }} />
@@ -1411,7 +1428,12 @@ export default function TransfersPage() {
                   {isExpanded && (
                     <tr className="border-b border-gray-100 bg-gray-50">
                       <td colSpan={COLS.length} className="px-8 py-3">
-                        <TransferRowDetails transferId={txn.id} basePath="/api/v1/inventory/transfers" />
+                        <TransferRowDetails
+                          transferId={txn.id}
+                          basePath="/api/v1/inventory/transfers"
+                          canResolve={canResolve}
+                          onResolved={onDiscrepancyResolved}
+                        />
                       </td>
                     </tr>
                   )}
