@@ -154,6 +154,20 @@ def _scoped_row(transfer_id: UUID, from_wh: str, to_wh: str) -> SimpleNamespace:
     )
 
 
+def _names_caller(row: Any, params: dict) -> bool:
+    """The approver EXISTS clause, emulated independently of the service code:
+    a step node in :step_nodes, or :uid as assignee or in all_holders."""
+    nodes, uid = set(params["step_nodes"]), params["uid"]
+    for step in row.resolved_approval_steps or []:
+        if (step.get("node_id") or "").lower() in nodes:
+            return True
+        if (step.get("assigned_to_user_id") or "").lower() == uid:
+            return True
+        if any(h["user_id"].lower() == uid for h in step.get("all_holders") or []):
+            return True
+    return False
+
+
 class _World:
     """Tenant A's transfers. The list query honours ANY(:subtree); the by-id
     lookup honours tenant_id = :tid."""
@@ -176,6 +190,7 @@ class _World:
                 rows = [
                     r for r in rows
                     if str(r.from_warehouse_id) in sub or str(r.to_warehouse_id) in sub
+                    or ("jsonb_array_elements" in sql and _names_caller(r, params))
                 ]
             return MagicMock(fetchall=MagicMock(return_value=rows))
         if "WHERE to_.id = :id" in sql:
@@ -338,3 +353,100 @@ class TestTransferDetailFields:
             from_warehouse_id=UUID(WH_A), to_warehouse_id=UUID(WH_B), created_at=_CREATED_AT,
         )
         assert (r.reference_number, r.from_warehouse_name, r.to_warehouse_name) == (None, None, None)
+
+
+# ── Approvers on a transfer's approval steps keep visibility ─────────────────
+#
+# Approval steps can resolve TENANT_WIDE or to a fixed position, so an approver
+# may sit outside both ends' subtrees. All three transfers run WH_C -> WH_D.
+#   T_NODE  a step's node_id is WH_E (upper-cased: compare lowercased)
+#   T_USER  a step's assigned_to_user_id is u-approver
+#   T_HOLD  an ANY-mode step lists u-holder in all_holders
+
+T_NODE = UUID("dddddddd-0000-0000-0000-00000000a001")
+T_USER = UUID("dddddddd-0000-0000-0000-00000000a002")
+T_HOLD = UUID("dddddddd-0000-0000-0000-00000000a003")
+
+
+def _step(node_id: str | None = None, user_id: str | None = None,
+          holders: tuple[str, ...] = ()) -> dict:
+    return {
+        "sequence": 1, "position_title": "Approver", "position_id": None,
+        "node_id": node_id, "assigned_to_user_id": user_id, "assigned_to_name": None,
+        "execution_mode": "any" if holders else "sequential", "status": "pending",
+        "all_holders": [{"user_id": u, "name": u} for u in holders],
+        "holder_count": len(holders),
+    }
+
+
+def _approval_row(transfer_id: UUID, steps: list[dict]) -> SimpleNamespace:
+    row = _scoped_row(transfer_id, WH_C, WH_D)
+    row.status = "PENDING_APPROVAL"
+    row.resolved_approval_steps = steps
+    return row
+
+
+@pytest.fixture
+def approvals(scoped):
+    scoped.rows += [
+        _approval_row(T_NODE, [_step(node_id=WH_A), _step(node_id=WH_E.upper())]),
+        _approval_row(T_USER, [_step(node_id=WH_C, user_id="U-APPROVER")]),
+        _approval_row(T_HOLD, [_step(node_id=WH_D, holders=("u-other", "U-HOLDER"))]),
+    ]
+    return scoped
+
+
+APPROVER = _User("u-approver", TENANT_A, WH_E, None, "WM")
+HOLDER   = _User("u-holder",   TENANT_A, WH_E, None, "LM")
+
+
+@pytest.mark.unit
+class TestApproverTransferScope:
+
+    async def test_approver_named_by_step_node_sees_and_gets_it(self, approvals) -> None:
+        assert await _list_ids(approvals, WM_E) == {T_NODE}
+        assert (await _get(approvals, WM_E, T_NODE)).transfer_id == T_NODE
+
+    async def test_approver_named_by_assigned_to_user_id(self, approvals) -> None:
+        assert T_USER in await _list_ids(approvals, APPROVER)
+        assert (await _get(approvals, APPROVER, T_USER)).transfer_id == T_USER
+
+    async def test_approver_listed_only_in_all_holders(self, approvals) -> None:
+        assert T_HOLD in await _list_ids(approvals, HOLDER)
+        assert (await _get(approvals, HOLDER, T_HOLD)).transfer_id == T_HOLD
+
+    async def test_unrelated_wm_neither_sees_nor_gets_them(self, approvals) -> None:
+        # WM_A: ends T_AB / T_CA only; its node WH_A sits on T_NODE's first step.
+        assert await _list_ids(approvals, WM_A) == {T_AB, T_CA, T_NODE}
+        for tid in (T_USER, T_HOLD, T_CD):
+            assert await _get(approvals, WM_A, tid) == _OUT_OF_SCOPE
+        assert await _get(approvals, LM_E, T_USER) == _OUT_OF_SCOPE
+        assert await _get(approvals, LM_E, T_HOLD) == _OUT_OF_SCOPE
+
+    async def test_null_steps_still_match_on_ends(self, approvals) -> None:
+        # T_AB / T_CA have resolved_approval_steps = None.
+        assert (await _get(approvals, WM_A, T_AB)).transfer_id == T_AB
+        assert (await _get(approvals, WM_A, T_CA)).transfer_id == T_CA
+
+    @pytest.mark.parametrize("steps", [None, "not json", "{}", [], ["x"], [{}]])
+    def test_malformed_steps_match_nothing(self, steps) -> None:
+        from services.inventory_service import _on_approval_steps
+
+        assert _on_approval_steps({WH_E}, "u-approver", steps) is False
+
+    def test_json_string_steps_are_parsed(self) -> None:
+        import json
+
+        from services.inventory_service import _on_approval_steps
+
+        assert _on_approval_steps(set(), "u-approver", json.dumps([_step(user_id="u-approver")]))
+
+    async def test_list_binds_lowercased_step_nodes_and_uid(self, approvals) -> None:
+        from services.inventory_service import InventoryService
+
+        db = approvals.db()
+        await InventoryService(db).list_transfers(_User("U-WM-A", TENANT_A, WH_A, None, "WM"))
+        sql, params = str(db.execute.call_args_list[0].args[0]), db.execute.call_args_list[0].args[1]
+        assert "jsonb_array_elements" in sql
+        assert params["step_nodes"] == [WH_A.lower()]
+        assert params["uid"] == "u-wm-a"

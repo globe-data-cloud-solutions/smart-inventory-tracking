@@ -64,6 +64,55 @@ from shared.permissions.audit import audit_log
 # Reason codes that always deduct stock — service forces negative quantity regardless of input sign
 _FORCE_NEGATIVE_REASONS: frozenset[str] = frozenset({"DAMAGE", "EXPIRY", "SUPPLIER_RETURN"})
 
+# A subtree-scoped caller also sees a transfer whose approval chain names them:
+# a step whose node_id is in their subtree, whose assigned_to_user_id is them,
+# or whose all_holders lists them (approval_service.ResolvedStep.to_dict).
+# The SQL (list_transfers) and _on_approval_steps (get_transfer) state the
+# same rule — change them together. Non-array steps (NULL before
+# PENDING_APPROVAL) match nothing.
+_APPROVER_SCOPE_SQL = """EXISTS (
+                SELECT 1
+                FROM jsonb_array_elements(
+                    CASE WHEN jsonb_typeof(to_.resolved_approval_steps) = 'array'
+                         THEN to_.resolved_approval_steps ELSE '[]'::jsonb END
+                ) AS step
+                WHERE lower(step->>'node_id') = ANY(:step_nodes)
+                   OR lower(step->>'assigned_to_user_id') = :uid
+                   OR EXISTS (
+                       SELECT 1
+                       FROM jsonb_array_elements(
+                           CASE WHEN jsonb_typeof(step->'all_holders') = 'array'
+                                THEN step->'all_holders' ELSE '[]'::jsonb END
+                       ) AS holder
+                       WHERE lower(holder->>'user_id') = :uid
+                   )
+              )"""
+
+
+def _on_approval_steps(scope: set[str], user_id: Any, steps: Any) -> bool:
+    """Python form of _APPROVER_SCOPE_SQL for one transfer's steps."""
+    if isinstance(steps, str):
+        try:
+            steps = _json.loads(steps)
+        except ValueError:
+            return False
+    if not isinstance(steps, list):
+        return False
+    uid = str(user_id).lower()
+    for step in steps:
+        if not isinstance(step, dict):
+            continue
+        if step.get("node_id") and str(step["node_id"]).lower() in scope:
+            return True
+        if step.get("assigned_to_user_id") and str(step["assigned_to_user_id"]).lower() == uid:
+            return True
+        holders = step.get("all_holders")
+        if isinstance(holders, list) and any(
+            isinstance(h, dict) and str(h.get("user_id", "")).lower() == uid for h in holders
+        ):
+            return True
+    return False
+
 
 async def _get_warehouse_name(db: Any, tenant_id: str, warehouse_id: str) -> str | None:
     """Resolve a facility's display name for audit logging (cosmetic — never raises)."""
@@ -2025,7 +2074,9 @@ class InventoryService:
 
         scope = await self._transfer_scope(user)
         if scope is not None and not (
-            _inside(scope, [row.from_warehouse_id]) or _inside(scope, [row.to_warehouse_id])
+            _inside(scope, [row.from_warehouse_id])
+            or _inside(scope, [row.to_warehouse_id])
+            or _on_approval_steps(scope, user.user_id, row.resolved_approval_steps)
         ):
             from fastapi import HTTPException
             raise HTTPException(status_code=403, detail={"code": "TRANSFER_OUT_OF_SCOPE"})
@@ -2837,7 +2888,8 @@ class InventoryService:
         self, user: Any, page: int = 1, limit: int = 50
     ) -> list[TransferListItem]:
         """List transfers in the caller's scope (see _transfer_scope) — a transfer
-        is in scope when either end is in the caller's node subtree.
+        is in scope when either end is in the caller's node subtree, or one of
+        its approval steps names the caller (_APPROVER_SCOPE_SQL).
         """
         scope = await self._transfer_scope(user)
         if scope is not None and not scope:
@@ -2850,9 +2902,13 @@ class InventoryService:
         if scope is not None:
             wh_filter = (
                 "AND (to_.from_warehouse_id = ANY(:subtree) "
-                "OR to_.to_warehouse_id = ANY(:subtree))"
+                "OR to_.to_warehouse_id = ANY(:subtree) "
+                f"OR {_APPROVER_SCOPE_SQL})"
             )
             params["subtree"] = sorted(scope)
+            # A separate text[] param: :subtree is bound as uuid[] above.
+            params["step_nodes"] = sorted(scope)
+            params["uid"] = str(user.user_id).lower()
 
         sql = text(f"""
             SELECT
