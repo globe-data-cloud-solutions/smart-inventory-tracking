@@ -663,6 +663,29 @@ Real-DB proof: `python scripts/smoke_issue_adjust_lots.py` (rollback-only).
 > selecting an expired lot by hand) must not apply to Adjustment — an
 > expired lot is the normal, intended target of an EXPIRY write-off.
 
+#### Lots, expiry alerts and set expiry (D1)
+
+- **`GET /inventory/lots`**: `status` stays `ACTIVE|DEPLETED|EXPIRED`, unchanged.
+  `days_to_expiry` and `expiring_soon` (window `expiring_within_days`, default
+  30) are separate fields, so the transfer picker's `status=ACTIVE` keeps
+  returning expiring lots.
+- **`GET /inventory/lots/expiry-alerts`**: permission `report:expiry_alerts`
+  (ABAC now `tenant_id` + `warehouse_id`). Batch-tracked **and**
+  expiry-tracked products only, `quantity > 0`. Groups lots as `EXPIRED` /
+  `EXPIRING` / `NO_EXPIRY`. Omitting `warehouse_id` returns the whole tenant
+  (Review Backlog RB-2).
+- **`PATCH /inventory/lots/{id}/expiry`**: permission `product:update` (TA, NM).
+  Once only, only when the expiry is empty, not in the past. Race-safe
+  conditional UPDATE; one `audit_logs` row in the same transaction; no ledger
+  write. A deliberate exception to "lot details never change" (migration 081).
+- **Expired-lot block on manual picks**: `validate_manual_selection`
+  (`LOT_EXPIRED`) runs on transfer approve and on Issue. Adjustments never
+  call it, so expired stock can still be written off.
+- **Facility names**: lot queries and the batch-tracking conversion read
+  `organization_node` first and fall back to the old `warehouses` table (empty
+  in every tenant). The conversion previously inner-joined `warehouses` and
+  created no OPENING lots; fixed in session 12.
+
 
 ## 17. Workflow State Machines
 
