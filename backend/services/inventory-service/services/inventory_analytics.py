@@ -397,7 +397,7 @@ async def get_lots(
                 p.name                AS product_name,
                 p.sku                  AS product_sku,
                 lb.warehouse_id,
-                w.name                 AS warehouse_name,
+                COALESCE(on_node.name, '') AS warehouse_name,
                 lb.quantity,
                 sl.expiry_date,
                 sl.first_received_at,
@@ -410,7 +410,7 @@ async def get_lots(
             FROM lot_balances lb
             JOIN stock_lots sl ON sl.id = lb.lot_id
             JOIN products   p  ON p.id  = sl.product_id
-            JOIN warehouses w  ON w.id  = lb.warehouse_id
+            LEFT JOIN organization_node on_node ON on_node.id = lb.warehouse_id
             WHERE 1 = 1
               {tenant_clause}
               {product_clause}
