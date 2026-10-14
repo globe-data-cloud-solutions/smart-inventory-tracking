@@ -18,7 +18,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from decimal import Decimal
-from unittest.mock import AsyncMock, MagicMock, call, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import UUID
 
 import pytest

@@ -7,12 +7,10 @@ are mocked. Integration tests that hit the dev RDS run in CI via pytest -m integ
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-from fastapi import HTTPException
-from httpx import ASGITransport, AsyncClient
+from httpx import AsyncClient
 
 # app / get_current_user come from the inv_app / inv_get_current_user fixtures
 # (conftest.py) — NOT a fresh `from main import app` here, which would resolve
@@ -301,7 +299,6 @@ class TestInventoryReceivePermissions:
 
     async def test_10_read_only_grant_blocks_write(self) -> None:
         """READ_ONLY grant type does not satisfy a write action — handler must enforce."""
-        from shared.permissions.store import RolePermissionGrant
         read_only = MagicMock()
         read_only.grant_type = "READ_ONLY"
 
@@ -486,7 +483,6 @@ class TestOutboxPattern:
 
     async def test_failed_row_retried_with_backoff(self) -> None:
         """On exception, outbox row is marked FAILED and task.retry is called."""
-        from shared.outbox.schemas import InventoryUpdatedPayload
         from shared.outbox.worker import OUTBOX_HANDLERS, _process
 
         mock_row = MagicMock()
@@ -559,7 +555,6 @@ class TestDispatch:
 class TestLocalization:
     def test_missing_key_returns_key_not_empty_string(self) -> None:
         """If a translation key is missing, t() returns the key itself, never empty string."""
-        import importlib.util, sys, os
         # Load the i18n module from the frontend source via direct exec for unit test
         # Actual test is documented here; full test runs in frontend jest suite
         assert True, "i18n contract: t('missing.key') == 'missing.key' — see lib/i18n.ts"
