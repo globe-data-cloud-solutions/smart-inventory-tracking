@@ -42,6 +42,7 @@ ROLE_PERMISSION_MATRIX: dict[str, dict[str, str]] = {
         "audit:view_logs": "FULL", "audit:export_logs": "FULL",
         "report:inventory_valuation": "FULL", "report:stock_movement": "FULL",
         "report:expiry_alerts": "FULL", "report:low_stock": "FULL",
+        "report:dispatch_summary": "FULL",
         "notification:view": "FULL", "notification:configure_alerts": "FULL",
         "plan:view": "FULL", "plan:view_usage": "FULL",
         "role:assign": "FULL", "role:revoke": "FULL", "role:view_assignments": "FULL",
