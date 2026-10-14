@@ -538,6 +538,49 @@ class TestIssueNonBatchUnchanged:
         assert exc.value.detail["code"] == "LOT_NOT_TRACKED"
         mock_record.assert_not_awaited()
 
+    async def test_non_batch_replay_returns_the_original_row(self) -> None:
+        """Same key resent: record_transaction's 409 becomes the original
+        result (its transaction_id and quantity); no second ledger row."""
+        original = SimpleNamespace(id=TX_ID, quantity=Decimal("-30.0000"))
+        h = _BatchHarness([], issued_rows=[])
+        h.db.execute = AsyncMock(return_value=MagicMock(
+            fetchone=MagicMock(return_value=original)
+        ))
+        h.record = AsyncMock(side_effect=HTTPException(
+            status_code=409,
+            detail={"code": "DUPLICATE_TRANSACTION", "idempotency_key": "issue:nb:replay"},
+        ))
+
+        result = await h.issue(
+            ProductDispatchInfo(batch_tracking=False, expiry_tracking=False, dispatch_strategy=None),
+            _body("issue:nb:replay", "30"),
+        )
+
+        h.record.assert_awaited_once()          # the one attempt that hit the key
+        assert result.transaction_id == UUID(TX_ID)
+        assert result.quantity == Decimal("30")
+        assert result.lots == [] and result.is_override is False
+        lookup = h.db.execute.await_args
+        assert "FROM inventory_transactions" in str(lookup.args[0])
+        assert "type = 'ISSUE'" in str(lookup.args[0])
+        assert lookup.args[1] == {"tid": TENANT_ID, "key": "issue:nb:replay"}
+
+    async def test_non_batch_key_used_elsewhere_stays_409(self) -> None:
+        """409 but no ISSUE row for the key in this tenant → the 409 stands."""
+        h = _BatchHarness([], issued_rows=[])
+        h.record = AsyncMock(side_effect=HTTPException(
+            status_code=409, detail={"code": "DUPLICATE_TRANSACTION"},
+        ))
+
+        with pytest.raises(HTTPException) as exc:
+            await h.issue(
+                ProductDispatchInfo(batch_tracking=False, expiry_tracking=False, dispatch_strategy=None),
+                _body("issue:nb:foreign", "30"),
+            )
+
+        assert exc.value.status_code == 409
+        assert exc.value.detail["code"] == "DUPLICATE_TRANSACTION"
+
 
 @pytest.mark.unit
 class TestIssueBatchEngineAllocation:

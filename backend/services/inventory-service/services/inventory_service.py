@@ -548,7 +548,9 @@ class InventoryService:
         route through the adjustment approval workflow instead.
 
         Non-batch product: a single ISSUE ledger INSERT with a negative quantity,
-        key = body.idempotency_key. lot_selections → 422 LOT_NOT_TRACKED.
+        key = body.idempotency_key. lot_selections → 422 LOT_NOT_TRACKED. A
+        replay (the key's ISSUE row already exists) returns that row and writes
+        nothing.
 
         Batch product: one ISSUE row per lot, sorted by lot_id, key
         f"{body.idempotency_key}:lot:{lot_id}", all sharing reference_id =
@@ -566,6 +568,7 @@ class InventoryService:
         PERMISSIONS: the override flags are resolved by the router.
         """
         from datetime import datetime, timezone
+        from fastapi import HTTPException
 
         tenant_id, user_id = str(user.tenant_id), str(user.user_id)
         product_id, warehouse_id = str(body.product_id), str(body.warehouse_id)
@@ -576,16 +579,39 @@ class InventoryService:
         if not product.batch_tracking:
             if body.lot_selections:
                 raise transfer_lots.http_from_engine(DispatchError("LOT_NOT_TRACKED"))
-            tx_id = await record_transaction(
-                self.db,
-                tenant_id=tenant_id,
-                transaction_type="ISSUE",
-                product_id=product_id,
-                warehouse_id=warehouse_id,
-                quantity=-qty,   # always a deduction
-                performed_by=user_id,
-                idempotency_key=body.idempotency_key,
-            )
+            try:
+                tx_id = await record_transaction(
+                    self.db,
+                    tenant_id=tenant_id,
+                    transaction_type="ISSUE",
+                    product_id=product_id,
+                    warehouse_id=warehouse_id,
+                    quantity=-qty,   # always a deduction
+                    performed_by=user_id,
+                    idempotency_key=body.idempotency_key,
+                )
+            except HTTPException as exc:
+                # A replay (same key resent) returns the original ISSUE row, as
+                # a batch replay does. A key used by anything else stays a 409.
+                if exc.status_code != 409:
+                    raise
+                original = (await self.db.execute(
+                    text(
+                        "SELECT id, quantity FROM inventory_transactions "
+                        "WHERE tenant_id = :tid AND type = 'ISSUE' AND idempotency_key = :key"
+                    ),
+                    {"tid": tenant_id, "key": body.idempotency_key},
+                )).fetchone()
+                if original is None:
+                    raise
+                return IssueStockResponse(
+                    transaction_id=UUID(str(original.id)),
+                    product_id=body.product_id,
+                    warehouse_id=body.warehouse_id,
+                    quantity=abs(Decimal(str(original.quantity))),
+                    reason_code=body.reason_code,
+                    created_at=datetime.now(timezone.utc),
+                )
             return IssueStockResponse(
                 transaction_id=UUID(tx_id),
                 product_id=body.product_id,
