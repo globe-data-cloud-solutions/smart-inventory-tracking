@@ -487,14 +487,16 @@ for (const locale of ["en", "am"] as const) {
       }
       await expect(panel.getByRole("combobox")).toHaveCount(0);
 
-      // Short receipt on LOT-B: a reason is required before anything is sent.
+      // Short receipt on LOT-B: a reason is required before anything is sent —
+      // the row shows why and the submit button stays disabled until it is chosen.
       const rowB = lotRow(panel, "LOT-B");
+      const submit = panel.getByRole("button", { name: s.receiveSubmit, exact: true });
+      await expect(submit).toBeEnabled();
       await rowB.getByRole("spinbutton").fill("38");
       const reason = rowB.getByRole("combobox");
       await expect(reason).toHaveAttribute("required", "");
-      const submit = panel.getByRole("button", { name: s.receiveSubmit, exact: true });
-      await submit.click();
       await expect(rowB.getByText(s.errReasonRequired)).toBeVisible();
+      await expect(submit).toBeDisabled();
       expect(stubs.calls.receive).toHaveLength(0);
 
       await expect(reason.locator('option[value="SHORT"]')).toHaveText(s.reasonShort);
@@ -532,10 +534,15 @@ for (const locale of ["en", "am"] as const) {
       await rowA.getByRole("spinbutton").fill("31");
       await expect(rowA.getByText(s.errRange("30"))).toBeVisible();
 
-      await panel.getByRole("button", { name: s.receiveSubmit, exact: true }).click();
-      await page.waitForTimeout(1_000);
+      const submit = panel.getByRole("button", { name: s.receiveSubmit, exact: true });
+      await expect(submit).toBeDisabled();
       expect(stubs.calls.receive).toHaveLength(0);
       await expect(panel).toBeVisible();
+
+      // Back in range: the button is enabled again.
+      await rowA.getByRole("spinbutton").fill("30");
+      await expect(rowA.getByText(s.errRange("30"))).toHaveCount(0);
+      await expect(submit).toBeEnabled();
 
       await finish(page, ctx, `R2 (${locale})`);
     });

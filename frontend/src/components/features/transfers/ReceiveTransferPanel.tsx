@@ -107,7 +107,6 @@ export function ReceiveTransferPanel({
   const gp = guardProps(useWriteGuard());
 
   const [inputs, setInputs]         = useState<Record<string, RowInput>>({});
-  const [showErrors, setShowErrors] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [formError, setFormError]   = useState("");
 
@@ -128,17 +127,16 @@ export function ReceiveTransferPanel({
     const v = inputFor(row);
     return isValidReceived(v.received, row.sent) && Number(v.received) < row.sent;
   };
+  /** Received outside 0..sent, or received short with no reason. */
+  const isInvalid = (row: ReceiptRow): boolean =>
+    !isValidReceived(inputFor(row).received, row.sent) || (isShort(row) && !inputFor(row).reason);
+  const anyInvalid = rows.some(isInvalid);
 
   const blocked = !isOnline || gp.disabled;
   const blockedReason = !isOnline ? t("errors.OFFLINE") : gp.title;
 
   async function submit() {
-    if (submitting || blocked || rows.length === 0) return;
-    const invalid = rows.some((row) => {
-      const v = inputFor(row);
-      return !isValidReceived(v.received, row.sent) || (isShort(row) && !v.reason);
-    });
-    if (invalid) { setShowErrors(true); return; }
+    if (submitting || blocked || rows.length === 0 || anyInvalid) return;
 
     setSubmitting(true);
     setFormError("");
@@ -208,7 +206,7 @@ export function ReceiveTransferPanel({
                   const v          = inputFor(row);
                   const qtyInvalid = !isValidReceived(v.received, row.sent);
                   const short      = isShort(row);
-                  const reasonErr  = showErrors && short && !v.reason;
+                  const reasonErr  = short && !v.reason;
                   return (
                     <tr key={row.key} className="border-b border-gray-100">
                       <td className={`${TD} font-semibold text-gray-900`}>{row.productName}</td>
@@ -283,7 +281,7 @@ export function ReceiveTransferPanel({
             {t("common.cancel")}
           </button>
           <button
-            disabled={submitting || blocked || rows.length === 0}
+            disabled={submitting || blocked || rows.length === 0 || anyInvalid}
             title={blockedReason}
             onClick={() => void submit()}
             className="flex-[2] py-2.5 bg-eth-forest text-eth-gold border-0 rounded-md text-sm font-bold cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
