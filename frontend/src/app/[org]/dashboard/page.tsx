@@ -18,6 +18,8 @@ import { formatQty } from "@/lib/utils";
 import { useContactInfo } from "@/hooks/useContactInfo";
 import { pickLocalized } from "@/lib/billing-types";
 import { ContactModal } from "@/components/features/contact/ContactModal";
+import { useFeatures } from "@/hooks/useFeatures";
+import { fetchExpiryAlerts, type ExpiryAlertsApi } from "@/components/features/lots/lotsApi";
 
 const isGatewayMode = !!process.env.NEXT_PUBLIC_API_URL;
 
@@ -93,7 +95,7 @@ function NeedHelpCard() {
 function SummaryCard({ title, subtitle, rows, accentColor }: {
   title: string;
   subtitle: string;
-  rows: { label: string; value: string | number; warn?: boolean }[];
+  rows: { label: string; value: string | number; warn?: boolean; href?: string }[];
   accentColor: string;
 }) {
   return (
@@ -115,21 +117,26 @@ function SummaryCard({ title, subtitle, rows, accentColor }: {
         className="grid"
         style={{ gridTemplateColumns: `repeat(${rows.length},1fr)` }}
       >
-        {rows.map((r, i) => (
-          <div
-            key={i}
-            className={[
-              "px-6 py-5 text-center",
-              i < rows.length - 1 ? "border-r border-gray-100" : "",
-              r.warn ? "bg-red-50" : "bg-white",
-            ].join(" ")}
-          >
-            <p className={`text-3xl font-extrabold m-0 ${r.warn ? "text-red-600" : "text-eth-forest"}`}>
-              {typeof r.value === "number" ? r.value.toLocaleString() : r.value}
-            </p>
-            <p className="text-xs text-gray-500 mt-1 font-medium">{r.label}</p>
-          </div>
-        ))}
+        {rows.map((r, i) => {
+          const cellClass = [
+            "px-6 py-5 text-center",
+            i < rows.length - 1 ? "border-r border-gray-100" : "",
+            r.warn ? "bg-red-50" : "bg-white",
+          ].join(" ");
+          const cell = (
+            <>
+              <p className={`text-3xl font-extrabold m-0 ${r.warn ? "text-red-600" : "text-eth-forest"}`}>
+                {typeof r.value === "number" ? r.value.toLocaleString() : r.value}
+              </p>
+              <p className="text-xs text-gray-500 mt-1 font-medium">{r.label}</p>
+            </>
+          );
+          return r.href ? (
+            <Link key={i} href={r.href} className={`${cellClass} no-underline`}>{cell}</Link>
+          ) : (
+            <div key={i} className={cellClass}>{cell}</div>
+          );
+        })}
       </div>
     </div>
   );
@@ -272,6 +279,20 @@ export default function OrgDashboard() {
     queryKey: ["dashboard-alerts", org],
     queryFn: () => api.get<ApiAlertRow[]>("/api/v1/inventory/analytics/alerts"),
     enabled,
+    staleTime: 0,
+    refetchOnMount: true,
+    refetchOnWindowFocus: true,
+  });
+
+  // Expiry rows next to low-stock (gateway mode, lot tracking on). A 403 (e.g. LM)
+  // or any other failure leaves data undefined, so no expiry rows are shown.
+  const { lotTracking } = useFeatures();
+  const expiryWarehouseId = user?.warehouseId ?? "";
+  const { data: expiryAlerts } = useQuery<ExpiryAlertsApi>({
+    queryKey: ["dashboard-expiry-alerts", org, expiryWarehouseId],
+    queryFn: () => fetchExpiryAlerts(expiryWarehouseId),
+    enabled: enabled && lotTracking,
+    retry: false,
     staleTime: 0,
     refetchOnMount: true,
     refetchOnWindowFocus: true,
@@ -1315,6 +1336,14 @@ export default function OrgDashboard() {
     }
     const warehouseRows = Array.from(warehouseMap.values());
 
+    const expiryHref = `/${org}/lots?view=expiry`;
+    const expiryRows = expiryAlerts ? [
+      { label: t("dashboard.expired_lots"),    value: expiryAlerts.counts.expired,   warn: expiryAlerts.counts.expired > 0,   href: expiryHref },
+      { label: t("dashboard.expiring_lots").replace("{days}", String(expiryAlerts.window_days)),
+                                               value: expiryAlerts.counts.expiring,  warn: expiryAlerts.counts.expiring > 0,  href: expiryHref },
+      { label: t("dashboard.no_expiry_lots"),  value: expiryAlerts.counts.no_expiry, warn: expiryAlerts.counts.no_expiry > 0, href: expiryHref },
+    ] : [];
+
     const cardTitle    = myWarehouseName ?? tenantName;
     const cardSubtitle = myWarehouseName
       ? `${user.role} access`
@@ -1341,6 +1370,7 @@ export default function OrgDashboard() {
             { label: t("dashboard.stat_skus_with_stock"), value: skusWithStock },
             { label: t("dashboard.in_stock"),             value: inStockCount },
             { label: t("alerts.low_stock"),               value: lowStockCount, warn: lowStockCount > 0 },
+            ...expiryRows,
           ]}
         />
 

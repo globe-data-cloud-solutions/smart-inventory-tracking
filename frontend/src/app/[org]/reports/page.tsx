@@ -12,7 +12,7 @@ export default function ReportsPage() {
   const REPORTS = [
     { titleKey: "report.inventory_valuation", desc: t("report.inv_valuation_desc"), icon: "📊", href: `/${org}/analytics` },
     { titleKey: "report.stock_movement",      desc: t("report.stock_movement_desc"), icon: "🔄", href: `/${org}/transfers` },
-    { titleKey: "report.expiry_alerts",       desc: t("report.expiry_alerts_desc"),  icon: "⚠️", href: `/${org}/inventory` },
+    { titleKey: "report.expiry_alerts",       desc: t("report.expiry_alerts_desc"),  icon: "⚠️", href: `/${org}/lots?view=expiry` },
     { titleKey: "report.low_stock",           desc: t("report.low_stock_desc"),      icon: "📉", href: `/${org}/analytics` },
     { titleKey: "report.lot_trace",           desc: t("report.lot_trace_desc"),      icon: "🔍", href: `/${org}/inventory` },
     { titleKey: "report.dispatch_summary",    desc: t("report.dispatch_desc"),       icon: "🚚", href: `/${org}/transfers` },
