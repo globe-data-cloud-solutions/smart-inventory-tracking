@@ -1573,7 +1573,8 @@
     "location": "Location",
     "type": "Type",
     "total_units": "Total Units",
-    "actions": "Tarkaanfii"
+    "actions": "Tarkaanfii",
+    "lot": "Lot"
   },
   "warehouse_type": {
     "MWH": "Main WH",

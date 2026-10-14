@@ -16,11 +16,13 @@ import { useTenantName } from "@/hooks/useTenantName";
 import { useWarehouses } from "@/hooks/useWarehouses";
 import { useTenantPositions } from "@/hooks/useTenantPositions";
 import { useWriteGuard, guardProps } from "@/hooks/useWriteGuard";
+import { formatExpiry } from "@/components/features/transfers/TransferLotDetails";
 
 type ApiProduct = {
   id: string; sku: string; name: string; unit: string; pack_size?: number;
   reorder_point?: number | null; category?: string | null;
   is_discontinued?: boolean;
+  batch_tracking?: boolean; expiry_tracking?: boolean;
   approval_overrides?: Record<string, ProductApprovalOverride>;
 };
 
@@ -44,6 +46,21 @@ interface AdjRecord {
   created_by?: string;
   created_at: string;
   is_self_approved?: boolean;
+  lot_id?: string | null;
+  lot_number?: string | null;
+  expiry_date?: string | null;
+  auto_lot?: boolean;
+}
+
+// lot_id set → lot number (+ expiry if any); lot_id null with lot_number →
+// "new lot <number>"; auto_lot → "new lot, generated at posting"; nothing → "—".
+function adjLotLabel(adj: AdjRecord): string {
+  if (adj.lot_id) {
+    return adj.expiry_date ? `${adj.lot_number ?? ""} · ${formatExpiry(adj.expiry_date)}` : (adj.lot_number ?? "—");
+  }
+  if (adj.lot_number) return t("adjustment.lot_new_named").replace("{number}", adj.lot_number);
+  if (adj.auto_lot) return t("adjustment.lot_new_auto");
+  return "—";
 }
 
 // MATRIX 1: GET /adjustments/{id}/approval-info response — when a Design-B
@@ -234,7 +251,8 @@ export default function AdjustmentsPage() {
         id: p.id, sku: p.sku, name: p.name,
         category: p.category ?? "—",
         unit: p.unit,
-        batchTracking: false,
+        batchTracking: p.batch_tracking === true,
+        expiryTracking: p.expiry_tracking === true,
         reorderPoint: p.reorder_point ?? 0,
         stock: adjStockByProductId.get(p.id) ?? {},
         approval_overrides: p.approval_overrides,
@@ -412,6 +430,9 @@ export default function AdjustmentsPage() {
                   <p className="text-xs text-gray-500 mt-0.5">
                     {a.warehouse_name} · {a.reason_code.replace(/_/g, " ")} · {(a.quantity_delta ?? 0) > 0 ? "+" : ""}{formatQty(a.quantity_delta ?? 0)} units
                   </p>
+                  <p data-testid="adj-approval-lot" className="text-xs text-gray-400 mt-0.5">
+                    {t("table.lot")}: {adjLotLabel(a)}
+                  </p>
                   {a.notes && <p className="text-xs text-gray-400 mt-0.5 italic">{a.notes}</p>}
                 </div>
                 <div className="flex gap-2">
@@ -445,7 +466,7 @@ export default function AdjustmentsPage() {
           <table className="w-full border-collapse text-sm">
             <thead>
               <tr className="bg-gray-50 border-b-2 border-gray-200">
-                {["common.date", "table.sku", "table.product", "table.location", "adjustment.quantity", "adjustment.reason", "adjustment.approval", "table.status", "table.actions"].map((key) => (
+                {["common.date", "table.sku", "table.product", "table.location", "adjustment.quantity", "adjustment.reason", "table.lot", "adjustment.approval", "table.status", "table.actions"].map((key) => (
                   <th key={key} className="px-3.5 py-2.5 text-left text-xs font-bold text-gray-500 uppercase tracking-wide whitespace-nowrap">
                     {t(key)}
                   </th>
@@ -469,6 +490,7 @@ export default function AdjustmentsPage() {
                     {(a.quantity_delta ?? 0) > 0 ? "+" : ""}{formatQty(a.quantity_delta ?? 0)}
                   </td>
                   <td className="px-3.5 py-2 text-gray-500 text-xs">{a.reason_code.replace(/_/g, " ")}</td>
+                  <td data-testid="adj-row-lot" className="px-3.5 py-2 text-gray-500 text-xs">{adjLotLabel(a)}</td>
                   <td className="px-3.5 py-2">
                     {(a.approval_required_role ?? "NONE") === "NONE"
                       ? <span className="text-xs text-gray-400">{t("adjustment.auto_applied")}</span>

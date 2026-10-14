@@ -774,7 +774,8 @@
     "location": "ቦታ",
     "type": "አይነት",
     "total_units": "ጠቅላላ አሃዶች",
-    "actions": "ድርጊቶች"
+    "actions": "ድርጊቶች",
+    "lot": "ሎት"
   },
   "warehouse_type": {
     "MWH": "ዋና መጋዘን",

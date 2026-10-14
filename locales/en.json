@@ -1047,7 +1047,8 @@
     "location": "Location",
     "type": "Type",
     "total_units": "Total Units",
-    "actions": "Actions"
+    "actions": "Actions",
+    "lot": "Lot"
   },
   "warehouse_type": {
     "MWH": "Main WH",
