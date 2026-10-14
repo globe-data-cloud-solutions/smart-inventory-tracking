@@ -125,10 +125,9 @@ class TestScope:
         s = _session()
         await override_summary(s, _user("RM", NODE_ID), TENANT_ID)
         sqls = [sql for sql, _ in _statements(s)]
-        assert len(sqls) == 6   # (transfer, issue, override) x (overall, FEFO)
+        assert len(sqls) == 4   # (transfer, issue) x (overall, FEFO)
         assert any("a.from_warehouse_id = ANY(" in q for q in sqls)
         assert any("t.warehouse_id = ANY(" in q for q in sqls)
-        assert any("o.warehouse_id = ANY(" in q for q in sqls)
 
     async def test_rm_warehouse_outside_subtree_is_403(self, subtree) -> None:
         s = _session()
@@ -234,8 +233,40 @@ class TestQueriesCarryTenant:
         s = _session()
         await override_summary(s, _user("TA"), TENANT_ID)
         sqls = [sql for sql, _ in _statements(s)]
-        assert sum("p.dispatch_strategy = 'FEFO'" in q for q in sqls) == 3
-        assert sum("JOIN products" in q for q in sqls) == 3
+        assert sum("p.dispatch_strategy = 'FEFO'" in q for q in sqls) == 2
+        assert sum("JOIN products" in q for q in sqls) == 2
+
+    async def test_issue_overridden_counted_from_same_ledger_rows_as_decisions(self) -> None:
+        """An override whose ledger rows fall outside the period is not counted:
+        the Issue overridden count is read from the SAME statement (same period,
+        scope and FEFO filter) as the Issue decisions, never from the override
+        table's own created_at."""
+        s = _session()
+        await override_summary(s, _user("TA"), TENANT_ID)
+        stmts = _statements(s)
+        issue_sqls = [(q, p) for q, p in stmts if "FROM inventory_transactions t" in q]
+        assert len(issue_sqls) == 2   # overall, FEFO
+        for sql, params in issue_sqls:
+            assert "AS decisions" in sql and "AS overridden" in sql
+            assert "t.transaction_date >= :df AND t.transaction_date <= :dt" in sql
+            assert "o.reference_id = t.reference_id" in sql
+            assert "o.tenant_id = t.tenant_id AND o.movement_type = 'ISSUE'" in sql
+            assert "ts_from" not in params   # period is the ledger date, not created_at
+        # no separate query counts ISSUE overrides by lot_allocation_overrides.created_at
+        for sql, _ in stmts:
+            assert not ("FROM lot_allocation_overrides o " in sql and "o.created_at" in sql
+                        and "count(" in sql)
+
+    async def test_issue_overridden_never_exceeds_decisions(self) -> None:
+        # one Issue decision in the period, one matching override: 1 of 1, never more.
+        result = MagicMock()
+        result.fetchone.return_value = SimpleNamespace(decisions=1, overridden=1)
+        s = MagicMock()
+        s.execute = AsyncMock(return_value=result)
+        out = await override_summary(s, _user("TA"), TENANT_ID)
+        issue = out.by_movement["ISSUE"]
+        assert issue.overridden <= issue.decisions
+        assert issue.compliance_rate == 0.0
 
     async def test_sa_without_tenant_is_422(self) -> None:
         s = _session()

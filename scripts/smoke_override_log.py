@@ -22,6 +22,7 @@ import json
 import os
 import sys
 import uuid
+from datetime import date, timedelta
 from decimal import Decimal
 from pathlib import Path
 from types import SimpleNamespace
@@ -142,6 +143,20 @@ async def main() -> None:
                  "uid": uid},
             )
 
+            # c2) the matching ISSUE ledger rows, as inventory_service.issue posts them:
+            #     the chosen lot, reference_id = the override's issue_ref (lot_b needs
+            #     stock first, so it is received in this transaction)
+            await record_transaction(
+                session, tenant_id, "RECEIVE", product_id, wh, Decimal("2"),
+                uid, f"smoke:receive-b:{product_id}:{uuid.uuid4()}",
+                lot_id=lot_b, lot_number=lot_b_number, source="OPENING_BALANCE",
+            )
+            await record_transaction(
+                session, tenant_id, "ISSUE", product_id, wh, Decimal("-2"),
+                uid, f"smoke:issue:{issue_ref}:lot:{lot_b}",
+                reference_id=issue_ref, lot_id=lot_b, lot_number=lot_b_number,
+            )
+
             # d) the log, as a TA-like user of the tenant
             log = await list_overrides(session, user, tenant_id, product_id=product_id)
             mine = [r for r in log.rows if str(r.id) == override_id]
@@ -164,6 +179,17 @@ async def main() -> None:
             _assert(summary.overall.overridden >= 1, "summary overall.overridden >= 1")
             _assert(summary.fefo.overridden >= 1, "summary fefo.overridden >= 1 (product is FEFO)")
             _assert(summary.by_movement["ISSUE"].overridden >= 1, "summary by_movement ISSUE.overridden >= 1")
+            issue_c = summary.by_movement["ISSUE"]
+            _assert(issue_c.overridden <= issue_c.decisions,
+                    "summary ISSUE.overridden <= ISSUE.decisions (same ledger set)")
+            # a period ending before today holds none of the ledger rows -> not counted
+            past = date.today() - timedelta(days=60)
+            old = await override_summary(
+                session, user, tenant_id, date_from=past - timedelta(days=5), date_to=past,
+                warehouse_id=wh,
+            )
+            _assert(old.by_movement["ISSUE"].overridden == 0,
+                    "an override whose ledger rows are outside the period is not counted")
 
             # f) another tenant never sees it
             await set_rls_context(session, other_tid, other_uid)

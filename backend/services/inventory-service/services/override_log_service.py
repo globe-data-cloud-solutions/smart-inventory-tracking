@@ -267,12 +267,18 @@ async def _period_counts(
         params,
     )).fetchone()
 
-    # ISSUE decisions: lot-carrying ledger rows, one decision per issue_ref.
+    # ISSUE: lot-carrying ledger rows, one decision per issue_ref. The overridden
+    # count comes from the SAME rows (those with a matching override row), so it
+    # can never exceed decisions at a period edge.
     params = {"tid": tid, "df": start, "dt": end}
     i_filters = _wh_filter("t.warehouse_id", subtree, warehouse_id, params)
     issued = (await db.execute(
         text(
-            "SELECT count(DISTINCT t.reference_id) AS decisions "
+            "SELECT count(DISTINCT t.reference_id) AS decisions, "
+            "       count(DISTINCT t.reference_id) FILTER (WHERE EXISTS ("
+            "         SELECT 1 FROM lot_allocation_overrides o "
+            "         WHERE o.tenant_id = t.tenant_id AND o.movement_type = 'ISSUE' "
+            "           AND o.reference_id = t.reference_id)) AS overridden "
             "FROM inventory_transactions t "
             f"{join('t')}"
             "WHERE t.tenant_id = :tid AND t.type = 'ISSUE' AND t.lot_id IS NOT NULL "
@@ -282,24 +288,9 @@ async def _period_counts(
         params,
     )).fetchone()
 
-    # ISSUE overridden: ISSUE override rows in the period.
-    params = {"tid": tid, "ts_from": ts_from, "ts_to": ts_to}
-    o_filters = _wh_filter("o.warehouse_id", subtree, warehouse_id, params)
-    ov = (await db.execute(
-        text(
-            "SELECT count(DISTINCT o.reference_id) AS overridden "
-            "FROM lot_allocation_overrides o "
-            f"{join('o')}"
-            "WHERE o.tenant_id = :tid AND o.movement_type = 'ISSUE' "
-            "  AND o.created_at >= :ts_from AND o.created_at < :ts_to"
-            f"{o_filters}{fefo}"
-        ),
-        params,
-    )).fetchone()
-
     return {
         "TRANSFER": (int(t.decisions), int(t.overridden)),
-        "ISSUE": (int(issued.decisions), int(ov.overridden)),
+        "ISSUE": (int(issued.decisions), int(issued.overridden)),
     }
 
 
@@ -331,7 +322,7 @@ async def override_summary(
     decisions   distinct transfer lines with allocations + distinct issue refs
                 with lot-carrying ISSUE ledger rows
     overridden  distinct transfer lines with override_id set + distinct issue
-                refs with an ISSUE override row
+                refs, among those same ledger rows, with an ISSUE override row
 
     `fefo` limits the same counts to products whose products.dispatch_strategy
     is 'FEFO' today. Non-overridden decisions do not store the strategy that
