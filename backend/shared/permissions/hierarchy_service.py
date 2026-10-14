@@ -22,7 +22,10 @@ async def get_descendant_node_ids(
     Returns {node_id} (singleton) on any DB error — fail open
     to exact-match, never fail closed (do not raise).
 
-    Never call this for roles not in FACILITY_SCOPED_ROLES.
+    Inside check_permission() this is called only for FACILITY_SCOPED_ROLES.
+    Outside it, it may also be used for RM subtree scoping in
+    transfer_discrepancies (resolve and list); for those callers the
+    fail-open {node_id} result is the stricter outcome (own node only).
     Never call this when node_id is None.
     """
     try:

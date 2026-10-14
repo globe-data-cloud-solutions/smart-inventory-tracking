@@ -30,13 +30,15 @@ PERMISSIONS: receipt — not checked here; the router requires transfer:receive
 and InventoryService.receive_transfer() runs the destination-warehouse check.
 Resolution — the router requires transfer:resolve_discrepancy and
 resolve_discrepancy() checks the RM's node subtree (TA / NM / SA: tenant-wide).
+Listing — the router requires transfer:list and list_discrepancies() narrows
+facility-scoped roles, and an RM with a node, to their node subtree.
 """
 from __future__ import annotations
 
 import json
 import uuid
 from decimal import Decimal
-from typing import Any, Mapping, Optional, Sequence
+from typing import Any, Iterable, Mapping, Optional, Sequence
 from uuid import UUID
 
 from fastapi import HTTPException
@@ -236,6 +238,9 @@ _RESOLUTIONS_BY_REASON: dict[str, tuple[str, ...]] = {
 # Roles that resolve tenant-wide; RM is limited to its node subtree.
 _TENANT_WIDE_ROLES = frozenset({"TA", "NM", "SA"})
 
+# Roles scoped to their node subtree by check_permission() (middleware.py).
+_FACILITY_SCOPED_ROLES = frozenset({"WM", "LM", "SA_GT", "RT"})
+
 # Outcomes that move stock at the source, so the source must be in the RM's scope too.
 _SOURCE_RESOLUTIONS = frozenset({"RETURNED", "RECEIVED_AS_LOT"})
 
@@ -268,6 +273,16 @@ async def _load_lot(db: AsyncSession, tenant_id: str, lot_id: Any) -> Any:
     )).fetchone()
 
 
+async def _subtree(db: AsyncSession, tenant_id: str, node_id: Any) -> set[str]:
+    """The caller's node and its descendants (get_descendant_node_ids), lowercased."""
+    return {str(n).lower() for n in await get_descendant_node_ids(db, tenant_id, str(node_id))}
+
+
+def _inside(subtree: set[str], nodes: Iterable[Any]) -> bool:
+    """Whether every node is in the lowercased subtree — JWT and DB casing differ."""
+    return all(str(node).lower() in subtree for node in nodes)
+
+
 async def _check_scope(
     db: AsyncSession,
     user: Any,
@@ -286,14 +301,10 @@ async def _check_scope(
     if role != "RM" or not getattr(user, "warehouse_id", None):
         raise out_of_scope
 
-    subtree = {
-        str(n).lower()
-        for n in await get_descendant_node_ids(db, tenant_id, str(user.warehouse_id))
-    }
     required = [to_warehouse_id]
     if resolution in _SOURCE_RESOLUTIONS:
         required.append(from_warehouse_id)
-    if any(str(node).lower() not in subtree for node in required):
+    if not _inside(await _subtree(db, tenant_id, user.warehouse_id), required):
         raise out_of_scope
 
 
@@ -309,10 +320,11 @@ async def resolve_discrepancy(
 
     404 DISCREPANCY_NOT_FOUND         no such row on this transfer for the tenant
     409 DISCREPANCY_ALREADY_RESOLVED  the row is not OPEN (or lost a race)
+    403 DISCREPANCY_OUT_OF_SCOPE      RM outside its subtree, or not RM/TA/NM/SA —
+                                      checked before the body is validated
     422 RESOLUTION_NOT_ALLOWED        the outcome does not fit the reason
     422 RESOLUTION_NOTE_REQUIRED      WRITTEN_OFF without a note
     422 RESOLUTION_LOT_INVALID        lot_id missing / not allowed / wrong lot
-    403 DISCREPANCY_OUT_OF_SCOPE      RM outside its subtree, or not RM/TA/NM/SA
     422 INSUFFICIENT_LOT_STOCK        (record_transaction) the arrived lot lacks
                                       N at the source — nothing is kept
     """
@@ -340,7 +352,11 @@ async def resolve_discrepancy(
     if d.status != "OPEN":
         raise HTTPException(status_code=409, detail={"code": "DISCREPANCY_ALREADY_RESOLVED"})
 
-    # c) the outcome must fit the reason
+    # c) scope — before any body validation. The required nodes depend on the
+    #    resolution, which the schema has already constrained to a known value.
+    await _check_scope(db, user, tenant_id, resolution, d.from_warehouse_id, d.to_warehouse_id)
+
+    # d) the outcome must fit the reason
     allowed = _allowed_resolutions(d.reason, d.lot_id)
     if resolution not in allowed:
         raise HTTPException(
@@ -348,11 +364,11 @@ async def resolve_discrepancy(
             detail={"code": "RESOLUTION_NOT_ALLOWED", "reason": d.reason, "allowed": allowed},
         )
 
-    # d) a write-off says why
+    # e) a write-off says why
     if resolution == "WRITTEN_OFF" and note is None:
         raise HTTPException(status_code=422, detail={"code": "RESOLUTION_NOTE_REQUIRED"})
 
-    # e) the arrived lot: RECEIVED_AS_LOT only, same tenant and product, not the
+    # f) the arrived lot: RECEIVED_AS_LOT only, same tenant and product, not the
     #    sent lot. An expired lot is accepted — this records what happened.
     arrived = None
     if resolution != "RECEIVED_AS_LOT":
@@ -364,9 +380,6 @@ async def resolve_discrepancy(
         arrived = await _load_lot(db, tenant_id, body.lot_id)
         if arrived is None or str(arrived.product_id).lower() != str(d.product_id).lower():
             raise _lot_invalid(body.lot_id)
-
-    # f) scope
-    await _check_scope(db, user, tenant_id, resolution, d.from_warehouse_id, d.to_warehouse_id)
 
     # g) ledger — record_transaction directly, so a duplicate key (409) or a
     #    lot floor failure (422) aborts the whole resolution.
@@ -490,22 +503,38 @@ async def list_discrepancies(
 ) -> list[TransferDiscrepancyListItem]:
     """The tenant's discrepancy rows, newest first, at most 200.
 
-    warehouse_id matches either end of the transfer. Facility scoping is the
-    rule InventoryService.list_transfers() applies: a WM with a warehouse sees
-    only transfers whose source or destination is that warehouse; every other
-    role sees the whole tenant.
+    Scope is the caller's node subtree (get_descendant_node_ids), matched
+    against either end of the transfer:
+      WM / LM / SA_GT / RT  their subtree; no node -> no rows
+      RM                    its subtree; no node -> the whole tenant
+      TA / NM / SA / AU     the whole tenant
+
+    warehouse_id narrows to rows where either end equals it. For a
+    subtree-scoped caller it must lie inside the subtree, else
+    403 WAREHOUSE_OUT_OF_SCOPE.
     """
-    params: dict[str, Any] = {"tid": str(user.tenant_id)}
+    tenant_id = str(user.tenant_id)
+    role = getattr(user, "role", None)
+    node_id = getattr(user, "warehouse_id", None)
+    if role in _FACILITY_SCOPED_ROLES and not node_id:
+        return []
+
+    params: dict[str, Any] = {"tid": tenant_id}
     filters = ""
     if status is not None:
         filters += " AND d.status = :status"
         params["status"] = status
+    if node_id and (role in _FACILITY_SCOPED_ROLES or role == "RM"):
+        subtree = await _subtree(db, tenant_id, node_id)
+        if warehouse_id is not None and not _inside(subtree, [warehouse_id]):
+            raise HTTPException(status_code=403, detail={"code": "WAREHOUSE_OUT_OF_SCOPE"})
+        filters += (
+            " AND (t.from_warehouse_id = ANY(:subtree) OR t.to_warehouse_id = ANY(:subtree))"
+        )
+        params["subtree"] = sorted(subtree)
     if warehouse_id is not None:
         filters += " AND (t.from_warehouse_id = :wh OR t.to_warehouse_id = :wh)"
-        params["wh"] = str(warehouse_id)
-    if user.role == "WM" and user.warehouse_id:
-        filters += " AND (t.from_warehouse_id = :wid OR t.to_warehouse_id = :wid)"
-        params["wid"] = str(user.warehouse_id)
+        params["wh"] = str(warehouse_id).lower()
 
     result = await db.execute(
         text(

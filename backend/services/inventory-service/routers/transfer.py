@@ -62,8 +62,9 @@ async def list_discrepancies(
     """Transfer discrepancies of the tenant, newest first (at most 200).
 
     status filters OPEN / RESOLVED; warehouse_id matches the source or the
-    destination. A WM only sees transfers touching its own warehouse, as on
-    GET /transfers.
+    destination. Facility-scoped roles, and an RM with a node, only see
+    transfers touching their node subtree (403 WAREHOUSE_OUT_OF_SCOPE for a
+    warehouse_id outside it).
     """
     result = await transfer_discrepancies.list_discrepancies(
         db, user, status=status, warehouse_id=warehouse_id

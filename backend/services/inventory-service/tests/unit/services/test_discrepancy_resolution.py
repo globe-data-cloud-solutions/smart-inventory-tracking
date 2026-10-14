@@ -34,6 +34,7 @@ WH_C = "20000000-0000-0000-0000-00000000000c"   # unrelated warehouse
 REGION = "40000000-0000-0000-0000-000000000001"    # RM node over WH_A and WH_B
 REGION_B = "40000000-0000-0000-0000-000000000002"  # RM node over WH_B only
 REGION_C = "40000000-0000-0000-0000-000000000003"  # RM node over WH_C only
+SITE = "50000000-0000-0000-0000-000000000001"      # facility node, WH_C is its child
 PRODUCT = "aaaaaaaa-0000-0000-0000-000000000001"   # batch
 PRODUCT_2 = "aaaaaaaa-0000-0000-0000-000000000002"  # non-batch
 T1 = "cccccccc-0000-0000-0000-000000000001"
@@ -83,6 +84,7 @@ SUBTREES: dict[str, set[str]] = {
     REGION: {REGION.upper(), WH_A.upper(), WH_B.upper()},
     REGION_B: {REGION_B, WH_B},
     REGION_C: {REGION_C, WH_C},
+    SITE: {SITE, WH_C.upper()},
 }
 
 
@@ -199,13 +201,14 @@ class _World:
             rows = [d for d in self.discrepancies.values() if d["tenant_id"] == params["tid"]]
             if "status" in params:
                 rows = [d for d in rows if d["status"] == params["status"]]
-            for key in ("wh", "wid"):
-                if key in params:
-                    rows = [
-                        d for d in rows
-                        if params[key] in (self.transfers[d["transfer_order_id"]]["from_wh"],
-                                           self.transfers[d["transfer_order_id"]]["to_wh"])
-                    ]
+            def ends(d: dict) -> tuple[str, str]:
+                t = self.transfers[d["transfer_order_id"]]
+                return t["from_wh"], t["to_wh"]
+
+            if "subtree" in params:   # uuid = ANY(:subtree)
+                rows = [d for d in rows if any(e in params["subtree"] for e in ends(d))]
+            if "wh" in params:
+                rows = [d for d in rows if params["wh"] in ends(d)]
             rows.sort(key=lambda d: d["created_at"], reverse=True)
             result.fetchall.return_value = [self._out_row(d) for d in rows]
         elif "FROM transfer_discrepancies d" in sql and "WHERE d.id = :did" in sql:
@@ -639,6 +642,22 @@ class TestResolutionScope:
         assert exc.detail == {"code": "DISCREPANCY_OUT_OF_SCOPE"}
         assert _nothing_written(world, discrepancy_id)
 
+    @pytest.mark.parametrize("discrepancy_id, body", [
+        (D_SHORT, {"resolution": "WRITTEN_OFF"}),                  # NOTE_REQUIRED
+        (D_DAMAGED, {"resolution": "ARRIVED_LATE"}),               # NOT_ALLOWED
+        (D_SHORT, {"resolution": "ARRIVED_LATE", "lot_id": LOT_C}),  # LOT_INVALID
+    ], ids=["no-note", "not-allowed", "bad-lot"])
+    async def test_scope_is_checked_before_the_body(
+        self, discrepancy_id: str, body: dict
+    ) -> None:
+        """An out-of-scope RM gets 403, never the 422 an invalid body would earn."""
+        world = _World()
+        exc = await _rejected(world, RM_OUT, discrepancy_id, **body)
+
+        assert exc.status_code == 403
+        assert exc.detail == {"code": "DISCREPANCY_OUT_OF_SCOPE"}
+        assert _nothing_written(world, discrepancy_id)
+
     @pytest.mark.parametrize("role", ["WM", "LM", "AU"])
     async def test_other_roles_are_refused_by_the_service_too(self, role: str) -> None:
         """Defence in depth behind the permission check."""
@@ -655,7 +674,12 @@ class TestResolutionScope:
 async def _list(world: _World, user: Any, **kw: Any) -> list:
     from services.transfer_discrepancies import list_discrepancies
 
-    return await list_discrepancies(world.db(), user, **kw)
+    with patch("services.transfer_discrepancies.get_descendant_node_ids", new=_descendants):
+        return await list_discrepancies(world.db(), user, **kw)
+
+
+ALL_ROWS = [D_T3, D_T2, D_RESOLVED, D_WRONG_NB, D_WRONG, D_DAMAGED, D_SHORT_NB, D_SHORT]
+T1_ROWS = [D_RESOLVED, D_WRONG_NB, D_WRONG, D_DAMAGED, D_SHORT_NB, D_SHORT]
 
 
 @pytest.mark.unit
@@ -694,28 +718,84 @@ class TestListDiscrepancies:
         assert [str(r.id) for r in rows] == [D_T3, D_T2]
         assert "(t.from_warehouse_id = :wh OR t.to_warehouse_id = :wh)" in world.sql[0][0]
 
-    async def test_wm_sees_only_transfers_touching_its_warehouse(self) -> None:
-        """Same rule as list_transfers: WM with a warehouse -> source or destination."""
+    @pytest.mark.parametrize("role", ["WM", "LM", "SA_GT", "RT"])
+    async def test_facility_role_sees_rows_with_either_end_in_its_subtree(
+        self, role: str
+    ) -> None:
+        """SITE's subtree is {SITE, WH_C}: T2 (WH_C ->) and T3 (-> WH_C) reach
+        it through the child node; the T1 rows (WH_A -> WH_B) do not."""
         world = _World()
-        rows = await _list(world, _user("WM", WH_C))
+        rows = await _list(world, _user(role, SITE))
 
         assert [str(r.id) for r in rows] == [D_T3, D_T2]
-        assert world.sql[0][1]["wid"] == WH_C
+        sql, params = world.sql[0]
+        assert "t.from_warehouse_id = ANY(:subtree) OR t.to_warehouse_id = ANY(:subtree)" in sql
+        assert params["subtree"] == sorted([SITE, WH_C])   # lowercased
 
-    async def test_wm_scope_and_warehouse_filter_combine(self) -> None:
+    async def test_wm_on_a_leaf_sees_transfers_touching_it(self) -> None:
         world = _World()
-        rows = await _list(world, _user("WM", WH_C), warehouse_id=UUID(WH_B))
-        assert [str(r.id) for r in rows] == [D_T3]
+        rows = await _list(world, _user("WM", WH_A))
+        assert [str(r.id) for r in rows] == [D_T2, *T1_ROWS]
 
-    @pytest.mark.parametrize("user", [RM_OUT, _user("LM", WH_C), _user("AU")],
-                             ids=["RM", "LM", "AU"])
-    async def test_other_roles_see_the_whole_tenant(self, user: Any) -> None:
-        """list_transfers narrows only WM; every other role is tenant-wide."""
+    @pytest.mark.parametrize("role", ["WM", "LM", "SA_GT", "RT"])
+    async def test_facility_role_without_a_node_sees_nothing(self, role: str) -> None:
+        world = _World()
+        assert await _list(world, _user(role, None)) == []
+        assert world.sql == []
+
+    async def test_rm_with_a_node_sees_its_subtree(self) -> None:
+        """REGION_B's subtree is {REGION_B, WH_B}: T1 and T3 touch WH_B, T2 does not."""
+        world = _World()
+        rows = await _list(world, RM_DEST_ONLY)
+
+        assert [str(r.id) for r in rows] == [D_T3, *T1_ROWS]
+        assert world.sql[0][1]["subtree"] == sorted([REGION_B, WH_B])
+
+    async def test_subtree_is_lowercased(self) -> None:
+        """REGION's subtree comes back upper case."""
+        world = _World()
+        rows = await _list(world, RM)
+
+        assert [str(r.id) for r in rows] == ALL_ROWS
+        assert world.sql[0][1]["subtree"] == sorted([REGION, WH_A, WH_B])
+
+    @pytest.mark.parametrize("user", [
+        RM_NO_NODE, TA, NM, _user("SA"), _user("AU", WH_C),
+    ], ids=["RM-no-node", "TA", "NM", "SA", "AU"])
+    async def test_tenant_wide_callers(self, user: Any) -> None:
         world = _World()
         rows = await _list(world, user)
 
-        assert len(rows) == 8
-        assert "wid" not in world.sql[0][1]
+        assert [str(r.id) for r in rows] == ALL_ROWS
+        assert "subtree" not in world.sql[0][1]
+
+    async def test_scope_and_warehouse_filter_combine(self) -> None:
+        world = _World()
+        rows = await _list(world, RM, warehouse_id=UUID(WH_A.upper()))
+
+        assert [str(r.id) for r in rows] == [D_T2, *T1_ROWS]
+        assert world.sql[0][1]["wh"] == WH_A
+
+    @pytest.mark.parametrize("user, warehouse_id", [
+        (_user("WM", SITE), WH_B),
+        (_user("LM", WH_A), WH_C),
+        (RM_DEST_ONLY, WH_A),
+    ], ids=["WM", "LM", "RM"])
+    async def test_warehouse_outside_the_subtree_is_403(
+        self, user: Any, warehouse_id: str
+    ) -> None:
+        world = _World()
+        with pytest.raises(HTTPException) as exc_info:
+            await _list(world, user, warehouse_id=UUID(warehouse_id))
+
+        assert exc_info.value.status_code == 403
+        assert exc_info.value.detail == {"code": "WAREHOUSE_OUT_OF_SCOPE"}
+        assert world.sql == []
+
+    async def test_tenant_wide_caller_may_name_any_warehouse(self) -> None:
+        world = _World()
+        rows = await _list(world, RM_NO_NODE, warehouse_id=UUID(WH_C))
+        assert [str(r.id) for r in rows] == [D_T3, D_T2]
 
     async def test_another_tenant_sees_only_its_rows(self) -> None:
         world = _World()
@@ -809,7 +889,7 @@ def _out(**kw: Any) -> Any:
 class TestResolvePermission:
     """docs/claude/testing.md cases that apply to transfer:resolve_discrepancy."""
 
-    @pytest.mark.parametrize("role", ["TA", "NM", "RM"])
+    @pytest.mark.parametrize("role", ["TA", "NM", "RM", "SA"])
     async def test_01_granted_roles_reach_the_service(self, api, inv_app, role: str) -> None:
         user = _user(role, REGION if role == "RM" else None)
         patches, audit, resolve, _, db = api(user)
