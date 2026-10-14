@@ -74,6 +74,57 @@ class NearExpirySettingsOut(BaseModel):
     near_expiry_days: int
 
 
+class OverrideLotOut(BaseModel):
+    lot_id: uuid.UUID
+    lot_number: Optional[str] = None
+    quantity: Decimal
+
+
+class OverrideProductOut(BaseModel):
+    id: uuid.UUID
+    name: str
+    sku: str
+
+
+class OverrideWarehouseOut(BaseModel):
+    id: uuid.UUID
+    name: Optional[str] = None
+
+
+class OverrideLogItem(BaseModel):
+    id: uuid.UUID
+    created_at: datetime
+    overridden_by: Optional[str] = None
+    product: OverrideProductOut
+    warehouse: OverrideWarehouseOut
+    strategy: str
+    movement_type: str
+    reference_id: Optional[uuid.UUID] = None
+    requested_qty: Decimal
+    suggested: List[OverrideLotOut]
+    chosen: List[OverrideLotOut]
+    reason: Optional[str] = None
+
+
+class OverrideLogOut(BaseModel):
+    total: int
+    rows: List[OverrideLogItem]
+
+
+class ComplianceCounts(BaseModel):
+    decisions: int
+    overridden: int
+    compliance_rate: Optional[float] = None
+
+
+class OverrideSummaryOut(BaseModel):
+    date_from: date
+    date_to: date
+    overall: ComplianceCounts
+    fefo: ComplianceCounts
+    by_movement: dict[str, ComplianceCounts]
+
+
 class OpeningLotItem(BaseModel):
     warehouse_id: uuid.UUID
     lot_id: uuid.UUID
