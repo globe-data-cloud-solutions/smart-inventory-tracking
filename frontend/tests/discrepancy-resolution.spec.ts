@@ -17,7 +17,9 @@
  *       and no Resolve button; the OPEN row has one
  *   T9  Regression: transfers list with null from/to warehouse names renders (no ReferenceError),
  *       no raw UUID where the warehouse name goes
- *   T10 Role gate (WM sees no Resolve): skipped — see the test.skip reason
+ *   T10 Role gate: WM stub (asRole) sees no Resolve button in the panel or in the expanded row
+ *   T11 Approver-only transfer (neither end is the WM's warehouse) is listed for a WM — the page
+ *       trusts the server's scoping in gateway mode
  *
  * NO LIVE WRITES. Login (POST /api/v1/auth/token) and the session are real, using the
  * permanent zz-e2e-ta TA probe account. Every transfer / discrepancy / lots / products / nodes
@@ -33,6 +35,7 @@ import fs from "fs";
 import path from "path";
 import { test, expect, type Page, type Locator, type ConsoleMessage, type Route } from "@playwright/test";
 import { E2E_TA_EMAIL, E2E_TA_SLUG, e2eTaPasswordOrSkip } from "./helpers/e2e-ta";
+import { asRole } from "./helpers/session-role";
 
 const BASE_URL = process.env.BASE_URL ?? "http://localhost:3000";
 
@@ -284,6 +287,7 @@ async function openTransfers(
   locale: Locale,
   setup: (stubs: Stubs) => void = () => {},
   transfers: Transfer[] = [transfer(T_ID, "PARTIALLY_RECEIVED", NAMED)],
+  role?: { role: string; warehouseId?: string },
 ): Promise<Ctx> {
   const taPassword = e2eTaPasswordOrSkip(test);
   const s = localeStrings(locale);
@@ -293,6 +297,7 @@ async function openTransfers(
 
   await page.addInitScript((loc) => window.localStorage.setItem("locale", loc), locale);
   await login(page, E2E_TA_EMAIL, taPassword);
+  if (role) await asRole(page, role.role, role.warehouseId);
   await page.goto(`${BASE_URL}/${E2E_TA_SLUG}/transfers`);
   await page.waitForLoadState("networkidle");
   return { s, stubs, errors };
@@ -607,9 +612,43 @@ for (const locale of ["en", "am"] as const) {
       await finish(page, ctx, `T9 ${locale}`);
     });
 
-    test.skip(
-      `T10 role gate: WM sees no Resolve buttons (${locale}) — skipped: the existing specs only patch warehouseId in the client session (TA role), there is no WM session/role stub, and no auth path is invented here`,
-      async () => {},
-    );
+    test(`T10 role gate: WM stub sees no Resolve buttons, in the panel or the expanded row (${locale})`, async ({ page }) => {
+      const ctx = await openTransfers(page, locale, (st) => {
+        st.openList = () => ({ status: 200, data: THREE_ROWS });
+        st.detailDiscrepancies[T_ID] = [disc(D_OPEN, PROD_BATCH, LOT_B, "SHORT")];
+      }, [transfer(T_ID, "PARTIALLY_RECEIVED", NAMED)], { role: "WM", warehouseId: WH_DST });
+      const { s } = ctx;
+
+      // The panel is informational for a WM: rows are listed, no action column.
+      const panel = panelOf(page);
+      await expect(panel).toBeVisible();
+      await expect(panel.locator("tbody tr")).toHaveCount(3);
+      for (const id of [D_SHORT, D_DAMAGED, D_WRONG]) {
+        await expect(page.getByTestId(`open-discrepancy-resolve-${id}`)).toHaveCount(0);
+      }
+      await expect(panel.getByRole("button", { name: s.resolveButton, exact: true })).toHaveCount(0);
+
+      // Expanded transfer row: the OPEN discrepancy shows, but no Resolve button.
+      await page.locator("tr").filter({ hasText: refOf(T_ID) }).getByRole("button", { name: s.lotsToggle }).click();
+      await expect(page.getByTestId(`discrepancy-row-${D_OPEN}`)).toBeVisible();
+      await expect(page.getByTestId(`discrepancy-resolve-${D_OPEN}`)).toHaveCount(0);
+      await expect(page.getByRole("button", { name: s.resolveButton, exact: true })).toHaveCount(0);
+
+      await finish(page, ctx, `T10 ${locale}`);
+    });
+
+    test(`T11 approver-only transfer (neither end is the WM's warehouse) is visible (${locale})`, async ({ page }) => {
+      const WM_OWN_WH = "77777777-7777-4777-8777-777777777777";
+      const ctx = await openTransfers(
+        page, locale, () => {},
+        [transfer(T_ID, "PENDING_APPROVAL", NAMED)],   // from WH_SRC to WH_DST — not WM_OWN_WH
+        { role: "WM", warehouseId: WM_OWN_WH },
+      );
+      const row = page.locator("tr").filter({ hasText: refOf(T_ID) });
+      await expect(row).toBeVisible();
+      await expect(row.getByRole("cell", { name: NAMED.from, exact: true })).toBeVisible();
+      await expect(row.getByRole("cell", { name: NAMED.to, exact: true })).toBeVisible();
+      await finish(page, ctx, `T11 ${locale}`);
+    });
   });
 }
