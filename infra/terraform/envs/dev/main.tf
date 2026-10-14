@@ -107,12 +107,13 @@ module "ecs" {
   beat_sizing     = { cpu = 256, memory = 512 }
   frontend_sizing = { cpu = 256, memory = 512, desired_count = 1 }
 
-  email_delivery_mode = "log"
-  email_from          = "no-reply@dev.local"
-  storage_bucket      = module.s3.bucket_name
-  storage_bucket_arn  = module.s3.bucket_arn
-  terms_version       = "2026-10"
-  app_base_url        = "https://${module.cloudfront.domain_name}"
+  email_delivery_mode  = "log"
+  feature_lot_tracking = true
+  email_from           = "no-reply@dev.local"
+  storage_bucket       = module.s3.bucket_name
+  storage_bucket_arn   = module.s3.bucket_arn
+  terms_version        = "2026-10"
+  app_base_url         = "https://${module.cloudfront.domain_name}"
 }
 
 module "observability" {

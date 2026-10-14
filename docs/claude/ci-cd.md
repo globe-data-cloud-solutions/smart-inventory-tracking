@@ -254,8 +254,9 @@ FEATURE_LOT_TRACKING           # inventory-service only. Truthy ("1"/"true"/"yes
                                 # GET /api/v1/inventory/features -> {"lot_tracking": true} and the
                                 # PUT /api/v1/inventory/products/{id}/lot-settings conversion endpoint;
                                 # anything else (including unset) is OFF, which the endpoint enforces with
-                                # 403 FEATURE_NOT_ENABLED. Default off; set to "true" in local dev; turn on
-                                # per environment when Phase C ships.
+                                # 403 FEATURE_NOT_ENABLED. Default off; on in dev/stage/prod via the ecs
+                                # module variable feature_lot_tracking (set in envs/<env>/main.tf); local dev
+                                # still reads it from .env; a per-tenant flag is Review Backlog RB-3.
 
 # ── Billing (S5) ─────────────────────────────────────────────────────────────
 STUB_WEBHOOK_SECRET            # HMAC-SHA256 secret for the STUB payment provider's webhook — from Secrets Manager
