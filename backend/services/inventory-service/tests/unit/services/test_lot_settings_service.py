@@ -322,6 +322,56 @@ class TestConversion:
         assert exc_info.value.status_code == 500
         assert exc_info.value.detail["code"] == "LOT_CONVERSION_MISMATCH"
 
+    async def test_conversion_query_does_not_require_old_warehouses_table(self) -> None:
+        import re
+
+        from services.lot_settings_service import update_lot_settings
+
+        bal1 = MagicMock(warehouse_id=WAREHOUSE_ID1, warehouse_code=None, quantity=Decimal("7"))
+
+        execs = [
+            _result(fetchone=_product_row(batch_tracking=False)),  # SELECT product
+            _result(fetchone=MagicMock(open_count=0)),              # COUNT open transfers
+            _result(),                                              # UPDATE products
+            _result(fetchall=[bal1]),                               # SELECT balances
+            _result(),                                              # INSERT audit_logs
+        ]
+        session = AsyncMock()
+        session.execute = AsyncMock(side_effect=execs)
+
+        with patch(
+            "services.lot_settings_service.create_opening_lot",
+            new=AsyncMock(return_value=("30000000-0000-0000-0000-000000000001", "OPENING-20000000")),
+        ) as mock_create_lot, patch(
+            "services.lot_settings_service.record_transaction",
+            new=AsyncMock(return_value="tx-id"),
+        ), patch(
+            "services.lot_settings_service.lot_totals_mismatch",
+            new=AsyncMock(return_value=None),
+        ):
+            result = await update_lot_settings(
+                session,
+                tenant_id=TENANT_ID,
+                product_id=PRODUCT_ID,
+                user_id=USER_ID,
+                role="TA",
+                feature_enabled=True,
+                batch_tracking=True,
+                expiry_tracking=False,
+                dispatch_strategy=None,
+            )
+
+        balances_sql = str(session.execute.await_args_list[3].args[0])
+        assert "FROM inventory_balances ib" in balances_sql
+        assert "LEFT JOIN organization_node" in balances_sql
+        # Every join on the old warehouses table must be a LEFT JOIN.
+        assert re.search(r"(?<!LEFT )JOIN warehouses\s+w ON", balances_sql) is None
+        assert "LEFT JOIN warehouses" in balances_sql
+
+        assert mock_create_lot.await_args.args[3] == f"OPENING-{WAREHOUSE_ID1[:8]}"
+        assert len(result.opening_lots) == 1
+        assert result.opening_lots[0].quantity == Decimal("7")
+
 
 @pytest.mark.unit
 class TestBatchTrackingOnWithOpenTransfers:
