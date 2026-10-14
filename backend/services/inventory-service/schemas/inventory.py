@@ -283,6 +283,13 @@ class AdjustmentRequest(BaseModel):
     @classmethod
     def no_null_bytes(cls, v: object) -> object: return _no_null(v)
 
+    @field_validator("quantity_delta", mode="after")
+    @classmethod
+    def non_zero_delta(cls, v: Decimal) -> Decimal:
+        if v == 0:
+            raise ValueError("quantity_delta must be non-zero")
+        return v
+
 
 class AdjustmentResponse(BaseModel):
     adjustment_id: uuid.UUID

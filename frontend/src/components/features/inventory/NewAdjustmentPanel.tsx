@@ -5,7 +5,7 @@ import { useQueryClient, useQuery } from "@tanstack/react-query";
 import { nanoid } from "nanoid";
 import { api, IS_GATEWAY_MODE } from "@/lib/api";
 import { t } from "@/lib/i18n";
-import { lotErrorMessage } from "@/lib/lotErrors";
+import { isQuantityDeltaError, lotErrorMessage } from "@/lib/lotErrors";
 import { getSession } from "@/lib/demo-auth";
 import { useWriteGuard, guardProps } from "@/hooks/useWriteGuard";
 import { useInventoryStore } from "@/lib/inventory-state";
@@ -317,7 +317,11 @@ export function NewAdjustmentPanel({ products, warehouses, orgSlug }: Props) {
       });
       void qc.invalidateQueries({ queryKey: ["adjustments", orgSlug] });
     } catch (err: unknown) {
-      setError(lotErrorMessage(err) ?? (err instanceof Error ? err.message : t("errors.INTERNAL_ERROR")));
+      setError(
+        isQuantityDeltaError(err)
+          ? t("adjustment.error_qty")
+          : lotErrorMessage(err) ?? (err instanceof Error ? err.message : t("errors.INTERNAL_ERROR")),
+      );
     } finally {
       setLoading(false);
     }

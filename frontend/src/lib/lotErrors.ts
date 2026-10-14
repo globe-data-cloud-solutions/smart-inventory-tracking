@@ -38,3 +38,15 @@ export function lotErrorMessage(err: unknown): string | null {
   const code = apiErrorCode(err);
   return LOT_ERROR_CODES.has(code) ? t(`errors.${code}`) : null;
 }
+
+/**
+ * True when the API rejected the request with a 422 on the quantity_delta field
+ * (FastAPI validation: {"detail": [{"loc": ["body", "quantity_delta"], ...}]}).
+ */
+export function isQuantityDeltaError(err: unknown): boolean {
+  const e = err as { status?: number; detail?: unknown } | null | undefined;
+  if (e?.status !== 422 || !Array.isArray(e.detail)) return false;
+  return e.detail.some(
+    (d) => Array.isArray((d as { loc?: unknown }).loc) && (d as { loc: unknown[] }).loc.includes("quantity_delta"),
+  );
+}
