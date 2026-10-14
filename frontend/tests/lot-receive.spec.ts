@@ -30,6 +30,10 @@
  * translate-x-full element as hidden — so every locator below is scoped to
  * the one open drawer via panelRoot(), never to the bare page.
  *
+ * The last block (receive-form reasons) is the transfer RECEIVE form, not the stock panel:
+ * it stubs one IN_TRANSIT transfer to the session warehouse and checks which discrepancy
+ * reasons each row offers (a non-batch row has no 'Wrong lot').
+ *
  * Chromium headless only, serviceWorkers blocked, en + am. Run:
  *   set -a; source .env; set +a
  *   cd frontend && npx playwright test tests/lot-receive.spec.ts --workers=1
@@ -334,3 +338,113 @@ test.describe("Opening Balance — lot/expiry (en)", () => {
     expect(consoleErrors, "zero console errors").toHaveLength(0);
   });
 });
+
+/* ── Transfer receive form: which reasons each row offers ───────────────────
+ * "Wrong lot" only makes sense for a row that carries a lot. Stubs one IN_TRANSIT
+ * transfer into the (client-patched) session warehouse, with a batch line (one lot
+ * allocation) and a non-batch line. No writes: nothing is submitted. */
+const RECV_WH = "test-wh-001";   // what fakeWarehouseAssignment puts in the session
+const RECV_T = "aaaa0009-0000-4000-8000-000000000009";
+const RECV_LINE_BATCH = "55555555-5555-4555-8555-555555555581";
+const RECV_LINE_PLAIN = "55555555-5555-4555-8555-555555555582";
+const RECV_PROD_BATCH = { id: "33333333-3333-4333-8333-333333333381", sku: "RCV-B-01", name: "RCV-BATCH" };
+const RECV_PROD_PLAIN = { id: "33333333-3333-4333-8333-333333333382", sku: "RCV-P-01", name: "RCV-PLAIN" };
+
+const recvTransfer = {
+  transfer_id: RECV_T, transfer_type: "PUSH", status: "IN_TRANSIT", reference_number: null,
+  from_warehouse_id: "11111111-1111-4111-8111-111111111111", from_warehouse_name: "Receive Source WH",
+  to_warehouse_id: RECV_WH, to_warehouse_name: "Test Warehouse",
+  lines: [
+    { line_id: RECV_LINE_BATCH, product_id: RECV_PROD_BATCH.id, product_name: RECV_PROD_BATCH.name, sku: RECV_PROD_BATCH.sku, quantity: "30.0000", uom: "pcs" },
+    { line_id: RECV_LINE_PLAIN, product_id: RECV_PROD_PLAIN.id, product_name: RECV_PROD_PLAIN.name, sku: RECV_PROD_PLAIN.sku, quantity: "20.0000", uom: "pcs" },
+  ],
+  lot_allocations: [{
+    line_id: RECV_LINE_BATCH, product_id: RECV_PROD_BATCH.id, lot_id: "44444444-4444-4444-8444-444444444481",
+    lot_number: "RCV-LOT-1", expiry_date: "2027-05-31", quantity: "30.0000", is_override: false,
+  }],
+  discrepancies: [],
+  created_by: "99999999-9999-4999-8999-999999999999", created_by_authority_level: 1,
+  created_at: "2026-10-12T08:00:00Z", is_self_approved: false,
+};
+
+for (const locale of ["en", "am"] as const) {
+  test.describe(`Transfer receive form — reasons per row (${locale})`, () => {
+    test(`a non-batch row offers Short and Damaged only; a lot row offers all three (${locale})`, async ({ page }) => {
+      const taPassword = e2eTaPasswordOrSkip(test);
+      const consoleErrors = collectConsoleErrors(page);
+      const unstubbedWrites: string[] = [];
+
+      const raw = JSON.parse(fs.readFileSync(path.join(__dirname, "..", "..", "locales", `${locale}.json`), "utf-8"));
+      const tr = raw.transfers;
+      const reasonLabel = tr.discrepancies.reason as Record<"SHORT" | "DAMAGED" | "WRONG_LOT", string>;
+      const receiveAction = tr.receive.action as string;
+      const receiveTitle = (tr.receive.title as string).replace("{ref}", RECV_T.slice(0, 8).toUpperCase());
+
+      await page.route((url) => url.pathname.startsWith("/api/"), (route) => {
+        const req = route.request();
+        const method = req.method();
+        const url = new URL(req.url());
+        const p = url.pathname.replace(/\/$/, "");
+        if (method === "GET") {
+          if (p === "/api/v1/inventory/transfers") return fulfillJson(route, [recvTransfer]);
+          if (p === `/api/v1/inventory/transfers/${RECV_T}`) return fulfillJson(route, recvTransfer);
+          if (p === `/api/v1/inventory/transfers/${RECV_T}/approval-info`) {
+            return fulfillJson(route, {
+              transfer_id: RECV_T, required_authority_level: 1, required_role_display: "Tenant Admin",
+              is_auto_approve: false, can_approve: false, reason: "", current_step: 1, total_steps: 1,
+            });
+          }
+          if (p === "/api/v1/inventory/transfers/discrepancies") return fulfillJson(route, []);
+          if (p === "/api/v1/products") {
+            return fulfillJson(route, [RECV_PROD_BATCH, RECV_PROD_PLAIN].map((x, i) => ({
+              ...x, type_code: "FG", unit: "pcs", pack_size: 1, created_at: "2026-10-01T00:00:00Z",
+              batch_tracking: i === 0, expiry_tracking: i === 0,
+            })));
+          }
+          if (/^\/api\/v1\/tenants\/[^/]+\/nodes$/.test(p)) return fulfillJson(route, []);
+          if (/^\/api\/v1\/tenants\/[^/]+\/transfer-types$/.test(p)) return fulfillJson(route, []);
+          if (p === "/api/v1/inventory/analytics/stock") return fulfillJson(route, []);
+          return route.continue();
+        }
+        if (method === "OPTIONS") return route.continue();
+        if (method === "POST" && p === "/api/v1/auth/token") return route.continue();   // real login
+        unstubbedWrites.push(`${method} ${url.pathname}`);
+        return route.abort();
+      });
+
+      await page.addInitScript((loc) => window.localStorage.setItem("locale", loc), locale);
+      await login(page, E2E_TA_EMAIL, taPassword);
+      await fakeWarehouseAssignment(page);
+      await page.goto(`${BASE_URL}/${E2E_TA_SLUG}/transfers`);
+      await page.waitForLoadState("networkidle");
+
+      await page.locator("tr").filter({ hasText: RECV_T.slice(0, 8).toUpperCase() })
+        .getByRole("button", { name: receiveAction, exact: true }).click();
+      const modal = page.locator("div.fixed.shadow-2xl").filter({ hasText: receiveTitle });
+      await expect(modal).toBeVisible();
+      await expect(modal.locator("tbody tr")).toHaveCount(2);
+
+      // Make each row short so its reason select appears.
+      const lotRow = modal.locator("tbody tr").filter({ hasText: "RCV-LOT-1" });
+      const plainRow = modal.locator("tbody tr").filter({ hasText: RECV_PROD_PLAIN.name });
+      await lotRow.getByRole("spinbutton").fill("25");
+      await plainRow.getByRole("spinbutton").fill("15");
+
+      const optionValues = (row: Locator) => row.getByRole("combobox").locator("option:not([value=''])")
+        .evaluateAll((els) => els.map((e) => (e as HTMLOptionElement).value));
+
+      expect(await optionValues(plainRow), "non-batch row: Short and Damaged only").toEqual(["SHORT", "DAMAGED"]);
+      expect(await optionValues(lotRow), "lot row: all three").toEqual(["SHORT", "DAMAGED", "WRONG_LOT"]);
+      for (const r of ["SHORT", "DAMAGED"] as const) {
+        await expect(plainRow.getByRole("combobox").locator(`option[value="${r}"]`)).toHaveText(reasonLabel[r]);
+      }
+      await expect(plainRow.getByRole("combobox").locator('option[value="WRONG_LOT"]')).toHaveCount(0);
+      await expect(lotRow.getByRole("combobox").locator('option[value="WRONG_LOT"]')).toHaveText(reasonLabel.WRONG_LOT);
+
+      expect(unstubbedWrites, "no write reached an unstubbed /api/ path").toEqual([]);
+      console.log(`--- receive form reasons (${locale}) console errors ---`);
+      for (const e of consoleErrors) console.log(e);
+      expect(consoleErrors, `zero console errors (${locale})`).toHaveLength(0);
+    });
+  });
+}
