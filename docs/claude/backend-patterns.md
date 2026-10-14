@@ -575,6 +575,8 @@ non-batch line.
   `discrepancies` (`TransferDiscrepancyOut`, with `lot_number` joined from
   `stock_lots`).
 
+Real-DB proof: `python scripts/smoke_transfer_receipt.py` (rollback-only).
+
 #### Issue and Adjustment (C3)
 
 `InventoryService.issue_stock()` / `create_adjustment()` /
@@ -660,8 +662,6 @@ Real-DB proof: `python scripts/smoke_issue_adjust_lots.py` (rollback-only).
 > **Phase D note**: blocking expired lots on a *manual* pick (an operator
 > selecting an expired lot by hand) must not apply to Adjustment — an
 > expired lot is the normal, intended target of an EXPIRY write-off.
-
-Real-DB proof: `python scripts/smoke_transfer_receipt.py` (rollback-only).
 
 
 ## 17. Workflow State Machines
