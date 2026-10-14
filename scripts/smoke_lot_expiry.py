@@ -6,9 +6,9 @@ permanent zz-e2e-ta tenant, and NEVER commits — everything happens inside one
 transaction that is rolled back in a `finally` block, so it is safe to run
 against a real database with no cleanup step.
 
-The tenant has no organization_node rows, so the script creates one (plus the
-matching legacy `warehouses` row that update_lot_settings joins) with the same
-id inside the transaction.
+The tenant has no organization_node rows, so the script creates one inside the
+transaction. It deliberately creates NO legacy `warehouses` row: the batch-tracking
+conversion must create the OPENING lot from the organization_node warehouse alone.
 
 Usage:
     set -a; source .env; set +a
@@ -79,13 +79,6 @@ async def main() -> None:
                 ),
                 {"id": wh, "tid": E2E_TENANT_ID, "name": wh_name, "code": f"SXP{suffix}"},
             )
-            await session.execute(
-                text(
-                    "INSERT INTO warehouses (id, tenant_id, name, code, is_active) "
-                    "VALUES (:id, :tid, :name, :code, true)"
-                ),
-                {"id": wh, "tid": E2E_TENANT_ID, "name": wh_name, "code": f"SXP{suffix}"},
-            )
             product_id = str(uuid.uuid4())
             await session.execute(
                 text(
@@ -106,6 +99,11 @@ async def main() -> None:
                 dispatch_strategy=None,
             )
             _assert(len(result.opening_lots) == 1, "conversion created one OPENING lot")
+            legacy = (await session.execute(
+                text("SELECT count(*) AS n FROM warehouses WHERE id = :id"), {"id": wh},
+            )).fetchone()
+            _assert(legacy.n == 0 and len(result.opening_lots) == 1,
+                    "conversion created the OPENING lot with no warehouses row")
             lot_id = str(result.opening_lots[0].lot_id)
             lot_number = result.opening_lots[0].lot_number
 
