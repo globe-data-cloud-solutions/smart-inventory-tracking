@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import { useQueryClient, useQuery } from "@tanstack/react-query";
 import { nanoid } from "nanoid";
 import { api, IS_GATEWAY_MODE } from "@/lib/api";
@@ -10,6 +10,9 @@ import { useWriteGuard, guardProps } from "@/hooks/useWriteGuard";
 import { useInventoryStore } from "@/lib/inventory-state";
 import { useAuditStore } from "@/lib/audit-log-state";
 import { buildOverrideTooltip } from "@/components/features/inventory/ProductLabel";
+import { LotFields } from "@/components/features/inventory/LotFields";
+import { formatQty } from "@/lib/utils";
+import { formatExpiry } from "@/components/features/transfers/TransferLotDetails";
 import type { DemoProduct, DemoWarehouse } from "@/lib/demo-data";
 
 interface Props { products: DemoProduct[]; warehouses: DemoWarehouse[]; orgSlug: string; }
@@ -25,7 +28,11 @@ const REASONS = [
   { value: "OTHER",             label: "adjustment.reasons.OTHER"             },
 ];
 
-// These reasons always deduct stock — user enters magnitude, system negates
+// These reasons always deduct stock — user enters magnitude, system negates.
+// Drives this panel's quantity-field layout only (unchanged — kept as today).
+// The backend's own effective-sign rule is _FORCE_NEGATIVE_REASONS in
+// inventory_service.py (DAMAGE, EXPIRY, SUPPLIER_RETURN); batch-product lot
+// selection below mirrors that via `qty`'s sign — see isLotNegative/isLotPositive.
 const FORCE_NEGATIVE = new Set(["DAMAGE", "EXPIRY", "THEFT"]);
 
 function Field({ label, hint, children }: { label: string; hint?: string; children: React.ReactNode }) {
@@ -44,6 +51,15 @@ const inputCls  = "w-full px-2.5 py-2 text-sm border border-gray-300 rounded out
 const selectCls = `${inputCls} cursor-pointer`;
 
 interface AdjResult { adjustment_id: string; status: string; quantity_delta: string }
+
+// GET /api/v1/inventory/lots — the fields this panel's lot pickers read.
+interface AdjLotApi {
+  lot_id: string;
+  lot_number: string;
+  quantity: string;
+  expiry_date: string | null;
+  status: string; // ACTIVE | DEPLETED | EXPIRED
+}
 
 export function NewAdjustmentPanel({ products, warehouses, orgSlug }: Props) {
   const qc      = useQueryClient();
@@ -108,6 +124,18 @@ export function NewAdjustmentPanel({ products, warehouses, orgSlug }: Props) {
   const [toast, setToast]             = useState<{ msg: string; applied: boolean } | null>(null);
   const [zeroWarn, setZeroWarn]       = useState(false);
 
+  // Batch-tracked lot choice (lot tracking on). Negative: one existing lot to
+  // deduct from. Positive: either an existing lot (any warehouse) or a new one.
+  const [lotId, setLotId]         = useState("");
+  const [lotMode, setLotMode]     = useState<"existing" | "new">("existing");
+  const [lotNumber, setLotNumber] = useState("");
+  const [expiryDate, setExpiryDate] = useState("");
+  const [autoLot, setAutoLot]     = useState(false);
+
+  function clearLot() {
+    setLotId(""); setLotMode("existing"); setLotNumber(""); setExpiryDate(""); setAutoLot(false);
+  }
+
   const effectiveWarehouseId = hasAssignedWarehouse ? (session?.warehouseId ?? "") : warehouseId;
   const effectiveWarehouseName = hasAssignedWarehouse
     ? (warehouses.find((w) => w.id.toLowerCase() === effectiveWarehouseId.toLowerCase())?.name
@@ -122,10 +150,63 @@ export function NewAdjustmentPanel({ products, warehouses, orgSlug }: Props) {
 
   const approvalInfo = qty !== 0 ? approvalHint(qty) : null;
   const selectedP    = products.find((p) => p.id === productId);
+  const isBatchProduct = selectedP?.batchTracking === true;
+  const newLotExpiryRequired = isBatchProduct && selectedP?.expiryTracking === true;
+
+  // Lot selection branches on the sign of `qty` (computed above), which already
+  // matches the backend's effective-sign rule in inventory_service.py
+  // (_FORCE_NEGATIVE_REASONS: DAMAGE, EXPIRY, SUPPLIER_RETURN always negative;
+  // every other reason follows the sign the user actually entered).
+  // SUPPLIER_RETURN is a legacy backend-only value and never appears in REASONS.
+  const isLotNegative = qty < 0;
+  const isLotPositive = qty > 0;
+
+  // GET /api/v1/inventory/lots?product_id&warehouse_id — non-depleted lots
+  // (ACTIVE + EXPIRED) with stock at this warehouse, for the negative path.
+  const { data: negativeLots = [] } = useQuery<AdjLotApi[]>({
+    queryKey: ["adj-lots-negative", productId, effectiveWarehouseId],
+    queryFn: () => api.get<AdjLotApi[]>(
+      `/api/v1/inventory/lots?${new URLSearchParams({ product_id: productId, warehouse_id: effectiveWarehouseId }).toString()}`
+    ),
+    enabled: IS_GATEWAY_MODE && isBatchProduct && isLotNegative && !!productId && !!effectiveWarehouseId,
+    staleTime: 0,
+  });
+
+  // GET /api/v1/inventory/lots?product_id&include_depleted=true — every lot of
+  // this product (any warehouse), de-duplicated by lot_id, for the positive
+  // "Existing lot" path.
+  const { data: allProductLots = [] } = useQuery<AdjLotApi[]>({
+    queryKey: ["adj-lots-existing", productId],
+    queryFn: () => api.get<AdjLotApi[]>(
+      `/api/v1/inventory/lots?${new URLSearchParams({ product_id: productId, include_depleted: "true" }).toString()}`
+    ),
+    enabled: IS_GATEWAY_MODE && isBatchProduct && isLotPositive && lotMode === "existing" && !!productId,
+    staleTime: 0,
+  });
+  const existingLots = useMemo(() => {
+    const map = new Map<string, AdjLotApi>();
+    for (const l of allProductLots) if (!map.has(l.lot_id)) map.set(l.lot_id, l);
+    return Array.from(map.values());
+  }, [allProductLots]);
+
+  const selectedNegativeLot = negativeLots.find((l) => l.lot_id === lotId);
+  const lotQtyError = isLotNegative && selectedNegativeLot && Math.abs(qty) > parseFloat(selectedNegativeLot.quantity)
+    ? t("adjustment.lot_error_exceeds").replace("{available}", formatQty(selectedNegativeLot.quantity))
+    : "";
+
+  // Switching sign (typing Add vs Remove) or reason clears an incompatible lot choice.
+  const lotClearKey = `${reason}|${isLotNegative ? "neg" : isLotPositive ? "pos" : "zero"}`;
+  const prevLotClearKey = useRef(lotClearKey);
+  useEffect(() => {
+    if (prevLotClearKey.current !== lotClearKey) {
+      clearLot();
+      prevLotClearKey.current = lotClearKey;
+    }
+  }, [lotClearKey]);
 
   function reset() {
     setProductId(""); setWarehouseId(""); setAddQty(""); setRemoveQty("");
-    setReason(""); setNotes(""); setError(""); setZeroWarn(false);
+    setReason(""); setNotes(""); setError(""); setZeroWarn(false); clearLot();
   }
 
   // Bug 6: auto-dismiss toast and close panel after 3 s
@@ -148,6 +229,20 @@ export function NewAdjustmentPanel({ products, warehouses, orgSlug }: Props) {
     if (!forceNeg && addNum > 0 && removeNum > 0) {
       setError("Fill either Add Stock or Remove Stock, not both.");
       return;
+    }
+
+    if (isBatchProduct && qty !== 0) {
+      if (isLotNegative) {
+        if (!lotId) { setError(t("errors.LOT_REQUIRED")); return; }
+        if (lotQtyError) { setError(lotQtyError); return; }
+      } else if (isLotPositive) {
+        if (lotMode === "existing") {
+          if (!lotId) { setError(t("errors.LOT_REQUIRED")); return; }
+        } else {
+          if (!autoLot && !lotNumber.trim()) { setError(t("errors.LOT_NUMBER_REQUIRED")); return; }
+          if (newLotExpiryRequired && !expiryDate) { setError(t("errors.EXPIRY_REQUIRED")); return; }
+        }
+      }
     }
 
     // Bug 7: zero-floor guard — block WM, confirm for managers
@@ -179,6 +274,13 @@ export function NewAdjustmentPanel({ products, warehouses, orgSlug }: Props) {
         reason_code:    reason,
         notes,
         idempotency_key: key,
+        ...(isBatchProduct && qty !== 0
+          ? isLotNegative
+            ? { lot_id: lotId }
+            : lotMode === "existing"
+              ? { lot_id: lotId }
+              : { lot_number: autoLot ? undefined : lotNumber.trim(), expiry_date: expiryDate || undefined, auto_lot: autoLot }
+          : {}),
       });
 
       // Bug 5: update Zustand inventory store when adjustment is auto-applied
@@ -260,7 +362,7 @@ export function NewAdjustmentPanel({ products, warehouses, orgSlug }: Props) {
           )}
 
           <Field label={t("table.product")}>
-            <select value={productId} onChange={(e) => setProductId(e.target.value)} className={selectCls} required>
+            <select value={productId} onChange={(e) => { setProductId(e.target.value); clearLot(); }} className={selectCls} required>
               <option value="">— {t("receive_panel.select_product")} —</option>
               {products.map((p) => (
                 <option key={p.id} value={p.id}>
@@ -360,6 +462,74 @@ export function NewAdjustmentPanel({ products, warehouses, orgSlug }: Props) {
                   </div>
                 )}
               </div>
+            )
+          )}
+
+          {isBatchProduct && reason && qty !== 0 && (
+            isLotNegative ? (
+              <Field label={t("adjustment.lot_label")}>
+                <select
+                  data-testid="adj-lot-select"
+                  value={lotId}
+                  onChange={(e) => setLotId(e.target.value)}
+                  className={selectCls}
+                  required
+                >
+                  <option value="">— {t("adjustment.lot_select_placeholder")} —</option>
+                  {negativeLots.map((l) => (
+                    <option key={l.lot_id} value={l.lot_id}>
+                      {l.lot_number}
+                      {l.expiry_date ? ` · ${formatExpiry(l.expiry_date)}` : ""}
+                      {` · ${formatQty(l.quantity)} ${t("lots.units")}`}
+                      {l.status === "EXPIRED" ? ` · ${t("lots.expired")}` : ""}
+                    </option>
+                  ))}
+                </select>
+                {lotQtyError && (
+                  <p data-testid="adj-lot-error" className="text-xs text-red-600 mt-1">{lotQtyError}</p>
+                )}
+              </Field>
+            ) : (
+              <Field label={t("adjustment.lot_label")}>
+                <div className="flex gap-2 mb-2">
+                  <button
+                    type="button"
+                    data-testid="adj-lot-mode-existing"
+                    onClick={() => setLotMode("existing")}
+                    className={`flex-1 py-1.5 rounded text-xs font-bold border cursor-pointer ${lotMode === "existing" ? "bg-cyan-600 text-white border-cyan-600" : "bg-white text-gray-700 border-gray-300"}`}
+                  >
+                    {t("adjustment.lot_mode_existing")}
+                  </button>
+                  <button
+                    type="button"
+                    data-testid="adj-lot-mode-new"
+                    onClick={() => setLotMode("new")}
+                    className={`flex-1 py-1.5 rounded text-xs font-bold border cursor-pointer ${lotMode === "new" ? "bg-cyan-600 text-white border-cyan-600" : "bg-white text-gray-700 border-gray-300"}`}
+                  >
+                    {t("adjustment.lot_mode_new")}
+                  </button>
+                </div>
+                {lotMode === "existing" ? (
+                  <select value={lotId} onChange={(e) => setLotId(e.target.value)} className={selectCls} required>
+                    <option value="">— {t("adjustment.lot_existing_placeholder")} —</option>
+                    {existingLots.map((l) => (
+                      <option key={l.lot_id} value={l.lot_id}>
+                        {l.lot_number}{l.expiry_date ? ` · ${formatExpiry(l.expiry_date)}` : ""}
+                      </option>
+                    ))}
+                  </select>
+                ) : (
+                  <LotFields
+                    lotNumber={lotNumber}
+                    expiryDate={expiryDate}
+                    autoLot={autoLot}
+                    expiryRequired={newLotExpiryRequired}
+                    onLotNumberChange={setLotNumber}
+                    onExpiryDateChange={setExpiryDate}
+                    onAutoLotChange={(v) => { setAutoLot(v); if (v) setLotNumber(""); }}
+                  />
+                )}
+              </Field>
             )
           )}
 

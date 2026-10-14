@@ -578,7 +578,15 @@
     "no_pending_hint": "All adjustments are resolved. Toggle history to view past records.",
     "rules_hint": "Approval rules",
     "self_approve": "Self-approve",
-    "controlled_note": "🔒 Controlled products always require a specific approver, regardless of quantity. Look for 🔒 on product names."
+    "controlled_note": "🔒 Controlled products always require a specific approver, regardless of quantity. Look for 🔒 on product names.",
+    "lot_label": "Lot",
+    "lot_select_placeholder": "Select lot to deduct from",
+    "lot_existing_placeholder": "Select existing lot",
+    "lot_mode_existing": "Existing Lot",
+    "lot_mode_new": "New Lot",
+    "lot_error_exceeds": "Exceeds available quantity in this lot ({available} units).",
+    "lot_new_named": "New lot: {number}",
+    "lot_new_auto": "New lot (generated at posting)"
   },
   "transfer": {
     "acting_on_behalf": "Acting on behalf of: {warehouse}",

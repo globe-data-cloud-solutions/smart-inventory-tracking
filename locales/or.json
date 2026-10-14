@@ -570,7 +570,15 @@
     "no_pending_hint": "Sirreessiwwan hundi xumuramaniiru. Galmeewwan darbe ilaaluuf seenaa jijjiiraa.",
     "rules_hint": "Seerota mirkaneessaa",
     "self_approve": "Ofiin mirkaneessuu",
-    "controlled_note": "🔒 Oomishaalee to'annoo jala jiran yeroo hunda mirkaneessaa addaa barbaadu, hangaa isaanii osoo hin ilaalle. Maqaa oomishaa irratti mallattoo 🔒 ilaali."
+    "controlled_note": "🔒 Oomishaalee to'annoo jala jiran yeroo hunda mirkaneessaa addaa barbaadu, hangaa isaanii osoo hin ilaalle. Maqaa oomishaa irratti mallattoo 🔒 ilaali.",
+    "lot_label": "Lot",
+    "lot_select_placeholder": "Select lot to deduct from",
+    "lot_existing_placeholder": "Select existing lot",
+    "lot_mode_existing": "Existing Lot",
+    "lot_mode_new": "New Lot",
+    "lot_error_exceeds": "Exceeds available quantity in this lot ({available} units).",
+    "lot_new_named": "New lot: {number}",
+    "lot_new_auto": "New lot (generated at posting)"
   },
   "transfer": {
     "acting_on_behalf": "Bakka {warehouse} bu'anii hojjechaa jiru",
