@@ -24,6 +24,7 @@ async def lots_client(inv_app, wm_user):
     db = AsyncMock()
     result = MagicMock()
     result.fetchall.return_value = []
+    result.fetchone.return_value = None  # no tenants row -> default window 30
     db.execute = AsyncMock(return_value=result)
 
     async def _db_gen():

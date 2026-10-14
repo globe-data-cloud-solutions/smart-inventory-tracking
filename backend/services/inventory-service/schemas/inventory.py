@@ -64,6 +64,16 @@ class SetLotExpiryOut(BaseModel):
     expiry_date: date
 
 
+class NearExpirySettingsRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    near_expiry_days: int = Field(..., ge=1, le=365)
+
+
+class NearExpirySettingsOut(BaseModel):
+    near_expiry_days: int
+
+
 class OpeningLotItem(BaseModel):
     warehouse_id: uuid.UUID
     lot_id: uuid.UUID
