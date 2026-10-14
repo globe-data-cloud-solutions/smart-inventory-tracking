@@ -27,6 +27,12 @@ type ApiProduct = {
 };
 
 type AdjStatus = "DRAFT" | "PENDING_APPROVAL" | "APPROVED" | "POSTED" | "REJECTED" | "CANCELLED";
+// Lot-related backend codes that have a translated errors.<CODE> entry.
+const LOT_ERROR_CODES = new Set([
+  "LOT_NUMBER_REQUIRED", "LOT_EXPIRY_MISMATCH", "INSUFFICIENT_LOT_STOCK", "LOT_REQUIRED",
+  "LOT_EXPIRED", "LOT_NOT_IN_WAREHOUSE", "LOT_NOT_FOUND",
+]);
+
 type AdjAction  = "submit" | "approve" | "reject" | "cancel";
 
 // Bug 2: added product_id and warehouse_id for scoping and balance update (Bug 9)
@@ -120,6 +126,7 @@ export default function AdjustmentsPage() {
   const user           = getSession();
   const qc             = useQueryClient();
   const [showHistory, setShowHistory] = useState(false);
+  const [actionError, setActionError] = useState<string | null>(null);
   const isGatewayMode  = IS_GATEWAY_MODE;
   const guard = useWriteGuard();
   const gp = guardProps(guard);
@@ -310,9 +317,18 @@ export default function AdjustmentsPage() {
     // Approvers (RM/NM/TA) must find the adjustment record regardless of which WH created it.
     const adj = allAdj.find((a) => (a.adjustment_id ?? a.id) === id);
 
+    setActionError(null);
     try {
       await api.post(`/api/v1/inventory/adjustments/${id}/${action}`, {});
-    } catch { /* seed adjustments return 404 — fall through to state updates below */ }
+    } catch (err: unknown) {
+      const code = (err as { code?: string } | undefined)?.code ?? "";
+      if (LOT_ERROR_CODES.has(code)) {
+        // Real lot failure at posting — show it translated and do not touch local stock.
+        setActionError(t(`errors.${code}`));
+        return;
+      }
+      /* seed adjustments return 404 — fall through to state updates below */
+    }
 
     // Update inventory balance OUTSIDE the try/catch so 404s (seed records) don't
     // swallow the store update. warehouse_id comes from the adjustment record — NOT from
@@ -403,6 +419,12 @@ export default function AdjustmentsPage() {
           <NewAdjustmentPanel products={panelProducts} warehouses={panelWarehouses} orgSlug={org} />
         </div>
       </div>
+
+      {actionError && (
+        <div data-testid="adj-action-error" className="mb-4 bg-red-50 border border-red-200 rounded px-4 py-2.5 text-sm text-red-600">
+          {actionError}
+        </div>
+      )}
 
       {gp.title && (
         <div className="mb-4 bg-red-50 border border-red-200 rounded px-4 py-2.5 text-sm text-red-600">

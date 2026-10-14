@@ -35,6 +35,12 @@ const REASONS = [
 // selection below mirrors that via `qty`'s sign — see isLotNegative/isLotPositive.
 const FORCE_NEGATIVE = new Set(["DAMAGE", "EXPIRY", "THEFT"]);
 
+// Lot-related backend codes that have a translated errors.<CODE> entry.
+const LOT_ERROR_CODES = new Set([
+  "LOT_NUMBER_REQUIRED", "LOT_EXPIRY_MISMATCH", "INSUFFICIENT_LOT_STOCK", "LOT_REQUIRED",
+  "LOT_EXPIRED", "LOT_NOT_IN_WAREHOUSE", "LOT_NOT_FOUND",
+]);
+
 function Field({ label, hint, children }: { label: string; hint?: string; children: React.ReactNode }) {
   return (
     <div className="mb-4">
@@ -316,7 +322,9 @@ export function NewAdjustmentPanel({ products, warehouses, orgSlug }: Props) {
       });
       void qc.invalidateQueries({ queryKey: ["adjustments", orgSlug] });
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : t("errors.INTERNAL_ERROR"));
+      const code = (err as { code?: string } | undefined)?.code ?? "";
+      if (LOT_ERROR_CODES.has(code)) setError(t(`errors.${code}`));
+      else setError(err instanceof Error ? err.message : t("errors.INTERNAL_ERROR"));
     } finally {
       setLoading(false);
     }
