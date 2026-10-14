@@ -29,6 +29,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from schemas.analytics import (
     CrossWarehouseStockOut,
     ForecastOut,
+    ExpiryAlertCounts,
+    ExpiryAlertOut,
+    ExpiryAlertsOut,
     InventoryStockOut,
     LotOut,
     ReorderAlertOut,
@@ -378,6 +381,7 @@ async def get_lots(
     include_depleted: bool = False,
     limit: int = 200,
     offset: int = 0,
+    expiring_within_days: int = 30,
 ) -> List[LotOut]:
     """Return one row per (lot, warehouse) with a computed status.
 
@@ -397,7 +401,7 @@ async def get_lots(
                 p.name                AS product_name,
                 p.sku                  AS product_sku,
                 lb.warehouse_id,
-                w.name                 AS warehouse_name,
+                COALESCE(on_node.name, w.name, '') AS warehouse_name,
                 lb.quantity,
                 sl.expiry_date,
                 sl.first_received_at,
@@ -406,11 +410,18 @@ async def get_lots(
                     WHEN lb.quantity = 0 THEN 'DEPLETED'
                     WHEN sl.expiry_date < CURRENT_DATE THEN 'EXPIRED'
                     ELSE 'ACTIVE'
-                END AS status
+                END AS status,
+                (sl.expiry_date - CURRENT_DATE) AS days_to_expiry,
+                COALESCE(
+                    sl.expiry_date BETWEEN CURRENT_DATE
+                        AND CURRENT_DATE + CAST(:expiring_within_days AS integer),
+                    FALSE
+                ) AS expiring_soon
             FROM lot_balances lb
             JOIN stock_lots sl ON sl.id = lb.lot_id
             JOIN products   p  ON p.id  = sl.product_id
-            JOIN warehouses w  ON w.id  = lb.warehouse_id
+            LEFT JOIN organization_node on_node ON on_node.id = lb.warehouse_id
+            LEFT JOIN warehouses w ON w.id = lb.warehouse_id
             WHERE 1 = 1
               {tenant_clause}
               {product_clause}
@@ -428,6 +439,7 @@ async def get_lots(
         "include_depleted": include_depleted,
         "limit": limit,
         "offset": offset,
+        "expiring_within_days": expiring_within_days,
     }
     if tenant_id:
         params["tid"] = str(tenant_id)
@@ -452,6 +464,104 @@ async def get_lots(
             first_received_at=r.first_received_at,
             is_opening=r.is_opening,
             status=r.status,
+            days_to_expiry=r.days_to_expiry,
+            expiring_soon=bool(r.expiring_soon),
         )
         for r in rows
     ]
+
+
+# ── Expiry alerts ───────────────────────────────────────────────────────────
+
+async def get_expiry_alerts(
+    session: AsyncSession,
+    tenant_id: Optional[uuid.UUID],
+    warehouse_id: Optional[uuid.UUID] = None,
+    within_days: int = 30,
+) -> ExpiryAlertsOut:
+    """Lot balances (quantity > 0) of batch- and expiry-tracked products that
+    are EXPIRED, EXPIRING within `within_days` (inclusive), or have NO_EXPIRY.
+
+    Order: EXPIRED (most overdue first), EXPIRING (soonest first), then
+    NO_EXPIRY (product name, lot number).
+    """
+    tenant_clause    = "AND lb.tenant_id = :tid AND sl.tenant_id = :tid" if tenant_id else ""
+    warehouse_clause = "AND lb.warehouse_id = :wid" if warehouse_id else ""
+
+    sql = text(f"""
+        WITH alert_rows AS (
+            SELECT
+                sl.id                AS lot_id,
+                sl.lot_number,
+                sl.product_id,
+                p.name               AS product_name,
+                p.sku                AS product_sku,
+                lb.warehouse_id,
+                COALESCE(on_node.name, w.name, '') AS warehouse_name,
+                lb.quantity,
+                sl.expiry_date,
+                sl.first_received_at,
+                sl.is_opening,
+                (sl.expiry_date - CURRENT_DATE) AS days_to_expiry,
+                CASE
+                    WHEN sl.expiry_date IS NULL THEN 'NO_EXPIRY'
+                    WHEN sl.expiry_date < CURRENT_DATE THEN 'EXPIRED'
+                    WHEN sl.expiry_date <= CURRENT_DATE + CAST(:within_days AS integer)
+                        THEN 'EXPIRING'
+                    ELSE NULL
+                END AS alert_type
+            FROM lot_balances lb
+            JOIN stock_lots sl ON sl.id = lb.lot_id
+            JOIN products   p  ON p.id  = sl.product_id
+            LEFT JOIN organization_node on_node ON on_node.id = lb.warehouse_id
+            LEFT JOIN warehouses w ON w.id = lb.warehouse_id
+            WHERE p.batch_tracking = true
+              AND p.expiry_tracking = true
+              AND lb.quantity > 0
+              {tenant_clause}
+              {warehouse_clause}
+        )
+        SELECT * FROM alert_rows
+        WHERE alert_type IS NOT NULL
+        ORDER BY
+            CASE alert_type WHEN 'EXPIRED' THEN 0 WHEN 'EXPIRING' THEN 1 ELSE 2 END,
+            expiry_date ASC NULLS LAST,
+            product_name,
+            lot_number
+    """)
+
+    params: dict = {"within_days": within_days}
+    if tenant_id:
+        params["tid"] = str(tenant_id)
+    if warehouse_id:
+        params["wid"] = str(warehouse_id)
+
+    rows = (await session.execute(sql, params)).fetchall()
+
+    items = [
+        ExpiryAlertOut(
+            lot_id=r.lot_id,
+            lot_number=r.lot_number,
+            product_id=r.product_id,
+            product_name=r.product_name,
+            product_sku=r.product_sku,
+            warehouse_id=r.warehouse_id,
+            warehouse_name=r.warehouse_name,
+            quantity=Decimal(str(r.quantity)),
+            expiry_date=r.expiry_date,
+            first_received_at=r.first_received_at,
+            is_opening=r.is_opening,
+            alert_type=r.alert_type,
+            days_to_expiry=r.days_to_expiry,
+        )
+        for r in rows
+    ]
+    return ExpiryAlertsOut(
+        window_days=within_days,
+        counts=ExpiryAlertCounts(
+            expired=sum(1 for i in items if i.alert_type == "EXPIRED"),
+            expiring=sum(1 for i in items if i.alert_type == "EXPIRING"),
+            no_expiry=sum(1 for i in items if i.alert_type == "NO_EXPIRY"),
+        ),
+        items=items,
+    )

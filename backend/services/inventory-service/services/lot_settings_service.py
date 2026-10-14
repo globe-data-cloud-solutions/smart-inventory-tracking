@@ -115,9 +115,10 @@ async def update_lot_settings(
     if not old_batch_tracking and batch_tracking:
         balances = (await session.execute(
             text(
-                "SELECT ib.warehouse_id, w.code AS warehouse_code, ib.quantity "
+                "SELECT ib.warehouse_id, COALESCE(n.code, w.code) AS warehouse_code, ib.quantity "
                 "FROM inventory_balances ib "
-                "JOIN warehouses w ON w.id = ib.warehouse_id "
+                "LEFT JOIN organization_node n ON n.id = ib.warehouse_id AND n.tenant_id = ib.tenant_id "
+                "LEFT JOIN warehouses        w ON w.id = ib.warehouse_id AND w.tenant_id = ib.tenant_id "
                 "WHERE ib.tenant_id = :tid AND ib.product_id = :pid "
                 "AND ib.lot_number IS NULL AND ib.quantity > 0"
             ),

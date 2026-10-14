@@ -3,7 +3,7 @@ from __future__ import annotations
 import uuid
 from datetime import date, datetime
 from decimal import Decimal
-from typing import List, Optional
+from typing import List, Literal, Optional
 
 from pydantic import BaseModel, computed_field
 
@@ -120,3 +120,33 @@ class LotOut(BaseModel):
     first_received_at: datetime
     is_opening: bool
     status: str
+    days_to_expiry: Optional[int] = None
+    expiring_soon: bool = False
+
+
+class ExpiryAlertOut(BaseModel):
+    lot_id: uuid.UUID
+    lot_number: str
+    product_id: uuid.UUID
+    product_name: str
+    product_sku: str
+    warehouse_id: uuid.UUID
+    warehouse_name: str
+    quantity: Decimal
+    expiry_date: Optional[date] = None
+    first_received_at: datetime
+    is_opening: bool
+    alert_type: Literal["EXPIRED", "EXPIRING", "NO_EXPIRY"]
+    days_to_expiry: Optional[int] = None
+
+
+class ExpiryAlertCounts(BaseModel):
+    expired: int
+    expiring: int
+    no_expiry: int
+
+
+class ExpiryAlertsOut(BaseModel):
+    window_days: int
+    counts: ExpiryAlertCounts
+    items: List[ExpiryAlertOut]

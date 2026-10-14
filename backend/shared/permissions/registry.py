@@ -179,7 +179,7 @@ class PERMISSIONS:
     # ── Domain 16 — Reports ───────────────────────────────────────────────
     REPORT_INV_VALUATION    = Permission("report:inventory_valuation",  ["tenant_id"])
     REPORT_STOCK_MOVEMENT   = Permission("report:stock_movement",       ["tenant_id"])
-    REPORT_EXPIRY_ALERTS    = Permission("report:expiry_alerts",        ["tenant_id"])
+    REPORT_EXPIRY_ALERTS    = Permission("report:expiry_alerts",        ["tenant_id", "warehouse_id"])
     REPORT_LOW_STOCK        = Permission("report:low_stock",            ["tenant_id"])
     REPORT_LOT_TRACE        = Permission("report:lot_trace",            ["tenant_id"])
     REPORT_DISPATCH_SUMMARY = Permission("report:dispatch_summary",     ["tenant_id"])

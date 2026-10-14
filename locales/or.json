@@ -672,7 +672,34 @@
     "ago": "ago",
     "total": "Total",
     "units": "units",
-    "pct_of_lot": "% of Lot"
+    "pct_of_lot": "% of Lot",
+    "chip_expired": "Expired",
+    "chip_expiring": "Expiring within {days} days",
+    "chip_no_expiry": "No expiry set",
+    "summary_error": "Could not load the expiry summary.",
+    "load_error": "Could not load lots.",
+    "filter_all": "All",
+    "filter_active": "Active",
+    "filter_expiring_soon": "Expiring soon",
+    "filter_expired": "Expired",
+    "filter_depleted": "Depleted",
+    "status_active": "Active",
+    "status_expiring_soon": "Expiring soon",
+    "status_expired": "Expired",
+    "status_depleted": "Depleted",
+    "opening_tag": "Opening",
+    "expiry_in_days": "in {n} days",
+    "expiry_in_one_day": "in 1 day",
+    "expiry_today": "expires today",
+    "expiry_ago_days": "expired {n} days ago",
+    "expiry_ago_one_day": "expired 1 day ago",
+    "no_expiry": "No expiry set",
+    "set_expiry": "Set expiry",
+    "set_expiry_title": "Set lot expiry",
+    "set_expiry_warning": "This expiry applies to this lot in every warehouse and can only be set once.",
+    "set_expiry_date": "Expiry date",
+    "set_expiry_success": "Expiry date saved.",
+    "no_records": "No Lot Records Found"
   },
   "notifications": {
     "title": "Beeksisaalee",
@@ -717,7 +744,9 @@
     "RECEIPT_EXCEEDS_SENT": "The received quantity can't be more than the quantity sent.",
     "RECEIPT_REASON_REQUIRED": "Choose a reason for the missing quantity.",
     "PARTIAL_RECEIPT_NOT_SUPPORTED": "Enter the received quantities on the receive form instead.",
-    "INVALID_STATE_TRANSITION": "This transfer's status has changed. Refresh and try again."
+    "INVALID_STATE_TRANSITION": "This transfer's status has changed. Refresh and try again.",
+    "LOT_EXPIRY_ALREADY_SET": "This lot already has an expiry date and it cannot be changed.",
+    "EXPIRY_TRACKING_OFF": "Expiry tracking is turned off for this product."
   },
   "demo": {
     "mode_banner": "Haala demo — jijjiiramni marsariitii haaromsamte haqama. Daataa dhaabbataa argachuuf backend waliin wal qabii."
@@ -1559,7 +1588,10 @@
     "tenant_name": "Tenant Name",
     "tenant_type": "Type",
     "need_help_title": "Need help?",
-    "need_help_all_contact": "All contact details"
+    "need_help_all_contact": "All contact details",
+    "expired_lots": "Expired lots",
+    "expiring_lots": "Expiring within {days} days",
+    "no_expiry_lots": "Lots with no expiry"
   },
   "table": {
     "sku": "SKU",

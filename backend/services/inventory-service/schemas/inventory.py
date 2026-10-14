@@ -6,7 +6,7 @@ from decimal import Decimal
 from enum import Enum
 from typing import List, Literal, Optional
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
 def _no_null(v: object) -> object:
@@ -49,6 +49,19 @@ class LotSettingsRequest(BaseModel):
     @classmethod
     def upper_strategy(cls, v: object) -> object:
         return v.strip().upper() if isinstance(v, str) else v
+
+
+class SetLotExpiryRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    expiry_date: date
+
+
+class SetLotExpiryOut(BaseModel):
+    lot_id: uuid.UUID
+    lot_number: str
+    product_id: uuid.UUID
+    expiry_date: date
 
 
 class OpeningLotItem(BaseModel):
