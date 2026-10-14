@@ -19,7 +19,6 @@ from services.approval_service import resolve_approval, ROLE_AUTHORITY_LEVEL
 from services.self_approval_service import (
     check_adjustment_self_approval,
     check_product_override,
-    check_self_approval,
     get_self_approval_decision,
 )
 from repositories.ledger_repo import record_transaction, write_transfer_ledger_entry
@@ -46,6 +45,7 @@ from schemas.inventory import (
     TransferOrderResponse,
 )
 from services import transfer_discrepancies, transfer_lots
+from services.transfer_discrepancies import _FACILITY_SCOPED_ROLES, _inside, _subtree
 from services.dispatch_service import (
     DispatchError,
     InsufficientStockError,
@@ -62,6 +62,55 @@ from shared.permissions.audit import audit_log
 
 # Reason codes that always deduct stock — service forces negative quantity regardless of input sign
 _FORCE_NEGATIVE_REASONS: frozenset[str] = frozenset({"DAMAGE", "EXPIRY", "SUPPLIER_RETURN"})
+
+# A subtree-scoped caller also sees a transfer whose approval chain names them:
+# a step whose node_id is in their subtree, whose assigned_to_user_id is them,
+# or whose all_holders lists them (approval_service.ResolvedStep.to_dict).
+# The SQL (list_transfers) and _on_approval_steps (get_transfer) state the
+# same rule — change them together. Non-array steps (NULL before
+# PENDING_APPROVAL) match nothing.
+_APPROVER_SCOPE_SQL = """EXISTS (
+                SELECT 1
+                FROM jsonb_array_elements(
+                    CASE WHEN jsonb_typeof(to_.resolved_approval_steps) = 'array'
+                         THEN to_.resolved_approval_steps ELSE '[]'::jsonb END
+                ) AS step
+                WHERE lower(step->>'node_id') = ANY(:step_nodes)
+                   OR lower(step->>'assigned_to_user_id') = :uid
+                   OR EXISTS (
+                       SELECT 1
+                       FROM jsonb_array_elements(
+                           CASE WHEN jsonb_typeof(step->'all_holders') = 'array'
+                                THEN step->'all_holders' ELSE '[]'::jsonb END
+                       ) AS holder
+                       WHERE lower(holder->>'user_id') = :uid
+                   )
+              )"""
+
+
+def _on_approval_steps(scope: set[str], user_id: Any, steps: Any) -> bool:
+    """Python form of _APPROVER_SCOPE_SQL for one transfer's steps."""
+    if isinstance(steps, str):
+        try:
+            steps = _json.loads(steps)
+        except ValueError:
+            return False
+    if not isinstance(steps, list):
+        return False
+    uid = str(user_id).lower()
+    for step in steps:
+        if not isinstance(step, dict):
+            continue
+        if step.get("node_id") and str(step["node_id"]).lower() in scope:
+            return True
+        if step.get("assigned_to_user_id") and str(step["assigned_to_user_id"]).lower() == uid:
+            return True
+        holders = step.get("all_holders")
+        if isinstance(holders, list) and any(
+            isinstance(h, dict) and str(h.get("user_id", "")).lower() == uid for h in holders
+        ):
+            return True
+    return False
 
 
 async def _get_warehouse_name(db: Any, tenant_id: str, warehouse_id: str) -> str | None:
@@ -476,7 +525,7 @@ class InventoryService:
             transaction_id=UUID(str(rows[0].id)),
             product_id=body.product_id,
             warehouse_id=body.warehouse_id,
-            quantity=sum((l.quantity for l in lots), Decimal("0")),
+            quantity=sum((lot.quantity for lot in lots), Decimal("0")),
             reason_code=body.reason_code,
             created_at=datetime.now(timezone.utc),
             lots=lots,
@@ -498,7 +547,9 @@ class InventoryService:
         route through the adjustment approval workflow instead.
 
         Non-batch product: a single ISSUE ledger INSERT with a negative quantity,
-        key = body.idempotency_key. lot_selections → 422 LOT_NOT_TRACKED.
+        key = body.idempotency_key. lot_selections → 422 LOT_NOT_TRACKED. A
+        replay (the key's ISSUE row already exists) returns that row and writes
+        nothing.
 
         Batch product: one ISSUE row per lot, sorted by lot_id, key
         f"{body.idempotency_key}:lot:{lot_id}", all sharing reference_id =
@@ -516,6 +567,7 @@ class InventoryService:
         PERMISSIONS: the override flags are resolved by the router.
         """
         from datetime import datetime, timezone
+        from fastapi import HTTPException
 
         tenant_id, user_id = str(user.tenant_id), str(user.user_id)
         product_id, warehouse_id = str(body.product_id), str(body.warehouse_id)
@@ -526,16 +578,39 @@ class InventoryService:
         if not product.batch_tracking:
             if body.lot_selections:
                 raise transfer_lots.http_from_engine(DispatchError("LOT_NOT_TRACKED"))
-            tx_id = await record_transaction(
-                self.db,
-                tenant_id=tenant_id,
-                transaction_type="ISSUE",
-                product_id=product_id,
-                warehouse_id=warehouse_id,
-                quantity=-qty,   # always a deduction
-                performed_by=user_id,
-                idempotency_key=body.idempotency_key,
-            )
+            try:
+                tx_id = await record_transaction(
+                    self.db,
+                    tenant_id=tenant_id,
+                    transaction_type="ISSUE",
+                    product_id=product_id,
+                    warehouse_id=warehouse_id,
+                    quantity=-qty,   # always a deduction
+                    performed_by=user_id,
+                    idempotency_key=body.idempotency_key,
+                )
+            except HTTPException as exc:
+                # A replay (same key resent) returns the original ISSUE row, as
+                # a batch replay does. A key used by anything else stays a 409.
+                if exc.status_code != 409:
+                    raise
+                original = (await self.db.execute(
+                    text(
+                        "SELECT id, quantity FROM inventory_transactions "
+                        "WHERE tenant_id = :tid AND type = 'ISSUE' AND idempotency_key = :key"
+                    ),
+                    {"tid": tenant_id, "key": body.idempotency_key},
+                )).fetchone()
+                if original is None:
+                    raise
+                return IssueStockResponse(
+                    transaction_id=UUID(str(original.id)),
+                    product_id=body.product_id,
+                    warehouse_id=body.warehouse_id,
+                    quantity=abs(Decimal(str(original.quantity))),
+                    reason_code=body.reason_code,
+                    created_at=datetime.now(timezone.utc),
+                )
             return IssueStockResponse(
                 transaction_id=UUID(tx_id),
                 product_id=body.product_id,
@@ -588,14 +663,14 @@ class InventoryService:
                         self.db, tenant_id, product_id, warehouse_id, lock=False
                     )
                     exc.expired_qty = sum(  # type: ignore[attr-defined]
-                        (l.quantity for l in plan_allocation(lots, qty, strategy).expired_skipped),
+                        (lot.quantity for lot in plan_allocation(lots, qty, strategy).expired_skipped),
                         Decimal("0"),
                     )
                     raise
                 allocs = sorted(
                     (
-                        transfer_lots.Alloc(l.lot_id, l.lot_number, l.expiry_date, l.quantity)
-                        for l in plan.lines
+                        transfer_lots.Alloc(pl.lot_id, pl.lot_number, pl.expiry_date, pl.quantity)
+                        for pl in plan.lines
                     ),
                     key=lambda a: a.lot_id,
                 )
@@ -1058,8 +1133,8 @@ class InventoryService:
         can_lot_select: bool = False,
     ) -> TransferOrderResponse:
         result = await self.db.execute(
-            text("SELECT * FROM transfer_orders WHERE id = :id FOR UPDATE"),
-            {"id": str(transfer_id)},
+            text("SELECT * FROM transfer_orders WHERE id = :id AND tenant_id = :tid FOR UPDATE"),
+            {"id": str(transfer_id), "tid": str(user.tenant_id)},
         )
         row = result.fetchone()
         if not row:
@@ -1096,7 +1171,7 @@ class InventoryService:
         # the full approval chain and jump directly to APPROVED in one step.
         if next_state == "PENDING_REVIEW":
             lines = (await self.db.execute(_lines_query, _lines_params)).fetchall()
-            total_qty = sum(Decimal(str(l.quantity)) for l in lines)
+            total_qty = sum(Decimal(str(ln.quantity)) for ln in lines)
             try:
                 total_value_pull = Decimal(str(getattr(row, "total_value", None) or "0"))
             except Exception:
@@ -1200,7 +1275,7 @@ class InventoryService:
         elif next_state == "PENDING_APPROVAL":
             from services.approval_service import resolve_transfer_approvers as _resolve_approvers
             lines = (await self.db.execute(_lines_query, _lines_params)).fetchall()
-            total_qty = sum(Decimal(str(l.quantity)) for l in lines)
+            total_qty = sum(Decimal(str(ln.quantity)) for ln in lines)
 
             # Self-approval fast-path for PUSH (DRAFT → PENDING_APPROVAL is the submission
             # step). If the submitter's policy permits it, skip the approval chain and jump
@@ -1315,8 +1390,8 @@ class InventoryService:
                 )
             tv_row = (await self.db.execute(
                 text("SELECT transfer_type_config_id, total_value, created_by "
-                     "FROM transfer_orders WHERE id = :id"),
-                {"id": str(transfer_id)},
+                     "FROM transfer_orders WHERE id = :id AND tenant_id = :tid"),
+                {"id": str(transfer_id), "tid": str(user.tenant_id)},
             )).fetchone()
             config_id_for_res = str(tv_row.transfer_type_config_id) if tv_row and tv_row.transfer_type_config_id else None
             tv_for_res = Decimal(str(tv_row.total_value)) if tv_row and tv_row.total_value else None
@@ -1384,7 +1459,7 @@ class InventoryService:
                 {"tid_order": str(transfer_id), "tid": str(user.tenant_id)},
             )).fetchall()
 
-            total_qty = sum(Decimal(str(l.quantity)) for l in lines)
+            total_qty = sum(Decimal(str(ln.quantity)) for ln in lines)
 
             # Self-approval guard: fetch the creator's authority level stored at creation.
             creator_level: int | None = getattr(row, "created_by_authority_level", None)
@@ -2001,28 +2076,51 @@ class InventoryService:
         )
 
     async def get_transfer(self, user: Any, transfer_id: UUID) -> TransferOrderResponse:
+        # Facility names: same COALESCE(warehouses, organization_node) as list_transfers.
         result = await self.db.execute(
-            text("SELECT * FROM transfer_orders WHERE id = :id"),
-            {"id": str(transfer_id)},
+            text("""
+                SELECT
+                    to_.*,
+                    COALESCE(fw.name, fw_n.name) AS from_warehouse_name,
+                    COALESCE(tw.name, tw_n.name) AS to_warehouse_name
+                FROM transfer_orders to_
+                LEFT JOIN warehouses fw          ON fw.id       = to_.from_warehouse_id
+                LEFT JOIN organization_node fw_n ON fw_n.id    = to_.from_warehouse_id
+                LEFT JOIN warehouses tw          ON tw.id       = to_.to_warehouse_id
+                LEFT JOIN organization_node tw_n ON tw_n.id    = to_.to_warehouse_id
+                WHERE to_.id = :id AND to_.tenant_id = :tid
+            """),
+            {"id": str(transfer_id), "tid": str(user.tenant_id)},
         )
         row = result.fetchone()
         if not row:
             from fastapi import HTTPException
             raise HTTPException(status_code=404, detail="Transfer not found")
 
+        scope = await self._transfer_scope(user)
+        if scope is not None and not (
+            _inside(scope, [row.from_warehouse_id])
+            or _inside(scope, [row.to_warehouse_id])
+            or _on_approval_steps(scope, user.user_id, row.resolved_approval_steps)
+        ):
+            from fastapi import HTTPException
+            raise HTTPException(status_code=403, detail={"code": "TRANSFER_OUT_OF_SCOPE"})
+
         _allocs = await transfer_lots.load_allocations(self.db, row.tenant_id, transfer_id)
         _discrepancies = await transfer_discrepancies.load_discrepancies(
             self.db, row.tenant_id, transfer_id
         )
 
-        from datetime import datetime, timezone
         return TransferOrderResponse(
             transfer_id=transfer_id,
             transfer_type=row.transfer_type,
             status=row.status,
+            reference_number=row.reference_number,
             from_warehouse_id=row.from_warehouse_id,
+            from_warehouse_name=row.from_warehouse_name,
             to_warehouse_id=row.to_warehouse_id,
-            created_at=datetime.now(timezone.utc),
+            to_warehouse_name=row.to_warehouse_name,
+            created_at=row.created_at,
             is_self_approved=bool(row.is_self_approved),
             lines=await self._transfer_line_items(transfer_id),
             lot_allocations=[
@@ -2796,21 +2894,46 @@ class InventoryService:
             for line in line_rows
         ]
 
+    async def _transfer_scope(self, user: Any) -> Optional[set[str]]:
+        """The lowercased node subtree whose transfers the caller sees; None means
+        the whole tenant. Same rules as transfer_discrepancies.list_discrepancies:
+          WM / LM / SA_GT / RT  their subtree; no node -> empty set (nothing)
+          RM                    its subtree; no node -> the whole tenant
+          TA / NM / SA / AU     the whole tenant
+        """
+        role = getattr(user, "role", None)
+        node_id = getattr(user, "warehouse_id", None)
+        if role in _FACILITY_SCOPED_ROLES and not node_id:
+            return set()
+        if node_id and (role in _FACILITY_SCOPED_ROLES or role == "RM"):
+            return await _subtree(self.db, str(user.tenant_id), node_id)
+        return None
+
     async def list_transfers(
         self, user: Any, page: int = 1, limit: int = 50
     ) -> list[TransferListItem]:
-        """List transfers scoped by role.
-
-        WM: sees only transfers involving their assigned warehouse (source or destination).
-        All other roles: see all transfers for the tenant.
+        """List transfers in the caller's scope (see _transfer_scope) — a transfer
+        is in scope when either end is in the caller's node subtree, or one of
+        its approval steps names the caller (_APPROVER_SCOPE_SQL).
         """
+        scope = await self._transfer_scope(user)
+        if scope is not None and not scope:
+            return []
+
         offset = (page - 1) * limit
         params: dict = {"tid": str(user.tenant_id), "offset": offset, "limit": limit}
 
         wh_filter = ""
-        if user.role == "WM" and user.warehouse_id:
-            wh_filter = "AND (to_.from_warehouse_id = :wid OR to_.to_warehouse_id = :wid)"
-            params["wid"] = str(user.warehouse_id)
+        if scope is not None:
+            wh_filter = (
+                "AND (to_.from_warehouse_id = ANY(:subtree) "
+                "OR to_.to_warehouse_id = ANY(:subtree) "
+                f"OR {_APPROVER_SCOPE_SQL})"
+            )
+            params["subtree"] = sorted(scope)
+            # A separate text[] param: :subtree is bound as uuid[] above.
+            params["step_nodes"] = sorted(scope)
+            params["uid"] = str(user.user_id).lower()
 
         sql = text(f"""
             SELECT

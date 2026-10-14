@@ -106,6 +106,9 @@ async def record_transaction(
     """Record an immutable ledger entry and conditionally update the running balance.
 
     Single entry point for all inventory mutations. Sequence within ONE transaction:
+      0. Zero guard         — HTTP 422 ZERO_QUANTITY when quantity == 0; callers
+                             that can arrive at 0 (e.g. a receipt line received
+                             as 0) skip the call themselves
       1. Idempotency guard  — HTTP 409 on duplicate key
       2. Pessimistic lock   — FOR UPDATE on balance row prevents concurrent races
       2b. Lot guard         — when the product is batch_tracking and the type is not
@@ -142,6 +145,17 @@ async def record_transaction(
 
     Returns the new transaction UUID string.
     """
+    # Step 0 — a zero-quantity ledger row is never written
+    if quantity == 0:
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "code": "ZERO_QUANTITY",
+                "product_id": product_id,
+                "transaction_type": transaction_type,
+            },
+        )
+
     tx_id = str(uuid.uuid4())
 
     # Step 1 — idempotency: 409 on replay

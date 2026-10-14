@@ -751,6 +751,7 @@
     "RECEIPT_LINES_MISMATCH": "The receipt must list every line and lot on this transfer exactly once.",
     "RECEIPT_EXCEEDS_SENT": "The received quantity can't be more than the quantity sent.",
     "RECEIPT_REASON_REQUIRED": "Choose a reason for the missing quantity.",
+    "WRONG_LOT_NOT_BATCH": "Wrong lot only applies to lot-tracked products. Choose Short or Damaged.",
     "PARTIAL_RECEIPT_NOT_SUPPORTED": "Enter the received quantities on the receive form instead.",
     "INVALID_STATE_TRANSITION": "This transfer's status has changed. Refresh and try again.",
     "LOT_EXPIRY_ALREADY_SET": "This lot already has an expiry date and it cannot be changed.",
@@ -916,6 +917,39 @@
       "submit": "Approve",
       "submit_changed": "Approve with chosen lots",
       "stock_detail": "Usable: {usable} · Expired: {expired}"
+    },
+    "view": {
+      "not_found": "Transfer not found.",
+      "out_of_scope": "You don't have access to this transfer.",
+      "load_failed": "Could not load this transfer. Please try again.",
+      "untitled": "{type} transfer · {date}",
+      "lines_title": "Transfer lines",
+      "col_product": "Product",
+      "col_sku": "SKU",
+      "col_quantity": "Quantity",
+      "col_unit": "Unit",
+      "no_lines": "This transfer has no lines.",
+      "type": {
+        "PULL": "Pull request",
+        "PUSH": "Push",
+        "SISTER": "Sister transfer"
+      },
+      "status": {
+        "DRAFT": "Draft",
+        "PENDING_REVIEW": "Pending review",
+        "PENDING_APPROVAL": "Pending approval",
+        "PENDING_SOURCE_CONFIRM": "Pending source confirmation",
+        "PENDING_DEST_CONFIRM": "Pending destination confirmation",
+        "APPROVED": "Approved",
+        "ADVISED": "Advised",
+        "ISSUED": "Issued",
+        "IN_TRANSIT": "In transit",
+        "PARTIALLY_RECEIVED": "Partially received",
+        "RECEIVED": "Received",
+        "COMPLETED": "Completed",
+        "REJECTED": "Rejected",
+        "CANCELLED": "Cancelled"
+      }
     }
   },
   "products": {

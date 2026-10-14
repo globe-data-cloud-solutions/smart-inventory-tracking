@@ -22,6 +22,7 @@ import { api, IS_GATEWAY_MODE } from "@/lib/api";
 import { t } from "@/lib/i18n";
 import { useTenantName } from "@/hooks/useTenantName";
 import { formatQty } from "@/lib/utils";
+import { usePermission } from "@/lib/permissions";
 
 type TransferType = "PULL" | "PUSH" | "SISTER";
 
@@ -192,6 +193,10 @@ function getAuthorityScope(warehouseId: string, warehouses: DemoWarehouse[]): st
 
 /**
  * Filters the transfer list to only those the current user should see.
+ *
+ * DEMO MODE ONLY. In gateway mode the server scopes GET /inventory/transfers
+ * itself (node subtree plus approvers named on a transfer's approval steps),
+ * so re-filtering client-side would hide transfers a WM / facility NM must approve.
  *
  * Visibility rules (per CLAUDE.md §13 ABAC + IMTS hierarchy):
  *   TA / SA         → all transfers (platform / tenant admin)
@@ -833,6 +838,10 @@ export default function TransfersPage() {
     staleTime: 30_000,
   });
 
+  // Discrepancy resolve (D2): TA / NM / SA tenant-wide, RM within its node subtree.
+  // The backend decides scope. Called before the early returns below (rules of hooks).
+  const canResolve = usePermission("transfer:resolve_discrepancy", user?.role ?? "");
+
   if (org === SA_ORG_SLUG) return <p className="p-8 text-gray-500">{t("dashboard.tenants_heading")}</p>;
   if (!user) return <p className="p-8 text-gray-500">{t("common.no_data")}</p>;
 
@@ -862,7 +871,9 @@ export default function TransfersPage() {
   const productById = new Map(mergedProducts.map((p) => [p.id, p]));
 
   // Apply hierarchy + role scoping
-  const scopedTransfers = scopeTransfers(allTransfers, user.role, user.warehouseId, effectiveWarehouses);
+  const scopedTransfers = isGatewayMode
+    ? allTransfers
+    : scopeTransfers(allTransfers, user.role, user.warehouseId, effectiveWarehouses);
 
   // Bug 4: terminal statuses drop to the Audit Log; only active transfers shown here
   const TERMINAL: TransferStatus[] = ["COMPLETED", "CANCELLED", "REJECTED"];
@@ -1110,9 +1121,6 @@ export default function TransfersPage() {
     setTimeout(() => setToast(""), 5000);
   }
 
-  // Discrepancy resolve (D2): TA / NM / SA tenant-wide, RM within its node subtree.
-  // Explicit role check — lib/permissions.ts is out of date. The backend decides scope.
-  const canResolve = user.role === "TA" || user.role === "NM" || user.role === "SA" || user.role === "RM";
   function onDiscrepancyResolved() {
     setToast(t("transfers.discrepancies.toast_resolved"));
     setTimeout(() => setToast(""), 5000);

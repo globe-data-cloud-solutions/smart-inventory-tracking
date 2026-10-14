@@ -87,6 +87,7 @@ def validate_receipt(
 
     RECEIPT_LINES_MISMATCH   the body does not list every expected entry exactly once
     RECEIPT_EXCEEDS_SENT     received more than was sent
+    WRONG_LOT_NOT_BATCH      WRONG_LOT on a non-batch entry (lot_id None)
     RECEIPT_REASON_REQUIRED  received less than was sent and no reason given
     """
     keys: list[EntryKey] = [
@@ -117,6 +118,11 @@ def validate_receipt(
                     "sent": float(sent),
                     "received": float(entry.received_quantity),
                 },
+            )
+        if lot_id is None and entry.reason == "WRONG_LOT":
+            raise HTTPException(
+                status_code=422,
+                detail={"code": "WRONG_LOT_NOT_BATCH", "line_id": line_id, "lot_id": None},
             )
         if entry.received_quantity < sent and entry.reason is None:
             raise HTTPException(

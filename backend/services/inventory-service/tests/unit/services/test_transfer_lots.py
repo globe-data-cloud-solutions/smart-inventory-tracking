@@ -68,6 +68,10 @@ def _transfer_row(status: str, steps: Optional[list] = None, step: int = 1) -> S
         total_value=None,
         product_override_applied=False,
         is_self_approved=False,
+        reference_number=None,
+        from_warehouse_name=None,
+        to_warehouse_name=None,
+        created_at=datetime(2026, 9, 1, tzinfo=timezone.utc),
     )
 
 

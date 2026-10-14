@@ -225,6 +225,10 @@ class TransferOrderResponse(BaseModel):
     from_warehouse_id: uuid.UUID
     to_warehouse_id: uuid.UUID
     created_at: datetime
+    # Filled by get_transfer only; other callers leave them None.
+    reference_number: Optional[str] = None
+    from_warehouse_name: Optional[str] = None
+    to_warehouse_name: Optional[str] = None
     total_value: Optional[Decimal] = None
     currency: Optional[str] = None
     transfer_type_config_id: Optional[uuid.UUID] = None
@@ -278,6 +282,13 @@ class AdjustmentRequest(BaseModel):
     @field_validator("lot_number", "idempotency_key", "notes", mode="before")
     @classmethod
     def no_null_bytes(cls, v: object) -> object: return _no_null(v)
+
+    @field_validator("quantity_delta", mode="after")
+    @classmethod
+    def non_zero_delta(cls, v: Decimal) -> Decimal:
+        if v == 0:
+            raise ValueError("quantity_delta must be non-zero")
+        return v
 
 
 class AdjustmentResponse(BaseModel):

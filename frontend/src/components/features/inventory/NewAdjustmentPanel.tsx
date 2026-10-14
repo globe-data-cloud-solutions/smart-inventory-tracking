@@ -5,6 +5,7 @@ import { useQueryClient, useQuery } from "@tanstack/react-query";
 import { nanoid } from "nanoid";
 import { api, IS_GATEWAY_MODE } from "@/lib/api";
 import { t } from "@/lib/i18n";
+import { isQuantityDeltaError, lotErrorMessage } from "@/lib/lotErrors";
 import { getSession } from "@/lib/demo-auth";
 import { useWriteGuard, guardProps } from "@/hooks/useWriteGuard";
 import { useInventoryStore } from "@/lib/inventory-state";
@@ -34,12 +35,6 @@ const REASONS = [
 // inventory_service.py (DAMAGE, EXPIRY, SUPPLIER_RETURN); batch-product lot
 // selection below mirrors that via `qty`'s sign — see isLotNegative/isLotPositive.
 const FORCE_NEGATIVE = new Set(["DAMAGE", "EXPIRY", "THEFT"]);
-
-// Lot-related backend codes that have a translated errors.<CODE> entry.
-const LOT_ERROR_CODES = new Set([
-  "LOT_NUMBER_REQUIRED", "LOT_EXPIRY_MISMATCH", "INSUFFICIENT_LOT_STOCK", "LOT_REQUIRED",
-  "LOT_EXPIRED", "LOT_NOT_IN_WAREHOUSE", "LOT_NOT_FOUND",
-]);
 
 function Field({ label, hint, children }: { label: string; hint?: string; children: React.ReactNode }) {
   return (
@@ -322,9 +317,11 @@ export function NewAdjustmentPanel({ products, warehouses, orgSlug }: Props) {
       });
       void qc.invalidateQueries({ queryKey: ["adjustments", orgSlug] });
     } catch (err: unknown) {
-      const code = (err as { code?: string } | undefined)?.code ?? "";
-      if (LOT_ERROR_CODES.has(code)) setError(t(`errors.${code}`));
-      else setError(err instanceof Error ? err.message : t("errors.INTERNAL_ERROR"));
+      setError(
+        isQuantityDeltaError(err)
+          ? t("adjustment.error_qty")
+          : lotErrorMessage(err) ?? (err instanceof Error ? err.message : t("errors.INTERNAL_ERROR")),
+      );
     } finally {
       setLoading(false);
     }

@@ -753,6 +753,7 @@
     "RECEIPT_LINES_MISMATCH": "የመቀበያ ዝርዝሩ በዚህ ዝውውር ላይ ያለውን እያንዳንዱን መስመር እና ሎት በትክክል አንድ ጊዜ መያዝ አለበት።",
     "RECEIPT_EXCEEDS_SENT": "የተቀበሉት መጠን ከተላከው መጠን መብለጥ አይችልም።",
     "RECEIPT_REASON_REQUIRED": "ለጎደለው መጠን ምክንያት ይምረጡ።",
+    "WRONG_LOT_NOT_BATCH": "የተሳሳተ ሎት የሚመለከተው በሎት ለሚከታተሉ ምርቶች ብቻ ነው። ጎድሏል ወይም ተበላሽቷል የሚለውን ይምረጡ።",
     "PARTIAL_RECEIPT_NOT_SUPPORTED": "በምትኩ የተቀበሉትን መጠኖች በመቀበያ ቅጹ ላይ ያስገቡ።",
     "INVALID_STATE_TRANSITION": "የዚህ ዝውውር ሁኔታ ተቀይሯል። እባክዎ ያድሱና እንደገና ይሞክሩ።",
     "LOT_EXPIRY_ALREADY_SET": "ይህ ሎት አስቀድሞ የማብቂያ ቀን አለው፤ ሊቀየር አይችልም።",
@@ -975,6 +976,39 @@
       "submit": "አጽድቅ",
       "submit_changed": "በተመረጡ ሎቶች አጽድቅ",
       "stock_detail": "ጥቅም ላይ የሚውል፦ {usable} · ጊዜው ያለፈ፦ {expired}"
+    },
+    "view": {
+      "not_found": "ዝውውሩ አልተገኘም።",
+      "out_of_scope": "ይህን ዝውውር የማየት ፈቃድ የለዎትም።",
+      "load_failed": "ዝውውሩን መጫን አልተቻለም። እባክዎ እንደገና ይሞክሩ።",
+      "untitled": "{type} ዝውውር · {date}",
+      "lines_title": "የዝውውር እቃዎች",
+      "col_product": "ምርት",
+      "col_sku": "የምርት ኮድ",
+      "col_quantity": "ብዛት",
+      "col_unit": "መለኪያ",
+      "no_lines": "በዚህ ዝውውር ውስጥ ምንም እቃ የለም።",
+      "type": {
+        "PULL": "የመውሰድ ጥያቄ",
+        "PUSH": "የመላክ ዝውውር",
+        "SISTER": "የእህት መጋዘን ዝውውር"
+      },
+      "status": {
+        "DRAFT": "ረቂቅ",
+        "PENDING_REVIEW": "ግምገማ በመጠባበቅ ላይ",
+        "PENDING_APPROVAL": "ፈቃድ በመጠባበቅ ላይ",
+        "PENDING_SOURCE_CONFIRM": "የላኪ ማረጋገጫ በመጠባበቅ ላይ",
+        "PENDING_DEST_CONFIRM": "የተቀባይ ማረጋገጫ በመጠባበቅ ላይ",
+        "APPROVED": "ተፈቅዷል",
+        "ADVISED": "ማስታወቂያ ተሰጥቷል",
+        "ISSUED": "ወጪ ተደርጓል",
+        "IN_TRANSIT": "በመጓጓዝ ላይ",
+        "PARTIALLY_RECEIVED": "በከፊል ተቀብሏል",
+        "RECEIVED": "ተቀብሏል",
+        "COMPLETED": "ተጠናቋል",
+        "REJECTED": "ውድቅ ተደርጓል",
+        "CANCELLED": "ተሰርዟል"
+      }
     }
   },
   "demo": {

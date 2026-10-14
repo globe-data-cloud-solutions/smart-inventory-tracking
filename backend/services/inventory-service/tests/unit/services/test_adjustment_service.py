@@ -1256,3 +1256,38 @@ class TestAdjustmentLotReadEndpoints:
 
         (stmt, _), = db.statements
         assert "LEFT JOIN stock_lots sl ON sl.id = ao.lot_id" in stmt
+
+
+# ── Zero-quantity adjustments are rejected at creation ───────────────────────
+
+class TestAdjustmentZeroDelta:
+    def test_zero_delta_rejected(self):
+        from pydantic import ValidationError
+        for zero in (Decimal("0"), Decimal("0.000"), 0):
+            with pytest.raises(ValidationError) as ei:
+                _adj_body(quantity_delta=zero)
+            assert ei.value.errors()[0]["loc"] == ("quantity_delta",)
+
+    def test_zero_delta_is_422_through_the_route(self):
+        # FastAPI turns the schema ValidationError into a 422 before the handler runs.
+        from fastapi import FastAPI
+        from fastapi.testclient import TestClient
+
+        app = FastAPI()
+
+        @app.post("/adj")
+        async def _adj(body: AdjustmentRequest) -> dict:
+            return {"ok": True}
+
+        payload = {
+            "warehouse_id": WAREHOUSE_ID, "product_id": PRODUCT_ID,
+            "reason_code": "COUNT_DISCREPANCY", "idempotency_key": "adj:zero:001",
+        }
+        client = TestClient(app)
+        assert client.post("/adj", json={**payload, "quantity_delta": 0}).status_code == 422
+        assert client.post("/adj", json={**payload, "quantity_delta": -3}).status_code == 200
+        assert client.post("/adj", json={**payload, "quantity_delta": 5}).status_code == 200
+
+    def test_negative_and_positive_delta_accepted(self):
+        assert _adj_body(quantity_delta=Decimal("-3")).quantity_delta == Decimal("-3")
+        assert _adj_body(quantity_delta=Decimal("5")).quantity_delta == Decimal("5")

@@ -9,13 +9,9 @@ import { useAuditStore } from "@/lib/audit-log-state";
 import { getSession } from "@/lib/demo-auth";
 import { useWriteGuard, guardProps } from "@/hooks/useWriteGuard";
 import { t } from "@/lib/i18n";
+import { lotErrorMessage } from "@/lib/lotErrors";
 import type { DemoProduct, DemoWarehouse } from "@/lib/demo-data";
 import { LotFields } from "@/components/features/inventory/LotFields";
-
-const LOT_ERROR_CODES = new Set([
-  "LOT_NOT_TRACKED", "LOT_INPUT_CONFLICT", "LOT_NUMBER_REQUIRED",
-  "EXPIRY_REQUIRED", "EXPIRY_IN_PAST", "LOT_EXPIRY_MISMATCH", "INSUFFICIENT_LOT_STOCK",
-]);
 
 interface Props { products: DemoProduct[]; warehouses: DemoWarehouse[]; orgSlug: string; }
 
@@ -102,9 +98,7 @@ export function OpeningBalancePanel({ products, warehouses, orgSlug }: Props) {
         setTimeout(() => { setSuccess(""); setOpen(false); }, 3000);
       }
     } catch (err: unknown) {
-      const code = (err as { code?: string } | undefined)?.code ?? "";
-      if (LOT_ERROR_CODES.has(code)) setError(t(`errors.${code}`));
-      else setError(err instanceof Error ? err.message : t("errors.INTERNAL_ERROR"));
+      setError(lotErrorMessage(err) ?? (err instanceof Error ? err.message : t("errors.INTERNAL_ERROR")));
     }
     finally { setLoading(false); }
   };

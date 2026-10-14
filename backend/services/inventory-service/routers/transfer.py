@@ -382,7 +382,7 @@ async def get_approval_info(
         if is_vacant and escalated:
             status_label: str | None = f"Position vacant — escalating to {esc_name}"
         elif is_vacant:
-            status_label = f"Position vacant — no available approver"
+            status_label = "Position vacant — no available approver"
         elif escalated:
             status_label = f"Awaiting {esc_name} approval (escalated — creator cannot self-approve)"
         elif exec_mode == "any" and display_count > 1:
@@ -430,7 +430,7 @@ async def get_approval_info(
         {"xfer_id": str(transfer_id), "tid": str(user.tenant_id)},
     )).fetchall()
 
-    total_qty = sum(Decimal(str(l.quantity)) for l in lines) if lines else Decimal("0")
+    total_qty = sum(Decimal(str(ln.quantity)) for ln in lines) if lines else Decimal("0")
 
     creator_level: int | None = (
         int(transfer_row.created_by_authority_level)

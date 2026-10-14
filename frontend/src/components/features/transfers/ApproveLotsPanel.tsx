@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useQueries } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import { t } from "@/lib/i18n";
+import { apiErrorCode, lotErrorMessage } from "@/lib/lotErrors";
 import { formatQty } from "@/lib/utils";
 import { useOfflineSync } from "@/hooks/useOfflineSync";
 import { useWriteGuard, guardProps } from "@/hooks/useWriteGuard";
@@ -17,17 +18,6 @@ import {
 
 const REASON_MAX = 500;
 
-/** Approval errors the panel translates; anything else gets the generic message. */
-const APPROVE_ERROR_CODES = new Set([
-  "OVERRIDE_REASON_REQUIRED",
-  "OVERRIDE_NOT_PERMITTED",
-  "LOT_SELECTION_NOT_ALLOWED",
-  "INSUFFICIENT_STOCK",
-  "INSUFFICIENT_LOT_STOCK",
-  "LOT_EXPIRED",
-  "LOT_NOT_IN_WAREHOUSE",
-  "SELECTION_QTY_MISMATCH",
-]);
 
 /** A batch-tracked transfer line with the engine's suggested split. */
 export interface ApproveLine {
@@ -51,20 +41,21 @@ export interface ApproveFailure {
   detail?: string;
 }
 
-/** Translated message for a failed approval; never a raw code or id. */
+/** Translated message for a failed approval; never a raw code or id. Lot
+ *  errors and INSUFFICIENT_STOCK are translated; anything else gets the
+ *  generic message. */
 export function approveFailure(err: unknown): ApproveFailure {
-  const e = err as { code?: string; detail?: Record<string, unknown> };
-  const code = e.code ?? "";
-  if (!APPROVE_ERROR_CODES.has(code)) return { message: t("errors.INTERNAL_ERROR") };
-  const failure: ApproveFailure = { message: t(`errors.${code}`) };
-  if (code === "INSUFFICIENT_STOCK") {
-    const usable  = Number(e.detail?.available);
-    const expired = Number(e.detail?.expired_qty);
-    if (e.detail?.available != null && e.detail?.expired_qty != null && isFinite(usable) && isFinite(expired)) {
-      failure.detail = t("transfers.approve.stock_detail")
-        .replace("{usable}", formatQty(usable))
-        .replace("{expired}", formatQty(expired));
-    }
+  if (apiErrorCode(err) !== "INSUFFICIENT_STOCK") {
+    return { message: lotErrorMessage(err) ?? t("errors.INTERNAL_ERROR") };
+  }
+  const detail = (err as { detail?: Record<string, unknown> }).detail;
+  const failure: ApproveFailure = { message: t("errors.INSUFFICIENT_STOCK") };
+  const usable  = Number(detail?.available);
+  const expired = Number(detail?.expired_qty);
+  if (detail?.available != null && detail?.expired_qty != null && isFinite(usable) && isFinite(expired)) {
+    failure.detail = t("transfers.approve.stock_detail")
+      .replace("{usable}", formatQty(usable))
+      .replace("{expired}", formatQty(expired));
   }
   return failure;
 }
