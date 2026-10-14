@@ -686,6 +686,62 @@ Real-DB proof: `python scripts/smoke_issue_adjust_lots.py` (rollback-only).
   in every tenant). The conversion previously inner-joined `warehouses` and
   created no OPENING lots; fixed in session 12.
 
+#### Discrepancy resolution (D2)
+
+A short receipt leaves one OPEN row in `transfer_discrepancies` (086), N =
+`missing_quantity`. `POST /api/v1/inventory/transfers/{id}/discrepancies/{did}/resolve`
+(`resolve_discrepancy()` in `services/transfer_discrepancies.py`) settles it
+exactly once. Ledger rows go through `record_transaction()` with reference
+`TRANSFER`/transfer id and key `transfer:{xfer}:discrepancy:{did}:{suffix}`.
+
+| Reason | Allowed outcomes |
+|---|---|
+| SHORT | WRITTEN_OFF, RETURNED, ARRIVED_LATE |
+| DAMAGED | WRITTEN_OFF |
+| WRONG_LOT | WRITTEN_OFF, RETURNED, RECEIVED_AS_LOT (batch line only) |
+
+| Outcome | Ledger rows |
+|---|---|
+| WRITTEN_OFF | none (note required) |
+| RETURNED | `TRANSFER_REVERSAL` +N at source, on the sent lot |
+| ARRIVED_LATE | `TRANSFER_IN` +N at destination, on the sent lot |
+| RECEIVED_AS_LOT | `TRANSFER_REVERSAL` +N at source (sent lot), `TRANSFER_OUT` -N at source (arrived lot), `TRANSFER_IN` +N at destination (arrived lot) |
+
+- **No ledger row for a write-off**: the shortfall left the books at receipt —
+  `TRANSFER_IN` credited only the received quantity, and the source was debited
+  in full at approval. Nothing is left to remove; the resolution records it.
+- **RECEIVED_AS_LOT lock order**: both source rows lock a `lot_balances` row at
+  the source, so they are posted in `lot_id` order (the allocation engine's
+  `load_candidate_lots` order), then the destination row. Net effect at the
+  source product level is 0. The arrived lot needs N at the source, else
+  `INSUFFICIENT_LOT_STOCK` aborts the whole resolution. `lot_id` is required for
+  this outcome and rejected for the others; an expired arrived lot is accepted.
+- **Who**: permission `transfer:resolve_discrepancy` — TA, NM, RM (migration
+  088); SA through the seed (`SA` = every registered permission). TA / NM / SA
+  resolve tenant-wide. An RM resolves only inside its node subtree
+  (`get_descendant_node_ids`): the destination must be in it, and the source
+  too for RETURNED and RECEIVED_AS_LOT. Any other role is refused.
+- **List**: `GET /api/v1/inventory/transfers/discrepancies` (`transfer:list`, `status` and
+  `warehouse_id` filters, newest first, max 200). WM / LM / SA_GT / RT see rows
+  whose source or destination is in their node subtree (no node, no rows); an RM
+  with a node likewise (no node: whole tenant); TA / NM / SA / AU see the
+  tenant. `warehouse_id` outside a scoped caller's subtree is
+  `403 WAREHOUSE_OUT_OF_SCOPE`.
+- **Errors**: 404 `DISCREPANCY_NOT_FOUND`; 409 `DISCREPANCY_ALREADY_RESOLVED`;
+  403 `DISCREPANCY_OUT_OF_SCOPE` (checked before the body is validated); 422
+  `RESOLUTION_NOT_ALLOWED`, `RESOLUTION_NOTE_REQUIRED`, `RESOLUTION_LOT_INVALID`,
+  `INSUFFICIENT_LOT_STOCK`.
+- **Insert, then resolve once**: 088 widens `status` to `OPEN|RESOLVED` and adds
+  `resolution`, `resolved_lot_id`, `resolution_note`, `resolved_by`,
+  `resolved_at`. `resolve_discrepancy()` is the only UPDATE path — a
+  documented exception to 086's append-only rule. The row is locked
+  (`FOR UPDATE`), ledger rows, the `OPEN -> RESOLVED` UPDATE and the
+  `audit_logs` row (`transfer:resolve_discrepancy`) all share one transaction.
+  No delete path.
+
+Real-DB proof: `python scripts/smoke_discrepancy_resolution.py` (rollback-only,
+organization_node fixtures only).
+
 
 ## 17. Workflow State Machines
 
