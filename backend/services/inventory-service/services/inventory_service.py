@@ -179,8 +179,8 @@ async def _apply_product_override_flag(
     table = "transfer_orders" if resource_type == "transfer" else "adjustment_orders"
     await db.execute(
         text(f"UPDATE {table} SET product_override_applied = TRUE, updated_at = now() "
-             f"WHERE id = :id"),
-        {"id": str(resource_id)},
+             f"WHERE id = :id AND tenant_id = :tid"),
+        {"id": str(resource_id), "tid": str(user.tenant_id)},
     )
 
     product_row = (await db.execute(
@@ -825,8 +825,11 @@ class InventoryService:
 
         # APPROVED → POSTED (terminal state)
         await self.db.execute(
-            text("UPDATE adjustment_orders SET status = 'POSTED', updated_at = now() WHERE id = :id"),
-            {"id": str(adjustment_id)},
+            text(
+                "UPDATE adjustment_orders SET status = 'POSTED', updated_at = now() "
+                "WHERE id = :id AND tenant_id = :tid"
+            ),
+            {"id": str(adjustment_id), "tid": str(user.tenant_id)},
         )
 
         await audit_log(
@@ -2454,9 +2457,9 @@ class InventoryService:
         await self.db.execute(
             text(
                 "UPDATE adjustment_orders SET lot_id = :lot_id, updated_at = now() "
-                "WHERE id = :id"
+                "WHERE id = :id AND tenant_id = :tid"
             ),
-            {"lot_id": lot_id, "id": str(adjustment_id)},
+            {"lot_id": lot_id, "id": str(adjustment_id), "tid": tenant_id},
         )
         return lot_id, lot_number, row.expiry_date
 
@@ -2464,8 +2467,11 @@ class InventoryService:
         self, user: Any, adjustment_id: UUID, next_state: str
     ) -> AdjustmentResponse:
         result = await self.db.execute(
-            text("SELECT * FROM adjustment_orders WHERE id = :id FOR UPDATE"),
-            {"id": str(adjustment_id)},
+            text(
+                "SELECT * FROM adjustment_orders "
+                "WHERE id = :id AND tenant_id = :tid FOR UPDATE"
+            ),
+            {"id": str(adjustment_id), "tid": str(user.tenant_id)},
         )
         row = result.fetchone()
         if not row:
@@ -2499,9 +2505,12 @@ class InventoryService:
                 text(
                     "UPDATE adjustment_orders "
                     "SET unit_price_at_submission = :up, total_value = :tv, updated_at = now() "
-                    "WHERE id = :id"
+                    "WHERE id = :id AND tenant_id = :tid"
                 ),
-                {"up": str(unit_price), "tv": str(total_value), "id": str(adjustment_id)},
+                {
+                    "up": str(unit_price), "tv": str(total_value),
+                    "id": str(adjustment_id), "tid": str(user.tenant_id),
+                },
             )
 
             # Product override (Design B) — takes precedence over self-approval
@@ -2531,7 +2540,7 @@ class InventoryService:
                         "    required_approver_name = :name, "
                         "    approver_escalated = :escalated, "
                         "    updated_at = now() "
-                        "WHERE id = :id"
+                        "WHERE id = :id AND tenant_id = :tid"
                     ),
                     {
                         "pos_id":    _override_step.get("position_id"),
@@ -2539,6 +2548,7 @@ class InventoryService:
                         "name":      _override_step.get("assigned_to_name"),
                         "escalated": _override_step.get("escalated", False),
                         "id":        str(adjustment_id),
+                        "tid":       str(user.tenant_id),
                     },
                 )
                 can_self_approve = False
@@ -2590,9 +2600,9 @@ class InventoryService:
                     text(
                         "UPDATE adjustment_orders "
                         "SET status = 'POSTED', is_self_approved = TRUE, updated_at = now() "
-                        "WHERE id = :id"
+                        "WHERE id = :id AND tenant_id = :tid"
                     ),
-                    {"id": str(adjustment_id)},
+                    {"id": str(adjustment_id), "tid": str(user.tenant_id)},
                 )
 
                 await write_to_outbox(
@@ -2694,8 +2704,11 @@ class InventoryService:
                 )
 
         await self.db.execute(
-            text("UPDATE adjustment_orders SET status = :s, updated_at = now() WHERE id = :id"),
-            {"s": next_state, "id": str(adjustment_id)},
+            text(
+                "UPDATE adjustment_orders SET status = :s, updated_at = now() "
+                "WHERE id = :id AND tenant_id = :tid"
+            ),
+            {"s": next_state, "id": str(adjustment_id), "tid": str(user.tenant_id)},
         )
 
         if next_state == "POSTED":
@@ -2849,8 +2862,8 @@ class InventoryService:
         self, user: Any, session_id: UUID
     ) -> CountSessionResponse:
         result = await self.db.execute(
-            text("SELECT * FROM count_sessions WHERE id = :id"),
-            {"id": str(session_id)},
+            text("SELECT * FROM count_sessions WHERE id = :id AND tenant_id = :tid"),
+            {"id": str(session_id), "tid": str(user.tenant_id)},
         )
         row = result.fetchone()
         if not row:

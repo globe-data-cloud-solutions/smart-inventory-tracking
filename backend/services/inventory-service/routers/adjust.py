@@ -109,8 +109,8 @@ async def approve_adjustment(
     # Load adjustment data from DB before advancing state
     row = (await db.execute(
         _text("SELECT status, product_id, warehouse_id, quantity_delta, reason_code "
-              "FROM adjustment_orders WHERE id = :id"),
-        {"id": str(adjustment_id)},
+              "FROM adjustment_orders WHERE id = :id AND tenant_id = :tid"),
+        {"id": str(adjustment_id), "tid": str(user.tenant_id)},
     )).fetchone()
     if not row:
         from fastapi import HTTPException
