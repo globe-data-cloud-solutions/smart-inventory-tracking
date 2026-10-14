@@ -19,7 +19,6 @@ from services.approval_service import resolve_approval, ROLE_AUTHORITY_LEVEL
 from services.self_approval_service import (
     check_adjustment_self_approval,
     check_product_override,
-    check_self_approval,
     get_self_approval_decision,
 )
 from repositories.ledger_repo import record_transaction, write_transfer_ledger_entry
@@ -526,7 +525,7 @@ class InventoryService:
             transaction_id=UUID(str(rows[0].id)),
             product_id=body.product_id,
             warehouse_id=body.warehouse_id,
-            quantity=sum((l.quantity for l in lots), Decimal("0")),
+            quantity=sum((lot.quantity for lot in lots), Decimal("0")),
             reason_code=body.reason_code,
             created_at=datetime.now(timezone.utc),
             lots=lots,
@@ -664,14 +663,14 @@ class InventoryService:
                         self.db, tenant_id, product_id, warehouse_id, lock=False
                     )
                     exc.expired_qty = sum(  # type: ignore[attr-defined]
-                        (l.quantity for l in plan_allocation(lots, qty, strategy).expired_skipped),
+                        (lot.quantity for lot in plan_allocation(lots, qty, strategy).expired_skipped),
                         Decimal("0"),
                     )
                     raise
                 allocs = sorted(
                     (
-                        transfer_lots.Alloc(l.lot_id, l.lot_number, l.expiry_date, l.quantity)
-                        for l in plan.lines
+                        transfer_lots.Alloc(pl.lot_id, pl.lot_number, pl.expiry_date, pl.quantity)
+                        for pl in plan.lines
                     ),
                     key=lambda a: a.lot_id,
                 )
@@ -1172,7 +1171,7 @@ class InventoryService:
         # the full approval chain and jump directly to APPROVED in one step.
         if next_state == "PENDING_REVIEW":
             lines = (await self.db.execute(_lines_query, _lines_params)).fetchall()
-            total_qty = sum(Decimal(str(l.quantity)) for l in lines)
+            total_qty = sum(Decimal(str(ln.quantity)) for ln in lines)
             try:
                 total_value_pull = Decimal(str(getattr(row, "total_value", None) or "0"))
             except Exception:
@@ -1276,7 +1275,7 @@ class InventoryService:
         elif next_state == "PENDING_APPROVAL":
             from services.approval_service import resolve_transfer_approvers as _resolve_approvers
             lines = (await self.db.execute(_lines_query, _lines_params)).fetchall()
-            total_qty = sum(Decimal(str(l.quantity)) for l in lines)
+            total_qty = sum(Decimal(str(ln.quantity)) for ln in lines)
 
             # Self-approval fast-path for PUSH (DRAFT → PENDING_APPROVAL is the submission
             # step). If the submitter's policy permits it, skip the approval chain and jump
@@ -1460,7 +1459,7 @@ class InventoryService:
                 {"tid_order": str(transfer_id), "tid": str(user.tenant_id)},
             )).fetchall()
 
-            total_qty = sum(Decimal(str(l.quantity)) for l in lines)
+            total_qty = sum(Decimal(str(ln.quantity)) for ln in lines)
 
             # Self-approval guard: fetch the creator's authority level stored at creation.
             creator_level: int | None = getattr(row, "created_by_authority_level", None)
