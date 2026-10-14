@@ -834,6 +834,10 @@ export default function TransfersPage() {
     staleTime: 30_000,
   });
 
+  // Discrepancy resolve (D2): TA / NM / SA tenant-wide, RM within its node subtree.
+  // The backend decides scope. Called before the early returns below (rules of hooks).
+  const canResolve = usePermission("transfer:resolve_discrepancy", user?.role ?? "");
+
   if (org === SA_ORG_SLUG) return <p className="p-8 text-gray-500">{t("dashboard.tenants_heading")}</p>;
   if (!user) return <p className="p-8 text-gray-500">{t("common.no_data")}</p>;
 
@@ -1111,9 +1115,6 @@ export default function TransfersPage() {
     setTimeout(() => setToast(""), 5000);
   }
 
-  // Discrepancy resolve (D2): TA / NM / SA tenant-wide, RM within its node subtree.
-  // The backend decides scope.
-  const canResolve = usePermission("transfer:resolve_discrepancy", user.role);
   function onDiscrepancyResolved() {
     setToast(t("transfers.discrepancies.toast_resolved"));
     setTimeout(() => setToast(""), 5000);
