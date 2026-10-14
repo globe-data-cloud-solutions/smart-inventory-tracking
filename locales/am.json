@@ -709,7 +709,12 @@
     "set_expiry_warning": "ይህ የማብቂያ ቀን ይህን ሎት በሁሉም መጋዘኖች ላይ ይመለከታል፤ አንድ ጊዜ ብቻ ሊቀመጥ ይችላል።",
     "set_expiry_date": "የማብቂያ ቀን",
     "set_expiry_success": "የማብቂያ ቀን ተቀምጧል።",
-    "no_records": "ምንም የሎት መዝገብ አልተገኘም"
+    "no_records": "ምንም የሎት መዝገብ አልተገኘም",
+    "window_label": "የማብቂያ ቅርብ ጊዜ፦ {days} ቀናት",
+    "window_input_label": "የማብቂያ ቅርብ ጊዜ (በቀናት)",
+    "window_range_error": "ከ1 እስከ 365 ያለ ሙሉ ቁጥር ያስገቡ።",
+    "window_saved": "የማብቂያ ቅርብ ጊዜ ተቀምጧል።",
+    "window_save_error": "የማብቂያ ቅርብ ጊዜን ማስቀመጥ አልተቻለም።"
   },
   "notifications": {
     "title": "ማንቂያዎች",

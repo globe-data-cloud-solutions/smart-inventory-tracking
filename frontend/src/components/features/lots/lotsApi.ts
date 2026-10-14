@@ -53,6 +53,22 @@ export function fetchExpiryAlerts(warehouseId: string): Promise<ExpiryAlertsApi>
   return api.get<ExpiryAlertsApi>(`/api/v1/inventory/lots/expiry-alerts${qs ? `?${qs}` : ""}`);
 }
 
+/* ── GET / PUT /api/v1/inventory/lots/expiry-settings ───────────────────── */
+export interface ExpirySettingsApi {
+  near_expiry_days: number;
+}
+
+export const NEAR_EXPIRY_MIN_DAYS = 1;
+export const NEAR_EXPIRY_MAX_DAYS = 365;
+
+export function fetchExpirySettings(): Promise<ExpirySettingsApi> {
+  return api.get<ExpirySettingsApi>("/api/v1/inventory/lots/expiry-settings");
+}
+
+export function updateExpirySettings(days: number): Promise<ExpirySettingsApi> {
+  return api.put<ExpirySettingsApi>("/api/v1/inventory/lots/expiry-settings", { near_expiry_days: days });
+}
+
 /** HTTP status carried by an ApiError-shaped throw, if any. */
 export function errStatus(err: unknown): number | undefined {
   return (err as { status?: number } | null | undefined)?.status;

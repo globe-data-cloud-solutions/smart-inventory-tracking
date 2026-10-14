@@ -8,7 +8,9 @@ import { t } from "@/lib/i18n";
 import { useFeatures } from "@/hooks/useFeatures";
 import { useTenantName } from "@/hooks/useTenantName";
 import { formatQty } from "@/lib/utils";
+import { usePermission } from "@/lib/permissions";
 import { ExpirySummary } from "./ExpirySummary";
+import { NearExpirySetting } from "./NearExpirySetting";
 import { SetLotExpiryDialog } from "./SetLotExpiryDialog";
 import {
   errStatus, expiryRelative, fetchExpiryAlerts, fetchLots, formatLotDate,
@@ -52,6 +54,7 @@ export function LiveLotsView({ org }: { org: string }) {
   // Facility-scoped roles only ever see their own warehouse (same scoping as the dashboard).
   const warehouseId = user?.warehouseId ?? "";
   const canSetExpiry = user?.role === "TA" || user?.role === "NM";
+  const canEditWindow = usePermission("tenant:configure", user?.role ?? "");
 
   const [search, setSearch]             = useState("");
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("ALL");
@@ -174,6 +177,8 @@ export function LiveLotsView({ org }: { org: string }) {
   return (
     <div className="p-8">
       {header}
+
+      <NearExpirySetting org={org} canEdit={canEditWindow} />
 
       {alerts && !alertsForbidden && (
         <ExpirySummary data={alerts} active={alertFilter} onSelect={pickAlert} />

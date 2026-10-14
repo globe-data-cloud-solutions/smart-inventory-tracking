@@ -699,7 +699,12 @@
     "set_expiry_warning": "This expiry applies to this lot in every warehouse and can only be set once.",
     "set_expiry_date": "Expiry date",
     "set_expiry_success": "Expiry date saved.",
-    "no_records": "No Lot Records Found"
+    "no_records": "No Lot Records Found",
+    "window_label": "Near-expiry window: {days} days",
+    "window_input_label": "Near-expiry window (days)",
+    "window_range_error": "Enter a whole number of days from 1 to 365.",
+    "window_saved": "Near-expiry window saved.",
+    "window_save_error": "Could not save the near-expiry window."
   },
   "notifications": {
     "title": "Beeksisaalee",
