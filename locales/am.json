@@ -682,7 +682,34 @@
     "ago": "በፊት",
     "total": "ጠቅላላ",
     "units": "አሃዶች",
-    "pct_of_lot": "% ከሎቱ"
+    "pct_of_lot": "% ከሎቱ",
+    "chip_expired": "ያለፈባቸው",
+    "chip_expiring": "በ{days} ቀናት ውስጥ የሚያልፉ",
+    "chip_no_expiry": "ማብቂያ ያልተቀመጠላቸው",
+    "summary_error": "የማብቂያ ማጠቃለያውን መጫን አልተቻለም።",
+    "load_error": "ሎቶችን መጫን አልተቻለም።",
+    "filter_all": "ሁሉም",
+    "filter_active": "ንቁ",
+    "filter_expiring_soon": "በቅርቡ የሚያልፉ",
+    "filter_expired": "ያለፈባቸው",
+    "filter_depleted": "የተሟጠጡ",
+    "status_active": "ንቁ",
+    "status_expiring_soon": "በቅርቡ የሚያልፍ",
+    "status_expired": "ያለፈበት",
+    "status_depleted": "የተሟጠጠ",
+    "opening_tag": "የመጀመሪያ ሂሳብ",
+    "expiry_in_days": "በ{n} ቀናት ውስጥ",
+    "expiry_in_one_day": "በ1 ቀን ውስጥ",
+    "expiry_today": "ዛሬ ያልፋል",
+    "expiry_ago_days": "ከ{n} ቀናት በፊት አልፏል",
+    "expiry_ago_one_day": "ከ1 ቀን በፊት አልፏል",
+    "no_expiry": "ማብቂያ አልተቀመጠም",
+    "set_expiry": "ማብቂያ ቀን አስቀምጥ",
+    "set_expiry_title": "የሎት ማብቂያ ቀን ያስቀምጡ",
+    "set_expiry_warning": "ይህ የማብቂያ ቀን ይህን ሎት በሁሉም መጋዘኖች ላይ ይመለከታል፤ አንድ ጊዜ ብቻ ሊቀመጥ ይችላል።",
+    "set_expiry_date": "የማብቂያ ቀን",
+    "set_expiry_success": "የማብቂያ ቀን ተቀምጧል።",
+    "no_records": "ምንም የሎት መዝገብ አልተገኘም"
   },
   "notifications": {
     "title": "ማንቂያዎች",
@@ -727,7 +754,9 @@
     "RECEIPT_EXCEEDS_SENT": "የተቀበሉት መጠን ከተላከው መጠን መብለጥ አይችልም።",
     "RECEIPT_REASON_REQUIRED": "ለጎደለው መጠን ምክንያት ይምረጡ።",
     "PARTIAL_RECEIPT_NOT_SUPPORTED": "በምትኩ የተቀበሉትን መጠኖች በመቀበያ ቅጹ ላይ ያስገቡ።",
-    "INVALID_STATE_TRANSITION": "የዚህ ዝውውር ሁኔታ ተቀይሯል። እባክዎ ያድሱና እንደገና ይሞክሩ።"
+    "INVALID_STATE_TRANSITION": "የዚህ ዝውውር ሁኔታ ተቀይሯል። እባክዎ ያድሱና እንደገና ይሞክሩ።",
+    "LOT_EXPIRY_ALREADY_SET": "ይህ ሎት አስቀድሞ የማብቂያ ቀን አለው፤ ሊቀየር አይችልም።",
+    "EXPIRY_TRACKING_OFF": "ለዚህ ምርት የማብቂያ ቀን ክትትል ጠፍቷል።"
   },
   "layout": {
     "sign_out": "ውጣ",
@@ -760,7 +789,10 @@
     "tenant_name": "የተከፋይ ስም",
     "tenant_type": "አይነት",
     "need_help_title": "እገዛ ይፈልጋሉ?",
-    "need_help_all_contact": "ሁሉም የእውቂያ ዝርዝሮች"
+    "need_help_all_contact": "ሁሉም የእውቂያ ዝርዝሮች",
+    "expired_lots": "ያለፈባቸው ሎቶች",
+    "expiring_lots": "በ{days} ቀናት ውስጥ የሚያልፉ",
+    "no_expiry_lots": "ማብቂያ የሌላቸው ሎቶች"
   },
   "table": {
     "sku": "SKU",
