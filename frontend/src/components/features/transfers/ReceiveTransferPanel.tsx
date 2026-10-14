@@ -14,6 +14,8 @@ import {
 } from "@/components/features/transfers/TransferLotDetails";
 
 const REASONS = ["SHORT", "DAMAGED", "WRONG_LOT"] as const;
+/** A row with no lot (non-batch line) cannot be a wrong-lot receipt — the server rejects it. */
+const NO_LOT_REASONS = REASONS.filter((r) => r !== "WRONG_LOT");
 const NOTE_MAX = 500;
 
 /** Receipt errors the form translates; anything else gets the generic message. */
@@ -238,7 +240,7 @@ export function ReceiveTransferPanel({
                               className={`px-2 py-1 text-sm rounded border outline-none bg-white ${reasonErr ? "border-red-600" : "border-gray-300"}`}
                             >
                               <option value="">{t("transfers.receive.reason_placeholder")}</option>
-                              {REASONS.map((r) => (
+                              {(row.lotId ? REASONS : NO_LOT_REASONS).map((r) => (
                                 <option key={r} value={r}>{t(`transfers.discrepancies.reason.${r}`)}</option>
                               ))}
                             </select>
