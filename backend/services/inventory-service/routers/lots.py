@@ -11,16 +11,19 @@ from __future__ import annotations
 import uuid
 from typing import List, Optional
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from dependencies import get_current_user, get_read_db_session
+from dependencies import get_current_user, get_db_session, get_read_db_session
 from shared.permissions.middleware import require_permission
 from shared.permissions.registry import PERMISSIONS
 from shared.utils.responses import SuccessResponse
 from shared.utils.tenant_scope import effective_tenant_id
+from routers.lot_settings import feature_lot_tracking_enabled
 from schemas.analytics import ExpiryAlertsOut, LotOut
+from schemas.inventory import SetLotExpiryOut, SetLotExpiryRequest
 from services.inventory_analytics import get_expiry_alerts, get_lots
+from services.lot_expiry_service import set_lot_expiry
 
 router = APIRouter()
 
@@ -70,3 +73,20 @@ async def expiry_alerts(
         db, tid, warehouse_id=warehouse_id, within_days=within_days
     )
     return SuccessResponse(data=data)
+
+
+@router.patch("/{lot_id}/expiry", response_model=SuccessResponse[SetLotExpiryOut])
+@require_permission(PERMISSIONS.PRODUCT_UPDATE)
+async def patch_lot_expiry(
+    lot_id: uuid.UUID,
+    body: SetLotExpiryRequest,
+    user=Depends(get_current_user),
+    db: AsyncSession = Depends(get_db_session),
+) -> SuccessResponse[SetLotExpiryOut]:
+    """Set an expiry once on a lot that has none. Metadata only - no ledger write."""
+    if not feature_lot_tracking_enabled():
+        raise HTTPException(status_code=403, detail={"code": "FEATURE_NOT_ENABLED"})
+    result = await set_lot_expiry(
+        db, str(user.tenant_id), str(lot_id), body.expiry_date, user
+    )
+    return SuccessResponse(data=SetLotExpiryOut(**result))

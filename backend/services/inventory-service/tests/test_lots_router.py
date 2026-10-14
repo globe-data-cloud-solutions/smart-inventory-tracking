@@ -93,3 +93,58 @@ class TestExpiryAlertsRouter:
             params={"warehouse_id": "20000000-0000-0000-0000-0000000000ff"},
         )
         assert resp.status_code == 403
+
+
+@pytest.fixture
+async def patch_client(inv_app, wm_user):
+    """WM client against the write session, RBAC grant controlled per test."""
+    from dependencies import get_db_session
+
+    db = AsyncMock()
+    db.execute = AsyncMock(return_value=MagicMock())
+
+    async def _db_gen():
+        yield db
+
+    inv_app.dependency_overrides[get_current_user] = lambda: wm_user
+    inv_app.dependency_overrides[get_db_session] = _db_gen
+    try:
+        async with AsyncClient(
+            transport=ASGITransport(app=inv_app), base_url="http://test"
+        ) as ac:
+            yield ac
+    finally:
+        inv_app.dependency_overrides.clear()
+
+
+LOT_ID = "30000000-0000-0000-0000-000000000001"
+
+
+@pytest.mark.unit
+class TestSetLotExpiryRouter:
+    url = f"/api/v1/inventory/lots/{LOT_ID}/expiry"
+
+    async def _patch(self, client, body):
+        with patch(
+            "shared.permissions.middleware.get_role_permission",
+            new=AsyncMock(return_value=_mock_full_grant()),
+        ), patch("shared.permissions.middleware.audit_log", new=AsyncMock()):
+            return await client.patch(self.url, json=body)
+
+    async def test_missing_expiry_date_is_422(self, patch_client) -> None:
+        assert (await self._patch(patch_client, {})).status_code == 422
+
+    async def test_bad_date_is_422(self, patch_client) -> None:
+        assert (await self._patch(patch_client, {"expiry_date": "not-a-date"})).status_code == 422
+
+    async def test_extra_field_is_422(self, patch_client) -> None:
+        body = {"expiry_date": "2030-01-01", "lot_number": "X"}
+        assert (await self._patch(patch_client, body)).status_code == 422
+
+    async def test_role_without_product_update_is_403(self, patch_client) -> None:
+        with patch(
+            "shared.permissions.middleware.get_role_permission",
+            new=AsyncMock(return_value=None),
+        ), patch("shared.permissions.middleware.audit_log", new=AsyncMock()):
+            resp = await patch_client.patch(self.url, json={"expiry_date": "2030-01-01"})
+        assert resp.status_code == 403
