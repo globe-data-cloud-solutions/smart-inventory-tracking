@@ -22,6 +22,7 @@ import { api, IS_GATEWAY_MODE } from "@/lib/api";
 import { t } from "@/lib/i18n";
 import { useTenantName } from "@/hooks/useTenantName";
 import { formatQty } from "@/lib/utils";
+import { usePermission } from "@/lib/permissions";
 
 type TransferType = "PULL" | "PUSH" | "SISTER";
 
@@ -1111,8 +1112,8 @@ export default function TransfersPage() {
   }
 
   // Discrepancy resolve (D2): TA / NM / SA tenant-wide, RM within its node subtree.
-  // Explicit role check — lib/permissions.ts is out of date. The backend decides scope.
-  const canResolve = user.role === "TA" || user.role === "NM" || user.role === "SA" || user.role === "RM";
+  // The backend decides scope.
+  const canResolve = usePermission("transfer:resolve_discrepancy", user.role);
   function onDiscrepancyResolved() {
     setToast(t("transfers.discrepancies.toast_resolved"));
     setTimeout(() => setToast(""), 5000);
