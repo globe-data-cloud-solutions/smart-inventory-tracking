@@ -19,8 +19,8 @@ from shared.permissions.middleware import require_permission
 from shared.permissions.registry import PERMISSIONS
 from shared.utils.responses import SuccessResponse
 from shared.utils.tenant_scope import effective_tenant_id
-from schemas.analytics import LotOut
-from services.inventory_analytics import get_lots
+from schemas.analytics import ExpiryAlertsOut, LotOut
+from services.inventory_analytics import get_expiry_alerts, get_lots
 
 router = APIRouter()
 
@@ -34,6 +34,7 @@ async def list_lots(
     include_depleted: bool = Query(False),
     limit: int = Query(200, ge=1, le=1000),
     offset: int = Query(0, ge=0),
+    expiring_within_days: int = Query(30, ge=1, le=365),
     tenant_id: Optional[uuid.UUID] = Query(None, description="SA only — filter to specific tenant"),
     user=Depends(get_current_user),
     db: AsyncSession = Depends(get_read_db_session),
@@ -49,5 +50,23 @@ async def list_lots(
         include_depleted=include_depleted,
         limit=limit,
         offset=offset,
+        expiring_within_days=expiring_within_days,
+    )
+    return SuccessResponse(data=data)
+
+
+@router.get("/expiry-alerts", response_model=SuccessResponse[ExpiryAlertsOut])
+@require_permission(PERMISSIONS.REPORT_EXPIRY_ALERTS)
+async def expiry_alerts(
+    warehouse_id: Optional[uuid.UUID] = Query(None),
+    within_days: int = Query(30, ge=1, le=365),
+    tenant_id: Optional[uuid.UUID] = Query(None, description="SA only — filter to specific tenant"),
+    user=Depends(get_current_user),
+    db: AsyncSession = Depends(get_read_db_session),
+) -> SuccessResponse[ExpiryAlertsOut]:
+    """Expired, expiring-soon and no-expiry lots of expiry-tracked products."""
+    tid = effective_tenant_id(user, tenant_id)
+    data = await get_expiry_alerts(
+        db, tid, warehouse_id=warehouse_id, within_days=within_days
     )
     return SuccessResponse(data=data)
