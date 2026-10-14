@@ -110,6 +110,7 @@ class PERMISSIONS:
     TRANSFER_CANCEL         = Permission("transfer:cancel",         ["tenant_id"])
     TRANSFER_VIEW           = Permission("transfer:view",           ["tenant_id"])
     TRANSFER_LIST           = Permission("transfer:list",           ["tenant_id"])
+    TRANSFER_RESOLVE_DISCREPANCY = Permission("transfer:resolve_discrepancy", ["tenant_id"])
 
     # ── Domain 7 — Adjustment Orders ──────────────────────────────────────
     ADJUSTMENT_CREATE       = Permission("adjustment:create",       ["tenant_id", "warehouse_id"])
@@ -249,7 +250,7 @@ ALL_PERMISSIONS: List[Permission] = [
     v for v in vars(PERMISSIONS).values() if isinstance(v, Permission)
 ]
 
-assert len(ALL_PERMISSIONS) == 161, (
-    f"Expected 161 permissions, found {len(ALL_PERMISSIONS)}. "
+assert len(ALL_PERMISSIONS) == 162, (
+    f"Expected 162 permissions, found {len(ALL_PERMISSIONS)}. "
     "Update registry.py and re-run seed_permissions.py."
 )

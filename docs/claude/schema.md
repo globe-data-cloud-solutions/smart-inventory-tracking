@@ -403,8 +403,9 @@ CREATE POLICY tenant_isolation ON transfer_line_allocations
 -- or one lot of a line (batch) where the destination received less than was sent.
 -- Record-only — TRANSFER_IN credits received_quantity; the missing quantity lives
 -- here and nowhere else. Append-only BY CODE (insert_discrepancy() is the only
--- write path; no PostgreSQL RULE on this table). Status is OPEN until a later
--- phase adds resolution (write-off / return).
+-- write path; no PostgreSQL RULE on this table). Rows are inserted OPEN; migration
+-- 088 adds the resolution columns and lets resolve_discrepancy() update a row
+-- exactly once, OPEN -> RESOLVED (the one exception to append-only; see 088 below).
 CREATE TABLE transfer_discrepancies (
   id                 UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   tenant_id          UUID NOT NULL,
@@ -419,7 +420,7 @@ CREATE TABLE transfer_discrepancies (
   reason             VARCHAR(20) NOT NULL
                      CHECK (reason IN ('SHORT','DAMAGED','WRONG_LOT')),
   note               TEXT NULL,
-  status             VARCHAR(20) NOT NULL DEFAULT 'OPEN' CHECK (status IN ('OPEN')),
+  status             VARCHAR(20) NOT NULL DEFAULT 'OPEN' CHECK (status IN ('OPEN')),  -- 088: OPEN|RESOLVED
   created_by         UUID NOT NULL,
   created_at         TIMESTAMPTZ NOT NULL DEFAULT now(),
   CHECK (received_quantity + missing_quantity = sent_quantity)
@@ -435,6 +436,28 @@ CREATE INDEX idx_transfer_discrepancies_tenant_status
 ALTER TABLE transfer_discrepancies ENABLE ROW LEVEL SECURITY;
 CREATE POLICY tenant_isolation ON transfer_discrepancies
   USING (tenant_id = current_setting('app.current_tenant_id', true)::uuid);
+
+-- ── transfer_discrepancies — resolution (migration 088) ──────────────────────
+-- Insert-then-resolve-once. resolve_discrepancy() is the only UPDATE path and
+-- writes an audit_logs row in the same transaction. All new columns NULL while OPEN.
+ALTER TABLE transfer_discrepancies
+  ADD COLUMN resolution      VARCHAR(20) NULL
+    CHECK (resolution IN ('WRITTEN_OFF','RETURNED','ARRIVED_LATE','RECEIVED_AS_LOT')),
+  ADD COLUMN resolved_lot_id UUID NULL REFERENCES stock_lots(id),  -- RECEIVED_AS_LOT only
+  ADD COLUMN resolution_note TEXT NULL,       -- required by the service for WRITTEN_OFF
+  ADD COLUMN resolved_by     UUID NULL,
+  ADD COLUMN resolved_at     TIMESTAMPTZ NULL;
+-- status CHECK widened (ck_transfer_discrepancies_status):
+--   status IN ('OPEN','RESOLVED')
+-- ck_transfer_discrepancies_resolution_state: OPEN => resolution, resolved_lot_id,
+--   resolved_by, resolved_at all NULL; RESOLVED => resolution, resolved_by,
+--   resolved_at NOT NULL.
+-- ck_transfer_discrepancies_resolved_lot:
+--   resolved_lot_id IS NULL OR resolution = 'RECEIVED_AS_LOT'
+-- ck_transfer_discrepancies_resolved_lot_required:
+--   resolution IS DISTINCT FROM 'RECEIVED_AS_LOT' OR resolved_lot_id IS NOT NULL
+-- Grants: transfer:resolve_discrepancy FULL for TA, NM, RM (SA via the seed).
+-- RLS unchanged (tenant_isolation, 086). Downgrade fails while any RESOLVED row exists.
 
 -- ── adjustment_orders — lot columns (migration 087) ──────────────────────────
 -- An adjustment on a batch-tracked product names the lot it posts against.

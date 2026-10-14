@@ -1,4 +1,4 @@
-from typing import List, Optional
+from typing import List, Literal, Optional
 from uuid import UUID
 
 from fastapi import APIRouter, Body, Depends, HTTPException, Query
@@ -14,12 +14,16 @@ from shared.utils.responses import SuccessResponse
 from schemas.inventory import (
     ApprovalInfoResponse,
     ReceiveTransferRequest,
+    ResolveDiscrepancyRequest,
     TransferApproveRequest,
+    TransferDiscrepancyListItem,
+    TransferDiscrepancyOut,
     TransferListItem,
     TransferOrderRequest,
     TransferOrderResponse,
     TransferTransitionRequest,
 )
+from services import transfer_discrepancies
 from services.inventory_service import InventoryService
 
 router = APIRouter()
@@ -43,6 +47,28 @@ async def list_transfers(
 ) -> SuccessResponse[List[TransferListItem]]:
     svc = InventoryService(db)
     result = await svc.list_transfers(user, page=page, limit=limit)
+    return SuccessResponse(data=result)
+
+
+# Fixed path — declared before every /{transfer_id} route (CLAUDE.md §7).
+@router.get("/discrepancies", response_model=SuccessResponse[List[TransferDiscrepancyListItem]])
+@require_permission(PERMISSIONS.TRANSFER_LIST)
+async def list_discrepancies(
+    status: Optional[Literal["OPEN", "RESOLVED"]] = Query(None),
+    warehouse_id: Optional[UUID] = Query(None),
+    user=Depends(get_current_user),
+    db: AsyncSession = Depends(get_db_session),
+) -> SuccessResponse[List[TransferDiscrepancyListItem]]:
+    """Transfer discrepancies of the tenant, newest first (at most 200).
+
+    status filters OPEN / RESOLVED; warehouse_id matches the source or the
+    destination. Facility-scoped roles, and an RM with a node, only see
+    transfers touching their node subtree (403 WAREHOUSE_OUT_OF_SCOPE for a
+    warehouse_id outside it).
+    """
+    result = await transfer_discrepancies.list_discrepancies(
+        db, user, status=status, warehouse_id=warehouse_id
+    )
     return SuccessResponse(data=result)
 
 
@@ -195,6 +221,29 @@ async def receive_transfer(
     """
     svc = InventoryService(db)
     result = await svc.receive_transfer(user, transfer_id, body)
+    return SuccessResponse(data=result)
+
+
+@router.post(
+    "/{transfer_id}/discrepancies/{discrepancy_id}/resolve",
+    response_model=SuccessResponse[TransferDiscrepancyOut],
+)
+@require_permission(PERMISSIONS.TRANSFER_RESOLVE_DISCREPANCY)
+async def resolve_discrepancy(
+    transfer_id: UUID,
+    discrepancy_id: UUID,
+    body: ResolveDiscrepancyRequest,
+    user=Depends(get_current_user),
+    db: AsyncSession = Depends(get_db_session),
+) -> SuccessResponse[TransferDiscrepancyOut]:
+    """Resolve one OPEN discrepancy: WRITTEN_OFF | RETURNED | ARRIVED_LATE |
+    RECEIVED_AS_LOT. Ledger rows, the OPEN -> RESOLVED update and the audit row
+    commit together; any error rolls all of them back. TA / NM tenant-wide,
+    RM within its node subtree.
+    """
+    result = await transfer_discrepancies.resolve_discrepancy(
+        db, user, transfer_id, discrepancy_id, body
+    )
     return SuccessResponse(data=result)
 
 

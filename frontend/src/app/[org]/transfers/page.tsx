@@ -11,6 +11,7 @@ import { ReceiveTransferPanel } from "@/components/features/transfers/ReceiveTra
 import { TransferRowDetails, hasLotSplit, transferDetailKey, type TransferReceiptDetail } from "@/components/features/transfers/TransferLotDetails";
 import { ApproveLotsPanel, approveFailure, type ApproveFailure, type ApproveLine, type ApproveLotsBody } from "@/components/features/transfers/ApproveLotsPanel";
 import { fetchDispatchPreview } from "@/components/features/transfers/DispatchPreview";
+import { OpenDiscrepanciesPanel } from "@/components/features/transfers/OpenDiscrepanciesPanel";
 import { ProductLabel } from "@/components/features/inventory/ProductLabel";
 import { useInventoryStore } from "@/lib/inventory-state";
 import { useAuditStore } from "@/lib/audit-log-state";
@@ -738,40 +739,8 @@ export default function TransfersPage() {
     refetchInterval: 15000,
   });
 
-  // Resolve warehouse names: API JOIN may return null when a node exists only in
-  // organization_node (not warehouses table). Fall back to effectiveWarehouses by ID.
-  const allTransfers = rawTransfers.map((tx) => {
-    const fromName = tx.from_warehouse_name ||
-      effectiveWarehouses.find((w) => w.id === tx.from_warehouse_id)?.name ||
-      tx.from_warehouse_id;
-    const toName = tx.to_warehouse_name ||
-      effectiveWarehouses.find((w) => w.id === tx.to_warehouse_id)?.name ||
-      tx.to_warehouse_id;
-    return { ...tx, from_warehouse_name: fromName, to_warehouse_name: toName };
-  });
-
-  // Prefetch approval-info for all PENDING_APPROVAL transfers so the Approve/Reject
-  // buttons are controlled by the backend's actual required_authority_level.
-  // Runs whenever allTransfers changes; only fetches each transfer once.
-  useEffect(() => {
-    if (!isGateway) return;
-    allTransfers
-      .filter((t) => t.status === "PENDING_APPROVAL" && !approvalInfoCache.current.has(t.id))
-      .forEach((t) => {
-        api.get<ApprovalInfoResponse>(`/api/v1/inventory/transfers/${t.id}/approval-info`)
-          .then((info) => { approvalInfoCache.current.set(t.id, info); })
-          .catch(() => { /* silently ignore — falls back to local canApprove */ });
-      });
-  }, [allTransfers, isGateway]);  // eslint-disable-line react-hooks/exhaustive-deps
-
-  // Fetch API-created products for the transfer panel product dropdown.
-  const { data: apiProducts = [] } = useQuery<ApiProduct[]>({
-    queryKey: ["products", org],
-    queryFn:  () => api.get<ApiProduct[]>("/api/v1/products"),
-    enabled: org !== SA_ORG_SLUG,
-    staleTime: 30_000,
-  });
-
+  // Everything effectiveWarehouses depends on lives here, above allTransfers (which reads it).
+  // Hook order stays unconditional and ahead of the early returns below.
   // Real warehouse data from the inventory analytics endpoint.
   // When this returns non-empty data, we are in gateway mode (real backend, real UUIDs).
   // In gateway mode, warehouse dropdowns must use real UUIDs — not the demo slug IDs
@@ -787,9 +756,7 @@ export default function TransfersPage() {
   // even those with no stock yet — covers BUG 3 (canPush) and BUG 4 (name resolution).
   const { warehouses: orgNodeWarehouses } = useWarehouses();
 
-  if (org === SA_ORG_SLUG) return <p className="p-8 text-gray-500">{t("dashboard.tenants_heading")}</p>;
   const tenant = DEMO_TENANTS.find((ten) => ten.slug === org);
-  if (!user) return <p className="p-8 text-gray-500">{t("common.no_data")}</p>;
 
   // Config-based: true whenever NEXT_PUBLIC_API_URL is set, regardless of whether
   // inventory_balances has rows yet.  The old stockData.length > 0 check was the
@@ -825,6 +792,50 @@ export default function TransfersPage() {
   }
   const gatewayWarehouses: DemoWarehouse[] = Array.from(gatewayWarehouseMap.values());
 
+  // Prefer org-node list (has level_number for canPush + all nodes regardless of stock).
+  // Fall back to analytics-derived list until org-node data loads.
+  const effectiveWarehouses = isGatewayMode
+    ? (orgNodeWarehouses.length > 0 ? orgNodeWarehouses : gatewayWarehouses)
+    : (tenant?.warehouses ?? []);
+
+
+  // Resolve warehouse names: API JOIN may return null when a node exists only in
+  // organization_node (not warehouses table). Fall back to effectiveWarehouses by ID.
+  const allTransfers = rawTransfers.map((tx) => {
+    const fromName = tx.from_warehouse_name ||
+      effectiveWarehouses.find((w) => w.id === tx.from_warehouse_id)?.name ||
+      "—";
+    const toName = tx.to_warehouse_name ||
+      effectiveWarehouses.find((w) => w.id === tx.to_warehouse_id)?.name ||
+      "—";
+    return { ...tx, from_warehouse_name: fromName, to_warehouse_name: toName };
+  });
+
+  // Prefetch approval-info for all PENDING_APPROVAL transfers so the Approve/Reject
+  // buttons are controlled by the backend's actual required_authority_level.
+  // Runs whenever allTransfers changes; only fetches each transfer once.
+  useEffect(() => {
+    if (!isGateway) return;
+    allTransfers
+      .filter((t) => t.status === "PENDING_APPROVAL" && !approvalInfoCache.current.has(t.id))
+      .forEach((t) => {
+        api.get<ApprovalInfoResponse>(`/api/v1/inventory/transfers/${t.id}/approval-info`)
+          .then((info) => { approvalInfoCache.current.set(t.id, info); })
+          .catch(() => { /* silently ignore — falls back to local canApprove */ });
+      });
+  }, [allTransfers, isGateway]);  // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Fetch API-created products for the transfer panel product dropdown.
+  const { data: apiProducts = [] } = useQuery<ApiProduct[]>({
+    queryKey: ["products", org],
+    queryFn:  () => api.get<ApiProduct[]>("/api/v1/products"),
+    enabled: org !== SA_ORG_SLUG,
+    staleTime: 30_000,
+  });
+
+  if (org === SA_ORG_SLUG) return <p className="p-8 text-gray-500">{t("dashboard.tenants_heading")}</p>;
+  if (!user) return <p className="p-8 text-gray-500">{t("common.no_data")}</p>;
+
   // Build stockByProductId from analytics/stock data: productId → { warehouseId: currentStock }
   // This is the source of truth for balances in gateway mode — the products API does not
   // return on_hand or warehouse_id.
@@ -849,12 +860,6 @@ export default function TransfersPage() {
     approval_overrides: p.approval_overrides,
   }));
   const productById = new Map(mergedProducts.map((p) => [p.id, p]));
-
-  // Prefer org-node list (has level_number for canPush + all nodes regardless of stock).
-  // Fall back to analytics-derived list until org-node data loads.
-  const effectiveWarehouses = isGatewayMode
-    ? (orgNodeWarehouses.length > 0 ? orgNodeWarehouses : gatewayWarehouses)
-    : (tenant?.warehouses ?? []);
 
   // Apply hierarchy + role scoping
   const scopedTransfers = scopeTransfers(allTransfers, user.role, user.warehouseId, effectiveWarehouses);
@@ -1105,8 +1110,16 @@ export default function TransfersPage() {
     setTimeout(() => setToast(""), 5000);
   }
 
+  // Discrepancy resolve (D2): TA / NM / SA tenant-wide, RM within its node subtree.
+  // Explicit role check — lib/permissions.ts is out of date. The backend decides scope.
+  const canResolve = user.role === "TA" || user.role === "NM" || user.role === "SA" || user.role === "RM";
+  function onDiscrepancyResolved() {
+    setToast(t("transfers.discrepancies.toast_resolved"));
+    setTimeout(() => setToast(""), 5000);
+  }
+
   const stats = {
-    draft:      visibleTransfers.filter((t) => t.status === "DRAFT").length,
+    draft:     visibleTransfers.filter((t) => t.status === "DRAFT").length,
     inTransit:  visibleTransfers.filter((t) => ["IN_TRANSIT", "PARTIALLY_RECEIVED"].includes(t.status)).length,
     pending:    visibleTransfers.filter((t) => ["PENDING_REVIEW", "PENDING_APPROVAL", "PENDING_SOURCE_CONFIRM", "PENDING_DEST_CONFIRM"].includes(t.status)).length,
     approved:   visibleTransfers.filter((t) => ["APPROVED", "ADVISED", "ISSUED"].includes(t.status)).length,
@@ -1249,6 +1262,14 @@ export default function TransfersPage() {
           </div>
         ))}
       </div>
+
+      <OpenDiscrepanciesPanel
+        org={org}
+        basePath="/api/v1/inventory/transfers"
+        canResolve={canResolve}
+        productName={(id) => productById.get(id)?.name}
+        onResolved={onDiscrepancyResolved}
+      />
 
       <div className="bg-white border border-gray-200 rounded overflow-hidden">
         <div className="h-[3px]" style={{ background: tenant?.color ?? "#1B4332" }} />
@@ -1411,7 +1432,12 @@ export default function TransfersPage() {
                   {isExpanded && (
                     <tr className="border-b border-gray-100 bg-gray-50">
                       <td colSpan={COLS.length} className="px-8 py-3">
-                        <TransferRowDetails transferId={txn.id} basePath="/api/v1/inventory/transfers" />
+                        <TransferRowDetails
+                          transferId={txn.id}
+                          basePath="/api/v1/inventory/transfers"
+                          canResolve={canResolve}
+                          onResolved={onDiscrepancyResolved}
+                        />
                       </td>
                     </tr>
                   )}

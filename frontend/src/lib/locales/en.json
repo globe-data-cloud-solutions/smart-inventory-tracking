@@ -840,7 +840,49 @@
         "WRONG_LOT": "Wrong lot"
       },
       "status": {
-        "OPEN": "Open"
+        "OPEN": "Open",
+        "RESOLVED": "Resolved"
+      },
+      "col_action": "Action",
+      "col_transfer": "Transfer",
+      "col_product": "Product",
+      "col_received_on": "Received on",
+      "resolve": "Resolve",
+      "resolution_note_label": "Resolution note",
+      "resolution": {
+        "WRITTEN_OFF": "Written off",
+        "RETURNED": "Returned to source lot",
+        "ARRIVED_LATE": "Arrived late",
+        "RECEIVED_AS_LOT": "Received as another lot"
+      },
+      "help": {
+        "WRITTEN_OFF": "No stock change, closes the record",
+        "RETURNED": "Adds the missing quantity back to the source lot",
+        "ARRIVED_LATE": "Adds it to the destination",
+        "RECEIVED_AS_LOT": "Moves it from the chosen lot at the source to the destination"
+      },
+      "dialog_title": "Resolve discrepancy",
+      "receiver_note": "Receiver's note",
+      "outcome_label": "Outcome",
+      "note_label": "Note",
+      "note_placeholder": "Add a note (max 500 characters)",
+      "lot_label": "Lot that arrived (from the source warehouse)",
+      "lot_placeholder": "Select a lot",
+      "lots_loading": "Loading lots...",
+      "lots_none": "There is no other lot of this product at the source warehouse.",
+      "lots_failed": "Could not load the lots. Please try again.",
+      "lot_option": "{lot} · expires {expiry} · balance {qty}",
+      "panel_title": "Open discrepancies ({count})",
+      "toast_resolved": "Discrepancy resolved",
+      "errors": {
+        "DISCREPANCY_ALREADY_RESOLVED": "This discrepancy has already been resolved.",
+        "RESOLUTION_NOT_ALLOWED": "That outcome is not allowed for this reason.",
+        "RESOLUTION_NOTE_REQUIRED": "A note is required to write off a discrepancy.",
+        "RESOLUTION_LOT_INVALID": "The selected lot is not valid for this discrepancy.",
+        "DISCREPANCY_OUT_OF_SCOPE": "This discrepancy is outside your scope, so you cannot resolve it.",
+        "DISCREPANCY_NOT_FOUND": "This discrepancy could not be found.",
+        "INSUFFICIENT_LOT_STOCK": "The selected lot does not have enough stock at the source warehouse.",
+        "GENERIC": "Could not resolve the discrepancy. Please try again."
       }
     },
     "preview": {
