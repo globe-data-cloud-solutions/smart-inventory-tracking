@@ -580,7 +580,15 @@
     "no_pending_hint": "ሁሉም ማስተካከያዎች ተፈቅደዋል። ያለፉ መዝገቦችን ለማየት ታሪክን ቀያይሩ።",
     "rules_hint": "የማጽደቅ ህጎች",
     "self_approve": "በራስ ማጽደቅ",
-    "controlled_note": "🔒 ቁጥጥር የተደረገባቸው ምርቶች ምንም ይሁን መጠናቸው ሁልጊዜ የተወሰነ አጽዳቂ ይፈልጋሉ። 🔒 ምልክትን በምርት ስም ላይ ይፈልጉ።"
+    "controlled_note": "🔒 ቁጥጥር የተደረገባቸው ምርቶች ምንም ይሁን መጠናቸው ሁልጊዜ የተወሰነ አጽዳቂ ይፈልጋሉ። 🔒 ምልክትን በምርት ስም ላይ ይፈልጉ።",
+    "lot_label": "ሎት",
+    "lot_select_placeholder": "ለመቀነስ ሎት ይምረጡ",
+    "lot_existing_placeholder": "ያለውን ሎት ይምረጡ",
+    "lot_mode_existing": "ያለ ሎት",
+    "lot_mode_new": "አዲስ ሎት",
+    "lot_error_exceeds": "ከዚህ ሎት ውስጥ ካለው መጠን አልፏል ({available} አሃዶች)።",
+    "lot_new_named": "አዲስ ሎት፦ {number}",
+    "lot_new_auto": "አዲስ ሎት (በመለጠፍ ላይ ይፈጠራል)"
   },
   "transfer": {
     "acting_on_behalf": "በ {warehouse} ምትክ በመስራት ላይ",
@@ -695,7 +703,8 @@
     "INSUFFICIENT_LOT_STOCK": "ይህን ጥያቄ ለማሟላት በዚህ ሎት ውስጥ በቂ ክምችት የለም።",
     "LOT_REQUIRED": "ለዚህ ግብይት ሎት መመረጥ አለበት።",
     "LOT_EXPIRED": "ይህ ሎት ጊዜው አልፎበታል፤ ሊላክ አይችልም።",
-    "LOT_NOT_IN_WAREHOUSE": "ይህ ሎት በምንጭ መጋዘኑ ውስጥ የዚህ ምርት ክምችት የለውም።",
+    "LOT_NOT_IN_WAREHOUSE": "ይህ ሎት በዚህ መጋዘን ውስጥ ክምችት የለውም።",
+    "LOT_NOT_FOUND": "ይህ ሎት ለዚህ ምርት አልተገኘም።",
     "SELECTION_QTY_MISMATCH": "የሎቶቹ መጠኖች ድምር ከመስመሩ መጠን ጋር እኩል መሆን አለበት።",
     "OVERRIDE_REASON_REQUIRED": "የFEFO የሎት ቅደም ተከተልን ለመቀየር ምክንያት ያስፈልጋል።",
     "OVERRIDE_NOT_PERMITTED": "የሎት ቅደም ተከተልን ለመቀየር ፈቃድ የለዎትም።",
@@ -765,7 +774,8 @@
     "location": "ቦታ",
     "type": "አይነት",
     "total_units": "ጠቅላላ አሃዶች",
-    "actions": "ድርጊቶች"
+    "actions": "ድርጊቶች",
+    "lot": "ሎት"
   },
   "warehouse_type": {
     "MWH": "ዋና መጋዘን",

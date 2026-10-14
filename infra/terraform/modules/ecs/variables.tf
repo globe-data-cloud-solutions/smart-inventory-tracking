@@ -37,6 +37,11 @@ variable "beat_sizing" {
 }
 
 variable "email_delivery_mode" { type = string }
+variable "feature_lot_tracking" {
+  type        = bool
+  default     = false
+  description = "Sets FEATURE_LOT_TRACKING on inventory-service (lot tracking / FEFO). See docs/claude/ci-cd.md."
+}
 variable "email_from" { type = string }
 variable "app_base_url" {
   type    = string

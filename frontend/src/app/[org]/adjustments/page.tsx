@@ -16,15 +16,23 @@ import { useTenantName } from "@/hooks/useTenantName";
 import { useWarehouses } from "@/hooks/useWarehouses";
 import { useTenantPositions } from "@/hooks/useTenantPositions";
 import { useWriteGuard, guardProps } from "@/hooks/useWriteGuard";
+import { formatExpiry } from "@/components/features/transfers/TransferLotDetails";
 
 type ApiProduct = {
   id: string; sku: string; name: string; unit: string; pack_size?: number;
   reorder_point?: number | null; category?: string | null;
   is_discontinued?: boolean;
+  batch_tracking?: boolean; expiry_tracking?: boolean;
   approval_overrides?: Record<string, ProductApprovalOverride>;
 };
 
 type AdjStatus = "DRAFT" | "PENDING_APPROVAL" | "APPROVED" | "POSTED" | "REJECTED" | "CANCELLED";
+// Lot-related backend codes that have a translated errors.<CODE> entry.
+const LOT_ERROR_CODES = new Set([
+  "LOT_NUMBER_REQUIRED", "LOT_EXPIRY_MISMATCH", "INSUFFICIENT_LOT_STOCK", "LOT_REQUIRED",
+  "LOT_EXPIRED", "LOT_NOT_IN_WAREHOUSE", "LOT_NOT_FOUND",
+]);
+
 type AdjAction  = "submit" | "approve" | "reject" | "cancel";
 
 // Bug 2: added product_id and warehouse_id for scoping and balance update (Bug 9)
@@ -44,6 +52,21 @@ interface AdjRecord {
   created_by?: string;
   created_at: string;
   is_self_approved?: boolean;
+  lot_id?: string | null;
+  lot_number?: string | null;
+  expiry_date?: string | null;
+  auto_lot?: boolean;
+}
+
+// lot_id set → lot number (+ expiry if any); lot_id null with lot_number →
+// "new lot <number>"; auto_lot → "new lot, generated at posting"; nothing → "—".
+function adjLotLabel(adj: AdjRecord): string {
+  if (adj.lot_id) {
+    return adj.expiry_date ? `${adj.lot_number ?? ""} · ${formatExpiry(adj.expiry_date)}` : (adj.lot_number ?? "—");
+  }
+  if (adj.lot_number) return t("adjustment.lot_new_named").replace("{number}", adj.lot_number);
+  if (adj.auto_lot) return t("adjustment.lot_new_auto");
+  return "—";
 }
 
 // MATRIX 1: GET /adjustments/{id}/approval-info response — when a Design-B
@@ -103,6 +126,7 @@ export default function AdjustmentsPage() {
   const user           = getSession();
   const qc             = useQueryClient();
   const [showHistory, setShowHistory] = useState(false);
+  const [actionError, setActionError] = useState<string | null>(null);
   const isGatewayMode  = IS_GATEWAY_MODE;
   const guard = useWriteGuard();
   const gp = guardProps(guard);
@@ -234,7 +258,8 @@ export default function AdjustmentsPage() {
         id: p.id, sku: p.sku, name: p.name,
         category: p.category ?? "—",
         unit: p.unit,
-        batchTracking: false,
+        batchTracking: p.batch_tracking === true,
+        expiryTracking: p.expiry_tracking === true,
         reorderPoint: p.reorder_point ?? 0,
         stock: adjStockByProductId.get(p.id) ?? {},
         approval_overrides: p.approval_overrides,
@@ -292,9 +317,18 @@ export default function AdjustmentsPage() {
     // Approvers (RM/NM/TA) must find the adjustment record regardless of which WH created it.
     const adj = allAdj.find((a) => (a.adjustment_id ?? a.id) === id);
 
+    setActionError(null);
     try {
       await api.post(`/api/v1/inventory/adjustments/${id}/${action}`, {});
-    } catch { /* seed adjustments return 404 — fall through to state updates below */ }
+    } catch (err: unknown) {
+      const code = (err as { code?: string } | undefined)?.code ?? "";
+      if (LOT_ERROR_CODES.has(code)) {
+        // Real lot failure at posting — show it translated and do not touch local stock.
+        setActionError(t(`errors.${code}`));
+        return;
+      }
+      /* seed adjustments return 404 — fall through to state updates below */
+    }
 
     // Update inventory balance OUTSIDE the try/catch so 404s (seed records) don't
     // swallow the store update. warehouse_id comes from the adjustment record — NOT from
@@ -386,6 +420,12 @@ export default function AdjustmentsPage() {
         </div>
       </div>
 
+      {actionError && (
+        <div data-testid="adj-action-error" className="mb-4 bg-red-50 border border-red-200 rounded px-4 py-2.5 text-sm text-red-600">
+          {actionError}
+        </div>
+      )}
+
       {gp.title && (
         <div className="mb-4 bg-red-50 border border-red-200 rounded px-4 py-2.5 text-sm text-red-600">
           {gp.title}
@@ -411,6 +451,9 @@ export default function AdjustmentsPage() {
                   </p>
                   <p className="text-xs text-gray-500 mt-0.5">
                     {a.warehouse_name} · {a.reason_code.replace(/_/g, " ")} · {(a.quantity_delta ?? 0) > 0 ? "+" : ""}{formatQty(a.quantity_delta ?? 0)} units
+                  </p>
+                  <p data-testid="adj-approval-lot" className="text-xs text-gray-400 mt-0.5">
+                    {t("table.lot")}: {adjLotLabel(a)}
                   </p>
                   {a.notes && <p className="text-xs text-gray-400 mt-0.5 italic">{a.notes}</p>}
                 </div>
@@ -445,7 +488,7 @@ export default function AdjustmentsPage() {
           <table className="w-full border-collapse text-sm">
             <thead>
               <tr className="bg-gray-50 border-b-2 border-gray-200">
-                {["common.date", "table.sku", "table.product", "table.location", "adjustment.quantity", "adjustment.reason", "adjustment.approval", "table.status", "table.actions"].map((key) => (
+                {["common.date", "table.sku", "table.product", "table.location", "adjustment.quantity", "adjustment.reason", "table.lot", "adjustment.approval", "table.status", "table.actions"].map((key) => (
                   <th key={key} className="px-3.5 py-2.5 text-left text-xs font-bold text-gray-500 uppercase tracking-wide whitespace-nowrap">
                     {t(key)}
                   </th>
@@ -469,6 +512,7 @@ export default function AdjustmentsPage() {
                     {(a.quantity_delta ?? 0) > 0 ? "+" : ""}{formatQty(a.quantity_delta ?? 0)}
                   </td>
                   <td className="px-3.5 py-2 text-gray-500 text-xs">{a.reason_code.replace(/_/g, " ")}</td>
+                  <td data-testid="adj-row-lot" className="px-3.5 py-2 text-gray-500 text-xs">{adjLotLabel(a)}</td>
                   <td className="px-3.5 py-2">
                     {(a.approval_required_role ?? "NONE") === "NONE"
                       ? <span className="text-xs text-gray-400">{t("adjustment.auto_applied")}</span>

@@ -50,7 +50,8 @@ locals {
         local.gateway_service_urls,
         # Gateway falls back to its own local default when unset.
         var.cors_origins != "" ? { CORS_ORIGINS = var.cors_origins } : {}
-      ) : { TRUST_PROXY_HEADERS = "true" }
+      ) : { TRUST_PROXY_HEADERS = "true" },
+      svc == "inventory-service" ? { FEATURE_LOT_TRACKING = var.feature_lot_tracking ? "true" : "false" } : {}
     )
   }
 

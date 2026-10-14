@@ -226,7 +226,10 @@ class AdjustmentRequest(BaseModel):
     product_id: uuid.UUID
     quantity_delta: Decimal
     reason_code: AdjustmentReasonCode
+    lot_id: Optional[uuid.UUID] = None
     lot_number: Optional[str] = None
+    expiry_date: Optional[date] = None
+    auto_lot: bool = False
     idempotency_key: str
     notes: Optional[str] = Field(None, max_length=2000)
 
@@ -242,6 +245,11 @@ class AdjustmentResponse(BaseModel):
     created_at: datetime
     is_self_approved: bool = False
     total_value: Optional[Decimal] = None
+    # Lot posted (POSTED) or chosen / entered so far (before posting).
+    lot_id: Optional[uuid.UUID] = None
+    lot_number: Optional[str] = None
+    expiry_date: Optional[date] = None
+    auto_lot: bool = False
 
 
 class CountSessionRequest(BaseModel):
@@ -270,10 +278,22 @@ class IssueStockRequest(BaseModel):
     notes: Optional[str] = None
     idempotency_key: str
     source: str = "WEB"
+    lot_selections: Optional[List[LotPick]] = None
+    override_reason: Optional[str] = Field(None, max_length=500)
 
-    @field_validator("reason_code", "issued_to", "notes", "idempotency_key", "source", mode="before")
+    @field_validator(
+        "reason_code", "issued_to", "notes", "idempotency_key", "source", "override_reason",
+        mode="before",
+    )
     @classmethod
     def no_null_bytes(cls, v: object) -> object: return _no_null(v)
+
+
+class IssuedLot(BaseModel):
+    lot_id: uuid.UUID
+    lot_number: Optional[str] = None
+    expiry_date: Optional[date] = None
+    quantity: Decimal
 
 
 class IssueStockResponse(BaseModel):
@@ -283,6 +303,8 @@ class IssueStockResponse(BaseModel):
     quantity: Decimal
     reason_code: str
     created_at: datetime
+    lots: List[IssuedLot] = []
+    is_override: bool = False
 
 
 class LotSelection(BaseModel):
@@ -379,6 +401,10 @@ class AdjustmentListItem(BaseModel):
     created_at: datetime
     notes: Optional[str] = None
     is_self_approved: bool = False
+    lot_id: Optional[uuid.UUID] = None
+    lot_number: Optional[str] = None
+    expiry_date: Optional[date] = None
+    auto_lot: bool = False
 
 
 class ApprovalInfoResponse(BaseModel):
@@ -427,6 +453,10 @@ class AdjustmentApprovalInfoResponse(BaseModel):
     approver_escalated:        bool               = False
     can_approve:               bool
     step_label:                Optional[str]      = None
+    lot_id:                    Optional[uuid.UUID] = None
+    lot_number:                Optional[str]      = None
+    expiry_date:               Optional[date]     = None
+    auto_lot:                  bool               = False
 
 
 class AuditLogItem(BaseModel):

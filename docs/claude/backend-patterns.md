@@ -577,6 +577,92 @@ non-batch line.
 
 Real-DB proof: `python scripts/smoke_transfer_receipt.py` (rollback-only).
 
+#### Issue and Adjustment (C3)
+
+`InventoryService.issue_stock()` / `create_adjustment()` /
+`transition_adjustment()` / `approve_adjustment()` (migration 087, lot columns
+on `adjustment_orders`).
+
+- **Issue — allocation at posting**: a batch-tracked line allocates against
+  the dispatch engine (`services/dispatch_service.py`) the moment
+  `issue_stock()` runs — there is no separate approval step, since ISSUE is a
+  direct On Hand deduction. One `ISSUE` ledger row per lot, sorted by
+  `lot_id`, all sharing `reference_id = issue_ref` (a `uuid5` of tenant +
+  idempotency key); key = `<idempotency_key>:lot:<lot_id>`. A replay (rows
+  already posted for `issue_ref`) returns those rows and writes nothing — the
+  same lock order as `record_transaction()` (balance row, then lots) protects
+  the check against a concurrent duplicate. `InsufficientStockError` reports
+  `expired_qty`: the part of the shortfall sitting in lots whose
+  `expiry_date` has passed (never allocated).
+- **Issue — overrides**: a `lot_selections` body that differs from the
+  engine's own plan is an override, exactly as for transfers — FEFO needs
+  `DISPATCH_FEFO_OVERRIDE` plus a non-blank reason
+  (`OVERRIDE_REASON_REQUIRED` otherwise), FIFO/LIFO needs
+  `DISPATCH_LOT_SELECT`; either without the matching permission raises
+  `OVERRIDE_NOT_PERMITTED` (403). `routers/issue.py` resolves both checks up
+  front. A posted override writes one `lot_allocation_overrides` row with
+  `movement_type = 'ISSUE'` and `reference_id = issue_ref`.
+- **Issue — non-batch unchanged**: a single `ISSUE` row, negative quantity,
+  `lot_id` NULL, key = the plain `idempotency_key`. `lot_selections` on a
+  non-batch product is `LOT_NOT_TRACKED` (422).
+- **Adjustment — lot captured at creation, posted later**:
+  `create_adjustment()` validates the lot input against the product's
+  tracking and stores it on `adjustment_orders` (`lot_id`, `lot_number`,
+  `expiry_date`, `auto_lot`) — it never creates a lot or touches a balance.
+  `_adjustment_lot_for_post()` resolves the lot the moment the ledger INSERT
+  actually happens (self-approve at submit, or `approve_adjustment()`),
+  creating a new lot (entered number or auto lot) in the same transaction as
+  the post and writing it back to `adjustment_orders.lot_id`. `LOT_NOT_FOUND`
+  (422) if a lot chosen by `lot_id` at creation was removed before posting.
+- **Adjustment — effective sign**: `DAMAGE` / `EXPIRY` / `SUPPLIER_RETURN`
+  always force a negative quantity regardless of the sign supplied
+  (`_FORCE_NEGATIVE_REASONS`); any other reason with a negative
+  `quantity_delta` is negative on its own terms. Either way counts as the
+  "effective negative" path in `_validate_adjustment_lot()`.
+- **Adjustment — negative needs a lot**: `lot_id` is required
+  (`LOT_REQUIRED` otherwise) and must already hold enough balance at the
+  warehouse (`LOT_NOT_IN_WAREHOUSE` if it holds none there,
+  `INSUFFICIENT_LOT_STOCK` if the requested quantity exceeds what it holds).
+  An **expired** lot is explicitly allowed here — writing off expired stock
+  is the normal way an EXPIRY adjustment is done. The same
+  `INSUFFICIENT_LOT_STOCK` code can also surface at posting (the lot-level
+  floor check in `record_transaction()`) if the lot was drained by something
+  else between creation and posting — independent of, and checked after, the
+  product-level stock floor.
+- **Adjustment — positive chooses or creates a lot**: exactly one of an
+  existing `lot_id`, a new `lot_number`, or `auto_lot` (`LOT_REQUIRED` for
+  none, `LOT_INPUT_CONFLICT` for more than one). An existing lot keeps its
+  own expiry (passing `expiry_date` alongside `lot_id` is also
+  `LOT_INPUT_CONFLICT`) and may land in a warehouse it has never held stock
+  in before — `lot_balances` gets a fresh row at posting. A new lot follows
+  `receive()`'s rules (`EXPIRY_REQUIRED`, `EXPIRY_IN_PAST`,
+  `LOT_EXPIRY_MISMATCH` on a reused number with a different expiry) but is
+  only actually created in `_adjustment_lot_for_post()`, at posting.
+- **Both posting paths covered**: self-approval at submit
+  (`transition_adjustment()`, DRAFT → PENDING_APPROVAL) and the
+  `POST /adjustments/{id}/approve` route both end by calling
+  `record_transaction()` with the resolved lot and updating
+  `adjustment_orders.lot_id`/status identically. Which path a given tenant
+  uses depends entirely on whether `adjustment_approval_rules` has a matching
+  active row for the submitter's `(role_code, level_number, reason_code)` —
+  `check_adjustment_self_approval()` returns `(False, None, None)` with no
+  match (or immediately, if `level_number` is `None`), which routes to
+  PENDING_APPROVAL every time. The permanent `zz-e2e-ta` smoke tenant has no
+  `adjustment_approval_rules` rows of its own, so its real users (`level_number
+  = None`) never self-approve — `scripts/smoke_issue_adjust_lots.py` scenarios
+  A1-A7 all post via the approve-route for that reason. The script's A8
+  scenario installs one temporary `adjustment_approval_rules` row (`role_code
+  = 'WM'`, `level_number = 99`, `reason_code` NULL/GLOBAL, generous limits —
+  rolled back with everything else) and calls `create_adjustment()` /
+  `transition_adjustment()` under a matching user, so the self-approve-at-submit
+  path is exercised too, end to end.
+
+Real-DB proof: `python scripts/smoke_issue_adjust_lots.py` (rollback-only).
+
+> **Phase D note**: blocking expired lots on a *manual* pick (an operator
+> selecting an expired lot by hand) must not apply to Adjustment — an
+> expired lot is the normal, intended target of an EXPIRY write-off.
+
 
 ## 17. Workflow State Machines
 

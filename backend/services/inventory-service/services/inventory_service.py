@@ -33,6 +33,7 @@ from schemas.inventory import (
     AdjustStockResponse,
     CountSessionRequest,
     CountSessionResponse,
+    IssuedLot,
     IssueStockRequest,
     IssueStockResponse,
     ReceiveStockRequest,
@@ -45,7 +46,17 @@ from schemas.inventory import (
     TransferOrderResponse,
 )
 from services import transfer_discrepancies, transfer_lots
-from services.dispatch_service import DispatchError, InsufficientStockError
+from services.dispatch_service import (
+    DispatchError,
+    InsufficientStockError,
+    allocate,
+    load_candidate_lots,
+    load_product,
+    plan_allocation,
+    record_override,
+    resolve_strategy,
+    validate_manual_selection,
+)
 from services.state_machine import InvalidStateTransitionError, validate_transition
 from shared.permissions.audit import audit_log
 
@@ -426,33 +437,231 @@ class InventoryService:
             source=body.source,
         )
 
-    async def issue_stock(self, user: Any, body: IssueStockRequest) -> IssueStockResponse:
+    async def _issued_rows(self, tenant_id: str, issue_ref: str) -> list[Any]:
+        """ISSUE ledger rows already posted for this issue_ref, ordered by lot_id."""
+        return list((await self.db.execute(
+            text(
+                "SELECT id, lot_id, lot_number, expiry_date, quantity "
+                "FROM inventory_transactions "
+                "WHERE tenant_id = :tid AND type = 'ISSUE' AND reference_id = :ref "
+                "ORDER BY lot_id"
+            ),
+            {"tid": tenant_id, "ref": issue_ref},
+        )).fetchall())
+
+    async def _issue_replay(
+        self, tenant_id: str, issue_ref: str, body: IssueStockRequest, rows: list[Any]
+    ) -> IssueStockResponse:
+        """The response of an Issue that was already posted — nothing is written."""
+        from datetime import datetime, timezone
+
+        override_row = (await self.db.execute(
+            text(
+                "SELECT id FROM lot_allocation_overrides "
+                "WHERE tenant_id = :tid AND movement_type = 'ISSUE' AND reference_id = :ref "
+                "LIMIT 1"
+            ),
+            {"tid": tenant_id, "ref": issue_ref},
+        )).fetchone()
+        lots = [
+            IssuedLot(
+                lot_id=r.lot_id,
+                lot_number=r.lot_number,
+                expiry_date=r.expiry_date,
+                quantity=abs(Decimal(str(r.quantity))),
+            )
+            for r in rows
+        ]
+        return IssueStockResponse(
+            transaction_id=UUID(str(rows[0].id)),
+            product_id=body.product_id,
+            warehouse_id=body.warehouse_id,
+            quantity=sum((l.quantity for l in lots), Decimal("0")),
+            reason_code=body.reason_code,
+            created_at=datetime.now(timezone.utc),
+            lots=lots,
+            is_override=override_row is not None,
+        )
+
+    async def issue_stock(
+        self,
+        user: Any,
+        body: IssueStockRequest,
+        *,
+        can_fefo_override: bool = False,
+        can_lot_select: bool = False,
+    ) -> IssueStockResponse:
         """Issue stock out of a warehouse — direct On Hand deduction, no reservation step.
 
-        ISSUE is always a single ledger INSERT with a negative quantity.
         No RESERVE transaction is created at any point in the workflow.
         If quantity exceeds the tenant approval threshold, the caller must
         route through the adjustment approval workflow instead.
+
+        Non-batch product: a single ISSUE ledger INSERT with a negative quantity,
+        key = body.idempotency_key. lot_selections → 422 LOT_NOT_TRACKED.
+
+        Batch product: one ISSUE row per lot, sorted by lot_id, key
+        f"{body.idempotency_key}:lot:{lot_id}", all sharing reference_id =
+        issue_ref (uuid5 of tenant + idempotency_key). The lots come from the
+        dispatch engine (allocate) or from body.lot_selections. A selection that
+        differs from the engine's order is an override: FEFO needs
+        can_fefo_override (and a reason), FIFO/LIFO needs can_lot_select; it is
+        logged in lot_allocation_overrides with movement_type="ISSUE". A replay
+        (ISSUE rows already exist for issue_ref) returns those rows and writes
+        nothing.
+
+        Lock order is the same as record_transaction(): the product balance row
+        first, then the lot_balances rows (ORDER BY lot_id).
+
+        PERMISSIONS: the override flags are resolved by the router.
         """
-        tx_id = await record_transaction(
-            self.db,
-            tenant_id=str(user.tenant_id),
-            transaction_type="ISSUE",
-            product_id=str(body.product_id),
-            warehouse_id=str(body.warehouse_id),
-            quantity=-abs(body.quantity),   # always a deduction
-            performed_by=str(user.user_id),
-            idempotency_key=body.idempotency_key,
+        from datetime import datetime, timezone
+
+        tenant_id, user_id = str(user.tenant_id), str(user.user_id)
+        product_id, warehouse_id = str(body.product_id), str(body.warehouse_id)
+        qty = abs(body.quantity)
+
+        product = await load_product(self.db, tenant_id, product_id)
+
+        if not product.batch_tracking:
+            if body.lot_selections:
+                raise transfer_lots.http_from_engine(DispatchError("LOT_NOT_TRACKED"))
+            tx_id = await record_transaction(
+                self.db,
+                tenant_id=tenant_id,
+                transaction_type="ISSUE",
+                product_id=product_id,
+                warehouse_id=warehouse_id,
+                quantity=-qty,   # always a deduction
+                performed_by=user_id,
+                idempotency_key=body.idempotency_key,
+            )
+            return IssueStockResponse(
+                transaction_id=UUID(tx_id),
+                product_id=body.product_id,
+                warehouse_id=body.warehouse_id,
+                quantity=body.quantity,
+                reason_code=body.reason_code,
+                created_at=datetime.now(timezone.utc),
+            )
+
+        # Stable per request: every lot row of this Issue carries it as reference_id.
+        issue_ref = str(
+            uuid.uuid5(uuid.NAMESPACE_URL, f"issue:{tenant_id}:{body.idempotency_key}")
         )
 
-        from datetime import datetime, timezone
+        # Replay check first — an Issue already posted is returned as it was.
+        posted = await self._issued_rows(tenant_id, issue_ref)
+        if posted:
+            return await self._issue_replay(tenant_id, issue_ref, body, posted)
+
+        # Same lock order as record_transaction(): balance row first, then lots.
+        await self.db.execute(
+            text(
+                "SELECT id FROM inventory_balances "
+                "WHERE tenant_id = :tid AND product_id = :pid AND warehouse_id = :wid FOR UPDATE"
+            ),
+            {"tid": tenant_id, "pid": product_id, "wid": warehouse_id},
+        )
+
+        # A concurrent request with the same key may have posted while this one
+        # waited for the lock — look again before allocating a second time.
+        posted = await self._issued_rows(tenant_id, issue_ref)
+        if posted:
+            return await self._issue_replay(tenant_id, issue_ref, body, posted)
+
+        strategy, _ = resolve_strategy(
+            product.batch_tracking, product.expiry_tracking, product.dispatch_strategy
+        )
+        chosen = body.lot_selections or None
+        is_override = False
+
+        try:
+            if chosen is None:
+                try:
+                    plan = await allocate(
+                        self.db, tenant_id, product_id, warehouse_id, qty, strategy
+                    )
+                except InsufficientStockError as exc:
+                    # Tell the caller how much of the shortfall is sitting in expired lots.
+                    lots = await load_candidate_lots(
+                        self.db, tenant_id, product_id, warehouse_id, lock=False
+                    )
+                    exc.expired_qty = sum(  # type: ignore[attr-defined]
+                        (l.quantity for l in plan_allocation(lots, qty, strategy).expired_skipped),
+                        Decimal("0"),
+                    )
+                    raise
+                allocs = sorted(
+                    (
+                        transfer_lots.Alloc(l.lot_id, l.lot_number, l.expiry_date, l.quantity)
+                        for l in plan.lines
+                    ),
+                    key=lambda a: a.lot_id,
+                )
+            else:
+                plan, is_override = await validate_manual_selection(
+                    self.db, tenant_id, product_id, warehouse_id, qty, chosen, strategy, lock=True
+                )
+                if is_override:
+                    permitted = can_fefo_override if strategy == "FEFO" else can_lot_select
+                    if not permitted:
+                        raise DispatchError("OVERRIDE_NOT_PERMITTED", strategy=strategy)
+                    await record_override(
+                        self.db,
+                        tenant_id=tenant_id,
+                        user_id=user_id,
+                        product_id=product_id,
+                        warehouse_id=warehouse_id,
+                        strategy=strategy,
+                        movement_type="ISSUE",
+                        reference_id=issue_ref,
+                        qty=qty,
+                        plan=plan,
+                        chosen=chosen,
+                        reason=body.override_reason,
+                    )
+                # The lots posted are the user's chosen lots, not the plan.
+                allocs = await transfer_lots._chosen_allocs(
+                    self.db, tenant_id, product_id, chosen
+                )
+        except (DispatchError, InsufficientStockError) as e:
+            raise transfer_lots.http_from_engine(e) from e
+
+        tx_ids: list[str] = []
+        for alloc in allocs:   # sorted by lot_id
+            tx_ids.append(await record_transaction(
+                self.db,
+                tenant_id=tenant_id,
+                transaction_type="ISSUE",
+                product_id=product_id,
+                warehouse_id=warehouse_id,
+                quantity=-alloc.quantity,   # always a deduction
+                performed_by=user_id,
+                idempotency_key=f"{body.idempotency_key}:lot:{alloc.lot_id}",
+                reference_id=issue_ref,
+                lot_id=alloc.lot_id,
+                lot_number=alloc.lot_number,
+                expiry_date=alloc.expiry_date,
+            ))
+
         return IssueStockResponse(
-            transaction_id=UUID(tx_id),
+            transaction_id=UUID(tx_ids[0]),
             product_id=body.product_id,
             warehouse_id=body.warehouse_id,
             quantity=body.quantity,
             reason_code=body.reason_code,
             created_at=datetime.now(timezone.utc),
+            lots=[
+                IssuedLot(
+                    lot_id=UUID(a.lot_id),
+                    lot_number=a.lot_number,
+                    expiry_date=a.expiry_date,
+                    quantity=a.quantity,
+                )
+                for a in allocs
+            ],
+            is_override=is_override,
         )
 
     async def adjust(self, user: Any, body: AdjustStockRequest) -> AdjustStockResponse:
@@ -520,6 +729,10 @@ class InventoryService:
             else body.quantity
         )
 
+        lot_id, lot_number, expiry_date = await self._adjustment_lot_for_post(
+            user, adjustment_id
+        )
+
         tx_id = await record_transaction(
             self.db,
             tenant_id=str(user.tenant_id),
@@ -530,6 +743,9 @@ class InventoryService:
             performed_by=str(user.user_id),
             idempotency_key=body.idempotency_key,
             reference_id=str(adjustment_id),
+            lot_id=lot_id,
+            lot_number=lot_number,
+            expiry_date=expiry_date,
         )
 
         # APPROVED → POSTED (terminal state)
@@ -548,6 +764,7 @@ class InventoryService:
                 "quantity_delta": str(quantity),
                 "reason_code": body.reason_code.value,
                 "transaction_id": str(tx_id),
+                "lot_id": lot_id,
             },
             "GRANTED",
         )
@@ -558,6 +775,9 @@ class InventoryService:
             status="POSTED",
             quantity_delta=quantity,
             created_at=datetime.now(timezone.utc),
+            lot_id=UUID(lot_id) if lot_id else None,
+            lot_number=lot_number,
+            expiry_date=expiry_date,
         )
 
     async def _get_factory_subtree(self, tenant_id: str, factory_node_id: str) -> set[str]:
@@ -1843,6 +2063,8 @@ class InventoryService:
                 created_at=existing.created_at or datetime.now(timezone.utc),
             )
 
+        lot = await self._validate_adjustment_lot(user, body)
+
         adj_id = uuid.uuid4()
         now = datetime.now(timezone.utc)
 
@@ -1850,8 +2072,10 @@ class InventoryService:
             text(
                 "INSERT INTO adjustment_orders "
                 "(id, tenant_id, warehouse_id, product_id, quantity_delta, "
-                " reason_code, status, idempotency_key, notes, created_by) "
-                "VALUES (:id, :tid, :wid, :pid, :delta, :reason, 'DRAFT', :key, :notes, :uid)"
+                " reason_code, status, idempotency_key, notes, created_by, "
+                " lot_id, lot_number, expiry_date, auto_lot) "
+                "VALUES (:id, :tid, :wid, :pid, :delta, :reason, 'DRAFT', :key, :notes, :uid, "
+                "        :lot_id, :lot_number, :expiry_date, :auto_lot)"
             ),
             {
                 "id": str(adj_id),
@@ -1863,6 +2087,10 @@ class InventoryService:
                 "key": body.idempotency_key,
                 "notes": body.notes,
                 "uid": str(user.user_id),
+                "lot_id": lot["lot_id"],
+                "lot_number": lot["lot_number"],
+                "expiry_date": lot["expiry_date"],
+                "auto_lot": lot["auto_lot"],
             },
         )
 
@@ -1875,6 +2103,12 @@ class InventoryService:
                 "warehouse_id": str(body.warehouse_id),
                 "quantity_delta": str(body.quantity_delta),
                 "reason_code": body.reason_code.value,
+                "lot_id": lot["lot_id"],
+                "lot_number": lot["lot_number"],
+                "expiry_date": (
+                    lot["expiry_date"].isoformat() if lot["expiry_date"] else None
+                ),
+                "auto_lot": lot["auto_lot"],
             },
             "GRANTED",
         )
@@ -1884,7 +2118,249 @@ class InventoryService:
             status="DRAFT",
             quantity_delta=body.quantity_delta,
             created_at=now,
+            lot_id=UUID(lot["lot_id"]) if lot["lot_id"] else None,
+            lot_number=lot["shown_lot_number"],
+            expiry_date=lot["shown_expiry_date"],
+            auto_lot=lot["auto_lot"],
         )
+
+    async def _validate_adjustment_lot(
+        self, user: Any, body: AdjustmentRequest
+    ) -> dict[str, Any]:
+        """Check the lot input of a new adjustment against the product's tracking.
+
+        Read-only — a new lot is never created here, only at posting
+        (_adjustment_lot_for_post). Returns the four values stored on the
+        adjustment_orders row (lot_id, lot_number, expiry_date, auto_lot) plus
+        shown_lot_number / shown_expiry_date for the response (the chosen lot's
+        own number and expiry when lot_id is given).
+        """
+        from datetime import date as _date
+        from fastapi import HTTPException
+
+        tenant_id = str(user.tenant_id)
+        product_id = str(body.product_id)
+
+        product_row = (await self.db.execute(
+            text(
+                "SELECT batch_tracking, expiry_tracking FROM products "
+                "WHERE id = :pid AND tenant_id = :tid"
+            ),
+            {"pid": product_id, "tid": tenant_id},
+        )).fetchone()
+        if product_row is None:
+            raise HTTPException(status_code=404, detail={"code": "PRODUCT_NOT_FOUND"})
+
+        none: dict[str, Any] = {
+            "lot_id": None, "lot_number": None, "expiry_date": None, "auto_lot": False,
+            "shown_lot_number": None, "shown_expiry_date": None,
+        }
+
+        if not product_row.batch_tracking:
+            if (
+                body.lot_id is not None
+                or (body.lot_number or "").strip()
+                or body.expiry_date is not None
+                or body.auto_lot
+            ):
+                raise HTTPException(status_code=422, detail={"code": "LOT_NOT_TRACKED"})
+            return none
+
+        # The sign that will actually post — e.g. DAMAGE with +5 posts -5.
+        effective_negative = (
+            body.reason_code.value in _FORCE_NEGATIVE_REASONS or body.quantity_delta < 0
+        )
+        has_number = body.lot_number is not None
+
+        async def _existing_lot() -> Any:
+            lot_row = (await self.db.execute(
+                text(
+                    "SELECT id, lot_number, expiry_date FROM stock_lots "
+                    "WHERE id = :lid AND tenant_id = :tid AND product_id = :pid"
+                ),
+                {"lid": str(body.lot_id), "tid": tenant_id, "pid": product_id},
+            )).fetchone()
+            if lot_row is None:
+                raise HTTPException(status_code=422, detail={"code": "LOT_NOT_FOUND"})
+            return lot_row
+
+        if effective_negative:
+            if body.lot_id is None:
+                raise HTTPException(status_code=422, detail={"code": "LOT_REQUIRED"})
+            if has_number or body.expiry_date is not None or body.auto_lot:
+                raise HTTPException(status_code=422, detail={"code": "LOT_INPUT_CONFLICT"})
+
+            lot_row = await _existing_lot()
+
+            balance_row = (await self.db.execute(
+                text(
+                    "SELECT quantity FROM lot_balances "
+                    "WHERE tenant_id = :tid AND lot_id = :lid AND warehouse_id = :wid"
+                ),
+                {"tid": tenant_id, "lid": str(body.lot_id), "wid": str(body.warehouse_id)},
+            )).fetchone()
+            available = (
+                Decimal(str(balance_row.quantity)) if balance_row is not None else Decimal("0")
+            )
+            if available <= 0:
+                raise HTTPException(status_code=422, detail={"code": "LOT_NOT_IN_WAREHOUSE"})
+
+            # An EXPIRED lot is allowed on purpose — this is how expired stock
+            # is written off.
+            requested = abs(body.quantity_delta)
+            if requested > available:
+                raise HTTPException(
+                    status_code=422,
+                    detail={
+                        "code": "INSUFFICIENT_LOT_STOCK",
+                        "lot_id": str(body.lot_id),
+                        "warehouse_id": str(body.warehouse_id),
+                        "available": float(available),
+                        "requested": float(requested),
+                    },
+                )
+
+            return {
+                **none,
+                "lot_id": str(body.lot_id),
+                "shown_lot_number": lot_row.lot_number,
+                "shown_expiry_date": lot_row.expiry_date,
+            }
+
+        # Addition: exactly one of an existing lot, a new lot number, an auto lot.
+        chosen = sum([body.lot_id is not None, has_number, bool(body.auto_lot)])
+        if chosen == 0:
+            raise HTTPException(status_code=422, detail={"code": "LOT_REQUIRED"})
+        if chosen > 1:
+            raise HTTPException(status_code=422, detail={"code": "LOT_INPUT_CONFLICT"})
+
+        if body.lot_id is not None:
+            # The lot keeps its own expiry (it may sit at any warehouse).
+            if body.expiry_date is not None:
+                raise HTTPException(status_code=422, detail={"code": "LOT_INPUT_CONFLICT"})
+            lot_row = await _existing_lot()
+            return {
+                **none,
+                "lot_id": str(body.lot_id),
+                "shown_lot_number": lot_row.lot_number,
+                "shown_expiry_date": lot_row.expiry_date,
+            }
+
+        # A new lot — same rules as receive().
+        lot_number: Optional[str] = None
+        if has_number:
+            lot_number = (body.lot_number or "").strip()
+            if not lot_number:
+                raise HTTPException(status_code=422, detail={"code": "LOT_NUMBER_REQUIRED"})
+
+        expiry_date = body.expiry_date
+        if product_row.expiry_tracking and not expiry_date:
+            raise HTTPException(status_code=422, detail={"code": "EXPIRY_REQUIRED"})
+        if expiry_date is not None and expiry_date < _date.today():
+            raise HTTPException(status_code=422, detail={"code": "EXPIRY_IN_PAST"})
+
+        if lot_number is not None:
+            same_number = (await self.db.execute(
+                text(
+                    "SELECT id, expiry_date FROM stock_lots "
+                    "WHERE tenant_id = :tid AND product_id = :pid AND lot_number = :lot"
+                ),
+                {"tid": tenant_id, "pid": product_id, "lot": lot_number},
+            )).fetchone()
+            if same_number is not None and same_number.expiry_date != expiry_date:
+                existing_expiry = same_number.expiry_date
+                raise HTTPException(
+                    status_code=422,
+                    detail={
+                        "code": "LOT_EXPIRY_MISMATCH",
+                        "lot_number": lot_number,
+                        "existing_expiry": (
+                            existing_expiry.isoformat() if existing_expiry else None
+                        ),
+                        "given_expiry": expiry_date.isoformat() if expiry_date else None,
+                    },
+                )
+
+        return {
+            "lot_id": None,
+            "lot_number": lot_number,
+            "expiry_date": expiry_date,
+            "auto_lot": bool(body.auto_lot),
+            "shown_lot_number": lot_number,
+            "shown_expiry_date": expiry_date,
+        }
+
+    async def _adjustment_lot_for_post(
+        self, user: Any, adjustment_id: UUID
+    ) -> tuple[Optional[str], Optional[str], Optional[Any]]:
+        """Resolve the lot an adjustment posts against: (lot_id, lot_number, expiry_date).
+
+        Non-batch product → (None, None, None). A new lot (entered number or
+        auto lot) is created here, in the same transaction as the ledger INSERT
+        that follows, and written back to adjustment_orders.lot_id so the row
+        shows the posted lot. A failed post rolls the new lot back with it.
+        """
+        from fastapi import HTTPException
+
+        tenant_id = str(user.tenant_id)
+
+        row = (await self.db.execute(
+            text(
+                "SELECT ao.product_id, ao.lot_id, ao.lot_number, ao.expiry_date, "
+                "       ao.auto_lot, p.batch_tracking "
+                "FROM adjustment_orders ao "
+                "JOIN products p ON p.id = ao.product_id AND p.tenant_id = ao.tenant_id "
+                "WHERE ao.id = :id AND ao.tenant_id = :tid"
+            ),
+            {"id": str(adjustment_id), "tid": tenant_id},
+        )).fetchone()
+        if row is None or not row.batch_tracking:
+            return None, None, None
+
+        if row.lot_id is not None:
+            lot_row = (await self.db.execute(
+                text(
+                    "SELECT lot_number, expiry_date FROM stock_lots "
+                    "WHERE id = :lid AND tenant_id = :tid"
+                ),
+                {"lid": str(row.lot_id), "tid": tenant_id},
+            )).fetchone()
+            if lot_row is None:
+                raise HTTPException(status_code=422, detail={"code": "LOT_NOT_FOUND"})
+            return str(row.lot_id), lot_row.lot_number, lot_row.expiry_date
+
+        if row.lot_number is not None:
+            # Raises LOT_EXPIRY_MISMATCH if the lot changed since creation.
+            lot_id = await get_or_create_lot(
+                self.db,
+                tenant_id=tenant_id,
+                product_id=str(row.product_id),
+                lot_number=row.lot_number,
+                expiry_date=row.expiry_date,
+                performed_by=str(user.user_id),
+            )
+            lot_number = row.lot_number
+        elif row.auto_lot:
+            lot_id, lot_number = await create_auto_lot(
+                self.db,
+                tenant_id=tenant_id,
+                product_id=str(row.product_id),
+                expiry_date=row.expiry_date,
+                performed_by=str(user.user_id),
+            )
+        else:
+            # No lot on the row (created before the product was batch-tracked) —
+            # record_transaction's lot guard rejects it with LOT_REQUIRED.
+            return None, None, None
+
+        await self.db.execute(
+            text(
+                "UPDATE adjustment_orders SET lot_id = :lot_id, updated_at = now() "
+                "WHERE id = :id"
+            ),
+            {"lot_id": lot_id, "id": str(adjustment_id)},
+        )
+        return lot_id, lot_number, row.expiry_date
 
     async def transition_adjustment(
         self, user: Any, adjustment_id: UUID, next_state: str
@@ -1993,6 +2469,10 @@ class InventoryService:
                     else Decimal(str(row.quantity_delta))
                 )
 
+                lot_id, lot_number, expiry_date = await self._adjustment_lot_for_post(
+                    user, adjustment_id
+                )
+
                 tx_id = await record_transaction(
                     self.db,
                     tenant_id=str(user.tenant_id),
@@ -2003,6 +2483,9 @@ class InventoryService:
                     performed_by=str(user.user_id),
                     idempotency_key=f"adj:{adjustment_id}:self_approve",
                     reference_id=str(adjustment_id),
+                    lot_id=lot_id,
+                    lot_number=lot_number,
+                    expiry_date=expiry_date,
                 )
 
                 await self.db.execute(
@@ -2036,6 +2519,7 @@ class InventoryService:
                         "total_value": str(total_value),
                         "reason_code": row.reason_code,
                         "transaction_id": str(tx_id),
+                        "lot_id": lot_id,
                         "policy": {
                             "role_code": str(user.role),
                             "level_number": getattr(user, "level_number", None),
@@ -2053,6 +2537,9 @@ class InventoryService:
                     created_at=datetime.now(timezone.utc),
                     is_self_approved=True,
                     total_value=total_value,
+                    lot_id=UUID(lot_id) if lot_id else None,
+                    lot_number=lot_number,
+                    expiry_date=expiry_date,
                 )
             # Not self-approved — fall through to PENDING_APPROVAL.
             # Log which role/position will handle approval so the audit trail is complete.
@@ -2126,6 +2613,22 @@ class InventoryService:
                 ),
             )
 
+        # Lot chosen or entered so far (nothing is posted on this path).
+        shown_lot_id = getattr(row, "lot_id", None)
+        shown_lot_number = getattr(row, "lot_number", None)
+        shown_expiry_date = getattr(row, "expiry_date", None)
+        if shown_lot_id is not None:
+            lot_row = (await self.db.execute(
+                text(
+                    "SELECT lot_number, expiry_date FROM stock_lots "
+                    "WHERE id = :lid AND tenant_id = :tid"
+                ),
+                {"lid": str(shown_lot_id), "tid": str(user.tenant_id)},
+            )).fetchone()
+            if lot_row is not None:
+                shown_lot_number = lot_row.lot_number
+                shown_expiry_date = lot_row.expiry_date
+
         from datetime import datetime, timezone
         return AdjustmentResponse(
             adjustment_id=adjustment_id,
@@ -2134,6 +2637,10 @@ class InventoryService:
             created_at=datetime.now(timezone.utc),
             is_self_approved=bool(row.is_self_approved),
             total_value=Decimal(str(row.total_value)) if row.total_value is not None else None,
+            lot_id=shown_lot_id,
+            lot_number=shown_lot_number,
+            expiry_date=shown_expiry_date,
+            auto_lot=bool(getattr(row, "auto_lot", False)),
         )
 
     async def get_adjustment_approval_info(
@@ -2151,10 +2658,16 @@ class InventoryService:
 
         row = (await self.db.execute(
             text(
-                "SELECT id, status, created_by, product_override_applied, "
-                "       required_approver_user_id, required_approver_name, "
-                "       approver_escalated "
-                "FROM adjustment_orders WHERE id = :id AND tenant_id = :tid"
+                "SELECT ao.id, ao.status, ao.created_by, ao.product_override_applied, "
+                "       ao.required_approver_user_id, ao.required_approver_name, "
+                "       ao.approver_escalated, ao.lot_id, ao.auto_lot, "
+                "       CASE WHEN ao.lot_id IS NOT NULL THEN sl.lot_number "
+                "            ELSE ao.lot_number END AS lot_number, "
+                "       CASE WHEN ao.lot_id IS NOT NULL THEN sl.expiry_date "
+                "            ELSE ao.expiry_date END AS expiry_date "
+                "FROM adjustment_orders ao "
+                "LEFT JOIN stock_lots sl ON sl.id = ao.lot_id "
+                "WHERE ao.id = :id AND ao.tenant_id = :tid"
             ),
             {"id": str(adjustment_id), "tid": str(user.tenant_id)},
         )).fetchone()
@@ -2200,6 +2713,10 @@ class InventoryService:
             approver_escalated=escalated,
             can_approve=can_approve,
             step_label=step_label,
+            lot_id=row.lot_id,
+            lot_number=row.lot_number,
+            expiry_date=row.expiry_date,
+            auto_lot=bool(row.auto_lot),
         )
 
     async def create_count_session(
@@ -2386,11 +2903,18 @@ class InventoryService:
                 ao.created_by::text AS created_by,
                 ao.created_at,
                 ao.notes,
-                ao.is_self_approved
+                ao.is_self_approved,
+                ao.lot_id,
+                CASE WHEN ao.lot_id IS NOT NULL THEN sl.lot_number
+                     ELSE ao.lot_number END  AS lot_number,
+                CASE WHEN ao.lot_id IS NOT NULL THEN sl.expiry_date
+                     ELSE ao.expiry_date END AS expiry_date,
+                ao.auto_lot
             FROM adjustment_orders ao
             JOIN products          p  ON p.id  = ao.product_id
             LEFT JOIN warehouses   w  ON w.id  = ao.warehouse_id
             LEFT JOIN organization_node wn ON wn.id = ao.warehouse_id
+            LEFT JOIN stock_lots   sl ON sl.id = ao.lot_id
             WHERE ao.tenant_id = :tid
               {wh_filter}
             ORDER BY ao.created_at DESC
@@ -2414,6 +2938,10 @@ class InventoryService:
                 created_at=r.created_at,
                 notes=r.notes,
                 is_self_approved=bool(r.is_self_approved),
+                lot_id=r.lot_id,
+                lot_number=r.lot_number,
+                expiry_date=r.expiry_date,
+                auto_lot=bool(r.auto_lot),
             )
             for r in rows
         ]
