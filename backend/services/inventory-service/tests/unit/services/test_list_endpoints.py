@@ -1,7 +1,7 @@
 """Unit tests for list_transfers() and list_adjustments() role-scoped filtering.
 
 Tests verify:
-1. WM role: SQL contains warehouse_id filter restricting results to their facility.
+1. WM role: SQL contains a node-subtree filter restricting results to their facility.
 2. NM/TA role: SQL does NOT contain warehouse_id filter — sees all tenant transfers.
 3. Response shape is correct for both endpoints.
 """
@@ -96,10 +96,11 @@ def _make_adj_row() -> MagicMock:
 class TestListTransfersScopedByRole:
 
     async def test_wm_list_includes_warehouse_filter_in_params(self) -> None:
-        """list_transfers() for a WM must pass their warehouse_id into the SQL params.
+        """list_transfers() for a WM must pass its node subtree into the SQL params.
 
         The wh_filter clause restricts results to transfers where
-        from_warehouse_id = :wid OR to_warehouse_id = :wid.
+        from_warehouse_id = ANY(:subtree) OR to_warehouse_id = ANY(:subtree)
+        (RB-2 — subtree via get_descendant_node_ids, not a raw equality).
         """
         session = AsyncMock()
         # First execute: transfer rows; second execute (per transfer): line rows
@@ -109,15 +110,19 @@ class TestListTransfersScopedByRole:
         ])
 
         svc = InventoryService(session)
-        results = await svc.list_transfers(WM_USER)
+        with patch(
+            "services.transfer_discrepancies.get_descendant_node_ids",
+            new=AsyncMock(return_value={WAREHOUSE_A}),
+        ):
+            results = await svc.list_transfers(WM_USER)
 
-        # Verify the first execute (list query) received warehouse_id in params
+        # Verify the first execute (list query) received the subtree in params
         list_call = session.execute.call_args_list[0]
         params = list_call.args[1] if len(list_call.args) > 1 else list_call.kwargs.get("params", {})
-        assert "wid" in params, (
-            "WM list_transfers must include 'wid' (warehouse_id) in SQL params"
+        assert "subtree" in params, (
+            "WM list_transfers must include 'subtree' (node subtree) in SQL params"
         )
-        assert params["wid"] == WAREHOUSE_A
+        assert params["subtree"] == [WAREHOUSE_A]
 
         # SQL text must contain the warehouse filter clause
         sql_text = str(list_call.args[0])

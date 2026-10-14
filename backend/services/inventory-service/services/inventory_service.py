@@ -46,6 +46,7 @@ from schemas.inventory import (
     TransferOrderResponse,
 )
 from services import transfer_discrepancies, transfer_lots
+from services.transfer_discrepancies import _FACILITY_SCOPED_ROLES, _inside, _subtree
 from services.dispatch_service import (
     DispatchError,
     InsufficientStockError,
@@ -2010,6 +2011,13 @@ class InventoryService:
             from fastapi import HTTPException
             raise HTTPException(status_code=404, detail="Transfer not found")
 
+        scope = await self._transfer_scope(user)
+        if scope is not None and not (
+            _inside(scope, [row.from_warehouse_id]) or _inside(scope, [row.to_warehouse_id])
+        ):
+            from fastapi import HTTPException
+            raise HTTPException(status_code=403, detail={"code": "TRANSFER_OUT_OF_SCOPE"})
+
         _allocs = await transfer_lots.load_allocations(self.db, row.tenant_id, transfer_id)
         _discrepancies = await transfer_discrepancies.load_discrepancies(
             self.db, row.tenant_id, transfer_id
@@ -2796,21 +2804,41 @@ class InventoryService:
             for line in line_rows
         ]
 
+    async def _transfer_scope(self, user: Any) -> Optional[set[str]]:
+        """The lowercased node subtree whose transfers the caller sees; None means
+        the whole tenant. Same rules as transfer_discrepancies.list_discrepancies:
+          WM / LM / SA_GT / RT  their subtree; no node -> empty set (nothing)
+          RM                    its subtree; no node -> the whole tenant
+          TA / NM / SA / AU     the whole tenant
+        """
+        role = getattr(user, "role", None)
+        node_id = getattr(user, "warehouse_id", None)
+        if role in _FACILITY_SCOPED_ROLES and not node_id:
+            return set()
+        if node_id and (role in _FACILITY_SCOPED_ROLES or role == "RM"):
+            return await _subtree(self.db, str(user.tenant_id), node_id)
+        return None
+
     async def list_transfers(
         self, user: Any, page: int = 1, limit: int = 50
     ) -> list[TransferListItem]:
-        """List transfers scoped by role.
-
-        WM: sees only transfers involving their assigned warehouse (source or destination).
-        All other roles: see all transfers for the tenant.
+        """List transfers in the caller's scope (see _transfer_scope) — a transfer
+        is in scope when either end is in the caller's node subtree.
         """
+        scope = await self._transfer_scope(user)
+        if scope is not None and not scope:
+            return []
+
         offset = (page - 1) * limit
         params: dict = {"tid": str(user.tenant_id), "offset": offset, "limit": limit}
 
         wh_filter = ""
-        if user.role == "WM" and user.warehouse_id:
-            wh_filter = "AND (to_.from_warehouse_id = :wid OR to_.to_warehouse_id = :wid)"
-            params["wid"] = str(user.warehouse_id)
+        if scope is not None:
+            wh_filter = (
+                "AND (to_.from_warehouse_id = ANY(:subtree) "
+                "OR to_.to_warehouse_id = ANY(:subtree))"
+            )
+            params["subtree"] = sorted(scope)
 
         sql = text(f"""
             SELECT

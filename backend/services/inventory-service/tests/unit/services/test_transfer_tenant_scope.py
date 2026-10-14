@@ -1,13 +1,18 @@
-"""Transfer lookups by id are tenant-filtered.
+"""Transfer lookups by id are tenant-filtered, and transfer list / detail are
+scoped to the caller's node subtree (RB-2).
 
 A transfer that belongs to another tenant answers 404 "Transfer not found",
 exactly as a missing id does — get_transfer and transition_transfer alike.
+A same-tenant transfer outside the caller's subtree is left out of the list
+and answers 403 TRANSFER_OUT_OF_SCOPE on detail.
 """
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import datetime, timezone
+from types import SimpleNamespace
 from typing import Any
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import UUID
 
 import pytest
@@ -95,3 +100,202 @@ class TestTransferLookupTenantFilter:
             )
         assert exc.value.status_code == 404
         assert exc.value.detail == "Transfer not found"
+
+
+# ── Node-subtree scoping for list and detail (RB-2) ──────────────────────────
+#
+#   REGION ─┬─ WH_A
+#           └─ WH_B          WH_C, WH_D, WH_E sit outside REGION
+#
+#   T_AB  WH_A -> WH_B   (from end in WH_A's subtree)
+#   T_CA  WH_C -> WH_A   (to end in WH_A's subtree)
+#   T_CD  WH_C -> WH_D   (outside REGION)
+
+REGION = "30000000-0000-0000-0000-0000000000aa"
+WH_A   = "30000000-0000-0000-0000-00000000000a"
+WH_B   = "30000000-0000-0000-0000-00000000000b"
+WH_C   = "30000000-0000-0000-0000-00000000000c"
+WH_D   = "30000000-0000-0000-0000-00000000000d"
+WH_E   = "30000000-0000-0000-0000-00000000000e"
+
+T_AB = UUID("dddddddd-0000-0000-0000-0000000000ab")
+T_CA = UUID("dddddddd-0000-0000-0000-0000000000ca")
+T_CD = UUID("dddddddd-0000-0000-0000-0000000000cd")
+
+_CREATED_AT = datetime(2026, 9, 1, 8, 30, tzinfo=timezone.utc)
+
+# Subtrees as get_descendant_node_ids returns them — upper-cased on purpose:
+# the scope check must lowercase both sides.
+_SUBTREES = {
+    REGION: {REGION.upper(), WH_A.upper(), WH_B.upper()},
+    WH_A: {WH_A.upper()},
+    WH_E: {WH_E.upper()},
+}
+
+
+async def _descendants(db: Any, tenant_id: str, node_id: str) -> set[str]:
+    return _SUBTREES[node_id]
+
+
+def _scoped_row(transfer_id: UUID, from_wh: str, to_wh: str) -> SimpleNamespace:
+    return SimpleNamespace(
+        id=transfer_id, transfer_id=transfer_id, tenant_id=TENANT_A,
+        transfer_type="PULL", status="DRAFT",
+        from_warehouse_id=UUID(from_wh), from_warehouse_name=f"name-{from_wh[-2:]}",
+        to_warehouse_id=UUID(to_wh), to_warehouse_name=f"name-{to_wh[-2:]}",
+        created_by="u-creator", created_by_authority_level=4,
+        created_at=_CREATED_AT, updated_at=_CREATED_AT,
+        is_self_approved=False, current_approval_step=1, resolved_approval_steps=None,
+    )
+
+
+class _World:
+    """Tenant A's transfers. The list query honours ANY(:subtree); the by-id
+    lookup honours tenant_id = :tid."""
+
+    def __init__(self) -> None:
+        self.rows = [
+            _scoped_row(T_AB, WH_A, WH_B),
+            _scoped_row(T_CA, WH_C, WH_A),
+            _scoped_row(T_CD, WH_C, WH_D),
+        ]
+        self.list_calls = 0
+
+    async def execute(self, stmt: Any, params: dict | None = None) -> MagicMock:
+        sql, params = str(stmt), params or {}
+        if "FROM transfer_orders to_" in sql and "ORDER BY to_.created_at" in sql:
+            self.list_calls += 1
+            rows = [r for r in self.rows if str(r.tenant_id) == params["tid"]]
+            if "ANY(:subtree)" in sql:
+                sub = set(params["subtree"])
+                rows = [
+                    r for r in rows
+                    if str(r.from_warehouse_id) in sub or str(r.to_warehouse_id) in sub
+                ]
+            return MagicMock(fetchall=MagicMock(return_value=rows))
+        if "FROM transfer_orders WHERE id = :id" in sql:
+            row = next((r for r in self.rows if str(r.id) == params.get("id")), None)
+            if row is not None and str(row.tenant_id) != params.get("tid"):
+                row = None
+            return MagicMock(fetchone=MagicMock(return_value=row))
+        raise AssertionError(f"unexpected query: {sql}")
+
+    def db(self) -> AsyncMock:
+        session = AsyncMock()
+        session.execute = AsyncMock(side_effect=self.execute)
+        return session
+
+
+@pytest.fixture
+def scoped():
+    """Subtree lookups answer from _SUBTREES; line / lot / discrepancy loads are
+    empty — they have their own files."""
+    from services.inventory_service import InventoryService
+
+    with patch("services.transfer_discrepancies.get_descendant_node_ids", new=_descendants), \
+         patch.object(InventoryService, "_transfer_line_items", new=AsyncMock(return_value=[])), \
+         patch("services.transfer_lots.load_allocations", new=AsyncMock(return_value={})), \
+         patch("services.transfer_discrepancies.load_discrepancies",
+               new=AsyncMock(return_value=[])):
+        yield _World()
+
+
+WM_A      = _User("u-wm-a", TENANT_A, WH_A,   None, "WM")
+WM_E      = _User("u-wm-e", TENANT_A, WH_E,   None, "WM")
+LM_E      = _User("u-lm-e", TENANT_A, WH_E,   None, "LM")
+WM_NONODE = _User("u-wm-0", TENANT_A, None,   None, "WM")
+RT_NONODE = _User("u-rt-0", TENANT_A, None,   None, "RT")
+RM_REGION = _User("u-rm",   TENANT_A, REGION, None, "RM")
+RM_NONODE = _User("u-rm-0", TENANT_A, None,   None, "RM")
+TA_A      = _User("u-ta-a", TENANT_A, None,   None, "TA")
+NM_AT_WH  = _User("u-nm",   TENANT_A, WH_E,   None, "NM")
+
+
+async def _list_ids(world: _World, user: _User) -> set[UUID]:
+    from services.inventory_service import InventoryService
+
+    return {t.transfer_id for t in await InventoryService(world.db()).list_transfers(user)}
+
+
+async def _get(world: _World, user: _User, transfer_id: UUID) -> Any:
+    """The transfer on success, else (status_code, detail)."""
+    from services.inventory_service import InventoryService
+
+    try:
+        return await InventoryService(world.db()).get_transfer(user, transfer_id)
+    except HTTPException as exc:
+        return exc.status_code, exc.detail
+
+
+_OUT_OF_SCOPE = (403, {"code": "TRANSFER_OUT_OF_SCOPE"})
+
+
+@pytest.mark.unit
+class TestTransferListScope:
+
+    async def test_wm_sees_transfers_with_either_end_in_its_subtree(self, scoped) -> None:
+        assert await _list_ids(scoped, WM_A) == {T_AB, T_CA}
+
+    async def test_wm_outside_sees_none(self, scoped) -> None:
+        assert await _list_ids(scoped, WM_E) == set()
+
+    async def test_lm_outside_sees_none(self, scoped) -> None:
+        assert await _list_ids(scoped, LM_E) == set()
+
+    @pytest.mark.parametrize("user", [WM_NONODE, RT_NONODE], ids=["WM", "RT"])
+    async def test_facility_role_without_node_gets_empty_list_and_no_query(
+        self, scoped, user,
+    ) -> None:
+        assert await _list_ids(scoped, user) == set()
+        assert scoped.list_calls == 0
+
+    async def test_rm_sees_its_subtree(self, scoped) -> None:
+        assert await _list_ids(scoped, RM_REGION) == {T_AB, T_CA}
+
+    async def test_rm_without_node_sees_tenant(self, scoped) -> None:
+        assert await _list_ids(scoped, RM_NONODE) == {T_AB, T_CA, T_CD}
+
+    @pytest.mark.parametrize("user", [TA_A, NM_AT_WH], ids=["TA", "NM-with-node"])
+    async def test_tenant_wide_roles_see_tenant(self, scoped, user) -> None:
+        assert await _list_ids(scoped, user) == {T_AB, T_CA, T_CD}
+
+    async def test_subtree_param_is_lowercased(self, scoped) -> None:
+        from services.inventory_service import InventoryService
+
+        db = scoped.db()
+        await InventoryService(db).list_transfers(WM_A)
+        params = db.execute.call_args_list[0].args[1]
+        assert params["subtree"] == [WH_A.lower()]
+
+
+@pytest.mark.unit
+class TestTransferDetailScope:
+
+    async def test_wm_gets_transfer_with_from_end_in_subtree(self, scoped) -> None:
+        assert (await _get(scoped, WM_A, T_AB)).transfer_id == T_AB
+
+    async def test_wm_gets_transfer_with_to_end_in_subtree(self, scoped) -> None:
+        assert (await _get(scoped, WM_A, T_CA)).transfer_id == T_CA
+
+    async def test_wm_outside_is_403(self, scoped) -> None:
+        assert await _get(scoped, WM_A, T_CD) == _OUT_OF_SCOPE
+        assert await _get(scoped, WM_E, T_AB) == _OUT_OF_SCOPE
+
+    async def test_lm_outside_is_403(self, scoped) -> None:
+        assert await _get(scoped, LM_E, T_AB) == _OUT_OF_SCOPE
+
+    async def test_facility_role_without_node_is_403(self, scoped) -> None:
+        assert await _get(scoped, WM_NONODE, T_AB) == _OUT_OF_SCOPE
+
+    async def test_rm_outside_its_subtree_is_403(self, scoped) -> None:
+        assert await _get(scoped, RM_REGION, T_CD) == _OUT_OF_SCOPE
+
+    async def test_rm_without_node_gets_any_tenant_transfer(self, scoped) -> None:
+        assert (await _get(scoped, RM_NONODE, T_CD)).transfer_id == T_CD
+
+    async def test_ta_gets_any_tenant_transfer(self, scoped) -> None:
+        assert (await _get(scoped, TA_A, T_CD)).transfer_id == T_CD
+
+    async def test_other_tenant_is_still_404_not_403(self, scoped) -> None:
+        other_wm = _User("u-wm-b", TENANT_B, WH_A, None, "WM")
+        assert await _get(scoped, other_wm, T_AB) == (404, "Transfer not found")
