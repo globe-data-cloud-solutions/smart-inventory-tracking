@@ -1,4 +1,5 @@
-"""Transfer receipt confirmation — what arrived, and what did not.
+"""Transfer receipt confirmation — what arrived, and what did not — and the
+later resolution of each shortfall.
 
 The destination confirms a received quantity per allocated lot (batch line) or
 per line (non-batch line). A quantity below what was sent becomes one row in
@@ -6,17 +7,34 @@ transfer_discrepancies (086); TRANSFER_IN credits the received quantity only.
 
   validate_receipt     check the whole receipt body against the transfer,
                        before anything is written
-  insert_discrepancy   the ONLY write path to transfer_discrepancies
-  load_discrepancies   the rows of a transfer, with the lot number
+  insert_discrepancy   the ONLY insert path to transfer_discrepancies
+  load_discrepancies   the rows of a transfer, with the lot numbers
+  resolve_discrepancy  the ONLY update path: OPEN -> RESOLVED, exactly once
+  list_discrepancies   the tenant's rows across transfers (GET /discrepancies)
 
-Append-only BY CODE: there is no update or delete function here. Rows are
-written with status OPEN; resolution (write-off / return) is a later phase.
+Rows are inserted OPEN at receipt and updated exactly once, OPEN -> RESOLVED,
+by resolve_discrepancy() (088) — a documented exception to 086's
+append-only-by-code rule. Every resolution writes its ledger rows, the UPDATE
+and an audit_logs row in ONE transaction. There is no delete path.
 
-PERMISSIONS: not checked here. The router requires transfer:receive and
-InventoryService.receive_transfer() runs the destination-warehouse check.
+Resolutions (N = missing_quantity):
+  WRITTEN_OFF      the stock is lost: no ledger rows, a note is required
+  RETURNED         it went back to the source: TRANSFER_REVERSAL +N at source
+  ARRIVED_LATE     it turned up at the destination: TRANSFER_IN +N at destination
+  RECEIVED_AS_LOT  a different lot of the product arrived (WRONG_LOT, batch line):
+                   TRANSFER_REVERSAL +N at source on the sent lot, TRANSFER_OUT -N
+                   at source on the arrived lot, TRANSFER_IN +N at destination on
+                   the arrived lot
+
+PERMISSIONS: receipt — not checked here; the router requires transfer:receive
+and InventoryService.receive_transfer() runs the destination-warehouse check.
+Resolution — the router requires transfer:resolve_discrepancy and
+resolve_discrepancy() checks the RM's node subtree (TA / NM / SA: tenant-wide).
 """
 from __future__ import annotations
 
+import json
+import uuid
 from decimal import Decimal
 from typing import Any, Mapping, Optional, Sequence
 from uuid import UUID
@@ -25,7 +43,14 @@ from fastapi import HTTPException
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from schemas.inventory import ReceiptLineIn, TransferDiscrepancyOut
+from repositories.ledger_repo import record_transaction
+from schemas.inventory import (
+    ReceiptLineIn,
+    ResolveDiscrepancyRequest,
+    TransferDiscrepancyListItem,
+    TransferDiscrepancyOut,
+)
+from shared.permissions.hierarchy_service import get_descendant_node_ids
 
 # (line_id, lot_id) — lot_id is None for a non-batch line.
 EntryKey = tuple[str, Optional[str]]
@@ -141,6 +166,44 @@ async def insert_discrepancy(
     )
 
 
+# Columns of TransferDiscrepancyOut: the sent lot (sl) and the resolved lot (rl)
+# are both LEFT JOINed for their lot numbers.
+_DISCREPANCY_COLUMNS = (
+    "d.id, d.transfer_line_id, d.product_id, d.lot_id, sl.lot_number, "
+    "d.sent_quantity, d.received_quantity, d.missing_quantity, "
+    "d.reason, d.note, d.status, d.created_at, "
+    "d.resolution, d.resolved_lot_id, rl.lot_number AS resolved_lot_number, "
+    "d.resolution_note, d.resolved_by, d.resolved_at"
+)
+_DISCREPANCY_LOT_JOINS = (
+    "LEFT JOIN stock_lots sl ON sl.id = d.lot_id AND sl.tenant_id = d.tenant_id "
+    "LEFT JOIN stock_lots rl ON rl.id = d.resolved_lot_id AND rl.tenant_id = d.tenant_id "
+)
+
+
+def _discrepancy_fields(r: Any) -> dict[str, Any]:
+    return {
+        "id": r.id,
+        "transfer_line_id": r.transfer_line_id,
+        "product_id": r.product_id,
+        "lot_id": r.lot_id,
+        "lot_number": r.lot_number,
+        "sent_quantity": r.sent_quantity,
+        "received_quantity": r.received_quantity,
+        "missing_quantity": r.missing_quantity,
+        "reason": r.reason,
+        "note": r.note,
+        "status": r.status,
+        "created_at": r.created_at,
+        "resolution": r.resolution,
+        "resolved_lot_id": r.resolved_lot_id,
+        "resolved_lot_number": r.resolved_lot_number,
+        "resolution_note": r.resolution_note,
+        "resolved_by": r.resolved_by,
+        "resolved_at": r.resolved_at,
+    }
+
+
 async def load_discrepancies(
     db: AsyncSession,
     tenant_id: UUID | str,
@@ -149,30 +212,321 @@ async def load_discrepancies(
     """The discrepancy rows of a transfer, ordered by line then lot."""
     result = await db.execute(
         text(
-            "SELECT d.id, d.transfer_line_id, d.product_id, d.lot_id, sl.lot_number, "
-            "       d.sent_quantity, d.received_quantity, d.missing_quantity, "
-            "       d.reason, d.note, d.status, d.created_at "
+            f"SELECT {_DISCREPANCY_COLUMNS} "
             "FROM transfer_discrepancies d "
-            "LEFT JOIN stock_lots sl ON sl.id = d.lot_id AND sl.tenant_id = d.tenant_id "
+            f"{_DISCREPANCY_LOT_JOINS}"
             "WHERE d.tenant_id = :tid AND d.transfer_order_id = :xfer_id "
             "ORDER BY d.transfer_line_id, d.lot_id"
         ),
         {"tid": str(tenant_id), "xfer_id": str(transfer_id)},
     )
+    return [TransferDiscrepancyOut(**_discrepancy_fields(r)) for r in result.fetchall()]
+
+
+# ── resolution ───────────────────────────────────────────────────────────────
+
+# Outcomes a reason may be resolved with. RECEIVED_AS_LOT additionally needs a
+# batch line (the row has a lot_id) — see _allowed_resolutions().
+_RESOLUTIONS_BY_REASON: dict[str, tuple[str, ...]] = {
+    "SHORT":     ("WRITTEN_OFF", "RETURNED", "ARRIVED_LATE"),
+    "DAMAGED":   ("WRITTEN_OFF",),
+    "WRONG_LOT": ("WRITTEN_OFF", "RETURNED", "RECEIVED_AS_LOT"),
+}
+
+# Roles that resolve tenant-wide; RM is limited to its node subtree.
+_TENANT_WIDE_ROLES = frozenset({"TA", "NM", "SA"})
+
+# Outcomes that move stock at the source, so the source must be in the RM's scope too.
+_SOURCE_RESOLUTIONS = frozenset({"RETURNED", "RECEIVED_AS_LOT"})
+
+
+def _allowed_resolutions(reason: str, lot_id: Optional[Any]) -> list[str]:
     return [
-        TransferDiscrepancyOut(
-            id=r.id,
-            transfer_line_id=r.transfer_line_id,
-            product_id=r.product_id,
-            lot_id=r.lot_id,
-            lot_number=r.lot_number,
-            sent_quantity=r.sent_quantity,
-            received_quantity=r.received_quantity,
-            missing_quantity=r.missing_quantity,
-            reason=r.reason,
-            note=r.note,
-            status=r.status,
-            created_at=r.created_at,
+        r for r in _RESOLUTIONS_BY_REASON.get(reason, ())
+        if r != "RECEIVED_AS_LOT" or lot_id is not None
+    ]
+
+
+def _lot_invalid(lot_id: Optional[UUID]) -> HTTPException:
+    return HTTPException(
+        status_code=422,
+        detail={
+            "code": "RESOLUTION_LOT_INVALID",
+            "lot_id": str(lot_id) if lot_id is not None else None,
+        },
+    )
+
+
+async def _load_lot(db: AsyncSession, tenant_id: str, lot_id: Any) -> Any:
+    """(id, product_id, lot_number, expiry_date) of a tenant's lot, or None."""
+    return (await db.execute(
+        text(
+            "SELECT id, product_id, lot_number, expiry_date FROM stock_lots "
+            "WHERE id = :lid AND tenant_id = :tid"
+        ),
+        {"lid": str(lot_id), "tid": tenant_id},
+    )).fetchone()
+
+
+async def _check_scope(
+    db: AsyncSession,
+    user: Any,
+    tenant_id: str,
+    resolution: str,
+    from_warehouse_id: Any,
+    to_warehouse_id: Any,
+) -> None:
+    """TA / NM / SA resolve tenant-wide. An RM needs the destination — and the
+    source, for outcomes that move stock there — inside its node subtree.
+    Any other role is refused (defence in depth: the permission blocks them)."""
+    role = getattr(user, "role", None)
+    if role in _TENANT_WIDE_ROLES:
+        return
+    out_of_scope = HTTPException(status_code=403, detail={"code": "DISCREPANCY_OUT_OF_SCOPE"})
+    if role != "RM" or not getattr(user, "warehouse_id", None):
+        raise out_of_scope
+
+    subtree = {
+        str(n).lower()
+        for n in await get_descendant_node_ids(db, tenant_id, str(user.warehouse_id))
+    }
+    required = [to_warehouse_id]
+    if resolution in _SOURCE_RESOLUTIONS:
+        required.append(from_warehouse_id)
+    if any(str(node).lower() not in subtree for node in required):
+        raise out_of_scope
+
+
+async def resolve_discrepancy(
+    db: AsyncSession,
+    user: Any,
+    transfer_id: UUID | str,
+    discrepancy_id: UUID | str,
+    body: ResolveDiscrepancyRequest,
+) -> TransferDiscrepancyOut:
+    """Settle one OPEN discrepancy — ledger rows, the OPEN -> RESOLVED UPDATE
+    and the audit row, all in the caller's single transaction.
+
+    404 DISCREPANCY_NOT_FOUND         no such row on this transfer for the tenant
+    409 DISCREPANCY_ALREADY_RESOLVED  the row is not OPEN (or lost a race)
+    422 RESOLUTION_NOT_ALLOWED        the outcome does not fit the reason
+    422 RESOLUTION_NOTE_REQUIRED      WRITTEN_OFF without a note
+    422 RESOLUTION_LOT_INVALID        lot_id missing / not allowed / wrong lot
+    403 DISCREPANCY_OUT_OF_SCOPE      RM outside its subtree, or not RM/TA/NM/SA
+    422 INSUFFICIENT_LOT_STOCK        (record_transaction) the arrived lot lacks
+                                      N at the source — nothing is kept
+    """
+    tenant_id = str(user.tenant_id)
+    transfer_id, discrepancy_id = str(transfer_id), str(discrepancy_id)
+    resolution = body.resolution
+    note = (body.note or "").strip() or None
+
+    # a) the row, locked against a concurrent resolve
+    d = (await db.execute(
+        text(
+            "SELECT d.id, d.product_id, d.lot_id, d.missing_quantity, d.reason, "
+            "       d.status, t.from_warehouse_id, t.to_warehouse_id "
+            "FROM transfer_discrepancies d "
+            "JOIN transfer_orders t ON t.id = d.transfer_order_id AND t.tenant_id = d.tenant_id "
+            "WHERE d.id = :did AND d.tenant_id = :tid AND d.transfer_order_id = :xfer_id "
+            "FOR UPDATE OF d"
+        ),
+        {"did": discrepancy_id, "tid": tenant_id, "xfer_id": transfer_id},
+    )).fetchone()
+    if d is None:
+        raise HTTPException(status_code=404, detail={"code": "DISCREPANCY_NOT_FOUND"})
+
+    # b) exactly once
+    if d.status != "OPEN":
+        raise HTTPException(status_code=409, detail={"code": "DISCREPANCY_ALREADY_RESOLVED"})
+
+    # c) the outcome must fit the reason
+    allowed = _allowed_resolutions(d.reason, d.lot_id)
+    if resolution not in allowed:
+        raise HTTPException(
+            status_code=422,
+            detail={"code": "RESOLUTION_NOT_ALLOWED", "reason": d.reason, "allowed": allowed},
+        )
+
+    # d) a write-off says why
+    if resolution == "WRITTEN_OFF" and note is None:
+        raise HTTPException(status_code=422, detail={"code": "RESOLUTION_NOTE_REQUIRED"})
+
+    # e) the arrived lot: RECEIVED_AS_LOT only, same tenant and product, not the
+    #    sent lot. An expired lot is accepted — this records what happened.
+    arrived = None
+    if resolution != "RECEIVED_AS_LOT":
+        if body.lot_id is not None:
+            raise _lot_invalid(body.lot_id)
+    else:
+        if body.lot_id is None or str(body.lot_id).lower() == str(d.lot_id).lower():
+            raise _lot_invalid(body.lot_id)
+        arrived = await _load_lot(db, tenant_id, body.lot_id)
+        if arrived is None or str(arrived.product_id).lower() != str(d.product_id).lower():
+            raise _lot_invalid(body.lot_id)
+
+    # f) scope
+    await _check_scope(db, user, tenant_id, resolution, d.from_warehouse_id, d.to_warehouse_id)
+
+    # g) ledger — record_transaction directly, so a duplicate key (409) or a
+    #    lot floor failure (422) aborts the whole resolution.
+    sent = await _load_lot(db, tenant_id, d.lot_id) if d.lot_id is not None else None
+    n = Decimal(str(d.missing_quantity))
+    product_id = str(d.product_id)
+    from_wh, to_wh = str(d.from_warehouse_id), str(d.to_warehouse_id)
+    key_prefix = f"transfer:{transfer_id}:discrepancy:{discrepancy_id}"
+
+    async def _post(transaction_type: str, warehouse_id: str, quantity: Decimal,
+                    lot: Any, suffix: str) -> None:
+        await record_transaction(
+            db,
+            tenant_id=tenant_id,
+            transaction_type=transaction_type,
+            product_id=product_id,
+            warehouse_id=warehouse_id,
+            quantity=quantity,
+            performed_by=str(user.user_id),
+            idempotency_key=f"{key_prefix}:{suffix}",
+            reference_type="TRANSFER",
+            reference_id=transfer_id,
+            lot_id=str(lot.id) if lot is not None else None,
+            lot_number=lot.lot_number if lot is not None else None,
+            expiry_date=lot.expiry_date if lot is not None else None,
+        )
+
+    if resolution == "RETURNED":
+        await _post("TRANSFER_REVERSAL", from_wh, n, sent, "return")
+    elif resolution == "ARRIVED_LATE":
+        await _post("TRANSFER_IN", to_wh, n, sent, "late")
+    elif resolution == "RECEIVED_AS_LOT":
+        # Both source rows lock a lot_balances row at the source. Post them in
+        # lot_id order — the order the allocation engine locks lots in
+        # (load_candidate_lots: ORDER BY lot_id FOR UPDATE) — so a concurrent
+        # allocation can never deadlock against this resolution.
+        source_rows = sorted(
+            [
+                ("TRANSFER_REVERSAL", n, sent, "swap:return"),
+                ("TRANSFER_OUT", -n, arrived, "swap:out"),
+            ],
+            key=lambda row: str(row[2].id).lower(),
+        )
+        for transaction_type, quantity, lot, suffix in source_rows:
+            await _post(transaction_type, from_wh, quantity, lot, suffix)
+        await _post("TRANSFER_IN", to_wh, n, arrived, "swap:in")
+
+    # h) OPEN -> RESOLVED, exactly once
+    resolved_lot_id = str(arrived.id) if arrived is not None else None
+    updated = await db.execute(
+        text(
+            "UPDATE transfer_discrepancies "
+            "SET status = 'RESOLVED', resolution = :resolution, "
+            "    resolved_lot_id = :resolved_lot_id, resolution_note = :note, "
+            "    resolved_by = :uid, resolved_at = now() "
+            "WHERE id = :did AND tenant_id = :tid AND status = 'OPEN'"
+        ),
+        {
+            "resolution": resolution,
+            "resolved_lot_id": resolved_lot_id,
+            "note": note,
+            "uid": str(user.user_id),
+            "did": discrepancy_id,
+            "tid": tenant_id,
+        },
+    )
+    if updated.rowcount != 1:
+        raise HTTPException(status_code=409, detail={"code": "DISCREPANCY_ALREADY_RESOLVED"})
+
+    # i) audit, same transaction (lot_expiry_service pattern)
+    await db.execute(
+        text(
+            "INSERT INTO audit_logs "
+            "  (id, tenant_id, user_id, role, action, resource_type, "
+            "   resource_id, decision, abac_context) "
+            "VALUES "
+            "  (:id, :tid, :uid, :role, 'transfer:resolve_discrepancy', 'transfer_discrepancy', "
+            "   :rid, 'GRANTED', CAST(:ctx AS jsonb))"
+        ),
+        {
+            "id": str(uuid.uuid4()),
+            "tid": tenant_id,
+            "uid": str(user.user_id),
+            "role": getattr(user, "role", None),
+            "rid": discrepancy_id,
+            "ctx": json.dumps({
+                "discrepancy_id": discrepancy_id,
+                "transfer_id": transfer_id,
+                "reason": d.reason,
+                "resolution": resolution,
+                "quantity": str(n),
+                "product_id": product_id,
+                "lot_id": str(d.lot_id) if d.lot_id is not None else None,
+                "resolved_lot_id": resolved_lot_id,
+                "from_warehouse_id": from_wh,
+                "to_warehouse_id": to_wh,
+                "note": note,
+            }),
+        },
+    )
+
+    row = (await db.execute(
+        text(
+            f"SELECT {_DISCREPANCY_COLUMNS} "
+            "FROM transfer_discrepancies d "
+            f"{_DISCREPANCY_LOT_JOINS}"
+            "WHERE d.id = :did AND d.tenant_id = :tid"
+        ),
+        {"did": discrepancy_id, "tid": tenant_id},
+    )).fetchone()
+    return TransferDiscrepancyOut(**_discrepancy_fields(row))
+
+
+# ── list ─────────────────────────────────────────────────────────────────────
+
+async def list_discrepancies(
+    db: AsyncSession,
+    user: Any,
+    status: Optional[str] = None,
+    warehouse_id: Optional[UUID | str] = None,
+) -> list[TransferDiscrepancyListItem]:
+    """The tenant's discrepancy rows, newest first, at most 200.
+
+    warehouse_id matches either end of the transfer. Facility scoping is the
+    rule InventoryService.list_transfers() applies: a WM with a warehouse sees
+    only transfers whose source or destination is that warehouse; every other
+    role sees the whole tenant.
+    """
+    params: dict[str, Any] = {"tid": str(user.tenant_id)}
+    filters = ""
+    if status is not None:
+        filters += " AND d.status = :status"
+        params["status"] = status
+    if warehouse_id is not None:
+        filters += " AND (t.from_warehouse_id = :wh OR t.to_warehouse_id = :wh)"
+        params["wh"] = str(warehouse_id)
+    if user.role == "WM" and user.warehouse_id:
+        filters += " AND (t.from_warehouse_id = :wid OR t.to_warehouse_id = :wid)"
+        params["wid"] = str(user.warehouse_id)
+
+    result = await db.execute(
+        text(
+            f"SELECT {_DISCREPANCY_COLUMNS}, d.transfer_order_id, t.transfer_type, "
+            "       t.from_warehouse_id, t.to_warehouse_id "
+            "FROM transfer_discrepancies d "
+            "JOIN transfer_orders t ON t.id = d.transfer_order_id AND t.tenant_id = d.tenant_id "
+            f"{_DISCREPANCY_LOT_JOINS}"
+            f"WHERE d.tenant_id = :tid{filters} "
+            "ORDER BY d.created_at DESC, d.id "
+            "LIMIT 200"
+        ),
+        params,
+    )
+    return [
+        TransferDiscrepancyListItem(
+            **_discrepancy_fields(r),
+            transfer_order_id=r.transfer_order_id,
+            transfer_type=r.transfer_type,
+            from_warehouse_id=r.from_warehouse_id,
+            to_warehouse_id=r.to_warehouse_id,
         )
         for r in result.fetchall()
     ]

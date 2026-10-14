@@ -178,6 +178,35 @@ class TransferDiscrepancyOut(BaseModel):
     note: Optional[str] = None
     status: str
     created_at: datetime
+    # Set once, when the row is resolved (OPEN -> RESOLVED, 088).
+    resolution: Optional[str] = None
+    resolved_lot_id: Optional[uuid.UUID] = None
+    resolved_lot_number: Optional[str] = None
+    resolution_note: Optional[str] = None
+    resolved_by: Optional[uuid.UUID] = None
+    resolved_at: Optional[datetime] = None
+
+
+class TransferDiscrepancyListItem(TransferDiscrepancyOut):
+    """A discrepancy row with the transfer it belongs to (GET /transfers/discrepancies)."""
+    transfer_order_id: uuid.UUID
+    transfer_type: str
+    from_warehouse_id: uuid.UUID
+    to_warehouse_id: uuid.UUID
+
+
+class ResolveDiscrepancyRequest(BaseModel):
+    """How an OPEN discrepancy was settled. lot_id is the lot that actually
+    arrived — RECEIVED_AS_LOT only."""
+    model_config = ConfigDict(extra="forbid")
+
+    resolution: Literal["WRITTEN_OFF", "RETURNED", "ARRIVED_LATE", "RECEIVED_AS_LOT"]
+    lot_id: Optional[uuid.UUID] = None
+    note: Optional[str] = Field(None, max_length=500)
+
+    @field_validator("note", mode="before")
+    @classmethod
+    def no_null_bytes(cls, v: object) -> object: return _no_null(v)
 
 
 class TransferLineItem(BaseModel):

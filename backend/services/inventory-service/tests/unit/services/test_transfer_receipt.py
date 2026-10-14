@@ -95,6 +95,12 @@ class _World:
                     note=d["note"],
                     status="OPEN",
                     created_at=datetime.now(timezone.utc),
+                    resolution=None,
+                    resolved_lot_id=None,
+                    resolved_lot_number=None,
+                    resolution_note=None,
+                    resolved_by=None,
+                    resolved_at=None,
                 )
                 for d in self.discrepancies
             ]
@@ -441,6 +447,12 @@ class TestReceiptConfirmation:
             for d in result.discrepancies
         ] == [(LINE_1, PRODUCT_ID, LOT_B, "LOT-B", Decimal("40"), Decimal("38"),
                Decimal("2"), "SHORT", "OPEN")]
+        # An OPEN row carries no resolution yet (088 columns all NULL).
+        assert [
+            (d.resolution, d.resolved_lot_id, d.resolved_lot_number, d.resolution_note,
+             d.resolved_by, d.resolved_at)
+            for d in result.discrepancies
+        ] == [(None, None, None, None, None, None)]
         assert len(result.lot_allocations) == 2
 
     async def test_get_transfer_returns_lines_with_line_id(self) -> None:
