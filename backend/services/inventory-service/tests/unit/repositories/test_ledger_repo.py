@@ -200,6 +200,43 @@ class TestLedgerRepo:
         mock_writer.assert_not_awaited()
         mock_outbox.assert_not_awaited()
 
+    @pytest.mark.parametrize("transaction_type", ["RECEIVE", "ISSUE", "TRANSIT_CLEAR", "LOT_OPENING"])
+    async def test_zero_quantity_raises_422_and_writes_nothing(self, transaction_type: str) -> None:
+        """quantity == 0 → HTTP 422 ZERO_QUANTITY before anything else, for
+        every type (balance-neutral and lot-only included): no idempotency key
+        registered, no ledger row, no balance change, no outbox event."""
+        from repositories.ledger_repo import record_transaction
+
+        session = AsyncMock()
+
+        with patch(
+            "repositories.ledger_repo.check_and_register_idempotency_key", new=AsyncMock()
+        ) as mock_idem, patch(
+            "repositories.ledger_repo._update_running_balance", new=AsyncMock()
+        ) as mock_writer, patch(
+            "repositories.ledger_repo.write_to_outbox", new=AsyncMock()
+        ) as mock_outbox:
+            with pytest.raises(HTTPException) as exc_info:
+                await record_transaction(
+                    session,
+                    tenant_id=TENANT_ID,
+                    transaction_type=transaction_type,
+                    product_id=PRODUCT_ID,
+                    warehouse_id=WAREHOUSE_ID,
+                    quantity=Decimal("0.0000"),
+                    performed_by=USER_ID,
+                    idempotency_key=IDEM_KEY,
+                    lot_id="lot-1" if transaction_type == "LOT_OPENING" else None,
+                )
+
+        assert exc_info.value.status_code == 422
+        assert exc_info.value.detail["code"] == "ZERO_QUANTITY"
+        assert exc_info.value.detail["transaction_type"] == transaction_type
+        mock_idem.assert_not_awaited()
+        session.execute.assert_not_awaited()
+        mock_writer.assert_not_awaited()
+        mock_outbox.assert_not_awaited()
+
     async def test_outbox_written_in_same_transaction(self) -> None:
         """write_to_outbox must be called on the same session object as the
         inventory_transactions INSERT — not on a separate session after commit."""
