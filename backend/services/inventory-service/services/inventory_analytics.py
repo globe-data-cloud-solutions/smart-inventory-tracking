@@ -401,7 +401,7 @@ async def get_lots(
                 p.name                AS product_name,
                 p.sku                  AS product_sku,
                 lb.warehouse_id,
-                COALESCE(on_node.name, '') AS warehouse_name,
+                COALESCE(on_node.name, w.name, '') AS warehouse_name,
                 lb.quantity,
                 sl.expiry_date,
                 sl.first_received_at,
@@ -421,6 +421,7 @@ async def get_lots(
             JOIN stock_lots sl ON sl.id = lb.lot_id
             JOIN products   p  ON p.id  = sl.product_id
             LEFT JOIN organization_node on_node ON on_node.id = lb.warehouse_id
+            LEFT JOIN warehouses w ON w.id = lb.warehouse_id
             WHERE 1 = 1
               {tenant_clause}
               {product_clause}
@@ -496,7 +497,7 @@ async def get_expiry_alerts(
                 p.name               AS product_name,
                 p.sku                AS product_sku,
                 lb.warehouse_id,
-                COALESCE(on_node.name, '') AS warehouse_name,
+                COALESCE(on_node.name, w.name, '') AS warehouse_name,
                 lb.quantity,
                 sl.expiry_date,
                 sl.first_received_at,
@@ -513,6 +514,7 @@ async def get_expiry_alerts(
             JOIN stock_lots sl ON sl.id = lb.lot_id
             JOIN products   p  ON p.id  = sl.product_id
             LEFT JOIN organization_node on_node ON on_node.id = lb.warehouse_id
+            LEFT JOIN warehouses w ON w.id = lb.warehouse_id
             WHERE p.batch_tracking = true
               AND p.expiry_tracking = true
               AND lb.quantity > 0
