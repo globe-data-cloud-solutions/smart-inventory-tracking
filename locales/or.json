@@ -2404,7 +2404,6 @@
     "nav": {
       "features": "Features",
       "get_started_anchor": "Get started",
-      "credentials": "Credentials",
       "sign_in": "Sign in",
       "get_started_cta": "Get started",
       "getting_started": "Getting started",
@@ -2467,13 +2466,6 @@
       "step3_title": "Verify & set up",
       "step3_desc": "Confirm your email, then configure your organisation.",
       "already_customer": "Already a customer?"
-    },
-    "credentials": {
-      "heading": "System Administrator Login",
-      "subheading": "Use the SA account to create tenants and onboard your first company.",
-      "badge": "SA",
-      "role_label": "System Administrator",
-      "cta": "Sign in to dashboard"
     },
     "footer": {
       "stack": "FastAPI · Next.js 14 · PostgreSQL 16 · AWS ECS Fargate"
