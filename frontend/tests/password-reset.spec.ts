@@ -20,6 +20,7 @@
  *   npx playwright test tests/password-reset.spec.ts
  */
 import { test, expect, type Page, type ConsoleMessage } from "@playwright/test";
+import { isDevHmrNoise } from "./helpers/console-noise";
 
 const BASE_URL = process.env.BASE_URL ?? "http://localhost:3000";
 
@@ -32,6 +33,7 @@ function collectConsoleErrors(page: Page): string[] {
   const lines: string[] = [];
   page.on("console", (msg: ConsoleMessage) => {
     if (msg.type() !== "error") return;
+    if (isDevHmrNoise(msg.text())) return;
     // Chromium logs any non-2xx fetch response itself as a devtools "error" —
     // that is the expected rejection path exercised by these tests, not an app bug.
     if (/Failed to load resource.*(401|400|429)/.test(msg.text())) return;

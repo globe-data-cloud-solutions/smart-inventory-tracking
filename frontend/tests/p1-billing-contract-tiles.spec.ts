@@ -8,6 +8,7 @@
  */
 import { test, expect, type Page, type ConsoleMessage } from "@playwright/test";
 import { E2E_TA_EMAIL, E2E_TA_SLUG, e2eTaPasswordOrSkip } from "./helpers/e2e-ta";
+import { isDevHmrNoise } from "./helpers/console-noise";
 
 const BASE_URL = process.env.BASE_URL ?? "http://localhost:3000";
 
@@ -17,6 +18,7 @@ function collectConsoleErrors(page: Page): string[] {
   const lines: string[] = [];
   page.on("console", (msg: ConsoleMessage) => {
     if (msg.type() !== "error") return;
+    if (isDevHmrNoise(msg.text())) return;
     lines.push(msg.text());
   });
   page.on("pageerror", (err) => lines.push(`[pageerror] ${err.message}`));

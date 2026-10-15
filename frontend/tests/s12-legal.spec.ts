@@ -12,17 +12,17 @@
  */
 import { test, expect, type Page, type ConsoleMessage } from "@playwright/test";
 import { E2E_TA_EMAIL, e2eTaPasswordOrSkip } from "./helpers/e2e-ta";
+import { SA_EMAIL, saPasswordOrSkip } from "./helpers/sa-credentials";
+import { isDevHmrNoise } from "./helpers/console-noise";
 
 const BASE_URL = process.env.BASE_URL ?? "http://localhost:3000";
-const SA_EMAIL = "smartadmin@smart-inventory.com";
-const SA_PASSWORD = "Admin@2026";
 const TENANT_6P2T_ID = "aed68cc5-789f-4cb0-9ef5-9b6404267e42"; // tenant-6-p2t, SA-created, no acceptance row
 
 test.setTimeout(60_000);
 
 function collectConsoleErrors(page: Page): string[] {
   const lines: string[] = [];
-  page.on("console", (msg: ConsoleMessage) => { if (msg.type() === "error") lines.push(msg.text()); });
+  page.on("console", (msg: ConsoleMessage) => { if (msg.type() === "error" && !isDevHmrNoise(msg.text())) lines.push(msg.text()); });
   page.on("pageerror", (err) => lines.push(`[pageerror] ${err.message}`));
   return lines;
 }
@@ -115,9 +115,10 @@ test.describe("S12-3 public legal pages + acceptance line", () => {
   });
 
   test("SA opens tenant-6-p2t (SA-created) and sees no acceptance on record", async ({ page }) => {
+    const saPw = saPasswordOrSkip(test);
     const consoleErrors = collectConsoleErrors(page);
 
-    await login(page, SA_EMAIL, SA_PASSWORD);
+    await login(page, SA_EMAIL, saPw);
     await page.goto(`${BASE_URL}/admin/settings/tenants/${TENANT_6P2T_ID}`);
     await page.waitForLoadState("networkidle");
     await page.getByRole("button", { name: /^.?.?\s*Profile$/i }).first().click();

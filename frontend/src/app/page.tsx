@@ -100,7 +100,6 @@ export default function HomePage() {
   const NAV_ANCHORS = [
     { href: "#features",    key: "landing.nav.features" },
     { href: "#get-started", key: "landing.nav.get_started_anchor" },
-    { href: "#credentials", key: "landing.nav.credentials" },
   ];
 
   return (
@@ -269,33 +268,7 @@ export default function HomePage() {
         </div>
       </section>
 
-      <Stripe h={4} />
       <Wave from="#F3F4F6" to={BG} flip />
-
-      {/* ════ CREDENTIALS CTA ═══════════════════════════════════════════════ */}
-      {/* TEMP: remove before go-live + reset SA password (Alex) */}
-      <section id="credentials" className="bg-[#0f2d1f] px-6 py-20 text-center">
-        <div className="max-w-[560px] mx-auto">
-          <h2 className="text-[2rem] font-extrabold text-white m-0">
-            {t("landing.credentials.heading")}
-          </h2>
-          <p className="text-sm text-emerald-300 mt-2 mb-8">
-            {t("landing.credentials.subheading")}
-          </p>
-          {/* TEMP: remove before go-live + reset SA password (Alex) */}
-          <div className="p-5 rounded-xl bg-white/[0.05] border border-white/10 text-left mb-8">
-            <div className="flex items-center gap-2 mb-3">
-              <span className="text-[11px] font-bold text-white px-1.5 py-0.5 rounded bg-red-600">{t("landing.credentials.badge")}</span>
-              <span className="text-xs text-emerald-300">{t("landing.credentials.role_label")}</span>
-            </div>
-            <p className="text-xs font-mono text-[#a7f3d0] m-0 mb-1">smartadmin@smart-inventory.com</p>
-            <p className="text-xs font-mono text-emerald-300 m-0">Admin@2026</p>
-          </div>
-          <Link href="/login" className="btn-cta-primary">
-            {t("landing.credentials.cta")}
-          </Link>
-        </div>
-      </section>
 
       {/* ════ FOOTER ════════════════════════════════════════════════════════ */}
       <Stripe h={5} />

@@ -13,6 +13,7 @@
  */
 import { test, expect, type Page, type ConsoleMessage, type Route } from "@playwright/test";
 import { E2E_TA_EMAIL, E2E_TA_SLUG, e2eTaPasswordOrSkip } from "./helpers/e2e-ta";
+import { isDevHmrNoise } from "./helpers/console-noise";
 
 const BASE_URL = process.env.BASE_URL ?? "http://localhost:3000";
 const PUBLIC_CONTACT_PATH = "**/api/v1/tenants/public/contact";
@@ -25,7 +26,7 @@ test.use({ serviceWorkers: "block" });
 
 function collectConsoleErrors(page: Page): string[] {
   const lines: string[] = [];
-  page.on("console", (msg: ConsoleMessage) => { if (msg.type() === "error") lines.push(msg.text()); });
+  page.on("console", (msg: ConsoleMessage) => { if (msg.type() === "error" && !isDevHmrNoise(msg.text())) lines.push(msg.text()); });
   page.on("pageerror", (err) => lines.push(`[pageerror] ${err.message}`));
   return lines;
 }

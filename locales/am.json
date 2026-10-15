@@ -1792,9 +1792,6 @@
     "active_skus": "ንቁ SKUዎች"
   },
   "login": {
-    "quick_access": "ፈጣን መዳረሻ",
-    "password": "የሚስጥር ቃል",
-    "click_to_fill": "ራሱ ሞሞን ለ ጠቅ ያድርጉ",
     "title": "ይግቡ",
     "subtitle": "የክምችት ዳሽቦርድዎን ይድረሱ",
     "email_label": "ኢሜይል አድራሻ",
@@ -1807,9 +1804,6 @@
     "submit_btn": "ግባ →",
     "create_account": "መለያ ይፍጠሩ",
     "email_not_verified": "ከመግባትዎ በፊት እባክዎ የኢሜይል አድራሻዎን ያረጋግጡ።",
-    "system_admin_heading": "የስርዓት አስተዳዳሪ",
-    "mobile_system_admin": "የስርዓት አስተዳዳሪ",
-    "personnel_hint": "የተከራይ መለያዎችን ለማከል፣ እንደ SA ይግቡና ማስተለኯት → ሰራተኞችን ይጠቀሙ።",
     "footer_tagline": "SMART የክምችት መከታተያ · RBAC + ABAC · 3 ቋንቋዎች",
     "auth_unavailable": "ይግባ ለጊዜው አይገኝም። እባክዎ ትንሽ ቆይተው ይሞክሩ።",
     "forgot_link": "የይለፍ ቃል ረስተዋል?",
@@ -2414,7 +2408,6 @@
     "nav": {
       "features": "ባህሪዎች",
       "get_started_anchor": "ይጀምሩ",
-      "credentials": "መታወቂያ",
       "sign_in": "ይግቡ",
       "get_started_cta": "ይጀምሩ",
       "getting_started": "መጀመር",
@@ -2477,13 +2470,6 @@
       "step3_title": "ያረጋግጡና ያዋቅሩ",
       "step3_desc": "ኢሜይልዎን ያረጋግጡ፣ ከዚያም ድርጅትዎን ያዋቅሩ።",
       "already_customer": "አስቀድመው ተጠቃሚ ነዎት?"
-    },
-    "credentials": {
-      "heading": "የስርዓት አስተዳዳሪ መግቢያ",
-      "subheading": "የSA መለያን ተከራዮችን ለመፍጠር እና ኩባንያዎን ለማስገባት ይጠቀሙ።",
-      "badge": "SA",
-      "role_label": "የስርዓት አስተዳዳሪ",
-      "cta": "ወደ ዳሽቦርድ ይግቡ"
     },
     "footer": {
       "stack": "FastAPI · Next.js 14 · PostgreSQL 16 · AWS ECS Fargate"

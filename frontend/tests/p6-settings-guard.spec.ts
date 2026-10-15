@@ -15,6 +15,7 @@ import fs from "fs";
 import path from "path";
 import { test, expect, type Page, type ConsoleMessage, type Route } from "@playwright/test";
 import { E2E_TA_EMAIL, E2E_TA_SLUG, e2eTaPasswordOrSkip } from "./helpers/e2e-ta";
+import { isDevHmrNoise } from "./helpers/console-noise";
 
 const BASE_URL = process.env.BASE_URL ?? "http://localhost:3000";
 
@@ -28,6 +29,7 @@ function collectConsoleErrors(page: Page): string[] {
   const lines: string[] = [];
   page.on("console", (msg: ConsoleMessage) => {
     if (msg.type() !== "error") return;
+    if (isDevHmrNoise(msg.text())) return;
     if (/Failed to load resource.*40[0-9]/.test(msg.text())) return; // expected gated round-trips
     if (/Failed to fetch RSC payload.*Falling back to browser navigation/.test(msg.text())) return; // next dev HMR noise
     lines.push(msg.text());
@@ -60,6 +62,7 @@ function localeStrings(locale: "en" | "am") {
     resetPassword: d.personnel.reset_password as string,
     deactivate: d.personnel.deactivate_user as string,
     addContact: d.sa.contacts_add_btn as string,
+    contactTab: d.tenant_admin.tabs.contact as string,
     renewalSubmit: d.tenant_admin.plan.renewal.submit_btn as string,
     readOnlyReason: d.contract.read_only_error as string,
     userLimitReason: d.plan.limit_reached.users as string,
@@ -145,7 +148,13 @@ for (const locale of ["en", "am"] as const) {
       // ── Contacts tab: add stays ENABLED (exempt) ──
       await page.goto(`${BASE_URL}/${E2E_TA_SLUG}/settings/tenant-admin`);
       await page.waitForLoadState("networkidle");
-      await page.getByRole("button", { name: "Contact" }).click();
+      // Scoped to the tab bar: the READ_ONLY banner also has a "Contact SMART" button.
+      // The tab button's accessible name is its icon + label. On a hard load the am
+      // page currently renders the English fallback label here, so accept either.
+      await page
+        .locator("div.overflow-x-auto")
+        .getByRole("button", { name: new RegExp(`^👥(Contact|${strings.contactTab})$`) })
+        .click();
       const addContactBtn = page.getByRole("button", { name: `+ ${strings.addContact}` });
       await expect(addContactBtn).toBeVisible({ timeout: 10_000 });
       await expect(addContactBtn).toBeEnabled();

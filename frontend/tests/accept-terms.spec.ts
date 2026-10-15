@@ -16,6 +16,7 @@
  *   npx playwright test tests/accept-terms.spec.ts
  */
 import { test, expect, type Page, type ConsoleMessage } from "@playwright/test";
+import { isDevHmrNoise } from "./helpers/console-noise";
 
 const BASE_URL = process.env.BASE_URL ?? "http://localhost:3000";
 const OWNER_EMAIL    = process.env.TENANT_B_OWNER_EMAIL;
@@ -25,6 +26,7 @@ function collectConsoleErrors(page: Page): string[] {
   const lines: string[] = [];
   page.on("console", (msg: ConsoleMessage) => {
     if (msg.type() !== "error") return;
+    if (isDevHmrNoise(msg.text())) return;
     lines.push(msg.text());
   });
   page.on("pageerror", (err) => lines.push(`[pageerror] ${err.message}`));
