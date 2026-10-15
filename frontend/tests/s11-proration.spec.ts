@@ -6,20 +6,22 @@
  * "Browser verification". Screenshots go to
  * frontend/test-results/screens/s11/ (gitignored).
  *
- * Uses the probe tenant zz-s11-probe created via the public signup API for
- * this work (ANNUAL STARTER, already upgraded to GROWTH + API_ACCESS
- * add-on via direct API calls earlier in this session, then downgraded
- * back to STARTER — this spec re-exercises the SAME upgrade through the
- * UI). Deactivated at the end — it keeps its invoice history (append-only).
+ * Creates its own probe tenant per run (zz-s11-<timestamp>, ANNUAL STARTER,
+ * via the public signup API) and gives it a paid subscription invoice so the
+ * upgrade raises a PRORATION invoice (proration._never_paid() is False).
+ * Deactivated in afterAll — it keeps its invoice history (append-only).
+ * SA-only: skipped unless Alex sets E2E_SA_PASSWORD.
  *
  * Run:
  *   npx playwright test tests/s11-proration.spec.ts
  */
 import { test, expect, type Page, type ConsoleMessage } from "@playwright/test";
-import { SA_EMAIL, saPasswordOrSkip } from "./helpers/sa-credentials";
+import { SA_EMAIL, saPassword, saPasswordOrSkip } from "./helpers/sa-credentials";
+import {
+  createPaidSubscriptionInvoice, createProbeTenant, deactivateTenant, saToken, type ProbeTenant,
+} from "./helpers/sa-api";
 
 const BASE_URL = process.env.BASE_URL ?? "http://localhost:3000";
-const PROBE_TENANT_ID = "c16a9753-1a17-4695-a766-6c98b4d529a6"; // zz-s11-probe
 
 test.setTimeout(60_000);
 
@@ -41,16 +43,29 @@ async function login(page: Page, email: string, password: string) {
 test.describe.configure({ mode: "serial" });
 
 test.describe("S11 proration — SA tenant page", () => {
+  test.skip(!saPassword(), "E2E_SA_PASSWORD not set — SA tests are run by Alex only, by hand");
+
+  let probe: ProbeTenant;
+
+  test.beforeAll(async ({ request }) => {
+    probe = await createProbeTenant(request, { prefix: "s11", tier: "STARTER", billingPeriod: "ANNUAL" });
+    await createPaidSubscriptionInvoice(request, await saToken(request), probe.id);
+  });
+
+  test.afterAll(async ({ request }) => {
+    if (probe) await deactivateTenant(request, await saToken(request), probe.id);
+  });
+
   test("upgrade preview, confirm, proration invoice banner + badge", async ({ page }) => {
     const saPw = saPasswordOrSkip(test);
     const consoleErrors = collectConsoleErrors(page);
 
     await login(page, SA_EMAIL, saPw);
-    await page.goto(`${BASE_URL}/admin/settings/tenants/${PROBE_TENANT_ID}`);
+    await page.goto(`${BASE_URL}/admin/settings/tenants/${probe.id}`);
     await page.getByRole("button", { name: /^.?.?\s*Plan$/i }).first().click();
     await page.waitForLoadState("networkidle");
 
-    // Current tier is STARTER (downgraded back via API earlier this session).
+    // Current tier is STARTER (the probe is created as ANNUAL STARTER in beforeAll).
     await page.getByRole("button", { name: "GROWTH" }).click();
     await page.getByRole("button", { name: "Save Changes" }).click();
 
@@ -62,13 +77,12 @@ test.describe("S11 proration — SA tenant page", () => {
     await expect(page.getByText(/proration invoice.*has been raised/i)).toBeVisible({ timeout: 10_000 });
     await page.screenshot({ path: "test-results/screens/s11/sa-plan-upgrade-done-en.png", fullPage: true });
 
-    // Invoices list should show at least one PRORATION badge (this run's new
-    // invoice, plus the one created via direct API call earlier in this session).
+    // Invoices list should show a PRORATION badge (this run's new invoice).
     await expect(page.getByText("Proration", { exact: true }).first()).toBeVisible({ timeout: 10_000 });
 
     // Cleanup — cancel the PRORATION invoice this run just raised (newest
-    // row, since the backend orders payments by created_at DESC) so repeated
-    // runs stop piling up PENDING invoices on zz-s11-probe (CLAUDE.md §15 S12).
+    // row, since the backend orders payments by created_at DESC) so the probe
+    // does not keep a PENDING invoice behind (CLAUDE.md §15 S12).
     const newInvoiceRow = page.locator("tr", { hasText: "Proration" }).first();
     await newInvoiceRow.getByRole("button", { name: "Cancel" }).click();
     await page.locator("tr.bg-red-50 input[type=\"text\"]").fill("e2e cleanup");
@@ -85,12 +99,15 @@ test.describe("S11 proration — SA tenant page", () => {
     const consoleErrors = collectConsoleErrors(page);
 
     await login(page, SA_EMAIL, saPw);
-    await page.goto(`${BASE_URL}/admin/settings/tenants/${PROBE_TENANT_ID}`);
+    await page.goto(`${BASE_URL}/admin/settings/tenants/${probe.id}`);
     await page.getByRole("button", { name: /^.?.?\s*Plan$/i }).first().click();
     await page.waitForLoadState("networkidle");
 
     await page.getByRole("button", { name: "STARTER" }).click();
     await page.getByRole("button", { name: "Save Changes" }).click();
+    // The no-refund note only renders for the "apply now" option (PlanTab.tsx);
+    // the default is "at renewal", which schedules the downgrade instead.
+    await page.getByLabel(/Apply now/i).check();
     await expect(page.getByText(/no refund or credit/i)).toBeVisible({ timeout: 10_000 });
     await page.screenshot({ path: "test-results/screens/s11/sa-plan-downgrade-no-refund-en.png", fullPage: true });
 
@@ -108,7 +125,7 @@ test.describe("S11 proration — SA tenant page", () => {
 
     await login(page, SA_EMAIL, saPw);
     await page.evaluate(() => localStorage.setItem("locale", "am"));
-    await page.goto(`${BASE_URL}/admin/settings/tenants/${PROBE_TENANT_ID}`);
+    await page.goto(`${BASE_URL}/admin/settings/tenants/${probe.id}`);
     await page.getByRole("button", { name: /Plan$/i }).first().click();
     await page.waitForLoadState("networkidle");
 

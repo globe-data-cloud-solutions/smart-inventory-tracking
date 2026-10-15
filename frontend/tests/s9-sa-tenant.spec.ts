@@ -15,12 +15,32 @@
 
 import { test, expect, type Page, type ConsoleMessage } from "@playwright/test";
 import { SA_EMAIL, saPassword, saPasswordOrSkip } from "./helpers/sa-credentials";
+import {
+  createProbeTenant, deactivateTenant, deactivateTenantBySlug, saToken, setContractDates,
+  type ProbeTenant,
+} from "./helpers/sa-api";
 
 const BASE_URL = process.env.BASE_URL ?? "http://localhost:3000";
 
 const T6P2T_NAME = "Tenant_6_P2T";
 const T6P2T_ID = "aed68cc5-789f-4cb0-9ef5-9b6404267e42";
-const CONTRACT_PROBE_ID = "1ed1ab02-989c-442d-80ac-e66a7a21b36e";
+
+// SA tests are run by Alex only, by hand (E2E_SA_PASSWORD) — see SA_SKIP_REASON guards below.
+const SA_SKIP_REASON = "E2E_SA_PASSWORD not set — SA tests are run by Alex only, by hand";
+
+/** ISO date (YYYY-MM-DD) `days` from today, UTC. */
+function isoDaysFromNow(days: number): string {
+  const d = new Date();
+  d.setUTCDate(d.getUTCDate() + days);
+  return d.toISOString().slice(0, 10);
+}
+
+/** `iso` plus `years` years, as an ISO date. */
+function isoPlusYears(iso: string, years: number): string {
+  const d = new Date(`${iso}T00:00:00Z`);
+  d.setUTCFullYear(d.getUTCFullYear() + years);
+  return d.toISOString().slice(0, 10);
+}
 
 test.describe.configure({ mode: "serial" });
 // Generous per-test timeout: the first navigation after a fresh demo login can
@@ -28,22 +48,6 @@ test.describe.configure({ mode: "serial" });
 // TanStack Query's retry/backoff plus Next dev's on-demand route compile can
 // together exceed the 30s default on a cold run.
 test.setTimeout(60_000);
-
-async function reactivateProbe(tenantId: string) {
-  const saPw = saPassword();
-  if (!saPw) return;
-  const tokenRes = await fetch(`${BASE_URL.replace("3000", "8000")}/api/v1/auth/token`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ email: SA_EMAIL, password: saPw }),
-  });
-  const { access_token } = (await tokenRes.json()) as { access_token: string };
-  await fetch(`${BASE_URL.replace("3000", "8000")}/api/v1/tenants/${tenantId}/reactivate`, {
-    method: "PATCH",
-    headers: { "Content-Type": "application/json", Authorization: `Bearer ${access_token}` },
-    body: JSON.stringify({}),
-  });
-}
 
 async function loginAs(page: Page, email: string, password: string) {
   await page.goto(`${BASE_URL}/login`);
@@ -94,7 +98,23 @@ test.describe("S9 smoke", () => {
 });
 
 test.describe("S9-2 SA tenant page", () => {
+  test.skip(!saPassword(), SA_SKIP_REASON);
+
   const errors: string[] = [];
+  // Own probe tenant (STARTER, MONTHLY) with a 2-year contract starting today —
+  // created per run, deactivated in afterAll (also deactivated by test 05 itself).
+  let probe: ProbeTenant;
+  const contractStart = isoDaysFromNow(0);
+  const contractEnd = isoPlusYears(contractStart, 2);
+
+  test.beforeAll(async ({ request }) => {
+    probe = await createProbeTenant(request, { prefix: "s9", tier: "STARTER", billingPeriod: "MONTHLY" });
+    await setContractDates(request, await saToken(request), probe.id, contractStart, contractEnd);
+  });
+
+  test.afterAll(async ({ request }) => {
+    if (probe) await deactivateTenant(request, await saToken(request), probe.id);
+  });
 
   test("01 - registry Open navigates to the SA tenant page", async ({ page }) => {
     const saPw = saPasswordOrSkip(test);
@@ -191,19 +211,15 @@ test.describe("S9-2 SA tenant page", () => {
   test("05 - contract probe: contract tab + status deactivate via UI", async ({ page }) => {
     const saPw = saPasswordOrSkip(test);
     errors.push(...collectConsoleErrors(page));
-    // Idempotent setup: this probe may already be DEACTIVATED from a prior run
-    // of this same test — reactivate it first via a direct API call so the UI
-    // flow below (deactivate via the Status tab) always has something to do.
-    await reactivateProbe(CONTRACT_PROBE_ID);
     await loginAs(page, SA_EMAIL, saPw);
-    await page.goto(`${BASE_URL}/admin/settings/tenants/${CONTRACT_PROBE_ID}`);
+    await page.goto(`${BASE_URL}/admin/settings/tenants/${probe.id}`);
     await page.getByRole("button", { name: /Contract/i }).first().waitFor({ state: "visible", timeout: 20_000 });
     await page.getByRole("button", { name: /Contract/i }).first().click();
     await page.waitForTimeout(600);
     // toLocaleDateString() formatting is environment-locale-dependent — match
     // loosely on the year rather than an exact M/D/Y string.
-    await expect(page.getByText(/2026/).first()).toBeVisible();
-    await expect(page.getByText(/2028/).first()).toBeVisible();
+    await expect(page.getByText(new RegExp(contractStart.slice(0, 4))).first()).toBeVisible();
+    await expect(page.getByText(new RegExp(contractEnd.slice(0, 4))).first()).toBeVisible();
     await page.screenshot({ path: "test-results/screens/s9/14-contract-probe-contract-tab.png", fullPage: true });
 
     await page.getByRole("button", { name: /Status/i }).first().click();
@@ -218,7 +234,7 @@ test.describe("S9-2 SA tenant page", () => {
     const saPw = saPasswordOrSkip(test);
     errors.push(...collectConsoleErrors(page));
     await loginAs(page, SA_EMAIL, saPw);
-    await page.goto(`${BASE_URL}/admin/settings/tenants/${CONTRACT_PROBE_ID}`);
+    await page.goto(`${BASE_URL}/admin/settings/tenants/${probe.id}`);
     await page.getByRole("button", { name: /Features/i }).first().waitFor({ state: "visible", timeout: 20_000 });
     await page.getByRole("button", { name: /Features/i }).first().click();
     await page.waitForTimeout(600);
@@ -281,6 +297,22 @@ test.describe("S9-2 SA tenant page", () => {
 });
 
 test.describe("S9-2 onboarding wizard", () => {
+  test.skip(!saPassword(), SA_SKIP_REASON);
+
+  // Unique per run so a second run never collides on name/slug/email.
+  const runId = Date.now().toString(36);
+  const wizardName = `ZZ S9 Wizard ${runId}`;
+  const wizardAdminEmail = `zz-s9-wizard-${runId}@probe.local`;
+  const wizardContactEmail = `zz-s9-wizard-contact-${runId}@probe.local`;
+  // Dates relative to today, not fixed calendar dates.
+  const wizardStart = isoDaysFromNow(30);
+  const wizardEnd = isoPlusYears(wizardStart, 2);
+  let wizardSlug: string | null = null;
+
+  test.afterAll(async ({ request }) => {
+    if (wizardSlug) await deactivateTenantBySlug(request, await saToken(request), wizardSlug);
+  });
+
   test("08 - wizard sends contract dates + billing period in one call", async ({ page }) => {
     const saPw = saPasswordOrSkip(test);
     const errors = collectConsoleErrors(page);
@@ -289,10 +321,10 @@ test.describe("S9-2 onboarding wizard", () => {
     await page.getByRole("button", { name: /Next/i }).waitFor({ state: "visible", timeout: 20_000 });
 
     // Step 1: Company info — name + contract dates (billing period is step 2)
-    await page.fill('input[placeholder*="Addis"]', "ZZ S9 Wizard Probe");
+    await page.fill('input[placeholder*="Addis"]', wizardName);
     const dateInputs = page.locator('input[type="date"]');
-    await dateInputs.nth(0).fill("2026-11-01");
-    await dateInputs.nth(1).fill("2028-10-31");
+    await dateInputs.nth(0).fill(wizardStart);
+    await dateInputs.nth(1).fill(wizardEnd);
     await page.screenshot({ path: "test-results/screens/s9/20-wizard-step1.png", fullPage: true });
     await page.getByRole("button", { name: /Next/i }).click();
 
@@ -306,7 +338,7 @@ test.describe("S9-2 onboarding wizard", () => {
 
     // Step 4: admin user
     await page.fill('input[placeholder*="Abebe"]', "ZZ Wizard Admin");
-    await page.fill('input[placeholder*="admin@company"]', "zz-s9-wizard@probe.local");
+    await page.fill('input[placeholder*="admin@company"]', wizardAdminEmail);
     const pwInputs = page.locator('input[type="password"]');
     await pwInputs.nth(0).fill("S9Wizard@2026!");
     await pwInputs.nth(1).fill("S9Wizard@2026!");
@@ -315,12 +347,15 @@ test.describe("S9-2 onboarding wizard", () => {
     // Step 5: primary contact is required to advance — target by label, since
     // the Tenant Address section above it also has type="text" inputs.
     await page.locator('label:has-text("Full Name") + input').fill("ZZ Wizard Contact");
-    await page.locator('input[type="email"]').fill("zz-s9-wizard-contact@probe.local");
+    await page.locator('input[type="email"]').fill(wizardContactEmail);
     await page.getByRole("button", { name: /Next/i }).click();
 
     await page.screenshot({ path: "test-results/screens/s9/20-wizard-review.png", fullPage: true });
     await page.getByRole("button", { name: "Launch Tenant →" }).click();
     await page.getByText(/Tenant Onboarded/i).waitFor({ state: "visible", timeout: 15_000 });
+    // The success page links to /<slug>/dashboard — read the created tenant's slug from it for cleanup.
+    const hrefs = await page.locator('a[href$="/dashboard"]').evaluateAll((els) => els.map((e) => e.getAttribute("href") ?? ""));
+    wizardSlug = hrefs.map((h) => h.split("/")[1] ?? "").find((slug) => slug && slug !== "admin") ?? null;
     await page.screenshot({ path: "test-results/screens/s9/21-wizard-success.png", fullPage: true });
 
     console.log("=== S9-2 wizard console/page errors (raw) ===");
@@ -330,6 +365,8 @@ test.describe("S9-2 onboarding wizard", () => {
 });
 
 test.describe("S9-3 dashboard picker", () => {
+  test.skip(!saPassword(), SA_SKIP_REASON);
+
   test("09 - Tenant Admin tab is a picker that navigates to the SA tenant page", async ({ page }) => {
     const saPw = saPasswordOrSkip(test);
     const errors = collectConsoleErrors(page);
