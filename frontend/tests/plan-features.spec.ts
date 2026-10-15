@@ -13,7 +13,7 @@
  */
 import { test, expect, type Page, type ConsoleMessage, type APIRequestContext } from "@playwright/test";
 import { E2E_TA_EMAIL, E2E_TA_SLUG, e2eTaPasswordOrSkip } from "./helpers/e2e-ta";
-import { SA_EMAIL, SA_PASSWORD } from "./helpers/sa-credentials";
+import { SA_EMAIL, saPassword, saPasswordOrSkip } from "./helpers/sa-credentials";
 
 const BASE_URL = process.env.BASE_URL ?? "http://localhost:3000";
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
@@ -68,7 +68,12 @@ async function resolveTenantId(request: APIRequestContext, slugOrId: string, tok
  * Mirrors signup.spec.ts's deactivateBySlug — duplicated here rather than
  * exported since that helper is local to that file. */
 async function deactivateBySlug(request: APIRequestContext, slug: string): Promise<void> {
-  const token = await apiToken(request, SA_EMAIL, SA_PASSWORD);
+  const saPw = saPassword();
+  if (!saPw) {
+    console.warn(`plan-features.spec cleanup skipped: E2E_SA_PASSWORD not set — could not deactivate ${slug}`);
+    return;
+  }
+  const token = await apiToken(request, SA_EMAIL, saPw);
   const authHeaders = { Authorization: `Bearer ${token}` };
   const registryResp = await request.get(`${API_BASE}/api/v1/tenants/sa/registry`, { headers: authHeaders });
   if (!registryResp.ok()) {
@@ -144,7 +149,8 @@ test.describe("Branding PATCH — plan gate", () => {
   });
 
   test("SA on zz-e2e-ta is not gated (bypasses plan checks)", async ({ request }) => {
-    const saToken = await apiToken(request, SA_EMAIL, SA_PASSWORD);
+    const saPw = saPasswordOrSkip(test);
+    const saToken = await apiToken(request, SA_EMAIL, saPw);
     const tenantId = await resolveTenantId(request, E2E_TA_SLUG, saToken);
 
     // Read current values first and send them back unchanged — this is a
@@ -166,6 +172,7 @@ test.describe("Branding PATCH — plan gate", () => {
 // ── Scheduled downgrade — never-paid tenant downgrades IMMEDIATE, not SCHEDULED ──
 test.describe("Scheduled downgrade — SA plan controls", () => {
   test("never-paid probe tenant: downgrade is IMMEDIATE, no scheduled notice", async ({ page, request }) => {
+    const saPw = saPasswordOrSkip(test);
     const slug = `zz-f1-${Date.now()}`;
     createdSlugs.push(slug);
 
@@ -183,7 +190,7 @@ test.describe("Scheduled downgrade — SA plan controls", () => {
     await page.getByRole("button", { name: "Create account" }).click();
     await expect(page.getByText("Your account is ready!")).toBeVisible();
 
-    const saToken = await apiToken(request, SA_EMAIL, SA_PASSWORD);
+    const saToken = await apiToken(request, SA_EMAIL, saPw);
     const tenantId = await resolveTenantId(request, slug, saToken);
 
     const patchResp = await request.patch(`${API_BASE}/api/v1/tenants/${tenantId}/plan`, {
@@ -196,7 +203,7 @@ test.describe("Scheduled downgrade — SA plan controls", () => {
     expect(data.scheduled_tier).toBeNull();
 
     // UI: SA's tenant Plan tab shows no scheduled-downgrade notice.
-    await login(page, SA_EMAIL, SA_PASSWORD);
+    await login(page, SA_EMAIL, saPw);
     await page.goto(`${BASE_URL}/admin/settings/tenants/${tenantId}`);
     await page.getByRole("button", { name: /Plan$/i }).first().click();
     await page.waitForLoadState("networkidle");
@@ -204,6 +211,7 @@ test.describe("Scheduled downgrade — SA plan controls", () => {
   });
 
   test("paid subscription: downgrade is SCHEDULED, SA can cancel it", async ({ page, request }) => {
+    const saPw = saPasswordOrSkip(test);
     const slug = `zz-f1-${Date.now()}-paid`;
     createdSlugs.push(slug);
 
@@ -221,7 +229,7 @@ test.describe("Scheduled downgrade — SA plan controls", () => {
     await page.getByRole("button", { name: "Create account" }).click();
     await expect(page.getByText("Your account is ready!")).toBeVisible();
 
-    const saToken = await apiToken(request, SA_EMAIL, SA_PASSWORD);
+    const saToken = await apiToken(request, SA_EMAIL, saPw);
     const authHeaders = { Authorization: `Bearer ${saToken}` };
     const tenantId = await resolveTenantId(request, slug, saToken);
 
@@ -256,7 +264,7 @@ test.describe("Scheduled downgrade — SA plan controls", () => {
     expect(data.scheduled_tier).toBe("STARTER");
 
     // UI: SA sees the notice + Cancel button; cancelling makes it disappear.
-    await login(page, SA_EMAIL, SA_PASSWORD);
+    await login(page, SA_EMAIL, saPw);
     await page.goto(`${BASE_URL}/admin/settings/tenants/${tenantId}`);
     await page.getByRole("button", { name: /Plan$/i }).first().click();
     await page.waitForLoadState("networkidle");

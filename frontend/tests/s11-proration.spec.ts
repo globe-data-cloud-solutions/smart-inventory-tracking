@@ -16,10 +16,9 @@
  *   npx playwright test tests/s11-proration.spec.ts
  */
 import { test, expect, type Page, type ConsoleMessage } from "@playwright/test";
+import { SA_EMAIL, saPasswordOrSkip } from "./helpers/sa-credentials";
 
 const BASE_URL = process.env.BASE_URL ?? "http://localhost:3000";
-const SA_EMAIL = "smartadmin@smart-inventory.com";
-const SA_PASSWORD = "Admin@2026";
 const PROBE_TENANT_ID = "c16a9753-1a17-4695-a766-6c98b4d529a6"; // zz-s11-probe
 
 test.setTimeout(60_000);
@@ -43,9 +42,10 @@ test.describe.configure({ mode: "serial" });
 
 test.describe("S11 proration — SA tenant page", () => {
   test("upgrade preview, confirm, proration invoice banner + badge", async ({ page }) => {
+    const saPw = saPasswordOrSkip(test);
     const consoleErrors = collectConsoleErrors(page);
 
-    await login(page, SA_EMAIL, SA_PASSWORD);
+    await login(page, SA_EMAIL, saPw);
     await page.goto(`${BASE_URL}/admin/settings/tenants/${PROBE_TENANT_ID}`);
     await page.getByRole("button", { name: /^.?.?\s*Plan$/i }).first().click();
     await page.waitForLoadState("networkidle");
@@ -81,9 +81,10 @@ test.describe("S11 proration — SA tenant page", () => {
   });
 
   test("downgrade shows no-refund note, no proration invoice", async ({ page }) => {
+    const saPw = saPasswordOrSkip(test);
     const consoleErrors = collectConsoleErrors(page);
 
-    await login(page, SA_EMAIL, SA_PASSWORD);
+    await login(page, SA_EMAIL, saPw);
     await page.goto(`${BASE_URL}/admin/settings/tenants/${PROBE_TENANT_ID}`);
     await page.getByRole("button", { name: /^.?.?\s*Plan$/i }).first().click();
     await page.waitForLoadState("networkidle");
@@ -102,9 +103,10 @@ test.describe("S11 proration — SA tenant page", () => {
   });
 
   test("Amharic locale renders the proration preview without errors", async ({ page }) => {
+    const saPw = saPasswordOrSkip(test);
     const consoleErrors = collectConsoleErrors(page);
 
-    await login(page, SA_EMAIL, SA_PASSWORD);
+    await login(page, SA_EMAIL, saPw);
     await page.evaluate(() => localStorage.setItem("locale", "am"));
     await page.goto(`${BASE_URL}/admin/settings/tenants/${PROBE_TENANT_ID}`);
     await page.getByRole("button", { name: /Plan$/i }).first().click();

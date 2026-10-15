@@ -14,10 +14,9 @@
  */
 
 import { test, expect, type Page, type ConsoleMessage } from "@playwright/test";
+import { SA_EMAIL, saPassword, saPasswordOrSkip } from "./helpers/sa-credentials";
 
 const BASE_URL = process.env.BASE_URL ?? "http://localhost:3000";
-const SA_EMAIL = "smartadmin@smart-inventory.com";
-const SA_PASSWORD = "Admin@2026";
 
 const T6P2T_NAME = "Tenant_6_P2T";
 const T6P2T_ID = "aed68cc5-789f-4cb0-9ef5-9b6404267e42";
@@ -31,10 +30,12 @@ test.describe.configure({ mode: "serial" });
 test.setTimeout(60_000);
 
 async function reactivateProbe(tenantId: string) {
+  const saPw = saPassword();
+  if (!saPw) return;
   const tokenRes = await fetch(`${BASE_URL.replace("3000", "8000")}/api/v1/auth/token`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ dev_email: SA_EMAIL }),
+    body: JSON.stringify({ email: SA_EMAIL, password: saPw }),
   });
   const { access_token } = (await tokenRes.json()) as { access_token: string };
   await fetch(`${BASE_URL.replace("3000", "8000")}/api/v1/tenants/${tenantId}/reactivate`, {
@@ -96,8 +97,9 @@ test.describe("S9-2 SA tenant page", () => {
   const errors: string[] = [];
 
   test("01 - registry Open navigates to the SA tenant page", async ({ page }) => {
+    const saPw = saPasswordOrSkip(test);
     errors.push(...collectConsoleErrors(page));
-    await loginAs(page, SA_EMAIL, SA_PASSWORD);
+    await loginAs(page, SA_EMAIL, saPw);
     await openTenantFromRegistry(page, T6P2T_NAME);
     await expect(page.getByRole("heading", { name: T6P2T_NAME })).toBeVisible();
     await page.screenshot({ path: "test-results/screens/s9/01-tenant-page.png", fullPage: true });
@@ -117,8 +119,9 @@ test.describe("S9-2 SA tenant page", () => {
 
   for (const tab of TABS) {
     test(`02 - tab renders: ${tab.id}`, async ({ page }) => {
+      const saPw = saPasswordOrSkip(test);
       errors.push(...collectConsoleErrors(page));
-      await loginAs(page, SA_EMAIL, SA_PASSWORD);
+      await loginAs(page, SA_EMAIL, saPw);
       await openTenantFromRegistry(page, T6P2T_NAME);
       await page.getByRole("button", { name: tab.label }).first().click();
       await page.waitForTimeout(600);
@@ -127,8 +130,9 @@ test.describe("S9-2 SA tenant page", () => {
   }
 
   test("03 - Amharic: profile and plan tabs render", async ({ page }) => {
+    const saPw = saPasswordOrSkip(test);
     errors.push(...collectConsoleErrors(page));
-    await loginAs(page, SA_EMAIL, SA_PASSWORD);
+    await loginAs(page, SA_EMAIL, saPw);
     await page.evaluate(() => localStorage.setItem("locale", "am"));
     // Registry's "Open" action label is itself translated in Amharic — go
     // straight to the tenant's known UUID rather than text-matching the link.
@@ -141,8 +145,9 @@ test.describe("S9-2 SA tenant page", () => {
   });
 
   test("04 - plan tab reads live tier limits, not hardcoded", async ({ page }) => {
+    const saPw = saPasswordOrSkip(test);
     errors.push(...collectConsoleErrors(page));
-    await loginAs(page, SA_EMAIL, SA_PASSWORD);
+    await loginAs(page, SA_EMAIL, saPw);
     await openTenantFromRegistry(page, T6P2T_NAME);
     await page.getByRole("button", { name: /^.?.?\s*Plan$/i }).first().click();
 
@@ -184,12 +189,13 @@ test.describe("S9-2 SA tenant page", () => {
   });
 
   test("05 - contract probe: contract tab + status deactivate via UI", async ({ page }) => {
+    const saPw = saPasswordOrSkip(test);
     errors.push(...collectConsoleErrors(page));
     // Idempotent setup: this probe may already be DEACTIVATED from a prior run
     // of this same test — reactivate it first via a direct API call so the UI
     // flow below (deactivate via the Status tab) always has something to do.
     await reactivateProbe(CONTRACT_PROBE_ID);
-    await loginAs(page, SA_EMAIL, SA_PASSWORD);
+    await loginAs(page, SA_EMAIL, saPw);
     await page.goto(`${BASE_URL}/admin/settings/tenants/${CONTRACT_PROBE_ID}`);
     await page.getByRole("button", { name: /Contract/i }).first().waitFor({ state: "visible", timeout: 20_000 });
     await page.getByRole("button", { name: /Contract/i }).first().click();
@@ -209,8 +215,9 @@ test.describe("S9-2 SA tenant page", () => {
   });
 
   test("06 - features tab: overrides banner + toggle", async ({ page }) => {
+    const saPw = saPasswordOrSkip(test);
     errors.push(...collectConsoleErrors(page));
-    await loginAs(page, SA_EMAIL, SA_PASSWORD);
+    await loginAs(page, SA_EMAIL, saPw);
     await page.goto(`${BASE_URL}/admin/settings/tenants/${CONTRACT_PROBE_ID}`);
     await page.getByRole("button", { name: /Features/i }).first().waitFor({ state: "visible", timeout: 20_000 });
     await page.getByRole("button", { name: /Features/i }).first().click();
@@ -253,8 +260,9 @@ test.describe("S9-2 SA tenant page", () => {
   });
 
   test("07 - admin user + activity tabs render for t6p2t", async ({ page }) => {
+    const saPw = saPasswordOrSkip(test);
     errors.push(...collectConsoleErrors(page));
-    await loginAs(page, SA_EMAIL, SA_PASSWORD);
+    await loginAs(page, SA_EMAIL, saPw);
     await openTenantFromRegistry(page, T6P2T_NAME);
     await page.getByRole("button", { name: /Admin User/i }).first().click();
     await page.waitForTimeout(600);
@@ -274,8 +282,9 @@ test.describe("S9-2 SA tenant page", () => {
 
 test.describe("S9-2 onboarding wizard", () => {
   test("08 - wizard sends contract dates + billing period in one call", async ({ page }) => {
+    const saPw = saPasswordOrSkip(test);
     const errors = collectConsoleErrors(page);
-    await loginAs(page, SA_EMAIL, SA_PASSWORD);
+    await loginAs(page, SA_EMAIL, saPw);
     await page.goto(`${BASE_URL}/onboard`);
     await page.getByRole("button", { name: /Next/i }).waitFor({ state: "visible", timeout: 20_000 });
 
@@ -322,8 +331,9 @@ test.describe("S9-2 onboarding wizard", () => {
 
 test.describe("S9-3 dashboard picker", () => {
   test("09 - Tenant Admin tab is a picker that navigates to the SA tenant page", async ({ page }) => {
+    const saPw = saPasswordOrSkip(test);
     const errors = collectConsoleErrors(page);
-    await loginAs(page, SA_EMAIL, SA_PASSWORD);
+    await loginAs(page, SA_EMAIL, saPw);
     await page.goto(`${BASE_URL}/admin/dashboard`);
 
     await page.getByRole("button", { name: /Tenant Admin/i }).click();

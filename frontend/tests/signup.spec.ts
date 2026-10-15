@@ -14,7 +14,7 @@
  */
 
 import { test, expect, type APIRequestContext } from "@playwright/test";
-import { SA_EMAIL, SA_PASSWORD } from "./helpers/sa-credentials";
+import { SA_EMAIL, saPassword } from "./helpers/sa-credentials";
 
 const BASE_URL = process.env.BASE_URL ?? "http://localhost:3000";
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
@@ -29,8 +29,13 @@ const createdSlugs: string[] = [];
 /** SA-only: resolve a tenant's UUID from its slug via the registry, then
  * deactivate it (soft delete — never a hard delete, per CLAUDE.md §8). */
 async function deactivateBySlug(request: APIRequestContext, slug: string): Promise<void> {
+  const saPw = saPassword();
+  if (!saPw) {
+    console.warn(`signup.spec cleanup skipped: E2E_SA_PASSWORD not set — could not deactivate ${slug}`);
+    return;
+  }
   const tokenResp = await request.post(`${API_BASE}/api/v1/auth/token`, {
-    data: { email: SA_EMAIL, password: SA_PASSWORD },
+    data: { email: SA_EMAIL, password: saPw },
   });
   if (!tokenResp.ok()) {
     console.warn(`signup.spec cleanup: SA login failed (${tokenResp.status()}) — could not deactivate ${slug}`);

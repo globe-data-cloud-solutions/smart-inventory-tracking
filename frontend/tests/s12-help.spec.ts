@@ -8,20 +8,17 @@
  *
  * No demo WM account exists in frontend/src/lib/demo-data.ts (ALL_DEMO_USERS
  * is SA only), and the real seeded WM account (wm_wha1@t07.com) has a real
- * password this suite does not have — the dev_email bypass on /token only
- * skips the password check when no dev_password is sent at all, which the
- * login form's own required-field validation won't allow. Per this task's
- * own instructions, that check is skipped rather than guessed at or reset.
+ * password this suite does not have, so that check is skipped rather than
+ * guessed at or reset.
  *
  * Run:
  *   npx playwright test tests/s12-help.spec.ts
  */
 import { test, expect, type Page, type ConsoleMessage } from "@playwright/test";
 import { E2E_TA_EMAIL, E2E_TA_SLUG, e2eTaPasswordOrSkip } from "./helpers/e2e-ta";
+import { SA_EMAIL, saPasswordOrSkip } from "./helpers/sa-credentials";
 
 const BASE_URL = process.env.BASE_URL ?? "http://localhost:3000";
-const SA_EMAIL = "smartadmin@smart-inventory.com";
-const SA_PASSWORD = "Admin@2026";
 const WM_EMAIL = "wm_wha1@t07.com";
 const WM_ORG = "tenant-07";
 
@@ -46,9 +43,10 @@ test.describe.configure({ mode: "serial" });
 
 test.describe("S12-2 Help & Documents", () => {
   test("SA sees every audience, including SA-only coming-soon", async ({ page }) => {
+    const saPw = saPasswordOrSkip(test);
     const consoleErrors = collectConsoleErrors(page);
 
-    await login(page, SA_EMAIL, SA_PASSWORD);
+    await login(page, SA_EMAIL, saPw);
     await page.goto(`${BASE_URL}/admin/help`);
     await page.waitForLoadState("networkidle");
 
@@ -183,9 +181,10 @@ test.describe("S12-2 Help & Documents", () => {
   });
 
   test("Amharic chrome translates, english_only_notice shown, no raw keys", async ({ page }) => {
+    const saPw = saPasswordOrSkip(test);
     const consoleErrors = collectConsoleErrors(page);
 
-    await login(page, SA_EMAIL, SA_PASSWORD);
+    await login(page, SA_EMAIL, saPw);
     await page.evaluate(() => localStorage.setItem("locale", "am"));
     await page.goto(`${BASE_URL}/admin/help/ta-onboarding-guide`);
     await page.waitForLoadState("networkidle");

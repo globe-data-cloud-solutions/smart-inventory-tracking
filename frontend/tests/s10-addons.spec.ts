@@ -10,14 +10,13 @@
  */
 import { test, expect, type Page, type ConsoleMessage } from "@playwright/test";
 import { E2E_TA_EMAIL, E2E_TA_SLUG, e2eTaPasswordOrSkip } from "./helpers/e2e-ta";
+import { SA_EMAIL, saPassword, saPasswordOrSkip } from "./helpers/sa-credentials";
 
 const BASE_URL = process.env.BASE_URL ?? "http://localhost:3000";
 // The gateway is a separate port from the Next.js dev server — never derived
 // from BASE_URL by string substitution (that breaks the moment BASE_URL
 // isn't literally "...3000"). GATEWAY_URL overrides for non-default setups.
 const GATEWAY_URL = process.env.GATEWAY_URL ?? "http://localhost:8000";
-const SA_EMAIL = "smartadmin@smart-inventory.com";
-const SA_PASSWORD = "Admin@2026";
 
 test.setTimeout(60_000);
 
@@ -39,13 +38,14 @@ async function login(page: Page, email: string, password: string) {
 test.describe("S10-1 post-login JWT race fix", () => {
   for (let i = 1; i <= 5; i++) {
     test(`fresh SA login #${i} -> dashboard, zero 401s`, async ({ page }) => {
+      const saPw = saPasswordOrSkip(test);
       const consoleLines = collectConsole(page);
       const apiErrors: string[] = [];
       page.on("response", (res) => {
         if (res.status() === 401) apiErrors.push(`401: ${res.url()}`);
       });
 
-      await login(page, SA_EMAIL, SA_PASSWORD);
+      await login(page, SA_EMAIL, saPw);
       // Give any in-flight dashboard queries a moment to settle.
       await page.waitForLoadState("networkidle");
 
@@ -81,11 +81,13 @@ test.describe("S10-1 permanent e2e TA account", () => {
 
 // ── S10-4 frontend: add-on catalog, tenant add-ons, feature sources ──────────
 
-async function getSaToken(): Promise<string> {
+async function getSaToken(): Promise<string | null> {
+  const saPw = saPassword();
+  if (!saPw) return null;
   const tokenRes = await fetch(`${GATEWAY_URL}/api/v1/auth/token`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ dev_email: SA_EMAIL }),
+    body: JSON.stringify({ email: SA_EMAIL, password: saPw }),
   });
   const { access_token } = (await tokenRes.json()) as { access_token: string };
   return access_token;
@@ -97,6 +99,7 @@ let cachedE2ETaTenantId: string | null = null;
 async function resolveE2ETaTenantId(): Promise<string> {
   if (cachedE2ETaTenantId) return cachedE2ETaTenantId;
   const token = await getSaToken();
+  if (!token) throw new Error("E2E_SA_PASSWORD not set — cannot resolve the E2E TA tenant id via the SA registry");
   const registryRes = await fetch(`${GATEWAY_URL}/api/v1/tenants/sa/registry`, {
     headers: { Authorization: `Bearer ${token}` },
   });
@@ -109,6 +112,10 @@ async function resolveE2ETaTenantId(): Promise<string> {
 
 async function reactivateE2ETa() {
   const token = await getSaToken();
+  if (!token) {
+    console.warn("reactivateE2ETa skipped: E2E_SA_PASSWORD not set");
+    return;
+  }
   const tenantId = await resolveE2ETaTenantId();
   // zz-e2e-ta stays ACTIVE always (CLAUDE.md §29) — this is a no-op guard, not a real reactivate need.
   await fetch(`${GATEWAY_URL}/api/v1/tenants/${tenantId}/reactivate`, {
@@ -122,11 +129,12 @@ test.describe.configure({ mode: "serial" });
 
 test.describe("S10-4 SA Plans & Pricing — Add-ons tab", () => {
   test("set and see a scheduled price", async ({ page }) => {
+    const saPw = saPasswordOrSkip(test);
     const consoleErrors: string[] = [];
     page.on("pageerror", (err) => consoleErrors.push(err.message));
     page.on("console", (msg) => { if (msg.type() === "error") consoleErrors.push(msg.text()); });
 
-    await login(page, SA_EMAIL, SA_PASSWORD);
+    await login(page, SA_EMAIL, saPw);
     await page.goto(`${BASE_URL}/admin/settings/plans`);
     await page.getByRole("button", { name: "Add-ons" }).click();
     await page.waitForLoadState("networkidle");
@@ -161,12 +169,13 @@ test.describe("S10-4 SA Plans & Pricing — Add-ons tab", () => {
 
 test.describe("S10-4 SA tenant page — Features Add-ons + plan-change persistence", () => {
   test("grant free override, survives plan change, then cancel", async ({ page }) => {
+    const saPw = saPasswordOrSkip(test);
     const consoleErrors: string[] = [];
     page.on("pageerror", (err) => consoleErrors.push(err.message));
     page.on("console", (msg) => { if (msg.type() === "error") consoleErrors.push(msg.text()); });
 
     await reactivateE2ETa();
-    await login(page, SA_EMAIL, SA_PASSWORD);
+    await login(page, SA_EMAIL, saPw);
     await page.goto(`${BASE_URL}/admin/settings/tenants/${await resolveE2ETaTenantId()}`);
     await page.getByRole("button", { name: /^.?.?\s*Features$/i }).first().click();
     await page.waitForLoadState("networkidle");
@@ -217,11 +226,12 @@ test.describe("S10-4 SA tenant page — Features Add-ons + plan-change persisten
   });
 
   test("purchased add-on on an invoice, screenshot line items, then cancel", async ({ page }) => {
+    const saPw = saPasswordOrSkip(test);
     const consoleErrors: string[] = [];
     page.on("pageerror", (err) => consoleErrors.push(err.message));
     page.on("console", (msg) => { if (msg.type() === "error") consoleErrors.push(msg.text()); });
 
-    await login(page, SA_EMAIL, SA_PASSWORD);
+    await login(page, SA_EMAIL, saPw);
     await page.goto(`${BASE_URL}/admin/settings/tenants/${await resolveE2ETaTenantId()}`);
     await page.getByRole("button", { name: /^.?.?\s*Features$/i }).first().click();
     await page.waitForLoadState("networkidle");
@@ -275,6 +285,7 @@ test.describe("S10-4 SA tenant page — Features Add-ons + plan-change persisten
 
 test.describe("S10-4 TA views (real login)", () => {
   test("Plan tab add-ons + invoice lines; Features source labels; settings restricted", async ({ page }) => {
+    saPasswordOrSkip(test); // resolves the TA tenant id through the SA registry
     const password = e2eTaPasswordOrSkip(test);
     const consoleErrors: string[] = [];
     page.on("pageerror", (err) => consoleErrors.push(err.message));

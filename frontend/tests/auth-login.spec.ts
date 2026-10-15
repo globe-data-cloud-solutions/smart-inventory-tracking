@@ -17,7 +17,7 @@
  */
 import { test, expect, type Page, type ConsoleMessage } from "@playwright/test";
 import { E2E_TA_EMAIL, e2eTaPasswordOrSkip } from "./helpers/e2e-ta";
-import { SA_EMAIL, SA_PASSWORD } from "./helpers/sa-credentials";
+import { SA_EMAIL, saPasswordOrSkip } from "./helpers/sa-credentials";
 
 const BASE_URL = process.env.BASE_URL ?? "http://localhost:3000";
 
@@ -49,11 +49,12 @@ async function gotoLogin(page: Page, locale: "en" | "am") {
 for (const locale of ["en", "am"] as const) {
   test.describe(`Email/password login (${locale})`, () => {
     test(`SA login succeeds and lands on the SA dashboard (${locale})`, async ({ page }) => {
+      const saPw = saPasswordOrSkip(test);
       const consoleErrors = collectConsoleErrors(page);
 
       await gotoLogin(page, locale);
       await page.fill('input[type="email"]', SA_EMAIL);
-      await page.fill('input[type="password"]', SA_PASSWORD);
+      await page.fill('input[type="password"]', saPw);
       await page.click('button[type="submit"]');
 
       await page.waitForURL(/\/admin\/dashboard/);
@@ -72,7 +73,7 @@ for (const locale of ["en", "am"] as const) {
       const consoleErrors = collectConsoleErrors(page);
 
       await gotoLogin(page, locale);
-      await page.fill('input[type="email"]', SA_EMAIL);
+      await page.fill('input[type="email"]', E2E_TA_EMAIL);
       await page.fill('input[type="password"]', "definitely-wrong-password");
       await page.click('button[type="submit"]');
 
@@ -104,7 +105,7 @@ for (const locale of ["en", "am"] as const) {
       });
 
       await gotoLogin(page, locale);
-      await page.fill('input[type="email"]', SA_EMAIL);
+      await page.fill('input[type="email"]', E2E_TA_EMAIL);
       // Leave password empty — the field is `required`, so the browser blocks
       // submission natively and the form handler never runs.
       await page.click('button[type="submit"]');
