@@ -97,7 +97,7 @@ test.describe("S12-2 Help & Documents", () => {
     // several places (checklist heading, FAQ, role-lock text), which makes the
     // old bare getByText ambiguous (strict-mode violation).
     await expect(page.getByRole("table").first()).toBeVisible();
-    await expect(page.getByRole("cell", { name: "Tenant Administrator", exact: true })).toBeVisible();
+    await expect(page.getByRole("cell", { name: /^🔒\s*Tenant Administrator \(TA\) Only$/ })).toBeVisible();
 
     // Internal anchor link scrolls to its heading (same algorithm as the
     // link's own target — see DocumentRenderer.slugifyHeading).
