@@ -1782,9 +1782,6 @@
     "SUB_WH": "Sub-WH"
   },
   "login": {
-    "quick_access": "Seenaa Ariifataa",
-    "password": "Jecha Icciitii",
-    "click_to_fill": "Guuti Ofumaan Tuqaa",
     "title": "Sign in",
     "subtitle": "Access your inventory dashboard",
     "email_label": "Email address",
@@ -1797,9 +1794,6 @@
     "submit_btn": "Sign in →",
     "create_account": "Create an account",
     "email_not_verified": "Please verify your email address before signing in.",
-    "system_admin_heading": "System Administrator",
-    "mobile_system_admin": "System Admin",
-    "personnel_hint": "To add tenant accounts, sign in as SA and use Settings → Personnel.",
     "footer_tagline": "SMART Inventory Tracker · RBAC + ABAC · 3 languages",
     "auth_unavailable": "Sign-in is temporarily unavailable. Please try again later.",
     "forgot_link": "Forgot password?",

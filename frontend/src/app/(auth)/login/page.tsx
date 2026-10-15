@@ -4,7 +4,6 @@ import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { loginWithPassword } from "@/lib/demo-auth";
-import { SA_USER } from "@/lib/demo-data";
 import { rawPost } from "@/lib/api";
 import { t } from "@/lib/i18n";
 import { PublicContactLink } from "@/components/features/auth/PublicContactLink";
@@ -16,8 +15,6 @@ export default function LoginPage() {
   const [error, setError]       = useState("");
   const [lockoutMessage, setLockoutMessage] = useState("");
   const [loading, setLoading]   = useState(false);
-  // Show password by default so users can see SA credentials without clicking
-  const [showPwd, setShowPwd]   = useState(true);
   const [emailNotVerified, setEmailNotVerified] = useState(false);
   const [resendSent, setResendSent] = useState(false);
   const [resending, setResending]   = useState(false);
@@ -108,67 +105,9 @@ export default function LoginPage() {
     router.push(dest);
   };
 
-  const fillCredentials = (em: string, pw: string) => {
-    setEmail(em);
-    setPassword(pw);
-    setError("");
-    setLockoutMessage("");
-  };
-
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-900 via-brand-900 to-slate-900 flex">
-      {/* ── Left panel: SA quick access ── */}
-      {/* Quick Access panel is for local development only.
-          Remove before production deployment.
-          Credentials are for the SA system account only. */}
-      <div className="hidden lg:flex lg:w-96 bg-white/5 border-r border-white/10 flex-col p-8 overflow-y-auto h-screen">
-        <h2 className="text-white font-bold text-lg mb-1">{t("login.quick_access")}</h2>
-
-        <div className="mb-6">
-          <p className="text-xs text-slate-400 uppercase tracking-wider font-semibold mb-2">
-            {t("login.system_admin_heading")}
-          </p>
-          {/* Clicking anywhere on the card except the eye icon fills both fields */}
-          <div
-            role="button"
-            tabIndex={0}
-            onClick={() => fillCredentials(SA_USER.email, SA_USER.password)}
-            onKeyDown={(e) => e.key === "Enter" && fillCredentials(SA_USER.email, SA_USER.password)}
-            className="w-full text-left p-3 rounded-lg bg-brand-600/30 border border-brand-500/40 hover:bg-brand-600/50 transition-colors group cursor-pointer"
-          >
-            <div className="flex items-center justify-between">
-              <p className="text-white text-sm font-medium group-hover:text-brand-200">{SA_USER.name}</p>
-              <span className="text-xs bg-brand-500 text-white rounded px-1.5 py-0.5">SA</span>
-            </div>
-            <p className="text-slate-400 text-xs font-mono mt-0.5">{SA_USER.email}</p>
-            <div className="flex items-center gap-2 mt-1.5">
-              <span className="text-xs text-gray-400">{t("login.password")}:</span>
-              <span className="text-xs font-mono text-slate-300">
-                {showPwd ? SA_USER.password : "••••••••"}
-              </span>
-              <button
-                type="button"
-                onClick={(e) => { e.stopPropagation(); setShowPwd((v) => !v); }}
-                className="text-gray-400 hover:text-gray-200 transition-colors leading-none"
-                aria-label={showPwd ? "Hide password" : "Show password"}
-              >
-                {showPwd ? "👁" : "👁‍🗨"}
-              </button>
-            </div>
-            <p className="text-xs text-brand-300 group-hover:text-brand-100 mt-2 font-medium">
-              {t("login.click_to_fill")} →
-            </p>
-          </div>
-        </div>
-
-        <div className="mt-auto border-t border-white/10 pt-4">
-          <p className="text-xs text-slate-500">
-            {t("login.personnel_hint")}
-          </p>
-        </div>
-      </div>
-
-      {/* ── Right panel: login form ── */}
+      {/* ── Login form ── */}
       <div className="flex-1 flex items-center justify-center p-8">
         <div className="w-full max-w-md">
           <div className="bg-white rounded-2xl shadow-2xl p-8">
@@ -267,13 +206,6 @@ export default function LoginPage() {
                 {t("login.create_account")}
               </Link>
             </p>
-
-            {/* Mobile credentials hint */}
-            <div className="mt-6 p-4 rounded-lg bg-brand-50 border border-brand-100 lg:hidden">
-              <p className="text-xs font-semibold text-brand-700 mb-2">{t("login.mobile_system_admin")}</p>
-              <p className="text-xs font-mono text-brand-800">{SA_USER.email}</p>
-              <p className="text-xs font-mono text-brand-800">{SA_USER.password}</p>
-            </div>
           </div>
 
           <p className="text-center text-slate-400 text-xs mt-6">

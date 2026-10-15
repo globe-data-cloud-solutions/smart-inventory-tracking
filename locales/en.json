@@ -1778,9 +1778,6 @@
     "coverage_hint": "This rule routes to {position} at {node} (Level {level}). The following nodes at the same level have no routing rule yet: {nodes}. Consider adding rules for those nodes."
   },
   "login": {
-    "quick_access": "Quick Access",
-    "password": "Password",
-    "click_to_fill": "Click to auto-fill",
     "title": "Sign in",
     "subtitle": "Access your inventory dashboard",
     "email_label": "Email address",
@@ -1794,9 +1791,6 @@
     "create_account": "Create an account",
     "getting_started_link": "Getting started",
     "email_not_verified": "Please verify your email address before signing in.",
-    "system_admin_heading": "System Administrator",
-    "mobile_system_admin": "System Admin",
-    "personnel_hint": "To add tenant accounts, sign in as SA and use Settings → Personnel.",
     "footer_tagline": "SMART Inventory Tracker · RBAC + ABAC · 3 languages",
     "auth_unavailable": "Sign-in is temporarily unavailable. Please try again later.",
     "forgot_link": "Forgot password?"

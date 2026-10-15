@@ -1,5 +1,5 @@
 // demo-data.ts — Session 1 clean slate
-// DEMO_TENANTS and ALL_DEMO_USERS are intentionally empty.
+// DEMO_TENANTS is intentionally empty.
 // All tenant data is now stored in the database; the BFF demo layer is retired.
 // Kept: type definitions and helper stubs required by existing imports.
 
@@ -71,21 +71,9 @@ export interface DemoTenant {
   description?: string;
 }
 
-// ── SA (System Admin) ─────────────────────────────────────────────────────────
-
-export const SA_USER: DemoUser = {
-  id: "sa-001",
-  email: "smartadmin@smart-inventory.com",
-  password: "Admin@2026",
-  name: "System Administrator",
-  role: "SA",
-};
-
 // ── Empty exports — all real data lives in the database ───────────────────────
 
 export const DEMO_TENANTS: DemoTenant[] = [];
-
-export const ALL_DEMO_USERS: DemoUser[] = [SA_USER];
 
 // ── Helper stubs — return empty/zero for gateway mode ────────────────────────
 
