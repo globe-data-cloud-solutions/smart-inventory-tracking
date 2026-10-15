@@ -11,7 +11,7 @@
 import { test, expect, type Page, type ConsoleMessage } from "@playwright/test";
 import { E2E_TA_EMAIL, e2eTaPasswordOrSkip } from "./helpers/e2e-ta";
 import { SA_EMAIL, saPassword, saPasswordOrSkip } from "./helpers/sa-credentials";
-import { createProbeTenant, deactivateTenant, saToken, type ProbeTenant } from "./helpers/sa-api";
+import { createProbeTenant, deactivateTenant, pickTestAddon, saToken, type PickedAddon, type ProbeTenant } from "./helpers/sa-api";
 import { isDevHmrNoise } from "./helpers/console-noise";
 
 const BASE_URL = process.env.BASE_URL ?? "http://localhost:3000";
@@ -203,14 +203,23 @@ test.describe("S10-4 SA Plans & Pricing — Add-ons tab", () => {
 });
 
 // Grant / invoice / TA-view tests run against their own probe tenant (STARTER,
-// MONTHLY), created per run and deactivated in afterAll — never zz-e2e-ta.
+// ANNUAL), created per run and deactivated in afterAll — never zz-e2e-ta.
+// The add-on they use is picked at run time: tier flags and add-on prices are
+// SA-editable platform config, so no add-on is hard-coded.
 test.describe("S10-4 probe tenant add-ons", () => {
   test.skip(!saPassword(), SA_SKIP_REASON);
 
   let probe: ProbeTenant;
+  let addon: PickedAddon;
 
   test.beforeAll(async ({ request }) => {
-    probe = await createProbeTenant(request, { prefix: "s10", tier: "STARTER", billingPeriod: "MONTHLY" });
+    // Not in STARTER or GROWTH (the test moves the probe between them, and a
+    // package-included add-on is refused with FEATURE_ALREADY_IN_PACKAGE), and
+    // priced for the probe's billing period (PURCHASED needs a current price).
+    addon = await pickTestAddon(request, await saToken(request), {
+      excludeTiers: ["STARTER", "GROWTH"], billingPeriod: "ANNUAL",
+    });
+    probe = await createProbeTenant(request, { prefix: "s10", tier: "STARTER", billingPeriod: "ANNUAL" });
   });
 
   test.afterAll(async ({ request }) => {
@@ -231,18 +240,16 @@ test.describe("S10-4 SA tenant page — Features Add-ons + plan-change persisten
 
     const addonsSection = page.locator("h3", { hasText: "Add-ons" }).locator("..");
     await addonsSection.getByRole("button", { name: "Grant free override" }).click();
-    // API Access is in neither STARTER nor GROWTH (LOGISTICS is in STARTER, so the
-    // backend refuses a grant with FEATURE_ALREADY_IN_PACKAGE and the dialog stays open).
-    await addonsSection.locator("select").selectOption({ label: "API Access" });
+    await addonsSection.locator("select").selectOption({ label: addon.displayName });
     await addonsSection.locator('input[type="text"]').fill("S10 Playwright pilot grant");
     await addonsSection.getByRole("button", { name: "Yes" }).click();
     await expect(addonsSection.getByText("Free override")).toBeVisible({ timeout: 10_000 });
 
-    const apiAccessRow = page.locator("h4", { hasText: "API Access" }).locator("..");
+    const apiAccessRow = page.locator("h4", { hasText: addon.displayName }).locator("..");
     await expect(apiAccessRow.getByText("Add-on", { exact: true })).toBeVisible();
     await page.screenshot({ path: "test-results/screens/s10/sa-tenant-features-addon-en.png", fullPage: true });
 
-    // Plan change STARTER -> GROWTH -> STARTER; API_ACCESS must stay "Add-on".
+    // Plan change STARTER -> GROWTH -> STARTER; the picked add-on must stay "Add-on".
     await page.getByRole("button", { name: /^.?.?\s*Plan$/i }).first().click();
     await page.waitForLoadState("networkidle");
     await page.getByRole("button", { name: "GROWTH" }).click();
@@ -289,7 +296,7 @@ test.describe("S10-4 SA tenant page — Features Add-ons + plan-change persisten
 
     const addonsSection = page.locator("h3", { hasText: "Add-ons" }).locator("..");
     await addonsSection.getByRole("button", { name: "Add purchased add-on" }).click();
-    await addonsSection.locator("select").selectOption({ label: "Logistics & Fleet Management" });
+    await addonsSection.locator("select").selectOption({ label: addon.displayName });
     await addonsSection.getByRole("button", { name: "Yes" }).click();
     await expect(addonsSection.getByText("Purchased")).toBeVisible({ timeout: 10_000 });
 
@@ -298,7 +305,7 @@ test.describe("S10-4 SA tenant page — Features Add-ons + plan-change persisten
     await page.getByRole("button", { name: "Raise Invoice" }).click();
     await page.getByRole("button", { name: "Yes" }).click();
     await page.waitForLoadState("networkidle");
-    await expect(page.getByText(/Add-on: Logistics/).first()).toBeVisible({ timeout: 10_000 });
+    await expect(page.getByText(`Add-on: ${addon.displayName}`).first()).toBeVisible({ timeout: 10_000 });
     await page.screenshot({ path: "test-results/screens/s10/sa-tenant-invoice-lines-en.png", fullPage: true });
 
     await page.evaluate(() => localStorage.setItem("locale", "am"));

@@ -162,3 +162,62 @@ export async function createPaidSubscriptionInvoice(
   );
   expect(paidResp.ok(), `mark-paid failed (${paidResp.status()}): ${await paidResp.text()}`).toBeTruthy();
 }
+
+export interface PickedAddon {
+  code: string;
+  displayName: string;
+  /** Current (effective now) price for the requested billing period, as the API returns it. */
+  amount: string;
+}
+
+export interface PickAddonOptions {
+  /** Tiers whose package must NOT include the add-on (flag false/absent in every one). */
+  excludeTiers: string[];
+  billingPeriod: "MONTHLY" | "ANNUAL";
+}
+
+/**
+ * SA: first ACTIVE add-on whose feature flag is not true in any excluded tier
+ * AND that has a current (effective now) price for billingPeriod. Tier flags and
+ * add-on prices are SA-editable platform config, so specs must not hard-code one.
+ * GET /platform/tier-config (tenants.py:448) + GET /platform/addons (tenants.py:976).
+ */
+export async function pickTestAddon(
+  request: APIRequestContext,
+  token: string,
+  { excludeTiers, billingPeriod }: PickAddonOptions,
+): Promise<PickedAddon> {
+  const tierResp = await request.get(`${API_BASE}/api/v1/tenants/platform/tier-config`, { headers: bearer(token) });
+  expect(tierResp.ok(), `tier-config request failed (${tierResp.status()})`).toBeTruthy();
+  const { data: tiers } = (await tierResp.json()) as {
+    data: Array<{ tier: string; feature_flags: Record<string, boolean> }>;
+  };
+  const excluded = tiers.filter((t) => excludeTiers.includes(t.tier));
+  const missing = excludeTiers.filter((t) => !excluded.some((e) => e.tier === t));
+  if (missing.length) throw new Error(`pickTestAddon: tier(s) ${missing.join(", ")} not found in platform tier-config`);
+
+  const addonResp = await request.get(`${API_BASE}/api/v1/tenants/platform/addons`, { headers: bearer(token) });
+  expect(addonResp.ok(), `add-on catalog request failed (${addonResp.status()})`).toBeTruthy();
+  const { data: addons } = (await addonResp.json()) as {
+    data: Array<{
+      code: string; display_name: string; is_active: boolean;
+      prices: Array<{ billing_period: string; current: { amount: string } | null }>;
+    }>;
+  };
+
+  const found = addons.find((a) =>
+    a.is_active
+    && excluded.every((t) => t.feature_flags[a.code] !== true)
+    && a.prices.some((p) => p.billing_period === billingPeriod && p.current !== null),
+  );
+  if (!found) {
+    const checked = addons
+      .map((a) => `${a.code}(active=${a.is_active}, in=[${excluded.filter((t) => t.feature_flags[a.code] === true).map((t) => t.tier).join(",")}], ${billingPeriod} price=${a.prices.find((p) => p.billing_period === billingPeriod)?.current ? "yes" : "no"})`)
+      .join("; ");
+    throw new Error(
+      `pickTestAddon: no ACTIVE add-on outside [${excludeTiers.join(", ")}] with a current ${billingPeriod} price. Checked: ${checked}`,
+    );
+  }
+  const price = found.prices.find((p) => p.billing_period === billingPeriod)!.current!;
+  return { code: found.code, displayName: found.display_name, amount: price.amount };
+}
