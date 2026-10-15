@@ -666,7 +666,8 @@ export default function InventoryPage() {
         <div className="flex gap-2 flex-wrap">
           {isMWH && <OpeningBalancePanel products={mergedProducts.filter((p) => !p.is_discontinued)} warehouses={displayWarehouses} orgSlug={org} />}
           {isMWH && <BulkImportPanel     products={mergedProducts.filter((p) => !p.is_discontinued)} warehouses={displayWarehouses} orgSlug={org} />}
-          <ReceiveStockPanel products={mergedProducts.filter((p) => !p.is_discontinued)} orgSlug={org} />
+          {/* RB-5: the panel posts to user.warehouseId — a user without one cannot receive. */}
+          {user.warehouseId && <ReceiveStockPanel products={mergedProducts.filter((p) => !p.is_discontinued)} orgSlug={org} />}
           {/* Issue Stock hidden — internal use only. Adjustment covers all correction
               needs for distributors. Re-enable when dispatch/sales module is built
               (Phase 2). */}

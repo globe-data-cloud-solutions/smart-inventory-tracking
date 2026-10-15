@@ -12,6 +12,7 @@ import { TransferRowDetails, hasLotSplit, transferDetailKey, type TransferReceip
 import { ApproveLotsPanel, approveFailure, type ApproveFailure, type ApproveLine, type ApproveLotsBody } from "@/components/features/transfers/ApproveLotsPanel";
 import { fetchDispatchPreview } from "@/components/features/transfers/DispatchPreview";
 import { OpenDiscrepanciesPanel } from "@/components/features/transfers/OpenDiscrepanciesPanel";
+import { tf, transferStatusLabel, transferTypeLabel, useTransferTypes } from "@/components/features/transfers/transferLabels";
 import { ProductLabel } from "@/components/features/inventory/ProductLabel";
 import { useInventoryStore } from "@/lib/inventory-state";
 import { useAuditStore } from "@/lib/audit-log-state";
@@ -149,7 +150,7 @@ function getWaitingMessage(
       // PULL: creator is at destination (to_warehouse) — show destination facility.
       // PUSH/SISTER: creator is at source (from_warehouse) — show source facility.
       const submitter = type === "PULL" ? toWarehouseName : fromWarehouseName;
-      return `Waiting for ${submitter} to submit`;
+      return tf("transfers.wait.draft", { name: submitter });
     }
     case "PENDING_REVIEW": {
       // Dynamic: derive reviewer level from creator authority level, mapped
@@ -157,17 +158,17 @@ function getWaitingMessage(
       // tenants without an LM tier — see getImmediateReviewerLevel).
       if (getLevelName && creatorAuthorityLevel != null && creatorAuthorityLevel > 1) {
         const reviewerLvl = getImmediateReviewerLevel(creatorAuthorityLevel, hierarchyLevels);
-        return `Awaiting ${getLevelName(reviewerLvl)} review`;
+        return tf("transfers.wait.review_level", { level: getLevelName(reviewerLvl) });
       }
-      return "Awaiting review";
+      return t("transfers.wait.review");
     }
-    case "PENDING_APPROVAL":        return "Awaiting approval";
-    case "PENDING_SOURCE_CONFIRM":  return `Awaiting ${fromWarehouseName} confirmation`;
-    case "PENDING_DEST_CONFIRM":    return `Awaiting ${toWarehouseName} confirmation`;
-    case "APPROVED":                return `Waiting for ${fromWarehouseName} to issue`;
-    case "ADVISED":                 return `Waiting for ${fromWarehouseName} to issue (advised)`;
-    case "ISSUED":                  return `Waiting for ${fromWarehouseName} to dispatch`;
-    case "IN_TRANSIT":              return `In transit → ${toWarehouseName}`;
+    case "PENDING_APPROVAL":        return t("transfers.wait.approval");
+    case "PENDING_SOURCE_CONFIRM":  return tf("transfers.wait.source_confirm", { name: fromWarehouseName });
+    case "PENDING_DEST_CONFIRM":    return tf("transfers.wait.dest_confirm", { name: toWarehouseName });
+    case "APPROVED":                return tf("transfers.wait.approved", { name: fromWarehouseName });
+    case "ADVISED":                 return tf("transfers.wait.advised", { name: fromWarehouseName });
+    case "ISSUED":                  return tf("transfers.wait.issued", { name: fromWarehouseName });
+    case "IN_TRANSIT":              return tf("transfers.wait.in_transit", { name: toWarehouseName });
     default:                        return null;
   }
 }
@@ -251,14 +252,12 @@ const STATUS_CLASS: Record<TransferStatus, string> = {
   CANCELLED:              "bg-gray-100   text-gray-400",
 };
 
-// Base styling per underlying type — labels overridden by tenant display name at render time
-const TYPE_CLASS: Record<TransferType, { cls: string; label: string }> = {
-  PULL:   { cls: "bg-blue-100   text-blue-800",   label: "PULL"   },
-  PUSH:   { cls: "bg-amber-100  text-amber-800",  label: "PUSH"   },
-  SISTER: { cls: "bg-violet-100 text-violet-800", label: "SISTER" },
+// Badge styling per underlying type; the text comes from transferTypeLabel (tenant name or generic label)
+const TYPE_CLASS: Record<TransferType, string> = {
+  PULL:   "bg-blue-100   text-blue-800",
+  PUSH:   "bg-amber-100  text-amber-800",
+  SISTER: "bg-violet-100 text-violet-800",
 };
-
-interface TenantTransferType { id: string; underlying_type: TransferType; display_name: string; is_active: boolean }
 
 /**
  * Authority level scale — lower number = higher authority (mirrors backend ROLE_AUTHORITY_LEVEL).
@@ -397,21 +396,21 @@ function getAvailableActions(
     : (userLevel <= 2 && !isCreator);
 
   // ── Action definitions (defined once, referenced by all maps) ─────────────
-  const approve   : Action = { next: "APPROVED",               label: "Approve",            color: "#059669" };
-  const reject    : Action = { next: "REJECTED",               label: "Reject",             color: "#991B1B" };
-  const cancel    : Action = { next: "CANCELLED",              label: "Cancel",             color: "#991B1B" };
-  const issue     : Action = { next: "ISSUED",                 label: "Issue",              color: "#065F46" };
-  const dispatch  : Action = { next: "IN_TRANSIT",             label: "Dispatch",           color: "#92400E" };
+  const approve   : Action = { next: "APPROVED",               label: t("transfers.action.approve"),          color: "#059669" };
+  const reject    : Action = { next: "REJECTED",               label: t("transfers.action.reject"),           color: "#991B1B" };
+  const cancel    : Action = { next: "CANCELLED",              label: t("transfers.action.cancel"),           color: "#991B1B" };
+  const issue     : Action = { next: "ISSUED",                 label: t("transfers.action.issue"),            color: "#065F46" };
+  const dispatch  : Action = { next: "IN_TRANSIT",             label: t("transfers.action.dispatch"),         color: "#92400E" };
   // Receive opens the receive form (C2): quantities are confirmed per lot / per line
   // and posted to POST /receive; a short receipt becomes a server-side discrepancy.
   // There is no separate "Partially Received" action.
   const receive   : Action = { next: "RECEIVED",               label: t("transfers.receive.action"), color: "#059669", opensReceive: true };
-  const complete  : Action = { next: "COMPLETED",              label: "Complete",           color: "#374151" };
-  const review    : Action = { next: "PENDING_REVIEW",         label: "Submit for Review",  color: "#5B21B6" };
-  const toApproval: Action = { next: "PENDING_APPROVAL",       label: "Send for Approval",  color: "#1E40AF" };
-  const submitReq : Action = { next: "PENDING_SOURCE_CONFIRM", label: "Submit Request",     color: "#5B21B6" };
-  const confirmSup: Action = { next: "PENDING_DEST_CONFIRM",   label: "Confirm Supply",     color: "#059669" };
-  const confirmInt: Action = { next: "PENDING_APPROVAL",       label: "Confirm & Escalate", color: "#1E40AF" };
+  const complete  : Action = { next: "COMPLETED",              label: t("transfers.action.complete"),         color: "#374151" };
+  const review    : Action = { next: "PENDING_REVIEW",         label: t("transfers.action.submit_review"),   color: "#5B21B6" };
+  const toApproval: Action = { next: "PENDING_APPROVAL",       label: t("transfers.action.send_approval"),   color: "#1E40AF" };
+  const submitReq : Action = { next: "PENDING_SOURCE_CONFIRM", label: t("transfers.action.submit_request"),   color: "#5B21B6" };
+  const confirmSup: Action = { next: "PENDING_DEST_CONFIRM",   label: t("transfers.action.confirm_supply"),   color: "#059669" };
+  const confirmInt: Action = { next: "PENDING_APPROVAL",       label: t("transfers.action.confirm_escalate"), color: "#1E40AF" };
 
   // ── PULL: destination requests stock from source ──────────────────────────
   //
@@ -622,8 +621,8 @@ function ApprovalPendingActions({
 
   if (info.can_approve) {
     const approveLabel = info.is_auto_approve
-      ? `✓ Approve (auto — within your authority)`
-      : "Approve";
+      ? t("transfers.action.approve_auto")
+      : t("transfers.action.approve");
     return (
       <div className="flex gap-1.5 flex-nowrap">
         <button
@@ -652,7 +651,7 @@ function ApprovalPendingActions({
             cursor:      !blocked ? "pointer" : "not-allowed",
           }}
         >
-          Reject
+          {t("transfers.action.reject")}
         </button>
       </div>
     );
@@ -663,17 +662,19 @@ function ApprovalPendingActions({
     const step = info.current_step && info.total_steps && info.total_steps > 1
       ? ` (${info.current_step}/${info.total_steps})`
       : "";
-    const waitMsg = `Awaiting ${info.current_approver_position_title ?? info.required_role_display}: ${info.current_approver_name}${step}`;
+    const waitMsg = tf("transfers.wait.approver", {
+      position: info.current_approver_position_title ?? info.required_role_display,
+      name:     info.current_approver_name,
+      step,
+    });
     return <span className="text-[11px] text-gray-400 italic leading-tight">{waitMsg}</span>;
   }
 
   const waitMsg = info.required_role_display
     ? `${t("approval.awaiting").replace("{role}", info.required_role_display)}${info.reason ? ` (${info.reason})` : ""}`
-    : "Awaiting approval";
+    : t("transfers.wait.approval");
   return <span className="text-[11px] text-gray-400 italic leading-tight">{waitMsg}</span>;
 }
-
-const COLS = ["Reference", "Type", "From", "To", "Product", "Qty", "Status", "Date", "Actions"];
 
 export default function TransfersPage() {
   const { org } = useParams() as { org: string };
@@ -713,7 +714,7 @@ export default function TransfersPage() {
   });
   const getLevelName = (levelNum: number): string =>
     hierarchyLevels?.find((l) => l.level_number === levelNum)?.level_name
-    ?? `Level ${levelNum} Manager`;
+    ?? tf("transfers.wait.level_fallback", { n: levelNum });
 
   // Approval-info cache — prefetched for every PENDING_APPROVAL transfer so
   // getAvailableActions can use the backend's actual can_approve rather than
@@ -721,18 +722,15 @@ export default function TransfersPage() {
   // useRef keeps the Map stable across re-renders without triggering extra effects.
   const approvalInfoCache = useRef<Map<string, ApprovalInfoResponse>>(new Map());
 
-  // Fetch tenant transfer type configs to show display names instead of PULL/PUSH/SISTER
-  const { data: tenantTransferTypes = [] } = useQuery<TenantTransferType[]>({
-    queryKey: ["transfer-types-page", tenantId],
-    queryFn:  () => api.get<TenantTransferType[]>(`/api/v1/tenants/${tenantId}/transfer-types`),
-    enabled:  isGateway && !!tenantId,
-    staleTime: 60_000,
-  });
+  // Tenant transfer type configs: the type badge shows the tenant's own name for the type
+  // (generic translated label when there is none, and in demo mode).
+  const tenantTransferTypes = useTransferTypes(tenantId);
 
-  function getTypeLabel(underlyingType: TransferType): string {
-    const cfg = tenantTransferTypes.find((t) => t.underlying_type === underlyingType);
-    return cfg?.display_name ?? TYPE_CLASS[underlyingType]?.label ?? underlyingType;
-  }
+  const colLabels = [
+    t("transfers.col.reference"), t("transfers.col.type"), t("transfers.col.from"), t("transfers.col.to"),
+    t("transfers.col.product"), t("transfers.col.qty"), t("transfers.col.status"), t("transfers.col.date"),
+    t("transfers.col.actions"),
+  ];
 
   const { data: rawTransfers = [], isLoading: transfersLoading } = useQuery<ApiTransfer[]>({
     queryKey: ["transfers", org],
@@ -984,7 +982,7 @@ export default function TransfersPage() {
         if (transfer?.status && fresh.status.toUpperCase() !== transfer.status.toUpperCase()) {
           // Status changed since the button was shown — abort and let user retry
           await qc.invalidateQueries({ queryKey: ["transfers", org] });
-          setToast(`Status changed to ${freshStatus.replace(/_/g, " ")} — list refreshed. Please try again.`);
+          setToast(tf("transfers.toast.status_changed", { status: transferStatusLabel(freshStatus) }));
           setTimeout(() => setToast(""), 5000);
           return null;
         }
@@ -994,7 +992,7 @@ export default function TransfersPage() {
           // 422 on GET: route validation error or stale ID — refresh rather than proceeding
           // to a PATCH that will also 422. Let the user retry with fresh data.
           await qc.invalidateQueries({ queryKey: ["transfers", org] });
-          setToast("Transfer state changed — refreshed. Please try again.");
+          setToast(t("transfers.toast.state_changed"));
           setTimeout(() => setToast(""), 5000);
           return null;
         }
@@ -1063,11 +1061,11 @@ export default function TransfersPage() {
       if (next === "APPROVED") {
         const approvalInfo = qc.getQueryData<ApprovalInfoResponse>(["approval-info", id]);
         const toastMsg = approvalInfo?.is_auto_approve
-          ? `Transfer auto-approved. ${approvalInfo.required_role_display} has been notified.`
-          : `Status updated to APPROVED`;
+          ? tf("transfers.toast.auto_approved", { role: approvalInfo.required_role_display })
+          : tf("transfers.toast.status_updated", { status: transferStatusLabel("APPROVED") });
         setToast(toastMsg);
       } else {
-        setToast(`Status updated to ${next.replace(/_/g, " ")}`);
+        setToast(tf("transfers.toast.status_updated", { status: transferStatusLabel(next) }));
       }
       setTimeout(() => setToast(""), 3000);
       return null;
@@ -1075,7 +1073,7 @@ export default function TransfersPage() {
       const apiErr = err as { status?: number; message?: string; code?: string };
       const is422  = apiErr.status === 422;
       const code   = apiErr.code ?? "";
-      const msg    = apiErr.message ?? "Transition failed.";
+      const msg    = apiErr.message ?? t("transfers.transition_failed");
       // Log full error so browser console shows the exact backend code + message
       console.error("[doTransition] transition failed:", { id, next, status: apiErr.status, code, message: msg, raw: err });
       if (approve) {
@@ -1084,8 +1082,8 @@ export default function TransfersPage() {
         return approveFailure(err);
       }
       const toastMsg = is422
-        ? `Invalid transition${code ? ` (${code})` : ""} — refreshing status…`
-        : (msg.length <= 80 ? msg : "Transition failed — check permissions.");
+        ? (code ? tf("transfers.toast.invalid_transition_code", { code }) : t("transfers.toast.invalid_transition"))
+        : (msg.length <= 80 ? msg : t("transfers.toast.check_permissions"));
       setToast(toastMsg);
       setTimeout(() => setToast(""), 5000);
       // Always refresh on error so the UI reflects the actual backend state
@@ -1149,7 +1147,7 @@ export default function TransfersPage() {
               {confirmModal.requiresQty ? t("transfers.partial_receive") : t("transfers.confirm_action")}
             </p>
             <p className="text-sm text-gray-500 mb-4">
-              {confirmModal.label} — {t("transfers.status_will_change")} <strong>{confirmModal.next.replace(/_/g, " ")}</strong>.
+              {confirmModal.label} — {t("transfers.status_will_change")} <strong>{transferStatusLabel(confirmModal.next)}</strong>.
             </p>
 
             {gp.title && (
@@ -1204,7 +1202,7 @@ export default function TransfersPage() {
                     const storeEntry = getTransferEntry(confirmModal.id);
                     const remaining  = confirmModal.transfer.quantity - (storeEntry?.receivedQuantity ?? 0);
                     const qty        = parseFloat(partialQtyInput);
-                    if (!qty || qty <= 0 || qty > remaining) { setPartialQtyErr(`Enter a quantity between 1 and ${formatQty(remaining)}`); return; }
+                    if (!qty || qty <= 0 || qty > remaining) { setPartialQtyErr(tf("transfers.toast.qty_range", { max: formatQty(remaining) })); return; }
                     void doTransition(confirmModal.id, confirmModal.next, qty);
                   } else {
                     void doTransition(confirmModal.id, confirmModal.next);
@@ -1285,7 +1283,7 @@ export default function TransfersPage() {
           <table className="w-full border-collapse">
             <thead>
               <tr className="bg-gray-50 border-b-2 border-gray-200">
-                {COLS.map((h) => (
+                {colLabels.map((h) => (
                   <th key={h} className="px-3 py-2.5 text-left text-[11px] font-bold text-gray-500 uppercase tracking-wide whitespace-nowrap">{h}</th>
                 ))}
               </tr>
@@ -1293,7 +1291,7 @@ export default function TransfersPage() {
             <tbody>
               {transfersLoading && Array.from({ length: 4 }).map((_, i) => (
                 <tr key={`skel-${i}`} className={`border-b border-gray-100 ${i % 2 === 0 ? "bg-white" : "bg-gray-50"}`}>
-                  {COLS.map((c) => (
+                  {colLabels.map((c) => (
                     <td key={c} className="px-3 py-3">
                       <div className="h-3 rounded bg-gray-200 animate-pulse" style={{ width: `${55 + (i * 13 + c.length * 7) % 35}%` }} />
                     </td>
@@ -1302,7 +1300,10 @@ export default function TransfersPage() {
               ))}
               {!transfersLoading && visibleTransfers.map((txn, idx) => {
                 const sCls = STATUS_CLASS[txn.status] ?? "bg-gray-100 text-gray-500";
-                const tb   = { ...(TYPE_CLASS[txn.transfer_type] ?? { cls: "bg-gray-100 text-gray-500", label: txn.transfer_type }), label: getTypeLabel(txn.transfer_type) };
+                const tb   = {
+                  cls:   TYPE_CLASS[txn.transfer_type] ?? "bg-gray-100 text-gray-500",
+                  label: transferTypeLabel(txn.transfer_type, tenantTransferTypes),
+                };
                 // Use cached approval-info can_approve when available (populated by the
                 // prefetch useEffect above).  Falls back to local estimate on first render.
                 const cachedApprInfo = txn.status === "PENDING_APPROVAL"
@@ -1350,12 +1351,12 @@ export default function TransfersPage() {
                       {formatQty(txn.quantity ?? 0)}
                       {txn.status === "PARTIALLY_RECEIVED" && (() => {
                         const e = getTransferEntry(txn.id); const rcvd = e?.receivedQuantity ?? 0;
-                        return rcvd > 0 ? <span className="block text-[10px] font-medium text-amber-800">{formatQty(rcvd)} rcvd · {formatQty(Number(txn.quantity ?? 0) - rcvd)} rem</span> : null;
+                        return rcvd > 0 ? <span className="block text-[10px] font-medium text-amber-800">{tf("transfers.list.rcvd_rem", { rcvd: formatQty(rcvd), rem: formatQty(Number(txn.quantity ?? 0) - rcvd) })}</span> : null;
                       })()}
                     </td>
                     <td className="px-3 py-2.5">
                       <span className={`text-[11px] font-bold px-2 py-0.5 rounded whitespace-nowrap ${sCls}`}>
-                        {txn.status.replace(/_/g, " ")}
+                        {transferStatusLabel(txn.status)}
                       </span>
                       {txn.is_self_approved && (
                         <span
@@ -1389,7 +1390,7 @@ export default function TransfersPage() {
                           onApprove={(label) => void openApprove(txn, label)}
                           onReject={() => {
                             setPartialQtyInput(""); setPartialQtyErr("");
-                            setConfirmModal({ id: txn.id, next: "REJECTED", label: "Reject", transfer: txn });
+                            setConfirmModal({ id: txn.id, next: "REJECTED", label: t("transfers.action.reject"), transfer: txn });
                           }}
                           fallbackActions={acts.filter(
                             (a) => a.next === "APPROVED" || a.next === "REJECTED"
@@ -1397,7 +1398,7 @@ export default function TransfersPage() {
                         />
                       ) : acts.length > 0 ? (
                         <div className="flex gap-1.5 flex-nowrap items-center">
-                          {!isOnline && <span title={t("errors.OFFLINE")} className="text-[11px] text-gray-400">offline</span>}
+                          {!isOnline && <span title={t("errors.OFFLINE")} className="text-[11px] text-gray-400">{t("transfers.list.offline")}</span>}
                           {acts.map((a) => {
                             const rowBlocked = !isOnline || gp.disabled;
                             return (
@@ -1439,7 +1440,7 @@ export default function TransfersPage() {
                   </tr>
                   {isExpanded && (
                     <tr className="border-b border-gray-100 bg-gray-50">
-                      <td colSpan={COLS.length} className="px-8 py-3">
+                      <td colSpan={colLabels.length} className="px-8 py-3">
                         <TransferRowDetails
                           transferId={txn.id}
                           basePath="/api/v1/inventory/transfers"

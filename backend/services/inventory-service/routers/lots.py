@@ -9,6 +9,7 @@ warehouse_id equality check is added here.
 from __future__ import annotations
 
 import uuid
+from datetime import date
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -21,9 +22,21 @@ from shared.utils.responses import SuccessResponse
 from shared.utils.tenant_scope import effective_tenant_id
 from routers.lot_settings import feature_lot_tracking_enabled
 from schemas.analytics import ExpiryAlertsOut, LotOut
-from schemas.inventory import SetLotExpiryOut, SetLotExpiryRequest
+from schemas.inventory import (
+    NearExpirySettingsOut,
+    NearExpirySettingsRequest,
+    OverrideLogOut,
+    OverrideSummaryOut,
+    SetLotExpiryOut,
+    SetLotExpiryRequest,
+)
 from services.inventory_analytics import get_expiry_alerts, get_lots
-from services.lot_expiry_service import set_lot_expiry
+from services.lot_expiry_service import (
+    get_near_expiry_days,
+    set_lot_expiry,
+    set_near_expiry_days,
+)
+from services.override_log_service import list_overrides, override_summary
 
 router = APIRouter()
 
@@ -37,13 +50,15 @@ async def list_lots(
     include_depleted: bool = Query(False),
     limit: int = Query(200, ge=1, le=1000),
     offset: int = Query(0, ge=0),
-    expiring_within_days: int = Query(30, ge=1, le=365),
+    expiring_within_days: Optional[int] = Query(None, ge=1, le=365),
     tenant_id: Optional[uuid.UUID] = Query(None, description="SA only — filter to specific tenant"),
     user=Depends(get_current_user),
     db: AsyncSession = Depends(get_read_db_session),
 ) -> SuccessResponse[List[LotOut]]:
     """Lot balances (lot x warehouse) with computed status."""
     tid = effective_tenant_id(user, tenant_id)
+    if expiring_within_days is None:
+        expiring_within_days = await get_near_expiry_days(db, tid)
     data = await get_lots(
         db,
         tid,
@@ -62,15 +77,86 @@ async def list_lots(
 @require_permission(PERMISSIONS.REPORT_EXPIRY_ALERTS)
 async def expiry_alerts(
     warehouse_id: Optional[uuid.UUID] = Query(None),
-    within_days: int = Query(30, ge=1, le=365),
+    within_days: Optional[int] = Query(None, ge=1, le=365),
     tenant_id: Optional[uuid.UUID] = Query(None, description="SA only — filter to specific tenant"),
     user=Depends(get_current_user),
     db: AsyncSession = Depends(get_read_db_session),
 ) -> SuccessResponse[ExpiryAlertsOut]:
     """Expired, expiring-soon and no-expiry lots of expiry-tracked products."""
     tid = effective_tenant_id(user, tenant_id)
+    if within_days is None:
+        within_days = await get_near_expiry_days(db, tid)
     data = await get_expiry_alerts(
         db, tid, warehouse_id=warehouse_id, within_days=within_days
+    )
+    return SuccessResponse(data=data)
+
+
+# Fixed path — declared before the parameterised /{lot_id}/expiry route.
+@router.get("/expiry-settings", response_model=SuccessResponse[NearExpirySettingsOut])
+@require_permission(PERMISSIONS.REPORT_EXPIRY_ALERTS)
+async def get_expiry_settings(
+    user=Depends(get_current_user),
+    db: AsyncSession = Depends(get_read_db_session),
+) -> SuccessResponse[NearExpirySettingsOut]:
+    """The tenant's near-expiry window (days)."""
+    days = await get_near_expiry_days(db, user.tenant_id)
+    return SuccessResponse(data=NearExpirySettingsOut(near_expiry_days=days))
+
+
+@router.put("/expiry-settings", response_model=SuccessResponse[NearExpirySettingsOut])
+@require_permission(PERMISSIONS.TENANT_CONFIGURE)
+async def put_expiry_settings(
+    body: NearExpirySettingsRequest,
+    user=Depends(get_current_user),
+    db: AsyncSession = Depends(get_db_session),
+) -> SuccessResponse[NearExpirySettingsOut]:
+    """Set the tenant's near-expiry window (TA). Audited in the same transaction."""
+    days = await set_near_expiry_days(
+        db, str(user.tenant_id), body.near_expiry_days, user
+    )
+    return SuccessResponse(data=NearExpirySettingsOut(near_expiry_days=days))
+
+
+# Fixed paths — declared before the parameterised /{lot_id}/expiry route.
+@router.get("/overrides", response_model=SuccessResponse[OverrideLogOut])
+@require_permission(PERMISSIONS.REPORT_DISPATCH_SUMMARY)
+async def list_lot_overrides(
+    date_from: Optional[date] = Query(None),
+    date_to: Optional[date] = Query(None),
+    warehouse_id: Optional[uuid.UUID] = Query(None),
+    product_id: Optional[uuid.UUID] = Query(None),
+    strategy: Optional[str] = Query(None, pattern="^(FEFO|FIFO|LIFO)$"),
+    limit: int = Query(50, ge=1, le=200),
+    offset: int = Query(0, ge=0),
+    tenant_id: Optional[uuid.UUID] = Query(None, description="SA only — filter to specific tenant"),
+    user=Depends(get_current_user),
+    db: AsyncSession = Depends(get_read_db_session),
+) -> SuccessResponse[OverrideLogOut]:
+    """Lot-allocation overrides in the period, newest first."""
+    tid = effective_tenant_id(user, tenant_id)
+    data = await list_overrides(
+        db, user, tid,
+        date_from=date_from, date_to=date_to, warehouse_id=warehouse_id,
+        product_id=product_id, strategy=strategy, limit=limit, offset=offset,
+    )
+    return SuccessResponse(data=data)
+
+
+@router.get("/overrides/summary", response_model=SuccessResponse[OverrideSummaryOut])
+@require_permission(PERMISSIONS.REPORT_DISPATCH_SUMMARY)
+async def lot_override_summary(
+    date_from: Optional[date] = Query(None),
+    date_to: Optional[date] = Query(None),
+    warehouse_id: Optional[uuid.UUID] = Query(None),
+    tenant_id: Optional[uuid.UUID] = Query(None, description="SA only — filter to specific tenant"),
+    user=Depends(get_current_user),
+    db: AsyncSession = Depends(get_read_db_session),
+) -> SuccessResponse[OverrideSummaryOut]:
+    """FEFO compliance: decisions, overridden and the compliance rate."""
+    tid = effective_tenant_id(user, tenant_id)
+    data = await override_summary(
+        db, user, tid, date_from=date_from, date_to=date_to, warehouse_id=warehouse_id
     )
     return SuccessResponse(data=data)
 

@@ -18,7 +18,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from decimal import Decimal
-from unittest.mock import AsyncMock, MagicMock, call, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import UUID
 
 import pytest
@@ -1124,7 +1124,7 @@ class TestAdjustmentLotPosting:
         assert lot_kwargs["expiry_date"] == _FUTURE
 
         (_, params), = _lot_id_updates(db)
-        assert params == {"lot_id": NEW_LOT_ID, "id": ADJ_ID}
+        assert params == {"lot_id": NEW_LOT_ID, "id": ADJ_ID, "tid": TENANT_ID}
 
         _, kwargs = mock_record.call_args
         assert kwargs["lot_id"] == NEW_LOT_ID
@@ -1171,7 +1171,7 @@ class TestAdjustmentLotPosting:
         assert lot_kwargs["expiry_date"] == _FUTURE
 
         (_, params), = _lot_id_updates(db)
-        assert params == {"lot_id": NEW_LOT_ID, "id": ADJ_ID}
+        assert params == {"lot_id": NEW_LOT_ID, "id": ADJ_ID, "tid": TENANT_ID}
 
         _, kwargs = mock_record.call_args
         assert kwargs["lot_id"] == NEW_LOT_ID

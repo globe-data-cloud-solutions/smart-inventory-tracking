@@ -8,7 +8,10 @@ import { t } from "@/lib/i18n";
 import { useFeatures } from "@/hooks/useFeatures";
 import { useTenantName } from "@/hooks/useTenantName";
 import { formatQty } from "@/lib/utils";
+import { usePermission } from "@/lib/permissions";
 import { ExpirySummary } from "./ExpirySummary";
+import { NearExpirySetting } from "./NearExpirySetting";
+import { OverridesView } from "./OverridesView";
 import { SetLotExpiryDialog } from "./SetLotExpiryDialog";
 import {
   errStatus, expiryRelative, fetchExpiryAlerts, fetchLots, formatLotDate,
@@ -16,6 +19,7 @@ import {
 } from "./lotsApi";
 
 type StatusFilter = "ALL" | "ACTIVE" | "EXPIRING" | "EXPIRED" | "DEPLETED";
+type PageView = "lots" | "overrides";
 
 const STATUS_FILTERS: Array<{ value: StatusFilter; labelKey: string; testId: string }> = [
   { value: "ALL",      labelKey: "lots.filter_all",           testId: "lots-filter-all" },
@@ -52,12 +56,15 @@ export function LiveLotsView({ org }: { org: string }) {
   // Facility-scoped roles only ever see their own warehouse (same scoping as the dashboard).
   const warehouseId = user?.warehouseId ?? "";
   const canSetExpiry = user?.role === "TA" || user?.role === "NM";
+  const canEditWindow = usePermission("tenant:configure", user?.role ?? "");
+  const canSeeOverrides = usePermission("report:dispatch_summary", user?.role ?? "");
 
   const [search, setSearch]             = useState("");
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("ALL");
   const [alertFilter, setAlertFilter]   = useState<ExpiryAlertType | null>(null);
   const [dialogLot, setDialogLot]       = useState<LotApi | null>(null);
   const [saved, setSaved]               = useState(false);
+  const [view, setView]                 = useState<PageView>("lots");
 
   // useFeatures() has no loading flag — read the shared query state so the
   // "enable batch tracking" hint does not flash while the flag is still loading.
@@ -171,9 +178,47 @@ export function LiveLotsView({ org }: { org: string }) {
   const noLotsAtAll = !lotsQuery.isLoading && !lotsQuery.isError && lots.length === 0
     && !search.trim() && statusFilter === "ALL" && !alertFilter;
 
+  const viewSwitch = canSeeOverrides ? (
+    <div role="group" aria-label={t("lots.view_switch_label")} className="flex gap-1.5 mb-6">
+      {([
+        { value: "lots" as const,      labelKey: "lots.view_lots",      testId: "lots-view-lots" },
+        { value: "overrides" as const, labelKey: "lots.view_overrides", testId: "lots-view-overrides" },
+      ]).map((v) => (
+        <button
+          key={v.value}
+          type="button"
+          data-testid={v.testId}
+          aria-pressed={view === v.value}
+          onClick={() => setView(v.value)}
+          className={`text-sm font-bold px-4 py-1.5 rounded-md cursor-pointer border-2 transition-all ${
+            view === v.value
+              ? "bg-[#0f2d1f] text-white border-[#0f2d1f]"
+              : "bg-white text-gray-600 border-gray-200 hover:border-gray-300"
+          }`}
+        >
+          {t(v.labelKey)}
+        </button>
+      ))}
+    </div>
+  ) : null;
+
+  if (canSeeOverrides && view === "overrides") {
+    return (
+      <div className="p-8">
+        {header}
+        {viewSwitch}
+        <OverridesView org={org} warehouseId={warehouseId} />
+      </div>
+    );
+  }
+
   return (
     <div className="p-8">
       {header}
+
+      {viewSwitch}
+
+      <NearExpirySetting org={org} canEdit={canEditWindow} />
 
       {alerts && !alertsForbidden && (
         <ExpirySummary data={alerts} active={alertFilter} onSelect={pickAlert} />

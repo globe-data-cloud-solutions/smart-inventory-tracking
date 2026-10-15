@@ -53,6 +53,98 @@ export function fetchExpiryAlerts(warehouseId: string): Promise<ExpiryAlertsApi>
   return api.get<ExpiryAlertsApi>(`/api/v1/inventory/lots/expiry-alerts${qs ? `?${qs}` : ""}`);
 }
 
+/* ── GET / PUT /api/v1/inventory/lots/expiry-settings ───────────────────── */
+export interface ExpirySettingsApi {
+  near_expiry_days: number;
+}
+
+export const NEAR_EXPIRY_MIN_DAYS = 1;
+export const NEAR_EXPIRY_MAX_DAYS = 365;
+
+export function fetchExpirySettings(): Promise<ExpirySettingsApi> {
+  return api.get<ExpirySettingsApi>("/api/v1/inventory/lots/expiry-settings");
+}
+
+export function updateExpirySettings(days: number): Promise<ExpirySettingsApi> {
+  return api.put<ExpirySettingsApi>("/api/v1/inventory/lots/expiry-settings", { near_expiry_days: days });
+}
+
+/* ── GET /api/v1/inventory/lots/overrides[/summary] ──────────────────────── */
+export type OverrideStrategy = "FEFO" | "FIFO" | "LIFO";
+
+export interface OverrideLotApi {
+  lot_id: string;
+  lot_number: string | null;
+  quantity: string | number;
+}
+
+export interface OverrideRowApi {
+  id: string;
+  created_at: string;
+  overridden_by: string | null;
+  product: { id: string; name: string; sku: string };
+  warehouse: { id: string; name: string | null };
+  strategy: string;
+  movement_type: string;
+  reference_id: string | null;
+  requested_qty: string | number;
+  suggested: OverrideLotApi[];
+  chosen: OverrideLotApi[];
+  reason: string | null;
+}
+
+export interface OverrideLogApi {
+  total: number;
+  rows: OverrideRowApi[];
+}
+
+export interface ComplianceCountsApi {
+  decisions: number;
+  overridden: number;
+  compliance_rate: number | null;
+}
+
+export interface OverrideSummaryApi {
+  date_from: string;
+  date_to: string;
+  overall: ComplianceCountsApi;
+  fefo: ComplianceCountsApi;
+  by_movement: Record<string, ComplianceCountsApi>;
+}
+
+export interface OverrideParams {
+  dateFrom: string;
+  dateTo: string;
+  warehouseId: string;
+  productId?: string;
+  strategy?: OverrideStrategy | "";
+  limit?: number;
+  offset?: number;
+}
+
+function overrideQuery(p: OverrideParams, withListFilters: boolean): string {
+  const q = new URLSearchParams();
+  if (p.dateFrom) q.set("date_from", p.dateFrom);
+  if (p.dateTo) q.set("date_to", p.dateTo);
+  if (p.warehouseId) q.set("warehouse_id", p.warehouseId);
+  if (withListFilters) {
+    if (p.productId) q.set("product_id", p.productId);
+    if (p.strategy) q.set("strategy", p.strategy);
+    q.set("limit", String(p.limit ?? 50));
+    q.set("offset", String(p.offset ?? 0));
+  }
+  const qs = q.toString();
+  return qs ? `?${qs}` : "";
+}
+
+export function fetchOverrides(p: OverrideParams): Promise<OverrideLogApi> {
+  return api.get<OverrideLogApi>(`/api/v1/inventory/lots/overrides${overrideQuery(p, true)}`);
+}
+
+export function fetchOverrideSummary(p: OverrideParams): Promise<OverrideSummaryApi> {
+  return api.get<OverrideSummaryApi>(`/api/v1/inventory/lots/overrides/summary${overrideQuery(p, false)}`);
+}
+
 /** HTTP status carried by an ApiError-shaped throw, if any. */
 export function errStatus(err: unknown): number | undefined {
   return (err as { status?: number } | null | undefined)?.status;

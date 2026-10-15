@@ -9,7 +9,7 @@ writer to inventory_balances:
 from __future__ import annotations
 
 from decimal import Decimal
-from unittest.mock import AsyncMock, MagicMock, call, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from fastapi import HTTPException
@@ -119,7 +119,7 @@ class TestLedgerRepo:
         """record_transaction() must INSERT into inventory_transactions and call
         _update_running_balance() — never issue a raw balance UPDATE from outside
         the dedicated writer."""
-        from repositories.ledger_repo import record_transaction, _update_running_balance
+        from repositories.ledger_repo import record_transaction
 
         session = _make_session(balance=50.0)
 

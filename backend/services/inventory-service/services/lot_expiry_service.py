@@ -4,6 +4,11 @@ Metadata-only: no ledger row, no inventory_transactions, no lot_balances change.
 The write is race-safe — the UPDATE only matches while expiry_date IS NULL.
 Audit follows lot_settings_service: an INSERT into audit_logs in the same
 transaction as the change.
+
+Also the tenant near-expiry window (tenants.near_expiry_days, migration 089):
+get_near_expiry_days() is read by the lot list and expiry-alert routes when no
+window is passed; set_near_expiry_days() is the TA write path, audited the
+same way.
 """
 from __future__ import annotations
 
@@ -15,6 +20,67 @@ from typing import Any
 from fastapi import HTTPException
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
+
+
+DEFAULT_NEAR_EXPIRY_DAYS = 30
+
+
+async def get_near_expiry_days(session: AsyncSession, tenant_id: Any) -> int:
+    """The tenant's near-expiry window; 30 for SA across tenants or no row."""
+    if tenant_id is None:
+        return DEFAULT_NEAR_EXPIRY_DAYS
+    row = (await session.execute(
+        text("SELECT near_expiry_days FROM tenants WHERE id = :tid"),
+        {"tid": str(tenant_id)},
+    )).fetchone()
+    if row is None or row.near_expiry_days is None:
+        return DEFAULT_NEAR_EXPIRY_DAYS
+    return int(row.near_expiry_days)
+
+
+async def set_near_expiry_days(
+    session: AsyncSession,
+    tenant_id: str,
+    near_expiry_days: int,
+    user: Any,
+) -> int:
+    old = (await session.execute(
+        text("SELECT near_expiry_days FROM tenants WHERE id = :tid FOR UPDATE"),
+        {"tid": tenant_id},
+    )).fetchone()
+    if old is None:
+        raise HTTPException(status_code=404, detail={"code": "TENANT_NOT_FOUND"})
+
+    await session.execute(
+        text(
+            "UPDATE tenants SET near_expiry_days = :d, updated_at = now() "
+            "WHERE id = :tid"
+        ),
+        {"d": near_expiry_days, "tid": tenant_id},
+    )
+
+    await session.execute(
+        text(
+            "INSERT INTO audit_logs "
+            "  (id, tenant_id, user_id, role, action, resource_type, "
+            "   resource_id, decision, abac_context) "
+            "VALUES "
+            "  (:id, :tid, :uid, :role, 'tenant:near_expiry_days_update', 'tenant', "
+            "   :rid, 'GRANTED', CAST(:ctx AS jsonb))"
+        ),
+        {
+            "id": str(uuid.uuid4()),
+            "tid": tenant_id,
+            "uid": str(user.user_id),
+            "role": getattr(user, "role", None),
+            "rid": tenant_id,
+            "ctx": json.dumps({
+                "old_near_expiry_days": old.near_expiry_days,
+                "new_near_expiry_days": near_expiry_days,
+            }),
+        },
+    )
+    return near_expiry_days
 
 
 def _already_set(lot_number: str, existing: date) -> HTTPException:
