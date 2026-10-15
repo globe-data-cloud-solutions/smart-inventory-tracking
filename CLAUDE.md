@@ -150,6 +150,7 @@ No `.env.example` committed — secrets via AWS Secrets Manager (local-dev excep
 - Alex runs `pg_dump` himself before ANY migration — Claude never takes backups and never uses the postgres superuser password.
 - Never add mock/demo data to a screen to make it appear to work (see §7).
 - Root `.env` is local-only and untracked — never commit it; load with `set -a; source .env; set +a`. Holds E2E_TA_PASSWORD for the permanent `zz-e2e-ta` tenant.
+- E2E_SA_PASSWORD is never put in `.env` and never set by Claude Code. Specs that need SA read it via `frontend/tests/helpers/sa-credentials.ts` and skip when it is unset; Alex sets it in his own terminal to run them. SA probe tenants come from `frontend/tests/helpers/sa-api.ts` (public sign-up: 5 per hour per IP).
 - Never toggle FORCE ROW LEVEL SECURITY on any table outside an Alembic migration.
 - Probe/test tenants are deactivated after use. Local dev only: they may be purged with scripts/delete_tenant.py (dry-run first, YES confirmation, after Alex's pg_dump). Never hard-delete tenants in staging or prod.
 - Never set `ENVIRONMENT=local` anywhere but a developer machine — it enables the password-optional dev_email shortcut (auth.py). Production login is POST /auth/token {email, password}.
