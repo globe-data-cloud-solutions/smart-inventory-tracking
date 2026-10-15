@@ -91,6 +91,7 @@ function localeStrings(locale: Locale) {
     errReasonRequired: d.errors.RECEIPT_REASON_REQUIRED as string,
     errLinesMismatch:  d.errors.RECEIPT_LINES_MISMATCH as string,
     // approve panel
+    approveAction:     tr.action.approve as string,
     approveTitle: (ref: string) => (tr.approve.title as string).replace("{ref}", ref),
     approveSubmit:     tr.approve.submit as string,
     changeLots:        tr.approve.change_lots as string,
@@ -426,7 +427,7 @@ async function openReceive(page: Page, s: Strings, transferId: string): Promise<
 }
 
 async function openLotPicker(page: Page, s: Strings, transferId: string): Promise<Locator> {
-  await listRow(page, transferId).getByRole("button", { name: "Approve", exact: true }).click();
+  await listRow(page, transferId).getByRole("button", { name: s.approveAction, exact: true }).click();
   const panel = modal(page, s.approveTitle(refOf(transferId)));
   await expect(panel).toBeVisible();
   return panel;
@@ -605,7 +606,7 @@ for (const locale of ["en", "am"] as const) {
       const { s, stubs } = ctx;
       stubs.steps[T_APPR_70] = { current_step: 1, total_steps: 2 };
 
-      await listRow(page, T_APPR_70).getByRole("button", { name: "Approve", exact: true }).click();
+      await listRow(page, T_APPR_70).getByRole("button", { name: s.approveAction, exact: true }).click();
       await page.getByRole("button", { name: s.confirm, exact: true }).click();
 
       await expect.poll(() => stubs.calls.patch.length, { timeout: 10_000 }).toBe(1);
