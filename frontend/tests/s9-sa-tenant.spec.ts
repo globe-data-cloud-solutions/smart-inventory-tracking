@@ -208,6 +208,35 @@ test.describe("S9-2 SA tenant page", () => {
     await page.waitForTimeout(800);
   });
 
+  // Declared before 05 on purpose: serial order is file order, and 05 leaves the
+  // shared probe DEACTIVATED. 06 is read-only and runs on the still-ACTIVE probe.
+  // The raw feature-flag override toggles (aria-pressed buttons + "Save Feature
+  // Flags") were removed in S10 — overrides are add-ons now. The SA Features tab
+  // shows the add-ons section instead; grant/cancel writes are covered in
+  // s10-addons.spec.ts, so this test asserts the section renders and the old
+  // toggles are gone.
+  test("06 - features tab: overrides banner + toggle", async ({ page }) => {
+    const saPw = saPasswordOrSkip(test);
+    errors.push(...collectConsoleErrors(page));
+    await loginAs(page, SA_EMAIL, saPw);
+    await page.goto(`${BASE_URL}/admin/settings/tenants/${probe.id}`);
+    await page.getByRole("button", { name: /Features/i }).first().waitFor({ state: "visible", timeout: 20_000 });
+    await page.getByRole("button", { name: /Features/i }).first().click();
+
+    const addonsSection = page.locator("h3", { hasText: "Add-ons" }).locator("..");
+    await expect(addonsSection).toBeVisible({ timeout: 20_000 });
+    await expect(addonsSection.getByText("No add-ons yet.")).toBeVisible({ timeout: 10_000 });
+    await expect(addonsSection.getByRole("button", { name: "Grant free override" })).toBeEnabled({ timeout: 10_000 });
+    await expect(addonsSection.getByRole("button", { name: "Add purchased add-on" })).toBeEnabled();
+    // Feature list carries a source label per feature (Package / Add-on / Not included).
+    await expect(page.getByText(/^(Package|Add-on|Not included)$/).first()).toBeVisible();
+    await page.screenshot({ path: "test-results/screens/s9/16-features-overrides.png", fullPage: true });
+
+    // The old raw override toggles must not come back.
+    await expect(page.locator("button[aria-pressed]")).toHaveCount(0);
+    await expect(page.getByRole("button", { name: /Save Feature Flags/i })).toHaveCount(0);
+  });
+
   test("05 - contract probe: contract tab + status deactivate via UI", async ({ page }) => {
     const saPw = saPasswordOrSkip(test);
     errors.push(...collectConsoleErrors(page));
@@ -228,51 +257,6 @@ test.describe("S9-2 SA tenant page", () => {
     await page.getByRole("button", { name: /Yes/i }).click();
     await expect(page.getByText("Deactivated").first()).toBeVisible({ timeout: 10_000 });
     await page.screenshot({ path: "test-results/screens/s9/15-contract-probe-deactivated.png", fullPage: true });
-  });
-
-  test("06 - features tab: overrides banner + toggle", async ({ page }) => {
-    const saPw = saPasswordOrSkip(test);
-    errors.push(...collectConsoleErrors(page));
-    await loginAs(page, SA_EMAIL, saPw);
-    await page.goto(`${BASE_URL}/admin/settings/tenants/${probe.id}`);
-    await page.getByRole("button", { name: /Features/i }).first().waitFor({ state: "visible", timeout: 20_000 });
-    await page.getByRole("button", { name: /Features/i }).first().click();
-    await page.waitForTimeout(600);
-    await page.screenshot({ path: "test-results/screens/s9/16-features-overrides.png", fullPage: true });
-
-    const toggle = page.locator("button[aria-pressed]").first();
-    const before = await toggle.getAttribute("aria-pressed");
-    await toggle.click();
-    const saveBtn = page.getByRole("button", { name: /Save Feature Flags/i });
-    if (await saveBtn.isVisible().catch(() => false)) {
-      await saveBtn.click();
-      const yesBtn = page.getByRole("button", { name: /Yes/i });
-      await yesBtn.waitFor({ state: "visible", timeout: 3_000 }).catch(() => null);
-      if (await yesBtn.isVisible().catch(() => false)) await yesBtn.click();
-      // Either the mutation resolves (success message) or the backend refuses
-      // it on a deactivated tenant (error message) — wait for either, don't
-      // assume success.
-      await page.waitForTimeout(1_200);
-    }
-    await page.screenshot({ path: "test-results/screens/s9/17-features-after-toggle.png", fullPage: true });
-
-    // Revert
-    await page.reload();
-    await page.getByRole("button", { name: /Features/i }).first().waitFor({ state: "visible", timeout: 20_000 });
-    await page.getByRole("button", { name: /Features/i }).first().click();
-    await page.waitForTimeout(600);
-    const toggleAfterReload = page.locator("button[aria-pressed]").first();
-    const current = await toggleAfterReload.getAttribute("aria-pressed");
-    if (current !== before) {
-      await toggleAfterReload.click();
-      const saveBtn2 = page.getByRole("button", { name: /Save Feature Flags/i });
-      if (await saveBtn2.isVisible().catch(() => false)) {
-        await saveBtn2.click();
-        const yesBtn2 = page.getByRole("button", { name: /Yes/i });
-        await yesBtn2.waitFor({ state: "visible", timeout: 3_000 }).catch(() => null);
-        if (await yesBtn2.isVisible().catch(() => false)) await yesBtn2.click();
-      }
-    }
   });
 
   test("07 - admin user + activity tabs render for t6p2t", async ({ page }) => {

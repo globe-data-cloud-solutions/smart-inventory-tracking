@@ -19,6 +19,10 @@ const BASE_URL = process.env.BASE_URL ?? "http://localhost:3000";
 const SA_SKIP_REASON = "E2E_SA_PASSWORD not set — SA tests are run by Alex only, by hand";
 
 test.setTimeout(60_000);
+// public/sw.js answers /api/v1/ mutations itself (respondWith(fetch(...))), and
+// page.route() never sees requests that go through a service worker — so the
+// price-post stub below only intercepts when the worker is blocked.
+test.use({ serviceWorkers: "block" });
 
 /** ISO date (YYYY-MM-DD) `days` from today, UTC. */
 function isoDaysFromNow(days: number): string {
