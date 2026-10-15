@@ -12,6 +12,7 @@ import { test, expect, type Page, type ConsoleMessage } from "@playwright/test";
 import { E2E_TA_EMAIL, e2eTaPasswordOrSkip } from "./helpers/e2e-ta";
 import { SA_EMAIL, saPassword, saPasswordOrSkip } from "./helpers/sa-credentials";
 import { createProbeTenant, deactivateTenant, saToken, type ProbeTenant } from "./helpers/sa-api";
+import { isDevHmrNoise } from "./helpers/console-noise";
 
 const BASE_URL = process.env.BASE_URL ?? "http://localhost:3000";
 
@@ -109,7 +110,7 @@ test.describe("S10-4 SA Plans & Pricing — Add-ons tab", () => {
     const saPw = saPasswordOrSkip(test);
     const consoleErrors: string[] = [];
     page.on("pageerror", (err) => consoleErrors.push(err.message));
-    page.on("console", (msg) => { if (msg.type() === "error") consoleErrors.push(msg.text()); });
+    page.on("console", (msg) => { if (msg.type() === "error" && !isDevHmrNoise(msg.text())) consoleErrors.push(msg.text()); });
 
     const effectiveFrom = isoDaysFromNow(120);
     const note = "S10 Playwright scheduled price test";
@@ -221,7 +222,7 @@ test.describe("S10-4 SA tenant page — Features Add-ons + plan-change persisten
     const saPw = saPasswordOrSkip(test);
     const consoleErrors: string[] = [];
     page.on("pageerror", (err) => consoleErrors.push(err.message));
-    page.on("console", (msg) => { if (msg.type() === "error") consoleErrors.push(msg.text()); });
+    page.on("console", (msg) => { if (msg.type() === "error" && !isDevHmrNoise(msg.text())) consoleErrors.push(msg.text()); });
 
     await login(page, SA_EMAIL, saPw);
     await page.goto(`${BASE_URL}/admin/settings/tenants/${probe.id}`);
@@ -277,7 +278,7 @@ test.describe("S10-4 SA tenant page — Features Add-ons + plan-change persisten
     const saPw = saPasswordOrSkip(test);
     const consoleErrors: string[] = [];
     page.on("pageerror", (err) => consoleErrors.push(err.message));
-    page.on("console", (msg) => { if (msg.type() === "error") consoleErrors.push(msg.text()); });
+    page.on("console", (msg) => { if (msg.type() === "error" && !isDevHmrNoise(msg.text())) consoleErrors.push(msg.text()); });
 
     await login(page, SA_EMAIL, saPw);
     await page.goto(`${BASE_URL}/admin/settings/tenants/${probe.id}`);
@@ -336,7 +337,7 @@ test.describe("S10-4 TA views (real login)", () => {
     saPasswordOrSkip(test); // the probe tenant (beforeAll) is created and cleaned up by SA
     const consoleErrors: string[] = [];
     page.on("pageerror", (err) => consoleErrors.push(err.message));
-    page.on("console", (msg) => { if (msg.type() === "error") consoleErrors.push(msg.text()); });
+    page.on("console", (msg) => { if (msg.type() === "error" && !isDevHmrNoise(msg.text())) consoleErrors.push(msg.text()); });
 
     await login(page, probe.adminEmail, probe.adminPassword);
     await page.waitForLoadState("networkidle");

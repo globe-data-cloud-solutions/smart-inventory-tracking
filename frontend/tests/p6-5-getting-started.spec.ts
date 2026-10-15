@@ -13,6 +13,7 @@ import fs from "fs";
 import path from "path";
 import { test, expect, type Page, type ConsoleMessage } from "@playwright/test";
 import { E2E_TA_EMAIL, E2E_TA_SLUG, e2eTaPasswordOrSkip } from "./helpers/e2e-ta";
+import { isDevHmrNoise } from "./helpers/console-noise";
 
 const BASE_URL = process.env.BASE_URL ?? "http://localhost:3000";
 
@@ -23,6 +24,7 @@ function collectConsoleErrors(page: Page): string[] {
   const lines: string[] = [];
   page.on("console", (msg: ConsoleMessage) => {
     if (msg.type() !== "error") return;
+    if (isDevHmrNoise(msg.text())) return;
     if (/Failed to load resource.*40[0-9]/.test(msg.text())) return;
     if (/Failed to fetch RSC payload.*Falling back to browser navigation/.test(msg.text())) return;
     lines.push(msg.text());

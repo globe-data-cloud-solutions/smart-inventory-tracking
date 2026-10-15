@@ -17,6 +17,7 @@
  */
 import { test, expect, type Page, type ConsoleMessage } from "@playwright/test";
 import { SA_EMAIL, saPassword, saPasswordOrSkip } from "./helpers/sa-credentials";
+import { isDevHmrNoise } from "./helpers/console-noise";
 import {
   createPaidSubscriptionInvoice, createProbeTenant, deactivateTenant, saToken, type ProbeTenant,
 } from "./helpers/sa-api";
@@ -27,7 +28,7 @@ test.setTimeout(60_000);
 
 function collectConsoleErrors(page: Page): string[] {
   const lines: string[] = [];
-  page.on("console", (msg: ConsoleMessage) => { if (msg.type() === "error") lines.push(msg.text()); });
+  page.on("console", (msg: ConsoleMessage) => { if (msg.type() === "error" && !isDevHmrNoise(msg.text())) lines.push(msg.text()); });
   page.on("pageerror", (err) => lines.push(`[pageerror] ${err.message}`));
   return lines;
 }

@@ -14,6 +14,7 @@
 import { test, expect, type Page, type ConsoleMessage, type APIRequestContext } from "@playwright/test";
 import { E2E_TA_EMAIL, E2E_TA_SLUG, e2eTaPasswordOrSkip } from "./helpers/e2e-ta";
 import { SA_EMAIL, saPassword, saPasswordOrSkip } from "./helpers/sa-credentials";
+import { isDevHmrNoise } from "./helpers/console-noise";
 
 const BASE_URL = process.env.BASE_URL ?? "http://localhost:3000";
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
@@ -24,6 +25,7 @@ function collectConsoleErrors(page: Page): string[] {
   const lines: string[] = [];
   page.on("console", (msg: ConsoleMessage) => {
     if (msg.type() !== "error") return;
+    if (isDevHmrNoise(msg.text())) return;
     if (/Failed to load resource.*402/.test(msg.text())) return; // expected plan-gate round-trip
     lines.push(msg.text());
   });

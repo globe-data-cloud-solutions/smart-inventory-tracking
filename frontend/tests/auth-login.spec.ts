@@ -18,6 +18,7 @@
 import { test, expect, type Page, type ConsoleMessage } from "@playwright/test";
 import { E2E_TA_EMAIL, e2eTaPasswordOrSkip } from "./helpers/e2e-ta";
 import { SA_EMAIL, saPasswordOrSkip } from "./helpers/sa-credentials";
+import { isDevHmrNoise } from "./helpers/console-noise";
 
 const BASE_URL = process.env.BASE_URL ?? "http://localhost:3000";
 
@@ -25,6 +26,7 @@ function collectConsoleErrors(page: Page): string[] {
   const lines: string[] = [];
   page.on("console", (msg: ConsoleMessage) => {
     if (msg.type() !== "error") return;
+    if (isDevHmrNoise(msg.text())) return;
     // Chromium logs the 401 fetch response itself as a devtools "error" —
     // that is the expected invalid-credentials flow, not an app bug.
     if (/Failed to load resource.*401/.test(msg.text())) return;
