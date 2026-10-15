@@ -231,16 +231,18 @@ test.describe("S10-4 SA tenant page — Features Add-ons + plan-change persisten
 
     const addonsSection = page.locator("h3", { hasText: "Add-ons" }).locator("..");
     await addonsSection.getByRole("button", { name: "Grant free override" }).click();
-    await addonsSection.locator("select").selectOption({ label: "Logistics & Fleet Management" });
+    // API Access is in neither STARTER nor GROWTH (LOGISTICS is in STARTER, so the
+    // backend refuses a grant with FEATURE_ALREADY_IN_PACKAGE and the dialog stays open).
+    await addonsSection.locator("select").selectOption({ label: "API Access" });
     await addonsSection.locator('input[type="text"]').fill("S10 Playwright pilot grant");
     await addonsSection.getByRole("button", { name: "Yes" }).click();
     await expect(addonsSection.getByText("Free override")).toBeVisible({ timeout: 10_000 });
 
-    const logisticsRow = page.locator("h4", { hasText: "Logistics & Fleet Management" }).locator("..");
-    await expect(logisticsRow.getByText("Add-on", { exact: true })).toBeVisible();
+    const apiAccessRow = page.locator("h4", { hasText: "API Access" }).locator("..");
+    await expect(apiAccessRow.getByText("Add-on", { exact: true })).toBeVisible();
     await page.screenshot({ path: "test-results/screens/s10/sa-tenant-features-addon-en.png", fullPage: true });
 
-    // Plan change STARTER -> GROWTH -> STARTER; LOGISTICS must stay "Add-on".
+    // Plan change STARTER -> GROWTH -> STARTER; API_ACCESS must stay "Add-on".
     await page.getByRole("button", { name: /^.?.?\s*Plan$/i }).first().click();
     await page.waitForLoadState("networkidle");
     await page.getByRole("button", { name: "GROWTH" }).click();
@@ -250,7 +252,7 @@ test.describe("S10-4 SA tenant page — Features Add-ons + plan-change persisten
 
     await page.getByRole("button", { name: /^.?.?\s*Features$/i }).first().click();
     await page.waitForLoadState("networkidle");
-    await expect(logisticsRow.getByText("Add-on", { exact: true })).toBeVisible({ timeout: 10_000 });
+    await expect(apiAccessRow.getByText("Add-on", { exact: true })).toBeVisible({ timeout: 10_000 });
 
     await page.getByRole("button", { name: /^.?.?\s*Plan$/i }).first().click();
     await page.waitForLoadState("networkidle");
@@ -261,7 +263,7 @@ test.describe("S10-4 SA tenant page — Features Add-ons + plan-change persisten
 
     await page.getByRole("button", { name: /^.?.?\s*Features$/i }).first().click();
     await page.waitForLoadState("networkidle");
-    await expect(logisticsRow.getByText("Add-on", { exact: true })).toBeVisible({ timeout: 10_000 });
+    await expect(apiAccessRow.getByText("Add-on", { exact: true })).toBeVisible({ timeout: 10_000 });
 
     // Cancel the override.
     await addonsSection.getByRole("button", { name: "Cancel" }).click();
