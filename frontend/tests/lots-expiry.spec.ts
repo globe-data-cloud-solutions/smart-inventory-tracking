@@ -14,6 +14,9 @@
  *   E8  lot_tracking off: enable-batch hint, no /inventory/lots request
  *   E9  Dashboard: three expiry rows link to the Lots page; absent when expiry-alerts is 403
  *   E10 Reports: the expiry alerts card links to the Lots page
+ *   W1  Saving the near-expiry window refetches lots + expiry-alerts; chip count and row badge change
+ *   W2  Dashboard -> Lots -> save window -> Dashboard (client-side navigation only): a new
+ *       dashboard expiry-alerts GET fires and the dashboard rows show the new counts
  *
  * NO LIVE WRITES. Login (POST /api/v1/auth/token) and the session are real, using the
  * permanent zz-e2e-ta TA probe account. Every lots / expiry-alerts / features / PATCH request
@@ -68,6 +71,8 @@ function localeStrings(locale: Locale) {
   return {
     chipExpired:    l.chip_expired as string,
     chipExpiring:   (l.chip_expiring as string).replace("{days}", "30"),
+    chipExpiringN:  (n: number) => (l.chip_expiring as string).replace("{days}", String(n)),
+    windowLabelN:   (n: number) => (l.window_label as string).replace("{days}", String(n)),
     chipNoExpiry:   l.chip_no_expiry as string,
     filterAll:      l.filter_all as string,
     statusActive:   l.status_active as string,
@@ -81,6 +86,7 @@ function localeStrings(locale: Locale) {
     successText:    l.set_expiry_success as string,
     dashExpired:    d.dashboard.expired_lots as string,
     dashExpiring:   (d.dashboard.expiring_lots as string).replace("{days}", "30"),
+    dashExpiringN:  (n: number) => (d.dashboard.expiring_lots as string).replace("{days}", String(n)),
     dashNoExpiry:   d.dashboard.no_expiry_lots as string,
     dashStatUnits:  d.dashboard.stat_units as string,
     reportTitle:    d.report.expiry_alerts as string,
@@ -136,8 +142,23 @@ const ALERTS = {
   items: [alertItem(LOT_EXP, "EXPIRED"), alertItem(LOT_SOON, "EXPIRING"), alertItem(LOT_OPEN, "NO_EXPIRY")],
 };
 
+// What the backend answers once the near-expiry window is widened from 30 to 60 days:
+// LOT-OK (120 days out in the base fixtures) is moved to 45 days so it now falls inside.
+const WIDE_DAYS = 60;
+const LOT_OK_WIDE = lotRow("LOT-OK", "0c", { expiry: ymd(45), days: 45, soon: true });
+const LOTS_WIDE = [LOT_EXP, LOT_SOON, LOT_OK_WIDE, LOT_OPEN];
+const ALERTS_WIDE = {
+  window_days: WIDE_DAYS,
+  counts: { expired: 1, expiring: 2, no_expiry: 1 },
+  items: [
+    alertItem(LOT_EXP, "EXPIRED"), alertItem(LOT_SOON, "EXPIRING"),
+    alertItem(LOT_OK_WIDE, "EXPIRING"), alertItem(LOT_OPEN, "NO_EXPIRY"),
+  ],
+};
+
 const LOTS_PATH   = "/api/v1/inventory/lots";
 const ALERTS_PATH = "/api/v1/inventory/lots/expiry-alerts";
+const SETTINGS_PATH = "/api/v1/inventory/lots/expiry-settings";
 const FEATURES    = "/api/v1/inventory/features";
 const PATCH_RE    = /^\/api\/v1\/inventory\/lots\/([0-9a-f-]{36})\/expiry$/;
 
@@ -148,8 +169,15 @@ interface Stubs {
   features: StubReply;
   alerts: StubReply;
   patch: () => StubReply;
+  /** Active lots returned by GET /lots (without include_depleted). */
+  lotRows: unknown[];
+  /** Near-expiry window returned by GET / PUT expiry-settings. */
+  windowDays: number;
+  /** Runs on every PUT expiry-settings before it replies: swap the fixtures the refetches will read. */
+  onWindowPut: (days: number) => void;
   calls: {
     lotGets: string[]; alertGets: number; featureGets: number;
+    settingsPuts: Array<Record<string, unknown>>;
     patches: Array<{ path: string; body: Record<string, unknown> }>;
     unstubbedWrites: string[];
   };
@@ -174,7 +202,10 @@ async function installStubs(page: Page, o: { lotTracking?: boolean; alertsStatus
       ? { status: o.alertsStatus, detail: { code: "RBAC_DENIED", message: "backend-only wording" } }
       : { status: 200, data: ALERTS },
     patch: () => ({ status: 200, data: { lot_id: LOT_OPEN.lot_id, expiry_date: ymd(30) } }),
-    calls: { lotGets: [], alertGets: 0, featureGets: 0, patches: [], unstubbedWrites: [] },
+    lotRows: LOTS_ACTIVE,
+    windowDays: 30,
+    onWindowPut: () => {},
+    calls: { lotGets: [], alertGets: 0, featureGets: 0, settingsPuts: [], patches: [], unstubbedWrites: [] },
   };
 
   await page.route((url) => url.pathname.startsWith("/api/"), (route) => {
@@ -186,9 +217,10 @@ async function installStubs(page: Page, o: { lotTracking?: boolean; alertsStatus
     if (method === "GET") {
       if (p === FEATURES) { stubs.calls.featureGets++; return reply(route, stubs.features); }
       if (p === ALERTS_PATH) { stubs.calls.alertGets++; return reply(route, stubs.alerts); }
+      if (p === SETTINGS_PATH) return reply(route, { status: 200, data: { near_expiry_days: stubs.windowDays } });
       if (p === LOTS_PATH) {
         stubs.calls.lotGets.push(url.search);
-        const rows = url.searchParams.get("include_depleted") === "true" ? [...LOTS_ACTIVE, LOT_DEPL] : LOTS_ACTIVE;
+        const rows = url.searchParams.get("include_depleted") === "true" ? [...stubs.lotRows, LOT_DEPL] : stubs.lotRows;
         return reply(route, { status: 200, data: rows });
       }
       return route.continue();
@@ -196,6 +228,14 @@ async function installStubs(page: Page, o: { lotTracking?: boolean; alertsStatus
 
     if (method === "OPTIONS") return route.continue();
     if (method === "POST" && p === "/api/v1/auth/token") return route.continue();   // real login
+
+    if (method === "PUT" && p === SETTINGS_PATH) {
+      const body = req.postDataJSON() as { near_expiry_days: number };
+      stubs.calls.settingsPuts.push(body);
+      stubs.windowDays = body.near_expiry_days;
+      stubs.onWindowPut(body.near_expiry_days);
+      return reply(route, { status: 200, data: { near_expiry_days: stubs.windowDays } });
+    }
 
     if (method === "PATCH" && PATCH_RE.test(p)) {
       stubs.calls.patches.push({ path: p, body: req.postDataJSON() as Record<string, unknown> });
@@ -440,6 +480,85 @@ for (const locale of ["en", "am"] as const) {
       expect(stubs.calls.lotGets, "no /inventory/lots request while lot_tracking is off").toEqual([]);
 
       await finish(page, ctx, `E8 (${locale})`);
+    });
+  });
+
+  test.describe(`Near-expiry window save invalidates the expiry queries (${locale})`, () => {
+    /** Widening the window changes what the (stubbed) backend answers from the next request on. */
+    function widenOnPut(stubs: Stubs) {
+      stubs.onWindowPut = () => { stubs.alerts = { status: 200, data: ALERTS_WIDE }; stubs.lotRows = LOTS_WIDE; };
+    }
+
+    async function saveWindow(page: Page, days: number) {
+      await page.getByTestId("lots-window-edit").click();
+      await page.getByTestId("lots-window-input").fill(String(days));
+      await page.getByTestId("lots-window-save").click();
+    }
+
+    test(`W1 saving the window refetches lots and expiry-alerts; chip count and row badge change (${locale})`, async ({ page }) => {
+      const ctx = await open(page, locale, "lots");
+      const { s, stubs } = ctx;
+      widenOnPut(stubs);
+
+      await expectOnlyRows(page, ["LOT-EXP", "LOT-SOON", "LOT-OK", "OPENING-WH1"]);
+      await expect(page.getByTestId("lots-window-text")).toHaveText(s.windowLabelN(30));
+      await expect(page.getByTestId("lots-chip-expiring").locator("span").first()).toHaveText("1");
+      await expect(page.getByTestId("lots-chip-expiring")).toContainText(s.chipExpiringN(30));
+      await expect(row(page, "LOT-OK").getByText(s.statusActive, { exact: true })).toBeVisible();
+
+      const lotsBefore = stubs.calls.lotGets.length;
+      const alertsBefore = stubs.calls.alertGets;
+      await saveWindow(page, WIDE_DAYS);
+
+      await expect.poll(() => stubs.calls.settingsPuts.length, { timeout: 10_000 }).toBe(1);
+      expect(stubs.calls.settingsPuts[0]).toEqual({ near_expiry_days: WIDE_DAYS });
+      await expect.poll(() => stubs.calls.lotGets.length, { timeout: 10_000 }).toBeGreaterThan(lotsBefore);
+      await expect.poll(() => stubs.calls.alertGets, { timeout: 10_000 }).toBeGreaterThan(alertsBefore);
+
+      await expect(page.getByTestId("lots-window-text")).toHaveText(s.windowLabelN(WIDE_DAYS));
+      await expect(page.getByTestId("lots-chip-expiring").locator("span").first()).toHaveText("2");
+      await expect(page.getByTestId("lots-chip-expiring")).toContainText(s.chipExpiringN(WIDE_DAYS));
+      await expect(row(page, "LOT-OK").getByText(s.statusExpiring, { exact: true })).toBeVisible();
+
+      await finish(page, ctx, `W1 (${locale})`);
+    });
+
+    test(`W2 dashboard -> Lots -> save window -> dashboard (client-side): new expiry-alerts GET, rows show the new counts (${locale})`, async ({ page }) => {
+      const ctx = await open(page, locale, "dashboard");
+      const { s, stubs } = ctx;
+      widenOnPut(stubs);
+      const lotsHref = `/${E2E_TA_SLUG}/lots`;
+      const dashHref = `/${E2E_TA_SLUG}/dashboard`;
+      const expiringRow = (days: number) =>
+        page.locator(`a[href="${lotsHref}?view=expiry"]`).filter({ hasText: s.dashExpiringN(days) });
+
+      // 1. The dashboard primes its expiry-alerts query with the 30-day answer.
+      await expect(page.getByText(s.dashStatUnits, { exact: true })).toBeVisible();
+      await expect(expiringRow(30)).toHaveCount(1);
+      await expect(expiringRow(30).locator("p").first()).toHaveText("1");
+      expect(stubs.calls.alertGets).toBeGreaterThan(0);
+
+      // 2. Client-side navigation to Lots (menu link, no page.goto): the SPA keeps its query cache.
+      await page.locator(`a[href="${lotsHref}"]`).first().click();
+      await page.waitForURL(/\/lots(\?|$)/);
+      await expect(page.getByTestId("lots-window-text")).toHaveText(s.windowLabelN(30));
+
+      // 3. Save the wider window and wait until the Lots page's own refetch has landed.
+      await saveWindow(page, WIDE_DAYS);
+      await expect.poll(() => stubs.calls.settingsPuts.length, { timeout: 10_000 }).toBe(1);
+      await expect(page.getByTestId("lots-chip-expiring").locator("span").first()).toHaveText("2");
+
+      // 4. Client-side navigation back: the dashboard must ask for expiry-alerts again.
+      const alertsBeforeBack = stubs.calls.alertGets;
+      await page.locator(`a[href="${dashHref}"]`).first().click();
+      await page.waitForURL(/\/dashboard(\?|$)/);
+      await expect.poll(() => stubs.calls.alertGets, { timeout: 10_000 }).toBeGreaterThan(alertsBeforeBack);
+
+      await expect(expiringRow(WIDE_DAYS)).toHaveCount(1);
+      await expect(expiringRow(WIDE_DAYS).locator("p").first()).toHaveText("2");
+      await expect(expiringRow(30)).toHaveCount(0);
+
+      await finish(page, ctx, `W2 (${locale})`);
     });
   });
 
