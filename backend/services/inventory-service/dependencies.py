@@ -9,6 +9,7 @@ Session 2: UserContext now carries position-derived claims.
 from __future__ import annotations
 
 import os
+import uuid
 from dataclasses import dataclass, field
 from typing import Any, AsyncGenerator, Optional
 
@@ -119,13 +120,31 @@ def get_current_user(request: Request) -> Optional[UserContext]:
         return None
 
 
+def _rls_tenant_for(user: UserContext, request: Request) -> Optional[str]:
+    """Tenant id to bind into RLS for this request.
+
+    SA has no tenant of its own (empty RLS tenant), so tables with FORCE RLS
+    would cast '' to uuid and 500.  SA may scope a request to the tenant it is
+    viewing via ?tenant_id=<uuid>; everyone else always gets their own tenant.
+    """
+    if user.role == "SA":
+        raw = request.query_params.get("tenant_id")
+        if raw:
+            try:
+                return str(uuid.UUID(raw))
+            except ValueError:
+                pass
+    return user.tenant_id
+
+
 async def get_db_session(
+    request: Request,
     user: Optional[UserContext] = Depends(get_current_user),
 ) -> AsyncGenerator[AsyncSession, None]:
     """Primary DB session with RLS context from authenticated user's tenant_id."""
     async with AsyncSessionLocal() as session:
         if user is not None:
-            await set_rls_context(session, user.tenant_id, user.user_id)
+            await set_rls_context(session, _rls_tenant_for(user, request), user.user_id)
         try:
             yield session
             await session.commit()
@@ -135,10 +154,11 @@ async def get_db_session(
 
 
 async def get_read_db_session(
+    request: Request,
     user: Optional[UserContext] = Depends(get_current_user),
 ) -> AsyncGenerator[AsyncSession, None]:
     """Read-replica session for analytics/reports."""
     async with AsyncReadSessionLocal() as session:
         if user is not None:
-            await set_rls_context(session, user.tenant_id, user.user_id)
+            await set_rls_context(session, _rls_tenant_for(user, request), user.user_id)
         yield session
