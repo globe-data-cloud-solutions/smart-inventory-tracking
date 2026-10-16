@@ -834,6 +834,22 @@ class InventoryService:
             {"id": str(adjustment_id), "tid": str(user.tenant_id)},
         )
 
+        await write_to_outbox(
+            self.db,
+            str(user.tenant_id),
+            "AdjustmentApplied",
+            AdjustmentAppliedPayload(
+                adjustment_id=str(adjustment_id),
+                product_id=str(body.product_id),
+                warehouse_id=str(body.warehouse_id),
+                delta=float(quantity),
+            ),
+            idempotency_key=(
+                f"{body.idempotency_key}:adjustment-applied"
+                if body.idempotency_key else None
+            ),
+        )
+
         await audit_log(
             user, "adjustment:approve",
             {
