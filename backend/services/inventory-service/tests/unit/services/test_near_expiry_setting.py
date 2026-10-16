@@ -28,7 +28,9 @@ _GRANTS = {
     ("TA", "tenant:configure"), ("TA", "report:expiry_alerts"),
     ("TA", "inventory:view_balance"),
     ("NM", "report:expiry_alerts"), ("NM", "inventory:view_balance"),
+    ("SA", "tenant:configure"), ("SA", "report:expiry_alerts"),
 }
+OTHER_TENANT_ID = "20000000-0000-0000-0000-000000000002"
 
 _EMPTY_ALERTS = {
     "window_days": 0,
@@ -63,8 +65,8 @@ def _sqls(session, prefix):
             if str(c.args[0]).lstrip().startswith(prefix)]
 
 
-def _user(role):
-    return SimpleNamespace(user_id=f"u-{role.lower()}", tenant_id=TENANT_ID, role=role,
+def _user(role, tenant_id=TENANT_ID):
+    return SimpleNamespace(user_id=f"u-{role.lower()}", tenant_id=tenant_id, role=role,
                            warehouse_id=None, region_id=None)
 
 
@@ -78,12 +80,12 @@ async def _grant(role, action_id):
 
 @pytest.fixture
 def make_client(inv_app):
-    """make_client(role, session) -> AsyncClient context with RBAC from _GRANTS."""
-    def _make(role, session):
+    """make_client(role, session[, user_tenant_id]) -> AsyncClient context with RBAC from _GRANTS."""
+    def _make(role, session, user_tenant_id=TENANT_ID):
         async def _db_gen():
             yield session
 
-        inv_app.dependency_overrides[get_current_user] = lambda: _user(role)
+        inv_app.dependency_overrides[get_current_user] = lambda: _user(role, user_tenant_id)
         inv_app.dependency_overrides[get_db_session] = _db_gen
         inv_app.dependency_overrides[get_read_db_session] = _db_gen
         return AsyncClient(transport=ASGITransport(app=inv_app), base_url="http://test")
@@ -209,3 +211,65 @@ class TestExpirySettingsEndpoints:
             resp = await c.put(self.URL, json={"near_expiry_days": 60})
         assert resp.status_code == 403
         assert not _sqls(s, "UPDATE tenants")
+
+
+@pytest.mark.unit
+class TestExpirySettingsSaTenant:
+    """SA has no tenant of its own — it picks one with ?tenant_id; others cannot."""
+
+    URL = "/api/v1/inventory/lots/expiry-settings"
+
+    async def test_sa_get_reads_chosen_tenant(self, make_client) -> None:
+        s = _session(MagicMock(near_expiry_days=21))
+        async with make_client("SA", s, None) as c:
+            resp = await c.get(self.URL, params={"tenant_id": OTHER_TENANT_ID})
+        assert resp.status_code == 200
+        assert resp.json()["data"] == {"near_expiry_days": 21}
+        assert _sqls(s, "SELECT near_expiry_days")[0].args[1] == {"tid": OTHER_TENANT_ID}
+
+    async def test_sa_put_writes_and_audits_chosen_tenant(self, make_client) -> None:
+        s = _session(MagicMock(near_expiry_days=30))
+        async with make_client("SA", s, None) as c:
+            resp = await c.put(
+                self.URL, params={"tenant_id": OTHER_TENANT_ID}, json={"near_expiry_days": 60}
+            )
+        assert resp.status_code == 200
+        assert resp.json()["data"] == {"near_expiry_days": 60}
+        assert _sqls(s, "UPDATE tenants")[0].args[1] == {"d": 60, "tid": OTHER_TENANT_ID}
+        audits = _sqls(s, "INSERT INTO audit_logs")
+        assert len(audits) == 1
+        assert audits[0].args[1]["tid"] == OTHER_TENANT_ID
+        assert audits[0].args[1]["rid"] == OTHER_TENANT_ID
+
+    async def test_sa_get_without_tenant_id_422(self, make_client) -> None:
+        s = _session(MagicMock(near_expiry_days=30))
+        async with make_client("SA", s, None) as c:
+            resp = await c.get(self.URL)
+        assert resp.status_code == 422
+        assert resp.json()["detail"] == {"code": "TENANT_ID_REQUIRED"}
+        s.execute.assert_not_called()
+
+    async def test_sa_put_without_tenant_id_422(self, make_client) -> None:
+        s = _session(MagicMock(near_expiry_days=30))
+        async with make_client("SA", s, None) as c:
+            resp = await c.put(self.URL, json={"near_expiry_days": 60})
+        assert resp.status_code == 422
+        assert resp.json()["detail"] == {"code": "TENANT_ID_REQUIRED"}
+        assert not _sqls(s, "UPDATE tenants")
+
+    async def test_ta_get_ignores_other_tenant_id(self, make_client) -> None:
+        s = _session(MagicMock(near_expiry_days=21))
+        async with make_client("TA", s) as c:
+            resp = await c.get(self.URL, params={"tenant_id": OTHER_TENANT_ID})
+        assert resp.status_code == 200
+        assert _sqls(s, "SELECT near_expiry_days")[0].args[1] == {"tid": TENANT_ID}
+
+    async def test_ta_put_ignores_other_tenant_id(self, make_client) -> None:
+        s = _session(MagicMock(near_expiry_days=30))
+        async with make_client("TA", s) as c:
+            resp = await c.put(
+                self.URL, params={"tenant_id": OTHER_TENANT_ID}, json={"near_expiry_days": 60}
+            )
+        assert resp.status_code == 200
+        assert _sqls(s, "UPDATE tenants")[0].args[1] == {"d": 60, "tid": TENANT_ID}
+        assert _sqls(s, "INSERT INTO audit_logs")[0].args[1]["tid"] == TENANT_ID
