@@ -19,6 +19,7 @@ import { useContactInfo } from "@/hooks/useContactInfo";
 import { pickLocalized } from "@/lib/billing-types";
 import { ContactModal } from "@/components/features/contact/ContactModal";
 import { useFeatures } from "@/hooks/useFeatures";
+import { useViewedTenantId } from "@/hooks/useViewedTenantId";
 import { fetchExpiryAlerts, type ExpiryAlertsApi } from "@/components/features/lots/lotsApi";
 
 const isGatewayMode = !!process.env.NEXT_PUBLIC_API_URL;
@@ -288,10 +289,12 @@ export default function OrgDashboard() {
   // or any other failure leaves data undefined, so no expiry rows are shown.
   const { lotTracking } = useFeatures();
   const expiryWarehouseId = user?.warehouseId ?? "";
+  const viewedTenant = useViewedTenantId(org);
+  const expiryTenantId = viewedTenant.isSA ? viewedTenant.tenantId : undefined;
   const { data: expiryAlerts } = useQuery<ExpiryAlertsApi>({
-    queryKey: ["dashboard-expiry-alerts", org, expiryWarehouseId],
-    queryFn: () => fetchExpiryAlerts(expiryWarehouseId),
-    enabled: enabled && lotTracking,
+    queryKey: ["dashboard-expiry-alerts", org, expiryWarehouseId, expiryTenantId],
+    queryFn: () => fetchExpiryAlerts(expiryWarehouseId, expiryTenantId),
+    enabled: enabled && lotTracking && viewedTenant.ready,
     retry: false,
     staleTime: 0,
     refetchOnMount: true,

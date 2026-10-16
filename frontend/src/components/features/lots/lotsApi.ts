@@ -39,15 +39,18 @@ export interface ExpiryAlertsApi {
   items: ExpiryAlertItem[];
 }
 
-export function fetchLots(warehouseId: string, includeDepleted: boolean): Promise<LotApi[]> {
+/** SA has no tenant of its own: it names the viewed tenant with ?tenant_id (ignored for other roles). */
+export function fetchLots(warehouseId: string, includeDepleted: boolean, tenantId?: string): Promise<LotApi[]> {
   const q = new URLSearchParams({ limit: "1000" });
+  if (tenantId) q.set("tenant_id", tenantId);
   if (includeDepleted) q.set("include_depleted", "true");
   if (warehouseId) q.set("warehouse_id", warehouseId);
   return api.get<LotApi[]>(`/api/v1/inventory/lots?${q.toString()}`);
 }
 
-export function fetchExpiryAlerts(warehouseId: string): Promise<ExpiryAlertsApi> {
+export function fetchExpiryAlerts(warehouseId: string, tenantId?: string): Promise<ExpiryAlertsApi> {
   const q = new URLSearchParams();
+  if (tenantId) q.set("tenant_id", tenantId);
   if (warehouseId) q.set("warehouse_id", warehouseId);
   const qs = q.toString();
   return api.get<ExpiryAlertsApi>(`/api/v1/inventory/lots/expiry-alerts${qs ? `?${qs}` : ""}`);
@@ -61,12 +64,19 @@ export interface ExpirySettingsApi {
 export const NEAR_EXPIRY_MIN_DAYS = 1;
 export const NEAR_EXPIRY_MAX_DAYS = 365;
 
-export function fetchExpirySettings(): Promise<ExpirySettingsApi> {
-  return api.get<ExpirySettingsApi>("/api/v1/inventory/lots/expiry-settings");
+function tenantQuery(tenantId?: string): string {
+  return tenantId ? `?${new URLSearchParams({ tenant_id: tenantId }).toString()}` : "";
 }
 
-export function updateExpirySettings(days: number): Promise<ExpirySettingsApi> {
-  return api.put<ExpirySettingsApi>("/api/v1/inventory/lots/expiry-settings", { near_expiry_days: days });
+export function fetchExpirySettings(tenantId?: string): Promise<ExpirySettingsApi> {
+  return api.get<ExpirySettingsApi>(`/api/v1/inventory/lots/expiry-settings${tenantQuery(tenantId)}`);
+}
+
+export function updateExpirySettings(days: number, tenantId?: string): Promise<ExpirySettingsApi> {
+  return api.put<ExpirySettingsApi>(
+    `/api/v1/inventory/lots/expiry-settings${tenantQuery(tenantId)}`,
+    { near_expiry_days: days },
+  );
 }
 
 /* ── GET /api/v1/inventory/lots/overrides[/summary] ──────────────────────── */
@@ -122,8 +132,9 @@ export interface OverrideParams {
   offset?: number;
 }
 
-function overrideQuery(p: OverrideParams, withListFilters: boolean): string {
+function overrideQuery(p: OverrideParams, withListFilters: boolean, tenantId?: string): string {
   const q = new URLSearchParams();
+  if (tenantId) q.set("tenant_id", tenantId);
   if (p.dateFrom) q.set("date_from", p.dateFrom);
   if (p.dateTo) q.set("date_to", p.dateTo);
   if (p.warehouseId) q.set("warehouse_id", p.warehouseId);
@@ -137,12 +148,12 @@ function overrideQuery(p: OverrideParams, withListFilters: boolean): string {
   return qs ? `?${qs}` : "";
 }
 
-export function fetchOverrides(p: OverrideParams): Promise<OverrideLogApi> {
-  return api.get<OverrideLogApi>(`/api/v1/inventory/lots/overrides${overrideQuery(p, true)}`);
+export function fetchOverrides(p: OverrideParams, tenantId?: string): Promise<OverrideLogApi> {
+  return api.get<OverrideLogApi>(`/api/v1/inventory/lots/overrides${overrideQuery(p, true, tenantId)}`);
 }
 
-export function fetchOverrideSummary(p: OverrideParams): Promise<OverrideSummaryApi> {
-  return api.get<OverrideSummaryApi>(`/api/v1/inventory/lots/overrides/summary${overrideQuery(p, false)}`);
+export function fetchOverrideSummary(p: OverrideParams, tenantId?: string): Promise<OverrideSummaryApi> {
+  return api.get<OverrideSummaryApi>(`/api/v1/inventory/lots/overrides/summary${overrideQuery(p, false, tenantId)}`);
 }
 
 /** HTTP status carried by an ApiError-shaped throw, if any. */

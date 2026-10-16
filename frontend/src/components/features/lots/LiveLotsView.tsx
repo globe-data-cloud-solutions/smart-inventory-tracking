@@ -7,6 +7,7 @@ import { getSession } from "@/lib/demo-auth";
 import { t } from "@/lib/i18n";
 import { useFeatures } from "@/hooks/useFeatures";
 import { useTenantName } from "@/hooks/useTenantName";
+import { useViewedTenantId } from "@/hooks/useViewedTenantId";
 import { formatQty } from "@/lib/utils";
 import { usePermission } from "@/lib/permissions";
 import { ExpirySummary } from "./ExpirySummary";
@@ -52,6 +53,9 @@ export function LiveLotsView({ org }: { org: string }) {
   const tenantName = useTenantName(org);
   const user = getSession();
   const { lotTracking } = useFeatures();
+  const viewed = useViewedTenantId(org);
+  // SA names the viewed tenant explicitly; every other role is scoped by its JWT.
+  const scopeTenantId = viewed.isSA ? viewed.tenantId : undefined;
 
   // Facility-scoped roles only ever see their own warehouse (same scoping as the dashboard).
   const warehouseId = user?.warehouseId ?? "";
@@ -74,17 +78,17 @@ export function LiveLotsView({ org }: { org: string }) {
   const includeDepleted = statusFilter === "DEPLETED";
 
   const lotsQuery = useQuery<LotApi[]>({
-    queryKey: ["lots-live", org, warehouseId, includeDepleted],
-    queryFn: () => fetchLots(warehouseId, includeDepleted),
-    enabled: lotTracking,
+    queryKey: ["lots-live", org, warehouseId, includeDepleted, scopeTenantId],
+    queryFn: () => fetchLots(warehouseId, includeDepleted, scopeTenantId),
+    enabled: lotTracking && viewed.ready,
     staleTime: 0,
     refetchOnMount: true,
   });
 
   const alertsQuery = useQuery<ExpiryAlertsApi>({
-    queryKey: ["lots-expiry-alerts", org, warehouseId],
-    queryFn: () => fetchExpiryAlerts(warehouseId),
-    enabled: lotTracking,
+    queryKey: ["lots-expiry-alerts", org, warehouseId, scopeTenantId],
+    queryFn: () => fetchExpiryAlerts(warehouseId, scopeTenantId),
+    enabled: lotTracking && viewed.ready,
     retry: false,
     staleTime: 0,
     refetchOnMount: true,
