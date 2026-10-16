@@ -5,6 +5,7 @@ import { useQuery } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import { t } from "@/lib/i18n";
 import { formatQty } from "@/lib/utils";
+import { useViewedTenantId } from "@/hooks/useViewedTenantId";
 import {
   errStatus, fetchOverrides, fetchOverrideSummary,
   type ComplianceCountsApi, type OverrideLogApi, type OverrideLotApi, type OverrideParams,
@@ -91,6 +92,9 @@ export function OverridesView({ org, warehouseId }: { org: string; warehouseId: 
   const [strategy, setStrategy]   = useState<OverrideStrategy | "">("");
   const [offset, setOffset]       = useState(0);
 
+  const viewed = useViewedTenantId(org);
+  const scopeTenantId = viewed.isSA ? viewed.tenantId : undefined;
+
   const rangeInvalid = !dateFrom || !dateTo || dateFrom > dateTo;
   const params: OverrideParams = { dateFrom, dateTo, warehouseId, productId, strategy, limit: PAGE_SIZE, offset };
 
@@ -106,17 +110,17 @@ export function OverridesView({ org, warehouseId }: { org: string; warehouseId: 
   );
 
   const summaryQuery = useQuery<OverrideSummaryApi>({
-    queryKey: ["lot-override-summary", org, warehouseId, dateFrom, dateTo],
-    queryFn: () => fetchOverrideSummary(params),
-    enabled: !rangeInvalid,
+    queryKey: ["lot-override-summary", org, warehouseId, dateFrom, dateTo, scopeTenantId],
+    queryFn: () => fetchOverrideSummary(params, scopeTenantId),
+    enabled: !rangeInvalid && viewed.ready,
     retry: false,
     staleTime: 0,
   });
 
   const listQuery = useQuery<OverrideLogApi>({
-    queryKey: ["lot-overrides", org, warehouseId, dateFrom, dateTo, productId, strategy, offset],
-    queryFn: () => fetchOverrides(params),
-    enabled: !rangeInvalid,
+    queryKey: ["lot-overrides", org, warehouseId, dateFrom, dateTo, productId, strategy, offset, scopeTenantId],
+    queryFn: () => fetchOverrides(params, scopeTenantId),
+    enabled: !rangeInvalid && viewed.ready,
     retry: false,
     staleTime: 0,
   });

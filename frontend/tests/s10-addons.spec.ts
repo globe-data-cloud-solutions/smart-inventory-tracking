@@ -8,7 +8,9 @@
  * Run:
  *   npx playwright test tests/s10-addons.spec.ts
  */
-import { test, expect, type Page, type ConsoleMessage } from "@playwright/test";
+import fs from "fs";
+import path from "path";
+import { test, expect, type APIRequestContext, type Page, type ConsoleMessage } from "@playwright/test";
 import { E2E_TA_EMAIL, e2eTaPasswordOrSkip } from "./helpers/e2e-ta";
 import { SA_EMAIL, saPassword, saPasswordOrSkip } from "./helpers/sa-credentials";
 import { createProbeTenant, deactivateTenant, pickTestAddon, saToken, type PickedAddon, type ProbeTenant } from "./helpers/sa-api";
@@ -30,6 +32,25 @@ function isoDaysFromNow(days: number): string {
   const d = new Date();
   d.setUTCDate(d.getUTCDate() + days);
   return d.toISOString().slice(0, 10);
+}
+
+/** am value of a locale key, read from locales/am.json (dot path). */
+function amString(key: string): string {
+  const raw = fs.readFileSync(path.join(__dirname, "..", "..", "locales", "am.json"), "utf-8");
+  const value = key.split(".").reduce<unknown>((o, k) => (o as Record<string, unknown> | undefined)?.[k], JSON.parse(raw));
+  if (typeof value !== "string") throw new Error(`locales/am.json has no string at ${key}`);
+  return value;
+}
+
+/**
+ * The add-on every S10 test uses, picked at run time: tier flags and add-on prices are
+ * SA-editable platform config. Not in STARTER or GROWTH (the probe tenant moves between
+ * them, and a package-included add-on is refused with FEATURE_ALREADY_IN_PACKAGE) and
+ * priced ANNUAL (PURCHASED needs a current price for the probe's billing period).
+ */
+function pickProbeAddon(request: APIRequestContext): Promise<PickedAddon> {
+  return saToken(request).then((token) =>
+    pickTestAddon(request, token, { excludeTiers: ["STARTER", "GROWTH"], billingPeriod: "ANNUAL" }));
 }
 
 function collectConsole(page: Page): string[] {
@@ -106,8 +127,9 @@ interface StubbedAddonCatalogRow {
 test.describe("S10-4 SA Plans & Pricing — Add-ons tab", () => {
   test.skip(!saPassword(), SA_SKIP_REASON);
 
-  test("set and see a scheduled price (POST stubbed — no real price written)", async ({ page }) => {
+  test("set and see a scheduled price (POST stubbed — no real price written)", async ({ page, request }) => {
     const saPw = saPasswordOrSkip(test);
+    const addon = await pickProbeAddon(request);
     const consoleErrors: string[] = [];
     page.on("pageerror", (err) => consoleErrors.push(err.message));
     page.on("console", (msg) => { if (msg.type() === "error" && !isDevHmrNoise(msg.text())) consoleErrors.push(msg.text()); });
@@ -190,9 +212,9 @@ test.describe("S10-4 SA Plans & Pricing — Add-ons tab", () => {
     await page.evaluate(() => localStorage.setItem("locale", "am"));
     await page.reload();
     await page.waitForLoadState("networkidle");
-    await page.getByRole("button", { name: /^(Add-ons|ተጨማሪዎች)$/ }).click();
+    await page.getByRole("button", { name: amString("platform_plans.tab_addons"), exact: true }).click();
     await page.waitForLoadState("networkidle");
-    await expect(page.getByText("LOGISTICS", { exact: true })).toBeVisible({ timeout: 10_000 });
+    await expect(page.getByText(addon.code, { exact: true })).toBeVisible({ timeout: 10_000 });
     await page.screenshot({ path: "test-results/screens/s10/sa-plans-addons-am.png", fullPage: true });
 
     expect(blockedWrites, "no other write may reach the add-on routes").toEqual([]);
@@ -213,12 +235,7 @@ test.describe("S10-4 probe tenant add-ons", () => {
   let addon: PickedAddon;
 
   test.beforeAll(async ({ request }) => {
-    // Not in STARTER or GROWTH (the test moves the probe between them, and a
-    // package-included add-on is refused with FEATURE_ALREADY_IN_PACKAGE), and
-    // priced for the probe's billing period (PURCHASED needs a current price).
-    addon = await pickTestAddon(request, await saToken(request), {
-      excludeTiers: ["STARTER", "GROWTH"], billingPeriod: "ANNUAL",
-    });
+    addon = await pickProbeAddon(request);
     probe = await createProbeTenant(request, { prefix: "s10", tier: "STARTER", billingPeriod: "ANNUAL" });
   });
 

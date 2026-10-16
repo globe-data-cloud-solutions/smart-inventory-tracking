@@ -338,8 +338,8 @@ function PricesTab() {
   });
 
   const [form, setForm] = useState({
-    tier: "STARTER" as string,
-    billing_period: "MONTHLY" as string,
+    tier: "" as string,
+    billing_period: "" as string,
     amount: "",
     effective_from: new Date().toISOString().slice(0, 10),
     reason: "",
@@ -362,7 +362,7 @@ function PricesTab() {
       await qc.invalidateQueries({ queryKey: ["platform-package-prices"] });
       await qc.invalidateQueries({ queryKey: ["platform-config-log"] });
       setSuccess(t("platform_plans.prices_note"));
-      setForm((f) => ({ ...f, amount: "", reason: "" }));
+      setForm((f) => ({ ...f, tier: "", billing_period: "", amount: "", reason: "" }));
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : t("platform_plans.error_generic"));
     } finally {
@@ -385,6 +385,7 @@ function PricesTab() {
               onChange={(e) => setForm((f) => ({ ...f, tier: e.target.value }))}
               className="w-full px-2 py-1.5 text-sm border border-gray-300 rounded outline-none"
             >
+              <option value="" disabled>{t("platform_plans.select_placeholder")}</option>
               {TIERS.map((tr) => (
                 <option key={tr} value={tr}>{tr}</option>
               ))}
@@ -397,6 +398,7 @@ function PricesTab() {
               onChange={(e) => setForm((f) => ({ ...f, billing_period: e.target.value }))}
               className="w-full px-2 py-1.5 text-sm border border-gray-300 rounded outline-none"
             >
+              <option value="" disabled>{t("platform_plans.select_placeholder")}</option>
               <option value="MONTHLY">{t("platform_plans.prices_monthly")}</option>
               <option value="ANNUAL">{t("platform_plans.prices_annual")}</option>
             </select>
@@ -438,7 +440,7 @@ function PricesTab() {
         <div className="flex justify-end mt-3">
           <button
             type="button"
-            disabled={submitting || !form.amount || !form.reason.trim()}
+            disabled={submitting || !form.tier || !form.billing_period || !form.amount || !form.reason.trim()}
             onClick={() => void handleSubmit()}
             className="px-4 py-2 text-xs font-bold text-white bg-[#0f2d1f] rounded hover:bg-[#1a4d35] disabled:opacity-50 disabled:cursor-not-allowed"
           >
@@ -526,7 +528,7 @@ function AddonsTab() {
 
   const [priceForm, setPriceForm] = useState({
     addon_code: "",
-    billing_period: "MONTHLY" as string,
+    billing_period: "" as string,
     amount: "",
     effective_from: new Date().toISOString().slice(0, 10),
     reason: "",
@@ -538,7 +540,6 @@ function AddonsTab() {
   useEffect(() => {
     if (data && !initialized.current) {
       setDrafts(Object.fromEntries(data.map((row) => [row.code, row])));
-      if (data.length > 0) setPriceForm((f) => ({ ...f, addon_code: data[0]!.code }));
       initialized.current = true;
     }
   }, [data]);
@@ -586,7 +587,7 @@ function AddonsTab() {
       await qc.invalidateQueries({ queryKey: ["platform-addons"] });
       await qc.invalidateQueries({ queryKey: ["platform-config-log"] });
       setPriceSuccess(t("platform_plans.addons_price_saved"));
-      setPriceForm((f) => ({ ...f, amount: "", reason: "" }));
+      setPriceForm((f) => ({ ...f, addon_code: "", billing_period: "", amount: "", reason: "" }));
     } catch (e: unknown) {
       setPriceError(e instanceof Error ? e.message : t("platform_plans.error_generic"));
     } finally {
@@ -614,6 +615,7 @@ function AddonsTab() {
               onChange={(e) => setPriceForm((f) => ({ ...f, addon_code: e.target.value }))}
               className="w-full px-2 py-1.5 text-sm border border-gray-300 rounded outline-none"
             >
+              <option value="" disabled>{t("platform_plans.select_placeholder")}</option>
               {sorted.map((a) => (
                 <option key={a.code} value={a.code}>{a.display_name}</option>
               ))}
@@ -626,6 +628,7 @@ function AddonsTab() {
               onChange={(e) => setPriceForm((f) => ({ ...f, billing_period: e.target.value }))}
               className="w-full px-2 py-1.5 text-sm border border-gray-300 rounded outline-none"
             >
+              <option value="" disabled>{t("platform_plans.select_placeholder")}</option>
               <option value="MONTHLY">{t("platform_plans.prices_monthly")}</option>
               <option value="ANNUAL">{t("platform_plans.prices_annual")}</option>
             </select>
@@ -666,7 +669,7 @@ function AddonsTab() {
         <div className="flex justify-end mt-3">
           <button
             type="button"
-            disabled={priceSubmitting || !priceForm.amount || !priceForm.reason.trim() || !priceForm.addon_code}
+            disabled={priceSubmitting || !priceForm.addon_code || !priceForm.billing_period || !priceForm.amount || !priceForm.reason.trim()}
             onClick={() => void handleSubmitPrice()}
             className="px-4 py-2 text-xs font-bold text-white bg-[#0f2d1f] rounded hover:bg-[#1a4d35] disabled:opacity-50 disabled:cursor-not-allowed"
           >

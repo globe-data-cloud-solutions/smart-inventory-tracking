@@ -96,9 +96,10 @@ class _World:
 
 @pytest.fixture
 def ledger():
-    """record_transaction and audit_log, patched where the service calls them."""
+    """record_transaction, write_to_outbox and audit_log, patched where the service calls them."""
     with patch("services.inventory_service.record_transaction",
                new=AsyncMock(return_value="eeeeeeee-0000-0000-0000-000000000001")) as rec, \
+         patch("services.inventory_service.write_to_outbox", new=AsyncMock()), \
          patch("services.inventory_service.audit_log", new=AsyncMock()):
         yield rec
 

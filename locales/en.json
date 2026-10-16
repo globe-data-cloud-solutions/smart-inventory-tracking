@@ -2158,6 +2158,7 @@
     "prices_set_new": "Set new price",
     "prices_tier_label": "Tier",
     "prices_period_label": "Billing period",
+    "select_placeholder": "Select…",
     "prices_amount_label": "Amount",
     "prices_effective_label": "Effective from",
     "prices_submit_btn": "Post price",

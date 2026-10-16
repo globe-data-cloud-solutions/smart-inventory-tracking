@@ -114,3 +114,58 @@ async def test_db_error_is_logged_and_never_raised(caplog: pytest.LogCaptureFixt
         await audit_log(user, "inventory:receive", {}, "GRANTED")  # must not raise
 
     assert "failed to write audit_logs row" in caplog.text
+
+
+async def test_caller_session_row_inserted_on_that_session_without_commit() -> None:
+    """db given: the INSERT runs on the caller's session, AsyncSessionLocal is never
+    opened, and nothing is committed here — the caller's transaction owns the commit."""
+    user = _user(tenant_id="tenant-1", role="TA")
+    caller_db = _fake_db()
+    own_session = MagicMock()
+
+    import shared.permissions.audit as audit_module
+    with patch.object(audit_module, "AsyncSessionLocal", own_session):
+        await audit_log(user, "adjustment:approve", {"resource_id": "a-1"}, "GRANTED", db=caller_db)
+
+    caller_db.execute.assert_awaited_once()
+    assert caller_db.execute.call_args.args[1]["tenant_id"] == "tenant-1"
+    caller_db.commit.assert_not_called()
+    own_session.assert_not_called()
+
+
+async def test_caller_session_error_propagates() -> None:
+    """db given: a failed INSERT must raise so the caller's business write rolls back
+    with it — an audit failure is never swallowed in this mode."""
+    user = _user(tenant_id="tenant-1", role="TA")
+    caller_db = _fake_db()
+    caller_db.execute = AsyncMock(side_effect=RuntimeError("db exploded"))
+
+    with pytest.raises(RuntimeError, match="db exploded"):
+        await audit_log(user, "adjustment:approve", {}, "GRANTED", db=caller_db)
+
+
+async def test_caller_session_platform_level_action_is_not_inserted(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """db given but no resolvable tenant: same no-insert warning rule as the default path."""
+    user = _user(tenant_id=None, role="SA")
+    caller_db = _fake_db()
+
+    with caplog.at_level(logging.WARNING):
+        await audit_log(user, "platform:tier_config_edit", {}, "GRANTED", db=caller_db)
+
+    caller_db.execute.assert_not_called()
+    assert "platform-level decision not stored" in caplog.text
+
+
+async def test_default_path_still_uses_own_session_and_commits() -> None:
+    """db None: behaviour unchanged — own AsyncSessionLocal session, committed once."""
+    user = _user(tenant_id="tenant-1", role="TA")
+    own = _fake_db()
+
+    import shared.permissions.audit as audit_module
+    with patch.object(audit_module, "AsyncSessionLocal", lambda: own):
+        await audit_log(user, "inventory:receive", {}, "DENIED", "RBAC_DENIED")
+
+    own.execute.assert_awaited_once()
+    own.commit.assert_awaited_once()

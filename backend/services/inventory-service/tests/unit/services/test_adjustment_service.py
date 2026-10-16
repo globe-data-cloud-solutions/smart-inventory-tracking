@@ -1291,3 +1291,46 @@ class TestAdjustmentZeroDelta:
     def test_negative_and_positive_delta_accepted(self):
         assert _adj_body(quantity_delta=Decimal("-3")).quantity_delta == Decimal("-3")
         assert _adj_body(quantity_delta=Decimal("5")).quantity_delta == Decimal("5")
+
+
+@pytest.mark.unit
+class TestApproveAdjustmentOutboxAndAuditSession:
+    """approve_adjustment() emits AdjustmentApplied in the same transaction and
+    writes its audit row on the same session (db=self.db)."""
+
+    async def test_approve_writes_adjustment_applied_outbox_and_audits_on_own_session(
+        self, db: AsyncMock, svc: InventoryService
+    ) -> None:
+        body = AdjustStockRequest(
+            product_id=UUID(PRODUCT_ID),
+            warehouse_id=UUID(WAREHOUSE_ID),
+            quantity=Decimal("-200"),
+            reason_code="COUNT_VARIANCE",
+            idempotency_key="adj:nm-approve:outbox-001",
+        )
+        adj_id = UUID(TX_ID)
+
+        with patch(
+            "services.inventory_service.record_transaction",
+            new_callable=AsyncMock, return_value=TX_ID,
+        ), patch(
+            "services.inventory_service.write_to_outbox", new_callable=AsyncMock,
+        ) as mock_outbox, patch(
+            "services.inventory_service.audit_log", new_callable=AsyncMock,
+        ) as mock_audit:
+            await svc.approve_adjustment(NM, adj_id, body)
+
+        mock_outbox.assert_awaited_once()
+        args, kwargs = mock_outbox.call_args
+        assert args[0] is db
+        assert args[1] == TENANT_ID
+        assert args[2] == "AdjustmentApplied"
+        payload = args[3]
+        assert payload.adjustment_id == str(adj_id)
+        assert payload.product_id == PRODUCT_ID
+        assert payload.warehouse_id == WAREHOUSE_ID
+        assert payload.delta == -200.0
+        assert kwargs["idempotency_key"] == "adj:nm-approve:outbox-001:adjustment-applied"
+
+        mock_audit.assert_awaited_once()
+        assert mock_audit.call_args.kwargs["db"] is db

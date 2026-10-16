@@ -922,7 +922,7 @@ class TestInventoryServiceTransfers:
         ), patch(
             "services.inventory_service.write_transfer_ledger_entry",
             new=AsyncMock(),
-        ):
+        ), patch("services.inventory_service.audit_log", new=AsyncMock()):
             result = await InventoryService(session).dispatch_transfer(NM_USER, TRANSFER_ID)
 
         assert result.status == "ISSUED", (
@@ -1457,7 +1457,8 @@ class TestGap4SimpleModeWiring:
         session  = _session_for_dispatch(xfer_row, [line])
 
         with patch("services.inventory_service.record_transaction", new=AsyncMock()), \
-             patch("services.inventory_service.write_transfer_ledger_entry", new=AsyncMock()):
+             patch("services.inventory_service.write_transfer_ledger_entry", new=AsyncMock()), \
+             patch("services.inventory_service.audit_log", new=AsyncMock()):
             result = await InventoryService(session).dispatch_transfer(NM_WITH_WH, TRANSFER_ID)
 
         assert result.status == "ISSUED", (
@@ -2861,6 +2862,7 @@ class TestMultiStepApproval:
                    ))), \
              patch("services.inventory_service.record_transaction",
                    new=AsyncMock(return_value="tx-step1")) as mock_record, \
+             patch("services.inventory_service.audit_log", new=AsyncMock()), \
              patch("services.inventory_service._get_simple_mode",
                    new=AsyncMock(return_value=False)):
             result = await InventoryService(session).transition_transfer(

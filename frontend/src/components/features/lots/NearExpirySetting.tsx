@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { t } from "@/lib/i18n";
 import { useWriteGuard } from "@/hooks/useWriteGuard";
+import { useViewedTenantId } from "@/hooks/useViewedTenantId";
 import {
   NEAR_EXPIRY_MAX_DAYS, NEAR_EXPIRY_MIN_DAYS, errStatus, fetchExpirySettings, updateExpirySettings,
   type ExpirySettingsApi,
@@ -21,6 +22,8 @@ interface Props {
 export function NearExpirySetting({ org, canEdit }: Props) {
   const qc = useQueryClient();
   const guard = useWriteGuard();
+  const viewed = useViewedTenantId(org);
+  const scopeTenantId = viewed.isSA ? viewed.tenantId : undefined;
   const [editing, setEditing] = useState(false);
   const [draft, setDraft]     = useState("");
   const [error, setError]     = useState("");
@@ -28,8 +31,9 @@ export function NearExpirySetting({ org, canEdit }: Props) {
   const [saved, setSaved]     = useState(false);
 
   const settingsQuery = useQuery<ExpirySettingsApi>({
-    queryKey: ["lots-expiry-settings", org],
-    queryFn: fetchExpirySettings,
+    queryKey: ["lots-expiry-settings", org, scopeTenantId],
+    queryFn: () => fetchExpirySettings(scopeTenantId),
+    enabled: viewed.ready,
     retry: false,
     staleTime: 0,
     refetchOnMount: true,
@@ -65,8 +69,8 @@ export function NearExpirySetting({ org, canEdit }: Props) {
 
     setSaving(true);
     try {
-      const out = await updateExpirySettings(n);
-      qc.setQueryData<ExpirySettingsApi>(["lots-expiry-settings", org], out);
+      const out = await updateExpirySettings(n, scopeTenantId);
+      qc.setQueryData<ExpirySettingsApi>(["lots-expiry-settings", org, scopeTenantId], out);
       setEditing(false);
       setSaved(true);
       // The lots table, the expiry chips and the dashboard rows all count with this window.

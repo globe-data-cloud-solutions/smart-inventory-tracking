@@ -96,11 +96,15 @@ async def expiry_alerts(
 @router.get("/expiry-settings", response_model=SuccessResponse[NearExpirySettingsOut])
 @require_permission(PERMISSIONS.REPORT_EXPIRY_ALERTS)
 async def get_expiry_settings(
+    tenant_id: Optional[uuid.UUID] = Query(None, description="SA only — filter to specific tenant"),
     user=Depends(get_current_user),
     db: AsyncSession = Depends(get_read_db_session),
 ) -> SuccessResponse[NearExpirySettingsOut]:
     """The tenant's near-expiry window (days)."""
-    days = await get_near_expiry_days(db, user.tenant_id)
+    tid = effective_tenant_id(user, tenant_id)
+    if tid is None:
+        raise HTTPException(status_code=422, detail={"code": "TENANT_ID_REQUIRED"})
+    days = await get_near_expiry_days(db, tid)
     return SuccessResponse(data=NearExpirySettingsOut(near_expiry_days=days))
 
 
@@ -108,13 +112,15 @@ async def get_expiry_settings(
 @require_permission(PERMISSIONS.TENANT_CONFIGURE)
 async def put_expiry_settings(
     body: NearExpirySettingsRequest,
+    tenant_id: Optional[uuid.UUID] = Query(None, description="SA only — filter to specific tenant"),
     user=Depends(get_current_user),
     db: AsyncSession = Depends(get_db_session),
 ) -> SuccessResponse[NearExpirySettingsOut]:
-    """Set the tenant's near-expiry window (TA). Audited in the same transaction."""
-    days = await set_near_expiry_days(
-        db, str(user.tenant_id), body.near_expiry_days, user
-    )
+    """Set the tenant's near-expiry window (TA, or SA for a chosen tenant). Audited in the same transaction."""
+    tid = effective_tenant_id(user, tenant_id)
+    if tid is None:
+        raise HTTPException(status_code=422, detail={"code": "TENANT_ID_REQUIRED"})
+    days = await set_near_expiry_days(db, str(tid), body.near_expiry_days, user)
     return SuccessResponse(data=NearExpirySettingsOut(near_expiry_days=days))
 
 
