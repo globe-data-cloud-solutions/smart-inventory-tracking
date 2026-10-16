@@ -2660,6 +2660,7 @@ class InventoryService:
                     },
                     "GRANTED",
                     "within_self_approval_limit",
+                    db=self.db,
                 )
 
                 from datetime import datetime, timezone
@@ -2693,6 +2694,7 @@ class InventoryService:
                     audit_context,
                     "CONDITIONAL",
                     f"routed_to:{route_to}",
+                    db=self.db,
                 )
 
         # ── Product-override approval gate (MATRIX 1) ───────────────────────
