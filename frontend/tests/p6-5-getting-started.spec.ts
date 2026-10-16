@@ -73,24 +73,16 @@ for (const locale of ["en", "am"] as const) {
       await page.waitForLoadState("networkidle");
 
       // The document's own h1 and section headings are sourced from the .md
-      // file (English-only content, same in every UI locale) — deterministic
-      // regardless of locale-load timing, unlike the page chrome's t()-driven
-      // title/buttons (lib/i18n.ts's module-level `translations` only updates
-      // async; a page with little reactive state after mount, like this one,
-      // can still be showing the English fallback by the time this runs).
+      // file (English-only content, same in every UI locale).
       await expect(page.getByRole("heading", { name: "SMART Inventory — Getting Started", level: 1 })).toBeVisible({ timeout: 10_000 });
       await expect(page.getByRole("heading", { name: "Before You Begin" })).toBeVisible();
       await expect(page.getByRole("heading", { name: "Choices you make at sign-up" })).toBeVisible();
       await expect(page.getByRole("heading", { name: "What happens after you submit" })).toBeVisible();
 
-      // Page-chrome strings: accept either language since the locale may not
-      // have finished loading yet (see note above) — the point of this
-      // assertion is that the controls render and work, in either language.
-      const printBtnRe = new RegExp(`${strings.printBtn}|Printable checklist`);
-      await expect(page.getByRole("button", { name: printBtnRe })).toBeVisible();
+      // Page-chrome strings come from the locale pack (t()), in the stored locale.
+      await expect(page.getByRole("button", { name: strings.printBtn })).toBeVisible();
 
-      const ctaRe = new RegExp(`${strings.createAccountCta}|Create an account`);
-      const cta = page.getByRole("link", { name: ctaRe });
+      const cta = page.getByRole("link", { name: strings.createAccountCta });
       await expect(cta).toBeVisible();
       await cta.click();
       await page.waitForURL(/\/signup/);

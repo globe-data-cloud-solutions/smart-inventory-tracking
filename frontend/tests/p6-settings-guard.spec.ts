@@ -149,11 +149,10 @@ for (const locale of ["en", "am"] as const) {
       await page.goto(`${BASE_URL}/${E2E_TA_SLUG}/settings/tenant-admin`);
       await page.waitForLoadState("networkidle");
       // Scoped to the tab bar: the READ_ONLY banner also has a "Contact SMART" button.
-      // The tab button's accessible name is its icon + label. On a hard load the am
-      // page currently renders the English fallback label here, so accept either.
+      // The tab button's accessible name is its icon + label.
       await page
         .locator("div.overflow-x-auto")
-        .getByRole("button", { name: new RegExp(`^👥(Contact|${strings.contactTab})$`) })
+        .getByRole("button", { name: new RegExp(`^👥${strings.contactTab}$`) })
         .click();
       const addContactBtn = page.getByRole("button", { name: `+ ${strings.addContact}` });
       await expect(addContactBtn).toBeVisible({ timeout: 10_000 });

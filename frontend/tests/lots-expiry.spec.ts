@@ -484,10 +484,7 @@ for (const locale of ["en", "am"] as const) {
 
       const card = page.locator(`a[href="/${E2E_TA_SLUG}/lots?view=expiry"]`);
       await expect(card).toHaveCount(1);
-      // The Reports page holds no state, so after a hard load it never re-renders once the am
-      // locale pack arrives and stays English (pre-existing; out of scope here). Check the
-      // translated title in en only; the link target is what this test is about.
-      if (locale === "en") await expect(card).toContainText(s.reportTitle);
+      await expect(card).toContainText(s.reportTitle);
 
       await finish(page, ctx, `E10 (${locale})`);
     });
