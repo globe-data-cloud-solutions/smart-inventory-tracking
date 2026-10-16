@@ -841,6 +841,7 @@ async def reset_hierarchy_config(
          "tenant_id": str(tenant_id)},
         "GRANTED",
         "SA reset org level configuration for tenant",
+        db=db,
     )
 
     return SuccessResponse(data={

@@ -529,6 +529,7 @@ async def remove_position_assignment(
                  "tenant_id": str(tenant_id), "target_user_id": str(user_id)},
                 "GRANTED",
                 "SA force-removed sole PRIMARY position — user auto-deactivated pending reassignment",
+                db=db,
             )
 
     await db.execute(

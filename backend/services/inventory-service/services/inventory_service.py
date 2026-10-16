@@ -203,6 +203,7 @@ async def _apply_product_override_flag(
         },
         decision="CONDITIONAL",
         reason="product_override_required",
+        db=db,
     )
 
 
@@ -778,6 +779,7 @@ class InventoryService:
                 "reason_code": body.reason_code,
             },
             decision="GRANTED",
+            db=self.db,
         )
 
         from datetime import datetime, timezone
@@ -845,6 +847,7 @@ class InventoryService:
                 "lot_id": lot_id,
             },
             "GRANTED",
+            db=self.db,
         )
 
         from datetime import datetime, timezone
@@ -1258,6 +1261,7 @@ class InventoryService:
                     },
                     decision="GRANTED",
                     reason="within_self_approval_limit",
+                    db=self.db,
                 )
                 from datetime import datetime, timezone
                 return TransferOrderResponse(
@@ -1364,6 +1368,7 @@ class InventoryService:
                         },
                         decision="GRANTED",
                         reason="within_self_approval_limit",
+                        db=self.db,
                     )
                     from datetime import datetime, timezone
                     return TransferOrderResponse(
@@ -1545,6 +1550,7 @@ class InventoryService:
                             f"Step {_cur_idx + 1} of {len(_steps)} approved; "
                             f"advancing to step {_next_idx + 1}"
                         ),
+                        db=self.db,
                     )
                     from datetime import datetime, timezone
                     return TransferOrderResponse(
@@ -1722,6 +1728,7 @@ class InventoryService:
                 action="transfer:dispatch",
                 resource=dispatch_audit_resource,
                 decision="GRANTED",
+                db=self.db,
             )
 
         await self.db.execute(
@@ -1850,6 +1857,7 @@ class InventoryService:
             action="transfer:issue",
             resource=audit_resource,
             decision="GRANTED",
+            db=self.db,
         )
 
         from datetime import datetime, timezone
@@ -2212,6 +2220,7 @@ class InventoryService:
                 "auto_lot": lot["auto_lot"],
             },
             "GRANTED",
+            db=self.db,
         )
 
         return AdjustmentResponse(
