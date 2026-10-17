@@ -100,7 +100,7 @@ export function OverridesView({ org, warehouseId }: { org: string; warehouseId: 
 
   const productsQuery = useQuery<ProductOption[]>({
     queryKey: ["lot-override-products", org],
-    queryFn: () => api.get<ProductOption[]>("/api/v1/products"),
+    queryFn: () => api.get<ProductOption[]>("/api/v1/products/"),
     retry: false,
     staleTime: 60_000,
   });

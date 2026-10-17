@@ -109,7 +109,7 @@ export default function DispatchPage() {
 
   const { data: apiProducts = [] } = useQuery<Array<{ id: string; sku: string; name: string }>>({
     queryKey: ["products", org],
-    queryFn:  () => api.get<Array<{ id: string; sku: string; name: string }>>("/api/v1/products"),
+    queryFn:  () => api.get<Array<{ id: string; sku: string; name: string }>>("/api/v1/products/"),
     enabled: org !== SA_ORG_SLUG,
     staleTime: 30_000,
   });

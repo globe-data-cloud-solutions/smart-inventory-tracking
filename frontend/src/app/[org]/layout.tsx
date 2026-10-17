@@ -63,7 +63,7 @@ function NotificationBell({ org }: { org: string }) {
     queryFn:  async () => {
       try {
         const r = await api.get<AutoApprovalAlert[]>(
-          "/api/v1/inventory/alerts?alert_type=AUTO_APPROVAL_NOTICE"
+          "/api/v1/inventory/alerts/?alert_type=AUTO_APPROVAL_NOTICE"
         );
         return r ?? [];
       } catch {

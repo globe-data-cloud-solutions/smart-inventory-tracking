@@ -586,7 +586,7 @@ export function AddProductPanel({
         productSku   = updated.sku;
       } else {
         const created = await api.post<{ id: string; sku: string }>(
-          apiBase,
+          `${apiBase}/`,
           {
             name:              name.trim(),
             short_name:        shortName.trim() || undefined,

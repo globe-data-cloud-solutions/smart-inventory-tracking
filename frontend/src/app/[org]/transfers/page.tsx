@@ -735,7 +735,7 @@ export default function TransfersPage() {
   const { data: rawTransfers = [], isLoading: transfersLoading } = useQuery<ApiTransfer[]>({
     queryKey: ["transfers", org],
     queryFn:  () =>
-      api.get<RawApiTransfer[]>("/api/v1/inventory/transfers")
+      api.get<RawApiTransfer[]>("/api/v1/inventory/transfers/")
         .then((rows) => rows.map(normalizeTransfer)),
     enabled: org !== SA_ORG_SLUG,
     staleTime: 0,
@@ -831,7 +831,7 @@ export default function TransfersPage() {
   // Fetch API-created products for the transfer panel product dropdown.
   const { data: apiProducts = [] } = useQuery<ApiProduct[]>({
     queryKey: ["products", org],
-    queryFn:  () => api.get<ApiProduct[]>("/api/v1/products"),
+    queryFn:  () => api.get<ApiProduct[]>("/api/v1/products/"),
     enabled: org !== SA_ORG_SLUG,
     staleTime: 30_000,
   });

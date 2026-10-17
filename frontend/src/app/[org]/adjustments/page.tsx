@@ -129,14 +129,14 @@ export default function AdjustmentsPage() {
   // All hooks called unconditionally — before any early returns
   const { data: apiAdj = [] } = useQuery<AdjRecord[]>({
     queryKey: ["adjustments", org],
-    queryFn:  () => api.get<AdjRecord[]>("/api/v1/inventory/adjustments"),
+    queryFn:  () => api.get<AdjRecord[]>("/api/v1/inventory/adjustments/"),
     enabled:  isGatewayMode && org !== SA_ORG_SLUG,
     staleTime: 0,
   });
 
   const { data: apiProducts = [] } = useQuery<ApiProduct[]>({
     queryKey: ["products", org],
-    queryFn:  () => api.get<ApiProduct[]>("/api/v1/products"),
+    queryFn:  () => api.get<ApiProduct[]>("/api/v1/products/"),
     enabled:  isGatewayMode && org !== SA_ORG_SLUG,
     staleTime: 30_000,
   });
