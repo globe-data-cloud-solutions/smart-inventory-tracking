@@ -29,11 +29,30 @@ export default function RootLayout({
         <Providers>{children}</Providers>
         <script
           dangerouslySetInnerHTML={{
-            __html: `
+            // NODE_ENV is inlined at build time. sw.js serves /_next/static/* cache-first, which is
+            // safe for hashed production chunks; in dev the chunk names never change, so a browser
+            // would keep running stale JS. Dev therefore removes any leftover worker and its caches.
+            __html: process.env.NODE_ENV === "production"
+              ? `
               if ('serviceWorker' in navigator) {
                 window.addEventListener('load', () => {
                   navigator.serviceWorker.register('/sw.js');
                 });
+              }
+            `
+              : `
+              if ('serviceWorker' in navigator) {
+                // An unregistered worker keeps controlling (and re-filling caches for) this page
+                // until it navigates, so reload once when one is controlling it.
+                const controlled = !!navigator.serviceWorker.controller;
+                navigator.serviceWorker.getRegistrations()
+                  .then((regs) => Promise.all(regs.map((r) => r.unregister())))
+                  .then(() => (window.caches ? caches.keys() : []))
+                  .then((keys) => Promise.all(
+                    keys.filter((k) => k.startsWith('smart-')).map((k) => caches.delete(k))
+                  ))
+                  .then(() => { if (controlled) window.location.reload(); })
+                  .catch(() => {});
               }
             `,
           }}
