@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import { t } from "@/lib/i18n";
+import { PanelError } from "@/components/ui/PanelError";
 import { formatQty } from "@/lib/utils";
 import { useOfflineSync } from "@/hooks/useOfflineSync";
 import { useWriteGuard, guardProps } from "@/hooks/useWriteGuard";
@@ -176,6 +177,8 @@ export function ReceiveTransferPanel({
         </p>
         <p className="text-sm text-gray-500 mb-4">{t("transfers.receive.intro")}</p>
 
+        <PanelError message={formError} />
+
         {blockedReason && (
           <p className="text-xs font-semibold text-red-600 bg-red-50 border border-red-200 rounded px-3 py-2 mb-4">
             {blockedReason}
@@ -270,12 +273,6 @@ export function ReceiveTransferPanel({
           </div>
         )}
 
-        {formError && (
-          <p className="text-xs font-semibold text-red-600 bg-red-50 border border-red-200 rounded px-3 py-2 mb-4">
-            {formError}
-          </p>
-        )}
-
         <div className="flex gap-2.5">
           <button onClick={onClose} className="flex-1 py-2.5 bg-gray-100 border-0 rounded-md text-sm font-semibold cursor-pointer">
             {t("common.cancel")}
@@ -286,7 +283,7 @@ export function ReceiveTransferPanel({
             onClick={() => void submit()}
             className="flex-[2] py-2.5 bg-eth-forest text-eth-gold border-0 rounded-md text-sm font-bold cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            {submitting ? t("common.loading") : t("transfers.receive.submit")}
+            {submitting ? t("common.saving") : t("transfers.receive.submit")}
           </button>
         </div>
       </div>

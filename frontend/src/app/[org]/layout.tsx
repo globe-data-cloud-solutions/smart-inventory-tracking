@@ -14,6 +14,7 @@ import { useTenantName } from "@/hooks/useTenantName";
 import { useContractStatus } from "@/hooks/useContractStatus";
 import { PublicContactLink } from "@/components/features/auth/PublicContactLink";
 import { ContactModal } from "@/components/features/contact/ContactModal";
+import { GlobalToast } from "@/components/ui/GlobalToast";
 
 type Locale = "en" | "am" | "or";
 
@@ -782,6 +783,7 @@ export default function OrgLayout({ children }: { children: React.ReactNode }) {
         </div>
       </div>
       <ContactModal open={contactOpen} onClose={() => setContactOpen(false)} />
+      <GlobalToast />
     </QueryClientProvider>
   );
 }

@@ -11,6 +11,8 @@ import { useWriteGuard, guardProps } from "@/hooks/useWriteGuard";
 import { useFeatures } from "@/hooks/useFeatures";
 import { usePermission } from "@/hooks/usePermission";
 import { t } from "@/lib/i18n";
+import { notify } from "@/lib/notify";
+import { PanelError } from "@/components/ui/PanelError";
 
 const LOT_SETTINGS_ERROR_CODES = new Set([
   "FEATURE_NOT_ENABLED", "EXPIRY_NEEDS_BATCH", "INVALID_DISPATCH_STRATEGY",
@@ -55,22 +57,6 @@ interface ApiTransferType {
   underlying_type: "PULL" | "PUSH" | "SISTER";
   display_name: string;
   is_active: boolean;
-}
-
-function Toast({ message, onDismiss }: { message: string; onDismiss: () => void }) {
-  useEffect(() => {
-    const id = setTimeout(onDismiss, 4000);
-    return () => clearTimeout(id);
-  }, [onDismiss]);
-  return (
-    <div
-      role="status"
-      aria-live="polite"
-      className="fixed bottom-6 right-6 z-[9999] bg-emerald-600 text-white px-5 py-3 rounded-md text-sm font-semibold shadow-xl"
-    >
-      {message}
-    </div>
-  );
 }
 
 // ── create-or-select component ────────────────────────────────────────────────
@@ -376,7 +362,6 @@ export function AddProductPanel({
   const [categoryErr, setCatErr]    = useState("");
   const [submitting, setSub]        = useState(false);
   const [panelError, setPanelError] = useState("");
-  const [toast, setToast]           = useState<string | null>(null);
   const [copied, setCopied]         = useState(false);
 
   const skuInputRef = useRef<HTMLInputElement>(null);
@@ -548,6 +533,7 @@ export function AddProductPanel({
   };
 
   const handleSave = async () => {
+    if (submitting) return;
     let valid = true;
     if (!name.trim())    { setNameErr("name_required"); valid = false; }
     if (!categoryOk)     { setCatErr("Category is required."); valid = false; }
@@ -689,11 +675,12 @@ export function AddProductPanel({
         // keep the panel open until the user closes it themselves.
         setOpeningLots(newOpeningLots);
       } else {
-        setToast(
-          isEdit
-            ? t("product.edit_success")
+        notify({
+          kind: "success",
+          message: isEdit
+            ? `${t("product.edit_success")} — ${productSku}`
             : t("product.add.success").replace("{{sku}}", productSku),
-        );
+        });
         if (!createLotSettingsFailed) { resetForm(); setOpen(false); onClose?.(); }
       }
     } catch (err) {
@@ -814,11 +801,7 @@ export function AddProductPanel({
               {gp.title}
             </div>
           )}
-          {panelError && (
-            <div role="alert" className="bg-red-50 border border-red-200 rounded px-3.5 py-2.5 text-sm text-red-600">
-              {panelError}
-            </div>
-          )}
+          <PanelError message={panelError} />
 
           {/* ── Product Image ────────────────────────────────────── */}
           <div>
@@ -1301,7 +1284,7 @@ export function AddProductPanel({
             {submitting && (
               <span className="w-3.5 h-3.5 rounded-full border-2 border-eth-gold/30 border-t-eth-gold animate-spin inline-block" />
             )}
-            {t("product.add.save")}
+            {submitting ? t("common.saving") : t("product.add.save")}
           </button>
         </div>
       </aside>
@@ -1330,7 +1313,6 @@ export function AddProductPanel({
         </div>
       )}
 
-      {toast && <Toast message={toast} onDismiss={() => setToast(null)} />}
     </>
   );
 }

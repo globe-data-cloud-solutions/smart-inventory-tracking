@@ -10,6 +10,8 @@ import { useScanner } from "@/hooks/useScanner";
 import { useAuditStore } from "@/lib/audit-log-state";
 import { getSession } from "@/lib/demo-auth";
 import { t } from "@/lib/i18n";
+import { notify } from "@/lib/notify";
+import { PanelError } from "@/components/ui/PanelError";
 import { lotErrorMessage } from "@/lib/lotErrors";
 import { useWarehouses } from "@/hooks/useWarehouses";
 import { useWriteGuard, guardProps } from "@/hooks/useWriteGuard";
@@ -65,8 +67,7 @@ export function ReceiveStockPanel({ products, orgSlug }: Props) {
   const [scanHint, setScanHint]       = useState("");
   const [form, setForm] = useState<FormState>({ productId: "", referenceType: "", quantity: "", lotNumber: "", expiryDate: "", autoLot: false });
   const [error, setError]     = useState("");
-  const [success, setSuccess] = useState("");
-  const [loading, setLoading] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
   const writeGuard = useWriteGuard();
   const gp = guardProps(writeGuard);
 
@@ -79,7 +80,7 @@ export function ReceiveStockPanel({ products, orgSlug }: Props) {
   const { videoRef, isActive: scanActive, error: scanError, start: startScan, stop: stopScan } = useScanner(onScan);
 
   function clearForm() { setForm({ productId: "", referenceType: "", quantity: "", lotNumber: "", expiryDate: "", autoLot: false }); setError(""); setScanHint(""); setScannerOpen(false); stopScan(); }
-  function reset() { clearForm(); setSuccess(""); }
+  function reset() { clearForm(); }
   function set(key: "productId" | "referenceType" | "quantity" | "lotNumber" | "expiryDate", val: string) { setForm((f) => ({ ...f, [key]: val })); setError(""); }
   function setAutoLot(val: boolean) { setForm((f) => ({ ...f, autoLot: val, lotNumber: val ? "" : f.lotNumber })); setError(""); }
   function toggleScanner() { if (scannerOpen) { stopScan(); setScannerOpen(false); } else { setScannerOpen(true); void startScan(); } }
@@ -90,7 +91,7 @@ export function ReceiveStockPanel({ products, orgSlug }: Props) {
 
   const onSubmit = async (e: React.FormEvent) => {
     e.preventDefault(); setError("");
-    if (gp.disabled) return; // defense in depth — form's native Enter-to-submit bypasses the button's disabled attr
+    if (gp.disabled || submitting) return; // defense in depth — form's native Enter-to-submit bypasses the button's disabled attr
     if (!form.productId)     { setError(t("receive_panel.error_product"));   return; }
     if (!warehouseId)        { setError(t("receive_panel.error_warehouse")); return; }
     if (!form.referenceType) { setError(t("receive_panel.error_ref_type")); return; }
@@ -110,30 +111,30 @@ export function ReceiveStockPanel({ products, orgSlug }: Props) {
         ? { auto_lot: form.autoLot, lot_number: form.autoLot ? undefined : form.lotNumber, expiry_date: form.expiryDate || undefined }
         : {}),
     };
-    setLoading(true);
+    setSubmitting(true);
     try {
       if (!isOnline) {
         await enqueueOfflineTransaction({ idempotencyKey: key, action: "inventory:receive", payload });
-        clearForm();
-        setSuccess(t("inventory.receive.queue_offline"));
-        setTimeout(() => { setSuccess(""); setOpen(false); }, 2500);
+        clearForm(); setOpen(false);
+        notify({ kind: "success", message: `${t("inventory.receive.queue_offline")} — ${product?.name ?? ""} (${product?.sku ?? ""}) +${qty.toLocaleString()}` });
       } else {
         const resp = await api.post<{ lot_number?: string | null }>("/api/v1/inventory/receive/", payload);
         if (user) logAudit({ tenantSlug: orgSlug, userEmail: user.email, userName: user.name, role: user.role, action: "inventory:receive", category: "INVENTORY", resourceRef: product?.sku ?? form.productId, resourceType: "InventoryTransaction", productName: product?.name, quantityStr: `+${qty.toLocaleString()} ${product?.unit ?? "units"}`, toWarehouse: warehouseName, notes: t(`transfer.reference.${form.referenceType}`) });
-        clearForm();
-        if (resp.lot_number) {
-          setSuccess(t("inventory.receive.success_lot").replace("{lot}", resp.lot_number));
-        } else {
-          setSuccess(t("inventory.receive.success"));
-          setTimeout(() => { setSuccess(""); setOpen(false); }, 2500);
-        }
+        clearForm(); setOpen(false);
+        const what = `${product?.name ?? ""} (${product?.sku ?? ""}) +${qty.toLocaleString()} ${product?.unit ?? ""}`.trim();
+        notify({
+          kind: "success",
+          message: resp.lot_number
+            ? `${t("inventory.receive.success_lot").replace("{lot}", resp.lot_number)} ${what}`
+            : `${t("inventory.receive.success")} — ${what}`,
+        });
         void qc.invalidateQueries({ queryKey: ["products", orgSlug] });
         void qc.invalidateQueries({ queryKey: ["inventory-stock", orgSlug] });
       }
     } catch (err: unknown) {
       setError(lotErrorMessage(err) ?? (err instanceof Error ? err.message : t("errors.INTERNAL_ERROR")));
     }
-    finally { setLoading(false); }
+    finally { setSubmitting(false); }
   };
 
   return (
@@ -154,6 +155,7 @@ export function ReceiveStockPanel({ products, orgSlug }: Props) {
         </div>
 
         <form onSubmit={onSubmit} className="flex-1 overflow-y-auto p-6">
+          <PanelError message={error} />
           {gp.disabled && gp.title && (
             <div role="alert" className="bg-amber-50 border border-amber-200 rounded px-3.5 py-2.5 text-sm text-amber-800 mb-4">
               {gp.title}
@@ -220,15 +222,13 @@ export function ReceiveStockPanel({ products, orgSlug }: Props) {
             />
           )}
 
-          {error   && <div className="bg-red-50 border border-red-200 rounded p-3 text-sm text-red-600 mb-3">{error}</div>}
-          {success && <div className="bg-green-50 border border-emerald-200 rounded p-3 text-sm text-emerald-600 mb-3">✓ {success}</div>}
         </form>
 
         <div className="px-6 py-4 border-t border-gray-200 flex gap-2.5">
           <button type="button" onClick={() => setOpen(false)} className="flex-1 py-2.5 bg-gray-100 border border-gray-200 rounded text-sm font-semibold text-gray-700 cursor-pointer">{t("common.cancel")}</button>
-          <button onClick={onSubmit as unknown as React.MouseEventHandler} disabled={loading || gp.disabled} title={gp.title}
-            className={`flex-[2] py-2.5 font-bold text-sm rounded border-0 text-eth-gold ${loading || gp.disabled ? "opacity-70 cursor-not-allowed" : "cursor-pointer"} ${isOnline ? "bg-eth-forest" : "bg-amber-800"}`}>
-            {loading ? t("common.loading") : isOnline ? t("inventory.receive.submit") : t("inventory.receive.queue_offline")}
+          <button onClick={onSubmit as unknown as React.MouseEventHandler} disabled={submitting || gp.disabled} title={gp.title}
+            className={`flex-[2] py-2.5 font-bold text-sm rounded border-0 text-eth-gold ${submitting || gp.disabled ? "opacity-70 cursor-not-allowed" : "cursor-pointer"} ${isOnline ? "bg-eth-forest" : "bg-amber-800"}`}>
+            {submitting ? t("common.saving") : isOnline ? t("inventory.receive.submit") : t("inventory.receive.queue_offline")}
           </button>
         </div>
       </div>

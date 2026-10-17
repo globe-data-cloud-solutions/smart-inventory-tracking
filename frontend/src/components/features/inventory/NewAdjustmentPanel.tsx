@@ -5,6 +5,8 @@ import { useQueryClient, useQuery } from "@tanstack/react-query";
 import { nanoid } from "nanoid";
 import { api, IS_GATEWAY_MODE } from "@/lib/api";
 import { t } from "@/lib/i18n";
+import { notify } from "@/lib/notify";
+import { PanelError } from "@/components/ui/PanelError";
 import { isQuantityDeltaError, lotErrorMessage } from "@/lib/lotErrors";
 import { getSession } from "@/lib/demo-auth";
 import { useWriteGuard, guardProps } from "@/hooks/useWriteGuard";
@@ -121,8 +123,7 @@ export function NewAdjustmentPanel({ products, warehouses, orgSlug }: Props) {
   const [reason, setReason]           = useState("");
   const [notes, setNotes]             = useState("");
   const [error, setError]             = useState("");
-  const [loading, setLoading]         = useState(false);
-  const [toast, setToast]             = useState<{ msg: string; applied: boolean } | null>(null);
+  const [submitting, setSubmitting]   = useState(false);
   const [zeroWarn, setZeroWarn]       = useState(false);
 
   // Batch-tracked lot choice (lot tracking on). Negative: one existing lot to
@@ -210,14 +211,8 @@ export function NewAdjustmentPanel({ products, warehouses, orgSlug }: Props) {
     setReason(""); setNotes(""); setError(""); setZeroWarn(false); clearLot();
   }
 
-  // Bug 6: auto-dismiss toast and close panel after 3 s
-  useEffect(() => {
-    if (!toast) return;
-    const id = setTimeout(() => { setToast(null); setOpen(false); }, 3000);
-    return () => clearTimeout(id);
-  }, [toast]);
-
   async function doSubmit(bypassZeroFloor = false) {
+    if (submitting) return;
     setError("");
     const blockedReason = guard.reason();
     if (blockedReason) { setError(blockedReason); return; }
@@ -263,7 +258,7 @@ export function NewAdjustmentPanel({ products, warehouses, orgSlug }: Props) {
 
     setZeroWarn(false);
     const key = `adjust:${productId}:${effectiveWarehouseId}:${Date.now()}:${nanoid(8)}`;
-    setLoading(true);
+    setSubmitting(true);
     try {
       const adj = await api.post<AdjResult>("/api/v1/inventory/adjustments/", {
         product_id:     productId,
@@ -309,11 +304,10 @@ export function NewAdjustmentPanel({ products, warehouses, orgSlug }: Props) {
         });
       }
 
-      // Bug 6: show toast, reset form, auto-close in 3 s (via useEffect)
-      reset();
-      setToast({
-        msg:     adj.status === "APPLIED" ? t("adjustment.success_applied") : t("adjustment.success_submitted"),
-        applied: adj.status === "APPLIED",
+      reset(); setOpen(false);
+      notify({
+        kind: "success",
+        message: `${adj.status === "APPLIED" ? t("adjustment.success_applied") : t("adjustment.success_submitted")} — ${selectedP?.name ?? ""} (${selectedP?.sku ?? ""}) ${qty > 0 ? "+" : ""}${qty}`,
       });
       void qc.invalidateQueries({ queryKey: ["adjustments", orgSlug] });
     } catch (err: unknown) {
@@ -323,7 +317,7 @@ export function NewAdjustmentPanel({ products, warehouses, orgSlug }: Props) {
           : lotErrorMessage(err) ?? (err instanceof Error ? err.message : t("errors.INTERNAL_ERROR")),
       );
     } finally {
-      setLoading(false);
+      setSubmitting(false);
     }
   }
 
@@ -358,13 +352,7 @@ export function NewAdjustmentPanel({ products, warehouses, orgSlug }: Props) {
             </div>
           )}
 
-          {/* Bug 6: toast replaces full-screen result */}
-          {toast && (
-            <div className={`mb-4 px-4 py-3 rounded-md text-sm font-semibold flex items-center gap-2 ${toast.applied ? "bg-green-50 text-green-800 border border-green-200" : "bg-amber-50 text-amber-800 border border-amber-200"}`}>
-              <span>{toast.applied ? "✓" : "⏳"}</span>
-              {toast.msg}
-            </div>
-          )}
+          <PanelError message={error} />
 
           <Field label={t("table.product")}>
             <select value={productId} onChange={(e) => { setProductId(e.target.value); clearLot(); }} className={selectCls} required>
@@ -542,8 +530,6 @@ export function NewAdjustmentPanel({ products, warehouses, orgSlug }: Props) {
             <textarea value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Supporting details…" rows={3} className={`${inputCls} resize-y`} />
           </Field>
 
-          {error && <div className="bg-red-50 border border-red-200 rounded p-3 text-sm text-red-600 mb-3">{error}</div>}
-
           {/* Bug 7: manager override confirmation when projected balance goes negative */}
           {zeroWarn && (
             <div className="bg-amber-50 border border-amber-300 rounded p-3 mb-3">
@@ -566,11 +552,11 @@ export function NewAdjustmentPanel({ products, warehouses, orgSlug }: Props) {
           <button
             type="button"
             onClick={() => void doSubmit()}
-            disabled={loading || zeroWarn || gp.disabled}
+            disabled={submitting || zeroWarn || gp.disabled}
             title={gp.title}
-            className={`flex-[2] py-2.5 bg-cyan-600 text-white font-bold text-sm rounded border-0 ${(loading || zeroWarn || gp.disabled) ? "opacity-70 cursor-not-allowed" : "cursor-pointer"}`}
+            className={`flex-[2] py-2.5 bg-cyan-600 text-white font-bold text-sm rounded border-0 ${(submitting || zeroWarn || gp.disabled) ? "opacity-70 cursor-not-allowed" : "cursor-pointer"}`}
           >
-            {loading ? t("common.loading") : t("adjustment.submit")}
+            {submitting ? t("common.saving") : t("adjustment.submit")}
           </button>
         </div>
       </div>

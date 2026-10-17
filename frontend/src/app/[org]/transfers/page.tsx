@@ -8,6 +8,7 @@ import { getSession, SA_ORG_SLUG } from "@/lib/demo-auth";
 import { DEMO_TENANTS, type DemoProduct, type DemoWarehouse, type ProductApprovalOverride } from "@/lib/demo-data";
 import { NewTransferPanel } from "@/components/features/transfers/NewTransferPanel";
 import { ReceiveTransferPanel } from "@/components/features/transfers/ReceiveTransferPanel";
+import { notify } from "@/lib/notify";
 import { TransferRowDetails, hasLotSplit, transferDetailKey, type TransferReceiptDetail } from "@/components/features/transfers/TransferLotDetails";
 import { ApproveLotsPanel, approveFailure, type ApproveFailure, type ApproveLine, type ApproveLotsBody } from "@/components/features/transfers/ApproveLotsPanel";
 import { fetchDispatchPreview } from "@/components/features/transfers/DispatchPreview";
@@ -1104,7 +1105,7 @@ export default function TransfersPage() {
   }
 
   // Receive form submitted: refresh the same queries doTransition refreshes.
-  function onReceived(id: string, receivedTotal: number, discrepancyCount: number) {
+  function onReceived(id: string, ref: string, receivedTotal: number, discrepancyCount: number) {
     setReceiveFor(null);
     void qc.invalidateQueries({ queryKey: ["transfers", org] });
     void qc.invalidateQueries({ queryKey: transferDetailKey(id) });
@@ -1115,8 +1116,7 @@ export default function TransfersPage() {
     } else if (discrepancyCount > 1) {
       msg += ` · ${t("transfers.receive.toast_discrepancies").replace("{count}", String(discrepancyCount))}`;
     }
-    setToast(msg);
-    setTimeout(() => setToast(""), 5000);
+    notify({ kind: discrepancyCount > 0 ? "warning" : "success", message: `${ref} — ${msg}` });
   }
 
   function onDiscrepancyResolved() {
@@ -1223,7 +1223,7 @@ export default function TransfersPage() {
           transferRef={receiveFor.ref}
           basePath="/api/v1/inventory/transfers"
           onClose={() => setReceiveFor(null)}
-          onReceived={(total, count) => onReceived(receiveFor.id, total, count)}
+          onReceived={(total, count) => onReceived(receiveFor.id, receiveFor.ref, total, count)}
         />
       )}
 
