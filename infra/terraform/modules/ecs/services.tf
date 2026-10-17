@@ -270,6 +270,50 @@ resource "aws_ecs_task_definition" "db_bootstrap" {
   ])
 }
 
+# ── Dev sample seed task ─────────────────────────────────────────────────
+# Dev only (seed_enabled). Run by the deploy workflow after migrations, on
+# every dev deploy. It creates the SA account and the sample tenants on first
+# creation only; existing rows and passwords are never changed. Uses the
+# runtime DB role (DATABASE_URL), not the master.
+
+resource "aws_ecs_task_definition" "seed" {
+  count                    = var.seed_enabled ? 1 : 0
+  family                   = "smart-${var.env}-seed"
+  requires_compatibilities = ["FARGATE"]
+  network_mode             = "awsvpc"
+  cpu                      = "256"
+  memory                   = "512"
+  execution_role_arn       = aws_iam_role.ecs_task_execution.arn
+
+  container_definitions = jsonencode([
+    {
+      name      = "seed"
+      image     = "${var.account_id}.dkr.ecr.${var.region}.amazonaws.com/smart-migration:${var.env}-latest"
+      essential = true
+      command   = ["python", "/app/backend/migrations/seed_dev_sample.py"]
+      environment = [
+        { name = "ENVIRONMENT", value = var.env },
+        { name = "SEED_ENABLED", value = "true" },
+      ]
+      secrets = concat(
+        [for s in local.secret_refs : s if s.name == "DATABASE_URL"],
+        [
+          { name = "SEED_SA_PASSWORD", valueFrom = var.secret_arns["seed/sa-password"] },
+          { name = "SEED_SAMPLE_PASSWORD", valueFrom = var.secret_arns["seed/sample-password"] },
+        ]
+      )
+      logConfiguration = {
+        logDriver = "awslogs"
+        options = {
+          "awslogs-group"         = aws_cloudwatch_log_group.migration.name
+          "awslogs-region"        = var.region
+          "awslogs-stream-prefix" = "seed"
+        }
+      }
+    }
+  ])
+}
+
 # ── Migration task (alembic upgrade head + permission seed) ───────────────
 # No aws_ecs_service — run on demand via `aws ecs run-task` from the deploy
 # workflow, after db-bootstrap and before any service rollout.

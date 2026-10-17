@@ -14,11 +14,25 @@ resource "random_password" "runtime_db" {
   special = false
 }
 
+# Dev sample-data passwords (seed_enabled only). Read by the seed ECS task to
+# hash the SA account and sample tenant users; nothing else reads them.
+resource "random_password" "seed_sa" {
+  count   = var.seed_enabled ? 1 : 0
+  length  = 32
+  special = false
+}
+
+resource "random_password" "seed_sample" {
+  count   = var.seed_enabled ? 1 : 0
+  length  = 32
+  special = false
+}
+
 locals {
   runtime_db_url = "postgresql+asyncpg://${var.runtime_db_role}:${random_password.runtime_db.result}@%s:5432/${var.db_name}?ssl=require"
   redis_url      = "rediss://${var.redis_host}:6379"
 
-  secret_values = {
+  base_secret_values = {
     "db/primary-url"             = format(local.runtime_db_url, var.db_host)
     "db/read-replica-url"        = format(local.runtime_db_url, var.read_db_host)
     "db/app-password"            = random_password.runtime_db.result
@@ -27,6 +41,13 @@ locals {
     "elasticache/celery-backend" = "${local.redis_url}/1"
     "jwt/secret"                 = random_password.jwt.result
   }
+
+  seed_secret_values = var.seed_enabled ? {
+    "seed/sa-password"     = random_password.seed_sa[0].result
+    "seed/sample-password" = random_password.seed_sample[0].result
+  } : {}
+
+  secret_values = merge(local.base_secret_values, local.seed_secret_values)
 }
 
 resource "aws_secretsmanager_secret" "app" {

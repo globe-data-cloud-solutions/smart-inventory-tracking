@@ -105,6 +105,7 @@ module "app_secrets" {
   runtime_db_role      = "smart_runtime"
   redis_host           = module.elasticache.primary_address
   recovery_window_days = 0
+  seed_enabled         = true # dev sample tenants + SA account (see seed ECS task)
 }
 
 # Inbound DB and Redis access from the ECS tasks. Kept here, not in the
@@ -134,6 +135,7 @@ module "ecs" {
 
   # Secrets and the RDS master secret (read only by db-bootstrap).
   secret_arns          = module.app_secrets.arns
+  seed_enabled         = true
   master_db_secret_arn = module.rds.master_secret_arn
   db_host              = module.rds.primary_address
 

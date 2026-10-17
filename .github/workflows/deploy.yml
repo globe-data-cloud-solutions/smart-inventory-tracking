@@ -155,7 +155,7 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ vars.AWS_REGION || 'us-east-1' }}
 
-      - name: Bootstrap runtime DB role, then run Alembic migrations (one-off ECS tasks)
+      - name: Bootstrap runtime DB role, migrate, and seed dev sample data (one-off ECS tasks)
         env:
           ENV: ${{ needs.setup.outputs.env }}
         run: |
@@ -168,9 +168,15 @@ jobs:
           SUBNETS="$(echo "$NETCFG" | python3 -c 'import json,sys; print(",".join(json.load(sys.stdin)["subnets"]))')"
           SGS="$(echo "$NETCFG" | python3 -c 'import json,sys; print(",".join(json.load(sys.stdin)["securityGroups"]))')"
 
-          # Order matters: db-bootstrap creates the runtime role that migrations connect as.
-          for FAMILY in db-bootstrap migration; do
+          # Order matters: db-bootstrap creates the runtime role that migrations
+          # connect as; seed (dev only) runs after migrations and is skipped where
+          # the task is not defined.
+          for FAMILY in db-bootstrap migration seed; do
             if ! aws ecs describe-task-definition --task-definition "smart-$ENV-$FAMILY" >/dev/null 2>&1; then
+              if [ "$FAMILY" = "seed" ]; then
+                echo "No seed task for $ENV — skipping sample-data seed."
+                continue
+              fi
               echo "::error::Task definition smart-$ENV-$FAMILY not found — define it in Terraform before deploying."
               exit 1
             fi

@@ -28,3 +28,9 @@ variable "recovery_window_days" {
   type    = number
   default = 30
 }
+
+# Dev only: also create the seed passwords (SA account, sample users).
+variable "seed_enabled" {
+  type    = bool
+  default = false
+}

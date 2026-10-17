@@ -160,6 +160,7 @@ No `.env.example` committed — secrets via AWS Secrets Manager (local-dev excep
 - Exception to the RULE policy: scripts/delete_tenant.py drops and recreates append-only RULEs inside its single purge transaction (local dev only). No other code may alter RULEs outside Alembic.
 - Services refuse to start on unsafe config (weak JWT secret, RATE_LIMIT_* overrides, JWT_EXPIRE_MINUTES>60 outside local; stage/prod require EMAIL_DELIVERY_MODE=ses) — see ci-cd.md §6.
 - Claude Code never uses SA credentials or an SA account — SA checks are Alex's, by hand.
+- **Dev sample data (decision, 2026-10-17, Alex):** every dev deploy runs `smart-dev-seed`, which creates the SA account (`smartadmin@smart-inventory.com`) and the sample tenants `T01` and `TenantS10` with their users, hierarchy, positions and config, from `backend/migrations/seed/dev_sample_tenants.json`. It creates each item on first creation only and never changes an existing tenant or password. Passwords are Terraform-generated (`smart/dev/seed/sa-password`, `smart/dev/seed/sample-password`); Alex reads them from Secrets Manager. Claude still does not log in as SA. Dev only: `seed_enabled` is false in stage and prod.
 - Run test suites in the foreground (background runs don't survive a pause).
 - New permission → classify it for read-only (docs/claude/backend-patterns.md).
 
