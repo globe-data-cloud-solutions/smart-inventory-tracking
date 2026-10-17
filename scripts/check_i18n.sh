@@ -197,7 +197,9 @@ fi
 # new permission or audit write without an audit.actions.* label fails here.
 echo ""
 echo "Checking audit action labels (audit.actions.*)..."
-if ! python3 scripts/audit_action_ids.py --check; then
+if [ ! -f "$ROOT/backend/shared/permissions/registry.py" ]; then
+  echo "  Check 7 skipped: backend sources not present (container build); enforced in container-smoke workflow"
+elif ! python3 scripts/audit_action_ids.py --check; then
   EXIT=1
 fi
 

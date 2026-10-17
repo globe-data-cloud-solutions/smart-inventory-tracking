@@ -10,6 +10,7 @@ on:
       - "locales/**"
       - "scripts/docker/**"
       - "scripts/check_i18n.sh"
+      - "scripts/audit_action_ids.py"
       - "scripts/check_locale_parity.py"
       - "scripts/check_help_docs.sh"
       - ".dockerignore"
@@ -22,6 +23,7 @@ on:
       - "locales/**"
       - "scripts/docker/**"
       - "scripts/check_i18n.sh"
+      - "scripts/audit_action_ids.py"
       - "scripts/check_locale_parity.py"
       - "scripts/check_help_docs.sh"
       - ".dockerignore"
@@ -36,4 +38,11 @@ jobs:
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      # Full checkout has backend/ + locales/; the frontend image build does not,
+      # so check_i18n.sh skips this check there and it is enforced here instead.
+      - name: Audit action labels guard
+        run: python3 scripts/audit_action_ids.py --check
       - run: bash scripts/docker/smoke.sh
