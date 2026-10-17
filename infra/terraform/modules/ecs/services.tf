@@ -1,18 +1,20 @@
+# Secrets are created out-of-band in Secrets Manager (see docs/claude/ci-cd.md).
+# ECS must get the full secret ARN: a bare name such as "smart/dev/jwt/secret"
+# is read as an SSM Parameter Store name, which the execution role cannot read.
 locals {
-  # Plain secret NAMEs, not ARNs: a partial ARN ending "-" + 6 chars (e.g.
-  # elasticache/celery-broker) is parsed by ECS as a random-suffix marker and
-  # fails to resolve. ECS resolves a bare name against the execution role's
-  # wildcard policy (smart/${var.env}/* below) just as well as a full ARN.
   secret_name_prefix = "smart/${var.env}"
 
   common_secrets = [
-    { name = "DATABASE_URL", valueFrom = "${local.secret_name_prefix}/db/primary-url" },
-    { name = "DATABASE_READ_URL", valueFrom = "${local.secret_name_prefix}/db/read-replica-url" },
-    { name = "REDIS_URL", valueFrom = "${local.secret_name_prefix}/elasticache/redis-url" },
-    { name = "CELERY_BROKER_URL", valueFrom = "${local.secret_name_prefix}/elasticache/celery-broker" },
-    { name = "CELERY_RESULT_BACKEND", valueFrom = "${local.secret_name_prefix}/elasticache/celery-backend" },
-    { name = "JWT_SECRET", valueFrom = "${local.secret_name_prefix}/jwt/secret" },
+    { name = "DATABASE_URL", key = "db/primary-url" },
+    { name = "DATABASE_READ_URL", key = "db/read-replica-url" },
+    { name = "REDIS_URL", key = "elasticache/redis-url" },
+    { name = "CELERY_BROKER_URL", key = "elasticache/celery-broker" },
+    { name = "CELERY_RESULT_BACKEND", key = "elasticache/celery-backend" },
+    { name = "JWT_SECRET", key = "jwt/secret" },
   ]
+
+  # Shape ECS expects in container definitions: { name, valueFrom = <ARN> }.
+  secret_refs = [for s in local.common_secrets : { name = s.name, valueFrom = data.aws_secretsmanager_secret.app[s.key].arn }]
 
   common_env = {
     ENVIRONMENT         = var.env
@@ -63,6 +65,11 @@ locals {
   )
 }
 
+data "aws_secretsmanager_secret" "app" {
+  for_each = toset([for s in local.common_secrets : s.key])
+  name     = "${local.secret_name_prefix}/${each.key}"
+}
+
 resource "aws_ecs_task_definition" "services" {
   for_each                 = toset(var.enabled_services)
   family                   = "smart-${var.env}-${each.key}"
@@ -82,7 +89,7 @@ resource "aws_ecs_task_definition" "services" {
         { name = "http", containerPort = 8000, protocol = "tcp" }
       ]
       environment = [for k, v in local.service_env[each.key] : { name = k, value = v }]
-      secrets     = local.common_secrets
+      secrets     = local.secret_refs
       logConfiguration = {
         logDriver = "awslogs"
         options = {
@@ -247,7 +254,7 @@ resource "aws_ecs_task_definition" "migration" {
         { name = "ENVIRONMENT", value = var.env }
       ]
       secrets = [
-        for s in local.common_secrets : s
+        for s in local.secret_refs : s
         if contains(["DATABASE_URL", "DATABASE_READ_URL"], s.name)
       ]
       logConfiguration = {
@@ -281,7 +288,7 @@ resource "aws_ecs_task_definition" "outbox_worker" {
       essential   = true
       command     = ["celery", "-A", "shared.outbox.worker", "worker", "--loglevel=info"]
       environment = [for k, v in local.common_env : { name = k, value = v }]
-      secrets     = local.common_secrets
+      secrets     = local.secret_refs
       logConfiguration = {
         logDriver = "awslogs"
         options = {
@@ -338,7 +345,7 @@ resource "aws_ecs_task_definition" "outbox_beat" {
       essential   = true
       command     = ["celery", "-A", "shared.outbox.worker", "beat", "--loglevel=info"]
       environment = [for k, v in local.common_env : { name = k, value = v }]
-      secrets     = local.common_secrets
+      secrets     = local.secret_refs
       logConfiguration = {
         logDriver = "awslogs"
         options = {
