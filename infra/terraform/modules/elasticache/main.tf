@@ -16,8 +16,8 @@ resource "aws_security_group" "redis" {
   name   = "smart-${var.env}-redis-sg"
   vpc_id = var.vpc_id
 
-  # Explicitly empty: removes the inline 6379 rule left by earlier applies.
-  ingress = []
+  # No inline ingress: the 6379 rule is a separate resource in the environment.
+  # Do not set ingress here (see rds/main.tf).
 }
 
 resource "aws_elasticache_replication_group" "main" {
