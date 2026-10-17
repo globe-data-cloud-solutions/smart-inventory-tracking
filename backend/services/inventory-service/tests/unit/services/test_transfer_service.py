@@ -212,12 +212,17 @@ def _session_for_receive(
       call 0 — SELECT transfer_orders FOR UPDATE
       call 1 — SELECT transfer_order_lines
       call 2 — UPDATE transfer_orders SET status = 'RECEIVED'
+      call 3 — INSERT INTO audit_logs (transfer:receive row, same session)
+      call 4 — facility-name lookup, only when the actor's facility is not the
+               destination (acted_on_behalf_of); unused otherwise
     """
     session = AsyncMock()
     session.execute = AsyncMock(side_effect=[
         MagicMock(fetchone=MagicMock(return_value=transfer_row)),
         MagicMock(fetchall=MagicMock(return_value=lines)),
         MagicMock(),
+        MagicMock(),
+        MagicMock(fetchone=MagicMock(return_value=None)),
     ])
     return session
 

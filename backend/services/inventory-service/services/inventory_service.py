@@ -1961,6 +1961,9 @@ class InventoryService:
             _expected = transfer_discrepancies.expected_entries(lines, _allocs)
             _receipt = transfer_discrepancies.validate_receipt(_expected, receipt.lines)
 
+        _sent_total = Decimal("0")
+        _received_total = Decimal("0")
+        _discrepancy_count = 0
         for line in lines:
             _line_allocs = _allocs.get(str(line.id))
             # Credited at the destination for this line (the full line without a receipt).
@@ -2048,6 +2051,7 @@ class InventoryService:
                     _entry = _receipt[(_line_id, _lot_id)]
                     if _line_id != str(line.id) or _entry.received_quantity >= _sent:
                         continue
+                    _discrepancy_count += 1
                     await transfer_discrepancies.insert_discrepancy(
                         self.db,
                         tenant_id=str(user.tenant_id),
@@ -2062,6 +2066,9 @@ class InventoryService:
                         note=_entry.note,
                         created_by=str(user.user_id),
                     )
+
+            _sent_total += Decimal(str(line.quantity))
+            _received_total += _line_received
 
             # StockTransferred is an additional event beyond the InventoryUpdated
             # that record_transaction() already fired — both in the same transaction.
@@ -2083,6 +2090,31 @@ class InventoryService:
         await self.db.execute(
             text("UPDATE transfer_orders SET status = 'RECEIVED', updated_at = now() WHERE id = :id"),
             {"id": str(transfer_id)},
+        )
+
+        # Transfer-linked audit row, in the receipt's own transaction (the permission
+        # middleware's transfer:receive row carries no resource_id). Shape mirrors the
+        # issue/dispatch rows; lets both transfer ends see the receipt in the Audit Log.
+        receive_audit_resource: dict[str, Any] = {
+            "resource_type": "transfer",
+            "resource_id": str(transfer_id),
+            "transfer_type": transfer_type,
+            "status_transition": "IN_TRANSIT_TO_RECEIVED",
+            "received_quantity_total": str(_received_total),
+            "short_quantity_total": str(_sent_total - _received_total),
+            "discrepancy_count": _discrepancy_count,
+        }
+        if str(user.warehouse_id or "").lower() != str(row.to_warehouse_id).lower():
+            receive_audit_resource["acted_on_behalf_of"] = (
+                await _get_warehouse_name(self.db, str(user.tenant_id), str(row.to_warehouse_id))
+                or str(row.to_warehouse_id)
+            )
+        await audit_log(
+            user=user,
+            action="transfer:receive",
+            resource=receive_audit_resource,
+            decision="GRANTED",
+            db=self.db,
         )
 
         _discrepancies: list = []

@@ -77,6 +77,8 @@ class _World:
         self.ledger: list[dict] = []          # record_transaction kwargs
         self.audit: list[dict] = []           # write_transfer_ledger_entry kwargs
         self.status_updates: list[str] = []
+        self.audit_rows: list[dict] = []      # audit_log() kwargs (transfer-linked rows)
+        self.audit_error: Optional[Exception] = None
         self.outbox = AsyncMock()
 
     async def execute(self, stmt: Any, params: Optional[dict] = None) -> MagicMock:
@@ -150,8 +152,14 @@ class _World:
         kw.pop("session", None)   # a different mock per run — not part of the entry
         self.audit.append(kw)
 
+    async def audit_log(self, *args: Any, **kw: Any) -> None:
+        if self.audit_error is not None:
+            raise self.audit_error
+        self.audit_rows.append(kw)
+
     def db(self) -> AsyncMock:
         session = AsyncMock()
+        self.session = session
         session.execute = AsyncMock(side_effect=self.execute)
         return session
 
@@ -182,6 +190,7 @@ class _World:
         return (
             self.ledger == [] and self.audit == [] and self.discrepancies == []
             and self.status_updates == [] and self.outbox.await_count == 0
+            and self.audit_rows == []
         )
 
 
@@ -230,7 +239,7 @@ async def _receive(world: _World, lines: Optional[list[dict]] = None) -> Any:
          patch("services.inventory_service.record_transaction", new=world.record_transaction), \
          patch("services.inventory_service.write_transfer_ledger_entry",
                new=world.write_transfer_ledger_entry), \
-         patch("services.inventory_service.write_to_outbox", new=world.outbox):
+         patch("services.inventory_service.write_to_outbox", new=world.outbox),          patch("services.inventory_service.audit_log", new=world.audit_log):
         svc = InventoryService(world.db())
         if receipt is None:
             return await svc.receive_transfer(DST_WM, TRANSFER_ID)
@@ -238,6 +247,73 @@ async def _receive(world: _World, lines: Optional[list[dict]] = None) -> Any:
 
 
 # ── receive_transfer ─────────────────────────────────────────────────────────
+
+@pytest.mark.unit
+class TestReceiveAuditRow:
+    """receive_transfer() writes one transfer-linked audit row (the middleware's
+    transfer:receive row has NULL resource_type/resource_id)."""
+
+    async def test_full_receipt_writes_row_with_zero_discrepancies(self) -> None:
+        world = _World()
+        await _receive(world)
+
+        assert len(world.audit_rows) == 1
+        row = world.audit_rows[0]
+        assert row["action"] == "transfer:receive"
+        assert row["decision"] == "GRANTED"
+        assert row["db"] is world.session          # caller transaction, not a separate session
+        res = row["resource"]
+        assert res["resource_type"] == "transfer"
+        assert res["resource_id"] == str(TRANSFER_ID)
+        assert res["received_quantity_total"] == "130"
+        assert res["short_quantity_total"] == "0"
+        assert res["discrepancy_count"] == 0
+        assert "acted_on_behalf_of" not in res
+
+    async def test_explicit_full_body_also_counts_zero(self) -> None:
+        world = _World()
+        await _receive(world, _body())
+
+        assert world.audit_rows[0]["resource"]["discrepancy_count"] == 0
+
+    async def test_short_receipt_records_totals_and_discrepancy_count(self) -> None:
+        world = _World()
+        await _receive(world, _body(
+            a="50", line2="25",
+            extra={"a": {"reason": "SHORT"}, "line2": {"reason": "DAMAGED"}},
+        ))
+
+        assert len(world.audit_rows) == 1
+        res = world.audit_rows[0]["resource"]
+        assert res["received_quantity_total"] == "115"   # 50 + 40 + 25
+        assert res["short_quantity_total"] == "15"       # 10 + 5
+        assert res["discrepancy_count"] == 2
+        assert res["discrepancy_count"] == len(world.discrepancies)
+
+    async def test_failed_validation_writes_no_audit_row(self) -> None:
+        world = _World()
+        with pytest.raises(HTTPException) as exc:
+            await _receive(world, _body(a="61"))   # more than sent
+
+        assert exc.value.status_code == 422
+        assert world.audit_rows == []
+
+    async def test_audit_failure_propagates_so_the_receipt_rolls_back(self) -> None:
+        """Caller-transaction mode: an audit write error is not swallowed, so the
+        request's transaction (ledger, discrepancies, status) is rolled back as a unit."""
+        world = _World()
+        world.audit_error = RuntimeError("audit insert failed")
+        with pytest.raises(RuntimeError, match="audit insert failed"):
+            await _receive(world)
+
+        assert world.audit_rows == []
+
+    async def test_no_extra_outbox_event_for_the_audit_row(self) -> None:
+        world = _World()
+        await _receive(world)
+
+        assert all(c.args[2] == "StockTransferred" for c in world.outbox.await_args_list)
+
 
 @pytest.mark.unit
 class TestReceiptConfirmation:
