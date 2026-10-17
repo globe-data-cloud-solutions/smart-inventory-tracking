@@ -118,8 +118,11 @@ function getEnrichmentLine(e: AuditLogItem): string | undefined {
         parts.push(t("audit.receive_quantities").replace("{received}", received).replace("{short}", short));
       }
     }
-    if ((e.discrepancy_count ?? 0) > 0) {
-      parts.push(t("audit.discrepancies_reported").replace("{count}", String(e.discrepancy_count)));
+    // Receive row only: abac_context.discrepancy_count. The per-transfer e.discrepancy_count is also
+    // set on issue/dispatch/approval rows, where "reported" would be misleading.
+    const reported = Number(e.abac_context?.["discrepancy_count"]);
+    if (Number.isFinite(reported) && reported > 0) {
+      parts.push(t("audit.discrepancies_reported").replace("{count}", String(reported)));
     }
   } else if (e.resource_type === "transfer_discrepancy" && e.discrepancy_product_name) {
     const reason = e.discrepancy_reason

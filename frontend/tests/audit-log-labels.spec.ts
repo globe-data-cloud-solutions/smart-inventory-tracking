@@ -106,6 +106,14 @@ const ROWS = [
     action: UNKNOWN_ACTION, resource_type: UNKNOWN_RESOURCE,
     resource_id: "88888888-8888-4888-8888-888888888888",
   },
+  {
+    // Issue row of the same transfer: carries the per-transfer discrepancy_count but no
+    // abac_context.discrepancy_count, so it must NOT show "N discrepancies reported".
+    ...base, id: "70000000-0000-4000-8000-000000000004",
+    action: "transfer:issue", resource_type: "transfer", resource_id: T_ID,
+    transfer_type: "PUSH", from_warehouse_name: "Smoke Source WH", to_warehouse_name: "Smoke Dest WH",
+    product_summary: "SMOKE-BATCH (40)", transfer_order_id: T_ID, discrepancy_count: 2,
+  },
 ];
 
 /* ── Stubs + catch-all write guard ────────────────────────────────────────── */
@@ -186,6 +194,11 @@ for (const locale of ["en", "am"] as const) {
       const unknown = rows.nth(2);
       await expect(unknown).toContainText(UNKNOWN_ACTION);
       await expect(unknown).toContainText(UNKNOWN_RESOURCE);
+
+      // d) issue row of the same transfer: per-transfer count must not surface as "reported"
+      const issue = rows.nth(3);
+      await expect(issue).toContainText("Smoke Source WH");
+      await expect(issue).not.toContainText(s.reported(2));
 
       expect(errors.pageErrors, `no page errors (${locale})`).toEqual([]);
       expect(stubs.unstubbedWrites, "no write reached an unstubbed /api/ path").toEqual([]);
