@@ -97,13 +97,19 @@ const PRODUCT = {
   batch_tracking: false, expiry_tracking: false, dispatch_strategy: null as string | null,
 };
 
+/** GET /products hits served by the stub, per page — openEditPanel asserts it is > 0. */
+const productGets = new WeakMap<Page, { count: number }>();
+
 async function stubCommon(
   page: Page,
   opts: { lotTracking: boolean; product?: typeof PRODUCT; stock?: number },
 ) {
   const product = opts.product ?? PRODUCT;
-  await page.route("**/api/v1/products", (route) => {
-    if (route.request().method() === "GET") return fulfillJson(route, [product]);
+  const hits = { count: 0 };
+  productGets.set(page, hits);
+  // Matches both /products and /products/ (the app calls either form).
+  await page.route("**/api/v1/products{,/}", (route) => {
+    if (route.request().method() === "GET") { hits.count += 1; return fulfillJson(route, [product]); }
     return route.continue();
   });
   await page.route("**/api/v1/inventory/features", (route) =>
@@ -139,6 +145,7 @@ async function openEditPanel(page: Page, s: ReturnType<typeof localeStrings>): P
   await page.getByRole("button", { name: s.editButton, exact: true }).click();
   const p = panel(page, s.editTitle);
   await expect(p).toBeVisible();
+  expect(productGets.get(page)?.count ?? 0, "products stub was hit").toBeGreaterThan(0);
   return p;
 }
 
