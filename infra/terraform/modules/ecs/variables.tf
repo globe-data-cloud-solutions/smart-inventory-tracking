@@ -74,3 +74,19 @@ variable "frontend_sizing" {
     desired_count = number
   })
 }
+
+# Secrets Manager ARNs keyed by path under smart/<env>/ (e.g. "jwt/secret"),
+# from modules/app-secrets.
+variable "secret_arns" { type = map(string) }
+
+# RDS-managed master secret (JSON: username, password). Used only by db-bootstrap.
+variable "master_db_secret_arn" { type = string }
+variable "db_host" { type = string }
+variable "db_name" {
+  type    = string
+  default = "smart_inventory"
+}
+variable "runtime_db_role" {
+  type    = string
+  default = "smart_runtime"
+}

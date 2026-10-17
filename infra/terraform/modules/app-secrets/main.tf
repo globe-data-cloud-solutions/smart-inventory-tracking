@@ -1,0 +1,42 @@
+# infra/terraform/modules/app-secrets/main.tf
+# Application secrets in AWS Secrets Manager, created and populated by Terraform.
+# The RDS master password is NOT copied here: only the db-bootstrap ECS task
+# receives it. Names follow smart/<env>/<category>/<name> (docs/claude/ci-cd.md §6).
+
+resource "random_password" "jwt" {
+  length  = 64
+  special = false
+}
+
+# Alphanumeric only: embedded in a connection URL and in the bootstrap SQL.
+resource "random_password" "runtime_db" {
+  length  = 48
+  special = false
+}
+
+locals {
+  runtime_db_url = "postgresql+asyncpg://${var.runtime_db_role}:${random_password.runtime_db.result}@%s:5432/${var.db_name}?ssl=require"
+  redis_url      = "rediss://${var.redis_host}:6379"
+
+  secret_values = {
+    "db/primary-url"             = format(local.runtime_db_url, var.db_host)
+    "db/read-replica-url"        = format(local.runtime_db_url, var.read_db_host)
+    "db/app-password"            = random_password.runtime_db.result
+    "elasticache/redis-url"      = "${local.redis_url}/0"
+    "elasticache/celery-broker"  = "${local.redis_url}/0"
+    "elasticache/celery-backend" = "${local.redis_url}/1"
+    "jwt/secret"                 = random_password.jwt.result
+  }
+}
+
+resource "aws_secretsmanager_secret" "app" {
+  for_each                = toset(keys(local.secret_values))
+  name                    = "smart/${var.env}/${each.key}"
+  recovery_window_in_days = var.recovery_window_days
+}
+
+resource "aws_secretsmanager_secret_version" "app" {
+  for_each      = toset(keys(local.secret_values))
+  secret_id     = aws_secretsmanager_secret.app[each.key].id
+  secret_string = local.secret_values[each.key]
+}

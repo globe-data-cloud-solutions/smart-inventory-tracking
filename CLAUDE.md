@@ -147,7 +147,9 @@ No `.env.example` committed — secrets via AWS Secrets Manager (local-dev excep
 - Never alter a PostgreSQL `RULE` outside of an Alembic migration.
 - Never reset a real user's password.
 - Probe/test account passwords may be printed in plain output.
-- Alex runs `pg_dump` himself before ANY migration — Claude never takes backups and never uses the postgres superuser password.
+- Alex runs `pg_dump` himself before ANY migration — Claude never takes backups.
+- **RDS master credentials (decision, 2026-10-17):** the RDS master secret (`master_user_secret`, username `smart_app`) is read only by the `smart-<env>-db-bootstrap` ECS task, injected by ECS from the RDS-managed secret. Claude and people never read or type it. The bootstrap task creates the runtime role `smart_runtime` (non-superuser, `NOBYPASSRLS`); the app and migrations connect as `smart_runtime`, never as the master. Override of the earlier "never use the superuser password" rule, approved by Alex.
+- **Application secrets are created by Terraform** (`infra/terraform/modules/app-secrets`), not by hand. Generated values (JWT key, runtime DB password) live in Terraform state, as the origin-verify secret does. Dev secrets have no recovery window so destroy/reprovision works with the same names; stage/prod keep 30 days.
 - Never add mock/demo data to a screen to make it appear to work (see §7).
 - Root `.env` is local-only and untracked — never commit it; load with `set -a; source .env; set +a`. Holds E2E_TA_PASSWORD for the permanent `zz-e2e-ta` tenant.
 - E2E_SA_PASSWORD is never put in `.env` and never set by Claude Code. Specs that need SA read it via `frontend/tests/helpers/sa-credentials.ts` and skip when it is unset; Alex sets it in his own terminal to run them. SA probe tenants come from `frontend/tests/helpers/sa-api.ts` (public sign-up: 5 per hour per IP).

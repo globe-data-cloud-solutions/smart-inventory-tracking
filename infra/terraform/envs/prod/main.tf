@@ -38,22 +38,20 @@ module "networking" {
 }
 
 module "rds" {
-  source                     = "../../modules/rds"
-  env                        = "prod"
-  vpc_id                     = module.networking.vpc_id
-  subnet_ids                 = module.networking.private_subnet_ids
-  instance_class             = "db.r8g.large"
-  allocated_storage          = 500
-  allowed_security_group_ids = [module.ecs.tasks_security_group_id]
+  source            = "../../modules/rds"
+  env               = "prod"
+  vpc_id            = module.networking.vpc_id
+  subnet_ids        = module.networking.private_subnet_ids
+  instance_class    = "db.r8g.large"
+  allocated_storage = 500
 }
 
 module "elasticache" {
-  source                     = "../../modules/elasticache"
-  env                        = "prod"
-  vpc_id                     = module.networking.vpc_id
-  subnet_ids                 = module.networking.private_subnet_ids
-  node_type                  = "cache.r7g.large"
-  allowed_security_group_ids = [module.ecs.tasks_security_group_id]
+  source     = "../../modules/elasticache"
+  env        = "prod"
+  vpc_id     = module.networking.vpc_id
+  subnet_ids = module.networking.private_subnet_ids
+  node_type  = "cache.r7g.large"
 }
 
 module "s3" {
@@ -84,12 +82,46 @@ module "cloudfront" {
   allowed_cidrs        = []
 }
 
+module "app_secrets" {
+  source               = "../../modules/app-secrets"
+  env                  = "prod"
+  db_host              = module.rds.primary_address
+  read_db_host         = coalesce(module.rds.replica_address, module.rds.primary_address)
+  db_name              = "smart_inventory"
+  runtime_db_role      = "smart_runtime"
+  redis_host           = module.elasticache.primary_address
+  recovery_window_days = 30
+}
+
+# Inbound DB and Redis access from the ECS tasks. Kept here, not in the
+# rds/elasticache modules, so those modules do not depend on ECS.
+resource "aws_vpc_security_group_ingress_rule" "rds_from_ecs" {
+  security_group_id            = module.rds.security_group_id
+  referenced_security_group_id = module.ecs.tasks_security_group_id
+  ip_protocol                  = "tcp"
+  from_port                    = 5432
+  to_port                      = 5432
+}
+
+resource "aws_vpc_security_group_ingress_rule" "redis_from_ecs" {
+  security_group_id            = module.elasticache.security_group_id
+  referenced_security_group_id = module.ecs.tasks_security_group_id
+  ip_protocol                  = "tcp"
+  from_port                    = 6379
+  to_port                      = 6379
+}
+
 module "ecs" {
   source             = "../../modules/ecs"
   env                = "prod"
   vpc_id             = module.networking.vpc_id
   private_subnet_ids = module.networking.private_subnet_ids
   account_id         = data.aws_caller_identity.current.account_id
+
+  # Secrets and the RDS master secret (read only by db-bootstrap).
+  secret_arns          = module.app_secrets.arns
+  master_db_secret_arn = module.rds.master_secret_arn
+  db_host              = module.rds.primary_address
 
   alb_security_group_id     = module.alb.alb_security_group_id
   gateway_target_group_arn  = module.alb.gateway_target_group_arn

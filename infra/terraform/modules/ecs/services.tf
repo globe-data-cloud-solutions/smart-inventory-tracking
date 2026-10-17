@@ -1,9 +1,7 @@
-# Secrets are created out-of-band in Secrets Manager (see docs/claude/ci-cd.md).
-# ECS must get the full secret ARN: a bare name such as "smart/dev/jwt/secret"
-# is read as an SSM Parameter Store name, which the execution role cannot read.
+# Secrets are created by modules/app-secrets. ECS must get the full secret ARN:
+# a bare name such as "smart/dev/jwt/secret" is read as an SSM Parameter Store
+# name, which the execution role cannot read.
 locals {
-  secret_name_prefix = "smart/${var.env}"
-
   common_secrets = [
     { name = "DATABASE_URL", key = "db/primary-url" },
     { name = "DATABASE_READ_URL", key = "db/read-replica-url" },
@@ -14,7 +12,7 @@ locals {
   ]
 
   # Shape ECS expects in container definitions: { name, valueFrom = <ARN> }.
-  secret_refs = [for s in local.common_secrets : { name = s.name, valueFrom = data.aws_secretsmanager_secret.app[s.key].arn }]
+  secret_refs = [for s in local.common_secrets : { name = s.name, valueFrom = var.secret_arns[s.key] }]
 
   common_env = {
     ENVIRONMENT         = var.env
@@ -63,11 +61,6 @@ locals {
     { "product-service" = aws_iam_role.product_service_task.arn },
     { for svc, role in aws_iam_role.ses_senders : svc => role.arn }
   )
-}
-
-data "aws_secretsmanager_secret" "app" {
-  for_each = toset([for s in local.common_secrets : s.key])
-  name     = "${local.secret_name_prefix}/${each.key}"
 }
 
 resource "aws_ecs_task_definition" "services" {
@@ -233,9 +226,53 @@ resource "aws_ecs_service" "frontend" {
   }
 }
 
+# ── DB bootstrap task (runtime role) ──────────────────────────────────────
+# One-off, run by the deploy workflow BEFORE migrations. Creates or updates the
+# runtime DB role (smart_runtime) that the app and migrations connect as.
+# The RDS master credentials are injected by ECS from the RDS-managed secret;
+# they are never written to state, logs, or any other secret. Idempotent.
+
+resource "aws_ecs_task_definition" "db_bootstrap" {
+  family                   = "smart-${var.env}-db-bootstrap"
+  requires_compatibilities = ["FARGATE"]
+  network_mode             = "awsvpc"
+  cpu                      = "256"
+  memory                   = "512"
+  execution_role_arn       = aws_iam_role.ecs_task_execution.arn
+
+  container_definitions = jsonencode([
+    {
+      name      = "db-bootstrap"
+      image     = "${var.account_id}.dkr.ecr.${var.region}.amazonaws.com/smart-migration:${var.env}-latest"
+      essential = true
+      command   = ["python", "/app/backend/migrations/bootstrap_db_role.py"]
+      environment = [
+        { name = "ENVIRONMENT", value = var.env },
+        { name = "PGHOST", value = var.db_host },
+        { name = "PGPORT", value = "5432" },
+        { name = "PGDATABASE", value = var.db_name },
+        { name = "RUNTIME_DB_ROLE", value = var.runtime_db_role },
+      ]
+      secrets = [
+        { name = "PGUSER", valueFrom = "${var.master_db_secret_arn}:username::" },
+        { name = "PGPASSWORD", valueFrom = "${var.master_db_secret_arn}:password::" },
+        { name = "RUNTIME_DB_PASSWORD", valueFrom = var.secret_arns["db/app-password"] },
+      ]
+      logConfiguration = {
+        logDriver = "awslogs"
+        options = {
+          "awslogs-group"         = aws_cloudwatch_log_group.migration.name
+          "awslogs-region"        = var.region
+          "awslogs-stream-prefix" = "db-bootstrap"
+        }
+      }
+    }
+  ])
+}
+
 # ── Migration task (alembic upgrade head + permission seed) ───────────────
 # No aws_ecs_service — run on demand via `aws ecs run-task` from the deploy
-# workflow, before any service rollout.
+# workflow, after db-bootstrap and before any service rollout.
 
 resource "aws_ecs_task_definition" "migration" {
   family                   = "smart-${var.env}-migration"
