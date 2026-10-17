@@ -29,6 +29,7 @@ import json
 import os
 import sys
 from pathlib import Path
+from urllib.parse import unquote, urlsplit
 
 import asyncpg
 import bcrypt
@@ -44,9 +45,19 @@ def _required(name: str) -> str:
     return value
 
 
-def _libpq_dsn(url: str) -> str:
-    # asyncpg takes a libpq-style DSN; the app's URL carries the SQLAlchemy driver.
-    return url.replace("postgresql+asyncpg://", "postgresql://", 1)
+def _connect_kwargs(url: str) -> dict:
+    # The app's URL carries the SQLAlchemy driver and a ?ssl= query. asyncpg
+    # rejects ?ssl= inside a DSN ("parameter ssl cannot be changed now"), so
+    # split the URL and pass ssl as a keyword, as bootstrap_db_role.py does.
+    parts = urlsplit(url.replace("postgresql+asyncpg://", "postgresql://", 1))
+    return {
+        "host": parts.hostname,
+        "port": parts.port or 5432,
+        "user": unquote(parts.username or ""),
+        "password": unquote(parts.password or ""),
+        "database": parts.path.lstrip("/"),
+        "ssl": "require",
+    }
 
 
 def _hash(password: str) -> str:
@@ -77,7 +88,7 @@ async def main() -> None:
     sample_password = _required("SEED_SAMPLE_PASSWORD")
     fixture: dict[str, list[dict]] = json.loads(FIXTURE.read_text(encoding="utf-8"))
 
-    conn = await asyncpg.connect(_libpq_dsn(_required("DATABASE_URL")))
+    conn = await asyncpg.connect(**_connect_kwargs(_required("DATABASE_URL")))
     try:
         # SA account: tenant_id IS NULL, identified by email. Rotation (see
         # SEED_ROTATE_SA) deletes it and re-creates it from the current secret,
