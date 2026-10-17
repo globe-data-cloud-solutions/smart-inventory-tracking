@@ -15,6 +15,9 @@ resource "aws_elasticache_subnet_group" "main" {
 resource "aws_security_group" "redis" {
   name   = "smart-${var.env}-redis-sg"
   vpc_id = var.vpc_id
+
+  # Explicitly empty: removes the inline 6379 rule left by earlier applies.
+  ingress = []
 }
 
 resource "aws_elasticache_replication_group" "main" {

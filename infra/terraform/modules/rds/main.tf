@@ -21,6 +21,10 @@ resource "aws_db_subnet_group" "main" {
 resource "aws_security_group" "rds" {
   name   = "smart-${var.env}-rds-sg"
   vpc_id = var.vpc_id
+
+  # Explicitly empty: removes the inline 5432 rule left by earlier applies.
+  # Omitting ingress would leave it in place and collide with the separate rule.
+  ingress = []
 }
 
 resource "aws_db_instance" "primary" {
