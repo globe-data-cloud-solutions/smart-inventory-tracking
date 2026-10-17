@@ -21,7 +21,8 @@ _TENANT_WIDE_ROLES = frozenset({"NM", "TA", "SA", "AU"})
 
 # Appended to WHERE when scoping to a facility and its children.
 # Covers: own actions, transfers where the facility is source or destination,
-# and adjustments posted against the facility.
+# adjustments posted against the facility, and transfer-discrepancy resolutions
+# whose parent transfer touches the facility (resource_id there is the discrepancy id).
 # :node_ids is bound as an expanding param — the facility + descendant ID set
 # is resolved in Python via get_descendant_node_ids() before this query runs.
 _SCOPE_CLAUSE = """
@@ -39,6 +40,19 @@ AND (
         SELECT id FROM adjustment_orders
         WHERE tenant_id = :tid
           AND warehouse_id IN :node_ids
+    )
+    OR (
+        al.resource_type = 'transfer_discrepancy'
+        AND al.resource_id IN (
+            SELECT td.id FROM transfer_discrepancies td
+            JOIN transfer_orders tdo
+              ON tdo.id = td.transfer_order_id AND tdo.tenant_id = td.tenant_id
+            WHERE td.tenant_id = :tid
+              AND (
+                tdo.from_warehouse_id IN :node_ids
+                OR tdo.to_warehouse_id IN :node_ids
+              )
+        )
     )
 )
 """
@@ -119,9 +133,18 @@ async def list_audit_logs(
         f"       al.resource_type, al.resource_id, al.decision, al.reason, al.abac_context, "
         f"       u.full_name AS user_name, "
         f"       t_ord.transfer_type AS transfer_type, "
+        f"       t_ord.id AS transfer_order_id, "
         f"       from_node.name AS from_warehouse_name, "
         f"       to_node.name AS to_warehouse_name, "
         f"       a_ord.reason_code AS adjustment_reason_code, "
+        f"       disc_p.name AS discrepancy_product_name, "
+        f"       disc.missing_quantity AS discrepancy_missing_quantity, "
+        f"       disc.reason AS discrepancy_reason, "
+        f"       disc.resolution AS discrepancy_resolution, "
+        f"       CASE WHEN t_ord.id IS NOT NULL AND al.resource_type = 'transfer' "
+        f"            THEN (SELECT COUNT(*) FROM transfer_discrepancies td "
+        f"                  WHERE td.tenant_id = :tid AND td.transfer_order_id = t_ord.id) "
+        f"            ELSE NULL END AS discrepancy_count, "
         f"       COALESCE( "
         f"           (SELECT CASE WHEN COUNT(*) > 1 "
         f"                        THEN COUNT(*) || ' items' "
@@ -139,7 +162,14 @@ async def list_audit_logs(
         f"       ) AS product_summary "
         f"FROM audit_logs al "
         f"LEFT JOIN users u ON u.id = al.user_id "
-        f"LEFT JOIN transfer_orders t_ord ON al.resource_type = 'transfer' AND al.resource_id = t_ord.id "
+        f"LEFT JOIN transfer_discrepancies disc "
+        f"       ON al.resource_type = 'transfer_discrepancy' AND al.resource_id = disc.id "
+        f"      AND disc.tenant_id = al.tenant_id "
+        f"LEFT JOIN products disc_p ON disc_p.id = disc.product_id "
+        f"LEFT JOIN transfer_orders t_ord "
+        f"       ON t_ord.tenant_id = al.tenant_id "
+        f"      AND ((al.resource_type = 'transfer' AND al.resource_id = t_ord.id) "
+        f"           OR (al.resource_type = 'transfer_discrepancy' AND t_ord.id = disc.transfer_order_id)) "
         f"LEFT JOIN adjustment_orders a_ord ON al.resource_type = 'adjustment' AND al.resource_id = a_ord.id "
         f"LEFT JOIN organization_node from_node ON from_node.id = t_ord.from_warehouse_id "
         f"LEFT JOIN organization_node to_node ON to_node.id = t_ord.to_warehouse_id "
@@ -173,6 +203,12 @@ async def list_audit_logs(
             to_warehouse_name=r.to_warehouse_name,
             product_summary=r.product_summary,
             adjustment_reason_code=r.adjustment_reason_code,
+            transfer_order_id=r.transfer_order_id,
+            discrepancy_count=r.discrepancy_count,
+            discrepancy_product_name=r.discrepancy_product_name,
+            discrepancy_missing_quantity=r.discrepancy_missing_quantity,
+            discrepancy_reason=r.discrepancy_reason,
+            discrepancy_resolution=r.discrepancy_resolution,
         )
         for r in rows
     ])
