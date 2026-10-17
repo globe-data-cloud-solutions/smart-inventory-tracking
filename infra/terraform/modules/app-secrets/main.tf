@@ -33,15 +33,18 @@ resource "random_password" "seed_sample" {
 
 locals {
   runtime_db_url = "postgresql+asyncpg://${var.runtime_db_role}:${random_password.runtime_db.result}@%s:5432/${var.db_name}?ssl=require"
-  redis_url      = "rediss://${var.redis_host}:6379"
+  # Celery requires ssl_cert_reqs on rediss:// URLs. ElastiCache presents a
+  # publicly trusted certificate, so verify it.
+  redis_url       = "rediss://${var.redis_host}:6379"
+  redis_tls_query = "?ssl_cert_reqs=CERT_REQUIRED"
 
   base_secret_values = {
     "db/primary-url"             = format(local.runtime_db_url, var.db_host)
     "db/read-replica-url"        = format(local.runtime_db_url, var.read_db_host)
     "db/app-password"            = random_password.runtime_db.result
-    "elasticache/redis-url"      = "${local.redis_url}/0"
-    "elasticache/celery-broker"  = "${local.redis_url}/0"
-    "elasticache/celery-backend" = "${local.redis_url}/1"
+    "elasticache/redis-url"      = "${local.redis_url}/0${local.redis_tls_query}"
+    "elasticache/celery-broker"  = "${local.redis_url}/0${local.redis_tls_query}"
+    "elasticache/celery-backend" = "${local.redis_url}/1${local.redis_tls_query}"
     "jwt/secret"                 = random_password.jwt.result
   }
 
