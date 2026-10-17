@@ -191,6 +191,16 @@ if ! python3 scripts/check_locale_parity.py; then
   EXIT=1
 fi
 
+# ── ERROR Check 7: every audit action id the backend writes has a label ───
+# The id list is derived from backend/shared/permissions/registry.py plus the
+# audit_log()/INSERT INTO audit_logs literals (scripts/audit_action_ids.py), so a
+# new permission or audit write without an audit.actions.* label fails here.
+echo ""
+echo "Checking audit action labels (audit.actions.*)..."
+if ! python3 scripts/audit_action_ids.py --check; then
+  EXIT=1
+fi
+
 # ── Summary ───────────────────────────────────────────────────────────────
 echo ""
 echo "─────────────────────────────────────────"

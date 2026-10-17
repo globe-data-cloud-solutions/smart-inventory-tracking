@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
@@ -45,6 +46,12 @@ interface AuditLogItem {
   to_warehouse_name: string | null;
   product_summary: string | null;
   adjustment_reason_code: string | null;
+  transfer_order_id: string | null;
+  discrepancy_count: number | null;
+  discrepancy_product_name: string | null;
+  discrepancy_missing_quantity: string | number | null;
+  discrepancy_reason: string | null;
+  discrepancy_resolution: string | null;
 }
 
 type Category = "TRANSFER" | "INVENTORY" | "ADJUSTMENT" | "SYSTEM";
@@ -67,20 +74,75 @@ function getActedOnBehalfOf(abacContext: Record<string, unknown> | null): string
   return typeof v === "string" ? v : undefined;
 }
 
+/** Translate a code through `<prefix>.<code>`, falling back to the raw code. */
+function labelOrRaw(prefix: string, code: string): string {
+  const key = `${prefix}.${code}`;
+  const label = t(key);
+  return label !== key ? label : code;
+}
+
+function getResourceLabel(resourceType: string): string {
+  return labelOrRaw("audit.resources", resourceType);
+}
+
+/** Same short reference the Transfers list shows (first 8 chars of the id). */
+function shortRef(transferId: string): string {
+  return transferId.slice(0, 8).toUpperCase();
+}
+
+function formatQty(v: string | number | null | undefined): string {
+  if (v === null || v === undefined || v === "") return "";
+  const n = Number(v);
+  return Number.isFinite(n) ? String(n) : String(v);
+}
+
+function getContextQty(abacContext: Record<string, unknown> | null, key: string): string | undefined {
+  const v = abacContext?.[key];
+  return typeof v === "string" || typeof v === "number" ? formatQty(v) : undefined;
+}
+
 function getEnrichmentLine(e: AuditLogItem): string | undefined {
+  const parts: string[] = [];
   if (e.resource_type === "transfer" && (e.from_warehouse_name || e.to_warehouse_name)) {
-    return t("audit.transfer_summary")
-      .replace("{type}", e.transfer_type ?? t("common.unknown"))
-      .replace("{from}", e.from_warehouse_name ?? t("common.unknown"))
-      .replace("{to}", e.to_warehouse_name ?? t("common.unknown"))
-      .replace("{product}", e.product_summary ?? t("common.unknown"));
+    parts.push(
+      t("audit.transfer_summary")
+        .replace("{type}", e.transfer_type ?? t("common.unknown"))
+        .replace("{from}", e.from_warehouse_name ?? t("common.unknown"))
+        .replace("{to}", e.to_warehouse_name ?? t("common.unknown"))
+        .replace("{product}", e.product_summary ?? t("common.unknown")),
+    );
+    if (e.action === "transfer:receive") {
+      const received = getContextQty(e.abac_context, "received_quantity_total");
+      const short = getContextQty(e.abac_context, "short_quantity_total");
+      if (received !== undefined && short !== undefined) {
+        parts.push(t("audit.receive_quantities").replace("{received}", received).replace("{short}", short));
+      }
+    }
+    if ((e.discrepancy_count ?? 0) > 0) {
+      parts.push(t("audit.discrepancies_reported").replace("{count}", String(e.discrepancy_count)));
+    }
+  } else if (e.resource_type === "transfer_discrepancy" && e.discrepancy_product_name) {
+    const reason = e.discrepancy_reason
+      ? labelOrRaw("transfers.discrepancies.reason", e.discrepancy_reason)
+      : undefined;
+    const resolution = e.discrepancy_resolution
+      ? labelOrRaw("transfers.discrepancies.resolution", e.discrepancy_resolution)
+      : undefined;
+    parts.push(
+      [
+        e.discrepancy_product_name,
+        [formatQty(e.discrepancy_missing_quantity), reason].filter(Boolean).join(" "),
+        resolution,
+      ].filter(Boolean).join(" · "),
+    );
+  } else if (e.resource_type === "adjustment" && (e.product_summary || e.adjustment_reason_code)) {
+    parts.push(
+      t("audit.adjustment_summary")
+        .replace("{product}", e.product_summary ?? t("common.unknown"))
+        .replace("{reason}", e.adjustment_reason_code ?? t("common.unknown")),
+    );
   }
-  if (e.resource_type === "adjustment" && (e.product_summary || e.adjustment_reason_code)) {
-    return t("audit.adjustment_summary")
-      .replace("{product}", e.product_summary ?? t("common.unknown"))
-      .replace("{reason}", e.adjustment_reason_code ?? t("common.unknown"));
-  }
-  return undefined;
+  return parts.length > 0 ? parts.join(" · ") : undefined;
 }
 
 const selectCls = "px-2.5 py-1.5 text-xs border border-gray-300 rounded-md bg-white outline-none cursor-pointer";
@@ -118,6 +180,7 @@ export default function AuditLogPage() {
         getActionLabel(e.action),
         e.action,
         e.resource_type ?? "",
+        e.resource_type ? getResourceLabel(e.resource_type) : "",
         e.user_name ?? "",
         e.role ?? "",
       ].join(" ").toLowerCase();
@@ -217,6 +280,10 @@ export default function AuditLogPage() {
                 const category = getCategory(e.action);
                 const cs = CATEGORY_CLASS[category] ?? CATEGORY_CLASS.SYSTEM!;
                 const actedOnBehalfOf = getActedOnBehalfOf(e.abac_context);
+                const transferHref =
+                  (e.resource_type === "transfer" || e.resource_type === "transfer_discrepancy") && e.transfer_order_id
+                    ? `/${org}/transfers/${e.transfer_order_id}`
+                    : undefined;
                 const decisionCls = DECISION_CLASS[e.decision] ?? "bg-gray-100 text-gray-700";
                 return (
                   <tr key={e.id} className={`border-b border-gray-100 ${idx % 2 === 0 ? "bg-white" : "bg-gray-50"}`}>
@@ -250,9 +317,19 @@ export default function AuditLogPage() {
                       )}
                     </td>
                     <td className="px-3 py-2 font-mono text-gray-500 text-[10px]">
-                      {e.resource_type ?? "—"}
-                      {e.resource_id && (
-                        <span className="text-gray-300"> #{e.resource_id.slice(0, 8)}</span>
+                      {e.resource_type ? getResourceLabel(e.resource_type) : "—"}
+                      {transferHref ? (
+                        <Link
+                          href={transferHref}
+                          data-testid="audit-transfer-link"
+                          className="text-blue-700 hover:underline"
+                        >
+                          {" "}#{shortRef(e.transfer_order_id!)}
+                        </Link>
+                      ) : (
+                        e.resource_id && (
+                          <span className="text-gray-300"> #{e.resource_id.slice(0, 8)}</span>
+                        )
                       )}
                     </td>
                     <td className="px-3 py-2">
