@@ -32,12 +32,18 @@ def _required(name: str) -> str:
 async def bootstrap(conn: asyncpg.Connection, role: str, password: str) -> None:
     # The role name is validated against ROLE_PATTERN and the password against
     # PASSWORD_PATTERN, so interpolating them into DDL cannot inject SQL.
+    # The master is not a superuser, so ALTER ROLE must not touch SUPERUSER or
+    # BYPASSRLS (Postgres rejects it even when setting NOSUPERUSER). Roles are
+    # created non-superuser without BYPASSRLS by default, so those attributes
+    # are only set at CREATE time.
     exists = await conn.fetchval("SELECT 1 FROM pg_roles WHERE rolname = $1", role)
-    verb = "ALTER" if exists else "CREATE"
-    await conn.execute(
-        f'{verb} ROLE "{role}" WITH LOGIN PASSWORD \'{password}\' '
-        "NOSUPERUSER NOCREATEDB NOCREATEROLE NOBYPASSRLS NOREPLICATION"
-    )
+    if exists:
+        await conn.execute(f'ALTER ROLE "{role}" WITH LOGIN PASSWORD \'{password}\'')
+    else:
+        await conn.execute(
+            f'CREATE ROLE "{role}" WITH LOGIN PASSWORD \'{password}\' '
+            "NOSUPERUSER NOCREATEDB NOCREATEROLE NOBYPASSRLS"
+        )
     database = await conn.fetchval("SELECT current_database()")
     # CREATE on the database lets the role install trusted extensions (pg_trgm
     # in migration 001). Without it the migration fails with "permission denied
