@@ -39,7 +39,10 @@ async def bootstrap(conn: asyncpg.Connection, role: str, password: str) -> None:
         "NOSUPERUSER NOCREATEDB NOCREATEROLE NOBYPASSRLS NOREPLICATION"
     )
     database = await conn.fetchval("SELECT current_database()")
-    await conn.execute(f'GRANT CONNECT ON DATABASE "{database}" TO "{role}"')
+    # CREATE on the database lets the role install trusted extensions (pg_trgm
+    # in migration 001). Without it the migration fails with "permission denied
+    # to create extension".
+    await conn.execute(f'GRANT CONNECT, CREATE ON DATABASE "{database}" TO "{role}"')
     # PostgreSQL 15+ no longer grants CREATE on public to everyone; the runtime
     # role needs it to run migrations that create tables.
     await conn.execute(f'GRANT USAGE, CREATE ON SCHEMA public TO "{role}"')
