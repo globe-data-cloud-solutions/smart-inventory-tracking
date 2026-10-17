@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useMemo, useEffect, useRef } from "react";
+import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { getSession, SA_ORG_SLUG } from "@/lib/demo-auth";
@@ -17,7 +18,8 @@ import { useTenantName } from "@/hooks/useTenantName";
 import { useWarehouses } from "@/hooks/useWarehouses";
 import { useTenantPositions } from "@/hooks/useTenantPositions";
 import { useWriteGuard, guardProps } from "@/hooks/useWriteGuard";
-import { formatExpiry } from "@/components/features/transfers/TransferLotDetails";
+import { formatExpiry, type TransferDiscrepancyListItemApi } from "@/components/features/transfers/TransferLotDetails";
+import { openDiscrepanciesKey } from "@/components/features/transfers/transferQueryKeys";
 
 type ApiProduct = {
   id: string; sku: string; name: string; unit: string; pack_size?: number;
@@ -131,6 +133,16 @@ export default function AdjustmentsPage() {
     queryKey: ["adjustments", org],
     queryFn:  () => api.get<AdjRecord[]>("/api/v1/inventory/adjustments/"),
     enabled:  isGatewayMode && org !== SA_ORG_SLUG,
+    staleTime: 0,
+  });
+
+  // Open transit discrepancies (same query/cache as the Transfers panel). Silent on error,
+  // e.g. 403 for a role without transfer:list — the notice simply does not render.
+  const { data: openDiscrepancies = [] } = useQuery<TransferDiscrepancyListItemApi[]>({
+    queryKey: openDiscrepanciesKey(),
+    queryFn:  () => api.get<TransferDiscrepancyListItemApi[]>("/api/v1/inventory/transfers/discrepancies?status=OPEN"),
+    enabled:  isGatewayMode && org !== SA_ORG_SLUG,
+    retry:    false,
     staleTime: 0,
   });
 
@@ -414,6 +426,15 @@ export default function AdjustmentsPage() {
           <NewAdjustmentPanel products={panelProducts} warehouses={panelWarehouses} orgSlug={org} />
         </div>
       </div>
+
+      {openDiscrepancies.length > 0 && (
+        <div data-testid="adjustments-discrepancy-notice" className="mb-4 bg-amber-50 border border-amber-200 rounded px-4 py-2.5 text-sm text-amber-900">
+          {t("adjustment.transit_discrepancies_notice").replace("{count}", String(openDiscrepancies.length))}{" "}
+          <Link href={`/${org}/transfers?focus=discrepancies`} className="font-semibold text-eth-forest underline">
+            {t("adjustment.transit_discrepancies_link")}
+          </Link>
+        </div>
+      )}
 
       {actionError && (
         <div data-testid="adj-action-error" className="mb-4 bg-red-50 border border-red-200 rounded px-4 py-2.5 text-sm text-red-600">

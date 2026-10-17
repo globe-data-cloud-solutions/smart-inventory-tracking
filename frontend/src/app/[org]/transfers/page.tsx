@@ -840,6 +840,11 @@ export default function TransfersPage() {
   // Discrepancy resolve (D2): TA / NM / SA tenant-wide, RM within its node subtree.
   // The backend decides scope. Called before the early returns below (rules of hooks).
   const canResolve = usePermission("transfer:resolve_discrepancy", user?.role ?? "");
+  // ?focus=discrepancies (the Adjustments page link): expand + scroll to the open-discrepancies panel.
+  const [focusDiscrepancies, setFocusDiscrepancies] = useState(false);
+  useEffect(() => {
+    setFocusDiscrepancies(new URLSearchParams(window.location.search).get("focus") === "discrepancies");
+  }, []);
 
   if (org === SA_ORG_SLUG) return <p className="p-8 text-gray-500">{t("dashboard.tenants_heading")}</p>;
   if (!user) return <p className="p-8 text-gray-500">{t("common.no_data")}</p>;
@@ -1275,6 +1280,7 @@ export default function TransfersPage() {
         canResolve={canResolve}
         productName={(id) => productById.get(id)?.name}
         onResolved={onDiscrepancyResolved}
+        focus={focusDiscrepancies}
       />
 
       <div className="bg-white border border-gray-200 rounded overflow-hidden">

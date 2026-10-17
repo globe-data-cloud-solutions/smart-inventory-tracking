@@ -568,6 +568,8 @@
     "warehouse_auto": "Auto-assigned from your profile",
     "warehouse_select": "Select warehouse",
     "show_history": "Seenaa agarsiisi",
+    "transit_discrepancies_notice": "{count} transit discrepancies are open. They are resolved on the Transfers page, not as adjustments.",
+    "transit_discrepancies_link": "Go to open discrepancies",
     "hide_history": "Seenaa dhoksi",
     "no_pending": "Sirreessiwwan eegama hin jiran",
     "no_pending_hint": "Sirreessiwwan hundi xumuramaniiru. Galmeewwan darbe ilaaluuf seenaa jijjiiraa.",
@@ -1471,6 +1473,7 @@
       "lots_failed": "Could not load the lots. Please try again.",
       "lot_option": "{lot} · expires {expiry} · balance {qty}",
       "panel_title": "Open discrepancies ({count})",
+      "awaiting_resolution": "Awaiting resolution by a Tenant Admin, National Manager or Regional Manager.",
       "toast_resolved": "Discrepancy resolved",
       "errors": {
         "DISCREPANCY_ALREADY_RESOLVED": "This discrepancy has already been resolved.",

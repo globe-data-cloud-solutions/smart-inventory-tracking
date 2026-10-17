@@ -578,6 +578,8 @@
     "warehouse_auto": "ከእርስዎ መገለጫ ራስ-ሰር ተሰጥቷል",
     "warehouse_select": "መጋዘን ይምረጡ",
     "show_history": "ታሪክ አሳይ",
+    "transit_discrepancies_notice": "{count} የመጓጓዣ ልዩነቶች ክፍት ናቸው። የሚፈቱት በዝውውሮች ገጽ ላይ ነው እንጂ እንደ ማስተካከያ አይደለም።",
+    "transit_discrepancies_link": "ወደ ክፍት ልዩነቶች ይሂዱ",
     "hide_history": "ታሪክ ደብቅ",
     "no_pending": "ምንም አስቸኳይ ማስተካከያዎች የሉም",
     "no_pending_hint": "ሁሉም ማስተካከያዎች ተፈቅደዋል። ያለፉ መዝገቦችን ለማየት ታሪክን ቀያይሩ።",
@@ -974,6 +976,7 @@
       "lots_failed": "ሎቶችን መጫን አልተቻለም። እባክዎ እንደገና ይሞክሩ።",
       "lot_option": "{lot} · ማብቂያ {expiry} · ቀሪ {qty}",
       "panel_title": "ክፍት ልዩነቶች ({count})",
+      "awaiting_resolution": "በተከራይ አስተዳዳሪ፣ በብሔራዊ ሥራ አስኪያጅ ወይም በክልል ሥራ አስኪያጅ መፍትሔ ይጠበቃል።",
       "toast_resolved": "ልዩነቱ ተፈትቷል",
       "errors": {
         "DISCREPANCY_ALREADY_RESOLVED": "ይህ ልዩነት አስቀድሞ ተፈትቷል።",
