@@ -590,3 +590,12 @@ class AuditLogItem(BaseModel):
     to_warehouse_name: Optional[str] = None
     product_summary: Optional[str] = None
     adjustment_reason_code: Optional[str] = None
+    # Transfer + transfer_discrepancy rows: the parent transfer, for linking.
+    transfer_order_id: Optional[uuid.UUID] = None
+    # Transfer rows only: how many discrepancies the transfer's receipt raised.
+    discrepancy_count: Optional[int] = None
+    # transfer_discrepancy rows only.
+    discrepancy_product_name: Optional[str] = None
+    discrepancy_missing_quantity: Optional[Decimal] = None
+    discrepancy_reason: Optional[str] = None
+    discrepancy_resolution: Optional[str] = None

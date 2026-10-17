@@ -165,6 +165,11 @@ export function TransferDiscrepancies({
       <p className="text-[11px] font-bold uppercase tracking-wider text-gray-400 mb-1.5">
         {t("transfers.discrepancies.title")}
       </p>
+      {!canResolve && discrepancies.some((d) => d.status === "OPEN") && (
+        <p data-testid="discrepancy-awaiting-resolution" className="text-xs text-amber-900 mb-1.5">
+          {t("transfers.discrepancies.awaiting_resolution")}
+        </p>
+      )}
       <div className="overflow-x-auto">
         <table className="border-collapse bg-white border border-gray-200 rounded">
           <thead>

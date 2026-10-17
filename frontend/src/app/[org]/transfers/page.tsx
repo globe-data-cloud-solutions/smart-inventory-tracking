@@ -8,6 +8,7 @@ import { getSession, SA_ORG_SLUG } from "@/lib/demo-auth";
 import { DEMO_TENANTS, type DemoProduct, type DemoWarehouse, type ProductApprovalOverride } from "@/lib/demo-data";
 import { NewTransferPanel } from "@/components/features/transfers/NewTransferPanel";
 import { ReceiveTransferPanel } from "@/components/features/transfers/ReceiveTransferPanel";
+import { notify } from "@/lib/notify";
 import { TransferRowDetails, hasLotSplit, transferDetailKey, type TransferReceiptDetail } from "@/components/features/transfers/TransferLotDetails";
 import { ApproveLotsPanel, approveFailure, type ApproveFailure, type ApproveLine, type ApproveLotsBody } from "@/components/features/transfers/ApproveLotsPanel";
 import { fetchDispatchPreview } from "@/components/features/transfers/DispatchPreview";
@@ -735,7 +736,7 @@ export default function TransfersPage() {
   const { data: rawTransfers = [], isLoading: transfersLoading } = useQuery<ApiTransfer[]>({
     queryKey: ["transfers", org],
     queryFn:  () =>
-      api.get<RawApiTransfer[]>("/api/v1/inventory/transfers")
+      api.get<RawApiTransfer[]>("/api/v1/inventory/transfers/")
         .then((rows) => rows.map(normalizeTransfer)),
     enabled: org !== SA_ORG_SLUG,
     staleTime: 0,
@@ -831,7 +832,7 @@ export default function TransfersPage() {
   // Fetch API-created products for the transfer panel product dropdown.
   const { data: apiProducts = [] } = useQuery<ApiProduct[]>({
     queryKey: ["products", org],
-    queryFn:  () => api.get<ApiProduct[]>("/api/v1/products"),
+    queryFn:  () => api.get<ApiProduct[]>("/api/v1/products/"),
     enabled: org !== SA_ORG_SLUG,
     staleTime: 30_000,
   });
@@ -839,6 +840,11 @@ export default function TransfersPage() {
   // Discrepancy resolve (D2): TA / NM / SA tenant-wide, RM within its node subtree.
   // The backend decides scope. Called before the early returns below (rules of hooks).
   const canResolve = usePermission("transfer:resolve_discrepancy", user?.role ?? "");
+  // ?focus=discrepancies (the Adjustments page link): expand + scroll to the open-discrepancies panel.
+  const [focusDiscrepancies, setFocusDiscrepancies] = useState(false);
+  useEffect(() => {
+    setFocusDiscrepancies(new URLSearchParams(window.location.search).get("focus") === "discrepancies");
+  }, []);
 
   if (org === SA_ORG_SLUG) return <p className="p-8 text-gray-500">{t("dashboard.tenants_heading")}</p>;
   if (!user) return <p className="p-8 text-gray-500">{t("common.no_data")}</p>;
@@ -1104,7 +1110,7 @@ export default function TransfersPage() {
   }
 
   // Receive form submitted: refresh the same queries doTransition refreshes.
-  function onReceived(id: string, receivedTotal: number, discrepancyCount: number) {
+  function onReceived(id: string, ref: string, receivedTotal: number, discrepancyCount: number) {
     setReceiveFor(null);
     void qc.invalidateQueries({ queryKey: ["transfers", org] });
     void qc.invalidateQueries({ queryKey: transferDetailKey(id) });
@@ -1115,8 +1121,7 @@ export default function TransfersPage() {
     } else if (discrepancyCount > 1) {
       msg += ` · ${t("transfers.receive.toast_discrepancies").replace("{count}", String(discrepancyCount))}`;
     }
-    setToast(msg);
-    setTimeout(() => setToast(""), 5000);
+    notify({ kind: discrepancyCount > 0 ? "warning" : "success", message: `${ref} — ${msg}` });
   }
 
   function onDiscrepancyResolved() {
@@ -1223,7 +1228,7 @@ export default function TransfersPage() {
           transferRef={receiveFor.ref}
           basePath="/api/v1/inventory/transfers"
           onClose={() => setReceiveFor(null)}
-          onReceived={(total, count) => onReceived(receiveFor.id, total, count)}
+          onReceived={(total, count) => onReceived(receiveFor.id, receiveFor.ref, total, count)}
         />
       )}
 
@@ -1275,6 +1280,7 @@ export default function TransfersPage() {
         canResolve={canResolve}
         productName={(id) => productById.get(id)?.name}
         onResolved={onDiscrepancyResolved}
+        focus={focusDiscrepancies}
       />
 
       <div className="bg-white border border-gray-200 rounded overflow-hidden">

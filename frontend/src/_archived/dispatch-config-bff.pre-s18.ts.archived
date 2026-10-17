@@ -1,3 +1,6 @@
+// ARCHIVED session 18: demo-only BFF for the old Dispatch page; no FastAPI router ever backed it.
+// Replaced by: product-form lot settings (dispatch strategy) and the Lots/Overrides pages.
+// Do not import; kept for history only.
 import { NextRequest, NextResponse } from "next/server";
 
 type Strategy = "FEFO" | "FIFO" | "LIFO";

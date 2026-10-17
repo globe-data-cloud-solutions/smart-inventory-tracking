@@ -2,7 +2,7 @@
 
 import { useEffect, useRef } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { api, IS_GATEWAY_MODE } from "@/lib/api";
+import { IS_GATEWAY_MODE, publicGet } from "@/lib/api";
 import { t } from "@/lib/i18n";
 import { formatCurrency } from "@/lib/utils";
 import { PackagesListOut } from "@/lib/billing-types";
@@ -36,7 +36,7 @@ export function PlanComparisonModal({ open, onClose, currentTier }: PlanComparis
 
   const { data: catalog, isLoading, isError } = useQuery<PackagesListOut>({
     queryKey: ["public-packages"],
-    queryFn: () => api.get<PackagesListOut>("/api/v1/tenants/public/packages"),
+    queryFn: () => publicGet<PackagesListOut>("/api/v1/tenants/public/packages"),
     enabled: open && IS_GATEWAY_MODE,
     staleTime: 60_000,
   });

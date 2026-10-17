@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "@/lib/api";
@@ -29,6 +29,7 @@ export function OpenDiscrepanciesPanel({
   canResolve,
   productName,
   onResolved,
+  focus = false,
 }: {
   org: string;
   basePath: string;
@@ -36,8 +37,12 @@ export function OpenDiscrepanciesPanel({
   /** Resolves a product id to its name; undefined when the page cannot. */
   productName: (productId: string) => string | undefined;
   onResolved: () => void;
+  /** Expand and scroll the panel into view once rows have loaded (?focus=discrepancies). */
+  focus?: boolean;
 }) {
   const [open, setOpen] = useState(true);
+  const panelRef = useRef<HTMLDivElement>(null);
+  const focused = useRef(false);
   const [resolving, setResolving] = useState<ResolveTarget | null>(null);
 
   const { data, isError, error } = useQuery<TransferDiscrepancyListItemApi[]>({
@@ -47,6 +52,14 @@ export function OpenDiscrepanciesPanel({
     staleTime: 0,
   });
 
+  const hasRows = (data?.length ?? 0) > 0;
+  useEffect(() => {
+    if (!focus || !hasRows || focused.current) return;
+    focused.current = true;
+    setOpen(true);
+    panelRef.current?.scrollIntoView({ block: "start" });
+  }, [focus, hasRows]);
+
   if (isError) {
     console.error("[OpenDiscrepanciesPanel] list failed:", error);
     return null;
@@ -55,7 +68,7 @@ export function OpenDiscrepanciesPanel({
   if (rows.length === 0) return null;
 
   return (
-    <div data-testid="open-discrepancies-panel" className="mb-6 bg-white border border-amber-200 rounded overflow-hidden">
+    <div ref={panelRef} id="open-discrepancies" data-testid="open-discrepancies-panel" className="mb-6 bg-white border border-amber-200 rounded overflow-hidden">
       <button
         type="button"
         data-testid="open-discrepancies-toggle"
@@ -66,6 +79,11 @@ export function OpenDiscrepanciesPanel({
         <span className="text-xs">{open ? "▾" : "▸"}</span>
         {t("transfers.discrepancies.panel_title").replace("{count}", String(rows.length))}
       </button>
+      {open && !canResolve && (
+        <p data-testid="discrepancy-awaiting-resolution" className="px-3 py-2 m-0 text-xs text-amber-900 bg-amber-50/50 border-b border-amber-100">
+          {t("transfers.discrepancies.awaiting_resolution")}
+        </p>
+      )}
       {open && (
         <div className="overflow-x-auto">
           <table className="w-full border-collapse">

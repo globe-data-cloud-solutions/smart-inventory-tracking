@@ -14,6 +14,7 @@ import { useTenantName } from "@/hooks/useTenantName";
 import { useContractStatus } from "@/hooks/useContractStatus";
 import { PublicContactLink } from "@/components/features/auth/PublicContactLink";
 import { ContactModal } from "@/components/features/contact/ContactModal";
+import { GlobalToast } from "@/components/ui/GlobalToast";
 
 type Locale = "en" | "am" | "or";
 
@@ -63,7 +64,7 @@ function NotificationBell({ org }: { org: string }) {
     queryFn:  async () => {
       try {
         const r = await api.get<AutoApprovalAlert[]>(
-          "/api/v1/inventory/alerts?alert_type=AUTO_APPROVAL_NOTICE"
+          "/api/v1/inventory/alerts/?alert_type=AUTO_APPROVAL_NOTICE"
         );
         return r ?? [];
       } catch {
@@ -519,7 +520,6 @@ const PAGE_LABELS: Record<string, string> = {
   transfers:           "Transfers",
   adjustments:         "Adjustments",
   "stock-count":       "Stock Count",
-  dispatch:            "Dispatch",
   analytics:           "Analytics",
   reports:             "Reports",
   "audit-log":         "Audit Log",
@@ -782,6 +782,7 @@ export default function OrgLayout({ children }: { children: React.ReactNode }) {
         </div>
       </div>
       <ContactModal open={contactOpen} onClose={() => setContactOpen(false)} />
+      <GlobalToast />
     </QueryClientProvider>
   );
 }
@@ -818,7 +819,6 @@ const TENANT_NAV: NavItem[] = [
   { type: "link", icon: "🔄", label: "Transfers",       page: "transfers"         },
   { type: "link", icon: "📋", label: "Adjustments",     page: "adjustments"       },
   { type: "link", icon: "🔢", label: "Stock Count",     page: "stock-count"       },
-  { type: "link", icon: "🚚", label: "Dispatch",        page: "dispatch"          },
   { type: "section", label: "Reports" },
   { type: "link", icon: "📈", label: "Analytics",       page: "analytics",        planFlag: "AI_ANALYTICS" },
   { type: "link", icon: "📊", label: "Reports",         page: "reports"           },

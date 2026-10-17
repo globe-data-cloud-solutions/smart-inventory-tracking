@@ -9,6 +9,8 @@ import { useAuditStore } from "@/lib/audit-log-state";
 import { getSession } from "@/lib/demo-auth";
 import { useWriteGuard, guardProps } from "@/hooks/useWriteGuard";
 import { t } from "@/lib/i18n";
+import { notify } from "@/lib/notify";
+import { PanelError } from "@/components/ui/PanelError";
 import { lotErrorMessage } from "@/lib/lotErrors";
 import type { DemoProduct, DemoWarehouse } from "@/lib/demo-data";
 import { LotFields } from "@/components/features/inventory/LotFields";
@@ -43,8 +45,7 @@ export function OpeningBalancePanel({ products, warehouses, orgSlug }: Props) {
   const [open, setOpen]       = useState(false);
   const [form, setForm]       = useState<FormState>({ warehouseId: lockedWarehouseId, productId: "", quantity: "", lotNumber: "", autoLot: false, expiryDate: "", notes: "", referenceDocument: "" });
   const [error, setError]     = useState("");
-  const [success, setSuccess] = useState("");
-  const [loading, setLoading] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
   const writeGuard = useWriteGuard();
   const gp = guardProps(writeGuard);
 
@@ -54,13 +55,13 @@ export function OpeningBalancePanel({ products, warehouses, orgSlug }: Props) {
   const expiryRequired     = requiresBatch && selectedProduct?.expiryTracking === true;
 
   function clearForm() { setForm({ warehouseId: lockedWarehouseId, productId: "", quantity: "", lotNumber: "", autoLot: false, expiryDate: "", notes: "", referenceDocument: "" }); setError(""); }
-  function reset() { clearForm(); setSuccess(""); }
+  function reset() { clearForm(); }
   function set(key: "warehouseId" | "productId" | "quantity" | "lotNumber" | "expiryDate" | "notes" | "referenceDocument", val: string) { setForm((f) => ({ ...f, [key]: val })); setError(""); }
   function setAutoLot(val: boolean) { setForm((f) => ({ ...f, autoLot: val, lotNumber: val ? "" : f.lotNumber })); setError(""); }
 
   const onSubmit = async (e: React.FormEvent) => {
     e.preventDefault(); setError("");
-    if (gp.disabled) return;
+    if (gp.disabled || submitting) return;
     if (!user)             { setError(t("opening_balance.error_session"));   return; }
     if (!form.warehouseId) { setError(t("receive_panel.error_warehouse")); return; }
     if (!form.productId)   { setError(t("receive_panel.error_product"));   return; }
@@ -83,24 +84,25 @@ export function OpeningBalancePanel({ products, warehouses, orgSlug }: Props) {
         ? { auto_lot: form.autoLot, lot_number: form.autoLot ? undefined : form.lotNumber, expiry_date: form.expiryDate || undefined }
         : {}),
     };
-    setLoading(true);
+    setSubmitting(true);
     try {
       const resp = await api.post<{ lot_number?: string | null }>("/api/v1/inventory/receive/", payload);
       addReceive(form.productId, form.warehouseId, qty);
       logAudit({ tenantSlug: orgSlug, userEmail: user.email, userName: user.name, role: user.role, action: "inventory:opening_balance", category: "INVENTORY", resourceRef: product?.sku ?? form.productId, resourceType: "OpeningBalanceReceipt", productName: product?.name, quantityStr: `+${qty.toLocaleString()} ${product?.unit ?? "units"}`, toWarehouse: warehouse?.name ?? form.warehouseId, notes: form.notes || undefined });
       void qc.invalidateQueries({ queryKey: ["products", orgSlug] });
       void qc.invalidateQueries({ queryKey: ["receipts", orgSlug] });
-      clearForm();
-      if (resp.lot_number) {
-        setSuccess(t("inventory.receive.success_lot").replace("{lot}", resp.lot_number));
-      } else {
-        setSuccess(t("opening_balance.success"));
-        setTimeout(() => { setSuccess(""); setOpen(false); }, 3000);
-      }
+      clearForm(); setOpen(false);
+      const what = `${product?.name ?? ""} (${product?.sku ?? ""}) +${qty.toLocaleString()} ${product?.unit ?? ""}`.trim();
+      notify({
+        kind: "success",
+        message: resp.lot_number
+          ? `${t("inventory.receive.success_lot").replace("{lot}", resp.lot_number)} ${what}`
+          : `${t("opening_balance.success")} ${what}`,
+      });
     } catch (err: unknown) {
       setError(lotErrorMessage(err) ?? (err instanceof Error ? err.message : t("errors.INTERNAL_ERROR")));
     }
-    finally { setLoading(false); }
+    finally { setSubmitting(false); }
   };
 
   if (!user) return null;
@@ -124,6 +126,7 @@ export function OpeningBalancePanel({ products, warehouses, orgSlug }: Props) {
         </div>
 
         <form onSubmit={onSubmit} className="flex-1 overflow-y-auto p-6">
+          <PanelError message={error} />
           {gp.disabled && gp.title && (
             <div role="alert" className="bg-amber-50 border border-amber-200 rounded px-3.5 py-2.5 text-sm text-amber-800 mb-4">
               {gp.title}
@@ -184,14 +187,12 @@ export function OpeningBalancePanel({ products, warehouses, orgSlug }: Props) {
             <input type="text" value={form.referenceDocument} onChange={(e) => set("referenceDocument", e.target.value)} placeholder="e.g. PHYS-COUNT-2026-001" className={inputCls} />
           </Field>
 
-          {error   && <div className="bg-red-50 border border-red-200 rounded p-3 text-sm text-red-600 mb-3">{error}</div>}
-          {success && <div className="bg-blue-50 border border-blue-200 rounded p-3 text-sm text-blue-800 mb-3 leading-relaxed">✓ {success}</div>}
         </form>
 
         <div className="px-6 py-4 border-t border-gray-200 flex gap-2.5">
           <button type="button" onClick={() => { reset(); setOpen(false); }} className="flex-1 py-2.5 bg-gray-100 border border-gray-200 rounded text-sm font-semibold text-gray-700 cursor-pointer">{t("common.cancel")}</button>
-          <button onClick={onSubmit as unknown as React.MouseEventHandler} disabled={loading || gp.disabled} title={gp.title} className={`flex-[2] py-2.5 bg-blue-800 text-white font-bold text-sm rounded border-0 ${loading || gp.disabled ? "opacity-70 cursor-not-allowed" : "cursor-pointer"}`}>
-            {loading ? t("common.loading") : t("opening_balance.submit")}
+          <button onClick={onSubmit as unknown as React.MouseEventHandler} disabled={submitting || gp.disabled} title={gp.title} className={`flex-[2] py-2.5 bg-blue-800 text-white font-bold text-sm rounded border-0 ${submitting || gp.disabled ? "opacity-70 cursor-not-allowed" : "cursor-pointer"}`}>
+            {submitting ? t("common.saving") : t("opening_balance.submit")}
           </button>
         </div>
       </div>

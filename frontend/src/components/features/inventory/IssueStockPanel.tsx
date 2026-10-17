@@ -10,6 +10,8 @@ import { useInventoryStore } from "@/lib/inventory-state";
 import { useAuditStore } from "@/lib/audit-log-state";
 import { getSession } from "@/lib/demo-auth";
 import { t } from "@/lib/i18n";
+import { notify } from "@/lib/notify";
+import { PanelError } from "@/components/ui/PanelError";
 import { useWarehouses } from "@/hooks/useWarehouses";
 import { useWriteGuard, guardProps } from "@/hooks/useWriteGuard";
 import type { DemoProduct } from "@/lib/demo-data";
@@ -70,14 +72,13 @@ export function IssueStockPanel({ products, orgSlug }: Props) {
   const [issuedTo, setIssuedTo]     = useState("");
   const [notes, setNotes]           = useState("");
   const [error, setError]           = useState("");
-  const [success, setSuccess]       = useState("");
-  const [loading, setLoading]       = useState(false);
+  const [submitting, setSubmitting] = useState(false);
   const writeGuard = useWriteGuard();
   const gp = guardProps(writeGuard);
 
   const destMeta = reasonCode ? DESTINATION_META[reasonCode] : null;
 
-  function reset() { setProductId(""); setQuantity(""); setReasonCode(""); setIssuedTo(""); setNotes(""); setError(""); setSuccess(""); }
+  function reset() { setProductId(""); setQuantity(""); setReasonCode(""); setIssuedTo(""); setNotes(""); setError(""); }
 
   const selectedProduct = products.find((p) => p.id === productId);
   const availableStock  = selectedProduct && warehouseId
@@ -86,7 +87,7 @@ export function IssueStockPanel({ products, orgSlug }: Props) {
 
   const onSubmit = async (e: React.FormEvent) => {
     e.preventDefault(); setError("");
-    if (gp.disabled) return;
+    if (gp.disabled || submitting) return;
     if (!productId)   { setError(t("receive_panel.error_product"));   return; }
     if (!warehouseId) { setError(t("receive_panel.error_warehouse")); return; }
     if (!reasonCode)  { setError(t("issue.error_reason")); return; }
@@ -96,21 +97,23 @@ export function IssueStockPanel({ products, orgSlug }: Props) {
     if (availableStock !== null && qty > availableStock) { setError(`${t("issue.insufficient")} ${availableStock.toLocaleString()}`); return; }
     const key = `issue:${productId}:${warehouseId}:${Date.now()}:${nanoid(8)}`;
     const payload = { product_id: productId, warehouse_id: warehouseId, quantity: qty.toFixed(4), reason_code: reasonCode, issued_to: issuedTo.trim() || undefined, notes, idempotency_key: key };
-    setLoading(true);
+    setSubmitting(true);
+    let successMsg = "";
     try {
       if (!isOnline) {
         await enqueueOfflineTransaction({ idempotencyKey: key, action: "inventory:issue", payload });
-        setSuccess(t("inventory.receive.queue_offline"));
+        successMsg = t("inventory.receive.queue_offline");
       } else {
         await api.post("/api/v1/inventory/issues/", payload);
         if (user) logAudit({ tenantSlug: orgSlug, userEmail: user.email, userName: user.name, role: user.role, action: "inventory:issue", category: "INVENTORY", resourceRef: selectedProduct?.sku ?? productId, resourceType: "InventoryTransaction", productName: selectedProduct?.name, quantityStr: `-${qty.toLocaleString()} ${selectedProduct?.unit ?? "units"}`, fromWarehouse: warehouseName, toWarehouse: issuedTo.trim() || undefined, notes: `[${reasonCode}]` });
-        setSuccess(t("issue.success"));
+        successMsg = t("issue.success");
         void qc.invalidateQueries({ queryKey: ["products", orgSlug] });
         void qc.invalidateQueries({ queryKey: ["inventory-stock", orgSlug] });
       }
-      reset(); setTimeout(() => { setSuccess(""); setOpen(false); }, 2500);
+      reset(); setOpen(false);
+      notify({ kind: "success", message: `${successMsg} — ${selectedProduct?.name ?? ""} (${selectedProduct?.sku ?? ""}) −${qty.toLocaleString()} ${selectedProduct?.unit ?? ""}`.trim() });
     } catch (err: unknown) { setError(err instanceof Error ? err.message : t("errors.INTERNAL_ERROR")); }
-    finally { setLoading(false); }
+    finally { setSubmitting(false); }
   };
 
   return (
@@ -131,6 +134,7 @@ export function IssueStockPanel({ products, orgSlug }: Props) {
         </div>
 
         <form onSubmit={onSubmit} className="flex-1 overflow-y-auto p-6">
+          <PanelError message={error} />
           {gp.disabled && gp.title && (
             <div role="alert" className="bg-amber-50 border border-amber-200 rounded px-3.5 py-2.5 text-sm text-amber-800 mb-4">
               {gp.title}
@@ -176,14 +180,12 @@ export function IssueStockPanel({ products, orgSlug }: Props) {
             <textarea value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Customer name, order reference, notes…" rows={3} className={`${inputCls} resize-y`} />
           </Field>
 
-          {error   && <div className="bg-red-50 border border-red-200 rounded p-3 text-sm text-red-600 mb-3">{error}</div>}
-          {success && <div className="bg-violet-50 border border-violet-200 rounded p-3 text-sm text-violet-700 mb-3">✓ {success}</div>}
         </form>
 
         <div className="px-6 py-4 border-t border-gray-200 flex gap-2.5">
           <button type="button" onClick={() => setOpen(false)} className="flex-1 py-2.5 bg-gray-100 border border-gray-200 rounded text-sm font-semibold text-gray-700 cursor-pointer">{t("common.cancel")}</button>
-          <button onClick={onSubmit as unknown as React.MouseEventHandler} disabled={loading || gp.disabled} title={gp.title} className={`flex-[2] py-2.5 bg-violet-600 text-white font-bold text-sm rounded border-0 ${loading || gp.disabled ? "opacity-70 cursor-not-allowed" : "cursor-pointer"}`}>
-            {loading ? t("common.loading") : t("issue.submit")}
+          <button onClick={onSubmit as unknown as React.MouseEventHandler} disabled={submitting || gp.disabled} title={gp.title} className={`flex-[2] py-2.5 bg-violet-600 text-white font-bold text-sm rounded border-0 ${submitting || gp.disabled ? "opacity-70 cursor-not-allowed" : "cursor-pointer"}`}>
+            {submitting ? t("common.saving") : t("issue.submit")}
           </button>
         </div>
       </div>

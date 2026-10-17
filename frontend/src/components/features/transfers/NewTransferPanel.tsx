@@ -9,6 +9,8 @@ import { useAuditStore } from "@/lib/audit-log-state";
 import { getSession } from "@/lib/demo-auth";
 import { useWriteGuard, guardProps } from "@/hooks/useWriteGuard";
 import { t } from "@/lib/i18n";
+import { notify } from "@/lib/notify";
+import { PanelError } from "@/components/ui/PanelError";
 import { formatQty } from "@/lib/utils";
 import { buildOverrideTooltip } from "@/components/features/inventory/ProductLabel";
 import { DispatchPreviewInfo, fetchDispatchPreview, type DispatchPreviewApi } from "@/components/features/transfers/DispatchPreview";
@@ -193,8 +195,7 @@ export function NewTransferPanel({ products, warehouses, orgSlug }: Props) {
   const [open, setOpen]         = useState(false);
   const [form, setForm]         = useState<FormState>(initialForm(defaultType));
   const [error, setError]       = useState("");
-  const [success, setSuccess]   = useState("");
-  const [loading, setLoading]   = useState(false);
+  const [submitting, setSubmitting] = useState(false);
   const [stockAlert, setStockAlert] = useState<{ fromWHName: string; productName: string; onHand: number; available: number; requested: number; canForce: boolean; } | null>(null);
 
   // When warehouse data loads asynchronously and canPush flips true,
@@ -211,7 +212,6 @@ export function NewTransferPanel({ products, warehouses, orgSlug }: Props) {
   const reset = useCallback(() => {
     setForm(initialForm(defaultType));
     setError("");
-    setSuccess("");
     setStockAlert(null);
   }, [defaultType, lockedWH]);  // eslint-disable-line react-hooks/exhaustive-deps
   function setField(key: keyof FormState, val: string) { setForm((f) => ({ ...f, [key]: val })); setError(""); setStockAlert(null); }
@@ -271,6 +271,7 @@ export function NewTransferPanel({ products, warehouses, orgSlug }: Props) {
     .sort((a, b) => a.tier - b.tier || a.name.localeCompare(b.name));
 
   async function doCreate(skipStockCheck: boolean) {
+    if (submitting) return;
     setError("");
     const blockedReason = guard.reason();
     if (blockedReason) { setError(blockedReason); return; }
@@ -291,7 +292,7 @@ export function NewTransferPanel({ products, warehouses, orgSlug }: Props) {
         return;
       }
     }
-    setLoading(true);
+    setSubmitting(true);
     try {
       const created = await api.post<{ transfer_id: string; total_value?: number; currency?: string }>("/api/v1/inventory/transfers/", {
         transfer_type: form.transferType,
@@ -306,11 +307,11 @@ export function NewTransferPanel({ products, warehouses, orgSlug }: Props) {
       const entry: TransferEntry = { id: transferId, ref: displayRef, tenantSlug: orgSlug, productId: form.productId, fromWarehouseId: effectiveFrom, fromWarehouseName: fromWH?.name ?? effectiveFrom, toWarehouseId: effectiveTo, toWarehouseName: toWH?.name ?? effectiveTo, quantity: qty, issuedDate: new Date().toISOString(), status: "DRAFT" };
       addTransfer(entry);
       if (user) logAudit({ tenantSlug: orgSlug, userEmail: user.email, userName: user.name, role: user.role, action: "transfer:DRAFT", category: "TRANSFER", resourceRef: displayRef, resourceType: "TransferOrder", productName: product?.name, quantityStr: `${qty.toLocaleString()} ${product?.unit ?? "units"}`, fromWarehouse: fromWH?.name, toWarehouse: toWH?.name, notes: `[${form.transferType}]${form.notes ? " " + form.notes : ""}` });
-      setSuccess(`${t("transfer_panel.created")} ${displayRef} — ${fromWH?.name} → ${toWH?.name}.`);
       void qc.invalidateQueries({ queryKey: ["transfers", orgSlug] });
-      reset(); setTimeout(() => { setSuccess(""); setOpen(false); }, 2500);
+      reset(); setOpen(false);
+      notify({ kind: "success", message: `${t("transfer_panel.created")} ${displayRef} — ${fromWH?.name} → ${toWH?.name}.` });
     } catch (err: unknown) { setError(err instanceof Error ? err.message : t("errors.INTERNAL_ERROR")); }
-    finally { setLoading(false); }
+    finally { setSubmitting(false); }
   }
 
   const onSubmit = (e: React.FormEvent) => { e.preventDefault(); void doCreate(false); };
@@ -338,6 +339,7 @@ export function NewTransferPanel({ products, warehouses, orgSlug }: Props) {
         </div>
 
         <form onSubmit={onSubmit} className="flex-1 overflow-y-auto p-6">
+          <PanelError message={error} />
           {gp.title && (
             <div className="bg-red-50 border border-red-200 rounded p-3 text-sm text-red-600 mb-4">
               {gp.title}
@@ -445,14 +447,12 @@ export function NewTransferPanel({ products, warehouses, orgSlug }: Props) {
             </div>
           )}
 
-          {error   && <div className="bg-red-50 border border-red-200 rounded p-3 text-sm text-red-600 mb-3">{error}</div>}
-          {success && <div className="bg-green-50 border border-emerald-200 rounded p-3 text-sm text-emerald-600 mb-3">✓ {success}</div>}
         </form>
 
         <div className="px-6 py-4 border-t border-gray-200 flex gap-2.5">
           <button type="button" onClick={() => setOpen(false)} className="flex-1 py-2.5 bg-gray-100 border border-gray-200 rounded text-sm font-semibold text-gray-700 cursor-pointer">{t("common.cancel")}</button>
-          <button onClick={onSubmit as unknown as React.MouseEventHandler} disabled={loading || gp.disabled} title={gp.title} className={`flex-[2] py-2.5 bg-[#0f2d1f] text-eth-gold font-bold text-sm rounded border-0 ${(loading || gp.disabled) ? "opacity-70 cursor-not-allowed" : "cursor-pointer"}`}>
-            {loading ? t("common.loading") : t("inventory.transfer.submit")}
+          <button onClick={onSubmit as unknown as React.MouseEventHandler} disabled={submitting || gp.disabled} title={gp.title} className={`flex-[2] py-2.5 bg-[#0f2d1f] text-eth-gold font-bold text-sm rounded border-0 ${(submitting || gp.disabled) ? "opacity-70 cursor-not-allowed" : "cursor-pointer"}`}>
+            {submitting ? t("common.saving") : t("inventory.transfer.submit")}
           </button>
         </div>
       </div>

@@ -142,7 +142,10 @@ for (const locale of ["en", "am"] as const) {
           open_request: null,
         })
       );
-      await page.route("**/api/v1/products", (route) => {
+      let productRouteHits = 0;
+      // Matches both /products and /products/ (the app calls either form).
+      await page.route("**/api/v1/products{,/}", (route) => {
+        productRouteHits += 1;
         if (route.request().method() === "POST") { productWriteSent = true; }
         return route.continue();
       });
@@ -204,6 +207,7 @@ for (const locale of ["en", "am"] as const) {
         await btn.click({ force: true, timeout: 2_000 }).catch(() => {});
       }
 
+      expect(productRouteHits, "products sentinel route was hit (glob matches the app's URL form)").toBeGreaterThan(0);
       expect(productWriteSent, "Add Product must never POST while disabled").toBe(false);
       expect(receiveWriteSent, "Receive must never POST while disabled").toBe(false);
       expect(transferWriteSent, "transfer transition must never PATCH while disabled").toBe(false);

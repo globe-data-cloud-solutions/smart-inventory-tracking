@@ -11,6 +11,8 @@ import { useWriteGuard, guardProps } from "@/hooks/useWriteGuard";
 import { useFeatures } from "@/hooks/useFeatures";
 import { usePermission } from "@/hooks/usePermission";
 import { t } from "@/lib/i18n";
+import { notify } from "@/lib/notify";
+import { PanelError } from "@/components/ui/PanelError";
 
 const LOT_SETTINGS_ERROR_CODES = new Set([
   "FEATURE_NOT_ENABLED", "EXPIRY_NEEDS_BATCH", "INVALID_DISPATCH_STRATEGY",
@@ -55,22 +57,6 @@ interface ApiTransferType {
   underlying_type: "PULL" | "PUSH" | "SISTER";
   display_name: string;
   is_active: boolean;
-}
-
-function Toast({ message, onDismiss }: { message: string; onDismiss: () => void }) {
-  useEffect(() => {
-    const id = setTimeout(onDismiss, 4000);
-    return () => clearTimeout(id);
-  }, [onDismiss]);
-  return (
-    <div
-      role="status"
-      aria-live="polite"
-      className="fixed bottom-6 right-6 z-[9999] bg-emerald-600 text-white px-5 py-3 rounded-md text-sm font-semibold shadow-xl"
-    >
-      {message}
-    </div>
-  );
 }
 
 // ── create-or-select component ────────────────────────────────────────────────
@@ -292,7 +278,6 @@ export function AddProductPanel({
   const [expiryTracking, setExpiryTracking]    = useState(false);
   const [dispatchStrategy, setDispatchStrategy] = useState<"FIFO" | "LIFO" | "FEFO">("FIFO");
   const [lotConfirmOpen, setLotConfirmOpen]     = useState(false);
-  const [lotSettingsError, setLotSettingsError] = useState("");
   const [openingLots, setOpeningLots]           = useState<OpeningLotItem[] | null>(null);
 
   const initialBatchTracking    = initialData?.batch_tracking ?? false;
@@ -376,7 +361,6 @@ export function AddProductPanel({
   const [categoryErr, setCatErr]    = useState("");
   const [submitting, setSub]        = useState(false);
   const [panelError, setPanelError] = useState("");
-  const [toast, setToast]           = useState<string | null>(null);
   const [copied, setCopied]         = useState(false);
 
   const skuInputRef = useRef<HTMLInputElement>(null);
@@ -538,7 +522,7 @@ export function AddProductPanel({
     setNameErr(""); setTcErr(""); setCatErr(""); setPanelError("");
     setMinimumRows(emptyMinimumRows());
     setBatchTrackingState(false); setExpiryTracking(false); setDispatchStrategy("FIFO");
-    setLotConfirmOpen(false); setLotSettingsError(""); setOpeningLots(null);
+    setLotConfirmOpen(false); setOpeningLots(null);
   };
 
   const openPanel  = () => { resetForm(); setOpen(true); };
@@ -548,6 +532,7 @@ export function AddProductPanel({
   };
 
   const handleSave = async () => {
+    if (submitting) return;
     let valid = true;
     if (!name.trim())    { setNameErr("name_required"); valid = false; }
     if (!categoryOk)     { setCatErr("Category is required."); valid = false; }
@@ -586,7 +571,7 @@ export function AddProductPanel({
         productSku   = updated.sku;
       } else {
         const created = await api.post<{ id: string; sku: string }>(
-          apiBase,
+          `${apiBase}/`,
           {
             name:              name.trim(),
             short_name:        shortName.trim() || undefined,
@@ -616,7 +601,8 @@ export function AddProductPanel({
         effectiveStrategy !== initialDispatchStrategy;
 
       let newOpeningLots: OpeningLotItem[] | null = null;
-      let createLotSettingsFailed = false;
+      // Create mode only: steps that ran after the product POST succeeded and then failed.
+      const failedSteps: { step: string; detail: string }[] = [];
 
       if (isEdit && lotSettingsChanged) {
         // Let a failure here (e.g. 409 BATCH_TRACKING_IN_USE) fall through to the
@@ -639,23 +625,28 @@ export function AddProductPanel({
           );
         } catch (lotErr) {
           const le = lotErr as Error & { code?: string };
-          createLotSettingsFailed = true;
-          setLotSettingsError(
-            le.code && LOT_SETTINGS_ERROR_CODES.has(le.code) ? t(`errors.${le.code}`) : t("errors.INTERNAL_ERROR"),
-          );
+          failedSteps.push({
+            step:   t("product.add.step_lot_settings"),
+            detail: le.code && LOT_SETTINGS_ERROR_CODES.has(le.code) ? t(`errors.${le.code}`) : t("errors.INTERNAL_ERROR"),
+          });
         }
       }
 
-      // Save product-level approval minimums / overrides. All 6 transaction
-      // types are always sent (override_enabled=false for unconfigured
+      // Save product-level approval minimums / overrides. Only TA can manage
+      // them (product:manage_approval_minimums; the section renders for TA only),
+      // so any other role never sends this PUT — it would 403 after the product
+      // was already created. For TA: edit mode always sends (so clearing a
+      // previously configured override works); create mode sends only when at
+      // least one override is active, since a new product has nothing to clear.
+      // All 6 transaction types are sent (override_enabled=false for unconfigured
       // rows) so entries is never empty — this satisfies the backend's
-      // EMPTY_ENTRIES validation and ensures that disabling a previously
-      // configured override actually clears it (rather than silently
-      // skipping the PUT call). An override is only persisted if a position
+      // EMPTY_ENTRIES validation. An override is only persisted if a position
       // has been chosen — the backend's check_product_override() requires
       // approver_position_id IS NOT NULL, so a checked-but-unconfigured
       // override is sent as override_enabled=false here.
-      await api.put<unknown>(
+      const hasActiveOverride = minimumRows.some((r) => r.override_enabled && r.approver_position_id !== "");
+      const sendMinimums = session?.role === "TA" && (isEdit || hasActiveOverride);
+      const putMinimums = () => api.put<unknown>(
         `${apiBase}/${productRefId}/approval-minimums`,
         {
           entries: minimumRows.map((r) => {
@@ -675,6 +666,24 @@ export function AddProductPanel({
         },
         token ?? undefined,
       );
+      if (sendMinimums) {
+        if (isEdit) {
+          await putMinimums();
+        } else {
+          // Create mode: the product already exists, so a failure here must not
+          // leave the panel open on a generic error (re-saving would duplicate it).
+          try {
+            await putMinimums();
+          } catch (minErr) {
+            const me = minErr as Error & { code?: string };
+            const coded = me.code ? t(`errors.${me.code}`) : "";
+            failedSteps.push({
+              step:   t("product.add.step_approval_minimums"),
+              detail: coded && coded !== `errors.${me.code}` ? coded : t("errors.INTERNAL_ERROR"),
+            });
+          }
+        }
+      }
 
       void qc.invalidateQueries({ queryKey: ["products"] });
       void qc.invalidateQueries({ queryKey: ["product-categories"] });
@@ -684,17 +693,29 @@ export function AddProductPanel({
       void qc.invalidateQueries({ queryKey: ["product-packaging-types"] });
       void qc.invalidateQueries({ queryKey: ["next-sku"] });
 
-      if (newOpeningLots) {
+      if (failedSteps.length > 0) {
+        // Product exists but a follow-up step failed: close and warn, naming the
+        // SKU, so the user does not re-save and duplicate the product.
+        resetForm(); setOpen(false); onClose?.();
+        notify({
+          kind: "warning",
+          message: t("product.add.partial_failure")
+            .replace("{{sku}}", productSku)
+            .replace("{{step}}", failedSteps.map((f) => f.step).join(" + "))
+            .replace("{{detail}}", failedSteps.map((f) => f.detail).join("; ")),
+        });
+      } else if (newOpeningLots) {
         // A batch-tracking conversion just ran — list the opening lots and
         // keep the panel open until the user closes it themselves.
         setOpeningLots(newOpeningLots);
       } else {
-        setToast(
-          isEdit
-            ? t("product.edit_success")
+        notify({
+          kind: "success",
+          message: isEdit
+            ? `${t("product.edit_success")} — ${productSku}`
             : t("product.add.success").replace("{{sku}}", productSku),
-        );
-        if (!createLotSettingsFailed) { resetForm(); setOpen(false); onClose?.(); }
+        });
+        resetForm(); setOpen(false); onClose?.();
       }
     } catch (err) {
       const e = err as Error & { status?: number; code?: string };
@@ -814,11 +835,7 @@ export function AddProductPanel({
               {gp.title}
             </div>
           )}
-          {panelError && (
-            <div role="alert" className="bg-red-50 border border-red-200 rounded px-3.5 py-2.5 text-sm text-red-600">
-              {panelError}
-            </div>
-          )}
+          <PanelError message={panelError} />
 
           {/* ── Product Image ────────────────────────────────────── */}
           <div>
@@ -1272,9 +1289,6 @@ export function AddProductPanel({
                       </div>
                     )}
 
-                    {lotSettingsError && (
-                      <p role="alert" className="text-xs text-red-600">{lotSettingsError}</p>
-                    )}
                   </>
                 )}
               </div>
@@ -1301,7 +1315,7 @@ export function AddProductPanel({
             {submitting && (
               <span className="w-3.5 h-3.5 rounded-full border-2 border-eth-gold/30 border-t-eth-gold animate-spin inline-block" />
             )}
-            {t("product.add.save")}
+            {submitting ? t("common.saving") : t("product.add.save")}
           </button>
         </div>
       </aside>
@@ -1330,7 +1344,6 @@ export function AddProductPanel({
         </div>
       )}
 
-      {toast && <Toast message={toast} onDismiss={() => setToast(null)} />}
     </>
   );
 }

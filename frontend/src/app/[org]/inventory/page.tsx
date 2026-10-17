@@ -260,7 +260,7 @@ export default function InventoryPage() {
 
   const { data: apiProducts = [] } = useQuery<ApiProduct[]>({
     queryKey: ["products", org],
-    queryFn:  () => api.get<ApiProduct[]>("/api/v1/products"),
+    queryFn:  () => api.get<ApiProduct[]>("/api/v1/products/"),
     enabled:  !!user && org !== SA_ORG_SLUG,
     staleTime: 0,
   });
@@ -282,7 +282,7 @@ export default function InventoryPage() {
           created_by?: string; created_by_authority_level?: number;
           created_at: string; is_self_approved?: boolean;
           lines: Array<{ product_id: string; product_name: string; quantity: string }>;
-        }>>("/api/v1/inventory/transfers")
+        }>>("/api/v1/inventory/transfers/")
         .then((rows) =>
           rows.map((r) => {
             const line = r.lines[0];

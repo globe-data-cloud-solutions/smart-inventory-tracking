@@ -7,7 +7,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
-import { api, IS_GATEWAY_MODE } from "@/lib/api";
+import { api, IS_GATEWAY_MODE, publicGet } from "@/lib/api";
 import { t } from "@/lib/i18n";
 import { formatCurrency } from "@/lib/utils";
 import { AuthLangSwitcher } from "@/components/features/auth/AuthLangSwitcher";
@@ -100,7 +100,7 @@ export default function SignupPage() {
     refetch: refetchCatalog,
   } = useQuery<PackagesListOut>({
     queryKey: ["public-packages"],
-    queryFn: () => api.get<PackagesListOut>("/api/v1/tenants/public/packages"),
+    queryFn: () => publicGet<PackagesListOut>("/api/v1/tenants/public/packages"),
     enabled: IS_GATEWAY_MODE,
     staleTime: 0,
   });
