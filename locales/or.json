@@ -203,6 +203,9 @@
       "save": "Meeshaa Olkaa'i",
       "cancel": "Haquu",
       "loading_sku": "Uumaa jira…",
+      "partial_failure": "Product {{sku}} created, but {{step}} was not saved: {{detail}}",
+      "step_lot_settings": "lot tracking settings",
+      "step_approval_minimums": "approval minimums",
       "error": {
         "duplicate_name": "Maqaa kana qabdu meeshaan dhaabbata kana keessatti duraan jiraatti.",
         "sku_cap_reached": "Daangaan SKU geenyera. Guddifachuuf bulchaa keessan quunnamaa.",

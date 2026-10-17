@@ -278,7 +278,6 @@ export function AddProductPanel({
   const [expiryTracking, setExpiryTracking]    = useState(false);
   const [dispatchStrategy, setDispatchStrategy] = useState<"FIFO" | "LIFO" | "FEFO">("FIFO");
   const [lotConfirmOpen, setLotConfirmOpen]     = useState(false);
-  const [lotSettingsError, setLotSettingsError] = useState("");
   const [openingLots, setOpeningLots]           = useState<OpeningLotItem[] | null>(null);
 
   const initialBatchTracking    = initialData?.batch_tracking ?? false;
@@ -523,7 +522,7 @@ export function AddProductPanel({
     setNameErr(""); setTcErr(""); setCatErr(""); setPanelError("");
     setMinimumRows(emptyMinimumRows());
     setBatchTrackingState(false); setExpiryTracking(false); setDispatchStrategy("FIFO");
-    setLotConfirmOpen(false); setLotSettingsError(""); setOpeningLots(null);
+    setLotConfirmOpen(false); setOpeningLots(null);
   };
 
   const openPanel  = () => { resetForm(); setOpen(true); };
@@ -602,7 +601,8 @@ export function AddProductPanel({
         effectiveStrategy !== initialDispatchStrategy;
 
       let newOpeningLots: OpeningLotItem[] | null = null;
-      let createLotSettingsFailed = false;
+      // Create mode only: steps that ran after the product POST succeeded and then failed.
+      const failedSteps: { step: string; detail: string }[] = [];
 
       if (isEdit && lotSettingsChanged) {
         // Let a failure here (e.g. 409 BATCH_TRACKING_IN_USE) fall through to the
@@ -625,23 +625,28 @@ export function AddProductPanel({
           );
         } catch (lotErr) {
           const le = lotErr as Error & { code?: string };
-          createLotSettingsFailed = true;
-          setLotSettingsError(
-            le.code && LOT_SETTINGS_ERROR_CODES.has(le.code) ? t(`errors.${le.code}`) : t("errors.INTERNAL_ERROR"),
-          );
+          failedSteps.push({
+            step:   t("product.add.step_lot_settings"),
+            detail: le.code && LOT_SETTINGS_ERROR_CODES.has(le.code) ? t(`errors.${le.code}`) : t("errors.INTERNAL_ERROR"),
+          });
         }
       }
 
-      // Save product-level approval minimums / overrides. All 6 transaction
-      // types are always sent (override_enabled=false for unconfigured
+      // Save product-level approval minimums / overrides. Only TA can manage
+      // them (product:manage_approval_minimums; the section renders for TA only),
+      // so any other role never sends this PUT — it would 403 after the product
+      // was already created. For TA: edit mode always sends (so clearing a
+      // previously configured override works); create mode sends only when at
+      // least one override is active, since a new product has nothing to clear.
+      // All 6 transaction types are sent (override_enabled=false for unconfigured
       // rows) so entries is never empty — this satisfies the backend's
-      // EMPTY_ENTRIES validation and ensures that disabling a previously
-      // configured override actually clears it (rather than silently
-      // skipping the PUT call). An override is only persisted if a position
+      // EMPTY_ENTRIES validation. An override is only persisted if a position
       // has been chosen — the backend's check_product_override() requires
       // approver_position_id IS NOT NULL, so a checked-but-unconfigured
       // override is sent as override_enabled=false here.
-      await api.put<unknown>(
+      const hasActiveOverride = minimumRows.some((r) => r.override_enabled && r.approver_position_id !== "");
+      const sendMinimums = session?.role === "TA" && (isEdit || hasActiveOverride);
+      const putMinimums = () => api.put<unknown>(
         `${apiBase}/${productRefId}/approval-minimums`,
         {
           entries: minimumRows.map((r) => {
@@ -661,6 +666,24 @@ export function AddProductPanel({
         },
         token ?? undefined,
       );
+      if (sendMinimums) {
+        if (isEdit) {
+          await putMinimums();
+        } else {
+          // Create mode: the product already exists, so a failure here must not
+          // leave the panel open on a generic error (re-saving would duplicate it).
+          try {
+            await putMinimums();
+          } catch (minErr) {
+            const me = minErr as Error & { code?: string };
+            const coded = me.code ? t(`errors.${me.code}`) : "";
+            failedSteps.push({
+              step:   t("product.add.step_approval_minimums"),
+              detail: coded && coded !== `errors.${me.code}` ? coded : t("errors.INTERNAL_ERROR"),
+            });
+          }
+        }
+      }
 
       void qc.invalidateQueries({ queryKey: ["products"] });
       void qc.invalidateQueries({ queryKey: ["product-categories"] });
@@ -670,7 +693,18 @@ export function AddProductPanel({
       void qc.invalidateQueries({ queryKey: ["product-packaging-types"] });
       void qc.invalidateQueries({ queryKey: ["next-sku"] });
 
-      if (newOpeningLots) {
+      if (failedSteps.length > 0) {
+        // Product exists but a follow-up step failed: close and warn, naming the
+        // SKU, so the user does not re-save and duplicate the product.
+        resetForm(); setOpen(false); onClose?.();
+        notify({
+          kind: "warning",
+          message: t("product.add.partial_failure")
+            .replace("{{sku}}", productSku)
+            .replace("{{step}}", failedSteps.map((f) => f.step).join(" + "))
+            .replace("{{detail}}", failedSteps.map((f) => f.detail).join("; ")),
+        });
+      } else if (newOpeningLots) {
         // A batch-tracking conversion just ran — list the opening lots and
         // keep the panel open until the user closes it themselves.
         setOpeningLots(newOpeningLots);
@@ -681,7 +715,7 @@ export function AddProductPanel({
             ? `${t("product.edit_success")} — ${productSku}`
             : t("product.add.success").replace("{{sku}}", productSku),
         });
-        if (!createLotSettingsFailed) { resetForm(); setOpen(false); onClose?.(); }
+        resetForm(); setOpen(false); onClose?.();
       }
     } catch (err) {
       const e = err as Error & { status?: number; code?: string };
@@ -1255,9 +1289,6 @@ export function AddProductPanel({
                       </div>
                     )}
 
-                    {lotSettingsError && (
-                      <p role="alert" className="text-xs text-red-600">{lotSettingsError}</p>
-                    )}
                   </>
                 )}
               </div>

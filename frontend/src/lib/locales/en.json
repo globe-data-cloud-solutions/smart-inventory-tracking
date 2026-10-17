@@ -214,6 +214,9 @@
       "save": "Save Product",
       "cancel": "Cancel",
       "loading_sku": "Generating…",
+      "partial_failure": "Product {{sku}} created, but {{step}} was not saved: {{detail}}",
+      "step_lot_settings": "lot tracking settings",
+      "step_approval_minimums": "approval minimums",
       "error": {
         "duplicate_name": "A product with this name already exists in this tenant.",
         "sku_cap_reached": "SKU limit reached. Please contact your administrator to upgrade the plan.",

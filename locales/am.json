@@ -208,6 +208,9 @@
       "save": "ምርቱን አስቀምጥ",
       "cancel": "ሰርዝ",
       "loading_sku": "እየፈጠረ ነው…",
+      "partial_failure": "ምርት {{sku}} ተፈጥሯል፣ ነገር ግን {{step}} አልተቀመጠም፦ {{detail}}",
+      "step_lot_settings": "የሎት ክትትል ቅንብሮች",
+      "step_approval_minimums": "ዝቅተኛ የማጽደቂያ ገደቦች",
       "error": {
         "duplicate_name": "በዚህ ስም ምርት አስቀድሞ በዚህ ድርጅት ውስጥ አለ።",
         "sku_cap_reached": "የSKU ወሰን ደርሷል። ለማሻሻል አስተዳዳሪዎን ያነጋግሩ።",

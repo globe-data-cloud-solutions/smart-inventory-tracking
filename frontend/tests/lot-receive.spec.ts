@@ -118,7 +118,8 @@ const BATCH_PRODUCT = {
   batch_tracking: true, expiry_tracking: true,
 };
 
-const PRODUCTS_PATH = "**/api/v1/products";
+// Both forms: the app calls the slashed collection root (769b492), older code did not.
+const PRODUCTS_PATH = "**/api/v1/products{,/}";
 const RECEIVE_PATH   = "**/api/v1/inventory/receive/";
 
 async function stubProducts(page: Page) {
@@ -250,10 +251,11 @@ for (const locale of ["en", "am"] as const) {
       expect(body.auto_lot).toBe(true);
       expect(body.lot_number).toBeUndefined();
 
-      await expect(panel.getByText(s.successLot("261012-001"))).toBeVisible({ timeout: 10_000 });
-
-      await page.waitForTimeout(4_000);
-      await expect(panelRoot(page, s.receiveTitle)).toBeVisible();
+      // New submit contract: the panel closes immediately and the global toast
+      // carries the lot number (no in-panel banner, no delayed close).
+      const toast = page.locator("[data-testid=global-toast]");
+      await expect(toast).toContainText(s.successLot("261012-001"), { timeout: 10_000 });
+      await expect(panelRoot(page, s.receiveTitle)).toHaveCount(0);
 
       if (locale === "am") {
         await expect(page.getByText(/receive_panel\./)).toHaveCount(0);
