@@ -66,6 +66,18 @@ resource "random_password" "origin_verify" {
   special = false
 }
 
+# Public name for the app. Must be a subdomain of a hosted zone in this account.
+locals {
+  app_domain = "smart.hplink.io"
+  app_zone   = "hplink.io"
+}
+
+module "custom_domain" {
+  source      = "../../modules/custom-domain"
+  domain_name = local.app_domain
+  zone_name   = local.app_zone
+}
+
 module "alb" {
   source               = "../../modules/alb"
   env                  = "dev"
@@ -81,6 +93,9 @@ module "cloudfront" {
   alb_dns_name         = module.alb.alb_dns_name
   origin_verify_secret = random_password.origin_verify.result
   allowed_cidrs        = var.allowed_cidrs # dev fails closed — set via TF_VAR_allowed_cidrs
+  aliases              = [local.app_domain]
+  acm_certificate_arn  = module.custom_domain.certificate_arn
+  route53_zone_id      = module.custom_domain.zone_id
 }
 
 module "ecs" {
@@ -93,7 +108,9 @@ module "ecs" {
   alb_security_group_id     = module.alb.alb_security_group_id
   gateway_target_group_arn  = module.alb.gateway_target_group_arn
   frontend_target_group_arn = module.alb.frontend_target_group_arn
-  cors_origins              = "https://${module.cloudfront.domain_name}"
+  # The custom domain is the browser origin; the CloudFront name stays allowed
+  # because the frontend image bakes NEXT_PUBLIC_API_URL to it (deploy.yml).
+  cors_origins = "https://${local.app_domain},https://${module.cloudfront.domain_name}"
 
   # order/logistics/analytics/notification/sync are stubs — add here to deploy.
   enabled_services = ["api-gateway", "auth-service", "tenant-service", "product-service",
@@ -113,7 +130,7 @@ module "ecs" {
   storage_bucket       = module.s3.bucket_name
   storage_bucket_arn   = module.s3.bucket_arn
   terms_version        = "2026-10"
-  app_base_url         = "https://${module.cloudfront.domain_name}"
+  app_base_url         = "https://${local.app_domain}"
 }
 
 module "observability" {
@@ -126,6 +143,7 @@ data "aws_caller_identity" "current" {}
 
 output "alb_dns_name" { value = module.alb.alb_dns_name }
 output "cloudfront_domain_name" { value = module.cloudfront.domain_name }
+output "app_domain_name" { value = local.app_domain }
 
 # No default — dev fails closed; set via TF_VAR_allowed_cidrs from the
 # GitHub repo variable DEV_ALLOWED_CIDRS.

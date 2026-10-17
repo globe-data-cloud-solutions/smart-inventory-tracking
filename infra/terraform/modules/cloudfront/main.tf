@@ -25,6 +25,7 @@ resource "aws_cloudfront_distribution" "this" {
   enabled      = true
   price_class  = "PriceClass_All"
   http_version = "http2and3"
+  aliases      = var.aliases
   # The allow-list function is IPv4-only; with IPv6 off, dual-stack browsers
   # fall back to IPv4 instead of being rejected.
   is_ipv6_enabled = length(var.allowed_cidrs) == 0
@@ -128,7 +129,50 @@ resource "aws_cloudfront_distribution" "this" {
     }
   }
 
-  viewer_certificate {
-    cloudfront_default_certificate = true
+  dynamic "viewer_certificate" {
+    for_each = var.acm_certificate_arn == "" ? [1] : []
+    content {
+      cloudfront_default_certificate = true
+    }
+  }
+
+  dynamic "viewer_certificate" {
+    for_each = var.acm_certificate_arn != "" ? [1] : []
+    content {
+      acm_certificate_arn      = var.acm_certificate_arn
+      ssl_support_method       = "sni-only"
+      minimum_protocol_version = "TLSv1.2_2021"
+    }
+  }
+}
+
+# Alias records point the custom hostname at this distribution. A record is
+# always created for IPv4; AAAA only when IPv6 is enabled (it is disabled
+# whenever allowed_cidrs is set, see is_ipv6_enabled above).
+resource "aws_route53_record" "alias_a" {
+  for_each = var.route53_zone_id != "" ? toset(var.aliases) : toset([])
+
+  zone_id = var.route53_zone_id
+  name    = each.value
+  type    = "A"
+
+  alias {
+    name                   = aws_cloudfront_distribution.this.domain_name
+    zone_id                = aws_cloudfront_distribution.this.hosted_zone_id
+    evaluate_target_health = false
+  }
+}
+
+resource "aws_route53_record" "alias_aaaa" {
+  for_each = var.route53_zone_id != "" && length(var.allowed_cidrs) == 0 ? toset(var.aliases) : toset([])
+
+  zone_id = var.route53_zone_id
+  name    = each.value
+  type    = "AAAA"
+
+  alias {
+    name                   = aws_cloudfront_distribution.this.domain_name
+    zone_id                = aws_cloudfront_distribution.this.hosted_zone_id
+    evaluate_target_health = false
   }
 }
