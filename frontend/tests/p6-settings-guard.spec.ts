@@ -215,7 +215,7 @@ for (const locale of ["en", "am"] as const) {
 // ── Coming-soon badges (gateway mode is inherent — no interception needed);
 // Opening Balance opener stays ENABLED (real route, P5 guard only) ─────────
 test.describe("Coming-soon screens + Opening Balance (real data, ACTIVE)", () => {
-  test("Bulk Import, Dispatch strategy, Stock Count submit show coming-soon; Opening Balance enabled", async ({ page }) => {
+  test("Bulk Import, Stock Count submit show coming-soon; Opening Balance enabled", async ({ page }) => {
     const taPassword = e2eTaPasswordOrSkip(test);
     const strings = localeStrings("en");
     const consoleErrors = collectConsoleErrors(page);
@@ -235,11 +235,6 @@ test.describe("Coming-soon screens + Opening Balance (real data, ACTIVE)", () =>
     const openingBalanceBtn = page.getByRole("button", { name: `+ ${strings.openingBalanceTitle}` });
     await expect(openingBalanceBtn).toBeVisible({ timeout: 10_000 });
     await expect(openingBalanceBtn).toBeEnabled();
-
-    // ── Dispatch strategy column header badge ──
-    await page.goto(`${BASE_URL}/${E2E_TA_SLUG}/dispatch`);
-    await page.waitForLoadState("networkidle");
-    await expect(page.getByText(strings.comingSoonBadge).first()).toBeVisible({ timeout: 10_000 });
 
     // ── Stock count: start a session (purely local state, no API call —
     // confirmed by the P5 fork), then check Submit Session's coming-soon ──

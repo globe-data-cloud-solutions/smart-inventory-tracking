@@ -1,3 +1,6 @@
+// ARCHIVED session 18: pre-FEFO Dispatch mock-up (Batch Tracking hardcoded false, strategies from a demo-only BFF).
+// Replaced by: product-form lot settings (dispatch strategy) and the Lots/Overrides pages.
+// Do not import; kept for history only.
 "use client";
 
 import { useParams } from "next/navigation";
