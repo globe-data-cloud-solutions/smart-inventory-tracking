@@ -79,6 +79,18 @@ async def _insert(conn: asyncpg.Connection, table: str, row: dict) -> None:
     )
 
 
+async def _resolve_price(conn: asyncpg.Connection, row: dict) -> dict:
+    # package_prices ids differ between databases (the local one has accumulated
+    # price history), so resolve the subscription's price in this database by
+    # tier, billing period and currency. price_id is nullable: no match = NULL.
+    price_id = await conn.fetchval(
+        "SELECT id FROM package_prices WHERE tier = $1 AND billing_period = $2 AND currency = $3 "
+        "ORDER BY effective_from DESC LIMIT 1",
+        row["tier"], row["billing_period"], row["currency"],
+    )
+    return {**row, "price_id": str(price_id) if price_id else None}
+
+
 async def main() -> None:
     if os.environ.get("SEED_ENABLED") != "true":
         print("seed_dev_sample: SEED_ENABLED is not 'true' — nothing to do.")
@@ -125,6 +137,8 @@ async def main() -> None:
                             continue
                         if table == "users":
                             row = {**row, "password_hash": _hash(sample_password)}
+                        if table == "subscriptions":
+                            row = await _resolve_price(conn, row)
                         await _insert(conn, table, row)
             print(f"seed_dev_sample: created tenant {name}.")
     finally:
