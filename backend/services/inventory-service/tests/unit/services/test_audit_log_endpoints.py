@@ -18,12 +18,28 @@ Covers:
 """
 from __future__ import annotations
 
+from dataclasses import dataclass
+from typing import Optional
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from httpx import AsyncClient
 
 from shared.permissions.middleware import PermissionResult
+
+
+# Local stub: `tests.conftest` resolves to whichever service's tests package is imported first
+# in a full `pytest backend/` run, so it cannot be imported by name here.
+TENANT_A = "10000000-0000-0000-0000-000000000001"
+
+
+@dataclass
+class _StubUser:
+    user_id: str
+    tenant_id: str
+    role: str
+    warehouse_id: Optional[str] = None
+    region_id: Optional[str] = None
 
 
 def _fake_execute_factory():
@@ -184,8 +200,6 @@ async def _get_as(client, user, subtree, captured, query="?include_system=true")
 class TestAuditLogTransferDiscrepancyRows:
 
     async def test_source_facility_wm_sees_discrepancy_row(self, client) -> None:
-        from tests.conftest import TENANT_A, _StubUser
-
         captured: list = []
         wm = _StubUser("u-src", TENANT_A, "WM", warehouse_id=SRC_WH)
         resp = await _get_as(client, wm, {SRC_WH}, captured)
@@ -200,16 +214,12 @@ class TestAuditLogTransferDiscrepancyRows:
         assert params["node_ids"] == [SRC_WH]
 
     async def test_destination_facility_wm_sees_discrepancy_row(self, client) -> None:
-        from tests.conftest import TENANT_A, _StubUser
-
         wm = _StubUser("u-dst", TENANT_A, "WM", warehouse_id=DST_WH)
         resp = await _get_as(client, wm, {DST_WH}, [])
 
         assert len(resp.json()["data"]) == 1
 
     async def test_unrelated_facility_wm_does_not_see_it(self, client) -> None:
-        from tests.conftest import TENANT_A, _StubUser
-
         captured: list = []
         wm = _StubUser("u-other", TENANT_A, "WM", warehouse_id=OTHER_WH)
         resp = await _get_as(client, wm, {OTHER_WH}, captured)
