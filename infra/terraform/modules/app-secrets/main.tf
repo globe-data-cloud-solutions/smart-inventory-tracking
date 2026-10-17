@@ -16,10 +16,13 @@ resource "random_password" "runtime_db" {
 
 # Dev sample-data passwords (seed_enabled only). Read by the seed ECS task to
 # hash the SA account and sample tenant users; nothing else reads them.
+# Bump seed_sa_rotation to generate a new SA password. The seed then rotates the
+# account only when the deploy runs with rotate_seed_sa=true.
 resource "random_password" "seed_sa" {
   count   = var.seed_enabled ? 1 : 0
   length  = 32
   special = false
+  keepers = { rotation = var.seed_sa_rotation }
 }
 
 resource "random_password" "seed_sample" {

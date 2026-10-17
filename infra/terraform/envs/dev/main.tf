@@ -106,6 +106,7 @@ module "app_secrets" {
   redis_host           = module.elasticache.primary_address
   recovery_window_days = 0
   seed_enabled         = true # dev sample tenants + SA account (see seed ECS task)
+  seed_sa_rotation     = "2"  # bumped to rotate the SA password (exposed in chat)
 }
 
 # Inbound DB and Redis access from the ECS tasks. Kept here, not in the

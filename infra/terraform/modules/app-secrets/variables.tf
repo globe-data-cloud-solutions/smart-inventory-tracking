@@ -34,3 +34,9 @@ variable "seed_enabled" {
   type    = bool
   default = false
 }
+
+# Rotation counter for the SA password (see random_password.seed_sa).
+variable "seed_sa_rotation" {
+  type    = string
+  default = "1"
+}

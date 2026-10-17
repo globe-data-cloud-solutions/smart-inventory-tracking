@@ -29,12 +29,21 @@ on:
         required: true
         type: choice
         options: [dev, stg, prd]
+      rotate_seed_sa:
+        description: 'Dev only: delete and re-create the SA account from the current seed secret'
+        required: false
+        type: boolean
+        default: false
   # Called by lifecycle.yml after infrastructure apply.
   workflow_call:
     inputs:
       environment:
         required: true
         type: string
+      rotate_seed_sa:
+        required: false
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -158,6 +167,7 @@ jobs:
       - name: Bootstrap runtime DB role, migrate, and seed dev sample data (one-off ECS tasks)
         env:
           ENV: ${{ needs.setup.outputs.env }}
+          ROTATE_SEED_SA: ${{ inputs.rotate_seed_sa || false }}
         run: |
           NETCFG="$(aws ecs describe-services --cluster "smart-$ENV" --services "smart-$ENV-api-gateway"             --query 'services[0].networkConfiguration.awsvpcConfiguration' --output json)"
           if [ -z "$NETCFG" ] || [ "$NETCFG" = "null" ]; then
@@ -181,7 +191,14 @@ jobs:
               exit 1
             fi
 
-            TASK_ARN="$(aws ecs run-task               --cluster "smart-$ENV"               --task-definition "smart-$ENV-$FAMILY"               --launch-type FARGATE               --network-configuration "awsvpcConfiguration={subnets=[$SUBNETS],securityGroups=[$SGS],assignPublicIp=DISABLED}"               --query 'tasks[0].taskArn' --output text)"
+            # Rotation is passed to the seed task only when requested.
+            OVERRIDES=""
+            if [ "$FAMILY" = "seed" ] && [ "$ROTATE_SEED_SA" = "true" ]; then
+              OVERRIDES='{"containerOverrides":[{"name":"seed","environment":[{"name":"SEED_ROTATE_SA","value":"true"}]}]}'
+              echo "SA rotation requested for the seed task."
+            fi
+
+            TASK_ARN="$(aws ecs run-task               --cluster "smart-$ENV"               --task-definition "smart-$ENV-$FAMILY"               --launch-type FARGATE               --network-configuration "awsvpcConfiguration={subnets=[$SUBNETS],securityGroups=[$SGS],assignPublicIp=DISABLED}"               ${OVERRIDES:+--overrides "$OVERRIDES"}               --query 'tasks[0].taskArn' --output text)"
             echo "$FAMILY task started: $TASK_ARN"
 
             aws ecs wait tasks-stopped --cluster "smart-$ENV" --tasks "$TASK_ARN"

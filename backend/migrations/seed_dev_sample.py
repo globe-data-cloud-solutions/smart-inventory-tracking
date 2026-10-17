@@ -4,7 +4,7 @@ Run by the seed ECS task after migrations, on every dev deploy. It replays
 backend/migrations/seed/dev_sample_tenants.json, which is exported from the
 development database by scripts/export_dev_sample_fixture.py.
 
-First creation only:
+First creation only (except SA rotation, below):
   - each tenant is created only if its id does not exist yet, in its own
     transaction, so a re-deploy never touches an existing tenant;
   - the SA account is created only if its email does not exist yet.
@@ -16,6 +16,8 @@ Passwords come from Terraform-managed secrets (never from the fixture):
 
 Environment:
   SEED_ENABLED=true     required; anything else exits without writing
+  SEED_ROTATE_SA=true   delete and re-create the SA account from the current
+                        secret (rotation); off by default
   DATABASE_URL          runtime role (smart_runtime), SQLAlchemy or libpq form
   SEED_SA_PASSWORD, SEED_SAMPLE_PASSWORD
 """
@@ -77,15 +79,19 @@ async def main() -> None:
 
     conn = await asyncpg.connect(_libpq_dsn(_required("DATABASE_URL")))
     try:
-        # SA account: tenant_id IS NULL, identified by email.
+        # SA account: tenant_id IS NULL, identified by email. Rotation (see
+        # SEED_ROTATE_SA) deletes it and re-creates it from the current secret,
+        # in one transaction, so there is never a window without the account.
         sa_row = next(r for r in fixture["users"] if r["email"] == SA_EMAIL)
-        if await conn.fetchval("SELECT 1 FROM users WHERE email = $1", SA_EMAIL):
-            print(f"seed_dev_sample: {SA_EMAIL} exists — skipped.")
-        else:
-            async with conn.transaction():
-                sa_row = {**sa_row, "password_hash": _hash(sa_password)}
-                await _insert(conn, "users", sa_row)
-            print(f"seed_dev_sample: created {SA_EMAIL}.")
+        rotate = os.environ.get("SEED_ROTATE_SA") == "true"
+        async with conn.transaction():
+            if rotate:
+                await conn.execute("DELETE FROM users WHERE email = $1", SA_EMAIL)
+            if await conn.fetchval("SELECT 1 FROM users WHERE email = $1", SA_EMAIL):
+                print(f"seed_dev_sample: {SA_EMAIL} exists — skipped.")
+            else:
+                await _insert(conn, "users", {**sa_row, "password_hash": _hash(sa_password)})
+                print(f"seed_dev_sample: {'rotated and ' if rotate else ''}created {SA_EMAIL}.")
 
         for tenant in fixture["tenants"]:
             tid = tenant["id"]
