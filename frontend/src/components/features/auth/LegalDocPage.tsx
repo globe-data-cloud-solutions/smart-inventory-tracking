@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { api, IS_GATEWAY_MODE } from "@/lib/api";
+import { IS_GATEWAY_MODE, publicGet } from "@/lib/api";
 import { t } from "@/lib/i18n";
 import { AuthLangSwitcher } from "@/components/features/auth/AuthLangSwitcher";
 import { DocumentRenderer } from "@/components/features/help/DocumentRenderer";
@@ -26,7 +26,7 @@ export function LegalDocPage({ kind }: { kind: "terms" | "privacy" }) {
 
   const { data: catalog } = useQuery<PackagesListOut>({
     queryKey: ["public-packages-terms-version"],
-    queryFn: () => api.get<PackagesListOut>("/api/v1/tenants/public/packages"),
+    queryFn: () => publicGet<PackagesListOut>("/api/v1/tenants/public/packages"),
     enabled: IS_GATEWAY_MODE,
     staleTime: 60_000,
   });

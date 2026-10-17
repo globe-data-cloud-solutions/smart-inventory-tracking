@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { getSession } from "@/lib/demo-auth";
 import { t, getCurrentLocale } from "@/lib/i18n";
-import { api } from "@/lib/api";
+import { api, publicGet } from "@/lib/api";
 import { ContactInfo } from "@/lib/billing-types";
 import { ContactDetailsView } from "@/components/features/auth/ContactDetailsView";
 
@@ -60,7 +60,7 @@ function PlatformContactEditor() {
   const qc = useQueryClient();
   const { data, isLoading, isError } = useQuery<ContactInfo>({
     queryKey: ["public-contact"],
-    queryFn: () => api.get<ContactInfo>("/api/v1/tenants/public/contact"),
+    queryFn: () => publicGet<ContactInfo>("/api/v1/tenants/public/contact"),
     staleTime: 0,
   });
 

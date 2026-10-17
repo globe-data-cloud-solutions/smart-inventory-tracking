@@ -48,9 +48,33 @@ function _isJwtExpiringSoon(token: string, windowSeconds = 300): boolean {
   return Date.now() / 1000 >= exp - windowSeconds;
 }
 
+/**
+ * Routes under app/(auth)/ — reachable without a session. A session-expiry redirect
+ * must never fire from, or carry as `from`, one of these (it loops on /login).
+ */
+export const AUTH_ROUTES = [
+  "login",
+  "signup",
+  "forgot-password",
+  "reset-password",
+  "verify-email",
+  "accept-terms",
+  "change-password",
+  "getting-started",
+  "terms",
+  "privacy",
+  "contact",
+] as const;
+
+function _isAuthPath(pathname: string): boolean {
+  const first = pathname.split("/").filter(Boolean)[0];
+  return !!first && (AUTH_ROUTES as readonly string[]).includes(first);
+}
+
 /** Redirect to /login preserving the current path and signalling session expiry. */
 function _redirectToLogin(): void {
   if (typeof window === "undefined") return;
+  if (_isAuthPath(window.location.pathname)) return;
   const from = window.location.pathname + window.location.search;
   const params = new URLSearchParams({ reason: "session_expired", from });
   window.location.href = `/login?${params.toString()}`;
@@ -92,6 +116,7 @@ async function request<T>(
 
   // Pre-flight: redirect before sending if the token is expired or about to expire.
   if (bearer && _isJwtExpiringSoon(bearer)) {
+    window.localStorage.removeItem("smart_demo_session");
     _redirectToLogin();
     return new Promise<T>(() => { /* navigation pending */ });
   }
@@ -204,6 +229,30 @@ export const api = {
   patch:  <T>(path: string, body: unknown, token?: string) => request<T>("PATCH",  path, body, token),
   delete: <T>(path: string, token?: string) => request<T>("DELETE", path, undefined, token),
 };
+
+/**
+ * GET a public (unauthenticated) endpoint that returns the {success, data} envelope.
+ * Sends only Content-Type — no JWT, tenant slug or role headers — and has no expiry
+ * check or login redirect, so it is safe on /login and other auth routes even with a
+ * stale stored session.
+ */
+export async function publicGet<T>(path: string): Promise<T> {
+  const res = await fetch(`${BASE_URL}${path}`, {
+    method: "GET",
+    headers: { "Content-Type": "application/json" },
+  });
+  const json = (await res.json().catch(() => null)) as ApiResponse<T> | ApiError | null;
+  if (!res.ok || !json || !json.success) {
+    const raw = json as unknown as { error?: { code?: string; message?: string }; detail?: { code?: string; message?: string } | string } | null;
+    const det = typeof raw?.detail === "object" ? raw.detail : null;
+    const msg = raw?.error?.message ?? det?.message ?? (typeof raw?.detail === "string" ? raw.detail : `HTTP ${res.status}`);
+    const err = new Error(msg) as Error & { status: number; code: string };
+    err.status = res.status;
+    err.code = raw?.error?.code ?? det?.code ?? "";
+    throw err;
+  }
+  return (json as ApiResponse<T>).data;
+}
 
 /**
  * POST to an endpoint that returns a raw JSON body (not the {success, data, ...}
