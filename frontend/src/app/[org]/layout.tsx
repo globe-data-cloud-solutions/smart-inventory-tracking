@@ -127,10 +127,15 @@ function NotificationBell({ org }: { org: string }) {
                       <span className="text-base shrink-0 mt-0.5">🔔</span>
                       <div>
                         <p className="font-semibold text-sm text-gray-800 m-0">
-                          Auto-approved: {a.transfer_type} transfer {a.transfer_ref}
+                          {t("common.auto_approved_transfer")
+                            .replace("{type}", a.transfer_type)
+                            .replace("{ref}", a.transfer_ref)}
                         </p>
                         <p className="text-xs text-gray-500 m-0 mt-0.5">
-                          {a.quantity.toLocaleString()} units {a.product_name} — {a.warehouse_name}
+                          {t("common.units_summary")
+                            .replace("{qty}", a.quantity.toLocaleString())
+                            .replace("{product}", a.product_name)
+                            .replace("{warehouse}", a.warehouse_name)}
                         </p>
                         <p className="text-xs text-blue-600 m-0 mt-0.5 font-medium">{a.reason}</p>
                       </div>
@@ -313,11 +318,11 @@ function Sidebar({ user, org, tenantName, plan, onClose, isOpen }: {
               <span
                 key={idx}
                 className="flex items-center gap-2.5 px-2.5 py-2 rounded text-sm font-medium mb-px text-white/25 border-l-[3px] border-transparent cursor-not-allowed select-none"
-                title="Coming soon"
+                title={t("common.coming_soon_badge")}
               >
                 <span className="text-[15px] leading-none shrink-0 opacity-40">{item.icon}</span>
                 {t(item.label)}
-                <span className="ml-auto text-[9px] font-bold uppercase tracking-wide text-white/20">Soon</span>
+                <span className="ml-auto text-[9px] font-bold uppercase tracking-wide text-white/20">{t("nav.soon_badge")}</span>
               </span>
             );
           }
@@ -326,11 +331,11 @@ function Sidebar({ user, org, tenantName, plan, onClose, isOpen }: {
               <span
                 key={idx}
                 className="flex items-center gap-2.5 px-2.5 py-2 rounded text-sm font-medium mb-px text-white/25 border-l-[3px] border-transparent cursor-not-allowed select-none"
-                title={`Upgrade to unlock ${item.planFlag}`}
+                title={t("nav.upgrade_to_unlock").replace("{feature}", t(`sa.feature_${item.planFlag}`))}
               >
                 <span className="text-[15px] leading-none shrink-0 opacity-40">{item.icon}</span>
                 {t(item.label)}
-                <span className="ml-auto text-[9px] font-bold uppercase tracking-wide bg-amber-500/20 text-amber-300 px-1.5 py-0.5 rounded">Upgrade</span>
+                <span className="ml-auto text-[9px] font-bold uppercase tracking-wide bg-amber-500/20 text-amber-300 px-1.5 py-0.5 rounded">{t("nav.upgrade_badge")}</span>
               </span>
             );
           }
@@ -644,7 +649,7 @@ export default function OrgLayout({ children }: { children: React.ReactNode }) {
           <button
             onClick={() => setSidebarOpen(prev => !prev)}
             className="md:hidden flex flex-col justify-center items-center w-9 h-9 gap-[5px] rounded border-0 bg-transparent cursor-pointer shrink-0 hover:bg-white/[0.08] transition-all"
-            aria-label="Toggle menu"
+            aria-label={t("nav.toggle_menu")}
           >
             <span className={`block w-5 h-0.5 bg-white/70 rounded transition-all duration-200 ${sidebarOpen ? "rotate-45 translate-y-[7px]" : ""}`} />
             <span className={`block w-5 h-0.5 bg-white/70 rounded transition-all duration-200 ${sidebarOpen ? "opacity-0" : ""}`} />
@@ -793,41 +798,41 @@ type NavItem =
   | { type: "link"; icon: string; label: string; page: string; roles?: string[]; disabled?: boolean; planFlag?: string; badge?: "renewalsOpenCount" };
 
 const SA_NAV: NavItem[] = [
-  { type: "section", label: "Overview" },
-  { type: "link", icon: "🏠", label: "Dashboard", page: "dashboard" },
+  { type: "section", label: "nav.section_overview" },
+  { type: "link", icon: "🏠", label: "nav.dashboard", page: "dashboard" },
   { type: "link", icon: "🔔", label: "sa.tab_renewals", page: "dashboard?tab=renewals", badge: "renewalsOpenCount" },
-  { type: "section", label: "System" },
+  { type: "section", label: "nav.section_system" },
   { type: "link", icon: "💳", label: "sa.nav_plans_pricing", page: "settings/plans" },
   { type: "link", icon: "☎️", label: "sa.nav_contact", page: "settings/contact" },
   // These pages are planned but not yet built — links are intentionally
   // disabled until the pages exist. Do not remove; placeholder only.
-  { type: "link", icon: "🔐", label: "Permissions", page: "dashboard", disabled: true },
-  { type: "link", icon: "📋", label: "Audit Log",   page: "dashboard", disabled: true },
-  { type: "link", icon: "❓", label: "nav.help",    page: "help" },
+  { type: "link", icon: "🔐", label: "nav.permissions", page: "dashboard", disabled: true },
+  { type: "link", icon: "📋", label: "nav.audit",       page: "dashboard", disabled: true },
+  { type: "link", icon: "❓", label: "nav.help",        page: "help" },
 ];
 
 // NAV ORDER: Do not change without updating PRD-APPENDIX.md §A — confirmed structure.
 // All labels are i18n keys rendered via t(item.label) — never hardcode English in JSX.
 const TENANT_NAV: NavItem[] = [
-  { type: "section", label: "Inventory" },
-  { type: "link", icon: "🏠", label: "Dashboard",       page: "dashboard"         },
-  { type: "link", icon: "🏭", label: "Products",        page: "products"          },
-  { type: "link", icon: "🏗️", label: "Warehouses",      page: "warehouses"        },
-  { type: "link", icon: "🔍", label: "Lot Traceability",page: "lots"              },
-  { type: "section", label: "Operations" },
-  { type: "link", icon: "📦", label: "Inventory",       page: "inventory"         },
-  { type: "link", icon: "🔄", label: "Transfers",       page: "transfers"         },
-  { type: "link", icon: "📋", label: "Adjustments",     page: "adjustments"       },
-  { type: "link", icon: "🔢", label: "Stock Count",     page: "stock-count"       },
-  { type: "section", label: "Reports" },
-  { type: "link", icon: "📈", label: "Analytics",       page: "analytics",        planFlag: "AI_ANALYTICS" },
-  { type: "link", icon: "📊", label: "Reports",         page: "reports"           },
-  { type: "link", icon: "📋", label: "Audit Log",       page: "audit-log"         },
+  { type: "section", label: "nav.section_inventory" },
+  { type: "link", icon: "🏠", label: "nav.dashboard",        page: "dashboard"         },
+  { type: "link", icon: "🏭", label: "nav.products",         page: "products"          },
+  { type: "link", icon: "🏗️", label: "nav.warehouses",       page: "warehouses"        },
+  { type: "link", icon: "🔍", label: "nav.lot_traceability", page: "lots"              },
+  { type: "section", label: "nav.section_operations" },
+  { type: "link", icon: "📦", label: "nav.inventory",        page: "inventory"         },
+  { type: "link", icon: "🔄", label: "nav.transfers",        page: "transfers"         },
+  { type: "link", icon: "📋", label: "nav.adjustments",      page: "adjustments"       },
+  { type: "link", icon: "🔢", label: "nav.stock_count",      page: "stock-count"       },
+  { type: "section", label: "nav.section_reports" },
+  { type: "link", icon: "📈", label: "nav.analytics",        page: "analytics",        planFlag: "AI_ANALYTICS" },
+  { type: "link", icon: "📊", label: "nav.reports",          page: "reports"           },
+  { type: "link", icon: "📋", label: "nav.audit",            page: "audit-log"         },
   { type: "link", icon: "📜", label: "nav.approval_policies", page: "approval-policies" },
-  { type: "section", label: "Settings", roles: ["SA", "TA"] },
-  { type: "link", icon: "🏢", label: "Org Setup",       page: "settings/org-setup",  roles: ["SA", "TA"] },
-  { type: "link", icon: "👥", label: "Personnel",       page: "settings/personnel",  roles: ["SA", "TA"] },
-  { type: "link", icon: "⚙️",  label: "Tenant Admin",   page: "settings/tenant-admin", roles: ["TA"] },
+  { type: "section", label: "nav.settings", roles: ["SA", "TA"] },
+  { type: "link", icon: "🏢", label: "nav.org_setup",        page: "settings/org-setup",  roles: ["SA", "TA"] },
+  { type: "link", icon: "👥", label: "nav.personnel",        page: "settings/personnel",  roles: ["SA", "TA"] },
+  { type: "link", icon: "⚙️",  label: "nav.tenant_admin",    page: "settings/tenant-admin", roles: ["TA"] },
   { type: "section", label: "nav.help_section" },
-  { type: "link", icon: "❓", label: "nav.help",       page: "help" },
+  { type: "link", icon: "❓", label: "nav.help",            page: "help" },
 ];

@@ -10,7 +10,26 @@
     "audit": "የኦዲት ምዝግብ ማስታወሻ",
     "approval_policies": "የማረጋገጫ ፖሊሲዎች",
     "help": "እገዛ",
-    "help_section": "እገዛ"
+    "help_section": "እገዛ",
+    "section_overview": "አጠቃላይ እይታ",
+    "section_system": "ስርዓት",
+    "section_inventory": "ክምችት",
+    "section_operations": "ክንዋኔዎች",
+    "section_reports": "ሪፖርቶች",
+    "dashboard": "ዳሽቦርድ",
+    "warehouses": "መጋዘኖች",
+    "lot_traceability": "የሎት መከታተያ",
+    "transfers": "ዝውውሮች",
+    "adjustments": "ማስተካከያዎች",
+    "stock_count": "የክምችት ቆጠራ",
+    "permissions": "ፈቃዶች",
+    "org_setup": "የድርጅት ማዋቀር",
+    "personnel": "ሰራተኞች",
+    "tenant_admin": "የተከራይ አስተዳዳሪ",
+    "soon_badge": "በቅርቡ",
+    "upgrade_badge": "ያሻሽሉ",
+    "upgrade_to_unlock": "{feature}ን ለመክፈት ያሻሽሉ",
+    "toggle_menu": "ምናሌ ቀያይር"
   },
   "inventory": {
     "balance": {
@@ -167,7 +186,9 @@
     "rate_limited": "በጣም ብዙ ሙከራዎች። እባክዎ ቆይተው ይሞክሩ።",
     "too_many_requests": "በጣም ብዙ ጥያቄዎች። እባክዎ ትንሽ ቆይተው እንደገና ይሞክሩ።",
     "coming_soon_badge": "በቅርቡ ይመጣል",
-    "coming_soon_hint": "ይህ ባህሪ እስካሁን አይገኝም።"
+    "coming_soon_hint": "ይህ ባህሪ እስካሁን አይገኝም።",
+    "auto_approved_transfer": "በራስ-ሰር ተፈቅዷል፦ {type} ዝውውር {ref}",
+    "units_summary": "{qty} ክፍሎች {product} — {warehouse}"
   },
   "not_found": {
     "heading": "ገጽ አልተገኘም",

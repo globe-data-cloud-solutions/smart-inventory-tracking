@@ -10,7 +10,26 @@
     "audit": "Audit Log",
     "approval_policies": "Approval Policies",
     "help": "Help",
-    "help_section": "Help"
+    "help_section": "Help",
+    "section_overview": "Overview",
+    "section_system": "System",
+    "section_inventory": "Inventory",
+    "section_operations": "Operations",
+    "section_reports": "Reports",
+    "dashboard": "Dashboard",
+    "warehouses": "Warehouses",
+    "lot_traceability": "Lot Traceability",
+    "transfers": "Transfers",
+    "adjustments": "Adjustments",
+    "stock_count": "Stock Count",
+    "permissions": "Permissions",
+    "org_setup": "Org Setup",
+    "personnel": "Personnel",
+    "tenant_admin": "Tenant Admin",
+    "soon_badge": "Soon",
+    "upgrade_badge": "Upgrade",
+    "upgrade_to_unlock": "Upgrade to unlock {feature}",
+    "toggle_menu": "Toggle menu"
   },
   "inventory": {
     "warehouse": "Warehouse",
@@ -179,7 +198,9 @@
     "rate_limited": "Too many attempts. Please try again later.",
     "too_many_requests": "Too many requests. Please wait a moment and try again.",
     "coming_soon_badge": "Coming soon",
-    "coming_soon_hint": "This feature is not available yet."
+    "coming_soon_hint": "This feature is not available yet.",
+    "auto_approved_transfer": "Auto-approved: {type} transfer {ref}",
+    "units_summary": "{qty} units {product} — {warehouse}"
   },
   "product": {
     "add": {
