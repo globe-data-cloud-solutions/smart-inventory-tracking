@@ -77,6 +77,11 @@ function localeStrings(locale: "en" | "am") {
     limitReachedWarehouses: d.plan.limit_reached.warehouses as string,
     reactivateBtn: d.org_setup.reactivate_node as string,
     levelApprovalOnlyHint: d.org_setup.level_approval_only_hint as string,
+    tabTree: d.org_setup.tab_tree as string,
+    addRootNode: d.org_setup.add_root_node as string,
+    addChildNode: d.org_setup.add_child_node as string,
+    nodeNamePlaceholder: d.org_setup.node_form_name_placeholder as string,
+    saveNode: d.org_setup.save_node as string,
   };
 }
 
@@ -117,10 +122,10 @@ function rootNode(overrides: Partial<Record<string, unknown>> = {}) {
   };
 }
 
-async function gotoOrgTree(page: Page) {
+async function gotoOrgTree(page: Page, tabTree: string) {
   await page.goto(`${BASE_URL}/${E2E_TA_SLUG}/settings/org-setup`);
   await page.waitForLoadState("networkidle");
-  await page.getByRole("button", { name: "Organisation Tree" }).click();
+  await page.getByRole("button", { name: tabTree }).click();
   await page.waitForLoadState("networkidle");
 }
 
@@ -172,17 +177,17 @@ for (const locale of ["en", "am"] as const) {
 
       await page.addInitScript((loc) => window.localStorage.setItem("locale", loc), locale);
       await login(page, E2E_TA_EMAIL, taPassword);
-      await gotoOrgTree(page);
+      await gotoOrgTree(page, strings.tabTree);
 
       await expect(page.getByText(/2.*3.*STARTER|2.*3.*Starter/i).first()).toBeVisible({ timeout: 10_000 });
       await expect(page.getByText(strings.warehouseNote)).toBeVisible();
 
-      await page.getByRole("button", { name: /Add root node/i }).click();
-      await page.getByPlaceholder(/North Addis Warehouse/i).fill("New Warehouse");
+      await page.getByRole("button", { name: strings.addRootNode }).click();
+      await page.getByPlaceholder(strings.nodeNamePlaceholder).fill("New Warehouse");
       const holdsStockCheckbox = page.getByText(strings.isStockHolding).locator("xpath=..").locator('input[type="checkbox"]');
       await expect(holdsStockCheckbox).toBeChecked();
 
-      await page.getByRole("button", { name: /Save Node/i }).click();
+      await page.getByRole("button", { name: strings.saveNode }).click();
       await expect.poll(() => nodeCreated).toBe(true);
 
       await expect(page.getByText(/3.*3.*STARTER|3.*3.*Starter/i).first()).toBeVisible({ timeout: 10_000 });
@@ -221,27 +226,27 @@ for (const locale of ["en", "am"] as const) {
 
       await page.addInitScript((loc) => window.localStorage.setItem("locale", loc), locale);
       await login(page, E2E_TA_EMAIL, taPassword);
-      await gotoOrgTree(page);
+      await gotoOrgTree(page, strings.tabTree);
 
       // Persistent cap notice at the top of the tab.
       await expect(page.getByText(strings.capNotice)).toBeVisible({ timeout: 10_000 });
 
       // Add a non-stock (approval-only) node — never blocked by the cap.
-      await page.getByRole("button", { name: /Add root node/i }).click();
-      await page.getByPlaceholder(/North Addis Warehouse/i).fill("Approval Node");
+      await page.getByRole("button", { name: strings.addRootNode }).click();
+      await page.getByPlaceholder(strings.nodeNamePlaceholder).fill("Approval Node");
       const holdsStockCheckbox = page.getByText(strings.isStockHolding).locator("xpath=..").locator('input[type="checkbox"]');
       await holdsStockCheckbox.uncheck();
-      const saveBtn = page.getByRole("button", { name: /Save Node/i });
+      const saveBtn = page.getByRole("button", { name: strings.saveNode });
       await expect(saveBtn).toBeEnabled();
       await saveBtn.click();
       await expect.poll(() => nonStockWriteSent).toBe(true);
 
       // Add a stock-holding node — blocked with the inline notice.
-      await page.getByRole("button", { name: /Add root node/i }).click();
-      await page.getByPlaceholder(/North Addis Warehouse/i).fill("Stock Node");
+      await page.getByRole("button", { name: strings.addRootNode }).click();
+      await page.getByPlaceholder(strings.nodeNamePlaceholder).fill("Stock Node");
       const holdsStockCheckbox2 = page.getByText(strings.isStockHolding).locator("xpath=..").locator('input[type="checkbox"]');
       await expect(holdsStockCheckbox2).toBeChecked();
-      const saveBtn2 = page.getByRole("button", { name: /Save Node/i });
+      const saveBtn2 = page.getByRole("button", { name: strings.saveNode });
       await expect(saveBtn2).toBeDisabled();
       await expect(page.getByText(strings.capNotice).last()).toBeVisible();
       await expect(page.getByRole("button", { name: strings.comparePlans }).last()).toBeVisible();
@@ -293,7 +298,7 @@ for (const locale of ["en", "am"] as const) {
 
       await page.addInitScript((loc) => window.localStorage.setItem("locale", loc), locale);
       await login(page, E2E_TA_EMAIL, taPassword);
-      await gotoOrgTree(page);
+      await gotoOrgTree(page, strings.tabTree);
 
       await page.getByRole("button", { name: strings.reactivateBtn }).click();
       await expect(page.getByText(strings.limitReachedWarehouses)).toBeVisible({ timeout: 10_000 });
@@ -321,14 +326,14 @@ for (const locale of ["en", "am"] as const) {
 
       await page.addInitScript((loc) => window.localStorage.setItem("locale", loc), locale);
       await login(page, E2E_TA_EMAIL, taPassword);
-      await gotoOrgTree(page);
+      await gotoOrgTree(page, strings.tabTree);
 
       await expect(page.getByText(strings.unlimited)).toBeVisible({ timeout: 10_000 });
 
       // Approval-only level (L2, added under the L1 root): "Holds stock" is
       // disabled + unchecked, with the approval-only hint — the level
       // holds-stock guard, not the plan cap, is what's driving this state.
-      await page.getByTitle("Add child node").first().click();
+      await page.getByTitle(strings.addChildNode).first().click();
       const childHoldsStockCheckbox = page.getByText(strings.isStockHolding).last().locator("xpath=..").locator('input[type="checkbox"]');
       await expect(childHoldsStockCheckbox).toBeDisabled();
       await expect(childHoldsStockCheckbox).not.toBeChecked();
