@@ -5,7 +5,6 @@ import { useQueryClient } from "@tanstack/react-query";
 import { nanoid } from "nanoid";
 import { api } from "@/lib/api";
 import { useInventoryStore } from "@/lib/inventory-state";
-import { useAuditStore } from "@/lib/audit-log-state";
 import { getSession } from "@/lib/demo-auth";
 import { useWriteGuard, guardProps } from "@/hooks/useWriteGuard";
 import { t } from "@/lib/i18n";
@@ -73,7 +72,6 @@ function validateRows(rawRows: string[][], products: DemoProduct[], warehouses: 
 export function BulkImportPanel({ products, warehouses, orgSlug }: Props) {
   const qc        = useQueryClient();
   const addReceive = useInventoryStore((s) => s.addReceive);
-  const logAudit   = useAuditStore((s) => s.log);
   const user       = getSession();
 
   const [open, setOpen]             = useState(false);
@@ -115,7 +113,6 @@ export function BulkImportPanel({ products, warehouses, orgSlug }: Props) {
       const payload = { rows: submittableRows.map((r) => ({ row_number: r.rowNumber, warehouse_code: r.warehouseCode, warehouse_id: r.warehouseId, sku_code: r.skuCode, product_id: r.productId, opening_quantity: r.openingQuantity, uom: r.uom, batch_number: r.batchNumber, manufacture_date: r.manufactureDate, expiry_date: r.expiryDate, notes: r.notes, reference_document: r.referenceDocument, idempotency_key: r.idempotencyKey, status: r.status, errors: r.issues.filter((i) => i.severity === "ERROR").map((i) => i.message), warnings: r.issues.filter((i) => i.severity === "WARNING").map((i) => i.message) })) };
       const batch = await api.post<ImportBatch>("/api/v1/imports/opening-balance", payload);
       for (const row of submittableRows) { if (row.productId && row.warehouseId && row.openingQuantity > 0) addReceive(row.productId, row.warehouseId, row.openingQuantity); }
-      logAudit({ tenantSlug: orgSlug, userEmail: user.email, userName: user.name, role: user.role, action: "inventory:bulk_import", category: "INVENTORY", resourceRef: batch.reference, resourceType: "ImportBatch", notes: `Import ref: ${batch.reference}` });
       void qc.invalidateQueries({ queryKey: ["products", orgSlug] });
       setImportRef(batch.reference);
       setSuccess(`Import batch submitted — ref: ${batch.reference}. Status: PENDING_APPROVAL. ${submittableRows.length} rows queued.`);

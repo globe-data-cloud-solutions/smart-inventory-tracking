@@ -9,7 +9,6 @@ import { DEMO_TENANTS, getLowStockProducts } from "@/lib/demo-data";
 import { api } from "@/lib/api";
 import { getCurrentLocale, setLocale, loadLocale, t } from "@/lib/i18n";
 import { useInventoryStore } from "@/lib/inventory-state";
-import { useAuditStore } from "@/lib/audit-log-state";
 import { useTenantName } from "@/hooks/useTenantName";
 import { useContractStatus } from "@/hooks/useContractStatus";
 import { PublicContactLink } from "@/components/features/auth/PublicContactLink";
@@ -569,7 +568,7 @@ export default function OrgLayout({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     useInventoryStore.persist.rehydrate();
-    useAuditStore.persist.rehydrate();
+    try { localStorage.removeItem("smart-audit-log-v1"); } catch { /* storage unavailable */ }
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {

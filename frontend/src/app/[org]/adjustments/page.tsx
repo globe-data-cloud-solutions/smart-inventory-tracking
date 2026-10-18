@@ -9,7 +9,6 @@ import { DEMO_TENANTS, type DemoTenant, type DemoProduct, type ProductApprovalOv
 import { NewAdjustmentPanel } from "@/components/features/inventory/NewAdjustmentPanel";
 import { ProductLabel } from "@/components/features/inventory/ProductLabel";
 import { useInventoryStore } from "@/lib/inventory-state";
-import { useAuditStore } from "@/lib/audit-log-state";
 import { api, IS_GATEWAY_MODE } from "@/lib/api";
 import { t } from "@/lib/i18n";
 import { lotErrorMessage } from "@/lib/lotErrors";
@@ -348,23 +347,6 @@ export default function AdjustmentsPage() {
 
       if (adjQty > 0) store.addReceive(adjProductId, adjWarehouseId, adjQty);
       else            store.addIssue(adjProductId, adjWarehouseId, Math.abs(adjQty));
-
-      // Audit log for this approval — use adj.warehouse_id (the WH that created the
-      // adjustment), never the approver's warehouse_id (NM/TA have none).
-      useAuditStore.getState().log({
-        tenantSlug:    org,
-        userEmail:     currentUser.email,
-        userName:      currentUser.name,
-        role:          currentUser.role,
-        category:      "ADJUSTMENT",
-        action:        "ADJUSTMENT_APPROVED",
-        resourceRef:   id,
-        resourceType:  "adjustment",
-        productName:   adj.product_name,
-        quantityStr:   `${adjQty > 0 ? "+" : ""}${adjQty}`,
-        fromWarehouse: adj.warehouse_name,
-        notes:         adj.notes,
-      });
     }
 
     await qc.invalidateQueries({ queryKey: ["adjustments", org] });

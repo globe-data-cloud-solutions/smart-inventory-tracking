@@ -1,3 +1,7 @@
+// Archived session 19. Write-only client copy of audit rows, kept only in
+// browser localStorage ("smart-audit-log-v1") — nothing ever read entries or
+// called getForTenant. The backend audit log replaced it.
+
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 

@@ -11,7 +11,6 @@ import { isQuantityDeltaError, lotErrorMessage } from "@/lib/lotErrors";
 import { getSession } from "@/lib/demo-auth";
 import { useWriteGuard, guardProps } from "@/hooks/useWriteGuard";
 import { useInventoryStore } from "@/lib/inventory-state";
-import { useAuditStore } from "@/lib/audit-log-state";
 import { buildOverrideTooltip } from "@/components/features/inventory/ProductLabel";
 import { LotFields } from "@/components/features/inventory/LotFields";
 import { formatQty } from "@/lib/utils";
@@ -284,24 +283,6 @@ export function NewAdjustmentPanel({ products, warehouses, orgSlug }: Props) {
         const store = useInventoryStore.getState();
         if (qty > 0) store.addReceive(productId, effectiveWarehouseId, qty);
         else         store.addIssue(productId, effectiveWarehouseId, Math.abs(qty));
-      }
-
-      // Bug 8: write audit log entry
-      if (session) {
-        useAuditStore.getState().log({
-          tenantSlug:    orgSlug,
-          userEmail:     session.email,
-          userName:      session.name,
-          role:          session.role,
-          category:      "ADJUSTMENT",
-          action:        adj.status === "APPLIED" ? "ADJUSTMENT_APPLIED" : "ADJUSTMENT_SUBMITTED",
-          resourceRef:   adj.adjustment_id,
-          resourceType:  "adjustment",
-          productName:   selectedP?.name,
-          quantityStr:   `${qty > 0 ? "+" : ""}${qty}`,
-          fromWarehouse: effectiveWarehouseName,
-          notes,
-        });
       }
 
       reset(); setOpen(false);

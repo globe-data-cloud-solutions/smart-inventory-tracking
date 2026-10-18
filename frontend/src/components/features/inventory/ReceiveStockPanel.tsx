@@ -7,7 +7,6 @@ import { api } from "@/lib/api";
 import { enqueueOfflineTransaction } from "@/store/offlineQueue";
 import { useOfflineSync } from "@/hooks/useOfflineSync";
 import { useScanner } from "@/hooks/useScanner";
-import { useAuditStore } from "@/lib/audit-log-state";
 import { getSession } from "@/lib/demo-auth";
 import { t } from "@/lib/i18n";
 import { notify } from "@/lib/notify";
@@ -52,7 +51,6 @@ const selectCls = `${inputCls} cursor-pointer`;
 export function ReceiveStockPanel({ products, orgSlug }: Props) {
   const { isOnline } = useOfflineSync();
   const qc       = useQueryClient();
-  const logAudit = useAuditStore((s) => s.log);
 
   const user        = getSession();
   const warehouseId = user?.warehouseId ?? "";
@@ -119,7 +117,6 @@ export function ReceiveStockPanel({ products, orgSlug }: Props) {
         notify({ kind: "success", message: `${t("inventory.receive.queue_offline")} — ${product?.name ?? ""} (${product?.sku ?? ""}) +${qty.toLocaleString()}` });
       } else {
         const resp = await api.post<{ lot_number?: string | null }>("/api/v1/inventory/receive/", payload);
-        if (user) logAudit({ tenantSlug: orgSlug, userEmail: user.email, userName: user.name, role: user.role, action: "inventory:receive", category: "INVENTORY", resourceRef: product?.sku ?? form.productId, resourceType: "InventoryTransaction", productName: product?.name, quantityStr: `+${qty.toLocaleString()} ${product?.unit ?? "units"}`, toWarehouse: warehouseName, notes: t(`transfer.reference.${form.referenceType}`) });
         clearForm(); setOpen(false);
         const what = `${product?.name ?? ""} (${product?.sku ?? ""}) +${qty.toLocaleString()} ${product?.unit ?? ""}`.trim();
         notify({

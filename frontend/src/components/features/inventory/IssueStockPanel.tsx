@@ -7,7 +7,6 @@ import { api } from "@/lib/api";
 import { enqueueOfflineTransaction } from "@/store/offlineQueue";
 import { useOfflineSync } from "@/hooks/useOfflineSync";
 import { useInventoryStore } from "@/lib/inventory-state";
-import { useAuditStore } from "@/lib/audit-log-state";
 import { getSession } from "@/lib/demo-auth";
 import { t } from "@/lib/i18n";
 import { notify } from "@/lib/notify";
@@ -55,7 +54,6 @@ export function IssueStockPanel({ products, orgSlug }: Props) {
   const { isOnline } = useOfflineSync();
   const qc = useQueryClient();
   const { getAvailable } = useInventoryStore();
-  const logAudit = useAuditStore((s) => s.log);
 
   const user        = getSession();
   const warehouseId = user?.warehouseId ?? "";
@@ -105,7 +103,6 @@ export function IssueStockPanel({ products, orgSlug }: Props) {
         successMsg = t("inventory.receive.queue_offline");
       } else {
         await api.post("/api/v1/inventory/issues/", payload);
-        if (user) logAudit({ tenantSlug: orgSlug, userEmail: user.email, userName: user.name, role: user.role, action: "inventory:issue", category: "INVENTORY", resourceRef: selectedProduct?.sku ?? productId, resourceType: "InventoryTransaction", productName: selectedProduct?.name, quantityStr: `-${qty.toLocaleString()} ${selectedProduct?.unit ?? "units"}`, fromWarehouse: warehouseName, toWarehouse: issuedTo.trim() || undefined, notes: `[${reasonCode}]` });
         successMsg = t("issue.success");
         void qc.invalidateQueries({ queryKey: ["products", orgSlug] });
         void qc.invalidateQueries({ queryKey: ["inventory-stock", orgSlug] });

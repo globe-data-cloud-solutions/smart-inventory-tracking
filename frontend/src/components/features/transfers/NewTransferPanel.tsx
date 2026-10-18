@@ -5,7 +5,6 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { nanoid } from "nanoid";
 import { api } from "@/lib/api";
 import { useInventoryStore, type TransferEntry } from "@/lib/inventory-state";
-import { useAuditStore } from "@/lib/audit-log-state";
 import { getSession } from "@/lib/demo-auth";
 import { useWriteGuard, guardProps } from "@/hooks/useWriteGuard";
 import { t } from "@/lib/i18n";
@@ -143,7 +142,6 @@ function ProductSelect({ options, value, onChange }: { options: ProductOption[];
 export function NewTransferPanel({ products, warehouses, orgSlug }: Props) {
   const qc = useQueryClient();
   const { addTransfer, getAvailable, getOnHand } = useInventoryStore();
-  const logAudit = useAuditStore((s) => s.log);
 
   const user     = getSession();
   const tenantId = user?.tenantId ?? "";
@@ -306,7 +304,6 @@ export function NewTransferPanel({ products, warehouses, orgSlug }: Props) {
       const displayRef  = transferId.slice(0, 8).toUpperCase();
       const entry: TransferEntry = { id: transferId, ref: displayRef, tenantSlug: orgSlug, productId: form.productId, fromWarehouseId: effectiveFrom, fromWarehouseName: fromWH?.name ?? effectiveFrom, toWarehouseId: effectiveTo, toWarehouseName: toWH?.name ?? effectiveTo, quantity: qty, issuedDate: new Date().toISOString(), status: "DRAFT" };
       addTransfer(entry);
-      if (user) logAudit({ tenantSlug: orgSlug, userEmail: user.email, userName: user.name, role: user.role, action: "transfer:DRAFT", category: "TRANSFER", resourceRef: displayRef, resourceType: "TransferOrder", productName: product?.name, quantityStr: `${qty.toLocaleString()} ${product?.unit ?? "units"}`, fromWarehouse: fromWH?.name, toWarehouse: toWH?.name, notes: `[${form.transferType}]${form.notes ? " " + form.notes : ""}` });
       void qc.invalidateQueries({ queryKey: ["transfers", orgSlug] });
       reset(); setOpen(false);
       notify({ kind: "success", message: `${t("transfer_panel.created")} ${displayRef} — ${fromWH?.name} → ${toWH?.name}.` });

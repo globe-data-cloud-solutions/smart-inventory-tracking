@@ -5,7 +5,6 @@ import { useQueryClient } from "@tanstack/react-query";
 import { nanoid } from "nanoid";
 import { api } from "@/lib/api";
 import { useInventoryStore } from "@/lib/inventory-state";
-import { useAuditStore } from "@/lib/audit-log-state";
 import { getSession } from "@/lib/demo-auth";
 import { useWriteGuard, guardProps } from "@/hooks/useWriteGuard";
 import { t } from "@/lib/i18n";
@@ -38,7 +37,6 @@ const lockedCls = `${inputCls} bg-gray-100 text-gray-500 cursor-not-allowed`;
 export function OpeningBalancePanel({ products, warehouses, orgSlug }: Props) {
   const qc        = useQueryClient();
   const addReceive = useInventoryStore((s) => s.addReceive);
-  const logAudit   = useAuditStore((s) => s.log);
   const user       = getSession();
   const lockedWarehouseId = user?.warehouseId ?? "";
 
@@ -72,7 +70,6 @@ export function OpeningBalancePanel({ products, warehouses, orgSlug }: Props) {
       if (expiryRequired && !form.expiryDate) { setError(t("errors.EXPIRY_REQUIRED")); return; }
     }
     const product   = products.find((p) => p.id === form.productId);
-    const warehouse = warehouses.find((w) => w.id === form.warehouseId);
     const idempotencyKey = `ob:${form.productId}:${form.warehouseId}:${Date.now()}:${nanoid(8)}`;
     const payload = {
       product_id:       form.productId,
@@ -88,7 +85,6 @@ export function OpeningBalancePanel({ products, warehouses, orgSlug }: Props) {
     try {
       const resp = await api.post<{ lot_number?: string | null }>("/api/v1/inventory/receive/", payload);
       addReceive(form.productId, form.warehouseId, qty);
-      logAudit({ tenantSlug: orgSlug, userEmail: user.email, userName: user.name, role: user.role, action: "inventory:opening_balance", category: "INVENTORY", resourceRef: product?.sku ?? form.productId, resourceType: "OpeningBalanceReceipt", productName: product?.name, quantityStr: `+${qty.toLocaleString()} ${product?.unit ?? "units"}`, toWarehouse: warehouse?.name ?? form.warehouseId, notes: form.notes || undefined });
       void qc.invalidateQueries({ queryKey: ["products", orgSlug] });
       void qc.invalidateQueries({ queryKey: ["receipts", orgSlug] });
       clearForm(); setOpen(false);
