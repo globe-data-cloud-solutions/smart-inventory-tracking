@@ -123,9 +123,10 @@ export class BarcodeScanner {
 
 ## 12. Localization — English, Amharic, Oromifa
 
-> **Status (2026-10):** Phase 1 ships **English + Amharic**. Oromifa is **deferred**
-> (STOCKBALANCE.md §8): `or.json` is a scaffold — every new key is added with the ENGLISH value
-> so the file stays complete; no Oromifa translation until a native-speaker review is staffed.
+> **Status (2026-10):** Phase 1 ships **English + Amharic**. Oromifa is **deferred**, not
+> offered to users in Phase 1 (STOCKBALANCE.md §8): `or.json` keeps the ~550 draft Oromo
+> values already in it unchanged until a native-speaker review is staffed; every NEW key is
+> added with the ENGLISH value so the file stays complete (Review Backlog RB-6).
 
 ### Three supported languages from Phase 1
 

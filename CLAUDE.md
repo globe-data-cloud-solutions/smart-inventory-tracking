@@ -102,8 +102,10 @@ No `.env.example` committed — secrets via AWS Secrets Manager (local-dev excep
   `update_running_balance()` inside `ledger_repo.py`, in the same transaction as the ledger
   INSERT; a PostgreSQL RULE blocks direct UPDATEs as defence in depth.
 - **i18n**: three locales — `en` (default), `am` (Amharic, required Phase 1), `or` (Oromifa,
-  **deferred** — `or.json` is an English-value scaffold copied from `en.json` key-for-key
-  until a native-speaker review is staffed). Loader/order: user locale → tenant default → `en`.
+  **deferred**, not offered to users in Phase 1). `or.json` keeps the ~550 draft Oromo
+  values already in it unchanged until a native-speaker review is staffed; every NEW key is
+  added with the ENGLISH value so the file stays complete (Review Backlog RB-6).
+  Loader/order: user locale → tenant default → `en`.
 
 ---
 
