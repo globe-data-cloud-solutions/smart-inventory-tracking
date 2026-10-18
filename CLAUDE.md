@@ -182,4 +182,5 @@ No `.env.example` committed — secrets via AWS Secrets Manager (local-dev excep
 | `docs/claude/billing-and-tenants.md` | Full §15 — onboarding wizard, package catalog, self sign-up, billing/invoices/proration, add-ons (S4–S12 history) | Any tenant, plan, billing, or add-on work |
 | `docs/claude/business-rules.md` | Full §24 business rules 1–27 + IMTS role mapping table, full §28 hierarchy/product-scoping/personnel rules | Checking whether a change violates an enforced business rule |
 | `docs/claude/guardrails.md` | Full §29 — exact incident-driven commands and local-dev reality | Debugging an import/startup/migration failure |
+| `docs/claude/redeploy-runbook.md` | provision/deploy/teardown cycle, state-lock and partial-destroy recovery | Before any AWS deploy/test/destroy cycle Alex instructs |
 | `docs/prompts/opening_balance.md` | Claude prompts for Option A (RECEIPT) and Option C (bulk import) opening-balance workflows | Building the initial stock entry assistant |
