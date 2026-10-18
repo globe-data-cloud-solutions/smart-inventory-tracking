@@ -120,6 +120,9 @@ No `.env.example` committed — secrets via AWS Secrets Manager (local-dev excep
 - Never expose a UI action button whose target state is missing from the backend state machine — keep `getAvailableActions()` and `state_machine.py` in sync in the same PR.
 - Never render a raw i18n key or a raw UUID as visible text — wrap in `t()` / resolve to a name first.
 - Never commit frontend changes without `npx tsc --noEmit` (0 errors) and `bash scripts/check_i18n.sh` (PASS).
+  `check_i18n.sh` runs `python scripts/check_hardcoded_jsx.py` as an ERROR check; intentional English
+  (brand names, example codes, currency/status codes) needs an `i18n-ignore: <reason>` marker on the
+  same line or the line directly above, or the file added to `scripts/i18n_hardcoded_allowlist.txt`.
 
 ## 6. Org Hierarchy Rules (one-liners — full detail: docs/claude/business-rules.md)
 

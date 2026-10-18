@@ -260,6 +260,23 @@ NEVER render a raw i18n key as visible JSX text.
     python3 -c "..." to sync the same key to am.json and or.json.
   Prevention: bash scripts/check_i18n.sh must pass before git commit.
 
+NEVER leave hardcoded English text in JSX, in placeholder/title/aria-label/alt
+  attributes, or in a string passed directly to setError/setErr/setMsg/
+  setMessage/setSaveError/setFormError/alert/confirm or as message: in
+  notify({...}).
+  Enforcement: scripts/check_hardcoded_jsx.py, wired into check_i18n.sh as an
+  ERROR check (ships in session 19, P5).
+  Genuinely untranslatable text (brand names like "SMART", example codes like
+  "BRD-001" or "LOT-2026-001", currency codes like "ETB"/"USD"/"EUR",
+  backend enum/status-machine codes like "PENDING_APPROVAL") gets an
+  `i18n-ignore: <reason>` marker in a comment on the same line or the line
+  directly above the hit — a plain `// i18n-ignore: ...` comment inside a JSX
+  attribute list, or a `{/* i18n-ignore: ... */}` comment as a JSX child
+  sibling for text content.
+  A whole file goes on scripts/i18n_hardcoded_allowlist.txt (one line,
+  `path  # reason`) only for demo-only or SA-internal debug files — keep that
+  list as short as possible; prefer per-line markers everywhere else.
+
 NEVER render a UUID directly in JSX text content.
   Warehouse/node IDs → resolve to name via API or ?? t('common.unknown')
   Tenant/org IDs → use useTenantName(org) hook
