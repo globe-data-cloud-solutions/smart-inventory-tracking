@@ -46,6 +46,7 @@ jobs:
   # ── Resolve the dev/stg/prd input to the envs/<dir> directory name ────────────
   setup:
     name: Resolve environment
+    if: github.repository == 'globe-data-cloud-solutions/smart-inventory-tracking'
     runs-on: ubuntu-latest
     outputs:
       env: ${{ steps.map.outputs.env }}

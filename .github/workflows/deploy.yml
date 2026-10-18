@@ -58,6 +58,7 @@ jobs:
   # ── Resolve dev/stg/prd → envs directory / cluster suffix ─────────────────────
   setup:
     name: Resolve environment
+    if: github.repository == 'globe-data-cloud-solutions/smart-inventory-tracking'
     runs-on: ubuntu-latest
     outputs:
       env: ${{ steps.map.outputs.env }}

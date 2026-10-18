@@ -8,6 +8,7 @@ run-name: Lifecycle ${{ inputs.action }} — ${{ inputs.environment }} (by ${{ g
 # Each step runs the existing reusable workflow, so the GitHub Environment gates
 # (infra-<env>, deploy-<env>) and every check inside them still apply.
 # Manual trigger only.
+# Runs only on globe-data-cloud-solutions (repository guard); dispatch only when Alex instructs.
 
 on:
   workflow_dispatch:
@@ -29,7 +30,7 @@ permissions:
 jobs:
   infra-up:
     name: Infrastructure apply
-    if: inputs.action == 'up'
+    if: github.repository == 'globe-data-cloud-solutions/smart-inventory-tracking' && inputs.action == 'up'
     uses: ./.github/workflows/infrastructure.yml
     with:
       environment: ${{ inputs.environment }}
@@ -38,7 +39,7 @@ jobs:
 
   deploy-up:
     name: Application deploy
-    if: inputs.action == 'up'
+    if: github.repository == 'globe-data-cloud-solutions/smart-inventory-tracking' && inputs.action == 'up'
     needs: [infra-up]
     uses: ./.github/workflows/deploy.yml
     with:
@@ -47,7 +48,7 @@ jobs:
 
   infra-down:
     name: Infrastructure destroy
-    if: inputs.action == 'down'
+    if: github.repository == 'globe-data-cloud-solutions/smart-inventory-tracking' && inputs.action == 'down'
     uses: ./.github/workflows/infrastructure.yml
     with:
       environment: ${{ inputs.environment }}
