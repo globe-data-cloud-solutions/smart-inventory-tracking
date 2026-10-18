@@ -8,6 +8,7 @@ import { getSession, logout, SA_ORG_SLUG, type SessionUser } from "@/lib/demo-au
 import { DEMO_TENANTS, getLowStockProducts } from "@/lib/demo-data";
 import { api } from "@/lib/api";
 import { getCurrentLocale, setLocale, loadLocale, t } from "@/lib/i18n";
+import { ENABLED_LOCALES } from "@/lib/locales-config";
 import { useInventoryStore } from "@/lib/inventory-state";
 import { useTenantName } from "@/hooks/useTenantName";
 import { useContractStatus } from "@/hooks/useContractStatus";
@@ -197,7 +198,7 @@ function LangSwitcher() {
 
   return (
     <div className="flex gap-0.5 bg-white/10 rounded p-0.5">
-      {(["en", "am", "or"] as Locale[]).map((loc) => (
+      {ENABLED_LOCALES.map((loc) => (
         <button
           key={loc}
           onClick={() => void switchLocale(loc)}

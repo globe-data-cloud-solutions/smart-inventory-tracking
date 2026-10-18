@@ -1,6 +1,7 @@
 // English fallback — kept in sync with smart-platform/locales/en.json.
 // Imported from the local copy so webpack stays within the frontend project root.
 import enFallback from "./locales/en.json";
+import { resolveLocale } from "./locales-config";
 
 type Locale = "en" | "am" | "or";
 
@@ -28,7 +29,7 @@ export function t(key: string): string {
 
 export function getCurrentLocale(): Locale {
   if (typeof window === "undefined") return "en";
-  return (localStorage.getItem("locale") as Locale | null) ?? "en";
+  return resolveLocale(localStorage.getItem("locale"));
 }
 
 export function setLocale(locale: Locale): void {

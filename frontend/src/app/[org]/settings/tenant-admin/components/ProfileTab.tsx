@@ -7,13 +7,10 @@ import { api } from "@/lib/api";
 import { t } from "@/lib/i18n";
 import { useWriteGuard, guardProps } from "@/hooks/useWriteGuard";
 import { TabProps, TenantAdminData } from "../types";
+import { ALL_LOCALES, ENABLED_LOCALES, resolveLocale } from "@/lib/locales-config";
 
 // Endonyms — each language shown in its own script, not translated (CLAUDE.md §12)
-const LOCALES = [
-  { code: "en", label: "English" },
-  { code: "am", label: "አማርኛ" },
-  { code: "or", label: "Afaan Oromoo" },
-];
+const LOCALES = ALL_LOCALES.filter((l) => ENABLED_LOCALES.includes(l.code));
 
 interface TermsAcceptanceOut {
   accepted_version: string | null;
@@ -81,7 +78,7 @@ export function ProfileTab({ tenantId, isLoading }: TabProps) {
   });
 
   const [formData, setFormData] = useState({
-    default_locale: tenant?.default_locale ?? "en",
+    default_locale: resolveLocale(tenant?.default_locale),
   });
 
   const updateMutation = useMutation({
@@ -115,7 +112,7 @@ export function ProfileTab({ tenantId, isLoading }: TabProps) {
           {!editMode && (
             <button
               onClick={() => {
-                setFormData({ default_locale: tenant.default_locale ?? "en" });
+                setFormData({ default_locale: resolveLocale(tenant.default_locale) });
                 setEditMode(true);
               }}
               {...gp}
@@ -178,7 +175,7 @@ export function ProfileTab({ tenantId, isLoading }: TabProps) {
               </label>
               <select
                 value={formData.default_locale}
-                onChange={(e) => setFormData({ ...formData, default_locale: e.target.value })}
+                onChange={(e) => setFormData({ ...formData, default_locale: resolveLocale(e.target.value) })}
                 className="w-full max-w-sm px-3 py-2 border border-gray-300 rounded-md text-sm"
               >
                 {LOCALES.map((loc) => (
@@ -194,7 +191,7 @@ export function ProfileTab({ tenantId, isLoading }: TabProps) {
                 {t("sa.edit_profile_field_locale")}
               </label>
               <p className="text-sm text-gray-600">
-                {LOCALES.find((l) => l.code === tenant.default_locale)?.label}
+                {LOCALES.find((l) => l.code === resolveLocale(tenant.default_locale))?.label}
               </p>
             </div>
           )}
@@ -212,7 +209,7 @@ export function ProfileTab({ tenantId, isLoading }: TabProps) {
             )}
             <button
               onClick={() => {
-                setFormData({ default_locale: tenant.default_locale ?? "en" });
+                setFormData({ default_locale: resolveLocale(tenant.default_locale) });
                 setEditMode(false);
                 setError(null);
               }}

@@ -105,7 +105,12 @@ No `.env.example` committed — secrets via AWS Secrets Manager (local-dev excep
   **deferred**, not offered to users in Phase 1). `or.json` keeps the ~550 draft Oromo
   values already in it unchanged until a native-speaker review is staffed; every NEW key is
   added with the ENGLISH value so the file stays complete (Review Backlog RB-6).
-  Loader/order: user locale → tenant default → `en`.
+  Loader/order: user locale → tenant default → `en`. Which languages users can actually pick
+  comes from `ENABLED_LOCALES` (`frontend/src/lib/locales-config.ts`), driven by the build-time
+  `NEXT_PUBLIC_ENABLED_LOCALES` env var (default `en,am`) — Oromo stays hidden from every
+  picker until `or.json` is translated, at which point setting the var to `en,am,or` and
+  redeploying the frontend turns it on (RB-6). The `/api/locales/[locale]` route keeps serving
+  all three packs regardless, so a disabled locale is still loadable for review.
 
 ---
 

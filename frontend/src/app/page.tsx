@@ -4,6 +4,13 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { t, getCurrentLocale, loadLocale } from "@/lib/i18n";
 import { AuthLangSwitcher } from "@/components/features/auth/AuthLangSwitcher";
+import { ALL_LOCALES, ENABLED_LOCALES } from "@/lib/locales-config";
+
+const ENABLED_LANG_LINE = ALL_LOCALES.filter((l) => ENABLED_LOCALES.includes(l.code))
+  .map((l) => l.label)
+  .join(" · ");
+const SHORT_LANG_LABELS: Record<string, string> = { en: "EN", am: "አማርኛ", or: "Afaan Oromoo" };
+const ENABLED_SHORT_LANG_LINE = ENABLED_LOCALES.map((c) => SHORT_LANG_LABELS[c]).join(" · ");
 import { useContactInfo } from "@/hooks/useContactInfo";
 
 const BG   = "#0f2d1f";
@@ -173,7 +180,7 @@ export default function HomePage() {
           <div className="mt-6 flex justify-center">
             <span className="inline-flex items-center gap-2 px-4 py-1.5 bg-white/[0.08] border border-white/[0.18] rounded-full text-xs font-medium text-[rgba(200,240,220,0.9)]">
               <span className="w-2 h-2 rounded-full bg-green-400 animate-pulse" />
-              🇪🇹 &nbsp;English · አማርኛ · Afaan Oromoo · {t("landing.hero.badge_suffix")}
+              🇪🇹 &nbsp;{ENABLED_LANG_LINE} · {t("landing.hero.badge_suffix")}
             </span>
           </div>
           <div className="mt-8 flex gap-3 justify-center flex-wrap">
@@ -290,7 +297,7 @@ export default function HomePage() {
             </Link>
           )}
           {/* i18n-ignore: language switcher labels — language names, not translated */}
-          <p className="text-xs text-green-900">🇪🇹 EN · አማርኛ · Afaan Oromoo</p>
+          <p className="text-xs text-green-900">🇪🇹 {ENABLED_SHORT_LANG_LINE}</p>
         </div>
       </footer>
     </div>

@@ -7,6 +7,7 @@ import Link from "next/link";
 import { getSession } from "@/lib/demo-auth";
 import { api } from "@/lib/api";
 import { t } from "@/lib/i18n";
+import { ENABLED_LOCALES } from "@/lib/locales-config";
 
 /* ── Types ───────────────────────────────────────────────────────────────── */
 type OrgType       = "PRODUCER" | "RETAILER" | "HYBRID";
@@ -630,7 +631,7 @@ export default function OnboardPage() {
             {/* ── Step 3: Locale ── */}
             {step === 3 && (
               <div className="flex flex-col gap-3">
-                {(["en", "am", "or"] as Locale[]).map((loc) => {
+                {ENABLED_LOCALES.map((loc) => {
                   const m        = LOCALE_META[loc];
                   const selected = form.locale === loc;
                   return (

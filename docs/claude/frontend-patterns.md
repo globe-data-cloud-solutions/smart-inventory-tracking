@@ -172,6 +172,25 @@ export function t(key: string): string {
 - No rebuild or redeployment required
 - **Oromifa pack must be reviewed by a native Afaan Oromoo-speaking domain expert before Phase 1 go-live**
 
+### Which languages users can pick (`ENABLED_LOCALES`)
+
+A language pack being loadable is not the same as a language being offered. Every picker
+(header `LangSwitcher`, `AuthLangSwitcher`, signup's `default_locale` select + its zod enum,
+the onboarding wizard's locale step, `ProfileTab`'s tenant-admin locale select, and the landing
+page's language line) reads the enabled set from `frontend/src/lib/locales-config.ts`:
+
+- `ALL_LOCALES` — the full `en`/`am`/`or` list with endonym labels.
+- `ENABLED_LOCALES` — parsed from `NEXT_PUBLIC_ENABLED_LOCALES` (comma list, build-time env
+  var), default `"en,am"`. Unknown codes are ignored; `en` is always included.
+- `isEnabledLocale(code)` / `resolveLocale(code)` — fall back to `en` for a disabled or
+  unknown code, used wherever a stored `locale`/`default_locale` value is read back.
+
+Turning Oromo on is a two-step, deliberate change, not a code change: finish translating
+`or.json` (RB-6), then set `NEXT_PUBLIC_ENABLED_LOCALES=en,am,or` and redeploy the frontend —
+the var is read at build time, so an env change alone does not take effect without a rebuild.
+`/api/locales/[locale]` keeps serving all three packs regardless of `ENABLED_LOCALES`, so a
+disabled locale stays loadable for review/testing even while hidden from end users.
+
 
 ## 27. UI/UX Rules
 
