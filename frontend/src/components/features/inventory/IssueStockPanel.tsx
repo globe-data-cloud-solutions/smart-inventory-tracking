@@ -11,6 +11,7 @@ import { getSession } from "@/lib/demo-auth";
 import { t } from "@/lib/i18n";
 import { notify } from "@/lib/notify";
 import { PanelError } from "@/components/ui/PanelError";
+import { formatNumber } from "@/lib/format";
 import { useWarehouses } from "@/hooks/useWarehouses";
 import { useWriteGuard, guardProps } from "@/hooks/useWriteGuard";
 import type { DemoProduct } from "@/lib/demo-data";
@@ -92,7 +93,7 @@ export function IssueStockPanel({ products, orgSlug }: Props) {
     if (destMeta?.required && !issuedTo.trim()) { setError(`"${destMeta.label}" is required.`); return; }
     const qty = parseFloat(quantity);
     if (!qty || qty <= 0) { setError(t("receive_panel.error_qty")); return; }
-    if (availableStock !== null && qty > availableStock) { setError(`${t("issue.insufficient")} ${availableStock.toLocaleString()}`); return; }
+    if (availableStock !== null && qty > availableStock) { setError(`${t("issue.insufficient")} ${formatNumber(availableStock)}`); return; }
     const key = `issue:${productId}:${warehouseId}:${Date.now()}:${nanoid(8)}`;
     const payload = { product_id: productId, warehouse_id: warehouseId, quantity: qty.toFixed(4), reason_code: reasonCode, issued_to: issuedTo.trim() || undefined, notes, idempotency_key: key };
     setSubmitting(true);
@@ -108,7 +109,7 @@ export function IssueStockPanel({ products, orgSlug }: Props) {
         void qc.invalidateQueries({ queryKey: ["inventory-stock", orgSlug] });
       }
       reset(); setOpen(false);
-      notify({ kind: "success", message: `${successMsg} — ${selectedProduct?.name ?? ""} (${selectedProduct?.sku ?? ""}) −${qty.toLocaleString()} ${selectedProduct?.unit ?? ""}`.trim() });
+      notify({ kind: "success", message: `${successMsg} — ${selectedProduct?.name ?? ""} (${selectedProduct?.sku ?? ""}) −${formatNumber(qty)} ${selectedProduct?.unit ?? ""}`.trim() });
     } catch (err: unknown) { setError(err instanceof Error ? err.message : t("errors.INTERNAL_ERROR")); }
     finally { setSubmitting(false); }
   };
@@ -152,7 +153,7 @@ export function IssueStockPanel({ products, orgSlug }: Props) {
 
           {availableStock !== null && (
             <div className="bg-violet-50 border border-violet-200 rounded-md px-3 py-2 mb-3 text-xs text-violet-800">
-              {t("inventory.available")}: <strong>{availableStock.toLocaleString()}</strong> {t("lots.units")}
+              {t("inventory.available")}: <strong>{formatNumber(availableStock)}</strong> {t("lots.units")}
             </div>
           )}
 

@@ -14,6 +14,7 @@ import { PanelError } from "@/components/ui/PanelError";
 import { lotErrorMessage } from "@/lib/lotErrors";
 import { useWarehouses } from "@/hooks/useWarehouses";
 import { useWriteGuard, guardProps } from "@/hooks/useWriteGuard";
+import { formatNumber } from "@/lib/format";
 import type { DemoProduct } from "@/lib/demo-data";
 import { buildOverrideTooltip } from "@/components/features/inventory/ProductLabel";
 import { LotFields } from "@/components/features/inventory/LotFields";
@@ -114,11 +115,11 @@ export function ReceiveStockPanel({ products, orgSlug }: Props) {
       if (!isOnline) {
         await enqueueOfflineTransaction({ idempotencyKey: key, action: "inventory:receive", payload });
         clearForm(); setOpen(false);
-        notify({ kind: "success", message: `${t("inventory.receive.queue_offline")} — ${product?.name ?? ""} (${product?.sku ?? ""}) +${qty.toLocaleString()}` });
+        notify({ kind: "success", message: `${t("inventory.receive.queue_offline")} — ${product?.name ?? ""} (${product?.sku ?? ""}) +${formatNumber(qty)}` });
       } else {
         const resp = await api.post<{ lot_number?: string | null }>("/api/v1/inventory/receive/", payload);
         clearForm(); setOpen(false);
-        const what = `${product?.name ?? ""} (${product?.sku ?? ""}) +${qty.toLocaleString()} ${product?.unit ?? ""}`.trim();
+        const what = `${product?.name ?? ""} (${product?.sku ?? ""}) +${formatNumber(qty)} ${product?.unit ?? ""}`.trim();
         notify({
           kind: "success",
           message: resp.lot_number

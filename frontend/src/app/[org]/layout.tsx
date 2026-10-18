@@ -8,6 +8,7 @@ import { getSession, logout, SA_ORG_SLUG, type SessionUser } from "@/lib/demo-au
 import { DEMO_TENANTS, getLowStockProducts } from "@/lib/demo-data";
 import { api } from "@/lib/api";
 import { getCurrentLocale, setLocale, loadLocale, t } from "@/lib/i18n";
+import { formatNumber } from "@/lib/format";
 import { ENABLED_LOCALES } from "@/lib/locales-config";
 import { useInventoryStore } from "@/lib/inventory-state";
 import { useTenantName } from "@/hooks/useTenantName";
@@ -133,7 +134,7 @@ function NotificationBell({ org }: { org: string }) {
                         </p>
                         <p className="text-xs text-gray-500 m-0 mt-0.5">
                           {t("common.units_summary")
-                            .replace("{qty}", a.quantity.toLocaleString())
+                            .replace("{qty}", formatNumber(a.quantity))
                             .replace("{product}", a.product_name)
                             .replace("{warehouse}", a.warehouse_name)}
                         </p>

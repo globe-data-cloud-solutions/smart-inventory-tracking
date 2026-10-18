@@ -13,6 +13,7 @@ import { TransferRowDetails, hasLotSplit, transferDetailKey, type TransferReceip
 import { ApproveLotsPanel, approveFailure, type ApproveFailure, type ApproveLine, type ApproveLotsBody } from "@/components/features/transfers/ApproveLotsPanel";
 import { fetchDispatchPreview } from "@/components/features/transfers/DispatchPreview";
 import { OpenDiscrepanciesPanel } from "@/components/features/transfers/OpenDiscrepanciesPanel";
+import { formatDate } from "@/lib/format";
 import { tf, transferStatusLabel, transferTypeLabel, useTransferTypes } from "@/components/features/transfers/transferLabels";
 import { ProductLabel } from "@/components/features/inventory/ProductLabel";
 import { useInventoryStore } from "@/lib/inventory-state";
@@ -1362,7 +1363,7 @@ export default function TransfersPage() {
                       )}
                     </td>
                     <td className="px-3 py-2.5 text-gray-400 text-xs whitespace-nowrap">
-                      {new Date(txn.created_at).toLocaleDateString()}
+                      {formatDate(txn.created_at)}
                     </td>
                     <td className="px-3 py-2.5">
                       {busy ? (

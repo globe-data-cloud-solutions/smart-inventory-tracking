@@ -3,6 +3,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import { t } from "@/lib/i18n";
+import { formatDateTime } from "@/lib/format";
 
 interface TenantActivityRow {
   id: string;
@@ -49,7 +50,7 @@ export function ActivityTab({ tenantId }: { tenantId: string }) {
               {t("sa.activity_by")} {entry.actor_email ?? entry.actor_id}
             </p>
             <p className="m-0 text-xs text-gray-400">
-              {new Date(entry.created_at).toLocaleString()}
+              {formatDateTime(entry.created_at)}
             </p>
             {entry.note && (
               <p className="m-0 text-xs text-gray-500 italic mt-1">{entry.note}</p>

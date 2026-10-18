@@ -13,6 +13,7 @@ import { api, IS_GATEWAY_MODE } from "@/lib/api";
 import { t } from "@/lib/i18n";
 import { lotErrorMessage } from "@/lib/lotErrors";
 import { formatQty } from "@/lib/utils";
+import { formatDate } from "@/lib/format";
 import { useTenantName } from "@/hooks/useTenantName";
 import { useWarehouses } from "@/hooks/useWarehouses";
 import { useTenantPositions } from "@/hooks/useTenantPositions";
@@ -496,7 +497,7 @@ export default function AdjustmentsPage() {
             <tbody>
               {displayAdj.map((a, idx) => (
                 <tr key={a.adjustment_id ?? a.id} className={`border-b border-gray-100 ${idx % 2 === 0 ? "bg-white" : "bg-gray-50"}`}>
-                  <td className="px-3.5 py-2 text-gray-400 text-xs whitespace-nowrap">{new Date(a.created_at).toLocaleDateString()}</td>
+                  <td className="px-3.5 py-2 text-gray-400 text-xs whitespace-nowrap">{formatDate(a.created_at)}</td>
                   <td className="px-3.5 py-2 font-mono text-xs text-gray-400">{a.product_sku}</td>
                   <td className="px-3.5 py-2 font-semibold text-gray-800">
                     <ProductLabel

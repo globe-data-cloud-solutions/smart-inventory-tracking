@@ -9,6 +9,7 @@ import { api } from "@/lib/api";
 import { t } from "@/lib/i18n";
 import { usePermission } from "@/lib/permissions";
 import { formatQty } from "@/lib/utils";
+import { formatDate, formatDateTime } from "@/lib/format";
 import {
   TransferDiscrepancies,
   TransferLotSplit,
@@ -129,11 +130,11 @@ export default function TransferDetailPage() {
   const lines = transfer.lines ?? [];
   const typeLabel = transferTypeLabel(transfer.transfer_type, transferTypes);
   const statusLabel = transferStatusLabel(transfer.status);
-  const createdAt = new Date(transfer.created_at).toLocaleString();
+  const createdAt = formatDateTime(transfer.created_at);
   const title = transfer.reference_number
     ?? t("transfers.view.untitled")
          .replace("{type}", typeLabel)
-         .replace("{date}", new Date(transfer.created_at).toLocaleDateString());
+         .replace("{date}", formatDate(transfer.created_at));
 
   const detailFields = [
     { label: t("transfers.detail.from"),    value: transfer.from_warehouse_name ?? "—" },

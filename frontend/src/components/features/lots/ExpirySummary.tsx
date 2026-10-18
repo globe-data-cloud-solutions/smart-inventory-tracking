@@ -1,6 +1,7 @@
 "use client";
 
 import { t } from "@/lib/i18n";
+import { formatNumber } from "@/lib/format";
 import type { ExpiryAlertType, ExpiryAlertsApi } from "./lotsApi";
 
 interface Props {
@@ -34,7 +35,7 @@ export function ExpirySummary({ data, active, onSelect }: Props) {
               selected ? "border-[#0f2d1f]" : ""
             }`}
           >
-            <span className="font-extrabold text-lg mr-2">{c.count(data).toLocaleString()}</span>
+            <span className="font-extrabold text-lg mr-2">{formatNumber(c.count(data))}</span>
             <span className="font-medium">
               {t(c.labelKey).replace("{days}", String(data.window_days))}
             </span>

@@ -5,6 +5,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { getSession } from "@/lib/demo-auth";
 import { t } from "@/lib/i18n";
 import { api } from "@/lib/api";
+import { formatNumber } from "@/lib/format";
 
 /* ── Types (mirror backend response shapes — amounts are strings, per the API) ── */
 
@@ -93,7 +94,7 @@ const TIER_BADGE: Record<string, string> = {
 
 function money(amount: string, currency: string): string {
   const n = Number(amount);
-  return `${Number.isFinite(n) ? n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : amount} ${currency}`;
+  return `${Number.isFinite(n) ? formatNumber(n, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : amount} ${currency}`;
 }
 
 /* ── Main page ─────────────────────────────────────────────────────────────── */

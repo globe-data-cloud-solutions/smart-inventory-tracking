@@ -1,5 +1,6 @@
 import { api } from "@/lib/api";
 import { t } from "@/lib/i18n";
+import { formatDate } from "@/lib/format";
 
 /* ── GET /api/v1/inventory/lots ─────────────────────────────────────────── */
 export type LotStatus = "ACTIVE" | "DEPLETED" | "EXPIRED";
@@ -166,7 +167,7 @@ export function formatLotDate(iso: string | null): string {
   if (!iso) return "—";
   const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso);
   const d = m ? new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3])) : new Date(iso);
-  return d.toLocaleDateString();
+  return formatDate(d);
 }
 
 /** "in N days" / "expires today" / "expired N days ago" / "No expiry set". */

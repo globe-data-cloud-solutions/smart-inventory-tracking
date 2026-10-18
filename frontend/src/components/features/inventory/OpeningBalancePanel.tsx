@@ -13,6 +13,7 @@ import { PanelError } from "@/components/ui/PanelError";
 import { lotErrorMessage } from "@/lib/lotErrors";
 import type { DemoProduct, DemoWarehouse } from "@/lib/demo-data";
 import { LotFields } from "@/components/features/inventory/LotFields";
+import { formatNumber } from "@/lib/format";
 
 interface Props { products: DemoProduct[]; warehouses: DemoWarehouse[]; orgSlug: string; }
 
@@ -88,7 +89,7 @@ export function OpeningBalancePanel({ products, warehouses, orgSlug }: Props) {
       void qc.invalidateQueries({ queryKey: ["products", orgSlug] });
       void qc.invalidateQueries({ queryKey: ["receipts", orgSlug] });
       clearForm(); setOpen(false);
-      const what = `${product?.name ?? ""} (${product?.sku ?? ""}) +${qty.toLocaleString()} ${product?.unit ?? ""}`.trim();
+      const what = `${product?.name ?? ""} (${product?.sku ?? ""}) +${formatNumber(qty)} ${product?.unit ?? ""}`.trim();
       notify({
         kind: "success",
         message: resp.lot_number

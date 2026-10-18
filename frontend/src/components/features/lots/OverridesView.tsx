@@ -5,6 +5,7 @@ import { useQuery } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import { t } from "@/lib/i18n";
 import { formatQty } from "@/lib/utils";
+import { formatNumber, formatDateTime } from "@/lib/format";
 import { useViewedTenantId } from "@/hooks/useViewedTenantId";
 import {
   errStatus, fetchOverrides, fetchOverrideSummary,
@@ -78,7 +79,7 @@ function CountCard({ id, label, value }: { id: string; label: string; value: num
     <div data-testid={`ov-card-${id}`} className="bg-white border border-gray-200 rounded-md px-4 py-3 min-w-[170px]">
       <p className="text-[11px] font-bold uppercase tracking-wide text-gray-400 m-0">{label}</p>
       <p data-testid={`ov-card-${id}-value`} className="text-2xl font-extrabold text-[#0f2d1f] m-0 mt-1">
-        {value.toLocaleString()}
+        {formatNumber(value)}
       </p>
     </div>
   );
@@ -236,7 +237,7 @@ export function OverridesView({ org, warehouseId }: { org: string; warehouseId: 
               <tbody>
                 {rows.map((r) => (
                   <tr key={r.id} data-testid="ov-row" className="border-t border-gray-100 align-top">
-                    <td className="px-3.5 py-2.5 text-gray-600 whitespace-nowrap">{new Date(r.created_at).toLocaleString()}</td>
+                    <td className="px-3.5 py-2.5 text-gray-600 whitespace-nowrap">{formatDateTime(r.created_at)}</td>
                     <td className="px-3.5 py-2.5 text-gray-700">{r.overridden_by ?? "—"}</td>
                     <td className="px-3.5 py-2.5">
                       <span className="font-semibold text-gray-800">{r.product.name}</span>

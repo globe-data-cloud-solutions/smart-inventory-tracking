@@ -11,6 +11,7 @@ import { t } from "@/lib/i18n";
 import { notify } from "@/lib/notify";
 import { PanelError } from "@/components/ui/PanelError";
 import { formatQty } from "@/lib/utils";
+import { formatNumber } from "@/lib/format";
 import { buildOverrideTooltip } from "@/components/features/inventory/ProductLabel";
 import { DispatchPreviewInfo, fetchDispatchPreview, type DispatchPreviewApi } from "@/components/features/transfers/DispatchPreview";
 import type { DemoProduct, DemoWarehouse, ProductApprovalOverride } from "@/lib/demo-data";
@@ -128,7 +129,7 @@ function ProductSelect({ options, value, onChange }: { options: ProductOption[];
               </span>
               {o.sourceKnown && (
                 <span className={`text-[11px] font-bold shrink-0 px-1.5 py-0.5 rounded ${TIER_TEXT[o.tier]} ${TIER_BG[o.tier]}`}>
-                  {o.avail < 0 ? o.avail.toLocaleString() : `+${o.avail.toLocaleString()}`}
+                  {o.avail < 0 ? formatNumber(o.avail) : `+${formatNumber(o.avail)}`}
                 </span>
               )}
             </div>
@@ -409,7 +410,7 @@ export function NewTransferPanel({ products, warehouses, orgSlug }: Props) {
             <input type="number" min="1" step="1" value={form.quantity} onChange={(e) => setField("quantity", e.target.value)} placeholder="e.g. 1455" className={inputCls} required />
             {estimatedValue !== undefined && (
               <p className="text-xs text-emerald-700 mt-1">
-                💰 {t("transfer_panel.estimated_value")}: ETB {estimatedValue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                💰 {t("transfer_panel.estimated_value")}: ETB {formatNumber(estimatedValue, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
               </p>
             )}
           </Field>

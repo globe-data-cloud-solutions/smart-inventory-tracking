@@ -6,6 +6,7 @@ import { useQuery } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import { t } from "@/lib/i18n";
 import { formatQty } from "@/lib/utils";
+import { formatDate } from "@/lib/format";
 import { ResolveDiscrepancyDialog, type ResolveTarget } from "./ResolveDiscrepancyDialog";
 import { codeLabel, type TransferDiscrepancyListItemApi } from "./TransferLotDetails";
 import { openDiscrepanciesKey } from "./transferQueryKeys";
@@ -112,7 +113,7 @@ export function OpenDiscrepanciesPanel({
                     <td className={`${TD} font-mono`}>{d.lot_number ?? "—"}</td>
                     <td className={`${TD} font-semibold text-red-700`}>{formatQty(d.missing_quantity)}</td>
                     <td className={TD}>{codeLabel("transfers.discrepancies.reason", d.reason)}</td>
-                    <td className={`${TD} whitespace-nowrap`}>{new Date(d.created_at).toLocaleDateString()}</td>
+                    <td className={`${TD} whitespace-nowrap`}>{formatDate(d.created_at)}</td>
                     {canResolve && (
                       <td className={TD}>
                         <button

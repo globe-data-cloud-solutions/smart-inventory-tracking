@@ -18,6 +18,7 @@ import { useWarehouses } from "@/hooks/useWarehouses";
 import { api } from "@/lib/api";
 import { t } from "@/lib/i18n";
 import { formatQty, formatCurrency } from "@/lib/utils";
+import { formatDate, formatTime } from "@/lib/format";
 import { useTenantName } from "@/hooks/useTenantName";
 
 type ApiTransfer = {
@@ -186,7 +187,7 @@ function TransactionDetailModal({ col, productName, rows, onClose }: {
                       {r.direction === "out" ? `−${formatQty(r.qty)}` : `+${formatQty(r.qty)}`}
                     </td>
                     <td className="px-2.5 py-2 text-gray-500 text-xs">
-                      {new Date(r.date).toLocaleDateString()} {new Date(r.date).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                      {formatDate(r.date)} {formatTime(r.date, { hour: "2-digit", minute: "2-digit", second: undefined })}
                     </td>
                     <td className="px-2.5 py-2 font-mono text-[11px] text-gray-400">{r.ref ?? "—"}</td>
                   </tr>

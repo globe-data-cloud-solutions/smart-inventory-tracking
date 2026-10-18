@@ -15,6 +15,7 @@ import {
 import { api } from "@/lib/api";
 import { t, getCurrentLocale } from "@/lib/i18n";
 import { formatQty } from "@/lib/utils";
+import { formatNumber, formatDate, formatDateTime } from "@/lib/format";
 import { useContactInfo } from "@/hooks/useContactInfo";
 import { pickLocalized } from "@/lib/billing-types";
 import { ContactModal } from "@/components/features/contact/ContactModal";
@@ -127,7 +128,7 @@ function SummaryCard({ title, subtitle, rows, accentColor }: {
           const cell = (
             <>
               <p className={`text-3xl font-extrabold m-0 ${r.warn ? "text-red-600" : "text-eth-forest"}`}>
-                {typeof r.value === "number" ? r.value.toLocaleString() : r.value}
+                {typeof r.value === "number" ? formatNumber(r.value) : r.value}
               </p>
               <p className="text-xs text-gray-500 mt-1 font-medium">{r.label}</p>
             </>
@@ -633,12 +634,12 @@ export default function OrgDashboard() {
                               </span>
                             </td>
                             <td className="px-4 py-2.5 text-center text-xs text-gray-600">
-                              {ten.sku_cap != null ? ten.sku_cap.toLocaleString() : <span className="text-gray-400">∞</span>}
+                              {ten.sku_cap != null ? formatNumber(ten.sku_cap) : <span className="text-gray-400">∞</span>}
                             </td>
                             <td className="px-4 py-2.5 text-center text-gray-700">{ten.user_count}</td>
                             <td className="px-4 py-2.5 text-center text-gray-700">{ten.node_count}</td>
                             <td className="px-4 py-2.5 text-xs text-gray-500 whitespace-nowrap">
-                              {new Date(ten.created_at).toLocaleDateString()}
+                              {formatDate(ten.created_at)}
                             </td>
                             <td className="px-4 py-2.5 text-xs whitespace-nowrap">
                               {ten.contract_end ? (
@@ -961,7 +962,7 @@ export default function OrgDashboard() {
                             </span>
                           </p>
                           <p className="m-0 text-xs text-gray-400 mt-0.5">
-                            {t("sa.renewals_requested_by")} {r.requested_by_email ?? r.requested_by} · {new Date(r.created_at).toLocaleDateString()}
+                            {t("sa.renewals_requested_by")} {r.requested_by_email ?? r.requested_by} · {formatDate(r.created_at)}
                           </p>
                           {r.message && (
                             <p className="m-0 text-xs text-gray-600 mt-1.5">
@@ -1077,7 +1078,7 @@ export default function OrgDashboard() {
                           {t("sa.activity_by")} {entry.actor_email ?? entry.actor_id}
                         </p>
                         <p className="m-0 text-xs text-gray-400">
-                          {new Date(entry.created_at).toLocaleString()}
+                          {formatDateTime(entry.created_at)}
                         </p>
                         {entry.note && (
                           <p className="m-0 text-xs text-gray-500 italic mt-1">{entry.note}</p>
@@ -1462,7 +1463,7 @@ export default function OrgDashboard() {
                   return (
                     <tr key={tr.transfer_id} className={`border-b border-gray-100 ${idx % 2 === 0 ? "bg-white" : "bg-gray-50"}`}>
                       <td className="px-4 py-2.5 text-gray-500 text-xs">
-                        {new Date(tr.created_at).toLocaleDateString()}
+                        {formatDate(tr.created_at)}
                       </td>
                       <td className="px-4 py-2.5">
                         <span className="text-xs font-bold bg-gray-100 text-gray-700 px-2 py-0.5 rounded">

@@ -191,6 +191,14 @@ the var is read at build time, so an env change alone does not take effect witho
 `/api/locales/[locale]` keeps serving all three packs regardless of `ENABLED_LOCALES`, so a
 disabled locale stays loadable for review/testing even while hidden from end users.
 
+- Format every date/time/number through `frontend/src/lib/format.ts`
+  (`formatDate`/`formatDateTime`/`formatTime`/`formatNumber`), never a bare
+  `toLocaleDateString()`/`toLocaleString()`/`toLocaleTimeString()`/`Intl.*` call — those follow
+  the browser's language, not the app's. Dates/times render on the Gregorian calendar in both
+  `en` and `am`; the Ethiopian calendar is a possible later option, not built. `check_i18n.sh`
+  enforces this outside `lib/format.ts` (an `i18n-ignore:` marker exempts a line whose value is
+  never displayed, e.g. a comparison-only date string).
+
 
 ## 27. UI/UX Rules
 

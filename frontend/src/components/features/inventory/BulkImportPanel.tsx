@@ -10,6 +10,7 @@ import { useWriteGuard, guardProps } from "@/hooks/useWriteGuard";
 import { t } from "@/lib/i18n";
 import type { DemoProduct, DemoWarehouse } from "@/lib/demo-data";
 import type { ImportBatch } from "@/app/api/v1/imports/_demo-state";
+import { formatNumber } from "@/lib/format";
 
 const isGatewayMode = !!process.env.NEXT_PUBLIC_API_URL;
 
@@ -232,7 +233,7 @@ export function BulkImportPanel({ products, warehouses, orgSlug }: Props) {
                           <span className="text-xs text-gray-700 font-semibold">{row.skuCode || "—"}</span>
                           <span className="text-[11px] text-gray-400">@ {row.warehouseCode || "—"}</span>
                           {row.productName && <span className="text-[11px] text-gray-500">· {row.productName}</span>}
-                          <span className="ml-auto text-[11px] font-bold text-gray-700">{row.openingQuantity > 0 ? `${row.openingQuantity.toLocaleString()} ${row.uom}` : ""}</span>
+                          <span className="ml-auto text-[11px] font-bold text-gray-700">{row.openingQuantity > 0 ? `${formatNumber(row.openingQuantity)} ${row.uom}` : ""}</span>
                         </div>
                         {row.issues.map((issue, iIdx) => (
                           <div key={iIdx} className={`font-mono text-[11px] ml-6 leading-relaxed ${issue.severity === "ERROR" ? "text-red-600" : "text-amber-800"}`}>

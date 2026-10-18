@@ -5,6 +5,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import { t } from "@/lib/i18n";
 import { formatCurrency } from "@/lib/utils";
+import { formatDate } from "@/lib/format";
 import { Badge } from "@/components/ui/Badge";
 import { tierLabel as planTierLabel } from "@/lib/planError";
 import { PublicContactLink } from "@/components/features/auth/PublicContactLink";
@@ -302,7 +303,7 @@ function RenewalCard() {
       {openRequest ? (
         <p className="text-sm text-emerald-700 bg-emerald-50 border border-emerald-200 rounded px-3 py-2">
           {t("tenant_admin.plan.renewal.open_notice")
-            .replace("{date}", new Date(openRequest.created_at).toLocaleDateString())}
+            .replace("{date}", formatDate(openRequest.created_at))}
         </p>
       ) : (
         <div className="space-y-2">
@@ -338,7 +339,7 @@ function RenewalCard() {
         <p className="mt-3 text-xs text-gray-600">
           {t("tenant_admin.plan.renewal.upgrade_line")
             .replace("{tier}", planTierLabel(openUpgradeRequest.requested_tier ?? ""))
-            .replace("{date}", new Date(openUpgradeRequest.created_at).toLocaleDateString())}
+            .replace("{date}", formatDate(openUpgradeRequest.created_at))}
         </p>
       )}
 
@@ -364,7 +365,7 @@ function RenewalCard() {
             {(requests ?? []).map((r) => (
               <div key={r.id} className="flex items-start justify-between gap-3 text-xs border border-gray-100 rounded px-3 py-2">
                 <div className="min-w-0">
-                  <p className="m-0 text-gray-700">{new Date(r.created_at).toLocaleDateString()}</p>
+                  <p className="m-0 text-gray-700">{formatDate(r.created_at)}</p>
                   {r.message && <p className="m-0 text-gray-500 mt-0.5 italic">{r.message}</p>}
                   {r.handled_note && (
                     <p className="m-0 text-gray-500 mt-0.5">{r.handled_note}</p>
@@ -614,7 +615,7 @@ function SubscriptionAndInvoices({ tenantId }: { tenantId?: string }) {
   const badgeVariant = SUBSCRIPTION_BADGE[subscription.status ?? ""] ?? "neutral";
   const periodLabelKey = subscription.billing_period === "ANNUAL" ? "tenant_admin.billing.annual" : "tenant_admin.billing.monthly";
   const pendingPayment = subscription.payments.find((p) => p.status === "PENDING") ?? null;
-  const todayLocal = new Date().toLocaleDateString("en-CA"); // YYYY-MM-DD, local time
+  const todayLocal = new Date().toLocaleDateString("en-CA"); // YYYY-MM-DD, local time; used only for comparison, never shown — i18n-ignore: comparison value, not displayed
   const billingPeriodEnded = !!subscription.current_period_end && subscription.current_period_end < todayLocal;
 
   return (
@@ -679,7 +680,7 @@ function SubscriptionAndInvoices({ tenantId }: { tenantId?: string }) {
             <p className="text-sm text-amber-900">
               {t("plan.downgrade_scheduled")
                 .replace("{tier}", planTierLabel(subscription.scheduled_tier))
-                .replace("{date}", subscription.scheduled_at ? new Date(subscription.scheduled_at).toLocaleDateString() : "—")}
+                .replace("{date}", subscription.scheduled_at ? formatDate(subscription.scheduled_at) : "—")}
             </p>
             {tenantId && (
               <button
