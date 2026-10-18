@@ -31,6 +31,18 @@ chore/<slug>              e.g. chore/add-oromifa-locale
   `workflow_dispatch`); run it manually from the Actions tab when verification
   is wanted.
 
+### Which repo runs what
+
+- **PRs and their checks run on `abiygit/smart-inventory-tracking`** — development PRs are
+  opened, checked (`container-smoke.yml`, `terraform-check.yml`) and merged there. `main` is
+  then pushed to both remotes.
+- **AWS workflows run only on `globe-data-cloud-solutions/smart-inventory-tracking`** —
+  `infrastructure.yml`, `deploy.yml` and `lifecycle.yml` each carry a `github.repository`
+  guard, so they skip on any other repo. They are dispatched only on Alex's explicit
+  instruction (Claude never dispatches them on its own).
+- `container-smoke.yml` is guarded to `abiygit/smart-inventory-tracking`, so pushing `main` to
+  both remotes does not run a duplicate smoke test on globe.
+
 ### PR checklist — `.github/PULL_REQUEST_TEMPLATE.md`
 
 ```markdown
