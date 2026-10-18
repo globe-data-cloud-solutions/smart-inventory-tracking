@@ -188,7 +188,8 @@
     "coming_soon_badge": "በቅርቡ ይመጣል",
     "coming_soon_hint": "ይህ ባህሪ እስካሁን አይገኝም።",
     "auto_approved_transfer": "በራስ-ሰር ተፈቅዷል፦ {type} ዝውውር {ref}",
-    "units_summary": "{qty} ክፍሎች {product} — {warehouse}"
+    "units_summary": "{qty} ክፍሎች {product} — {warehouse}",
+    "dismiss": "አሰናብት"
   },
   "not_found": {
     "heading": "ገጽ አልተገኘም",
@@ -1431,7 +1432,39 @@
     "self_approval_level_note": "ራስ-ማጽደቅ ለ {position} — {node} (L{level})።",
     "threshold_quantity": "መጠን",
     "threshold_value": "ዋጋ",
-    "threshold_either": "ከሁሉም አንዱ"
+    "threshold_either": "ከሁሉም አንዱ",
+    "table_level_name": "የደረጃ ስም *",
+    "table_role": "ሚና *",
+    "table_holds_stock": "ክምችት ይይዛል",
+    "select_role_placeholder": "— ሚና ይምረጡ —",
+    "levels_saved": "ደረጃዎች ተቀምጠዋል።",
+    "level_placeholder_1": "ዋና ፋብሪካ",
+    "level_placeholder_2": "አካባቢ",
+    "level_placeholder_3": "መጋዘን",
+    "level_placeholder_4": "ንዑስ መጋዘን",
+    "level_placeholder_5": "ቆጣሪ",
+    "node_name_required": "ስም ያስፈልጋል።",
+    "edit_node_heading": "አርትዕ፦ {name}",
+    "new_node_heading": "አዲስ ኖድ — {level}",
+    "node_form_name_label": "ስም *",
+    "node_form_name_placeholder": "ለምሳሌ ሰሜን አዲስ መጋዘን",
+    "node_location_label": "አድራሻ (አማራጭ)",
+    "node_location_placeholder": "ለምሳሌ ቂርቆስ፣ አዲስ አበባ",
+    "node_primary_source_label": "ዋና የአቅርቦት ምንጭ (አማራጭ)",
+    "save_node": "ኖድ አስቀምጥ",
+    "add_child_node": "ንዑስ ኖድ ጨምር",
+    "edit_node_action": "ኖድ አርትዕ",
+    "add_root_node": "+ ስር ኖድ ጨምር (L1)",
+    "no_nodes_for_positions": "ኖዶች የለም። መጀመሪያ የድርጅት ዛፍን ያዋቅሩ።",
+    "edit_position_heading": "ቦታ አርትዕ",
+    "position_title_placeholder": "ለምሳሌ የመጋዘን አስኪያጅ",
+    "no_reports_to": "— የለም —",
+    "reports_to_prefix": "· ሪፖርት የሚያደርግለት፦",
+    "no_active_transfer_types": "ንቁ የዝውውር አይነቶች የለም። መጀመሪያ በዝውውር አይነቶች ገጽ ያዋቅሩ።",
+    "approval_steps_heading": "የማፅደቅ ደረጃዎች",
+    "rule_label": "ደንብ {n}",
+    "tab_levels": "የድርጅት ደረጃዎች",
+    "tab_tree": "የድርጅት ዛፍ"
   },
   "personnel": {
     "page_title": "የሠራተኛ አስተዳደር",
@@ -1528,7 +1561,14 @@
     "no_facility_assigned": "ምንም ቦታ አልተሰጠም (ኋላ ላይ ይመድቡ)",
     "edit_user": "ተጠቃሚ አርም",
     "save_changes": "ለውጦች አስቀምጥ",
-    "force_password_reset": "ወደፊት ምዝገባ ላይ የይለፍ ቃል ዳግም ማስጀምር አስገድድ"
+    "force_password_reset": "ወደፊት ምዝገባ ላይ የይለፍ ቃል ዳግም ማስጀምር አስገድድ",
+    "create_user_fields_required": "ስም፣ ኢሜል እና የመለያ ቁልፍ ያስፈልጋሉ።",
+    "full_name_placeholder": "ሙሉ ስም",
+    "email_placeholder": "email@company.com",
+    "assign_later_placeholder": "— በኋላ ይመድቡ —",
+    "pwd_reset_badge": "የመለያ ቁልፍ ዳግም ማስጀመር",
+    "no_position_badge": "⚠ ቦታ አልተመደበም",
+    "acting_assignments_count": "{n} ተጠባባቂ ምደባ(ዎች)"
   },
   "approval_rules": {
     "description": "ለእያንዳንዱ የግብይት አይነት የፍቃድ ወረፋ የሚወስኑ የቁጥር ደረጃዎችን ያቀናብሩ።",
@@ -1743,7 +1783,9 @@
     "add": "ቦታ ጨምር",
     "save": "ቦታ አስቀምጥ",
     "no_positions": "ለዚህ ኖድ ምንም ቦታዎች አልተዘጋጁም።",
-    "select_node": "ቦታዎቹን ለማስተዳደር በግራ በኩል ኖድ ይምረጡ።"
+    "select_node": "ቦታዎቹን ለማስተዳደር በግራ በኩል ኖድ ይምረጡ።",
+    "title_required": "የቦታ ማዕረግ ያስፈልጋል።",
+    "confirm_delete": "ቦታ \"{title}\" ይሰረዝ?"
   },
   "transfer_type": {
     "request_stock": "ክምችት ጠይቅ (PULL)",
@@ -1817,7 +1859,11 @@
     "no_positions_available": "ለዚህ ተከራይ እስካሁን ምንም ቦታ አልተዋቀረም።",
     "self_approve_unlimited": "በራስ ማጽደቅ (ያለ ገደብ)",
     "legacy_role_label": "{role} (ነባር — ምንም ቦታ አልተመደበም)",
-    "coverage_hint": "ይህ ህግ ወደ {node} ላይ ወደ {position} (ደረጃ {level}) ይልካል። ተመሳሳይ ደረጃ ያሉ ቀጣዮቹ ኖዶች እስካሁን ወረፋ ህግ የላቸውም: {nodes}። ለእነዚህ ኖዶች ህጎች ማከልን ያስቡ።"
+    "coverage_hint": "ይህ ህግ ወደ {node} ላይ ወደ {position} (ደረጃ {level}) ይልካል። ተመሳሳይ ደረጃ ያሉ ቀጣዮቹ ኖዶች እስካሁን ወረፋ ህግ የላቸውም: {nodes}። ለእነዚህ ኖዶች ህጎች ማከልን ያስቡ።",
+    "range_to": "እስከ",
+    "qty_min_placeholder": "ዝቅተኛ",
+    "qty_max_unlimited_placeholder": "ያልተገደበ",
+    "units_suffix": "ክፍሎች"
   },
   "transfer_panel": {
     "estimated_value": "ግምታዊ ዋጋ",
@@ -2086,7 +2132,10 @@
     "upload_logo": "አርማ ጫን",
     "upload_banner": "ሰሌዳ ጫን",
     "branding_preview": "ቅድሚያ እይታ",
-    "branding_saved": "ብራንዲንግ ተዘምኗል"
+    "branding_saved": "ብራንዲንግ ተዘምኗል",
+    "uploading": "በመጫን ላይ…",
+    "logo_dimensions_hint": "JPG · PNG · WebP · እስከ 1MB",
+    "banner_dimensions_hint": "JPG · PNG · WebP · እስከ 3MB · የሚመከረው 1200×300px"
   },
   "tenant_admin": {
     "page": {

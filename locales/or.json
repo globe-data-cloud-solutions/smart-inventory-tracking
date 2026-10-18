@@ -189,7 +189,8 @@
     "coming_soon_badge": "Coming soon",
     "coming_soon_hint": "This feature is not available yet.",
     "auto_approved_transfer": "Auto-approved: {type} transfer {ref}",
-    "units_summary": "{qty} units {product} — {warehouse}"
+    "units_summary": "{qty} units {product} — {warehouse}",
+    "dismiss": "Dismiss"
   },
   "product": {
     "add": {
@@ -1115,7 +1116,39 @@
     "self_approval_level_note": "Of-eeyyamuu ofii {position} — {node} (L{level}) tiif.",
     "threshold_quantity": "Quantity",
     "threshold_value": "Value",
-    "threshold_either": "Either"
+    "threshold_either": "Either",
+    "table_level_name": "Level Name *",
+    "table_role": "Role *",
+    "table_holds_stock": "Holds Stock",
+    "select_role_placeholder": "— Select Role —",
+    "levels_saved": "Levels saved.",
+    "level_placeholder_1": "Main Factory",
+    "level_placeholder_2": "Region",
+    "level_placeholder_3": "Warehouse",
+    "level_placeholder_4": "Sub-Warehouse",
+    "level_placeholder_5": "Counter",
+    "node_name_required": "Name is required.",
+    "edit_node_heading": "Edit: {name}",
+    "new_node_heading": "New node — {level}",
+    "node_form_name_label": "Name *",
+    "node_form_name_placeholder": "e.g. North Addis Warehouse",
+    "node_location_label": "Location / Address (optional)",
+    "node_location_placeholder": "e.g. Kirkos, Addis Ababa",
+    "node_primary_source_label": "Primary supply source (optional)",
+    "save_node": "Save Node",
+    "add_child_node": "Add child node",
+    "edit_node_action": "Edit node",
+    "add_root_node": "+ Add root node (L1)",
+    "no_nodes_for_positions": "No nodes. Set up the Tree first.",
+    "edit_position_heading": "Edit Position",
+    "position_title_placeholder": "e.g. Warehouse Manager",
+    "no_reports_to": "— none —",
+    "reports_to_prefix": "· Reports to:",
+    "no_active_transfer_types": "No active transfer types. Configure them in the Transfer Types tab first.",
+    "approval_steps_heading": "Approval Steps",
+    "rule_label": "Rule {n}",
+    "tab_levels": "Organisation Levels",
+    "tab_tree": "Organisation Tree"
   },
   "personnel": {
     "page_title": "Personnel Management",
@@ -1212,7 +1245,14 @@
     "no_facility_assigned": "Bakka hin kennamne (booda ramadi)",
     "edit_user": "Edit User",
     "save_changes": "Save Changes",
-    "force_password_reset": "Force password reset on next login"
+    "force_password_reset": "Force password reset on next login",
+    "create_user_fields_required": "Name, email and password are required.",
+    "full_name_placeholder": "Full name",
+    "email_placeholder": "email@company.com",
+    "assign_later_placeholder": "— assign later —",
+    "pwd_reset_badge": "pwd reset",
+    "no_position_badge": "⚠ No position assigned",
+    "acting_assignments_count": "{n} acting assignment(s)"
   },
   "approval_rules": {
     "description": "Gosoota hojii hunda dhaaf ramaddii hayyamaa murteessu gatii qabsiisi.",
@@ -1421,7 +1461,9 @@
     "add": "Add Position",
     "save": "Save Position",
     "no_positions": "No positions defined for this node.",
-    "select_node": "Select a node on the left to manage its positions."
+    "select_node": "Select a node on the left to manage its positions.",
+    "title_required": "Position Title is required.",
+    "confirm_delete": "Delete position \"{title}\"?"
   },
   "transfer_type": {
     "request_stock": "Request Stock (PULL)",
@@ -1495,7 +1537,11 @@
     "no_positions_available": "Kireeffataa kanaaf iddoon hin qophoofne.",
     "self_approve_unlimited": "Ofii of-mirkaneessuu (daangaa hin qabu)",
     "legacy_role_label": "{role} (durii — iddoon hin ramadamne)",
-    "coverage_hint": "This rule routes to {position} at {node} (Level {level}). The following nodes at the same level have no routing rule yet: {nodes}. Consider adding rules for those nodes."
+    "coverage_hint": "This rule routes to {position} at {node} (Level {level}). The following nodes at the same level have no routing rule yet: {nodes}. Consider adding rules for those nodes.",
+    "range_to": "to",
+    "qty_min_placeholder": "min",
+    "qty_max_unlimited_placeholder": "unlimited",
+    "units_suffix": "units"
   },
   "transfer_panel": {
     "estimated_value": "Estimated value",
@@ -2076,7 +2122,10 @@
     "upload_logo": "Akaakuu fe'i",
     "upload_banner": "Baneera fe'i",
     "branding_preview": "Ilaalcha",
-    "branding_saved": "Braandiin haaromfame"
+    "branding_saved": "Braandiin haaromfame",
+    "uploading": "Uploading…",
+    "logo_dimensions_hint": "JPG · PNG · WebP · max 1MB",
+    "banner_dimensions_hint": "JPG · PNG · WebP · max 3MB · recommended 1200×300px"
   },
   "tenant_admin": {
     "page": {

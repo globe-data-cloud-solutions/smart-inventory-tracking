@@ -423,7 +423,7 @@ function LevelsTab({
                   >
                     <option value="">{t("org_setup.no_default_role")}</option>
                     {allowedNewRoleOptions.map((r) => (
-                      <option key={r.code} value={r.code}>{r.code} — {r.label}</option>
+                      <option key={r.code} value={r.code}>{r.code} — {t(`roles.${r.code}`)}</option>
                     ))}
                   </select>
                 </div>
@@ -565,10 +565,10 @@ function LevelsTab({
           <thead className="bg-gray-50 border-b border-gray-200">
             <tr>
               <th className="px-3 py-2 text-left text-xs font-semibold text-gray-500 w-12">No</th>
-              <th className="px-3 py-2 text-left text-xs font-semibold text-gray-500">Level Name *</th>
-              <th className="px-3 py-2 text-left text-xs font-semibold text-gray-500">Role *</th>
+              <th className="px-3 py-2 text-left text-xs font-semibold text-gray-500">{t("org_setup.table_level_name")}</th>
+              <th className="px-3 py-2 text-left text-xs font-semibold text-gray-500">{t("org_setup.table_role")}</th>
               <th className="px-3 py-2 text-left text-xs font-semibold text-gray-500">{t("org_setup.role_display_name")}</th>
-              <th className="px-3 py-2 text-center text-xs font-semibold text-gray-500 w-24">Holds Stock</th>
+              <th className="px-3 py-2 text-center text-xs font-semibold text-gray-500 w-24">{t("org_setup.table_holds_stock")}</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-100">
@@ -594,7 +594,13 @@ function LevelsTab({
                         }
                       }}
                       onKeyDown={(e) => { if (e.key === "Enter") e.currentTarget.blur(); }}
-                      placeholder={["Main Factory", "Region", "Warehouse", "Sub-Warehouse", "Counter"][idx] ?? ""}
+                      placeholder={[
+                        t("org_setup.level_placeholder_1"),
+                        t("org_setup.level_placeholder_2"),
+                        t("org_setup.level_placeholder_3"),
+                        t("org_setup.level_placeholder_4"),
+                        t("org_setup.level_placeholder_5"),
+                      ][idx] ?? ""}
                       disabled={persisted && gp.disabled}
                       title={persisted ? gp.title : undefined}
                       className="w-full border border-gray-300 rounded px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 disabled:opacity-60 disabled:cursor-not-allowed"
@@ -619,9 +625,9 @@ function LevelsTab({
                         })}
                         className="border border-gray-300 rounded px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
                       >
-                        <option value="">— Select Role —</option>
+                        <option value="">{t("org_setup.select_role_placeholder")}</option>
                         {ROLE_OPTIONS.map((r) => (
-                          <option key={r.code} value={r.code}>{r.code} — {r.label}</option>
+                          <option key={r.code} value={r.code}>{r.code} — {t(`roles.${r.code}`)}</option>
                         ))}
                       </select>
                     )}
@@ -694,7 +700,7 @@ function LevelsTab({
 
       {renameError && <p className="text-sm text-red-600">{renameError}</p>}
       {saveError && <p className="text-sm text-red-600">{saveError}</p>}
-      {saveOk && <p className="text-sm text-emerald-600 font-medium">Levels saved.</p>}
+      {saveOk && <p className="text-sm text-emerald-600 font-medium">{t("org_setup.levels_saved")}</p>}
 
       {stockToggleConfirm && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/40 px-4">
@@ -858,7 +864,7 @@ function NodeForm({
 
   async function save() {
     if (gp.disabled) return;
-    if (!form.name.trim()) { setError("Name is required."); return; }
+    if (!form.name.trim()) { setError(t("org_setup.node_name_required")); return; }
     setSaving(true);
     setError(null);
     try {
@@ -927,17 +933,19 @@ function NodeForm({
   return (
     <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 space-y-3 mt-2">
       <p className="text-xs font-semibold text-blue-800">
-        {editingNode ? `Edit: ${editingNode.name}` : `New node — ${levelLabel}`}
+        {editingNode
+          ? t("org_setup.edit_node_heading").replace("{name}", editingNode.name)
+          : t("org_setup.new_node_heading").replace("{level}", levelLabel)}
       </p>
 
       {/* Name */}
       <div>
-        <label className="block text-xs font-medium text-gray-600 mb-1">Name *</label>
+        <label className="block text-xs font-medium text-gray-600 mb-1">{t("org_setup.node_form_name_label")}</label>
         <input
           type="text"
           value={form.name}
           onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
-          placeholder="e.g. North Addis Warehouse"
+          placeholder={t("org_setup.node_form_name_placeholder")}
           autoFocus
           className="w-full text-sm border border-gray-300 rounded px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-blue-500"
         />
@@ -945,12 +953,12 @@ function NodeForm({
 
       {/* Location (optional) */}
       <div>
-        <label className="block text-xs font-medium text-gray-600 mb-1">Location / Address (optional)</label>
+        <label className="block text-xs font-medium text-gray-600 mb-1">{t("org_setup.node_location_label")}</label>
         <input
           type="text"
           value={form.location}
           onChange={(e) => setForm((f) => ({ ...f, location: e.target.value }))}
-          placeholder="e.g. Kirkos, Addis Ababa"
+          placeholder={t("org_setup.node_location_placeholder")}
           className="w-full text-sm border border-gray-300 rounded px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-blue-500"
         />
       </div>
@@ -958,13 +966,13 @@ function NodeForm({
       {/* Primary source (optional, not shown when editing) */}
       {!editingNode && (
         <div>
-          <label className="block text-xs font-medium text-gray-600 mb-1">Primary supply source (optional)</label>
+          <label className="block text-xs font-medium text-gray-600 mb-1">{t("org_setup.node_primary_source_label")}</label>
           <select
             value={form.primary_source_id}
             onChange={(e) => setForm((f) => ({ ...f, primary_source_id: e.target.value }))}
             className="w-full text-sm border border-gray-300 rounded px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-blue-500"
           >
-            <option value="">None</option>
+            <option value="">{t("common.none")}</option>
             {flat.filter((n) => n.is_stock_holding && n.is_active).map((n) => (
               <option key={n.id} value={n.id}>
                 L{n.hierarchy_level} — {n.name}
@@ -1019,14 +1027,14 @@ function NodeForm({
           title={gp.title}
           className="px-4 py-1.5 bg-blue-600 text-white text-sm font-semibold rounded hover:bg-blue-700 disabled:opacity-50"
         >
-          {saving ? t("common.saving") : "Save Node"}
+          {saving ? t("common.saving") : t("org_setup.save_node")}
         </button>
         <button
           type="button"
           onClick={onCancel}
           className="px-4 py-1.5 border border-gray-300 text-gray-600 text-sm font-medium rounded hover:bg-gray-50"
         >
-          Cancel
+          {t("common.cancel")}
         </button>
       </div>
     </div>
@@ -1196,7 +1204,7 @@ function TreeTab({
                 {canAddChild && (
                   <button
                     type="button"
-                    title={addGp.title ?? "Add child node"}
+                    title={addGp.title ?? t("org_setup.add_child_node")}
                     disabled={addGp.disabled}
                     onClick={() => { setAddParentId(node.id); setEditNodeId(null); }}
                     className="w-6 h-6 flex items-center justify-center text-xs rounded border border-emerald-300 text-emerald-700 hover:bg-emerald-100 bg-white disabled:opacity-40 disabled:cursor-not-allowed"
@@ -1206,7 +1214,7 @@ function TreeTab({
                 )}
                 <button
                   type="button"
-                  title={editGp.title ?? "Edit node"}
+                  title={editGp.title ?? t("org_setup.edit_node_action")}
                   disabled={editGp.disabled}
                   onClick={() => { setEditNodeId(node.id); setAddParentId(null); }}
                   className="w-6 h-6 flex items-center justify-center text-xs rounded border border-gray-300 text-gray-600 hover:bg-gray-100 bg-white disabled:opacity-40 disabled:cursor-not-allowed"
@@ -1376,7 +1384,7 @@ function TreeTab({
           title={addGp.title}
           className="px-4 py-2 border-2 border-dashed border-emerald-300 text-emerald-700 text-sm font-medium rounded-lg hover:bg-emerald-50 w-full disabled:opacity-40 disabled:cursor-not-allowed"
         >
-          + Add root node (L1)
+          {t("org_setup.add_root_node")}
         </button>
       )}
 
@@ -2215,7 +2223,7 @@ function PositionsTab({ tenantId }: { tenantId: string }) {
 
   async function savePosition() {
     if (gp.disabled) return;
-    if (!formTitle.trim()) { setFormErr(t("position.title") + " is required."); return; }
+    if (!formTitle.trim()) { setFormErr(t("position.title_required")); return; }
     setSaving(true); setFormErr(null);
     try {
       const body = {
@@ -2253,7 +2261,7 @@ function PositionsTab({ tenantId }: { tenantId: string }) {
 
   async function deletePosition(posId: string, title: string) {
     if (gp.disabled) return;
-    if (!confirm(`Delete position "${title}"?`)) return;
+    if (!confirm(t("position.confirm_delete").replace("{title}", title))) return;
     try {
       await api.delete(`/api/v1/tenants/${tenantId}/positions/${posId}`);
       void qc.invalidateQueries({ queryKey: ["positions", tenantId] });
@@ -2306,7 +2314,7 @@ function PositionsTab({ tenantId }: { tenantId: string }) {
       {/* Left: tree */}
       <div className="w-64 shrink-0 space-y-1 border-r border-gray-200 pr-4 overflow-y-auto" style={{ maxHeight: "600px" }}>
         {nodesLoading ? <p className="text-xs text-gray-400 py-4 text-center">{t("common.loading")}</p>
-          : nodes.length === 0 ? <p className="text-xs text-gray-400 py-4 text-center">No nodes. Set up the Tree first.</p>
+          : nodes.length === 0 ? <p className="text-xs text-gray-400 py-4 text-center">{t("org_setup.no_nodes_for_positions")}</p>
           : nodes.map((n) => renderTreeNode(n, 0))}
       </div>
 
@@ -2333,11 +2341,11 @@ function PositionsTab({ tenantId }: { tenantId: string }) {
             {/* Add/edit form */}
             {(showAddForm || editPosId) && (
               <div className="border border-emerald-300 rounded-lg p-4 bg-emerald-50 space-y-3">
-                <p className="text-xs font-bold uppercase text-emerald-700">{editPosId ? "Edit Position" : t("position.add")}</p>
+                <p className="text-xs font-bold uppercase text-emerald-700">{editPosId ? t("org_setup.edit_position_heading") : t("position.add")}</p>
                 <div>
                   <label className="block text-xs font-bold text-gray-700 mb-1">{t("position.title")} *</label>
                   <input value={formTitle} onChange={(e) => setFormTitle(e.target.value)}
-                    className="w-full border border-gray-300 rounded px-2.5 py-1.5 text-sm" placeholder="e.g. Warehouse Manager" />
+                    className="w-full border border-gray-300 rounded px-2.5 py-1.5 text-sm" placeholder={t("org_setup.position_title_placeholder")} />
                 </div>
                 <div>
                   <label className="block text-xs font-bold text-gray-700 mb-1">{t("position.role")} *</label>
@@ -2349,14 +2357,14 @@ function PositionsTab({ tenantId }: { tenantId: string }) {
                     if (NO_SELF_APPROVAL_ROLES.has(next)) setFormSAEnabled(false);
                   }}
                     className="w-full border border-gray-300 rounded px-2.5 py-1.5 text-sm bg-white">
-                    {POSITION_ROLES.map((r) => <option key={r.code} value={r.code}>{r.label} ({r.code})</option>)}
+                    {POSITION_ROLES.map((r) => <option key={r.code} value={r.code}>{t(`roles.${r.code}`)} ({r.code})</option>)}
                   </select>
                 </div>
                 <div>
                   <label className="block text-xs font-bold text-gray-700 mb-1">{t("position.reports_to")}</label>
                   <select value={formReportsTo} onChange={(e) => setFormReportsTo(e.target.value)}
                     className="w-full border border-gray-300 rounded px-2.5 py-1.5 text-sm bg-white">
-                    <option value="">— none —</option>
+                    <option value="">{t("org_setup.no_reports_to")}</option>
                     {allPositions.filter((p) => p.id !== editPosId).map((p) => (
                       <option key={p.id} value={p.id}>{p.title} ({p.role_code}) — {positionNodeMap.get(p.id) ?? ""}</option>
                     ))}
@@ -2481,7 +2489,7 @@ function PositionsTab({ tenantId }: { tenantId: string }) {
                           />
                           {pos.reports_to_title ? (
                             <span>
-                              · Reports to: {pos.reports_to_title}
+                              {t("org_setup.reports_to_prefix")} {pos.reports_to_title}
                               {pos.reports_to_position_id && positionNodeMap.get(pos.reports_to_position_id) !== selectedGroup?.node_name
                                 ? ` (${positionNodeMap.get(pos.reports_to_position_id) ?? ""})`
                                 : ""}
@@ -2840,7 +2848,7 @@ function AdjustmentRulesSection({ tenantId, onRuleCountChange }: { tenantId: str
             <Fragment key={rule.id ?? `local_${idx}`}>
             <div className="border border-gray-200 rounded-xl p-4 bg-white space-y-3">
               <div className="flex items-center justify-between">
-                <span className="text-xs font-bold uppercase text-gray-500">Rule {idx + 1}</span>
+                <span className="text-xs font-bold uppercase text-gray-500">{t("org_setup.rule_label").replace("{n}", String(idx + 1))}</span>
                 <div className="flex items-center gap-2">
                   <label className="text-[10px] font-semibold text-gray-400 uppercase">{t("approval_rule.priority_label")}</label>
                   <input type="number" min={0} value={rule.priority}
@@ -2998,7 +3006,7 @@ function AdjustmentRulesSection({ tenantId, onRuleCountChange }: { tenantId: str
                   </span>
                   <button type="button"
                     onClick={() => setDismissedHints((prev) => new Set(prev).add(h.key))}
-                    className="shrink-0 text-blue-400 hover:text-blue-600" aria-label="Dismiss">✕</button>
+                    className="shrink-0 text-blue-400 hover:text-blue-600" aria-label={t("common.dismiss")}>✕</button>
                 </div>
               ))}
             </Fragment>
@@ -3298,7 +3306,7 @@ function ApprovalRulesV2Tab({ tenantId, prefillLevel }: { tenantId: string; pref
         <>
           {(ttLoading || rulesLoading) && <p className="text-sm text-gray-400 py-8 text-center">{t("common.loading")}</p>}
           {!ttLoading && !rulesLoading && activeTypes.length === 0 && (
-            <p className="text-sm text-gray-400 py-8 text-center">No active transfer types. Configure them in the Transfer Types tab first.</p>
+            <p className="text-sm text-gray-400 py-8 text-center">{t("org_setup.no_active_transfer_types")}</p>
           )}
           {!ttLoading && !rulesLoading && activeTypes.length > 0 && (<>
             {/* Type tabs */}
@@ -3338,7 +3346,7 @@ function ApprovalRulesV2Tab({ tenantId, prefillLevel }: { tenantId: string; pref
             <div className="border border-gray-200 rounded-xl p-4 bg-white space-y-3">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-3">
-                  <span className="text-xs font-bold uppercase text-gray-500">Rule {rIdx + 1}</span>
+                  <span className="text-xs font-bold uppercase text-gray-500">{t("org_setup.rule_label").replace("{n}", String(rIdx + 1))}</span>
                   <div className="flex flex-col gap-0.5">
                     <div className="flex items-center gap-1.5">
                       <label className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide">
@@ -3390,19 +3398,19 @@ function ApprovalRulesV2Tab({ tenantId, prefillLevel }: { tenantId: string; pref
                 </div>
                 {(rule.threshold_type === "QUANTITY" || rule.threshold_type === "EITHER" || rule.threshold_type === "BOTH") && (
                   <div className="flex items-center gap-2 mt-2">
-                    <input type="number" min={0} value={rule.quantity_min} placeholder="min" onChange={(e) => updateRule(activeType, rIdx, { quantity_min: Number(e.target.value) })}
+                    <input type="number" min={0} value={rule.quantity_min} placeholder={t("approval_rule.qty_min_placeholder")} onChange={(e) => updateRule(activeType, rIdx, { quantity_min: Number(e.target.value) })}
                       className="w-24 border border-gray-300 rounded px-2 py-1 text-xs" />
-                    <span className="text-xs text-gray-400">to</span>
-                    <input type="number" min={0} value={rule.quantity_max ?? ""} placeholder="unlimited" onChange={(e) => updateRule(activeType, rIdx, { quantity_max: e.target.value ? Number(e.target.value) : null })}
+                    <span className="text-xs text-gray-400">{t("approval_rule.range_to")}</span>
+                    <input type="number" min={0} value={rule.quantity_max ?? ""} placeholder={t("approval_rule.qty_max_unlimited_placeholder")} onChange={(e) => updateRule(activeType, rIdx, { quantity_max: e.target.value ? Number(e.target.value) : null })}
                       className="w-28 border border-gray-300 rounded px-2 py-1 text-xs" />
-                    <span className="text-xs text-gray-400">units</span>
+                    <span className="text-xs text-gray-400">{t("approval_rule.units_suffix")}</span>
                   </div>
                 )}
               </div>
 
               {/* Approval steps */}
               <div>
-                <p className="text-xs font-bold text-gray-600 mb-2">Approval Steps</p>
+                <p className="text-xs font-bold text-gray-600 mb-2">{t("org_setup.approval_steps_heading")}</p>
                 <div className="space-y-2">
                   {rule.steps.map((step, sIdx) => (
                     <div key={sIdx} className="flex items-center gap-2 flex-wrap bg-gray-50 rounded p-2">
@@ -3450,7 +3458,7 @@ function ApprovalRulesV2Tab({ tenantId, prefillLevel }: { tenantId: string; pref
                   </span>
                   <button type="button"
                     onClick={() => setDismissedHints((prev) => new Set(prev).add(h.key))}
-                    className="shrink-0 text-blue-400 hover:text-blue-600" aria-label="Dismiss">✕</button>
+                    className="shrink-0 text-blue-400 hover:text-blue-600" aria-label={t("common.dismiss")}>✕</button>
                 </div>
               ))}
             </Fragment>
@@ -3465,7 +3473,7 @@ function ApprovalRulesV2Tab({ tenantId, prefillLevel }: { tenantId: string; pref
 
           {gp.title && <p className="text-xs font-semibold text-red-600 bg-red-50 border border-red-200 rounded px-3 py-2">{gp.title}</p>}
           {saveErr && <p className="text-sm text-red-600">{saveErr}</p>}
-          {saveOk && <p className="text-sm text-emerald-600 font-medium">✓ Saved</p>}
+          {saveOk && <p className="text-sm text-emerald-600 font-medium">✓ {t("common.saved")}</p>}
           <button type="button" onClick={() => void save()} disabled={saving || gp.disabled} title={gp.title}
             className="px-4 py-2 bg-blue-600 text-white text-sm font-semibold rounded hover:bg-blue-700 disabled:opacity-50">
             {saving ? t("common.saving") : t("approval_rule.save")}
@@ -3660,7 +3668,7 @@ function PersonnelV2Tab({ tenantId }: { tenantId: string }) {
 
   async function createUser() {
     if (createGp.disabled) return;
-    if (!uName.trim() || !uEmail.trim() || !uPass.trim()) { setFormErr("Name, email and password are required."); return; }
+    if (!uName.trim() || !uEmail.trim() || !uPass.trim()) { setFormErr(t("personnel.create_user_fields_required")); return; }
     setSaving(true); setFormErr(null);
     try {
       await api.post(`/api/v1/tenants/${tenantId}/users`, {
@@ -3705,23 +3713,23 @@ function PersonnelV2Tab({ tenantId }: { tenantId: string }) {
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="block text-xs font-bold text-gray-700 mb-1">{t("personnel.full_name")} *</label>
-              <input value={uName} onChange={(e) => setUName(e.target.value)} className="w-full border border-gray-300 rounded px-2.5 py-1.5 text-sm" placeholder="Full name" />
+              <input value={uName} onChange={(e) => setUName(e.target.value)} className="w-full border border-gray-300 rounded px-2.5 py-1.5 text-sm" placeholder={t("personnel.full_name_placeholder")} />
             </div>
             <div>
               <label className="block text-xs font-bold text-gray-700 mb-1">{t("personnel.email")} *</label>
-              <input type="email" value={uEmail} onChange={(e) => setUEmail(e.target.value)} className="w-full border border-gray-300 rounded px-2.5 py-1.5 text-sm" placeholder="email@company.com" />
+              <input type="email" value={uEmail} onChange={(e) => setUEmail(e.target.value)} className="w-full border border-gray-300 rounded px-2.5 py-1.5 text-sm" placeholder={t("personnel.email_placeholder")} />
             </div>
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="block text-xs font-bold text-gray-700 mb-1">Temporary Password *</label>
+              <label className="block text-xs font-bold text-gray-700 mb-1">{t("personnel.temp_password")} *</label>
               <input type="password" value={uPass} onChange={(e) => setUPass(e.target.value)} className="w-full border border-gray-300 rounded px-2.5 py-1.5 text-sm" />
             </div>
             <div>
-              <label className="block text-xs font-bold text-gray-700 mb-1">{t("personnel.primary_facility")} (optional)</label>
+              <label className="block text-xs font-bold text-gray-700 mb-1">{t("personnel.primary_facility")} ({t("common.optional")})</label>
               <select value={uPosId} onChange={(e) => setUPosId(e.target.value)}
                 className="w-full border border-gray-300 rounded px-2.5 py-1.5 text-sm bg-white">
-                <option value="">— assign later —</option>
+                <option value="">{t("personnel.assign_later_placeholder")}</option>
                 {allPositions.map((p) => <option key={p.id} value={p.id}>{p.title} · {posGroups.find((g) => g.positions.some((pos) => pos.id === p.id))?.node_name ?? ""}</option>)}
               </select>
             </div>
@@ -3747,15 +3755,15 @@ function PersonnelV2Tab({ tenantId }: { tenantId: string }) {
           {users.map((u) => (
             <div key={u.id} className={`border rounded-xl p-3 flex items-start justify-between gap-3 ${u.is_active ? "border-gray-200 bg-white" : "border-gray-100 bg-gray-50 opacity-60"}`}>
               <div className="min-w-0 flex-1">
-                <p className="text-sm font-semibold text-gray-800 m-0">{u.name} {u.must_reset_password && <span className="text-[10px] bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded-full ml-1">pwd reset</span>}</p>
+                <p className="text-sm font-semibold text-gray-800 m-0">{u.name} {u.must_reset_password && <span className="text-[10px] bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded-full ml-1">{t("personnel.pwd_reset_badge")}</span>}</p>
                 <p className="text-xs text-gray-500 m-0">{u.email}</p>
                 {u.primary_position ? (
                   <p className="text-xs text-emerald-700 m-0 mt-0.5">✓ {u.primary_position.title} · {u.primary_position.node_name}</p>
                 ) : (
-                  <p className="text-xs text-amber-600 m-0 mt-0.5">⚠ No position assigned</p>
+                  <p className="text-xs text-amber-600 m-0 mt-0.5">{t("personnel.no_position_badge")}</p>
                 )}
                 {u.acting_positions.length > 0 && (
-                  <p className="text-xs text-gray-400 m-0">{u.acting_positions.length} acting assignment{u.acting_positions.length > 1 ? "s" : ""}</p>
+                  <p className="text-xs text-gray-400 m-0">{t("personnel.acting_assignments_count").replace("{n}", String(u.acting_positions.length))}</p>
                 )}
               </div>
               <div className="flex items-center gap-1.5 shrink-0">
@@ -3846,9 +3854,9 @@ function BrandingTab({ tenantId }: { tenantId: string }) {
     errKey: string,
   ) {
     if (gp.disabled) return;
-    if (file.size > maxBytes) { setErr(t(errKey) || "File too large"); return; }
+    if (file.size > maxBytes) { setErr(t(errKey)); return; }
     if (!["image/jpeg","image/png","image/webp"].includes(file.type)) {
-      setErr(t("product.image_invalid_type") || "Only JPG, PNG, WebP accepted"); return;
+      setErr(t("product.image_invalid_type")); return;
     }
     setErr(""); setUploading(true);
     try {
@@ -3890,7 +3898,7 @@ function BrandingTab({ tenantId }: { tenantId: string }) {
       />
       {saved && (
         <div className="bg-emerald-50 border border-emerald-200 rounded px-4 py-2 text-sm text-emerald-700 font-semibold">
-          {t("settings.branding_saved") || "Branding saved."}
+          {t("settings.branding_saved")}
         </div>
       )}
       {!brandingAllowed && (
@@ -3906,8 +3914,8 @@ function BrandingTab({ tenantId }: { tenantId: string }) {
 
       {/* Logo */}
       <div>
-        <p className="text-sm font-bold text-gray-700 mb-2">{t("settings.tenant_logo") || "Tenant Logo"}</p>
-        <p className="text-xs text-gray-400 mb-3">JPG · PNG · WebP · max 1MB</p>
+        <p className="text-sm font-bold text-gray-700 mb-2">{t("settings.tenant_logo")}</p>
+        <p className="text-xs text-gray-400 mb-3">{t("settings.logo_dimensions_hint")}</p>
         <div className="flex items-center gap-4">
           {logoUrl
             ? <img src={logoUrl} alt="" className="w-16 h-16 rounded border border-gray-200 object-contain" />
@@ -3915,7 +3923,7 @@ function BrandingTab({ tenantId }: { tenantId: string }) {
           }
           <label className={(brandingAllowed && !gp.disabled) ? "cursor-pointer" : "cursor-not-allowed opacity-50"} title={gp.title}>
             <span className="px-3 py-1.5 text-xs font-semibold bg-gray-100 border border-gray-300 rounded cursor-pointer hover:bg-gray-200">
-              {logoUploading ? "Uploading…" : (t("settings.upload_logo") || "Upload Logo")}
+              {logoUploading ? t("settings.uploading") : t("settings.upload_logo")}
             </span>
             <input
               type="file"
@@ -3930,7 +3938,7 @@ function BrandingTab({ tenantId }: { tenantId: string }) {
           </label>
           {logoUrl && (
             <button type="button" disabled={!brandingAllowed || gp.disabled} title={gp.title} onClick={() => setLogoUrl(null)} className="text-xs text-red-500 bg-transparent border-0 cursor-pointer p-0 disabled:opacity-50 disabled:cursor-not-allowed">
-              {t("common.remove") || "Remove"}
+              {t("common.remove")}
             </button>
           )}
         </div>
@@ -3939,15 +3947,15 @@ function BrandingTab({ tenantId }: { tenantId: string }) {
 
       {/* Banner */}
       <div>
-        <p className="text-sm font-bold text-gray-700 mb-2">{t("settings.tenant_banner") || "Dashboard Banner"}</p>
-        <p className="text-xs text-gray-400 mb-3">JPG · PNG · WebP · max 3MB · recommended 1200×300px</p>
+        <p className="text-sm font-bold text-gray-700 mb-2">{t("settings.tenant_banner")}</p>
+        <p className="text-xs text-gray-400 mb-3">{t("settings.banner_dimensions_hint")}</p>
         {bannerUrl && (
           <img src={bannerUrl} alt="" className="w-full rounded border border-gray-200 object-cover mb-3" style={{ maxHeight: "120px" }} />
         )}
         <div className="flex items-center gap-3">
           <label className={(brandingAllowed && !gp.disabled) ? "cursor-pointer" : "cursor-not-allowed opacity-50"} title={gp.title}>
             <span className="px-3 py-1.5 text-xs font-semibold bg-gray-100 border border-gray-300 rounded cursor-pointer hover:bg-gray-200">
-              {bannerUploading ? "Uploading…" : (t("settings.upload_banner") || "Upload Banner")}
+              {bannerUploading ? t("settings.uploading") : t("settings.upload_banner")}
             </span>
             <input
               type="file"
@@ -3962,7 +3970,7 @@ function BrandingTab({ tenantId }: { tenantId: string }) {
           </label>
           {bannerUrl && (
             <button type="button" disabled={!brandingAllowed || gp.disabled} title={gp.title} onClick={() => setBannerUrl(null)} className="text-xs text-red-500 bg-transparent border-0 cursor-pointer p-0 disabled:opacity-50 disabled:cursor-not-allowed">
-              {t("common.remove") || "Remove"}
+              {t("common.remove")}
             </button>
           )}
         </div>
@@ -4021,13 +4029,13 @@ export default function OrgSetupPage() {
 
       {/* Tab bar */}
       <div className="flex flex-wrap border-b border-gray-200 mb-6 gap-0.5">
-        <button type="button" className={tabCls("levels")}         onClick={() => setActiveTab("levels")}>Organisation Levels</button>
-        <button type="button" className={tabCls("tree")}           onClick={() => setActiveTab("tree")}>Organisation Tree</button>
+        <button type="button" className={tabCls("levels")}         onClick={() => setActiveTab("levels")}>{t("org_setup.tab_levels")}</button>
+        <button type="button" className={tabCls("tree")}           onClick={() => setActiveTab("tree")}>{t("org_setup.tab_tree")}</button>
         <button type="button" className={tabCls("positions")}      onClick={() => setActiveTab("positions")}>{t("wizard.positions_tab")}</button>
         <button type="button" className={tabCls("personnel")}      onClick={() => setActiveTab("personnel")}>{t("wizard.personnel_tab")}</button>
         <button type="button" className={tabCls("transfer-types")} onClick={() => setActiveTab("transfer-types")}>{t("wizard.transfer_types_tab")}</button>
         <button type="button" className={tabCls("approval")}       onClick={() => setActiveTab("approval")}>{t("wizard.approval_rules_tab")}</button>
-        <button type="button" className={tabCls("branding")}       onClick={() => setActiveTab("branding")}>{t("settings.branding") || "Branding"}</button>
+        <button type="button" className={tabCls("branding")}       onClick={() => setActiveTab("branding")}>{t("settings.branding")}</button>
       </div>
 
       {/* key={tenantId} on every tab: forces a full unmount/remount on tenant switch
