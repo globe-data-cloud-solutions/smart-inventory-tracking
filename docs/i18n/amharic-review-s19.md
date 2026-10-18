@@ -105,4 +105,6 @@ These Amharic strings were machine-written in session 19 and need a native-speak
 | adjustment.notes_placeholder | Supporting details… | ዝርዝር መረጃ… |
 | opening_balance.notes_placeholder | e.g. Initial go-live stock count | ለምሳሌ፦ የመጀመሪያ ክምችት ቆጠራ |
 
+`help/am/getting-started.md` — whole document, needs review.
+
 Marked `i18n-ignore` (brand names, currency/enum codes, example placeholders, URL path segments) rather than translated: landing/onboard/nav "SMART"/"Inventory"/"Tracker" brand text, the language-switcher label, dashboard's literal `/dashboard` link path, AddProductPanel's `BRD`/`BRD-001` example codes and `ETB`/`USD`/`EUR` currency codes, org-setup's `ETB` currency code, plans page's `PACKAGE`/`PRICE`/`ADDON` backend enum options and `STARTER, STARTER/MONTHLY…` example key, LotFields' `LOT-2026-001` example code, OpeningBalancePanel's `PHYS-COUNT-2026-001` example code, and the `SUBMITTED → PENDING_APPROVAL → POSTED` / `DRAFT → PENDING_APPROVAL → POSTED` state-machine code trails in BulkImportPanel/OpeningBalancePanel.

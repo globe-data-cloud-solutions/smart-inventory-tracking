@@ -6,6 +6,7 @@ import { t } from "@/lib/i18n";
 import { AuthLangSwitcher } from "@/components/features/auth/AuthLangSwitcher";
 import { DocumentRenderer } from "@/components/features/help/DocumentRenderer";
 import { PublicContactLink } from "@/components/features/auth/PublicContactLink";
+import { fetchHelpDoc } from "@/lib/help/fetchHelpDoc";
 
 /**
  * Public /getting-started page (CLAUDE.md §15 S12) — no session required,
@@ -18,11 +19,7 @@ export default function GettingStartedPage() {
 
   useEffect(() => {
     let cancelled = false;
-    fetch("/help/getting-started.md")
-      .then((res) => {
-        if (!res.ok) throw new Error("fetch failed");
-        return res.text();
-      })
+    fetchHelpDoc("getting-started.md")
       .then((text) => { if (!cancelled) setMarkdown(text); })
       .catch(() => { if (!cancelled) setError(true); });
     return () => { cancelled = true; };
