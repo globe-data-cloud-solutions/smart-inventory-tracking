@@ -141,6 +141,7 @@ function TypeCodeSelect({ options, value, onChange, hasError }: TypeCodeSelectPr
         <input
           value={value}
           onChange={(e) => onChange(e.target.value.replace(/[^A-Za-z]/g, "").toUpperCase().slice(0, 10))}
+          // i18n-ignore: example product-type codes
           placeholder="e.g. BRD, CEM, PKG"
           maxLength={10}
           className={`flex-1 uppercase ${hasError ? fieldErr : fieldOk}`}
@@ -796,6 +797,7 @@ export function AddProductPanel({
               value={skuOverride}
               onChange={(e) => setSkuOvr(e.target.value.toUpperCase())}
               className="font-mono text-[13px] font-extrabold flex-1 tracking-widest text-emerald-600 border border-emerald-300 rounded px-1.5 py-0.5 outline-none bg-white"
+              // i18n-ignore: example SKU code
               placeholder="BRD-001"
               onBlur={() => { if (!skuOverride.trim()) { setSkuEditing(false); } }}
             />
@@ -812,7 +814,7 @@ export function AddProductPanel({
             <button
               type="button"
               onClick={startSkuEdit}
-              title="Edit SKU"
+              title={t("product.add.edit_sku_tooltip")}
               className="px-2 py-1 border border-emerald-200 rounded bg-white text-[11px] text-emerald-600 font-semibold shrink-0 cursor-pointer"
             >
               ✎
@@ -983,7 +985,7 @@ export function AddProductPanel({
               options={brandOptions}
               value={brand}
               onChange={setBrand}
-              placeholder="Select brand"
+              placeholder={t("product.add.field.brand_placeholder")}
               inputPlaceholder="e.g. Horizon, LocalBrand"
               createLabel={`+ ${t("add_product.new_category") || "Create new"}`}
               backLabel={`← ${t("add_product.back") || "Back"}`}
@@ -1015,7 +1017,7 @@ export function AddProductPanel({
               options={uomOptions}
               value={unit}
               onChange={setUnit}
-              placeholder="Select unit"
+              placeholder={t("product.add.field.unit_placeholder")}
               inputPlaceholder="e.g. KG, Box, Bag, Litre"
               createLabel={`+ ${t("add_product.new_category") || "Create new"}`}
               backLabel={`← ${t("add_product.back") || "Back"}`}
@@ -1032,7 +1034,7 @@ export function AddProductPanel({
               options={pkgTypeNames}
               value={packagingType}
               onChange={(v) => { setPkgType(v); if (!v) setUpp("1"); }}
-              placeholder="Select packaging type"
+              placeholder={t("product.add.field.packaging_type_placeholder")}
               inputPlaceholder="e.g. Carton, Sack, Drum"
               createLabel={`+ ${t("add_product.new_category") || "Create new"}`}
               backLabel={`← ${t("add_product.back") || "Back"}`}
@@ -1095,8 +1097,11 @@ export function AddProductPanel({
                 onChange={(e) => setCurrency(e.target.value)}
                 className="w-20 px-2 py-2 rounded text-sm border border-gray-300 bg-white outline-none cursor-pointer"
               >
+                {/* i18n-ignore: currency code */}
                 <option value="ETB">ETB</option>
+                {/* i18n-ignore: currency code */}
                 <option value="USD">USD</option>
+                {/* i18n-ignore: currency code */}
                 <option value="EUR">EUR</option>
               </select>
             </div>

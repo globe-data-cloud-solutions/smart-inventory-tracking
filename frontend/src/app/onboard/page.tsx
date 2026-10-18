@@ -421,8 +421,10 @@ export default function OnboardPage() {
       <header className="bg-[#0f2d1f] px-8 h-14 flex items-center justify-between shadow-[0_2px_12px_rgba(0,0,0,0.35)]">
         <Link href="/admin/dashboard" className="flex items-center gap-2.5 no-underline">
           <Logo />
+          {/* i18n-ignore: brand name */}
           <span className="font-bold text-[15px] text-white">
-            SMART <span className="text-[#FCDD09]">Inventory</span>
+            SMART {/* i18n-ignore: brand name */}
+            <span className="text-[#FCDD09]">Inventory</span>
           </span>
         </Link>
         <span className="text-xs font-bold text-emerald-300">{t("wizard.title")}</span>

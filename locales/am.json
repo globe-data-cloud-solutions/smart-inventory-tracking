@@ -122,7 +122,10 @@
     "total_value": "ጠቅላላ ዋጋ",
     "grand_total": "ታላቅ ድምር",
     "showing_all": "ዜሮ ክምችት ጨምሮ ሁሉም ምርቶች",
-    "showing_active": "ክምችት ያላቸው ምርቶች ብቻ"
+    "showing_active": "ክምችት ያላቸው ምርቶች ብቻ",
+    "batch_badge": "ባች",
+    "new_badge": "አዲስ",
+    "ref_column": "ማጣቀሻ"
   },
   "scanner": {
     "idle": "ካሜራ አልነቃም",
@@ -219,7 +222,10 @@
         "description": "መግለጫ",
         "description_placeholder": "የምርት መግለጫ…",
         "packaging_type": "የማሸጊያ አይነት",
-        "units_per_package": "በአንድ ጥቅል ውስጥ ያሉ አሃዶች"
+        "units_per_package": "በአንድ ጥቅል ውስጥ ያሉ አሃዶች",
+        "brand_placeholder": "ብራንድ ይምረጡ",
+        "unit_placeholder": "መለኪያ ይምረጡ",
+        "packaging_type_placeholder": "የማሸጊያ ዓይነት ይምረጡ"
       },
       "sold_as": "ይሸጣል",
       "sku_preview_label": "SKU ቅድመ-ዕይታ",
@@ -242,7 +248,8 @@
         "type_code_max": "ከፍተኛ 5 ፊደሎች።",
         "type_code_letters_only": "ፊደሎች ብቻ፣ ቁጥሮች ወይም ምልክቶች አይፈቀዱም።",
         "duplicate_sku": "SKU አስቀድሞ አለ። SKU ዎን አርምና እንደገና ይሞክሩ።"
-      }
+      },
+      "edit_sku_tooltip": "ኤስኬዩ አርትዕ"
     },
     "unit": {
       "KG": "ኪሎ ግራም (KG)",
@@ -702,7 +709,8 @@
     "grant_type": "ዓይነት",
     "restricted": "መዳረሻ ለሲስተም አስተዳዳሪ እና ኦዲተር ሚናዎች ብቻ ተወስኗል።",
     "no_access": "— = ዕድል የለም",
-    "showing": "በማሳየት ላይ"
+    "showing": "በማሳየት ላይ",
+    "abac_column": "ABAC"
   },
   "issue": {
     "title": "ክምችት አውጣ",
@@ -720,7 +728,8 @@
     "subtitle": "የወጪ ክምችት እንቅስቃሴን ይመዝግቡ",
     "qty_to_issue": "ለማውጣት ያለ መጠን",
     "insufficient": "በቂ ክምችት የለም። ዝግጁ:",
-    "error_reason": "እባክዎ የምክንያት ኮድ ይምረጡ።"
+    "error_reason": "እባክዎ የምክንያት ኮድ ይምረጡ።",
+    "notes_placeholder": "የደንበኛ ስም፣ የትዕዛዝ ማጣቀሻ፣ ማስታወሻዎች…"
   },
   "adjustment": {
     "title": "የክምችት ማስተካከያ",
@@ -777,7 +786,10 @@
     "lot_mode_new": "አዲስ ሎት",
     "lot_error_exceeds": "ከዚህ ሎት ውስጥ ካለው መጠን አልፏል ({available} አሃዶች)።",
     "lot_new_named": "አዲስ ሎት፦ {number}",
-    "lot_new_auto": "አዲስ ሎት (በመለጠፍ ላይ ይፈጠራል)"
+    "lot_new_auto": "አዲስ ሎት (በመለጠፍ ላይ ይፈጠራል)",
+    "error_fill_either": "ክምችት መጨመር ወይም ክምችት መቀነስ ከሁለቱ አንዱን ብቻ ይሙሉ።",
+    "zero_floor_audit_notice": "ይህ ተግባር በኦዲት ይመዘገባል።",
+    "notes_placeholder": "ዝርዝር መረጃ…"
   },
   "transfer": {
     "acting_on_behalf": "በ {warehouse} ምትክ በመስራት ላይ",
@@ -1464,7 +1476,8 @@
     "approval_steps_heading": "የማፅደቅ ደረጃዎች",
     "rule_label": "ደንብ {n}",
     "tab_levels": "የድርጅት ደረጃዎች",
-    "tab_tree": "የድርጅት ዛፍ"
+    "tab_tree": "የድርጅት ዛፍ",
+    "table_no_column": "ቁ."
   },
   "personnel": {
     "page_title": "የሠራተኛ አስተዳደር",
@@ -1917,7 +1930,8 @@
     "balance_label": "ጠቅላላ ክምችት",
     "balance_note": "ቁጥቋጦ ጠቅላላ በሁሉም መጋዘኖች። ለቀጥታ በ-መጋዘን ሚዛኖች፣ ክምችት ገጽ ይመልከቱ።",
     "status_active": "ንቁ",
-    "status_inactive": "ንቁ ያልሆነ"
+    "status_inactive": "ንቁ ያልሆነ",
+    "new_count_suffix": "አዲስ"
   },
   "bulk_import": {
     "title": "ከፍ ብሎ ማስገቢያ",
@@ -1948,7 +1962,11 @@
     "error_empty": "ከማረጋገጥ በፊት እባክዎ CSV ውሂብ ለጥፉ።",
     "error_no_data": "ምንም ውሂብ ረድፎች አልተገኙም። እባክዎ ርዕሱ ከኋላ ቢያንስ አንድ ውሂብ ረድፍ ያካትቱ።",
     "error_validate_first": "እባክዎ መጀመሪያ ውሂቡን ያረጋግጡ።",
-    "error_fix_errors": "ከማቅረብ በፊት ሁሉም ስህተት ረድፎች ያስተካክሉ።"
+    "error_fix_errors": "ከማቅረብ በፊት ሁሉም ስህተት ረድፎች ያስተካክሉ።",
+    "row_label": "ረድፍ",
+    "issue_field_label": "ሜዳ",
+    "issue_severity_label": "ክብደት",
+    "issue_message_label": "መልእክት"
   },
   "opening_balance": {
     "title": "የቀደምት ሚዛን",
@@ -1960,7 +1978,8 @@
     "ref_doc": "ማጣቀሻ ሰነድ",
     "submit": "ቀደምት ሚዛን አቅርቡ",
     "success": "ክፍያ ደረሰኝ ተፈጥሯል — ሁኔታ፡ ፈቃድ በጥበቃ ላይ።",
-    "error_session": "ምንም ክፍለ-ጊዜ አልተገኘም — እባክዎ እንደገና ይግቡ።"
+    "error_session": "ምንም ክፍለ-ጊዜ አልተገኘም — እባክዎ እንደገና ይግቡ።",
+    "notes_placeholder": "ለምሳሌ፦ የመጀመሪያ ክምችት ቆጠራ"
   },
   "add_product": {
     "new_category": "+ አዲስ ምድብ ጨምር…",
@@ -2018,7 +2037,8 @@
     "locations": "ቦታዎች",
     "col_name": "ስም",
     "col_location": "ቦታ",
-    "col_manager": "ሥራ አስኪያጅ"
+    "col_manager": "ሥራ አስኪያጅ",
+    "no_stock_badge": "(ክምችት የለም)"
   },
   "analytics": {
     "stock_by_location": "ክምችት በቦታ",

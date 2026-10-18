@@ -32,6 +32,9 @@
     "toggle_menu": "Toggle menu"
   },
   "inventory": {
+    "batch_badge": "BATCH",
+    "new_badge": "NEW",
+    "ref_column": "Ref",
     "warehouse": "Warehouse",
     "all_locations": "All locations",
     "category": "Category",
@@ -225,8 +228,12 @@
         "description": "Description",
         "description_placeholder": "Product description…",
         "packaging_type": "Packaging Type",
-        "units_per_package": "Units per package"
+        "units_per_package": "Units per package",
+        "brand_placeholder": "Select brand",
+        "unit_placeholder": "Select unit",
+        "packaging_type_placeholder": "Select packaging type"
       },
+      "edit_sku_tooltip": "Edit SKU",
       "sold_as": "Sold as",
       "sku_preview_label": "SKU preview",
       "confirm": {
@@ -696,6 +703,7 @@
     "subtitle": "Role–permission matrix · 116 actions · 10 roles · 3-layer enforcement (Gateway → Service → RLS)",
     "action": "Action",
     "domain": "Domain",
+    "abac_column": "ABAC",
     "role": "Role",
     "grant_type": "Grant",
     "restricted": "Access restricted to System Admin and Auditor roles.",
@@ -718,7 +726,8 @@
       "OTHER": "Other"
     },
     "submit": "Issue Stock",
-    "success": "Stock issued successfully"
+    "success": "Stock issued successfully",
+    "notes_placeholder": "Customer name, order reference, notes…"
   },
   "adjustment": {
     "title": "Stock Adjustment",
@@ -751,12 +760,15 @@
     "success_submitted": "Submitted for approval",
     "subtitle": "Correct stock balance — approval may be required",
     "error_qty": "Quantity must be non-zero.",
+    "error_fill_either": "Fill either Add Stock or Remove Stock, not both.",
     "add_stock": "Add Stock",
     "remove_stock": "Remove Stock",
     "quantity_hint_remove": "Enter magnitude — always a deduction",
     "zero_floor_wm": "Insufficient stock. On-hand would go negative. Contact your manager.",
     "zero_floor_warn": "This adjustment will bring on-hand below zero. Proceed?",
+    "zero_floor_audit_notice": "This action will be audit-logged.",
     "zero_floor_proceed": "Proceed Anyway",
+    "notes_placeholder": "Supporting details…",
     "warehouse_auto": "Auto-assigned from your profile",
     "warehouse_select": "Select warehouse",
     "show_history": "Show history",
@@ -953,17 +965,6 @@
     "LOT_NUMBER_REQUIRED": "A lot number is required.",
     "LOT_EXPIRY_MISMATCH": "This lot number already exists with a different expiry date.",
     "INSUFFICIENT_LOT_STOCK": "Not enough stock in this lot to complete the request.",
-    "LOT_NOT_TRACKED": "This product does not track lots — lot number, expiry date, or auto-lot cannot be supplied.",
-    "LOT_INPUT_CONFLICT": "Provide either a lot number or auto-generate one, not both.",
-    "EXPIRY_REQUIRED": "An expiry date is required for this product.",
-    "EXPIRY_IN_PAST": "Expiry date cannot be in the past.",
-    "FEATURE_NOT_ENABLED": "This feature is not enabled for your environment.",
-    "EXPIRY_NEEDS_BATCH": "Expiry tracking requires batch tracking to be turned on.",
-    "INVALID_DISPATCH_STRATEGY": "This dispatch strategy is not valid for the selected settings.",
-    "BATCH_TRACKING_IN_USE": "Batch tracking cannot be turned off while a lot still holds stock.",
-    "LOT_CONVERSION_MISMATCH": "Opening lot totals did not match on-hand stock. The change was not saved.",
-    "INVALID_SOURCE": "This source is not allowed for receiving stock.",
-    "LOT_NUMBER_GENERATION_FAILED": "Could not generate a unique lot number. Please try again.",
     "LOT_REQUIRED": "A lot must be selected for this transaction.",
     "LOT_EXPIRED": "This lot has expired and cannot be dispatched.",
     "LOT_NOT_IN_WAREHOUSE": "This lot has no stock in this warehouse.",
@@ -974,7 +975,18 @@
     "LOT_SELECTION_NOT_ALLOWED": "Lots can only be chosen at the final approval step.",
     "INSUFFICIENT_STOCK": "Not enough usable stock. Expired lots are not counted.",
     "BATCH_TRACKING_TRANSFERS_OPEN": "Lot tracking can't be switched on while transfers of this product are approved or in transit.",
+    "LOT_NOT_TRACKED": "This product does not track lots — lot number, expiry date, or auto-lot cannot be supplied.",
+    "LOT_INPUT_CONFLICT": "Provide either a lot number or auto-generate one, not both.",
+    "EXPIRY_REQUIRED": "An expiry date is required for this product.",
+    "EXPIRY_IN_PAST": "Expiry date cannot be in the past.",
+    "INVALID_SOURCE": "This source is not allowed for receiving stock.",
+    "LOT_NUMBER_GENERATION_FAILED": "Could not generate a unique lot number. Please try again.",
     "PRODUCT_NOT_FOUND": "Product not found.",
+    "FEATURE_NOT_ENABLED": "This feature is not enabled for your environment.",
+    "EXPIRY_NEEDS_BATCH": "Expiry tracking requires batch tracking to be turned on.",
+    "INVALID_DISPATCH_STRATEGY": "This dispatch strategy is not valid for the selected settings.",
+    "BATCH_TRACKING_IN_USE": "Batch tracking cannot be turned off while a lot still holds stock.",
+    "LOT_CONVERSION_MISMATCH": "Opening lot totals did not match on-hand stock. The change was not saved.",
     "RECEIPT_LINES_MISMATCH": "The receipt must list every line and lot on this transfer exactly once.",
     "RECEIPT_EXCEEDS_SENT": "The received quantity can't be more than the quantity sent.",
     "RECEIPT_REASON_REQUIRED": "Choose a reason for the missing quantity.",
@@ -1234,6 +1246,7 @@
     }
   },
   "products": {
+    "new_count_suffix": "new",
     "col_name": "Product Name",
     "col_category": "Category / Type",
     "col_pack_size": "Pack Size",
@@ -1266,6 +1279,10 @@
     "unique_skus": "Unique SKUs",
     "unique_whs": "Unique warehouses",
     "row_report": "Row Validation Report",
+    "row_label": "ROW",
+    "issue_field_label": "FIELD",
+    "issue_severity_label": "SEVERITY",
+    "issue_message_label": "MESSAGE",
     "cannot_submit": "Cannot Submit",
     "error_row_label": "error row(s) must be fixed",
     "submit_btn": "Submit Import",
@@ -1284,6 +1301,7 @@
     "batch_required": "BATCH TRACKED — lot details required",
     "required": "required",
     "ref_doc": "Reference Document",
+    "notes_placeholder": "e.g. Initial go-live stock count",
     "submit": "Submit Opening Balance",
     "success": "Opening Balance receipt created — status: PENDING_APPROVAL.",
     "error_session": "No session found — please log in again."
@@ -1370,6 +1388,7 @@
     "excel": "Excel"
   },
   "warehouses": {
+    "no_stock_badge": "(no stock)",
     "title": "Warehouses",
     "locations": "locations",
     "col_name": "Name",
@@ -1449,6 +1468,7 @@
     "mode_banner": "Demo mode — changes reset on page refresh. Connect to backend for persistent data."
   },
   "org_setup": {
+    "table_no_column": "No.",
     "help": {
       "levels_message": "Define the levels in your organisation hierarchy before building your tree. Example: Factory → Region → Warehouse.",
       "levels_tip": "You can rename levels at any time. You can also add a level at the bottom, or remove the bottom level if it has no org nodes. Inserting or removing a level in the middle changes your existing data — contact SMART and we will plan it with you.",

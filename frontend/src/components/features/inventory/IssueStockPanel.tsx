@@ -174,7 +174,7 @@ export function IssueStockPanel({ products, orgSlug }: Props) {
           )}
 
           <Field label={t("audit.notes")} hint={`(${t("receive_panel.optional")})`}>
-            <textarea value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Customer name, order reference, notes…" rows={3} className={`${inputCls} resize-y`} />
+            <textarea value={notes} onChange={(e) => setNotes(e.target.value)} placeholder={t("issue.notes_placeholder")} rows={3} className={`${inputCls} resize-y`} />
           </Field>
 
         </form>

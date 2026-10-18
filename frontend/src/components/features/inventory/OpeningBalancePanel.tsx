@@ -116,6 +116,7 @@ export function OpeningBalancePanel({ products, warehouses, orgSlug }: Props) {
           <div>
             <p className="font-bold text-base text-white m-0">{t("opening_balance.title")}</p>
             <p className="text-xs text-blue-200 mt-0.5">{t("opening_balance.subtitle")}</p>
+            {/* i18n-ignore: state-machine status codes */}
             <p className="text-[10px] text-blue-300 mt-1 font-mono tracking-wide">DRAFT → PENDING_APPROVAL → POSTED</p>
           </div>
           <button onClick={() => setOpen(false)} className="bg-white/10 border-0 cursor-pointer text-white text-lg w-8 h-8 rounded flex items-center justify-center shrink-0">✕</button>
@@ -177,9 +178,10 @@ export function OpeningBalancePanel({ products, warehouses, orgSlug }: Props) {
           )}
 
           <Field label={t("audit.notes")} hint={`(${t("receive_panel.optional")})`}>
-            <textarea value={form.notes} onChange={(e) => set("notes", e.target.value)} placeholder="e.g. Initial go-live stock count" rows={2} className={`${inputCls} resize-y`} />
+            <textarea value={form.notes} onChange={(e) => set("notes", e.target.value)} placeholder={t("opening_balance.notes_placeholder")} rows={2} className={`${inputCls} resize-y`} />
           </Field>
           <Field label={t("opening_balance.ref_doc")} hint={`(${t("receive_panel.optional")})`}>
+            {/* i18n-ignore: example reference-document code */}
             <input type="text" value={form.referenceDocument} onChange={(e) => set("referenceDocument", e.target.value)} placeholder="e.g. PHYS-COUNT-2026-001" className={inputCls} />
           </Field>
 

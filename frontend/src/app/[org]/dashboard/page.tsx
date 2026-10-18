@@ -1125,6 +1125,7 @@ export default function OrgDashboard() {
                             <p className="m-0 font-semibold text-gray-500 text-sm">
                               {personnelModalRow.ta_name ?? "—"}
                             </p>
+                            {/* i18n-ignore: role code abbreviation, matches RoleBadge convention (AU/LM/TA, untranslated) */}
                             <span className="text-[10px] font-bold bg-gray-200 text-gray-500 px-1.5 py-0.5 rounded uppercase">
                               TA
                             </span>
@@ -1272,6 +1273,7 @@ export default function OrgDashboard() {
                   </div>
                   <div className="px-5 py-2.5 border-t border-gray-100 bg-gray-50">
                     {/* tenant slug link — color is per-tenant */}
+                    {/* i18n-ignore: literal URL path segment, not translated text */}
                     <span className="text-xs font-bold" style={{ color: ten.color }}>
                       /{ten.slug}/dashboard →
                     </span>

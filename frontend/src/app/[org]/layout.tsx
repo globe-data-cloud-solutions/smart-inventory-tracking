@@ -658,6 +658,7 @@ export default function OrgLayout({ children }: { children: React.ReactNode }) {
           {/* Logo */}
           <Link href={`/${user.orgSlug}/dashboard`} className="flex items-center gap-2 no-underline shrink-0">
             <Logo />
+            {/* i18n-ignore: brand name */}
             <span className="font-bold text-sm text-white whitespace-nowrap">
               SMART <span className="text-eth-gold font-medium">{t("nav.inventory")}</span>
             </span>

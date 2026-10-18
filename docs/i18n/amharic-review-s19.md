@@ -79,3 +79,30 @@ These Amharic strings were machine-written in session 19 and need a native-speak
 | settings.banner_dimensions_hint | JPG · PNG · WebP · max 3MB · recommended 1200×300px | JPG · PNG · WebP · እስከ 3MB · የሚመከረው 1200×300px |
 | position.title_required | Position Title is required. | የቦታ ማዕረግ ያስፈልጋል። |
 | position.confirm_delete | Delete position "{title}"? | ቦታ "{title}" ይሰረዝ? |
+
+## P5 — Scattered strings
+
+| Key | English | Amharic |
+|---|---|---|
+| product.add.edit_sku_tooltip | Edit SKU | ኤስኬዩ አርትዕ |
+| product.add.field.brand_placeholder | Select brand | ብራንድ ይምረጡ |
+| product.add.field.unit_placeholder | Select unit | መለኪያ ይምረጡ |
+| product.add.field.packaging_type_placeholder | Select packaging type | የማሸጊያ ዓይነት ይምረጡ |
+| inventory.batch_badge | BATCH | ባች |
+| inventory.new_badge | NEW | አዲስ |
+| inventory.ref_column | Ref | ማጣቀሻ |
+| permissions.abac_column | ABAC | ABAC |
+| products.new_count_suffix | new | አዲስ |
+| org_setup.table_no_column | No. | ቁ. |
+| warehouses.no_stock_badge | (no stock) | (ክምችት የለም) |
+| bulk_import.row_label | ROW | ረድፍ |
+| bulk_import.issue_field_label | FIELD | ሜዳ |
+| bulk_import.issue_severity_label | SEVERITY | ክብደት |
+| bulk_import.issue_message_label | MESSAGE | መልእክት |
+| issue.notes_placeholder | Customer name, order reference, notes… | የደንበኛ ስም፣ የትዕዛዝ ማጣቀሻ፣ ማስታወሻዎች… |
+| adjustment.error_fill_either | Fill either Add Stock or Remove Stock, not both. | ክምችት መጨመር ወይም ክምችት መቀነስ ከሁለቱ አንዱን ብቻ ይሙሉ። |
+| adjustment.zero_floor_audit_notice | This action will be audit-logged. | ይህ ተግባር በኦዲት ይመዘገባል። |
+| adjustment.notes_placeholder | Supporting details… | ዝርዝር መረጃ… |
+| opening_balance.notes_placeholder | e.g. Initial go-live stock count | ለምሳሌ፦ የመጀመሪያ ክምችት ቆጠራ |
+
+Marked `i18n-ignore` (brand names, currency/enum codes, example placeholders, URL path segments) rather than translated: landing/onboard/nav "SMART"/"Inventory"/"Tracker" brand text, the language-switcher label, dashboard's literal `/dashboard` link path, AddProductPanel's `BRD`/`BRD-001` example codes and `ETB`/`USD`/`EUR` currency codes, org-setup's `ETB` currency code, plans page's `PACKAGE`/`PRICE`/`ADDON` backend enum options and `STARTER, STARTER/MONTHLY…` example key, LotFields' `LOT-2026-001` example code, OpeningBalancePanel's `PHYS-COUNT-2026-001` example code, and the `SUBMITTED → PENDING_APPROVAL → POSTED` / `DRAFT → PENDING_APPROVAL → POSTED` state-machine code trails in BulkImportPanel/OpeningBalancePanel.

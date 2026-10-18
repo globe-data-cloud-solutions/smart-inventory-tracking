@@ -123,7 +123,10 @@
     "total_value": "Gatii Waliigalaa",
     "grand_total": "Waliigala Guddaa",
     "showing_all": "Kuusaa ziroo dabalatee meeshaalee hundumaa",
-    "showing_active": "Kuusaa qaban qofaa"
+    "showing_active": "Kuusaa qaban qofaa",
+    "batch_badge": "BATCH",
+    "new_badge": "NEW",
+    "ref_column": "Ref"
   },
   "scanner": {
     "idle": "Kaameraan hin socho'u",
@@ -214,7 +217,10 @@
         "description": "Ibsa",
         "description_placeholder": "Ibsa meeshaa…",
         "packaging_type": "Gosa Kuusaa",
-        "units_per_package": "Lakkoofsa tokkotti"
+        "units_per_package": "Lakkoofsa tokkotti",
+        "brand_placeholder": "Select brand",
+        "unit_placeholder": "Select unit",
+        "packaging_type_placeholder": "Select packaging type"
       },
       "sold_as": "Gurgurame",
       "sku_preview_label": "SKU mul'ata",
@@ -237,7 +243,8 @@
         "type_code_max": "Guddaan qubee 5.",
         "type_code_letters_only": "Qubee qofa, lakkoofsa ykn mallattoo hin fayyadamin.",
         "duplicate_sku": "SKU already exists. Edit the SKU and try again."
-      }
+      },
+      "edit_sku_tooltip": "Edit SKU"
     },
     "unit": {
       "KG": "Kilograama (KG)",
@@ -692,7 +699,8 @@
     "grant_type": "Akaakuu",
     "restricted": "Access restricted to System Admin and Auditor roles.",
     "no_access": "— = No access",
-    "showing": "Showing"
+    "showing": "Showing",
+    "abac_column": "ABAC"
   },
   "issue": {
     "title": "Kuusaa Baasi",
@@ -710,7 +718,8 @@
     "subtitle": "Record outbound stock movement",
     "qty_to_issue": "Quantity to Issue",
     "insufficient": "Insufficient stock. Available:",
-    "error_reason": "Please select a reason code."
+    "error_reason": "Please select a reason code.",
+    "notes_placeholder": "Customer name, order reference, notes…"
   },
   "adjustment": {
     "title": "Sirreessa Kuusaa",
@@ -767,7 +776,10 @@
     "lot_mode_new": "New Lot",
     "lot_error_exceeds": "Exceeds available quantity in this lot ({available} units).",
     "lot_new_named": "New lot: {number}",
-    "lot_new_auto": "New lot (generated at posting)"
+    "lot_new_auto": "New lot (generated at posting)",
+    "error_fill_either": "Fill either Add Stock or Remove Stock, not both.",
+    "zero_floor_audit_notice": "This action will be audit-logged.",
+    "notes_placeholder": "Supporting details…"
   },
   "transfer": {
     "acting_on_behalf": "Bakka {warehouse} bu'anii hojjechaa jiru",
@@ -1148,7 +1160,8 @@
     "approval_steps_heading": "Approval Steps",
     "rule_label": "Rule {n}",
     "tab_levels": "Organisation Levels",
-    "tab_tree": "Organisation Tree"
+    "tab_tree": "Organisation Tree",
+    "table_no_column": "No."
   },
   "personnel": {
     "page_title": "Personnel Management",
@@ -1844,7 +1857,8 @@
     "balance_label": "Total Stock",
     "balance_note": "reference total across all warehouses. For live per-warehouse balances, see the Inventory page.",
     "status_active": "Active",
-    "status_inactive": "Inactive"
+    "status_inactive": "Inactive",
+    "new_count_suffix": "new"
   },
   "bulk_import": {
     "title": "Bulk Import",
@@ -1875,7 +1889,11 @@
     "error_empty": "Please paste CSV data before validating.",
     "error_no_data": "No data rows found. Please include at least one data row after the header.",
     "error_validate_first": "Please validate the data first.",
-    "error_fix_errors": "Fix all ERROR rows before submitting."
+    "error_fix_errors": "Fix all ERROR rows before submitting.",
+    "row_label": "ROW",
+    "issue_field_label": "FIELD",
+    "issue_severity_label": "SEVERITY",
+    "issue_message_label": "MESSAGE"
   },
   "opening_balance": {
     "title": "Opening Balance",
@@ -1887,7 +1905,8 @@
     "ref_doc": "Reference Document",
     "submit": "Submit Opening Balance",
     "success": "Opening Balance receipt created — status: PENDING_APPROVAL.",
-    "error_session": "No session found — please log in again."
+    "error_session": "No session found — please log in again.",
+    "notes_placeholder": "e.g. Initial go-live stock count"
   },
   "add_product": {
     "new_category": "+ Add new category…",
@@ -1945,7 +1964,8 @@
     "locations": "locations",
     "col_name": "Name",
     "col_location": "Location",
-    "col_manager": "Manager"
+    "col_manager": "Manager",
+    "no_stock_badge": "(no stock)"
   },
   "analytics": {
     "stock_by_location": "Stock by Location",

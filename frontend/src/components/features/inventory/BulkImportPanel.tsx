@@ -149,6 +149,7 @@ export function BulkImportPanel({ products, warehouses, orgSlug }: Props) {
           <div>
             <p className="font-bold text-base text-white m-0">{t("bulk_import.full_title")}</p>
             <p className="text-xs text-violet-200 mt-0.5">{t("bulk_import.subtitle")}</p>
+            {/* i18n-ignore: state-machine status codes */}
             <p className="text-[10px] text-violet-300 mt-1 font-mono tracking-wide">SUBMITTED → PENDING_APPROVAL → POSTED</p>
           </div>
           <button onClick={() => setOpen(false)} className="bg-white/10 border-0 cursor-pointer text-white text-lg w-8 h-8 rounded flex items-center justify-center shrink-0">✕</button>
@@ -226,7 +227,7 @@ export function BulkImportPanel({ products, warehouses, orgSlug }: Props) {
                       <div key={row.rowNumber} className={`${rowBg} ${idx < parsedRows.length - 1 ? "border-b border-gray-200" : ""} px-3 py-2`}>
                         <div className={`flex items-center gap-2 ${row.issues.length > 0 ? "mb-1" : ""}`}>
                           <span className={`font-bold text-sm min-w-[16px] ${statusCls}`}>{statusIcon}</span>
-                          <span className="font-mono text-[11px] text-gray-500 min-w-[52px]">ROW {row.rowNumber}</span>
+                          <span className="font-mono text-[11px] text-gray-500 min-w-[52px]">{t("bulk_import.row_label")} {row.rowNumber}</span>
                           <span className="text-xs text-gray-700 font-semibold">{row.skuCode || "—"}</span>
                           <span className="text-[11px] text-gray-400">@ {row.warehouseCode || "—"}</span>
                           {row.productName && <span className="text-[11px] text-gray-500">· {row.productName}</span>}
@@ -234,7 +235,7 @@ export function BulkImportPanel({ products, warehouses, orgSlug }: Props) {
                         </div>
                         {row.issues.map((issue, iIdx) => (
                           <div key={iIdx} className={`font-mono text-[11px] ml-6 leading-relaxed ${issue.severity === "ERROR" ? "text-red-600" : "text-amber-800"}`}>
-                            ROW [{row.rowNumber}] | FIELD: {issue.field} | SEVERITY: {issue.severity} | MESSAGE: {issue.message}
+                            {t("bulk_import.row_label")} [{row.rowNumber}] | {t("bulk_import.issue_field_label")}: {issue.field} | {t("bulk_import.issue_severity_label")}: {issue.severity} | {t("bulk_import.issue_message_label")}: {issue.message}
                           </div>
                         ))}
                       </div>

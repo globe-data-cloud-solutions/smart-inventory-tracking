@@ -110,8 +110,10 @@ export default function HomePage() {
         <div className="max-w-[1200px] mx-auto px-6 h-14 flex items-center gap-6">
           <Link href="/" className="flex items-center gap-2 no-underline">
             <Logo size={32} />
+            {/* i18n-ignore: brand name */}
             <span className="hidden sm:inline font-bold text-[15px] text-[#0f2d1f] whitespace-nowrap">
-              SMART <span className="text-[#2D6A4F] font-medium">Inventory</span>
+              SMART {/* i18n-ignore: brand name */}
+              <span className="text-[#2D6A4F] font-medium">Inventory</span>
             </span>
           </Link>
           <div className="hidden md:flex items-center gap-8 mx-auto">
@@ -157,7 +159,9 @@ export default function HomePage() {
             className="font-extrabold text-white m-0 leading-[1.08] tracking-[-0.02em]"
             style={{ fontSize: "clamp(2.5rem, 6vw, 4.5rem)" }}
           >
+            {/* i18n-ignore: brand name */}
             SMART Inventory
+            {/* i18n-ignore: brand name */}
             <span className="block text-[#FCDD09]">Tracker</span>
           </h1>
           <p
@@ -276,6 +280,7 @@ export default function HomePage() {
         <div className="max-w-[1200px] mx-auto flex flex-wrap items-center justify-between gap-4">
           <div className="flex items-center gap-2">
             <Logo size={24} />
+            {/* i18n-ignore: brand name */}
             <p className="font-bold text-sm text-white m-0">SMART Inventory Tracker</p>
           </div>
           <p className="text-xs text-green-900">{t("landing.footer.stack")}</p>
@@ -284,6 +289,7 @@ export default function HomePage() {
               {t("landing.nav.contact")}
             </Link>
           )}
+          {/* i18n-ignore: language switcher labels — language names, not translated */}
           <p className="text-xs text-green-900">🇪🇹 EN · አማርኛ · Afaan Oromoo</p>
         </div>
       </footer>

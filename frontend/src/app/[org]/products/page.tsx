@@ -172,7 +172,7 @@ export default function ProductsPage() {
             {tenantName ?? org} · {total} {t("table.skus")}
             {!isGatewayMode && tenant && apiProducts.length > 0 && (
               <span className="ml-2 text-[11px] font-bold bg-green-100 text-green-800 px-1.5 py-0.5 rounded-full">
-                {apiProducts.length} new
+                {apiProducts.length} {t("products.new_count_suffix")}
               </span>
             )}
           </p>
@@ -222,7 +222,7 @@ export default function ProductsPage() {
                 <tr key={p.id} className={`border-b border-gray-100 ${idx % 2 === 0 ? "bg-white" : "bg-gray-50"} ${p.is_discontinued ? "opacity-60" : ""}`}>
                   <td className="px-4 py-2.5 font-mono text-[11px] text-gray-400">
                     {p.sku}
-                    {p.isNew && <span className="ml-1.5 text-[10px] font-bold bg-green-100 text-green-800 px-1 py-0.5 rounded">NEW</span>}
+                    {p.isNew && <span className="ml-1.5 text-[10px] font-bold bg-green-100 text-green-800 px-1 py-0.5 rounded">{t("inventory.new_badge")}</span>}
                   </td>
                   <td className="px-4 py-2.5 font-semibold text-gray-800">
                     <div className="flex items-center gap-2">

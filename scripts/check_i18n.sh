@@ -112,6 +112,13 @@ else
   fi
 fi
 
+# ── ERROR Check 2b: hardcoded English strings in JSX/attrs/error calls ────
+echo ""
+echo "Checking for hardcoded English strings in JSX..."
+if ! python3 scripts/check_hardcoded_jsx.py; then
+  EXIT=1
+fi
+
 # ── WARNING Check 3: Dynamic template literal t() calls ───────────────────
 # These use t(\`key.\${var}\`) — the script cannot verify all possible values.
 # Caller must manually ensure all dynamic values have entries in en.json.

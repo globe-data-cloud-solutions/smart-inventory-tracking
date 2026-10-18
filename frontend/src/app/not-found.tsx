@@ -32,6 +32,7 @@ export default function NotFound() {
         </Link>
       </div>
 
+      {/* i18n-ignore: brand name */}
       <p className="mt-8 text-xs text-green-700">SMART Inventory Tracker</p>
     </div>
   );

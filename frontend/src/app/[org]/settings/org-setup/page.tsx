@@ -564,7 +564,7 @@ function LevelsTab({
         <table className="w-full text-sm">
           <thead className="bg-gray-50 border-b border-gray-200">
             <tr>
-              <th className="px-3 py-2 text-left text-xs font-semibold text-gray-500 w-12">No</th>
+              <th className="px-3 py-2 text-left text-xs font-semibold text-gray-500 w-12">{t("org_setup.table_no_column")}</th>
               <th className="px-3 py-2 text-left text-xs font-semibold text-gray-500">{t("org_setup.table_level_name")}</th>
               <th className="px-3 py-2 text-left text-xs font-semibold text-gray-500">{t("org_setup.table_role")}</th>
               <th className="px-3 py-2 text-left text-xs font-semibold text-gray-500">{t("org_setup.role_display_name")}</th>
@@ -2276,6 +2276,7 @@ function AdjustmentRulesSection({ tenantId, onRuleCountChange }: { tenantId: str
                       <input type="number" min={0} value={rule.value_limit} placeholder={t("approval_rule.adj_value_limit")}
                         onChange={(e) => updateRule(idx, { value_limit: e.target.value })}
                         className="w-32 border border-gray-300 rounded px-2 py-1 text-xs" />
+                      {/* i18n-ignore: currency code */}
                       <span className="text-xs text-gray-400">ETB</span>
                     </>
                   )}

@@ -820,8 +820,11 @@ function HistoryTab() {
             className="px-2 py-1.5 text-sm border border-gray-300 rounded outline-none"
           >
             <option value="">{t("common.all")}</option>
+            {/* i18n-ignore: backend entity_type enum code, not translated */}
             <option value="PACKAGE">PACKAGE</option>
+            {/* i18n-ignore: backend entity_type enum code, not translated */}
             <option value="PRICE">PRICE</option>
+            {/* i18n-ignore: backend entity_type enum code, not translated */}
             <option value="ADDON">ADDON</option>
             <option value="ADDON_PRICE">ADDON_PRICE</option>
           </select>
@@ -832,6 +835,7 @@ function HistoryTab() {
             type="text"
             value={entityKey}
             onChange={(e) => setEntityKey(e.target.value)}
+            // i18n-ignore: example plan/price key codes
             placeholder="STARTER, STARTER/MONTHLY…"
             className="px-2 py-1.5 text-sm border border-gray-300 rounded outline-none"
           />

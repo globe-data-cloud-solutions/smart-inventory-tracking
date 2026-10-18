@@ -177,7 +177,7 @@ export default function WarehousesPage() {
                       )}
                       {node.name}
                       {!node.is_stock_holding && (
-                        <span className="ml-2 text-[10px] text-gray-400 font-normal">(no stock)</span>
+                        <span className="ml-2 text-[10px] text-gray-400 font-normal">{t("warehouses.no_stock_badge")}</span>
                       )}
                     </td>
                     <td className="px-4 py-2.5 text-gray-500">{node.address ?? "—"}</td>
