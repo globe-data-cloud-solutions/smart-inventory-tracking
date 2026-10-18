@@ -149,8 +149,9 @@ export function BulkImportPanel({ products, warehouses, orgSlug }: Props) {
           <div>
             <p className="font-bold text-base text-white m-0">{t("bulk_import.full_title")}</p>
             <p className="text-xs text-violet-200 mt-0.5">{t("bulk_import.subtitle")}</p>
-            {/* i18n-ignore: state-machine status codes */}
-            <p className="text-[10px] text-violet-300 mt-1 font-mono tracking-wide">SUBMITTED → PENDING_APPROVAL → POSTED</p>
+            <p className="text-[10px] text-violet-300 mt-1 font-mono tracking-wide">
+              {t("status.SUBMITTED")} → {t("status.PENDING_APPROVAL")} → {t("status.POSTED")}
+            </p>
           </div>
           <button onClick={() => setOpen(false)} className="bg-white/10 border-0 cursor-pointer text-white text-lg w-8 h-8 rounded flex items-center justify-center shrink-0">✕</button>
         </div>
