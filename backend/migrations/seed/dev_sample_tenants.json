@@ -1,0 +1,861 @@
+{
+  "tenants": [
+    {
+      "id": "e27248bf-fd29-486a-9cae-795dfc325ea3",
+      "name": "TenantS10",
+      "organisation_type": "PRODUCER",
+      "parent_tenant_id": null,
+      "plan_id": "00000000-0000-0000-0000-000000000001",
+      "feature_flags": {
+        "LOGISTICS": true,
+        "API_ACCESS": false,
+        "AI_ANALYTICS": false,
+        "AUDIT_EXPORT": true,
+        "CORE_INVENTORY": true,
+        "CUSTOM_BRANDING": true,
+        "LOT_TRACEABILITY": true,
+        "TRANSFERS_SISTER": true,
+        "TRANSFERS_PULL_PUSH": true
+      },
+      "sku_cap": 1500,
+      "approval_thresholds": {
+        "inventory:adjust": {
+          "low": 100,
+          "medium": 500
+        }
+      },
+      "default_locale": "en",
+      "onboarding_complete": false,
+      "is_active": true,
+      "created_at": "2026-10-09T21:55:51.639555-04:00",
+      "updated_at": "2026-10-09T21:55:51.639555-04:00",
+      "slug": "tenants10",
+      "sku_prefix": "SKU",
+      "sku_counter": 0,
+      "logo_url": null,
+      "banner_url": null,
+      "status": "ACTIVE",
+      "plan_tier": "GROWTH",
+      "max_warehouses": 10,
+      "max_users": 25,
+      "contact_name": null,
+      "contact_email": null,
+      "contact_phone": null,
+      "contract_start": "2026-10-09",
+      "contract_end": "2026-11-09",
+      "notes": null,
+      "address_line1": null,
+      "address_line2": null,
+      "city": null,
+      "state_province": null,
+      "postal_code": null,
+      "country": null,
+      "contract_expiry_notified": [],
+      "industry": null,
+      "signup_source": "SELF_SIGNUP",
+      "near_expiry_days": 30
+    },
+    {
+      "id": "0e898780-9aa2-4f63-b39f-258f45ed161e",
+      "name": "T01",
+      "organisation_type": "PRODUCER",
+      "parent_tenant_id": null,
+      "plan_id": "00000000-0000-0000-0000-000000000001",
+      "feature_flags": {
+        "LOGISTICS": true,
+        "API_ACCESS": false,
+        "AI_ANALYTICS": false,
+        "AUDIT_EXPORT": false,
+        "CORE_INVENTORY": true,
+        "CUSTOM_BRANDING": false,
+        "LOT_TRACEABILITY": true,
+        "TRANSFERS_SISTER": true,
+        "TRANSFERS_PULL_PUSH": true
+      },
+      "sku_cap": 19,
+      "approval_thresholds": {},
+      "default_locale": "en",
+      "onboarding_complete": false,
+      "is_active": true,
+      "created_at": "2026-07-02T05:35:32.098746-04:00",
+      "updated_at": "2026-10-15T20:27:54.62543-04:00",
+      "slug": "t01",
+      "sku_prefix": "SKU",
+      "sku_counter": 0,
+      "logo_url": "/static/uploads/tenants/logos/eef17c4ded934deebcbdb4656db80602_dash-banner.png",
+      "banner_url": null,
+      "status": "ACTIVE",
+      "plan_tier": "STARTER",
+      "max_warehouses": 3,
+      "max_users": 5,
+      "contact_name": null,
+      "contact_email": null,
+      "contact_phone": null,
+      "contract_start": "2026-10-09",
+      "contract_end": "2026-12-31",
+      "notes": "Start up Company note",
+      "address_line1": "Merkato",
+      "address_line2": null,
+      "city": "Addis Ababa",
+      "state_province": "Addis",
+      "postal_code": null,
+      "country": "Eth",
+      "contract_expiry_notified": [],
+      "industry": "Prod Ind",
+      "signup_source": "SA",
+      "near_expiry_days": 30
+    }
+  ],
+  "subscriptions": [
+    {
+      "id": "ae3e6e41-e716-452e-b967-071de4f191a5",
+      "tenant_id": "e27248bf-fd29-486a-9cae-795dfc325ea3",
+      "tier": "GROWTH",
+      "billing_period": "MONTHLY",
+      "status": "PENDING_PAYMENT",
+      "provider": "MANUAL",
+      "price_id": "5a85d7ee-1f4f-4eb9-a773-3bd298c064c4",
+      "amount": 200.0,
+      "currency": "ETB",
+      "current_period_start": "2026-10-09",
+      "current_period_end": "2026-11-09",
+      "cancelled_at": null,
+      "created_by": "4a4ad95a-9802-487c-8dfa-0b00dfb7306e",
+      "created_at": "2026-10-09T21:55:51.639555-04:00",
+      "updated_at": "2026-10-09T21:55:51.639555-04:00",
+      "scheduled_tier": null,
+      "scheduled_at": null,
+      "scheduled_by": null
+    },
+    {
+      "id": "c1e24ba9-29e0-4a7b-824e-8547c5995987",
+      "tenant_id": "0e898780-9aa2-4f63-b39f-258f45ed161e",
+      "tier": "STARTER",
+      "billing_period": "ANNUAL",
+      "status": "ACTIVE",
+      "provider": "MANUAL",
+      "price_id": "6345f289-2ede-42f9-81b9-acb46b5f053f",
+      "amount": 1000.0,
+      "currency": "ETB",
+      "current_period_start": "2026-07-02",
+      "current_period_end": "2026-07-15",
+      "cancelled_at": null,
+      "created_by": null,
+      "created_at": "2026-10-06T06:37:22.709043-04:00",
+      "updated_at": "2026-10-06T06:37:22.709043-04:00",
+      "scheduled_tier": null,
+      "scheduled_at": null,
+      "scheduled_by": null
+    }
+  ],
+  "tenant_contacts": [
+    {
+      "id": "4c4b4d4f-3234-400c-8abf-07d2b73749d7",
+      "tenant_id": "e27248bf-fd29-486a-9cae-795dfc325ea3",
+      "is_primary": true,
+      "full_name": "Jan",
+      "position_title": null,
+      "email": "admin@s10.com",
+      "phone": null,
+      "mobile": null,
+      "created_at": "2026-10-09T21:55:51.639555-04:00"
+    },
+    {
+      "id": "4e684f1a-cfdc-41ac-ab0a-22e28b082c16",
+      "tenant_id": "0e898780-9aa2-4f63-b39f-258f45ed161e",
+      "is_primary": false,
+      "full_name": "Sinedu Deputy",
+      "position_title": "Deputy Mgr",
+      "email": "ddd@t.com",
+      "phone": "12345678",
+      "mobile": null,
+      "created_at": "2026-07-02T05:35:33.857753-04:00"
+    },
+    {
+      "id": "2d098cc2-5db3-48a9-8149-6c28103f19d5",
+      "tenant_id": "0e898780-9aa2-4f63-b39f-258f45ed161e",
+      "is_primary": true,
+      "full_name": "Solomon Tam",
+      "position_title": "Director",
+      "email": "s@G.com",
+      "phone": "12345678",
+      "mobile": null,
+      "created_at": "2026-07-02T05:35:33.857753-04:00"
+    }
+  ],
+  "tenant_hierarchy_config": [
+    {
+      "id": "8b493b3f-f8e9-4870-8877-4dd61198f9be",
+      "tenant_id": "e27248bf-fd29-486a-9cae-795dfc325ea3",
+      "level_number": 1,
+      "level_name": "Main",
+      "default_role_code": "NM",
+      "role_display_label": "National Manager",
+      "is_stock_holding": true,
+      "is_active": true,
+      "created_at": "2026-10-09T22:00:41.622025-04:00",
+      "updated_at": "2026-10-09T22:00:41.622025-04:00"
+    },
+    {
+      "id": "1dafe726-1695-4e45-b266-a09ad01ad1d4",
+      "tenant_id": "e27248bf-fd29-486a-9cae-795dfc325ea3",
+      "level_number": 2,
+      "level_name": "Region",
+      "default_role_code": "RM",
+      "role_display_label": "Regional Manager",
+      "is_stock_holding": true,
+      "is_active": true,
+      "created_at": "2026-10-09T22:00:41.622025-04:00",
+      "updated_at": "2026-10-09T22:00:41.622025-04:00"
+    },
+    {
+      "id": "08485b1e-e6d9-4b23-bc34-682fa712bdea",
+      "tenant_id": "e27248bf-fd29-486a-9cae-795dfc325ea3",
+      "level_number": 3,
+      "level_name": "Warehouse",
+      "default_role_code": "WM",
+      "role_display_label": "Warehouse Manager",
+      "is_stock_holding": true,
+      "is_active": true,
+      "created_at": "2026-10-09T22:00:41.622025-04:00",
+      "updated_at": "2026-10-09T22:00:41.622025-04:00"
+    },
+    {
+      "id": "4df59d18-3d2a-4d5e-8332-71238ea9abcd",
+      "tenant_id": "0e898780-9aa2-4f63-b39f-258f45ed161e",
+      "level_number": 1,
+      "level_name": "Main Factory",
+      "default_role_code": "NM",
+      "role_display_label": "National Manager",
+      "is_stock_holding": true,
+      "is_active": true,
+      "created_at": "2026-07-02T18:15:05.666416-04:00",
+      "updated_at": "2026-07-02T18:15:05.666416-04:00"
+    },
+    {
+      "id": "bd947bdb-b7dd-4a77-91cc-6245d9e3c77f",
+      "tenant_id": "0e898780-9aa2-4f63-b39f-258f45ed161e",
+      "level_number": 2,
+      "level_name": "Region T01",
+      "default_role_code": "RM",
+      "role_display_label": "Regional Manager",
+      "is_stock_holding": true,
+      "is_active": true,
+      "created_at": "2026-07-02T18:15:05.666416-04:00",
+      "updated_at": "2026-07-02T18:15:05.666416-04:00"
+    },
+    {
+      "id": "18741015-e290-457a-8c74-fe283fc0e381",
+      "tenant_id": "0e898780-9aa2-4f63-b39f-258f45ed161e",
+      "level_number": 3,
+      "level_name": "Warehouse ",
+      "default_role_code": "WM",
+      "role_display_label": "Warehouse Manager",
+      "is_stock_holding": true,
+      "is_active": true,
+      "created_at": "2026-07-02T18:15:05.666416-04:00",
+      "updated_at": "2026-07-02T18:15:05.666416-04:00"
+    }
+  ],
+  "organization_node": [
+    {
+      "id": "2d261614-a594-437e-891d-c628a645c2e6",
+      "tenant_id": "0e898780-9aa2-4f63-b39f-258f45ed161e",
+      "name": "Addis Main L1",
+      "code": "ADDISMAI1",
+      "hierarchy_level": 1,
+      "parent_node_id": null,
+      "is_stock_holding": true,
+      "is_active": true,
+      "created_at": "2026-07-02T18:15:37.249826-04:00",
+      "updated_at": "2026-07-02T18:15:37.249826-04:00",
+      "address": "Addis"
+    },
+    {
+      "id": "139d5b6d-9146-4f80-835e-c3c14c2c5541",
+      "tenant_id": "0e898780-9aa2-4f63-b39f-258f45ed161e",
+      "name": "Jimma",
+      "code": "JIMMA1",
+      "hierarchy_level": 1,
+      "parent_node_id": null,
+      "is_stock_holding": true,
+      "is_active": false,
+      "created_at": "2026-07-02T18:16:40.790461-04:00",
+      "updated_at": "2026-07-02T18:18:05.455403-04:00",
+      "address": null
+    },
+    {
+      "id": "7f1db5ba-c89f-4211-8e8a-ab317215537d",
+      "tenant_id": "0e898780-9aa2-4f63-b39f-258f45ed161e",
+      "name": "South",
+      "code": "SOUTH1",
+      "hierarchy_level": 1,
+      "parent_node_id": null,
+      "is_stock_holding": true,
+      "is_active": false,
+      "created_at": "2026-07-02T18:16:29.58341-04:00",
+      "updated_at": "2026-07-02T18:18:09.353063-04:00",
+      "address": "A"
+    },
+    {
+      "id": "ca96c685-bc5f-4ca2-8bf7-d4404a28e543",
+      "tenant_id": "0e898780-9aa2-4f63-b39f-258f45ed161e",
+      "name": "Mekele 02",
+      "code": "MEKELE021",
+      "hierarchy_level": 1,
+      "parent_node_id": null,
+      "is_stock_holding": true,
+      "is_active": false,
+      "created_at": "2026-07-02T18:16:15.044476-04:00",
+      "updated_at": "2026-07-02T18:18:11.842202-04:00",
+      "address": "Mekele"
+    },
+    {
+      "id": "22336278-1bca-4ae9-99b8-1efe74d5908e",
+      "tenant_id": "0e898780-9aa2-4f63-b39f-258f45ed161e",
+      "name": "Awassa L2",
+      "code": "AWASSAL22",
+      "hierarchy_level": 2,
+      "parent_node_id": "2d261614-a594-437e-891d-c628a645c2e6",
+      "is_stock_holding": true,
+      "is_active": true,
+      "created_at": "2026-07-02T18:18:55.292919-04:00",
+      "updated_at": "2026-07-02T18:18:55.292919-04:00",
+      "address": "Awassa"
+    },
+    {
+      "id": "7dfefb31-eef4-4e35-8a41-0d9e90963a46",
+      "tenant_id": "0e898780-9aa2-4f63-b39f-258f45ed161e",
+      "name": "Soddo WHA",
+      "code": "SODDOWHA3",
+      "hierarchy_level": 3,
+      "parent_node_id": "22336278-1bca-4ae9-99b8-1efe74d5908e",
+      "is_stock_holding": true,
+      "is_active": true,
+      "created_at": "2026-07-02T18:19:19.606867-04:00",
+      "updated_at": "2026-07-02T18:19:19.606867-04:00",
+      "address": "Soddo"
+    },
+    {
+      "id": "7a6f9542-0076-45cf-bee5-3c8ed9f5d460",
+      "tenant_id": "0e898780-9aa2-4f63-b39f-258f45ed161e",
+      "name": "Arbaminch WH-B",
+      "code": "ARBAMINC3",
+      "hierarchy_level": 3,
+      "parent_node_id": "22336278-1bca-4ae9-99b8-1efe74d5908e",
+      "is_stock_holding": true,
+      "is_active": true,
+      "created_at": "2026-07-02T18:20:19.430782-04:00",
+      "updated_at": "2026-07-02T18:20:19.430782-04:00",
+      "address": "A Minch"
+    }
+  ],
+  "org_node_hierarchy": [
+    {
+      "id": "4a771a07-f1a8-4d76-8bf7-80c5ce9c02d2",
+      "tenant_id": "0e898780-9aa2-4f63-b39f-258f45ed161e",
+      "from_node_id": "22336278-1bca-4ae9-99b8-1efe74d5908e",
+      "to_node_id": "2d261614-a594-437e-891d-c628a645c2e6",
+      "relationship_type": "PRIMARY_REPORTS_TO",
+      "is_preferred": false,
+      "created_at": "2026-07-02T18:18:55.292919-04:00"
+    },
+    {
+      "id": "8c24504e-3794-43d8-b376-de4f4ee08aa1",
+      "tenant_id": "0e898780-9aa2-4f63-b39f-258f45ed161e",
+      "from_node_id": "7dfefb31-eef4-4e35-8a41-0d9e90963a46",
+      "to_node_id": "22336278-1bca-4ae9-99b8-1efe74d5908e",
+      "relationship_type": "PRIMARY_REPORTS_TO",
+      "is_preferred": false,
+      "created_at": "2026-07-02T18:19:19.606867-04:00"
+    },
+    {
+      "id": "af3febf6-32f0-4c3c-84ae-d472462ad95a",
+      "tenant_id": "0e898780-9aa2-4f63-b39f-258f45ed161e",
+      "from_node_id": "7a6f9542-0076-45cf-bee5-3c8ed9f5d460",
+      "to_node_id": "22336278-1bca-4ae9-99b8-1efe74d5908e",
+      "relationship_type": "PRIMARY_REPORTS_TO",
+      "is_preferred": false,
+      "created_at": "2026-07-02T18:20:19.430782-04:00"
+    }
+  ],
+  "users": [
+    {
+      "id": "00000001-0a00-0000-0000-000000000001",
+      "tenant_id": null,
+      "email": "smartadmin@smart-inventory.com",
+      "full_name": "System Administrator",
+      "locale": "en",
+      "created_by": null,
+      "is_active": true,
+      "created_at": "2026-06-06T09:46:56.744851-04:00",
+      "updated_at": "2026-10-15T06:38:43.724017-04:00",
+      "must_reset_password": false,
+      "system_role": null,
+      "is_account_owner": false,
+      "email_verified_at": "2026-06-06T09:46:56.744851-04:00"
+    },
+    {
+      "id": "4a4ad95a-9802-487c-8dfa-0b00dfb7306e",
+      "tenant_id": "e27248bf-fd29-486a-9cae-795dfc325ea3",
+      "email": "admin@s10.com",
+      "full_name": "Jan",
+      "locale": "en",
+      "created_by": null,
+      "is_active": true,
+      "created_at": "2026-10-09T21:55:51.639555-04:00",
+      "updated_at": "2026-10-09T21:55:51.639555-04:00",
+      "must_reset_password": false,
+      "system_role": "TA",
+      "is_account_owner": true,
+      "email_verified_at": null
+    },
+    {
+      "id": "7838b52b-d526-47e1-87a0-3d12c6cf2c31",
+      "tenant_id": "e27248bf-fd29-486a-9cae-795dfc325ea3",
+      "email": "a1@s10.com",
+      "full_name": "Lemma",
+      "locale": "en",
+      "created_by": null,
+      "is_active": true,
+      "created_at": "2026-10-09T22:13:04.715917-04:00",
+      "updated_at": "2026-10-09T22:13:04.715917-04:00",
+      "must_reset_password": true,
+      "system_role": null,
+      "is_account_owner": false,
+      "email_verified_at": null
+    },
+    {
+      "id": "4435147c-1017-4f5b-ac99-44cfb1ab21d1",
+      "tenant_id": "e27248bf-fd29-486a-9cae-795dfc325ea3",
+      "email": "a2@s10.com",
+      "full_name": "Tom",
+      "locale": "en",
+      "created_by": null,
+      "is_active": true,
+      "created_at": "2026-10-09T22:13:43.621677-04:00",
+      "updated_at": "2026-10-09T22:13:43.621677-04:00",
+      "must_reset_password": true,
+      "system_role": null,
+      "is_account_owner": false,
+      "email_verified_at": null
+    },
+    {
+      "id": "5c7f7957-fb27-42e2-b7c8-98a47dede3fe",
+      "tenant_id": "0e898780-9aa2-4f63-b39f-258f45ed161e",
+      "email": "a05@t01.com",
+      "full_name": "Can ICreate FIFTHuser",
+      "locale": "en",
+      "created_by": null,
+      "is_active": true,
+      "created_at": "2026-07-02T19:26:01.680837-04:00",
+      "updated_at": "2026-07-02T19:40:42.433011-04:00",
+      "must_reset_password": true,
+      "system_role": null,
+      "is_account_owner": false,
+      "email_verified_at": "2026-07-02T19:26:01.680837-04:00"
+    },
+    {
+      "id": "f9120e0a-d8e4-4079-98c4-b077b90f2001",
+      "tenant_id": "0e898780-9aa2-4f63-b39f-258f45ed161e",
+      "email": "a04@t01.com",
+      "full_name": "Arbaminch WHMgr",
+      "locale": "en",
+      "created_by": null,
+      "is_active": true,
+      "created_at": "2026-07-02T19:25:29.356321-04:00",
+      "updated_at": "2026-09-27T07:35:08.105327-04:00",
+      "must_reset_password": false,
+      "system_role": null,
+      "is_account_owner": false,
+      "email_verified_at": "2026-07-02T19:25:29.356321-04:00"
+    },
+    {
+      "id": "610eed03-0877-4afa-a323-c266def92bb2",
+      "tenant_id": "0e898780-9aa2-4f63-b39f-258f45ed161e",
+      "email": "admin@t01.com",
+      "full_name": "Abebe Adminy",
+      "locale": "en",
+      "created_by": null,
+      "is_active": true,
+      "created_at": "2026-07-02T05:35:32.612246-04:00",
+      "updated_at": "2026-07-02T10:28:41.220711-04:00",
+      "must_reset_password": false,
+      "system_role": "TA",
+      "is_account_owner": true,
+      "email_verified_at": "2026-07-02T05:35:32.612246-04:00"
+    },
+    {
+      "id": "0f056ae8-8ed9-4e8d-8b7c-e79df2ab2f84",
+      "tenant_id": "0e898780-9aa2-4f63-b39f-258f45ed161e",
+      "email": "a03@t01.com",
+      "full_name": "Soddo WHMgr",
+      "locale": "en",
+      "created_by": null,
+      "is_active": true,
+      "created_at": "2026-07-02T19:25:03.190619-04:00",
+      "updated_at": "2026-07-02T19:27:48.030772-04:00",
+      "must_reset_password": true,
+      "system_role": null,
+      "is_account_owner": false,
+      "email_verified_at": "2026-07-02T19:25:03.190619-04:00"
+    },
+    {
+      "id": "6e0ea4dc-f6fd-4476-bfb4-84a978939f1d",
+      "tenant_id": "0e898780-9aa2-4f63-b39f-258f45ed161e",
+      "email": "a07@t01.com",
+      "full_name": "User07 T01User",
+      "locale": "en",
+      "created_by": null,
+      "is_active": false,
+      "created_at": "2026-07-02T19:35:10.706853-04:00",
+      "updated_at": "2026-07-02T19:35:22.989241-04:00",
+      "must_reset_password": true,
+      "system_role": null,
+      "is_account_owner": false,
+      "email_verified_at": "2026-07-02T19:35:10.706853-04:00"
+    },
+    {
+      "id": "7dbe8b74-c307-4b77-9113-5c33a3bf08ee",
+      "tenant_id": "0e898780-9aa2-4f63-b39f-258f45ed161e",
+      "email": "a06@t01.com",
+      "full_name": "Seventh UserT01",
+      "locale": "en",
+      "created_by": null,
+      "is_active": false,
+      "created_at": "2026-07-02T19:26:29.085041-04:00",
+      "updated_at": "2026-07-02T19:35:26.611732-04:00",
+      "must_reset_password": true,
+      "system_role": null,
+      "is_account_owner": false,
+      "email_verified_at": "2026-07-02T19:26:29.085041-04:00"
+    },
+    {
+      "id": "9d86ded9-a7e7-48c7-9e29-2b944443c77c",
+      "tenant_id": "0e898780-9aa2-4f63-b39f-258f45ed161e",
+      "email": "a01@t01.com",
+      "full_name": "Alemu MainMgr",
+      "locale": "en",
+      "created_by": null,
+      "is_active": true,
+      "created_at": "2026-07-02T19:23:55.597261-04:00",
+      "updated_at": "2026-07-03T19:04:54.453521-04:00",
+      "must_reset_password": false,
+      "system_role": null,
+      "is_account_owner": false,
+      "email_verified_at": "2026-07-02T19:23:55.597261-04:00"
+    },
+    {
+      "id": "90b0a560-917e-4314-afb8-e002d16b820d",
+      "tenant_id": "0e898780-9aa2-4f63-b39f-258f45ed161e",
+      "email": "a02@t01.com",
+      "full_name": "Tamrat RegionMgr",
+      "locale": "en",
+      "created_by": null,
+      "is_active": true,
+      "created_at": "2026-07-02T19:24:32.411347-04:00",
+      "updated_at": "2026-07-04T07:16:38.350374-04:00",
+      "must_reset_password": false,
+      "system_role": null,
+      "is_account_owner": false,
+      "email_verified_at": "2026-07-02T19:24:32.411347-04:00"
+    }
+  ],
+  "positions": [
+    {
+      "id": "333beac9-f491-44ae-b123-35e805264ca8",
+      "tenant_id": "0e898780-9aa2-4f63-b39f-258f45ed161e",
+      "node_id": "2d261614-a594-437e-891d-c628a645c2e6",
+      "title": "Main Factory Head",
+      "role_code": "NM",
+      "reports_to_position_id": null,
+      "is_active": true,
+      "created_at": "2026-07-02T18:21:35.849753-04:00",
+      "updated_at": "2026-07-04T07:13:55.193915-04:00"
+    },
+    {
+      "id": "e8651865-3935-4a37-8862-ddfff1cffc6f",
+      "tenant_id": "0e898780-9aa2-4f63-b39f-258f45ed161e",
+      "node_id": "22336278-1bca-4ae9-99b8-1efe74d5908e",
+      "title": "Regional Manager",
+      "role_code": "RM",
+      "reports_to_position_id": "333beac9-f491-44ae-b123-35e805264ca8",
+      "is_active": true,
+      "created_at": "2026-07-02T18:22:01.220351-04:00",
+      "updated_at": "2026-07-02T18:22:01.220351-04:00"
+    },
+    {
+      "id": "d8b44d68-ee78-4ed7-9709-0b6f7bdbb9aa",
+      "tenant_id": "0e898780-9aa2-4f63-b39f-258f45ed161e",
+      "node_id": "7a6f9542-0076-45cf-bee5-3c8ed9f5d460",
+      "title": "A-M Warehouse Mgr",
+      "role_code": "WM",
+      "reports_to_position_id": "e8651865-3935-4a37-8862-ddfff1cffc6f",
+      "is_active": true,
+      "created_at": "2026-07-02T18:22:47.513169-04:00",
+      "updated_at": "2026-07-02T18:22:47.513169-04:00"
+    },
+    {
+      "id": "4f4889d3-d700-4316-a473-2839eb3e163c",
+      "tenant_id": "0e898780-9aa2-4f63-b39f-258f45ed161e",
+      "node_id": "7dfefb31-eef4-4e35-8a41-0d9e90963a46",
+      "title": "Soddo WHM",
+      "role_code": "WM",
+      "reports_to_position_id": "e8651865-3935-4a37-8862-ddfff1cffc6f",
+      "is_active": true,
+      "created_at": "2026-07-02T18:23:04.020093-04:00",
+      "updated_at": "2026-07-02T18:23:04.020093-04:00"
+    }
+  ],
+  "personnel_positions": [
+    {
+      "id": "5ae68e00-4da2-4ca8-8b66-a6d5d14a7e5b",
+      "tenant_id": "0e898780-9aa2-4f63-b39f-258f45ed161e",
+      "user_id": "9d86ded9-a7e7-48c7-9e29-2b944443c77c",
+      "position_id": "333beac9-f491-44ae-b123-35e805264ca8",
+      "assignment_type": "PRIMARY",
+      "valid_from": "2026-07-02",
+      "valid_until": null,
+      "is_active": true,
+      "assigned_by": null,
+      "notes": null,
+      "created_at": "2026-07-02T19:23:55.597261-04:00"
+    },
+    {
+      "id": "9a94b91f-5312-4278-b2b9-64da1dc2b87f",
+      "tenant_id": "0e898780-9aa2-4f63-b39f-258f45ed161e",
+      "user_id": "90b0a560-917e-4314-afb8-e002d16b820d",
+      "position_id": "e8651865-3935-4a37-8862-ddfff1cffc6f",
+      "assignment_type": "PRIMARY",
+      "valid_from": "2026-07-02",
+      "valid_until": null,
+      "is_active": true,
+      "assigned_by": null,
+      "notes": null,
+      "created_at": "2026-07-02T19:24:32.411347-04:00"
+    },
+    {
+      "id": "66d3b399-b5a7-42f8-8510-e023479a130b",
+      "tenant_id": "0e898780-9aa2-4f63-b39f-258f45ed161e",
+      "user_id": "0f056ae8-8ed9-4e8d-8b7c-e79df2ab2f84",
+      "position_id": "4f4889d3-d700-4316-a473-2839eb3e163c",
+      "assignment_type": "PRIMARY",
+      "valid_from": "2026-07-02",
+      "valid_until": null,
+      "is_active": true,
+      "assigned_by": null,
+      "notes": null,
+      "created_at": "2026-07-02T19:25:03.190619-04:00"
+    },
+    {
+      "id": "ada2547b-8f25-45f0-ade2-cc81396e6fe0",
+      "tenant_id": "0e898780-9aa2-4f63-b39f-258f45ed161e",
+      "user_id": "f9120e0a-d8e4-4079-98c4-b077b90f2001",
+      "position_id": "d8b44d68-ee78-4ed7-9709-0b6f7bdbb9aa",
+      "assignment_type": "PRIMARY",
+      "valid_from": "2026-07-02",
+      "valid_until": null,
+      "is_active": true,
+      "assigned_by": null,
+      "notes": null,
+      "created_at": "2026-07-02T19:25:29.356321-04:00"
+    }
+  ],
+  "product_categories": [
+    {
+      "id": "e1d7c349-1d29-4252-89a8-7fd42b857206",
+      "tenant_id": "0e898780-9aa2-4f63-b39f-258f45ed161e",
+      "name": "Beverage",
+      "parent_id": null,
+      "is_active": true,
+      "created_at": "2026-07-02T19:48:02.58951-04:00",
+      "updated_at": "2026-07-02T19:48:02.58951-04:00"
+    }
+  ],
+  "product_type_codes": [
+    {
+      "id": "096673e2-202f-465b-98d1-a50c24f6e7ae",
+      "tenant_id": "0e898780-9aa2-4f63-b39f-258f45ed161e",
+      "code": "BVR",
+      "description": null,
+      "is_active": true,
+      "created_at": "2026-07-02T19:48:02.58951-04:00"
+    }
+  ],
+  "product_uoms": [
+    {
+      "id": "37cf4c4f-7952-4359-a61d-1bcc413fe79c",
+      "tenant_id": "0e898780-9aa2-4f63-b39f-258f45ed161e",
+      "name": "Bottle",
+      "is_active": true,
+      "created_at": "2026-07-02T19:48:02.58951-04:00"
+    },
+    {
+      "id": "e5a5b833-4ed8-41bb-9bfe-0c5949daa169",
+      "tenant_id": "0e898780-9aa2-4f63-b39f-258f45ed161e",
+      "name": "units",
+      "is_active": true,
+      "created_at": "2026-10-16T06:30:22.17372-04:00"
+    }
+  ],
+  "product_packaging_types": [
+    {
+      "id": "c2bfd601-4b70-4faa-9c1a-0b4d035bd14e",
+      "tenant_id": "0e898780-9aa2-4f63-b39f-258f45ed161e",
+      "name": "Pack of 6",
+      "units_per_package": 1,
+      "is_active": true,
+      "created_at": "2026-07-02T19:48:02.58951-04:00"
+    },
+    {
+      "id": "f124652c-c4e5-457d-b8f5-0ec41d3ef3c2",
+      "tenant_id": "0e898780-9aa2-4f63-b39f-258f45ed161e",
+      "name": "Pack of 12",
+      "units_per_package": 1,
+      "is_active": true,
+      "created_at": "2026-07-02T19:48:44.64332-04:00"
+    },
+    {
+      "id": "1da64dba-538c-4ae4-ab22-8f4f1278ee10",
+      "tenant_id": "0e898780-9aa2-4f63-b39f-258f45ed161e",
+      "name": "Package",
+      "units_per_package": 1,
+      "is_active": true,
+      "created_at": "2026-07-02T19:49:44.217094-04:00"
+    },
+    {
+      "id": "fae667a8-66e3-41ad-bd3f-6813006b0518",
+      "tenant_id": "0e898780-9aa2-4f63-b39f-258f45ed161e",
+      "name": "Package of 12",
+      "units_per_package": 1,
+      "is_active": true,
+      "created_at": "2026-07-02T19:52:20.729311-04:00"
+    }
+  ],
+  "self_approval_policies": [
+    {
+      "id": "a34fcd17-c252-46c5-8182-68e4375274ed",
+      "tenant_id": "0e898780-9aa2-4f63-b39f-258f45ed161e",
+      "role_code": "NM",
+      "level_number": 1,
+      "transfer_types": [
+        "PULL",
+        "PUSH",
+        "SISTER"
+      ],
+      "threshold_type": "QUANTITY",
+      "qty_limit": null,
+      "value_limit": null,
+      "is_active": true,
+      "created_at": "2026-07-04T07:13:56.242116-04:00",
+      "updated_at": "2026-07-04T07:13:56.242116-04:00",
+      "created_by": null
+    }
+  ],
+  "transfer_type_config": [
+    {
+      "id": "f63cfbac-efd9-4cbe-849f-833e5194a3f4",
+      "tenant_id": "0e898780-9aa2-4f63-b39f-258f45ed161e",
+      "underlying_type": "SISTER",
+      "display_name": "Branch Exchange",
+      "description": null,
+      "is_active": true,
+      "sort_order": 2,
+      "created_at": "2026-07-02T19:43:22.306454-04:00"
+    },
+    {
+      "id": "666cb1e0-d2db-4986-b951-0681f25ca7a9",
+      "tenant_id": "0e898780-9aa2-4f63-b39f-258f45ed161e",
+      "underlying_type": "PUSH",
+      "display_name": "Send Stock",
+      "description": null,
+      "is_active": true,
+      "sort_order": 1,
+      "created_at": "2026-07-02T19:43:22.306454-04:00"
+    },
+    {
+      "id": "fccfd9ef-7dec-4d93-a62b-394deedd1afa",
+      "tenant_id": "0e898780-9aa2-4f63-b39f-258f45ed161e",
+      "underlying_type": "PULL",
+      "display_name": "Request Stock",
+      "description": null,
+      "is_active": true,
+      "sort_order": 0,
+      "created_at": "2026-07-02T19:43:22.306454-04:00"
+    }
+  ],
+  "transfer_type_level_permissions": [
+    {
+      "id": "306bbbc6-00df-407a-9e6f-4b3474874906",
+      "tenant_id": "0e898780-9aa2-4f63-b39f-258f45ed161e",
+      "transfer_type_config_id": "fccfd9ef-7dec-4d93-a62b-394deedd1afa",
+      "level_number": 1,
+      "can_initiate": true,
+      "can_receive": true
+    },
+    {
+      "id": "4d006c48-d7e2-4147-a4c3-81e1c6dd4b45",
+      "tenant_id": "0e898780-9aa2-4f63-b39f-258f45ed161e",
+      "transfer_type_config_id": "fccfd9ef-7dec-4d93-a62b-394deedd1afa",
+      "level_number": 2,
+      "can_initiate": true,
+      "can_receive": true
+    },
+    {
+      "id": "ef8168b2-cca6-4ceb-be67-af0f92bfba54",
+      "tenant_id": "0e898780-9aa2-4f63-b39f-258f45ed161e",
+      "transfer_type_config_id": "fccfd9ef-7dec-4d93-a62b-394deedd1afa",
+      "level_number": 3,
+      "can_initiate": true,
+      "can_receive": true
+    },
+    {
+      "id": "08f9b0b8-2f50-4ceb-a595-78954c0a0bbd",
+      "tenant_id": "0e898780-9aa2-4f63-b39f-258f45ed161e",
+      "transfer_type_config_id": "666cb1e0-d2db-4986-b951-0681f25ca7a9",
+      "level_number": 1,
+      "can_initiate": true,
+      "can_receive": true
+    },
+    {
+      "id": "78603bcb-82f5-4bdd-a7c4-0446840b82c0",
+      "tenant_id": "0e898780-9aa2-4f63-b39f-258f45ed161e",
+      "transfer_type_config_id": "666cb1e0-d2db-4986-b951-0681f25ca7a9",
+      "level_number": 2,
+      "can_initiate": true,
+      "can_receive": true
+    },
+    {
+      "id": "38d25cbd-dfb7-4c57-b72f-888b925d9667",
+      "tenant_id": "0e898780-9aa2-4f63-b39f-258f45ed161e",
+      "transfer_type_config_id": "666cb1e0-d2db-4986-b951-0681f25ca7a9",
+      "level_number": 3,
+      "can_initiate": true,
+      "can_receive": true
+    },
+    {
+      "id": "7e950984-4ba1-49e6-8ab7-bb118e616628",
+      "tenant_id": "0e898780-9aa2-4f63-b39f-258f45ed161e",
+      "transfer_type_config_id": "f63cfbac-efd9-4cbe-849f-833e5194a3f4",
+      "level_number": 1,
+      "can_initiate": true,
+      "can_receive": true
+    },
+    {
+      "id": "57efd3ed-1b69-4eaf-b373-0bb1ddbc5d27",
+      "tenant_id": "0e898780-9aa2-4f63-b39f-258f45ed161e",
+      "transfer_type_config_id": "f63cfbac-efd9-4cbe-849f-833e5194a3f4",
+      "level_number": 2,
+      "can_initiate": true,
+      "can_receive": true
+    },
+    {
+      "id": "3a6ccb94-381f-4db1-8378-4ae1d93a0091",
+      "tenant_id": "0e898780-9aa2-4f63-b39f-258f45ed161e",
+      "transfer_type_config_id": "f63cfbac-efd9-4cbe-849f-833e5194a3f4",
+      "level_number": 3,
+      "can_initiate": true,
+      "can_receive": true
+    }
+  ]
+}

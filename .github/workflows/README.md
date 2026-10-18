@@ -15,6 +15,10 @@ This directory contains the CI/CD workflows for provisioning, testing, and deplo
 
 ## Available Workflows
 
+> **Which repo runs what:** PRs and their checks (`container-smoke`, `terraform-check`) run on `abiygit/smart-inventory-tracking`; `main` is pushed to both remotes.
+> AWS workflows (`infrastructure.yml`, `deploy.yml`, `lifecycle.yml`) run only on `globe-data-cloud-solutions/smart-inventory-tracking` (guarded by `github.repository`).
+> Dispatch them only when Alex explicitly instructs it.
+
 ### 1. **CI** (`ci.yml`)
 Automated quality gate that runs on manual trigger.
 - Linting (ruff, TypeScript strict)
@@ -38,7 +42,7 @@ Terraform-based provisioning and deprovisioning for AWS resources.
 
 **Trigger:**
 ```bash
-gh workflow run infrastructure.yml -f environment=dev -f stage=validate
+gh workflow run infrastructure.yml -f environment=dev -f stage=validate -R globe-data-cloud-solutions/smart-inventory-tracking
 ```
 
 ### 3. **Deploy Application** (`deploy.yml`)
@@ -49,7 +53,7 @@ Builds Docker images, pushes to ECR, runs migrations, and deploys to ECS.
 
 **Trigger:**
 ```bash
-gh workflow run deploy.yml -f environment=dev
+gh workflow run deploy.yml -f environment=dev -R globe-data-cloud-solutions/smart-inventory-tracking
 ```
 
 ### 4. **Container Smoke Test** (`container-smoke.yml`)

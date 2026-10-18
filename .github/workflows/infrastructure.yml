@@ -29,6 +29,15 @@ on:
         required: true
         type: choice
         options: [validate, plan, apply, delete]
+  # Called by lifecycle.yml. Same inputs as above.
+  workflow_call:
+    inputs:
+      environment:
+        required: true
+        type: string
+      stage:
+        required: true
+        type: string
 
 permissions:
   contents: read
@@ -37,6 +46,7 @@ jobs:
   # ── Resolve the dev/stg/prd input to the envs/<dir> directory name ────────────
   setup:
     name: Resolve environment
+    if: github.repository == 'globe-data-cloud-solutions/smart-inventory-tracking'
     runs-on: ubuntu-latest
     outputs:
       env: ${{ steps.map.outputs.env }}
@@ -109,6 +119,24 @@ jobs:
       - name: Terraform Apply
         if: inputs.stage == 'apply'
         run: terraform apply -auto-approve -input=false
+
+      # Scale ECS services to zero and wait for their tasks to stop, so task
+      # ENIs release their security groups before Terraform deletes them.
+      - name: Drain ECS services (pre-destroy)
+        if: inputs.stage == 'delete'
+        run: |
+          CLUSTER="smart-${{ needs.setup.outputs.env }}"
+          SERVICES="$(aws ecs list-services --cluster "$CLUSTER" --query 'serviceArns' --output text | tr '\t' '\n' | sed 's#.*/##' | grep -v '^$' || true)"
+          if [ -z "$SERVICES" ]; then
+            echo "No ECS services in $CLUSTER — nothing to drain."
+            exit 0
+          fi
+          for svc in $SERVICES; do
+            aws ecs update-service --cluster "$CLUSTER" --service "$svc" --desired-count 0 >/dev/null
+          done
+          # shellcheck disable=SC2086
+          aws ecs wait services-stable --cluster "$CLUSTER" --services $SERVICES
+          echo "Drained: $SERVICES"
 
       - name: Delete ECR repositories (pre-destroy cleanup)
         if: inputs.stage == 'delete'

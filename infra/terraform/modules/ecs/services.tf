@@ -1,18 +1,18 @@
+# Secrets are created by modules/app-secrets. ECS must get the full secret ARN:
+# a bare name such as "smart/dev/jwt/secret" is read as an SSM Parameter Store
+# name, which the execution role cannot read.
 locals {
-  # Plain secret NAMEs, not ARNs: a partial ARN ending "-" + 6 chars (e.g.
-  # elasticache/celery-broker) is parsed by ECS as a random-suffix marker and
-  # fails to resolve. ECS resolves a bare name against the execution role's
-  # wildcard policy (smart/${var.env}/* below) just as well as a full ARN.
-  secret_name_prefix = "smart/${var.env}"
-
   common_secrets = [
-    { name = "DATABASE_URL", valueFrom = "${local.secret_name_prefix}/db/primary-url" },
-    { name = "DATABASE_READ_URL", valueFrom = "${local.secret_name_prefix}/db/read-replica-url" },
-    { name = "REDIS_URL", valueFrom = "${local.secret_name_prefix}/elasticache/redis-url" },
-    { name = "CELERY_BROKER_URL", valueFrom = "${local.secret_name_prefix}/elasticache/celery-broker" },
-    { name = "CELERY_RESULT_BACKEND", valueFrom = "${local.secret_name_prefix}/elasticache/celery-backend" },
-    { name = "JWT_SECRET", valueFrom = "${local.secret_name_prefix}/jwt/secret" },
+    { name = "DATABASE_URL", key = "db/primary-url" },
+    { name = "DATABASE_READ_URL", key = "db/read-replica-url" },
+    { name = "REDIS_URL", key = "elasticache/redis-url" },
+    { name = "CELERY_BROKER_URL", key = "elasticache/celery-broker" },
+    { name = "CELERY_RESULT_BACKEND", key = "elasticache/celery-backend" },
+    { name = "JWT_SECRET", key = "jwt/secret" },
   ]
+
+  # Shape ECS expects in container definitions: { name, valueFrom = <ARN> }.
+  secret_refs = [for s in local.common_secrets : { name = s.name, valueFrom = var.secret_arns[s.key] }]
 
   common_env = {
     ENVIRONMENT         = var.env
@@ -82,7 +82,7 @@ resource "aws_ecs_task_definition" "services" {
         { name = "http", containerPort = 8000, protocol = "tcp" }
       ]
       environment = [for k, v in local.service_env[each.key] : { name = k, value = v }]
-      secrets     = local.common_secrets
+      secrets     = local.secret_refs
       logConfiguration = {
         logDriver = "awslogs"
         options = {
@@ -226,9 +226,97 @@ resource "aws_ecs_service" "frontend" {
   }
 }
 
+# ── DB bootstrap task (runtime role) ──────────────────────────────────────
+# One-off, run by the deploy workflow BEFORE migrations. Creates or updates the
+# runtime DB role (smart_runtime) that the app and migrations connect as.
+# The RDS master credentials are injected by ECS from the RDS-managed secret;
+# they are never written to state, logs, or any other secret. Idempotent.
+
+resource "aws_ecs_task_definition" "db_bootstrap" {
+  family                   = "smart-${var.env}-db-bootstrap"
+  requires_compatibilities = ["FARGATE"]
+  network_mode             = "awsvpc"
+  cpu                      = "256"
+  memory                   = "512"
+  execution_role_arn       = aws_iam_role.ecs_task_execution.arn
+
+  container_definitions = jsonencode([
+    {
+      name      = "db-bootstrap"
+      image     = "${var.account_id}.dkr.ecr.${var.region}.amazonaws.com/smart-migration:${var.env}-latest"
+      essential = true
+      command   = ["python", "/app/backend/migrations/bootstrap_db_role.py"]
+      environment = [
+        { name = "ENVIRONMENT", value = var.env },
+        { name = "PGHOST", value = var.db_host },
+        { name = "PGPORT", value = "5432" },
+        { name = "PGDATABASE", value = var.db_name },
+        { name = "RUNTIME_DB_ROLE", value = var.runtime_db_role },
+      ]
+      secrets = [
+        { name = "PGUSER", valueFrom = "${var.master_db_secret_arn}:username::" },
+        { name = "PGPASSWORD", valueFrom = "${var.master_db_secret_arn}:password::" },
+        { name = "RUNTIME_DB_PASSWORD", valueFrom = var.secret_arns["db/app-password"] },
+      ]
+      logConfiguration = {
+        logDriver = "awslogs"
+        options = {
+          "awslogs-group"         = aws_cloudwatch_log_group.migration.name
+          "awslogs-region"        = var.region
+          "awslogs-stream-prefix" = "db-bootstrap"
+        }
+      }
+    }
+  ])
+}
+
+# ── Dev sample seed task ─────────────────────────────────────────────────
+# Dev only (seed_enabled). Run by the deploy workflow after migrations, on
+# every dev deploy. It creates the SA account and the sample tenants on first
+# creation only; existing rows and passwords are never changed. Uses the
+# runtime DB role (DATABASE_URL), not the master.
+
+resource "aws_ecs_task_definition" "seed" {
+  count                    = var.seed_enabled ? 1 : 0
+  family                   = "smart-${var.env}-seed"
+  requires_compatibilities = ["FARGATE"]
+  network_mode             = "awsvpc"
+  cpu                      = "256"
+  memory                   = "512"
+  execution_role_arn       = aws_iam_role.ecs_task_execution.arn
+
+  container_definitions = jsonencode([
+    {
+      name      = "seed"
+      image     = "${var.account_id}.dkr.ecr.${var.region}.amazonaws.com/smart-migration:${var.env}-latest"
+      essential = true
+      command   = ["python", "/app/backend/migrations/seed_dev_sample.py"]
+      environment = [
+        { name = "ENVIRONMENT", value = var.env },
+        { name = "SEED_ENABLED", value = "true" },
+      ]
+      secrets = concat(
+        [for s in local.secret_refs : s if s.name == "DATABASE_URL"],
+        [
+          { name = "SEED_SA_PASSWORD", valueFrom = var.secret_arns["seed/sa-password"] },
+          { name = "SEED_SAMPLE_PASSWORD", valueFrom = var.secret_arns["seed/sample-password"] },
+        ]
+      )
+      logConfiguration = {
+        logDriver = "awslogs"
+        options = {
+          "awslogs-group"         = aws_cloudwatch_log_group.migration.name
+          "awslogs-region"        = var.region
+          "awslogs-stream-prefix" = "seed"
+        }
+      }
+    }
+  ])
+}
+
 # ── Migration task (alembic upgrade head + permission seed) ───────────────
 # No aws_ecs_service — run on demand via `aws ecs run-task` from the deploy
-# workflow, before any service rollout.
+# workflow, after db-bootstrap and before any service rollout.
 
 resource "aws_ecs_task_definition" "migration" {
   family                   = "smart-${var.env}-migration"
@@ -247,7 +335,7 @@ resource "aws_ecs_task_definition" "migration" {
         { name = "ENVIRONMENT", value = var.env }
       ]
       secrets = [
-        for s in local.common_secrets : s
+        for s in local.secret_refs : s
         if contains(["DATABASE_URL", "DATABASE_READ_URL"], s.name)
       ]
       logConfiguration = {
@@ -281,7 +369,7 @@ resource "aws_ecs_task_definition" "outbox_worker" {
       essential   = true
       command     = ["celery", "-A", "shared.outbox.worker", "worker", "--loglevel=info"]
       environment = [for k, v in local.common_env : { name = k, value = v }]
-      secrets     = local.common_secrets
+      secrets     = local.secret_refs
       logConfiguration = {
         logDriver = "awslogs"
         options = {
@@ -338,7 +426,7 @@ resource "aws_ecs_task_definition" "outbox_beat" {
       essential   = true
       command     = ["celery", "-A", "shared.outbox.worker", "beat", "--loglevel=info"]
       environment = [for k, v in local.common_env : { name = k, value = v }]
-      secrets     = local.common_secrets
+      secrets     = local.secret_refs
       logConfiguration = {
         logDriver = "awslogs"
         options = {

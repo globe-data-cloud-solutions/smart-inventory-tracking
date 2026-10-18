@@ -9,24 +9,22 @@ variable "allocated_storage" {
   type    = number
   default = 100
 }
-variable "allowed_security_group_ids" { type = list(string) }
 
 resource "aws_db_subnet_group" "main" {
   name       = "smart-${var.env}-db-subnet"
   subnet_ids = var.subnet_ids
 }
 
+# Inbound 5432 is granted by the environment (aws_vpc_security_group_ingress_rule
+# from the ECS tasks SG). Keeping it out of this module avoids an rds <-> ecs
+# dependency cycle: ECS needs this module's endpoints for its secrets.
 resource "aws_security_group" "rds" {
   name   = "smart-${var.env}-rds-sg"
   vpc_id = var.vpc_id
 
-  ingress {
-    from_port       = 5432
-    to_port         = 5432
-    protocol        = "tcp"
-    security_groups = var.allowed_security_group_ids
-    description     = "Postgres from ECS tasks"
-  }
+  # No inline ingress: the 5432 rule is a separate resource in the environment.
+  # Do not set ingress here: an explicit list makes this resource own every
+  # inbound rule, and an update would revoke the separate rule.
 }
 
 resource "aws_db_instance" "primary" {
@@ -69,6 +67,9 @@ resource "aws_db_parameter_group" "pg16" {
   }
 }
 
-output "primary_endpoint" { value = aws_db_instance.primary.endpoint }
-output "replica_endpoint" { value = var.env == "prod" ? aws_db_instance.read_replica[0].endpoint : null }
+output "primary_address" { value = aws_db_instance.primary.address }
+output "replica_address" { value = var.env == "prod" ? aws_db_instance.read_replica[0].address : null }
 output "security_group_id" { value = aws_security_group.rds.id }
+# RDS-managed master credentials (JSON: username, password). Read only by the
+# db-bootstrap ECS task, via ECS secret injection.
+output "master_secret_arn" { value = aws_db_instance.primary.master_user_secret[0].secret_arn }

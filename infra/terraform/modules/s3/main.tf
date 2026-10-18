@@ -2,6 +2,9 @@ variable "env" { type = string }
 
 resource "aws_s3_bucket" "attachments" {
   bucket = "smart-${var.env}-attachments"
+  # Non-prod buckets are disposable: allow `terraform destroy` to remove the
+  # objects and versions. Prod keeps the guard so a destroy cannot delete data.
+  force_destroy = var.env != "prod"
 }
 
 resource "aws_s3_bucket_versioning" "attachments" {

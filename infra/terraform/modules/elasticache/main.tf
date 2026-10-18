@@ -5,24 +5,19 @@ variable "node_type" {
   type    = string
   default = "cache.t4g.small"
 }
-variable "allowed_security_group_ids" { type = list(string) }
 
 resource "aws_elasticache_subnet_group" "main" {
   name       = "smart-${var.env}-redis"
   subnet_ids = var.subnet_ids
 }
 
+# Inbound 6379 is granted by the environment (see rds/main.tf for why).
 resource "aws_security_group" "redis" {
   name   = "smart-${var.env}-redis-sg"
   vpc_id = var.vpc_id
 
-  ingress {
-    from_port       = 6379
-    to_port         = 6379
-    protocol        = "tcp"
-    security_groups = var.allowed_security_group_ids
-    description     = "Redis from ECS tasks"
-  }
+  # No inline ingress: the 6379 rule is a separate resource in the environment.
+  # Do not set ingress here (see rds/main.tf).
 }
 
 resource "aws_elasticache_replication_group" "main" {
@@ -38,7 +33,7 @@ resource "aws_elasticache_replication_group" "main" {
   automatic_failover_enabled = var.env == "prod" ? true : false
 }
 
-output "primary_endpoint" {
+output "primary_address" {
   value = aws_elasticache_replication_group.main.primary_endpoint_address
 }
 output "security_group_id" { value = aws_security_group.redis.id }

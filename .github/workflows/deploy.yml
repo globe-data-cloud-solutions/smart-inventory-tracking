@@ -29,6 +29,21 @@ on:
         required: true
         type: choice
         options: [dev, stg, prd]
+      rotate_seed_sa:
+        description: 'Dev only: delete and re-create the SA account from the current seed secret'
+        required: false
+        type: boolean
+        default: false
+  # Called by lifecycle.yml after infrastructure apply.
+  workflow_call:
+    inputs:
+      environment:
+        required: true
+        type: string
+      rotate_seed_sa:
+        required: false
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -43,6 +58,7 @@ jobs:
   # ── Resolve dev/stg/prd → envs directory / cluster suffix ─────────────────────
   setup:
     name: Resolve environment
+    if: github.repository == 'globe-data-cloud-solutions/smart-inventory-tracking'
     runs-on: ubuntu-latest
     outputs:
       env: ${{ steps.map.outputs.env }}
@@ -135,7 +151,7 @@ jobs:
 
   # ── Migrate DB + roll out ECS services ────────────────────────────────────────
   deploy:
-    name: Migrate & roll out — ${{ needs.setup.outputs.env }}
+    name: Bootstrap, migrate & roll out — ${{ needs.setup.outputs.env }}
     runs-on: ubuntu-latest
     needs: [setup, build-push]
     # GitHub Environment gate — add reviewers on deploy-stage / deploy-prod for approval.
@@ -149,17 +165,12 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ vars.AWS_REGION || 'us-east-1' }}
 
-      - name: Run Alembic migrations (one-off ECS task)
+      - name: Bootstrap runtime DB role, migrate, and seed dev sample data (one-off ECS tasks)
         env:
           ENV: ${{ needs.setup.outputs.env }}
+          ROTATE_SEED_SA: ${{ inputs.rotate_seed_sa || false }}
         run: |
-          if ! aws ecs describe-task-definition --task-definition "smart-$ENV-migration" >/dev/null 2>&1; then
-            echo "::error::Task definition smart-$ENV-migration not found — define it in Terraform before deploying."
-            exit 1
-          fi
-
-          NETCFG="$(aws ecs describe-services --cluster "smart-$ENV" --services "smart-$ENV-api-gateway" \
-            --query 'services[0].networkConfiguration.awsvpcConfiguration' --output json)"
+          NETCFG="$(aws ecs describe-services --cluster "smart-$ENV" --services "smart-$ENV-api-gateway"             --query 'services[0].networkConfiguration.awsvpcConfiguration' --output json)"
           if [ -z "$NETCFG" ] || [ "$NETCFG" = "null" ]; then
             echo "::error::Could not read networkConfiguration from smart-$ENV-api-gateway service."
             exit 1
@@ -168,25 +179,40 @@ jobs:
           SUBNETS="$(echo "$NETCFG" | python3 -c 'import json,sys; print(",".join(json.load(sys.stdin)["subnets"]))')"
           SGS="$(echo "$NETCFG" | python3 -c 'import json,sys; print(",".join(json.load(sys.stdin)["securityGroups"]))')"
 
-          TASK_ARN="$(aws ecs run-task \
-            --cluster "smart-$ENV" \
-            --task-definition "smart-$ENV-migration" \
-            --launch-type FARGATE \
-            --network-configuration "awsvpcConfiguration={subnets=[$SUBNETS],securityGroups=[$SGS],assignPublicIp=DISABLED}" \
-            --query 'tasks[0].taskArn' --output text)"
-          echo "Migration task started: $TASK_ARN"
+          # Order matters: db-bootstrap creates the runtime role that migrations
+          # connect as; seed (dev only) runs after migrations and is skipped where
+          # the task is not defined.
+          for FAMILY in db-bootstrap migration seed; do
+            if ! aws ecs describe-task-definition --task-definition "smart-$ENV-$FAMILY" >/dev/null 2>&1; then
+              if [ "$FAMILY" = "seed" ]; then
+                echo "No seed task for $ENV — skipping sample-data seed."
+                continue
+              fi
+              echo "::error::Task definition smart-$ENV-$FAMILY not found — define it in Terraform before deploying."
+              exit 1
+            fi
 
-          aws ecs wait tasks-stopped --cluster "smart-$ENV" --tasks "$TASK_ARN"
+            # Rotation is passed to the seed task only when requested.
+            OVERRIDES=""
+            if [ "$FAMILY" = "seed" ] && [ "$ROTATE_SEED_SA" = "true" ]; then
+              OVERRIDES='{"containerOverrides":[{"name":"seed","environment":[{"name":"SEED_ROTATE_SA","value":"true"}]}]}'
+              echo "SA rotation requested for the seed task."
+            fi
 
-          EXIT_CODE="$(aws ecs describe-tasks --cluster "smart-$ENV" --tasks "$TASK_ARN" \
-            --query 'tasks[0].containers[?name==`migration`].exitCode | [0]' --output text)"
-          if [ "$EXIT_CODE" != "0" ]; then
-            STOPPED_REASON="$(aws ecs describe-tasks --cluster "smart-$ENV" --tasks "$TASK_ARN" \
-              --query 'tasks[0].stoppedReason' --output text)"
-            echo "::error::Migration task failed (exitCode=$EXIT_CODE): $STOPPED_REASON — see log group /ecs/smart-$ENV/migration"
-            exit 1
-          fi
-          echo "Migration task completed successfully."
+            TASK_ARN="$(aws ecs run-task               --cluster "smart-$ENV"               --task-definition "smart-$ENV-$FAMILY"               --launch-type FARGATE               --network-configuration "awsvpcConfiguration={subnets=[$SUBNETS],securityGroups=[$SGS],assignPublicIp=DISABLED}"               ${OVERRIDES:+--overrides "$OVERRIDES"}               --query 'tasks[0].taskArn' --output text)"
+            echo "$FAMILY task started: $TASK_ARN"
+
+            aws ecs wait tasks-stopped --cluster "smart-$ENV" --tasks "$TASK_ARN"
+
+            CONTAINER="$(aws ecs describe-task-definition --task-definition "smart-$ENV-$FAMILY"               --query 'taskDefinition.containerDefinitions[0].name' --output text)"
+            EXIT_CODE="$(aws ecs describe-tasks --cluster "smart-$ENV" --tasks "$TASK_ARN"               --query "tasks[0].containers[?name=='$CONTAINER'].exitCode | [0]" --output text)"
+            if [ "$EXIT_CODE" != "0" ]; then
+              STOPPED_REASON="$(aws ecs describe-tasks --cluster "smart-$ENV" --tasks "$TASK_ARN"                 --query 'tasks[0].stoppedReason' --output text)"
+              echo "::error::$FAMILY task failed (exitCode=$EXIT_CODE): $STOPPED_REASON — see log group /ecs/smart-$ENV/migration"
+              exit 1
+            fi
+            echo "$FAMILY task completed successfully."
+          done
 
       - name: Force new deployment for each service
         env:

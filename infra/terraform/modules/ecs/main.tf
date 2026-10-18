@@ -45,11 +45,19 @@ resource "aws_iam_role_policy" "secrets_access" {
 
   policy = jsonencode({
     Version = "2012-10-17"
-    Statement = [{
-      Effect   = "Allow"
-      Action   = ["secretsmanager:GetSecretValue"]
-      Resource = "arn:aws:secretsmanager:${var.region}:${var.account_id}:secret:smart/${var.env}/*"
-    }]
+    Statement = [
+      {
+        Effect   = "Allow"
+        Action   = ["secretsmanager:GetSecretValue"]
+        Resource = "arn:aws:secretsmanager:${var.region}:${var.account_id}:secret:smart/${var.env}/*"
+      },
+      {
+        # RDS-managed master secret (name rds!db-...), read only by db-bootstrap.
+        Effect   = "Allow"
+        Action   = ["secretsmanager:GetSecretValue"]
+        Resource = var.master_db_secret_arn
+      },
+    ]
   })
 }
 

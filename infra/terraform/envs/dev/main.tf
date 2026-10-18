@@ -38,21 +38,19 @@ module "networking" {
 }
 
 module "rds" {
-  source                     = "../../modules/rds"
-  env                        = "dev"
-  vpc_id                     = module.networking.vpc_id
-  subnet_ids                 = module.networking.private_subnet_ids
-  instance_class             = "db.t4g.medium"
-  allowed_security_group_ids = [module.ecs.tasks_security_group_id]
+  source         = "../../modules/rds"
+  env            = "dev"
+  vpc_id         = module.networking.vpc_id
+  subnet_ids     = module.networking.private_subnet_ids
+  instance_class = "db.t4g.medium"
 }
 
 module "elasticache" {
-  source                     = "../../modules/elasticache"
-  env                        = "dev"
-  vpc_id                     = module.networking.vpc_id
-  subnet_ids                 = module.networking.private_subnet_ids
-  node_type                  = "cache.t4g.small"
-  allowed_security_group_ids = [module.ecs.tasks_security_group_id]
+  source     = "../../modules/elasticache"
+  env        = "dev"
+  vpc_id     = module.networking.vpc_id
+  subnet_ids = module.networking.private_subnet_ids
+  node_type  = "cache.t4g.small"
 }
 
 module "s3" {
@@ -64,6 +62,18 @@ module "s3" {
 resource "random_password" "origin_verify" {
   length  = 48
   special = false
+}
+
+# Public name for the app. Must be a subdomain of a hosted zone in this account.
+locals {
+  app_domain = "smart.hplink.io"
+  app_zone   = "hplink.io"
+}
+
+module "custom_domain" {
+  source      = "../../modules/custom-domain"
+  domain_name = local.app_domain
+  zone_name   = local.app_zone
 }
 
 module "alb" {
@@ -81,6 +91,40 @@ module "cloudfront" {
   alb_dns_name         = module.alb.alb_dns_name
   origin_verify_secret = random_password.origin_verify.result
   allowed_cidrs        = var.allowed_cidrs # dev fails closed — set via TF_VAR_allowed_cidrs
+  aliases              = [local.app_domain]
+  acm_certificate_arn  = module.custom_domain.certificate_arn
+  route53_zone_id      = module.custom_domain.zone_id
+}
+
+module "app_secrets" {
+  source               = "../../modules/app-secrets"
+  env                  = "dev"
+  db_host              = module.rds.primary_address
+  read_db_host         = coalesce(module.rds.replica_address, module.rds.primary_address)
+  db_name              = "smart_inventory"
+  runtime_db_role      = "smart_runtime"
+  redis_host           = module.elasticache.primary_address
+  recovery_window_days = 0
+  seed_enabled         = true # dev sample tenants + SA account (see seed ECS task)
+  seed_sa_rotation     = "2"  # bumped to rotate the SA password (exposed in chat)
+}
+
+# Inbound DB and Redis access from the ECS tasks. Kept here, not in the
+# rds/elasticache modules, so those modules do not depend on ECS.
+resource "aws_vpc_security_group_ingress_rule" "rds_from_ecs" {
+  security_group_id            = module.rds.security_group_id
+  referenced_security_group_id = module.ecs.tasks_security_group_id
+  ip_protocol                  = "tcp"
+  from_port                    = 5432
+  to_port                      = 5432
+}
+
+resource "aws_vpc_security_group_ingress_rule" "redis_from_ecs" {
+  security_group_id            = module.elasticache.security_group_id
+  referenced_security_group_id = module.ecs.tasks_security_group_id
+  ip_protocol                  = "tcp"
+  from_port                    = 6379
+  to_port                      = 6379
 }
 
 module "ecs" {
@@ -90,10 +134,18 @@ module "ecs" {
   private_subnet_ids = module.networking.private_subnet_ids
   account_id         = data.aws_caller_identity.current.account_id
 
+  # Secrets and the RDS master secret (read only by db-bootstrap).
+  secret_arns          = module.app_secrets.arns
+  seed_enabled         = true
+  master_db_secret_arn = module.rds.master_secret_arn
+  db_host              = module.rds.primary_address
+
   alb_security_group_id     = module.alb.alb_security_group_id
   gateway_target_group_arn  = module.alb.gateway_target_group_arn
   frontend_target_group_arn = module.alb.frontend_target_group_arn
-  cors_origins              = "https://${module.cloudfront.domain_name}"
+  # The custom domain is the browser origin; the CloudFront name stays allowed
+  # because the frontend image bakes NEXT_PUBLIC_API_URL to it (deploy.yml).
+  cors_origins = "https://${local.app_domain},https://${module.cloudfront.domain_name}"
 
   # order/logistics/analytics/notification/sync are stubs — add here to deploy.
   enabled_services = ["api-gateway", "auth-service", "tenant-service", "product-service",
@@ -113,7 +165,7 @@ module "ecs" {
   storage_bucket       = module.s3.bucket_name
   storage_bucket_arn   = module.s3.bucket_arn
   terms_version        = "2026-10"
-  app_base_url         = "https://${module.cloudfront.domain_name}"
+  app_base_url         = "https://${local.app_domain}"
 }
 
 module "observability" {
@@ -126,6 +178,7 @@ data "aws_caller_identity" "current" {}
 
 output "alb_dns_name" { value = module.alb.alb_dns_name }
 output "cloudfront_domain_name" { value = module.cloudfront.domain_name }
+output "app_domain_name" { value = local.app_domain }
 
 # No default — dev fails closed; set via TF_VAR_allowed_cidrs from the
 # GitHub repo variable DEV_ALLOWED_CIDRS.

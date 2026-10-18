@@ -1,0 +1,56 @@
+name: Lifecycle
+run-name: Lifecycle ${{ inputs.action }} — ${{ inputs.environment }} (by ${{ github.actor }})
+
+# One-button, repeatable environment lifecycle.
+#   up   → infrastructure apply, then application deploy (only if apply succeeded)
+#   down → infrastructure destroy (drains ECS and deletes ECR repos first)
+#
+# Each step runs the existing reusable workflow, so the GitHub Environment gates
+# (infra-<env>, deploy-<env>) and every check inside them still apply.
+# Manual trigger only.
+# Runs only on globe-data-cloud-solutions (repository guard); dispatch only when Alex instructs.
+
+on:
+  workflow_dispatch:
+    inputs:
+      action:
+        description: 'up = provision infra then deploy app; down = destroy infra'
+        required: true
+        type: choice
+        options: [up, down]
+      environment:
+        description: 'Target environment'
+        required: true
+        type: choice
+        options: [dev, stg, prd]
+
+permissions:
+  contents: read
+
+jobs:
+  infra-up:
+    name: Infrastructure apply
+    if: github.repository == 'globe-data-cloud-solutions/smart-inventory-tracking' && inputs.action == 'up'
+    uses: ./.github/workflows/infrastructure.yml
+    with:
+      environment: ${{ inputs.environment }}
+      stage: apply
+    secrets: inherit
+
+  deploy-up:
+    name: Application deploy
+    if: github.repository == 'globe-data-cloud-solutions/smart-inventory-tracking' && inputs.action == 'up'
+    needs: [infra-up]
+    uses: ./.github/workflows/deploy.yml
+    with:
+      environment: ${{ inputs.environment }}
+    secrets: inherit
+
+  infra-down:
+    name: Infrastructure destroy
+    if: github.repository == 'globe-data-cloud-solutions/smart-inventory-tracking' && inputs.action == 'down'
+    uses: ./.github/workflows/infrastructure.yml
+    with:
+      environment: ${{ inputs.environment }}
+      stage: delete
+    secrets: inherit
