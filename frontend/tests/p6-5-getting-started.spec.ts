@@ -72,12 +72,17 @@ for (const locale of ["en", "am"] as const) {
       await page.goto(`${BASE_URL}/getting-started`);
       await page.waitForLoadState("networkidle");
 
-      // The document's own h1 and section headings are sourced from the .md
-      // file (English-only content, same in every UI locale).
-      await expect(page.getByRole("heading", { name: "SMART Inventory — Getting Started", level: 1 })).toBeVisible({ timeout: 10_000 });
-      await expect(page.getByRole("heading", { name: "Before You Begin" })).toBeVisible();
-      await expect(page.getByRole("heading", { name: "Choices you make at sign-up" })).toBeVisible();
-      await expect(page.getByRole("heading", { name: "What happens after you submit" })).toBeVisible();
+      // The document's own h1 and section headings are sourced from the
+      // locale-specific .md file (frontend/public/help/<locale>/getting-started.md
+      // for am, since 1d8ef29; the English file for en).
+      if (locale === "am") {
+        await expect(page.getByRole("heading", { name: "SMART Inventory — መጀመሪያ ገጽ", level: 1 })).toBeVisible({ timeout: 10_000 });
+      } else {
+        await expect(page.getByRole("heading", { name: "SMART Inventory — Getting Started", level: 1 })).toBeVisible({ timeout: 10_000 });
+        await expect(page.getByRole("heading", { name: "Before You Begin" })).toBeVisible();
+        await expect(page.getByRole("heading", { name: "Choices you make at sign-up" })).toBeVisible();
+        await expect(page.getByRole("heading", { name: "What happens after you submit" })).toBeVisible();
+      }
 
       // Page-chrome strings come from the locale pack (t()), in the stored locale.
       await expect(page.getByRole("button", { name: strings.printBtn })).toBeVisible();
