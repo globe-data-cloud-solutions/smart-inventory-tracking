@@ -13,6 +13,10 @@ import pytest
 os.environ.setdefault("DATABASE_URL", "postgresql+asyncpg://fake:fake@localhost:5432/fake")
 os.environ.setdefault("DATABASE_READ_URL", "postgresql+asyncpg://fake:fake@localhost:5432/fake")
 os.environ.setdefault("REDIS_URL", "redis://localhost:6379/0")
+# shared.outbox.worker reads these two at IMPORT time (Celery app construction) —
+# same fake-default rationale as the three above.
+os.environ.setdefault("CELERY_BROKER_URL", "redis://localhost:6379/0")
+os.environ.setdefault("CELERY_RESULT_BACKEND", "redis://localhost:6379/1")
 
 
 @pytest.fixture(autouse=True)

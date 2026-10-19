@@ -414,6 +414,67 @@ class TestContractExpiry:
         assert calls == []
 
 
+# ── _ensure_future_partitions: idempotent monthly partition maintenance ─────
+
+@pytest.mark.unit
+class TestEnsureFuturePartitions:
+
+    @staticmethod
+    def _mock_session(existing_names: set[str], creates: list[str]) -> AsyncMock:
+        async def capture_execute(sql, params=None, *args, **kwargs):
+            sql_str = str(sql)
+            if "to_regclass" in sql_str:
+                result = MagicMock()
+                result.scalar.return_value = (params or {}).get("name") in existing_names
+                return result
+            if "CREATE TABLE IF NOT EXISTS" in sql_str:
+                name = sql_str.split("CREATE TABLE IF NOT EXISTS ")[1].split(" ")[0]
+                creates.append(name)
+                existing_names.add(name)
+            return MagicMock()
+
+        session = AsyncMock()
+        session.execute = AsyncMock(side_effect=capture_execute)
+        return session
+
+    async def test_idempotent_second_run_creates_nothing(self) -> None:
+        existing: set[str] = set()
+        creates: list[str] = []
+
+        with patch("shared.outbox.worker.AsyncSessionLocal") as mock_ctx:
+            session = self._mock_session(existing, creates)
+            mock_ctx.return_value.__aenter__.return_value = session
+            await worker._ensure_future_partitions()
+
+        assert len(creates) == worker.PARTITION_MONTHS_AHEAD
+
+        creates.clear()
+        with patch("shared.outbox.worker.AsyncSessionLocal") as mock_ctx:
+            session = self._mock_session(existing, creates)
+            mock_ctx.return_value.__aenter__.return_value = session
+            await worker._ensure_future_partitions()
+
+        assert creates == [], "second run must be a no-op — partitions already exist"
+
+    async def test_creates_exactly_the_missing_months(self) -> None:
+        today = date.today()
+        month0 = worker._partition_name(today.year, today.month)
+
+        # Only the current month's partition pre-exists; the remaining
+        # PARTITION_MONTHS_AHEAD - 1 future months are missing.
+        existing: set[str] = {month0}
+        creates: list[str] = []
+
+        with patch("shared.outbox.worker.AsyncSessionLocal") as mock_ctx:
+            session = self._mock_session(existing, creates)
+            mock_ctx.return_value.__aenter__.return_value = session
+            await worker._ensure_future_partitions()
+
+        assert month0 not in creates
+        assert len(creates) == worker.PARTITION_MONTHS_AHEAD - 1
+        assert len(set(creates)) == len(creates), "no duplicate partitions created"
+
+
 # ── static source check: no bind-param-then-cast syntax remains ─────────────
 
 @pytest.mark.unit

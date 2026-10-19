@@ -10,6 +10,7 @@ from typing import Awaitable, Callable, Coroutine, TypeVar
 from celery import Celery
 from celery.schedules import crontab
 from celery.signals import beat_init, worker_init
+from dateutil.relativedelta import relativedelta
 from sqlalchemy import text
 
 from shared.db.session import AsyncSessionLocal
@@ -52,6 +53,10 @@ app.conf.beat_schedule = {
     "check-contract-expiry": {
         "task": "shared.outbox.worker.check_contract_expiry",
         "schedule": crontab(hour=6, minute=0),  # daily at 06:00 UTC
+    },
+    "ensure-future-partitions": {
+        "task": "shared.outbox.worker.ensure_future_partitions",
+        "schedule": crontab(day_of_month=1, hour=7, minute=0),  # monthly, 1st at 07:00 UTC
     },
 }
 app.conf.timezone = "UTC"
@@ -331,4 +336,66 @@ async def _check_contracts() -> None:
         logger.info(
             "ContractExpiryAlert fired: tenant=%s milestone=%s days_left=%d marked=%s",
             tid, key, days_left, marked_keys,
+        )
+
+
+# Keep this many future months of inventory_transactions partitions created ahead
+# of need. Same naming/range scheme as scripts/create_partitions.py (the manual
+# bootstrap path run at infra setup) — kept here as a Celery task so it also runs
+# unattended going forward (Bug 4: nothing previously scheduled this).
+PARTITION_MONTHS_AHEAD = 3
+
+
+def _partition_name(year: int, month: int) -> str:
+    return f"inventory_transactions_{year}_{month:02d}"
+
+
+def _partition_range(year: int, month: int) -> tuple[str, str]:
+    start = date(year, month, 1)
+    end = start + relativedelta(months=1)
+    return start.isoformat(), end.isoformat()
+
+
+@app.task
+def ensure_future_partitions() -> None:
+    """Monthly beat task — keeps PARTITION_MONTHS_AHEAD future inventory_transactions
+    partitions created ahead of need. Idempotent: a partition that already exists is
+    left untouched and not reported as created.
+    """
+    _run(_ensure_future_partitions())
+
+
+async def _ensure_future_partitions() -> None:
+    today = date.today()
+    created: list[str] = []
+
+    async with AsyncSessionLocal() as session:
+        for i in range(PARTITION_MONTHS_AHEAD):
+            target = today + relativedelta(months=i)
+            name = _partition_name(target.year, target.month)
+
+            exists = (await session.execute(
+                text("SELECT to_regclass(:name) IS NOT NULL"), {"name": name}
+            )).scalar()
+            if exists:
+                continue
+
+            start, end = _partition_range(target.year, target.month)
+            await session.execute(
+                text(
+                    f"CREATE TABLE IF NOT EXISTS {name} "
+                    f"PARTITION OF inventory_transactions "
+                    f"FOR VALUES FROM ('{start}') TO ('{end}')"
+                )
+            )
+            created.append(name)
+
+        await session.commit()
+
+    if created:
+        logger.info("Partition maintenance: created %s", created)
+    else:
+        logger.info(
+            "Partition maintenance: nothing to create (already %d month(s) ahead)",
+            PARTITION_MONTHS_AHEAD,
         )
