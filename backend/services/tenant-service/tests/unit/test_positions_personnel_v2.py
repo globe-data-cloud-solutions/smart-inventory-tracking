@@ -953,6 +953,87 @@ class TestPersonnelV2:
         update_stmt, _ = execute_calls[-1]
         assert "system_role = NULL" in update_stmt
 
+    async def test_ta_cannot_promote_another_user_to_ta_via_update(self) -> None:
+        """PATCH /users/{id} rejects a TA caller setting system_role='TA' on a
+        DIFFERENT user — not just the self-lockout case. Only SA may create a
+        peer/superior TA account, whether via POST (create_user) or PATCH."""
+        from routers.personnel_v2 import update_user, UserUpdateRequest
+
+        target_row = _row(id=USER_ID, email="target@test.com", system_role="AU")
+        db = _db_seq(target_row)  # SELECT ... WHERE id — ceiling check fires next, no UPDATE reached
+
+        with _GRANT_ALL, pytest.raises(HTTPException) as exc_info:
+            await update_user(
+                tenant_id=UUID(TENANT_ID),
+                user_id=UUID(USER_ID),
+                body=UserUpdateRequest(system_role="TA"),
+                user=_Caller(role="TA"),
+                db=db,
+            )
+
+        assert exc_info.value.status_code == 403
+        assert exc_info.value.detail["code"] == "ROLE_CEILING_EXCEEDED"
+
+    async def test_sa_can_promote_another_user_to_ta_via_update(self) -> None:
+        """PATCH /users/{id} setting system_role='TA' succeeds for an SA caller —
+        the role ceiling only blocks a non-SA caller, not SA."""
+        from routers.personnel_v2 import update_user, UserUpdateRequest
+
+        target_row = _row(id=USER_ID, email="target@test.com", system_role="AU")
+        db = _db_seq(target_row, None)  # SELECT, then UPDATE
+
+        with _GRANT_ALL:
+            result = await update_user(
+                tenant_id=UUID(TENANT_ID),
+                user_id=UUID(USER_ID),
+                body=UserUpdateRequest(system_role="TA"),
+                user=_Caller(role="SA"),
+                db=db,
+            )
+
+        assert result.data == {"updated": True, "user_id": USER_ID}
+
+    async def test_ta_cannot_modify_another_tas_role(self) -> None:
+        """PATCH /users/{id} rejects a TA caller touching the system_role of a
+        DIFFERENT user who is already TA — covers both reassigning it to
+        something else and clearing it. Demoting/editing a peer TA is a
+        privilege-escalation-adjacent path just like promoting one is."""
+        from routers.personnel_v2 import update_user, UserUpdateRequest
+
+        target_row = _row(id=USER_ID, email="target@test.com", system_role="TA")
+        db = _db_seq(target_row)
+
+        with _GRANT_ALL, pytest.raises(HTTPException) as exc_info:
+            await update_user(
+                tenant_id=UUID(TENANT_ID),
+                user_id=UUID(USER_ID),
+                body=UserUpdateRequest(clear_system_role=True),
+                user=_Caller(role="TA"),
+                db=db,
+            )
+
+        assert exc_info.value.status_code == 403
+        assert exc_info.value.detail["code"] == "ROLE_CEILING_EXCEEDED"
+
+    async def test_sa_can_modify_another_tas_role(self) -> None:
+        """PATCH /users/{id} clearing an existing TA's system_role succeeds for
+        an SA caller — the ceiling only blocks non-SA callers."""
+        from routers.personnel_v2 import update_user, UserUpdateRequest
+
+        target_row = _row(id=USER_ID, email="target@test.com", system_role="TA")
+        db = _db_seq(target_row, None)
+
+        with _GRANT_ALL:
+            result = await update_user(
+                tenant_id=UUID(TENANT_ID),
+                user_id=UUID(USER_ID),
+                body=UserUpdateRequest(clear_system_role=True),
+                user=_Caller(role="SA"),
+                db=db,
+            )
+
+        assert result.data == {"updated": True, "user_id": USER_ID}
+
     # ── S2c: global case-insensitive duplicate email → 409 ──────────────────
 
     async def test_create_user_duplicate_email_in_another_tenant_returns_409(self) -> None:

@@ -20,7 +20,9 @@ ROLE_PERMISSION_MATRIX: dict[str, dict[str, str]] = {
     "SA": {p.id: "FULL" for p in ALL_PERMISSIONS},  # SA gets everything
     "TA": {
         "tenant:configure": "FULL", "tenant:view": "FULL", "tenant:manage": "FULL",
-        "transfer_type:view": "FULL",
+        "transfer_type:view": "FULL", "transfer_type:manage": "FULL",
+        "transfer_approval_rule:manage": "FULL", "transfer_approval_rule:view": "FULL",
+        "position:manage": "FULL",
         "user:create": "FULL", "user:view": "FULL", "user:list": "FULL",
         "user:update": "FULL", "user:manage": "FULL", "user:deactivate": "FULL",
         "user:assign_role": "FULL", "user:reset_password": "FULL",
@@ -35,7 +37,7 @@ ROLE_PERMISSION_MATRIX: dict[str, dict[str, str]] = {
         "transfer:create": "FULL", "transfer:submit": "FULL", "transfer:approve": "FULL",
         "transfer:reject": "FULL", "transfer:view": "FULL", "transfer:list": "FULL",
         "transfer:resolve_discrepancy": "FULL",
-        "adjustment:create": "FULL", "adjustment:approve": "FULL",
+        "adjustment:create": "FULL", "adjustment:submit": "FULL", "adjustment:approve": "FULL",
         "adjustment:view": "FULL", "adjustment:list": "FULL",
         "dispatch:configure": "FULL", "dispatch:view_config": "FULL",
         "dispatch:fefo_override": "FULL", "dispatch:lot_select": "FULL",
