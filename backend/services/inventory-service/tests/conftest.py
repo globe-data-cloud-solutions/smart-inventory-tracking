@@ -70,10 +70,17 @@ if "inventory-service" not in _gcu_file or "inventory-service" not in _gds_file:
         f"the wrong service module — get_current_user={_gcu_file!r}, "
         f"get_db_session={_gds_file!r}"
     )
-if not any(getattr(r, "path", "").startswith("/api/v1/inventory") for r in app.routes):
+# Route-path introspection (checking r.path on app.routes) broke on newer
+# FastAPI/Starlette: app.include_router() now wraps each included router as
+# a fastapi.routing._IncludedRouter entry in app.routes, which has no .path
+# attribute (getattr returns None) — the routes are still registered and
+# resolve correctly at request time, this check just can't see them anymore.
+# app.title is version-agnostic and was already a stable per-service
+# identifier (set in each service's main.py), so use that instead.
+if app.title != "SMART Inventory Service":
     raise RuntimeError(
-        "inventory-service conftest: `app` has no /api/v1/inventory route — it "
-        f"is not the inventory-service app. Routes: {[getattr(r, 'path', None) for r in app.routes]}"
+        f"inventory-service conftest: `app.title` is {app.title!r} — it is not "
+        "the inventory-service app."
     )
 
 for _key in list(sys.modules):

@@ -7,11 +7,12 @@ Two balance writers exist, both reachable only from record_transaction():
   _update_running_balance() — the product/warehouse total in inventory_balances
   _update_lot_balance()     — the per-lot/warehouse total in lot_balances (lot_repo.py)
 
-Enforcement chain (CLAUDE.md §14, Business Rules #2, #26):
-  1. Application rule: only record_transaction() may call _update_running_balance()
-                       or _update_lot_balance()
-  2. Database rule:    PostgreSQL RULE on warehouse_stock/inventory_balances rejects
-                       direct writes outside the privileged ledger session role
+Enforcement (CLAUDE.md §14, Business Rules #2, #26):
+  Application rule only — only record_transaction() may call
+  _update_running_balance() or _update_lot_balance(). There is no PostgreSQL
+  RULE on inventory_balances; defence against a direct write is app-level
+  code review/CI, not a database-level guard (unlike audit_logs, which does
+  have an append-only RULE — see schema.md).
 """
 from __future__ import annotations
 

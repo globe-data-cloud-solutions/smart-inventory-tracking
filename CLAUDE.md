@@ -16,9 +16,12 @@ Retailers in Phase 2.
 ```
 NEVER build separate codebases for producers vs retailers.
 NEVER update stock balances directly — all mutations INSERT into inventory_transactions.
-NEVER write directly to warehouse_stock — it is a computed read model maintained by ledger
-  triggers. Application code never issues UPDATE warehouse_stock SET on_hand = … under any
-  circumstances. Direct writes here bypass the immutable ledger and break balance integrity.
+NEVER write directly to inventory_balances — it is a computed read model maintained by
+  _update_running_balance() in backend/services/inventory-service/repositories/ledger_repo.py,
+  called only from record_transaction(). Application code never issues UPDATE
+  inventory_balances SET quantity = … from any other path. There is no PostgreSQL RULE on
+  this table — the defence is application-level (code review/CI), not a database guard.
+  Direct writes here bypass the immutable ledger and break balance integrity.
 NEVER ship a new API endpoint without registering its action in permissions/registry.py.
 NEVER run analytics or report queries on the primary database — read replicas only.
 NEVER allow AI recommendations to auto-execute — status must be PENDING_APPROVAL first.
@@ -96,11 +99,12 @@ No `.env.example` committed — secrets via AWS Secrets Manager (local-dev excep
   actions fail `scripts/ci_drift_check.py` in CI. Three enforcement layers are all mandatory:
   gateway JWT/role → service RBAC+ABAC+audit → PostgreSQL RLS. UI hiding is never a security
   layer by itself.
-- **Ledger / warehouse_stock** (docs/claude/backend-patterns.md, docs/claude/schema.md):
+- **Ledger / inventory_balances** (docs/claude/backend-patterns.md, docs/claude/schema.md):
   every stock mutation is an INSERT into `inventory_transactions`, never a direct balance
-  UPDATE. `warehouse_stock` is a computed read model — the only permitted writer is
-  `update_running_balance()` inside `ledger_repo.py`, in the same transaction as the ledger
-  INSERT; a PostgreSQL RULE blocks direct UPDATEs as defence in depth.
+  UPDATE. `inventory_balances` is a computed read model — the only permitted writer is
+  `_update_running_balance()` inside `ledger_repo.py`, in the same transaction as the ledger
+  INSERT; there is no PostgreSQL RULE on this table — the defence is application-level only
+  (code review/CI), not a database guard.
 - **i18n**: three locales — `en` (default), `am` (Amharic, required Phase 1), `or` (Oromifa,
   **deferred**, not offered to users in Phase 1). `or.json` keeps the ~550 draft Oromo
   values already in it unchanged until a native-speaker review is staffed; every NEW key is
