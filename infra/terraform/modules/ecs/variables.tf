@@ -91,6 +91,11 @@ variable "runtime_db_role" {
   default = "smart_runtime"
 }
 
+variable "owner_db_role" {
+  type    = string
+  default = "smart_owner"
+}
+
 # Dev only: create the sample-data seed task (SA account + sample tenants).
 variable "seed_enabled" {
   type    = bool

@@ -14,6 +14,11 @@ resource "random_password" "runtime_db" {
   special = false
 }
 
+resource "random_password" "owner_db" {
+  length  = 48
+  special = false
+}
+
 # Dev sample-data passwords (seed_enabled only). Read by the seed ECS task to
 # hash the SA account and sample tenant users; nothing else reads them.
 # Bump seed_sa_rotation to generate a new SA password. The seed then rotates the
@@ -33,6 +38,8 @@ resource "random_password" "seed_sample" {
 
 locals {
   runtime_db_url = "postgresql+asyncpg://${var.runtime_db_role}:${random_password.runtime_db.result}@%s:5432/${var.db_name}?ssl=require"
+  # Owner role: migrations and the dev seed only. Services use the runtime URLs.
+  migration_db_url = "postgresql+asyncpg://${var.owner_db_role}:${random_password.owner_db.result}@${var.db_host}:5432/${var.db_name}?ssl=require"
   # rediss:// needs ssl_cert_reqs, and the two client libraries spell it
   # differently: redis-py (REDIS_URL, used by the login lockout) takes
   # "required"; Celery (broker and result backend) takes "CERT_REQUIRED".
@@ -45,6 +52,8 @@ locals {
     "db/primary-url"             = format(local.runtime_db_url, var.db_host)
     "db/read-replica-url"        = format(local.runtime_db_url, var.read_db_host)
     "db/app-password"            = random_password.runtime_db.result
+    "db/migration-url"           = local.migration_db_url
+    "db/owner-password"          = random_password.owner_db.result
     "elasticache/redis-url"      = "${local.redis_url}/0${local.redis_tls_query}"
     "elasticache/celery-broker"  = "${local.redis_url}/0${local.celery_tls_query}"
     "elasticache/celery-backend" = "${local.redis_url}/1${local.celery_tls_query}"

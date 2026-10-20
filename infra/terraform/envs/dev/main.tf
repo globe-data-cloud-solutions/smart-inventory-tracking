@@ -103,6 +103,7 @@ module "app_secrets" {
   read_db_host         = coalesce(module.rds.replica_address, module.rds.primary_address)
   db_name              = "smart_inventory"
   runtime_db_role      = "smart_runtime"
+  owner_db_role        = "smart_owner"
   redis_host           = module.elasticache.primary_address
   recovery_window_days = 0
   seed_enabled         = true # dev sample tenants + SA account (see seed ECS task)
