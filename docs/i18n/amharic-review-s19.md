@@ -250,3 +250,8 @@ Every backend error code without an existing `errors.<CODE>` entry (see `docs/i1
 | errors.VALIDATION | Some fields are missing or invalid. Please check the form. | አንዳንድ መስኮች ጎድለዋል ወይም ልክ አይደሉም። እባክዎ ቅጹን ያረጋግጡ። |
 | errors.UNKNOWN | Something went wrong. Please try again. | የሆነ ስህተት ተፈጥሯል። እባክዎ እንደገና ይሞክሩ። |
 | errors.NETWORK | Cannot reach the server. Check your connection and try again. | አገልጋዩን ማግኘት አልተቻለም። ግንኙነትዎን ያረጋግጡና እንደገና ይሞክሩ። |
+
+## Documents
+
+- `docs/SA_OPERATIONS_MANUAL_Amharic.md` — whole document, machine draft, needs native-speaker review.
+- `docs/TA_ONBOARDING_GUIDE_Amharic.md` — whole document, machine draft, needs native-speaker review.
