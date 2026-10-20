@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 from datetime import date, timedelta
 from pathlib import Path
 from typing import Any
@@ -412,6 +413,109 @@ class TestContractExpiry:
             await worker._check_contracts()
 
         assert calls == []
+
+
+# ── _ensure_future_partitions: idempotent monthly partition maintenance ─────
+
+@pytest.mark.unit
+class TestEnsureFuturePartitions:
+
+    @staticmethod
+    def _mock_session(existing_names: set[str], creates: list[str]) -> AsyncMock:
+        async def capture_execute(sql, params=None, *args, **kwargs):
+            sql_str = str(sql)
+            if "to_regclass" in sql_str:
+                result = MagicMock()
+                result.scalar.return_value = (params or {}).get("name") in existing_names
+                return result
+            if "CREATE TABLE IF NOT EXISTS" in sql_str:
+                name = sql_str.split("CREATE TABLE IF NOT EXISTS ")[1].split(" ")[0]
+                creates.append(name)
+                existing_names.add(name)
+            return MagicMock()
+
+        session = AsyncMock()
+        session.execute = AsyncMock(side_effect=capture_execute)
+        return session
+
+    async def test_idempotent_second_run_creates_nothing(self) -> None:
+        existing: set[str] = set()
+        creates: list[str] = []
+
+        with patch("shared.outbox.worker.AsyncSessionLocal") as mock_ctx:
+            session = self._mock_session(existing, creates)
+            mock_ctx.return_value.__aenter__.return_value = session
+            await worker._ensure_future_partitions()
+
+        # current month + PARTITION_FUTURE_MONTHS future months = 4 total
+        assert len(creates) == worker.PARTITION_FUTURE_MONTHS + 1
+
+        creates.clear()
+        with patch("shared.outbox.worker.AsyncSessionLocal") as mock_ctx:
+            session = self._mock_session(existing, creates)
+            mock_ctx.return_value.__aenter__.return_value = session
+            await worker._ensure_future_partitions()
+
+        assert creates == [], "second run must be a no-op — partitions already exist"
+
+    async def test_creates_exactly_the_missing_months(self) -> None:
+        today = date.today()
+        month0 = worker._partition_name(today.year, today.month)
+
+        # Only the current month's partition pre-exists; the remaining
+        # PARTITION_FUTURE_MONTHS future months are missing.
+        existing: set[str] = {month0}
+        creates: list[str] = []
+
+        with patch("shared.outbox.worker.AsyncSessionLocal") as mock_ctx:
+            session = self._mock_session(existing, creates)
+            mock_ctx.return_value.__aenter__.return_value = session
+            await worker._ensure_future_partitions()
+
+        assert month0 not in creates
+        assert len(creates) == worker.PARTITION_FUTURE_MONTHS
+        assert len(set(creates)) == len(creates), "no duplicate partitions created"
+
+
+# ── _run_initial_partition_check: beat_init startup hook ────────────────────
+
+@pytest.mark.unit
+class TestRunInitialPartitionCheck:
+
+    def test_fresh_db_creates_exactly_four_then_is_idempotent(self) -> None:
+        # Plain (non-async) test: _run_initial_partition_check is a sync Celery
+        # signal handler that manages its own event loop via _run() — calling
+        # it from inside pytest-asyncio's own running loop would raise
+        # "Cannot run the event loop while another loop is running".
+        existing: set[str] = set()
+        creates: list[str] = []
+
+        with patch("shared.outbox.worker.AsyncSessionLocal") as mock_ctx:
+            session = TestEnsureFuturePartitions._mock_session(existing, creates)
+            mock_ctx.return_value.__aenter__.return_value = session
+            worker._run_initial_partition_check()
+
+        assert len(creates) == 4  # current month + 3 future
+
+        creates.clear()
+        with patch("shared.outbox.worker.AsyncSessionLocal") as mock_ctx:
+            session = TestEnsureFuturePartitions._mock_session(existing, creates)
+            mock_ctx.return_value.__aenter__.return_value = session
+            worker._run_initial_partition_check()
+
+        assert creates == [], "re-running the startup check must be a no-op"
+
+    def test_errors_are_logged_not_raised(self, caplog: pytest.LogCaptureFixture) -> None:
+        async def _boom() -> None:
+            raise RuntimeError("db unavailable")
+
+        # Patch _ensure_future_partitions itself (not _run) so no real coroutine
+        # object is ever left unawaited — _run still genuinely executes _boom().
+        with patch("shared.outbox.worker._ensure_future_partitions", _boom), \
+             caplog.at_level(logging.ERROR):
+            worker._run_initial_partition_check()  # must not raise
+
+        assert "Startup partition check failed" in caplog.text
 
 
 # ── static source check: no bind-param-then-cast syntax remains ─────────────
