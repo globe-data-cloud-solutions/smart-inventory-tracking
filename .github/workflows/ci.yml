@@ -62,6 +62,8 @@ jobs:
           "
 
   test-backend:
+    # Uses the globe AWS account's dev DB; never runs on other repositories.
+    if: github.repository == 'globe-data-cloud-solutions/smart-inventory-tracking'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
