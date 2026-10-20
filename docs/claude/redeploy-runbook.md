@@ -27,23 +27,7 @@ Dev stack: `smart-dev` cluster, `https://smart.hplink.io`, Terraform in `infra/t
 
 **SA password:** read `smart/dev/seed/sa-password` in your own terminal. Never paste it into a chat.
 
-**stage/prod SA bootstrap (no dev seed there):** `seed_enabled` is `false` in stage and prod (CLAUDE.md §8, 2026-10-17 decision), so `seed_dev_sample.py` never runs there and a fresh RDS has no SA account at all — nothing else creates one. `backend/migrations/bootstrap_sa_account.py` fills that gap: it creates **only** the SA user row (no tenants, no sample data), reading the SA email and password from Secrets Manager at runtime via `boto3`, using secret *names* passed in — never the values themselves, and never printed or logged. Run it as a one-off override of the existing migration task, after migrations have applied:
-
-```
-aws ecs run-task \
-  --cluster smart-<env> \
-  --task-definition smart-<env>-migration \
-  --overrides '{"containerOverrides": [{
-    "name": "migration",
-    "command": ["python", "/app/backend/migrations/bootstrap_sa_account.py",
-                 "--email-secret-name", "smart/<env>/sa/email",
-                 "--password-secret-name", "smart/<env>/sa/password"]
-  }]}'
-```
-
-Idempotent: it checks whether a user with that email already exists before writing anything, and never overwrites an existing SA's password — safe to re-run on every redeploy, same first-creation-only spirit as the dev seed. It does **not** need its own ECS service or task definition — it reuses the migration image/task definition that already exists, only overriding the container command.
-
-**Terraform this would need (not added by this change):** the migration task's execution/task role needs `secretsmanager:GetSecretValue` on the two new SA secret ARNs (`smart/<env>/sa/email`, `smart/<env>/sa/password`), and those two secrets themselves need to exist in `infra/terraform/modules/app-secrets` for stage/prod. Neither was added here.
+**Stage/prod SA bootstrap: not yet available (P0 item 4); do not run this step.**
 
 **Failure modes hit and their fixes:**
 - Private subnets had no route to the NAT: networking module needed route tables.
