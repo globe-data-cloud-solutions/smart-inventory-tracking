@@ -12,7 +12,10 @@ from shared.db.models.base import Base
 import shared.db.models  # noqa: F401
 
 config = context.config
-config.set_main_option("sqlalchemy.url", os.environ["DATABASE_URL"])
+config.set_main_option(
+    "sqlalchemy.url",
+    os.environ.get("MIGRATION_DATABASE_URL") or os.environ["DATABASE_URL"],
+)
 
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
