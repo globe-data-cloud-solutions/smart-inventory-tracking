@@ -13,6 +13,7 @@ from celery.signals import beat_init, worker_init
 from dateutil.relativedelta import relativedelta
 from sqlalchemy import text
 
+from shared.db.rls import set_system_rls_context
 from shared.db.session import AsyncSessionLocal
 from shared.outbox.schemas import PAYLOAD_TYPES, ContractExpiryAlertPayload
 from shared.utils.env_guard import assert_safe_environment
@@ -259,6 +260,7 @@ async def _check_contracts() -> None:
     today = date.today()
 
     async with AsyncSessionLocal() as session:
+        await set_system_rls_context(session, "check_contract_expiry")
         rows = (await session.execute(
             text(
                 "SELECT id, name, contract_end, status, contract_expiry_notified "
@@ -283,6 +285,7 @@ async def _check_contracts() -> None:
             if "0d" in notified:
                 continue
             async with AsyncSessionLocal() as session:
+                await set_system_rls_context(session, "check_contract_expiry")
                 await session.execute(
                     text(
                         "INSERT INTO outbox (tenant_id, event_type, payload, payload_ver) "
@@ -323,6 +326,7 @@ async def _check_contracts() -> None:
         marked_keys = [f"{m}d" for m in _EXPIRY_MILESTONES if m >= milestone and f"{m}d" not in notified]
 
         async with AsyncSessionLocal() as session:
+            await set_system_rls_context(session, "check_contract_expiry")
             await session.execute(
                 text(
                     "INSERT INTO outbox (tenant_id, event_type, payload, payload_ver) "
@@ -388,6 +392,7 @@ async def _ensure_future_partitions() -> None:
     created: list[str] = []
 
     async with AsyncSessionLocal() as session:
+        await set_system_rls_context(session, "ensure_future_partitions")
         for i in range(PARTITION_FUTURE_MONTHS + 1):  # +1 for the current month itself
             target = today + relativedelta(months=i)
             name = _partition_name(target.year, target.month)

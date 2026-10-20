@@ -67,7 +67,12 @@ async def get_db_session(
     """Primary DB session with RLS context set from the authenticated user's tenant_id."""
     async with AsyncSessionLocal() as session:
         if user is not None:
-            await set_rls_context(session, user.tenant_id, user.user_id)
+            # SA has no tenant: its tenant_id here is str(None), so bind none and
+            # rely on the SA flag instead of casting "None" to uuid.
+            is_sa = user.role == "SA"
+            await set_rls_context(
+                session, "" if is_sa else user.tenant_id, user.user_id, is_sa=is_sa
+            )
         try:
             yield session
             await session.commit()
