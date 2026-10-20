@@ -123,6 +123,7 @@ module "ecs" {
   secret_arns          = module.app_secrets.arns
   master_db_secret_arn = module.rds.master_secret_arn
   db_host              = module.rds.primary_address
+  owner_db_role        = "smart_owner"
 
   alb_security_group_id     = module.alb.alb_security_group_id
   gateway_target_group_arn  = module.alb.gateway_target_group_arn
