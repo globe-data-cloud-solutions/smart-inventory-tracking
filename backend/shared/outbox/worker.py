@@ -367,6 +367,23 @@ async def _check_contracts() -> None:
 PARTITION_FUTURE_MONTHS = 3
 
 
+# Same tenant_isolation expression as migration 091 (V_EXPR) — duplicated on
+# purpose: new partitions must carry the policy migration 091 gave existing ones.
+_TENANT_ISOLATION_EXPR = (
+    "(tenant_id = NULLIF(current_setting('app.current_tenant_id', true), '')::uuid "
+    "OR COALESCE(current_setting('app.is_sa', true), '') = 'on')"
+)
+
+
+def _partition_rls_sql(name: str) -> list[str]:
+    return [
+        f"ALTER TABLE {name} ENABLE ROW LEVEL SECURITY",
+        f"DROP POLICY IF EXISTS tenant_isolation ON {name}",
+        f"CREATE POLICY tenant_isolation ON {name} "
+        f"USING {_TENANT_ISOLATION_EXPR} WITH CHECK {_TENANT_ISOLATION_EXPR}",
+    ]
+
+
 def _partition_name(year: int, month: int) -> str:
     return f"inventory_transactions_{year}_{month:02d}"
 
@@ -411,6 +428,8 @@ async def _ensure_future_partitions() -> None:
                     f"FOR VALUES FROM ('{start}') TO ('{end}')"
                 )
             )
+            for stmt in _partition_rls_sql(name):
+                await session.execute(text(stmt))
             created.append(name)
 
         await session.commit()

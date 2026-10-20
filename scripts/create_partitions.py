@@ -14,6 +14,23 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 
+# Same tenant_isolation expression as migration 091 (V_EXPR) — duplicated on
+# purpose: new partitions must carry the policy migration 091 gave existing ones.
+_TENANT_ISOLATION_EXPR = (
+    "(tenant_id = NULLIF(current_setting('app.current_tenant_id', true), '')::uuid "
+    "OR COALESCE(current_setting('app.is_sa', true), '') = 'on')"
+)
+
+
+def _partition_rls_sql(name: str) -> list[str]:
+    return [
+        f"ALTER TABLE {name} ENABLE ROW LEVEL SECURITY",
+        f"DROP POLICY IF EXISTS tenant_isolation ON {name}",
+        f"CREATE POLICY tenant_isolation ON {name} "
+        f"USING {_TENANT_ISOLATION_EXPR} WITH CHECK {_TENANT_ISOLATION_EXPR}",
+    ]
+
+
 def partition_name(year: int, month: int) -> str:
     return f"inventory_transactions_{year}_{month:02d}"
 
@@ -42,6 +59,8 @@ async def create_partitions(months_ahead: int) -> None:
                     f"FOR VALUES FROM ('{start}') TO ('{end}')"
                 )
             )
+            for stmt in _partition_rls_sql(name):
+                await session.execute(text(stmt))
             print(f"  Created partition: {name} ({start} → {end})")
 
         await session.commit()

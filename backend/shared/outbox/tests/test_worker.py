@@ -476,6 +476,27 @@ class TestEnsureFuturePartitions:
         assert len(creates) == worker.PARTITION_FUTURE_MONTHS
         assert len(set(creates)) == len(creates), "no duplicate partitions created"
 
+    async def test_new_partition_gets_tenant_rls(self) -> None:
+        """Migration 091 (D9): a new partition gets RLS + tenant_isolation in the
+        same session as its CREATE TABLE, run under the system context."""
+        existing: set[str] = set()
+        creates: list[str] = []
+
+        with patch("shared.outbox.worker.AsyncSessionLocal") as mock_ctx:
+            session = self._mock_session(existing, creates)
+            mock_ctx.return_value.__aenter__.return_value = session
+            await worker._ensure_future_partitions()
+
+        statements = [" ".join(str(c.args[0]).split()) for c in session.execute.await_args_list]
+        assert "set_config('app.is_sa', :sa, true)" in statements[0]
+        for name in creates:
+            assert f"ALTER TABLE {name} ENABLE ROW LEVEL SECURITY" in statements
+            policy = [s for s in statements if s.startswith(f"CREATE POLICY tenant_isolation ON {name} ")]
+            assert len(policy) == 1
+            assert "NULLIF(current_setting('app.current_tenant_id', true), '')::uuid" in policy[0]
+            assert "COALESCE(current_setting('app.is_sa', true), '') = 'on'" in policy[0]
+            assert "WITH CHECK" in policy[0]
+
 
 # ── _run_initial_partition_check: beat_init startup hook ────────────────────
 
