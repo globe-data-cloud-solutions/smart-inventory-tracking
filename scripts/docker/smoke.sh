@@ -153,6 +153,28 @@ fi
 [ "$FAILED" -eq 0 ] || { log "SUMMARY: build failures present, aborting before container run"; exit 1; }
 
 # ── c. fresh-DB migrations + permission seed ────────────────────────────────
+section "Runtime DB role"
+# Migration 091 refuses to run unless the runtime role exists. Create it first,
+# as the owner, with a throwaway password that is never printed.
+RUNTIME_PW="$(openssl rand -hex 24)"
+if docker exec -i "$PG_NAME" psql -v ON_ERROR_STOP=1 -q -U smoke -d smart_inventory >/dev/null <<SQL
+DO \$\$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'smart_runtime') THEN
+    CREATE ROLE smart_runtime LOGIN PASSWORD '${RUNTIME_PW}' NOSUPERUSER NOCREATEDB NOCREATEROLE NOBYPASSRLS;
+  END IF;
+END \$\$;
+GRANT CONNECT ON DATABASE smart_inventory TO smart_runtime;
+GRANT USAGE, CREATE ON SCHEMA public TO smart_runtime;
+SQL
+then
+  log "runtime role smart_runtime ready"
+else
+  fail "runtime role creation"
+fi
+unset RUNTIME_PW
+[ "$FAILED" -eq 0 ] || exit 1
+
 section "Fresh-DB migrations"
 DB_URL="postgresql+asyncpg://smoke:smoke@${PG_NAME}:5432/smart_inventory"
 if docker run --rm --network "$NETWORK" \
