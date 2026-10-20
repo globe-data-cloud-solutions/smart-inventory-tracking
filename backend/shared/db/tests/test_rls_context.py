@@ -70,3 +70,34 @@ def test_after_begin_noop_without_context() -> None:
     rls._reapply_rls_context(sync_session, MagicMock(), connection)
 
     connection.execute.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_sa_flag_on_for_sa() -> None:
+    session = MagicMock()
+    session.info = {}
+    session.execute = AsyncMock()
+
+    await rls.set_rls_context(session, TENANT_ID, USER_ID, is_sa=True)
+
+    assert session.info["rls"] == (TENANT_ID, USER_ID, True)
+    call = session.execute.await_args_list[-1]
+    sql = _sql(call)
+    assert "set_config('app.is_sa', :sa, true)" in sql
+    assert call.args[1]["sa"] == "on"
+
+
+@pytest.mark.asyncio
+async def test_non_sa_flag_off() -> None:
+    session = MagicMock()
+    session.info = {}
+    session.execute = AsyncMock()
+
+    await rls.set_rls_context(session, TENANT_ID, USER_ID)
+
+    assert session.info["rls"] == (TENANT_ID, USER_ID, False)
+    call = session.execute.await_args_list[-1]
+    sql = _sql(call)
+    # Explicitly 'off', transaction-local — never left unset from a prior SA request.
+    assert "set_config('app.is_sa', :sa, true)" in sql
+    assert call.args[1]["sa"] == "off"
