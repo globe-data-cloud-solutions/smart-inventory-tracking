@@ -53,7 +53,10 @@ class TestCheckPermissionTargetTenant:
             result = await check_permission(
                 _user("TA", TENANT_A),
                 PERMISSIONS.TENANT_VIEW,
-                resource={"tenant_id": TENANT_A, "target_tenant_id": TENANT_B},
+                resource={
+                    "tenant_id": TENANT_A, "target_tenant_id": TENANT_B,
+                    "_tenant_id_from_path": True,
+                },
                 db=None,
             )
         assert result.allowed is False
@@ -67,7 +70,10 @@ class TestCheckPermissionTargetTenant:
             result = await check_permission(
                 _user("TA", TENANT_A),
                 PERMISSIONS.TENANT_VIEW,
-                resource={"tenant_id": TENANT_A, "target_tenant_id": TENANT_A},
+                resource={
+                    "tenant_id": TENANT_A, "target_tenant_id": TENANT_A,
+                    "_tenant_id_from_path": True,
+                },
                 db=None,
             )
         assert result.allowed is True
@@ -80,7 +86,10 @@ class TestCheckPermissionTargetTenant:
             result = await check_permission(
                 _user("SA", None),
                 PERMISSIONS.TENANT_VIEW,
-                resource={"tenant_id": None, "target_tenant_id": TENANT_B},
+                resource={
+                    "tenant_id": None, "target_tenant_id": TENANT_B,
+                    "_tenant_id_from_path": True,
+                },
                 db=None,
             )
         assert result.allowed is True
@@ -93,7 +102,10 @@ class TestCheckPermissionTargetTenant:
             result = await check_permission(
                 _user("SYS", None),
                 PERMISSIONS.TENANT_VIEW,
-                resource={"tenant_id": None, "target_tenant_id": TENANT_B},
+                resource={
+                    "tenant_id": None, "target_tenant_id": TENANT_B,
+                    "_tenant_id_from_path": True,
+                },
                 db=None,
             )
         assert result.allowed is True
@@ -114,7 +126,10 @@ class TestCheckPermissionTargetTenant:
             result = await check_permission(
                 _user("TA", TENANT_A),
                 PERMISSIONS.TENANT_VIEW,
-                resource={"tenant_id": TENANT_A, "target_tenant_id": "tenant-a-slug"},
+                resource={
+                    "tenant_id": TENANT_A, "target_tenant_id": "tenant-a-slug",
+                    "_tenant_id_from_path": True,
+                },
                 db=db,
             )
         assert result.allowed is True
@@ -154,3 +169,104 @@ class TestRequirePermissionSignatureDistinguishesPathFromQuery:
         with _FULL_GRANT, _NO_AUDIT:
             result = await fake_route(tenant_id=UUID(TENANT_B), user=_user("TA", TENANT_A), db=None)
         assert result == "ok"
+
+
+class TestAuditAttributionDecoupledFromEnforcement:
+    """Coordinator correction (session 17 regression): target_tenant_id must keep
+    being set for ANY tenant_id kwarg — path or query override — so audit_log()
+    can still attribute an SA's decision on an override route to the target
+    tenant. Enforcement reads a SEPARATE "_tenant_id_from_path" flag; the two
+    must never be entangled into one condition again."""
+
+    async def test_sa_override_route_audit_still_attributed_to_target_tenant(self) -> None:
+        from shared.permissions.middleware import require_permission
+        from shared.permissions.registry import PERMISSIONS
+
+        captured_resource: dict = {}
+
+        async def _capture_audit(user, action, resource, decision, reason=""):
+            captured_resource.update(resource)
+
+        @require_permission(PERMISSIONS.TENANT_VIEW)
+        async def fake_override_route(tenant_id: Optional[UUID] = None, user=None, db=None):
+            return "ok"
+
+        with _FULL_GRANT, patch(
+            "shared.permissions.middleware.audit_log", new=AsyncMock(side_effect=_capture_audit)
+        ):
+            result = await fake_override_route(tenant_id=UUID(TENANT_B), user=_user("SA", None), db=None)
+
+        assert result == "ok"
+        # target_tenant_id must still be set (audit attribution) even though this
+        # is an optional query override, not a required path param.
+        assert captured_resource.get("target_tenant_id") == str(UUID(TENANT_B))
+        # ...but the enforcement-only flag must NOT be set for this route shape.
+        assert "_tenant_id_from_path" not in captured_resource
+
+    async def test_required_path_route_sets_from_path_flag(self) -> None:
+        from shared.permissions.middleware import require_permission
+        from shared.permissions.registry import PERMISSIONS
+
+        captured_resource: dict = {}
+
+        async def _capture_audit(user, action, resource, decision, reason=""):
+            captured_resource.update(resource)
+
+        @require_permission(PERMISSIONS.TENANT_VIEW)
+        async def fake_path_route(tenant_id: UUID, user=None, db=None):
+            return "ok"
+
+        with _FULL_GRANT, patch(
+            "shared.permissions.middleware.audit_log", new=AsyncMock(side_effect=_capture_audit)
+        ):
+            await fake_path_route(tenant_id=UUID(TENANT_A), user=_user("TA", TENANT_A), db=None)
+
+        assert captured_resource.get("target_tenant_id") == str(UUID(TENANT_A))
+        assert captured_resource.get("_tenant_id_from_path") is True
+
+
+class TestCaseInsensitiveTenantComparison:
+    """The mismatch check must not false-positive on casing differences between
+    the JWT's tenant_id and the path/slug-resolved value."""
+
+    async def test_same_tenant_uppercase_path_uuid_is_allowed(self) -> None:
+        """tenants.py's get_tenant/get_approval_rules/put_approval_rules type
+        tenant_id as plain `str` (to also accept a slug), so — unlike a route
+        typed `tenant_id: UUID`, where FastAPI/Python's uuid module always
+        normalizes to lowercase — the ORIGINAL casing of the path string
+        reaches the wrapper unchanged and must be handled explicitly."""
+        from shared.permissions.middleware import require_permission
+        from shared.permissions.registry import PERMISSIONS
+
+        @require_permission(PERMISSIONS.TENANT_VIEW)
+        async def fake_route(tenant_id: str, user=None, db=None):
+            return "ok"
+
+        uppercase_tenant_a = TENANT_A.upper()
+        with _FULL_GRANT, _NO_AUDIT:
+            result = await fake_route(
+                tenant_id=uppercase_tenant_a, user=_user("TA", TENANT_A), db=None
+            )
+        assert result == "ok"
+
+    async def test_same_tenant_uppercase_slug_resolved_id_is_allowed(self) -> None:
+        from shared.permissions.middleware import check_permission
+        from shared.permissions.registry import PERMISSIONS
+
+        db = AsyncMock()
+        db.execute = AsyncMock(
+            return_value=MagicMock(fetchone=MagicMock(return_value=MagicMock(id=TENANT_A.upper())))
+        )
+
+        with _FULL_GRANT, _NO_AUDIT:
+            result = await check_permission(
+                _user("TA", TENANT_A),
+                PERMISSIONS.TENANT_VIEW,
+                resource={
+                    "tenant_id": TENANT_A,
+                    "target_tenant_id": "tenant-a-slug",
+                    "_tenant_id_from_path": True,
+                },
+                db=db,
+            )
+        assert result.allowed is True

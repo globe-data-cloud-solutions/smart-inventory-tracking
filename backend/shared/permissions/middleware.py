@@ -55,15 +55,20 @@ async def check_permission(
     # Path tenant_id check (RB-1 sweep HOLEs 1-3 root cause, docs/reviews/2026-10-19-rb1-sweep.md):
     # require_permission's wrapper stashes the route's own {tenant_id} path value as
     # target_tenant_id (distinct from the tautological "tenant_id" check above, which
-    # the wrapper always sets to the caller's OWN tenant_id). A non-SA/SYS caller whose
-    # path tenant_id resolves (by UUID or by slug) to a different tenant than their own
-    # is denied here, regardless of whether the route handler remembers to check this itself.
+    # the wrapper always sets to the caller's OWN tenant_id) — target_tenant_id is set
+    # for ANY tenant_id kwarg (path or query override) so audit_log() can keep
+    # attributing an SA's decision on an override route to the right tenant (session 17).
+    # Enforcement below reads the SEPARATE "_tenant_id_from_path" flag, which the wrapper
+    # only sets for a required {tenant_id} path segment — these two concerns must never
+    # be entangled into one condition again. A non-SA/SYS caller whose path tenant_id
+    # resolves (by UUID or by slug, case-insensitively) to a different tenant than their
+    # own is denied here, regardless of whether the route handler checks this itself.
     target_tenant_id = resource.get("target_tenant_id")
-    if target_tenant_id and user.role not in ("SA", "SYS"):
+    if target_tenant_id and resource.get("_tenant_id_from_path") and user.role not in ("SA", "SYS"):
         resolved_target: str | None
         try:
             uuid.UUID(str(target_tenant_id))
-            resolved_target = str(target_tenant_id)
+            resolved_target = str(target_tenant_id).lower()
         except ValueError:
             resolved_target = None
             if db is not None:
@@ -73,8 +78,8 @@ async def check_permission(
                     {"slug": str(target_tenant_id)},
                 )).fetchone()
                 if row is not None:
-                    resolved_target = str(row.id)
-        if resolved_target is None or resolved_target != str(user.tenant_id):
+                    resolved_target = str(row.id).lower()
+        if resolved_target is None or resolved_target != str(user.tenant_id).lower():
             await audit_log(user, action.id, resource, "DENIED", "ABAC_DENIED: TENANT_ACCESS_DENIED")
             return PermissionResult(allowed=False, reason="TENANT_ACCESS_DENIED")
 
@@ -157,16 +162,20 @@ def require_permission(
                 "region_id": getattr(user, "region_id", None),
             }
 
-            # Stash the route's PATH tenant_id (e.g. /{tenant_id}/plan) separately from
-            # the actor's own tenant_id — an SA has no tenant_id of its own, so this is
-            # how audit_log() attributes an SA decision to the tenant being acted on.
+            # Stash the route's tenant_id kwarg (path OR optional query override)
+            # separately from the actor's own tenant_id — an SA has no tenant_id of
+            # its own, so this is how audit_log() attributes an SA's decision to the
+            # tenant being acted on, for EITHER kind of route. Unconditional — must
+            # not be narrowed to the required-path-param case (session 17 regression).
             path_tenant_id = kwargs.get("tenant_id")
-            if (
-                path_tenant_id is not None
-                and "target_tenant_id" not in resource
-                and _tenant_id_is_required_path_param
-            ):
+            if path_tenant_id is not None and "target_tenant_id" not in resource:
                 resource["target_tenant_id"] = str(path_tenant_id)
+            # Separate flag: enforcement (in check_permission) only applies when this
+            # tenant_id came from a REQUIRED {tenant_id} path segment, never from an
+            # Optional[...] = Query(None) override — kept fully independent of the
+            # audit-attribution assignment above.
+            if path_tenant_id is not None and _tenant_id_is_required_path_param:
+                resource["_tenant_id_from_path"] = True
 
             body = kwargs.get("body")
             if body and hasattr(body, "model_dump"):
