@@ -36,7 +36,8 @@ running this task needs secretsmanager:GetSecretValue on both secret ARNs
 Environment / arguments:
   --email-secret-name / SA_EMAIL_SECRET_NAME        Secrets Manager secret name holding the SA email
   --password-secret-name / SA_PASSWORD_SECRET_NAME  Secrets Manager secret name holding the SA password
-  DATABASE_URL                                      runtime role (smart_runtime), SQLAlchemy or libpq form
+  MIGRATION_DATABASE_URL                            owner role (smart_owner), SQLAlchemy or libpq form;
+                                                    falls back to DATABASE_URL (local dev)
 """
 from __future__ import annotations
 
@@ -97,9 +98,10 @@ async def main() -> None:
     password_secret_name = _resolve_arg(
         args.password_secret_name, "SA_PASSWORD_SECRET_NAME", "--password-secret-name"
     )
-    database_url = os.environ.get("DATABASE_URL", "")
+    # Run as an override of the migration task, which carries only the owner URL.
+    database_url = os.environ.get("MIGRATION_DATABASE_URL") or os.environ.get("DATABASE_URL", "")
     if not database_url:
-        sys.exit("bootstrap_sa_account: missing required env var DATABASE_URL")
+        sys.exit("bootstrap_sa_account: missing required env var MIGRATION_DATABASE_URL")
 
     email = _get_secret_value(email_secret_name)
     password = _get_secret_value(password_secret_name)
