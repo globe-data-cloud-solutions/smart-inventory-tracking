@@ -58,11 +58,10 @@ async def consume_verification_token(db: AsyncSession, raw: str) -> Optional[str
         text("UPDATE email_verification_tokens SET used_at = now() WHERE id = :id"),
         {"id": str(row.id)},
     )
+    # users is RLS-protected and no tenant context exists before sign-in:
+    # SECURITY DEFINER auth_mark_email_verified (migration 091, D6).
     await db.execute(
-        text(
-            "UPDATE users SET email_verified_at = now() "
-            "WHERE id = :uid AND email_verified_at IS NULL"
-        ),
+        text("SELECT auth_mark_email_verified(:uid)"),
         {"uid": str(row.user_id)},
     )
     return str(row.user_id)

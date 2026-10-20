@@ -64,6 +64,7 @@ async def _lookup_user_with_position(
     SA users (tenant_id IS NULL) bypass position lookup.
     """
     try:
+        from shared.db.rls import set_rls_context
         from shared.db.session import AsyncSessionLocal
         from sqlalchemy import text as sa_text
 
@@ -71,19 +72,10 @@ async def _lookup_user_with_position(
             # Step 1 — find user by email WITHOUT is_active filter so we can
             # distinguish "unknown email" from "deactivated account" and return
             # the same 401 for both (no information leak).
+            # No tenant context exists before login, so users is read through
+            # the SECURITY DEFINER auth_user_by_email (migration 091, D6).
             user_row = await db.execute(
-                sa_text("""
-                    SELECT u.id, u.email, u.full_name, u.tenant_id,
-                           u.password_hash, u.must_reset_password,
-                           u.system_role, u.is_active, u.email_verified_at,
-                           u.is_account_owner,
-                           t.slug AS tenant_slug,
-                           t.is_active AS tenant_active, t.status AS tenant_status
-                    FROM   users u
-                    LEFT JOIN tenants t ON t.id = u.tenant_id
-                    WHERE  lower(u.email) = lower(:email)
-                    LIMIT  1
-                """),
+                sa_text("SELECT * FROM auth_user_by_email(:email)"),
                 {"email": email},
             )
             user_rec = user_row.fetchone()
@@ -135,6 +127,7 @@ async def _lookup_user_with_position(
         terms_acceptance_required = False
         if user_rec.tenant_id is not None and bool(user_rec.is_account_owner):
             async with AsyncSessionLocal() as db:
+                await set_rls_context(db, str(user_rec.tenant_id), str(user_rec.id))
                 terms_row = await db.execute(
                     sa_text(
                         "SELECT terms_version FROM terms_acceptances "
@@ -197,6 +190,7 @@ async def _lookup_user_with_position(
             }
 
         async with AsyncSessionLocal() as db:
+            await set_rls_context(db, str(user_rec.tenant_id), str(user_rec.id))
             # Step 2 — primary active position
             primary_row = await db.execute(
                 sa_text("""
@@ -476,13 +470,10 @@ async def change_password_by_id(user_id: str, body: ChangePasswordByIdRequest, r
         from sqlalchemy import text as sa_text
         async with AsyncSessionLocal() as db:
             row = (await db.execute(
-                sa_text(
-                    "SELECT id, password_hash, must_reset_password "
-                    "FROM users WHERE id = :uid AND is_active = true"
-                ),
+                sa_text("SELECT * FROM auth_user_by_id(:uid)"),
                 {"uid": user_id},
             )).fetchone()
-            if row is None:
+            if row is None or not row.is_active:
                 raise HTTPException(status_code=404, detail="User not found")
 
             must_reset = bool(row.must_reset_password)
@@ -511,10 +502,7 @@ async def change_password_by_id(user_id: str, body: ChangePasswordByIdRequest, r
 
             new_hash = _bcrypt.hashpw(body.new_password.encode(), _bcrypt.gensalt()).decode()
             await db.execute(
-                sa_text(
-                    "UPDATE users SET password_hash = :ph, must_reset_password = false,"
-                    " updated_at = now() WHERE id = :uid"
-                ),
+                sa_text("SELECT auth_update_password(:uid, :ph)"),
                 {"ph": new_hash, "uid": user_id},
             )
             await db.commit()
@@ -576,13 +564,13 @@ async def resend_verification(body: ResendVerificationRequest, request: Request)
     async with AsyncSessionLocal() as db:
         async with db.begin():
             row = (await db.execute(
-                sa_text(
-                    "SELECT id FROM users "
-                    "WHERE lower(email) = :email AND is_active = true AND email_verified_at IS NULL"
-                ),
+                sa_text("SELECT auth_active_unverified_user_id(:email) AS id"),
                 {"email": email},
             )).fetchone()
-            raw_token = await issue_verification_token(db, str(row.id)) if row else None
+            raw_token = (
+                await issue_verification_token(db, str(row.id))
+                if row and row.id is not None else None
+            )
 
     if raw_token is not None:
         try:
@@ -624,10 +612,13 @@ async def forgot_password(body: ForgotPasswordRequest, request: Request) -> dict
     async with AsyncSessionLocal() as db:
         async with db.begin():
             row = (await db.execute(
-                sa_text("SELECT id FROM users WHERE lower(email) = :email AND is_active = true"),
+                sa_text("SELECT auth_active_user_id(:email) AS id"),
                 {"email": email},
             )).fetchone()
-            raw_token = await issue_reset_token(db, str(row.id)) if row else None
+            raw_token = (
+                await issue_reset_token(db, str(row.id))
+                if row and row.id is not None else None
+            )
 
     if raw_token is not None:
         try:
@@ -669,18 +660,16 @@ async def reset_password(body: ResetPasswordRequest, request: Request) -> dict:
 
             new_hash = _bcrypt.hashpw(body.new_password.encode(), _bcrypt.gensalt()).decode()
             await db.execute(
-                sa_text(
-                    "UPDATE users SET password_hash = :ph, must_reset_password = false, "
-                    "email_verified_at = COALESCE(email_verified_at, now()), updated_at = now() "
-                    "WHERE id = :uid"
-                ),
+                sa_text("SELECT auth_apply_password_reset(:uid, :ph)"),
                 {"ph": new_hash, "uid": user_id},
             )
             email_row = (await db.execute(
-                sa_text("SELECT email FROM users WHERE id = :uid"),
+                sa_text("SELECT auth_user_email_by_id(:uid) AS email"),
                 {"uid": user_id},
             )).fetchone()
-            email_for_lockout = str(email_row.email) if email_row else None
+            email_for_lockout = (
+                str(email_row.email) if email_row and email_row.email is not None else None
+            )
 
     await revoke_user_tokens(user_id)
 
