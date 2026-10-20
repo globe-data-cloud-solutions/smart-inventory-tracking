@@ -72,6 +72,8 @@ function localeStrings(locale: "en" | "am") {
     openingBalanceTitle: d.opening_balance.title as string,
     startSession: d.count.start_session as string,
     submitSession: d.count.submit_session as string,
+    tabTree: d.org_setup.tab_tree as string,
+    addRootNode: d.org_setup.add_root_node as string,
   };
 }
 
@@ -135,12 +137,11 @@ for (const locale of ["en", "am"] as const) {
       await expect(deactivateBtn).toBeVisible({ timeout: 10_000 });
       await expect(deactivateBtn).toBeEnabled();
 
-      // ── org-setup Tree tab: add-node disabled (hardcoded English label,
-      // not run through t() in app code today — same text in every locale) ──
+      // ── org-setup Tree tab: add-node disabled ──
       await page.goto(`${BASE_URL}/${E2E_TA_SLUG}/settings/org-setup`);
       await page.waitForLoadState("networkidle");
-      await page.getByRole("button", { name: "Organisation Tree" }).click();
-      const addNodeBtn = page.getByRole("button", { name: /Add root node/i });
+      await page.getByRole("button", { name: strings.tabTree }).click();
+      const addNodeBtn = page.getByRole("button", { name: strings.addRootNode });
       await expect(addNodeBtn).toBeVisible({ timeout: 10_000 });
       await expect(addNodeBtn).toBeDisabled();
       expect(await addNodeBtn.getAttribute("title")).toBe(strings.readOnlyReason);

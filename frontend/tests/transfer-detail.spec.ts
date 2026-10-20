@@ -297,7 +297,10 @@ for (const locale of ["en", "am"] as const) {
       const ctx = await open(page, locale, () => ok(detail({ reference_number: null })));
       const { s } = ctx;
 
-      const date = await page.evaluate((iso) => new Date(iso).toLocaleDateString(), "2026-10-12T08:00:00Z");
+      const date = await page.evaluate(
+        ({ iso, l }) => new Intl.DateTimeFormat(l === "am" ? "am-ET" : "en-US", { year: "numeric", month: "numeric", day: "numeric", calendar: "gregory" }).format(new Date(iso)),
+        { iso: "2026-10-12T08:00:00Z", l: locale },
+      );
       const title = s.untitled.replace("{type}", s.type.PUSH!).replace("{date}", date);
       await expect(page.getByText(title, { exact: true })).toBeVisible();
 
