@@ -25,6 +25,21 @@ logger = logging.getLogger(__name__)
 def _check_safe_environment(**kwargs: object) -> None:
     assert_safe_environment()
 
+
+@beat_init.connect
+def _run_initial_partition_check(**kwargs: object) -> None:
+    """Runs once when the beat process starts, after the safe-environment guard
+    above. A fresh RDS has ZERO inventory_transactions partitions — nothing else
+    creates the initial set, so every stock mutation 500s from deploy until the
+    periodic schedule below first fires. This closes that gap. Errors are
+    logged, not raised: a transient DB hiccup on beat startup must never crash
+    the beat process — the periodic schedule will retry.
+    """
+    try:
+        _run(_ensure_future_partitions())
+    except Exception:
+        logger.exception("Startup partition check failed")
+
 T = TypeVar("T")
 
 # One dedicated event loop per process, created lazily and reused across tasks —
@@ -56,7 +71,7 @@ app.conf.beat_schedule = {
     },
     "ensure-future-partitions": {
         "task": "shared.outbox.worker.ensure_future_partitions",
-        "schedule": crontab(day_of_month=1, hour=7, minute=0),  # monthly, 1st at 07:00 UTC
+        "schedule": crontab(hour=7, minute=0),  # daily at 07:00 UTC
     },
 }
 app.conf.timezone = "UTC"
@@ -339,11 +354,13 @@ async def _check_contracts() -> None:
         )
 
 
-# Keep this many future months of inventory_transactions partitions created ahead
-# of need. Same naming/range scheme as scripts/create_partitions.py (the manual
-# bootstrap path run at infra setup) — kept here as a Celery task so it also runs
-# unattended going forward (Bug 4: nothing previously scheduled this).
-PARTITION_MONTHS_AHEAD = 3
+# Keep the current month plus this many future months of inventory_transactions
+# partitions created ahead of need (4 total at any time: current + 3 future).
+# Same naming/range scheme as scripts/create_partitions.py (the manual bootstrap
+# path run at infra setup) — kept here as a Celery task, run once at beat
+# startup and daily thereafter, so a fresh RDS is never caught with zero
+# partitions (Bug 4: nothing previously created or scheduled this at all).
+PARTITION_FUTURE_MONTHS = 3
 
 
 def _partition_name(year: int, month: int) -> str:
@@ -358,7 +375,8 @@ def _partition_range(year: int, month: int) -> tuple[str, str]:
 
 @app.task
 def ensure_future_partitions() -> None:
-    """Monthly beat task — keeps PARTITION_MONTHS_AHEAD future inventory_transactions
+    """Daily beat task (also run once at beat startup — see _run_initial_partition_check)
+    — keeps the current month plus PARTITION_FUTURE_MONTHS future inventory_transactions
     partitions created ahead of need. Idempotent: a partition that already exists is
     left untouched and not reported as created.
     """
@@ -370,7 +388,7 @@ async def _ensure_future_partitions() -> None:
     created: list[str] = []
 
     async with AsyncSessionLocal() as session:
-        for i in range(PARTITION_MONTHS_AHEAD):
+        for i in range(PARTITION_FUTURE_MONTHS + 1):  # +1 for the current month itself
             target = today + relativedelta(months=i)
             name = _partition_name(target.year, target.month)
 
@@ -396,6 +414,7 @@ async def _ensure_future_partitions() -> None:
         logger.info("Partition maintenance: created %s", created)
     else:
         logger.info(
-            "Partition maintenance: nothing to create (already %d month(s) ahead)",
-            PARTITION_MONTHS_AHEAD,
+            "Partition maintenance: nothing to create (current + %d future month(s) "
+            "already exist)",
+            PARTITION_FUTURE_MONTHS,
         )
