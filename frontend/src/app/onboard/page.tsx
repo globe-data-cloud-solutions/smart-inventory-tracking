@@ -334,7 +334,7 @@ export default function OnboardPage() {
       } else if (code === "SLUG_ALREADY_EXISTS") {
         setError(t("wizard.slug_exists_error"));
       } else {
-        setError(err instanceof Error ? err.message : "Unexpected error");
+        setError(err instanceof Error ? err.message : t("errors.UNKNOWN"));
       }
     } finally {
       setLoading(false);
