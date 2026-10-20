@@ -32,9 +32,9 @@ Dev stack: `smart-dev` cluster, `https://smart.hplink.io`, Terraform in `infra/t
 ```
 aws ecs run-task \
   --cluster smart-<env> \
-  --task-definition smart-<env>-migrate \
+  --task-definition smart-<env>-migration \
   --overrides '{"containerOverrides": [{
-    "name": "migrate",
+    "name": "migration",
     "command": ["python", "/app/backend/migrations/bootstrap_sa_account.py",
                  "--email-secret-name", "smart/<env>/sa/email",
                  "--password-secret-name", "smart/<env>/sa/password"]
