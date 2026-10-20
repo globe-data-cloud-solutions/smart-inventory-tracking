@@ -642,6 +642,11 @@ build-push  → matrix over all 10 services + migration + frontend: ensures the
               on Comment=='smart-<env>') and fails with ::error:: if
               empty/None — apply infra before deploying — then passes it as
               --build-arg NEXT_PUBLIC_API_URL=https://<cloudfront-domain>.
+              frontend/Dockerfile's deps-build stage runs `pnpm run build`,
+              which runs check_i18n.sh and check_help_docs.sh inside the image —
+              every file check_i18n.sh / check_help_docs.sh reads must be copied
+              into the image (scripts/*, locales/*, docs/*, frontend/*) or the
+              build fails.
 deploy      → run Alembic migrations + permission seed via one-off ECS task
               (smart-<env>-migration), reading network config (subnets/SGs) from
               the running smart-<env>-api-gateway service; FAILS the run if the

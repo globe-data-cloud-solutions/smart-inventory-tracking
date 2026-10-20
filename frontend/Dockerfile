@@ -7,7 +7,8 @@ WORKDIR /app
 COPY frontend/package.json frontend/pnpm-lock.yaml frontend/pnpm-workspace.yaml ./frontend/
 RUN cd frontend && pnpm install --frozen-lockfile
 
-COPY scripts/check_i18n.sh scripts/check_help_docs.sh scripts/check_locale_parity.py ./scripts/
+# every file check_i18n.sh / check_help_docs.sh reads must be copied here
+COPY scripts/check_i18n.sh scripts/check_help_docs.sh scripts/check_locale_parity.py scripts/check_hardcoded_jsx.py scripts/i18n_hardcoded_allowlist.txt ./scripts/
 COPY locales ./locales
 COPY docs/TA_ONBOARDING_GUIDE.md docs/GETTING_STARTED.md ./docs/
 COPY docs/legal ./docs/legal
