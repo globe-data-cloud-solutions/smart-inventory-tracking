@@ -2798,18 +2798,11 @@ async def get_tenant(
     user=Depends(get_current_user),
     db: AsyncSession = Depends(get_db_session),
 ) -> SuccessResponse[TenantResponse]:
-    from fastapi import HTTPException
     from sqlalchemy import text
-    # Accept both UUID (id) and slug lookups
-    try:
-        uuid.UUID(tenant_id)
-        result = await db.execute(
-            text("SELECT * FROM tenants WHERE id = :id"), {"id": tenant_id}
-        )
-    except ValueError:
-        result = await db.execute(
-            text("SELECT * FROM tenants WHERE slug = :slug"), {"slug": tenant_id}
-        )
+    resolved_id = await _resolve_and_authorize_tenant_id(tenant_id, user, db)
+    result = await db.execute(
+        text("SELECT * FROM tenants WHERE id = :id"), {"id": resolved_id}
+    )
     row = result.fetchone()
     if not row:
         raise HTTPException(status_code=404, detail="Tenant not found")
@@ -2908,6 +2901,33 @@ async def _resolve_tenant_id(tenant_id: str, db: AsyncSession) -> Optional[str]:
     return str(r.id) if r else None
 
 
+async def _resolve_and_authorize_tenant_id(
+    tenant_id: str, user, db: AsyncSession
+) -> str:
+    """Resolve a UUID-or-slug path value to the real tenant id, then enforce the
+    same cross-tenant-isolation contract as dependencies.get_db_session_for_tenant:
+    SA may access any tenant; everyone else may only access their own.
+
+    Raises 404 if the tenant doesn't exist, 403 TENANT_ACCESS_DENIED if a non-SA
+    caller's own tenant_id doesn't match the resolved id (by UUID or by slug).
+    """
+    resolved_id = await _resolve_tenant_id(tenant_id, db)
+    if not resolved_id:
+        raise HTTPException(status_code=404, detail="Tenant not found")
+    if not user:
+        raise HTTPException(status_code=401, detail="Unauthenticated")
+    if user.role != "SA":
+        if user.tenant_id is None or str(user.tenant_id) != resolved_id:
+            raise HTTPException(
+                status_code=403,
+                detail={
+                    "code":    "TENANT_ACCESS_DENIED",
+                    "message": "You do not have access to this tenant",
+                },
+            )
+    return resolved_id
+
+
 @router.get("/{tenant_id}/approval-rules", response_model=SuccessResponse[List[ApprovalRuleItem]])
 @require_permission(PERMISSIONS.TENANT_VIEW)
 async def get_approval_rules(
@@ -2916,15 +2936,10 @@ async def get_approval_rules(
     db: AsyncSession = Depends(get_db_session),
 ) -> SuccessResponse[List[ApprovalRuleItem]]:
     from sqlalchemy import text
-    try:
-        uuid.UUID(tenant_id)
-        result = await db.execute(
-            text("SELECT approval_thresholds FROM tenants WHERE id = :id"), {"id": tenant_id}
-        )
-    except ValueError:
-        result = await db.execute(
-            text("SELECT approval_thresholds FROM tenants WHERE slug = :slug"), {"slug": tenant_id}
-        )
+    resolved_id = await _resolve_and_authorize_tenant_id(tenant_id, user, db)
+    result = await db.execute(
+        text("SELECT approval_thresholds FROM tenants WHERE id = :id"), {"id": resolved_id}
+    )
     row = result.fetchone()
     if not row:
         raise HTTPException(status_code=404, detail="Tenant not found")
@@ -2952,9 +2967,7 @@ async def put_approval_rules(
     db: AsyncSession = Depends(get_db_session),
 ) -> SuccessResponse[List[ApprovalRuleItem]]:
     from sqlalchemy import text
-    resolved_id = await _resolve_tenant_id(tenant_id, db)
-    if not resolved_id:
-        raise HTTPException(status_code=404, detail="Tenant not found")
+    resolved_id = await _resolve_and_authorize_tenant_id(tenant_id, user, db)
     payload = {
         "simple_mode": body.simple_mode,
         "rules": [rule.model_dump() for rule in body.rules],

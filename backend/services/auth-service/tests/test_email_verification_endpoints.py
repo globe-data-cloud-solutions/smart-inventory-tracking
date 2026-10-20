@@ -13,8 +13,12 @@ import sys
 
 _AUTH_ROOT = os.path.normpath(os.path.join(os.path.dirname(__file__), ".."))
 _was_on_path = _AUTH_ROOT in sys.path
-if not _was_on_path:
-    sys.path.insert(0, _AUTH_ROOT)
+if _was_on_path:
+    # See test_auth.py: editable-install .pth files put every service's root
+    # on sys.path permanently at a fixed order — being "already present" isn't
+    # enough, it must be FIRST or `from main import app` resolves elsewhere.
+    sys.path.remove(_AUTH_ROOT)
+sys.path.insert(0, _AUTH_ROOT)
 
 from main import app  # noqa: E402 — auth-service/main.py
 import routers.auth as auth_module  # noqa: E402

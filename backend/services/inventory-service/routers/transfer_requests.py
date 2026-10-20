@@ -29,26 +29,29 @@ router = APIRouter()
 
 _FACILITY_NAME_SQL = text("""
     SELECT COALESCE(
-        (SELECT name FROM warehouses WHERE id = :id),
-        (SELECT name FROM organization_node WHERE id = :id)
+        (SELECT name FROM warehouses WHERE id = :id AND tenant_id = :tid),
+        (SELECT name FROM organization_node WHERE id = :id AND tenant_id = :tid)
     ) AS name
 """)
 
 
-async def _facility_name(session: AsyncSession, facility_id: Any) -> Optional[str]:
-    """A facility's name, or None. Warehouse lookup falls back to organization_node
-    when the legacy warehouses table has no row for the ID — same COALESCE
-    pattern used by list_transfers()."""
-    row = (await session.execute(_FACILITY_NAME_SQL, {"id": str(facility_id)})).fetchone()
+async def _facility_name(session: AsyncSession, facility_id: Any, tenant_id: Any) -> Optional[str]:
+    """A facility's name, or None, scoped to tenant_id. Warehouse lookup falls back
+    to organization_node when the legacy warehouses table has no row for the ID —
+    same COALESCE pattern used by list_transfers()."""
+    row = (await session.execute(
+        _FACILITY_NAME_SQL, {"id": str(facility_id), "tid": str(tenant_id)}
+    )).fetchone()
     return row.name if row else None
 
 
 async def _enrich(row: Any, session: AsyncSession) -> TransferRequestOut:
     """Join warehouse and product names onto a transfer_request row."""
-    rw_name = await _facility_name(session, row.requesting_warehouse_id)
-    sw_name = await _facility_name(session, row.source_warehouse_id)
+    rw_name = await _facility_name(session, row.requesting_warehouse_id, row.tenant_id)
+    sw_name = await _facility_name(session, row.source_warehouse_id, row.tenant_id)
     pr = (await session.execute(
-        text("SELECT name, sku FROM products WHERE id = :id"), {"id": str(row.product_id)}
+        text("SELECT name, sku FROM products WHERE id = :id AND tenant_id = :tid"),
+        {"id": str(row.product_id), "tid": str(row.tenant_id)},
     )).fetchone()
 
     return TransferRequestOut(
@@ -84,12 +87,20 @@ async def create_transfer_request(
 
     req_id = str(uuid.uuid4())
 
-    # Resolve names for the outbox payload (before the INSERT, same session)
-    rw_name = await _facility_name(db, body.requesting_warehouse_id)
+    # Validate every referenced facility/product actually belongs to the caller's
+    # tenant before it's ever stored as a FK or disclosed in a name lookup.
+    rw_name = await _facility_name(db, body.requesting_warehouse_id, user.tenant_id)
+    if rw_name is None:
+        raise HTTPException(status_code=404, detail="Requesting warehouse not found")
+    sw_name_check = await _facility_name(db, body.source_warehouse_id, user.tenant_id)
+    if sw_name_check is None:
+        raise HTTPException(status_code=404, detail="Source warehouse not found")
     pr_row = (await db.execute(
-        text("SELECT name FROM products WHERE id = :id"),
-        {"id": str(body.product_id)},
+        text("SELECT name FROM products WHERE id = :id AND tenant_id = :tid"),
+        {"id": str(body.product_id), "tid": str(user.tenant_id)},
     )).fetchone()
+    if pr_row is None:
+        raise HTTPException(status_code=404, detail="Product not found")
 
     await db.execute(
         text("""

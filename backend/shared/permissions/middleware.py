@@ -1,4 +1,6 @@
 import functools
+import inspect
+import uuid
 from typing import Any, Callable
 
 from fastapi import HTTPException, Request
@@ -49,6 +51,32 @@ async def check_permission(
         if user.role != "SA":
             await audit_log(user, action.id, resource, "DENIED", "ABAC_DENIED: tenant mismatch")
             return PermissionResult(allowed=False, reason="ABAC_DENIED: tenant mismatch")
+
+    # Path tenant_id check (RB-1 sweep HOLEs 1-3 root cause, docs/reviews/2026-10-19-rb1-sweep.md):
+    # require_permission's wrapper stashes the route's own {tenant_id} path value as
+    # target_tenant_id (distinct from the tautological "tenant_id" check above, which
+    # the wrapper always sets to the caller's OWN tenant_id). A non-SA/SYS caller whose
+    # path tenant_id resolves (by UUID or by slug) to a different tenant than their own
+    # is denied here, regardless of whether the route handler remembers to check this itself.
+    target_tenant_id = resource.get("target_tenant_id")
+    if target_tenant_id and user.role not in ("SA", "SYS"):
+        resolved_target: str | None
+        try:
+            uuid.UUID(str(target_tenant_id))
+            resolved_target = str(target_tenant_id)
+        except ValueError:
+            resolved_target = None
+            if db is not None:
+                from sqlalchemy import text as _sql_text
+                row = (await db.execute(
+                    _sql_text("SELECT id FROM tenants WHERE slug = :slug"),
+                    {"slug": str(target_tenant_id)},
+                )).fetchone()
+                if row is not None:
+                    resolved_target = str(row.id)
+        if resolved_target is None or resolved_target != str(user.tenant_id):
+            await audit_log(user, action.id, resource, "DENIED", "ABAC_DENIED: TENANT_ACCESS_DENIED")
+            return PermissionResult(allowed=False, reason="TENANT_ACCESS_DENIED")
 
     if "region_id" in action.abac and getattr(user, "region_id", None):
         if resource.get("region_id") and resource["region_id"] != user.region_id:
@@ -103,6 +131,20 @@ def require_permission(
         )
 
     def decorator(func: Callable) -> Callable:
+        # Computed once per route, not per call: a route's `tenant_id` parameter
+        # is a required {tenant_id} PATH segment only if it has no default value
+        # (FastAPI path params can never have one). An Optional[...] = Query(None)
+        # tenant_id is a caller-supplied override that routes already resolve via
+        # effective_tenant_id() (ignored for non-SA) — that pattern must NOT be
+        # subjected to the path-tenant_id mismatch check below, or a non-SA's
+        # harmless/ignored override gets rejected instead of silently downgraded,
+        # breaking existing, intended behaviour (e.g. GET .../expiry-settings?tenant_id=<other>).
+        _sig = inspect.signature(func)
+        _tenant_id_param = _sig.parameters.get("tenant_id")
+        _tenant_id_is_required_path_param = bool(
+            _tenant_id_param is not None and _tenant_id_param.default is inspect.Parameter.empty
+        )
+
         @functools.wraps(func)
         async def wrapper(*args: Any, **kwargs: Any) -> Any:
             user = kwargs.get("user") or (args[0] if args else None)
@@ -119,7 +161,11 @@ def require_permission(
             # the actor's own tenant_id — an SA has no tenant_id of its own, so this is
             # how audit_log() attributes an SA decision to the tenant being acted on.
             path_tenant_id = kwargs.get("tenant_id")
-            if path_tenant_id is not None and "target_tenant_id" not in resource:
+            if (
+                path_tenant_id is not None
+                and "target_tenant_id" not in resource
+                and _tenant_id_is_required_path_param
+            ):
                 resource["target_tenant_id"] = str(path_tenant_id)
 
             body = kwargs.get("body")
