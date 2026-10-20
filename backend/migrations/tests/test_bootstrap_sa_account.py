@@ -158,7 +158,7 @@ class TestDatabaseUrl:
 class TestNoSecretLeakageInLogs:
 
     async def test_main_never_prints_email_or_password(self, monkeypatch: pytest.MonkeyPatch, capsys) -> None:
-        monkeypatch.setenv("DATABASE_URL", "postgresql://fake")
+        monkeypatch.setenv("MIGRATION_DATABASE_URL", "postgresql://fake")
         monkeypatch.setattr(
             bootstrap_sa_account, "parse_args",
             lambda argv: type("Args", (), {

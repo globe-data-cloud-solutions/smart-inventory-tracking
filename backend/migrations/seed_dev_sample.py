@@ -19,7 +19,7 @@ Environment:
   SEED_ROTATE_SA=true   delete and re-create the SA account from the current
                         secret (rotation); off by default
   MIGRATION_DATABASE_URL  owner role (smart_owner), SQLAlchemy or libpq form;
-                          falls back to DATABASE_URL (local dev)
+                          falls back to DATABASE_URL only with ENVIRONMENT=local
   SEED_SA_PASSWORD, SEED_SAMPLE_PASSWORD
 """
 
@@ -32,6 +32,7 @@ import sys
 
 import asyncpg
 
+from migrations.migration_url import migration_database_url_or_exit
 from migrations.seed_common import (
     FIXTURE,
     SA_EMAIL,
@@ -73,7 +74,7 @@ async def main() -> None:
     sample_password = _required("SEED_SAMPLE_PASSWORD")
     fixture: dict[str, list[dict]] = json.loads(FIXTURE.read_text(encoding="utf-8"))
 
-    db_url = os.environ.get("MIGRATION_DATABASE_URL") or _required("DATABASE_URL")
+    db_url = migration_database_url_or_exit("seed_dev_sample")
     conn = await asyncpg.connect(**connect_kwargs(db_url))
     try:
         # SA account: tenant_id IS NULL, identified by email. Rotation (see

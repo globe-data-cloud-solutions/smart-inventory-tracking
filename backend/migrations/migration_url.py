@@ -6,6 +6,8 @@ privilege, and if it ever ran migrations it would own the tables and so bypass
 RLS. The fallback to DATABASE_URL is therefore allowed only for ENVIRONMENT=local.
 """
 
+import os
+import sys
 from collections.abc import Mapping
 
 
@@ -24,3 +26,11 @@ def migration_database_url(environ: Mapping[str, str]) -> str:
         "MIGRATION_DATABASE_URL is required to run migrations outside ENVIRONMENT=local; "
         "refusing to fall back to DATABASE_URL (the runtime role)."
     )
+
+
+def migration_database_url_or_exit(prog: str) -> str:
+    """Same rule for the seed and SA scripts, exiting with a message instead of raising."""
+    try:
+        return migration_database_url(os.environ)
+    except RuntimeError as exc:
+        sys.exit(f"{prog}: {exc}")
