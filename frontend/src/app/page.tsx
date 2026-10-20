@@ -4,6 +4,13 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { t, getCurrentLocale, loadLocale } from "@/lib/i18n";
 import { AuthLangSwitcher } from "@/components/features/auth/AuthLangSwitcher";
+import { ALL_LOCALES, ENABLED_LOCALES } from "@/lib/locales-config";
+
+const ENABLED_LANG_LINE = ALL_LOCALES.filter((l) => ENABLED_LOCALES.includes(l.code))
+  .map((l) => l.label)
+  .join(" · ");
+const SHORT_LANG_LABELS: Record<string, string> = { en: "EN", am: "አማርኛ", or: "Afaan Oromoo" };
+const ENABLED_SHORT_LANG_LINE = ENABLED_LOCALES.map((c) => SHORT_LANG_LABELS[c]).join(" · ");
 import { useContactInfo } from "@/hooks/useContactInfo";
 
 const BG   = "#0f2d1f";
@@ -110,8 +117,10 @@ export default function HomePage() {
         <div className="max-w-[1200px] mx-auto px-6 h-14 flex items-center gap-6">
           <Link href="/" className="flex items-center gap-2 no-underline">
             <Logo size={32} />
+            {/* i18n-ignore: brand name */}
             <span className="hidden sm:inline font-bold text-[15px] text-[#0f2d1f] whitespace-nowrap">
-              SMART <span className="text-[#2D6A4F] font-medium">Inventory</span>
+              SMART {/* i18n-ignore: brand name */}
+              <span className="text-[#2D6A4F] font-medium">Inventory</span>
             </span>
           </Link>
           <div className="hidden md:flex items-center gap-8 mx-auto">
@@ -157,7 +166,9 @@ export default function HomePage() {
             className="font-extrabold text-white m-0 leading-[1.08] tracking-[-0.02em]"
             style={{ fontSize: "clamp(2.5rem, 6vw, 4.5rem)" }}
           >
+            {/* i18n-ignore: brand name */}
             SMART Inventory
+            {/* i18n-ignore: brand name */}
             <span className="block text-[#FCDD09]">Tracker</span>
           </h1>
           <p
@@ -169,7 +180,7 @@ export default function HomePage() {
           <div className="mt-6 flex justify-center">
             <span className="inline-flex items-center gap-2 px-4 py-1.5 bg-white/[0.08] border border-white/[0.18] rounded-full text-xs font-medium text-[rgba(200,240,220,0.9)]">
               <span className="w-2 h-2 rounded-full bg-green-400 animate-pulse" />
-              🇪🇹 &nbsp;English · አማርኛ · Afaan Oromoo · {t("landing.hero.badge_suffix")}
+              🇪🇹 &nbsp;{ENABLED_LANG_LINE} · {t("landing.hero.badge_suffix")}
             </span>
           </div>
           <div className="mt-8 flex gap-3 justify-center flex-wrap">
@@ -276,6 +287,7 @@ export default function HomePage() {
         <div className="max-w-[1200px] mx-auto flex flex-wrap items-center justify-between gap-4">
           <div className="flex items-center gap-2">
             <Logo size={24} />
+            {/* i18n-ignore: brand name */}
             <p className="font-bold text-sm text-white m-0">SMART Inventory Tracker</p>
           </div>
           <p className="text-xs text-green-900">{t("landing.footer.stack")}</p>
@@ -284,7 +296,8 @@ export default function HomePage() {
               {t("landing.nav.contact")}
             </Link>
           )}
-          <p className="text-xs text-green-900">🇪🇹 EN · አማርኛ · Afaan Oromoo</p>
+          {/* i18n-ignore: language switcher labels — language names, not translated */}
+          <p className="text-xs text-green-900">🇪🇹 {ENABLED_SHORT_LANG_LINE}</p>
         </div>
       </footer>
     </div>

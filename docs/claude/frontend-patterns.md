@@ -123,9 +123,10 @@ export class BarcodeScanner {
 
 ## 12. Localization — English, Amharic, Oromifa
 
-> **Status (2026-10):** Phase 1 ships **English + Amharic**. Oromifa is **deferred**
-> (STOCKBALANCE.md §8): `or.json` is a scaffold — every new key is added with the ENGLISH value
-> so the file stays complete; no Oromifa translation until a native-speaker review is staffed.
+> **Status (2026-10):** Phase 1 ships **English + Amharic**. Oromifa is **deferred**, not
+> offered to users in Phase 1 (STOCKBALANCE.md §8): `or.json` keeps the ~550 draft Oromo
+> values already in it unchanged until a native-speaker review is staffed; every NEW key is
+> added with the ENGLISH value so the file stays complete (Review Backlog RB-6).
 
 ### Three supported languages from Phase 1
 
@@ -170,6 +171,33 @@ export function t(key: string): string {
 - Adding a new language = upload a new JSON file to S3 + add enum value via Alembic migration
 - No rebuild or redeployment required
 - **Oromifa pack must be reviewed by a native Afaan Oromoo-speaking domain expert before Phase 1 go-live**
+
+### Which languages users can pick (`ENABLED_LOCALES`)
+
+A language pack being loadable is not the same as a language being offered. Every picker
+(header `LangSwitcher`, `AuthLangSwitcher`, signup's `default_locale` select + its zod enum,
+the onboarding wizard's locale step, `ProfileTab`'s tenant-admin locale select, and the landing
+page's language line) reads the enabled set from `frontend/src/lib/locales-config.ts`:
+
+- `ALL_LOCALES` — the full `en`/`am`/`or` list with endonym labels.
+- `ENABLED_LOCALES` — parsed from `NEXT_PUBLIC_ENABLED_LOCALES` (comma list, build-time env
+  var), default `"en,am"`. Unknown codes are ignored; `en` is always included.
+- `isEnabledLocale(code)` / `resolveLocale(code)` — fall back to `en` for a disabled or
+  unknown code, used wherever a stored `locale`/`default_locale` value is read back.
+
+Turning Oromo on is a two-step, deliberate change, not a code change: finish translating
+`or.json` (RB-6), then set `NEXT_PUBLIC_ENABLED_LOCALES=en,am,or` and redeploy the frontend —
+the var is read at build time, so an env change alone does not take effect without a rebuild.
+`/api/locales/[locale]` keeps serving all three packs regardless of `ENABLED_LOCALES`, so a
+disabled locale stays loadable for review/testing even while hidden from end users.
+
+- Format every date/time/number through `frontend/src/lib/format.ts`
+  (`formatDate`/`formatDateTime`/`formatTime`/`formatNumber`), never a bare
+  `toLocaleDateString()`/`toLocaleString()`/`toLocaleTimeString()`/`Intl.*` call — those follow
+  the browser's language, not the app's. Dates/times render on the Gregorian calendar in both
+  `en` and `am`; the Ethiopian calendar is a possible later option, not built. `check_i18n.sh`
+  enforces this outside `lib/format.ts` (an `i18n-ignore:` marker exempts a line whose value is
+  never displayed, e.g. a comparison-only date string).
 
 
 ## 27. UI/UX Rules
@@ -258,6 +286,23 @@ NEVER render a raw i18n key as visible JSX text.
   After adding a key to en.json, run:
     python3 -c "..." to sync the same key to am.json and or.json.
   Prevention: bash scripts/check_i18n.sh must pass before git commit.
+
+NEVER leave hardcoded English text in JSX, in placeholder/title/aria-label/alt
+  attributes, or in a string passed directly to setError/setErr/setMsg/
+  setMessage/setSaveError/setFormError/alert/confirm or as message: in
+  notify({...}).
+  Enforcement: scripts/check_hardcoded_jsx.py, wired into check_i18n.sh as an
+  ERROR check (ships in session 19, P5).
+  Genuinely untranslatable text (brand names like "SMART", example codes like
+  "BRD-001" or "LOT-2026-001", currency codes like "ETB"/"USD"/"EUR",
+  backend enum/status-machine codes like "PENDING_APPROVAL") gets an
+  `i18n-ignore: <reason>` marker in a comment on the same line or the line
+  directly above the hit — a plain `// i18n-ignore: ...` comment inside a JSX
+  attribute list, or a `{/* i18n-ignore: ... */}` comment as a JSX child
+  sibling for text content.
+  A whole file goes on scripts/i18n_hardcoded_allowlist.txt (one line,
+  `path  # reason`) only for demo-only or SA-internal debug files — keep that
+  list as short as possible; prefer per-line markers everywhere else.
 
 NEVER render a UUID directly in JSX text content.
   Warehouse/node IDs → resolve to name via API or ?? t('common.unknown')

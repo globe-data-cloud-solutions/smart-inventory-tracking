@@ -11,7 +11,6 @@ import { isQuantityDeltaError, lotErrorMessage } from "@/lib/lotErrors";
 import { getSession } from "@/lib/demo-auth";
 import { useWriteGuard, guardProps } from "@/hooks/useWriteGuard";
 import { useInventoryStore } from "@/lib/inventory-state";
-import { useAuditStore } from "@/lib/audit-log-state";
 import { buildOverrideTooltip } from "@/components/features/inventory/ProductLabel";
 import { LotFields } from "@/components/features/inventory/LotFields";
 import { formatQty } from "@/lib/utils";
@@ -223,7 +222,7 @@ export function NewAdjustmentPanel({ products, warehouses, orgSlug }: Props) {
     if (forceNeg  && addNum === 0)                 { setError(t("adjustment.error_qty")); return; }
     if (!forceNeg && addNum === 0 && removeNum === 0) { setError(t("adjustment.error_qty")); return; }
     if (!forceNeg && addNum > 0 && removeNum > 0) {
-      setError("Fill either Add Stock or Remove Stock, not both.");
+      setError(t("adjustment.error_fill_either"));
       return;
     }
 
@@ -284,24 +283,6 @@ export function NewAdjustmentPanel({ products, warehouses, orgSlug }: Props) {
         const store = useInventoryStore.getState();
         if (qty > 0) store.addReceive(productId, effectiveWarehouseId, qty);
         else         store.addIssue(productId, effectiveWarehouseId, Math.abs(qty));
-      }
-
-      // Bug 8: write audit log entry
-      if (session) {
-        useAuditStore.getState().log({
-          tenantSlug:    orgSlug,
-          userEmail:     session.email,
-          userName:      session.name,
-          role:          session.role,
-          category:      "ADJUSTMENT",
-          action:        adj.status === "APPLIED" ? "ADJUSTMENT_APPLIED" : "ADJUSTMENT_SUBMITTED",
-          resourceRef:   adj.adjustment_id,
-          resourceType:  "adjustment",
-          productName:   selectedP?.name,
-          quantityStr:   `${qty > 0 ? "+" : ""}${qty}`,
-          fromWarehouse: effectiveWarehouseName,
-          notes,
-        });
       }
 
       reset(); setOpen(false);
@@ -527,14 +508,14 @@ export function NewAdjustmentPanel({ products, warehouses, orgSlug }: Props) {
           )}
 
           <Field label={t("audit.notes")} hint={`(${t("receive_panel.optional")})`}>
-            <textarea value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Supporting details…" rows={3} className={`${inputCls} resize-y`} />
+            <textarea value={notes} onChange={(e) => setNotes(e.target.value)} placeholder={t("adjustment.notes_placeholder")} rows={3} className={`${inputCls} resize-y`} />
           </Field>
 
           {/* Bug 7: manager override confirmation when projected balance goes negative */}
           {zeroWarn && (
             <div className="bg-amber-50 border border-amber-300 rounded p-3 mb-3">
               <p className="text-sm font-bold text-amber-900 mb-1">{t("adjustment.zero_floor_warn")}</p>
-              <p className="text-xs text-amber-700 mb-3">This action will be audit-logged.</p>
+              <p className="text-xs text-amber-700 mb-3">{t("adjustment.zero_floor_audit_notice")}</p>
               <div className="flex gap-2">
                 <button type="button" onClick={() => setZeroWarn(false)} className="px-3 py-1.5 bg-white border border-amber-300 rounded text-xs font-semibold cursor-pointer">
                   {t("common.cancel")}

@@ -81,6 +81,9 @@ function localeStrings(locale: "en" | "am") {
     isStockHoldingLabel: org.is_stock_holding as string,
     warehouseCapNotice: (tier: string, limit: number) =>
       (org.warehouse_cap_notice as string).replace("{tier}", tier).replace("{limit}", String(limit)),
+    tabTree: org.tab_tree as string,
+    editNodeAction: org.edit_node_action as string,
+    saveNode: org.save_node as string,
   };
 }
 
@@ -248,14 +251,14 @@ for (const locale of ["en", "am"] as const) {
       await login(page, E2E_TA_EMAIL, taPassword);
       await gotoLevels(page);
 
-      await page.getByRole("button", { name: "Organisation Tree" }).click();
+      await page.getByRole("button", { name: s.tabTree }).click();
       await expect(page.getByText("WH North")).toBeVisible({ timeout: 10_000 });
 
-      await page.getByTitle("Edit node").click();
+      await page.getByTitle(s.editNodeAction).click();
       const holdsStockCheckbox = page.locator("label", { hasText: s.isStockHoldingLabel })
         .locator('input[type="checkbox"]');
       await holdsStockCheckbox.uncheck();
-      await page.getByRole("button", { name: "Save Node" }).click();
+      await page.getByRole("button", { name: s.saveNode }).click();
 
       await expect(page.getByText(s.nodeStockActivityStock)).toBeVisible({ timeout: 10_000 });
 
@@ -283,16 +286,16 @@ for (const locale of ["en", "am"] as const) {
       await login(page, E2E_TA_EMAIL, taPassword);
       await gotoLevels(page);
 
-      await page.getByRole("button", { name: "Organisation Tree" }).click();
+      await page.getByRole("button", { name: s.tabTree }).click();
       await expect(page.getByText("WH North")).toBeVisible({ timeout: 10_000 });
 
-      await page.getByTitle("Edit node").click();
+      await page.getByTitle(s.editNodeAction).click();
       const holdsStockCheckbox = page.locator("label", { hasText: s.isStockHoldingLabel })
         .locator('input[type="checkbox"]');
       await holdsStockCheckbox.check();
 
       await expect(page.getByText(s.warehouseCapNotice("Starter", 1)).first()).toBeVisible({ timeout: 10_000 });
-      await expect(page.getByRole("button", { name: "Save Node" })).toBeDisabled();
+      await expect(page.getByRole("button", { name: s.saveNode })).toBeDisabled();
 
       console.log(`--- node on at cap (${locale}) console errors ---`);
       for (const e of consoleErrors) console.log(e);

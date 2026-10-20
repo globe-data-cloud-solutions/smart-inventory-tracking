@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { getCurrentLocale, loadLocale, setLocale, t } from "@/lib/i18n";
+import { ENABLED_LOCALES } from "@/lib/locales-config";
 
 type Locale = "en" | "am" | "or";
 
@@ -28,7 +29,7 @@ export function AuthLangSwitcher() {
 
   return (
     <div className="flex gap-0.5 bg-gray-100 rounded p-0.5">
-      {(["en", "am", "or"] as Locale[]).map((loc) => (
+      {ENABLED_LOCALES.map((loc) => (
         <button
           key={loc}
           type="button"

@@ -16,9 +16,12 @@ Retailers in Phase 2.
 ```
 NEVER build separate codebases for producers vs retailers.
 NEVER update stock balances directly — all mutations INSERT into inventory_transactions.
-NEVER write directly to warehouse_stock — it is a computed read model maintained by ledger
-  triggers. Application code never issues UPDATE warehouse_stock SET on_hand = … under any
-  circumstances. Direct writes here bypass the immutable ledger and break balance integrity.
+NEVER write directly to inventory_balances — it is a computed read model maintained by
+  _update_running_balance() in backend/services/inventory-service/repositories/ledger_repo.py,
+  called only from record_transaction(). Application code never issues UPDATE
+  inventory_balances SET quantity = … from any other path. There is no PostgreSQL RULE on
+  this table — the defence is application-level (code review/CI), not a database guard.
+  Direct writes here bypass the immutable ledger and break balance integrity.
 NEVER ship a new API endpoint without registering its action in permissions/registry.py.
 NEVER run analytics or report queries on the primary database — read replicas only.
 NEVER allow AI recommendations to auto-execute — status must be PENDING_APPROVAL first.
@@ -96,14 +99,25 @@ No `.env.example` committed — secrets via AWS Secrets Manager (local-dev excep
   actions fail `scripts/ci_drift_check.py` in CI. Three enforcement layers are all mandatory:
   gateway JWT/role → service RBAC+ABAC+audit → PostgreSQL RLS. UI hiding is never a security
   layer by itself.
-- **Ledger / warehouse_stock** (docs/claude/backend-patterns.md, docs/claude/schema.md):
+- **Ledger / inventory_balances** (docs/claude/backend-patterns.md, docs/claude/schema.md):
   every stock mutation is an INSERT into `inventory_transactions`, never a direct balance
-  UPDATE. `warehouse_stock` is a computed read model — the only permitted writer is
-  `update_running_balance()` inside `ledger_repo.py`, in the same transaction as the ledger
-  INSERT; a PostgreSQL RULE blocks direct UPDATEs as defence in depth.
+  UPDATE. `inventory_balances` is a computed read model — the only permitted writer is
+  `_update_running_balance()` inside `ledger_repo.py`, in the same transaction as the ledger
+  INSERT; there is no PostgreSQL RULE on this table — the defence is application-level only
+  (code review/CI), not a database guard.
 - **i18n**: three locales — `en` (default), `am` (Amharic, required Phase 1), `or` (Oromifa,
-  **deferred** — `or.json` is an English-value scaffold copied from `en.json` key-for-key
-  until a native-speaker review is staffed). Loader/order: user locale → tenant default → `en`.
+  **deferred**, not offered to users in Phase 1). `or.json` keeps the ~550 draft Oromo
+  values already in it unchanged until a native-speaker review is staffed; every NEW key is
+  added with the ENGLISH value so the file stays complete (Review Backlog RB-6).
+  Loader/order: user locale → tenant default → `en`. Which languages users can actually pick
+  comes from `ENABLED_LOCALES` (`frontend/src/lib/locales-config.ts`), driven by the build-time
+  `NEXT_PUBLIC_ENABLED_LOCALES` env var (default `en,am`) — Oromo stays hidden from every
+  picker until `or.json` is translated, at which point setting the var to `en,am,or` and
+  redeploying the frontend turns it on (RB-6). The `/api/locales/[locale]` route keeps serving
+  all three packs regardless, so a disabled locale is still loadable for review.
+  Every backend error code needs an `errors.<CODE>` entry in en/am/or (guarded by
+  `scripts/check_error_codes.py` in container-smoke); extra values go in the `detail` object
+  as named fields, never only inside the English message.
 
 ---
 
@@ -118,6 +132,9 @@ No `.env.example` committed — secrets via AWS Secrets Manager (local-dev excep
 - Never expose a UI action button whose target state is missing from the backend state machine — keep `getAvailableActions()` and `state_machine.py` in sync in the same PR.
 - Never render a raw i18n key or a raw UUID as visible text — wrap in `t()` / resolve to a name first.
 - Never commit frontend changes without `npx tsc --noEmit` (0 errors) and `bash scripts/check_i18n.sh` (PASS).
+  `check_i18n.sh` runs `python scripts/check_hardcoded_jsx.py` as an ERROR check; intentional English
+  (brand names, example codes, currency/status codes) needs an `i18n-ignore: <reason>` marker on the
+  same line or the line directly above, or the file added to `scripts/i18n_hardcoded_allowlist.txt`.
 
 ## 6. Org Hierarchy Rules (one-liners — full detail: docs/claude/business-rules.md)
 
@@ -182,4 +199,5 @@ No `.env.example` committed — secrets via AWS Secrets Manager (local-dev excep
 | `docs/claude/billing-and-tenants.md` | Full §15 — onboarding wizard, package catalog, self sign-up, billing/invoices/proration, add-ons (S4–S12 history) | Any tenant, plan, billing, or add-on work |
 | `docs/claude/business-rules.md` | Full §24 business rules 1–27 + IMTS role mapping table, full §28 hierarchy/product-scoping/personnel rules | Checking whether a change violates an enforced business rule |
 | `docs/claude/guardrails.md` | Full §29 — exact incident-driven commands and local-dev reality | Debugging an import/startup/migration failure |
+| `docs/claude/redeploy-runbook.md` | provision/deploy/teardown cycle, state-lock and partial-destroy recovery | Before any AWS deploy/test/destroy cycle Alex instructs |
 | `docs/prompts/opening_balance.md` | Claude prompts for Option A (RECEIPT) and Option C (bulk import) opening-balance workflows | Building the initial stock entry assistant |

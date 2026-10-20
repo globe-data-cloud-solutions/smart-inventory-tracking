@@ -8,6 +8,7 @@ import { t, getCurrentLocale } from "@/lib/i18n";
 import { getHelpDoc, isDocVisibleToRole } from "@/lib/help/manifest";
 import { DocumentRenderer } from "@/components/features/help/DocumentRenderer";
 import { getText } from "@/lib/api";
+import { fetchHelpDoc } from "@/lib/help/fetchHelpDoc";
 
 export default function HelpDocPage() {
   const { org, docId } = useParams() as { org: string; docId: string };
@@ -23,10 +24,7 @@ export default function HelpDocPage() {
     let cancelled = false;
     const fetchText = doc.apiPath
       ? getText(doc.apiPath, session?.jwtToken)
-      : fetch(`/help/${doc.file}`).then((res) => {
-          if (!res.ok) throw new Error("fetch failed");
-          return res.text();
-        });
+      : fetchHelpDoc(doc.file!);
     fetchText
       .then((text) => { if (!cancelled) setMarkdown(text); })
       .catch(() => { if (!cancelled) setError(true); });

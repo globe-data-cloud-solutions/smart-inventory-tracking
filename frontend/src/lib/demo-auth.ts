@@ -1,6 +1,7 @@
 "use client";
 
 import { type Role } from "@/lib/demo-data";
+import { t, hasKey } from "@/lib/i18n";
 
 /** One active position from the user's personnel_positions record. */
 export interface ActivePosition {
@@ -98,11 +99,14 @@ export async function loginWithPassword(email: string, password: string): Promis
         const errBody = (await res.json().catch(() => null)) as
           | { detail?: { code?: string; message?: string } }
           | null;
-        const err = new Error(
-          errBody?.detail?.message ??
-            "Too many failed login attempts. Please wait 15 minutes before trying again, or contact your administrator."
-        ) as Error & { status?: number };
+        const code = errBody?.detail?.code;
+        const message = code && hasKey(`errors.${code}`)
+          ? t(`errors.${code}`)
+          : (errBody?.detail?.message ??
+            "Too many failed login attempts. Please wait 15 minutes before trying again, or contact your administrator.");
+        const err = new Error(message) as Error & { status?: number; code?: string };
         err.status = 429;
+        err.code = code;
         throw err;
       }
       if (res.status === 403) {
@@ -111,9 +115,10 @@ export async function loginWithPassword(email: string, password: string): Promis
           | null;
         const code = errBody?.detail?.code;
         if (code === "TENANT_SUSPENDED" || code === "TENANT_DEACTIVATED" || code === "EMAIL_NOT_VERIFIED") {
-          const err = new Error(
-            errBody?.detail?.message ?? "Your account access has been restricted. Please contact your administrator."
-          ) as Error & { status?: number; code?: string };
+          const message = hasKey(`errors.${code}`)
+            ? t(`errors.${code}`)
+            : (errBody?.detail?.message ?? "Your account access has been restricted. Please contact your administrator.");
+          const err = new Error(message) as Error & { status?: number; code?: string };
           err.status = 403;
           err.code = code;
           throw err;

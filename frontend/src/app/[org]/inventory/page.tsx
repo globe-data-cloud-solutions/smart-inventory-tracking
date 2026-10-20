@@ -18,6 +18,7 @@ import { useWarehouses } from "@/hooks/useWarehouses";
 import { api } from "@/lib/api";
 import { t } from "@/lib/i18n";
 import { formatQty, formatCurrency } from "@/lib/utils";
+import { formatDate, formatTime } from "@/lib/format";
 import { useTenantName } from "@/hooks/useTenantName";
 
 type ApiTransfer = {
@@ -85,7 +86,7 @@ function FilterDropdown({ options, selected, onChange, onClose }: {
     <div ref={ref} className="absolute top-full left-0 z-50 mt-1 bg-white border border-gray-200 rounded-md shadow-xl min-w-[160px] py-1.5">
       <label className="flex items-center gap-2 px-3 py-1.5 cursor-pointer text-xs text-gray-700 border-b border-gray-100">
         <input type="checkbox" checked={allSelected} onChange={() => onChange(allSelected ? [] : [...options])} className="cursor-pointer" />
-        <span className="font-semibold">{t("common.filter")} All</span>
+        <span className="font-semibold">{t("common.filter")} {t("common.all")}</span>
       </label>
       {options.map((opt) => (
         <label key={opt} className="flex items-center gap-2 px-3 py-1.5 cursor-pointer text-xs text-gray-700 hover:bg-gray-50">
@@ -174,7 +175,7 @@ function TransactionDetailModal({ col, productName, rows, onClose }: {
                   </th>
                   <th className="px-2.5 py-1.5 text-right text-[11px] font-bold text-gray-500 uppercase tracking-wide">{t("lots.quantity")}</th>
                   <th className="px-2.5 py-1.5 text-left text-[11px] font-bold text-gray-500 uppercase tracking-wide">{t("common.date")}</th>
-                  <th className="px-2.5 py-1.5 text-left text-[11px] font-bold text-gray-500 uppercase tracking-wide">Ref</th>
+                  <th className="px-2.5 py-1.5 text-left text-[11px] font-bold text-gray-500 uppercase tracking-wide">{t("inventory.ref_column")}</th>
                 </tr>
               </thead>
               <tbody>
@@ -186,7 +187,7 @@ function TransactionDetailModal({ col, productName, rows, onClose }: {
                       {r.direction === "out" ? `−${formatQty(r.qty)}` : `+${formatQty(r.qty)}`}
                     </td>
                     <td className="px-2.5 py-2 text-gray-500 text-xs">
-                      {new Date(r.date).toLocaleDateString()} {new Date(r.date).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                      {formatDate(r.date)} {formatTime(r.date, { hour: "2-digit", minute: "2-digit", second: undefined })}
                     </td>
                     <td className="px-2.5 py-2 font-mono text-[11px] text-gray-400">{r.ref ?? "—"}</td>
                   </tr>
@@ -760,7 +761,7 @@ export default function InventoryPage() {
                         <td className="px-3.5 py-2.5 font-semibold text-gray-800 whitespace-nowrap">
                           <ProductLabel name={p.name} approvalOverrides={p.approval_overrides} />
                           {p.batchTracking && (
-                            <span className="ml-1.5 text-[10px] font-bold bg-violet-100 text-violet-800 px-1 py-0.5 rounded">BATCH</span>
+                            <span className="ml-1.5 text-[10px] font-bold bg-violet-100 text-violet-800 px-1 py-0.5 rounded">{t("inventory.batch_badge")}</span>
                           )}
                         </td>
                         <td className="px-3.5 py-2.5 text-xs text-gray-600 whitespace-nowrap">{si.warehouse_name}</td>
@@ -820,7 +821,7 @@ export default function InventoryPage() {
                     <td className="px-3.5 py-2.5 whitespace-nowrap">
                       <ProductLabel name={p.name} approvalOverrides={p.approval_overrides} className="font-semibold text-gray-800" />
                       {p.batchTracking && (
-                        <span className="ml-1.5 text-[10px] font-bold bg-violet-100 text-violet-800 px-1 py-0.5 rounded">BATCH</span>
+                        <span className="ml-1.5 text-[10px] font-bold bg-violet-100 text-violet-800 px-1 py-0.5 rounded">{t("inventory.batch_badge")}</span>
                       )}
                       {/* WM/RM/LM: show warehouse context under product name so operator
                           knows the on-hand figure is scoped to their facility only */}
@@ -897,7 +898,7 @@ export default function InventoryPage() {
                 <tr key={p.id} className={`border-b border-gray-100 ${idx % 2 === 0 ? "bg-emerald-50/30" : "bg-green-50"}`}>
                   <td className="px-3.5 py-2.5 font-mono text-[11px] text-gray-400">
                     {p.sku}
-                    <span className="ml-1.5 text-[10px] font-bold bg-green-100 text-green-800 px-1 py-0.5 rounded">NEW</span>
+                    <span className="ml-1.5 text-[10px] font-bold bg-green-100 text-green-800 px-1 py-0.5 rounded">{t("inventory.new_badge")}</span>
                   </td>
                   <td className="px-3.5 py-2.5 font-semibold text-gray-800">
                     <ProductLabel name={p.name} approvalOverrides={p.approval_overrides} />

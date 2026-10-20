@@ -1,5 +1,24 @@
-import { t } from "@/lib/i18n";
+import { t, hasKey } from "@/lib/i18n";
 import { tierLabel } from "@/lib/planError";
+import { formatNumber } from "@/lib/format";
+
+/**
+ * Fills {placeholder} tokens in an errors.<CODE> string from the backend's
+ * detail object. Numbers go through formatNumber; plan_tier/upgrade_to go
+ * through tierLabel (they carry tier codes like STARTER, not display names).
+ * A placeholder with no matching (or null/undefined) detail value is removed
+ * rather than left as a literal "{x}" in the rendered message.
+ */
+function fillErrorTemplate(template: string, detail?: Record<string, unknown> | null): string {
+  const filled = template.replace(/\{(\w+)\}/g, (_match, key: string) => {
+    const val = detail?.[key];
+    if (val === null || val === undefined) return "";
+    if (key === "plan_tier" || key === "upgrade_to") return tierLabel(String(val));
+    if (typeof val === "number") return formatNumber(val);
+    return String(val);
+  });
+  return filled.replace(/\s{2,}/g, " ").trim();
+}
 
 const BASE_URL = process.env.NEXT_PUBLIC_API_URL ?? "";
 
@@ -128,11 +147,18 @@ async function request<T>(
   if (session.role)        headers["X-User-Role"]         = session.role;
   if (session.warehouseId) headers["X-User-Warehouse-Id"] = session.warehouseId;
 
-  const res = await fetch(`${BASE_URL}${path}`, {
-    method,
-    headers,
-    body: body ? JSON.stringify(body) : undefined,
-  });
+  let res: Response;
+  try {
+    res = await fetch(`${BASE_URL}${path}`, {
+      method,
+      headers,
+      body: body ? JSON.stringify(body) : undefined,
+    });
+  } catch {
+    const netErr = new Error(t("errors.NETWORK")) as Error & { status?: number; code: string };
+    netErr.code = "NETWORK";
+    throw netErr;
+  }
 
   // 401 when a JWT was sent means the token was rejected — clear session.
   // 401 with no JWT (SA with no token yet, or BFF mode) is surfaced as a normal
@@ -163,8 +189,9 @@ async function request<T>(
       contract_end?: string | null; read_only_since?: string | null;
       reason?: string; nodes?: Array<{ id: string; name: string }>;
     };
-    const raw   = json as unknown as { detail?: DetObj | string };
-    const det   = typeof raw.detail === "object" ? raw.detail : null;
+    const raw   = json as unknown as { detail?: DetObj | string | unknown[] };
+    const isValidationArray = Array.isArray(raw.detail);
+    const det   = !isValidationArray && typeof raw.detail === "object" ? (raw.detail as DetObj | null) : null;
     const detMsg = det?.message ?? det?.detail ?? (typeof raw.detail === "string" ? raw.detail : "");
     const detCode = det?.code ?? "";
 
@@ -181,6 +208,10 @@ async function request<T>(
       }
     } else if (res.status === 429 && !detMsg) {
       friendlyMessage = t("common.too_many_requests");
+    } else if (res.status === 422 && isValidationArray) {
+      friendlyMessage = t("errors.VALIDATION");
+    } else if (detCode && hasKey(`errors.${detCode}`)) {
+      friendlyMessage = fillErrorTemplate(t(`errors.${detCode}`), det as Record<string, unknown> | null);
     }
 
     const apiErr = new Error(
@@ -237,18 +268,32 @@ export const api = {
  * stale stored session.
  */
 export async function publicGet<T>(path: string): Promise<T> {
-  const res = await fetch(`${BASE_URL}${path}`, {
-    method: "GET",
-    headers: { "Content-Type": "application/json" },
-  });
+  let res: Response;
+  try {
+    res = await fetch(`${BASE_URL}${path}`, {
+      method: "GET",
+      headers: { "Content-Type": "application/json" },
+    });
+  } catch {
+    const netErr = new Error(t("errors.NETWORK")) as Error & { status?: number; code: string };
+    netErr.code = "NETWORK";
+    throw netErr;
+  }
   const json = (await res.json().catch(() => null)) as ApiResponse<T> | ApiError | null;
   if (!res.ok || !json || !json.success) {
-    const raw = json as unknown as { error?: { code?: string; message?: string }; detail?: { code?: string; message?: string } | string } | null;
-    const det = typeof raw?.detail === "object" ? raw.detail : null;
-    const msg = raw?.error?.message ?? det?.message ?? (typeof raw?.detail === "string" ? raw.detail : `HTTP ${res.status}`);
+    const raw = json as unknown as { error?: { code?: string; message?: string }; detail?: { code?: string; message?: string } | string | unknown[] } | null;
+    const isValidationArray = Array.isArray(raw?.detail);
+    const det = !isValidationArray && typeof raw?.detail === "object" ? raw?.detail as { code?: string; message?: string } | null : null;
+    const code = raw?.error?.code ?? det?.code ?? "";
+    let msg = raw?.error?.message ?? det?.message ?? (typeof raw?.detail === "string" ? raw?.detail : `HTTP ${res.status}`);
+    if (res.status === 422 && isValidationArray) {
+      msg = t("errors.VALIDATION");
+    } else if (code && hasKey(`errors.${code}`)) {
+      msg = fillErrorTemplate(t(`errors.${code}`), det as Record<string, unknown> | null);
+    }
     const err = new Error(msg) as Error & { status: number; code: string };
     err.status = res.status;
-    err.code = raw?.error?.code ?? det?.code ?? "";
+    err.code = code;
     throw err;
   }
   return (json as ApiResponse<T>).data;
@@ -261,21 +306,35 @@ export async function publicGet<T>(path: string): Promise<T> {
  * for these: it throws on any response lacking `success: true`, which these never set.
  */
 export async function rawPost<T>(path: string, body: unknown): Promise<T> {
-  const res = await fetch(`${BASE_URL}${path}`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body),
-  });
+  let res: Response;
+  try {
+    res = await fetch(`${BASE_URL}${path}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+  } catch {
+    const netErr = new Error(t("errors.NETWORK")) as Error & { status?: number; code: string };
+    netErr.code = "NETWORK";
+    throw netErr;
+  }
   const json = (await res.json().catch(() => null)) as
-    | { detail?: { code?: string; message?: string } | string }
+    | { detail?: { code?: string; message?: string } | string | unknown[] }
     | null;
   if (!res.ok) {
     const det = json?.detail;
-    const detObj = typeof det === "object" ? det : null;
-    const message = detObj?.message ?? (typeof det === "string" ? det : `HTTP ${res.status}`);
+    const isValidationArray = Array.isArray(det);
+    const detObj = !isValidationArray && typeof det === "object" ? det as { code?: string; message?: string } | null : null;
+    const code = detObj?.code;
+    let message = detObj?.message ?? (typeof det === "string" ? det : `HTTP ${res.status}`);
+    if (res.status === 422 && isValidationArray) {
+      message = t("errors.VALIDATION");
+    } else if (code && hasKey(`errors.${code}`)) {
+      message = fillErrorTemplate(t(`errors.${code}`), detObj as Record<string, unknown> | null);
+    }
     const err = new Error(message) as Error & { status: number; code?: string };
     err.status = res.status;
-    err.code = detObj?.code;
+    err.code = code;
     throw err;
   }
   return json as T;

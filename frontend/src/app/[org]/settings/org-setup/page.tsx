@@ -423,7 +423,7 @@ function LevelsTab({
                   >
                     <option value="">{t("org_setup.no_default_role")}</option>
                     {allowedNewRoleOptions.map((r) => (
-                      <option key={r.code} value={r.code}>{r.code} — {r.label}</option>
+                      <option key={r.code} value={r.code}>{r.code} — {t(`roles.${r.code}`)}</option>
                     ))}
                   </select>
                 </div>
@@ -564,11 +564,11 @@ function LevelsTab({
         <table className="w-full text-sm">
           <thead className="bg-gray-50 border-b border-gray-200">
             <tr>
-              <th className="px-3 py-2 text-left text-xs font-semibold text-gray-500 w-12">No</th>
-              <th className="px-3 py-2 text-left text-xs font-semibold text-gray-500">Level Name *</th>
-              <th className="px-3 py-2 text-left text-xs font-semibold text-gray-500">Role *</th>
+              <th className="px-3 py-2 text-left text-xs font-semibold text-gray-500 w-12">{t("org_setup.table_no_column")}</th>
+              <th className="px-3 py-2 text-left text-xs font-semibold text-gray-500">{t("org_setup.table_level_name")}</th>
+              <th className="px-3 py-2 text-left text-xs font-semibold text-gray-500">{t("org_setup.table_role")}</th>
               <th className="px-3 py-2 text-left text-xs font-semibold text-gray-500">{t("org_setup.role_display_name")}</th>
-              <th className="px-3 py-2 text-center text-xs font-semibold text-gray-500 w-24">Holds Stock</th>
+              <th className="px-3 py-2 text-center text-xs font-semibold text-gray-500 w-24">{t("org_setup.table_holds_stock")}</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-100">
@@ -594,7 +594,13 @@ function LevelsTab({
                         }
                       }}
                       onKeyDown={(e) => { if (e.key === "Enter") e.currentTarget.blur(); }}
-                      placeholder={["Main Factory", "Region", "Warehouse", "Sub-Warehouse", "Counter"][idx] ?? ""}
+                      placeholder={[
+                        t("org_setup.level_placeholder_1"),
+                        t("org_setup.level_placeholder_2"),
+                        t("org_setup.level_placeholder_3"),
+                        t("org_setup.level_placeholder_4"),
+                        t("org_setup.level_placeholder_5"),
+                      ][idx] ?? ""}
                       disabled={persisted && gp.disabled}
                       title={persisted ? gp.title : undefined}
                       className="w-full border border-gray-300 rounded px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 disabled:opacity-60 disabled:cursor-not-allowed"
@@ -619,9 +625,9 @@ function LevelsTab({
                         })}
                         className="border border-gray-300 rounded px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
                       >
-                        <option value="">— Select Role —</option>
+                        <option value="">{t("org_setup.select_role_placeholder")}</option>
                         {ROLE_OPTIONS.map((r) => (
-                          <option key={r.code} value={r.code}>{r.code} — {r.label}</option>
+                          <option key={r.code} value={r.code}>{r.code} — {t(`roles.${r.code}`)}</option>
                         ))}
                       </select>
                     )}
@@ -694,7 +700,7 @@ function LevelsTab({
 
       {renameError && <p className="text-sm text-red-600">{renameError}</p>}
       {saveError && <p className="text-sm text-red-600">{saveError}</p>}
-      {saveOk && <p className="text-sm text-emerald-600 font-medium">Levels saved.</p>}
+      {saveOk && <p className="text-sm text-emerald-600 font-medium">{t("org_setup.levels_saved")}</p>}
 
       {stockToggleConfirm && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/40 px-4">
@@ -858,7 +864,7 @@ function NodeForm({
 
   async function save() {
     if (gp.disabled) return;
-    if (!form.name.trim()) { setError("Name is required."); return; }
+    if (!form.name.trim()) { setError(t("org_setup.node_name_required")); return; }
     setSaving(true);
     setError(null);
     try {
@@ -927,17 +933,19 @@ function NodeForm({
   return (
     <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 space-y-3 mt-2">
       <p className="text-xs font-semibold text-blue-800">
-        {editingNode ? `Edit: ${editingNode.name}` : `New node — ${levelLabel}`}
+        {editingNode
+          ? t("org_setup.edit_node_heading").replace("{name}", editingNode.name)
+          : t("org_setup.new_node_heading").replace("{level}", levelLabel)}
       </p>
 
       {/* Name */}
       <div>
-        <label className="block text-xs font-medium text-gray-600 mb-1">Name *</label>
+        <label className="block text-xs font-medium text-gray-600 mb-1">{t("org_setup.node_form_name_label")}</label>
         <input
           type="text"
           value={form.name}
           onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
-          placeholder="e.g. North Addis Warehouse"
+          placeholder={t("org_setup.node_form_name_placeholder")}
           autoFocus
           className="w-full text-sm border border-gray-300 rounded px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-blue-500"
         />
@@ -945,12 +953,12 @@ function NodeForm({
 
       {/* Location (optional) */}
       <div>
-        <label className="block text-xs font-medium text-gray-600 mb-1">Location / Address (optional)</label>
+        <label className="block text-xs font-medium text-gray-600 mb-1">{t("org_setup.node_location_label")}</label>
         <input
           type="text"
           value={form.location}
           onChange={(e) => setForm((f) => ({ ...f, location: e.target.value }))}
-          placeholder="e.g. Kirkos, Addis Ababa"
+          placeholder={t("org_setup.node_location_placeholder")}
           className="w-full text-sm border border-gray-300 rounded px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-blue-500"
         />
       </div>
@@ -958,13 +966,13 @@ function NodeForm({
       {/* Primary source (optional, not shown when editing) */}
       {!editingNode && (
         <div>
-          <label className="block text-xs font-medium text-gray-600 mb-1">Primary supply source (optional)</label>
+          <label className="block text-xs font-medium text-gray-600 mb-1">{t("org_setup.node_primary_source_label")}</label>
           <select
             value={form.primary_source_id}
             onChange={(e) => setForm((f) => ({ ...f, primary_source_id: e.target.value }))}
             className="w-full text-sm border border-gray-300 rounded px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-blue-500"
           >
-            <option value="">None</option>
+            <option value="">{t("common.none")}</option>
             {flat.filter((n) => n.is_stock_holding && n.is_active).map((n) => (
               <option key={n.id} value={n.id}>
                 L{n.hierarchy_level} — {n.name}
@@ -1019,14 +1027,14 @@ function NodeForm({
           title={gp.title}
           className="px-4 py-1.5 bg-blue-600 text-white text-sm font-semibold rounded hover:bg-blue-700 disabled:opacity-50"
         >
-          {saving ? t("common.saving") : "Save Node"}
+          {saving ? t("common.saving") : t("org_setup.save_node")}
         </button>
         <button
           type="button"
           onClick={onCancel}
           className="px-4 py-1.5 border border-gray-300 text-gray-600 text-sm font-medium rounded hover:bg-gray-50"
         >
-          Cancel
+          {t("common.cancel")}
         </button>
       </div>
     </div>
@@ -1196,7 +1204,7 @@ function TreeTab({
                 {canAddChild && (
                   <button
                     type="button"
-                    title={addGp.title ?? "Add child node"}
+                    title={addGp.title ?? t("org_setup.add_child_node")}
                     disabled={addGp.disabled}
                     onClick={() => { setAddParentId(node.id); setEditNodeId(null); }}
                     className="w-6 h-6 flex items-center justify-center text-xs rounded border border-emerald-300 text-emerald-700 hover:bg-emerald-100 bg-white disabled:opacity-40 disabled:cursor-not-allowed"
@@ -1206,7 +1214,7 @@ function TreeTab({
                 )}
                 <button
                   type="button"
-                  title={editGp.title ?? "Edit node"}
+                  title={editGp.title ?? t("org_setup.edit_node_action")}
                   disabled={editGp.disabled}
                   onClick={() => { setEditNodeId(node.id); setAddParentId(null); }}
                   className="w-6 h-6 flex items-center justify-center text-xs rounded border border-gray-300 text-gray-600 hover:bg-gray-100 bg-white disabled:opacity-40 disabled:cursor-not-allowed"
@@ -1376,7 +1384,7 @@ function TreeTab({
           title={addGp.title}
           className="px-4 py-2 border-2 border-dashed border-emerald-300 text-emerald-700 text-sm font-medium rounded-lg hover:bg-emerald-50 w-full disabled:opacity-40 disabled:cursor-not-allowed"
         >
-          + Add root node (L1)
+          {t("org_setup.add_root_node")}
         </button>
       )}
 
@@ -1432,645 +1440,6 @@ function TreeTab({
           {nodes.map((n) => renderNode(n, 0))}
         </div>
       )}
-    </div>
-  );
-}
-
-/* ── Tab 3: Approval Rules ────────────────────────────────────────────────── */
-
-interface ApprovalTier {
-  id: string;
-  max_quantity: number | null;  // null = unlimited (last tier)
-  approver_role: string;
-  auto_approve: boolean;
-  notify_above: boolean;
-  notify_all: boolean;
-}
-
-interface SavedApprovalRule {
-  transaction_type: string;
-  min_quantity: number | null;
-  max_quantity: number | null;
-  approver_role: string;
-  authority_level?: number;
-  approval_order: number;
-  auto_approve?: boolean;
-  notify_levels?: number[];
-}
-
-type TxTabKey = "PULL" | "PUSH" | "ADJUSTMENT" | "RECEIVE" | "ISSUE";
-
-const TX_TABS: { key: TxTabKey; label: string }[] = [
-  { key: "PULL",       label: "PULL / SISTER" },
-  { key: "PUSH",       label: "PUSH" },
-  { key: "ADJUSTMENT", label: "Adjustment" },
-  { key: "RECEIVE",    label: "Receive" },
-  { key: "ISSUE",      label: "Issue" },
-];
-
-const ALL_NOTIFY_LEVELS = [1, 2, 3, 4];
-const ROLE_AUTH: Record<string, number> = {
-  SA: 1, TA: 1, NM: 1, RM: 2, LM: 3, WM: 4,
-};
-
-function mkTier(
-  role = "",
-  maxQty: number | null = null,
-  autoApprove = false,
-): ApprovalTier {
-  return {
-    id: `${Date.now()}_${Math.random().toString(36).slice(2, 9)}`,
-    max_quantity: maxQty,
-    approver_role: role,
-    auto_approve: autoApprove,
-    notify_above: false,
-    notify_all: false,
-  };
-}
-
-// Build pre-populated tiers from hierarchy levels when no saved rules exist.
-// Sorted bottom→top: highest level_number (WH) → lowest level_number (NM/Main).
-// Ground tier: qty=100, auto_approve=true. Top tier: unlimited, auto_approve=false.
-function buildDefaultTiers(levels: HierarchyLevel[]): ApprovalTier[] {
-  if (levels.length === 0) return [mkTier()];
-  const sorted = [...levels].sort((a, b) => b.level_number - a.level_number);
-  return sorted.map((lv, i) => {
-    const isLast = i === sorted.length - 1;
-    // 10^(i+2): i=0→100, i=1→1000, i=2→10000 ...
-    const maxQty = isLast ? null : Math.pow(10, i + 2);
-    return mkTier(lv.default_role_code, maxQty, i === 0);
-  });
-}
-
-function tiersFromRules(rules: SavedApprovalRule[]): ApprovalTier[] {
-  if (!rules.length) return [mkTier()];
-  return rules
-    .slice()
-    .sort((a, b) => a.approval_order - b.approval_order)
-    .map((r, idx) => ({
-      id: `saved_${idx}`,
-      max_quantity: r.max_quantity,
-      approver_role: r.approver_role,
-      auto_approve: r.auto_approve ?? false,
-      notify_above: r.notify_levels?.length === 1,
-      notify_all: (r.notify_levels?.length ?? 0) >= 4,
-    }));
-}
-
-function tiersToRules(tiers: ApprovalTier[], txType: string): SavedApprovalRule[] {
-  let prev: number | null = null;
-  return tiers.map((tier, idx) => {
-    const authLevel = ROLE_AUTH[tier.approver_role] ?? 4;
-    const notifyLevels: number[] = tier.auto_approve
-      ? tier.notify_all
-        ? ALL_NOTIFY_LEVELS
-        : tier.notify_above
-          ? [Math.max(1, authLevel - 1)]
-          : []
-      : [];
-    const rule: SavedApprovalRule = {
-      transaction_type: txType,
-      min_quantity: prev,
-      max_quantity: tier.max_quantity,
-      approver_role: tier.approver_role,
-      authority_level: authLevel,
-      approval_order: idx + 1,
-      auto_approve: tier.auto_approve,
-      notify_levels: notifyLevels,
-    };
-    prev = tier.max_quantity;
-    return rule;
-  });
-}
-
-function validateTiers(tiers: ApprovalTier[]): string | null {
-  if (tiers.length === 0) return "At least one tier is required.";
-  const last = tiers[tiers.length - 1];
-  if (!last) return "At least one tier is required.";
-  if (last.max_quantity !== null) return "Last tier must be unlimited.";
-  for (let i = 0; i < tiers.length; i++) {
-    const tier = tiers[i];
-    if (!tier) continue;
-    const isLast = i === tiers.length - 1;
-    if (!isLast && tier.max_quantity === null) {
-      return `Tier ${i + 1}: enter an upper bound — only the last tier can be unlimited.`;
-    }
-    if (!tier.approver_role) return `Tier ${i + 1}: please select an approver.`;
-    if (!isLast) {
-      const nxt = tiers[i + 1];
-      if (nxt && nxt.max_quantity !== null && tier.max_quantity !== null && tier.max_quantity >= nxt.max_quantity) {
-        return `Upper bounds must be ascending: tier ${i + 1} (${tier.max_quantity.toLocaleString()} units) must be less than tier ${i + 2} (${nxt.max_quantity.toLocaleString()} units).`;
-      }
-    }
-  }
-  return null;
-}
-
-function TierTable({
-  tiers,
-  setTiers,
-  levels,
-}: {
-  tiers: ApprovalTier[];
-  setTiers: (fn: (prev: ApprovalTier[]) => ApprovalTier[]) => void;
-  levels: HierarchyLevel[];
-}) {
-  function updateTier(i: number, patch: Partial<ApprovalTier>) {
-    setTiers((prev) => prev.map((t, idx) => (idx === i ? { ...t, ...patch } : t)));
-  }
-
-  function deleteTier(i: number) {
-    setTiers((prev) => {
-      const next = prev.filter((_, idx) => idx !== i);
-      if (next.length === 0) return [mkTier()];
-      const lastItem = next[next.length - 1];
-      if (lastItem !== undefined && lastItem.max_quantity !== null) {
-        const updated: ApprovalTier = { ...lastItem, max_quantity: null };
-        next[next.length - 1] = updated;
-      }
-      return next;
-    });
-  }
-
-  function addTier() {
-    setTiers((prev) => {
-      const maxSoFar = prev
-        .slice(0, -1)
-        .reduce((m, tier) => Math.max(m, tier.max_quantity ?? 0), 0);
-      const proposed = maxSoFar > 0 ? maxSoFar * 10 : 100;
-      const updated = prev.map((tier, i) =>
-        i === prev.length - 1 ? { ...tier, max_quantity: proposed } : tier
-      );
-      return [...updated, mkTier()];
-    });
-  }
-
-  const lastTier = tiers[tiers.length - 1];
-  // Hide "+ Add Tier" when the last tier already requires the highest authority (Level 1 = NM/TA/SA)
-  const canAddTier = !lastTier || (ROLE_AUTH[lastTier.approver_role] ?? 5) > 1;
-
-  return (
-    <div className="space-y-3">
-      {/* Enhancement 5 — helper instruction note */}
-      <div className="flex gap-2 items-start px-3 py-2 bg-blue-50 border border-blue-200 rounded-lg">
-        <span className="text-blue-500 shrink-0 mt-0.5">ℹ</span>
-        <p className="text-xs text-blue-800 whitespace-pre-line">{t("approval.tier_help")}</p>
-      </div>
-
-      <div className="overflow-x-auto rounded-lg border border-gray-200">
-        <table className="w-full text-sm">
-          <thead className="bg-gray-50 border-b border-gray-200">
-            <tr>
-              <th className="px-3 py-2 text-left text-xs font-semibold text-gray-500 w-10">No</th>
-              <th className="px-3 py-2 text-left text-xs font-semibold text-gray-500 w-40">Up To (units)</th>
-              <th className="px-3 py-2 text-left text-xs font-semibold text-gray-500">Approver</th>
-              <th className="px-3 py-2 text-left text-xs font-semibold text-gray-500 w-32">{t("approval.auto_approve")}</th>
-              <th className="px-3 py-2 w-10"></th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-gray-100">
-            {tiers.map((tier, i) => {
-              const isLastTier = i === tiers.length - 1;
-              const approverAuthLevel = ROLE_AUTH[tier.approver_role] ?? 5;
-              const isLevel1Approver = approverAuthLevel === 1;
-              return (
-                <Fragment key={tier.id}>
-                  <tr className="hover:bg-gray-50">
-                    <td className="px-3 py-2.5 text-gray-400 font-mono text-xs">{i + 1}</td>
-                    <td className="px-3 py-2.5">
-                      {isLastTier ? (
-                        <span className="text-sm text-gray-400 italic">unlimited</span>
-                      ) : (
-                        <input
-                          type="number"
-                          min={1}
-                          value={tier.max_quantity ?? ""}
-                          onChange={(e) =>
-                            updateTier(i, {
-                              max_quantity: e.target.value ? Number(e.target.value) : null,
-                            })
-                          }
-                          className="w-28 border border-gray-300 rounded px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
-                        />
-                      )}
-                    </td>
-                    <td className="px-3 py-2.5">
-                      <select
-                        value={tier.approver_role}
-                        onChange={(e) => updateTier(i, { approver_role: e.target.value })}
-                        className="border border-gray-300 rounded px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 bg-white"
-                      >
-                        <option value="">— select —</option>
-                        {levels.map((lv) => (
-                          <option key={lv.default_role_code} value={lv.default_role_code}>
-                            {lv.level_name} ({lv.role_display_label})
-                          </option>
-                        ))}
-                      </select>
-                    </td>
-                    <td className="px-3 py-2.5">
-                      <label className="flex items-center gap-1.5 cursor-pointer">
-                        <input
-                          type="checkbox"
-                          checked={tier.auto_approve}
-                          onChange={(e) =>
-                            updateTier(i, {
-                              auto_approve: e.target.checked,
-                              notify_above: e.target.checked ? tier.notify_above : false,
-                              notify_all: e.target.checked ? tier.notify_all : false,
-                            })
-                          }
-                          className="rounded"
-                        />
-                        <span className="text-xs text-gray-600">{t("approval.auto_approve")}</span>
-                      </label>
-                    </td>
-                    {/* Enhancement 4 — delete button on every tier */}
-                    <td className="px-3 py-2.5">
-                      <button
-                        type="button"
-                        onClick={() => deleteTier(i)}
-                        className="text-red-400 hover:text-red-600 text-base leading-none"
-                        aria-label="Remove tier"
-                      >
-                        🗑
-                      </button>
-                    </td>
-                  </tr>
-                  {tier.auto_approve && (
-                    <tr key={`${tier.id}-notify`}>
-                      <td></td>
-                      <td colSpan={3} className="px-3 py-2 bg-blue-50">
-                        <div className="flex items-center gap-4 text-xs text-gray-600 pl-2 border-l-2 border-blue-300">
-                          <span className="font-medium">Notify:</span>
-                          {/* Enhancement 3 — hide "Notify level above" for Level 1 approvers */}
-                          {!isLevel1Approver && (
-                            <label className="flex items-center gap-1 cursor-pointer">
-                              <input
-                                type="checkbox"
-                                checked={tier.notify_above}
-                                onChange={(e) => updateTier(i, { notify_above: e.target.checked })}
-                                className="rounded"
-                              />
-                              {t("approval.notify_above")}
-                            </label>
-                          )}
-                          <label className="flex items-center gap-1 cursor-pointer">
-                            <input
-                              type="checkbox"
-                              checked={tier.notify_all}
-                              onChange={(e) => updateTier(i, { notify_all: e.target.checked })}
-                              className="rounded"
-                            />
-                            {t("approval.notify_all")}
-                          </label>
-                        </div>
-                      </td>
-                      <td className="bg-blue-50"></td>
-                    </tr>
-                  )}
-                </Fragment>
-              );
-            })}
-          </tbody>
-        </table>
-      </div>
-      {/* Enhancement 2 — hide "+ Add Tier" when already at highest authority (Level 1) */}
-      {canAddTier && (
-        <div className="flex items-center gap-4">
-          <button
-            type="button"
-            onClick={addTier}
-            className="px-3 py-1.5 border border-dashed border-emerald-400 text-emerald-700 text-sm rounded hover:bg-emerald-50"
-          >
-            + {t("approval.add_tier")}
-          </button>
-          <p className="text-xs text-gray-400">{t("approval.tier_hint")}</p>
-        </div>
-      )}
-    </div>
-  );
-}
-
-function defaultCustomTiers(): Record<TxTabKey, ApprovalTier[]> {
-  return {
-    PULL:       [mkTier()],
-    PUSH:       [mkTier()],
-    ADJUSTMENT: [mkTier()],
-    RECEIVE:    [mkTier()],
-    ISSUE:      [mkTier()],
-  };
-}
-
-function ApprovalRulesTab({ tenantId }: { tenantId: string }) {
-  const qc = useQueryClient();
-  const [simpleMode, setSimpleMode] = useState(true);
-  const [simpleTiers, setSimpleTiers] = useState<ApprovalTier[]>([mkTier()]);
-  const [customTiers, setCustomTiers] = useState<Record<TxTabKey, ApprovalTier[]>>(
-    defaultCustomTiers
-  );
-  const [activeCustomTab, setActiveCustomTab] = useState<TxTabKey>("PULL");
-  const [initialized, setInitialized] = useState(false);
-  const [pendingSwitch, setPendingSwitch] = useState(false);
-  const [switchNotice, setSwitchNotice] = useState<string | null>(null);
-  const [gapError, setGapError] = useState<string | null>(null);
-  const [saveOk, setSaveOk] = useState(false);
-  const [saveErr, setSaveErr] = useState<string | null>(null);
-
-  const { data: levels = [], isLoading: levelsLoading } = useQuery<HierarchyLevel[]>({
-    queryKey: ["hierarchy-config", tenantId],
-    queryFn: () => api.get<HierarchyLevel[]>(`/api/v1/tenants/${tenantId}/hierarchy/config`),
-    staleTime: 30_000,
-  });
-
-  const { data: savedRules = [], isLoading: rulesLoading } = useQuery<SavedApprovalRule[]>({
-    queryKey: ["approval-rules", tenantId],
-    queryFn: () => api.get<SavedApprovalRule[]>(`/api/v1/tenants/${tenantId}/approval-rules`),
-    staleTime: 30_000,
-  });
-
-  if (!initialized && !rulesLoading && !levelsLoading) {
-    if (savedRules.length > 0) {
-      const pullTiers = tiersFromRules(
-        savedRules.filter((r) => r.transaction_type === "PULL")
-      );
-      const allSame = (["PUSH", "ADJUSTMENT", "RECEIVE", "ISSUE"] as const).every((tx) => {
-        const compare = tiersFromRules(savedRules.filter((r) => r.transaction_type === tx));
-        return (
-          JSON.stringify(
-            compare.map(({ approver_role, max_quantity, auto_approve }) => ({
-              approver_role, max_quantity, auto_approve,
-            }))
-          ) ===
-          JSON.stringify(
-            pullTiers.map(({ approver_role, max_quantity, auto_approve }) => ({
-              approver_role, max_quantity, auto_approve,
-            }))
-          )
-        );
-      });
-
-      if (allSame) {
-        setSimpleMode(true);
-        setSimpleTiers(pullTiers.length > 0 ? pullTiers : [mkTier()]);
-      } else {
-        setSimpleMode(false);
-        setCustomTiers({
-          PULL:       tiersFromRules(savedRules.filter((r) => r.transaction_type === "PULL")),
-          PUSH:       tiersFromRules(savedRules.filter((r) => r.transaction_type === "PUSH")),
-          ADJUSTMENT: tiersFromRules(savedRules.filter((r) => r.transaction_type === "ADJUSTMENT")),
-          RECEIVE:    tiersFromRules(savedRules.filter((r) => r.transaction_type === "RECEIVE")),
-          ISSUE:      tiersFromRules(savedRules.filter((r) => r.transaction_type === "ISSUE")),
-        });
-      }
-    } else if (levels.length > 0) {
-      const baseTiers = buildDefaultTiers(levels);
-      const freshCopy = () =>
-        baseTiers.map((tier) => ({
-          ...tier,
-          id: `${Date.now()}_${Math.random().toString(36).slice(2, 9)}`,
-        }));
-      setSimpleTiers(freshCopy());
-      setCustomTiers({
-        PULL:       freshCopy(),
-        PUSH:       freshCopy(),
-        ADJUSTMENT: freshCopy(),
-        RECEIVE:    freshCopy(),
-        ISSUE:      freshCopy(),
-      });
-    }
-    setInitialized(true);
-  }
-
-  function buildRules(mode?: boolean): SavedApprovalRule[] {
-    const useSimple = mode ?? simpleMode;
-    if (useSimple) {
-      return (["PULL", "SISTER", "PUSH", "ADJUSTMENT", "RECEIVE", "ISSUE"] as const).flatMap(
-        (tx) => tiersToRules(simpleTiers, tx)
-      );
-    }
-    return [
-      ...tiersToRules(customTiers["PULL"],       "PULL"),
-      ...tiersToRules(customTiers["PULL"],       "SISTER"),
-      ...tiersToRules(customTiers["PUSH"],       "PUSH"),
-      ...tiersToRules(customTiers["ADJUSTMENT"], "ADJUSTMENT"),
-      ...tiersToRules(customTiers["RECEIVE"],    "RECEIVE"),
-      ...tiersToRules(customTiers["ISSUE"],      "ISSUE"),
-    ];
-  }
-
-  function handleConfirmSwitch() {
-    const newMode = !simpleMode;
-    const notice = newMode
-      ? t("approval.switched_to_simple")
-      : t("approval.switched_to_custom");
-    setSimpleMode(newMode);
-    setPendingSwitch(false);
-    setSwitchNotice(notice);
-    setSaveOk(false);
-    saveMutation.mutate({ rules: buildRules(newMode), simple_mode: newMode });
-  }
-
-  function handleSave() {
-    const tierSets = simpleMode
-      ? [simpleTiers]
-      : Object.values(customTiers);
-    for (const ts of tierSets) {
-      const err = validateTiers(ts);
-      if (err) { setGapError(err); return; }
-    }
-    setGapError(null);
-    setSwitchNotice(null);
-    saveMutation.mutate({ rules: buildRules(), simple_mode: simpleMode });
-  }
-
-  function copyToAll() {
-    const src = customTiers[activeCustomTab];
-    setCustomTiers({
-      PULL:       src.map((t) => ({ ...t, id: `${Date.now()}_${Math.random()}` })),
-      PUSH:       src.map((t) => ({ ...t, id: `${Date.now()}_${Math.random()}` })),
-      ADJUSTMENT: src.map((t) => ({ ...t, id: `${Date.now()}_${Math.random()}` })),
-      RECEIVE:    src.map((t) => ({ ...t, id: `${Date.now()}_${Math.random()}` })),
-      ISSUE:      src.map((t) => ({ ...t, id: `${Date.now()}_${Math.random()}` })),
-    });
-  }
-
-  const saveMutation = useMutation({
-    mutationFn: ({ rules, simple_mode }: { rules: SavedApprovalRule[]; simple_mode: boolean }) =>
-      api.put(`/api/v1/tenants/${tenantId}/approval-rules`, { simple_mode, rules }),
-    onSuccess: () => {
-      void qc.invalidateQueries({ queryKey: ["approval-rules", tenantId] });
-      setSaveOk(true);
-      setSaveErr(null);
-    },
-    onError: (e: unknown) => {
-      setSaveErr(e instanceof Error ? e.message : t("common.error"));
-      setSaveOk(false);
-    },
-  });
-
-  const customTabCls = (k: TxTabKey) =>
-    `px-3 py-1.5 text-xs font-semibold border-b-2 transition-all ${
-      activeCustomTab === k
-        ? "border-emerald-600 text-emerald-700"
-        : "border-transparent text-gray-500 hover:text-gray-700"
-    }`;
-
-  if (rulesLoading) {
-    return <p className="text-sm text-gray-400 py-8 text-center">{t("common.loading")}</p>;
-  }
-
-  return (
-    <div className="space-y-6">
-      <div>
-        <h3 className="text-base font-semibold text-gray-900">{t("approval_rules.section")}</h3>
-        <p className="text-sm text-gray-500 mt-0.5">
-          {t("approval.rules_desc")}
-        </p>
-      </div>
-
-      {/* Mode selector */}
-      <div className="space-y-3">
-        <div className="flex gap-3">
-          <button
-            type="button"
-            onClick={() => !simpleMode && setPendingSwitch(true)}
-            className={`flex-1 text-left rounded-lg border-2 px-4 py-3 transition-all ${
-              simpleMode
-                ? "border-emerald-500 bg-emerald-50"
-                : "border-gray-200 bg-white hover:border-gray-300"
-            }`}
-          >
-            <div className="flex items-center justify-between mb-1">
-              <span className="text-sm font-semibold text-gray-900">{t("approval.simple_mode_title")}</span>
-              {simpleMode ? (
-                <span className="text-xs font-medium text-emerald-700 bg-emerald-100 px-2 py-0.5 rounded-full">
-                  {"●"} {t("approval.active")}
-                </span>
-              ) : (
-                <span className="text-xs text-gray-400 bg-gray-100 px-2 py-0.5 rounded-full">
-                  {"○"} {t("approval.saved")}
-                </span>
-              )}
-            </div>
-            <p className="text-xs text-gray-500">{t("approval.simple_mode_desc")}</p>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => simpleMode && setPendingSwitch(true)}
-            className={`flex-1 text-left rounded-lg border-2 px-4 py-3 transition-all ${
-              !simpleMode
-                ? "border-emerald-500 bg-emerald-50"
-                : "border-gray-200 bg-white hover:border-gray-300"
-            }`}
-          >
-            <div className="flex items-center justify-between mb-1">
-              <span className="text-sm font-semibold text-gray-900">{t("approval.custom_mode_title")}</span>
-              {!simpleMode ? (
-                <span className="text-xs font-medium text-emerald-700 bg-emerald-100 px-2 py-0.5 rounded-full">
-                  {"●"} {t("approval.active")}
-                </span>
-              ) : (
-                <span className="text-xs text-gray-400 bg-gray-100 px-2 py-0.5 rounded-full">
-                  {"○"} {t("approval.saved")}
-                </span>
-              )}
-            </div>
-            <p className="text-xs text-gray-500">{t("approval.custom_mode_desc")}</p>
-          </button>
-        </div>
-
-        {pendingSwitch && (
-          <div className="rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 space-y-2">
-            <p className="text-sm text-amber-800">
-              {"⚠"} {simpleMode ? t("approval.switch_warning_custom") : t("approval.switch_warning_simple")}
-            </p>
-            <div className="flex gap-2">
-              <button
-                type="button"
-                onClick={handleConfirmSwitch}
-                className="px-3 py-1.5 bg-emerald-700 text-white text-xs font-semibold rounded hover:bg-emerald-800"
-              >
-                {t("approval.confirm_switch")}
-              </button>
-              <button
-                type="button"
-                onClick={() => setPendingSwitch(false)}
-                className="px-3 py-1.5 border border-gray-300 text-gray-700 text-xs rounded hover:bg-gray-50"
-              >
-                {t("common.cancel")}
-              </button>
-            </div>
-          </div>
-        )}
-      </div>
-
-      {/* Simple mode — one table for all transaction types */}
-      {simpleMode && (
-        <TierTable tiers={simpleTiers} setTiers={setSimpleTiers} levels={levels} />
-      )}
-
-      {/* Custom mode — per-type tabs */}
-      {!simpleMode && (
-        <div className="space-y-4">
-          <div className="flex border-b border-gray-200">
-            {TX_TABS.map(({ key, label }) => (
-              <button
-                key={key}
-                type="button"
-                className={customTabCls(key)}
-                onClick={() => setActiveCustomTab(key)}
-              >
-                {label}
-              </button>
-            ))}
-          </div>
-
-          {activeCustomTab === "PULL" && (
-            <p className="text-xs text-gray-500 italic">
-              {t("approval.sister_shares_pull")}
-            </p>
-          )}
-
-          <TierTable
-            tiers={customTiers[activeCustomTab]}
-            setTiers={(fn) =>
-              setCustomTiers((prev) => ({
-                ...prev,
-                [activeCustomTab]: fn(prev[activeCustomTab]),
-              }))
-            }
-            levels={levels}
-          />
-
-          <button
-            type="button"
-            onClick={copyToAll}
-            className="px-3 py-1.5 border border-gray-300 text-gray-600 text-sm rounded hover:bg-gray-50"
-          >
-            {t("approval.copy_to_all")}
-          </button>
-        </div>
-      )}
-
-      {gapError && (
-        <p className="text-sm text-red-600 bg-red-50 border border-red-200 rounded px-3 py-2">
-          {gapError}
-        </p>
-      )}
-      {saveErr && <p className="text-sm text-red-600">{saveErr}</p>}
-      {saveOk && !switchNotice && <p className="text-sm text-emerald-600 font-medium">{t("approval_rules.saved")}</p>}
-      {switchNotice && <p className="text-sm text-emerald-600 font-medium">{switchNotice}</p>}
-
-      <button
-        type="button"
-        onClick={handleSave}
-        disabled={saveMutation.isPending}
-        className="px-5 py-2 bg-emerald-700 text-white text-sm font-semibold rounded-lg hover:bg-emerald-800 disabled:opacity-50"
-      >
-        {saveMutation.isPending ? t("common.saving") : t("approval_rules.save_button")}
-      </button>
     </div>
   );
 }
@@ -2215,7 +1584,7 @@ function PositionsTab({ tenantId }: { tenantId: string }) {
 
   async function savePosition() {
     if (gp.disabled) return;
-    if (!formTitle.trim()) { setFormErr(t("position.title") + " is required."); return; }
+    if (!formTitle.trim()) { setFormErr(t("position.title_required")); return; }
     setSaving(true); setFormErr(null);
     try {
       const body = {
@@ -2253,7 +1622,7 @@ function PositionsTab({ tenantId }: { tenantId: string }) {
 
   async function deletePosition(posId: string, title: string) {
     if (gp.disabled) return;
-    if (!confirm(`Delete position "${title}"?`)) return;
+    if (!confirm(t("position.confirm_delete").replace("{title}", title))) return;
     try {
       await api.delete(`/api/v1/tenants/${tenantId}/positions/${posId}`);
       void qc.invalidateQueries({ queryKey: ["positions", tenantId] });
@@ -2306,7 +1675,7 @@ function PositionsTab({ tenantId }: { tenantId: string }) {
       {/* Left: tree */}
       <div className="w-64 shrink-0 space-y-1 border-r border-gray-200 pr-4 overflow-y-auto" style={{ maxHeight: "600px" }}>
         {nodesLoading ? <p className="text-xs text-gray-400 py-4 text-center">{t("common.loading")}</p>
-          : nodes.length === 0 ? <p className="text-xs text-gray-400 py-4 text-center">No nodes. Set up the Tree first.</p>
+          : nodes.length === 0 ? <p className="text-xs text-gray-400 py-4 text-center">{t("org_setup.no_nodes_for_positions")}</p>
           : nodes.map((n) => renderTreeNode(n, 0))}
       </div>
 
@@ -2333,11 +1702,11 @@ function PositionsTab({ tenantId }: { tenantId: string }) {
             {/* Add/edit form */}
             {(showAddForm || editPosId) && (
               <div className="border border-emerald-300 rounded-lg p-4 bg-emerald-50 space-y-3">
-                <p className="text-xs font-bold uppercase text-emerald-700">{editPosId ? "Edit Position" : t("position.add")}</p>
+                <p className="text-xs font-bold uppercase text-emerald-700">{editPosId ? t("org_setup.edit_position_heading") : t("position.add")}</p>
                 <div>
                   <label className="block text-xs font-bold text-gray-700 mb-1">{t("position.title")} *</label>
                   <input value={formTitle} onChange={(e) => setFormTitle(e.target.value)}
-                    className="w-full border border-gray-300 rounded px-2.5 py-1.5 text-sm" placeholder="e.g. Warehouse Manager" />
+                    className="w-full border border-gray-300 rounded px-2.5 py-1.5 text-sm" placeholder={t("org_setup.position_title_placeholder")} />
                 </div>
                 <div>
                   <label className="block text-xs font-bold text-gray-700 mb-1">{t("position.role")} *</label>
@@ -2349,14 +1718,14 @@ function PositionsTab({ tenantId }: { tenantId: string }) {
                     if (NO_SELF_APPROVAL_ROLES.has(next)) setFormSAEnabled(false);
                   }}
                     className="w-full border border-gray-300 rounded px-2.5 py-1.5 text-sm bg-white">
-                    {POSITION_ROLES.map((r) => <option key={r.code} value={r.code}>{r.label} ({r.code})</option>)}
+                    {POSITION_ROLES.map((r) => <option key={r.code} value={r.code}>{t(`roles.${r.code}`)} ({r.code})</option>)}
                   </select>
                 </div>
                 <div>
                   <label className="block text-xs font-bold text-gray-700 mb-1">{t("position.reports_to")}</label>
                   <select value={formReportsTo} onChange={(e) => setFormReportsTo(e.target.value)}
                     className="w-full border border-gray-300 rounded px-2.5 py-1.5 text-sm bg-white">
-                    <option value="">— none —</option>
+                    <option value="">{t("org_setup.no_reports_to")}</option>
                     {allPositions.filter((p) => p.id !== editPosId).map((p) => (
                       <option key={p.id} value={p.id}>{p.title} ({p.role_code}) — {positionNodeMap.get(p.id) ?? ""}</option>
                     ))}
@@ -2481,7 +1850,7 @@ function PositionsTab({ tenantId }: { tenantId: string }) {
                           />
                           {pos.reports_to_title ? (
                             <span>
-                              · Reports to: {pos.reports_to_title}
+                              {t("org_setup.reports_to_prefix")} {pos.reports_to_title}
                               {pos.reports_to_position_id && positionNodeMap.get(pos.reports_to_position_id) !== selectedGroup?.node_name
                                 ? ` (${positionNodeMap.get(pos.reports_to_position_id) ?? ""})`
                                 : ""}
@@ -2840,7 +2209,7 @@ function AdjustmentRulesSection({ tenantId, onRuleCountChange }: { tenantId: str
             <Fragment key={rule.id ?? `local_${idx}`}>
             <div className="border border-gray-200 rounded-xl p-4 bg-white space-y-3">
               <div className="flex items-center justify-between">
-                <span className="text-xs font-bold uppercase text-gray-500">Rule {idx + 1}</span>
+                <span className="text-xs font-bold uppercase text-gray-500">{t("org_setup.rule_label").replace("{n}", String(idx + 1))}</span>
                 <div className="flex items-center gap-2">
                   <label className="text-[10px] font-semibold text-gray-400 uppercase">{t("approval_rule.priority_label")}</label>
                   <input type="number" min={0} value={rule.priority}
@@ -2907,6 +2276,7 @@ function AdjustmentRulesSection({ tenantId, onRuleCountChange }: { tenantId: str
                       <input type="number" min={0} value={rule.value_limit} placeholder={t("approval_rule.adj_value_limit")}
                         onChange={(e) => updateRule(idx, { value_limit: e.target.value })}
                         className="w-32 border border-gray-300 rounded px-2 py-1 text-xs" />
+                      {/* i18n-ignore: currency code */}
                       <span className="text-xs text-gray-400">ETB</span>
                     </>
                   )}
@@ -2998,7 +2368,7 @@ function AdjustmentRulesSection({ tenantId, onRuleCountChange }: { tenantId: str
                   </span>
                   <button type="button"
                     onClick={() => setDismissedHints((prev) => new Set(prev).add(h.key))}
-                    className="shrink-0 text-blue-400 hover:text-blue-600" aria-label="Dismiss">✕</button>
+                    className="shrink-0 text-blue-400 hover:text-blue-600" aria-label={t("common.dismiss")}>✕</button>
                 </div>
               ))}
             </Fragment>
@@ -3298,7 +2668,7 @@ function ApprovalRulesV2Tab({ tenantId, prefillLevel }: { tenantId: string; pref
         <>
           {(ttLoading || rulesLoading) && <p className="text-sm text-gray-400 py-8 text-center">{t("common.loading")}</p>}
           {!ttLoading && !rulesLoading && activeTypes.length === 0 && (
-            <p className="text-sm text-gray-400 py-8 text-center">No active transfer types. Configure them in the Transfer Types tab first.</p>
+            <p className="text-sm text-gray-400 py-8 text-center">{t("org_setup.no_active_transfer_types")}</p>
           )}
           {!ttLoading && !rulesLoading && activeTypes.length > 0 && (<>
             {/* Type tabs */}
@@ -3338,7 +2708,7 @@ function ApprovalRulesV2Tab({ tenantId, prefillLevel }: { tenantId: string; pref
             <div className="border border-gray-200 rounded-xl p-4 bg-white space-y-3">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-3">
-                  <span className="text-xs font-bold uppercase text-gray-500">Rule {rIdx + 1}</span>
+                  <span className="text-xs font-bold uppercase text-gray-500">{t("org_setup.rule_label").replace("{n}", String(rIdx + 1))}</span>
                   <div className="flex flex-col gap-0.5">
                     <div className="flex items-center gap-1.5">
                       <label className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide">
@@ -3390,19 +2760,19 @@ function ApprovalRulesV2Tab({ tenantId, prefillLevel }: { tenantId: string; pref
                 </div>
                 {(rule.threshold_type === "QUANTITY" || rule.threshold_type === "EITHER" || rule.threshold_type === "BOTH") && (
                   <div className="flex items-center gap-2 mt-2">
-                    <input type="number" min={0} value={rule.quantity_min} placeholder="min" onChange={(e) => updateRule(activeType, rIdx, { quantity_min: Number(e.target.value) })}
+                    <input type="number" min={0} value={rule.quantity_min} placeholder={t("approval_rule.qty_min_placeholder")} onChange={(e) => updateRule(activeType, rIdx, { quantity_min: Number(e.target.value) })}
                       className="w-24 border border-gray-300 rounded px-2 py-1 text-xs" />
-                    <span className="text-xs text-gray-400">to</span>
-                    <input type="number" min={0} value={rule.quantity_max ?? ""} placeholder="unlimited" onChange={(e) => updateRule(activeType, rIdx, { quantity_max: e.target.value ? Number(e.target.value) : null })}
+                    <span className="text-xs text-gray-400">{t("approval_rule.range_to")}</span>
+                    <input type="number" min={0} value={rule.quantity_max ?? ""} placeholder={t("approval_rule.qty_max_unlimited_placeholder")} onChange={(e) => updateRule(activeType, rIdx, { quantity_max: e.target.value ? Number(e.target.value) : null })}
                       className="w-28 border border-gray-300 rounded px-2 py-1 text-xs" />
-                    <span className="text-xs text-gray-400">units</span>
+                    <span className="text-xs text-gray-400">{t("approval_rule.units_suffix")}</span>
                   </div>
                 )}
               </div>
 
               {/* Approval steps */}
               <div>
-                <p className="text-xs font-bold text-gray-600 mb-2">Approval Steps</p>
+                <p className="text-xs font-bold text-gray-600 mb-2">{t("org_setup.approval_steps_heading")}</p>
                 <div className="space-y-2">
                   {rule.steps.map((step, sIdx) => (
                     <div key={sIdx} className="flex items-center gap-2 flex-wrap bg-gray-50 rounded p-2">
@@ -3450,7 +2820,7 @@ function ApprovalRulesV2Tab({ tenantId, prefillLevel }: { tenantId: string; pref
                   </span>
                   <button type="button"
                     onClick={() => setDismissedHints((prev) => new Set(prev).add(h.key))}
-                    className="shrink-0 text-blue-400 hover:text-blue-600" aria-label="Dismiss">✕</button>
+                    className="shrink-0 text-blue-400 hover:text-blue-600" aria-label={t("common.dismiss")}>✕</button>
                 </div>
               ))}
             </Fragment>
@@ -3465,7 +2835,7 @@ function ApprovalRulesV2Tab({ tenantId, prefillLevel }: { tenantId: string; pref
 
           {gp.title && <p className="text-xs font-semibold text-red-600 bg-red-50 border border-red-200 rounded px-3 py-2">{gp.title}</p>}
           {saveErr && <p className="text-sm text-red-600">{saveErr}</p>}
-          {saveOk && <p className="text-sm text-emerald-600 font-medium">✓ Saved</p>}
+          {saveOk && <p className="text-sm text-emerald-600 font-medium">✓ {t("common.saved")}</p>}
           <button type="button" onClick={() => void save()} disabled={saving || gp.disabled} title={gp.title}
             className="px-4 py-2 bg-blue-600 text-white text-sm font-semibold rounded hover:bg-blue-700 disabled:opacity-50">
             {saving ? t("common.saving") : t("approval_rule.save")}
@@ -3660,7 +3030,7 @@ function PersonnelV2Tab({ tenantId }: { tenantId: string }) {
 
   async function createUser() {
     if (createGp.disabled) return;
-    if (!uName.trim() || !uEmail.trim() || !uPass.trim()) { setFormErr("Name, email and password are required."); return; }
+    if (!uName.trim() || !uEmail.trim() || !uPass.trim()) { setFormErr(t("personnel.create_user_fields_required")); return; }
     setSaving(true); setFormErr(null);
     try {
       await api.post(`/api/v1/tenants/${tenantId}/users`, {
@@ -3705,23 +3075,23 @@ function PersonnelV2Tab({ tenantId }: { tenantId: string }) {
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="block text-xs font-bold text-gray-700 mb-1">{t("personnel.full_name")} *</label>
-              <input value={uName} onChange={(e) => setUName(e.target.value)} className="w-full border border-gray-300 rounded px-2.5 py-1.5 text-sm" placeholder="Full name" />
+              <input value={uName} onChange={(e) => setUName(e.target.value)} className="w-full border border-gray-300 rounded px-2.5 py-1.5 text-sm" placeholder={t("personnel.full_name_placeholder")} />
             </div>
             <div>
               <label className="block text-xs font-bold text-gray-700 mb-1">{t("personnel.email")} *</label>
-              <input type="email" value={uEmail} onChange={(e) => setUEmail(e.target.value)} className="w-full border border-gray-300 rounded px-2.5 py-1.5 text-sm" placeholder="email@company.com" />
+              <input type="email" value={uEmail} onChange={(e) => setUEmail(e.target.value)} className="w-full border border-gray-300 rounded px-2.5 py-1.5 text-sm" placeholder={t("personnel.email_placeholder")} />
             </div>
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="block text-xs font-bold text-gray-700 mb-1">Temporary Password *</label>
+              <label className="block text-xs font-bold text-gray-700 mb-1">{t("personnel.temp_password")} *</label>
               <input type="password" value={uPass} onChange={(e) => setUPass(e.target.value)} className="w-full border border-gray-300 rounded px-2.5 py-1.5 text-sm" />
             </div>
             <div>
-              <label className="block text-xs font-bold text-gray-700 mb-1">{t("personnel.primary_facility")} (optional)</label>
+              <label className="block text-xs font-bold text-gray-700 mb-1">{t("personnel.primary_facility")} ({t("common.optional")})</label>
               <select value={uPosId} onChange={(e) => setUPosId(e.target.value)}
                 className="w-full border border-gray-300 rounded px-2.5 py-1.5 text-sm bg-white">
-                <option value="">— assign later —</option>
+                <option value="">{t("personnel.assign_later_placeholder")}</option>
                 {allPositions.map((p) => <option key={p.id} value={p.id}>{p.title} · {posGroups.find((g) => g.positions.some((pos) => pos.id === p.id))?.node_name ?? ""}</option>)}
               </select>
             </div>
@@ -3747,15 +3117,15 @@ function PersonnelV2Tab({ tenantId }: { tenantId: string }) {
           {users.map((u) => (
             <div key={u.id} className={`border rounded-xl p-3 flex items-start justify-between gap-3 ${u.is_active ? "border-gray-200 bg-white" : "border-gray-100 bg-gray-50 opacity-60"}`}>
               <div className="min-w-0 flex-1">
-                <p className="text-sm font-semibold text-gray-800 m-0">{u.name} {u.must_reset_password && <span className="text-[10px] bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded-full ml-1">pwd reset</span>}</p>
+                <p className="text-sm font-semibold text-gray-800 m-0">{u.name} {u.must_reset_password && <span className="text-[10px] bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded-full ml-1">{t("personnel.pwd_reset_badge")}</span>}</p>
                 <p className="text-xs text-gray-500 m-0">{u.email}</p>
                 {u.primary_position ? (
                   <p className="text-xs text-emerald-700 m-0 mt-0.5">✓ {u.primary_position.title} · {u.primary_position.node_name}</p>
                 ) : (
-                  <p className="text-xs text-amber-600 m-0 mt-0.5">⚠ No position assigned</p>
+                  <p className="text-xs text-amber-600 m-0 mt-0.5">{t("personnel.no_position_badge")}</p>
                 )}
                 {u.acting_positions.length > 0 && (
-                  <p className="text-xs text-gray-400 m-0">{u.acting_positions.length} acting assignment{u.acting_positions.length > 1 ? "s" : ""}</p>
+                  <p className="text-xs text-gray-400 m-0">{t("personnel.acting_assignments_count").replace("{n}", String(u.acting_positions.length))}</p>
                 )}
               </div>
               <div className="flex items-center gap-1.5 shrink-0">
@@ -3846,9 +3216,9 @@ function BrandingTab({ tenantId }: { tenantId: string }) {
     errKey: string,
   ) {
     if (gp.disabled) return;
-    if (file.size > maxBytes) { setErr(t(errKey) || "File too large"); return; }
+    if (file.size > maxBytes) { setErr(t(errKey)); return; }
     if (!["image/jpeg","image/png","image/webp"].includes(file.type)) {
-      setErr(t("product.image_invalid_type") || "Only JPG, PNG, WebP accepted"); return;
+      setErr(t("product.image_invalid_type")); return;
     }
     setErr(""); setUploading(true);
     try {
@@ -3890,7 +3260,7 @@ function BrandingTab({ tenantId }: { tenantId: string }) {
       />
       {saved && (
         <div className="bg-emerald-50 border border-emerald-200 rounded px-4 py-2 text-sm text-emerald-700 font-semibold">
-          {t("settings.branding_saved") || "Branding saved."}
+          {t("settings.branding_saved")}
         </div>
       )}
       {!brandingAllowed && (
@@ -3906,8 +3276,8 @@ function BrandingTab({ tenantId }: { tenantId: string }) {
 
       {/* Logo */}
       <div>
-        <p className="text-sm font-bold text-gray-700 mb-2">{t("settings.tenant_logo") || "Tenant Logo"}</p>
-        <p className="text-xs text-gray-400 mb-3">JPG · PNG · WebP · max 1MB</p>
+        <p className="text-sm font-bold text-gray-700 mb-2">{t("settings.tenant_logo")}</p>
+        <p className="text-xs text-gray-400 mb-3">{t("settings.logo_dimensions_hint")}</p>
         <div className="flex items-center gap-4">
           {logoUrl
             ? <img src={logoUrl} alt="" className="w-16 h-16 rounded border border-gray-200 object-contain" />
@@ -3915,7 +3285,7 @@ function BrandingTab({ tenantId }: { tenantId: string }) {
           }
           <label className={(brandingAllowed && !gp.disabled) ? "cursor-pointer" : "cursor-not-allowed opacity-50"} title={gp.title}>
             <span className="px-3 py-1.5 text-xs font-semibold bg-gray-100 border border-gray-300 rounded cursor-pointer hover:bg-gray-200">
-              {logoUploading ? "Uploading…" : (t("settings.upload_logo") || "Upload Logo")}
+              {logoUploading ? t("settings.uploading") : t("settings.upload_logo")}
             </span>
             <input
               type="file"
@@ -3930,7 +3300,7 @@ function BrandingTab({ tenantId }: { tenantId: string }) {
           </label>
           {logoUrl && (
             <button type="button" disabled={!brandingAllowed || gp.disabled} title={gp.title} onClick={() => setLogoUrl(null)} className="text-xs text-red-500 bg-transparent border-0 cursor-pointer p-0 disabled:opacity-50 disabled:cursor-not-allowed">
-              {t("common.remove") || "Remove"}
+              {t("common.remove")}
             </button>
           )}
         </div>
@@ -3939,15 +3309,15 @@ function BrandingTab({ tenantId }: { tenantId: string }) {
 
       {/* Banner */}
       <div>
-        <p className="text-sm font-bold text-gray-700 mb-2">{t("settings.tenant_banner") || "Dashboard Banner"}</p>
-        <p className="text-xs text-gray-400 mb-3">JPG · PNG · WebP · max 3MB · recommended 1200×300px</p>
+        <p className="text-sm font-bold text-gray-700 mb-2">{t("settings.tenant_banner")}</p>
+        <p className="text-xs text-gray-400 mb-3">{t("settings.banner_dimensions_hint")}</p>
         {bannerUrl && (
           <img src={bannerUrl} alt="" className="w-full rounded border border-gray-200 object-cover mb-3" style={{ maxHeight: "120px" }} />
         )}
         <div className="flex items-center gap-3">
           <label className={(brandingAllowed && !gp.disabled) ? "cursor-pointer" : "cursor-not-allowed opacity-50"} title={gp.title}>
             <span className="px-3 py-1.5 text-xs font-semibold bg-gray-100 border border-gray-300 rounded cursor-pointer hover:bg-gray-200">
-              {bannerUploading ? "Uploading…" : (t("settings.upload_banner") || "Upload Banner")}
+              {bannerUploading ? t("settings.uploading") : t("settings.upload_banner")}
             </span>
             <input
               type="file"
@@ -3962,7 +3332,7 @@ function BrandingTab({ tenantId }: { tenantId: string }) {
           </label>
           {bannerUrl && (
             <button type="button" disabled={!brandingAllowed || gp.disabled} title={gp.title} onClick={() => setBannerUrl(null)} className="text-xs text-red-500 bg-transparent border-0 cursor-pointer p-0 disabled:opacity-50 disabled:cursor-not-allowed">
-              {t("common.remove") || "Remove"}
+              {t("common.remove")}
             </button>
           )}
         </div>
@@ -4021,13 +3391,13 @@ export default function OrgSetupPage() {
 
       {/* Tab bar */}
       <div className="flex flex-wrap border-b border-gray-200 mb-6 gap-0.5">
-        <button type="button" className={tabCls("levels")}         onClick={() => setActiveTab("levels")}>Organisation Levels</button>
-        <button type="button" className={tabCls("tree")}           onClick={() => setActiveTab("tree")}>Organisation Tree</button>
+        <button type="button" className={tabCls("levels")}         onClick={() => setActiveTab("levels")}>{t("org_setup.tab_levels")}</button>
+        <button type="button" className={tabCls("tree")}           onClick={() => setActiveTab("tree")}>{t("org_setup.tab_tree")}</button>
         <button type="button" className={tabCls("positions")}      onClick={() => setActiveTab("positions")}>{t("wizard.positions_tab")}</button>
         <button type="button" className={tabCls("personnel")}      onClick={() => setActiveTab("personnel")}>{t("wizard.personnel_tab")}</button>
         <button type="button" className={tabCls("transfer-types")} onClick={() => setActiveTab("transfer-types")}>{t("wizard.transfer_types_tab")}</button>
         <button type="button" className={tabCls("approval")}       onClick={() => setActiveTab("approval")}>{t("wizard.approval_rules_tab")}</button>
-        <button type="button" className={tabCls("branding")}       onClick={() => setActiveTab("branding")}>{t("settings.branding") || "Branding"}</button>
+        <button type="button" className={tabCls("branding")}       onClick={() => setActiveTab("branding")}>{t("settings.branding")}</button>
       </div>
 
       {/* key={tenantId} on every tab: forces a full unmount/remount on tenant switch

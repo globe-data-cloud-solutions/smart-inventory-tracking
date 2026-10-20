@@ -9,11 +9,11 @@ import { DEMO_TENANTS, type DemoTenant, type DemoProduct, type ProductApprovalOv
 import { NewAdjustmentPanel } from "@/components/features/inventory/NewAdjustmentPanel";
 import { ProductLabel } from "@/components/features/inventory/ProductLabel";
 import { useInventoryStore } from "@/lib/inventory-state";
-import { useAuditStore } from "@/lib/audit-log-state";
 import { api, IS_GATEWAY_MODE } from "@/lib/api";
 import { t } from "@/lib/i18n";
 import { lotErrorMessage } from "@/lib/lotErrors";
 import { formatQty } from "@/lib/utils";
+import { formatDate } from "@/lib/format";
 import { useTenantName } from "@/hooks/useTenantName";
 import { useWarehouses } from "@/hooks/useWarehouses";
 import { useTenantPositions } from "@/hooks/useTenantPositions";
@@ -348,23 +348,6 @@ export default function AdjustmentsPage() {
 
       if (adjQty > 0) store.addReceive(adjProductId, adjWarehouseId, adjQty);
       else            store.addIssue(adjProductId, adjWarehouseId, Math.abs(adjQty));
-
-      // Audit log for this approval — use adj.warehouse_id (the WH that created the
-      // adjustment), never the approver's warehouse_id (NM/TA have none).
-      useAuditStore.getState().log({
-        tenantSlug:    org,
-        userEmail:     currentUser.email,
-        userName:      currentUser.name,
-        role:          currentUser.role,
-        category:      "ADJUSTMENT",
-        action:        "ADJUSTMENT_APPROVED",
-        resourceRef:   id,
-        resourceType:  "adjustment",
-        productName:   adj.product_name,
-        quantityStr:   `${adjQty > 0 ? "+" : ""}${adjQty}`,
-        fromWarehouse: adj.warehouse_name,
-        notes:         adj.notes,
-      });
     }
 
     await qc.invalidateQueries({ queryKey: ["adjustments", org] });
@@ -514,7 +497,7 @@ export default function AdjustmentsPage() {
             <tbody>
               {displayAdj.map((a, idx) => (
                 <tr key={a.adjustment_id ?? a.id} className={`border-b border-gray-100 ${idx % 2 === 0 ? "bg-white" : "bg-gray-50"}`}>
-                  <td className="px-3.5 py-2 text-gray-400 text-xs whitespace-nowrap">{new Date(a.created_at).toLocaleDateString()}</td>
+                  <td className="px-3.5 py-2 text-gray-400 text-xs whitespace-nowrap">{formatDate(a.created_at)}</td>
                   <td className="px-3.5 py-2 font-mono text-xs text-gray-400">{a.product_sku}</td>
                   <td className="px-3.5 py-2 font-semibold text-gray-800">
                     <ProductLabel

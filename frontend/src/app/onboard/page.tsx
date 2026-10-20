@@ -7,6 +7,7 @@ import Link from "next/link";
 import { getSession } from "@/lib/demo-auth";
 import { api } from "@/lib/api";
 import { t } from "@/lib/i18n";
+import { ENABLED_LOCALES } from "@/lib/locales-config";
 
 /* ── Types ───────────────────────────────────────────────────────────────── */
 type OrgType       = "PRODUCER" | "RETAILER" | "HYBRID";
@@ -333,7 +334,7 @@ export default function OnboardPage() {
       } else if (code === "SLUG_ALREADY_EXISTS") {
         setError(t("wizard.slug_exists_error"));
       } else {
-        setError(err instanceof Error ? err.message : "Unexpected error");
+        setError(err instanceof Error ? err.message : t("errors.UNKNOWN"));
       }
     } finally {
       setLoading(false);
@@ -421,8 +422,10 @@ export default function OnboardPage() {
       <header className="bg-[#0f2d1f] px-8 h-14 flex items-center justify-between shadow-[0_2px_12px_rgba(0,0,0,0.35)]">
         <Link href="/admin/dashboard" className="flex items-center gap-2.5 no-underline">
           <Logo />
+          {/* i18n-ignore: brand name */}
           <span className="font-bold text-[15px] text-white">
-            SMART <span className="text-[#FCDD09]">Inventory</span>
+            SMART {/* i18n-ignore: brand name */}
+            <span className="text-[#FCDD09]">Inventory</span>
           </span>
         </Link>
         <span className="text-xs font-bold text-emerald-300">{t("wizard.title")}</span>
@@ -628,7 +631,7 @@ export default function OnboardPage() {
             {/* ── Step 3: Locale ── */}
             {step === 3 && (
               <div className="flex flex-col gap-3">
-                {(["en", "am", "or"] as Locale[]).map((loc) => {
+                {ENABLED_LOCALES.map((loc) => {
                   const m        = LOCALE_META[loc];
                   const selected = form.locale === loc;
                   return (

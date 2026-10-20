@@ -282,26 +282,30 @@ gap with Redis "revoked-before" timestamps, checked once at the gateway.
 
 ## 14. Inventory Ledger — Immutable Rules
 
-### warehouse_stock is a computed read model — never write to it directly
+### inventory_balances is a computed read model — never write to it directly
 
 ```
-warehouse_stock holds pre-computed balance columns (on_hand, reserved, in_transit_in,
-in_transit_out) for fast dashboard queries. It is NOT a source of truth.
+inventory_balances holds one row per (tenant, product, warehouse[, lot]) with a single
+quantity column, for fast dashboard/balance queries. It is NOT a source of truth.
 
-The ONLY permitted writer:   update_running_balance() in ledger_repo.py
+The ONLY permitted writer:   _update_running_balance() in ledger_repo.py
 The ONLY permitted caller:   record_transaction() in ledger_repo.py
 Both run in the SAME database transaction as the inventory_transactions INSERT.
 
-Every other code path that touches warehouse_stock is READ ONLY (SELECT).
+Every other code path that touches inventory_balances is READ ONLY (SELECT).
 
-The database enforces this via a PostgreSQL RULE on warehouse_stock that rejects
-any UPDATE issued outside the privileged ledger session role. This is defence in depth
-on top of the application-level rule above.
+Correction (2026-10, Bugs 5/6 in ClaudeE2EReviewBug.md): there is NO PostgreSQL RULE on
+inventory_balances — confirmed against the live schema via `pg_rules` (only append-only
+audit/log-style tables have one: audit_logs, tenant_activity_log, package_prices,
+platform_config_log, payment_line_items, terms_acceptances, addon_prices).
+This section previously claimed defence-in-depth at the database level for this table;
+that was inaccurate. The only real protection is the application-level rule above
+(code review/CI) — no RULE has been added here to make the old claim true.
 
-IMTS §13.2 describes warehouse_stock as an inventory table. That description is accurate —
-it is a table. What IMTS does not make explicit is that it is a derived/read table, not
-a directly-writable one. PRD v4 §11.4 PR-NEW-9 is the authoritative rule: no direct
-balance updates. This section operationalises that rule.
+IMTS §13.2 describes warehouse_stock as an inventory table — that name is historical;
+the live table is inventory_balances, and IMTS's point still holds: it is a derived/read
+table, not a directly-writable one. PRD v4 §11.4 PR-NEW-9 is the authoritative rule: no
+direct balance updates. This section operationalises that rule.
 ```
 
 ```python
@@ -886,6 +890,15 @@ token response), NOT the {success,data} envelope above. ~30 scripts/e2e scripts 
 frontend auth helpers depend on this flat shape. Errors on these endpoints still use
 {"detail":{"code","message"}}, not the error envelope. This is intentional — do not change
 the response shape of these endpoints to match the standard envelope.
+
+Error codes and locales (Session 19, P6): every error `code` a route can return needs an
+errors.<CODE> entry in locales/en.json, am.json, and or.json — guarded by
+scripts/check_error_codes.py (container-smoke). Any value the message needs to interpolate
+(a count, a name, a limit) must be its own key in `detail`, not just baked into the English
+`message` string — the frontend fills {placeholder} tokens in errors.<CODE> from `detail`,
+so a value that only exists inside the f-string can never be localized:
+  {"code": "PLAN_LIMIT_REACHED", "resource": "skus", "current": 10, "limit": 10,
+   "plan_tier": "STARTER", "upgrade_to": "GROWTH", "message": "SKU limit reached (10/10)."}
 ```
 
 ---

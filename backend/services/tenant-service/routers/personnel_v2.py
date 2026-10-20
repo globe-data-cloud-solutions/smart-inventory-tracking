@@ -743,11 +743,35 @@ async def update_user(
         )
 
     row = (await db.execute(
-        text("SELECT id, email FROM users WHERE id = :uid AND tenant_id = :tid"),
+        text("SELECT id, email, system_role FROM users WHERE id = :uid AND tenant_id = :tid"),
         {"uid": str(user_id), "tid": str(tenant_id)},
     )).fetchone()
     if not row:
         raise HTTPException(status_code=404, detail="User not found")
+
+    # Role ceiling (Bug 11): only a platform admin (SA) may ever set
+    # system_role='TA' on someone else, and only SA may touch the system_role
+    # (change OR clear) of a user who is already TA. A TA promoting a peer to
+    # TA, or editing/demoting another TA, is a privilege-escalation path —
+    # server-side, not just UI-hidden. Mirrors create_user's ceiling check.
+    touches_system_role = (
+        body.clear_system_role or body.system_role is not None or body.role is not None
+    )
+    if touches_system_role and getattr(user, "role", None) != "SA":
+        if row.system_role == "TA":
+            raise HTTPException(
+                status_code=403,
+                detail={"code": "ROLE_CEILING_EXCEEDED",
+                        "message": "Only a platform administrator can modify an existing "
+                                   "Tenant Administrator's role."},
+            )
+        effective_sr_check = body.system_role or ("TA" if body.role == "TA" else None)
+        if effective_sr_check == "TA":
+            raise HTTPException(
+                status_code=403,
+                detail={"code": "ROLE_CEILING_EXCEEDED",
+                        "message": "Only a platform administrator can create Tenant Administrator accounts."},
+            )
 
     set_parts: list[str] = ["updated_at = now()"]
     params: dict = {"uid": str(user_id), "tid": str(tenant_id)}

@@ -146,7 +146,7 @@ export default function PermissionsPage() {
                 {t("permissions.action")}
               </th>
               <th className="px-3.5 py-2.5 text-left text-[11px] font-bold text-gray-500 uppercase">{t("permissions.domain")}</th>
-              <th className="px-3.5 py-2.5 text-left text-[11px] font-bold text-gray-500 uppercase">ABAC</th>
+              <th className="px-3.5 py-2.5 text-left text-[11px] font-bold text-gray-500 uppercase">{t("permissions.abac_column")}</th>
               {ROLES.map((r) => (
                 <th key={r} className="px-2 py-2.5 text-center text-[11px] font-bold text-gray-500 uppercase whitespace-nowrap">{r}</th>
               ))}

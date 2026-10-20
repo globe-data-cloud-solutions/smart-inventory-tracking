@@ -11,6 +11,7 @@ import { api, IS_GATEWAY_MODE, publicGet } from "@/lib/api";
 import { t } from "@/lib/i18n";
 import { formatCurrency } from "@/lib/utils";
 import { AuthLangSwitcher } from "@/components/features/auth/AuthLangSwitcher";
+import { ENABLED_LOCALES, type LocaleCode } from "@/lib/locales-config";
 import { BillingPeriod, PackagesListOut } from "@/lib/billing-types";
 import { PublicContactLink } from "@/components/features/auth/PublicContactLink";
 
@@ -46,7 +47,7 @@ const detailsSchema = z
     slug: z.string().trim().optional(),
     organisation_type: z.enum(["PRODUCER", "RETAILER", "HYBRID"]),
     industry: z.string().trim().optional(),
-    default_locale: z.enum(["en", "am", "or"]),
+    default_locale: z.enum(ENABLED_LOCALES as [LocaleCode, ...LocaleCode[]]),
     admin_full_name: z.string().trim().min(1, "signup.validation.admin_name_required"),
     admin_email: z.string().trim().email("signup.validation.email_invalid"),
     admin_password: z.string().min(8, "signup.validation.password_min"),
@@ -367,9 +368,9 @@ export default function SignupPage() {
                   {...form.register("default_locale")}
                   className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-200"
                 >
-                  <option value="en">{t("lang.en")}</option>
-                  <option value="am">{t("lang.am")}</option>
-                  <option value="or">{t("lang.or")}</option>
+                  {ENABLED_LOCALES.map((loc) => (
+                    <option key={loc} value={loc}>{t(`lang.${loc}`)}</option>
+                  ))}
                 </select>
                 <p className="mt-1 text-xs text-gray-400">{t("signup.language_hint")}</p>
               </div>

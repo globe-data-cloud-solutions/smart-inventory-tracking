@@ -7,6 +7,7 @@ import { useQuery } from "@tanstack/react-query";
 import { getSession, SA_ORG_SLUG } from "@/lib/demo-auth";
 import { api, IS_GATEWAY_MODE } from "@/lib/api";
 import { t } from "@/lib/i18n";
+import { formatDateTime } from "@/lib/format";
 import { useTenantName } from "@/hooks/useTenantName";
 
 const CATEGORY_CLASS: Record<string, { bg: string; text: string; icon: string }> = {
@@ -291,7 +292,7 @@ export default function AuditLogPage() {
                 return (
                   <tr key={e.id} className={`border-b border-gray-100 ${idx % 2 === 0 ? "bg-white" : "bg-gray-50"}`}>
                     <td className="px-3 py-2 text-gray-400 whitespace-nowrap font-mono text-[10px]">
-                      {new Date(e.timestamp).toLocaleString()}
+                      {formatDateTime(e.timestamp)}
                     </td>
                     <td className="px-3 py-2 font-semibold text-gray-800 whitespace-nowrap text-[11px]">
                       {e.user_name ?? t("common.unknown")}

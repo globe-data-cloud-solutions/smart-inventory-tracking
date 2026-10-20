@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useParams } from "next/navigation";
+import { t } from "@/lib/i18n";
 
 interface TabHelpBannerProps {
   message: string;
@@ -64,7 +65,7 @@ export function TabHelpBanner({ message, tip, storageKey, dismissible = true }: 
           type="button"
           onClick={handleDismiss}
           className="shrink-0 text-blue-400 hover:text-blue-600"
-          aria-label="Dismiss"
+          aria-label={t("common.dismiss")}
         >
           ✕
         </button>

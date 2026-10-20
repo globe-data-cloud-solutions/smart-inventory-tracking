@@ -13,10 +13,10 @@ import { TransferRowDetails, hasLotSplit, transferDetailKey, type TransferReceip
 import { ApproveLotsPanel, approveFailure, type ApproveFailure, type ApproveLine, type ApproveLotsBody } from "@/components/features/transfers/ApproveLotsPanel";
 import { fetchDispatchPreview } from "@/components/features/transfers/DispatchPreview";
 import { OpenDiscrepanciesPanel } from "@/components/features/transfers/OpenDiscrepanciesPanel";
+import { formatDate } from "@/lib/format";
 import { tf, transferStatusLabel, transferTypeLabel, useTransferTypes } from "@/components/features/transfers/transferLabels";
 import { ProductLabel } from "@/components/features/inventory/ProductLabel";
 import { useInventoryStore } from "@/lib/inventory-state";
-import { useAuditStore } from "@/lib/audit-log-state";
 import { useOfflineSync } from "@/hooks/useOfflineSync";
 import { useWarehouses } from "@/hooks/useWarehouses";
 import { useWriteGuard, guardProps } from "@/hooks/useWriteGuard";
@@ -687,7 +687,6 @@ export default function TransfersPage() {
   const gp = guardProps(guard);
   // partialReceive (store) is archived: partial receipts are server-side since C2.
   const { updateTransferStatus, getTransferEntry, addTransfer } = useInventoryStore();
-  const logAudit = useAuditStore((s) => s.log);
   const [transitioning, setTransitioning] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting]   = useState(false);
   const [confirmModal, setConfirmModal] = useState<{
@@ -1044,26 +1043,6 @@ export default function TransfersPage() {
       updateTransferStatus(id, next);
       // archived: the client-only partialReceive(id, partialQty) store call that used to
       // follow here — partial receipts are server-side since C2 (receive form → POST /receive).
-      logAudit({
-        tenantSlug:    org,
-        userEmail:     user.email,
-        userName:      user.name,
-        role:          user.role,
-        action:        `transfer:${next}`,
-        category:      "TRANSFER",
-        resourceRef:   transfer?.ref ?? id,
-        resourceType:  "TransferOrder",
-        productName:   transfer?.product_name,
-        quantityStr:   transfer ? `${formatQty(transfer.quantity)} ${transfer.product_name ? "units" : ""}` : undefined,
-        fromWarehouse: transfer?.from_warehouse_name,
-        toWarehouse:   transfer?.to_warehouse_name,
-        notes:         partialQty ? `Batch received: ${formatQty(partialQty)} units` : undefined,
-        actedOnBehalfOf:
-          (next === "ISSUED" || next === "IN_TRANSIT")
-          && user.warehouseId?.toLowerCase() !== transfer?.from_warehouse_id?.toLowerCase()
-            ? (transfer?.from_warehouse_name ?? t("common.unknown"))
-            : undefined,
-      });
       if (next === "APPROVED") {
         const approvalInfo = qc.getQueryData<ApprovalInfoResponse>(["approval-info", id]);
         const toastMsg = approvalInfo?.is_auto_approve
@@ -1384,7 +1363,7 @@ export default function TransfersPage() {
                       )}
                     </td>
                     <td className="px-3 py-2.5 text-gray-400 text-xs whitespace-nowrap">
-                      {new Date(txn.created_at).toLocaleDateString()}
+                      {formatDate(txn.created_at)}
                     </td>
                     <td className="px-3 py-2.5">
                       {busy ? (

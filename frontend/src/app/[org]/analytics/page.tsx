@@ -4,6 +4,7 @@ import { useParams } from "next/navigation";
 import { SA_ORG_SLUG } from "@/lib/demo-auth";
 import { DEMO_TENANTS, getLowStockProducts, getTotalStock } from "@/lib/demo-data";
 import { t } from "@/lib/i18n";
+import { formatNumber } from "@/lib/format";
 
 export default function AnalyticsPage() {
   const { org } = useParams() as { org: string };
@@ -69,7 +70,7 @@ export default function AnalyticsPage() {
             <div key={w.name} className="mb-2.5">
               <div className="flex justify-between mb-1">
                 <span className="text-xs text-gray-700 truncate max-w-[70%]">{w.name}</span>
-                <span className="text-xs font-semibold text-gray-900">{w.units.toLocaleString()}</span>
+                <span className="text-xs font-semibold text-gray-900">{formatNumber(w.units)}</span>
               </div>
               <div className="h-2 bg-gray-100 rounded overflow-hidden">
                 {/* bar width is runtime-computed — must use style */}
@@ -97,7 +98,7 @@ export default function AnalyticsPage() {
                 <p className="text-[11px] text-gray-400 m-0">{p.sku}</p>
               </div>
               <div className="text-right">
-                <p className="text-xs font-bold text-red-600 m-0">{getTotalStock(p).toLocaleString()}</p>
+                <p className="text-xs font-bold text-red-600 m-0">{formatNumber(getTotalStock(p))}</p>
                 <p className="text-[11px] text-gray-400 m-0">{t("table.reorder_point")}: {p.reorderPoint}</p>
               </div>
             </div>
@@ -110,7 +111,7 @@ export default function AnalyticsPage() {
         <p className="text-sm font-bold text-gray-800 mb-4">{t("analytics.summary")}</p>
         <div className="grid grid-cols-4 gap-4 text-center">
           {[
-            { label: t("dashboard.stat_units"),     value: total.toLocaleString() },
+            { label: t("dashboard.stat_units"),     value: formatNumber(total) },
             { label: t("analytics.active_skus"),    value: tenant.products.length },
             { label: t("dashboard.stat_locations"), value: tenant.warehouses.length },
             { label: t("alerts.low_stock"),         value: low.length },

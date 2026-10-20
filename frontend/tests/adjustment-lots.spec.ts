@@ -518,7 +518,10 @@ for (const locale of ["en", "am"] as const) {
 
       await expect(page.locator("th", { hasText: s.lotHeader })).toBeVisible();
       const cell = (name: string) => page.locator("tr").filter({ hasText: name }).getByTestId("adj-row-lot");
-      const expiry = await page.evaluate((d) => new Date(d).toLocaleDateString(), LOT_A.expiry_date!);
+      const expiry = await page.evaluate(
+        ({ d, l }) => new Intl.DateTimeFormat(l === "am" ? "am-ET" : "en-US", { year: "numeric", month: "numeric", day: "numeric", calendar: "gregory" }).format(new Date(d)),
+        { d: LOT_A.expiry_date!, l: locale },
+      );
 
       await expect(cell("ROW-EXISTING-LOT")).toHaveText(`LOT-A · ${expiry}`);
       await expect(cell("ROW-NEW-NAMED")).toHaveText(s.lotNewNamed("NEW-77"));
@@ -533,7 +536,10 @@ for (const locale of ["en", "am"] as const) {
       const { s } = ctx;
 
       const card = (name: string) => page.locator("div.bg-white.border-amber-200").filter({ hasText: name }).filter({ has: page.getByTestId("adj-approval-lot") });
-      const expiry = await page.evaluate((d) => new Date(d).toLocaleDateString(), LOT_A.expiry_date!);
+      const expiry = await page.evaluate(
+        ({ d, l }) => new Intl.DateTimeFormat(l === "am" ? "am-ET" : "en-US", { year: "numeric", month: "numeric", day: "numeric", calendar: "gregory" }).format(new Date(d)),
+        { d: LOT_A.expiry_date!, l: locale },
+      );
 
       await expect(card("ROW-EXISTING-LOT").getByTestId("adj-approval-lot")).toHaveText(`${s.lotHeader}: LOT-A · ${expiry}`);
       await expect(card("ROW-NEW-NAMED").getByTestId("adj-approval-lot")).toHaveText(`${s.lotHeader}: ${s.lotNewNamed("NEW-77")}`);

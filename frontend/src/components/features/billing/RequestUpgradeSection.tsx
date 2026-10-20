@@ -5,6 +5,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import { t } from "@/lib/i18n";
 import { PlanComparisonModal } from "./PlanComparisonModal";
+import { formatDate } from "@/lib/format";
 
 const TIER_ORDER = ["STARTER", "GROWTH", "ENTERPRISE"];
 
@@ -101,7 +102,7 @@ export function RequestUpgradeSection({ planTier }: { planTier: string }) {
       <p className="text-sm text-gray-700">
         {t("tenant_admin.features.upgrade_open_notice")
           .replace("{tier}", tierLabel(openUpgradeRequest.requested_tier ?? ""))
-          .replace("{date}", new Date(openUpgradeRequest.created_at).toLocaleDateString())}
+          .replace("{date}", formatDate(openUpgradeRequest.created_at))}
       </p>
     );
   }

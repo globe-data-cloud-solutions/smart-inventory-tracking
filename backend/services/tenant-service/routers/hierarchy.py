@@ -160,14 +160,14 @@ async def _get_level_name(
 
 
 async def _get_manager_info(
-    db: AsyncSession, user_id: Optional[str]
+    db: AsyncSession, user_id: Optional[str], tenant_id: Optional[str] = None
 ) -> tuple[Optional[str], Optional[str]]:
     if not user_id:
         return None, None
     # role column was dropped in migration 031 — query full_name only
     row = await db.execute(
-        text("SELECT full_name FROM users WHERE id = :uid"),
-        {"uid": user_id},
+        text("SELECT full_name FROM users WHERE id = :uid AND tenant_id = :tid"),
+        {"uid": user_id, "tid": tenant_id},
     )
     r = row.fetchone()
     return (r[0], None) if r else (None, None)
@@ -1006,7 +1006,7 @@ async def create_org_node(
 
     level_name = await _get_level_name(db, str(tenant_id), body.level_number)
     manager_name, manager_role = await _get_manager_info(
-        db, str(body.manager_user_id) if body.manager_user_id else None
+        db, str(body.manager_user_id) if body.manager_user_id else None, str(tenant_id)
     )
 
     return SuccessResponse(
@@ -1109,7 +1109,7 @@ async def update_org_node(
 
     level_name = await _get_level_name(db, str(tenant_id), existing.hierarchy_level)
     manager_name, manager_role = await _get_manager_info(
-        db, str(body.manager_user_id) if body.manager_user_id else None
+        db, str(body.manager_user_id) if body.manager_user_id else None, str(tenant_id)
     )
 
     return SuccessResponse(

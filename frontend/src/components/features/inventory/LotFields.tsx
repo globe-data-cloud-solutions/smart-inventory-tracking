@@ -40,6 +40,7 @@ export function LotFields({
           value={lotNumber}
           disabled={autoLot}
           onChange={(e) => onLotNumberChange(e.target.value)}
+          // i18n-ignore: example lot code
           placeholder="e.g. LOT-2026-001"
           className={`${inputCls} ${autoLot ? "bg-gray-100 text-gray-500 cursor-not-allowed" : ""}`}
         />

@@ -7,7 +7,6 @@ import { api } from "@/lib/api";
 import { enqueueOfflineTransaction } from "@/store/offlineQueue";
 import { useOfflineSync } from "@/hooks/useOfflineSync";
 import { useScanner } from "@/hooks/useScanner";
-import { useAuditStore } from "@/lib/audit-log-state";
 import { getSession } from "@/lib/demo-auth";
 import { t } from "@/lib/i18n";
 import { notify } from "@/lib/notify";
@@ -15,6 +14,7 @@ import { PanelError } from "@/components/ui/PanelError";
 import { lotErrorMessage } from "@/lib/lotErrors";
 import { useWarehouses } from "@/hooks/useWarehouses";
 import { useWriteGuard, guardProps } from "@/hooks/useWriteGuard";
+import { formatNumber } from "@/lib/format";
 import type { DemoProduct } from "@/lib/demo-data";
 import { buildOverrideTooltip } from "@/components/features/inventory/ProductLabel";
 import { LotFields } from "@/components/features/inventory/LotFields";
@@ -52,7 +52,6 @@ const selectCls = `${inputCls} cursor-pointer`;
 export function ReceiveStockPanel({ products, orgSlug }: Props) {
   const { isOnline } = useOfflineSync();
   const qc       = useQueryClient();
-  const logAudit = useAuditStore((s) => s.log);
 
   const user        = getSession();
   const warehouseId = user?.warehouseId ?? "";
@@ -116,12 +115,11 @@ export function ReceiveStockPanel({ products, orgSlug }: Props) {
       if (!isOnline) {
         await enqueueOfflineTransaction({ idempotencyKey: key, action: "inventory:receive", payload });
         clearForm(); setOpen(false);
-        notify({ kind: "success", message: `${t("inventory.receive.queue_offline")} — ${product?.name ?? ""} (${product?.sku ?? ""}) +${qty.toLocaleString()}` });
+        notify({ kind: "success", message: `${t("inventory.receive.queue_offline")} — ${product?.name ?? ""} (${product?.sku ?? ""}) +${formatNumber(qty)}` });
       } else {
         const resp = await api.post<{ lot_number?: string | null }>("/api/v1/inventory/receive/", payload);
-        if (user) logAudit({ tenantSlug: orgSlug, userEmail: user.email, userName: user.name, role: user.role, action: "inventory:receive", category: "INVENTORY", resourceRef: product?.sku ?? form.productId, resourceType: "InventoryTransaction", productName: product?.name, quantityStr: `+${qty.toLocaleString()} ${product?.unit ?? "units"}`, toWarehouse: warehouseName, notes: t(`transfer.reference.${form.referenceType}`) });
         clearForm(); setOpen(false);
-        const what = `${product?.name ?? ""} (${product?.sku ?? ""}) +${qty.toLocaleString()} ${product?.unit ?? ""}`.trim();
+        const what = `${product?.name ?? ""} (${product?.sku ?? ""}) +${formatNumber(qty)} ${product?.unit ?? ""}`.trim();
         notify({
           kind: "success",
           message: resp.lot_number

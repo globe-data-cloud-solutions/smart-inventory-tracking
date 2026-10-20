@@ -2221,6 +2221,7 @@ class InventoryService:
             )
 
         lot = await self._validate_adjustment_lot(user, body)
+        await self._validate_adjustment_warehouse(user, body)
 
         adj_id = uuid.uuid4()
         now = datetime.now(timezone.utc)
@@ -2281,6 +2282,25 @@ class InventoryService:
             expiry_date=lot["shown_expiry_date"],
             auto_lot=lot["auto_lot"],
         )
+
+    async def _validate_adjustment_warehouse(
+        self, user: Any, body: AdjustmentRequest
+    ) -> None:
+        """Confirm body.warehouse_id belongs to the caller's tenant before it is
+        ever stored as a FK — mirrors _validate_adjustment_lot's product_id check,
+        which this call already relies on existing alongside it."""
+        from fastapi import HTTPException
+
+        row = (await self.db.execute(
+            text(
+                "SELECT 1 FROM warehouses WHERE id = :wid AND tenant_id = :tid "
+                "UNION ALL "
+                "SELECT 1 FROM organization_node WHERE id = :wid AND tenant_id = :tid"
+            ),
+            {"wid": str(body.warehouse_id), "tid": str(user.tenant_id)},
+        )).fetchone()
+        if row is None:
+            raise HTTPException(status_code=404, detail={"code": "WAREHOUSE_NOT_FOUND"})
 
     async def _validate_adjustment_lot(
         self, user: Any, body: AdjustmentRequest

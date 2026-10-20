@@ -5,6 +5,7 @@ import { useQuery } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import { t } from "@/lib/i18n";
 import { formatQty } from "@/lib/utils";
+import { formatDate } from "@/lib/format";
 import { ResolveDiscrepancyDialog, type ResolveTarget } from "./ResolveDiscrepancyDialog";
 import { transferDetailKey } from "./transferQueryKeys";
 
@@ -79,7 +80,7 @@ export function hasLotSplit(status: string): boolean {
 }
 
 export function formatExpiry(expiry: string | null): string {
-  return expiry ? new Date(expiry).toLocaleDateString() : "—";
+  return expiry ? formatDate(expiry) : "—";
 }
 
 /** Translated label for a backend code; never the raw code. */

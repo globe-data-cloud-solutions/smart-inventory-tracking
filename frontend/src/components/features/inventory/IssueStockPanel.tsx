@@ -7,11 +7,11 @@ import { api } from "@/lib/api";
 import { enqueueOfflineTransaction } from "@/store/offlineQueue";
 import { useOfflineSync } from "@/hooks/useOfflineSync";
 import { useInventoryStore } from "@/lib/inventory-state";
-import { useAuditStore } from "@/lib/audit-log-state";
 import { getSession } from "@/lib/demo-auth";
 import { t } from "@/lib/i18n";
 import { notify } from "@/lib/notify";
 import { PanelError } from "@/components/ui/PanelError";
+import { formatNumber } from "@/lib/format";
 import { useWarehouses } from "@/hooks/useWarehouses";
 import { useWriteGuard, guardProps } from "@/hooks/useWriteGuard";
 import type { DemoProduct } from "@/lib/demo-data";
@@ -55,7 +55,6 @@ export function IssueStockPanel({ products, orgSlug }: Props) {
   const { isOnline } = useOfflineSync();
   const qc = useQueryClient();
   const { getAvailable } = useInventoryStore();
-  const logAudit = useAuditStore((s) => s.log);
 
   const user        = getSession();
   const warehouseId = user?.warehouseId ?? "";
@@ -94,7 +93,7 @@ export function IssueStockPanel({ products, orgSlug }: Props) {
     if (destMeta?.required && !issuedTo.trim()) { setError(`"${destMeta.label}" is required.`); return; }
     const qty = parseFloat(quantity);
     if (!qty || qty <= 0) { setError(t("receive_panel.error_qty")); return; }
-    if (availableStock !== null && qty > availableStock) { setError(`${t("issue.insufficient")} ${availableStock.toLocaleString()}`); return; }
+    if (availableStock !== null && qty > availableStock) { setError(`${t("issue.insufficient")} ${formatNumber(availableStock)}`); return; }
     const key = `issue:${productId}:${warehouseId}:${Date.now()}:${nanoid(8)}`;
     const payload = { product_id: productId, warehouse_id: warehouseId, quantity: qty.toFixed(4), reason_code: reasonCode, issued_to: issuedTo.trim() || undefined, notes, idempotency_key: key };
     setSubmitting(true);
@@ -105,13 +104,12 @@ export function IssueStockPanel({ products, orgSlug }: Props) {
         successMsg = t("inventory.receive.queue_offline");
       } else {
         await api.post("/api/v1/inventory/issues/", payload);
-        if (user) logAudit({ tenantSlug: orgSlug, userEmail: user.email, userName: user.name, role: user.role, action: "inventory:issue", category: "INVENTORY", resourceRef: selectedProduct?.sku ?? productId, resourceType: "InventoryTransaction", productName: selectedProduct?.name, quantityStr: `-${qty.toLocaleString()} ${selectedProduct?.unit ?? "units"}`, fromWarehouse: warehouseName, toWarehouse: issuedTo.trim() || undefined, notes: `[${reasonCode}]` });
         successMsg = t("issue.success");
         void qc.invalidateQueries({ queryKey: ["products", orgSlug] });
         void qc.invalidateQueries({ queryKey: ["inventory-stock", orgSlug] });
       }
       reset(); setOpen(false);
-      notify({ kind: "success", message: `${successMsg} — ${selectedProduct?.name ?? ""} (${selectedProduct?.sku ?? ""}) −${qty.toLocaleString()} ${selectedProduct?.unit ?? ""}`.trim() });
+      notify({ kind: "success", message: `${successMsg} — ${selectedProduct?.name ?? ""} (${selectedProduct?.sku ?? ""}) −${formatNumber(qty)} ${selectedProduct?.unit ?? ""}`.trim() });
     } catch (err: unknown) { setError(err instanceof Error ? err.message : t("errors.INTERNAL_ERROR")); }
     finally { setSubmitting(false); }
   };
@@ -155,7 +153,7 @@ export function IssueStockPanel({ products, orgSlug }: Props) {
 
           {availableStock !== null && (
             <div className="bg-violet-50 border border-violet-200 rounded-md px-3 py-2 mb-3 text-xs text-violet-800">
-              {t("inventory.available")}: <strong>{availableStock.toLocaleString()}</strong> {t("lots.units")}
+              {t("inventory.available")}: <strong>{formatNumber(availableStock)}</strong> {t("lots.units")}
             </div>
           )}
 
@@ -177,7 +175,7 @@ export function IssueStockPanel({ products, orgSlug }: Props) {
           )}
 
           <Field label={t("audit.notes")} hint={`(${t("receive_panel.optional")})`}>
-            <textarea value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Customer name, order reference, notes…" rows={3} className={`${inputCls} resize-y`} />
+            <textarea value={notes} onChange={(e) => setNotes(e.target.value)} placeholder={t("issue.notes_placeholder")} rows={3} className={`${inputCls} resize-y`} />
           </Field>
 
         </form>

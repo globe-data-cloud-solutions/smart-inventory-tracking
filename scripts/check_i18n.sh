@@ -112,6 +112,13 @@ else
   fi
 fi
 
+# ── ERROR Check 2b: hardcoded English strings in JSX/attrs/error calls ────
+echo ""
+echo "Checking for hardcoded English strings in JSX..."
+if ! python3 scripts/check_hardcoded_jsx.py; then
+  EXIT=1
+fi
+
 # ── WARNING Check 3: Dynamic template literal t() calls ───────────────────
 # These use t(\`key.\${var}\`) — the script cannot verify all possible values.
 # Caller must manually ensure all dynamic values have entries in en.json.
@@ -201,6 +208,62 @@ if [ ! -f "$ROOT/backend/shared/permissions/registry.py" ]; then
   echo "  Check 7 skipped: backend sources not present (container build); enforced in container-smoke workflow"
 elif ! python3 scripts/audit_action_ids.py --check; then
   EXIT=1
+fi
+
+# ── ERROR Check 8: raw toLocale*/Intl.DateTimeFormat|NumberFormat calls ───
+# Dates/numbers must go through frontend/src/lib/format.ts so output follows the
+# app's language, not the browser's. An `i18n-ignore:` marker on the same line or
+# the line directly above exempts a call (e.g. a value only used for comparison).
+echo ""
+echo "Checking for raw locale-formatting calls outside lib/format.ts..."
+
+CHECK8_SCRIPT="$(mktemp)"
+cat > "$CHECK8_SCRIPT" <<'PYEOF'
+import os, re, sys
+
+PATTERN = re.compile(r"toLocaleDateString\(|toLocaleString\(|toLocaleTimeString\(|new Intl\.(DateTimeFormat|NumberFormat)\(")
+violations = []
+
+for base in ("frontend/src/app", "frontend/src/components"):
+    for root, dirs, files in os.walk(base):
+        dirs[:] = [d for d in dirs if d not in ("node_modules", ".next", "_archived")]
+        for fn in files:
+            if not fn.endswith((".ts", ".tsx")):
+                continue
+            path = os.path.join(root, fn)
+            lines = open(path, encoding="utf-8").read().splitlines()
+            for i, line in enumerate(lines, start=1):
+                if not PATTERN.search(line):
+                    continue
+                exempt = False
+                for ln in (i, i - 1):
+                    if 1 <= ln <= len(lines) and "i18n-ignore:" in lines[ln - 1]:
+                        exempt = True
+                        break
+                if not exempt:
+                    violations.append(f"{path}:{i}: {line.strip()}")
+
+for v in violations:
+    print(v)
+sys.exit(1 if violations else 0)
+PYEOF
+
+set +e
+CHECK8_OUTPUT="$(python3 "$CHECK8_SCRIPT" 2>&1)"
+CHECK8_EXIT=$?
+set -e
+rm -f "$CHECK8_SCRIPT"
+
+if [ "$CHECK8_EXIT" -ne 0 ]; then
+  echo ""
+  echo "ERROR: raw locale-formatting calls found outside lib/format.ts:"
+  echo "$CHECK8_OUTPUT"
+  echo ""
+  echo "Fix: use formatNumber/formatDate/formatDateTime/formatTime from lib/format.ts,"
+  echo "  or add an i18n-ignore: <reason> marker if the value is never displayed."
+  EXIT=1
+else
+  echo "  PASS: No raw locale-formatting calls outside lib/format.ts."
 fi
 
 # ── Summary ───────────────────────────────────────────────────────────────

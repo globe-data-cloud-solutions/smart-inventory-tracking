@@ -675,6 +675,10 @@ def _lot_db(
             return _result(rows[0] if rows else None, rows)
         if "SELECT batch_tracking, expiry_tracking FROM products" in stmt:
             return _result(product)
+        if "SELECT 1 FROM warehouses WHERE id = :wid" in stmt:
+            # _validate_adjustment_warehouse — these tests are about lot handling,
+            # not warehouse ownership, so the warehouse always exists by default.
+            return _result(MagicMock())
         if "SELECT unit_price FROM products" in stmt:
             return _result(MagicMock(unit_price=Decimal("10")))
         if "FROM stock_lots WHERE id = :lid" in stmt:
@@ -724,6 +728,39 @@ def _lot_id_updates(db: AsyncMock) -> list:
         (s, p) for s, p in db.statements
         if s.startswith("UPDATE adjustment_orders SET lot_id")
     ]
+
+
+@pytest.mark.unit
+class TestAdjustmentWarehouseTenantValidation:
+    """RB-1 sweep HOLE 7 (docs/reviews/2026-10-19-rb1-sweep.md): product_id was
+    validated against the caller's tenant in create_adjustment, warehouse_id
+    was not. Fixed via _validate_adjustment_warehouse on fix/rb1-holes."""
+
+    async def test_warehouse_not_in_caller_tenant_is_rejected(self) -> None:
+        db = AsyncMock()
+        db.statements = []
+
+        async def _execute(sql, params=None):
+            stmt = " ".join(str(sql).split())
+            db.statements.append((stmt, params or {}))
+            if stmt.startswith("SELECT id, status, quantity_delta, created_at"):
+                return MagicMock(fetchone=MagicMock(return_value=None))  # not idempotent-replayed
+            if "SELECT batch_tracking, expiry_tracking FROM products" in stmt:
+                return MagicMock(fetchone=MagicMock(return_value=_product(batch=False)))
+            if stmt.startswith("SELECT 1 FROM warehouses WHERE id = :wid"):
+                return MagicMock(fetchone=MagicMock(return_value=None))  # not found in this tenant
+            return MagicMock(fetchone=MagicMock(return_value=None))
+
+        db.execute = AsyncMock(side_effect=_execute)
+
+        err = await _create_error(db)
+        assert err.status_code == 404
+        assert err.detail["code"] == "WAREHOUSE_NOT_FOUND"
+
+    async def test_warehouse_in_caller_tenant_succeeds(self) -> None:
+        db = _lot_db(product=_product(batch=False))
+        result, _ = await _create(db)
+        assert result.status == "DRAFT"
 
 
 @pytest.mark.unit

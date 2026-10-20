@@ -139,6 +139,26 @@ aws ecs run-task \
   --profile smart-dev
 ```
 
+### stage/prod SA bootstrap — one-off task (no dev-style seed there)
+
+`seed_enabled=false` in stage and prod, so `seed_dev_sample.py` never runs and a fresh RDS there has no SA account. `backend/migrations/bootstrap_sa_account.py` creates **only** the SA user (no tenants), reading its email/password from Secrets Manager by *name* at runtime (never hardcoded, never logged) — run as a one-off override of the existing migration task, same shape as the dev one-off above:
+
+```bash
+aws ecs run-task \
+  --cluster smart-<env> \
+  --task-definition smart-<env>-migrate \
+  --overrides '{"containerOverrides": [{
+    "name": "migrate",
+    "command": ["python", "/app/backend/migrations/bootstrap_sa_account.py",
+                 "--email-secret-name", "smart/<env>/sa/email",
+                 "--password-secret-name", "smart/<env>/sa/password"]
+  }]}' \
+  --launch-type FARGATE \
+  --profile smart-<env>
+```
+
+Idempotent (checks for the email first, never overwrites an existing SA). Needs two new secrets (`smart/<env>/sa/email`, `smart/<env>/sa/password`, per the naming convention below) and `secretsmanager:GetSecretValue` on them granted to the migration task's role — neither added by this change; see `docs/claude/redeploy-runbook.md` for the full writeup.
+
 ### Running tests locally (unit tests only — no AWS services needed)
 
 ```bash
@@ -622,6 +642,11 @@ build-push  → matrix over all 10 services + migration + frontend: ensures the
               on Comment=='smart-<env>') and fails with ::error:: if
               empty/None — apply infra before deploying — then passes it as
               --build-arg NEXT_PUBLIC_API_URL=https://<cloudfront-domain>.
+              frontend/Dockerfile's deps-build stage runs `pnpm run build`,
+              which runs check_i18n.sh and check_help_docs.sh inside the image —
+              every file check_i18n.sh / check_help_docs.sh reads must be copied
+              into the image (scripts/*, locales/*, docs/*, frontend/*) or the
+              build fails.
 deploy      → run Alembic migrations + permission seed via one-off ECS task
               (smart-<env>-migration), reading network config (subnets/SGs) from
               the running smart-<env>-api-gateway service; FAILS the run if the

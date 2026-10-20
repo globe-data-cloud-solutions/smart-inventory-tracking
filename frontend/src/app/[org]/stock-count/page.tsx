@@ -8,6 +8,7 @@ import { useScanner } from "@/hooks/useScanner";
 import { useWriteGuard, guardProps } from "@/hooks/useWriteGuard";
 import { t } from "@/lib/i18n";
 import { useTenantName } from "@/hooks/useTenantName";
+import { formatNumber } from "@/lib/format";
 
 const isGatewayMode = !!process.env.NEXT_PUBLIC_API_URL;
 
@@ -251,7 +252,7 @@ export default function StockCountPage() {
                 <tr key={p.id} className={`border-b border-gray-100 ${idx % 2 === 0 ? "bg-white" : "bg-gray-50"}`}>
                   <td className="px-4 py-2.5 font-mono text-[11px] text-gray-400">{p.sku}</td>
                   <td className="px-4 py-2.5 font-semibold text-gray-800">{p.name}</td>
-                  <td className="px-4 py-2.5 text-right text-gray-500">{expected.toLocaleString()}</td>
+                  <td className="px-4 py-2.5 text-right text-gray-500">{formatNumber(expected)}</td>
                   <td className="px-3 py-2 text-right">
                     <input
                       type="number" min={0} step={1} value={raw}

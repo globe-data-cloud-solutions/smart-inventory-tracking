@@ -5,6 +5,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import { t } from "@/lib/i18n";
 import { TabProps, TenantAdminData } from "../types";
+import { formatDate } from "@/lib/format";
 
 interface SubscriptionBillingPeriod {
   billing_period: string | null;
@@ -183,13 +184,13 @@ export function ContractTab({ tenantId, isLoading }: TabProps) {
           <div>
             <p className="text-sm text-gray-600 mb-1">{t("tenant_admin.contract.start_date")}</p>
             <p className="text-lg font-semibold text-gray-800">
-              {contractStart ? contractStart.toLocaleDateString() : "—"}
+              {contractStart ? formatDate(contractStart) : "—"}
             </p>
           </div>
           <div>
             <p className="text-sm text-gray-600 mb-1">{t("tenant_admin.contract.end_date")}</p>
             <p className="text-lg font-semibold text-gray-800">
-              {contractEnd ? contractEnd.toLocaleDateString() : "—"}
+              {contractEnd ? formatDate(contractEnd) : "—"}
             </p>
           </div>
           <div>

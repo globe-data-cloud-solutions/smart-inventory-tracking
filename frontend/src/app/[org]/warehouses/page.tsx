@@ -7,6 +7,7 @@ import { DEMO_TENANTS, type DemoWarehouse } from "@/lib/demo-data";
 import { api } from "@/lib/api";
 import { t } from "@/lib/i18n";
 import { useTenantName } from "@/hooks/useTenantName";
+import { formatNumber } from "@/lib/format";
 
 /* ── Types ─────────────────────────────────────────────────────────────────── */
 
@@ -177,7 +178,7 @@ export default function WarehousesPage() {
                       )}
                       {node.name}
                       {!node.is_stock_holding && (
-                        <span className="ml-2 text-[10px] text-gray-400 font-normal">(no stock)</span>
+                        <span className="ml-2 text-[10px] text-gray-400 font-normal">{t("warehouses.no_stock_badge")}</span>
                       )}
                     </td>
                     <td className="px-4 py-2.5 text-gray-500">{node.address ?? "—"}</td>
@@ -198,7 +199,7 @@ export default function WarehousesPage() {
                           </>
                         : "—"}
                     </td>
-                    <td className="px-4 py-2.5 font-bold text-gray-900">{stock.units.toLocaleString()}</td>
+                    <td className="px-4 py-2.5 font-bold text-gray-900">{formatNumber(stock.units)}</td>
                     <td className="px-4 py-2.5 text-gray-700">{stock.skus.size}</td>
                   </tr>
                 );
@@ -224,7 +225,7 @@ export default function WarehousesPage() {
                       </span>
                     </td>
                     <td className="px-4 py-2.5 text-gray-700">{manager?.name ?? "—"}</td>
-                    <td className="px-4 py-2.5 font-bold text-gray-900">{whUnits.toLocaleString()}</td>
+                    <td className="px-4 py-2.5 font-bold text-gray-900">{formatNumber(whUnits)}</td>
                     <td className="px-4 py-2.5 text-gray-700">{whSKUs}</td>
                   </tr>
                 );

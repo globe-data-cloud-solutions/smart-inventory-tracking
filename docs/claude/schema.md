@@ -157,45 +157,49 @@ $$ LANGUAGE plpgsql;
 CREATE TRIGGER outbox_notify AFTER INSERT ON outbox
   FOR EACH ROW EXECUTE FUNCTION notify_outbox();
 
--- ── warehouse_stock — COMPUTED READ MODEL (never write directly from application code) ─
+-- ── inventory_balances — COMPUTED READ MODEL (never write directly from application code) ─
 --
--- CRITICAL: warehouse_stock is a materialised read model derived entirely from
+-- CRITICAL: inventory_balances is a read model derived entirely from
 -- inventory_transactions INSERTs. Application code NEVER issues:
---   UPDATE warehouse_stock SET on_hand = …
+--   UPDATE inventory_balances SET quantity = …
 -- Doing so bypasses the immutable ledger, breaks audit trails, and violates Business Rule #2.
 --
 -- How balances are maintained:
 --   1. record_transaction() INSERTs a row into inventory_transactions (the ledger).
---   2. update_running_balance() is called in the same DB transaction and issues
---      UPDATE warehouse_stock SET … only from within ledger_repo.py.
---   3. No other code path may touch warehouse_stock columns directly.
---   4. warehouse_stock is queried (SELECT) freely for dashboards and balance checks.
+--   2. _update_running_balance() is called in the same DB transaction and issues
+--      INSERT ... ON CONFLICT DO UPDATE SET quantity = … only from within ledger_repo.py.
+--   3. No other code path may touch inventory_balances columns directly.
+--   4. inventory_balances is queried (SELECT) freely for dashboards and balance checks.
 --
--- The IMTS warehouse_stock table referenced in IMTS §13.2 is this same table.
--- It is NOT an independent mutable store. It is a denormalised read cache of ledger state.
-CREATE TABLE warehouse_stock (
-  id             UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  tenant_id      UUID NOT NULL,
-  facility_id    UUID NOT NULL REFERENCES organization_node(id),
-  product_id     UUID NOT NULL,
-  on_hand        NUMERIC(15,4) NOT NULL DEFAULT 0,
-  reserved       NUMERIC(15,4) NOT NULL DEFAULT 0,
-  in_transit_in  NUMERIC(15,4) NOT NULL DEFAULT 0,
-  in_transit_out NUMERIC(15,4) NOT NULL DEFAULT 0,
-  -- available is always computed: on_hand - reserved. Never stored separately.
-  updated_at     TIMESTAMPTZ NOT NULL DEFAULT now(),
-  UNIQUE (tenant_id, facility_id, product_id)
+-- Correction (2026-10, Bugs 5/6 in ClaudeE2EReviewBug.md): this table was previously
+-- documented here as `warehouse_stock` with on_hand/reserved/in_transit_in/in_transit_out
+-- columns and a protective PostgreSQL RULE. Neither is accurate against the live schema —
+-- the real table is `inventory_balances`, one row per (tenant, product, warehouse, lot),
+-- and there is NO RULE on it (confirmed via `pg_rules`: only audit-log-style tables —
+-- audit_logs, tenant_activity_log, package_prices, platform_config_log,
+-- payment_line_items, terms_acceptances, addon_prices — have one). The only protection
+-- against a direct write is application-level (code review/CI via
+-- backend/services/inventory-service/repositories/ledger_repo.py's own module docstring
+-- and this doc), not a database-enforced guard. No RULE has been added — this is a
+-- documentation correction only.
+CREATE TABLE inventory_balances (
+  id           UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  tenant_id    UUID NOT NULL,
+  product_id   UUID NOT NULL,
+  warehouse_id UUID NOT NULL REFERENCES organization_node(id),
+  quantity     NUMERIC(15,4) NOT NULL DEFAULT 0,
+  lot_number   VARCHAR(100),
+  expiry_date  DATE,
+  created_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at   TIMESTAMPTZ NOT NULL DEFAULT now()
 );
-CREATE INDEX idx_wstock_tenant_facility ON warehouse_stock (tenant_id, facility_id);
-ALTER TABLE warehouse_stock ENABLE ROW LEVEL SECURITY;
-CREATE POLICY tenant_isolation ON warehouse_stock
+-- Unique per (tenant, product, warehouse) for the non-lot-tracked case only —
+-- lot-tracked products hold one row per lot instead (lot_number IS NOT NULL).
+CREATE UNIQUE INDEX idx_balances_tenant_product_warehouse
+  ON inventory_balances (tenant_id, product_id, warehouse_id) WHERE lot_number IS NULL;
+ALTER TABLE inventory_balances ENABLE ROW LEVEL SECURITY;
+CREATE POLICY tenant_isolation ON inventory_balances
   USING (tenant_id = current_setting('app.current_tenant_id', true)::uuid);
--- Prevent any direct UPDATE from outside ledger_repo.py at the DB level (defence in depth)
--- Note: update_running_balance() in ledger_repo.py uses a privileged session role that
--- bypasses this check. All other application sessions are denied direct writes.
-CREATE RULE no_direct_stock_update AS ON UPDATE TO warehouse_stock
-  WHERE current_setting('app.ledger_write_allowed', true) IS DISTINCT FROM 'true'
-  DO INSTEAD NOTHING;
 CREATE TABLE dispatch_strategy_configs (
   id             UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   tenant_id      UUID NOT NULL REFERENCES tenants(id),

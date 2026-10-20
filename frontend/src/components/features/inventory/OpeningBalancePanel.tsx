@@ -5,7 +5,6 @@ import { useQueryClient } from "@tanstack/react-query";
 import { nanoid } from "nanoid";
 import { api } from "@/lib/api";
 import { useInventoryStore } from "@/lib/inventory-state";
-import { useAuditStore } from "@/lib/audit-log-state";
 import { getSession } from "@/lib/demo-auth";
 import { useWriteGuard, guardProps } from "@/hooks/useWriteGuard";
 import { t } from "@/lib/i18n";
@@ -14,6 +13,7 @@ import { PanelError } from "@/components/ui/PanelError";
 import { lotErrorMessage } from "@/lib/lotErrors";
 import type { DemoProduct, DemoWarehouse } from "@/lib/demo-data";
 import { LotFields } from "@/components/features/inventory/LotFields";
+import { formatNumber } from "@/lib/format";
 
 interface Props { products: DemoProduct[]; warehouses: DemoWarehouse[]; orgSlug: string; }
 
@@ -38,7 +38,6 @@ const lockedCls = `${inputCls} bg-gray-100 text-gray-500 cursor-not-allowed`;
 export function OpeningBalancePanel({ products, warehouses, orgSlug }: Props) {
   const qc        = useQueryClient();
   const addReceive = useInventoryStore((s) => s.addReceive);
-  const logAudit   = useAuditStore((s) => s.log);
   const user       = getSession();
   const lockedWarehouseId = user?.warehouseId ?? "";
 
@@ -72,7 +71,6 @@ export function OpeningBalancePanel({ products, warehouses, orgSlug }: Props) {
       if (expiryRequired && !form.expiryDate) { setError(t("errors.EXPIRY_REQUIRED")); return; }
     }
     const product   = products.find((p) => p.id === form.productId);
-    const warehouse = warehouses.find((w) => w.id === form.warehouseId);
     const idempotencyKey = `ob:${form.productId}:${form.warehouseId}:${Date.now()}:${nanoid(8)}`;
     const payload = {
       product_id:       form.productId,
@@ -88,11 +86,10 @@ export function OpeningBalancePanel({ products, warehouses, orgSlug }: Props) {
     try {
       const resp = await api.post<{ lot_number?: string | null }>("/api/v1/inventory/receive/", payload);
       addReceive(form.productId, form.warehouseId, qty);
-      logAudit({ tenantSlug: orgSlug, userEmail: user.email, userName: user.name, role: user.role, action: "inventory:opening_balance", category: "INVENTORY", resourceRef: product?.sku ?? form.productId, resourceType: "OpeningBalanceReceipt", productName: product?.name, quantityStr: `+${qty.toLocaleString()} ${product?.unit ?? "units"}`, toWarehouse: warehouse?.name ?? form.warehouseId, notes: form.notes || undefined });
       void qc.invalidateQueries({ queryKey: ["products", orgSlug] });
       void qc.invalidateQueries({ queryKey: ["receipts", orgSlug] });
       clearForm(); setOpen(false);
-      const what = `${product?.name ?? ""} (${product?.sku ?? ""}) +${qty.toLocaleString()} ${product?.unit ?? ""}`.trim();
+      const what = `${product?.name ?? ""} (${product?.sku ?? ""}) +${formatNumber(qty)} ${product?.unit ?? ""}`.trim();
       notify({
         kind: "success",
         message: resp.lot_number
@@ -120,7 +117,9 @@ export function OpeningBalancePanel({ products, warehouses, orgSlug }: Props) {
           <div>
             <p className="font-bold text-base text-white m-0">{t("opening_balance.title")}</p>
             <p className="text-xs text-blue-200 mt-0.5">{t("opening_balance.subtitle")}</p>
-            <p className="text-[10px] text-blue-300 mt-1 font-mono tracking-wide">DRAFT → PENDING_APPROVAL → POSTED</p>
+            <p className="text-[10px] text-blue-300 mt-1 font-mono tracking-wide">
+              {t("status.DRAFT")} → {t("status.PENDING_APPROVAL")} → {t("status.POSTED")}
+            </p>
           </div>
           <button onClick={() => setOpen(false)} className="bg-white/10 border-0 cursor-pointer text-white text-lg w-8 h-8 rounded flex items-center justify-center shrink-0">✕</button>
         </div>
@@ -181,9 +180,10 @@ export function OpeningBalancePanel({ products, warehouses, orgSlug }: Props) {
           )}
 
           <Field label={t("audit.notes")} hint={`(${t("receive_panel.optional")})`}>
-            <textarea value={form.notes} onChange={(e) => set("notes", e.target.value)} placeholder="e.g. Initial go-live stock count" rows={2} className={`${inputCls} resize-y`} />
+            <textarea value={form.notes} onChange={(e) => set("notes", e.target.value)} placeholder={t("opening_balance.notes_placeholder")} rows={2} className={`${inputCls} resize-y`} />
           </Field>
           <Field label={t("opening_balance.ref_doc")} hint={`(${t("receive_panel.optional")})`}>
+            {/* i18n-ignore: example reference-document code */}
             <input type="text" value={form.referenceDocument} onChange={(e) => set("referenceDocument", e.target.value)} placeholder="e.g. PHYS-COUNT-2026-001" className={inputCls} />
           </Field>
 
