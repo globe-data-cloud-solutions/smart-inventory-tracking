@@ -1,5 +1,6 @@
 import asyncio
 import os
+import sys
 from logging.config import fileConfig
 
 from alembic import context
@@ -11,11 +12,13 @@ from shared.db.models.base import Base
 # All models must be imported so Alembic can detect them
 import shared.db.models  # noqa: F401
 
+# Alembic's prepend_sys_path is relative to the working directory, so add this
+# file's directory explicitly to import the sibling resolver from anywhere.
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from migration_url import migration_database_url  # noqa: E402
+
 config = context.config
-config.set_main_option(
-    "sqlalchemy.url",
-    os.environ.get("MIGRATION_DATABASE_URL") or os.environ["DATABASE_URL"],
-)
+config.set_main_option("sqlalchemy.url", migration_database_url(os.environ))
 
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
