@@ -134,6 +134,7 @@ Every error code the backend can return to a client (literal `"code": "X"` / `'c
 | `UPSTREAM_TIMEOUT` | `backend/services/api-gateway/main.py:177` | — | Upstream service for {matched_prefix} timed out | yes |
 | `USE_ADDONS` | `backend/services/tenant-service/routers/tenants.py:3517` | — | Direct feature-flag overrides are no longer supported. Grant a free override or purchased add-on via POST /{tenant_id}/addons instead. |  |
 | `USE_DEACTIVATE` | `backend/services/tenant-service/routers/tenants.py:2985` | — | Tenants are never deleted; use PATCH /{tenant_id}/deactivate. |  |
+| `WAREHOUSE_NOT_FOUND` | `backend/services/inventory-service/services/inventory_service.py:2303` | — | none (code-only) |  |
 | `WAREHOUSE_OUT_OF_SCOPE` | `backend/services/inventory-service/services/override_log_service.py:99` | — | none (code-only) |  |
 | `WRONG_PROVIDER` | `backend/services/tenant-service/routers/billing.py:427` | — | Only MANUAL payments are marked paid here |  |
 | `ZERO_QUANTITY` | `backend/services/inventory-service/repositories/ledger_repo.py:153` | product_id, transaction_type | none (code-only) |  |

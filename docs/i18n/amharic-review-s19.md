@@ -243,6 +243,7 @@ Every backend error code without an existing `errors.<CODE>` entry (see `docs/i1
 | errors.UPSTREAM_TIMEOUT | The service took too long to respond. Please try again. | አገልግሎቱ ምላሽ ለመስጠት በጣም ረጅም ጊዜ ወስዷል። እባክዎ እንደገና ይሞክሩ። |
 | errors.USE_ADDONS | Feature overrides are no longer set directly — use the Add-ons page instead. | ባህሪ ማለፊያዎች ከእንግዲህ በቀጥታ አይዋቀሩም — በምትኩ የተጨማሪ አገልግሎቶች ገጽን ይጠቀሙ። |
 | errors.USE_DEACTIVATE | Accounts are never deleted — deactivate them instead. | መለያዎች በፍጹም አይሰረዙም — በምትኩ ያቦዝኗቸው። |
+| errors.WAREHOUSE_NOT_FOUND | This warehouse was not found in your organisation. | ይህ መጋዘን በድርጅትዎ ውስጥ አልተገኘም። |
 | errors.WAREHOUSE_OUT_OF_SCOPE | You don't have access to this warehouse. | ለዚህ መጋዘን መዳረሻ የለዎትም። |
 | errors.WRONG_PROVIDER | Only manually recorded payments can be marked paid here. | እዚህ ላይ እንደ ተከፈለ ሊመለከት የሚችለው በእጅ የተመዘገበ ክፍያ ብቻ ነው። |
 | errors.ZERO_QUANTITY | Quantity must be greater than zero. | መጠኑ ከዜሮ የበለጠ መሆን አለበት። |

@@ -1115,6 +1115,7 @@
     "UPSTREAM_TIMEOUT": "Tajaajilli deebii kennuuf yeroo dheeraa fudhate. Maaloo irra deebi'ii yaali.",
     "USE_ADDONS": "Irra-dabarsaaleen amalaa siʼachi kallattiin hin qindaa'aman — qaarreen fuula Dabalataa fayyadami.",
     "USE_DEACTIVATE": "Ginbiiwwan gonkumaa hin haqaman — qaarreen isaan dhaabi.",
+    "WAREHOUSE_NOT_FOUND": "Kuusaan kun dhaabbata keessan keessatti hin argamne.",
     "WAREHOUSE_OUT_OF_SCOPE": "Kuusaa kanaaf mirga hin qabdan.",
     "WRONG_PROVIDER": "Kaffaltii kan harkaan galmaa'e qofatu asitti akka kaffalametti mallatteeffamuu danda'a.",
     "ZERO_QUANTITY": "Hangi sun zeeroo ol ta'uu qaba.",

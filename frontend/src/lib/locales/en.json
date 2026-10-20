@@ -1123,6 +1123,7 @@
     "UPSTREAM_TIMEOUT": "The service took too long to respond. Please try again.",
     "USE_ADDONS": "Feature overrides are no longer set directly — use the Add-ons page instead.",
     "USE_DEACTIVATE": "Accounts are never deleted — deactivate them instead.",
+    "WAREHOUSE_NOT_FOUND": "This warehouse was not found in your organisation.",
     "WAREHOUSE_OUT_OF_SCOPE": "You don't have access to this warehouse.",
     "WRONG_PROVIDER": "Only manually recorded payments can be marked paid here.",
     "ZERO_QUANTITY": "Quantity must be greater than zero.",
