@@ -194,7 +194,8 @@ ROLE_PERMISSION_MATRIX: dict[str, dict[str, str]] = {
 
 
 async def seed() -> None:
-    engine = create_async_engine(os.environ["DATABASE_URL"])
+    # Owner role in deployed migration tasks; DATABASE_URL in local dev.
+    engine = create_async_engine(os.environ.get("MIGRATION_DATABASE_URL") or os.environ["DATABASE_URL"])
     Session = async_sessionmaker(bind=engine, expire_on_commit=False)
 
     async with Session() as session:
