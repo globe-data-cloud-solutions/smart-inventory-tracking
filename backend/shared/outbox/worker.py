@@ -367,31 +367,8 @@ async def _check_contracts() -> None:
 PARTITION_FUTURE_MONTHS = 3
 
 
-# Same tenant_isolation expression as migration 091 (V_EXPR) — duplicated on
-# purpose: new partitions must carry the policy migration 091 gave existing ones.
-_TENANT_ISOLATION_EXPR = (
-    "(tenant_id = NULLIF(current_setting('app.current_tenant_id', true), '')::uuid "
-    "OR COALESCE(current_setting('app.is_sa', true), '') = 'on')"
-)
-
-
-def _partition_rls_sql(name: str) -> list[str]:
-    return [
-        f"ALTER TABLE {name} ENABLE ROW LEVEL SECURITY",
-        f"DROP POLICY IF EXISTS tenant_isolation ON {name}",
-        f"CREATE POLICY tenant_isolation ON {name} "
-        f"USING {_TENANT_ISOLATION_EXPR} WITH CHECK {_TENANT_ISOLATION_EXPR}",
-    ]
-
-
 def _partition_name(year: int, month: int) -> str:
     return f"inventory_transactions_{year}_{month:02d}"
-
-
-def _partition_range(year: int, month: int) -> tuple[str, str]:
-    start = date(year, month, 1)
-    end = start + relativedelta(months=1)
-    return start.isoformat(), end.isoformat()
 
 
 @app.task
@@ -399,7 +376,11 @@ def ensure_future_partitions() -> None:
     """Daily beat task (also run once at beat startup — see _run_initial_partition_check)
     — keeps the current month plus PARTITION_FUTURE_MONTHS future inventory_transactions
     partitions created ahead of need. Idempotent: a partition that already exists is
-    left untouched and not reported as created.
+    not recreated and not reported as created.
+
+    The runtime role cannot CREATE or ALTER tables, so every month goes through the
+    SECURITY DEFINER ensure_inventory_partition(date) (migration 092), which creates
+    the partition if missing and (re)applies RLS + tenant_isolation either way.
     """
     _run(_ensure_future_partitions())
 
@@ -417,20 +398,13 @@ async def _ensure_future_partitions() -> None:
             exists = (await session.execute(
                 text("SELECT to_regclass(:name) IS NOT NULL"), {"name": name}
             )).scalar()
-            if exists:
-                continue
 
-            start, end = _partition_range(target.year, target.month)
             await session.execute(
-                text(
-                    f"CREATE TABLE IF NOT EXISTS {name} "
-                    f"PARTITION OF inventory_transactions "
-                    f"FOR VALUES FROM ('{start}') TO ('{end}')"
-                )
+                text("SELECT ensure_inventory_partition(:m)"),
+                {"m": date(target.year, target.month, 1)},
             )
-            for stmt in _partition_rls_sql(name):
-                await session.execute(text(stmt))
-            created.append(name)
+            if not exists:
+                created.append(name)
 
         await session.commit()
 

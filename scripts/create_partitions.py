@@ -1,6 +1,10 @@
 """Create monthly partitions for inventory_transactions.
 Run at infrastructure setup and monthly via Celery beat / cron.
 Usage: python scripts/create_partitions.py --months 3
+
+Runs as the runtime role, which cannot CREATE or ALTER tables: each month goes
+through the SECURITY DEFINER ensure_inventory_partition(date) (migration 092),
+which creates the partition if missing and (re)applies RLS + tenant_isolation.
 """
 from __future__ import annotations
 
@@ -14,31 +18,8 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 
-# Same tenant_isolation expression as migration 091 (V_EXPR) — duplicated on
-# purpose: new partitions must carry the policy migration 091 gave existing ones.
-_TENANT_ISOLATION_EXPR = (
-    "(tenant_id = NULLIF(current_setting('app.current_tenant_id', true), '')::uuid "
-    "OR COALESCE(current_setting('app.is_sa', true), '') = 'on')"
-)
-
-
-def _partition_rls_sql(name: str) -> list[str]:
-    return [
-        f"ALTER TABLE {name} ENABLE ROW LEVEL SECURITY",
-        f"DROP POLICY IF EXISTS tenant_isolation ON {name}",
-        f"CREATE POLICY tenant_isolation ON {name} "
-        f"USING {_TENANT_ISOLATION_EXPR} WITH CHECK {_TENANT_ISOLATION_EXPR}",
-    ]
-
-
 def partition_name(year: int, month: int) -> str:
     return f"inventory_transactions_{year}_{month:02d}"
-
-
-def partition_range(year: int, month: int) -> tuple[str, str]:
-    start = date(year, month, 1)
-    end = start + relativedelta(months=1)
-    return start.isoformat(), end.isoformat()
 
 
 async def create_partitions(months_ahead: int) -> None:
@@ -50,21 +31,15 @@ async def create_partitions(months_ahead: int) -> None:
         for i in range(months_ahead):
             target = today + relativedelta(months=i)
             name = partition_name(target.year, target.month)
-            start, end = partition_range(target.year, target.month)
 
             await session.execute(
-                text(
-                    f"CREATE TABLE IF NOT EXISTS {name} "
-                    f"PARTITION OF inventory_transactions "
-                    f"FOR VALUES FROM ('{start}') TO ('{end}')"
-                )
+                text("SELECT ensure_inventory_partition(:m)"),
+                {"m": date(target.year, target.month, 1)},
             )
-            for stmt in _partition_rls_sql(name):
-                await session.execute(text(stmt))
-            print(f"  Created partition: {name} ({start} → {end})")
+            print(f"  Ensured partition: {name}")
 
         await session.commit()
-        print(f"Done. Created {months_ahead} partition(s).")
+        print(f"Done. Ensured {months_ahead} partition(s).")
 
     await engine.dispose()
 
