@@ -96,7 +96,8 @@ jobs:
         with: { python-version: "3.12" }
       - run: pip install uv
       - run: uv pip install --system -e "backend/shared[test]"
-      - run: alembic -c backend/migrations/alembic.ini upgrade head
+      - run: alembic upgrade head
+        working-directory: backend/migrations
       - run: python scripts/seed_permissions.py
       - run: python scripts/create_partitions.py --months 3
       - run: pytest backend/ -v --tb=short --cov=backend -m "unit or integration"
@@ -133,9 +134,11 @@ jobs:
             --secret-id smart/dev/db/migration-url --query SecretString --output text)" >> $GITHUB_ENV
       - uses: actions/setup-python@v5
         with: { python-version: "3.12" }
-      - run: pip install uv && uv pip install --system alembic asyncpg sqlalchemy
-      - run: |
-          alembic -c backend/migrations/alembic.ini upgrade head
-          alembic -c backend/migrations/alembic.ini downgrade -1
-          alembic -c backend/migrations/alembic.ini upgrade head
+      - run: pip install uv
+      - run: uv pip install --system -e "backend/shared[test]"
+      - working-directory: backend/migrations
+        run: |
+          alembic upgrade head
+          alembic downgrade -1
+          alembic upgrade head
           echo "Round-trip passed ✅"
