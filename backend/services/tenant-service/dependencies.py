@@ -84,7 +84,9 @@ async def get_db_session(
 ) -> AsyncGenerator[AsyncSession, None]:
     async with AsyncSessionLocal() as session:
         if user is not None:
-            await set_rls_context(session, user.tenant_id, user.user_id)
+            await set_rls_context(
+                session, user.tenant_id, user.user_id, is_sa=user.role == "SA"
+            )
         try:
             yield session
             await session.commit()
@@ -152,7 +154,7 @@ async def get_db_session_for_tenant(
 
     async with AsyncSessionLocal() as session:
         # Always set RLS to the URL's tenant_id (verified for non-SA above).
-        await set_rls_context(session, str(tenant_id), user.user_id)
+        await set_rls_context(session, str(tenant_id), user.user_id, is_sa=user.role == "SA")
         try:
             yield session
             await session.commit()

@@ -40,16 +40,17 @@ async def test_set_rls_context_uses_transaction_local() -> None:
         sql = _sql(call)
         assert "set_config('app.current_tenant_id', :tid, true)" in sql
         assert "set_config('app.current_user_id', :uid, true)" in sql
+        assert "set_config('app.is_sa', :sa, true)" in sql
         assert "false" not in sql
-        assert call.args[1] == {"tid": TENANT_ID, "uid": USER_ID}
-    assert session.info["rls"] == (TENANT_ID, USER_ID)
+        assert call.args[1] == {"tid": TENANT_ID, "uid": USER_ID, "sa": "off"}
+    assert session.info["rls"] == (TENANT_ID, USER_ID, False)
 
 
 def test_after_begin_reapplies_context() -> None:
     assert event.contains(Session, "after_begin", rls._reapply_rls_context)
 
     sync_session = MagicMock()
-    sync_session.info = {"rls": (TENANT_ID, USER_ID)}
+    sync_session.info = {"rls": (TENANT_ID, USER_ID, True)}
     connection = MagicMock()
 
     rls._reapply_rls_context(sync_session, MagicMock(), connection)
@@ -59,7 +60,8 @@ def test_after_begin_reapplies_context() -> None:
     sql = _sql(call)
     assert "set_config('app.current_tenant_id', :tid, true)" in sql
     assert "set_config('app.current_user_id', :uid, true)" in sql
-    assert call.args[1] == {"tid": TENANT_ID, "uid": USER_ID}
+    assert "set_config('app.is_sa', :sa, true)" in sql
+    assert call.args[1] == {"tid": TENANT_ID, "uid": USER_ID, "sa": "on"}
 
 
 def test_after_begin_noop_without_context() -> None:
@@ -70,3 +72,47 @@ def test_after_begin_noop_without_context() -> None:
     rls._reapply_rls_context(sync_session, MagicMock(), connection)
 
     connection.execute.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_sa_flag_on_for_sa() -> None:
+    session = MagicMock()
+    session.info = {}
+    session.execute = AsyncMock()
+
+    await rls.set_rls_context(session, TENANT_ID, USER_ID, is_sa=True)
+
+    assert session.info["rls"] == (TENANT_ID, USER_ID, True)
+    call = session.execute.await_args_list[-1]
+    sql = _sql(call)
+    assert "set_config('app.is_sa', :sa, true)" in sql
+    assert call.args[1]["sa"] == "on"
+
+
+@pytest.mark.asyncio
+async def test_non_sa_flag_off() -> None:
+    session = MagicMock()
+    session.info = {}
+    session.execute = AsyncMock()
+
+    await rls.set_rls_context(session, TENANT_ID, USER_ID)
+
+    assert session.info["rls"] == (TENANT_ID, USER_ID, False)
+    call = session.execute.await_args_list[-1]
+    sql = _sql(call)
+    # Explicitly 'off', transaction-local — never left unset from a prior SA request.
+    assert "set_config('app.is_sa', :sa, true)" in sql
+    assert call.args[1]["sa"] == "off"
+
+
+@pytest.mark.asyncio
+async def test_none_tenant_binds_empty() -> None:
+    """SA has no tenant: None must bind as '' (matches nothing), never 'None'."""
+    session = MagicMock()
+    session.info = {}
+    session.execute = AsyncMock()
+
+    await rls.set_rls_context(session, None, USER_ID, is_sa=True)
+
+    assert session.info["rls"] == ("", USER_ID, True)
+    assert session.execute.await_args_list[-1].args[1]["tid"] == ""

@@ -144,7 +144,10 @@ async def get_db_session(
     """Primary DB session with RLS context from authenticated user's tenant_id."""
     async with AsyncSessionLocal() as session:
         if user is not None:
-            await set_rls_context(session, _rls_tenant_for(user, request), user.user_id)
+            await set_rls_context(
+                session, _rls_tenant_for(user, request), user.user_id,
+                is_sa=user.role == "SA",
+            )
         try:
             yield session
             await session.commit()
@@ -160,5 +163,8 @@ async def get_read_db_session(
     """Read-replica session for analytics/reports."""
     async with AsyncReadSessionLocal() as session:
         if user is not None:
-            await set_rls_context(session, _rls_tenant_for(user, request), user.user_id)
+            await set_rls_context(
+                session, _rls_tenant_for(user, request), user.user_id,
+                is_sa=user.role == "SA",
+            )
         yield session

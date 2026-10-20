@@ -14,7 +14,10 @@ async def get_db_session(user=Depends(lambda: None)) -> AsyncGenerator[AsyncSess
         # Skipping rather than crashing ensures the 401 error response is returned
         # cleanly instead of a 500 from an AttributeError on user.tenant_id.
         if user is not None:
-            await set_rls_context(session, user.tenant_id, user.user_id)
+            await set_rls_context(
+                session, user.tenant_id, user.user_id,
+                is_sa=getattr(user, "role", None) == "SA",
+            )
         try:
             yield session
             await session.commit()
@@ -27,5 +30,8 @@ async def get_read_db_session(user=Depends(lambda: None)) -> AsyncGenerator[Asyn
     """Read replica session — use for analytics, reports, and AI ETL queries only."""
     async with AsyncReadSessionLocal() as session:
         if user is not None:
-            await set_rls_context(session, user.tenant_id, user.user_id)
+            await set_rls_context(
+                session, user.tenant_id, user.user_id,
+                is_sa=getattr(user, "role", None) == "SA",
+            )
         yield session
