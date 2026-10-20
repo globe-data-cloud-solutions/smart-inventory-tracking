@@ -886,6 +886,15 @@ token response), NOT the {success,data} envelope above. ~30 scripts/e2e scripts 
 frontend auth helpers depend on this flat shape. Errors on these endpoints still use
 {"detail":{"code","message"}}, not the error envelope. This is intentional — do not change
 the response shape of these endpoints to match the standard envelope.
+
+Error codes and locales (Session 19, P6): every error `code` a route can return needs an
+errors.<CODE> entry in locales/en.json, am.json, and or.json — guarded by
+scripts/check_error_codes.py (container-smoke). Any value the message needs to interpolate
+(a count, a name, a limit) must be its own key in `detail`, not just baked into the English
+`message` string — the frontend fills {placeholder} tokens in errors.<CODE> from `detail`,
+so a value that only exists inside the f-string can never be localized:
+  {"code": "PLAN_LIMIT_REACHED", "resource": "skus", "current": 10, "limit": 10,
+   "plan_tier": "STARTER", "upgrade_to": "GROWTH", "message": "SKU limit reached (10/10)."}
 ```
 
 ---

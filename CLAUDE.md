@@ -111,6 +111,9 @@ No `.env.example` committed — secrets via AWS Secrets Manager (local-dev excep
   picker until `or.json` is translated, at which point setting the var to `en,am,or` and
   redeploying the frontend turns it on (RB-6). The `/api/locales/[locale]` route keeps serving
   all three packs regardless, so a disabled locale is still loadable for review.
+  Every backend error code needs an `errors.<CODE>` entry in en/am/or (guarded by
+  `scripts/check_error_codes.py` in container-smoke); extra values go in the `detail` object
+  as named fields, never only inside the English message.
 
 ---
 
