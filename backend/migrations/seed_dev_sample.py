@@ -28,14 +28,16 @@ import asyncio
 import json
 import os
 import sys
-from pathlib import Path
-from urllib.parse import unquote, urlsplit
 
 import asyncpg
-import bcrypt
 
-FIXTURE = Path(__file__).resolve().parent / "seed" / "dev_sample_tenants.json"
-SA_EMAIL = "smartadmin@smart-inventory.com"
+from migrations.seed_common import (
+    FIXTURE,
+    SA_EMAIL,
+    connect_kwargs,
+    hash_password,
+    insert_row,
+)
 
 
 def _required(name: str) -> str:
@@ -45,38 +47,8 @@ def _required(name: str) -> str:
     return value
 
 
-def _connect_kwargs(url: str) -> dict:
-    # The app's URL carries the SQLAlchemy driver and a ?ssl= query. asyncpg
-    # rejects ?ssl= inside a DSN ("parameter ssl cannot be changed now"), so
-    # split the URL and pass ssl as a keyword, as bootstrap_db_role.py does.
-    parts = urlsplit(url.replace("postgresql+asyncpg://", "postgresql://", 1))
-    return {
-        "host": parts.hostname,
-        "port": parts.port or 5432,
-        "user": unquote(parts.username or ""),
-        "password": unquote(parts.password or ""),
-        "database": parts.path.lstrip("/"),
-        "ssl": "require",
-    }
-
-
-def _hash(password: str) -> str:
-    return bcrypt.hashpw(password.encode(), bcrypt.gensalt()).decode()
-
-
 def _row_tenant(table: str, row: dict) -> str | None:
     return row["id"] if table == "tenants" else row.get("tenant_id")
-
-
-async def _insert(conn: asyncpg.Connection, table: str, row: dict) -> None:
-    # json_populate_record coerces each JSON value to the column's own type
-    # (uuid, timestamptz, enum, arrays, jsonb), so the fixture stays plain JSON.
-    # The table name comes from the fixture and is double-quoted.
-    await conn.execute(
-        f'INSERT INTO "{table}" SELECT (json_populate_record(NULL::"{table}", $1::json)).* '
-        "ON CONFLICT DO NOTHING",
-        json.dumps(row),
-    )
 
 
 async def _resolve_price(conn: asyncpg.Connection, row: dict) -> dict:
@@ -100,7 +72,7 @@ async def main() -> None:
     sample_password = _required("SEED_SAMPLE_PASSWORD")
     fixture: dict[str, list[dict]] = json.loads(FIXTURE.read_text(encoding="utf-8"))
 
-    conn = await asyncpg.connect(**_connect_kwargs(_required("DATABASE_URL")))
+    conn = await asyncpg.connect(**connect_kwargs(_required("DATABASE_URL")))
     try:
         # SA account: tenant_id IS NULL, identified by email. Rotation (see
         # SEED_ROTATE_SA) deletes it and re-creates it from the current secret,
@@ -113,7 +85,7 @@ async def main() -> None:
             if await conn.fetchval("SELECT 1 FROM users WHERE email = $1", SA_EMAIL):
                 print(f"seed_dev_sample: {SA_EMAIL} exists — skipped.")
             else:
-                await _insert(conn, "users", {**sa_row, "password_hash": _hash(sa_password)})
+                await insert_row(conn, "users", {**sa_row, "password_hash": hash_password(sa_password)})
                 print(f"seed_dev_sample: {'rotated and ' if rotate else ''}created {SA_EMAIL}.")
 
         for tenant in fixture["tenants"]:
@@ -126,7 +98,7 @@ async def main() -> None:
             async with conn.transaction():
                 # Writes to tenant-scoped tables are checked against this setting.
                 await conn.execute("SELECT set_config('app.current_tenant_id', $1, true)", tid)
-                await _insert(conn, "tenants", tenant)
+                await insert_row(conn, "tenants", tenant)
                 # Fixture order keeps parents first: users come before the
                 # tables that reference them (personnel_positions, policies).
                 for table in fixture:
@@ -136,10 +108,10 @@ async def main() -> None:
                         if _row_tenant(table, row) != tid:
                             continue
                         if table == "users":
-                            row = {**row, "password_hash": _hash(sample_password)}
+                            row = {**row, "password_hash": hash_password(sample_password)}
                         if table == "subscriptions":
                             row = await _resolve_price(conn, row)
-                        await _insert(conn, table, row)
+                        await insert_row(conn, table, row)
             print(f"seed_dev_sample: created tenant {name}.")
     finally:
         await conn.close()
