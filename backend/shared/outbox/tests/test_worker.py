@@ -428,10 +428,12 @@ class TestEnsureFuturePartitions:
                 result = MagicMock()
                 result.scalar.return_value = (params or {}).get("name") in existing_names
                 return result
-            if "CREATE TABLE IF NOT EXISTS" in sql_str:
-                name = sql_str.split("CREATE TABLE IF NOT EXISTS ")[1].split(" ")[0]
-                creates.append(name)
-                existing_names.add(name)
+            if "ensure_inventory_partition(" in sql_str:
+                m = (params or {})["m"]
+                name = worker._partition_name(m.year, m.month)
+                if name not in existing_names:
+                    creates.append(name)
+                    existing_names.add(name)
             return MagicMock()
 
         session = AsyncMock()
@@ -476,9 +478,11 @@ class TestEnsureFuturePartitions:
         assert len(creates) == worker.PARTITION_FUTURE_MONTHS
         assert len(set(creates)) == len(creates), "no duplicate partitions created"
 
-    async def test_new_partition_gets_tenant_rls(self) -> None:
-        """Migration 091 (D9): a new partition gets RLS + tenant_isolation in the
-        same session as its CREATE TABLE, run under the system context."""
+    async def test_partitions_created_through_ensure_inventory_partition(self) -> None:
+        """Migration 092 (D12): the runtime role cannot CREATE/ALTER tables, so every
+        month goes through the SECURITY DEFINER ensure_inventory_partition(date),
+        which creates the partition and applies RLS + tenant_isolation itself.
+        The worker issues no DDL, and runs under the system context."""
         existing: set[str] = set()
         creates: list[str] = []
 
@@ -487,15 +491,17 @@ class TestEnsureFuturePartitions:
             mock_ctx.return_value.__aenter__.return_value = session
             await worker._ensure_future_partitions()
 
-        statements = [" ".join(str(c.args[0]).split()) for c in session.execute.await_args_list]
+        calls = session.execute.await_args_list
+        statements = [" ".join(str(c.args[0]).split()) for c in calls]
         assert "set_config('app.is_sa', :sa, true)" in statements[0]
-        for name in creates:
-            assert f"ALTER TABLE {name} ENABLE ROW LEVEL SECURITY" in statements
-            policy = [s for s in statements if s.startswith(f"CREATE POLICY tenant_isolation ON {name} ")]
-            assert len(policy) == 1
-            assert "NULLIF(current_setting('app.current_tenant_id', true), '')::uuid" in policy[0]
-            assert "COALESCE(current_setting('app.is_sa', true), '') = 'on'" in policy[0]
-            assert "WITH CHECK" in policy[0]
+        ensure_months = [
+            c.args[1]["m"] for c in calls if "SELECT ensure_inventory_partition(" in str(c.args[0])
+        ]
+        assert len(ensure_months) == worker.PARTITION_FUTURE_MONTHS + 1
+        assert all(m.day == 1 for m in ensure_months)
+        for s in statements:
+            assert "CREATE TABLE" not in s.upper()
+            assert "ALTER TABLE" not in s.upper()
 
 
 # ── _run_initial_partition_check: beat_init startup hook ────────────────────
