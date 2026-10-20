@@ -39,7 +39,7 @@ for _p in (str(_BACKEND), str(_INVENTORY_ROOT)):
 from sqlalchemy import text  # noqa: E402
 
 from shared.db.session import AsyncSessionLocal  # noqa: E402
-from shared.db.rls import set_rls_context  # noqa: E402
+from shared.db.rls import set_rls_context, set_system_rls_context  # noqa: E402
 from repositories.ledger_repo import record_transaction  # noqa: E402
 from services.lot_settings_service import update_lot_settings  # noqa: E402
 from services.override_log_service import list_overrides, override_summary  # noqa: E402
@@ -62,7 +62,9 @@ async def main() -> None:
     async with AsyncSessionLocal() as session:
         try:
             # a) a tenant with a stock-holding organization_node, a user of it, and
-            #    a user of another tenant
+            #    a user of another tenant. Fixture discovery spans tenants, so it
+            #    runs under the system context (the runtime role is bound by RLS).
+            await set_system_rls_context(session, "smoke_override_log")
             node = (await session.execute(text(
                 "SELECT n.tenant_id, n.id, n.name FROM organization_node n "
                 "WHERE n.is_stock_holding AND n.is_active "
