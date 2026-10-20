@@ -346,8 +346,8 @@ async def create_position(
     rp_title: Optional[str] = None
     if body.reports_to_position_id:
         rp_row = (await db.execute(
-            text("SELECT title FROM positions WHERE id = :id"),
-            {"id": str(body.reports_to_position_id)},
+            text("SELECT title FROM positions WHERE id = :id AND tenant_id = :tid"),
+            {"id": str(body.reports_to_position_id), "tid": str(tenant_id)},
         )).fetchone()
         if rp_row:
             rp_title = rp_row.title
@@ -452,8 +452,8 @@ async def update_position(
     rp_title: Optional[str] = row.rp_title
     if body.reports_to_position_id and body.reports_to_position_id != row.reports_to_position_id:
         rp_row = (await db.execute(
-            text("SELECT title FROM positions WHERE id = :id"),
-            {"id": str(body.reports_to_position_id)},
+            text("SELECT title FROM positions WHERE id = :id AND tenant_id = :tid"),
+            {"id": str(body.reports_to_position_id), "tid": str(tenant_id)},
         )).fetchone()
         rp_title = rp_row.title if rp_row else None
 
