@@ -24,6 +24,7 @@ Usage:
     set -a; source .env; set +a
     py -3.12 scripts/smoke_rls_policies.py
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -59,7 +60,8 @@ def _result(ok: bool, label: str) -> None:
 
 async def _ctx(session, tenant_id: str, is_sa: bool = False) -> None:
     await session.execute(
-        _CTX_SQL, {"tid": tenant_id, "uid": str(uuid.uuid4()), "sa": "on" if is_sa else "off"}
+        _CTX_SQL,
+        {"tid": tenant_id, "uid": str(uuid.uuid4()), "sa": "on" if is_sa else "off"},
     )
 
 
@@ -80,18 +82,29 @@ async def _check(session, label: str, fn) -> None:
 async def main() -> None:
     session = AsyncSessionLocal()
     try:
-        who = (await session.execute(text(
-            "SELECT current_user AS u, "
-            "       (SELECT tableowner FROM pg_tables WHERE schemaname='public' AND tablename='users') AS owner, "
-            "       (SELECT rolbypassrls FROM pg_roles WHERE rolname = current_user) AS bypass"
-        ))).one()
+        who = (
+            await session.execute(
+                text(
+                    "SELECT current_user AS u, "
+                    "       (SELECT tableowner FROM pg_tables WHERE schemaname='public' AND tablename='users') AS owner, "
+                    "       (SELECT rolbypassrls FROM pg_roles WHERE rolname = current_user) AS bypass"
+                )
+            )
+        ).one()
         print(f"current_user={who.u} users_owner={who.owner} bypassrls={who.bypass}")
-        _result(who.u != who.owner and not who.bypass, "PRE: running as non-owner, NOBYPASSRLS role")
+        _result(
+            who.u != who.owner and not who.bypass,
+            "PRE: running as non-owner, NOBYPASSRLS role",
+        )
 
         # ── fixtures (rolled back) ────────────────────────────────────────────
-        tmpl = (await session.execute(text(
-            "SELECT organisation_type, plan_id FROM tenants ORDER BY created_at LIMIT 1"
-        ))).one()
+        tmpl = (
+            await session.execute(
+                text(
+                    "SELECT organisation_type, plan_id FROM tenants ORDER BY created_at LIMIT 1"
+                )
+            )
+        ).one()
         tag = uuid.uuid4().hex[:10]
         tenant_a, tenant_b = str(uuid.uuid4()), str(uuid.uuid4())
         user_a, user_b = str(uuid.uuid4()), str(uuid.uuid4())
@@ -99,16 +112,27 @@ async def main() -> None:
         email_b = f"rls-smoke-b-{tag}@example.invalid"
         for tid, name in ((tenant_a, "A"), (tenant_b, "B")):
             await session.execute(
-                text("INSERT INTO tenants (id, name, organisation_type, plan_id) "
-                     "VALUES (:id, :name, :ot, :plan)"),
-                {"id": tid, "name": f"rls-smoke-{name}-{tag}",
-                 "ot": tmpl.organisation_type, "plan": tmpl.plan_id},
+                text(
+                    "INSERT INTO tenants (id, name, organisation_type, plan_id) "
+                    "VALUES (:id, :name, :ot, :plan)"
+                ),
+                {
+                    "id": tid,
+                    "name": f"rls-smoke-{name}-{tag}",
+                    "ot": tmpl.organisation_type,
+                    "plan": tmpl.plan_id,
+                },
             )
-        for tid, uid, email in ((tenant_a, user_a, email_a), (tenant_b, user_b, email_b)):
+        for tid, uid, email in (
+            (tenant_a, user_a, email_a),
+            (tenant_b, user_b, email_b),
+        ):
             await _ctx(session, tid)
             await session.execute(
-                text("INSERT INTO users (id, tenant_id, email, full_name) "
-                     "VALUES (:id, :tid, :email, 'RLS smoke')"),
+                text(
+                    "INSERT INTO users (id, tenant_id, email, full_name) "
+                    "VALUES (:id, :tid, :email, 'RLS smoke')"
+                ),
                 {"id": uid, "tid": tid, "email": email},
             )
         print(f"fixtures: tenant A={tenant_a} tenant B={tenant_b}")
@@ -117,17 +141,23 @@ async def main() -> None:
         # i.
         async def step_i(s) -> bool:
             await _ctx(s, tenant_a)
-            n = (await s.execute(text("SELECT count(*) FROM users WHERE id = :b"), ids)).scalar_one()
+            n = (
+                await s.execute(text("SELECT count(*) FROM users WHERE id = :b"), ids)
+            ).scalar_one()
             print(f"  i: rows={n}")
             return n == 0
+
         await _check(session, "i: tenant A cannot see tenant B's user", step_i)
 
         # ii.
         async def step_ii(s) -> bool:
             await _ctx(s, tenant_a)
-            n = (await s.execute(text("SELECT count(*) FROM users WHERE id = :a"), ids)).scalar_one()
+            n = (
+                await s.execute(text("SELECT count(*) FROM users WHERE id = :a"), ids)
+            ).scalar_one()
             print(f"  ii: rows={n}")
             return n == 1
+
         await _check(session, "ii: tenant A sees its own user", step_ii)
 
         # iii.
@@ -136,6 +166,7 @@ async def main() -> None:
             n = (await s.execute(_COUNT_USERS_SQL, ids)).scalar_one()
             print(f"  iii: rows={n}")
             return n == 0
+
         await _check(session, "iii: no tenant context sees no users", step_iii)
 
         # iv.
@@ -144,6 +175,7 @@ async def main() -> None:
             n = (await s.execute(_COUNT_USERS_SQL, ids)).scalar_one()
             print(f"  iv: rows={n}")
             return n == 2
+
         await _check(session, "iv: SA flag with no tenant sees both tenants", step_iv)
 
         # v.
@@ -151,8 +183,10 @@ async def main() -> None:
             await _ctx(s, tenant_b)
             try:
                 await s.execute(
-                    text("INSERT INTO audit_logs (tenant_id, action, decision) "
-                         "VALUES (:tid, 'smoke:rls', 'ALLOW')"),
+                    text(
+                        "INSERT INTO audit_logs (tenant_id, action, decision) "
+                        "VALUES (:tid, 'smoke:rls', 'ALLOW')"
+                    ),
                     {"tid": tenant_a},
                 )
             except DBAPIError as exc:
@@ -161,40 +195,63 @@ async def main() -> None:
                 return "row-level security" in msg
             print("  v: INSERT accepted")
             return False
-        await _check(session, "v: audit_logs INSERT into another tenant is rejected", step_v)
+
+        await _check(
+            session, "v: audit_logs INSERT into another tenant is rejected", step_v
+        )
 
         # vi.
         async def step_vi(s) -> bool:
             await _ctx(s, tenant_b)
             try:
                 await s.execute(
-                    text("INSERT INTO users (tenant_id, email, full_name) "
-                         "VALUES (:tid, :email, 'RLS smoke dup')"),
+                    text(
+                        "INSERT INTO users (tenant_id, email, full_name) "
+                        "VALUES (:tid, :email, 'RLS smoke dup')"
+                    ),
                     {"tid": tenant_b, "email": email_a.upper()},
                 )
             except IntegrityError as exc:
                 name = getattr(exc.orig.__cause__, "constraint_name", None) or getattr(
-                    exc.orig, "constraint_name", None)
+                    exc.orig, "constraint_name", None
+                )
                 print(f"  vi: IntegrityError constraint_name={name}")
                 return name == "uq_users_email_lower"
             print("  vi: duplicate INSERT accepted")
             return False
-        await _check(session, "vi: duplicate email across tenants -> uq_users_email_lower", step_vi)
+
+        await _check(
+            session,
+            "vi: duplicate email across tenants -> uq_users_email_lower",
+            step_vi,
+        )
 
         # vii.
         async def step_vii(s) -> bool:
             await _ctx(s, "")
-            rows = (await s.execute(
-                text("SELECT * FROM auth_user_by_email(:email)"), {"email": email_a.upper()}
-            )).mappings().all()
+            rows = (
+                (
+                    await s.execute(
+                        text("SELECT * FROM auth_user_by_email(:email)"),
+                        {"email": email_a.upper()},
+                    )
+                )
+                .mappings()
+                .all()
+            )
             print(f"  vii: rows={len(rows)}")
             return len(rows) == 1 and str(rows[0]["id"]) == user_a
+
         await _check(session, "vii: auth_user_by_email works with no context", step_vii)
     finally:
         await session.rollback()
         await session.close()
 
-    print("SMOKE PASS" if not _failures else f"SMOKE FAIL ({len(_failures)} step(s) failed)")
+    print(
+        "SMOKE PASS"
+        if not _failures
+        else f"SMOKE FAIL ({len(_failures)} step(s) failed)"
+    )
     if _failures:
         sys.exit(1)
 

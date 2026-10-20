@@ -12,6 +12,7 @@ Same signature, language, SECURITY DEFINER and search_path. CREATE OR REPLACE
 keeps the existing owner and EXECUTE grants from 092, so none are re-issued.
 Downgrade restores the unconditional 092 body; it never drops a partition.
 """
+
 from alembic import op
 
 revision = "093"

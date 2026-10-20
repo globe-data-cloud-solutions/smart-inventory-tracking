@@ -31,7 +31,7 @@ from shared.auth.password_reset import (
 )
 from shared.cache.login_lockout import (
     _check_login_lockout,
-    _login_attempts_key,
+    _login_attempts_key,  # noqa: F401 - used by tests/test_auth.py via the router module
     _record_failed_login,
     _reset_login_attempts,
 )

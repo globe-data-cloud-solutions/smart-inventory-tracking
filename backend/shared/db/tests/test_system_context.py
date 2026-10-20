@@ -5,6 +5,7 @@ no single tenant. They run with an empty tenant and the SA flag on, labelled wit
 the task name, transaction-local like every request context.
 No real database connection is used.
 """
+
 from __future__ import annotations
 
 from unittest.mock import AsyncMock, MagicMock

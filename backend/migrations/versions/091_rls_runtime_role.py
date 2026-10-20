@@ -36,6 +36,7 @@ Downgrade restores the original expression, drops the functions, revokes the
 grants and default privileges, and disables the RLS this added. It does NOT
 re-add FORCE.
 """
+
 import os
 import re
 
@@ -50,7 +51,9 @@ depends_on = None
 def _runtime_role() -> str:
     role = os.environ.get("RUNTIME_DB_ROLE", "smart_runtime")
     if not re.fullmatch(r"[a-z_][a-z0-9_]{0,62}", role):
-        raise RuntimeError(f"Migration 091: RUNTIME_DB_ROLE {role!r} is not a valid role name")
+        raise RuntimeError(
+            f"Migration 091: RUNTIME_DB_ROLE {role!r} is not a valid role name"
+        )
     return role
 
 
@@ -62,7 +65,12 @@ V_EXPR = (
 )
 _OLD_EXPR = "(tenant_id = (current_setting('app.current_tenant_id', true))::uuid)"
 
-_FORCE_DRIFT_TABLES = ("products", "warehouses", "inventory_balances", "inventory_transactions")
+_FORCE_DRIFT_TABLES = (
+    "products",
+    "warehouses",
+    "inventory_balances",
+    "inventory_transactions",
+)
 _D10_TABLES = ("tenant_contacts", "tenant_activity_log")
 
 _USER_COLUMNS = """
@@ -217,13 +225,17 @@ def upgrade() -> None:
     """)
 
     # 2. Grants
-    op.execute(f'GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO "{role}"')
+    op.execute(
+        f'GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO "{role}"'
+    )
     op.execute(f'GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO "{role}"')
     op.execute(
-        f'ALTER DEFAULT PRIVILEGES IN SCHEMA public '
+        f"ALTER DEFAULT PRIVILEGES IN SCHEMA public "
         f'GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO "{role}"'
     )
-    op.execute(f'ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT USAGE, SELECT ON SEQUENCES TO "{role}"')
+    op.execute(
+        f'ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT USAGE, SELECT ON SEQUENCES TO "{role}"'
+    )
 
     # 3. tenant_isolation rewrite (D2, D3)
     op.execute(f"""
@@ -248,7 +260,9 @@ def upgrade() -> None:
     # 4. audit_logs (D4)
     op.execute("DROP POLICY audit_select ON audit_logs")
     op.execute(f"CREATE POLICY audit_select ON audit_logs FOR SELECT USING {V_EXPR}")
-    op.execute(f"CREATE POLICY audit_insert ON audit_logs FOR INSERT WITH CHECK {V_EXPR}")
+    op.execute(
+        f"CREATE POLICY audit_insert ON audit_logs FOR INSERT WITH CHECK {V_EXPR}"
+    )
 
     # 5. FORCE drift removal (D8)
     for table in _FORCE_DRIFT_TABLES:
@@ -279,7 +293,9 @@ def upgrade() -> None:
     # 7. tenant_contacts, tenant_activity_log (D10); outbox stays global
     for table in _D10_TABLES:
         op.execute(f"ALTER TABLE {table} ENABLE ROW LEVEL SECURITY")
-        op.execute(f"CREATE POLICY tenant_isolation ON {table} USING {V_EXPR} WITH CHECK {V_EXPR}")
+        op.execute(
+            f"CREATE POLICY tenant_isolation ON {table} USING {V_EXPR} WITH CHECK {V_EXPR}"
+        )
     op.execute(
         "COMMENT ON TABLE outbox IS "
         "'Global by design (D10): the Celery worker polls across tenants.'"
@@ -339,10 +355,14 @@ def downgrade() -> None:
         END $$;
     """)
 
-    op.execute(f'ALTER DEFAULT PRIVILEGES IN SCHEMA public REVOKE USAGE, SELECT ON SEQUENCES FROM "{role}"')
     op.execute(
-        f'ALTER DEFAULT PRIVILEGES IN SCHEMA public '
+        f'ALTER DEFAULT PRIVILEGES IN SCHEMA public REVOKE USAGE, SELECT ON SEQUENCES FROM "{role}"'
+    )
+    op.execute(
+        f"ALTER DEFAULT PRIVILEGES IN SCHEMA public "
         f'REVOKE SELECT, INSERT, UPDATE, DELETE ON TABLES FROM "{role}"'
     )
     op.execute(f'REVOKE USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public FROM "{role}"')
-    op.execute(f'REVOKE SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public FROM "{role}"')
+    op.execute(
+        f'REVOKE SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public FROM "{role}"'
+    )

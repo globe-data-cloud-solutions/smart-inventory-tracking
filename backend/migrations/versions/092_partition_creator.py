@@ -18,6 +18,7 @@ ensure_inventory_partition(p_month):
 EXECUTE is revoked from PUBLIC and granted only to the runtime role.
 Downgrade drops the function; it never drops a partition.
 """
+
 import os
 import re
 
@@ -32,7 +33,9 @@ depends_on = None
 def _runtime_role() -> str:
     role = os.environ.get("RUNTIME_DB_ROLE", "smart_runtime")
     if not re.fullmatch(r"[a-z_][a-z0-9_]{0,62}", role):
-        raise RuntimeError(f"Migration 092: RUNTIME_DB_ROLE {role!r} is not a valid role name")
+        raise RuntimeError(
+            f"Migration 092: RUNTIME_DB_ROLE {role!r} is not a valid role name"
+        )
     return role
 
 

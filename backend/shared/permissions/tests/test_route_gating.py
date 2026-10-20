@@ -7,6 +7,7 @@ the marker is caught too. Each service is loaded in its own subprocess: the
 services share top-level module names (main, routers, schemas, ...), so
 importing two in one process would shadow each other.
 """
+
 from __future__ import annotations
 
 import json
@@ -29,11 +30,11 @@ _FAKE_ENV = {
 for _k, _v in _FAKE_ENV.items():
     os.environ.setdefault(_k, _v)
 
-import pytest
-from fastapi import FastAPI
-from fastapi.routing import APIRoute
+import pytest  # noqa: E402
+from fastapi import FastAPI  # noqa: E402
+from fastapi.routing import APIRoute  # noqa: E402
 
-from shared.permissions.tests.route_gating_allowlist import (
+from shared.permissions.tests.route_gating_allowlist import (  # noqa: E402
     ALLOWLIST,
     HEALTH_PATH,
 )
@@ -42,8 +43,15 @@ pytestmark = pytest.mark.unit
 
 BACKEND = Path(__file__).resolve().parents[3]
 SERVICES = [
-    "analytics", "auth", "inventory", "logistics", "notification",
-    "order", "product", "sync", "tenant",
+    "analytics",
+    "auth",
+    "inventory",
+    "logistics",
+    "notification",
+    "order",
+    "product",
+    "sync",
+    "tenant",
 ]
 
 
@@ -93,7 +101,11 @@ def _service_routes(service: str) -> list[dict]:
     env = {**_FAKE_ENV, **os.environ}
     proc = subprocess.run(
         [sys.executable, "-c", _CHILD, str(root), str(BACKEND)],
-        cwd=root, env=env, capture_output=True, text=True, timeout=120,
+        cwd=root,
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=120,
     )
     assert proc.returncode == 0, f"{service}-service failed to import:\n{proc.stderr[-2000:]}"
     return json.loads(proc.stdout.strip().splitlines()[-1])

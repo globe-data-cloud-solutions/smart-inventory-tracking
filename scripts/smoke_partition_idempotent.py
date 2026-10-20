@@ -23,6 +23,7 @@ Usage:
     set -a; source .env; set +a
     py -3.12 scripts/smoke_partition_idempotent.py
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -85,14 +86,23 @@ async def _rls(s):
 async def part_a() -> None:
     session = AsyncSessionLocal()
     try:
-        who = (await session.execute(text(
-            "SELECT current_user AS u, "
-            "       (SELECT tableowner FROM pg_tables WHERE schemaname='public' "
-            "        AND tablename='inventory_transactions') AS owner, "
-            "       (SELECT rolbypassrls FROM pg_roles WHERE rolname = current_user) AS bypass"
-        ))).one()
-        print(f"A: current_user={who.u} inventory_transactions_owner={who.owner} bypassrls={who.bypass}")
-        _result(who.u != who.owner and not who.bypass, "A PRE: running as non-owner, NOBYPASSRLS role")
+        who = (
+            await session.execute(
+                text(
+                    "SELECT current_user AS u, "
+                    "       (SELECT tableowner FROM pg_tables WHERE schemaname='public' "
+                    "        AND tablename='inventory_transactions') AS owner, "
+                    "       (SELECT rolbypassrls FROM pg_roles WHERE rolname = current_user) AS bypass"
+                )
+            )
+        ).one()
+        print(
+            f"A: current_user={who.u} inventory_transactions_owner={who.owner} bypassrls={who.bypass}"
+        )
+        _result(
+            who.u != who.owner and not who.bypass,
+            "A PRE: running as non-owner, NOBYPASSRLS role",
+        )
 
         first: dict[str, int | None] = {}
 
@@ -101,33 +111,48 @@ async def part_a() -> None:
             first["oid"] = await _policy_oid(s)
             print(f"  i: tenant_isolation oid={first['oid']}")
             return first["oid"] is not None
-        await _check(session, f"i: first call creates {_PARTITION} with tenant_isolation", step_i)
+
+        await _check(
+            session, f"i: first call creates {_PARTITION} with tenant_isolation", step_i
+        )
 
         async def step_ii(s) -> bool:
             await s.execute(_ENSURE_SQL)
             oid = await _policy_oid(s)
             print(f"  ii: tenant_isolation oid={oid} (before {first.get('oid')})")
             return oid is not None and oid == first.get("oid")
-        await _check(session, "ii: second call leaves the policy oid unchanged", step_ii)
+
+        await _check(
+            session, "ii: second call leaves the policy oid unchanged", step_ii
+        )
     finally:
         await session.rollback()
         await session.close()
 
 
 async def part_b() -> None:
-    engine = create_async_engine(os.environ["MIGRATION_DATABASE_URL"], pool_size=1, max_overflow=0)
+    engine = create_async_engine(
+        os.environ["MIGRATION_DATABASE_URL"], pool_size=1, max_overflow=0
+    )
     session = async_sessionmaker(bind=engine, expire_on_commit=False, autoflush=False)()
     try:
-        who = (await session.execute(text(
-            "SELECT current_user = (SELECT tableowner FROM pg_tables WHERE schemaname='public' "
-            "AND tablename='inventory_transactions')"
-        ))).scalar_one()
+        who = (
+            await session.execute(
+                text(
+                    "SELECT current_user = (SELECT tableowner FROM pg_tables WHERE schemaname='public' "
+                    "AND tablename='inventory_transactions')"
+                )
+            )
+        ).scalar_one()
         _result(who is True, "B PRE: running as the inventory_transactions owner")
 
         async def setup(s) -> bool:
             await s.execute(_ENSURE_SQL)
             return await _policy_oid(s) is not None
-        await _check(session, f"B setup: {_PARTITION} exists with tenant_isolation", setup)
+
+        await _check(
+            session, f"B setup: {_PARTITION} exists with tenant_isolation", setup
+        )
 
         async def step_iii(s) -> bool:
             await s.execute(text(f"DROP POLICY tenant_isolation ON {_PARTITION}"))
@@ -135,14 +160,20 @@ async def part_b() -> None:
             oid, rls = await _policy_oid(s), await _rls(s)
             print(f"  iii: tenant_isolation oid={oid} relrowsecurity={rls}")
             return oid is not None and rls is True
-        await _check(session, "iii: dropped policy is recreated, RLS still on", step_iii)
+
+        await _check(
+            session, "iii: dropped policy is recreated, RLS still on", step_iii
+        )
 
         async def step_iv(s) -> bool:
-            await s.execute(text(f"ALTER TABLE {_PARTITION} DISABLE ROW LEVEL SECURITY"))
+            await s.execute(
+                text(f"ALTER TABLE {_PARTITION} DISABLE ROW LEVEL SECURITY")
+            )
             await s.execute(_ENSURE_SQL)
             oid, rls = await _policy_oid(s), await _rls(s)
             print(f"  iv: tenant_isolation oid={oid} relrowsecurity={rls}")
             return oid is not None and rls is True
+
         await _check(session, "iv: disabled RLS is re-enabled", step_iv)
     finally:
         await session.rollback()
@@ -153,7 +184,11 @@ async def part_b() -> None:
 async def main() -> None:
     await part_a()
     await part_b()
-    print("SMOKE PASS" if not _failures else f"SMOKE FAIL ({len(_failures)} step(s) failed)")
+    print(
+        "SMOKE PASS"
+        if not _failures
+        else f"SMOKE FAIL ({len(_failures)} step(s) failed)"
+    )
     if _failures:
         sys.exit(1)
 
