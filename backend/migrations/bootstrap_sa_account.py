@@ -11,16 +11,17 @@ overriding its command, e.g.:
 
     aws ecs run-task \\
       --cluster smart-<env> \\
-      --task-definition smart-<env>-migrate \\
+      --task-definition smart-<env>-migration \\
       --overrides '{"containerOverrides": [{
-        "name": "migrate",
+        "name": "migration",
         "command": ["python", "/app/backend/migrations/bootstrap_sa_account.py",
-                     "--email-secret-name", "smart/<env>/sa/email",
-                     "--password-secret-name", "smart/<env>/sa/password"]
+                     "--email-secret-name", "<email-secret-name>",
+                     "--password-secret-name", "<password-secret-name>"]
       }]}'
 
-See docs/claude/redeploy-runbook.md and docs/claude/ci-cd.md for the full
-invocation and the IAM/Terraform this needs (not added by this script).
+The SA email/password secrets are NOT created by Terraform, and the task role
+has no access to them yet. Stage/prod SA bootstrap is not yet available
+(P0 item 4); see docs/claude/redeploy-runbook.md. Do not run this in stage/prod.
 
 Idempotency: the email is looked up first; if a user with that email already
 exists, nothing is written and nothing is changed — this never overwrites an
