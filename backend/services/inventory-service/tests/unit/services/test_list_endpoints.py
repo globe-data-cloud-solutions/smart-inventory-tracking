@@ -114,7 +114,7 @@ class TestListTransfersScopedByRole:
             "services.transfer_discrepancies.get_descendant_node_ids",
             new=AsyncMock(return_value={WAREHOUSE_A}),
         ):
-            results = await svc.list_transfers(WM_USER)
+            await svc.list_transfers(WM_USER)
 
         # Verify the first execute (list query) received the subtree in params
         list_call = session.execute.call_args_list[0]
@@ -158,7 +158,7 @@ class TestListTransfersScopedByRole:
         ])
 
         svc = InventoryService(session)
-        results = await svc.list_transfers(TA_USER)
+        await svc.list_transfers(TA_USER)
 
         list_call = session.execute.call_args_list[0]
         params = list_call.args[1] if len(list_call.args) > 1 else {}

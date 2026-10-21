@@ -311,7 +311,6 @@ class TestDeactivatedUserCannotLogin:
         ])
 
         # Verify the deactivate SQL pattern would set is_active=false
-        expected_sql_pattern = "is_active"
         deactivate_sql = (
             "UPDATE users SET is_active = false, updated_at = now() "
             "WHERE id = :uid AND tenant_id = :tid"
@@ -478,7 +477,6 @@ class TestTenantCreationIncludesTAUser:
         Without the rollback, orphaned tenants accumulate with no admin access.
         """
         tenant_created = {"id": None, "deleted": False}
-        user_created = False
 
         def create_tenant(name: str) -> dict:
             tenant_created["id"] = "fake-tenant-id"
@@ -1535,7 +1533,6 @@ class TestNewTenantProductCreation:
         )
         # Verify TENANT_VIEW is no longer the guard on the list endpoint
         lines = src.splitlines()
-        in_list_nodes = False
         for i, line in enumerate(lines):
             if '"/{tenant_id}/nodes"' in line:
                 # Check next ~5 lines for the permission decorator
@@ -1634,9 +1631,6 @@ class TestBugAProductFixes:
     def test_categories_endpoint_uses_product_list_categories_permission(self):
         """GET /categories/ must use PRODUCT_LIST_CATEGORIES, not a broader permission."""
         import os
-        router_path = os.path.join(
-            os.path.dirname(__file__), '..', '..', 'routers', 'products.py'
-        )
         # This test is in tenant-service tests but checks product-service router
         product_router_path = os.path.join(
             os.path.dirname(__file__), '..', '..', '..', '..', 'product-service', 'routers', 'products.py'

@@ -3070,7 +3070,6 @@ class TestGapCPositionIdRouting:
         import json as _json
 
         POS_ID    = "pppppppp-0000-0000-0000-000000000003"
-        RULE_ID   = "rrrrrrrr-0000-0000-0000-000000000003"
         OLD_TITLE = "Regional Manager"
         NEW_TITLE = "Zone Director"
 

@@ -293,8 +293,6 @@ class TestOutboxWorker:
         to PENDING (crash recovery) before dispatching new tasks."""
         from shared.outbox.worker import _poll
 
-        row_ids_dispatched: list[str] = []
-
         select_result = MagicMock()
         select_result.fetchall.return_value = []  # no pending rows after reset
 
@@ -307,7 +305,7 @@ class TestOutboxWorker:
             return select_result
 
         with patch("shared.outbox.worker.AsyncSessionLocal") as mock_ctx, \
-             patch("shared.outbox.worker.process_outbox_row") as mock_dispatch:
+             patch("shared.outbox.worker.process_outbox_row"):
             session = AsyncMock()
             session.execute = AsyncMock(side_effect=capture_execute)
             mock_ctx.return_value.__aenter__.return_value = session
