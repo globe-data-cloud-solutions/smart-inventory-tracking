@@ -14,6 +14,8 @@ from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import UUID
 
+from datetime import datetime, timezone
+
 import pytest
 from fastapi import HTTPException
 
@@ -189,6 +191,18 @@ def _make_transfer_row(
     row.from_warehouse_id = from_wh
     row.to_warehouse_id = to_wh
     row.tenant_id = TENANT_ID
+    # Columns the read-back builder reads from the SELECT (to_.*).
+    row.transfer_id = TRANSFER_ID
+    row.reference_number = None
+    row.from_warehouse_name = None
+    row.to_warehouse_name = None
+    row.created_at = datetime(2026, 9, 1, tzinfo=timezone.utc)
+    row.total_value = None
+    row.currency = "ETB"
+    row.transfer_type_config_id = None
+    row.is_self_approved = False
+    row.current_approval_step = None
+    row.resolved_approval_steps = None
     return row
 
 

@@ -67,6 +67,7 @@ def _transfer_row(status: str, steps: Optional[list] = None, step: int = 1) -> S
         resolved_approval_steps=steps,
         current_approval_step=step,
         total_value=None,
+        currency="ETB",
         product_override_applied=False,
         is_self_approved=False,
         reference_number=None,

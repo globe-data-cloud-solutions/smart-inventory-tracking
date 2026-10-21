@@ -68,6 +68,11 @@ class _World:
             from_warehouse_name=None,
             to_warehouse_name=None,
             created_at=datetime(2026, 9, 1, tzinfo=timezone.utc),
+            total_value=None,
+            currency="ETB",
+            transfer_type_config_id=None,
+            current_approval_step=None,
+            resolved_approval_steps=None,
         )
         self.lines = [
             SimpleNamespace(id=LINE_1, product_id=PRODUCT_ID, quantity=Decimal("100")),

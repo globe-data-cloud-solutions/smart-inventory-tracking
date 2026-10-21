@@ -2314,6 +2314,8 @@ class InventoryService:
             to_warehouse_id=row.to_warehouse_id,
             to_warehouse_name=row.to_warehouse_name,
             created_at=row.created_at,
+            total_value=row.total_value,
+            currency=row.currency,
             is_self_approved=bool(row.is_self_approved),
             lines=await self._transfer_line_items(transfer_id),
             lot_allocations=[
