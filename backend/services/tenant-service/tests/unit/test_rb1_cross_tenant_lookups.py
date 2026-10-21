@@ -31,6 +31,7 @@ pytestmark = pytest.mark.asyncio
 TENANT_A = "aaaaaaaa-0000-0000-0000-000000000001"
 OTHER_POSITION_ID = "cccccccc-0000-0000-0000-000000000003"
 OTHER_USER_ID = "dddddddd-0000-0000-0000-000000000004"
+NODE_ID = "eeeeeeee-0000-0000-0000-000000000005"
 
 _GRANT_ALL = patch(
     "shared.permissions.middleware.check_permission",
@@ -80,31 +81,35 @@ class TestPositionsReportsToLeak:
 
 
 class TestManagerInfoLeak:
-    """HOLE 5: manager_user_id's full_name must not resolve cross-tenant."""
+    """HOLE 5: a node's manager lookup must stay inside the tenant.
 
-    async def test_manager_from_another_tenant_is_not_resolved(self) -> None:
-        from routers.hierarchy import _get_manager_info
+    Originally _get_manager_info resolved a request-body user id. Bug 10
+    removed that field; the manager is now the PRIMARY position holder of the
+    node, looked up by _node_manager with tenant_id in the WHERE clause.
+    """
+
+    async def test_manager_lookup_is_tenant_scoped(self) -> None:
+        from routers.hierarchy import _node_manager
 
         db = AsyncMock()
 
         async def _execute(stmt, params=None):
             sql = " ".join(str(stmt).split())
-            assert "tenant_id = :tid" in sql, "manager lookup must be tenant-scoped"
+            assert "p.tenant_id = :tid" in sql, "manager lookup must be tenant-scoped"
             assert params["tid"] == TENANT_A
-            return MagicMock(fetchone=MagicMock(return_value=None))  # belongs to a different tenant
+            return MagicMock(fetchone=MagicMock(return_value=None))  # no holder in this tenant
 
         db.execute = AsyncMock(side_effect=_execute)
 
-        name, role = await _get_manager_info(db, OTHER_USER_ID, TENANT_A)
+        name, role = await _node_manager(db, NODE_ID, TENANT_A)
         assert name is None and role is None
 
     async def test_manager_from_same_tenant_is_resolved(self) -> None:
-        from routers.hierarchy import _get_manager_info
+        from routers.hierarchy import _node_manager
 
         db = AsyncMock()
-        row = MagicMock()
-        row.__getitem__ = lambda self, i: "Jane Manager"
+        row = MagicMock(manager_name="Jane Manager", manager_role="WM")
         db.execute = AsyncMock(return_value=MagicMock(fetchone=MagicMock(return_value=row)))
 
-        name, _ = await _get_manager_info(db, OTHER_USER_ID, TENANT_A)
-        assert name == "Jane Manager"
+        name, role = await _node_manager(db, NODE_ID, TENANT_A)
+        assert (name, role) == ("Jane Manager", "WM")
