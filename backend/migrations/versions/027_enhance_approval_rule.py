@@ -16,6 +16,7 @@ Create Date: 2026-05-29
 
 Round-trip tested: alembic upgrade head → downgrade -1 → upgrade head
 """
+
 from __future__ import annotations
 
 import sqlalchemy as sa
@@ -85,7 +86,9 @@ def downgrade() -> None:
     op.drop_constraint("ck_approval_rule_tx_type", "approval_rule", type_="check")
 
     # Purge RECEIVE/ISSUE rows so original constraint can be re-added cleanly
-    op.execute("DELETE FROM approval_rule WHERE transaction_type IN ('RECEIVE', 'ISSUE')")
+    op.execute(
+        "DELETE FROM approval_rule WHERE transaction_type IN ('RECEIVE', 'ISSUE')"
+    )
 
     op.drop_column("approval_rule", "simple_mode")
     op.drop_column("approval_rule", "notify_levels")

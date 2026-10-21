@@ -8,6 +8,7 @@ Revision ID: 066
 Revises:     065
 Create Date: 2026-06-29
 """
+
 from __future__ import annotations
 
 from alembic import op
@@ -20,12 +21,24 @@ depends_on = None
 
 def upgrade() -> None:
     # 1. Postal address fields on tenants
-    op.execute("ALTER TABLE tenants ADD COLUMN IF NOT EXISTS address_line1  VARCHAR(255)")
-    op.execute("ALTER TABLE tenants ADD COLUMN IF NOT EXISTS address_line2  VARCHAR(255)")
-    op.execute("ALTER TABLE tenants ADD COLUMN IF NOT EXISTS city           VARCHAR(100)")
-    op.execute("ALTER TABLE tenants ADD COLUMN IF NOT EXISTS state_province VARCHAR(100)")
-    op.execute("ALTER TABLE tenants ADD COLUMN IF NOT EXISTS postal_code    VARCHAR(20)")
-    op.execute("ALTER TABLE tenants ADD COLUMN IF NOT EXISTS country        VARCHAR(100)")
+    op.execute(
+        "ALTER TABLE tenants ADD COLUMN IF NOT EXISTS address_line1  VARCHAR(255)"
+    )
+    op.execute(
+        "ALTER TABLE tenants ADD COLUMN IF NOT EXISTS address_line2  VARCHAR(255)"
+    )
+    op.execute(
+        "ALTER TABLE tenants ADD COLUMN IF NOT EXISTS city           VARCHAR(100)"
+    )
+    op.execute(
+        "ALTER TABLE tenants ADD COLUMN IF NOT EXISTS state_province VARCHAR(100)"
+    )
+    op.execute(
+        "ALTER TABLE tenants ADD COLUMN IF NOT EXISTS postal_code    VARCHAR(20)"
+    )
+    op.execute(
+        "ALTER TABLE tenants ADD COLUMN IF NOT EXISTS country        VARCHAR(100)"
+    )
 
     # 2. Structured contacts table — replaces the single contact_* columns
     #    for tenants that use the new wizard contacts step. Old columns remain

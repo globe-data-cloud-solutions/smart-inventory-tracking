@@ -17,7 +17,7 @@ async def lifespan(app: FastAPI):  # type: ignore[type-arg]
 
 app = FastAPI(title="SMART Product Service", version="1.0.0", lifespan=lifespan)
 app.include_router(products.router, prefix="/api/v1/products", tags=["products"])
-app.include_router(upload.router,   prefix="/api/v1/upload",   tags=["upload"])
+app.include_router(upload.router, prefix="/api/v1/upload", tags=["upload"])
 
 # Serve uploaded files — disk (LocalStorageService) via StaticFiles, or S3
 # (S3StorageService) via a proxy route. Both are public, matching the gateway's

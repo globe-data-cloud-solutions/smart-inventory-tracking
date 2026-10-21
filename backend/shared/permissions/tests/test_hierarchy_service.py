@@ -11,7 +11,9 @@ CHILD_2 = "07000007-0004-0000-0000-000000000003"
 GRANDCHILD = "07000007-0004-0000-0000-000000000004"
 
 
-def _mock_db(rows: list[tuple[str]] | None = None, side_effect: Exception | None = None) -> AsyncMock:
+def _mock_db(
+    rows: list[tuple[str]] | None = None, side_effect: Exception | None = None
+) -> AsyncMock:
     db = AsyncMock()
     if side_effect is not None:
         db.execute.side_effect = side_effect

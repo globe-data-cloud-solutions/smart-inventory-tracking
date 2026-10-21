@@ -16,6 +16,7 @@ Create Date: 2026-05-28
 
 Round-trip tested: alembic upgrade head -> downgrade -1 -> upgrade head
 """
+
 from __future__ import annotations
 
 from alembic import op
@@ -29,7 +30,7 @@ depends_on = None
 # ── role permission seeds ─────────────────────────────────────────────────────
 # list_*: TA, NM, RM, WM (everyone who works with the product form)
 # create_*: TA, NM, RM (managers who own the product catalogue)
-_LIST_ROLES   = ("SA", "TA", "NM", "RM", "WM")
+_LIST_ROLES = ("SA", "TA", "NM", "RM", "WM")
 _CREATE_ROLES = ("SA", "TA", "NM", "RM")
 
 _NEW_ACTION_ROLES: list[tuple[str, str]] = []
@@ -59,7 +60,8 @@ def upgrade() -> None:
     conn = op.get_bind()
 
     # ── product_brands ────────────────────────────────────────────────────
-    conn.execute(sa.text("""
+    conn.execute(
+        sa.text("""
         CREATE TABLE IF NOT EXISTS product_brands (
             id         UUID PRIMARY KEY DEFAULT gen_random_uuid(),
             tenant_id  UUID NOT NULL,
@@ -67,29 +69,37 @@ def upgrade() -> None:
             is_active  BOOLEAN NOT NULL DEFAULT true,
             created_at TIMESTAMPTZ NOT NULL DEFAULT now()
         )
-    """))
-    conn.execute(sa.text(
-        "CREATE INDEX IF NOT EXISTS idx_brands_tenant ON product_brands (tenant_id)"
-    ))
-    conn.execute(sa.text(
-        "DO $$ BEGIN "
-        "  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname='uq_brands_tenant_name') THEN "
-        "    ALTER TABLE product_brands ADD CONSTRAINT uq_brands_tenant_name UNIQUE (tenant_id, name); "
-        "  END IF; "
-        "END $$"
-    ))
+    """)
+    )
+    conn.execute(
+        sa.text(
+            "CREATE INDEX IF NOT EXISTS idx_brands_tenant ON product_brands (tenant_id)"
+        )
+    )
+    conn.execute(
+        sa.text(
+            "DO $$ BEGIN "
+            "  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname='uq_brands_tenant_name') THEN "
+            "    ALTER TABLE product_brands ADD CONSTRAINT uq_brands_tenant_name UNIQUE (tenant_id, name); "
+            "  END IF; "
+            "END $$"
+        )
+    )
     conn.execute(sa.text("ALTER TABLE product_brands ENABLE ROW LEVEL SECURITY"))
-    conn.execute(sa.text(
-        "DO $$ BEGIN "
-        "  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE tablename='product_brands' AND policyname='tenant_isolation') THEN "
-        "    CREATE POLICY tenant_isolation ON product_brands "
-        "    USING (tenant_id = current_setting('app.current_tenant_id', true)::uuid); "
-        "  END IF; "
-        "END $$"
-    ))
+    conn.execute(
+        sa.text(
+            "DO $$ BEGIN "
+            "  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE tablename='product_brands' AND policyname='tenant_isolation') THEN "
+            "    CREATE POLICY tenant_isolation ON product_brands "
+            "    USING (tenant_id = current_setting('app.current_tenant_id', true)::uuid); "
+            "  END IF; "
+            "END $$"
+        )
+    )
 
     # ── product_type_codes ────────────────────────────────────────────────
-    conn.execute(sa.text("""
+    conn.execute(
+        sa.text("""
         CREATE TABLE IF NOT EXISTS product_type_codes (
             id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
             tenant_id   UUID NOT NULL,
@@ -98,29 +108,37 @@ def upgrade() -> None:
             is_active   BOOLEAN NOT NULL DEFAULT true,
             created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
         )
-    """))
-    conn.execute(sa.text(
-        "CREATE INDEX IF NOT EXISTS idx_type_codes_tenant ON product_type_codes (tenant_id)"
-    ))
-    conn.execute(sa.text(
-        "DO $$ BEGIN "
-        "  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname='uq_type_codes_tenant_code') THEN "
-        "    ALTER TABLE product_type_codes ADD CONSTRAINT uq_type_codes_tenant_code UNIQUE (tenant_id, code); "
-        "  END IF; "
-        "END $$"
-    ))
+    """)
+    )
+    conn.execute(
+        sa.text(
+            "CREATE INDEX IF NOT EXISTS idx_type_codes_tenant ON product_type_codes (tenant_id)"
+        )
+    )
+    conn.execute(
+        sa.text(
+            "DO $$ BEGIN "
+            "  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname='uq_type_codes_tenant_code') THEN "
+            "    ALTER TABLE product_type_codes ADD CONSTRAINT uq_type_codes_tenant_code UNIQUE (tenant_id, code); "
+            "  END IF; "
+            "END $$"
+        )
+    )
     conn.execute(sa.text("ALTER TABLE product_type_codes ENABLE ROW LEVEL SECURITY"))
-    conn.execute(sa.text(
-        "DO $$ BEGIN "
-        "  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE tablename='product_type_codes' AND policyname='tenant_isolation') THEN "
-        "    CREATE POLICY tenant_isolation ON product_type_codes "
-        "    USING (tenant_id = current_setting('app.current_tenant_id', true)::uuid); "
-        "  END IF; "
-        "END $$"
-    ))
+    conn.execute(
+        sa.text(
+            "DO $$ BEGIN "
+            "  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE tablename='product_type_codes' AND policyname='tenant_isolation') THEN "
+            "    CREATE POLICY tenant_isolation ON product_type_codes "
+            "    USING (tenant_id = current_setting('app.current_tenant_id', true)::uuid); "
+            "  END IF; "
+            "END $$"
+        )
+    )
 
     # ── product_uoms ──────────────────────────────────────────────────────
-    conn.execute(sa.text("""
+    conn.execute(
+        sa.text("""
         CREATE TABLE IF NOT EXISTS product_uoms (
             id         UUID PRIMARY KEY DEFAULT gen_random_uuid(),
             tenant_id  UUID NOT NULL,
@@ -128,29 +146,37 @@ def upgrade() -> None:
             is_active  BOOLEAN NOT NULL DEFAULT true,
             created_at TIMESTAMPTZ NOT NULL DEFAULT now()
         )
-    """))
-    conn.execute(sa.text(
-        "CREATE INDEX IF NOT EXISTS idx_uoms_tenant ON product_uoms (tenant_id)"
-    ))
-    conn.execute(sa.text(
-        "DO $$ BEGIN "
-        "  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname='uq_uoms_tenant_name') THEN "
-        "    ALTER TABLE product_uoms ADD CONSTRAINT uq_uoms_tenant_name UNIQUE (tenant_id, name); "
-        "  END IF; "
-        "END $$"
-    ))
+    """)
+    )
+    conn.execute(
+        sa.text(
+            "CREATE INDEX IF NOT EXISTS idx_uoms_tenant ON product_uoms (tenant_id)"
+        )
+    )
+    conn.execute(
+        sa.text(
+            "DO $$ BEGIN "
+            "  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname='uq_uoms_tenant_name') THEN "
+            "    ALTER TABLE product_uoms ADD CONSTRAINT uq_uoms_tenant_name UNIQUE (tenant_id, name); "
+            "  END IF; "
+            "END $$"
+        )
+    )
     conn.execute(sa.text("ALTER TABLE product_uoms ENABLE ROW LEVEL SECURITY"))
-    conn.execute(sa.text(
-        "DO $$ BEGIN "
-        "  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE tablename='product_uoms' AND policyname='tenant_isolation') THEN "
-        "    CREATE POLICY tenant_isolation ON product_uoms "
-        "    USING (tenant_id = current_setting('app.current_tenant_id', true)::uuid); "
-        "  END IF; "
-        "END $$"
-    ))
+    conn.execute(
+        sa.text(
+            "DO $$ BEGIN "
+            "  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE tablename='product_uoms' AND policyname='tenant_isolation') THEN "
+            "    CREATE POLICY tenant_isolation ON product_uoms "
+            "    USING (tenant_id = current_setting('app.current_tenant_id', true)::uuid); "
+            "  END IF; "
+            "END $$"
+        )
+    )
 
     # ── product_packaging_types ───────────────────────────────────────────
-    conn.execute(sa.text("""
+    conn.execute(
+        sa.text("""
         CREATE TABLE IF NOT EXISTS product_packaging_types (
             id               UUID PRIMARY KEY DEFAULT gen_random_uuid(),
             tenant_id        UUID NOT NULL,
@@ -159,51 +185,69 @@ def upgrade() -> None:
             is_active        BOOLEAN NOT NULL DEFAULT true,
             created_at       TIMESTAMPTZ NOT NULL DEFAULT now()
         )
-    """))
-    conn.execute(sa.text(
-        "CREATE INDEX IF NOT EXISTS idx_pkg_types_tenant ON product_packaging_types (tenant_id)"
-    ))
-    conn.execute(sa.text(
-        "DO $$ BEGIN "
-        "  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname='uq_pkg_types_tenant_name') THEN "
-        "    ALTER TABLE product_packaging_types ADD CONSTRAINT uq_pkg_types_tenant_name UNIQUE (tenant_id, name); "
-        "  END IF; "
-        "END $$"
-    ))
-    conn.execute(sa.text("ALTER TABLE product_packaging_types ENABLE ROW LEVEL SECURITY"))
-    conn.execute(sa.text(
-        "DO $$ BEGIN "
-        "  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE tablename='product_packaging_types' AND policyname='tenant_isolation') THEN "
-        "    CREATE POLICY tenant_isolation ON product_packaging_types "
-        "    USING (tenant_id = current_setting('app.current_tenant_id', true)::uuid); "
-        "  END IF; "
-        "END $$"
-    ))
+    """)
+    )
+    conn.execute(
+        sa.text(
+            "CREATE INDEX IF NOT EXISTS idx_pkg_types_tenant ON product_packaging_types (tenant_id)"
+        )
+    )
+    conn.execute(
+        sa.text(
+            "DO $$ BEGIN "
+            "  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname='uq_pkg_types_tenant_name') THEN "
+            "    ALTER TABLE product_packaging_types ADD CONSTRAINT uq_pkg_types_tenant_name UNIQUE (tenant_id, name); "
+            "  END IF; "
+            "END $$"
+        )
+    )
+    conn.execute(
+        sa.text("ALTER TABLE product_packaging_types ENABLE ROW LEVEL SECURITY")
+    )
+    conn.execute(
+        sa.text(
+            "DO $$ BEGIN "
+            "  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE tablename='product_packaging_types' AND policyname='tenant_isolation') THEN "
+            "    CREATE POLICY tenant_isolation ON product_packaging_types "
+            "    USING (tenant_id = current_setting('app.current_tenant_id', true)::uuid); "
+            "  END IF; "
+            "END $$"
+        )
+    )
 
     # ── products: new columns (all guarded with IF NOT EXISTS) ────────────
-    conn.execute(sa.text(
-        "ALTER TABLE products ADD COLUMN IF NOT EXISTS short_name VARCHAR(50)"
-    ))
-    conn.execute(sa.text(
-        "ALTER TABLE products ADD COLUMN IF NOT EXISTS description TEXT"
-    ))
-    conn.execute(sa.text(
-        "ALTER TABLE products ADD COLUMN IF NOT EXISTS brand_id UUID REFERENCES product_brands(id)"
-    ))
-    conn.execute(sa.text(
-        "ALTER TABLE products ADD COLUMN IF NOT EXISTS type_code_id UUID REFERENCES product_type_codes(id)"
-    ))
-    conn.execute(sa.text(
-        "ALTER TABLE products ADD COLUMN IF NOT EXISTS packaging_type_id UUID REFERENCES product_packaging_types(id)"
-    ))
+    conn.execute(
+        sa.text("ALTER TABLE products ADD COLUMN IF NOT EXISTS short_name VARCHAR(50)")
+    )
+    conn.execute(
+        sa.text("ALTER TABLE products ADD COLUMN IF NOT EXISTS description TEXT")
+    )
+    conn.execute(
+        sa.text(
+            "ALTER TABLE products ADD COLUMN IF NOT EXISTS brand_id UUID REFERENCES product_brands(id)"
+        )
+    )
+    conn.execute(
+        sa.text(
+            "ALTER TABLE products ADD COLUMN IF NOT EXISTS type_code_id UUID REFERENCES product_type_codes(id)"
+        )
+    )
+    conn.execute(
+        sa.text(
+            "ALTER TABLE products ADD COLUMN IF NOT EXISTS packaging_type_id UUID REFERENCES product_packaging_types(id)"
+        )
+    )
 
     # ── role_permissions: seed all new lookup permissions ─────────────────
     for role_code, action_id in _NEW_ACTION_ROLES:
-        conn.execute(sa.text(
-            "INSERT INTO role_permissions (role_code, action_id, grant_type) "
-            "VALUES (:rc, :aid, 'FULL') "
-            "ON CONFLICT (role_code, action_id) DO NOTHING"
-        ), {"rc": role_code, "aid": action_id})
+        conn.execute(
+            sa.text(
+                "INSERT INTO role_permissions (role_code, action_id, grant_type) "
+                "VALUES (:rc, :aid, 'FULL') "
+                "ON CONFLICT (role_code, action_id) DO NOTHING"
+            ),
+            {"rc": role_code, "aid": action_id},
+        )
 
 
 def downgrade() -> None:

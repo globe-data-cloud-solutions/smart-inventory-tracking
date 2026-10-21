@@ -10,6 +10,7 @@ and is allowlisted in scripts/ci_drift_check.py next to list_public_packages.
 PUT /platform/contact follows the same SA-only + platform_config_log pattern
 as the PRICE routes in routers/tenants.py (platform:tier_config_edit).
 """
+
 from __future__ import annotations
 
 import re
@@ -83,6 +84,7 @@ _SELECT_CONTACT = (
 
 # ── GET /public/contact ───────────────────────────────────────────────────
 
+
 @router.get("/public/contact", response_model=SuccessResponse[ContactOut])
 async def get_public_contact(request: Request) -> SuccessResponse[ContactOut]:
     await rate_limit_hit("packages", client_ip(request))
@@ -94,6 +96,7 @@ async def get_public_contact(request: Request) -> SuccessResponse[ContactOut]:
 
 
 # ── PUT /platform/contact ─────────────────────────────────────────────────
+
 
 class ContactUpdateRequest(BaseModel):
     support_email: Optional[str] = None
@@ -108,8 +111,15 @@ class ContactUpdateRequest(BaseModel):
     reason: str
 
     @field_validator(
-        "support_email", "phone", "whatsapp", "address_en", "address_am",
-        "hours_en", "hours_am", "note_en", "note_am",
+        "support_email",
+        "phone",
+        "whatsapp",
+        "address_en",
+        "address_am",
+        "hours_en",
+        "hours_am",
+        "note_en",
+        "note_am",
         mode="before",
     )
     @classmethod
@@ -142,7 +152,9 @@ async def update_platform_contact(
 
     reason = body.reason.strip() if body.reason else ""
     if not reason:
-        raise HTTPException(status_code=422, detail={"code": "REASON_REQUIRED", "message": "reason is required."})
+        raise HTTPException(
+            status_code=422, detail={"code": "REASON_REQUIRED", "message": "reason is required."}
+        )
 
     if body.support_email is not None:
         try:
@@ -150,7 +162,10 @@ async def update_platform_contact(
         except EmailNotValidError:
             raise HTTPException(
                 status_code=422,
-                detail={"code": "INVALID_EMAIL", "message": "support_email must be a valid email address."},
+                detail={
+                    "code": "INVALID_EMAIL",
+                    "message": "support_email must be a valid email address.",
+                },
             )
 
     for field in ("phone", "whatsapp"):
@@ -158,7 +173,10 @@ async def update_platform_contact(
         if value is not None and not _PHONE_RE.match(value):
             raise HTTPException(
                 status_code=422,
-                detail={"code": "INVALID_PHONE", "message": f"{field} must match {_PHONE_RE.pattern}."},
+                detail={
+                    "code": "INVALID_PHONE",
+                    "message": f"{field} must match {_PHONE_RE.pattern}.",
+                },
             )
 
     fields_set = body.model_fields_set - {"reason"}
@@ -168,7 +186,10 @@ async def update_platform_contact(
         if limit is not None and value is not None and len(value) > limit:
             raise HTTPException(
                 status_code=422,
-                detail={"code": "FIELD_TOO_LONG", "message": f"{field} must be at most {limit} characters."},
+                detail={
+                    "code": "FIELD_TOO_LONG",
+                    "message": f"{field} must be at most {limit} characters.",
+                },
             )
 
     old_row = (await db.execute(text(_SELECT_CONTACT))).fetchone()
@@ -200,8 +221,12 @@ async def update_platform_contact(
                     "VALUES ('CONTACT', 'platform', :field, :old, :new, :reason, :actor_id, :actor_email)"
                 ),
                 {
-                    "field": field, "old": old_val, "new": new_val,
-                    "reason": reason, "actor_id": str(user.user_id), "actor_email": actor_email,
+                    "field": field,
+                    "old": old_val,
+                    "new": new_val,
+                    "reason": reason,
+                    "actor_id": str(user.user_id),
+                    "actor_email": actor_email,
                 },
             )
 

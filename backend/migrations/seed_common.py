@@ -4,6 +4,7 @@ Used by seed_dev_sample.py (dev: full sample tenants + SA) and
 bootstrap_sa_account.py (stage/prod: SA only, no tenants — seed_enabled=false
 there, so nothing else ever creates the SA account in those environments).
 """
+
 from __future__ import annotations
 
 import json

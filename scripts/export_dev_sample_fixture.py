@@ -52,7 +52,13 @@ TABLES = [
     "transfer_type_level_permissions",
 ]
 
-OUT = Path(__file__).resolve().parent.parent / "backend" / "migrations" / "seed" / "dev_sample_tenants.json"
+OUT = (
+    Path(__file__).resolve().parent.parent
+    / "backend"
+    / "migrations"
+    / "seed"
+    / "dev_sample_tenants.json"
+)
 
 
 def _database_url() -> str:
@@ -70,11 +76,17 @@ def _query(url: str, sql: str) -> str:
     wrapped = f"BEGIN READ ONLY; {sql}; ROLLBACK;"
     result = subprocess.run(
         ["psql", url, "-X", "-At", "-v", "ON_ERROR_STOP=1", "-c", wrapped],
-        capture_output=True, text=True, check=True,
+        capture_output=True,
+        text=True,
+        check=True,
     )
     # json_agg output spans several lines (one per row); keep everything between
     # the transaction markers.
-    body = [ln for ln in result.stdout.splitlines() if ln.strip() not in ("BEGIN", "ROLLBACK")]
+    body = [
+        ln
+        for ln in result.stdout.splitlines()
+        if ln.strip() not in ("BEGIN", "ROLLBACK")
+    ]
     return "\n".join(body) if body else "[]"
 
 
@@ -84,7 +96,9 @@ def _scope(table: str) -> str:
     if table == "tenants":
         return f"name IN ({names})"
     if table == "users":
-        return f"tenant_id IN {tenant_ids} OR (tenant_id IS NULL AND email = '{SA_EMAIL}')"
+        return (
+            f"tenant_id IN {tenant_ids} OR (tenant_id IS NULL AND email = '{SA_EMAIL}')"
+        )
     return f"tenant_id IN {tenant_ids}"
 
 
@@ -118,7 +132,10 @@ def main() -> None:
     url = _database_url()
     fixture: dict[str, list[dict]] = {}
     for table in TABLES:
-        raw = _query(url, f"SELECT coalesce(json_agg(t), '[]'::json) FROM (SELECT * FROM {table} WHERE {_scope(table)}) t")
+        raw = _query(
+            url,
+            f"SELECT coalesce(json_agg(t), '[]'::json) FROM (SELECT * FROM {table} WHERE {_scope(table)}) t",
+        )
         rows = json.loads(raw)
         for r in rows:
             # Never export credentials; the seed sets these from Terraform secrets.
@@ -128,7 +145,10 @@ def main() -> None:
         print(f"{table}: {len(rows)} rows")
 
     OUT.parent.mkdir(parents=True, exist_ok=True)
-    OUT.write_text(json.dumps(fixture, indent=2, ensure_ascii=False, default=str) + "\n", encoding="utf-8")
+    OUT.write_text(
+        json.dumps(fixture, indent=2, ensure_ascii=False, default=str) + "\n",
+        encoding="utf-8",
+    )
     print(f"wrote {OUT}")
 
 

@@ -12,6 +12,7 @@ Usage:
     set -a; source .env; set +a
     python scripts/smoke_transfer_lots.py
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -79,66 +80,92 @@ async def _receive_lot(session, product_id, wh, lot_number, qty) -> str:
 
 
 async def _lot_balances(session, product_id: str, wh: str) -> dict[str, Decimal]:
-    rows = (await session.execute(
-        text(
-            "SELECT lot_id, quantity FROM lot_balances "
-            "WHERE tenant_id = :tid AND product_id = :pid AND warehouse_id = :wid"
-        ),
-        {"tid": E2E_TENANT_ID, "pid": product_id, "wid": wh},
-    )).fetchall()
+    rows = (
+        await session.execute(
+            text(
+                "SELECT lot_id, quantity FROM lot_balances "
+                "WHERE tenant_id = :tid AND product_id = :pid AND warehouse_id = :wid"
+            ),
+            {"tid": E2E_TENANT_ID, "pid": product_id, "wid": wh},
+        )
+    ).fetchall()
     return {str(r.lot_id): Decimal(str(r.quantity)) for r in rows}
 
 
 async def _product_balance(session, product_id: str, wh: str) -> Decimal:
-    row = (await session.execute(
-        text(
-            "SELECT quantity FROM inventory_balances "
-            "WHERE tenant_id = :tid AND product_id = :pid AND warehouse_id = :wid "
-            "AND lot_number IS NULL"
-        ),
-        {"tid": E2E_TENANT_ID, "pid": product_id, "wid": wh},
-    )).fetchone()
+    row = (
+        await session.execute(
+            text(
+                "SELECT quantity FROM inventory_balances "
+                "WHERE tenant_id = :tid AND product_id = :pid AND warehouse_id = :wid "
+                "AND lot_number IS NULL"
+            ),
+            {"tid": E2E_TENANT_ID, "pid": product_id, "wid": wh},
+        )
+    ).fetchone()
     return Decimal(str(row.quantity)) if row else Decimal("0")
 
 
 async def _row_counts(session, transfer_id: str) -> tuple[int, int]:
     """(transfer_line_allocations rows, ledger rows) for this transfer."""
-    allocs = (await session.execute(
-        text(
-            "SELECT count(*) AS cnt FROM transfer_line_allocations "
-            "WHERE tenant_id = :tid AND transfer_order_id = :xfer"
-        ),
-        {"tid": E2E_TENANT_ID, "xfer": transfer_id},
-    )).fetchone().cnt
-    ledger = (await session.execute(
-        text(
-            "SELECT count(*) AS cnt FROM inventory_transactions "
-            "WHERE tenant_id = :tid AND reference_id::text = :xfer"
-        ),
-        {"tid": E2E_TENANT_ID, "xfer": transfer_id},
-    )).fetchone().cnt
+    allocs = (
+        (
+            await session.execute(
+                text(
+                    "SELECT count(*) AS cnt FROM transfer_line_allocations "
+                    "WHERE tenant_id = :tid AND transfer_order_id = :xfer"
+                ),
+                {"tid": E2E_TENANT_ID, "xfer": transfer_id},
+            )
+        )
+        .fetchone()
+        .cnt
+    )
+    ledger = (
+        (
+            await session.execute(
+                text(
+                    "SELECT count(*) AS cnt FROM inventory_transactions "
+                    "WHERE tenant_id = :tid AND reference_id::text = :xfer"
+                ),
+                {"tid": E2E_TENANT_ID, "xfer": transfer_id},
+            )
+        )
+        .fetchone()
+        .cnt
+    )
     return allocs, ledger
 
 
 async def _lot_identity(session, lot_ids: list[str]) -> dict[str, tuple]:
-    rows = (await session.execute(
-        text(
-            "SELECT id, lot_number, expiry_date, first_received_at FROM stock_lots "
-            "WHERE tenant_id = :tid AND id::text = ANY(:ids)"
-        ),
-        {"tid": E2E_TENANT_ID, "ids": lot_ids},
-    )).fetchall()
+    rows = (
+        await session.execute(
+            text(
+                "SELECT id, lot_number, expiry_date, first_received_at FROM stock_lots "
+                "WHERE tenant_id = :tid AND id::text = ANY(:ids)"
+            ),
+            {"tid": E2E_TENANT_ID, "ids": lot_ids},
+        )
+    ).fetchall()
     return {str(r.id): (r.lot_number, r.expiry_date, r.first_received_at) for r in rows}
 
 
-async def _add_line(session, transfer_id: str, product_id: str, qty: str) -> SimpleNamespace:
+async def _add_line(
+    session, transfer_id: str, product_id: str, qty: str
+) -> SimpleNamespace:
     line_id = str(uuid.uuid4())
     await session.execute(
         text(
             "INSERT INTO transfer_order_lines (id, transfer_order_id, tenant_id, product_id, quantity) "
             "VALUES (:id, :xfer, :tid, :pid, :qty)"
         ),
-        {"id": line_id, "xfer": transfer_id, "tid": E2E_TENANT_ID, "pid": product_id, "qty": qty},
+        {
+            "id": line_id,
+            "xfer": transfer_id,
+            "tid": E2E_TENANT_ID,
+            "pid": product_id,
+            "qty": qty,
+        },
     )
     return SimpleNamespace(id=line_id, product_id=product_id, quantity=Decimal(qty))
 
@@ -149,15 +176,22 @@ async def _run(session, suffix: str) -> None:
     # ── setup: two temporary stock-holding warehouse nodes, a batch FIFO product, two lots ──
     src = str(uuid.uuid4())
     dst = str(uuid.uuid4())
-    for node_id, label, code in ((src, "Smoke Transfer Source", f"SMOKE-SRC-{suffix}"),
-                                  (dst, "Smoke Transfer Destination", f"SMOKE-DST-{suffix}")):
+    for node_id, label, code in (
+        (src, "Smoke Transfer Source", f"SMOKE-SRC-{suffix}"),
+        (dst, "Smoke Transfer Destination", f"SMOKE-DST-{suffix}"),
+    ):
         await session.execute(
             text(
                 "INSERT INTO organization_node "
                 "(id, tenant_id, name, code, hierarchy_level, is_stock_holding, is_active) "
                 "VALUES (:id, :tid, :name, :code, 1, true, true)"
             ),
-            {"id": node_id, "tid": E2E_TENANT_ID, "name": f"{label} {suffix}", "code": code},
+            {
+                "id": node_id,
+                "tid": E2E_TENANT_ID,
+                "name": f"{label} {suffix}",
+                "code": code,
+            },
         )
     print(f"     source={src}  destination={dst}")
 
@@ -199,12 +233,21 @@ async def _run(session, suffix: str) -> None:
             "(id, tenant_id, from_warehouse_id, to_warehouse_id, transfer_type, status, created_by) "
             "VALUES (:id, :tid, :src, :dst, 'PUSH', 'PENDING_APPROVAL', :uid)"
         ),
-        {"id": transfer_id, "tid": E2E_TENANT_ID, "src": src, "dst": dst, "uid": E2E_USER_ID},
+        {
+            "id": transfer_id,
+            "tid": E2E_TENANT_ID,
+            "src": src,
+            "dst": dst,
+            "uid": E2E_USER_ID,
+        },
     )
     line = await _add_line(session, transfer_id, product_id, "100")
     key_prefix = f"transfer:{transfer_id}:approve:out"
     balance_before = await _product_balance(session, product_id, src)
-    _check(balance_before == Decimal("140"), f"setup: source holds LOT-A 60 + LOT-B 80 (balance {balance_before})")
+    _check(
+        balance_before == Decimal("140"),
+        f"setup: source holds LOT-A 60 + LOT-B 80 (balance {balance_before})",
+    )
 
     async def _post_out(lines) -> None:
         await transfer_lots.post_transfer_out(
@@ -219,28 +262,45 @@ async def _run(session, suffix: str) -> None:
 
     # ── 1) post_transfer_out: FIFO takes LOT-A 60 then LOT-B 40 ──
     await _post_out([line])
-    allocs = (await transfer_lots.load_allocations(session, E2E_TENANT_ID, transfer_id))[line.id]
+    allocs = (
+        await transfer_lots.load_allocations(session, E2E_TENANT_ID, transfer_id)
+    )[line.id]
     got = {a.lot_number: a.quantity for a in allocs}
     print(f"     allocations: {[(a.lot_number, str(a.quantity)) for a in allocs]}")
-    _check(got == {"LOT-A": Decimal("60"), "LOT-B": Decimal("40")},
-           "1) allocations are LOT-A 60, LOT-B 40")
+    _check(
+        got == {"LOT-A": Decimal("60"), "LOT-B": Decimal("40")},
+        "1) allocations are LOT-A 60, LOT-B 40",
+    )
     src_lots = await _lot_balances(session, product_id, src)
-    _check(src_lots == {lot_a: Decimal("0"), lot_b: Decimal("40")},
-           f"1) source lot balances are 0 and 40 (got {sorted(str(v) for v in src_lots.values())})")
+    _check(
+        src_lots == {lot_a: Decimal("0"), lot_b: Decimal("40")},
+        f"1) source lot balances are 0 and 40 (got {sorted(str(v) for v in src_lots.values())})",
+    )
     balance_after = await _product_balance(session, product_id, src)
-    _check(balance_after - balance_before == Decimal("-100"),
-           f"1) source product balance moved by -100 ({balance_before} -> {balance_after})")
+    _check(
+        balance_after - balance_before == Decimal("-100"),
+        f"1) source product balance moved by -100 ({balance_before} -> {balance_after})",
+    )
 
     # ── 2) replay with the same key_prefix: nothing new ──
     counts_before = await _row_counts(session, transfer_id)
     await _post_out([line])
     counts_after = await _row_counts(session, transfer_id)
-    print(f"     (allocation rows, ledger rows) before={counts_before} after={counts_after}")
-    _check(counts_after == counts_before == (2, 2), "2) replay writes no new allocation or ledger rows")
-    _check(await _lot_balances(session, product_id, src) == src_lots,
-           "2) replay leaves the source lot balances unchanged")
-    _check(await _product_balance(session, product_id, src) == balance_after,
-           "2) replay leaves the source product balance unchanged")
+    print(
+        f"     (allocation rows, ledger rows) before={counts_before} after={counts_after}"
+    )
+    _check(
+        counts_after == counts_before == (2, 2),
+        "2) replay writes no new allocation or ledger rows",
+    )
+    _check(
+        await _lot_balances(session, product_id, src) == src_lots,
+        "2) replay leaves the source lot balances unchanged",
+    )
+    _check(
+        await _product_balance(session, product_id, src) == balance_after,
+        "2) replay leaves the source product balance unchanged",
+    )
 
     # ── 3) post_transfer_in: destination is credited on the SAME lot_ids ──
     await transfer_lots.post_transfer_in(
@@ -253,18 +313,27 @@ async def _run(session, suffix: str) -> None:
         allocs=allocs,
     )
     dst_lots = await _lot_balances(session, product_id, dst)
-    _check(dst_lots == {lot_a: Decimal("60"), lot_b: Decimal("40")},
-           "3) destination lot_balances are LOT-A 60, LOT-B 40 on the same lot_ids")
-    _check(await _product_balance(session, product_id, dst) == Decimal("100"),
-           "3) destination product balance is 100")
+    _check(
+        dst_lots == {lot_a: Decimal("60"), lot_b: Decimal("40")},
+        "3) destination lot_balances are LOT-A 60, LOT-B 40 on the same lot_ids",
+    )
+    _check(
+        await _product_balance(session, product_id, dst) == Decimal("100"),
+        "3) destination product balance is 100",
+    )
     identity_after = await _lot_identity(session, [lot_a, lot_b])
-    _check(identity_after == identity_before,
-           "3) stock_lots lot_number, expiry_date and first_received_at are unchanged")
+    _check(
+        identity_after == identity_before,
+        "3) stock_lots lot_number, expiry_date and first_received_at are unchanged",
+    )
 
     # ── 4) lot totals agree with the product totals at both warehouses ──
     for label, wh in (("source", src), ("destination", dst)):
         mismatch = await lot_totals_mismatch(session, E2E_TENANT_ID, product_id, wh)
-        _check(mismatch is None, f"4) lot_totals_mismatch at {label} returns nothing (got {mismatch})")
+        _check(
+            mismatch is None,
+            f"4) lot_totals_mismatch at {label} returns nothing (got {mismatch})",
+        )
 
     # ── second scenario: a new line is posted out, then reversed per lot ──
     line2 = await _add_line(session, transfer_id, product_id, "30")
@@ -272,13 +341,21 @@ async def _run(session, suffix: str) -> None:
     pre_balance = await _product_balance(session, product_id, src)
 
     await _post_out([line2])
-    allocs2 = (await transfer_lots.load_allocations(session, E2E_TENANT_ID, transfer_id))[line2.id]
-    print(f"     line 2 allocations: {[(a.lot_number, str(a.quantity)) for a in allocs2]}")
-    _check([(a.lot_number, a.quantity) for a in allocs2] == [("LOT-B", Decimal("30"))],
-           "5) line 2 (30) is allocated from LOT-B — LOT-A is already empty")
+    allocs2 = (
+        await transfer_lots.load_allocations(session, E2E_TENANT_ID, transfer_id)
+    )[line2.id]
+    print(
+        f"     line 2 allocations: {[(a.lot_number, str(a.quantity)) for a in allocs2]}"
+    )
+    _check(
+        [(a.lot_number, a.quantity) for a in allocs2] == [("LOT-B", Decimal("30"))],
+        "5) line 2 (30) is allocated from LOT-B — LOT-A is already empty",
+    )
     mid_lots = await _lot_balances(session, product_id, src)
-    _check(mid_lots == {lot_a: Decimal("0"), lot_b: Decimal("10")},
-           "5) source lot balances after line 2 are 0 and 10")
+    _check(
+        mid_lots == {lot_a: Decimal("0"), lot_b: Decimal("10")},
+        "5) source lot balances after line 2 are 0 and 10",
+    )
 
     await transfer_lots.post_lot_audit(
         session,
@@ -292,12 +369,19 @@ async def _run(session, suffix: str) -> None:
         sign=1,
         status_transition="APPROVED_TO_CANCELLED",
     )
-    _check(await _lot_balances(session, product_id, src) == pre_lots,
-           "5) TRANSFER_REVERSAL puts the source lot balances back to their pre-transfer values")
-    _check(await _product_balance(session, product_id, src) == pre_balance,
-           "5) TRANSFER_REVERSAL restores the source product balance")
+    _check(
+        await _lot_balances(session, product_id, src) == pre_lots,
+        "5) TRANSFER_REVERSAL puts the source lot balances back to their pre-transfer values",
+    )
+    _check(
+        await _product_balance(session, product_id, src) == pre_balance,
+        "5) TRANSFER_REVERSAL restores the source product balance",
+    )
     mismatch = await lot_totals_mismatch(session, E2E_TENANT_ID, product_id, src)
-    _check(mismatch is None, f"5) lot_totals_mismatch at source returns nothing (got {mismatch})")
+    _check(
+        mismatch is None,
+        f"5) lot_totals_mismatch at source returns nothing (got {mismatch})",
+    )
 
 
 async def main() -> int:
@@ -320,21 +404,28 @@ async def main() -> int:
     # ── post-rollback check from a NEW session ──
     async with AsyncSessionLocal() as verify_session:
         await set_rls_context(verify_session, E2E_TENANT_ID, E2E_USER_ID)
-        product = (await verify_session.execute(
-            text("SELECT id FROM products WHERE tenant_id = :tid AND sku = :sku"),
-            {"tid": E2E_TENANT_ID, "sku": f"SMKT-{suffix}"},
-        )).fetchone()
-        allocations = (await verify_session.execute(
-            text(
-                "SELECT count(*) AS cnt FROM transfer_line_allocations a "
-                "JOIN products p ON p.id = a.product_id "
-                "WHERE a.tenant_id = :tid AND p.sku = :sku"
-            ),
-            {"tid": E2E_TENANT_ID, "sku": f"SMKT-{suffix}"},
-        )).fetchone()
+        product = (
+            await verify_session.execute(
+                text("SELECT id FROM products WHERE tenant_id = :tid AND sku = :sku"),
+                {"tid": E2E_TENANT_ID, "sku": f"SMKT-{suffix}"},
+            )
+        ).fetchone()
+        allocations = (
+            await verify_session.execute(
+                text(
+                    "SELECT count(*) AS cnt FROM transfer_line_allocations a "
+                    "JOIN products p ON p.id = a.product_id "
+                    "WHERE a.tenant_id = :tid AND p.sku = :sku"
+                ),
+                {"tid": E2E_TENANT_ID, "sku": f"SMKT-{suffix}"},
+            )
+        ).fetchone()
         await verify_session.rollback()
     _check(product is None, "6) post-rollback: smoke product not found")
-    _check(allocations.cnt == 0, f"6) post-rollback: smoke allocation rows = {allocations.cnt}")
+    _check(
+        allocations.cnt == 0,
+        f"6) post-rollback: smoke allocation rows = {allocations.cnt}",
+    )
 
     if _failures:
         print(f"SMOKE FAIL ({len(_failures)} failed)")

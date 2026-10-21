@@ -6,6 +6,7 @@ Runs as the runtime role, which cannot CREATE or ALTER tables: each month goes
 through the SECURITY DEFINER ensure_inventory_partition(date) (migration 092),
 which creates the partition if missing and (re)applies RLS + tenant_isolation.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -46,6 +47,8 @@ async def create_partitions(months_ahead: int) -> None:
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("--months", type=int, default=3, help="Number of months to create ahead")
+    parser.add_argument(
+        "--months", type=int, default=3, help="Number of months to create ahead"
+    )
     args = parser.parse_args()
     asyncio.run(create_partitions(args.months))

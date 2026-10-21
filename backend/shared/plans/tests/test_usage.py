@@ -1,6 +1,7 @@
 """Unit tests for shared.plans.usage — the counts used both for plan
 enforcement (plan_middleware.py, product-service create_product) and for
 GET /me/plan-usage display."""
+
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -52,7 +53,9 @@ async def test_get_plan_usage_with_caps(monkeypatch: pytest.MonkeyPatch) -> None
         "max_users": 5,
         "addons": [],
     }
-    monkeypatch.setattr("shared.plans.usage.get_tenant_entitlements", AsyncMock(return_value=entitlements))
+    monkeypatch.setattr(
+        "shared.plans.usage.get_tenant_entitlements", AsyncMock(return_value=entitlements)
+    )
     monkeypatch.setattr("shared.plans.usage.count_active_skus", AsyncMock(return_value=10))
     monkeypatch.setattr("shared.plans.usage.count_billable_users", AsyncMock(return_value=2))
     monkeypatch.setattr("shared.plans.usage.count_active_warehouses", AsyncMock(return_value=1))
@@ -77,7 +80,9 @@ async def test_get_plan_usage_unlimited_caps_are_null(monkeypatch: pytest.Monkey
         "max_users": None,
         "addons": [],
     }
-    monkeypatch.setattr("shared.plans.usage.get_tenant_entitlements", AsyncMock(return_value=entitlements))
+    monkeypatch.setattr(
+        "shared.plans.usage.get_tenant_entitlements", AsyncMock(return_value=entitlements)
+    )
     monkeypatch.setattr("shared.plans.usage.count_active_skus", AsyncMock(return_value=5000))
     monkeypatch.setattr("shared.plans.usage.count_billable_users", AsyncMock(return_value=40))
     monkeypatch.setattr("shared.plans.usage.count_active_warehouses", AsyncMock(return_value=12))

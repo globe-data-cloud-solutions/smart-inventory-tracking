@@ -4,6 +4,7 @@ fall back to DATABASE_URL (the runtime role) outside ENVIRONMENT=local.
 No DB: the connect call in each script is replaced with one that records the
 URL it was given and stops the script there.
 """
+
 from __future__ import annotations
 
 import os
@@ -15,7 +16,9 @@ import pytest
 import migrations.bootstrap_sa_account as bootstrap_sa_account
 import migrations.seed_dev_sample as seed_dev_sample
 
-_SCRIPTS_ROOT = os.path.normpath(os.path.join(os.path.dirname(__file__), "..", "..", "..", "scripts"))
+_SCRIPTS_ROOT = os.path.normpath(
+    os.path.join(os.path.dirname(__file__), "..", "..", "..", "scripts")
+)
 if _SCRIPTS_ROOT not in sys.path:
     sys.path.insert(0, _SCRIPTS_ROOT)
 
@@ -55,15 +58,18 @@ def _assert_refused(exc: pytest.ExceptionInfo[SystemExit], prog: str) -> None:
 
 
 class TestSeedPermissions:
-
-    async def test_dev_without_migration_url_exits(self, monkeypatch: pytest.MonkeyPatch) -> None:
+    async def test_dev_without_migration_url_exits(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         _runtime_url_only(monkeypatch, "dev")
         monkeypatch.setattr(seed_permissions, "create_async_engine", _fake_engine)
         with pytest.raises(SystemExit) as exc:
             await seed_permissions.seed()
         _assert_refused(exc, "seed_permissions")
 
-    async def test_local_falls_back_to_database_url(self, monkeypatch: pytest.MonkeyPatch) -> None:
+    async def test_local_falls_back_to_database_url(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         _runtime_url_only(monkeypatch, "local")
         monkeypatch.setattr(seed_permissions, "create_async_engine", _fake_engine)
         with pytest.raises(_Connected) as exc:
@@ -72,7 +78,6 @@ class TestSeedPermissions:
 
 
 class TestSeedDevSample:
-
     @pytest.fixture(autouse=True)
     def _seed_env(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setenv("SEED_ENABLED", "true")
@@ -80,13 +85,17 @@ class TestSeedDevSample:
         monkeypatch.setenv("SEED_SAMPLE_PASSWORD", "fake-sample-password")
         monkeypatch.setattr(seed_dev_sample.asyncpg, "connect", _fake_asyncpg_connect)
 
-    async def test_dev_without_migration_url_exits(self, monkeypatch: pytest.MonkeyPatch) -> None:
+    async def test_dev_without_migration_url_exits(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         _runtime_url_only(monkeypatch, "dev")
         with pytest.raises(SystemExit) as exc:
             await seed_dev_sample.main()
         _assert_refused(exc, "seed_dev_sample")
 
-    async def test_local_falls_back_to_database_url(self, monkeypatch: pytest.MonkeyPatch) -> None:
+    async def test_local_falls_back_to_database_url(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         _runtime_url_only(monkeypatch, "local")
         with pytest.raises(_Connected) as exc:
             await seed_dev_sample.main()
@@ -94,15 +103,20 @@ class TestSeedDevSample:
 
 
 class TestBootstrapSaAccount:
-
     @pytest.fixture(autouse=True)
     def _sa_env(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setenv("SA_EMAIL_SECRET_NAME", "fake/email/secret")
         monkeypatch.setenv("SA_PASSWORD_SECRET_NAME", "fake/password/secret")
-        monkeypatch.setattr(bootstrap_sa_account.sys, "argv", ["bootstrap_sa_account.py"])
-        monkeypatch.setattr(bootstrap_sa_account, "_get_secret_value", lambda name: "fake-value")
+        monkeypatch.setattr(
+            bootstrap_sa_account.sys, "argv", ["bootstrap_sa_account.py"]
+        )
+        monkeypatch.setattr(
+            bootstrap_sa_account, "_get_secret_value", lambda name: "fake-value"
+        )
 
-    async def test_dev_without_migration_url_exits(self, monkeypatch: pytest.MonkeyPatch) -> None:
+    async def test_dev_without_migration_url_exits(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         _runtime_url_only(monkeypatch, "dev")
         bootstrap_mock = AsyncMock(return_value=True)
         with patch.object(bootstrap_sa_account, "bootstrap", bootstrap_mock):
@@ -111,7 +125,9 @@ class TestBootstrapSaAccount:
         _assert_refused(exc, "bootstrap_sa_account")
         bootstrap_mock.assert_not_awaited()
 
-    async def test_local_falls_back_to_database_url(self, monkeypatch: pytest.MonkeyPatch) -> None:
+    async def test_local_falls_back_to_database_url(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         _runtime_url_only(monkeypatch, "local")
         bootstrap_mock = AsyncMock(return_value=True)
         with patch.object(bootstrap_sa_account, "bootstrap", bootstrap_mock):

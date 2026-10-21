@@ -39,6 +39,7 @@ driven instead — see resolve_keep_list().
 
 LOCAL DEV ONLY per CLAUDE.md §8 — never run against staging or prod.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -58,17 +59,22 @@ from sqlalchemy import create_engine, text
 # Connection — sync driver
 # ---------------------------------------------------------------------------
 _raw_url = os.environ["DATABASE_URL"]
-_sync_url = (
-    _raw_url
-    .replace("postgresql+asyncpg://", "postgresql://")
-    .replace("postgresql+psycopg2://", "postgresql://")
+_sync_url = _raw_url.replace("postgresql+asyncpg://", "postgresql://").replace(
+    "postgresql+psycopg2://", "postgresql://"
 )
 engine = create_engine(_sync_url, echo=False)
 
 # ---------------------------------------------------------------------------
 # Safety guard — single/multi-tenant mode never deletes these regardless of input
 # ---------------------------------------------------------------------------
-PROTECTED_TENANT_NAMES = {"tenant_6_p2t", "tenant 6", "t6", "tenant_07", "tenant 07", "t7"}
+PROTECTED_TENANT_NAMES = {
+    "tenant_6_p2t",
+    "tenant 6",
+    "t6",
+    "tenant_07",
+    "tenant 07",
+    "t7",
+}
 
 # Hard-coded special case: no tenant_id column AND no declared FK constraint,
 # so FK discovery below cannot find it. transaction_id -> inventory_transactions.id.
@@ -87,6 +93,7 @@ _ITK_ORPHAN_COUNT = (
 # ---------------------------------------------------------------------------
 # Discovery helpers
 # ---------------------------------------------------------------------------
+
 
 def discover_tenant_tables(conn) -> list[str]:
     """Every public base table with a tenant_id column, excluding `tenants`
@@ -143,12 +150,19 @@ def get_all_fks(conn) -> list[dict]:
         )
     ).fetchall()
     return [
-        {"child_table": r[0], "child_col": r[1], "parent_table": r[2], "parent_col": r[3]}
+        {
+            "child_table": r[0],
+            "child_col": r[1],
+            "parent_table": r[2],
+            "parent_col": r[3],
+        }
         for r in rows
     ]
 
 
-def discover_fk_only_tables(conn, tenant_tables: list[str], all_fks: list[dict]) -> list[dict]:
+def discover_fk_only_tables(
+    conn, tenant_tables: list[str], all_fks: list[dict]
+) -> list[dict]:
     """Tables without tenant_id whose FK points at a table in the purge set
     (tenant_tables, or 'users'/'tenants'/'organization_node'). Excludes the
     hard-coded inventory_transaction_keys special case (no real FK exists for it)."""
@@ -177,8 +191,10 @@ def discover_fk_only_tables(conn, tenant_tables: list[str], all_fks: list[dict])
 def topo_order(nodes: set[str], edges: list[tuple[str, str]]) -> list[str]:
     """Kahn's algorithm. edges = (child, parent) meaning child must precede
     parent in the returned order. Self-loops are ignored."""
-    deps: dict[str, set[str]] = defaultdict(set)   # node -> nodes it must come after
-    children_of: dict[str, set[str]] = defaultdict(set)  # parent -> children waiting on it
+    deps: dict[str, set[str]] = defaultdict(set)  # node -> nodes it must come after
+    children_of: dict[str, set[str]] = defaultdict(
+        set
+    )  # parent -> children waiting on it
     for child, parent in edges:
         if child == parent or child not in nodes or parent not in nodes:
             continue
@@ -259,6 +275,7 @@ def build_purge_plan(conn) -> dict:
 # Tenant resolution
 # ---------------------------------------------------------------------------
 
+
 def resolve_tenant_ids(conn, names_or_ids: list[str]) -> list[tuple[str, str]]:
     """Return list of (id, name) for the given names or UUIDs. (Single/multi mode.)"""
     resolved = []
@@ -271,7 +288,9 @@ def resolve_tenant_ids(conn, names_or_ids: list[str]) -> list[tuple[str, str]]:
             ).fetchone()
         except ValueError:
             row = conn.execute(
-                text("SELECT id::text, name FROM tenants WHERE LOWER(name) = LOWER(:v)"),
+                text(
+                    "SELECT id::text, name FROM tenants WHERE LOWER(name) = LOWER(:v)"
+                ),
                 {"v": val},
             ).fetchone()
 
@@ -281,8 +300,14 @@ def resolve_tenant_ids(conn, names_or_ids: list[str]) -> list[tuple[str, str]]:
 
         tid, tname = row[0], row[1]
 
-        if tname.lower() in PROTECTED_TENANT_NAMES or val.lower() in PROTECTED_TENANT_NAMES:
-            print(f"  [PROTECTED] '{tname}' is in the protected list — skipping.", file=sys.stderr)
+        if (
+            tname.lower() in PROTECTED_TENANT_NAMES
+            or val.lower() in PROTECTED_TENANT_NAMES
+        ):
+            print(
+                f"  [PROTECTED] '{tname}' is in the protected list — skipping.",
+                file=sys.stderr,
+            )
             continue
 
         resolved.append((tid, tname))
@@ -303,7 +328,10 @@ def resolve_keep_list(conn, keep_names: list[str]) -> list[tuple[str, str, str]]
             {"v": val},
         ).fetchall()
         if len(rows) != 1:
-            print(f"\n[ABORT] Keep-list entry '{val}' matched {len(rows)} tenant(s):", file=sys.stderr)
+            print(
+                f"\n[ABORT] Keep-list entry '{val}' matched {len(rows)} tenant(s):",
+                file=sys.stderr,
+            )
             for r in rows:
                 print(f"    {r[0]}  slug={r[1]}  name={r[2]}", file=sys.stderr)
             if not rows:
@@ -325,6 +353,7 @@ def get_sa_holding_tenant_ids(conn) -> set[str]:
 # ---------------------------------------------------------------------------
 # Core delete / count helpers
 # ---------------------------------------------------------------------------
+
 
 def _set_tenant_context(conn, tid: str) -> None:
     """Set app.current_tenant_id so RLS policies evaluate TRUE for this tenant's
@@ -350,19 +379,28 @@ def _delete_table(conn, table: str, plan: dict, tid: str) -> int:
         )
         return conn.execute(text(sql), {"tid": tid}).rowcount
     where = "id = :tid" if table == "tenants" else "tenant_id = :tid"
-    return conn.execute(text(f"DELETE FROM {table} WHERE {where}"), {"tid": tid}).rowcount
+    return conn.execute(
+        text(f"DELETE FROM {table} WHERE {where}"), {"tid": tid}
+    ).rowcount
 
 
-def run_purge_transaction(targets: list[tuple[str, str]], plan: dict, kept_tenants: list[tuple[str, str]],
-                           tenants_before: int, dry_run: bool) -> bool:
+def run_purge_transaction(
+    targets: list[tuple[str, str]],
+    plan: dict,
+    kept_tenants: list[tuple[str, str]],
+    tenants_before: int,
+    dry_run: bool,
+) -> bool:
     """Open one connection/transaction, run execute_purge, then ROLLBACK
     (dry-run or failed orphan check) or COMMIT (live + clean). Returns True
     if the purge was committed."""
     with engine.connect() as conn:
         txn = conn.begin()
         label = "DRY RUN" if dry_run else "LIVE PURGE"
-        print(f"\n=== {label} — deletes run in a transaction, "
-              f"{'ROLLBACK' if dry_run else 'COMMIT'} at the end ===")
+        print(
+            f"\n=== {label} — deletes run in a transaction, "
+            f"{'ROLLBACK' if dry_run else 'COMMIT'} at the end ==="
+        )
         orphans = execute_purge(conn, targets, plan, kept_tenants)
 
         if dry_run or orphans:
@@ -384,7 +422,12 @@ def run_purge_transaction(targets: list[tuple[str, str]], plan: dict, kept_tenan
     return committed
 
 
-def execute_purge(conn, targets: list[tuple[str, str]], plan: dict, kept_tenants: list[tuple[str, str]]) -> int:
+def execute_purge(
+    conn,
+    targets: list[tuple[str, str]],
+    plan: dict,
+    kept_tenants: list[tuple[str, str]],
+) -> int:
     """Drop append-only rules, delete every table for every target tenant,
     recreate the rules, then run the orphan check — all against the connection's
     CURRENT transaction (caller controls commit/rollback). Prints per-tenant and
@@ -408,14 +451,18 @@ def execute_purge(conn, targets: list[tuple[str, str]], plan: dict, kept_tenants
         print(f"  {'TOTAL':45s}  {tenant_total:>6} row(s)")
         grand_total += tenant_total
 
-    print(f"\n=== Per-table totals across {len(targets)} tenant(s) (grand total {grand_total}) ===")
+    print(
+        f"\n=== Per-table totals across {len(targets)} tenant(s) (grand total {grand_total}) ==="
+    )
     for table in plan["order"]:
         if totals[table]:
             print(f"  {table:45s}  {totals[table]:>6}")
 
     print("\nRecreating append-only rules...")
     for rule, table in plan["rules"]:
-        conn.execute(text(f"CREATE RULE {rule} AS ON DELETE TO {table} DO INSTEAD NOTHING"))
+        conn.execute(
+            text(f"CREATE RULE {rule} AS ON DELETE TO {table} DO INSTEAD NOTHING")
+        )
         print(f"  [RULE] Recreated {rule} on {table}")
 
     print("\nOrphan check...")
@@ -436,7 +483,9 @@ def orphan_check(conn, plan: dict, kept_tenants: list[tuple[str, str]]) -> int:
         )
         n = conn.execute(text(sql)).scalar() or 0
         if n:
-            print(f"  [ORPHAN] {table}.{fk['child_col']} -> {fk['parent_table']}: {n} row(s)")
+            print(
+                f"  [ORPHAN] {table}.{fk['child_col']} -> {fk['parent_table']}: {n} row(s)"
+            )
         total_orphans += n
 
     # inventory_transaction_keys has no declared FK constraint (soft/app-enforced
@@ -445,8 +494,10 @@ def orphan_check(conn, plan: dict, kept_tenants: list[tuple[str, str]]) -> int:
     # gap, unrelated to this purge.
     n = conn.execute(text(_ITK_ORPHAN_COUNT)).scalar() or 0
     if n:
-        print(f"  [INFO] {_ITK_TABLE}.transaction_id -> inventory_transactions: "
-              f"{n} row(s) with no matching transaction (pre-existing, no real FK; not counted as a failure)")
+        print(
+            f"  [INFO] {_ITK_TABLE}.transaction_id -> inventory_transactions: "
+            f"{n} row(s) with no matching transaction (pre-existing, no real FK; not counted as a failure)"
+        )
 
     # Direct tenant-scoped tables: per kept tenant, with RLS context set
     # (covers FORCE RLS tables: inventory_transactions, inventory_balances,
@@ -471,7 +522,9 @@ def orphan_check(conn, plan: dict, kept_tenants: list[tuple[str, str]]) -> int:
             )
             n = conn.execute(text(sql), {"tid": tid}).scalar() or 0
             if n:
-                print(f"  [ORPHAN] tenant {tname}: {child}.{child_col} -> {parent}: {n} row(s)")
+                print(
+                    f"  [ORPHAN] tenant {tname}: {child}.{child_col} -> {parent}: {n} row(s)"
+                )
             total_orphans += n
 
     return total_orphans
@@ -480,6 +533,7 @@ def orphan_check(conn, plan: dict, kept_tenants: list[tuple[str, str]]) -> int:
 # ---------------------------------------------------------------------------
 # Entry point
 # ---------------------------------------------------------------------------
+
 
 def main() -> None:
     parser = argparse.ArgumentParser(
@@ -498,8 +552,8 @@ def main() -> None:
         nargs="+",
         metavar="NAME_OR_SLUG",
         help="Purge every tenant EXCEPT the named ones (match by slug or name, "
-             "case-insensitive, exactly one each) and any tenant holding a "
-             "system_role=SA user.",
+        "case-insensitive, exactly one each) and any tenant holding a "
+        "system_role=SA user.",
     )
     parser.add_argument(
         "--dry-run",
@@ -507,22 +561,29 @@ def main() -> None:
         help="Show row counts that would be deleted; make no changes.",
     )
     parser.add_argument(
-        "--yes", "-y",
+        "--yes",
+        "-y",
         action="store_true",
         help="Skip the interactive confirmation prompt (for scripted use).",
     )
     args = parser.parse_args()
 
     if args.tenants and args.all_except:
-        parser.error("--all-except cannot be combined with explicit tenant names/UUIDs.")
+        parser.error(
+            "--all-except cannot be combined with explicit tenant names/UUIDs."
+        )
     if not args.tenants and not args.all_except:
         parser.error("Provide tenant name(s)/UUID(s), or use --all-except.")
 
     with engine.connect() as conn:
         plan = build_purge_plan(conn)
         conn.rollback()
-    print(f"Purge plan: {len(plan['order'])} tables, deletion order resolved via pg_constraint.")
-    print(f"FK-only special-case tables discovered: {sorted(plan['fk_only'].keys()) or '(none)'}")
+    print(
+        f"Purge plan: {len(plan['order'])} tables, deletion order resolved via pg_constraint."
+    )
+    print(
+        f"FK-only special-case tables discovered: {sorted(plan['fk_only'].keys()) or '(none)'}"
+    )
     print(f"Append-only rules affected: {plan['rules'] or '(none)'}")
 
     if args.all_except:
@@ -533,22 +594,32 @@ def main() -> None:
 
             sa_ids = get_sa_holding_tenant_ids(conn)
             if sa_ids:
-                print(f"\nAlso keeping {len(sa_ids)} tenant(s) holding a system_role=SA user:")
+                print(
+                    f"\nAlso keeping {len(sa_ids)} tenant(s) holding a system_role=SA user:"
+                )
                 for r in conn.execute(
-                    text("SELECT id::text, slug, name FROM tenants WHERE id::text = ANY(:ids)"),
+                    text(
+                        "SELECT id::text, slug, name FROM tenants WHERE id::text = ANY(:ids)"
+                    ),
                     {"ids": list(sa_ids)},
                 ):
                     print(f"    {r[0]}  slug={r[1]}  name={r[2]}")
             keep_ids |= sa_ids
 
-            all_rows = conn.execute(text("SELECT id::text, slug, name, created_at FROM tenants ORDER BY created_at")).fetchall()
+            all_rows = conn.execute(
+                text(
+                    "SELECT id::text, slug, name, created_at FROM tenants ORDER BY created_at"
+                )
+            ).fetchall()
             conn.rollback()
 
         tenants_before = len(all_rows)
         purge_targets = [(r[0], r[2]) for r in all_rows if r[0] not in keep_ids]
         kept_tenants = [(r[0], r[2]) for r in all_rows if r[0] in keep_ids]
 
-        print(f"\nPURGE target: {len(purge_targets)} tenant(s) (of {tenants_before} total):")
+        print(
+            f"\nPURGE target: {len(purge_targets)} tenant(s) (of {tenants_before} total):"
+        )
         for r in all_rows:
             if r[0] not in keep_ids:
                 print(f"  {r[0]}  slug={r[1]}  name={r[2]}  created_at={r[3]}")
@@ -566,7 +637,9 @@ def main() -> None:
                 print("Aborted — no changes made.")
                 return
 
-        run_purge_transaction(purge_targets, plan, kept_tenants, tenants_before, args.dry_run)
+        run_purge_transaction(
+            purge_targets, plan, kept_tenants, tenants_before, args.dry_run
+        )
         return
 
     # ---- Single/multi-tenant mode (unchanged behaviour) ----
@@ -589,7 +662,9 @@ def main() -> None:
 
     if not args.dry_run and not args.yes:
         print()
-        confirm = input("Type YES to permanently delete all data for the above tenant(s): ").strip()
+        confirm = input(
+            "Type YES to permanently delete all data for the above tenant(s): "
+        ).strip()
         if confirm != "YES":
             print("Aborted — no changes made.")
             return

@@ -3,6 +3,7 @@
 All routes use the read replica session where possible.
 The effective_tenant_id() utility allows SA to query across tenants.
 """
+
 from __future__ import annotations
 
 import uuid
@@ -17,7 +18,14 @@ from shared.permissions.middleware import require_permission
 from shared.permissions.registry import PERMISSIONS
 from shared.utils.responses import SuccessResponse
 from shared.utils.tenant_scope import effective_tenant_id
-from schemas.analytics import CrossWarehouseStockOut, ForecastOut, InventoryStockOut, ReorderAlertOut, TransferHistoryItem, WarehouseOut
+from schemas.analytics import (
+    CrossWarehouseStockOut,
+    ForecastOut,
+    InventoryStockOut,
+    ReorderAlertOut,
+    TransferHistoryItem,
+    WarehouseOut,
+)
 from services.inventory_analytics import (
     get_alerts,
     get_cross_warehouse_stock,
@@ -33,7 +41,7 @@ router = APIRouter()
 @require_permission(PERMISSIONS.INVENTORY_VIEW_BALANCE)
 async def stock_levels(
     warehouse_id: Optional[uuid.UUID] = Query(None),
-    tenant_id: Optional[uuid.UUID]   = Query(None, description="SA only — filter to specific tenant"),
+    tenant_id: Optional[uuid.UUID] = Query(None, description="SA only — filter to specific tenant"),
     user=Depends(get_current_user),
     db: AsyncSession = Depends(get_read_db_session),
 ) -> SuccessResponse[List[InventoryStockOut]]:
@@ -60,8 +68,8 @@ async def reorder_alerts(
 @require_permission(PERMISSIONS.AI_FORECAST_VIEW)
 async def demand_forecast(
     product_id: Optional[uuid.UUID] = Query(None),
-    days: int                        = Query(30, ge=1, le=365),
-    tenant_id: Optional[uuid.UUID]  = Query(None),
+    days: int = Query(30, ge=1, le=365),
+    tenant_id: Optional[uuid.UUID] = Query(None),
     user=Depends(get_current_user),
     db: AsyncSession = Depends(get_read_db_session),
 ) -> SuccessResponse[List[ForecastOut]]:
@@ -94,9 +102,11 @@ async def list_warehouses(
 ) -> SuccessResponse[List[WarehouseOut]]:
     """All active warehouses for the tenant with address and assigned manager name."""
     from sqlalchemy import text
+
     tid = effective_tenant_id(user, tenant_id)
-    rows = (await db.execute(
-        text("""
+    rows = (
+        await db.execute(
+            text("""
             SELECT n.id, n.name, 'WAREHOUSE' AS warehouse_type,
                    NULL::text AS address, NULL::text AS manager_name
             FROM organization_node n
@@ -112,24 +122,27 @@ async def list_warehouses(
               )
             ORDER BY name
         """),
-        {"tid": str(tid)},
-    )).fetchall()
-    return SuccessResponse(data=[
-        WarehouseOut(
-            id=r.id,
-            name=r.name,
-            warehouse_type=r.warehouse_type,
-            address=r.address,
-            manager_name=r.manager_name,
+            {"tid": str(tid)},
         )
-        for r in rows
-    ])
+    ).fetchall()
+    return SuccessResponse(
+        data=[
+            WarehouseOut(
+                id=r.id,
+                name=r.name,
+                warehouse_type=r.warehouse_type,
+                address=r.address,
+                manager_name=r.manager_name,
+            )
+            for r in rows
+        ]
+    )
 
 
 @router.get("/transfer-history", response_model=SuccessResponse[List[TransferHistoryItem]])
 @require_permission(PERMISSIONS.INVENTORY_VIEW_LEDGER)
 async def transfer_history(
-    product_id:   uuid.UUID = Query(...),
+    product_id: uuid.UUID = Query(...),
     warehouse_id: uuid.UUID = Query(...),
     tenant_id: Optional[uuid.UUID] = Query(None),
     user=Depends(get_current_user),

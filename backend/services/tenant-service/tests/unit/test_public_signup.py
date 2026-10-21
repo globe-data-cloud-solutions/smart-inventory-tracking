@@ -6,17 +6,18 @@ every test here — it has its own unit tests in
 backend/shared/cache/tests/test_rate_limit.py and must not depend on a real
 Redis connection for these tests.
 """
+
 from __future__ import annotations
 
 import os
 import sys
 
-os.environ.setdefault("DATABASE_URL",      "postgresql+asyncpg://test:x@localhost/test")
+os.environ.setdefault("DATABASE_URL", "postgresql+asyncpg://test:x@localhost/test")
 os.environ.setdefault("DATABASE_READ_URL", "postgresql+asyncpg://test:x@localhost/test")
-os.environ.setdefault("JWT_SECRET",        "test-secret")
-os.environ.setdefault("JWT_SECRET_KEY",    "test-secret")
-os.environ.setdefault("ENVIRONMENT",       "local")
-os.environ.setdefault("REDIS_URL",         "redis://localhost:6379/0")
+os.environ.setdefault("JWT_SECRET", "test-secret")
+os.environ.setdefault("JWT_SECRET_KEY", "test-secret")
+os.environ.setdefault("ENVIRONMENT", "local")
+os.environ.setdefault("REDIS_URL", "redis://localhost:6379/0")
 
 _TENANT_ROOT = os.path.normpath(os.path.join(os.path.dirname(__file__), "..", ".."))
 if _TENANT_ROOT not in sys.path:
@@ -93,12 +94,15 @@ async def _call_signup(body_kwargs: dict[str, Any], execute_side_effect, ip: str
     fake_db = _make_db(execute_side_effect)
     body = SignupRequest(**body_kwargs)
 
-    with patch("routers.public_signup.rate_limit_hit", new=AsyncMock(return_value=None)), \
-         patch("routers.public_signup.AsyncSessionLocal", lambda: fake_db):
+    with (
+        patch("routers.public_signup.rate_limit_hit", new=AsyncMock(return_value=None)),
+        patch("routers.public_signup.AsyncSessionLocal", lambda: fake_db),
+    ):
         return await public_signup(body=body, request=_fake_request(ip))
 
 
 # ── Body validation (no DB call reached) ─────────────────────────────────────
+
 
 async def test_invalid_organisation_type_returns_422() -> None:
     async def _execute(sql, params=None, **kw):
@@ -140,7 +144,9 @@ async def test_terms_version_mismatch_returns_422() -> None:
     assert exc_info.value.detail["code"] == "TERMS_VERSION_MISMATCH"
 
 
-async def test_terms_version_mismatch_after_runtime_env_change(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_terms_version_mismatch_after_runtime_env_change(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """get_terms_version() reads TERMS_VERSION at call time, not at import
     time — a request sent with the version that was current a moment ago
     must be rejected once the env var changes underneath the running
@@ -159,6 +165,7 @@ async def test_terms_version_mismatch_after_runtime_env_change(monkeypatch: pyte
 
 
 # ── DB-backed validation ──────────────────────────────────────────────────────
+
 
 async def test_non_public_tier_returns_422_invalid_tier() -> None:
     async def _execute(sql, params=None, **kw):

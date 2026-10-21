@@ -1,4 +1,5 @@
 """Notification Service — alert delivery via Celery outbox workers."""
+
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI

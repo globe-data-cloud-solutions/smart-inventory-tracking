@@ -20,6 +20,7 @@ Column trace (qty = 100, source start = 2000):
   IN_TRANSIT       : current_stock=1900, pending_out=0,   in_transit_out=100, available=1900
   RECEIVED         : current_stock=1900, pending_out=0,   in_transit_out=0,   available=1900
 """
+
 from __future__ import annotations
 
 import pytest
@@ -30,7 +31,6 @@ from decimal import Decimal
 
 @pytest.mark.unit
 class TestInventoryStockOutSchema:
-
     def test_approved_transfer_does_not_double_deduct_available(self) -> None:
         """net_available must equal current_stock when pending_out_qty is 0.
 
@@ -44,8 +44,8 @@ class TestInventoryStockOutSchema:
             product_sku="CEM-001",
             warehouse_id="20000000-0000-0000-0000-000000000001",
             warehouse_name="AW North",
-            current_stock=Decimal("1900"),   # already reduced by TRANSFER_OUT at APPROVED
-            pending_out_qty=Decimal("0"),    # APPROVED is NOT a soft hold
+            current_stock=Decimal("1900"),  # already reduced by TRANSFER_OUT at APPROVED
+            pending_out_qty=Decimal("0"),  # APPROVED is NOT a soft hold
             in_transit_out_qty=Decimal("0"),
             in_transit_in_qty=Decimal("0"),
             requested_qty=Decimal("0"),
@@ -67,8 +67,8 @@ class TestInventoryStockOutSchema:
             product_sku="CEM-001",
             warehouse_id="20000000-0000-0000-0000-000000000001",
             warehouse_name="AW North",
-            current_stock=Decimal("2000"),    # On Hand not yet reduced
-            pending_out_qty=Decimal("100"),   # soft hold at PENDING_APPROVAL
+            current_stock=Decimal("2000"),  # On Hand not yet reduced
+            pending_out_qty=Decimal("100"),  # soft hold at PENDING_APPROVAL
             in_transit_out_qty=Decimal("0"),
             in_transit_in_qty=Decimal("0"),
             requested_qty=Decimal("0"),
@@ -115,7 +115,7 @@ class TestInventoryStockOutSchema:
             warehouse_id="20000000-0000-0000-0000-000000000001",
             warehouse_name="AW North",
             current_stock=Decimal("2000"),
-            pending_out_qty=Decimal("0"),    # DRAFT excluded — no soft hold
+            pending_out_qty=Decimal("0"),  # DRAFT excluded — no soft hold
             in_transit_out_qty=Decimal("0"),
             in_transit_in_qty=Decimal("0"),
             requested_qty=Decimal("0"),
@@ -139,11 +139,14 @@ class TestInventoryStockOutSchema:
         # DRAFT: no soft hold — available must equal On Hand
         draft_item = InventoryStockOut(
             product_id="aaaaaaaa-0000-0000-0000-000000000001",
-            product_name="Cement 50kg", product_sku="CEM-001",
+            product_name="Cement 50kg",
+            product_sku="CEM-001",
             warehouse_id="20000000-0000-0000-0000-000000000001",
             warehouse_name="AW North",
-            current_stock=Decimal("500"), pending_out_qty=Decimal("0"),
-            in_transit_out_qty=Decimal("0"), in_transit_in_qty=Decimal("0"),
+            current_stock=Decimal("500"),
+            pending_out_qty=Decimal("0"),
+            in_transit_out_qty=Decimal("0"),
+            in_transit_in_qty=Decimal("0"),
             requested_qty=Decimal("0"),
         )
         assert draft_item.net_available == Decimal("500"), (
@@ -153,11 +156,14 @@ class TestInventoryStockOutSchema:
         # PENDING_REVIEW: soft hold in place — available reduces, On Hand unchanged
         pending_item = InventoryStockOut(
             product_id="aaaaaaaa-0000-0000-0000-000000000001",
-            product_name="Cement 50kg", product_sku="CEM-001",
+            product_name="Cement 50kg",
+            product_sku="CEM-001",
             warehouse_id="20000000-0000-0000-0000-000000000001",
             warehouse_name="AW North",
-            current_stock=Decimal("500"), pending_out_qty=Decimal("200"),
-            in_transit_out_qty=Decimal("0"), in_transit_in_qty=Decimal("0"),
+            current_stock=Decimal("500"),
+            pending_out_qty=Decimal("200"),
+            in_transit_out_qty=Decimal("0"),
+            in_transit_in_qty=Decimal("0"),
             requested_qty=Decimal("0"),
         )
         assert pending_item.net_available == Decimal("300"), (
@@ -173,22 +179,27 @@ class TestInventoryStockOutSchema:
 
         Verifies available stays at 1900 from APPROVED through IN_TRANSIT.
         """
-        PRODUCT_ID   = "aaaaaaaa-0000-0000-0000-000000000001"
+        PRODUCT_ID = "aaaaaaaa-0000-0000-0000-000000000001"
         WAREHOUSE_ID = "20000000-0000-0000-0000-000000000001"
 
         def _item(current: str, pending: str, transit_out: str) -> InventoryStockOut:
             return InventoryStockOut(
-                product_id=PRODUCT_ID, product_name="X", product_sku="X-001",
-                warehouse_id=WAREHOUSE_ID, warehouse_name="WH",
-                current_stock=Decimal(current), pending_out_qty=Decimal(pending),
-                in_transit_out_qty=Decimal(transit_out), in_transit_in_qty=Decimal("0"),
+                product_id=PRODUCT_ID,
+                product_name="X",
+                product_sku="X-001",
+                warehouse_id=WAREHOUSE_ID,
+                warehouse_name="WH",
+                current_stock=Decimal(current),
+                pending_out_qty=Decimal(pending),
+                in_transit_out_qty=Decimal(transit_out),
+                in_transit_in_qty=Decimal("0"),
                 requested_qty=Decimal("0"),
             )
 
         # PENDING_APPROVAL: On Hand=2000, soft hold=100, available=1900
         assert _item("2000", "100", "0").net_available == Decimal("1900")
         # APPROVED: On Hand=1900 (deducted), soft hold cleared, available=1900
-        assert _item("1900", "0",   "0").net_available == Decimal("1900")
+        assert _item("1900", "0", "0").net_available == Decimal("1900")
         # ISSUED: in_transit_out=100 (informational), available still 1900
         assert _item("1900", "0", "100").net_available == Decimal("1900")
         # IN_TRANSIT: same as ISSUED from source perspective

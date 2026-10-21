@@ -2,7 +2,6 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 
-
 class DuplicateTransactionError(Exception):
     def __init__(self, idempotency_key: str) -> None:
         super().__init__(f"Duplicate transaction key: {idempotency_key}")

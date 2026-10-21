@@ -27,14 +27,15 @@ Revision ID: 038
 Revises:     037
 Create Date: 2026-06-02
 """
+
 from __future__ import annotations
 
 from alembic import op
 
-revision      = "038"
+revision = "038"
 down_revision = "037"
 branch_labels = None
-depends_on    = None
+depends_on = None
 
 
 def upgrade() -> None:
@@ -43,7 +44,9 @@ def upgrade() -> None:
     op.execute("ALTER TYPE transaction_type ADD VALUE IF NOT EXISTS 'TRANSIT_OUT'")
     op.execute("ALTER TYPE transaction_type ADD VALUE IF NOT EXISTS 'TRANSIT_IN'")
     op.execute("ALTER TYPE transaction_type ADD VALUE IF NOT EXISTS 'TRANSIT_CLEAR'")
-    op.execute("ALTER TYPE transaction_type ADD VALUE IF NOT EXISTS 'TRANSFER_REVERSAL'")
+    op.execute(
+        "ALTER TYPE transaction_type ADD VALUE IF NOT EXISTS 'TRANSFER_REVERSAL'"
+    )
 
 
 def downgrade() -> None:

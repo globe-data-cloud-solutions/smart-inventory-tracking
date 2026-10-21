@@ -14,6 +14,7 @@ Covers 7 business rules enforced by InventoryService.adjust():
 7. NM/RM approval (PATCH transition to APPROVED) triggers record_transaction() and
    updates the on-hand balance — the [id]/route.ts auto-promotes APPROVED → APPLIED.
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -27,10 +28,10 @@ from schemas.inventory import AdjustStockRequest
 from services.inventory_service import InventoryService
 
 
-TENANT_ID    = "10000000-0000-0000-0000-000000000001"
+TENANT_ID = "10000000-0000-0000-0000-000000000001"
 WAREHOUSE_ID = "20000000-0000-0000-0000-000000000001"
-PRODUCT_ID   = "aaaaaaaa-0000-0000-0000-000000000001"
-TX_ID        = "bbbbbbbb-0000-0000-0000-000000000001"
+PRODUCT_ID = "aaaaaaaa-0000-0000-0000-000000000001"
+TX_ID = "bbbbbbbb-0000-0000-0000-000000000001"
 
 
 @dataclass
@@ -41,10 +42,10 @@ class _User:
     role: str
 
 
-WM  = _User("u-wm-001",  TENANT_ID, WAREHOUSE_ID, "WM")
-NM  = _User("u-nm-001",  TENANT_ID, "",            "NM")
-RM  = _User("u-rm-001",  TENANT_ID, "",            "RM")
-TA  = _User("u-ta-001",  TENANT_ID, "",            "TA")   # Tenant Admin — no assigned warehouse
+WM = _User("u-wm-001", TENANT_ID, WAREHOUSE_ID, "WM")
+NM = _User("u-nm-001", TENANT_ID, "", "NM")
+RM = _User("u-rm-001", TENANT_ID, "", "RM")
+TA = _User("u-ta-001", TENANT_ID, "", "TA")  # Tenant Admin — no assigned warehouse
 
 
 @pytest.fixture()
@@ -52,9 +53,7 @@ def db() -> AsyncMock:
     # Row lookups find nothing: approve_adjustment() then posts without a lot,
     # as it does for a non-batch product.
     mock_db = AsyncMock()
-    mock_db.execute = AsyncMock(
-        return_value=MagicMock(fetchone=MagicMock(return_value=None))
-    )
+    mock_db.execute = AsyncMock(return_value=MagicMock(fetchone=MagicMock(return_value=None)))
     return mock_db
 
 
@@ -67,9 +66,7 @@ def svc(db: AsyncMock) -> InventoryService:
 class TestAdjustmentWarehouseScope:
     """BUG 1 regression: warehouse must come from body (JWT-prefilled), not a dropdown."""
 
-    async def test_adjustment_wm_scoped_to_own_wh(
-        self, svc: InventoryService
-    ) -> None:
+    async def test_adjustment_wm_scoped_to_own_wh(self, svc: InventoryService) -> None:
         """adjust() passes body.warehouse_id to record_transaction unchanged.
 
         The frontend pre-populates body.warehouse_id from the WM's JWT session
@@ -103,9 +100,7 @@ class TestAdjustmentWarehouseScope:
 class TestAdjustmentNegativeEnforced:
     """BUG 4A regression: DAMAGE and EXPIRY always produce a negative ledger quantity."""
 
-    async def test_adjustment_damage_is_always_negative(
-        self, svc: InventoryService
-    ) -> None:
+    async def test_adjustment_damage_is_always_negative(self, svc: InventoryService) -> None:
         """DAMAGE reason forces a negative quantity regardless of the sign supplied."""
         body = AdjustStockRequest(
             product_id=UUID(PRODUCT_ID),
@@ -128,9 +123,7 @@ class TestAdjustmentNegativeEnforced:
         )
         assert kwargs["quantity"] == Decimal("-40")
 
-    async def test_adjustment_expiry_is_always_negative(
-        self, svc: InventoryService
-    ) -> None:
+    async def test_adjustment_expiry_is_always_negative(self, svc: InventoryService) -> None:
         """EXPIRY reason forces a negative quantity regardless of the sign supplied."""
         body = AdjustStockRequest(
             product_id=UUID(PRODUCT_ID),
@@ -152,9 +145,7 @@ class TestAdjustmentNegativeEnforced:
             "EXPIRY adjustment must always produce a negative ledger quantity"
         )
 
-    async def test_return_to_supplier_always_negative(
-        self, svc: InventoryService
-    ) -> None:
+    async def test_return_to_supplier_always_negative(self, svc: InventoryService) -> None:
         """SUPPLIER_RETURN reason forces a negative quantity regardless of input sign.
 
         Returning goods to a supplier is a stock deduction. The user enters a
@@ -181,9 +172,7 @@ class TestAdjustmentNegativeEnforced:
         )
         assert kwargs["quantity"] == Decimal("-75")
 
-    async def test_adjustment_count_variance_preserves_sign(
-        self, svc: InventoryService
-    ) -> None:
+    async def test_adjustment_count_variance_preserves_sign(self, svc: InventoryService) -> None:
         """COUNT_VARIANCE may be positive (surplus found) or negative (shortage)."""
         body_pos = AdjustStockRequest(
             product_id=UUID(PRODUCT_ID),
@@ -210,17 +199,19 @@ class TestAdjustmentNegativeEnforced:
             await svc.adjust(WM, body_neg)
             neg_kwargs = mock_record.call_args[1]
 
-        assert pos_kwargs["quantity"] == Decimal("10"), "Positive COUNT_VARIANCE must remain positive"
-        assert neg_kwargs["quantity"] == Decimal("-10"), "Negative COUNT_VARIANCE must remain negative"
+        assert pos_kwargs["quantity"] == Decimal("10"), (
+            "Positive COUNT_VARIANCE must remain positive"
+        )
+        assert neg_kwargs["quantity"] == Decimal("-10"), (
+            "Negative COUNT_VARIANCE must remain negative"
+        )
 
 
 @pytest.mark.unit
 class TestAdjustmentUpdatesOnHand:
     """BUG 5 regression: APPLIED adjustment must call record_transaction with ADJUSTMENT type."""
 
-    async def test_adjustment_updates_on_hand_immediately(
-        self, svc: InventoryService
-    ) -> None:
+    async def test_adjustment_updates_on_hand_immediately(self, svc: InventoryService) -> None:
         """A below-threshold adjustment (auto-APPLIED) calls record_transaction exactly once
         with transaction_type='ADJUSTMENT' and the correct signed quantity.
         """
@@ -252,9 +243,7 @@ class TestAdjustmentUpdatesOnHand:
 class TestAdjustmentZeroFloor:
     """BUG 7 regression: adjustments that would drive on-hand negative are blocked or warned."""
 
-    async def test_adjustment_below_zero_blocked_for_wm(
-        self, svc: InventoryService
-    ) -> None:
+    async def test_adjustment_below_zero_blocked_for_wm(self, svc: InventoryService) -> None:
         """WM cannot create an adjustment that brings on-hand below zero.
 
         validate_stock_available() raises InsufficientStockError when the ledger
@@ -277,9 +266,7 @@ class TestAdjustmentZeroFloor:
             with pytest.raises(Exception, match="InsufficientStockError"):
                 await svc.adjust(WM, body)
 
-    async def test_adjustment_override_requires_permission(
-        self, svc: InventoryService
-    ) -> None:
+    async def test_adjustment_override_requires_permission(self, svc: InventoryService) -> None:
         """An NM-role user with override=True can bypass the zero-floor guard.
 
         When override_zero_floor=True is passed in the request, adjust() calls
@@ -312,9 +299,7 @@ class TestAdjustmentZeroFloor:
 class TestAdjustmentAuditLog:
     """BUG 8 regression: every adjustment writes an audit log entry."""
 
-    async def test_adjustment_creates_audit_log_entry(
-        self, svc: InventoryService
-    ) -> None:
+    async def test_adjustment_creates_audit_log_entry(self, svc: InventoryService) -> None:
         """adjust() calls audit_log() once for every adjustment, regardless of status.
 
         The audit entry must carry action='ADJUSTMENT', the tenant_id, and the
@@ -328,14 +313,17 @@ class TestAdjustmentAuditLog:
             idempotency_key="adj:audit:001",
         )
 
-        with patch(
-            "services.inventory_service.record_transaction",
-            new_callable=AsyncMock,
-            return_value=TX_ID,
-        ), patch(
-            "services.inventory_service.audit_log",
-            new_callable=AsyncMock,
-        ) as mock_audit:
+        with (
+            patch(
+                "services.inventory_service.record_transaction",
+                new_callable=AsyncMock,
+                return_value=TX_ID,
+            ),
+            patch(
+                "services.inventory_service.audit_log",
+                new_callable=AsyncMock,
+            ) as mock_audit,
+        ):
             await svc.adjust(WM, body)
 
         mock_audit.assert_awaited_once()
@@ -349,9 +337,7 @@ class TestAdjustmentAuditLog:
 class TestNMApprovalTriggersBalance:
     """BUG 9 regression: manager approval must update the inventory balance."""
 
-    async def test_nm_approval_triggers_balance_update(
-        self, svc: InventoryService
-    ) -> None:
+    async def test_nm_approval_triggers_balance_update(self, svc: InventoryService) -> None:
         """approve_adjustment() calls record_transaction() with the adjustment quantity.
 
         When an NM or RM approves a SUBMITTED adjustment, the service must call
@@ -451,9 +437,7 @@ class TestAdjustmentAutoApplyVsPending:
             "adjust() must return the transaction_id produced by record_transaction()"
         )
 
-    async def test_approval_updates_adjusted_wh_balance(
-        self, svc: InventoryService
-    ) -> None:
+    async def test_approval_updates_adjusted_wh_balance(self, svc: InventoryService) -> None:
         """approve_adjustment() calls record_transaction() at the adjusted WH with the correct qty.
 
         This is the complete contract that backs the frontend BUG A fix:
@@ -483,7 +467,9 @@ class TestAdjustmentAutoApplyVsPending:
         assert kwargs["warehouse_id"] == WAREHOUSE_ID, (
             "Balance update must target the WH that made the adjustment, not the approver's WH"
         )
-        assert kwargs["quantity"] == Decimal("-300"), "Must use the signed qty from the adjustment record"
+        assert kwargs["quantity"] == Decimal("-300"), (
+            "Must use the signed qty from the adjustment record"
+        )
         assert result.status == "POSTED", "approve_adjustment must advance to POSTED"
 
     async def test_pending_adjustment_does_not_call_record_transaction(
@@ -536,8 +522,8 @@ class TestApproverWarehouseScopeIsolation:
         """
         body = AdjustStockRequest(
             product_id=UUID(PRODUCT_ID),
-            warehouse_id=UUID(WAREHOUSE_ID),   # the WH that created the adjustment
-            quantity=Decimal("-1500"),          # >= 1000 → TA-tier approval required
+            warehouse_id=UUID(WAREHOUSE_ID),  # the WH that created the adjustment
+            quantity=Decimal("-1500"),  # >= 1000 → TA-tier approval required
             reason_code="DAMAGE",
             idempotency_key="adj:ta-wh-scope:001",
         )
@@ -570,7 +556,7 @@ class TestApproverWarehouseScopeIsolation:
         body = AdjustStockRequest(
             product_id=UUID(PRODUCT_ID),
             warehouse_id=UUID(WAREHOUSE_ID),
-            quantity=Decimal("-300"),           # 100–999 → RM-tier; NM can approve RM-tier too
+            quantity=Decimal("-300"),  # 100–999 → RM-tier; NM can approve RM-tier too
             reason_code="COUNT_VARIANCE",
             idempotency_key="adj:nm-wh-scope:001",
         )
@@ -606,13 +592,13 @@ from fastapi import HTTPException  # noqa: E402
 
 from schemas.inventory import AdjustmentRequest  # noqa: E402
 
-LOT_ID     = "cccccccc-0000-0000-0000-000000000001"
+LOT_ID = "cccccccc-0000-0000-0000-000000000001"
 NEW_LOT_ID = "cccccccc-0000-0000-0000-000000000002"
-ADJ_ID     = "dddddddd-0000-0000-0000-000000000001"
-APPROVER   = "eeeeeeee-0000-0000-0000-000000000001"
+ADJ_ID = "dddddddd-0000-0000-0000-000000000001"
+APPROVER = "eeeeeeee-0000-0000-0000-000000000001"
 
 _FUTURE = date.today() + timedelta(days=90)
-_PAST   = date.today() - timedelta(days=1)
+_PAST = date.today() - timedelta(days=1)
 
 
 def _product(batch: bool = True, expiry: bool = False) -> MagicMock:
@@ -724,10 +710,7 @@ def _inserts(db: AsyncMock, table: str) -> list:
 
 
 def _lot_id_updates(db: AsyncMock) -> list:
-    return [
-        (s, p) for s, p in db.statements
-        if s.startswith("UPDATE adjustment_orders SET lot_id")
-    ]
+    return [(s, p) for s, p in db.statements if s.startswith("UPDATE adjustment_orders SET lot_id")]
 
 
 @pytest.mark.unit
@@ -765,7 +748,6 @@ class TestAdjustmentWarehouseTenantValidation:
 
 @pytest.mark.unit
 class TestAdjustmentLotNonBatch:
-
     @pytest.mark.parametrize(
         "lot_fields",
         [
@@ -788,7 +770,7 @@ class TestAdjustmentLotNonBatch:
         assert result.status == "DRAFT"
         assert result.quantity_delta == Decimal("-5")
         assert result.lot_id is None and result.lot_number is None
-        (_, params), = _inserts(db, "adjustment_orders")
+        ((_, params),) = _inserts(db, "adjustment_orders")
         assert params["lot_id"] is None
         assert params["lot_number"] is None
         assert params["expiry_date"] is None
@@ -803,7 +785,6 @@ class TestAdjustmentLotNonBatch:
 
 @pytest.mark.unit
 class TestAdjustmentLotBatchNegative:
-
     async def test_batch_negative_without_lot_id_is_lot_required(self) -> None:
         db = _lot_db(product=_product())
         err = await _create_error(db)
@@ -828,7 +809,7 @@ class TestAdjustmentLotBatchNegative:
         assert err.status_code == 422
         assert err.detail["code"] == "LOT_NOT_FOUND"
 
-        (_, params), = [
+        ((_, params),) = [
             (s, p) for s, p in db.statements if "FROM stock_lots WHERE id = :lid" in s
         ]
         assert params == {"lid": LOT_ID, "tid": TENANT_ID, "pid": PRODUCT_ID}
@@ -863,7 +844,10 @@ class TestAdjustmentLotBatchNegative:
             balance=Decimal("10"),
         )
         result, _ = await _create(
-            db, lot_id=UUID(LOT_ID), quantity_delta=Decimal("-5"), reason_code="EXPIRY",
+            db,
+            lot_id=UUID(LOT_ID),
+            quantity_delta=Decimal("-5"),
+            reason_code="EXPIRY",
         )
         assert result.status == "DRAFT"
         assert result.lot_id == UUID(LOT_ID)
@@ -873,26 +857,34 @@ class TestAdjustmentLotBatchNegative:
         """DAMAGE +5 posts -5, so it needs an existing lot like any removal."""
         db = _lot_db(product=_product())
         err = await _create_error(
-            db, reason_code="DAMAGE", quantity_delta=Decimal("5"), auto_lot=True,
+            db,
+            reason_code="DAMAGE",
+            quantity_delta=Decimal("5"),
+            auto_lot=True,
         )
         assert err.detail["code"] == "LOT_REQUIRED"
 
         db = _lot_db(product=_product(), lot=_lot(), balance=Decimal("3"))
         err = await _create_error(
-            db, reason_code="DAMAGE", quantity_delta=Decimal("5"), lot_id=UUID(LOT_ID),
+            db,
+            reason_code="DAMAGE",
+            quantity_delta=Decimal("5"),
+            lot_id=UUID(LOT_ID),
         )
         assert err.detail["code"] == "INSUFFICIENT_LOT_STOCK"
 
         db = _lot_db(product=_product(), lot=_lot(), balance=Decimal("10"))
         result, _ = await _create(
-            db, reason_code="DAMAGE", quantity_delta=Decimal("5"), lot_id=UUID(LOT_ID),
+            db,
+            reason_code="DAMAGE",
+            quantity_delta=Decimal("5"),
+            lot_id=UUID(LOT_ID),
         )
         assert result.lot_id == UUID(LOT_ID)
 
 
 @pytest.mark.unit
 class TestAdjustmentLotBatchPositive:
-
     async def test_batch_positive_without_any_lot_choice_is_lot_required(self) -> None:
         db = _lot_db(product=_product())
         err = await _create_error(db, quantity_delta=Decimal("5"))
@@ -916,7 +908,10 @@ class TestAdjustmentLotBatchPositive:
     async def test_batch_positive_existing_lot_with_expiry_is_conflict(self) -> None:
         db = _lot_db(product=_product(expiry=True), lot=_lot(expiry_date=_FUTURE))
         err = await _create_error(
-            db, quantity_delta=Decimal("5"), lot_id=UUID(LOT_ID), expiry_date=_FUTURE,
+            db,
+            quantity_delta=Decimal("5"),
+            lot_id=UUID(LOT_ID),
+            expiry_date=_FUTURE,
         )
         assert err.detail["code"] == "LOT_INPUT_CONFLICT"
 
@@ -944,7 +939,10 @@ class TestAdjustmentLotBatchPositive:
     async def test_batch_positive_new_lot_expiry_in_past(self, choice) -> None:
         db = _lot_db(product=_product(expiry=True))
         err = await _create_error(
-            db, quantity_delta=Decimal("5"), expiry_date=_PAST, **choice,
+            db,
+            quantity_delta=Decimal("5"),
+            expiry_date=_PAST,
+            **choice,
         )
         assert err.status_code == 422
         assert err.detail["code"] == "EXPIRY_IN_PAST"
@@ -961,10 +959,14 @@ class TestAdjustmentLotBatchPositive:
             same_number=MagicMock(id=UUID(LOT_ID), expiry_date=other_expiry),
         )
         with patch(
-            "services.inventory_service.get_or_create_lot", new_callable=AsyncMock,
+            "services.inventory_service.get_or_create_lot",
+            new_callable=AsyncMock,
         ) as mock_get_or_create:
             err = await _create_error(
-                db, quantity_delta=Decimal("5"), lot_number="LOT-A1", expiry_date=_FUTURE,
+                db,
+                quantity_delta=Decimal("5"),
+                lot_number="LOT-A1",
+                expiry_date=_FUTURE,
             )
 
         assert err.status_code == 422
@@ -975,13 +977,21 @@ class TestAdjustmentLotBatchPositive:
 
     async def test_batch_positive_new_lot_is_not_created_at_creation(self) -> None:
         db = _lot_db(product=_product(expiry=True))
-        with patch(
-            "services.inventory_service.get_or_create_lot", new_callable=AsyncMock,
-        ) as mock_get_or_create, patch(
-            "services.inventory_service.create_auto_lot", new_callable=AsyncMock,
-        ) as mock_auto:
+        with (
+            patch(
+                "services.inventory_service.get_or_create_lot",
+                new_callable=AsyncMock,
+            ) as mock_get_or_create,
+            patch(
+                "services.inventory_service.create_auto_lot",
+                new_callable=AsyncMock,
+            ) as mock_auto,
+        ):
             result, _ = await _create(
-                db, quantity_delta=Decimal("5"), lot_number="LOT-NEW", expiry_date=_FUTURE,
+                db,
+                quantity_delta=Decimal("5"),
+                lot_number="LOT-NEW",
+                expiry_date=_FUTURE,
             )
 
         mock_get_or_create.assert_not_awaited()
@@ -994,12 +1004,11 @@ class TestAdjustmentLotBatchPositive:
 
 @pytest.mark.unit
 class TestAdjustmentLotStored:
-
     async def test_chosen_lot_stored_on_insert_and_audit(self) -> None:
         db = _lot_db(product=_product(), lot=_lot(), balance=Decimal("10"))
         _, mock_audit = await _create(db, lot_id=UUID(LOT_ID))
 
-        (_, params), = _inserts(db, "adjustment_orders")
+        ((_, params),) = _inserts(db, "adjustment_orders")
         assert params["lot_id"] == LOT_ID
         assert params["lot_number"] is None
         assert params["expiry_date"] is None
@@ -1011,10 +1020,13 @@ class TestAdjustmentLotStored:
     async def test_new_lot_number_stored_stripped(self) -> None:
         db = _lot_db(product=_product(expiry=True))
         _, mock_audit = await _create(
-            db, quantity_delta=Decimal("5"), lot_number="  LOT-NEW  ", expiry_date=_FUTURE,
+            db,
+            quantity_delta=Decimal("5"),
+            lot_number="  LOT-NEW  ",
+            expiry_date=_FUTURE,
         )
 
-        (stmt, params), = _inserts(db, "adjustment_orders")
+        ((stmt, params),) = _inserts(db, "adjustment_orders")
         assert "lot_id, lot_number, expiry_date, auto_lot" in stmt
         assert params["lot_id"] is None
         assert params["lot_number"] == "LOT-NEW"
@@ -1029,7 +1041,7 @@ class TestAdjustmentLotStored:
         db = _lot_db(product=_product())
         result, _ = await _create(db, quantity_delta=Decimal("5"), auto_lot=True)
 
-        (_, params), = _inserts(db, "adjustment_orders")
+        ((_, params),) = _inserts(db, "adjustment_orders")
         assert params["lot_id"] is None
         assert params["lot_number"] is None
         assert params["auto_lot"] is True
@@ -1048,7 +1060,6 @@ def _approve_body(quantity: str = "-5", reason: str = "COUNT_DISCREPANCY") -> Ad
 
 @pytest.mark.unit
 class TestAdjustmentLotPosting:
-
     async def test_self_approve_posts_with_chosen_lot(self) -> None:
         draft = MagicMock()
         draft.status = "DRAFT"
@@ -1062,22 +1073,35 @@ class TestAdjustmentLotPosting:
             lot=_lot(expiry_date=_FUTURE),
         )
 
-        with patch(
-            "services.inventory_service.check_product_override",
-            new_callable=AsyncMock, return_value=None,
-        ), patch(
-            "services.inventory_service.check_adjustment_self_approval",
-            new_callable=AsyncMock, return_value=(True, None, None),
-        ), patch(
-            "services.inventory_service.record_transaction",
-            new_callable=AsyncMock, return_value=TX_ID,
-        ) as mock_record, patch(
-            "services.inventory_service.write_to_outbox", new_callable=AsyncMock,
-        ), patch(
-            "services.inventory_service.audit_log", new_callable=AsyncMock,
-        ) as mock_audit:
+        with (
+            patch(
+                "services.inventory_service.check_product_override",
+                new_callable=AsyncMock,
+                return_value=None,
+            ),
+            patch(
+                "services.inventory_service.check_adjustment_self_approval",
+                new_callable=AsyncMock,
+                return_value=(True, None, None),
+            ),
+            patch(
+                "services.inventory_service.record_transaction",
+                new_callable=AsyncMock,
+                return_value=TX_ID,
+            ) as mock_record,
+            patch(
+                "services.inventory_service.write_to_outbox",
+                new_callable=AsyncMock,
+            ),
+            patch(
+                "services.inventory_service.audit_log",
+                new_callable=AsyncMock,
+            ) as mock_audit,
+        ):
             result = await InventoryService(db).transition_adjustment(
-                WM, UUID(ADJ_ID), "PENDING_APPROVAL",
+                WM,
+                UUID(ADJ_ID),
+                "PENDING_APPROVAL",
             )
 
         mock_record.assert_awaited_once()
@@ -1100,14 +1124,21 @@ class TestAdjustmentLotPosting:
     async def test_approve_posts_with_chosen_lot(self) -> None:
         db = _lot_db(order=_order_row(lot_id=UUID(LOT_ID)), lot=_lot(expiry_date=_FUTURE))
 
-        with patch(
-            "services.inventory_service.record_transaction",
-            new_callable=AsyncMock, return_value=TX_ID,
-        ) as mock_record, patch(
-            "services.inventory_service.audit_log", new_callable=AsyncMock,
-        ) as mock_audit:
+        with (
+            patch(
+                "services.inventory_service.record_transaction",
+                new_callable=AsyncMock,
+                return_value=TX_ID,
+            ) as mock_record,
+            patch(
+                "services.inventory_service.audit_log",
+                new_callable=AsyncMock,
+            ) as mock_audit,
+        ):
             result = await InventoryService(db).approve_adjustment(
-                NM, UUID(ADJ_ID), _approve_body(),
+                NM,
+                UUID(ADJ_ID),
+                _approve_body(),
             )
 
         mock_record.assert_awaited_once()
@@ -1130,7 +1161,8 @@ class TestAdjustmentLotPosting:
 
         with patch(
             "services.inventory_service.record_transaction",
-            new_callable=AsyncMock, return_value=TX_ID,
+            new_callable=AsyncMock,
+            return_value=TX_ID,
         ) as mock_record:
             await InventoryService(db).approve_adjustment(NM, UUID(ADJ_ID), _approve_body())
 
@@ -1142,15 +1174,22 @@ class TestAdjustmentLotPosting:
     async def test_new_lot_by_number_is_created_at_posting(self) -> None:
         db = _lot_db(order=_order_row(lot_number="LOT-NEW", expiry_date=_FUTURE))
 
-        with patch(
-            "services.inventory_service.get_or_create_lot",
-            new_callable=AsyncMock, return_value=NEW_LOT_ID,
-        ) as mock_get_or_create, patch(
-            "services.inventory_service.record_transaction",
-            new_callable=AsyncMock, return_value=TX_ID,
-        ) as mock_record:
+        with (
+            patch(
+                "services.inventory_service.get_or_create_lot",
+                new_callable=AsyncMock,
+                return_value=NEW_LOT_ID,
+            ) as mock_get_or_create,
+            patch(
+                "services.inventory_service.record_transaction",
+                new_callable=AsyncMock,
+                return_value=TX_ID,
+            ) as mock_record,
+        ):
             result = await InventoryService(db).approve_adjustment(
-                NM, UUID(ADJ_ID), _approve_body("5"),
+                NM,
+                UUID(ADJ_ID),
+                _approve_body("5"),
             )
 
         mock_get_or_create.assert_awaited_once()
@@ -1160,7 +1199,7 @@ class TestAdjustmentLotPosting:
         assert lot_kwargs["lot_number"] == "LOT-NEW"
         assert lot_kwargs["expiry_date"] == _FUTURE
 
-        (_, params), = _lot_id_updates(db)
+        ((_, params),) = _lot_id_updates(db)
         assert params == {"lot_id": NEW_LOT_ID, "id": ADJ_ID, "tid": TENANT_ID}
 
         _, kwargs = mock_record.call_args
@@ -1172,16 +1211,22 @@ class TestAdjustmentLotPosting:
     async def test_lot_expiry_mismatch_at_posting_blocks_the_ledger_write(self) -> None:
         db = _lot_db(order=_order_row(lot_number="LOT-NEW", expiry_date=_FUTURE))
 
-        with patch(
-            "services.inventory_service.get_or_create_lot",
-            new_callable=AsyncMock,
-            side_effect=HTTPException(status_code=422, detail={"code": "LOT_EXPIRY_MISMATCH"}),
-        ), patch(
-            "services.inventory_service.record_transaction", new_callable=AsyncMock,
-        ) as mock_record:
+        with (
+            patch(
+                "services.inventory_service.get_or_create_lot",
+                new_callable=AsyncMock,
+                side_effect=HTTPException(status_code=422, detail={"code": "LOT_EXPIRY_MISMATCH"}),
+            ),
+            patch(
+                "services.inventory_service.record_transaction",
+                new_callable=AsyncMock,
+            ) as mock_record,
+        ):
             with pytest.raises(HTTPException) as exc_info:
                 await InventoryService(db).approve_adjustment(
-                    NM, UUID(ADJ_ID), _approve_body("5"),
+                    NM,
+                    UUID(ADJ_ID),
+                    _approve_body("5"),
                 )
 
         assert exc_info.value.detail["code"] == "LOT_EXPIRY_MISMATCH"
@@ -1191,15 +1236,22 @@ class TestAdjustmentLotPosting:
     async def test_auto_lot_is_created_at_posting(self) -> None:
         db = _lot_db(order=_order_row(auto_lot=True, expiry_date=_FUTURE))
 
-        with patch(
-            "services.inventory_service.create_auto_lot",
-            new_callable=AsyncMock, return_value=(NEW_LOT_ID, "261013-001"),
-        ) as mock_auto, patch(
-            "services.inventory_service.record_transaction",
-            new_callable=AsyncMock, return_value=TX_ID,
-        ) as mock_record:
+        with (
+            patch(
+                "services.inventory_service.create_auto_lot",
+                new_callable=AsyncMock,
+                return_value=(NEW_LOT_ID, "261013-001"),
+            ) as mock_auto,
+            patch(
+                "services.inventory_service.record_transaction",
+                new_callable=AsyncMock,
+                return_value=TX_ID,
+            ) as mock_record,
+        ):
             result = await InventoryService(db).approve_adjustment(
-                NM, UUID(ADJ_ID), _approve_body("5"),
+                NM,
+                UUID(ADJ_ID),
+                _approve_body("5"),
             )
 
         mock_auto.assert_awaited_once()
@@ -1207,7 +1259,7 @@ class TestAdjustmentLotPosting:
         assert lot_kwargs["product_id"] == PRODUCT_ID
         assert lot_kwargs["expiry_date"] == _FUTURE
 
-        (_, params), = _lot_id_updates(db)
+        ((_, params),) = _lot_id_updates(db)
         assert params == {"lot_id": NEW_LOT_ID, "id": ADJ_ID, "tid": TENANT_ID}
 
         _, kwargs = mock_record.call_args
@@ -1224,12 +1276,15 @@ class TestAdjustmentLotPosting:
             "services.inventory_service.record_transaction",
             new_callable=AsyncMock,
             side_effect=HTTPException(
-                status_code=422, detail={"code": "INSUFFICIENT_LOT_STOCK"},
+                status_code=422,
+                detail={"code": "INSUFFICIENT_LOT_STOCK"},
             ),
         ):
             with pytest.raises(HTTPException) as exc_info:
                 await InventoryService(db).approve_adjustment(
-                    NM, UUID(ADJ_ID), _approve_body(),
+                    NM,
+                    UUID(ADJ_ID),
+                    _approve_body(),
                 )
 
         assert exc_info.value.detail["code"] == "INSUFFICIENT_LOT_STOCK"
@@ -1238,7 +1293,6 @@ class TestAdjustmentLotPosting:
 
 @pytest.mark.unit
 class TestAdjustmentLotReadEndpoints:
-
     async def test_list_adjustments_returns_lot_fields(self) -> None:
         row = MagicMock()
         row.adjustment_id = UUID(ADJ_ID)
@@ -1267,7 +1321,7 @@ class TestAdjustmentLotReadEndpoints:
         assert item.expiry_date == _FUTURE
         assert item.auto_lot is False
 
-        (stmt, _), = db.statements
+        ((stmt, _),) = db.statements
         assert "LEFT JOIN stock_lots sl ON sl.id = ao.lot_id" in stmt
 
     async def test_approval_info_returns_lot_fields(self) -> None:
@@ -1291,15 +1345,17 @@ class TestAdjustmentLotReadEndpoints:
         assert info.expiry_date == _FUTURE
         assert info.auto_lot is False
 
-        (stmt, _), = db.statements
+        ((stmt, _),) = db.statements
         assert "LEFT JOIN stock_lots sl ON sl.id = ao.lot_id" in stmt
 
 
 # ── Zero-quantity adjustments are rejected at creation ───────────────────────
 
+
 class TestAdjustmentZeroDelta:
     def test_zero_delta_rejected(self):
         from pydantic import ValidationError
+
         for zero in (Decimal("0"), Decimal("0.000"), 0):
             with pytest.raises(ValidationError) as ei:
                 _adj_body(quantity_delta=zero)
@@ -1317,8 +1373,10 @@ class TestAdjustmentZeroDelta:
             return {"ok": True}
 
         payload = {
-            "warehouse_id": WAREHOUSE_ID, "product_id": PRODUCT_ID,
-            "reason_code": "COUNT_DISCREPANCY", "idempotency_key": "adj:zero:001",
+            "warehouse_id": WAREHOUSE_ID,
+            "product_id": PRODUCT_ID,
+            "reason_code": "COUNT_DISCREPANCY",
+            "idempotency_key": "adj:zero:001",
         }
         client = TestClient(app)
         assert client.post("/adj", json={**payload, "quantity_delta": 0}).status_code == 422
@@ -1347,14 +1405,21 @@ class TestApproveAdjustmentOutboxAndAuditSession:
         )
         adj_id = UUID(TX_ID)
 
-        with patch(
-            "services.inventory_service.record_transaction",
-            new_callable=AsyncMock, return_value=TX_ID,
-        ), patch(
-            "services.inventory_service.write_to_outbox", new_callable=AsyncMock,
-        ) as mock_outbox, patch(
-            "services.inventory_service.audit_log", new_callable=AsyncMock,
-        ) as mock_audit:
+        with (
+            patch(
+                "services.inventory_service.record_transaction",
+                new_callable=AsyncMock,
+                return_value=TX_ID,
+            ),
+            patch(
+                "services.inventory_service.write_to_outbox",
+                new_callable=AsyncMock,
+            ) as mock_outbox,
+            patch(
+                "services.inventory_service.audit_log",
+                new_callable=AsyncMock,
+            ) as mock_audit,
+        ):
             await svc.approve_adjustment(NM, adj_id, body)
 
         mock_outbox.assert_awaited_once()

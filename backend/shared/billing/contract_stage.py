@@ -5,6 +5,7 @@ Stages: ACTIVE -> EXPIRING (<=14 days left) -> GRACE (<=14 days past end)
 -> READ_ONLY (beyond grace). A missing contract_end means no contract date
 was ever set and the tenant is never restricted.
 """
+
 from __future__ import annotations
 
 import logging
@@ -35,9 +36,9 @@ def compute_contract_stage(
         contract_end = contract_end.date()
     elif not isinstance(contract_end, date):
         logger.warning(
-            "compute_contract_stage: unexpected contract_end type %r (%r) — "
-            "treating as ACTIVE",
-            type(contract_end), contract_end,
+            "compute_contract_stage: unexpected contract_end type %r (%r) — treating as ACTIVE",
+            type(contract_end),
+            contract_end,
         )
         return "ACTIVE"
 
@@ -51,10 +52,12 @@ def compute_contract_stage(
 
 async def get_tenant_contract_stage(db: AsyncSession, tenant_id: str) -> dict[str, Any]:
     """Load contract_end for tenant_id and compute its current stage."""
-    row = (await db.execute(
-        text("SELECT contract_end FROM tenants WHERE id = :tid"),
-        {"tid": tenant_id},
-    )).fetchone()
+    row = (
+        await db.execute(
+            text("SELECT contract_end FROM tenants WHERE id = :tid"),
+            {"tid": tenant_id},
+        )
+    ).fetchone()
 
     contract_end = row.contract_end if row else None
     today = datetime.utcnow().date()

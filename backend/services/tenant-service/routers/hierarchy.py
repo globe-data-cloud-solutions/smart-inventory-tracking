@@ -5,6 +5,7 @@ Org node CRUD:      GET/POST /tenants/{tenant_id}/nodes
                     PATCH/DELETE /tenants/{tenant_id}/nodes/{node_id}
 Supply routes:      POST /tenants/{tenant_id}/nodes/{node_id}/supply-routes
 """
+
 from __future__ import annotations
 
 import uuid
@@ -40,13 +41,14 @@ def _duplicate_level_name_http_exception() -> HTTPException:
     return HTTPException(
         status_code=422,
         detail={
-            "code":    "DUPLICATE_LEVEL_NAME",
+            "code": "DUPLICATE_LEVEL_NAME",
             "message": "A level with this name already exists for this tenant.",
         },
     )
 
 
 # ── Pydantic schemas ──────────────────────────────────────────────────────────
+
 
 class HierarchyLevelIn(BaseModel):
     level_number: int
@@ -145,9 +147,8 @@ class SupplyRouteOut(BaseModel):
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
-async def _get_level_name(
-    db: AsyncSession, tenant_id: str, level_number: int
-) -> Optional[str]:
+
+async def _get_level_name(db: AsyncSession, tenant_id: str, level_number: int) -> Optional[str]:
     row = await db.execute(
         text(
             "SELECT level_name FROM tenant_hierarchy_config "
@@ -238,7 +239,7 @@ async def _node_stock_activity_blocker(
             return {
                 "code": "NODE_HAS_OPEN_TRANSFERS",
                 "message": f"Cannot deactivate — this location has {transfer_count.cnt} "
-                           "open transfer(s). Complete or cancel them first.",
+                "open transfer(s). Complete or cancel them first.",
             }
 
     if "adjustments" in checks:
@@ -256,7 +257,7 @@ async def _node_stock_activity_blocker(
             return {
                 "code": "NODE_HAS_PENDING_ADJUSTMENTS",
                 "message": f"Cannot deactivate — this location has {adj_count.cnt} "
-                           "pending adjustment(s).",
+                "pending adjustment(s).",
             }
 
     if "stock" in checks:
@@ -273,13 +274,14 @@ async def _node_stock_activity_blocker(
             return {
                 "code": "NODE_HAS_STOCK",
                 "message": "Cannot deactivate — this location has stock on hand. "
-                           "Transfer or adjust stock to zero first.",
+                "Transfer or adjust stock to zero first.",
             }
 
     return None
 
 
 # ── Hierarchy config endpoints ─────────────────────────────────────────────────
+
 
 @router.get(
     "/{tenant_id}/hierarchy/config",
@@ -338,7 +340,7 @@ async def upsert_hierarchy_config(
         raise HTTPException(
             status_code=422,
             detail={
-                "code":    "DUPLICATE_LEVEL_NUMBER",
+                "code": "DUPLICATE_LEVEL_NUMBER",
                 "message": "Each level must have a unique level number.",
             },
         )
@@ -356,36 +358,40 @@ async def upsert_hierarchy_config(
         raise HTTPException(
             status_code=422,
             detail={
-                "code":    "LEVELS_NOT_CONTIGUOUS",
+                "code": "LEVELS_NOT_CONTIGUOUS",
                 "message": "Level numbers must be contiguous, starting at 1 with no gaps.",
             },
         )
 
-    existing_count = (await db.execute(
-        text(
-            "SELECT COUNT(*) FROM tenant_hierarchy_config "
-            "WHERE tenant_id = :tid AND is_active = true"
-        ),
-        {"tid": str(tenant_id)},
-    )).scalar() or 0
+    existing_count = (
+        await db.execute(
+            text(
+                "SELECT COUNT(*) FROM tenant_hierarchy_config "
+                "WHERE tenant_id = :tid AND is_active = true"
+            ),
+            {"tid": str(tenant_id)},
+        )
+    ).scalar() or 0
     # G3a — directional level lock: growing is always safe (new levels
     # are appended below existing nodes and have no data yet).
     # Shrinking is only blocked if nodes exist at the levels being removed.
     if existing_count > 0 and len(body) < existing_count:
         # Find the highest level_number currently used by any active node
-        max_used_level = (await db.execute(
-            text(
-                "SELECT COALESCE(MAX(hierarchy_level), 0) "
-                "FROM organization_node "
-                "WHERE tenant_id = :tid AND is_active = true"
-            ),
-            {"tid": str(tenant_id)},
-        )).scalar() or 0
+        max_used_level = (
+            await db.execute(
+                text(
+                    "SELECT COALESCE(MAX(hierarchy_level), 0) "
+                    "FROM organization_node "
+                    "WHERE tenant_id = :tid AND is_active = true"
+                ),
+                {"tid": str(tenant_id)},
+            )
+        ).scalar() or 0
         if len(body) < max_used_level:
             raise HTTPException(
                 status_code=422,
                 detail={
-                    "code":    "LEVEL_COUNT_LOCKED",
+                    "code": "LEVEL_COUNT_LOCKED",
                     "message": (
                         f"Cannot remove level {max_used_level} — active org nodes "
                         f"exist at that level. Remove or move those nodes first."
@@ -399,32 +405,36 @@ async def upsert_hierarchy_config(
     # still sits at that level. Mirrors the PATCH guard below so the full-replace
     # path can't bypass it. New levels in this payload are unaffected.
     if existing_count > 0:
-        existing_levels_rows = (await db.execute(
-            text(
-                "SELECT level_number, is_stock_holding FROM tenant_hierarchy_config "
-                "WHERE tenant_id = :tid AND is_active = true"
-            ),
-            {"tid": str(tenant_id)},
-        )).fetchall()
+        existing_levels_rows = (
+            await db.execute(
+                text(
+                    "SELECT level_number, is_stock_holding FROM tenant_hierarchy_config "
+                    "WHERE tenant_id = :tid AND is_active = true"
+                ),
+                {"tid": str(tenant_id)},
+            )
+        ).fetchall()
         existing_stock_by_level = {r.level_number: r.is_stock_holding for r in existing_levels_rows}
 
         for level in body:
             was_stock_holding = existing_stock_by_level.get(level.level_number)
             if was_stock_holding is True and level.is_stock_holding is False:
-                blocked_nodes = (await db.execute(
-                    text(
-                        "SELECT id, name FROM organization_node "
-                        "WHERE tenant_id = :tid AND hierarchy_level = :lvl "
-                        "AND is_active = true AND is_stock_holding = true"
-                    ),
-                    {"tid": str(tenant_id), "lvl": level.level_number},
-                )).fetchall()
+                blocked_nodes = (
+                    await db.execute(
+                        text(
+                            "SELECT id, name FROM organization_node "
+                            "WHERE tenant_id = :tid AND hierarchy_level = :lvl "
+                            "AND is_active = true AND is_stock_holding = true"
+                        ),
+                        {"tid": str(tenant_id), "lvl": level.level_number},
+                    )
+                ).fetchall()
                 if blocked_nodes:
                     raise HTTPException(
                         status_code=422,
                         detail={
-                            "code":    "LEVEL_HAS_STOCK_NODES",
-                            "nodes":   [{"id": str(n.id), "name": n.name} for n in blocked_nodes],
+                            "code": "LEVEL_HAS_STOCK_NODES",
+                            "nodes": [{"id": str(n.id), "name": n.name} for n in blocked_nodes],
                             "message": "Switch these locations to approval-only first.",
                         },
                     )
@@ -535,28 +545,32 @@ async def rename_hierarchy_level(
         # true → false is only allowed if no active node at this level still
         # holds stock. false → true is always allowed — nodes are unaffected.
         if body.is_stock_holding is False:
-            current_row = (await db.execute(
-                text(
-                    "SELECT level_number, is_stock_holding FROM tenant_hierarchy_config "
-                    "WHERE id = :id AND tenant_id = :tid"
-                ),
-                {"id": str(level_id), "tid": str(tenant_id)},
-            )).fetchone()
-            if current_row is not None and current_row.is_stock_holding:
-                blocked_nodes = (await db.execute(
+            current_row = (
+                await db.execute(
                     text(
-                        "SELECT id, name FROM organization_node "
-                        "WHERE tenant_id = :tid AND hierarchy_level = :lvl "
-                        "AND is_active = true AND is_stock_holding = true"
+                        "SELECT level_number, is_stock_holding FROM tenant_hierarchy_config "
+                        "WHERE id = :id AND tenant_id = :tid"
                     ),
-                    {"tid": str(tenant_id), "lvl": current_row.level_number},
-                )).fetchall()
+                    {"id": str(level_id), "tid": str(tenant_id)},
+                )
+            ).fetchone()
+            if current_row is not None and current_row.is_stock_holding:
+                blocked_nodes = (
+                    await db.execute(
+                        text(
+                            "SELECT id, name FROM organization_node "
+                            "WHERE tenant_id = :tid AND hierarchy_level = :lvl "
+                            "AND is_active = true AND is_stock_holding = true"
+                        ),
+                        {"tid": str(tenant_id), "lvl": current_row.level_number},
+                    )
+                ).fetchall()
                 if blocked_nodes:
                     raise HTTPException(
                         status_code=422,
                         detail={
-                            "code":    "LEVEL_HAS_STOCK_NODES",
-                            "nodes":   [{"id": str(n.id), "name": n.name} for n in blocked_nodes],
+                            "code": "LEVEL_HAS_STOCK_NODES",
+                            "nodes": [{"id": str(n.id), "name": n.name} for n in blocked_nodes],
                             "message": "Switch these locations to approval-only first.",
                         },
                     )
@@ -571,7 +585,7 @@ async def rename_hierarchy_level(
             text(
                 f"""
                 UPDATE tenant_hierarchy_config
-                SET {', '.join(set_clauses)}, updated_at = now()
+                SET {", ".join(set_clauses)}, updated_at = now()
                 WHERE id = :id AND tenant_id = :tid
                 RETURNING id, tenant_id, level_number, level_name, default_role_code,
                           role_display_label, is_stock_holding, is_active
@@ -629,68 +643,98 @@ async def get_approval_coverage(
     tid = str(tenant_id)
 
     # 1. Transfer approval rules — any rules exist for this tenant?
-    transfer_total = (await db.execute(
-        text("SELECT COUNT(*) FROM transfer_approval_rules "
-             "WHERE tenant_id = :tid AND is_active = true"),
-        {"tid": tid},
-    )).scalar() or 0
+    transfer_total = (
+        await db.execute(
+            text(
+                "SELECT COUNT(*) FROM transfer_approval_rules "
+                "WHERE tenant_id = :tid AND is_active = true"
+            ),
+            {"tid": tid},
+        )
+    ).scalar() or 0
 
     # 2. Transfer approval rules — does this level have coverage?
     # Covered if: any rule has source_level IS NULL AND dest_level IS NULL
     # (global catch-all), OR any rule explicitly mentions this level
-    transfer_null_rule = (await db.execute(
-        text("SELECT COUNT(*) FROM transfer_approval_rules "
-             "WHERE tenant_id = :tid AND is_active = true "
-             "AND source_level IS NULL AND destination_level IS NULL"),
-        {"tid": tid},
-    )).scalar() or 0
+    transfer_null_rule = (
+        await db.execute(
+            text(
+                "SELECT COUNT(*) FROM transfer_approval_rules "
+                "WHERE tenant_id = :tid AND is_active = true "
+                "AND source_level IS NULL AND destination_level IS NULL"
+            ),
+            {"tid": tid},
+        )
+    ).scalar() or 0
 
-    transfer_explicit = (await db.execute(
-        text("SELECT COUNT(*) FROM transfer_approval_rules "
-             "WHERE tenant_id = :tid AND is_active = true "
-             "AND (source_level = :lv OR destination_level = :lv)"),
-        {"tid": tid, "lv": level},
-    )).scalar() or 0
+    transfer_explicit = (
+        await db.execute(
+            text(
+                "SELECT COUNT(*) FROM transfer_approval_rules "
+                "WHERE tenant_id = :tid AND is_active = true "
+                "AND (source_level = :lv OR destination_level = :lv)"
+            ),
+            {"tid": tid, "lv": level},
+        )
+    ).scalar() or 0
 
     transfer_level_covered = (transfer_null_rule > 0) or (transfer_explicit > 0)
 
     # 3. Adjustment approval rules
-    adj_total = (await db.execute(
-        text("SELECT COUNT(*) FROM adjustment_approval_rules "
-             "WHERE tenant_id = :tid AND is_active = true"),
-        {"tid": tid},
-    )).scalar() or 0
+    adj_total = (
+        await db.execute(
+            text(
+                "SELECT COUNT(*) FROM adjustment_approval_rules "
+                "WHERE tenant_id = :tid AND is_active = true"
+            ),
+            {"tid": tid},
+        )
+    ).scalar() or 0
 
-    adj_level = (await db.execute(
-        text("SELECT COUNT(*) FROM adjustment_approval_rules "
-             "WHERE tenant_id = :tid AND is_active = true "
-             "AND level_number = :lv"),
-        {"tid": tid, "lv": level},
-    )).scalar() or 0
+    adj_level = (
+        await db.execute(
+            text(
+                "SELECT COUNT(*) FROM adjustment_approval_rules "
+                "WHERE tenant_id = :tid AND is_active = true "
+                "AND level_number = :lv"
+            ),
+            {"tid": tid, "lv": level},
+        )
+    ).scalar() or 0
 
     # 4. Self-approval policies
-    self_appr = (await db.execute(
-        text("SELECT COUNT(*) FROM self_approval_policies "
-             "WHERE tenant_id = :tid AND level_number = :lv"),
-        {"tid": tid, "lv": level},
-    )).scalar() or 0
+    self_appr = (
+        await db.execute(
+            text(
+                "SELECT COUNT(*) FROM self_approval_policies "
+                "WHERE tenant_id = :tid AND level_number = :lv"
+            ),
+            {"tid": tid, "lv": level},
+        )
+    ).scalar() or 0
 
     # 5. Transfer type level permissions
-    level_perms = (await db.execute(
-        text("SELECT COUNT(*) FROM transfer_type_level_permissions ttlp "
-             "JOIN transfer_type_config ttc ON ttc.id = ttlp.transfer_type_config_id "
-             "WHERE ttc.tenant_id = :tid AND ttlp.level_number = :lv"),
-        {"tid": tid, "lv": level},
-    )).scalar() or 0
+    level_perms = (
+        await db.execute(
+            text(
+                "SELECT COUNT(*) FROM transfer_type_level_permissions ttlp "
+                "JOIN transfer_type_config ttc ON ttc.id = ttlp.transfer_type_config_id "
+                "WHERE ttc.tenant_id = :tid AND ttlp.level_number = :lv"
+            ),
+            {"tid": tid, "lv": level},
+        )
+    ).scalar() or 0
 
-    return SuccessResponse(data=ApprovalCoverageResponse(
-        transfer_rules_exist=transfer_total > 0,
-        transfer_level_covered=transfer_level_covered,
-        adj_rules_exist=adj_total > 0,
-        adj_level_covered=adj_level > 0,
-        self_approval_covered=self_appr > 0,
-        transfer_level_perms_exist=level_perms > 0,
-    ))
+    return SuccessResponse(
+        data=ApprovalCoverageResponse(
+            transfer_rules_exist=transfer_total > 0,
+            transfer_level_covered=transfer_level_covered,
+            adj_rules_exist=adj_total > 0,
+            adj_level_covered=adj_level > 0,
+            self_approval_covered=self_appr > 0,
+            transfer_level_perms_exist=level_perms > 0,
+        )
+    )
 
 
 class CloneLevelPermsResponse(BaseModel):
@@ -716,78 +760,108 @@ async def clone_level_permissions(
     tid = str(tenant_id)
 
     # Get this node's level
-    node_row = (await db.execute(
-        text("SELECT hierarchy_level FROM organization_node "
-             "WHERE id = :nid AND tenant_id = :tid AND is_active = true"),
-        {"nid": str(node_id), "tid": tid},
-    )).fetchone()
+    node_row = (
+        await db.execute(
+            text(
+                "SELECT hierarchy_level FROM organization_node "
+                "WHERE id = :nid AND tenant_id = :tid AND is_active = true"
+            ),
+            {"nid": str(node_id), "tid": tid},
+        )
+    ).fetchone()
     if not node_row:
         raise HTTPException(status_code=404, detail="Node not found")
     target_level = node_row.hierarchy_level
 
     # Find highest existing level that has permissions rows
-    source_row = (await db.execute(
-        text("SELECT ttlp.level_number, ttlp.can_initiate, ttlp.can_receive, "
-             "       ttlp.transfer_type_config_id "
-             "FROM transfer_type_level_permissions ttlp "
-             "JOIN transfer_type_config ttc ON ttc.id = ttlp.transfer_type_config_id "
-             "WHERE ttc.tenant_id = :tid "
-             "AND ttlp.level_number < :lv "
-             "ORDER BY ttlp.level_number DESC LIMIT 1"),
-        {"tid": tid, "lv": target_level},
-    )).fetchone()
+    source_row = (
+        await db.execute(
+            text(
+                "SELECT ttlp.level_number, ttlp.can_initiate, ttlp.can_receive, "
+                "       ttlp.transfer_type_config_id "
+                "FROM transfer_type_level_permissions ttlp "
+                "JOIN transfer_type_config ttc ON ttc.id = ttlp.transfer_type_config_id "
+                "WHERE ttc.tenant_id = :tid "
+                "AND ttlp.level_number < :lv "
+                "ORDER BY ttlp.level_number DESC LIMIT 1"
+            ),
+            {"tid": tid, "lv": target_level},
+        )
+    ).fetchone()
 
     if not source_row:
-        return SuccessResponse(data=CloneLevelPermsResponse(
-            cloned=False, from_level=None,
-            to_level=target_level, transfer_types_updated=0,
-        ))
+        return SuccessResponse(
+            data=CloneLevelPermsResponse(
+                cloned=False,
+                from_level=None,
+                to_level=target_level,
+                transfer_types_updated=0,
+            )
+        )
 
     from_level = source_row.level_number
 
     # Get all transfer_type_config_ids for this tenant
-    tt_rows = (await db.execute(
-        text("SELECT id FROM transfer_type_config "
-             "WHERE tenant_id = :tid AND is_active = true"),
-        {"tid": tid},
-    )).fetchall()
+    tt_rows = (
+        await db.execute(
+            text("SELECT id FROM transfer_type_config WHERE tenant_id = :tid AND is_active = true"),
+            {"tid": tid},
+        )
+    ).fetchall()
 
     cloned_count = 0
     for tt_row in tt_rows:
         ttc_id = str(tt_row.id)
         # Check if a row already exists for target_level on this transfer type
-        exists = (await db.execute(
-            text("SELECT 1 FROM transfer_type_level_permissions "
-                 "WHERE transfer_type_config_id = :ttc AND level_number = :lv"),
-            {"ttc": ttc_id, "lv": target_level},
-        )).fetchone()
+        exists = (
+            await db.execute(
+                text(
+                    "SELECT 1 FROM transfer_type_level_permissions "
+                    "WHERE transfer_type_config_id = :ttc AND level_number = :lv"
+                ),
+                {"ttc": ttc_id, "lv": target_level},
+            )
+        ).fetchone()
         if exists:
             continue
 
         # Get source level permissions for this transfer type
-        src = (await db.execute(
-            text("SELECT can_initiate, can_receive "
-                 "FROM transfer_type_level_permissions "
-                 "WHERE transfer_type_config_id = :ttc AND level_number = :src_lv"),
-            {"ttc": ttc_id, "src_lv": from_level},
-        )).fetchone()
+        src = (
+            await db.execute(
+                text(
+                    "SELECT can_initiate, can_receive "
+                    "FROM transfer_type_level_permissions "
+                    "WHERE transfer_type_config_id = :ttc AND level_number = :src_lv"
+                ),
+                {"ttc": ttc_id, "src_lv": from_level},
+            )
+        ).fetchone()
 
         if src:
             await db.execute(
-                text("INSERT INTO transfer_type_level_permissions "
-                     "(tenant_id, transfer_type_config_id, level_number, can_initiate, can_receive) "
-                     "VALUES (:tid, :ttc, :lv, :ci, :cr)"),
-                {"tid": str(tenant_id), "ttc": ttc_id, "lv": target_level,
-                 "ci": src.can_initiate, "cr": src.can_receive},
+                text(
+                    "INSERT INTO transfer_type_level_permissions "
+                    "(tenant_id, transfer_type_config_id, level_number, can_initiate, can_receive) "
+                    "VALUES (:tid, :ttc, :lv, :ci, :cr)"
+                ),
+                {
+                    "tid": str(tenant_id),
+                    "ttc": ttc_id,
+                    "lv": target_level,
+                    "ci": src.can_initiate,
+                    "cr": src.can_receive,
+                },
             )
             cloned_count += 1
 
-    return SuccessResponse(data=CloneLevelPermsResponse(
-        cloned=cloned_count > 0,
-        from_level=from_level,
-        to_level=target_level,
-        transfer_types_updated=cloned_count,
-    ))
+    return SuccessResponse(
+        data=CloneLevelPermsResponse(
+            cloned=cloned_count > 0,
+            from_level=from_level,
+            to_level=target_level,
+            transfer_types_updated=cloned_count,
+        )
+    )
 
 
 @router.delete(
@@ -808,25 +882,26 @@ async def reset_hierarchy_config(
         raise HTTPException(
             status_code=403,
             detail={
-                "code":    "FORBIDDEN",
+                "code": "FORBIDDEN",
                 "message": "Only a platform administrator (SA) may reset org level configuration.",
             },
         )
 
-    node_count = (await db.execute(
-        text(
-            "SELECT COUNT(*) FROM organization_node "
-            "WHERE tenant_id = :tid AND is_active = true"
-        ),
-        {"tid": str(tenant_id)},
-    )).scalar() or 0
+    node_count = (
+        await db.execute(
+            text(
+                "SELECT COUNT(*) FROM organization_node WHERE tenant_id = :tid AND is_active = true"
+            ),
+            {"tid": str(tenant_id)},
+        )
+    ).scalar() or 0
     if node_count > 0:
         raise HTTPException(
             status_code=422,
             detail={
-                "code":    "ORG_NODES_EXIST",
+                "code": "ORG_NODES_EXIST",
                 "message": "Cannot reset org levels while org nodes exist. Remove all "
-                           "nodes first, then request a reset.",
+                "nodes first, then request a reset.",
             },
         )
 
@@ -836,21 +911,28 @@ async def reset_hierarchy_config(
     )
 
     await audit_log(
-        user, PERMISSIONS.TENANT_MANAGE.id,
-        {"resource_type": "tenant_hierarchy_config", "resource_id": str(tenant_id),
-         "tenant_id": str(tenant_id)},
+        user,
+        PERMISSIONS.TENANT_MANAGE.id,
+        {
+            "resource_type": "tenant_hierarchy_config",
+            "resource_id": str(tenant_id),
+            "tenant_id": str(tenant_id),
+        },
         "GRANTED",
         "SA reset org level configuration for tenant",
         db=db,
     )
 
-    return SuccessResponse(data={
-        "reset": True,
-        "message": "Org levels cleared. Tenant Admin can now redefine the org structure.",
-    })
+    return SuccessResponse(
+        data={
+            "reset": True,
+            "message": "Org levels cleared. Tenant Admin can now redefine the org structure.",
+        }
+    )
 
 
 # ── Org node endpoints ────────────────────────────────────────────────────────
+
 
 @router.get(
     "/{tenant_id}/nodes",
@@ -889,8 +971,7 @@ async def list_org_nodes(
             "    WHEN 'WM' THEN 6 WHEN 'SA_GT' THEN 4 ELSE 0 END DESC "
             "  LIMIT 1"
             ") mgr ON true "
-            "WHERE n.tenant_id = :tid " + active_filter +
-            "ORDER BY n.hierarchy_level, n.name"
+            "WHERE n.tenant_id = :tid " + active_filter + "ORDER BY n.hierarchy_level, n.name"
         ),
         {"tid": str(tenant_id)},
     )
@@ -905,18 +986,15 @@ async def list_org_nodes(
             "is_stock_holding": r.is_stock_holding,
             "is_active": r.is_active,
             "address": getattr(r, "address", None),
-            "manager_name":  getattr(r, "manager_name", None),
-            "manager_role":  getattr(r, "manager_role", None),
+            "manager_name": getattr(r, "manager_name", None),
+            "manager_role": getattr(r, "manager_role", None),
         }
         for r in rows.fetchall()
     ]
 
     # Load level names once
     lvl_rows = await db.execute(
-        text(
-            "SELECT level_number, level_name FROM tenant_hierarchy_config "
-            "WHERE tenant_id = :tid"
-        ),
+        text("SELECT level_number, level_name FROM tenant_hierarchy_config WHERE tenant_id = :tid"),
         {"tid": str(tenant_id)},
     )
     level_names = {r.level_number: r.level_name for r in lvl_rows.fetchall()}
@@ -1052,24 +1130,28 @@ async def update_org_node(
         raise HTTPException(status_code=404, detail="Node not found")
 
     new_name = body.name if body.name is not None else existing.name
-    new_stock = body.is_stock_holding if body.is_stock_holding is not None else existing.is_stock_holding
+    new_stock = (
+        body.is_stock_holding if body.is_stock_holding is not None else existing.is_stock_holding
+    )
     new_address = body.address if body.address is not None else getattr(existing, "address", None)
 
     if body.is_stock_holding is True:
-        level_row = (await db.execute(
-            text(
-                "SELECT is_stock_holding FROM tenant_hierarchy_config "
-                "WHERE tenant_id = :tid AND level_number = :lvl"
-            ),
-            {"tid": str(tenant_id), "lvl": existing.hierarchy_level},
-        )).fetchone()
+        level_row = (
+            await db.execute(
+                text(
+                    "SELECT is_stock_holding FROM tenant_hierarchy_config "
+                    "WHERE tenant_id = :tid AND level_number = :lvl"
+                ),
+                {"tid": str(tenant_id), "lvl": existing.hierarchy_level},
+            )
+        ).fetchone()
         if level_row is not None and not level_row.is_stock_holding:
             raise HTTPException(
                 status_code=422,
                 detail={
                     "code": "LEVEL_DOES_NOT_HOLD_STOCK",
                     "message": "This level is not configured to hold stock. "
-                               "Update the level configuration first.",
+                    "Update the level configuration first.",
                 },
             )
 
@@ -1082,8 +1164,8 @@ async def update_org_node(
                     "code": "NODE_STOCK_ACTIVITY",
                     "reason": blocker["code"],
                     "message": "Move or issue the remaining stock and close open "
-                               "transfers/adjustments before making this an "
-                               "approval-only location.",
+                    "transfers/adjustments before making this an "
+                    "approval-only location.",
                 },
             )
 
@@ -1167,7 +1249,7 @@ async def delete_org_node(
             detail={
                 "code": "NODE_HAS_INVENTORY",
                 "message": "Cannot delete a node that holds active inventory. "
-                           "Transfer or adjust stock to zero first.",
+                "Transfer or adjust stock to zero first.",
             },
         )
 
@@ -1222,7 +1304,10 @@ async def deactivate_org_node(
 
     # CHECKS 1 & 2 — no open transfers, no pending adjustments
     blocker = await _node_stock_activity_blocker(
-        db, str(tenant_id), str(node_id), checks=("transfers", "adjustments"),
+        db,
+        str(tenant_id),
+        str(node_id),
+        checks=("transfers", "adjustments"),
     )
     if blocker:
         raise HTTPException(status_code=422, detail=blocker)
@@ -1255,14 +1340,17 @@ async def deactivate_org_node(
             detail={
                 "code": "NODE_HAS_SOLE_USERS",
                 "message": f"Cannot deactivate — {sole_count.cnt} staff member(s) have "
-                           "this as their only position. Reassign them to another "
-                           "position first.",
+                "this as their only position. Reassign them to another "
+                "position first.",
             },
         )
 
     # CHECK 4 — no stock on hand
     blocker = await _node_stock_activity_blocker(
-        db, str(tenant_id), str(node_id), checks=("stock",),
+        db,
+        str(tenant_id),
+        str(node_id),
+        checks=("stock",),
     )
     if blocker:
         raise HTTPException(status_code=422, detail=blocker)
@@ -1315,6 +1403,7 @@ async def reactivate_org_node(
 
 
 # ── Supply route endpoints ─────────────────────────────────────────────────────
+
 
 @router.post(
     "/{tenant_id}/nodes/{node_id}/supply-routes",

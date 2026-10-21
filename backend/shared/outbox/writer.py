@@ -43,10 +43,10 @@ async def write_to_outbox(
             "VALUES (:tid, :etype, CAST(:payload AS jsonb), :ver, 'PENDING', :ikey)"
         ),
         {
-            "tid":   tenant_id,
-            "etype": payload.event_type,   # use payload's Literal field, not the raw string
+            "tid": tenant_id,
+            "etype": payload.event_type,  # use payload's Literal field, not the raw string
             "payload": payload.model_dump_json(),
-            "ver":   payload.version,
-            "ikey":  idempotency_key,      # None → NULL in PostgreSQL
+            "ver": payload.version,
+            "ikey": idempotency_key,  # None → NULL in PostgreSQL
         },
     )

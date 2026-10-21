@@ -9,6 +9,7 @@ nulls rather than an error.
 Mocked session + mocked permission store throughout — no real DB
 connection required.
 """
+
 from __future__ import annotations
 
 import os
@@ -16,12 +17,12 @@ import sys
 import uuid
 from datetime import datetime, timezone
 
-os.environ.setdefault("DATABASE_URL",      "postgresql+asyncpg://test:x@localhost/test")
+os.environ.setdefault("DATABASE_URL", "postgresql+asyncpg://test:x@localhost/test")
 os.environ.setdefault("DATABASE_READ_URL", "postgresql+asyncpg://test:x@localhost/test")
-os.environ.setdefault("JWT_SECRET",        "test-secret")
-os.environ.setdefault("JWT_SECRET_KEY",    "test-secret")
-os.environ.setdefault("ENVIRONMENT",       "local")
-os.environ.setdefault("TERMS_VERSION",     "2026-10")
+os.environ.setdefault("JWT_SECRET", "test-secret")
+os.environ.setdefault("JWT_SECRET_KEY", "test-secret")
+os.environ.setdefault("ENVIRONMENT", "local")
+os.environ.setdefault("TERMS_VERSION", "2026-10")
 
 _TENANT_ROOT = os.path.normpath(os.path.join(os.path.dirname(__file__), "..", ".."))
 if _TENANT_ROOT not in sys.path:
@@ -39,6 +40,7 @@ TENANT_A = uuid.UUID("aaaaaaaa-0000-0000-0000-000000000001")
 
 def _user(role: str, tenant_id: str | None):
     from dependencies import UserContext
+
     return UserContext(user_id="u-1", role=role, tenant_id=tenant_id, warehouse_id=None)
 
 
@@ -70,8 +72,13 @@ async def test_ta_terms_acceptance_found() -> None:
     ta = _user("TA", str(TENANT_A))
     accepted_at = datetime(2026, 5, 1, 12, 0, tzinfo=timezone.utc)
     db = _db_with_row(_row("2026-05", accepted_at, "ta@acme.com"))
-    with patch("shared.permissions.middleware.get_role_permission", new=AsyncMock(return_value=_full_grant())), \
-         patch("shared.permissions.middleware.audit_log", new=AsyncMock()):
+    with (
+        patch(
+            "shared.permissions.middleware.get_role_permission",
+            new=AsyncMock(return_value=_full_grant()),
+        ),
+        patch("shared.permissions.middleware.audit_log", new=AsyncMock()),
+    ):
         out = await get_my_terms_acceptance(user=ta, db=db)
 
     assert out.data.accepted_version == "2026-05"
@@ -86,8 +93,13 @@ async def test_ta_terms_acceptance_no_row_returns_nulls() -> None:
 
     ta = _user("TA", str(TENANT_A))
     db = _db_with_row(None)
-    with patch("shared.permissions.middleware.get_role_permission", new=AsyncMock(return_value=_full_grant())), \
-         patch("shared.permissions.middleware.audit_log", new=AsyncMock()):
+    with (
+        patch(
+            "shared.permissions.middleware.get_role_permission",
+            new=AsyncMock(return_value=_full_grant()),
+        ),
+        patch("shared.permissions.middleware.audit_log", new=AsyncMock()),
+    ):
         out = await get_my_terms_acceptance(user=ta, db=db)
 
     assert out.data.accepted_version is None
@@ -102,8 +114,13 @@ async def test_sa_terms_acceptance_for_any_tenant() -> None:
     sa = _user("SA", None)
     accepted_at = datetime(2026, 5, 1, 12, 0, tzinfo=timezone.utc)
     db = _db_with_row(_row("2026-05", accepted_at, "ta@acme.com"))
-    with patch("shared.permissions.middleware.get_role_permission", new=AsyncMock(return_value=_full_grant())), \
-         patch("shared.permissions.middleware.audit_log", new=AsyncMock()):
+    with (
+        patch(
+            "shared.permissions.middleware.get_role_permission",
+            new=AsyncMock(return_value=_full_grant()),
+        ),
+        patch("shared.permissions.middleware.audit_log", new=AsyncMock()),
+    ):
         out = await get_tenant_terms_acceptance(tenant_id=TENANT_A, user=sa, db=db)
 
     assert out.data.accepted_version == "2026-05"
@@ -116,8 +133,13 @@ async def test_sa_terms_acceptance_denied_for_non_sa() -> None:
     from routers.tenants import get_tenant_terms_acceptance
 
     ta = _user("TA", str(TENANT_A))
-    with patch("shared.permissions.middleware.get_role_permission", new=AsyncMock(return_value=_full_grant())), \
-         patch("shared.permissions.middleware.audit_log", new=AsyncMock()):
+    with (
+        patch(
+            "shared.permissions.middleware.get_role_permission",
+            new=AsyncMock(return_value=_full_grant()),
+        ),
+        patch("shared.permissions.middleware.audit_log", new=AsyncMock()),
+    ):
         with pytest.raises(HTTPException) as exc_info:
             await get_tenant_terms_acceptance(tenant_id=TENANT_A, user=ta, db=AsyncMock())
 

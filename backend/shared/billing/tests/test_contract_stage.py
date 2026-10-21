@@ -1,4 +1,5 @@
 """Unit tests for shared.billing.contract_stage — pure stage boundaries."""
+
 from __future__ import annotations
 
 from datetime import date, datetime

@@ -3,6 +3,7 @@
 session.execute is mocked and calls are classified by their SQL text, so the
 tests can assert exactly which writes were (not) issued.
 """
+
 from __future__ import annotations
 
 from datetime import date, timedelta
@@ -66,14 +67,15 @@ def _updated(exp):
 
 @pytest.mark.unit
 class TestSetLotExpiry:
-
     async def test_success(self) -> None:
         exp = date.today() + timedelta(days=10)
         s = _session([_lot()], update_row=_updated(exp))
         out = await set_lot_expiry(s, TENANT_ID, LOT_ID, exp, _user())
         assert out == {
-            "lot_id": LOT_ID, "lot_number": "OPENING-MWH",
-            "product_id": PRODUCT_ID, "expiry_date": exp,
+            "lot_id": LOT_ID,
+            "lot_number": "OPENING-MWH",
+            "product_id": PRODUCT_ID,
+            "expiry_date": exp,
         }
         assert len(_sqls(s, "UPDATE")) == 1
         audits = _sqls(s, "INSERT INTO audit_logs")

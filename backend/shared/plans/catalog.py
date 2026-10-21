@@ -6,6 +6,7 @@ row holds its EFFECTIVE values, set by applying a package here. No tier
 defaults are hardcoded anywhere else in the backend or frontend — every
 caller that needs a package's limits or flags goes through this module.
 """
+
 from __future__ import annotations
 
 import json
@@ -28,17 +29,19 @@ UNSET: Any = _Unset()
 # Single source of truth — SA package editing (PATCH /platform/tier-config) rejects any
 # other key with 422 UNKNOWN_FEATURE_FLAG. Keep in sync with locales/en.json's
 # tenant_admin.features.flag.* keys (frontend FeaturesTab.tsx FEATURE_MATRIX).
-KNOWN_FEATURE_FLAGS: frozenset[str] = frozenset({
-    "CORE_INVENTORY",
-    "TRANSFERS_PULL_PUSH",
-    "TRANSFERS_SISTER",
-    "LOT_TRACEABILITY",
-    "LOGISTICS",
-    "AUDIT_EXPORT",
-    "CUSTOM_BRANDING",
-    "AI_ANALYTICS",
-    "API_ACCESS",
-})
+KNOWN_FEATURE_FLAGS: frozenset[str] = frozenset(
+    {
+        "CORE_INVENTORY",
+        "TRANSFERS_PULL_PUSH",
+        "TRANSFERS_SISTER",
+        "LOT_TRACEABILITY",
+        "LOGISTICS",
+        "AUDIT_EXPORT",
+        "CUSTOM_BRANDING",
+        "AI_ANALYTICS",
+        "API_ACCESS",
+    }
+)
 
 
 def _row_to_package(row: Any) -> dict[str, Any]:
@@ -60,14 +63,16 @@ async def get_package(db: AsyncSession, tier: str) -> dict[str, Any]:
     Raises ValueError if the tier does not exist in platform_tier_config.
     There is no hardcoded fallback — the table is the only source.
     """
-    row = (await db.execute(
-        text(
-            "SELECT tier, display_name, max_warehouses, max_users, sku_cap, "
-            "       feature_flags, is_public, sort_order "
-            "FROM platform_tier_config WHERE tier = :tier"
-        ),
-        {"tier": tier},
-    )).fetchone()
+    row = (
+        await db.execute(
+            text(
+                "SELECT tier, display_name, max_warehouses, max_users, sku_cap, "
+                "       feature_flags, is_public, sort_order "
+                "FROM platform_tier_config WHERE tier = :tier"
+            ),
+            {"tier": tier},
+        )
+    ).fetchone()
     if not row:
         raise ValueError(f"Unknown plan tier: {tier}")
     return _row_to_package(row)
@@ -155,26 +160,30 @@ async def get_tenant_entitlements(db: AsyncSession, tenant_id: str) -> dict[str,
     replaces the package flags but never touches tenant_addons, so a granted
     add-on survives a plan change by construction (migration 072, S10).
     """
-    row = (await db.execute(
-        text(
-            "SELECT plan_tier, feature_flags, sku_cap, "
-            "       max_warehouses, max_users "
-            "FROM   tenants WHERE id = :tid"
-        ),
-        {"tid": str(tenant_id)},
-    )).fetchone()
+    row = (
+        await db.execute(
+            text(
+                "SELECT plan_tier, feature_flags, sku_cap, "
+                "       max_warehouses, max_users "
+                "FROM   tenants WHERE id = :tid"
+            ),
+            {"tid": str(tenant_id)},
+        )
+    ).fetchone()
     if not row:
         return {}
 
-    addon_rows = (await db.execute(
-        text(
-            "SELECT addon_code FROM tenant_addons "
-            "WHERE tenant_id = :tid AND status = 'ACTIVE' "
-            "AND starts_on <= CURRENT_DATE "
-            "AND (ends_on IS NULL OR ends_on >= CURRENT_DATE)"
-        ),
-        {"tid": str(tenant_id)},
-    )).fetchall()
+    addon_rows = (
+        await db.execute(
+            text(
+                "SELECT addon_code FROM tenant_addons "
+                "WHERE tenant_id = :tid AND status = 'ACTIVE' "
+                "AND starts_on <= CURRENT_DATE "
+                "AND (ends_on IS NULL OR ends_on >= CURRENT_DATE)"
+            ),
+            {"tid": str(tenant_id)},
+        )
+    ).fetchall()
     active_addons = [r.addon_code for r in addon_rows]
 
     feature_flags = dict(row.feature_flags) if row.feature_flags else {}

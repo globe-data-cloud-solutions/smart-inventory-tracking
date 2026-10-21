@@ -53,7 +53,9 @@ async def audit_log(
     if tenant_id is None:
         logger.warning(
             "audit: platform-level decision not stored action=%s user=%s decision=%s",
-            action, getattr(user, "user_id", None), decision,
+            action,
+            getattr(user, "user_id", None),
+            decision,
         )
         return
 
@@ -88,5 +90,7 @@ async def audit_log(
     except Exception:
         logger.exception(
             "audit: failed to write audit_logs row action=%s user=%s decision=%s",
-            action, getattr(user, "user_id", None), decision,
+            action,
+            getattr(user, "user_id", None),
+            decision,
         )

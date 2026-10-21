@@ -22,6 +22,7 @@ uses set_system_rls_context: empty tenant, SA flag on, labelled with the task.
 Pre-auth lookups (login, password reset) go through the SECURITY DEFINER
 auth_* functions instead of any context.
 """
+
 from sqlalchemy import event, text
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import Session

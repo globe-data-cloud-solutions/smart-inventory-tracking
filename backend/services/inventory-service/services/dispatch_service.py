@@ -16,6 +16,7 @@ dispatch_strategy_configs table are never read here):
   products.dispatch_strategy   -> (it,     "PRODUCT")
   otherwise                    -> ("FIFO", "DEFAULT")
 """
+
 from __future__ import annotations
 
 import json
@@ -52,6 +53,7 @@ class DispatchError(Exception):
 
 
 # ── Pure layer ────────────────────────────────────────────────────────────────
+
 
 @dataclass(frozen=True)
 class CandidateLot:
@@ -188,6 +190,7 @@ def compare_selection(plan: Allocation, chosen: Iterable[Any]) -> bool:
 
 # ── DB layer ──────────────────────────────────────────────────────────────────
 
+
 async def load_candidate_lots(
     db: AsyncSession,
     tenant_id: Optional[UUID | str],
@@ -255,13 +258,15 @@ async def load_product(
         tenant_clause = "AND tenant_id = :tid"
         params["tid"] = str(tenant_id)
 
-    row = (await db.execute(
-        text(
-            "SELECT batch_tracking, expiry_tracking, dispatch_strategy FROM products "
-            f"WHERE id = :pid {tenant_clause}"
-        ),
-        params,
-    )).fetchone()
+    row = (
+        await db.execute(
+            text(
+                "SELECT batch_tracking, expiry_tracking, dispatch_strategy FROM products "
+                f"WHERE id = :pid {tenant_clause}"
+            ),
+            params,
+        )
+    ).fetchone()
     if row is None:
         raise HTTPException(status_code=404, detail={"code": "PRODUCT_NOT_FOUND"})
 
@@ -342,9 +347,7 @@ async def validate_manual_selection(
 
     selected = sum(totals.values(), Decimal("0"))
     if selected != Decimal(qty):
-        raise DispatchError(
-            "SELECTION_QTY_MISMATCH", requested=str(qty), selected=str(selected)
-        )
+        raise DispatchError("SELECTION_QTY_MISMATCH", requested=str(qty), selected=str(selected))
 
     plan = plan_allocation(lots, qty, strategy, today)
     return plan, compare_selection(plan, chosen)
@@ -382,13 +385,14 @@ async def record_override(
         raise DispatchError("OVERRIDE_REASON_REQUIRED")
 
     totals = _selection_totals(chosen)
-    rows = (await db.execute(
-        text(
-            "SELECT id, lot_number FROM stock_lots "
-            "WHERE tenant_id = :tid AND product_id = :pid"
-        ),
-        {"tid": str(tenant_id), "pid": str(product_id)},
-    )).fetchall()
+    rows = (
+        await db.execute(
+            text(
+                "SELECT id, lot_number FROM stock_lots WHERE tenant_id = :tid AND product_id = :pid"
+            ),
+            {"tid": str(tenant_id), "pid": str(product_id)},
+        )
+    ).fetchall()
     lot_numbers = {str(r.id): r.lot_number for r in rows}
 
     suggested = [

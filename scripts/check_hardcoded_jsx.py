@@ -2,6 +2,7 @@
 """Fail if hardcoded English text appears in frontend JSX/TSX.
 Run from the repo root: python scripts/check_hardcoded_jsx.py
 """
+
 import os
 import re
 import sys
@@ -214,9 +215,7 @@ def find_attr_hits(code, lines):
 
 def find_call_hits(code, lines):
     hits = []
-    for m in re.finditer(
-        CALL_NAMES + r"\s*\(\s*([\"'`])([A-Za-z][^\"'`]*)", code
-    ):
+    for m in re.finditer(CALL_NAMES + r"\s*\(\s*([\"'`])([A-Za-z][^\"'`]*)", code):
         value = m.group(2).strip()
         if not LETTERS_RE.search(value):
             continue

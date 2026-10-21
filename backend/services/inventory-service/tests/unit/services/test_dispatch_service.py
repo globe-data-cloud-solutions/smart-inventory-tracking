@@ -4,6 +4,7 @@ The pure layer (resolve_strategy / sort_lots / plan_allocation /
 compare_selection) is tested directly. The DB layer is tested with a mocked
 session — scripts/smoke_dispatch_engine.py proves the real SQL.
 """
+
 from __future__ import annotations
 
 from datetime import date, datetime, timedelta
@@ -14,18 +15,18 @@ import pytest
 from fastapi import HTTPException
 
 
-TENANT_ID    = "10000000-0000-0000-0000-000000000001"
-PRODUCT_ID   = "aaaaaaaa-0000-0000-0000-000000000001"
+TENANT_ID = "10000000-0000-0000-0000-000000000001"
+PRODUCT_ID = "aaaaaaaa-0000-0000-0000-000000000001"
 WAREHOUSE_ID = "20000000-0000-0000-0000-000000000001"
-USER_ID      = "40000000-0000-0000-0000-000000000001"
+USER_ID = "40000000-0000-0000-0000-000000000001"
 
 TODAY = date(2026, 10, 13)
 T0 = datetime(2026, 1, 1)
 
 LOT_OPENING = "30000000-0000-0000-0000-000000000001"
-LOT_1       = "30000000-0000-0000-0000-000000000002"
-LOT_2       = "30000000-0000-0000-0000-000000000003"
-LOT_3       = "30000000-0000-0000-0000-000000000004"
+LOT_1 = "30000000-0000-0000-0000-000000000002"
+LOT_2 = "30000000-0000-0000-0000-000000000003"
+LOT_3 = "30000000-0000-0000-0000-000000000004"
 
 
 def _lot(lot_id, lot_number, quantity="10", expiry_date=None, received_day=0):
@@ -82,7 +83,6 @@ def _sql(session, call_index):
 
 @pytest.mark.unit
 class TestResolveStrategy:
-
     def test_not_batch_returns_none_not_batch(self) -> None:
         from services.dispatch_service import resolve_strategy
 
@@ -111,7 +111,6 @@ class TestResolveStrategy:
 
 @pytest.mark.unit
 class TestSortLots:
-
     def test_fefo_no_expiry_first_then_earliest_expiry(self) -> None:
         from services.dispatch_service import sort_lots
 
@@ -189,13 +188,14 @@ class TestSortLots:
 
 @pytest.mark.unit
 class TestPlanAllocation:
-
     def test_single_lot_covers_quantity(self) -> None:
         from services.dispatch_service import plan_allocation
 
         plan = plan_allocation(_standard_lots(), Decimal("4"), "FEFO", TODAY)
 
-        assert [(line.lot_number, line.quantity) for line in plan.lines] == [("OPENING-MWH", Decimal("4"))]
+        assert [(line.lot_number, line.quantity) for line in plan.lines] == [
+            ("OPENING-MWH", Decimal("4"))
+        ]
         assert plan.shortfall == Decimal("0")
         assert plan.expired_skipped == []
 
@@ -229,7 +229,9 @@ class TestPlanAllocation:
         plan = plan_allocation(lots, Decimal("30"), "FEFO", TODAY)
 
         assert "L3" not in [line.lot_number for line in plan.lines]
-        assert [(lot.lot_number, lot.quantity) for lot in plan.expired_skipped] == [("L3", Decimal("7"))]
+        assert [(lot.lot_number, lot.quantity) for lot in plan.expired_skipped] == [
+            ("L3", Decimal("7"))
+        ]
         assert plan.shortfall == Decimal("0")
 
     def test_expired_lot_skipped_under_fifo_and_lifo_too(self) -> None:
@@ -304,7 +306,6 @@ class TestPlanAllocation:
 
 @pytest.mark.unit
 class TestCompareSelection:
-
     def _plan(self):
         from services.dispatch_service import plan_allocation
 
@@ -361,7 +362,6 @@ class TestCompareSelection:
 
 @pytest.mark.unit
 class TestLoadCandidateLots:
-
     async def test_preview_read_does_not_lock(self) -> None:
         from services.dispatch_service import load_candidate_lots
 
@@ -399,7 +399,6 @@ class TestLoadCandidateLots:
 
 @pytest.mark.unit
 class TestLoadProduct:
-
     async def test_returns_tracking_flags_and_strategy(self) -> None:
         from services.dispatch_service import load_product
 
@@ -409,7 +408,9 @@ class TestLoadProduct:
         product = await load_product(session, TENANT_ID, PRODUCT_ID)
 
         assert (product.batch_tracking, product.expiry_tracking, product.dispatch_strategy) == (
-            True, False, "LIFO",
+            True,
+            False,
+            "LIFO",
         )
 
     async def test_missing_product_raises_404_product_not_found(self) -> None:
@@ -426,7 +427,6 @@ class TestLoadProduct:
 
 @pytest.mark.unit
 class TestAllocate:
-
     async def test_locks_and_returns_plan(self) -> None:
         from services.dispatch_service import allocate
 
@@ -456,14 +456,19 @@ class TestAllocate:
 
 @pytest.mark.unit
 class TestValidateManualSelection:
-
     async def _run(self, chosen, qty="15", lots=None, strategy="FEFO"):
         from services.dispatch_service import validate_manual_selection
 
         lots = _standard_lots() if lots is None else lots
         session = _session(_result(), _result(fetchall=[_row(lot) for lot in lots]))
         return await validate_manual_selection(
-            session, TENANT_ID, PRODUCT_ID, WAREHOUSE_ID, Decimal(qty), chosen, strategy,
+            session,
+            TENANT_ID,
+            PRODUCT_ID,
+            WAREHOUSE_ID,
+            Decimal(qty),
+            chosen,
+            strategy,
             today=TODAY,
         )
 
@@ -475,25 +480,31 @@ class TestValidateManualSelection:
         return exc_info.value.code
 
     async def test_selection_matching_plan_is_not_override(self) -> None:
-        plan, is_override = await self._run([
-            {"lot_id": LOT_OPENING, "quantity": Decimal("10")},
-            {"lot_id": LOT_2, "quantity": Decimal("5")},
-        ])
+        plan, is_override = await self._run(
+            [
+                {"lot_id": LOT_OPENING, "quantity": Decimal("10")},
+                {"lot_id": LOT_2, "quantity": Decimal("5")},
+            ]
+        )
         assert is_override is False
         assert [line.lot_number for line in plan.lines] == ["OPENING-MWH", "L2"]
 
     async def test_valid_selection_differing_from_plan_is_override(self) -> None:
-        plan, is_override = await self._run([
-            {"lot_id": LOT_1, "quantity": Decimal("10")},
-            {"lot_id": LOT_2, "quantity": Decimal("5")},
-        ])
+        plan, is_override = await self._run(
+            [
+                {"lot_id": LOT_1, "quantity": Decimal("10")},
+                {"lot_id": LOT_2, "quantity": Decimal("5")},
+            ]
+        )
         assert is_override is True
         assert [line.lot_number for line in plan.lines] == ["OPENING-MWH", "L2"]
 
     async def test_lot_from_another_warehouse_or_product_rejected(self) -> None:
-        code = await self._code([
-            {"lot_id": "30000000-0000-0000-0000-0000000000ff", "quantity": Decimal("15")},
-        ])
+        code = await self._code(
+            [
+                {"lot_id": "30000000-0000-0000-0000-0000000000ff", "quantity": Decimal("15")},
+            ]
+        )
         assert code == "LOT_NOT_IN_WAREHOUSE"
 
     async def test_expired_lot_rejected(self) -> None:
@@ -508,24 +519,30 @@ class TestValidateManualSelection:
         assert code == "INSUFFICIENT_LOT_STOCK"
 
     async def test_duplicate_lines_for_one_lot_are_summed_against_balance(self) -> None:
-        code = await self._code([
-            {"lot_id": LOT_1, "quantity": Decimal("8")},
-            {"lot_id": LOT_1, "quantity": Decimal("7")},
-        ])
+        code = await self._code(
+            [
+                {"lot_id": LOT_1, "quantity": Decimal("8")},
+                {"lot_id": LOT_1, "quantity": Decimal("7")},
+            ]
+        )
         assert code == "INSUFFICIENT_LOT_STOCK"
 
     async def test_sum_not_equal_to_quantity_rejected(self) -> None:
-        code = await self._code([
-            {"lot_id": LOT_OPENING, "quantity": Decimal("10")},
-            {"lot_id": LOT_2, "quantity": Decimal("4")},
-        ])
+        code = await self._code(
+            [
+                {"lot_id": LOT_OPENING, "quantity": Decimal("10")},
+                {"lot_id": LOT_2, "quantity": Decimal("4")},
+            ]
+        )
         assert code == "SELECTION_QTY_MISMATCH"
 
     async def test_non_positive_line_rejected(self) -> None:
-        code = await self._code([
-            {"lot_id": LOT_OPENING, "quantity": Decimal("15")},
-            {"lot_id": LOT_2, "quantity": Decimal("0")},
-        ])
+        code = await self._code(
+            [
+                {"lot_id": LOT_OPENING, "quantity": Decimal("15")},
+                {"lot_id": LOT_2, "quantity": Decimal("0")},
+            ]
+        )
         assert code == "SELECTION_QTY_MISMATCH"
 
     async def test_raises_domain_error_not_http_exception(self) -> None:
@@ -539,7 +556,6 @@ class TestValidateManualSelection:
 
 @pytest.mark.unit
 class TestRecordOverride:
-
     def _plan(self):
         from services.dispatch_service import plan_allocation
 
@@ -559,8 +575,18 @@ class TestRecordOverride:
             _result(fetchone=MagicMock(id="override-id-001")),
         )
         override_id = await record_override(
-            session, TENANT_ID, USER_ID, PRODUCT_ID, WAREHOUSE_ID, strategy, "ISSUE", None,
-            Decimal("15"), self._plan(), self._CHOSEN, reason,
+            session,
+            TENANT_ID,
+            USER_ID,
+            PRODUCT_ID,
+            WAREHOUSE_ID,
+            strategy,
+            "ISSUE",
+            None,
+            Decimal("15"),
+            self._plan(),
+            self._CHOSEN,
+            reason,
         )
         return session, override_id
 
@@ -571,8 +597,18 @@ class TestRecordOverride:
         session = AsyncMock()
         with pytest.raises(DispatchError) as exc_info:
             await record_override(
-                session, TENANT_ID, USER_ID, PRODUCT_ID, WAREHOUSE_ID, "FEFO", "ISSUE", None,
-                Decimal("15"), self._plan(), self._CHOSEN, reason,
+                session,
+                TENANT_ID,
+                USER_ID,
+                PRODUCT_ID,
+                WAREHOUSE_ID,
+                "FEFO",
+                "ISSUE",
+                None,
+                Decimal("15"),
+                self._plan(),
+                self._CHOSEN,
+                reason,
             )
 
         assert exc_info.value.code == "OVERRIDE_REASON_REQUIRED"

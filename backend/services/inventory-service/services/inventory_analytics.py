@@ -15,6 +15,7 @@ Key translation decisions:
   - in_transit_in from transfer_orders WHERE status = IN_TRANSIT (destination side)
   - requested_qty from transfer_requests WHERE status = PENDING
 """
+
 from __future__ import annotations
 
 import uuid
@@ -41,6 +42,7 @@ from schemas.analytics import (
 
 # ── Current stock ──────────────────────────────────────────────────────────────
 
+
 async def get_stock(
     session: AsyncSession,
     tenant_id: Optional[uuid.UUID],
@@ -53,7 +55,7 @@ async def get_stock(
     in_transit_in   : transfer_orders IN_TRANSIT destined for this warehouse
     requested_qty   : transfer_requests PENDING against this warehouse as source
     """
-    tenant_clause   = "AND ib.tenant_id = :tid" if tenant_id else ""
+    tenant_clause = "AND ib.tenant_id = :tid" if tenant_id else ""
     warehouse_clause = "AND ib.warehouse_id = :wid" if warehouse_id else ""
 
     balance_sql = text(f"""
@@ -102,7 +104,8 @@ async def get_stock(
         # APPROVED/ISSUED/IN_TRANSIT are excluded: current_stock already reflects
         # the APPROVED deduction via TRANSFER_OUT; including them double-subtracts.
         # Correct set: PENDING_APPROVAL only.
-        pending_out_sql = text("""
+        pending_out_sql = text(
+            """
             SELECT COALESCE(SUM(tol.quantity), 0)
             FROM transfer_order_lines tol
             JOIN transfer_orders to_ ON to_.id = tol.transfer_order_id
@@ -111,23 +114,30 @@ async def get_stock(
               AND to_.status IN (
                 'PENDING_APPROVAL'
               )
-        """ + (" AND to_.tenant_id = :tid" if tenant_id else ""))
+        """
+            + (" AND to_.tenant_id = :tid" if tenant_id else "")
+        )
         pending_out = (
             await session.execute(pending_out_sql, {"wid": str(wid), "pid": str(pid), **tid_param})
         ).scalar() or Decimal("0")
 
         # In transit out: stock already deducted from On Hand (at APPROVED) and
         # physically moving — informational only, does NOT affect net_available.
-        in_transit_out_sql = text("""
+        in_transit_out_sql = text(
+            """
             SELECT COALESCE(SUM(tol.quantity), 0)
             FROM transfer_order_lines tol
             JOIN transfer_orders to_ ON to_.id = tol.transfer_order_id
             WHERE to_.from_warehouse_id = :wid
               AND tol.product_id = :pid
               AND to_.status IN ('ISSUED','IN_TRANSIT')
-        """ + (" AND to_.tenant_id = :tid" if tenant_id else ""))
+        """
+            + (" AND to_.tenant_id = :tid" if tenant_id else "")
+        )
         in_transit_out = (
-            await session.execute(in_transit_out_sql, {"wid": str(wid), "pid": str(pid), **tid_param})
+            await session.execute(
+                in_transit_out_sql, {"wid": str(wid), "pid": str(pid), **tid_param}
+            )
         ).scalar() or Decimal("0")
 
         # In-transit inbound: orders destined for this warehouse that have physically
@@ -135,26 +145,32 @@ async def get_stock(
         # PARTIALLY_RECEIVED is included because the remaining un-received quantity is
         # still in transit — omitting it caused the inbound counter to drop to zero mid-way
         # through a partial receipt, which confused operators tracking expected stock.
-        in_transit_sql = text("""
+        in_transit_sql = text(
+            """
             SELECT COALESCE(SUM(tol.quantity), 0)
             FROM transfer_order_lines tol
             JOIN transfer_orders to_ ON to_.id = tol.transfer_order_id
             WHERE to_.to_warehouse_id = :wid
               AND tol.product_id = :pid
               AND to_.status IN ('IN_TRANSIT', 'PARTIALLY_RECEIVED')
-        """ + (" AND to_.tenant_id = :tid" if tenant_id else ""))
+        """
+            + (" AND to_.tenant_id = :tid" if tenant_id else "")
+        )
         in_transit_in = (
             await session.execute(in_transit_sql, {"wid": str(wid), "pid": str(pid), **tid_param})
         ).scalar() or Decimal("0")
 
         # Requested: pending transfer requests sourcing from this warehouse
-        requested_sql = text("""
+        requested_sql = text(
+            """
             SELECT COALESCE(SUM(tr.quantity), 0)
             FROM transfer_requests tr
             WHERE tr.source_warehouse_id = :wid
               AND tr.product_id = :pid
               AND tr.status = 'PENDING'
-        """ + (" AND tr.tenant_id = :tid" if tenant_id else ""))
+        """
+            + (" AND tr.tenant_id = :tid" if tenant_id else "")
+        )
         requested = (
             await session.execute(requested_sql, {"wid": str(wid), "pid": str(pid), **tid_param})
         ).scalar() or Decimal("0")
@@ -180,6 +196,7 @@ async def get_stock(
 
 # ── Reorder alerts ─────────────────────────────────────────────────────────────
 
+
 async def get_alerts(
     session: AsyncSession,
     tenant_id: Optional[uuid.UUID],
@@ -195,12 +212,8 @@ async def get_alerts(
         FROM products
         WHERE id = ANY(:ids)
     """)
-    product_rows = (
-        await session.execute(product_sql, {"ids": product_ids})
-    ).fetchall()
-    reorder_map = {
-        row.id: (row.reorder_point, row.reorder_quantity) for row in product_rows
-    }
+    product_rows = (await session.execute(product_sql, {"ids": product_ids})).fetchall()
+    reorder_map = {row.id: (row.reorder_point, row.reorder_quantity) for row in product_rows}
 
     alerts = []
     for item in stock_items:
@@ -224,6 +237,7 @@ async def get_alerts(
 
 
 # ── Demand forecast ────────────────────────────────────────────────────────────
+
 
 async def get_forecast(
     session: AsyncSession,
@@ -265,9 +279,7 @@ async def get_forecast(
         ).scalar() or 0
 
         avg_daily = float(total_consumed) / days if days > 0 else 0
-        days_until = (
-            round(float(item.current_stock) / avg_daily, 1) if avg_daily > 0 else None
-        )
+        days_until = round(float(item.current_stock) / avg_daily, 1) if avg_daily > 0 else None
 
         results.append(
             ForecastOut(
@@ -290,6 +302,7 @@ async def get_forecast(
 
 
 # ── Cross-warehouse stock ──────────────────────────────────────────────────────
+
 
 async def get_cross_warehouse_stock(
     session: AsyncSession,
@@ -321,6 +334,7 @@ async def get_cross_warehouse_stock(
 
 
 # ── Transfer history ───────────────────────────────────────────────────────────
+
 
 async def get_transfer_history(
     session: AsyncSession,
@@ -372,6 +386,7 @@ async def get_transfer_history(
 
 # ── Lots ────────────────────────────────────────────────────────────────────
 
+
 async def get_lots(
     session: AsyncSession,
     tenant_id: Optional[uuid.UUID],
@@ -388,8 +403,8 @@ async def get_lots(
     status: quantity = 0 -> DEPLETED; expiry_date < today -> EXPIRED; else ACTIVE.
     DEPLETED lots are hidden unless include_depleted=True.
     """
-    tenant_clause    = "AND lb.tenant_id = :tid AND sl.tenant_id = :tid" if tenant_id else ""
-    product_clause   = "AND sl.product_id = :pid" if product_id else ""
+    tenant_clause = "AND lb.tenant_id = :tid AND sl.tenant_id = :tid" if tenant_id else ""
+    product_clause = "AND sl.product_id = :pid" if product_id else ""
     warehouse_clause = "AND lb.warehouse_id = :wid" if warehouse_id else ""
 
     sql = text(f"""
@@ -473,6 +488,7 @@ async def get_lots(
 
 # ── Expiry alerts ───────────────────────────────────────────────────────────
 
+
 async def get_expiry_alerts(
     session: AsyncSession,
     tenant_id: Optional[uuid.UUID],
@@ -485,7 +501,7 @@ async def get_expiry_alerts(
     Order: EXPIRED (most overdue first), EXPIRING (soonest first), then
     NO_EXPIRY (product name, lot number).
     """
-    tenant_clause    = "AND lb.tenant_id = :tid AND sl.tenant_id = :tid" if tenant_id else ""
+    tenant_clause = "AND lb.tenant_id = :tid AND sl.tenant_id = :tid" if tenant_id else ""
     warehouse_clause = "AND lb.warehouse_id = :wid" if warehouse_id else ""
 
     sql = text(f"""

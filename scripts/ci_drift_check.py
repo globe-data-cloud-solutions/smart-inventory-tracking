@@ -2,6 +2,7 @@
 Fails if any action used in a decorator is not in registry.py.
 Run as: python scripts/ci_drift_check.py
 """
+
 from __future__ import annotations
 
 import ast

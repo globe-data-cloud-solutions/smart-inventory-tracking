@@ -1,4 +1,5 @@
 """Tests for api-gateway proxy error handling (503/504 for unreachable services)."""
+
 import importlib.util
 import os
 from unittest.mock import AsyncMock, patch

@@ -10,8 +10,12 @@ import pytest
 # Obviously-fake localhost defaults let collection succeed; a real value from
 # .env (or any other source) always wins since setdefault() never overwrites
 # an already-set variable.
-os.environ.setdefault("DATABASE_URL", "postgresql+asyncpg://fake:fake@localhost:5432/fake")
-os.environ.setdefault("DATABASE_READ_URL", "postgresql+asyncpg://fake:fake@localhost:5432/fake")
+os.environ.setdefault(
+    "DATABASE_URL", "postgresql+asyncpg://fake:fake@localhost:5432/fake"
+)
+os.environ.setdefault(
+    "DATABASE_READ_URL", "postgresql+asyncpg://fake:fake@localhost:5432/fake"
+)
 os.environ.setdefault("REDIS_URL", "redis://localhost:6379/0")
 # shared.outbox.worker reads these two at IMPORT time (Celery app construction) —
 # same fake-default rationale as the three above.
@@ -39,7 +43,11 @@ def _default_contract_stage_active(monkeypatch):
     monkeypatch.setattr(
         contract_stage,
         "get_tenant_contract_stage",
-        AsyncMock(return_value={
-            "stage": "ACTIVE", "contract_end": None, "read_only_since": None,
-        }),
+        AsyncMock(
+            return_value={
+                "stage": "ACTIVE",
+                "contract_end": None,
+                "read_only_since": None,
+            }
+        ),
     )

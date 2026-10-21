@@ -5,12 +5,12 @@ import sys
 from pathlib import Path
 
 # Must be set before shared.db.session is imported (it reads DATABASE_URL at module level)
-os.environ.setdefault("DATABASE_URL",          "postgresql+asyncpg://test:x@localhost/test")
-os.environ.setdefault("DATABASE_READ_URL",     "postgresql+asyncpg://test:x@localhost/test")
-os.environ.setdefault("JWT_SECRET",            "test-secret-for-unit-tests")
-os.environ.setdefault("JWT_SECRET_KEY",        "test-secret-for-unit-tests")
-os.environ.setdefault("ENVIRONMENT",           "local")
-os.environ.setdefault("CELERY_BROKER_URL",     "redis://localhost:6379/1")
+os.environ.setdefault("DATABASE_URL", "postgresql+asyncpg://test:x@localhost/test")
+os.environ.setdefault("DATABASE_READ_URL", "postgresql+asyncpg://test:x@localhost/test")
+os.environ.setdefault("JWT_SECRET", "test-secret-for-unit-tests")
+os.environ.setdefault("JWT_SECRET_KEY", "test-secret-for-unit-tests")
+os.environ.setdefault("ENVIRONMENT", "local")
+os.environ.setdefault("CELERY_BROKER_URL", "redis://localhost:6379/1")
 os.environ.setdefault("CELERY_RESULT_BACKEND", "redis://localhost:6379/2")
 
 from dataclasses import dataclass
@@ -129,6 +129,7 @@ def _make_mock_db() -> AsyncMock:
 def _db_override(db: AsyncMock):
     async def _gen():
         yield db
+
     return _gen
 
 
@@ -139,9 +140,7 @@ async def client():
     app.dependency_overrides[get_current_user] = lambda: WM_STUB
     app.dependency_overrides[get_db_session] = _db_override(db)
     try:
-        async with AsyncClient(
-            transport=ASGITransport(app=app), base_url="http://test"
-        ) as ac:
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
             yield ac
     finally:
         app.dependency_overrides.clear()
@@ -174,5 +173,4 @@ def au_user():
 
 @pytest.fixture
 def other_tenant_user():
-    return _StubUser("u-ot", "99999999-0000-0000-0000-000000000001", "WM",
-                     warehouse_id=WAREHOUSE_A)
+    return _StubUser("u-ot", "99999999-0000-0000-0000-000000000001", "WM", warehouse_id=WAREHOUSE_A)

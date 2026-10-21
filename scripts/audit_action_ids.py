@@ -17,6 +17,7 @@ Usage:
   python scripts/audit_action_ids.py --check    # exit 1 if any id lacks an en.json label
   python scripts/audit_action_ids.py --resources  # print resource_type values written
 """
+
 from __future__ import annotations
 
 import json
@@ -56,12 +57,12 @@ def literal_ids() -> set[str]:
         if "audit_log(" not in s and "INSERT INTO audit_logs" not in s:
             continue
         for m in re.finditer(r"audit_log\(", s):
-            seg = s[m.end():m.end() + 400]
+            seg = s[m.end() : m.end() + 400]
             ids.update(re.findall(r'f?["\'](' + _ID + r')["\']', seg))
             for name in re.findall(r'f"\{[a-z_]+\}:([a-z][a-z_]*)"', seg):
                 ids.update(f"{pfx}:{name}" for pfx in _TEMPLATE_PREFIXES)
         for m in re.finditer(r"INSERT INTO audit_logs", s):
-            seg = s[m.end():m.end() + 800]
+            seg = s[m.end() : m.end() + 800]
             ids.update(re.findall(r"'(" + _ID + r")'", seg))
     return ids
 
@@ -78,7 +79,7 @@ def resource_types() -> set[str]:
             continue
         types.update(re.findall(r'"resource_type":\s*"([a-z_]+)"', s))
         for m in re.finditer(r"INSERT INTO audit_logs", s):
-            seg = s[m.end():m.end() + 800]
+            seg = s[m.end() : m.end() + 800]
             types.update(re.findall(r"'[a-z_]+:[a-z_]+',\s*'([a-z_]+)'", seg))
     return types
 
@@ -99,10 +100,14 @@ def main(argv: list[str]) -> int:
     labels = en.get("audit", {}).get("actions", {})
     missing = [i for i in ids if label_key(i) not in labels]
     if missing:
-        print(f"ERROR: {len(missing)} audit action id(s) have no audit.actions label in locales/en.json:")
+        print(
+            f"ERROR: {len(missing)} audit action id(s) have no audit.actions label in locales/en.json:"
+        )
         for i in missing:
             print(f"  {i}  ->  audit.actions.{label_key(i)}")
-        print("Fix: add the label to locales/en.json (and mirror to the other locale files).")
+        print(
+            "Fix: add the label to locales/en.json (and mirror to the other locale files)."
+        )
         return 1
     print(f"  PASS: all {len(ids)} audit action ids have an audit.actions label.")
     return 0

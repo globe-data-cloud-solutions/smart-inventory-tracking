@@ -9,6 +9,7 @@ via RATE_LIMIT_<BUCKET>=<limit>/<window_s> (bucket name upper-cased, '-' →
 override value is logged and ignored (falls back to the default); it never
 crashes the service.
 """
+
 from __future__ import annotations
 
 import logging
@@ -53,7 +54,9 @@ def limit_for(bucket: str) -> tuple[int, int]:
         except (ValueError, TypeError):
             logger.warning(
                 "Invalid %s=%r — expected <limit>/<window_s>; using default %s",
-                env_name, raw, default,
+                env_name,
+                raw,
+                default,
             )
             resolved = default
 
@@ -75,14 +78,19 @@ async def hit(bucket: str, key: str, limit: int, window_seconds: int) -> None:
             retry_after = ttl if ttl and ttl > 0 else window_seconds
             raise HTTPException(
                 status_code=429,
-                detail={"code": "RATE_LIMITED", "message": "Too many requests. Please try again later."},
+                detail={
+                    "code": "RATE_LIMITED",
+                    "message": "Too many requests. Please try again later.",
+                },
                 headers={"Retry-After": str(retry_after)},
             )
     except HTTPException:
         raise
     except Exception as exc:
         # Fail-open: a Redis outage must never block sign-up/verification.
-        logger.warning("Rate limiter unavailable (fail-open) bucket=%s key=%s: %s", bucket, key, exc)
+        logger.warning(
+            "Rate limiter unavailable (fail-open) bucket=%s key=%s: %s", bucket, key, exc
+        )
 
 
 async def hit_bucket(bucket: str, key: str) -> None:

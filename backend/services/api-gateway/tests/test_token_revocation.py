@@ -2,6 +2,7 @@
 shared.cache.token_revocation.is_token_revoked) is rejected with 401
 TOKEN_REVOKED even though its signature is valid; a non-revoked token is
 proxied as before; public paths never run the check at all."""
+
 import importlib.util
 import os
 from unittest.mock import AsyncMock, patch
@@ -48,8 +49,10 @@ def test_revoked_token_returns_401(api_gateway_app) -> None:
 def test_non_revoked_token_is_proxied(api_gateway_app) -> None:
     client = TestClient(api_gateway_app.app)
 
-    with patch.object(api_gateway_app, "is_token_revoked", new=AsyncMock(return_value=False)), \
-         patch("httpx.AsyncClient.request", new_callable=AsyncMock) as mock_request:
+    with (
+        patch.object(api_gateway_app, "is_token_revoked", new=AsyncMock(return_value=False)),
+        patch("httpx.AsyncClient.request", new_callable=AsyncMock) as mock_request,
+    ):
         mock_request.return_value = httpx.Response(200, json={"success": True, "data": []})
         response = client.get(
             "/api/v1/tenants/",
@@ -63,8 +66,10 @@ def test_non_revoked_token_is_proxied(api_gateway_app) -> None:
 def test_public_path_never_checks_revocation(api_gateway_app) -> None:
     client = TestClient(api_gateway_app.app)
 
-    with patch.object(api_gateway_app, "is_token_revoked", new=AsyncMock()) as mock_check, \
-         patch("httpx.AsyncClient.request", new_callable=AsyncMock) as mock_request:
+    with (
+        patch.object(api_gateway_app, "is_token_revoked", new=AsyncMock()) as mock_check,
+        patch("httpx.AsyncClient.request", new_callable=AsyncMock) as mock_request,
+    ):
         mock_request.return_value = httpx.Response(200, json={"success": True, "data": []})
         response = client.get("/api/v1/tenants/public/packages")
 

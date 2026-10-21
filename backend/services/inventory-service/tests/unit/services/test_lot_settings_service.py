@@ -1,4 +1,5 @@
 """Unit tests for services/lot_settings_service.update_lot_settings()."""
+
 from __future__ import annotations
 
 from decimal import Decimal
@@ -8,9 +9,9 @@ import pytest
 from fastapi import HTTPException
 
 
-TENANT_ID     = "10000000-0000-0000-0000-000000000001"
-PRODUCT_ID    = "aaaaaaaa-0000-0000-0000-000000000001"
-USER_ID       = "u-ta-001"
+TENANT_ID = "10000000-0000-0000-0000-000000000001"
+PRODUCT_ID = "aaaaaaaa-0000-0000-0000-000000000001"
+USER_ID = "u-ta-001"
 WAREHOUSE_ID1 = "20000000-0000-0000-0000-000000000001"
 WAREHOUSE_ID2 = "20000000-0000-0000-0000-000000000002"
 
@@ -32,7 +33,6 @@ def _result(fetchone=None, fetchall=None):
 
 @pytest.mark.unit
 class TestFeatureFlag:
-
     async def test_flag_off_raises_403_before_any_query(self) -> None:
         from services.lot_settings_service import update_lot_settings
 
@@ -58,7 +58,6 @@ class TestFeatureFlag:
 
 @pytest.mark.unit
 class TestProductNotFound:
-
     async def test_missing_product_raises_404(self) -> None:
         from services.lot_settings_service import update_lot_settings
 
@@ -84,7 +83,6 @@ class TestProductNotFound:
 
 @pytest.mark.unit
 class TestStrategyValidation:
-
     async def _run(self, session_execute_side_effect, **kwargs):
         from services.lot_settings_service import update_lot_settings
 
@@ -138,9 +136,9 @@ class TestStrategyValidation:
         execs = [
             _result(fetchone=_product_row()),  # SELECT product
             _result(fetchone=MagicMock(open_count=0)),  # COUNT open transfers
-            _result(),                          # UPDATE products
-            _result(fetchall=[]),               # SELECT balances (no conversion needed, old=batch already? )
-            _result(),                           # INSERT audit_logs
+            _result(),  # UPDATE products
+            _result(fetchall=[]),  # SELECT balances (no conversion needed, old=batch already? )
+            _result(),  # INSERT audit_logs
         ]
         # old batch_tracking False -> True triggers conversion query; stub empty balances
         result = await self._run(
@@ -171,7 +169,6 @@ class TestStrategyValidation:
 
 @pytest.mark.unit
 class TestBatchTrackingOff:
-
     async def test_blocked_while_lot_holds_stock(self) -> None:
         from services.lot_settings_service import update_lot_settings
 
@@ -229,7 +226,6 @@ class TestBatchTrackingOff:
 
 @pytest.mark.unit
 class TestConversion:
-
     async def test_two_warehouses_create_opening_lots(self) -> None:
         from services.lot_settings_service import update_lot_settings
 
@@ -238,25 +234,31 @@ class TestConversion:
 
         execs = [
             _result(fetchone=_product_row(batch_tracking=False)),  # SELECT product
-            _result(fetchone=MagicMock(open_count=0)),              # COUNT open transfers
-            _result(),                                              # UPDATE products
-            _result(fetchall=[bal1, bal2]),                         # SELECT balances
-            _result(),                                              # INSERT audit_logs
+            _result(fetchone=MagicMock(open_count=0)),  # COUNT open transfers
+            _result(),  # UPDATE products
+            _result(fetchall=[bal1, bal2]),  # SELECT balances
+            _result(),  # INSERT audit_logs
         ]
         session = AsyncMock()
         session.execute = AsyncMock(side_effect=execs)
 
         lot_uuid1 = "30000000-0000-0000-0000-000000000001"
         lot_uuid2 = "30000000-0000-0000-0000-000000000002"
-        with patch(
-            "services.lot_settings_service.create_opening_lot",
-            new=AsyncMock(side_effect=[(lot_uuid1, "OPENING-MWH"), (lot_uuid2, "OPENING-SUB1")]),
-        ) as mock_create_lot, patch(
-            "services.lot_settings_service.record_transaction",
-            new=AsyncMock(return_value="tx-id"),
-        ) as mock_record_tx, patch(
-            "services.lot_settings_service.lot_totals_mismatch",
-            new=AsyncMock(return_value=None),
+        with (
+            patch(
+                "services.lot_settings_service.create_opening_lot",
+                new=AsyncMock(
+                    side_effect=[(lot_uuid1, "OPENING-MWH"), (lot_uuid2, "OPENING-SUB1")]
+                ),
+            ) as mock_create_lot,
+            patch(
+                "services.lot_settings_service.record_transaction",
+                new=AsyncMock(return_value="tx-id"),
+            ) as mock_record_tx,
+            patch(
+                "services.lot_settings_service.lot_totals_mismatch",
+                new=AsyncMock(return_value=None),
+            ),
         ):
             result = await update_lot_settings(
                 session,
@@ -296,15 +298,19 @@ class TestConversion:
         session = AsyncMock()
         session.execute = AsyncMock(side_effect=execs)
 
-        with patch(
-            "services.lot_settings_service.create_opening_lot",
-            new=AsyncMock(return_value=("30000000-0000-0000-0000-000000000001", "OPENING-MWH")),
-        ), patch(
-            "services.lot_settings_service.record_transaction",
-            new=AsyncMock(return_value="tx-id"),
-        ), patch(
-            "services.lot_settings_service.lot_totals_mismatch",
-            new=AsyncMock(return_value=Decimal("3")),
+        with (
+            patch(
+                "services.lot_settings_service.create_opening_lot",
+                new=AsyncMock(return_value=("30000000-0000-0000-0000-000000000001", "OPENING-MWH")),
+            ),
+            patch(
+                "services.lot_settings_service.record_transaction",
+                new=AsyncMock(return_value="tx-id"),
+            ),
+            patch(
+                "services.lot_settings_service.lot_totals_mismatch",
+                new=AsyncMock(return_value=Decimal("3")),
+            ),
         ):
             with pytest.raises(HTTPException) as exc_info:
                 await update_lot_settings(
@@ -331,23 +337,29 @@ class TestConversion:
 
         execs = [
             _result(fetchone=_product_row(batch_tracking=False)),  # SELECT product
-            _result(fetchone=MagicMock(open_count=0)),              # COUNT open transfers
-            _result(),                                              # UPDATE products
-            _result(fetchall=[bal1]),                               # SELECT balances
-            _result(),                                              # INSERT audit_logs
+            _result(fetchone=MagicMock(open_count=0)),  # COUNT open transfers
+            _result(),  # UPDATE products
+            _result(fetchall=[bal1]),  # SELECT balances
+            _result(),  # INSERT audit_logs
         ]
         session = AsyncMock()
         session.execute = AsyncMock(side_effect=execs)
 
-        with patch(
-            "services.lot_settings_service.create_opening_lot",
-            new=AsyncMock(return_value=("30000000-0000-0000-0000-000000000001", "OPENING-20000000")),
-        ) as mock_create_lot, patch(
-            "services.lot_settings_service.record_transaction",
-            new=AsyncMock(return_value="tx-id"),
-        ), patch(
-            "services.lot_settings_service.lot_totals_mismatch",
-            new=AsyncMock(return_value=None),
+        with (
+            patch(
+                "services.lot_settings_service.create_opening_lot",
+                new=AsyncMock(
+                    return_value=("30000000-0000-0000-0000-000000000001", "OPENING-20000000")
+                ),
+            ) as mock_create_lot,
+            patch(
+                "services.lot_settings_service.record_transaction",
+                new=AsyncMock(return_value="tx-id"),
+            ),
+            patch(
+                "services.lot_settings_service.lot_totals_mismatch",
+                new=AsyncMock(return_value=None),
+            ),
         ):
             result = await update_lot_settings(
                 session,
@@ -375,24 +387,26 @@ class TestConversion:
 
 @pytest.mark.unit
 class TestBatchTrackingOnWithOpenTransfers:
-
     async def test_blocked_while_transfer_in_transit(self) -> None:
         from services.lot_settings_service import update_lot_settings
 
         execs = [
             _result(fetchone=_product_row(batch_tracking=False)),  # SELECT product
-            _result(fetchone=MagicMock(open_count=1)),              # COUNT open transfers (IN_TRANSIT line)
+            _result(fetchone=MagicMock(open_count=1)),  # COUNT open transfers (IN_TRANSIT line)
         ]
         session = AsyncMock()
         session.execute = AsyncMock(side_effect=execs)
 
-        with patch(
-            "services.lot_settings_service.create_opening_lot",
-            new=AsyncMock(),
-        ) as mock_create_lot, patch(
-            "services.lot_settings_service.record_transaction",
-            new=AsyncMock(),
-        ) as mock_record_tx:
+        with (
+            patch(
+                "services.lot_settings_service.create_opening_lot",
+                new=AsyncMock(),
+            ) as mock_create_lot,
+            patch(
+                "services.lot_settings_service.record_transaction",
+                new=AsyncMock(),
+            ) as mock_record_tx,
+        ):
             with pytest.raises(HTTPException) as exc_info:
                 await update_lot_settings(
                     session,
@@ -422,10 +436,10 @@ class TestBatchTrackingOnWithOpenTransfers:
 
         execs = [
             _result(fetchone=_product_row(batch_tracking=False)),  # SELECT product
-            _result(fetchone=MagicMock(open_count=0)),              # COUNT — PENDING_APPROVAL not matched
-            _result(),                                              # UPDATE products
-            _result(fetchall=[]),                                   # SELECT balances
-            _result(),                                              # INSERT audit_logs
+            _result(fetchone=MagicMock(open_count=0)),  # COUNT — PENDING_APPROVAL not matched
+            _result(),  # UPDATE products
+            _result(fetchall=[]),  # SELECT balances
+            _result(),  # INSERT audit_logs
         ]
         session = AsyncMock()
         session.execute = AsyncMock(side_effect=execs)
@@ -454,9 +468,11 @@ class TestBatchTrackingOnWithOpenTransfers:
         from services.lot_settings_service import update_lot_settings
 
         execs = [
-            _result(fetchone=_product_row(batch_tracking=True, dispatch_strategy="FIFO")),  # SELECT product
-            _result(),                                                                       # UPDATE products
-            _result(),                                                                       # INSERT audit_logs
+            _result(
+                fetchone=_product_row(batch_tracking=True, dispatch_strategy="FIFO")
+            ),  # SELECT product
+            _result(),  # UPDATE products
+            _result(),  # INSERT audit_logs
         ]
         session = AsyncMock()
         session.execute = AsyncMock(side_effect=execs)

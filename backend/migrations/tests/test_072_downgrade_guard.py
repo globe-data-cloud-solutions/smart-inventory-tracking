@@ -7,6 +7,7 @@ No live database connection: _refuse_if_addon_lines_exist() is called
 directly with alembic.op.get_bind() mocked to return a fake bind whose
 .execute(...).scalar() answers the ADDON-row count.
 """
+
 from __future__ import annotations
 
 import importlib.util

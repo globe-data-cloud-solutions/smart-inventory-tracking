@@ -9,6 +9,7 @@ version, or owners won't be asked to re-accept.
 
 Fix on failure: bash scripts/sync_help_docs.sh
 """
+
 from __future__ import annotations
 
 import os

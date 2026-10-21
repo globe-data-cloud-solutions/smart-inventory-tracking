@@ -10,7 +10,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
 def _no_null(v: object) -> object:
-    if isinstance(v, str) and '\x00' in v:
+    if isinstance(v, str) and "\x00" in v:
         raise ValueError("Null bytes are not allowed in text fields")
     return v
 
@@ -152,7 +152,8 @@ class ReceiveStockRequest(BaseModel):
 
     @field_validator("lot_number", "idempotency_key", "source", mode="before")
     @classmethod
-    def no_null_bytes(cls, v: object) -> object: return _no_null(v)
+    def no_null_bytes(cls, v: object) -> object:
+        return _no_null(v)
 
     @field_validator("lot_number", mode="after")
     @classmethod
@@ -183,7 +184,8 @@ class TransferOrderRequest(BaseModel):
 
     @field_validator("notes", "transfer_type", mode="before")
     @classmethod
-    def no_null_bytes(cls, v: object) -> object: return _no_null(v)
+    def no_null_bytes(cls, v: object) -> object:
+        return _no_null(v)
 
 
 class TransferLineRequest(BaseModel):
@@ -193,11 +195,13 @@ class TransferLineRequest(BaseModel):
 
     @field_validator("lot_number", mode="before")
     @classmethod
-    def no_null_bytes(cls, v: object) -> object: return _no_null(v)
+    def no_null_bytes(cls, v: object) -> object:
+        return _no_null(v)
 
 
 class TransferLotAllocation(BaseModel):
     """One lot a transfer line was split into at approval (transfer_line_allocations)."""
+
     line_id: uuid.UUID
     product_id: uuid.UUID
     lot_id: uuid.UUID
@@ -209,6 +213,7 @@ class TransferLotAllocation(BaseModel):
 
 class ReceiptLineIn(BaseModel):
     """What arrived for one transfer line (non-batch) or one lot of a line (batch)."""
+
     line_id: uuid.UUID
     lot_id: Optional[uuid.UUID] = None
     # 4 decimal places = NUMERIC(15,4) on transfer_discrepancies.
@@ -218,7 +223,8 @@ class ReceiptLineIn(BaseModel):
 
     @field_validator("note", mode="before")
     @classmethod
-    def no_null_bytes(cls, v: object) -> object: return _no_null(v)
+    def no_null_bytes(cls, v: object) -> object:
+        return _no_null(v)
 
 
 class ReceiveTransferRequest(BaseModel):
@@ -227,6 +233,7 @@ class ReceiveTransferRequest(BaseModel):
 
 class TransferDiscrepancyOut(BaseModel):
     """One shortfall recorded at receipt (transfer_discrepancies)."""
+
     id: uuid.UUID
     transfer_line_id: uuid.UUID
     product_id: uuid.UUID
@@ -250,6 +257,7 @@ class TransferDiscrepancyOut(BaseModel):
 
 class TransferDiscrepancyListItem(TransferDiscrepancyOut):
     """A discrepancy row with the transfer it belongs to (GET /transfers/discrepancies)."""
+
     transfer_order_id: uuid.UUID
     transfer_type: str
     from_warehouse_id: uuid.UUID
@@ -259,6 +267,7 @@ class TransferDiscrepancyListItem(TransferDiscrepancyOut):
 class ResolveDiscrepancyRequest(BaseModel):
     """How an OPEN discrepancy was settled. lot_id is the lot that actually
     arrived — RECEIVED_AS_LOT only."""
+
     model_config = ConfigDict(extra="forbid")
 
     resolution: Literal["WRITTEN_OFF", "RETURNED", "ARRIVED_LATE", "RECEIVED_AS_LOT"]
@@ -267,7 +276,8 @@ class ResolveDiscrepancyRequest(BaseModel):
 
     @field_validator("note", mode="before")
     @classmethod
-    def no_null_bytes(cls, v: object) -> object: return _no_null(v)
+    def no_null_bytes(cls, v: object) -> object:
+        return _no_null(v)
 
 
 class TransferLineItem(BaseModel):
@@ -317,7 +327,8 @@ class TransferApproveRequest(BaseModel):
 
     @field_validator("override_reason", mode="before")
     @classmethod
-    def no_null_bytes(cls, v: object) -> object: return _no_null(v)
+    def no_null_bytes(cls, v: object) -> object:
+        return _no_null(v)
 
 
 class TransferActionRequest(BaseModel):
@@ -325,7 +336,8 @@ class TransferActionRequest(BaseModel):
 
     @field_validator("notes", mode="before")
     @classmethod
-    def no_null_bytes(cls, v: object) -> object: return _no_null(v)
+    def no_null_bytes(cls, v: object) -> object:
+        return _no_null(v)
 
 
 class AdjustmentRequest(BaseModel):
@@ -342,7 +354,8 @@ class AdjustmentRequest(BaseModel):
 
     @field_validator("lot_number", "idempotency_key", "notes", mode="before")
     @classmethod
-    def no_null_bytes(cls, v: object) -> object: return _no_null(v)
+    def no_null_bytes(cls, v: object) -> object:
+        return _no_null(v)
 
     @field_validator("quantity_delta", mode="after")
     @classmethod
@@ -373,7 +386,8 @@ class CountSessionRequest(BaseModel):
 
     @field_validator("notes", mode="before")
     @classmethod
-    def no_null_bytes(cls, v: object) -> object: return _no_null(v)
+    def no_null_bytes(cls, v: object) -> object:
+        return _no_null(v)
 
 
 class CountSessionResponse(BaseModel):
@@ -396,11 +410,17 @@ class IssueStockRequest(BaseModel):
     override_reason: Optional[str] = Field(None, max_length=500)
 
     @field_validator(
-        "reason_code", "issued_to", "notes", "idempotency_key", "source", "override_reason",
+        "reason_code",
+        "issued_to",
+        "notes",
+        "idempotency_key",
+        "source",
+        "override_reason",
         mode="before",
     )
     @classmethod
-    def no_null_bytes(cls, v: object) -> object: return _no_null(v)
+    def no_null_bytes(cls, v: object) -> object:
+        return _no_null(v)
 
 
 class IssuedLot(BaseModel):
@@ -430,6 +450,7 @@ class LotSelection(BaseModel):
 
 class LotChoice(BaseModel):
     """One line of a user's manual lot selection (dispatch_service.validate_manual_selection)."""
+
     lot_id: uuid.UUID
     quantity: Decimal = Field(gt=0)
 
@@ -456,7 +477,7 @@ class DispatchPreviewResponse(BaseModel):
 class AdjustStockRequest(BaseModel):
     product_id: uuid.UUID
     warehouse_id: uuid.UUID
-    quantity: Decimal            # signed: positive = add, negative = remove
+    quantity: Decimal  # signed: positive = add, negative = remove
     reason_code: AdjustmentReasonCode
     notes: Optional[str] = None
     idempotency_key: str
@@ -465,7 +486,8 @@ class AdjustStockRequest(BaseModel):
 
     @field_validator("notes", "idempotency_key", "source", mode="before")
     @classmethod
-    def no_null_bytes(cls, v: object) -> object: return _no_null(v)
+    def no_null_bytes(cls, v: object) -> object:
+        return _no_null(v)
 
 
 class AdjustStockResponse(BaseModel):
@@ -478,6 +500,7 @@ class AdjustStockResponse(BaseModel):
 
 
 # ── List response schemas ──────────────────────────────────────────────────────
+
 
 class TransferListItem(BaseModel):
     transfer_id: uuid.UUID
@@ -494,7 +517,7 @@ class TransferListItem(BaseModel):
     is_self_approved: bool = False
     lines: List[TransferLineItem]
     current_step: int = 1
-    total_steps:  int = 1
+    total_steps: int = 1
 
 
 class TransferTransitionRequest(BaseModel):
@@ -529,25 +552,26 @@ class ApprovalInfoResponse(BaseModel):
     (or one of the all_holders list for ANY-mode steps).
     Legacy fields (required_authority_level etc.) preserved for backward compat.
     """
-    transfer_id:              uuid.UUID
+
+    transfer_id: uuid.UUID
     required_authority_level: int
-    required_role_display:    str
-    is_auto_approve:          bool
-    can_approve:              bool
-    reason:                   str
+    required_role_display: str
+    is_auto_approve: bool
+    can_approve: bool
+    reason: str
     # Session 6 — specific assignee fields
-    current_step:                    int           = 1
-    total_steps:                     int           = 1
-    current_approver_user_id:        Optional[str] = None
-    current_approver_name:           Optional[str] = None
+    current_step: int = 1
+    total_steps: int = 1
+    current_approver_user_id: Optional[str] = None
+    current_approver_name: Optional[str] = None
     current_approver_position_title: Optional[str] = None
-    execution_mode:                  str           = "sequential"
-    sla_hours:                       Optional[int] = None
-    is_dynamic_routing:              bool          = False
+    execution_mode: str = "sequential"
+    sla_hours: Optional[int] = None
+    is_dynamic_routing: bool = False
     # ANY-mode and status-label fields
-    holder_count:                    int           = 1
-    all_holders:                     list[dict]    = []
-    status_label:                    Optional[str] = None
+    holder_count: int = 1
+    all_holders: list[dict] = []
+    status_label: Optional[str] = None
 
 
 class AdjustmentApprovalInfoResponse(BaseModel):
@@ -559,18 +583,19 @@ class AdjustmentApprovalInfoResponse(BaseModel):
     Adjustments without an override fall back to the normal
     adjustment:approve RBAC grant.
     """
-    adjustment_id:             uuid.UUID
-    status:                    str
-    product_override_applied: bool           = False
+
+    adjustment_id: uuid.UUID
+    status: str
+    product_override_applied: bool = False
     required_approver_user_id: Optional[uuid.UUID] = None
-    required_approver_name:    Optional[str]      = None
-    approver_escalated:        bool               = False
-    can_approve:               bool
-    step_label:                Optional[str]      = None
-    lot_id:                    Optional[uuid.UUID] = None
-    lot_number:                Optional[str]      = None
-    expiry_date:               Optional[date]     = None
-    auto_lot:                  bool               = False
+    required_approver_name: Optional[str] = None
+    approver_escalated: bool = False
+    can_approve: bool
+    step_label: Optional[str] = None
+    lot_id: Optional[uuid.UUID] = None
+    lot_number: Optional[str] = None
+    expiry_date: Optional[date] = None
+    auto_lot: bool = False
 
 
 class AuditLogItem(BaseModel):

@@ -13,6 +13,7 @@ db.execute routes platform_tier_config / package_prices reads to fixture rows
 and records every (sql, params) pair so assertions can inspect exactly what
 was written.
 """
+
 from __future__ import annotations
 
 import os
@@ -21,11 +22,11 @@ from datetime import date
 from decimal import Decimal
 from unittest.mock import AsyncMock, MagicMock, patch
 
-os.environ.setdefault("DATABASE_URL",      "postgresql+asyncpg://test:x@localhost/test")
+os.environ.setdefault("DATABASE_URL", "postgresql+asyncpg://test:x@localhost/test")
 os.environ.setdefault("DATABASE_READ_URL", "postgresql+asyncpg://test:x@localhost/test")
-os.environ.setdefault("JWT_SECRET",        "test-secret")
-os.environ.setdefault("JWT_SECRET_KEY",    "test-secret")
-os.environ.setdefault("ENVIRONMENT",       "local")
+os.environ.setdefault("JWT_SECRET", "test-secret")
+os.environ.setdefault("JWT_SECRET_KEY", "test-secret")
+os.environ.setdefault("ENVIRONMENT", "local")
 
 _TENANT_ROOT = os.path.normpath(os.path.join(os.path.dirname(__file__), "..", ".."))
 if _TENANT_ROOT not in sys.path:
@@ -39,6 +40,7 @@ pytestmark = pytest.mark.asyncio
 
 def _user(role: str, tenant_id: str | None = None):
     from dependencies import UserContext
+
     return UserContext(user_id="u-1", role=role, tenant_id=tenant_id, warehouse_id=None)
 
 
@@ -67,6 +69,7 @@ def _price_row(tier: str = "GROWTH") -> MagicMock:
 def _make_tracking_db(calls: list):
     """A fake AsyncSession whose execute() logs every (sql, params) pair and
     answers platform_tier_config / package_prices reads with fixture rows."""
+
     async def _execute(sql, params=None, **kw):
         calls.append((str(sql), dict(params) if params else {}))
         res = MagicMock()
@@ -75,8 +78,8 @@ def _make_tracking_db(calls: list):
         elif "package_prices" in str(sql):
             res.fetchone = MagicMock(return_value=_price_row())
         else:
-            res.fetchone = MagicMock(return_value=None)   # no slug collision, no tenant row
-            res.scalar   = MagicMock(return_value=None)
+            res.fetchone = MagicMock(return_value=None)  # no slug collision, no tenant row
+            res.scalar = MagicMock(return_value=None)
         return res
 
     db = AsyncMock()
@@ -87,14 +90,18 @@ def _make_tracking_db(calls: list):
 
 def _grant():
     from shared.permissions.store import RolePermissionGrant as PermissionGrant
+
     return PermissionGrant(role="SA", action_id="tenant:create", grant_type="FULL")
 
 
 async def _create(body, calls):
     from routers.tenants import create_tenant
+
     caller = _user("SA")
     db = _make_tracking_db(calls)
-    with patch("shared.permissions.middleware.get_role_permission", new=AsyncMock(return_value=_grant())):
+    with patch(
+        "shared.permissions.middleware.get_role_permission", new=AsyncMock(return_value=_grant())
+    ):
         with patch("shared.permissions.audit.audit_log", new=AsyncMock()):
             resp = await create_tenant(body=body, user=caller, db=db)
     return resp, calls
@@ -112,15 +119,16 @@ def _contract_update_call(calls):
 
 @pytest.mark.unit
 class TestContractIndependentOfBillingPeriod:
-
     async def test_two_year_contract_with_annual_billing(self):
         """2-year contract + ANNUAL billing -> subscription period is 1 year,
         contract spans the full 2 years the caller asked for."""
         from schemas.tenant import TenantCreateRequest
 
         body = TenantCreateRequest(
-            name="Two Year Co", organisation_type="PRODUCER",
-            contract_start="2026-11-01", contract_end="2028-10-31",
+            name="Two Year Co",
+            organisation_type="PRODUCER",
+            contract_start="2026-11-01",
+            contract_end="2028-10-31",
             billing_period="ANNUAL",
         )
         calls: list = []
@@ -131,7 +139,9 @@ class TestContractIndependentOfBillingPeriod:
 
         contract_params = _contract_update_call(calls)
         assert contract_params == {
-            "cs": date(2026, 11, 1), "ce": date(2028, 10, 31), "id": str(resp.data.id),
+            "cs": date(2026, 11, 1),
+            "ce": date(2028, 10, 31),
+            "id": str(resp.data.id),
         }
 
     async def test_contract_end_defaults_to_subscription_period_end(self):
@@ -140,8 +150,10 @@ class TestContractIndependentOfBillingPeriod:
         from schemas.tenant import TenantCreateRequest
 
         body = TenantCreateRequest(
-            name="Start Only Co", organisation_type="PRODUCER",
-            contract_start="2026-11-01", billing_period="MONTHLY",
+            name="Start Only Co",
+            organisation_type="PRODUCER",
+            contract_start="2026-11-01",
+            billing_period="MONTHLY",
         )
         calls: list = []
         resp, calls = await _create(body, calls)
@@ -160,13 +172,18 @@ class TestContractIndependentOfBillingPeriod:
         from schemas.tenant import TenantCreateRequest
 
         body = TenantCreateRequest(
-            name="Bad Dates Co", organisation_type="PRODUCER",
-            contract_start="2026-11-01", contract_end="2026-11-01",
+            name="Bad Dates Co",
+            organisation_type="PRODUCER",
+            contract_start="2026-11-01",
+            contract_end="2026-11-01",
         )
         caller = _user("SA")
         db = AsyncMock()
 
-        with patch("shared.permissions.middleware.get_role_permission", new=AsyncMock(return_value=_grant())):
+        with patch(
+            "shared.permissions.middleware.get_role_permission",
+            new=AsyncMock(return_value=_grant()),
+        ):
             with patch("shared.permissions.audit.audit_log", new=AsyncMock()):
                 with pytest.raises(HTTPException) as exc_info:
                     await create_tenant(body=body, user=caller, db=db)
@@ -183,13 +200,17 @@ class TestContractIndependentOfBillingPeriod:
         from schemas.tenant import TenantCreateRequest
 
         body = TenantCreateRequest(
-            name="Past End Co", organisation_type="PRODUCER",
+            name="Past End Co",
+            organisation_type="PRODUCER",
             contract_end="2020-01-01",
         )
         caller = _user("SA")
         db = AsyncMock()
 
-        with patch("shared.permissions.middleware.get_role_permission", new=AsyncMock(return_value=_grant())):
+        with patch(
+            "shared.permissions.middleware.get_role_permission",
+            new=AsyncMock(return_value=_grant()),
+        ):
             with patch("shared.permissions.audit.audit_log", new=AsyncMock()):
                 with pytest.raises(HTTPException) as exc_info:
                     await create_tenant(body=body, user=caller, db=db)
@@ -206,7 +227,8 @@ class TestContractIndependentOfBillingPeriod:
 
         future_end = (date.today() + timedelta(days=365)).isoformat()
         body = TenantCreateRequest(
-            name="Future End Co", organisation_type="PRODUCER",
+            name="Future End Co",
+            organisation_type="PRODUCER",
             contract_end=future_end,
         )
         calls: list = []
@@ -221,11 +243,16 @@ class TestContractIndependentOfBillingPeriod:
         from routers.tenants import create_tenant
         from schemas.tenant import TenantCreateRequest
 
-        body = TenantCreateRequest(name="Bad Period Co", organisation_type="PRODUCER", billing_period="WEEKLY")
+        body = TenantCreateRequest(
+            name="Bad Period Co", organisation_type="PRODUCER", billing_period="WEEKLY"
+        )
         caller = _user("SA")
         db = AsyncMock()
 
-        with patch("shared.permissions.middleware.get_role_permission", new=AsyncMock(return_value=_grant())):
+        with patch(
+            "shared.permissions.middleware.get_role_permission",
+            new=AsyncMock(return_value=_grant()),
+        ):
             with patch("shared.permissions.audit.audit_log", new=AsyncMock()):
                 with pytest.raises(HTTPException) as exc_info:
                     await create_tenant(body=body, user=caller, db=db)
@@ -250,7 +277,6 @@ class TestContractIndependentOfBillingPeriod:
 
 @pytest.mark.unit
 class TestPatchContractLeavesSubscriptionUnchanged:
-
     async def test_patch_contract_touches_only_tenants_table(self):
         """PATCH /{tenant_id}/contract must never write to subscriptions —
         contract and billing period are independent (CLAUDE.md §15 decision B)."""
@@ -275,8 +301,13 @@ class TestPatchContractLeavesSubscriptionUnchanged:
         db.execute = AsyncMock(side_effect=_execute)
         caller = _user("SA")
 
-        body = ContractUpdateRequest(contract_start="2026-01-01", contract_end="2028-01-01", note="extend")
-        with patch("shared.permissions.middleware.get_role_permission", new=AsyncMock(return_value=_grant())):
+        body = ContractUpdateRequest(
+            contract_start="2026-01-01", contract_end="2028-01-01", note="extend"
+        )
+        with patch(
+            "shared.permissions.middleware.get_role_permission",
+            new=AsyncMock(return_value=_grant()),
+        ):
             with patch("shared.permissions.audit.audit_log", new=AsyncMock()):
                 with patch("routers.tenants._log_tenant_activity", new=AsyncMock()):
                     await update_tenant_contract(tenant_id="t-1", body=body, user=caller, db=db)

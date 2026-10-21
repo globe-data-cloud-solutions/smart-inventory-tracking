@@ -4,6 +4,7 @@ No real DB or AWS — asyncpg.connect and boto3.client are both mocked. The
 fake secrets client below matches just the one boto3 method this script
 calls (get_secret_value), standing in for moto (not a project dependency).
 """
+
 from __future__ import annotations
 
 import logging
@@ -33,10 +34,12 @@ class _FakeSecretsClient:
 
 
 def _patch_secrets(email: str = FAKE_EMAIL, password: str = FAKE_PASSWORD):
-    fake_client = _FakeSecretsClient({
-        "fake/email/secret": email,
-        "fake/password/secret": password,
-    })
+    fake_client = _FakeSecretsClient(
+        {
+            "fake/email/secret": email,
+            "fake/password/secret": password,
+        }
+    )
     return patch("boto3.client", return_value=fake_client)
 
 
@@ -54,6 +57,7 @@ def _mock_conn(existing_emails: set[str], inserted: list[dict]):
     async def execute(sql, *args, **kwargs):
         if "INSERT INTO" in sql and '"users"' in sql:
             import json
+
             inserted.append(json.loads(args[0]))
         return None
 
@@ -68,7 +72,6 @@ def _mock_conn(existing_emails: set[str], inserted: list[dict]):
 
 
 class TestGetSecretValue:
-
     def test_fetches_secret_string_by_name(self) -> None:
         with _patch_secrets():
             value = bootstrap_sa_account._get_secret_value("fake/email/secret")
@@ -76,14 +79,19 @@ class TestGetSecretValue:
 
 
 class TestResolveArg:
-
     def test_cli_value_wins_over_env(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setenv("SA_EMAIL_SECRET_NAME", "from-env")
-        assert bootstrap_sa_account._resolve_arg("from-cli", "SA_EMAIL_SECRET_NAME", "--x") == "from-cli"
+        assert (
+            bootstrap_sa_account._resolve_arg("from-cli", "SA_EMAIL_SECRET_NAME", "--x")
+            == "from-cli"
+        )
 
     def test_env_used_when_no_cli_value(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setenv("SA_EMAIL_SECRET_NAME", "from-env")
-        assert bootstrap_sa_account._resolve_arg(None, "SA_EMAIL_SECRET_NAME", "--x") == "from-env"
+        assert (
+            bootstrap_sa_account._resolve_arg(None, "SA_EMAIL_SECRET_NAME", "--x")
+            == "from-env"
+        )
 
     def test_missing_both_exits(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.delenv("SA_EMAIL_SECRET_NAME", raising=False)
@@ -92,13 +100,17 @@ class TestResolveArg:
 
 
 class TestBootstrap:
-
     async def test_creates_sa_when_absent(self) -> None:
         inserted: list[dict] = []
         conn = _mock_conn(existing_emails=set(), inserted=inserted)
 
-        with patch("migrations.bootstrap_sa_account.asyncpg.connect", AsyncMock(return_value=conn)):
-            created = await bootstrap_sa_account.bootstrap(FAKE_EMAIL, FAKE_PASSWORD, "postgresql://fake")
+        with patch(
+            "migrations.bootstrap_sa_account.asyncpg.connect",
+            AsyncMock(return_value=conn),
+        ):
+            created = await bootstrap_sa_account.bootstrap(
+                FAKE_EMAIL, FAKE_PASSWORD, "postgresql://fake"
+            )
 
         assert created is True
         assert len(inserted) == 1
@@ -109,8 +121,13 @@ class TestBootstrap:
         inserted: list[dict] = []
         conn = _mock_conn(existing_emails={FAKE_EMAIL}, inserted=inserted)
 
-        with patch("migrations.bootstrap_sa_account.asyncpg.connect", AsyncMock(return_value=conn)):
-            created = await bootstrap_sa_account.bootstrap(FAKE_EMAIL, FAKE_PASSWORD, "postgresql://fake")
+        with patch(
+            "migrations.bootstrap_sa_account.asyncpg.connect",
+            AsyncMock(return_value=conn),
+        ):
+            created = await bootstrap_sa_account.bootstrap(
+                FAKE_EMAIL, FAKE_PASSWORD, "postgresql://fake"
+            )
 
         assert created is False
         assert inserted == []
@@ -121,63 +138,94 @@ class TestBootstrap:
         inserted: list[dict] = []
         conn = _mock_conn(existing_emails=set(), inserted=inserted)
 
-        with patch("migrations.bootstrap_sa_account.asyncpg.connect", AsyncMock(return_value=conn)):
-            await bootstrap_sa_account.bootstrap(FAKE_EMAIL, FAKE_PASSWORD, "postgresql://fake")
+        with patch(
+            "migrations.bootstrap_sa_account.asyncpg.connect",
+            AsyncMock(return_value=conn),
+        ):
+            await bootstrap_sa_account.bootstrap(
+                FAKE_EMAIL, FAKE_PASSWORD, "postgresql://fake"
+            )
 
         assert inserted[0]["email"] != SA_EMAIL
         assert inserted[0]["email"] == FAKE_EMAIL
 
 
 class TestDatabaseUrl:
-
-    async def test_main_prefers_migration_database_url(self, monkeypatch: pytest.MonkeyPatch) -> None:
+    async def test_main_prefers_migration_database_url(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         monkeypatch.setenv("MIGRATION_DATABASE_URL", "postgresql://owner")
         monkeypatch.setenv("DATABASE_URL", "postgresql://runtime")
         monkeypatch.setattr(
-            bootstrap_sa_account, "parse_args",
-            lambda argv: type("Args", (), {
-                "email_secret_name": "fake/email/secret",
-                "password_secret_name": "fake/password/secret",
-            })(),
+            bootstrap_sa_account,
+            "parse_args",
+            lambda argv: type(
+                "Args",
+                (),
+                {
+                    "email_secret_name": "fake/email/secret",
+                    "password_secret_name": "fake/password/secret",
+                },
+            )(),
         )
         bootstrap_mock = AsyncMock(return_value=True)
-        with _patch_secrets(), patch.object(bootstrap_sa_account, "bootstrap", bootstrap_mock):
+        with (
+            _patch_secrets(),
+            patch.object(bootstrap_sa_account, "bootstrap", bootstrap_mock),
+        ):
             await bootstrap_sa_account.main()
         assert bootstrap_mock.await_args.args[2] == "postgresql://owner"
 
-    async def test_main_exits_without_any_url(self, monkeypatch: pytest.MonkeyPatch) -> None:
+    async def test_main_exits_without_any_url(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         monkeypatch.delenv("MIGRATION_DATABASE_URL", raising=False)
         monkeypatch.delenv("DATABASE_URL", raising=False)
         monkeypatch.setenv("SA_EMAIL_SECRET_NAME", "fake/email/secret")
         monkeypatch.setenv("SA_PASSWORD_SECRET_NAME", "fake/password/secret")
-        monkeypatch.setattr(bootstrap_sa_account.sys, "argv", ["bootstrap_sa_account.py"])
+        monkeypatch.setattr(
+            bootstrap_sa_account.sys, "argv", ["bootstrap_sa_account.py"]
+        )
         with pytest.raises(SystemExit):
             await bootstrap_sa_account.main()
 
 
 class TestNoSecretLeakageInLogs:
-
-    async def test_main_never_prints_email_or_password(self, monkeypatch: pytest.MonkeyPatch, capsys) -> None:
+    async def test_main_never_prints_email_or_password(
+        self, monkeypatch: pytest.MonkeyPatch, capsys
+    ) -> None:
         monkeypatch.setenv("MIGRATION_DATABASE_URL", "postgresql://fake")
         monkeypatch.setattr(
-            bootstrap_sa_account, "parse_args",
-            lambda argv: type("Args", (), {
-                "email_secret_name": "fake/email/secret",
-                "password_secret_name": "fake/password/secret",
-            })(),
+            bootstrap_sa_account,
+            "parse_args",
+            lambda argv: type(
+                "Args",
+                (),
+                {
+                    "email_secret_name": "fake/email/secret",
+                    "password_secret_name": "fake/password/secret",
+                },
+            )(),
         )
 
         conn = _mock_conn(existing_emails=set(), inserted=[])
 
-        with _patch_secrets(), \
-             patch("migrations.bootstrap_sa_account.asyncpg.connect", AsyncMock(return_value=conn)):
+        with (
+            _patch_secrets(),
+            patch(
+                "migrations.bootstrap_sa_account.asyncpg.connect",
+                AsyncMock(return_value=conn),
+            ),
+        ):
             await bootstrap_sa_account.main()
 
         out = capsys.readouterr().out
         assert FAKE_EMAIL not in out
         assert FAKE_PASSWORD not in out
 
-    def test_caplog_never_contains_secret_values(self, caplog: pytest.LogCaptureFixture) -> None:
+    def test_caplog_never_contains_secret_values(
+        self, caplog: pytest.LogCaptureFixture
+    ) -> None:
         with caplog.at_level(logging.DEBUG):
             with _patch_secrets():
                 bootstrap_sa_account._get_secret_value("fake/password/secret")

@@ -9,8 +9,18 @@ from sqlalchemy.orm import Mapped, mapped_column
 from shared.db.models.base import Base
 
 RoleEnum = Enum(
-    "SA", "TA", "NM", "RM", "WM", "LM", "SA_GT", "RT", "AU", "SYS",
-    name="role_code", create_type=False,
+    "SA",
+    "TA",
+    "NM",
+    "RM",
+    "WM",
+    "LM",
+    "SA_GT",
+    "RT",
+    "AU",
+    "SYS",
+    name="role_code",
+    create_type=False,
 )
 
 

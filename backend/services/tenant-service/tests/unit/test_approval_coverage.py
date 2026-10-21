@@ -1,16 +1,18 @@
 """Unit tests for get_approval_coverage and clone_level_permissions endpoints."""
+
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from fastapi import HTTPException
 
 TENANT_ID = "aabbccdd-0000-0000-0000-000000000010"
-NODE_ID   = "bbccddee-0000-0000-0000-000000000011"
+NODE_ID = "bbccddee-0000-0000-0000-000000000011"
 
 
 # ---------------------------------------------------------------------------
 # Mock helpers
 # ---------------------------------------------------------------------------
+
 
 def _scalar(value: int) -> MagicMock:
     r = MagicMock()
@@ -45,7 +47,7 @@ def _tt_row(id_: str) -> MagicMock:
 def _src_perm_row(can_initiate: bool, can_receive: bool) -> MagicMock:
     row = MagicMock()
     row.can_initiate = can_initiate
-    row.can_receive  = can_receive
+    row.can_receive = can_receive
     return row
 
 
@@ -59,6 +61,7 @@ def _source_level_row(level_number: int) -> MagicMock:
 # Inline reproductions of the endpoint logic for pure unit testing
 # (no HTTP server, no real DB — mirrors hierarchy.py exactly)
 # ---------------------------------------------------------------------------
+
 
 async def _run_coverage(db: AsyncMock, tenant_id: str, level: int) -> dict:
     """Mirrors get_approval_coverage business logic."""
@@ -76,11 +79,11 @@ async def _run_coverage(db: AsyncMock, tenant_id: str, level: int) -> dict:
     level_perms = (await db.execute(None, {"tid": tid, "lv": level})).scalar() or 0
 
     return {
-        "transfer_rules_exist":     transfer_total > 0,
-        "transfer_level_covered":   transfer_level_covered,
-        "adj_rules_exist":          adj_total > 0,
-        "adj_level_covered":        adj_level > 0,
-        "self_approval_covered":    self_appr > 0,
+        "transfer_rules_exist": transfer_total > 0,
+        "transfer_level_covered": transfer_level_covered,
+        "adj_rules_exist": adj_total > 0,
+        "adj_level_covered": adj_level > 0,
+        "self_approval_covered": self_appr > 0,
         "transfer_level_perms_exist": level_perms > 0,
     }
 
@@ -99,8 +102,12 @@ async def _run_clone(db: AsyncMock, tenant_id: str, node_id: str) -> dict:
     source_row = source_result.fetchone()
 
     if not source_row:
-        return {"cloned": False, "from_level": None,
-                "to_level": target_level, "transfer_types_updated": 0}
+        return {
+            "cloned": False,
+            "from_level": None,
+            "to_level": target_level,
+            "transfer_types_updated": 0,
+        }
 
     from_level = source_row.level_number
 
@@ -120,21 +127,24 @@ async def _run_clone(db: AsyncMock, tenant_id: str, node_id: str) -> dict:
         src = src_result.fetchone()
 
         if src:
-            await db.execute(None, {"ttc": ttc_id, "lv": target_level,
-                                    "ci": src.can_initiate, "cr": src.can_receive})
+            await db.execute(
+                None,
+                {"ttc": ttc_id, "lv": target_level, "ci": src.can_initiate, "cr": src.can_receive},
+            )
             cloned_count += 1
 
     return {
-        "cloned":                  cloned_count > 0,
-        "from_level":              from_level,
-        "to_level":                target_level,
-        "transfer_types_updated":  cloned_count,
+        "cloned": cloned_count > 0,
+        "from_level": from_level,
+        "to_level": target_level,
+        "transfer_types_updated": cloned_count,
     }
 
 
 # ---------------------------------------------------------------------------
 # Coverage tests
 # ---------------------------------------------------------------------------
+
 
 @pytest.mark.asyncio
 async def test_coverage_no_rules():
@@ -144,11 +154,11 @@ async def test_coverage_no_rules():
 
     result = await _run_coverage(db, TENANT_ID, level=4)
 
-    assert result["transfer_rules_exist"]      is False
-    assert result["transfer_level_covered"]    is False
-    assert result["adj_rules_exist"]           is False
-    assert result["adj_level_covered"]         is False
-    assert result["self_approval_covered"]     is False
+    assert result["transfer_rules_exist"] is False
+    assert result["transfer_level_covered"] is False
+    assert result["adj_rules_exist"] is False
+    assert result["adj_level_covered"] is False
+    assert result["self_approval_covered"] is False
     assert result["transfer_level_perms_exist"] is False
 
 
@@ -169,9 +179,9 @@ async def test_coverage_global_null_rule():
 
     result = await _run_coverage(db, TENANT_ID, level=5)
 
-    assert result["transfer_rules_exist"]   is True
+    assert result["transfer_rules_exist"] is True
     assert result["transfer_level_covered"] is True
-    assert result["adj_rules_exist"]        is False
+    assert result["adj_rules_exist"] is False
 
 
 @pytest.mark.asyncio
@@ -191,7 +201,7 @@ async def test_coverage_explicit_level():
 
     result = await _run_coverage(db, TENANT_ID, level=4)
 
-    assert result["adj_rules_exist"]  is True
+    assert result["adj_rules_exist"] is True
     assert result["adj_level_covered"] is True
 
 
@@ -212,7 +222,7 @@ async def test_coverage_new_level_uncovered():
 
     result = await _run_coverage(db, TENANT_ID, level=4)
 
-    assert result["transfer_rules_exist"]   is True
+    assert result["transfer_rules_exist"] is True
     assert result["transfer_level_covered"] is False
 
 
@@ -220,21 +230,22 @@ async def test_coverage_new_level_uncovered():
 # Clone tests
 # ---------------------------------------------------------------------------
 
+
 @pytest.mark.asyncio
 async def test_clone_no_source():
     """No existing level_permissions rows → returns cloned=False, transfer_types_updated=0."""
     db = AsyncMock()
     # node lookup → level 4; source lookup → None
     db.execute.side_effect = [
-        _fetchone(_node_row(4)),   # node hierarchy_level
-        _fetchone(None),           # source_row (no permissions below level 4)
+        _fetchone(_node_row(4)),  # node hierarchy_level
+        _fetchone(None),  # source_row (no permissions below level 4)
     ]
 
     result = await _run_clone(db, TENANT_ID, NODE_ID)
 
-    assert result["cloned"]                 is False
-    assert result["from_level"]             is None
-    assert result["to_level"]               == 4
+    assert result["cloned"] is False
+    assert result["from_level"] is None
+    assert result["to_level"] == 4
     assert result["transfer_types_updated"] == 0
 
 
@@ -246,22 +257,22 @@ async def test_clone_success():
 
     db = AsyncMock()
     db.execute.side_effect = [
-        _fetchone(_node_row(4)),                                   # node level = 4
-        _fetchone(_source_level_row(3)),                           # source level = 3
-        _fetchall([_tt_row(tt1_id), _tt_row(tt2_id)]),            # transfer types
+        _fetchone(_node_row(4)),  # node level = 4
+        _fetchone(_source_level_row(3)),  # source level = 3
+        _fetchall([_tt_row(tt1_id), _tt_row(tt2_id)]),  # transfer types
         # TT1: no existing row at level 4, src perms found, INSERT fires
-        _fetchone(None),                                           # exists check tt1
+        _fetchone(None),  # exists check tt1
         _fetchone(_src_perm_row(can_initiate=True, can_receive=True)),  # src perms tt1
-        MagicMock(),                                               # INSERT tt1
+        MagicMock(),  # INSERT tt1
         # TT2: no existing row at level 4, src perms found, INSERT fires
-        _fetchone(None),                                           # exists check tt2
-        _fetchone(_src_perm_row(can_initiate=False, can_receive=True)), # src perms tt2
-        MagicMock(),                                               # INSERT tt2
+        _fetchone(None),  # exists check tt2
+        _fetchone(_src_perm_row(can_initiate=False, can_receive=True)),  # src perms tt2
+        MagicMock(),  # INSERT tt2
     ]
 
     result = await _run_clone(db, TENANT_ID, NODE_ID)
 
-    assert result["cloned"]                 is True
-    assert result["from_level"]             == 3
-    assert result["to_level"]               == 4
+    assert result["cloned"] is True
+    assert result["from_level"] == 3
+    assert result["to_level"] == 4
     assert result["transfer_types_updated"] == 2

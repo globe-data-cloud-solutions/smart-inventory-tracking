@@ -5,6 +5,7 @@ Revises: 020
 Create Date: 2026-05-27
 
 """
+
 from alembic import op
 import sqlalchemy as sa
 
@@ -17,7 +18,9 @@ depends_on = None
 def upgrade() -> None:
     op.add_column(
         "users",
-        sa.Column("must_reset_password", sa.Boolean(), nullable=False, server_default="false"),
+        sa.Column(
+            "must_reset_password", sa.Boolean(), nullable=False, server_default="false"
+        ),
     )
 
 

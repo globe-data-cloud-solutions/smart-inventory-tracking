@@ -1,5 +1,6 @@
 """Unit tests for shared.cache.token_revocation. Redis access is mocked; no
 real connection required."""
+
 from __future__ import annotations
 
 import time
@@ -20,7 +21,9 @@ async def test_user_revoked_token_issued_before_revoke() -> None:
     client.mget = AsyncMock(return_value=[str(int(time.time())), None])
 
     with patch("shared.cache.token_revocation.get_redis_client", return_value=client):
-        revoked = await is_token_revoked({"sub": "user-1", "tenant_id": None, "iat": int(time.time()) - 60})
+        revoked = await is_token_revoked(
+            {"sub": "user-1", "tenant_id": None, "iat": int(time.time()) - 60}
+        )
 
     assert revoked is True
 
@@ -69,7 +72,9 @@ async def test_is_token_revoked_fails_open_on_redis_error() -> None:
         "shared.cache.token_revocation.get_redis_client",
         side_effect=ConnectionError("down"),
     ):
-        revoked = await is_token_revoked({"sub": "user-1", "tenant_id": None, "iat": int(time.time())})
+        revoked = await is_token_revoked(
+            {"sub": "user-1", "tenant_id": None, "iat": int(time.time())}
+        )
 
     assert revoked is False
 

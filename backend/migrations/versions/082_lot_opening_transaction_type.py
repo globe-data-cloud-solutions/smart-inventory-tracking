@@ -14,14 +14,15 @@ Revision ID: 082
 Revises:     081
 Create Date: 2026-10-12
 """
+
 from __future__ import annotations
 
 from alembic import op
 
-revision      = "082"
+revision = "082"
 down_revision = "081"
 branch_labels = None
-depends_on    = None
+depends_on = None
 
 
 def upgrade() -> None:

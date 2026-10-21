@@ -8,8 +8,18 @@ from sqlalchemy.orm import Mapped, mapped_column
 from shared.db.models.base import Base, SoftDeleteMixin, TimestampMixin
 
 RoleEnum = Enum(
-    "SA", "TA", "NM", "RM", "WM", "LM", "SA_GT", "RT", "AU", "SYS",
-    name="role_code", create_type=False,
+    "SA",
+    "TA",
+    "NM",
+    "RM",
+    "WM",
+    "LM",
+    "SA_GT",
+    "RT",
+    "AU",
+    "SYS",
+    name="role_code",
+    create_type=False,
 )
 LocaleEnum = Enum("en", "am", "or", name="supported_locale", create_type=False)
 
@@ -17,9 +27,7 @@ LocaleEnum = Enum("en", "am", "or", name="supported_locale", create_type=False)
 class User(Base, TimestampMixin, SoftDeleteMixin):
     __tablename__ = "users"
 
-    id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
-    )
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     tenant_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("tenants.id"), nullable=False, index=True
     )
@@ -31,6 +39,4 @@ class User(Base, TimestampMixin, SoftDeleteMixin):
     warehouse_id: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True), nullable=True)
     locale: Mapped[str] = mapped_column(LocaleEnum, nullable=False, server_default="en")
     created_by: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True), nullable=True)
-    is_account_owner: Mapped[bool] = mapped_column(
-        Boolean, nullable=False, server_default="false"
-    )
+    is_account_owner: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="false")

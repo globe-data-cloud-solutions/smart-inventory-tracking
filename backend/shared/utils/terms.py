@@ -4,6 +4,7 @@ Read at call time (never cached at import time) so a runtime override of
 TERMS_VERSION on the service start command takes effect for every request,
 including signup validation and login's re-acceptance check.
 """
+
 import os
 
 

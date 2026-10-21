@@ -1,6 +1,7 @@
 """Unit tests for shared.email.sender — delivery-mode selection and the
 three send paths (log/ses/disabled). No network; the SES client is replaced
 via the module-level factory function."""
+
 from __future__ import annotations
 
 from unittest.mock import MagicMock, patch
@@ -32,15 +33,22 @@ def test_log_mode_emits_exact_dev_email_line(monkeypatch, caplog) -> None:
     monkeypatch.setenv("ENVIRONMENT", "local")
     monkeypatch.delenv("EMAIL_DELIVERY_MODE", raising=False)
     send_email(
-        "user@example.com", "subject", "text body contains https://x/y?token=raw-token", "html body",
+        "user@example.com",
+        "subject",
+        "text body contains https://x/y?token=raw-token",
+        "html body",
         log_line="[DEV EMAIL] verify user@example.com: http://localhost:3000/verify-email?token=raw-token",
     )
-    assert caplog.text.count(
-        "[DEV EMAIL] verify user@example.com: http://localhost:3000/verify-email?token=raw-token"
-    ) == 1
+    assert (
+        caplog.text.count(
+            "[DEV EMAIL] verify user@example.com: http://localhost:3000/verify-email?token=raw-token"
+        )
+        == 1
+    )
     # The token never appears anywhere except inside the one expected line.
     assert "raw-token" not in caplog.text.replace(
-        "[DEV EMAIL] verify user@example.com: http://localhost:3000/verify-email?token=raw-token", ""
+        "[DEV EMAIL] verify user@example.com: http://localhost:3000/verify-email?token=raw-token",
+        "",
     )
 
 
@@ -51,7 +59,8 @@ def test_ses_mode_calls_send_email_with_expected_args(monkeypatch) -> None:
 
     with patch("shared.email.sender._ses_client", return_value=fake_client):
         send_email(
-            "user@example.com", "Reset your password",
+            "user@example.com",
+            "Reset your password",
             "text body with https://app/reset-password?token=raw-token",
             "<p>html body with https://app/reset-password?token=raw-token</p>",
             log_line="[DEV EMAIL] reset user@example.com: should-not-be-used",
@@ -72,7 +81,10 @@ def test_ses_mode_without_email_from_does_not_send(monkeypatch, caplog) -> None:
 
     with patch("shared.email.sender._ses_client", return_value=fake_client):
         send_email(
-            "user@example.com", "subject", "text", "html",
+            "user@example.com",
+            "subject",
+            "text",
+            "html",
             log_line="[DEV EMAIL] should-not-be-used",
         )
 

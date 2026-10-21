@@ -13,6 +13,7 @@ inventory-service tests that run later see their own versions of those names.
 The imported objects themselves keep working because Python function closures
 read globals from the MODULE DICT (auth_module.__dict__), not from sys.modules.
 """
+
 from __future__ import annotations
 
 import os
@@ -49,7 +50,7 @@ from fastapi.testclient import TestClient  # noqa: E402 - sys.path/env setup abo
 from jose import jwt  # noqa: E402 - sys.path/env setup above must run first
 
 _SECRET = "test-secret-for-unit-tests"
-_ALG    = "HS256"
+_ALG = "HS256"
 
 client = TestClient(app)
 
@@ -97,6 +98,7 @@ def _no_real_redis(monkeypatch: pytest.MonkeyPatch) -> _FakeRedis:
     fake = _FakeRedis()
     import shared.cache.login_lockout as _lockout_mod
     import shared.cache.rate_limit as _rate_limit_mod
+
     monkeypatch.setattr(_lockout_mod, "get_redis_client", lambda: fake)
     monkeypatch.setattr(_rate_limit_mod, "get_redis_client", lambda: fake)
     return fake
@@ -113,18 +115,18 @@ class TestLocalDevAuth:
 
         async def _mock_sa(email: str, password: object = None) -> dict:
             return {
-                "sub":                 "sa-001",
-                "email":               email.lower(),
-                "name":                "System Administrator",
-                "tenant_id":           None,
-                "tenant_slug":         None,
-                "role":                "SA",
-                "warehouse_id":        None,
-                "warehouse_name":      None,
-                "position_id":         None,
-                "position_title":      None,
-                "level_number":        None,
-                "positions":           [],
+                "sub": "sa-001",
+                "email": email.lower(),
+                "name": "System Administrator",
+                "tenant_id": None,
+                "tenant_slug": None,
+                "role": "SA",
+                "warehouse_id": None,
+                "warehouse_name": None,
+                "position_id": None,
+                "position_title": None,
+                "level_number": None,
+                "positions": [],
                 "must_reset_password": False,
             }
 
@@ -141,8 +143,8 @@ class TestLocalDevAuth:
         assert data["expires_in"] > 0
 
         payload = jwt.decode(data["access_token"], _SECRET, algorithms=[_ALG])
-        assert payload["role"]         == "SA"
-        assert payload["tenant_id"]    is None
+        assert payload["role"] == "SA"
+        assert payload["tenant_id"] is None
         assert payload["warehouse_id"] is None
         assert "exp" in payload
         assert "iat" in payload
@@ -152,18 +154,18 @@ class TestLocalDevAuth:
 
         async def _mock_sa(email: str, password: object = None) -> dict:
             return {
-                "sub":                 "sa-001",
-                "email":               email.lower(),
-                "name":                "System Administrator",
-                "tenant_id":           None,
-                "tenant_slug":         None,
-                "role":                "SA",
-                "warehouse_id":        None,
-                "warehouse_name":      None,
-                "position_id":         None,
-                "position_title":      None,
-                "level_number":        None,
-                "positions":           [],
+                "sub": "sa-001",
+                "email": email.lower(),
+                "name": "System Administrator",
+                "tenant_id": None,
+                "tenant_slug": None,
+                "role": "SA",
+                "warehouse_id": None,
+                "warehouse_name": None,
+                "position_id": None,
+                "position_title": None,
+                "level_number": None,
+                "positions": [],
                 "must_reset_password": False,
             }
 
@@ -186,18 +188,18 @@ class TestLocalDevAuth:
 
         async def _mock_ta(email: str, password: object = None) -> dict:
             return {
-                "sub":                 "ta-001",
-                "email":               email.lower(),
-                "name":                "Tenant Admin",
-                "tenant_id":           "aaaaaaaa-0000-0000-0000-000000000001",
-                "tenant_slug":         "acme",
-                "role":                "TA",
-                "warehouse_id":        None,
-                "warehouse_name":      None,
-                "position_id":         None,
-                "position_title":      "Tenant Administrator",
-                "level_number":        1,
-                "positions":           [],
+                "sub": "ta-001",
+                "email": email.lower(),
+                "name": "Tenant Admin",
+                "tenant_id": "aaaaaaaa-0000-0000-0000-000000000001",
+                "tenant_slug": "acme",
+                "role": "TA",
+                "warehouse_id": None,
+                "warehouse_name": None,
+                "position_id": None,
+                "position_title": "Tenant Administrator",
+                "level_number": 1,
+                "positions": [],
                 "must_reset_password": False,
             }
 
@@ -209,10 +211,10 @@ class TestLocalDevAuth:
         )
         assert resp.status_code == 200
         payload = jwt.decode(resp.json()["access_token"], _SECRET, algorithms=[_ALG])
-        assert payload["role"]         == "TA"
-        assert payload["tenant_id"]    == "aaaaaaaa-0000-0000-0000-000000000001"
+        assert payload["role"] == "TA"
+        assert payload["tenant_id"] == "aaaaaaaa-0000-0000-0000-000000000001"
         assert payload["warehouse_id"] is None
-        assert payload["positions"]    == []
+        assert payload["positions"] == []
 
     def test_au_user_can_login_without_position(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """AU user (system_role='AU', no position) gets role=AU and is not blocked
@@ -223,35 +225,36 @@ class TestLocalDevAuth:
         from unittest.mock import AsyncMock, MagicMock
 
         fake_row = MagicMock()
-        fake_row.id                  = "au-001"
-        fake_row.email                = "au@acme.com"
-        fake_row.full_name            = "Almaz Tesfaye"
-        fake_row.tenant_id            = "aaaaaaaa-0000-0000-0000-000000000001"
-        fake_row.password_hash        = None
-        fake_row.must_reset_password  = False
-        fake_row.system_role          = "AU"
-        fake_row.is_active            = True
-        fake_row.tenant_slug          = "acme"
+        fake_row.id = "au-001"
+        fake_row.email = "au@acme.com"
+        fake_row.full_name = "Almaz Tesfaye"
+        fake_row.tenant_id = "aaaaaaaa-0000-0000-0000-000000000001"
+        fake_row.password_hash = None
+        fake_row.must_reset_password = False
+        fake_row.system_role = "AU"
+        fake_row.is_active = True
+        fake_row.tenant_slug = "acme"
 
         fake_result = MagicMock()
         fake_result.fetchone = MagicMock(return_value=fake_row)
 
         fake_db = AsyncMock()
-        fake_db.execute    = AsyncMock(return_value=fake_result)
+        fake_db.execute = AsyncMock(return_value=fake_result)
         fake_db.__aenter__ = AsyncMock(return_value=fake_db)
-        fake_db.__aexit__  = AsyncMock(return_value=None)
+        fake_db.__aexit__ = AsyncMock(return_value=None)
 
         import shared.db.session as _sess_mod
+
         monkeypatch.setattr(_sess_mod, "AsyncSessionLocal", lambda: fake_db)
 
         resp = client.post("/api/v1/auth/token", json={"dev_email": "au@acme.com"})
         assert resp.status_code == 200, resp.text
         payload = jwt.decode(resp.json()["access_token"], _SECRET, algorithms=[_ALG])
-        assert payload["role"]         == "AU"
-        assert payload["tenant_id"]    == "aaaaaaaa-0000-0000-0000-000000000001"
+        assert payload["role"] == "AU"
+        assert payload["tenant_id"] == "aaaaaaaa-0000-0000-0000-000000000001"
         assert payload["warehouse_id"] is None
-        assert payload["position_id"]  is None
-        assert payload["positions"]    == []
+        assert payload["position_id"] is None
+        assert payload["positions"] == []
 
     def test_lm_user_can_login_without_position(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """LM user (system_role='LM', no position) gets role=LM — same direct-role
@@ -259,34 +262,35 @@ class TestLocalDevAuth:
         from unittest.mock import AsyncMock, MagicMock
 
         fake_row = MagicMock()
-        fake_row.id                  = "lm-001"
-        fake_row.email                = "lm@acme.com"
-        fake_row.full_name            = "Dawit Alemu"
-        fake_row.tenant_id            = "aaaaaaaa-0000-0000-0000-000000000001"
-        fake_row.password_hash        = None
-        fake_row.must_reset_password  = False
-        fake_row.system_role          = "LM"
-        fake_row.is_active            = True
-        fake_row.tenant_slug          = "acme"
+        fake_row.id = "lm-001"
+        fake_row.email = "lm@acme.com"
+        fake_row.full_name = "Dawit Alemu"
+        fake_row.tenant_id = "aaaaaaaa-0000-0000-0000-000000000001"
+        fake_row.password_hash = None
+        fake_row.must_reset_password = False
+        fake_row.system_role = "LM"
+        fake_row.is_active = True
+        fake_row.tenant_slug = "acme"
 
         fake_result = MagicMock()
         fake_result.fetchone = MagicMock(return_value=fake_row)
 
         fake_db = AsyncMock()
-        fake_db.execute    = AsyncMock(return_value=fake_result)
+        fake_db.execute = AsyncMock(return_value=fake_result)
         fake_db.__aenter__ = AsyncMock(return_value=fake_db)
-        fake_db.__aexit__  = AsyncMock(return_value=None)
+        fake_db.__aexit__ = AsyncMock(return_value=None)
 
         import shared.db.session as _sess_mod
+
         monkeypatch.setattr(_sess_mod, "AsyncSessionLocal", lambda: fake_db)
 
         resp = client.post("/api/v1/auth/token", json={"dev_email": "lm@acme.com"})
         assert resp.status_code == 200, resp.text
         payload = jwt.decode(resp.json()["access_token"], _SECRET, algorithms=[_ALG])
-        assert payload["role"]         == "LM"
+        assert payload["role"] == "LM"
         assert payload["warehouse_id"] is None
-        assert payload["position_id"]  is None
-        assert payload["positions"]    == []
+        assert payload["position_id"] is None
+        assert payload["positions"] == []
 
     def test_dev_email_unknown_returns_401(self) -> None:
         """Unknown dev_email returns 401 (was 404 before FIX A2).
@@ -306,24 +310,26 @@ class TestLocalDevAuth:
         )
         assert resp.status_code == 403
 
-    def test_email_password_login_success_in_production(self, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_email_password_login_success_in_production(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         """email+password works in every environment, including production."""
         monkeypatch.setattr(auth_module, "ENVIRONMENT", "production")
 
         async def _mock_wm(email: str, password: object = None) -> dict:
             return {
-                "sub":                 "wm-001",
-                "email":               email.lower(),
-                "name":                "Warehouse Manager",
-                "tenant_id":           "aaaaaaaa-0000-0000-0000-000000000001",
-                "tenant_slug":         "acme",
-                "role":                "WM",
-                "warehouse_id":        "bbbbbbbb-0000-0000-0000-000000000001",
-                "warehouse_name":      "WH1",
-                "position_id":         "cccccccc-0000-0000-0000-000000000001",
-                "position_title":      "Warehouse Manager",
-                "level_number":        3,
-                "positions":           [],
+                "sub": "wm-001",
+                "email": email.lower(),
+                "name": "Warehouse Manager",
+                "tenant_id": "aaaaaaaa-0000-0000-0000-000000000001",
+                "tenant_slug": "acme",
+                "role": "WM",
+                "warehouse_id": "bbbbbbbb-0000-0000-0000-000000000001",
+                "warehouse_name": "WH1",
+                "position_id": "cccccccc-0000-0000-0000-000000000001",
+                "position_title": "Warehouse Manager",
+                "level_number": 3,
+                "positions": [],
                 "must_reset_password": False,
             }
 
@@ -335,7 +341,7 @@ class TestLocalDevAuth:
         )
         assert resp.status_code == 200, resp.text
         payload = jwt.decode(resp.json()["access_token"], _SECRET, algorithms=[_ALG])
-        assert payload["role"]      == "WM"
+        assert payload["role"] == "WM"
         assert payload["tenant_id"] == "aaaaaaaa-0000-0000-0000-000000000001"
 
     def test_email_without_password_returns_422(self) -> None:
@@ -348,7 +354,9 @@ class TestLocalDevAuth:
         assert resp2.status_code == 422
         assert resp2.json()["detail"]["code"] == "PASSWORD_REQUIRED"
 
-    def test_email_wrong_password_returns_invalid_credentials(self, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_email_wrong_password_returns_invalid_credentials(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         """Wrong password on the email path returns the generic 401 INVALID_CREDENTIALS."""
 
         async def _mock_wrong_password(email: str, password: object = None) -> dict:
@@ -395,18 +403,18 @@ class TestLocalDevAuth:
 
         async def _mock_pending(email: str, password: object = None) -> dict:
             return {
-                "sub":                 "user-pending-001",
-                "email":               email.lower(),
-                "name":                "New User",
-                "tenant_id":           "tttt-1111",
-                "tenant_slug":         "test-tenant",
-                "role":                "PENDING_SETUP",
-                "warehouse_id":        None,
-                "warehouse_name":      None,
-                "position_id":         None,
-                "position_title":      None,
-                "level_number":        None,
-                "positions":           [],
+                "sub": "user-pending-001",
+                "email": email.lower(),
+                "name": "New User",
+                "tenant_id": "tttt-1111",
+                "tenant_slug": "test-tenant",
+                "role": "PENDING_SETUP",
+                "warehouse_id": None,
+                "warehouse_name": None,
+                "position_id": None,
+                "position_title": None,
+                "level_number": None,
+                "positions": [],
                 "must_reset_password": True,
             }
 
@@ -426,18 +434,18 @@ class TestLocalDevAuth:
 
         async def _mock_pending(email: str, password: object = None) -> dict:
             return {
-                "sub":                 "user-pending-002",
-                "email":               email.lower(),
-                "name":                "Pending User",
-                "tenant_id":           "tttt-2222",
-                "tenant_slug":         "demo-tenant",
-                "role":                "PENDING_SETUP",
-                "warehouse_id":        None,
-                "warehouse_name":      None,
-                "position_id":         None,
-                "position_title":      None,
-                "level_number":        None,
-                "positions":           [],
+                "sub": "user-pending-002",
+                "email": email.lower(),
+                "name": "Pending User",
+                "tenant_id": "tttt-2222",
+                "tenant_slug": "demo-tenant",
+                "role": "PENDING_SETUP",
+                "warehouse_id": None,
+                "warehouse_name": None,
+                "position_id": None,
+                "position_title": None,
+                "level_number": None,
+                "positions": [],
                 "must_reset_password": True,
             }
 
@@ -446,13 +454,13 @@ class TestLocalDevAuth:
         resp = client.post("/api/v1/auth/token", json={"dev_email": "pending@demo.com"})
         assert resp.status_code == 200
 
-        body    = resp.json()
-        token   = body["access_token"]
+        body = resp.json()
+        token = body["access_token"]
         payload = jwt.decode(token, _SECRET, algorithms=[_ALG])
         # role is in the JWT payload
-        assert payload["role"]         == "PENDING_SETUP"
+        assert payload["role"] == "PENDING_SETUP"
         assert payload["warehouse_id"] is None
-        assert payload["positions"]    == []
+        assert payload["positions"] == []
         # must_reset_password is in the TokenResponse body (not in the JWT)
         assert body["must_reset_password"] is True
 
@@ -466,29 +474,31 @@ class TestLocalDevAuth:
 
         # Build a fake DB row: must_reset=True, password_hash=some_hash
         import bcrypt as _bcrypt
+
         fake_hash = _bcrypt.hashpw(b"TempPass@2026", _bcrypt.gensalt()).decode()
-        fake_row  = MagicMock()
-        fake_row.id                 = "user-pending-003"
-        fake_row.password_hash      = fake_hash
+        fake_row = MagicMock()
+        fake_row.id = "user-pending-003"
+        fake_row.password_hash = fake_hash
         fake_row.must_reset_password = True
 
         fake_result = MagicMock()
         fake_result.fetchone = MagicMock(return_value=fake_row)
 
         fake_db = AsyncMock()
-        fake_db.execute   = AsyncMock(return_value=fake_result)
-        fake_db.commit    = AsyncMock()
+        fake_db.execute = AsyncMock(return_value=fake_result)
+        fake_db.commit = AsyncMock()
         fake_db.__aenter__ = AsyncMock(return_value=fake_db)
-        fake_db.__aexit__  = AsyncMock(return_value=None)
+        fake_db.__aexit__ = AsyncMock(return_value=None)
 
         import shared.db.session as _sess_mod
+
         monkeypatch.setattr(_sess_mod, "AsyncSessionLocal", lambda: fake_db)
 
         # No current_password supplied — must NOT return 401
         resp = client.patch(
             "/api/v1/auth/password/user-pending-003",
             json={
-                "user_id":     "user-pending-003",
+                "user_id": "user-pending-003",
                 "new_password": "NewSecure@2026!",
                 # current_password intentionally omitted
             },
@@ -514,7 +524,9 @@ class TestLocalDevAuth:
         )
         assert resp.status_code == 403
 
-    def test_change_password_wrong_current_password_returns_401(self, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_change_password_wrong_current_password_returns_401(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         """A normal (non-must_reset) user supplying the wrong current_password
         gets 401, even with ENVIRONMENT=production."""
         from unittest.mock import AsyncMock, MagicMock
@@ -522,29 +534,31 @@ class TestLocalDevAuth:
         monkeypatch.setattr(auth_module, "ENVIRONMENT", "production")
 
         import bcrypt as _bcrypt
+
         fake_hash = _bcrypt.hashpw(b"ActualPass@2026", _bcrypt.gensalt()).decode()
-        fake_row  = MagicMock()
-        fake_row.id                  = "user-normal-001"
-        fake_row.password_hash       = fake_hash
+        fake_row = MagicMock()
+        fake_row.id = "user-normal-001"
+        fake_row.password_hash = fake_hash
         fake_row.must_reset_password = False
 
         fake_result = MagicMock()
         fake_result.fetchone = MagicMock(return_value=fake_row)
 
         fake_db = AsyncMock()
-        fake_db.execute    = AsyncMock(return_value=fake_result)
+        fake_db.execute = AsyncMock(return_value=fake_result)
         fake_db.__aenter__ = AsyncMock(return_value=fake_db)
-        fake_db.__aexit__  = AsyncMock(return_value=None)
+        fake_db.__aexit__ = AsyncMock(return_value=None)
 
         import shared.db.session as _sess_mod
+
         monkeypatch.setattr(_sess_mod, "AsyncSessionLocal", lambda: fake_db)
 
         resp = client.patch(
             "/api/v1/auth/password/user-normal-001",
             json={
-                "user_id":          "user-normal-001",
+                "user_id": "user-normal-001",
                 "current_password": "wrong",
-                "new_password":     "NewSecure@2026!",
+                "new_password": "NewSecure@2026!",
             },
             headers=_bearer_for("user-normal-001"),
         )
@@ -558,30 +572,32 @@ class TestLocalDevAuth:
         monkeypatch.setattr(auth_module, "ENVIRONMENT", "production")
 
         import bcrypt as _bcrypt
+
         fake_hash = _bcrypt.hashpw(b"ActualPass@2026", _bcrypt.gensalt()).decode()
-        fake_row  = MagicMock()
-        fake_row.id                  = "user-normal-002"
-        fake_row.password_hash       = fake_hash
+        fake_row = MagicMock()
+        fake_row.id = "user-normal-002"
+        fake_row.password_hash = fake_hash
         fake_row.must_reset_password = False
 
         fake_result = MagicMock()
         fake_result.fetchone = MagicMock(return_value=fake_row)
 
         fake_db = AsyncMock()
-        fake_db.execute    = AsyncMock(return_value=fake_result)
-        fake_db.commit     = AsyncMock()
+        fake_db.execute = AsyncMock(return_value=fake_result)
+        fake_db.commit = AsyncMock()
         fake_db.__aenter__ = AsyncMock(return_value=fake_db)
-        fake_db.__aexit__  = AsyncMock(return_value=None)
+        fake_db.__aexit__ = AsyncMock(return_value=None)
 
         import shared.db.session as _sess_mod
+
         monkeypatch.setattr(_sess_mod, "AsyncSessionLocal", lambda: fake_db)
 
         resp = client.patch(
             "/api/v1/auth/password/user-normal-002",
             json={
-                "user_id":          "user-normal-002",
+                "user_id": "user-normal-002",
                 "current_password": "ActualPass@2026",
-                "new_password":     "NewSecure@2026!",
+                "new_password": "NewSecure@2026!",
             },
             headers=_bearer_for("user-normal-002"),
         )
@@ -596,22 +612,24 @@ class TestLocalDevAuth:
         monkeypatch.setattr(auth_module, "ENVIRONMENT", "production")
 
         import bcrypt as _bcrypt
+
         fake_hash = _bcrypt.hashpw(b"ActualPass@2026", _bcrypt.gensalt()).decode()
-        fake_row  = MagicMock()
-        fake_row.id                  = "user-normal-003"
-        fake_row.password_hash       = fake_hash
+        fake_row = MagicMock()
+        fake_row.id = "user-normal-003"
+        fake_row.password_hash = fake_hash
         fake_row.must_reset_password = False
 
         fake_result = MagicMock()
         fake_result.fetchone = MagicMock(return_value=fake_row)
 
         fake_db = AsyncMock()
-        fake_db.execute    = AsyncMock(return_value=fake_result)
-        fake_db.commit     = AsyncMock()
+        fake_db.execute = AsyncMock(return_value=fake_result)
+        fake_db.commit = AsyncMock()
         fake_db.__aenter__ = AsyncMock(return_value=fake_db)
-        fake_db.__aexit__  = AsyncMock(return_value=None)
+        fake_db.__aexit__ = AsyncMock(return_value=None)
 
         import shared.db.session as _sess_mod
+
         monkeypatch.setattr(_sess_mod, "AsyncSessionLocal", lambda: fake_db)
 
         mock_revoke = AsyncMock()
@@ -620,9 +638,9 @@ class TestLocalDevAuth:
         resp = client.patch(
             "/api/v1/auth/password/user-normal-003",
             json={
-                "user_id":          "user-normal-003",
+                "user_id": "user-normal-003",
                 "current_password": "ActualPass@2026",
-                "new_password":     "NewSecure@2026!",
+                "new_password": "NewSecure@2026!",
             },
             headers=_bearer_for("user-normal-003"),
         )
@@ -690,13 +708,19 @@ class TestLoginAttemptLimiting:
             if password == "correct":
                 call_log.append("success")
                 return {
-                    "sub": "u-1", "email": email, "name": "Test User",
+                    "sub": "u-1",
+                    "email": email,
+                    "name": "Test User",
                     "tenant_id": "aaaaaaaa-0000-0000-0000-000000000001",
-                    "tenant_slug": "acme", "role": "WM",
+                    "tenant_slug": "acme",
+                    "role": "WM",
                     "warehouse_id": "bbbbbbbb-0000-0000-0000-000000000001",
-                    "warehouse_name": "WH1", "position_id": "cccccccc-0000-0000-0000-000000000001",
-                    "position_title": "Warehouse Manager", "level_number": 3,
-                    "positions": [], "must_reset_password": False,
+                    "warehouse_name": "WH1",
+                    "position_id": "cccccccc-0000-0000-0000-000000000001",
+                    "position_title": "Warehouse Manager",
+                    "level_number": 3,
+                    "positions": [],
+                    "must_reset_password": False,
                 }
             call_log.append("fail")
             raise auth_module.HTTPException(status_code=401, detail="Invalid password")
@@ -706,11 +730,15 @@ class TestLoginAttemptLimiting:
 
         email = "resettest@acme.com"
         for _ in range(3):
-            resp = client.post("/api/v1/auth/token", json={"dev_email": email, "dev_password": "wrong"})
+            resp = client.post(
+                "/api/v1/auth/token", json={"dev_email": email, "dev_password": "wrong"}
+            )
             assert resp.status_code == 401
         assert fake_redis.store[auth_module._login_attempts_key(email)] == 3
 
-        resp = client.post("/api/v1/auth/token", json={"dev_email": email, "dev_password": "correct"})
+        resp = client.post(
+            "/api/v1/auth/token", json={"dev_email": email, "dev_password": "correct"}
+        )
         assert resp.status_code == 200
         assert auth_module._login_attempts_key(email) not in fake_redis.store
 
@@ -738,7 +766,10 @@ class TestLoginPerIpRateLimit:
             if bucket == "login":
                 raise auth_module.HTTPException(
                     status_code=429,
-                    detail={"code": "RATE_LIMITED", "message": "Too many requests. Please try again later."},
+                    detail={
+                        "code": "RATE_LIMITED",
+                        "message": "Too many requests. Please try again later.",
+                    },
                 )
 
         monkeypatch.setattr(auth_module, "rate_limit_hit", _mock_rate_limit_hit)
@@ -757,13 +788,19 @@ class TestLoginPerIpRateLimit:
 
         async def _mock_pending(email: str, password: object = None) -> dict:
             return {
-                "sub": "u-dev", "email": email, "name": "Dev User",
+                "sub": "u-dev",
+                "email": email,
+                "name": "Dev User",
                 "tenant_id": "aaaaaaaa-0000-0000-0000-000000000001",
-                "tenant_slug": "acme", "role": "WM",
+                "tenant_slug": "acme",
+                "role": "WM",
                 "warehouse_id": "bbbbbbbb-0000-0000-0000-000000000001",
-                "warehouse_name": "WH1", "position_id": "cccccccc-0000-0000-0000-000000000001",
-                "position_title": "Warehouse Manager", "level_number": 3,
-                "positions": [], "must_reset_password": False,
+                "warehouse_name": "WH1",
+                "position_id": "cccccccc-0000-0000-0000-000000000001",
+                "position_title": "Warehouse Manager",
+                "level_number": 3,
+                "positions": [],
+                "must_reset_password": False,
             }
 
         async def _mock_rate_limit_hit_always_429(bucket: str, key: str) -> None:
@@ -791,31 +828,34 @@ class TestSuspendedTenantPasswordOrdering:
         from unittest.mock import AsyncMock, MagicMock
 
         fake_row = MagicMock()
-        fake_row.id                 = "ta-001"
-        fake_row.email               = "ta@suspended.com"
-        fake_row.full_name           = "Suspended TA"
-        fake_row.tenant_id           = "aaaaaaaa-0000-0000-0000-000000000099"
-        fake_row.password_hash       = bcrypt.hashpw(b"CorrectPass123", bcrypt.gensalt()).decode()
+        fake_row.id = "ta-001"
+        fake_row.email = "ta@suspended.com"
+        fake_row.full_name = "Suspended TA"
+        fake_row.tenant_id = "aaaaaaaa-0000-0000-0000-000000000099"
+        fake_row.password_hash = bcrypt.hashpw(b"CorrectPass123", bcrypt.gensalt()).decode()
         fake_row.must_reset_password = False
-        fake_row.system_role         = "TA"
-        fake_row.is_active           = True
-        fake_row.email_verified_at   = None
-        fake_row.tenant_slug         = "suspended-co"
-        fake_row.tenant_active       = True
-        fake_row.tenant_status       = "SUSPENDED"
+        fake_row.system_role = "TA"
+        fake_row.is_active = True
+        fake_row.email_verified_at = None
+        fake_row.tenant_slug = "suspended-co"
+        fake_row.tenant_active = True
+        fake_row.tenant_status = "SUSPENDED"
 
         fake_result = MagicMock()
         fake_result.fetchone = MagicMock(return_value=fake_row)
 
         fake_db = AsyncMock()
-        fake_db.execute    = AsyncMock(return_value=fake_result)
+        fake_db.execute = AsyncMock(return_value=fake_result)
         fake_db.__aenter__ = AsyncMock(return_value=fake_db)
-        fake_db.__aexit__  = AsyncMock(return_value=None)
+        fake_db.__aexit__ = AsyncMock(return_value=None)
         return fake_db
 
     def test_wrong_password_returns_401_not_403(self, monkeypatch: pytest.MonkeyPatch) -> None:
         import shared.db.session as _sess_mod
-        monkeypatch.setattr(_sess_mod, "AsyncSessionLocal", lambda: self._fake_db_for_suspended_tenant())
+
+        monkeypatch.setattr(
+            _sess_mod, "AsyncSessionLocal", lambda: self._fake_db_for_suspended_tenant()
+        )
 
         resp = client.post(
             "/api/v1/auth/token",
@@ -824,9 +864,14 @@ class TestSuspendedTenantPasswordOrdering:
         assert resp.status_code == 401
         assert resp.json()["detail"]["code"] == "INVALID_CREDENTIALS"
 
-    def test_right_password_returns_403_tenant_suspended(self, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_right_password_returns_403_tenant_suspended(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         import shared.db.session as _sess_mod
-        monkeypatch.setattr(_sess_mod, "AsyncSessionLocal", lambda: self._fake_db_for_suspended_tenant())
+
+        monkeypatch.setattr(
+            _sess_mod, "AsyncSessionLocal", lambda: self._fake_db_for_suspended_tenant()
+        )
 
         resp = client.post(
             "/api/v1/auth/token",
@@ -834,4 +879,3 @@ class TestSuspendedTenantPasswordOrdering:
         )
         assert resp.status_code == 403
         assert resp.json()["detail"]["code"] == "TENANT_SUSPENDED"
-

@@ -36,6 +36,7 @@ Run after `alembic upgrade head`:
 Idempotent: uses INSERT ... ON CONFLICT DO NOTHING for the tenant stub
 and DELETE + re-INSERT for the rules (safe to re-run).
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -56,7 +57,7 @@ Session = async_sessionmaker(bind=engine, expire_on_commit=False)
 
 # ── Tenant IDs (match seed_demo_data.py) ───────────────────────────────────
 
-ADDIS_WATER_ID  = "10000001-0000-0000-0000-000000000001"
+ADDIS_WATER_ID = "10000001-0000-0000-0000-000000000001"
 MUGER_CEMENT_ID = "10000002-0000-0000-0000-000000000001"
 
 # ── Approval rule definitions ───────────────────────────────────────────────
@@ -70,82 +71,72 @@ MUGER_CEMENT_ID = "10000002-0000-0000-0000-000000000001"
 
 ADDIS_WATER_RULES = [
     # ── PULL ───────────────────────────────────────────────────────────────
-    ("PULL",         "0",   "99.9999",  "WM", 1, 4, False, "'{}'"),
-    ("PULL",       "100",  "999.9999",  "RM", 1, 2, False, "'{1}'"),
-    ("PULL",      "1000",       None,   "NM", 1, 1, False, "'{}'"),
-
+    ("PULL", "0", "99.9999", "WM", 1, 4, False, "'{}'"),
+    ("PULL", "100", "999.9999", "RM", 1, 2, False, "'{1}'"),
+    ("PULL", "1000", None, "NM", 1, 1, False, "'{}'"),
     # ── PUSH ───────────────────────────────────────────────────────────────
-    ("PUSH",         "0",   "99.9999",  "WM", 1, 4, False, "'{}'"),
-    ("PUSH",       "100",  "999.9999",  "RM", 1, 2, False, "'{1}'"),
-    ("PUSH",      "1000",       None,   "NM", 1, 1, False, "'{}'"),
-
+    ("PUSH", "0", "99.9999", "WM", 1, 4, False, "'{}'"),
+    ("PUSH", "100", "999.9999", "RM", 1, 2, False, "'{1}'"),
+    ("PUSH", "1000", None, "NM", 1, 1, False, "'{}'"),
     # ── SISTER (migration 029 will sync authority fields from PULL) ────────
-    ("SISTER",       "0",   "99.9999",  "WM", 1, 4, False, "'{}'"),
-    ("SISTER",     "100",  "999.9999",  "RM", 1, 2, False, "'{1}'"),
-    ("SISTER",    "1000",       None,   "NM", 1, 1, False, "'{}'"),
-
+    ("SISTER", "0", "99.9999", "WM", 1, 4, False, "'{}'"),
+    ("SISTER", "100", "999.9999", "RM", 1, 2, False, "'{1}'"),
+    ("SISTER", "1000", None, "NM", 1, 1, False, "'{}'"),
     # ── ADJUSTMENT ─────────────────────────────────────────────────────────
-    ("ADJUSTMENT",   "0",   "99.9999",  "WM", 1, 4, True,  "'{}'"),   # auto-approved
-    ("ADJUSTMENT", "100",  "999.9999",  "RM", 1, 2, False, "'{1}'"),
-    ("ADJUSTMENT","1000",       None,   "TA", 1, 1, False, "'{}'"),
-
+    ("ADJUSTMENT", "0", "99.9999", "WM", 1, 4, True, "'{}'"),  # auto-approved
+    ("ADJUSTMENT", "100", "999.9999", "RM", 1, 2, False, "'{1}'"),
+    ("ADJUSTMENT", "1000", None, "TA", 1, 1, False, "'{}'"),
     # ── RECEIVE ────────────────────────────────────────────────────────────
-    ("RECEIVE",      "0",  "199.9999",  "WM", 1, 4, False, "'{}'"),
-    ("RECEIVE",    "200",       None,   "RM", 1, 2, False, "'{1}'"),
-
+    ("RECEIVE", "0", "199.9999", "WM", 1, 4, False, "'{}'"),
+    ("RECEIVE", "200", None, "RM", 1, 2, False, "'{1}'"),
     # ── ISSUE ──────────────────────────────────────────────────────────────
-    ("ISSUE",        "0",  "199.9999",  "WM", 1, 4, False, "'{}'"),
-    ("ISSUE",      "200",       None,   "RM", 1, 2, False, "'{1}'"),
+    ("ISSUE", "0", "199.9999", "WM", 1, 4, False, "'{}'"),
+    ("ISSUE", "200", None, "RM", 1, 2, False, "'{1}'"),
 ]
 
 # Muger Cement — same org type and size, identical bands
 MUGER_CEMENT_RULES = [
-    ("PULL",         "0",   "99.9999",  "WM", 1, 4, False, "'{}'"),
-    ("PULL",       "100",  "999.9999",  "RM", 1, 2, False, "'{1}'"),
-    ("PULL",      "1000",       None,   "NM", 1, 1, False, "'{}'"),
-
-    ("PUSH",         "0",   "99.9999",  "WM", 1, 4, False, "'{}'"),
-    ("PUSH",       "100",  "999.9999",  "RM", 1, 2, False, "'{1}'"),
-    ("PUSH",      "1000",       None,   "NM", 1, 1, False, "'{}'"),
-
-    ("SISTER",       "0",   "99.9999",  "WM", 1, 4, False, "'{}'"),
-    ("SISTER",     "100",  "999.9999",  "RM", 1, 2, False, "'{1}'"),
-    ("SISTER",    "1000",       None,   "NM", 1, 1, False, "'{}'"),
-
-    ("ADJUSTMENT",   "0",   "99.9999",  "WM", 1, 4, True,  "'{}'"),
-    ("ADJUSTMENT", "100",  "999.9999",  "RM", 1, 2, False, "'{1}'"),
-    ("ADJUSTMENT","1000",       None,   "TA", 1, 1, False, "'{}'"),
-
-    ("RECEIVE",      "0",  "199.9999",  "WM", 1, 4, False, "'{}'"),
-    ("RECEIVE",    "200",       None,   "RM", 1, 2, False, "'{1}'"),
-
-    ("ISSUE",        "0",  "199.9999",  "WM", 1, 4, False, "'{}'"),
-    ("ISSUE",      "200",       None,   "RM", 1, 2, False, "'{1}'"),
+    ("PULL", "0", "99.9999", "WM", 1, 4, False, "'{}'"),
+    ("PULL", "100", "999.9999", "RM", 1, 2, False, "'{1}'"),
+    ("PULL", "1000", None, "NM", 1, 1, False, "'{}'"),
+    ("PUSH", "0", "99.9999", "WM", 1, 4, False, "'{}'"),
+    ("PUSH", "100", "999.9999", "RM", 1, 2, False, "'{1}'"),
+    ("PUSH", "1000", None, "NM", 1, 1, False, "'{}'"),
+    ("SISTER", "0", "99.9999", "WM", 1, 4, False, "'{}'"),
+    ("SISTER", "100", "999.9999", "RM", 1, 2, False, "'{1}'"),
+    ("SISTER", "1000", None, "NM", 1, 1, False, "'{}'"),
+    ("ADJUSTMENT", "0", "99.9999", "WM", 1, 4, True, "'{}'"),
+    ("ADJUSTMENT", "100", "999.9999", "RM", 1, 2, False, "'{1}'"),
+    ("ADJUSTMENT", "1000", None, "TA", 1, 1, False, "'{}'"),
+    ("RECEIVE", "0", "199.9999", "WM", 1, 4, False, "'{}'"),
+    ("RECEIVE", "200", None, "RM", 1, 2, False, "'{1}'"),
+    ("ISSUE", "0", "199.9999", "WM", 1, 4, False, "'{}'"),
+    ("ISSUE", "200", None, "RM", 1, 2, False, "'{1}'"),
 ]
 
 SEED_DATA: list[tuple[str, list]] = [
-    (ADDIS_WATER_ID,  ADDIS_WATER_RULES),
+    (ADDIS_WATER_ID, ADDIS_WATER_RULES),
     (MUGER_CEMENT_ID, MUGER_CEMENT_RULES),
 ]
 
 TENANT_STUBS = [
     {
-        "id":                ADDIS_WATER_ID,
-        "name":              "Addis Water",
+        "id": ADDIS_WATER_ID,
+        "name": "Addis Water",
         "organisation_type": "PRODUCER",
     },
     {
-        "id":                MUGER_CEMENT_ID,
-        "name":              "Muger Cement",
+        "id": MUGER_CEMENT_ID,
+        "name": "Muger Cement",
         "organisation_type": "PRODUCER",
     },
 ]
 
 # ── Seed logic ──────────────────────────────────────────────────────────────
 
+
 async def seed() -> None:
     async with Session() as session:
-
         # 1. Ensure tenant rows exist (won't overwrite if already seeded by seed_demo_data.py)
         for stub in TENANT_STUBS:
             await session.execute(
@@ -161,10 +152,10 @@ async def seed() -> None:
                     ON CONFLICT (id) DO NOTHING
                 """),
                 {
-                    "id":       stub["id"],
-                    "name":     stub["name"],
+                    "id": stub["id"],
+                    "name": stub["name"],
                     "org_type": stub["organisation_type"],
-                    "plan_id":  str(uuid.uuid4()),
+                    "plan_id": str(uuid.uuid4()),
                 },
             )
         print("Tenants: ensured (ON CONFLICT DO NOTHING)")
@@ -182,8 +173,16 @@ async def seed() -> None:
         # 3. Insert rules
         total = 0
         for tenant_id, rules in SEED_DATA:
-            for (tx_type, min_qty, max_qty, role, order,
-                 auth_level, auto_approve, notify_levels) in rules:
+            for (
+                tx_type,
+                min_qty,
+                max_qty,
+                role,
+                order,
+                auth_level,
+                auto_approve,
+                notify_levels,
+            ) in rules:
                 await session.execute(
                     text(f"""
                         INSERT INTO approval_rule
@@ -202,13 +201,13 @@ async def seed() -> None:
                              true)
                     """),
                     {
-                        "tid":          tenant_id,
-                        "tx_type":      tx_type,
-                        "min_qty":      min_qty,
-                        "max_qty":      max_qty,
-                        "role":         role,
-                        "order":        order,
-                        "auth_level":   auth_level,
+                        "tid": tenant_id,
+                        "tx_type": tx_type,
+                        "min_qty": min_qty,
+                        "max_qty": max_qty,
+                        "role": role,
+                        "order": order,
+                        "auth_level": auth_level,
                         "auto_approve": auto_approve,
                     },
                 )
@@ -233,11 +232,17 @@ async def seed() -> None:
         for row in rows:
             if row.tenant != current_tenant:
                 print(f"Tenant: {row.tenant}")
-                print(f"  {'Type':<12} {'Min':>8} {'Max':>10}  {'Role':<4}  {'Lvl':>3}  {'Auto':>5}  Notify")
-                print(f"  {'-'*12} {'-'*8} {'-'*10}  {'-'*4}  {'-'*3}  {'-'*5}  {'-'*8}")
+                print(
+                    f"  {'Type':<12} {'Min':>8} {'Max':>10}  {'Role':<4}  {'Lvl':>3}  {'Auto':>5}  Notify"
+                )
+                print(
+                    f"  {'-' * 12} {'-' * 8} {'-' * 10}  {'-' * 4}  {'-' * 3}  {'-' * 5}  {'-' * 8}"
+                )
                 current_tenant = row.tenant
-            max_str    = str(row.max_quantity) if row.max_quantity is not None else "unlimited"
-            auto_str   = "yes" if row.auto_approve else "no"
+            max_str = (
+                str(row.max_quantity) if row.max_quantity is not None else "unlimited"
+            )
+            auto_str = "yes" if row.auto_approve else "no"
             notify_str = str(row.notify_levels) if row.notify_levels else "[]"
             print(
                 f"  {row.transaction_type:<12} {str(row.min_quantity):>8} {max_str:>10}"

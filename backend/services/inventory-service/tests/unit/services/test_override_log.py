@@ -5,6 +5,7 @@ Uses the inv_app fixture (not a fresh `from main import app`) per conftest.py.
 RBAC is driven by a small grant table mirroring seed_permissions.py for the
 roles used here (WM has no report:dispatch_summary).
 """
+
 from __future__ import annotations
 
 from datetime import date, datetime, timedelta, timezone
@@ -26,7 +27,7 @@ from services.override_log_service import (
 )
 
 TENANT_ID = "10000000-0000-0000-0000-000000000001"
-NODE_ID = "AAAAAAAA-0000-0000-0000-000000000001"   # JWT casing differs from the DB's
+NODE_ID = "AAAAAAAA-0000-0000-0000-000000000001"  # JWT casing differs from the DB's
 CHILD_ID = "aaaaaaaa-0000-0000-0000-000000000002"
 OUTSIDE_ID = "bbbbbbbb-0000-0000-0000-000000000009"
 
@@ -34,8 +35,13 @@ _GRANTS = {("TA", "report:dispatch_summary"), ("RM", "report:dispatch_summary")}
 
 
 def _user(role, node=None):
-    return SimpleNamespace(user_id=f"u-{role.lower()}", tenant_id=TENANT_ID, role=role,
-                           warehouse_id=node, region_id=None)
+    return SimpleNamespace(
+        user_id=f"u-{role.lower()}",
+        tenant_id=TENANT_ID,
+        role=role,
+        warehouse_id=node,
+        region_id=None,
+    )
 
 
 def _session():
@@ -63,7 +69,6 @@ def subtree():
 
 @pytest.mark.unit
 class TestComplianceRate:
-
     def test_no_decisions_is_null(self) -> None:
         assert compliance_rate(0, 0) is None
 
@@ -79,7 +84,6 @@ class TestComplianceRate:
 
 @pytest.mark.unit
 class TestPeriod:
-
     def test_default_is_last_30_days_ending_today(self) -> None:
         start, end = resolve_period(None, None, today=date(2026, 10, 14))
         assert end == date(2026, 10, 14)
@@ -112,7 +116,6 @@ class TestPeriod:
 
 @pytest.mark.unit
 class TestScope:
-
     async def test_rm_with_node_gets_subtree_filter(self, subtree) -> None:
         s = _session()
         await list_overrides(s, _user("RM", NODE_ID), TENANT_ID)
@@ -125,7 +128,7 @@ class TestScope:
         s = _session()
         await override_summary(s, _user("RM", NODE_ID), TENANT_ID)
         sqls = [sql for sql, _ in _statements(s)]
-        assert len(sqls) == 4   # (transfer, issue) x (overall, FEFO)
+        assert len(sqls) == 4  # (transfer, issue) x (overall, FEFO)
         assert any("a.from_warehouse_id = ANY(" in q for q in sqls)
         assert any("t.warehouse_id = ANY(" in q for q in sqls)
 
@@ -180,22 +183,36 @@ class TestScope:
 
 @pytest.mark.unit
 class TestQueriesCarryTenant:
-
     async def test_list_queries_filter_by_tenant(self) -> None:
         s = MagicMock()
         row = SimpleNamespace(
-            id="00000000-0000-0000-0000-0000000000d1", created_at=datetime.now(timezone.utc), overridden_by_name="A B",
-            product_id="00000000-0000-0000-0000-0000000000a1", product_name="P", product_sku="S",
-            warehouse_id="00000000-0000-0000-0000-0000000000b1", warehouse_name="WH",
-            strategy="FEFO", movement_type="ISSUE", reference_id=None, requested_qty=1,
+            id="00000000-0000-0000-0000-0000000000d1",
+            created_at=datetime.now(timezone.utc),
+            overridden_by_name="A B",
+            product_id="00000000-0000-0000-0000-0000000000a1",
+            product_name="P",
+            product_sku="S",
+            warehouse_id="00000000-0000-0000-0000-0000000000b1",
+            warehouse_name="WH",
+            strategy="FEFO",
+            movement_type="ISSUE",
+            reference_id=None,
+            requested_qty=1,
             suggested='[{"lot_id": "00000000-0000-0000-0000-0000000000c1", '
-                      '"lot_number": "OLD", "quantity": "1"}]',
-            chosen=[{"lot_id": "00000000-0000-0000-0000-0000000000c2",
-                     "lot_number": None, "quantity": "1"}],
+            '"lot_number": "OLD", "quantity": "1"}]',
+            chosen=[
+                {
+                    "lot_id": "00000000-0000-0000-0000-0000000000c2",
+                    "lot_number": None,
+                    "quantity": "1",
+                }
+            ],
             reason="r",
         )
-        lots = [SimpleNamespace(id="00000000-0000-0000-0000-0000000000c1", lot_number="L-1"),
-                SimpleNamespace(id="00000000-0000-0000-0000-0000000000c2", lot_number="L-2")]
+        lots = [
+            SimpleNamespace(id="00000000-0000-0000-0000-0000000000c1", lot_number="L-1"),
+            SimpleNamespace(id="00000000-0000-0000-0000-0000000000c2", lot_number="L-2"),
+        ]
         results = [SimpleNamespace(n=1), [row], lots]
 
         async def _execute(stmt, params=None):
@@ -212,7 +229,7 @@ class TestQueriesCarryTenant:
         item = out.rows[0]
         assert item.overridden_by == "A B"
         assert item.product.sku == "S" and item.warehouse.name == "WH"
-        assert [x.lot_number for x in item.suggested] == ["L-1"]   # joined, not the stored one
+        assert [x.lot_number for x in item.suggested] == ["L-1"]  # joined, not the stored one
         assert [x.lot_number for x in item.chosen] == ["L-2"]
         stmts = _statements(s)
         assert len(stmts) == 3
@@ -245,17 +262,20 @@ class TestQueriesCarryTenant:
         await override_summary(s, _user("TA"), TENANT_ID)
         stmts = _statements(s)
         issue_sqls = [(q, p) for q, p in stmts if "FROM inventory_transactions t" in q]
-        assert len(issue_sqls) == 2   # overall, FEFO
+        assert len(issue_sqls) == 2  # overall, FEFO
         for sql, params in issue_sqls:
             assert "AS decisions" in sql and "AS overridden" in sql
             assert "t.transaction_date >= :df AND t.transaction_date <= :dt" in sql
             assert "o.reference_id = t.reference_id" in sql
             assert "o.tenant_id = t.tenant_id AND o.movement_type = 'ISSUE'" in sql
-            assert "ts_from" not in params   # period is the ledger date, not created_at
+            assert "ts_from" not in params  # period is the ledger date, not created_at
         # no separate query counts ISSUE overrides by lot_allocation_overrides.created_at
         for sql, _ in stmts:
-            assert not ("FROM lot_allocation_overrides o " in sql and "o.created_at" in sql
-                        and "count(" in sql)
+            assert not (
+                "FROM lot_allocation_overrides o " in sql
+                and "o.created_at" in sql
+                and "count(" in sql
+            )
 
     async def test_issue_overridden_never_exceeds_decisions(self) -> None:
         # one Issue decision in the period, one matching override: 1 of 1, never more.
@@ -279,6 +299,7 @@ class TestQueriesCarryTenant:
 @pytest.fixture
 def make_client(inv_app):
     """make_client(role, session) -> AsyncClient with RBAC from _GRANTS."""
+
     def _make(role, session):
         async def _db_gen():
             yield session
@@ -295,9 +316,12 @@ def make_client(inv_app):
         g.grant_type = "FULL"
         return g
 
-    with patch(
-        "shared.permissions.middleware.get_role_permission", new=AsyncMock(side_effect=_grant)
-    ), patch("shared.permissions.middleware.audit_log", new=AsyncMock()):
+    with (
+        patch(
+            "shared.permissions.middleware.get_role_permission", new=AsyncMock(side_effect=_grant)
+        ),
+        patch("shared.permissions.middleware.audit_log", new=AsyncMock()),
+    ):
         try:
             yield _make
         finally:
@@ -306,9 +330,9 @@ def make_client(inv_app):
 
 @pytest.mark.unit
 class TestRoutes:
-
-    @pytest.mark.parametrize("path", ["/api/v1/inventory/lots/overrides",
-                                      "/api/v1/inventory/lots/overrides/summary"])
+    @pytest.mark.parametrize(
+        "path", ["/api/v1/inventory/lots/overrides", "/api/v1/inventory/lots/overrides/summary"]
+    )
     async def test_wm_without_permission_is_403(self, make_client, path) -> None:
         s = _session()
         async with make_client("WM", s) as c:

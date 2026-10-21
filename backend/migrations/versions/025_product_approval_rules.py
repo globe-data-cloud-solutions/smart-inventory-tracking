@@ -16,6 +16,7 @@ Create Date: 2026-05-28
 
 Round-trip tested: alembic upgrade head → downgrade -1 → upgrade head
 """
+
 from __future__ import annotations
 
 import sqlalchemy as sa
@@ -28,7 +29,7 @@ branch_labels = None
 depends_on = None
 
 # Roles that may view product approval rules (any operational role)
-_VIEW_ROLES   = ("SA", "TA", "NM", "RM", "WM")
+_VIEW_ROLES = ("SA", "TA", "NM", "RM", "WM")
 # Roles that may upsert/reset product approval rules (TA and NM per design, SA always)
 _MANAGE_ROLES = ("SA", "TA", "NM")
 

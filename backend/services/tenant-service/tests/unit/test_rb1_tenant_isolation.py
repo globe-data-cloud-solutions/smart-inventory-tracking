@@ -5,16 +5,17 @@ _resolve_and_authorize_tenant_id (fix/rb1-holes) — these tests prove the fix
 actually bites (fail against pre-fix behaviour, pass after) and that SA access
 is preserved.
 """
+
 from __future__ import annotations
 
 import os
 import sys
 
-os.environ.setdefault("DATABASE_URL",      "postgresql+asyncpg://test:x@localhost/test")
+os.environ.setdefault("DATABASE_URL", "postgresql+asyncpg://test:x@localhost/test")
 os.environ.setdefault("DATABASE_READ_URL", "postgresql+asyncpg://test:x@localhost/test")
-os.environ.setdefault("JWT_SECRET",        "test-secret")
-os.environ.setdefault("JWT_SECRET_KEY",    "test-secret")
-os.environ.setdefault("ENVIRONMENT",       "local")
+os.environ.setdefault("JWT_SECRET", "test-secret")
+os.environ.setdefault("JWT_SECRET_KEY", "test-secret")
+os.environ.setdefault("ENVIRONMENT", "local")
 
 _TENANT_ROOT = os.path.normpath(os.path.join(os.path.dirname(__file__), "..", ".."))
 if _TENANT_ROOT not in sys.path:
@@ -77,14 +78,18 @@ class TestGetTenant:
         from routers.tenants import get_tenant
 
         with _GRANT_ALL:
-            resp = await get_tenant(tenant_id=TENANT_B, user=_user("SA", None), db=_db_for_tenant_b())
+            resp = await get_tenant(
+                tenant_id=TENANT_B, user=_user("SA", None), db=_db_for_tenant_b()
+            )
         assert str(resp.data.id) == TENANT_B
 
     async def test_ta_from_tenant_b_can_read_own_tenant(self) -> None:
         from routers.tenants import get_tenant
 
         with _GRANT_ALL:
-            resp = await get_tenant(tenant_id=TENANT_B, user=_user("TA", TENANT_B), db=_db_for_tenant_b())
+            resp = await get_tenant(
+                tenant_id=TENANT_B, user=_user("TA", TENANT_B), db=_db_for_tenant_b()
+            )
         assert str(resp.data.id) == TENANT_B
 
 
@@ -93,7 +98,9 @@ class TestGetApprovalRules:
         from routers.tenants import get_approval_rules
 
         with _GRANT_ALL, pytest.raises(HTTPException) as exc:
-            await get_approval_rules(tenant_id=TENANT_B, user=_user("TA", TENANT_A), db=_db_for_tenant_b())
+            await get_approval_rules(
+                tenant_id=TENANT_B, user=_user("TA", TENANT_A), db=_db_for_tenant_b()
+            )
         assert exc.value.status_code == 403
         assert exc.value.detail["code"] == "TENANT_ACCESS_DENIED"
 
@@ -101,7 +108,9 @@ class TestGetApprovalRules:
         from routers.tenants import get_approval_rules
 
         with _GRANT_ALL:
-            resp = await get_approval_rules(tenant_id=TENANT_B, user=_user("SA", None), db=_db_for_tenant_b())
+            resp = await get_approval_rules(
+                tenant_id=TENANT_B, user=_user("SA", None), db=_db_for_tenant_b()
+            )
         assert resp.data == []
 
 
@@ -123,7 +132,9 @@ class TestPutApprovalRules:
         body = ApprovalRulesBody(simple_mode=True, rules=[])
         db = _db_for_tenant_b()
         with _GRANT_ALL:
-            resp = await put_approval_rules(tenant_id=TENANT_B, body=body, user=_user("SA", None), db=db)
+            resp = await put_approval_rules(
+                tenant_id=TENANT_B, body=body, user=_user("SA", None), db=db
+            )
         assert resp.data == []
 
     async def test_ta_from_tenant_b_can_write_own_rules(self) -> None:
@@ -132,7 +143,9 @@ class TestPutApprovalRules:
         body = ApprovalRulesBody(simple_mode=True, rules=[])
         db = _db_for_tenant_b()
         with _GRANT_ALL:
-            resp = await put_approval_rules(tenant_id=TENANT_B, body=body, user=_user("TA", TENANT_B), db=db)
+            resp = await put_approval_rules(
+                tenant_id=TENANT_B, body=body, user=_user("TA", TENANT_B), db=db
+            )
         assert resp.data == []
 
 

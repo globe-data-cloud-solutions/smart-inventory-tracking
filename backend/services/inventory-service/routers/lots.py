@@ -6,6 +6,7 @@ require_permission -> check_permission (get_descendant_node_ids traversal
 for FACILITY_SCOPED roles) in shared/permissions/middleware.py. No raw
 warehouse_id equality check is added here.
 """
+
 from __future__ import annotations
 
 import uuid
@@ -86,9 +87,7 @@ async def expiry_alerts(
     tid = effective_tenant_id(user, tenant_id)
     if within_days is None:
         within_days = await get_near_expiry_days(db, tid)
-    data = await get_expiry_alerts(
-        db, tid, warehouse_id=warehouse_id, within_days=within_days
-    )
+    data = await get_expiry_alerts(db, tid, warehouse_id=warehouse_id, within_days=within_days)
     return SuccessResponse(data=data)
 
 
@@ -142,9 +141,16 @@ async def list_lot_overrides(
     """Lot-allocation overrides in the period, newest first."""
     tid = effective_tenant_id(user, tenant_id)
     data = await list_overrides(
-        db, user, tid,
-        date_from=date_from, date_to=date_to, warehouse_id=warehouse_id,
-        product_id=product_id, strategy=strategy, limit=limit, offset=offset,
+        db,
+        user,
+        tid,
+        date_from=date_from,
+        date_to=date_to,
+        warehouse_id=warehouse_id,
+        product_id=product_id,
+        strategy=strategy,
+        limit=limit,
+        offset=offset,
     )
     return SuccessResponse(data=data)
 
@@ -178,7 +184,5 @@ async def patch_lot_expiry(
     """Set an expiry once on a lot that has none. Metadata only - no ledger write."""
     if not feature_lot_tracking_enabled():
         raise HTTPException(status_code=403, detail={"code": "FEATURE_NOT_ENABLED"})
-    result = await set_lot_expiry(
-        db, str(user.tenant_id), str(lot_id), body.expiry_date, user
-    )
+    result = await set_lot_expiry(db, str(user.tenant_id), str(lot_id), body.expiry_date, user)
     return SuccessResponse(data=SetLotExpiryOut(**result))

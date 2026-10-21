@@ -12,6 +12,7 @@ Two providers exist today:
 This is the slot a real gateway (e.g. Chapa, Telebirr) plugs into later —
 just implement PaymentProvider and add it to _PROVIDERS. Nothing more.
 """
+
 from __future__ import annotations
 
 import hashlib
@@ -59,7 +60,10 @@ class StubProvider:
 
     def checkout(self, payment: dict[str, Any]) -> dict[str, Any]:
         base_url = os.environ.get("APP_BASE_URL", "http://localhost:3000")
-        return {"type": "REDIRECT", "url": f"{base_url}/billing/stub-checkout?payment={payment['payment_id']}"}
+        return {
+            "type": "REDIRECT",
+            "url": f"{base_url}/billing/stub-checkout?payment={payment['payment_id']}",
+        }
 
     def parse_webhook(self, headers: Mapping[str, str], body: bytes) -> WebhookEvent:
         secret = os.environ.get("STUB_WEBHOOK_SECRET")

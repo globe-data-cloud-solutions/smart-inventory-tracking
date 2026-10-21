@@ -4,6 +4,7 @@ Revision ID: 064
 Revises:     063
 Create Date: 2026-06-25
 """
+
 from __future__ import annotations
 
 from alembic import op
@@ -15,18 +16,12 @@ depends_on = None
 
 
 def upgrade() -> None:
-    op.execute(
-        "CREATE TYPE plan_tier AS ENUM ('STARTER', 'GROWTH', 'ENTERPRISE')"
-    )
+    op.execute("CREATE TYPE plan_tier AS ENUM ('STARTER', 'GROWTH', 'ENTERPRISE')")
     op.execute(
         "ALTER TABLE tenants ADD COLUMN plan_tier plan_tier NOT NULL DEFAULT 'ENTERPRISE'"
     )
-    op.execute(
-        "ALTER TABLE tenants ADD COLUMN max_warehouses INTEGER"
-    )
-    op.execute(
-        "ALTER TABLE tenants ADD COLUMN max_users INTEGER"
-    )
+    op.execute("ALTER TABLE tenants ADD COLUMN max_warehouses INTEGER")
+    op.execute("ALTER TABLE tenants ADD COLUMN max_users INTEGER")
     op.execute(
         "UPDATE tenants SET plan_tier = 'ENTERPRISE', max_warehouses = NULL, max_users = NULL"
     )

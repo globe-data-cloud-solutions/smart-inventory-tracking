@@ -23,6 +23,7 @@ Revision ID: 017
 Revises: 016
 Create Date: 2026-05-26
 """
+
 from __future__ import annotations
 
 import sqlalchemy as sa
@@ -39,25 +40,25 @@ _T2 = "10000002-0000-0000-0000-000000000001"  # Muger Cement
 
 # ── Warehouse / organization_node IDs (match seed_demo_data.py) ───────────────
 # Addis Water nodes
-_T1_MAIN  = "20000001-a000-0000-0000-000000000001"  # Main Production Center
+_T1_MAIN = "20000001-a000-0000-0000-000000000001"  # Main Production Center
 _T1_NORTH = "20000001-a000-0000-0000-000000000002"  # North WH
-_T1_NSUB  = "20000001-a000-0000-0000-000000000003"  # North-Subcenter WH
+_T1_NSUB = "20000001-a000-0000-0000-000000000003"  # North-Subcenter WH
 _T1_SOUTH = "20000001-a000-0000-0000-000000000004"  # South WH
-_T1_EAST  = "20000001-a000-0000-0000-000000000005"  # East WH
-_T1_WEST  = "20000001-a000-0000-0000-000000000006"  # West WH
+_T1_EAST = "20000001-a000-0000-0000-000000000005"  # East WH
+_T1_WEST = "20000001-a000-0000-0000-000000000006"  # West WH
 
 # Muger Cement nodes
-_T2_HARAR    = "20000002-0c00-0000-0000-000000000001"  # Harar Production Center
-_T2_AMBO     = "20000002-0c00-0000-0000-000000000002"  # Ambo Production Center
-_T2_KOMBOLCHA= "20000002-0c00-0000-0000-000000000003"  # Kombolcha WH
-_T2_MEKELE   = "20000002-0c00-0000-0000-000000000004"  # Mekele WH
+_T2_HARAR = "20000002-0c00-0000-0000-000000000001"  # Harar Production Center
+_T2_AMBO = "20000002-0c00-0000-0000-000000000002"  # Ambo Production Center
+_T2_KOMBOLCHA = "20000002-0c00-0000-0000-000000000003"  # Kombolcha WH
+_T2_MEKELE = "20000002-0c00-0000-0000-000000000004"  # Mekele WH
 _T2_DIREDAWA = "20000002-0c00-0000-0000-000000000005"  # Dire Dawa WH
-_T2_HAWASSA  = "20000002-0c00-0000-0000-000000000006"  # Hawassa WH
+_T2_HAWASSA = "20000002-0c00-0000-0000-000000000006"  # Hawassa WH
 
 # ── User IDs (match seed_demo_data.py) ────────────────────────────────────────
 # Addis Water users
-_U_AW_TA  = "00000001-a001-0000-0000-000000000001"  # TA  — no warehouse
-_U_AW_NM  = "00000001-a002-0000-0000-000000000001"  # NM  — Main Production Center
+_U_AW_TA = "00000001-a001-0000-0000-000000000001"  # TA  — no warehouse
+_U_AW_NM = "00000001-a002-0000-0000-000000000001"  # NM  — Main Production Center
 _U_AW_WM1 = "00000001-a003-0000-0000-000000000001"  # WM  — North WH
 _U_AW_WM2 = "00000001-a004-0000-0000-000000000001"  # WM  — North-Subcenter WH
 _U_AW_WM3 = "00000001-a005-0000-0000-000000000001"  # WM  — South WH
@@ -65,7 +66,7 @@ _U_AW_WM4 = "00000001-a006-0000-0000-000000000001"  # WM  — East WH
 _U_AW_WM5 = "00000001-a007-0000-0000-000000000001"  # WM  — West WH
 
 # Muger Cement users
-_U_MC_TA  = "00000002-0c01-0000-0000-000000000001"  # TA  — no warehouse
+_U_MC_TA = "00000002-0c01-0000-0000-000000000001"  # TA  — no warehouse
 _U_MC_NM1 = "00000002-0c02-0000-0000-000000000001"  # NM  — Harar Production Center
 _U_MC_NM2 = "00000002-0c03-0000-0000-000000000001"  # NM  — Ambo Production Center
 _U_MC_WM1 = "00000002-0c04-0000-0000-000000000001"  # WM  — Kombolcha WH
@@ -74,16 +75,19 @@ _U_MC_WM3 = "00000002-0c06-0000-0000-000000000001"  # WM  — Dire Dawa WH
 _U_MC_WM4 = "00000002-0c07-0000-0000-000000000001"  # WM  — Hawassa WH
 
 # SA user — seeded in T1 context but is platform-wide
-_U_SA     = "00000001-0a00-0000-0000-000000000001"
+_U_SA = "00000001-0a00-0000-0000-000000000001"
 
 # ── System user for created_by on seeded records ──────────────────────────────
 _SYS_USER = "00000000-0000-0000-0000-000000000001"
 
 
 def _tenant_exists(bind: sa.engine.Connection, tenant_id: str) -> bool:
-    return bind.execute(
-        sa.text("SELECT 1 FROM tenants WHERE id = :tid"), {"tid": tenant_id}
-    ).first() is not None
+    return (
+        bind.execute(
+            sa.text("SELECT 1 FROM tenants WHERE id = :tid"), {"tid": tenant_id}
+        ).first()
+        is not None
+    )
 
 
 def upgrade() -> None:

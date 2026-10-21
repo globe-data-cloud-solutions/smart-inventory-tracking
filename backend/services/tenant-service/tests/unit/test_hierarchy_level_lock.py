@@ -1,4 +1,5 @@
 """Unit tests for the directional level lock in upsert_hierarchy_config (G3a)."""
+
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -41,26 +42,31 @@ def _make_body(n: int) -> list:
 # (no HTTP server needed). Mirrors hierarchy.py upsert_hierarchy_config G3a.
 # ---------------------------------------------------------------------------
 
+
 async def _run_g3a(db, tenant_id: str, body: list) -> None:
     from sqlalchemy import text
 
-    existing_count = (await db.execute(
-        text(
-            "SELECT COUNT(*) FROM tenant_hierarchy_config "
-            "WHERE tenant_id = :tid AND is_active = true"
-        ),
-        {"tid": str(tenant_id)},
-    )).scalar() or 0
-
-    if existing_count > 0 and len(body) < existing_count:
-        max_used_level = (await db.execute(
+    existing_count = (
+        await db.execute(
             text(
-                "SELECT COALESCE(MAX(hierarchy_level), 0) "
-                "FROM organization_node "
+                "SELECT COUNT(*) FROM tenant_hierarchy_config "
                 "WHERE tenant_id = :tid AND is_active = true"
             ),
             {"tid": str(tenant_id)},
-        )).scalar() or 0
+        )
+    ).scalar() or 0
+
+    if existing_count > 0 and len(body) < existing_count:
+        max_used_level = (
+            await db.execute(
+                text(
+                    "SELECT COALESCE(MAX(hierarchy_level), 0) "
+                    "FROM organization_node "
+                    "WHERE tenant_id = :tid AND is_active = true"
+                ),
+                {"tid": str(tenant_id)},
+            )
+        ).scalar() or 0
 
         if len(body) < max_used_level:
             raise HTTPException(
@@ -78,6 +84,7 @@ async def _run_g3a(db, tenant_id: str, body: list) -> None:
 # ---------------------------------------------------------------------------
 # Tests
 # ---------------------------------------------------------------------------
+
 
 @pytest.mark.asyncio
 async def test_grow_levels_allowed():
@@ -129,6 +136,7 @@ def test_grow_levels_unchanged_existing_rows():
 # LEVELS_NOT_CONTIGUOUS guard — mirrors the contiguity check added to
 # upsert_hierarchy_config ahead of G3a / any write.
 # ---------------------------------------------------------------------------
+
 
 def _check_contiguous(level_numbers: list) -> None:
     if sorted(level_numbers) != list(range(1, len(level_numbers) + 1)):

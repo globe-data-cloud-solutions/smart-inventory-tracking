@@ -5,6 +5,7 @@ sets a tenant's contract_start/contract_end from a creation flow (SA create
 or self sign-up). A plan change updating an existing LIVE subscription is a
 separate concern (payment step, S5) — this module does not touch it.
 """
+
 from __future__ import annotations
 
 import calendar
@@ -38,30 +39,36 @@ async def get_current_price(db: AsyncSession, tier: str, billing_period: str) ->
     Tie-break on created_at DESC: prices are append-only, so posting a correcting
     price with the SAME effective_from as a wrong one is the only way to fix it —
     the more-recently-created row must win."""
-    return (await db.execute(
-        text(
-            "SELECT id, tier, billing_period, currency, amount, effective_from "
-            "FROM package_prices "
-            "WHERE tier = :tier AND billing_period = :period AND effective_from <= now() "
-            "ORDER BY effective_from DESC, created_at DESC LIMIT 1"
-        ),
-        {"tier": tier, "period": billing_period},
-    )).fetchone()
+    return (
+        await db.execute(
+            text(
+                "SELECT id, tier, billing_period, currency, amount, effective_from "
+                "FROM package_prices "
+                "WHERE tier = :tier AND billing_period = :period AND effective_from <= now() "
+                "ORDER BY effective_from DESC, created_at DESC LIMIT 1"
+            ),
+            {"tier": tier, "period": billing_period},
+        )
+    ).fetchone()
 
 
-async def get_current_addon_price(db: AsyncSession, addon_code: str, billing_period: str) -> Optional[Any]:
+async def get_current_addon_price(
+    db: AsyncSession, addon_code: str, billing_period: str
+) -> Optional[Any]:
     """The latest addon_prices row for addon_code+billing_period with
     effective_from <= now(), or None if no price exists (S10). Same
     append-only / tie-break semantics as get_current_price() above."""
-    return (await db.execute(
-        text(
-            "SELECT id, addon_code, billing_period, currency, amount, effective_from "
-            "FROM addon_prices "
-            "WHERE addon_code = :code AND billing_period = :period AND effective_from <= now() "
-            "ORDER BY effective_from DESC, created_at DESC LIMIT 1"
-        ),
-        {"code": addon_code, "period": billing_period},
-    )).fetchone()
+    return (
+        await db.execute(
+            text(
+                "SELECT id, addon_code, billing_period, currency, amount, effective_from "
+                "FROM addon_prices "
+                "WHERE addon_code = :code AND billing_period = :period AND effective_from <= now() "
+                "ORDER BY effective_from DESC, created_at DESC LIMIT 1"
+            ),
+            {"code": addon_code, "period": billing_period},
+        )
+    ).fetchone()
 
 
 def period_end(start: date, billing_period: str) -> date:
@@ -106,24 +113,32 @@ async def start_subscription(
     if price is None:
         raise ValueError("PRICE_NOT_AVAILABLE")
 
-    subscription_id = (await db.execute(
-        text(
-            "INSERT INTO subscriptions ("
-            "  tenant_id, tier, billing_period, status, provider, price_id, amount, "
-            "  currency, current_period_start, current_period_end, created_by"
-            ") VALUES ("
-            "  :tid, :tier, :period, :status, :provider, :price_id, :amount, "
-            "  :currency, :start, :end, :created_by"
-            ") RETURNING id"
-        ),
-        {
-            "tid": str(tenant_id), "tier": tier, "period": billing_period,
-            "status": status, "provider": provider, "price_id": str(price.id),
-            "amount": price.amount, "currency": price.currency,
-            "start": start, "end": end,
-            "created_by": str(created_by) if created_by else None,
-        },
-    )).scalar_one()
+    subscription_id = (
+        await db.execute(
+            text(
+                "INSERT INTO subscriptions ("
+                "  tenant_id, tier, billing_period, status, provider, price_id, amount, "
+                "  currency, current_period_start, current_period_end, created_by"
+                ") VALUES ("
+                "  :tid, :tier, :period, :status, :provider, :price_id, :amount, "
+                "  :currency, :start, :end, :created_by"
+                ") RETURNING id"
+            ),
+            {
+                "tid": str(tenant_id),
+                "tier": tier,
+                "period": billing_period,
+                "status": status,
+                "provider": provider,
+                "price_id": str(price.id),
+                "amount": price.amount,
+                "currency": price.currency,
+                "start": start,
+                "end": end,
+                "created_by": str(created_by) if created_by else None,
+            },
+        )
+    ).scalar_one()
 
     await db.execute(
         text(
@@ -160,14 +175,16 @@ async def update_live_subscription_tier(
     Raises ValueError("PRICE_NOT_AVAILABLE") if no current price exists for
     new_tier at the subscription's billing_period.
     """
-    sub = (await db.execute(
-        text(
-            "SELECT id, tier, billing_period, amount FROM subscriptions "
-            "WHERE tenant_id = :tid AND status IN ('ACTIVE', 'PENDING_PAYMENT', 'PAST_DUE') "
-            "LIMIT 1"
-        ),
-        {"tid": str(tenant_id)},
-    )).fetchone()
+    sub = (
+        await db.execute(
+            text(
+                "SELECT id, tier, billing_period, amount FROM subscriptions "
+                "WHERE tenant_id = :tid AND status IN ('ACTIVE', 'PENDING_PAYMENT', 'PAST_DUE') "
+                "LIMIT 1"
+            ),
+            {"tid": str(tenant_id)},
+        )
+    ).fetchone()
     if sub is None or sub.tier == new_tier:
         return None
 
@@ -183,6 +200,8 @@ async def update_live_subscription_tier(
         {"tier": new_tier, "price_id": str(price.id), "amount": price.amount, "sid": str(sub.id)},
     )
     return {
-        "old_tier": sub.tier, "new_tier": new_tier,
-        "old_amount": sub.amount, "new_amount": price.amount,
+        "old_tier": sub.tier,
+        "new_tier": new_tier,
+        "old_amount": sub.amount,
+        "new_amount": price.amount,
     }

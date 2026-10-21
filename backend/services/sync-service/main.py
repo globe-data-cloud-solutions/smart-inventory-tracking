@@ -1,4 +1,5 @@
 """Sync Service — offline queue drain and conflict resolution."""
+
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI

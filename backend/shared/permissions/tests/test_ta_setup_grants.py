@@ -7,6 +7,7 @@ mock) so these tests actually fail against the pre-fix matrix and pass only
 once TA is granted — same pattern as test_renewal_requests.py's
 _matrix_grant(). Mocked store/audit throughout — no real DB connection.
 """
+
 from __future__ import annotations
 
 import os
@@ -15,13 +16,15 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-os.environ.setdefault("DATABASE_URL",      "postgresql+asyncpg://test:x@localhost/test")
+os.environ.setdefault("DATABASE_URL", "postgresql+asyncpg://test:x@localhost/test")
 os.environ.setdefault("DATABASE_READ_URL", "postgresql+asyncpg://test:x@localhost/test")
-os.environ.setdefault("JWT_SECRET",        "test-secret")
-os.environ.setdefault("JWT_SECRET_KEY",    "test-secret")
-os.environ.setdefault("ENVIRONMENT",       "local")
+os.environ.setdefault("JWT_SECRET", "test-secret")
+os.environ.setdefault("JWT_SECRET_KEY", "test-secret")
+os.environ.setdefault("ENVIRONMENT", "local")
 
-_SCRIPTS_ROOT = os.path.normpath(os.path.join(os.path.dirname(__file__), "..", "..", "..", "..", "scripts"))
+_SCRIPTS_ROOT = os.path.normpath(
+    os.path.join(os.path.dirname(__file__), "..", "..", "..", "..", "scripts")
+)
 if _SCRIPTS_ROOT not in sys.path:
     sys.path.insert(0, _SCRIPTS_ROOT)
 
@@ -44,6 +47,7 @@ def _matrix_grant(role: str, action_id: str):
     matching what store.get_role_permission() would return from a freshly
     seeded DB for this (role, action) pair."""
     import seed_permissions
+
     grant_type = seed_permissions.ROLE_PERMISSION_MATRIX.get(role, {}).get(action_id)
     if grant_type is None:
         return None
@@ -54,9 +58,13 @@ def _matrix_grant(role: str, action_id: str):
 
 async def _check(role: str, action) -> bool:
     user = _user(role)
-    with patch("shared.permissions.middleware.get_role_permission",
-               new=AsyncMock(side_effect=lambda r, a: _matrix_grant(r, a))), \
-         patch("shared.permissions.middleware.audit_log", new=AsyncMock()):
+    with (
+        patch(
+            "shared.permissions.middleware.get_role_permission",
+            new=AsyncMock(side_effect=lambda r, a: _matrix_grant(r, a)),
+        ),
+        patch("shared.permissions.middleware.audit_log", new=AsyncMock()),
+    ):
         result = await check_permission(user, action, {"tenant_id": TENANT_ID})
     return result.allowed
 
@@ -64,6 +72,7 @@ async def _check(role: str, action) -> bool:
 # position:manage / transfer_type:manage / transfer_approval_rule:manage:
 # only SA held these before migration 090 — NM (one level below TA) is the
 # "still denied" control for all three.
+
 
 async def test_ta_can_manage_positions() -> None:
     assert await _check("TA", PERMISSIONS.POSITION_MANAGE) is True
@@ -102,6 +111,7 @@ async def test_nm_still_cannot_view_transfer_approval_rules() -> None:
 
 # adjustment:submit: NM/RM/WM already held this before migration 090, so the
 # meaningful "still denied" control is AU (read-only Auditor role), not NM.
+
 
 async def test_ta_can_submit_adjustments() -> None:
     assert await _check("TA", PERMISSIONS.ADJUSTMENT_SUBMIT) is True

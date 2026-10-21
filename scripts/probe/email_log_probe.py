@@ -18,6 +18,7 @@ tenant service logs separately — this script does not read log files itself.
 Usage:
     python scripts/probe/email_log_probe.py
 """
+
 from __future__ import annotations
 
 import os
@@ -61,7 +62,9 @@ def main() -> int:
         if signup_resp.status_code not in (200, 201):
             print(f"Signup failed, aborting. slug={slug}")
             return 1
-        print(f"probe tenant slug={slug} admin_email={admin_email} password={probe_password}")
+        print(
+            f"probe tenant slug={slug} admin_email={admin_email} password={probe_password}"
+        )
 
         # E2
         resp_e2 = client.post(
@@ -77,13 +80,17 @@ def main() -> int:
         )
         _print_step("E3", "202 (no email line expected)", resp_e3)
 
-        print(f"\nNow tail the auth/tenant service logs for '[DEV EMAIL] reset {admin_email}:' "
-              f"to retrieve the reset token, then re-run with it for E4.")
+        print(
+            f"\nNow tail the auth/tenant service logs for '[DEV EMAIL] reset {admin_email}:' "
+            f"to retrieve the reset token, then re-run with it for E4."
+        )
 
         reset_token = os.environ.get("RESET_TOKEN")
         if not reset_token:
-            print("RESET_TOKEN not set — skipping E4. Set RESET_TOKEN=<token> and re-run to "
-                  "complete the reset + login check.")
+            print(
+                "RESET_TOKEN not set — skipping E4. Set RESET_TOKEN=<token> and re-run to "
+                "complete the reset + login check."
+            )
             return 0
 
         # E4
@@ -100,7 +107,9 @@ def main() -> int:
         )
         _print_step("E4b login", "200", resp_e4b)
 
-        print(f"\ndeactivate when done: python scripts/probe/deactivate_tenants.py {slug}")
+        print(
+            f"\ndeactivate when done: python scripts/probe/deactivate_tenants.py {slug}"
+        )
 
     return 0
 

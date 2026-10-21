@@ -26,6 +26,7 @@ Create Date: 2026-06-12
 
 Round-trip tested: alembic upgrade head -> downgrade -1 -> upgrade head
 """
+
 from __future__ import annotations
 
 from alembic import op

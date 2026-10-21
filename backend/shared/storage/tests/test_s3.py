@@ -1,6 +1,7 @@
 """Unit tests for shared.storage — S3StorageService, LocalStorageService.get(),
 and get_storage() backend selection. No network; the boto3 client is replaced
 via the module-level factory function."""
+
 from __future__ import annotations
 
 from unittest.mock import MagicMock, patch
@@ -108,7 +109,7 @@ async def test_local_save_then_get_round_trips(tmp_path, monkeypatch) -> None:
         content_type="image/jpeg",
         folder="products",
     )
-    rel_path = url[len("/static/uploads/"):]
+    rel_path = url[len("/static/uploads/") :]
     result = await service.get(rel_path)
     assert result is not None
     content, content_type = result

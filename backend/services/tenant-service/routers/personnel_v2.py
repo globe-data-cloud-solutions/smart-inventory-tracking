@@ -11,6 +11,7 @@ DELETE /tenants/{tenant_id}/users/{user_id}/positions/{assignment_id}
 PATCH  /tenants/{tenant_id}/users/{user_id}/deactivate
 PATCH  /tenants/{tenant_id}/users/{user_id}/reactivate
 """
+
 from __future__ import annotations
 
 import uuid
@@ -67,54 +68,55 @@ def _duplicate_email_http_exception() -> HTTPException:
 
 # ── Pydantic schemas ──────────────────────────────────────────────────────────
 
+
 class PositionAssignmentOut(BaseModel):
-    assignment_id:  uuid.UUID
-    position_id:    uuid.UUID
-    title:          str
-    role_code:      str
-    node_id:        uuid.UUID
-    node_name:      str
-    level_number:   int
+    assignment_id: uuid.UUID
+    position_id: uuid.UUID
+    title: str
+    role_code: str
+    node_id: uuid.UUID
+    node_name: str
+    level_number: int
     assignment_type: str
-    valid_from:     Optional[date]
-    valid_until:    Optional[date]
+    valid_from: Optional[date]
+    valid_until: Optional[date]
 
 
 class UserOut(BaseModel):
-    id:               uuid.UUID
-    email:            str
-    name:             str
+    id: uuid.UUID
+    email: str
+    name: str
     # role / facility fields for frontend UserRecord compatibility
-    role:                   str                      # system_role or primary_position.role_code
-    primary_facility_id:    Optional[uuid.UUID]      # primary_position.node_id
-    primary_facility_name:  Optional[str]            # primary_position.node_name
-    primary_position:       Optional[PositionAssignmentOut]
-    acting_positions:       List[PositionAssignmentOut]
-    is_active:              bool
-    must_reset_password:    bool
+    role: str  # system_role or primary_position.role_code
+    primary_facility_id: Optional[uuid.UUID]  # primary_position.node_id
+    primary_facility_name: Optional[str]  # primary_position.node_name
+    primary_position: Optional[PositionAssignmentOut]
+    acting_positions: List[PositionAssignmentOut]
+    is_active: bool
+    must_reset_password: bool
 
 
 class UserCreate(BaseModel):
-    name:        str
-    email:       EmailStr
-    password:    str
+    name: str
+    email: EmailStr
+    password: str
     position_id: Optional[uuid.UUID] = None
-    system_role: Optional[str] = None   # "TA"/"AU"/"LM" for tenant-wide accounts without a position
-    role:        Optional[str] = None   # Frontend compat: if "TA", maps to system_role="TA"
+    system_role: Optional[str] = None  # "TA"/"AU"/"LM" for tenant-wide accounts without a position
+    role: Optional[str] = None  # Frontend compat: if "TA", maps to system_role="TA"
 
 
 class UserUpdateRequest(BaseModel):
-    name:                Optional[str]       = None
-    email:               Optional[EmailStr]  = None
-    must_reset_password: Optional[bool]      = None
-    system_role:         Optional[str]       = None
-    role:                Optional[str]       = None  # Frontend compat: "TA" → system_role="TA"
-    password:            Optional[str]       = None  # admin-initiated reset
+    name: Optional[str] = None
+    email: Optional[EmailStr] = None
+    must_reset_password: Optional[bool] = None
+    system_role: Optional[str] = None
+    role: Optional[str] = None  # Frontend compat: "TA" → system_role="TA"
+    password: Optional[str] = None  # admin-initiated reset
     # system_role=None means "don't touch this column" (PATCH semantics can't
     # otherwise distinguish "not provided" from "clear it"). Set this explicitly
     # to NULL system_role — used when switching a user from a tenant-wide role
     # (Track B) back to a position-based one (Track A).
-    clear_system_role:   bool                = False
+    clear_system_role: bool = False
 
     @field_validator("password")
     @classmethod
@@ -125,21 +127,25 @@ class UserUpdateRequest(BaseModel):
 
 
 class AssignPositionRequest(BaseModel):
-    position_id:     uuid.UUID
+    position_id: uuid.UUID
     assignment_type: str = "PRIMARY"
-    valid_from:      Optional[date] = None
-    valid_until:     Optional[date] = None
-    notes:           Optional[str]  = None
+    valid_from: Optional[date] = None
+    valid_until: Optional[date] = None
+    notes: Optional[str] = None
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
+
 async def _user_positions(
-    db: AsyncSession, user_id: str, tenant_id: str,
+    db: AsyncSession,
+    user_id: str,
+    tenant_id: str,
 ) -> tuple[Optional[PositionAssignmentOut], List[PositionAssignmentOut]]:
     """Fetch primary + acting positions for a user."""
-    rows = (await db.execute(
-        text("""
+    rows = (
+        await db.execute(
+            text("""
             SELECT pp.id AS assignment_id, pp.assignment_type,
                    pp.valid_from, pp.valid_until,
                    p.id AS position_id, p.title, p.role_code,
@@ -153,11 +159,12 @@ async def _user_positions(
             AND    (pp.valid_until IS NULL OR pp.valid_until >= CURRENT_DATE)
             ORDER  BY pp.assignment_type, p.title
         """),
-        {"uid": user_id, "tid": tenant_id},
-    )).fetchall()
+            {"uid": user_id, "tid": tenant_id},
+        )
+    ).fetchall()
 
     primary: Optional[PositionAssignmentOut] = None
-    acting:  List[PositionAssignmentOut]     = []
+    acting: List[PositionAssignmentOut] = []
     for r in rows:
         ap = PositionAssignmentOut(
             assignment_id=r.assignment_id,
@@ -180,8 +187,8 @@ async def _user_positions(
 
 # ── Routes ────────────────────────────────────────────────────────────────────
 
-@router.get("/{tenant_id}/users",
-            response_model=SuccessResponse[List[UserOut]])
+
+@router.get("/{tenant_id}/users", response_model=SuccessResponse[List[UserOut]])
 @require_permission(PERMISSIONS.USER_VIEW)
 async def list_users(
     tenant_id: uuid.UUID,
@@ -189,41 +196,42 @@ async def list_users(
     db: AsyncSession = Depends(get_db_session_for_tenant),
 ) -> SuccessResponse[List[UserOut]]:
     """List all users for a tenant with their current position assignments."""
-    rows = (await db.execute(
-        text("""
+    rows = (
+        await db.execute(
+            text("""
             SELECT id, email, full_name, is_active, must_reset_password, system_role
             FROM   users
             WHERE  tenant_id = :tid
             ORDER  BY full_name
         """),
-        {"tid": str(tenant_id)},
-    )).fetchall()
+            {"tid": str(tenant_id)},
+        )
+    ).fetchall()
 
     result: List[UserOut] = []
     for r in rows:
         primary, acting = await _user_positions(db, str(r.id), str(tenant_id))
         effective_role = (
-            str(r.system_role) if r.system_role
-            else (primary.role_code if primary else "—")
+            str(r.system_role) if r.system_role else (primary.role_code if primary else "—")
         )
-        result.append(UserOut(
-            id=r.id,
-            email=r.email,
-            name=r.full_name,
-            role=effective_role,
-            primary_facility_id=primary.node_id if primary else None,
-            primary_facility_name=primary.node_name if primary else None,
-            primary_position=primary,
-            acting_positions=acting,
-            is_active=r.is_active,
-            must_reset_password=r.must_reset_password,
-        ))
+        result.append(
+            UserOut(
+                id=r.id,
+                email=r.email,
+                name=r.full_name,
+                role=effective_role,
+                primary_facility_id=primary.node_id if primary else None,
+                primary_facility_name=primary.node_name if primary else None,
+                primary_position=primary,
+                acting_positions=acting,
+                is_active=r.is_active,
+                must_reset_password=r.must_reset_password,
+            )
+        )
     return SuccessResponse(data=result)
 
 
-@router.post("/{tenant_id}/users",
-             status_code=201,
-             response_model=SuccessResponse[UserOut])
+@router.post("/{tenant_id}/users", status_code=201, response_model=SuccessResponse[UserOut])
 @require_permission(PERMISSIONS.USER_CREATE)
 async def create_user(
     tenant_id: uuid.UUID,
@@ -240,26 +248,35 @@ async def create_user(
     # Email is globally unique (uq_users_email_lower, migration 070) — check
     # across ALL tenants, not just this one, and never reveal which tenant
     # already owns it.
-    existing = (await db.execute(
-        text("SELECT id FROM users WHERE lower(email) = :email"),
-        {"email": normalized_email},
-    )).fetchone()
+    existing = (
+        await db.execute(
+            text("SELECT id FROM users WHERE lower(email) = :email"),
+            {"email": normalized_email},
+        )
+    ).fetchone()
     if existing:
         raise _duplicate_email_http_exception()
 
     # Derive effective system_role: explicit field wins, then map role="TA" → "TA"
     effective_system_role = body.system_role or ("TA" if body.role == "TA" else None)
     if effective_system_role and effective_system_role not in VALID_DIRECT_SYSTEM_ROLES:
-        raise HTTPException(status_code=422, detail={"code": "INVALID_SYSTEM_ROLE",
-            "message": "system_role must be TA, AU, or LM, or null (role comes from position)."})
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "code": "INVALID_SYSTEM_ROLE",
+                "message": "system_role must be TA, AU, or LM, or null (role comes from position).",
+            },
+        )
 
     # Role ceiling: only a platform admin (SA) may create another Tenant Admin.
     # A TA cannot create a peer/superior account — server-side, not just UI-hidden.
     if effective_system_role == "TA" and getattr(user, "role", None) != "SA":
         raise HTTPException(
             status_code=403,
-            detail={"code": "ROLE_CEILING_EXCEEDED",
-                    "message": "Only a platform administrator can create Tenant Administrator accounts."},
+            detail={
+                "code": "ROLE_CEILING_EXCEEDED",
+                "message": "Only a platform administrator can create Tenant Administrator accounts.",
+            },
         )
 
     await check_plan_create_user(user, db)
@@ -274,8 +291,10 @@ async def create_user(
                 VALUES (:id, :tid, :email, :name, :hash, true, true, :sysrole)
             """),
             {
-                "id": str(user_id), "tid": str(tenant_id),
-                "email": normalized_email, "name": body.name,
+                "id": str(user_id),
+                "tid": str(tenant_id),
+                "email": normalized_email,
+                "name": body.name,
                 "hash": _hash(body.password),
                 "sysrole": effective_system_role,
             },
@@ -288,16 +307,18 @@ async def create_user(
     # Optionally assign primary position
     primary: Optional[PositionAssignmentOut] = None
     if body.position_id:
-        pos_row = (await db.execute(
-            text("""
+        pos_row = (
+            await db.execute(
+                text("""
                 SELECT p.id, p.title, p.role_code,
                        n.id AS node_id, n.name AS node_name, n.hierarchy_level
                 FROM   positions p
                 JOIN   organization_node n ON n.id = p.node_id
                 WHERE  p.id = :pid AND p.tenant_id = :tid AND p.is_active = true
             """),
-            {"pid": str(body.position_id), "tid": str(tenant_id)},
-        )).fetchone()
+                {"pid": str(body.position_id), "tid": str(tenant_id)},
+            )
+        ).fetchone()
         if not pos_row:
             raise HTTPException(status_code=404, detail="Position not found")
 
@@ -308,8 +329,12 @@ async def create_user(
                   (id, tenant_id, user_id, position_id, assignment_type)
                 VALUES (:id, :tid, :uid, :pid, 'PRIMARY')
             """),
-            {"id": str(assignment_id), "tid": str(tenant_id),
-             "uid": str(user_id), "pid": str(body.position_id)},
+            {
+                "id": str(assignment_id),
+                "tid": str(tenant_id),
+                "uid": str(user_id),
+                "pid": str(body.position_id),
+            },
         )
         primary = PositionAssignmentOut(
             assignment_id=assignment_id,
@@ -324,23 +349,27 @@ async def create_user(
             valid_until=None,
         )
 
-    return SuccessResponse(data=UserOut(
-        id=user_id,
-        email=normalized_email,
-        name=body.name,
-        role=effective_system_role or (primary.role_code if primary else "—"),
-        primary_facility_id=primary.node_id if primary else None,
-        primary_facility_name=primary.node_name if primary else None,
-        primary_position=primary,
-        acting_positions=[],
-        is_active=True,
-        must_reset_password=True,
-    ))
+    return SuccessResponse(
+        data=UserOut(
+            id=user_id,
+            email=normalized_email,
+            name=body.name,
+            role=effective_system_role or (primary.role_code if primary else "—"),
+            primary_facility_id=primary.node_id if primary else None,
+            primary_facility_name=primary.node_name if primary else None,
+            primary_position=primary,
+            acting_positions=[],
+            is_active=True,
+            must_reset_password=True,
+        )
+    )
 
 
-@router.post("/{tenant_id}/users/{user_id}/positions",
-             status_code=201,
-             response_model=SuccessResponse[PositionAssignmentOut])
+@router.post(
+    "/{tenant_id}/users/{user_id}/positions",
+    status_code=201,
+    response_model=SuccessResponse[PositionAssignmentOut],
+)
 @require_permission(PERMISSIONS.USER_MANAGE)
 async def assign_position(
     tenant_id: uuid.UUID,
@@ -355,22 +384,28 @@ async def assign_position(
     ACTING/DELEGATE: time-bounded, multiple allowed.
     """
     if body.assignment_type not in ("PRIMARY", "ACTING", "DELEGATE"):
-        raise HTTPException(status_code=422, detail="assignment_type must be PRIMARY, ACTING, or DELEGATE")
+        raise HTTPException(
+            status_code=422, detail="assignment_type must be PRIMARY, ACTING, or DELEGATE"
+        )
 
     # Self-lockout guard — see update_user(). Assigning any position to oneself
     # changes one's own effective role; only another admin may do this.
     if str(user.user_id) == str(user_id):
         raise HTTPException(
             status_code=403,
-            detail={"code": "CANNOT_MODIFY_OWN_ROLE",
-                    "message": "You cannot modify your own role or position."},
+            detail={
+                "code": "CANNOT_MODIFY_OWN_ROLE",
+                "message": "You cannot modify your own role or position.",
+            },
         )
 
     # Verify user belongs to this tenant
-    user_row = (await db.execute(
-        text("SELECT id FROM users WHERE id = :uid AND tenant_id = :tid AND is_active = true"),
-        {"uid": str(user_id), "tid": str(tenant_id)},
-    )).fetchone()
+    user_row = (
+        await db.execute(
+            text("SELECT id FROM users WHERE id = :uid AND tenant_id = :tid AND is_active = true"),
+            {"uid": str(user_id), "tid": str(tenant_id)},
+        )
+    ).fetchone()
     if not user_row:
         raise HTTPException(status_code=404, detail="User not found in this tenant")
 
@@ -390,21 +425,24 @@ async def assign_position(
         )
 
     # Verify position belongs to this tenant
-    pos_row = (await db.execute(
-        text("""
+    pos_row = (
+        await db.execute(
+            text("""
             SELECT p.id, p.title, p.role_code,
                    n.id AS node_id, n.name AS node_name, n.hierarchy_level
             FROM   positions p
             JOIN   organization_node n ON n.id = p.node_id
             WHERE  p.id = :pid AND p.tenant_id = :tid AND p.is_active = true
         """),
-        {"pid": str(body.position_id), "tid": str(tenant_id)},
-    )).fetchone()
+            {"pid": str(body.position_id), "tid": str(tenant_id)},
+        )
+    ).fetchone()
     if not pos_row:
         raise HTTPException(status_code=404, detail="Position not found")
 
     assignment_id = uuid.uuid4()
     from datetime import date as _date
+
     # Default valid_from to today if not provided — prevents NOT NULL violation when
     # the Edit User panel calls this endpoint without an explicit valid_from date.
     effective_valid_from = body.valid_from or _date.today()
@@ -417,30 +455,36 @@ async def assign_position(
                     :vf, :vu, :notes)
         """),
         {
-            "id": str(assignment_id), "tid": str(tenant_id),
-            "uid": str(user_id), "pid": str(body.position_id),
+            "id": str(assignment_id),
+            "tid": str(tenant_id),
+            "uid": str(user_id),
+            "pid": str(body.position_id),
             "atype": body.assignment_type,
-            "vf":    effective_valid_from, "vu": body.valid_until,
+            "vf": effective_valid_from,
+            "vu": body.valid_until,
             "notes": body.notes,
         },
     )
 
-    return SuccessResponse(data=PositionAssignmentOut(
-        assignment_id=assignment_id,
-        position_id=pos_row.id,
-        title=pos_row.title,
-        role_code=pos_row.role_code,
-        node_id=pos_row.node_id,
-        node_name=pos_row.node_name,
-        level_number=pos_row.hierarchy_level,
-        assignment_type=body.assignment_type,
-        valid_from=body.valid_from,
-        valid_until=body.valid_until,
-    ))
+    return SuccessResponse(
+        data=PositionAssignmentOut(
+            assignment_id=assignment_id,
+            position_id=pos_row.id,
+            title=pos_row.title,
+            role_code=pos_row.role_code,
+            node_id=pos_row.node_id,
+            node_name=pos_row.node_name,
+            level_number=pos_row.hierarchy_level,
+            assignment_type=body.assignment_type,
+            valid_from=body.valid_from,
+            valid_until=body.valid_until,
+        )
+    )
 
 
-@router.delete("/{tenant_id}/users/{user_id}/positions/{assignment_id}",
-               response_model=SuccessResponse[dict])
+@router.delete(
+    "/{tenant_id}/users/{user_id}/positions/{assignment_id}", response_model=SuccessResponse[dict]
+)
 @require_permission(PERMISSIONS.USER_MANAGE)
 async def remove_position_assignment(
     tenant_id: uuid.UUID,
@@ -464,8 +508,10 @@ async def remove_position_assignment(
     if force and user.role != "SA":
         raise HTTPException(
             status_code=403,
-            detail={"code": "FORCE_REMOVE_SA_ONLY",
-                    "message": "The force flag may only be used by a platform administrator (SA)."},
+            detail={
+                "code": "FORCE_REMOVE_SA_ONLY",
+                "message": "The force flag may only be used by a platform administrator (SA).",
+            },
         )
 
     # Self-lockout guard — see update_user(). Removing one's own position
@@ -473,12 +519,15 @@ async def remove_position_assignment(
     if str(user.user_id) == str(user_id):
         raise HTTPException(
             status_code=403,
-            detail={"code": "CANNOT_MODIFY_OWN_ROLE",
-                    "message": "You cannot modify your own role or position."},
+            detail={
+                "code": "CANNOT_MODIFY_OWN_ROLE",
+                "message": "You cannot modify your own role or position.",
+            },
         )
 
-    row = (await db.execute(
-        text("""
+    row = (
+        await db.execute(
+            text("""
             SELECT pp.id, pp.assignment_type
             FROM   personnel_positions pp
             JOIN   users u ON u.id = pp.user_id
@@ -487,31 +536,34 @@ async def remove_position_assignment(
             AND    pp.tenant_id = :tid
             AND    pp.is_active = true
         """),
-        {"aid": str(assignment_id), "uid": str(user_id), "tid": str(tenant_id)},
-    )).fetchone()
+            {"aid": str(assignment_id), "uid": str(user_id), "tid": str(tenant_id)},
+        )
+    ).fetchone()
     if not row:
         raise HTTPException(status_code=404, detail="Assignment not found or already inactive")
 
     # Cannot remove the last active PRIMARY — unless an SA explicitly forces it.
     user_deactivated = False
     if row.assignment_type == "PRIMARY":
-        other_primary_count = (await db.execute(
-            text("""
+        other_primary_count = (
+            await db.execute(
+                text("""
                 SELECT COUNT(*) FROM personnel_positions
                 WHERE user_id = :uid AND assignment_type = 'PRIMARY'
                 AND is_active = true AND id != :aid
                 AND (valid_until IS NULL OR valid_until >= CURRENT_DATE)
             """),
-            {"uid": str(user_id), "aid": str(assignment_id)},
-        )).scalar() or 0
+                {"uid": str(user_id), "aid": str(assignment_id)},
+            )
+        ).scalar() or 0
         if other_primary_count == 0:
             if not force:
                 raise HTTPException(
                     status_code=422,
                     detail={
-                        "code":    "CANNOT_REMOVE_LAST_PRIMARY",
+                        "code": "CANNOT_REMOVE_LAST_PRIMARY",
                         "message": "Cannot remove the user's only active PRIMARY assignment. "
-                                   "Assign a new PRIMARY first, or deactivate the user.",
+                        "Assign a new PRIMARY first, or deactivate the user.",
                     },
                 )
             # SA force path: removing the user's only position would otherwise leave
@@ -524,9 +576,14 @@ async def remove_position_assignment(
             user_deactivated = True
             await revoke_user_tokens(str(user_id))
             await audit_log(
-                user, PERMISSIONS.USER_MANAGE.id,
-                {"resource_type": "personnel_position", "resource_id": str(assignment_id),
-                 "tenant_id": str(tenant_id), "target_user_id": str(user_id)},
+                user,
+                PERMISSIONS.USER_MANAGE.id,
+                {
+                    "resource_type": "personnel_position",
+                    "resource_id": str(assignment_id),
+                    "tenant_id": str(tenant_id),
+                    "target_user_id": str(user_id),
+                },
                 "GRANTED",
                 "SA force-removed sole PRIMARY position — user auto-deactivated pending reassignment",
                 db=db,
@@ -536,16 +593,17 @@ async def remove_position_assignment(
         text("UPDATE personnel_positions SET is_active = false WHERE id = :aid"),
         {"aid": str(assignment_id)},
     )
-    return SuccessResponse(data={
-        "deactivated": True,
-        "assignment_id": str(assignment_id),
-        "removed": True,
-        "user_deactivated": user_deactivated,
-    })
+    return SuccessResponse(
+        data={
+            "deactivated": True,
+            "assignment_id": str(assignment_id),
+            "removed": True,
+            "user_deactivated": user_deactivated,
+        }
+    )
 
 
-@router.patch("/{tenant_id}/users/{user_id}/deactivate",
-              response_model=SuccessResponse[dict])
+@router.patch("/{tenant_id}/users/{user_id}/deactivate", response_model=SuccessResponse[dict])
 @require_permission(PERMISSIONS.USER_MANAGE)
 async def deactivate_user(
     tenant_id: uuid.UUID,
@@ -562,32 +620,40 @@ async def deactivate_user(
     if str(user.user_id) == str(user_id):
         raise HTTPException(
             status_code=422,
-            detail={"code": "CANNOT_DEACTIVATE_SELF",
-                    "message": "You cannot deactivate your own account."},
+            detail={
+                "code": "CANNOT_DEACTIVATE_SELF",
+                "message": "You cannot deactivate your own account.",
+            },
         )
 
-    row = (await db.execute(
-        text("SELECT id, system_role FROM users WHERE id = :uid AND tenant_id = :tid AND is_active = true"),
-        {"uid": str(user_id), "tid": str(tenant_id)},
-    )).fetchone()
+    row = (
+        await db.execute(
+            text(
+                "SELECT id, system_role FROM users WHERE id = :uid AND tenant_id = :tid AND is_active = true"
+            ),
+            {"uid": str(user_id), "tid": str(tenant_id)},
+        )
+    ).fetchone()
     if not row:
         raise HTTPException(status_code=404, detail="User not found or already inactive")
 
     if row.system_role == "TA":
-        active_ta_count = (await db.execute(
-            text("""
+        active_ta_count = (
+            await db.execute(
+                text("""
                 SELECT COUNT(*) FROM users
                 WHERE tenant_id = :tid AND system_role = 'TA' AND is_active = true
             """),
-            {"tid": str(tenant_id)},
-        )).scalar() or 0
+                {"tid": str(tenant_id)},
+            )
+        ).scalar() or 0
         if active_ta_count <= 1:
             raise HTTPException(
                 status_code=422,
                 detail={
                     "code": "CANNOT_DEACTIVATE_LAST_TA",
                     "message": "Cannot deactivate the last active Tenant Administrator. "
-                               "Assign another TA first or contact your platform administrator.",
+                    "Assign another TA first or contact your platform administrator.",
                 },
             )
 
@@ -596,15 +662,16 @@ async def deactivate_user(
         {"uid": str(user_id)},
     )
     await db.execute(
-        text("UPDATE personnel_positions SET is_active = false WHERE user_id = :uid AND tenant_id = :tid"),
+        text(
+            "UPDATE personnel_positions SET is_active = false WHERE user_id = :uid AND tenant_id = :tid"
+        ),
         {"uid": str(user_id), "tid": str(tenant_id)},
     )
     await revoke_user_tokens(str(user_id))
     return SuccessResponse(data={"deactivated": True, "user_id": str(user_id)})
 
 
-@router.patch("/{tenant_id}/users/{user_id}/reactivate",
-              response_model=SuccessResponse[dict])
+@router.patch("/{tenant_id}/users/{user_id}/reactivate", response_model=SuccessResponse[dict])
 @require_permission(PERMISSIONS.USER_MANAGE)
 async def reactivate_user(
     tenant_id: uuid.UUID,
@@ -625,10 +692,14 @@ async def reactivate_user(
     Pass restore_position=False to reactivate the user account only, leaving
     position reassignment to a follow-up POST /positions call.
     """
-    row = (await db.execute(
-        text("SELECT id, system_role FROM users WHERE id = :uid AND tenant_id = :tid AND is_active = false"),
-        {"uid": str(user_id), "tid": str(tenant_id)},
-    )).fetchone()
+    row = (
+        await db.execute(
+            text(
+                "SELECT id, system_role FROM users WHERE id = :uid AND tenant_id = :tid AND is_active = false"
+            ),
+            {"uid": str(user_id), "tid": str(tenant_id)},
+        )
+    ).fetchone()
     if not row:
         raise HTTPException(status_code=404, detail="User not found or already active")
 
@@ -643,8 +714,9 @@ async def reactivate_user(
 
     pos_restored = False
     if restore_position:
-        pp_row = (await db.execute(
-            text("""
+        pp_row = (
+            await db.execute(
+                text("""
                 SELECT id, is_active, valid_until
                 FROM   personnel_positions
                 WHERE  user_id         = :uid
@@ -653,8 +725,9 @@ async def reactivate_user(
                 ORDER  BY created_at DESC
                 LIMIT  1
             """),
-            {"uid": str(user_id), "tid": str(tenant_id)},
-        )).fetchone()
+                {"uid": str(user_id), "tid": str(tenant_id)},
+            )
+        ).fetchone()
         if (
             pp_row is not None
             and not pp_row.is_active
@@ -666,15 +739,16 @@ async def reactivate_user(
             )
             pos_restored = True
 
-    return SuccessResponse(data={
-        "reactivated": True,
-        "user_id": str(user_id),
-        "position_restored": pos_restored,
-    })
+    return SuccessResponse(
+        data={
+            "reactivated": True,
+            "user_id": str(user_id),
+            "position_restored": pos_restored,
+        }
+    )
 
 
-@router.get("/{tenant_id}/users/{user_id}",
-            response_model=SuccessResponse[UserOut])
+@router.get("/{tenant_id}/users/{user_id}", response_model=SuccessResponse[UserOut])
 @require_permission(PERMISSIONS.USER_VIEW)
 async def get_user(
     tenant_id: uuid.UUID,
@@ -683,38 +757,40 @@ async def get_user(
     db: AsyncSession = Depends(get_db_session_for_tenant),
 ) -> SuccessResponse[UserOut]:
     """Fetch a single user with their position assignments."""
-    row = (await db.execute(
-        text("""
+    row = (
+        await db.execute(
+            text("""
             SELECT id, email, full_name, is_active, must_reset_password, system_role
             FROM   users
             WHERE  id = :uid AND tenant_id = :tid
         """),
-        {"uid": str(user_id), "tid": str(tenant_id)},
-    )).fetchone()
+            {"uid": str(user_id), "tid": str(tenant_id)},
+        )
+    ).fetchone()
     if not row:
         raise HTTPException(status_code=404, detail="User not found")
 
     primary, acting = await _user_positions(db, str(user_id), str(tenant_id))
     effective_role = (
-        str(row.system_role) if row.system_role
-        else (primary.role_code if primary else "—")
+        str(row.system_role) if row.system_role else (primary.role_code if primary else "—")
     )
-    return SuccessResponse(data=UserOut(
-        id=row.id,
-        email=row.email,
-        name=row.full_name,
-        role=effective_role,
-        primary_facility_id=primary.node_id if primary else None,
-        primary_facility_name=primary.node_name if primary else None,
-        primary_position=primary,
-        acting_positions=acting,
-        is_active=row.is_active,
-        must_reset_password=row.must_reset_password,
-    ))
+    return SuccessResponse(
+        data=UserOut(
+            id=row.id,
+            email=row.email,
+            name=row.full_name,
+            role=effective_role,
+            primary_facility_id=primary.node_id if primary else None,
+            primary_facility_name=primary.node_name if primary else None,
+            primary_position=primary,
+            acting_positions=acting,
+            is_active=row.is_active,
+            must_reset_password=row.must_reset_password,
+        )
+    )
 
 
-@router.patch("/{tenant_id}/users/{user_id}",
-              response_model=SuccessResponse[dict])
+@router.patch("/{tenant_id}/users/{user_id}", response_model=SuccessResponse[dict])
 @require_permission(PERMISSIONS.USER_MANAGE)
 async def update_user(
     tenant_id: uuid.UUID,
@@ -738,14 +814,18 @@ async def update_user(
     ):
         raise HTTPException(
             status_code=403,
-            detail={"code": "CANNOT_MODIFY_OWN_ROLE",
-                    "message": "You cannot modify your own role or position."},
+            detail={
+                "code": "CANNOT_MODIFY_OWN_ROLE",
+                "message": "You cannot modify your own role or position.",
+            },
         )
 
-    row = (await db.execute(
-        text("SELECT id, email, system_role FROM users WHERE id = :uid AND tenant_id = :tid"),
-        {"uid": str(user_id), "tid": str(tenant_id)},
-    )).fetchone()
+    row = (
+        await db.execute(
+            text("SELECT id, email, system_role FROM users WHERE id = :uid AND tenant_id = :tid"),
+            {"uid": str(user_id), "tid": str(tenant_id)},
+        )
+    ).fetchone()
     if not row:
         raise HTTPException(status_code=404, detail="User not found")
 
@@ -761,16 +841,20 @@ async def update_user(
         if row.system_role == "TA":
             raise HTTPException(
                 status_code=403,
-                detail={"code": "ROLE_CEILING_EXCEEDED",
-                        "message": "Only a platform administrator can modify an existing "
-                                   "Tenant Administrator's role."},
+                detail={
+                    "code": "ROLE_CEILING_EXCEEDED",
+                    "message": "Only a platform administrator can modify an existing "
+                    "Tenant Administrator's role.",
+                },
             )
         effective_sr_check = body.system_role or ("TA" if body.role == "TA" else None)
         if effective_sr_check == "TA":
             raise HTTPException(
                 status_code=403,
-                detail={"code": "ROLE_CEILING_EXCEEDED",
-                        "message": "Only a platform administrator can create Tenant Administrator accounts."},
+                detail={
+                    "code": "ROLE_CEILING_EXCEEDED",
+                    "message": "Only a platform administrator can create Tenant Administrator accounts.",
+                },
             )
 
     set_parts: list[str] = ["updated_at = now()"]
@@ -784,10 +868,12 @@ async def update_user(
         if normalized_email != row.email.strip().lower():
             # Email is globally unique (uq_users_email_lower) — check across
             # ALL tenants, excluding this user's own row.
-            existing = (await db.execute(
-                text("SELECT id FROM users WHERE lower(email) = :email AND id != :uid"),
-                {"email": normalized_email, "uid": str(user_id)},
-            )).fetchone()
+            existing = (
+                await db.execute(
+                    text("SELECT id FROM users WHERE lower(email) = :email AND id != :uid"),
+                    {"email": normalized_email, "uid": str(user_id)},
+                )
+            ).fetchone()
             if existing:
                 raise _duplicate_email_http_exception()
         set_parts.append("email = :email")
@@ -814,8 +900,10 @@ async def update_user(
             if effective_sr not in VALID_DIRECT_SYSTEM_ROLES:
                 raise HTTPException(
                     status_code=422,
-                    detail={"code": "INVALID_SYSTEM_ROLE",
-                            "message": "system_role must be TA, AU, or LM, or null (role comes from position)."},
+                    detail={
+                        "code": "INVALID_SYSTEM_ROLE",
+                        "message": "system_role must be TA, AU, or LM, or null (role comes from position).",
+                    },
                 )
             set_parts.append("system_role = :sr")
             params["sr"] = effective_sr

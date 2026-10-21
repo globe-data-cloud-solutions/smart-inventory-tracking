@@ -23,6 +23,7 @@ matrix and the user-specified thresholds:
   1000+  → TA   (large write-off, Tenant Admin / CEO required)
 scripts/seed_approval_rules.py matches these bands as of Session 4.
 """
+
 from __future__ import annotations
 
 from decimal import Decimal
@@ -39,32 +40,33 @@ TENANT_ID = "10000000-0000-0000-0000-000000000001"
 
 # PULL: WH requests stock from RWH or MWH
 PULL_RULES: list[tuple[Decimal, Decimal | None, str]] = [
-    (Decimal("0"),    Decimal("999.9999"),  "WM"),
+    (Decimal("0"), Decimal("999.9999"), "WM"),
     (Decimal("1000"), Decimal("4999.9999"), "RM"),
-    (Decimal("5000"), None,                 "NM"),
+    (Decimal("5000"), None, "NM"),
 ]
 
 # PUSH: MWH/RWH proactively sends stock downstream — always NM or above
 PUSH_RULES: list[tuple[Decimal, Decimal | None, str]] = [
-    (Decimal("0"),    Decimal("4999.9999"), "NM"),
-    (Decimal("5000"), None,                 "TA"),
+    (Decimal("0"), Decimal("4999.9999"), "NM"),
+    (Decimal("5000"), None, "TA"),
 ]
 
 # SISTER: peer WH ↔ WH lateral transfer
 SISTER_RULES: list[tuple[Decimal, Decimal | None, str]] = [
-    (Decimal("0"),    Decimal("999.9999"), "WM"),
-    (Decimal("1000"), None,               "RM"),
+    (Decimal("0"), Decimal("999.9999"), "WM"),
+    (Decimal("1000"), None, "RM"),
 ]
 
 # ADJUSTMENT: damage / write-off / count variance — 3 bands (IMTS §6 / user spec)
 ADJUSTMENT_RULES: list[tuple[Decimal, Decimal | None, str]] = [
-    (Decimal("0"),    Decimal("99.9999"),  "WM"),   # 0–99:    WM self-approval
-    (Decimal("100"),  Decimal("999.9999"), "RM"),   # 100–999: RM required
-    (Decimal("1000"), None,               "TA"),    # 1000+:   TA (CEO) required
+    (Decimal("0"), Decimal("99.9999"), "WM"),  # 0–99:    WM self-approval
+    (Decimal("100"), Decimal("999.9999"), "RM"),  # 100–999: RM required
+    (Decimal("1000"), None, "TA"),  # 1000+:   TA (CEO) required
 ]
 
 
 # ── Mock DB helpers ───────────────────────────────────────────────────────────
+
 
 def _threshold_db(role: str, level: int, auto: bool = False) -> AsyncMock:
     """Mock DB for resolve_approval() returning a single threshold band row.
@@ -74,9 +76,7 @@ def _threshold_db(role: str, level: int, auto: bool = False) -> AsyncMock:
     """
     db = AsyncMock()
     db.execute = AsyncMock(
-        return_value=MagicMock(
-            fetchone=MagicMock(return_value=(role, level, auto, []))
-        )
+        return_value=MagicMock(fetchone=MagicMock(return_value=(role, level, auto, [])))
     )
     return db
 
@@ -84,13 +84,12 @@ def _threshold_db(role: str, level: int, auto: bool = False) -> AsyncMock:
 def _mock_db_no_rule() -> AsyncMock:
     """Mock AsyncSession that returns None (no matching approval rule)."""
     db = AsyncMock()
-    db.execute = AsyncMock(
-        return_value=MagicMock(fetchone=MagicMock(return_value=None))
-    )
+    db.execute = AsyncMock(return_value=MagicMock(fetchone=MagicMock(return_value=None)))
     return db
 
 
 # ── Test class ────────────────────────────────────────────────────────────────
+
 
 @pytest.mark.unit
 class TestApprovalWorkflows:
@@ -109,14 +108,14 @@ class TestApprovalWorkflows:
             _threshold_db("RM", 2, auto=False), TENANT_ID, "PULL", Decimal("2000")
         )
 
-        assert decision.required_role            == "RM"
+        assert decision.required_role == "RM"
         assert decision.required_authority_level == 2
-        assert decision.is_auto_approved         is False
-        assert decision.next_status              == "PENDING_APPROVAL"
+        assert decision.is_auto_approved is False
+        assert decision.next_status == "PENDING_APPROVAL"
 
         # State machine: PULL mandatory review step must not be skipped
-        validate_transition("PULL", "DRAFT",            "PENDING_REVIEW")
-        validate_transition("PULL", "PENDING_REVIEW",   "PENDING_APPROVAL")
+        validate_transition("PULL", "DRAFT", "PENDING_REVIEW")
+        validate_transition("PULL", "PENDING_REVIEW", "PENDING_APPROVAL")
         validate_transition("PULL", "PENDING_APPROVAL", "APPROVED")
 
     async def test_pull_wh_to_rwh_insufficient_escalates(self) -> None:
@@ -129,10 +128,10 @@ class TestApprovalWorkflows:
             _threshold_db("NM", 1, auto=False), TENANT_ID, "PULL", Decimal("6000")
         )
 
-        assert decision.required_role            == "NM"
+        assert decision.required_role == "NM"
         assert decision.required_authority_level == 1
-        assert decision.is_auto_approved         is False
-        assert decision.next_status              == "PENDING_APPROVAL"
+        assert decision.is_auto_approved is False
+        assert decision.next_status == "PENDING_APPROVAL"
 
     async def test_pull_wh_to_mwh_direct_no_rwh(self) -> None:
         """Large PULL from MWH (qty=7000) → NM band required; NM band not auto-approve.
@@ -144,11 +143,13 @@ class TestApprovalWorkflows:
         for requester_level in (4, 3):  # WM=4, LM=3
             decision = await resolve_approval(
                 _threshold_db("NM", 1, auto=False),
-                TENANT_ID, "PULL", Decimal("7000"),
+                TENANT_ID,
+                "PULL",
+                Decimal("7000"),
                 requester_authority_level=requester_level,
             )
-            assert decision.required_role            == "NM"
-            assert decision.is_auto_approved         is False
+            assert decision.required_role == "NM"
+            assert decision.is_auto_approved is False
             assert decision.required_authority_level == 1
 
     # ── Push routing ─────────────────────────────────────────────────────────
@@ -164,16 +165,16 @@ class TestApprovalWorkflows:
             _threshold_db("NM", 1, auto=False), TENANT_ID, "PUSH", Decimal("1000")
         )
 
-        assert decision.required_role            == "NM"
+        assert decision.required_role == "NM"
         assert decision.required_authority_level == 1
-        assert decision.is_auto_approved         is False
-        assert decision.next_status              == "PENDING_APPROVAL"
+        assert decision.is_auto_approved is False
+        assert decision.next_status == "PENDING_APPROVAL"
 
         # PUSH state path after NM approves: APPROVED → ADVISED → ISSUED
-        validate_transition("PUSH", "DRAFT",            "PENDING_APPROVAL")
+        validate_transition("PUSH", "DRAFT", "PENDING_APPROVAL")
         validate_transition("PUSH", "PENDING_APPROVAL", "APPROVED")
-        validate_transition("PUSH", "APPROVED",         "ADVISED")
-        validate_transition("PUSH", "ADVISED",          "ISSUED")
+        validate_transition("PUSH", "APPROVED", "ADVISED")
+        validate_transition("PUSH", "ADVISED", "ISSUED")
 
     async def test_push_mwh_to_wh_direct(self) -> None:
         """LM initiates PUSH from MWH directly to WH; NM band required.
@@ -185,12 +186,12 @@ class TestApprovalWorkflows:
             _threshold_db("NM", 1, auto=False), TENANT_ID, "PUSH", Decimal("500")
         )
 
-        assert decision.required_role            == "NM"
-        assert decision.is_auto_approved         is False
+        assert decision.required_role == "NM"
+        assert decision.is_auto_approved is False
 
         # ADVISED → ISSUED → IN_TRANSIT is the normal post-approval completion path
-        validate_transition("PUSH", "ADVISED",    "ISSUED")
-        validate_transition("PUSH", "ISSUED",     "IN_TRANSIT")
+        validate_transition("PUSH", "ADVISED", "ISSUED")
+        validate_transition("PUSH", "ISSUED", "IN_TRANSIT")
         validate_transition("PUSH", "IN_TRANSIT", "RECEIVED")
 
     async def test_push_rwh_to_wh_regional(self) -> None:
@@ -204,10 +205,10 @@ class TestApprovalWorkflows:
             _threshold_db("NM", 1, auto=False), TENANT_ID, "PUSH", Decimal("1000")
         )
 
-        assert decision.required_role            == "NM"
+        assert decision.required_role == "NM"
         assert decision.required_authority_level == 1
-        assert decision.is_auto_approved         is False
-        assert decision.next_status              == "PENDING_APPROVAL"
+        assert decision.is_auto_approved is False
+        assert decision.next_status == "PENDING_APPROVAL"
 
         # NM (1) has higher authority than RM (2) and LM (3) — lower number wins
         assert ROLE_AUTHORITY_LEVEL["NM"] < ROLE_AUTHORITY_LEVEL["RM"]
@@ -249,16 +250,16 @@ class TestApprovalWorkflows:
             _threshold_db("WM", 4, auto=True), TENANT_ID, "SISTER", Decimal("500")
         )
 
-        assert decision.required_role            == "WM"
+        assert decision.required_role == "WM"
         assert decision.required_authority_level == 4
-        assert decision.is_auto_approved         is True
-        assert decision.next_status              == "APPROVED"
+        assert decision.is_auto_approved is True
+        assert decision.next_status == "APPROVED"
 
         # Full SISTER state path — both confirms are mandatory steps
-        validate_transition("SISTER", "DRAFT",                  "PENDING_SOURCE_CONFIRM")
+        validate_transition("SISTER", "DRAFT", "PENDING_SOURCE_CONFIRM")
         validate_transition("SISTER", "PENDING_SOURCE_CONFIRM", "PENDING_DEST_CONFIRM")
-        validate_transition("SISTER", "PENDING_DEST_CONFIRM",   "PENDING_APPROVAL")
-        validate_transition("SISTER", "PENDING_APPROVAL",       "APPROVED")
+        validate_transition("SISTER", "PENDING_DEST_CONFIRM", "PENDING_APPROVAL")
+        validate_transition("SISTER", "PENDING_APPROVAL", "APPROVED")
 
         # Source cannot skip to PENDING_DEST_CONFIRM directly
         with pytest.raises(InvalidStateTransitionError):
@@ -275,10 +276,10 @@ class TestApprovalWorkflows:
             _threshold_db("RM", 2, auto=False), TENANT_ID, "SISTER", Decimal("1500")
         )
 
-        assert decision.required_role            == "RM"
+        assert decision.required_role == "RM"
         assert decision.required_authority_level == 2
-        assert decision.is_auto_approved         is False
-        assert decision.next_status              == "PENDING_APPROVAL"
+        assert decision.is_auto_approved is False
+        assert decision.next_status == "PENDING_APPROVAL"
 
     async def test_sister_rwh_cross_region(self) -> None:
         """RM(src) and RM(dst) confirm cross-region RWH SISTER; RM band is auto-approve.
@@ -291,14 +292,14 @@ class TestApprovalWorkflows:
             _threshold_db("RM", 2, auto=True), TENANT_ID, "SISTER", Decimal("1500")
         )
 
-        assert decision.required_role            == "RM"
+        assert decision.required_role == "RM"
         assert decision.required_authority_level == 2
-        assert decision.is_auto_approved         is True
-        assert decision.next_status              == "APPROVED"
+        assert decision.is_auto_approved is True
+        assert decision.next_status == "APPROVED"
 
         # RM (2) has higher authority than WM (4) and lower than NM (1)
-        assert ROLE_AUTHORITY_LEVEL["RM"] < ROLE_AUTHORITY_LEVEL["WM"]   # 2 < 4
-        assert ROLE_AUTHORITY_LEVEL["NM"] < ROLE_AUTHORITY_LEVEL["RM"]   # 1 < 2
+        assert ROLE_AUTHORITY_LEVEL["RM"] < ROLE_AUTHORITY_LEVEL["WM"]  # 2 < 4
+        assert ROLE_AUTHORITY_LEVEL["NM"] < ROLE_AUTHORITY_LEVEL["RM"]  # 1 < 2
 
     async def test_sister_rejected_by_destination(self) -> None:
         """Destination WM declines at PENDING_DEST_CONFIRM → REJECTED (terminal).
@@ -310,10 +311,16 @@ class TestApprovalWorkflows:
         validate_transition("SISTER", "PENDING_DEST_CONFIRM", "REJECTED")
 
         # REJECTED is terminal — no state change possible after rejection
-        for next_state in ("PENDING_APPROVAL", "APPROVED", "ISSUED",
-                           "IN_TRANSIT", "RECEIVED", "COMPLETED", "DRAFT"):
-            with pytest.raises(InvalidStateTransitionError,
-                               match=r"SISTER.*REJECTED"):
+        for next_state in (
+            "PENDING_APPROVAL",
+            "APPROVED",
+            "ISSUED",
+            "IN_TRANSIT",
+            "RECEIVED",
+            "COMPLETED",
+            "DRAFT",
+        ):
+            with pytest.raises(InvalidStateTransitionError, match=r"SISTER.*REJECTED"):
                 validate_transition("SISTER", "REJECTED", next_state)
 
     # ── Damage / write-off routing ────────────────────────────────────────────
@@ -331,15 +338,15 @@ class TestApprovalWorkflows:
             _threshold_db("WM", 4, auto=True), TENANT_ID, "ADJUSTMENT", Decimal("50")
         )
 
-        assert decision.required_role            == "WM"
+        assert decision.required_role == "WM"
         assert decision.required_authority_level == 4
-        assert decision.is_auto_approved         is True
-        assert decision.next_status              == "APPROVED"
+        assert decision.is_auto_approved is True
+        assert decision.next_status == "APPROVED"
 
         # ADJUSTMENT state machine: DRAFT → PENDING_APPROVAL → APPROVED → POSTED
-        validate_transition("ADJUSTMENT", "DRAFT",            "PENDING_APPROVAL")
+        validate_transition("ADJUSTMENT", "DRAFT", "PENDING_APPROVAL")
         validate_transition("ADJUSTMENT", "PENDING_APPROVAL", "APPROVED")
-        validate_transition("ADJUSTMENT", "APPROVED",         "POSTED")
+        validate_transition("ADJUSTMENT", "APPROVED", "POSTED")
 
         # POSTED is terminal — no transit states exist for adjustments
         with pytest.raises(InvalidStateTransitionError):
@@ -355,10 +362,10 @@ class TestApprovalWorkflows:
             _threshold_db("RM", 2, auto=False), TENANT_ID, "ADJUSTMENT", Decimal("500")
         )
 
-        assert decision.required_role            == "RM"
+        assert decision.required_role == "RM"
         assert decision.required_authority_level == 2
-        assert decision.is_auto_approved         is False
-        assert decision.next_status              == "PENDING_APPROVAL"
+        assert decision.is_auto_approved is False
+        assert decision.next_status == "PENDING_APPROVAL"
 
     async def test_damage_exceeds_limit_final_ta(self) -> None:
         """ADJUSTMENT qty=1200 (TA band, ≥ 1000) → TA (CEO-equivalent) required.
@@ -371,10 +378,10 @@ class TestApprovalWorkflows:
             _threshold_db("TA", 1, auto=False), TENANT_ID, "ADJUSTMENT", Decimal("1200")
         )
 
-        assert decision.required_role            == "TA"
+        assert decision.required_role == "TA"
         assert decision.required_authority_level == 1
-        assert decision.is_auto_approved         is False
-        assert decision.next_status              == "PENDING_APPROVAL"
+        assert decision.is_auto_approved is False
+        assert decision.next_status == "PENDING_APPROVAL"
 
         # TA and NM share authority level 1 — both are highest tenant-scoped authority
         assert ROLE_AUTHORITY_LEVEL["TA"] == ROLE_AUTHORITY_LEVEL["NM"] == 1
@@ -392,10 +399,10 @@ class TestApprovalWorkflows:
             _threshold_db("TA", 1, auto=False), TENANT_ID, "ADJUSTMENT", Decimal("1500")
         )
 
-        assert decision.required_role            == "TA"
+        assert decision.required_role == "TA"
         assert decision.required_authority_level == 1
-        assert decision.is_auto_approved         is False
-        assert decision.next_status              == "PENDING_APPROVAL"
+        assert decision.is_auto_approved is False
+        assert decision.next_status == "PENDING_APPROVAL"
 
         # Authority hierarchy: LM (3) > NM (1) > TA (1) — lower number = higher authority
         assert ROLE_AUTHORITY_LEVEL["LM"] > ROLE_AUTHORITY_LEVEL["NM"]
@@ -410,19 +417,15 @@ class TestApprovalWorkflows:
         PULL qty=500 is in the WM band (0–999) of the default rules.
         Level 3 fallback never raises for valid tx types (PROMPT C §fallback).
         """
-        decision = await resolve_approval(
-            _mock_db_no_rule(), TENANT_ID, "PULL", Decimal("500")
-        )
-        assert decision.required_role            == "WM"
+        decision = await resolve_approval(_mock_db_no_rule(), TENANT_ID, "PULL", Decimal("500"))
+        assert decision.required_role == "WM"
         assert decision.required_authority_level == 4
 
     async def test_org_type_default_raises_for_unknown_tx_type(self) -> None:
         """ValueError is raised when the transaction_type is unrecognised —
         the org-type defaults only cover PULL, PUSH, ADJUSTMENT, SISTER, RECEIVE, ISSUE."""
         with pytest.raises(ValueError, match="No default approval rule"):
-            await resolve_approval(
-                _mock_db_no_rule(), TENANT_ID, "UNKNOWN_TYPE", Decimal("500")
-            )
+            await resolve_approval(_mock_db_no_rule(), TENANT_ID, "UNKNOWN_TYPE", Decimal("500"))
 
     # ── resolve_approval() 3-step resolution tests ───────────────────────────
 
@@ -435,14 +438,16 @@ class TestApprovalWorkflows:
         """
         PRODUCT = "pppppppp-0000-0000-0000-000000000001"
         db = AsyncMock()
-        db.execute = AsyncMock(side_effect=[
-            MagicMock(fetchone=MagicMock(return_value=(2,))),              # pam → min_level=2
-            MagicMock(fetchone=MagicMock(return_value=("WM", 4, True, []))),  # band → WM level 4
-        ])
-
-        decision = await resolve_approval(
-            db, TENANT_ID, "PULL", Decimal("50"), product_id=PRODUCT
+        db.execute = AsyncMock(
+            side_effect=[
+                MagicMock(fetchone=MagicMock(return_value=(2,))),  # pam → min_level=2
+                MagicMock(
+                    fetchone=MagicMock(return_value=("WM", 4, True, []))
+                ),  # band → WM level 4
+            ]
         )
+
+        decision = await resolve_approval(db, TENANT_ID, "PULL", Decimal("50"), product_id=PRODUCT)
 
         assert decision.required_authority_level == 2, (
             "product_min=2 must win over threshold=4: min(2,4)=2"
@@ -470,10 +475,14 @@ class TestApprovalWorkflows:
         required_authority_level = min(1, 2) = 1."""
         PRODUCT = "pppppppp-0000-0000-0000-000000000002"
         db = AsyncMock()
-        db.execute = AsyncMock(side_effect=[
-            MagicMock(fetchone=MagicMock(return_value=(1,))),              # pam → min_level=1
-            MagicMock(fetchone=MagicMock(return_value=("RM", 2, False, []))),  # band → RM level 2
-        ])
+        db.execute = AsyncMock(
+            side_effect=[
+                MagicMock(fetchone=MagicMock(return_value=(1,))),  # pam → min_level=1
+                MagicMock(
+                    fetchone=MagicMock(return_value=("RM", 2, False, []))
+                ),  # band → RM level 2
+            ]
+        )
 
         decision = await resolve_approval(
             db, TENANT_ID, "PULL", Decimal("2000"), product_id=PRODUCT
@@ -497,9 +506,7 @@ class TestApprovalWorkflows:
         # Verify that the threshold query used 'PULL' not 'SISTER'
         assert db.execute.await_count == 1, "no product_id → exactly one DB call"
         call_params = db.execute.call_args_list[0].args[1]
-        assert call_params["tx_type"] == "PULL", (
-            "SISTER must look up PULL bands, not SISTER bands"
-        )
+        assert call_params["tx_type"] == "PULL", "SISTER must look up PULL bands, not SISTER bands"
 
     # ── Regression tests (PROMPT 3 — approval UI + routing) ──────────────────
 
@@ -577,14 +584,16 @@ class TestApprovalWorkflows:
         """
         PRODUCT = "pppppppp-0000-0000-0000-000000000099"
         db = AsyncMock()
-        db.execute = AsyncMock(side_effect=[
-            MagicMock(fetchone=MagicMock(return_value=(2,))),               # pam → min_level=2
-            MagicMock(fetchone=MagicMock(return_value=("WM", 4, True, []))),  # band → WM, auto=True
-        ])
-
-        decision = await resolve_approval(
-            db, TENANT_ID, "PULL", Decimal("50"), product_id=PRODUCT
+        db.execute = AsyncMock(
+            side_effect=[
+                MagicMock(fetchone=MagicMock(return_value=(2,))),  # pam → min_level=2
+                MagicMock(
+                    fetchone=MagicMock(return_value=("WM", 4, True, []))
+                ),  # band → WM, auto=True
+            ]
         )
+
+        decision = await resolve_approval(db, TENANT_ID, "PULL", Decimal("50"), product_id=PRODUCT)
 
         assert decision.required_authority_level == 2, (
             "product_min=2 must override band level=4: min(2,4)=2"
@@ -664,13 +673,11 @@ class TestApprovalWorkflows:
             return_value=MagicMock(fetchone=MagicMock(return_value=("NM", 1, False, [])))
         )
 
-        decision = await resolve_approval(
-            db, TENANT_ID, "PUSH", Decimal("500"), simple_mode=False
-        )
+        decision = await resolve_approval(db, TENANT_ID, "PUSH", Decimal("500"), simple_mode=False)
 
-        assert decision.required_role            == "NM"
+        assert decision.required_role == "NM"
         assert decision.required_authority_level == 1
-        assert decision.is_auto_approved         is False
+        assert decision.is_auto_approved is False
 
         # The DB query must use "PUSH" not "PULL" in custom mode
         assert db.execute.await_count == 1, "custom PUSH rule found — no PULL fallback needed"
@@ -683,22 +690,22 @@ class TestApprovalWorkflows:
         """In custom mode (simple_mode=False), when no PUSH-specific rule exists,
         fall back to PULL rules before using org-type defaults."""
         db = AsyncMock()
-        db.execute = AsyncMock(side_effect=[
-            MagicMock(fetchone=MagicMock(return_value=None)),                      # PUSH → no rule
-            MagicMock(fetchone=MagicMock(return_value=("RM", 2, False, []))),      # PULL → RM
-        ])
-
-        decision = await resolve_approval(
-            db, TENANT_ID, "PUSH", Decimal("500"), simple_mode=False
+        db.execute = AsyncMock(
+            side_effect=[
+                MagicMock(fetchone=MagicMock(return_value=None)),  # PUSH → no rule
+                MagicMock(fetchone=MagicMock(return_value=("RM", 2, False, []))),  # PULL → RM
+            ]
         )
 
-        assert decision.required_role            == "RM"
+        decision = await resolve_approval(db, TENANT_ID, "PUSH", Decimal("500"), simple_mode=False)
+
+        assert decision.required_role == "RM"
         assert decision.required_authority_level == 2
         assert db.execute.await_count == 2, (
             "two DB calls expected: PUSH lookup (None) then PULL fallback"
         )
         push_params = db.execute.call_args_list[0].args[1]
-        pull_params  = db.execute.call_args_list[1].args[1]
+        pull_params = db.execute.call_args_list[1].args[1]
         assert push_params["tx_type"] == "PUSH"
         assert pull_params["tx_type"] == "PULL", (
             "custom mode fallback must query PULL rules when PUSH rule is absent"

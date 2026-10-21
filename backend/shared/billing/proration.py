@@ -24,6 +24,7 @@ change in place. It never blocks anything; a PENDING PERIOD invoice DOES
 block a new upgrade or PURCHASED add-on grant (rule 6,
 check_not_blocked_by_pending_period_invoice()).
 """
+
 from __future__ import annotations
 
 import calendar
@@ -36,20 +37,26 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from shared.billing.addons import grant_addon
-from shared.billing.subscriptions import get_current_addon_price, get_current_price, update_live_subscription_tier, vat_breakdown
+from shared.billing.subscriptions import (
+    get_current_addon_price,
+    get_current_price,
+    update_live_subscription_tier,
+    vat_breakdown,
+)
 
 
 @dataclass(frozen=True)
 class ProrationLine:
-    item_type: str                       # 'PACKAGE' | 'ADDON'
-    item_key: str                        # tier code or addon_code
+    item_type: str  # 'PACKAGE' | 'ADDON'
+    item_key: str  # tier code or addon_code
     description: str
-    amount: Decimal                      # already-prorated amount for this line (pre-VAT)
-    price_id: Optional[str] = None       # PACKAGE lines — package_prices id
+    amount: Decimal  # already-prorated amount for this line (pre-VAT)
+    price_id: Optional[str] = None  # PACKAGE lines — package_prices id
     addon_price_id: Optional[str] = None  # ADDON lines — addon_prices id
 
 
 # ── month-boundary arithmetic ────────────────────────────────────────────────
+
 
 def _add_months(d: date, n: int) -> date:
     """`d` plus `n` calendar months, day-clamped the same way as
@@ -132,35 +139,44 @@ def prorate(annual_amount: Decimal, months: int) -> Decimal:
 
 # ── subscription / invoice lookups ───────────────────────────────────────────
 
+
 async def _get_live_subscription(db: AsyncSession, tenant_id: str) -> Any:
-    return (await db.execute(
-        text(
-            "SELECT id, tenant_id, tier, billing_period, status, provider, price_id, "
-            "       amount, currency, current_period_start, current_period_end "
-            "FROM subscriptions "
-            "WHERE tenant_id = :tid AND status IN ('ACTIVE', 'PENDING_PAYMENT', 'PAST_DUE') "
-            "LIMIT 1"
-        ),
-        {"tid": str(tenant_id)},
-    )).fetchone()
+    return (
+        await db.execute(
+            text(
+                "SELECT id, tenant_id, tier, billing_period, status, provider, price_id, "
+                "       amount, currency, current_period_start, current_period_end "
+                "FROM subscriptions "
+                "WHERE tenant_id = :tid AND status IN ('ACTIVE', 'PENDING_PAYMENT', 'PAST_DUE') "
+                "LIMIT 1"
+            ),
+            {"tid": str(tenant_id)},
+        )
+    ).fetchone()
 
 
 async def _has_paid_payment(db: AsyncSession, subscription_id: str) -> bool:
-    row = (await db.execute(
-        text("SELECT id FROM payments WHERE subscription_id = :sid AND status = 'PAID' LIMIT 1"),
-        {"sid": str(subscription_id)},
-    )).fetchone()
+    row = (
+        await db.execute(
+            text(
+                "SELECT id FROM payments WHERE subscription_id = :sid AND status = 'PAID' LIMIT 1"
+            ),
+            {"sid": str(subscription_id)},
+        )
+    ).fetchone()
     return row is not None
 
 
 async def _has_pending_period_invoice(db: AsyncSession, subscription_id: str) -> bool:
-    row = (await db.execute(
-        text(
-            "SELECT id FROM payments WHERE subscription_id = :sid "
-            "AND status = 'PENDING' AND invoice_kind = 'PERIOD' LIMIT 1"
-        ),
-        {"sid": str(subscription_id)},
-    )).fetchone()
+    row = (
+        await db.execute(
+            text(
+                "SELECT id FROM payments WHERE subscription_id = :sid "
+                "AND status = 'PENDING' AND invoice_kind = 'PERIOD' LIMIT 1"
+            ),
+            {"sid": str(subscription_id)},
+        )
+    ).fetchone()
     return row is not None
 
 
@@ -182,6 +198,7 @@ async def check_not_blocked_by_pending_period_invoice(db: AsyncSession, tenant_i
 
 
 # ── invoice creation (write) ─────────────────────────────────────────────────
+
 
 async def create_proration_invoice(
     db: AsyncSession,
@@ -206,32 +223,40 @@ async def create_proration_invoice(
         return None
 
     today = date.today()
-    free_until = _free_until(subscription.current_period_start, subscription.current_period_end, today)
+    free_until = _free_until(
+        subscription.current_period_start, subscription.current_period_end, today
+    )
 
     breakdown = vat_breakdown(subtotal)
-    payment_id = (await db.execute(
-        text(
-            "INSERT INTO payments ("
-            "  tenant_id, subscription_id, status, currency, subtotal, vat_rate, "
-            "  vat_amount, total, period_start, period_end, provider, invoice_kind, "
-            "  recorded_by, note"
-            ") VALUES ("
-            "  :tid, :sid, 'PENDING', :currency, :subtotal, :vat_rate, "
-            "  :vat_amount, :total, :start, :end, :provider, 'PRORATION', "
-            "  :recorded_by, :note"
-            ") RETURNING id"
-        ),
-        {
-            "tid": str(tenant_id), "sid": str(subscription.id),
-            "currency": subscription.currency,
-            "subtotal": breakdown["subtotal"], "vat_rate": breakdown["vat_rate"],
-            "vat_amount": breakdown["vat_amount"], "total": breakdown["total"],
-            "start": free_until, "end": subscription.current_period_end,
-            "provider": subscription.provider,
-            "recorded_by": str(recorded_by) if recorded_by else None,
-            "note": reason,
-        },
-    )).scalar_one()
+    payment_id = (
+        await db.execute(
+            text(
+                "INSERT INTO payments ("
+                "  tenant_id, subscription_id, status, currency, subtotal, vat_rate, "
+                "  vat_amount, total, period_start, period_end, provider, invoice_kind, "
+                "  recorded_by, note"
+                ") VALUES ("
+                "  :tid, :sid, 'PENDING', :currency, :subtotal, :vat_rate, "
+                "  :vat_amount, :total, :start, :end, :provider, 'PRORATION', "
+                "  :recorded_by, :note"
+                ") RETURNING id"
+            ),
+            {
+                "tid": str(tenant_id),
+                "sid": str(subscription.id),
+                "currency": subscription.currency,
+                "subtotal": breakdown["subtotal"],
+                "vat_rate": breakdown["vat_rate"],
+                "vat_amount": breakdown["vat_amount"],
+                "total": breakdown["total"],
+                "start": free_until,
+                "end": subscription.current_period_end,
+                "provider": subscription.provider,
+                "recorded_by": str(recorded_by) if recorded_by else None,
+                "note": reason,
+            },
+        )
+    ).scalar_one()
 
     for line in lines:
         await db.execute(
@@ -245,25 +270,36 @@ async def create_proration_invoice(
                 ")"
             ),
             {
-                "tid": str(tenant_id), "pid": str(payment_id),
-                "item_type": line.item_type, "item_key": line.item_key,
+                "tid": str(tenant_id),
+                "pid": str(payment_id),
+                "item_type": line.item_type,
+                "item_key": line.item_key,
                 "description": line.description,
-                "price_id": line.price_id, "addon_price_id": line.addon_price_id,
+                "price_id": line.price_id,
+                "addon_price_id": line.addon_price_id,
                 "amount": line.amount,
             },
         )
 
     return {
-        "payment_id": str(payment_id), "status": "PENDING", "invoice_kind": "PRORATION",
-        "period_start": free_until, "period_end": subscription.current_period_end,
+        "payment_id": str(payment_id),
+        "status": "PENDING",
+        "invoice_kind": "PRORATION",
+        "period_start": free_until,
+        "period_end": subscription.current_period_end,
         **breakdown,
     }
 
 
 # ── orchestration: wraps the existing write with the S11 rule ───────────────
 
+
 async def apply_plan_change_with_proration(
-    db: AsyncSession, tenant_id: str, new_tier: str, *, recorded_by: Optional[str],
+    db: AsyncSession,
+    tenant_id: str,
+    new_tier: str,
+    *,
+    recorded_by: Optional[str],
 ) -> dict[str, Any]:
     """Wraps update_live_subscription_tier with the S11 proration rule.
     Entitlements (apply_package_to_tenant) are the caller's concern, as
@@ -278,7 +314,9 @@ async def apply_plan_change_with_proration(
     sub_before = await _get_live_subscription(db, tenant_id)
     if sub_before is not None and sub_before.tier != new_tier:
         new_price_check = await get_current_price(db, new_tier, sub_before.billing_period)
-        if new_price_check is not None and Decimal(new_price_check.amount) > Decimal(sub_before.amount):
+        if new_price_check is not None and Decimal(new_price_check.amount) > Decimal(
+            sub_before.amount
+        ):
             # Inlined rather than check_not_blocked_by_pending_period_invoice(db, tenant_id) —
             # sub_before is already loaded, no need to fetch it a second time.
             if await _has_pending_period_invoice(db, sub_before.id):
@@ -290,19 +328,29 @@ async def apply_plan_change_with_proration(
     if subscription_change is not None and sub_before is not None:
         old_amount = Decimal(subscription_change["old_amount"])
         new_amount = Decimal(subscription_change["new_amount"])
-        if sub_before.billing_period == "ANNUAL" and new_amount > old_amount and not await _never_paid(db, sub_before):
-            months = remaining_billing_months(sub_before.current_period_start, sub_before.current_period_end, date.today())
+        if (
+            sub_before.billing_period == "ANNUAL"
+            and new_amount > old_amount
+            and not await _never_paid(db, sub_before)
+        ):
+            months = remaining_billing_months(
+                sub_before.current_period_start, sub_before.current_period_end, date.today()
+            )
             if months > 0:
                 new_price_row = await get_current_price(db, new_tier, sub_before.billing_period)
                 line = ProrationLine(
-                    item_type="PACKAGE", item_key=new_tier,
+                    item_type="PACKAGE",
+                    item_key=new_tier,
                     description=f"Upgrade {subscription_change['old_tier']} -> {new_tier} "
-                                f"— {months}/12 of annual difference",
+                    f"— {months}/12 of annual difference",
                     amount=prorate(new_amount - old_amount, months),
                     price_id=str(new_price_row.id) if new_price_row is not None else None,
                 )
                 proration_invoice = await create_proration_invoice(
-                    db, tenant_id, sub_before, [line],
+                    db,
+                    tenant_id,
+                    sub_before,
+                    [line],
                     reason=f"Upgrade {subscription_change['old_tier']} -> {new_tier}",
                     recorded_by=recorded_by,
                 )
@@ -332,24 +380,36 @@ async def apply_addon_grant_with_proration(
         await check_not_blocked_by_pending_period_invoice(db, tenant_id)
 
     result = await grant_addon(
-        db, tenant_id, addon_code, source,
-        note=note, starts_on=starts_on, ends_on=ends_on, created_by=created_by,
+        db,
+        tenant_id,
+        addon_code,
+        source,
+        note=note,
+        starts_on=starts_on,
+        ends_on=ends_on,
+        created_by=created_by,
     )
 
     proration_invoice = None
     if source == "PURCHASED":
         sub = await _get_live_subscription(db, tenant_id)
         if sub is not None and sub.billing_period == "ANNUAL" and not await _never_paid(db, sub):
-            months = remaining_billing_months(sub.current_period_start, sub.current_period_end, date.today())
+            months = remaining_billing_months(
+                sub.current_period_start, sub.current_period_end, date.today()
+            )
             if months > 0:
                 line = ProrationLine(
-                    item_type="ADDON", item_key=addon_code,
+                    item_type="ADDON",
+                    item_key=addon_code,
                     description=f"{addon_code} add-on — {months}/12 of annual price",
                     amount=prorate(Decimal(result["amount"]), months),
                     addon_price_id=result["price_id"],
                 )
                 proration_invoice = await create_proration_invoice(
-                    db, tenant_id, sub, [line],
+                    db,
+                    tenant_id,
+                    sub,
+                    [line],
                     reason=f"Purchased add-on {addon_code}",
                     recorded_by=created_by,
                 )
@@ -359,13 +419,21 @@ async def apply_addon_grant_with_proration(
 
 # ── read-only previews (no writes) ───────────────────────────────────────────
 
+
 def _empty_preview() -> dict[str, Any]:
     zero = vat_breakdown(Decimal("0"))
     return {
-        "remaining_months": 0, "free_until": None, "period_end": None,
-        "old_amount": None, "new_amount": None,
-        "subtotal": zero["subtotal"], "vat": zero["vat_amount"], "total": zero["total"],
-        "currency": None, "will_invoice": False, "blocked_code": None,
+        "remaining_months": 0,
+        "free_until": None,
+        "period_end": None,
+        "old_amount": None,
+        "new_amount": None,
+        "subtotal": zero["subtotal"],
+        "vat": zero["vat_amount"],
+        "total": zero["total"],
+        "currency": None,
+        "will_invoice": False,
+        "blocked_code": None,
     }
 
 
@@ -387,20 +455,36 @@ async def preview_upgrade(db: AsyncSession, tenant_id: str, new_tier: str) -> di
 
     months, subtotal, free_until = 0, Decimal("0"), None
     will_invoice = False
-    if blocked_code is None and is_upgrade and sub.billing_period == "ANNUAL" and not await _never_paid(db, sub):
-        months = remaining_billing_months(sub.current_period_start, sub.current_period_end, date.today())
+    if (
+        blocked_code is None
+        and is_upgrade
+        and sub.billing_period == "ANNUAL"
+        and not await _never_paid(db, sub)
+    ):
+        months = remaining_billing_months(
+            sub.current_period_start, sub.current_period_end, date.today()
+        )
         if months > 0:
             subtotal = prorate(new_amount - old_amount, months)
             if subtotal > 0:
                 will_invoice = True
-                free_until = _free_until(sub.current_period_start, sub.current_period_end, date.today())
+                free_until = _free_until(
+                    sub.current_period_start, sub.current_period_end, date.today()
+                )
 
     breakdown = vat_breakdown(subtotal)
     return {
-        "remaining_months": months, "free_until": free_until, "period_end": sub.current_period_end,
-        "old_amount": old_amount, "new_amount": new_amount,
-        "subtotal": breakdown["subtotal"], "vat": breakdown["vat_amount"], "total": breakdown["total"],
-        "currency": sub.currency, "will_invoice": will_invoice, "blocked_code": blocked_code,
+        "remaining_months": months,
+        "free_until": free_until,
+        "period_end": sub.current_period_end,
+        "old_amount": old_amount,
+        "new_amount": new_amount,
+        "subtotal": breakdown["subtotal"],
+        "vat": breakdown["vat_amount"],
+        "total": breakdown["total"],
+        "currency": sub.currency,
+        "will_invoice": will_invoice,
+        "blocked_code": blocked_code,
     }
 
 
@@ -420,18 +504,34 @@ async def preview_addon(db: AsyncSession, tenant_id: str, addon_code: str) -> di
 
     months, subtotal, free_until = 0, Decimal("0"), None
     will_invoice = False
-    if blocked_code is None and new_amount is not None and sub.billing_period == "ANNUAL" and not await _never_paid(db, sub):
-        months = remaining_billing_months(sub.current_period_start, sub.current_period_end, date.today())
+    if (
+        blocked_code is None
+        and new_amount is not None
+        and sub.billing_period == "ANNUAL"
+        and not await _never_paid(db, sub)
+    ):
+        months = remaining_billing_months(
+            sub.current_period_start, sub.current_period_end, date.today()
+        )
         if months > 0:
             subtotal = prorate(new_amount, months)
             if subtotal > 0:
                 will_invoice = True
-                free_until = _free_until(sub.current_period_start, sub.current_period_end, date.today())
+                free_until = _free_until(
+                    sub.current_period_start, sub.current_period_end, date.today()
+                )
 
     breakdown = vat_breakdown(subtotal)
     return {
-        "remaining_months": months, "free_until": free_until, "period_end": sub.current_period_end,
-        "old_amount": None, "new_amount": new_amount,
-        "subtotal": breakdown["subtotal"], "vat": breakdown["vat_amount"], "total": breakdown["total"],
-        "currency": sub.currency, "will_invoice": will_invoice, "blocked_code": blocked_code,
+        "remaining_months": months,
+        "free_until": free_until,
+        "period_end": sub.current_period_end,
+        "old_amount": None,
+        "new_amount": new_amount,
+        "subtotal": breakdown["subtotal"],
+        "vat": breakdown["vat_amount"],
+        "total": breakdown["total"],
+        "currency": sub.currency,
+        "will_invoice": will_invoice,
+        "blocked_code": blocked_code,
     }

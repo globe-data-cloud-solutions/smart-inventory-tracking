@@ -35,14 +35,18 @@ async def sync_batch(
     results = []
     for item in items:
         if await idempotency_key_exists(db, item.idempotency_key):
-            results.append(SyncResult(
-                idempotency_key=item.idempotency_key,
-                status="SYNCED",
-                detail="Already processed",
-            ))
+            results.append(
+                SyncResult(
+                    idempotency_key=item.idempotency_key,
+                    status="SYNCED",
+                    detail="Already processed",
+                )
+            )
         else:
-            results.append(SyncResult(
-                idempotency_key=item.idempotency_key,
-                status="SYNCED",
-            ))
+            results.append(
+                SyncResult(
+                    idempotency_key=item.idempotency_key,
+                    status="SYNCED",
+                )
+            )
     return SuccessResponse(data=results)

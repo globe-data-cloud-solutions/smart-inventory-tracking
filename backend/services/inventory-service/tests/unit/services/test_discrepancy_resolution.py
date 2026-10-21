@@ -10,6 +10,7 @@ insufficient source lot raises the same 422 INSUFFICIENT_LOT_STOCK.
 
 Transfer T1 moves stock from WH_A (source) to WH_B (destination).
 """
+
 from __future__ import annotations
 
 import importlib.util
@@ -28,54 +29,57 @@ from httpx import ASGITransport, AsyncClient
 
 TENANT_ID = "10000000-0000-0000-0000-000000000001"
 OTHER_TENANT = "99999999-0000-0000-0000-000000000001"
-WH_A = "20000000-0000-0000-0000-00000000000a"   # source of T1
-WH_B = "20000000-0000-0000-0000-00000000000b"   # destination of T1
-WH_C = "20000000-0000-0000-0000-00000000000c"   # unrelated warehouse
-REGION = "40000000-0000-0000-0000-000000000001"    # RM node over WH_A and WH_B
+WH_A = "20000000-0000-0000-0000-00000000000a"  # source of T1
+WH_B = "20000000-0000-0000-0000-00000000000b"  # destination of T1
+WH_C = "20000000-0000-0000-0000-00000000000c"  # unrelated warehouse
+REGION = "40000000-0000-0000-0000-000000000001"  # RM node over WH_A and WH_B
 REGION_B = "40000000-0000-0000-0000-000000000002"  # RM node over WH_B only
 REGION_C = "40000000-0000-0000-0000-000000000003"  # RM node over WH_C only
-SITE = "50000000-0000-0000-0000-000000000001"      # facility node, WH_C is its child
-PRODUCT = "aaaaaaaa-0000-0000-0000-000000000001"   # batch
+SITE = "50000000-0000-0000-0000-000000000001"  # facility node, WH_C is its child
+PRODUCT = "aaaaaaaa-0000-0000-0000-000000000001"  # batch
 PRODUCT_2 = "aaaaaaaa-0000-0000-0000-000000000002"  # non-batch
 T1 = "cccccccc-0000-0000-0000-000000000001"
-T2 = "cccccccc-0000-0000-0000-000000000002"       # WH_C -> WH_A
-T3 = "cccccccc-0000-0000-0000-000000000003"       # WH_B -> WH_C
+T2 = "cccccccc-0000-0000-0000-000000000002"  # WH_C -> WH_A
+T3 = "cccccccc-0000-0000-0000-000000000003"  # WH_B -> WH_C
 T_OTHER = "cccccccc-0000-0000-0000-0000000000ff"  # another tenant
 LINE = "11111111-0000-0000-0000-000000000001"
 USER_ID = "30000000-0000-0000-0000-000000000001"
 
 # Lots are compared in lot_id order: LOT_0 < LOT_A < LOT_C < LOT_D.
-LOT_0 = "00000001-0000-0000-0000-000000000000"   # product, sorts BEFORE the sent lot
-LOT_A = "0000000a-0000-0000-0000-000000000000"   # product, the lot that was sent
-LOT_C = "0000000c-0000-0000-0000-000000000000"   # product, expired, sorts AFTER LOT_A
-LOT_D = "0000000d-0000-0000-0000-000000000000"   # product, only 1 at the source
-LOT_Z = "0000000f-0000-0000-0000-000000000000"   # PRODUCT_2 — another product
+LOT_0 = "00000001-0000-0000-0000-000000000000"  # product, sorts BEFORE the sent lot
+LOT_A = "0000000a-0000-0000-0000-000000000000"  # product, the lot that was sent
+LOT_C = "0000000c-0000-0000-0000-000000000000"  # product, expired, sorts AFTER LOT_A
+LOT_D = "0000000d-0000-0000-0000-000000000000"  # product, only 1 at the source
+LOT_Z = "0000000f-0000-0000-0000-000000000000"  # PRODUCT_2 — another product
 
-D_SHORT = "dddddddd-0000-0000-0000-000000000001"           # SHORT, batch, 2 missing
-D_SHORT_NB = "dddddddd-0000-0000-0000-000000000002"        # SHORT, non-batch, 5 missing
-D_DAMAGED = "dddddddd-0000-0000-0000-000000000003"         # DAMAGED, batch, 4 missing
-D_WRONG = "dddddddd-0000-0000-0000-000000000004"           # WRONG_LOT, batch, 3 missing
-D_WRONG_NB = "dddddddd-0000-0000-0000-000000000005"        # WRONG_LOT, non-batch, 6 missing
-D_RESOLVED = "dddddddd-0000-0000-0000-000000000006"        # already RESOLVED
-D_T2 = "dddddddd-0000-0000-0000-000000000007"              # on T2 (WH_C -> WH_A)
-D_T3 = "dddddddd-0000-0000-0000-000000000008"              # on T3 (WH_B -> WH_C)
-D_OTHER = "dddddddd-0000-0000-0000-0000000000ff"           # another tenant's row
+D_SHORT = "dddddddd-0000-0000-0000-000000000001"  # SHORT, batch, 2 missing
+D_SHORT_NB = "dddddddd-0000-0000-0000-000000000002"  # SHORT, non-batch, 5 missing
+D_DAMAGED = "dddddddd-0000-0000-0000-000000000003"  # DAMAGED, batch, 4 missing
+D_WRONG = "dddddddd-0000-0000-0000-000000000004"  # WRONG_LOT, batch, 3 missing
+D_WRONG_NB = "dddddddd-0000-0000-0000-000000000005"  # WRONG_LOT, non-batch, 6 missing
+D_RESOLVED = "dddddddd-0000-0000-0000-000000000006"  # already RESOLVED
+D_T2 = "dddddddd-0000-0000-0000-000000000007"  # on T2 (WH_C -> WH_A)
+D_T3 = "dddddddd-0000-0000-0000-000000000008"  # on T3 (WH_B -> WH_C)
+D_OTHER = "dddddddd-0000-0000-0000-0000000000ff"  # another tenant's row
 
 KEY = f"transfer:{T1}:discrepancy"
 
 
 def _user(role: str, warehouse_id: Optional[str] = None, tenant_id: str = TENANT_ID) -> Any:
     return SimpleNamespace(
-        user_id=USER_ID, tenant_id=tenant_id, role=role,
-        warehouse_id=warehouse_id, region_id=None,
+        user_id=USER_ID,
+        tenant_id=tenant_id,
+        role=role,
+        warehouse_id=warehouse_id,
+        region_id=None,
     )
 
 
 TA = _user("TA")
 NM = _user("NM")
-RM = _user("RM", REGION)              # source and destination in scope
+RM = _user("RM", REGION)  # source and destination in scope
 RM_DEST_ONLY = _user("RM", REGION_B)  # destination in scope, source outside
-RM_OUT = _user("RM", REGION_C)        # neither end in scope
+RM_OUT = _user("RM", REGION_C)  # neither end in scope
 RM_NO_NODE = _user("RM", None)
 
 # Subtrees as get_descendant_node_ids returns them. REGION's comes back in
@@ -100,13 +104,27 @@ class _World:
             T_OTHER: dict(tenant_id=OTHER_TENANT, from_wh=WH_A, to_wh=WH_B, type="PULL"),
         }
         self.lots = {
-            LOT_0: dict(tenant_id=TENANT_ID, product_id=PRODUCT, lot_number="LOT-0", expiry_date=None),
-            LOT_A: dict(tenant_id=TENANT_ID, product_id=PRODUCT, lot_number="LOT-A",
-                        expiry_date=date(2027, 1, 31)),
-            LOT_C: dict(tenant_id=TENANT_ID, product_id=PRODUCT, lot_number="LOT-C",
-                        expiry_date=date.today() - timedelta(days=30)),   # expired
-            LOT_D: dict(tenant_id=TENANT_ID, product_id=PRODUCT, lot_number="LOT-D", expiry_date=None),
-            LOT_Z: dict(tenant_id=TENANT_ID, product_id=PRODUCT_2, lot_number="LOT-Z", expiry_date=None),
+            LOT_0: dict(
+                tenant_id=TENANT_ID, product_id=PRODUCT, lot_number="LOT-0", expiry_date=None
+            ),
+            LOT_A: dict(
+                tenant_id=TENANT_ID,
+                product_id=PRODUCT,
+                lot_number="LOT-A",
+                expiry_date=date(2027, 1, 31),
+            ),
+            LOT_C: dict(
+                tenant_id=TENANT_ID,
+                product_id=PRODUCT,
+                lot_number="LOT-C",
+                expiry_date=date.today() - timedelta(days=30),
+            ),  # expired
+            LOT_D: dict(
+                tenant_id=TENANT_ID, product_id=PRODUCT, lot_number="LOT-D", expiry_date=None
+            ),
+            LOT_Z: dict(
+                tenant_id=TENANT_ID, product_id=PRODUCT_2, lot_number="LOT-Z", expiry_date=None
+            ),
         }
         self.lot_balances: dict[tuple[str, str], Decimal] = {
             (LOT_0, WH_A): Decimal("10"),
@@ -115,16 +133,34 @@ class _World:
             (LOT_D, WH_A): Decimal("1"),
         }
 
-        def row(did: str, xfer: str, product: str, lot: Optional[str], missing: str,
-                reason: str, minutes: int, status: str = "OPEN", tenant: str = TENANT_ID) -> dict:
+        def row(
+            did: str,
+            xfer: str,
+            product: str,
+            lot: Optional[str],
+            missing: str,
+            reason: str,
+            minutes: int,
+            status: str = "OPEN",
+            tenant: str = TENANT_ID,
+        ) -> dict:
             return dict(
-                id=did, tenant_id=tenant, transfer_order_id=xfer, transfer_line_id=LINE,
-                product_id=product, lot_id=lot, sent_quantity=Decimal("10"),
+                id=did,
+                tenant_id=tenant,
+                transfer_order_id=xfer,
+                transfer_line_id=LINE,
+                product_id=product,
+                lot_id=lot,
+                sent_quantity=Decimal("10"),
                 received_quantity=Decimal("10") - Decimal(missing),
-                missing_quantity=Decimal(missing), reason=reason, note=None, status=status,
+                missing_quantity=Decimal(missing),
+                reason=reason,
+                note=None,
+                status=status,
                 created_at=now + timedelta(minutes=minutes),
                 resolution="WRITTEN_OFF" if status == "RESOLVED" else None,
-                resolved_lot_id=None, resolution_note="gone" if status == "RESOLVED" else None,
+                resolved_lot_id=None,
+                resolution_note="gone" if status == "RESOLVED" else None,
                 resolved_by=USER_ID if status == "RESOLVED" else None,
                 resolved_at=now if status == "RESOLVED" else None,
             )
@@ -140,11 +176,11 @@ class _World:
             D_T3: row(D_T3, T3, PRODUCT_2, None, "1", "DAMAGED", 8),
             D_OTHER: row(D_OTHER, T_OTHER, PRODUCT_2, None, "1", "SHORT", 9, tenant=OTHER_TENANT),
         }
-        self.ledger: list[dict] = []        # record_transaction kwargs, in call order
-        self.updates: list[dict] = []       # UPDATE transfer_discrepancies params
-        self.audits: list[dict] = []        # INSERT INTO audit_logs params
+        self.ledger: list[dict] = []  # record_transaction kwargs, in call order
+        self.updates: list[dict] = []  # UPDATE transfer_discrepancies params
+        self.audits: list[dict] = []  # INSERT INTO audit_logs params
         self.sql: list[tuple[str, dict]] = []
-        self.update_rowcount: Optional[int] = None   # force a lost race
+        self.update_rowcount: Optional[int] = None  # force a lost race
 
     # ── session ──
     def _out_row(self, d: dict) -> SimpleNamespace:
@@ -155,7 +191,9 @@ class _World:
             **{k: v for k, v in d.items() if k != "tenant_id"},
             lot_number=lot["lot_number"] if lot else None,
             resolved_lot_number=rlot["lot_number"] if rlot else None,
-            transfer_type=t["type"], from_warehouse_id=t["from_wh"], to_warehouse_id=t["to_wh"],
+            transfer_type=t["type"],
+            from_warehouse_id=t["from_wh"],
+            to_warehouse_id=t["to_wh"],
         )
 
     async def execute(self, stmt: Any, params: Optional[dict] = None) -> MagicMock:
@@ -167,21 +205,30 @@ class _World:
 
         if "FOR UPDATE OF d" in sql:
             d = self.discrepancies.get(params["did"])
-            if d and d["tenant_id"] == params["tid"] and d["transfer_order_id"] == params["xfer_id"]:
+            if (
+                d
+                and d["tenant_id"] == params["tid"]
+                and d["transfer_order_id"] == params["xfer_id"]
+            ):
                 t = self.transfers[d["transfer_order_id"]]
                 result.fetchone.return_value = SimpleNamespace(
-                    id=d["id"], product_id=UUID(d["product_id"]),
+                    id=d["id"],
+                    product_id=UUID(d["product_id"]),
                     lot_id=UUID(d["lot_id"]) if d["lot_id"] else None,
-                    missing_quantity=d["missing_quantity"], reason=d["reason"],
-                    status=d["status"], from_warehouse_id=UUID(t["from_wh"]),
+                    missing_quantity=d["missing_quantity"],
+                    reason=d["reason"],
+                    status=d["status"],
+                    from_warehouse_id=UUID(t["from_wh"]),
                     to_warehouse_id=UUID(t["to_wh"]),
                 )
         elif sql.startswith("SELECT id, product_id, lot_number, expiry_date FROM stock_lots"):
             lot = self.lots.get(params["lid"])
             if lot and lot["tenant_id"] == params["tid"]:
                 result.fetchone.return_value = SimpleNamespace(
-                    id=UUID(params["lid"]), product_id=UUID(lot["product_id"]),
-                    lot_number=lot["lot_number"], expiry_date=lot["expiry_date"],
+                    id=UUID(params["lid"]),
+                    product_id=UUID(lot["product_id"]),
+                    lot_number=lot["lot_number"],
+                    expiry_date=lot["expiry_date"],
                 )
         elif sql.startswith("UPDATE transfer_discrepancies"):
             self.updates.append(params)
@@ -189,9 +236,11 @@ class _World:
             hit = bool(d and d["tenant_id"] == params["tid"] and d["status"] == "OPEN")
             if hit and self.update_rowcount is None:
                 d.update(
-                    status="RESOLVED", resolution=params["resolution"],
+                    status="RESOLVED",
+                    resolution=params["resolution"],
                     resolved_lot_id=params["resolved_lot_id"],
-                    resolution_note=params["note"], resolved_by=params["uid"],
+                    resolution_note=params["note"],
+                    resolved_by=params["uid"],
                     resolved_at=datetime.now(timezone.utc),
                 )
             result.rowcount = self.update_rowcount if self.update_rowcount is not None else int(hit)
@@ -201,11 +250,12 @@ class _World:
             rows = [d for d in self.discrepancies.values() if d["tenant_id"] == params["tid"]]
             if "status" in params:
                 rows = [d for d in rows if d["status"] == params["status"]]
+
             def ends(d: dict) -> tuple[str, str]:
                 t = self.transfers[d["transfer_order_id"]]
                 return t["from_wh"], t["to_wh"]
 
-            if "subtree" in params:   # uuid = ANY(:subtree)
+            if "subtree" in params:  # uuid = ANY(:subtree)
                 rows = [d for d in rows if any(e in params["subtree"] for e in ends(d))]
             if "wh" in params:
                 rows = [d for d in rows if params["wh"] in ends(d)]
@@ -231,9 +281,13 @@ class _World:
             if before + qty < 0:
                 raise HTTPException(
                     status_code=422,
-                    detail={"code": "INSUFFICIENT_LOT_STOCK", "lot_id": lot_id,
-                            "warehouse_id": wh, "available": float(before),
-                            "requested": float(abs(qty))},
+                    detail={
+                        "code": "INSUFFICIENT_LOT_STOCK",
+                        "lot_id": lot_id,
+                        "warehouse_id": wh,
+                        "available": float(before),
+                        "requested": float(abs(qty)),
+                    },
                 )
             self.lot_balances[(lot_id, wh)] = before + qty
         self.ledger.append(kw)
@@ -241,8 +295,13 @@ class _World:
 
     def rows(self) -> list[tuple]:
         return [
-            (c["transaction_type"], c["warehouse_id"], c["quantity"], c["lot_id"],
-             c["idempotency_key"])
+            (
+                c["transaction_type"],
+                c["warehouse_id"],
+                c["quantity"],
+                c["lot_id"],
+                c["idempotency_key"],
+            )
             for c in self.ledger
         ]
 
@@ -252,15 +311,21 @@ async def _descendants(db: Any, tenant_id: str, node_id: str) -> set[str]:
     return SUBTREES.get(node_id, {node_id})
 
 
-async def _resolve(world: _World, user: Any, discrepancy_id: str, transfer_id: str = T1,
-                   **body: Any) -> Any:
+async def _resolve(
+    world: _World, user: Any, discrepancy_id: str, transfer_id: str = T1, **body: Any
+) -> Any:
     from schemas.inventory import ResolveDiscrepancyRequest
     from services.transfer_discrepancies import resolve_discrepancy
 
-    with patch("services.transfer_discrepancies.record_transaction", new=world.record_transaction), \
-         patch("services.transfer_discrepancies.get_descendant_node_ids", new=_descendants):
+    with (
+        patch("services.transfer_discrepancies.record_transaction", new=world.record_transaction),
+        patch("services.transfer_discrepancies.get_descendant_node_ids", new=_descendants),
+    ):
         return await resolve_discrepancy(
-            world.db(), user, UUID(transfer_id), UUID(discrepancy_id),
+            world.db(),
+            user,
+            UUID(transfer_id),
+            UUID(discrepancy_id),
             ResolveDiscrepancyRequest(**body),
         )
 
@@ -273,7 +338,9 @@ async def _rejected(world: _World, user: Any, discrepancy_id: str, **body: Any) 
 
 def _nothing_written(world: _World, discrepancy_id: str) -> bool:
     return (
-        world.ledger == [] and world.updates == [] and world.audits == []
+        world.ledger == []
+        and world.updates == []
+        and world.audits == []
         and world.discrepancies[discrepancy_id]["status"] == "OPEN"
     )
 
@@ -281,11 +348,18 @@ def _nothing_written(world: _World, discrepancy_id: str) -> bool:
 # ── outcomes by reason ───────────────────────────────────────────────────────
 
 ALLOWED = [
-    (D_SHORT, "WRITTEN_OFF"), (D_SHORT, "RETURNED"), (D_SHORT, "ARRIVED_LATE"),
-    (D_SHORT_NB, "WRITTEN_OFF"), (D_SHORT_NB, "RETURNED"), (D_SHORT_NB, "ARRIVED_LATE"),
+    (D_SHORT, "WRITTEN_OFF"),
+    (D_SHORT, "RETURNED"),
+    (D_SHORT, "ARRIVED_LATE"),
+    (D_SHORT_NB, "WRITTEN_OFF"),
+    (D_SHORT_NB, "RETURNED"),
+    (D_SHORT_NB, "ARRIVED_LATE"),
     (D_DAMAGED, "WRITTEN_OFF"),
-    (D_WRONG, "WRITTEN_OFF"), (D_WRONG, "RETURNED"), (D_WRONG, "RECEIVED_AS_LOT"),
-    (D_WRONG_NB, "WRITTEN_OFF"), (D_WRONG_NB, "RETURNED"),
+    (D_WRONG, "WRITTEN_OFF"),
+    (D_WRONG, "RETURNED"),
+    (D_WRONG, "RECEIVED_AS_LOT"),
+    (D_WRONG_NB, "WRITTEN_OFF"),
+    (D_WRONG_NB, "RETURNED"),
 ]
 NOT_ALLOWED = [
     (D_SHORT, "RECEIVED_AS_LOT", "SHORT", ["WRITTEN_OFF", "RETURNED", "ARRIVED_LATE"]),
@@ -311,7 +385,6 @@ def _body_for(resolution: str) -> dict:
 
 @pytest.mark.unit
 class TestResolutionByReason:
-
     @pytest.mark.parametrize("discrepancy_id, resolution", ALLOWED)
     async def test_allowed_outcome_resolves(self, discrepancy_id: str, resolution: str) -> None:
         world = _World()
@@ -331,15 +404,19 @@ class TestResolutionByReason:
         exc = await _rejected(world, TA, discrepancy_id, **_body_for(resolution))
 
         assert exc.status_code == 422
-        assert exc.detail == {"code": "RESOLUTION_NOT_ALLOWED", "reason": reason, "allowed": allowed}
+        assert exc.detail == {
+            "code": "RESOLUTION_NOT_ALLOWED",
+            "reason": reason,
+            "allowed": allowed,
+        }
         assert _nothing_written(world, discrepancy_id)
 
 
 # ── ledger rows ──────────────────────────────────────────────────────────────
 
+
 @pytest.mark.unit
 class TestResolutionLedger:
-
     async def test_written_off_posts_no_ledger_rows(self) -> None:
         world = _World()
         out = await _resolve(world, TA, D_SHORT, resolution="WRITTEN_OFF", note="  fell off truck ")
@@ -388,7 +465,9 @@ class TestResolutionLedger:
             ("TRANSFER_IN", WH_B, Decimal("5"), None, f"{KEY}:{D_SHORT_NB}:late"),
         ]
 
-    async def test_received_as_lot_swaps_lots_reversal_first_when_sent_lot_sorts_first(self) -> None:
+    async def test_received_as_lot_swaps_lots_reversal_first_when_sent_lot_sorts_first(
+        self,
+    ) -> None:
         """Arrived LOT_C (> LOT_A): reversal on LOT_A, out on LOT_C, in on LOT_C.
         LOT_C is expired — accepted, this records what happened."""
         world = _World()
@@ -425,21 +504,26 @@ class TestResolutionLedger:
         await _resolve(world, TA, D_SHORT_NB, resolution="ARRIVED_LATE")
 
         assert {c["transaction_type"] for c in world.ledger} == {
-            "TRANSFER_REVERSAL", "TRANSFER_OUT", "TRANSFER_IN",
+            "TRANSFER_REVERSAL",
+            "TRANSFER_OUT",
+            "TRANSFER_IN",
         }
 
 
 # ── RECEIVED_AS_LOT lot checks ───────────────────────────────────────────────
 
+
 @pytest.mark.unit
 class TestReceivedAsLot:
-
-    @pytest.mark.parametrize("case, lot_id", [
-        ("missing lot_id", None),
-        ("same lot as sent", LOT_A),
-        ("another product's lot", LOT_Z),
-        ("unknown lot", "0000000e-0000-0000-0000-000000000000"),
-    ])
+    @pytest.mark.parametrize(
+        "case, lot_id",
+        [
+            ("missing lot_id", None),
+            ("same lot as sent", LOT_A),
+            ("another product's lot", LOT_Z),
+            ("unknown lot", "0000000e-0000-0000-0000-000000000000"),
+        ],
+    )
     async def test_bad_lot_is_422(self, case: str, lot_id: Optional[str]) -> None:
         world = _World()
         body: dict[str, Any] = {"resolution": "RECEIVED_AS_LOT"}
@@ -493,9 +577,9 @@ class TestReceivedAsLot:
 
 # ── validation, idempotence ──────────────────────────────────────────────────
 
+
 @pytest.mark.unit
 class TestResolutionRules:
-
     @pytest.mark.parametrize("note", [None, "", "   "])
     async def test_written_off_without_note_is_422(self, note: Optional[str]) -> None:
         world = _World()
@@ -531,16 +615,25 @@ class TestResolutionRules:
         assert exc.detail == {"code": "DISCREPANCY_ALREADY_RESOLVED"}
         assert world.audits == []
 
-    @pytest.mark.parametrize("discrepancy_id, transfer_id", [
-        ("dddddddd-0000-0000-0000-0000000000ee", T1),   # no such row
-        (D_SHORT, T2),                                  # row of another transfer
-        (D_OTHER, T_OTHER),                             # another tenant's row
-    ])
+    @pytest.mark.parametrize(
+        "discrepancy_id, transfer_id",
+        [
+            ("dddddddd-0000-0000-0000-0000000000ee", T1),  # no such row
+            (D_SHORT, T2),  # row of another transfer
+            (D_OTHER, T_OTHER),  # another tenant's row
+        ],
+    )
     async def test_not_found_is_404(self, discrepancy_id: str, transfer_id: str) -> None:
         world = _World()
         with pytest.raises(HTTPException) as exc_info:
-            await _resolve(world, TA, discrepancy_id, transfer_id=transfer_id,
-                           resolution="WRITTEN_OFF", note="x")
+            await _resolve(
+                world,
+                TA,
+                discrepancy_id,
+                transfer_id=transfer_id,
+                resolution="WRITTEN_OFF",
+                note="x",
+            )
 
         assert exc_info.value.status_code == 404
         assert exc_info.value.detail == {"code": "DISCREPANCY_NOT_FOUND"}
@@ -560,18 +653,27 @@ class TestResolutionRules:
 
         update_sql = next(s for s, _ in world.sql if s.startswith("UPDATE transfer_discrepancies"))
         assert "status = 'OPEN'" in update_sql.split("WHERE")[1]
-        assert world.updates == [{
-            "resolution": "RECEIVED_AS_LOT", "resolved_lot_id": LOT_C, "note": None,
-            "uid": USER_ID, "did": D_WRONG, "tid": TENANT_ID,
-        }]
+        assert world.updates == [
+            {
+                "resolution": "RECEIVED_AS_LOT",
+                "resolved_lot_id": LOT_C,
+                "note": None,
+                "uid": USER_ID,
+                "did": D_WRONG,
+                "tid": TENANT_ID,
+            }
+        ]
 
     async def test_audit_row_written_after_the_update_in_the_same_session(self) -> None:
         world = _World()
         await _resolve(world, RM, D_WRONG, resolution="RECEIVED_AS_LOT", lot_id=LOT_C)
 
         kinds = [
-            "update" if s.startswith("UPDATE transfer_discrepancies")
-            else "audit" if "INSERT INTO audit_logs" in s else None
+            "update"
+            if s.startswith("UPDATE transfer_discrepancies")
+            else "audit"
+            if "INSERT INTO audit_logs" in s
+            else None
             for s, _ in world.sql
         ]
         assert kinds.index("update") < kinds.index("audit")
@@ -597,19 +699,24 @@ class TestResolutionRules:
 
 # ── scope ────────────────────────────────────────────────────────────────────
 
+
 @pytest.mark.unit
 class TestResolutionScope:
-
     @pytest.mark.parametrize("user", [TA, NM, _user("SA")], ids=["TA", "NM", "SA"])
     async def test_tenant_wide_roles_resolve_without_a_node(self, user: Any) -> None:
         world = _World()
         out = await _resolve(world, user, D_SHORT, resolution="RETURNED")
         assert out.status == "RESOLVED"
 
-    @pytest.mark.parametrize("resolution, discrepancy_id", [
-        ("WRITTEN_OFF", D_SHORT), ("RETURNED", D_SHORT), ("ARRIVED_LATE", D_SHORT),
-        ("RECEIVED_AS_LOT", D_WRONG),
-    ])
+    @pytest.mark.parametrize(
+        "resolution, discrepancy_id",
+        [
+            ("WRITTEN_OFF", D_SHORT),
+            ("RETURNED", D_SHORT),
+            ("ARRIVED_LATE", D_SHORT),
+            ("RECEIVED_AS_LOT", D_WRONG),
+        ],
+    )
     async def test_rm_with_both_ends_in_subtree_resolves(
         self, resolution: str, discrepancy_id: str
     ) -> None:
@@ -625,13 +732,16 @@ class TestResolutionScope:
         out = await _resolve(world, RM_DEST_ONLY, D_SHORT, **_body_for(resolution))
         assert out.status == "RESOLVED"
 
-    @pytest.mark.parametrize("user, resolution, discrepancy_id", [
-        (RM_OUT, "WRITTEN_OFF", D_SHORT),            # destination outside
-        (RM_OUT, "ARRIVED_LATE", D_SHORT),           # destination outside
-        (RM_DEST_ONLY, "RETURNED", D_SHORT),         # source outside
-        (RM_DEST_ONLY, "RECEIVED_AS_LOT", D_WRONG),  # source outside
-        (RM_NO_NODE, "WRITTEN_OFF", D_SHORT),        # no node at all
-    ])
+    @pytest.mark.parametrize(
+        "user, resolution, discrepancy_id",
+        [
+            (RM_OUT, "WRITTEN_OFF", D_SHORT),  # destination outside
+            (RM_OUT, "ARRIVED_LATE", D_SHORT),  # destination outside
+            (RM_DEST_ONLY, "RETURNED", D_SHORT),  # source outside
+            (RM_DEST_ONLY, "RECEIVED_AS_LOT", D_WRONG),  # source outside
+            (RM_NO_NODE, "WRITTEN_OFF", D_SHORT),  # no node at all
+        ],
+    )
     async def test_rm_out_of_scope_is_403(
         self, user: Any, resolution: str, discrepancy_id: str
     ) -> None:
@@ -642,14 +752,16 @@ class TestResolutionScope:
         assert exc.detail == {"code": "DISCREPANCY_OUT_OF_SCOPE"}
         assert _nothing_written(world, discrepancy_id)
 
-    @pytest.mark.parametrize("discrepancy_id, body", [
-        (D_SHORT, {"resolution": "WRITTEN_OFF"}),                  # NOTE_REQUIRED
-        (D_DAMAGED, {"resolution": "ARRIVED_LATE"}),               # NOT_ALLOWED
-        (D_SHORT, {"resolution": "ARRIVED_LATE", "lot_id": LOT_C}),  # LOT_INVALID
-    ], ids=["no-note", "not-allowed", "bad-lot"])
-    async def test_scope_is_checked_before_the_body(
-        self, discrepancy_id: str, body: dict
-    ) -> None:
+    @pytest.mark.parametrize(
+        "discrepancy_id, body",
+        [
+            (D_SHORT, {"resolution": "WRITTEN_OFF"}),  # NOTE_REQUIRED
+            (D_DAMAGED, {"resolution": "ARRIVED_LATE"}),  # NOT_ALLOWED
+            (D_SHORT, {"resolution": "ARRIVED_LATE", "lot_id": LOT_C}),  # LOT_INVALID
+        ],
+        ids=["no-note", "not-allowed", "bad-lot"],
+    )
+    async def test_scope_is_checked_before_the_body(self, discrepancy_id: str, body: dict) -> None:
         """An out-of-scope RM gets 403, never the 422 an invalid body would earn."""
         world = _World()
         exc = await _rejected(world, RM_OUT, discrepancy_id, **body)
@@ -671,6 +783,7 @@ class TestResolutionScope:
 
 # ── list ─────────────────────────────────────────────────────────────────────
 
+
 async def _list(world: _World, user: Any, **kw: Any) -> list:
     from services.transfer_discrepancies import list_discrepancies
 
@@ -684,17 +797,27 @@ T1_ROWS = [D_RESOLVED, D_WRONG_NB, D_WRONG, D_DAMAGED, D_SHORT_NB, D_SHORT]
 
 @pytest.mark.unit
 class TestListDiscrepancies:
-
     async def test_tenant_rows_newest_first_with_transfer_fields(self) -> None:
         world = _World()
         rows = await _list(world, TA)
 
         assert [str(r.id) for r in rows] == [
-            D_T3, D_T2, D_RESOLVED, D_WRONG_NB, D_WRONG, D_DAMAGED, D_SHORT_NB, D_SHORT,
-        ]   # D_OTHER (another tenant) is not there
+            D_T3,
+            D_T2,
+            D_RESOLVED,
+            D_WRONG_NB,
+            D_WRONG,
+            D_DAMAGED,
+            D_SHORT_NB,
+            D_SHORT,
+        ]  # D_OTHER (another tenant) is not there
         first = rows[-1]
-        assert (str(first.transfer_order_id), first.transfer_type,
-                str(first.from_warehouse_id), str(first.to_warehouse_id)) == (T1, "PULL", WH_A, WH_B)
+        assert (
+            str(first.transfer_order_id),
+            first.transfer_type,
+            str(first.from_warehouse_id),
+            str(first.to_warehouse_id),
+        ) == (T1, "PULL", WH_A, WH_B)
         assert first.lot_number == "LOT-A"
         sql, params = world.sql[0]
         assert "ORDER BY d.created_at DESC" in sql and "LIMIT 200" in sql
@@ -719,9 +842,7 @@ class TestListDiscrepancies:
         assert "(t.from_warehouse_id = :wh OR t.to_warehouse_id = :wh)" in world.sql[0][0]
 
     @pytest.mark.parametrize("role", ["WM", "LM", "SA_GT", "RT"])
-    async def test_facility_role_sees_rows_with_either_end_in_its_subtree(
-        self, role: str
-    ) -> None:
+    async def test_facility_role_sees_rows_with_either_end_in_its_subtree(self, role: str) -> None:
         """SITE's subtree is {SITE, WH_C}: T2 (WH_C ->) and T3 (-> WH_C) reach
         it through the child node; the T1 rows (WH_A -> WH_B) do not."""
         world = _World()
@@ -730,7 +851,7 @@ class TestListDiscrepancies:
         assert [str(r.id) for r in rows] == [D_T3, D_T2]
         sql, params = world.sql[0]
         assert "t.from_warehouse_id = ANY(:subtree) OR t.to_warehouse_id = ANY(:subtree)" in sql
-        assert params["subtree"] == sorted([SITE, WH_C])   # lowercased
+        assert params["subtree"] == sorted([SITE, WH_C])  # lowercased
 
     async def test_wm_on_a_leaf_sees_transfers_touching_it(self) -> None:
         world = _World()
@@ -759,9 +880,17 @@ class TestListDiscrepancies:
         assert [str(r.id) for r in rows] == ALL_ROWS
         assert world.sql[0][1]["subtree"] == sorted([REGION, WH_A, WH_B])
 
-    @pytest.mark.parametrize("user", [
-        RM_NO_NODE, TA, NM, _user("SA"), _user("AU", WH_C),
-    ], ids=["RM-no-node", "TA", "NM", "SA", "AU"])
+    @pytest.mark.parametrize(
+        "user",
+        [
+            RM_NO_NODE,
+            TA,
+            NM,
+            _user("SA"),
+            _user("AU", WH_C),
+        ],
+        ids=["RM-no-node", "TA", "NM", "SA", "AU"],
+    )
     async def test_tenant_wide_callers(self, user: Any) -> None:
         world = _World()
         rows = await _list(world, user)
@@ -776,14 +905,16 @@ class TestListDiscrepancies:
         assert [str(r.id) for r in rows] == [D_T2, *T1_ROWS]
         assert world.sql[0][1]["wh"] == WH_A
 
-    @pytest.mark.parametrize("user, warehouse_id", [
-        (_user("WM", SITE), WH_B),
-        (_user("LM", WH_A), WH_C),
-        (RM_DEST_ONLY, WH_A),
-    ], ids=["WM", "LM", "RM"])
-    async def test_warehouse_outside_the_subtree_is_403(
-        self, user: Any, warehouse_id: str
-    ) -> None:
+    @pytest.mark.parametrize(
+        "user, warehouse_id",
+        [
+            (_user("WM", SITE), WH_B),
+            (_user("LM", WH_A), WH_C),
+            (RM_DEST_ONLY, WH_A),
+        ],
+        ids=["WM", "LM", "RM"],
+    )
+    async def test_warehouse_outside_the_subtree_is_403(self, user: Any, warehouse_id: str) -> None:
         world = _World()
         with pytest.raises(HTTPException) as exc_info:
             await _list(world, user, warehouse_id=UUID(warehouse_id))
@@ -851,9 +982,12 @@ def api(inv_app, inv_get_current_user):
         patches = [
             patch("shared.permissions.middleware.get_role_permission", new=_grant),
             patch("shared.permissions.middleware.audit_log", new=audit),
-            patch("shared.billing.contract_stage.get_tenant_contract_stage",
-                  AsyncMock(return_value={"stage": stage, "contract_end": None,
-                                          "read_only_since": None})),
+            patch(
+                "shared.billing.contract_stage.get_tenant_contract_stage",
+                AsyncMock(
+                    return_value={"stage": stage, "contract_end": None, "read_only_since": None}
+                ),
+            ),
             patch("services.transfer_discrepancies.resolve_discrepancy", new=resolve),
             patch("services.transfer_discrepancies.list_discrepancies", new=listing),
         ]
@@ -877,11 +1011,21 @@ def _out(**kw: Any) -> Any:
     from schemas.inventory import TransferDiscrepancyOut
 
     return TransferDiscrepancyOut(
-        id=UUID(D_SHORT), transfer_line_id=UUID(LINE), product_id=UUID(PRODUCT),
-        lot_id=UUID(LOT_A), lot_number="LOT-A", sent_quantity=Decimal("10"),
-        received_quantity=Decimal("8"), missing_quantity=Decimal("2"), reason="SHORT",
-        status="RESOLVED", created_at=datetime.now(timezone.utc), resolution="RETURNED",
-        resolved_by=UUID(USER_ID), resolved_at=datetime.now(timezone.utc), **kw,
+        id=UUID(D_SHORT),
+        transfer_line_id=UUID(LINE),
+        product_id=UUID(PRODUCT),
+        lot_id=UUID(LOT_A),
+        lot_number="LOT-A",
+        sent_quantity=Decimal("10"),
+        received_quantity=Decimal("8"),
+        missing_quantity=Decimal("2"),
+        reason="SHORT",
+        status="RESOLVED",
+        created_at=datetime.now(timezone.utc),
+        resolution="RETURNED",
+        resolved_by=UUID(USER_ID),
+        resolved_at=datetime.now(timezone.utc),
+        **kw,
     )
 
 
@@ -909,12 +1053,14 @@ class TestResolvePermission:
     @pytest.mark.parametrize("role", ["WM", "LM", "AU"])
     async def test_02_09_12_other_roles_denied_and_audited(self, api, inv_app, role: str) -> None:
         patches, audit, resolve, _, _ = api(_user(role, WH_B))
-        resp = await _call(inv_app, patches, "POST", RESOLVE_URL,
-                           json={"resolution": "WRITTEN_OFF", "note": "x"})
+        resp = await _call(
+            inv_app, patches, "POST", RESOLVE_URL, json={"resolution": "WRITTEN_OFF", "note": "x"}
+        )
 
         assert resp.status_code == 403
         assert resp.json()["detail"] == {
-            "code": "RBAC_DENIED", "action": "transfer:resolve_discrepancy",
+            "code": "RBAC_DENIED",
+            "action": "transfer:resolve_discrepancy",
         }
         resolve.assert_not_awaited()
         assert audit.await_args.args[3:] == ("DENIED", "RBAC_DENIED")
@@ -923,8 +1069,9 @@ class TestResolvePermission:
         """Every query is tenant-filtered: another tenant's RM gets 404."""
         world = _World()
         with pytest.raises(HTTPException) as exc_info:
-            await _resolve(world, _user("RM", REGION, tenant_id=OTHER_TENANT), D_SHORT,
-                           resolution="RETURNED")
+            await _resolve(
+                world, _user("RM", REGION, tenant_id=OTHER_TENANT), D_SHORT, resolution="RETURNED"
+            )
         assert exc_info.value.status_code == 404
         assert world.updates == [] and world.ledger == []
 
@@ -956,28 +1103,33 @@ class TestResolvePermission:
         assert PERMISSIONS.TRANSFER_RESOLVE_DISCREPANCY.abac == ["tenant_id"]
         matrix = _seed_matrix()
         granted = {
-            role for role, grants in matrix.items()
-            if "transfer:resolve_discrepancy" in grants
+            role for role, grants in matrix.items() if "transfer:resolve_discrepancy" in grants
         }
         assert granted == {"SA", "TA", "NM", "RM"}
         assert {matrix[r]["transfer:resolve_discrepancy"] for r in granted} == {"FULL"}
 
     def test_route_is_registered_with_the_permission(self, inv_app) -> None:
         route = next(
-            r for r in inv_app.routes
-            if getattr(r, "path", "").endswith("/{transfer_id}/discrepancies/{discrepancy_id}/resolve")
+            r
+            for r in inv_app.routes
+            if getattr(r, "path", "").endswith(
+                "/{transfer_id}/discrepancies/{discrepancy_id}/resolve"
+            )
         )
         assert route.methods == {"POST"}
         assert route.endpoint.__permission__.id == "transfer:resolve_discrepancy"
 
-    @pytest.mark.parametrize("body", [
-        {},
-        {"resolution": "LOST"},
-        {"resolution": "RETURNED", "note": "x" * 501},
-        {"resolution": "RETURNED", "note": "bad\x00note"},
-        {"resolution": "RETURNED", "lot_id": "not-a-uuid"},
-        {"resolution": "RETURNED", "quantity": 5},
-    ])
+    @pytest.mark.parametrize(
+        "body",
+        [
+            {},
+            {"resolution": "LOST"},
+            {"resolution": "RETURNED", "note": "x" * 501},
+            {"resolution": "RETURNED", "note": "bad\x00note"},
+            {"resolution": "RETURNED", "lot_id": "not-a-uuid"},
+            {"resolution": "RETURNED", "quantity": 5},
+        ],
+    )
     async def test_bad_body_is_422(self, api, inv_app, body: dict) -> None:
         patches, _, resolve, _, _ = api(TA)
         resp = await _call(inv_app, patches, "POST", RESOLVE_URL, json=body)
@@ -988,12 +1140,12 @@ class TestResolvePermission:
 
 @pytest.mark.unit
 class TestListEndpoint:
-
     async def test_fixed_path_is_not_taken_for_a_transfer_id(self, api, inv_app) -> None:
         """GET /discrepancies reaches the list, not GET /{transfer_id}."""
         patches, _, _, listing, db = api(_user("WM", WH_B))
-        resp = await _call(inv_app, patches, "GET", LIST_URL,
-                           params={"status": "OPEN", "warehouse_id": WH_C})
+        resp = await _call(
+            inv_app, patches, "GET", LIST_URL, params={"status": "OPEN", "warehouse_id": WH_C}
+        )
 
         assert resp.status_code == 200, resp.text
         assert resp.json()["data"] == []
@@ -1002,7 +1154,8 @@ class TestListEndpoint:
 
     def test_declared_before_the_parameterised_get(self, inv_app) -> None:
         paths = [
-            r.path for r in inv_app.routes
+            r.path
+            for r in inv_app.routes
             if getattr(r, "path", "").startswith("/api/v1/inventory/transfers/")
             and "GET" in getattr(r, "methods", set())
         ]

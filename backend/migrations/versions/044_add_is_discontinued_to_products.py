@@ -4,6 +4,7 @@ Revision ID: 044
 Revises: 043
 Create Date: 2026-06-06
 """
+
 from __future__ import annotations
 from alembic import op
 import sqlalchemy as sa
@@ -17,7 +18,9 @@ depends_on = None
 def upgrade() -> None:
     op.add_column(
         "products",
-        sa.Column("is_discontinued", sa.Boolean(), nullable=False, server_default="false"),
+        sa.Column(
+            "is_discontinued", sa.Boolean(), nullable=False, server_default="false"
+        ),
     )
     op.execute(
         "CREATE INDEX IF NOT EXISTS idx_products_tenant_active "

@@ -4,6 +4,7 @@ mark_paid idempotency + contract extension, and cancel/fail state guards.
 Mocked session throughout (no real DB connection): db.execute is an AsyncMock
 whose side_effect is the ordered list of results the production code expects
 for each await db.execute(...) call, in call order."""
+
 from __future__ import annotations
 
 from datetime import date
@@ -40,9 +41,16 @@ def _result(fetchone=None, scalar_one=None, fetchall=None) -> MagicMock:
 
 def _subscription(
     *,
-    id="sub-1", tier="GROWTH", billing_period="MONTHLY", status="PENDING_PAYMENT",
-    provider="MANUAL", price_id="price-1", amount=Decimal("200.00"), currency="ETB",
-    current_period_start=date(2026, 10, 6), current_period_end=date(2026, 11, 6),
+    id="sub-1",
+    tier="GROWTH",
+    billing_period="MONTHLY",
+    status="PENDING_PAYMENT",
+    provider="MANUAL",
+    price_id="price-1",
+    amount=Decimal("200.00"),
+    currency="ETB",
+    current_period_start=date(2026, 10, 6),
+    current_period_end=date(2026, 11, 6),
     scheduled_tier=None,
 ) -> MagicMock:
     row = MagicMock()
@@ -53,21 +61,39 @@ def _subscription(
     return row
 
 
-def _price(*, id="price-1", tier="GROWTH", billing_period="MONTHLY", currency="ETB", amount=Decimal("200.00")) -> MagicMock:
+def _price(
+    *,
+    id="price-1",
+    tier="GROWTH",
+    billing_period="MONTHLY",
+    currency="ETB",
+    amount=Decimal("200.00"),
+) -> MagicMock:
     row = MagicMock()
-    row.id, row.tier, row.billing_period, row.currency, row.amount = id, tier, billing_period, currency, amount
+    row.id, row.tier, row.billing_period, row.currency, row.amount = (
+        id,
+        tier,
+        billing_period,
+        currency,
+        amount,
+    )
     return row
 
 
 # ── next_invoice_period ──────────────────────────────────────────────────────
 
+
 async def test_next_invoice_period_first_invoice_uses_snapshot_price() -> None:
     sub = _subscription(status="PENDING_PAYMENT", price_id="price-1", amount=Decimal("200.00"))
     snapshot_price = _price(id="price-1", amount=Decimal("200.00"))
-    db = _db([
-        _result(fetchone=None),            # no existing PAID payment -> first invoice
-        _result(fetchone=snapshot_price),  # SELECT package_prices WHERE id = subscription.price_id
-    ])
+    db = _db(
+        [
+            _result(fetchone=None),  # no existing PAID payment -> first invoice
+            _result(
+                fetchone=snapshot_price
+            ),  # SELECT package_prices WHERE id = subscription.price_id
+        ]
+    )
 
     start, end, price, is_renewal = await next_invoice_period(db, sub)
 
@@ -80,12 +106,18 @@ async def test_next_invoice_period_first_invoice_uses_snapshot_price() -> None:
 async def test_next_invoice_period_renewal_uses_current_price_not_snapshot() -> None:
     """A renewal is priced at the CURRENT package price, which may differ
     from the subscription's own (older) snapshot amount."""
-    sub = _subscription(status="ACTIVE", price_id="price-1", amount=Decimal("200.00"),
-                         current_period_end=date(2026, 11, 6))
+    sub = _subscription(
+        status="ACTIVE",
+        price_id="price-1",
+        amount=Decimal("200.00"),
+        current_period_end=date(2026, 11, 6),
+    )
     current_price = _price(id="price-2", amount=Decimal("250.00"))
-    db = _db([
-        _result(fetchone=current_price),  # get_current_price()
-    ])
+    db = _db(
+        [
+            _result(fetchone=current_price),  # get_current_price()
+        ]
+    )
 
     start, end, price, is_renewal = await next_invoice_period(db, sub)
 
@@ -98,9 +130,14 @@ async def test_next_invoice_period_renewal_uses_current_price_not_snapshot() -> 
 async def test_next_invoice_period_renewal_uses_scheduled_tier_price_when_set() -> None:
     """S13: a scheduled downgrade re-prices the renewal at scheduled_tier,
     not the subscription's current tier."""
-    sub = _subscription(status="ACTIVE", tier="GROWTH", scheduled_tier="STARTER",
-                         price_id="price-1", amount=Decimal("200.00"),
-                         current_period_end=date(2026, 11, 6))
+    sub = _subscription(
+        status="ACTIVE",
+        tier="GROWTH",
+        scheduled_tier="STARTER",
+        price_id="price-1",
+        amount=Decimal("200.00"),
+        current_period_end=date(2026, 11, 6),
+    )
     starter_price = _price(id="price-starter", tier="STARTER", amount=Decimal("100.00"))
     db = _db([_result(fetchone=starter_price)])
 
@@ -115,13 +152,21 @@ async def test_next_invoice_period_renewal_uses_scheduled_tier_price_when_set() 
 async def test_next_invoice_period_first_invoice_ignores_scheduled_tier() -> None:
     """The subscription's FIRST invoice is always at its own snapshot price —
     scheduled_tier only ever affects a renewal."""
-    sub = _subscription(status="PENDING_PAYMENT", scheduled_tier="STARTER",
-                         price_id="price-1", amount=Decimal("200.00"))
+    sub = _subscription(
+        status="PENDING_PAYMENT",
+        scheduled_tier="STARTER",
+        price_id="price-1",
+        amount=Decimal("200.00"),
+    )
     snapshot_price = _price(id="price-1", amount=Decimal("200.00"))
-    db = _db([
-        _result(fetchone=None),            # no existing PAID payment -> first invoice
-        _result(fetchone=snapshot_price),  # SELECT package_prices WHERE id = subscription.price_id
-    ])
+    db = _db(
+        [
+            _result(fetchone=None),  # no existing PAID payment -> first invoice
+            _result(
+                fetchone=snapshot_price
+            ),  # SELECT package_prices WHERE id = subscription.price_id
+        ]
+    )
 
     start, end, price, is_renewal = await next_invoice_period(db, sub)
 
@@ -135,10 +180,12 @@ async def test_next_invoice_period_pending_payment_with_existing_paid_is_a_renew
     the first invoice."""
     sub = _subscription(status="PENDING_PAYMENT")
     current_price = _price(amount=Decimal("300.00"))
-    db = _db([
-        _result(fetchone=MagicMock()),    # existing PAID payment found
-        _result(fetchone=current_price),  # get_current_price()
-    ])
+    db = _db(
+        [
+            _result(fetchone=MagicMock()),  # existing PAID payment found
+            _result(fetchone=current_price),  # get_current_price()
+        ]
+    )
 
     _, _, price, is_renewal = await next_invoice_period(db, sub)
 
@@ -156,20 +203,23 @@ async def test_next_invoice_period_renewal_raises_when_no_price_available() -> N
 
 # ── create_invoice ───────────────────────────────────────────────────────────
 
+
 async def test_create_invoice_first_invoice_vat_on_200_is_30_and_230() -> None:
     sub = _subscription(status="PENDING_PAYMENT", price_id="price-1", amount=Decimal("200.00"))
     snapshot_price = _price(id="price-1", amount=Decimal("200.00"))
     tier_row = MagicMock(display_name="Growth")
-    db = _db([
-        _result(fetchone=sub),              # _get_live_subscription
-        _result(fetchone=None),             # no existing PENDING payment
-        _result(fetchone=None),             # no existing PAID payment (first invoice)
-        _result(fetchone=snapshot_price),   # package_prices by id
-        _result(fetchall=[]),               # _active_purchased_addons -> none
-        _result(scalar_one="payment-1"),    # INSERT payments RETURNING id
-        _result(fetchone=tier_row),         # platform_tier_config.display_name
-        _result(),                          # INSERT payment_line_items (PACKAGE)
-    ])
+    db = _db(
+        [
+            _result(fetchone=sub),  # _get_live_subscription
+            _result(fetchone=None),  # no existing PENDING payment
+            _result(fetchone=None),  # no existing PAID payment (first invoice)
+            _result(fetchone=snapshot_price),  # package_prices by id
+            _result(fetchall=[]),  # _active_purchased_addons -> none
+            _result(scalar_one="payment-1"),  # INSERT payments RETURNING id
+            _result(fetchone=tier_row),  # platform_tier_config.display_name
+            _result(),  # INSERT payment_line_items (PACKAGE)
+        ]
+    )
 
     out = await create_invoice(db, "tenant-1", recorded_by="user-1")
 
@@ -189,10 +239,12 @@ async def test_create_invoice_no_live_subscription_raises() -> None:
 
 async def test_create_invoice_already_pending_raises() -> None:
     sub = _subscription()
-    db = _db([
-        _result(fetchone=sub),           # _get_live_subscription
-        _result(fetchone=MagicMock()),   # an existing PENDING payment
-    ])
+    db = _db(
+        [
+            _result(fetchone=sub),  # _get_live_subscription
+            _result(fetchone=MagicMock()),  # an existing PENDING payment
+        ]
+    )
 
     with pytest.raises(ValueError, match="INVOICE_ALREADY_PENDING"):
         await create_invoice(db, "tenant-1")
@@ -204,16 +256,18 @@ async def test_create_invoice_pending_check_is_scoped_to_period_invoice_kind() -
     scoped to invoice_kind = 'PERIOD'."""
     sub = _subscription(status="PENDING_PAYMENT", price_id="price-1", amount=Decimal("200.00"))
     snapshot_price = _price(id="price-1", amount=Decimal("200.00"))
-    db = _db([
-        _result(fetchone=sub),               # _get_live_subscription
-        _result(fetchone=None),               # existing-pending lookup (mocked: none found)
-        _result(fetchone=None),               # no existing PAID payment (first invoice)
-        _result(fetchone=snapshot_price),     # package_prices by id
-        _result(fetchall=[]),                 # _active_purchased_addons
-        _result(scalar_one="payment-1"),      # INSERT payments
-        _result(fetchone=MagicMock(display_name="Growth")),
-        _result(),                            # INSERT payment_line_items
-    ])
+    db = _db(
+        [
+            _result(fetchone=sub),  # _get_live_subscription
+            _result(fetchone=None),  # existing-pending lookup (mocked: none found)
+            _result(fetchone=None),  # no existing PAID payment (first invoice)
+            _result(fetchone=snapshot_price),  # package_prices by id
+            _result(fetchall=[]),  # _active_purchased_addons
+            _result(scalar_one="payment-1"),  # INSERT payments
+            _result(fetchone=MagicMock(display_name="Growth")),
+            _result(),  # INSERT payment_line_items
+        ]
+    )
 
     await create_invoice(db, "tenant-1")
 
@@ -223,10 +277,21 @@ async def test_create_invoice_pending_check_is_scoped_to_period_invoice_kind() -
 
 # ── create_invoice + add-ons (S10) ──────────────────────────────────────────────
 
-def _addon_row(*, addon_code="LOGISTICS", price_id="addon-price-1", amount=Decimal("50.00"),
-                display_name="Logistics & Fleet Management") -> MagicMock:
+
+def _addon_row(
+    *,
+    addon_code="LOGISTICS",
+    price_id="addon-price-1",
+    amount=Decimal("50.00"),
+    display_name="Logistics & Fleet Management",
+) -> MagicMock:
     row = MagicMock()
-    row.addon_code, row.price_id, row.amount, row.display_name = addon_code, price_id, amount, display_name
+    row.addon_code, row.price_id, row.amount, row.display_name = (
+        addon_code,
+        price_id,
+        amount,
+        display_name,
+    )
     return row
 
 
@@ -237,21 +302,27 @@ async def test_create_invoice_package_plus_two_addons_correct_subtotal_vat_total
     snapshot_price = _price(id="price-1", amount=Decimal("200.00"))
     tier_row = MagicMock(display_name="Growth")
     addon1 = _addon_row(addon_code="LOGISTICS", price_id="addon-price-1", amount=Decimal("50.00"))
-    addon2 = _addon_row(addon_code="AUDIT_EXPORT", price_id="addon-price-2", amount=Decimal("20.00"),
-                         display_name="Audit Log Export")
+    addon2 = _addon_row(
+        addon_code="AUDIT_EXPORT",
+        price_id="addon-price-2",
+        amount=Decimal("20.00"),
+        display_name="Audit Log Export",
+    )
 
-    db = _db([
-        _result(fetchone=sub),                       # _get_live_subscription
-        _result(fetchone=None),                       # no existing PENDING payment
-        _result(fetchone=None),                       # no existing PAID payment (first invoice)
-        _result(fetchone=snapshot_price),              # package_prices by id
-        _result(fetchall=[addon1, addon2]),            # _active_purchased_addons
-        _result(scalar_one="payment-1"),               # INSERT payments RETURNING id
-        _result(fetchone=tier_row),                    # platform_tier_config.display_name
-        _result(),                                      # INSERT payment_line_items (PACKAGE)
-        _result(),                                      # INSERT payment_line_items (ADDON LOGISTICS)
-        _result(),                                      # INSERT payment_line_items (ADDON AUDIT_EXPORT)
-    ])
+    db = _db(
+        [
+            _result(fetchone=sub),  # _get_live_subscription
+            _result(fetchone=None),  # no existing PENDING payment
+            _result(fetchone=None),  # no existing PAID payment (first invoice)
+            _result(fetchone=snapshot_price),  # package_prices by id
+            _result(fetchall=[addon1, addon2]),  # _active_purchased_addons
+            _result(scalar_one="payment-1"),  # INSERT payments RETURNING id
+            _result(fetchone=tier_row),  # platform_tier_config.display_name
+            _result(),  # INSERT payment_line_items (PACKAGE)
+            _result(),  # INSERT payment_line_items (ADDON LOGISTICS)
+            _result(),  # INSERT payment_line_items (ADDON AUDIT_EXPORT)
+        ]
+    )
 
     out = await create_invoice(db, "tenant-1", recorded_by="user-1")
 
@@ -269,25 +340,37 @@ async def test_create_invoice_renewal_reprices_addon_at_current_price() -> None:
     addon-price-OLD, 40.00) is NOT used — the add-on's CURRENT price for the
     subscription's billing_period (addon-price-NEW, 60.00) is billed instead,
     same rule as the package itself."""
-    sub = _subscription(status="ACTIVE", tier="GROWTH", billing_period="MONTHLY",
-                         current_period_end=date(2026, 11, 6))
+    sub = _subscription(
+        status="ACTIVE",
+        tier="GROWTH",
+        billing_period="MONTHLY",
+        current_period_end=date(2026, 11, 6),
+    )
     current_package_price = _price(id="price-growth-nov", amount=Decimal("200.00"))
     current_addon_price = MagicMock(id="addon-price-NEW", amount=Decimal("60.00"))
     tier_row = MagicMock(display_name="Growth")
-    stale_addon = _addon_row(addon_code="AI_ANALYTICS", price_id="addon-price-OLD", amount=Decimal("40.00"),
-                              display_name="AI Forecasting & Analytics")
+    stale_addon = _addon_row(
+        addon_code="AI_ANALYTICS",
+        price_id="addon-price-OLD",
+        amount=Decimal("40.00"),
+        display_name="AI Forecasting & Analytics",
+    )
 
-    db = _db([
-        _result(fetchone=sub),                        # _get_live_subscription
-        _result(fetchone=None),                        # no existing PENDING payment
-        _result(fetchone=current_package_price),       # next_invoice_period renewal: get_current_price
-        _result(fetchall=[stale_addon]),                # _active_purchased_addons
-        _result(fetchone=current_addon_price),          # get_current_addon_price (renewal re-price)
-        _result(scalar_one="payment-2"),                # INSERT payments RETURNING id
-        _result(fetchone=tier_row),                     # platform_tier_config.display_name
-        _result(),                                       # INSERT payment_line_items (PACKAGE)
-        _result(),                                       # INSERT payment_line_items (ADDON)
-    ])
+    db = _db(
+        [
+            _result(fetchone=sub),  # _get_live_subscription
+            _result(fetchone=None),  # no existing PENDING payment
+            _result(
+                fetchone=current_package_price
+            ),  # next_invoice_period renewal: get_current_price
+            _result(fetchall=[stale_addon]),  # _active_purchased_addons
+            _result(fetchone=current_addon_price),  # get_current_addon_price (renewal re-price)
+            _result(scalar_one="payment-2"),  # INSERT payments RETURNING id
+            _result(fetchone=tier_row),  # platform_tier_config.display_name
+            _result(),  # INSERT payment_line_items (PACKAGE)
+            _result(),  # INSERT payment_line_items (ADDON)
+        ]
+    )
 
     out = await create_invoice(db, "tenant-1")
 
@@ -301,8 +384,16 @@ async def test_create_invoice_renewal_reprices_addon_at_current_price() -> None:
 
 # ── mark_paid ─────────────────────────────────────────────────────────────────
 
-def _payment(*, id="payment-1", tenant_id="tenant-1", subscription_id="sub-1",
-             status="PENDING", period_start=date(2026, 10, 6), period_end=date(2026, 11, 6)) -> MagicMock:
+
+def _payment(
+    *,
+    id="payment-1",
+    tenant_id="tenant-1",
+    subscription_id="sub-1",
+    status="PENDING",
+    period_start=date(2026, 10, 6),
+    period_end=date(2026, 11, 6),
+) -> MagicMock:
     row = MagicMock()
     row.id, row.tenant_id, row.subscription_id, row.status = id, tenant_id, subscription_id, status
     row.period_start, row.period_end = period_start, period_end
@@ -314,19 +405,28 @@ async def test_mark_paid_activates_subscription_and_extends_contract() -> None:
     line_item = MagicMock(price_id="price-1", amount=Decimal("200.00"), price_tier="GROWTH")
     subscription = MagicMock(id="sub-1", tier="GROWTH", price_id="price-1", scheduled_tier=None)
 
-    db = _db([
-        _result(fetchone=payment),       # SELECT payments FOR UPDATE
-        _result(),                       # UPDATE payments
-        _result(fetchone=line_item),     # SELECT payment_line_items (PACKAGE)
-        _result(fetchone=subscription),  # SELECT subscriptions FOR UPDATE
-        _result(),                       # UPDATE subscriptions (same price branch)
-        _result(),                       # UPDATE tenants contract dates
-        _result(fetchall=[]),            # SELECT payment_line_items (ADDON) -> none
-    ])
+    db = _db(
+        [
+            _result(fetchone=payment),  # SELECT payments FOR UPDATE
+            _result(),  # UPDATE payments
+            _result(fetchone=line_item),  # SELECT payment_line_items (PACKAGE)
+            _result(fetchone=subscription),  # SELECT subscriptions FOR UPDATE
+            _result(),  # UPDATE subscriptions (same price branch)
+            _result(),  # UPDATE tenants contract dates
+            _result(fetchall=[]),  # SELECT payment_line_items (ADDON) -> none
+        ]
+    )
 
-    out = await mark_paid(db, "payment-1", provider="MANUAL", provider_reference="RCPT-1", recorded_by="sa-1")
+    out = await mark_paid(
+        db, "payment-1", provider="MANUAL", provider_reference="RCPT-1", recorded_by="sa-1"
+    )
 
-    assert out == {"payment_id": "payment-1", "status": "PAID", "already_paid": False, "downgrade_applied": None}
+    assert out == {
+        "payment_id": "payment-1",
+        "status": "PAID",
+        "already_paid": False,
+        "downgrade_applied": None,
+    }
 
 
 async def test_mark_paid_twice_second_call_is_idempotent_and_does_not_re_extend() -> None:
@@ -355,17 +455,21 @@ async def test_mark_paid_renewal_at_new_price_updates_subscription_price() -> No
     -> the subscription moves onto the new price at renewal."""
     payment = _payment(status="PENDING")
     line_item = MagicMock(price_id="price-2", amount=Decimal("250.00"), price_tier="GROWTH")
-    subscription = MagicMock(id="sub-1", tier="GROWTH", price_id="price-1", scheduled_tier=None)  # old price, same tier
+    subscription = MagicMock(
+        id="sub-1", tier="GROWTH", price_id="price-1", scheduled_tier=None
+    )  # old price, same tier
 
-    db = _db([
-        _result(fetchone=payment),
-        _result(),
-        _result(fetchone=line_item),
-        _result(fetchone=subscription),
-        _result(),  # UPDATE subscriptions ... price_id = 'price-2'
-        _result(),  # UPDATE tenants
-        _result(fetchall=[]),  # SELECT payment_line_items (ADDON) -> none
-    ])
+    db = _db(
+        [
+            _result(fetchone=payment),
+            _result(),
+            _result(fetchone=line_item),
+            _result(fetchone=subscription),
+            _result(),  # UPDATE subscriptions ... price_id = 'price-2'
+            _result(),  # UPDATE tenants
+            _result(fetchall=[]),  # SELECT payment_line_items (ADDON) -> none
+        ]
+    )
 
     out = await mark_paid(db, "payment-1", provider="MANUAL")
     assert out["already_paid"] is False
@@ -386,15 +490,17 @@ async def test_mark_paid_contract_end_never_moves_backwards() -> None:
     line_item = MagicMock(price_id="price-1", amount=Decimal("200.00"), price_tier="GROWTH")
     subscription = MagicMock(id="sub-1", tier="GROWTH", price_id="price-1", scheduled_tier=None)
 
-    db = _db([
-        _result(fetchone=payment),
-        _result(),
-        _result(fetchone=line_item),
-        _result(fetchone=subscription),
-        _result(),
-        _result(),
-        _result(fetchall=[]),  # SELECT payment_line_items (ADDON) -> none
-    ])
+    db = _db(
+        [
+            _result(fetchone=payment),
+            _result(),
+            _result(fetchone=line_item),
+            _result(fetchone=subscription),
+            _result(),
+            _result(),
+            _result(fetchall=[]),  # SELECT payment_line_items (ADDON) -> none
+        ]
+    )
 
     await mark_paid(db, "payment-1", provider="MANUAL")
 
@@ -417,15 +523,17 @@ async def test_mark_paid_contract_expiry_notified_reset_clause_present() -> None
     line_item = MagicMock(price_id="price-1", amount=Decimal("200.00"), price_tier="GROWTH")
     subscription = MagicMock(id="sub-1", tier="GROWTH", price_id="price-1", scheduled_tier=None)
 
-    db = _db([
-        _result(fetchone=payment),
-        _result(),
-        _result(fetchone=line_item),
-        _result(fetchone=subscription),
-        _result(),
-        _result(),
-        _result(fetchall=[]),  # SELECT payment_line_items (ADDON) -> none
-    ])
+    db = _db(
+        [
+            _result(fetchone=payment),
+            _result(),
+            _result(fetchone=line_item),
+            _result(fetchone=subscription),
+            _result(),
+            _result(),
+            _result(fetchall=[]),  # SELECT payment_line_items (ADDON) -> none
+        ]
+    )
 
     await mark_paid(db, "payment-1", provider="MANUAL")
 
@@ -449,17 +557,25 @@ async def test_mark_paid_tier_changed_after_invoice_keeps_current_tier_price() -
     only the period + status."""
     payment = _payment(status="PENDING")
     line_item = MagicMock(price_id="price-starter", amount=Decimal("100.00"), price_tier="STARTER")
-    subscription = MagicMock(id="sub-1", tier="GROWTH", price_id="price-growth", amount=Decimal("200.00"), scheduled_tier=None)
+    subscription = MagicMock(
+        id="sub-1",
+        tier="GROWTH",
+        price_id="price-growth",
+        amount=Decimal("200.00"),
+        scheduled_tier=None,
+    )
 
-    db = _db([
-        _result(fetchone=payment),       # SELECT payments FOR UPDATE
-        _result(),                       # UPDATE payments
-        _result(fetchone=line_item),     # SELECT payment_line_items JOIN package_prices
-        _result(fetchone=subscription),  # SELECT subscriptions FOR UPDATE
-        _result(),                       # UPDATE subscriptions (period/status only)
-        _result(),                       # UPDATE tenants contract dates
-        _result(fetchall=[]),            # SELECT payment_line_items (ADDON) -> none
-    ])
+    db = _db(
+        [
+            _result(fetchone=payment),  # SELECT payments FOR UPDATE
+            _result(),  # UPDATE payments
+            _result(fetchone=line_item),  # SELECT payment_line_items JOIN package_prices
+            _result(fetchone=subscription),  # SELECT subscriptions FOR UPDATE
+            _result(),  # UPDATE subscriptions (period/status only)
+            _result(),  # UPDATE tenants contract dates
+            _result(fetchall=[]),  # SELECT payment_line_items (ADDON) -> none
+        ]
+    )
 
     out = await mark_paid(db, "payment-1", provider="MANUAL")
     assert out["already_paid"] is False
@@ -479,18 +595,22 @@ async def test_mark_paid_reads_package_line_only_and_updates_addon_snapshots() -
     payment = _payment(status="PENDING")
     package_line = MagicMock(price_id="price-1", amount=Decimal("200.00"), price_tier="GROWTH")
     subscription = MagicMock(id="sub-1", tier="GROWTH", price_id="price-1", scheduled_tier=None)
-    addon_line = MagicMock(addon_code="LOGISTICS", addon_price_id="addon-price-NEW", amount=Decimal("60.00"))
+    addon_line = MagicMock(
+        addon_code="LOGISTICS", addon_price_id="addon-price-NEW", amount=Decimal("60.00")
+    )
 
-    db = _db([
-        _result(fetchone=payment),            # SELECT payments FOR UPDATE
-        _result(),                            # UPDATE payments
-        _result(fetchone=package_line),       # SELECT payment_line_items (PACKAGE)
-        _result(fetchone=subscription),       # SELECT subscriptions FOR UPDATE
-        _result(),                            # UPDATE subscriptions
-        _result(),                            # UPDATE tenants contract dates
-        _result(fetchall=[addon_line]),       # SELECT payment_line_items (ADDON)
-        _result(),                            # UPDATE tenant_addons (LOGISTICS snapshot)
-    ])
+    db = _db(
+        [
+            _result(fetchone=payment),  # SELECT payments FOR UPDATE
+            _result(),  # UPDATE payments
+            _result(fetchone=package_line),  # SELECT payment_line_items (PACKAGE)
+            _result(fetchone=subscription),  # SELECT subscriptions FOR UPDATE
+            _result(),  # UPDATE subscriptions
+            _result(),  # UPDATE tenants contract dates
+            _result(fetchall=[addon_line]),  # SELECT payment_line_items (ADDON)
+            _result(),  # UPDATE tenant_addons (LOGISTICS snapshot)
+        ]
+    )
 
     out = await mark_paid(db, "payment-1", provider="MANUAL")
     assert out["already_paid"] is False
@@ -518,17 +638,21 @@ async def test_mark_paid_scheduled_tier_match_switches_tier_and_clears_schedule(
 
     payment = _payment(status="PENDING")
     line_item = MagicMock(price_id="price-starter", amount=Decimal("100.00"), price_tier="STARTER")
-    subscription = MagicMock(id="sub-1", tier="GROWTH", price_id="price-growth", scheduled_tier="STARTER")
+    subscription = MagicMock(
+        id="sub-1", tier="GROWTH", price_id="price-growth", scheduled_tier="STARTER"
+    )
 
-    db = _db([
-        _result(fetchone=payment),       # SELECT payments FOR UPDATE
-        _result(),                       # UPDATE payments
-        _result(fetchone=line_item),     # SELECT payment_line_items (PACKAGE)
-        _result(fetchone=subscription),  # SELECT subscriptions FOR UPDATE
-        _result(),                       # UPDATE subscriptions (downgrade switch)
-        _result(),                       # UPDATE tenants contract dates
-        _result(fetchall=[]),            # SELECT payment_line_items (ADDON) -> none
-    ])
+    db = _db(
+        [
+            _result(fetchone=payment),  # SELECT payments FOR UPDATE
+            _result(),  # UPDATE payments
+            _result(fetchone=line_item),  # SELECT payment_line_items (PACKAGE)
+            _result(fetchone=subscription),  # SELECT subscriptions FOR UPDATE
+            _result(),  # UPDATE subscriptions (downgrade switch)
+            _result(),  # UPDATE tenants contract dates
+            _result(fetchall=[]),  # SELECT payment_line_items (ADDON) -> none
+        ]
+    )
 
     with patch.object(payments_module, "apply_package_to_tenant", AsyncMock()) as mock_apply:
         out = await mark_paid(db, "payment-1", provider="MANUAL")
@@ -551,17 +675,21 @@ async def test_mark_paid_scheduled_tier_mismatch_old_tier_invoice_no_switch() ->
     still priced at the OLD tier — paying it must not switch anything."""
     payment = _payment(status="PENDING")
     line_item = MagicMock(price_id="price-growth", amount=Decimal("200.00"), price_tier="GROWTH")
-    subscription = MagicMock(id="sub-1", tier="GROWTH", price_id="price-growth", scheduled_tier="STARTER")
+    subscription = MagicMock(
+        id="sub-1", tier="GROWTH", price_id="price-growth", scheduled_tier="STARTER"
+    )
 
-    db = _db([
-        _result(fetchone=payment),       # SELECT payments FOR UPDATE
-        _result(),                       # UPDATE payments
-        _result(fetchone=line_item),     # SELECT payment_line_items (PACKAGE)
-        _result(fetchone=subscription),  # SELECT subscriptions FOR UPDATE
-        _result(),                       # UPDATE subscriptions (period/status only)
-        _result(),                       # UPDATE tenants contract dates
-        _result(fetchall=[]),            # SELECT payment_line_items (ADDON) -> none
-    ])
+    db = _db(
+        [
+            _result(fetchone=payment),  # SELECT payments FOR UPDATE
+            _result(),  # UPDATE payments
+            _result(fetchone=line_item),  # SELECT payment_line_items (PACKAGE)
+            _result(fetchone=subscription),  # SELECT subscriptions FOR UPDATE
+            _result(),  # UPDATE subscriptions (period/status only)
+            _result(),  # UPDATE tenants contract dates
+            _result(fetchall=[]),  # SELECT payment_line_items (ADDON) -> none
+        ]
+    )
 
     out = await mark_paid(db, "payment-1", provider="MANUAL")
 
@@ -578,6 +706,7 @@ async def test_mark_paid_unknown_payment_raises_not_found() -> None:
 
 
 # ── cancel_invoice / mark_failed ─────────────────────────────────────────────
+
 
 async def test_cancel_invoice_from_pending_succeeds() -> None:
     db = _db([_result(fetchone=_payment(status="PENDING")), _result()])

@@ -41,6 +41,7 @@ def _run_initial_partition_check(**kwargs: object) -> None:
     except Exception:
         logger.exception("Startup partition check failed")
 
+
 T = TypeVar("T")
 
 # One dedicated event loop per process, created lazily and reused across tasks —
@@ -84,13 +85,12 @@ def register_handler(event_type: str) -> Callable:
     def decorator(func: Callable) -> Callable:
         OUTBOX_HANDLERS[event_type] = func
         return func
+
     return decorator
 
 
 @register_handler("ContractExpiryAlert")
-async def handle_contract_expiry_alert(
-    payload: ContractExpiryAlertPayload, tenant_id: str
-) -> None:
+async def handle_contract_expiry_alert(payload: ContractExpiryAlertPayload, tenant_id: str) -> None:
     """Log contract expiry alerts.
 
     Phase 3: wire to notification-service for email / push delivery.
@@ -187,7 +187,7 @@ async def _process(task: object, row_id: str) -> None:
                 {"e": str(exc), "id": row_id},
             )
             await session.commit()
-        raise task.retry(exc=exc, countdown=2 ** task.request.retries)  # type: ignore[attr-defined]
+        raise task.retry(exc=exc, countdown=2**task.request.retries)  # type: ignore[attr-defined]
 
 
 @app.task
@@ -261,14 +261,16 @@ async def _check_contracts() -> None:
 
     async with AsyncSessionLocal() as session:
         await set_system_rls_context(session, "check_contract_expiry")
-        rows = (await session.execute(
-            text(
-                "SELECT id, name, contract_end, status, contract_expiry_notified "
-                "FROM tenants "
-                "WHERE contract_end IS NOT NULL AND is_active = true "
-                "AND coalesce(status, 'ACTIVE') NOT IN ('SUSPENDED', 'DEACTIVATED')"
+        rows = (
+            await session.execute(
+                text(
+                    "SELECT id, name, contract_end, status, contract_expiry_notified "
+                    "FROM tenants "
+                    "WHERE contract_end IS NOT NULL AND is_active = true "
+                    "AND coalesce(status, 'ACTIVE') NOT IN ('SUSPENDED', 'DEACTIVATED')"
+                )
             )
-        )).fetchall()
+        ).fetchall()
 
     for row in rows:
         contract_end: date = row.contract_end
@@ -292,14 +294,16 @@ async def _check_contracts() -> None:
                         "VALUES (:tid, :etype, CAST(:payload AS jsonb), '1.0')"
                     ),
                     {
-                        "tid":     tid,
-                        "etype":   "ContractExpiryAlert",
-                        "payload": json.dumps(ContractExpiryAlertPayload(
-                            tenant_id=tid,
-                            tenant_name=tname,
-                            contract_end=contract_end.isoformat(),
-                            days_remaining=days_left,
-                        ).model_dump()),
+                        "tid": tid,
+                        "etype": "ContractExpiryAlert",
+                        "payload": json.dumps(
+                            ContractExpiryAlertPayload(
+                                tenant_id=tid,
+                                tenant_name=tname,
+                                contract_end=contract_end.isoformat(),
+                                days_remaining=days_left,
+                            ).model_dump()
+                        ),
                     },
                 )
                 await session.execute(
@@ -313,7 +317,8 @@ async def _check_contracts() -> None:
                 await session.commit()
             logger.error(
                 "ContractExpiryAlert fired: tenant=%s milestone=0d days_left=%d",
-                tid, days_left,
+                tid,
+                days_left,
             )
             continue
 
@@ -323,7 +328,9 @@ async def _check_contracts() -> None:
             continue
         milestone = min(candidates)
         key = f"{milestone}d"
-        marked_keys = [f"{m}d" for m in _EXPIRY_MILESTONES if m >= milestone and f"{m}d" not in notified]
+        marked_keys = [
+            f"{m}d" for m in _EXPIRY_MILESTONES if m >= milestone and f"{m}d" not in notified
+        ]
 
         async with AsyncSessionLocal() as session:
             await set_system_rls_context(session, "check_contract_expiry")
@@ -333,14 +340,16 @@ async def _check_contracts() -> None:
                     "VALUES (:tid, :etype, CAST(:payload AS jsonb), '1.0')"
                 ),
                 {
-                    "tid":     tid,
-                    "etype":   "ContractExpiryAlert",
-                    "payload": json.dumps(ContractExpiryAlertPayload(
-                        tenant_id=tid,
-                        tenant_name=tname,
-                        contract_end=contract_end.isoformat(),
-                        days_remaining=days_left,
-                    ).model_dump()),
+                    "tid": tid,
+                    "etype": "ContractExpiryAlert",
+                    "payload": json.dumps(
+                        ContractExpiryAlertPayload(
+                            tenant_id=tid,
+                            tenant_name=tname,
+                            contract_end=contract_end.isoformat(),
+                            days_remaining=days_left,
+                        ).model_dump()
+                    ),
                 },
             )
             await session.execute(
@@ -354,7 +363,10 @@ async def _check_contracts() -> None:
             await session.commit()
         logger.info(
             "ContractExpiryAlert fired: tenant=%s milestone=%s days_left=%d marked=%s",
-            tid, key, days_left, marked_keys,
+            tid,
+            key,
+            days_left,
+            marked_keys,
         )
 
 
@@ -395,9 +407,9 @@ async def _ensure_future_partitions() -> None:
             target = today + relativedelta(months=i)
             name = _partition_name(target.year, target.month)
 
-            exists = (await session.execute(
-                text("SELECT to_regclass(:name) IS NOT NULL"), {"name": name}
-            )).scalar()
+            exists = (
+                await session.execute(text("SELECT to_regclass(:name) IS NOT NULL"), {"name": name})
+            ).scalar()
 
             await session.execute(
                 text("SELECT ensure_inventory_partition(:m)"),
@@ -412,7 +424,6 @@ async def _ensure_future_partitions() -> None:
         logger.info("Partition maintenance: created %s", created)
     else:
         logger.info(
-            "Partition maintenance: nothing to create (current + %d future month(s) "
-            "already exist)",
+            "Partition maintenance: nothing to create (current + %d future month(s) already exist)",
             PARTITION_FUTURE_MONTHS,
         )

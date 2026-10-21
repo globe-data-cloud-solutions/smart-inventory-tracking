@@ -5,6 +5,7 @@ Tests 1–4 verify validate_transition() and get_machine() directly.
 Tests 5–7 verify InventoryService.dispatch_transfer() and receive_transfer()
 via mocks, confirming that the ledger (record_transaction) is called correctly.
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -24,13 +25,13 @@ from services.state_machine import (
 
 # ── Shared fixtures ──────────────────────────────────────────────────────────
 
-TENANT_ID    = "10000000-0000-0000-0000-000000000001"
-WAREHOUSE_A  = "20000000-0000-0000-0000-000000000001"
-WAREHOUSE_B  = "20000000-0000-0000-0000-000000000002"
-PRODUCT_ID   = "aaaaaaaa-0000-0000-0000-000000000001"
-TRANSFER_ID  = UUID("cccccccc-0000-0000-0000-000000000001")
-LINE_ID      = "llllllll-0000-0000-0000-000000000001"
-USER_ID      = "u-wm-src"
+TENANT_ID = "10000000-0000-0000-0000-000000000001"
+WAREHOUSE_A = "20000000-0000-0000-0000-000000000001"
+WAREHOUSE_B = "20000000-0000-0000-0000-000000000002"
+PRODUCT_ID = "aaaaaaaa-0000-0000-0000-000000000001"
+TRANSFER_ID = UUID("cccccccc-0000-0000-0000-000000000001")
+LINE_ID = "llllllll-0000-0000-0000-000000000001"
+USER_ID = "u-wm-src"
 
 
 @dataclass
@@ -62,22 +63,28 @@ def _non_batch_transfer_lots():
     async def _record(*args: Any, **kwargs: Any) -> Any:
         return await inv.record_transaction(*args, **kwargs)
 
-    with patch(
-        "services.transfer_lots.load_allocations", new=AsyncMock(return_value={}),
-    ), patch(
-        "services.transfer_lots.load_product",
-        new=AsyncMock(return_value=ProductDispatchInfo(False, False, None)),
-    ), patch(
-        "services.transfer_lots.record_transaction", new=_record,
+    with (
+        patch(
+            "services.transfer_lots.load_allocations",
+            new=AsyncMock(return_value={}),
+        ),
+        patch(
+            "services.transfer_lots.load_product",
+            new=AsyncMock(return_value=ProductDispatchInfo(False, False, None)),
+        ),
+        patch(
+            "services.transfer_lots.record_transaction",
+            new=_record,
+        ),
     ):
         yield
 
 
 # ── State machine unit tests (tests 1–4) ─────────────────────────────────────
 
+
 @pytest.mark.unit
 class TestIMTSStateMachines:
-
     def test_pull_invalid_draft_to_in_transit_raises_422(self) -> None:
         """PULL DRAFT → IN_TRANSIT must fail — IN_TRANSIT is never reachable from DRAFT.
         The only valid path from DRAFT is PENDING_REVIEW (or CANCELLED).
@@ -102,7 +109,7 @@ class TestIMTSStateMachines:
         """SISTER transfers require source-manager confirmation before the destination
         manager is asked. Jumping directly from DRAFT to PENDING_DEST_CONFIRM must fail."""
         # The correct path: DRAFT → PENDING_SOURCE_CONFIRM → PENDING_DEST_CONFIRM
-        validate_transition("SISTER", "DRAFT", "PENDING_SOURCE_CONFIRM")   # valid
+        validate_transition("SISTER", "DRAFT", "PENDING_SOURCE_CONFIRM")  # valid
         validate_transition("SISTER", "PENDING_SOURCE_CONFIRM", "PENDING_DEST_CONFIRM")  # valid
 
         # Skipping source confirm is forbidden
@@ -113,9 +120,17 @@ class TestIMTSStateMachines:
         """COMPLETED is a terminal state in every machine — no onward transition
         is permitted for PULL, PUSH, or SISTER."""
         for transfer_type in ("PULL", "PUSH", "SISTER"):
-            for next_state in ("DRAFT", "PENDING_REVIEW", "PENDING_APPROVAL",
-                               "APPROVED", "ISSUED", "IN_TRANSIT", "RECEIVED",
-                               "CANCELLED", "COMPLETED"):
+            for next_state in (
+                "DRAFT",
+                "PENDING_REVIEW",
+                "PENDING_APPROVAL",
+                "APPROVED",
+                "ISSUED",
+                "IN_TRANSIT",
+                "RECEIVED",
+                "CANCELLED",
+                "COMPLETED",
+            ):
                 with pytest.raises(InvalidStateTransitionError):
                     validate_transition(transfer_type, "COMPLETED", next_state)
 
@@ -130,10 +145,16 @@ class TestIMTSStateMachines:
         validate_transition("PUSH", "PENDING_APPROVAL", "REJECTED")  # must not raise
 
         # REJECTED is a hard terminal — nothing is permitted from it
-        for next_state in ("APPROVED", "CANCELLED", "DRAFT", "PENDING_APPROVAL",
-                           "ISSUED", "IN_TRANSIT", "COMPLETED"):
-            with pytest.raises(InvalidStateTransitionError,
-                               match=r"PUSH.*REJECTED"):
+        for next_state in (
+            "APPROVED",
+            "CANCELLED",
+            "DRAFT",
+            "PENDING_APPROVAL",
+            "ISSUED",
+            "IN_TRANSIT",
+            "COMPLETED",
+        ):
+            with pytest.raises(InvalidStateTransitionError, match=r"PUSH.*REJECTED"):
                 validate_transition("PUSH", "REJECTED", next_state)
 
     def test_sister_cancelled_from_dest_confirm(self) -> None:
@@ -144,17 +165,17 @@ class TestIMTSStateMachines:
         explicitly permitted as a semantically distinct outcome.
         """
         # Destination WM can abandon (CANCELLED) or refuse (REJECTED)
-        validate_transition("SISTER", "PENDING_DEST_CONFIRM", "CANCELLED")   # must not raise
-        validate_transition("SISTER", "PENDING_DEST_CONFIRM", "REJECTED")    # already worked
+        validate_transition("SISTER", "PENDING_DEST_CONFIRM", "CANCELLED")  # must not raise
+        validate_transition("SISTER", "PENDING_DEST_CONFIRM", "REJECTED")  # already worked
 
         # CANCELLED is a hard terminal for SISTER
         for next_state in ("DRAFT", "PENDING_APPROVAL", "APPROVED", "ISSUED"):
-            with pytest.raises(InvalidStateTransitionError,
-                               match=r"SISTER.*CANCELLED"):
+            with pytest.raises(InvalidStateTransitionError, match=r"SISTER.*CANCELLED"):
                 validate_transition("SISTER", "CANCELLED", next_state)
 
 
 # ── InventoryService integration tests (tests 5–7) ───────────────────────────
+
 
 def _make_transfer_row(
     status: str,
@@ -163,19 +184,19 @@ def _make_transfer_row(
     to_wh: str = WAREHOUSE_B,
 ) -> MagicMock:
     row = MagicMock()
-    row.status        = status
+    row.status = status
     row.transfer_type = transfer_type
     row.from_warehouse_id = from_wh
-    row.to_warehouse_id   = to_wh
-    row.tenant_id     = TENANT_ID
+    row.to_warehouse_id = to_wh
+    row.tenant_id = TENANT_ID
     return row
 
 
 def _make_line(quantity: float = 50.0) -> MagicMock:
     line = MagicMock()
-    line.id         = LINE_ID
+    line.id = LINE_ID
     line.product_id = PRODUCT_ID
-    line.quantity   = Decimal(str(quantity))
+    line.quantity = Decimal(str(quantity))
     return line
 
 
@@ -192,12 +213,14 @@ def _session_for_dispatch(
     Also suitable for transition_transfer() calls that fetch lines (APPROVED, CANCELLED from APPROVED).
     """
     session = AsyncMock()
-    session.execute = AsyncMock(side_effect=[
-        MagicMock(fetchone=MagicMock(return_value=transfer_row)),  # transfer SELECT
-        MagicMock(fetchall=MagicMock(return_value=lines)),         # lines SELECT
-        MagicMock(),                                                # status UPDATE
-        MagicMock(fetchone=MagicMock(return_value=None)),           # warehouse name lookup
-    ])
+    session.execute = AsyncMock(
+        side_effect=[
+            MagicMock(fetchone=MagicMock(return_value=transfer_row)),  # transfer SELECT
+            MagicMock(fetchall=MagicMock(return_value=lines)),  # lines SELECT
+            MagicMock(),  # status UPDATE
+            MagicMock(fetchone=MagicMock(return_value=None)),  # warehouse name lookup
+        ]
+    )
     return session
 
 
@@ -206,21 +229,23 @@ def _session_for_receive(
     lines: list,
 ) -> AsyncMock:
     """Build a mock session for receive_transfer's queries:
-      call 0 — SELECT transfer_orders FOR UPDATE
-      call 1 — SELECT transfer_order_lines
-      call 2 — UPDATE transfer_orders SET status = 'RECEIVED'
-      call 3 — INSERT INTO audit_logs (transfer:receive row, same session)
-      call 4 — facility-name lookup, only when the actor's facility is not the
-               destination (acted_on_behalf_of); unused otherwise
+    call 0 — SELECT transfer_orders FOR UPDATE
+    call 1 — SELECT transfer_order_lines
+    call 2 — UPDATE transfer_orders SET status = 'RECEIVED'
+    call 3 — INSERT INTO audit_logs (transfer:receive row, same session)
+    call 4 — facility-name lookup, only when the actor's facility is not the
+             destination (acted_on_behalf_of); unused otherwise
     """
     session = AsyncMock()
-    session.execute = AsyncMock(side_effect=[
-        MagicMock(fetchone=MagicMock(return_value=transfer_row)),
-        MagicMock(fetchall=MagicMock(return_value=lines)),
-        MagicMock(),
-        MagicMock(),
-        MagicMock(fetchone=MagicMock(return_value=None)),
-    ])
+    session.execute = AsyncMock(
+        side_effect=[
+            MagicMock(fetchone=MagicMock(return_value=transfer_row)),
+            MagicMock(fetchall=MagicMock(return_value=lines)),
+            MagicMock(),
+            MagicMock(),
+            MagicMock(fetchone=MagicMock(return_value=None)),
+        ]
+    )
     return session
 
 
@@ -261,30 +286,34 @@ class TestGetWarehouseName:
 
 @pytest.mark.unit
 class TestInventoryServiceTransfers:
-
     async def test_dispatch_writes_no_ledger_entries(self) -> None:
         """dispatch_transfer() (APPROVED → ISSUED) writes no direct record_transaction entries.
         Source on_hand was already deducted at APPROVED. Transit-tracking entries are written
         via write_transfer_ledger_entry (a separate audit path — not a balance mutation)."""
         from services.inventory_service import InventoryService
 
-        line      = _make_line(quantity=50.0)
-        xfer_row  = _make_transfer_row("APPROVED", transfer_type="PULL")
-        session   = _session_for_dispatch(xfer_row, [line])
+        line = _make_line(quantity=50.0)
+        xfer_row = _make_transfer_row("APPROVED", transfer_type="PULL")
+        session = _session_for_dispatch(xfer_row, [line])
 
-        with patch(
-            "services.inventory_service.record_transaction",
-            new=AsyncMock(return_value="tx-dispatched"),
-        ) as mock_record, patch(
-            "services.inventory_service.write_transfer_ledger_entry",
-            new=AsyncMock(),
+        with (
+            patch(
+                "services.inventory_service.record_transaction",
+                new=AsyncMock(return_value="tx-dispatched"),
+            ) as mock_record,
+            patch(
+                "services.inventory_service.write_transfer_ledger_entry",
+                new=AsyncMock(),
+            ),
         ):
-            svc    = InventoryService(session)
+            svc = InventoryService(session)
             result = await svc.dispatch_transfer(SRC_WM, TRANSFER_ID)
 
         assert result.status == "ISSUED"
         # No direct record_transaction calls at dispatch (transit audit is via write_transfer_ledger_entry)
-        assert mock_record.await_count == 0, "dispatch_transfer must write zero direct ledger entries"
+        assert mock_record.await_count == 0, (
+            "dispatch_transfer must write zero direct ledger entries"
+        )
 
     async def test_received_transition_credits_destination_balance(self) -> None:
         """receive_transfer() (IN_TRANSIT → RECEIVED) writes one TRANSFER_IN per line
@@ -292,34 +321,42 @@ class TestInventoryServiceTransfers:
         Transit-clear audit entries are written via write_transfer_ledger_entry (separate path)."""
         from services.inventory_service import InventoryService
 
-        line      = _make_line(quantity=30.0)
-        xfer_row  = _make_transfer_row("IN_TRANSIT", transfer_type="PULL")
-        session   = _session_for_receive(xfer_row, [line])
+        line = _make_line(quantity=30.0)
+        xfer_row = _make_transfer_row("IN_TRANSIT", transfer_type="PULL")
+        session = _session_for_receive(xfer_row, [line])
 
-        with patch(
-            "services.inventory_service.record_transaction",
-            new=AsyncMock(return_value="tx-received"),
-        ) as mock_record, patch(
-            "services.inventory_service.write_to_outbox",
-            new=AsyncMock(),
-        ), patch(
-            "services.inventory_service.write_transfer_ledger_entry",
-            new=AsyncMock(),
+        with (
+            patch(
+                "services.inventory_service.record_transaction",
+                new=AsyncMock(return_value="tx-received"),
+            ) as mock_record,
+            patch(
+                "services.inventory_service.write_to_outbox",
+                new=AsyncMock(),
+            ),
+            patch(
+                "services.inventory_service.write_transfer_ledger_entry",
+                new=AsyncMock(),
+            ),
         ):
-            svc    = InventoryService(session)
+            svc = InventoryService(session)
             result = await svc.receive_transfer(DST_WM, TRANSFER_ID)
 
         assert result.status == "RECEIVED"
         assert mock_record.await_count == 1
 
         calls = {kw["transaction_type"]: kw for _, kw in mock_record.call_args_list}
-        assert "TRANSFER_OUT" not in calls, "TRANSFER_OUT must NOT be written at receive (deducted at APPROVED)"
-        assert "RELEASE" not in calls, "RELEASE must NOT be written (no RESERVE was made at dispatch)"
-        tin  = calls["TRANSFER_IN"]
+        assert "TRANSFER_OUT" not in calls, (
+            "TRANSFER_OUT must NOT be written at receive (deducted at APPROVED)"
+        )
+        assert "RELEASE" not in calls, (
+            "RELEASE must NOT be written (no RESERVE was made at dispatch)"
+        )
+        tin = calls["TRANSFER_IN"]
 
-        assert tin["warehouse_id"]  == WAREHOUSE_B        # destination WH credited
-        assert tin["quantity"]      == Decimal("30")       # positive = credit
-        assert tin["reference_id"]  == str(TRANSFER_ID)
+        assert tin["warehouse_id"] == WAREHOUSE_B  # destination WH credited
+        assert tin["quantity"] == Decimal("30")  # positive = credit
+        assert tin["reference_id"] == str(TRANSFER_ID)
 
     async def test_cancelled_from_approved_reverses_source_balance(self) -> None:
         """A PULL transfer cancelled while in APPROVED state must write a TRANSFER_REVERSAL
@@ -335,22 +372,26 @@ class TestInventoryServiceTransfers:
         """
         from services.inventory_service import InventoryService
 
-        line     = _make_line(quantity=50.0)
+        line = _make_line(quantity=50.0)
         xfer_row = _make_transfer_row("APPROVED", transfer_type="PULL")
-        session  = _session_for_dispatch(xfer_row, [line])  # SELECT transfer, SELECT lines, UPDATE
+        session = _session_for_dispatch(xfer_row, [line])  # SELECT transfer, SELECT lines, UPDATE
 
         captured_ledger_calls: list = []
+
         async def _capture_ledger(*_, **kw):
             captured_ledger_calls.append(kw)
 
-        with patch(
-            "services.inventory_service.record_transaction",
-            new=AsyncMock(),
-        ) as mock_record, patch(
-            "services.inventory_service.write_transfer_ledger_entry",
-            new=AsyncMock(side_effect=_capture_ledger),
+        with (
+            patch(
+                "services.inventory_service.record_transaction",
+                new=AsyncMock(),
+            ) as mock_record,
+            patch(
+                "services.inventory_service.write_transfer_ledger_entry",
+                new=AsyncMock(side_effect=_capture_ledger),
+            ),
         ):
-            svc    = InventoryService(session)
+            svc = InventoryService(session)
             result = await svc.transition_transfer(SRC_WM, TRANSFER_ID, "CANCELLED")
 
         assert result.status == "CANCELLED"
@@ -362,9 +403,9 @@ class TestInventoryServiceTransfers:
         assert len(captured_ledger_calls) == 1, "exactly one TRANSFER_REVERSAL entry expected"
         rev = captured_ledger_calls[0]
         assert rev["transaction_type"] == "TRANSFER_REVERSAL"
-        assert rev["warehouse_id"]     == WAREHOUSE_A,    "reversal must target source warehouse"
-        assert rev["quantity"]         == Decimal("50"),   "reversal must be positive (restore)"
-        assert rev["transfer_id"]      == str(TRANSFER_ID)
+        assert rev["warehouse_id"] == WAREHOUSE_A, "reversal must target source warehouse"
+        assert rev["quantity"] == Decimal("50"), "reversal must be positive (restore)"
+        assert rev["transfer_id"] == str(TRANSFER_ID)
 
         # State machine sanity: APPROVED → CANCELLED is valid for PULL
         validate_transition("PULL", "APPROVED", "CANCELLED")  # must not raise
@@ -376,19 +417,23 @@ class TestInventoryServiceTransfers:
         entries. Source on_hand was already deducted at APPROVED via transition_transfer()."""
         from services.inventory_service import InventoryService
 
-        line     = _make_line(quantity=120.0)
-        xfer_row = _make_transfer_row("APPROVED", transfer_type="PUSH",
-                                      from_wh=WAREHOUSE_A, to_wh=WAREHOUSE_B)
-        session  = _session_for_dispatch(xfer_row, [line])
+        line = _make_line(quantity=120.0)
+        xfer_row = _make_transfer_row(
+            "APPROVED", transfer_type="PUSH", from_wh=WAREHOUSE_A, to_wh=WAREHOUSE_B
+        )
+        session = _session_for_dispatch(xfer_row, [line])
 
-        with patch(
-            "services.inventory_service.record_transaction",
-            new=AsyncMock(return_value="tx-issued"),
-        ) as mock_record, patch(
-            "services.inventory_service.write_transfer_ledger_entry",
-            new=AsyncMock(),
+        with (
+            patch(
+                "services.inventory_service.record_transaction",
+                new=AsyncMock(return_value="tx-issued"),
+            ) as mock_record,
+            patch(
+                "services.inventory_service.write_transfer_ledger_entry",
+                new=AsyncMock(),
+            ),
         ):
-            svc    = InventoryService(session)
+            svc = InventoryService(session)
             result = await svc.dispatch_transfer(SRC_WM, TRANSFER_ID)
 
         assert result.status == "ISSUED", "status must advance to ISSUED"
@@ -399,20 +444,24 @@ class TestInventoryServiceTransfers:
         Transit-tracking entries go via write_transfer_ledger_entry (audit only, not balance)."""
         from services.inventory_service import InventoryService
 
-        qty      = Decimal("75")
-        line     = _make_line(quantity=float(qty))
-        xfer_row = _make_transfer_row("APPROVED", transfer_type="PULL",
-                                      from_wh=WAREHOUSE_A, to_wh=WAREHOUSE_B)
-        session  = _session_for_dispatch(xfer_row, [line])
+        qty = Decimal("75")
+        line = _make_line(quantity=float(qty))
+        xfer_row = _make_transfer_row(
+            "APPROVED", transfer_type="PULL", from_wh=WAREHOUSE_A, to_wh=WAREHOUSE_B
+        )
+        session = _session_for_dispatch(xfer_row, [line])
 
-        with patch(
-            "services.inventory_service.record_transaction",
-            new=AsyncMock(return_value="tx-both-sides"),
-        ) as mock_record, patch(
-            "services.inventory_service.write_transfer_ledger_entry",
-            new=AsyncMock(),
+        with (
+            patch(
+                "services.inventory_service.record_transaction",
+                new=AsyncMock(return_value="tx-both-sides"),
+            ) as mock_record,
+            patch(
+                "services.inventory_service.write_transfer_ledger_entry",
+                new=AsyncMock(),
+            ),
         ):
-            svc    = InventoryService(session)
+            svc = InventoryService(session)
             result = await svc.dispatch_transfer(SRC_WM, TRANSFER_ID)
 
         assert result.status == "ISSUED"
@@ -423,23 +472,28 @@ class TestInventoryServiceTransfers:
         via record_transaction. TRANSIT_CLEAR audit entries go via write_transfer_ledger_entry."""
         from services.inventory_service import InventoryService
 
-        qty      = Decimal("60")
-        line     = _make_line(quantity=float(qty))
-        xfer_row = _make_transfer_row("IN_TRANSIT", transfer_type="PUSH",
-                                      from_wh=WAREHOUSE_A, to_wh=WAREHOUSE_B)
-        session  = _session_for_receive(xfer_row, [line])
+        qty = Decimal("60")
+        line = _make_line(quantity=float(qty))
+        xfer_row = _make_transfer_row(
+            "IN_TRANSIT", transfer_type="PUSH", from_wh=WAREHOUSE_A, to_wh=WAREHOUSE_B
+        )
+        session = _session_for_receive(xfer_row, [line])
 
-        with patch(
-            "services.inventory_service.record_transaction",
-            new=AsyncMock(return_value="tx-received-clear"),
-        ) as mock_record, patch(
-            "services.inventory_service.write_to_outbox",
-            new=AsyncMock(),
-        ), patch(
-            "services.inventory_service.write_transfer_ledger_entry",
-            new=AsyncMock(),
+        with (
+            patch(
+                "services.inventory_service.record_transaction",
+                new=AsyncMock(return_value="tx-received-clear"),
+            ) as mock_record,
+            patch(
+                "services.inventory_service.write_to_outbox",
+                new=AsyncMock(),
+            ),
+            patch(
+                "services.inventory_service.write_transfer_ledger_entry",
+                new=AsyncMock(),
+            ),
         ):
-            svc    = InventoryService(session)
+            svc = InventoryService(session)
             result = await svc.receive_transfer(DST_WM, TRANSFER_ID)
 
         assert result.status == "RECEIVED"
@@ -449,10 +503,12 @@ class TestInventoryServiceTransfers:
         assert "TRANSFER_OUT" not in calls_by_type, "TRANSFER_OUT must NOT be written at receive"
         assert "RELEASE" not in calls_by_type, "RELEASE must NOT be written (no RESERVE was made)"
 
-        assert "TRANSFER_IN" in calls_by_type, "TRANSFER_IN missing — destination on_hand not credited"
+        assert "TRANSFER_IN" in calls_by_type, (
+            "TRANSFER_IN missing — destination on_hand not credited"
+        )
         tin = calls_by_type["TRANSFER_IN"]
         assert tin["warehouse_id"] == WAREHOUSE_B, "TRANSFER_IN must target destination"
-        assert tin["quantity"]     == qty,          "TRANSFER_IN must be positive (credit)"
+        assert tin["quantity"] == qty, "TRANSFER_IN must be positive (credit)"
         assert tin["reference_id"] == str(TRANSFER_ID)
 
     async def test_approved_transition_writes_transfer_out_at_source(self) -> None:
@@ -462,24 +518,32 @@ class TestInventoryServiceTransfers:
         from services.approval_service import ApprovalDecision
         from services.inventory_service import InventoryService
 
-        line     = _make_line(quantity=50.0)
+        line = _make_line(quantity=50.0)
         xfer_row = _make_transfer_row("PENDING_APPROVAL", transfer_type="PULL")
-        session  = _session_for_dispatch(xfer_row, [line])  # SELECT transfer, SELECT lines, UPDATE
+        session = _session_for_dispatch(xfer_row, [line])  # SELECT transfer, SELECT lines, UPDATE
 
-        with patch(
-            "services.inventory_service.resolve_approval",
-            new=AsyncMock(return_value=ApprovalDecision(
-                required_role="WM", is_auto_approved=False,
-                next_status="PENDING_APPROVAL", required_authority_level=4,
-            )),
-        ), patch(
-            "services.inventory_service.record_transaction",
-            new=AsyncMock(return_value="tx-approved"),
-        ) as mock_record, patch(
-            "services.inventory_service._get_simple_mode",
-            new=AsyncMock(return_value=True),
+        with (
+            patch(
+                "services.inventory_service.resolve_approval",
+                new=AsyncMock(
+                    return_value=ApprovalDecision(
+                        required_role="WM",
+                        is_auto_approved=False,
+                        next_status="PENDING_APPROVAL",
+                        required_authority_level=4,
+                    )
+                ),
+            ),
+            patch(
+                "services.inventory_service.record_transaction",
+                new=AsyncMock(return_value="tx-approved"),
+            ) as mock_record,
+            patch(
+                "services.inventory_service._get_simple_mode",
+                new=AsyncMock(return_value=True),
+            ),
         ):
-            svc    = InventoryService(session)
+            svc = InventoryService(session)
             result = await svc.transition_transfer(SRC_WM, TRANSFER_ID, "APPROVED")
 
         assert result.status == "APPROVED"
@@ -487,8 +551,8 @@ class TestInventoryServiceTransfers:
 
         calls = {kw["transaction_type"]: kw for _, kw in mock_record.call_args_list}
         out = calls["TRANSFER_OUT"]
-        assert out["warehouse_id"] == WAREHOUSE_A,        "TRANSFER_OUT must target source warehouse"
-        assert out["quantity"]     == -Decimal("50"),      "TRANSFER_OUT must be negative (deduction)"
+        assert out["warehouse_id"] == WAREHOUSE_A, "TRANSFER_OUT must target source warehouse"
+        assert out["quantity"] == -Decimal("50"), "TRANSFER_OUT must be negative (deduction)"
         assert out["reference_id"] == str(TRANSFER_ID)
 
         # State machine sanity: PENDING_APPROVAL → APPROVED is valid for PULL
@@ -510,17 +574,20 @@ class TestInventoryServiceTransfers:
         from services.inventory_service import InventoryService
         from fastapi import HTTPException
 
-        line     = _make_line(quantity=40.0)
+        line = _make_line(quantity=40.0)
         xfer_row = _make_transfer_row("APPROVED", transfer_type="PUSH")
 
         # Source WM (WAREHOUSE_A == from_warehouse_id) must succeed
         session = _session_for_dispatch(xfer_row, [line])
-        with patch(
-            "services.inventory_service.record_transaction",
-            new=AsyncMock(return_value="tx-src-dispatch"),
-        ), patch(
-            "services.inventory_service.write_transfer_ledger_entry",
-            new=AsyncMock(),
+        with (
+            patch(
+                "services.inventory_service.record_transaction",
+                new=AsyncMock(return_value="tx-src-dispatch"),
+            ),
+            patch(
+                "services.inventory_service.write_transfer_ledger_entry",
+                new=AsyncMock(),
+            ),
         ):
             result = await InventoryService(session).dispatch_transfer(SRC_WM, TRANSFER_ID)
         assert result.status == "ISSUED", "source WM must be able to dispatch an APPROVED transfer"
@@ -558,24 +625,32 @@ class TestInventoryServiceTransfers:
 
         _TX = "dddddddd-0000-0000-0000-000000000002"
         recorded: list = []
+
         async def _record(*_args, **kw):
             recorded.append(kw)
             return _TX
 
         from services.approval_service import ApprovalDecision
+
         _auto_approve_off = ApprovalDecision(
-            required_role="WM", is_auto_approved=False,
-            next_status="PENDING_APPROVAL", required_authority_level=4,
+            required_role="WM",
+            is_auto_approved=False,
+            next_status="PENDING_APPROVAL",
+            required_authority_level=4,
         )
-        with patch(
-            "services.inventory_service.resolve_approval",
-            new=AsyncMock(return_value=_auto_approve_off),
-        ), patch(
-            "services.inventory_service.record_transaction",
-            new=AsyncMock(side_effect=_record),
-        ), patch(
-            "services.inventory_service._get_simple_mode",
-            new=AsyncMock(return_value=True),
+        with (
+            patch(
+                "services.inventory_service.resolve_approval",
+                new=AsyncMock(return_value=_auto_approve_off),
+            ),
+            patch(
+                "services.inventory_service.record_transaction",
+                new=AsyncMock(side_effect=_record),
+            ),
+            patch(
+                "services.inventory_service._get_simple_mode",
+                new=AsyncMock(return_value=True),
+            ),
         ):
             await InventoryService(_session_for_dispatch(xfer1, [line1])).transition_transfer(
                 SRC_WM, TRANSFER_ID, "APPROVED"
@@ -597,9 +672,13 @@ class TestInventoryServiceTransfers:
         )
 
         # Each key must reference its own transfer_id
-        key_for_transfer1 = next(r["idempotency_key"] for r in transfer_outs if r["quantity"] == -Decimal("50"))
-        key_for_transfer2 = next(r["idempotency_key"] for r in transfer_outs if r["quantity"] == -Decimal("80"))
-        assert str(TRANSFER_ID)   in key_for_transfer1, "first key must embed TRANSFER_ID"
+        key_for_transfer1 = next(
+            r["idempotency_key"] for r in transfer_outs if r["quantity"] == -Decimal("50")
+        )
+        key_for_transfer2 = next(
+            r["idempotency_key"] for r in transfer_outs if r["quantity"] == -Decimal("80")
+        )
+        assert str(TRANSFER_ID) in key_for_transfer1, "first key must embed TRANSFER_ID"
         assert str(TRANSFER_ID_2) in key_for_transfer2, "second key must embed TRANSFER_ID_2"
 
         # Quantities are independent
@@ -639,6 +718,7 @@ class TestInventoryServiceTransfers:
 
         _TX = "dddddddd-0000-0000-0000-000000000001"
         recorded: list = []
+
         async def _record(*_args, **kw):
             recorded.append(kw)
             return _TX
@@ -647,7 +727,9 @@ class TestInventoryServiceTransfers:
 
         def _make_db() -> AsyncMock:
             db = AsyncMock()
-            db.execute = AsyncMock(return_value=MagicMock(fetchone=MagicMock(return_value=product_row)))
+            db.execute = AsyncMock(
+                return_value=MagicMock(fetchone=MagicMock(return_value=product_row))
+            )
             return db
 
         with patch(
@@ -692,27 +774,36 @@ class TestInventoryServiceTransfers:
         from services.inventory_service import InventoryService
         from fastapi import HTTPException
 
-        line     = _make_line(quantity=50.0)
+        line = _make_line(quantity=50.0)
         xfer_row = _make_transfer_row("PENDING_APPROVAL", transfer_type="PULL")
 
         from services.approval_service import ApprovalDecision
+
         _TX = "tx-double-submit"
-        with patch(
-            "services.inventory_service.resolve_approval",
-            new=AsyncMock(return_value=ApprovalDecision(
-                required_role="WM", is_auto_approved=False,
-                next_status="PENDING_APPROVAL", required_authority_level=4,
-            )),
-        ), patch(
-            "services.inventory_service.record_transaction",
-            new=AsyncMock(return_value=_TX),
-        ), patch(
-            "services.inventory_service._get_simple_mode",
-            new=AsyncMock(return_value=True),
+        with (
+            patch(
+                "services.inventory_service.resolve_approval",
+                new=AsyncMock(
+                    return_value=ApprovalDecision(
+                        required_role="WM",
+                        is_auto_approved=False,
+                        next_status="PENDING_APPROVAL",
+                        required_authority_level=4,
+                    )
+                ),
+            ),
+            patch(
+                "services.inventory_service.record_transaction",
+                new=AsyncMock(return_value=_TX),
+            ),
+            patch(
+                "services.inventory_service._get_simple_mode",
+                new=AsyncMock(return_value=True),
+            ),
         ):
             # First request succeeds: PENDING_APPROVAL → APPROVED
             session1 = _session_for_dispatch(xfer_row, [line])
-            result1  = await InventoryService(session1).transition_transfer(
+            result1 = await InventoryService(session1).transition_transfer(
                 SRC_WM, TRANSFER_ID, "APPROVED"
             )
             assert result1.status == "APPROVED"
@@ -772,27 +863,36 @@ class TestInventoryServiceTransfers:
         from services.approval_service import ApprovalDecision
         from services.inventory_service import InventoryService
 
-        line     = _make_line(quantity=50.0)
+        line = _make_line(quantity=50.0)
         xfer_row = _make_transfer_row("PENDING_APPROVAL", transfer_type="PULL")
-        session  = _session_for_dispatch(xfer_row, [line])
+        session = _session_for_dispatch(xfer_row, [line])
 
         mock_outbox = AsyncMock()
-        with patch(
-            "services.inventory_service.resolve_approval",
-            new=AsyncMock(return_value=ApprovalDecision(
-                required_role="WM", is_auto_approved=True,
-                next_status="APPROVED", required_authority_level=4,
-                notify_levels=[1, 2],
-            )),
-        ), patch(
-            "services.inventory_service.record_transaction",
-            new=AsyncMock(return_value="tx-auto"),
-        ), patch(
-            "services.inventory_service.write_to_outbox",
-            new=mock_outbox,
-        ), patch(
-            "services.inventory_service._get_simple_mode",
-            new=AsyncMock(return_value=True),
+        with (
+            patch(
+                "services.inventory_service.resolve_approval",
+                new=AsyncMock(
+                    return_value=ApprovalDecision(
+                        required_role="WM",
+                        is_auto_approved=True,
+                        next_status="APPROVED",
+                        required_authority_level=4,
+                        notify_levels=[1, 2],
+                    )
+                ),
+            ),
+            patch(
+                "services.inventory_service.record_transaction",
+                new=AsyncMock(return_value="tx-auto"),
+            ),
+            patch(
+                "services.inventory_service.write_to_outbox",
+                new=mock_outbox,
+            ),
+            patch(
+                "services.inventory_service._get_simple_mode",
+                new=AsyncMock(return_value=True),
+            ),
         ):
             result = await InventoryService(session).transition_transfer(
                 SRC_WM, TRANSFER_ID, "APPROVED"
@@ -800,10 +900,7 @@ class TestInventoryServiceTransfers:
 
         assert result.status == "APPROVED"
         # write_to_outbox(db, tenant_id, event_type, payload) — event_type is args[2]
-        auto_notices = [
-            c for c in mock_outbox.call_args_list
-            if c.args[2] == "AutoApprovalNotice"
-        ]
+        auto_notices = [c for c in mock_outbox.call_args_list if c.args[2] == "AutoApprovalNotice"]
         assert len(auto_notices) == 2, (
             f"expected 2 AutoApprovalNotice events (one per notify_level), got {len(auto_notices)}"
         )
@@ -814,23 +911,32 @@ class TestInventoryServiceTransfers:
         from services.approval_service import ApprovalDecision
         from services.inventory_service import InventoryService
 
-        line     = _make_line(quantity=50.0)
+        line = _make_line(quantity=50.0)
         xfer_row = _make_transfer_row("PENDING_APPROVAL", transfer_type="PULL")
-        session  = _session_for_dispatch(xfer_row, [line])
+        session = _session_for_dispatch(xfer_row, [line])
 
-        with patch(
-            "services.inventory_service.resolve_approval",
-            new=AsyncMock(return_value=ApprovalDecision(
-                required_role="RM", is_auto_approved=False,
-                next_status="PENDING_APPROVAL", required_authority_level=2,
-            )),
-        ), patch(
-            "services.inventory_service.record_transaction",
-            new=AsyncMock(return_value="tx-blocked"),
-        ), patch(
-            "services.inventory_service._get_simple_mode",
-            new=AsyncMock(return_value=True),
-        ), pytest.raises(HTTPException) as exc_info:
+        with (
+            patch(
+                "services.inventory_service.resolve_approval",
+                new=AsyncMock(
+                    return_value=ApprovalDecision(
+                        required_role="RM",
+                        is_auto_approved=False,
+                        next_status="PENDING_APPROVAL",
+                        required_authority_level=2,
+                    )
+                ),
+            ),
+            patch(
+                "services.inventory_service.record_transaction",
+                new=AsyncMock(return_value="tx-blocked"),
+            ),
+            patch(
+                "services.inventory_service._get_simple_mode",
+                new=AsyncMock(return_value=True),
+            ),
+            pytest.raises(HTTPException) as exc_info,
+        ):
             await InventoryService(session).transition_transfer(SRC_WM, TRANSFER_ID, "APPROVED")
 
         assert exc_info.value.status_code == 403
@@ -850,19 +956,22 @@ class TestInventoryServiceTransfers:
         """
         from services.inventory_service import InventoryService
 
-        line      = _make_line(quantity=100.0)
-        qty       = Decimal("100")
+        line = _make_line(quantity=100.0)
+        qty = Decimal("100")
 
         # APPROVED → ISSUED: dispatch_transfer() must write zero ledger entries
         approved_row = _make_transfer_row("APPROVED", transfer_type="PULL")
-        session_a    = _session_for_dispatch(approved_row, [line])
+        session_a = _session_for_dispatch(approved_row, [line])
 
-        with patch(
-            "services.inventory_service.record_transaction",
-            new=AsyncMock(return_value="tx"),
-        ) as mock_dispatch, patch(
-            "services.inventory_service.write_transfer_ledger_entry",
-            new=AsyncMock(),
+        with (
+            patch(
+                "services.inventory_service.record_transaction",
+                new=AsyncMock(return_value="tx"),
+            ) as mock_dispatch,
+            patch(
+                "services.inventory_service.write_transfer_ledger_entry",
+                new=AsyncMock(),
+            ),
         ):
             await InventoryService(session_a).dispatch_transfer(SRC_WM, TRANSFER_ID)
 
@@ -872,22 +981,27 @@ class TestInventoryServiceTransfers:
 
         # IN_TRANSIT → RECEIVED: receive_transfer() must write exactly TRANSFER_IN at destination
         in_transit_row = _make_transfer_row("IN_TRANSIT", transfer_type="PULL")
-        session_r      = _session_for_receive(in_transit_row, [line])
+        session_r = _session_for_receive(in_transit_row, [line])
 
         received_calls: list = []
+
         async def _record_receive(*_args, **kw):
             received_calls.append(kw)
             return "tx-receive"
 
-        with patch(
-            "services.inventory_service.record_transaction",
-            new=AsyncMock(side_effect=_record_receive),
-        ), patch(
-            "services.inventory_service.write_to_outbox",
-            new=AsyncMock(),
-        ), patch(
-            "services.inventory_service.write_transfer_ledger_entry",
-            new=AsyncMock(),
+        with (
+            patch(
+                "services.inventory_service.record_transaction",
+                new=AsyncMock(side_effect=_record_receive),
+            ),
+            patch(
+                "services.inventory_service.write_to_outbox",
+                new=AsyncMock(),
+            ),
+            patch(
+                "services.inventory_service.write_transfer_ledger_entry",
+                new=AsyncMock(),
+            ),
         ):
             result = await InventoryService(session_r).receive_transfer(DST_WM, TRANSFER_ID)
 
@@ -895,8 +1009,8 @@ class TestInventoryServiceTransfers:
         assert len(received_calls) == 1, "exactly one ledger entry written at RECEIVED"
         tin = received_calls[0]
         assert tin["transaction_type"] == "TRANSFER_IN"
-        assert tin["warehouse_id"]     == WAREHOUSE_B, "TRANSFER_IN must target destination"
-        assert tin["quantity"]         == qty,          "TRANSFER_IN must be positive (credit)"
+        assert tin["warehouse_id"] == WAREHOUSE_B, "TRANSFER_IN must target destination"
+        assert tin["quantity"] == qty, "TRANSFER_IN must be positive (credit)"
 
     async def test_nm_can_dispatch_as_tenant_manager(self) -> None:
         """NM without warehouse_id must be ALLOWED to dispatch APPROVED transfers.
@@ -914,17 +1028,21 @@ class TestInventoryServiceTransfers:
 
         NM_USER = _User("u-nm", TENANT_ID, None, None, "NM")
 
-        line     = _make_line(quantity=60.0)
+        line = _make_line(quantity=60.0)
         xfer_row = _make_transfer_row("APPROVED", transfer_type="PULL")
-        session  = _session_for_dispatch(xfer_row, [line])
+        session = _session_for_dispatch(xfer_row, [line])
 
-        with patch(
-            "services.inventory_service.record_transaction",
-            new=AsyncMock(return_value="tx-nm-dispatch"),
-        ), patch(
-            "services.inventory_service.write_transfer_ledger_entry",
-            new=AsyncMock(),
-        ), patch("services.inventory_service.audit_log", new=AsyncMock()):
+        with (
+            patch(
+                "services.inventory_service.record_transaction",
+                new=AsyncMock(return_value="tx-nm-dispatch"),
+            ),
+            patch(
+                "services.inventory_service.write_transfer_ledger_entry",
+                new=AsyncMock(),
+            ),
+            patch("services.inventory_service.audit_log", new=AsyncMock()),
+        ):
             result = await InventoryService(session).dispatch_transfer(NM_USER, TRANSFER_ID)
 
         assert result.status == "ISSUED", (
@@ -947,9 +1065,10 @@ class TestInventoryServiceTransfers:
 
         RM_USER = _User("u-rm-region", TENANT_ID, WAREHOUSE_B, None, "RM")
 
-        xfer_row = _make_transfer_row("APPROVED", transfer_type="PULL",
-                                      from_wh=WAREHOUSE_A, to_wh=WAREHOUSE_B)
-        session  = AsyncMock()
+        xfer_row = _make_transfer_row(
+            "APPROVED", transfer_type="PULL", from_wh=WAREHOUSE_A, to_wh=WAREHOUSE_B
+        )
+        session = AsyncMock()
         session.execute = AsyncMock(
             return_value=MagicMock(fetchone=MagicMock(return_value=xfer_row))
         )
@@ -1008,16 +1127,18 @@ class TestInventoryServiceTransfers:
         RM_CREATOR_ID = "u-rm-creator-001"
         RM_USER = _User(RM_CREATOR_ID, TENANT_ID, None, None, "RM")
 
-        line     = _make_line(quantity=300.0)
+        line = _make_line(quantity=300.0)
         xfer_row = _make_transfer_row("PENDING_APPROVAL", transfer_type="PULL")
-        xfer_row.created_by               = RM_CREATOR_ID  # RM is the creator
-        xfer_row.created_by_authority_level = 2             # RM authority level
+        xfer_row.created_by = RM_CREATOR_ID  # RM is the creator
+        xfer_row.created_by_authority_level = 2  # RM authority level
 
         session = _session_for_dispatch(xfer_row, [line])
 
-        with patch("services.inventory_service.resolve_approval", new=AsyncMock()), \
-             patch("services.inventory_service.record_transaction", new=AsyncMock()), \
-             pytest.raises(HTTPException) as exc_info:
+        with (
+            patch("services.inventory_service.resolve_approval", new=AsyncMock()),
+            patch("services.inventory_service.record_transaction", new=AsyncMock()),
+            pytest.raises(HTTPException) as exc_info,
+        ):
             await InventoryService(session).transition_transfer(RM_USER, TRANSFER_ID, "APPROVED")
 
         assert exc_info.value.status_code == 403
@@ -1051,7 +1172,9 @@ class TestInventoryServiceTransfers:
         assert decision.required_authority_level == 1, (
             "RM-required transfer created by RM must escalate to level 1 (NM/TA)"
         )
-        assert decision.is_auto_approved is False, "auto_approve must be suppressed after escalation"
+        assert decision.is_auto_approved is False, (
+            "auto_approve must be suppressed after escalation"
+        )
         assert "Escalated" in decision.reason
 
     async def test_issue_and_dispatch_separate_steps(self) -> None:
@@ -1065,8 +1188,8 @@ class TestInventoryServiceTransfers:
         stuck at ISSUED with no buttons after clicking Issue.
         """
         # Valid two-step sequence
-        validate_transition("PUSH", "APPROVED",  "ISSUED")      # Issue click
-        validate_transition("PUSH", "ISSUED",    "IN_TRANSIT")  # Dispatch click
+        validate_transition("PUSH", "APPROVED", "ISSUED")  # Issue click
+        validate_transition("PUSH", "ISSUED", "IN_TRANSIT")  # Dispatch click
 
         # Skipping ISSUED is not allowed
         with pytest.raises(InvalidStateTransitionError):
@@ -1088,22 +1211,27 @@ class TestInventoryServiceTransfers:
         RM_CREATOR_ID = "u-rm-no-wh-002"
         RM_USER = _User(RM_CREATOR_ID, TENANT_ID, None, None, "RM")  # no warehouse_id
 
-        line     = _make_line(quantity=80.0)
-        xfer_row = _make_transfer_row("IN_TRANSIT", transfer_type="PULL",
-                                      from_wh=WAREHOUSE_A, to_wh=WAREHOUSE_B)
+        line = _make_line(quantity=80.0)
+        xfer_row = _make_transfer_row(
+            "IN_TRANSIT", transfer_type="PULL", from_wh=WAREHOUSE_A, to_wh=WAREHOUSE_B
+        )
         xfer_row.created_by = RM_CREATOR_ID  # RM is the creator
 
         session = _session_for_receive(xfer_row, [line])
 
-        with patch(
-            "services.inventory_service.record_transaction",
-            new=AsyncMock(return_value="tx-rm-receive"),
-        ) as mock_record, patch(
-            "services.inventory_service.write_to_outbox",
-            new=AsyncMock(),
-        ), patch(
-            "services.inventory_service.write_transfer_ledger_entry",
-            new=AsyncMock(),
+        with (
+            patch(
+                "services.inventory_service.record_transaction",
+                new=AsyncMock(return_value="tx-rm-receive"),
+            ) as mock_record,
+            patch(
+                "services.inventory_service.write_to_outbox",
+                new=AsyncMock(),
+            ),
+            patch(
+                "services.inventory_service.write_transfer_ledger_entry",
+                new=AsyncMock(),
+            ),
         ):
             result = await InventoryService(session).receive_transfer(RM_USER, TRANSFER_ID)
 
@@ -1130,29 +1258,31 @@ class TestInventoryServiceTransfers:
 
 # ── Gap 2 — ledger wiring tests ──────────────────────────────────────────────
 
+
 def _session_for_transition_with_lines(
     transfer_row: MagicMock,
     lines: list,
 ) -> AsyncMock:
     """Session for transition_transfer() branches that need to load lines:
-      call 0 — SELECT transfer_orders FOR UPDATE
-      call 1 — SELECT transfer_order_lines
-      call 2 — SELECT product_approval_minimums (Design-B override check; none configured)
-      call 3 — UPDATE transfer_orders SET status
+    call 0 — SELECT transfer_orders FOR UPDATE
+    call 1 — SELECT transfer_order_lines
+    call 2 — SELECT product_approval_minimums (Design-B override check; none configured)
+    call 3 — UPDATE transfer_orders SET status
     """
     session = AsyncMock()
-    session.execute = AsyncMock(side_effect=[
-        MagicMock(fetchone=MagicMock(return_value=transfer_row)),
-        MagicMock(fetchall=MagicMock(return_value=lines)),
-        MagicMock(fetchone=MagicMock(return_value=None)),
-        MagicMock(),
-    ])
+    session.execute = AsyncMock(
+        side_effect=[
+            MagicMock(fetchone=MagicMock(return_value=transfer_row)),
+            MagicMock(fetchall=MagicMock(return_value=lines)),
+            MagicMock(fetchone=MagicMock(return_value=None)),
+            MagicMock(),
+        ]
+    )
     return session
 
 
 @pytest.mark.unit
 class TestGap2LedgerWiring:
-
     async def test_pending_review_writes_no_reserve_entry(self) -> None:
         """PULL DRAFT → PENDING_REVIEW must NOT write any ledger entry.
 
@@ -1162,16 +1292,19 @@ class TestGap2LedgerWiring:
         """
         from services.inventory_service import InventoryService
 
-        line     = _make_line(quantity=40.0)
+        line = _make_line(quantity=40.0)
         xfer_row = _make_transfer_row("DRAFT", transfer_type="PULL")
-        session  = _session_for_transition_with_lines(xfer_row, [line])
+        session = _session_for_transition_with_lines(xfer_row, [line])
 
         captured: list = []
+
         async def _cap(*_, **kw):
             captured.append(kw)
 
-        with patch("services.inventory_service.write_transfer_ledger_entry",
-                   new=AsyncMock(side_effect=_cap)):
+        with patch(
+            "services.inventory_service.write_transfer_ledger_entry",
+            new=AsyncMock(side_effect=_cap),
+        ):
             result = await InventoryService(session).transition_transfer(
                 SRC_WM, TRANSFER_ID, "PENDING_REVIEW"
             )
@@ -1191,16 +1324,19 @@ class TestGap2LedgerWiring:
         """
         from services.inventory_service import InventoryService
 
-        line     = _make_line(quantity=40.0)
+        line = _make_line(quantity=40.0)
         xfer_row = _make_transfer_row("PENDING_REVIEW", transfer_type="PULL")
-        session  = _session_for_transition_with_lines(xfer_row, [line])
+        session = _session_for_transition_with_lines(xfer_row, [line])
 
         captured: list = []
+
         async def _cap(*_, **kw):
             captured.append(kw)
 
-        with patch("services.inventory_service.write_transfer_ledger_entry",
-                   new=AsyncMock(side_effect=_cap)):
+        with patch(
+            "services.inventory_service.write_transfer_ledger_entry",
+            new=AsyncMock(side_effect=_cap),
+        ):
             result = await InventoryService(session).transition_transfer(
                 SRC_WM, TRANSFER_ID, "CANCELLED"
             )
@@ -1216,43 +1352,51 @@ class TestGap2LedgerWiring:
         line via write_transfer_ledger_entry at the source warehouse."""
         from services.inventory_service import InventoryService
 
-        line     = _make_line(quantity=50.0)
+        line = _make_line(quantity=50.0)
         xfer_row = _make_transfer_row("APPROVED", transfer_type="PULL")
-        session  = _session_for_dispatch(xfer_row, [line])
+        session = _session_for_dispatch(xfer_row, [line])
 
         captured: list = []
+
         async def _cap(*_, **kw):
             captured.append(kw)
 
-        with patch("services.inventory_service.record_transaction", new=AsyncMock()), \
-             patch("services.inventory_service.write_transfer_ledger_entry",
-                   new=AsyncMock(side_effect=_cap)):
+        with (
+            patch("services.inventory_service.record_transaction", new=AsyncMock()),
+            patch(
+                "services.inventory_service.write_transfer_ledger_entry",
+                new=AsyncMock(side_effect=_cap),
+            ),
+        ):
             result = await InventoryService(session).dispatch_transfer(SRC_WM, TRANSFER_ID)
 
         assert result.status == "ISSUED"
         assert len(captured) == 1
         r = captured[0]
         assert r["transaction_type"] == "TRANSIT_OUT"
-        assert r["warehouse_id"]     == WAREHOUSE_A       # source
-        assert r["quantity"]         == Decimal("50")
+        assert r["warehouse_id"] == WAREHOUSE_A  # source
+        assert r["quantity"] == Decimal("50")
         assert r["status_transition"] == "APPROVED_TO_ISSUED"
-        assert r["line_id"]          == LINE_ID
+        assert r["line_id"] == LINE_ID
 
     async def test_in_transit_writes_transit_in_both_sides(self) -> None:
         """ISSUED → IN_TRANSIT must write TRANSIT_OUT at source AND TRANSIT_IN at
         destination — one pair per line."""
         from services.inventory_service import InventoryService
 
-        line     = _make_line(quantity=60.0)
+        line = _make_line(quantity=60.0)
         xfer_row = _make_transfer_row("ISSUED", transfer_type="PULL")
-        session  = _session_for_transition_with_lines(xfer_row, [line])
+        session = _session_for_transition_with_lines(xfer_row, [line])
 
         captured: list = []
+
         async def _cap(*_, **kw):
             captured.append(kw)
 
-        with patch("services.inventory_service.write_transfer_ledger_entry",
-                   new=AsyncMock(side_effect=_cap)):
+        with patch(
+            "services.inventory_service.write_transfer_ledger_entry",
+            new=AsyncMock(side_effect=_cap),
+        ):
             result = await InventoryService(session).transition_transfer(
                 SRC_WM, TRANSFER_ID, "IN_TRANSIT"
             )
@@ -1262,16 +1406,16 @@ class TestGap2LedgerWiring:
 
         by_type = {c["transaction_type"]: c for c in captured}
         assert "TRANSIT_OUT" in by_type
-        assert "TRANSIT_IN"  in by_type
+        assert "TRANSIT_IN" in by_type
 
         out = by_type["TRANSIT_OUT"]
-        assert out["warehouse_id"]     == WAREHOUSE_A    # source
-        assert out["quantity"]         == Decimal("60")
+        assert out["warehouse_id"] == WAREHOUSE_A  # source
+        assert out["quantity"] == Decimal("60")
         assert out["status_transition"] == "ISSUED_TO_IN_TRANSIT"
 
         inp = by_type["TRANSIT_IN"]
-        assert inp["warehouse_id"]     == WAREHOUSE_B    # destination
-        assert inp["quantity"]         == Decimal("60")
+        assert inp["warehouse_id"] == WAREHOUSE_B  # destination
+        assert inp["quantity"] == Decimal("60")
         assert inp["status_transition"] == "ISSUED_TO_IN_TRANSIT"
 
     async def test_received_writes_transit_clear(self) -> None:
@@ -1279,19 +1423,26 @@ class TestGap2LedgerWiring:
         (negative qty) and then write TRANSFER_IN at destination via record_transaction."""
         from services.inventory_service import InventoryService
 
-        line     = _make_line(quantity=70.0)
+        line = _make_line(quantity=70.0)
         xfer_row = _make_transfer_row("IN_TRANSIT", transfer_type="PULL")
-        session  = _session_for_receive(xfer_row, [line])
+        session = _session_for_receive(xfer_row, [line])
 
         ledger_calls: list = []
+
         async def _cap_ledger(*_, **kw):
             ledger_calls.append(kw)
 
-        with patch("services.inventory_service.record_transaction",
-                   new=AsyncMock(return_value="tx-tin")), \
-             patch("services.inventory_service.write_to_outbox", new=AsyncMock()), \
-             patch("services.inventory_service.write_transfer_ledger_entry",
-                   new=AsyncMock(side_effect=_cap_ledger)):
+        with (
+            patch(
+                "services.inventory_service.record_transaction",
+                new=AsyncMock(return_value="tx-tin"),
+            ),
+            patch("services.inventory_service.write_to_outbox", new=AsyncMock()),
+            patch(
+                "services.inventory_service.write_transfer_ledger_entry",
+                new=AsyncMock(side_effect=_cap_ledger),
+            ),
+        ):
             result = await InventoryService(session).receive_transfer(DST_WM, TRANSFER_ID)
 
         assert result.status == "RECEIVED"
@@ -1303,7 +1454,7 @@ class TestGap2LedgerWiring:
 
         for c in ledger_calls:
             assert c["transaction_type"] == "TRANSIT_CLEAR"
-            assert c["quantity"]         == -Decimal("70")   # negative = clear
+            assert c["quantity"] == -Decimal("70")  # negative = clear
             assert c["status_transition"] == "IN_TRANSIT_TO_RECEIVED"
 
     async def test_cancel_post_approved_writes_reversal(self) -> None:
@@ -1311,18 +1462,22 @@ class TestGap2LedgerWiring:
         (positive qty = restores source on_hand). No direct record_transaction call."""
         from services.inventory_service import InventoryService
 
-        line     = _make_line(quantity=55.0)
+        line = _make_line(quantity=55.0)
         xfer_row = _make_transfer_row("APPROVED", transfer_type="PULL")
-        session  = _session_for_dispatch(xfer_row, [line])
+        session = _session_for_dispatch(xfer_row, [line])
 
         captured: list = []
+
         async def _cap(*_, **kw):
             captured.append(kw)
 
-        with patch("services.inventory_service.record_transaction",
-                   new=AsyncMock()) as mock_record, \
-             patch("services.inventory_service.write_transfer_ledger_entry",
-                   new=AsyncMock(side_effect=_cap)):
+        with (
+            patch("services.inventory_service.record_transaction", new=AsyncMock()) as mock_record,
+            patch(
+                "services.inventory_service.write_transfer_ledger_entry",
+                new=AsyncMock(side_effect=_cap),
+            ),
+        ):
             result = await InventoryService(session).transition_transfer(
                 SRC_WM, TRANSFER_ID, "CANCELLED"
             )
@@ -1334,17 +1489,17 @@ class TestGap2LedgerWiring:
         assert len(captured) == 1
         r = captured[0]
         assert r["transaction_type"] == "TRANSFER_REVERSAL"
-        assert r["warehouse_id"]     == WAREHOUSE_A
-        assert r["quantity"]         == Decimal("55")    # positive = restore
+        assert r["warehouse_id"] == WAREHOUSE_A
+        assert r["quantity"] == Decimal("55")  # positive = restore
         assert r["status_transition"] == "APPROVED_TO_CANCELLED"
-        assert r["line_id"]          == LINE_ID
+        assert r["line_id"] == LINE_ID
 
 
 # ── Gap 4 — simple_mode wiring tests ─────────────────────────────────────────
 
+
 @pytest.mark.unit
 class TestGap4SimpleModeWiring:
-
     async def test_simple_mode_flag_read_from_tenant(self) -> None:
         """APPROVED transition reads simple_mode from tenant.approval_thresholds
         and passes the value to resolve_approval().
@@ -1355,27 +1510,31 @@ class TestGap4SimpleModeWiring:
         from services.approval_service import ApprovalDecision
         from services.inventory_service import InventoryService
 
-        line     = _make_line(quantity=100.0)
+        line = _make_line(quantity=100.0)
         xfer_row = _make_transfer_row("PENDING_APPROVAL", transfer_type="PUSH")
-        session  = _session_for_dispatch(xfer_row, [line])
+        session = _session_for_dispatch(xfer_row, [line])
 
         captured_resolve_kwargs: dict = {}
 
         async def fake_resolve(*_, **kw):
             captured_resolve_kwargs.update(kw)
             return ApprovalDecision(
-                required_role="WM", is_auto_approved=False,
-                next_status="PENDING_APPROVAL", required_authority_level=4,
+                required_role="WM",
+                is_auto_approved=False,
+                next_status="PENDING_APPROVAL",
+                required_authority_level=4,
             )
 
-        with patch("services.inventory_service.resolve_approval",
-                   side_effect=fake_resolve), \
-             patch("services.inventory_service._get_simple_mode",
-                   new=AsyncMock(return_value=False)) as mock_get_mode, \
-             patch("services.inventory_service.record_transaction",
-                   new=AsyncMock(return_value="tx-sm")), \
-             patch("services.inventory_service.write_transfer_ledger_entry",
-                   new=AsyncMock()):
+        with (
+            patch("services.inventory_service.resolve_approval", side_effect=fake_resolve),
+            patch(
+                "services.inventory_service._get_simple_mode", new=AsyncMock(return_value=False)
+            ) as mock_get_mode,
+            patch(
+                "services.inventory_service.record_transaction", new=AsyncMock(return_value="tx-sm")
+            ),
+            patch("services.inventory_service.write_transfer_ledger_entry", new=AsyncMock()),
+        ):
             result = await InventoryService(session).transition_transfer(
                 SRC_WM, TRANSFER_ID, "APPROVED"
             )
@@ -1401,18 +1560,22 @@ class TestGap4SimpleModeWiring:
         from services.approval_service import ApprovalResolution
 
         pull_row = _make_transfer_row("PENDING_REVIEW", transfer_type="PULL")
-        session  = AsyncMock()
-        session.execute = AsyncMock(side_effect=[
-            MagicMock(fetchone=MagicMock(return_value=pull_row)),  # SELECT transfer
-            MagicMock(fetchall=MagicMock(return_value=[])),         # SELECT lines (for qty)
-            MagicMock(fetchone=MagicMock(return_value=None)),       # SELECT transfer for config_id
-            MagicMock(fetchone=MagicMock(return_value=None)),       # fallback config lookup → None
-            MagicMock(),                                             # UPDATE resolved_steps
-            MagicMock(),                                             # UPDATE status
-        ])
+        session = AsyncMock()
+        session.execute = AsyncMock(
+            side_effect=[
+                MagicMock(fetchone=MagicMock(return_value=pull_row)),  # SELECT transfer
+                MagicMock(fetchall=MagicMock(return_value=[])),  # SELECT lines (for qty)
+                MagicMock(fetchone=MagicMock(return_value=None)),  # SELECT transfer for config_id
+                MagicMock(fetchone=MagicMock(return_value=None)),  # fallback config lookup → None
+                MagicMock(),  # UPDATE resolved_steps
+                MagicMock(),  # UPDATE status
+            ]
+        )
 
-        with patch("services.approval_service.resolve_transfer_approvers",
-                   new=AsyncMock(return_value=ApprovalResolution(steps=[], missing_rule=True))):
+        with patch(
+            "services.approval_service.resolve_transfer_approvers",
+            new=AsyncMock(return_value=ApprovalResolution(steps=[], missing_rule=True)),
+        ):
             result = await InventoryService(session).transition_transfer(
                 SRC_WM, TRANSFER_ID, "PENDING_APPROVAL"
             )
@@ -1453,14 +1616,17 @@ class TestGap4SimpleModeWiring:
 
         NM_WITH_WH = _User("u-nm-wh", TENANT_ID, WAREHOUSE_B, None, "NM")
 
-        line     = _make_line(quantity=60.0)
-        xfer_row = _make_transfer_row("APPROVED", transfer_type="PULL",
-                                      from_wh=WAREHOUSE_A, to_wh=WAREHOUSE_B)
-        session  = _session_for_dispatch(xfer_row, [line])
+        line = _make_line(quantity=60.0)
+        xfer_row = _make_transfer_row(
+            "APPROVED", transfer_type="PULL", from_wh=WAREHOUSE_A, to_wh=WAREHOUSE_B
+        )
+        session = _session_for_dispatch(xfer_row, [line])
 
-        with patch("services.inventory_service.record_transaction", new=AsyncMock()), \
-             patch("services.inventory_service.write_transfer_ledger_entry", new=AsyncMock()), \
-             patch("services.inventory_service.audit_log", new=AsyncMock()):
+        with (
+            patch("services.inventory_service.record_transaction", new=AsyncMock()),
+            patch("services.inventory_service.write_transfer_ledger_entry", new=AsyncMock()),
+            patch("services.inventory_service.audit_log", new=AsyncMock()),
+        ):
             result = await InventoryService(session).dispatch_transfer(NM_WITH_WH, TRANSFER_ID)
 
         assert result.status == "ISSUED", (
@@ -1482,18 +1648,23 @@ class TestGap4SimpleModeWiring:
 
         NM_NO_WH = _User("u-nm", TENANT_ID, None, None, "NM")
 
-        line     = _make_line(quantity=60.0)
-        xfer_row = _make_transfer_row("APPROVED", transfer_type="PULL",
-                                      from_wh=WAREHOUSE_A, to_wh=WAREHOUSE_B)
-        session  = _session_for_dispatch(xfer_row, [line])
+        line = _make_line(quantity=60.0)
+        xfer_row = _make_transfer_row(
+            "APPROVED", transfer_type="PULL", from_wh=WAREHOUSE_A, to_wh=WAREHOUSE_B
+        )
+        session = _session_for_dispatch(xfer_row, [line])
 
-        with patch("services.inventory_service.record_transaction", new=AsyncMock()), \
-             patch("services.inventory_service.write_transfer_ledger_entry", new=AsyncMock()), \
-             patch("services.inventory_service.audit_log", new=AsyncMock()) as mock_audit:
+        with (
+            patch("services.inventory_service.record_transaction", new=AsyncMock()),
+            patch("services.inventory_service.write_transfer_ledger_entry", new=AsyncMock()),
+            patch("services.inventory_service.audit_log", new=AsyncMock()) as mock_audit,
+        ):
             result = await InventoryService(session).dispatch_transfer(NM_NO_WH, TRANSFER_ID)
 
         assert result.status == "ISSUED"
-        issue_calls = [c for c in mock_audit.call_args_list if c.kwargs["action"] == "transfer:issue"]
+        issue_calls = [
+            c for c in mock_audit.call_args_list if c.kwargs["action"] == "transfer:issue"
+        ]
         assert len(issue_calls) == 1
         assert "acted_on_behalf_of" in issue_calls[0].kwargs["resource"], (
             "NM (warehouse_id=None) issuing from L2's warehouse must record "
@@ -1506,18 +1677,23 @@ class TestGap4SimpleModeWiring:
         """
         from services.inventory_service import InventoryService
 
-        line     = _make_line(quantity=60.0)
-        xfer_row = _make_transfer_row("APPROVED", transfer_type="PULL",
-                                      from_wh=WAREHOUSE_A, to_wh=WAREHOUSE_B)
-        session  = _session_for_dispatch(xfer_row, [line])
+        line = _make_line(quantity=60.0)
+        xfer_row = _make_transfer_row(
+            "APPROVED", transfer_type="PULL", from_wh=WAREHOUSE_A, to_wh=WAREHOUSE_B
+        )
+        session = _session_for_dispatch(xfer_row, [line])
 
-        with patch("services.inventory_service.record_transaction", new=AsyncMock()), \
-             patch("services.inventory_service.write_transfer_ledger_entry", new=AsyncMock()), \
-             patch("services.inventory_service.audit_log", new=AsyncMock()) as mock_audit:
+        with (
+            patch("services.inventory_service.record_transaction", new=AsyncMock()),
+            patch("services.inventory_service.write_transfer_ledger_entry", new=AsyncMock()),
+            patch("services.inventory_service.audit_log", new=AsyncMock()) as mock_audit,
+        ):
             result = await InventoryService(session).dispatch_transfer(SRC_WM, TRANSFER_ID)
 
         assert result.status == "ISSUED"
-        issue_calls = [c for c in mock_audit.call_args_list if c.kwargs["action"] == "transfer:issue"]
+        issue_calls = [
+            c for c in mock_audit.call_args_list if c.kwargs["action"] == "transfer:issue"
+        ]
         assert len(issue_calls) == 1
         assert "acted_on_behalf_of" not in issue_calls[0].kwargs["resource"], (
             "L2 issuing their own transfer (warehouse_id == from_warehouse_id) "
@@ -1543,9 +1719,9 @@ class TestGap4SimpleModeWiring:
 
 # ── Session 5 — transfer type config + level permission + value tests ─────────
 
+
 @pytest.mark.unit
 class TestSession5TransferTypeConfig:
-
     async def test_transfer_type_validated_against_config(self) -> None:
         """create_transfer() resolves transfer_type_config by underlying_type and
         stores the config_id on the new transfer_order row.
@@ -1580,27 +1756,35 @@ class TestSession5TransferTypeConfig:
             pd_r = MagicMock()
             pd_r.pending = Decimal("0")
             session = AsyncMock()
-            session.execute = AsyncMock(side_effect=[
-                MagicMock(fetchone=MagicMock(return_value=MagicMock(is_active=True))),  # from active check
-                MagicMock(fetchone=MagicMock(return_value=MagicMock(is_active=True))),  # to active check
-                MagicMock(fetchone=MagicMock(return_value=None)),        # factory check
-                MagicMock(fetchone=MagicMock(return_value=config_row)),  # config lookup
-                MagicMock(fetchone=MagicMock(return_value=None)),        # src node level
-                MagicMock(fetchone=MagicMock(return_value=None)),        # dst node level
-                MagicMock(fetchone=MagicMock(return_value=oh_r)),        # on_hand (stock check)
-                MagicMock(fetchone=MagicMock(return_value=pd_r)),        # pending_out (stock check)
-                MagicMock(fetchone=MagicMock(return_value=None)),        # unit_price
-                MagicMock(),  # INSERT transfer_orders
-                MagicMock(),  # INSERT lines
-            ])
+            session.execute = AsyncMock(
+                side_effect=[
+                    MagicMock(
+                        fetchone=MagicMock(return_value=MagicMock(is_active=True))
+                    ),  # from active check
+                    MagicMock(
+                        fetchone=MagicMock(return_value=MagicMock(is_active=True))
+                    ),  # to active check
+                    MagicMock(fetchone=MagicMock(return_value=None)),  # factory check
+                    MagicMock(fetchone=MagicMock(return_value=config_row)),  # config lookup
+                    MagicMock(fetchone=MagicMock(return_value=None)),  # src node level
+                    MagicMock(fetchone=MagicMock(return_value=None)),  # dst node level
+                    MagicMock(fetchone=MagicMock(return_value=oh_r)),  # on_hand (stock check)
+                    MagicMock(fetchone=MagicMock(return_value=pd_r)),  # pending_out (stock check)
+                    MagicMock(fetchone=MagicMock(return_value=None)),  # unit_price
+                    MagicMock(),  # INSERT transfer_orders
+                    MagicMock(),  # INSERT lines
+                ]
+            )
             return session
 
         user = _User("u-wm", TENANT_ID, WAREHOUSE_A, None, "WM")
         session = _make_create_session()
 
-        with patch("services.inventory_service.write_to_outbox", new=AsyncMock()), \
-             patch("services.inventory_service.write_transfer_ledger_entry", new=AsyncMock()), \
-             patch("services.inventory_service._get_simple_mode", new=AsyncMock(return_value=True)):
+        with (
+            patch("services.inventory_service.write_to_outbox", new=AsyncMock()),
+            patch("services.inventory_service.write_transfer_ledger_entry", new=AsyncMock()),
+            patch("services.inventory_service._get_simple_mode", new=AsyncMock(return_value=True)),
+        ):
             body = TransferOrderRequest(
                 transfer_type="PULL",
                 from_warehouse_id=UUID(WAREHOUSE_A),
@@ -1624,22 +1808,28 @@ class TestSession5TransferTypeConfig:
 
         CONFIG_UUID = "eeeeeeee-0000-0000-0000-000000000001"
 
-        config_row   = MagicMock()
+        config_row = MagicMock()
         config_row.id = UUID(CONFIG_UUID)
         src_node_row = MagicMock()
         src_node_row.hierarchy_level = 3
-        perm_row     = MagicMock()
+        perm_row = MagicMock()
         perm_row.can_initiate = False  # blocked
 
         session = AsyncMock()
-        session.execute = AsyncMock(side_effect=[
-            MagicMock(fetchone=MagicMock(return_value=MagicMock(is_active=True))),  # from active check
-            MagicMock(fetchone=MagicMock(return_value=MagicMock(is_active=True))),  # to active check
-            MagicMock(fetchone=MagicMock(return_value=None)),         # factory check
-            MagicMock(fetchone=MagicMock(return_value=config_row)),   # config lookup
-            MagicMock(fetchone=MagicMock(return_value=src_node_row)), # src node level=3
-            MagicMock(fetchone=MagicMock(return_value=perm_row)),     # perm: can_initiate=False
-        ])
+        session.execute = AsyncMock(
+            side_effect=[
+                MagicMock(
+                    fetchone=MagicMock(return_value=MagicMock(is_active=True))
+                ),  # from active check
+                MagicMock(
+                    fetchone=MagicMock(return_value=MagicMock(is_active=True))
+                ),  # to active check
+                MagicMock(fetchone=MagicMock(return_value=None)),  # factory check
+                MagicMock(fetchone=MagicMock(return_value=config_row)),  # config lookup
+                MagicMock(fetchone=MagicMock(return_value=src_node_row)),  # src node level=3
+                MagicMock(fetchone=MagicMock(return_value=perm_row)),  # perm: can_initiate=False
+            ]
+        )
 
         user = _User("u-wm", TENANT_ID, WAREHOUSE_A, None, "WM")
 
@@ -1650,7 +1840,9 @@ class TestSession5TransferTypeConfig:
                     transfer_type="PULL",
                     from_warehouse_id=UUID(WAREHOUSE_A),
                     to_warehouse_id=UUID(WAREHOUSE_B),
-                    lines=[TransferLineRequest(product_id=UUID(PRODUCT_ID), quantity=Decimal("50"))],
+                    lines=[
+                        TransferLineRequest(product_id=UUID(PRODUCT_ID), quantity=Decimal("50"))
+                    ],
                 ),
             )
 
@@ -1668,25 +1860,33 @@ class TestSession5TransferTypeConfig:
         from decimal import Decimal
         from uuid import UUID
 
-        price_row  = MagicMock()
-        price_row.unit_price  = Decimal("100")
-        oh_row_tv  = MagicMock()
-        oh_row_tv.qty        = Decimal("9999")
+        price_row = MagicMock()
+        price_row.unit_price = Decimal("100")
+        oh_row_tv = MagicMock()
+        oh_row_tv.qty = Decimal("9999")
         pend_row_tv = MagicMock()
         pend_row_tv.pending = Decimal("0")
 
         session = AsyncMock()
-        session.execute = AsyncMock(side_effect=[
-            MagicMock(fetchone=MagicMock(return_value=MagicMock(is_active=True))),  # from active check
-            MagicMock(fetchone=MagicMock(return_value=MagicMock(is_active=True))),  # to active check
-            MagicMock(fetchone=MagicMock(return_value=None)),           # factory check
-            MagicMock(fetchone=MagicMock(return_value=None)),           # no config → config_id=None
-            MagicMock(fetchone=MagicMock(return_value=oh_row_tv)),      # on_hand (stock check)
-            MagicMock(fetchone=MagicMock(return_value=pend_row_tv)),    # pending_out (stock check)
-            MagicMock(fetchone=MagicMock(return_value=price_row)),      # unit_price=100
-            MagicMock(),  # INSERT transfer_orders
-            MagicMock(),  # INSERT lines
-        ])
+        session.execute = AsyncMock(
+            side_effect=[
+                MagicMock(
+                    fetchone=MagicMock(return_value=MagicMock(is_active=True))
+                ),  # from active check
+                MagicMock(
+                    fetchone=MagicMock(return_value=MagicMock(is_active=True))
+                ),  # to active check
+                MagicMock(fetchone=MagicMock(return_value=None)),  # factory check
+                MagicMock(fetchone=MagicMock(return_value=None)),  # no config → config_id=None
+                MagicMock(fetchone=MagicMock(return_value=oh_row_tv)),  # on_hand (stock check)
+                MagicMock(
+                    fetchone=MagicMock(return_value=pend_row_tv)
+                ),  # pending_out (stock check)
+                MagicMock(fetchone=MagicMock(return_value=price_row)),  # unit_price=100
+                MagicMock(),  # INSERT transfer_orders
+                MagicMock(),  # INSERT lines
+            ]
+        )
 
         user = _User("u-wm", TENANT_ID, WAREHOUSE_A, None, "WM")
 
@@ -1708,6 +1908,7 @@ class TestSession5TransferTypeConfig:
 
 # ── Stock availability check at creation ────────────────────────────────────
 
+
 @pytest.mark.asyncio
 class TestCreateTransferStockCheck:
     """Regression tests for BUG: PUSH transfers allowed qty > available stock.
@@ -1724,21 +1925,29 @@ class TestCreateTransferStockCheck:
         from schemas.inventory import TransferOrderRequest, TransferLineRequest
         from services.inventory_service import InventoryService
 
-        on_hand_row  = MagicMock()
-        on_hand_row.qty     = Decimal("50")
-        pending_row  = MagicMock()
+        on_hand_row = MagicMock()
+        on_hand_row.qty = Decimal("50")
+        pending_row = MagicMock()
         pending_row.pending = Decimal("30")
         # available = 50 - 30 = 20; requested = 40 > 20 → must raise
 
         session = AsyncMock()
-        session.execute = AsyncMock(side_effect=[
-            MagicMock(fetchone=MagicMock(return_value=MagicMock(is_active=True))),  # from active check
-            MagicMock(fetchone=MagicMock(return_value=MagicMock(is_active=True))),  # to active check
-            MagicMock(fetchone=MagicMock(return_value=None)),          # factory check → no restriction
-            MagicMock(fetchone=MagicMock(return_value=None)),          # config resolution → None
-            MagicMock(fetchone=MagicMock(return_value=on_hand_row)),   # inventory_balances on_hand=50
-            MagicMock(fetchone=MagicMock(return_value=pending_row)),   # pending_out=30
-        ])
+        session.execute = AsyncMock(
+            side_effect=[
+                MagicMock(
+                    fetchone=MagicMock(return_value=MagicMock(is_active=True))
+                ),  # from active check
+                MagicMock(
+                    fetchone=MagicMock(return_value=MagicMock(is_active=True))
+                ),  # to active check
+                MagicMock(fetchone=MagicMock(return_value=None)),  # factory check → no restriction
+                MagicMock(fetchone=MagicMock(return_value=None)),  # config resolution → None
+                MagicMock(
+                    fetchone=MagicMock(return_value=on_hand_row)
+                ),  # inventory_balances on_hand=50
+                MagicMock(fetchone=MagicMock(return_value=pending_row)),  # pending_out=30
+            ]
+        )
 
         user = _User("u-nm", TENANT_ID, WAREHOUSE_A, None, "NM")
 
@@ -1749,9 +1958,9 @@ class TestCreateTransferStockCheck:
                     transfer_type="PUSH",
                     from_warehouse_id=UUID(WAREHOUSE_A),
                     to_warehouse_id=UUID(WAREHOUSE_B),
-                    lines=[TransferLineRequest(
-                        product_id=UUID(PRODUCT_ID), quantity=Decimal("40")
-                    )],
+                    lines=[
+                        TransferLineRequest(product_id=UUID(PRODUCT_ID), quantity=Decimal("40"))
+                    ],
                 ),
             )
 
@@ -1766,26 +1975,32 @@ class TestCreateTransferStockCheck:
         from schemas.inventory import TransferOrderRequest, TransferLineRequest
         from services.inventory_service import InventoryService
 
-        on_hand_row  = MagicMock()
-        on_hand_row.qty     = Decimal("100")
-        pending_row  = MagicMock()
+        on_hand_row = MagicMock()
+        on_hand_row.qty = Decimal("100")
+        pending_row = MagicMock()
         pending_row.pending = Decimal("20")
-        price_row    = MagicMock()
+        price_row = MagicMock()
         price_row.unit_price = Decimal("10")
         # available = 100 - 20 = 80; requested = 30 ≤ 80 → must succeed
 
         session = AsyncMock()
-        session.execute = AsyncMock(side_effect=[
-            MagicMock(fetchone=MagicMock(return_value=MagicMock(is_active=True))),  # from active check
-            MagicMock(fetchone=MagicMock(return_value=MagicMock(is_active=True))),  # to active check
-            MagicMock(fetchone=MagicMock(return_value=None)),         # factory check
-            MagicMock(fetchone=MagicMock(return_value=None)),         # config resolution
-            MagicMock(fetchone=MagicMock(return_value=on_hand_row)),  # on_hand=100
-            MagicMock(fetchone=MagicMock(return_value=pending_row)),  # pending_out=20
-            MagicMock(fetchone=MagicMock(return_value=price_row)),    # unit_price=10
-            MagicMock(),                                               # INSERT transfer_orders
-            MagicMock(),                                               # INSERT lines
-        ])
+        session.execute = AsyncMock(
+            side_effect=[
+                MagicMock(
+                    fetchone=MagicMock(return_value=MagicMock(is_active=True))
+                ),  # from active check
+                MagicMock(
+                    fetchone=MagicMock(return_value=MagicMock(is_active=True))
+                ),  # to active check
+                MagicMock(fetchone=MagicMock(return_value=None)),  # factory check
+                MagicMock(fetchone=MagicMock(return_value=None)),  # config resolution
+                MagicMock(fetchone=MagicMock(return_value=on_hand_row)),  # on_hand=100
+                MagicMock(fetchone=MagicMock(return_value=pending_row)),  # pending_out=20
+                MagicMock(fetchone=MagicMock(return_value=price_row)),  # unit_price=10
+                MagicMock(),  # INSERT transfer_orders
+                MagicMock(),  # INSERT lines
+            ]
+        )
 
         user = _User("u-nm", TENANT_ID, WAREHOUSE_A, None, "NM")
 
@@ -1795,9 +2010,7 @@ class TestCreateTransferStockCheck:
                 transfer_type="PUSH",
                 from_warehouse_id=UUID(WAREHOUSE_A),
                 to_warehouse_id=UUID(WAREHOUSE_B),
-                lines=[TransferLineRequest(
-                    product_id=UUID(PRODUCT_ID), quantity=Decimal("30")
-                )],
+                lines=[TransferLineRequest(product_id=UUID(PRODUCT_ID), quantity=Decimal("30"))],
             ),
         )
 
@@ -1807,6 +2020,7 @@ class TestCreateTransferStockCheck:
 
 
 # ── Inactive node check at creation ──────────────────────────────────────────
+
 
 @pytest.mark.asyncio
 class TestCreateTransferActiveNodeCheck:
@@ -1823,10 +2037,16 @@ class TestCreateTransferActiveNodeCheck:
         from services.inventory_service import InventoryService
 
         session = AsyncMock()
-        session.execute = AsyncMock(side_effect=[
-            MagicMock(fetchone=MagicMock(return_value=MagicMock(is_active=True))),   # from active check
-            MagicMock(fetchone=MagicMock(return_value=MagicMock(is_active=False))),  # to active check
-        ])
+        session.execute = AsyncMock(
+            side_effect=[
+                MagicMock(
+                    fetchone=MagicMock(return_value=MagicMock(is_active=True))
+                ),  # from active check
+                MagicMock(
+                    fetchone=MagicMock(return_value=MagicMock(is_active=False))
+                ),  # to active check
+            ]
+        )
 
         user = _User("u-wm", TENANT_ID, WAREHOUSE_A, None, "WM")
 
@@ -1837,7 +2057,9 @@ class TestCreateTransferActiveNodeCheck:
                     transfer_type="PULL",
                     from_warehouse_id=UUID(WAREHOUSE_A),
                     to_warehouse_id=UUID(WAREHOUSE_B),
-                    lines=[TransferLineRequest(product_id=UUID(PRODUCT_ID), quantity=Decimal("10"))],
+                    lines=[
+                        TransferLineRequest(product_id=UUID(PRODUCT_ID), quantity=Decimal("10"))
+                    ],
                 ),
             )
 
@@ -1851,9 +2073,13 @@ class TestCreateTransferActiveNodeCheck:
         from services.inventory_service import InventoryService
 
         session = AsyncMock()
-        session.execute = AsyncMock(side_effect=[
-            MagicMock(fetchone=MagicMock(return_value=MagicMock(is_active=False))),  # from active check
-        ])
+        session.execute = AsyncMock(
+            side_effect=[
+                MagicMock(
+                    fetchone=MagicMock(return_value=MagicMock(is_active=False))
+                ),  # from active check
+            ]
+        )
 
         user = _User("u-wm", TENANT_ID, WAREHOUSE_A, None, "WM")
 
@@ -1864,7 +2090,9 @@ class TestCreateTransferActiveNodeCheck:
                     transfer_type="PULL",
                     from_warehouse_id=UUID(WAREHOUSE_A),
                     to_warehouse_id=UUID(WAREHOUSE_B),
-                    lines=[TransferLineRequest(product_id=UUID(PRODUCT_ID), quantity=Decimal("10"))],
+                    lines=[
+                        TransferLineRequest(product_id=UUID(PRODUCT_ID), quantity=Decimal("10"))
+                    ],
                 ),
             )
 
@@ -1874,6 +2102,7 @@ class TestCreateTransferActiveNodeCheck:
 
 
 # ── WMS-standard reservation timing ────────────────────────────────────────
+
 
 def _session_for_pending_approval(
     transfer_row: MagicMock,
@@ -1909,29 +2138,29 @@ def _session_for_pending_approval(
     """
     tv_row = MagicMock()
     tv_row.transfer_type_config_id = None
-    tv_row.total_value             = None
-    tv_row.created_by              = "u-creator-000"
+    tv_row.total_value = None
+    tv_row.created_by = "u-creator-000"
 
     if transfer_type == "PUSH":
         side_effect = [
             MagicMock(fetchone=MagicMock(return_value=transfer_row)),  # transfer SELECT
-            MagicMock(fetchall=MagicMock(return_value=lines)),          # lines SELECT
-            MagicMock(fetchone=MagicMock(return_value=None)),           # product override (fast-path) → None
-            MagicMock(fetchone=MagicMock(return_value=tv_row)),         # tv_row SELECT
-            MagicMock(fetchone=MagicMock(return_value=None)),           # fallback config lookup → None
-            MagicMock(fetchone=MagicMock(return_value=None)),           # product override (routing) → None
-            MagicMock(),                                                 # UPDATE approval steps
-            MagicMock(),                                                 # UPDATE status
+            MagicMock(fetchall=MagicMock(return_value=lines)),  # lines SELECT
+            MagicMock(fetchone=MagicMock(return_value=None)),  # product override (fast-path) → None
+            MagicMock(fetchone=MagicMock(return_value=tv_row)),  # tv_row SELECT
+            MagicMock(fetchone=MagicMock(return_value=None)),  # fallback config lookup → None
+            MagicMock(fetchone=MagicMock(return_value=None)),  # product override (routing) → None
+            MagicMock(),  # UPDATE approval steps
+            MagicMock(),  # UPDATE status
         ]
     else:
         side_effect = [
             MagicMock(fetchone=MagicMock(return_value=transfer_row)),  # transfer SELECT
-            MagicMock(fetchall=MagicMock(return_value=lines)),          # lines SELECT
-            MagicMock(fetchone=MagicMock(return_value=tv_row)),         # tv_row SELECT
-            MagicMock(fetchone=MagicMock(return_value=None)),           # fallback config lookup → None
-            MagicMock(fetchone=MagicMock(return_value=None)),           # product override (routing) → None
-            MagicMock(),                                                 # UPDATE approval steps
-            MagicMock(),                                                 # UPDATE status
+            MagicMock(fetchall=MagicMock(return_value=lines)),  # lines SELECT
+            MagicMock(fetchone=MagicMock(return_value=tv_row)),  # tv_row SELECT
+            MagicMock(fetchone=MagicMock(return_value=None)),  # fallback config lookup → None
+            MagicMock(fetchone=MagicMock(return_value=None)),  # product override (routing) → None
+            MagicMock(),  # UPDATE approval steps
+            MagicMock(),  # UPDATE status
         ]
 
     session = AsyncMock()
@@ -1942,8 +2171,8 @@ def _session_for_pending_approval(
 def _mock_resolution() -> MagicMock:
     res = MagicMock()
     res.steps_as_json.return_value = "[]"
-    res.is_auto_approved           = False
-    res.notify_levels              = []
+    res.is_auto_approved = False
+    res.notify_levels = []
     return res
 
 
@@ -1969,13 +2198,15 @@ class TestWMSReservationTiming:
         """
         from services.inventory_service import InventoryService
 
-        line     = _make_line(quantity=100.0)
+        line = _make_line(quantity=100.0)
         xfer_row = _make_transfer_row("DRAFT", transfer_type="PULL")
-        session  = _session_for_transition_with_lines(xfer_row, [line])
+        session = _session_for_transition_with_lines(xfer_row, [line])
 
         captured: list = []
-        with patch("services.inventory_service.write_transfer_ledger_entry",
-                   new=AsyncMock(side_effect=lambda *_, **kw: captured.append(kw))):
+        with patch(
+            "services.inventory_service.write_transfer_ledger_entry",
+            new=AsyncMock(side_effect=lambda *_, **kw: captured.append(kw)),
+        ):
             result = await InventoryService(session).transition_transfer(
                 SRC_WM, TRANSFER_ID, "PENDING_REVIEW"
             )
@@ -1994,15 +2225,21 @@ class TestWMSReservationTiming:
         """
         from services.inventory_service import InventoryService
 
-        line     = _make_line(quantity=100.0)
+        line = _make_line(quantity=100.0)
         xfer_row = _make_transfer_row("PENDING_REVIEW", transfer_type="PULL")
-        session  = _session_for_pending_approval(xfer_row, [line])
+        session = _session_for_pending_approval(xfer_row, [line])
 
         captured: list = []
-        with patch("services.inventory_service.write_transfer_ledger_entry",
-                   new=AsyncMock(side_effect=lambda *_, **kw: captured.append(kw))), \
-             patch("services.approval_service.resolve_transfer_approvers",
-                   new=AsyncMock(return_value=_mock_resolution())):
+        with (
+            patch(
+                "services.inventory_service.write_transfer_ledger_entry",
+                new=AsyncMock(side_effect=lambda *_, **kw: captured.append(kw)),
+            ),
+            patch(
+                "services.approval_service.resolve_transfer_approvers",
+                new=AsyncMock(return_value=_mock_resolution()),
+            ),
+        ):
             result = await InventoryService(session).transition_transfer(
                 SRC_WM, TRANSFER_ID, "PENDING_APPROVAL"
             )
@@ -2011,10 +2248,10 @@ class TestWMSReservationTiming:
         reserves = [c for c in captured if c.get("transaction_type") == "RESERVE"]
         assert len(reserves) == 1, "exactly one RESERVE entry per line at PENDING_APPROVAL"
         r = reserves[0]
-        assert r["warehouse_id"]      == WAREHOUSE_A
-        assert r["quantity"]          == Decimal("100")
+        assert r["warehouse_id"] == WAREHOUSE_A
+        assert r["quantity"] == Decimal("100")
         assert r["status_transition"] == "PENDING_REVIEW_TO_PENDING_APPROVAL"
-        assert r["line_id"]           == LINE_ID
+        assert r["line_id"] == LINE_ID
 
     async def test_push_reserve_at_pending_approval(self) -> None:
         """PUSH DRAFT → PENDING_APPROVAL: RESERVE written at source.
@@ -2024,15 +2261,21 @@ class TestWMSReservationTiming:
         """
         from services.inventory_service import InventoryService
 
-        line     = _make_line(quantity=75.0)
+        line = _make_line(quantity=75.0)
         xfer_row = _make_transfer_row("DRAFT", transfer_type="PUSH")
-        session  = _session_for_pending_approval(xfer_row, [line], transfer_type="PUSH")
+        session = _session_for_pending_approval(xfer_row, [line], transfer_type="PUSH")
 
         captured: list = []
-        with patch("services.inventory_service.write_transfer_ledger_entry",
-                   new=AsyncMock(side_effect=lambda *_, **kw: captured.append(kw))), \
-             patch("services.approval_service.resolve_transfer_approvers",
-                   new=AsyncMock(return_value=_mock_resolution())):
+        with (
+            patch(
+                "services.inventory_service.write_transfer_ledger_entry",
+                new=AsyncMock(side_effect=lambda *_, **kw: captured.append(kw)),
+            ),
+            patch(
+                "services.approval_service.resolve_transfer_approvers",
+                new=AsyncMock(return_value=_mock_resolution()),
+            ),
+        ):
             result = await InventoryService(session).transition_transfer(
                 SRC_WM, TRANSFER_ID, "PENDING_APPROVAL"
             )
@@ -2041,8 +2284,8 @@ class TestWMSReservationTiming:
         reserves = [c for c in captured if c.get("transaction_type") == "RESERVE"]
         assert len(reserves) == 1
         r = reserves[0]
-        assert r["warehouse_id"]      == WAREHOUSE_A
-        assert r["quantity"]          == Decimal("75")
+        assert r["warehouse_id"] == WAREHOUSE_A
+        assert r["quantity"] == Decimal("75")
         assert r["status_transition"] == "DRAFT_TO_PENDING_APPROVAL"
 
     async def test_sister_reserve_at_pending_approval(self) -> None:
@@ -2053,15 +2296,21 @@ class TestWMSReservationTiming:
         """
         from services.inventory_service import InventoryService
 
-        line     = _make_line(quantity=50.0)
+        line = _make_line(quantity=50.0)
         xfer_row = _make_transfer_row("PENDING_DEST_CONFIRM", transfer_type="SISTER")
-        session  = _session_for_pending_approval(xfer_row, [line])
+        session = _session_for_pending_approval(xfer_row, [line])
 
         captured: list = []
-        with patch("services.inventory_service.write_transfer_ledger_entry",
-                   new=AsyncMock(side_effect=lambda *_, **kw: captured.append(kw))), \
-             patch("services.approval_service.resolve_transfer_approvers",
-                   new=AsyncMock(return_value=_mock_resolution())):
+        with (
+            patch(
+                "services.inventory_service.write_transfer_ledger_entry",
+                new=AsyncMock(side_effect=lambda *_, **kw: captured.append(kw)),
+            ),
+            patch(
+                "services.approval_service.resolve_transfer_approvers",
+                new=AsyncMock(return_value=_mock_resolution()),
+            ),
+        ):
             result = await InventoryService(session).transition_transfer(
                 SRC_WM, TRANSFER_ID, "PENDING_APPROVAL"
             )
@@ -2070,8 +2319,8 @@ class TestWMSReservationTiming:
         reserves = [c for c in captured if c.get("transaction_type") == "RESERVE"]
         assert len(reserves) == 1
         r = reserves[0]
-        assert r["warehouse_id"]      == WAREHOUSE_A
-        assert r["quantity"]          == Decimal("50")
+        assert r["warehouse_id"] == WAREHOUSE_A
+        assert r["quantity"] == Decimal("50")
         assert r["status_transition"] == "PENDING_DEST_CONFIRM_TO_PENDING_APPROVAL"
 
     async def test_cancel_at_pending_approval_writes_release(self) -> None:
@@ -2082,13 +2331,15 @@ class TestWMSReservationTiming:
         """
         from services.inventory_service import InventoryService
 
-        line     = _make_line(quantity=60.0)
+        line = _make_line(quantity=60.0)
         xfer_row = _make_transfer_row("PENDING_APPROVAL", transfer_type="PULL")
-        session  = _session_for_transition_with_lines(xfer_row, [line])
+        session = _session_for_transition_with_lines(xfer_row, [line])
 
         captured: list = []
-        with patch("services.inventory_service.write_transfer_ledger_entry",
-                   new=AsyncMock(side_effect=lambda *_, **kw: captured.append(kw))):
+        with patch(
+            "services.inventory_service.write_transfer_ledger_entry",
+            new=AsyncMock(side_effect=lambda *_, **kw: captured.append(kw)),
+        ):
             result = await InventoryService(session).transition_transfer(
                 SRC_WM, TRANSFER_ID, "CANCELLED"
             )
@@ -2097,12 +2348,13 @@ class TestWMSReservationTiming:
         releases = [c for c in captured if c.get("transaction_type") == "RELEASE"]
         assert len(releases) == 1, "RELEASE must fire when cancelling at PENDING_APPROVAL"
         r = releases[0]
-        assert r["quantity"]          == -Decimal("60")
-        assert r["warehouse_id"]      == WAREHOUSE_A
+        assert r["quantity"] == -Decimal("60")
+        assert r["warehouse_id"] == WAREHOUSE_A
         assert r["status_transition"] == "CANCELLED_PRE_APPROVAL"
 
 
 # ── D5/D1/D2/D3/D4 regression tests ────────────────────────────────────────
+
 
 @pytest.mark.unit
 class TestE2EDiscrepancyRegressions:
@@ -2132,19 +2384,22 @@ class TestE2EDiscrepancyRegressions:
         """
         # Simulate the dict returned by _find_matching_rule when steps are empty
         rule_with_empty_steps = {"id": "some-uuid", "approval_steps": []}
-        rule_with_none_steps  = {"id": "some-uuid", "approval_steps": None}
+        rule_with_none_steps = {"id": "some-uuid", "approval_steps": None}
 
         # The check used in resolve_transfer_approvers:
         # rule = candidate if candidate and candidate.get("approval_steps") else None
-        assert not rule_with_empty_steps.get("approval_steps"), \
+        assert not rule_with_empty_steps.get("approval_steps"), (
             "empty list is falsy — must be treated as no rule"
-        assert not rule_with_none_steps.get("approval_steps"), \
+        )
+        assert not rule_with_none_steps.get("approval_steps"), (
             "None is falsy — must be treated as no rule"
+        )
 
         # A properly configured rule has at least one step
         rule_with_steps = {"id": "some-uuid", "approval_steps": [{"sequence": 1}]}
-        assert rule_with_steps.get("approval_steps"), \
+        assert rule_with_steps.get("approval_steps"), (
             "non-empty steps list is truthy — rule is used"
+        )
 
     # ── D2: Reviewer is immediate superior only ──────────────────────────────
 
@@ -2154,31 +2409,34 @@ class TestE2EDiscrepancyRegressions:
         WM (authority 4) creator → immediate reviewer = level 3 (LM/RM).
         NM (authority 1) must NOT see PENDING_REVIEW actions on WM-created PULLs.
         """
+
         # Mirrors the frontend getAvailableActions logic
         def immediate_reviewer_level(creator_authority_level: int) -> int:
             return max(1, creator_authority_level - 1)
 
         def can_review(user_level: int, creator_level: int, is_creator: bool) -> bool:
-            return (
-                not is_creator
-                and user_level == immediate_reviewer_level(creator_level)
-            )
+            return not is_creator and user_level == immediate_reviewer_level(creator_level)
 
         # WM (L4) creates PULL → immediate reviewer is L3
         assert immediate_reviewer_level(4) == 3
-        assert can_review(user_level=3, creator_level=4, is_creator=False) is True,  \
+        assert can_review(user_level=3, creator_level=4, is_creator=False) is True, (
             "LM (L3) IS the immediate reviewer for WM (L4) creator"
-        assert can_review(user_level=2, creator_level=4, is_creator=False) is False, \
+        )
+        assert can_review(user_level=2, creator_level=4, is_creator=False) is False, (
             "RM (L2) must NOT review WM-created PULL (L3 is immediate)"
-        assert can_review(user_level=1, creator_level=4, is_creator=False) is False, \
+        )
+        assert can_review(user_level=1, creator_level=4, is_creator=False) is False, (
             "NM (L1) must NOT review WM-created PULL (L3 is immediate)"
+        )
 
         # RM (L2) creates → immediate reviewer is L1 (NM)
         assert immediate_reviewer_level(2) == 1
-        assert can_review(user_level=1, creator_level=2, is_creator=False) is True,  \
+        assert can_review(user_level=1, creator_level=2, is_creator=False) is True, (
             "NM (L1) IS the immediate reviewer for RM (L2) creator"
-        assert can_review(user_level=2, creator_level=2, is_creator=True) is False,  \
+        )
+        assert can_review(user_level=2, creator_level=2, is_creator=True) is False, (
             "creator cannot review their own transfer"
+        )
 
     # ── D3: canApprove from approval-info endpoint ───────────────────────────
 
@@ -2190,6 +2448,7 @@ class TestE2EDiscrepancyRegressions:
 
         With override: canApprove = can_approve from approval-info (backend truth).
         """
+
         # Simulate the local estimate that was wrong in the e2e test
         def local_can_approve(user_level: int, is_creator: bool) -> bool:
             return user_level <= 2 and not is_creator
@@ -2205,19 +2464,23 @@ class TestE2EDiscrepancyRegressions:
         RM_LEVEL = 2  # RM is L2
 
         # Without override: RM (L2) incorrectly appears to be able to approve
-        assert local_can_approve(RM_LEVEL, is_creator=False) is True, \
+        assert local_can_approve(RM_LEVEL, is_creator=False) is True, (
             "local estimate incorrectly allows RM to approve NM-created PUSH"
+        )
 
         # With override=False (from approval-info: required L1, RM is L2 → blocked):
-        assert can_approve_with_override(RM_LEVEL, is_creator=False, override=False) is False, \
+        assert can_approve_with_override(RM_LEVEL, is_creator=False, override=False) is False, (
             "override=False from approval-info correctly blocks RM"
+        )
 
         # With override=True (from approval-info: RM IS the required approver):
-        assert can_approve_with_override(RM_LEVEL, is_creator=False, override=True) is True, \
+        assert can_approve_with_override(RM_LEVEL, is_creator=False, override=True) is True, (
             "override=True from approval-info correctly allows RM"
+        )
 
 
 # ── FIX 1/2/3 regression tests ──────────────────────────────────────────────
+
 
 @pytest.mark.asyncio
 @pytest.mark.unit
@@ -2292,8 +2555,10 @@ class TestApprovalGateAndAnyMode:
         user = _User(RM_USER_ID, TENANT_ID, WAREHOUSE_B, None, "RM")  # RM, not GM
 
         decision = ApprovalDecision(
-            required_role="NM", is_auto_approved=False,
-            next_status="PENDING_APPROVAL", required_authority_level=1,
+            required_role="NM",
+            is_auto_approved=False,
+            next_status="PENDING_APPROVAL",
+            required_authority_level=1,
         )
 
         with pytest.raises(HTTPException) as exc:
@@ -2328,8 +2593,10 @@ class TestApprovalGateAndAnyMode:
         row.current_approval_step = 1
 
         decision = ApprovalDecision(
-            required_role="RM", is_auto_approved=False,
-            next_status="PENDING_APPROVAL", required_authority_level=2,
+            required_role="RM",
+            is_auto_approved=False,
+            next_status="PENDING_APPROVAL",
+            required_authority_level=2,
         )
 
         # Both RM-A and RM-B must be allowed
@@ -2362,8 +2629,10 @@ class TestApprovalGateAndAnyMode:
 
         user = _User(OUTSIDER_ID, TENANT_ID, WAREHOUSE_B, None, "RM")
         decision = ApprovalDecision(
-            required_role="RM", is_auto_approved=False,
-            next_status="PENDING_APPROVAL", required_authority_level=2,
+            required_role="RM",
+            is_auto_approved=False,
+            next_status="PENDING_APPROVAL",
+            required_authority_level=2,
         )
 
         with pytest.raises(HTTPException) as exc:
@@ -2374,6 +2643,7 @@ class TestApprovalGateAndAnyMode:
 
     def test_approval_info_status_label_any_mode(self) -> None:
         """status_label correctly describes ANY-mode multi-holder steps."""
+
         # Mirror the status_label logic from get_approval_info
         def compute_label(
             exec_mode: str,
@@ -2396,13 +2666,21 @@ class TestApprovalGateAndAnyMode:
             return f"Awaiting {position_title} approval"
 
         # ANY mode, 2 holders
-        label = compute_label("any", 2, "Regional Manager", None, False, False,
-                               [{"user_id": "a", "name": "RM-A"}, {"user_id": "b", "name": "RM-B"}])
+        label = compute_label(
+            "any",
+            2,
+            "Regional Manager",
+            None,
+            False,
+            False,
+            [{"user_id": "a", "name": "RM-A"}, {"user_id": "b", "name": "RM-B"}],
+        )
         assert label == "Any Regional Manager can approve (2 approvers available)"
 
         # ANY mode, 1 holder
-        label = compute_label("any", 1, "Regional Manager", None, False, False,
-                               [{"user_id": "a", "name": "RM-A"}])
+        label = compute_label(
+            "any", 1, "Regional Manager", None, False, False, [{"user_id": "a", "name": "RM-A"}]
+        )
         assert label == "Awaiting RM-A approval"
 
         # Sequential, named approver
@@ -2415,6 +2693,7 @@ class TestApprovalGateAndAnyMode:
 
 
 # ── FIX 1/2: ancestor traversal and empty-holders gate ──────────────────────
+
 
 @pytest.mark.asyncio
 @pytest.mark.unit
@@ -2540,8 +2819,12 @@ class TestAncestorTraversal:
         SUBWH = "node-sub-wh"
         ZONA = "node-zone-a"
         TENANT = "tenant-001"
-        CHAIN = {"node-sub-wh": "node-wh-a", "node-wh-a": "node-reg-a",
-                 "node-reg-a": ZONA, ZONA: None}
+        CHAIN = {
+            "node-sub-wh": "node-wh-a",
+            "node-wh-a": "node-reg-a",
+            "node-reg-a": ZONA,
+            ZONA: None,
+        }
         # Zone Manager only at Zone A
         HAS_POS = {ZONA}
 
@@ -2611,7 +2894,7 @@ class TestAncestorTraversal:
                 "position_title": "Zone Manager",
                 "execution_mode": "any",
                 "assigned_to_user_id": None,
-                "all_holders": [],          # ← empty: position not found in hierarchy
+                "all_holders": [],  # ← empty: position not found in hierarchy
                 "holder_count": 0,
             }
         ]
@@ -2619,8 +2902,10 @@ class TestAncestorTraversal:
 
         user = _User("any-user", TENANT_ID, WAREHOUSE_A, None, "RM")
         decision = ApprovalDecision(
-            required_role="RM", is_auto_approved=False,
-            next_status="PENDING_APPROVAL", required_authority_level=2,
+            required_role="RM",
+            is_auto_approved=False,
+            next_status="PENDING_APPROVAL",
+            required_authority_level=2,
         )
 
         with pytest.raises(HTTPException) as exc:
@@ -2633,6 +2918,7 @@ class TestAncestorTraversal:
 
 
 # ── BUG 1 + BUG 2 regression tests ──────────────────────────────────────────
+
 
 @pytest.mark.unit
 class TestL1StockAndTAEscalation:
@@ -2648,6 +2934,7 @@ class TestL1StockAndTAEscalation:
         """
         import inspect
         from services.inventory_analytics import get_stock
+
         src = inspect.getsource(get_stock)
         assert "LEFT JOIN warehouses" not in src, (
             "get_stock() must not JOIN the legacy warehouses table — "
@@ -2684,15 +2971,17 @@ class TestL1StockAndTAEscalation:
                 "assigned_to_user_id": OTHER_TA_ID,  # TA stored, but another TA calling
                 "assigned_to_name": "Tenant Admin",
                 "all_holders": [],
-                "escalated": True,                   # ← self-approval escalation flag
+                "escalated": True,  # ← self-approval escalation flag
             }
         ]
         row.current_approval_step = 1
         row.created_by = CREATOR_ID
 
         decision = ApprovalDecision(
-            required_role="TA", is_auto_approved=False,
-            next_status="PENDING_APPROVAL", required_authority_level=1,
+            required_role="TA",
+            is_auto_approved=False,
+            next_status="PENDING_APPROVAL",
+            required_authority_level=1,
         )
 
         # A different TA (not the stored OTHER_TA_ID) tries to approve
@@ -2728,8 +3017,10 @@ class TestL1StockAndTAEscalation:
         row.created_by = CREATOR_ID
 
         decision = ApprovalDecision(
-            required_role="TA", is_auto_approved=False,
-            next_status="PENDING_APPROVAL", required_authority_level=1,
+            required_role="TA",
+            is_auto_approved=False,
+            next_status="PENDING_APPROVAL",
+            required_authority_level=1,
         )
 
         # RM (not TA) tries to approve — must be blocked
@@ -2775,6 +3066,7 @@ class TestL1StockAndTAEscalation:
 
 
 # ── GAP-A regression tests — multi-step sequential approval enforcement ───────
+
 
 @pytest.mark.unit
 class TestMultiStepApproval:
@@ -2848,27 +3140,38 @@ class TestMultiStepApproval:
         from services.inventory_service import InventoryService
 
         approver = _User("u-approver-1", TENANT_ID, WAREHOUSE_B, None, "NM")
-        row  = self._make_one_step_row(approver.user_id)
+        row = self._make_one_step_row(approver.user_id)
         line = _make_line(quantity=50.0)
 
         # execute 0: SELECT row; 1: SELECT lines; 2: UPDATE JSONB final; 3: UPDATE status
         session = AsyncMock()
-        session.execute = AsyncMock(side_effect=[
-            MagicMock(fetchone=MagicMock(return_value=row)),
-            MagicMock(fetchall=MagicMock(return_value=[line])),
-            MagicMock(),
-            MagicMock(),
-        ])
+        session.execute = AsyncMock(
+            side_effect=[
+                MagicMock(fetchone=MagicMock(return_value=row)),
+                MagicMock(fetchall=MagicMock(return_value=[line])),
+                MagicMock(),
+                MagicMock(),
+            ]
+        )
 
-        with patch("services.inventory_service.resolve_approval",
-                   new=AsyncMock(return_value=ApprovalDecision(
-                       required_role="NM", is_auto_approved=False,
-                       next_status="PENDING_APPROVAL", required_authority_level=1,
-                   ))), \
-             patch("services.inventory_service.record_transaction",
-                   new=AsyncMock(return_value="tx-single")) as mock_record, \
-             patch("services.inventory_service._get_simple_mode",
-                   new=AsyncMock(return_value=False)):
+        with (
+            patch(
+                "services.inventory_service.resolve_approval",
+                new=AsyncMock(
+                    return_value=ApprovalDecision(
+                        required_role="NM",
+                        is_auto_approved=False,
+                        next_status="PENDING_APPROVAL",
+                        required_authority_level=1,
+                    )
+                ),
+            ),
+            patch(
+                "services.inventory_service.record_transaction",
+                new=AsyncMock(return_value="tx-single"),
+            ) as mock_record,
+            patch("services.inventory_service._get_simple_mode", new=AsyncMock(return_value=False)),
+        ):
             result = await InventoryService(session).transition_transfer(
                 approver, TRANSFER_ID, "APPROVED"
             )
@@ -2882,28 +3185,39 @@ class TestMultiStepApproval:
         from services.inventory_service import InventoryService
 
         approver1 = _User("u-approver-1", TENANT_ID, WAREHOUSE_B, None, "NM")
-        row  = self._make_two_step_row(current_step=1, approver1_uid=approver1.user_id)
+        row = self._make_two_step_row(current_step=1, approver1_uid=approver1.user_id)
         line = _make_line(quantity=50.0)
 
         # execute 0: SELECT row; 1: SELECT lines; 2: UPDATE JSONB + advance counter
         # No execute 3 — returns early at PENDING_APPROVAL
         session = AsyncMock()
-        session.execute = AsyncMock(side_effect=[
-            MagicMock(fetchone=MagicMock(return_value=row)),
-            MagicMock(fetchall=MagicMock(return_value=[line])),
-            MagicMock(),
-        ])
+        session.execute = AsyncMock(
+            side_effect=[
+                MagicMock(fetchone=MagicMock(return_value=row)),
+                MagicMock(fetchall=MagicMock(return_value=[line])),
+                MagicMock(),
+            ]
+        )
 
-        with patch("services.inventory_service.resolve_approval",
-                   new=AsyncMock(return_value=ApprovalDecision(
-                       required_role="NM", is_auto_approved=False,
-                       next_status="PENDING_APPROVAL", required_authority_level=1,
-                   ))), \
-             patch("services.inventory_service.record_transaction",
-                   new=AsyncMock(return_value="tx-step1")) as mock_record, \
-             patch("services.inventory_service.audit_log", new=AsyncMock()), \
-             patch("services.inventory_service._get_simple_mode",
-                   new=AsyncMock(return_value=False)):
+        with (
+            patch(
+                "services.inventory_service.resolve_approval",
+                new=AsyncMock(
+                    return_value=ApprovalDecision(
+                        required_role="NM",
+                        is_auto_approved=False,
+                        next_status="PENDING_APPROVAL",
+                        required_authority_level=1,
+                    )
+                ),
+            ),
+            patch(
+                "services.inventory_service.record_transaction",
+                new=AsyncMock(return_value="tx-step1"),
+            ) as mock_record,
+            patch("services.inventory_service.audit_log", new=AsyncMock()),
+            patch("services.inventory_service._get_simple_mode", new=AsyncMock(return_value=False)),
+        ):
             result = await InventoryService(session).transition_transfer(
                 approver1, TRANSFER_ID, "APPROVED"
             )
@@ -2921,28 +3235,39 @@ class TestMultiStepApproval:
         from services.inventory_service import InventoryService
 
         approver2 = _User("u-approver-2", TENANT_ID, WAREHOUSE_B, None, "RM")
-        row  = self._make_two_step_row(current_step=2, approver2_uid=approver2.user_id)
+        row = self._make_two_step_row(current_step=2, approver2_uid=approver2.user_id)
         row.resolved_approval_steps[0]["status"] = "approved"  # step 1 already done
         line = _make_line(quantity=50.0)
 
         # execute 0: SELECT row; 1: SELECT lines; 2: UPDATE JSONB final; 3: UPDATE status
         session = AsyncMock()
-        session.execute = AsyncMock(side_effect=[
-            MagicMock(fetchone=MagicMock(return_value=row)),
-            MagicMock(fetchall=MagicMock(return_value=[line])),
-            MagicMock(),
-            MagicMock(),
-        ])
+        session.execute = AsyncMock(
+            side_effect=[
+                MagicMock(fetchone=MagicMock(return_value=row)),
+                MagicMock(fetchall=MagicMock(return_value=[line])),
+                MagicMock(),
+                MagicMock(),
+            ]
+        )
 
-        with patch("services.inventory_service.resolve_approval",
-                   new=AsyncMock(return_value=ApprovalDecision(
-                       required_role="RM", is_auto_approved=False,
-                       next_status="PENDING_APPROVAL", required_authority_level=2,
-                   ))), \
-             patch("services.inventory_service.record_transaction",
-                   new=AsyncMock(return_value="tx-step2")) as mock_record, \
-             patch("services.inventory_service._get_simple_mode",
-                   new=AsyncMock(return_value=False)):
+        with (
+            patch(
+                "services.inventory_service.resolve_approval",
+                new=AsyncMock(
+                    return_value=ApprovalDecision(
+                        required_role="RM",
+                        is_auto_approved=False,
+                        next_status="PENDING_APPROVAL",
+                        required_authority_level=2,
+                    )
+                ),
+            ),
+            patch(
+                "services.inventory_service.record_transaction",
+                new=AsyncMock(return_value="tx-step2"),
+            ) as mock_record,
+            patch("services.inventory_service._get_simple_mode", new=AsyncMock(return_value=False)),
+        ):
             result = await InventoryService(session).transition_transfer(
                 approver2, TRANSFER_ID, "APPROVED"
             )
@@ -2955,25 +3280,34 @@ class TestMultiStepApproval:
         from services.approval_service import ApprovalDecision
         from services.inventory_service import InventoryService
 
-        approver1  = _User("u-approver-1", TENANT_ID, WAREHOUSE_B, None, "NM")
+        approver1 = _User("u-approver-1", TENANT_ID, WAREHOUSE_B, None, "NM")
         wrong_user = _User("u-wrong", TENANT_ID, WAREHOUSE_B, None, "RM")
-        row  = self._make_two_step_row(current_step=1, approver1_uid=approver1.user_id)
+        row = self._make_two_step_row(current_step=1, approver1_uid=approver1.user_id)
         line = _make_line(quantity=50.0)
 
         # execute 0: SELECT row; 1: SELECT lines; then 403 before any writes
         session = AsyncMock()
-        session.execute = AsyncMock(side_effect=[
-            MagicMock(fetchone=MagicMock(return_value=row)),
-            MagicMock(fetchall=MagicMock(return_value=[line])),
-        ])
+        session.execute = AsyncMock(
+            side_effect=[
+                MagicMock(fetchone=MagicMock(return_value=row)),
+                MagicMock(fetchall=MagicMock(return_value=[line])),
+            ]
+        )
 
-        with patch("services.inventory_service.resolve_approval",
-                   new=AsyncMock(return_value=ApprovalDecision(
-                       required_role="NM", is_auto_approved=False,
-                       next_status="PENDING_APPROVAL", required_authority_level=1,
-                   ))), \
-             patch("services.inventory_service._get_simple_mode",
-                   new=AsyncMock(return_value=False)):
+        with (
+            patch(
+                "services.inventory_service.resolve_approval",
+                new=AsyncMock(
+                    return_value=ApprovalDecision(
+                        required_role="NM",
+                        is_auto_approved=False,
+                        next_status="PENDING_APPROVAL",
+                        required_authority_level=1,
+                    )
+                ),
+            ),
+            patch("services.inventory_service._get_simple_mode", new=AsyncMock(return_value=False)),
+        ):
             with pytest.raises(HTTPException) as exc_info:
                 await InventoryService(session).transition_transfer(
                     wrong_user, TRANSFER_ID, "APPROVED"
@@ -2984,6 +3318,7 @@ class TestMultiStepApproval:
 
 
 # ── GAP-C regression tests: position_id-based approval routing ───────────────
+
 
 @pytest.mark.unit
 @pytest.mark.asyncio
@@ -3007,8 +3342,7 @@ class TestGapCPositionIdRouting:
         return {"id": rule_id, "approval_steps": [step]}
 
     @staticmethod
-    def _pos_db_row(pos_id: str, user_id: str, name: str,
-                    node_id: str, title: str) -> MagicMock:
+    def _pos_db_row(pos_id: str, user_id: str, name: str, node_id: str, title: str) -> MagicMock:
         r = MagicMock()
         r.pos_id = pos_id
         r.user_id = user_id
@@ -3022,16 +3356,18 @@ class TestGapCPositionIdRouting:
         from decimal import Decimal as D
         from services.approval_service import resolve_transfer_approvers
 
-        POS_ID    = "pppppppp-0000-0000-0000-000000000001"
-        HOLDER    = "u-holder-001"
-        NODE_ID   = "nnnnnnnn-0000-0000-0000-000000000001"
-        RULE_ID   = "rrrrrrrr-0000-0000-0000-000000000001"
-        TTCID     = "tttttttt-0000-0000-0000-000000000001"
+        POS_ID = "pppppppp-0000-0000-0000-000000000001"
+        HOLDER = "u-holder-001"
+        NODE_ID = "nnnnnnnn-0000-0000-0000-000000000001"
+        RULE_ID = "rrrrrrrr-0000-0000-0000-000000000001"
+        TTCID = "tttttttt-0000-0000-0000-000000000001"
 
         db_row = self._pos_db_row(POS_ID, HOLDER, "Alice", NODE_ID, "New Title (current)")
 
-        with patch("services.approval_service._find_matching_rule",
-                   new=AsyncMock(return_value=self._rule(POS_ID, "Old Title (stale)", RULE_ID))):
+        with patch(
+            "services.approval_service._find_matching_rule",
+            new=AsyncMock(return_value=self._rule(POS_ID, "Old Title (stale)", RULE_ID)),
+        ):
             session = AsyncMock()
             # src_level and dst_level provided → no initial node queries.
             # Only the direct-by-ID position query fires.
@@ -3057,7 +3393,7 @@ class TestGapCPositionIdRouting:
         step = result.steps[0]
         assert step.assigned_to_user_id == HOLDER
         assert step.assigned_to_name == "Alice"
-        assert step.position_title == "New Title (current)"   # refreshed from DB
+        assert step.position_title == "New Title (current)"  # refreshed from DB
         # Only ONE execute call: the direct-by-ID query
         assert session.execute.await_count == 1
 
@@ -3066,11 +3402,11 @@ class TestGapCPositionIdRouting:
         from decimal import Decimal as D
         from services.approval_service import resolve_transfer_approvers
 
-        RULE_ID   = "rrrrrrrr-0000-0000-0000-000000000002"
-        TTCID     = "tttttttt-0000-0000-0000-000000000002"
-        POS_ID    = "pppppppp-0000-0000-0000-000000000002"
-        HOLDER    = "u-holder-002"
-        NODE_ID   = "nnnnnnnn-0000-0000-0000-000000000002"
+        RULE_ID = "rrrrrrrr-0000-0000-0000-000000000002"
+        TTCID = "tttttttt-0000-0000-0000-000000000002"
+        POS_ID = "pppppppp-0000-0000-0000-000000000002"
+        HOLDER = "u-holder-002"
+        NODE_ID = "nnnnnnnn-0000-0000-0000-000000000002"
 
         pos_row = MagicMock()
         pos_row.pos_id = POS_ID
@@ -3080,8 +3416,10 @@ class TestGapCPositionIdRouting:
 
         # TENANT_WIDE resolution returns None without a DB call, so only
         # _find_position_and_holder fires → 1 execute call total.
-        with patch("services.approval_service._find_matching_rule",
-                   new=AsyncMock(return_value=self._rule(None, "Regional Manager", RULE_ID))):
+        with patch(
+            "services.approval_service._find_matching_rule",
+            new=AsyncMock(return_value=self._rule(None, "Regional Manager", RULE_ID)),
+        ):
             session = AsyncMock()
             session.execute = AsyncMock(
                 return_value=MagicMock(fetchone=MagicMock(return_value=pos_row))
@@ -3105,21 +3443,27 @@ class TestGapCPositionIdRouting:
         step = result.steps[0]
         assert step.assigned_to_user_id == HOLDER
         assert step.position_title == "Regional Manager"
-        assert session.execute.await_count == 1   # find_position_and_holder only
+        assert session.execute.await_count == 1  # find_position_and_holder only
 
     def test_rename_position_updates_approval_rules_jsonb(self) -> None:
         """Part B cascade logic: renaming updates position_title in JSONB steps
         that reference the position by position_id."""
         import json as _json
 
-        POS_ID    = "pppppppp-0000-0000-0000-000000000003"
+        POS_ID = "pppppppp-0000-0000-0000-000000000003"
         OLD_TITLE = "Regional Manager"
         NEW_TITLE = "Zone Director"
 
         # Simulate the in-memory JSONB (as Python list) returned from DB
         steps: list[dict] = [
-            {"sequence": 1, "position_id": POS_ID, "position_title": OLD_TITLE,
-             "resolution": "TENANT_WIDE", "execution_mode": "sequential", "sla_hours": None},
+            {
+                "sequence": 1,
+                "position_id": POS_ID,
+                "position_title": OLD_TITLE,
+                "resolution": "TENANT_WIDE",
+                "execution_mode": "sequential",
+                "sla_hours": None,
+            },
         ]
 
         # Apply the cascade logic exactly as written in positions.py
@@ -3141,16 +3485,18 @@ class TestGapCPositionIdRouting:
         from decimal import Decimal as D
         from services.approval_service import resolve_transfer_approvers
 
-        POS_ID  = "pppppppp-0000-0000-0000-000000000004"
-        HOLDER  = "u-holder-004"
+        POS_ID = "pppppppp-0000-0000-0000-000000000004"
+        HOLDER = "u-holder-004"
         NODE_ID = "nnnnnnnn-0000-0000-0000-000000000004"
         RULE_ID = "rrrrrrrr-0000-0000-0000-000000000004"
-        TTCID   = "tttttttt-0000-0000-0000-000000000004"
+        TTCID = "tttttttt-0000-0000-0000-000000000004"
 
         db_row = self._pos_db_row(POS_ID, HOLDER, "Carol", NODE_ID, "Supply Chain Lead")
 
-        with patch("services.approval_service._find_matching_rule",
-                   new=AsyncMock(return_value=self._rule(POS_ID, "Logistics Director (old)", RULE_ID))):
+        with patch(
+            "services.approval_service._find_matching_rule",
+            new=AsyncMock(return_value=self._rule(POS_ID, "Logistics Director (old)", RULE_ID)),
+        ):
             session = AsyncMock()
             session.execute = AsyncMock(
                 return_value=MagicMock(fetchone=MagicMock(return_value=db_row))
@@ -3176,4 +3522,4 @@ class TestGapCPositionIdRouting:
             f"Expected {HOLDER!r} but got {step.assigned_to_user_id!r}. "
             "Rename should not break routing when position_id is stored."
         )
-        assert step.position_title == "Supply Chain Lead"   # refreshed from DB
+        assert step.position_title == "Supply Chain Lead"  # refreshed from DB

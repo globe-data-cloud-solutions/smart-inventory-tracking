@@ -7,6 +7,7 @@ Revision ID: 075
 Revises:     074
 Create Date: 2026-10-07
 """
+
 from __future__ import annotations
 
 from alembic import op
@@ -18,9 +19,7 @@ depends_on = None
 
 
 def upgrade() -> None:
-    op.execute(
-        "ALTER TABLE outbox ADD COLUMN processing_started_at TIMESTAMPTZ NULL"
-    )
+    op.execute("ALTER TABLE outbox ADD COLUMN processing_started_at TIMESTAMPTZ NULL")
     op.execute(
         "COMMENT ON COLUMN outbox.processing_started_at IS "
         "'Set when a worker moves the row to PROCESSING; stuck-row reset uses this, not created_at'"

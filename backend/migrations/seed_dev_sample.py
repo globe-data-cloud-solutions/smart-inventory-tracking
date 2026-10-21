@@ -60,7 +60,9 @@ async def _resolve_price(conn: asyncpg.Connection, row: dict) -> dict:
     price_id = await conn.fetchval(
         "SELECT id FROM package_prices WHERE tier = $1 AND billing_period = $2 AND currency = $3 "
         "ORDER BY effective_from DESC LIMIT 1",
-        row["tier"], row["billing_period"], row["currency"],
+        row["tier"],
+        row["billing_period"],
+        row["currency"],
     )
     return {**row, "price_id": str(price_id) if price_id else None}
 
@@ -88,8 +90,14 @@ async def main() -> None:
             if await conn.fetchval("SELECT 1 FROM users WHERE email = $1", SA_EMAIL):
                 print(f"seed_dev_sample: {SA_EMAIL} exists — skipped.")
             else:
-                await insert_row(conn, "users", {**sa_row, "password_hash": hash_password(sa_password)})
-                print(f"seed_dev_sample: {'rotated and ' if rotate else ''}created {SA_EMAIL}.")
+                await insert_row(
+                    conn,
+                    "users",
+                    {**sa_row, "password_hash": hash_password(sa_password)},
+                )
+                print(
+                    f"seed_dev_sample: {'rotated and ' if rotate else ''}created {SA_EMAIL}."
+                )
 
         for tenant in fixture["tenants"]:
             tid = tenant["id"]
@@ -100,7 +108,9 @@ async def main() -> None:
 
             async with conn.transaction():
                 # Writes to tenant-scoped tables are checked against this setting.
-                await conn.execute("SELECT set_config('app.current_tenant_id', $1, true)", tid)
+                await conn.execute(
+                    "SELECT set_config('app.current_tenant_id', $1, true)", tid
+                )
                 await insert_row(conn, "tenants", tenant)
                 # Fixture order keeps parents first: users come before the
                 # tables that reference them (personnel_positions, policies).
@@ -111,7 +121,10 @@ async def main() -> None:
                         if _row_tenant(table, row) != tid:
                             continue
                         if table == "users":
-                            row = {**row, "password_hash": hash_password(sample_password)}
+                            row = {
+                                **row,
+                                "password_hash": hash_password(sample_password),
+                            }
                         if table == "subscriptions":
                             row = await _resolve_price(conn, row)
                         await insert_row(conn, table, row)

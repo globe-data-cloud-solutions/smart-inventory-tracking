@@ -15,7 +15,9 @@ async def get_db_session(user=Depends(lambda: None)) -> AsyncGenerator[AsyncSess
         # cleanly instead of a 500 from an AttributeError on user.tenant_id.
         if user is not None:
             await set_rls_context(
-                session, user.tenant_id, user.user_id,
+                session,
+                user.tenant_id,
+                user.user_id,
                 is_sa=getattr(user, "role", None) == "SA",
             )
         try:
@@ -31,7 +33,9 @@ async def get_read_db_session(user=Depends(lambda: None)) -> AsyncGenerator[Asyn
     async with AsyncReadSessionLocal() as session:
         if user is not None:
             await set_rls_context(
-                session, user.tenant_id, user.user_id,
+                session,
+                user.tenant_id,
+                user.user_id,
                 is_sa=getattr(user, "role", None) == "SA",
             )
         yield session

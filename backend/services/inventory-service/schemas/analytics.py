@@ -20,10 +20,10 @@ class InventoryStockOut(BaseModel):
     # On Hand is already reduced at APPROVED via TRANSFER_OUT ledger entry, so
     # APPROVED/ISSUED/IN_TRANSIT must NOT be included here — doing so causes a
     # double deduction: current_stock already reflects the APPROVED deduction.
-    pending_out_qty: Decimal = Decimal("0")      # DRAFT/PENDING soft holds
-    in_transit_out_qty: Decimal = Decimal("0")   # ISSUED/IN_TRANSIT (informational)
-    in_transit_in_qty: Decimal = Decimal("0")    # inbound not yet received
-    requested_qty: Decimal = Decimal("0")         # pending transfer requests on this stock
+    pending_out_qty: Decimal = Decimal("0")  # DRAFT/PENDING soft holds
+    in_transit_out_qty: Decimal = Decimal("0")  # ISSUED/IN_TRANSIT (informational)
+    in_transit_in_qty: Decimal = Decimal("0")  # inbound not yet received
+    requested_qty: Decimal = Decimal("0")  # pending transfer requests on this stock
 
     @computed_field  # type: ignore[misc]
     @property
@@ -41,7 +41,7 @@ class ReorderAlertOut(BaseModel):
     current_stock: Decimal
     reorder_point: Decimal
     reorder_quantity: Optional[Decimal] = None
-    shortfall: Decimal   # reorder_point - current_stock (always > 0 in alerts)
+    shortfall: Decimal  # reorder_point - current_stock (always > 0 in alerts)
 
 
 class ForecastOut(BaseModel):
@@ -52,7 +52,7 @@ class ForecastOut(BaseModel):
     warehouse_name: str
     current_stock: Decimal
     avg_daily_consumption: float
-    days_until_stockout: Optional[float] = None   # None = no consumption in window
+    days_until_stockout: Optional[float] = None  # None = no consumption in window
 
 
 class CrossWarehouseStockOut(BaseModel):

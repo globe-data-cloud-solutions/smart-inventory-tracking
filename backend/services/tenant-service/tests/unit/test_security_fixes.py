@@ -1,19 +1,20 @@
 """Unit tests for security fixes A1, A2, A3.
 
-  A1 — Cross-tenant isolation via get_db_session_for_tenant
-  A2 — Deactivated-user login path (tested via _lookup_user mock)
-  A3 — Custom slug validation and duplicate rejection in create_tenant
+A1 — Cross-tenant isolation via get_db_session_for_tenant
+A2 — Deactivated-user login path (tested via _lookup_user mock)
+A3 — Custom slug validation and duplicate rejection in create_tenant
 """
+
 from __future__ import annotations
 
 import os
 import sys
 
-os.environ.setdefault("DATABASE_URL",      "postgresql+asyncpg://test:x@localhost/test")
+os.environ.setdefault("DATABASE_URL", "postgresql+asyncpg://test:x@localhost/test")
 os.environ.setdefault("DATABASE_READ_URL", "postgresql+asyncpg://test:x@localhost/test")
-os.environ.setdefault("JWT_SECRET",        "test-secret")
-os.environ.setdefault("JWT_SECRET_KEY",    "test-secret")
-os.environ.setdefault("ENVIRONMENT",       "local")
+os.environ.setdefault("JWT_SECRET", "test-secret")
+os.environ.setdefault("JWT_SECRET_KEY", "test-secret")
+os.environ.setdefault("ENVIRONMENT", "local")
 
 _TENANT_ROOT = os.path.normpath(os.path.join(os.path.dirname(__file__), "..", ".."))
 if _TENANT_ROOT not in sys.path:
@@ -35,15 +36,18 @@ TENANT_B = "bbbbbbbb-0000-0000-0000-000000000001"
 
 def _user(role: str, tenant_id: str | None = TENANT_A):
     from dependencies import UserContext
+
     return UserContext(
-        user_id="u1", role=role,
-        tenant_id=tenant_id, warehouse_id=None,
+        user_id="u1",
+        role=role,
+        tenant_id=tenant_id,
+        warehouse_id=None,
     )
 
 
 _CATALOG_LIMITS = {
-    "STARTER":    {"max_warehouses": 3,    "max_users": 5,    "sku_cap": 500},
-    "GROWTH":     {"max_warehouses": 10,   "max_users": 25,   "sku_cap": 1500},
+    "STARTER": {"max_warehouses": 3, "max_users": 5, "sku_cap": 500},
+    "GROWTH": {"max_warehouses": 10, "max_users": 25, "sku_cap": 1500},
     "ENTERPRISE": {"max_warehouses": None, "max_users": None, "sku_cap": None},
 }
 
@@ -64,7 +68,9 @@ def _catalog_row(tier: str = "GROWTH") -> MagicMock:
 
 
 _ANNUAL_PRICES = {
-    "STARTER": "1000.00", "GROWTH": "2000.00", "ENTERPRISE": "3000.00",
+    "STARTER": "1000.00",
+    "GROWTH": "2000.00",
+    "ENTERPRISE": "3000.00",
 }
 
 
@@ -81,15 +87,16 @@ def _price_row(tier: str = "GROWTH") -> MagicMock:
 
 # ── FIX A1: Cross-tenant isolation ───────────────────────────────────────────
 
+
 @pytest.mark.unit
 class TestCrossTenantIsolation:
-
     @pytest.mark.asyncio
     async def test_cross_tenant_access_denied(self):
         """TA from tenant B cannot access tenant A's resources."""
         from dependencies import get_db_session_for_tenant
-        ta_user = _user("TA", TENANT_B)          # TA belongs to tenant B
-        target  = UUID(TENANT_A)                 # trying to access tenant A
+
+        ta_user = _user("TA", TENANT_B)  # TA belongs to tenant B
+        target = UUID(TENANT_A)  # trying to access tenant A
 
         with pytest.raises(HTTPException) as exc_info:
             # Iterating the generator triggers the access check
@@ -103,8 +110,9 @@ class TestCrossTenantIsolation:
     async def test_wm_cross_tenant_access_denied(self):
         """WM from tenant B cannot access tenant A's resources."""
         from dependencies import get_db_session_for_tenant
+
         wm_user = _user("WM", TENANT_B)
-        target  = UUID(TENANT_A)
+        target = UUID(TENANT_A)
 
         with pytest.raises(HTTPException) as exc_info:
             async for _ in get_db_session_for_tenant(target, wm_user):
@@ -116,6 +124,7 @@ class TestCrossTenantIsolation:
     async def test_null_tenant_id_denied(self):
         """User with no tenant_id in JWT is blocked from all tenant routes."""
         from dependencies import get_db_session_for_tenant
+
         user_no_tenant = _user("WM", tenant_id=None)
         target = UUID(TENANT_A)
 
@@ -129,6 +138,7 @@ class TestCrossTenantIsolation:
     async def test_unauthenticated_denied(self):
         """Missing JWT (user=None) returns 401."""
         from dependencies import get_db_session_for_tenant
+
         target = UUID(TENANT_A)
 
         with pytest.raises(HTTPException) as exc_info:
@@ -141,8 +151,9 @@ class TestCrossTenantIsolation:
     async def test_sa_can_access_any_tenant(self):
         """SA is allowed to access any tenant — no 403 raised before DB open."""
         from dependencies import get_db_session_for_tenant
-        sa_user = _user("SA", tenant_id=None)    # SA has no tenant
-        target  = UUID(TENANT_A)
+
+        sa_user = _user("SA", tenant_id=None)  # SA has no tenant
+        target = UUID(TENANT_A)
 
         # Patch the session factory so we don't need a real DB.
         # SA must NOT raise before reaching the session open.
@@ -165,8 +176,9 @@ class TestCrossTenantIsolation:
     async def test_ta_same_tenant_allowed(self):
         """TA accessing their own tenant must NOT raise 403 before DB open."""
         from dependencies import get_db_session_for_tenant
-        ta_user = _user("TA", TENANT_A)   # TA belongs to tenant A
-        target  = UUID(TENANT_A)          # accessing tenant A's data — allowed
+
+        ta_user = _user("TA", TENANT_A)  # TA belongs to tenant A
+        target = UUID(TENANT_A)  # accessing tenant A's data — allowed
 
         mock_session = AsyncMock()
         mock_session.commit = AsyncMock()
@@ -188,14 +200,16 @@ class TestCrossTenantIsolation:
                     async for _ in get_db_session_for_tenant(target, ta_user):
                         break
                 except HTTPException as e:
-                    pytest.fail(f"Same-tenant TA should not get HTTPException but got {e.status_code}")
+                    pytest.fail(
+                        f"Same-tenant TA should not get HTTPException but got {e.status_code}"
+                    )
 
 
 # ── FIX A2: Deactivated user returns 401 ─────────────────────────────────────
 
+
 @pytest.mark.unit
 class TestDeactivatedUserLogin:
-
     def _row(self, **kw):
         r = MagicMock()
         for k, v in kw.items():
@@ -209,14 +223,13 @@ class TestDeactivatedUserLogin:
         Simulates finding the user in the DB but with is_active=False.
         """
         # Import directly to test the logic; mock the DB session.
-        _AUTH_ROOT = os.path.normpath(
-            os.path.join(_TENANT_ROOT, "..", "auth-service")
-        )
+        _AUTH_ROOT = os.path.normpath(os.path.join(_TENANT_ROOT, "..", "auth-service"))
         if _AUTH_ROOT not in sys.path:
             sys.path.insert(0, _AUTH_ROOT)
 
         with patch.dict(sys.modules, {}):
             import importlib
+
             spec = importlib.util.spec_from_file_location(
                 "auth_router",
                 os.path.join(_AUTH_ROOT, "routers", "auth.py"),
@@ -226,10 +239,15 @@ class TestDeactivatedUserLogin:
 
             # Build an inactive user row
             inactive_row = self._row(
-                id=uuid4(), email="wm@int-test.com", full_name="WM User",
-                tenant_id=uuid4(), password_hash=None,
-                must_reset_password=False, system_role=None,
-                is_active=False, tenant_slug="int-test",
+                id=uuid4(),
+                email="wm@int-test.com",
+                full_name="WM User",
+                tenant_id=uuid4(),
+                password_hash=None,
+                must_reset_password=False,
+                system_role=None,
+                is_active=False,
+                tenant_slug="int-test",
             )
             mock_result = MagicMock()
             mock_result.fetchone = MagicMock(return_value=inactive_row)
@@ -257,57 +275,69 @@ class TestDeactivatedUserLogin:
 
 # ── FIX A3: Slug validation + uniqueness ─────────────────────────────────────
 
+
 @pytest.mark.unit
 class TestTenantSlug:
-
     # ── _validate_slug — imports inline to avoid sys.modules pollution ──────
 
     def test_valid_slug_simple(self):
         from routers.tenants import _validate_slug
+
         assert _validate_slug("my-tenant") is True
 
     def test_valid_slug_alphanumeric(self):
         from routers.tenants import _validate_slug
+
         assert _validate_slug("acme2026") is True
 
     def test_valid_slug_with_hyphens(self):
         from routers.tenants import _validate_slug
+
         assert _validate_slug("north-addis-warehouse") is True
 
     def test_invalid_slug_starts_with_hyphen(self):
         from routers.tenants import _validate_slug
+
         assert _validate_slug("-bad-slug") is False
 
     def test_invalid_slug_ends_with_hyphen(self):
         from routers.tenants import _validate_slug
+
         assert _validate_slug("bad-slug-") is False
 
     def test_invalid_slug_too_short(self):
         from routers.tenants import _validate_slug
-        assert _validate_slug("ab") is False   # 2 chars: only start + end, needs ≥1 middle
+
+        assert _validate_slug("ab") is False  # 2 chars: only start + end, needs ≥1 middle
 
     def test_invalid_slug_uppercase(self):
         from routers.tenants import _validate_slug
+
         assert _validate_slug("My-Tenant") is False
 
     def test_invalid_slug_spaces(self):
         from routers.tenants import _validate_slug
+
         assert _validate_slug("my tenant") is False
 
     def test_invalid_slug_special_chars(self):
         from routers.tenants import _validate_slug
+
         assert _validate_slug("my_tenant!") is False
 
     def test_valid_slug_minimum_length(self):
         from routers.tenants import _validate_slug
-        assert _validate_slug("abc") is True   # 3 chars: a + b + c
+
+        assert _validate_slug("abc") is True  # 3 chars: a + b + c
 
     def test_valid_slug_maximum_length(self):
         from routers.tenants import _validate_slug
-        assert _validate_slug("a" + "b" * 48 + "c") is True   # 50 chars
+
+        assert _validate_slug("a" + "b" * 48 + "c") is True  # 50 chars
 
     def test_invalid_slug_over_maximum(self):
         from routers.tenants import _validate_slug
+
         assert _validate_slug("a" + "b" * 49 + "c") is False  # 51 chars
 
     # ── create_tenant with custom slug ────────────────────────────────────────
@@ -319,8 +349,9 @@ class TestTenantSlug:
         from schemas.tenant import TenantCreateRequest
         from shared.permissions.store import RolePermissionGrant as PermissionGrant
 
-        body   = TenantCreateRequest(name="Test Company", slug="my-custom-slug",
-                                     organisation_type="PRODUCER")
+        body = TenantCreateRequest(
+            name="Test Company", slug="my-custom-slug", organisation_type="PRODUCER"
+        )
         caller = _user("SA", tenant_id=None)
 
         db = AsyncMock()
@@ -336,15 +367,16 @@ class TestTenantSlug:
                 res.fetchone = MagicMock(return_value=_price_row(body.plan_tier))
                 return res
             res = MagicMock()
-            res.fetchone = MagicMock(return_value=None)   # no collision
-            res.scalar   = MagicMock(return_value=None)
+            res.fetchone = MagicMock(return_value=None)  # no collision
+            res.scalar = MagicMock(return_value=None)
             return res
 
         db.execute = AsyncMock(side_effect=_execute)
 
         grant = PermissionGrant(role="SA", action_id="tenant:create", grant_type="FULL")
-        with patch("shared.permissions.middleware.get_role_permission",
-                   new=AsyncMock(return_value=grant)):
+        with patch(
+            "shared.permissions.middleware.get_role_permission", new=AsyncMock(return_value=grant)
+        ):
             with patch("shared.permissions.audit.audit_log", new=AsyncMock()):
                 resp = await create_tenant(body=body, user=caller, db=db)
 
@@ -357,8 +389,7 @@ class TestTenantSlug:
         from schemas.tenant import TenantCreateRequest
         from shared.permissions.store import RolePermissionGrant as PermissionGrant
 
-        body   = TenantCreateRequest(name="Another", slug="taken-slug",
-                                     organisation_type="PRODUCER")
+        body = TenantCreateRequest(name="Another", slug="taken-slug", organisation_type="PRODUCER")
         caller = _user("SA", tenant_id=None)
 
         existing = MagicMock()
@@ -368,14 +399,15 @@ class TestTenantSlug:
 
         async def _execute(sql, params=None, **kw):
             res = MagicMock()
-            res.fetchone = MagicMock(return_value=existing)   # slug taken
+            res.fetchone = MagicMock(return_value=existing)  # slug taken
             return res
 
         db.execute = AsyncMock(side_effect=_execute)
 
         grant = PermissionGrant(role="SA", action_id="tenant:create", grant_type="FULL")
-        with patch("shared.permissions.middleware.get_role_permission",
-                   new=AsyncMock(return_value=grant)):
+        with patch(
+            "shared.permissions.middleware.get_role_permission", new=AsyncMock(return_value=grant)
+        ):
             with patch("shared.permissions.audit.audit_log", new=AsyncMock()):
                 with pytest.raises(HTTPException) as exc_info:
                     await create_tenant(body=body, user=caller, db=db)
@@ -391,14 +423,14 @@ class TestTenantSlug:
         from schemas.tenant import TenantCreateRequest
         from shared.permissions.store import RolePermissionGrant as PermissionGrant
 
-        body   = TenantCreateRequest(name="Test", slug="-bad-",
-                                     organisation_type="PRODUCER")
+        body = TenantCreateRequest(name="Test", slug="-bad-", organisation_type="PRODUCER")
         caller = _user("SA", tenant_id=None)
-        db     = AsyncMock()
+        db = AsyncMock()
 
         grant = PermissionGrant(role="SA", action_id="tenant:create", grant_type="FULL")
-        with patch("shared.permissions.middleware.get_role_permission",
-                   new=AsyncMock(return_value=grant)):
+        with patch(
+            "shared.permissions.middleware.get_role_permission", new=AsyncMock(return_value=grant)
+        ):
             with patch("shared.permissions.audit.audit_log", new=AsyncMock()):
                 with pytest.raises(HTTPException) as exc_info:
                     await create_tenant(body=body, user=caller, db=db)
@@ -413,8 +445,9 @@ class TestTenantSlug:
         from schemas.tenant import TenantCreateRequest
         from shared.permissions.store import RolePermissionGrant as PermissionGrant
 
-        body   = TenantCreateRequest(name="North Addis Warehouse", slug=None,
-                                     organisation_type="PRODUCER")
+        body = TenantCreateRequest(
+            name="North Addis Warehouse", slug=None, organisation_type="PRODUCER"
+        )
         caller = _user("SA", tenant_id=None)
 
         db = AsyncMock()
@@ -431,14 +464,15 @@ class TestTenantSlug:
                 return res
             res = MagicMock()
             res.fetchone = MagicMock(return_value=None)
-            res.scalar   = MagicMock(return_value=None)
+            res.scalar = MagicMock(return_value=None)
             return res
 
         db.execute = AsyncMock(side_effect=_execute)
 
         grant = PermissionGrant(role="SA", action_id="tenant:create", grant_type="FULL")
-        with patch("shared.permissions.middleware.get_role_permission",
-                   new=AsyncMock(return_value=grant)):
+        with patch(
+            "shared.permissions.middleware.get_role_permission", new=AsyncMock(return_value=grant)
+        ):
             with patch("shared.permissions.audit.audit_log", new=AsyncMock()):
                 resp = await create_tenant(body=body, user=caller, db=db)
 
@@ -452,9 +486,9 @@ class TestTenantSlug:
 # defaulting TenantCreateRequest.organisation_type to "PRODUCER" and validating
 # it against VALID_ORGANISATION_TYPES in the route handler before any DB call.
 
+
 @pytest.mark.unit
 class TestTenantOrganisationType:
-
     @pytest.mark.asyncio
     async def test_organisation_type_defaults_to_producer(self):
         """Omitting organisation_type defaults to PRODUCER and succeeds (201)."""
@@ -462,8 +496,8 @@ class TestTenantOrganisationType:
         from schemas.tenant import TenantCreateRequest
         from shared.permissions.store import RolePermissionGrant as PermissionGrant
 
-        body   = TenantCreateRequest(name="Defaulted Org Co", slug="defaulted-org-co")
-        assert body.organisation_type == "PRODUCER"   # schema-level default
+        body = TenantCreateRequest(name="Defaulted Org Co", slug="defaulted-org-co")
+        assert body.organisation_type == "PRODUCER"  # schema-level default
         caller = _user("SA", tenant_id=None)
 
         db = AsyncMock()
@@ -479,15 +513,16 @@ class TestTenantOrganisationType:
                 res.fetchone = MagicMock(return_value=_price_row(body.plan_tier))
                 return res
             res = MagicMock()
-            res.fetchone = MagicMock(return_value=None)   # no slug collision
-            res.scalar   = MagicMock(return_value=None)
+            res.fetchone = MagicMock(return_value=None)  # no slug collision
+            res.scalar = MagicMock(return_value=None)
             return res
 
         db.execute = AsyncMock(side_effect=_execute)
 
         grant = PermissionGrant(role="SA", action_id="tenant:create", grant_type="FULL")
-        with patch("shared.permissions.middleware.get_role_permission",
-                   new=AsyncMock(return_value=grant)):
+        with patch(
+            "shared.permissions.middleware.get_role_permission", new=AsyncMock(return_value=grant)
+        ):
             with patch("shared.permissions.audit.audit_log", new=AsyncMock()):
                 resp = await create_tenant(body=body, user=caller, db=db)
 
@@ -501,13 +536,14 @@ class TestTenantOrganisationType:
         from schemas.tenant import TenantCreateRequest
         from shared.permissions.store import RolePermissionGrant as PermissionGrant
 
-        body   = TenantCreateRequest(name="Bad Org Co", organisation_type="INVALID")
+        body = TenantCreateRequest(name="Bad Org Co", organisation_type="INVALID")
         caller = _user("SA", tenant_id=None)
-        db     = AsyncMock()
+        db = AsyncMock()
 
         grant = PermissionGrant(role="SA", action_id="tenant:create", grant_type="FULL")
-        with patch("shared.permissions.middleware.get_role_permission",
-                   new=AsyncMock(return_value=grant)):
+        with patch(
+            "shared.permissions.middleware.get_role_permission", new=AsyncMock(return_value=grant)
+        ):
             with patch("shared.permissions.audit.audit_log", new=AsyncMock()):
                 with pytest.raises(HTTPException) as exc_info:
                     await create_tenant(body=body, user=caller, db=db)

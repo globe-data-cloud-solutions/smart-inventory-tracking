@@ -1,4 +1,5 @@
 """Unit tests for shared.utils.env_guard.assert_safe_environment."""
+
 from __future__ import annotations
 
 import os

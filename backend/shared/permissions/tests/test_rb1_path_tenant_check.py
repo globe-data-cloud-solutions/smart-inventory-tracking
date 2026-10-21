@@ -9,6 +9,7 @@ tenant_id override (e.g. GET .../expiry-settings?tenant_id=<other>), which
 routes already resolve safely via effective_tenant_id() and must keep
 returning 200 for a mismatched override from a non-SA caller, not 403.
 """
+
 from __future__ import annotations
 
 import os
@@ -18,11 +19,11 @@ from uuid import UUID
 
 import pytest
 
-os.environ.setdefault("DATABASE_URL",      "postgresql+asyncpg://test:x@localhost/test")
+os.environ.setdefault("DATABASE_URL", "postgresql+asyncpg://test:x@localhost/test")
 os.environ.setdefault("DATABASE_READ_URL", "postgresql+asyncpg://test:x@localhost/test")
-os.environ.setdefault("JWT_SECRET",        "test-secret")
-os.environ.setdefault("JWT_SECRET_KEY",    "test-secret")
-os.environ.setdefault("ENVIRONMENT",       "local")
+os.environ.setdefault("JWT_SECRET", "test-secret")
+os.environ.setdefault("JWT_SECRET_KEY", "test-secret")
+os.environ.setdefault("ENVIRONMENT", "local")
 
 pytestmark = pytest.mark.asyncio
 
@@ -54,7 +55,8 @@ class TestCheckPermissionTargetTenant:
                 _user("TA", TENANT_A),
                 PERMISSIONS.TENANT_VIEW,
                 resource={
-                    "tenant_id": TENANT_A, "target_tenant_id": TENANT_B,
+                    "tenant_id": TENANT_A,
+                    "target_tenant_id": TENANT_B,
                     "_tenant_id_from_path": True,
                 },
                 db=None,
@@ -71,7 +73,8 @@ class TestCheckPermissionTargetTenant:
                 _user("TA", TENANT_A),
                 PERMISSIONS.TENANT_VIEW,
                 resource={
-                    "tenant_id": TENANT_A, "target_tenant_id": TENANT_A,
+                    "tenant_id": TENANT_A,
+                    "target_tenant_id": TENANT_A,
                     "_tenant_id_from_path": True,
                 },
                 db=None,
@@ -87,7 +90,8 @@ class TestCheckPermissionTargetTenant:
                 _user("SA", None),
                 PERMISSIONS.TENANT_VIEW,
                 resource={
-                    "tenant_id": None, "target_tenant_id": TENANT_B,
+                    "tenant_id": None,
+                    "target_tenant_id": TENANT_B,
                     "_tenant_id_from_path": True,
                 },
                 db=None,
@@ -103,7 +107,8 @@ class TestCheckPermissionTargetTenant:
                 _user("SYS", None),
                 PERMISSIONS.TENANT_VIEW,
                 resource={
-                    "tenant_id": None, "target_tenant_id": TENANT_B,
+                    "tenant_id": None,
+                    "target_tenant_id": TENANT_B,
                     "_tenant_id_from_path": True,
                 },
                 db=None,
@@ -127,7 +132,8 @@ class TestCheckPermissionTargetTenant:
                 _user("TA", TENANT_A),
                 PERMISSIONS.TENANT_VIEW,
                 resource={
-                    "tenant_id": TENANT_A, "target_tenant_id": "tenant-a-slug",
+                    "tenant_id": TENANT_A,
+                    "target_tenant_id": "tenant-a-slug",
                     "_tenant_id_from_path": True,
                 },
                 db=db,
@@ -191,10 +197,15 @@ class TestAuditAttributionDecoupledFromEnforcement:
         async def fake_override_route(tenant_id: Optional[UUID] = None, user=None, db=None):
             return "ok"
 
-        with _FULL_GRANT, patch(
-            "shared.permissions.middleware.audit_log", new=AsyncMock(side_effect=_capture_audit)
+        with (
+            _FULL_GRANT,
+            patch(
+                "shared.permissions.middleware.audit_log", new=AsyncMock(side_effect=_capture_audit)
+            ),
         ):
-            result = await fake_override_route(tenant_id=UUID(TENANT_B), user=_user("SA", None), db=None)
+            result = await fake_override_route(
+                tenant_id=UUID(TENANT_B), user=_user("SA", None), db=None
+            )
 
         assert result == "ok"
         # target_tenant_id must still be set (audit attribution) even though this
@@ -216,8 +227,11 @@ class TestAuditAttributionDecoupledFromEnforcement:
         async def fake_path_route(tenant_id: UUID, user=None, db=None):
             return "ok"
 
-        with _FULL_GRANT, patch(
-            "shared.permissions.middleware.audit_log", new=AsyncMock(side_effect=_capture_audit)
+        with (
+            _FULL_GRANT,
+            patch(
+                "shared.permissions.middleware.audit_log", new=AsyncMock(side_effect=_capture_audit)
+            ),
         ):
             await fake_path_route(tenant_id=UUID(TENANT_A), user=_user("TA", TENANT_A), db=None)
 

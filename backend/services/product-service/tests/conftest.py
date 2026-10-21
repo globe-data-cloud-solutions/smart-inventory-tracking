@@ -3,6 +3,7 @@
 No real DB or network — all infrastructure is mocked.
 Integration tests (@pytest.mark.integration) run in CI against dev AWS RDS.
 """
+
 from __future__ import annotations
 
 import os
@@ -52,16 +53,16 @@ if _product_root in sys.path:
 sys.path.insert(0, _product_root)
 
 # 3. Stub env vars BEFORE any shared module reads os.environ at import time.
-os.environ.setdefault("DATABASE_URL",          "postgresql+asyncpg://test:x@localhost/test")
-os.environ.setdefault("DATABASE_READ_URL",     "postgresql+asyncpg://test:x@localhost/test")
-os.environ.setdefault("CELERY_BROKER_URL",     "redis://localhost:6379/1")
+os.environ.setdefault("DATABASE_URL", "postgresql+asyncpg://test:x@localhost/test")
+os.environ.setdefault("DATABASE_READ_URL", "postgresql+asyncpg://test:x@localhost/test")
+os.environ.setdefault("CELERY_BROKER_URL", "redis://localhost:6379/1")
 os.environ.setdefault("CELERY_RESULT_BACKEND", "redis://localhost:6379/2")
-os.environ.setdefault("JWT_SECRET",            "x" * 64)
+os.environ.setdefault("JWT_SECRET", "x" * 64)
 
 # 4. Import product-service modules while product-service root is first.
-from main import app                            # noqa: E402  — product-service app
+from main import app  # noqa: E402  — product-service app
 from dependencies import get_db_session  # noqa: E402
-from dependencies import get_current_user       # noqa: E402  — product-service version
+from dependencies import get_current_user  # noqa: E402  — product-service version
 
 # Collection-time guard: fail loudly (not with a mystifying 401 at test-execution
 # time) if the eviction/promotion above somehow didn't win — e.g. a future new
@@ -111,9 +112,12 @@ if _product_root in sys.path:
     sys.path.remove(_product_root)
 sys.path.append(_product_root)
 
-from product_test_data import (              # noqa: F401, E402  (re-export for fixture injection; E402 - sys.path/sys.modules setup above must run first)
-    TENANT_A, TENANT_B,
-    TA_USER, SA_USER, WM_USER,
+from product_test_data import (  # noqa: F401, E402  (re-export for fixture injection; E402 - sys.path/sys.modules setup above must run first)
+    TENANT_A,
+    TENANT_B,
+    TA_USER,
+    SA_USER,
+    WM_USER,
     VALID_BODY,
     mock_full_grant,
     _make_mock_db,
@@ -127,11 +131,13 @@ from product_test_data import (              # noqa: F401, E402  (re-export for 
 # in test_products.py would return the wrong object.  product_test_data is a stable
 # intermediate that survives sys.modules restoration.
 import product_test_data as _ptd  # noqa: E402 - sys.path/sys.modules setup above must run first
+
 _ptd.get_db_session = get_db_session  # type: ignore[attr-defined]
 _ptd.get_current_user = get_current_user  # type: ignore[attr-defined]
 
 
 # ── Client fixture ────────────────────────────────────────────────────────────
+
 
 @pytest.fixture
 def product_app():
@@ -145,7 +151,7 @@ def product_app():
 async def client() -> AsyncGenerator[AsyncClient, None]:
     """Test client with DB + user dependencies overridden."""
     db = _make_mock_db()
-    app.dependency_overrides[get_db_session]   = _make_db_override(db)
+    app.dependency_overrides[get_db_session] = _make_db_override(db)
     app.dependency_overrides[get_current_user] = lambda: TA_USER
     try:
         async with AsyncClient(

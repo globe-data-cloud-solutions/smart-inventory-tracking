@@ -23,6 +23,7 @@ Usage:
     set -a; source .env; set +a
     python scripts/smoke_rls_context.py
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -71,7 +72,9 @@ async def _new_session_setting() -> tuple[str | None, int]:
 
 async def main() -> None:
     async with AsyncSessionLocal() as session:
-        tenant_a = str((await session.execute(text("SELECT id FROM tenants LIMIT 1"))).scalar_one())
+        tenant_a = str(
+            (await session.execute(text("SELECT id FROM tenants LIMIT 1"))).scalar_one()
+        )
     user = SimpleNamespace(tenant_id=tenant_a, user_id=str(uuid.uuid4()))
     print(f"tenant A = {tenant_a}")
 
@@ -81,13 +84,17 @@ async def main() -> None:
     one = (await session.execute(text("SELECT 1"))).scalar_one()
     pid = (await session.execute(text("SELECT pg_backend_pid()"))).scalar_one()
     returned = await _finish(gen)
-    print(f"step 1: SELECT 1 -> {one}, pid={pid}, generator returned normally={returned}")
+    print(
+        f"step 1: SELECT 1 -> {one}, pid={pid}, generator returned normally={returned}"
+    )
     _result(one == 1 and returned, "step 1: request committed and returned normally")
 
     # 2. a NEW session must not inherit tenant A
     tid, pid2 = await _new_session_setting()
     print(f"step 2: current_setting('app.current_tenant_id') = {tid!r}, pid={pid2}")
-    _result(tid in (None, ""), "step 2: new session sees NULL/'' after committed request")
+    _result(
+        tid in (None, ""), "step 2: new session sees NULL/'' after committed request"
+    )
 
     # 3. mid-request commit keeps tenant A for the next statement
     gen = get_db_session(user=user)
@@ -96,9 +103,14 @@ async def main() -> None:
     await session.commit()
     row = (await session.execute(_SETTING_SQL)).one()
     returned = await _finish(gen)
-    print(f"step 3: after mid-request commit current_setting = {row.tid!r}, pid={row.pid}, "
-          f"generator returned normally={returned}")
-    _result(row.tid == tenant_a and returned, "step 3: tenant A still set after mid-request commit")
+    print(
+        f"step 3: after mid-request commit current_setting = {row.tid!r}, pid={row.pid}, "
+        f"generator returned normally={returned}"
+    )
+    _result(
+        row.tid == tenant_a and returned,
+        "step 3: tenant A still set after mid-request commit",
+    )
 
     # 4. exception path: the generator rolls back and re-raises
     gen = get_db_session(user=user)
@@ -110,10 +122,19 @@ async def main() -> None:
     except RuntimeError:
         raised = True
     tid, pid4 = await _new_session_setting()
-    print(f"step 4: generator re-raised={raised}; new session current_setting = {tid!r}, pid={pid4}")
-    _result(raised and tid in (None, ""), "step 4: new session sees NULL/'' after failed request")
+    print(
+        f"step 4: generator re-raised={raised}; new session current_setting = {tid!r}, pid={pid4}"
+    )
+    _result(
+        raised and tid in (None, ""),
+        "step 4: new session sees NULL/'' after failed request",
+    )
 
-    print("SMOKE PASS" if not _failures else f"SMOKE FAIL ({len(_failures)} step(s) failed)")
+    print(
+        "SMOKE PASS"
+        if not _failures
+        else f"SMOKE FAIL ({len(_failures)} step(s) failed)"
+    )
     if _failures:
         sys.exit(1)
 

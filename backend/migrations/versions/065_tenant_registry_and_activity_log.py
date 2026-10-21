@@ -8,6 +8,7 @@ Revision ID: 065
 Revises:     064
 Create Date: 2026-06-26
 """
+
 from __future__ import annotations
 
 from alembic import op
@@ -20,8 +21,12 @@ depends_on = None
 
 def upgrade() -> None:
     # 1. Contact / contract columns on tenants
-    op.execute("ALTER TABLE tenants ADD COLUMN IF NOT EXISTS contact_name  VARCHAR(255)")
-    op.execute("ALTER TABLE tenants ADD COLUMN IF NOT EXISTS contact_email VARCHAR(255)")
+    op.execute(
+        "ALTER TABLE tenants ADD COLUMN IF NOT EXISTS contact_name  VARCHAR(255)"
+    )
+    op.execute(
+        "ALTER TABLE tenants ADD COLUMN IF NOT EXISTS contact_email VARCHAR(255)"
+    )
     op.execute("ALTER TABLE tenants ADD COLUMN IF NOT EXISTS contact_phone VARCHAR(50)")
     op.execute("ALTER TABLE tenants ADD COLUMN IF NOT EXISTS contract_start DATE")
     op.execute("ALTER TABLE tenants ADD COLUMN IF NOT EXISTS contract_end   DATE")

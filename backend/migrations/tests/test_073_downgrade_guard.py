@@ -7,6 +7,7 @@ No live database connection: _refuse_if_proration_invoices_exist() is called
 directly with alembic.op.get_bind() mocked to return a fake bind whose
 .execute(...).scalar() answers the PRORATION-row count.
 """
+
 from __future__ import annotations
 
 import importlib.util
@@ -21,7 +22,9 @@ _MODULE_PATH = Path(__file__).resolve().parent.parent / "versions" / "073_prorat
 
 
 def _load_073_module():
-    spec = importlib.util.spec_from_file_location("migration_073_proration", _MODULE_PATH)
+    spec = importlib.util.spec_from_file_location(
+        "migration_073_proration", _MODULE_PATH
+    )
     assert spec is not None and spec.loader is not None
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)

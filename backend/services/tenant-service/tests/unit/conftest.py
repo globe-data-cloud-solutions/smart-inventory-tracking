@@ -22,18 +22,17 @@ Before each test:
      After the flush, fresh imports resolve via sys.path[0] = tenant-service.
 After each test flush again so later services are unaffected.
 """
+
 from __future__ import annotations
 
 import os
 import sys
 import pytest
 
-os.environ.setdefault("JWT_SECRET",     "test-secret-for-unit-tests")
+os.environ.setdefault("JWT_SECRET", "test-secret-for-unit-tests")
 os.environ.setdefault("JWT_SECRET_KEY", "test-secret-for-unit-tests")
 
-_TENANT_SVC_ROOT = os.path.normpath(
-    os.path.join(os.path.dirname(__file__), "..", "..")
-)
+_TENANT_SVC_ROOT = os.path.normpath(os.path.join(os.path.dirname(__file__), "..", ".."))
 
 # Bare-name packages that every service defines — the ones that collide when
 # multiple services' tests run in the same process.
@@ -43,7 +42,8 @@ _SERVICE_PACKAGES = ("routers", "dependencies", "services", "main", "schemas")
 def _flush_service_modules() -> None:
     """Remove all per-service bare-name modules from sys.modules."""
     stale = [
-        k for k in list(sys.modules)
+        k
+        for k in list(sys.modules)
         if any(k == p or k.startswith(p + ".") for p in _SERVICE_PACKAGES)
     ]
     for k in stale:

@@ -2,6 +2,7 @@
 must come from the real caller, not the ALB, once the gateway sits behind one.
 TRUSTED_PROXY_HOPS is read at module import time, so each test reloads the
 module fresh with the env var set beforehand."""
+
 import importlib.util
 import os
 from unittest.mock import AsyncMock, patch

@@ -6,6 +6,7 @@ exactly as a missing id does — get_transfer and transition_transfer alike.
 A same-tenant transfer outside the caller's subtree is left out of the list
 and answers 403 TRANSFER_OUT_OF_SCOPE on detail.
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -18,8 +19,8 @@ from uuid import UUID
 import pytest
 from fastapi import HTTPException
 
-TENANT_A    = "10000000-0000-0000-0000-00000000000a"
-TENANT_B    = "10000000-0000-0000-0000-00000000000b"
+TENANT_A = "10000000-0000-0000-0000-00000000000a"
+TENANT_B = "10000000-0000-0000-0000-00000000000b"
 WAREHOUSE_A = "20000000-0000-0000-0000-000000000001"
 WAREHOUSE_B = "20000000-0000-0000-0000-000000000002"
 TRANSFER_ID = UUID("cccccccc-0000-0000-0000-000000000001")
@@ -36,17 +37,17 @@ class _User:
 
 def _transfer_row(tenant_id: str = TENANT_A) -> MagicMock:
     row = MagicMock()
-    row.id                = TRANSFER_ID
-    row.tenant_id         = tenant_id
-    row.transfer_type     = "PULL"
-    row.status            = "DRAFT"
+    row.id = TRANSFER_ID
+    row.tenant_id = tenant_id
+    row.transfer_type = "PULL"
+    row.status = "DRAFT"
     row.from_warehouse_id = WAREHOUSE_A
-    row.to_warehouse_id   = WAREHOUSE_B
-    row.is_self_approved  = False
-    row.reference_number  = "TR-0001"
+    row.to_warehouse_id = WAREHOUSE_B
+    row.is_self_approved = False
+    row.reference_number = "TR-0001"
     row.from_warehouse_name = "Source"
-    row.to_warehouse_name   = "Destination"
-    row.created_at        = datetime(2026, 9, 1, tzinfo=timezone.utc)
+    row.to_warehouse_name = "Destination"
+    row.created_at = datetime(2026, 9, 1, tzinfo=timezone.utc)
     return row
 
 
@@ -74,7 +75,6 @@ OTHER_TENANT_TA = _User("u-ta-b", TENANT_B, None, None, "TA")
 
 @pytest.mark.unit
 class TestTransferLookupTenantFilter:
-
     async def test_get_transfer_other_tenant_is_404(self) -> None:
         from services.inventory_service import InventoryService
 
@@ -88,7 +88,9 @@ class TestTransferLookupTenantFilter:
 
         with pytest.raises(HTTPException) as exc:
             await InventoryService(_db(_transfer_row())).transition_transfer(
-                OTHER_TENANT_TA, TRANSFER_ID, "PENDING_REVIEW",
+                OTHER_TENANT_TA,
+                TRANSFER_ID,
+                "PENDING_REVIEW",
             )
         assert exc.value.status_code == 404
         assert exc.value.detail == "Transfer not found"
@@ -100,7 +102,8 @@ class TestTransferLookupTenantFilter:
         same_tenant_ta = _User("u-ta-a", TENANT_A, None, None, "TA")
         with pytest.raises(HTTPException) as exc:
             await InventoryService(_db(_transfer_row())).get_transfer(
-                same_tenant_ta, UUID("cccccccc-0000-0000-0000-0000000000ff"),
+                same_tenant_ta,
+                UUID("cccccccc-0000-0000-0000-0000000000ff"),
             )
         assert exc.value.status_code == 404
         assert exc.value.detail == "Transfer not found"
@@ -116,11 +119,11 @@ class TestTransferLookupTenantFilter:
 #   T_CD  WH_C -> WH_D   (outside REGION)
 
 REGION = "30000000-0000-0000-0000-0000000000aa"
-WH_A   = "30000000-0000-0000-0000-00000000000a"
-WH_B   = "30000000-0000-0000-0000-00000000000b"
-WH_C   = "30000000-0000-0000-0000-00000000000c"
-WH_D   = "30000000-0000-0000-0000-00000000000d"
-WH_E   = "30000000-0000-0000-0000-00000000000e"
+WH_A = "30000000-0000-0000-0000-00000000000a"
+WH_B = "30000000-0000-0000-0000-00000000000b"
+WH_C = "30000000-0000-0000-0000-00000000000c"
+WH_D = "30000000-0000-0000-0000-00000000000d"
+WH_E = "30000000-0000-0000-0000-00000000000e"
 
 T_AB = UUID("dddddddd-0000-0000-0000-0000000000ab")
 T_CA = UUID("dddddddd-0000-0000-0000-0000000000ca")
@@ -143,13 +146,22 @@ async def _descendants(db: Any, tenant_id: str, node_id: str) -> set[str]:
 
 def _scoped_row(transfer_id: UUID, from_wh: str, to_wh: str) -> SimpleNamespace:
     return SimpleNamespace(
-        id=transfer_id, transfer_id=transfer_id, tenant_id=TENANT_A,
-        transfer_type="PULL", status="DRAFT",
-        from_warehouse_id=UUID(from_wh), from_warehouse_name=f"name-{from_wh[-2:]}",
-        to_warehouse_id=UUID(to_wh), to_warehouse_name=f"name-{to_wh[-2:]}",
-        created_by="u-creator", created_by_authority_level=4,
-        created_at=_CREATED_AT, updated_at=_CREATED_AT,
-        is_self_approved=False, current_approval_step=1, resolved_approval_steps=None,
+        id=transfer_id,
+        transfer_id=transfer_id,
+        tenant_id=TENANT_A,
+        transfer_type="PULL",
+        status="DRAFT",
+        from_warehouse_id=UUID(from_wh),
+        from_warehouse_name=f"name-{from_wh[-2:]}",
+        to_warehouse_id=UUID(to_wh),
+        to_warehouse_name=f"name-{to_wh[-2:]}",
+        created_by="u-creator",
+        created_by_authority_level=4,
+        created_at=_CREATED_AT,
+        updated_at=_CREATED_AT,
+        is_self_approved=False,
+        current_approval_step=1,
+        resolved_approval_steps=None,
         reference_number=f"TR-{str(transfer_id)[-2:].upper()}",
     )
 
@@ -188,8 +200,10 @@ class _World:
             if "ANY(:subtree)" in sql:
                 sub = set(params["subtree"])
                 rows = [
-                    r for r in rows
-                    if str(r.from_warehouse_id) in sub or str(r.to_warehouse_id) in sub
+                    r
+                    for r in rows
+                    if str(r.from_warehouse_id) in sub
+                    or str(r.to_warehouse_id) in sub
                     or ("jsonb_array_elements" in sql and _names_caller(r, params))
                 ]
             return MagicMock(fetchall=MagicMock(return_value=rows))
@@ -212,23 +226,24 @@ def scoped():
     empty — they have their own files."""
     from services.inventory_service import InventoryService
 
-    with patch("services.transfer_discrepancies.get_descendant_node_ids", new=_descendants), \
-         patch.object(InventoryService, "_transfer_line_items", new=AsyncMock(return_value=[])), \
-         patch("services.transfer_lots.load_allocations", new=AsyncMock(return_value={})), \
-         patch("services.transfer_discrepancies.load_discrepancies",
-               new=AsyncMock(return_value=[])):
+    with (
+        patch("services.transfer_discrepancies.get_descendant_node_ids", new=_descendants),
+        patch.object(InventoryService, "_transfer_line_items", new=AsyncMock(return_value=[])),
+        patch("services.transfer_lots.load_allocations", new=AsyncMock(return_value={})),
+        patch("services.transfer_discrepancies.load_discrepancies", new=AsyncMock(return_value=[])),
+    ):
         yield _World()
 
 
-WM_A      = _User("u-wm-a", TENANT_A, WH_A,   None, "WM")
-WM_E      = _User("u-wm-e", TENANT_A, WH_E,   None, "WM")
-LM_E      = _User("u-lm-e", TENANT_A, WH_E,   None, "LM")
-WM_NONODE = _User("u-wm-0", TENANT_A, None,   None, "WM")
-RT_NONODE = _User("u-rt-0", TENANT_A, None,   None, "RT")
-RM_REGION = _User("u-rm",   TENANT_A, REGION, None, "RM")
-RM_NONODE = _User("u-rm-0", TENANT_A, None,   None, "RM")
-TA_A      = _User("u-ta-a", TENANT_A, None,   None, "TA")
-NM_AT_WH  = _User("u-nm",   TENANT_A, WH_E,   None, "NM")
+WM_A = _User("u-wm-a", TENANT_A, WH_A, None, "WM")
+WM_E = _User("u-wm-e", TENANT_A, WH_E, None, "WM")
+LM_E = _User("u-lm-e", TENANT_A, WH_E, None, "LM")
+WM_NONODE = _User("u-wm-0", TENANT_A, None, None, "WM")
+RT_NONODE = _User("u-rt-0", TENANT_A, None, None, "RT")
+RM_REGION = _User("u-rm", TENANT_A, REGION, None, "RM")
+RM_NONODE = _User("u-rm-0", TENANT_A, None, None, "RM")
+TA_A = _User("u-ta-a", TENANT_A, None, None, "TA")
+NM_AT_WH = _User("u-nm", TENANT_A, WH_E, None, "NM")
 
 
 async def _list_ids(world: _World, user: _User) -> set[UUID]:
@@ -252,7 +267,6 @@ _OUT_OF_SCOPE = (403, {"code": "TRANSFER_OUT_OF_SCOPE"})
 
 @pytest.mark.unit
 class TestTransferListScope:
-
     async def test_wm_sees_transfers_with_either_end_in_its_subtree(self, scoped) -> None:
         assert await _list_ids(scoped, WM_A) == {T_AB, T_CA}
 
@@ -264,7 +278,9 @@ class TestTransferListScope:
 
     @pytest.mark.parametrize("user", [WM_NONODE, RT_NONODE], ids=["WM", "RT"])
     async def test_facility_role_without_node_gets_empty_list_and_no_query(
-        self, scoped, user,
+        self,
+        scoped,
+        user,
     ) -> None:
         assert await _list_ids(scoped, user) == set()
         assert scoped.list_calls == 0
@@ -290,7 +306,6 @@ class TestTransferListScope:
 
 @pytest.mark.unit
 class TestTransferDetailScope:
-
     async def test_wm_gets_transfer_with_from_end_in_subtree(self, scoped) -> None:
         assert (await _get(scoped, WM_A, T_AB)).transfer_id == T_AB
 
@@ -323,13 +338,15 @@ class TestTransferDetailScope:
 
 # ── Transfer detail response fields ──────────────────────────────────────────
 
+
 @pytest.mark.unit
 class TestTransferDetailFields:
-
     async def test_detail_returns_names_and_reference_number(self, scoped) -> None:
         result = await _get(scoped, TA_A, T_CA)
         assert (result.reference_number, result.from_warehouse_name, result.to_warehouse_name) == (
-            "TR-CA", "name-0c", "name-0a",
+            "TR-CA",
+            "name-0c",
+            "name-0a",
         )
 
     async def test_detail_created_at_is_the_row_value(self, scoped) -> None:
@@ -349,10 +366,18 @@ class TestTransferDetailFields:
         from schemas.inventory import TransferOrderResponse
 
         r = TransferOrderResponse(
-            transfer_id=T_AB, transfer_type="PULL", status="DRAFT",
-            from_warehouse_id=UUID(WH_A), to_warehouse_id=UUID(WH_B), created_at=_CREATED_AT,
+            transfer_id=T_AB,
+            transfer_type="PULL",
+            status="DRAFT",
+            from_warehouse_id=UUID(WH_A),
+            to_warehouse_id=UUID(WH_B),
+            created_at=_CREATED_AT,
         )
-        assert (r.reference_number, r.from_warehouse_name, r.to_warehouse_name) == (None, None, None)
+        assert (r.reference_number, r.from_warehouse_name, r.to_warehouse_name) == (
+            None,
+            None,
+            None,
+        )
 
 
 # ── Approvers on a transfer's approval steps keep visibility ─────────────────
@@ -368,12 +393,18 @@ T_USER = UUID("dddddddd-0000-0000-0000-00000000a002")
 T_HOLD = UUID("dddddddd-0000-0000-0000-00000000a003")
 
 
-def _step(node_id: str | None = None, user_id: str | None = None,
-          holders: tuple[str, ...] = ()) -> dict:
+def _step(
+    node_id: str | None = None, user_id: str | None = None, holders: tuple[str, ...] = ()
+) -> dict:
     return {
-        "sequence": 1, "position_title": "Approver", "position_id": None,
-        "node_id": node_id, "assigned_to_user_id": user_id, "assigned_to_name": None,
-        "execution_mode": "any" if holders else "sequential", "status": "pending",
+        "sequence": 1,
+        "position_title": "Approver",
+        "position_id": None,
+        "node_id": node_id,
+        "assigned_to_user_id": user_id,
+        "assigned_to_name": None,
+        "execution_mode": "any" if holders else "sequential",
+        "status": "pending",
         "all_holders": [{"user_id": u, "name": u} for u in holders],
         "holder_count": len(holders),
     }
@@ -397,12 +428,11 @@ def approvals(scoped):
 
 
 APPROVER = _User("u-approver", TENANT_A, WH_E, None, "WM")
-HOLDER   = _User("u-holder",   TENANT_A, WH_E, None, "LM")
+HOLDER = _User("u-holder", TENANT_A, WH_E, None, "LM")
 
 
 @pytest.mark.unit
 class TestApproverTransferScope:
-
     async def test_approver_named_by_step_node_sees_and_gets_it(self, approvals) -> None:
         assert await _list_ids(approvals, WM_E) == {T_NODE}
         assert (await _get(approvals, WM_E, T_NODE)).transfer_id == T_NODE
@@ -446,7 +476,10 @@ class TestApproverTransferScope:
 
         db = approvals.db()
         await InventoryService(db).list_transfers(_User("U-WM-A", TENANT_A, WH_A, None, "WM"))
-        sql, params = str(db.execute.call_args_list[0].args[0]), db.execute.call_args_list[0].args[1]
+        sql, params = (
+            str(db.execute.call_args_list[0].args[0]),
+            db.execute.call_args_list[0].args[1],
+        )
         assert "jsonb_array_elements" in sql
         assert params["step_nodes"] == [WH_A.lower()]
         assert params["uid"] == "u-wm-a"

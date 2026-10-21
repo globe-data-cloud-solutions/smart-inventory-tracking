@@ -14,6 +14,7 @@ Writes a UTF-8-with-BOM CSV (opens correctly in Excel):
 
 All paths are repo-relative.
 """
+
 import argparse
 import csv
 import json

@@ -47,6 +47,7 @@ Revision ID: 072
 Revises:     071
 Create Date: 2026-10-07
 """
+
 from __future__ import annotations
 
 from alembic import op
@@ -131,8 +132,12 @@ def upgrade() -> None:
         "CREATE INDEX idx_addon_prices_current "
         "ON addon_prices (addon_code, billing_period, effective_from DESC)"
     )
-    op.execute("CREATE RULE no_update_addon_prices AS ON UPDATE TO addon_prices DO INSTEAD NOTHING")
-    op.execute("CREATE RULE no_delete_addon_prices AS ON DELETE TO addon_prices DO INSTEAD NOTHING")
+    op.execute(
+        "CREATE RULE no_update_addon_prices AS ON UPDATE TO addon_prices DO INSTEAD NOTHING"
+    )
+    op.execute(
+        "CREATE RULE no_delete_addon_prices AS ON DELETE TO addon_prices DO INSTEAD NOTHING"
+    )
     # No seed prices — SA sets them via POST /platform/addons/{code}/prices (S10-3).
 
     # ── B2) payment_line_items grows a second, distinct FK column for ADDON
@@ -182,7 +187,9 @@ def upgrade() -> None:
         "CREATE UNIQUE INDEX uq_tenant_addons_live ON tenant_addons (tenant_id, addon_code) "
         "WHERE status = 'ACTIVE'"
     )
-    op.execute("CREATE INDEX idx_tenant_addons_tenant_status ON tenant_addons (tenant_id, status)")
+    op.execute(
+        "CREATE INDEX idx_tenant_addons_tenant_status ON tenant_addons (tenant_id, status)"
+    )
     op.execute("ALTER TABLE tenant_addons ENABLE ROW LEVEL SECURITY")
     op.execute(
         "CREATE POLICY tenant_isolation ON tenant_addons "
@@ -270,7 +277,9 @@ def downgrade() -> None:
     # triggers on a downgrade run after the feature has seen real use.
     _refuse_if_addon_lines_exist()
 
-    op.execute("ALTER TABLE payment_line_items DROP CONSTRAINT IF EXISTS chk_line_item_price_ref")
+    op.execute(
+        "ALTER TABLE payment_line_items DROP CONSTRAINT IF EXISTS chk_line_item_price_ref"
+    )
     op.execute("ALTER TABLE payment_line_items DROP COLUMN IF EXISTS addon_price_id")
 
     op.execute(

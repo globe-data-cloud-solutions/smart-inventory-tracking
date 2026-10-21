@@ -8,6 +8,7 @@ In unit tests these functions are overridden via app.dependency_overrides.
 In production the API gateway validates the token before proxying, but
 the service decodes it again to extract claims for RBAC / ABAC checks.
 """
+
 from __future__ import annotations
 
 import os

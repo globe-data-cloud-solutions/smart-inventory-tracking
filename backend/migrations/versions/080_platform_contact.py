@@ -11,6 +11,7 @@ Revision ID: 080
 Revises:     079
 Create Date: 2026-10-11
 """
+
 from __future__ import annotations
 
 from alembic import op

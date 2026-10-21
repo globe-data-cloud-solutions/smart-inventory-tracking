@@ -178,15 +178,19 @@ async def _apply_product_override_flag(
     """
     table = "transfer_orders" if resource_type == "transfer" else "adjustment_orders"
     await db.execute(
-        text(f"UPDATE {table} SET product_override_applied = TRUE, updated_at = now() "
-             f"WHERE id = :id AND tenant_id = :tid"),
+        text(
+            f"UPDATE {table} SET product_override_applied = TRUE, updated_at = now() "
+            f"WHERE id = :id AND tenant_id = :tid"
+        ),
         {"id": str(resource_id), "tid": str(user.tenant_id)},
     )
 
-    product_row = (await db.execute(
-        text("SELECT name FROM products WHERE id = :pid AND tenant_id = :tid"),
-        {"pid": override["product_id"], "tid": str(user.tenant_id)},
-    )).fetchone()
+    product_row = (
+        await db.execute(
+            text("SELECT name FROM products WHERE id = :pid AND tenant_id = :tid"),
+            {"pid": override["product_id"], "tid": str(user.tenant_id)},
+        )
+    ).fetchone()
 
     await audit_log(
         user=user,
@@ -208,9 +212,9 @@ async def _apply_product_override_flag(
 
 
 async def _override_resolution_steps(
-    session:         AsyncSession,
-    tenant_id:       str,
-    override:        dict,
+    session: AsyncSession,
+    tenant_id: str,
+    override: dict,
     creator_user_id: Optional[str] = None,
 ) -> list[dict]:
     """Build a single-step resolved_approval_steps list from a product override.
@@ -232,16 +236,18 @@ async def _override_resolution_steps(
     from services.approval_service import _escalate_vacant, _find_tenant_ta
 
     approver_user_id = override.get("approver_user_id")
-    approver_name    = override.get("approver_name")
-    position_id      = override.get("approver_position_id")
-    escalated        = False
+    approver_name = override.get("approver_name")
+    position_id = override.get("approver_position_id")
+    escalated = False
 
     needs_escalation = approver_user_id is None or (
         creator_user_id is not None and str(approver_user_id) == str(creator_user_id)
     )
     if needs_escalation:
         approver_user_id, approver_name, escalated = await _escalate_vacant(
-            session, tenant_id, position_id,
+            session,
+            tenant_id,
+            position_id,
         )
         if not approver_user_id or (
             creator_user_id is not None and str(approver_user_id) == str(creator_user_id)
@@ -250,28 +256,30 @@ async def _override_resolution_steps(
             escalated = True
 
     is_vacant = approver_user_id is None
-    return [{
-        "sequence":            1,
-        "position_title":      override.get("approver_title") or "Designated Approver",
-        "position_id":         position_id,
-        "node_id":             None,
-        "assigned_to_user_id": approver_user_id,
-        "assigned_to_name":    approver_name,
-        "execution_mode":      "sequential",
-        "sla_hours":           None,
-        "is_vacant":           is_vacant,
-        "escalated":           escalated,
-        "status":              "pending",
-        "all_holders":         [],
-        "holder_count":        0 if is_vacant else 1,
-    }]
+    return [
+        {
+            "sequence": 1,
+            "position_title": override.get("approver_title") or "Designated Approver",
+            "position_id": position_id,
+            "node_id": None,
+            "assigned_to_user_id": approver_user_id,
+            "assigned_to_name": approver_name,
+            "execution_mode": "sequential",
+            "sla_hours": None,
+            "is_vacant": is_vacant,
+            "escalated": escalated,
+            "status": "pending",
+            "all_holders": [],
+            "holder_count": 0 if is_vacant else 1,
+        }
+    ]
 
 
 async def _check_can_approve(
-    row:          Any,
-    user:         Any,
+    row: Any,
+    user: Any,
     caller_level: int,
-    decision:     Any,  # resolve_approval() result — used for simple-mode fallback gate
+    decision: Any,  # resolve_approval() result — used for simple-mode fallback gate
 ) -> None:
     """Raise HTTP 403 if the user cannot approve this transfer.
 
@@ -295,12 +303,12 @@ async def _check_can_approve(
             resolved_steps = _json.loads(resolved_steps)
         steps: list = resolved_steps if isinstance(resolved_steps, list) else []
         if steps:
-            cur_idx  = max(0, (getattr(row, "current_approval_step", 1) or 1) - 1)
+            cur_idx = max(0, (getattr(row, "current_approval_step", 1) or 1) - 1)
             cur_step = steps[cur_idx] if cur_idx < len(steps) else steps[-1]
 
-            exec_mode    = (cur_step.get("execution_mode") or "sequential").lower()
+            exec_mode = (cur_step.get("execution_mode") or "sequential").lower()
             assigned_uid = cur_step.get("assigned_to_user_id")
-            all_holders  = cur_step.get("all_holders") or []
+            all_holders = cur_step.get("all_holders") or []
             step_escalated = cur_step.get("escalated", False)
 
             # Escalated step override: when a step was escalated to TA because the
@@ -309,7 +317,7 @@ async def _check_can_approve(
             # user_id differs from the stored assigned_to_user_id.
             if step_escalated:
                 caller_role = getattr(user, "role", "")
-                is_own      = str(getattr(row, "created_by", "")) == caller_uid
+                is_own = str(getattr(row, "created_by", "")) == caller_uid
                 if caller_role == "TA" and not is_own:
                     return  # TA allowed on escalated steps
 
@@ -327,8 +335,8 @@ async def _check_can_approve(
                     raise HTTPException(
                         status_code=422,
                         detail={
-                            "code":           "NO_APPROVER_FOUND",
-                            "message":        (
+                            "code": "NO_APPROVER_FOUND",
+                            "message": (
                                 f"No active holder found for "
                                 f"'{cur_step.get('position_title', 'the designated approver')}' "
                                 "in the approval chain. Contact your Tenant Admin to assign "
@@ -342,8 +350,8 @@ async def _check_can_approve(
                     raise HTTPException(
                         status_code=403,
                         detail={
-                            "code":     "NOT_ASSIGNED_APPROVER",
-                            "message":  (
+                            "code": "NOT_ASSIGNED_APPROVER",
+                            "message": (
                                 f"Only an active '{cur_step.get('position_title', 'designated')}' "
                                 "can approve this step."
                             ),
@@ -357,14 +365,14 @@ async def _check_can_approve(
                 raise HTTPException(
                     status_code=403,
                     detail={
-                        "code":        "NOT_ASSIGNED_APPROVER",
-                        "message":     (
+                        "code": "NOT_ASSIGNED_APPROVER",
+                        "message": (
                             f"This transfer is assigned to "
                             f"{cur_step.get('assigned_to_name', 'another approver')}. "
                             "You are not the assigned approver."
                         ),
                         "assigned_to": cur_step.get("assigned_to_name"),
-                        "position":    cur_step.get("position_title"),
+                        "position": cur_step.get("position_title"),
                     },
                 )
             return  # caller matches assigned approver (or no specific assignee)
@@ -374,10 +382,10 @@ async def _check_can_approve(
         raise HTTPException(
             status_code=403,
             detail={
-                "code":          "INSUFFICIENT_APPROVAL_AUTHORITY",
-                "required":      decision.required_authority_level,
+                "code": "INSUFFICIENT_APPROVAL_AUTHORITY",
+                "required": decision.required_authority_level,
                 "required_role": decision.required_role_display,
-                "reason":        decision.reason,
+                "reason": decision.reason,
             },
         )
 
@@ -413,13 +421,15 @@ class InventoryService:
                 detail={"code": "INVALID_SOURCE", "source": body.source},
             )
 
-        product_row = (await self.db.execute(
-            text(
-                "SELECT batch_tracking, expiry_tracking FROM products "
-                "WHERE id = :pid AND tenant_id = :tid"
-            ),
-            {"pid": str(body.product_id), "tid": str(user.tenant_id)},
-        )).fetchone()
+        product_row = (
+            await self.db.execute(
+                text(
+                    "SELECT batch_tracking, expiry_tracking FROM products "
+                    "WHERE id = :pid AND tenant_id = :tid"
+                ),
+                {"pid": str(body.product_id), "tid": str(user.tenant_id)},
+            )
+        ).fetchone()
         if product_row is None:
             raise HTTPException(status_code=404, detail={"code": "PRODUCT_NOT_FOUND"})
 
@@ -489,15 +499,19 @@ class InventoryService:
 
     async def _issued_rows(self, tenant_id: str, issue_ref: str) -> list[Any]:
         """ISSUE ledger rows already posted for this issue_ref, ordered by lot_id."""
-        return list((await self.db.execute(
-            text(
-                "SELECT id, lot_id, lot_number, expiry_date, quantity "
-                "FROM inventory_transactions "
-                "WHERE tenant_id = :tid AND type = 'ISSUE' AND reference_id = :ref "
-                "ORDER BY lot_id"
-            ),
-            {"tid": tenant_id, "ref": issue_ref},
-        )).fetchall())
+        return list(
+            (
+                await self.db.execute(
+                    text(
+                        "SELECT id, lot_id, lot_number, expiry_date, quantity "
+                        "FROM inventory_transactions "
+                        "WHERE tenant_id = :tid AND type = 'ISSUE' AND reference_id = :ref "
+                        "ORDER BY lot_id"
+                    ),
+                    {"tid": tenant_id, "ref": issue_ref},
+                )
+            ).fetchall()
+        )
 
     async def _issue_replay(
         self, tenant_id: str, issue_ref: str, body: IssueStockRequest, rows: list[Any]
@@ -505,14 +519,16 @@ class InventoryService:
         """The response of an Issue that was already posted — nothing is written."""
         from datetime import datetime, timezone
 
-        override_row = (await self.db.execute(
-            text(
-                "SELECT id FROM lot_allocation_overrides "
-                "WHERE tenant_id = :tid AND movement_type = 'ISSUE' AND reference_id = :ref "
-                "LIMIT 1"
-            ),
-            {"tid": tenant_id, "ref": issue_ref},
-        )).fetchone()
+        override_row = (
+            await self.db.execute(
+                text(
+                    "SELECT id FROM lot_allocation_overrides "
+                    "WHERE tenant_id = :tid AND movement_type = 'ISSUE' AND reference_id = :ref "
+                    "LIMIT 1"
+                ),
+                {"tid": tenant_id, "ref": issue_ref},
+            )
+        ).fetchone()
         lots = [
             IssuedLot(
                 lot_id=r.lot_id,
@@ -586,7 +602,7 @@ class InventoryService:
                     transaction_type="ISSUE",
                     product_id=product_id,
                     warehouse_id=warehouse_id,
-                    quantity=-qty,   # always a deduction
+                    quantity=-qty,  # always a deduction
                     performed_by=user_id,
                     idempotency_key=body.idempotency_key,
                 )
@@ -595,13 +611,15 @@ class InventoryService:
                 # a batch replay does. A key used by anything else stays a 409.
                 if exc.status_code != 409:
                     raise
-                original = (await self.db.execute(
-                    text(
-                        "SELECT id, quantity FROM inventory_transactions "
-                        "WHERE tenant_id = :tid AND type = 'ISSUE' AND idempotency_key = :key"
-                    ),
-                    {"tid": tenant_id, "key": body.idempotency_key},
-                )).fetchone()
+                original = (
+                    await self.db.execute(
+                        text(
+                            "SELECT id, quantity FROM inventory_transactions "
+                            "WHERE tenant_id = :tid AND type = 'ISSUE' AND idempotency_key = :key"
+                        ),
+                        {"tid": tenant_id, "key": body.idempotency_key},
+                    )
+                ).fetchone()
                 if original is None:
                     raise
                 return IssueStockResponse(
@@ -622,9 +640,7 @@ class InventoryService:
             )
 
         # Stable per request: every lot row of this Issue carries it as reference_id.
-        issue_ref = str(
-            uuid.uuid5(uuid.NAMESPACE_URL, f"issue:{tenant_id}:{body.idempotency_key}")
-        )
+        issue_ref = str(uuid.uuid5(uuid.NAMESPACE_URL, f"issue:{tenant_id}:{body.idempotency_key}"))
 
         # Replay check first — an Issue already posted is returned as it was.
         posted = await self._issued_rows(tenant_id, issue_ref)
@@ -664,7 +680,10 @@ class InventoryService:
                         self.db, tenant_id, product_id, warehouse_id, lock=False
                     )
                     exc.expired_qty = sum(  # type: ignore[attr-defined]
-                        (lot.quantity for lot in plan_allocation(lots, qty, strategy).expired_skipped),
+                        (
+                            lot.quantity
+                            for lot in plan_allocation(lots, qty, strategy).expired_skipped
+                        ),
                         Decimal("0"),
                     )
                     raise
@@ -698,28 +717,28 @@ class InventoryService:
                         reason=body.override_reason,
                     )
                 # The lots posted are the user's chosen lots, not the plan.
-                allocs = await transfer_lots._chosen_allocs(
-                    self.db, tenant_id, product_id, chosen
-                )
+                allocs = await transfer_lots._chosen_allocs(self.db, tenant_id, product_id, chosen)
         except (DispatchError, InsufficientStockError) as e:
             raise transfer_lots.http_from_engine(e) from e
 
         tx_ids: list[str] = []
-        for alloc in allocs:   # sorted by lot_id
-            tx_ids.append(await record_transaction(
-                self.db,
-                tenant_id=tenant_id,
-                transaction_type="ISSUE",
-                product_id=product_id,
-                warehouse_id=warehouse_id,
-                quantity=-alloc.quantity,   # always a deduction
-                performed_by=user_id,
-                idempotency_key=f"{body.idempotency_key}:lot:{alloc.lot_id}",
-                reference_id=issue_ref,
-                lot_id=alloc.lot_id,
-                lot_number=alloc.lot_number,
-                expiry_date=alloc.expiry_date,
-            ))
+        for alloc in allocs:  # sorted by lot_id
+            tx_ids.append(
+                await record_transaction(
+                    self.db,
+                    tenant_id=tenant_id,
+                    transaction_type="ISSUE",
+                    product_id=product_id,
+                    warehouse_id=warehouse_id,
+                    quantity=-alloc.quantity,  # always a deduction
+                    performed_by=user_id,
+                    idempotency_key=f"{body.idempotency_key}:lot:{alloc.lot_id}",
+                    reference_id=issue_ref,
+                    lot_id=alloc.lot_id,
+                    lot_number=alloc.lot_number,
+                    expiry_date=alloc.expiry_date,
+                )
+            )
 
         return IssueStockResponse(
             transaction_id=UUID(tx_ids[0]),
@@ -751,9 +770,7 @@ class InventoryService:
         idempotency and outbox atomicity.
         """
         quantity = (
-            -abs(body.quantity)
-            if body.reason_code in _FORCE_NEGATIVE_REASONS
-            else body.quantity
+            -abs(body.quantity) if body.reason_code in _FORCE_NEGATIVE_REASONS else body.quantity
         )
 
         tx_id = await record_transaction(
@@ -783,6 +800,7 @@ class InventoryService:
         )
 
         from datetime import datetime, timezone
+
         return AdjustStockResponse(
             transaction_id=UUID(tx_id),
             product_id=body.product_id,
@@ -801,14 +819,10 @@ class InventoryService:
         Calls record_transaction() — the only permitted path for balance mutations.
         """
         quantity = (
-            -abs(body.quantity)
-            if body.reason_code in _FORCE_NEGATIVE_REASONS
-            else body.quantity
+            -abs(body.quantity) if body.reason_code in _FORCE_NEGATIVE_REASONS else body.quantity
         )
 
-        lot_id, lot_number, expiry_date = await self._adjustment_lot_for_post(
-            user, adjustment_id
-        )
+        lot_id, lot_number, expiry_date = await self._adjustment_lot_for_post(user, adjustment_id)
 
         tx_id = await record_transaction(
             self.db,
@@ -845,13 +859,13 @@ class InventoryService:
                 delta=float(quantity),
             ),
             idempotency_key=(
-                f"{body.idempotency_key}:adjustment-applied"
-                if body.idempotency_key else None
+                f"{body.idempotency_key}:adjustment-applied" if body.idempotency_key else None
             ),
         )
 
         await audit_log(
-            user, "adjustment:approve",
+            user,
+            "adjustment:approve",
             {
                 "resource_type": "adjustment",
                 "resource_id": str(adjustment_id),
@@ -867,6 +881,7 @@ class InventoryService:
         )
 
         from datetime import datetime, timezone
+
         return AdjustmentResponse(
             adjustment_id=adjustment_id,
             status="POSTED",
@@ -903,46 +918,58 @@ class InventoryService:
         )
         return {str(r[0]) for r in rows.fetchall()}
 
-    async def create_transfer(
-        self, user: Any, body: TransferOrderRequest
-    ) -> TransferOrderResponse:
+    async def create_transfer(self, user: Any, body: TransferOrderRequest) -> TransferOrderResponse:
         from fastapi import HTTPException
 
         # Reject inactive (deactivated) warehouses on either side — otherwise a
         # transfer can be created against a node that has been closed/deactivated,
         # defeating the deactivation feature's purpose.
         for side, wid in (("from", body.from_warehouse_id), ("to", body.to_warehouse_id)):
-            node_row = (await self.db.execute(
-                text("SELECT is_active FROM organization_node WHERE id = :nid AND tenant_id = :tid"),
-                {"nid": str(wid), "tid": str(user.tenant_id)},
-            )).fetchone()
+            node_row = (
+                await self.db.execute(
+                    text(
+                        "SELECT is_active FROM organization_node WHERE id = :nid AND tenant_id = :tid"
+                    ),
+                    {"nid": str(wid), "tid": str(user.tenant_id)},
+                )
+            ).fetchone()
             if node_row is not None and not node_row.is_active:
                 raise HTTPException(
                     status_code=422,
                     detail={
                         "code": "NODE_INACTIVE",
                         "message": f"Cannot create transfer — the {side} warehouse is inactive. "
-                                   "Reactivate it first or choose a different warehouse.",
+                        "Reactivate it first or choose a different warehouse.",
                     },
                 )
 
         # Validate factory-specific products before any INSERT.
         for line in body.lines:
-            product_row = (await self.db.execute(
-                text("SELECT sku, source_factory_id FROM products WHERE id = :pid AND tenant_id = :tid"),
-                {"pid": str(line.product_id), "tid": str(user.tenant_id)},
-            )).fetchone()
+            product_row = (
+                await self.db.execute(
+                    text(
+                        "SELECT sku, source_factory_id FROM products WHERE id = :pid AND tenant_id = :tid"
+                    ),
+                    {"pid": str(line.product_id), "tid": str(user.tenant_id)},
+                )
+            ).fetchone()
 
             if product_row and product_row.source_factory_id is not None:
                 subtree = await self._get_factory_subtree(
                     str(user.tenant_id), str(product_row.source_factory_id)
                 )
                 if str(body.from_warehouse_id) not in subtree:
-                    factory_row = (await self.db.execute(
-                        text("SELECT name FROM organization_node WHERE id = :fid AND tenant_id = :tid"),
-                        {"fid": str(product_row.source_factory_id), "tid": str(user.tenant_id)},
-                    )).fetchone()
-                    factory_name = factory_row.name if factory_row else str(product_row.source_factory_id)
+                    factory_row = (
+                        await self.db.execute(
+                            text(
+                                "SELECT name FROM organization_node WHERE id = :fid AND tenant_id = :tid"
+                            ),
+                            {"fid": str(product_row.source_factory_id), "tid": str(user.tenant_id)},
+                        )
+                    ).fetchone()
+                    factory_name = (
+                        factory_row.name if factory_row else str(product_row.source_factory_id)
+                    )
                     raise HTTPException(
                         status_code=422,
                         detail={
@@ -953,23 +980,31 @@ class InventoryService:
 
         transfer_id = uuid.uuid4()
         from datetime import datetime, timezone
+
         now = datetime.now(timezone.utc)
 
         # ── Resolve transfer_type_config (optional — allows backward compat) ──
-        config_id: str | None = str(body.transfer_type_config_id) if body.transfer_type_config_id else None
+        config_id: str | None = (
+            str(body.transfer_type_config_id) if body.transfer_type_config_id else None
+        )
 
         if config_id is None:
             # Auto-resolve by underlying_type so new tenants get config linkage automatically
-            cfg_row = (await self.db.execute(
-                text("SELECT id FROM transfer_type_config WHERE underlying_type = :tt AND tenant_id = :tid AND is_active = true"),
-                {"tt": body.transfer_type, "tid": str(user.tenant_id)},
-            )).fetchone()
+            cfg_row = (
+                await self.db.execute(
+                    text(
+                        "SELECT id FROM transfer_type_config WHERE underlying_type = :tt AND tenant_id = :tid AND is_active = true"
+                    ),
+                    {"tt": body.transfer_type, "tid": str(user.tenant_id)},
+                )
+            ).fetchone()
             if cfg_row:
                 config_id = str(cfg_row.id)
 
         # ── Validate level permissions if config is present ───────────────────
         if config_id:
             from fastapi import HTTPException as _HTTPException
+
             # Source node level — check can_initiate
             # Initiator is the requesting side:
             #   PULL:   destination (to_warehouse_id) requests stock from source
@@ -980,40 +1015,56 @@ class InventoryService:
                 if body.transfer_type in ("PULL", "SISTER")
                 else str(body.from_warehouse_id)
             )
-            initiator_node = (await self.db.execute(
-                text("SELECT hierarchy_level FROM organization_node WHERE id = :nid AND tenant_id = :tid"),
-                {"nid": initiator_node_id, "tid": str(user.tenant_id)},
-            )).fetchone()
+            initiator_node = (
+                await self.db.execute(
+                    text(
+                        "SELECT hierarchy_level FROM organization_node WHERE id = :nid AND tenant_id = :tid"
+                    ),
+                    {"nid": initiator_node_id, "tid": str(user.tenant_id)},
+                )
+            ).fetchone()
             if initiator_node:
-                init_perm = (await self.db.execute(
-                    text("SELECT can_initiate FROM transfer_type_level_permissions "
-                         "WHERE transfer_type_config_id = :cid AND level_number = :ln"),
-                    {"cid": config_id, "ln": initiator_node.hierarchy_level},
-                )).fetchone()
+                init_perm = (
+                    await self.db.execute(
+                        text(
+                            "SELECT can_initiate FROM transfer_type_level_permissions "
+                            "WHERE transfer_type_config_id = :cid AND level_number = :ln"
+                        ),
+                        {"cid": config_id, "ln": initiator_node.hierarchy_level},
+                    )
+                ).fetchone()
                 if init_perm is not None and not init_perm.can_initiate:
                     raise _HTTPException(
                         status_code=422,
                         detail={
-                            "code":    "LEVEL_CANNOT_INITIATE",
+                            "code": "LEVEL_CANNOT_INITIATE",
                             "message": f"Level {initiator_node.hierarchy_level} nodes cannot initiate this transfer type.",
                         },
                     )
             # Destination node level — check can_receive
-            dst_node = (await self.db.execute(
-                text("SELECT hierarchy_level FROM organization_node WHERE id = :nid AND tenant_id = :tid"),
-                {"nid": str(body.to_warehouse_id), "tid": str(user.tenant_id)},
-            )).fetchone()
+            dst_node = (
+                await self.db.execute(
+                    text(
+                        "SELECT hierarchy_level FROM organization_node WHERE id = :nid AND tenant_id = :tid"
+                    ),
+                    {"nid": str(body.to_warehouse_id), "tid": str(user.tenant_id)},
+                )
+            ).fetchone()
             if dst_node:
-                dst_perm = (await self.db.execute(
-                    text("SELECT can_receive FROM transfer_type_level_permissions "
-                         "WHERE transfer_type_config_id = :cid AND level_number = :ln"),
-                    {"cid": config_id, "ln": dst_node.hierarchy_level},
-                )).fetchone()
+                dst_perm = (
+                    await self.db.execute(
+                        text(
+                            "SELECT can_receive FROM transfer_type_level_permissions "
+                            "WHERE transfer_type_config_id = :cid AND level_number = :ln"
+                        ),
+                        {"cid": config_id, "ln": dst_node.hierarchy_level},
+                    )
+                ).fetchone()
                 if dst_perm is not None and not dst_perm.can_receive:
                     raise _HTTPException(
                         status_code=422,
                         detail={
-                            "code":    "LEVEL_CANNOT_RECEIVE",
+                            "code": "LEVEL_CANNOT_RECEIVE",
                             "message": f"Level {dst_node.hierarchy_level} nodes cannot receive this transfer type.",
                         },
                     )
@@ -1026,41 +1077,46 @@ class InventoryService:
         # APPROVED/ISSUED/IN_TRANSIT are excluded: on_hand already reflects the
         # APPROVED deduction, so counting them again would double-subtract.
         from fastapi import HTTPException as _HTTPEx2
+
         for line in body.lines:
-            oh_row = (await self.db.execute(
-                text(
-                    "SELECT COALESCE(quantity, 0) AS qty "
-                    "FROM inventory_balances "
-                    "WHERE tenant_id = :tid AND product_id = :pid "
-                    "  AND warehouse_id = :wid AND lot_number IS NULL"
-                ),
-                {
-                    "tid": str(user.tenant_id),
-                    "pid": str(line.product_id),
-                    "wid": str(body.from_warehouse_id),
-                },
-            )).fetchone()
+            oh_row = (
+                await self.db.execute(
+                    text(
+                        "SELECT COALESCE(quantity, 0) AS qty "
+                        "FROM inventory_balances "
+                        "WHERE tenant_id = :tid AND product_id = :pid "
+                        "  AND warehouse_id = :wid AND lot_number IS NULL"
+                    ),
+                    {
+                        "tid": str(user.tenant_id),
+                        "pid": str(line.product_id),
+                        "wid": str(body.from_warehouse_id),
+                    },
+                )
+            ).fetchone()
             on_hand = Decimal(str(oh_row.qty)) if oh_row else Decimal("0")
 
-            pending_row = (await self.db.execute(
-                text(
-                    "SELECT COALESCE(SUM(tol.quantity), 0) AS pending "
-                    "FROM transfer_order_lines tol "
-                    "JOIN transfer_orders to_ ON to_.id = tol.transfer_order_id "
-                    "WHERE to_.from_warehouse_id = :wid "
-                    "  AND tol.product_id = :pid "
-                    "  AND to_.tenant_id = :tid "
-                    "  AND to_.status IN ("
-                    "    'PENDING_REVIEW','PENDING_APPROVAL',"
-                    "    'PENDING_SOURCE_CONFIRM','PENDING_DEST_CONFIRM'"
-                    "  )"
-                ),
-                {
-                    "tid": str(user.tenant_id),
-                    "pid": str(line.product_id),
-                    "wid": str(body.from_warehouse_id),
-                },
-            )).fetchone()
+            pending_row = (
+                await self.db.execute(
+                    text(
+                        "SELECT COALESCE(SUM(tol.quantity), 0) AS pending "
+                        "FROM transfer_order_lines tol "
+                        "JOIN transfer_orders to_ ON to_.id = tol.transfer_order_id "
+                        "WHERE to_.from_warehouse_id = :wid "
+                        "  AND tol.product_id = :pid "
+                        "  AND to_.tenant_id = :tid "
+                        "  AND to_.status IN ("
+                        "    'PENDING_REVIEW','PENDING_APPROVAL',"
+                        "    'PENDING_SOURCE_CONFIRM','PENDING_DEST_CONFIRM'"
+                        "  )"
+                    ),
+                    {
+                        "tid": str(user.tenant_id),
+                        "pid": str(line.product_id),
+                        "wid": str(body.from_warehouse_id),
+                    },
+                )
+            ).fetchone()
             pending_out = Decimal(str(pending_row.pending)) if pending_row else Decimal("0")
 
             available = on_hand - pending_out
@@ -1068,11 +1124,11 @@ class InventoryService:
                 raise _HTTPEx2(
                     status_code=422,
                     detail={
-                        "code":         "INSUFFICIENT_STOCK",
-                        "product_id":   str(line.product_id),
+                        "code": "INSUFFICIENT_STOCK",
+                        "product_id": str(line.product_id),
                         "warehouse_id": str(body.from_warehouse_id),
-                        "available":    float(available),
-                        "requested":    float(line.quantity),
+                        "available": float(available),
+                        "requested": float(line.quantity),
                         "message": (
                             f"Insufficient stock. "
                             f"Available: {available}, Requested: {line.quantity}"
@@ -1083,10 +1139,12 @@ class InventoryService:
         # ── Calculate total_value from product unit_prices ────────────────────
         total_value: Decimal | None = None
         for line in body.lines:
-            price_row = (await self.db.execute(
-                text("SELECT unit_price FROM products WHERE id = :pid AND tenant_id = :tid"),
-                {"pid": str(line.product_id), "tid": str(user.tenant_id)},
-            )).fetchone()
+            price_row = (
+                await self.db.execute(
+                    text("SELECT unit_price FROM products WHERE id = :pid AND tenant_id = :tid"),
+                    {"pid": str(line.product_id), "tid": str(user.tenant_id)},
+                )
+            ).fetchone()
             if price_row and price_row.unit_price is not None:
                 line_value = Decimal(str(price_row.unit_price)) * line.quantity
                 total_value = (total_value or Decimal("0")) + line_value
@@ -1132,6 +1190,7 @@ class InventoryService:
             )
 
         import uuid as _uuid
+
         return TransferOrderResponse(
             transfer_id=transfer_id,
             transfer_type=body.transfer_type,
@@ -1161,6 +1220,7 @@ class InventoryService:
         row = result.fetchone()
         if not row:
             from fastapi import HTTPException
+
             raise HTTPException(status_code=404, detail="Transfer not found")
 
         transfer_type = getattr(row, "transfer_type", "PULL")
@@ -1168,6 +1228,7 @@ class InventoryService:
             validate_transition(transfer_type, row.status, next_state)
         except InvalidStateTransitionError as exc:
             from fastapi import HTTPException
+
             raise HTTPException(
                 status_code=422,
                 detail={"code": "INVALID_STATE_TRANSITION", "detail": str(exc)},
@@ -1176,6 +1237,7 @@ class InventoryService:
         # Lots are chosen only on the call that posts TRANSFER_OUT (final approval).
         if lot_selections and next_state != "APPROVED":
             from fastapi import HTTPException
+
             raise HTTPException(status_code=422, detail={"code": "LOT_SELECTION_NOT_ALLOWED"})
 
         _lines_query = text(
@@ -1205,11 +1267,20 @@ class InventoryService:
             # position will be enforced when normal routing is resolved at
             # PENDING_APPROVAL.
             _product_override_pull = await _resolve_product_override(
-                self.db, str(user.tenant_id), lines, transfer_type, total_qty, total_value_pull,
+                self.db,
+                str(user.tenant_id),
+                lines,
+                transfer_type,
+                total_qty,
+                total_value_pull,
             )
             if _product_override_pull is not None:
                 await _apply_product_override_flag(
-                    self.db, user, "transfer", transfer_id, _product_override_pull,
+                    self.db,
+                    user,
+                    "transfer",
+                    transfer_id,
+                    _product_override_pull,
                 )
                 _self_approval_policy_pull = None
             else:
@@ -1270,9 +1341,11 @@ class InventoryService:
                             "level_number": getattr(user, "level_number", None),
                             "threshold_type": _self_approval_policy_pull.threshold_type,
                             "qty_limit": str(_self_approval_policy_pull.qty_limit)
-                            if _self_approval_policy_pull.qty_limit is not None else None,
+                            if _self_approval_policy_pull.qty_limit is not None
+                            else None,
                             "value_limit": str(_self_approval_policy_pull.value_limit)
-                            if _self_approval_policy_pull.value_limit is not None else None,
+                            if _self_approval_policy_pull.value_limit is not None
+                            else None,
                         },
                     },
                     decision="GRANTED",
@@ -1280,6 +1353,7 @@ class InventoryService:
                     db=self.db,
                 )
                 from datetime import datetime, timezone
+
                 return TransferOrderResponse(
                     transfer_id=transfer_id,
                     transfer_type=transfer_type,
@@ -1297,6 +1371,7 @@ class InventoryService:
         #           source is committed — lock now.
         elif next_state == "PENDING_APPROVAL":
             from services.approval_service import resolve_transfer_approvers as _resolve_approvers
+
             lines = (await self.db.execute(_lines_query, _lines_params)).fetchall()
             total_qty = sum(Decimal(str(ln.quantity)) for ln in lines)
 
@@ -1312,11 +1387,20 @@ class InventoryService:
 
                 # Product override (Design B) — takes precedence over self-approval.
                 _product_override_push = await _resolve_product_override(
-                    self.db, str(user.tenant_id), lines, transfer_type, total_qty, total_value_push,
+                    self.db,
+                    str(user.tenant_id),
+                    lines,
+                    transfer_type,
+                    total_qty,
+                    total_value_push,
                 )
                 if _product_override_push is not None:
                     await _apply_product_override_flag(
-                        self.db, user, "transfer", transfer_id, _product_override_push,
+                        self.db,
+                        user,
+                        "transfer",
+                        transfer_id,
+                        _product_override_push,
                     )
                     _self_approval_policy_push = None
                 else:
@@ -1377,9 +1461,11 @@ class InventoryService:
                                 "level_number": getattr(user, "level_number", None),
                                 "threshold_type": _self_approval_policy_push.threshold_type,
                                 "qty_limit": str(_self_approval_policy_push.qty_limit)
-                                if _self_approval_policy_push.qty_limit is not None else None,
+                                if _self_approval_policy_push.qty_limit is not None
+                                else None,
                                 "value_limit": str(_self_approval_policy_push.value_limit)
-                                if _self_approval_policy_push.value_limit is not None else None,
+                                if _self_approval_policy_push.value_limit is not None
+                                else None,
                             },
                         },
                         decision="GRANTED",
@@ -1387,6 +1473,7 @@ class InventoryService:
                         db=self.db,
                     )
                     from datetime import datetime, timezone
+
                     return TransferOrderResponse(
                         transfer_id=transfer_id,
                         transfer_type=transfer_type,
@@ -1412,12 +1499,20 @@ class InventoryService:
                     status_transition=f"{row.status}_TO_PENDING_APPROVAL",
                     line_id=str(line.id),
                 )
-            tv_row = (await self.db.execute(
-                text("SELECT transfer_type_config_id, total_value, created_by "
-                     "FROM transfer_orders WHERE id = :id AND tenant_id = :tid"),
-                {"id": str(transfer_id), "tid": str(user.tenant_id)},
-            )).fetchone()
-            config_id_for_res = str(tv_row.transfer_type_config_id) if tv_row and tv_row.transfer_type_config_id else None
+            tv_row = (
+                await self.db.execute(
+                    text(
+                        "SELECT transfer_type_config_id, total_value, created_by "
+                        "FROM transfer_orders WHERE id = :id AND tenant_id = :tid"
+                    ),
+                    {"id": str(transfer_id), "tid": str(user.tenant_id)},
+                )
+            ).fetchone()
+            config_id_for_res = (
+                str(tv_row.transfer_type_config_id)
+                if tv_row and tv_row.transfer_type_config_id
+                else None
+            )
             tv_for_res = Decimal(str(tv_row.total_value)) if tv_row and tv_row.total_value else None
             created_by_for_res = str(tv_row.created_by) if tv_row and tv_row.created_by else None
 
@@ -1425,12 +1520,16 @@ class InventoryService:
             # transfer_type_config_id may be NULL.  Re-resolve it now so rules
             # are used for legacy transfers too.
             if not config_id_for_res:
-                cfg_fallback = (await self.db.execute(
-                    text("SELECT id FROM transfer_type_config "
-                         "WHERE underlying_type = :tt AND tenant_id = :tid AND is_active = true "
-                         "LIMIT 1"),
-                    {"tt": transfer_type, "tid": str(user.tenant_id)},
-                )).fetchone()
+                cfg_fallback = (
+                    await self.db.execute(
+                        text(
+                            "SELECT id FROM transfer_type_config "
+                            "WHERE underlying_type = :tt AND tenant_id = :tid AND is_active = true "
+                            "LIMIT 1"
+                        ),
+                        {"tt": transfer_type, "tid": str(user.tenant_id)},
+                    )
+                ).fetchone()
                 if cfg_fallback:
                     config_id_for_res = str(cfg_fallback.id)
 
@@ -1440,16 +1539,27 @@ class InventoryService:
             # directly to the override's approver position instead of calling
             # resolve_transfer_approvers().
             _product_override_routing = await _resolve_product_override(
-                self.db, str(user.tenant_id), lines, transfer_type, total_qty,
+                self.db,
+                str(user.tenant_id),
+                lines,
+                transfer_type,
+                total_qty,
                 tv_for_res if tv_for_res is not None else Decimal("0"),
             )
             if _product_override_routing is not None:
                 if not getattr(row, "product_override_applied", False):
                     await _apply_product_override_flag(
-                        self.db, user, "transfer", transfer_id, _product_override_routing,
+                        self.db,
+                        user,
+                        "transfer",
+                        transfer_id,
+                        _product_override_routing,
                     )
                 resolved_steps = await _override_resolution_steps(
-                    self.db, str(user.tenant_id), _product_override_routing, created_by_for_res,
+                    self.db,
+                    str(user.tenant_id),
+                    _product_override_routing,
+                    created_by_for_res,
                 )
             else:
                 resolution = await _resolve_approvers(
@@ -1475,13 +1585,15 @@ class InventoryService:
 
         # APPROVED: authority check → hard deduction per line → auto-approve notification.
         elif next_state == "APPROVED":
-            lines = (await self.db.execute(
-                text(
-                    "SELECT * FROM transfer_order_lines "
-                    "WHERE transfer_order_id = :tid_order AND tenant_id = :tid"
-                ),
-                {"tid_order": str(transfer_id), "tid": str(user.tenant_id)},
-            )).fetchall()
+            lines = (
+                await self.db.execute(
+                    text(
+                        "SELECT * FROM transfer_order_lines "
+                        "WHERE transfer_order_id = :tid_order AND tenant_id = :tid"
+                    ),
+                    {"tid_order": str(transfer_id), "tid": str(user.tenant_id)},
+                )
+            ).fetchall()
 
             total_qty = sum(Decimal(str(ln.quantity)) for ln in lines)
 
@@ -1490,15 +1602,15 @@ class InventoryService:
             caller_level = ROLE_AUTHORITY_LEVEL.get(getattr(user, "role", ""), 5)
 
             # Belt-and-suspenders: if the caller IS the creator, reject immediately.
-            if (
-                getattr(row, "created_by", None) is not None
-                and str(getattr(row, "created_by", "")) == str(user.user_id)
-            ):
+            if getattr(row, "created_by", None) is not None and str(
+                getattr(row, "created_by", "")
+            ) == str(user.user_id):
                 from fastapi import HTTPException
+
                 raise HTTPException(
                     status_code=403,
                     detail={
-                        "code":    "CANNOT_APPROVE_OWN_TRANSFER",
+                        "code": "CANNOT_APPROVE_OWN_TRANSFER",
                         "message": "You cannot approve a transfer you created.",
                     },
                 )
@@ -1506,7 +1618,10 @@ class InventoryService:
             # Compute once for both the gate and auto-approve notification.
             simple_mode = await _get_simple_mode(self.db, str(user.tenant_id))
             decision = await resolve_approval(
-                self.db, str(user.tenant_id), transfer_type, total_qty,
+                self.db,
+                str(user.tenant_id),
+                transfer_type,
+                total_qty,
                 requester_authority_level=creator_level,
                 simple_mode=simple_mode,
             )
@@ -1523,6 +1638,7 @@ class InventoryService:
 
             if _steps:
                 from datetime import datetime as _dt, timezone as _tz
+
                 _cur_idx = (getattr(row, "current_approval_step", 1) or 1) - 1
                 _next_idx = _cur_idx + 1
 
@@ -1535,6 +1651,7 @@ class InventoryService:
                     # Do NOT fire TRANSFER_OUT; return early before the fall-through.
                     if lot_selections:
                         from fastapi import HTTPException
+
                         raise HTTPException(
                             status_code=422, detail={"code": "LOT_SELECTION_NOT_ALLOWED"}
                         )
@@ -1569,6 +1686,7 @@ class InventoryService:
                         db=self.db,
                     )
                     from datetime import datetime, timezone
+
                     return TransferOrderResponse(
                         transfer_id=transfer_id,
                         transfer_type=transfer_type,
@@ -1735,10 +1853,9 @@ class InventoryService:
                 "status_transition": "ISSUED_TO_IN_TRANSIT",
             }
             if str(user.warehouse_id or "").lower() != str(row.from_warehouse_id).lower():
-                dispatch_audit_resource["acted_on_behalf_of"] = (
-                    await _get_warehouse_name(self.db, str(user.tenant_id), str(row.from_warehouse_id))
-                    or str(row.from_warehouse_id)
-                )
+                dispatch_audit_resource["acted_on_behalf_of"] = await _get_warehouse_name(
+                    self.db, str(user.tenant_id), str(row.from_warehouse_id)
+                ) or str(row.from_warehouse_id)
             await audit_log(
                 user=user,
                 action="transfer:dispatch",
@@ -1753,6 +1870,7 @@ class InventoryService:
         )
 
         from datetime import datetime, timezone
+
         return TransferOrderResponse(
             transfer_id=transfer_id,
             transfer_type=transfer_type,
@@ -1778,6 +1896,7 @@ class InventoryService:
         row = result.fetchone()
         if not row:
             from fastapi import HTTPException
+
             raise HTTPException(status_code=404, detail="Transfer not found")
 
         # ABAC: the caller must manage the source warehouse.
@@ -1795,6 +1914,7 @@ class InventoryService:
             can_dispatch = False
         if not can_dispatch:
             from fastapi import HTTPException
+
             raise HTTPException(
                 status_code=403,
                 detail="Only the source warehouse manager can dispatch this transfer",
@@ -1805,18 +1925,21 @@ class InventoryService:
             validate_transition(transfer_type, row.status, "ISSUED")
         except InvalidStateTransitionError as exc:
             from fastapi import HTTPException
+
             raise HTTPException(
                 status_code=422,
                 detail={"code": "INVALID_STATE_TRANSITION", "detail": str(exc)},
             ) from exc
 
-        lines = (await self.db.execute(
-            text(
-                "SELECT * FROM transfer_order_lines "
-                "WHERE transfer_order_id = :tid_order AND tenant_id = :tid"
-            ),
-            {"tid_order": str(transfer_id), "tid": str(user.tenant_id)},
-        )).fetchall()
+        lines = (
+            await self.db.execute(
+                text(
+                    "SELECT * FROM transfer_order_lines "
+                    "WHERE transfer_order_id = :tid_order AND tenant_id = :tid"
+                ),
+                {"tid_order": str(transfer_id), "tid": str(user.tenant_id)},
+            )
+        ).fetchall()
 
         # Source on_hand was already deducted at APPROVED via TRANSFER_OUT.
         # Record physical dispatch in the audit ledger (does not affect on_hand again).
@@ -1864,10 +1987,9 @@ class InventoryService:
             "status_transition": "APPROVED_TO_ISSUED",
         }
         if str(user.warehouse_id or "").lower() != str(row.from_warehouse_id).lower():
-            audit_resource["acted_on_behalf_of"] = (
-                await _get_warehouse_name(self.db, str(user.tenant_id), str(row.from_warehouse_id))
-                or str(row.from_warehouse_id)
-            )
+            audit_resource["acted_on_behalf_of"] = await _get_warehouse_name(
+                self.db, str(user.tenant_id), str(row.from_warehouse_id)
+            ) or str(row.from_warehouse_id)
         await audit_log(
             user=user,
             action="transfer:issue",
@@ -1877,6 +1999,7 @@ class InventoryService:
         )
 
         from datetime import datetime, timezone
+
         return TransferOrderResponse(
             transfer_id=transfer_id,
             transfer_type=transfer_type,
@@ -1913,6 +2036,7 @@ class InventoryService:
         row = result.fetchone()
         if not row:
             from fastapi import HTTPException
+
             raise HTTPException(status_code=404, detail="Transfer not found")
 
         # ABAC: caller must be the destination warehouse.
@@ -1926,9 +2050,12 @@ class InventoryService:
         elif user.warehouse_id:
             can_receive = str(user.warehouse_id).lower() == str(row.to_warehouse_id).lower()
         else:
-            can_receive = str(getattr(user, "user_id", "")) == str(getattr(row, "created_by", "NONE"))
+            can_receive = str(getattr(user, "user_id", "")) == str(
+                getattr(row, "created_by", "NONE")
+            )
         if not can_receive:
             from fastapi import HTTPException
+
             raise HTTPException(
                 status_code=403,
                 detail="Only the destination warehouse can receive this transfer",
@@ -1939,18 +2066,21 @@ class InventoryService:
             validate_transition(transfer_type, row.status, "RECEIVED")
         except InvalidStateTransitionError as exc:
             from fastapi import HTTPException
+
             raise HTTPException(
                 status_code=422,
                 detail={"code": "INVALID_STATE_TRANSITION", "detail": str(exc)},
             ) from exc
 
-        lines = (await self.db.execute(
-            text(
-                "SELECT * FROM transfer_order_lines "
-                "WHERE transfer_order_id = :tid_order AND tenant_id = :tid"
-            ),
-            {"tid_order": str(transfer_id), "tid": str(user.tenant_id)},
-        )).fetchall()
+        lines = (
+            await self.db.execute(
+                text(
+                    "SELECT * FROM transfer_order_lines "
+                    "WHERE transfer_order_id = :tid_order AND tenant_id = :tid"
+                ),
+                {"tid_order": str(transfer_id), "tid": str(user.tenant_id)},
+            )
+        ).fetchall()
 
         _allocs = await transfer_lots.load_allocations(self.db, user.tenant_id, transfer_id)
 
@@ -2088,7 +2218,9 @@ class InventoryService:
                 )
 
         await self.db.execute(
-            text("UPDATE transfer_orders SET status = 'RECEIVED', updated_at = now() WHERE id = :id"),
+            text(
+                "UPDATE transfer_orders SET status = 'RECEIVED', updated_at = now() WHERE id = :id"
+            ),
             {"id": str(transfer_id)},
         )
 
@@ -2105,10 +2237,9 @@ class InventoryService:
             "discrepancy_count": _discrepancy_count,
         }
         if str(user.warehouse_id or "").lower() != str(row.to_warehouse_id).lower():
-            receive_audit_resource["acted_on_behalf_of"] = (
-                await _get_warehouse_name(self.db, str(user.tenant_id), str(row.to_warehouse_id))
-                or str(row.to_warehouse_id)
-            )
+            receive_audit_resource["acted_on_behalf_of"] = await _get_warehouse_name(
+                self.db, str(user.tenant_id), str(row.to_warehouse_id)
+            ) or str(row.to_warehouse_id)
         await audit_log(
             user=user,
             action="transfer:receive",
@@ -2124,6 +2255,7 @@ class InventoryService:
             )
 
         from datetime import datetime, timezone
+
         return TransferOrderResponse(
             transfer_id=transfer_id,
             transfer_type=transfer_type,
@@ -2154,6 +2286,7 @@ class InventoryService:
         row = result.fetchone()
         if not row:
             from fastapi import HTTPException
+
             raise HTTPException(status_code=404, detail="Transfer not found")
 
         scope = await self._transfer_scope(user)
@@ -2163,6 +2296,7 @@ class InventoryService:
             or _on_approval_steps(scope, user.user_id, row.resolved_approval_steps)
         ):
             from fastapi import HTTPException
+
             raise HTTPException(status_code=403, detail={"code": "TRANSFER_OUT_OF_SCOPE"})
 
         _allocs = await transfer_lots.load_allocations(self.db, row.tenant_id, transfer_id)
@@ -2198,20 +2332,20 @@ class InventoryService:
             discrepancies=_discrepancies,
         )
 
-    async def create_adjustment(
-        self, user: Any, body: AdjustmentRequest
-    ) -> AdjustmentResponse:
+    async def create_adjustment(self, user: Any, body: AdjustmentRequest) -> AdjustmentResponse:
         from datetime import datetime, timezone
 
         # Idempotency: return the existing record if this key was already used
-        existing = (await self.db.execute(
-            text(
-                "SELECT id, status, quantity_delta, created_at "
-                "FROM adjustment_orders "
-                "WHERE tenant_id = :tid AND idempotency_key = :key"
-            ),
-            {"tid": str(user.tenant_id), "key": body.idempotency_key},
-        )).fetchone()
+        existing = (
+            await self.db.execute(
+                text(
+                    "SELECT id, status, quantity_delta, created_at "
+                    "FROM adjustment_orders "
+                    "WHERE tenant_id = :tid AND idempotency_key = :key"
+                ),
+                {"tid": str(user.tenant_id), "key": body.idempotency_key},
+            )
+        ).fetchone()
         if existing is not None:
             return AdjustmentResponse(
                 adjustment_id=existing.id,
@@ -2253,7 +2387,8 @@ class InventoryService:
         )
 
         await audit_log(
-            user, "adjustment:create",
+            user,
+            "adjustment:create",
             {
                 "resource_type": "adjustment",
                 "resource_id": str(adj_id),
@@ -2263,9 +2398,7 @@ class InventoryService:
                 "reason_code": body.reason_code.value,
                 "lot_id": lot["lot_id"],
                 "lot_number": lot["lot_number"],
-                "expiry_date": (
-                    lot["expiry_date"].isoformat() if lot["expiry_date"] else None
-                ),
+                "expiry_date": (lot["expiry_date"].isoformat() if lot["expiry_date"] else None),
                 "auto_lot": lot["auto_lot"],
             },
             "GRANTED",
@@ -2283,28 +2416,26 @@ class InventoryService:
             auto_lot=lot["auto_lot"],
         )
 
-    async def _validate_adjustment_warehouse(
-        self, user: Any, body: AdjustmentRequest
-    ) -> None:
+    async def _validate_adjustment_warehouse(self, user: Any, body: AdjustmentRequest) -> None:
         """Confirm body.warehouse_id belongs to the caller's tenant before it is
         ever stored as a FK — mirrors _validate_adjustment_lot's product_id check,
         which this call already relies on existing alongside it."""
         from fastapi import HTTPException
 
-        row = (await self.db.execute(
-            text(
-                "SELECT 1 FROM warehouses WHERE id = :wid AND tenant_id = :tid "
-                "UNION ALL "
-                "SELECT 1 FROM organization_node WHERE id = :wid AND tenant_id = :tid"
-            ),
-            {"wid": str(body.warehouse_id), "tid": str(user.tenant_id)},
-        )).fetchone()
+        row = (
+            await self.db.execute(
+                text(
+                    "SELECT 1 FROM warehouses WHERE id = :wid AND tenant_id = :tid "
+                    "UNION ALL "
+                    "SELECT 1 FROM organization_node WHERE id = :wid AND tenant_id = :tid"
+                ),
+                {"wid": str(body.warehouse_id), "tid": str(user.tenant_id)},
+            )
+        ).fetchone()
         if row is None:
             raise HTTPException(status_code=404, detail={"code": "WAREHOUSE_NOT_FOUND"})
 
-    async def _validate_adjustment_lot(
-        self, user: Any, body: AdjustmentRequest
-    ) -> dict[str, Any]:
+    async def _validate_adjustment_lot(self, user: Any, body: AdjustmentRequest) -> dict[str, Any]:
         """Check the lot input of a new adjustment against the product's tracking.
 
         Read-only — a new lot is never created here, only at posting
@@ -2319,19 +2450,25 @@ class InventoryService:
         tenant_id = str(user.tenant_id)
         product_id = str(body.product_id)
 
-        product_row = (await self.db.execute(
-            text(
-                "SELECT batch_tracking, expiry_tracking FROM products "
-                "WHERE id = :pid AND tenant_id = :tid"
-            ),
-            {"pid": product_id, "tid": tenant_id},
-        )).fetchone()
+        product_row = (
+            await self.db.execute(
+                text(
+                    "SELECT batch_tracking, expiry_tracking FROM products "
+                    "WHERE id = :pid AND tenant_id = :tid"
+                ),
+                {"pid": product_id, "tid": tenant_id},
+            )
+        ).fetchone()
         if product_row is None:
             raise HTTPException(status_code=404, detail={"code": "PRODUCT_NOT_FOUND"})
 
         none: dict[str, Any] = {
-            "lot_id": None, "lot_number": None, "expiry_date": None, "auto_lot": False,
-            "shown_lot_number": None, "shown_expiry_date": None,
+            "lot_id": None,
+            "lot_number": None,
+            "expiry_date": None,
+            "auto_lot": False,
+            "shown_lot_number": None,
+            "shown_expiry_date": None,
         }
 
         if not product_row.batch_tracking:
@@ -2351,13 +2488,15 @@ class InventoryService:
         has_number = body.lot_number is not None
 
         async def _existing_lot() -> Any:
-            lot_row = (await self.db.execute(
-                text(
-                    "SELECT id, lot_number, expiry_date FROM stock_lots "
-                    "WHERE id = :lid AND tenant_id = :tid AND product_id = :pid"
-                ),
-                {"lid": str(body.lot_id), "tid": tenant_id, "pid": product_id},
-            )).fetchone()
+            lot_row = (
+                await self.db.execute(
+                    text(
+                        "SELECT id, lot_number, expiry_date FROM stock_lots "
+                        "WHERE id = :lid AND tenant_id = :tid AND product_id = :pid"
+                    ),
+                    {"lid": str(body.lot_id), "tid": tenant_id, "pid": product_id},
+                )
+            ).fetchone()
             if lot_row is None:
                 raise HTTPException(status_code=422, detail={"code": "LOT_NOT_FOUND"})
             return lot_row
@@ -2370,13 +2509,15 @@ class InventoryService:
 
             lot_row = await _existing_lot()
 
-            balance_row = (await self.db.execute(
-                text(
-                    "SELECT quantity FROM lot_balances "
-                    "WHERE tenant_id = :tid AND lot_id = :lid AND warehouse_id = :wid"
-                ),
-                {"tid": tenant_id, "lid": str(body.lot_id), "wid": str(body.warehouse_id)},
-            )).fetchone()
+            balance_row = (
+                await self.db.execute(
+                    text(
+                        "SELECT quantity FROM lot_balances "
+                        "WHERE tenant_id = :tid AND lot_id = :lid AND warehouse_id = :wid"
+                    ),
+                    {"tid": tenant_id, "lid": str(body.lot_id), "wid": str(body.warehouse_id)},
+                )
+            ).fetchone()
             available = (
                 Decimal(str(balance_row.quantity)) if balance_row is not None else Decimal("0")
             )
@@ -2438,13 +2579,15 @@ class InventoryService:
             raise HTTPException(status_code=422, detail={"code": "EXPIRY_IN_PAST"})
 
         if lot_number is not None:
-            same_number = (await self.db.execute(
-                text(
-                    "SELECT id, expiry_date FROM stock_lots "
-                    "WHERE tenant_id = :tid AND product_id = :pid AND lot_number = :lot"
-                ),
-                {"tid": tenant_id, "pid": product_id, "lot": lot_number},
-            )).fetchone()
+            same_number = (
+                await self.db.execute(
+                    text(
+                        "SELECT id, expiry_date FROM stock_lots "
+                        "WHERE tenant_id = :tid AND product_id = :pid AND lot_number = :lot"
+                    ),
+                    {"tid": tenant_id, "pid": product_id, "lot": lot_number},
+                )
+            ).fetchone()
             if same_number is not None and same_number.expiry_date != expiry_date:
                 existing_expiry = same_number.expiry_date
                 raise HTTPException(
@@ -2482,27 +2625,31 @@ class InventoryService:
 
         tenant_id = str(user.tenant_id)
 
-        row = (await self.db.execute(
-            text(
-                "SELECT ao.product_id, ao.lot_id, ao.lot_number, ao.expiry_date, "
-                "       ao.auto_lot, p.batch_tracking "
-                "FROM adjustment_orders ao "
-                "JOIN products p ON p.id = ao.product_id AND p.tenant_id = ao.tenant_id "
-                "WHERE ao.id = :id AND ao.tenant_id = :tid"
-            ),
-            {"id": str(adjustment_id), "tid": tenant_id},
-        )).fetchone()
+        row = (
+            await self.db.execute(
+                text(
+                    "SELECT ao.product_id, ao.lot_id, ao.lot_number, ao.expiry_date, "
+                    "       ao.auto_lot, p.batch_tracking "
+                    "FROM adjustment_orders ao "
+                    "JOIN products p ON p.id = ao.product_id AND p.tenant_id = ao.tenant_id "
+                    "WHERE ao.id = :id AND ao.tenant_id = :tid"
+                ),
+                {"id": str(adjustment_id), "tid": tenant_id},
+            )
+        ).fetchone()
         if row is None or not row.batch_tracking:
             return None, None, None
 
         if row.lot_id is not None:
-            lot_row = (await self.db.execute(
-                text(
-                    "SELECT lot_number, expiry_date FROM stock_lots "
-                    "WHERE id = :lid AND tenant_id = :tid"
-                ),
-                {"lid": str(row.lot_id), "tid": tenant_id},
-            )).fetchone()
+            lot_row = (
+                await self.db.execute(
+                    text(
+                        "SELECT lot_number, expiry_date FROM stock_lots "
+                        "WHERE id = :lid AND tenant_id = :tid"
+                    ),
+                    {"lid": str(row.lot_id), "tid": tenant_id},
+                )
+            ).fetchone()
             if lot_row is None:
                 raise HTTPException(status_code=422, detail={"code": "LOT_NOT_FOUND"})
             return str(row.lot_id), lot_row.lot_number, lot_row.expiry_date
@@ -2544,21 +2691,20 @@ class InventoryService:
         self, user: Any, adjustment_id: UUID, next_state: str
     ) -> AdjustmentResponse:
         result = await self.db.execute(
-            text(
-                "SELECT * FROM adjustment_orders "
-                "WHERE id = :id AND tenant_id = :tid FOR UPDATE"
-            ),
+            text("SELECT * FROM adjustment_orders WHERE id = :id AND tenant_id = :tid FOR UPDATE"),
             {"id": str(adjustment_id), "tid": str(user.tenant_id)},
         )
         row = result.fetchone()
         if not row:
             from fastapi import HTTPException
+
             raise HTTPException(status_code=404, detail="Adjustment not found")
 
         try:
             validate_transition("ADJUSTMENT", row.status, next_state)
         except InvalidStateTransitionError as exc:
             from fastapi import HTTPException
+
             raise HTTPException(
                 status_code=422,
                 detail={"code": "INVALID_STATE_TRANSITION", "detail": str(exc)},
@@ -2566,10 +2712,12 @@ class InventoryService:
 
         # ── Adjustment self-approval engine — runs at submission (DRAFT → PENDING_APPROVAL) ──
         if row.status == "DRAFT" and next_state == "PENDING_APPROVAL":
-            product_row = (await self.db.execute(
-                text("SELECT unit_price FROM products WHERE id = :pid"),
-                {"pid": str(row.product_id)},
-            )).fetchone()
+            product_row = (
+                await self.db.execute(
+                    text("SELECT unit_price FROM products WHERE id = :pid"),
+                    {"pid": str(row.product_id)},
+                )
+            ).fetchone()
             unit_price = (
                 Decimal(str(product_row.unit_price))
                 if product_row and product_row.unit_price is not None
@@ -2585,8 +2733,10 @@ class InventoryService:
                     "WHERE id = :id AND tenant_id = :tid"
                 ),
                 {
-                    "up": str(unit_price), "tv": str(total_value),
-                    "id": str(adjustment_id), "tid": str(user.tenant_id),
+                    "up": str(unit_price),
+                    "tv": str(total_value),
+                    "id": str(adjustment_id),
+                    "tid": str(user.tenant_id),
                 },
             )
 
@@ -2604,11 +2754,20 @@ class InventoryService:
                 _product_override_adj = dict(_product_override_adj)
                 _product_override_adj["product_id"] = str(row.product_id)
                 await _apply_product_override_flag(
-                    self.db, user, "adjustment", adjustment_id, _product_override_adj,
+                    self.db,
+                    user,
+                    "adjustment",
+                    adjustment_id,
+                    _product_override_adj,
                 )
-                _override_step = (await _override_resolution_steps(
-                    self.db, str(user.tenant_id), _product_override_adj, str(row.created_by),
-                ))[0]
+                _override_step = (
+                    await _override_resolution_steps(
+                        self.db,
+                        str(user.tenant_id),
+                        _product_override_adj,
+                        str(row.created_by),
+                    )
+                )[0]
                 await self.db.execute(
                     text(
                         "UPDATE adjustment_orders "
@@ -2620,22 +2779,22 @@ class InventoryService:
                         "WHERE id = :id AND tenant_id = :tid"
                     ),
                     {
-                        "pos_id":    _override_step.get("position_id"),
-                        "user_id":   _override_step.get("assigned_to_user_id"),
-                        "name":      _override_step.get("assigned_to_name"),
+                        "pos_id": _override_step.get("position_id"),
+                        "user_id": _override_step.get("assigned_to_user_id"),
+                        "name": _override_step.get("assigned_to_name"),
                         "escalated": _override_step.get("escalated", False),
-                        "id":        str(adjustment_id),
-                        "tid":       str(user.tenant_id),
+                        "id": str(adjustment_id),
+                        "tid": str(user.tenant_id),
                     },
                 )
                 can_self_approve = False
                 route_to = _product_override_adj.get("approver_role_code")
                 route_position = {
-                    "approver_position_id":    _override_step.get("position_id"),
-                    "approver_user_id":        _override_step.get("assigned_to_user_id"),
-                    "approver_name":           _override_step.get("assigned_to_name"),
+                    "approver_position_id": _override_step.get("position_id"),
+                    "approver_user_id": _override_step.get("assigned_to_user_id"),
+                    "approver_name": _override_step.get("assigned_to_name"),
                     "approver_position_title": _product_override_adj.get("approver_title"),
-                    "escalated":               _override_step.get("escalated", False),
+                    "escalated": _override_step.get("escalated", False),
                 }
             else:
                 can_self_approve, route_to, route_position = await check_adjustment_self_approval(
@@ -2716,6 +2875,7 @@ class InventoryService:
                 )
 
                 from datetime import datetime, timezone
+
                 return AdjustmentResponse(
                     adjustment_id=adjustment_id,
                     status="POSTED",
@@ -2757,23 +2917,22 @@ class InventoryService:
         if next_state == "APPROVED" and getattr(row, "product_override_applied", False):
             from fastapi import HTTPException
 
-            caller_uid   = str(user.user_id)
-            caller_role  = getattr(user, "role", "")
-            is_own       = str(getattr(row, "created_by", "") or "") == caller_uid
+            caller_uid = str(user.user_id)
+            caller_role = getattr(user, "role", "")
+            is_own = str(getattr(row, "created_by", "") or "") == caller_uid
             required_uid = (
                 str(row.required_approver_user_id) if row.required_approver_user_id else None
             )
             escalated = bool(getattr(row, "approver_escalated", False))
 
-            allowed = (
-                (required_uid is not None and caller_uid == required_uid and not is_own)
-                or (escalated and caller_role == "TA" and not is_own)
+            allowed = (required_uid is not None and caller_uid == required_uid and not is_own) or (
+                escalated and caller_role == "TA" and not is_own
             )
             if not allowed:
                 raise HTTPException(
                     status_code=403,
                     detail={
-                        "code":    "NOT_REQUIRED_APPROVER",
+                        "code": "NOT_REQUIRED_APPROVER",
                         "message": (
                             f"Only {row.required_approver_name or 'the designated approver'} "
                             "can approve this adjustment."
@@ -2808,18 +2967,21 @@ class InventoryService:
         shown_lot_number = getattr(row, "lot_number", None)
         shown_expiry_date = getattr(row, "expiry_date", None)
         if shown_lot_id is not None:
-            lot_row = (await self.db.execute(
-                text(
-                    "SELECT lot_number, expiry_date FROM stock_lots "
-                    "WHERE id = :lid AND tenant_id = :tid"
-                ),
-                {"lid": str(shown_lot_id), "tid": str(user.tenant_id)},
-            )).fetchone()
+            lot_row = (
+                await self.db.execute(
+                    text(
+                        "SELECT lot_number, expiry_date FROM stock_lots "
+                        "WHERE id = :lid AND tenant_id = :tid"
+                    ),
+                    {"lid": str(shown_lot_id), "tid": str(user.tenant_id)},
+                )
+            ).fetchone()
             if lot_row is not None:
                 shown_lot_number = lot_row.lot_number
                 shown_expiry_date = lot_row.expiry_date
 
         from datetime import datetime, timezone
+
         return AdjustmentResponse(
             adjustment_id=adjustment_id,
             status=next_state,
@@ -2846,35 +3008,36 @@ class InventoryService:
         """
         from fastapi import HTTPException
 
-        row = (await self.db.execute(
-            text(
-                "SELECT ao.id, ao.status, ao.created_by, ao.product_override_applied, "
-                "       ao.required_approver_user_id, ao.required_approver_name, "
-                "       ao.approver_escalated, ao.lot_id, ao.auto_lot, "
-                "       CASE WHEN ao.lot_id IS NOT NULL THEN sl.lot_number "
-                "            ELSE ao.lot_number END AS lot_number, "
-                "       CASE WHEN ao.lot_id IS NOT NULL THEN sl.expiry_date "
-                "            ELSE ao.expiry_date END AS expiry_date "
-                "FROM adjustment_orders ao "
-                "LEFT JOIN stock_lots sl ON sl.id = ao.lot_id "
-                "WHERE ao.id = :id AND ao.tenant_id = :tid"
-            ),
-            {"id": str(adjustment_id), "tid": str(user.tenant_id)},
-        )).fetchone()
+        row = (
+            await self.db.execute(
+                text(
+                    "SELECT ao.id, ao.status, ao.created_by, ao.product_override_applied, "
+                    "       ao.required_approver_user_id, ao.required_approver_name, "
+                    "       ao.approver_escalated, ao.lot_id, ao.auto_lot, "
+                    "       CASE WHEN ao.lot_id IS NOT NULL THEN sl.lot_number "
+                    "            ELSE ao.lot_number END AS lot_number, "
+                    "       CASE WHEN ao.lot_id IS NOT NULL THEN sl.expiry_date "
+                    "            ELSE ao.expiry_date END AS expiry_date "
+                    "FROM adjustment_orders ao "
+                    "LEFT JOIN stock_lots sl ON sl.id = ao.lot_id "
+                    "WHERE ao.id = :id AND ao.tenant_id = :tid"
+                ),
+                {"id": str(adjustment_id), "tid": str(user.tenant_id)},
+            )
+        ).fetchone()
         if not row:
             raise HTTPException(status_code=404, detail="Adjustment not found")
 
-        caller_uid   = str(user.user_id)
-        caller_role  = getattr(user, "role", "")
-        is_own       = str(row.created_by or "") == caller_uid
+        caller_uid = str(user.user_id)
+        caller_role = getattr(user, "role", "")
+        is_own = str(row.created_by or "") == caller_uid
         required_uid = str(row.required_approver_user_id) if row.required_approver_user_id else None
-        escalated    = bool(row.approver_escalated)
+        escalated = bool(row.approver_escalated)
 
         if row.product_override_applied:
             can_approve = (
-                (required_uid is not None and caller_uid == required_uid and not is_own)
-                or (escalated and caller_role == "TA" and not is_own)
-            )
+                required_uid is not None and caller_uid == required_uid and not is_own
+            ) or (escalated and caller_role == "TA" and not is_own)
             if escalated:
                 step_label = (
                     f"Awaiting {row.required_approver_name or 'TA'} approval "
@@ -2889,7 +3052,9 @@ class InventoryService:
             from shared.permissions.registry import PERMISSIONS
 
             result = await check_permission(
-                user, PERMISSIONS.ADJUSTMENT_APPROVE, {"tenant_id": str(user.tenant_id)},
+                user,
+                PERMISSIONS.ADJUSTMENT_APPROVE,
+                {"tenant_id": str(user.tenant_id)},
             )
             can_approve = bool(result.allowed) and not is_own
             step_label = None
@@ -2914,6 +3079,7 @@ class InventoryService:
     ) -> CountSessionResponse:
         session_id = uuid.uuid4()
         from datetime import datetime, timezone
+
         now = datetime.now(timezone.utc)
 
         await self.db.execute(
@@ -2937,9 +3103,7 @@ class InventoryService:
             created_at=now,
         )
 
-    async def get_count_session(
-        self, user: Any, session_id: UUID
-    ) -> CountSessionResponse:
+    async def get_count_session(self, user: Any, session_id: UUID) -> CountSessionResponse:
         result = await self.db.execute(
             text("SELECT * FROM count_sessions WHERE id = :id AND tenant_id = :tid"),
             {"id": str(session_id), "tid": str(user.tenant_id)},
@@ -2947,9 +3111,11 @@ class InventoryService:
         row = result.fetchone()
         if not row:
             from fastapi import HTTPException
+
             raise HTTPException(status_code=404, detail="Count session not found")
 
         from datetime import datetime, timezone
+
         return CountSessionResponse(
             session_id=session_id,
             warehouse_id=row.warehouse_id,
@@ -2959,8 +3125,9 @@ class InventoryService:
 
     async def _transfer_line_items(self, transfer_id: Any) -> list[TransferLineItem]:
         """The lines of one transfer with product name/SKU, for list and detail responses."""
-        line_rows = (await self.db.execute(
-            text("""
+        line_rows = (
+            await self.db.execute(
+                text("""
                 SELECT
                     tol.id               AS line_id,
                     tol.product_id,
@@ -2972,8 +3139,9 @@ class InventoryService:
                 JOIN products p ON p.id = tol.product_id
                 WHERE tol.transfer_order_id = :xfer_id
             """),
-            {"xfer_id": str(transfer_id)},
-        )).fetchall()
+                {"xfer_id": str(transfer_id)},
+            )
+        ).fetchall()
         return [
             TransferLineItem(
                 line_id=line.line_id,

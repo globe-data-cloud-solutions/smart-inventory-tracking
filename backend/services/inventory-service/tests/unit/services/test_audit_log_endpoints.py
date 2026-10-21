@@ -16,6 +16,7 @@ Covers:
    the Category column grouping used by the ALL/TRANSFER/INVENTORY/
    ADJUSTMENT tabs.
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -51,6 +52,7 @@ def _fake_execute_factory():
     literals like '%:view') that isn't present in the supplied params dict —
     reproducing the exact failure mode of the original bug.
     """
+
     async def _execute(stmt, params=None):
         compiled = stmt.compile()
         compiled.construct_params(params or {})
@@ -87,7 +89,6 @@ async def _get_audit_log(client: AsyncClient, query: str):
 
 @pytest.mark.unit
 class TestAuditLogIncludeSystemBindParams:
-
     async def test_default_excludes_system_category_without_error(
         self, client: AsyncClient
     ) -> None:
@@ -100,9 +101,7 @@ class TestAuditLogIncludeSystemBindParams:
         assert body["success"] is True
         assert body["data"] == []
 
-    async def test_include_system_true_returns_all_categories(
-        self, client: AsyncClient
-    ) -> None:
+    async def test_include_system_true_returns_all_categories(self, client: AsyncClient) -> None:
         """include_system=true must also succeed (no category filter added)."""
         resp = await _get_audit_log(client, "?page=1&limit=10&include_system=true")
 
@@ -134,15 +133,25 @@ def _disc_row():
     return SimpleNamespace(
         id="60000000-0000-0000-0000-000000000001",
         timestamp=datetime(2026, 10, 16, tzinfo=timezone.utc),
-        user_id=None, user_name="Dest WM", role="WM",
+        user_id=None,
+        user_name="Dest WM",
+        role="WM",
         action="transfer:resolve_discrepancy",
-        resource_type="transfer_discrepancy", resource_id=DISC_ID,
-        decision="GRANTED", reason=None, abac_context=None,
-        transfer_type="PULL", from_warehouse_name="Source WH",
-        to_warehouse_name="Dest WH", product_summary="Rice (10)",
-        adjustment_reason_code=None, transfer_order_id=TRANSFER_ID,
-        discrepancy_count=None, discrepancy_product_name="Rice",
-        discrepancy_missing_quantity=Decimal("3"), discrepancy_reason="SHORT",
+        resource_type="transfer_discrepancy",
+        resource_id=DISC_ID,
+        decision="GRANTED",
+        reason=None,
+        abac_context=None,
+        transfer_type="PULL",
+        from_warehouse_name="Source WH",
+        to_warehouse_name="Dest WH",
+        product_summary="Rice (10)",
+        adjustment_reason_code=None,
+        transfer_order_id=TRANSFER_ID,
+        discrepancy_count=None,
+        discrepancy_product_name="Rice",
+        discrepancy_missing_quantity=Decimal("3"),
+        discrepancy_reason="SHORT",
         discrepancy_resolution="WRITTEN_OFF",
     )
 
@@ -151,6 +160,7 @@ def _scoped_db(captured: list):
     """Fake execute: records (sql, params); returns the discrepancy row only if
     the statement is unscoped, or the bound node_ids touch the transfer's ends
     (the rule the SQL's discrepancy branch encodes)."""
+
     async def _execute(stmt, params=None):
         params = params or {}
         stmt.compile().construct_params(params)
@@ -186,9 +196,13 @@ async def _get_as(client, user, subtree, captured, query="?include_system=true")
     app.dependency_overrides[get_current_user] = lambda: user
     app.dependency_overrides[get_db_session] = _db_gen
     try:
-        with patch.dict(module_globals, {"get_descendant_node_ids": _descendants}), patch(
-            "shared.permissions.middleware.check_permission",
-            new_callable=AsyncMock, return_value=PermissionResult(allowed=True),
+        with (
+            patch.dict(module_globals, {"get_descendant_node_ids": _descendants}),
+            patch(
+                "shared.permissions.middleware.check_permission",
+                new_callable=AsyncMock,
+                return_value=PermissionResult(allowed=True),
+            ),
         ):
             return await client.get(f"/api/v1/audit-log/{query}")
     finally:
@@ -198,7 +212,6 @@ async def _get_as(client, user, subtree, captured, query="?include_system=true")
 
 @pytest.mark.unit
 class TestAuditLogTransferDiscrepancyRows:
-
     async def test_source_facility_wm_sees_discrepancy_row(self, client) -> None:
         captured: list = []
         wm = _StubUser("u-src", TENANT_A, "WM", warehouse_id=SRC_WH)

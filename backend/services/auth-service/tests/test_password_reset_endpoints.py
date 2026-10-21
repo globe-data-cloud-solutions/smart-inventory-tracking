@@ -5,6 +5,7 @@ mocked — no real connections required.
 sys.path note: mirrors test_auth.py's scoped import so later-running service
 tests still see their own bare 'main'/'routers' module names.
 """
+
 from __future__ import annotations
 
 import os
@@ -63,6 +64,7 @@ class _FakeLockoutRedis:
 @pytest.fixture(autouse=True)
 def _no_real_redis(monkeypatch: pytest.MonkeyPatch) -> None:
     import shared.cache.login_lockout as _lockout_mod
+
     monkeypatch.setattr(_lockout_mod, "get_redis_client", lambda: _FakeLockoutRedis())
 
 
@@ -90,14 +92,17 @@ class TestForgotPassword:
     def test_known_and_unknown_email_return_identical_202_body(self) -> None:
         import shared.db.session as _sess_mod
 
-        with _no_rate_limit(), \
-             patch.object(auth_module, "send_reset_email") as mock_send:
+        with _no_rate_limit(), patch.object(auth_module, "send_reset_email") as mock_send:
             with patch.object(_sess_mod, "AsyncSessionLocal", lambda: _fake_db(None)):
                 resp_unknown = client.post(
                     "/api/v1/auth/forgot-password", json={"email": "nobody@probe.local"}
                 )
-            with patch.object(_sess_mod, "AsyncSessionLocal", lambda: _fake_db("real-user-1")), \
-                 patch.object(auth_module, "issue_reset_token", new=AsyncMock(return_value="raw-token")):
+            with (
+                patch.object(_sess_mod, "AsyncSessionLocal", lambda: _fake_db("real-user-1")),
+                patch.object(
+                    auth_module, "issue_reset_token", new=AsyncMock(return_value="raw-token")
+                ),
+            ):
                 resp_real = client.post(
                     "/api/v1/auth/forgot-password", json={"email": "real@probe.local"}
                 )
@@ -110,9 +115,11 @@ class TestForgotPassword:
     def test_unknown_email_never_calls_send(self) -> None:
         import shared.db.session as _sess_mod
 
-        with _no_rate_limit(), \
-             patch.object(_sess_mod, "AsyncSessionLocal", lambda: _fake_db(None)), \
-             patch.object(auth_module, "send_reset_email") as mock_send:
+        with (
+            _no_rate_limit(),
+            patch.object(_sess_mod, "AsyncSessionLocal", lambda: _fake_db(None)),
+            patch.object(auth_module, "send_reset_email") as mock_send,
+        ):
             resp = client.post("/api/v1/auth/forgot-password", json={"email": "nobody@probe.local"})
 
         assert resp.status_code == 202
@@ -138,9 +145,11 @@ class TestResetPassword:
     def test_valid_token_resets_password_and_token_becomes_unusable(self) -> None:
         import shared.db.session as _sess_mod
 
-        with _no_rate_limit(), \
-             patch.object(auth_module, "consume_reset_token", new=AsyncMock(return_value="user-1")), \
-             patch.object(_sess_mod, "AsyncSessionLocal", lambda: self._fake_reset_db()):
+        with (
+            _no_rate_limit(),
+            patch.object(auth_module, "consume_reset_token", new=AsyncMock(return_value="user-1")),
+            patch.object(_sess_mod, "AsyncSessionLocal", lambda: self._fake_reset_db()),
+        ):
             resp = client.post(
                 "/api/v1/auth/reset-password",
                 json={"token": "a-real-token", "new_password": "NewPass123"},
@@ -149,8 +158,10 @@ class TestResetPassword:
         assert resp.json() == {"reset": True}
 
     def test_expired_or_used_token_returns_400(self) -> None:
-        with _no_rate_limit(), \
-             patch.object(auth_module, "consume_reset_token", new=AsyncMock(return_value=None)):
+        with (
+            _no_rate_limit(),
+            patch.object(auth_module, "consume_reset_token", new=AsyncMock(return_value=None)),
+        ):
             resp = client.post(
                 "/api/v1/auth/reset-password",
                 json={"token": "expired-or-used", "new_password": "NewPass123"},
@@ -161,17 +172,21 @@ class TestResetPassword:
     def test_token_unusable_a_second_time(self) -> None:
         import shared.db.session as _sess_mod
 
-        with _no_rate_limit(), \
-             patch.object(auth_module, "consume_reset_token", new=AsyncMock(return_value="user-1")), \
-             patch.object(_sess_mod, "AsyncSessionLocal", lambda: self._fake_reset_db()):
+        with (
+            _no_rate_limit(),
+            patch.object(auth_module, "consume_reset_token", new=AsyncMock(return_value="user-1")),
+            patch.object(_sess_mod, "AsyncSessionLocal", lambda: self._fake_reset_db()),
+        ):
             first = client.post(
                 "/api/v1/auth/reset-password",
                 json={"token": "one-time-token", "new_password": "NewPass123"},
             )
         assert first.status_code == 200
 
-        with _no_rate_limit(), \
-             patch.object(auth_module, "consume_reset_token", new=AsyncMock(return_value=None)):
+        with (
+            _no_rate_limit(),
+            patch.object(auth_module, "consume_reset_token", new=AsyncMock(return_value=None)),
+        ):
             second = client.post(
                 "/api/v1/auth/reset-password",
                 json={"token": "one-time-token", "new_password": "NewPass123"},
@@ -194,10 +209,12 @@ class TestResetPassword:
         import shared.db.session as _sess_mod
 
         mock_revoke = AsyncMock()
-        with _no_rate_limit(), \
-             patch.object(auth_module, "consume_reset_token", new=AsyncMock(return_value="user-1")), \
-             patch.object(_sess_mod, "AsyncSessionLocal", lambda: self._fake_reset_db()), \
-             patch.object(auth_module, "revoke_user_tokens", mock_revoke):
+        with (
+            _no_rate_limit(),
+            patch.object(auth_module, "consume_reset_token", new=AsyncMock(return_value="user-1")),
+            patch.object(_sess_mod, "AsyncSessionLocal", lambda: self._fake_reset_db()),
+            patch.object(auth_module, "revoke_user_tokens", mock_revoke),
+        ):
             resp = client.post(
                 "/api/v1/auth/reset-password",
                 json={"token": "a-real-token", "new_password": "NewPass123"},
@@ -213,10 +230,12 @@ class TestResetPassword:
         import shared.db.session as _sess_mod
 
         mock_issue = AsyncMock(side_effect=["raw-token-1", "raw-token-2"])
-        with _no_rate_limit(), \
-             patch.object(auth_module, "send_reset_email"), \
-             patch.object(_sess_mod, "AsyncSessionLocal", lambda: _fake_db("real-user-1")), \
-             patch.object(auth_module, "issue_reset_token", new=mock_issue):
+        with (
+            _no_rate_limit(),
+            patch.object(auth_module, "send_reset_email"),
+            patch.object(_sess_mod, "AsyncSessionLocal", lambda: _fake_db("real-user-1")),
+            patch.object(auth_module, "issue_reset_token", new=mock_issue),
+        ):
             client.post("/api/v1/auth/forgot-password", json={"email": "real@probe.local"})
             client.post("/api/v1/auth/forgot-password", json={"email": "real@probe.local"})
 

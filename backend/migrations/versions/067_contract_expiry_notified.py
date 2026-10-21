@@ -8,6 +8,7 @@ Revision ID: 067
 Revises:     066
 Create Date: 2026-06-29
 """
+
 from __future__ import annotations
 
 from alembic import op

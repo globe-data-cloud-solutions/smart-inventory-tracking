@@ -1,11 +1,12 @@
 """Failed-login attempt tracking — shared between auth-service (records and
 checks lockouts at login) and tenant-service (clears the lockout immediately
 when a TA resets a user's password via personnel_v2.py's update_user())."""
+
 from fastapi import HTTPException
 
 from shared.cache.redis_client import get_redis_client
 
-LOGIN_ATTEMPT_LIMIT   = 5
+LOGIN_ATTEMPT_LIMIT = 5
 LOGIN_LOCKOUT_SECONDS = 15 * 60
 
 
@@ -22,8 +23,8 @@ async def _check_login_lockout(email: str) -> None:
             detail={
                 "code": "TOO_MANY_ATTEMPTS",
                 "message": "Too many failed login attempts. Please wait 15 minutes "
-                           "before trying again, or contact your administrator to "
-                           "reset your account.",
+                "before trying again, or contact your administrator to "
+                "reset your account.",
             },
             headers={"Retry-After": str(LOGIN_LOCKOUT_SECONDS)},
         )

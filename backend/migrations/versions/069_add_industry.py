@@ -9,6 +9,7 @@ Revision ID: 069
 Revises:     068
 Create Date: 2026-07-02
 """
+
 from __future__ import annotations
 
 from alembic import op
@@ -20,12 +21,8 @@ depends_on = None
 
 
 def upgrade() -> None:
-    op.execute(
-        "ALTER TABLE tenants ADD COLUMN IF NOT EXISTS industry VARCHAR(100)"
-    )
+    op.execute("ALTER TABLE tenants ADD COLUMN IF NOT EXISTS industry VARCHAR(100)")
 
 
 def downgrade() -> None:
-    op.execute(
-        "ALTER TABLE tenants DROP COLUMN IF EXISTS industry"
-    )
+    op.execute("ALTER TABLE tenants DROP COLUMN IF EXISTS industry")

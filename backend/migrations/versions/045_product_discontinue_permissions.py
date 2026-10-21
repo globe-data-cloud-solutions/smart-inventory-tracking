@@ -4,6 +4,7 @@ Revision ID: 045
 Revises: 044
 Create Date: 2026-06-06
 """
+
 from __future__ import annotations
 from alembic import op
 
@@ -14,9 +15,9 @@ depends_on = None
 
 _INSERTS = [
     ("TA", "product:discontinue", "FULL"),
-    ("TA", "product:reactivate",  "FULL"),
+    ("TA", "product:reactivate", "FULL"),
     ("SA", "product:discontinue", "FULL"),
-    ("SA", "product:reactivate",  "FULL"),
+    ("SA", "product:reactivate", "FULL"),
 ]
 
 

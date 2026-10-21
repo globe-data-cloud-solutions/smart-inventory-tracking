@@ -9,6 +9,7 @@
 
 Run: python3 scripts/check_locale_parity.py   (scripts/check_i18n.sh runs it too)
 """
+
 import json
 import os
 import sys
@@ -64,10 +65,13 @@ def main():
     )
     # Section 2 — Amharic / Oromo translations
     for lang, keys in translated.items():
-        ok = report(
-            f"in locales/en.json but not in locales/{lang}.json",
-            sorted(root_keys - keys),
-        ) and ok
+        ok = (
+            report(
+                f"in locales/en.json but not in locales/{lang}.json",
+                sorted(root_keys - keys),
+            )
+            and ok
+        )
 
     if ok:
         print("PARITY PASS")

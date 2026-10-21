@@ -3,6 +3,7 @@
 No real DB or network required. Integration tests (@pytest.mark.integration)
 run in CI against dev AWS RDS.
 """
+
 from __future__ import annotations
 
 import threading
@@ -12,7 +13,9 @@ import pytest
 from httpx import AsyncClient
 
 from product_test_data import (
-    TENANT_A, SA_USER, NM_USER,
+    TENANT_A,
+    SA_USER,
+    NM_USER,
     VALID_BODY,
     mock_full_grant,
     _make_mock_db,
@@ -33,15 +36,16 @@ def _patch_perm(granted: bool = True):
         new=AsyncMock(return_value=mock_full_grant() if granted else None),
     )
 
+
 def _patch_audit():
     return patch("shared.permissions.middleware.audit_log", new=AsyncMock())
 
 
 # ─────────────────────────────────────────────────────────────────────────────
 
+
 @pytest.mark.unit
 class TestCreateProduct:
-
     # 01 — TA can create → HTTP 201 with correct SKU ──────────────────────────
 
     async def test_01_ta_can_create_product(self, client: AsyncClient) -> None:
@@ -50,9 +54,9 @@ class TestCreateProduct:
         assert r.status_code == 201
         d = r.json()["data"]
         # SKU format changed in migration 024: {TYPE_CODE}-{seq:03d}
-        assert d["sku"]       == "BRD-001"
-        assert d["name"]      == "Test Product Alpha"
-        assert d["unit"]      == "KG"
+        assert d["sku"] == "BRD-001"
+        assert d["name"] == "Test Product Alpha"
+        assert d["unit"] == "KG"
         assert d["pack_size"] == 1
         assert d["tenant_id"] == TENANT_A
 
@@ -144,7 +148,9 @@ class TestCreateProduct:
 
     # 09 — Duplicate name same tenant → 409 ───────────────────────────────────
 
-    async def test_09_duplicate_name_same_tenant_returns_409(self, client: AsyncClient, product_app) -> None:
+    async def test_09_duplicate_name_same_tenant_returns_409(
+        self, client: AsyncClient, product_app
+    ) -> None:
         db = _make_mock_db(dup_exists=True)
         product_app.dependency_overrides[get_db_session] = _make_db_override(db)
         try:
@@ -177,9 +183,9 @@ class TestCreateProduct:
 
         assert r.status_code == 402
         body = r.json()
-        assert body["detail"]["code"]     == "PLAN_LIMIT_REACHED"
+        assert body["detail"]["code"] == "PLAN_LIMIT_REACHED"
         assert body["detail"]["resource"] == "skus"
-        assert body["detail"]["limit"]    == 10
+        assert body["detail"]["limit"] == 10
 
     # 11b — SKU cap reached (RETAILER) → 402 ──────────────────────────────────
     # sku_cap applies to every organisation type, not just PRODUCER (CLAUDE.md §24 rule 16).
@@ -197,7 +203,7 @@ class TestCreateProduct:
 
         assert r.status_code == 402
         body = r.json()
-        assert body["detail"]["code"]     == "PLAN_LIMIT_REACHED"
+        assert body["detail"]["code"] == "PLAN_LIMIT_REACHED"
         assert body["detail"]["resource"] == "skus"
 
     # 12 — RETAILER not capped ────────────────────────────────────────────────
@@ -247,7 +253,7 @@ class TestCreateProduct:
 
         db = AsyncMock()
         db.execute = AsyncMock(return_value=count_res)
-        db.commit  = AsyncMock()
+        db.commit = AsyncMock()
 
         product_app.dependency_overrides[get_db_session] = _make_db_override(db)
         try:
@@ -257,7 +263,7 @@ class TestCreateProduct:
             product_app.dependency_overrides.pop(get_db_session, None)
 
         assert r.status_code == 200
-        assert r.json()["data"]["sku"]     == "BRD-004"
+        assert r.json()["data"]["sku"] == "BRD-004"
         assert r.json()["data"]["counter"] == 4
         # Non-mutating: exactly ONE execute call (COUNT SELECT, not UPDATE)
         assert db.execute.await_count == 1
@@ -267,7 +273,7 @@ class TestCreateProduct:
         with _patch_perm(True), _patch_audit():
             r = await client.get("/api/v1/products/next-sku")
         assert r.status_code == 200
-        assert r.json()["data"]["sku"]     == ""
+        assert r.json()["data"]["sku"] == ""
         assert r.json()["data"]["counter"] is None
 
     # 15 — Migration round-trip documented ────────────────────────────────────
@@ -420,7 +426,7 @@ class TestUpdateProduct:
 
 # ─────────────────────────────────────────────────────────────────────────────
 
-APPROVER_ID  = "60000001-0000-0000-0000-000000000001"
+APPROVER_ID = "60000001-0000-0000-0000-000000000001"
 ALL_TX_TYPES = ["PULL", "PUSH", "SISTER", "ADJUSTMENT", "RECEIVE", "ISSUE"]
 
 
@@ -428,9 +434,9 @@ def _minimum_entries(override_tx: str | None = None) -> list[dict]:
     """All 6 transaction types; only override_tx (if given) has override_enabled=True."""
     return [
         {
-            "transaction_type":     tx,
-            "override_enabled":     tx == override_tx,
-            "threshold_type":       "ALWAYS",
+            "transaction_type": tx,
+            "override_enabled": tx == override_tx,
+            "threshold_type": "ALWAYS",
             "approver_position_id": APPROVER_ID if tx == override_tx else None,
         }
         for tx in ALL_TX_TYPES
@@ -443,8 +449,12 @@ class TestApprovalMinimums:
 
     # 01 — Valid entries with one override → row persisted, returned ──────────
 
-    async def test_put_approval_minimums_creates_override(self, client: AsyncClient, product_app) -> None:
-        row = _make_pam_row(transaction_type="PULL", approver_position_id=APPROVER_ID, is_active=True)
+    async def test_put_approval_minimums_creates_override(
+        self, client: AsyncClient, product_app
+    ) -> None:
+        row = _make_pam_row(
+            transaction_type="PULL", approver_position_id=APPROVER_ID, is_active=True
+        )
         db = _make_approval_minimums_put_mock_db(num_inserts=1, return_rows=[row])
         product_app.dependency_overrides[get_db_session] = _make_db_override(db)
         try:
@@ -464,8 +474,12 @@ class TestApprovalMinimums:
 
     # 02 — Re-PUT replaces old row, not duplicates (DELETE runs first) ────────
 
-    async def test_put_approval_minimums_update_existing(self, client: AsyncClient, product_app) -> None:
-        row = _make_pam_row(transaction_type="PUSH", approver_position_id=APPROVER_ID, is_active=True)
+    async def test_put_approval_minimums_update_existing(
+        self, client: AsyncClient, product_app
+    ) -> None:
+        row = _make_pam_row(
+            transaction_type="PUSH", approver_position_id=APPROVER_ID, is_active=True
+        )
         db = _make_approval_minimums_put_mock_db(num_inserts=1, return_rows=[row])
         product_app.dependency_overrides[get_db_session] = _make_db_override(db)
         try:
@@ -484,7 +498,9 @@ class TestApprovalMinimums:
 
     # 03 — Empty entries without clear_all → 422 EMPTY_ENTRIES ────────────────
 
-    async def test_put_empty_entries_without_clear_all_returns_422(self, client: AsyncClient) -> None:
+    async def test_put_empty_entries_without_clear_all_returns_422(
+        self, client: AsyncClient
+    ) -> None:
         with _patch_perm(True), _patch_audit():
             r = await client.put(
                 f"/api/v1/products/{PRODUCT_ID}/approval-minimums",
@@ -512,7 +528,9 @@ class TestApprovalMinimums:
 
     # 05 — GET with no configured overrides → empty list ──────────────────────
 
-    async def test_get_approval_minimums_empty_when_none_configured(self, client: AsyncClient, product_app) -> None:
+    async def test_get_approval_minimums_empty_when_none_configured(
+        self, client: AsyncClient, product_app
+    ) -> None:
         db = _make_approval_minimums_get_mock_db(return_rows=[])
         product_app.dependency_overrides[get_db_session] = _make_db_override(db)
         try:

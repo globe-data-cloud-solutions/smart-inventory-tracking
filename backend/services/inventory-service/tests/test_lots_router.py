@@ -3,6 +3,7 @@
 Uses the inv_app fixture (not a fresh `from main import app`) per the
 convention established in test_permissions.py / conftest.py.
 """
+
 from __future__ import annotations
 
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -33,10 +34,13 @@ async def lots_client(inv_app, wm_user):
     inv_app.dependency_overrides[get_current_user] = lambda: wm_user
     inv_app.dependency_overrides[get_read_db_session] = _db_gen
     try:
-        with patch(
-            "shared.permissions.middleware.get_role_permission",
-            new=AsyncMock(return_value=_mock_full_grant()),
-        ), patch("shared.permissions.middleware.audit_log", new=AsyncMock()):
+        with (
+            patch(
+                "shared.permissions.middleware.get_role_permission",
+                new=AsyncMock(return_value=_mock_full_grant()),
+            ),
+            patch("shared.permissions.middleware.audit_log", new=AsyncMock()),
+        ):
             async with AsyncClient(
                 transport=ASGITransport(app=inv_app), base_url="http://test"
             ) as ac:
@@ -47,7 +51,6 @@ async def lots_client(inv_app, wm_user):
 
 @pytest.mark.unit
 class TestLotsRouterLimit:
-
     async def test_limit_max_1000_enforced(self, lots_client) -> None:
         resp = await lots_client.get("/api/v1/inventory/lots", params={"limit": 1001})
         assert resp.status_code == 422
@@ -65,7 +68,6 @@ class TestLotsRouterLimit:
 
 @pytest.mark.unit
 class TestExpiryAlertsRouter:
-
     async def test_within_days_bounds(self, lots_client) -> None:
         url = "/api/v1/inventory/lots/expiry-alerts"
         assert (await lots_client.get(url, params={"within_days": 0})).status_code == 422
@@ -110,9 +112,7 @@ async def patch_client(inv_app, wm_user):
     inv_app.dependency_overrides[get_current_user] = lambda: wm_user
     inv_app.dependency_overrides[get_db_session] = _db_gen
     try:
-        async with AsyncClient(
-            transport=ASGITransport(app=inv_app), base_url="http://test"
-        ) as ac:
+        async with AsyncClient(transport=ASGITransport(app=inv_app), base_url="http://test") as ac:
             yield ac
     finally:
         inv_app.dependency_overrides.clear()
@@ -126,10 +126,13 @@ class TestSetLotExpiryRouter:
     url = f"/api/v1/inventory/lots/{LOT_ID}/expiry"
 
     async def _patch(self, client, body):
-        with patch(
-            "shared.permissions.middleware.get_role_permission",
-            new=AsyncMock(return_value=_mock_full_grant()),
-        ), patch("shared.permissions.middleware.audit_log", new=AsyncMock()):
+        with (
+            patch(
+                "shared.permissions.middleware.get_role_permission",
+                new=AsyncMock(return_value=_mock_full_grant()),
+            ),
+            patch("shared.permissions.middleware.audit_log", new=AsyncMock()),
+        ):
             return await client.patch(self.url, json=body)
 
     async def test_missing_expiry_date_is_422(self, patch_client) -> None:
@@ -143,9 +146,12 @@ class TestSetLotExpiryRouter:
         assert (await self._patch(patch_client, body)).status_code == 422
 
     async def test_role_without_product_update_is_403(self, patch_client) -> None:
-        with patch(
-            "shared.permissions.middleware.get_role_permission",
-            new=AsyncMock(return_value=None),
-        ), patch("shared.permissions.middleware.audit_log", new=AsyncMock()):
+        with (
+            patch(
+                "shared.permissions.middleware.get_role_permission",
+                new=AsyncMock(return_value=None),
+            ),
+            patch("shared.permissions.middleware.audit_log", new=AsyncMock()),
+        ):
             resp = await patch_client.patch(self.url, json={"expiry_date": "2030-01-01"})
         assert resp.status_code == 403

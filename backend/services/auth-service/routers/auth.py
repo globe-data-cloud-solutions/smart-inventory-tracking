@@ -8,6 +8,7 @@ longer columns on the users table.
 SA accounts (tenant_id IS NULL) bypass position lookup and receive a
 hardcoded SA claim set.
 """
+
 import asyncio
 import os
 from datetime import datetime, timedelta, timezone
@@ -48,8 +49,8 @@ if not JWT_SECRET:
         "empty signing secret."
     )
 JWT_ALGORITHM = os.environ.get("JWT_ALGORITHM", "HS256")
-JWT_EXPIRE    = int(os.environ.get("JWT_EXPIRE_MINUTES", "60"))
-ENVIRONMENT   = os.environ.get("ENVIRONMENT", "")
+JWT_EXPIRE = int(os.environ.get("JWT_EXPIRE_MINUTES", "60"))
+ENVIRONMENT = os.environ.get("ENVIRONMENT", "")
 
 
 async def _lookup_user_with_position(
@@ -105,18 +106,18 @@ async def _lookup_user_with_position(
                 raise HTTPException(
                     status_code=403,
                     detail={
-                        "code":    "TENANT_SUSPENDED",
+                        "code": "TENANT_SUSPENDED",
                         "message": "This account has been temporarily suspended. "
-                                   "Please contact your administrator.",
+                        "Please contact your administrator.",
                     },
                 )
             if tenant_status == "DEACTIVATED":
                 raise HTTPException(
                     status_code=403,
                     detail={
-                        "code":    "TENANT_DEACTIVATED",
+                        "code": "TENANT_DEACTIVATED",
                         "message": "This account has been deactivated. "
-                                   "Please contact SMART support to retrieve your data.",
+                        "Please contact SMART support to retrieve your data.",
                     },
                 )
 
@@ -152,40 +153,40 @@ async def _lookup_user_with_position(
         direct_role = getattr(user_rec, "system_role", None)
         if direct_role in _DIRECT_ROLE_TITLES:
             return {
-                "sub":                  str(user_rec.id),
-                "email":                str(user_rec.email),
-                "name":                 str(user_rec.full_name),
-                "tenant_id":            str(user_rec.tenant_id),
-                "tenant_slug":          str(user_rec.tenant_slug) if user_rec.tenant_slug else None,
-                "role":                 direct_role,
-                "warehouse_id":         None,
-                "warehouse_name":       None,
-                "position_id":          None,
-                "position_title":       _DIRECT_ROLE_TITLES[direct_role],
-                "level_number":         1,
-                "positions":            [],
-                "must_reset_password":  bool(user_rec.must_reset_password),
-                "email_verified_at":    user_rec.email_verified_at,
+                "sub": str(user_rec.id),
+                "email": str(user_rec.email),
+                "name": str(user_rec.full_name),
+                "tenant_id": str(user_rec.tenant_id),
+                "tenant_slug": str(user_rec.tenant_slug) if user_rec.tenant_slug else None,
+                "role": direct_role,
+                "warehouse_id": None,
+                "warehouse_name": None,
+                "position_id": None,
+                "position_title": _DIRECT_ROLE_TITLES[direct_role],
+                "level_number": 1,
+                "positions": [],
+                "must_reset_password": bool(user_rec.must_reset_password),
+                "email_verified_at": user_rec.email_verified_at,
                 "terms_acceptance_required": terms_acceptance_required,
             }
 
         # SA — no tenant, no position; return hardcoded SA claims
         if user_rec.tenant_id is None:
             return {
-                "sub":                  str(user_rec.id),
-                "email":                str(user_rec.email),
-                "name":                 str(user_rec.full_name),
-                "tenant_id":            None,
-                "tenant_slug":          None,
-                "role":                 "SA",
-                "warehouse_id":         None,
-                "warehouse_name":       None,
-                "position_id":          None,
-                "position_title":       None,
-                "level_number":         None,
-                "positions":            [],
-                "must_reset_password":  bool(user_rec.must_reset_password),
-                "email_verified_at":    user_rec.email_verified_at,
+                "sub": str(user_rec.id),
+                "email": str(user_rec.email),
+                "name": str(user_rec.full_name),
+                "tenant_id": None,
+                "tenant_slug": None,
+                "role": "SA",
+                "warehouse_id": None,
+                "warehouse_name": None,
+                "position_id": None,
+                "position_title": None,
+                "level_number": None,
+                "positions": [],
+                "must_reset_password": bool(user_rec.must_reset_password),
+                "email_verified_at": user_rec.email_verified_at,
                 "terms_acceptance_required": False,
             }
 
@@ -226,20 +227,20 @@ async def _lookup_user_with_position(
                 # a new user with a temp password can never log in to change it.
                 if bool(user_rec.must_reset_password):
                     return {
-                        "sub":                 str(user_rec.id),
-                        "email":               str(user_rec.email),
-                        "name":                str(user_rec.full_name),
-                        "tenant_id":           str(user_rec.tenant_id),
-                        "tenant_slug":         str(user_rec.tenant_slug) if user_rec.tenant_slug else None,
-                        "role":                "PENDING_SETUP",
-                        "warehouse_id":        None,
-                        "warehouse_name":      None,
-                        "position_id":         None,
-                        "position_title":      None,
-                        "level_number":        None,
-                        "positions":           [],
+                        "sub": str(user_rec.id),
+                        "email": str(user_rec.email),
+                        "name": str(user_rec.full_name),
+                        "tenant_id": str(user_rec.tenant_id),
+                        "tenant_slug": str(user_rec.tenant_slug) if user_rec.tenant_slug else None,
+                        "role": "PENDING_SETUP",
+                        "warehouse_id": None,
+                        "warehouse_name": None,
+                        "position_id": None,
+                        "position_title": None,
+                        "level_number": None,
+                        "positions": [],
                         "must_reset_password": True,
-                        "email_verified_at":   user_rec.email_verified_at,
+                        "email_verified_at": user_rec.email_verified_at,
                         "terms_acceptance_required": terms_acceptance_required,
                     }
                 # User has no position and no pending password reset → hard block.
@@ -270,30 +271,30 @@ async def _lookup_user_with_position(
             all_positions = all_rows.fetchall()
 
         return {
-            "sub":                  str(user_rec.id),
-            "email":                str(user_rec.email),
-            "name":                 str(user_rec.full_name),
-            "tenant_id":            str(user_rec.tenant_id),
-            "tenant_slug":          str(user_rec.tenant_slug) if user_rec.tenant_slug else None,
-            "role":                 str(primary_rec.role_code),
-            "warehouse_id":         str(primary_rec.node_id),
-            "warehouse_name":       str(primary_rec.node_name),
-            "position_id":          str(primary_rec.pp_id),
-            "position_title":       str(primary_rec.title),
-            "level_number":         int(primary_rec.hierarchy_level),
+            "sub": str(user_rec.id),
+            "email": str(user_rec.email),
+            "name": str(user_rec.full_name),
+            "tenant_id": str(user_rec.tenant_id),
+            "tenant_slug": str(user_rec.tenant_slug) if user_rec.tenant_slug else None,
+            "role": str(primary_rec.role_code),
+            "warehouse_id": str(primary_rec.node_id),
+            "warehouse_name": str(primary_rec.node_name),
+            "position_id": str(primary_rec.pp_id),
+            "position_title": str(primary_rec.title),
+            "level_number": int(primary_rec.hierarchy_level),
             "positions": [
                 {
-                    "position_id":      str(pos.pp_id),
-                    "role_code":        str(pos.role_code),
-                    "node_id":          str(pos.node_id),
-                    "node_name":        str(pos.node_name),
-                    "level_number":     int(pos.hierarchy_level),
-                    "assignment_type":  str(pos.assignment_type),
+                    "position_id": str(pos.pp_id),
+                    "role_code": str(pos.role_code),
+                    "node_id": str(pos.node_id),
+                    "node_name": str(pos.node_name),
+                    "level_number": int(pos.hierarchy_level),
+                    "assignment_type": str(pos.assignment_type),
                 }
                 for pos in all_positions
             ],
-            "must_reset_password":  bool(user_rec.must_reset_password),
-            "email_verified_at":    user_rec.email_verified_at,
+            "must_reset_password": bool(user_rec.must_reset_password),
+            "email_verified_at": user_rec.email_verified_at,
             "terms_acceptance_required": terms_acceptance_required,
         }
 
@@ -304,17 +305,17 @@ async def _lookup_user_with_position(
 
 
 class TokenRequest(BaseModel):
-    email:          str | None = None
-    password:       str | None = None
-    dev_email:      str | None = None
-    dev_password:   str | None = None
+    email: str | None = None
+    password: str | None = None
+    dev_email: str | None = None
+    dev_password: str | None = None
 
 
 class TokenResponse(BaseModel):
-    access_token:       str
-    token_type:         str  = "bearer"
-    expires_in:         int
-    tenant_slug:        str | None = None
+    access_token: str
+    token_type: str = "bearer"
+    expires_in: int
+    tenant_slug: str | None = None
     must_reset_password: bool = False
     terms_acceptance_required: bool = False
 
@@ -403,24 +404,24 @@ async def exchange_token(body: TokenRequest, request: Request) -> TokenResponse:
             detail="Provide email and password",
         )
 
-    tenant_slug          = claims.get("tenant_slug")
-    must_reset_password  = bool(claims.get("must_reset_password", False))
+    tenant_slug = claims.get("tenant_slug")
+    must_reset_password = bool(claims.get("must_reset_password", False))
     terms_acceptance_required = bool(claims.get("terms_acceptance_required", False))
 
     payload: dict = {
-        "sub":            claims["sub"],
-        "email":          claims["email"],
-        "name":           claims["name"],
-        "tenant_id":      claims["tenant_id"],
-        "role":           claims["role"],
-        "warehouse_id":   claims["warehouse_id"],
+        "sub": claims["sub"],
+        "email": claims["email"],
+        "name": claims["name"],
+        "tenant_id": claims["tenant_id"],
+        "role": claims["role"],
+        "warehouse_id": claims["warehouse_id"],
         "warehouse_name": claims["warehouse_name"],
-        "position_id":    claims["position_id"],
+        "position_id": claims["position_id"],
         "position_title": claims["position_title"],
-        "level_number":   claims["level_number"],
-        "positions":      claims["positions"],
-        "iat":            int(now.timestamp()),
-        "exp":            int((now + timedelta(minutes=JWT_EXPIRE)).timestamp()),
+        "level_number": claims["level_number"],
+        "positions": claims["positions"],
+        "iat": int(now.timestamp()),
+        "exp": int((now + timedelta(minutes=JWT_EXPIRE)).timestamp()),
     }
 
     token = jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
@@ -434,13 +435,15 @@ async def exchange_token(body: TokenRequest, request: Request) -> TokenResponse:
 
 
 class ChangePasswordByIdRequest(BaseModel):
-    user_id:          str
-    current_password: Optional[str] = None   # optional for must_reset users
-    new_password:     str
+    user_id: str
+    current_password: Optional[str] = None  # optional for must_reset users
+    new_password: str
 
 
 @router.patch("/password/{user_id}", response_model=dict)
-async def change_password_by_id(user_id: str, body: ChangePasswordByIdRequest, request: Request) -> dict:
+async def change_password_by_id(
+    user_id: str, body: ChangePasswordByIdRequest, request: Request
+) -> dict:
     """Change password for a user identified by user_id.
 
     Requires a valid SMART Bearer JWT whose sub == user_id — available in
@@ -468,11 +471,14 @@ async def change_password_by_id(user_id: str, body: ChangePasswordByIdRequest, r
     try:
         from shared.db.session import AsyncSessionLocal
         from sqlalchemy import text as sa_text
+
         async with AsyncSessionLocal() as db:
-            row = (await db.execute(
-                sa_text("SELECT * FROM auth_user_by_id(:uid)"),
-                {"uid": user_id},
-            )).fetchone()
+            row = (
+                await db.execute(
+                    sa_text("SELECT * FROM auth_user_by_id(:uid)"),
+                    {"uid": user_id},
+                )
+            ).fetchone()
             if row is None or not row.is_active:
                 raise HTTPException(status_code=404, detail="User not found")
 
@@ -487,9 +493,7 @@ async def change_password_by_id(user_id: str, body: ChangePasswordByIdRequest, r
                         status_code=401,
                         detail="No password set for this account — contact your administrator",
                     )
-                if not _bcrypt.checkpw(
-                    body.current_password.encode(), row.password_hash.encode()
-                ):
+                if not _bcrypt.checkpw(body.current_password.encode(), row.password_hash.encode()):
                     raise HTTPException(status_code=401, detail="Current password is incorrect")
             elif body.current_password:
                 # must_reset=true but caller supplied current_password: validate it.
@@ -518,6 +522,7 @@ async def change_password_by_id(user_id: str, body: ChangePasswordByIdRequest, r
 
 # ── Email verification (S4) ───────────────────────────────────────────────────
 
+
 class VerifyEmailRequest(BaseModel):
     token: str
 
@@ -543,7 +548,10 @@ async def verify_email(body: VerifyEmailRequest, request: Request) -> dict:
     if user_id is None:
         raise HTTPException(
             status_code=400,
-            detail={"code": "INVALID_OR_EXPIRED_TOKEN", "message": "This verification link is invalid or has expired."},
+            detail={
+                "code": "INVALID_OR_EXPIRED_TOKEN",
+                "message": "This verification link is invalid or has expired.",
+            },
         )
     return {"verified": True}
 
@@ -563,13 +571,16 @@ async def resend_verification(body: ResendVerificationRequest, request: Request)
 
     async with AsyncSessionLocal() as db:
         async with db.begin():
-            row = (await db.execute(
-                sa_text("SELECT auth_active_unverified_user_id(:email) AS id"),
-                {"email": email},
-            )).fetchone()
+            row = (
+                await db.execute(
+                    sa_text("SELECT auth_active_unverified_user_id(:email) AS id"),
+                    {"email": email},
+                )
+            ).fetchone()
             raw_token = (
                 await issue_verification_token(db, str(row.id))
-                if row and row.id is not None else None
+                if row and row.id is not None
+                else None
             )
 
     if raw_token is not None:
@@ -577,6 +588,7 @@ async def resend_verification(body: ResendVerificationRequest, request: Request)
             await asyncio.to_thread(send_verification_email, email, raw_token)
         except Exception as exc:  # noqa: BLE001 — best-effort, response is unconditional
             import logging
+
             logging.getLogger(__name__).warning("Failed to send verification email: %s", exc)
 
     return {"sent": True}
@@ -584,12 +596,13 @@ async def resend_verification(body: ResendVerificationRequest, request: Request)
 
 # ── Password reset (S4 / B2) ──────────────────────────────────────────────────
 
+
 class ForgotPasswordRequest(BaseModel):
     email: str
 
 
 class ResetPasswordRequest(BaseModel):
-    token:        str
+    token: str
     new_password: str
 
 
@@ -611,13 +624,14 @@ async def forgot_password(body: ForgotPasswordRequest, request: Request) -> dict
 
     async with AsyncSessionLocal() as db:
         async with db.begin():
-            row = (await db.execute(
-                sa_text("SELECT auth_active_user_id(:email) AS id"),
-                {"email": email},
-            )).fetchone()
+            row = (
+                await db.execute(
+                    sa_text("SELECT auth_active_user_id(:email) AS id"),
+                    {"email": email},
+                )
+            ).fetchone()
             raw_token = (
-                await issue_reset_token(db, str(row.id))
-                if row and row.id is not None else None
+                await issue_reset_token(db, str(row.id)) if row and row.id is not None else None
             )
 
     if raw_token is not None:
@@ -625,6 +639,7 @@ async def forgot_password(body: ForgotPasswordRequest, request: Request) -> dict
             await asyncio.to_thread(send_reset_email, email, raw_token)
         except Exception as exc:  # noqa: BLE001 — best-effort, response is unconditional
             import logging
+
             logging.getLogger(__name__).warning("Failed to send reset email: %s", exc)
 
     return {"sent": True}
@@ -641,7 +656,10 @@ async def reset_password(body: ResetPasswordRequest, request: Request) -> dict:
     if len(body.new_password) < 8:
         raise HTTPException(
             status_code=422,
-            detail={"code": "PASSWORD_TOO_SHORT", "message": "New password must be at least 8 characters"},
+            detail={
+                "code": "PASSWORD_TOO_SHORT",
+                "message": "New password must be at least 8 characters",
+            },
         )
 
     from shared.db.session import AsyncSessionLocal
@@ -655,7 +673,10 @@ async def reset_password(body: ResetPasswordRequest, request: Request) -> dict:
             if user_id is None:
                 raise HTTPException(
                     status_code=400,
-                    detail={"code": "INVALID_OR_EXPIRED_TOKEN", "message": "This reset link is invalid or has expired."},
+                    detail={
+                        "code": "INVALID_OR_EXPIRED_TOKEN",
+                        "message": "This reset link is invalid or has expired.",
+                    },
                 )
 
             new_hash = _bcrypt.hashpw(body.new_password.encode(), _bcrypt.gensalt()).decode()
@@ -663,10 +684,12 @@ async def reset_password(body: ResetPasswordRequest, request: Request) -> dict:
                 sa_text("SELECT auth_apply_password_reset(:uid, :ph)"),
                 {"ph": new_hash, "uid": user_id},
             )
-            email_row = (await db.execute(
-                sa_text("SELECT auth_user_email_by_id(:uid) AS email"),
-                {"uid": user_id},
-            )).fetchone()
+            email_row = (
+                await db.execute(
+                    sa_text("SELECT auth_user_email_by_id(:uid) AS email"),
+                    {"uid": user_id},
+                )
+            ).fetchone()
             email_for_lockout = (
                 str(email_row.email) if email_row and email_row.email is not None else None
             )

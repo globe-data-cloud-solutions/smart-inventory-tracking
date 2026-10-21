@@ -9,6 +9,7 @@ check_permission (get_descendant_node_ids traversal for FACILITY_SCOPED
 roles) in shared/permissions/middleware.py. No raw warehouse_id equality
 check is added here.
 """
+
 from __future__ import annotations
 
 import uuid

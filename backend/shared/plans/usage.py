@@ -6,6 +6,7 @@ check_plan_create_warehouse and product-service's SKU cap check must all
 read these instead of duplicating the SQL, so the enforcement count and the
 displayed usage (GET /me/plan-usage) never drift apart.
 """
+
 from __future__ import annotations
 
 from typing import Any

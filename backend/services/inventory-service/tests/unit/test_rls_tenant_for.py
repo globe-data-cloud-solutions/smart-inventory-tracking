@@ -1,4 +1,5 @@
 """Unit tests for dependencies._rls_tenant_for — SA scopes RLS via ?tenant_id."""
+
 from __future__ import annotations
 
 from types import SimpleNamespace
@@ -21,7 +22,6 @@ def _user(role: str, tenant_id: str | None) -> UserContext:
 
 @pytest.mark.unit
 class TestRlsTenantFor:
-
     def test_sa_with_tenant_id_uses_that_tenant(self) -> None:
         assert _rls_tenant_for(_user("SA", ""), _req(tenant_id=OTHER)) == OTHER
 

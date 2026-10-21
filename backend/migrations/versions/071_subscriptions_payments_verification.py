@@ -26,6 +26,7 @@ Revision ID: 071
 Revises:     070
 Create Date: 2026-10-06
 """
+
 from __future__ import annotations
 
 from alembic import op
@@ -123,7 +124,9 @@ def upgrade() -> None:
         )
         """
     )
-    op.execute("CREATE INDEX idx_payments_tenant_created ON payments (tenant_id, created_at DESC)")
+    op.execute(
+        "CREATE INDEX idx_payments_tenant_created ON payments (tenant_id, created_at DESC)"
+    )
     op.execute("CREATE INDEX idx_payments_subscription ON payments (subscription_id)")
     op.execute(
         "CREATE UNIQUE INDEX uq_payments_provider_reference ON payments (provider, provider_reference) "

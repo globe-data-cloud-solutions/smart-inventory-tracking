@@ -13,6 +13,7 @@ deactivation, suspend) and must never incorrectly lock a caller out either —
 so revocation checks fail OPEN (not revoked) on any Redis error, while the
 revoke write itself swallows errors and never raises.
 """
+
 from __future__ import annotations
 
 import logging

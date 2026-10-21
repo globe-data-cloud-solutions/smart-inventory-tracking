@@ -17,6 +17,7 @@ with API_BASE) and REDIS_URL/redis-cli available for the TTL check in P6.
 Usage:
     python scripts/probe/token_revocation_probe.py
 """
+
 from __future__ import annotations
 
 import os
@@ -60,7 +61,9 @@ def main() -> int:
             print(f"Signup failed, aborting. slug={slug}")
             return 1
         admin_email = f"{slug}@probe.local"
-        print(f"probe tenant slug={slug} admin_email={admin_email} password={probe_password}")
+        print(
+            f"probe tenant slug={slug} admin_email={admin_email} password={probe_password}"
+        )
 
         # P1
         login_a = client.post(
@@ -116,12 +119,17 @@ def main() -> int:
         _print_step("P4", "200", resp_b1)
 
         # P5
-        deactivate_script = os.path.join(os.path.dirname(__file__), "deactivate_tenants.py")
+        deactivate_script = os.path.join(
+            os.path.dirname(__file__), "deactivate_tenants.py"
+        )
         proc = subprocess.run(
             [sys.executable, deactivate_script, slug],
-            capture_output=True, text=True,
+            capture_output=True,
+            text=True,
         )
-        print(f"P5 deactivate_tenants.py -> {proc.returncode} {proc.stdout.strip()} {proc.stderr.strip()[:200]}")
+        print(
+            f"P5 deactivate_tenants.py -> {proc.returncode} {proc.stdout.strip()} {proc.stderr.strip()[:200]}"
+        )
 
         resp_b2 = client.get(
             f"{API_BASE}/api/v1/tenants/me/plan",
@@ -130,9 +138,16 @@ def main() -> int:
         _print_step("P5", "401 TOKEN_REVOKED", resp_b2)
 
         # P6
-        for key in (f"revoked_before:user:{sub.lower()}", f"revoked_before:tenant:{str(tenant_id).lower()}"):
-            ttl_proc = subprocess.run(["redis-cli", "TTL", key], capture_output=True, text=True)
-            print(f"P6 TTL {key} -> {ttl_proc.stdout.strip()} {ttl_proc.stderr.strip()[:200]}")
+        for key in (
+            f"revoked_before:user:{sub.lower()}",
+            f"revoked_before:tenant:{str(tenant_id).lower()}",
+        ):
+            ttl_proc = subprocess.run(
+                ["redis-cli", "TTL", key], capture_output=True, text=True
+            )
+            print(
+                f"P6 TTL {key} -> {ttl_proc.stdout.strip()} {ttl_proc.stderr.strip()[:200]}"
+            )
 
     return 0
 

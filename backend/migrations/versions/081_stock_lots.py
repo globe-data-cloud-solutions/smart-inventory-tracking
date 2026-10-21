@@ -37,6 +37,7 @@ Create Date: 2026-10-12
 
 Round-trip tested: alembic upgrade head -> downgrade -1 -> upgrade head
 """
+
 from __future__ import annotations
 
 from alembic import op
@@ -102,7 +103,9 @@ def upgrade() -> None:
     )
 
     # ── inventory_transactions: lot_id (no FK — partitioned table) ─────────
-    op.execute("ALTER TABLE inventory_transactions ADD COLUMN IF NOT EXISTS lot_id UUID")
+    op.execute(
+        "ALTER TABLE inventory_transactions ADD COLUMN IF NOT EXISTS lot_id UUID"
+    )
 
     # ── products: lot-aware flags ───────────────────────────────────────────
     # dispatch_strategy reuses the dispatch_strategy enum type created by 001
@@ -128,7 +131,9 @@ def upgrade() -> None:
 
 def downgrade() -> None:
     op.execute("COMMENT ON TABLE dispatch_strategy_configs IS NULL")
-    op.execute("ALTER TABLE products DROP CONSTRAINT IF EXISTS ck_products_expiry_needs_batch")
+    op.execute(
+        "ALTER TABLE products DROP CONSTRAINT IF EXISTS ck_products_expiry_needs_batch"
+    )
     op.execute("ALTER TABLE products DROP COLUMN IF EXISTS dispatch_strategy")
     op.execute("ALTER TABLE inventory_transactions DROP COLUMN IF EXISTS lot_id")
     op.execute("DROP TABLE IF EXISTS lot_balances")
