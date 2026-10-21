@@ -784,8 +784,10 @@ class TestOrgLevelInputsEditableOnFirstRender:
         `prev.map(...)` in `updateLevel` actually finds an element to update.
         """
         def suggest_role(level_number: int) -> str:
-            if level_number == 1: return "NM"
-            if level_number <= 3: return "RM"
+            if level_number == 1:
+                return "NM"
+            if level_number <= 3:
+                return "RM"
             return "WM"
 
         levels = [

@@ -348,8 +348,10 @@ class TestFactorySpecificProductValidation:
         product_row.source_factory_id = None
         product_row.sku = "STD-001"
 
-        oh_row = MagicMock(); oh_row.qty = Decimal("9999")
-        pend_row = MagicMock(); pend_row.pending = Decimal("0")
+        oh_row = MagicMock()
+        oh_row.qty = Decimal("9999")
+        pend_row = MagicMock()
+        pend_row.pending = Decimal("0")
 
         session = AsyncMock()
         session.execute = AsyncMock(side_effect=[
@@ -384,8 +386,10 @@ class TestFactorySpecificProductValidation:
             return_value=[(self.FACTORY_ID,), (self.SUBTREE_WH,)]
         )
 
-        oh_row2 = MagicMock(); oh_row2.qty = Decimal("9999")
-        pend_row2 = MagicMock(); pend_row2.pending = Decimal("0")
+        oh_row2 = MagicMock()
+        oh_row2.qty = Decimal("9999")
+        pend_row2 = MagicMock()
+        pend_row2.pending = Decimal("0")
 
         session = AsyncMock()
         session.execute = AsyncMock(side_effect=[
