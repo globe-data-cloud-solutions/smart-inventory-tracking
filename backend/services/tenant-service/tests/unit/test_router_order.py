@@ -25,8 +25,8 @@ _TENANT_ROOT = os.path.normpath(os.path.join(os.path.dirname(__file__), "..", ".
 if _TENANT_ROOT not in sys.path:
     sys.path.insert(0, _TENANT_ROOT)
 
-import pytest
-from starlette.routing import Match
+import pytest  # noqa: E402 - sys.path/env setup above must run first
+from starlette.routing import Match  # noqa: E402 - sys.path/env setup above must run first
 
 
 @pytest.mark.unit

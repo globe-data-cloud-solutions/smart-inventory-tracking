@@ -29,10 +29,10 @@ _TENANT_ROOT = os.path.normpath(os.path.join(os.path.dirname(__file__), "..", ".
 if _TENANT_ROOT not in sys.path:
     sys.path.insert(0, _TENANT_ROOT)
 
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch  # noqa: E402 - sys.path/env setup above must run first
 
-import pytest
-from fastapi import HTTPException
+import pytest  # noqa: E402 - sys.path/env setup above must run first
+from fastapi import HTTPException  # noqa: E402 - sys.path/env setup above must run first
 
 pytestmark = pytest.mark.asyncio
 

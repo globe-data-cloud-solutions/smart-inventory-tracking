@@ -44,9 +44,9 @@ if not _was_on_path:
         pass
 # ─────────────────────────────────────────────────────────────────────────────
 
-import pytest
-from fastapi.testclient import TestClient
-from jose import jwt
+import pytest  # noqa: E402 - sys.path/env setup above must run first
+from fastapi.testclient import TestClient  # noqa: E402 - sys.path/env setup above must run first
+from jose import jwt  # noqa: E402 - sys.path/env setup above must run first
 
 _SECRET = "test-secret-for-unit-tests"
 _ALG    = "HS256"
@@ -110,7 +110,6 @@ class TestLocalDevAuth:
         Mocks _lookup_user_with_position so the test is DB-free.
         SA path: tenant_id=None, role=SA, no warehouse.
         """
-        import asyncio
 
         async def _mock_sa(email: str, password: object = None) -> dict:
             return {

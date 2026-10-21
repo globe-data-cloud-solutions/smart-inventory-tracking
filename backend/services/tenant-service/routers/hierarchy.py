@@ -17,7 +17,7 @@ from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from dependencies import get_current_user, get_db_session, get_db_session_for_tenant
+from dependencies import get_current_user, get_db_session_for_tenant
 from shared.permissions.audit import audit_log
 from shared.permissions.middleware import require_permission
 from shared.permissions.plan_middleware import check_plan_create_warehouse

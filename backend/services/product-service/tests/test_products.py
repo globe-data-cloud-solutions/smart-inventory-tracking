@@ -12,8 +12,7 @@ import pytest
 from httpx import AsyncClient
 
 from product_test_data import (
-    TENANT_A, TENANT_B,
-    TA_USER, SA_USER, WM_USER, NM_USER,
+    TENANT_A, SA_USER, NM_USER,
     VALID_BODY,
     mock_full_grant,
     _make_mock_db,

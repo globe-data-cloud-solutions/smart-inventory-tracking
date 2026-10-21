@@ -33,10 +33,10 @@ from shared.permissions.registry import PERMISSIONS
 from shared.plans.usage import count_active_skus
 from shared.utils.responses import SuccessResponse
 from schemas.product import (
-    ApprovalMinimumEntry, ApprovalMinimumResponse,
+    ApprovalMinimumResponse,
     ApprovalMinimumsUpsertRequest, ProductApprovalMinimumsResponse,
     ProductApprovalOverride,
-    ApprovalRuleEntry, ApprovalRuleResponse,
+    ApprovalRuleResponse,
     ApprovalRulesUpsertRequest, ProductApprovalRulesResponse,
     BrandCreateRequest, BrandResponse,
     CategoryCreateRequest, CategoryResponse,

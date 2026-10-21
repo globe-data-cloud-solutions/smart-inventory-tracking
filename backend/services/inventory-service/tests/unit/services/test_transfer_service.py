@@ -18,9 +18,6 @@ from fastapi import HTTPException
 
 from services.state_machine import (
     InvalidStateTransitionError,
-    PULL_TRANSITIONS,
-    PUSH_TRANSITIONS,
-    SISTER_TRANSITIONS,
     validate_transition,
 )
 
@@ -1578,8 +1575,10 @@ class TestSession5TransferTypeConfig:
         config_row.id = UUID(CONFIG_UUID)
 
         def _make_create_session() -> AsyncMock:
-            oh_r = MagicMock(); oh_r.qty = Decimal("9999")
-            pd_r = MagicMock(); pd_r.pending = Decimal("0")
+            oh_r = MagicMock()
+            oh_r.qty = Decimal("9999")
+            pd_r = MagicMock()
+            pd_r.pending = Decimal("0")
             session = AsyncMock()
             session.execute = AsyncMock(side_effect=[
                 MagicMock(fetchone=MagicMock(return_value=MagicMock(is_active=True))),  # from active check
@@ -1625,9 +1624,12 @@ class TestSession5TransferTypeConfig:
 
         CONFIG_UUID = "eeeeeeee-0000-0000-0000-000000000001"
 
-        config_row   = MagicMock(); config_row.id = UUID(CONFIG_UUID)
-        src_node_row = MagicMock(); src_node_row.hierarchy_level = 3
-        perm_row     = MagicMock(); perm_row.can_initiate = False   # blocked
+        config_row   = MagicMock()
+        config_row.id = UUID(CONFIG_UUID)
+        src_node_row = MagicMock()
+        src_node_row.hierarchy_level = 3
+        perm_row     = MagicMock()
+        perm_row.can_initiate = False  # blocked
 
         session = AsyncMock()
         session.execute = AsyncMock(side_effect=[
@@ -1666,9 +1668,12 @@ class TestSession5TransferTypeConfig:
         from decimal import Decimal
         from uuid import UUID
 
-        price_row  = MagicMock(); price_row.unit_price  = Decimal("100")
-        oh_row_tv  = MagicMock(); oh_row_tv.qty        = Decimal("9999")
-        pend_row_tv = MagicMock(); pend_row_tv.pending = Decimal("0")
+        price_row  = MagicMock()
+        price_row.unit_price  = Decimal("100")
+        oh_row_tv  = MagicMock()
+        oh_row_tv.qty        = Decimal("9999")
+        pend_row_tv = MagicMock()
+        pend_row_tv.pending = Decimal("0")
 
         session = AsyncMock()
         session.execute = AsyncMock(side_effect=[
@@ -1719,8 +1724,10 @@ class TestCreateTransferStockCheck:
         from schemas.inventory import TransferOrderRequest, TransferLineRequest
         from services.inventory_service import InventoryService
 
-        on_hand_row  = MagicMock(); on_hand_row.qty     = Decimal("50")
-        pending_row  = MagicMock(); pending_row.pending = Decimal("30")
+        on_hand_row  = MagicMock()
+        on_hand_row.qty     = Decimal("50")
+        pending_row  = MagicMock()
+        pending_row.pending = Decimal("30")
         # available = 50 - 30 = 20; requested = 40 > 20 → must raise
 
         session = AsyncMock()
@@ -1759,9 +1766,12 @@ class TestCreateTransferStockCheck:
         from schemas.inventory import TransferOrderRequest, TransferLineRequest
         from services.inventory_service import InventoryService
 
-        on_hand_row  = MagicMock(); on_hand_row.qty     = Decimal("100")
-        pending_row  = MagicMock(); pending_row.pending = Decimal("20")
-        price_row    = MagicMock(); price_row.unit_price = Decimal("10")
+        on_hand_row  = MagicMock()
+        on_hand_row.qty     = Decimal("100")
+        pending_row  = MagicMock()
+        pending_row.pending = Decimal("20")
+        price_row    = MagicMock()
+        price_row.unit_price = Decimal("10")
         # available = 100 - 20 = 80; requested = 30 ≤ 80 → must succeed
 
         session = AsyncMock()
@@ -2297,7 +2307,8 @@ class TestApprovalGateAndAnyMode:
         from services.inventory_service import _check_can_approve
         from services.approval_service import ApprovalDecision
 
-        RM_A_ID = "rm-a-user"; RM_B_ID = "rm-b-user"
+        RM_A_ID = "rm-a-user"
+        RM_B_ID = "rm-b-user"
 
         row = MagicMock()
         row.resolved_approval_steps = [
@@ -2420,8 +2431,12 @@ class TestAncestorTraversal:
         """
         from services.approval_service import _find_ancestor_with_position
 
-        SUBWH = "node-sub-wh"; WHA = "node-wh-a"; REGA = "node-reg-a"; ZONA = "node-zone-a"
-        TENANT = "tenant-001"; TITLE = "Zone Manager"
+        SUBWH = "node-sub-wh"
+        WHA = "node-wh-a"
+        REGA = "node-reg-a"
+        ZONA = "node-zone-a"
+        TENANT = "tenant-001"
+        TITLE = "Zone Manager"
 
         # Counts: Zone Manager found only at Zone A
         counts_by_nid = {SUBWH: 0, WHA: 0, REGA: 0, ZONA: 1}
@@ -2446,7 +2461,9 @@ class TestAncestorTraversal:
                 parent_id = parents.get(nid)
                 if parent_id:
                     row = MagicMock()
-                    row.id = parent_id; row.name = names[parent_id]; row.hierarchy_level = 0
+                    row.id = parent_id
+                    row.name = names[parent_id]
+                    row.hierarchy_level = 0
                     result.fetchone = MagicMock(return_value=row)
                 else:
                     result.fetchone = MagicMock(return_value=None)
@@ -2454,7 +2471,9 @@ class TestAncestorTraversal:
             else:
                 # _get_node — returns the node itself
                 row = MagicMock()
-                row.id = nid; row.name = names.get(nid, nid); row.hierarchy_level = 0
+                row.id = nid
+                row.name = names.get(nid, nid)
+                row.hierarchy_level = 0
                 result.fetchone = MagicMock(return_value=row)
                 result.scalar = MagicMock(return_value=None)
             return result
@@ -2481,7 +2500,9 @@ class TestAncestorTraversal:
         """
         from services.approval_service import _find_ancestor_with_position
 
-        NODE_A = "node-a"; NODE_B = "node-b"; TENANT = "tenant-001"
+        NODE_A = "node-a"
+        NODE_B = "node-b"
+        TENANT = "tenant-001"
 
         async def fake_execute(sql, params=None, **kw):
             nid = (params or {}).get("nid")
@@ -2492,7 +2513,10 @@ class TestAncestorTraversal:
             else:
                 # A's parent is B, B's parent is A (cycle)
                 other = NODE_B if nid == NODE_A else NODE_A
-                row = MagicMock(); row.id = other; row.name = other; row.hierarchy_level = 0
+                row = MagicMock()
+                row.id = other
+                row.name = other
+                row.hierarchy_level = 0
                 result.fetchone = MagicMock(return_value=row)
                 result.scalar = MagicMock(return_value=None)
             return result
@@ -2513,7 +2537,9 @@ class TestAncestorTraversal:
         """
         from services.approval_service import _resolve_node_for_step
 
-        SUBWH = "node-sub-wh"; ZONA = "node-zone-a"; TENANT = "tenant-001"
+        SUBWH = "node-sub-wh"
+        ZONA = "node-zone-a"
+        TENANT = "tenant-001"
         CHAIN = {"node-sub-wh": "node-wh-a", "node-wh-a": "node-reg-a",
                  "node-reg-a": ZONA, ZONA: None}
         # Zone Manager only at Zone A
@@ -2530,14 +2556,20 @@ class TestAncestorTraversal:
                 # _get_parent_node
                 parent_id = CHAIN.get(nid)
                 if parent_id:
-                    row = MagicMock(); row.id = parent_id; row.name = parent_id; row.hierarchy_level = 0
+                    row = MagicMock()
+                    row.id = parent_id
+                    row.name = parent_id
+                    row.hierarchy_level = 0
                     result.fetchone = MagicMock(return_value=row)
                 else:
                     result.fetchone = MagicMock(return_value=None)
                 result.scalar = MagicMock(return_value=None)
             else:
                 # _get_node — return the node itself
-                row = MagicMock(); row.id = nid; row.name = nid; row.hierarchy_level = 0
+                row = MagicMock()
+                row.id = nid
+                row.name = nid
+                row.hierarchy_level = 0
                 result.fetchone = MagicMock(return_value=row)
                 result.scalar = MagicMock(return_value=None)
             return result
@@ -2638,9 +2670,9 @@ class TestL1StockAndTAEscalation:
         """
         from services.inventory_service import _check_can_approve
         from services.approval_service import ApprovalDecision
-        from fastapi import HTTPException
 
-        CREATOR_ID = "creator-000"; OTHER_TA_ID = "ta-user-001"
+        CREATOR_ID = "creator-000"
+        OTHER_TA_ID = "ta-user-001"
 
         # A step that was escalated to TA (self-approval prevention)
         row = MagicMock()
@@ -2676,7 +2708,9 @@ class TestL1StockAndTAEscalation:
         from services.approval_service import ApprovalDecision
         from fastapi import HTTPException
 
-        TA_ID = "ta-user-001"; RM_ID = "rm-user-001"; CREATOR_ID = "creator-000"
+        TA_ID = "ta-user-001"
+        RM_ID = "rm-user-001"
+        CREATOR_ID = "creator-000"
 
         row = MagicMock()
         row.resolved_approval_steps = [
@@ -2976,8 +3010,11 @@ class TestGapCPositionIdRouting:
     def _pos_db_row(pos_id: str, user_id: str, name: str,
                     node_id: str, title: str) -> MagicMock:
         r = MagicMock()
-        r.pos_id = pos_id; r.user_id = user_id; r.full_name = name
-        r.node_id = node_id; r.title = title
+        r.pos_id = pos_id
+        r.user_id = user_id
+        r.full_name = name
+        r.node_id = node_id
+        r.title = title
         return r
 
     async def test_approval_step_resolves_by_position_id(self) -> None:
@@ -3036,8 +3073,10 @@ class TestGapCPositionIdRouting:
         NODE_ID   = "nnnnnnnn-0000-0000-0000-000000000002"
 
         pos_row = MagicMock()
-        pos_row.pos_id = POS_ID; pos_row.user_id = HOLDER
-        pos_row.full_name = "Bob"; pos_row.node_id = NODE_ID
+        pos_row.pos_id = POS_ID
+        pos_row.user_id = HOLDER
+        pos_row.full_name = "Bob"
+        pos_row.node_id = NODE_ID
 
         # TENANT_WIDE resolution returns None without a DB call, so only
         # _find_position_and_holder fires → 1 execute call total.
@@ -3074,7 +3113,6 @@ class TestGapCPositionIdRouting:
         import json as _json
 
         POS_ID    = "pppppppp-0000-0000-0000-000000000003"
-        RULE_ID   = "rrrrrrrr-0000-0000-0000-000000000003"
         OLD_TITLE = "Regional Manager"
         NEW_TITLE = "Zone Director"
 

@@ -30,7 +30,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from services.approval_service import ROLE_AUTHORITY_LEVEL, ApprovalDecision, resolve_approval
+from services.approval_service import ROLE_AUTHORITY_LEVEL, resolve_approval
 from services.state_machine import InvalidStateTransitionError, validate_transition
 
 # ── Inline approval rule constants (authoritative IMTS §6 matrix) ────────────

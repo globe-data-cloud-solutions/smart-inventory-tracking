@@ -125,14 +125,14 @@ class TestDispatchPreview:
         assert data["warehouse_id"] == WAREHOUSE_A
         assert data["strategy"] == "FEFO"
         assert data["strategy_source"] == "FORCED"
-        assert [(l["lot_number"], Decimal(l["quantity"])) for l in data["lines"]] == [
+        assert [(line["lot_number"], Decimal(line["quantity"])) for line in data["lines"]] == [
             ("OPENING-MWH", Decimal("6")),
             ("L-DATED", Decimal("6")),
         ]
         assert set(data["lines"][0]) == {"lot_id", "lot_number", "expiry_date", "quantity"}
         assert data["lines"][0]["expiry_date"] is None
         assert data["lines"][1]["expiry_date"] == "2999-01-01"
-        assert [l["lot_number"] for l in data["expired_skipped"]] == ["L-EXPIRED"]
+        assert [lot["lot_number"] for lot in data["expired_skipped"]] == ["L-EXPIRED"]
         assert Decimal(data["shortfall"]) == Decimal("0")
         assert Decimal(data["available_total"]) == Decimal("16")
 
@@ -152,7 +152,7 @@ class TestDispatchPreview:
 
         data = resp.json()["data"]
         assert (data["strategy"], data["strategy_source"]) == ("LIFO", "PRODUCT")
-        assert [l["lot_number"] for l in data["lines"]] == ["L-DATED"]
+        assert [line["lot_number"] for line in data["lines"]] == ["L-DATED"]
 
     async def test_preview_never_locks(self, make_client, wm_user) -> None:
         async with make_client(wm_user, _product()) as (client, db):

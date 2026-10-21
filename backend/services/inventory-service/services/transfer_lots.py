@@ -166,14 +166,14 @@ async def _allocate_line(
                 db, tenant_id, product_id, from_warehouse_id, lock=False
             )
             exc.expired_qty = sum(  # type: ignore[attr-defined]
-                (l.quantity for l in plan_allocation(lots, qty, strategy).expired_skipped),
+                (lot.quantity for lot in plan_allocation(lots, qty, strategy).expired_skipped),
                 Decimal("0"),
             )
             raise
         allocs = sorted(
             (
-                Alloc(l.lot_id, l.lot_number, l.expiry_date, l.quantity)
-                for l in plan.lines
+                Alloc(line.lot_id, line.lot_number, line.expiry_date, line.quantity)
+                for line in plan.lines
             ),
             key=lambda a: a.lot_id,
         )
@@ -266,8 +266,8 @@ async def post_transfer_out(
     tenant_id, user_id = str(tenant_id), str(user_id)
     transfer_id, from_warehouse_id = str(transfer_id), str(from_warehouse_id)
 
-    ordered = sorted(lines, key=lambda l: (str(l.product_id), str(l.id)))
-    line_ids = {str(l.id) for l in ordered}
+    ordered = sorted(lines, key=lambda line: (str(line.product_id), str(line.id)))
+    line_ids = {str(line.id) for line in ordered}
 
     chosen_by_line: dict[str, list[Any]] = {}
     for selection in selections or []:

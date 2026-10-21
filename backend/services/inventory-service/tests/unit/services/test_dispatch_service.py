@@ -50,7 +50,7 @@ def _standard_lots():
 
 
 def _numbers(lots):
-    return [l.lot_number for l in lots]
+    return [lot.lot_number for lot in lots]
 
 
 def _row(lot):
@@ -195,7 +195,7 @@ class TestPlanAllocation:
 
         plan = plan_allocation(_standard_lots(), Decimal("4"), "FEFO", TODAY)
 
-        assert [(l.lot_number, l.quantity) for l in plan.lines] == [("OPENING-MWH", Decimal("4"))]
+        assert [(line.lot_number, line.quantity) for line in plan.lines] == [("OPENING-MWH", Decimal("4"))]
         assert plan.shortfall == Decimal("0")
         assert plan.expired_skipped == []
 
@@ -204,7 +204,7 @@ class TestPlanAllocation:
 
         plan = plan_allocation(_standard_lots(), Decimal("25"), "FEFO", TODAY)
 
-        assert [(l.lot_number, l.quantity) for l in plan.lines] == [
+        assert [(line.lot_number, line.quantity) for line in plan.lines] == [
             ("OPENING-MWH", Decimal("10")),
             ("L2", Decimal("10")),
             ("L1", Decimal("5")),
@@ -228,8 +228,8 @@ class TestPlanAllocation:
         ]
         plan = plan_allocation(lots, Decimal("30"), "FEFO", TODAY)
 
-        assert "L3" not in [l.lot_number for l in plan.lines]
-        assert [(l.lot_number, l.quantity) for l in plan.expired_skipped] == [("L3", Decimal("7"))]
+        assert "L3" not in [line.lot_number for line in plan.lines]
+        assert [(lot.lot_number, lot.quantity) for lot in plan.expired_skipped] == [("L3", Decimal("7"))]
         assert plan.shortfall == Decimal("0")
 
     def test_expired_lot_skipped_under_fifo_and_lifo_too(self) -> None:
@@ -240,14 +240,14 @@ class TestPlanAllocation:
             plan = plan_allocation(lots, Decimal("5"), strategy, TODAY)
             assert plan.lines == []
             assert plan.shortfall == Decimal("5")
-            assert [l.lot_number for l in plan.expired_skipped] == ["L3"]
+            assert [lot.lot_number for lot in plan.expired_skipped] == ["L3"]
 
     def test_lot_expiring_today_is_still_allocatable(self) -> None:
         from services.dispatch_service import plan_allocation
 
         plan = plan_allocation([_lot(LOT_1, "L1", expiry_date=TODAY)], Decimal("5"), "FEFO", TODAY)
 
-        assert [l.lot_number for l in plan.lines] == ["L1"]
+        assert [line.lot_number for line in plan.lines] == ["L1"]
         assert plan.expired_skipped == []
 
     def test_expired_reported_even_when_quantity_already_covered(self) -> None:
@@ -259,14 +259,14 @@ class TestPlanAllocation:
         ]
         plan = plan_allocation(lots, Decimal("1"), "FEFO", TODAY)
 
-        assert [l.lot_number for l in plan.expired_skipped] == ["L3"]
+        assert [lot.lot_number for lot in plan.expired_skipped] == ["L3"]
 
     def test_shortfall_when_stock_does_not_cover(self) -> None:
         from services.dispatch_service import plan_allocation
 
         plan = plan_allocation(_standard_lots(), Decimal("42.5"), "FIFO", TODAY)
 
-        assert sum(l.quantity for l in plan.lines) == Decimal("30")
+        assert sum(line.quantity for line in plan.lines) == Decimal("30")
         assert plan.shortfall == Decimal("12.5")
 
     def test_no_lots_gives_full_shortfall_without_raising(self) -> None:
@@ -287,7 +287,7 @@ class TestPlanAllocation:
         ]
         plan = plan_allocation(lots, Decimal("5"), "FIFO", TODAY)
 
-        assert [l.lot_number for l in plan.lines] == ["L1"]
+        assert [line.lot_number for line in plan.lines] == ["L1"]
         assert plan.expired_skipped == []
         assert plan.shortfall == Decimal("0")
 
@@ -296,7 +296,7 @@ class TestPlanAllocation:
 
         plan = plan_allocation(_standard_lots(), Decimal("12"), "LIFO", TODAY)
 
-        assert [(l.lot_number, l.quantity) for l in plan.lines] == [
+        assert [(line.lot_number, line.quantity) for line in plan.lines] == [
             ("L2", Decimal("10")),
             ("L1", Decimal("2")),
         ]
@@ -365,7 +365,7 @@ class TestLoadCandidateLots:
     async def test_preview_read_does_not_lock(self) -> None:
         from services.dispatch_service import load_candidate_lots
 
-        session = _session(_result(fetchall=[_row(l) for l in _standard_lots()]))
+        session = _session(_result(fetchall=[_row(lot) for lot in _standard_lots()]))
 
         lots = await load_candidate_lots(session, TENANT_ID, PRODUCT_ID, WAREHOUSE_ID)
 
@@ -373,7 +373,7 @@ class TestLoadCandidateLots:
         assert "FOR UPDATE" not in _sql(session, 0)
         assert "quantity > 0" in _sql(session, 0)
         assert sorted(_numbers(lots)) == ["L1", "L2", "OPENING-MWH"]
-        assert all(isinstance(l.quantity, Decimal) for l in lots)
+        assert all(isinstance(lot.quantity, Decimal) for lot in lots)
 
     async def test_lock_true_locks_in_lot_id_order_before_reading(self) -> None:
         from services.dispatch_service import load_candidate_lots
@@ -430,19 +430,19 @@ class TestAllocate:
     async def test_locks_and_returns_plan(self) -> None:
         from services.dispatch_service import allocate
 
-        session = _session(_result(), _result(fetchall=[_row(l) for l in _standard_lots()]))
+        session = _session(_result(), _result(fetchall=[_row(lot) for lot in _standard_lots()]))
 
         plan = await allocate(
             session, TENANT_ID, PRODUCT_ID, WAREHOUSE_ID, Decimal("15"), "FEFO", today=TODAY
         )
 
         assert "FOR UPDATE" in _sql(session, 0)
-        assert [l.lot_number for l in plan.lines] == ["OPENING-MWH", "L2"]
+        assert [line.lot_number for line in plan.lines] == ["OPENING-MWH", "L2"]
 
     async def test_shortfall_raises_insufficient_stock_error(self) -> None:
         from services.dispatch_service import InsufficientStockError, allocate
 
-        session = _session(_result(), _result(fetchall=[_row(l) for l in _standard_lots()]))
+        session = _session(_result(), _result(fetchall=[_row(lot) for lot in _standard_lots()]))
 
         with pytest.raises(InsufficientStockError) as exc_info:
             await allocate(
@@ -461,7 +461,7 @@ class TestValidateManualSelection:
         from services.dispatch_service import validate_manual_selection
 
         lots = _standard_lots() if lots is None else lots
-        session = _session(_result(), _result(fetchall=[_row(l) for l in lots]))
+        session = _session(_result(), _result(fetchall=[_row(lot) for lot in lots]))
         return await validate_manual_selection(
             session, TENANT_ID, PRODUCT_ID, WAREHOUSE_ID, Decimal(qty), chosen, strategy,
             today=TODAY,
@@ -480,7 +480,7 @@ class TestValidateManualSelection:
             {"lot_id": LOT_2, "quantity": Decimal("5")},
         ])
         assert is_override is False
-        assert [l.lot_number for l in plan.lines] == ["OPENING-MWH", "L2"]
+        assert [line.lot_number for line in plan.lines] == ["OPENING-MWH", "L2"]
 
     async def test_valid_selection_differing_from_plan_is_override(self) -> None:
         plan, is_override = await self._run([
@@ -488,7 +488,7 @@ class TestValidateManualSelection:
             {"lot_id": LOT_2, "quantity": Decimal("5")},
         ])
         assert is_override is True
-        assert [l.lot_number for l in plan.lines] == ["OPENING-MWH", "L2"]
+        assert [line.lot_number for line in plan.lines] == ["OPENING-MWH", "L2"]
 
     async def test_lot_from_another_warehouse_or_product_rejected(self) -> None:
         code = await self._code([
@@ -553,7 +553,7 @@ class TestRecordOverride:
     async def _run(self, strategy, reason):
         from services.dispatch_service import record_override
 
-        lot_rows = [MagicMock(id=l.lot_id, lot_number=l.lot_number) for l in _standard_lots()]
+        lot_rows = [MagicMock(id=lot.lot_id, lot_number=lot.lot_number) for lot in _standard_lots()]
         session = _session(
             _result(fetchall=lot_rows),
             _result(fetchone=MagicMock(id="override-id-001")),

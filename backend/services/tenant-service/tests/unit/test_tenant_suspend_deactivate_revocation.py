@@ -17,10 +17,10 @@ _TENANT_ROOT = os.path.normpath(os.path.join(os.path.dirname(__file__), "..", ".
 if _TENANT_ROOT not in sys.path:
     sys.path.insert(0, _TENANT_ROOT)
 
-from unittest.mock import AsyncMock, MagicMock, patch
-from uuid import UUID
+from unittest.mock import AsyncMock, MagicMock, patch  # noqa: E402 - sys.path/env setup above must run first
+from uuid import UUID  # noqa: E402 - sys.path/env setup above must run first
 
-import pytest
+import pytest  # noqa: E402 - sys.path/env setup above must run first
 
 TENANT_ID = "aaaaaaaa-0000-0000-0000-000000000001"
 

@@ -28,9 +28,7 @@ Round-trip tested: alembic upgrade head -> downgrade -1 -> upgrade head
 """
 from __future__ import annotations
 
-import sqlalchemy as sa
 from alembic import op
-from sqlalchemy.dialects import postgresql
 
 revision = "050"
 down_revision = "049"

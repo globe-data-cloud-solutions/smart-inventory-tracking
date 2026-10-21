@@ -8,7 +8,6 @@ Adds:
 """
 
 from alembic import op
-import sqlalchemy as sa
 
 revision = "041"
 down_revision = "040"

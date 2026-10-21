@@ -26,7 +26,7 @@ _SCRIPTS_ROOT = os.path.normpath(os.path.join(os.path.dirname(__file__), "..", "
 if _SCRIPTS_ROOT not in sys.path:
     sys.path.insert(0, _SCRIPTS_ROOT)
 
-from seed_permissions import ROLE_PERMISSION_MATRIX
+from seed_permissions import ROLE_PERMISSION_MATRIX  # noqa: E402 - sys.path/env setup above must run first
 
 BRANDING_ACTION = "tenant:upload_branding"
 

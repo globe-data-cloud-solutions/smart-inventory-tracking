@@ -1,7 +1,6 @@
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from shared.db.models.inventory import InventoryTransactionKey
 
 
 class DuplicateTransactionError(Exception):

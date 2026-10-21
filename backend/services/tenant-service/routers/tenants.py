@@ -28,7 +28,7 @@ from shared.plans.catalog import KNOWN_FEATURE_FLAGS, UNSET, apply_package_to_te
 from shared.plans.usage import get_plan_usage
 from shared.utils.responses import SuccessResponse
 from shared.utils.terms import get_terms_version
-from schemas.tenant import TenantCreateRequest, TenantResponse, VALID_PLAN_TIERS, VALID_LOCALES
+from schemas.tenant import TenantCreateRequest, TenantResponse, VALID_PLAN_TIERS
 
 logger = logging.getLogger(__name__)
 

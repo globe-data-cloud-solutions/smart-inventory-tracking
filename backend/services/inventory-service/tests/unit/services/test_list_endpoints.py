@@ -17,9 +17,9 @@ from uuid import UUID
 
 import pytest
 
-_NOW = datetime(2026, 5, 24, 10, 0, 0, tzinfo=timezone.utc)
-
 from services.inventory_service import InventoryService
+
+_NOW = datetime(2026, 5, 24, 10, 0, 0, tzinfo=timezone.utc)
 
 
 TENANT_ID    = "10000000-0000-0000-0000-000000000001"
@@ -114,7 +114,7 @@ class TestListTransfersScopedByRole:
             "services.transfer_discrepancies.get_descendant_node_ids",
             new=AsyncMock(return_value={WAREHOUSE_A}),
         ):
-            results = await svc.list_transfers(WM_USER)
+            await svc.list_transfers(WM_USER)
 
         # Verify the first execute (list query) received the subtree in params
         list_call = session.execute.call_args_list[0]
@@ -158,7 +158,7 @@ class TestListTransfersScopedByRole:
         ])
 
         svc = InventoryService(session)
-        results = await svc.list_transfers(TA_USER)
+        await svc.list_transfers(TA_USER)
 
         list_call = session.execute.call_args_list[0]
         params = list_call.args[1] if len(list_call.args) > 1 else {}
@@ -348,8 +348,10 @@ class TestFactorySpecificProductValidation:
         product_row.source_factory_id = None
         product_row.sku = "STD-001"
 
-        oh_row = MagicMock(); oh_row.qty = Decimal("9999")
-        pend_row = MagicMock(); pend_row.pending = Decimal("0")
+        oh_row = MagicMock()
+        oh_row.qty = Decimal("9999")
+        pend_row = MagicMock()
+        pend_row.pending = Decimal("0")
 
         session = AsyncMock()
         session.execute = AsyncMock(side_effect=[
@@ -384,8 +386,10 @@ class TestFactorySpecificProductValidation:
             return_value=[(self.FACTORY_ID,), (self.SUBTREE_WH,)]
         )
 
-        oh_row2 = MagicMock(); oh_row2.qty = Decimal("9999")
-        pend_row2 = MagicMock(); pend_row2.pending = Decimal("0")
+        oh_row2 = MagicMock()
+        oh_row2.qty = Decimal("9999")
+        pend_row2 = MagicMock()
+        pend_row2.pending = Decimal("0")
 
         session = AsyncMock()
         session.execute = AsyncMock(side_effect=[

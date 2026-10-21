@@ -89,7 +89,6 @@ class TestOrgNodeCreateAndTree:
         ]
 
         # Replicate the _build_tree algorithm from routers/hierarchy.py
-        from dataclasses import asdict
         id_map: dict[str, dict[str, Any]] = {}
         for r in rows:
             id_map[r.id] = {
@@ -312,7 +311,6 @@ class TestDeactivatedUserCannotLogin:
         ])
 
         # Verify the deactivate SQL pattern would set is_active=false
-        expected_sql_pattern = "is_active"
         deactivate_sql = (
             "UPDATE users SET is_active = false, updated_at = now() "
             "WHERE id = :uid AND tenant_id = :tid"
@@ -479,7 +477,6 @@ class TestTenantCreationIncludesTAUser:
         Without the rollback, orphaned tenants accumulate with no admin access.
         """
         tenant_created = {"id": None, "deleted": False}
-        user_created = False
 
         def create_tenant(name: str) -> dict:
             tenant_created["id"] = "fake-tenant-id"
@@ -787,8 +784,10 @@ class TestOrgLevelInputsEditableOnFirstRender:
         `prev.map(...)` in `updateLevel` actually finds an element to update.
         """
         def suggest_role(level_number: int) -> str:
-            if level_number == 1: return "NM"
-            if level_number <= 3: return "RM"
+            if level_number == 1:
+                return "NM"
+            if level_number <= 3:
+                return "RM"
             return "WM"
 
         levels = [
@@ -1479,9 +1478,9 @@ class TestNewTenantProductCreation:
 
     def test_ta_can_create_product_for_new_tenant(self):
         """ProductCreateRequest accepts any non-empty unit string and any positive int pack_size."""
-        from pydantic import ValidationError
 
-        import sys, os
+        import sys
+        import os
         sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', 'schemas'))
         try:
             from product import ProductCreateRequest
@@ -1494,7 +1493,8 @@ class TestNewTenantProductCreation:
 
     def test_product_create_rejects_empty_unit(self):
         """unit must be at least 1 character after stripping."""
-        import sys, os
+        import sys
+        import os
         sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', 'schemas'))
         try:
             from pydantic import ValidationError
@@ -1508,7 +1508,8 @@ class TestNewTenantProductCreation:
 
     def test_product_create_rejects_zero_pack_size(self):
         """pack_size must be >= 1."""
-        import sys, os
+        import sys
+        import os
         sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', 'schemas'))
         try:
             from pydantic import ValidationError
@@ -1524,7 +1525,7 @@ class TestNewTenantProductCreation:
         """GET /tenants/{id}/nodes must use INVENTORY_VIEW permission so NM/RM/WM
         can fetch their facility list. TENANT_VIEW is too restrictive — it blocked
         NM with 403, preventing the warehouses page from loading."""
-        import ast, os
+        import os
         hierarchy_path = os.path.join(
             os.path.dirname(__file__), '..', '..', 'routers', 'hierarchy.py'
         )
@@ -1537,7 +1538,6 @@ class TestNewTenantProductCreation:
         )
         # Verify TENANT_VIEW is no longer the guard on the list endpoint
         lines = src.splitlines()
-        in_list_nodes = False
         for i, line in enumerate(lines):
             if '"/{tenant_id}/nodes"' in line:
                 # Check next ~5 lines for the permission decorator
@@ -1569,10 +1569,11 @@ class TestBugAProductFixes:
 
     def test_reorder_point_saves_and_returns(self):
         """ProductCreateRequest must accept reorder_point; ProductResponse must return it."""
-        import sys, os
+        import sys
+        import os
         sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', 'schemas'))
         try:
-            from product import ProductCreateRequest, ProductResponse
+            from product import ProductCreateRequest, ProductResponse  # noqa: F401 - ImportError probe: skip test if ProductResponse is missing
         except ImportError:
             return
 
@@ -1612,7 +1613,8 @@ class TestBugAProductFixes:
 
     def test_category_creates_per_tenant(self):
         """ProductCreateRequest must accept category string; it is resolved server-side."""
-        import sys, os
+        import sys
+        import os
         sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', 'schemas'))
         try:
             from product import ProductCreateRequest
@@ -1623,7 +1625,8 @@ class TestBugAProductFixes:
         assert req.category == "Cement"
 
     def test_category_strips_whitespace(self):
-        import sys, os
+        import sys
+        import os
         sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', 'schemas'))
         try:
             from product import ProductCreateRequest
@@ -1636,9 +1639,6 @@ class TestBugAProductFixes:
     def test_categories_endpoint_uses_product_list_categories_permission(self):
         """GET /categories/ must use PRODUCT_LIST_CATEGORIES, not a broader permission."""
         import os
-        router_path = os.path.join(
-            os.path.dirname(__file__), '..', '..', 'routers', 'products.py'
-        )
         # This test is in tenant-service tests but checks product-service router
         product_router_path = os.path.join(
             os.path.dirname(__file__), '..', '..', '..', '..', 'product-service', 'routers', 'products.py'
@@ -1676,7 +1676,8 @@ class TestBugBProductEnhancements:
 
     def test_type_code_validator_uppercases(self):
         """type_code field is coerced to uppercase on input."""
-        import sys, os
+        import sys
+        import os
         sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', '..', '..', 'product-service', 'schemas'))
         try:
             from product import ProductCreateRequest
@@ -1687,7 +1688,8 @@ class TestBugBProductEnhancements:
 
     def test_sku_override_accepted(self):
         """sku_override field is accepted and stripped."""
-        import sys, os
+        import sys
+        import os
         sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', '..', '..', 'product-service', 'schemas'))
         try:
             from product import ProductCreateRequest
@@ -1764,10 +1766,11 @@ class TestBugBProductEnhancements:
 
     def test_new_permissions_registered(self):
         """All 8 new B-enhancement permissions exist in registry."""
-        import sys, os
+        import sys
+        import os
         sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', '..', '..', 'shared'))
         try:
-            from permissions.registry import PERMISSIONS, ALL_PERMISSIONS
+            from permissions.registry import PERMISSIONS, ALL_PERMISSIONS  # noqa: F401 - ImportError probe: skip test if PERMISSIONS is missing
         except ImportError:
             return
         required = [
