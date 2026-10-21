@@ -89,7 +89,6 @@ class TestOrgNodeCreateAndTree:
         ]
 
         # Replicate the _build_tree algorithm from routers/hierarchy.py
-        from dataclasses import asdict
         id_map: dict[str, dict[str, Any]] = {}
         for r in rows:
             id_map[r.id] = {
@@ -1479,7 +1478,6 @@ class TestNewTenantProductCreation:
 
     def test_ta_can_create_product_for_new_tenant(self):
         """ProductCreateRequest accepts any non-empty unit string and any positive int pack_size."""
-        from pydantic import ValidationError
 
         import sys, os
         sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', 'schemas'))
@@ -1524,7 +1522,7 @@ class TestNewTenantProductCreation:
         """GET /tenants/{id}/nodes must use INVENTORY_VIEW permission so NM/RM/WM
         can fetch their facility list. TENANT_VIEW is too restrictive — it blocked
         NM with 403, preventing the warehouses page from loading."""
-        import ast, os
+        import os
         hierarchy_path = os.path.join(
             os.path.dirname(__file__), '..', '..', 'routers', 'hierarchy.py'
         )
@@ -1572,7 +1570,7 @@ class TestBugAProductFixes:
         import sys, os
         sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', 'schemas'))
         try:
-            from product import ProductCreateRequest, ProductResponse
+            from product import ProductCreateRequest, ProductResponse  # noqa: F401 - ImportError probe: skip test if ProductResponse is missing
         except ImportError:
             return
 
@@ -1767,7 +1765,7 @@ class TestBugBProductEnhancements:
         import sys, os
         sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', '..', '..', 'shared'))
         try:
-            from permissions.registry import PERMISSIONS, ALL_PERMISSIONS
+            from permissions.registry import PERMISSIONS, ALL_PERMISSIONS  # noqa: F401 - ImportError probe: skip test if PERMISSIONS is missing
         except ImportError:
             return
         required = [

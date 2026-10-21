@@ -110,7 +110,6 @@ class TestLocalDevAuth:
         Mocks _lookup_user_with_position so the test is DB-free.
         SA path: tenant_id=None, role=SA, no warehouse.
         """
-        import asyncio
 
         async def _mock_sa(email: str, password: object = None) -> dict:
             return {

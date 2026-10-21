@@ -9,11 +9,11 @@ Additional tests cover the behaviours introduced by the two bug fixes:
 from __future__ import annotations
 
 from typing import Any
-from unittest.mock import AsyncMock, MagicMock, call, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from shared.outbox.schemas import InventoryUpdatedPayload, StockTransferredPayload
+from shared.outbox.schemas import InventoryUpdatedPayload
 
 
 # ── helpers ───────────────────────────────────────────────────────────────────

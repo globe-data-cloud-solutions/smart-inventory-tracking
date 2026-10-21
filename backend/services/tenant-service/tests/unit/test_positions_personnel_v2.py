@@ -36,11 +36,10 @@ if not _was_on_path:
 # ─────────────────────────────────────────────────────────────────────────────
 
 import json
-from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
-from uuid import UUID, uuid4
+from uuid import UUID
 
 import asyncpg
 import pytest

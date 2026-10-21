@@ -73,7 +73,7 @@ def _hash_password(password: str) -> str:
 def _verify_password(password: str, hashed: str) -> bool:
     return _bcrypt.checkpw(password.encode(), hashed.encode())
 
-from dependencies import get_current_user, get_db_session, get_db_session_for_tenant
+from dependencies import get_current_user, get_db_session_for_tenant
 from shared.permissions.middleware import require_permission
 from shared.permissions.registry import PERMISSIONS
 from shared.utils.responses import SuccessResponse

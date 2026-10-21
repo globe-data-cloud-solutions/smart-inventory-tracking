@@ -18,9 +18,6 @@ from fastapi import HTTPException
 
 from services.state_machine import (
     InvalidStateTransitionError,
-    PULL_TRANSITIONS,
-    PUSH_TRANSITIONS,
-    SISTER_TRANSITIONS,
     validate_transition,
 )
 
@@ -2638,7 +2635,6 @@ class TestL1StockAndTAEscalation:
         """
         from services.inventory_service import _check_can_approve
         from services.approval_service import ApprovalDecision
-        from fastapi import HTTPException
 
         CREATOR_ID = "creator-000"; OTHER_TA_ID = "ta-user-001"
 

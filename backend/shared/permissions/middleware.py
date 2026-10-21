@@ -3,7 +3,7 @@ import inspect
 import uuid
 from typing import Any, Callable
 
-from fastapi import HTTPException, Request
+from fastapi import HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from shared.permissions.audit import audit_log
