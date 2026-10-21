@@ -8,7 +8,7 @@ import { getSession, SA_ORG_SLUG } from "@/lib/demo-auth";
 import { api } from "@/lib/api";
 import { t } from "@/lib/i18n";
 import { usePermission } from "@/lib/permissions";
-import { formatQty } from "@/lib/utils";
+import { formatCurrency, formatQty } from "@/lib/utils";
 import { formatDate, formatDateTime } from "@/lib/format";
 import {
   TransferDiscrepancies,
@@ -33,6 +33,8 @@ interface TransferOrderResponse {
   to_warehouse_id: string;
   to_warehouse_name: string | null;
   created_at: string;
+  total_value?: number | string | null;
+  currency?: string | null;
   is_self_approved?: boolean;
   current_approval_step?: unknown;
   resolved_approval_steps?: unknown;
@@ -140,6 +142,12 @@ export default function TransferDetailPage() {
     { label: t("transfers.detail.from"),    value: transfer.from_warehouse_name ?? "—" },
     { label: t("transfers.detail.to"),      value: transfer.to_warehouse_name ?? "—" },
     { label: t("transfers.detail.created"), value: createdAt },
+    ...(transfer.total_value != null
+      ? [{
+          label: t("transfers.detail.total_value"),
+          value: formatCurrency(transfer.total_value, transfer.currency ?? "ETB"),
+        }]
+      : []),
   ];
 
   return (

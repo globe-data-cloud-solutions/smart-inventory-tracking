@@ -48,6 +48,11 @@ def _transfer_row(tenant_id: str = TENANT_A) -> MagicMock:
     row.from_warehouse_name = "Source"
     row.to_warehouse_name = "Destination"
     row.created_at = datetime(2026, 9, 1, tzinfo=timezone.utc)
+    row.total_value = None
+    row.currency = "ETB"
+    row.transfer_type_config_id = None
+    row.current_approval_step = None
+    row.resolved_approval_steps = None
     return row
 
 
@@ -160,7 +165,10 @@ def _scoped_row(transfer_id: UUID, from_wh: str, to_wh: str) -> SimpleNamespace:
         created_at=_CREATED_AT,
         updated_at=_CREATED_AT,
         is_self_approved=False,
-        current_approval_step=1,
+        total_value=None,
+        currency="ETB",
+        transfer_type_config_id=None,
+        current_approval_step=None,
         resolved_approval_steps=None,
         reference_number=f"TR-{str(transfer_id)[-2:].upper()}",
     )

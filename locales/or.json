@@ -1770,7 +1770,8 @@
       "product": "Meeshaa",
       "quantity": "Baay'ina",
       "created": "Uumame",
-      "notes": "Yaadannoo"
+      "notes": "Yaadannoo",
+      "total_value": "Total value"
     },
     "offline_error": "Jijjiirri haala dabarsaa walqunnamtii interneetii barbaada. Maaloo irra deebi'ii walqunnamii yaali.",
     "receive": {

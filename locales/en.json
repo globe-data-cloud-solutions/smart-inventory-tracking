@@ -1168,7 +1168,8 @@
       "product": "Product",
       "quantity": "Quantity",
       "created": "Created",
-      "notes": "Notes"
+      "notes": "Notes",
+      "total_value": "Total value"
     },
     "offline_error": "Transfer status changes require an internet connection. Please reconnect and try again.",
     "receive": {
