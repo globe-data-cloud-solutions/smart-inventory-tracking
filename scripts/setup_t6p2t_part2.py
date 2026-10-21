@@ -21,6 +21,7 @@ DELETE+INSERT / idempotency-key checks throughout.
 Run:  python scripts/setup_t6p2t_part2.py
 Requires: DATABASE_URL env var
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -49,41 +50,41 @@ Session = async_sessionmaker(bind=engine, expire_on_commit=False)
 # PART 1 — CONSTANTS
 # ══════════════════════════════════════════════════════════════════════════
 TENANT_ID = "aed68cc5-789f-4cb0-9ef5-9b6404267e42"
-SA_USER   = "00000001-0a00-0000-0000-000000000001"  # platform SA — RLS context user
-TA_USER   = "75960e66-39d1-4fa0-a4da-9fe4537f11fc"   # T6P2T TA — created_by attribution
+SA_USER = "00000001-0a00-0000-0000-000000000001"  # platform SA — RLS context user
+TA_USER = "75960e66-39d1-4fa0-a4da-9fe4537f11fc"  # T6P2T TA — created_by attribution
 
 # Nodes (from t6p2t_state.json)
-NODE_A_FAC    = "bb874f9f-cc49-40a3-a814-ebeab83ffa25"   # L1
-NODE_B_FAC    = "1fad3251-aba0-4930-b26c-e3e152577c5d"   # L1
-NODE_A_REG    = "630aee08-424d-4146-b7c4-fab6e4cc208a"   # L2
-NODE_B_REG    = "c678c8ea-595b-4f6a-9edd-a66b67557050"   # L2
-NODE_WHA1     = "1eb94c52-4963-4355-8e54-0d9810eafb02"   # L3, parent=A_REG
-NODE_WHA2     = "3996ffc4-4821-49ed-8717-d9c98025c695"   # L3, parent=A_REG
-NODE_WHA3     = "266557a4-b2fb-438a-910e-c149bf35c8e9"   # L3, parent=A_REG
-NODE_WHB1     = "c53b1fb3-10fa-453b-986b-6581c855d557"   # L3, parent=B_REG
-NODE_WHB2     = "aeebb033-8594-44b5-932d-7bfd4411cdba"   # L3, parent=B_REG
-NODE_SAT_WHA1 = "4ca4ea2a-512a-48a4-b01c-e72d20af3aff"   # L4, parent=WHA1
-NODE_SAT_WHA2 = "80d2ba11-ac76-42ca-b834-f34913da58e3"   # L4, parent=WHA1
-NODE_SAT_WHB1 = "7f0c4007-1488-4890-a551-12cc496ea289"   # L4, parent=WHB1
-NODE_SAT_WHB2 = "230e9afa-d694-46f7-9eda-22ed9bc3dab3"   # L4, parent=WHB2
+NODE_A_FAC = "bb874f9f-cc49-40a3-a814-ebeab83ffa25"  # L1
+NODE_B_FAC = "1fad3251-aba0-4930-b26c-e3e152577c5d"  # L1
+NODE_A_REG = "630aee08-424d-4146-b7c4-fab6e4cc208a"  # L2
+NODE_B_REG = "c678c8ea-595b-4f6a-9edd-a66b67557050"  # L2
+NODE_WHA1 = "1eb94c52-4963-4355-8e54-0d9810eafb02"  # L3, parent=A_REG
+NODE_WHA2 = "3996ffc4-4821-49ed-8717-d9c98025c695"  # L3, parent=A_REG
+NODE_WHA3 = "266557a4-b2fb-438a-910e-c149bf35c8e9"  # L3, parent=A_REG
+NODE_WHB1 = "c53b1fb3-10fa-453b-986b-6581c855d557"  # L3, parent=B_REG
+NODE_WHB2 = "aeebb033-8594-44b5-932d-7bfd4411cdba"  # L3, parent=B_REG
+NODE_SAT_WHA1 = "4ca4ea2a-512a-48a4-b01c-e72d20af3aff"  # L4, parent=WHA1
+NODE_SAT_WHA2 = "80d2ba11-ac76-42ca-b834-f34913da58e3"  # L4, parent=WHA1
+NODE_SAT_WHB1 = "7f0c4007-1488-4890-a551-12cc496ea289"  # L4, parent=WHB1
+NODE_SAT_WHB2 = "230e9afa-d694-46f7-9eda-22ed9bc3dab3"  # L4, parent=WHB2
 
 # NEW — SAT_WHA3 under WHA3 (L4 Satellite)
 NODE_SAT_WHA3 = "e1badc24-0001-0004-0000-000000000001"
 
 # Positions (from t6p2t_state.json)
-POS_A_FAC_DIR = "0f1bd8cc-5ce3-4bab-b40c-03777fc2ad6c"   # NM @ A_FAC
-POS_A_REG_MGR = "ce9e1ab6-d594-4dd9-aecd-4934fadfa432"   # RM @ A_REG
-POS_WHA1_MGR  = "88d54a15-7a1f-4a0d-a597-e6518f1344bb"   # WM @ WHA1
-POS_WHA2_MGR  = "c81e9288-5db1-4bbf-8ba8-5fa57a503cfa"   # WM @ WHA2
-POS_WHA3_MGR  = "639a6396-edb8-4d48-86e0-df4a9650839e"   # WM @ WHA3
-POS_B_FAC_DIR = "706c839a-d9ba-41e1-b1f5-b6445a3a50d4"   # NM @ B_FAC
-POS_B_REG_MGR = "4ffbbb0f-f1ae-4271-a421-02aa1216f017"   # RM @ B_REG
-POS_WHB1_MGR  = "78d8c59f-27e7-4365-b282-b8ef3a4af79b"   # WM @ WHB1
-POS_WHB2_MGR  = "fdbe07cb-5650-4bad-b22d-799f5770b60f"   # WM @ WHB2
+POS_A_FAC_DIR = "0f1bd8cc-5ce3-4bab-b40c-03777fc2ad6c"  # NM @ A_FAC
+POS_A_REG_MGR = "ce9e1ab6-d594-4dd9-aecd-4934fadfa432"  # RM @ A_REG
+POS_WHA1_MGR = "88d54a15-7a1f-4a0d-a597-e6518f1344bb"  # WM @ WHA1
+POS_WHA2_MGR = "c81e9288-5db1-4bbf-8ba8-5fa57a503cfa"  # WM @ WHA2
+POS_WHA3_MGR = "639a6396-edb8-4d48-86e0-df4a9650839e"  # WM @ WHA3
+POS_B_FAC_DIR = "706c839a-d9ba-41e1-b1f5-b6445a3a50d4"  # NM @ B_FAC
+POS_B_REG_MGR = "4ffbbb0f-f1ae-4271-a421-02aa1216f017"  # RM @ B_REG
+POS_WHB1_MGR = "78d8c59f-27e7-4365-b282-b8ef3a4af79b"  # WM @ WHB1
+POS_WHB2_MGR = "fdbe07cb-5650-4bad-b22d-799f5770b60f"  # WM @ WHB2
 
 # NEW — SAT_WHA3 position and user
 POS_SAT_WHA3_LEAD = "e1badc24-0002-0004-0000-000000000001"
-USR_SAT_WHA3_LM   = "e1badc24-0003-0004-0000-000000000001"
+USR_SAT_WHA3_LM = "e1badc24-0003-0004-0000-000000000001"
 
 # NEW — SAT_WHA3 WM position and user
 POS_SAT_WHA3_WM = "e1badc24-0004-0004-0000-000000000001"
@@ -98,7 +99,7 @@ PROD_P5 = "e1badc24-0301-0000-0000-000000000005"  # Factory-Specific A
 
 # Product catalog support (category / type code) — created if missing
 CAT_GENERAL = "e1badc24-0300-0000-0000-000000000001"
-TC_STD      = "e1badc24-0300-0000-0000-000000000002"
+TC_STD = "e1badc24-0300-0000-0000-000000000002"
 
 PW_HASH = bcrypt.hashpw(b"Test@2026", bcrypt.gensalt(rounds=12)).decode("utf-8")
 TODAY = date.today()
@@ -155,10 +156,10 @@ async def main() -> None:
             # (id, sku, name, uom, source_factory_id)
             products = [
                 (PROD_P1, "T6P2T-STD-001", "Standard Bulk Item", "Unit", None),
-                (PROD_P2, "T6P2T-STD-002", "Premium Item",       "Carton", None),
-                (PROD_P3, "T6P2T-CON-001", "Secure Med-A",       "Unit", None),
-                (PROD_P4, "T6P2T-CON-002", "Secure Med-B",       "Unit", None),
-                (PROD_P5, "T6P2T-FAC-001", "Factory-A Special",  "Box", NODE_A_FAC),
+                (PROD_P2, "T6P2T-STD-002", "Premium Item", "Carton", None),
+                (PROD_P3, "T6P2T-CON-001", "Secure Med-A", "Unit", None),
+                (PROD_P4, "T6P2T-CON-002", "Secure Med-B", "Unit", None),
+                (PROD_P5, "T6P2T-FAC-001", "Factory-A Special", "Box", NODE_A_FAC),
             ]
             for p_id, sku, name, uom, src_fac in products:
                 await s.execute(
@@ -178,9 +179,15 @@ async def main() -> None:
                             source_factory_id = EXCLUDED.source_factory_id
                     """),
                     {
-                        "id": p_id, "tid": TENANT_ID, "sku": sku, "name": name,
-                        "uom": uom, "cat": CAT_GENERAL, "tc": TC_STD,
-                        "src_fac": src_fac, "created_by": TA_USER,
+                        "id": p_id,
+                        "tid": TENANT_ID,
+                        "sku": sku,
+                        "name": name,
+                        "uom": uom,
+                        "cat": CAT_GENERAL,
+                        "tc": TC_STD,
+                        "src_fac": src_fac,
+                        "created_by": TA_USER,
                     },
                 )
             await s.commit()
@@ -195,11 +202,11 @@ async def main() -> None:
         try:
             overrides = [
                 # (product_id, tx_type, threshold_type, qty_threshold, approver_pos_id)
-                (PROD_P3, "PULL",       "ALWAYS",   None, POS_A_FAC_DIR),
-                (PROD_P3, "PUSH",       "ALWAYS",   None, POS_A_FAC_DIR),
-                (PROD_P3, "ADJUSTMENT", "ALWAYS",   None, POS_A_FAC_DIR),
-                (PROD_P4, "PULL",       "QUANTITY", 50,   POS_A_REG_MGR),
-                (PROD_P4, "ADJUSTMENT", "ALWAYS",   None, POS_A_REG_MGR),
+                (PROD_P3, "PULL", "ALWAYS", None, POS_A_FAC_DIR),
+                (PROD_P3, "PUSH", "ALWAYS", None, POS_A_FAC_DIR),
+                (PROD_P3, "ADJUSTMENT", "ALWAYS", None, POS_A_FAC_DIR),
+                (PROD_P4, "PULL", "QUANTITY", 50, POS_A_REG_MGR),
+                (PROD_P4, "ADJUSTMENT", "ALWAYS", None, POS_A_REG_MGR),
             ]
             for p_id, tx_type, ttype, qty_thr, approver_pos in overrides:
                 await s.execute(
@@ -221,13 +228,19 @@ async def main() -> None:
                             is_active            = EXCLUDED.is_active
                     """),
                     {
-                        "tid": TENANT_ID, "pid": p_id, "txtype": tx_type,
-                        "ttype": ttype, "qty": qty_thr, "approver": approver_pos,
+                        "tid": TENANT_ID,
+                        "pid": p_id,
+                        "txtype": tx_type,
+                        "ttype": ttype,
+                        "qty": qty_thr,
+                        "approver": approver_pos,
                         "created_by": TA_USER,
                     },
                 )
             await s.commit()
-            print(f"  [OK] {len(overrides)} product approval overrides set (P3 ALWAYS + P4 QUANTITY/ALWAYS)")
+            print(
+                f"  [OK] {len(overrides)} product approval overrides set (P3 ALWAYS + P4 QUANTITY/ALWAYS)"
+            )
         except Exception as e:
             abort("PART 3", e)
 
@@ -259,7 +272,12 @@ async def main() -> None:
                              ARRAY['PULL','PUSH','SISTER','ADJUSTMENT']::VARCHAR(20)[],
                              'QUANTITY', :qty, true)
                     """),
-                    {"tid": TENANT_ID, "role": role_code, "lvl": level_num, "qty": qty_limit},
+                    {
+                        "tid": TENANT_ID,
+                        "role": role_code,
+                        "lvl": level_num,
+                        "qty": qty_limit,
+                    },
                 )
             await s.commit()
             print(f"  [OK] {len(sap_rows)} self-approval policies set (NM/RM/WM/LM)")
@@ -278,9 +296,9 @@ async def main() -> None:
             adj_rows = [
                 # (role_code, level_number, qty_limit, approver_position_id)
                 ("NM", 1, None, None),
-                ("RM", 2, 500,  None),
-                ("WM", 3, 200,  POS_A_FAC_DIR),
-                ("LM", 4, 100,  POS_WHA1_MGR),
+                ("RM", 2, 500, None),
+                ("WM", 3, 200, POS_A_FAC_DIR),
+                ("LM", 4, 100, POS_WHA1_MGR),
             ]
             for role_code, level_num, qty_limit, approver_pos in adj_rows:
                 await s.execute(
@@ -295,8 +313,11 @@ async def main() -> None:
                              :approver, 1, true)
                     """),
                     {
-                        "tid": TENANT_ID, "role": role_code, "lvl": level_num,
-                        "qty": qty_limit, "approver": approver_pos,
+                        "tid": TENANT_ID,
+                        "role": role_code,
+                        "lvl": level_num,
+                        "qty": qty_limit,
+                        "approver": approver_pos,
                     },
                 )
             await s.commit()
@@ -323,8 +344,10 @@ async def main() -> None:
                         is_active = EXCLUDED.is_active
                 """),
                 {
-                    "id": NODE_SAT_WHA3, "tid": TENANT_ID,
-                    "name": "Satellite WHA3 Depot", "code": "SAT-WHA3",
+                    "id": NODE_SAT_WHA3,
+                    "tid": TENANT_ID,
+                    "name": "Satellite WHA3 Depot",
+                    "code": "SAT-WHA3",
                     "parent": NODE_WHA3,
                 },
             )
@@ -343,8 +366,11 @@ async def main() -> None:
                         role_code = EXCLUDED.role_code
                 """),
                 {
-                    "id": POS_SAT_WHA3_LEAD, "tid": TENANT_ID, "nid": NODE_SAT_WHA3,
-                    "title": "SAT_WHA3 Depot Lead", "rpts": POS_WHA3_MGR,
+                    "id": POS_SAT_WHA3_LEAD,
+                    "tid": TENANT_ID,
+                    "nid": NODE_SAT_WHA3,
+                    "title": "SAT_WHA3 Depot Lead",
+                    "rpts": POS_WHA3_MGR,
                 },
             )
 
@@ -367,8 +393,12 @@ async def main() -> None:
                         password_hash = EXCLUDED.password_hash
                 """),
                 {
-                    "id": USR_SAT_WHA3_LM, "tid": TENANT_ID, "sub": cognito_sub,
-                    "email": email, "name": "LM SAT WHA3", "pw": PW_HASH,
+                    "id": USR_SAT_WHA3_LM,
+                    "tid": TENANT_ID,
+                    "sub": cognito_sub,
+                    "email": email,
+                    "name": "LM SAT WHA3",
+                    "pw": PW_HASH,
                     "created_by": TA_USER,
                 },
             )
@@ -387,8 +417,11 @@ async def main() -> None:
                     DO NOTHING
                 """),
                 {
-                    "id": uid(), "tid": TENANT_ID, "uid": USR_SAT_WHA3_LM,
-                    "pid": POS_SAT_WHA3_LEAD, "assigned_by": TA_USER,
+                    "id": uid(),
+                    "tid": TENANT_ID,
+                    "uid": USR_SAT_WHA3_LM,
+                    "pid": POS_SAT_WHA3_LEAD,
+                    "assigned_by": TA_USER,
                 },
             )
             await s.commit()
@@ -415,8 +448,11 @@ async def main() -> None:
                         role_code = EXCLUDED.role_code
                 """),
                 {
-                    "id": POS_SAT_WHA3_WM, "tid": TENANT_ID, "nid": NODE_SAT_WHA3,
-                    "title": "SAT_WHA3 Warehouse Manager", "rpts": POS_WHA3_MGR,
+                    "id": POS_SAT_WHA3_WM,
+                    "tid": TENANT_ID,
+                    "nid": NODE_SAT_WHA3,
+                    "title": "SAT_WHA3 Warehouse Manager",
+                    "rpts": POS_WHA3_MGR,
                 },
             )
 
@@ -439,8 +475,12 @@ async def main() -> None:
                         password_hash = EXCLUDED.password_hash
                 """),
                 {
-                    "id": USR_SAT_WHA3_WM, "tid": TENANT_ID, "sub": cognito_sub,
-                    "email": email, "name": "SAT WHA3 Warehouse Manager", "pw": PW_HASH,
+                    "id": USR_SAT_WHA3_WM,
+                    "tid": TENANT_ID,
+                    "sub": cognito_sub,
+                    "email": email,
+                    "name": "SAT WHA3 Warehouse Manager",
+                    "pw": PW_HASH,
                     "created_by": TA_USER,
                 },
             )
@@ -459,8 +499,11 @@ async def main() -> None:
                     DO NOTHING
                 """),
                 {
-                    "id": uid(), "tid": TENANT_ID, "uid": USR_SAT_WHA3_WM,
-                    "pid": POS_SAT_WHA3_WM, "assigned_by": TA_USER,
+                    "id": uid(),
+                    "tid": TENANT_ID,
+                    "uid": USR_SAT_WHA3_WM,
+                    "pid": POS_SAT_WHA3_WM,
+                    "assigned_by": TA_USER,
                 },
             )
             await s.commit()
@@ -475,32 +518,28 @@ async def main() -> None:
         try:
             # (product_id, node_id, qty)
             opening_stock = [
-                (PROD_P1, NODE_A_FAC,    2000),
-                (PROD_P1, NODE_A_REG,    1500),
-                (PROD_P1, NODE_WHA1,     800),
-                (PROD_P1, NODE_WHA2,     600),
-                (PROD_P1, NODE_WHA3,     500),
-                (PROD_P1, NODE_WHB1,     700),
-                (PROD_P1, NODE_WHB2,     400),
+                (PROD_P1, NODE_A_FAC, 2000),
+                (PROD_P1, NODE_A_REG, 1500),
+                (PROD_P1, NODE_WHA1, 800),
+                (PROD_P1, NODE_WHA2, 600),
+                (PROD_P1, NODE_WHA3, 500),
+                (PROD_P1, NODE_WHB1, 700),
+                (PROD_P1, NODE_WHB2, 400),
                 (PROD_P1, NODE_SAT_WHA1, 300),
                 (PROD_P1, NODE_SAT_WHA2, 200),
                 (PROD_P1, NODE_SAT_WHB1, 250),
                 (PROD_P1, NODE_SAT_WHB2, 150),
                 (PROD_P1, NODE_SAT_WHA3, 180),
-
-                (PROD_P2, NODE_A_FAC,    500),
-                (PROD_P2, NODE_WHA1,     200),
-                (PROD_P2, NODE_WHA2,     150),
-                (PROD_P2, NODE_WHB1,     180),
-
-                (PROD_P3, NODE_A_FAC,    400),
-                (PROD_P3, NODE_WHA1,     100),
-
-                (PROD_P4, NODE_A_FAC,    300),
-                (PROD_P4, NODE_WHA1,     80),
-
-                (PROD_P5, NODE_A_FAC,    600),
-                (PROD_P5, NODE_WHA1,     200),
+                (PROD_P2, NODE_A_FAC, 500),
+                (PROD_P2, NODE_WHA1, 200),
+                (PROD_P2, NODE_WHA2, 150),
+                (PROD_P2, NODE_WHB1, 180),
+                (PROD_P3, NODE_A_FAC, 400),
+                (PROD_P3, NODE_WHA1, 100),
+                (PROD_P4, NODE_A_FAC, 300),
+                (PROD_P4, NODE_WHA1, 80),
+                (PROD_P5, NODE_A_FAC, 600),
+                (PROD_P5, NODE_WHA1, 200),
                 # P5 @ NODE_B_FAC deliberately NOT seeded — factory-specific
                 # constraint test relies on zero stock on the B-side.
             ]
@@ -510,11 +549,15 @@ async def main() -> None:
             for prod_id, node_id, qty in opening_stock:
                 ikey = f"t6p2t:seed:receipt:{prod_id[:8]}:{node_id[:8]}"
 
-                existing = (await s.execute(
-                    text("SELECT 1 FROM inventory_transactions "
-                         "WHERE tenant_id=:tid AND idempotency_key=:ikey LIMIT 1"),
-                    {"tid": TENANT_ID, "ikey": ikey},
-                )).fetchone()
+                existing = (
+                    await s.execute(
+                        text(
+                            "SELECT 1 FROM inventory_transactions "
+                            "WHERE tenant_id=:tid AND idempotency_key=:ikey LIMIT 1"
+                        ),
+                        {"tid": TENANT_ID, "ikey": ikey},
+                    )
+                ).fetchone()
                 if existing:
                     skipped += 1
                     continue
@@ -532,9 +575,14 @@ async def main() -> None:
                              :ikey, 'SEED', :uid)
                     """),
                     {
-                        "id": tx_id, "td": TODAY, "tid": TENANT_ID,
-                        "pid": prod_id, "wid": node_id, "qty": qty,
-                        "ikey": ikey, "uid": TA_USER,
+                        "id": tx_id,
+                        "td": TODAY,
+                        "tid": TENANT_ID,
+                        "pid": prod_id,
+                        "wid": node_id,
+                        "qty": qty,
+                        "ikey": ikey,
+                        "uid": TA_USER,
                     },
                 )
 
@@ -566,7 +614,12 @@ async def main() -> None:
     # ── PART 8 — UPDATE t6p2t_state.json ────────────────────────────────
     print("\n[PART 8] Updating tests/e2e/t6p2t_state.json …")
     try:
-        state_path = Path(__file__).resolve().parent.parent / "tests" / "e2e" / "t6p2t_state.json"
+        state_path = (
+            Path(__file__).resolve().parent.parent
+            / "tests"
+            / "e2e"
+            / "t6p2t_state.json"
+        )
         with open(state_path, "r", encoding="utf-8") as f:
             state = json.load(f)
 
@@ -610,7 +663,9 @@ async def main() -> None:
     print(f"  lm_satwha3 user : {USR_SAT_WHA3_LM}  (lm_satwha3@t6p2t.com / Test@2026)")
     print(f"  SAT_WHA3 WM pos : {POS_SAT_WHA3_WM}")
     print(f"  wm_satwha3 user : {USR_SAT_WHA3_WM}  (wm_satwha3@t6p2t.com / Test@2026)")
-    print(f"  Products        : P1={PROD_P1} P2={PROD_P2} P3={PROD_P3} P4={PROD_P4} P5={PROD_P5}")
+    print(
+        f"  Products        : P1={PROD_P1} P2={PROD_P2} P3={PROD_P3} P4={PROD_P4} P5={PROD_P5}"
+    )
     print()
 
 

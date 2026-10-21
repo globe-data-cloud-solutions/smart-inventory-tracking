@@ -5,6 +5,7 @@ Tests verify:
 2. NM/TA role: SQL does NOT contain warehouse_id filter — sees all tenant transfers.
 3. Response shape is correct for both endpoints.
 """
+
 from __future__ import annotations
 
 import uuid
@@ -22,13 +23,13 @@ from services.inventory_service import InventoryService
 _NOW = datetime(2026, 5, 24, 10, 0, 0, tzinfo=timezone.utc)
 
 
-TENANT_ID    = "10000000-0000-0000-0000-000000000001"
-WAREHOUSE_A  = "20000000-0000-0000-0000-000000000001"
-WAREHOUSE_B  = "20000000-0000-0000-0000-000000000002"
-PRODUCT_ID   = "aaaaaaaa-0000-0000-0000-000000000001"
-TRANSFER_ID  = "cccccccc-0000-0000-0000-000000000001"
-LINE_ID      = "eeeeeeee-0000-0000-0000-000000000001"
-ADJ_ID       = "dddddddd-0000-0000-0000-000000000001"
+TENANT_ID = "10000000-0000-0000-0000-000000000001"
+WAREHOUSE_A = "20000000-0000-0000-0000-000000000001"
+WAREHOUSE_B = "20000000-0000-0000-0000-000000000002"
+PRODUCT_ID = "aaaaaaaa-0000-0000-0000-000000000001"
+TRANSFER_ID = "cccccccc-0000-0000-0000-000000000001"
+LINE_ID = "eeeeeeee-0000-0000-0000-000000000001"
+ADJ_ID = "dddddddd-0000-0000-0000-000000000001"
 
 
 @dataclass
@@ -41,60 +42,59 @@ class _User:
 
 
 WM_USER = _User("u-wm", TENANT_ID, WAREHOUSE_A, None, "WM")
-NM_USER = _User("u-nm", TENANT_ID, None,        None, "NM")
-TA_USER = _User("u-ta", TENANT_ID, None,        None, "TA")
+NM_USER = _User("u-nm", TENANT_ID, None, None, "NM")
+TA_USER = _User("u-ta", TENANT_ID, None, None, "TA")
 
 
 def _make_transfer_row() -> MagicMock:
     row = MagicMock()
-    row.transfer_id          = UUID(TRANSFER_ID)
-    row.transfer_type        = "PULL"
-    row.status               = "DRAFT"
-    row.from_warehouse_id    = UUID(WAREHOUSE_A)
-    row.from_warehouse_name  = "AW North"
-    row.to_warehouse_id      = UUID(WAREHOUSE_B)
-    row.to_warehouse_name    = "AW Main"
-    row.created_by           = "u-wm"
-    row.created_at           = _NOW
-    row.updated_at           = None
+    row.transfer_id = UUID(TRANSFER_ID)
+    row.transfer_type = "PULL"
+    row.status = "DRAFT"
+    row.from_warehouse_id = UUID(WAREHOUSE_A)
+    row.from_warehouse_name = "AW North"
+    row.to_warehouse_id = UUID(WAREHOUSE_B)
+    row.to_warehouse_name = "AW Main"
+    row.created_by = "u-wm"
+    row.created_at = _NOW
+    row.updated_at = None
     return row
 
 
 def _make_line_row() -> MagicMock:
     row = MagicMock()
-    row.line_id       = UUID(LINE_ID)
-    row.product_id    = UUID(PRODUCT_ID)
-    row.product_name  = "Cement 50kg"
-    row.sku           = "CEM-50"
-    row.quantity      = Decimal("100")
-    row.uom           = "bags"
+    row.line_id = UUID(LINE_ID)
+    row.product_id = UUID(PRODUCT_ID)
+    row.product_name = "Cement 50kg"
+    row.sku = "CEM-50"
+    row.quantity = Decimal("100")
+    row.uom = "bags"
     return row
 
 
 def _make_adj_row() -> MagicMock:
     row = MagicMock()
-    row.adjustment_id  = UUID(ADJ_ID)
-    row.product_id     = UUID(PRODUCT_ID)
-    row.product_name   = "Cement 50kg"
-    row.sku            = "CEM-50"
-    row.warehouse_id   = UUID(WAREHOUSE_A)
+    row.adjustment_id = UUID(ADJ_ID)
+    row.product_id = UUID(PRODUCT_ID)
+    row.product_name = "Cement 50kg"
+    row.sku = "CEM-50"
+    row.warehouse_id = UUID(WAREHOUSE_A)
     row.warehouse_name = "AW North"
     row.quantity_delta = Decimal("-20")
-    row.reason_code    = "DAMAGE"
-    row.status         = "DRAFT"
-    row.created_by     = "u-wm"
-    row.created_at     = _NOW
-    row.notes          = None
-    row.lot_id         = None
-    row.lot_number     = None
-    row.expiry_date    = None
-    row.auto_lot       = False
+    row.reason_code = "DAMAGE"
+    row.status = "DRAFT"
+    row.created_by = "u-wm"
+    row.created_at = _NOW
+    row.notes = None
+    row.lot_id = None
+    row.lot_number = None
+    row.expiry_date = None
+    row.auto_lot = False
     return row
 
 
 @pytest.mark.unit
 class TestListTransfersScopedByRole:
-
     async def test_wm_list_includes_warehouse_filter_in_params(self) -> None:
         """list_transfers() for a WM must pass its node subtree into the SQL params.
 
@@ -104,10 +104,12 @@ class TestListTransfersScopedByRole:
         """
         session = AsyncMock()
         # First execute: transfer rows; second execute (per transfer): line rows
-        session.execute = AsyncMock(side_effect=[
-            MagicMock(fetchall=MagicMock(return_value=[_make_transfer_row()])),
-            MagicMock(fetchall=MagicMock(return_value=[_make_line_row()])),
-        ])
+        session.execute = AsyncMock(
+            side_effect=[
+                MagicMock(fetchall=MagicMock(return_value=[_make_transfer_row()])),
+                MagicMock(fetchall=MagicMock(return_value=[_make_line_row()])),
+            ]
+        )
 
         svc = InventoryService(session)
         with patch(
@@ -118,7 +120,9 @@ class TestListTransfersScopedByRole:
 
         # Verify the first execute (list query) received the subtree in params
         list_call = session.execute.call_args_list[0]
-        params = list_call.args[1] if len(list_call.args) > 1 else list_call.kwargs.get("params", {})
+        params = (
+            list_call.args[1] if len(list_call.args) > 1 else list_call.kwargs.get("params", {})
+        )
         assert "subtree" in params, (
             "WM list_transfers must include 'subtree' (node subtree) in SQL params"
         )
@@ -136,10 +140,12 @@ class TestListTransfersScopedByRole:
         NM sees all transfers for the tenant regardless of warehouse assignment.
         """
         session = AsyncMock()
-        session.execute = AsyncMock(side_effect=[
-            MagicMock(fetchall=MagicMock(return_value=[_make_transfer_row()])),
-            MagicMock(fetchall=MagicMock(return_value=[_make_line_row()])),
-        ])
+        session.execute = AsyncMock(
+            side_effect=[
+                MagicMock(fetchall=MagicMock(return_value=[_make_transfer_row()])),
+                MagicMock(fetchall=MagicMock(return_value=[_make_line_row()])),
+            ]
+        )
 
         svc = InventoryService(session)
         await svc.list_transfers(NM_USER)
@@ -153,9 +159,11 @@ class TestListTransfersScopedByRole:
     async def test_ta_list_does_not_filter_by_warehouse(self) -> None:
         """Tenant Admin (TA) sees all transfers for the tenant."""
         session = AsyncMock()
-        session.execute = AsyncMock(side_effect=[
-            MagicMock(fetchall=MagicMock(return_value=[])),
-        ])
+        session.execute = AsyncMock(
+            side_effect=[
+                MagicMock(fetchall=MagicMock(return_value=[])),
+            ]
+        )
 
         svc = InventoryService(session)
         await svc.list_transfers(TA_USER)
@@ -167,34 +175,38 @@ class TestListTransfersScopedByRole:
     async def test_list_transfers_returns_enriched_shape(self) -> None:
         """list_transfers() returns TransferListItem with warehouse names and lines."""
         session = AsyncMock()
-        session.execute = AsyncMock(side_effect=[
-            MagicMock(fetchall=MagicMock(return_value=[_make_transfer_row()])),
-            MagicMock(fetchall=MagicMock(return_value=[_make_line_row()])),
-        ])
+        session.execute = AsyncMock(
+            side_effect=[
+                MagicMock(fetchall=MagicMock(return_value=[_make_transfer_row()])),
+                MagicMock(fetchall=MagicMock(return_value=[_make_line_row()])),
+            ]
+        )
 
         svc = InventoryService(session)
         results = await svc.list_transfers(NM_USER)
 
         assert len(results) == 1
         item = results[0]
-        assert item.transfer_id        == UUID(TRANSFER_ID)
-        assert item.transfer_type      == "PULL"
-        assert item.status             == "DRAFT"
+        assert item.transfer_id == UUID(TRANSFER_ID)
+        assert item.transfer_type == "PULL"
+        assert item.status == "DRAFT"
         assert item.from_warehouse_name == "AW North"
-        assert item.to_warehouse_name   == "AW Main"
-        assert len(item.lines)          == 1
+        assert item.to_warehouse_name == "AW Main"
+        assert len(item.lines) == 1
         assert item.lines[0].product_name == "Cement 50kg"
-        assert item.lines[0].sku          == "CEM-50"
-        assert item.lines[0].quantity     == Decimal("100")
+        assert item.lines[0].sku == "CEM-50"
+        assert item.lines[0].quantity == Decimal("100")
 
     async def test_list_transfers_lines_carry_line_id(self) -> None:
         """Every line of a list item carries its transfer_order_lines id — the
         receive form sends it back as line_id."""
         session = AsyncMock()
-        session.execute = AsyncMock(side_effect=[
-            MagicMock(fetchall=MagicMock(return_value=[_make_transfer_row()])),
-            MagicMock(fetchall=MagicMock(return_value=[_make_line_row()])),
-        ])
+        session.execute = AsyncMock(
+            side_effect=[
+                MagicMock(fetchall=MagicMock(return_value=[_make_transfer_row()])),
+                MagicMock(fetchall=MagicMock(return_value=[_make_line_row()])),
+            ]
+        )
 
         svc = InventoryService(session)
         results = await svc.list_transfers(NM_USER)
@@ -206,9 +218,7 @@ class TestListTransfersScopedByRole:
     async def test_list_transfers_empty_returns_empty_list(self) -> None:
         """Empty transfer_orders table returns an empty list, not an error."""
         session = AsyncMock()
-        session.execute = AsyncMock(
-            return_value=MagicMock(fetchall=MagicMock(return_value=[]))
-        )
+        session.execute = AsyncMock(return_value=MagicMock(fetchall=MagicMock(return_value=[])))
 
         svc = InventoryService(session)
         results = await svc.list_transfers(NM_USER)
@@ -218,17 +228,17 @@ class TestListTransfersScopedByRole:
     async def test_list_transfers_pagination_offset(self) -> None:
         """page=2 with limit=10 must set OFFSET=10 in params."""
         session = AsyncMock()
-        session.execute = AsyncMock(
-            return_value=MagicMock(fetchall=MagicMock(return_value=[]))
-        )
+        session.execute = AsyncMock(return_value=MagicMock(fetchall=MagicMock(return_value=[])))
 
         svc = InventoryService(session)
         await svc.list_transfers(NM_USER, page=2, limit=10)
 
         list_call = session.execute.call_args_list[0]
         params = list_call.args[1] if len(list_call.args) > 1 else {}
-        assert params["offset"] == 10, f"Expected offset=10 for page=2 limit=10, got {params.get('offset')}"
-        assert params["limit"]  == 10
+        assert params["offset"] == 10, (
+            f"Expected offset=10 for page=2 limit=10, got {params.get('offset')}"
+        )
+        assert params["limit"] == 10
 
     async def test_list_transfers_returns_actual_transfer_type(self) -> None:
         """list_transfers() must return the DB transfer_type, not hardcoded 'PULL'.
@@ -246,10 +256,12 @@ class TestListTransfersScopedByRole:
 
         for expected_type, db_row in [("PUSH", push_row), ("SISTER", sister_row)]:
             session = AsyncMock()
-            session.execute = AsyncMock(side_effect=[
-                MagicMock(fetchall=MagicMock(return_value=[db_row])),
-                MagicMock(fetchall=MagicMock(return_value=[])),
-            ])
+            session.execute = AsyncMock(
+                side_effect=[
+                    MagicMock(fetchall=MagicMock(return_value=[db_row])),
+                    MagicMock(fetchall=MagicMock(return_value=[])),
+                ]
+            )
 
             svc = InventoryService(session)
             results = await svc.list_transfers(NM_USER)
@@ -265,7 +277,6 @@ class TestListTransfersScopedByRole:
 
 @pytest.mark.unit
 class TestListAdjustmentsScopedByRole:
-
     async def test_wm_list_includes_warehouse_filter_in_params(self) -> None:
         """list_adjustments() for WM must pass warehouse_id into SQL params."""
         session = AsyncMock()
@@ -278,17 +289,13 @@ class TestListAdjustmentsScopedByRole:
 
         list_call = session.execute.call_args_list[0]
         params = list_call.args[1] if len(list_call.args) > 1 else {}
-        assert "wid" in params, (
-            "WM list_adjustments must include 'wid' in SQL params"
-        )
+        assert "wid" in params, "WM list_adjustments must include 'wid' in SQL params"
         assert params["wid"] == WAREHOUSE_A
 
     async def test_nm_list_does_not_filter_by_warehouse(self) -> None:
         """NM list_adjustments must NOT include warehouse_id filter."""
         session = AsyncMock()
-        session.execute = AsyncMock(
-            return_value=MagicMock(fetchall=MagicMock(return_value=[]))
-        )
+        session.execute = AsyncMock(return_value=MagicMock(fetchall=MagicMock(return_value=[])))
 
         svc = InventoryService(session)
         await svc.list_adjustments(NM_USER)
@@ -309,13 +316,13 @@ class TestListAdjustmentsScopedByRole:
 
         assert len(results) == 1
         item = results[0]
-        assert item.adjustment_id  == UUID(ADJ_ID)
-        assert item.product_name   == "Cement 50kg"
-        assert item.sku            == "CEM-50"
+        assert item.adjustment_id == UUID(ADJ_ID)
+        assert item.product_name == "Cement 50kg"
+        assert item.sku == "CEM-50"
         assert item.warehouse_name == "AW North"
         assert item.quantity_delta == Decimal("-20")
-        assert item.reason_code    == "DAMAGE"
-        assert item.status         == "DRAFT"
+        assert item.reason_code == "DAMAGE"
+        assert item.status == "DRAFT"
 
 
 @pytest.mark.unit
@@ -325,16 +332,17 @@ class TestFactorySpecificProductValidation:
     are always allowed from any warehouse.
     """
 
-    FACTORY_ID   = "ffffffff-0000-0000-0000-000000000001"
-    SUBTREE_WH   = "20000000-0000-0000-0000-000000000001"   # inside factory subtree
-    OUTSIDE_WH   = "20000000-0000-0000-0000-000000000099"   # NOT in subtree
-    PRODUCT_B    = "bbbbbbbb-0000-0000-0000-000000000001"
+    FACTORY_ID = "ffffffff-0000-0000-0000-000000000001"
+    SUBTREE_WH = "20000000-0000-0000-0000-000000000001"  # inside factory subtree
+    OUTSIDE_WH = "20000000-0000-0000-0000-000000000099"  # NOT in subtree
+    PRODUCT_B = "bbbbbbbb-0000-0000-0000-000000000001"
 
     def _make_user(self, wh_id: str) -> _User:
         return _User("u-wm", TENANT_ID, wh_id, None, "WM")
 
     def _make_transfer_body(self, from_wh: str, product_id: str) -> Any:
         from schemas.inventory import TransferOrderRequest, TransferLineRequest
+
         return TransferOrderRequest(
             from_warehouse_id=UUID(from_wh),
             to_warehouse_id=UUID(WAREHOUSE_B),
@@ -354,17 +362,23 @@ class TestFactorySpecificProductValidation:
         pend_row.pending = Decimal("0")
 
         session = AsyncMock()
-        session.execute = AsyncMock(side_effect=[
-            MagicMock(fetchone=MagicMock(return_value=MagicMock(is_active=True))),  # from warehouse active check
-            MagicMock(fetchone=MagicMock(return_value=MagicMock(is_active=True))),  # to warehouse active check
-            MagicMock(fetchone=MagicMock(return_value=product_row)),  # products lookup
-            MagicMock(fetchone=MagicMock(return_value=None)),          # config lookup → None
-            MagicMock(fetchone=MagicMock(return_value=oh_row)),        # on_hand (stock check)
-            MagicMock(fetchone=MagicMock(return_value=pend_row)),      # pending_out (stock check)
-            MagicMock(fetchone=MagicMock(return_value=None)),          # unit_price → None
-            MagicMock(),                                                # INSERT transfer_orders
-            MagicMock(),                                                # INSERT transfer_order_lines
-        ])
+        session.execute = AsyncMock(
+            side_effect=[
+                MagicMock(
+                    fetchone=MagicMock(return_value=MagicMock(is_active=True))
+                ),  # from warehouse active check
+                MagicMock(
+                    fetchone=MagicMock(return_value=MagicMock(is_active=True))
+                ),  # to warehouse active check
+                MagicMock(fetchone=MagicMock(return_value=product_row)),  # products lookup
+                MagicMock(fetchone=MagicMock(return_value=None)),  # config lookup → None
+                MagicMock(fetchone=MagicMock(return_value=oh_row)),  # on_hand (stock check)
+                MagicMock(fetchone=MagicMock(return_value=pend_row)),  # pending_out (stock check)
+                MagicMock(fetchone=MagicMock(return_value=None)),  # unit_price → None
+                MagicMock(),  # INSERT transfer_orders
+                MagicMock(),  # INSERT transfer_order_lines
+            ]
+        )
 
         svc = InventoryService(session)
         user = self._make_user(self.OUTSIDE_WH)
@@ -382,9 +396,7 @@ class TestFactorySpecificProductValidation:
         product_row.sku = "FAC-001"
 
         subtree_result = MagicMock()
-        subtree_result.fetchall = MagicMock(
-            return_value=[(self.FACTORY_ID,), (self.SUBTREE_WH,)]
-        )
+        subtree_result.fetchall = MagicMock(return_value=[(self.FACTORY_ID,), (self.SUBTREE_WH,)])
 
         oh_row2 = MagicMock()
         oh_row2.qty = Decimal("9999")
@@ -392,18 +404,24 @@ class TestFactorySpecificProductValidation:
         pend_row2.pending = Decimal("0")
 
         session = AsyncMock()
-        session.execute = AsyncMock(side_effect=[
-            MagicMock(fetchone=MagicMock(return_value=MagicMock(is_active=True))),  # from warehouse active check
-            MagicMock(fetchone=MagicMock(return_value=MagicMock(is_active=True))),  # to warehouse active check
-            MagicMock(fetchone=MagicMock(return_value=product_row)),  # products lookup
-            subtree_result,                                            # subtree CTE
-            MagicMock(fetchone=MagicMock(return_value=None)),          # config lookup → None
-            MagicMock(fetchone=MagicMock(return_value=oh_row2)),       # on_hand (stock check)
-            MagicMock(fetchone=MagicMock(return_value=pend_row2)),     # pending_out (stock check)
-            MagicMock(fetchone=MagicMock(return_value=None)),          # unit_price → None
-            MagicMock(),                                                # INSERT transfer_orders
-            MagicMock(),                                                # INSERT lines
-        ])
+        session.execute = AsyncMock(
+            side_effect=[
+                MagicMock(
+                    fetchone=MagicMock(return_value=MagicMock(is_active=True))
+                ),  # from warehouse active check
+                MagicMock(
+                    fetchone=MagicMock(return_value=MagicMock(is_active=True))
+                ),  # to warehouse active check
+                MagicMock(fetchone=MagicMock(return_value=product_row)),  # products lookup
+                subtree_result,  # subtree CTE
+                MagicMock(fetchone=MagicMock(return_value=None)),  # config lookup → None
+                MagicMock(fetchone=MagicMock(return_value=oh_row2)),  # on_hand (stock check)
+                MagicMock(fetchone=MagicMock(return_value=pend_row2)),  # pending_out (stock check)
+                MagicMock(fetchone=MagicMock(return_value=None)),  # unit_price → None
+                MagicMock(),  # INSERT transfer_orders
+                MagicMock(),  # INSERT lines
+            ]
+        )
 
         svc = InventoryService(session)
         user = self._make_user(self.SUBTREE_WH)
@@ -422,21 +440,25 @@ class TestFactorySpecificProductValidation:
         product_row.sku = "FAC-001"
 
         subtree_result = MagicMock()
-        subtree_result.fetchall = MagicMock(
-            return_value=[(self.FACTORY_ID,), (self.SUBTREE_WH,)]
-        )
+        subtree_result.fetchall = MagicMock(return_value=[(self.FACTORY_ID,), (self.SUBTREE_WH,)])
 
         factory_node_row = MagicMock()
         factory_node_row.name = "Jimma Factory"
 
         session = AsyncMock()
-        session.execute = AsyncMock(side_effect=[
-            MagicMock(fetchone=MagicMock(return_value=MagicMock(is_active=True))),  # from warehouse active check
-            MagicMock(fetchone=MagicMock(return_value=MagicMock(is_active=True))),  # to warehouse active check
-            MagicMock(fetchone=MagicMock(return_value=product_row)),       # products lookup
-            subtree_result,                                                  # subtree CTE
-            MagicMock(fetchone=MagicMock(return_value=factory_node_row)),   # factory name lookup
-        ])
+        session.execute = AsyncMock(
+            side_effect=[
+                MagicMock(
+                    fetchone=MagicMock(return_value=MagicMock(is_active=True))
+                ),  # from warehouse active check
+                MagicMock(
+                    fetchone=MagicMock(return_value=MagicMock(is_active=True))
+                ),  # to warehouse active check
+                MagicMock(fetchone=MagicMock(return_value=product_row)),  # products lookup
+                subtree_result,  # subtree CTE
+                MagicMock(fetchone=MagicMock(return_value=factory_node_row)),  # factory name lookup
+            ]
+        )
 
         svc = InventoryService(session)
         user = self._make_user(self.OUTSIDE_WH)
@@ -466,13 +488,19 @@ class TestFactorySpecificProductValidation:
         factory_node_row.name = "Addis Main Factory"
 
         session = AsyncMock()
-        session.execute = AsyncMock(side_effect=[
-            MagicMock(fetchone=MagicMock(return_value=MagicMock(is_active=True))),  # from warehouse active check
-            MagicMock(fetchone=MagicMock(return_value=MagicMock(is_active=True))),  # to warehouse active check
-            MagicMock(fetchone=MagicMock(return_value=product_row)),
-            subtree_result,
-            MagicMock(fetchone=MagicMock(return_value=factory_node_row)),
-        ])
+        session.execute = AsyncMock(
+            side_effect=[
+                MagicMock(
+                    fetchone=MagicMock(return_value=MagicMock(is_active=True))
+                ),  # from warehouse active check
+                MagicMock(
+                    fetchone=MagicMock(return_value=MagicMock(is_active=True))
+                ),  # to warehouse active check
+                MagicMock(fetchone=MagicMock(return_value=product_row)),
+                subtree_result,
+                MagicMock(fetchone=MagicMock(return_value=factory_node_row)),
+            ]
+        )
 
         svc = InventoryService(session)
         user = self._make_user(self.OUTSIDE_WH)
@@ -499,25 +527,32 @@ class TestFactorySpecificProductValidation:
         factory_node_row.name = "Locked Factory"
 
         session = AsyncMock()
-        session.execute = AsyncMock(side_effect=[
-            MagicMock(fetchone=MagicMock(return_value=MagicMock(is_active=True))),  # from warehouse active check
-            MagicMock(fetchone=MagicMock(return_value=MagicMock(is_active=True))),  # to warehouse active check
-            MagicMock(fetchone=MagicMock(return_value=bad_product)),
-            subtree_result,
-            MagicMock(fetchone=MagicMock(return_value=factory_node_row)),
-        ])
+        session.execute = AsyncMock(
+            side_effect=[
+                MagicMock(
+                    fetchone=MagicMock(return_value=MagicMock(is_active=True))
+                ),  # from warehouse active check
+                MagicMock(
+                    fetchone=MagicMock(return_value=MagicMock(is_active=True))
+                ),  # to warehouse active check
+                MagicMock(fetchone=MagicMock(return_value=bad_product)),
+                subtree_result,
+                MagicMock(fetchone=MagicMock(return_value=factory_node_row)),
+            ]
+        )
 
         svc = InventoryService(session)
         user = self._make_user(self.OUTSIDE_WH)
 
         from schemas.inventory import TransferOrderRequest, TransferLineRequest
+
         body = TransferOrderRequest(
             from_warehouse_id=UUID(self.OUTSIDE_WH),
             to_warehouse_id=UUID(WAREHOUSE_B),
             transfer_type="PULL",
             lines=[
                 TransferLineRequest(product_id=UUID(self.PRODUCT_B), quantity=Decimal("5")),
-                TransferLineRequest(product_id=UUID(PRODUCT_ID),     quantity=Decimal("3")),
+                TransferLineRequest(product_id=UUID(PRODUCT_ID), quantity=Decimal("3")),
             ],
         )
 
@@ -532,7 +567,6 @@ class TestFactorySpecificProductValidation:
 
 @pytest.mark.unit
 class TestIssueStockBelowZeroBlocked:
-
     async def test_issue_below_zero_blocked_by_record_transaction(self) -> None:
         """record_transaction() raises when stock would go below zero.
 
@@ -558,16 +592,19 @@ class TestIssueStockBelowZeroBlocked:
         from services.dispatch_service import ProductDispatchInfo
 
         # issue_stock() loads the product first — a non-batch product here.
-        with patch(
-            "services.inventory_service.load_product",
-            new_callable=AsyncMock,
-            return_value=ProductDispatchInfo(
-                batch_tracking=False, expiry_tracking=False, dispatch_strategy=None
+        with (
+            patch(
+                "services.inventory_service.load_product",
+                new_callable=AsyncMock,
+                return_value=ProductDispatchInfo(
+                    batch_tracking=False, expiry_tracking=False, dispatch_strategy=None
+                ),
             ),
-        ), patch(
-            "services.inventory_service.record_transaction",
-            new_callable=AsyncMock,
-            side_effect=insufficient_stock_error,
+            patch(
+                "services.inventory_service.record_transaction",
+                new_callable=AsyncMock,
+                side_effect=insufficient_stock_error,
+            ),
         ):
             with pytest.raises(Exception, match="INSUFFICIENT_STOCK"):
                 await svc.issue_stock(WM_USER, body)
@@ -611,11 +648,15 @@ class TestTransferRequestsEnrich:
         product_row.sku = "CEM-50"
 
         session = AsyncMock()
-        session.execute = AsyncMock(side_effect=[
-            MagicMock(fetchone=MagicMock(return_value=req_wh_row)),   # COALESCE for requesting_wh
-            MagicMock(fetchone=MagicMock(return_value=src_wh_row)),   # COALESCE for source_wh
-            MagicMock(fetchone=MagicMock(return_value=product_row)),  # product lookup
-        ])
+        session.execute = AsyncMock(
+            side_effect=[
+                MagicMock(
+                    fetchone=MagicMock(return_value=req_wh_row)
+                ),  # COALESCE for requesting_wh
+                MagicMock(fetchone=MagicMock(return_value=src_wh_row)),  # COALESCE for source_wh
+                MagicMock(fetchone=MagicMock(return_value=product_row)),  # product lookup
+            ]
+        )
 
         result = await _enrich(row, session)
 
@@ -653,11 +694,13 @@ class TestTransferRequestsEnrich:
         product_row.sku = "X-001"
 
         session = AsyncMock()
-        session.execute = AsyncMock(side_effect=[
-            MagicMock(fetchone=MagicMock(return_value=result_row)),
-            MagicMock(fetchone=MagicMock(return_value=result_row)),
-            MagicMock(fetchone=MagicMock(return_value=product_row)),
-        ])
+        session.execute = AsyncMock(
+            side_effect=[
+                MagicMock(fetchone=MagicMock(return_value=result_row)),
+                MagicMock(fetchone=MagicMock(return_value=result_row)),
+                MagicMock(fetchone=MagicMock(return_value=product_row)),
+            ]
+        )
 
         await _enrich(row, session)
 
@@ -665,6 +708,5 @@ class TestTransferRequestsEnrich:
         first_call = session.execute.call_args_list[0]
         sql_text = str(first_call.args[0])
         assert "organization_node" in sql_text, (
-            "_enrich SQL must reference organization_node for COALESCE fallback; "
-            "got: " + sql_text
+            "_enrich SQL must reference organization_node for COALESCE fallback; got: " + sql_text
         )

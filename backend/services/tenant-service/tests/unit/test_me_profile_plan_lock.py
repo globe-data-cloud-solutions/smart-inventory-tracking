@@ -10,17 +10,18 @@ Pydantic would otherwise silently drop them. Every other profile field
 Mocked session + mocked Request/db throughout — no real DB connection
 required.
 """
+
 from __future__ import annotations
 
 import os
 import sys
 import uuid
 
-os.environ.setdefault("DATABASE_URL",      "postgresql+asyncpg://test:x@localhost/test")
+os.environ.setdefault("DATABASE_URL", "postgresql+asyncpg://test:x@localhost/test")
 os.environ.setdefault("DATABASE_READ_URL", "postgresql+asyncpg://test:x@localhost/test")
-os.environ.setdefault("JWT_SECRET",        "test-secret")
-os.environ.setdefault("JWT_SECRET_KEY",    "test-secret")
-os.environ.setdefault("ENVIRONMENT",       "local")
+os.environ.setdefault("JWT_SECRET", "test-secret")
+os.environ.setdefault("JWT_SECRET_KEY", "test-secret")
+os.environ.setdefault("ENVIRONMENT", "local")
 
 _TENANT_ROOT = os.path.normpath(os.path.join(os.path.dirname(__file__), "..", ".."))
 if _TENANT_ROOT not in sys.path:
@@ -38,6 +39,7 @@ TENANT_A = uuid.UUID("aaaaaaaa-0000-0000-0000-000000000001")
 
 def _user():
     from dependencies import UserContext
+
     return UserContext(user_id="u-1", role="TA", tenant_id=str(TENANT_A), warehouse_id=None)
 
 
@@ -76,13 +78,21 @@ async def test_plan_billing_field_rejected_before_any_write(raw_body: dict) -> N
 
     ta = _user()
     db = AsyncMock()
-    with patch("shared.permissions.middleware.get_role_permission", new=AsyncMock(return_value=_full_grant())), \
-         patch("shared.permissions.middleware.audit_log", new=AsyncMock()):
+    with (
+        patch(
+            "shared.permissions.middleware.get_role_permission",
+            new=AsyncMock(return_value=_full_grant()),
+        ),
+        patch("shared.permissions.middleware.audit_log", new=AsyncMock()),
+    ):
         with pytest.raises(HTTPException) as exc_info:
             await update_my_profile(
                 request=_request(raw_body),
-                body=TAProfileUpdateRequest(**{k: v for k, v in raw_body.items() if k == "default_locale"}),
-                user=ta, db=db,
+                body=TAProfileUpdateRequest(
+                    **{k: v for k, v in raw_body.items() if k == "default_locale"}
+                ),
+                user=ta,
+                db=db,
             )
 
     assert exc_info.value.status_code == 403
@@ -96,13 +106,19 @@ async def test_locale_only_change_still_works() -> None:
     ta = _user()
     db = AsyncMock()
     db.execute.return_value = _scalar_result("en")
-    with patch("shared.permissions.middleware.get_role_permission", new=AsyncMock(return_value=_full_grant())), \
-         patch("shared.permissions.middleware.audit_log", new=AsyncMock()), \
-         patch("routers.tenants._log_tenant_activity", new=AsyncMock()):
+    with (
+        patch(
+            "shared.permissions.middleware.get_role_permission",
+            new=AsyncMock(return_value=_full_grant()),
+        ),
+        patch("shared.permissions.middleware.audit_log", new=AsyncMock()),
+        patch("routers.tenants._log_tenant_activity", new=AsyncMock()),
+    ):
         out = await update_my_profile(
             request=_request({"default_locale": "am"}),
             body=TAProfileUpdateRequest(default_locale="am"),
-            user=ta, db=db,
+            user=ta,
+            db=db,
         )
 
     assert out.data == {"default_locale": "am"}
@@ -115,12 +131,18 @@ async def test_no_locale_field_returns_zero_changes() -> None:
 
     ta = _user()
     db = AsyncMock()
-    with patch("shared.permissions.middleware.get_role_permission", new=AsyncMock(return_value=_full_grant())), \
-         patch("shared.permissions.middleware.audit_log", new=AsyncMock()):
+    with (
+        patch(
+            "shared.permissions.middleware.get_role_permission",
+            new=AsyncMock(return_value=_full_grant()),
+        ),
+        patch("shared.permissions.middleware.audit_log", new=AsyncMock()),
+    ):
         out = await update_my_profile(
             request=_request({}),
             body=TAProfileUpdateRequest(),
-            user=ta, db=db,
+            user=ta,
+            db=db,
         )
 
     assert out.data == {"changes": 0}

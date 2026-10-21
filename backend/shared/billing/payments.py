@@ -10,6 +10,7 @@ Design (agreed, S5):
   - Paying extends the contract; nothing is enforced on non-payment yet.
   - Payments are never deleted; payment_line_items is append-only (DB rule).
 """
+
 from __future__ import annotations
 
 from datetime import date, datetime, timezone
@@ -19,28 +20,33 @@ from typing import Any, Optional
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from shared.billing.subscriptions import get_current_addon_price, get_current_price, period_end, vat_breakdown
+from shared.billing.subscriptions import (
+    get_current_addon_price,
+    get_current_price,
+    period_end,
+    vat_breakdown,
+)
 from shared.plans.catalog import apply_package_to_tenant
 
 _LIVE_SUBSCRIPTION_STATUSES = ("ACTIVE", "PENDING_PAYMENT", "PAST_DUE")
 
 
 async def _get_live_subscription(db: AsyncSession, tenant_id: str) -> Any:
-    return (await db.execute(
-        text(
-            "SELECT id, tenant_id, tier, billing_period, status, provider, price_id, "
-            "       amount, currency, current_period_start, current_period_end, scheduled_tier "
-            "FROM subscriptions "
-            "WHERE tenant_id = :tid AND status IN ('ACTIVE', 'PENDING_PAYMENT', 'PAST_DUE') "
-            "LIMIT 1"
-        ),
-        {"tid": str(tenant_id)},
-    )).fetchone()
+    return (
+        await db.execute(
+            text(
+                "SELECT id, tenant_id, tier, billing_period, status, provider, price_id, "
+                "       amount, currency, current_period_start, current_period_end, scheduled_tier "
+                "FROM subscriptions "
+                "WHERE tenant_id = :tid AND status IN ('ACTIVE', 'PENDING_PAYMENT', 'PAST_DUE') "
+                "LIMIT 1"
+            ),
+            {"tid": str(tenant_id)},
+        )
+    ).fetchone()
 
 
-async def next_invoice_period(
-    db: AsyncSession, subscription: Any
-) -> tuple[date, date, Any, bool]:
+async def next_invoice_period(db: AsyncSession, subscription: Any) -> tuple[date, date, Any, bool]:
     """The period + price the next invoice for `subscription` should bill.
 
     - PENDING_PAYMENT with no PAID payment yet for this subscription: the
@@ -57,17 +63,25 @@ async def next_invoice_period(
     """
     is_first_invoice = False
     if subscription.status == "PENDING_PAYMENT":
-        existing_paid = (await db.execute(
-            text("SELECT id FROM payments WHERE subscription_id = :sid AND status = 'PAID' LIMIT 1"),
-            {"sid": str(subscription.id)},
-        )).fetchone()
+        existing_paid = (
+            await db.execute(
+                text(
+                    "SELECT id FROM payments WHERE subscription_id = :sid AND status = 'PAID' LIMIT 1"
+                ),
+                {"sid": str(subscription.id)},
+            )
+        ).fetchone()
         is_first_invoice = existing_paid is None
 
     if is_first_invoice:
-        price = (await db.execute(
-            text("SELECT id, tier, billing_period, currency, amount FROM package_prices WHERE id = :pid"),
-            {"pid": str(subscription.price_id)},
-        )).fetchone()
+        price = (
+            await db.execute(
+                text(
+                    "SELECT id, tier, billing_period, currency, amount FROM package_prices WHERE id = :pid"
+                ),
+                {"pid": str(subscription.price_id)},
+            )
+        ).fetchone()
         return subscription.current_period_start, subscription.current_period_end, price, False
 
     start = subscription.current_period_end
@@ -81,16 +95,18 @@ async def next_invoice_period(
 
 async def _active_purchased_addons(db: AsyncSession, tenant_id: str) -> list[Any]:
     """ACTIVE, PURCHASED, billable (amount > 0) tenant_addons rows for a tenant."""
-    return (await db.execute(
-        text(
-            "SELECT ta.id, ta.addon_code, ta.price_id, ta.amount, pa.display_name "
-            "FROM tenant_addons ta "
-            "JOIN platform_addons pa ON pa.code = ta.addon_code "
-            "WHERE ta.tenant_id = :tid AND ta.status = 'ACTIVE' "
-            "  AND ta.source = 'PURCHASED' AND ta.amount > 0"
-        ),
-        {"tid": str(tenant_id)},
-    )).fetchall()
+    return (
+        await db.execute(
+            text(
+                "SELECT ta.id, ta.addon_code, ta.price_id, ta.amount, pa.display_name "
+                "FROM tenant_addons ta "
+                "JOIN platform_addons pa ON pa.code = ta.addon_code "
+                "WHERE ta.tenant_id = :tid AND ta.status = 'ACTIVE' "
+                "  AND ta.source = 'PURCHASED' AND ta.amount > 0"
+            ),
+            {"tid": str(tenant_id)},
+        )
+    ).fetchall()
 
 
 async def create_invoice(
@@ -121,13 +137,15 @@ async def create_invoice(
     if subscription is None:
         raise ValueError("NO_LIVE_SUBSCRIPTION")
 
-    existing_pending = (await db.execute(
-        text(
-            "SELECT id FROM payments WHERE subscription_id = :sid "
-            "AND status = 'PENDING' AND invoice_kind = 'PERIOD' LIMIT 1"
-        ),
-        {"sid": str(subscription.id)},
-    )).fetchone()
+    existing_pending = (
+        await db.execute(
+            text(
+                "SELECT id FROM payments WHERE subscription_id = :sid "
+                "AND status = 'PENDING' AND invoice_kind = 'PERIOD' LIMIT 1"
+            ),
+            {"sid": str(subscription.id)},
+        )
+    ).fetchone()
     if existing_pending is not None:
         raise ValueError("INVOICE_ALREADY_PENDING")
 
@@ -141,40 +159,54 @@ async def create_invoice(
             current = await get_current_addon_price(db, a.addon_code, subscription.billing_period)
             if current is not None:
                 addon_price_id, addon_amount = str(current.id), Decimal(current.amount)
-        addon_lines.append({
-            "addon_code": a.addon_code, "display_name": a.display_name,
-            "price_id": addon_price_id, "amount": addon_amount,
-        })
+        addon_lines.append(
+            {
+                "addon_code": a.addon_code,
+                "display_name": a.display_name,
+                "price_id": addon_price_id,
+                "amount": addon_amount,
+            }
+        )
 
-    combined_subtotal = Decimal(price.amount) + sum((addon_line["amount"] for addon_line in addon_lines), Decimal("0"))
+    combined_subtotal = Decimal(price.amount) + sum(
+        (addon_line["amount"] for addon_line in addon_lines), Decimal("0")
+    )
     breakdown = vat_breakdown(combined_subtotal)
 
-    payment_id = (await db.execute(
-        text(
-            "INSERT INTO payments ("
-            "  tenant_id, subscription_id, status, currency, subtotal, vat_rate, "
-            "  vat_amount, total, period_start, period_end, provider, invoice_kind, recorded_by, note"
-            ") VALUES ("
-            "  :tid, :sid, 'PENDING', :currency, :subtotal, :vat_rate, "
-            "  :vat_amount, :total, :start, :end, :provider, 'PERIOD', :recorded_by, :note"
-            ") RETURNING id"
-        ),
-        {
-            "tid": str(tenant_id), "sid": str(subscription.id),
-            "currency": price.currency,
-            "subtotal": breakdown["subtotal"], "vat_rate": breakdown["vat_rate"],
-            "vat_amount": breakdown["vat_amount"], "total": breakdown["total"],
-            "start": start, "end": end,
-            "provider": subscription.provider,
-            "recorded_by": str(recorded_by) if recorded_by else None,
-            "note": note,
-        },
-    )).scalar_one()
+    payment_id = (
+        await db.execute(
+            text(
+                "INSERT INTO payments ("
+                "  tenant_id, subscription_id, status, currency, subtotal, vat_rate, "
+                "  vat_amount, total, period_start, period_end, provider, invoice_kind, recorded_by, note"
+                ") VALUES ("
+                "  :tid, :sid, 'PENDING', :currency, :subtotal, :vat_rate, "
+                "  :vat_amount, :total, :start, :end, :provider, 'PERIOD', :recorded_by, :note"
+                ") RETURNING id"
+            ),
+            {
+                "tid": str(tenant_id),
+                "sid": str(subscription.id),
+                "currency": price.currency,
+                "subtotal": breakdown["subtotal"],
+                "vat_rate": breakdown["vat_rate"],
+                "vat_amount": breakdown["vat_amount"],
+                "total": breakdown["total"],
+                "start": start,
+                "end": end,
+                "provider": subscription.provider,
+                "recorded_by": str(recorded_by) if recorded_by else None,
+                "note": note,
+            },
+        )
+    ).scalar_one()
 
-    package = (await db.execute(
-        text("SELECT display_name FROM platform_tier_config WHERE tier = :tier"),
-        {"tier": subscription.tier},
-    )).fetchone()
+    package = (
+        await db.execute(
+            text("SELECT display_name FROM platform_tier_config WHERE tier = :tier"),
+            {"tier": subscription.tier},
+        )
+    ).fetchone()
     display_name = package.display_name if package and package.display_name else subscription.tier
 
     await db.execute(
@@ -188,7 +220,8 @@ async def create_invoice(
             ")"
         ),
         {
-            "tid": str(tenant_id), "pid": str(payment_id),
+            "tid": str(tenant_id),
+            "pid": str(payment_id),
             "item_key": subscription.tier,
             "description": f"{display_name} — {subscription.billing_period}",
             "price_id": str(price.id),
@@ -208,7 +241,8 @@ async def create_invoice(
                 ")"
             ),
             {
-                "tid": str(tenant_id), "pid": str(payment_id),
+                "tid": str(tenant_id),
+                "pid": str(payment_id),
                 "item_key": line["addon_code"],
                 "description": f"{line['display_name']} — {subscription.billing_period}",
                 "addon_price_id": line["price_id"],
@@ -258,13 +292,15 @@ async def mark_paid(
     ValueError("INVALID_PAYMENT_STATE") if it is not PENDING or already PAID
     (i.e. FAILED/CANCELLED/REFUNDED).
     """
-    payment = (await db.execute(
-        text(
-            "SELECT id, tenant_id, subscription_id, status, invoice_kind, period_start, period_end "
-            "FROM payments WHERE id = :pid FOR UPDATE"
-        ),
-        {"pid": str(payment_id)},
-    )).fetchone()
+    payment = (
+        await db.execute(
+            text(
+                "SELECT id, tenant_id, subscription_id, status, invoice_kind, period_start, period_end "
+                "FROM payments WHERE id = :pid FOR UPDATE"
+            ),
+            {"pid": str(payment_id)},
+        )
+    ).fetchone()
     if payment is None:
         raise ValueError("PAYMENT_NOT_FOUND")
 
@@ -284,29 +320,38 @@ async def mark_paid(
             "WHERE id = :pid"
         ),
         {
-            "paid_at": paid_at, "provider": provider, "pref": provider_reference,
+            "paid_at": paid_at,
+            "provider": provider,
+            "pref": provider_reference,
             "recorded_by": str(recorded_by) if recorded_by else None,
-            "note": note, "pid": str(payment.id),
+            "note": note,
+            "pid": str(payment.id),
         },
     )
 
     if payment.invoice_kind == "PRORATION":
         return {"payment_id": str(payment.id), "status": "PAID", "already_paid": False}
 
-    line_item = (await db.execute(
-        text(
-            "SELECT pli.price_id, pli.amount, pp.tier AS price_tier "
-            "FROM payment_line_items pli "
-            "JOIN package_prices pp ON pp.id = pli.price_id "
-            "WHERE pli.payment_id = :pid AND pli.item_type = 'PACKAGE' LIMIT 1"
-        ),
-        {"pid": str(payment.id)},
-    )).fetchone()
+    line_item = (
+        await db.execute(
+            text(
+                "SELECT pli.price_id, pli.amount, pp.tier AS price_tier "
+                "FROM payment_line_items pli "
+                "JOIN package_prices pp ON pp.id = pli.price_id "
+                "WHERE pli.payment_id = :pid AND pli.item_type = 'PACKAGE' LIMIT 1"
+            ),
+            {"pid": str(payment.id)},
+        )
+    ).fetchone()
 
-    subscription = (await db.execute(
-        text("SELECT id, tier, price_id, scheduled_tier FROM subscriptions WHERE id = :sid FOR UPDATE"),
-        {"sid": str(payment.subscription_id)},
-    )).fetchone()
+    subscription = (
+        await db.execute(
+            text(
+                "SELECT id, tier, price_id, scheduled_tier FROM subscriptions WHERE id = :sid FOR UPDATE"
+            ),
+            {"sid": str(payment.subscription_id)},
+        )
+    ).fetchone()
 
     # A scheduled downgrade (S13) switches tier the moment the renewal
     # invoice priced at scheduled_tier is paid — checked BEFORE the
@@ -329,8 +374,10 @@ async def mark_paid(
             ),
             {
                 "tier": subscription.scheduled_tier,
-                "start": payment.period_start, "end": payment.period_end,
-                "price_id": str(line_item.price_id), "amount": line_item.amount,
+                "start": payment.period_start,
+                "end": payment.period_end,
+                "price_id": str(line_item.price_id),
+                "amount": line_item.amount,
                 "sid": str(subscription.id),
             },
         )
@@ -356,8 +403,10 @@ async def mark_paid(
                 "WHERE id = :sid"
             ),
             {
-                "start": payment.period_start, "end": payment.period_end,
-                "price_id": str(line_item.price_id), "amount": line_item.amount,
+                "start": payment.period_start,
+                "end": payment.period_end,
+                "price_id": str(line_item.price_id),
+                "amount": line_item.amount,
                 "sid": str(subscription.id),
             },
         )
@@ -389,13 +438,15 @@ async def mark_paid(
     # Adopt each ADDON line item's price onto the matching ACTIVE tenant_addons
     # row — same snapshot-on-payment pattern as the PACKAGE line above, so a
     # renewal's re-priced add-on (create_invoice) sticks once actually paid.
-    addon_lines = (await db.execute(
-        text(
-            "SELECT item_key AS addon_code, addon_price_id, amount "
-            "FROM payment_line_items WHERE payment_id = :pid AND item_type = 'ADDON'"
-        ),
-        {"pid": str(payment.id)},
-    )).fetchall()
+    addon_lines = (
+        await db.execute(
+            text(
+                "SELECT item_key AS addon_code, addon_price_id, amount "
+                "FROM payment_line_items WHERE payment_id = :pid AND item_type = 'ADDON'"
+            ),
+            {"pid": str(payment.id)},
+        )
+    ).fetchall()
     for line in addon_lines:
         await db.execute(
             text(
@@ -404,12 +455,19 @@ async def mark_paid(
                 "  AND source = 'PURCHASED'"
             ),
             {
-                "price_id": str(line.addon_price_id), "amount": line.amount,
-                "tid": str(payment.tenant_id), "code": line.addon_code,
+                "price_id": str(line.addon_price_id),
+                "amount": line.amount,
+                "tid": str(payment.tenant_id),
+                "code": line.addon_code,
             },
         )
 
-    return {"payment_id": str(payment.id), "status": "PAID", "already_paid": False, "downgrade_applied": downgrade_applied}
+    return {
+        "payment_id": str(payment.id),
+        "status": "PAID",
+        "already_paid": False,
+        "downgrade_applied": downgrade_applied,
+    }
 
 
 async def mark_failed(
@@ -420,10 +478,12 @@ async def mark_failed(
     note: Optional[str] = None,
 ) -> dict[str, Any]:
     """PENDING -> FAILED only. Raises ValueError("INVALID_PAYMENT_STATE") otherwise."""
-    payment = (await db.execute(
-        text("SELECT id, status FROM payments WHERE id = :pid FOR UPDATE"),
-        {"pid": str(payment_id)},
-    )).fetchone()
+    payment = (
+        await db.execute(
+            text("SELECT id, status FROM payments WHERE id = :pid FOR UPDATE"),
+            {"pid": str(payment_id)},
+        )
+    ).fetchone()
     if payment is None:
         raise ValueError("PAYMENT_NOT_FOUND")
     if payment.status != "PENDING":
@@ -447,10 +507,12 @@ async def cancel_invoice(
     note: str,
 ) -> dict[str, Any]:
     """PENDING -> CANCELLED only. Raises ValueError("INVALID_PAYMENT_STATE") otherwise."""
-    payment = (await db.execute(
-        text("SELECT id, status FROM payments WHERE id = :pid FOR UPDATE"),
-        {"pid": str(payment_id)},
-    )).fetchone()
+    payment = (
+        await db.execute(
+            text("SELECT id, status FROM payments WHERE id = :pid FOR UPDATE"),
+            {"pid": str(payment_id)},
+        )
+    ).fetchone()
     if payment is None:
         raise ValueError("PAYMENT_NOT_FOUND")
     if payment.status != "PENDING":

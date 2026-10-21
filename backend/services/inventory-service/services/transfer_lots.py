@@ -20,6 +20,7 @@ balance — every deduction and credit goes through record_transaction().
 PERMISSIONS: not checked here. The router resolves can_fefo_override /
 can_lot_select and passes them in.
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -105,13 +106,15 @@ async def _chosen_allocs(
 ) -> list[Alloc]:
     """The user's selection as Allocs (lot number/expiry from stock_lots), by lot_id."""
     totals = _selection_totals(chosen)
-    rows = (await db.execute(
-        text(
-            "SELECT id, lot_number, expiry_date FROM stock_lots "
-            "WHERE tenant_id = :tid AND product_id = :pid"
-        ),
-        {"tid": tenant_id, "pid": product_id},
-    )).fetchall()
+    rows = (
+        await db.execute(
+            text(
+                "SELECT id, lot_number, expiry_date FROM stock_lots "
+                "WHERE tenant_id = :tid AND product_id = :pid"
+            ),
+            {"tid": tenant_id, "pid": product_id},
+        )
+    ).fetchall()
     lots = {str(r.id): r for r in rows}
     return [
         Alloc(

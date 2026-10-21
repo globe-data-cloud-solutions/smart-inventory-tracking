@@ -10,6 +10,7 @@ Uses the inv_app fixture (not a fresh `from main import app`) per conftest.py.
 RBAC is driven by a small grant table mirroring seed_permissions.py for the
 two roles used here.
 """
+
 from __future__ import annotations
 
 from types import SimpleNamespace
@@ -25,10 +26,13 @@ TENANT_ID = "10000000-0000-0000-0000-000000000001"
 
 # (role, action) pairs granted — mirrors ROLE_PERMISSION_MATRIX for TA and NM.
 _GRANTS = {
-    ("TA", "tenant:configure"), ("TA", "report:expiry_alerts"),
+    ("TA", "tenant:configure"),
+    ("TA", "report:expiry_alerts"),
     ("TA", "inventory:view_balance"),
-    ("NM", "report:expiry_alerts"), ("NM", "inventory:view_balance"),
-    ("SA", "tenant:configure"), ("SA", "report:expiry_alerts"),
+    ("NM", "report:expiry_alerts"),
+    ("NM", "inventory:view_balance"),
+    ("SA", "tenant:configure"),
+    ("SA", "report:expiry_alerts"),
 }
 OTHER_TENANT_ID = "20000000-0000-0000-0000-000000000002"
 
@@ -48,6 +52,7 @@ def _result(row):
 
 def _session(tenant_row):
     """execute() returns tenant_row for SELECTs, None-row results for writes."""
+
     async def _execute(stmt, params=None):
         if str(stmt).lstrip().startswith("SELECT near_expiry_days"):
             return _result(tenant_row)
@@ -61,13 +66,17 @@ def _session(tenant_row):
 
 
 def _sqls(session, prefix):
-    return [c for c in session.execute.call_args_list
-            if str(c.args[0]).lstrip().startswith(prefix)]
+    return [c for c in session.execute.call_args_list if str(c.args[0]).lstrip().startswith(prefix)]
 
 
 def _user(role, tenant_id=TENANT_ID):
-    return SimpleNamespace(user_id=f"u-{role.lower()}", tenant_id=tenant_id, role=role,
-                           warehouse_id=None, region_id=None)
+    return SimpleNamespace(
+        user_id=f"u-{role.lower()}",
+        tenant_id=tenant_id,
+        role=role,
+        warehouse_id=None,
+        region_id=None,
+    )
 
 
 async def _grant(role, action_id):
@@ -81,6 +90,7 @@ async def _grant(role, action_id):
 @pytest.fixture
 def make_client(inv_app):
     """make_client(role, session[, user_tenant_id]) -> AsyncClient context with RBAC from _GRANTS."""
+
     def _make(role, session, user_tenant_id=TENANT_ID):
         async def _db_gen():
             yield session
@@ -90,9 +100,12 @@ def make_client(inv_app):
         inv_app.dependency_overrides[get_read_db_session] = _db_gen
         return AsyncClient(transport=ASGITransport(app=inv_app), base_url="http://test")
 
-    with patch(
-        "shared.permissions.middleware.get_role_permission", new=AsyncMock(side_effect=_grant)
-    ), patch("shared.permissions.middleware.audit_log", new=AsyncMock()):
+    with (
+        patch(
+            "shared.permissions.middleware.get_role_permission", new=AsyncMock(side_effect=_grant)
+        ),
+        patch("shared.permissions.middleware.audit_log", new=AsyncMock()),
+    ):
         try:
             yield _make
         finally:
@@ -101,7 +114,6 @@ def make_client(inv_app):
 
 @pytest.mark.unit
 class TestGetNearExpiryDaysHelper:
-
     async def test_returns_tenant_value(self) -> None:
         s = _session(MagicMock(near_expiry_days=45))
         assert await get_near_expiry_days(s, TENANT_ID) == 45
@@ -118,7 +130,6 @@ class TestGetNearExpiryDaysHelper:
 
 @pytest.mark.unit
 class TestSetNearExpiryDaysService:
-
     async def test_updates_and_audits_in_same_session(self) -> None:
         s = _session(MagicMock(near_expiry_days=30))
         out = await set_near_expiry_days(s, TENANT_ID, 60, _user("TA"))
@@ -136,7 +147,6 @@ class TestSetNearExpiryDaysService:
 
 @pytest.mark.unit
 class TestLotRoutesFollowSetting:
-
     async def test_list_lots_no_param_uses_tenant_value(self, make_client) -> None:
         s = _session(MagicMock(near_expiry_days=45))
         with patch("routers.lots.get_lots", new=AsyncMock(return_value=[])) as gl:
@@ -178,7 +188,6 @@ class TestLotRoutesFollowSetting:
 
 @pytest.mark.unit
 class TestExpirySettingsEndpoints:
-
     URL = "/api/v1/inventory/lots/expiry-settings"
 
     async def test_get_returns_stored_value(self, make_client) -> None:

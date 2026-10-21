@@ -4,6 +4,7 @@ Placed at the service root (not inside tests/) so it is importable as
 `product_test_data` when the product-service root is on sys.path, with
 no risk of colliding with inventory-service's `tests` package.
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -26,8 +27,12 @@ TENANT_B = "99999999-0000-0000-0000-000000000099"
 
 TA_USER = _User("10000001-0000-0000-0000-000000000010", TENANT_A, "TA")
 SA_USER = _User("10000001-0000-0000-0000-000000000011", TENANT_A, "SA")
-WM_USER = _User("10000001-0000-0000-0000-000000000012", TENANT_A, "WM",
-                warehouse_id="20000001-0000-0000-0000-000000000001")
+WM_USER = _User(
+    "10000001-0000-0000-0000-000000000012",
+    TENANT_A,
+    "WM",
+    warehouse_id="20000001-0000-0000-0000-000000000001",
+)
 NM_USER = _User("10000001-0000-0000-0000-000000000013", TENANT_A, "NM")
 
 # type_code is now required.  SKU format: {TYPE_CODE}-{seq:03d}
@@ -118,22 +123,42 @@ def _make_mock_db(
         # type_code found — no INSERT, one less call
         # 1 tenant, 2 dup, 3 tc_find, 4 tc_lock, 5 sku_count,
         # 6 uom_find, 7 INSERT uom, 8 INSERT product, 9 INSERT audit, 10 INSERT outbox
-        db.execute = AsyncMock(side_effect=[
-            tenant_res, dup_res, tc_find_res, _default(), sku_count_res,
-            uom_find_res, _default(), _default(), _default(), _default(),
-        ])
+        db.execute = AsyncMock(
+            side_effect=[
+                tenant_res,
+                dup_res,
+                tc_find_res,
+                _default(),
+                sku_count_res,
+                uom_find_res,
+                _default(),
+                _default(),
+                _default(),
+                _default(),
+            ]
+        )
     else:
         # Full happy path: new type_code, new UOM
         # 1 tenant, 2 dup, 3 tc_find(None), 4 INSERT tc, 5 tc_lock,
         # 6 sku_count, 7 uom_find(None), 8 INSERT uom,
         # 9 INSERT product, 10 INSERT audit, 11 INSERT outbox
-        db.execute = AsyncMock(side_effect=[
-            tenant_res, dup_res, tc_find_res, _default(), _default(),
-            sku_count_res, uom_find_res, _default(),
-            _default(), _default(), _default(),
-        ])
+        db.execute = AsyncMock(
+            side_effect=[
+                tenant_res,
+                dup_res,
+                tc_find_res,
+                _default(),
+                _default(),
+                sku_count_res,
+                uom_find_res,
+                _default(),
+                _default(),
+                _default(),
+                _default(),
+            ]
+        )
 
-    db.commit   = AsyncMock()
+    db.commit = AsyncMock()
     db.rollback = AsyncMock()
     return db
 
@@ -148,8 +173,10 @@ def _cap_db(cap: int, current_count: int, org_type: str = "PRODUCER") -> AsyncMo
 
 def _make_db_override(db: AsyncMock):
     """Returns an async generator function for use in app.dependency_overrides."""
+
     async def _override():
         yield db
+
     return _override
 
 
@@ -234,7 +261,7 @@ def _make_approval_minimums_put_mock_db(num_inserts: int, return_rows: list) -> 
 
     side_effects = [_default() for _ in range(1 + num_inserts + 1)] + [read_res]
     db.execute = AsyncMock(side_effect=side_effects)
-    db.commit   = AsyncMock()
+    db.commit = AsyncMock()
     db.rollback = AsyncMock()
     return db
 
@@ -245,7 +272,7 @@ def _make_approval_minimums_get_mock_db(return_rows: list) -> AsyncMock:
     read_res = MagicMock()
     read_res.fetchall.return_value = return_rows
     db.execute = AsyncMock(return_value=read_res)
-    db.commit   = AsyncMock()
+    db.commit = AsyncMock()
     db.rollback = AsyncMock()
     return db
 
@@ -290,6 +317,6 @@ def _make_update_mock_db(
     else:
         db.execute = AsyncMock(side_effect=[row_res, _default(), _default(), controlled_res])
 
-    db.commit   = AsyncMock()
+    db.commit = AsyncMock()
     db.rollback = AsyncMock()
     return db

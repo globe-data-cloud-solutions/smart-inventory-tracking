@@ -5,6 +5,7 @@ Based on reference transfer_requests.py but with two key differences:
   2. Notification written to the outbox in the SAME transaction as the
      transfer_request row (Outbox pattern) — never post-commit direct emit.
 """
+
 from __future__ import annotations
 
 import uuid
@@ -39,9 +40,9 @@ async def _facility_name(session: AsyncSession, facility_id: Any, tenant_id: Any
     """A facility's name, or None, scoped to tenant_id. Warehouse lookup falls back
     to organization_node when the legacy warehouses table has no row for the ID —
     same COALESCE pattern used by list_transfers()."""
-    row = (await session.execute(
-        _FACILITY_NAME_SQL, {"id": str(facility_id), "tid": str(tenant_id)}
-    )).fetchone()
+    row = (
+        await session.execute(_FACILITY_NAME_SQL, {"id": str(facility_id), "tid": str(tenant_id)})
+    ).fetchone()
     return row.name if row else None
 
 
@@ -49,10 +50,12 @@ async def _enrich(row: Any, session: AsyncSession) -> TransferRequestOut:
     """Join warehouse and product names onto a transfer_request row."""
     rw_name = await _facility_name(session, row.requesting_warehouse_id, row.tenant_id)
     sw_name = await _facility_name(session, row.source_warehouse_id, row.tenant_id)
-    pr = (await session.execute(
-        text("SELECT name, sku FROM products WHERE id = :id AND tenant_id = :tid"),
-        {"id": str(row.product_id), "tid": str(row.tenant_id)},
-    )).fetchone()
+    pr = (
+        await session.execute(
+            text("SELECT name, sku FROM products WHERE id = :id AND tenant_id = :tid"),
+            {"id": str(row.product_id), "tid": str(row.tenant_id)},
+        )
+    ).fetchone()
 
     return TransferRequestOut(
         id=row.id,
@@ -95,10 +98,12 @@ async def create_transfer_request(
     sw_name_check = await _facility_name(db, body.source_warehouse_id, user.tenant_id)
     if sw_name_check is None:
         raise HTTPException(status_code=404, detail="Source warehouse not found")
-    pr_row = (await db.execute(
-        text("SELECT name FROM products WHERE id = :id AND tenant_id = :tid"),
-        {"id": str(body.product_id), "tid": str(user.tenant_id)},
-    )).fetchone()
+    pr_row = (
+        await db.execute(
+            text("SELECT name FROM products WHERE id = :id AND tenant_id = :tid"),
+            {"id": str(body.product_id), "tid": str(user.tenant_id)},
+        )
+    ).fetchone()
     if pr_row is None:
         raise HTTPException(status_code=404, detail="Product not found")
 
@@ -112,15 +117,15 @@ async def create_transfer_request(
                :pid, :qty, :req_date, :notes, 'PENDING', :uid)
         """),
         {
-            "id":       req_id,
-            "tid":      str(user.tenant_id),
-            "req_wh":   str(body.requesting_warehouse_id),
-            "src_wh":   str(body.source_warehouse_id),
-            "pid":      str(body.product_id),
-            "qty":      str(body.quantity),
+            "id": req_id,
+            "tid": str(user.tenant_id),
+            "req_wh": str(body.requesting_warehouse_id),
+            "src_wh": str(body.source_warehouse_id),
+            "pid": str(body.product_id),
+            "qty": str(body.quantity),
             "req_date": body.required_date,
-            "notes":    body.notes,
-            "uid":      str(user.user_id),
+            "notes": body.notes,
+            "uid": str(user.user_id),
         },
     )
 
@@ -141,9 +146,9 @@ async def create_transfer_request(
         ),
     )
 
-    row = (await db.execute(
-        text("SELECT * FROM transfer_requests WHERE id = :id"), {"id": req_id}
-    )).fetchone()
+    row = (
+        await db.execute(text("SELECT * FROM transfer_requests WHERE id = :id"), {"id": req_id})
+    ).fetchone()
 
     return SuccessResponse(data=await _enrich(row, db))
 
@@ -151,10 +156,10 @@ async def create_transfer_request(
 @router.get("/", response_model=SuccessResponse[List[TransferRequestOut]])
 @require_permission(PERMISSIONS.TRANSFER_LIST)
 async def list_transfer_requests(
-    source_warehouse_id: Optional[uuid.UUID]  = Query(None),
-    product_id:          Optional[uuid.UUID]  = Query(None),
-    status:              Optional[str]         = Query(None),
-    tenant_id:           Optional[uuid.UUID]  = Query(None),
+    source_warehouse_id: Optional[uuid.UUID] = Query(None),
+    product_id: Optional[uuid.UUID] = Query(None),
+    status: Optional[str] = Query(None),
+    tenant_id: Optional[uuid.UUID] = Query(None),
     user=Depends(get_current_user),
     db: AsyncSession = Depends(get_db_session),
 ) -> SuccessResponse[List[TransferRequestOut]]:
@@ -190,26 +195,25 @@ async def update_request_status(
     user=Depends(get_current_user),
     db: AsyncSession = Depends(get_db_session),
 ) -> SuccessResponse[TransferRequestOut]:
-    row = (await db.execute(
-        text(
-            "SELECT * FROM transfer_requests "
-            "WHERE id = :id AND tenant_id = :tid FOR UPDATE"
-        ),
-        {"id": str(request_id), "tid": str(user.tenant_id)},
-    )).fetchone()
+    row = (
+        await db.execute(
+            text("SELECT * FROM transfer_requests WHERE id = :id AND tenant_id = :tid FOR UPDATE"),
+            {"id": str(request_id), "tid": str(user.tenant_id)},
+        )
+    ).fetchone()
 
     if not row:
         raise HTTPException(status_code=404, detail="Transfer request not found")
 
     await db.execute(
-        text(
-            "UPDATE transfer_requests SET status = :status, updated_at = now() WHERE id = :id"
-        ),
+        text("UPDATE transfer_requests SET status = :status, updated_at = now() WHERE id = :id"),
         {"status": new_status, "id": str(request_id)},
     )
 
-    updated = (await db.execute(
-        text("SELECT * FROM transfer_requests WHERE id = :id"), {"id": str(request_id)}
-    )).fetchone()
+    updated = (
+        await db.execute(
+            text("SELECT * FROM transfer_requests WHERE id = :id"), {"id": str(request_id)}
+        )
+    ).fetchone()
 
     return SuccessResponse(data=await _enrich(updated, db))

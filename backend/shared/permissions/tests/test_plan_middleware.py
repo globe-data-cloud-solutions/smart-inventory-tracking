@@ -1,4 +1,5 @@
 """Unit tests for plan_middleware — feature flag and resource limit checks."""
+
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -57,7 +58,9 @@ def _db_plan_only(plan_result: MagicMock, addon_codes: list[str] | None = None) 
     return db
 
 
-def _db_plan_then_count(plan_result: MagicMock, count: int, addon_codes: list[str] | None = None) -> AsyncMock:
+def _db_plan_then_count(
+    plan_result: MagicMock, count: int, addon_codes: list[str] | None = None
+) -> AsyncMock:
     """DB mock for four execute calls: plan fetch, addon query, tenant FOR UPDATE lock, COUNT(*)."""
     lock_result = MagicMock()
     count_result = MagicMock()
@@ -68,6 +71,7 @@ def _db_plan_then_count(plan_result: MagicMock, count: int, addon_codes: list[st
 
 
 # ── SA bypass / TA gated ─────────────────────────────────────────────────────
+
 
 @pytest.mark.asyncio
 async def test_sa_bypasses_feature_flag_check() -> None:
@@ -113,6 +117,7 @@ async def test_ta_not_bypassed_unlimited_plan_passes() -> None:
 
 # ── tenant_id None → SA platform action bypass ────────────────────────────────
 
+
 @pytest.mark.asyncio
 async def test_no_tenant_id_bypasses_all_checks() -> None:
     db = AsyncMock()
@@ -121,6 +126,7 @@ async def test_no_tenant_id_bypasses_all_checks() -> None:
 
 
 # ── Feature flag False → 402 ──────────────────────────────────────────────────
+
 
 @pytest.mark.asyncio
 async def test_feature_flag_false_raises_402() -> None:
@@ -143,6 +149,7 @@ async def test_feature_flag_false_raises_402() -> None:
 
 # ── Feature flag MISSING (not just False) → 402, deny-by-default (S10) ───────
 
+
 @pytest.mark.asyncio
 async def test_feature_flag_missing_key_raises_402() -> None:
     """A flag absent from feature_flags entirely (not even an explicit False)
@@ -161,6 +168,7 @@ async def test_feature_flag_missing_key_raises_402() -> None:
 
 # ── Feature flag True → passes ────────────────────────────────────────────────
 
+
 @pytest.mark.asyncio
 async def test_feature_flag_true_passes() -> None:
     plan = _plan_result(
@@ -174,6 +182,7 @@ async def test_feature_flag_true_passes() -> None:
 
 # ── Action with no flag mapping → always passes ───────────────────────────────
 
+
 @pytest.mark.asyncio
 async def test_unmapped_action_passes_regardless_of_flags() -> None:
     plan = _plan_result(feature_flags={})
@@ -183,6 +192,7 @@ async def test_unmapped_action_passes_regardless_of_flags() -> None:
 
 
 # ── Warehouse limit reached → 402 ────────────────────────────────────────────
+
 
 @pytest.mark.asyncio
 async def test_warehouse_limit_reached_raises_402() -> None:
@@ -203,6 +213,7 @@ async def test_warehouse_limit_reached_raises_402() -> None:
 
 # ── Warehouse limit NULL → unlimited, passes ─────────────────────────────────
 
+
 @pytest.mark.asyncio
 async def test_warehouse_limit_null_passes() -> None:
     plan = _plan_result(plan_tier="ENTERPRISE", max_warehouses=None)
@@ -213,6 +224,7 @@ async def test_warehouse_limit_null_passes() -> None:
 
 
 # ── User limit reached → 402 ─────────────────────────────────────────────────
+
 
 @pytest.mark.asyncio
 async def test_user_limit_reached_raises_402() -> None:
@@ -232,6 +244,7 @@ async def test_user_limit_reached_raises_402() -> None:
 
 # ── User limit NULL → unlimited, passes ──────────────────────────────────────
 
+
 @pytest.mark.asyncio
 async def test_user_limit_null_passes() -> None:
     plan = _plan_result(plan_tier="ENTERPRISE", max_users=None)
@@ -241,6 +254,7 @@ async def test_user_limit_null_passes() -> None:
 
 
 # ── TA is subject to warehouse limit (not bypassed) ──────────────────────────
+
 
 @pytest.mark.asyncio
 async def test_ta_warehouse_limit_enforced() -> None:
@@ -266,6 +280,7 @@ async def test_ta_warehouse_limit_under_cap_passes() -> None:
 
 # ── SA still bypasses warehouse limit ────────────────────────────────────────
 
+
 @pytest.mark.asyncio
 async def test_sa_still_bypasses_warehouse_limit() -> None:
     """SA manages plans and is never subject to warehouse caps."""
@@ -275,6 +290,7 @@ async def test_sa_still_bypasses_warehouse_limit() -> None:
 
 
 # ── _required_flag / requires_flag mapping ───────────────────────────────────
+
 
 @pytest.mark.parametrize(
     "action_id,expected_flag",
@@ -295,6 +311,7 @@ def test_required_flag_mapping(action_id: str, expected_flag: str | None) -> Non
 
 # ── Drift guard — ACTION_FLAG_MAP stays consistent with the registry ────────
 
+
 def test_action_flag_map_values_are_known_feature_flags() -> None:
     for flag in ACTION_FLAG_MAP.values():
         assert flag in KNOWN_FEATURE_FLAGS
@@ -305,9 +322,7 @@ def test_action_flag_map_keys_match_a_registry_action() -> None:
     # call in transfer.py's create_transfer handler — it has no registry
     # Permission/action id of its own (TRANSFER_CREATE covers that route).
     manual_keys = {"transfer:sister"}
-    all_action_ids = [
-        v.id for v in vars(PERMISSIONS).values() if isinstance(v, Permission)
-    ]
+    all_action_ids = [v.id for v in vars(PERMISSIONS).values() if isinstance(v, Permission)]
     for key in ACTION_FLAG_MAP:
         if key in manual_keys:
             continue
@@ -317,6 +332,7 @@ def test_action_flag_map_keys_match_a_registry_action() -> None:
 
 
 # ── require_permission integration — plan gate runs after RBAC ──────────────
+
 
 @require_permission(PERMISSIONS.TENANT_UPLOAD_BRANDING)
 async def _branding_handler(user=None, db=None) -> str:
@@ -337,16 +353,17 @@ _ACTIVE_STAGE = {"stage": "ACTIVE", "contract_end": None, "read_only_since": Non
 
 @pytest.mark.asyncio
 async def test_require_permission_ta_gated_by_flag_false() -> None:
-    plan = _plan_result(
-        plan_tier="GROWTH", feature_flags={"CUSTOM_BRANDING": False}
-    )
+    plan = _plan_result(plan_tier="GROWTH", feature_flags={"CUSTOM_BRANDING": False})
     db = _db_plan_only(plan)
-    with patch(
-        "shared.permissions.middleware.check_permission",
-        AsyncMock(return_value=PermissionResult(allowed=True)),
-    ), patch(
-        "shared.billing.contract_stage.get_tenant_contract_stage",
-        AsyncMock(return_value=_ACTIVE_STAGE),
+    with (
+        patch(
+            "shared.permissions.middleware.check_permission",
+            AsyncMock(return_value=PermissionResult(allowed=True)),
+        ),
+        patch(
+            "shared.billing.contract_stage.get_tenant_contract_stage",
+            AsyncMock(return_value=_ACTIVE_STAGE),
+        ),
     ):
         with pytest.raises(HTTPException) as exc_info:
             await _branding_handler(user=_user(role="TA"), db=db)
@@ -356,16 +373,17 @@ async def test_require_permission_ta_gated_by_flag_false() -> None:
 
 @pytest.mark.asyncio
 async def test_require_permission_ta_passes_when_flag_true() -> None:
-    plan = _plan_result(
-        plan_tier="ENTERPRISE", feature_flags={"CUSTOM_BRANDING": True}
-    )
+    plan = _plan_result(plan_tier="ENTERPRISE", feature_flags={"CUSTOM_BRANDING": True})
     db = _db_plan_only(plan)
-    with patch(
-        "shared.permissions.middleware.check_permission",
-        AsyncMock(return_value=PermissionResult(allowed=True)),
-    ), patch(
-        "shared.billing.contract_stage.get_tenant_contract_stage",
-        AsyncMock(return_value=_ACTIVE_STAGE),
+    with (
+        patch(
+            "shared.permissions.middleware.check_permission",
+            AsyncMock(return_value=PermissionResult(allowed=True)),
+        ),
+        patch(
+            "shared.billing.contract_stage.get_tenant_contract_stage",
+            AsyncMock(return_value=_ACTIVE_STAGE),
+        ),
     ):
         result = await _branding_handler(user=_user(role="TA"), db=db)
     assert result == "handler ran"
@@ -417,13 +435,16 @@ async def test_require_permission_unmapped_action_skips_entitlements() -> None:
     # read-only gate still issues ONE db.execute (contract stage lookup)
     # even though the plan gate itself skips entitlements for this action.
     db = AsyncMock()
-    with patch(
-        "shared.permissions.middleware.check_permission",
-        AsyncMock(return_value=PermissionResult(allowed=True)),
-    ), patch(
-        "shared.billing.contract_stage.get_tenant_contract_stage",
-        AsyncMock(return_value=_ACTIVE_STAGE),
-    ) as mock_stage:
+    with (
+        patch(
+            "shared.permissions.middleware.check_permission",
+            AsyncMock(return_value=PermissionResult(allowed=True)),
+        ),
+        patch(
+            "shared.billing.contract_stage.get_tenant_contract_stage",
+            AsyncMock(return_value=_ACTIVE_STAGE),
+        ) as mock_stage,
+    ):
         result = await _product_create_handler(user=_user(role="TA"), db=db)
     assert result == "handler ran"
     mock_stage.assert_awaited_once()

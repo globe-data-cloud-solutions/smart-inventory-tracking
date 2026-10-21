@@ -8,6 +8,7 @@ Revision ID: 035
 Revises:     034
 Create Date: 2026-05-31
 """
+
 from __future__ import annotations
 
 import sqlalchemy as sa
@@ -32,8 +33,12 @@ def upgrade() -> None:
     )
     op.add_column(
         "transfer_orders",
-        sa.Column("total_value", sa.Numeric(15, 4), nullable=True,
-                  comment="qty × unit_price summed across all lines; NULL when unit_price absent"),
+        sa.Column(
+            "total_value",
+            sa.Numeric(15, 4),
+            nullable=True,
+            comment="qty × unit_price summed across all lines; NULL when unit_price absent",
+        ),
     )
     op.add_column(
         "transfer_orders",
@@ -41,13 +46,17 @@ def upgrade() -> None:
     )
     op.create_foreign_key(
         "fk_transfer_orders_type_config",
-        "transfer_orders", "transfer_type_config",
-        ["transfer_type_config_id"], ["id"],
+        "transfer_orders",
+        "transfer_type_config",
+        ["transfer_type_config_id"],
+        ["id"],
     )
 
 
 def downgrade() -> None:
-    op.drop_constraint("fk_transfer_orders_type_config", "transfer_orders", type_="foreignkey")
+    op.drop_constraint(
+        "fk_transfer_orders_type_config", "transfer_orders", type_="foreignkey"
+    )
     op.drop_column("transfer_orders", "currency")
     op.drop_column("transfer_orders", "total_value")
     op.drop_column("transfer_orders", "transfer_type_config_id")

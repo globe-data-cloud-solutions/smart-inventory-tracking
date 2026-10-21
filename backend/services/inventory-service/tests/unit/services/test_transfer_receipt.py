@@ -10,6 +10,7 @@ The transfer under test has two lines:
   LINE_1  batch product, 100 sent, split LOT-A 60 / LOT-B 40 at approval
   LINE_2  non-batch product, 30 sent
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -23,20 +24,20 @@ from uuid import UUID, uuid4
 import pytest
 from fastapi import HTTPException
 
-TENANT_ID   = "10000000-0000-0000-0000-000000000001"
-WAREHOUSE_A = "20000000-0000-0000-0000-000000000001"   # source
-WAREHOUSE_B = "20000000-0000-0000-0000-000000000002"   # destination
-PRODUCT_ID  = "aaaaaaaa-0000-0000-0000-000000000001"   # batch
-PRODUCT_2   = "aaaaaaaa-0000-0000-0000-000000000002"   # non-batch
+TENANT_ID = "10000000-0000-0000-0000-000000000001"
+WAREHOUSE_A = "20000000-0000-0000-0000-000000000001"  # source
+WAREHOUSE_B = "20000000-0000-0000-0000-000000000002"  # destination
+PRODUCT_ID = "aaaaaaaa-0000-0000-0000-000000000001"  # batch
+PRODUCT_2 = "aaaaaaaa-0000-0000-0000-000000000002"  # non-batch
 TRANSFER_ID = UUID("cccccccc-0000-0000-0000-000000000001")
-LINE_1      = "11111111-0000-0000-0000-000000000001"
-LINE_2      = "11111111-0000-0000-0000-000000000002"
-LOT_A       = "0000000a-0000-0000-0000-000000000000"
-LOT_B       = "0000000b-0000-0000-0000-000000000000"
-LOT_OTHER   = "0000000c-0000-0000-0000-000000000000"   # not on this transfer
-USER_ID     = "30000000-0000-0000-0000-000000000001"
+LINE_1 = "11111111-0000-0000-0000-000000000001"
+LINE_2 = "11111111-0000-0000-0000-000000000002"
+LOT_A = "0000000a-0000-0000-0000-000000000000"
+LOT_B = "0000000b-0000-0000-0000-000000000000"
+LOT_OTHER = "0000000c-0000-0000-0000-000000000000"  # not on this transfer
+USER_ID = "30000000-0000-0000-0000-000000000001"
 LOT_NUMBERS = {LOT_A: "LOT-A", LOT_B: "LOT-B"}
-IN_KEY      = f"transfer:{TRANSFER_ID}:receive:in:line"
+IN_KEY = f"transfer:{TRANSFER_ID}:receive:in:line"
 
 
 @dataclass
@@ -73,11 +74,11 @@ class _World:
             SimpleNamespace(id=LINE_2, product_id=PRODUCT_2, quantity=Decimal("30")),
         ]
         self.allocations = [(LINE_1, LOT_A, Decimal("60")), (LINE_1, LOT_B, Decimal("40"))]
-        self.discrepancies: list[dict] = []   # INSERT INTO transfer_discrepancies params
-        self.ledger: list[dict] = []          # record_transaction kwargs
-        self.audit: list[dict] = []           # write_transfer_ledger_entry kwargs
+        self.discrepancies: list[dict] = []  # INSERT INTO transfer_discrepancies params
+        self.ledger: list[dict] = []  # record_transaction kwargs
+        self.audit: list[dict] = []  # write_transfer_ledger_entry kwargs
         self.status_updates: list[str] = []
-        self.audit_rows: list[dict] = []      # audit_log() kwargs (transfer-linked rows)
+        self.audit_rows: list[dict] = []  # audit_log() kwargs (transfer-linked rows)
         self.audit_error: Optional[Exception] = None
         self.outbox = AsyncMock()
 
@@ -149,7 +150,7 @@ class _World:
         return f"tx-{len(self.ledger)}"
 
     async def write_transfer_ledger_entry(self, **kw: Any) -> None:
-        kw.pop("session", None)   # a different mock per run — not part of the entry
+        kw.pop("session", None)  # a different mock per run — not part of the entry
         self.audit.append(kw)
 
     async def audit_log(self, *args: Any, **kw: Any) -> None:
@@ -188,8 +189,11 @@ class _World:
 
     def nothing_written(self) -> bool:
         return (
-            self.ledger == [] and self.audit == [] and self.discrepancies == []
-            and self.status_updates == [] and self.outbox.await_count == 0
+            self.ledger == []
+            and self.audit == []
+            and self.discrepancies == []
+            and self.status_updates == []
+            and self.outbox.await_count == 0
             and self.audit_rows == []
         )
 
@@ -233,13 +237,20 @@ async def _receive(world: _World, lines: Optional[list[dict]] = None) -> Any:
     from services.inventory_service import InventoryService
 
     receipt = ReceiveTransferRequest(lines=lines) if lines is not None else None
-    with patch("services.transfer_lots.record_transaction", new=world.record_transaction), \
-         patch("services.transfer_lots.write_transfer_ledger_entry",
-               new=world.write_transfer_ledger_entry), \
-         patch("services.inventory_service.record_transaction", new=world.record_transaction), \
-         patch("services.inventory_service.write_transfer_ledger_entry",
-               new=world.write_transfer_ledger_entry), \
-         patch("services.inventory_service.write_to_outbox", new=world.outbox),          patch("services.inventory_service.audit_log", new=world.audit_log):
+    with (
+        patch("services.transfer_lots.record_transaction", new=world.record_transaction),
+        patch(
+            "services.transfer_lots.write_transfer_ledger_entry",
+            new=world.write_transfer_ledger_entry,
+        ),
+        patch("services.inventory_service.record_transaction", new=world.record_transaction),
+        patch(
+            "services.inventory_service.write_transfer_ledger_entry",
+            new=world.write_transfer_ledger_entry,
+        ),
+        patch("services.inventory_service.write_to_outbox", new=world.outbox),
+        patch("services.inventory_service.audit_log", new=world.audit_log),
+    ):
         svc = InventoryService(world.db())
         if receipt is None:
             return await svc.receive_transfer(DST_WM, TRANSFER_ID)
@@ -247,6 +258,7 @@ async def _receive(world: _World, lines: Optional[list[dict]] = None) -> Any:
 
 
 # ── receive_transfer ─────────────────────────────────────────────────────────
+
 
 @pytest.mark.unit
 class TestReceiveAuditRow:
@@ -261,7 +273,7 @@ class TestReceiveAuditRow:
         row = world.audit_rows[0]
         assert row["action"] == "transfer:receive"
         assert row["decision"] == "GRANTED"
-        assert row["db"] is world.session          # caller transaction, not a separate session
+        assert row["db"] is world.session  # caller transaction, not a separate session
         res = row["resource"]
         assert res["resource_type"] == "transfer"
         assert res["resource_id"] == str(TRANSFER_ID)
@@ -278,22 +290,26 @@ class TestReceiveAuditRow:
 
     async def test_short_receipt_records_totals_and_discrepancy_count(self) -> None:
         world = _World()
-        await _receive(world, _body(
-            a="50", line2="25",
-            extra={"a": {"reason": "SHORT"}, "line2": {"reason": "DAMAGED"}},
-        ))
+        await _receive(
+            world,
+            _body(
+                a="50",
+                line2="25",
+                extra={"a": {"reason": "SHORT"}, "line2": {"reason": "DAMAGED"}},
+            ),
+        )
 
         assert len(world.audit_rows) == 1
         res = world.audit_rows[0]["resource"]
-        assert res["received_quantity_total"] == "115"   # 50 + 40 + 25
-        assert res["short_quantity_total"] == "15"       # 10 + 5
+        assert res["received_quantity_total"] == "115"  # 50 + 40 + 25
+        assert res["short_quantity_total"] == "15"  # 10 + 5
         assert res["discrepancy_count"] == 2
         assert res["discrepancy_count"] == len(world.discrepancies)
 
     async def test_failed_validation_writes_no_audit_row(self) -> None:
         world = _World()
         with pytest.raises(HTTPException) as exc:
-            await _receive(world, _body(a="61"))   # more than sent
+            await _receive(world, _body(a="61"))  # more than sent
 
         assert exc.value.status_code == 422
         assert world.audit_rows == []
@@ -317,7 +333,6 @@ class TestReceiveAuditRow:
 
 @pytest.mark.unit
 class TestReceiptConfirmation:
-
     async def test_no_body_is_a_full_receipt_with_todays_entries_and_keys(self) -> None:
         """No body: the same TRANSIT_CLEAR / TRANSFER_IN entries and idempotency
         keys as before receipt confirmation, for a batch and a non-batch line."""
@@ -366,9 +381,9 @@ class TestReceiptConfirmation:
         """LOT-B 38 of 40, SHORT: TRANSFER_IN 38 on LOT-B with today's key, one
         discrepancy (sent 40, received 38, missing 2), TRANSIT_CLEAR still 40."""
         world = _World()
-        result = await _receive(world, _body(
-            b="38", extra={"b": {"reason": "SHORT", "note": "two cartons missing"}}
-        ))
+        result = await _receive(
+            world, _body(b="38", extra={"b": {"reason": "SHORT", "note": "two cartons missing"}})
+        )
 
         assert result.status == "RECEIVED"
         assert world.transit_clear() == FULL_TRANSIT_CLEAR
@@ -377,26 +392,48 @@ class TestReceiptConfirmation:
             (LOT_B, Decimal("38"), f"{IN_KEY}:{LINE_1}:lot:{LOT_B}"),
             (None, Decimal("30"), f"{IN_KEY}:{LINE_2}"),
         ]
-        assert world.discrepancies == [{
-            "tid": TENANT_ID,
-            "xfer_id": str(TRANSFER_ID),
-            "line_id": LINE_1,
-            "pid": PRODUCT_ID,
-            "lot_id": LOT_B,
-            "wid": WAREHOUSE_B,
-            "sent": "40",
-            "received": "38",
-            "missing": "2",
-            "reason": "SHORT",
-            "note": "two cartons missing",
-            "uid": USER_ID,
-        }]
+        assert world.discrepancies == [
+            {
+                "tid": TENANT_ID,
+                "xfer_id": str(TRANSFER_ID),
+                "line_id": LINE_1,
+                "pid": PRODUCT_ID,
+                "lot_id": LOT_B,
+                "wid": WAREHOUSE_B,
+                "sent": "40",
+                "received": "38",
+                "missing": "2",
+                "reason": "SHORT",
+                "note": "two cartons missing",
+                "uid": USER_ID,
+            }
+        ]
         assert [
-            (str(d.transfer_line_id), str(d.lot_id), d.lot_number, d.sent_quantity,
-             d.received_quantity, d.missing_quantity, d.reason, d.note, d.status)
+            (
+                str(d.transfer_line_id),
+                str(d.lot_id),
+                d.lot_number,
+                d.sent_quantity,
+                d.received_quantity,
+                d.missing_quantity,
+                d.reason,
+                d.note,
+                d.status,
+            )
             for d in result.discrepancies
-        ] == [(LINE_1, LOT_B, "LOT-B", Decimal("40"), Decimal("38"), Decimal("2"),
-               "SHORT", "two cartons missing", "OPEN")]
+        ] == [
+            (
+                LINE_1,
+                LOT_B,
+                "LOT-B",
+                Decimal("40"),
+                Decimal("38"),
+                Decimal("2"),
+                "SHORT",
+                "two cartons missing",
+                "OPEN",
+            )
+        ]
 
     async def test_batch_lot_received_zero_damaged_posts_no_transfer_in(self) -> None:
         """LOT-A 0 of 60, DAMAGED: no TRANSFER_IN for LOT-A at all (no zero
@@ -410,7 +447,15 @@ class TestReceiptConfirmation:
         ]
         assert world.transit_clear() == FULL_TRANSIT_CLEAR
         assert [
-            (d["line_id"], d["lot_id"], d["sent"], d["received"], d["missing"], d["reason"], d["note"])
+            (
+                d["line_id"],
+                d["lot_id"],
+                d["sent"],
+                d["received"],
+                d["missing"],
+                d["reason"],
+                d["note"],
+            )
             for d in world.discrepancies
         ] == [(LINE_1, LOT_A, "60", "0", "60", "DAMAGED", None)]
 
@@ -425,7 +470,15 @@ class TestReceiptConfirmation:
         assert "lot_id" not in world.ledger[2]
         assert world.transit_clear() == FULL_TRANSIT_CLEAR
         assert [
-            (d["line_id"], d["pid"], d["lot_id"], d["sent"], d["received"], d["missing"], d["reason"])
+            (
+                d["line_id"],
+                d["pid"],
+                d["lot_id"],
+                d["sent"],
+                d["received"],
+                d["missing"],
+                d["reason"],
+            )
             for d in world.discrepancies
         ] == [(LINE_2, PRODUCT_2, None, "30", "25", "5", "DAMAGED")]
         assert result.discrepancies[0].lot_id is None
@@ -446,18 +499,34 @@ class TestReceiptConfirmation:
         }
         assert world.nothing_written()
 
-    @pytest.mark.parametrize("case, lines", [
-        ("missing entry", _body()[:2]),
-        ("extra entry", _body() + [_entry(LINE_1, LOT_OTHER, "5")]),
-        ("duplicate entry", _body() + [_entry(LINE_2, None, "30")]),
-        ("unknown lot_id", [
-            _entry(LINE_1, LOT_A, "60"), _entry(LINE_1, LOT_OTHER, "40"), _entry(LINE_2, None, "30"),
-        ]),
-        ("lot_id on a non-batch line", [
-            _entry(LINE_1, LOT_A, "60"), _entry(LINE_1, LOT_B, "40"), _entry(LINE_2, LOT_A, "30"),
-        ]),
-        ("batch line without lot_id", [_entry(LINE_1, None, "100"), _entry(LINE_2, None, "30")]),
-    ])
+    @pytest.mark.parametrize(
+        "case, lines",
+        [
+            ("missing entry", _body()[:2]),
+            ("extra entry", _body() + [_entry(LINE_1, LOT_OTHER, "5")]),
+            ("duplicate entry", _body() + [_entry(LINE_2, None, "30")]),
+            (
+                "unknown lot_id",
+                [
+                    _entry(LINE_1, LOT_A, "60"),
+                    _entry(LINE_1, LOT_OTHER, "40"),
+                    _entry(LINE_2, None, "30"),
+                ],
+            ),
+            (
+                "lot_id on a non-batch line",
+                [
+                    _entry(LINE_1, LOT_A, "60"),
+                    _entry(LINE_1, LOT_B, "40"),
+                    _entry(LINE_2, LOT_A, "30"),
+                ],
+            ),
+            (
+                "batch line without lot_id",
+                [_entry(LINE_1, None, "100"), _entry(LINE_2, None, "30")],
+            ),
+        ],
+    )
     async def test_lines_mismatch_is_422_and_nothing_is_written(
         self, case: str, lines: list[dict]
     ) -> None:
@@ -484,7 +553,9 @@ class TestReceiptConfirmation:
 
         assert exc_info.value.status_code == 422
         assert exc_info.value.detail == {
-            "code": "RECEIPT_REASON_REQUIRED", "line_id": LINE_2, "lot_id": None,
+            "code": "RECEIPT_REASON_REQUIRED",
+            "line_id": LINE_2,
+            "lot_id": None,
         }
         assert world.nothing_written()
 
@@ -496,7 +567,9 @@ class TestReceiptConfirmation:
 
         assert exc_info.value.status_code == 422
         assert exc_info.value.detail == {
-            "code": "WRONG_LOT_NOT_BATCH", "line_id": LINE_2, "lot_id": None,
+            "code": "WRONG_LOT_NOT_BATCH",
+            "line_id": LINE_2,
+            "lot_id": None,
         }
         assert world.nothing_written()
 
@@ -520,16 +593,21 @@ class TestReceiptConfirmation:
         """StockTransferred carries the line's received total (60 + 38 = 98); a
         line that received nothing fires no event and posts no TRANSFER_IN."""
         world = _World()
-        await _receive(world, _body(
-            b="38", line2="0",
-            extra={"b": {"reason": "SHORT"}, "line2": {"reason": "DAMAGED"}},
-        ))
+        await _receive(
+            world,
+            _body(
+                b="38",
+                line2="0",
+                extra={"b": {"reason": "SHORT"}, "line2": {"reason": "DAMAGED"}},
+            ),
+        )
 
         assert world.transferred() == [(PRODUCT_ID, 98.0)]
         assert [t[0] for t in world.transfer_in()] == [LOT_A, LOT_B]
         assert world.transit_clear() == FULL_TRANSIT_CLEAR
         assert [(d["line_id"], d["lot_id"], d["missing"]) for d in world.discrepancies] == [
-            (LINE_1, LOT_B, "2"), (LINE_2, None, "30"),
+            (LINE_1, LOT_B, "2"),
+            (LINE_2, None, "30"),
         ]
 
     async def test_partially_received_transfer_can_still_be_received(self) -> None:
@@ -544,22 +622,56 @@ class TestReceiptConfirmation:
         from services.inventory_service import InventoryService
 
         world = _World(status="RECEIVED")
-        world.discrepancies.append({
-            "line_id": LINE_1, "pid": PRODUCT_ID, "lot_id": LOT_B, "sent": "40",
-            "received": "38", "missing": "2", "reason": "SHORT", "note": None,
-        })
+        world.discrepancies.append(
+            {
+                "line_id": LINE_1,
+                "pid": PRODUCT_ID,
+                "lot_id": LOT_B,
+                "sent": "40",
+                "received": "38",
+                "missing": "2",
+                "reason": "SHORT",
+                "note": None,
+            }
+        )
         result = await InventoryService(world.db()).get_transfer(DST_WM, TRANSFER_ID)
 
         assert [
-            (str(d.transfer_line_id), str(d.product_id), str(d.lot_id), d.lot_number,
-             d.sent_quantity, d.received_quantity, d.missing_quantity, d.reason, d.status)
+            (
+                str(d.transfer_line_id),
+                str(d.product_id),
+                str(d.lot_id),
+                d.lot_number,
+                d.sent_quantity,
+                d.received_quantity,
+                d.missing_quantity,
+                d.reason,
+                d.status,
+            )
             for d in result.discrepancies
-        ] == [(LINE_1, PRODUCT_ID, LOT_B, "LOT-B", Decimal("40"), Decimal("38"),
-               Decimal("2"), "SHORT", "OPEN")]
+        ] == [
+            (
+                LINE_1,
+                PRODUCT_ID,
+                LOT_B,
+                "LOT-B",
+                Decimal("40"),
+                Decimal("38"),
+                Decimal("2"),
+                "SHORT",
+                "OPEN",
+            )
+        ]
         # An OPEN row carries no resolution yet (088 columns all NULL).
         assert [
-            (d.resolution, d.resolved_lot_id, d.resolved_lot_number, d.resolution_note,
-             d.resolved_by, d.resolved_at)
+            (
+                d.resolution,
+                d.resolved_lot_id,
+                d.resolved_lot_number,
+                d.resolution_note,
+                d.resolved_by,
+                d.resolved_at,
+            )
             for d in result.discrepancies
         ] == [(None, None, None, None, None, None)]
         assert len(result.lot_allocations) == 2
@@ -571,7 +683,9 @@ class TestReceiptConfirmation:
         world = _World()
         result = await InventoryService(world.db()).get_transfer(DST_WM, TRANSFER_ID)
 
-        assert [(str(line.line_id), str(line.product_id), line.quantity) for line in result.lines] == [
+        assert [
+            (str(line.line_id), str(line.product_id), line.quantity) for line in result.lines
+        ] == [
             (LINE_1, PRODUCT_ID, Decimal("100")),
             (LINE_2, PRODUCT_2, Decimal("30")),
         ]
@@ -583,22 +697,27 @@ class TestReceiptConfirmation:
 
 # ── endpoints ────────────────────────────────────────────────────────────────
 
+
 def _allow_all():
     """Permission granted, tenant ACTIVE — the handlers run for real."""
     from shared.permissions.middleware import PermissionResult
 
     return (
-        patch("shared.permissions.middleware.check_permission",
-              AsyncMock(return_value=PermissionResult(allowed=True))),
-        patch("shared.billing.contract_stage.get_tenant_contract_stage",
-              AsyncMock(return_value={"stage": "ACTIVE", "contract_end": None,
-                                      "read_only_since": None})),
+        patch(
+            "shared.permissions.middleware.check_permission",
+            AsyncMock(return_value=PermissionResult(allowed=True)),
+        ),
+        patch(
+            "shared.billing.contract_stage.get_tenant_contract_stage",
+            AsyncMock(
+                return_value={"stage": "ACTIVE", "contract_end": None, "read_only_since": None}
+            ),
+        ),
     )
 
 
 @pytest.mark.unit
 class TestReceiptEndpoints:
-
     async def test_patch_partially_received_is_422_before_any_service_call(self, wm_user) -> None:
         from routers.transfer import transition_transfer
         from schemas.inventory import TransferTransitionRequest
@@ -647,14 +766,18 @@ class TestReceiptEndpoints:
         check = AsyncMock(return_value=PermissionResult(allowed=True))
         body = ReceiveTransferRequest(lines=_body(b="38", extra={"b": {"reason": "SHORT"}}))
         _, active = _allow_all()
-        with patch("shared.permissions.middleware.check_permission", check), active, \
-             patch("routers.transfer.InventoryService") as svc_cls:
+        with (
+            patch("shared.permissions.middleware.check_permission", check),
+            active,
+            patch("routers.transfer.InventoryService") as svc_cls,
+        ):
             svc_cls.return_value.receive_transfer = AsyncMock(return_value=MagicMock())
             await receive_transfer(transfer_id=TRANSFER_ID, body=body, user=wm_user, db=AsyncMock())
             await receive_transfer(transfer_id=TRANSFER_ID, body=None, user=wm_user, db=AsyncMock())
 
         assert [c.args for c in svc_cls.return_value.receive_transfer.await_args_list] == [
-            (wm_user, TRANSFER_ID, body), (wm_user, TRANSFER_ID, None),
+            (wm_user, TRANSFER_ID, body),
+            (wm_user, TRANSFER_ID, None),
         ]
         assert {c.args[1].id for c in check.await_args_list} == {"transfer:receive"}
 
@@ -662,7 +785,9 @@ class TestReceiptEndpoints:
         from pydantic import ValidationError
         from schemas.inventory import ReceiveTransferRequest
 
-        ok = ReceiveTransferRequest(lines=[_entry(LINE_2, None, "0", reason="DAMAGED", note="x" * 500)])
+        ok = ReceiveTransferRequest(
+            lines=[_entry(LINE_2, None, "0", reason="DAMAGED", note="x" * 500)]
+        )
         assert ok.lines[0].received_quantity == Decimal("0")
         for bad in (
             {"lines": []},

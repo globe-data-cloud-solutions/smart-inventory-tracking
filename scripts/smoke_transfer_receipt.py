@@ -16,6 +16,7 @@ Usage:
     set -a; source .env; set +a
     python scripts/smoke_transfer_receipt.py
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -97,8 +98,12 @@ async def _make_product(session, suffix: str, tag: str, batch: bool) -> str:
 
 
 async def _stock(
-    session, product_id: str, wh: str, qty: str,
-    lot_number: Optional[str] = None, expiry_in_days: Optional[int] = None,
+    session,
+    product_id: str,
+    wh: str,
+    qty: str,
+    lot_number: Optional[str] = None,
+    expiry_in_days: Optional[int] = None,
 ) -> Optional[str]:
     """RECEIVE qty at wh; returns the lot_id for a lot receipt."""
     lot_id = None
@@ -125,7 +130,9 @@ async def _stock(
     return lot_id
 
 
-async def _in_transit_transfer(session, svc, src: str, dst: str, product_id: str, qty: str):
+async def _in_transit_transfer(
+    session, svc, src: str, dst: str, product_id: str, qty: str
+):
     """A PUSH transfer of qty, approved in engine order and dispatched to IN_TRANSIT."""
     transfer_id = str(uuid.uuid4())
     await session.execute(
@@ -134,7 +141,13 @@ async def _in_transit_transfer(session, svc, src: str, dst: str, product_id: str
             "(id, tenant_id, from_warehouse_id, to_warehouse_id, transfer_type, status, created_by) "
             "VALUES (:id, :tid, :src, :dst, 'PUSH', 'PENDING_APPROVAL', :uid)"
         ),
-        {"id": transfer_id, "tid": E2E_TENANT_ID, "src": src, "dst": dst, "uid": CREATOR_ID},
+        {
+            "id": transfer_id,
+            "tid": E2E_TENANT_ID,
+            "src": src,
+            "dst": dst,
+            "uid": CREATOR_ID,
+        },
     )
     line = await _add_line(session, transfer_id, product_id, qty)
     await svc.transition_transfer(USER, uuid.UUID(transfer_id), "APPROVED")
@@ -144,43 +157,53 @@ async def _in_transit_transfer(session, svc, src: str, dst: str, product_id: str
 
 
 async def _status(session, transfer_id: str) -> str:
-    return (await session.execute(
-        text("SELECT status FROM transfer_orders WHERE id = :id AND tenant_id = :tid"),
-        {"id": transfer_id, "tid": E2E_TENANT_ID},
-    )).scalar()
+    return (
+        await session.execute(
+            text(
+                "SELECT status FROM transfer_orders WHERE id = :id AND tenant_id = :tid"
+            ),
+            {"id": transfer_id, "tid": E2E_TENANT_ID},
+        )
+    ).scalar()
 
 
 async def _ledger(session, transfer_id: str, tx_type: str) -> list:
-    return (await session.execute(
-        text(
-            "SELECT warehouse_id, lot_id, quantity, idempotency_key FROM inventory_transactions "
-            "WHERE tenant_id = :tid AND reference_id::text = :xfer "
-            "AND type = CAST(:type AS transaction_type)"
-        ),
-        {"tid": E2E_TENANT_ID, "xfer": transfer_id, "type": tx_type},
-    )).fetchall()
+    return (
+        await session.execute(
+            text(
+                "SELECT warehouse_id, lot_id, quantity, idempotency_key FROM inventory_transactions "
+                "WHERE tenant_id = :tid AND reference_id::text = :xfer "
+                "AND type = CAST(:type AS transaction_type)"
+            ),
+            {"tid": E2E_TENANT_ID, "xfer": transfer_id, "type": tx_type},
+        )
+    ).fetchall()
 
 
 async def _discrepancies(session, transfer_id: str) -> list:
-    return (await session.execute(
-        text(
-            "SELECT lot_id, sent_quantity, received_quantity, missing_quantity, "
-            "       reason, note, status "
-            "FROM transfer_discrepancies WHERE tenant_id = :tid AND transfer_order_id = :xfer"
-        ),
-        {"tid": E2E_TENANT_ID, "xfer": transfer_id},
-    )).fetchall()
+    return (
+        await session.execute(
+            text(
+                "SELECT lot_id, sent_quantity, received_quantity, missing_quantity, "
+                "       reason, note, status "
+                "FROM transfer_discrepancies WHERE tenant_id = :tid AND transfer_order_id = :xfer"
+            ),
+            {"tid": E2E_TENANT_ID, "xfer": transfer_id},
+        )
+    ).fetchall()
 
 
 async def _write_counts(session, transfer_id: str) -> tuple[int, int]:
     """(inventory_transactions rows, transfer_discrepancies rows) for this transfer."""
-    ledger = (await session.execute(
-        text(
-            "SELECT count(*) FROM inventory_transactions "
-            "WHERE tenant_id = :tid AND reference_id::text = :xfer"
-        ),
-        {"tid": E2E_TENANT_ID, "xfer": transfer_id},
-    )).scalar()
+    ledger = (
+        await session.execute(
+            text(
+                "SELECT count(*) FROM inventory_transactions "
+                "WHERE tenant_id = :tid AND reference_id::text = :xfer"
+            ),
+            {"tid": E2E_TENANT_ID, "xfer": transfer_id},
+        )
+    ).scalar()
     return ledger, len(await _discrepancies(session, transfer_id))
 
 
@@ -197,13 +220,15 @@ def _body(*entries: tuple) -> ReceiveTransferRequest:
     """entries: (line_id, lot_id, received[, reason[, note]])."""
     lines = []
     for line_id, lot_id, received, *rest in entries:
-        lines.append(ReceiptLineIn(
-            line_id=line_id,
-            lot_id=lot_id,
-            received_quantity=_d(received),
-            reason=rest[0] if rest else None,
-            note=rest[1] if len(rest) > 1 else None,
-        ))
+        lines.append(
+            ReceiptLineIn(
+                line_id=line_id,
+                lot_id=lot_id,
+                received_quantity=_d(received),
+                reason=rest[0] if rest else None,
+                note=rest[1] if len(rest) > 1 else None,
+            )
+        )
     return ReceiveTransferRequest(lines=lines)
 
 
@@ -219,68 +244,111 @@ async def _scenario_a(session, svc, src, dst, suffix) -> None:
     # in-transit figure is visible before the receipt.
     lot_z = await _stock(session, product_id, dst, "5", "LOT-Z", 90)
     await record_transaction(
-        session, E2E_TENANT_ID, "ISSUE", product_id, dst, _d("-5"), E2E_USER_ID,
+        session,
+        E2E_TENANT_ID,
+        "ISSUE",
+        product_id,
+        dst,
+        _d("-5"),
+        E2E_USER_ID,
         f"smoke:receipt:issue:{product_id}:{uuid.uuid4()}",
-        lot_id=lot_z, lot_number="LOT-Z",
+        lot_id=lot_z,
+        lot_number="LOT-Z",
     )
     dst_seed = await _product_balance(session, product_id, dst)
-    _check(dst_seed == _d("0"), f"A) setup: destination holds a zero balance row (got {dst_seed})")
+    _check(
+        dst_seed == _d("0"),
+        f"A) setup: destination holds a zero balance row (got {dst_seed})",
+    )
 
-    transfer_id, line = await _in_transit_transfer(session, svc, src, dst, product_id, "70")
+    transfer_id, line = await _in_transit_transfer(
+        session, svc, src, dst, product_id, "70"
+    )
     src_balance_approved = await _product_balance(session, product_id, src)
     src_lots_approved = await _lot_balances(session, product_id, src)
-    _check(src_lots_approved == {lot_a: _d("0"), lot_b: _d("0")},
-           f"A) after approval the source lots are LOT-A 0, LOT-B 0 "
-           f"(got {sorted(str(v) for v in src_lots_approved.values())}, product {src_balance_approved})")
+    _check(
+        src_lots_approved == {lot_a: _d("0"), lot_b: _d("0")},
+        f"A) after approval the source lots are LOT-A 0, LOT-B 0 "
+        f"(got {sorted(str(v) for v in src_lots_approved.values())}, product {src_balance_approved})",
+    )
 
     before = await _in_transit_in(session, product_id, dst)
-    _check(before == _d("70"), f"A) before receipt in_transit_in at the destination = 70 (got {before})")
+    _check(
+        before == _d("70"),
+        f"A) before receipt in_transit_in at the destination = 70 (got {before})",
+    )
 
     await svc.receive_transfer(
-        USER, uuid.UUID(transfer_id),
-        _body((line.id, lot_a, "30"), (line.id, lot_b, "38", "SHORT", "2 cartons missing")),
+        USER,
+        uuid.UUID(transfer_id),
+        _body(
+            (line.id, lot_a, "30"), (line.id, lot_b, "38", "SHORT", "2 cartons missing")
+        ),
     )
 
     dst_lots = await _lot_balances(session, product_id, dst)
-    _check(dst_lots == {lot_a: _d("30"), lot_b: _d("38"), lot_z: _d("0")},
-           f"A) destination lot_balances are LOT-A 30, LOT-B 38 on the source lot_ids "
-           f"(got {[str(dst_lots.get(l)) for l in (lot_a, lot_b)]})")
-    _check(await _lot_identity(session, [lot_a, lot_b]) == identity_before,
-           "A) stock_lots lot_number, expiry_date and first_received_at are unchanged")
+    _check(
+        dst_lots == {lot_a: _d("30"), lot_b: _d("38"), lot_z: _d("0")},
+        f"A) destination lot_balances are LOT-A 30, LOT-B 38 on the source lot_ids "
+        f"(got {[str(dst_lots.get(l)) for l in (lot_a, lot_b)]})",
+    )
+    _check(
+        await _lot_identity(session, [lot_a, lot_b]) == identity_before,
+        "A) stock_lots lot_number, expiry_date and first_received_at are unchanged",
+    )
     dst_balance = await _product_balance(session, product_id, dst)
-    _check(dst_balance == _d("68"), f"A) destination product balance = 68 (got {dst_balance})")
+    _check(
+        dst_balance == _d("68"),
+        f"A) destination product balance = 68 (got {dst_balance})",
+    )
 
     src_lots = await _lot_balances(session, product_id, src)
     src_balance = await _product_balance(session, product_id, src)
-    _check(src_lots == src_lots_approved and src_balance == src_balance_approved,
-           f"A) source unchanged by the receipt (lots {sorted(str(v) for v in src_lots.values())}, "
-           f"product {src_balance_approved} -> {src_balance})")
+    _check(
+        src_lots == src_lots_approved and src_balance == src_balance_approved,
+        f"A) source unchanged by the receipt (lots {sorted(str(v) for v in src_lots.values())}, "
+        f"product {src_balance_approved} -> {src_balance})",
+    )
 
     ins = await _ledger(session, transfer_id, "TRANSFER_IN")
     got_in = {str(r.lot_id): r.quantity for r in ins}
-    _check(len(ins) == 2 and got_in == {lot_a: _d("30"), lot_b: _d("38")},
-           f"A) exactly one TRANSFER_IN per lot, 30 and 38 (got {sorted(str(r.quantity) for r in ins)})")
-    _check(all(r.idempotency_key.endswith(f":line:{line.id}:lot:{r.lot_id}") for r in ins),
-           f"A) TRANSFER_IN keys end :line:<id>:lot:<lot_id> ({[r.idempotency_key[-20:] for r in ins]})")
+    _check(
+        len(ins) == 2 and got_in == {lot_a: _d("30"), lot_b: _d("38")},
+        f"A) exactly one TRANSFER_IN per lot, 30 and 38 (got {sorted(str(r.quantity) for r in ins)})",
+    )
+    _check(
+        all(r.idempotency_key.endswith(f":line:{line.id}:lot:{r.lot_id}") for r in ins),
+        f"A) TRANSFER_IN keys end :line:<id>:lot:<lot_id> ({[r.idempotency_key[-20:] for r in ins]})",
+    )
 
     clears = await _ledger(session, transfer_id, "TRANSIT_CLEAR")
     by_wh = {
-        wh: {str(r.lot_id): abs(r.quantity) for r in clears if str(r.warehouse_id) == wh}
+        wh: {
+            str(r.lot_id): abs(r.quantity) for r in clears if str(r.warehouse_id) == wh
+        }
         for wh in (src, dst)
     }
     full = {lot_a: _d("30"), lot_b: _d("40")}
-    _check(len(clears) == 4 and by_wh[src] == full and by_wh[dst] == full,
-           f"A) TRANSIT_CLEAR carries the full sent 30 and 40 at source and destination "
-           f"(got {sorted(str(r.quantity) for r in clears)})")
+    _check(
+        len(clears) == 4 and by_wh[src] == full and by_wh[dst] == full,
+        f"A) TRANSIT_CLEAR carries the full sent 30 and 40 at source and destination "
+        f"(got {sorted(str(r.quantity) for r in clears)})",
+    )
 
     disc = await _discrepancies(session, transfer_id)
-    print(f"     discrepancies: {[(str(d.sent_quantity), str(d.received_quantity), str(d.missing_quantity), d.reason, d.status, d.note) for d in disc]}")
+    print(
+        f"     discrepancies: {[(str(d.sent_quantity), str(d.received_quantity), str(d.missing_quantity), d.reason, d.status, d.note) for d in disc]}"
+    )
     _check(len(disc) == 1, f"A) one transfer_discrepancies row (got {len(disc)})")
     if len(disc) == 1:
         d = disc[0]
         _check(
-            str(d.lot_id) == lot_b and d.sent_quantity == 40 and d.received_quantity == 38
-            and d.missing_quantity == 2 and d.reason == "SHORT" and d.status == "OPEN"
+            str(d.lot_id) == lot_b
+            and d.sent_quantity == 40
+            and d.received_quantity == 38
+            and d.missing_quantity == 2
+            and d.reason == "SHORT"
+            and d.status == "OPEN"
             and d.note == "2 cartons missing",
             "A) discrepancy: lot LOT-B, sent 40, received 38, missing 2, SHORT, OPEN, note saved",
         )
@@ -288,28 +356,42 @@ async def _scenario_a(session, svc, src, dst, suffix) -> None:
     status = await _status(session, transfer_id)
     _check(status == "RECEIVED", f"A) status = RECEIVED (got {status})")
     after = await _in_transit_in(session, product_id, dst)
-    _check(after == _d("0"), f"A) after receipt in_transit_in at the destination = 0 (got {after})")
+    _check(
+        after == _d("0"),
+        f"A) after receipt in_transit_in at the destination = 0 (got {after})",
+    )
 
     fetched = await svc.get_transfer(USER, uuid.UUID(transfer_id))
     lot_numbers = [d.lot_number for d in fetched.discrepancies]
-    _check(lot_numbers == ["LOT-B"], f"A) get_transfer() returns the discrepancy with lot_number {lot_numbers}")
+    _check(
+        lot_numbers == ["LOT-B"],
+        f"A) get_transfer() returns the discrepancy with lot_number {lot_numbers}",
+    )
 
 
 async def _scenario_b(session, svc, src, dst, suffix) -> None:
     product_id = await _make_product(session, suffix, "B", batch=False)
     await _stock(session, product_id, src, "50")
-    transfer_id, line = await _in_transit_transfer(session, svc, src, dst, product_id, "50")
+    transfer_id, line = await _in_transit_transfer(
+        session, svc, src, dst, product_id, "50"
+    )
     dst_before = await _product_balance(session, product_id, dst)
 
     await svc.receive_transfer(
-        USER, uuid.UUID(transfer_id), _body((line.id, None, "45", "DAMAGED")),
+        USER,
+        uuid.UUID(transfer_id),
+        _body((line.id, None, "45", "DAMAGED")),
     )
     dst_after = await _product_balance(session, product_id, dst)
-    _check(dst_after - dst_before == _d("45"),
-           f"B) non-batch: destination +45 only ({dst_before} -> {dst_after})")
+    _check(
+        dst_after - dst_before == _d("45"),
+        f"B) non-batch: destination +45 only ({dst_before} -> {dst_after})",
+    )
     disc = await _discrepancies(session, transfer_id)
     _check(
-        len(disc) == 1 and disc[0].lot_id is None and disc[0].missing_quantity == 5
+        len(disc) == 1
+        and disc[0].lot_id is None
+        and disc[0].missing_quantity == 5
         and disc[0].reason == "DAMAGED",
         f"B) one discrepancy with lot_id NULL, missing 5, DAMAGED "
         f"(got {[(d.lot_id, str(d.missing_quantity), d.reason) for d in disc]})",
@@ -321,23 +403,33 @@ async def _scenario_b(session, svc, src, dst, suffix) -> None:
 async def _scenario_c(session, svc, src, dst, suffix) -> None:
     product_id = await _make_product(session, suffix, "C", batch=True)
     lot = await _stock(session, product_id, src, "20", "LOT-C", 30)
-    transfer_id, line = await _in_transit_transfer(session, svc, src, dst, product_id, "20")
+    transfer_id, line = await _in_transit_transfer(
+        session, svc, src, dst, product_id, "20"
+    )
 
     await svc.receive_transfer(
-        USER, uuid.UUID(transfer_id), _body((line.id, lot, "0", "WRONG_LOT")),
+        USER,
+        uuid.UUID(transfer_id),
+        _body((line.id, lot, "0", "WRONG_LOT")),
     )
     ins = await _ledger(session, transfer_id, "TRANSFER_IN")
-    _check(len(ins) == 0, f"C) received 0: no TRANSFER_IN row for the lot (got {len(ins)})")
+    _check(
+        len(ins) == 0, f"C) received 0: no TRANSFER_IN row for the lot (got {len(ins)})"
+    )
     disc = await _discrepancies(session, transfer_id)
     _check(
-        len(disc) == 1 and str(disc[0].lot_id) == lot and disc[0].missing_quantity == 20
+        len(disc) == 1
+        and str(disc[0].lot_id) == lot
+        and disc[0].missing_quantity == 20
         and disc[0].reason == "WRONG_LOT",
         f"C) the discrepancy has missing 20, WRONG_LOT "
         f"(got {[(str(d.missing_quantity), d.reason) for d in disc]})",
     )
     dst_lot = (await _lot_balances(session, product_id, dst)).get(lot)
-    _check(dst_lot is None or dst_lot == 0,
-           f"C) destination balance for the lot is absent or 0 (got {dst_lot})")
+    _check(
+        dst_lot is None or dst_lot == 0,
+        f"C) destination balance for the lot is absent or 0 (got {dst_lot})",
+    )
     status = await _status(session, transfer_id)
     _check(status == "RECEIVED", f"C) status = RECEIVED (got {status})")
 
@@ -346,14 +438,18 @@ async def _scenario_d(session, svc, src, dst, suffix) -> None:
     product_id = await _make_product(session, suffix, "D", batch=True)
     lot_1 = await _stock(session, product_id, src, "15", "LOT-D1", 30)
     lot_2 = await _stock(session, product_id, src, "25", "LOT-D2", 60)
-    transfer_id, _line = await _in_transit_transfer(session, svc, src, dst, product_id, "40")
+    transfer_id, _line = await _in_transit_transfer(
+        session, svc, src, dst, product_id, "40"
+    )
 
     await svc.receive_transfer(USER, uuid.UUID(transfer_id))
     dst_lots = await _lot_balances(session, product_id, dst)
     dst_balance = await _product_balance(session, product_id, dst)
-    _check(dst_lots == {lot_1: _d("15"), lot_2: _d("25")} and dst_balance == _d("40"),
-           f"D) no body: full quantities credited (lots {sorted(str(v) for v in dst_lots.values())}, "
-           f"product {dst_balance})")
+    _check(
+        dst_lots == {lot_1: _d("15"), lot_2: _d("25")} and dst_balance == _d("40"),
+        f"D) no body: full quantities credited (lots {sorted(str(v) for v in dst_lots.values())}, "
+        f"product {dst_balance})",
+    )
     disc = await _discrepancies(session, transfer_id)
     _check(len(disc) == 0, f"D) no body: zero discrepancies (got {len(disc)})")
     status = await _status(session, transfer_id)
@@ -364,15 +460,26 @@ async def _scenario_e(session, svc, src, dst, suffix) -> None:
     product_id = await _make_product(session, suffix, "E", batch=True)
     lot_1 = await _stock(session, product_id, src, "10", "LOT-E1", 30)
     lot_2 = await _stock(session, product_id, src, "10", "LOT-E2", 60)
-    transfer_id, line = await _in_transit_transfer(session, svc, src, dst, product_id, "20")
+    transfer_id, line = await _in_transit_transfer(
+        session, svc, src, dst, product_id, "20"
+    )
 
     cases = (
-        ("received > sent", "RECEIPT_EXCEEDS_SENT",
-         _body((line.id, lot_1, "11"), (line.id, lot_2, "10"))),
-        ("a lot missing from the body", "RECEIPT_LINES_MISMATCH",
-         _body((line.id, lot_1, "10"))),
-        ("a short line with no reason", "RECEIPT_REASON_REQUIRED",
-         _body((line.id, lot_1, "9"), (line.id, lot_2, "10"))),
+        (
+            "received > sent",
+            "RECEIPT_EXCEEDS_SENT",
+            _body((line.id, lot_1, "11"), (line.id, lot_2, "10")),
+        ),
+        (
+            "a lot missing from the body",
+            "RECEIPT_LINES_MISMATCH",
+            _body((line.id, lot_1, "10")),
+        ),
+        (
+            "a short line with no reason",
+            "RECEIPT_REASON_REQUIRED",
+            _body((line.id, lot_1, "9"), (line.id, lot_2, "10")),
+        ),
     )
     for label, expected_code, body in cases:
         counts_before = await _write_counts(session, transfer_id)
@@ -381,19 +488,28 @@ async def _scenario_e(session, svc, src, dst, suffix) -> None:
         try:
             await svc.receive_transfer(USER, uuid.UUID(transfer_id), body)
         except HTTPException as exc:
-            code = exc.detail.get("code") if isinstance(exc.detail, dict) else exc.detail
+            code = (
+                exc.detail.get("code") if isinstance(exc.detail, dict) else exc.detail
+            )
             got = f"{exc.status_code} {code}"
         # Counted INSIDE the savepoint, before it is rolled back: proves the
         # rejection itself wrote nothing.
         counts_after = await _write_counts(session, transfer_id)
         status_inside = await _status(session, transfer_id)
         await savepoint.rollback()
-        _check(got == f"422 {expected_code}", f"E) {label}: 422 {expected_code} (got {got})")
-        _check(counts_after == counts_before,
-               f"E) {label}: (ledger, discrepancy) counts unchanged {counts_before} -> {counts_after}")
+        _check(
+            got == f"422 {expected_code}",
+            f"E) {label}: 422 {expected_code} (got {got})",
+        )
+        _check(
+            counts_after == counts_before,
+            f"E) {label}: (ledger, discrepancy) counts unchanged {counts_before} -> {counts_after}",
+        )
         status = await _status(session, transfer_id)
-        _check(status_inside == "IN_TRANSIT" and status == "IN_TRANSIT",
-               f"E) {label}: status still IN_TRANSIT (got {status})")
+        _check(
+            status_inside == "IN_TRANSIT" and status == "IN_TRANSIT",
+            f"E) {label}: status still IN_TRANSIT (got {status})",
+        )
 
 
 async def _run(session, suffix: str) -> None:
@@ -401,15 +517,22 @@ async def _run(session, suffix: str) -> None:
 
     src = str(uuid.uuid4())
     dst = str(uuid.uuid4())
-    for node_id, label, code in ((src, "Smoke Receipt Source", f"SMOKE-RSRC-{suffix}"),
-                                  (dst, "Smoke Receipt Destination", f"SMOKE-RDST-{suffix}")):
+    for node_id, label, code in (
+        (src, "Smoke Receipt Source", f"SMOKE-RSRC-{suffix}"),
+        (dst, "Smoke Receipt Destination", f"SMOKE-RDST-{suffix}"),
+    ):
         await session.execute(
             text(
                 "INSERT INTO organization_node "
                 "(id, tenant_id, name, code, hierarchy_level, is_stock_holding, is_active) "
                 "VALUES (:id, :tid, :name, :code, 1, true, true)"
             ),
-            {"id": node_id, "tid": E2E_TENANT_ID, "name": f"{label} {suffix}", "code": code},
+            {
+                "id": node_id,
+                "tid": E2E_TENANT_ID,
+                "name": f"{label} {suffix}",
+                "code": code,
+            },
         )
     print(f"     source={src}  destination={dst}")
 
@@ -435,21 +558,29 @@ async def main() -> int:
     # ── post-rollback check from a NEW session ──
     async with AsyncSessionLocal() as verify_session:
         await set_rls_context(verify_session, E2E_TENANT_ID, E2E_USER_ID)
-        products = (await verify_session.execute(
-            text("SELECT count(*) FROM products WHERE tenant_id = :tid AND sku LIKE :sku"),
-            {"tid": E2E_TENANT_ID, "sku": f"SMKR-%-{suffix}"},
-        )).scalar()
-        discrepancies = (await verify_session.execute(
-            text(
-                "SELECT count(*) FROM transfer_discrepancies d "
-                "JOIN products p ON p.id = d.product_id "
-                "WHERE d.tenant_id = :tid AND p.sku LIKE :sku"
-            ),
-            {"tid": E2E_TENANT_ID, "sku": f"SMKR-%-{suffix}"},
-        )).scalar()
+        products = (
+            await verify_session.execute(
+                text(
+                    "SELECT count(*) FROM products WHERE tenant_id = :tid AND sku LIKE :sku"
+                ),
+                {"tid": E2E_TENANT_ID, "sku": f"SMKR-%-{suffix}"},
+            )
+        ).scalar()
+        discrepancies = (
+            await verify_session.execute(
+                text(
+                    "SELECT count(*) FROM transfer_discrepancies d "
+                    "JOIN products p ON p.id = d.product_id "
+                    "WHERE d.tenant_id = :tid AND p.sku LIKE :sku"
+                ),
+                {"tid": E2E_TENANT_ID, "sku": f"SMKR-%-{suffix}"},
+            )
+        ).scalar()
         await verify_session.rollback()
     _check(products == 0, f"post-rollback: smoke products = {products}")
-    _check(discrepancies == 0, f"post-rollback: smoke discrepancy rows = {discrepancies}")
+    _check(
+        discrepancies == 0, f"post-rollback: smoke discrepancy rows = {discrepancies}"
+    )
 
     if _failures:
         print(f"SMOKE FAIL ({len(_failures)} failed)")

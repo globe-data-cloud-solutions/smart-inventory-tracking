@@ -1,6 +1,7 @@
 """Unit tests for shared.auth.email_verification — token issuance,
 single-use consumption, and the ENVIRONMENT-aware delivery-mode default.
 DB access is mocked; no real connection required."""
+
 from __future__ import annotations
 
 from unittest.mock import AsyncMock, MagicMock

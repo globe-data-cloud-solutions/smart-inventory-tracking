@@ -3,6 +3,7 @@ consumed via the public reset-password endpoint. The raw token is returned
 once by issue_reset_token() and never stored or logged anywhere except the
 dev-mode sender below; only its SHA-256 hash lives in the database.
 """
+
 from __future__ import annotations
 
 import hashlib
@@ -51,14 +52,16 @@ async def consume_reset_token(db: AsyncSession, raw: str) -> Optional[str]:
     """Single-use: locks and marks the matching unused, unexpired token as
     used. Returns the user_id on success, or None if the token is missing,
     already used, or expired."""
-    row = (await db.execute(
-        text(
-            "SELECT id, user_id FROM password_reset_tokens "
-            "WHERE token_hash = :hash AND used_at IS NULL AND expires_at > now() "
-            "FOR UPDATE"
-        ),
-        {"hash": _hash_token(raw)},
-    )).fetchone()
+    row = (
+        await db.execute(
+            text(
+                "SELECT id, user_id FROM password_reset_tokens "
+                "WHERE token_hash = :hash AND used_at IS NULL AND expires_at > now() "
+                "FOR UPDATE"
+            ),
+            {"hash": _hash_token(raw)},
+        )
+    ).fetchone()
     if row is None:
         return None
 
@@ -75,6 +78,9 @@ def send_reset_email(email: str, raw_token: str) -> None:
     subject, text_body, html_body = password_reset_template(raw_token)
     app_base_url = os.environ.get("APP_BASE_URL", "http://localhost:3000")
     send_email(
-        email, subject, text_body, html_body,
+        email,
+        subject,
+        text_body,
+        html_body,
         log_line=f"[DEV EMAIL] reset {email}: {app_base_url}/reset-password?token={raw_token}",
     )

@@ -3,6 +3,7 @@ migration file reusing an already-used revision id, which produced two
 heads and silently forked the migration graph. These checks run against
 the script directory only — no database connection required.
 """
+
 from __future__ import annotations
 
 import re
@@ -38,7 +39,9 @@ def test_all_revision_ids_unique() -> None:
             continue
         rev_id = match.group(1)
         if rev_id in seen:
-            duplicates.append(f"{rev_id!r} used in both {seen[rev_id].name} and {path.name}")
+            duplicates.append(
+                f"{rev_id!r} used in both {seen[rev_id].name} and {path.name}"
+            )
         else:
             seen[rev_id] = path
 

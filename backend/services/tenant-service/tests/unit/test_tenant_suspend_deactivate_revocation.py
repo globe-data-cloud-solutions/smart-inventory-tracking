@@ -2,16 +2,17 @@
 each call revoke_tenant_tokens right after their status UPDATE; reactivate
 does not (token revocation is a one-way gate — reactivating a tenant must
 not restore sessions that were already invalidated)."""
+
 from __future__ import annotations
 
 import os
 import sys
 
-os.environ.setdefault("DATABASE_URL",      "postgresql+asyncpg://test:x@localhost/test")
+os.environ.setdefault("DATABASE_URL", "postgresql+asyncpg://test:x@localhost/test")
 os.environ.setdefault("DATABASE_READ_URL", "postgresql+asyncpg://test:x@localhost/test")
-os.environ.setdefault("JWT_SECRET",        "test-secret")
-os.environ.setdefault("JWT_SECRET_KEY",    "test-secret")
-os.environ.setdefault("ENVIRONMENT",       "local")
+os.environ.setdefault("JWT_SECRET", "test-secret")
+os.environ.setdefault("JWT_SECRET_KEY", "test-secret")
+os.environ.setdefault("ENVIRONMENT", "local")
 
 _TENANT_ROOT = os.path.normpath(os.path.join(os.path.dirname(__file__), "..", ".."))
 if _TENANT_ROOT not in sys.path:
@@ -34,6 +35,7 @@ _GRANT_ALL = patch(
 
 def _sa_user():
     from dependencies import UserContext
+
     return UserContext(user_id="sa-1", role="SA", tenant_id=None, warehouse_id=None)
 
 

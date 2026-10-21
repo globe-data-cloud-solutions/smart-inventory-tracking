@@ -5,6 +5,7 @@ transitions write the ledger even though the action id is transfer:view (a
 nominally read permission) — so it must be blocked in READ_ONLY regardless
 of the action id's own classification.
 """
+
 from __future__ import annotations
 from uuid import uuid4
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -32,13 +33,17 @@ async def test_read_only_blocks_transition_and_service_not_called() -> None:
     db = AsyncMock()
     body = TransferTransitionRequest(next_status="ISSUED")
 
-    with patch(
-        "shared.permissions.middleware.check_permission",
-        AsyncMock(return_value=PermissionResult(allowed=True)),
-    ), patch(
-        "shared.billing.contract_stage.get_tenant_contract_stage",
-        AsyncMock(return_value=_stage("READ_ONLY")),
-    ), patch("routers.transfer.InventoryService") as mock_svc_cls:
+    with (
+        patch(
+            "shared.permissions.middleware.check_permission",
+            AsyncMock(return_value=PermissionResult(allowed=True)),
+        ),
+        patch(
+            "shared.billing.contract_stage.get_tenant_contract_stage",
+            AsyncMock(return_value=_stage("READ_ONLY")),
+        ),
+        patch("routers.transfer.InventoryService") as mock_svc_cls,
+    ):
         with pytest.raises(HTTPException) as exc_info:
             await transition_transfer(transfer_id=uuid4(), body=body, user=_user(), db=db)
 
@@ -51,13 +56,17 @@ async def test_grace_tenant_allowed_through_to_service() -> None:
     db = AsyncMock()
     body = TransferTransitionRequest(next_status="RECEIVED")
 
-    with patch(
-        "shared.permissions.middleware.check_permission",
-        AsyncMock(return_value=PermissionResult(allowed=True)),
-    ), patch(
-        "shared.billing.contract_stage.get_tenant_contract_stage",
-        AsyncMock(return_value=_stage("GRACE")),
-    ), patch("routers.transfer.InventoryService") as mock_svc_cls:
+    with (
+        patch(
+            "shared.permissions.middleware.check_permission",
+            AsyncMock(return_value=PermissionResult(allowed=True)),
+        ),
+        patch(
+            "shared.billing.contract_stage.get_tenant_contract_stage",
+            AsyncMock(return_value=_stage("GRACE")),
+        ),
+        patch("routers.transfer.InventoryService") as mock_svc_cls,
+    ):
         mock_svc = mock_svc_cls.return_value
         mock_svc.receive_transfer = AsyncMock(return_value=MagicMock())
         await transition_transfer(transfer_id=uuid4(), body=body, user=_user(), db=db)

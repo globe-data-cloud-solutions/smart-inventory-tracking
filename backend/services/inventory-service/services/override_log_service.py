@@ -19,6 +19,7 @@ Scope (CLAUDE.md §1, same rule as transfer_discrepancies.list_discrepancies):
 The subtree is matched against the override's warehouse_id, the allocation's
 from_warehouse_id and the ledger row's warehouse_id.
 """
+
 from __future__ import annotations
 
 import json
@@ -119,6 +120,7 @@ def _wh_filter(
 
 # ── list ─────────────────────────────────────────────────────────────────────
 
+
 def _stored_lots(raw: Any) -> list[dict[str, Any]]:
     return json.loads(raw) if isinstance(raw, str) else (raw or [])
 
@@ -165,48 +167,60 @@ async def list_overrides(
         filters += " AND o.strategy = CAST(:strategy AS dispatch_strategy)"
         params["strategy"] = strategy
 
-    total = (await db.execute(
-        text(
-            "SELECT count(*) AS n FROM lot_allocation_overrides o "
-            f"WHERE o.tenant_id = :tid{filters}"
-        ),
-        params,
-    )).fetchone().n
+    total = (
+        (
+            await db.execute(
+                text(
+                    "SELECT count(*) AS n FROM lot_allocation_overrides o "
+                    f"WHERE o.tenant_id = :tid{filters}"
+                ),
+                params,
+            )
+        )
+        .fetchone()
+        .n
+    )
 
-    rows = (await db.execute(
-        text(
-            "SELECT o.id, o.created_at, u.full_name AS overridden_by_name, "
-            "       o.product_id, p.name AS product_name, p.sku AS product_sku, "
-            "       o.warehouse_id, COALESCE(n.name, w.name) AS warehouse_name, "
-            "       o.strategy::text AS strategy, o.movement_type, o.reference_id, "
-            "       o.requested_qty, o.suggested, o.chosen, o.reason "
-            "FROM lot_allocation_overrides o "
-            "JOIN products p ON p.id = o.product_id AND p.tenant_id = o.tenant_id "
-            "LEFT JOIN users u ON u.id = o.overridden_by "
-            "LEFT JOIN organization_node n ON n.id = o.warehouse_id AND n.tenant_id = o.tenant_id "
-            "LEFT JOIN warehouses w ON w.id = o.warehouse_id AND w.tenant_id = o.tenant_id "
-            f"WHERE o.tenant_id = :tid{filters} "
-            "ORDER BY o.created_at DESC, o.id "
-            "LIMIT :limit OFFSET :offset"
-        ),
-        {**params, "limit": limit, "offset": offset},
-    )).fetchall()
+    rows = (
+        await db.execute(
+            text(
+                "SELECT o.id, o.created_at, u.full_name AS overridden_by_name, "
+                "       o.product_id, p.name AS product_name, p.sku AS product_sku, "
+                "       o.warehouse_id, COALESCE(n.name, w.name) AS warehouse_name, "
+                "       o.strategy::text AS strategy, o.movement_type, o.reference_id, "
+                "       o.requested_qty, o.suggested, o.chosen, o.reason "
+                "FROM lot_allocation_overrides o "
+                "JOIN products p ON p.id = o.product_id AND p.tenant_id = o.tenant_id "
+                "LEFT JOIN users u ON u.id = o.overridden_by "
+                "LEFT JOIN organization_node n ON n.id = o.warehouse_id AND n.tenant_id = o.tenant_id "
+                "LEFT JOIN warehouses w ON w.id = o.warehouse_id AND w.tenant_id = o.tenant_id "
+                f"WHERE o.tenant_id = :tid{filters} "
+                "ORDER BY o.created_at DESC, o.id "
+                "LIMIT :limit OFFSET :offset"
+            ),
+            {**params, "limit": limit, "offset": offset},
+        )
+    ).fetchall()
 
-    lot_ids = sorted({
-        str(i["lot_id"]).lower()
-        for r in rows
-        for raw in (r.suggested, r.chosen)
-        for i in _stored_lots(raw)
-    })
+    lot_ids = sorted(
+        {
+            str(i["lot_id"]).lower()
+            for r in rows
+            for raw in (r.suggested, r.chosen)
+            for i in _stored_lots(raw)
+        }
+    )
     lot_numbers: dict[str, str] = {}
     if lot_ids:
-        found = (await db.execute(
-            text(
-                "SELECT id, lot_number FROM stock_lots "
-                "WHERE tenant_id = :tid AND id = ANY(CAST(:ids AS uuid[]))"
-            ),
-            {"tid": tid, "ids": lot_ids},
-        )).fetchall()
+        found = (
+            await db.execute(
+                text(
+                    "SELECT id, lot_number FROM stock_lots "
+                    "WHERE tenant_id = :tid AND id = ANY(CAST(:ids AS uuid[]))"
+                ),
+                {"tid": tid, "ids": lot_ids},
+            )
+        ).fetchall()
         lot_numbers = {str(r.id).lower(): r.lot_number for r in found}
 
     return OverrideLogOut(
@@ -216,9 +230,7 @@ async def list_overrides(
                 id=r.id,
                 created_at=r.created_at,
                 overridden_by=r.overridden_by_name,
-                product=OverrideProductOut(
-                    id=r.product_id, name=r.product_name, sku=r.product_sku
-                ),
+                product=OverrideProductOut(id=r.product_id, name=r.product_name, sku=r.product_sku),
                 warehouse=OverrideWarehouseOut(id=r.warehouse_id, name=r.warehouse_name),
                 strategy=r.strategy,
                 movement_type=r.movement_type,
@@ -234,6 +246,7 @@ async def list_overrides(
 
 
 # ── summary ──────────────────────────────────────────────────────────────────
+
 
 async def _period_counts(
     db: AsyncSession,
@@ -254,39 +267,43 @@ async def _period_counts(
     # TRANSFER: one row per lot per line; a line is overridden if any row has override_id.
     params: dict[str, Any] = {"tid": tid, "ts_from": ts_from, "ts_to": ts_to}
     t_filters = _wh_filter("a.from_warehouse_id", subtree, warehouse_id, params)
-    t = (await db.execute(
-        text(
-            "SELECT count(DISTINCT a.transfer_line_id) AS decisions, "
-            "       count(DISTINCT a.transfer_line_id) "
-            "         FILTER (WHERE a.override_id IS NOT NULL) AS overridden "
-            "FROM transfer_line_allocations a "
-            f"{join('a')}"
-            "WHERE a.tenant_id = :tid AND a.created_at >= :ts_from AND a.created_at < :ts_to"
-            f"{t_filters}{fefo}"
-        ),
-        params,
-    )).fetchone()
+    t = (
+        await db.execute(
+            text(
+                "SELECT count(DISTINCT a.transfer_line_id) AS decisions, "
+                "       count(DISTINCT a.transfer_line_id) "
+                "         FILTER (WHERE a.override_id IS NOT NULL) AS overridden "
+                "FROM transfer_line_allocations a "
+                f"{join('a')}"
+                "WHERE a.tenant_id = :tid AND a.created_at >= :ts_from AND a.created_at < :ts_to"
+                f"{t_filters}{fefo}"
+            ),
+            params,
+        )
+    ).fetchone()
 
     # ISSUE: lot-carrying ledger rows, one decision per issue_ref. The overridden
     # count comes from the SAME rows (those with a matching override row), so it
     # can never exceed decisions at a period edge.
     params = {"tid": tid, "df": start, "dt": end}
     i_filters = _wh_filter("t.warehouse_id", subtree, warehouse_id, params)
-    issued = (await db.execute(
-        text(
-            "SELECT count(DISTINCT t.reference_id) AS decisions, "
-            "       count(DISTINCT t.reference_id) FILTER (WHERE EXISTS ("
-            "         SELECT 1 FROM lot_allocation_overrides o "
-            "         WHERE o.tenant_id = t.tenant_id AND o.movement_type = 'ISSUE' "
-            "           AND o.reference_id = t.reference_id)) AS overridden "
-            "FROM inventory_transactions t "
-            f"{join('t')}"
-            "WHERE t.tenant_id = :tid AND t.type = 'ISSUE' AND t.lot_id IS NOT NULL "
-            "  AND t.transaction_date >= :df AND t.transaction_date <= :dt"
-            f"{i_filters}{fefo}"
-        ),
-        params,
-    )).fetchone()
+    issued = (
+        await db.execute(
+            text(
+                "SELECT count(DISTINCT t.reference_id) AS decisions, "
+                "       count(DISTINCT t.reference_id) FILTER (WHERE EXISTS ("
+                "         SELECT 1 FROM lot_allocation_overrides o "
+                "         WHERE o.tenant_id = t.tenant_id AND o.movement_type = 'ISSUE' "
+                "           AND o.reference_id = t.reference_id)) AS overridden "
+                "FROM inventory_transactions t "
+                f"{join('t')}"
+                "WHERE t.tenant_id = :tid AND t.type = 'ISSUE' AND t.lot_id IS NOT NULL "
+                "  AND t.transaction_date >= :df AND t.transaction_date <= :dt"
+                f"{i_filters}{fefo}"
+            ),
+            params,
+        )
+    ).fetchone()
 
     return {
         "TRANSFER": (int(t.decisions), int(t.overridden)),

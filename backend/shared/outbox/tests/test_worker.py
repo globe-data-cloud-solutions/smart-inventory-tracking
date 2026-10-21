@@ -10,6 +10,7 @@ Covers the 2026-10-07 worker fixes:
   - contract expiry is alerts-only (no auto-suspend) with catch-up milestones
   - no `:param::jsonb` bind-then-cast syntax remains (asyncpg can't parse it)
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -60,9 +61,9 @@ def _tenant_row(
 
 # ── _run: single reused loop ─────────────────────────────────────────────────
 
+
 @pytest.mark.unit
 class TestRun:
-
     async def _noop(self) -> int:
         return 1
 
@@ -79,7 +80,9 @@ class TestRun:
         async def coro() -> int:
             return 1
 
-        with patch("shared.outbox.worker.asyncio.new_event_loop", wraps=asyncio.new_event_loop) as spy:
+        with patch(
+            "shared.outbox.worker.asyncio.new_event_loop", wraps=asyncio.new_event_loop
+        ) as spy:
             worker._run(coro())
             worker._run(coro())
 
@@ -88,9 +91,9 @@ class TestRun:
 
 # ── _process: processing_started_at lifecycle ───────────────────────────────
 
+
 @pytest.mark.unit
 class TestProcessTimestamps:
-
     async def test_processing_sets_processing_started_at(self) -> None:
         pending_row = MagicMock()
         pending_row.status = "PENDING"
@@ -107,8 +110,10 @@ class TestProcessTimestamps:
             calls.append(str(sql))
             return select_result
 
-        with patch("shared.outbox.worker.AsyncSessionLocal") as mock_ctx, \
-             patch("shared.outbox.worker.OUTBOX_HANDLERS", {}):
+        with (
+            patch("shared.outbox.worker.AsyncSessionLocal") as mock_ctx,
+            patch("shared.outbox.worker.OUTBOX_HANDLERS", {}),
+        ):
             session = AsyncMock()
             session.execute = AsyncMock(side_effect=capture_execute)
             mock_ctx.return_value.__aenter__.return_value = session
@@ -136,8 +141,10 @@ class TestProcessTimestamps:
             calls.append(str(sql))
             return select_result
 
-        with patch("shared.outbox.worker.AsyncSessionLocal") as mock_ctx, \
-             patch("shared.outbox.worker.OUTBOX_HANDLERS", {}):
+        with (
+            patch("shared.outbox.worker.AsyncSessionLocal") as mock_ctx,
+            patch("shared.outbox.worker.OUTBOX_HANDLERS", {}),
+        ):
             session = AsyncMock()
             session.execute = AsyncMock(side_effect=capture_execute)
             mock_ctx.return_value.__aenter__.return_value = session
@@ -165,8 +172,10 @@ class TestProcessTimestamps:
             calls.append(str(sql))
             return select_result
 
-        with patch("shared.outbox.worker.AsyncSessionLocal") as mock_ctx, \
-             patch("shared.outbox.worker.OUTBOX_HANDLERS", {}):
+        with (
+            patch("shared.outbox.worker.AsyncSessionLocal") as mock_ctx,
+            patch("shared.outbox.worker.OUTBOX_HANDLERS", {}),
+        ):
             session = AsyncMock()
             session.execute = AsyncMock(side_effect=capture_execute)
             mock_ctx.return_value.__aenter__.return_value = session
@@ -183,8 +192,11 @@ class TestProcessTimestamps:
         pending_row.event_type = "InventoryUpdated"
         pending_row.tenant_id = "tenant-1"
         pending_row.payload = {
-            "product_id": "p1", "warehouse_id": "w1",
-            "delta": 5.0, "transaction_id": "t1", "version": "1.0",
+            "product_id": "p1",
+            "warehouse_id": "w1",
+            "delta": 5.0,
+            "transaction_id": "t1",
+            "version": "1.0",
         }
 
         select_result = MagicMock()
@@ -201,10 +213,13 @@ class TestProcessTimestamps:
         task.request.retries = 0
         task.retry = MagicMock(side_effect=RuntimeError("retry sentinel"))
 
-        with patch("shared.outbox.worker.AsyncSessionLocal") as mock_ctx, \
-             patch.dict(worker.OUTBOX_HANDLERS, {
-                 "InventoryUpdated": AsyncMock(side_effect=RuntimeError("boom"))
-             }):
+        with (
+            patch("shared.outbox.worker.AsyncSessionLocal") as mock_ctx,
+            patch.dict(
+                worker.OUTBOX_HANDLERS,
+                {"InventoryUpdated": AsyncMock(side_effect=RuntimeError("boom"))},
+            ),
+        ):
             session = AsyncMock()
             session.execute = AsyncMock(side_effect=capture_execute)
             mock_ctx.return_value.__aenter__.return_value = session
@@ -219,9 +234,9 @@ class TestProcessTimestamps:
 
 # ── _poll: stuck-row reset uses processing_started_at ────────────────────────
 
+
 @pytest.mark.unit
 class TestPollResetColumn:
-
     async def test_reset_sql_uses_processing_started_at_not_created_at(self) -> None:
         select_result = MagicMock()
         select_result.fetchall.return_value = []
@@ -234,8 +249,10 @@ class TestPollResetColumn:
                 reset_sql.append(sql_str)
             return select_result
 
-        with patch("shared.outbox.worker.AsyncSessionLocal") as mock_ctx, \
-             patch("shared.outbox.worker.process_outbox_row"):
+        with (
+            patch("shared.outbox.worker.AsyncSessionLocal") as mock_ctx,
+            patch("shared.outbox.worker.process_outbox_row"),
+        ):
             session = AsyncMock()
             session.execute = AsyncMock(side_effect=capture_execute)
             mock_ctx.return_value.__aenter__.return_value = session
@@ -249,9 +266,9 @@ class TestPollResetColumn:
 
 # ── _check_contracts: alerts-only + catch-up milestones ─────────────────────
 
+
 @pytest.mark.unit
 class TestContractExpiry:
-
     async def test_expired_fires_one_0d_alert_no_suspend(self) -> None:
         today = date.today()
         row = _tenant_row(contract_end=today - timedelta(days=3), notified=[])
@@ -417,9 +434,9 @@ class TestContractExpiry:
 
 # ── _ensure_future_partitions: idempotent monthly partition maintenance ─────
 
+
 @pytest.mark.unit
 class TestEnsureFuturePartitions:
-
     @staticmethod
     def _mock_session(existing_names: set[str], creates: list[str]) -> AsyncMock:
         async def capture_execute(sql, params=None, *args, **kwargs):
@@ -506,9 +523,9 @@ class TestEnsureFuturePartitions:
 
 # ── _run_initial_partition_check: beat_init startup hook ────────────────────
 
+
 @pytest.mark.unit
 class TestRunInitialPartitionCheck:
-
     def test_fresh_db_creates_exactly_four_then_is_idempotent(self) -> None:
         # Plain (non-async) test: _run_initial_partition_check is a sync Celery
         # signal handler that manages its own event loop via _run() — calling
@@ -538,8 +555,10 @@ class TestRunInitialPartitionCheck:
 
         # Patch _ensure_future_partitions itself (not _run) so no real coroutine
         # object is ever left unawaited — _run still genuinely executes _boom().
-        with patch("shared.outbox.worker._ensure_future_partitions", _boom), \
-             caplog.at_level(logging.ERROR):
+        with (
+            patch("shared.outbox.worker._ensure_future_partitions", _boom),
+            caplog.at_level(logging.ERROR),
+        ):
             worker._run_initial_partition_check()  # must not raise
 
         assert "Startup partition check failed" in caplog.text
@@ -547,11 +566,12 @@ class TestRunInitialPartitionCheck:
 
 # ── static source check: no bind-param-then-cast syntax remains ─────────────
 
+
 @pytest.mark.unit
 class TestNoBindParamCast:
-
     def test_no_param_colon_colon_jsonb_in_worker_source(self) -> None:
         src = Path(worker.__file__).read_text(encoding="utf-8")
         import re
+
         matches = re.findall(r":\w+::", src)
         assert matches == [], f"found bind-param-then-cast syntax: {matches}"

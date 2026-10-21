@@ -7,6 +7,7 @@ POST /api/v1/upload/tenant-banner  → tenant:upload_branding (TA)
 Files are saved via get_storage() — LocalStorageService (disk) or S3StorageService,
 selected by STORAGE_BACKEND. Both are served as /static/uploads/... (see main.py).
 """
+
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
@@ -24,9 +25,9 @@ router = APIRouter()
 _storage = get_storage()
 
 _ACCEPTED_IMAGE_TYPES = {"image/jpeg", "image/png", "image/webp"}
-_MAX_PRODUCT_IMAGE_BYTES = 2 * 1024 * 1024   # 2 MB
-_MAX_LOGO_BYTES          = 1 * 1024 * 1024   # 1 MB
-_MAX_BANNER_BYTES        = 3 * 1024 * 1024   # 3 MB
+_MAX_PRODUCT_IMAGE_BYTES = 2 * 1024 * 1024  # 2 MB
+_MAX_LOGO_BYTES = 1 * 1024 * 1024  # 1 MB
+_MAX_BANNER_BYTES = 3 * 1024 * 1024  # 3 MB
 
 
 def _validate_image(file: UploadFile, max_bytes: int) -> None:
@@ -38,7 +39,10 @@ def _validate_image(file: UploadFile, max_bytes: int) -> None:
     if file.size and file.size > max_bytes:
         raise HTTPException(
             status_code=422,
-            detail={"code": "IMAGE_TOO_LARGE", "message": f"File must be under {max_bytes // (1024*1024)} MB"},
+            detail={
+                "code": "IMAGE_TOO_LARGE",
+                "message": f"File must be under {max_bytes // (1024 * 1024)} MB",
+            },
         )
 
 

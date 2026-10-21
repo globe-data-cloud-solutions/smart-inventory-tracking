@@ -4,6 +4,7 @@ Revision ID: 048
 Revises: 047
 Create Date: 2026-06-07
 """
+
 from __future__ import annotations
 from alembic import op
 
@@ -13,11 +14,11 @@ branch_labels = None
 depends_on = None
 
 _INSERTS = [
-    ("TA", "adjustment_approval_rule:view",   "FULL"),
+    ("TA", "adjustment_approval_rule:view", "FULL"),
     ("TA", "adjustment_approval_rule:manage", "FULL"),
-    ("SA", "adjustment_approval_rule:view",   "FULL"),
+    ("SA", "adjustment_approval_rule:view", "FULL"),
     ("SA", "adjustment_approval_rule:manage", "FULL"),
-    ("NM", "adjustment_approval_rule:view",   "FULL"),
+    ("NM", "adjustment_approval_rule:view", "FULL"),
 ]
 
 

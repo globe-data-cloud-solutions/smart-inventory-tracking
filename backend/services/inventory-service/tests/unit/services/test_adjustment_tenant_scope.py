@@ -5,6 +5,7 @@ same 404 as a missing id ("Adjustment not found" / "Count session not
 found") — never 403, so the id's existence elsewhere is not revealed — and
 nothing is written: no adjustment_orders UPDATE, no ledger entry.
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -17,11 +18,11 @@ from uuid import UUID
 import pytest
 from fastapi import HTTPException
 
-TENANT_A   = "10000000-0000-0000-0000-00000000000a"
-TENANT_B   = "10000000-0000-0000-0000-00000000000b"
-WAREHOUSE  = "20000000-0000-0000-0000-000000000001"
-PRODUCT    = "40000000-0000-0000-0000-000000000001"
-ADJ_ID     = UUID("aaaaaaaa-0000-0000-0000-000000000001")
+TENANT_A = "10000000-0000-0000-0000-00000000000a"
+TENANT_B = "10000000-0000-0000-0000-00000000000b"
+WAREHOUSE = "20000000-0000-0000-0000-000000000001"
+PRODUCT = "40000000-0000-0000-0000-000000000001"
+ADJ_ID = UUID("aaaaaaaa-0000-0000-0000-000000000001")
 SESSION_ID = UUID("bbbbbbbb-0000-0000-0000-000000000001")
 
 
@@ -40,19 +41,33 @@ TA_B = _User("u-ta-b", TENANT_B, None, None, "TA")
 
 def _adjustment(status: str) -> SimpleNamespace:
     return SimpleNamespace(
-        id=ADJ_ID, tenant_id=TENANT_A, status=status,
-        product_id=UUID(PRODUCT), warehouse_id=UUID(WAREHOUSE),
-        quantity_delta=Decimal("5"), reason_code="DAMAGE",
-        created_by="u-creator", product_override_applied=False,
-        required_approver_user_id=None, required_approver_name=None,
-        approver_escalated=False, lot_id=None, lot_number=None,
-        expiry_date=None, auto_lot=False, is_self_approved=False, total_value=None,
+        id=ADJ_ID,
+        tenant_id=TENANT_A,
+        status=status,
+        product_id=UUID(PRODUCT),
+        warehouse_id=UUID(WAREHOUSE),
+        quantity_delta=Decimal("5"),
+        reason_code="DAMAGE",
+        created_by="u-creator",
+        product_override_applied=False,
+        required_approver_user_id=None,
+        required_approver_name=None,
+        approver_escalated=False,
+        lot_id=None,
+        lot_number=None,
+        expiry_date=None,
+        auto_lot=False,
+        is_self_approved=False,
+        total_value=None,
     )
 
 
 def _count_session() -> SimpleNamespace:
     return SimpleNamespace(
-        id=SESSION_ID, tenant_id=TENANT_A, warehouse_id=UUID(WAREHOUSE), status="OPEN",
+        id=SESSION_ID,
+        tenant_id=TENANT_A,
+        warehouse_id=UUID(WAREHOUSE),
+        status="OPEN",
     )
 
 
@@ -68,8 +83,10 @@ class _World:
 
     @staticmethod
     def _visible(row: Any, sql: str, params: dict) -> bool:
-        return row is not None and params.get("id") == str(row.id) and (
-            "tenant_id = :tid" not in sql or params.get("tid") == str(row.tenant_id)
+        return (
+            row is not None
+            and params.get("id") == str(row.id)
+            and ("tenant_id = :tid" not in sql or params.get("tid") == str(row.tenant_id))
         )
 
     async def execute(self, stmt: Any, params: dict | None = None) -> MagicMock:
@@ -97,10 +114,14 @@ class _World:
 @pytest.fixture
 def ledger():
     """record_transaction, write_to_outbox and audit_log, patched where the service calls them."""
-    with patch("services.inventory_service.record_transaction",
-               new=AsyncMock(return_value="eeeeeeee-0000-0000-0000-000000000001")) as rec, \
-         patch("services.inventory_service.write_to_outbox", new=AsyncMock()), \
-         patch("services.inventory_service.audit_log", new=AsyncMock()):
+    with (
+        patch(
+            "services.inventory_service.record_transaction",
+            new=AsyncMock(return_value="eeeeeeee-0000-0000-0000-000000000001"),
+        ) as rec,
+        patch("services.inventory_service.write_to_outbox", new=AsyncMock()),
+        patch("services.inventory_service.audit_log", new=AsyncMock()),
+    ):
         yield rec
 
 
@@ -120,12 +141,16 @@ _TRANSITIONS = [
 
 @pytest.mark.unit
 class TestTransitionAdjustmentTenantFilter:
-
     @pytest.mark.parametrize(
-        "status,next_state", _TRANSITIONS, ids=[t for _, t in _TRANSITIONS],
+        "status,next_state",
+        _TRANSITIONS,
+        ids=[t for _, t in _TRANSITIONS],
     )
     async def test_other_tenant_is_404_and_nothing_written(
-        self, ledger, status, next_state,
+        self,
+        ledger,
+        status,
+        next_state,
     ) -> None:
         from services.inventory_service import InventoryService
 
@@ -147,11 +172,13 @@ class TestTransitionAdjustmentTenantFilter:
 
         world = _World(_adjustment("DRAFT"))
         result = await InventoryService(world.db()).transition_adjustment(
-            TA_A, ADJ_ID, "CANCELLED",
+            TA_A,
+            ADJ_ID,
+            "CANCELLED",
         )
 
         assert result.status == "CANCELLED"
-        (sql, params), = world.updates
+        ((sql, params),) = world.updates
         assert "WHERE id = :id AND tenant_id = :tid" in sql
         assert params == {"s": "CANCELLED", "id": str(ADJ_ID), "tid": TENANT_A}
         ledger.assert_not_awaited()
@@ -162,17 +189,23 @@ def route_gates():
     """The permission and contract-stage gates in front of the approve route."""
     from shared.permissions.middleware import PermissionResult
 
-    with patch("shared.permissions.middleware.check_permission",
-               new=AsyncMock(return_value=PermissionResult(allowed=True))), \
-         patch("shared.billing.contract_stage.get_tenant_contract_stage",
-               AsyncMock(return_value={"stage": "ACTIVE", "contract_end": None,
-                                       "read_only_since": None})):
+    with (
+        patch(
+            "shared.permissions.middleware.check_permission",
+            new=AsyncMock(return_value=PermissionResult(allowed=True)),
+        ),
+        patch(
+            "shared.billing.contract_stage.get_tenant_contract_stage",
+            AsyncMock(
+                return_value={"stage": "ACTIVE", "contract_end": None, "read_only_since": None}
+            ),
+        ),
+    ):
         yield
 
 
 @pytest.mark.unit
 class TestApproveRouteTenantFilter:
-
     async def test_other_tenant_pre_read_is_404_and_no_ledger(self, route_gates, ledger) -> None:
         from routers.adjust import approve_adjustment
 
@@ -206,7 +239,6 @@ class TestApproveRouteTenantFilter:
 
 @pytest.mark.unit
 class TestCountSessionTenantFilter:
-
     async def test_other_tenant_is_404(self) -> None:
         from services.inventory_service import InventoryService
 

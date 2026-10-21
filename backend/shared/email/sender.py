@@ -5,6 +5,7 @@ this module existed; everything else (an unset ENVIRONMENT included, as on
 a misconfigured AWS deploy) defaults to "disabled" so a live link never
 ends up in CloudWatch.
 """
+
 from __future__ import annotations
 
 import logging

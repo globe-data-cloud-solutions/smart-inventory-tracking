@@ -3,6 +3,7 @@
 Session 2 update: UserContext now carries position-derived claims (role,
 warehouse_id, level_number, positions[]) matching the inventory-service.
 """
+
 from __future__ import annotations
 
 import os
@@ -26,26 +27,31 @@ if not JWT_SECRET:
 JWT_ALGORITHM = os.environ.get("JWT_ALGORITHM", "HS256")
 
 ROLE_AUTHORITY_LEVEL: dict[str, int] = {
-    "SA": 1, "TA": 1, "NM": 1,
+    "SA": 1,
+    "TA": 1,
+    "NM": 1,
     "RM": 2,
     "LM": 3,
     "WM": 4,
-    "SA_GT": 5, "RT": 5, "AU": 5, "SYS": 5,
+    "SA_GT": 5,
+    "RT": 5,
+    "AU": 5,
+    "SYS": 5,
 }
 
 
 @dataclass
 class UserContext:
-    user_id:        str
-    role:           str
-    tenant_id:      Optional[str]
-    warehouse_id:   Optional[str]
+    user_id: str
+    role: str
+    tenant_id: Optional[str]
+    warehouse_id: Optional[str]
     warehouse_name: Optional[str] = None
-    position_id:    Optional[str] = None
+    position_id: Optional[str] = None
     position_title: Optional[str] = None
-    level_number:   Optional[int] = None
-    positions:      list[dict[str, Any]] = field(default_factory=list)
-    region_id:      Optional[str] = None
+    level_number: Optional[int] = None
+    positions: list[dict[str, Any]] = field(default_factory=list)
+    region_id: Optional[str] = None
 
     @property
     def authority_level(self) -> int:
@@ -64,16 +70,16 @@ def get_current_user(request: Request) -> Optional[UserContext]:
     try:
         payload = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
         return UserContext(
-            user_id=        str(payload.get("sub", "")),
-            role=           str(payload.get("role", "")),
-            tenant_id=      payload.get("tenant_id"),
-            warehouse_id=   payload.get("warehouse_id"),
-            warehouse_name= payload.get("warehouse_name"),
-            position_id=    payload.get("position_id"),
-            position_title= payload.get("position_title"),
-            level_number=   payload.get("level_number"),
-            positions=      list(payload.get("positions", [])),
-            region_id=      payload.get("region_id"),
+            user_id=str(payload.get("sub", "")),
+            role=str(payload.get("role", "")),
+            tenant_id=payload.get("tenant_id"),
+            warehouse_id=payload.get("warehouse_id"),
+            warehouse_name=payload.get("warehouse_name"),
+            position_id=payload.get("position_id"),
+            position_title=payload.get("position_title"),
+            level_number=payload.get("level_number"),
+            positions=list(payload.get("positions", [])),
+            region_id=payload.get("region_id"),
         )
     except JWTError:
         return None
@@ -84,9 +90,7 @@ async def get_db_session(
 ) -> AsyncGenerator[AsyncSession, None]:
     async with AsyncSessionLocal() as session:
         if user is not None:
-            await set_rls_context(
-                session, user.tenant_id, user.user_id, is_sa=user.role == "SA"
-            )
+            await set_rls_context(session, user.tenant_id, user.user_id, is_sa=user.role == "SA")
         try:
             yield session
             await session.commit()
@@ -121,7 +125,7 @@ async def get_db_session_for_tenant(
             raise _HTTPException(
                 status_code=403,
                 detail={
-                    "code":    "TENANT_ACCESS_DENIED",
+                    "code": "TENANT_ACCESS_DENIED",
                     "message": "You do not have access to this tenant",
                 },
             )
@@ -129,17 +133,20 @@ async def get_db_session_for_tenant(
         # Tenant status check — block API access for suspended/deactivated tenants
         # SA is exempt (they need access to manage the tenant itself)
         from sqlalchemy import text
+
         async with AsyncSessionLocal() as status_session:
-            status_row = (await status_session.execute(
-                text("SELECT status FROM tenants WHERE id = :tid"),
-                {"tid": str(tenant_id)},
-            )).fetchone()
+            status_row = (
+                await status_session.execute(
+                    text("SELECT status FROM tenants WHERE id = :tid"),
+                    {"tid": str(tenant_id)},
+                )
+            ).fetchone()
             if status_row:
                 if status_row.status == "SUSPENDED":
                     raise _HTTPException(
                         status_code=423,
                         detail={
-                            "code":    "TENANT_SUSPENDED",
+                            "code": "TENANT_SUSPENDED",
                             "message": "Your account has been temporarily suspended.",
                         },
                     )
@@ -147,7 +154,7 @@ async def get_db_session_for_tenant(
                     raise _HTTPException(
                         status_code=410,
                         detail={
-                            "code":    "TENANT_DEACTIVATED",
+                            "code": "TENANT_DEACTIVATED",
                             "message": "This account has been deactivated.",
                         },
                     )

@@ -6,6 +6,7 @@ in-memory _World holds lot balances, stored allocations and the ledger calls,
 so the real engine code (allocate, validate_manual_selection, record_override)
 runs against it.
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -22,20 +23,20 @@ from fastapi import HTTPException
 from services import dispatch_service, transfer_lots
 from services.dispatch_service import CandidateLot
 
-TENANT_ID   = "10000000-0000-0000-0000-000000000001"
-WAREHOUSE_A = "20000000-0000-0000-0000-000000000001"   # source
-WAREHOUSE_B = "20000000-0000-0000-0000-000000000002"   # destination
-PRODUCT_ID  = "aaaaaaaa-0000-0000-0000-000000000001"
-PRODUCT_2   = "aaaaaaaa-0000-0000-0000-000000000002"
+TENANT_ID = "10000000-0000-0000-0000-000000000001"
+WAREHOUSE_A = "20000000-0000-0000-0000-000000000001"  # source
+WAREHOUSE_B = "20000000-0000-0000-0000-000000000002"  # destination
+PRODUCT_ID = "aaaaaaaa-0000-0000-0000-000000000001"
+PRODUCT_2 = "aaaaaaaa-0000-0000-0000-000000000002"
 TRANSFER_ID = UUID("cccccccc-0000-0000-0000-000000000001")
-LINE_1      = "11111111-0000-0000-0000-000000000001"
-LINE_2      = "11111111-0000-0000-0000-000000000002"
-LOT_A       = "0000000a-0000-0000-0000-000000000000"   # older
-LOT_B       = "0000000b-0000-0000-0000-000000000000"
-USER_ID     = "u-approver"
-KEY_PREFIX  = f"transfer:{TRANSFER_ID}:approve:out"
-TODAY       = date.today()
-T0          = datetime(2026, 1, 1, tzinfo=timezone.utc)
+LINE_1 = "11111111-0000-0000-0000-000000000001"
+LINE_2 = "11111111-0000-0000-0000-000000000002"
+LOT_A = "0000000a-0000-0000-0000-000000000000"  # older
+LOT_B = "0000000b-0000-0000-0000-000000000000"
+USER_ID = "u-approver"
+KEY_PREFIX = f"transfer:{TRANSFER_ID}:approve:out"
+TODAY = date.today()
+T0 = datetime(2026, 1, 1, tzinfo=timezone.utc)
 
 
 @dataclass
@@ -90,17 +91,20 @@ class _World:
         # lots at the SOURCE: lot_id -> [lot_number, expiry_date, hours_after_T0, quantity]
         self.lots = {
             k: [v[0], v[1], v[2], Decimal(v[3])]
-            for k, v in (lots or {
-                LOT_A: ("LOT-A", None, 0, "60"),
-                LOT_B: ("LOT-B", None, 1, "80"),
-            }).items()
+            for k, v in (
+                lots
+                or {
+                    LOT_A: ("LOT-A", None, 0, "60"),
+                    LOT_B: ("LOT-B", None, 1, "80"),
+                }
+            ).items()
         }
         self.transfer_row: Any = None
         self.lines: list = []
         self.allocations: list[dict] = []
         self.overrides: list[dict] = []
-        self.ledger: list[dict] = []     # record_transaction kwargs
-        self.audit: list[dict] = []      # write_transfer_ledger_entry kwargs
+        self.ledger: list[dict] = []  # record_transaction kwargs
+        self.audit: list[dict] = []  # write_transfer_ledger_entry kwargs
         self.keys: set[str] = set()
         self.events: list[str] = []
 
@@ -202,8 +206,10 @@ def world_patches():
             patch("services.dispatch_service.load_candidate_lots", new=world.load_candidate_lots),
             patch("services.transfer_lots.load_candidate_lots", new=world.load_candidate_lots),
             patch("services.transfer_lots.record_transaction", new=world.record_transaction),
-            patch("services.transfer_lots.write_transfer_ledger_entry",
-                  new=world.write_transfer_ledger_entry),
+            patch(
+                "services.transfer_lots.write_transfer_ledger_entry",
+                new=world.write_transfer_ledger_entry,
+            ),
             patch("services.transfer_lots.allocate", new=world.allocate_spy()),
         )
 
@@ -247,16 +253,26 @@ async def _approve(world: _World, **kw: Any):
     from services.approval_service import ApprovalDecision
     from services.inventory_service import InventoryService
 
-    with patch(
-        "services.inventory_service.resolve_approval",
-        new=AsyncMock(return_value=ApprovalDecision(
-            required_role="WM", is_auto_approved=False,
-            next_status="PENDING_APPROVAL", required_authority_level=4,
-        )),
-    ), patch(
-        "services.inventory_service._get_simple_mode", new=AsyncMock(return_value=True),
-    ), patch(
-        "services.inventory_service.audit_log", new=AsyncMock(),
+    with (
+        patch(
+            "services.inventory_service.resolve_approval",
+            new=AsyncMock(
+                return_value=ApprovalDecision(
+                    required_role="WM",
+                    is_auto_approved=False,
+                    next_status="PENDING_APPROVAL",
+                    required_authority_level=4,
+                )
+            ),
+        ),
+        patch(
+            "services.inventory_service._get_simple_mode",
+            new=AsyncMock(return_value=True),
+        ),
+        patch(
+            "services.inventory_service.audit_log",
+            new=AsyncMock(),
+        ),
     ):
         return await InventoryService(world.db()).transition_transfer(
             APPROVER, TRANSFER_ID, "APPROVED", **kw
@@ -265,9 +281,9 @@ async def _approve(world: _World, **kw: Any):
 
 # ── post_transfer_out ────────────────────────────────────────────────────────
 
+
 @pytest.mark.unit
 class TestPostTransferOut:
-
     async def test_batch_line_split_across_two_lots(self, world_patches) -> None:
         """A batch line of 100 over LOT-A 60 / LOT-B 80 posts 60 + 40, one
         TRANSFER_OUT per lot, each key ending in :lot:<lot_id>."""
@@ -288,10 +304,13 @@ class TestPostTransferOut:
             assert call["reference_id"] == str(TRANSFER_ID)
         assert [c["lot_number"] for c in world.ledger] == ["LOT-A", "LOT-B"]
         assert [(a["lot_id"], a["qty"], a["is_override"]) for a in world.allocations] == [
-            (LOT_A, "60", False), (LOT_B, "40", False),
+            (LOT_A, "60", False),
+            (LOT_B, "40", False),
         ]
 
-    async def test_non_batch_line_posts_one_transfer_out_with_todays_key(self, world_patches) -> None:
+    async def test_non_batch_line_posts_one_transfer_out_with_todays_key(
+        self, world_patches
+    ) -> None:
         """A non-batch line keeps today's single TRANSFER_OUT and today's exact
         key; nothing is allocated, locked or inserted."""
         world = _World(batch=False)
@@ -376,16 +395,19 @@ class TestPostTransferOut:
 
 # ── approval through InventoryService ────────────────────────────────────────
 
+
 @pytest.mark.unit
 class TestApproveWithLots:
-
     async def test_expired_lots_shortfall_returns_422_with_expired_qty(self, world_patches) -> None:
         """Expired lots are never allocated: 60 expired + 80 usable cannot cover
         100, and the error says how much is sitting in expired lots."""
-        world = _World(expiry=True, lots={
-            LOT_A: ("LOT-A", TODAY - timedelta(days=1), 0, "60"),
-            LOT_B: ("LOT-B", TODAY + timedelta(days=90), 1, "80"),
-        })
+        world = _World(
+            expiry=True,
+            lots={
+                LOT_A: ("LOT-A", TODAY - timedelta(days=1), 0, "60"),
+                LOT_B: ("LOT-B", TODAY + timedelta(days=90), 1, "80"),
+            },
+        )
         world.transfer_row, world.lines = _transfer_row("PENDING_APPROVAL"), [_line()]
 
         with _Patched(world_patches(world)):
@@ -402,38 +424,53 @@ class TestApproveWithLots:
         }
         assert world.ledger == [] and world.allocations == []
 
-    async def test_fefo_selection_differing_from_plan_without_grant_is_403(self, world_patches) -> None:
-        world = _World(expiry=True, lots={
-            LOT_A: ("LOT-A", TODAY + timedelta(days=30), 0, "60"),
-            LOT_B: ("LOT-B", TODAY + timedelta(days=90), 1, "80"),
-        })
+    async def test_fefo_selection_differing_from_plan_without_grant_is_403(
+        self, world_patches
+    ) -> None:
+        world = _World(
+            expiry=True,
+            lots={
+                LOT_A: ("LOT-A", TODAY + timedelta(days=30), 0, "60"),
+                LOT_B: ("LOT-B", TODAY + timedelta(days=90), 1, "80"),
+            },
+        )
         world.transfer_row, world.lines = _transfer_row("PENDING_APPROVAL"), [_line(qty="50")]
 
         with _Patched(world_patches(world)):
             with pytest.raises(HTTPException) as exc_info:
                 await _approve(
-                    world, lot_selections=_pick(LOT_B, "50"),
-                    override_reason="customer asked", can_fefo_override=False, can_lot_select=True,
+                    world,
+                    lot_selections=_pick(LOT_B, "50"),
+                    override_reason="customer asked",
+                    can_fefo_override=False,
+                    can_lot_select=True,
                 )
 
         assert exc_info.value.status_code == 403
         assert exc_info.value.detail == {
-            "code": "OVERRIDE_NOT_PERMITTED", "strategy": "FEFO", "line_id": LINE_1,
+            "code": "OVERRIDE_NOT_PERMITTED",
+            "strategy": "FEFO",
+            "line_id": LINE_1,
         }
         assert world.ledger == [] and world.overrides == [] and world.allocations == []
 
     async def test_fefo_override_with_blank_reason_is_422(self, world_patches) -> None:
-        world = _World(expiry=True, lots={
-            LOT_A: ("LOT-A", TODAY + timedelta(days=30), 0, "60"),
-            LOT_B: ("LOT-B", TODAY + timedelta(days=90), 1, "80"),
-        })
+        world = _World(
+            expiry=True,
+            lots={
+                LOT_A: ("LOT-A", TODAY + timedelta(days=30), 0, "60"),
+                LOT_B: ("LOT-B", TODAY + timedelta(days=90), 1, "80"),
+            },
+        )
         world.transfer_row, world.lines = _transfer_row("PENDING_APPROVAL"), [_line(qty="50")]
 
         with _Patched(world_patches(world)):
             with pytest.raises(HTTPException) as exc_info:
                 await _approve(
-                    world, lot_selections=_pick(LOT_B, "50"),
-                    override_reason="   ", can_fefo_override=True,
+                    world,
+                    lot_selections=_pick(LOT_B, "50"),
+                    override_reason="   ",
+                    can_fefo_override=True,
                 )
 
         assert exc_info.value.status_code == 422
@@ -443,21 +480,31 @@ class TestApproveWithLots:
     async def test_selection_of_expired_lot_is_rejected_at_approve(self, world_patches) -> None:
         """A manual pick of an expired lot is refused even for an approver who
         holds both dispatch:fefo_override and dispatch:lot_select."""
-        world = _World(expiry=True, lots={
-            LOT_A: ("LOT-A", TODAY - timedelta(days=1), 0, "60"),
-            LOT_B: ("LOT-B", TODAY + timedelta(days=90), 1, "80"),
-        })
+        world = _World(
+            expiry=True,
+            lots={
+                LOT_A: ("LOT-A", TODAY - timedelta(days=1), 0, "60"),
+                LOT_B: ("LOT-B", TODAY + timedelta(days=90), 1, "80"),
+            },
+        )
         world.transfer_row, world.lines = _transfer_row("PENDING_APPROVAL"), [_line(qty="50")]
 
         with _Patched(world_patches(world)):
             with pytest.raises(HTTPException) as exc_info:
                 await _approve(
-                    world, lot_selections=_pick(LOT_A, "50"),
-                    override_reason="customer asked", can_fefo_override=True, can_lot_select=True,
+                    world,
+                    lot_selections=_pick(LOT_A, "50"),
+                    override_reason="customer asked",
+                    can_fefo_override=True,
+                    can_lot_select=True,
                 )
 
         assert exc_info.value.status_code == 422
-        assert exc_info.value.detail == {"code": "LOT_EXPIRED", "lot_id": LOT_A, "lot_number": "LOT-A"}
+        assert exc_info.value.detail == {
+            "code": "LOT_EXPIRED",
+            "lot_id": LOT_A,
+            "lot_number": "LOT-A",
+        }
         assert world.ledger == [] and world.overrides == [] and world.allocations == []
 
     async def test_fifo_override_with_lot_select_needs_no_reason(self, world_patches) -> None:
@@ -468,17 +515,24 @@ class TestApproveWithLots:
 
         with _Patched(world_patches(world)):
             result = await _approve(
-                world, lot_selections=_pick(LOT_B, "50"),
-                can_fefo_override=False, can_lot_select=True,
+                world,
+                lot_selections=_pick(LOT_B, "50"),
+                can_fefo_override=False,
+                can_lot_select=True,
             )
 
         assert result.status == "APPROVED"
         assert len(world.overrides) == 1
         override = world.overrides[0]
         assert (override["strategy"], override["mtype"], override["ref"], override["reason"]) == (
-            "FIFO", "TRANSFER", str(TRANSFER_ID), None,
+            "FIFO",
+            "TRANSFER",
+            str(TRANSFER_ID),
+            None,
         )
-        assert [(a["lot_id"], a["qty"], a["is_override"], a["override_id"]) for a in world.allocations] == [
+        assert [
+            (a["lot_id"], a["qty"], a["is_override"], a["override_id"]) for a in world.allocations
+        ] == [
             (LOT_B, "50", True, "override-1"),
         ]
         assert [(c["lot_id"], c["quantity"]) for c in world.ledger] == [(LOT_B, Decimal("-50"))]
@@ -500,8 +554,14 @@ class TestApproveWithLots:
     async def test_selections_at_non_final_step_are_rejected(self, world_patches) -> None:
         """Step 1 of 2 does not post TRANSFER_OUT, so it cannot carry lot selections."""
         steps = [
-            {"sequence": n, "execution_mode": "sequential", "assigned_to_user_id": USER_ID,
-             "all_holders": [], "escalated": False, "status": "pending"}
+            {
+                "sequence": n,
+                "execution_mode": "sequential",
+                "assigned_to_user_id": USER_ID,
+                "all_holders": [],
+                "escalated": False,
+                "status": "pending",
+            }
             for n in (1, 2)
         ]
         world = _World()
@@ -524,7 +584,10 @@ class TestApproveWithLots:
         with _Patched(world_patches(world)):
             with pytest.raises(HTTPException) as exc_info:
                 await InventoryService(world.db()).transition_transfer(
-                    APPROVER, TRANSFER_ID, "CANCELLED", lot_selections=_pick(LOT_A, "100"),
+                    APPROVER,
+                    TRANSFER_ID,
+                    "CANCELLED",
+                    lot_selections=_pick(LOT_A, "100"),
                 )
 
         assert exc_info.value.status_code == 422
@@ -533,28 +596,38 @@ class TestApproveWithLots:
 
 # ── after approval: cancel, dispatch, receive ────────────────────────────────
 
+
 def _approved_world(status: str) -> _World:
     """A transfer whose line of 100 was already split LOT-A 60 / LOT-B 40."""
     world = _World()
     world.transfer_row, world.lines = _transfer_row(status), [_line()]
     for lot_id, qty in ((LOT_A, "60"), (LOT_B, "40")):
-        world.allocations.append({
-            "line_id": LINE_1, "lot_id": lot_id, "qty": qty, "pid": PRODUCT_ID,
-            "is_override": False, "override_id": None,
-        })
+        world.allocations.append(
+            {
+                "line_id": LINE_1,
+                "lot_id": lot_id,
+                "qty": qty,
+                "pid": PRODUCT_ID,
+                "is_override": False,
+                "override_id": None,
+            }
+        )
     return world
 
 
 @pytest.mark.unit
 class TestLotsAfterApproval:
-
     async def test_cancel_after_approval_reverses_each_lot_at_source(self, world_patches) -> None:
         from services.inventory_service import InventoryService
 
         world = _approved_world("APPROVED")
-        with _Patched(world_patches(world)), patch(
-            "services.inventory_service.write_transfer_ledger_entry", new=AsyncMock(),
-        ) as line_level:
+        with (
+            _Patched(world_patches(world)),
+            patch(
+                "services.inventory_service.write_transfer_ledger_entry",
+                new=AsyncMock(),
+            ) as line_level,
+        ):
             result = await InventoryService(world.db()).transition_transfer(
                 APPROVER, TRANSFER_ID, "CANCELLED"
             )
@@ -562,7 +635,8 @@ class TestLotsAfterApproval:
         assert result.status == "CANCELLED"
         assert line_level.await_count == 0, "a line with allocations has no line-level reversal"
         assert [
-            (c["transaction_type"], c["warehouse_id"], c["lot_id"], c["quantity"]) for c in world.audit
+            (c["transaction_type"], c["warehouse_id"], c["lot_id"], c["quantity"])
+            for c in world.audit
         ] == [
             ("TRANSFER_REVERSAL", WAREHOUSE_A, LOT_A, Decimal("60")),
             ("TRANSFER_REVERSAL", WAREHOUSE_A, LOT_B, Decimal("40")),
@@ -579,15 +653,25 @@ class TestLotsAfterApproval:
         dst = _User("u-dst", TENANT_ID, WAREHOUSE_B, None, "WM")
         world = _approved_world("APPROVED")
 
-        with _Patched(world_patches(world)), patch(
-            "services.inventory_service.write_transfer_ledger_entry", new=AsyncMock(),
-        ) as line_level, patch(
-            "services.inventory_service.record_transaction", new=AsyncMock(),
-        ) as line_level_ledger, patch(
-            "services.inventory_service.audit_log", new=AsyncMock(),
-        ), patch(
-            "services.inventory_service.write_to_outbox", new=AsyncMock(),
-        ) as outbox:
+        with (
+            _Patched(world_patches(world)),
+            patch(
+                "services.inventory_service.write_transfer_ledger_entry",
+                new=AsyncMock(),
+            ) as line_level,
+            patch(
+                "services.inventory_service.record_transaction",
+                new=AsyncMock(),
+            ) as line_level_ledger,
+            patch(
+                "services.inventory_service.audit_log",
+                new=AsyncMock(),
+            ),
+            patch(
+                "services.inventory_service.write_to_outbox",
+                new=AsyncMock(),
+            ) as outbox,
+        ):
             await InventoryService(world.db()).dispatch_transfer(src, TRANSFER_ID)
             world.transfer_row.status = "ISSUED"
             await InventoryService(world.db()).transition_transfer(src, TRANSFER_ID, "IN_TRANSIT")
@@ -598,35 +682,129 @@ class TestLotsAfterApproval:
         assert line_level.await_count == 0 and line_level_ledger.await_count == 0
 
         audit = [
-            (c["transaction_type"], c["status_transition"], c["warehouse_id"], c["lot_id"],
-             c["quantity"], c["line_id"])
+            (
+                c["transaction_type"],
+                c["status_transition"],
+                c["warehouse_id"],
+                c["lot_id"],
+                c["quantity"],
+                c["line_id"],
+            )
             for c in world.audit
         ]
         assert audit == [
-            ("TRANSIT_OUT", "APPROVED_TO_ISSUED", WAREHOUSE_A, LOT_A, Decimal("60"), f"{LINE_1}:{LOT_A}"),
-            ("TRANSIT_OUT", "APPROVED_TO_ISSUED", WAREHOUSE_A, LOT_B, Decimal("40"), f"{LINE_1}:{LOT_B}"),
-            ("TRANSIT_OUT", "ISSUED_TO_IN_TRANSIT", WAREHOUSE_A, LOT_A, Decimal("60"), f"{LINE_1}:{LOT_A}"),
-            ("TRANSIT_OUT", "ISSUED_TO_IN_TRANSIT", WAREHOUSE_A, LOT_B, Decimal("40"), f"{LINE_1}:{LOT_B}"),
-            ("TRANSIT_IN", "ISSUED_TO_IN_TRANSIT", WAREHOUSE_B, LOT_A, Decimal("60"), f"{LINE_1}:{LOT_A}"),
-            ("TRANSIT_IN", "ISSUED_TO_IN_TRANSIT", WAREHOUSE_B, LOT_B, Decimal("40"), f"{LINE_1}:{LOT_B}"),
-            ("TRANSIT_CLEAR", "IN_TRANSIT_TO_RECEIVED", WAREHOUSE_A, LOT_A, Decimal("-60"), f"{LINE_1}:{LOT_A}"),
-            ("TRANSIT_CLEAR", "IN_TRANSIT_TO_RECEIVED", WAREHOUSE_A, LOT_B, Decimal("-40"), f"{LINE_1}:{LOT_B}"),
-            ("TRANSIT_CLEAR", "IN_TRANSIT_TO_RECEIVED", WAREHOUSE_B, LOT_A, Decimal("-60"), f"{LINE_1}:{LOT_A}:dest"),
-            ("TRANSIT_CLEAR", "IN_TRANSIT_TO_RECEIVED", WAREHOUSE_B, LOT_B, Decimal("-40"), f"{LINE_1}:{LOT_B}:dest"),
+            (
+                "TRANSIT_OUT",
+                "APPROVED_TO_ISSUED",
+                WAREHOUSE_A,
+                LOT_A,
+                Decimal("60"),
+                f"{LINE_1}:{LOT_A}",
+            ),
+            (
+                "TRANSIT_OUT",
+                "APPROVED_TO_ISSUED",
+                WAREHOUSE_A,
+                LOT_B,
+                Decimal("40"),
+                f"{LINE_1}:{LOT_B}",
+            ),
+            (
+                "TRANSIT_OUT",
+                "ISSUED_TO_IN_TRANSIT",
+                WAREHOUSE_A,
+                LOT_A,
+                Decimal("60"),
+                f"{LINE_1}:{LOT_A}",
+            ),
+            (
+                "TRANSIT_OUT",
+                "ISSUED_TO_IN_TRANSIT",
+                WAREHOUSE_A,
+                LOT_B,
+                Decimal("40"),
+                f"{LINE_1}:{LOT_B}",
+            ),
+            (
+                "TRANSIT_IN",
+                "ISSUED_TO_IN_TRANSIT",
+                WAREHOUSE_B,
+                LOT_A,
+                Decimal("60"),
+                f"{LINE_1}:{LOT_A}",
+            ),
+            (
+                "TRANSIT_IN",
+                "ISSUED_TO_IN_TRANSIT",
+                WAREHOUSE_B,
+                LOT_B,
+                Decimal("40"),
+                f"{LINE_1}:{LOT_B}",
+            ),
+            (
+                "TRANSIT_CLEAR",
+                "IN_TRANSIT_TO_RECEIVED",
+                WAREHOUSE_A,
+                LOT_A,
+                Decimal("-60"),
+                f"{LINE_1}:{LOT_A}",
+            ),
+            (
+                "TRANSIT_CLEAR",
+                "IN_TRANSIT_TO_RECEIVED",
+                WAREHOUSE_A,
+                LOT_B,
+                Decimal("-40"),
+                f"{LINE_1}:{LOT_B}",
+            ),
+            (
+                "TRANSIT_CLEAR",
+                "IN_TRANSIT_TO_RECEIVED",
+                WAREHOUSE_B,
+                LOT_A,
+                Decimal("-60"),
+                f"{LINE_1}:{LOT_A}:dest",
+            ),
+            (
+                "TRANSIT_CLEAR",
+                "IN_TRANSIT_TO_RECEIVED",
+                WAREHOUSE_B,
+                LOT_B,
+                Decimal("-40"),
+                f"{LINE_1}:{LOT_B}:dest",
+            ),
         ]
         # Every audit key is unique: {transfer}:{type}:{transition}:{line_id}
         keys = [(c["transaction_type"], c["status_transition"], c["line_id"]) for c in world.audit]
         assert len(set(keys)) == len(keys)
 
         assert [
-            (c["transaction_type"], c["warehouse_id"], c["lot_id"], c["lot_number"], c["quantity"],
-             c["idempotency_key"])
+            (
+                c["transaction_type"],
+                c["warehouse_id"],
+                c["lot_id"],
+                c["lot_number"],
+                c["quantity"],
+                c["idempotency_key"],
+            )
             for c in world.ledger
         ] == [
-            ("TRANSFER_IN", WAREHOUSE_B, LOT_A, "LOT-A", Decimal("60"),
-             f"transfer:{TRANSFER_ID}:receive:in:line:{LINE_1}:lot:{LOT_A}"),
-            ("TRANSFER_IN", WAREHOUSE_B, LOT_B, "LOT-B", Decimal("40"),
-             f"transfer:{TRANSFER_ID}:receive:in:line:{LINE_1}:lot:{LOT_B}"),
+            (
+                "TRANSFER_IN",
+                WAREHOUSE_B,
+                LOT_A,
+                "LOT-A",
+                Decimal("60"),
+                f"transfer:{TRANSFER_ID}:receive:in:line:{LINE_1}:lot:{LOT_A}",
+            ),
+            (
+                "TRANSFER_IN",
+                WAREHOUSE_B,
+                LOT_B,
+                "LOT-B",
+                Decimal("40"),
+                f"transfer:{TRANSFER_ID}:receive:in:line:{LINE_1}:lot:{LOT_B}",
+            ),
         ]
 
         # StockTransferred stays one per line with the line total.
@@ -642,7 +820,14 @@ class TestLotsAfterApproval:
         result = await InventoryService(world.db()).get_transfer(APPROVER, TRANSFER_ID)
 
         assert [
-            (str(a.line_id), str(a.product_id), str(a.lot_id), a.lot_number, a.quantity, a.is_override)
+            (
+                str(a.line_id),
+                str(a.product_id),
+                str(a.lot_id),
+                a.lot_number,
+                a.quantity,
+                a.is_override,
+            )
             for a in result.lot_allocations
         ] == [
             (LINE_1, PRODUCT_ID, LOT_A, "LOT-A", Decimal("60"), False),
@@ -652,16 +837,19 @@ class TestLotsAfterApproval:
 
 # ── approve endpoint ─────────────────────────────────────────────────────────
 
+
 @pytest.mark.unit
 class TestApproveEndpoint:
-
     @staticmethod
     def _response() -> Any:
         from schemas.inventory import TransferOrderResponse
 
         return TransferOrderResponse(
-            transfer_id=TRANSFER_ID, transfer_type="PULL", status="APPROVED",
-            from_warehouse_id=UUID(WAREHOUSE_A), to_warehouse_id=UUID(WAREHOUSE_B),
+            transfer_id=TRANSFER_ID,
+            transfer_type="PULL",
+            status="APPROVED",
+            from_warehouse_id=UUID(WAREHOUSE_A),
+            to_warehouse_id=UUID(WAREHOUSE_B),
             created_at=datetime.now(timezone.utc),
         )
 
@@ -671,8 +859,10 @@ class TestApproveEndpoint:
         from shared.permissions.middleware import PermissionResult
 
         check = AsyncMock(return_value=PermissionResult(allowed=True))
-        with patch("shared.permissions.middleware.check_permission", check), \
-             patch("routers.transfer.InventoryService") as svc_cls:
+        with (
+            patch("shared.permissions.middleware.check_permission", check),
+            patch("routers.transfer.InventoryService") as svc_cls,
+        ):
             svc_cls.return_value.transition_transfer = AsyncMock(return_value=self._response())
             resp = await client.post(f"/api/v1/inventory/transfers/{TRANSFER_ID}/approve")
 
@@ -698,24 +888,33 @@ class TestApproveEndpoint:
             return PermissionResult(allowed=permission.id != "dispatch:fefo_override")
 
         db = AsyncMock()
-        db.execute = AsyncMock(return_value=MagicMock(
-            fetchone=MagicMock(return_value=SimpleNamespace(from_warehouse_id=WAREHOUSE_A))
-        ))
+        db.execute = AsyncMock(
+            return_value=MagicMock(
+                fetchone=MagicMock(return_value=SimpleNamespace(from_warehouse_id=WAREHOUSE_A))
+            )
+        )
         body = TransferApproveRequest(
             lot_selections=[{"line_id": LINE_1, "lots": [{"lot_id": LOT_B, "quantity": "50"}]}],
             override_reason="short-dated stock held back",
         )
 
-        with patch("shared.permissions.middleware.check_permission", new=_check), \
-             patch("shared.billing.contract_stage.get_tenant_contract_stage",
-                   AsyncMock(return_value={"stage": "ACTIVE", "contract_end": None,
-                                           "read_only_since": None})), \
-             patch("routers.transfer.InventoryService") as svc_cls:
+        with (
+            patch("shared.permissions.middleware.check_permission", new=_check),
+            patch(
+                "shared.billing.contract_stage.get_tenant_contract_stage",
+                AsyncMock(
+                    return_value={"stage": "ACTIVE", "contract_end": None, "read_only_since": None}
+                ),
+            ),
+            patch("routers.transfer.InventoryService") as svc_cls,
+        ):
             svc_cls.return_value.transition_transfer = AsyncMock(return_value=self._response())
             await approve_transfer(transfer_id=TRANSFER_ID, body=body, user=wm_user, db=db)
 
         svc_cls.return_value.transition_transfer.assert_awaited_once_with(
-            wm_user, TRANSFER_ID, "APPROVED",
+            wm_user,
+            TRANSFER_ID,
+            "APPROVED",
             lot_selections=body.lot_selections,
             override_reason="short-dated stock held back",
             can_fefo_override=False,
@@ -723,7 +922,8 @@ class TestApproveEndpoint:
         )
         assert seen["dispatch:fefo_override"] == {"tenant_id": wm_user.tenant_id}
         assert seen["dispatch:lot_select"] == {
-            "tenant_id": wm_user.tenant_id, "warehouse_id": WAREHOUSE_A,
+            "tenant_id": wm_user.tenant_id,
+            "warehouse_id": WAREHOUSE_A,
         }
 
     def test_approve_request_schema_limits(self) -> None:

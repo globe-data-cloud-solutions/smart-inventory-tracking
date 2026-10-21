@@ -14,6 +14,7 @@ any write when it should be. create_proration_invoice itself is tested with
 a mocked DB session (no real connection) and a patched _free_until so the
 test is independent of the actual calendar date.
 """
+
 from __future__ import annotations
 
 from datetime import date
@@ -43,9 +44,17 @@ def _result(fetchone=None, scalar_one=None, fetchall=None) -> MagicMock:
 
 
 def _sub(
-    *, id="sub-1", tier="STARTER", billing_period="ANNUAL", status="ACTIVE",
-    provider="MANUAL", price_id="price-starter", amount=Decimal("1000.00"), currency="ETB",
-    current_period_start=date(2026, 1, 15), current_period_end=date(2027, 1, 15),
+    *,
+    id="sub-1",
+    tier="STARTER",
+    billing_period="ANNUAL",
+    status="ACTIVE",
+    provider="MANUAL",
+    price_id="price-starter",
+    amount=Decimal("1000.00"),
+    currency="ETB",
+    current_period_start=date(2026, 1, 15),
+    current_period_end=date(2027, 1, 15),
 ) -> MagicMock:
     row = MagicMock()
     row.id, row.tier, row.billing_period, row.status = id, tier, billing_period, status
@@ -55,6 +64,7 @@ def _sub(
 
 
 # ── remaining_billing_months / prorate — pure, no mocking ───────────────────
+
 
 def test_remaining_months_mid_period_example_is_7() -> None:
     """The decided worked example: annual period 2026-01-15 -> 2027-01-15,
@@ -114,11 +124,16 @@ def test_prorate_rounds_half_up() -> None:
 
 # ── create_proration_invoice — mocked DB, patched _free_until ───────────────
 
+
 async def test_create_proration_invoice_zero_subtotal_writes_nothing() -> None:
     db = _db([])
     out = await proration.create_proration_invoice(
-        db, "tenant-1", _sub(), [ProrationLine("PACKAGE", "GROWTH", "x", Decimal("0"))],
-        "reason", "user-1",
+        db,
+        "tenant-1",
+        _sub(),
+        [ProrationLine("PACKAGE", "GROWTH", "x", Decimal("0"))],
+        "reason",
+        "user-1",
     )
     assert out is None
     db.execute.assert_not_called()
@@ -127,15 +142,22 @@ async def test_create_proration_invoice_zero_subtotal_writes_nothing() -> None:
 async def test_create_proration_invoice_upgrade_700_plus_105_vat_is_805() -> None:
     sub = _sub(id="sub-1", provider="MANUAL", currency="ETB", current_period_end=date(2027, 1, 15))
     line = ProrationLine(
-        item_type="PACKAGE", item_key="GROWTH", description="Upgrade STARTER -> GROWTH",
-        amount=Decimal("700.00"), price_id="price-growth",
+        item_type="PACKAGE",
+        item_key="GROWTH",
+        description="Upgrade STARTER -> GROWTH",
+        amount=Decimal("700.00"),
+        price_id="price-growth",
     )
-    db = _db([
-        _result(scalar_one="payment-prorate-1"),  # INSERT payments RETURNING id
-        _result(),                                  # INSERT payment_line_items
-    ])
+    db = _db(
+        [
+            _result(scalar_one="payment-prorate-1"),  # INSERT payments RETURNING id
+            _result(),  # INSERT payment_line_items
+        ]
+    )
     with patch.object(proration, "_free_until", return_value=date(2026, 6, 15)):
-        out = await proration.create_proration_invoice(db, "tenant-1", sub, [line], "Upgrade", "user-1")
+        out = await proration.create_proration_invoice(
+            db, "tenant-1", sub, [line], "Upgrade", "user-1"
+        )
 
     assert out["subtotal"] == Decimal("700.00")
     assert out["vat_amount"] == Decimal("105.00")
@@ -159,24 +181,38 @@ async def test_create_proration_invoice_upgrade_700_plus_105_vat_is_805() -> Non
 
 # ── apply_plan_change_with_proration — collaborators patched ───────────────
 
+
 async def test_apply_plan_change_upgrade_annual_paid_raises_proration_invoice() -> None:
-    sub_before = _sub(tier="STARTER", billing_period="ANNUAL", status="ACTIVE", amount=Decimal("1000.00"))
+    sub_before = _sub(
+        tier="STARTER", billing_period="ANNUAL", status="ACTIVE", amount=Decimal("1000.00")
+    )
     new_price = MagicMock(id="price-growth", amount=Decimal("2200.00"))
     subscription_change = {
-        "old_tier": "STARTER", "new_tier": "GROWTH",
-        "old_amount": Decimal("1000.00"), "new_amount": Decimal("2200.00"),
+        "old_tier": "STARTER",
+        "new_tier": "GROWTH",
+        "old_amount": Decimal("1000.00"),
+        "new_amount": Decimal("2200.00"),
     }
     expected_invoice = {"payment_id": "pay-1", "total": Decimal("805.00")}
 
-    with patch.object(proration, "_get_live_subscription", AsyncMock(return_value=sub_before)), \
-         patch.object(proration, "get_current_price", AsyncMock(return_value=new_price)), \
-         patch.object(proration, "_has_pending_period_invoice", AsyncMock(return_value=False)), \
-         patch.object(proration, "update_live_subscription_tier", AsyncMock(return_value=subscription_change)) as mock_update, \
-         patch.object(proration, "_never_paid", AsyncMock(return_value=False)), \
-         patch.object(proration, "remaining_billing_months", MagicMock(return_value=7)), \
-         patch.object(proration, "create_proration_invoice", AsyncMock(return_value=expected_invoice)) as mock_create:
+    with (
+        patch.object(proration, "_get_live_subscription", AsyncMock(return_value=sub_before)),
+        patch.object(proration, "get_current_price", AsyncMock(return_value=new_price)),
+        patch.object(proration, "_has_pending_period_invoice", AsyncMock(return_value=False)),
+        patch.object(
+            proration, "update_live_subscription_tier", AsyncMock(return_value=subscription_change)
+        ) as mock_update,
+        patch.object(proration, "_never_paid", AsyncMock(return_value=False)),
+        patch.object(proration, "remaining_billing_months", MagicMock(return_value=7)),
+        patch.object(
+            proration, "create_proration_invoice", AsyncMock(return_value=expected_invoice)
+        ) as mock_create,
+    ):
         out = await proration.apply_plan_change_with_proration(
-            AsyncMock(), "tenant-1", "GROWTH", recorded_by="user-1",
+            AsyncMock(),
+            "tenant-1",
+            "GROWTH",
+            recorded_by="user-1",
         )
 
     mock_update.assert_awaited_once()
@@ -191,18 +227,25 @@ async def test_apply_plan_change_upgrade_annual_paid_raises_proration_invoice() 
     assert lines[0].price_id == "price-growth"
 
 
-async def test_apply_plan_change_blocked_by_pending_period_invoice_raises_before_any_write() -> None:
+async def test_apply_plan_change_blocked_by_pending_period_invoice_raises_before_any_write() -> (
+    None
+):
     sub_before = _sub(tier="STARTER", amount=Decimal("1000.00"))
     new_price = MagicMock(id="price-growth", amount=Decimal("2200.00"))
 
-    with patch.object(proration, "_get_live_subscription", AsyncMock(return_value=sub_before)), \
-         patch.object(proration, "get_current_price", AsyncMock(return_value=new_price)), \
-         patch.object(proration, "_has_pending_period_invoice", AsyncMock(return_value=True)), \
-         patch.object(proration, "update_live_subscription_tier", AsyncMock()) as mock_update, \
-         patch.object(proration, "create_proration_invoice", AsyncMock()) as mock_create:
+    with (
+        patch.object(proration, "_get_live_subscription", AsyncMock(return_value=sub_before)),
+        patch.object(proration, "get_current_price", AsyncMock(return_value=new_price)),
+        patch.object(proration, "_has_pending_period_invoice", AsyncMock(return_value=True)),
+        patch.object(proration, "update_live_subscription_tier", AsyncMock()) as mock_update,
+        patch.object(proration, "create_proration_invoice", AsyncMock()) as mock_create,
+    ):
         with pytest.raises(ValueError, match="INVOICE_PENDING_SETTLE_FIRST"):
             await proration.apply_plan_change_with_proration(
-                AsyncMock(), "tenant-1", "GROWTH", recorded_by="user-1",
+                AsyncMock(),
+                "tenant-1",
+                "GROWTH",
+                recorded_by="user-1",
             )
 
     mock_update.assert_not_called()
@@ -213,17 +256,26 @@ async def test_apply_plan_change_downgrade_no_invoice_no_credit() -> None:
     sub_before = _sub(tier="GROWTH", amount=Decimal("2200.00"))
     cheaper_price = MagicMock(id="price-starter", amount=Decimal("1000.00"))
     subscription_change = {
-        "old_tier": "GROWTH", "new_tier": "STARTER",
-        "old_amount": Decimal("2200.00"), "new_amount": Decimal("1000.00"),
+        "old_tier": "GROWTH",
+        "new_tier": "STARTER",
+        "old_amount": Decimal("2200.00"),
+        "new_amount": Decimal("1000.00"),
     }
 
-    with patch.object(proration, "_get_live_subscription", AsyncMock(return_value=sub_before)), \
-         patch.object(proration, "get_current_price", AsyncMock(return_value=cheaper_price)), \
-         patch.object(proration, "_has_pending_period_invoice", AsyncMock()) as mock_pending, \
-         patch.object(proration, "update_live_subscription_tier", AsyncMock(return_value=subscription_change)), \
-         patch.object(proration, "create_proration_invoice", AsyncMock()) as mock_create:
+    with (
+        patch.object(proration, "_get_live_subscription", AsyncMock(return_value=sub_before)),
+        patch.object(proration, "get_current_price", AsyncMock(return_value=cheaper_price)),
+        patch.object(proration, "_has_pending_period_invoice", AsyncMock()) as mock_pending,
+        patch.object(
+            proration, "update_live_subscription_tier", AsyncMock(return_value=subscription_change)
+        ),
+        patch.object(proration, "create_proration_invoice", AsyncMock()) as mock_create,
+    ):
         out = await proration.apply_plan_change_with_proration(
-            AsyncMock(), "tenant-1", "STARTER", recorded_by="user-1",
+            AsyncMock(),
+            "tenant-1",
+            "STARTER",
+            recorded_by="user-1",
         )
 
     mock_pending.assert_not_called()  # downgrade is never blocked -> never even checked
@@ -235,17 +287,26 @@ async def test_apply_plan_change_monthly_upgrade_no_invoice() -> None:
     sub_before = _sub(tier="STARTER", billing_period="MONTHLY", amount=Decimal("100.00"))
     new_price = MagicMock(id="price-growth-m", amount=Decimal("200.00"))
     subscription_change = {
-        "old_tier": "STARTER", "new_tier": "GROWTH",
-        "old_amount": Decimal("100.00"), "new_amount": Decimal("200.00"),
+        "old_tier": "STARTER",
+        "new_tier": "GROWTH",
+        "old_amount": Decimal("100.00"),
+        "new_amount": Decimal("200.00"),
     }
 
-    with patch.object(proration, "_get_live_subscription", AsyncMock(return_value=sub_before)), \
-         patch.object(proration, "get_current_price", AsyncMock(return_value=new_price)), \
-         patch.object(proration, "_has_pending_period_invoice", AsyncMock(return_value=False)), \
-         patch.object(proration, "update_live_subscription_tier", AsyncMock(return_value=subscription_change)), \
-         patch.object(proration, "create_proration_invoice", AsyncMock()) as mock_create:
+    with (
+        patch.object(proration, "_get_live_subscription", AsyncMock(return_value=sub_before)),
+        patch.object(proration, "get_current_price", AsyncMock(return_value=new_price)),
+        patch.object(proration, "_has_pending_period_invoice", AsyncMock(return_value=False)),
+        patch.object(
+            proration, "update_live_subscription_tier", AsyncMock(return_value=subscription_change)
+        ),
+        patch.object(proration, "create_proration_invoice", AsyncMock()) as mock_create,
+    ):
         out = await proration.apply_plan_change_with_proration(
-            AsyncMock(), "tenant-1", "GROWTH", recorded_by="user-1",
+            AsyncMock(),
+            "tenant-1",
+            "GROWTH",
+            recorded_by="user-1",
         )
 
     mock_create.assert_not_called()
@@ -253,21 +314,32 @@ async def test_apply_plan_change_monthly_upgrade_no_invoice() -> None:
 
 
 async def test_apply_plan_change_never_paid_subscription_no_invoice() -> None:
-    sub_before = _sub(tier="STARTER", billing_period="ANNUAL", status="PENDING_PAYMENT", amount=Decimal("1000.00"))
+    sub_before = _sub(
+        tier="STARTER", billing_period="ANNUAL", status="PENDING_PAYMENT", amount=Decimal("1000.00")
+    )
     new_price = MagicMock(id="price-growth", amount=Decimal("2200.00"))
     subscription_change = {
-        "old_tier": "STARTER", "new_tier": "GROWTH",
-        "old_amount": Decimal("1000.00"), "new_amount": Decimal("2200.00"),
+        "old_tier": "STARTER",
+        "new_tier": "GROWTH",
+        "old_amount": Decimal("1000.00"),
+        "new_amount": Decimal("2200.00"),
     }
 
-    with patch.object(proration, "_get_live_subscription", AsyncMock(return_value=sub_before)), \
-         patch.object(proration, "get_current_price", AsyncMock(return_value=new_price)), \
-         patch.object(proration, "_has_pending_period_invoice", AsyncMock(return_value=False)), \
-         patch.object(proration, "update_live_subscription_tier", AsyncMock(return_value=subscription_change)), \
-         patch.object(proration, "_never_paid", AsyncMock(return_value=True)), \
-         patch.object(proration, "create_proration_invoice", AsyncMock()) as mock_create:
+    with (
+        patch.object(proration, "_get_live_subscription", AsyncMock(return_value=sub_before)),
+        patch.object(proration, "get_current_price", AsyncMock(return_value=new_price)),
+        patch.object(proration, "_has_pending_period_invoice", AsyncMock(return_value=False)),
+        patch.object(
+            proration, "update_live_subscription_tier", AsyncMock(return_value=subscription_change)
+        ),
+        patch.object(proration, "_never_paid", AsyncMock(return_value=True)),
+        patch.object(proration, "create_proration_invoice", AsyncMock()) as mock_create,
+    ):
         out = await proration.apply_plan_change_with_proration(
-            AsyncMock(), "tenant-1", "GROWTH", recorded_by="user-1",
+            AsyncMock(),
+            "tenant-1",
+            "GROWTH",
+            recorded_by="user-1",
         )
 
     mock_create.assert_not_called()
@@ -276,13 +348,26 @@ async def test_apply_plan_change_never_paid_subscription_no_invoice() -> None:
 
 # ── apply_addon_grant_with_proration — collaborators patched ────────────────
 
+
 async def test_apply_addon_grant_override_never_invoiced() -> None:
-    grant_result = {"id": "ta-1", "addon_code": "LOGISTICS", "amount": Decimal("0"), "price_id": None}
-    with patch.object(proration, "grant_addon", AsyncMock(return_value=grant_result)) as mock_grant, \
-         patch.object(proration, "_has_pending_period_invoice", AsyncMock()) as mock_pending, \
-         patch.object(proration, "create_proration_invoice", AsyncMock()) as mock_create:
+    grant_result = {
+        "id": "ta-1",
+        "addon_code": "LOGISTICS",
+        "amount": Decimal("0"),
+        "price_id": None,
+    }
+    with (
+        patch.object(proration, "grant_addon", AsyncMock(return_value=grant_result)) as mock_grant,
+        patch.object(proration, "_has_pending_period_invoice", AsyncMock()) as mock_pending,
+        patch.object(proration, "create_proration_invoice", AsyncMock()) as mock_create,
+    ):
         out = await proration.apply_addon_grant_with_proration(
-            AsyncMock(), "tenant-1", "LOGISTICS", "OVERRIDE", note="pilot", created_by="sa-1",
+            AsyncMock(),
+            "tenant-1",
+            "LOGISTICS",
+            "OVERRIDE",
+            note="pilot",
+            created_by="sa-1",
         )
 
     mock_grant.assert_awaited_once()
@@ -292,18 +377,31 @@ async def test_apply_addon_grant_override_never_invoiced() -> None:
 
 
 async def test_apply_addon_grant_purchased_annual_paid_raises_proration_invoice() -> None:
-    grant_result = {"id": "ta-2", "addon_code": "LOGISTICS", "amount": Decimal("120.00"), "price_id": "addon-price-1"}
+    grant_result = {
+        "id": "ta-2",
+        "addon_code": "LOGISTICS",
+        "amount": Decimal("120.00"),
+        "price_id": "addon-price-1",
+    }
     sub = _sub(billing_period="ANNUAL", status="ACTIVE")
     expected_invoice = {"payment_id": "pay-2", "total": Decimal("80.50")}
 
-    with patch.object(proration, "_has_pending_period_invoice", AsyncMock(return_value=False)), \
-         patch.object(proration, "grant_addon", AsyncMock(return_value=grant_result)), \
-         patch.object(proration, "_get_live_subscription", AsyncMock(return_value=sub)), \
-         patch.object(proration, "_never_paid", AsyncMock(return_value=False)), \
-         patch.object(proration, "remaining_billing_months", MagicMock(return_value=7)), \
-         patch.object(proration, "create_proration_invoice", AsyncMock(return_value=expected_invoice)) as mock_create:
+    with (
+        patch.object(proration, "_has_pending_period_invoice", AsyncMock(return_value=False)),
+        patch.object(proration, "grant_addon", AsyncMock(return_value=grant_result)),
+        patch.object(proration, "_get_live_subscription", AsyncMock(return_value=sub)),
+        patch.object(proration, "_never_paid", AsyncMock(return_value=False)),
+        patch.object(proration, "remaining_billing_months", MagicMock(return_value=7)),
+        patch.object(
+            proration, "create_proration_invoice", AsyncMock(return_value=expected_invoice)
+        ) as mock_create,
+    ):
         out = await proration.apply_addon_grant_with_proration(
-            AsyncMock(), "tenant-1", "LOGISTICS", "PURCHASED", created_by="sa-1",
+            AsyncMock(),
+            "tenant-1",
+            "LOGISTICS",
+            "PURCHASED",
+            created_by="sa-1",
         )
 
     assert out["proration_invoice"] == expected_invoice
@@ -314,18 +412,25 @@ async def test_apply_addon_grant_purchased_annual_paid_raises_proration_invoice(
 
 
 async def test_apply_addon_grant_purchased_blocked_before_grant() -> None:
-    with patch.object(proration, "_has_pending_period_invoice", AsyncMock(return_value=True)), \
-         patch.object(proration, "_get_live_subscription", AsyncMock(return_value=_sub())), \
-         patch.object(proration, "grant_addon", AsyncMock()) as mock_grant:
+    with (
+        patch.object(proration, "_has_pending_period_invoice", AsyncMock(return_value=True)),
+        patch.object(proration, "_get_live_subscription", AsyncMock(return_value=_sub())),
+        patch.object(proration, "grant_addon", AsyncMock()) as mock_grant,
+    ):
         with pytest.raises(ValueError, match="INVOICE_PENDING_SETTLE_FIRST"):
             await proration.apply_addon_grant_with_proration(
-                AsyncMock(), "tenant-1", "LOGISTICS", "PURCHASED", created_by="sa-1",
+                AsyncMock(),
+                "tenant-1",
+                "LOGISTICS",
+                "PURCHASED",
+                created_by="sa-1",
             )
 
     mock_grant.assert_not_called()
 
 
 # ── preview_upgrade / preview_addon — read-only, collaborators patched ─────
+
 
 async def test_preview_upgrade_no_live_subscription_returns_empty() -> None:
     with patch.object(proration, "_get_live_subscription", AsyncMock(return_value=None)):
@@ -337,9 +442,11 @@ async def test_preview_upgrade_no_live_subscription_returns_empty() -> None:
 async def test_preview_upgrade_blocked_by_pending_period_invoice() -> None:
     sub = _sub(amount=Decimal("1000.00"))
     new_price = MagicMock(amount=Decimal("2200.00"))
-    with patch.object(proration, "_get_live_subscription", AsyncMock(return_value=sub)), \
-         patch.object(proration, "get_current_price", AsyncMock(return_value=new_price)), \
-         patch.object(proration, "_has_pending_period_invoice", AsyncMock(return_value=True)):
+    with (
+        patch.object(proration, "_get_live_subscription", AsyncMock(return_value=sub)),
+        patch.object(proration, "get_current_price", AsyncMock(return_value=new_price)),
+        patch.object(proration, "_has_pending_period_invoice", AsyncMock(return_value=True)),
+    ):
         out = await proration.preview_upgrade(AsyncMock(), "tenant-1", "GROWTH")
     assert out["will_invoice"] is False
     assert out["blocked_code"] == "INVOICE_PENDING_SETTLE_FIRST"
@@ -348,9 +455,11 @@ async def test_preview_upgrade_blocked_by_pending_period_invoice() -> None:
 async def test_preview_upgrade_downgrade_no_charge_not_blocked() -> None:
     sub = _sub(amount=Decimal("2200.00"))
     cheaper_price = MagicMock(amount=Decimal("1000.00"))
-    with patch.object(proration, "_get_live_subscription", AsyncMock(return_value=sub)), \
-         patch.object(proration, "get_current_price", AsyncMock(return_value=cheaper_price)), \
-         patch.object(proration, "_has_pending_period_invoice", AsyncMock()) as mock_pending:
+    with (
+        patch.object(proration, "_get_live_subscription", AsyncMock(return_value=sub)),
+        patch.object(proration, "get_current_price", AsyncMock(return_value=cheaper_price)),
+        patch.object(proration, "_has_pending_period_invoice", AsyncMock()) as mock_pending,
+    ):
         out = await proration.preview_upgrade(AsyncMock(), "tenant-1", "STARTER")
     mock_pending.assert_not_called()
     assert out["will_invoice"] is False
@@ -360,12 +469,14 @@ async def test_preview_upgrade_downgrade_no_charge_not_blocked() -> None:
 async def test_preview_upgrade_annual_paid_mid_period_shows_amounts() -> None:
     sub = _sub(billing_period="ANNUAL", status="ACTIVE", amount=Decimal("1000.00"))
     new_price = MagicMock(amount=Decimal("2200.00"))
-    with patch.object(proration, "_get_live_subscription", AsyncMock(return_value=sub)), \
-         patch.object(proration, "get_current_price", AsyncMock(return_value=new_price)), \
-         patch.object(proration, "_has_pending_period_invoice", AsyncMock(return_value=False)), \
-         patch.object(proration, "_never_paid", AsyncMock(return_value=False)), \
-         patch.object(proration, "remaining_billing_months", MagicMock(return_value=7)), \
-         patch.object(proration, "_free_until", MagicMock(return_value=date(2026, 6, 15))):
+    with (
+        patch.object(proration, "_get_live_subscription", AsyncMock(return_value=sub)),
+        patch.object(proration, "get_current_price", AsyncMock(return_value=new_price)),
+        patch.object(proration, "_has_pending_period_invoice", AsyncMock(return_value=False)),
+        patch.object(proration, "_never_paid", AsyncMock(return_value=False)),
+        patch.object(proration, "remaining_billing_months", MagicMock(return_value=7)),
+        patch.object(proration, "_free_until", MagicMock(return_value=date(2026, 6, 15))),
+    ):
         out = await proration.preview_upgrade(AsyncMock(), "tenant-1", "GROWTH")
 
     assert out["will_invoice"] is True
@@ -379,12 +490,14 @@ async def test_preview_upgrade_annual_paid_mid_period_shows_amounts() -> None:
 async def test_preview_addon_purchased_annual_shows_amounts() -> None:
     sub = _sub(billing_period="ANNUAL", status="ACTIVE")
     price = MagicMock(amount=Decimal("120.00"))
-    with patch.object(proration, "_get_live_subscription", AsyncMock(return_value=sub)), \
-         patch.object(proration, "get_current_addon_price", AsyncMock(return_value=price)), \
-         patch.object(proration, "_has_pending_period_invoice", AsyncMock(return_value=False)), \
-         patch.object(proration, "_never_paid", AsyncMock(return_value=False)), \
-         patch.object(proration, "remaining_billing_months", MagicMock(return_value=7)), \
-         patch.object(proration, "_free_until", MagicMock(return_value=date(2026, 6, 15))):
+    with (
+        patch.object(proration, "_get_live_subscription", AsyncMock(return_value=sub)),
+        patch.object(proration, "get_current_addon_price", AsyncMock(return_value=price)),
+        patch.object(proration, "_has_pending_period_invoice", AsyncMock(return_value=False)),
+        patch.object(proration, "_never_paid", AsyncMock(return_value=False)),
+        patch.object(proration, "remaining_billing_months", MagicMock(return_value=7)),
+        patch.object(proration, "_free_until", MagicMock(return_value=date(2026, 6, 15))),
+    ):
         out = await proration.preview_addon(AsyncMock(), "tenant-1", "LOGISTICS")
 
     assert out["will_invoice"] is True
@@ -394,6 +507,7 @@ async def test_preview_addon_purchased_annual_shows_amounts() -> None:
 
 
 # ── mark_paid(PRORATION) — never touches subscription/contract/tenant_addons ─
+
 
 def _proration_payment(*, status="PENDING") -> MagicMock:
     row = MagicMock()
@@ -405,10 +519,12 @@ def _proration_payment(*, status="PENDING") -> MagicMock:
 
 async def test_mark_paid_proration_only_flips_status_nothing_else() -> None:
     payment = _proration_payment()
-    db = _db([
-        _result(fetchone=payment),  # SELECT payments FOR UPDATE
-        _result(),                 # UPDATE payments
-    ])
+    db = _db(
+        [
+            _result(fetchone=payment),  # SELECT payments FOR UPDATE
+            _result(),  # UPDATE payments
+        ]
+    )
 
     out = await mark_paid(db, "payment-prorate-1", provider="MANUAL", recorded_by="sa-1")
 

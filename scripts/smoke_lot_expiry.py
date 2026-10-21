@@ -14,6 +14,7 @@ Usage:
     set -a; source .env; set +a
     python scripts/smoke_lot_expiry.py
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -63,10 +64,14 @@ async def main() -> None:
         try:
             await set_rls_context(session, E2E_TENANT_ID, E2E_USER_ID)
             tid = uuid.UUID(E2E_TENANT_ID)
-            user = SimpleNamespace(user_id=E2E_USER_ID, role="TA", tenant_id=E2E_TENANT_ID)
+            user = SimpleNamespace(
+                user_id=E2E_USER_ID, role="TA", tenant_id=E2E_TENANT_ID
+            )
             # set_lot_expiry audits with an INSERT in this same session/transaction
             # (like lot_settings_service), so the rollback removes it.
-            print("audit: set_lot_expiry writes audit_logs in the same transaction (rolled back)")
+            print(
+                "audit: set_lot_expiry writes audit_logs in the same transaction (rolled back)"
+            )
 
             # a) product with stock in a stock-holding org-node warehouse, converted
             wh = str(uuid.uuid4())
@@ -77,7 +82,12 @@ async def main() -> None:
                     "(id, tenant_id, name, code, hierarchy_level, is_stock_holding, is_active) "
                     "VALUES (:id, :tid, :name, :code, 1, true, true)"
                 ),
-                {"id": wh, "tid": E2E_TENANT_ID, "name": wh_name, "code": f"SXP{suffix}"},
+                {
+                    "id": wh,
+                    "tid": E2E_TENANT_ID,
+                    "name": wh_name,
+                    "code": f"SXP{suffix}",
+                },
             )
             product_id = str(uuid.uuid4())
             await session.execute(
@@ -86,24 +96,46 @@ async def main() -> None:
                     "(id, tenant_id, sku, name, unit_of_measure, batch_tracking, expiry_tracking, is_active) "
                     "VALUES (:id, :tid, :sku, :name, 'EACH', false, false, true)"
                 ),
-                {"id": product_id, "tid": E2E_TENANT_ID, "sku": f"SMKX-{suffix}",
-                 "name": f"Smoke Expiry Product {suffix}"},
+                {
+                    "id": product_id,
+                    "tid": E2E_TENANT_ID,
+                    "sku": f"SMKX-{suffix}",
+                    "name": f"Smoke Expiry Product {suffix}",
+                },
             )
             await record_transaction(
-                session, E2E_TENANT_ID, "RECEIVE", product_id, wh, Decimal("10"),
-                E2E_USER_ID, f"smoke:receive:{product_id}:{uuid.uuid4()}", source="OPENING_BALANCE",
+                session,
+                E2E_TENANT_ID,
+                "RECEIVE",
+                product_id,
+                wh,
+                Decimal("10"),
+                E2E_USER_ID,
+                f"smoke:receive:{product_id}:{uuid.uuid4()}",
+                source="OPENING_BALANCE",
             )
             result = await update_lot_settings(
-                session, tenant_id=E2E_TENANT_ID, product_id=product_id, user_id=E2E_USER_ID,
-                role="TA", feature_enabled=True, batch_tracking=True, expiry_tracking=True,
+                session,
+                tenant_id=E2E_TENANT_ID,
+                product_id=product_id,
+                user_id=E2E_USER_ID,
+                role="TA",
+                feature_enabled=True,
+                batch_tracking=True,
+                expiry_tracking=True,
                 dispatch_strategy=None,
             )
             _assert(len(result.opening_lots) == 1, "conversion created one OPENING lot")
-            legacy = (await session.execute(
-                text("SELECT count(*) AS n FROM warehouses WHERE id = :id"), {"id": wh},
-            )).fetchone()
-            _assert(legacy.n == 0 and len(result.opening_lots) == 1,
-                    "conversion created the OPENING lot with no warehouses row")
+            legacy = (
+                await session.execute(
+                    text("SELECT count(*) AS n FROM warehouses WHERE id = :id"),
+                    {"id": wh},
+                )
+            ).fetchone()
+            _assert(
+                legacy.n == 0 and len(result.opening_lots) == 1,
+                "conversion created the OPENING lot with no warehouses row",
+            )
             lot_id = str(result.opening_lots[0].lot_id)
             lot_number = result.opening_lots[0].lot_number
 
@@ -112,25 +144,38 @@ async def main() -> None:
             mine = [lot for lot in lots if str(lot.lot_id) == lot_id]
             _assert(len(mine) == 1, "get_lots lists the OPENING lot")
             print(f"warehouse_name from get_lots: {mine[0].warehouse_name!r}")
-            _assert(bool(mine[0].warehouse_name), "get_lots warehouse_name is non-empty")
-            _assert(mine[0].warehouse_name == wh_name, "warehouse_name comes from organization_node")
+            _assert(
+                bool(mine[0].warehouse_name), "get_lots warehouse_name is non-empty"
+            )
+            _assert(
+                mine[0].warehouse_name == wh_name,
+                "warehouse_name comes from organization_node",
+            )
             _assert(mine[0].expiry_date is None, "lot has no expiry yet")
 
             # c) alerts: NO_EXPIRY
             alerts = await get_expiry_alerts(session, tid)
             a = [i for i in alerts.items if str(i.lot_id) == lot_id]
-            _assert(len(a) == 1 and a[0].alert_type == "NO_EXPIRY", "expiry alerts list the lot as NO_EXPIRY")
+            _assert(
+                len(a) == 1 and a[0].alert_type == "NO_EXPIRY",
+                "expiry alerts list the lot as NO_EXPIRY",
+            )
 
             # d) set expiry today + 10
             exp = date.today() + timedelta(days=10)
             out = await set_lot_expiry(session, E2E_TENANT_ID, lot_id, exp, user)
-            _assert(out["expiry_date"] == exp and str(out["lot_id"]) == lot_id, "set_lot_expiry succeeded")
+            _assert(
+                out["expiry_date"] == exp and str(out["lot_id"]) == lot_id,
+                "set_lot_expiry succeeded",
+            )
 
             # e) alerts: EXPIRING 10; lot list: expiring_soon, ACTIVE
             alerts = await get_expiry_alerts(session, tid)
             a = [i for i in alerts.items if str(i.lot_id) == lot_id]
             _assert(
-                len(a) == 1 and a[0].alert_type == "EXPIRING" and a[0].days_to_expiry == 10,
+                len(a) == 1
+                and a[0].alert_type == "EXPIRING"
+                and a[0].days_to_expiry == 10,
                 "expiry alerts now EXPIRING with days_to_expiry 10",
             )
             lots = await get_lots(session, tid, product_id=uuid.UUID(product_id))
@@ -142,7 +187,9 @@ async def main() -> None:
 
             # f) second set -> 409
             try:
-                await set_lot_expiry(session, E2E_TENANT_ID, lot_id, exp + timedelta(days=1), user)
+                await set_lot_expiry(
+                    session, E2E_TENANT_ID, lot_id, exp + timedelta(days=1), user
+                )
                 raise AssertionError("FAILED: expected LOT_EXPIRY_ALREADY_SET")
             except AssertionError:
                 raise
@@ -156,12 +203,23 @@ async def main() -> None:
                 )
 
             # set_lot_expiry must not touch the ledger
-            n = (await session.execute(
-                text("SELECT count(*) AS n FROM inventory_transactions "
-                     "WHERE tenant_id = :tid AND product_id = :pid"),
-                {"tid": E2E_TENANT_ID, "pid": product_id},
-            )).fetchone().n
-            _assert(n == 2, f"ledger holds only RECEIVE + LOT_OPENING for the product (got {n})")
+            n = (
+                (
+                    await session.execute(
+                        text(
+                            "SELECT count(*) AS n FROM inventory_transactions "
+                            "WHERE tenant_id = :tid AND product_id = :pid"
+                        ),
+                        {"tid": E2E_TENANT_ID, "pid": product_id},
+                    )
+                )
+                .fetchone()
+                .n
+            )
+            _assert(
+                n == 2,
+                f"ledger holds only RECEIVE + LOT_OPENING for the product (got {n})",
+            )
             print(f"lot {lot_number} expiry set to {exp.isoformat()}")
             print("SMOKE PASS")
         finally:
@@ -170,11 +228,15 @@ async def main() -> None:
     # h) post-rollback check from a NEW session
     async with AsyncSessionLocal() as verify_session:
         await set_rls_context(verify_session, E2E_TENANT_ID, E2E_USER_ID)
-        row = (await verify_session.execute(
-            text("SELECT id FROM products WHERE tenant_id = :tid AND sku = :sku"),
-            {"tid": E2E_TENANT_ID, "sku": f"SMKX-{suffix}"},
-        )).fetchone()
-        print(f"Post-rollback check: product {'not found (expected)' if row is None else 'STILL PRESENT'}")
+        row = (
+            await verify_session.execute(
+                text("SELECT id FROM products WHERE tenant_id = :tid AND sku = :sku"),
+                {"tid": E2E_TENANT_ID, "sku": f"SMKX-{suffix}"},
+            )
+        ).fetchone()
+        print(
+            f"Post-rollback check: product {'not found (expected)' if row is None else 'STILL PRESENT'}"
+        )
         await verify_session.rollback()
         if row is not None:
             raise SystemExit(1)

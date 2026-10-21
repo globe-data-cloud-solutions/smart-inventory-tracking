@@ -4,6 +4,7 @@ _update_lot_balance is the ONLY permitted writer to lot_balances, and it is
 only ever called from record_transaction() in ledger_repo.py, in the same
 transaction as the inventory_transactions INSERT — never after commit.
 """
+
 from __future__ import annotations
 
 from datetime import date

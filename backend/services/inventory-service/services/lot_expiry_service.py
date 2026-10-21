@@ -10,6 +10,7 @@ get_near_expiry_days() is read by the lot list and expiry-alert routes when no
 window is passed; set_near_expiry_days() is the TA write path, audited the
 same way.
 """
+
 from __future__ import annotations
 
 import json
@@ -29,10 +30,12 @@ async def get_near_expiry_days(session: AsyncSession, tenant_id: Any) -> int:
     """The tenant's near-expiry window; 30 for SA across tenants or no row."""
     if tenant_id is None:
         return DEFAULT_NEAR_EXPIRY_DAYS
-    row = (await session.execute(
-        text("SELECT near_expiry_days FROM tenants WHERE id = :tid"),
-        {"tid": str(tenant_id)},
-    )).fetchone()
+    row = (
+        await session.execute(
+            text("SELECT near_expiry_days FROM tenants WHERE id = :tid"),
+            {"tid": str(tenant_id)},
+        )
+    ).fetchone()
     if row is None or row.near_expiry_days is None:
         return DEFAULT_NEAR_EXPIRY_DAYS
     return int(row.near_expiry_days)
@@ -44,18 +47,17 @@ async def set_near_expiry_days(
     near_expiry_days: int,
     user: Any,
 ) -> int:
-    old = (await session.execute(
-        text("SELECT near_expiry_days FROM tenants WHERE id = :tid FOR UPDATE"),
-        {"tid": tenant_id},
-    )).fetchone()
+    old = (
+        await session.execute(
+            text("SELECT near_expiry_days FROM tenants WHERE id = :tid FOR UPDATE"),
+            {"tid": tenant_id},
+        )
+    ).fetchone()
     if old is None:
         raise HTTPException(status_code=404, detail={"code": "TENANT_NOT_FOUND"})
 
     await session.execute(
-        text(
-            "UPDATE tenants SET near_expiry_days = :d, updated_at = now() "
-            "WHERE id = :tid"
-        ),
+        text("UPDATE tenants SET near_expiry_days = :d, updated_at = now() WHERE id = :tid"),
         {"d": near_expiry_days, "tid": tenant_id},
     )
 
@@ -74,10 +76,12 @@ async def set_near_expiry_days(
             "uid": str(user.user_id),
             "role": getattr(user, "role", None),
             "rid": tenant_id,
-            "ctx": json.dumps({
-                "old_near_expiry_days": old.near_expiry_days,
-                "new_near_expiry_days": near_expiry_days,
-            }),
+            "ctx": json.dumps(
+                {
+                    "old_near_expiry_days": old.near_expiry_days,
+                    "new_near_expiry_days": near_expiry_days,
+                }
+            ),
         },
     )
     return near_expiry_days
@@ -95,16 +99,18 @@ def _already_set(lot_number: str, existing: date) -> HTTPException:
 
 
 async def _load_lot(session: AsyncSession, tenant_id: str, lot_id: str):
-    return (await session.execute(
-        text(
-            "SELECT l.id, l.lot_number, l.product_id, l.expiry_date, "
-            "       p.batch_tracking, p.expiry_tracking "
-            "FROM stock_lots l "
-            "JOIN products p ON p.id = l.product_id AND p.tenant_id = l.tenant_id "
-            "WHERE l.id = :lid AND l.tenant_id = :tid"
-        ),
-        {"lid": lot_id, "tid": tenant_id},
-    )).fetchone()
+    return (
+        await session.execute(
+            text(
+                "SELECT l.id, l.lot_number, l.product_id, l.expiry_date, "
+                "       p.batch_tracking, p.expiry_tracking "
+                "FROM stock_lots l "
+                "JOIN products p ON p.id = l.product_id AND p.tenant_id = l.tenant_id "
+                "WHERE l.id = :lid AND l.tenant_id = :tid"
+            ),
+            {"lid": lot_id, "tid": tenant_id},
+        )
+    ).fetchone()
 
 
 async def set_lot_expiry(
@@ -130,14 +136,16 @@ async def set_lot_expiry(
     if expiry_date < date.today():
         raise HTTPException(status_code=422, detail={"code": "EXPIRY_IN_PAST"})
 
-    row = (await session.execute(
-        text(
-            "UPDATE stock_lots SET expiry_date = :exp "
-            "WHERE id = :lid AND tenant_id = :tid AND expiry_date IS NULL "
-            "RETURNING id, lot_number, product_id, expiry_date"
-        ),
-        {"exp": expiry_date, "lid": lot_id, "tid": tenant_id},
-    )).fetchone()
+    row = (
+        await session.execute(
+            text(
+                "UPDATE stock_lots SET expiry_date = :exp "
+                "WHERE id = :lid AND tenant_id = :tid AND expiry_date IS NULL "
+                "RETURNING id, lot_number, product_id, expiry_date"
+            ),
+            {"exp": expiry_date, "lid": lot_id, "tid": tenant_id},
+        )
+    ).fetchone()
     if row is None:
         # Another request set the expiry between our read and the UPDATE.
         current = await _load_lot(session, tenant_id, lot_id)
@@ -160,13 +168,15 @@ async def set_lot_expiry(
             "uid": str(user.user_id),
             "role": getattr(user, "role", None),
             "rid": str(row.id),
-            "ctx": json.dumps({
-                "lot_id": str(row.id),
-                "lot_number": row.lot_number,
-                "product_id": str(row.product_id),
-                "expiry_date": row.expiry_date.isoformat(),
-                "reason": "expiry set once (was empty)",
-            }),
+            "ctx": json.dumps(
+                {
+                    "lot_id": str(row.id),
+                    "lot_number": row.lot_number,
+                    "product_id": str(row.product_id),
+                    "expiry_date": row.expiry_date.isoformat(),
+                    "reason": "expiry set once (was empty)",
+                }
+            ),
         },
     )
 

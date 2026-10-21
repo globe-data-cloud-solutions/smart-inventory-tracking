@@ -36,7 +36,7 @@ class LocalStorageService(StorageService):
     async def delete(self, url: str) -> None:
         # Strip base URL prefix to get relative path
         if url.startswith(_BASE_URL + "/"):
-            rel = url[len(_BASE_URL) + 1:]
+            rel = url[len(_BASE_URL) + 1 :]
             path = _BASE_PATH / rel
             if path.exists():
                 path.unlink()

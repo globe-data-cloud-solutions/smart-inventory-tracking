@@ -7,6 +7,7 @@ called with is_local = true, and an after_begin listener re-applies the context
 stored in session.info["rls"] at the start of every new transaction.
 No real database connection is used.
 """
+
 from __future__ import annotations
 
 from unittest.mock import AsyncMock, MagicMock

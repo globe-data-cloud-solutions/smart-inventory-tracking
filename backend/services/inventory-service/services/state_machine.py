@@ -11,67 +11,67 @@ class InvalidStateTransitionError(Exception):
 # ── PULL — WH requests stock from RWH or MWH ────────────────────────────────
 # Has a mandatory PENDING_REVIEW step before approval.
 PULL_TRANSITIONS: dict[str, list[str]] = {
-    "DRAFT":              ["PENDING_REVIEW", "CANCELLED"],
-    "PENDING_REVIEW":     ["PENDING_APPROVAL", "REJECTED", "CANCELLED"],
-    "PENDING_APPROVAL":   ["APPROVED", "REJECTED", "CANCELLED"],
-    "APPROVED":           ["ISSUED", "CANCELLED"],
-    "ISSUED":             ["IN_TRANSIT"],
-    "IN_TRANSIT":         ["PARTIALLY_RECEIVED", "RECEIVED"],
+    "DRAFT": ["PENDING_REVIEW", "CANCELLED"],
+    "PENDING_REVIEW": ["PENDING_APPROVAL", "REJECTED", "CANCELLED"],
+    "PENDING_APPROVAL": ["APPROVED", "REJECTED", "CANCELLED"],
+    "APPROVED": ["ISSUED", "CANCELLED"],
+    "ISSUED": ["IN_TRANSIT"],
+    "IN_TRANSIT": ["PARTIALLY_RECEIVED", "RECEIVED"],
     "PARTIALLY_RECEIVED": ["RECEIVED"],
-    "RECEIVED":           ["COMPLETED"],
-    "COMPLETED":          [],
-    "REJECTED":           [],
-    "CANCELLED":          [],
+    "RECEIVED": ["COMPLETED"],
+    "COMPLETED": [],
+    "REJECTED": [],
+    "CANCELLED": [],
 }
 
 # ── PUSH — MWH/RWH proactively sends stock down ──────────────────────────────
 # No review step; ADVISED state lets the destination flag issues before dispatch.
 PUSH_TRANSITIONS: dict[str, list[str]] = {
-    "DRAFT":              ["PENDING_APPROVAL", "CANCELLED"],
-    "PENDING_APPROVAL":   ["APPROVED", "REJECTED", "CANCELLED"],
-    "APPROVED":           ["ADVISED", "ISSUED", "CANCELLED"],
-    "ADVISED":            ["ISSUED", "CANCELLED"],
-    "ISSUED":             ["IN_TRANSIT"],
-    "IN_TRANSIT":         ["PARTIALLY_RECEIVED", "RECEIVED"],
+    "DRAFT": ["PENDING_APPROVAL", "CANCELLED"],
+    "PENDING_APPROVAL": ["APPROVED", "REJECTED", "CANCELLED"],
+    "APPROVED": ["ADVISED", "ISSUED", "CANCELLED"],
+    "ADVISED": ["ISSUED", "CANCELLED"],
+    "ISSUED": ["IN_TRANSIT"],
+    "IN_TRANSIT": ["PARTIALLY_RECEIVED", "RECEIVED"],
     "PARTIALLY_RECEIVED": ["RECEIVED"],
-    "RECEIVED":           ["COMPLETED"],
-    "COMPLETED":          [],
-    "REJECTED":           [],
-    "CANCELLED":          [],
+    "RECEIVED": ["COMPLETED"],
+    "COMPLETED": [],
+    "REJECTED": [],
+    "CANCELLED": [],
 }
 
 # ── SISTER — WH ↔ WH same level ─────────────────────────────────────────────
 # Both managers must explicitly confirm before any approval flows upward.
 SISTER_TRANSITIONS: dict[str, list[str]] = {
-    "DRAFT":                  ["PENDING_SOURCE_CONFIRM", "CANCELLED"],
+    "DRAFT": ["PENDING_SOURCE_CONFIRM", "CANCELLED"],
     "PENDING_SOURCE_CONFIRM": ["PENDING_DEST_CONFIRM", "CANCELLED"],
-    "PENDING_DEST_CONFIRM":   ["PENDING_APPROVAL", "REJECTED", "CANCELLED"],
-    "PENDING_APPROVAL":       ["APPROVED", "REJECTED", "CANCELLED"],
-    "APPROVED":               ["ISSUED"],
-    "ISSUED":                 ["IN_TRANSIT"],
-    "IN_TRANSIT":             ["PARTIALLY_RECEIVED", "RECEIVED"],
-    "PARTIALLY_RECEIVED":     ["RECEIVED"],
-    "RECEIVED":               ["COMPLETED"],
-    "COMPLETED":              [],
-    "REJECTED":               [],
-    "CANCELLED":              [],
+    "PENDING_DEST_CONFIRM": ["PENDING_APPROVAL", "REJECTED", "CANCELLED"],
+    "PENDING_APPROVAL": ["APPROVED", "REJECTED", "CANCELLED"],
+    "APPROVED": ["ISSUED"],
+    "ISSUED": ["IN_TRANSIT"],
+    "IN_TRANSIT": ["PARTIALLY_RECEIVED", "RECEIVED"],
+    "PARTIALLY_RECEIVED": ["RECEIVED"],
+    "RECEIVED": ["COMPLETED"],
+    "COMPLETED": [],
+    "REJECTED": [],
+    "CANCELLED": [],
 }
 
 # ── ADJUSTMENT — DAMAGE / EXCESS write-offs ──────────────────────────────────
 # No transit states; terminal state is POSTED (ledger entry applied).
 ADJUSTMENT_TRANSITIONS: dict[str, list[str]] = {
-    "DRAFT":            ["PENDING_APPROVAL", "CANCELLED"],
+    "DRAFT": ["PENDING_APPROVAL", "CANCELLED"],
     "PENDING_APPROVAL": ["APPROVED", "REJECTED"],
-    "APPROVED":         ["POSTED"],
-    "POSTED":           [],
-    "REJECTED":         [],
-    "CANCELLED":        [],
+    "APPROVED": ["POSTED"],
+    "POSTED": [],
+    "REJECTED": [],
+    "CANCELLED": [],
 }
 
 _MACHINES: dict[str, dict[str, list[str]]] = {
-    "PULL":       PULL_TRANSITIONS,
-    "PUSH":       PUSH_TRANSITIONS,
-    "SISTER":     SISTER_TRANSITIONS,
+    "PULL": PULL_TRANSITIONS,
+    "PUSH": PUSH_TRANSITIONS,
+    "SISTER": SISTER_TRANSITIONS,
     "ADJUSTMENT": ADJUSTMENT_TRANSITIONS,
 }
 

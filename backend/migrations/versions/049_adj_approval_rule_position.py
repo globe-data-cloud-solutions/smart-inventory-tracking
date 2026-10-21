@@ -9,6 +9,7 @@ Revision ID: 049
 Revises: 048
 Create Date: 2026-06-09
 """
+
 from __future__ import annotations
 from alembic import op
 

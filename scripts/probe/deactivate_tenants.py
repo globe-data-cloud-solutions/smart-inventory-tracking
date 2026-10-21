@@ -13,6 +13,7 @@ Usage:
 Requires the api-gateway running (default http://localhost:8000 — override
 with API_BASE).
 """
+
 from __future__ import annotations
 
 import os
@@ -41,9 +42,13 @@ def main(slugs: list[str]) -> int:
         access_token = token_resp.json()["access_token"]
         headers = {"Authorization": f"Bearer {access_token}"}
 
-        registry_resp = client.get(f"{API_BASE}/api/v1/tenants/sa/registry", headers=headers)
+        registry_resp = client.get(
+            f"{API_BASE}/api/v1/tenants/sa/registry", headers=headers
+        )
         if registry_resp.status_code != 200:
-            print(f"Registry fetch failed: {registry_resp.status_code} {registry_resp.text}")
+            print(
+                f"Registry fetch failed: {registry_resp.status_code} {registry_resp.text}"
+            )
             return 1
         tenants = registry_resp.json()["data"]
         by_slug = {t["slug"]: t["id"] for t in tenants}
@@ -56,10 +61,15 @@ def main(slugs: list[str]) -> int:
                 exit_code = 1
                 continue
 
-            resp = client.patch(f"{API_BASE}/api/v1/tenants/{tenant_id}/deactivate", headers=headers)
+            resp = client.patch(
+                f"{API_BASE}/api/v1/tenants/{tenant_id}/deactivate", headers=headers
+            )
             if resp.status_code == 200:
                 print(f"{slug}: DEACTIVATED")
-            elif resp.status_code == 422 and resp.json().get("detail", {}).get("code") == "ALREADY_DEACTIVATED":
+            elif (
+                resp.status_code == 422
+                and resp.json().get("detail", {}).get("code") == "ALREADY_DEACTIVATED"
+            ):
                 print(f"{slug}: already deactivated")
             else:
                 print(f"{slug}: FAILED ({resp.status_code}) {resp.text}")

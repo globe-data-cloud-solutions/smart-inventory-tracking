@@ -18,6 +18,7 @@ fixed UUIDs so duplicate runs are no-ops.
 Run:  python scripts/setup_tenant07.py
 Requires: DATABASE_URL env var
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -42,124 +43,128 @@ engine = create_async_engine(os.environ["DATABASE_URL"])
 Session = async_sessionmaker(bind=engine, expire_on_commit=False)
 
 # --Fixed IDs — do not change after first run ──────────────────────────────────
-T07_ID   = "07000007-0000-0000-0000-000000000001"
-PLAN_ID  = "07000007-ffff-0000-0000-000000000001"
-SA_USER  = "00000001-0a00-0000-0000-000000000001"  # seed_demo_data.py SA
+T07_ID = "07000007-0000-0000-0000-000000000001"
+PLAN_ID = "07000007-ffff-0000-0000-000000000001"
+SA_USER = "00000001-0a00-0000-0000-000000000001"  # seed_demo_data.py SA
 
 # Org Nodes
-NODE_FA    = "07000007-0001-0000-0000-000000000001"  # Factory A     (L1)
-NODE_RA    = "07000007-0002-0000-0000-000000000001"  # Region A      (L2)
-NODE_SRA   = "07000007-0003-0000-0000-000000000001"  # Subregion A   (L3)
-NODE_WHA1  = "07000007-0004-0000-0000-000000000001"  # WHA1          (L4)
-NODE_WHA2  = "07000007-0004-0000-0000-000000000002"  # WHA2          (L4)
-NODE_WHA3  = "07000007-0004-0000-0000-000000000003"  # WHA3          (L4)
-NODE_FB    = "07000007-0005-0000-0000-000000000001"  # Factory B     (L1)
-NODE_RB1   = "07000007-0006-0000-0000-000000000001"  # Region B1     (L2)
-NODE_SRB1  = "07000007-0007-0000-0000-000000000001"  # Subregion B1  (L3)
+NODE_FA = "07000007-0001-0000-0000-000000000001"  # Factory A     (L1)
+NODE_RA = "07000007-0002-0000-0000-000000000001"  # Region A      (L2)
+NODE_SRA = "07000007-0003-0000-0000-000000000001"  # Subregion A   (L3)
+NODE_WHA1 = "07000007-0004-0000-0000-000000000001"  # WHA1          (L4)
+NODE_WHA2 = "07000007-0004-0000-0000-000000000002"  # WHA2          (L4)
+NODE_WHA3 = "07000007-0004-0000-0000-000000000003"  # WHA3          (L4)
+NODE_FB = "07000007-0005-0000-0000-000000000001"  # Factory B     (L1)
+NODE_RB1 = "07000007-0006-0000-0000-000000000001"  # Region B1     (L2)
+NODE_SRB1 = "07000007-0007-0000-0000-000000000001"  # Subregion B1  (L3)
 NODE_WHB11 = "07000007-0008-0000-0000-000000000001"  # WHB1-1        (L4)
 NODE_WHB12 = "07000007-0008-0000-0000-000000000002"  # WHB1-2        (L4)
-NODE_RB2   = "07000007-0009-0000-0000-000000000001"  # Region B2     (L2)
+NODE_RB2 = "07000007-0009-0000-0000-000000000001"  # Region B2     (L2)
 NODE_WHB21 = "07000007-000a-0000-0000-000000000001"  # WHB2-1        (L4, skips L3)
 NODE_WHB22 = "07000007-000a-0000-0000-000000000002"  # WHB2-2        (L4, skips L3)
 
 # Positions (positions table only allows NM/RM/LM/WM/AU/RT — no TA)
-POS_FA_NM      = "07000007-0101-0000-0000-000000000001"
+POS_FA_NM = "07000007-0101-0000-0000-000000000001"
 POS_FA_ASST_NM = "07000007-0101-0000-0000-000000000002"
-POS_RA_RM      = "07000007-0102-0000-0000-000000000001"
+POS_RA_RM = "07000007-0102-0000-0000-000000000001"
 POS_RA_ASST_RM = "07000007-0102-0000-0000-000000000002"
-POS_SRA_RM     = "07000007-0103-0000-0000-000000000001"
-POS_SRA_ASST   = "07000007-0103-0000-0000-000000000002"
-POS_WHA1_WM    = "07000007-0104-0000-0000-000000000001"
-POS_WHA1_ASST  = "07000007-0104-0000-0000-000000000002"
-POS_WHA2_WM    = "07000007-0104-0000-0000-000000000003"
-POS_WHA2_ASST  = "07000007-0104-0000-0000-000000000004"
-POS_WHA3_WM    = "07000007-0104-0000-0000-000000000005"
-POS_WHA3_ASST  = "07000007-0104-0000-0000-000000000006"
-POS_FB_NM      = "07000007-0105-0000-0000-000000000001"
+POS_SRA_RM = "07000007-0103-0000-0000-000000000001"
+POS_SRA_ASST = "07000007-0103-0000-0000-000000000002"
+POS_WHA1_WM = "07000007-0104-0000-0000-000000000001"
+POS_WHA1_ASST = "07000007-0104-0000-0000-000000000002"
+POS_WHA2_WM = "07000007-0104-0000-0000-000000000003"
+POS_WHA2_ASST = "07000007-0104-0000-0000-000000000004"
+POS_WHA3_WM = "07000007-0104-0000-0000-000000000005"
+POS_WHA3_ASST = "07000007-0104-0000-0000-000000000006"
+POS_FB_NM = "07000007-0105-0000-0000-000000000001"
 POS_FB_ASST_NM = "07000007-0105-0000-0000-000000000002"
-POS_RB1_RM     = "07000007-0106-0000-0000-000000000001"
-POS_RB1_ASST   = "07000007-0106-0000-0000-000000000002"
-POS_SRB1_RM    = "07000007-0107-0000-0000-000000000001"
-POS_SRB1_ASST  = "07000007-0107-0000-0000-000000000002"
-POS_WHB11_WM   = "07000007-0108-0000-0000-000000000001"
+POS_RB1_RM = "07000007-0106-0000-0000-000000000001"
+POS_RB1_ASST = "07000007-0106-0000-0000-000000000002"
+POS_SRB1_RM = "07000007-0107-0000-0000-000000000001"
+POS_SRB1_ASST = "07000007-0107-0000-0000-000000000002"
+POS_WHB11_WM = "07000007-0108-0000-0000-000000000001"
 POS_WHB11_ASST = "07000007-0108-0000-0000-000000000002"
-POS_WHB12_WM   = "07000007-0108-0000-0000-000000000003"
+POS_WHB12_WM = "07000007-0108-0000-0000-000000000003"
 POS_WHB12_ASST = "07000007-0108-0000-0000-000000000004"
-POS_RB2_RM     = "07000007-0109-0000-0000-000000000001"
-POS_RB2_ASST   = "07000007-0109-0000-0000-000000000002"
-POS_WHB21_WM   = "07000007-010a-0000-0000-000000000001"
+POS_RB2_RM = "07000007-0109-0000-0000-000000000001"
+POS_RB2_ASST = "07000007-0109-0000-0000-000000000002"
+POS_WHB21_WM = "07000007-010a-0000-0000-000000000001"
 POS_WHB21_ASST = "07000007-010a-0000-0000-000000000002"
-POS_WHB22_WM   = "07000007-010a-0000-0000-000000000003"
+POS_WHB22_WM = "07000007-010a-0000-0000-000000000003"
 POS_WHB22_ASST = "07000007-010a-0000-0000-000000000004"
 # AU and LM — tenant-wide roles assigned to Factory A node (node required by schema)
-POS_AU         = "07000007-010b-0000-0000-000000000001"
-POS_LM         = "07000007-010b-0000-0000-000000000002"
+POS_AU = "07000007-010b-0000-0000-000000000001"
+POS_LM = "07000007-010b-0000-0000-000000000002"
 
 # Users (fixed IDs for reproducibility)
-USR_TA         = "07000007-0201-0000-0000-000000000001"
-USR_FA_NM      = "07000007-0202-0000-0000-000000000001"
+USR_TA = "07000007-0201-0000-0000-000000000001"
+USR_FA_NM = "07000007-0202-0000-0000-000000000001"
 USR_FA_ASST_NM = "07000007-0202-0000-0000-000000000002"
-USR_RA_RM      = "07000007-0203-0000-0000-000000000001"
+USR_RA_RM = "07000007-0203-0000-0000-000000000001"
 USR_RA_ASST_RM = "07000007-0203-0000-0000-000000000002"
-USR_SRA_RM     = "07000007-0204-0000-0000-000000000001"
-USR_SRA_ASST   = "07000007-0204-0000-0000-000000000002"
-USR_WHA1_WM    = "07000007-0205-0000-0000-000000000001"
-USR_WHA1_ASST  = "07000007-0205-0000-0000-000000000002"
-USR_WHA2_WM    = "07000007-0205-0000-0000-000000000003"
-USR_WHA2_ASST  = "07000007-0205-0000-0000-000000000004"
-USR_WHA3_WM    = "07000007-0205-0000-0000-000000000005"
-USR_WHA3_ASST  = "07000007-0205-0000-0000-000000000006"
-USR_FB_NM      = "07000007-0206-0000-0000-000000000001"
+USR_SRA_RM = "07000007-0204-0000-0000-000000000001"
+USR_SRA_ASST = "07000007-0204-0000-0000-000000000002"
+USR_WHA1_WM = "07000007-0205-0000-0000-000000000001"
+USR_WHA1_ASST = "07000007-0205-0000-0000-000000000002"
+USR_WHA2_WM = "07000007-0205-0000-0000-000000000003"
+USR_WHA2_ASST = "07000007-0205-0000-0000-000000000004"
+USR_WHA3_WM = "07000007-0205-0000-0000-000000000005"
+USR_WHA3_ASST = "07000007-0205-0000-0000-000000000006"
+USR_FB_NM = "07000007-0206-0000-0000-000000000001"
 USR_FB_ASST_NM = "07000007-0206-0000-0000-000000000002"
-USR_RB1_RM     = "07000007-0207-0000-0000-000000000001"
-USR_RB1_ASST   = "07000007-0207-0000-0000-000000000002"
-USR_SRB1_RM    = "07000007-0208-0000-0000-000000000001"
-USR_SRB1_ASST  = "07000007-0208-0000-0000-000000000002"
-USR_WHB11_WM   = "07000007-0209-0000-0000-000000000001"
+USR_RB1_RM = "07000007-0207-0000-0000-000000000001"
+USR_RB1_ASST = "07000007-0207-0000-0000-000000000002"
+USR_SRB1_RM = "07000007-0208-0000-0000-000000000001"
+USR_SRB1_ASST = "07000007-0208-0000-0000-000000000002"
+USR_WHB11_WM = "07000007-0209-0000-0000-000000000001"
 USR_WHB11_ASST = "07000007-0209-0000-0000-000000000002"
-USR_WHB12_WM   = "07000007-0209-0000-0000-000000000003"
+USR_WHB12_WM = "07000007-0209-0000-0000-000000000003"
 USR_WHB12_ASST = "07000007-0209-0000-0000-000000000004"
-USR_RB2_RM     = "07000007-020a-0000-0000-000000000001"
-USR_RB2_ASST   = "07000007-020a-0000-0000-000000000002"
-USR_WHB21_WM   = "07000007-020b-0000-0000-000000000001"
+USR_RB2_RM = "07000007-020a-0000-0000-000000000001"
+USR_RB2_ASST = "07000007-020a-0000-0000-000000000002"
+USR_WHB21_WM = "07000007-020b-0000-0000-000000000001"
 USR_WHB21_ASST = "07000007-020b-0000-0000-000000000002"
-USR_WHB22_WM   = "07000007-020b-0000-0000-000000000003"
+USR_WHB22_WM = "07000007-020b-0000-0000-000000000003"
 USR_WHB22_ASST = "07000007-020b-0000-0000-000000000004"
-USR_AU         = "07000007-020c-0000-0000-000000000001"
-USR_LM         = "07000007-020c-0000-0000-000000000002"
+USR_AU = "07000007-020c-0000-0000-000000000001"
+USR_LM = "07000007-020c-0000-0000-000000000002"
 
 # ── Satellite Depot nodes (L5) ──────────────────────────────
-NODE_WHA1_SAT1   = "07000007-000b-0000-0000-000000000001"  # WHA1-SAT1  (L5, under WHA1)
-NODE_WHB11_SAT1  = "07000007-000b-0000-0000-000000000002"  # WHB11-SAT1 (L5, under WHB1-1)
-NODE_WHB21_SAT1  = "07000007-000b-0000-0000-000000000003"  # WHB21-SAT1 (L5, under WHB2-1)
+NODE_WHA1_SAT1 = "07000007-000b-0000-0000-000000000001"  # WHA1-SAT1  (L5, under WHA1)
+NODE_WHB11_SAT1 = (
+    "07000007-000b-0000-0000-000000000002"  # WHB11-SAT1 (L5, under WHB1-1)
+)
+NODE_WHB21_SAT1 = (
+    "07000007-000b-0000-0000-000000000003"  # WHB21-SAT1 (L5, under WHB2-1)
+)
 
 # Satellite positions
-POS_WHA1_SAT1_WM    = "07000007-010c-0000-0000-000000000001"
-POS_WHA1_SAT1_ASST  = "07000007-010c-0000-0000-000000000002"
-POS_WHB11_SAT1_WM   = "07000007-010c-0000-0000-000000000003"
+POS_WHA1_SAT1_WM = "07000007-010c-0000-0000-000000000001"
+POS_WHA1_SAT1_ASST = "07000007-010c-0000-0000-000000000002"
+POS_WHB11_SAT1_WM = "07000007-010c-0000-0000-000000000003"
 POS_WHB11_SAT1_ASST = "07000007-010c-0000-0000-000000000004"
-POS_WHB21_SAT1_WM   = "07000007-010c-0000-0000-000000000005"
+POS_WHB21_SAT1_WM = "07000007-010c-0000-0000-000000000005"
 POS_WHB21_SAT1_ASST = "07000007-010c-0000-0000-000000000006"
 
 # Satellite users
-USR_WHA1_SAT1_WM    = "07000007-020d-0000-0000-000000000001"
-USR_WHA1_SAT1_ASST  = "07000007-020d-0000-0000-000000000002"
-USR_WHB11_SAT1_WM   = "07000007-020d-0000-0000-000000000003"
+USR_WHA1_SAT1_WM = "07000007-020d-0000-0000-000000000001"
+USR_WHA1_SAT1_ASST = "07000007-020d-0000-0000-000000000002"
+USR_WHB11_SAT1_WM = "07000007-020d-0000-0000-000000000003"
 USR_WHB11_SAT1_ASST = "07000007-020d-0000-0000-000000000004"
-USR_WHB21_SAT1_WM   = "07000007-020d-0000-0000-000000000005"
+USR_WHB21_SAT1_WM = "07000007-020d-0000-0000-000000000005"
 USR_WHB21_SAT1_ASST = "07000007-020d-0000-0000-000000000006"
 
 # Products
-CAT_RAW_MAT    = "07000007-0301-0000-0000-000000000001"
-CAT_FINISHED   = "07000007-0301-0000-0000-000000000002"
-TC_RAW         = "412837ec-f7ea-489b-8931-cc23fce37569"  # RAW — Raw Materials
-TC_FIN         = "aa965bf5-878f-4113-8193-6719e0d61023"  # FIN — Finished Goods
-TC_PKG         = "ed9779f1-de46-4a07-9e1e-fab11bd6da18"  # PKG — Packaging
-PROD_P1        = "07000007-0302-0000-0000-000000000001"  # Steel Rod A
-PROD_P2        = "07000007-0302-0000-0000-000000000002"  # Copper Wire B
-PROD_P3        = "07000007-0302-0000-0000-000000000003"  # Product Alpha
-PROD_P4        = "07000007-0302-0000-0000-000000000004"  # Secure Item X (controlled)
-PROD_P5        = "07000007-0302-0000-0000-000000000005"  # Secure Item Y (controlled)
+CAT_RAW_MAT = "07000007-0301-0000-0000-000000000001"
+CAT_FINISHED = "07000007-0301-0000-0000-000000000002"
+TC_RAW = "412837ec-f7ea-489b-8931-cc23fce37569"  # RAW — Raw Materials
+TC_FIN = "aa965bf5-878f-4113-8193-6719e0d61023"  # FIN — Finished Goods
+TC_PKG = "ed9779f1-de46-4a07-9e1e-fab11bd6da18"  # PKG — Packaging
+PROD_P1 = "07000007-0302-0000-0000-000000000001"  # Steel Rod A
+PROD_P2 = "07000007-0302-0000-0000-000000000002"  # Copper Wire B
+PROD_P3 = "07000007-0302-0000-0000-000000000003"  # Product Alpha
+PROD_P4 = "07000007-0302-0000-0000-000000000004"  # Secure Item X (controlled)
+PROD_P5 = "07000007-0302-0000-0000-000000000005"  # Secure Item Y (controlled)
 
 # Password hash (Test@2026)
 PW_HASH = bcrypt.hashpw(b"Test@2026", bcrypt.gensalt(rounds=12)).decode("utf-8")
@@ -192,7 +197,6 @@ async def set_rls(s, tenant_id: str, user_id: str = SA_USER) -> None:
 # ══════════════════════════════════════════════════════════════════════════════
 async def main() -> None:
     async with Session() as s:
-
         # --PART 1 — TENANT ───────────────────────────────────────────────────
         print("\n[PART 1] Creating tenant …")
         try:
@@ -214,19 +218,21 @@ async def main() -> None:
                         onboarding_complete = EXCLUDED.onboarding_complete
                 """),
                 {
-                    "id":         T07_ID,
-                    "name":       "Test Organization Seven",
-                    "slug":       "tenant-07",
-                    "plan_id":    PLAN_ID,
-                    "flags":      json.dumps({
-                        "LOGISTICS": False,
-                        "AI_ANALYTICS": False,
-                        "ADVANCED_BATCH_TRACKING": True,
-                        "FLEET_MANAGEMENT": False,
-                    }),
-                    "thresholds": json.dumps({
-                        "inventory:adjust": {"low": 100, "medium": 500}
-                    }),
+                    "id": T07_ID,
+                    "name": "Test Organization Seven",
+                    "slug": "tenant-07",
+                    "plan_id": PLAN_ID,
+                    "flags": json.dumps(
+                        {
+                            "LOGISTICS": False,
+                            "AI_ANALYTICS": False,
+                            "ADVANCED_BATCH_TRACKING": True,
+                            "FLEET_MANAGEMENT": False,
+                        }
+                    ),
+                    "thresholds": json.dumps(
+                        {"inventory:adjust": {"low": 100, "medium": 500}}
+                    ),
                 },
             )
             await s.commit()
@@ -241,9 +247,9 @@ async def main() -> None:
         print("\n[PART 2] Creating hierarchy config …")
         try:
             levels = [
-                (1, "Main Factory",   "NM", False),
-                (2, "Regional Center","RM", False),
-                (3, "Sub Region",     "RM", False),
+                (1, "Main Factory", "NM", False),
+                (2, "Regional Center", "RM", False),
+                (3, "Sub Region", "RM", False),
                 (4, "Warehouse Area", "WM", True),
                 (5, "Satellite Depot", "WM", True),
             ]
@@ -261,10 +267,10 @@ async def main() -> None:
                             is_stock_holding = EXCLUDED.is_stock_holding
                     """),
                     {
-                        "tid":   T07_ID,
-                        "ln":    level_number,
+                        "tid": T07_ID,
+                        "ln": level_number,
                         "lname": level_name,
-                        "role":  role_code,
+                        "role": role_code,
                         "stock": is_stock,
                     },
                 )
@@ -281,24 +287,24 @@ async def main() -> None:
             # (id, name, code, level, parent, is_stock_holding)
             nodes = [
                 # Factory A branch
-                (NODE_FA,    "Factory A",    "FA",     1, None,     False),
-                (NODE_RA,    "Region A",     "RA",     2, NODE_FA,  False),
-                (NODE_SRA,   "Subregion A",  "SRA",    3, NODE_RA,  False),
-                (NODE_WHA1,  "WHA1",         "WHA1",   4, NODE_SRA, True),
-                (NODE_WHA2,  "WHA2",         "WHA2",   4, NODE_SRA, True),
-                (NODE_WHA3,  "WHA3",         "WHA3",   4, NODE_SRA, True),
+                (NODE_FA, "Factory A", "FA", 1, None, False),
+                (NODE_RA, "Region A", "RA", 2, NODE_FA, False),
+                (NODE_SRA, "Subregion A", "SRA", 3, NODE_RA, False),
+                (NODE_WHA1, "WHA1", "WHA1", 4, NODE_SRA, True),
+                (NODE_WHA2, "WHA2", "WHA2", 4, NODE_SRA, True),
+                (NODE_WHA3, "WHA3", "WHA3", 4, NODE_SRA, True),
                 # Factory B branch
-                (NODE_FB,    "Factory B",    "FB",     1, None,     False),
-                (NODE_RB1,   "Region B1",    "RB1",    2, NODE_FB,  False),
-                (NODE_SRB1,  "Subregion B1", "SRB1",   3, NODE_RB1, False),
-                (NODE_WHB11, "WHB1-1",       "WHB1-1", 4, NODE_SRB1,True),
-                (NODE_WHB12, "WHB1-2",       "WHB1-2", 4, NODE_SRB1,True),
+                (NODE_FB, "Factory B", "FB", 1, None, False),
+                (NODE_RB1, "Region B1", "RB1", 2, NODE_FB, False),
+                (NODE_SRB1, "Subregion B1", "SRB1", 3, NODE_RB1, False),
+                (NODE_WHB11, "WHB1-1", "WHB1-1", 4, NODE_SRB1, True),
+                (NODE_WHB12, "WHB1-2", "WHB1-2", 4, NODE_SRB1, True),
                 # Region B2 — no L3 layer (WHBs are direct children of Region B2)
-                (NODE_RB2,   "Region B2",    "RB2",    2, NODE_FB,  False),
-                (NODE_WHB21, "WHB2-1",       "WHB2-1", 4, NODE_RB2, True),
-                (NODE_WHB22, "WHB2-2",       "WHB2-2", 4, NODE_RB2, True),
+                (NODE_RB2, "Region B2", "RB2", 2, NODE_FB, False),
+                (NODE_WHB21, "WHB2-1", "WHB2-1", 4, NODE_RB2, True),
+                (NODE_WHB22, "WHB2-2", "WHB2-2", 4, NODE_RB2, True),
                 # Satellite Depots (L5)
-                (NODE_WHA1_SAT1,  "WHA1-SAT1",  "WHA1-S1",  5, NODE_WHA1,  True),
+                (NODE_WHA1_SAT1, "WHA1-SAT1", "WHA1-S1", 5, NODE_WHA1, True),
                 (NODE_WHB11_SAT1, "WHB11-SAT1", "WHB11-S1", 5, NODE_WHB11, True),
                 (NODE_WHB21_SAT1, "WHB21-SAT1", "WHB21-S1", 5, NODE_WHB21, True),
             ]
@@ -316,13 +322,13 @@ async def main() -> None:
                             is_stock_holding = EXCLUDED.is_stock_holding
                     """),
                     {
-                        "id":     nid,
-                        "tid":    T07_ID,
-                        "name":   name,
-                        "code":   code,
-                        "level":  level,
+                        "id": nid,
+                        "tid": T07_ID,
+                        "name": name,
+                        "code": code,
+                        "level": level,
                         "parent": parent,
-                        "stock":  stock,
+                        "stock": stock,
                     },
                 )
             await s.commit()
@@ -341,57 +347,87 @@ async def main() -> None:
             # (id, node_id, title, role_code, reports_to)
             positions = [
                 # Factory A (L1, NM)
-                (POS_FA_NM,      NODE_FA,    "Factory A NM",      "NM", None),
-                (POS_FA_ASST_NM, NODE_FA,    "Factory A Asst NM", "NM", POS_FA_NM),
+                (POS_FA_NM, NODE_FA, "Factory A NM", "NM", None),
+                (POS_FA_ASST_NM, NODE_FA, "Factory A Asst NM", "NM", POS_FA_NM),
                 # Region A (L2, RM)
-                (POS_RA_RM,      NODE_RA,    "Region A RM",       "RM", POS_FA_NM),
-                (POS_RA_ASST_RM, NODE_RA,    "Region A Asst RM",  "RM", POS_RA_RM),
+                (POS_RA_RM, NODE_RA, "Region A RM", "RM", POS_FA_NM),
+                (POS_RA_ASST_RM, NODE_RA, "Region A Asst RM", "RM", POS_RA_RM),
                 # Subregion A (L3, RM)
-                (POS_SRA_RM,     NODE_SRA,   "Subregion A RM",    "RM", POS_RA_RM),
-                (POS_SRA_ASST,   NODE_SRA,   "Subregion A Asst RM","RM",POS_SRA_RM),
+                (POS_SRA_RM, NODE_SRA, "Subregion A RM", "RM", POS_RA_RM),
+                (POS_SRA_ASST, NODE_SRA, "Subregion A Asst RM", "RM", POS_SRA_RM),
                 # WHA1 (L4, WM)
-                (POS_WHA1_WM,    NODE_WHA1,  "WHA1 WM",           "WM", POS_SRA_RM),
-                (POS_WHA1_ASST,  NODE_WHA1,  "WHA1 Asst WM",      "WM", POS_WHA1_WM),
+                (POS_WHA1_WM, NODE_WHA1, "WHA1 WM", "WM", POS_SRA_RM),
+                (POS_WHA1_ASST, NODE_WHA1, "WHA1 Asst WM", "WM", POS_WHA1_WM),
                 # WHA2 (L4, WM)
-                (POS_WHA2_WM,    NODE_WHA2,  "WHA2 WM",           "WM", POS_SRA_RM),
-                (POS_WHA2_ASST,  NODE_WHA2,  "WHA2 Asst WM",      "WM", POS_WHA2_WM),
+                (POS_WHA2_WM, NODE_WHA2, "WHA2 WM", "WM", POS_SRA_RM),
+                (POS_WHA2_ASST, NODE_WHA2, "WHA2 Asst WM", "WM", POS_WHA2_WM),
                 # WHA3 (L4, WM)
-                (POS_WHA3_WM,    NODE_WHA3,  "WHA3 WM",           "WM", POS_SRA_RM),
-                (POS_WHA3_ASST,  NODE_WHA3,  "WHA3 Asst WM",      "WM", POS_WHA3_WM),
+                (POS_WHA3_WM, NODE_WHA3, "WHA3 WM", "WM", POS_SRA_RM),
+                (POS_WHA3_ASST, NODE_WHA3, "WHA3 Asst WM", "WM", POS_WHA3_WM),
                 # Factory B (L1, NM)
-                (POS_FB_NM,      NODE_FB,    "Factory B NM",      "NM", None),
-                (POS_FB_ASST_NM, NODE_FB,    "Factory B Asst NM", "NM", POS_FB_NM),
+                (POS_FB_NM, NODE_FB, "Factory B NM", "NM", None),
+                (POS_FB_ASST_NM, NODE_FB, "Factory B Asst NM", "NM", POS_FB_NM),
                 # Region B1 (L2, RM)
-                (POS_RB1_RM,     NODE_RB1,   "Region B1 RM",      "RM", POS_FB_NM),
-                (POS_RB1_ASST,   NODE_RB1,   "Region B1 Asst RM", "RM", POS_RB1_RM),
+                (POS_RB1_RM, NODE_RB1, "Region B1 RM", "RM", POS_FB_NM),
+                (POS_RB1_ASST, NODE_RB1, "Region B1 Asst RM", "RM", POS_RB1_RM),
                 # Subregion B1 (L3, RM)
-                (POS_SRB1_RM,    NODE_SRB1,  "Subregion B1 RM",   "RM", POS_RB1_RM),
-                (POS_SRB1_ASST,  NODE_SRB1,  "Subregion B1 Asst RM","RM",POS_SRB1_RM),
+                (POS_SRB1_RM, NODE_SRB1, "Subregion B1 RM", "RM", POS_RB1_RM),
+                (POS_SRB1_ASST, NODE_SRB1, "Subregion B1 Asst RM", "RM", POS_SRB1_RM),
                 # WHB1-1 (L4, WM)
-                (POS_WHB11_WM,   NODE_WHB11, "WHB1-1 WM",         "WM", POS_SRB1_RM),
-                (POS_WHB11_ASST, NODE_WHB11, "WHB1-1 Asst WM",    "WM", POS_WHB11_WM),
+                (POS_WHB11_WM, NODE_WHB11, "WHB1-1 WM", "WM", POS_SRB1_RM),
+                (POS_WHB11_ASST, NODE_WHB11, "WHB1-1 Asst WM", "WM", POS_WHB11_WM),
                 # WHB1-2 (L4, WM)
-                (POS_WHB12_WM,   NODE_WHB12, "WHB1-2 WM",         "WM", POS_SRB1_RM),
-                (POS_WHB12_ASST, NODE_WHB12, "WHB1-2 Asst WM",    "WM", POS_WHB12_WM),
+                (POS_WHB12_WM, NODE_WHB12, "WHB1-2 WM", "WM", POS_SRB1_RM),
+                (POS_WHB12_ASST, NODE_WHB12, "WHB1-2 Asst WM", "WM", POS_WHB12_WM),
                 # Region B2 (L2, RM)
-                (POS_RB2_RM,     NODE_RB2,   "Region B2 RM",      "RM", POS_FB_NM),
-                (POS_RB2_ASST,   NODE_RB2,   "Region B2 Asst RM", "RM", POS_RB2_RM),
+                (POS_RB2_RM, NODE_RB2, "Region B2 RM", "RM", POS_FB_NM),
+                (POS_RB2_ASST, NODE_RB2, "Region B2 Asst RM", "RM", POS_RB2_RM),
                 # WHB2-1 (L4, WM — direct child of Region B2, no L3)
-                (POS_WHB21_WM,   NODE_WHB21, "WHB2-1 WM",         "WM", POS_RB2_RM),
-                (POS_WHB21_ASST, NODE_WHB21, "WHB2-1 Asst WM",    "WM", POS_WHB21_WM),
+                (POS_WHB21_WM, NODE_WHB21, "WHB2-1 WM", "WM", POS_RB2_RM),
+                (POS_WHB21_ASST, NODE_WHB21, "WHB2-1 Asst WM", "WM", POS_WHB21_WM),
                 # WHB2-2 (L4, WM)
-                (POS_WHB22_WM,   NODE_WHB22, "WHB2-2 WM",         "WM", POS_RB2_RM),
-                (POS_WHB22_ASST, NODE_WHB22, "WHB2-2 Asst WM",    "WM", POS_WHB22_WM),
+                (POS_WHB22_WM, NODE_WHB22, "WHB2-2 WM", "WM", POS_RB2_RM),
+                (POS_WHB22_ASST, NODE_WHB22, "WHB2-2 Asst WM", "WM", POS_WHB22_WM),
                 # Tenant-wide roles anchored at Factory A (L1) — schema requires node_id
-                (POS_AU,         NODE_FA,    "T07 AU",            "AU", None),
-                (POS_LM,         NODE_FA,    "T07 LM",            "LM", None),
+                (POS_AU, NODE_FA, "T07 AU", "AU", None),
+                (POS_LM, NODE_FA, "T07 LM", "LM", None),
                 # Satellite Depot positions (L5) — reports_to parent WM position
-                (POS_WHA1_SAT1_WM,    NODE_WHA1_SAT1,  "WHA1-SAT1 WM",      "WM", POS_WHA1_WM),
-                (POS_WHA1_SAT1_ASST,  NODE_WHA1_SAT1,  "WHA1-SAT1 Asst WM", "WM", POS_WHA1_SAT1_WM),
-                (POS_WHB11_SAT1_WM,   NODE_WHB11_SAT1, "WHB11-SAT1 WM",     "WM", POS_WHB11_WM),
-                (POS_WHB11_SAT1_ASST, NODE_WHB11_SAT1, "WHB11-SAT1 Asst WM","WM", POS_WHB11_SAT1_WM),
-                (POS_WHB21_SAT1_WM,   NODE_WHB21_SAT1, "WHB21-SAT1 WM",     "WM", POS_WHB21_WM),
-                (POS_WHB21_SAT1_ASST, NODE_WHB21_SAT1, "WHB21-SAT1 Asst WM","WM", POS_WHB21_SAT1_WM),
+                (POS_WHA1_SAT1_WM, NODE_WHA1_SAT1, "WHA1-SAT1 WM", "WM", POS_WHA1_WM),
+                (
+                    POS_WHA1_SAT1_ASST,
+                    NODE_WHA1_SAT1,
+                    "WHA1-SAT1 Asst WM",
+                    "WM",
+                    POS_WHA1_SAT1_WM,
+                ),
+                (
+                    POS_WHB11_SAT1_WM,
+                    NODE_WHB11_SAT1,
+                    "WHB11-SAT1 WM",
+                    "WM",
+                    POS_WHB11_WM,
+                ),
+                (
+                    POS_WHB11_SAT1_ASST,
+                    NODE_WHB11_SAT1,
+                    "WHB11-SAT1 Asst WM",
+                    "WM",
+                    POS_WHB11_SAT1_WM,
+                ),
+                (
+                    POS_WHB21_SAT1_WM,
+                    NODE_WHB21_SAT1,
+                    "WHB21-SAT1 WM",
+                    "WM",
+                    POS_WHB21_WM,
+                ),
+                (
+                    POS_WHB21_SAT1_ASST,
+                    NODE_WHB21_SAT1,
+                    "WHB21-SAT1 Asst WM",
+                    "WM",
+                    POS_WHB21_SAT1_WM,
+                ),
             ]
             for pid, nid, title, role_code, reports_to in positions:
                 await s.execute(
@@ -406,12 +442,12 @@ async def main() -> None:
                             role_code = EXCLUDED.role_code
                     """),
                     {
-                        "id":    pid,
-                        "tid":   T07_ID,
-                        "nid":   nid,
+                        "id": pid,
+                        "tid": T07_ID,
+                        "nid": nid,
                         "title": title,
-                        "role":  role_code,
-                        "rpts":  reports_to,
+                        "role": role_code,
+                        "rpts": reports_to,
                     },
                 )
             await s.commit()
@@ -430,47 +466,179 @@ async def main() -> None:
             # (usr_id, email, full_name, system_role, position_id)
             users = [
                 # TA — no position (system_role drives JWT)
-                (USR_TA,         "admin@t07.com",             "T07 Admin",             "TA",  None),
+                (USR_TA, "admin@t07.com", "T07 Admin", "TA", None),
                 # Factory A
-                (USR_FA_NM,      "nm_factorya@t07.com",       "A-Factory NM",          None,  POS_FA_NM),
-                (USR_FA_ASST_NM, "asst_nm_factorya@t07.com",  "A-Factory Asst NM",     None,  POS_FA_ASST_NM),
-                (USR_RA_RM,      "rm_regiona@t07.com",        "A-Region RM",           None,  POS_RA_RM),
-                (USR_RA_ASST_RM, "asst_rm_regiona@t07.com",   "A-Region Asst RM",      None,  POS_RA_ASST_RM),
-                (USR_SRA_RM,     "rm_subregiona@t07.com",     "A-SubRegion RM",        None,  POS_SRA_RM),
-                (USR_SRA_ASST,   "asst_rm_subregiona@t07.com","A-SubRegion Asst RM",   None,  POS_SRA_ASST),
-                (USR_WHA1_WM,    "wm_wha1@t07.com",           "A-WHA1 WM",             None,  POS_WHA1_WM),
-                (USR_WHA1_ASST,  "asst_wm_wha1@t07.com",      "A-WHA1 Asst WM",        None,  POS_WHA1_ASST),
-                (USR_WHA2_WM,    "wm_wha2@t07.com",           "A-WHA2 WM",             None,  POS_WHA2_WM),
-                (USR_WHA2_ASST,  "asst_wm_wha2@t07.com",      "A-WHA2 Asst WM",        None,  POS_WHA2_ASST),
-                (USR_WHA3_WM,    "wm_wha3@t07.com",           "A-WHA3 WM",             None,  POS_WHA3_WM),
-                (USR_WHA3_ASST,  "asst_wm_wha3@t07.com",      "A-WHA3 Asst WM",        None,  POS_WHA3_ASST),
+                (USR_FA_NM, "nm_factorya@t07.com", "A-Factory NM", None, POS_FA_NM),
+                (
+                    USR_FA_ASST_NM,
+                    "asst_nm_factorya@t07.com",
+                    "A-Factory Asst NM",
+                    None,
+                    POS_FA_ASST_NM,
+                ),
+                (USR_RA_RM, "rm_regiona@t07.com", "A-Region RM", None, POS_RA_RM),
+                (
+                    USR_RA_ASST_RM,
+                    "asst_rm_regiona@t07.com",
+                    "A-Region Asst RM",
+                    None,
+                    POS_RA_ASST_RM,
+                ),
+                (
+                    USR_SRA_RM,
+                    "rm_subregiona@t07.com",
+                    "A-SubRegion RM",
+                    None,
+                    POS_SRA_RM,
+                ),
+                (
+                    USR_SRA_ASST,
+                    "asst_rm_subregiona@t07.com",
+                    "A-SubRegion Asst RM",
+                    None,
+                    POS_SRA_ASST,
+                ),
+                (USR_WHA1_WM, "wm_wha1@t07.com", "A-WHA1 WM", None, POS_WHA1_WM),
+                (
+                    USR_WHA1_ASST,
+                    "asst_wm_wha1@t07.com",
+                    "A-WHA1 Asst WM",
+                    None,
+                    POS_WHA1_ASST,
+                ),
+                (USR_WHA2_WM, "wm_wha2@t07.com", "A-WHA2 WM", None, POS_WHA2_WM),
+                (
+                    USR_WHA2_ASST,
+                    "asst_wm_wha2@t07.com",
+                    "A-WHA2 Asst WM",
+                    None,
+                    POS_WHA2_ASST,
+                ),
+                (USR_WHA3_WM, "wm_wha3@t07.com", "A-WHA3 WM", None, POS_WHA3_WM),
+                (
+                    USR_WHA3_ASST,
+                    "asst_wm_wha3@t07.com",
+                    "A-WHA3 Asst WM",
+                    None,
+                    POS_WHA3_ASST,
+                ),
                 # Factory B
-                (USR_FB_NM,      "nm_factoryb@t07.com",       "B-Factory NM",          None,  POS_FB_NM),
-                (USR_FB_ASST_NM, "asst_nm_factoryb@t07.com",  "B-Factory Asst NM",     None,  POS_FB_ASST_NM),
-                (USR_RB1_RM,     "rm_regionb1@t07.com",       "B-Region B1 RM",        None,  POS_RB1_RM),
-                (USR_RB1_ASST,   "asst_rm_regionb1@t07.com",  "B-Region B1 Asst RM",   None,  POS_RB1_ASST),
-                (USR_SRB1_RM,    "rm_subregionb1@t07.com",    "B-SubRegion B1 RM",     None,  POS_SRB1_RM),
-                (USR_SRB1_ASST,  "asst_rm_subregionb1@t07.com","B-SubRegion B1 Asst RM",None, POS_SRB1_ASST),
-                (USR_WHB11_WM,   "wm_whb1_1@t07.com",         "B-WHB1-1 WM",           None,  POS_WHB11_WM),
-                (USR_WHB11_ASST, "asst_wm_whb1_1@t07.com",    "B-WHB1-1 Asst WM",      None,  POS_WHB11_ASST),
-                (USR_WHB12_WM,   "wm_whb1_2@t07.com",         "B-WHB1-2 WM",           None,  POS_WHB12_WM),
-                (USR_WHB12_ASST, "asst_wm_whb1_2@t07.com",    "B-WHB1-2 Asst WM",      None,  POS_WHB12_ASST),
-                (USR_RB2_RM,     "rm_regionb2@t07.com",       "B-Region B2 RM",        None,  POS_RB2_RM),
-                (USR_RB2_ASST,   "asst_rm_regionb2@t07.com",  "B-Region B2 Asst RM",   None,  POS_RB2_ASST),
-                (USR_WHB21_WM,   "wm_whb2_1@t07.com",         "B-WHB2-1 WM",           None,  POS_WHB21_WM),
-                (USR_WHB21_ASST, "asst_wm_whb2_1@t07.com",    "B-WHB2-1 Asst WM",      None,  POS_WHB21_ASST),
-                (USR_WHB22_WM,   "wm_whb2_2@t07.com",         "B-WHB2-2 WM",           None,  POS_WHB22_WM),
-                (USR_WHB22_ASST, "asst_wm_whb2_2@t07.com",    "B-WHB2-2 Asst WM",      None,  POS_WHB22_ASST),
+                (USR_FB_NM, "nm_factoryb@t07.com", "B-Factory NM", None, POS_FB_NM),
+                (
+                    USR_FB_ASST_NM,
+                    "asst_nm_factoryb@t07.com",
+                    "B-Factory Asst NM",
+                    None,
+                    POS_FB_ASST_NM,
+                ),
+                (USR_RB1_RM, "rm_regionb1@t07.com", "B-Region B1 RM", None, POS_RB1_RM),
+                (
+                    USR_RB1_ASST,
+                    "asst_rm_regionb1@t07.com",
+                    "B-Region B1 Asst RM",
+                    None,
+                    POS_RB1_ASST,
+                ),
+                (
+                    USR_SRB1_RM,
+                    "rm_subregionb1@t07.com",
+                    "B-SubRegion B1 RM",
+                    None,
+                    POS_SRB1_RM,
+                ),
+                (
+                    USR_SRB1_ASST,
+                    "asst_rm_subregionb1@t07.com",
+                    "B-SubRegion B1 Asst RM",
+                    None,
+                    POS_SRB1_ASST,
+                ),
+                (USR_WHB11_WM, "wm_whb1_1@t07.com", "B-WHB1-1 WM", None, POS_WHB11_WM),
+                (
+                    USR_WHB11_ASST,
+                    "asst_wm_whb1_1@t07.com",
+                    "B-WHB1-1 Asst WM",
+                    None,
+                    POS_WHB11_ASST,
+                ),
+                (USR_WHB12_WM, "wm_whb1_2@t07.com", "B-WHB1-2 WM", None, POS_WHB12_WM),
+                (
+                    USR_WHB12_ASST,
+                    "asst_wm_whb1_2@t07.com",
+                    "B-WHB1-2 Asst WM",
+                    None,
+                    POS_WHB12_ASST,
+                ),
+                (USR_RB2_RM, "rm_regionb2@t07.com", "B-Region B2 RM", None, POS_RB2_RM),
+                (
+                    USR_RB2_ASST,
+                    "asst_rm_regionb2@t07.com",
+                    "B-Region B2 Asst RM",
+                    None,
+                    POS_RB2_ASST,
+                ),
+                (USR_WHB21_WM, "wm_whb2_1@t07.com", "B-WHB2-1 WM", None, POS_WHB21_WM),
+                (
+                    USR_WHB21_ASST,
+                    "asst_wm_whb2_1@t07.com",
+                    "B-WHB2-1 Asst WM",
+                    None,
+                    POS_WHB21_ASST,
+                ),
+                (USR_WHB22_WM, "wm_whb2_2@t07.com", "B-WHB2-2 WM", None, POS_WHB22_WM),
+                (
+                    USR_WHB22_ASST,
+                    "asst_wm_whb2_2@t07.com",
+                    "B-WHB2-2 Asst WM",
+                    None,
+                    POS_WHB22_ASST,
+                ),
                 # Tenant-wide
-                (USR_AU,         "au@t07.com",                "T07 Auditor",           None,  POS_AU),
-                (USR_LM,         "lm@t07.com",                "T07 Logistics",         None,  POS_LM),
+                (USR_AU, "au@t07.com", "T07 Auditor", None, POS_AU),
+                (USR_LM, "lm@t07.com", "T07 Logistics", None, POS_LM),
                 # Satellite Depot users (L5)
-                (USR_WHA1_SAT1_WM,    "wm_wha1sat1@t07.com",    "A-WHA1-SAT1 WM",      None, POS_WHA1_SAT1_WM),
-                (USR_WHA1_SAT1_ASST,  "asst_wha1sat1@t07.com",  "A-WHA1-SAT1 Asst WM", None, POS_WHA1_SAT1_ASST),
-                (USR_WHB11_SAT1_WM,   "wm_whb11sat1@t07.com",   "B-WHB11-SAT1 WM",     None, POS_WHB11_SAT1_WM),
-                (USR_WHB11_SAT1_ASST, "asst_whb11sat1@t07.com",  "B-WHB11-SAT1 Asst WM",None, POS_WHB11_SAT1_ASST),
-                (USR_WHB21_SAT1_WM,   "wm_whb21sat1@t07.com",   "B-WHB21-SAT1 WM",     None, POS_WHB21_SAT1_WM),
-                (USR_WHB21_SAT1_ASST, "asst_whb21sat1@t07.com",  "B-WHB21-SAT1 Asst WM",None, POS_WHB21_SAT1_ASST),
+                (
+                    USR_WHA1_SAT1_WM,
+                    "wm_wha1sat1@t07.com",
+                    "A-WHA1-SAT1 WM",
+                    None,
+                    POS_WHA1_SAT1_WM,
+                ),
+                (
+                    USR_WHA1_SAT1_ASST,
+                    "asst_wha1sat1@t07.com",
+                    "A-WHA1-SAT1 Asst WM",
+                    None,
+                    POS_WHA1_SAT1_ASST,
+                ),
+                (
+                    USR_WHB11_SAT1_WM,
+                    "wm_whb11sat1@t07.com",
+                    "B-WHB11-SAT1 WM",
+                    None,
+                    POS_WHB11_SAT1_WM,
+                ),
+                (
+                    USR_WHB11_SAT1_ASST,
+                    "asst_whb11sat1@t07.com",
+                    "B-WHB11-SAT1 Asst WM",
+                    None,
+                    POS_WHB11_SAT1_ASST,
+                ),
+                (
+                    USR_WHB21_SAT1_WM,
+                    "wm_whb21sat1@t07.com",
+                    "B-WHB21-SAT1 WM",
+                    None,
+                    POS_WHB21_SAT1_WM,
+                ),
+                (
+                    USR_WHB21_SAT1_ASST,
+                    "asst_whb21sat1@t07.com",
+                    "B-WHB21-SAT1 Asst WM",
+                    None,
+                    POS_WHB21_SAT1_ASST,
+                ),
             ]
 
             for uid_val, email, full_name, sys_role, pos_id in users:
@@ -492,13 +660,13 @@ async def main() -> None:
                             system_role   = EXCLUDED.system_role
                     """),
                     {
-                        "id":         uid_val,
-                        "tid":        T07_ID,
-                        "sub":        cognito_sub,
-                        "email":      email,
-                        "name":       full_name,
-                        "pw":         PW_HASH,
-                        "sysrole":    sys_role,
+                        "id": uid_val,
+                        "tid": T07_ID,
+                        "sub": cognito_sub,
+                        "email": email,
+                        "name": full_name,
+                        "pw": PW_HASH,
+                        "sysrole": sys_role,
                         "created_by": SA_USER,
                     },
                 )
@@ -518,10 +686,10 @@ async def main() -> None:
                             DO NOTHING
                         """),
                         {
-                            "id":          pp_id,
-                            "tid":         T07_ID,
-                            "uid":         uid_val,
-                            "pid":         pos_id,
+                            "id": pp_id,
+                            "tid": T07_ID,
+                            "uid": uid_val,
+                            "pid": pos_id,
                             "assigned_by": SA_USER,
                         },
                     )
@@ -537,7 +705,7 @@ async def main() -> None:
         try:
             # Categories
             for cat_id, cat_name in [
-                (CAT_RAW_MAT,  "Raw Materials"),
+                (CAT_RAW_MAT, "Raw Materials"),
                 (CAT_FINISHED, "Finished Goods"),
             ]:
                 await s.execute(
@@ -568,11 +736,11 @@ async def main() -> None:
 
             # Products: (id, sku, name, uom, cat_id, tc_id)
             products = [
-                (PROD_P1, "T07-RM-001", "Steel Rod A",    "KG",    CAT_RAW_MAT,  TC_RAW),
-                (PROD_P2, "T07-RM-002", "Copper Wire B",  "Roll",  CAT_RAW_MAT,  TC_RAW),
-                (PROD_P3, "T07-FG-001", "Product Alpha",  "Unit",  CAT_FINISHED, TC_FIN),
-                (PROD_P4, "T07-FG-002", "Secure Item X",  "Unit",  CAT_FINISHED, TC_FIN),
-                (PROD_P5, "T07-FG-003", "Secure Item Y",  "Piece", CAT_FINISHED, TC_PKG),
+                (PROD_P1, "T07-RM-001", "Steel Rod A", "KG", CAT_RAW_MAT, TC_RAW),
+                (PROD_P2, "T07-RM-002", "Copper Wire B", "Roll", CAT_RAW_MAT, TC_RAW),
+                (PROD_P3, "T07-FG-001", "Product Alpha", "Unit", CAT_FINISHED, TC_FIN),
+                (PROD_P4, "T07-FG-002", "Secure Item X", "Unit", CAT_FINISHED, TC_FIN),
+                (PROD_P5, "T07-FG-003", "Secure Item Y", "Piece", CAT_FINISHED, TC_PKG),
             ]
             for p_id, sku, name, uom, cat_id, tc_id in products:
                 await s.execute(
@@ -591,18 +759,20 @@ async def main() -> None:
                             type_code_id = EXCLUDED.type_code_id
                     """),
                     {
-                        "id":         p_id,
-                        "tid":        T07_ID,
-                        "sku":        sku,
-                        "name":       name,
-                        "uom":        uom,
-                        "cat":        cat_id,
-                        "tc":         tc_id,
+                        "id": p_id,
+                        "tid": T07_ID,
+                        "sku": sku,
+                        "name": name,
+                        "uom": uom,
+                        "cat": cat_id,
+                        "tc": tc_id,
                         "created_by": USR_TA,
                     },
                 )
             await s.commit()
-            print(f"  [OK] 2 categories + 3 type codes + {len(products)} products created")
+            print(
+                f"  [OK] 2 categories + 3 type codes + {len(products)} products created"
+            )
 
             # Product approval overrides for controlled items (product_approval_minimums)
             # P4 — Secure Item X
@@ -616,11 +786,11 @@ async def main() -> None:
 
             overrides = [
                 # (product_id, tx_type, threshold_type, qty_threshold, approver_pos_id)
-                (PROD_P4, "PULL",       "ALWAYS",    None, POS_FA_NM),
-                (PROD_P4, "PUSH",       "ALWAYS",    None, POS_FA_NM),
-                (PROD_P4, "ADJUSTMENT", "QUANTITY",  50,   POS_FA_NM),
-                (PROD_P5, "PULL",       "QUANTITY",  100,  POS_RA_RM),
-                (PROD_P5, "ADJUSTMENT", "ALWAYS",    None, POS_RA_RM),
+                (PROD_P4, "PULL", "ALWAYS", None, POS_FA_NM),
+                (PROD_P4, "PUSH", "ALWAYS", None, POS_FA_NM),
+                (PROD_P4, "ADJUSTMENT", "QUANTITY", 50, POS_FA_NM),
+                (PROD_P5, "PULL", "QUANTITY", 100, POS_RA_RM),
+                (PROD_P5, "ADJUSTMENT", "ALWAYS", None, POS_RA_RM),
             ]
             for p_id, tx_type, ttype, qty_thr, approver_pos in overrides:
                 await s.execute(
@@ -642,13 +812,13 @@ async def main() -> None:
                             is_active            = EXCLUDED.is_active
                     """),
                     {
-                        "tid":         T07_ID,
-                        "pid":         p_id,
-                        "txtype":      tx_type,
-                        "ttype":       ttype,
-                        "qty":         qty_thr,
-                        "approver":    approver_pos,
-                        "created_by":  USR_TA,
+                        "tid": T07_ID,
+                        "pid": p_id,
+                        "txtype": tx_type,
+                        "ttype": ttype,
+                        "qty": qty_thr,
+                        "approver": approver_pos,
+                        "created_by": USR_TA,
                     },
                 )
             await s.commit()
@@ -663,18 +833,27 @@ async def main() -> None:
         try:
             ttc_ids: dict[str, str] = {}  # underlying_type → ttc_id
             type_configs = [
-                ("PULL",   "Request Stock",  "L1–L4 can initiate PULL requests",     1),
-                ("PUSH",   "Send Stock",     "L1–L2 can proactively push stock",      2),
-                ("SISTER", "Branch Exchange","L4 warehouse-to-warehouse peer exchange",3),
+                ("PULL", "Request Stock", "L1–L4 can initiate PULL requests", 1),
+                ("PUSH", "Send Stock", "L1–L2 can proactively push stock", 2),
+                (
+                    "SISTER",
+                    "Branch Exchange",
+                    "L4 warehouse-to-warehouse peer exchange",
+                    3,
+                ),
             ]
             for utype, dname, desc, sort in type_configs:
                 ttc_id = uid()
                 # Check for existing row (idempotent)
-                row = (await s.execute(
-                    text("SELECT id FROM transfer_type_config "
-                         "WHERE tenant_id=:tid AND underlying_type=:utype"),
-                    {"tid": T07_ID, "utype": utype},
-                )).fetchone()
+                row = (
+                    await s.execute(
+                        text(
+                            "SELECT id FROM transfer_type_config "
+                            "WHERE tenant_id=:tid AND underlying_type=:utype"
+                        ),
+                        {"tid": T07_ID, "utype": utype},
+                    )
+                ).fetchone()
                 if row:
                     ttc_ids[utype] = str(row[0])
                     await s.execute(
@@ -697,12 +876,12 @@ async def main() -> None:
                                  :desc, true, :sort)
                         """),
                         {
-                            "id":    ttc_id,
-                            "tid":   T07_ID,
+                            "id": ttc_id,
+                            "tid": T07_ID,
                             "utype": utype,
                             "dname": dname,
-                            "desc":  desc,
-                            "sort":  sort,
+                            "desc": desc,
+                            "sort": sort,
                         },
                     )
 
@@ -711,16 +890,33 @@ async def main() -> None:
             # PUSH: levels 1–2 can initiate; all can receive
             # SISTER: level 4 only can initiate and receive
             level_perms = {
-                "PULL":   [(1, True, True), (2, True, True), (3, True, True), (4, True, True)],
-                "PUSH":   [(1, True, True), (2, True, True), (3, False,True), (4, False,True)],
-                "SISTER": [(1, False,False),(2, False,False),(3, False,False),(4, True, True)],
+                "PULL": [
+                    (1, True, True),
+                    (2, True, True),
+                    (3, True, True),
+                    (4, True, True),
+                ],
+                "PUSH": [
+                    (1, True, True),
+                    (2, True, True),
+                    (3, False, True),
+                    (4, False, True),
+                ],
+                "SISTER": [
+                    (1, False, False),
+                    (2, False, False),
+                    (3, False, False),
+                    (4, True, True),
+                ],
             }
             for utype, perms in level_perms.items():
                 ttc_id = ttc_ids[utype]
                 # Delete existing level perms to re-seed cleanly
                 await s.execute(
-                    text("DELETE FROM transfer_type_level_permissions "
-                         "WHERE transfer_type_config_id=:ttc_id"),
+                    text(
+                        "DELETE FROM transfer_type_level_permissions "
+                        "WHERE transfer_type_config_id=:ttc_id"
+                    ),
                     {"ttc_id": ttc_id},
                 )
                 for lvl, can_init, can_recv in perms:
@@ -733,11 +929,11 @@ async def main() -> None:
                                 (:tid, :ttc_id, :lvl, :init, :recv)
                         """),
                         {
-                            "tid":    T07_ID,
+                            "tid": T07_ID,
                             "ttc_id": ttc_id,
-                            "lvl":    lvl,
-                            "init":   can_init,
-                            "recv":   can_recv,
+                            "lvl": lvl,
+                            "init": can_init,
+                            "recv": can_recv,
                         },
                     )
             await s.commit()
@@ -766,9 +962,9 @@ async def main() -> None:
                 # (role_code, level_number, qty_limit)  — None = unlimited
                 ("NM", 1, None),
                 ("RM", 2, 10000),
-                ("RM", 3,  5000),
-                ("WM", 4,  1000),
-                ("WM", 5,   500),
+                ("RM", 3, 5000),
+                ("WM", 4, 1000),
+                ("WM", 5, 500),
             ]
             for role_code, level_num, qty_limit in sap_rows:
                 await s.execute(
@@ -786,7 +982,12 @@ async def main() -> None:
                             is_active     = EXCLUDED.is_active,
                             transfer_types = EXCLUDED.transfer_types
                     """),
-                    {"tid": T07_ID, "role": role_code, "lvl": level_num, "qty": qty_limit},
+                    {
+                        "tid": T07_ID,
+                        "role": role_code,
+                        "lvl": level_num,
+                        "qty": qty_limit,
+                    },
                 )
 
             # --8b Adjustment self-approval (adjustment_approval_rules) ───────
@@ -800,9 +1001,9 @@ async def main() -> None:
                 # (role_code, level_number, qty_limit)  — qty_limit=None means no limit
                 ("NM", 1, None),
                 ("RM", 2, 10000),
-                ("RM", 3,  5000),
-                ("WM", 4,  1000),
-                ("WM", 5,   500),
+                ("RM", 3, 5000),
+                ("WM", 4, 1000),
+                ("WM", 5, 500),
             ]
             for role_code, level_num, qty_limit in adj_sap_rows:
                 await s.execute(
@@ -817,10 +1018,10 @@ async def main() -> None:
                              10, true)
                     """),
                     {
-                        "tid":  T07_ID,
+                        "tid": T07_ID,
                         "role": role_code,
-                        "lvl":  level_num,
-                        "qty":  qty_limit,
+                        "lvl": level_num,
+                        "qty": qty_limit,
                     },
                 )
 
@@ -835,13 +1036,15 @@ async def main() -> None:
             #   "named_position"          — specific position by title at a named node
             #
             # Clear existing rules for idempotency
-            pull_id   = ttc_ids["PULL"]
-            push_id   = ttc_ids["PUSH"]
+            pull_id = ttc_ids["PULL"]
+            push_id = ttc_ids["PUSH"]
             sister_id = ttc_ids["SISTER"]
 
             for ttc_id in [pull_id, push_id, sister_id]:
                 await s.execute(
-                    text("DELETE FROM transfer_approval_rules WHERE transfer_type_config_id=:ttc"),
+                    text(
+                        "DELETE FROM transfer_approval_rules WHERE transfer_type_config_id=:ttc"
+                    ),
                     {"ttc": ttc_id},
                 )
 
@@ -849,124 +1052,256 @@ async def main() -> None:
             pull_rules = [
                 # Rule 1: L1→Any, no steps (NM self-approves via policy)
                 {
-                    "ttc_id": pull_id, "src": 1, "dst": None,
-                    "qty_min": 0, "qty_max": None, "priority": 1,
+                    "ttc_id": pull_id,
+                    "src": 1,
+                    "dst": None,
+                    "qty_min": 0,
+                    "qty_max": None,
+                    "priority": 1,
                     "steps": [],
                 },
                 # Rule 2: L2→L1, Factory A NM approves, 48h
                 {
-                    "ttc_id": pull_id, "src": 2, "dst": 1,
-                    "qty_min": 0, "qty_max": None, "priority": 2,
-                    "steps": [{"sequence": 1, "position_title": "Factory A NM",
-                               "resolution": "source_parent_node",
-                               "execution_mode": "SEQUENTIAL", "sla_hours": 48}],
+                    "ttc_id": pull_id,
+                    "src": 2,
+                    "dst": 1,
+                    "qty_min": 0,
+                    "qty_max": None,
+                    "priority": 2,
+                    "steps": [
+                        {
+                            "sequence": 1,
+                            "position_title": "Factory A NM",
+                            "resolution": "source_parent_node",
+                            "execution_mode": "SEQUENTIAL",
+                            "sla_hours": 48,
+                        }
+                    ],
                 },
                 # Rule 3: L3→L2, Region A RM approves, 24h
                 {
-                    "ttc_id": pull_id, "src": 3, "dst": 2,
-                    "qty_min": 0, "qty_max": None, "priority": 3,
-                    "steps": [{"sequence": 1, "position_title": "Region A RM",
-                               "resolution": "source_parent_node",
-                               "execution_mode": "SEQUENTIAL", "sla_hours": 24}],
+                    "ttc_id": pull_id,
+                    "src": 3,
+                    "dst": 2,
+                    "qty_min": 0,
+                    "qty_max": None,
+                    "priority": 3,
+                    "steps": [
+                        {
+                            "sequence": 1,
+                            "position_title": "Region A RM",
+                            "resolution": "source_parent_node",
+                            "execution_mode": "SEQUENTIAL",
+                            "sla_hours": 24,
+                        }
+                    ],
                 },
                 # Rule 4: L4→L3, 0–5000, Subregion A RM approves, 24h
                 {
-                    "ttc_id": pull_id, "src": 4, "dst": 3,
-                    "qty_min": 0, "qty_max": 5000, "priority": 4,
-                    "steps": [{"sequence": 1, "position_title": "Subregion A RM",
-                               "resolution": "source_parent_node",
-                               "execution_mode": "SEQUENTIAL", "sla_hours": 24}],
+                    "ttc_id": pull_id,
+                    "src": 4,
+                    "dst": 3,
+                    "qty_min": 0,
+                    "qty_max": 5000,
+                    "priority": 4,
+                    "steps": [
+                        {
+                            "sequence": 1,
+                            "position_title": "Subregion A RM",
+                            "resolution": "source_parent_node",
+                            "execution_mode": "SEQUENTIAL",
+                            "sla_hours": 24,
+                        }
+                    ],
                 },
                 # Rule 5: L4→L3, 5001+, Subregion A RM then Region A RM, 24h each
                 {
-                    "ttc_id": pull_id, "src": 4, "dst": 3,
-                    "qty_min": 5001, "qty_max": None, "priority": 5,
+                    "ttc_id": pull_id,
+                    "src": 4,
+                    "dst": 3,
+                    "qty_min": 5001,
+                    "qty_max": None,
+                    "priority": 5,
                     "steps": [
-                        {"sequence": 1, "position_title": "Subregion A RM",
-                         "resolution": "source_parent_node",
-                         "execution_mode": "SEQUENTIAL", "sla_hours": 24},
-                        {"sequence": 2, "position_title": "Region A RM",
-                         "resolution": "source_parent_node",
-                         "execution_mode": "SEQUENTIAL", "sla_hours": 24},
+                        {
+                            "sequence": 1,
+                            "position_title": "Subregion A RM",
+                            "resolution": "source_parent_node",
+                            "execution_mode": "SEQUENTIAL",
+                            "sla_hours": 24,
+                        },
+                        {
+                            "sequence": 2,
+                            "position_title": "Region A RM",
+                            "resolution": "source_parent_node",
+                            "execution_mode": "SEQUENTIAL",
+                            "sla_hours": 24,
+                        },
                     ],
                 },
                 # L5 satellite pulls from parent WH (L4) — WHA1 WM approves
-                {"ttc_id": pull_id, "src": 5, "dst": 4,
-                 "qty_min": 0, "qty_max": 500, "priority": 6,
-                 "steps": []},
+                {
+                    "ttc_id": pull_id,
+                    "src": 5,
+                    "dst": 4,
+                    "qty_min": 0,
+                    "qty_max": 500,
+                    "priority": 6,
+                    "steps": [],
+                },
                 # L5 satellite pulls from parent WH (L4) — over threshold, WHA1 WM + SRA RM
-                {"ttc_id": pull_id, "src": 5, "dst": 4,
-                 "qty_min": 501, "qty_max": None, "priority": 7,
-                 "steps": [
-                     {"sequence": 1, "position_title": "WHA1 WM",
-                      "resolution": "source_parent_node",
-                      "execution_mode": "SEQUENTIAL", "sla_hours": 24},
-                     {"sequence": 2, "position_title": "Subregion A RM",
-                      "resolution": "source_parent_node",
-                      "execution_mode": "SEQUENTIAL", "sla_hours": 24},
-                 ]},
+                {
+                    "ttc_id": pull_id,
+                    "src": 5,
+                    "dst": 4,
+                    "qty_min": 501,
+                    "qty_max": None,
+                    "priority": 7,
+                    "steps": [
+                        {
+                            "sequence": 1,
+                            "position_title": "WHA1 WM",
+                            "resolution": "source_parent_node",
+                            "execution_mode": "SEQUENTIAL",
+                            "sla_hours": 24,
+                        },
+                        {
+                            "sequence": 2,
+                            "position_title": "Subregion A RM",
+                            "resolution": "source_parent_node",
+                            "execution_mode": "SEQUENTIAL",
+                            "sla_hours": 24,
+                        },
+                    ],
+                },
             ]
 
             # PUSH rules
             push_rules = [
                 # Rule 1: L1→Any, Factory A NM advises, 48h
                 {
-                    "ttc_id": push_id, "src": 1, "dst": None,
-                    "qty_min": 0, "qty_max": None, "priority": 1,
-                    "steps": [{"sequence": 1, "position_title": "Factory A NM",
-                               "resolution": "source_parent_node",
-                               "execution_mode": "SEQUENTIAL", "sla_hours": 48}],
+                    "ttc_id": push_id,
+                    "src": 1,
+                    "dst": None,
+                    "qty_min": 0,
+                    "qty_max": None,
+                    "priority": 1,
+                    "steps": [
+                        {
+                            "sequence": 1,
+                            "position_title": "Factory A NM",
+                            "resolution": "source_parent_node",
+                            "execution_mode": "SEQUENTIAL",
+                            "sla_hours": 48,
+                        }
+                    ],
                 },
                 # Rule 2: L2→L4, Region A RM approves, 24h
                 {
-                    "ttc_id": push_id, "src": 2, "dst": 4,
-                    "qty_min": 0, "qty_max": None, "priority": 2,
-                    "steps": [{"sequence": 1, "position_title": "Region A RM",
-                               "resolution": "source_parent_node",
-                               "execution_mode": "SEQUENTIAL", "sla_hours": 24}],
+                    "ttc_id": push_id,
+                    "src": 2,
+                    "dst": 4,
+                    "qty_min": 0,
+                    "qty_max": None,
+                    "priority": 2,
+                    "steps": [
+                        {
+                            "sequence": 1,
+                            "position_title": "Region A RM",
+                            "resolution": "source_parent_node",
+                            "execution_mode": "SEQUENTIAL",
+                            "sla_hours": 24,
+                        }
+                    ],
                 },
                 # L4 WH pushes down to L5 satellite — WM self-authorizes small qty
-                {"ttc_id": push_id, "src": 4, "dst": 5,
-                 "qty_min": 0, "qty_max": 500, "priority": 3,
-                 "steps": []},
+                {
+                    "ttc_id": push_id,
+                    "src": 4,
+                    "dst": 5,
+                    "qty_min": 0,
+                    "qty_max": 500,
+                    "priority": 3,
+                    "steps": [],
+                },
                 # L4 WH pushes large qty to satellite — RM approval required
-                {"ttc_id": push_id, "src": 4, "dst": 5,
-                 "qty_min": 501, "qty_max": None, "priority": 4,
-                 "steps": [
-                     {"sequence": 1, "position_title": "Subregion A RM",
-                      "resolution": "source_parent_node",
-                      "execution_mode": "SEQUENTIAL", "sla_hours": 24},
-                 ]},
+                {
+                    "ttc_id": push_id,
+                    "src": 4,
+                    "dst": 5,
+                    "qty_min": 501,
+                    "qty_max": None,
+                    "priority": 4,
+                    "steps": [
+                        {
+                            "sequence": 1,
+                            "position_title": "Subregion A RM",
+                            "resolution": "source_parent_node",
+                            "execution_mode": "SEQUENTIAL",
+                            "sla_hours": 24,
+                        },
+                    ],
+                },
             ]
 
             # SISTER rules
             sister_rules = [
                 # Rule 1: L4→L4, 0–1000, no approval steps (peer self-approves)
                 {
-                    "ttc_id": sister_id, "src": 4, "dst": 4,
-                    "qty_min": 0, "qty_max": 1000, "priority": 1,
+                    "ttc_id": sister_id,
+                    "src": 4,
+                    "dst": 4,
+                    "qty_min": 0,
+                    "qty_max": 1000,
+                    "priority": 1,
                     "steps": [],
                 },
                 # Rule 2: L4→L4, 1001+, Subregion A RM approves, 24h
                 {
-                    "ttc_id": sister_id, "src": 4, "dst": 4,
-                    "qty_min": 1001, "qty_max": None, "priority": 2,
-                    "steps": [{"sequence": 1, "position_title": "Subregion A RM",
-                               "resolution": "source_parent_node",
-                               "execution_mode": "SEQUENTIAL", "sla_hours": 24}],
+                    "ttc_id": sister_id,
+                    "src": 4,
+                    "dst": 4,
+                    "qty_min": 1001,
+                    "qty_max": None,
+                    "priority": 2,
+                    "steps": [
+                        {
+                            "sequence": 1,
+                            "position_title": "Subregion A RM",
+                            "resolution": "source_parent_node",
+                            "execution_mode": "SEQUENTIAL",
+                            "sla_hours": 24,
+                        }
+                    ],
                 },
                 # Sister transfer between two L5 satellites — small qty auto
-                {"ttc_id": sister_id, "src": 5, "dst": 5,
-                 "qty_min": 0, "qty_max": 500, "priority": 3,
-                 "steps": []},
+                {
+                    "ttc_id": sister_id,
+                    "src": 5,
+                    "dst": 5,
+                    "qty_min": 0,
+                    "qty_max": 500,
+                    "priority": 3,
+                    "steps": [],
+                },
                 # Sister between L5 satellites — larger qty needs parent WM
-                {"ttc_id": sister_id, "src": 5, "dst": 5,
-                 "qty_min": 501, "qty_max": None, "priority": 4,
-                 "steps": [
-                     {"sequence": 1, "position_title": "WHA1 WM",
-                      "resolution": "source_parent_node",
-                      "execution_mode": "SEQUENTIAL", "sla_hours": 24},
-                 ]},
+                {
+                    "ttc_id": sister_id,
+                    "src": 5,
+                    "dst": 5,
+                    "qty_min": 501,
+                    "qty_max": None,
+                    "priority": 4,
+                    "steps": [
+                        {
+                            "sequence": 1,
+                            "position_title": "WHA1 WM",
+                            "resolution": "source_parent_node",
+                            "execution_mode": "SEQUENTIAL",
+                            "sla_hours": 24,
+                        },
+                    ],
+                },
             ]
 
             all_rules = pull_rules + push_rules + sister_rules
@@ -990,24 +1325,28 @@ async def main() -> None:
                              CAST(:steps AS jsonb), :priority, true)
                     """),
                     {
-                        "tid":     T07_ID,
-                        "ttc_id":  rule["ttc_id"],
-                        "src":     rule["src"],
-                        "dst":     rule["dst"],
+                        "tid": T07_ID,
+                        "ttc_id": rule["ttc_id"],
+                        "src": rule["src"],
+                        "dst": rule["dst"],
                         "qty_min": rule["qty_min"],
                         "qty_max": rule["qty_max"],
-                        "steps":   steps_json,
-                        "priority":rule["priority"],
+                        "steps": steps_json,
+                        "priority": rule["priority"],
                     },
                 )
 
             await s.commit()
-            pull_count   = len(pull_rules)
-            push_count   = len(push_rules)
+            pull_count = len(pull_rules)
+            push_count = len(push_rules)
             sister_count = len(sister_rules)
-            print(f"  [OK]Self-approval policies: 4 PULL/PUSH/SISTER + 4 ADJUSTMENT (NM/RM-L2/RM-L3/WM)")
+            print(
+                f"  [OK]Self-approval policies: 4 PULL/PUSH/SISTER + 4 ADJUSTMENT (NM/RM-L2/RM-L3/WM)"
+            )
             print(f"  [OK]Adjustment approval rules: 4 (NM/RM-L2/RM-L3/WM)")
-            print(f"  [OK]Transfer approval rules: {pull_count} PULL + {push_count} PUSH + {sister_count} SISTER")
+            print(
+                f"  [OK]Transfer approval rules: {pull_count} PULL + {push_count} PUSH + {sister_count} SISTER"
+            )
         except Exception as e:
             abort("PART 8", e)
 
@@ -1026,40 +1365,46 @@ async def main() -> None:
             }
             # (node_id, {sku: qty})
             opening_stock = [
-                (NODE_WHA1,  {"T07-RM-001": 500, "T07-RM-002": 200,
-                              "T07-FG-001": 100, "T07-FG-002": 50,
-                              "T07-FG-003": 150}),
-                (NODE_WHA2,  {"T07-RM-001": 300, "T07-RM-002": 100,
-                              "T07-FG-001": 75}),
-                (NODE_WHA3,  {"T07-RM-001": 200, "T07-FG-001": 50,
-                              "T07-FG-003": 80}),
-                (NODE_WHB11, {"T07-RM-001": 400, "T07-RM-002": 150,
-                              "T07-FG-001": 60}),
+                (
+                    NODE_WHA1,
+                    {
+                        "T07-RM-001": 500,
+                        "T07-RM-002": 200,
+                        "T07-FG-001": 100,
+                        "T07-FG-002": 50,
+                        "T07-FG-003": 150,
+                    },
+                ),
+                (NODE_WHA2, {"T07-RM-001": 300, "T07-RM-002": 100, "T07-FG-001": 75}),
+                (NODE_WHA3, {"T07-RM-001": 200, "T07-FG-001": 50, "T07-FG-003": 80}),
+                (NODE_WHB11, {"T07-RM-001": 400, "T07-RM-002": 150, "T07-FG-001": 60}),
                 (NODE_WHB12, {"T07-RM-001": 250, "T07-RM-002": 80}),
-                (NODE_WHB21, {"T07-RM-001": 350, "T07-FG-001": 90,
-                              "T07-FG-002": 30}),
-                (NODE_WHB22, {"T07-RM-001": 180, "T07-RM-002": 60,
-                              "T07-FG-003": 40}),
+                (NODE_WHB21, {"T07-RM-001": 350, "T07-FG-001": 90, "T07-FG-002": 30}),
+                (NODE_WHB22, {"T07-RM-001": 180, "T07-RM-002": 60, "T07-FG-003": 40}),
                 # Satellite Depots (L5) — Phase 2 operational stock
-                (NODE_WHA1_SAT1,  {"T07-RM-001": 800, "T07-FG-001": 80}),
+                (NODE_WHA1_SAT1, {"T07-RM-001": 800, "T07-FG-001": 80}),
                 (NODE_WHB11_SAT1, {"T07-RM-001": 150, "T07-FG-001": 50}),
                 (NODE_WHB21_SAT1, {"T07-RM-001": 100, "T07-FG-001": 40}),
             ]
 
             tx_count = 0
-            skipped  = 0
+            skipped = 0
             for node_id, sku_qtys in opening_stock:
                 for sku, qty in sku_qtys.items():
-                    prod_id  = sku_to_id[sku]
-                    ikey     = f"seed:t07:open:{sku}:{node_id}"
-                    tx_id    = uid()
+                    prod_id = sku_to_id[sku]
+                    ikey = f"seed:t07:open:{sku}:{node_id}"
+                    tx_id = uid()
 
                     # Idempotency: skip if already seeded (ikey is stored on the row)
-                    existing = (await s.execute(
-                        text("SELECT 1 FROM inventory_transactions "
-                             "WHERE tenant_id=:tid AND idempotency_key=:ikey LIMIT 1"),
-                        {"tid": T07_ID, "ikey": ikey},
-                    )).fetchone()
+                    existing = (
+                        await s.execute(
+                            text(
+                                "SELECT 1 FROM inventory_transactions "
+                                "WHERE tenant_id=:tid AND idempotency_key=:ikey LIMIT 1"
+                            ),
+                            {"tid": T07_ID, "ikey": ikey},
+                        )
+                    ).fetchone()
                     if existing:
                         skipped += 1
                         continue
@@ -1077,14 +1422,14 @@ async def main() -> None:
                                  :ikey, 'SEED', :uid)
                         """),
                         {
-                            "id":   tx_id,
-                            "td":   TODAY,
-                            "tid":  T07_ID,
-                            "pid":  prod_id,
-                            "wid":  node_id,
-                            "qty":  qty,
+                            "id": tx_id,
+                            "td": TODAY,
+                            "tid": T07_ID,
+                            "pid": prod_id,
+                            "wid": node_id,
+                            "qty": qty,
                             "ikey": ikey,
-                            "uid":  USR_TA,
+                            "uid": USR_TA,
                         },
                     )
 
@@ -1108,27 +1453,36 @@ async def main() -> None:
             await s.commit()
             if skipped:
                 print(f"  [skip]{skipped} stock entries already existed — skipped")
-            print(f"  [OK]{tx_count} RECEIVE transactions seeded across 10 nodes (7 WH + 3 satellites)")
+            print(
+                f"  [OK]{tx_count} RECEIVE transactions seeded across 10 nodes (7 WH + 3 satellites)"
+            )
         except Exception as e:
             abort("PART 9", e)
 
         # --SUMMARY ───────────────────────────────────────────────────────────
         await set_rls(s, T07_ID)
         counts = {}
-        for tbl in ("organization_node", "positions", "users",
-                    "products", "inventory_transactions"):
-            row = (await s.execute(
-                text(f"SELECT COUNT(*) FROM {tbl} WHERE tenant_id = :tid"),
-                {"tid": T07_ID},
-            )).scalar()
+        for tbl in (
+            "organization_node",
+            "positions",
+            "users",
+            "products",
+            "inventory_transactions",
+        ):
+            row = (
+                await s.execute(
+                    text(f"SELECT COUNT(*) FROM {tbl} WHERE tenant_id = :tid"),
+                    {"tid": T07_ID},
+                )
+            ).scalar()
             counts[tbl] = row
 
     await engine.dispose()
 
     # --CREDENTIALS TABLE ─────────────────────────────────────────────────────
-    SEP  = "+" + "-" * 20 + "+" + "-" * 38 + "+" + "-" * 18 + "+"
-    HDR  = "| {:<18} | {:<36} | {:<16} |"
-    ROW  = "| {:<18} | {:<36} | {:<16} |"
+    SEP = "+" + "-" * 20 + "+" + "-" * 38 + "+" + "-" * 18 + "+"
+    HDR = "| {:<18} | {:<36} | {:<16} |"
+    ROW = "| {:<18} | {:<36} | {:<16} |"
     print()
     print("=" * 80)
     print("  TENANT 07 -- TEST CREDENTIALS")
@@ -1139,43 +1493,43 @@ async def main() -> None:
 
     rows = [
         # TA
-        ("TA",               "admin@t07.com",               "Test@2026"),
-        ("-" * 18,           "-" * 36,                      "-" * 16),
+        ("TA", "admin@t07.com", "Test@2026"),
+        ("-" * 18, "-" * 36, "-" * 16),
         # Factory A
-        ("NM  (Factory A)",  "nm_factorya@t07.com",         "Test@2026"),
-        ("Asst NM (FA)",     "asst_nm_factorya@t07.com",    "Test@2026"),
-        ("RM  (Region A)",   "rm_regiona@t07.com",          "Test@2026"),
-        ("Asst RM (RA)",     "asst_rm_regiona@t07.com",     "Test@2026"),
-        ("RM  (SubReg A)",   "rm_subregiona@t07.com",       "Test@2026"),
-        ("Asst RM (SRA)",    "asst_rm_subregiona@t07.com",  "Test@2026"),
-        ("WM  (WHA1)",       "wm_wha1@t07.com",             "Test@2026"),
-        ("Asst WM (WHA1)",   "asst_wm_wha1@t07.com",        "Test@2026"),
-        ("WM  (WHA2)",       "wm_wha2@t07.com",             "Test@2026"),
-        ("Asst WM (WHA2)",   "asst_wm_wha2@t07.com",        "Test@2026"),
-        ("WM  (WHA3)",       "wm_wha3@t07.com",             "Test@2026"),
-        ("Asst WM (WHA3)",   "asst_wm_wha3@t07.com",        "Test@2026"),
-        ("-" * 18,           "-" * 36,                      "-" * 16),
+        ("NM  (Factory A)", "nm_factorya@t07.com", "Test@2026"),
+        ("Asst NM (FA)", "asst_nm_factorya@t07.com", "Test@2026"),
+        ("RM  (Region A)", "rm_regiona@t07.com", "Test@2026"),
+        ("Asst RM (RA)", "asst_rm_regiona@t07.com", "Test@2026"),
+        ("RM  (SubReg A)", "rm_subregiona@t07.com", "Test@2026"),
+        ("Asst RM (SRA)", "asst_rm_subregiona@t07.com", "Test@2026"),
+        ("WM  (WHA1)", "wm_wha1@t07.com", "Test@2026"),
+        ("Asst WM (WHA1)", "asst_wm_wha1@t07.com", "Test@2026"),
+        ("WM  (WHA2)", "wm_wha2@t07.com", "Test@2026"),
+        ("Asst WM (WHA2)", "asst_wm_wha2@t07.com", "Test@2026"),
+        ("WM  (WHA3)", "wm_wha3@t07.com", "Test@2026"),
+        ("Asst WM (WHA3)", "asst_wm_wha3@t07.com", "Test@2026"),
+        ("-" * 18, "-" * 36, "-" * 16),
         # Factory B
-        ("NM  (Factory B)",  "nm_factoryb@t07.com",         "Test@2026"),
-        ("Asst NM (FB)",     "asst_nm_factoryb@t07.com",    "Test@2026"),
-        ("RM  (Region B1)",  "rm_regionb1@t07.com",         "Test@2026"),
-        ("Asst RM (RB1)",    "asst_rm_regionb1@t07.com",    "Test@2026"),
-        ("RM  (SubReg B1)",  "rm_subregionb1@t07.com",      "Test@2026"),
-        ("Asst RM (SRB1)",   "asst_rm_subregionb1@t07.com", "Test@2026"),
-        ("WM  (WHB1-1)",     "wm_whb1_1@t07.com",           "Test@2026"),
-        ("Asst WM B1-1",     "asst_wm_whb1_1@t07.com",      "Test@2026"),
-        ("WM  (WHB1-2)",     "wm_whb1_2@t07.com",           "Test@2026"),
-        ("Asst WM B1-2",     "asst_wm_whb1_2@t07.com",      "Test@2026"),
-        ("RM  (Region B2)",  "rm_regionb2@t07.com",         "Test@2026"),
-        ("Asst RM (RB2)",    "asst_rm_regionb2@t07.com",    "Test@2026"),
-        ("WM  (WHB2-1)",     "wm_whb2_1@t07.com",           "Test@2026"),
-        ("Asst WM B2-1",     "asst_wm_whb2_1@t07.com",      "Test@2026"),
-        ("WM  (WHB2-2)",     "wm_whb2_2@t07.com",           "Test@2026"),
-        ("Asst WM B2-2",     "asst_wm_whb2_2@t07.com",      "Test@2026"),
-        ("-" * 18,           "-" * 36,                      "-" * 16),
+        ("NM  (Factory B)", "nm_factoryb@t07.com", "Test@2026"),
+        ("Asst NM (FB)", "asst_nm_factoryb@t07.com", "Test@2026"),
+        ("RM  (Region B1)", "rm_regionb1@t07.com", "Test@2026"),
+        ("Asst RM (RB1)", "asst_rm_regionb1@t07.com", "Test@2026"),
+        ("RM  (SubReg B1)", "rm_subregionb1@t07.com", "Test@2026"),
+        ("Asst RM (SRB1)", "asst_rm_subregionb1@t07.com", "Test@2026"),
+        ("WM  (WHB1-1)", "wm_whb1_1@t07.com", "Test@2026"),
+        ("Asst WM B1-1", "asst_wm_whb1_1@t07.com", "Test@2026"),
+        ("WM  (WHB1-2)", "wm_whb1_2@t07.com", "Test@2026"),
+        ("Asst WM B1-2", "asst_wm_whb1_2@t07.com", "Test@2026"),
+        ("RM  (Region B2)", "rm_regionb2@t07.com", "Test@2026"),
+        ("Asst RM (RB2)", "asst_rm_regionb2@t07.com", "Test@2026"),
+        ("WM  (WHB2-1)", "wm_whb2_1@t07.com", "Test@2026"),
+        ("Asst WM B2-1", "asst_wm_whb2_1@t07.com", "Test@2026"),
+        ("WM  (WHB2-2)", "wm_whb2_2@t07.com", "Test@2026"),
+        ("Asst WM B2-2", "asst_wm_whb2_2@t07.com", "Test@2026"),
+        ("-" * 18, "-" * 36, "-" * 16),
         # Tenant-wide
-        ("AU  (Auditor)",    "au@t07.com",                  "Test@2026"),
-        ("LM  (Logistics)",  "lm@t07.com",                  "Test@2026"),
+        ("AU  (Auditor)", "au@t07.com", "Test@2026"),
+        ("LM  (Logistics)", "lm@t07.com", "Test@2026"),
     ]
     for role_label, email, pw in rows:
         print(ROW.format(role_label, email, pw))

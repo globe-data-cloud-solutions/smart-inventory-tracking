@@ -1,6 +1,7 @@
 """Tests for api-gateway's public sign-up paths (S4): exact-match
 UNAUTHENTICATED_PATHS entries pass without a token, everything else still
 requires one, and X-Real-IP is always overwritten from the real connection."""
+
 import importlib.util
 import os
 from unittest.mock import AsyncMock, patch

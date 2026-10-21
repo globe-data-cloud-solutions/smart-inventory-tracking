@@ -4,6 +4,7 @@ ids without checking tenant ownership, and stored the unvalidated ids as FKs
 regardless. Fixed on fix/rb1-holes: each id is now validated against the
 caller's tenant before insert.
 """
+
 from __future__ import annotations
 
 import os
@@ -14,11 +15,11 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from fastapi import HTTPException
 
-os.environ.setdefault("DATABASE_URL",      "postgresql+asyncpg://test:x@localhost/test")
+os.environ.setdefault("DATABASE_URL", "postgresql+asyncpg://test:x@localhost/test")
 os.environ.setdefault("DATABASE_READ_URL", "postgresql+asyncpg://test:x@localhost/test")
-os.environ.setdefault("JWT_SECRET",        "test-secret")
-os.environ.setdefault("JWT_SECRET_KEY",    "test-secret")
-os.environ.setdefault("ENVIRONMENT",       "local")
+os.environ.setdefault("JWT_SECRET", "test-secret")
+os.environ.setdefault("JWT_SECRET_KEY", "test-secret")
+os.environ.setdefault("ENVIRONMENT", "local")
 
 _INV_ROOT = os.path.normpath(os.path.join(os.path.dirname(__file__), "..", "..", ".."))
 if _INV_ROOT not in sys.path:

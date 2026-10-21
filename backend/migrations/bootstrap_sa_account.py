@@ -40,6 +40,7 @@ Environment / arguments:
   MIGRATION_DATABASE_URL                            owner role (smart_owner), SQLAlchemy or libpq form;
                                                     falls back to DATABASE_URL only with ENVIRONMENT=local
 """
+
 from __future__ import annotations
 
 import argparse
@@ -50,7 +51,12 @@ import sys
 import asyncpg
 
 from migrations.migration_url import migration_database_url_or_exit
-from migrations.seed_common import connect_kwargs, hash_password, insert_row, load_sa_row
+from migrations.seed_common import (
+    connect_kwargs,
+    hash_password,
+    insert_row,
+    load_sa_row,
+)
 
 
 def _get_secret_value(secret_name: str) -> str:
@@ -64,7 +70,9 @@ def _get_secret_value(secret_name: str) -> str:
 def _resolve_arg(cli_value: str | None, env_var: str, secret_name_label: str) -> str:
     name = cli_value or os.environ.get(env_var, "")
     if not name:
-        sys.exit(f"bootstrap_sa_account: missing {secret_name_label} (pass it or set {env_var})")
+        sys.exit(
+            f"bootstrap_sa_account: missing {secret_name_label} (pass it or set {env_var})"
+        )
     return name
 
 
@@ -84,7 +92,8 @@ async def bootstrap(email: str, password: str, database_url: str) -> bool:
             if await conn.fetchval("SELECT 1 FROM users WHERE email = $1", email):
                 return False
             await insert_row(
-                conn, "users",
+                conn,
+                "users",
                 {**sa_row, "email": email, "password_hash": hash_password(password)},
             )
             return True
@@ -108,7 +117,11 @@ async def main() -> None:
 
     created = await bootstrap(email, password, database_url)
     # Never log the email or password values themselves.
-    print("bootstrap_sa_account: SA created." if created else "bootstrap_sa_account: SA already exists — skipped.")
+    print(
+        "bootstrap_sa_account: SA created."
+        if created
+        else "bootstrap_sa_account: SA already exists — skipped."
+    )
 
 
 if __name__ == "__main__":

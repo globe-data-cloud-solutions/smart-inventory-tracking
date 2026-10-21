@@ -8,6 +8,7 @@ other is exactly the class of bug fixed in this commit (forgot/reset-password
 Router files are parsed with ast (not imported) — same technique
 ci_drift_check.py itself uses — so this needs no DB and no running service.
 """
+
 import ast
 import importlib.util
 import os
@@ -70,7 +71,11 @@ def _route_path(tree: ast.AST, func_name: str) -> tuple[str, str] | None:
                 and d.func.value.id == "router"
                 and d.func.attr in ("get", "post", "patch", "delete", "put")
             ):
-                if d.args and isinstance(d.args[0], ast.Constant) and isinstance(d.args[0].value, str):
+                if (
+                    d.args
+                    and isinstance(d.args[0], ast.Constant)
+                    and isinstance(d.args[0].value, str)
+                ):
                     return d.func.attr.upper(), d.args[0].value
     return None
 
@@ -89,7 +94,9 @@ def _allowlisted_full_paths() -> list[tuple[str, str, str]]:
             if (rel_path, func_name) in SKIP_PARAMETERIZED:
                 continue
             route = _route_path(tree, func_name)
-            assert route is not None, f"{rel_path}::{func_name} has no @router.<method>(...) decorator"
+            assert route is not None, (
+                f"{rel_path}::{func_name} has no @router.<method>(...) decorator"
+            )
             _, sub_path = route
             full_path = prefix + sub_path
             assert "{" not in full_path, (

@@ -12,6 +12,7 @@ allowlisted in scripts/ci_drift_check.py. DB access goes through
 shared.db.session.AsyncSessionLocal directly — there is no authenticated user
 yet to derive a session from.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -59,6 +60,7 @@ VALID_BILLING_PERIODS = frozenset({"MONTHLY", "ANNUAL"})
 
 # ── Pydantic models ───────────────────────────────────────────────────────────
 
+
 class PriceOut(BaseModel):
     subtotal: Decimal
     vat_rate: Decimal
@@ -72,9 +74,9 @@ class PackageOut(BaseModel):
     display_name: Optional[str]
     max_warehouses: Optional[int]
     max_users: Optional[int]
-    sku_cap: Optional[int]          # None = unlimited
+    sku_cap: Optional[int]  # None = unlimited
     feature_flags: dict
-    prices: dict[str, PriceOut]     # key: "MONTHLY" | "ANNUAL" — omitted if no current price
+    prices: dict[str, PriceOut]  # key: "MONTHLY" | "ANNUAL" — omitted if no current price
 
 
 class PackagesListOut(BaseModel):
@@ -143,6 +145,7 @@ class SignupOut(BaseModel):
 
 # ── GET /public/packages ──────────────────────────────────────────────────────
 
+
 @router.get("/public/packages", response_model=SuccessResponse[PackagesListOut])
 async def list_public_packages(request: Request) -> SuccessResponse[PackagesListOut]:
     await rate_limit_hit("packages", client_ip(request))
@@ -156,21 +159,26 @@ async def list_public_packages(request: Request) -> SuccessResponse[PackagesList
                 price_row = await get_current_price(db, pkg["tier"], period)
                 if price_row is None:
                     continue
-                prices[period] = PriceOut(currency=price_row.currency, **vat_breakdown(price_row.amount))
-            out.append(PackageOut(
-                tier=pkg["tier"],
-                display_name=pkg["display_name"],
-                max_warehouses=pkg["max_warehouses"],
-                max_users=pkg["max_users"],
-                sku_cap=pkg["sku_cap"],
-                feature_flags=pkg["feature_flags"],
-                prices=prices,
-            ))
+                prices[period] = PriceOut(
+                    currency=price_row.currency, **vat_breakdown(price_row.amount)
+                )
+            out.append(
+                PackageOut(
+                    tier=pkg["tier"],
+                    display_name=pkg["display_name"],
+                    max_warehouses=pkg["max_warehouses"],
+                    max_users=pkg["max_users"],
+                    sku_cap=pkg["sku_cap"],
+                    feature_flags=pkg["feature_flags"],
+                    prices=prices,
+                )
+            )
 
     return SuccessResponse(data=PackagesListOut(packages=out, terms_version=get_terms_version()))
 
 
 # ── POST /public/signup ───────────────────────────────────────────────────────
+
 
 @router.post("/public/signup", status_code=201, response_model=SuccessResponse[SignupOut])
 async def public_signup(body: SignupRequest, request: Request) -> SuccessResponse[SignupOut]:
@@ -198,7 +206,10 @@ async def public_signup(body: SignupRequest, request: Request) -> SuccessRespons
     if not body.accept_terms:
         raise HTTPException(
             status_code=422,
-            detail={"code": "TERMS_NOT_ACCEPTED", "message": "You must accept the terms to sign up."},
+            detail={
+                "code": "TERMS_NOT_ACCEPTED",
+                "message": "You must accept the terms to sign up.",
+            },
         )
     current_terms_version = get_terms_version()
     if body.terms_version != current_terms_version:
@@ -227,7 +238,10 @@ async def public_signup(body: SignupRequest, request: Request) -> SuccessRespons
             if not package["is_public"]:
                 raise HTTPException(
                     status_code=422,
-                    detail={"code": "INVALID_TIER", "message": f"Tier {body.tier} is not available for self sign-up."},
+                    detail={
+                        "code": "INVALID_TIER",
+                        "message": f"Tier {body.tier} is not available for self sign-up.",
+                    },
                 )
 
             # Slug resolution — same rules as SA create_tenant().
@@ -239,7 +253,7 @@ async def public_signup(body: SignupRequest, request: Request) -> SuccessRespons
                         detail={
                             "code": "INVALID_SLUG",
                             "message": "Slug must be 3-50 characters, lowercase letters/digits/hyphens, "
-                                       "and must start and end with a letter or digit.",
+                            "and must start and end with a letter or digit.",
                         },
                     )
                 slug = candidate
@@ -260,10 +274,12 @@ async def public_signup(body: SignupRequest, request: Request) -> SuccessRespons
                     slug = f"{base_slug}-{str(tenant_id)[:8]}"
 
             # Email is globally unique — never reveal which tenant owns it.
-            existing = (await db.execute(
-                text("SELECT id FROM users WHERE lower(email) = :email"),
-                {"email": body.admin_email},
-            )).fetchone()
+            existing = (
+                await db.execute(
+                    text("SELECT id FROM users WHERE lower(email) = :email"),
+                    {"email": body.admin_email},
+                )
+            ).fetchone()
             if existing:
                 raise _duplicate_email_http_exception()
 
@@ -317,8 +333,10 @@ async def public_signup(body: SignupRequest, request: Request) -> SuccessRespons
                         "VALUES (:id, :tid, :email, :name, :hash, true, false, 'TA', true)"
                     ),
                     {
-                        "id": str(user_id), "tid": str(tenant_id),
-                        "email": body.admin_email, "name": body.admin_full_name,
+                        "id": str(user_id),
+                        "tid": str(tenant_id),
+                        "email": body.admin_email,
+                        "name": body.admin_full_name,
                         "hash": pw_hash,
                     },
                 )
@@ -334,8 +352,10 @@ async def public_signup(body: SignupRequest, request: Request) -> SuccessRespons
                     "VALUES (:tid, true, :name, :email, :phone)"
                 ),
                 {
-                    "tid": str(tenant_id), "name": body.admin_full_name,
-                    "email": body.admin_email, "phone": body.phone,
+                    "tid": str(tenant_id),
+                    "name": body.admin_full_name,
+                    "email": body.admin_email,
+                    "phone": body.phone,
                 },
             )
 
@@ -343,8 +363,13 @@ async def public_signup(body: SignupRequest, request: Request) -> SuccessRespons
             # immediately; no payment enforcement until a provider is connected.
             try:
                 subscription = await start_subscription(
-                    db, tenant_id, body.tier, body.billing_period,
-                    status="PENDING_PAYMENT", provider="MANUAL", created_by=user_id,
+                    db,
+                    tenant_id,
+                    body.tier,
+                    body.billing_period,
+                    status="PENDING_PAYMENT",
+                    provider="MANUAL",
+                    created_by=user_id,
                 )
             except ValueError as exc:
                 raise HTTPException(
@@ -360,14 +385,19 @@ async def public_signup(body: SignupRequest, request: Request) -> SuccessRespons
                     "VALUES (:tid, :uid, :tv, :ip, :ua)"
                 ),
                 {
-                    "tid": str(tenant_id), "uid": str(user_id),
-                    "tv": body.terms_version, "ip": ip, "ua": user_agent,
+                    "tid": str(tenant_id),
+                    "uid": str(user_id),
+                    "tv": body.terms_version,
+                    "ip": ip,
+                    "ua": user_agent,
                 },
             )
 
             # 7. Activity log entry.
             await _log_tenant_activity(
-                db, tenant_id, str(user_id),
+                db,
+                tenant_id,
+                str(user_id),
                 action="SELF_SIGNUP",
                 new_value=f"{body.tier}/{body.billing_period}",
             )
@@ -382,27 +412,29 @@ async def public_signup(body: SignupRequest, request: Request) -> SuccessRespons
     except Exception as exc:  # noqa: BLE001 — best-effort, sign-up already succeeded
         logging.getLogger(__name__).warning("Failed to send verification email: %s", exc)
 
-    return SuccessResponse(data=SignupOut(
-        tenant_id=str(tenant_id),
-        slug=slug,
-        company_name=body.company_name,
-        admin_email=body.admin_email,
-        tier=body.tier,
-        billing_period=body.billing_period,
-        subscription_status=subscription["status"],
-        contract_start=subscription["current_period_start"].isoformat()
+    return SuccessResponse(
+        data=SignupOut(
+            tenant_id=str(tenant_id),
+            slug=slug,
+            company_name=body.company_name,
+            admin_email=body.admin_email,
+            tier=body.tier,
+            billing_period=body.billing_period,
+            subscription_status=subscription["status"],
+            contract_start=subscription["current_period_start"].isoformat()
             if isinstance(subscription["current_period_start"], date)
             else str(subscription["current_period_start"]),
-        contract_end=subscription["current_period_end"].isoformat()
+            contract_end=subscription["current_period_end"].isoformat()
             if isinstance(subscription["current_period_end"], date)
             else str(subscription["current_period_end"]),
-        price=PriceOut(
-            currency=subscription["currency"],
-            subtotal=subscription["subtotal"],
-            vat_rate=subscription["vat_rate"],
-            vat_amount=subscription["vat_amount"],
-            total=subscription["total"],
-        ),
-        email_verification_required=verification_required(),
-        next_step="SIGN_IN",
-    ))
+            price=PriceOut(
+                currency=subscription["currency"],
+                subtotal=subscription["subtotal"],
+                vat_rate=subscription["vat_rate"],
+                vat_amount=subscription["vat_amount"],
+                total=subscription["total"],
+            ),
+            email_verification_required=verification_required(),
+            next_step="SIGN_IN",
+        )
+    )

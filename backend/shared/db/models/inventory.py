@@ -10,15 +10,30 @@ from sqlalchemy.orm import Mapped, mapped_column
 from shared.db.models.base import Base, TimestampMixin
 
 TxTypeEnum = Enum(
-    "RECEIVE", "TRANSFER_OUT", "TRANSFER_IN", "ISSUE",
-    "ADJUSTMENT", "RESERVE", "RELEASE", "RETURN", "COUNT_VARIANCE",
+    "RECEIVE",
+    "TRANSFER_OUT",
+    "TRANSFER_IN",
+    "ISSUE",
+    "ADJUSTMENT",
+    "RESERVE",
+    "RELEASE",
+    "RETURN",
+    "COUNT_VARIANCE",
     "LOT_OPENING",
-    name="transaction_type", create_type=False,
+    name="transaction_type",
+    create_type=False,
 )
 TransferStatusEnum = Enum(
-    "DRAFT", "SUBMITTED", "APPROVED", "IN_TRANSIT",
-    "RECEIVED", "CLOSED", "REJECTED", "CANCELLED",
-    name="transfer_status", create_type=False,
+    "DRAFT",
+    "SUBMITTED",
+    "APPROVED",
+    "IN_TRANSIT",
+    "RECEIVED",
+    "CLOSED",
+    "REJECTED",
+    "CANCELLED",
+    name="transfer_status",
+    create_type=False,
 )
 DispatchEnum = Enum("FEFO", "FIFO", "LIFO", name="dispatch_strategy", create_type=False)
 

@@ -22,6 +22,7 @@ Revision ID: 070
 Revises:     069
 Create Date: 2026-10-04
 """
+
 from __future__ import annotations
 
 from alembic import op
@@ -229,8 +230,12 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    op.execute("DROP RULE IF EXISTS no_delete_platform_config_log ON platform_config_log")
-    op.execute("DROP RULE IF EXISTS no_update_platform_config_log ON platform_config_log")
+    op.execute(
+        "DROP RULE IF EXISTS no_delete_platform_config_log ON platform_config_log"
+    )
+    op.execute(
+        "DROP RULE IF EXISTS no_update_platform_config_log ON platform_config_log"
+    )
     op.execute("DROP TABLE IF EXISTS platform_config_log")
 
     op.execute("DROP RULE IF EXISTS no_delete_package_prices ON package_prices")

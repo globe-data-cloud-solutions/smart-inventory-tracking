@@ -8,6 +8,7 @@ Revision ID: 063
 Revises:     062
 Create Date: 2026-06-24
 """
+
 from __future__ import annotations
 
 from alembic import op
@@ -25,12 +26,8 @@ def upgrade() -> None:
     op.execute(
         "ALTER TABLE tenants ADD COLUMN status tenant_status NOT NULL DEFAULT 'ACTIVE'"
     )
-    op.execute(
-        "UPDATE tenants SET status = 'ACTIVE' WHERE is_active = true"
-    )
-    op.execute(
-        "UPDATE tenants SET status = 'DEACTIVATED' WHERE is_active = false"
-    )
+    op.execute("UPDATE tenants SET status = 'ACTIVE' WHERE is_active = true")
+    op.execute("UPDATE tenants SET status = 'DEACTIVATED' WHERE is_active = false")
 
 
 def downgrade() -> None:

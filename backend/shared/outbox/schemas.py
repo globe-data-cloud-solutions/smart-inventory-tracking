@@ -77,6 +77,7 @@ class AutoApprovalNoticePayload(BasePayload):
     ledger entries at APPROVED state. Consumed by the notification worker to alert
     the relevant role (e.g. RM notified when WM band auto-approves a small transfer).
     """
+
     event_type: Literal["AutoApprovalNotice"] = "AutoApprovalNotice"
     transfer_id: str
     transaction_type: str
@@ -91,6 +92,7 @@ class TransferRequestedPayload(BasePayload):
     Written to the outbox in the same transaction as the transfer_request row.
     Delivered by the notification worker to the source warehouse's alert feed.
     """
+
     event_type: Literal["TransferRequested"] = "TransferRequested"
     transfer_request_id: str
     requesting_warehouse_id: str
@@ -107,6 +109,7 @@ class ProductCreatedPayload(BasePayload):
     Written to the outbox in the same transaction as the products INSERT.
     Never emitted post-commit.
     """
+
     event_type: Literal["ProductCreated"] = "ProductCreated"
     product_id: str
     sku: str
@@ -122,24 +125,25 @@ class ContractExpiryAlertPayload(BasePayload):
     days_remaining: 0 means the contract has already expired (auto-suspend fired).
     Milestone values: 90, 30, 14, 5, 2, 1, 0.
     """
+
     event_type: Literal["ContractExpiryAlert"] = "ContractExpiryAlert"
     tenant_id: str
     tenant_name: str
-    contract_end: str   # ISO date "YYYY-MM-DD"
+    contract_end: str  # ISO date "YYYY-MM-DD"
     days_remaining: int  # 0 = expired today or earlier
 
 
 PAYLOAD_TYPES = {
-    "InventoryUpdated":    InventoryUpdatedPayload,
-    "StockTransferred":    StockTransferredPayload,
-    "OrderCreated":        OrderCreatedPayload,
-    "ShipmentDispatched":  ShipmentDispatchedPayload,
-    "AdjustmentApplied":   AdjustmentAppliedPayload,
+    "InventoryUpdated": InventoryUpdatedPayload,
+    "StockTransferred": StockTransferredPayload,
+    "OrderCreated": OrderCreatedPayload,
+    "ShipmentDispatched": ShipmentDispatchedPayload,
+    "AdjustmentApplied": AdjustmentAppliedPayload,
     "StockCountCompleted": StockCountCompletedPayload,
     "TenantOrgTypeChanged": TenantOrgTypeChangedPayload,
     "FefoOverrideApplied": FefoOverrideAppliedPayload,
-    "TransferRequested":   TransferRequestedPayload,
-    "ProductCreated":      ProductCreatedPayload,
-    "AutoApprovalNotice":  AutoApprovalNoticePayload,
+    "TransferRequested": TransferRequestedPayload,
+    "ProductCreated": ProductCreatedPayload,
+    "AutoApprovalNotice": AutoApprovalNoticePayload,
     "ContractExpiryAlert": ContractExpiryAlertPayload,
 }

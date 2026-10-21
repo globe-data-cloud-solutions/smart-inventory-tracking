@@ -4,6 +4,7 @@ Revision ID: 047
 Revises: 046
 Create Date: 2026-06-06
 """
+
 from __future__ import annotations
 from alembic import op
 
@@ -13,11 +14,11 @@ branch_labels = None
 depends_on = None
 
 _INSERTS = [
-    ("TA", "tenant:self_approval_view",   "FULL"),
+    ("TA", "tenant:self_approval_view", "FULL"),
     ("TA", "tenant:self_approval_manage", "FULL"),
-    ("SA", "tenant:self_approval_view",   "FULL"),
+    ("SA", "tenant:self_approval_view", "FULL"),
     ("SA", "tenant:self_approval_manage", "FULL"),
-    ("NM", "tenant:self_approval_view",   "FULL"),
+    ("NM", "tenant:self_approval_view", "FULL"),
 ]
 
 

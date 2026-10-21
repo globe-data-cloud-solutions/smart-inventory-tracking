@@ -1,4 +1,5 @@
 """API Gateway — JWT validation, rate limiting, plan cap enforcement, request routing."""
+
 import logging
 import os
 from contextlib import asynccontextmanager
@@ -30,23 +31,23 @@ JWT_ALGORITHM = os.environ.get("JWT_ALGORITHM", "HS256")
 TRUSTED_PROXY_HOPS = int(os.environ.get("TRUSTED_PROXY_HOPS", "0"))
 
 SERVICE_MAP = {
-    "/api/v1/auth":      os.environ.get("AUTH_SERVICE_URL",       "http://auth-service:8000"),
-    "/api/v1/tenants":   os.environ.get("TENANT_SERVICE_URL",     "http://tenant-service:8000"),
-    "/api/v1/products":  os.environ.get("PRODUCT_SERVICE_URL",    "http://product-service:8000"),
-    "/api/v1/upload":    os.environ.get("PRODUCT_SERVICE_URL",    "http://product-service:8000"),
+    "/api/v1/auth": os.environ.get("AUTH_SERVICE_URL", "http://auth-service:8000"),
+    "/api/v1/tenants": os.environ.get("TENANT_SERVICE_URL", "http://tenant-service:8000"),
+    "/api/v1/products": os.environ.get("PRODUCT_SERVICE_URL", "http://product-service:8000"),
+    "/api/v1/upload": os.environ.get("PRODUCT_SERVICE_URL", "http://product-service:8000"),
     # Uploaded static files (images) — served by product-service StaticFiles mount.
     # No JWT required: <img> tags cannot send Authorization headers.
-    "/static":           os.environ.get("PRODUCT_SERVICE_URL",    "http://product-service:8000"),
+    "/static": os.environ.get("PRODUCT_SERVICE_URL", "http://product-service:8000"),
     # All inventory endpoints (transfers, adjustments, issues, counts, analytics)
     # are mounted under /api/v1/inventory/* on the inventory service.
     # Callers must use /api/v1/inventory/transfers (not /api/v1/transfers).
-    "/api/v1/inventory": os.environ.get("INVENTORY_SERVICE_URL",  "http://inventory-service:8000"),
+    "/api/v1/inventory": os.environ.get("INVENTORY_SERVICE_URL", "http://inventory-service:8000"),
     # Audit log is served by inventory-service but exposed at /api/v1/audit-log
     # so callers don't need to know which service owns it.
-    "/api/v1/audit-log": os.environ.get("INVENTORY_SERVICE_URL",  "http://inventory-service:8000"),
-    "/api/v1/orders":    os.environ.get("ORDER_SERVICE_URL",       "http://order-service:8000"),
-    "/api/v1/logistics": os.environ.get("LOGISTICS_SERVICE_URL",  "http://logistics-service:8000"),
-    "/api/v1/analytics": os.environ.get("ANALYTICS_SERVICE_URL",  "http://analytics-service:8000"),
+    "/api/v1/audit-log": os.environ.get("INVENTORY_SERVICE_URL", "http://inventory-service:8000"),
+    "/api/v1/orders": os.environ.get("ORDER_SERVICE_URL", "http://order-service:8000"),
+    "/api/v1/logistics": os.environ.get("LOGISTICS_SERVICE_URL", "http://logistics-service:8000"),
+    "/api/v1/analytics": os.environ.get("ANALYTICS_SERVICE_URL", "http://analytics-service:8000"),
 }
 
 UNAUTHENTICATED_PATHS = {
@@ -151,8 +152,7 @@ async def proxy(request: Request, path: str) -> Response:
             )
     except (httpx.ConnectError, httpx.ConnectTimeout):
         logger.warning(
-            f"Upstream service for {matched_prefix} is unavailable: "
-            f"{request.method} {full_path}"
+            f"Upstream service for {matched_prefix} is unavailable: {request.method} {full_path}"
         )
         return JSONResponse(
             status_code=503,
@@ -166,8 +166,7 @@ async def proxy(request: Request, path: str) -> Response:
         )
     except httpx.TimeoutException:
         logger.warning(
-            f"Upstream service for {matched_prefix} timed out: "
-            f"{request.method} {full_path}"
+            f"Upstream service for {matched_prefix} timed out: {request.method} {full_path}"
         )
         return JSONResponse(
             status_code=504,

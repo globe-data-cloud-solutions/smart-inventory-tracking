@@ -4,6 +4,7 @@ Revision ID: 001
 Revises:
 Create Date: 2026-05-09
 """
+
 from __future__ import annotations
 
 from alembic import op
@@ -26,55 +27,114 @@ def upgrade() -> None:
     # ── tenants ───────────────────────────────────────────────────────────
     op.create_table(
         "tenants",
-        sa.Column("id", postgresql.UUID(as_uuid=True), primary_key=True,
-                  server_default=sa.text("gen_random_uuid()")),
+        sa.Column(
+            "id",
+            postgresql.UUID(as_uuid=True),
+            primary_key=True,
+            server_default=sa.text("gen_random_uuid()"),
+        ),
         sa.Column("name", sa.String(255), nullable=False),
-        sa.Column("organisation_type",
-                  sa.Enum("PRODUCER", "RETAILER", "HYBRID", name="organisation_type"),
-                  nullable=False),
-        sa.Column("parent_tenant_id", postgresql.UUID(as_uuid=True),
-                  sa.ForeignKey("tenants.id"), nullable=True),
+        sa.Column(
+            "organisation_type",
+            sa.Enum("PRODUCER", "RETAILER", "HYBRID", name="organisation_type"),
+            nullable=False,
+        ),
+        sa.Column(
+            "parent_tenant_id",
+            postgresql.UUID(as_uuid=True),
+            sa.ForeignKey("tenants.id"),
+            nullable=True,
+        ),
         sa.Column("plan_id", postgresql.UUID(as_uuid=True), nullable=False),
-        sa.Column("feature_flags", postgresql.JSONB, nullable=False, server_default="{}"),
+        sa.Column(
+            "feature_flags", postgresql.JSONB, nullable=False, server_default="{}"
+        ),
         sa.Column("sku_cap", sa.Integer, nullable=True),
-        sa.Column("approval_thresholds", postgresql.JSONB, nullable=False, server_default="{}"),
-        sa.Column("default_locale",
-                  sa.Enum("en", "am", "or", name="supported_locale"),
-                  nullable=False, server_default="en"),
-        sa.Column("onboarding_complete", sa.Boolean, nullable=False, server_default="false"),
+        sa.Column(
+            "approval_thresholds", postgresql.JSONB, nullable=False, server_default="{}"
+        ),
+        sa.Column(
+            "default_locale",
+            sa.Enum("en", "am", "or", name="supported_locale"),
+            nullable=False,
+            server_default="en",
+        ),
+        sa.Column(
+            "onboarding_complete", sa.Boolean, nullable=False, server_default="false"
+        ),
         sa.Column("is_active", sa.Boolean, nullable=False, server_default="true"),
-        sa.Column("created_at", sa.TIMESTAMP(timezone=True),
-                  nullable=False, server_default=sa.text("now()")),
-        sa.Column("updated_at", sa.TIMESTAMP(timezone=True),
-                  nullable=False, server_default=sa.text("now()")),
+        sa.Column(
+            "created_at",
+            sa.TIMESTAMP(timezone=True),
+            nullable=False,
+            server_default=sa.text("now()"),
+        ),
+        sa.Column(
+            "updated_at",
+            sa.TIMESTAMP(timezone=True),
+            nullable=False,
+            server_default=sa.text("now()"),
+        ),
     )
 
     # ── users ─────────────────────────────────────────────────────────────
     # role_code and supported_locale are already in the DB from the tenants table above.
     op.create_table(
         "users",
-        sa.Column("id", postgresql.UUID(as_uuid=True), primary_key=True,
-                  server_default=sa.text("gen_random_uuid()")),
-        sa.Column("tenant_id", postgresql.UUID(as_uuid=True),
-                  sa.ForeignKey("tenants.id"), nullable=False),
+        sa.Column(
+            "id",
+            postgresql.UUID(as_uuid=True),
+            primary_key=True,
+            server_default=sa.text("gen_random_uuid()"),
+        ),
+        sa.Column(
+            "tenant_id",
+            postgresql.UUID(as_uuid=True),
+            sa.ForeignKey("tenants.id"),
+            nullable=False,
+        ),
         sa.Column("cognito_sub", sa.String(255), nullable=False, unique=True),
         sa.Column("email", sa.String(320), nullable=False),
         sa.Column("full_name", sa.String(255), nullable=False),
-        sa.Column("role",
-                  sa.Enum("SA","TA","NM","RM","WM","LM","SA_GT","RT","AU","SYS",
-                          name="role_code"),
-                  nullable=False),
+        sa.Column(
+            "role",
+            sa.Enum(
+                "SA",
+                "TA",
+                "NM",
+                "RM",
+                "WM",
+                "LM",
+                "SA_GT",
+                "RT",
+                "AU",
+                "SYS",
+                name="role_code",
+            ),
+            nullable=False,
+        ),
         sa.Column("region_id", postgresql.UUID(as_uuid=True), nullable=True),
         sa.Column("warehouse_id", postgresql.UUID(as_uuid=True), nullable=True),
-        sa.Column("locale",
-                  sa.Enum("en","am","or", name="supported_locale"),
-                  nullable=False, server_default="en"),
+        sa.Column(
+            "locale",
+            sa.Enum("en", "am", "or", name="supported_locale"),
+            nullable=False,
+            server_default="en",
+        ),
         sa.Column("created_by", postgresql.UUID(as_uuid=True), nullable=True),
         sa.Column("is_active", sa.Boolean, nullable=False, server_default="true"),
-        sa.Column("created_at", sa.TIMESTAMP(timezone=True),
-                  nullable=False, server_default=sa.text("now()")),
-        sa.Column("updated_at", sa.TIMESTAMP(timezone=True),
-                  nullable=False, server_default=sa.text("now()")),
+        sa.Column(
+            "created_at",
+            sa.TIMESTAMP(timezone=True),
+            nullable=False,
+            server_default=sa.text("now()"),
+        ),
+        sa.Column(
+            "updated_at",
+            sa.TIMESTAMP(timezone=True),
+            nullable=False,
+            server_default=sa.text("now()"),
+        ),
     )
     op.create_index("idx_users_tenant", "users", ["tenant_id"])
     op.execute("ALTER TABLE users ENABLE ROW LEVEL SECURITY")
@@ -86,17 +146,33 @@ def upgrade() -> None:
     # ── product_categories ────────────────────────────────────────────────
     op.create_table(
         "product_categories",
-        sa.Column("id", postgresql.UUID(as_uuid=True), primary_key=True,
-                  server_default=sa.text("gen_random_uuid()")),
+        sa.Column(
+            "id",
+            postgresql.UUID(as_uuid=True),
+            primary_key=True,
+            server_default=sa.text("gen_random_uuid()"),
+        ),
         sa.Column("tenant_id", postgresql.UUID(as_uuid=True), nullable=False),
         sa.Column("name", sa.String(255), nullable=False),
-        sa.Column("parent_id", postgresql.UUID(as_uuid=True),
-                  sa.ForeignKey("product_categories.id"), nullable=True),
+        sa.Column(
+            "parent_id",
+            postgresql.UUID(as_uuid=True),
+            sa.ForeignKey("product_categories.id"),
+            nullable=True,
+        ),
         sa.Column("is_active", sa.Boolean, nullable=False, server_default="true"),
-        sa.Column("created_at", sa.TIMESTAMP(timezone=True),
-                  nullable=False, server_default=sa.text("now()")),
-        sa.Column("updated_at", sa.TIMESTAMP(timezone=True),
-                  nullable=False, server_default=sa.text("now()")),
+        sa.Column(
+            "created_at",
+            sa.TIMESTAMP(timezone=True),
+            nullable=False,
+            server_default=sa.text("now()"),
+        ),
+        sa.Column(
+            "updated_at",
+            sa.TIMESTAMP(timezone=True),
+            nullable=False,
+            server_default=sa.text("now()"),
+        ),
     )
     op.create_index("idx_categories_tenant", "product_categories", ["tenant_id"])
     op.execute("ALTER TABLE product_categories ENABLE ROW LEVEL SECURITY")
@@ -108,32 +184,49 @@ def upgrade() -> None:
     # ── products ──────────────────────────────────────────────────────────
     op.create_table(
         "products",
-        sa.Column("id", postgresql.UUID(as_uuid=True), primary_key=True,
-                  server_default=sa.text("gen_random_uuid()")),
+        sa.Column(
+            "id",
+            postgresql.UUID(as_uuid=True),
+            primary_key=True,
+            server_default=sa.text("gen_random_uuid()"),
+        ),
         sa.Column("tenant_id", postgresql.UUID(as_uuid=True), nullable=False),
         sa.Column("sku", sa.String(100), nullable=False),
         sa.Column("name", sa.String(255), nullable=False),
         sa.Column("description", sa.String(1000), nullable=True),
-        sa.Column("category_id", postgresql.UUID(as_uuid=True),
-                  sa.ForeignKey("product_categories.id"), nullable=True),
+        sa.Column(
+            "category_id",
+            postgresql.UUID(as_uuid=True),
+            sa.ForeignKey("product_categories.id"),
+            nullable=True,
+        ),
         sa.Column("barcode", sa.String(100), nullable=True),
         sa.Column("unit_of_measure", sa.String(50), nullable=False),
         sa.Column("batch_tracking", sa.Boolean, nullable=False, server_default="false"),
-        sa.Column("expiry_tracking", sa.Boolean, nullable=False, server_default="false"),
+        sa.Column(
+            "expiry_tracking", sa.Boolean, nullable=False, server_default="false"
+        ),
         sa.Column("reorder_point", sa.Numeric(15, 4), nullable=True),
         sa.Column("attributes", postgresql.JSONB, nullable=True),
         sa.Column("created_by", postgresql.UUID(as_uuid=True), nullable=True),
         sa.Column("is_active", sa.Boolean, nullable=False, server_default="true"),
-        sa.Column("created_at", sa.TIMESTAMP(timezone=True),
-                  nullable=False, server_default=sa.text("now()")),
-        sa.Column("updated_at", sa.TIMESTAMP(timezone=True),
-                  nullable=False, server_default=sa.text("now()")),
+        sa.Column(
+            "created_at",
+            sa.TIMESTAMP(timezone=True),
+            nullable=False,
+            server_default=sa.text("now()"),
+        ),
+        sa.Column(
+            "updated_at",
+            sa.TIMESTAMP(timezone=True),
+            nullable=False,
+            server_default=sa.text("now()"),
+        ),
     )
     op.create_index("idx_products_tenant_sku", "products", ["tenant_id", "sku"])
     op.execute("CREATE EXTENSION IF NOT EXISTS pg_trgm")
     op.execute(
-        "CREATE INDEX idx_products_name_trgm ON products "
-        "USING gin (name gin_trgm_ops)"
+        "CREATE INDEX idx_products_name_trgm ON products USING gin (name gin_trgm_ops)"
     )
     op.execute("ALTER TABLE products ENABLE ROW LEVEL SECURITY")
     op.execute(
@@ -144,11 +237,15 @@ def upgrade() -> None:
     # ── inventory_transactions (partitioned by transaction_date) ──────────
     # Uses raw SQL because op.create_table doesn't support PARTITION BY.
     # The transaction_type enum will be created by the raw DDL below.
-    op.execute("CREATE TYPE transaction_type AS ENUM "
-               "('RECEIVE','TRANSFER_OUT','TRANSFER_IN','ISSUE',"
-               "'ADJUSTMENT','RESERVE','RELEASE','RETURN','COUNT_VARIANCE')")
-    op.execute("CREATE TYPE transfer_status AS ENUM "
-               "('DRAFT','SUBMITTED','APPROVED','IN_TRANSIT','RECEIVED','CLOSED','REJECTED','CANCELLED')")
+    op.execute(
+        "CREATE TYPE transaction_type AS ENUM "
+        "('RECEIVE','TRANSFER_OUT','TRANSFER_IN','ISSUE',"
+        "'ADJUSTMENT','RESERVE','RELEASE','RETURN','COUNT_VARIANCE')"
+    )
+    op.execute(
+        "CREATE TYPE transfer_status AS ENUM "
+        "('DRAFT','SUBMITTED','APPROVED','IN_TRANSIT','RECEIVED','CLOSED','REJECTED','CANCELLED')"
+    )
     op.execute(
         """
         CREATE TABLE inventory_transactions (
@@ -187,25 +284,41 @@ def upgrade() -> None:
         "inventory_transaction_keys",
         sa.Column("idempotency_key", sa.String(255), primary_key=True),
         sa.Column("transaction_id", postgresql.UUID(as_uuid=True), nullable=False),
-        sa.Column("created_at", sa.TIMESTAMP(timezone=True),
-                  nullable=False, server_default=sa.text("now()")),
+        sa.Column(
+            "created_at",
+            sa.TIMESTAMP(timezone=True),
+            nullable=False,
+            server_default=sa.text("now()"),
+        ),
     )
 
     # ── inventory_balances ────────────────────────────────────────────────
     op.create_table(
         "inventory_balances",
-        sa.Column("id", postgresql.UUID(as_uuid=True), primary_key=True,
-                  server_default=sa.text("gen_random_uuid()")),
+        sa.Column(
+            "id",
+            postgresql.UUID(as_uuid=True),
+            primary_key=True,
+            server_default=sa.text("gen_random_uuid()"),
+        ),
         sa.Column("tenant_id", postgresql.UUID(as_uuid=True), nullable=False),
         sa.Column("product_id", postgresql.UUID(as_uuid=True), nullable=False),
         sa.Column("warehouse_id", postgresql.UUID(as_uuid=True), nullable=False),
         sa.Column("quantity", sa.Numeric(15, 4), nullable=False, server_default="0"),
         sa.Column("lot_number", sa.String(100), nullable=True),
         sa.Column("expiry_date", sa.Date, nullable=True),
-        sa.Column("created_at", sa.TIMESTAMP(timezone=True),
-                  nullable=False, server_default=sa.text("now()")),
-        sa.Column("updated_at", sa.TIMESTAMP(timezone=True),
-                  nullable=False, server_default=sa.text("now()")),
+        sa.Column(
+            "created_at",
+            sa.TIMESTAMP(timezone=True),
+            nullable=False,
+            server_default=sa.text("now()"),
+        ),
+        sa.Column(
+            "updated_at",
+            sa.TIMESTAMP(timezone=True),
+            nullable=False,
+            server_default=sa.text("now()"),
+        ),
     )
     op.create_index(
         "idx_balances_tenant_product_warehouse",
@@ -223,19 +336,33 @@ def upgrade() -> None:
     # ── dispatch_strategy_configs ─────────────────────────────────────────
     op.create_table(
         "dispatch_strategy_configs",
-        sa.Column("id", postgresql.UUID(as_uuid=True), primary_key=True,
-                  server_default=sa.text("gen_random_uuid()")),
-        sa.Column("tenant_id", postgresql.UUID(as_uuid=True),
-                  sa.ForeignKey("tenants.id"), nullable=False),
+        sa.Column(
+            "id",
+            postgresql.UUID(as_uuid=True),
+            primary_key=True,
+            server_default=sa.text("gen_random_uuid()"),
+        ),
+        sa.Column(
+            "tenant_id",
+            postgresql.UUID(as_uuid=True),
+            sa.ForeignKey("tenants.id"),
+            nullable=False,
+        ),
         sa.Column("scope", sa.String(20), nullable=False),
         sa.Column("scope_id", postgresql.UUID(as_uuid=True), nullable=False),
-        sa.Column("strategy",
-                  sa.Enum("FEFO","FIFO","LIFO", name="dispatch_strategy"),
-                  nullable=False),
+        sa.Column(
+            "strategy",
+            sa.Enum("FEFO", "FIFO", "LIFO", name="dispatch_strategy"),
+            nullable=False,
+        ),
         sa.Column("effective_from", sa.Date, nullable=False),
         sa.Column("configured_by", postgresql.UUID(as_uuid=True), nullable=False),
-        sa.Column("created_at", sa.TIMESTAMP(timezone=True),
-                  nullable=False, server_default=sa.text("now()")),
+        sa.Column(
+            "created_at",
+            sa.TIMESTAMP(timezone=True),
+            nullable=False,
+            server_default=sa.text("now()"),
+        ),
     )
     op.create_index(
         "idx_dispatch_scope",
@@ -252,25 +379,39 @@ def upgrade() -> None:
     # ── outbox ────────────────────────────────────────────────────────────
     op.create_table(
         "outbox",
-        sa.Column("id", postgresql.UUID(as_uuid=True), primary_key=True,
-                  server_default=sa.text("gen_random_uuid()")),
+        sa.Column(
+            "id",
+            postgresql.UUID(as_uuid=True),
+            primary_key=True,
+            server_default=sa.text("gen_random_uuid()"),
+        ),
         sa.Column("tenant_id", postgresql.UUID(as_uuid=True), nullable=False),
         sa.Column("event_type", sa.String(100), nullable=False),
         sa.Column("payload", postgresql.JSONB, nullable=False),
         sa.Column("payload_ver", sa.String(10), nullable=False, server_default="1.0"),
-        sa.Column("status",
-                  sa.Enum("PENDING","PROCESSING","PROCESSED","FAILED",
-                          name="outbox_status"),
-                  nullable=False, server_default="PENDING"),
+        sa.Column(
+            "status",
+            sa.Enum(
+                "PENDING", "PROCESSING", "PROCESSED", "FAILED", name="outbox_status"
+            ),
+            nullable=False,
+            server_default="PENDING",
+        ),
         sa.Column("attempts", sa.Integer, nullable=False, server_default="0"),
         sa.Column("last_error", sa.Text, nullable=True),
-        sa.Column("created_at", sa.TIMESTAMP(timezone=True),
-                  nullable=False, server_default=sa.text("now()")),
+        sa.Column(
+            "created_at",
+            sa.TIMESTAMP(timezone=True),
+            nullable=False,
+            server_default=sa.text("now()"),
+        ),
         sa.Column("processed_at", sa.TIMESTAMP(timezone=True), nullable=True),
     )
     op.create_index(
-        "idx_outbox_pending", "outbox", ["status", "created_at"],
-        postgresql_where=sa.text("status IN ('PENDING','FAILED')")
+        "idx_outbox_pending",
+        "outbox",
+        ["status", "created_at"],
+        postgresql_where=sa.text("status IN ('PENDING','FAILED')"),
     )
 
     # pg_notify trigger
@@ -293,16 +434,37 @@ def upgrade() -> None:
     # role_code is already created by the users table above.
     op.create_table(
         "audit_logs",
-        sa.Column("id", postgresql.UUID(as_uuid=True), primary_key=True,
-                  server_default=sa.text("gen_random_uuid()")),
+        sa.Column(
+            "id",
+            postgresql.UUID(as_uuid=True),
+            primary_key=True,
+            server_default=sa.text("gen_random_uuid()"),
+        ),
         sa.Column("tenant_id", postgresql.UUID(as_uuid=True), nullable=False),
-        sa.Column("timestamp", sa.TIMESTAMP(timezone=True),
-                  nullable=False, server_default=sa.text("now()")),
+        sa.Column(
+            "timestamp",
+            sa.TIMESTAMP(timezone=True),
+            nullable=False,
+            server_default=sa.text("now()"),
+        ),
         sa.Column("user_id", postgresql.UUID(as_uuid=True), nullable=True),
-        sa.Column("role",
-                  sa.Enum("SA","TA","NM","RM","WM","LM","SA_GT","RT","AU","SYS",
-                          name="role_code"),
-                  nullable=True),
+        sa.Column(
+            "role",
+            sa.Enum(
+                "SA",
+                "TA",
+                "NM",
+                "RM",
+                "WM",
+                "LM",
+                "SA_GT",
+                "RT",
+                "AU",
+                "SYS",
+                name="role_code",
+            ),
+            nullable=True,
+        ),
         sa.Column("action", sa.String(100), nullable=False),
         sa.Column("resource_type", sa.String(100), nullable=True),
         sa.Column("resource_id", postgresql.UUID(as_uuid=True), nullable=True),
@@ -319,22 +481,36 @@ def upgrade() -> None:
         "USING (tenant_id = current_setting('app.current_tenant_id', true)::uuid)"
     )
     # Immutability rules — NEVER remove these
-    op.execute("CREATE RULE no_update_audit AS ON UPDATE TO audit_logs DO INSTEAD NOTHING")
-    op.execute("CREATE RULE no_delete_audit AS ON DELETE TO audit_logs DO INSTEAD NOTHING")
+    op.execute(
+        "CREATE RULE no_update_audit AS ON UPDATE TO audit_logs DO INSTEAD NOTHING"
+    )
+    op.execute(
+        "CREATE RULE no_delete_audit AS ON DELETE TO audit_logs DO INSTEAD NOTHING"
+    )
 
     # ── role_permissions ──────────────────────────────────────────────────
     op.create_table(
         "role_permissions",
-        sa.Column("id", postgresql.UUID(as_uuid=True), primary_key=True,
-                  server_default=sa.text("gen_random_uuid()")),
+        sa.Column(
+            "id",
+            postgresql.UUID(as_uuid=True),
+            primary_key=True,
+            server_default=sa.text("gen_random_uuid()"),
+        ),
         sa.Column("role_code", sa.String(10), nullable=False),
         sa.Column("action_id", sa.String(100), nullable=False),
-        sa.Column("grant_type",
-                  sa.Enum("FULL","CONDITIONAL","READ_ONLY", name="grant_type"),
-                  nullable=False),
+        sa.Column(
+            "grant_type",
+            sa.Enum("FULL", "CONDITIONAL", "READ_ONLY", name="grant_type"),
+            nullable=False,
+        ),
         sa.Column("is_active", sa.Boolean, nullable=False, server_default="true"),
-        sa.Column("created_at", sa.TIMESTAMP(timezone=True),
-                  nullable=False, server_default=sa.text("now()")),
+        sa.Column(
+            "created_at",
+            sa.TIMESTAMP(timezone=True),
+            nullable=False,
+            server_default=sa.text("now()"),
+        ),
     )
     op.create_index(
         "idx_role_permissions_role_action",

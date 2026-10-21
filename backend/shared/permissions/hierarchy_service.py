@@ -3,6 +3,7 @@ Shared hierarchy traversal utility.
 Used by check_permission() for node+descendant scope resolution.
 Source of truth: organization_node.parent_node_id (flat FK, not org_node_hierarchy).
 """
+
 from __future__ import annotations
 
 from sqlalchemy.ext.asyncio import AsyncSession

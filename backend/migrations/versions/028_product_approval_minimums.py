@@ -15,6 +15,7 @@ Create Date: 2026-05-29
 
 Round-trip tested: alembic upgrade head → downgrade -1 → upgrade head
 """
+
 from __future__ import annotations
 
 import sqlalchemy as sa
@@ -101,12 +102,8 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    op.execute(
-        "DROP POLICY IF EXISTS tenant_isolation ON product_approval_minimums"
-    )
-    op.execute(
-        "ALTER TABLE product_approval_minimums DISABLE ROW LEVEL SECURITY"
-    )
+    op.execute("DROP POLICY IF EXISTS tenant_isolation ON product_approval_minimums")
+    op.execute("ALTER TABLE product_approval_minimums DISABLE ROW LEVEL SECURITY")
     op.drop_index("idx_pam_tenant_tx_type", table_name="product_approval_minimums")
     op.drop_index("idx_pam_tenant_product", table_name="product_approval_minimums")
     op.drop_table("product_approval_minimums")

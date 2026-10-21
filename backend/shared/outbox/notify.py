@@ -3,6 +3,7 @@ Each outbox INSERT fires pg_notify('outbox_insert', row_id) via a DB trigger.
 This module listens on that channel and dispatches Celery tasks immediately,
 providing sub-second side-effect delivery without polling overhead.
 """
+
 from __future__ import annotations
 
 import asyncio

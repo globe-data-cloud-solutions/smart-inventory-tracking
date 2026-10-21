@@ -1,5 +1,6 @@
 """Unit tests for shared.billing.providers — MANUAL/STUB checkout shapes and
 StubProvider's HMAC-signed webhook verification. No DB, no network."""
+
 from __future__ import annotations
 
 import hashlib
@@ -34,7 +35,10 @@ def test_manual_parse_webhook_not_implemented() -> None:
 def test_stub_checkout_returns_redirect_url(monkeypatch) -> None:
     monkeypatch.setenv("APP_BASE_URL", "https://app.example.com")
     out = StubProvider().checkout({"payment_id": "payment-1"})
-    assert out == {"type": "REDIRECT", "url": "https://app.example.com/billing/stub-checkout?payment=payment-1"}
+    assert out == {
+        "type": "REDIRECT",
+        "url": "https://app.example.com/billing/stub-checkout?payment=payment-1",
+    }
 
 
 def _signed_body(secret: str, payload: dict) -> tuple[bytes, str]:
@@ -45,9 +49,14 @@ def _signed_body(secret: str, payload: dict) -> tuple[bytes, str]:
 
 def test_stub_parse_webhook_good_signature_succeeded(monkeypatch) -> None:
     monkeypatch.setenv("STUB_WEBHOOK_SECRET", "s5-local-secret")
-    body, sig = _signed_body("s5-local-secret", {
-        "event": "payment.succeeded", "payment_id": "payment-1", "provider_reference": "STUB-REF-1",
-    })
+    body, sig = _signed_body(
+        "s5-local-secret",
+        {
+            "event": "payment.succeeded",
+            "payment_id": "payment-1",
+            "provider_reference": "STUB-REF-1",
+        },
+    )
 
     event = StubProvider().parse_webhook({"X-Stub-Signature": sig}, body)
 
@@ -58,9 +67,14 @@ def test_stub_parse_webhook_good_signature_succeeded(monkeypatch) -> None:
 
 def test_stub_parse_webhook_good_signature_failed(monkeypatch) -> None:
     monkeypatch.setenv("STUB_WEBHOOK_SECRET", "s5-local-secret")
-    body, sig = _signed_body("s5-local-secret", {
-        "event": "payment.failed", "payment_id": "payment-1", "provider_reference": None,
-    })
+    body, sig = _signed_body(
+        "s5-local-secret",
+        {
+            "event": "payment.failed",
+            "payment_id": "payment-1",
+            "provider_reference": None,
+        },
+    )
 
     event = StubProvider().parse_webhook({"X-Stub-Signature": sig}, body)
     assert event.event == "payment.failed"
@@ -68,7 +82,9 @@ def test_stub_parse_webhook_good_signature_failed(monkeypatch) -> None:
 
 def test_stub_parse_webhook_bad_signature_raises(monkeypatch) -> None:
     monkeypatch.setenv("STUB_WEBHOOK_SECRET", "s5-local-secret")
-    body, _ = _signed_body("s5-local-secret", {"event": "payment.succeeded", "payment_id": "payment-1"})
+    body, _ = _signed_body(
+        "s5-local-secret", {"event": "payment.succeeded", "payment_id": "payment-1"}
+    )
 
     with pytest.raises(ValueError, match="INVALID_SIGNATURE"):
         StubProvider().parse_webhook({"X-Stub-Signature": "0" * 64}, body)
@@ -76,7 +92,9 @@ def test_stub_parse_webhook_bad_signature_raises(monkeypatch) -> None:
 
 def test_stub_parse_webhook_missing_signature_header_raises(monkeypatch) -> None:
     monkeypatch.setenv("STUB_WEBHOOK_SECRET", "s5-local-secret")
-    body, _ = _signed_body("s5-local-secret", {"event": "payment.succeeded", "payment_id": "payment-1"})
+    body, _ = _signed_body(
+        "s5-local-secret", {"event": "payment.succeeded", "payment_id": "payment-1"}
+    )
 
     with pytest.raises(ValueError, match="INVALID_SIGNATURE"):
         StubProvider().parse_webhook({}, body)
@@ -101,7 +119,9 @@ def test_stub_parse_webhook_malformed_payload_raises(monkeypatch) -> None:
 
 def test_stub_parse_webhook_unknown_event_raises(monkeypatch) -> None:
     monkeypatch.setenv("STUB_WEBHOOK_SECRET", "s5-local-secret")
-    body, sig = _signed_body("s5-local-secret", {"event": "payment.refunded", "payment_id": "payment-1"})
+    body, sig = _signed_body(
+        "s5-local-secret", {"event": "payment.refunded", "payment_id": "payment-1"}
+    )
 
     with pytest.raises(ValueError, match="INVALID_PAYLOAD"):
         StubProvider().parse_webhook({"X-Stub-Signature": sig}, body)

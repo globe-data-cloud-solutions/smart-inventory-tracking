@@ -3,6 +3,7 @@ decisions (audit_logs.tenant_id is NOT NULL and SA has no tenant of its own), th
 platform-level no-insert path, and the never-raises contract on DB failure.
 
 Mocked session throughout (no real DB connection)."""
+
 from __future__ import annotations
 
 import logging
@@ -38,6 +39,7 @@ async def test_ta_own_tenant_row_written_under_own_tenant_id() -> None:
     db = _fake_db()
 
     import shared.permissions.audit as audit_module
+
     with patch.object(audit_module, "AsyncSessionLocal", lambda: db):
         await audit_log(user, "inventory:receive", {"warehouse_id": "wh-1"}, "GRANTED")
 
@@ -55,6 +57,7 @@ async def test_sa_on_tenant_route_writes_row_under_target_tenant_id() -> None:
     resource = {"tenant_id": None, "target_tenant_id": "tenant-being-managed"}
 
     import shared.permissions.audit as audit_module
+
     with patch.object(audit_module, "AsyncSessionLocal", lambda: db):
         await audit_log(user, "tenant:manage", resource, "GRANTED")
 
@@ -73,7 +76,11 @@ async def test_platform_level_action_with_no_resolvable_tenant_is_not_inserted(
     db = _fake_db()
 
     import shared.permissions.audit as audit_module
-    with caplog.at_level(logging.WARNING), patch.object(audit_module, "AsyncSessionLocal", lambda: db):
+
+    with (
+        caplog.at_level(logging.WARNING),
+        patch.object(audit_module, "AsyncSessionLocal", lambda: db),
+    ):
         await audit_log(user, "platform:tier_config_edit", {}, "GRANTED")
 
     db.execute.assert_not_called()
@@ -94,6 +101,7 @@ async def test_resource_with_uuid_and_datetime_serializes_without_error() -> Non
     }
 
     import shared.permissions.audit as audit_module
+
     with patch.object(audit_module, "AsyncSessionLocal", lambda: db):
         await audit_log(user, "inventory:receive", resource, "GRANTED")
 
@@ -110,7 +118,11 @@ async def test_db_error_is_logged_and_never_raised(caplog: pytest.LogCaptureFixt
     db.execute = AsyncMock(side_effect=RuntimeError("db exploded"))
 
     import shared.permissions.audit as audit_module
-    with caplog.at_level(logging.ERROR), patch.object(audit_module, "AsyncSessionLocal", lambda: db):
+
+    with (
+        caplog.at_level(logging.ERROR),
+        patch.object(audit_module, "AsyncSessionLocal", lambda: db),
+    ):
         await audit_log(user, "inventory:receive", {}, "GRANTED")  # must not raise
 
     assert "failed to write audit_logs row" in caplog.text
@@ -124,6 +136,7 @@ async def test_caller_session_row_inserted_on_that_session_without_commit() -> N
     own_session = MagicMock()
 
     import shared.permissions.audit as audit_module
+
     with patch.object(audit_module, "AsyncSessionLocal", own_session):
         await audit_log(user, "adjustment:approve", {"resource_id": "a-1"}, "GRANTED", db=caller_db)
 
@@ -164,6 +177,7 @@ async def test_default_path_still_uses_own_session_and_commits() -> None:
     own = _fake_db()
 
     import shared.permissions.audit as audit_module
+
     with patch.object(audit_module, "AsyncSessionLocal", lambda: own):
         await audit_log(user, "inventory:receive", {}, "DENIED", "RBAC_DENIED")
 

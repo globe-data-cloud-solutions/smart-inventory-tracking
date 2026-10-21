@@ -53,7 +53,7 @@ class S3StorageService(StorageService):
     async def delete(self, url: str) -> None:
         if not url.startswith(_BASE_URL + "/"):
             return
-        rel = url[len(_BASE_URL) + 1:]
+        rel = url[len(_BASE_URL) + 1 :]
         key = f"{_KEY_PREFIX}{rel}"
 
         def _delete() -> None:

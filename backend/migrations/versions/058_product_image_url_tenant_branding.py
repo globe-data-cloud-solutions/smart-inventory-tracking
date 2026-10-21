@@ -6,6 +6,7 @@ Revision ID: 058
 Revises: 057
 Create Date: 2026-06-16
 """
+
 from __future__ import annotations
 
 from alembic import op
@@ -22,7 +23,7 @@ def upgrade() -> None:
     op.execute("ALTER TABLE tenants  ADD COLUMN IF NOT EXISTS banner_url TEXT NULL")
 
     for action_id, roles in [
-        ("product:upload_image",   ["TA", "NM"]),
+        ("product:upload_image", ["TA", "NM"]),
         ("tenant:upload_branding", ["TA"]),
     ]:
         for role in roles:

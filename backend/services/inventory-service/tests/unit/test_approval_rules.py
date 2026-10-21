@@ -10,6 +10,7 @@ Business rules under test (CLAUDE.md §24, §15):
   - PUSH always requires NM or above (NM for < 5000, TA for ≥ 5000)
   - Threshold ranges are contiguous with no gaps between bands
 """
+
 from __future__ import annotations
 
 from decimal import Decimal
@@ -22,29 +23,37 @@ import pytest
 
 ADDIS_WATER_RULES: dict[str, list[tuple[Decimal, Optional[Decimal], str]]] = {
     "PULL": [
-        (Decimal("0"),    Decimal("999.9999"),  "WM"),
+        (Decimal("0"), Decimal("999.9999"), "WM"),
         (Decimal("1000"), Decimal("4999.9999"), "RM"),
-        (Decimal("5000"), None,                 "NM"),
+        (Decimal("5000"), None, "NM"),
     ],
     "PUSH": [
-        (Decimal("0"),    Decimal("4999.9999"), "NM"),
-        (Decimal("5000"), None,                 "TA"),
+        (Decimal("0"), Decimal("4999.9999"), "NM"),
+        (Decimal("5000"), None, "TA"),
     ],
     "ADJUSTMENT": [
-        (Decimal("0"),    Decimal("99.9999"),  "WM"),   # 0–99:    WM self-approval
-        (Decimal("100"),  Decimal("999.9999"), "RM"),   # 100–999: RM required
-        (Decimal("1000"), None,               "TA"),    # 1000+:   TA (CEO) required
+        (Decimal("0"), Decimal("99.9999"), "WM"),  # 0–99:    WM self-approval
+        (Decimal("100"), Decimal("999.9999"), "RM"),  # 100–999: RM required
+        (Decimal("1000"), None, "TA"),  # 1000+:   TA (CEO) required
     ],
     "SISTER": [
-        (Decimal("0"),    Decimal("999.9999"), "WM"),
-        (Decimal("1000"), None,               "RM"),
+        (Decimal("0"), Decimal("999.9999"), "WM"),
+        (Decimal("1000"), None, "RM"),
     ],
 }
 
 # Role hierarchy — used to assert "NM or above"
 ROLE_LEVEL: dict[str, int] = {
-    "SYS": 1, "AU": 2, "RT": 3, "SA_GT": 4,
-    "WM": 6, "LM": 6, "RM": 7, "NM": 8, "TA": 9, "SA": 10,
+    "SYS": 1,
+    "AU": 2,
+    "RT": 3,
+    "SA_GT": 4,
+    "WM": 6,
+    "LM": 6,
+    "RM": 7,
+    "NM": 8,
+    "TA": 9,
+    "SA": 10,
 }
 
 
@@ -59,28 +68,25 @@ def _resolve_approver(tx_type: str, quantity: Decimal) -> str:
 
 # ── Tests ────────────────────────────────────────────────────────────────────
 
+
 @pytest.mark.unit
 class TestApprovalRuleRouting:
-
     # ── PULL routing ─────────────────────────────────────────────────────────
 
     def test_pull_small_qty_routes_to_wm(self) -> None:
         """PULL qty < 1000 is handled by the Warehouse Manager."""
         for qty in [Decimal("0"), Decimal("1"), Decimal("500"), Decimal("999")]:
-            assert _resolve_approver("PULL", qty) == "WM", \
-                f"Expected WM for PULL qty={qty}"
+            assert _resolve_approver("PULL", qty) == "WM", f"Expected WM for PULL qty={qty}"
 
     def test_pull_mid_qty_routes_to_rm(self) -> None:
         """PULL 1000 ≤ qty < 5000 requires Regional Manager approval."""
         for qty in [Decimal("1000"), Decimal("2500"), Decimal("4999")]:
-            assert _resolve_approver("PULL", qty) == "RM", \
-                f"Expected RM for PULL qty={qty}"
+            assert _resolve_approver("PULL", qty) == "RM", f"Expected RM for PULL qty={qty}"
 
     def test_pull_large_qty_routes_to_nm(self) -> None:
         """PULL qty ≥ 5000 requires National Manager approval."""
         for qty in [Decimal("5000"), Decimal("10000"), Decimal("999999")]:
-            assert _resolve_approver("PULL", qty) == "NM", \
-                f"Expected NM for PULL qty={qty}"
+            assert _resolve_approver("PULL", qty) == "NM", f"Expected NM for PULL qty={qty}"
 
     def test_pull_boundary_1000_is_rm_not_wm(self) -> None:
         """Exact boundary 1000 falls into RM band, not WM band."""
@@ -97,8 +103,9 @@ class TestApprovalRuleRouting:
         WM (6) and RM (7) must never appear as PUSH approvers."""
         bands = ADDIS_WATER_RULES["PUSH"]
         for _, _, role in bands:
-            assert ROLE_LEVEL[role] >= ROLE_LEVEL["NM"], \
+            assert ROLE_LEVEL[role] >= ROLE_LEVEL["NM"], (
                 f"PUSH approver '{role}' is below NM level — violates §24"
+            )
 
     def test_push_small_qty_requires_nm(self) -> None:
         """PUSH qty < 5000 requires NM."""
@@ -120,14 +127,16 @@ class TestApprovalRuleRouting:
     def test_adjustment_mid_requires_rm(self) -> None:
         """Adjustments 100–999 units require Regional Manager."""
         for qty in [Decimal("100"), Decimal("500"), Decimal("999")]:
-            assert _resolve_approver("ADJUSTMENT", qty) == "RM", \
+            assert _resolve_approver("ADJUSTMENT", qty) == "RM", (
                 f"Expected RM for ADJUSTMENT qty={qty}"
+            )
 
     def test_adjustment_large_requires_ta(self) -> None:
         """Adjustments ≥ 1000 units require Tenant Admin (CEO-equivalent)."""
         for qty in [Decimal("1000"), Decimal("5000"), Decimal("10000")]:
-            assert _resolve_approver("ADJUSTMENT", qty) == "TA", \
+            assert _resolve_approver("ADJUSTMENT", qty) == "TA", (
                 f"Expected TA for ADJUSTMENT qty={qty}"
+            )
 
     # ── SISTER routing ────────────────────────────────────────────────────────
 
@@ -153,14 +162,15 @@ class TestApprovalRuleRouting:
         for tx_type, bands in ADDIS_WATER_RULES.items():
             for i in range(len(bands) - 1):
                 current_max = bands[i][1]
-                next_min    = bands[i + 1][0]
-                assert current_max is not None, \
+                next_min = bands[i + 1][0]
+                assert current_max is not None, (
                     f"{tx_type} band {i} has None max but is not the last band"
+                )
                 # current band ends at X.9999; next starts at X+1.0000
                 # gap would mean current_max + epsilon != next_min
                 assert current_max + epsilon == next_min, (
                     f"Gap in {tx_type} between band {i} (max={current_max}) "
-                    f"and band {i+1} (min={next_min}): "
+                    f"and band {i + 1} (min={next_min}): "
                     f"qty={current_max + epsilon} has no approver"
                 )
 
@@ -170,8 +180,9 @@ class TestApprovalRuleRouting:
         """
         for tx_type, bands in ADDIS_WATER_RULES.items():
             last_max = bands[-1][1]
-            assert last_max is None, \
+            assert last_max is None, (
                 f"{tx_type} last band max_qty={last_max} — must be None (open-ended)"
+            )
 
     def test_first_band_each_type_starts_at_zero(self) -> None:
         """The lowest band for every transaction type starts at zero quantity.
@@ -179,5 +190,6 @@ class TestApprovalRuleRouting:
         """
         for tx_type, bands in ADDIS_WATER_RULES.items():
             first_min = bands[0][0]
-            assert first_min == Decimal("0"), \
+            assert first_min == Decimal("0"), (
                 f"{tx_type} first band min_qty={first_min} — must start at 0"
+            )

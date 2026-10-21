@@ -73,14 +73,19 @@ async def check_permission(
             resolved_target = None
             if db is not None:
                 from sqlalchemy import text as _sql_text
-                row = (await db.execute(
-                    _sql_text("SELECT id FROM tenants WHERE slug = :slug"),
-                    {"slug": str(target_tenant_id)},
-                )).fetchone()
+
+                row = (
+                    await db.execute(
+                        _sql_text("SELECT id FROM tenants WHERE slug = :slug"),
+                        {"slug": str(target_tenant_id)},
+                    )
+                ).fetchone()
                 if row is not None:
                     resolved_target = str(row.id).lower()
         if resolved_target is None or resolved_target != str(user.tenant_id).lower():
-            await audit_log(user, action.id, resource, "DENIED", "ABAC_DENIED: TENANT_ACCESS_DENIED")
+            await audit_log(
+                user, action.id, resource, "DENIED", "ABAC_DENIED: TENANT_ACCESS_DENIED"
+            )
             return PermissionResult(allowed=False, reason="TENANT_ACCESS_DENIED")
 
     if "region_id" in action.abac and getattr(user, "region_id", None):
@@ -101,7 +106,8 @@ async def check_permission(
             if user_wh_str not in scope_cache:
                 if db is not None:
                     scope_cache[user_wh_str] = {
-                        n.lower() for n in await get_descendant_node_ids(
+                        n.lower()
+                        for n in await get_descendant_node_ids(
                             db, str(user.tenant_id), str(user.warehouse_id)
                         )
                     }
@@ -109,10 +115,8 @@ async def check_permission(
                     # No db session available — fall back to exact match
                     scope_cache[user_wh_str] = {user_wh_str}
             if resource_wh_str not in scope_cache[user_wh_str]:
-                await audit_log(user, action.id, resource, "DENIED",
-                                "ABAC_DENIED: warehouse scope")
-                return PermissionResult(allowed=False,
-                                        reason="ABAC_DENIED: warehouse scope")
+                await audit_log(user, action.id, resource, "DENIED", "ABAC_DENIED: warehouse scope")
+                return PermissionResult(allowed=False, reason="ABAC_DENIED: warehouse scope")
 
     if grant.grant_type == "CONDITIONAL":
         await audit_log(user, action.id, resource, "CONDITIONAL", "APPROVAL_REQUIRED")
@@ -131,8 +135,7 @@ def require_permission(
 
     if read_only_exempt and read_only_force_write:
         raise ValueError(
-            "require_permission: read_only_exempt and read_only_force_write "
-            "are mutually exclusive"
+            "require_permission: read_only_exempt and read_only_force_write are mutually exclusive"
         )
 
     def decorator(func: Callable) -> Callable:
@@ -184,8 +187,7 @@ def require_permission(
             db = kwargs.get("db")
             _scope_cache: dict[str, set[str]] = {}
 
-            result = await check_permission(user, action, resource, db=db,
-                                            scope_cache=_scope_cache)
+            result = await check_permission(user, action, resource, db=db, scope_cache=_scope_cache)
 
             if not result.allowed:
                 raise HTTPException(
@@ -214,11 +216,13 @@ def require_permission(
                                 "action": action.id,
                                 "contract_end": (
                                     contract["contract_end"].isoformat()
-                                    if contract["contract_end"] else None
+                                    if contract["contract_end"]
+                                    else None
                                 ),
                                 "read_only_since": (
                                     contract["read_only_since"].isoformat()
-                                    if contract["read_only_since"] else None
+                                    if contract["read_only_since"]
+                                    else None
                                 ),
                             },
                         )

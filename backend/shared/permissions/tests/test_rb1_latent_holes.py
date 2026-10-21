@@ -11,18 +11,21 @@ tenant:upload_branding to any non-SA role, this test fails, which is the
 intended signal to go fix the route's tenant-ownership check (the same way
 HOLEs 1-7 were fixed) before shipping that grant.
 """
+
 from __future__ import annotations
 
 import os
 import sys
 
-os.environ.setdefault("DATABASE_URL",      "postgresql+asyncpg://test:x@localhost/test")
+os.environ.setdefault("DATABASE_URL", "postgresql+asyncpg://test:x@localhost/test")
 os.environ.setdefault("DATABASE_READ_URL", "postgresql+asyncpg://test:x@localhost/test")
-os.environ.setdefault("JWT_SECRET",        "test-secret")
-os.environ.setdefault("JWT_SECRET_KEY",    "test-secret")
-os.environ.setdefault("ENVIRONMENT",       "local")
+os.environ.setdefault("JWT_SECRET", "test-secret")
+os.environ.setdefault("JWT_SECRET_KEY", "test-secret")
+os.environ.setdefault("ENVIRONMENT", "local")
 
-_SCRIPTS_ROOT = os.path.normpath(os.path.join(os.path.dirname(__file__), "..", "..", "..", "..", "scripts"))
+_SCRIPTS_ROOT = os.path.normpath(
+    os.path.join(os.path.dirname(__file__), "..", "..", "..", "..", "scripts")
+)
 if _SCRIPTS_ROOT not in sys.path:
     sys.path.insert(0, _SCRIPTS_ROOT)
 
@@ -35,7 +38,8 @@ def test_no_non_sa_role_holds_branding_upload_permission() -> None:
     """SA holding it is safe (SA bypasses tenant-ownership checks by design) —
     only a non-SA grant would make HOLE 8 exploitable."""
     holders = [
-        role for role, grants in ROLE_PERMISSION_MATRIX.items()
+        role
+        for role, grants in ROLE_PERMISSION_MATRIX.items()
         if role != "SA" and BRANDING_ACTION in grants
     ]
     assert holders == [], (

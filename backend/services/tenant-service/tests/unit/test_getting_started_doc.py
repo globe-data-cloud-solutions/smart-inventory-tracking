@@ -6,6 +6,7 @@ test_manual_copy_matches_source_of_truth for the same kind of doc pair.
 
 Fix on failure: bash scripts/sync_help_docs.sh
 """
+
 from __future__ import annotations
 
 import os
@@ -25,8 +26,7 @@ def test_getting_started_copy_matches_source_of_truth() -> None:
 
     copy = repo_root / "frontend" / "public" / "help" / "getting-started.md"
     assert copy.exists(), (
-        "frontend/public/help/getting-started.md is missing — "
-        "run scripts/sync_help_docs.sh"
+        "frontend/public/help/getting-started.md is missing — run scripts/sync_help_docs.sh"
     )
     assert copy.read_bytes() == source.read_bytes(), (
         "frontend/public/help/getting-started.md has drifted from "

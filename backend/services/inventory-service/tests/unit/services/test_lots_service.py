@@ -6,6 +6,7 @@ so these tests mock session.execute and verify: (a) row->LotOut mapping for
 each status value, and (b) that product_id/warehouse_id/status/include_depleted
 are plumbed through to the query params exactly as the caller passed them.
 """
+
 from __future__ import annotations
 
 from datetime import date, datetime
@@ -14,8 +15,8 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-TENANT_ID    = "10000000-0000-0000-0000-000000000001"
-PRODUCT_ID   = "aaaaaaaa-0000-0000-0000-000000000001"
+TENANT_ID = "10000000-0000-0000-0000-000000000001"
+PRODUCT_ID = "aaaaaaaa-0000-0000-0000-000000000001"
 WAREHOUSE_ID = "20000000-0000-0000-0000-000000000001"
 
 
@@ -61,18 +62,22 @@ def _result(rows):
 
 @pytest.mark.unit
 class TestGetLotsMapping:
-
     async def test_returns_lot_rows_with_computed_status(self) -> None:
         from services.inventory_analytics import get_lots
 
         session = AsyncMock()
         session.execute = AsyncMock(
-            return_value=_result([
-                _lot_row(status="ACTIVE"),
-                _lot_row(lot_id="30000000-0000-0000-0000-000000000002",
-                         lot_number="30250101-002", status="EXPIRED",
-                         expiry_date=date(2025, 1, 1)),
-            ])
+            return_value=_result(
+                [
+                    _lot_row(status="ACTIVE"),
+                    _lot_row(
+                        lot_id="30000000-0000-0000-0000-000000000002",
+                        lot_number="30250101-002",
+                        status="EXPIRED",
+                        expiry_date=date(2025, 1, 1),
+                    ),
+                ]
+            )
         )
 
         result = await get_lots(session, TENANT_ID)
@@ -116,7 +121,6 @@ class TestGetLotsMapping:
 
 @pytest.mark.unit
 class TestGetLotsFilters:
-
     async def test_product_id_filter_passed_to_query(self) -> None:
         from services.inventory_analytics import get_lots
 
@@ -167,25 +171,31 @@ class TestGetLotsFilters:
 
 @pytest.mark.unit
 class TestGetLotsExpiryFields:
-
     async def test_days_to_expiry_and_expiring_soon_mapped(self) -> None:
         from services.inventory_analytics import get_lots
 
         session = AsyncMock()
         session.execute = AsyncMock(
-            return_value=_result([
-                _lot_row(expiry_date=date(2026, 11, 1), days_to_expiry=18,
-                         expiring_soon=True),
-                _lot_row(lot_number="L2", expiry_date=date(2027, 6, 1),
-                         days_to_expiry=230, expiring_soon=False),
-                _lot_row(lot_number="OPENING-X"),
-            ])
+            return_value=_result(
+                [
+                    _lot_row(expiry_date=date(2026, 11, 1), days_to_expiry=18, expiring_soon=True),
+                    _lot_row(
+                        lot_number="L2",
+                        expiry_date=date(2027, 6, 1),
+                        days_to_expiry=230,
+                        expiring_soon=False,
+                    ),
+                    _lot_row(lot_number="OPENING-X"),
+                ]
+            )
         )
 
         result = await get_lots(session, TENANT_ID)
 
         assert [(r.days_to_expiry, r.expiring_soon) for r in result] == [
-            (18, True), (230, False), (None, False),
+            (18, True),
+            (230, False),
+            (None, False),
         ]
         assert all(r.status == "ACTIVE" for r in result)
 
@@ -213,8 +223,7 @@ class TestGetLotsExpiryFields:
         assert params["expiring_within_days"] == 30
 
 
-def _alert_row(alert_type, lot_number="L1", expiry_date=None, days_to_expiry=None,
-               **kw):
+def _alert_row(alert_type, lot_number="L1", expiry_date=None, days_to_expiry=None, **kw):
     return MagicMock(
         lot_id=kw.get("lot_id", "30000000-0000-0000-0000-000000000001"),
         lot_number=lot_number,
@@ -234,24 +243,28 @@ def _alert_row(alert_type, lot_number="L1", expiry_date=None, days_to_expiry=Non
 
 @pytest.mark.unit
 class TestGetExpiryAlerts:
-
     async def test_maps_each_alert_type_and_counts_match(self) -> None:
         from services.inventory_analytics import get_expiry_alerts
 
         session = AsyncMock()
         session.execute = AsyncMock(
-            return_value=_result([
-                _alert_row("EXPIRED", "E1", date(2026, 10, 1), -13),
-                _alert_row("EXPIRED", "E2", date(2026, 10, 10), -4),
-                _alert_row("EXPIRING", "X1", date(2026, 10, 20), 6),
-                _alert_row("NO_EXPIRY", "N1"),
-            ])
+            return_value=_result(
+                [
+                    _alert_row("EXPIRED", "E1", date(2026, 10, 1), -13),
+                    _alert_row("EXPIRED", "E2", date(2026, 10, 10), -4),
+                    _alert_row("EXPIRING", "X1", date(2026, 10, 20), 6),
+                    _alert_row("NO_EXPIRY", "N1"),
+                ]
+            )
         )
 
         result = await get_expiry_alerts(session, TENANT_ID)
 
         assert [i.alert_type for i in result.items] == [
-            "EXPIRED", "EXPIRED", "EXPIRING", "NO_EXPIRY",
+            "EXPIRED",
+            "EXPIRED",
+            "EXPIRING",
+            "NO_EXPIRY",
         ]
         assert [i.days_to_expiry for i in result.items] == [-13, -4, 6, None]
         assert result.items[3].expiry_date is None
@@ -269,8 +282,7 @@ class TestGetExpiryAlerts:
         result = await get_expiry_alerts(session, TENANT_ID, within_days=7)
 
         assert result.items == []
-        assert (result.counts.expired, result.counts.expiring,
-                result.counts.no_expiry) == (0, 0, 0)
+        assert (result.counts.expired, result.counts.expiring, result.counts.no_expiry) == (0, 0, 0)
         assert result.window_days == 7
 
     async def test_within_days_and_warehouse_reach_query_params(self) -> None:
@@ -279,9 +291,7 @@ class TestGetExpiryAlerts:
         session = AsyncMock()
         session.execute = AsyncMock(return_value=_result([]))
 
-        await get_expiry_alerts(
-            session, TENANT_ID, warehouse_id=WAREHOUSE_ID, within_days=45
-        )
+        await get_expiry_alerts(session, TENANT_ID, warehouse_id=WAREHOUSE_ID, within_days=45)
 
         sql, params = session.execute.call_args.args
         assert params["within_days"] == 45

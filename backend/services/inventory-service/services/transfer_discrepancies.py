@@ -33,6 +33,7 @@ resolve_discrepancy() checks the RM's node subtree (TA / NM / SA: tenant-wide).
 Listing — the router requires transfer:list and list_discrepancies() narrows
 facility-scoped roles, and an RM with a node, to their node subtree.
 """
+
 from __future__ import annotations
 
 import json
@@ -91,8 +92,7 @@ def validate_receipt(
     RECEIPT_REASON_REQUIRED  received less than was sent and no reason given
     """
     keys: list[EntryKey] = [
-        (str(e.line_id), str(e.lot_id) if e.lot_id is not None else None)
-        for e in receipt_lines
+        (str(e.line_id), str(e.lot_id) if e.lot_id is not None else None) for e in receipt_lines
     ]
     if len(set(keys)) != len(keys) or set(keys) != set(expected):
         raise HTTPException(
@@ -236,8 +236,8 @@ async def load_discrepancies(
 # Outcomes a reason may be resolved with. RECEIVED_AS_LOT additionally needs a
 # batch line (the row has a lot_id) — see _allowed_resolutions().
 _RESOLUTIONS_BY_REASON: dict[str, tuple[str, ...]] = {
-    "SHORT":     ("WRITTEN_OFF", "RETURNED", "ARRIVED_LATE"),
-    "DAMAGED":   ("WRITTEN_OFF",),
+    "SHORT": ("WRITTEN_OFF", "RETURNED", "ARRIVED_LATE"),
+    "DAMAGED": ("WRITTEN_OFF",),
     "WRONG_LOT": ("WRITTEN_OFF", "RETURNED", "RECEIVED_AS_LOT"),
 }
 
@@ -253,7 +253,8 @@ _SOURCE_RESOLUTIONS = frozenset({"RETURNED", "RECEIVED_AS_LOT"})
 
 def _allowed_resolutions(reason: str, lot_id: Optional[Any]) -> list[str]:
     return [
-        r for r in _RESOLUTIONS_BY_REASON.get(reason, ())
+        r
+        for r in _RESOLUTIONS_BY_REASON.get(reason, ())
         if r != "RECEIVED_AS_LOT" or lot_id is not None
     ]
 
@@ -270,13 +271,15 @@ def _lot_invalid(lot_id: Optional[UUID]) -> HTTPException:
 
 async def _load_lot(db: AsyncSession, tenant_id: str, lot_id: Any) -> Any:
     """(id, product_id, lot_number, expiry_date) of a tenant's lot, or None."""
-    return (await db.execute(
-        text(
-            "SELECT id, product_id, lot_number, expiry_date FROM stock_lots "
-            "WHERE id = :lid AND tenant_id = :tid"
-        ),
-        {"lid": str(lot_id), "tid": tenant_id},
-    )).fetchone()
+    return (
+        await db.execute(
+            text(
+                "SELECT id, product_id, lot_number, expiry_date FROM stock_lots "
+                "WHERE id = :lid AND tenant_id = :tid"
+            ),
+            {"lid": str(lot_id), "tid": tenant_id},
+        )
+    ).fetchone()
 
 
 async def _subtree(db: AsyncSession, tenant_id: str, node_id: Any) -> set[str]:
@@ -340,17 +343,19 @@ async def resolve_discrepancy(
     note = (body.note or "").strip() or None
 
     # a) the row, locked against a concurrent resolve
-    d = (await db.execute(
-        text(
-            "SELECT d.id, d.product_id, d.lot_id, d.missing_quantity, d.reason, "
-            "       d.status, t.from_warehouse_id, t.to_warehouse_id "
-            "FROM transfer_discrepancies d "
-            "JOIN transfer_orders t ON t.id = d.transfer_order_id AND t.tenant_id = d.tenant_id "
-            "WHERE d.id = :did AND d.tenant_id = :tid AND d.transfer_order_id = :xfer_id "
-            "FOR UPDATE OF d"
-        ),
-        {"did": discrepancy_id, "tid": tenant_id, "xfer_id": transfer_id},
-    )).fetchone()
+    d = (
+        await db.execute(
+            text(
+                "SELECT d.id, d.product_id, d.lot_id, d.missing_quantity, d.reason, "
+                "       d.status, t.from_warehouse_id, t.to_warehouse_id "
+                "FROM transfer_discrepancies d "
+                "JOIN transfer_orders t ON t.id = d.transfer_order_id AND t.tenant_id = d.tenant_id "
+                "WHERE d.id = :did AND d.tenant_id = :tid AND d.transfer_order_id = :xfer_id "
+                "FOR UPDATE OF d"
+            ),
+            {"did": discrepancy_id, "tid": tenant_id, "xfer_id": transfer_id},
+        )
+    ).fetchone()
     if d is None:
         raise HTTPException(status_code=404, detail={"code": "DISCREPANCY_NOT_FOUND"})
 
@@ -395,8 +400,9 @@ async def resolve_discrepancy(
     from_wh, to_wh = str(d.from_warehouse_id), str(d.to_warehouse_id)
     key_prefix = f"transfer:{transfer_id}:discrepancy:{discrepancy_id}"
 
-    async def _post(transaction_type: str, warehouse_id: str, quantity: Decimal,
-                    lot: Any, suffix: str) -> None:
+    async def _post(
+        transaction_type: str, warehouse_id: str, quantity: Decimal, lot: Any, suffix: str
+    ) -> None:
         await record_transaction(
             db,
             tenant_id=tenant_id,
@@ -471,35 +477,40 @@ async def resolve_discrepancy(
             "uid": str(user.user_id),
             "role": getattr(user, "role", None),
             "rid": discrepancy_id,
-            "ctx": json.dumps({
-                "discrepancy_id": discrepancy_id,
-                "transfer_id": transfer_id,
-                "reason": d.reason,
-                "resolution": resolution,
-                "quantity": str(n),
-                "product_id": product_id,
-                "lot_id": str(d.lot_id) if d.lot_id is not None else None,
-                "resolved_lot_id": resolved_lot_id,
-                "from_warehouse_id": from_wh,
-                "to_warehouse_id": to_wh,
-                "note": note,
-            }),
+            "ctx": json.dumps(
+                {
+                    "discrepancy_id": discrepancy_id,
+                    "transfer_id": transfer_id,
+                    "reason": d.reason,
+                    "resolution": resolution,
+                    "quantity": str(n),
+                    "product_id": product_id,
+                    "lot_id": str(d.lot_id) if d.lot_id is not None else None,
+                    "resolved_lot_id": resolved_lot_id,
+                    "from_warehouse_id": from_wh,
+                    "to_warehouse_id": to_wh,
+                    "note": note,
+                }
+            ),
         },
     )
 
-    row = (await db.execute(
-        text(
-            f"SELECT {_DISCREPANCY_COLUMNS} "
-            "FROM transfer_discrepancies d "
-            f"{_DISCREPANCY_LOT_JOINS}"
-            "WHERE d.id = :did AND d.tenant_id = :tid"
-        ),
-        {"did": discrepancy_id, "tid": tenant_id},
-    )).fetchone()
+    row = (
+        await db.execute(
+            text(
+                f"SELECT {_DISCREPANCY_COLUMNS} "
+                "FROM transfer_discrepancies d "
+                f"{_DISCREPANCY_LOT_JOINS}"
+                "WHERE d.id = :did AND d.tenant_id = :tid"
+            ),
+            {"did": discrepancy_id, "tid": tenant_id},
+        )
+    ).fetchone()
     return TransferDiscrepancyOut(**_discrepancy_fields(row))
 
 
 # ── list ─────────────────────────────────────────────────────────────────────
+
 
 async def list_discrepancies(
     db: AsyncSession,
@@ -534,9 +545,7 @@ async def list_discrepancies(
         subtree = await _subtree(db, tenant_id, node_id)
         if warehouse_id is not None and not _inside(subtree, [warehouse_id]):
             raise HTTPException(status_code=403, detail={"code": "WAREHOUSE_OUT_OF_SCOPE"})
-        filters += (
-            " AND (t.from_warehouse_id = ANY(:subtree) OR t.to_warehouse_id = ANY(:subtree))"
-        )
+        filters += " AND (t.from_warehouse_id = ANY(:subtree) OR t.to_warehouse_id = ANY(:subtree))"
         params["subtree"] = sorted(subtree)
     if warehouse_id is not None:
         filters += " AND (t.from_warehouse_id = :wh OR t.to_warehouse_id = :wh)"

@@ -4,6 +4,7 @@ Revision ID: 008
 Revises: 007
 Create Date: 2026-05-24
 """
+
 from __future__ import annotations
 
 from alembic import op
@@ -16,13 +17,13 @@ depends_on = None
 # Rows to insert: (role_code, action_id, grant_type)
 _INSERTS = [
     # TA — adjustment:list (was present in seed_permissions but missing from migration)
-    ("TA", "adjustment:list",  "FULL"),
+    ("TA", "adjustment:list", "FULL"),
     # NM — adjustment:list
-    ("NM", "adjustment:list",  "FULL"),
+    ("NM", "adjustment:list", "FULL"),
     # TA — inventory:issue (NM/RM/WM already had it; TA was missing)
-    ("TA", "inventory:issue",  "FULL"),
+    ("TA", "inventory:issue", "FULL"),
     # NM — inventory:issue
-    ("NM", "inventory:issue",  "FULL"),
+    ("NM", "inventory:issue", "FULL"),
 ]
 
 

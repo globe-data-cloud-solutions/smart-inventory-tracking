@@ -10,16 +10,18 @@ from pydantic import BaseModel, Field, field_validator
 
 # ── helpers ───────────────────────────────────────────────────────────────────
 
+
 def _strip(v: object) -> object:
     if isinstance(v, str):
-        if '\x00' in v:
+        if "\x00" in v:
             raise ValueError("Null bytes are not allowed in text fields")
         return v.strip()
     return v
 
+
 def _strip_opt(v: object) -> object:
     if isinstance(v, str):
-        if '\x00' in v:
+        if "\x00" in v:
             raise ValueError("Null bytes are not allowed in text fields")
         s = v.strip()
         return s if s else None
@@ -27,6 +29,7 @@ def _strip_opt(v: object) -> object:
 
 
 # ── product ───────────────────────────────────────────────────────────────────
+
 
 class ProductCreateRequest(BaseModel):
     """POST /api/v1/products/ body.
@@ -39,35 +42,48 @@ class ProductCreateRequest(BaseModel):
     short_name: Optional[str] = Field(default=None, max_length=50)
     description: Optional[str] = Field(default=None)
     category: Optional[str] = Field(default=None, max_length=255)
-    type_code: str = Field(min_length=2, max_length=10,
-                           description="Finds or creates a product_type_codes row")
+    type_code: str = Field(
+        min_length=2, max_length=10, description="Finds or creates a product_type_codes row"
+    )
     brand: Optional[str] = Field(default=None, max_length=100)
-    unit: str = Field(default="units", min_length=1, max_length=50,
-                      description="UOM string; finds or creates a product_uoms row")
+    unit: str = Field(
+        default="units",
+        min_length=1,
+        max_length=50,
+        description="UOM string; finds or creates a product_uoms row",
+    )
     packaging_type: Optional[str] = Field(default=None, max_length=50)
     units_per_package: Optional[int] = Field(default=None, ge=1)
     reorder_point: Optional[Decimal] = Field(default=None, ge=0)
-    sku_override: Optional[str] = Field(default=None, max_length=50,
-                                        description="Manual SKU override; skips auto-generation")
-    unit_price: Optional[Decimal] = Field(default=None, ge=0,
-                                          description="Unit selling/transfer price; used for total_value on transfers")
+    sku_override: Optional[str] = Field(
+        default=None, max_length=50, description="Manual SKU override; skips auto-generation"
+    )
+    unit_price: Optional[Decimal] = Field(
+        default=None,
+        ge=0,
+        description="Unit selling/transfer price; used for total_value on transfers",
+    )
     currency: str = Field(default="ETB", max_length=10)
 
     @field_validator("name", mode="before")
     @classmethod
-    def strip_name(cls, v: object) -> object: return _strip(v)
+    def strip_name(cls, v: object) -> object:
+        return _strip(v)
 
     @field_validator("short_name", mode="before")
     @classmethod
-    def strip_short_name(cls, v: object) -> object: return _strip_opt(v)
+    def strip_short_name(cls, v: object) -> object:
+        return _strip_opt(v)
 
     @field_validator("description", mode="before")
     @classmethod
-    def strip_desc(cls, v: object) -> object: return _strip_opt(v)
+    def strip_desc(cls, v: object) -> object:
+        return _strip_opt(v)
 
     @field_validator("category", mode="before")
     @classmethod
-    def strip_category(cls, v: object) -> object: return _strip_opt(v)
+    def strip_category(cls, v: object) -> object:
+        return _strip_opt(v)
 
     @field_validator("type_code", mode="before")
     @classmethod
@@ -76,19 +92,23 @@ class ProductCreateRequest(BaseModel):
 
     @field_validator("brand", mode="before")
     @classmethod
-    def strip_brand(cls, v: object) -> object: return _strip_opt(v)
+    def strip_brand(cls, v: object) -> object:
+        return _strip_opt(v)
 
     @field_validator("unit", mode="before")
     @classmethod
-    def strip_unit(cls, v: object) -> object: return _strip(v)
+    def strip_unit(cls, v: object) -> object:
+        return _strip(v)
 
     @field_validator("packaging_type", mode="before")
     @classmethod
-    def strip_pkg(cls, v: object) -> object: return _strip_opt(v)
+    def strip_pkg(cls, v: object) -> object:
+        return _strip_opt(v)
 
     @field_validator("sku_override", mode="before")
     @classmethod
-    def strip_sku_override(cls, v: object) -> object: return _strip_opt(v)
+    def strip_sku_override(cls, v: object) -> object:
+        return _strip_opt(v)
 
 
 class ProductUpdateRequest(BaseModel):
@@ -114,19 +134,23 @@ class ProductUpdateRequest(BaseModel):
 
     @field_validator("name", mode="before")
     @classmethod
-    def strip_name(cls, v: object) -> object: return _strip_opt(v)
+    def strip_name(cls, v: object) -> object:
+        return _strip_opt(v)
 
     @field_validator("short_name", mode="before")
     @classmethod
-    def strip_short_name(cls, v: object) -> object: return _strip_opt(v)
+    def strip_short_name(cls, v: object) -> object:
+        return _strip_opt(v)
 
     @field_validator("description", mode="before")
     @classmethod
-    def strip_desc(cls, v: object) -> object: return _strip_opt(v)
+    def strip_desc(cls, v: object) -> object:
+        return _strip_opt(v)
 
     @field_validator("category", mode="before")
     @classmethod
-    def strip_category(cls, v: object) -> object: return _strip_opt(v)
+    def strip_category(cls, v: object) -> object:
+        return _strip_opt(v)
 
     @field_validator("type_code", mode="before")
     @classmethod
@@ -135,15 +159,18 @@ class ProductUpdateRequest(BaseModel):
 
     @field_validator("brand", mode="before")
     @classmethod
-    def strip_brand(cls, v: object) -> object: return _strip_opt(v)
+    def strip_brand(cls, v: object) -> object:
+        return _strip_opt(v)
 
     @field_validator("unit", mode="before")
     @classmethod
-    def strip_unit(cls, v: object) -> object: return _strip_opt(v)
+    def strip_unit(cls, v: object) -> object:
+        return _strip_opt(v)
 
     @field_validator("packaging_type", mode="before")
     @classmethod
-    def strip_pkg(cls, v: object) -> object: return _strip_opt(v)
+    def strip_pkg(cls, v: object) -> object:
+        return _strip_opt(v)
 
 
 class ProductResponse(BaseModel):
@@ -174,6 +201,7 @@ class ProductResponse(BaseModel):
 
 # ── next-sku ──────────────────────────────────────────────────────────────────
 
+
 class NextSkuResponse(BaseModel):
     """Preview of the SKU that will be assigned on the next product creation.
     Non-mutating — does NOT increment any counter.
@@ -185,12 +213,14 @@ class NextSkuResponse(BaseModel):
 
 # ── categories ────────────────────────────────────────────────────────────────
 
+
 class CategoryCreateRequest(BaseModel):
     name: str = Field(min_length=1, max_length=255)
 
     @field_validator("name", mode="before")
     @classmethod
-    def strip_name(cls, v: object) -> object: return _strip(v)
+    def strip_name(cls, v: object) -> object:
+        return _strip(v)
 
 
 class CategoryResponse(BaseModel):
@@ -201,12 +231,14 @@ class CategoryResponse(BaseModel):
 
 # ── brands ────────────────────────────────────────────────────────────────────
 
+
 class BrandCreateRequest(BaseModel):
     name: str = Field(min_length=1, max_length=100)
 
     @field_validator("name", mode="before")
     @classmethod
-    def strip_name(cls, v: object) -> object: return _strip(v)
+    def strip_name(cls, v: object) -> object:
+        return _strip(v)
 
 
 class BrandResponse(BaseModel):
@@ -216,6 +248,7 @@ class BrandResponse(BaseModel):
 
 
 # ── type codes ────────────────────────────────────────────────────────────────
+
 
 class TypeCodeCreateRequest(BaseModel):
     code: str = Field(min_length=2, max_length=10)
@@ -228,7 +261,8 @@ class TypeCodeCreateRequest(BaseModel):
 
     @field_validator("description", mode="before")
     @classmethod
-    def strip_desc(cls, v: object) -> object: return _strip_opt(v)
+    def strip_desc(cls, v: object) -> object:
+        return _strip_opt(v)
 
 
 class TypeCodeResponse(BaseModel):
@@ -240,12 +274,14 @@ class TypeCodeResponse(BaseModel):
 
 # ── UOMs ──────────────────────────────────────────────────────────────────────
 
+
 class UomCreateRequest(BaseModel):
     name: str = Field(min_length=1, max_length=50)
 
     @field_validator("name", mode="before")
     @classmethod
-    def strip_name(cls, v: object) -> object: return _strip(v)
+    def strip_name(cls, v: object) -> object:
+        return _strip(v)
 
 
 class UomResponse(BaseModel):
@@ -256,13 +292,15 @@ class UomResponse(BaseModel):
 
 # ── packaging types ───────────────────────────────────────────────────────────
 
+
 class PackagingTypeCreateRequest(BaseModel):
     name: str = Field(min_length=1, max_length=50)
     units_per_package: int = Field(default=1, ge=1)
 
     @field_validator("name", mode="before")
     @classmethod
-    def strip_name(cls, v: object) -> object: return _strip(v)
+    def strip_name(cls, v: object) -> object:
+        return _strip(v)
 
 
 class PackagingTypeResponse(BaseModel):
@@ -274,18 +312,18 @@ class PackagingTypeResponse(BaseModel):
 
 # ── approval rules ────────────────────────────────────────────────────────────
 
-_VALID_TX_TYPES   = {"PULL", "PUSH", "ADJUSTMENT", "SISTER"}
-_VALID_APPROVERS  = {"WM", "RM", "NM", "TA", "SA"}
+_VALID_TX_TYPES = {"PULL", "PUSH", "ADJUSTMENT", "SISTER"}
+_VALID_APPROVERS = {"WM", "RM", "NM", "TA", "SA"}
 
 
 class ApprovalRuleEntry(BaseModel):
     """One quantity band override for a specific product + transaction type."""
 
     transaction_type: str = Field(description="PULL | PUSH | ADJUSTMENT | SISTER")
-    min_quantity:     Optional[Decimal] = Field(default=None, ge=0)
-    max_quantity:     Optional[Decimal] = Field(default=None, ge=0)
-    approver_role:    str = Field(min_length=2, max_length=10)
-    approval_order:   int = Field(default=1, ge=1)
+    min_quantity: Optional[Decimal] = Field(default=None, ge=0)
+    max_quantity: Optional[Decimal] = Field(default=None, ge=0)
+    approver_role: str = Field(min_length=2, max_length=10)
+    approval_order: int = Field(default=1, ge=1)
 
     @field_validator("transaction_type", mode="before")
     @classmethod
@@ -307,27 +345,28 @@ class ApprovalRulesUpsertRequest(BaseModel):
 
     Send an empty list to reset to tenant defaults (clears all product-level rules).
     """
+
     rules: list[ApprovalRuleEntry] = Field(default_factory=list)
 
 
 class ApprovalRuleResponse(BaseModel):
     """Single row from the approval_rule table, annotated with scope."""
 
-    id:               uuid.UUID
+    id: uuid.UUID
     transaction_type: str
-    min_quantity:     Optional[Decimal] = None
-    max_quantity:     Optional[Decimal] = None
-    approver_role:    str
-    approval_order:   int
-    product_id:       Optional[uuid.UUID] = None
+    min_quantity: Optional[Decimal] = None
+    max_quantity: Optional[Decimal] = None
+    approver_role: str
+    approval_order: int
+    product_id: Optional[uuid.UUID] = None
     is_product_level: bool  # True when product_id is set
 
 
 class ProductApprovalRulesResponse(BaseModel):
     """Response from GET /products/{id}/approval-rules and /approval-rules/latest."""
 
-    product_id:        Optional[uuid.UUID] = None
-    rules:             list[ApprovalRuleResponse]
+    product_id: Optional[uuid.UUID] = None
+    rules: list[ApprovalRuleResponse]
     is_using_defaults: bool  # True when product has no custom rules of its own
 
 
@@ -354,14 +393,15 @@ class ApprovalMinimumEntry(BaseModel):
     override_enabled is True; otherwise any existing row for this tx_type
     is deleted.
     """
-    transaction_type:     str
-    min_authority_level:  Optional[int] = Field(default=None, ge=1, le=5)
-    override_enabled:     bool = False
-    threshold_type:       str = "ALWAYS"
-    qty_threshold:        Optional[Decimal] = Field(default=None, ge=0)
-    value_threshold:      Optional[Decimal] = Field(default=None, ge=0)
+
+    transaction_type: str
+    min_authority_level: Optional[int] = Field(default=None, ge=1, le=5)
+    override_enabled: bool = False
+    threshold_type: str = "ALWAYS"
+    qty_threshold: Optional[Decimal] = Field(default=None, ge=0)
+    value_threshold: Optional[Decimal] = Field(default=None, ge=0)
     approver_position_id: Optional[uuid.UUID] = None
-    note:                 Optional[str] = None
+    note: Optional[str] = None
 
     @field_validator("transaction_type", mode="before")
     @classmethod
@@ -388,32 +428,35 @@ class ApprovalMinimumsUpsertRequest(BaseModel):
     To intentionally clear all product-level approval configuration,
     set clear_all=true (entries may be empty or omitted in that case).
     """
+
     entries: list[ApprovalMinimumEntry] = Field(default_factory=list)
     clear_all: bool = False
 
 
 class ApprovalMinimumResponse(BaseModel):
     """One row from product_approval_minimums."""
-    id:                   uuid.UUID
-    product_id:           uuid.UUID
-    transaction_type:     str
-    min_authority_level:  Optional[int] = None
-    override_enabled:     bool = False
-    threshold_type:       str = "ALWAYS"
-    qty_threshold:        Optional[Decimal] = None
-    value_threshold:      Optional[Decimal] = None
+
+    id: uuid.UUID
+    product_id: uuid.UUID
+    transaction_type: str
+    min_authority_level: Optional[int] = None
+    override_enabled: bool = False
+    threshold_type: str = "ALWAYS"
+    qty_threshold: Optional[Decimal] = None
+    value_threshold: Optional[Decimal] = None
     approver_position_id: Optional[uuid.UUID] = None
-    approver_label:       Optional[str] = None
-    note:                 Optional[str] = None
-    created_by:           uuid.UUID
-    created_at:           datetime
-    updated_at:           datetime
+    approver_label: Optional[str] = None
+    note: Optional[str] = None
+    created_by: uuid.UUID
+    created_at: datetime
+    updated_at: datetime
 
 
 class ProductApprovalMinimumsResponse(BaseModel):
     """Response from GET/PUT /products/{id}/approval-minimums."""
+
     product_id: uuid.UUID
-    minimums:   list[ApprovalMinimumResponse]
+    minimums: list[ApprovalMinimumResponse]
 
 
 class ProductApprovalOverride(BaseModel):
@@ -423,7 +466,8 @@ class ProductApprovalOverride(BaseModel):
     keyed by transaction_type. Consumed by NewTransferPanel /
     NewAdjustmentPanel (PART F) to render the lock icon + tooltip.
     """
-    mode:           str  # ALWAYS | QUANTITY | VALUE
-    threshold:      Optional[Decimal] = None
+
+    mode: str  # ALWAYS | QUANTITY | VALUE
+    threshold: Optional[Decimal] = None
     approver_label: Optional[str] = None
-    note:           Optional[str] = None
+    note: Optional[str] = None

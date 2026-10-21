@@ -52,6 +52,7 @@ Users:       GET/POST /tenants/{tenant_id}/users
 Assignments: POST     /tenants/{tenant_id}/users/{user_id}/assignments
              DELETE   /tenants/{tenant_id}/users/{user_id}/assignments/{assignment_id}
 """
+
 from __future__ import annotations
 
 import uuid
@@ -83,12 +84,21 @@ router = APIRouter()
 
 # Role privilege levels — higher = more privilege
 ROLE_LEVELS: dict[str, int] = {
-    "SYS": 1, "AU": 2, "RT": 3, "SA_GT": 4,
-    "LM": 6, "WM": 6, "RM": 7, "NM": 8, "TA": 9, "SA": 10,
+    "SYS": 1,
+    "AU": 2,
+    "RT": 3,
+    "SA_GT": 4,
+    "LM": 6,
+    "WM": 6,
+    "RM": 7,
+    "NM": 8,
+    "TA": 9,
+    "SA": 10,
 }
 
 
 # ── Pydantic schemas ──────────────────────────────────────────────────────────
+
 
 class AssignmentOut(BaseModel):
     id: uuid.UUID
@@ -106,7 +116,7 @@ class UserOut(BaseModel):
     id: uuid.UUID
     tenant_id: uuid.UUID
     email: str
-    name: str                           # full_name alias for frontend compatibility
+    name: str  # full_name alias for frontend compatibility
     role: str
     primary_facility_id: Optional[uuid.UUID]
     primary_facility_name: Optional[str]
@@ -116,26 +126,26 @@ class UserOut(BaseModel):
 
 
 class UserCreateRequest(BaseModel):
-    name: str                           # full_name alias for frontend compatibility
+    name: str  # full_name alias for frontend compatibility
     email: EmailStr
-    role: str                           # role_code alias for frontend compatibility
-    facility_id: Optional[uuid.UUID] = None   # optional for TA/SA-level roles
+    role: str  # role_code alias for frontend compatibility
+    facility_id: Optional[uuid.UUID] = None  # optional for TA/SA-level roles
     password: Optional[str] = None
 
 
 class UserUpdateRequest(BaseModel):
-    name: Optional[str] = None              # frontend alias for full_name
-    full_name: Optional[str] = None         # backward compat
+    name: Optional[str] = None  # frontend alias for full_name
+    full_name: Optional[str] = None  # backward compat
     email: Optional[EmailStr] = None
-    role: Optional[str] = None              # frontend alias for role_code
-    role_code: Optional[str] = None         # backward compat
+    role: Optional[str] = None  # frontend alias for role_code
+    role_code: Optional[str] = None  # backward compat
     facility_id: Optional[uuid.UUID] = None
     must_reset_password: Optional[bool] = None
 
 
 class AssignmentCreateRequest(BaseModel):
     facility_id: uuid.UUID
-    assignment_type: str   # ACTING | DELEGATE
+    assignment_type: str  # ACTING | DELEGATE
     role_code: Optional[str] = None
     valid_from: Optional[datetime] = None
     valid_until: datetime
@@ -144,9 +154,8 @@ class AssignmentCreateRequest(BaseModel):
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
-async def _get_authority_scope(
-    db: AsyncSession, tenant_id: str, facility_id: str
-) -> list[str]:
+
+async def _get_authority_scope(db: AsyncSession, tenant_id: str, facility_id: str) -> list[str]:
     """Return all organization_node IDs that facility_id has authority over."""
     rows = await db.execute(
         text(
@@ -172,9 +181,7 @@ async def _get_authority_scope(
     return [str(r[0]) for r in rows.fetchall()]
 
 
-async def _get_user_assignments(
-    db: AsyncSession, user_id: str
-) -> list[AssignmentOut]:
+async def _get_user_assignments(db: AsyncSession, user_id: str) -> list[AssignmentOut]:
     rows = await db.execute(
         text(
             """
@@ -215,12 +222,13 @@ def _check_role_ceiling(caller_role: str, target_role: str) -> None:
             detail={
                 "code": "ROLE_CEILING_VIOLATION",
                 "message": f"Cannot assign role '{target_role}' — "
-                           f"it is at or above your own privilege level.",
+                f"it is at or above your own privilege level.",
             },
         )
 
 
 # ── User list ─────────────────────────────────────────────────────────────────
+
 
 @router.get(
     "/{tenant_id}/users",
@@ -300,6 +308,7 @@ async def list_users(
 
 # ── Get single user ───────────────────────────────────────────────────────────
 
+
 @router.get(
     "/{tenant_id}/users/{user_id}",
     response_model=SuccessResponse[UserOut],
@@ -345,6 +354,7 @@ async def get_user(
 
 
 # ── Create user ───────────────────────────────────────────────────────────────
+
 
 @router.post(
     "/{tenant_id}/users",
@@ -453,6 +463,7 @@ async def create_user(
 
 # ── Update user ───────────────────────────────────────────────────────────────
 
+
 @router.patch(
     "/{tenant_id}/users/{user_id}",
     response_model=SuccessResponse[UserOut],
@@ -486,18 +497,31 @@ async def update_user(
     new_role = effective_role if effective_role is not None else existing.role
     new_email = body.email if body.email is not None else existing.email
     facility_changed = body.facility_id is not None
-    new_wh = str(body.facility_id) if facility_changed else (
-        str(existing.warehouse_id) if existing.warehouse_id else None
+    new_wh = (
+        str(body.facility_id)
+        if facility_changed
+        else (str(existing.warehouse_id) if existing.warehouse_id else None)
     )
 
     if effective_role:
         _check_role_ceiling(caller_role, effective_role)
 
     # Build SET clause conditionally to avoid overwriting unchanged fields
-    set_parts = ["full_name = :name", "role = :role", "email = :email",
-                 "warehouse_id = :wh", "updated_at = now()"]
-    params: dict = {"name": new_name, "role": new_role, "email": new_email,
-                    "wh": new_wh, "uid": str(user_id), "tid": tid}
+    set_parts = [
+        "full_name = :name",
+        "role = :role",
+        "email = :email",
+        "warehouse_id = :wh",
+        "updated_at = now()",
+    ]
+    params: dict = {
+        "name": new_name,
+        "role": new_role,
+        "email": new_email,
+        "wh": new_wh,
+        "uid": str(user_id),
+        "tid": tid,
+    }
     if body.must_reset_password is not None:
         set_parts.append("must_reset_password = :mrp")
         params["mrp"] = body.must_reset_password
@@ -537,7 +561,9 @@ async def update_user(
                     """
                 ),
                 {
-                    "tid": tid, "uid": str(user_id), "fid": str(body.facility_id),
+                    "tid": tid,
+                    "uid": str(user_id),
+                    "fid": str(body.facility_id),
                     "role": new_role,
                     "created_by": str(user.user_id) if user else str(user_id),
                 },
@@ -560,6 +586,7 @@ async def update_user(
 
 
 # ── Deactivate / reactivate ───────────────────────────────────────────────────
+
 
 @router.post(
     "/{tenant_id}/users/{user_id}/deactivate",
@@ -628,6 +655,7 @@ async def reactivate_user(
 
 # ── Assignments ───────────────────────────────────────────────────────────────
 
+
 @router.post(
     "/{tenant_id}/users/{user_id}/assignments",
     status_code=201,
@@ -652,7 +680,9 @@ async def create_assignment(
 
     # Verify target user exists in this tenant
     u_row = await db.execute(
-        text("SELECT id, role FROM users WHERE id = :uid AND tenant_id = :tid AND is_active = true"),
+        text(
+            "SELECT id, role FROM users WHERE id = :uid AND tenant_id = :tid AND is_active = true"
+        ),
         {"uid": str(user_id), "tid": tid},
     )
     target_user = u_row.fetchone()
@@ -688,8 +718,10 @@ async def create_assignment(
         if t_wh and t_wh.warehouse_id and str(t_wh.warehouse_id) not in scope:
             raise HTTPException(
                 status_code=403,
-                detail={"code": "OUTSIDE_AUTHORITY_SCOPE",
-                        "message": "Target user is outside your authority scope"},
+                detail={
+                    "code": "OUTSIDE_AUTHORITY_SCOPE",
+                    "message": "Target user is outside your authority scope",
+                },
             )
 
     valid_from = body.valid_from or datetime.now(timezone.utc)
@@ -764,15 +796,12 @@ async def deactivate_assignment(
             detail={
                 "code": "CANNOT_REMOVE_PRIMARY",
                 "message": "Cannot remove a PRIMARY facility assignment. "
-                           "Deactivate the user instead.",
+                "Deactivate the user instead.",
             },
         )
 
     await db.execute(
-        text(
-            "UPDATE user_facility_assignments SET is_active = false "
-            "WHERE id = :aid"
-        ),
+        text("UPDATE user_facility_assignments SET is_active = false WHERE id = :aid"),
         {"aid": str(assignment_id)},
     )
     return SuccessResponse(data={"deactivated_assignment": str(assignment_id)})

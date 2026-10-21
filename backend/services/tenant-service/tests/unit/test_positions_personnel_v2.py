@@ -12,24 +12,23 @@ Fix mirrors the auth-service pattern: temporarily insert tenant-service root at
 position 0, flush stale routers.* entries, then restore sys.path after loading.
 Inline imports inside test methods re-resolve after each per-test flush in conftest.
 """
+
 from __future__ import annotations
 
 import os
 import sys
 
-os.environ.setdefault("DATABASE_URL",      "postgresql+asyncpg://test:x@localhost/test")
+os.environ.setdefault("DATABASE_URL", "postgresql+asyncpg://test:x@localhost/test")
 os.environ.setdefault("DATABASE_READ_URL", "postgresql+asyncpg://test:x@localhost/test")
-os.environ.setdefault("JWT_SECRET",        "test-secret")
-os.environ.setdefault("JWT_SECRET_KEY",    "test-secret")
+os.environ.setdefault("JWT_SECRET", "test-secret")
+os.environ.setdefault("JWT_SECRET_KEY", "test-secret")
 # redis.from_url() doesn't connect eagerly — this only satisfies the module-level
 # os.environ["REDIS_URL"] read in shared.cache.redis_client (personnel_v2.py now
 # imports shared.cache.login_lockout for the password-reset lockout-clear call).
 os.environ.setdefault("REDIS_URL", "redis://localhost:6379/0")
 
 # ── Scoped sys.path: guarantee tenant-service routers win the lookup ──────────
-_TENANT_ROOT = os.path.normpath(
-    os.path.join(os.path.dirname(__file__), "..", "..")
-)
+_TENANT_ROOT = os.path.normpath(os.path.join(os.path.dirname(__file__), "..", ".."))
 _was_on_path = _TENANT_ROOT in sys.path
 if not _was_on_path:
     sys.path.insert(0, _TENANT_ROOT)
@@ -46,11 +45,11 @@ import pytest  # noqa: E402 - sys.path/env setup above must run first
 from fastapi import HTTPException  # noqa: E402 - sys.path/env setup above must run first
 from sqlalchemy.exc import IntegrityError  # noqa: E402 - sys.path/env setup above must run first
 
-TENANT_ID    = "aaaaaaaa-0000-0000-0000-000000000001"
-NODE_ID      = "bbbbbbbb-0000-0000-0000-000000000001"
-POSITION_ID  = "cccccccc-0000-0000-0000-000000000001"
-USER_ID      = "dddddddd-0000-0000-0000-000000000001"
-CONFIG_ID    = "eeeeeeee-0000-0000-0000-000000000001"
+TENANT_ID = "aaaaaaaa-0000-0000-0000-000000000001"
+NODE_ID = "bbbbbbbb-0000-0000-0000-000000000001"
+POSITION_ID = "cccccccc-0000-0000-0000-000000000001"
+USER_ID = "dddddddd-0000-0000-0000-000000000001"
+CONFIG_ID = "eeeeeeee-0000-0000-0000-000000000001"
 POSITION_A_ID = "cccccccc-0000-0000-0000-00000000000a"
 POSITION_B_ID = "cccccccc-0000-0000-0000-00000000000b"
 
@@ -87,19 +86,19 @@ def _db_seq(*returns: Any) -> AsyncMock:
         if r is None:
             res.fetchone = MagicMock(return_value=None)
             res.fetchall = MagicMock(return_value=[])
-            res.scalar   = MagicMock(return_value=0)
+            res.scalar = MagicMock(return_value=0)
         elif isinstance(r, int):
             res.fetchone = MagicMock(return_value=_row(count=r) if r else None)
             res.fetchall = MagicMock(return_value=[])
-            res.scalar   = MagicMock(return_value=r)
+            res.scalar = MagicMock(return_value=r)
         elif isinstance(r, list):
             res.fetchone = MagicMock(return_value=r[0] if r else None)
             res.fetchall = MagicMock(return_value=r)
-            res.scalar   = MagicMock(return_value=len(r))
+            res.scalar = MagicMock(return_value=len(r))
         else:
             res.fetchone = MagicMock(return_value=r)
             res.fetchall = MagicMock(return_value=[r])
-            res.scalar   = MagicMock(return_value=1)
+            res.scalar = MagicMock(return_value=1)
         results.append(res)
 
     db.execute = AsyncMock(side_effect=results)
@@ -133,9 +132,9 @@ def _db_seq_raising(*returns: Any, raises: Exception) -> AsyncMock:
 
 # ── Test 1 & 2: Position creation ────────────────────────────────────────────
 
+
 @pytest.mark.unit
 class TestPositionCreate:
-
     async def test_position_create_at_node(self) -> None:
         """POST /nodes/{node_id}/positions succeeds for a valid role_code (WM)."""
         from routers.positions import create_position, PositionCreate
@@ -152,7 +151,7 @@ class TestPositionCreate:
                 db=db,
             )
 
-        assert result.data.title     == "WH Manager North"
+        assert result.data.title == "WH Manager North"
         assert result.data.role_code == "WM"
         assert result.data.is_active is True
 
@@ -201,10 +200,16 @@ class TestPositionCreate:
         from routers.positions import update_position, PositionUpdate
 
         existing_row = _row(
-            id=POSITION_ID, title="WH Manager North", role_code="WM",
-            reports_to_position_id=None, is_active=True, rp_title=None,
+            id=POSITION_ID,
+            title="WH Manager North",
+            role_code="WM",
+            reports_to_position_id=None,
+            is_active=True,
+            rp_title=None,
         )
-        db = _db_seq_raising(existing_row, raises=_unique_violation("uq_positions_node_title_active"))
+        db = _db_seq_raising(
+            existing_row, raises=_unique_violation("uq_positions_node_title_active")
+        )
 
         with _GRANT_ALL, pytest.raises(HTTPException) as exc_info:
             await update_position(
@@ -225,8 +230,12 @@ class TestPositionCreate:
         from routers.positions import update_position, PositionUpdate
 
         b_row = _row(
-            id=POSITION_B_ID, title="Position B", role_code="WM",
-            reports_to_position_id=None, is_active=True, rp_title=None,
+            id=POSITION_B_ID,
+            title="Position B",
+            role_code="WM",
+            reports_to_position_id=None,
+            is_active=True,
+            rp_title=None,
         )
         # _would_create_cycle's lookup of A's current reports_to_position_id —
         # simulates the prior PATCH that set A.reports_to_position_id = B.
@@ -251,8 +260,12 @@ class TestPositionCreate:
         from routers.positions import update_position, PositionUpdate
 
         existing_row = _row(
-            id=POSITION_ID, title="Position X", role_code="WM",
-            reports_to_position_id=None, is_active=True, rp_title=None,
+            id=POSITION_ID,
+            title="Position X",
+            role_code="WM",
+            reports_to_position_id=None,
+            is_active=True,
+            rp_title=None,
         )
         db = _db_seq(existing_row)
 
@@ -287,16 +300,22 @@ class TestPositionCreate:
 
 # ── Test 3: Personnel v2 ─────────────────────────────────────────────────────
 
+
 @pytest.mark.unit
 class TestPersonnelV2:
-
     async def test_create_user_with_position(self) -> None:
         """POST /users creates the user AND the PRIMARY personnel_position atomically —
         a single call into create_user, with no separate POST .../positions needed."""
         from routers.personnel_v2 import create_user, UserCreate
 
-        pos_row = _row(id=POSITION_ID, title="Main WH Manager", role_code="WM",
-                       node_id=NODE_ID, node_name="Main WH", hierarchy_level=1)
+        pos_row = _row(
+            id=POSITION_ID,
+            title="Main WH Manager",
+            role_code="WM",
+            node_id=NODE_ID,
+            node_name="Main WH",
+            hierarchy_level=1,
+        )
 
         execute_calls: list[tuple[str, dict]] = []
 
@@ -304,11 +323,11 @@ class TestPersonnelV2:
             execute_calls.append((str(stmt), params or {}))
             res = MagicMock()
             if "SELECT id FROM users" in str(stmt):
-                res.fetchone = MagicMock(return_value=None)       # no duplicate email
+                res.fetchone = MagicMock(return_value=None)  # no duplicate email
             elif "SELECT p.id, p.title, p.role_code" in str(stmt):
-                res.fetchone = MagicMock(return_value=pos_row)    # position lookup
+                res.fetchone = MagicMock(return_value=pos_row)  # position lookup
             else:
-                res.fetchone = MagicMock(return_value=None)       # INSERT statements
+                res.fetchone = MagicMock(return_value=None)  # INSERT statements
             return res
 
         db = AsyncMock()
@@ -338,7 +357,9 @@ class TestPersonnelV2:
         stmts = " ".join(s for s, _ in execute_calls)
         assert "INSERT INTO users" in stmts
         assert "INSERT INTO personnel_positions" in stmts
-        assert len(execute_calls) == 4, "dup-email check + INSERT user + position lookup + INSERT assignment"
+        assert len(execute_calls) == 4, (
+            "dup-email check + INSERT user + position lookup + INSERT assignment"
+        )
 
     async def test_swap_primary_position_success(self) -> None:
         """POST /users/{id}/positions with assignment_type=PRIMARY deactivates the user's
@@ -347,8 +368,14 @@ class TestPersonnelV2:
         from routers.personnel_v2 import assign_position, AssignPositionRequest
 
         user_row = _row(id=USER_ID)
-        pos_row  = _row(id=POSITION_ID, title="Main WH Manager", role_code="WM",
-                        node_id=NODE_ID, node_name="Main WH", hierarchy_level=1)
+        pos_row = _row(
+            id=POSITION_ID,
+            title="Main WH Manager",
+            role_code="WM",
+            node_id=NODE_ID,
+            node_name="Main WH",
+            hierarchy_level=1,
+        )
 
         execute_calls: list[tuple[str, dict]] = []
 
@@ -384,7 +411,9 @@ class TestPersonnelV2:
         # The deactivate-old-PRIMARY UPDATE must run before the INSERT of the new
         # PRIMARY row, so at no point do two active PRIMARY rows coexist.
         update_idx = next(i for i, (s, _) in enumerate(execute_calls) if "is_active = false" in s)
-        insert_idx = next(i for i, (s, _) in enumerate(execute_calls) if "INSERT INTO personnel_positions" in s)
+        insert_idx = next(
+            i for i, (s, _) in enumerate(execute_calls) if "INSERT INTO personnel_positions" in s
+        )
         assert update_idx < insert_idx
         update_stmt, update_params = execute_calls[update_idx]
         assert "assignment_type = 'PRIMARY'" in update_stmt
@@ -400,14 +429,20 @@ class TestPersonnelV2:
         from routers.personnel_v2 import assign_position, AssignPositionRequest
 
         user_row = _row(id=USER_ID)
-        pos_row  = _row(id=POSITION_ID, title="Main WH Manager", role_code="WM",
-                        node_id=NODE_ID, node_name="Main WH", hierarchy_level=1)
+        pos_row = _row(
+            id=POSITION_ID,
+            title="Main WH Manager",
+            role_code="WM",
+            node_id=NODE_ID,
+            node_name="Main WH",
+            hierarchy_level=1,
+        )
 
         db = _db_seq(
             user_row,  # user belongs to tenant
-            None,      # UPDATE — deactivate existing PRIMARY (same position)
-            pos_row,   # position lookup — same position_id as before
-            None,      # INSERT — new PRIMARY row at the same position
+            None,  # UPDATE — deactivate existing PRIMARY (same position)
+            pos_row,  # position lookup — same position_id as before
+            None,  # INSERT — new PRIMARY row at the same position
         )
 
         with _GRANT_ALL:
@@ -440,7 +475,9 @@ class TestPersonnelV2:
         async def _capture(stmt, params=None, **kw) -> MagicMock:
             execute_calls.append((str(stmt), params or {}))
             res = MagicMock()
-            res.fetchone = MagicMock(return_value=assignment_row if "SELECT pp.id" in str(stmt) else None)
+            res.fetchone = MagicMock(
+                return_value=assignment_row if "SELECT pp.id" in str(stmt) else None
+            )
             return res
 
         db = AsyncMock()
@@ -456,8 +493,10 @@ class TestPersonnelV2:
             )
 
         assert result.data == {
-            "deactivated": True, "assignment_id": POSITION_ID,
-            "removed": True, "user_deactivated": False,
+            "deactivated": True,
+            "assignment_id": POSITION_ID,
+            "removed": True,
+            "user_deactivated": False,
         }
         stmts = " ".join(s for s, _ in execute_calls)
         assert "UPDATE personnel_positions SET is_active = false" in stmts
@@ -474,7 +513,7 @@ class TestPersonnelV2:
 
         db = _db_seq(
             assignment_row,  # assignment found and active
-            0,                # other_primary_count == 0 → only this PRIMARY exists
+            0,  # other_primary_count == 0 → only this PRIMARY exists
         )
 
         with _GRANT_ALL, pytest.raises(HTTPException) as exc_info:
@@ -501,9 +540,9 @@ class TestPersonnelV2:
 
         db = _db_seq(
             assignment_row,  # assignment found and active
-            0,                # other_primary_count == 0 → only this PRIMARY exists
-            None,             # UPDATE users SET is_active = false
-            None,             # UPDATE personnel_positions SET is_active = false
+            0,  # other_primary_count == 0 → only this PRIMARY exists
+            None,  # UPDATE users SET is_active = false
+            None,  # UPDATE personnel_positions SET is_active = false
         )
 
         with _GRANT_ALL:
@@ -519,7 +558,9 @@ class TestPersonnelV2:
         assert result.data["removed"] is True
         assert result.data["user_deactivated"] is True
 
-    async def test_sa_force_remove_sole_primary_revokes_user_tokens(self, monkeypatch: pytest.MonkeyPatch) -> None:
+    async def test_sa_force_remove_sole_primary_revokes_user_tokens(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         """The auto-deactivate path in a force-removal of the sole PRIMARY
         assignment also revokes the user's tokens."""
         from routers.personnel_v2 import remove_position_assignment
@@ -582,7 +623,9 @@ class TestPersonnelV2:
         async def _capture(stmt, params=None, **kw) -> MagicMock:
             execute_calls.append((str(stmt), params or {}))
             res = MagicMock()
-            res.fetchone = MagicMock(return_value=user_row if "FROM users WHERE id" in str(stmt) else None)
+            res.fetchone = MagicMock(
+                return_value=user_row if "FROM users WHERE id" in str(stmt) else None
+            )
             return res
 
         db = AsyncMock()
@@ -612,7 +655,9 @@ class TestPersonnelV2:
         assert update_params["ph"] != "NewPass@2026"  # stored as a bcrypt hash, never plaintext
         assert reset_calls == ["locked-out@test.com"]
 
-    async def test_ta_password_reset_revokes_user_tokens(self, monkeypatch: pytest.MonkeyPatch) -> None:
+    async def test_ta_password_reset_revokes_user_tokens(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         """PATCH /users/{id} with password also revokes the target user's tokens,
         but only when password_hash is actually being set."""
         from routers.personnel_v2 import update_user, UserUpdateRequest
@@ -621,7 +666,9 @@ class TestPersonnelV2:
 
         async def _capture(stmt, params=None, **kw) -> MagicMock:
             res = MagicMock()
-            res.fetchone = MagicMock(return_value=user_row if "FROM users WHERE id" in str(stmt) else None)
+            res.fetchone = MagicMock(
+                return_value=user_row if "FROM users WHERE id" in str(stmt) else None
+            )
             return res
 
         db = AsyncMock()
@@ -642,7 +689,9 @@ class TestPersonnelV2:
 
         mock_revoke.assert_awaited_once_with(USER_ID)
 
-    async def test_update_user_without_password_does_not_revoke_tokens(self, monkeypatch: pytest.MonkeyPatch) -> None:
+    async def test_update_user_without_password_does_not_revoke_tokens(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         """PATCH /users/{id} with no password field never touches token revocation."""
         from routers.personnel_v2 import update_user, UserUpdateRequest
 
@@ -650,7 +699,9 @@ class TestPersonnelV2:
 
         async def _capture(stmt, params=None, **kw) -> MagicMock:
             res = MagicMock()
-            res.fetchone = MagicMock(return_value=user_row if "FROM users WHERE id" in str(stmt) else None)
+            res.fetchone = MagicMock(
+                return_value=user_row if "FROM users WHERE id" in str(stmt) else None
+            )
             return res
 
         db = AsyncMock()
@@ -715,7 +766,7 @@ class TestPersonnelV2:
         target_row = _row(id=USER_ID, system_role="TA")
         db = _db_seq(
             target_row,  # target user found, active
-            1,           # active_ta_count == 1 → only this TA exists
+            1,  # active_ta_count == 1 → only this TA exists
         )
 
         with _GRANT_ALL, pytest.raises(HTTPException) as exc_info:
@@ -737,9 +788,9 @@ class TestPersonnelV2:
         target_row = _row(id=USER_ID, system_role="TA")
         db = _db_seq(
             target_row,  # target user found, active
-            2,           # active_ta_count == 2 → another TA exists
-            None,        # UPDATE users SET is_active=false
-            None,        # UPDATE personnel_positions SET is_active=false
+            2,  # active_ta_count == 2 → another TA exists
+            None,  # UPDATE users SET is_active=false
+            None,  # UPDATE personnel_positions SET is_active=false
         )
 
         with _GRANT_ALL:
@@ -933,7 +984,9 @@ class TestPersonnelV2:
         async def _capture(stmt, params=None, **kw) -> MagicMock:
             execute_calls.append((str(stmt), params or {}))
             res = MagicMock()
-            res.fetchone = MagicMock(return_value=user_row if "FROM users WHERE id" in str(stmt) else None)
+            res.fetchone = MagicMock(
+                return_value=user_row if "FROM users WHERE id" in str(stmt) else None
+            )
             return res
 
         db = AsyncMock()
@@ -959,7 +1012,9 @@ class TestPersonnelV2:
         from routers.personnel_v2 import update_user, UserUpdateRequest
 
         target_row = _row(id=USER_ID, email="target@test.com", system_role="AU")
-        db = _db_seq(target_row)  # SELECT ... WHERE id — ceiling check fires next, no UPDATE reached
+        db = _db_seq(
+            target_row
+        )  # SELECT ... WHERE id — ceiling check fires next, no UPDATE reached
 
         with _GRANT_ALL, pytest.raises(HTTPException) as exc_info:
             await update_user(
@@ -1083,7 +1138,9 @@ class TestPersonnelV2:
         assert exc_info.value.status_code == 409
         assert exc_info.value.detail["code"] == "DUPLICATE_EMAIL"
 
-    async def test_update_user_email_to_another_users_email_different_case_returns_409(self) -> None:
+    async def test_update_user_email_to_another_users_email_different_case_returns_409(
+        self,
+    ) -> None:
         """PATCH /users/{id} changing email to one already used by someone else,
         even with different casing, returns 409 instead of a raw 500."""
         from routers.personnel_v2 import update_user, UserUpdateRequest
@@ -1145,7 +1202,6 @@ class TestPersonnelV2:
         assert exc_info.value.detail["code"] == "DUPLICATE_EMAIL"
 
 
-
 # ── Test 3b: Reactivate with position restore ─────────────────────────────────
 
 ASSIGNMENT_ID_OLD = "ffffffff-0000-0000-0000-000000000001"
@@ -1170,12 +1226,12 @@ class TestReactivateUserPositionRestore:
         from routers.personnel_v2 import reactivate_user
 
         user_row = _row(id=USER_ID, system_role=None)
-        pos_row  = _row(id=ASSIGNMENT_ID_NEW, is_active=False, valid_until=None)
+        pos_row = _row(id=ASSIGNMENT_ID_NEW, is_active=False, valid_until=None)
         db = _db_seq(
-            user_row,   # SELECT users WHERE is_active=false
-            None,       # UPDATE users SET is_active=true
-            pos_row,    # SELECT personnel_positions ORDER BY created_at DESC LIMIT 1
-            None,       # UPDATE personnel_positions SET is_active=true
+            user_row,  # SELECT users WHERE is_active=false
+            None,  # UPDATE users SET is_active=true
+            pos_row,  # SELECT personnel_positions ORDER BY created_at DESC LIMIT 1
+            None,  # UPDATE personnel_positions SET is_active=true
         )
 
         with _GRANT_ALL:
@@ -1187,10 +1243,10 @@ class TestReactivateUserPositionRestore:
                 db=db,
             )
 
-        assert result.data["reactivated"]       is True
-        assert result.data["user_id"]           == USER_ID
+        assert result.data["reactivated"] is True
+        assert result.data["user_id"] == USER_ID
         assert result.data["position_restored"] is True
-        assert db.execute.call_count            == 4  # user SELECT + user UPDATE + pos SELECT + pos UPDATE
+        assert db.execute.call_count == 4  # user SELECT + user UPDATE + pos SELECT + pos UPDATE
 
     async def test_reactivate_skips_restore_when_opted_out(self) -> None:
         """PATCH /users/{id}/reactivate?restore_position=False reactivates the account
@@ -1201,7 +1257,7 @@ class TestReactivateUserPositionRestore:
         user_row = _row(id=USER_ID, system_role=None)
         db = _db_seq(
             user_row,  # SELECT users WHERE is_active=false
-            None,      # UPDATE users SET is_active=true
+            None,  # UPDATE users SET is_active=true
             # No position SELECT or UPDATE — restore_position=False short-circuits
         )
 
@@ -1214,9 +1270,9 @@ class TestReactivateUserPositionRestore:
                 db=db,
             )
 
-        assert result.data["reactivated"]       is True
+        assert result.data["reactivated"] is True
         assert result.data["position_restored"] is False
-        assert db.execute.call_count            == 2  # only the two user-scoped DB calls
+        assert db.execute.call_count == 2  # only the two user-scoped DB calls
 
     async def test_reactivate_restores_only_newest_primary_row(self) -> None:
         """When a user has two historical PRIMARY rows (an older swapped-out one and a
@@ -1227,7 +1283,7 @@ class TestReactivateUserPositionRestore:
         ASSIGNMENT_ID_NEW, never ASSIGNMENT_ID_OLD."""
         from routers.personnel_v2 import reactivate_user
 
-        user_row  = _row(id=USER_ID, system_role=None)
+        user_row = _row(id=USER_ID, system_role=None)
         # Simulate the DB correctly returning the newer row from the ORDER BY DESC query
         newer_pos = _row(id=ASSIGNMENT_ID_NEW, is_active=False, valid_until=None)
 
@@ -1266,7 +1322,9 @@ class TestReactivateUserPositionRestore:
             None,
         )
         assert pos_select is not None, "Expected a SELECT on personnel_positions"
-        assert "created_at DESC" in pos_select, "SELECT must order by created_at DESC to get newest row"
+        assert "created_at DESC" in pos_select, (
+            "SELECT must order by created_at DESC to get newest row"
+        )
         assert "LIMIT" in pos_select
 
         # The UPDATE must target the NEWER row's id only
@@ -1283,12 +1341,16 @@ class TestReactivateUserPositionRestore:
 
 # ── Test 4: Transfer type config ─────────────────────────────────────────────
 
+
 @pytest.mark.unit
 class TestTransferTypeConfig:
-
     async def test_transfer_type_config_upsert(self) -> None:
         """PUT /transfer-types inserts a new config and stores level permissions."""
-        from routers.transfer_types import upsert_transfer_types, TransferTypeConfigIn, LevelPermissionIn
+        from routers.transfer_types import (
+            upsert_transfer_types,
+            TransferTypeConfigIn,
+            LevelPermissionIn,
+        )
 
         execute_calls: list[tuple[str, dict]] = []
 
@@ -1297,24 +1359,28 @@ class TestTransferTypeConfig:
             res = MagicMock()
             res.fetchone = MagicMock(return_value=None)  # no existing → INSERT path
             res.fetchall = MagicMock(return_value=[])
-            res.scalar   = MagicMock(return_value=0)
+            res.scalar = MagicMock(return_value=0)
             return res
 
         db = AsyncMock()
         db.execute = AsyncMock(side_effect=_capture)
-        db.commit  = AsyncMock()
+        db.commit = AsyncMock()
 
         with _GRANT_ALL:
             try:
                 await upsert_transfer_types(
                     tenant_id=UUID(TENANT_ID),
-                    body=[TransferTypeConfigIn(
-                        underlying_type="PULL",
-                        display_name="Pull Request",
-                        level_permissions=[
-                            LevelPermissionIn(level_number=3, can_initiate=False, can_receive=True)
-                        ],
-                    )],
+                    body=[
+                        TransferTypeConfigIn(
+                            underlying_type="PULL",
+                            display_name="Pull Request",
+                            level_permissions=[
+                                LevelPermissionIn(
+                                    level_number=3, can_initiate=False, can_receive=True
+                                )
+                            ],
+                        )
+                    ],
                     user=_Caller(),
                     db=db,
                 )
@@ -1323,7 +1389,9 @@ class TestTransferTypeConfig:
 
         stmts = " ".join(s for s, _ in execute_calls)
         assert "INSERT" in stmts, "Expected INSERT for new transfer type config"
-        assert len(execute_calls) >= 3, "Expected: check existing + INSERT config + INSERT level perm"
+        assert len(execute_calls) >= 3, (
+            "Expected: check existing + INSERT config + INSERT level perm"
+        )
 
     async def test_duplicate_transfer_type_code_in_payload_returns_422(self) -> None:
         """G4: two items with the same underlying_type (the schema's unique
@@ -1359,33 +1427,35 @@ class TestTransferTypeConfig:
             res = MagicMock()
             res.fetchone = MagicMock(return_value=None)
             res.fetchall = MagicMock(return_value=[])
-            res.scalar   = MagicMock(return_value=0)
+            res.scalar = MagicMock(return_value=0)
             return res
 
         db = AsyncMock()
         db.execute = AsyncMock(side_effect=_capture)
-        db.commit  = AsyncMock()
+        db.commit = AsyncMock()
 
         with _GRANT_ALL:
             try:
                 await upsert_approval_rules(
                     tenant_id=UUID(TENANT_ID),
-                    body=[ApprovalRuleIn(
-                        transfer_type_config_id=UUID(CONFIG_ID),
-                        source_level=3,
-                        destination_level=2,
-                        quantity_min=100,
-                        quantity_max=5000,
-                        threshold_type="QUANTITY",
-                        approval_steps=[
-                            ApprovalStepIn(
-                                sequence=1,
-                                position_title="Regional Manager",
-                                sla_hours=24,
-                            )
-                        ],
-                        priority=10,
-                    )],
+                    body=[
+                        ApprovalRuleIn(
+                            transfer_type_config_id=UUID(CONFIG_ID),
+                            source_level=3,
+                            destination_level=2,
+                            quantity_min=100,
+                            quantity_max=5000,
+                            threshold_type="QUANTITY",
+                            approval_steps=[
+                                ApprovalStepIn(
+                                    sequence=1,
+                                    position_title="Regional Manager",
+                                    sla_hours=24,
+                                )
+                            ],
+                            priority=10,
+                        )
+                    ],
                     user=_Caller(),
                     db=db,
                 )
@@ -1404,6 +1474,6 @@ class TestTransferTypeConfig:
         # steps is now a Python list (not JSON string) since we use bindparam(type_=types.JSON)
         raw_steps = insert_with_steps[0]["steps"]
         steps = raw_steps if isinstance(raw_steps, list) else json.loads(raw_steps)
-        assert steps[0]["sequence"]       == 1
+        assert steps[0]["sequence"] == 1
         assert steps[0]["position_title"] == "Regional Manager"
-        assert steps[0]["sla_hours"]      == 24
+        assert steps[0]["sla_hours"] == 24

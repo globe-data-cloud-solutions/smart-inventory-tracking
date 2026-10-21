@@ -14,6 +14,7 @@ any other plan change immediately (S13, Alex's decisions 2026-10-07).
   - Any immediate change clears a previously scheduled downgrade — a
     tenant never has both an immediate change AND a pending schedule.
 """
+
 from __future__ import annotations
 
 from decimal import Decimal
@@ -31,16 +32,18 @@ _VALID_EFFECTIVE = ("RENEWAL", "IMMEDIATE")
 
 
 async def _get_live_subscription_for_update(db: AsyncSession, tenant_id: str) -> Any:
-    return (await db.execute(
-        text(
-            "SELECT id, tenant_id, tier, billing_period, status, provider, price_id, "
-            "       amount, currency, current_period_start, current_period_end, scheduled_tier "
-            "FROM subscriptions "
-            "WHERE tenant_id = :tid AND status IN ('ACTIVE', 'PENDING_PAYMENT', 'PAST_DUE') "
-            "LIMIT 1 FOR UPDATE"
-        ),
-        {"tid": str(tenant_id)},
-    )).fetchone()
+    return (
+        await db.execute(
+            text(
+                "SELECT id, tenant_id, tier, billing_period, status, provider, price_id, "
+                "       amount, currency, current_period_start, current_period_end, scheduled_tier "
+                "FROM subscriptions "
+                "WHERE tenant_id = :tid AND status IN ('ACTIVE', 'PENDING_PAYMENT', 'PAST_DUE') "
+                "LIMIT 1 FOR UPDATE"
+            ),
+            {"tid": str(tenant_id)},
+        )
+    ).fetchone()
 
 
 async def _clear_schedule(db: AsyncSession, subscription_id: str) -> None:
@@ -61,16 +64,18 @@ async def _find_pending_old_tier_period_invoice(
     at `old_tier` — i.e. the renewal invoice from BEFORE this downgrade was
     scheduled. Surfaced so the caller can flag it (it will need re-raising
     or cancelling at the scheduled_tier price once the renewal is due)."""
-    row = (await db.execute(
-        text(
-            "SELECT pli.payment_id AS id FROM payment_line_items pli "
-            "JOIN payments p ON p.id = pli.payment_id "
-            "JOIN package_prices pp ON pp.id = pli.price_id "
-            "WHERE p.subscription_id = :sid AND p.status = 'PENDING' AND p.invoice_kind = 'PERIOD' "
-            "  AND pli.item_type = 'PACKAGE' AND pp.tier = :tier LIMIT 1"
-        ),
-        {"sid": str(subscription_id), "tier": old_tier},
-    )).fetchone()
+    row = (
+        await db.execute(
+            text(
+                "SELECT pli.payment_id AS id FROM payment_line_items pli "
+                "JOIN payments p ON p.id = pli.payment_id "
+                "JOIN package_prices pp ON pp.id = pli.price_id "
+                "WHERE p.subscription_id = :sid AND p.status = 'PENDING' AND p.invoice_kind = 'PERIOD' "
+                "  AND pli.item_type = 'PACKAGE' AND pp.tier = :tier LIMIT 1"
+            ),
+            {"sid": str(subscription_id), "tier": old_tier},
+        )
+    ).fetchone()
     return str(row.id) if row is not None else None
 
 
@@ -130,7 +135,9 @@ async def change_plan(
                     "sid": str(sub.id),
                 },
             )
-            pending_renewal_invoice_id = await _find_pending_old_tier_period_invoice(db, sub.id, sub.tier)
+            pending_renewal_invoice_id = await _find_pending_old_tier_period_invoice(
+                db, sub.id, sub.tier
+            )
             return {
                 "mode": "SCHEDULED",
                 "plan_tier": sub.tier,
@@ -145,10 +152,16 @@ async def change_plan(
         await _clear_schedule(db, sub.id)
 
     effective_package = await apply_package_to_tenant(
-        db, tenant_id, new_tier,
-        max_warehouses=max_warehouses, max_users=max_users, sku_cap=sku_cap,
+        db,
+        tenant_id,
+        new_tier,
+        max_warehouses=max_warehouses,
+        max_users=max_users,
+        sku_cap=sku_cap,
     )
-    plan_change = await apply_plan_change_with_proration(db, tenant_id, new_tier, recorded_by=recorded_by)
+    plan_change = await apply_plan_change_with_proration(
+        db, tenant_id, new_tier, recorded_by=recorded_by
+    )
     return {
         "mode": "IMMEDIATE",
         "effective": effective_package,

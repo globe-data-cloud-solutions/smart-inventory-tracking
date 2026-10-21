@@ -3,6 +3,7 @@
 Uses the inv_app fixture (not a fresh `from main import app`) per the
 convention established in test_permissions.py / conftest.py.
 """
+
 from __future__ import annotations
 
 from datetime import date, datetime
@@ -16,12 +17,12 @@ from dependencies import get_current_user, get_read_db_session
 
 URL = "/api/v1/inventory/dispatch/preview"
 
-PRODUCT_ID  = "aaaaaaaa-0000-0000-0000-000000000001"
+PRODUCT_ID = "aaaaaaaa-0000-0000-0000-000000000001"
 WAREHOUSE_A = "20000000-0000-0000-0000-000000000001"
 WAREHOUSE_B = "20000000-0000-0000-0000-000000000002"
 
 LOT_OPENING = "30000000-0000-0000-0000-000000000001"
-LOT_DATED   = "30000000-0000-0000-0000-000000000002"
+LOT_DATED = "30000000-0000-0000-0000-000000000002"
 LOT_EXPIRED = "30000000-0000-0000-0000-000000000003"
 
 
@@ -90,10 +91,13 @@ def make_client(inv_app):
         inv_app.dependency_overrides[get_current_user] = lambda: user
         inv_app.dependency_overrides[get_read_db_session] = _db_gen
         try:
-            with patch(
-                "shared.permissions.middleware.get_role_permission",
-                new=AsyncMock(return_value=_mock_full_grant()),
-            ), patch("shared.permissions.middleware.audit_log", new=AsyncMock()):
+            with (
+                patch(
+                    "shared.permissions.middleware.get_role_permission",
+                    new=AsyncMock(return_value=_mock_full_grant()),
+                ),
+                patch("shared.permissions.middleware.audit_log", new=AsyncMock()),
+            ):
                 async with AsyncClient(
                     transport=ASGITransport(app=inv_app), base_url="http://test"
                 ) as ac:
@@ -110,7 +114,6 @@ def _params(quantity="12", warehouse_id=WAREHOUSE_A):
 
 @pytest.mark.unit
 class TestDispatchPreview:
-
     async def test_200_shape_fefo(self, make_client, wm_user) -> None:
         async with make_client(wm_user, _product()) as (client, _db):
             resp = await client.get(URL, params=_params("12"))
@@ -118,8 +121,15 @@ class TestDispatchPreview:
         assert resp.status_code == 200
         data = resp.json()["data"]
         assert set(data) == {
-            "product_id", "warehouse_id", "quantity", "strategy", "strategy_source",
-            "lines", "shortfall", "expired_skipped", "available_total",
+            "product_id",
+            "warehouse_id",
+            "quantity",
+            "strategy",
+            "strategy_source",
+            "lines",
+            "shortfall",
+            "expired_skipped",
+            "available_total",
         }
         assert data["product_id"] == PRODUCT_ID
         assert data["warehouse_id"] == WAREHOUSE_A
@@ -200,7 +210,9 @@ class TestDispatchPreview:
 
         assert resp.status_code == 422
 
-    async def test_facility_scoped_user_outside_subtree_returns_403(self, make_client, wm_user) -> None:
+    async def test_facility_scoped_user_outside_subtree_returns_403(
+        self, make_client, wm_user
+    ) -> None:
         """WM scoped to WAREHOUSE_A asking for WAREHOUSE_B: the warehouse_id
         query kwarg goes through check_permission's node+descendant traversal
         (get_descendant_node_ids) — WAREHOUSE_B is not in the subtree."""

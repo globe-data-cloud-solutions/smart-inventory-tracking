@@ -8,6 +8,7 @@ Revision ID: 033
 Revises:     032
 Create Date: 2026-05-31
 """
+
 from __future__ import annotations
 
 import sqlalchemy as sa
@@ -23,31 +24,49 @@ depends_on = None
 def upgrade() -> None:
     op.create_table(
         "transfer_approval_rules",
-        sa.Column("id", postgresql.UUID(as_uuid=True),
-                  server_default=sa.text("gen_random_uuid()"), nullable=False),
+        sa.Column(
+            "id",
+            postgresql.UUID(as_uuid=True),
+            server_default=sa.text("gen_random_uuid()"),
+            nullable=False,
+        ),
         sa.Column("tenant_id", postgresql.UUID(as_uuid=True), nullable=False),
-        sa.Column("transfer_type_config_id", postgresql.UUID(as_uuid=True), nullable=False),
+        sa.Column(
+            "transfer_type_config_id", postgresql.UUID(as_uuid=True), nullable=False
+        ),
         sa.Column("source_level", sa.Integer(), nullable=True),
         sa.Column("destination_level", sa.Integer(), nullable=True),
         sa.Column("source_node_id", postgresql.UUID(as_uuid=True), nullable=True),
         sa.Column("destination_node_id", postgresql.UUID(as_uuid=True), nullable=True),
-        sa.Column("quantity_min", sa.Numeric(15, 4),
-                  server_default="0", nullable=False),
+        sa.Column(
+            "quantity_min", sa.Numeric(15, 4), server_default="0", nullable=False
+        ),
         sa.Column("quantity_max", sa.Numeric(15, 4), nullable=True),
-        sa.Column("value_min", sa.Numeric(15, 4),
-                  server_default="0", nullable=False),
+        sa.Column("value_min", sa.Numeric(15, 4), server_default="0", nullable=False),
         sa.Column("value_max", sa.Numeric(15, 4), nullable=True),
-        sa.Column("threshold_type", sa.String(20),
-                  server_default="QUANTITY", nullable=False),
+        sa.Column(
+            "threshold_type", sa.String(20), server_default="QUANTITY", nullable=False
+        ),
         sa.Column("currency", sa.String(3), server_default="ETB", nullable=True),
-        sa.Column("approval_steps", postgresql.JSONB(), server_default=sa.text("'[]'"), nullable=False),
+        sa.Column(
+            "approval_steps",
+            postgresql.JSONB(),
+            server_default=sa.text("'[]'"),
+            nullable=False,
+        ),
         sa.Column("priority", sa.Integer(), server_default="0", nullable=False),
         sa.Column("is_active", sa.Boolean(), server_default="true", nullable=False),
-        sa.Column("created_at", sa.TIMESTAMP(timezone=True),
-                  server_default=sa.text("NOW()"), nullable=False),
+        sa.Column(
+            "created_at",
+            sa.TIMESTAMP(timezone=True),
+            server_default=sa.text("NOW()"),
+            nullable=False,
+        ),
         sa.PrimaryKeyConstraint("id"),
         sa.ForeignKeyConstraint(["tenant_id"], ["tenants.id"]),
-        sa.ForeignKeyConstraint(["transfer_type_config_id"], ["transfer_type_config.id"]),
+        sa.ForeignKeyConstraint(
+            ["transfer_type_config_id"], ["transfer_type_config.id"]
+        ),
         sa.ForeignKeyConstraint(["source_node_id"], ["organization_node.id"]),
         sa.ForeignKeyConstraint(["destination_node_id"], ["organization_node.id"]),
         sa.CheckConstraint(

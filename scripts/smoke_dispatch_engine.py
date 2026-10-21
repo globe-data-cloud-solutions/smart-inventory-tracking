@@ -12,6 +12,7 @@ Usage:
     set -a; source .env; set +a
     python scripts/smoke_dispatch_engine.py
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -108,13 +109,15 @@ async def _resolve(session, product_id):
 
 
 async def _override_count(session, product_id: str) -> int:
-    row = (await session.execute(
-        text(
-            "SELECT count(*) AS cnt FROM lot_allocation_overrides "
-            "WHERE tenant_id = :tid AND product_id = :pid"
-        ),
-        {"tid": E2E_TENANT_ID, "pid": product_id},
-    )).fetchone()
+    row = (
+        await session.execute(
+            text(
+                "SELECT count(*) AS cnt FROM lot_allocation_overrides "
+                "WHERE tenant_id = :tid AND product_id = :pid"
+            ),
+            {"tid": E2E_TENANT_ID, "pid": product_id},
+        )
+    ).fetchone()
     return row.cnt
 
 
@@ -129,7 +132,12 @@ async def _run(session, suffix: str) -> None:
             "INSERT INTO warehouses (id, tenant_id, name, code, is_active) "
             "VALUES (:id, :tid, :name, :code, true)"
         ),
-        {"id": wh, "tid": E2E_TENANT_ID, "name": f"Smoke Dispatch WH {suffix}", "code": f"SMKD{suffix}"},
+        {
+            "id": wh,
+            "tid": E2E_TENANT_ID,
+            "name": f"Smoke Dispatch WH {suffix}",
+            "code": f"SMKD{suffix}",
+        },
     )
     product_id = str(uuid.uuid4())
     await session.execute(
@@ -156,21 +164,34 @@ async def _run(session, suffix: str) -> None:
         f"smoke:dispatch:receive:{product_id}:{uuid.uuid4()}",
         source="OPENING_BALANCE",
     )
-    _check(await _resolve(session, product_id) == (None, "NOT_BATCH"),
-           "a) non-batch product resolves to (None, NOT_BATCH)")
+    _check(
+        await _resolve(session, product_id) == (None, "NOT_BATCH"),
+        "a) non-batch product resolves to (None, NOT_BATCH)",
+    )
 
-    converted = await _set_lot_settings(session, product_id, expiry=False, strategy=None)
+    converted = await _set_lot_settings(
+        session, product_id, expiry=False, strategy=None
+    )
     _check(len(converted.opening_lots) == 1, "a) conversion created one OPENING lot")
     opening = converted.opening_lots[0]
     opening_id = str(opening.lot_id)
     print(f"     OPENING lot {opening.lot_number} qty={opening.quantity}")
     resolved = await _resolve(session, product_id)
-    _check(resolved == ("FIFO", "PRODUCT"), f"a) batch-on product resolves to (FIFO, PRODUCT) (got {resolved})")
+    _check(
+        resolved == ("FIFO", "PRODUCT"),
+        f"a) batch-on product resolves to (FIFO, PRODUCT) (got {resolved})",
+    )
 
     # ── b) L1 (expiry +90), then L2 (expiry +30, received AFTER L1), L3 expired ──
-    l1 = await _receive_lot(session, product_id, wh, "SMK-L1", today + timedelta(days=90), Decimal("8"))
-    l2 = await _receive_lot(session, product_id, wh, "SMK-L2", today + timedelta(days=30), Decimal("6"))
-    l3 = await _receive_lot(session, product_id, wh, "SMK-L3", today - timedelta(days=1), Decimal("5"))
+    l1 = await _receive_lot(
+        session, product_id, wh, "SMK-L1", today + timedelta(days=90), Decimal("8")
+    )
+    l2 = await _receive_lot(
+        session, product_id, wh, "SMK-L2", today + timedelta(days=30), Decimal("6")
+    )
+    l3 = await _receive_lot(
+        session, product_id, wh, "SMK-L3", today - timedelta(days=1), Decimal("5")
+    )
 
     # stock_lots.first_received_at defaults to now(), which is the TRANSACTION
     # start time — every lot created in this single transaction would share one
@@ -186,51 +207,88 @@ async def _run(session, suffix: str) -> None:
         )
 
     lots = await load_candidate_lots(session, E2E_TENANT_ID, product_id, wh)
-    print(f"     candidate lots: {sorted((l.lot_number, str(l.quantity), str(l.expiry_date)) for l in lots)}")
+    print(
+        f"     candidate lots: {sorted((l.lot_number, str(l.quantity), str(l.expiry_date)) for l in lots)}"
+    )
     _check(len(lots) == 4, "b) load_candidate_lots returns OPENING + L1 + L2 + L3")
 
     # ── c) expiry on -> FEFO forced ──
     await _set_lot_settings(session, product_id, expiry=True, strategy=None)
     strategy, source = await _resolve(session, product_id)
-    _check((strategy, source) == ("FEFO", "FORCED"), f"c) expiry on resolves to (FEFO, FORCED) (got {(strategy, source)})")
+    _check(
+        (strategy, source) == ("FEFO", "FORCED"),
+        f"c) expiry on resolves to (FEFO, FORCED) (got {(strategy, source)})",
+    )
 
     lots = await load_candidate_lots(session, E2E_TENANT_ID, product_id, wh)
     fefo_plan = plan_allocation(lots, Decimal("20"), strategy, today)
-    print(f"     FEFO plan for 20: {[(l.lot_number, str(l.quantity)) for l in fefo_plan.lines]}")
-    _check([l.lot_id for l in fefo_plan.lines] == [opening_id, l2, l1],
-           "c) FEFO order is OPENING, L2, L1")
-    _check([l.quantity for l in fefo_plan.lines] == [Decimal("10"), Decimal("6"), Decimal("4")],
-           "c) FEFO quantities are 10, 6, 4")
+    print(
+        f"     FEFO plan for 20: {[(l.lot_number, str(l.quantity)) for l in fefo_plan.lines]}"
+    )
+    _check(
+        [l.lot_id for l in fefo_plan.lines] == [opening_id, l2, l1],
+        "c) FEFO order is OPENING, L2, L1",
+    )
+    _check(
+        [l.quantity for l in fefo_plan.lines]
+        == [Decimal("10"), Decimal("6"), Decimal("4")],
+        "c) FEFO quantities are 10, 6, 4",
+    )
     _check(fefo_plan.shortfall == 0, "c) FEFO plan has no shortfall")
-    _check([l.lot_id for l in fefo_plan.expired_skipped] == [l3], "c) L3 is in expired_skipped")
-    _check(l3 not in [l.lot_id for l in fefo_plan.lines], "c) expired L3 is never allocated")
+    _check(
+        [l.lot_id for l in fefo_plan.expired_skipped] == [l3],
+        "c) L3 is in expired_skipped",
+    )
+    _check(
+        l3 not in [l.lot_id for l in fefo_plan.lines],
+        "c) expired L3 is never allocated",
+    )
 
     # ── d) expiry off + LIFO ──
     await _set_lot_settings(session, product_id, expiry=False, strategy="LIFO")
     strategy, source = await _resolve(session, product_id)
-    _check((strategy, source) == ("LIFO", "PRODUCT"), f"d) resolves to (LIFO, PRODUCT) (got {(strategy, source)})")
+    _check(
+        (strategy, source) == ("LIFO", "PRODUCT"),
+        f"d) resolves to (LIFO, PRODUCT) (got {(strategy, source)})",
+    )
 
     lots = await load_candidate_lots(session, E2E_TENANT_ID, product_id, wh)
     lifo_plan = plan_allocation(lots, Decimal("20"), strategy, today)
-    print(f"     LIFO plan for 20: {[(l.lot_number, str(l.quantity)) for l in lifo_plan.lines]}")
+    print(
+        f"     LIFO plan for 20: {[(l.lot_number, str(l.quantity)) for l in lifo_plan.lines]}"
+    )
     _check(lifo_plan.lines[0].lot_id == l2, "d) LIFO takes L2 first")
     _check(lifo_plan.lines[-1].lot_id == opening_id, "d) LIFO takes OPENING last")
-    _check([l.lot_id for l in lifo_plan.expired_skipped] == [l3], "d) L3 still skipped under LIFO")
+    _check(
+        [l.lot_id for l in lifo_plan.expired_skipped] == [l3],
+        "d) L3 still skipped under LIFO",
+    )
 
     # ── e) allocate (locking), manual selection, override log ──
     await _set_lot_settings(session, product_id, expiry=True, strategy=None)
     strategy, _ = await _resolve(session, product_id)
 
-    plan = await allocate(session, E2E_TENANT_ID, product_id, wh, Decimal("12"), strategy)
-    print(f"     allocate(12) with row locks: {[(l.lot_number, str(l.quantity)) for l in plan.lines]}")
-    _check([l.lot_id for l in plan.lines] == [opening_id, l2], "e) allocate(lock=True) succeeds: OPENING then L2")
+    plan = await allocate(
+        session, E2E_TENANT_ID, product_id, wh, Decimal("12"), strategy
+    )
+    print(
+        f"     allocate(12) with row locks: {[(l.lot_number, str(l.quantity)) for l in plan.lines]}"
+    )
+    _check(
+        [l.lot_id for l in plan.lines] == [opening_id, l2],
+        "e) allocate(lock=True) succeeds: OPENING then L2",
+    )
 
     try:
-        await allocate(session, E2E_TENANT_ID, product_id, wh, Decimal("1000"), strategy)
+        await allocate(
+            session, E2E_TENANT_ID, product_id, wh, Decimal("1000"), strategy
+        )
         _check(False, "e) allocate beyond stock raises InsufficientStockError")
     except InsufficientStockError as exc:
-        _check(exc.available == Decimal("24"),
-               f"e) allocate beyond stock raises InsufficientStockError (available={exc.available}, expired L3 excluded)")
+        _check(
+            exc.available == Decimal("24"),
+            f"e) allocate beyond stock raises InsufficientStockError (available={exc.available}, expired L3 excluded)",
+        )
 
     chosen = [
         {"lot_id": l1, "quantity": Decimal("8")},
@@ -239,20 +297,50 @@ async def _run(session, suffix: str) -> None:
     plan, is_override = await validate_manual_selection(
         session, E2E_TENANT_ID, product_id, wh, Decimal("12"), chosen, strategy
     )
-    _check(is_override is True, "e) validate_manual_selection choosing L1 first returns is_override True")
+    _check(
+        is_override is True,
+        "e) validate_manual_selection choosing L1 first returns is_override True",
+    )
 
     _, same = await validate_manual_selection(
-        session, E2E_TENANT_ID, product_id, wh, Decimal("12"),
-        [{"lot_id": opening_id, "quantity": Decimal("10")}, {"lot_id": l2, "quantity": Decimal("2")}],
+        session,
+        E2E_TENANT_ID,
+        product_id,
+        wh,
+        Decimal("12"),
+        [
+            {"lot_id": opening_id, "quantity": Decimal("10")},
+            {"lot_id": l2, "quantity": Decimal("2")},
+        ],
         strategy,
     )
     _check(same is False, "e) selection equal to the plan is not an override")
 
     for label, bad_chosen, bad_qty, expected in (
-        ("expired lot", [{"lot_id": l3, "quantity": Decimal("5")}], Decimal("5"), "LOT_EXPIRED"),
-        ("unknown lot", [{"lot_id": str(uuid.uuid4()), "quantity": Decimal("5")}], Decimal("5"), "LOT_NOT_IN_WAREHOUSE"),
-        ("over balance", [{"lot_id": l2, "quantity": Decimal("7")}], Decimal("7"), "INSUFFICIENT_LOT_STOCK"),
-        ("sum mismatch", [{"lot_id": l2, "quantity": Decimal("3")}], Decimal("5"), "SELECTION_QTY_MISMATCH"),
+        (
+            "expired lot",
+            [{"lot_id": l3, "quantity": Decimal("5")}],
+            Decimal("5"),
+            "LOT_EXPIRED",
+        ),
+        (
+            "unknown lot",
+            [{"lot_id": str(uuid.uuid4()), "quantity": Decimal("5")}],
+            Decimal("5"),
+            "LOT_NOT_IN_WAREHOUSE",
+        ),
+        (
+            "over balance",
+            [{"lot_id": l2, "quantity": Decimal("7")}],
+            Decimal("7"),
+            "INSUFFICIENT_LOT_STOCK",
+        ),
+        (
+            "sum mismatch",
+            [{"lot_id": l2, "quantity": Decimal("3")}],
+            Decimal("5"),
+            "SELECTION_QTY_MISMATCH",
+        ),
     ):
         try:
             await validate_manual_selection(
@@ -260,39 +348,70 @@ async def _run(session, suffix: str) -> None:
             )
             _check(False, f"e) {label} raises {expected}")
         except DispatchError as exc:
-            _check(exc.code == expected, f"e) {label} raises {expected} (got {exc.code})")
+            _check(
+                exc.code == expected, f"e) {label} raises {expected} (got {exc.code})"
+            )
 
     override_args = (
-        session, E2E_TENANT_ID, E2E_USER_ID, product_id, wh, "FEFO", "ISSUE", None,
-        Decimal("12"), plan, chosen,
+        session,
+        E2E_TENANT_ID,
+        E2E_USER_ID,
+        product_id,
+        wh,
+        "FEFO",
+        "ISSUE",
+        None,
+        Decimal("12"),
+        plan,
+        chosen,
     )
     try:
         await record_override(*override_args, "   ")
-        _check(False, "e) FEFO override with blank reason raises OVERRIDE_REASON_REQUIRED")
+        _check(
+            False, "e) FEFO override with blank reason raises OVERRIDE_REASON_REQUIRED"
+        )
     except DispatchError as exc:
-        _check(exc.code == "OVERRIDE_REASON_REQUIRED",
-               f"e) FEFO override with blank reason raises OVERRIDE_REASON_REQUIRED (got {exc.code})")
-    _check(await _override_count(session, product_id) == 0, "e) nothing inserted for the rejected override")
+        _check(
+            exc.code == "OVERRIDE_REASON_REQUIRED",
+            f"e) FEFO override with blank reason raises OVERRIDE_REASON_REQUIRED (got {exc.code})",
+        )
+    _check(
+        await _override_count(session, product_id) == 0,
+        "e) nothing inserted for the rejected override",
+    )
 
-    override_id = await record_override(*override_args, "smoke: customer asked for the long-dated lot")
+    override_id = await record_override(
+        *override_args, "smoke: customer asked for the long-dated lot"
+    )
     count = await _override_count(session, product_id)
-    _check(count == 1, f"e) FEFO override with a reason inserts one row (SELECT count = {count})")
+    _check(
+        count == 1,
+        f"e) FEFO override with a reason inserts one row (SELECT count = {count})",
+    )
 
-    row = (await session.execute(
-        text(
-            "SELECT strategy::text AS strategy, movement_type, requested_qty, suggested, chosen, "
-            "reason, overridden_by FROM lot_allocation_overrides WHERE id = :id"
-        ),
-        {"id": override_id},
-    )).fetchone()
-    print(f"     override row: strategy={row.strategy} movement_type={row.movement_type} "
-          f"requested_qty={row.requested_qty} reason={row.reason!r}")
+    row = (
+        await session.execute(
+            text(
+                "SELECT strategy::text AS strategy, movement_type, requested_qty, suggested, chosen, "
+                "reason, overridden_by FROM lot_allocation_overrides WHERE id = :id"
+            ),
+            {"id": override_id},
+        )
+    ).fetchone()
+    print(
+        f"     override row: strategy={row.strategy} movement_type={row.movement_type} "
+        f"requested_qty={row.requested_qty} reason={row.reason!r}"
+    )
     print(f"     suggested={row.suggested}")
     print(f"     chosen={row.chosen}")
-    _check([s["lot_number"] for s in row.suggested] == [opening.lot_number, "SMK-L2"],
-           "e) stored suggested = engine order (OPENING, L2)")
-    _check([c["lot_number"] for c in row.chosen] == ["SMK-L1", opening.lot_number],
-           "e) stored chosen = user choice (L1, OPENING)")
+    _check(
+        [s["lot_number"] for s in row.suggested] == [opening.lot_number, "SMK-L2"],
+        "e) stored suggested = engine order (OPENING, L2)",
+    )
+    _check(
+        [c["lot_number"] for c in row.chosen] == ["SMK-L1", opening.lot_number],
+        "e) stored chosen = user choice (L1, OPENING)",
+    )
 
 
 async def main() -> int:
@@ -312,17 +431,25 @@ async def main() -> int:
     # ── post-rollback check from a NEW session ──
     async with AsyncSessionLocal() as verify_session:
         await set_rls_context(verify_session, E2E_TENANT_ID, E2E_USER_ID)
-        product = (await verify_session.execute(
-            text("SELECT id FROM products WHERE tenant_id = :tid AND sku = :sku"),
-            {"tid": E2E_TENANT_ID, "sku": f"SMKD-{suffix}"},
-        )).fetchone()
-        overrides = (await verify_session.execute(
-            text("SELECT count(*) AS cnt FROM lot_allocation_overrides WHERE tenant_id = :tid"),
-            {"tid": E2E_TENANT_ID},
-        )).fetchone()
+        product = (
+            await verify_session.execute(
+                text("SELECT id FROM products WHERE tenant_id = :tid AND sku = :sku"),
+                {"tid": E2E_TENANT_ID, "sku": f"SMKD-{suffix}"},
+            )
+        ).fetchone()
+        overrides = (
+            await verify_session.execute(
+                text(
+                    "SELECT count(*) AS cnt FROM lot_allocation_overrides WHERE tenant_id = :tid"
+                ),
+                {"tid": E2E_TENANT_ID},
+            )
+        ).fetchone()
         await verify_session.rollback()
     _check(product is None, "f) post-rollback: smoke product not found")
-    _check(overrides.cnt == 0, f"f) post-rollback: tenant override rows = {overrides.cnt}")
+    _check(
+        overrides.cnt == 0, f"f) post-rollback: tenant override rows = {overrides.cnt}"
+    )
 
     if _failures:
         print(f"SMOKE FAIL ({len(_failures)} failed)")

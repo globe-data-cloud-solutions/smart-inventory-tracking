@@ -13,6 +13,7 @@ POST returns existing row if name/code already exists for this tenant.
 
 Audit log and outbox are written inside the same transaction (CLAUDE.md §8, §14).
 """
+
 from __future__ import annotations
 
 import json
@@ -34,17 +35,26 @@ from shared.plans.usage import count_active_skus
 from shared.utils.responses import SuccessResponse
 from schemas.product import (
     ApprovalMinimumResponse,
-    ApprovalMinimumsUpsertRequest, ProductApprovalMinimumsResponse,
+    ApprovalMinimumsUpsertRequest,
+    ProductApprovalMinimumsResponse,
     ProductApprovalOverride,
     ApprovalRuleResponse,
-    ApprovalRulesUpsertRequest, ProductApprovalRulesResponse,
-    BrandCreateRequest, BrandResponse,
-    CategoryCreateRequest, CategoryResponse,
+    ApprovalRulesUpsertRequest,
+    ProductApprovalRulesResponse,
+    BrandCreateRequest,
+    BrandResponse,
+    CategoryCreateRequest,
+    CategoryResponse,
     NextSkuResponse,
-    PackagingTypeCreateRequest, PackagingTypeResponse,
-    ProductCreateRequest, ProductResponse, ProductUpdateRequest,
-    TypeCodeCreateRequest, TypeCodeResponse,
-    UomCreateRequest, UomResponse,
+    PackagingTypeCreateRequest,
+    PackagingTypeResponse,
+    ProductCreateRequest,
+    ProductResponse,
+    ProductUpdateRequest,
+    TypeCodeCreateRequest,
+    TypeCodeResponse,
+    UomCreateRequest,
+    UomResponse,
 )
 
 router = APIRouter()
@@ -59,15 +69,19 @@ async def _raise_if_controlled(db: AsyncSession, tid: str, pid: str, role: Optio
     """
     if role in ("TA", "SA"):
         return
-    is_controlled = bool((await db.execute(
-        text(
-            "SELECT 1 FROM product_approval_minimums "
-            "WHERE tenant_id = :tid AND product_id = :pid "
-            "AND is_active = TRUE AND approver_position_id IS NOT NULL "
-            "LIMIT 1"
-        ),
-        {"tid": tid, "pid": pid},
-    )).fetchone())
+    is_controlled = bool(
+        (
+            await db.execute(
+                text(
+                    "SELECT 1 FROM product_approval_minimums "
+                    "WHERE tenant_id = :tid AND product_id = :pid "
+                    "AND is_active = TRUE AND approver_position_id IS NOT NULL "
+                    "LIMIT 1"
+                ),
+                {"tid": tid, "pid": pid},
+            )
+        ).fetchone()
+    )
     if is_controlled:
         raise HTTPException(
             status_code=403,
@@ -79,6 +93,7 @@ async def _raise_if_controlled(db: AsyncSession, tid: str, pid: str, role: Optio
 
 
 # ── GET /next-sku — MUST appear before any /{id} route ───────────────────────
+
 
 @router.get("/next-sku", response_model=SuccessResponse[NextSkuResponse])
 @require_permission(PERMISSIONS.PRODUCT_READ_NEXT_SKU)
@@ -109,6 +124,7 @@ async def preview_next_sku(
 
 # ── GET / ─────────────────────────────────────────────────────────────────────
 
+
 @router.get("/", response_model=SuccessResponse[list])
 @require_permission(PERMISSIONS.PRODUCT_LIST)
 async def list_products(
@@ -135,20 +151,18 @@ async def list_products(
     if q:
         result = await db.execute(
             text(
-                base_select
-                + "WHERE p.tenant_id = :tid AND p.name % :q AND p.is_active = true "
-                  "AND (NOT :active_only OR p.is_discontinued = FALSE) "
-                  "ORDER BY similarity(p.name, :q) DESC LIMIT 50"
+                base_select + "WHERE p.tenant_id = :tid AND p.name % :q AND p.is_active = true "
+                "AND (NOT :active_only OR p.is_discontinued = FALSE) "
+                "ORDER BY similarity(p.name, :q) DESC LIMIT 50"
             ),
             {"tid": str(user.tenant_id), "q": q, "active_only": active_only},
         )
     else:
         result = await db.execute(
             text(
-                base_select
-                + "WHERE p.tenant_id = :tid AND p.is_active = true "
-                  "AND (NOT :active_only OR p.is_discontinued = FALSE) "
-                  "ORDER BY p.name LIMIT 200"
+                base_select + "WHERE p.tenant_id = :tid AND p.is_active = true "
+                "AND (NOT :active_only OR p.is_discontinued = FALSE) "
+                "ORDER BY p.name LIMIT 200"
             ),
             {"tid": str(user.tenant_id), "active_only": active_only},
         )
@@ -159,8 +173,9 @@ async def list_products(
     # NewAdjustmentPanel (PART F) to render the lock icon + tooltip.
     overrides_by_product: dict[str, dict[str, ProductApprovalOverride]] = {}
     if rows:
-        override_rows = (await db.execute(
-            text("""
+        override_rows = (
+            await db.execute(
+                text("""
                 SELECT pam.product_id, pam.transaction_type, pam.threshold_type,
                        pam.qty_threshold, pam.value_threshold, pam.note,
                        pos.title AS approver_title
@@ -170,11 +185,14 @@ async def list_products(
                   AND  pam.is_active = TRUE
                   AND  pam.approver_position_id IS NOT NULL
             """),
-            {"tid": str(user.tenant_id)},
-        )).fetchall()
+                {"tid": str(user.tenant_id)},
+            )
+        ).fetchall()
         for o in override_rows:
-            threshold = o.qty_threshold if o.threshold_type == "QUANTITY" else (
-                o.value_threshold if o.threshold_type == "VALUE" else None
+            threshold = (
+                o.qty_threshold
+                if o.threshold_type == "QUANTITY"
+                else (o.value_threshold if o.threshold_type == "VALUE" else None)
             )
             overrides_by_product.setdefault(str(o.product_id), {})[o.transaction_type] = (
                 ProductApprovalOverride(
@@ -188,25 +206,27 @@ async def list_products(
     return SuccessResponse(
         data=[
             {
-                "id":               str(r.id),
-                "sku":              r.sku,
-                "name":             r.name,
-                "short_name":       r.short_name,
-                "description":      r.description,
-                "unit":             getattr(r, "unit", None),
-                "pack_size":        getattr(r, "pack_size", None),
-                "reorder_point":    float(r.reorder_point) if r.reorder_point is not None else None,
-                "unit_price":       float(r.unit_price) if getattr(r, "unit_price", None) is not None else None,
-                "currency":         getattr(r, "currency", None),
-                "is_discontinued":  bool(r.is_discontinued),
-                "image_url":        r.image_url,
-                "category":         r.category,
-                "brand":            r.brand,
-                "type_code":        r.type_code,
-                "packaging_type":   r.packaging_type,
+                "id": str(r.id),
+                "sku": r.sku,
+                "name": r.name,
+                "short_name": r.short_name,
+                "description": r.description,
+                "unit": getattr(r, "unit", None),
+                "pack_size": getattr(r, "pack_size", None),
+                "reorder_point": float(r.reorder_point) if r.reorder_point is not None else None,
+                "unit_price": float(r.unit_price)
+                if getattr(r, "unit_price", None) is not None
+                else None,
+                "currency": getattr(r, "currency", None),
+                "is_discontinued": bool(r.is_discontinued),
+                "image_url": r.image_url,
+                "category": r.category,
+                "brand": r.brand,
+                "type_code": r.type_code,
+                "packaging_type": r.packaging_type,
                 "units_per_package": r.units_per_package,
-                "batch_tracking":   bool(r.batch_tracking),
-                "expiry_tracking":  bool(r.expiry_tracking),
+                "batch_tracking": bool(r.batch_tracking),
+                "expiry_tracking": bool(r.expiry_tracking),
                 "dispatch_strategy": r.dispatch_strategy,
                 "approval_overrides": {
                     tx: o.model_dump(mode="json")
@@ -220,6 +240,7 @@ async def list_products(
 
 
 # ── POST /{id}/discontinue ────────────────────────────────────────────────────
+
 
 @router.post("/{product_id}/discontinue", response_model=SuccessResponse[dict])
 @require_permission(PERMISSIONS.PRODUCT_DISCONTINUE)
@@ -237,23 +258,24 @@ async def discontinue_product(
     await _raise_if_controlled(db, tid, pid, role)
 
     # Check stock across all warehouses
-    stock_rows = (await db.execute(
-        text(
-            "SELECT ib.warehouse_id::text, COALESCE(n.name, ib.warehouse_id::text) AS warehouse_name, "
-            "SUM(ib.quantity) AS on_hand "
-            "FROM inventory_balances ib "
-            "LEFT JOIN organization_node n ON n.id = ib.warehouse_id "
-            "WHERE ib.product_id = :pid AND ib.tenant_id = :tid "
-            "GROUP BY ib.warehouse_id, n.name "
-            "HAVING SUM(ib.quantity) > 0"
-        ),
-        {"pid": pid, "tid": tid},
-    )).fetchall()
+    stock_rows = (
+        await db.execute(
+            text(
+                "SELECT ib.warehouse_id::text, COALESCE(n.name, ib.warehouse_id::text) AS warehouse_name, "
+                "SUM(ib.quantity) AS on_hand "
+                "FROM inventory_balances ib "
+                "LEFT JOIN organization_node n ON n.id = ib.warehouse_id "
+                "WHERE ib.product_id = :pid AND ib.tenant_id = :tid "
+                "GROUP BY ib.warehouse_id, n.name "
+                "HAVING SUM(ib.quantity) > 0"
+            ),
+            {"pid": pid, "tid": tid},
+        )
+    ).fetchall()
 
     if stock_rows:
         locations = [
-            {"warehouse": r.warehouse_name, "on_hand": float(r.on_hand)}
-            for r in stock_rows
+            {"warehouse": r.warehouse_name, "on_hand": float(r.on_hand)} for r in stock_rows
         ]
         raise HTTPException(
             status_code=422,
@@ -265,18 +287,20 @@ async def discontinue_product(
         )
 
     # Check pending transfers
-    pending_count = (await db.execute(
-        text(
-            "SELECT COUNT(*) FROM transfer_orders t "
-            "WHERE t.tenant_id = :tid "
-            "AND t.status IN ('PENDING_REVIEW','PENDING_APPROVAL','APPROVED','IN_TRANSIT') "
-            "AND EXISTS ("
-            "  SELECT 1 FROM transfer_order_lines tol "
-            "  WHERE tol.transfer_order_id = t.id AND tol.product_id = :pid"
-            ")"
-        ),
-        {"pid": pid, "tid": tid},
-    )).scalar() or 0
+    pending_count = (
+        await db.execute(
+            text(
+                "SELECT COUNT(*) FROM transfer_orders t "
+                "WHERE t.tenant_id = :tid "
+                "AND t.status IN ('PENDING_REVIEW','PENDING_APPROVAL','APPROVED','IN_TRANSIT') "
+                "AND EXISTS ("
+                "  SELECT 1 FROM transfer_order_lines tol "
+                "  WHERE tol.transfer_order_id = t.id AND tol.product_id = :pid"
+                ")"
+            ),
+            {"pid": pid, "tid": tid},
+        )
+    ).scalar() or 0
 
     if pending_count > 0:
         raise HTTPException(
@@ -298,6 +322,7 @@ async def discontinue_product(
 
 
 # ── POST /{id}/reactivate ─────────────────────────────────────────────────────
+
 
 @router.post("/{product_id}/reactivate", response_model=SuccessResponse[dict])
 @require_permission(PERMISSIONS.PRODUCT_REACTIVATE)
@@ -325,6 +350,7 @@ async def reactivate_product(
 
 
 # ── POST / ───────────────────────────────────────────────────────────────────
+
 
 @router.post("/", status_code=201, response_model=SuccessResponse[ProductResponse])
 @require_permission(PERMISSIONS.PRODUCT_CREATE)
@@ -372,11 +398,11 @@ async def create_product(
             raise HTTPException(
                 status_code=402,
                 detail={
-                    "code":       "PLAN_LIMIT_REACHED",
-                    "resource":   "skus",
-                    "current":    current,
-                    "limit":      tenant.sku_cap,
-                    "plan_tier":  plan_tier,
+                    "code": "PLAN_LIMIT_REACHED",
+                    "resource": "skus",
+                    "current": current,
+                    "limit": tenant.sku_cap,
+                    "plan_tier": plan_tier,
                     "upgrade_to": _UPGRADE_TO.get(plan_tier),
                     "message": (
                         f"SKU limit reached ({current}/{tenant.sku_cap}). "
@@ -397,7 +423,7 @@ async def create_product(
         raise HTTPException(
             status_code=409,
             detail={
-                "code":    "duplicate_product_name",
+                "code": "duplicate_product_name",
                 "message": "A product with this name already exists in this tenant",
             },
         )
@@ -406,19 +432,22 @@ async def create_product(
     category_id: Optional[str] = None
     category_name: Optional[str] = None
     if body.category:
-        cat_row = (await db.execute(
-            text("SELECT id, name FROM product_categories "
-                 "WHERE tenant_id = :tid AND LOWER(name) = LOWER(:n) AND is_active = true"),
-            {"tid": tid, "n": body.category},
-        )).fetchone()
+        cat_row = (
+            await db.execute(
+                text(
+                    "SELECT id, name FROM product_categories "
+                    "WHERE tenant_id = :tid AND LOWER(name) = LOWER(:n) AND is_active = true"
+                ),
+                {"tid": tid, "n": body.category},
+            )
+        ).fetchone()
         if cat_row:
             category_id, category_name = str(cat_row.id), cat_row.name
         else:
             category_id = str(uuid.uuid4())
             category_name = body.category
             await db.execute(
-                text("INSERT INTO product_categories (id, tenant_id, name) "
-                     "VALUES (:id, :tid, :n)"),
+                text("INSERT INTO product_categories (id, tenant_id, name) VALUES (:id, :tid, :n)"),
                 {"id": category_id, "tid": tid, "n": category_name},
             )
 
@@ -426,35 +455,41 @@ async def create_product(
     brand_id: Optional[str] = None
     brand_name: Optional[str] = None
     if body.brand:
-        br_row = (await db.execute(
-            text("SELECT id, name FROM product_brands "
-                 "WHERE tenant_id = :tid AND LOWER(name) = LOWER(:n) AND is_active = true"),
-            {"tid": tid, "n": body.brand},
-        )).fetchone()
+        br_row = (
+            await db.execute(
+                text(
+                    "SELECT id, name FROM product_brands "
+                    "WHERE tenant_id = :tid AND LOWER(name) = LOWER(:n) AND is_active = true"
+                ),
+                {"tid": tid, "n": body.brand},
+            )
+        ).fetchone()
         if br_row:
             brand_id, brand_name = str(br_row.id), br_row.name
         else:
             brand_id = str(uuid.uuid4())
             brand_name = body.brand
             await db.execute(
-                text("INSERT INTO product_brands (id, tenant_id, name) "
-                     "VALUES (:id, :tid, :n)"),
+                text("INSERT INTO product_brands (id, tenant_id, name) VALUES (:id, :tid, :n)"),
                 {"id": brand_id, "tid": tid, "n": brand_name},
             )
 
     # 6. Resolve type_code — find or create, then lock FOR UPDATE for SKU generation.
-    tc_row = (await db.execute(
-        text("SELECT id, code FROM product_type_codes "
-             "WHERE tenant_id = :tid AND UPPER(code) = :code AND is_active = true"),
-        {"tid": tid, "code": body.type_code},
-    )).fetchone()
+    tc_row = (
+        await db.execute(
+            text(
+                "SELECT id, code FROM product_type_codes "
+                "WHERE tenant_id = :tid AND UPPER(code) = :code AND is_active = true"
+            ),
+            {"tid": tid, "code": body.type_code},
+        )
+    ).fetchone()
     if tc_row:
         type_code_id = str(tc_row.id)
     else:
         type_code_id = str(uuid.uuid4())
         await db.execute(
-            text("INSERT INTO product_type_codes (id, tenant_id, code) "
-                 "VALUES (:id, :tid, :code)"),
+            text("INSERT INTO product_type_codes (id, tenant_id, code) VALUES (:id, :tid, :code)"),
             {"id": type_code_id, "tid": tid, "code": body.type_code},
         )
 
@@ -467,10 +502,12 @@ async def create_product(
     # 7. Generate or validate SKU.
     if body.sku_override:
         sku = body.sku_override
-        dup_sku = (await db.execute(
-            text("SELECT id FROM products WHERE tenant_id = :tid AND sku = :sku"),
-            {"tid": tid, "sku": sku},
-        )).fetchone()
+        dup_sku = (
+            await db.execute(
+                text("SELECT id FROM products WHERE tenant_id = :tid AND sku = :sku"),
+                {"tid": tid, "sku": sku},
+            )
+        ).fetchone()
         if dup_sku:
             raise HTTPException(
                 status_code=409,
@@ -478,8 +515,10 @@ async def create_product(
             )
     else:
         count_result = await db.execute(
-            text("SELECT COUNT(*) FROM products "
-                 "WHERE tenant_id = :tid AND sku LIKE :prefix AND is_active = true"),
+            text(
+                "SELECT COUNT(*) FROM products "
+                "WHERE tenant_id = :tid AND sku LIKE :prefix AND is_active = true"
+            ),
             {"tid": tid, "prefix": f"{body.type_code}-%"},
         )
         seq = int(count_result.scalar() or 0) + 1
@@ -487,11 +526,15 @@ async def create_product(
 
     # 8. Resolve UOM — find or create in product_uoms (string stored on products.unit).
     uom_name = body.unit
-    uom_row = (await db.execute(
-        text("SELECT id FROM product_uoms "
-             "WHERE tenant_id = :tid AND LOWER(name) = LOWER(:n) AND is_active = true"),
-        {"tid": tid, "n": uom_name},
-    )).fetchone()
+    uom_row = (
+        await db.execute(
+            text(
+                "SELECT id FROM product_uoms "
+                "WHERE tenant_id = :tid AND LOWER(name) = LOWER(:n) AND is_active = true"
+            ),
+            {"tid": tid, "n": uom_name},
+        )
+    ).fetchone()
     if not uom_row:
         await db.execute(
             text("INSERT INTO product_uoms (id, tenant_id, name) VALUES (:id, :tid, :n)"),
@@ -503,11 +546,15 @@ async def create_product(
     packaging_type_name: Optional[str] = None
     resolved_units_per_package: Optional[int] = None
     if body.packaging_type:
-        pt_row = (await db.execute(
-            text("SELECT id, name, units_per_package FROM product_packaging_types "
-                 "WHERE tenant_id = :tid AND LOWER(name) = LOWER(:n) AND is_active = true"),
-            {"tid": tid, "n": body.packaging_type},
-        )).fetchone()
+        pt_row = (
+            await db.execute(
+                text(
+                    "SELECT id, name, units_per_package FROM product_packaging_types "
+                    "WHERE tenant_id = :tid AND LOWER(name) = LOWER(:n) AND is_active = true"
+                ),
+                {"tid": tid, "n": body.packaging_type},
+            )
+        ).fetchone()
         if pt_row:
             packaging_type_id = str(pt_row.id)
             packaging_type_name = pt_row.name
@@ -517,11 +564,17 @@ async def create_product(
             packaging_type_name = body.packaging_type
             resolved_units_per_package = body.units_per_package or 1
             await db.execute(
-                text("INSERT INTO product_packaging_types "
-                     "  (id, tenant_id, name, units_per_package) "
-                     "VALUES (:id, :tid, :n, :upp)"),
-                {"id": packaging_type_id, "tid": tid,
-                 "n": packaging_type_name, "upp": resolved_units_per_package},
+                text(
+                    "INSERT INTO product_packaging_types "
+                    "  (id, tenant_id, name, units_per_package) "
+                    "VALUES (:id, :tid, :n, :upp)"
+                ),
+                {
+                    "id": packaging_type_id,
+                    "tid": tid,
+                    "n": packaging_type_name,
+                    "upp": resolved_units_per_package,
+                },
             )
 
     # 10. INSERT product.
@@ -542,23 +595,23 @@ async def create_product(
             "   :reorder_point, :unit_price, :currency, true, :uid)"
         ),
         {
-            "id":            product_id,
-            "tid":           tid,
-            "sku":           sku,
-            "name":          body.name,
-            "short_name":    body.short_name,
-            "description":   body.description,
-            "uom":           uom_name,
-            "unit":          uom_name,
-            "pack_size":     1,
-            "cat_id":        category_id,
-            "brand_id":      brand_id,
-            "tc_id":         type_code_id,
-            "pt_id":         packaging_type_id,
+            "id": product_id,
+            "tid": tid,
+            "sku": sku,
+            "name": body.name,
+            "short_name": body.short_name,
+            "description": body.description,
+            "uom": uom_name,
+            "unit": uom_name,
+            "pack_size": 1,
+            "cat_id": category_id,
+            "brand_id": brand_id,
+            "tc_id": type_code_id,
+            "pt_id": packaging_type_id,
             "reorder_point": float(body.reorder_point) if body.reorder_point is not None else None,
-            "unit_price":    float(body.unit_price) if body.unit_price is not None else None,
-            "currency":      body.currency,
-            "uid":           uid,
+            "unit_price": float(body.unit_price) if body.unit_price is not None else None,
+            "currency": body.currency,
+            "uid": uid,
         },
     )
 
@@ -573,21 +626,23 @@ async def create_product(
             "   :rid, 'GRANTED', CAST(:ctx AS jsonb))"
         ),
         {
-            "id":   str(uuid.uuid4()),
-            "tid":  tid,
-            "uid":  uid,
+            "id": str(uuid.uuid4()),
+            "tid": tid,
+            "uid": uid,
             "role": getattr(user, "role", None),
-            "rid":  product_id,
-            "ctx":  json.dumps({
-                "sku":           sku,
-                "name":          body.name,
-                "type_code":     body.type_code,
-                "unit":          uom_name,
-                "category":      category_name,
-                "brand":         brand_name,
-                "unit_price":    str(body.unit_price) if body.unit_price is not None else None,
-                "currency":      body.currency,
-            }),
+            "rid": product_id,
+            "ctx": json.dumps(
+                {
+                    "sku": sku,
+                    "name": body.name,
+                    "type_code": body.type_code,
+                    "unit": uom_name,
+                    "category": category_name,
+                    "brand": brand_name,
+                    "unit_price": str(body.unit_price) if body.unit_price is not None else None,
+                    "currency": body.currency,
+                }
+            ),
         },
     )
 
@@ -635,6 +690,7 @@ async def create_product(
 
 # ── PATCH /{id} ───────────────────────────────────────────────────────────────
 
+
 @router.patch("/{product_id}", response_model=SuccessResponse[ProductResponse])
 @require_permission(PERMISSIONS.PRODUCT_UPDATE)
 async def update_product(
@@ -655,25 +711,27 @@ async def update_product(
     uid = str(user.user_id) if getattr(user, "user_id", None) else None
     role = getattr(user, "role", None)
 
-    row = (await db.execute(
-        text(
-            "SELECT p.id, p.sku, p.name, p.short_name, p.description, "
-            "p.unit, p.pack_size, p.reorder_point, p.unit_price, p.currency, "
-            "p.image_url, "
-            "p.batch_tracking, p.expiry_tracking, p.dispatch_strategy, "
-            "p.category_id, p.brand_id, p.type_code_id, p.packaging_type_id, "
-            "p.tenant_id, p.created_at, p.created_by, "
-            "pc.name AS category, pb.name AS brand, ptc.code AS type_code, "
-            "ppt.name AS packaging_type, ppt.units_per_package "
-            "FROM products p "
-            "LEFT JOIN product_categories pc ON pc.id = p.category_id "
-            "LEFT JOIN product_brands pb ON pb.id = p.brand_id "
-            "LEFT JOIN product_type_codes ptc ON ptc.id = p.type_code_id "
-            "LEFT JOIN product_packaging_types ppt ON ppt.id = p.packaging_type_id "
-            "WHERE p.id = :pid AND p.tenant_id = :tid AND p.is_active = true"
-        ),
-        {"pid": pid, "tid": tid},
-    )).fetchone()
+    row = (
+        await db.execute(
+            text(
+                "SELECT p.id, p.sku, p.name, p.short_name, p.description, "
+                "p.unit, p.pack_size, p.reorder_point, p.unit_price, p.currency, "
+                "p.image_url, "
+                "p.batch_tracking, p.expiry_tracking, p.dispatch_strategy, "
+                "p.category_id, p.brand_id, p.type_code_id, p.packaging_type_id, "
+                "p.tenant_id, p.created_at, p.created_by, "
+                "pc.name AS category, pb.name AS brand, ptc.code AS type_code, "
+                "ppt.name AS packaging_type, ppt.units_per_package "
+                "FROM products p "
+                "LEFT JOIN product_categories pc ON pc.id = p.category_id "
+                "LEFT JOIN product_brands pb ON pb.id = p.brand_id "
+                "LEFT JOIN product_type_codes ptc ON ptc.id = p.type_code_id "
+                "LEFT JOIN product_packaging_types ppt ON ppt.id = p.packaging_type_id "
+                "WHERE p.id = :pid AND p.tenant_id = :tid AND p.is_active = true"
+            ),
+            {"pid": pid, "tid": tid},
+        )
+    ).fetchone()
     if not row:
         raise HTTPException(status_code=404, detail="Product not found")
 
@@ -682,19 +740,21 @@ async def update_product(
 
     # Duplicate name guard (case-insensitive), excluding this product.
     if body.name is not None and body.name.lower() != row.name.lower():
-        dup = (await db.execute(
-            text(
-                "SELECT id FROM products "
-                "WHERE tenant_id = :tid AND LOWER(name) = LOWER(:name) "
-                "AND is_active = true AND id != :pid"
-            ),
-            {"tid": tid, "name": body.name, "pid": pid},
-        )).fetchone()
+        dup = (
+            await db.execute(
+                text(
+                    "SELECT id FROM products "
+                    "WHERE tenant_id = :tid AND LOWER(name) = LOWER(:name) "
+                    "AND is_active = true AND id != :pid"
+                ),
+                {"tid": tid, "name": body.name, "pid": pid},
+            )
+        ).fetchone()
         if dup:
             raise HTTPException(
                 status_code=409,
                 detail={
-                    "code":    "duplicate_product_name",
+                    "code": "duplicate_product_name",
                     "message": "A product with this name already exists in this tenant",
                 },
             )
@@ -727,19 +787,22 @@ async def update_product(
     # Category — find or create.
     category_name = row.category
     if body.category is not None:
-        cat_row = (await db.execute(
-            text("SELECT id, name FROM product_categories "
-                 "WHERE tenant_id = :tid AND LOWER(name) = LOWER(:n) AND is_active = true"),
-            {"tid": tid, "n": body.category},
-        )).fetchone()
+        cat_row = (
+            await db.execute(
+                text(
+                    "SELECT id, name FROM product_categories "
+                    "WHERE tenant_id = :tid AND LOWER(name) = LOWER(:n) AND is_active = true"
+                ),
+                {"tid": tid, "n": body.category},
+            )
+        ).fetchone()
         if cat_row:
             category_id, category_name = str(cat_row.id), cat_row.name
         else:
             category_id = str(uuid.uuid4())
             category_name = body.category
             await db.execute(
-                text("INSERT INTO product_categories (id, tenant_id, name) "
-                     "VALUES (:id, :tid, :n)"),
+                text("INSERT INTO product_categories (id, tenant_id, name) VALUES (:id, :tid, :n)"),
                 {"id": category_id, "tid": tid, "n": category_name},
             )
         set_clauses.append("category_id = :category_id")
@@ -748,19 +811,22 @@ async def update_product(
     # Brand — find or create.
     brand_name = row.brand
     if body.brand is not None:
-        br_row = (await db.execute(
-            text("SELECT id, name FROM product_brands "
-                 "WHERE tenant_id = :tid AND LOWER(name) = LOWER(:n) AND is_active = true"),
-            {"tid": tid, "n": body.brand},
-        )).fetchone()
+        br_row = (
+            await db.execute(
+                text(
+                    "SELECT id, name FROM product_brands "
+                    "WHERE tenant_id = :tid AND LOWER(name) = LOWER(:n) AND is_active = true"
+                ),
+                {"tid": tid, "n": body.brand},
+            )
+        ).fetchone()
         if br_row:
             brand_id, brand_name = str(br_row.id), br_row.name
         else:
             brand_id = str(uuid.uuid4())
             brand_name = body.brand
             await db.execute(
-                text("INSERT INTO product_brands (id, tenant_id, name) "
-                     "VALUES (:id, :tid, :n)"),
+                text("INSERT INTO product_brands (id, tenant_id, name) VALUES (:id, :tid, :n)"),
                 {"id": brand_id, "tid": tid, "n": brand_name},
             )
         set_clauses.append("brand_id = :brand_id")
@@ -769,19 +835,24 @@ async def update_product(
     # Type code — find or create. SKU itself is never regenerated.
     type_code_value = row.type_code
     if body.type_code is not None:
-        tc_row = (await db.execute(
-            text("SELECT id, code FROM product_type_codes "
-                 "WHERE tenant_id = :tid AND UPPER(code) = :code AND is_active = true"),
-            {"tid": tid, "code": body.type_code},
-        )).fetchone()
+        tc_row = (
+            await db.execute(
+                text(
+                    "SELECT id, code FROM product_type_codes "
+                    "WHERE tenant_id = :tid AND UPPER(code) = :code AND is_active = true"
+                ),
+                {"tid": tid, "code": body.type_code},
+            )
+        ).fetchone()
         if tc_row:
             type_code_id, type_code_value = str(tc_row.id), tc_row.code
         else:
             type_code_id = str(uuid.uuid4())
             type_code_value = body.type_code
             await db.execute(
-                text("INSERT INTO product_type_codes (id, tenant_id, code) "
-                     "VALUES (:id, :tid, :code)"),
+                text(
+                    "INSERT INTO product_type_codes (id, tenant_id, code) VALUES (:id, :tid, :code)"
+                ),
                 {"id": type_code_id, "tid": tid, "code": type_code_value},
             )
         set_clauses.append("type_code_id = :type_code_id")
@@ -791,11 +862,15 @@ async def update_product(
     unit_value = row.unit
     if body.unit is not None:
         unit_value = body.unit
-        uom_row = (await db.execute(
-            text("SELECT id FROM product_uoms "
-                 "WHERE tenant_id = :tid AND LOWER(name) = LOWER(:n) AND is_active = true"),
-            {"tid": tid, "n": unit_value},
-        )).fetchone()
+        uom_row = (
+            await db.execute(
+                text(
+                    "SELECT id FROM product_uoms "
+                    "WHERE tenant_id = :tid AND LOWER(name) = LOWER(:n) AND is_active = true"
+                ),
+                {"tid": tid, "n": unit_value},
+            )
+        ).fetchone()
         if not uom_row:
             await db.execute(
                 text("INSERT INTO product_uoms (id, tenant_id, name) VALUES (:id, :tid, :n)"),
@@ -809,11 +884,15 @@ async def update_product(
     packaging_type_name = row.packaging_type
     units_per_package = row.units_per_package
     if body.packaging_type is not None:
-        pt_row = (await db.execute(
-            text("SELECT id, name, units_per_package FROM product_packaging_types "
-                 "WHERE tenant_id = :tid AND LOWER(name) = LOWER(:n) AND is_active = true"),
-            {"tid": tid, "n": body.packaging_type},
-        )).fetchone()
+        pt_row = (
+            await db.execute(
+                text(
+                    "SELECT id, name, units_per_package FROM product_packaging_types "
+                    "WHERE tenant_id = :tid AND LOWER(name) = LOWER(:n) AND is_active = true"
+                ),
+                {"tid": tid, "n": body.packaging_type},
+            )
+        ).fetchone()
         if pt_row:
             packaging_type_id = str(pt_row.id)
             packaging_type_name = pt_row.name
@@ -823,11 +902,17 @@ async def update_product(
             packaging_type_name = body.packaging_type
             units_per_package = body.units_per_package or 1
             await db.execute(
-                text("INSERT INTO product_packaging_types "
-                     "  (id, tenant_id, name, units_per_package) "
-                     "VALUES (:id, :tid, :n, :upp)"),
-                {"id": packaging_type_id, "tid": tid,
-                 "n": packaging_type_name, "upp": units_per_package},
+                text(
+                    "INSERT INTO product_packaging_types "
+                    "  (id, tenant_id, name, units_per_package) "
+                    "VALUES (:id, :tid, :n, :upp)"
+                ),
+                {
+                    "id": packaging_type_id,
+                    "tid": tid,
+                    "n": packaging_type_name,
+                    "upp": units_per_package,
+                },
             )
         set_clauses.append("packaging_type_id = :packaging_type_id")
         params["packaging_type_id"] = packaging_type_id
@@ -848,24 +933,28 @@ async def update_product(
             "   :rid, 'GRANTED', CAST(:ctx AS jsonb))"
         ),
         {
-            "id":   str(uuid.uuid4()),
-            "tid":  tid,
-            "uid":  uid,
+            "id": str(uuid.uuid4()),
+            "tid": tid,
+            "uid": uid,
             "role": role,
-            "rid":  pid,
-            "ctx":  json.dumps(body.model_dump(mode="json", exclude_none=True)),
+            "rid": pid,
+            "ctx": json.dumps(body.model_dump(mode="json", exclude_none=True)),
         },
     )
 
-    is_controlled = bool((await db.execute(
-        text(
-            "SELECT 1 FROM product_approval_minimums "
-            "WHERE tenant_id = :tid AND product_id = :pid "
-            "AND is_active = TRUE AND approver_position_id IS NOT NULL "
-            "LIMIT 1"
-        ),
-        {"tid": tid, "pid": pid},
-    )).fetchone())
+    is_controlled = bool(
+        (
+            await db.execute(
+                text(
+                    "SELECT 1 FROM product_approval_minimums "
+                    "WHERE tenant_id = :tid AND product_id = :pid "
+                    "AND is_active = TRUE AND approver_position_id IS NOT NULL "
+                    "LIMIT 1"
+                ),
+                {"tid": tid, "pid": pid},
+            )
+        ).fetchone()
+    )
 
     return SuccessResponse(
         data=ProductResponse(
@@ -881,10 +970,14 @@ async def update_product(
             brand=brand_name,
             packaging_type=packaging_type_name,
             units_per_package=units_per_package,
-            reorder_point=body.reorder_point if body.reorder_point is not None else row.reorder_point,
+            reorder_point=body.reorder_point
+            if body.reorder_point is not None
+            else row.reorder_point,
             unit_price=body.unit_price if body.unit_price is not None else row.unit_price,
             currency=body.currency if body.currency is not None else row.currency,
-            image_url=body.image_url if body.image_url is not None else getattr(row, "image_url", None),
+            image_url=body.image_url
+            if body.image_url is not None
+            else getattr(row, "image_url", None),
             is_controlled=is_controlled,
             batch_tracking=bool(row.batch_tracking),
             expiry_tracking=bool(row.expiry_tracking),
@@ -898,6 +991,7 @@ async def update_product(
 
 # ── GET /categories/ ─────────────────────────────────────────────────────────
 
+
 @router.get("/categories/", response_model=SuccessResponse[list])
 @require_permission(PERMISSIONS.PRODUCT_LIST_CATEGORIES)
 async def list_categories(
@@ -905,17 +999,22 @@ async def list_categories(
     db: AsyncSession = Depends(get_db_session),
 ) -> SuccessResponse[list]:
     result = await db.execute(
-        text("SELECT id, tenant_id, name FROM product_categories "
-             "WHERE tenant_id = :tid AND is_active = true ORDER BY name"),
+        text(
+            "SELECT id, tenant_id, name FROM product_categories "
+            "WHERE tenant_id = :tid AND is_active = true ORDER BY name"
+        ),
         {"tid": str(user.tenant_id)},
     )
     return SuccessResponse(
-        data=[{"id": str(r.id), "tenant_id": str(r.tenant_id), "name": r.name}
-              for r in result.fetchall()]
+        data=[
+            {"id": str(r.id), "tenant_id": str(r.tenant_id), "name": r.name}
+            for r in result.fetchall()
+        ]
     )
 
 
 # ── POST /categories/ ────────────────────────────────────────────────────────
+
 
 @router.post("/categories/", status_code=201, response_model=SuccessResponse[CategoryResponse])
 @require_permission(PERMISSIONS.PRODUCT_CREATE_CATEGORY)
@@ -925,14 +1024,20 @@ async def create_category(
     db: AsyncSession = Depends(get_db_session),
 ) -> SuccessResponse[CategoryResponse]:
     tid = str(user.tenant_id)
-    row = (await db.execute(
-        text("SELECT id, name FROM product_categories "
-             "WHERE tenant_id = :tid AND LOWER(name) = LOWER(:n) AND is_active = true"),
-        {"tid": tid, "n": body.name},
-    )).fetchone()
+    row = (
+        await db.execute(
+            text(
+                "SELECT id, name FROM product_categories "
+                "WHERE tenant_id = :tid AND LOWER(name) = LOWER(:n) AND is_active = true"
+            ),
+            {"tid": tid, "n": body.name},
+        )
+    ).fetchone()
     if row:
         return SuccessResponse(
-            data=CategoryResponse(id=uuid.UUID(str(row.id)), name=row.name, tenant_id=uuid.UUID(tid))
+            data=CategoryResponse(
+                id=uuid.UUID(str(row.id)), name=row.name, tenant_id=uuid.UUID(tid)
+            )
         )
     cat_id = str(uuid.uuid4())
     await db.execute(
@@ -946,6 +1051,7 @@ async def create_category(
 
 # ── GET /brands/ ─────────────────────────────────────────────────────────────
 
+
 @router.get("/brands/", response_model=SuccessResponse[list])
 @require_permission(PERMISSIONS.PRODUCT_LIST_BRANDS)
 async def list_brands(
@@ -953,17 +1059,22 @@ async def list_brands(
     db: AsyncSession = Depends(get_db_session),
 ) -> SuccessResponse[list]:
     result = await db.execute(
-        text("SELECT id, tenant_id, name FROM product_brands "
-             "WHERE tenant_id = :tid AND is_active = true ORDER BY name"),
+        text(
+            "SELECT id, tenant_id, name FROM product_brands "
+            "WHERE tenant_id = :tid AND is_active = true ORDER BY name"
+        ),
         {"tid": str(user.tenant_id)},
     )
     return SuccessResponse(
-        data=[{"id": str(r.id), "tenant_id": str(r.tenant_id), "name": r.name}
-              for r in result.fetchall()]
+        data=[
+            {"id": str(r.id), "tenant_id": str(r.tenant_id), "name": r.name}
+            for r in result.fetchall()
+        ]
     )
 
 
 # ── POST /brands/ ────────────────────────────────────────────────────────────
+
 
 @router.post("/brands/", status_code=201, response_model=SuccessResponse[BrandResponse])
 @require_permission(PERMISSIONS.PRODUCT_CREATE_BRAND)
@@ -973,11 +1084,15 @@ async def create_brand(
     db: AsyncSession = Depends(get_db_session),
 ) -> SuccessResponse[BrandResponse]:
     tid = str(user.tenant_id)
-    row = (await db.execute(
-        text("SELECT id, name FROM product_brands "
-             "WHERE tenant_id = :tid AND LOWER(name) = LOWER(:n) AND is_active = true"),
-        {"tid": tid, "n": body.name},
-    )).fetchone()
+    row = (
+        await db.execute(
+            text(
+                "SELECT id, name FROM product_brands "
+                "WHERE tenant_id = :tid AND LOWER(name) = LOWER(:n) AND is_active = true"
+            ),
+            {"tid": tid, "n": body.name},
+        )
+    ).fetchone()
     if row:
         return SuccessResponse(
             data=BrandResponse(id=uuid.UUID(str(row.id)), name=row.name, tenant_id=uuid.UUID(tid))
@@ -994,6 +1109,7 @@ async def create_brand(
 
 # ── GET /type-codes/ ─────────────────────────────────────────────────────────
 
+
 @router.get("/type-codes/", response_model=SuccessResponse[list])
 @require_permission(PERMISSIONS.PRODUCT_LIST_TYPE_CODES)
 async def list_type_codes(
@@ -1001,20 +1117,27 @@ async def list_type_codes(
     db: AsyncSession = Depends(get_db_session),
 ) -> SuccessResponse[list]:
     result = await db.execute(
-        text("SELECT id, tenant_id, code, description FROM product_type_codes "
-             "WHERE tenant_id = :tid AND is_active = true ORDER BY code"),
+        text(
+            "SELECT id, tenant_id, code, description FROM product_type_codes "
+            "WHERE tenant_id = :tid AND is_active = true ORDER BY code"
+        ),
         {"tid": str(user.tenant_id)},
     )
     return SuccessResponse(
         data=[
-            {"id": str(r.id), "tenant_id": str(r.tenant_id),
-             "code": r.code, "description": r.description}
+            {
+                "id": str(r.id),
+                "tenant_id": str(r.tenant_id),
+                "code": r.code,
+                "description": r.description,
+            }
             for r in result.fetchall()
         ]
     )
 
 
 # ── POST /type-codes/ ────────────────────────────────────────────────────────
+
 
 @router.post("/type-codes/", status_code=201, response_model=SuccessResponse[TypeCodeResponse])
 @require_permission(PERMISSIONS.PRODUCT_CREATE_TYPE_CODE)
@@ -1024,33 +1147,44 @@ async def create_type_code(
     db: AsyncSession = Depends(get_db_session),
 ) -> SuccessResponse[TypeCodeResponse]:
     tid = str(user.tenant_id)
-    row = (await db.execute(
-        text("SELECT id, code, description FROM product_type_codes "
-             "WHERE tenant_id = :tid AND UPPER(code) = :code AND is_active = true"),
-        {"tid": tid, "code": body.code},
-    )).fetchone()
+    row = (
+        await db.execute(
+            text(
+                "SELECT id, code, description FROM product_type_codes "
+                "WHERE tenant_id = :tid AND UPPER(code) = :code AND is_active = true"
+            ),
+            {"tid": tid, "code": body.code},
+        )
+    ).fetchone()
     if row:
         return SuccessResponse(
             data=TypeCodeResponse(
-                id=uuid.UUID(str(row.id)), code=row.code,
-                description=row.description, tenant_id=uuid.UUID(tid),
+                id=uuid.UUID(str(row.id)),
+                code=row.code,
+                description=row.description,
+                tenant_id=uuid.UUID(tid),
             )
         )
     tcid = str(uuid.uuid4())
     await db.execute(
-        text("INSERT INTO product_type_codes (id, tenant_id, code, description) "
-             "VALUES (:id, :tid, :code, :desc)"),
+        text(
+            "INSERT INTO product_type_codes (id, tenant_id, code, description) "
+            "VALUES (:id, :tid, :code, :desc)"
+        ),
         {"id": tcid, "tid": tid, "code": body.code, "desc": body.description},
     )
     return SuccessResponse(
         data=TypeCodeResponse(
-            id=uuid.UUID(tcid), code=body.code,
-            description=body.description, tenant_id=uuid.UUID(tid),
+            id=uuid.UUID(tcid),
+            code=body.code,
+            description=body.description,
+            tenant_id=uuid.UUID(tid),
         )
     )
 
 
 # ── GET /uoms/ ───────────────────────────────────────────────────────────────
+
 
 @router.get("/uoms/", response_model=SuccessResponse[list])
 @require_permission(PERMISSIONS.PRODUCT_LIST_UOMS)
@@ -1059,17 +1193,22 @@ async def list_uoms(
     db: AsyncSession = Depends(get_db_session),
 ) -> SuccessResponse[list]:
     result = await db.execute(
-        text("SELECT id, tenant_id, name FROM product_uoms "
-             "WHERE tenant_id = :tid AND is_active = true ORDER BY name"),
+        text(
+            "SELECT id, tenant_id, name FROM product_uoms "
+            "WHERE tenant_id = :tid AND is_active = true ORDER BY name"
+        ),
         {"tid": str(user.tenant_id)},
     )
     return SuccessResponse(
-        data=[{"id": str(r.id), "tenant_id": str(r.tenant_id), "name": r.name}
-              for r in result.fetchall()]
+        data=[
+            {"id": str(r.id), "tenant_id": str(r.tenant_id), "name": r.name}
+            for r in result.fetchall()
+        ]
     )
 
 
 # ── POST /uoms/ ──────────────────────────────────────────────────────────────
+
 
 @router.post("/uoms/", status_code=201, response_model=SuccessResponse[UomResponse])
 @require_permission(PERMISSIONS.PRODUCT_CREATE_UOM)
@@ -1079,11 +1218,15 @@ async def create_uom(
     db: AsyncSession = Depends(get_db_session),
 ) -> SuccessResponse[UomResponse]:
     tid = str(user.tenant_id)
-    row = (await db.execute(
-        text("SELECT id, name FROM product_uoms "
-             "WHERE tenant_id = :tid AND LOWER(name) = LOWER(:n) AND is_active = true"),
-        {"tid": tid, "n": body.name},
-    )).fetchone()
+    row = (
+        await db.execute(
+            text(
+                "SELECT id, name FROM product_uoms "
+                "WHERE tenant_id = :tid AND LOWER(name) = LOWER(:n) AND is_active = true"
+            ),
+            {"tid": tid, "n": body.name},
+        )
+    ).fetchone()
     if row:
         return SuccessResponse(
             data=UomResponse(id=uuid.UUID(str(row.id)), name=row.name, tenant_id=uuid.UUID(tid))
@@ -1100,6 +1243,7 @@ async def create_uom(
 
 # ── GET /packaging-types/ ────────────────────────────────────────────────────
 
+
 @router.get("/packaging-types/", response_model=SuccessResponse[list])
 @require_permission(PERMISSIONS.PRODUCT_LIST_PACKAGING_TYPES)
 async def list_packaging_types(
@@ -1107,14 +1251,20 @@ async def list_packaging_types(
     db: AsyncSession = Depends(get_db_session),
 ) -> SuccessResponse[list]:
     result = await db.execute(
-        text("SELECT id, tenant_id, name, units_per_package FROM product_packaging_types "
-             "WHERE tenant_id = :tid AND is_active = true ORDER BY name"),
+        text(
+            "SELECT id, tenant_id, name, units_per_package FROM product_packaging_types "
+            "WHERE tenant_id = :tid AND is_active = true ORDER BY name"
+        ),
         {"tid": str(user.tenant_id)},
     )
     return SuccessResponse(
         data=[
-            {"id": str(r.id), "tenant_id": str(r.tenant_id),
-             "name": r.name, "units_per_package": r.units_per_package}
+            {
+                "id": str(r.id),
+                "tenant_id": str(r.tenant_id),
+                "name": r.name,
+                "units_per_package": r.units_per_package,
+            }
             for r in result.fetchall()
         ]
     )
@@ -1122,8 +1272,10 @@ async def list_packaging_types(
 
 # ── POST /packaging-types/ ───────────────────────────────────────────────────
 
-@router.post("/packaging-types/", status_code=201,
-             response_model=SuccessResponse[PackagingTypeResponse])
+
+@router.post(
+    "/packaging-types/", status_code=201, response_model=SuccessResponse[PackagingTypeResponse]
+)
 @require_permission(PERMISSIONS.PRODUCT_CREATE_PACKAGING_TYPE)
 async def create_packaging_type(
     body: PackagingTypeCreateRequest,
@@ -1131,33 +1283,44 @@ async def create_packaging_type(
     db: AsyncSession = Depends(get_db_session),
 ) -> SuccessResponse[PackagingTypeResponse]:
     tid = str(user.tenant_id)
-    row = (await db.execute(
-        text("SELECT id, name, units_per_package FROM product_packaging_types "
-             "WHERE tenant_id = :tid AND LOWER(name) = LOWER(:n) AND is_active = true"),
-        {"tid": tid, "n": body.name},
-    )).fetchone()
+    row = (
+        await db.execute(
+            text(
+                "SELECT id, name, units_per_package FROM product_packaging_types "
+                "WHERE tenant_id = :tid AND LOWER(name) = LOWER(:n) AND is_active = true"
+            ),
+            {"tid": tid, "n": body.name},
+        )
+    ).fetchone()
     if row:
         return SuccessResponse(
             data=PackagingTypeResponse(
-                id=uuid.UUID(str(row.id)), name=row.name,
-                units_per_package=row.units_per_package, tenant_id=uuid.UUID(tid),
+                id=uuid.UUID(str(row.id)),
+                name=row.name,
+                units_per_package=row.units_per_package,
+                tenant_id=uuid.UUID(tid),
             )
         )
     ptid = str(uuid.uuid4())
     await db.execute(
-        text("INSERT INTO product_packaging_types (id, tenant_id, name, units_per_package) "
-             "VALUES (:id, :tid, :n, :upp)"),
+        text(
+            "INSERT INTO product_packaging_types (id, tenant_id, name, units_per_package) "
+            "VALUES (:id, :tid, :n, :upp)"
+        ),
         {"id": ptid, "tid": tid, "n": body.name, "upp": body.units_per_package},
     )
     return SuccessResponse(
         data=PackagingTypeResponse(
-            id=uuid.UUID(ptid), name=body.name,
-            units_per_package=body.units_per_package, tenant_id=uuid.UUID(tid),
+            id=uuid.UUID(ptid),
+            name=body.name,
+            units_per_package=body.units_per_package,
+            tenant_id=uuid.UUID(tid),
         )
     )
 
 
 # ── Approval rule helpers ─────────────────────────────────────────────────────
+
 
 async def _read_approval_rules(
     db: AsyncSession,
@@ -1237,8 +1400,8 @@ async def _read_approval_rules(
 
 # ── GET /approval-rules/latest — MUST appear before /{product_id} routes ──────
 
-@router.get("/approval-rules/latest",
-            response_model=SuccessResponse[ProductApprovalRulesResponse])
+
+@router.get("/approval-rules/latest", response_model=SuccessResponse[ProductApprovalRulesResponse])
 @require_permission(PERMISSIONS.PRODUCT_VIEW_APPROVAL_RULES)
 async def get_latest_approval_rules(
     user=Depends(get_current_user),
@@ -1276,8 +1439,10 @@ async def get_latest_approval_rules(
 
 # ── GET /{product_id}/approval-rules ─────────────────────────────────────────
 
-@router.get("/{product_id}/approval-rules",
-            response_model=SuccessResponse[ProductApprovalRulesResponse])
+
+@router.get(
+    "/{product_id}/approval-rules", response_model=SuccessResponse[ProductApprovalRulesResponse]
+)
 @require_permission(PERMISSIONS.PRODUCT_VIEW_APPROVAL_RULES)
 async def get_product_approval_rules(
     product_id: str,
@@ -1297,8 +1462,10 @@ async def get_product_approval_rules(
 
 # ── PUT /{product_id}/approval-rules ─────────────────────────────────────────
 
-@router.put("/{product_id}/approval-rules",
-            response_model=SuccessResponse[ProductApprovalRulesResponse])
+
+@router.put(
+    "/{product_id}/approval-rules", response_model=SuccessResponse[ProductApprovalRulesResponse]
+)
 @require_permission(PERMISSIONS.PRODUCT_MANAGE_APPROVAL_RULES)
 async def upsert_product_approval_rules(
     product_id: str,
@@ -1318,8 +1485,7 @@ async def upsert_product_approval_rules(
 
     # Delete existing product-level rules for this product (replace semantics)
     await db.execute(
-        text("DELETE FROM approval_rule "
-             "WHERE tenant_id = :tid AND product_id = :pid"),
+        text("DELETE FROM approval_rule WHERE tenant_id = :tid AND product_id = :pid"),
         {"tid": tid, "pid": pid},
     )
 
@@ -1336,14 +1502,14 @@ async def upsert_product_approval_rules(
                    :approver_role, :approval_order, :pid, true)
             """),
             {
-                "id":             rid,
-                "tid":            tid,
-                "tx_type":        entry.transaction_type,
-                "min_qty":        str(entry.min_quantity) if entry.min_quantity is not None else None,
-                "max_qty":        str(entry.max_quantity) if entry.max_quantity is not None else None,
-                "approver_role":  entry.approver_role,
+                "id": rid,
+                "tid": tid,
+                "tx_type": entry.transaction_type,
+                "min_qty": str(entry.min_quantity) if entry.min_quantity is not None else None,
+                "max_qty": str(entry.max_quantity) if entry.max_quantity is not None else None,
+                "approver_role": entry.approver_role,
                 "approval_order": entry.approval_order,
-                "pid":            pid,
+                "pid": pid,
             },
         )
 
@@ -1356,10 +1522,10 @@ async def upsert_product_approval_rules(
                     'product', :rid, 'GRANTED')
         """),
         {
-            "tid":  tid,
-            "uid":  str(user.user_id),
+            "tid": tid,
+            "uid": str(user.user_id),
             "role": user.role,
-            "rid":  uuid.UUID(pid),
+            "rid": uuid.UUID(pid),
         },
     )
 
@@ -1369,13 +1535,15 @@ async def upsert_product_approval_rules(
 
 # ── GET /{product_id}/approval-minimums ───────────────────────────────────────
 
+
 async def _read_approval_minimums(
     db: AsyncSession,
     tenant_id: str,
     product_id: str,
 ) -> ProductApprovalMinimumsResponse:
-    rows = (await db.execute(
-        text("""
+    rows = (
+        await db.execute(
+            text("""
             SELECT pam.id, pam.transaction_type, pam.min_authority_level,
                    pam.threshold_type, pam.qty_threshold, pam.value_threshold,
                    pam.approver_position_id, pam.note, pam.is_active,
@@ -1386,8 +1554,9 @@ async def _read_approval_minimums(
             WHERE  pam.product_id = :pid AND pam.tenant_id = :tid
             ORDER BY pam.transaction_type
         """),
-        {"pid": product_id, "tid": tenant_id},
-    )).fetchall()
+            {"pid": product_id, "tid": tenant_id},
+        )
+    ).fetchall()
     return ProductApprovalMinimumsResponse(
         product_id=uuid.UUID(product_id),
         minimums=[
@@ -1400,7 +1569,9 @@ async def _read_approval_minimums(
                 threshold_type=r.threshold_type,
                 qty_threshold=r.qty_threshold,
                 value_threshold=r.value_threshold,
-                approver_position_id=uuid.UUID(str(r.approver_position_id)) if r.approver_position_id else None,
+                approver_position_id=uuid.UUID(str(r.approver_position_id))
+                if r.approver_position_id
+                else None,
                 approver_label=r.approver_title,
                 note=r.note,
                 created_by=uuid.UUID(str(r.created_by)),
@@ -1412,8 +1583,10 @@ async def _read_approval_minimums(
     )
 
 
-@router.get("/{product_id}/approval-minimums",
-            response_model=SuccessResponse[ProductApprovalMinimumsResponse])
+@router.get(
+    "/{product_id}/approval-minimums",
+    response_model=SuccessResponse[ProductApprovalMinimumsResponse],
+)
 @require_permission(PERMISSIONS.PRODUCT_VIEW)
 async def get_product_approval_minimums(
     product_id: str,
@@ -1427,8 +1600,11 @@ async def get_product_approval_minimums(
 
 # ── PUT /{product_id}/approval-minimums ───────────────────────────────────────
 
-@router.put("/{product_id}/approval-minimums",
-            response_model=SuccessResponse[ProductApprovalMinimumsResponse])
+
+@router.put(
+    "/{product_id}/approval-minimums",
+    response_model=SuccessResponse[ProductApprovalMinimumsResponse],
+)
 @require_permission(PERMISSIONS.PRODUCT_MANAGE_APPROVAL_MINIMUMS)
 async def upsert_product_approval_minimums(
     product_id: str,
@@ -1459,8 +1635,7 @@ async def upsert_product_approval_minimums(
     now = datetime.now(timezone.utc)
 
     await db.execute(
-        text("DELETE FROM product_approval_minimums "
-             "WHERE product_id = :pid AND tenant_id = :tid"),
+        text("DELETE FROM product_approval_minimums WHERE product_id = :pid AND tenant_id = :tid"),
         {"pid": pid, "tid": tid},
     )
 
@@ -1481,18 +1656,20 @@ async def upsert_product_approval_minimums(
                    :by, :now, :now)
             """),
             {
-                "tid":                  tid,
-                "pid":                  pid,
-                "tx_type":              entry.transaction_type,
-                "min_auth":             entry.min_authority_level,
-                "threshold_type":       entry.threshold_type,
-                "qty_threshold":        entry.qty_threshold,
-                "value_threshold":      entry.value_threshold,
-                "approver_position_id": str(entry.approver_position_id) if entry.approver_position_id else None,
-                "note":                 entry.note,
-                "is_active":            entry.override_enabled,
-                "by":                   str(user.user_id),
-                "now":                  now,
+                "tid": tid,
+                "pid": pid,
+                "tx_type": entry.transaction_type,
+                "min_auth": entry.min_authority_level,
+                "threshold_type": entry.threshold_type,
+                "qty_threshold": entry.qty_threshold,
+                "value_threshold": entry.value_threshold,
+                "approver_position_id": str(entry.approver_position_id)
+                if entry.approver_position_id
+                else None,
+                "note": entry.note,
+                "is_active": entry.override_enabled,
+                "by": str(user.user_id),
+                "now": now,
             },
         )
 
@@ -1504,10 +1681,10 @@ async def upsert_product_approval_minimums(
                     'product', :rid, 'GRANTED')
         """),
         {
-            "tid":  tid,
-            "uid":  str(user.user_id),
+            "tid": tid,
+            "uid": str(user.user_id),
             "role": user.role,
-            "rid":  uuid.UUID(pid),
+            "rid": uuid.UUID(pid),
         },
     )
 

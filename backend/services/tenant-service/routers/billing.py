@@ -8,6 +8,7 @@ main.py AFTER tenants.router (S10): tenants.router owns the fixed
 router's parameterised /{tenant_id}/addons — Starlette matches routes in
 registration order across the whole app, not just within one router.
 """
+
 from __future__ import annotations
 
 import uuid
@@ -47,6 +48,7 @@ def _dt(value: date | datetime | None) -> Optional[str]:
 
 
 # ── Pydantic models ───────────────────────────────────────────────────────────
+
 
 class PaymentLineItemOut(BaseModel):
     item_type: str
@@ -128,10 +130,10 @@ class TenantAddonOut(BaseModel):
 
 class AddonGrantRequest(BaseModel):
     addon_code: str
-    source: str                      # 'OVERRIDE' | 'PURCHASED'
+    source: str  # 'OVERRIDE' | 'PURCHASED'
     starts_on: Optional[str] = None  # default today
     ends_on: Optional[str] = None
-    note: Optional[str] = None       # required when source=OVERRIDE
+    note: Optional[str] = None  # required when source=OVERRIDE
 
 
 class AddonCancelRequest(BaseModel):
@@ -140,84 +142,129 @@ class AddonCancelRequest(BaseModel):
 
 # ── Shared helpers ────────────────────────────────────────────────────────────
 
+
 async def _load_subscription_view(db: AsyncSession, tenant_id: str) -> SubscriptionOut:
-    tenant_row = (await db.execute(
-        text("SELECT contract_start, contract_end FROM tenants WHERE id = :tid"),
-        {"tid": str(tenant_id)},
-    )).fetchone()
+    tenant_row = (
+        await db.execute(
+            text("SELECT contract_start, contract_end FROM tenants WHERE id = :tid"),
+            {"tid": str(tenant_id)},
+        )
+    ).fetchone()
     contract_start = _dt(tenant_row.contract_start) if tenant_row else None
     contract_end = _dt(tenant_row.contract_end) if tenant_row else None
 
-    sub = (await db.execute(
-        text(
-            "SELECT id, tier, billing_period, status, provider, amount, currency, "
-            "       current_period_start, current_period_end, scheduled_tier, scheduled_at "
-            "FROM subscriptions WHERE tenant_id = :tid "
-            "ORDER BY (status IN ('ACTIVE', 'PENDING_PAYMENT', 'PAST_DUE')) DESC, "
-            "         created_at DESC LIMIT 1"
-        ),
-        {"tid": str(tenant_id)},
-    )).fetchone()
+    sub = (
+        await db.execute(
+            text(
+                "SELECT id, tier, billing_period, status, provider, amount, currency, "
+                "       current_period_start, current_period_end, scheduled_tier, scheduled_at "
+                "FROM subscriptions WHERE tenant_id = :tid "
+                "ORDER BY (status IN ('ACTIVE', 'PENDING_PAYMENT', 'PAST_DUE')) DESC, "
+                "         created_at DESC LIMIT 1"
+            ),
+            {"tid": str(tenant_id)},
+        )
+    ).fetchone()
 
     if sub is None:
         return SubscriptionOut(
-            id=None, tier=None, billing_period=None, status=None, provider=None,
-            amount=None, currency=None, current_period_start=None, current_period_end=None,
-            scheduled_tier=None, scheduled_at=None,
-            contract_start=contract_start, contract_end=contract_end,
+            id=None,
+            tier=None,
+            billing_period=None,
+            status=None,
+            provider=None,
+            amount=None,
+            currency=None,
+            current_period_start=None,
+            current_period_end=None,
+            scheduled_tier=None,
+            scheduled_at=None,
+            contract_start=contract_start,
+            contract_end=contract_end,
             payments=[],
         )
 
-    payment_rows = (await db.execute(
-        text(
-            "SELECT id, status, invoice_kind, currency, subtotal, vat_rate, vat_amount, total, "
-            "       period_start, period_end, provider, provider_reference, paid_at, created_at "
-            "FROM payments WHERE subscription_id = :sid ORDER BY created_at DESC"
-        ),
-        {"sid": str(sub.id)},
-    )).fetchall()
+    payment_rows = (
+        await db.execute(
+            text(
+                "SELECT id, status, invoice_kind, currency, subtotal, vat_rate, vat_amount, total, "
+                "       period_start, period_end, provider, provider_reference, paid_at, created_at "
+                "FROM payments WHERE subscription_id = :sid ORDER BY created_at DESC"
+            ),
+            {"sid": str(sub.id)},
+        )
+    ).fetchall()
 
     payments: list[PaymentOut] = []
     for p in payment_rows:
-        line_item_rows = (await db.execute(
-            text(
-                "SELECT item_type, item_key, description, quantity, unit_amount, amount "
-                "FROM payment_line_items WHERE payment_id = :pid ORDER BY created_at"
-            ),
-            {"pid": str(p.id)},
-        )).fetchall()
-        payments.append(PaymentOut(
-            id=str(p.id), status=p.status, invoice_kind=p.invoice_kind, currency=p.currency,
-            subtotal=p.subtotal, vat_rate=p.vat_rate, vat_amount=p.vat_amount, total=p.total,
-            period_start=_dt(p.period_start), period_end=_dt(p.period_end),
-            provider=p.provider, provider_reference=p.provider_reference,
-            paid_at=_dt(p.paid_at), created_at=_dt(p.created_at),
-            line_items=[
-                PaymentLineItemOut(
-                    item_type=li.item_type, item_key=li.item_key, description=li.description,
-                    quantity=li.quantity, unit_amount=li.unit_amount, amount=li.amount,
-                )
-                for li in line_item_rows
-            ],
-        ))
+        line_item_rows = (
+            await db.execute(
+                text(
+                    "SELECT item_type, item_key, description, quantity, unit_amount, amount "
+                    "FROM payment_line_items WHERE payment_id = :pid ORDER BY created_at"
+                ),
+                {"pid": str(p.id)},
+            )
+        ).fetchall()
+        payments.append(
+            PaymentOut(
+                id=str(p.id),
+                status=p.status,
+                invoice_kind=p.invoice_kind,
+                currency=p.currency,
+                subtotal=p.subtotal,
+                vat_rate=p.vat_rate,
+                vat_amount=p.vat_amount,
+                total=p.total,
+                period_start=_dt(p.period_start),
+                period_end=_dt(p.period_end),
+                provider=p.provider,
+                provider_reference=p.provider_reference,
+                paid_at=_dt(p.paid_at),
+                created_at=_dt(p.created_at),
+                line_items=[
+                    PaymentLineItemOut(
+                        item_type=li.item_type,
+                        item_key=li.item_key,
+                        description=li.description,
+                        quantity=li.quantity,
+                        unit_amount=li.unit_amount,
+                        amount=li.amount,
+                    )
+                    for li in line_item_rows
+                ],
+            )
+        )
 
     return SubscriptionOut(
-        id=str(sub.id), tier=sub.tier, billing_period=sub.billing_period, status=sub.status,
-        provider=sub.provider, amount=sub.amount, currency=sub.currency,
-        current_period_start=_dt(sub.current_period_start), current_period_end=_dt(sub.current_period_end),
-        scheduled_tier=sub.scheduled_tier, scheduled_at=_dt(sub.scheduled_at),
-        contract_start=contract_start, contract_end=contract_end,
+        id=str(sub.id),
+        tier=sub.tier,
+        billing_period=sub.billing_period,
+        status=sub.status,
+        provider=sub.provider,
+        amount=sub.amount,
+        currency=sub.currency,
+        current_period_start=_dt(sub.current_period_start),
+        current_period_end=_dt(sub.current_period_end),
+        scheduled_tier=sub.scheduled_tier,
+        scheduled_at=_dt(sub.scheduled_at),
+        contract_start=contract_start,
+        contract_end=contract_end,
         payments=payments,
     )
 
 
 async def _get_payment_for_tenant(db: AsyncSession, payment_id: str, tenant_id: str):
-    row = (await db.execute(
-        text("SELECT id, tenant_id, provider, status FROM payments WHERE id = :pid"),
-        {"pid": str(payment_id)},
-    )).fetchone()
+    row = (
+        await db.execute(
+            text("SELECT id, tenant_id, provider, status FROM payments WHERE id = :pid"),
+            {"pid": str(payment_id)},
+        )
+    ).fetchone()
     if row is None or str(row.tenant_id) != str(tenant_id):
-        raise HTTPException(status_code=404, detail={"code": "PAYMENT_NOT_FOUND", "message": "Payment not found"})
+        raise HTTPException(
+            status_code=404, detail={"code": "PAYMENT_NOT_FOUND", "message": "Payment not found"}
+        )
     return row
 
 
@@ -240,33 +287,45 @@ def _map_value_error(exc: ValueError) -> HTTPException:
         "ADDON_NOT_ACTIVE": 422,
         "INVOICE_PENDING_SETTLE_FIRST": 409,
     }
-    return HTTPException(status_code=status_map.get(code, 422), detail={"code": code, "message": code})
+    return HTTPException(
+        status_code=status_map.get(code, 422), detail={"code": code, "message": code}
+    )
 
 
 async def _load_tenant_addons(db: AsyncSession, tenant_id: str) -> list[TenantAddonOut]:
-    rows = (await db.execute(
-        text(
-            "SELECT ta.id, ta.addon_code, pa.display_name, ta.source, ta.status, "
-            "       ta.amount, ta.starts_on, ta.ends_on, ta.note, ta.created_at, ta.cancelled_at "
-            "FROM tenant_addons ta "
-            "JOIN platform_addons pa ON pa.code = ta.addon_code "
-            "WHERE ta.tenant_id = :tid "
-            "ORDER BY (ta.status = 'ACTIVE') DESC, ta.created_at DESC"
-        ),
-        {"tid": str(tenant_id)},
-    )).fetchall()
+    rows = (
+        await db.execute(
+            text(
+                "SELECT ta.id, ta.addon_code, pa.display_name, ta.source, ta.status, "
+                "       ta.amount, ta.starts_on, ta.ends_on, ta.note, ta.created_at, ta.cancelled_at "
+                "FROM tenant_addons ta "
+                "JOIN platform_addons pa ON pa.code = ta.addon_code "
+                "WHERE ta.tenant_id = :tid "
+                "ORDER BY (ta.status = 'ACTIVE') DESC, ta.created_at DESC"
+            ),
+            {"tid": str(tenant_id)},
+        )
+    ).fetchall()
     return [
         TenantAddonOut(
-            id=str(r.id), addon_code=r.addon_code, display_name=r.display_name,
-            source=r.source, status=r.status, amount=r.amount,
-            starts_on=r.starts_on.isoformat(), ends_on=_dt(r.ends_on), note=r.note,
-            created_at=r.created_at.isoformat(), cancelled_at=_dt(r.cancelled_at),
+            id=str(r.id),
+            addon_code=r.addon_code,
+            display_name=r.display_name,
+            source=r.source,
+            status=r.status,
+            amount=r.amount,
+            starts_on=r.starts_on.isoformat(),
+            ends_on=_dt(r.ends_on),
+            note=r.note,
+            created_at=r.created_at.isoformat(),
+            cancelled_at=_dt(r.cancelled_at),
         )
         for r in rows
     ]
 
 
 # ── TA self-service — fixed paths ────────────────────────────────────────────
+
 
 @router.get("/me/subscription", response_model=SuccessResponse[SubscriptionOut])
 @require_permission(PERMISSIONS.BILLING_VIEW_OWN)
@@ -318,6 +377,7 @@ async def get_my_invoice_checkout(
 
 # ── Public STUB webhook — fixed path, no JWT ─────────────────────────────────
 
+
 @router.post("/public/payments/webhook/stub")
 async def stub_payment_webhook(request: Request) -> dict:
     """Allowlisted in scripts/ci_drift_check.py and api-gateway's
@@ -334,19 +394,26 @@ async def stub_payment_webhook(request: Request) -> dict:
         raise HTTPException(status_code=status_code, detail={"code": code, "message": code})
 
     async with AsyncSessionLocal() as db:
-        payment_row = (await db.execute(
-            text("SELECT tenant_id FROM payments WHERE id = :pid"),
-            {"pid": event.payment_id},
-        )).fetchone()
+        payment_row = (
+            await db.execute(
+                text("SELECT tenant_id FROM payments WHERE id = :pid"),
+                {"pid": event.payment_id},
+            )
+        ).fetchone()
         if payment_row is None:
-            raise HTTPException(status_code=404, detail={"code": "PAYMENT_NOT_FOUND", "message": "Payment not found"})
+            raise HTTPException(
+                status_code=404,
+                detail={"code": "PAYMENT_NOT_FOUND", "message": "Payment not found"},
+            )
 
         async with db.begin():
             await set_rls_context(db, str(payment_row.tenant_id), SYSTEM_ACTOR_ID)
             try:
                 if event.event == "payment.succeeded":
                     result = await mark_paid(
-                        db, event.payment_id, provider="STUB",
+                        db,
+                        event.payment_id,
+                        provider="STUB",
                         provider_reference=event.provider_reference,
                         recorded_by=SYSTEM_ACTOR_ID,
                         note="STUB webhook",
@@ -354,7 +421,9 @@ async def stub_payment_webhook(request: Request) -> dict:
                     if result.get("downgrade_applied"):
                         try:
                             await _log_tenant_activity(
-                                db, payment_row.tenant_id, SYSTEM_ACTOR_ID,
+                                db,
+                                payment_row.tenant_id,
+                                SYSTEM_ACTOR_ID,
                                 action="PLAN_DOWNGRADE_APPLIED",
                                 new_value=result["downgrade_applied"],
                             )
@@ -362,7 +431,8 @@ async def stub_payment_webhook(request: Request) -> dict:
                             pass  # log failure must not roll back the payment
                 else:
                     result = await mark_failed(
-                        db, event.payment_id,
+                        db,
+                        event.payment_id,
                         provider_reference=event.provider_reference,
                         note="STUB webhook",
                     )
@@ -373,6 +443,7 @@ async def stub_payment_webhook(request: Request) -> dict:
 
 
 # ── SA management — parameterised paths ──────────────────────────────────────
+
 
 @router.get("/{tenant_id}/subscription", response_model=SuccessResponse[SubscriptionOut])
 @require_permission(PERMISSIONS.BILLING_VIEW)
@@ -395,12 +466,16 @@ async def create_tenant_invoice(
 ) -> SuccessResponse[dict]:
     """SA: raise a new invoice for the tenant's live subscription."""
     try:
-        result = await create_invoice(db, str(tenant_id), recorded_by=str(user.user_id), note=body.note)
+        result = await create_invoice(
+            db, str(tenant_id), recorded_by=str(user.user_id), note=body.note
+        )
     except ValueError as exc:
         raise _map_value_error(exc)
 
     await _log_tenant_activity(
-        db, tenant_id, str(user.user_id),
+        db,
+        tenant_id,
+        str(user.user_id),
         action="INVOICE_CREATED",
         new_value=f"payment={result['payment_id']} total={result['total']}",
         note=body.note,
@@ -424,28 +499,39 @@ async def mark_tenant_payment_paid(
     if payment.provider != "MANUAL":
         raise HTTPException(
             status_code=422,
-            detail={"code": "WRONG_PROVIDER", "message": "Only MANUAL payments are marked paid here"},
+            detail={
+                "code": "WRONG_PROVIDER",
+                "message": "Only MANUAL payments are marked paid here",
+            },
         )
 
     paid_at = datetime.fromisoformat(body.paid_at) if body.paid_at else None
     try:
         result = await mark_paid(
-            db, str(payment_id), provider="MANUAL",
-            provider_reference=body.provider_reference, paid_at=paid_at,
-            recorded_by=str(user.user_id), note=body.note,
+            db,
+            str(payment_id),
+            provider="MANUAL",
+            provider_reference=body.provider_reference,
+            paid_at=paid_at,
+            recorded_by=str(user.user_id),
+            note=body.note,
         )
     except ValueError as exc:
         raise _map_value_error(exc)
 
     await _log_tenant_activity(
-        db, tenant_id, str(user.user_id),
+        db,
+        tenant_id,
+        str(user.user_id),
         action="PAYMENT_MARKED_PAID",
         new_value=f"payment={payment_id} ref={body.provider_reference or ''}",
         note=body.note,
     )
     if result.get("downgrade_applied"):
         await _log_tenant_activity(
-            db, tenant_id, str(user.user_id),
+            db,
+            tenant_id,
+            str(user.user_id),
             action="PLAN_DOWNGRADE_APPLIED",
             new_value=result["downgrade_applied"],
         )
@@ -464,12 +550,16 @@ async def cancel_tenant_payment(
     """SA: cancel a PENDING invoice."""
     await _get_payment_for_tenant(db, str(payment_id), str(tenant_id))
     try:
-        result = await cancel_invoice(db, str(payment_id), recorded_by=str(user.user_id), note=body.note)
+        result = await cancel_invoice(
+            db, str(payment_id), recorded_by=str(user.user_id), note=body.note
+        )
     except ValueError as exc:
         raise _map_value_error(exc)
 
     await _log_tenant_activity(
-        db, tenant_id, str(user.user_id),
+        db,
+        tenant_id,
+        str(user.user_id),
         action="INVOICE_CANCELLED",
         new_value=f"payment={payment_id}",
         note=body.note,
@@ -512,8 +602,13 @@ async def grant_tenant_addon(
     ends_on = date.fromisoformat(body.ends_on) if body.ends_on else None
     try:
         outcome = await apply_addon_grant_with_proration(
-            db, str(tenant_id), body.addon_code, body.source,
-            note=body.note, starts_on=starts_on, ends_on=ends_on,
+            db,
+            str(tenant_id),
+            body.addon_code,
+            body.source,
+            note=body.note,
+            starts_on=starts_on,
+            ends_on=ends_on,
             created_by=str(user.user_id),
         )
     except ValueError as exc:
@@ -522,14 +617,18 @@ async def grant_tenant_addon(
     proration_invoice = outcome["proration_invoice"]
 
     await _log_tenant_activity(
-        db, tenant_id, str(user.user_id),
+        db,
+        tenant_id,
+        str(user.user_id),
         action="ADDON_GRANTED",
         new_value=f"addon={body.addon_code} source={body.source} amount={result['amount']}",
         note=body.note,
     )
     if proration_invoice is not None:
         await _log_tenant_activity(
-            db, tenant_id, str(user.user_id),
+            db,
+            tenant_id,
+            str(user.user_id),
             action="PRORATION_INVOICE_RAISED",
             new_value=f"payment={proration_invoice['payment_id']} total={proration_invoice['total']}",
         )
@@ -547,12 +646,16 @@ async def cancel_tenant_addon(
 ) -> SuccessResponse[dict]:
     """SA: cancel an ACTIVE add-on grant. Never deletes the row."""
     try:
-        result = await cancel_addon(db, str(tenant_id), str(addon_id), cancelled_by=str(user.user_id))
+        result = await cancel_addon(
+            db, str(tenant_id), str(addon_id), cancelled_by=str(user.user_id)
+        )
     except ValueError as exc:
         raise _map_value_error(exc)
 
     await _log_tenant_activity(
-        db, tenant_id, str(user.user_id),
+        db,
+        tenant_id,
+        str(user.user_id),
         action="ADDON_CANCELLED",
         new_value=f"addon={result['addon_code']}",
         note=body.note,

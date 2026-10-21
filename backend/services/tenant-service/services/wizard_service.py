@@ -10,7 +10,7 @@ from schemas.tenant import WizardData, WizardResult
 APPROVAL_DEFAULTS: dict[str, dict] = {
     "PRODUCER": {"inventory:adjust": {"low": 100, "medium": 500}},
     "RETAILER": {"inventory:adjust": {"low": 500, "medium": 5000}},
-    "HYBRID":   {"inventory:adjust": {"low": 250, "medium": 2000}},
+    "HYBRID": {"inventory:adjust": {"low": 250, "medium": 2000}},
 }
 
 
@@ -60,10 +60,12 @@ async def complete_wizard(
         ),
     )
 
-    current = (await db.execute(
-        text("SELECT feature_flags, plan_tier FROM tenants WHERE id = :tid"),
-        {"tid": tenant_id},
-    )).fetchone()
+    current = (
+        await db.execute(
+            text("SELECT feature_flags, plan_tier FROM tenants WHERE id = :tid"),
+            {"tid": tenant_id},
+        )
+    ).fetchone()
 
     return WizardResult(
         tenant_id=tenant_id,

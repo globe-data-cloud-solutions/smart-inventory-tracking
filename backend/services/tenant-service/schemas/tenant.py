@@ -29,7 +29,7 @@ VALID_LOCALES = {"en", "am", "or"}
 
 class TenantCreateRequest(BaseModel):
     name: str
-    slug: Optional[str] = None               # custom URL identifier; auto-generated if omitted
+    slug: Optional[str] = None  # custom URL identifier; auto-generated if omitted
     plan_id: Optional[uuid.UUID] = DEFAULT_SYSTEM_PLAN_ID
     default_locale: str = "en"
     # tenants.organisation_type is NOT NULL at the DB level (it's a PostgreSQL
@@ -52,9 +52,9 @@ class TenantCreateRequest(BaseModel):
     # (the subscription's billing cycle) — CLAUDE.md §15 decision B. Both optional;
     # when omitted the contract defaults to the subscription's first period, exactly
     # as before this field existed.
-    contract_start: Optional[str] = None   # YYYY-MM-DD
-    contract_end: Optional[str] = None     # YYYY-MM-DD
-    billing_period: str = "ANNUAL"         # MONTHLY | ANNUAL
+    contract_start: Optional[str] = None  # YYYY-MM-DD
+    contract_end: Optional[str] = None  # YYYY-MM-DD
+    billing_period: str = "ANNUAL"  # MONTHLY | ANNUAL
 
 
 class TenantResponse(BaseModel):

@@ -4,6 +4,7 @@ Called at DRAFT → PENDING_REVIEW (PULL) and DRAFT → PENDING_APPROVAL (PUSH).
 Returns True when the submitter's self-approval policy permits skipping the
 normal approval workflow and jumping directly to APPROVED.
 """
+
 from __future__ import annotations
 
 from decimal import Decimal
@@ -175,8 +176,9 @@ async def check_adjustment_self_approval(
 
     if rule.approver_position_id is not None:
         # Route to the current PRIMARY holder of the named position.
-        holder = (await session.execute(
-            text("""
+        holder = (
+            await session.execute(
+                text("""
                 SELECT u.id AS user_id, u.full_name AS user_name,
                        p.title AS position_title, p.role_code AS position_role_code
                 FROM   personnel_positions pp
@@ -188,22 +190,31 @@ async def check_adjustment_self_approval(
                   AND  (pp.valid_until IS NULL OR pp.valid_until >= CURRENT_DATE)
                 LIMIT 1
             """),
-            {"pid": str(rule.approver_position_id)},
-        )).fetchone()
+                {"pid": str(rule.approver_position_id)},
+            )
+        ).fetchone()
 
         if holder is None:
             # Vacant position — escalate to Tenant Admin
-            return False, "TA", {
-                "approver_position_id": str(rule.approver_position_id),
-                "escalated_vacant_position": True,
-            }
+            return (
+                False,
+                "TA",
+                {
+                    "approver_position_id": str(rule.approver_position_id),
+                    "escalated_vacant_position": True,
+                },
+            )
 
-        return False, holder.position_role_code, {
-            "approver_position_id": str(rule.approver_position_id),
-            "approver_user_id": str(holder.user_id),
-            "approver_name": holder.user_name,
-            "approver_position_title": holder.position_title,
-        }
+        return (
+            False,
+            holder.position_role_code,
+            {
+                "approver_position_id": str(rule.approver_position_id),
+                "approver_user_id": str(holder.user_id),
+                "approver_name": holder.user_name,
+                "approver_position_title": holder.position_title,
+            },
+        )
 
     if rule.approver_role_code is None:
         # Self-approve
@@ -277,8 +288,9 @@ async def check_product_override(
             return None
     # ALWAYS — no threshold check, always applies.
 
-    holder = (await session.execute(
-        text("""
+    holder = (
+        await session.execute(
+            text("""
             SELECT u.id AS user_id, u.full_name AS user_name,
                    p.title AS position_title, p.role_code AS position_role_code
             FROM   positions p
@@ -291,17 +303,18 @@ async def check_product_override(
             WHERE  p.id = :pid
             LIMIT 1
         """),
-        {"pid": str(row.approver_position_id)},
-    )).fetchone()
+            {"pid": str(row.approver_position_id)},
+        )
+    ).fetchone()
 
     return {
         "approver_position_id": str(row.approver_position_id),
-        "approver_role_code":   holder.position_role_code if holder else None,
-        "approver_user_id":     str(holder.user_id) if holder and holder.user_id else None,
-        "approver_name":        holder.user_name if holder else None,
-        "approver_title":       holder.position_title if holder else None,
-        "note":                 row.note,
-        "threshold_type":       row.threshold_type,
+        "approver_role_code": holder.position_role_code if holder else None,
+        "approver_user_id": str(holder.user_id) if holder and holder.user_id else None,
+        "approver_name": holder.user_name if holder else None,
+        "approver_title": holder.position_title if holder else None,
+        "note": row.note,
+        "threshold_type": row.threshold_type,
     }
 
 

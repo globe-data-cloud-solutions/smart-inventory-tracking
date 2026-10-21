@@ -57,7 +57,9 @@ async def submit_adjustment(
     return SuccessResponse(data=result)
 
 
-@router.get("/{adjustment_id}/approval-info", response_model=SuccessResponse[AdjustmentApprovalInfoResponse])
+@router.get(
+    "/{adjustment_id}/approval-info", response_model=SuccessResponse[AdjustmentApprovalInfoResponse]
+)
 @require_permission(PERMISSIONS.ADJUSTMENT_VIEW)
 async def get_adjustment_approval_info(
     adjustment_id: UUID,
@@ -107,13 +109,18 @@ async def approve_adjustment(
     svc = InventoryService(db)
 
     # Load adjustment data from DB before advancing state
-    row = (await db.execute(
-        _text("SELECT status, product_id, warehouse_id, quantity_delta, reason_code "
-              "FROM adjustment_orders WHERE id = :id AND tenant_id = :tid"),
-        {"id": str(adjustment_id), "tid": str(user.tenant_id)},
-    )).fetchone()
+    row = (
+        await db.execute(
+            _text(
+                "SELECT status, product_id, warehouse_id, quantity_delta, reason_code "
+                "FROM adjustment_orders WHERE id = :id AND tenant_id = :tid"
+            ),
+            {"id": str(adjustment_id), "tid": str(user.tenant_id)},
+        )
+    ).fetchone()
     if not row:
         from fastapi import HTTPException
+
         raise HTTPException(status_code=404, detail="Adjustment not found")
 
     # If DRAFT, auto-advance to PENDING_APPROVAL first (single-approver shortcut)

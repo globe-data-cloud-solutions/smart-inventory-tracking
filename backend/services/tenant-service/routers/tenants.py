@@ -21,10 +21,21 @@ from shared.cache.token_revocation import revoke_tenant_tokens
 from shared.permissions.middleware import require_permission
 from shared.permissions.registry import PERMISSIONS
 from shared.billing.contract_stage import compute_contract_stage, get_tenant_contract_stage
-from shared.billing.subscriptions import get_current_addon_price, get_current_price, period_end, start_subscription, vat_breakdown
+from shared.billing.subscriptions import (
+    get_current_addon_price,
+    get_current_price,
+    period_end,
+    start_subscription,
+    vat_breakdown,
+)
 from shared.billing.proration import preview_addon, preview_upgrade
 from shared.billing.plan_change import cancel_scheduled_downgrade, change_plan
-from shared.plans.catalog import KNOWN_FEATURE_FLAGS, UNSET, apply_package_to_tenant, get_tenant_entitlements
+from shared.plans.catalog import (
+    KNOWN_FEATURE_FLAGS,
+    UNSET,
+    apply_package_to_tenant,
+    get_tenant_entitlements,
+)
 from shared.plans.usage import get_plan_usage
 from shared.utils.responses import SuccessResponse
 from shared.utils.terms import get_terms_version
@@ -34,6 +45,7 @@ logger = logging.getLogger(__name__)
 
 
 # ── Contract renewal requests (P2) ───────────────────────────────────────────
+
 
 class RenewalRequestIn(BaseModel):
     message: Optional[str] = Field(default=None, max_length=500)
@@ -137,36 +149,36 @@ class TenantRegistryRow(BaseModel):
     slug: Optional[str]
     organisation_type: Optional[str]
     status: str
-    plan_tier:      Optional[str]
-    default_locale: str = "en"      # persisted user-facing locale preference
-    contact_name:   Optional[str]   # legacy single-contact field
-    contact_email:  Optional[str]
-    contact_phone:  Optional[str]
-    contract_start: Optional[str]   # ISO date string "YYYY-MM-DD" or None
-    contract_end:   Optional[str]
-    notes:          Optional[str]
-    sku_cap:        Optional[int]
-    address_line1:  Optional[str]
-    address_line2:  Optional[str]
-    city:           Optional[str]
+    plan_tier: Optional[str]
+    default_locale: str = "en"  # persisted user-facing locale preference
+    contact_name: Optional[str]  # legacy single-contact field
+    contact_email: Optional[str]
+    contact_phone: Optional[str]
+    contract_start: Optional[str]  # ISO date string "YYYY-MM-DD" or None
+    contract_end: Optional[str]
+    notes: Optional[str]
+    sku_cap: Optional[int]
+    address_line1: Optional[str]
+    address_line2: Optional[str]
+    city: Optional[str]
     state_province: Optional[str]
-    postal_code:    Optional[str]
-    country:        Optional[str]
+    postal_code: Optional[str]
+    country: Optional[str]
     contacts: List[RegistryContact] = []
     user_count: int
     node_count: int
-    created_at: str                 # ISO datetime string
-    ta_name:  Optional[str] = None  # TA admin user name
+    created_at: str  # ISO datetime string
+    ta_name: Optional[str] = None  # TA admin user name
     ta_email: Optional[str] = None  # TA admin user email
     ta_user_id: Optional[str] = None  # TA admin user UUID (for edit link)
     industry: Optional[str] = None
     feature_flags: dict = {}
     # S6: billing/subscription summary columns
-    signup_source: str = "SA"               # 'SA' or 'SELF_SIGNUP'
-    subscription_status: Optional[str] = None     # live subscription status, or None
-    billing_period: Optional[str] = None          # 'MONTHLY' | 'ANNUAL', or None
-    current_period_end: Optional[str] = None      # ISO date string, or None
-    last_payment_status: Optional[str] = None     # latest payment's status, or None
+    signup_source: str = "SA"  # 'SA' or 'SELF_SIGNUP'
+    subscription_status: Optional[str] = None  # live subscription status, or None
+    billing_period: Optional[str] = None  # 'MONTHLY' | 'ANNUAL', or None
+    current_period_end: Optional[str] = None  # ISO date string, or None
+    last_payment_status: Optional[str] = None  # latest payment's status, or None
 
 
 class TenantContactIn(BaseModel):
@@ -179,16 +191,16 @@ class TenantContactIn(BaseModel):
 
 
 class TenantAddressIn(BaseModel):
-    address_line1:  Optional[str] = None
-    address_line2:  Optional[str] = None
-    city:           Optional[str] = None
+    address_line1: Optional[str] = None
+    address_line2: Optional[str] = None
+    city: Optional[str] = None
     state_province: Optional[str] = None
-    postal_code:    Optional[str] = None
-    country:        Optional[str] = None
+    postal_code: Optional[str] = None
+    country: Optional[str] = None
 
 
 class TenantContactsBulkIn(BaseModel):
-    address:  Optional[TenantAddressIn] = None
+    address: Optional[TenantAddressIn] = None
     contacts: List[TenantContactIn] = []
 
 
@@ -250,7 +262,9 @@ def _validate_slug(slug: str) -> bool:
     """Return True if slug matches: 3-50 chars, lowercase alphanumeric + hyphens,
     must start and end with alphanumeric (no leading/trailing hyphens)."""
     import re as _re
+
     return bool(_re.match(r"^[a-z0-9][a-z0-9-]{1,48}[a-z0-9]$", slug))
+
 
 router = APIRouter()
 
@@ -299,7 +313,9 @@ async def sa_tenant_registry(
     if not user or user.role != "SA":
         raise HTTPException(status_code=403, detail={"code": "FORBIDDEN", "message": "SA only"})
 
-    rows = (await db.execute(text("""
+    rows = (
+        await db.execute(
+            text("""
         SELECT
             t.id, t.name, t.slug, t.organisation_type, t.status, t.plan_tier,
             t.default_locale,
@@ -355,47 +371,51 @@ async def sa_tenant_registry(
             ORDER BY p.created_at DESC LIMIT 1
         ) pay ON true
         ORDER BY t.created_at DESC
-    """))).fetchall()
-
-    return SuccessResponse(data=[
-        TenantRegistryRow(
-            id=row.id,
-            name=row.name,
-            slug=row.slug,
-            organisation_type=row.organisation_type,
-            status=row.status,
-            plan_tier=str(row.plan_tier) if row.plan_tier else None,
-            default_locale=row.default_locale or "en",
-            contact_name=row.contact_name,
-            contact_email=row.contact_email,
-            contact_phone=row.contact_phone,
-            contract_start=str(row.contract_start) if row.contract_start else None,
-            contract_end=str(row.contract_end)     if row.contract_end   else None,
-            notes=row.notes,
-            sku_cap=row.sku_cap,
-            address_line1=row.address_line1,
-            address_line2=row.address_line2,
-            city=row.city,
-            state_province=row.state_province,
-            postal_code=row.postal_code,
-            country=row.country,
-            contacts=[RegistryContact(**c) for c in (row.contacts or [])],
-            user_count=int(row.user_count),
-            node_count=int(row.node_count),
-            created_at=row.created_at.isoformat(),
-            ta_name=row.ta_name,
-            ta_email=row.ta_email,
-            ta_user_id=row.ta_user_id,
-            industry=row.industry,
-            feature_flags=dict(row.feature_flags) if row.feature_flags else {},
-            signup_source=row.signup_source,
-            subscription_status=row.subscription_status,
-            billing_period=row.billing_period,
-            current_period_end=str(row.current_period_end) if row.current_period_end else None,
-            last_payment_status=row.last_payment_status,
+    """)
         )
-        for row in rows
-    ])
+    ).fetchall()
+
+    return SuccessResponse(
+        data=[
+            TenantRegistryRow(
+                id=row.id,
+                name=row.name,
+                slug=row.slug,
+                organisation_type=row.organisation_type,
+                status=row.status,
+                plan_tier=str(row.plan_tier) if row.plan_tier else None,
+                default_locale=row.default_locale or "en",
+                contact_name=row.contact_name,
+                contact_email=row.contact_email,
+                contact_phone=row.contact_phone,
+                contract_start=str(row.contract_start) if row.contract_start else None,
+                contract_end=str(row.contract_end) if row.contract_end else None,
+                notes=row.notes,
+                sku_cap=row.sku_cap,
+                address_line1=row.address_line1,
+                address_line2=row.address_line2,
+                city=row.city,
+                state_province=row.state_province,
+                postal_code=row.postal_code,
+                country=row.country,
+                contacts=[RegistryContact(**c) for c in (row.contacts or [])],
+                user_count=int(row.user_count),
+                node_count=int(row.node_count),
+                created_at=row.created_at.isoformat(),
+                ta_name=row.ta_name,
+                ta_email=row.ta_email,
+                ta_user_id=row.ta_user_id,
+                industry=row.industry,
+                feature_flags=dict(row.feature_flags) if row.feature_flags else {},
+                signup_source=row.signup_source,
+                subscription_status=row.subscription_status,
+                billing_period=row.billing_period,
+                current_period_end=str(row.current_period_end) if row.current_period_end else None,
+                last_payment_status=row.last_payment_status,
+            )
+            for row in rows
+        ]
+    )
 
 
 _SA_MANUAL_PATH = Path(__file__).resolve().parent.parent / "static" / "sa_operations_manual.md"
@@ -429,8 +449,8 @@ async def sa_docs_operations_manual(
 
 class TierConfigEntry(BaseModel):
     tier: str
-    max_warehouses: Optional[int] = None   # None = unlimited
-    max_users: Optional[int] = None        # None = unlimited
+    max_warehouses: Optional[int] = None  # None = unlimited
+    max_users: Optional[int] = None  # None = unlimited
     # Read-only catalog fields (migration 070) — optional so existing clients
     # that only send/expect max_warehouses/max_users keep working.
     display_name: Optional[str] = None
@@ -458,31 +478,40 @@ async def get_platform_tier_config(
     """
     if not user or user.role != "SA":
         raise HTTPException(status_code=403, detail={"code": "FORBIDDEN", "message": "SA only"})
-    rows = (await db.execute(
-        text(
-            "SELECT tier, max_warehouses, max_users, display_name, sku_cap, "
-            "       feature_flags, is_public, sort_order "
-            "FROM platform_tier_config ORDER BY sort_order"
-        ),
-    )).fetchall()
-    return SuccessResponse(data=[
-        TierConfigEntry(
-            tier=row.tier,
-            max_warehouses=row.max_warehouses,
-            max_users=row.max_users,
-            display_name=row.display_name,
-            sku_cap=row.sku_cap,
-            feature_flags=dict(row.feature_flags) if row.feature_flags else {},
-            is_public=row.is_public,
-            sort_order=row.sort_order,
+    rows = (
+        await db.execute(
+            text(
+                "SELECT tier, max_warehouses, max_users, display_name, sku_cap, "
+                "       feature_flags, is_public, sort_order "
+                "FROM platform_tier_config ORDER BY sort_order"
+            ),
         )
-        for row in rows
-    ])
+    ).fetchall()
+    return SuccessResponse(
+        data=[
+            TierConfigEntry(
+                tier=row.tier,
+                max_warehouses=row.max_warehouses,
+                max_users=row.max_users,
+                display_name=row.display_name,
+                sku_cap=row.sku_cap,
+                feature_flags=dict(row.feature_flags) if row.feature_flags else {},
+                is_public=row.is_public,
+                sort_order=row.sort_order,
+            )
+            for row in rows
+        ]
+    )
 
 
 _EDITABLE_TIER_FIELDS = (
-    "max_warehouses", "max_users", "display_name", "sku_cap",
-    "is_public", "sort_order", "feature_flags",
+    "max_warehouses",
+    "max_users",
+    "display_name",
+    "sku_cap",
+    "is_public",
+    "sort_order",
+    "feature_flags",
 )
 
 
@@ -528,22 +557,28 @@ async def update_platform_tier_config(
             if name is None or not (1 <= len(name) <= 60):
                 raise HTTPException(
                     status_code=422,
-                    detail={"code": "INVALID_DISPLAY_NAME",
-                            "message": "display_name must be 1-60 characters."},
+                    detail={
+                        "code": "INVALID_DISPLAY_NAME",
+                        "message": "display_name must be 1-60 characters.",
+                    },
                 )
         if "sku_cap" in fields_set and entry.sku_cap is not None and entry.sku_cap < 1:
             raise HTTPException(
                 status_code=422,
-                detail={"code": "INVALID_SKU_CAP",
-                        "message": "sku_cap must be >= 1, or null for unlimited."},
+                detail={
+                    "code": "INVALID_SKU_CAP",
+                    "message": "sku_cap must be >= 1, or null for unlimited.",
+                },
             )
         if "feature_flags" in fields_set and entry.feature_flags:
             unknown = sorted(set(entry.feature_flags) - KNOWN_FEATURE_FLAGS)
             if unknown:
                 raise HTTPException(
                     status_code=422,
-                    detail={"code": "UNKNOWN_FEATURE_FLAG",
-                            "message": f"Unknown feature flag(s): {', '.join(unknown)}"},
+                    detail={
+                        "code": "UNKNOWN_FEATURE_FLAG",
+                        "message": f"Unknown feature flag(s): {', '.join(unknown)}",
+                    },
                 )
 
     reason = (body.reason or "").strip() or "SA tier-config edit"
@@ -551,15 +586,18 @@ async def update_platform_tier_config(
     # At least one tier must remain publicly visible across the WHOLE catalog —
     # checked BEFORE any write, using each tier's current DB value for tiers this
     # request doesn't touch.
-    current_rows = (await db.execute(
-        text("SELECT tier, is_public FROM platform_tier_config"),
-    )).fetchall()
+    current_rows = (
+        await db.execute(
+            text("SELECT tier, is_public FROM platform_tier_config"),
+        )
+    ).fetchall()
     by_tier = {entry.tier: entry for entry in body.tiers}
     still_public = False
     for row in current_rows:
         entry = by_tier.get(row.tier)
         effective_public = (
-            entry.is_public if entry is not None and "is_public" in entry.model_fields_set
+            entry.is_public
+            if entry is not None and "is_public" in entry.model_fields_set
             else row.is_public
         )
         if effective_public:
@@ -568,8 +606,10 @@ async def update_platform_tier_config(
     if not still_public:
         raise HTTPException(
             status_code=422,
-            detail={"code": "NO_PUBLIC_PACKAGE",
-                    "message": "At least one package must remain publicly visible."},
+            detail={
+                "code": "NO_PUBLIC_PACKAGE",
+                "message": "At least one package must remain publicly visible.",
+            },
         )
 
     actor_email = getattr(user, "email", None)
@@ -579,14 +619,16 @@ async def update_platform_tier_config(
         if not editable:
             continue
 
-        old_row = (await db.execute(
-            text(
-                "SELECT max_warehouses, max_users, display_name, sku_cap, "
-                "       feature_flags, is_public, sort_order "
-                "FROM platform_tier_config WHERE tier = :tier"
-            ),
-            {"tier": entry.tier},
-        )).fetchone()
+        old_row = (
+            await db.execute(
+                text(
+                    "SELECT max_warehouses, max_users, display_name, sku_cap, "
+                    "       feature_flags, is_public, sort_order "
+                    "FROM platform_tier_config WHERE tier = :tier"
+                ),
+                {"tier": entry.tier},
+            )
+        ).fetchone()
 
         set_parts = ["updated_at = now()", "updated_by_id = :uid"]
         params: dict = {"tier": entry.tier, "uid": str(user.user_id)}
@@ -627,32 +669,40 @@ async def update_platform_tier_config(
                     "VALUES ('PACKAGE', :tier, :field, :old, :new, :reason, :actor_id, :actor_email)"
                 ),
                 {
-                    "tier": entry.tier, "field": field,
-                    "old": old_str, "new": new_str,
-                    "reason": reason, "actor_id": str(user.user_id), "actor_email": actor_email,
+                    "tier": entry.tier,
+                    "field": field,
+                    "old": old_str,
+                    "new": new_str,
+                    "reason": reason,
+                    "actor_id": str(user.user_id),
+                    "actor_email": actor_email,
                 },
             )
 
-    rows = (await db.execute(
-        text(
-            "SELECT tier, max_warehouses, max_users, display_name, sku_cap, "
-            "       feature_flags, is_public, sort_order "
-            "FROM platform_tier_config ORDER BY sort_order"
-        ),
-    )).fetchall()
-    return SuccessResponse(data=[
-        TierConfigEntry(
-            tier=row.tier,
-            max_warehouses=row.max_warehouses,
-            max_users=row.max_users,
-            display_name=row.display_name,
-            sku_cap=row.sku_cap,
-            feature_flags=dict(row.feature_flags) if row.feature_flags else {},
-            is_public=row.is_public,
-            sort_order=row.sort_order,
+    rows = (
+        await db.execute(
+            text(
+                "SELECT tier, max_warehouses, max_users, display_name, sku_cap, "
+                "       feature_flags, is_public, sort_order "
+                "FROM platform_tier_config ORDER BY sort_order"
+            ),
         )
-        for row in rows
-    ])
+    ).fetchall()
+    return SuccessResponse(
+        data=[
+            TierConfigEntry(
+                tier=row.tier,
+                max_warehouses=row.max_warehouses,
+                max_users=row.max_users,
+                display_name=row.display_name,
+                sku_cap=row.sku_cap,
+                feature_flags=dict(row.feature_flags) if row.feature_flags else {},
+                is_public=row.is_public,
+                sort_order=row.sort_order,
+            )
+            for row in rows
+        ]
+    )
 
 
 class PriceHistoryEntry(BaseModel):
@@ -717,22 +767,27 @@ async def get_platform_package_prices(
     result: List[TierPricing] = []
     for t in tiers:
         for period in _VALID_BILLING_PERIODS:
-            rows = (await db.execute(
-                text(
-                    "SELECT pp.id, pp.amount, pp.currency, pp.effective_from, pp.reason, "
-                    "       pp.created_by, pp.created_at, u.email AS created_by_email "
-                    "FROM package_prices pp "
-                    "LEFT JOIN users u ON u.id = pp.created_by "
-                    "WHERE pp.tier = :tier AND pp.billing_period = :period "
-                    "ORDER BY pp.effective_from DESC, pp.created_at DESC"
-                ),
-                {"tier": t, "period": period},
-            )).fetchall()
+            rows = (
+                await db.execute(
+                    text(
+                        "SELECT pp.id, pp.amount, pp.currency, pp.effective_from, pp.reason, "
+                        "       pp.created_by, pp.created_at, u.email AS created_by_email "
+                        "FROM package_prices pp "
+                        "LEFT JOIN users u ON u.id = pp.created_by "
+                        "WHERE pp.tier = :tier AND pp.billing_period = :period "
+                        "ORDER BY pp.effective_from DESC, pp.created_at DESC"
+                    ),
+                    {"tier": t, "period": period},
+                )
+            ).fetchall()
 
             history = [
                 PriceHistoryEntry(
-                    id=str(r.id), amount=r.amount, currency=r.currency,
-                    effective_from=r.effective_from.isoformat(), reason=r.reason,
+                    id=str(r.id),
+                    amount=r.amount,
+                    currency=r.currency,
+                    effective_from=r.effective_from.isoformat(),
+                    reason=r.reason,
                     created_by=str(r.created_by) if r.created_by else None,
                     created_by_email=r.created_by_email,
                     created_at=r.created_at.isoformat(),
@@ -745,16 +800,25 @@ async def get_platform_package_prices(
             if current_row is not None:
                 breakdown = vat_breakdown(Decimal(current_row.amount))
                 current = PriceSnapshot(
-                    id=str(current_row.id), amount=current_row.amount, currency=current_row.currency,
+                    id=str(current_row.id),
+                    amount=current_row.amount,
+                    currency=current_row.currency,
                     effective_from=current_row.effective_from.isoformat(),
-                    subtotal=breakdown["subtotal"], vat_rate=breakdown["vat_rate"],
-                    vat_amount=breakdown["vat_amount"], total=breakdown["total"],
+                    subtotal=breakdown["subtotal"],
+                    vat_rate=breakdown["vat_rate"],
+                    vat_amount=breakdown["vat_amount"],
+                    total=breakdown["total"],
                 )
 
-            result.append(TierPricing(
-                tier=t, billing_period=period,
-                current=current, scheduled=scheduled, history=history,
-            ))
+            result.append(
+                TierPricing(
+                    tier=t,
+                    billing_period=period,
+                    current=current,
+                    scheduled=scheduled,
+                    history=history,
+                )
+            )
 
     return SuccessResponse(data=result)
 
@@ -766,7 +830,9 @@ class PriceCreateRequest(BaseModel):
     reason: str
 
 
-@router.post("/platform/packages/{tier}/prices", response_model=SuccessResponse[dict], status_code=201)
+@router.post(
+    "/platform/packages/{tier}/prices", response_model=SuccessResponse[dict], status_code=201
+)
 @require_permission(PERMISSIONS.PLATFORM_TIER_CONFIG_EDIT)
 async def create_platform_package_price(
     tier: str,
@@ -796,19 +862,25 @@ async def create_platform_package_price(
     if body.billing_period not in _VALID_BILLING_PERIODS:
         raise HTTPException(
             status_code=422,
-            detail={"code": "INVALID_BILLING_PERIOD",
-                    "message": f"billing_period must be one of {list(_VALID_BILLING_PERIODS)}"},
+            detail={
+                "code": "INVALID_BILLING_PERIOD",
+                "message": f"billing_period must be one of {list(_VALID_BILLING_PERIODS)}",
+            },
         )
     if body.amount < 0 or -body.amount.as_tuple().exponent > 2:
         raise HTTPException(
             status_code=422,
-            detail={"code": "INVALID_AMOUNT",
-                    "message": "amount must be >= 0 with at most 2 decimal places."},
+            detail={
+                "code": "INVALID_AMOUNT",
+                "message": "amount must be >= 0 with at most 2 decimal places.",
+            },
         )
 
     reason = body.reason.strip() if body.reason else ""
     if not reason:
-        raise HTTPException(status_code=422, detail={"code": "REASON_REQUIRED", "message": "reason is required."})
+        raise HTTPException(
+            status_code=422, detail={"code": "REASON_REQUIRED", "message": "reason is required."}
+        )
 
     now = datetime.now(timezone.utc)
     effective_from = body.effective_from or now
@@ -817,20 +889,30 @@ async def create_platform_package_price(
     if effective_from < now - timedelta(minutes=5):
         raise HTTPException(
             status_code=422,
-            detail={"code": "EFFECTIVE_FROM_IN_PAST",
-                    "message": "effective_from must not be more than 5 minutes in the past."},
+            detail={
+                "code": "EFFECTIVE_FROM_IN_PAST",
+                "message": "effective_from must not be more than 5 minutes in the past.",
+            },
         )
 
     old_price = await get_current_price(db, tier, body.billing_period)
 
-    new_id = (await db.execute(
-        text(
-            "INSERT INTO package_prices (tier, billing_period, amount, effective_from, reason, created_by) "
-            "VALUES (:tier, :period, :amount, :eff, :reason, :uid) RETURNING id"
-        ),
-        {"tier": tier, "period": body.billing_period, "amount": body.amount,
-         "eff": effective_from, "reason": reason, "uid": str(user.user_id)},
-    )).scalar_one()
+    new_id = (
+        await db.execute(
+            text(
+                "INSERT INTO package_prices (tier, billing_period, amount, effective_from, reason, created_by) "
+                "VALUES (:tier, :period, :amount, :eff, :reason, :uid) RETURNING id"
+            ),
+            {
+                "tier": tier,
+                "period": body.billing_period,
+                "amount": body.amount,
+                "eff": effective_from,
+                "reason": reason,
+                "uid": str(user.user_id),
+            },
+        )
+    ).scalar_one()
 
     await db.execute(
         text(
@@ -842,18 +924,22 @@ async def create_platform_package_price(
             "key": f"{tier}/{body.billing_period}",
             "old": str(old_price.amount) if old_price else None,
             "new": f"{body.amount} from {effective_from.isoformat()}",
-            "reason": reason, "actor_id": str(user.user_id), "actor_email": getattr(user, "email", None),
+            "reason": reason,
+            "actor_id": str(user.user_id),
+            "actor_email": getattr(user, "email", None),
         },
     )
 
-    return SuccessResponse(data={
-        "id": str(new_id),
-        "tier": tier,
-        "billing_period": body.billing_period,
-        "amount": body.amount,
-        "effective_from": effective_from.isoformat(),
-        "message": "Existing subscriptions pay this price starting from their next renewal.",
-    })
+    return SuccessResponse(
+        data={
+            "id": str(new_id),
+            "tier": tier,
+            "billing_period": body.billing_period,
+            "amount": body.amount,
+            "effective_from": effective_from.isoformat(),
+            "message": "Existing subscriptions pay this price starting from their next renewal.",
+        }
+    )
 
 
 class ConfigLogEntry(BaseModel):
@@ -892,28 +978,38 @@ async def get_platform_config_log(
         params["entity_key"] = entity_key
     where_clause = f"WHERE {' AND '.join(conditions)}" if conditions else ""
 
-    rows = (await db.execute(
-        text(
-            f"SELECT id, entity_type, entity_key, field, old_value, new_value, "
-            f"       reason, actor_email, created_at "
-            f"FROM platform_config_log {where_clause} "
-            f"ORDER BY created_at DESC LIMIT :limit"
-        ),
-        params,
-    )).fetchall()
-
-    return SuccessResponse(data=[
-        ConfigLogEntry(
-            id=str(row.id), entity_type=row.entity_type, entity_key=row.entity_key,
-            field=row.field, old_value=row.old_value, new_value=row.new_value,
-            reason=row.reason, actor_email=row.actor_email,
-            created_at=row.created_at.isoformat(),
+    rows = (
+        await db.execute(
+            text(
+                f"SELECT id, entity_type, entity_key, field, old_value, new_value, "
+                f"       reason, actor_email, created_at "
+                f"FROM platform_config_log {where_clause} "
+                f"ORDER BY created_at DESC LIMIT :limit"
+            ),
+            params,
         )
-        for row in rows
-    ])
+    ).fetchall()
+
+    return SuccessResponse(
+        data=[
+            ConfigLogEntry(
+                id=str(row.id),
+                entity_type=row.entity_type,
+                entity_key=row.entity_key,
+                field=row.field,
+                old_value=row.old_value,
+                new_value=row.new_value,
+                reason=row.reason,
+                actor_email=row.actor_email,
+                created_at=row.created_at.isoformat(),
+            )
+            for row in rows
+        ]
+    )
 
 
 # ── Add-on catalog (S10) — mirrors the package tier-config/prices routes ────
+
 
 class AddonPricing(BaseModel):
     billing_period: str
@@ -936,22 +1032,27 @@ async def _addon_pricing(db: AsyncSession, addon_code: str) -> List[AddonPricing
     now = datetime.now(timezone.utc)
     result: List[AddonPricing] = []
     for period in _VALID_BILLING_PERIODS:
-        rows = (await db.execute(
-            text(
-                "SELECT ap.id, ap.amount, ap.currency, ap.effective_from, ap.reason, "
-                "       ap.created_by, ap.created_at, u.email AS created_by_email "
-                "FROM addon_prices ap "
-                "LEFT JOIN users u ON u.id = ap.created_by "
-                "WHERE ap.addon_code = :code AND ap.billing_period = :period "
-                "ORDER BY ap.effective_from DESC, ap.created_at DESC"
-            ),
-            {"code": addon_code, "period": period},
-        )).fetchall()
+        rows = (
+            await db.execute(
+                text(
+                    "SELECT ap.id, ap.amount, ap.currency, ap.effective_from, ap.reason, "
+                    "       ap.created_by, ap.created_at, u.email AS created_by_email "
+                    "FROM addon_prices ap "
+                    "LEFT JOIN users u ON u.id = ap.created_by "
+                    "WHERE ap.addon_code = :code AND ap.billing_period = :period "
+                    "ORDER BY ap.effective_from DESC, ap.created_at DESC"
+                ),
+                {"code": addon_code, "period": period},
+            )
+        ).fetchall()
 
         history = [
             PriceHistoryEntry(
-                id=str(r.id), amount=r.amount, currency=r.currency,
-                effective_from=r.effective_from.isoformat(), reason=r.reason,
+                id=str(r.id),
+                amount=r.amount,
+                currency=r.currency,
+                effective_from=r.effective_from.isoformat(),
+                reason=r.reason,
                 created_by=str(r.created_by) if r.created_by else None,
                 created_by_email=r.created_by_email,
                 created_at=r.created_at.isoformat(),
@@ -964,12 +1065,20 @@ async def _addon_pricing(db: AsyncSession, addon_code: str) -> List[AddonPricing
         if current_row is not None:
             breakdown = vat_breakdown(Decimal(current_row.amount))
             current = PriceSnapshot(
-                id=str(current_row.id), amount=current_row.amount, currency=current_row.currency,
+                id=str(current_row.id),
+                amount=current_row.amount,
+                currency=current_row.currency,
                 effective_from=current_row.effective_from.isoformat(),
-                subtotal=breakdown["subtotal"], vat_rate=breakdown["vat_rate"],
-                vat_amount=breakdown["vat_amount"], total=breakdown["total"],
+                subtotal=breakdown["subtotal"],
+                vat_rate=breakdown["vat_rate"],
+                vat_amount=breakdown["vat_amount"],
+                total=breakdown["total"],
             )
-        result.append(AddonPricing(billing_period=period, current=current, scheduled=scheduled, history=history))
+        result.append(
+            AddonPricing(
+                billing_period=period, current=current, scheduled=scheduled, history=history
+            )
+        )
     return result
 
 
@@ -984,20 +1093,28 @@ async def get_platform_addons(
     if not user or user.role != "SA":
         raise HTTPException(status_code=403, detail={"code": "FORBIDDEN", "message": "SA only"})
 
-    rows = (await db.execute(
-        text(
-            "SELECT code, display_name, description, is_active, is_public, sort_order "
-            "FROM platform_addons ORDER BY sort_order"
-        ),
-    )).fetchall()
-    return SuccessResponse(data=[
-        AddonCatalogEntry(
-            code=row.code, display_name=row.display_name, description=row.description,
-            is_active=row.is_active, is_public=row.is_public, sort_order=row.sort_order,
-            prices=await _addon_pricing(db, row.code),
+    rows = (
+        await db.execute(
+            text(
+                "SELECT code, display_name, description, is_active, is_public, sort_order "
+                "FROM platform_addons ORDER BY sort_order"
+            ),
         )
-        for row in rows
-    ])
+    ).fetchall()
+    return SuccessResponse(
+        data=[
+            AddonCatalogEntry(
+                code=row.code,
+                display_name=row.display_name,
+                description=row.description,
+                is_active=row.is_active,
+                is_public=row.is_public,
+                sort_order=row.sort_order,
+                prices=await _addon_pricing(db, row.code),
+            )
+            for row in rows
+        ]
+    )
 
 
 class AddonUpdateRequest(BaseModel):
@@ -1028,24 +1145,33 @@ async def update_platform_addon(
 
     reason = (body.reason or "").strip()
     if not reason:
-        raise HTTPException(status_code=422, detail={"code": "REASON_REQUIRED", "message": "reason is required."})
+        raise HTTPException(
+            status_code=422, detail={"code": "REASON_REQUIRED", "message": "reason is required."}
+        )
 
-    old_row = (await db.execute(
-        text(
-            "SELECT display_name, description, is_active, is_public, sort_order "
-            "FROM platform_addons WHERE code = :code"
-        ),
-        {"code": code},
-    )).fetchone()
+    old_row = (
+        await db.execute(
+            text(
+                "SELECT display_name, description, is_active, is_public, sort_order "
+                "FROM platform_addons WHERE code = :code"
+            ),
+            {"code": code},
+        )
+    ).fetchone()
     if old_row is None:
-        raise HTTPException(status_code=404, detail={"code": "ADDON_NOT_FOUND", "message": "Unknown add-on."})
+        raise HTTPException(
+            status_code=404, detail={"code": "ADDON_NOT_FOUND", "message": "Unknown add-on."}
+        )
 
     if "display_name" in body.model_fields_set:
         name = body.display_name
         if name is None or not (1 <= len(name) <= 60):
             raise HTTPException(
                 status_code=422,
-                detail={"code": "INVALID_DISPLAY_NAME", "message": "display_name must be 1-60 characters."},
+                detail={
+                    "code": "INVALID_DISPLAY_NAME",
+                    "message": "display_name must be 1-60 characters.",
+                },
             )
 
     editable = [f for f in _EDITABLE_ADDON_FIELDS if f in body.model_fields_set]
@@ -1073,29 +1199,41 @@ async def update_platform_addon(
                     "VALUES ('ADDON', :code, :field, :old, :new, :reason, :actor_id, :actor_email)"
                 ),
                 {
-                    "code": code, "field": field,
+                    "code": code,
+                    "field": field,
                     "old": str(old_val) if old_val is not None else None,
                     "new": str(new_val) if new_val is not None else None,
-                    "reason": reason, "actor_id": str(user.user_id),
+                    "reason": reason,
+                    "actor_id": str(user.user_id),
                     "actor_email": getattr(user, "email", None),
                 },
             )
 
-    row = (await db.execute(
-        text(
-            "SELECT code, display_name, description, is_active, is_public, sort_order "
-            "FROM platform_addons WHERE code = :code"
-        ),
-        {"code": code},
-    )).fetchone()
-    return SuccessResponse(data=AddonCatalogEntry(
-        code=row.code, display_name=row.display_name, description=row.description,
-        is_active=row.is_active, is_public=row.is_public, sort_order=row.sort_order,
-        prices=await _addon_pricing(db, row.code),
-    ))
+    row = (
+        await db.execute(
+            text(
+                "SELECT code, display_name, description, is_active, is_public, sort_order "
+                "FROM platform_addons WHERE code = :code"
+            ),
+            {"code": code},
+        )
+    ).fetchone()
+    return SuccessResponse(
+        data=AddonCatalogEntry(
+            code=row.code,
+            display_name=row.display_name,
+            description=row.description,
+            is_active=row.is_active,
+            is_public=row.is_public,
+            sort_order=row.sort_order,
+            prices=await _addon_pricing(db, row.code),
+        )
+    )
 
 
-@router.post("/platform/addons/{code}/prices", response_model=SuccessResponse[dict], status_code=201)
+@router.post(
+    "/platform/addons/{code}/prices", response_model=SuccessResponse[dict], status_code=201
+)
 @require_permission(PERMISSIONS.PLATFORM_TIER_CONFIG_EDIT)
 async def create_platform_addon_price(
     code: str,
@@ -1110,28 +1248,39 @@ async def create_platform_addon_price(
     if not user or user.role != "SA":
         raise HTTPException(status_code=403, detail={"code": "FORBIDDEN", "message": "SA only"})
 
-    addon_row = (await db.execute(
-        text("SELECT code FROM platform_addons WHERE code = :code"), {"code": code},
-    )).fetchone()
+    addon_row = (
+        await db.execute(
+            text("SELECT code FROM platform_addons WHERE code = :code"),
+            {"code": code},
+        )
+    ).fetchone()
     if addon_row is None:
-        raise HTTPException(status_code=404, detail={"code": "ADDON_NOT_FOUND", "message": "Unknown add-on."})
+        raise HTTPException(
+            status_code=404, detail={"code": "ADDON_NOT_FOUND", "message": "Unknown add-on."}
+        )
 
     if body.billing_period not in _VALID_BILLING_PERIODS:
         raise HTTPException(
             status_code=422,
-            detail={"code": "INVALID_BILLING_PERIOD",
-                    "message": f"billing_period must be one of {list(_VALID_BILLING_PERIODS)}"},
+            detail={
+                "code": "INVALID_BILLING_PERIOD",
+                "message": f"billing_period must be one of {list(_VALID_BILLING_PERIODS)}",
+            },
         )
     if body.amount < 0 or -body.amount.as_tuple().exponent > 2:
         raise HTTPException(
             status_code=422,
-            detail={"code": "INVALID_AMOUNT",
-                    "message": "amount must be >= 0 with at most 2 decimal places."},
+            detail={
+                "code": "INVALID_AMOUNT",
+                "message": "amount must be >= 0 with at most 2 decimal places.",
+            },
         )
 
     reason = body.reason.strip() if body.reason else ""
     if not reason:
-        raise HTTPException(status_code=422, detail={"code": "REASON_REQUIRED", "message": "reason is required."})
+        raise HTTPException(
+            status_code=422, detail={"code": "REASON_REQUIRED", "message": "reason is required."}
+        )
 
     now = datetime.now(timezone.utc)
     effective_from = body.effective_from or now
@@ -1140,20 +1289,30 @@ async def create_platform_addon_price(
     if effective_from < now - timedelta(minutes=5):
         raise HTTPException(
             status_code=422,
-            detail={"code": "EFFECTIVE_FROM_IN_PAST",
-                    "message": "effective_from must not be more than 5 minutes in the past."},
+            detail={
+                "code": "EFFECTIVE_FROM_IN_PAST",
+                "message": "effective_from must not be more than 5 minutes in the past.",
+            },
         )
 
     old_price = await get_current_addon_price(db, code, body.billing_period)
 
-    new_id = (await db.execute(
-        text(
-            "INSERT INTO addon_prices (addon_code, billing_period, amount, effective_from, reason, created_by) "
-            "VALUES (:code, :period, :amount, :eff, :reason, :uid) RETURNING id"
-        ),
-        {"code": code, "period": body.billing_period, "amount": body.amount,
-         "eff": effective_from, "reason": reason, "uid": str(user.user_id)},
-    )).scalar_one()
+    new_id = (
+        await db.execute(
+            text(
+                "INSERT INTO addon_prices (addon_code, billing_period, amount, effective_from, reason, created_by) "
+                "VALUES (:code, :period, :amount, :eff, :reason, :uid) RETURNING id"
+            ),
+            {
+                "code": code,
+                "period": body.billing_period,
+                "amount": body.amount,
+                "eff": effective_from,
+                "reason": reason,
+                "uid": str(user.user_id),
+            },
+        )
+    ).scalar_one()
 
     await db.execute(
         text(
@@ -1165,18 +1324,22 @@ async def create_platform_addon_price(
             "key": f"{code}/{body.billing_period}",
             "old": str(old_price.amount) if old_price else None,
             "new": f"{body.amount} from {effective_from.isoformat()}",
-            "reason": reason, "actor_id": str(user.user_id), "actor_email": getattr(user, "email", None),
+            "reason": reason,
+            "actor_id": str(user.user_id),
+            "actor_email": getattr(user, "email", None),
         },
     )
 
-    return SuccessResponse(data={
-        "id": str(new_id),
-        "addon_code": code,
-        "billing_period": body.billing_period,
-        "amount": body.amount,
-        "effective_from": effective_from.isoformat(),
-        "message": "Existing purchased add-ons pay this price starting from their next renewal invoice.",
-    })
+    return SuccessResponse(
+        data={
+            "id": str(new_id),
+            "addon_code": code,
+            "billing_period": body.billing_period,
+            "amount": body.amount,
+            "effective_from": effective_from.isoformat(),
+            "message": "Existing purchased add-ons pay this price starting from their next renewal invoice.",
+        }
+    )
 
 
 @router.get("/sa/{tenant_id}/activity", response_model=SuccessResponse[List[TenantActivityRow]])
@@ -1192,15 +1355,18 @@ async def sa_tenant_activity(
     if not user or user.role != "SA":
         raise HTTPException(status_code=403, detail={"code": "FORBIDDEN", "message": "SA only"})
 
-    exists = (await db.execute(
-        text("SELECT id FROM tenants WHERE id = :tid"),
-        {"tid": str(tenant_id)},
-    )).fetchone()
+    exists = (
+        await db.execute(
+            text("SELECT id FROM tenants WHERE id = :tid"),
+            {"tid": str(tenant_id)},
+        )
+    ).fetchone()
     if not exists:
         raise HTTPException(status_code=404, detail="Tenant not found")
 
-    rows = (await db.execute(
-        text("""
+    rows = (
+        await db.execute(
+            text("""
             SELECT id, tenant_id, actor_id, actor_email,
                    action, old_value, new_value, note, created_at
             FROM tenant_activity_log
@@ -1208,23 +1374,26 @@ async def sa_tenant_activity(
             ORDER BY created_at DESC
             LIMIT :lim OFFSET :off
         """),
-        {"tid": str(tenant_id), "lim": limit, "off": offset},
-    )).fetchall()
-
-    return SuccessResponse(data=[
-        TenantActivityRow(
-            id=row.id,
-            tenant_id=row.tenant_id,
-            actor_id=row.actor_id,
-            actor_email=row.actor_email,
-            action=row.action,
-            old_value=row.old_value,
-            new_value=row.new_value,
-            note=row.note,
-            created_at=row.created_at.isoformat(),
+            {"tid": str(tenant_id), "lim": limit, "off": offset},
         )
-        for row in rows
-    ])
+    ).fetchall()
+
+    return SuccessResponse(
+        data=[
+            TenantActivityRow(
+                id=row.id,
+                tenant_id=row.tenant_id,
+                actor_id=row.actor_id,
+                actor_email=row.actor_email,
+                action=row.action,
+                old_value=row.old_value,
+                new_value=row.new_value,
+                note=row.note,
+                created_at=row.created_at.isoformat(),
+            )
+            for row in rows
+        ]
+    )
 
 
 @router.get("/sa/renewal-requests", response_model=SuccessResponse[List[SARenewalRequestRow]])
@@ -1252,8 +1421,9 @@ async def sa_list_renewal_requests(
         conditions.append("r.request_type = :rtype")
     where = f"WHERE {' AND '.join(conditions)}" if conditions else ""
 
-    rows = (await db.execute(
-        text(f"""
+    rows = (
+        await db.execute(
+            text(f"""
             SELECT r.id, r.tenant_id, t.name AS tenant_name, t.slug AS tenant_slug,
                    t.plan_tier, t.contract_end,
                    r.requested_by, r.requested_by_email, r.message,
@@ -1264,27 +1434,38 @@ async def sa_list_renewal_requests(
             {where}
             ORDER BY r.created_at DESC
         """),
-        {"rtype": type} if type != "ALL" else {},
-    )).fetchall()
-
-    return SuccessResponse(data=[
-        SARenewalRequestRow(
-            id=row.id, tenant_id=row.tenant_id,
-            tenant_name=row.tenant_name, tenant_slug=row.tenant_slug,
-            plan_tier=row.plan_tier,
-            contract_end=str(row.contract_end) if row.contract_end else None,
-            requested_by=row.requested_by, requested_by_email=row.requested_by_email,
-            message=row.message, request_type=row.request_type, requested_tier=row.requested_tier,
-            status=row.status,
-            handled_by=row.handled_by, handled_note=row.handled_note,
-            handled_at=row.handled_at.isoformat() if row.handled_at else None,
-            created_at=row.created_at.isoformat(),
+            {"rtype": type} if type != "ALL" else {},
         )
-        for row in rows
-    ])
+    ).fetchall()
+
+    return SuccessResponse(
+        data=[
+            SARenewalRequestRow(
+                id=row.id,
+                tenant_id=row.tenant_id,
+                tenant_name=row.tenant_name,
+                tenant_slug=row.tenant_slug,
+                plan_tier=row.plan_tier,
+                contract_end=str(row.contract_end) if row.contract_end else None,
+                requested_by=row.requested_by,
+                requested_by_email=row.requested_by_email,
+                message=row.message,
+                request_type=row.request_type,
+                requested_tier=row.requested_tier,
+                status=row.status,
+                handled_by=row.handled_by,
+                handled_note=row.handled_note,
+                handled_at=row.handled_at.isoformat() if row.handled_at else None,
+                created_at=row.created_at.isoformat(),
+            )
+            for row in rows
+        ]
+    )
 
 
-@router.patch("/sa/renewal-requests/{request_id}", response_model=SuccessResponse[RenewalRequestOut])
+@router.patch(
+    "/sa/renewal-requests/{request_id}", response_model=SuccessResponse[RenewalRequestOut]
+)
 @require_permission(PERMISSIONS.TENANT_RENEWAL_MANAGE)
 async def sa_handle_renewal_request(
     request_id: uuid.UUID,
@@ -1299,10 +1480,14 @@ async def sa_handle_renewal_request(
     if not user or user.role != "SA":
         raise HTTPException(status_code=403, detail={"code": "FORBIDDEN", "message": "SA only"})
 
-    existing = (await db.execute(
-        text("SELECT id, tenant_id, status, request_type FROM tenant_renewal_requests WHERE id = :id"),
-        {"id": str(request_id)},
-    )).fetchone()
+    existing = (
+        await db.execute(
+            text(
+                "SELECT id, tenant_id, status, request_type FROM tenant_renewal_requests WHERE id = :id"
+            ),
+            {"id": str(request_id)},
+        )
+    ).fetchone()
     if not existing:
         raise HTTPException(status_code=404, detail="Renewal request not found")
     if existing.status != "OPEN":
@@ -1311,26 +1496,32 @@ async def sa_handle_renewal_request(
             detail={"code": "RENEWAL_REQUEST_NOT_OPEN", "status": existing.status},
         )
 
-    updated = (await db.execute(
-        text(
-            "UPDATE tenant_renewal_requests "
-            "SET status = :status, handled_by = :hb, handled_note = :note, handled_at = now() "
-            "WHERE id = :id "
-            "RETURNING id, tenant_id, requested_by, requested_by_email, message, "
-            "request_type, requested_tier, status, handled_by, handled_note, handled_at, created_at"
-        ),
-        {
-            "status": body.status, "hb": str(user.user_id),
-            "note": body.note, "id": str(request_id),
-        },
-    )).fetchone()
+    updated = (
+        await db.execute(
+            text(
+                "UPDATE tenant_renewal_requests "
+                "SET status = :status, handled_by = :hb, handled_note = :note, handled_at = now() "
+                "WHERE id = :id "
+                "RETURNING id, tenant_id, requested_by, requested_by_email, message, "
+                "request_type, requested_tier, status, handled_by, handled_note, handled_at, created_at"
+            ),
+            {
+                "status": body.status,
+                "hb": str(user.user_id),
+                "note": body.note,
+                "id": str(request_id),
+            },
+        )
+    ).fetchone()
 
     if existing.request_type == "UPGRADE":
         action = "UPGRADE_HANDLED" if body.status == "HANDLED" else "UPGRADE_CANCELLED"
     else:
         action = "RENEWAL_HANDLED" if body.status == "HANDLED" else "RENEWAL_CANCELLED"
     await _log_tenant_activity(
-        db, existing.tenant_id, str(user.user_id),
+        db,
+        existing.tenant_id,
+        str(user.user_id),
         action=action,
         old_value="OPEN",
         new_value=body.status,
@@ -1352,14 +1543,18 @@ async def sa_contracts_overview(
     if not user or user.role != "SA":
         raise HTTPException(status_code=403, detail={"code": "FORBIDDEN", "message": "SA only"})
 
-    rows = (await db.execute(text("""
+    rows = (
+        await db.execute(
+            text("""
         SELECT t.id, t.name, t.slug, t.plan_tier, t.contract_end,
                (SELECT r.id FROM tenant_renewal_requests r
                 WHERE r.tenant_id = t.id AND r.status = 'OPEN' AND r.request_type = 'RENEWAL'
                 ORDER BY r.created_at DESC LIMIT 1) AS open_request_id
         FROM tenants t
         WHERE t.status != 'DEACTIVATED'
-    """))).fetchall()
+    """)
+        )
+    ).fetchall()
 
     today = datetime.utcnow().date()
     counts = {"EXPIRING": 0, "GRACE": 0, "READ_ONLY": 0}
@@ -1371,12 +1566,18 @@ async def sa_contracts_overview(
             continue
         days_left = (row.contract_end - today).days if row.contract_end else None
         counts[stage] += 1
-        overview_rows.append(ContractsOverviewRow(
-            tenant_id=row.id, name=row.name, slug=row.slug, plan_tier=row.plan_tier,
-            contract_end=str(row.contract_end) if row.contract_end else None,
-            days_left=days_left, stage=stage,
-            open_request_id=row.open_request_id,
-        ))
+        overview_rows.append(
+            ContractsOverviewRow(
+                tenant_id=row.id,
+                name=row.name,
+                slug=row.slug,
+                plan_tier=row.plan_tier,
+                contract_end=str(row.contract_end) if row.contract_end else None,
+                days_left=days_left,
+                stage=stage,
+                open_request_id=row.open_request_id,
+            )
+        )
 
     overview_rows.sort(key=lambda r: r.days_left if r.days_left is not None else 10**9)
 
@@ -1391,15 +1592,16 @@ async def create_tenant(
     db: AsyncSession = Depends(get_db_session),
 ) -> SuccessResponse[TenantResponse]:
     from sqlalchemy import text
+
     tenant_id = uuid.uuid4()
 
     if body.organisation_type not in VALID_ORGANISATION_TYPES:
         raise HTTPException(
             status_code=422,
             detail={
-                "code":    "INVALID_ORGANISATION_TYPE",
+                "code": "INVALID_ORGANISATION_TYPE",
                 "message": f"organisation_type must be one of {sorted(VALID_ORGANISATION_TYPES)}, "
-                           f"got '{body.organisation_type}'.",
+                f"got '{body.organisation_type}'.",
             },
         )
 
@@ -1407,9 +1609,9 @@ async def create_tenant(
         raise HTTPException(
             status_code=422,
             detail={
-                "code":    "INVALID_TIER",
+                "code": "INVALID_TIER",
                 "message": f"plan_tier must be one of {sorted(VALID_PLAN_TIERS)}, "
-                           f"got '{body.plan_tier}'.",
+                f"got '{body.plan_tier}'.",
             },
         )
 
@@ -1417,9 +1619,9 @@ async def create_tenant(
         raise HTTPException(
             status_code=422,
             detail={
-                "code":    "INVALID_BILLING_PERIOD",
+                "code": "INVALID_BILLING_PERIOD",
                 "message": f"billing_period must be one of {list(_VALID_BILLING_PERIODS)}, "
-                           f"got '{body.billing_period}'.",
+                f"got '{body.billing_period}'.",
             },
         )
 
@@ -1431,26 +1633,40 @@ async def create_tenant(
         except ValueError:
             raise HTTPException(
                 status_code=422,
-                detail={"code": "INVALID_CONTRACT_DATES",
-                        "message": f"'{field}' must be a valid ISO date (YYYY-MM-DD)."},
+                detail={
+                    "code": "INVALID_CONTRACT_DATES",
+                    "message": f"'{field}' must be a valid ISO date (YYYY-MM-DD).",
+                },
             )
 
     contract_start_parsed = _parse_contract_date(body.contract_start, "contract_start")
-    contract_end_parsed   = _parse_contract_date(body.contract_end, "contract_end")
-    if contract_start_parsed and contract_end_parsed and contract_end_parsed <= contract_start_parsed:
+    contract_end_parsed = _parse_contract_date(body.contract_end, "contract_end")
+    if (
+        contract_start_parsed
+        and contract_end_parsed
+        and contract_end_parsed <= contract_start_parsed
+    ):
         raise HTTPException(
             status_code=422,
-            detail={"code": "INVALID_CONTRACT_DATES",
-                    "message": "contract_end must be after contract_start."},
+            detail={
+                "code": "INVALID_CONTRACT_DATES",
+                "message": "contract_end must be after contract_start.",
+            },
         )
     # contract_end given WITHOUT contract_start implicitly starts the contract
     # today (see effective_start below) — it must still land in the future,
     # or the contract would already be expired at creation.
-    if contract_start_parsed is None and contract_end_parsed is not None and contract_end_parsed <= date.today():
+    if (
+        contract_start_parsed is None
+        and contract_end_parsed is not None
+        and contract_end_parsed <= date.today()
+    ):
         raise HTTPException(
             status_code=422,
-            detail={"code": "INVALID_CONTRACT_DATES",
-                    "message": "contract_end must be after today when contract_start is not given."},
+            detail={
+                "code": "INVALID_CONTRACT_DATES",
+                "message": "contract_end must be after today when contract_start is not given.",
+            },
         )
 
     # Slug resolution: use caller-provided slug (validated) or auto-generate from name.
@@ -1460,9 +1676,9 @@ async def create_tenant(
             raise HTTPException(
                 status_code=422,
                 detail={
-                    "code":    "INVALID_SLUG",
+                    "code": "INVALID_SLUG",
                     "message": "Slug must be 3-50 characters, lowercase letters/digits/hyphens, "
-                               "and must start and end with a letter or digit.",
+                    "and must start and end with a letter or digit.",
                 },
             )
         slug = candidate
@@ -1472,7 +1688,7 @@ async def create_tenant(
             raise HTTPException(
                 status_code=409,
                 detail={
-                    "code":    "SLUG_ALREADY_EXISTS",
+                    "code": "SLUG_ALREADY_EXISTS",
                     "message": f"The URL identifier '{slug}' is already taken.",
                 },
             )
@@ -1523,7 +1739,9 @@ async def create_tenant(
     # caller explicitly sent it.
     try:
         await apply_package_to_tenant(
-            db, tenant_id, body.plan_tier,
+            db,
+            tenant_id,
+            body.plan_tier,
             sku_cap=body.sku_cap if "sku_cap" in body.model_fields_set else UNSET,
         )
     except ValueError as exc:
@@ -1540,8 +1758,13 @@ async def create_tenant(
     # still NULL, so an explicit contract below always wins.
     try:
         subscription_result = await start_subscription(
-            db, tenant_id, body.plan_tier, body.billing_period,
-            status="ACTIVE", provider="MANUAL", created_by=user.user_id,
+            db,
+            tenant_id,
+            body.plan_tier,
+            body.billing_period,
+            status="ACTIVE",
+            provider="MANUAL",
+            created_by=user.user_id,
             start=contract_start_parsed,
         )
     except ValueError as exc:
@@ -1562,16 +1785,17 @@ async def create_tenant(
             {"cs": effective_start, "ce": effective_end, "id": str(tenant_id)},
         )
         contract_start_out = str(effective_start)
-        contract_end_out   = str(effective_end)
+        contract_end_out = str(effective_end)
     else:
         contract_start_out = str(subscription_result["current_period_start"])
-        contract_end_out   = str(subscription_result["current_period_end"])
+        contract_end_out = str(subscription_result["current_period_end"])
 
     # Atomic TA admin user creation — same DB transaction as tenant INSERT.
     admin_user_id: Optional[uuid.UUID] = None
     admin_email_out: Optional[str] = None
     if body.admin_email and body.admin_password:
         import bcrypt as _bcrypt
+
         pw_hash = _bcrypt.hashpw(body.admin_password.encode(), _bcrypt.gensalt()).decode()
         admin_user_id = uuid.uuid4()
         normalized_admin_email = body.admin_email.strip().lower()
@@ -1579,10 +1803,12 @@ async def create_tenant(
 
         # Email is globally unique (uq_users_email_lower, migration 070) —
         # check across ALL tenants, never reveal which tenant owns it.
-        existing = (await db.execute(
-            text("SELECT id FROM users WHERE lower(email) = :email"),
-            {"email": normalized_admin_email},
-        )).fetchone()
+        existing = (
+            await db.execute(
+                text("SELECT id FROM users WHERE lower(email) = :email"),
+                {"email": normalized_admin_email},
+            )
+        ).fetchone()
         if existing:
             raise _duplicate_email_http_exception()
 
@@ -1595,11 +1821,11 @@ async def create_tenant(
                     "VALUES (:id, :tid, :email, :name, :hash, true, true, 'TA', true)"
                 ),
                 {
-                    "id":    str(admin_user_id),
-                    "tid":   str(tenant_id),
+                    "id": str(admin_user_id),
+                    "tid": str(tenant_id),
                     "email": normalized_admin_email,
-                    "name":  body.admin_name or body.admin_email,
-                    "hash":  pw_hash,
+                    "name": body.admin_name or body.admin_email,
+                    "hash": pw_hash,
                 },
             )
         except IntegrityError as exc:
@@ -1634,19 +1860,21 @@ async def _get_tenant_plan_data(db: AsyncSession, tenant_id: uuid.UUID | str) ->
     if not entitlements:
         raise HTTPException(status_code=404, detail="Tenant not found")
 
-    row = (await db.execute(
-        text("SELECT contract_start, contract_end FROM tenants WHERE id = :tid"),
-        {"tid": str(tenant_id)},
-    )).fetchone()
+    row = (
+        await db.execute(
+            text("SELECT contract_start, contract_end FROM tenants WHERE id = :tid"),
+            {"tid": str(tenant_id)},
+        )
+    ).fetchone()
     return {
-        "plan_tier":       entitlements["plan_tier"],
-        "feature_flags":   entitlements["feature_flags"],
-        "sku_cap":         entitlements["sku_cap"],
-        "max_warehouses":  entitlements["max_warehouses"],
-        "max_users":       entitlements["max_users"],
-        "addons":          entitlements["addons"],
-        "contract_start":  str(row.contract_start) if row and row.contract_start else None,
-        "contract_end":    str(row.contract_end)   if row and row.contract_end   else None,
+        "plan_tier": entitlements["plan_tier"],
+        "feature_flags": entitlements["feature_flags"],
+        "sku_cap": entitlements["sku_cap"],
+        "max_warehouses": entitlements["max_warehouses"],
+        "max_users": entitlements["max_users"],
+        "addons": entitlements["addons"],
+        "contract_start": str(row.contract_start) if row and row.contract_start else None,
+        "contract_end": str(row.contract_end) if row and row.contract_end else None,
     }
 
 
@@ -1693,14 +1921,16 @@ async def _get_terms_acceptance(db: AsyncSession, tenant_id) -> TermsAcceptanceO
     is expected, not an error. Newest acceptance wins if a tenant somehow
     has more than one (it shouldn't, today)."""
     current_version = get_terms_version()
-    row = (await db.execute(
-        text(
-            "SELECT ta.terms_version, ta.accepted_at, u.email "
-            "FROM terms_acceptances ta JOIN users u ON u.id = ta.user_id "
-            "WHERE ta.tenant_id = :tid ORDER BY ta.accepted_at DESC LIMIT 1"
-        ),
-        {"tid": str(tenant_id)},
-    )).fetchone()
+    row = (
+        await db.execute(
+            text(
+                "SELECT ta.terms_version, ta.accepted_at, u.email "
+                "FROM terms_acceptances ta JOIN users u ON u.id = ta.user_id "
+                "WHERE ta.tenant_id = :tid ORDER BY ta.accepted_at DESC LIMIT 1"
+            ),
+            {"tid": str(tenant_id)},
+        )
+    ).fetchone()
     if not row:
         return TermsAcceptanceOut(current_version=current_version)
     return TermsAcceptanceOut(
@@ -1737,14 +1967,19 @@ async def accept_current_terms(
     if not user or not user.tenant_id:
         raise HTTPException(status_code=403, detail="No tenant context")
 
-    owner_row = (await db.execute(
-        text("SELECT is_account_owner FROM users WHERE id = :uid"),
-        {"uid": user.user_id},
-    )).fetchone()
+    owner_row = (
+        await db.execute(
+            text("SELECT is_account_owner FROM users WHERE id = :uid"),
+            {"uid": user.user_id},
+        )
+    ).fetchone()
     if not owner_row or not owner_row.is_account_owner:
         raise HTTPException(
             status_code=403,
-            detail={"code": "NOT_ACCOUNT_OWNER", "message": "Only the account owner can accept terms."},
+            detail={
+                "code": "NOT_ACCOUNT_OWNER",
+                "message": "Only the account owner can accept terms.",
+            },
         )
 
     current = await _get_terms_acceptance(db, user.tenant_id)
@@ -1758,14 +1993,19 @@ async def accept_current_terms(
             "VALUES (:tid, :uid, :tv, :ip, :ua)"
         ),
         {
-            "tid": str(user.tenant_id), "uid": user.user_id,
-            "tv": current.current_version, "ip": client_ip(request), "ua": user_agent,
+            "tid": str(user.tenant_id),
+            "uid": user.user_id,
+            "tv": current.current_version,
+            "ip": client_ip(request),
+            "ua": user_agent,
         },
     )
 
     try:
         await _log_tenant_activity(
-            db, user.tenant_id, user.user_id,
+            db,
+            user.tenant_id,
+            user.user_id,
             action="TERMS_ACCEPTED",
             old_value=current.accepted_version,
             new_value=current.current_version,
@@ -1792,13 +2032,14 @@ def _serialize_preview(preview: dict) -> dict:
 
 class PlanUpdateRequest(BaseModel):
     plan_tier: str
-    max_warehouses: Optional[int] = None   # if None, auto-set from platform_tier_config
-    max_users: Optional[int] = None        # if None, auto-set from platform_tier_config
-    sku_cap: Optional[int] = None          # None = unlimited; only updated when key present in body
+    max_warehouses: Optional[int] = None  # if None, auto-set from platform_tier_config
+    max_users: Optional[int] = None  # if None, auto-set from platform_tier_config
+    sku_cap: Optional[int] = None  # None = unlimited; only updated when key present in body
     effective: Literal["RENEWAL", "IMMEDIATE"] = "RENEWAL"  # S13 — SA override with IMMEDIATE
 
 
 # ── TA Self-Service Endpoints ────────────────────────────────────────────────
+
 
 @router.get("/me/profile", response_model=SuccessResponse[TenantResponse])
 @require_permission(PERMISSIONS.TENANT_VIEW)
@@ -1811,8 +2052,7 @@ async def get_my_profile(
         raise HTTPException(status_code=403, detail="No tenant context")
 
     result = await db.execute(
-        text("SELECT * FROM tenants WHERE id = :id"),
-        {"id": str(user.tenant_id)}
+        text("SELECT * FROM tenants WHERE id = :id"), {"id": str(user.tenant_id)}
     )
     row = result.fetchone()
     if not row:
@@ -1833,20 +2073,23 @@ async def get_my_profile(
             plan_tier=str(row.plan_tier) if getattr(row, "plan_tier", None) else None,
             max_warehouses=getattr(row, "max_warehouses", None),
             max_users=getattr(row, "max_users", None),
-            contract_start=str(row.contract_start) if getattr(row, "contract_start", None) else None,
+            contract_start=str(row.contract_start)
+            if getattr(row, "contract_start", None)
+            else None,
             contract_end=str(row.contract_end) if getattr(row, "contract_end", None) else None,
         )
     )
 
 
 class ContractUpdateRequest(BaseModel):
-    contract_start: Optional[str] = None   # "YYYY-MM-DD" or null to clear
-    contract_end:   Optional[str] = None   # "YYYY-MM-DD" or null to clear
-    note: str                              # required — mandatory audit reason
+    contract_start: Optional[str] = None  # "YYYY-MM-DD" or null to clear
+    contract_end: Optional[str] = None  # "YYYY-MM-DD" or null to clear
+    note: str  # required — mandatory audit reason
 
 
 class TAProfileUpdateRequest(BaseModel):
     """TA can only update specific fields of their own profile."""
+
     default_locale: Optional[str] = None
 
 
@@ -1855,7 +2098,14 @@ class TAProfileUpdateRequest(BaseModel):
 # TAProfileUpdateRequest has no field for them (Pydantic would otherwise just
 # silently drop them). SA PATCH /{tenant_id}/plan and /{tenant_id}/profile
 # are unaffected by this check.
-PLAN_BILLING_FIELDS = {"plan_tier", "max_warehouses", "max_users", "sku_cap", "feature_flags", "billing_period"}
+PLAN_BILLING_FIELDS = {
+    "plan_tier",
+    "max_warehouses",
+    "max_users",
+    "sku_cap",
+    "feature_flags",
+    "billing_period",
+}
 
 
 @router.patch("/me/profile", response_model=SuccessResponse[dict])
@@ -1892,10 +2142,12 @@ async def update_my_profile(
     if body.default_locale is None:
         return SuccessResponse(data={"changes": 0})
 
-    old_locale = (await db.execute(
-        text("SELECT default_locale FROM tenants WHERE id = :id"),
-        {"id": str(user.tenant_id)},
-    )).scalar() or "en"
+    old_locale = (
+        await db.execute(
+            text("SELECT default_locale FROM tenants WHERE id = :id"),
+            {"id": str(user.tenant_id)},
+        )
+    ).scalar() or "en"
 
     if body.default_locale == old_locale:
         return SuccessResponse(data={"changes": 0})
@@ -1907,7 +2159,9 @@ async def update_my_profile(
 
     try:
         await _log_tenant_activity(
-            db, user.tenant_id, str(user.user_id),
+            db,
+            user.tenant_id,
+            str(user.user_id),
             action="PROFILE_UPDATE",
             old_value=old_locale,
             new_value=body.default_locale,
@@ -1935,13 +2189,18 @@ async def update_my_contract(
     if not note:
         raise HTTPException(
             status_code=422,
-            detail={"code": "NOTE_REQUIRED", "message": "A note explaining the contract change is required."},
+            detail={
+                "code": "NOTE_REQUIRED",
+                "message": "A note explaining the contract change is required.",
+            },
         )
 
-    row = (await db.execute(
-        text("SELECT id, status, contract_start, contract_end FROM tenants WHERE id = :id"),
-        {"id": str(user.tenant_id)},
-    )).fetchone()
+    row = (
+        await db.execute(
+            text("SELECT id, status, contract_start, contract_end FROM tenants WHERE id = :id"),
+            {"id": str(user.tenant_id)},
+        )
+    ).fetchone()
     if not row:
         raise HTTPException(status_code=404, detail="Tenant not found")
 
@@ -1953,20 +2212,21 @@ async def update_my_contract(
         except ValueError:
             raise HTTPException(
                 status_code=422,
-                detail={"code": "INVALID_DATE", "message": f"'{s}' is not a valid ISO date (YYYY-MM-DD)."},
+                detail={
+                    "code": "INVALID_DATE",
+                    "message": f"'{s}' is not a valid ISO date (YYYY-MM-DD).",
+                },
             )
 
     new_start = _parse_date(body.contract_start)
-    new_end   = _parse_date(body.contract_end)
+    new_end = _parse_date(body.contract_end)
 
     old_start = str(row.contract_start) if row.contract_start else None
-    old_end   = str(row.contract_end) if row.contract_end else None
+    old_end = str(row.contract_end) if row.contract_end else None
 
     # Auto-reactivate if tenant was suspended and new end is in future
     should_reactivate = (
-        str(row.status) == "SUSPENDED"
-        and new_end is not None
-        and new_end >= _date.today()
+        str(row.status) == "SUSPENDED" and new_end is not None and new_end >= _date.today()
     )
 
     if not any(x for x in [new_start, new_end, should_reactivate] if x):
@@ -1995,7 +2255,9 @@ async def update_my_contract(
 
     try:
         await _log_tenant_activity(
-            db, user.tenant_id, str(user.user_id),
+            db,
+            user.tenant_id,
+            str(user.user_id),
             action="CONTRACT_RENEWAL",
             old_value=f"start:{old_start}, end:{old_end}",
             new_value=f"start:{body.contract_start}, end:{body.contract_end}",
@@ -2004,11 +2266,13 @@ async def update_my_contract(
     except Exception:
         pass
 
-    return SuccessResponse(data={
-        "contract_start": body.contract_start,
-        "contract_end": body.contract_end,
-        "reactivated": should_reactivate,
-    })
+    return SuccessResponse(
+        data={
+            "contract_start": body.contract_start,
+            "contract_end": body.contract_end,
+            "reactivated": should_reactivate,
+        }
+    )
 
 
 @router.get("/me/contract-status", response_model=SuccessResponse[ContractStatusOut])
@@ -2027,32 +2291,39 @@ async def get_my_contract_status(
     today = datetime.utcnow().date()
     days_left = (contract_end - today).days if contract_end else None
 
-    open_row = (await db.execute(
-        text(
-            "SELECT id, created_at FROM tenant_renewal_requests "
-            "WHERE tenant_id = :tid AND status = 'OPEN' AND request_type = 'RENEWAL' "
-            "ORDER BY created_at DESC LIMIT 1"
-        ),
-        {"tid": str(user.tenant_id)},
-    )).fetchone()
+    open_row = (
+        await db.execute(
+            text(
+                "SELECT id, created_at FROM tenant_renewal_requests "
+                "WHERE tenant_id = :tid AND status = 'OPEN' AND request_type = 'RENEWAL' "
+                "ORDER BY created_at DESC LIMIT 1"
+            ),
+            {"tid": str(user.tenant_id)},
+        )
+    ).fetchone()
     open_request = (
         ContractStatusOpenRequest(id=open_row.id, created_at=open_row.created_at.isoformat())
-        if open_row else None
+        if open_row
+        else None
     )
 
-    return SuccessResponse(data=ContractStatusOut(
-        stage=stage_info["stage"],
-        contract_end=str(contract_end) if contract_end else None,
-        days_left=days_left,
-        grace_ends=str(stage_info["grace_ends"]) if stage_info["grace_ends"] else None,
-        read_only_since=(
-            str(stage_info["read_only_since"]) if stage_info["read_only_since"] else None
-        ),
-        open_request=open_request,
-    ))
+    return SuccessResponse(
+        data=ContractStatusOut(
+            stage=stage_info["stage"],
+            contract_end=str(contract_end) if contract_end else None,
+            days_left=days_left,
+            grace_ends=str(stage_info["grace_ends"]) if stage_info["grace_ends"] else None,
+            read_only_since=(
+                str(stage_info["read_only_since"]) if stage_info["read_only_since"] else None
+            ),
+            open_request=open_request,
+        )
+    )
 
 
-@router.post("/me/renewal-requests", status_code=201, response_model=SuccessResponse[RenewalRequestOut])
+@router.post(
+    "/me/renewal-requests", status_code=201, response_model=SuccessResponse[RenewalRequestOut]
+)
 @require_permission(PERMISSIONS.TENANT_RENEWAL_REQUEST)
 async def create_my_renewal_request(
     body: RenewalRequestIn,
@@ -2072,58 +2343,69 @@ async def create_my_renewal_request(
         raise HTTPException(status_code=422, detail={"code": "REQUESTED_TIER_NOT_ALLOWED"})
 
     if body.request_type == "UPGRADE":
-        tenant_row = (await db.execute(
-            text("SELECT plan_tier FROM tenants WHERE id = :tid"),
-            {"tid": str(user.tenant_id)},
-        )).fetchone()
+        tenant_row = (
+            await db.execute(
+                text("SELECT plan_tier FROM tenants WHERE id = :tid"),
+                {"tid": str(user.tenant_id)},
+            )
+        ).fetchone()
         current_tier = str(tenant_row.plan_tier) if tenant_row and tenant_row.plan_tier else None
-        if (
-            current_tier not in _VALID_TIERS
-            or _VALID_TIERS.index(body.requested_tier) <= _VALID_TIERS.index(current_tier)
-        ):
+        if current_tier not in _VALID_TIERS or _VALID_TIERS.index(
+            body.requested_tier
+        ) <= _VALID_TIERS.index(current_tier):
             raise HTTPException(status_code=422, detail={"code": "NOT_AN_UPGRADE"})
 
-    existing = (await db.execute(
-        text(
-            "SELECT id FROM tenant_renewal_requests "
-            "WHERE tenant_id = :tid AND request_type = :rtype AND status = 'OPEN'"
-        ),
-        {"tid": str(user.tenant_id), "rtype": body.request_type},
-    )).fetchone()
+    existing = (
+        await db.execute(
+            text(
+                "SELECT id FROM tenant_renewal_requests "
+                "WHERE tenant_id = :tid AND request_type = :rtype AND status = 'OPEN'"
+            ),
+            {"tid": str(user.tenant_id), "rtype": body.request_type},
+        )
+    ).fetchone()
     if existing:
-        open_code = "RENEWAL_REQUEST_OPEN" if body.request_type == "RENEWAL" else "UPGRADE_REQUEST_OPEN"
+        open_code = (
+            "RENEWAL_REQUEST_OPEN" if body.request_type == "RENEWAL" else "UPGRADE_REQUEST_OPEN"
+        )
         raise HTTPException(
             status_code=409,
             detail={"code": open_code, "id": str(existing.id)},
         )
 
-    email_row = (await db.execute(
-        text("SELECT email FROM users WHERE id = :uid LIMIT 1"),
-        {"uid": str(user.user_id)},
-    )).fetchone()
+    email_row = (
+        await db.execute(
+            text("SELECT email FROM users WHERE id = :uid LIMIT 1"),
+            {"uid": str(user.user_id)},
+        )
+    ).fetchone()
     requested_by_email = email_row.email if email_row else None
 
-    row = (await db.execute(
-        text(
-            "INSERT INTO tenant_renewal_requests "
-            "(tenant_id, requested_by, requested_by_email, message, request_type, requested_tier) "
-            "VALUES (:tid, :uid, :email, :message, :rtype, :rtier) "
-            "RETURNING id, tenant_id, requested_by, requested_by_email, message, "
-            "request_type, requested_tier, status, handled_by, handled_note, handled_at, created_at"
-        ),
-        {
-            "tid": str(user.tenant_id),
-            "uid": str(user.user_id),
-            "email": requested_by_email,
-            "message": body.message,
-            "rtype": body.request_type,
-            "rtier": body.requested_tier,
-        },
-    )).fetchone()
+    row = (
+        await db.execute(
+            text(
+                "INSERT INTO tenant_renewal_requests "
+                "(tenant_id, requested_by, requested_by_email, message, request_type, requested_tier) "
+                "VALUES (:tid, :uid, :email, :message, :rtype, :rtier) "
+                "RETURNING id, tenant_id, requested_by, requested_by_email, message, "
+                "request_type, requested_tier, status, handled_by, handled_note, handled_at, created_at"
+            ),
+            {
+                "tid": str(user.tenant_id),
+                "uid": str(user.user_id),
+                "email": requested_by_email,
+                "message": body.message,
+                "rtype": body.request_type,
+                "rtier": body.requested_tier,
+            },
+        )
+    ).fetchone()
 
     action = "RENEWAL_REQUESTED" if body.request_type == "RENEWAL" else "UPGRADE_REQUESTED"
     await _log_tenant_activity(
-        db, user.tenant_id, str(user.user_id),
+        db,
+        user.tenant_id,
+        str(user.user_id),
         action=action,
         new_value=body.requested_tier if body.request_type == "UPGRADE" else None,
         note=body.message,
@@ -2146,15 +2428,17 @@ async def list_my_renewal_requests(
     if not user or not user.tenant_id:
         raise HTTPException(status_code=403, detail="No tenant context")
 
-    rows = (await db.execute(
-        text(
-            "SELECT id, tenant_id, requested_by, requested_by_email, message, "
-            "request_type, requested_tier, status, handled_by, handled_note, handled_at, created_at "
-            "FROM tenant_renewal_requests WHERE tenant_id = :tid "
-            "ORDER BY created_at DESC LIMIT 10"
-        ),
-        {"tid": str(user.tenant_id)},
-    )).fetchall()
+    rows = (
+        await db.execute(
+            text(
+                "SELECT id, tenant_id, requested_by, requested_by_email, message, "
+                "request_type, requested_tier, status, handled_by, handled_note, handled_at, created_at "
+                "FROM tenant_renewal_requests WHERE tenant_id = :tid "
+                "ORDER BY created_at DESC LIMIT 10"
+            ),
+            {"tid": str(user.tenant_id)},
+        )
+    ).fetchall()
 
     return SuccessResponse(data=[_renewal_row_to_out(r) for r in rows])
 
@@ -2169,34 +2453,40 @@ async def get_my_contacts(
     if not user or not user.tenant_id:
         raise HTTPException(status_code=403, detail="No tenant context")
 
-    rows = (await db.execute(
-        text(
-            "SELECT id, tenant_id, is_primary, full_name, position_title, "
-            "email, phone, mobile, created_at "
-            "FROM tenant_contacts WHERE tenant_id = :tid "
-            "ORDER BY is_primary DESC, created_at ASC"
-        ),
-        {"tid": str(user.tenant_id)},
-    )).fetchall()
-
-    return SuccessResponse(data=[
-        TenantContactOut(
-            id=row.id,
-            tenant_id=row.tenant_id,
-            is_primary=row.is_primary,
-            full_name=row.full_name,
-            position_title=row.position_title,
-            email=row.email,
-            phone=row.phone,
-            mobile=row.mobile,
-            created_at=row.created_at.isoformat(),
+    rows = (
+        await db.execute(
+            text(
+                "SELECT id, tenant_id, is_primary, full_name, position_title, "
+                "email, phone, mobile, created_at "
+                "FROM tenant_contacts WHERE tenant_id = :tid "
+                "ORDER BY is_primary DESC, created_at ASC"
+            ),
+            {"tid": str(user.tenant_id)},
         )
-        for row in rows
-    ])
+    ).fetchall()
+
+    return SuccessResponse(
+        data=[
+            TenantContactOut(
+                id=row.id,
+                tenant_id=row.tenant_id,
+                is_primary=row.is_primary,
+                full_name=row.full_name,
+                position_title=row.position_title,
+                email=row.email,
+                phone=row.phone,
+                mobile=row.mobile,
+                created_at=row.created_at.isoformat(),
+            )
+            for row in rows
+        ]
+    )
 
 
 async def _create_tenant_contact(
-    db: AsyncSession, tenant_id: uuid.UUID | str, body: TenantContactIn,
+    db: AsyncSession,
+    tenant_id: uuid.UUID | str,
+    body: TenantContactIn,
 ) -> TenantContactOut:
     """Shared by POST /me/contacts (TA) and POST /{tenant_id}/contacts (SA)."""
     from datetime import datetime
@@ -2241,21 +2531,26 @@ async def _create_tenant_contact(
 
 
 async def _update_tenant_contact(
-    db: AsyncSession, tenant_id: uuid.UUID | str, contact_id: uuid.UUID, body: TenantContactIn,
+    db: AsyncSession,
+    tenant_id: uuid.UUID | str,
+    contact_id: uuid.UUID,
+    body: TenantContactIn,
 ) -> TenantContactOut:
     """Shared by PATCH /me/contacts/{id} (TA) and PATCH /{tenant_id}/contacts/{id} (SA).
     Raises 404 if the contact does not belong to tenant_id."""
     if not body.full_name or not body.full_name.strip():
         raise HTTPException(status_code=422, detail="full_name is required")
 
-    row = (await db.execute(
-        text(
-            "SELECT id, tenant_id, is_primary, full_name, position_title, "
-            "email, phone, mobile, created_at "
-            "FROM tenant_contacts WHERE id = :id AND tenant_id = :tid"
-        ),
-        {"id": contact_id, "tid": str(tenant_id)},
-    )).fetchone()
+    row = (
+        await db.execute(
+            text(
+                "SELECT id, tenant_id, is_primary, full_name, position_title, "
+                "email, phone, mobile, created_at "
+                "FROM tenant_contacts WHERE id = :id AND tenant_id = :tid"
+            ),
+            {"id": contact_id, "tid": str(tenant_id)},
+        )
+    ).fetchone()
     if not row:
         raise HTTPException(status_code=404, detail="Contact not found")
 
@@ -2385,8 +2680,11 @@ async def get_tenant_proration_preview(
             status_code=422,
             detail={"code": "INVALID_REQUEST", "message": "Pass exactly one of tier or addon"},
         )
-    preview = await (preview_upgrade(db, str(tenant_id), tier) if tier
-                      else preview_addon(db, str(tenant_id), addon))
+    preview = await (
+        preview_upgrade(db, str(tenant_id), tier)
+        if tier
+        else preview_addon(db, str(tenant_id), addon)
+    )
     return SuccessResponse(data=_serialize_preview(preview))
 
 
@@ -2408,13 +2706,17 @@ async def update_tenant_plan(
     if body.plan_tier not in valid_tiers:
         raise HTTPException(
             status_code=422,
-            detail={"code": "INVALID_TIER",
-                    "message": f"plan_tier must be one of {sorted(valid_tiers)}"},
+            detail={
+                "code": "INVALID_TIER",
+                "message": f"plan_tier must be one of {sorted(valid_tiers)}",
+            },
         )
-    old_row = (await db.execute(
-        text("SELECT plan_tier FROM tenants WHERE id = :id"),
-        {"id": str(tenant_id)},
-    )).fetchone()
+    old_row = (
+        await db.execute(
+            text("SELECT plan_tier FROM tenants WHERE id = :id"),
+            {"id": str(tenant_id)},
+        )
+    ).fetchone()
     old_tier = str(old_row.plan_tier) if old_row and old_row.plan_tier else None
 
     # A paid downgrade defaults to SCHEDULE-at-renewal (S13) — nothing else
@@ -2424,9 +2726,14 @@ async def update_tenant_plan(
     # billing months on the IMMEDIATE path (CLAUDE.md §15 S11).
     try:
         plan_change = await change_plan(
-            db, tenant_id, body.plan_tier,
-            effective=body.effective, recorded_by=str(user.user_id),
-            max_warehouses=body.max_warehouses if "max_warehouses" in body.model_fields_set else UNSET,
+            db,
+            tenant_id,
+            body.plan_tier,
+            effective=body.effective,
+            recorded_by=str(user.user_id),
+            max_warehouses=body.max_warehouses
+            if "max_warehouses" in body.model_fields_set
+            else UNSET,
             max_users=body.max_users if "max_users" in body.model_fields_set else UNSET,
             sku_cap=body.sku_cap if "sku_cap" in body.model_fields_set else UNSET,
         )
@@ -2442,39 +2749,51 @@ async def update_tenant_plan(
     proration_invoice = plan_change.get("proration_invoice")
     subscription_change = plan_change.get("subscription_change")
     if mode == "IMMEDIATE" and subscription_change is None:
-        logger.warning("update_tenant_plan: no live subscription for tenant %s — not created here", tenant_id)
+        logger.warning(
+            "update_tenant_plan: no live subscription for tenant %s — not created here", tenant_id
+        )
 
     try:
         if mode == "SCHEDULED":
             await _log_tenant_activity(
-                db, tenant_id, str(user.user_id),
+                db,
+                tenant_id,
+                str(user.user_id),
                 action="PLAN_DOWNGRADE_SCHEDULED",
                 old_value=plan_change["plan_tier"],
                 new_value=plan_change["scheduled_tier"],
             )
         else:
             await _log_tenant_activity(
-                db, tenant_id, str(user.user_id),
+                db,
+                tenant_id,
+                str(user.user_id),
                 action="PLAN_CHANGE",
                 old_value=old_tier,
                 new_value=body.plan_tier,
             )
             if mode == "UNCHANGED" and plan_change.get("scheduled_cleared"):
                 await _log_tenant_activity(
-                    db, tenant_id, str(user.user_id),
+                    db,
+                    tenant_id,
+                    str(user.user_id),
                     action="PLAN_DOWNGRADE_CANCELLED",
                     old_value=body.plan_tier,
                 )
             if subscription_change is not None:
                 await _log_tenant_activity(
-                    db, tenant_id, str(user.user_id),
+                    db,
+                    tenant_id,
+                    str(user.user_id),
                     action="SUBSCRIPTION_TIER_CHANGE",
                     old_value=f"{subscription_change['old_tier']}/{subscription_change['old_amount']}",
                     new_value=f"{subscription_change['new_tier']}/{subscription_change['new_amount']}",
                 )
             if proration_invoice is not None:
                 await _log_tenant_activity(
-                    db, tenant_id, str(user.user_id),
+                    db,
+                    tenant_id,
+                    str(user.user_id),
                     action="PRORATION_INVOICE_RAISED",
                     new_value=f"payment={proration_invoice['payment_id']} total={proration_invoice['total']}",
                 )
@@ -2493,16 +2812,18 @@ async def update_tenant_plan(
         max_wh_out = effective_package["max_warehouses"]
         max_u_out = effective_package["max_users"]
 
-    return SuccessResponse(data={
-        "mode":                        mode,
-        "plan_tier":                   plan_tier_out,
-        "max_warehouses":              max_wh_out,
-        "max_users":                   max_u_out,
-        "proration_invoice":           proration_invoice,
-        "scheduled_tier":              plan_change.get("scheduled_tier"),
-        "effective_at":                plan_change.get("effective_at"),
-        "pending_renewal_invoice_id":  plan_change.get("pending_renewal_invoice_id"),
-    })
+    return SuccessResponse(
+        data={
+            "mode": mode,
+            "plan_tier": plan_tier_out,
+            "max_warehouses": max_wh_out,
+            "max_users": max_u_out,
+            "proration_invoice": proration_invoice,
+            "scheduled_tier": plan_change.get("scheduled_tier"),
+            "effective_at": plan_change.get("effective_at"),
+            "pending_renewal_invoice_id": plan_change.get("pending_renewal_invoice_id"),
+        }
+    )
 
 
 @router.delete("/{tenant_id}/plan/scheduled", response_model=SuccessResponse[dict])
@@ -2529,7 +2850,9 @@ async def cancel_tenant_scheduled_downgrade(
 
     try:
         await _log_tenant_activity(
-            db, tenant_id, str(user.user_id),
+            db,
+            tenant_id,
+            str(user.user_id),
             action="PLAN_DOWNGRADE_CANCELLED",
             old_value=result["cancelled_tier"],
         )
@@ -2557,7 +2880,14 @@ class TenantProfileUpdateRequest(BaseModel):
 
 VALID_LOCALES = frozenset({"en", "am", "or"})
 
-_PROFILE_ADDR_FIELDS = ("address_line1", "address_line2", "city", "state_province", "postal_code", "country")
+_PROFILE_ADDR_FIELDS = (
+    "address_line1",
+    "address_line2",
+    "city",
+    "state_province",
+    "postal_code",
+    "country",
+)
 
 
 def _build_profile_update_set_clause(
@@ -2622,19 +2952,24 @@ async def update_tenant_profile(
     if not user or user.role != "SA":
         raise HTTPException(status_code=403, detail={"code": "FORBIDDEN", "message": "SA only"})
 
-    row = (await db.execute(
-        text(
-            "SELECT id, name, organisation_type, default_locale, plan_tier, "
-            "notes, industry, address_line1, address_line2, city, state_province, postal_code, country "
-            "FROM tenants WHERE id = :id"
-        ),
-        {"id": str(tenant_id)},
-    )).fetchone()
+    row = (
+        await db.execute(
+            text(
+                "SELECT id, name, organisation_type, default_locale, plan_tier, "
+                "notes, industry, address_line1, address_line2, city, state_province, postal_code, country "
+                "FROM tenants WHERE id = :id"
+            ),
+            {"id": str(tenant_id)},
+        )
+    ).fetchone()
     if not row:
         raise HTTPException(status_code=404, detail="Tenant not found")
 
     # Validate supplied values before touching the DB
-    if body.organisation_type is not None and body.organisation_type not in VALID_ORGANISATION_TYPES:
+    if (
+        body.organisation_type is not None
+        and body.organisation_type not in VALID_ORGANISATION_TYPES
+    ):
         raise HTTPException(
             status_code=422,
             detail={
@@ -2660,10 +2995,10 @@ async def update_tenant_profile(
         )
 
     # Compute which fields actually changed so we only write and log real deltas.
-    old_name     = row.name
+    old_name = row.name
     old_org_type = str(row.organisation_type) if row.organisation_type else None
-    old_locale   = row.default_locale or "en"
-    old_tier     = str(row.plan_tier) if row.plan_tier else None
+    old_locale = row.default_locale or "en"
+    old_tier = str(row.plan_tier) if row.plan_tier else None
 
     changes: dict[str, tuple[str | None, str | None]] = {}
     if body.name is not None and body.name.strip() and body.name.strip() != old_name:
@@ -2716,7 +3051,11 @@ async def update_tenant_profile(
         new_tier = changes["plan_tier"][1]
         try:
             plan_change = await change_plan(
-                db, tenant_id, new_tier, effective="RENEWAL", recorded_by=str(user.user_id),
+                db,
+                tenant_id,
+                new_tier,
+                effective="RENEWAL",
+                recorded_by=str(user.user_id),
             )
         except ValueError as exc:
             code = str(exc)
@@ -2729,7 +3068,10 @@ async def update_tenant_profile(
         subscription_change = plan_change.get("subscription_change")
         proration_invoice = plan_change.get("proration_invoice")
         if plan_mode == "IMMEDIATE" and subscription_change is None:
-            logger.warning("update_tenant_profile: no live subscription for tenant %s — not created here", tenant_id)
+            logger.warning(
+                "update_tenant_profile: no live subscription for tenant %s — not created here",
+                tenant_id,
+            )
 
     # Log each changed field as its own activity row so the audit trail is granular.
     # plan_tier is skipped here when nothing was actually applied (SCHEDULED
@@ -2740,7 +3082,9 @@ async def update_tenant_profile(
             continue
         try:
             await _log_tenant_activity(
-                db, tenant_id, str(user.user_id),
+                db,
+                tenant_id,
+                str(user.user_id),
                 action=f"PROFILE_UPDATE_{field.upper()}",
                 old_value=old_val,
                 new_value=new_val,
@@ -2751,7 +3095,9 @@ async def update_tenant_profile(
     if subscription_change is not None:
         try:
             await _log_tenant_activity(
-                db, tenant_id, str(user.user_id),
+                db,
+                tenant_id,
+                str(user.user_id),
                 action="SUBSCRIPTION_TIER_CHANGE",
                 old_value=f"{subscription_change['old_tier']}/{subscription_change['old_amount']}",
                 new_value=f"{subscription_change['new_tier']}/{subscription_change['new_amount']}",
@@ -2762,7 +3108,9 @@ async def update_tenant_profile(
     if proration_invoice is not None:
         try:
             await _log_tenant_activity(
-                db, tenant_id, str(user.user_id),
+                db,
+                tenant_id,
+                str(user.user_id),
                 action="PRORATION_INVOICE_RAISED",
                 new_value=f"payment={proration_invoice['payment_id']} total={proration_invoice['total']}",
             )
@@ -2772,7 +3120,9 @@ async def update_tenant_profile(
     if plan_mode == "SCHEDULED":
         try:
             await _log_tenant_activity(
-                db, tenant_id, str(user.user_id),
+                db,
+                tenant_id,
+                str(user.user_id),
                 action="PLAN_DOWNGRADE_SCHEDULED",
                 old_value=changes["plan_tier"][0],
                 new_value=changes["plan_tier"][1],
@@ -2781,14 +3131,16 @@ async def update_tenant_profile(
             pass  # log failure must not roll back the update
 
     reported_fields = [
-        f for f in changes
-        if not (f == "plan_tier" and plan_mode in ("SCHEDULED", "UNCHANGED"))
+        f for f in changes if not (f == "plan_tier" and plan_mode in ("SCHEDULED", "UNCHANGED"))
     ]
-    return SuccessResponse(data={
-        "changes": len(reported_fields), "fields": reported_fields,
-        "proration_invoice": proration_invoice,
-        "mode": plan_mode,
-    })
+    return SuccessResponse(
+        data={
+            "changes": len(reported_fields),
+            "fields": reported_fields,
+            "proration_invoice": proration_invoice,
+            "mode": plan_mode,
+        }
+    )
 
 
 @router.get("/{tenant_id}", response_model=SuccessResponse[TenantResponse])
@@ -2799,10 +3151,9 @@ async def get_tenant(
     db: AsyncSession = Depends(get_db_session),
 ) -> SuccessResponse[TenantResponse]:
     from sqlalchemy import text
+
     resolved_id = await _resolve_and_authorize_tenant_id(tenant_id, user, db)
-    result = await db.execute(
-        text("SELECT * FROM tenants WHERE id = :id"), {"id": resolved_id}
-    )
+    result = await db.execute(text("SELECT * FROM tenants WHERE id = :id"), {"id": resolved_id})
     row = result.fetchone()
     if not row:
         raise HTTPException(status_code=404, detail="Tenant not found")
@@ -2821,13 +3172,16 @@ async def get_tenant(
             plan_tier=str(row.plan_tier) if getattr(row, "plan_tier", None) else None,
             max_warehouses=getattr(row, "max_warehouses", None),
             max_users=getattr(row, "max_users", None),
-            contract_start=str(row.contract_start) if getattr(row, "contract_start", None) else None,
-            contract_end=str(row.contract_end)   if getattr(row, "contract_end",   None) else None,
+            contract_start=str(row.contract_start)
+            if getattr(row, "contract_start", None)
+            else None,
+            contract_end=str(row.contract_end) if getattr(row, "contract_end", None) else None,
         )
     )
 
 
 # ── Branding PATCH ─────────────────────────────────────────────────────────────
+
 
 class BrandingUpdateRequest(BaseModel):
     logo_url: Optional[str] = None
@@ -2862,16 +3216,21 @@ async def update_tenant_branding(
             params,
         )
 
-    row = (await db.execute(
-        text("SELECT logo_url, banner_url FROM tenants WHERE id = :id"), {"id": resolved_id}
-    )).fetchone()
-    return SuccessResponse(data={
-        "logo_url": row.logo_url if row else None,
-        "banner_url": row.banner_url if row else None,
-    })
+    row = (
+        await db.execute(
+            text("SELECT logo_url, banner_url FROM tenants WHERE id = :id"), {"id": resolved_id}
+        )
+    ).fetchone()
+    return SuccessResponse(
+        data={
+            "logo_url": row.logo_url if row else None,
+            "banner_url": row.banner_url if row else None,
+        }
+    )
 
 
 # ── Approval rules schemas ─────────────────────────────────────────────────────
+
 
 class ApprovalRuleItem(BaseModel):
     transaction_type: str
@@ -2892,18 +3251,19 @@ class ApprovalRulesBody(BaseModel):
 async def _resolve_tenant_id(tenant_id: str, db: AsyncSession) -> Optional[str]:
     """Accept either a UUID or slug, return the UUID string or None if not found."""
     from sqlalchemy import text
+
     try:
         uuid.UUID(tenant_id)
         row = await db.execute(text("SELECT id FROM tenants WHERE id = :id"), {"id": tenant_id})
     except ValueError:
-        row = await db.execute(text("SELECT id FROM tenants WHERE slug = :slug"), {"slug": tenant_id})
+        row = await db.execute(
+            text("SELECT id FROM tenants WHERE slug = :slug"), {"slug": tenant_id}
+        )
     r = row.fetchone()
     return str(r.id) if r else None
 
 
-async def _resolve_and_authorize_tenant_id(
-    tenant_id: str, user, db: AsyncSession
-) -> str:
+async def _resolve_and_authorize_tenant_id(tenant_id: str, user, db: AsyncSession) -> str:
     """Resolve a UUID-or-slug path value to the real tenant id, then enforce the
     same cross-tenant-isolation contract as dependencies.get_db_session_for_tenant:
     SA may access any tenant; everyone else may only access their own.
@@ -2921,7 +3281,7 @@ async def _resolve_and_authorize_tenant_id(
             raise HTTPException(
                 status_code=403,
                 detail={
-                    "code":    "TENANT_ACCESS_DENIED",
+                    "code": "TENANT_ACCESS_DENIED",
                     "message": "You do not have access to this tenant",
                 },
             )
@@ -2936,6 +3296,7 @@ async def get_approval_rules(
     db: AsyncSession = Depends(get_db_session),
 ) -> SuccessResponse[List[ApprovalRuleItem]]:
     from sqlalchemy import text
+
     resolved_id = await _resolve_and_authorize_tenant_id(tenant_id, user, db)
     result = await db.execute(
         text("SELECT approval_thresholds FROM tenants WHERE id = :id"), {"id": resolved_id}
@@ -2967,6 +3328,7 @@ async def put_approval_rules(
     db: AsyncSession = Depends(get_db_session),
 ) -> SuccessResponse[List[ApprovalRuleItem]]:
     from sqlalchemy import text
+
     resolved_id = await _resolve_and_authorize_tenant_id(tenant_id, user, db)
     payload = {
         "simple_mode": body.simple_mode,
@@ -3010,10 +3372,12 @@ async def _log_tenant_activity(
     new_value: Optional[str] = None,
     note: Optional[str] = None,
 ) -> None:
-    actor_email_row = (await db.execute(
-        text("SELECT email FROM users WHERE id = :uid LIMIT 1"),
-        {"uid": actor_id},
-    )).fetchone()
+    actor_email_row = (
+        await db.execute(
+            text("SELECT email FROM users WHERE id = :uid LIMIT 1"),
+            {"uid": actor_id},
+        )
+    ).fetchone()
     actor_email = actor_email_row.email if actor_email_row else None
 
     await db.execute(
@@ -3023,13 +3387,13 @@ async def _log_tenant_activity(
             "VALUES (:tid, :aid, :aemail, :action, :old, :new, :note)"
         ),
         {
-            "tid":    str(tenant_id),
-            "aid":    actor_id,
+            "tid": str(tenant_id),
+            "aid": actor_id,
             "aemail": actor_email,
             "action": action,
-            "old":    old_value,
-            "new":    new_value,
-            "note":   note,
+            "old": old_value,
+            "new": new_value,
+            "note": note,
         },
     )
 
@@ -3058,14 +3422,21 @@ async def save_tenant_contacts_bulk(
     tid = str(tenant_id)
 
     # Verify tenant exists
-    if not (await db.execute(text("SELECT id FROM tenants WHERE id = :id"), {"id": tid})).fetchone():
-        raise HTTPException(status_code=404, detail={"code": "NOT_FOUND", "message": "Tenant not found"})
+    if not (
+        await db.execute(text("SELECT id FROM tenants WHERE id = :id"), {"id": tid})
+    ).fetchone():
+        raise HTTPException(
+            status_code=404, detail={"code": "NOT_FOUND", "message": "Tenant not found"}
+        )
 
     primary_count = sum(1 for c in body.contacts if c.is_primary)
     if body.contacts and primary_count != 1:
         raise HTTPException(
             status_code=422,
-            detail={"code": "INVALID_CONTACTS", "message": "Exactly one contact must be marked is_primary=true"},
+            detail={
+                "code": "INVALID_CONTACTS",
+                "message": "Exactly one contact must be marked is_primary=true",
+            },
         )
 
     # Update address on tenant
@@ -3078,13 +3449,13 @@ async def save_tenant_contacts_bulk(
                 "WHERE id=:tid"
             ),
             {
-                "a1":      body.address.address_line1,
-                "a2":      body.address.address_line2,
-                "city":    body.address.city,
-                "sp":      body.address.state_province,
-                "pc":      body.address.postal_code,
+                "a1": body.address.address_line1,
+                "a2": body.address.address_line2,
+                "city": body.address.city,
+                "sp": body.address.state_province,
+                "pc": body.address.postal_code,
                 "country": body.address.country,
-                "tid":     tid,
+                "tid": tid,
             },
         )
 
@@ -3104,13 +3475,13 @@ async def save_tenant_contacts_bulk(
                 "VALUES (:tid, :primary, :name, :title, :email, :phone, :mobile)"
             ),
             {
-                "tid":     tid,
+                "tid": tid,
                 "primary": contact.is_primary,
-                "name":    contact.full_name.strip(),
-                "title":   contact.position_title,
-                "email":   contact.email,
-                "phone":   contact.phone,
-                "mobile":  contact.mobile,
+                "name": contact.full_name.strip(),
+                "title": contact.position_title,
+                "email": contact.email,
+                "phone": contact.phone,
+                "mobile": contact.mobile,
             },
         )
 
@@ -3128,33 +3499,39 @@ async def list_tenant_contacts(
     if not user or user.role != "SA":
         raise HTTPException(status_code=403, detail={"code": "FORBIDDEN", "message": "SA only"})
 
-    rows = (await db.execute(
-        text(
-            "SELECT id, tenant_id, is_primary, full_name, position_title, "
-            "email, phone, mobile, created_at "
-            "FROM tenant_contacts WHERE tenant_id = :tid "
-            "ORDER BY is_primary DESC, created_at ASC"
-        ),
-        {"tid": str(tenant_id)},
-    )).fetchall()
-
-    return SuccessResponse(data=[
-        TenantContactOut(
-            id=row.id,
-            tenant_id=row.tenant_id,
-            is_primary=row.is_primary,
-            full_name=row.full_name,
-            position_title=row.position_title,
-            email=row.email,
-            phone=row.phone,
-            mobile=row.mobile,
-            created_at=row.created_at.isoformat(),
+    rows = (
+        await db.execute(
+            text(
+                "SELECT id, tenant_id, is_primary, full_name, position_title, "
+                "email, phone, mobile, created_at "
+                "FROM tenant_contacts WHERE tenant_id = :tid "
+                "ORDER BY is_primary DESC, created_at ASC"
+            ),
+            {"tid": str(tenant_id)},
         )
-        for row in rows
-    ])
+    ).fetchall()
+
+    return SuccessResponse(
+        data=[
+            TenantContactOut(
+                id=row.id,
+                tenant_id=row.tenant_id,
+                is_primary=row.is_primary,
+                full_name=row.full_name,
+                position_title=row.position_title,
+                email=row.email,
+                phone=row.phone,
+                mobile=row.mobile,
+                created_at=row.created_at.isoformat(),
+            )
+            for row in rows
+        ]
+    )
 
 
-@router.post("/{tenant_id}/contacts", status_code=201, response_model=SuccessResponse[TenantContactOut])
+@router.post(
+    "/{tenant_id}/contacts", status_code=201, response_model=SuccessResponse[TenantContactOut]
+)
 @require_permission(PERMISSIONS.TENANT_MANAGE)
 async def create_tenant_contact(
     tenant_id: uuid.UUID,
@@ -3168,7 +3545,9 @@ async def create_tenant_contact(
     result = await _create_tenant_contact(db, tenant_id, body)
     try:
         await _log_tenant_activity(
-            db, tenant_id, str(user.user_id),
+            db,
+            tenant_id,
+            str(user.user_id),
             action="CONTACT_CREATED",
             new_value=result.full_name,
         )
@@ -3177,7 +3556,9 @@ async def create_tenant_contact(
     return SuccessResponse(data=result)
 
 
-@router.patch("/{tenant_id}/contacts/{contact_id}", response_model=SuccessResponse[TenantContactOut])
+@router.patch(
+    "/{tenant_id}/contacts/{contact_id}", response_model=SuccessResponse[TenantContactOut]
+)
 @require_permission(PERMISSIONS.TENANT_MANAGE)
 async def update_tenant_contact(
     tenant_id: uuid.UUID,
@@ -3193,7 +3574,9 @@ async def update_tenant_contact(
     result = await _update_tenant_contact(db, tenant_id, contact_id, body)
     try:
         await _log_tenant_activity(
-            db, tenant_id, str(user.user_id),
+            db,
+            tenant_id,
+            str(user.user_id),
             action="CONTACT_UPDATED",
             new_value=result.full_name,
         )
@@ -3225,13 +3608,20 @@ async def update_tenant_contract(
     if not note:
         raise HTTPException(
             status_code=422,
-            detail={"code": "NOTE_REQUIRED", "message": "A note explaining the contract change is required."},
+            detail={
+                "code": "NOTE_REQUIRED",
+                "message": "A note explaining the contract change is required.",
+            },
         )
 
-    row = (await db.execute(
-        text("SELECT id, name, status, contract_start, contract_end FROM tenants WHERE id = :id"),
-        {"id": str(tenant_id)},
-    )).fetchone()
+    row = (
+        await db.execute(
+            text(
+                "SELECT id, name, status, contract_start, contract_end FROM tenants WHERE id = :id"
+            ),
+            {"id": str(tenant_id)},
+        )
+    ).fetchone()
     if not row:
         raise HTTPException(status_code=404, detail="Tenant not found")
 
@@ -3244,20 +3634,21 @@ async def update_tenant_contract(
         except ValueError:
             raise HTTPException(
                 status_code=422,
-                detail={"code": "INVALID_DATE", "message": f"'{s}' is not a valid ISO date (YYYY-MM-DD)."},
+                detail={
+                    "code": "INVALID_DATE",
+                    "message": f"'{s}' is not a valid ISO date (YYYY-MM-DD).",
+                },
             )
 
     new_start = _parse_date(body.contract_start)
-    new_end   = _parse_date(body.contract_end)
+    new_end = _parse_date(body.contract_end)
 
     old_start = str(row.contract_start) if row.contract_start else None
-    old_end   = str(row.contract_end)   if row.contract_end   else None
+    old_end = str(row.contract_end) if row.contract_end else None
 
     # Auto-reactivate if tenant was suspended because of expiry and new end is in the future
     should_reactivate = (
-        str(row.status) == "SUSPENDED"
-        and new_end is not None
-        and new_end >= _date.today()
+        str(row.status) == "SUSPENDED" and new_end is not None and new_end >= _date.today()
     )
 
     await db.execute(
@@ -3273,7 +3664,9 @@ async def update_tenant_contract(
 
     if should_reactivate:
         await db.execute(
-            text("UPDATE tenants SET status = 'ACTIVE', is_active = true, updated_at = now() WHERE id = :id"),
+            text(
+                "UPDATE tenants SET status = 'ACTIVE', is_active = true, updated_at = now() WHERE id = :id"
+            ),
             {"id": str(tenant_id)},
         )
 
@@ -3281,7 +3674,9 @@ async def update_tenant_contract(
         old_summary = f"start={old_start or 'none'} end={old_end or 'none'}"
         new_summary = f"start={new_start or 'none'} end={new_end or 'none'}"
         await _log_tenant_activity(
-            db, tenant_id, str(user.user_id),
+            db,
+            tenant_id,
+            str(user.user_id),
             action="CONTRACT_DATES_UPDATED",
             old_value=old_summary,
             new_value=new_summary,
@@ -3290,11 +3685,13 @@ async def update_tenant_contract(
     except Exception:
         pass
 
-    return SuccessResponse(data={
-        "contract_start":  new_start,
-        "contract_end":    new_end,
-        "reactivated":     should_reactivate,
-    })
+    return SuccessResponse(
+        data={
+            "contract_start": new_start,
+            "contract_end": new_end,
+            "reactivated": should_reactivate,
+        }
+    )
 
 
 @router.patch("/{tenant_id}/suspend", response_model=SuccessResponse[TenantStatusResponse])
@@ -3307,29 +3704,48 @@ async def suspend_tenant(
     """SA-only: temporarily suspend a tenant. All non-SA logins blocked immediately."""
     if not user or user.role != "SA":
         raise HTTPException(status_code=403, detail={"code": "FORBIDDEN", "message": "SA only"})
-    row = (await db.execute(
-        text("SELECT id, name, status FROM tenants WHERE id = :id"),
-        {"id": str(tenant_id)},
-    )).fetchone()
+    row = (
+        await db.execute(
+            text("SELECT id, name, status FROM tenants WHERE id = :id"),
+            {"id": str(tenant_id)},
+        )
+    ).fetchone()
     if not row:
         raise HTTPException(status_code=404, detail="Tenant not found")
     if row.status == "SUSPENDED":
-        raise HTTPException(status_code=422, detail={"code": "ALREADY_SUSPENDED", "message": "Tenant is already suspended"})
+        raise HTTPException(
+            status_code=422,
+            detail={"code": "ALREADY_SUSPENDED", "message": "Tenant is already suspended"},
+        )
     if row.status == "DEACTIVATED":
-        raise HTTPException(status_code=422, detail={"code": "TENANT_DEACTIVATED", "message": "Cannot suspend a deactivated tenant. Reactivate first."})
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "code": "TENANT_DEACTIVATED",
+                "message": "Cannot suspend a deactivated tenant. Reactivate first.",
+            },
+        )
     await db.execute(
-        text("UPDATE tenants SET status = 'SUSPENDED', is_active = false, updated_at = now() WHERE id = :id"),
+        text(
+            "UPDATE tenants SET status = 'SUSPENDED', is_active = false, updated_at = now() WHERE id = :id"
+        ),
         {"id": str(tenant_id)},
     )
     await revoke_tenant_tokens(str(tenant_id))
     try:
         await _log_tenant_activity(
-            db, tenant_id, str(user.user_id),
-            action="SUSPEND", old_value=row.status, new_value="SUSPENDED",
+            db,
+            tenant_id,
+            str(user.user_id),
+            action="SUSPEND",
+            old_value=row.status,
+            new_value="SUSPENDED",
         )
     except Exception:
         pass  # log write failure must never roll back the status change
-    return SuccessResponse(data=TenantStatusResponse(id=tenant_id, name=row.name, status="SUSPENDED"))
+    return SuccessResponse(
+        data=TenantStatusResponse(id=tenant_id, name=row.name, status="SUSPENDED")
+    )
 
 
 @router.patch("/{tenant_id}/reactivate", response_model=SuccessResponse[TenantStatusResponse])
@@ -3342,22 +3758,33 @@ async def reactivate_tenant(
     """SA-only: restore a suspended or deactivated tenant to ACTIVE."""
     if not user or user.role != "SA":
         raise HTTPException(status_code=403, detail={"code": "FORBIDDEN", "message": "SA only"})
-    row = (await db.execute(
-        text("SELECT id, name, status FROM tenants WHERE id = :id"),
-        {"id": str(tenant_id)},
-    )).fetchone()
+    row = (
+        await db.execute(
+            text("SELECT id, name, status FROM tenants WHERE id = :id"),
+            {"id": str(tenant_id)},
+        )
+    ).fetchone()
     if not row:
         raise HTTPException(status_code=404, detail="Tenant not found")
     if row.status == "ACTIVE":
-        raise HTTPException(status_code=422, detail={"code": "ALREADY_ACTIVE", "message": "Tenant is already active"})
+        raise HTTPException(
+            status_code=422,
+            detail={"code": "ALREADY_ACTIVE", "message": "Tenant is already active"},
+        )
     await db.execute(
-        text("UPDATE tenants SET status = 'ACTIVE', is_active = true, updated_at = now() WHERE id = :id"),
+        text(
+            "UPDATE tenants SET status = 'ACTIVE', is_active = true, updated_at = now() WHERE id = :id"
+        ),
         {"id": str(tenant_id)},
     )
     try:
         await _log_tenant_activity(
-            db, tenant_id, str(user.user_id),
-            action="REACTIVATE", old_value=row.status, new_value="ACTIVE",
+            db,
+            tenant_id,
+            str(user.user_id),
+            action="REACTIVATE",
+            old_value=row.status,
+            new_value="ACTIVE",
         )
     except Exception:
         pass  # log write failure must never roll back the status change
@@ -3374,30 +3801,44 @@ async def deactivate_tenant(
     """SA-only: permanently deactivate a tenant (soft delete). Data preserved."""
     if not user or user.role != "SA":
         raise HTTPException(status_code=403, detail={"code": "FORBIDDEN", "message": "SA only"})
-    row = (await db.execute(
-        text("SELECT id, name, status FROM tenants WHERE id = :id"),
-        {"id": str(tenant_id)},
-    )).fetchone()
+    row = (
+        await db.execute(
+            text("SELECT id, name, status FROM tenants WHERE id = :id"),
+            {"id": str(tenant_id)},
+        )
+    ).fetchone()
     if not row:
         raise HTTPException(status_code=404, detail="Tenant not found")
     if row.status == "DEACTIVATED":
-        raise HTTPException(status_code=422, detail={"code": "ALREADY_DEACTIVATED", "message": "Tenant is already deactivated"})
+        raise HTTPException(
+            status_code=422,
+            detail={"code": "ALREADY_DEACTIVATED", "message": "Tenant is already deactivated"},
+        )
     await db.execute(
-        text("UPDATE tenants SET status = 'DEACTIVATED', is_active = false, updated_at = now() WHERE id = :id"),
+        text(
+            "UPDATE tenants SET status = 'DEACTIVATED', is_active = false, updated_at = now() WHERE id = :id"
+        ),
         {"id": str(tenant_id)},
     )
     await revoke_tenant_tokens(str(tenant_id))
     try:
         await _log_tenant_activity(
-            db, tenant_id, str(user.user_id),
-            action="DEACTIVATE", old_value=row.status, new_value="DEACTIVATED",
+            db,
+            tenant_id,
+            str(user.user_id),
+            action="DEACTIVATE",
+            old_value=row.status,
+            new_value="DEACTIVATED",
         )
     except Exception:
         pass  # log write failure must never roll back the status change
-    return SuccessResponse(data=TenantStatusResponse(id=tenant_id, name=row.name, status="DEACTIVATED"))
+    return SuccessResponse(
+        data=TenantStatusResponse(id=tenant_id, name=row.name, status="DEACTIVATED")
+    )
 
 
 # ── TA Admin User ────────────────────────────────────────────────────────────
+
 
 class TaUserOut(BaseModel):
     id: str
@@ -3420,14 +3861,16 @@ async def get_tenant_admin_user(
     """SA-only: return the primary TA user for a tenant."""
     if not user or user.role != "SA":
         raise HTTPException(status_code=403, detail={"code": "FORBIDDEN", "message": "SA only"})
-    row = (await db.execute(
-        text(
-            "SELECT id, full_name, email FROM users "
-            "WHERE tenant_id = :tid AND system_role = 'TA' AND is_active = true "
-            "ORDER BY created_at ASC LIMIT 1"
-        ),
-        {"tid": str(tenant_id)},
-    )).fetchone()
+    row = (
+        await db.execute(
+            text(
+                "SELECT id, full_name, email FROM users "
+                "WHERE tenant_id = :tid AND system_role = 'TA' AND is_active = true "
+                "ORDER BY created_at ASC LIMIT 1"
+            ),
+            {"tid": str(tenant_id)},
+        )
+    ).fetchone()
     if not row:
         raise HTTPException(status_code=404, detail="No active TA user found for this tenant")
     return SuccessResponse(data=TaUserOut(id=str(row.id), full_name=row.full_name, email=row.email))
@@ -3445,14 +3888,16 @@ async def update_tenant_admin_user(
     if not user or user.role != "SA":
         raise HTTPException(status_code=403, detail={"code": "FORBIDDEN", "message": "SA only"})
 
-    row = (await db.execute(
-        text(
-            "SELECT id, full_name, email FROM users "
-            "WHERE tenant_id = :tid AND system_role = 'TA' AND is_active = true "
-            "ORDER BY created_at ASC LIMIT 1"
-        ),
-        {"tid": str(tenant_id)},
-    )).fetchone()
+    row = (
+        await db.execute(
+            text(
+                "SELECT id, full_name, email FROM users "
+                "WHERE tenant_id = :tid AND system_role = 'TA' AND is_active = true "
+                "ORDER BY created_at ASC LIMIT 1"
+            ),
+            {"tid": str(tenant_id)},
+        )
+    ).fetchone()
     if not row:
         raise HTTPException(status_code=404, detail="No active TA user found for this tenant")
 
@@ -3471,10 +3916,12 @@ async def update_tenant_admin_user(
             # Email is globally unique (uq_users_email_lower) — check across
             # ALL tenants, excluding this user's own row. Never reveal which
             # tenant already owns the email.
-            existing = (await db.execute(
-                text("SELECT id FROM users WHERE lower(email) = :email AND id != :uid"),
-                {"email": normalized_email, "uid": str(row.id)},
-            )).fetchone()
+            existing = (
+                await db.execute(
+                    text("SELECT id FROM users WHERE lower(email) = :email AND id != :uid"),
+                    {"email": normalized_email, "uid": str(row.id)},
+                )
+            ).fetchone()
             if existing:
                 raise _duplicate_email_http_exception()
             set_parts.append("email = :email")
@@ -3496,7 +3943,9 @@ async def update_tenant_admin_user(
     for field, (old_val, new_val) in changes.items():
         try:
             await _log_tenant_activity(
-                db, tenant_id, str(user.user_id),
+                db,
+                tenant_id,
+                str(user.user_id),
                 action=f"PROFILE_UPDATE_{field.upper()}",
                 old_value=old_val,
                 new_value=new_val,
@@ -3507,6 +3956,7 @@ async def update_tenant_admin_user(
 
 
 # ── Feature Flags ────────────────────────────────────────────────────────────
+
 
 class FeatureFlagsUpdateRequest(BaseModel):
     feature_flags: dict  # e.g. {"LOGISTICS": true, "AI_ANALYTICS": false}
@@ -3529,7 +3979,7 @@ async def update_feature_flags(
         detail={
             "code": "USE_ADDONS",
             "message": "Direct feature-flag overrides are no longer supported. "
-                       "Grant a free override or purchased add-on via POST "
-                       "/{tenant_id}/addons instead.",
+            "Grant a free override or purchased add-on via POST "
+            "/{tenant_id}/addons instead.",
         },
     )

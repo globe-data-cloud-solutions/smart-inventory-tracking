@@ -17,6 +17,7 @@ Error body shape:
     "upgrade_to": "<GROWTH|ENTERPRISE>",   # next tier up, or null
   }
 """
+
 from __future__ import annotations
 
 from typing import Any, Optional
@@ -33,17 +34,17 @@ from shared.plans.usage import count_active_warehouses, count_billable_users
 # Actions not listed here are not feature-gated (always allowed if RBAC passes).
 
 ACTION_FLAG_MAP: dict[str, str] = {
-    "transfer:sister":          "TRANSFERS_SISTER",   # kept for the explicit call in transfer.py
-    "tenant:upload_branding":   "CUSTOM_BRANDING",
-    "logistics:":               "LOGISTICS",
-    "audit:export":             "AUDIT_EXPORT",
-    "ai:":                      "AI_ANALYTICS",
+    "transfer:sister": "TRANSFERS_SISTER",  # kept for the explicit call in transfer.py
+    "tenant:upload_branding": "CUSTOM_BRANDING",
+    "logistics:": "LOGISTICS",
+    "audit:export": "AUDIT_EXPORT",
+    "ai:": "AI_ANALYTICS",
 }
 
 # ── Upgrade path ──────────────────────────────────────────────────────────────
 _UPGRADE_TO: dict[str, Optional[str]] = {
-    "STARTER":    "GROWTH",
-    "GROWTH":     "ENTERPRISE",
+    "STARTER": "GROWTH",
+    "GROWTH": "ENTERPRISE",
     "ENTERPRISE": None,
 }
 
@@ -56,9 +57,7 @@ def _required_flag(action: str) -> Optional[str]:
     return None
 
 
-async def _get_tenant_plan(
-    db: AsyncSession, tenant_id: str
-) -> dict[str, Any]:
+async def _get_tenant_plan(db: AsyncSession, tenant_id: str) -> dict[str, Any]:
     """Thin wrapper kept so callers don't change — delegates to
     shared.plans.catalog.get_tenant_entitlements(), the single source of a
     tenant's effective plan_tier, feature_flags, sku_cap, max_warehouses,
@@ -95,9 +94,9 @@ async def check_plan(
     if not plan:
         return  # tenant not found — let RBAC handle 404
 
-    plan_tier     = plan["plan_tier"]
+    plan_tier = plan["plan_tier"]
     feature_flags = plan["feature_flags"]
-    upgrade_to    = _UPGRADE_TO.get(plan_tier)
+    upgrade_to = _UPGRADE_TO.get(plan_tier)
 
     # ── Feature flag check ────────────────────────────────────────────────────
     # feature_flags.get(required_flag, False) denies by default: a flag that is
@@ -113,11 +112,11 @@ async def check_plan(
             raise HTTPException(
                 status_code=402,
                 detail={
-                    "code":       "FEATURE_NOT_IN_PLAN",
-                    "feature":    required_flag,
-                    "plan_tier":  plan_tier,
+                    "code": "FEATURE_NOT_IN_PLAN",
+                    "feature": required_flag,
+                    "plan_tier": plan_tier,
                     "upgrade_to": upgrade_to,
-                    "message":    (
+                    "message": (
                         f"'{required_flag}' is not available on your current plan "
                         f"({plan_tier}). Upgrade to {upgrade_to or 'a higher tier'} "
                         f"to unlock this feature."
@@ -162,10 +161,10 @@ async def check_plan_create_warehouse(
         raise HTTPException(
             status_code=402,
             detail={
-                "code":      "PLAN_LIMIT_REACHED",
-                "resource":  "warehouses",
-                "current":   int(current),
-                "limit":     plan["max_warehouses"],
+                "code": "PLAN_LIMIT_REACHED",
+                "resource": "warehouses",
+                "current": int(current),
+                "limit": plan["max_warehouses"],
                 "plan_tier": plan["plan_tier"],
                 "upgrade_to": _UPGRADE_TO.get(plan["plan_tier"]),
                 "message": (
@@ -213,10 +212,10 @@ async def check_plan_create_user(
         raise HTTPException(
             status_code=402,
             detail={
-                "code":      "PLAN_LIMIT_REACHED",
-                "resource":  "users",
-                "current":   int(current),
-                "limit":     plan["max_users"],
+                "code": "PLAN_LIMIT_REACHED",
+                "resource": "users",
+                "current": int(current),
+                "limit": plan["max_users"],
                 "plan_tier": plan["plan_tier"],
                 "upgrade_to": _UPGRADE_TO.get(plan["plan_tier"]),
                 "message": (

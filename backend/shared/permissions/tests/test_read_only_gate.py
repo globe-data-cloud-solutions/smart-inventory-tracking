@@ -1,5 +1,6 @@
 """Unit tests for shared.permissions.read_only (classification) and the
 READ_ONLY gate wired into require_permission()."""
+
 from __future__ import annotations
 
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -58,6 +59,7 @@ def test_route_exempt_overrides_force_write() -> None:
 
 # ── require_permission() decorator wiring ───────────────────────────────────
 
+
 def _user(role: str = "WM", tenant_id: str | None = "tenant-1") -> MagicMock:
     u = MagicMock()
     u.role, u.tenant_id = role, tenant_id
@@ -86,7 +88,9 @@ async def test_write_action_blocked_when_read_only(mock_check) -> None:
         new_callable=AsyncMock,
     ) as mock_stage:
         mock_stage.return_value = {
-            "stage": "READ_ONLY", "contract_end": None, "read_only_since": None,
+            "stage": "READ_ONLY",
+            "contract_end": None,
+            "read_only_since": None,
         }
         with pytest.raises(HTTPException) as exc_info:
             await _call_decorated(PERMISSIONS.INVENTORY_RECEIVE, user=_user(), db=db)
@@ -104,7 +108,9 @@ async def test_read_action_allowed_when_read_only(mock_check) -> None:
         new_callable=AsyncMock,
     ) as mock_stage:
         mock_stage.return_value = {
-            "stage": "READ_ONLY", "contract_end": None, "read_only_since": None,
+            "stage": "READ_ONLY",
+            "contract_end": None,
+            "read_only_since": None,
         }
         result = await _call_decorated(PERMISSIONS.INVENTORY_VIEW, user=_user(), db=db)
     assert result == "ok"
@@ -119,10 +125,15 @@ async def test_exempt_write_action_allowed_when_read_only(mock_check) -> None:
         new_callable=AsyncMock,
     ) as mock_stage:
         mock_stage.return_value = {
-            "stage": "READ_ONLY", "contract_end": None, "read_only_since": None,
+            "stage": "READ_ONLY",
+            "contract_end": None,
+            "read_only_since": None,
         }
         result = await _call_decorated(
-            PERMISSIONS.INVENTORY_RECEIVE, user=_user(), db=db, read_only_exempt=True,
+            PERMISSIONS.INVENTORY_RECEIVE,
+            user=_user(),
+            db=db,
+            read_only_exempt=True,
         )
     assert result == "ok"
     mock_stage.assert_not_called()
@@ -137,7 +148,9 @@ async def test_notification_dismiss_allowed_when_read_only(mock_check) -> None:
         new_callable=AsyncMock,
     ) as mock_stage:
         mock_stage.return_value = {
-            "stage": "READ_ONLY", "contract_end": None, "read_only_since": None,
+            "stage": "READ_ONLY",
+            "contract_end": None,
+            "read_only_since": None,
         }
         result = await _call_decorated(PERMISSIONS.NOTIFICATION_DISMISS, user=_user(), db=db)
     assert result == "ok"
@@ -154,7 +167,9 @@ async def test_reset_password_allowed_when_read_only(mock_check) -> None:
         new_callable=AsyncMock,
     ) as mock_stage:
         mock_stage.return_value = {
-            "stage": "READ_ONLY", "contract_end": None, "read_only_since": None,
+            "stage": "READ_ONLY",
+            "contract_end": None,
+            "read_only_since": None,
         }
         result = await _call_decorated(PERMISSIONS.USER_RESET_PASSWORD, user=_user(), db=db)
     assert result == "ok"
@@ -170,7 +185,9 @@ async def test_deactivate_user_allowed_when_read_only(mock_check) -> None:
         new_callable=AsyncMock,
     ) as mock_stage:
         mock_stage.return_value = {
-            "stage": "READ_ONLY", "contract_end": None, "read_only_since": None,
+            "stage": "READ_ONLY",
+            "contract_end": None,
+            "read_only_since": None,
         }
         result = await _call_decorated(PERMISSIONS.USER_DEACTIVATE, user=_user(), db=db)
     assert result == "ok"
@@ -186,7 +203,9 @@ async def test_create_user_still_blocked_when_read_only(mock_check) -> None:
         new_callable=AsyncMock,
     ) as mock_stage:
         mock_stage.return_value = {
-            "stage": "READ_ONLY", "contract_end": None, "read_only_since": None,
+            "stage": "READ_ONLY",
+            "contract_end": None,
+            "read_only_since": None,
         }
         with pytest.raises(HTTPException) as exc_info:
             await _call_decorated(PERMISSIONS.USER_CREATE, user=_user(), db=db)
@@ -203,7 +222,9 @@ async def test_sa_bypasses_gate_entirely(mock_check) -> None:
         new_callable=AsyncMock,
     ) as mock_stage:
         result = await _call_decorated(
-            PERMISSIONS.INVENTORY_RECEIVE, user=_user(role="SA", tenant_id=None), db=db,
+            PERMISSIONS.INVENTORY_RECEIVE,
+            user=_user(role="SA", tenant_id=None),
+            db=db,
         )
     assert result == "ok"
     mock_stage.assert_not_called()
@@ -219,7 +240,9 @@ async def test_write_allowed_outside_read_only(mock_check, stage) -> None:
         new_callable=AsyncMock,
     ) as mock_stage:
         mock_stage.return_value = {
-            "stage": stage, "contract_end": None, "read_only_since": None,
+            "stage": stage,
+            "contract_end": None,
+            "read_only_since": None,
         }
         result = await _call_decorated(PERMISSIONS.INVENTORY_RECEIVE, user=_user(), db=db)
     assert result == "ok"
@@ -236,6 +259,7 @@ async def test_no_db_raises_500_for_gated_write(mock_check) -> None:
 
 # ── read_only_force_write ────────────────────────────────────────────────────
 
+
 @patch("shared.permissions.middleware.check_permission", new_callable=AsyncMock)
 async def test_force_write_blocks_a_nominally_read_action_when_read_only(mock_check) -> None:
     mock_check.return_value = _allowed_result()
@@ -250,7 +274,9 @@ async def test_force_write_blocks_a_nominally_read_action_when_read_only(mock_ch
         new_callable=AsyncMock,
     ) as mock_stage:
         mock_stage.return_value = {
-            "stage": "READ_ONLY", "contract_end": None, "read_only_since": None,
+            "stage": "READ_ONLY",
+            "contract_end": None,
+            "read_only_since": None,
         }
         with pytest.raises(HTTPException) as exc_info:
             await handler(user=_user(), db=db)

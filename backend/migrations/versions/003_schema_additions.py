@@ -5,6 +5,7 @@ Revision ID: 003
 Revises: 002
 Create Date: 2026-05-09
 """
+
 from __future__ import annotations
 
 from alembic import op
@@ -25,7 +26,9 @@ def upgrade() -> None:
         "warehouses",
         sa.Column(
             "warehouse_type",
-            sa.Enum("FACTORY", "REGIONAL", "RETAIL", "SUBCENTER", name="warehouse_type"),
+            sa.Enum(
+                "FACTORY", "REGIONAL", "RETAIL", "SUBCENTER", name="warehouse_type"
+            ),
             nullable=True,
         ),
     )

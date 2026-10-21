@@ -8,6 +8,7 @@ Revision ID: 013
 Revises: 012
 Create Date: 2026-05-26
 """
+
 from __future__ import annotations
 
 from alembic import op
@@ -26,24 +27,47 @@ def upgrade() -> None:
     # users.warehouse_id maps to organization_node.id via the JWT claim.
     op.create_table(
         "organization_node",
-        sa.Column("id", postgresql.UUID(as_uuid=True), primary_key=True,
-                  server_default=sa.text("gen_random_uuid()")),
-        sa.Column("tenant_id", postgresql.UUID(as_uuid=True),
-                  sa.ForeignKey("tenants.id"), nullable=False),
+        sa.Column(
+            "id",
+            postgresql.UUID(as_uuid=True),
+            primary_key=True,
+            server_default=sa.text("gen_random_uuid()"),
+        ),
+        sa.Column(
+            "tenant_id",
+            postgresql.UUID(as_uuid=True),
+            sa.ForeignKey("tenants.id"),
+            nullable=False,
+        ),
         sa.Column("name", sa.String(255), nullable=False),
         sa.Column("code", sa.String(50), nullable=False),
         sa.Column("hierarchy_level", sa.Integer, nullable=False),
-        sa.Column("parent_node_id", postgresql.UUID(as_uuid=True),
-                  sa.ForeignKey("organization_node.id"), nullable=True),
-        sa.Column("is_stock_holding", sa.Boolean, nullable=False, server_default="true"),
+        sa.Column(
+            "parent_node_id",
+            postgresql.UUID(as_uuid=True),
+            sa.ForeignKey("organization_node.id"),
+            nullable=True,
+        ),
+        sa.Column(
+            "is_stock_holding", sa.Boolean, nullable=False, server_default="true"
+        ),
         sa.Column("is_active", sa.Boolean, nullable=False, server_default="true"),
-        sa.Column("created_at", sa.TIMESTAMP(timezone=True),
-                  nullable=False, server_default=sa.text("now()")),
-        sa.Column("updated_at", sa.TIMESTAMP(timezone=True),
-                  nullable=False, server_default=sa.text("now()")),
+        sa.Column(
+            "created_at",
+            sa.TIMESTAMP(timezone=True),
+            nullable=False,
+            server_default=sa.text("now()"),
+        ),
+        sa.Column(
+            "updated_at",
+            sa.TIMESTAMP(timezone=True),
+            nullable=False,
+            server_default=sa.text("now()"),
+        ),
     )
-    op.create_index("idx_org_node_tenant", "organization_node",
-                    ["tenant_id", "hierarchy_level"])
+    op.create_index(
+        "idx_org_node_tenant", "organization_node", ["tenant_id", "hierarchy_level"]
+    )
     op.execute("ALTER TABLE organization_node ENABLE ROW LEVEL SECURITY")
     op.execute(
         "CREATE POLICY tenant_isolation ON organization_node "
@@ -55,26 +79,58 @@ def upgrade() -> None:
     # A facility can report to one parent but receive stock from multiple sources.
     op.create_table(
         "org_node_hierarchy",
-        sa.Column("id", postgresql.UUID(as_uuid=True), primary_key=True,
-                  server_default=sa.text("gen_random_uuid()")),
-        sa.Column("tenant_id", postgresql.UUID(as_uuid=True),
-                  sa.ForeignKey("tenants.id"), nullable=False),
-        sa.Column("from_node_id", postgresql.UUID(as_uuid=True),
-                  sa.ForeignKey("organization_node.id"), nullable=False),
-        sa.Column("to_node_id", postgresql.UUID(as_uuid=True),
-                  sa.ForeignKey("organization_node.id"), nullable=False),
-        sa.Column("relationship_type",
-                  sa.Enum("PRIMARY_REPORTS_TO", "SUPPLY_FROM", "DISTRIBUTE_TO",
-                          name="node_relationship"),
-                  nullable=False),
+        sa.Column(
+            "id",
+            postgresql.UUID(as_uuid=True),
+            primary_key=True,
+            server_default=sa.text("gen_random_uuid()"),
+        ),
+        sa.Column(
+            "tenant_id",
+            postgresql.UUID(as_uuid=True),
+            sa.ForeignKey("tenants.id"),
+            nullable=False,
+        ),
+        sa.Column(
+            "from_node_id",
+            postgresql.UUID(as_uuid=True),
+            sa.ForeignKey("organization_node.id"),
+            nullable=False,
+        ),
+        sa.Column(
+            "to_node_id",
+            postgresql.UUID(as_uuid=True),
+            sa.ForeignKey("organization_node.id"),
+            nullable=False,
+        ),
+        sa.Column(
+            "relationship_type",
+            sa.Enum(
+                "PRIMARY_REPORTS_TO",
+                "SUPPLY_FROM",
+                "DISTRIBUTE_TO",
+                name="node_relationship",
+            ),
+            nullable=False,
+        ),
         sa.Column("is_preferred", sa.Boolean, nullable=False, server_default="false"),
-        sa.Column("created_at", sa.TIMESTAMP(timezone=True),
-                  nullable=False, server_default=sa.text("now()")),
+        sa.Column(
+            "created_at",
+            sa.TIMESTAMP(timezone=True),
+            nullable=False,
+            server_default=sa.text("now()"),
+        ),
     )
-    op.create_index("idx_org_hier_from", "org_node_hierarchy",
-                    ["tenant_id", "from_node_id", "relationship_type"])
-    op.create_index("idx_org_hier_to", "org_node_hierarchy",
-                    ["tenant_id", "to_node_id", "relationship_type"])
+    op.create_index(
+        "idx_org_hier_from",
+        "org_node_hierarchy",
+        ["tenant_id", "from_node_id", "relationship_type"],
+    )
+    op.create_index(
+        "idx_org_hier_to",
+        "org_node_hierarchy",
+        ["tenant_id", "to_node_id", "relationship_type"],
+    )
     op.execute("ALTER TABLE org_node_hierarchy ENABLE ROW LEVEL SECURITY")
     op.execute(
         "CREATE POLICY tenant_isolation ON org_node_hierarchy "

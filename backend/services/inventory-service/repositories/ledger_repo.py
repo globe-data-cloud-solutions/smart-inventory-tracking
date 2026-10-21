@@ -14,6 +14,7 @@ Enforcement (CLAUDE.md §14, Business Rules #2, #26):
   code review/CI, not a database-level guard (unlike audit_logs, which does
   have an append-only RULE — see schema.md).
 """
+
 from __future__ import annotations
 
 import uuid
@@ -169,9 +170,7 @@ async def record_transaction(
         ) from exc
 
     # Step 2 — pessimistic lock + read balance_before
-    balance_before = await _get_balance(
-        session, tenant_id, product_id, warehouse_id, lock=True
-    )
+    balance_before = await _get_balance(session, tenant_id, product_id, warehouse_id, lock=True)
 
     # Step 2b — lot guard: batch-tracked products must carry a lot_id for any
     # type that isn't balance-neutral (RESERVE/RELEASE/TRANSIT_* stay allowed
@@ -266,37 +265,36 @@ async def record_transaction(
             "        :ikey, :ref, :source, :uid, :lot_id, :lot_number, :expiry_date, :unit_cost)"
         ),
         {
-            "id":   tx_id,
-            "td":   date.today(),
-            "tid":  tenant_id,
+            "id": tx_id,
+            "td": date.today(),
+            "tid": tenant_id,
             "type": transaction_type,
-            "pid":  product_id,
-            "wid":  warehouse_id,
-            "qty":  str(quantity),
+            "pid": product_id,
+            "wid": warehouse_id,
+            "qty": str(quantity),
             "ikey": idempotency_key,
-            "ref":  reference_id,
+            "ref": reference_id,
             "source": source,
-            "uid":  performed_by,
-            "lot_id":      lot_id,
-            "lot_number":  lot_number,
+            "uid": performed_by,
+            "lot_id": lot_id,
+            "lot_number": lot_number,
             "expiry_date": expiry_date,
-            "unit_cost":   str(unit_cost) if unit_cost is not None else None,
+            "unit_cost": str(unit_cost) if unit_cost is not None else None,
         },
     )
 
     # Step 5 — update running balance (skip for audit-only types that must not
     # affect on_hand, and for lot-only types whose product total is seeded
     # separately)
-    if (
-        transaction_type not in _BALANCE_NEUTRAL_TYPES
-        and transaction_type not in _LOT_ONLY_TYPES
-    ):
+    if transaction_type not in _BALANCE_NEUTRAL_TYPES and transaction_type not in _LOT_ONLY_TYPES:
         await _update_running_balance(session, tenant_id, product_id, warehouse_id, quantity)
 
         # Step 5b — update lot balance (skip for neutral types; they write the
         # lot columns on the ledger row above but never touch lot_balances)
         if lot_id is not None:
-            await _update_lot_balance(session, tenant_id, lot_id, product_id, warehouse_id, quantity)
+            await _update_lot_balance(
+                session, tenant_id, lot_id, product_id, warehouse_id, quantity
+            )
     elif transaction_type in _LOT_ONLY_TYPES:
         # Lot-only types always carry a lot_id (enforced in Step 2b) and only
         # ever touch lot_balances — the product total is unaffected.
@@ -321,29 +319,35 @@ async def record_transaction(
 # Audit-trail types that write an immutable ledger row but must NOT touch
 # inventory_balances.  TRANSFER_REVERSAL is NOT here — it restores on_hand
 # when a transfer is cancelled after APPROVED (replacing the old RETURN type).
-_BALANCE_NEUTRAL_TYPES: frozenset[str] = frozenset({
-    "RESERVE",       # soft-lock at PENDING_REVIEW: on_hand unchanged
-    "RELEASE",       # release soft-lock on cancel: on_hand unchanged
-    "TRANSIT_OUT",   # dispatch audit at ISSUED: on_hand already deducted at APPROVED
-    "TRANSIT_IN",    # inbound audit at IN_TRANSIT: stock not received yet
-    "TRANSIT_CLEAR", # clear-transit audit at RECEIVED: TRANSFER_IN handles credit
-})
+_BALANCE_NEUTRAL_TYPES: frozenset[str] = frozenset(
+    {
+        "RESERVE",  # soft-lock at PENDING_REVIEW: on_hand unchanged
+        "RELEASE",  # release soft-lock on cancel: on_hand unchanged
+        "TRANSIT_OUT",  # dispatch audit at ISSUED: on_hand already deducted at APPROVED
+        "TRANSIT_IN",  # inbound audit at IN_TRANSIT: stock not received yet
+        "TRANSIT_CLEAR",  # clear-transit audit at RECEIVED: TRANSFER_IN handles credit
+    }
+)
 
 # Lot-only types: always require a lot_id, write the ledger row and update
 # lot_balances, but never touch inventory_balances — the product total is
 # seeded separately (RECEIVE/ADJUSTMENT/opening import).
-_LOT_ONLY_TYPES: frozenset[str] = frozenset({
-    "LOT_OPENING",   # captures a lot's opening quantity; product total unchanged
-})
+_LOT_ONLY_TYPES: frozenset[str] = frozenset(
+    {
+        "LOT_OPENING",  # captures a lot's opening quantity; product total unchanged
+    }
+)
 
-_TRANSFER_LEDGER_TYPES: frozenset[str] = frozenset({
-    "RESERVE",
-    "RELEASE",
-    "TRANSIT_OUT",
-    "TRANSIT_IN",
-    "TRANSIT_CLEAR",
-    "TRANSFER_REVERSAL",
-})
+_TRANSFER_LEDGER_TYPES: frozenset[str] = frozenset(
+    {
+        "RESERVE",
+        "RELEASE",
+        "TRANSIT_OUT",
+        "TRANSIT_IN",
+        "TRANSIT_CLEAR",
+        "TRANSFER_REVERSAL",
+    }
+)
 
 
 async def write_transfer_ledger_entry(

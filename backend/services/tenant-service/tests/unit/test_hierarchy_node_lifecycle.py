@@ -16,20 +16,19 @@ Fix mirrors the auth-service pattern: temporarily insert tenant-service root at
 position 0, flush stale routers.* entries, then restore sys.path after loading.
 Inline imports inside test methods re-resolve after each per-test flush in conftest.
 """
+
 from __future__ import annotations
 
 import os
 import sys
 
-os.environ.setdefault("DATABASE_URL",      "postgresql+asyncpg://test:x@localhost/test")
+os.environ.setdefault("DATABASE_URL", "postgresql+asyncpg://test:x@localhost/test")
 os.environ.setdefault("DATABASE_READ_URL", "postgresql+asyncpg://test:x@localhost/test")
-os.environ.setdefault("JWT_SECRET",        "test-secret")
-os.environ.setdefault("JWT_SECRET_KEY",    "test-secret")
+os.environ.setdefault("JWT_SECRET", "test-secret")
+os.environ.setdefault("JWT_SECRET_KEY", "test-secret")
 
 # ── Scoped sys.path: guarantee tenant-service routers win the lookup ──────────
-_TENANT_ROOT = os.path.normpath(
-    os.path.join(os.path.dirname(__file__), "..", "..")
-)
+_TENANT_ROOT = os.path.normpath(os.path.join(os.path.dirname(__file__), "..", ".."))
 _was_on_path = _TENANT_ROOT in sys.path
 if not _was_on_path:
     sys.path.insert(0, _TENANT_ROOT)
@@ -46,8 +45,8 @@ from fastapi import HTTPException  # noqa: E402 - sys.path/env setup above must 
 from sqlalchemy.exc import IntegrityError  # noqa: E402 - sys.path/env setup above must run first
 
 TENANT_ID = "aaaaaaaa-0000-0000-0000-000000000001"
-NODE_ID   = "bbbbbbbb-0000-0000-0000-000000000001"
-LEVEL_ID  = "cccccccc-0000-0000-0000-000000000001"
+NODE_ID = "bbbbbbbb-0000-0000-0000-000000000001"
+LEVEL_ID = "cccccccc-0000-0000-0000-000000000001"
 
 
 @dataclass
@@ -82,15 +81,15 @@ def _db_seq(*returns: Any) -> AsyncMock:
         if r is None:
             res.fetchone = MagicMock(return_value=None)
             res.fetchall = MagicMock(return_value=[])
-            res.scalar   = MagicMock(return_value=0)
+            res.scalar = MagicMock(return_value=0)
         elif isinstance(r, list):
             res.fetchone = MagicMock(return_value=r[0] if r else None)
             res.fetchall = MagicMock(return_value=r)
-            res.scalar   = MagicMock(return_value=len(r))
+            res.scalar = MagicMock(return_value=len(r))
         else:
             res.fetchone = MagicMock(return_value=r)
             res.fetchall = MagicMock(return_value=[r])
-            res.scalar   = MagicMock(return_value=1)
+            res.scalar = MagicMock(return_value=1)
         results.append(res)
 
     db.execute = AsyncMock(side_effect=results)
@@ -128,17 +127,22 @@ def _db_seq_raising(*returns: Any, raises: Exception) -> AsyncMock:
 
 # ── Test 1: Hierarchy level rename ───────────────────────────────────────────
 
+
 @pytest.mark.unit
 class TestHierarchyLevelRename:
-
     async def test_ta_can_rename_level(self) -> None:
         """TA renames a level — PATCH returns 200 with the updated level_name."""
         from routers.hierarchy import rename_hierarchy_level, HierarchyLevelRename
 
         updated_row = _row(
-            id=UUID(LEVEL_ID), tenant_id=UUID(TENANT_ID), level_number=2,
-            level_name="Region", default_role_code="RM",
-            role_display_label="Regional Manager", is_stock_holding=False, is_active=True,
+            id=UUID(LEVEL_ID),
+            tenant_id=UUID(TENANT_ID),
+            level_number=2,
+            level_name="Region",
+            default_role_code="RM",
+            role_display_label="Regional Manager",
+            is_stock_holding=False,
+            is_active=True,
         )
         db = _db_seq(updated_row)
 
@@ -193,9 +197,9 @@ class TestHierarchyLevelRename:
 
 # ── Test 1b: Hierarchy config PUT — G1/G2/G3a validation gaps ───────────────
 
+
 @pytest.mark.unit
 class TestHierarchyConfigUpsert:
-
     async def test_duplicate_level_name_returns_422(self) -> None:
         """G1: PUT /hierarchy/config converts the uq_hierarchy_config_tenant_name
         IntegrityError into a clean 422 DUPLICATE_LEVEL_NAME instead of a raw 500."""
@@ -294,12 +298,21 @@ class TestHierarchyConfigUpsert:
             execute_calls.append(str(stmt))
             res = MagicMock()
             res.scalar = MagicMock(return_value=4)  # existing_count
-            res.fetchall = MagicMock(return_value=[
-                _row(id=uuid4(), tenant_id=UUID(TENANT_ID), level_number=n,
-                     level_name=f"Level {n}", default_role_code=None,
-                     role_display_label=None, is_stock_holding=True, is_active=True)
-                for n in (1, 2, 3, 4)
-            ])
+            res.fetchall = MagicMock(
+                return_value=[
+                    _row(
+                        id=uuid4(),
+                        tenant_id=UUID(TENANT_ID),
+                        level_number=n,
+                        level_name=f"Level {n}",
+                        default_role_code=None,
+                        role_display_label=None,
+                        is_stock_holding=True,
+                        is_active=True,
+                    )
+                    for n in (1, 2, 3, 4)
+                ]
+            )
             return res
 
         db = AsyncMock()
@@ -325,9 +338,9 @@ class TestHierarchyConfigUpsert:
 
 # ── Test 1c: SA org level reset endpoint — G3b ───────────────────────────────
 
+
 @pytest.mark.unit
 class TestHierarchyConfigReset:
-
     async def test_sa_reset_blocked_when_nodes_exist(self) -> None:
         """G3b: SA cannot reset hierarchy config while active org nodes exist."""
         from routers.hierarchy import reset_hierarchy_config
@@ -339,7 +352,9 @@ class TestHierarchyConfigReset:
 
         with _GRANT_ALL, pytest.raises(HTTPException) as exc_info:
             await reset_hierarchy_config(
-                tenant_id=UUID(TENANT_ID), user=_Caller(role="SA"), db=db,
+                tenant_id=UUID(TENANT_ID),
+                user=_Caller(role="SA"),
+                db=db,
             )
         assert exc_info.value.status_code == 422
         assert exc_info.value.detail["code"] == "ORG_NODES_EXIST"
@@ -361,7 +376,9 @@ class TestHierarchyConfigReset:
 
         with _GRANT_ALL:
             result = await reset_hierarchy_config(
-                tenant_id=UUID(TENANT_ID), user=_Caller(role="SA"), db=db,
+                tenant_id=UUID(TENANT_ID),
+                user=_Caller(role="SA"),
+                db=db,
             )
 
         assert result.data["reset"] is True
@@ -375,7 +392,9 @@ class TestHierarchyConfigReset:
 
         with _GRANT_ALL, pytest.raises(HTTPException) as exc_info:
             await reset_hierarchy_config(
-                tenant_id=UUID(TENANT_ID), user=_Caller(role="TA"), db=db,
+                tenant_id=UUID(TENANT_ID),
+                user=_Caller(role="TA"),
+                db=db,
             )
         assert exc_info.value.status_code == 403
         assert exc_info.value.detail["code"] == "FORBIDDEN"
@@ -383,23 +402,26 @@ class TestHierarchyConfigReset:
 
 # ── Test 2: Org node deactivation / reactivation ─────────────────────────────
 
+
 @pytest.mark.unit
 class TestNodeDeactivation:
-
     async def test_deactivate_node_no_stock(self) -> None:
         """A clean node (no stock, transfers, adjustments, or sole users) deactivates."""
         from routers.hierarchy import deactivate_org_node
 
-        node_row     = _row(id=UUID(NODE_ID))
+        node_row = _row(id=UUID(NODE_ID))
         transfer_row = _row(cnt=0)
-        adj_row      = _row(cnt=0)
-        sole_row     = _row(cnt=0)
-        stock_row    = _row(total=0)
+        adj_row = _row(cnt=0)
+        sole_row = _row(cnt=0)
+        stock_row = _row(total=0)
         db = _db_seq(node_row, transfer_row, adj_row, sole_row, stock_row, None)
 
         with _GRANT_ALL:
             result = await deactivate_org_node(
-                tenant_id=UUID(TENANT_ID), node_id=UUID(NODE_ID), user=_Caller(), db=db,
+                tenant_id=UUID(TENANT_ID),
+                node_id=UUID(NODE_ID),
+                user=_Caller(),
+                db=db,
             )
 
         assert result.data == {"deactivated": NODE_ID}
@@ -408,14 +430,17 @@ class TestNodeDeactivation:
         """A node with stock on hand cannot be deactivated — 422 NODE_HAS_STOCK."""
         from routers.hierarchy import deactivate_org_node
 
-        node_row  = _row(id=UUID(NODE_ID))
+        node_row = _row(id=UUID(NODE_ID))
         stock_row = _row(total=50)
         # Production order: transfer(0) → adj(0) → sole(0) → stock(50 → 422)
         db = _db_seq(node_row, _row(cnt=0), _row(cnt=0), _row(cnt=0), stock_row)
 
         with _GRANT_ALL, pytest.raises(HTTPException) as exc_info:
             await deactivate_org_node(
-                tenant_id=UUID(TENANT_ID), node_id=UUID(NODE_ID), user=_Caller(), db=db,
+                tenant_id=UUID(TENANT_ID),
+                node_id=UUID(NODE_ID),
+                user=_Caller(),
+                db=db,
             )
         assert exc_info.value.status_code == 422
         assert exc_info.value.detail["code"] == "NODE_HAS_STOCK"
@@ -424,14 +449,17 @@ class TestNodeDeactivation:
         """A node with open (non-terminal) transfers cannot be deactivated."""
         from routers.hierarchy import deactivate_org_node
 
-        node_row     = _row(id=UUID(NODE_ID))
+        node_row = _row(id=UUID(NODE_ID))
         transfer_row = _row(cnt=2)
         # Transfer is check #1 — raises 422 immediately, no further DB calls
         db = _db_seq(node_row, transfer_row)
 
         with _GRANT_ALL, pytest.raises(HTTPException) as exc_info:
             await deactivate_org_node(
-                tenant_id=UUID(TENANT_ID), node_id=UUID(NODE_ID), user=_Caller(), db=db,
+                tenant_id=UUID(TENANT_ID),
+                node_id=UUID(NODE_ID),
+                user=_Caller(),
+                db=db,
             )
         assert exc_info.value.status_code == 422
         assert exc_info.value.detail["code"] == "NODE_HAS_OPEN_TRANSFERS"
@@ -440,15 +468,18 @@ class TestNodeDeactivation:
         """A node with pending (non-terminal) adjustments cannot be deactivated."""
         from routers.hierarchy import deactivate_org_node
 
-        node_row     = _row(id=UUID(NODE_ID))
+        node_row = _row(id=UUID(NODE_ID))
         transfer_row = _row(cnt=0)
-        adj_row      = _row(cnt=1)
+        adj_row = _row(cnt=1)
         # Transfer(0) passes, adj(1) raises 422 immediately
         db = _db_seq(node_row, transfer_row, adj_row)
 
         with _GRANT_ALL, pytest.raises(HTTPException) as exc_info:
             await deactivate_org_node(
-                tenant_id=UUID(TENANT_ID), node_id=UUID(NODE_ID), user=_Caller(), db=db,
+                tenant_id=UUID(TENANT_ID),
+                node_id=UUID(NODE_ID),
+                user=_Caller(),
+                db=db,
             )
         assert exc_info.value.status_code == 422
         assert exc_info.value.detail["code"] == "NODE_HAS_PENDING_ADJUSTMENTS"
@@ -457,16 +488,19 @@ class TestNodeDeactivation:
         """A node that is some staff member's only position cannot be deactivated."""
         from routers.hierarchy import deactivate_org_node
 
-        node_row     = _row(id=UUID(NODE_ID))
+        node_row = _row(id=UUID(NODE_ID))
         transfer_row = _row(cnt=0)
-        adj_row      = _row(cnt=0)
-        sole_row     = _row(cnt=1)
+        adj_row = _row(cnt=0)
+        sole_row = _row(cnt=1)
         # Transfer(0) and adj(0) pass, sole(1) raises 422 immediately
         db = _db_seq(node_row, transfer_row, adj_row, sole_row)
 
         with _GRANT_ALL, pytest.raises(HTTPException) as exc_info:
             await deactivate_org_node(
-                tenant_id=UUID(TENANT_ID), node_id=UUID(NODE_ID), user=_Caller(), db=db,
+                tenant_id=UUID(TENANT_ID),
+                node_id=UUID(NODE_ID),
+                user=_Caller(),
+                db=db,
             )
         assert exc_info.value.status_code == 422
         assert exc_info.value.detail["code"] == "NODE_HAS_SOLE_USERS"
@@ -480,7 +514,10 @@ class TestNodeDeactivation:
 
         with _GRANT_ALL:
             result = await reactivate_org_node(
-                tenant_id=UUID(TENANT_ID), node_id=UUID(NODE_ID), user=_Caller(), db=db,
+                tenant_id=UUID(TENANT_ID),
+                node_id=UUID(NODE_ID),
+                user=_Caller(),
+                db=db,
             )
 
         assert result.data == {"reactivated": NODE_ID}
@@ -492,11 +529,15 @@ class TestNodeDeactivation:
         node_row = _row(id=UUID(NODE_ID), hierarchy_level=1, is_stock_holding=True)
         db = _db_seq(node_row, None)
 
-        with _GRANT_ALL, patch(
-            "routers.hierarchy.check_plan_create_warehouse", new=AsyncMock()
-        ) as mock_check:
+        with (
+            _GRANT_ALL,
+            patch("routers.hierarchy.check_plan_create_warehouse", new=AsyncMock()) as mock_check,
+        ):
             result = await reactivate_org_node(
-                tenant_id=UUID(TENANT_ID), node_id=UUID(NODE_ID), user=_Caller(), db=db,
+                tenant_id=UUID(TENANT_ID),
+                node_id=UUID(NODE_ID),
+                user=_Caller(),
+                db=db,
             )
 
         mock_check.assert_awaited_once()
@@ -510,7 +551,10 @@ class TestNodeDeactivation:
 
         with _DENY_ALL, pytest.raises(HTTPException) as exc_info:
             await deactivate_org_node(
-                tenant_id=UUID(TENANT_ID), node_id=UUID(NODE_ID), user=_Caller(role="WM"), db=db,
+                tenant_id=UUID(TENANT_ID),
+                node_id=UUID(NODE_ID),
+                user=_Caller(role="WM"),
+                db=db,
             )
         assert exc_info.value.status_code == 403
 
@@ -532,7 +576,10 @@ class TestNodeDeactivation:
 
         with _GRANT_ALL:
             await list_org_nodes(
-                tenant_id=UUID(TENANT_ID), include_inactive=False, user=_Caller(), db=db,
+                tenant_id=UUID(TENANT_ID),
+                include_inactive=False,
+                user=_Caller(),
+                db=db,
             )
 
         assert "n.is_active = true" in captured_sql[0]
@@ -555,7 +602,10 @@ class TestNodeDeactivation:
 
         with _GRANT_ALL:
             await list_org_nodes(
-                tenant_id=UUID(TENANT_ID), include_inactive=True, user=_Caller(), db=db,
+                tenant_id=UUID(TENANT_ID),
+                include_inactive=True,
+                user=_Caller(),
+                db=db,
             )
 
         assert "n.is_active = true" not in captured_sql[0]
@@ -563,18 +613,24 @@ class TestNodeDeactivation:
 
 # ── Test 3: Org node update — is_stock_holding vs level config ──────────────
 
+
 @pytest.mark.unit
 class TestOrgNodeUpdate:
-
     async def test_cannot_set_stock_holding_on_non_stock_level(self) -> None:
         """PATCH /nodes/{id} with is_stock_holding=true is rejected when the node's
         hierarchy level is configured as non-stock-holding in tenant_hierarchy_config."""
         from routers.hierarchy import update_org_node, OrgNodeUpdate
 
         existing_row = _row(
-            id=UUID(NODE_ID), tenant_id=UUID(TENANT_ID), name="Region A", code="RA",
-            hierarchy_level=2, parent_node_id=None, is_stock_holding=False,
-            is_active=True, address=None,
+            id=UUID(NODE_ID),
+            tenant_id=UUID(TENANT_ID),
+            name="Region A",
+            code="RA",
+            hierarchy_level=2,
+            parent_node_id=None,
+            is_stock_holding=False,
+            is_active=True,
+            address=None,
         )
         level_row = _row(is_stock_holding=False)
         db = _db_seq(existing_row, level_row)
@@ -595,16 +651,25 @@ class TestOrgNodeUpdate:
         from routers.hierarchy import update_org_node, OrgNodeUpdate
 
         existing_row = _row(
-            id=UUID(NODE_ID), tenant_id=UUID(TENANT_ID), name="WHA4", code="WHA4",
-            hierarchy_level=4, parent_node_id=None, is_stock_holding=False,
-            is_active=True, address=None,
+            id=UUID(NODE_ID),
+            tenant_id=UUID(TENANT_ID),
+            name="WHA4",
+            code="WHA4",
+            hierarchy_level=4,
+            parent_node_id=None,
+            is_stock_holding=False,
+            is_active=True,
+            address=None,
         )
         level_row = _row(is_stock_holding=True)
-        db = _db_seq(existing_row, level_row, None, None)  # existing, level check, UPDATE, _get_level_name
+        db = _db_seq(
+            existing_row, level_row, None, None
+        )  # existing, level check, UPDATE, _get_level_name
 
-        with _GRANT_ALL, patch(
-            "routers.hierarchy.check_plan_create_warehouse", new=AsyncMock()
-        ) as mock_check:
+        with (
+            _GRANT_ALL,
+            patch("routers.hierarchy.check_plan_create_warehouse", new=AsyncMock()) as mock_check,
+        ):
             result = await update_org_node(
                 tenant_id=UUID(TENANT_ID),
                 node_id=UUID(NODE_ID),
@@ -621,16 +686,25 @@ class TestOrgNodeUpdate:
         from routers.hierarchy import update_org_node, OrgNodeUpdate
 
         existing_row = _row(
-            id=UUID(NODE_ID), tenant_id=UUID(TENANT_ID), name="WHA4", code="WHA4",
-            hierarchy_level=4, parent_node_id=None, is_stock_holding=True,
-            is_active=True, address=None,
+            id=UUID(NODE_ID),
+            tenant_id=UUID(TENANT_ID),
+            name="WHA4",
+            code="WHA4",
+            hierarchy_level=4,
+            parent_node_id=None,
+            is_stock_holding=True,
+            is_active=True,
+            address=None,
         )
         db = _db_seq(existing_row, _row(cnt=2))
 
         with _GRANT_ALL, pytest.raises(HTTPException) as exc_info:
             await update_org_node(
-                tenant_id=UUID(TENANT_ID), node_id=UUID(NODE_ID),
-                body=OrgNodeUpdate(is_stock_holding=False), user=_Caller(), db=db,
+                tenant_id=UUID(TENANT_ID),
+                node_id=UUID(NODE_ID),
+                body=OrgNodeUpdate(is_stock_holding=False),
+                user=_Caller(),
+                db=db,
             )
         assert exc_info.value.status_code == 422
         assert exc_info.value.detail["code"] == "NODE_STOCK_ACTIVITY"
@@ -642,16 +716,25 @@ class TestOrgNodeUpdate:
         from routers.hierarchy import update_org_node, OrgNodeUpdate
 
         existing_row = _row(
-            id=UUID(NODE_ID), tenant_id=UUID(TENANT_ID), name="WHA4", code="WHA4",
-            hierarchy_level=4, parent_node_id=None, is_stock_holding=True,
-            is_active=True, address=None,
+            id=UUID(NODE_ID),
+            tenant_id=UUID(TENANT_ID),
+            name="WHA4",
+            code="WHA4",
+            hierarchy_level=4,
+            parent_node_id=None,
+            is_stock_holding=True,
+            is_active=True,
+            address=None,
         )
         db = _db_seq(existing_row, _row(cnt=0), _row(cnt=1))
 
         with _GRANT_ALL, pytest.raises(HTTPException) as exc_info:
             await update_org_node(
-                tenant_id=UUID(TENANT_ID), node_id=UUID(NODE_ID),
-                body=OrgNodeUpdate(is_stock_holding=False), user=_Caller(), db=db,
+                tenant_id=UUID(TENANT_ID),
+                node_id=UUID(NODE_ID),
+                body=OrgNodeUpdate(is_stock_holding=False),
+                user=_Caller(),
+                db=db,
             )
         assert exc_info.value.status_code == 422
         assert exc_info.value.detail["code"] == "NODE_STOCK_ACTIVITY"
@@ -663,16 +746,25 @@ class TestOrgNodeUpdate:
         from routers.hierarchy import update_org_node, OrgNodeUpdate
 
         existing_row = _row(
-            id=UUID(NODE_ID), tenant_id=UUID(TENANT_ID), name="WHA4", code="WHA4",
-            hierarchy_level=4, parent_node_id=None, is_stock_holding=True,
-            is_active=True, address=None,
+            id=UUID(NODE_ID),
+            tenant_id=UUID(TENANT_ID),
+            name="WHA4",
+            code="WHA4",
+            hierarchy_level=4,
+            parent_node_id=None,
+            is_stock_holding=True,
+            is_active=True,
+            address=None,
         )
         db = _db_seq(existing_row, _row(cnt=0), _row(cnt=0), _row(total=50))
 
         with _GRANT_ALL, pytest.raises(HTTPException) as exc_info:
             await update_org_node(
-                tenant_id=UUID(TENANT_ID), node_id=UUID(NODE_ID),
-                body=OrgNodeUpdate(is_stock_holding=False), user=_Caller(), db=db,
+                tenant_id=UUID(TENANT_ID),
+                node_id=UUID(NODE_ID),
+                body=OrgNodeUpdate(is_stock_holding=False),
+                user=_Caller(),
+                db=db,
             )
         assert exc_info.value.status_code == 422
         assert exc_info.value.detail["code"] == "NODE_STOCK_ACTIVITY"
@@ -684,25 +776,34 @@ class TestOrgNodeUpdate:
         from routers.hierarchy import update_org_node, OrgNodeUpdate
 
         existing_row = _row(
-            id=UUID(NODE_ID), tenant_id=UUID(TENANT_ID), name="WHA4", code="WHA4",
-            hierarchy_level=4, parent_node_id=None, is_stock_holding=True,
-            is_active=True, address=None,
+            id=UUID(NODE_ID),
+            tenant_id=UUID(TENANT_ID),
+            name="WHA4",
+            code="WHA4",
+            hierarchy_level=4,
+            parent_node_id=None,
+            is_stock_holding=True,
+            is_active=True,
+            address=None,
         )
         db = _db_seq(existing_row, _row(cnt=0), _row(cnt=0), _row(total=0), None, None)
 
         with _GRANT_ALL:
             result = await update_org_node(
-                tenant_id=UUID(TENANT_ID), node_id=UUID(NODE_ID),
-                body=OrgNodeUpdate(is_stock_holding=False), user=_Caller(), db=db,
+                tenant_id=UUID(TENANT_ID),
+                node_id=UUID(NODE_ID),
+                body=OrgNodeUpdate(is_stock_holding=False),
+                user=_Caller(),
+                db=db,
             )
         assert result.data.is_stock_holding is False
 
 
 # ── Test 4: Hierarchy level PATCH — is_stock_holding guard ──────────────────
 
+
 @pytest.mark.unit
 class TestHierarchyLevelStockToggle:
-
     async def test_level_off_blocked_with_stock_nodes(self) -> None:
         """PATCH is_stock_holding=false on a level is rejected with
         LEVEL_HAS_STOCK_NODES when an active node at that level still holds stock."""
@@ -714,9 +815,11 @@ class TestHierarchyLevelStockToggle:
 
         with _GRANT_ALL, pytest.raises(HTTPException) as exc_info:
             await rename_hierarchy_level(
-                tenant_id=UUID(TENANT_ID), level_id=UUID(LEVEL_ID),
+                tenant_id=UUID(TENANT_ID),
+                level_id=UUID(LEVEL_ID),
                 body=HierarchyLevelRename(is_stock_holding=False),
-                user=_Caller(), db=db,
+                user=_Caller(),
+                db=db,
             )
         assert exc_info.value.status_code == 422
         assert exc_info.value.detail["code"] == "LEVEL_HAS_STOCK_NODES"
@@ -729,17 +832,24 @@ class TestHierarchyLevelStockToggle:
 
         current_row = _row(level_number=3, is_stock_holding=True)
         updated_row = _row(
-            id=UUID(LEVEL_ID), tenant_id=UUID(TENANT_ID), level_number=3,
-            level_name="Warehouse", default_role_code=None, role_display_label=None,
-            is_stock_holding=False, is_active=True,
+            id=UUID(LEVEL_ID),
+            tenant_id=UUID(TENANT_ID),
+            level_number=3,
+            level_name="Warehouse",
+            default_role_code=None,
+            role_display_label=None,
+            is_stock_holding=False,
+            is_active=True,
         )
         db = _db_seq(current_row, [], updated_row)
 
         with _GRANT_ALL:
             result = await rename_hierarchy_level(
-                tenant_id=UUID(TENANT_ID), level_id=UUID(LEVEL_ID),
+                tenant_id=UUID(TENANT_ID),
+                level_id=UUID(LEVEL_ID),
                 body=HierarchyLevelRename(is_stock_holding=False),
-                user=_Caller(), db=db,
+                user=_Caller(),
+                db=db,
             )
         assert result.data.is_stock_holding is False
 
@@ -750,17 +860,24 @@ class TestHierarchyLevelStockToggle:
 
         current_row = _row(level_number=3, is_stock_holding=False)
         updated_row = _row(
-            id=UUID(LEVEL_ID), tenant_id=UUID(TENANT_ID), level_number=3,
-            level_name="Warehouse", default_role_code=None, role_display_label=None,
-            is_stock_holding=False, is_active=True,
+            id=UUID(LEVEL_ID),
+            tenant_id=UUID(TENANT_ID),
+            level_number=3,
+            level_name="Warehouse",
+            default_role_code=None,
+            role_display_label=None,
+            is_stock_holding=False,
+            is_active=True,
         )
         db = _db_seq(current_row, updated_row)
 
         with _GRANT_ALL:
             result = await rename_hierarchy_level(
-                tenant_id=UUID(TENANT_ID), level_id=UUID(LEVEL_ID),
+                tenant_id=UUID(TENANT_ID),
+                level_id=UUID(LEVEL_ID),
                 body=HierarchyLevelRename(is_stock_holding=False),
-                user=_Caller(), db=db,
+                user=_Caller(),
+                db=db,
             )
         assert result.data.is_stock_holding is False
 
@@ -770,26 +887,33 @@ class TestHierarchyLevelStockToggle:
         from routers.hierarchy import rename_hierarchy_level, HierarchyLevelRename
 
         updated_row = _row(
-            id=UUID(LEVEL_ID), tenant_id=UUID(TENANT_ID), level_number=3,
-            level_name="Warehouse", default_role_code=None, role_display_label=None,
-            is_stock_holding=True, is_active=True,
+            id=UUID(LEVEL_ID),
+            tenant_id=UUID(TENANT_ID),
+            level_number=3,
+            level_name="Warehouse",
+            default_role_code=None,
+            role_display_label=None,
+            is_stock_holding=True,
+            is_active=True,
         )
         db = _db_seq(updated_row)  # single call — no node lookup for true->true/false->true
 
         with _GRANT_ALL:
             result = await rename_hierarchy_level(
-                tenant_id=UUID(TENANT_ID), level_id=UUID(LEVEL_ID),
+                tenant_id=UUID(TENANT_ID),
+                level_id=UUID(LEVEL_ID),
                 body=HierarchyLevelRename(is_stock_holding=True),
-                user=_Caller(), db=db,
+                user=_Caller(),
+                db=db,
             )
         assert result.data.is_stock_holding is True
 
 
 # ── Test 5: Hierarchy config PUT — closes the unguarded stock-toggle path ────
 
+
 @pytest.mark.unit
 class TestHierarchyConfigPutStockGuard:
-
     async def test_put_blocks_level_true_to_false_with_stock_nodes(self) -> None:
         """A full-replace PUT that flips an existing level's is_stock_holding
         true→false is blocked the same way the PATCH guard is, when an active
@@ -800,13 +924,17 @@ class TestHierarchyConfigPutStockGuard:
         existing_count_res.scalar = MagicMock(return_value=2)
 
         existing_levels_res = MagicMock()
-        existing_levels_res.fetchall = MagicMock(return_value=[
-            _row(level_number=1, is_stock_holding=True),
-            _row(level_number=2, is_stock_holding=True),
-        ])
+        existing_levels_res.fetchall = MagicMock(
+            return_value=[
+                _row(level_number=1, is_stock_holding=True),
+                _row(level_number=2, is_stock_holding=True),
+            ]
+        )
 
         blocked_nodes_res = MagicMock()
-        blocked_nodes_res.fetchall = MagicMock(return_value=[_row(id=UUID(NODE_ID), name="WH North")])
+        blocked_nodes_res.fetchall = MagicMock(
+            return_value=[_row(id=UUID(NODE_ID), name="WH North")]
+        )
 
         call_count = 0
 
@@ -829,9 +957,12 @@ class TestHierarchyConfigPutStockGuard:
                 tenant_id=UUID(TENANT_ID),
                 body=[
                     HierarchyLevelIn(level_number=1, level_name="Factory", is_stock_holding=True),
-                    HierarchyLevelIn(level_number=2, level_name="Warehouse", is_stock_holding=False),
+                    HierarchyLevelIn(
+                        level_number=2, level_name="Warehouse", is_stock_holding=False
+                    ),
                 ],
-                user=_Caller(), db=db,
+                user=_Caller(),
+                db=db,
             )
         assert exc_info.value.status_code == 422
         assert exc_info.value.detail["code"] == "LEVEL_HAS_STOCK_NODES"
@@ -846,21 +977,41 @@ class TestHierarchyConfigPutStockGuard:
         existing_count_res.scalar = MagicMock(return_value=2)
 
         existing_levels_res = MagicMock()
-        existing_levels_res.fetchall = MagicMock(return_value=[
-            _row(level_number=1, is_stock_holding=True),
-            _row(level_number=2, is_stock_holding=True),
-        ])
+        existing_levels_res.fetchall = MagicMock(
+            return_value=[
+                _row(level_number=1, is_stock_holding=True),
+                _row(level_number=2, is_stock_holding=True),
+            ]
+        )
 
         blocked_nodes_res = MagicMock()
         blocked_nodes_res.fetchall = MagicMock(return_value=[])
 
         final_rows_res = MagicMock()
-        final_rows_res.fetchall = MagicMock(return_value=[
-            _row(id=uuid4(), tenant_id=UUID(TENANT_ID), level_number=1, level_name="Factory",
-                 default_role_code=None, role_display_label=None, is_stock_holding=True, is_active=True),
-            _row(id=uuid4(), tenant_id=UUID(TENANT_ID), level_number=2, level_name="Warehouse",
-                 default_role_code=None, role_display_label=None, is_stock_holding=False, is_active=True),
-        ])
+        final_rows_res.fetchall = MagicMock(
+            return_value=[
+                _row(
+                    id=uuid4(),
+                    tenant_id=UUID(TENANT_ID),
+                    level_number=1,
+                    level_name="Factory",
+                    default_role_code=None,
+                    role_display_label=None,
+                    is_stock_holding=True,
+                    is_active=True,
+                ),
+                _row(
+                    id=uuid4(),
+                    tenant_id=UUID(TENANT_ID),
+                    level_number=2,
+                    level_name="Warehouse",
+                    default_role_code=None,
+                    role_display_label=None,
+                    is_stock_holding=False,
+                    is_active=True,
+                ),
+            ]
+        )
 
         call_count = 0
 
@@ -885,9 +1036,12 @@ class TestHierarchyConfigPutStockGuard:
                 tenant_id=UUID(TENANT_ID),
                 body=[
                     HierarchyLevelIn(level_number=1, level_name="Factory", is_stock_holding=True),
-                    HierarchyLevelIn(level_number=2, level_name="Warehouse", is_stock_holding=False),
+                    HierarchyLevelIn(
+                        level_number=2, level_name="Warehouse", is_stock_holding=False
+                    ),
                 ],
-                user=_Caller(), db=db,
+                user=_Caller(),
+                db=db,
             )
         assert len(result.data) == 2
         assert result.data[1].is_stock_holding is False
@@ -916,8 +1070,13 @@ class TestHierarchyConfigPutStockGuard:
             try:
                 await upsert_hierarchy_config(
                     tenant_id=UUID(TENANT_ID),
-                    body=[HierarchyLevelIn(level_number=1, level_name="Factory", is_stock_holding=False)],
-                    user=_Caller(), db=db,
+                    body=[
+                        HierarchyLevelIn(
+                            level_number=1, level_name="Factory", is_stock_holding=False
+                        )
+                    ],
+                    user=_Caller(),
+                    db=db,
                 )
             except HTTPException as exc:
                 pytest.fail(f"New level should never trigger the stock guard, got {exc.detail}")

@@ -42,15 +42,17 @@ async def issue_stock(
 
     tid = str(user.tenant_id)
     # A CONDITIONAL grant returns allowed=True; the FEFO reason rule covers it.
-    can_fefo_override = (await check_permission(
-        user, PERMISSIONS.DISPATCH_FEFO_OVERRIDE, {"tenant_id": tid}, db=db
-    )).allowed
-    can_lot_select = (await check_permission(
-        user,
-        PERMISSIONS.DISPATCH_LOT_SELECT,
-        {"tenant_id": tid, "warehouse_id": str(body.warehouse_id)},
-        db=db,
-    )).allowed
+    can_fefo_override = (
+        await check_permission(user, PERMISSIONS.DISPATCH_FEFO_OVERRIDE, {"tenant_id": tid}, db=db)
+    ).allowed
+    can_lot_select = (
+        await check_permission(
+            user,
+            PERMISSIONS.DISPATCH_LOT_SELECT,
+            {"tenant_id": tid, "warehouse_id": str(body.warehouse_id)},
+            db=db,
+        )
+    ).allowed
 
     result = await svc.issue_stock(
         user, body, can_fefo_override=can_fefo_override, can_lot_select=can_lot_select

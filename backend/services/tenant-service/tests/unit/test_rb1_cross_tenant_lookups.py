@@ -5,17 +5,18 @@ belonged to the caller's tenant, leaking another tenant's position
 title / user full name into the response. Fixed on fix/rb1-holes by adding
 tenant_id to both lookups.
 """
+
 from __future__ import annotations
 
 import os
 import sys
 import uuid
 
-os.environ.setdefault("DATABASE_URL",      "postgresql+asyncpg://test:x@localhost/test")
+os.environ.setdefault("DATABASE_URL", "postgresql+asyncpg://test:x@localhost/test")
 os.environ.setdefault("DATABASE_READ_URL", "postgresql+asyncpg://test:x@localhost/test")
-os.environ.setdefault("JWT_SECRET",        "test-secret")
-os.environ.setdefault("JWT_SECRET_KEY",    "test-secret")
-os.environ.setdefault("ENVIRONMENT",       "local")
+os.environ.setdefault("JWT_SECRET", "test-secret")
+os.environ.setdefault("JWT_SECRET_KEY", "test-secret")
+os.environ.setdefault("ENVIRONMENT", "local")
 
 _TENANT_ROOT = os.path.normpath(os.path.join(os.path.dirname(__file__), "..", ".."))
 if _TENANT_ROOT not in sys.path:
@@ -67,7 +68,11 @@ class TestPositionsReportsToLeak:
 
         with _GRANT_ALL:
             resp = await positions_module.create_position(
-                tenant_id=uuid.UUID(TENANT_A), node_id=uuid.uuid4(), body=body, user=user, db=db,
+                tenant_id=uuid.UUID(TENANT_A),
+                node_id=uuid.uuid4(),
+                body=body,
+                user=user,
+                db=db,
             )
         # The cross-tenant position doesn't resolve within this tenant's scope,
         # so no title is disclosed — it must NOT silently show the other tenant's data.

@@ -12,6 +12,7 @@ anywhere in the scanned backend sources.
 
 Run from the repo root: python scripts/check_error_codes.py
 """
+
 import json
 import os
 import re
@@ -60,7 +61,12 @@ def collect_codes():
     for base in SCAN_DIRS:
         base_path = os.path.join(ROOT, base)
         for root, dirs, files in os.walk(base_path):
-            dirs[:] = [d for d in dirs if not should_skip_dir(d) and d not in ("node_modules", ".next", "__pycache__")]
+            dirs[:] = [
+                d
+                for d in dirs
+                if not should_skip_dir(d)
+                and d not in ("node_modules", ".next", "__pycache__")
+            ]
             for fn in files:
                 if not fn.endswith(".py") or should_skip_file(fn):
                     continue
@@ -99,15 +105,21 @@ def load_error_keys(path):
 
 def main():
     codes = collect_codes()
-    locale_error_keys = {loc: load_error_keys(path) for loc, path in LOCALE_FILES.items()}
+    locale_error_keys = {
+        loc: load_error_keys(path) for loc, path in LOCALE_FILES.items()
+    }
 
     missing = {}
     for code in sorted(codes):
-        missing_in = [loc for loc, keys in locale_error_keys.items() if code not in keys]
+        missing_in = [
+            loc for loc, keys in locale_error_keys.items() if code not in keys
+        ]
         if missing_in:
             missing[code] = missing_in
 
-    print(f"Scanned backend/services and backend/shared: {len(codes)} distinct error codes found.")
+    print(
+        f"Scanned backend/services and backend/shared: {len(codes)} distinct error codes found."
+    )
     print()
 
     if missing:
@@ -126,7 +138,9 @@ def main():
     orphaned = sorted(c for c in all_locale_codes if c not in codes)
     if orphaned:
         print()
-        print(f"WARNING: {len(orphaned)} errors.* keys have no matching backend code anymore:")
+        print(
+            f"WARNING: {len(orphaned)} errors.* keys have no matching backend code anymore:"
+        )
         for code in orphaned:
             print(f"  {code}")
 

@@ -6,6 +6,7 @@ Additional tests cover the behaviours introduced by the two bug fixes:
   - FAILED rows must be re-processed (not silently skipped) on Celery retry
   - stuck PROCESSING rows are reset to PENDING by the poll task
 """
+
 from __future__ import annotations
 
 from typing import Any
@@ -17,6 +18,7 @@ from shared.outbox.schemas import InventoryUpdatedPayload
 
 
 # ── helpers ───────────────────────────────────────────────────────────────────
+
 
 def _inventory_payload(*, product_id: str = "p1", delta: float = 10.0) -> InventoryUpdatedPayload:
     return InventoryUpdatedPayload(
@@ -38,9 +40,9 @@ def _mock_session_with_row(row: Any) -> AsyncMock:
 
 # ── writer.py tests ───────────────────────────────────────────────────────────
 
+
 @pytest.mark.unit
 class TestOutboxWriter:
-
     async def test_outbox_written_in_same_transaction(self) -> None:
         """write_to_outbox() must INSERT into the outbox using the SAME session
         object as the primary record — never a new session, never post-commit."""
@@ -99,8 +101,7 @@ class TestOutboxWriter:
         payload = _inventory_payload()
         key = "transfer:abc123:dispatch:line:1"
 
-        await write_to_outbox(session, "tenant-1", "InventoryUpdated", payload,
-                              idempotency_key=key)
+        await write_to_outbox(session, "tenant-1", "InventoryUpdated", payload, idempotency_key=key)
 
         params = session.execute.call_args.args[1]
         assert params["ikey"] == key
@@ -126,8 +127,9 @@ class TestOutboxWriter:
         session = AsyncMock()
         payload = _inventory_payload()
 
-        await write_to_outbox(session, "tenant-1", "InventoryUpdated", payload,
-                              idempotency_key="some-key")
+        await write_to_outbox(
+            session, "tenant-1", "InventoryUpdated", payload, idempotency_key="some-key"
+        )
 
         sql_str = str(session.execute.call_args.args[0])
         assert "idempotency_key" in sql_str
@@ -135,9 +137,9 @@ class TestOutboxWriter:
 
 # ── worker.py tests ───────────────────────────────────────────────────────────
 
+
 @pytest.mark.unit
 class TestOutboxWorker:
-
     async def test_worker_idempotent_on_already_processed(self) -> None:
         """A row whose status is PROCESSED must be skipped — the handler must not
         be called again and no UPDATE must be issued on the outbox row."""
@@ -192,8 +194,11 @@ class TestOutboxWorker:
         pending_row.event_type = "InventoryUpdated"
         pending_row.tenant_id = "tenant-1"
         pending_row.payload = {
-            "product_id": "p1", "warehouse_id": "w1",
-            "delta": 5.0, "transaction_id": "t1", "version": "1.0",
+            "product_id": "p1",
+            "warehouse_id": "w1",
+            "delta": 5.0,
+            "transaction_id": "t1",
+            "version": "1.0",
         }
 
         select_result = MagicMock()
@@ -209,7 +214,7 @@ class TestOutboxWorker:
 
         session_execute_responses = [
             select_result,  # SELECT FOR UPDATE SKIP LOCKED
-            AsyncMock(),    # UPDATE status='PROCESSING'
+            AsyncMock(),  # UPDATE status='PROCESSING'
         ]
 
         calls_made: list[str] = []
@@ -256,8 +261,11 @@ class TestOutboxWorker:
         failed_row.event_type = "InventoryUpdated"
         failed_row.tenant_id = "tenant-1"
         failed_row.payload = {
-            "product_id": "p1", "warehouse_id": "w1",
-            "delta": 5.0, "transaction_id": "t1", "version": "1.0",
+            "product_id": "p1",
+            "warehouse_id": "w1",
+            "delta": 5.0,
+            "transaction_id": "t1",
+            "version": "1.0",
         }
 
         select_result = MagicMock()
@@ -271,8 +279,10 @@ class TestOutboxWorker:
                 processing_updates.append(sql_str)
             return select_result
 
-        with patch("shared.outbox.worker.AsyncSessionLocal") as mock_ctx, \
-             patch("shared.outbox.worker.OUTBOX_HANDLERS", {}):
+        with (
+            patch("shared.outbox.worker.AsyncSessionLocal") as mock_ctx,
+            patch("shared.outbox.worker.OUTBOX_HANDLERS", {}),
+        ):
             # No handler registered → no side effect, should complete to PROCESSED
             session = AsyncMock()
             session.execute = AsyncMock(side_effect=capture_execute)
@@ -304,8 +314,10 @@ class TestOutboxWorker:
                 reset_sql_issued.append(sql_str)
             return select_result
 
-        with patch("shared.outbox.worker.AsyncSessionLocal") as mock_ctx, \
-             patch("shared.outbox.worker.process_outbox_row"):
+        with (
+            patch("shared.outbox.worker.AsyncSessionLocal") as mock_ctx,
+            patch("shared.outbox.worker.process_outbox_row"),
+        ):
             session = AsyncMock()
             session.execute = AsyncMock(side_effect=capture_execute)
             mock_ctx.return_value.__aenter__.return_value = session

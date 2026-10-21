@@ -21,9 +21,11 @@ import sys
 
 def assert_safe_environment() -> None:
     env = os.environ.get("ENVIRONMENT", "")
-    on_ecs = bool(os.environ.get("ECS_CONTAINER_METADATA_URI_V4")
-                  or os.environ.get("ECS_CONTAINER_METADATA_URI")
-                  or os.environ.get("AWS_EXECUTION_ENV", "").startswith("AWS_ECS"))
+    on_ecs = bool(
+        os.environ.get("ECS_CONTAINER_METADATA_URI_V4")
+        or os.environ.get("ECS_CONTAINER_METADATA_URI")
+        or os.environ.get("AWS_EXECUTION_ENV", "").startswith("AWS_ECS")
+    )
 
     if env == "local":
         if on_ecs:
@@ -46,7 +48,9 @@ def assert_safe_environment() -> None:
         if len(jwt_secret) < 64:
             problems.append("JWT_SECRET (or JWT_SECRET_KEY) must be at least 64 characters")
         if len(set(jwt_secret)) < 10:
-            problems.append("JWT_SECRET (or JWT_SECRET_KEY) must have at least 10 distinct characters")
+            problems.append(
+                "JWT_SECRET (or JWT_SECRET_KEY) must have at least 10 distinct characters"
+            )
 
     rate_limit_keys = sorted(k for k in os.environ if k.startswith("RATE_LIMIT_"))
     if rate_limit_keys:

@@ -5,6 +5,7 @@ pass-through, lot input validation (LOT_NOT_TRACKED / LOT_NUMBER_REQUIRED /
 LOT_INPUT_CONFLICT), expiry validation (EXPIRY_REQUIRED / EXPIRY_IN_PAST),
 manual vs. auto lot resolution, and the source allow-list (INVALID_SOURCE).
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -20,11 +21,11 @@ from schemas.inventory import ReceiveStockRequest
 from services.inventory_service import InventoryService
 
 
-TENANT_ID    = "10000000-0000-0000-0000-000000000001"
+TENANT_ID = "10000000-0000-0000-0000-000000000001"
 WAREHOUSE_ID = "20000000-0000-0000-0000-000000000001"
-PRODUCT_ID   = "aaaaaaaa-0000-0000-0000-000000000001"
-TX_ID        = "bbbbbbbb-0000-0000-0000-000000000001"
-LOT_ID       = "cccccccc-0000-0000-0000-000000000001"
+PRODUCT_ID = "aaaaaaaa-0000-0000-0000-000000000001"
+TX_ID = "bbbbbbbb-0000-0000-0000-000000000001"
+LOT_ID = "cccccccc-0000-0000-0000-000000000001"
 
 
 @dataclass
@@ -61,7 +62,6 @@ def _body(**kwargs) -> ReceiveStockRequest:
 
 @pytest.mark.unit
 class TestReceiveNonBatch:
-
     async def test_plain_non_batch_receive(self) -> None:
         db = _db_with_product(_product_row(batch_tracking=False, expiry_tracking=False))
         svc = InventoryService(db)
@@ -107,7 +107,6 @@ class TestReceiveNonBatch:
 
 @pytest.mark.unit
 class TestReceiveBatchValidation:
-
     async def test_batch_with_no_lot_input_raises_lot_number_required(self) -> None:
         db = _db_with_product(_product_row(batch_tracking=True, expiry_tracking=False))
         svc = InventoryService(db)
@@ -155,21 +154,23 @@ class TestReceiveBatchValidation:
 
 @pytest.mark.unit
 class TestReceiveLotResolution:
-
     async def test_manual_lot_passes_lot_id_to_record_transaction(self) -> None:
         db = _db_with_product(_product_row(batch_tracking=True, expiry_tracking=False))
         svc = InventoryService(db)
         body = _body(lot_number="LOT-A1")
 
-        with patch(
-            "services.inventory_service.get_or_create_lot",
-            new_callable=AsyncMock,
-            return_value=LOT_ID,
-        ) as mock_get_or_create, patch(
-            "services.inventory_service.record_transaction",
-            new_callable=AsyncMock,
-            return_value=TX_ID,
-        ) as mock_record:
+        with (
+            patch(
+                "services.inventory_service.get_or_create_lot",
+                new_callable=AsyncMock,
+                return_value=LOT_ID,
+            ) as mock_get_or_create,
+            patch(
+                "services.inventory_service.record_transaction",
+                new_callable=AsyncMock,
+                return_value=TX_ID,
+            ) as mock_record,
+        ):
             result = await svc.receive(WM, body)
 
         mock_get_or_create.assert_awaited_once()
@@ -185,14 +186,17 @@ class TestReceiveLotResolution:
 
         generated_number = f"{date.today().strftime('%y%m%d')}-001"
 
-        with patch(
-            "services.inventory_service.create_auto_lot",
-            new_callable=AsyncMock,
-            return_value=(LOT_ID, generated_number),
-        ) as mock_auto, patch(
-            "services.inventory_service.record_transaction",
-            new_callable=AsyncMock,
-            return_value=TX_ID,
+        with (
+            patch(
+                "services.inventory_service.create_auto_lot",
+                new_callable=AsyncMock,
+                return_value=(LOT_ID, generated_number),
+            ) as mock_auto,
+            patch(
+                "services.inventory_service.record_transaction",
+                new_callable=AsyncMock,
+                return_value=TX_ID,
+            ),
         ):
             result = await svc.receive(WM, body)
 
@@ -203,7 +207,6 @@ class TestReceiveLotResolution:
 
 @pytest.mark.unit
 class TestReceiveSource:
-
     async def test_opening_balance_source_passed_through(self) -> None:
         db = _db_with_product(_product_row(batch_tracking=False, expiry_tracking=False))
         svc = InventoryService(db)

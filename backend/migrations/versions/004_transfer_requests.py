@@ -4,6 +4,7 @@ Revision ID: 004
 Revises: 003
 Create Date: 2026-05-09
 """
+
 from __future__ import annotations
 
 from alembic import op
@@ -58,7 +59,11 @@ def upgrade() -> None:
         sa.Column(
             "status",
             sa.Enum(
-                "PENDING", "APPROVED", "REJECTED", "FULFILLED", "CANCELLED",
+                "PENDING",
+                "APPROVED",
+                "REJECTED",
+                "FULFILLED",
+                "CANCELLED",
                 name="transfer_request_status",
             ),
             nullable=False,

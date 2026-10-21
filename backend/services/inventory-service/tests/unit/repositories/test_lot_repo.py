@@ -1,4 +1,5 @@
 """Unit tests for repositories/lot_repo.py."""
+
 from __future__ import annotations
 
 from datetime import date
@@ -9,10 +10,10 @@ import pytest
 from fastapi import HTTPException
 
 
-TENANT_ID    = "10000000-0000-0000-0000-000000000001"
-PRODUCT_ID   = "aaaaaaaa-0000-0000-0000-000000000001"
-USER_ID      = "u-wm-01"
-LOT_ID       = "lot-id-001"
+TENANT_ID = "10000000-0000-0000-0000-000000000001"
+PRODUCT_ID = "aaaaaaaa-0000-0000-0000-000000000001"
+USER_ID = "u-wm-01"
+LOT_ID = "lot-id-001"
 WAREHOUSE_ID = "wh-id-001"
 
 
@@ -34,7 +35,6 @@ def _make_session(existing_expiry) -> AsyncMock:
 
 @pytest.mark.unit
 class TestGetOrCreateLot:
-
     async def test_new_lot_creates_and_returns_id(self) -> None:
         from repositories.lot_repo import get_or_create_lot
 
@@ -63,9 +63,7 @@ class TestGetOrCreateLot:
 
         session = _make_session(existing_expiry=None)
 
-        lot_id = await get_or_create_lot(
-            session, TENANT_ID, PRODUCT_ID, "LOT-A1", None, USER_ID
-        )
+        lot_id = await get_or_create_lot(session, TENANT_ID, PRODUCT_ID, "LOT-A1", None, USER_ID)
 
         assert lot_id == "lot-id-001"
 
@@ -110,7 +108,6 @@ class TestGetOrCreateLot:
 
 @pytest.mark.unit
 class TestCreateAutoLot:
-
     async def test_format_is_yymmdd_seq(self) -> None:
         from repositories.lot_repo import create_auto_lot
 
@@ -143,9 +140,7 @@ class TestCreateAutoLot:
         session = AsyncMock()
         session.execute = AsyncMock(side_effect=[count_result, insert_result])
 
-        _, lot_number = await create_auto_lot(
-            session, TENANT_ID, PRODUCT_ID, None, USER_ID
-        )
+        _, lot_number = await create_auto_lot(session, TENANT_ID, PRODUCT_ID, None, USER_ID)
 
         today_prefix = date.today().strftime("%y%m%d")
         assert lot_number == f"{today_prefix}-005"
@@ -163,13 +158,9 @@ class TestCreateAutoLot:
         insert_result.fetchone.return_value = MagicMock(id="new-lot-id")
 
         session = AsyncMock()
-        session.execute = AsyncMock(
-            side_effect=[count_result, conflict_result, insert_result]
-        )
+        session.execute = AsyncMock(side_effect=[count_result, conflict_result, insert_result])
 
-        _, lot_number = await create_auto_lot(
-            session, TENANT_ID, PRODUCT_ID, None, USER_ID
-        )
+        _, lot_number = await create_auto_lot(session, TENANT_ID, PRODUCT_ID, None, USER_ID)
 
         today_prefix = date.today().strftime("%y%m%d")
         assert lot_number == f"{today_prefix}-002"
@@ -185,9 +176,7 @@ class TestCreateAutoLot:
         conflict_result.fetchone.return_value = None
 
         session = AsyncMock()
-        session.execute = AsyncMock(
-            side_effect=[count_result] + [conflict_result] * 5
-        )
+        session.execute = AsyncMock(side_effect=[count_result] + [conflict_result] * 5)
 
         with pytest.raises(HTTPException) as exc_info:
             await create_auto_lot(session, TENANT_ID, PRODUCT_ID, None, USER_ID)
@@ -199,7 +188,6 @@ class TestCreateAutoLot:
 
 @pytest.mark.unit
 class TestCreateOpeningLot:
-
     async def test_creates_new_opening_lot(self) -> None:
         from repositories.lot_repo import create_opening_lot
 
@@ -260,7 +248,6 @@ class TestCreateOpeningLot:
 
 @pytest.mark.unit
 class TestUpdateLotBalance:
-
     async def test_positive_delta_upserts(self) -> None:
         from repositories.lot_repo import _update_lot_balance
 

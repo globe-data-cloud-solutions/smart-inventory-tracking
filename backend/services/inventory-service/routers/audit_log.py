@@ -65,15 +65,19 @@ async def list_audit_logs(
     limit: int = Query(50, ge=1, le=200),
     action: str = Query(None),
     resource_type: str = Query(None),
-    include_system: bool = Query(False,
-                                 description="Include SYSTEM-category actions (anything "
-                                             "outside transfer:*, inventory:*, adjustment:*) "
-                                             "and *:view / *:list read actions. Default false "
-                                             "hides notifications, page views, and other "
-                                             "system/read activity."),
-    scope: str = Query("auto",
-                       description="'auto' applies role-based scoping. "
-                                   "'all' shows the entire tenant log (NM/TA/SA/AU only)."),
+    include_system: bool = Query(
+        False,
+        description="Include SYSTEM-category actions (anything "
+        "outside transfer:*, inventory:*, adjustment:*) "
+        "and *:view / *:list read actions. Default false "
+        "hides notifications, page views, and other "
+        "system/read activity.",
+    ),
+    scope: str = Query(
+        "auto",
+        description="'auto' applies role-based scoping. "
+        "'all' shows the entire tenant log (NM/TA/SA/AU only).",
+    ),
     user=Depends(get_current_user),
     db: AsyncSession = Depends(get_db_session),
 ) -> SuccessResponse[List[AuditLogItem]]:
@@ -87,17 +91,14 @@ async def list_audit_logs(
     # NM/TA/SA/AU always see the full tenant log; scope=all is a no-op for them.
     # WM/RM/LM are always facility-scoped — scope=all is ignored to prevent
     # privilege escalation via query parameter.
-    apply_scope = (
-        user.role not in _TENANT_WIDE_ROLES
-        and user.warehouse_id is not None
-    )
+    apply_scope = user.role not in _TENANT_WIDE_ROLES and user.warehouse_id is not None
 
     # Resolve facility + descendant node IDs only when scoping is active.
     if apply_scope:
         params["scope_uid"] = str(user.user_id)
-        params["node_ids"] = sorted(await get_descendant_node_ids(
-            db, str(user.tenant_id), str(user.warehouse_id)
-        ))
+        params["node_ids"] = sorted(
+            await get_descendant_node_ids(db, str(user.tenant_id), str(user.warehouse_id))
+        )
         scope_fragment = _SCOPE_CLAUSE
     else:
         scope_fragment = ""
@@ -185,30 +186,32 @@ async def list_audit_logs(
         stmt = stmt.bindparams(bindparam("node_ids", expanding=True))
     rows = (await db.execute(stmt, params)).fetchall()
 
-    return SuccessResponse(data=[
-        AuditLogItem(
-            id=r.id,
-            timestamp=r.timestamp,
-            user_id=r.user_id,
-            user_name=r.user_name,
-            role=r.role,
-            action=r.action,
-            resource_type=r.resource_type,
-            resource_id=r.resource_id,
-            decision=r.decision,
-            reason=r.reason,
-            abac_context=r.abac_context,
-            transfer_type=r.transfer_type,
-            from_warehouse_name=r.from_warehouse_name,
-            to_warehouse_name=r.to_warehouse_name,
-            product_summary=r.product_summary,
-            adjustment_reason_code=r.adjustment_reason_code,
-            transfer_order_id=r.transfer_order_id,
-            discrepancy_count=r.discrepancy_count,
-            discrepancy_product_name=r.discrepancy_product_name,
-            discrepancy_missing_quantity=r.discrepancy_missing_quantity,
-            discrepancy_reason=r.discrepancy_reason,
-            discrepancy_resolution=r.discrepancy_resolution,
-        )
-        for r in rows
-    ])
+    return SuccessResponse(
+        data=[
+            AuditLogItem(
+                id=r.id,
+                timestamp=r.timestamp,
+                user_id=r.user_id,
+                user_name=r.user_name,
+                role=r.role,
+                action=r.action,
+                resource_type=r.resource_type,
+                resource_id=r.resource_id,
+                decision=r.decision,
+                reason=r.reason,
+                abac_context=r.abac_context,
+                transfer_type=r.transfer_type,
+                from_warehouse_name=r.from_warehouse_name,
+                to_warehouse_name=r.to_warehouse_name,
+                product_summary=r.product_summary,
+                adjustment_reason_code=r.adjustment_reason_code,
+                transfer_order_id=r.transfer_order_id,
+                discrepancy_count=r.discrepancy_count,
+                discrepancy_product_name=r.discrepancy_product_name,
+                discrepancy_missing_quantity=r.discrepancy_missing_quantity,
+                discrepancy_reason=r.discrepancy_reason,
+                discrepancy_resolution=r.discrepancy_resolution,
+            )
+            for r in rows
+        ]
+    )

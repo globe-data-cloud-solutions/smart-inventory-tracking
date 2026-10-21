@@ -12,6 +12,7 @@ Revision ID: 031
 Revises:     030
 Create Date: 2026-05-31
 """
+
 from __future__ import annotations
 
 import sqlalchemy as sa
@@ -29,12 +30,8 @@ def upgrade() -> None:
     # SA platform account has no tenant and no Cognito identity.
     # These may already be nullable if the raw SQL was run in PART A; the
     # op.alter_column calls are idempotent here.
-    op.execute(
-        "ALTER TABLE users ALTER COLUMN tenant_id DROP NOT NULL"
-    )
-    op.execute(
-        "ALTER TABLE users ALTER COLUMN cognito_sub DROP NOT NULL"
-    )
+    op.execute("ALTER TABLE users ALTER COLUMN tenant_id DROP NOT NULL")
+    op.execute("ALTER TABLE users ALTER COLUMN cognito_sub DROP NOT NULL")
 
     # ── Drop role and warehouse_id from users ─────────────────────────────────
     # Role is now determined via positions/personnel_positions.
@@ -49,18 +46,32 @@ def upgrade() -> None:
     # ── positions ─────────────────────────────────────────────────────────────
     op.create_table(
         "positions",
-        sa.Column("id", postgresql.UUID(as_uuid=True),
-                  server_default=sa.text("gen_random_uuid()"), nullable=False),
+        sa.Column(
+            "id",
+            postgresql.UUID(as_uuid=True),
+            server_default=sa.text("gen_random_uuid()"),
+            nullable=False,
+        ),
         sa.Column("tenant_id", postgresql.UUID(as_uuid=True), nullable=False),
         sa.Column("node_id", postgresql.UUID(as_uuid=True), nullable=False),
         sa.Column("title", sa.String(100), nullable=False),
         sa.Column("role_code", sa.String(20), nullable=False),
-        sa.Column("reports_to_position_id", postgresql.UUID(as_uuid=True), nullable=True),
+        sa.Column(
+            "reports_to_position_id", postgresql.UUID(as_uuid=True), nullable=True
+        ),
         sa.Column("is_active", sa.Boolean(), server_default="true", nullable=False),
-        sa.Column("created_at", sa.TIMESTAMP(timezone=True),
-                  server_default=sa.text("NOW()"), nullable=False),
-        sa.Column("updated_at", sa.TIMESTAMP(timezone=True),
-                  server_default=sa.text("NOW()"), nullable=False),
+        sa.Column(
+            "created_at",
+            sa.TIMESTAMP(timezone=True),
+            server_default=sa.text("NOW()"),
+            nullable=False,
+        ),
+        sa.Column(
+            "updated_at",
+            sa.TIMESTAMP(timezone=True),
+            server_default=sa.text("NOW()"),
+            nullable=False,
+        ),
         sa.PrimaryKeyConstraint("id"),
         sa.ForeignKeyConstraint(["tenant_id"], ["tenants.id"]),
         sa.ForeignKeyConstraint(["node_id"], ["organization_node.id"]),
@@ -83,20 +94,32 @@ def upgrade() -> None:
     # ── personnel_positions ───────────────────────────────────────────────────
     op.create_table(
         "personnel_positions",
-        sa.Column("id", postgresql.UUID(as_uuid=True),
-                  server_default=sa.text("gen_random_uuid()"), nullable=False),
+        sa.Column(
+            "id",
+            postgresql.UUID(as_uuid=True),
+            server_default=sa.text("gen_random_uuid()"),
+            nullable=False,
+        ),
         sa.Column("tenant_id", postgresql.UUID(as_uuid=True), nullable=False),
         sa.Column("user_id", postgresql.UUID(as_uuid=True), nullable=False),
         sa.Column("position_id", postgresql.UUID(as_uuid=True), nullable=False),
         sa.Column("assignment_type", sa.String(20), nullable=False),
-        sa.Column("valid_from", sa.Date(),
-                  server_default=sa.text("CURRENT_DATE"), nullable=False),
+        sa.Column(
+            "valid_from",
+            sa.Date(),
+            server_default=sa.text("CURRENT_DATE"),
+            nullable=False,
+        ),
         sa.Column("valid_until", sa.Date(), nullable=True),
         sa.Column("is_active", sa.Boolean(), server_default="true", nullable=False),
         sa.Column("assigned_by", postgresql.UUID(as_uuid=True), nullable=True),
         sa.Column("notes", sa.Text(), nullable=True),
-        sa.Column("created_at", sa.TIMESTAMP(timezone=True),
-                  server_default=sa.text("NOW()"), nullable=False),
+        sa.Column(
+            "created_at",
+            sa.TIMESTAMP(timezone=True),
+            server_default=sa.text("NOW()"),
+            nullable=False,
+        ),
         sa.PrimaryKeyConstraint("id"),
         sa.ForeignKeyConstraint(["tenant_id"], ["tenants.id"]),
         sa.ForeignKeyConstraint(["user_id"], ["users.id"]),
@@ -111,10 +134,14 @@ def upgrade() -> None:
             name="personnel_positions_dates_check",
         ),
     )
-    op.create_index("idx_personnel_positions_user",
-                    "personnel_positions", ["tenant_id", "user_id"])
-    op.create_index("idx_personnel_positions_position",
-                    "personnel_positions", ["position_id", "is_active"])
+    op.create_index(
+        "idx_personnel_positions_user", "personnel_positions", ["tenant_id", "user_id"]
+    )
+    op.create_index(
+        "idx_personnel_positions_position",
+        "personnel_positions",
+        ["position_id", "is_active"],
+    )
     # Unique index: each user may have only ONE active PRIMARY assignment
     op.execute(
         "CREATE UNIQUE INDEX idx_one_primary_per_user "
@@ -136,21 +163,33 @@ def downgrade() -> None:
     # Recreate user_facility_assignments (from migration 016)
     op.create_table(
         "user_facility_assignments",
-        sa.Column("id", postgresql.UUID(as_uuid=True),
-                  server_default=sa.text("gen_random_uuid()"), nullable=False),
+        sa.Column(
+            "id",
+            postgresql.UUID(as_uuid=True),
+            server_default=sa.text("gen_random_uuid()"),
+            nullable=False,
+        ),
         sa.Column("tenant_id", postgresql.UUID(as_uuid=True), nullable=False),
         sa.Column("user_id", postgresql.UUID(as_uuid=True), nullable=False),
         sa.Column("facility_id", postgresql.UUID(as_uuid=True), nullable=False),
         sa.Column("assignment_type", sa.String(20), nullable=False),
         sa.Column("role_code", sa.String(20), nullable=False),
-        sa.Column("valid_from", sa.TIMESTAMP(timezone=True),
-                  server_default=sa.text("now()"), nullable=False),
+        sa.Column(
+            "valid_from",
+            sa.TIMESTAMP(timezone=True),
+            server_default=sa.text("now()"),
+            nullable=False,
+        ),
         sa.Column("valid_until", sa.TIMESTAMP(timezone=True), nullable=True),
         sa.Column("created_by", postgresql.UUID(as_uuid=True), nullable=False),
         sa.Column("notes", sa.Text(), nullable=True),
         sa.Column("is_active", sa.Boolean(), server_default="true", nullable=False),
-        sa.Column("created_at", sa.TIMESTAMP(timezone=True),
-                  server_default=sa.text("now()"), nullable=False),
+        sa.Column(
+            "created_at",
+            sa.TIMESTAMP(timezone=True),
+            server_default=sa.text("now()"),
+            nullable=False,
+        ),
         sa.PrimaryKeyConstraint("id"),
         sa.ForeignKeyConstraint(["tenant_id"], ["tenants.id"]),
         sa.ForeignKeyConstraint(["user_id"], ["users.id"]),
@@ -158,15 +197,20 @@ def downgrade() -> None:
     )
 
     # Restore columns (nullable — can't know original NOT NULL state with data present)
-    op.add_column("users", sa.Column("region_id",
-                  postgresql.UUID(as_uuid=True), nullable=True))
-    op.add_column("users", sa.Column("warehouse_id",
-                  postgresql.UUID(as_uuid=True), nullable=True))
+    op.add_column(
+        "users", sa.Column("region_id", postgresql.UUID(as_uuid=True), nullable=True)
+    )
+    op.add_column(
+        "users", sa.Column("warehouse_id", postgresql.UUID(as_uuid=True), nullable=True)
+    )
     op.add_column("users", sa.Column("role", sa.String(20), nullable=True))
 
-    op.alter_column("users", "tenant_id",
-                    existing_type=postgresql.UUID(as_uuid=True),
-                    nullable=False)
-    op.alter_column("users", "cognito_sub",
-                    existing_type=sa.String(255),
-                    nullable=False)
+    op.alter_column(
+        "users",
+        "tenant_id",
+        existing_type=postgresql.UUID(as_uuid=True),
+        nullable=False,
+    )
+    op.alter_column(
+        "users", "cognito_sub", existing_type=sa.String(255), nullable=False
+    )

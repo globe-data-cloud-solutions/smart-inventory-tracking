@@ -3,6 +3,7 @@
 SA role can see all tenants (override=None means all, override=UUID means specific).
 All other roles are restricted to their own tenant_id.
 """
+
 from __future__ import annotations
 
 import uuid

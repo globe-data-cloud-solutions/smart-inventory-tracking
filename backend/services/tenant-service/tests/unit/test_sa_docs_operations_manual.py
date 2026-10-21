@@ -5,16 +5,17 @@ same pattern as sa_tenant_registry); no user (no token) gets 401 from
 require_permission itself. Also guards drift between docs/SA_OPERATIONS_MANUAL.md
 (source of truth) and the backend static copy served by this route.
 """
+
 from __future__ import annotations
 
 import os
 import sys
 
-os.environ.setdefault("DATABASE_URL",      "postgresql+asyncpg://test:x@localhost/test")
+os.environ.setdefault("DATABASE_URL", "postgresql+asyncpg://test:x@localhost/test")
 os.environ.setdefault("DATABASE_READ_URL", "postgresql+asyncpg://test:x@localhost/test")
-os.environ.setdefault("JWT_SECRET",        "test-secret")
-os.environ.setdefault("JWT_SECRET_KEY",    "test-secret")
-os.environ.setdefault("ENVIRONMENT",       "local")
+os.environ.setdefault("JWT_SECRET", "test-secret")
+os.environ.setdefault("JWT_SECRET_KEY", "test-secret")
+os.environ.setdefault("ENVIRONMENT", "local")
 
 _TENANT_ROOT = os.path.normpath(os.path.join(os.path.dirname(__file__), "..", ".."))
 if _TENANT_ROOT not in sys.path:
@@ -34,6 +35,7 @@ _GRANT_ALL = patch(
 
 def _user(role: str):
     from dependencies import UserContext
+
     return UserContext(user_id="u1", role=role, tenant_id=None, warehouse_id=None)
 
 

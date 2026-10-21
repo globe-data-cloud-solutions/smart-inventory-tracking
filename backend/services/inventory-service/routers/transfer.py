@@ -31,8 +31,8 @@ router = APIRouter()
 # GAP 1 fix: each transfer type has a different first post-DRAFT state.
 # "SUBMITTED" is not a valid state in any machine — it was the old placeholder.
 _SUBMIT_NEXT_STATUS: dict[str, str] = {
-    "PULL":   "PENDING_REVIEW",
-    "PUSH":   "PENDING_APPROVAL",
+    "PULL": "PENDING_REVIEW",
+    "PUSH": "PENDING_APPROVAL",
     "SISTER": "PENDING_SOURCE_CONFIRM",
 }
 
@@ -99,7 +99,10 @@ async def submit_transfer(
     if next_status is None:
         raise HTTPException(
             status_code=422,
-            detail={"code": "UNKNOWN_TRANSFER_TYPE", "message": f"Unknown transfer type: {transfer.transfer_type}"},
+            detail={
+                "code": "UNKNOWN_TRANSFER_TYPE",
+                "message": f"Unknown transfer type: {transfer.transfer_type}",
+            },
         )
     result = await svc.transition_transfer(user, transfer_id, next_status)
     return SuccessResponse(data=result)
@@ -152,25 +155,31 @@ async def approve_transfer(
         return SuccessResponse(data=result)
 
     tid = str(user.tenant_id)
-    transfer_row = (await db.execute(
-        text("SELECT from_warehouse_id FROM transfer_orders WHERE id = :id AND tenant_id = :tid"),
-        {"id": str(transfer_id), "tid": tid},
-    )).fetchone()
+    transfer_row = (
+        await db.execute(
+            text(
+                "SELECT from_warehouse_id FROM transfer_orders WHERE id = :id AND tenant_id = :tid"
+            ),
+            {"id": str(transfer_id), "tid": tid},
+        )
+    ).fetchone()
     if not transfer_row:
         raise HTTPException(status_code=404, detail="Transfer not found")
 
     from shared.permissions.middleware import check_permission
 
     # A CONDITIONAL grant returns allowed=True; the FEFO reason rule covers it.
-    can_fefo_override = (await check_permission(
-        user, PERMISSIONS.DISPATCH_FEFO_OVERRIDE, {"tenant_id": tid}, db=db
-    )).allowed
-    can_lot_select = (await check_permission(
-        user,
-        PERMISSIONS.DISPATCH_LOT_SELECT,
-        {"tenant_id": tid, "warehouse_id": str(transfer_row.from_warehouse_id)},
-        db=db,
-    )).allowed
+    can_fefo_override = (
+        await check_permission(user, PERMISSIONS.DISPATCH_FEFO_OVERRIDE, {"tenant_id": tid}, db=db)
+    ).allowed
+    can_lot_select = (
+        await check_permission(
+            user,
+            PERMISSIONS.DISPATCH_LOT_SELECT,
+            {"tenant_id": tid, "warehouse_id": str(transfer_row.from_warehouse_id)},
+            db=db,
+        )
+    ).allowed
 
     result = await svc.transition_transfer(
         user,
@@ -279,13 +288,21 @@ async def transition_transfer(
     from shared.permissions.registry import PERMISSIONS as _P
 
     if body.next_status == "REJECTED":
-        result = await check_permission(user, _P.TRANSFER_REJECT, {"tenant_id": str(user.tenant_id)}, db=db)
+        result = await check_permission(
+            user, _P.TRANSFER_REJECT, {"tenant_id": str(user.tenant_id)}, db=db
+        )
         if not result.allowed:
-            raise HTTPException(status_code=403, detail={"code": result.reason, "action": _P.TRANSFER_REJECT.id})
+            raise HTTPException(
+                status_code=403, detail={"code": result.reason, "action": _P.TRANSFER_REJECT.id}
+            )
     elif body.next_status == "CANCELLED":
-        result = await check_permission(user, _P.TRANSFER_CANCEL, {"tenant_id": str(user.tenant_id)}, db=db)
+        result = await check_permission(
+            user, _P.TRANSFER_CANCEL, {"tenant_id": str(user.tenant_id)}, db=db
+        )
         if not result.allowed:
-            raise HTTPException(status_code=403, detail={"code": result.reason, "action": _P.TRANSFER_CANCEL.id})
+            raise HTTPException(
+                status_code=403, detail={"code": result.reason, "action": _P.TRANSFER_CANCEL.id}
+            )
 
     if body.next_status == "ISSUED":
         result = await svc.dispatch_transfer(user, transfer_id)
@@ -296,8 +313,7 @@ async def transition_transfer(
     return SuccessResponse(data=result)
 
 
-@router.get("/{transfer_id}/approval-info",
-            response_model=SuccessResponse[ApprovalInfoResponse])
+@router.get("/{transfer_id}/approval-info", response_model=SuccessResponse[ApprovalInfoResponse])
 @require_permission(PERMISSIONS.TRANSFER_VIEW)
 async def get_approval_info(
     transfer_id: UUID,
@@ -314,14 +330,17 @@ async def get_approval_info(
     from services.approval_service import resolve_approval, ROLE_AUTHORITY_LEVEL
 
     import json as _json
-    transfer_row = (await db.execute(
-        text(
-            "SELECT transfer_type, created_by, created_by_authority_level, "
-            "resolved_approval_steps, current_approval_step "
-            "FROM transfer_orders WHERE id = :id AND tenant_id = :tid"
-        ),
-        {"id": str(transfer_id), "tid": str(user.tenant_id)},
-    )).fetchone()
+
+    transfer_row = (
+        await db.execute(
+            text(
+                "SELECT transfer_type, created_by, created_by_authority_level, "
+                "resolved_approval_steps, current_approval_step "
+                "FROM transfer_orders WHERE id = :id AND tenant_id = :tid"
+            ),
+            {"id": str(transfer_id), "tid": str(user.tenant_id)},
+        )
+    ).fetchone()
     if not transfer_row:
         raise HTTPException(status_code=404, detail="Transfer not found")
 
@@ -334,15 +353,16 @@ async def get_approval_info(
         cur_idx = max(0, (transfer_row.current_approval_step or 1) - 1)
         cur_step = steps[cur_idx] if cur_idx < len(steps) else (steps[-1] if steps else {})
 
-        caller_uid      = str(user.user_id)
-        assignee_uid    = cur_step.get("assigned_to_user_id")
-        exec_mode       = (cur_step.get("execution_mode") or "sequential").lower()
-        all_holders     = cur_step.get("all_holders") or []
-        holder_count    = cur_step.get("holder_count") or (len(all_holders) if all_holders else (1 if assignee_uid else 0))
-        position_title  = cur_step.get("position_title", "Approver")
+        caller_uid = str(user.user_id)
+        assignee_uid = cur_step.get("assigned_to_user_id")
+        exec_mode = (cur_step.get("execution_mode") or "sequential").lower()
+        all_holders = cur_step.get("all_holders") or []
+        holder_count = cur_step.get("holder_count") or (
+            len(all_holders) if all_holders else (1 if assignee_uid else 0)
+        )
+        position_title = cur_step.get("position_title", "Approver")
         is_own_transfer = (
-            transfer_row.created_by is not None
-            and str(transfer_row.created_by) == caller_uid
+            transfer_row.created_by is not None and str(transfer_row.created_by) == caller_uid
         )
 
         # Compute can_approve for dynamic routing.
@@ -350,10 +370,14 @@ async def get_approval_info(
         # Creator self-approval is already blocked by CANNOT_APPROVE_OWN_TRANSFER in the
         # APPROVED transition, but we also reflect it here so the UI shows correctly.
         if exec_mode == "any":
-            holder_uids     = {str(h.get("user_id", "")) for h in all_holders}
-            can_approve_dyn = bool(holder_uids and caller_uid in holder_uids and not is_own_transfer)
+            holder_uids = {str(h.get("user_id", "")) for h in all_holders}
+            can_approve_dyn = bool(
+                holder_uids and caller_uid in holder_uids and not is_own_transfer
+            )
         else:
-            can_approve_dyn = bool(assignee_uid and caller_uid == assignee_uid and not is_own_transfer)
+            can_approve_dyn = bool(
+                assignee_uid and caller_uid == assignee_uid and not is_own_transfer
+            )
 
         # BUG 5: TA (Tenant Admin, system_role='TA') can approve any transfer they didn't
         # create, regardless of who the specifically assigned approver is.  This prevents
@@ -368,14 +392,13 @@ async def get_approval_info(
         # shown in the label so the label reflects who can actually act (not the creator).
         transfer_creator_uid = str(transfer_row.created_by) if transfer_row.created_by else ""
         non_creator_holders = [
-            h for h in all_holders
-            if str(h.get("user_id", "")) != transfer_creator_uid
+            h for h in all_holders if str(h.get("user_id", "")) != transfer_creator_uid
         ]
         display_count = len(non_creator_holders) if exec_mode == "any" else holder_count
 
         is_vacant = cur_step.get("is_vacant", False)
-        escalated  = cur_step.get("escalated", False)
-        esc_name   = cur_step.get("assigned_to_name") or "an escalated approver"
+        escalated = cur_step.get("escalated", False)
+        esc_name = cur_step.get("assigned_to_name") or "an escalated approver"
         # BUG 4: distinguish "position vacant → escalating" from "self-approval → escalating".
         # is_vacant=True means the position had no holder at all.
         # escalated=True with is_vacant=False means the original holder was the creator.
@@ -388,7 +411,11 @@ async def get_approval_info(
         elif exec_mode == "any" and display_count > 1:
             status_label = f"Any {position_title} can approve ({display_count} approvers available)"
         elif exec_mode == "any" and display_count == 1:
-            approver_name = non_creator_holders[0]["name"] if non_creator_holders else (assignee_uid or position_title)
+            approver_name = (
+                non_creator_holders[0]["name"]
+                if non_creator_holders
+                else (assignee_uid or position_title)
+            )
             status_label = f"Awaiting {approver_name} approval"
         elif exec_mode == "any" and display_count == 0 and all_holders:
             # Only the creator holds the position — they can't self-approve
@@ -399,36 +426,40 @@ async def get_approval_info(
             status_label = f"Awaiting {position_title} approval"
 
         _cur_seq = cur_step.get("sequence", 1)
-        _total   = len(steps)
-        return SuccessResponse(data=ApprovalInfoResponse(
-            transfer_id=transfer_id,
-            required_authority_level=1,
-            required_role_display=position_title,
-            is_auto_approve=False,
-            can_approve=can_approve_dyn,
-            reason=f"Step {_cur_seq} of {_total}: {position_title} approval required.",
-            current_step=_cur_seq,
-            total_steps=_total,
-            current_approver_user_id=assignee_uid,
-            current_approver_name=cur_step.get("assigned_to_name"),
-            current_approver_position_title=position_title,
-            execution_mode=exec_mode,
-            sla_hours=cur_step.get("sla_hours"),
-            is_dynamic_routing=True,
-            holder_count=holder_count,
-            all_holders=all_holders,
-            status_label=status_label,
-            step_label=f"Step {_cur_seq} of {_total}" if _total > 1 else None,
-        ))
+        _total = len(steps)
+        return SuccessResponse(
+            data=ApprovalInfoResponse(
+                transfer_id=transfer_id,
+                required_authority_level=1,
+                required_role_display=position_title,
+                is_auto_approve=False,
+                can_approve=can_approve_dyn,
+                reason=f"Step {_cur_seq} of {_total}: {position_title} approval required.",
+                current_step=_cur_seq,
+                total_steps=_total,
+                current_approver_user_id=assignee_uid,
+                current_approver_name=cur_step.get("assigned_to_name"),
+                current_approver_position_title=position_title,
+                execution_mode=exec_mode,
+                sla_hours=cur_step.get("sla_hours"),
+                is_dynamic_routing=True,
+                holder_count=holder_count,
+                all_holders=all_holders,
+                status_label=status_label,
+                step_label=f"Step {_cur_seq} of {_total}" if _total > 1 else None,
+            )
+        )
 
     # ── Legacy path: role-level routing (old approval_rule / authority_level) ─
-    lines = (await db.execute(
-        text(
-            "SELECT quantity FROM transfer_order_lines "
-            "WHERE transfer_order_id = :xfer_id AND tenant_id = :tid"
-        ),
-        {"xfer_id": str(transfer_id), "tid": str(user.tenant_id)},
-    )).fetchall()
+    lines = (
+        await db.execute(
+            text(
+                "SELECT quantity FROM transfer_order_lines "
+                "WHERE transfer_order_id = :xfer_id AND tenant_id = :tid"
+            ),
+            {"xfer_id": str(transfer_id), "tid": str(user.tenant_id)},
+        )
+    ).fetchall()
 
     total_qty = sum(Decimal(str(ln.quantity)) for ln in lines) if lines else Decimal("0")
 
@@ -446,26 +477,30 @@ async def get_approval_info(
     simple_mode = _rules_json.get("simple_mode", True) if isinstance(_rules_json, dict) else True
 
     decision = await resolve_approval(
-        db, str(user.tenant_id), transfer_row.transfer_type, total_qty,
+        db,
+        str(user.tenant_id),
+        transfer_row.transfer_type,
+        total_qty,
         requester_authority_level=creator_level,
         simple_mode=simple_mode,
     )
 
     caller_level = ROLE_AUTHORITY_LEVEL.get(getattr(user, "role", ""), 5)
-    is_own_transfer = (
-        transfer_row.created_by is not None
-        and str(transfer_row.created_by) == str(user.user_id)
+    is_own_transfer = transfer_row.created_by is not None and str(transfer_row.created_by) == str(
+        user.user_id
     )
     can_approve = (not is_own_transfer) and (caller_level <= decision.required_authority_level)
 
-    return SuccessResponse(data=ApprovalInfoResponse(
-        transfer_id=transfer_id,
-        required_authority_level=decision.required_authority_level,
-        required_role_display=decision.required_role_display,
-        is_auto_approve=decision.is_auto_approve,
-        can_approve=can_approve,
-        reason=decision.reason,
-    ))
+    return SuccessResponse(
+        data=ApprovalInfoResponse(
+            transfer_id=transfer_id,
+            required_authority_level=decision.required_authority_level,
+            required_role_display=decision.required_role_display,
+            is_auto_approve=decision.is_auto_approve,
+            can_approve=can_approve,
+            reason=decision.reason,
+        )
+    )
 
 
 @router.get("/{transfer_id}", response_model=SuccessResponse[TransferOrderResponse])

@@ -22,9 +22,7 @@ class RolePermissionGrant:
 _cache: dict[tuple[str, str], tuple[Optional[RolePermissionGrant], float]] = {}
 
 
-async def get_role_permission(
-    role: str, action_id: str
-) -> Optional[RolePermissionGrant]:
+async def get_role_permission(role: str, action_id: str) -> Optional[RolePermissionGrant]:
     key = (role, action_id)
     entry = _cache.get(key)
     if entry is not None:

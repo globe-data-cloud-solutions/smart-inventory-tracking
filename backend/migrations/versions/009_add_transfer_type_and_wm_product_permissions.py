@@ -4,6 +4,7 @@ Revision ID: 009
 Revises: 008
 Create Date: 2026-05-25
 """
+
 from __future__ import annotations
 
 from alembic import op
@@ -19,7 +20,9 @@ def upgrade() -> None:
     # 1. Add transfer_type column to transfer_orders (default PULL for existing rows)
     op.add_column(
         "transfer_orders",
-        sa.Column("transfer_type", sa.String(20), nullable=False, server_default="PULL"),
+        sa.Column(
+            "transfer_type", sa.String(20), nullable=False, server_default="PULL"
+        ),
     )
 
     # 2. WM: add product:list and product:view (WM receives, issues, transfers products

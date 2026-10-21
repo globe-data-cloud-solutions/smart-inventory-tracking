@@ -1,4 +1,5 @@
 """Notification alerts endpoint — /api/v1/inventory/alerts."""
+
 from __future__ import annotations
 
 import logging

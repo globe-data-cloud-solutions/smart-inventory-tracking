@@ -10,6 +10,7 @@ These tests verify the backend semantics enforced by InventoryService.issue_stoc
 2. No RESERVE transaction is created at any point during an ISSUE operation.
 3. The issued quantity is negated regardless of the sign the caller supplies.
 """
+
 from __future__ import annotations
 
 import uuid
@@ -30,10 +31,10 @@ from services.dispatch_service import CandidateLot, ProductDispatchInfo
 from services.inventory_service import InventoryService
 
 
-TENANT_ID    = "10000000-0000-0000-0000-000000000001"
+TENANT_ID = "10000000-0000-0000-0000-000000000001"
 WAREHOUSE_ID = "20000000-0000-0000-0000-000000000001"
-PRODUCT_ID   = "aaaaaaaa-0000-0000-0000-000000000001"
-TX_ID        = "bbbbbbbb-0000-0000-0000-000000000001"
+PRODUCT_ID = "aaaaaaaa-0000-0000-0000-000000000001"
+TX_ID = "bbbbbbbb-0000-0000-0000-000000000001"
 
 
 @dataclass
@@ -73,7 +74,6 @@ def non_batch_product() -> Iterator[AsyncMock]:
 
 @pytest.mark.unit
 class TestIssueStockReducesOnHandDirectly:
-
     async def test_issue_stock_calls_record_transaction_with_issue_type(
         self, svc: InventoryService
     ) -> None:
@@ -104,9 +104,7 @@ class TestIssueStockReducesOnHandDirectly:
             f"Expected transaction_type='ISSUE', got '{kwargs['transaction_type']}'"
         )
 
-    async def test_issue_stock_quantity_is_negative_deduction(
-        self, svc: InventoryService
-    ) -> None:
+    async def test_issue_stock_quantity_is_negative_deduction(self, svc: InventoryService) -> None:
         """The ledger quantity for ISSUE must be negative (direct On Hand deduction).
 
         On Hand reduces immediately when the ISSUE is posted — there is no
@@ -164,7 +162,6 @@ class TestIssueStockReducesOnHandDirectly:
 
 @pytest.mark.unit
 class TestIssueStockDoesNotCreateReservation:
-
     async def test_issue_stock_does_not_call_reserve_transaction(
         self, svc: InventoryService
     ) -> None:
@@ -200,9 +197,7 @@ class TestIssueStockDoesNotCreateReservation:
             "record_transaction must not be called with transaction_type='RESERVE' for ISSUE"
         )
 
-    async def test_issue_stock_does_not_create_draft_transfer(
-        self, svc: InventoryService
-    ) -> None:
+    async def test_issue_stock_does_not_create_draft_transfer(self, svc: InventoryService) -> None:
         """ISSUE must not insert a transfer_orders or adjustment_orders row in DRAFT state.
 
         A DRAFT row would cause the quantity to appear in the Reserved column on the
@@ -236,9 +231,7 @@ class TestIssueStockDoesNotCreateReservation:
                 "issue_stock must not create an adjustment_orders row"
             )
 
-    async def test_zero_stock_product_remains_in_inventory(
-        self, svc: InventoryService
-    ) -> None:
+    async def test_zero_stock_product_remains_in_inventory(self, svc: InventoryService) -> None:
         """Issuing all remaining stock does not raise an error and produces a valid ISSUE tx.
 
         Business rule: a product with On Hand = 0 must remain visible in the Inventory
@@ -252,7 +245,7 @@ class TestIssueStockDoesNotCreateReservation:
         body = IssueStockRequest(
             product_id=UUID(PRODUCT_ID),
             warehouse_id=UUID(WAREHOUSE_ID),
-            quantity=Decimal("500"),   # issuing full remaining balance
+            quantity=Decimal("500"),  # issuing full remaining balance
             reason_code="SALE",
             idempotency_key="issue:zero-balance:001",
         )
@@ -271,9 +264,7 @@ class TestIssueStockDoesNotCreateReservation:
         assert kwargs["quantity"] == Decimal("-500")
         assert kwargs["transaction_type"] == "ISSUE"
 
-    async def test_issue_stock_response_carries_correct_fields(
-        self, svc: InventoryService
-    ) -> None:
+    async def test_issue_stock_response_carries_correct_fields(self, svc: InventoryService) -> None:
         """Response must echo product_id, warehouse_id, quantity, and reason_code."""
         body = IssueStockRequest(
             product_id=UUID(PRODUCT_ID),
@@ -290,10 +281,10 @@ class TestIssueStockDoesNotCreateReservation:
         ):
             result = await svc.issue_stock(WM, body)
 
-        assert result.product_id   == UUID(PRODUCT_ID)
+        assert result.product_id == UUID(PRODUCT_ID)
         assert result.warehouse_id == UUID(WAREHOUSE_ID)
-        assert result.quantity     == Decimal("20")
-        assert result.reason_code  == "SAMPLE"
+        assert result.quantity == Decimal("20")
+        assert result.reason_code == "SAMPLE"
         assert result.transaction_id == UUID(TX_ID)
 
 
@@ -310,9 +301,7 @@ class TestWarehouseFromJWT:
     JWT session); the service must pass it through unchanged to record_transaction.
     """
 
-    async def test_receive_stock_warehouse_from_jwt_not_input(
-        self, svc: InventoryService
-    ) -> None:
+    async def test_receive_stock_warehouse_from_jwt_not_input(self, svc: InventoryService) -> None:
         """receive() passes body.warehouse_id to record_transaction unchanged.
 
         The frontend sets body.warehouse_id = user.warehouseId from the JWT session
@@ -327,7 +316,9 @@ class TestWarehouseFromJWT:
         )
 
         product_row = MagicMock(batch_tracking=False, expiry_tracking=False)
-        svc.db.execute = AsyncMock(return_value=MagicMock(fetchone=MagicMock(return_value=product_row)))
+        svc.db.execute = AsyncMock(
+            return_value=MagicMock(fetchone=MagicMock(return_value=product_row))
+        )
 
         with patch(
             "services.inventory_service.record_transaction",
@@ -345,9 +336,7 @@ class TestWarehouseFromJWT:
         assert kwargs["transaction_type"] == "RECEIVE"
         assert result.warehouse_id == UUID(WAREHOUSE_ID)
 
-    async def test_issue_stock_warehouse_from_jwt_not_input(
-        self, svc: InventoryService
-    ) -> None:
+    async def test_issue_stock_warehouse_from_jwt_not_input(self, svc: InventoryService) -> None:
         """issue_stock() passes body.warehouse_id to record_transaction unchanged.
 
         The frontend sets body.warehouse_id = user.warehouseId from the JWT session
@@ -384,12 +373,16 @@ class TestWarehouseFromJWT:
 TODAY = date.today()
 # The earliest-expiry lot has the HIGHER lot_id, so "engine order" and
 # "sorted by lot_id" are different orders.
-LOT_LATE    = "cccccccc-0000-0000-0000-000000000001"
-LOT_EARLY   = "cccccccc-0000-0000-0000-000000000002"
+LOT_LATE = "cccccccc-0000-0000-0000-000000000001"
+LOT_EARLY = "cccccccc-0000-0000-0000-000000000002"
 LOT_EXPIRED = "cccccccc-0000-0000-0000-000000000003"
 
-FEFO_PRODUCT = ProductDispatchInfo(batch_tracking=True, expiry_tracking=True, dispatch_strategy=None)
-FIFO_PRODUCT = ProductDispatchInfo(batch_tracking=True, expiry_tracking=False, dispatch_strategy=None)
+FEFO_PRODUCT = ProductDispatchInfo(
+    batch_tracking=True, expiry_tracking=True, dispatch_strategy=None
+)
+FIFO_PRODUCT = ProductDispatchInfo(
+    batch_tracking=True, expiry_tracking=False, dispatch_strategy=None
+)
 
 
 def _lot(lot_id: str, number: str, expiry_days: int, received_day: int, qty: str) -> CandidateLot:
@@ -402,8 +395,8 @@ def _lot(lot_id: str, number: str, expiry_days: int, received_day: int, qty: str
     )
 
 
-EARLY   = _lot(LOT_EARLY,   "L-EARLY",   10, 1, "20")
-LATE    = _lot(LOT_LATE,    "L-LATE",    60, 2, "50")
+EARLY = _lot(LOT_EARLY, "L-EARLY", 10, 1, "20")
+LATE = _lot(LOT_LATE, "L-LATE", 60, 2, "50")
 EXPIRED = _lot(LOT_EXPIRED, "L-EXPIRED", -5, 3, "100")
 
 
@@ -424,7 +417,9 @@ def _body(
         reason_code="SALE",
         idempotency_key=key,
         lot_selections=(
-            [LotPick(lot_id=UUID(lot_id), quantity=Decimal(q)) for lot_id, q in picks] if picks else None
+            [LotPick(lot_id=UUID(lot_id), quantity=Decimal(q)) for lot_id, q in picks]
+            if picks
+            else None
         ),
         override_reason=reason,
     )
@@ -465,7 +460,9 @@ class _BatchHarness:
             )
         elif "FROM stock_lots" in sql:
             result.fetchall.return_value = [
-                SimpleNamespace(id=lot.lot_id, lot_number=lot.lot_number, expiry_date=lot.expiry_date)
+                SimpleNamespace(
+                    id=lot.lot_id, lot_number=lot.lot_number, expiry_date=lot.expiry_date
+                )
                 for lot in self.lots
             ]
         return result
@@ -477,18 +474,20 @@ class _BatchHarness:
     async def issue(
         self, product: ProductDispatchInfo, body: IssueStockRequest, **flags: bool
     ) -> Any:
-        with patch(
-            "services.inventory_service.load_product", new_callable=AsyncMock, return_value=product
-        ), patch(
-            "services.dispatch_service.load_candidate_lots", new=self._load_lots
-        ), patch(
-            "services.inventory_service.load_candidate_lots", new=self._load_lots
-        ), patch(
-            "services.inventory_service.record_override",
-            new_callable=AsyncMock,
-            side_effect=dispatch_service.record_override,
-        ) as mock_override, patch(
-            "services.inventory_service.record_transaction", new=self.record
+        with (
+            patch(
+                "services.inventory_service.load_product",
+                new_callable=AsyncMock,
+                return_value=product,
+            ),
+            patch("services.dispatch_service.load_candidate_lots", new=self._load_lots),
+            patch("services.inventory_service.load_candidate_lots", new=self._load_lots),
+            patch(
+                "services.inventory_service.record_override",
+                new_callable=AsyncMock,
+                side_effect=dispatch_service.record_override,
+            ) as mock_override,
+            patch("services.inventory_service.record_transaction", new=self.record),
         ):
             self.override = mock_override
             return await self.svc.issue_stock(WM, body, **flags)
@@ -499,7 +498,6 @@ class _BatchHarness:
 
 @pytest.mark.unit
 class TestIssueNonBatchUnchanged:
-
     async def test_non_batch_posts_single_row_with_unchanged_key(
         self, svc: InventoryService
     ) -> None:
@@ -543,20 +541,22 @@ class TestIssueNonBatchUnchanged:
         result (its transaction_id and quantity); no second ledger row."""
         original = SimpleNamespace(id=TX_ID, quantity=Decimal("-30.0000"))
         h = _BatchHarness([], issued_rows=[])
-        h.db.execute = AsyncMock(return_value=MagicMock(
-            fetchone=MagicMock(return_value=original)
-        ))
-        h.record = AsyncMock(side_effect=HTTPException(
-            status_code=409,
-            detail={"code": "DUPLICATE_TRANSACTION", "idempotency_key": "issue:nb:replay"},
-        ))
+        h.db.execute = AsyncMock(return_value=MagicMock(fetchone=MagicMock(return_value=original)))
+        h.record = AsyncMock(
+            side_effect=HTTPException(
+                status_code=409,
+                detail={"code": "DUPLICATE_TRANSACTION", "idempotency_key": "issue:nb:replay"},
+            )
+        )
 
         result = await h.issue(
-            ProductDispatchInfo(batch_tracking=False, expiry_tracking=False, dispatch_strategy=None),
+            ProductDispatchInfo(
+                batch_tracking=False, expiry_tracking=False, dispatch_strategy=None
+            ),
             _body("issue:nb:replay", "30"),
         )
 
-        h.record.assert_awaited_once()          # the one attempt that hit the key
+        h.record.assert_awaited_once()  # the one attempt that hit the key
         assert result.transaction_id == UUID(TX_ID)
         assert result.quantity == Decimal("30")
         assert result.lots == [] and result.is_override is False
@@ -568,13 +568,18 @@ class TestIssueNonBatchUnchanged:
     async def test_non_batch_key_used_elsewhere_stays_409(self) -> None:
         """409 but no ISSUE row for the key in this tenant → the 409 stands."""
         h = _BatchHarness([], issued_rows=[])
-        h.record = AsyncMock(side_effect=HTTPException(
-            status_code=409, detail={"code": "DUPLICATE_TRANSACTION"},
-        ))
+        h.record = AsyncMock(
+            side_effect=HTTPException(
+                status_code=409,
+                detail={"code": "DUPLICATE_TRANSACTION"},
+            )
+        )
 
         with pytest.raises(HTTPException) as exc:
             await h.issue(
-                ProductDispatchInfo(batch_tracking=False, expiry_tracking=False, dispatch_strategy=None),
+                ProductDispatchInfo(
+                    batch_tracking=False, expiry_tracking=False, dispatch_strategy=None
+                ),
                 _body("issue:nb:foreign", "30"),
             )
 
@@ -584,7 +589,6 @@ class TestIssueNonBatchUnchanged:
 
 @pytest.mark.unit
 class TestIssueBatchEngineAllocation:
-
     async def test_fefo_split_posts_one_issue_row_per_lot(self) -> None:
         """30 units over EARLY(20) + LATE(50): two ISSUE rows, sorted by lot_id."""
         h = _BatchHarness([EARLY, LATE, EXPIRED])
@@ -593,10 +597,11 @@ class TestIssueBatchEngineAllocation:
         result = await h.issue(FEFO_PRODUCT, _body(key, "30"))
 
         rows = h.posted()
-        assert [r["lot_id"] for r in rows] == [LOT_LATE, LOT_EARLY]          # sorted by lot_id
+        assert [r["lot_id"] for r in rows] == [LOT_LATE, LOT_EARLY]  # sorted by lot_id
         assert [r["quantity"] for r in rows] == [Decimal("-10"), Decimal("-20")]
         assert [r["idempotency_key"] for r in rows] == [
-            f"{key}:lot:{LOT_LATE}", f"{key}:lot:{LOT_EARLY}",
+            f"{key}:lot:{LOT_LATE}",
+            f"{key}:lot:{LOT_EARLY}",
         ]
         assert {r["reference_id"] for r in rows} == {_issue_ref(key)}
         assert {r["transaction_type"] for r in rows} == {"ISSUE"}
@@ -604,7 +609,8 @@ class TestIssueBatchEngineAllocation:
         assert [r["expiry_date"] for r in rows] == [LATE.expiry_date, EARLY.expiry_date]
 
         assert [(str(lot.lot_id), lot.quantity) for lot in result.lots] == [
-            (LOT_LATE, Decimal("10")), (LOT_EARLY, Decimal("20")),
+            (LOT_LATE, Decimal("10")),
+            (LOT_EARLY, Decimal("20")),
         ]
         assert result.quantity == Decimal("30")
         assert result.is_override is False
@@ -646,7 +652,8 @@ class TestIssueBatchEngineAllocation:
         assert "lock_balance" in h.events and "load_lots" in h.events
         assert h.events.index("lock_balance") < h.events.index("load_lots")
         lock_sql = [
-            str(c.args[0]) for c in h.db.execute.await_args_list
+            str(c.args[0])
+            for c in h.db.execute.await_args_list
             if "FROM inventory_balances" in str(c.args[0])
         ]
         assert len(lock_sql) == 1 and "FOR UPDATE" in lock_sql[0]
@@ -654,18 +661,18 @@ class TestIssueBatchEngineAllocation:
 
 @pytest.mark.unit
 class TestIssueBatchManualSelection:
-
     async def test_selection_equal_to_engine_order_is_not_an_override(self) -> None:
         h = _BatchHarness([EARLY, LATE])
         body = _body("issue:c3:same", "30", picks=[(LOT_LATE, "10"), (LOT_EARLY, "20")])
 
-        result = await h.issue(FEFO_PRODUCT, body)   # no override permission at all
+        result = await h.issue(FEFO_PRODUCT, body)  # no override permission at all
 
         assert result.is_override is False
         h.override.assert_not_awaited()
         assert "override_insert" not in h.events
         assert [(r["lot_id"], r["quantity"]) for r in h.posted()] == [
-            (LOT_LATE, Decimal("-10")), (LOT_EARLY, Decimal("-20")),
+            (LOT_LATE, Decimal("-10")),
+            (LOT_EARLY, Decimal("-20")),
         ]
 
     async def test_fefo_override_with_permission_and_reason_is_logged(self) -> None:
@@ -685,7 +692,9 @@ class TestIssueBatchManualSelection:
         assert result.is_override is True
         # The lots posted are the chosen lots, not the plan.
         assert [(r["lot_id"], r["quantity"]) for r in h.posted()] == [(LOT_LATE, Decimal("-30"))]
-        assert [(str(lot.lot_id), lot.quantity) for lot in result.lots] == [(LOT_LATE, Decimal("30"))]
+        assert [(str(lot.lot_id), lot.quantity) for lot in result.lots] == [
+            (LOT_LATE, Decimal("30"))
+        ]
 
     async def test_fefo_override_without_reason_is_rejected(self) -> None:
         h = _BatchHarness([EARLY, LATE])
@@ -715,7 +724,7 @@ class TestIssueBatchManualSelection:
 
     async def test_fifo_override_allowed_with_lot_select_reason_optional(self) -> None:
         h = _BatchHarness([EARLY, LATE])
-        body = _body("issue:c3:fifo-ok", "30", picks=[(LOT_LATE, "30")])   # no reason
+        body = _body("issue:c3:fifo-ok", "30", picks=[(LOT_LATE, "30")])  # no reason
 
         result = await h.issue(FIFO_PRODUCT, body, can_lot_select=True)
 
@@ -764,39 +773,46 @@ class TestIssueBatchManualSelection:
 
 @pytest.mark.unit
 class TestIssueBatchReplay:
-
     async def test_replay_returns_existing_rows_and_writes_nothing(self) -> None:
         """ISSUE rows already exist for issue_ref → returned as-is, nothing allocated."""
         rows = [
             SimpleNamespace(
-                id="eeeeeeee-0000-0000-0000-000000000001", lot_id=LOT_LATE,
-                lot_number="L-LATE", expiry_date=LATE.expiry_date, quantity=Decimal("-10"),
+                id="eeeeeeee-0000-0000-0000-000000000001",
+                lot_id=LOT_LATE,
+                lot_number="L-LATE",
+                expiry_date=LATE.expiry_date,
+                quantity=Decimal("-10"),
             ),
             SimpleNamespace(
-                id="eeeeeeee-0000-0000-0000-000000000002", lot_id=LOT_EARLY,
-                lot_number="L-EARLY", expiry_date=EARLY.expiry_date, quantity=Decimal("-20"),
+                id="eeeeeeee-0000-0000-0000-000000000002",
+                lot_id=LOT_EARLY,
+                lot_number="L-EARLY",
+                expiry_date=EARLY.expiry_date,
+                quantity=Decimal("-20"),
             ),
         ]
         h = _BatchHarness([EARLY, LATE], issued_rows=rows)
         key = "issue:c3:replay"
 
-        with patch(
-            "services.inventory_service.allocate", new_callable=AsyncMock
-        ) as mock_allocate, patch(
-            "services.inventory_service.validate_manual_selection", new_callable=AsyncMock
-        ) as mock_validate:
+        with (
+            patch("services.inventory_service.allocate", new_callable=AsyncMock) as mock_allocate,
+            patch(
+                "services.inventory_service.validate_manual_selection", new_callable=AsyncMock
+            ) as mock_validate,
+        ):
             result = await h.issue(FEFO_PRODUCT, _body(key, "30"))
 
         mock_allocate.assert_not_awaited()
         mock_validate.assert_not_awaited()
         h.record.assert_not_awaited()
         h.override.assert_not_awaited()
-        assert h.events == ["replay"]          # no lock taken, no lots loaded
+        assert h.events == ["replay"]  # no lock taken, no lots loaded
         replay_call = h.db.execute.await_args_list[0]
         assert replay_call.args[1] == {"tid": TENANT_ID, "ref": _issue_ref(key)}
 
         assert result.transaction_id == UUID(rows[0].id)
         assert result.quantity == Decimal("30")
         assert [(str(lot.lot_id), lot.lot_number, lot.quantity) for lot in result.lots] == [
-            (LOT_LATE, "L-LATE", Decimal("10")), (LOT_EARLY, "L-EARLY", Decimal("20")),
+            (LOT_LATE, "L-LATE", Decimal("10")),
+            (LOT_EARLY, "L-EARLY", Decimal("20")),
         ]

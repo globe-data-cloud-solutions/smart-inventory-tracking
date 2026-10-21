@@ -12,6 +12,7 @@ grant here actually take effect — it OR's package feature_flags with every
 currently-ACTIVE, in-window tenant_addons row. apply_package_to_tenant()
 never touches this table, so a granted add-on survives a plan change.
 """
+
 from __future__ import annotations
 
 from datetime import date
@@ -25,21 +26,25 @@ from shared.billing.subscriptions import get_current_addon_price
 
 
 async def _get_addon(db: AsyncSession, addon_code: str) -> Any:
-    return (await db.execute(
-        text("SELECT code, display_name, is_active FROM platform_addons WHERE code = :code"),
-        {"code": addon_code},
-    )).fetchone()
+    return (
+        await db.execute(
+            text("SELECT code, display_name, is_active FROM platform_addons WHERE code = :code"),
+            {"code": addon_code},
+        )
+    ).fetchone()
 
 
 async def _get_live_subscription(db: AsyncSession, tenant_id: str) -> Any:
-    return (await db.execute(
-        text(
-            "SELECT id, billing_period FROM subscriptions "
-            "WHERE tenant_id = :tid AND status IN ('ACTIVE', 'PENDING_PAYMENT', 'PAST_DUE') "
-            "LIMIT 1"
-        ),
-        {"tid": str(tenant_id)},
-    )).fetchone()
+    return (
+        await db.execute(
+            text(
+                "SELECT id, billing_period FROM subscriptions "
+                "WHERE tenant_id = :tid AND status IN ('ACTIVE', 'PENDING_PAYMENT', 'PAST_DUE') "
+                "LIMIT 1"
+            ),
+            {"tid": str(tenant_id)},
+        )
+    ).fetchone()
 
 
 async def grant_addon(
@@ -69,24 +74,31 @@ async def grant_addon(
     if not addon.is_active:
         raise ValueError("ADDON_INACTIVE")
 
-    tenant_row = (await db.execute(
-        text("SELECT plan_tier FROM tenants WHERE id = :tid"), {"tid": str(tenant_id)},
-    )).fetchone()
+    tenant_row = (
+        await db.execute(
+            text("SELECT plan_tier FROM tenants WHERE id = :tid"),
+            {"tid": str(tenant_id)},
+        )
+    ).fetchone()
     if tenant_row and tenant_row.plan_tier:
-        package = (await db.execute(
-            text("SELECT feature_flags FROM platform_tier_config WHERE tier = :tier"),
-            {"tier": str(tenant_row.plan_tier)},
-        )).fetchone()
+        package = (
+            await db.execute(
+                text("SELECT feature_flags FROM platform_tier_config WHERE tier = :tier"),
+                {"tier": str(tenant_row.plan_tier)},
+            )
+        ).fetchone()
         if package and bool((package.feature_flags or {}).get(addon_code)):
             raise ValueError("FEATURE_ALREADY_IN_PACKAGE")
 
-    existing = (await db.execute(
-        text(
-            "SELECT id FROM tenant_addons "
-            "WHERE tenant_id = :tid AND addon_code = :code AND status = 'ACTIVE'"
-        ),
-        {"tid": str(tenant_id), "code": addon_code},
-    )).fetchone()
+    existing = (
+        await db.execute(
+            text(
+                "SELECT id FROM tenant_addons "
+                "WHERE tenant_id = :tid AND addon_code = :code AND status = 'ACTIVE'"
+            ),
+            {"tid": str(tenant_id), "code": addon_code},
+        )
+    ).fetchone()
     if existing is not None:
         raise ValueError("ADDON_ALREADY_ACTIVE")
 
@@ -106,26 +118,38 @@ async def grant_addon(
         price_id = str(price.id)
         amount = Decimal(price.amount)
 
-    new_id = (await db.execute(
-        text(
-            "INSERT INTO tenant_addons "
-            "  (tenant_id, addon_code, source, status, price_id, amount, "
-            "   starts_on, ends_on, note, created_by) "
-            "VALUES (:tid, :code, :source, 'ACTIVE', :price_id, :amount, "
-            "        COALESCE(:starts_on, CURRENT_DATE), :ends_on, :note, :created_by) "
-            "RETURNING id"
-        ),
-        {
-            "tid": str(tenant_id), "code": addon_code, "source": source,
-            "price_id": price_id, "amount": amount,
-            "starts_on": starts_on, "ends_on": ends_on,
-            "note": note, "created_by": str(created_by) if created_by else None,
-        },
-    )).scalar_one()
+    new_id = (
+        await db.execute(
+            text(
+                "INSERT INTO tenant_addons "
+                "  (tenant_id, addon_code, source, status, price_id, amount, "
+                "   starts_on, ends_on, note, created_by) "
+                "VALUES (:tid, :code, :source, 'ACTIVE', :price_id, :amount, "
+                "        COALESCE(:starts_on, CURRENT_DATE), :ends_on, :note, :created_by) "
+                "RETURNING id"
+            ),
+            {
+                "tid": str(tenant_id),
+                "code": addon_code,
+                "source": source,
+                "price_id": price_id,
+                "amount": amount,
+                "starts_on": starts_on,
+                "ends_on": ends_on,
+                "note": note,
+                "created_by": str(created_by) if created_by else None,
+            },
+        )
+    ).scalar_one()
 
     return {
-        "id": str(new_id), "tenant_id": str(tenant_id), "addon_code": addon_code,
-        "source": source, "status": "ACTIVE", "amount": amount, "price_id": price_id,
+        "id": str(new_id),
+        "tenant_id": str(tenant_id),
+        "addon_code": addon_code,
+        "source": source,
+        "status": "ACTIVE",
+        "amount": amount,
+        "price_id": price_id,
     }
 
 
@@ -137,10 +161,12 @@ async def cancel_addon(
     cancelled_by: Optional[str] = None,
 ) -> dict[str, Any]:
     """Raises ValueError ADDON_GRANT_NOT_FOUND or ADDON_NOT_ACTIVE."""
-    row = (await db.execute(
-        text("SELECT id, tenant_id, status, addon_code FROM tenant_addons WHERE id = :id"),
-        {"id": str(tenant_addon_id)},
-    )).fetchone()
+    row = (
+        await db.execute(
+            text("SELECT id, tenant_id, status, addon_code FROM tenant_addons WHERE id = :id"),
+            {"id": str(tenant_addon_id)},
+        )
+    ).fetchone()
     if row is None or str(row.tenant_id) != str(tenant_id):
         raise ValueError("ADDON_GRANT_NOT_FOUND")
     if row.status != "ACTIVE":

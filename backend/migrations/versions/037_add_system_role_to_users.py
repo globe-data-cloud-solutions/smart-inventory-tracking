@@ -10,6 +10,7 @@ Revision ID: 037
 Revises:     036
 Create Date: 2026-05-31
 """
+
 from __future__ import annotations
 
 import sqlalchemy as sa
@@ -29,7 +30,7 @@ def upgrade() -> None:
             sa.String(10),
             nullable=True,
             comment="Set to 'TA' for tenant-admin accounts that have no position in the "
-                    "org hierarchy. NULL for all other users (role comes from positions).",
+            "org hierarchy. NULL for all other users (role comes from positions).",
         ),
     )
     op.execute(

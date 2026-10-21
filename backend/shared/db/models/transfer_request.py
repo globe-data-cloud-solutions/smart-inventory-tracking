@@ -11,8 +11,13 @@ from sqlalchemy.orm import Mapped, mapped_column
 from shared.db.models.base import Base
 
 TransferRequestStatusEnum = Enum(
-    "PENDING", "APPROVED", "REJECTED", "FULFILLED", "CANCELLED",
-    name="transfer_request_status", create_type=False,
+    "PENDING",
+    "APPROVED",
+    "REJECTED",
+    "FULFILLED",
+    "CANCELLED",
+    name="transfer_request_status",
+    create_type=False,
 )
 
 
@@ -24,9 +29,7 @@ class TransferRequest(Base):
 
     __tablename__ = "transfer_requests"
 
-    id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
-    )
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     tenant_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
     requesting_warehouse_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),

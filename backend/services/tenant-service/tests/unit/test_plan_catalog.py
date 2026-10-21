@@ -1,22 +1,23 @@
 """Unit tests for the S2 package-catalog work.
 
-  - shared.plans.catalog: get_package / apply_package_to_tenant (single
-    source of plan limits and feature flags — migration 070).
-  - routers.tenants._build_profile_update_set_clause: the A1 fix (org-type
-    change sets approval_thresholds only, never feature_flags) — owed test.
-  - routers.tenants.update_platform_tier_config: platform_config_log is
-    written only for fields that actually changed.
+- shared.plans.catalog: get_package / apply_package_to_tenant (single
+  source of plan limits and feature flags — migration 070).
+- routers.tenants._build_profile_update_set_clause: the A1 fix (org-type
+  change sets approval_thresholds only, never feature_flags) — owed test.
+- routers.tenants.update_platform_tier_config: platform_config_log is
+  written only for fields that actually changed.
 """
+
 from __future__ import annotations
 
 import os
 import sys
 
-os.environ.setdefault("DATABASE_URL",      "postgresql+asyncpg://test:x@localhost/test")
+os.environ.setdefault("DATABASE_URL", "postgresql+asyncpg://test:x@localhost/test")
 os.environ.setdefault("DATABASE_READ_URL", "postgresql+asyncpg://test:x@localhost/test")
-os.environ.setdefault("JWT_SECRET",        "test-secret")
-os.environ.setdefault("JWT_SECRET_KEY",    "test-secret")
-os.environ.setdefault("ENVIRONMENT",       "local")
+os.environ.setdefault("JWT_SECRET", "test-secret")
+os.environ.setdefault("JWT_SECRET_KEY", "test-secret")
+os.environ.setdefault("ENVIRONMENT", "local")
 
 _TENANT_ROOT = os.path.normpath(os.path.join(os.path.dirname(__file__), "..", ".."))
 if _TENANT_ROOT not in sys.path:
@@ -32,6 +33,7 @@ TENANT_ID = "aabbccdd-0000-0000-0000-000000000001"
 
 def _user(role: str = "SA", tenant_id: str | None = None):
     from dependencies import UserContext
+
     return UserContext(user_id="u1", role=role, tenant_id=tenant_id, warehouse_id=None)
 
 
@@ -48,9 +50,15 @@ def _package_row(
     row.max_users = max_users
     row.sku_cap = sku_cap
     row.feature_flags = {
-        "CORE_INVENTORY": True, "TRANSFERS_PULL_PUSH": True, "LOT_TRACEABILITY": True,
-        "TRANSFERS_SISTER": False, "LOGISTICS": False, "AUDIT_EXPORT": False,
-        "CUSTOM_BRANDING": False, "AI_ANALYTICS": False, "API_ACCESS": False,
+        "CORE_INVENTORY": True,
+        "TRANSFERS_PULL_PUSH": True,
+        "LOT_TRACEABILITY": True,
+        "TRANSFERS_SISTER": False,
+        "LOGISTICS": False,
+        "AUDIT_EXPORT": False,
+        "CUSTOM_BRANDING": False,
+        "AI_ANALYTICS": False,
+        "API_ACCESS": False,
     }
     row.is_public = True
     row.sort_order = 1
@@ -59,9 +67,9 @@ def _package_row(
 
 # ── shared.plans.catalog ──────────────────────────────────────────────────────
 
+
 @pytest.mark.unit
 class TestPlanCatalog:
-
     @pytest.mark.asyncio
     async def test_apply_package_to_tenant_issues_one_update_with_full_package(self):
         from shared.plans.catalog import apply_package_to_tenant
@@ -141,9 +149,9 @@ class TestPlanCatalog:
 
 # ── A1 owed test: org-type change never touches feature_flags ───────────────
 
+
 @pytest.mark.unit
 class TestProfileOrgTypeFlags:
-
     def test_org_type_change_sets_thresholds_not_flags(self):
         from routers.tenants import _build_profile_update_set_clause
         from routers.tenants import TenantProfileUpdateRequest
@@ -176,20 +184,26 @@ class TestProfileOrgTypeFlags:
 
 # ── platform_config_log: only changed fields are logged ─────────────────────
 
+
 @pytest.mark.unit
 class TestTierConfigLog:
-
     @pytest.mark.asyncio
     async def test_patch_tier_config_logs_only_the_changed_field(self):
-        from routers.tenants import update_platform_tier_config, TierConfigUpdateRequest, TierConfigEntry
+        from routers.tenants import (
+            update_platform_tier_config,
+            TierConfigUpdateRequest,
+            TierConfigEntry,
+        )
         from shared.permissions.store import RolePermissionGrant as PermissionGrant
 
         caller = _user("SA")
-        body = TierConfigUpdateRequest(tiers=[TierConfigEntry(tier="STARTER", max_warehouses=3, max_users=6)])
+        body = TierConfigUpdateRequest(
+            tiers=[TierConfigEntry(tier="STARTER", max_warehouses=3, max_users=6)]
+        )
 
         old_row = MagicMock()
-        old_row.max_warehouses = 3   # unchanged
-        old_row.max_users = 5        # changes to 6
+        old_row.max_warehouses = 3  # unchanged
+        old_row.max_users = 5  # changes to 6
 
         public_check = MagicMock()
         public_check.fetchall = MagicMock(return_value=[MagicMock(tier="STARTER", is_public=True)])
@@ -201,15 +215,20 @@ class TestTierConfigLog:
         final_select.fetchall = MagicMock(return_value=[])
 
         db = AsyncMock()
-        db.execute = AsyncMock(side_effect=[public_check, select_old, update_res, log_res, final_select])
+        db.execute = AsyncMock(
+            side_effect=[public_check, select_old, update_res, log_res, final_select]
+        )
 
         grant = PermissionGrant(role="SA", action_id="platform:tier_config_edit", grant_type="FULL")
-        with patch("shared.permissions.middleware.get_role_permission",
-                   new=AsyncMock(return_value=grant)):
+        with patch(
+            "shared.permissions.middleware.get_role_permission", new=AsyncMock(return_value=grant)
+        ):
             with patch("shared.permissions.audit.audit_log", new=AsyncMock()):
                 await update_platform_tier_config(body=body, user=caller, db=db)
 
-        assert db.execute.call_count == 5   # public check, select old, update, ONE log insert, final select
+        assert (
+            db.execute.call_count == 5
+        )  # public check, select old, update, ONE log insert, final select
         log_call_sql = str(db.execute.call_args_list[3].args[0])
         log_call_params = db.execute.call_args_list[3].args[1]
         assert "platform_config_log" in log_call_sql
@@ -221,11 +240,17 @@ class TestTierConfigLog:
 
     @pytest.mark.asyncio
     async def test_patch_tier_config_unchanged_fields_write_no_log(self):
-        from routers.tenants import update_platform_tier_config, TierConfigUpdateRequest, TierConfigEntry
+        from routers.tenants import (
+            update_platform_tier_config,
+            TierConfigUpdateRequest,
+            TierConfigEntry,
+        )
         from shared.permissions.store import RolePermissionGrant as PermissionGrant
 
         caller = _user("SA")
-        body = TierConfigUpdateRequest(tiers=[TierConfigEntry(tier="STARTER", max_warehouses=3, max_users=5)])
+        body = TierConfigUpdateRequest(
+            tiers=[TierConfigEntry(tier="STARTER", max_warehouses=3, max_users=5)]
+        )
 
         old_row = MagicMock()
         old_row.max_warehouses = 3
@@ -243,25 +268,41 @@ class TestTierConfigLog:
         db.execute = AsyncMock(side_effect=[public_check, select_old, update_res, final_select])
 
         grant = PermissionGrant(role="SA", action_id="platform:tier_config_edit", grant_type="FULL")
-        with patch("shared.permissions.middleware.get_role_permission",
-                   new=AsyncMock(return_value=grant)):
+        with patch(
+            "shared.permissions.middleware.get_role_permission", new=AsyncMock(return_value=grant)
+        ):
             with patch("shared.permissions.audit.audit_log", new=AsyncMock()):
                 await update_platform_tier_config(body=body, user=caller, db=db)
 
-        assert db.execute.call_count == 4   # public check, select old, update, final select — no log insert
+        assert (
+            db.execute.call_count == 4
+        )  # public check, select old, update, final select — no log insert
 
     @pytest.mark.asyncio
     async def test_patch_tier_config_partial_update_leaves_other_fields_untouched(self):
         """Sending only display_name must not touch max_warehouses/max_users/sku_cap/etc —
         the UPDATE's SET clause contains display_name only (plus updated_at/updated_by_id)."""
-        from routers.tenants import update_platform_tier_config, TierConfigUpdateRequest, TierConfigEntry
+        from routers.tenants import (
+            update_platform_tier_config,
+            TierConfigUpdateRequest,
+            TierConfigEntry,
+        )
         from shared.permissions.store import RolePermissionGrant as PermissionGrant
 
         caller = _user("SA")
-        body = TierConfigUpdateRequest(tiers=[TierConfigEntry(tier="GROWTH", display_name="Growth Plan")])
+        body = TierConfigUpdateRequest(
+            tiers=[TierConfigEntry(tier="GROWTH", display_name="Growth Plan")]
+        )
 
-        old_row = MagicMock(max_warehouses=10, max_users=25, display_name="Growth",
-                             sku_cap=1500, feature_flags={}, is_public=True, sort_order=2)
+        old_row = MagicMock(
+            max_warehouses=10,
+            max_users=25,
+            display_name="Growth",
+            sku_cap=1500,
+            feature_flags={},
+            is_public=True,
+            sort_order=2,
+        )
         public_check = MagicMock()
         public_check.fetchall = MagicMock(return_value=[MagicMock(tier="GROWTH", is_public=True)])
         select_old = MagicMock()
@@ -272,16 +313,27 @@ class TestTierConfigLog:
         final_select.fetchall = MagicMock(return_value=[])
 
         db = AsyncMock()
-        db.execute = AsyncMock(side_effect=[public_check, select_old, update_res, log_res, final_select])
+        db.execute = AsyncMock(
+            side_effect=[public_check, select_old, update_res, log_res, final_select]
+        )
 
         grant = PermissionGrant(role="SA", action_id="platform:tier_config_edit", grant_type="FULL")
-        with patch("shared.permissions.middleware.get_role_permission", new=AsyncMock(return_value=grant)):
+        with patch(
+            "shared.permissions.middleware.get_role_permission", new=AsyncMock(return_value=grant)
+        ):
             with patch("shared.permissions.audit.audit_log", new=AsyncMock()):
                 await update_platform_tier_config(body=body, user=caller, db=db)
 
         update_call_sql = str(db.execute.call_args_list[2].args[0])
         assert "display_name" in update_call_sql
-        for untouched in ("max_warehouses", "max_users", "sku_cap", "is_public", "sort_order", "feature_flags"):
+        for untouched in (
+            "max_warehouses",
+            "max_users",
+            "sku_cap",
+            "is_public",
+            "sort_order",
+            "feature_flags",
+        ):
             assert untouched not in update_call_sql
         log_call_params = db.execute.call_args_list[3].args[1]
         assert log_call_params["field"] == "display_name"
@@ -289,7 +341,11 @@ class TestTierConfigLog:
     @pytest.mark.asyncio
     async def test_patch_tier_config_unknown_feature_flag_rejected(self):
         from fastapi import HTTPException
-        from routers.tenants import update_platform_tier_config, TierConfigUpdateRequest, TierConfigEntry
+        from routers.tenants import (
+            update_platform_tier_config,
+            TierConfigUpdateRequest,
+            TierConfigEntry,
+        )
         from shared.permissions.store import RolePermissionGrant as PermissionGrant
 
         caller = _user("SA")
@@ -297,10 +353,14 @@ class TestTierConfigLog:
             tiers=[TierConfigEntry(tier="STARTER", feature_flags={"BOGUS_FLAG": True})]
         )
         db = AsyncMock()
-        db.execute = AsyncMock(side_effect=AssertionError("must not query the DB before validation"))
+        db.execute = AsyncMock(
+            side_effect=AssertionError("must not query the DB before validation")
+        )
 
         grant = PermissionGrant(role="SA", action_id="platform:tier_config_edit", grant_type="FULL")
-        with patch("shared.permissions.middleware.get_role_permission", new=AsyncMock(return_value=grant)):
+        with patch(
+            "shared.permissions.middleware.get_role_permission", new=AsyncMock(return_value=grant)
+        ):
             with patch("shared.permissions.audit.audit_log", new=AsyncMock()):
                 with pytest.raises(HTTPException) as exc_info:
                     await update_platform_tier_config(body=body, user=caller, db=db)
@@ -311,7 +371,11 @@ class TestTierConfigLog:
     @pytest.mark.asyncio
     async def test_patch_tier_config_last_public_package_rejected(self):
         from fastapi import HTTPException
-        from routers.tenants import update_platform_tier_config, TierConfigUpdateRequest, TierConfigEntry
+        from routers.tenants import (
+            update_platform_tier_config,
+            TierConfigUpdateRequest,
+            TierConfigEntry,
+        )
         from shared.permissions.store import RolePermissionGrant as PermissionGrant
 
         caller = _user("SA")
@@ -319,16 +383,20 @@ class TestTierConfigLog:
 
         # Only STARTER is currently public; GROWTH/ENTERPRISE are already not public.
         public_check = MagicMock()
-        public_check.fetchall = MagicMock(return_value=[
-            MagicMock(tier="STARTER", is_public=True),
-            MagicMock(tier="GROWTH", is_public=False),
-            MagicMock(tier="ENTERPRISE", is_public=False),
-        ])
+        public_check.fetchall = MagicMock(
+            return_value=[
+                MagicMock(tier="STARTER", is_public=True),
+                MagicMock(tier="GROWTH", is_public=False),
+                MagicMock(tier="ENTERPRISE", is_public=False),
+            ]
+        )
         db = AsyncMock()
         db.execute = AsyncMock(side_effect=[public_check])
 
         grant = PermissionGrant(role="SA", action_id="platform:tier_config_edit", grant_type="FULL")
-        with patch("shared.permissions.middleware.get_role_permission", new=AsyncMock(return_value=grant)):
+        with patch(
+            "shared.permissions.middleware.get_role_permission", new=AsyncMock(return_value=grant)
+        ):
             with patch("shared.permissions.audit.audit_log", new=AsyncMock()):
                 with pytest.raises(HTTPException) as exc_info:
                     await update_platform_tier_config(body=body, user=caller, db=db)
@@ -351,13 +419,19 @@ class TestPlatformPackagePrices:
         caller = _user("SA")
         body = PriceCreateRequest(billing_period="MONTHLY", amount="150.00", reason="   ")
         db = AsyncMock()
-        db.execute = AsyncMock(side_effect=AssertionError("must not query the DB before validation"))
+        db.execute = AsyncMock(
+            side_effect=AssertionError("must not query the DB before validation")
+        )
 
         grant = PermissionGrant(role="SA", action_id="platform:tier_config_edit", grant_type="FULL")
-        with patch("shared.permissions.middleware.get_role_permission", new=AsyncMock(return_value=grant)):
+        with patch(
+            "shared.permissions.middleware.get_role_permission", new=AsyncMock(return_value=grant)
+        ):
             with patch("shared.permissions.audit.audit_log", new=AsyncMock()):
                 with pytest.raises(HTTPException) as exc_info:
-                    await create_platform_package_price(tier="STARTER", body=body, user=caller, db=db)
+                    await create_platform_package_price(
+                        tier="STARTER", body=body, user=caller, db=db
+                    )
 
         assert exc_info.value.status_code == 422
         assert exc_info.value.detail["code"] == "REASON_REQUIRED"
@@ -371,17 +445,25 @@ class TestPlatformPackagePrices:
 
         caller = _user("SA")
         body = PriceCreateRequest(
-            billing_period="MONTHLY", amount="150.00", reason="correction",
+            billing_period="MONTHLY",
+            amount="150.00",
+            reason="correction",
             effective_from=datetime.now(timezone.utc) - timedelta(days=1),
         )
         db = AsyncMock()
-        db.execute = AsyncMock(side_effect=AssertionError("must not query the DB before validation"))
+        db.execute = AsyncMock(
+            side_effect=AssertionError("must not query the DB before validation")
+        )
 
         grant = PermissionGrant(role="SA", action_id="platform:tier_config_edit", grant_type="FULL")
-        with patch("shared.permissions.middleware.get_role_permission", new=AsyncMock(return_value=grant)):
+        with patch(
+            "shared.permissions.middleware.get_role_permission", new=AsyncMock(return_value=grant)
+        ):
             with patch("shared.permissions.audit.audit_log", new=AsyncMock()):
                 with pytest.raises(HTTPException) as exc_info:
-                    await create_platform_package_price(tier="STARTER", body=body, user=caller, db=db)
+                    await create_platform_package_price(
+                        tier="STARTER", body=body, user=caller, db=db
+                    )
 
         assert exc_info.value.status_code == 422
         assert exc_info.value.detail["code"] == "EFFECTIVE_FROM_IN_PAST"
@@ -405,9 +487,13 @@ class TestPlatformPackagePrices:
         db.execute = AsyncMock(side_effect=[current_price_result, insert_price_result, log_result])
 
         grant = PermissionGrant(role="SA", action_id="platform:tier_config_edit", grant_type="FULL")
-        with patch("shared.permissions.middleware.get_role_permission", new=AsyncMock(return_value=grant)):
+        with patch(
+            "shared.permissions.middleware.get_role_permission", new=AsyncMock(return_value=grant)
+        ):
             with patch("shared.permissions.audit.audit_log", new=AsyncMock()):
-                result = await create_platform_package_price(tier="STARTER", body=body, user=caller, db=db)
+                result = await create_platform_package_price(
+                    tier="STARTER", body=body, user=caller, db=db
+                )
 
         assert result.data["id"] == "price-new"
         insert_sql = str(db.execute.call_args_list[1].args[0])
@@ -430,17 +516,37 @@ class TestRegistryBillingColumns:
 
         caller = _user("SA")
         row = MagicMock(
-            id="00000000-0000-0000-0000-000000000001", slug="acme", organisation_type="RETAILER",
-            status="ACTIVE", plan_tier="GROWTH", default_locale="en",
-            contact_name=None, contact_email=None, contact_phone=None,
-            contract_start=None, contract_end=None, notes=None, sku_cap=None,
-            address_line1=None, address_line2=None, city=None, state_province=None,
-            postal_code=None, country=None, industry=None, feature_flags={},
+            id="00000000-0000-0000-0000-000000000001",
+            slug="acme",
+            organisation_type="RETAILER",
+            status="ACTIVE",
+            plan_tier="GROWTH",
+            default_locale="en",
+            contact_name=None,
+            contact_email=None,
+            contact_phone=None,
+            contract_start=None,
+            contract_end=None,
+            notes=None,
+            sku_cap=None,
+            address_line1=None,
+            address_line2=None,
+            city=None,
+            state_province=None,
+            postal_code=None,
+            country=None,
+            industry=None,
+            feature_flags={},
             created_at=_dt.datetime(2026, 10, 1, tzinfo=_dt.timezone.utc),
-            signup_source="SELF_SIGNUP", subscription_status="ACTIVE",
-            billing_period="ANNUAL", current_period_end=_dt.date(2027, 10, 1),
+            signup_source="SELF_SIGNUP",
+            subscription_status="ACTIVE",
+            billing_period="ANNUAL",
+            current_period_end=_dt.date(2027, 10, 1),
             last_payment_status="PAID",
-            contacts=[], ta_name=None, ta_email=None, ta_user_id=None,
+            contacts=[],
+            ta_name=None,
+            ta_email=None,
+            ta_user_id=None,
         )
         row.name = "Acme"  # "name" is a reserved MagicMock constructor kwarg — set separately
         select_result = MagicMock()
@@ -450,7 +556,9 @@ class TestRegistryBillingColumns:
         db.execute = AsyncMock(return_value=select_result)
 
         grant = PermissionGrant(role="SA", action_id="tenant:registry_view", grant_type="FULL")
-        with patch("shared.permissions.middleware.get_role_permission", new=AsyncMock(return_value=grant)):
+        with patch(
+            "shared.permissions.middleware.get_role_permission", new=AsyncMock(return_value=grant)
+        ):
             with patch("shared.permissions.audit.audit_log", new=AsyncMock()):
                 result = await sa_tenant_registry(user=caller, db=db)
 

@@ -1,21 +1,22 @@
 """Unit tests for the P4 platform contact work (migration 080).
 
-  - routers.platform_contact.get_public_contact: unauthenticated, returns
-    configured=false + nulls on an empty row.
-  - routers.platform_contact.update_platform_contact: SA-only, reason
-    required, phone format validated, empty string -> NULL, per-field
-    platform_config_log entries only for fields that actually changed.
+- routers.platform_contact.get_public_contact: unauthenticated, returns
+  configured=false + nulls on an empty row.
+- routers.platform_contact.update_platform_contact: SA-only, reason
+  required, phone format validated, empty string -> NULL, per-field
+  platform_config_log entries only for fields that actually changed.
 """
+
 from __future__ import annotations
 
 import os
 import sys
 
-os.environ.setdefault("DATABASE_URL",      "postgresql+asyncpg://test:x@localhost/test")
+os.environ.setdefault("DATABASE_URL", "postgresql+asyncpg://test:x@localhost/test")
 os.environ.setdefault("DATABASE_READ_URL", "postgresql+asyncpg://test:x@localhost/test")
-os.environ.setdefault("JWT_SECRET",        "test-secret")
-os.environ.setdefault("JWT_SECRET_KEY",    "test-secret")
-os.environ.setdefault("ENVIRONMENT",       "local")
+os.environ.setdefault("JWT_SECRET", "test-secret")
+os.environ.setdefault("JWT_SECRET_KEY", "test-secret")
+os.environ.setdefault("ENVIRONMENT", "local")
 
 _TENANT_ROOT = os.path.normpath(os.path.join(os.path.dirname(__file__), "..", ".."))
 if _TENANT_ROOT not in sys.path:
@@ -30,6 +31,7 @@ from fastapi import HTTPException  # noqa: E402 - sys.path/env setup above must 
 
 def _user(role: str = "SA"):
     from dependencies import UserContext
+
     return UserContext(user_id="u1", role=role, tenant_id=None, warehouse_id=None)
 
 
@@ -51,7 +53,6 @@ def _contact_row(**overrides) -> MagicMock:
 
 @pytest.mark.unit
 class TestPublicContact:
-
     @pytest.mark.asyncio
     async def test_unconfigured_returns_false_and_nulls(self):
         from routers.platform_contact import get_public_contact
@@ -80,7 +81,6 @@ class TestPublicContact:
 
 @pytest.mark.unit
 class TestUpdatePlatformContact:
-
     @pytest.mark.asyncio
     async def test_missing_reason_rejected(self):
         from routers.platform_contact import ContactUpdateRequest, update_platform_contact
@@ -89,10 +89,14 @@ class TestUpdatePlatformContact:
         caller = _user("SA")
         body = ContactUpdateRequest(support_email="support@example.com", reason="   ")
         db = AsyncMock()
-        db.execute = AsyncMock(side_effect=AssertionError("must not query the DB before validation"))
+        db.execute = AsyncMock(
+            side_effect=AssertionError("must not query the DB before validation")
+        )
 
         grant = PermissionGrant(role="SA", action_id="platform:contact_edit", grant_type="FULL")
-        with patch("shared.permissions.middleware.get_role_permission", new=AsyncMock(return_value=grant)):
+        with patch(
+            "shared.permissions.middleware.get_role_permission", new=AsyncMock(return_value=grant)
+        ):
             with patch("shared.permissions.audit.audit_log", new=AsyncMock()):
                 with pytest.raises(HTTPException) as exc_info:
                     await update_platform_contact(body=body, user=caller, db=db)
@@ -108,10 +112,14 @@ class TestUpdatePlatformContact:
         caller = _user("SA")
         body = ContactUpdateRequest(phone="not-a-phone!!", reason="fix phone")
         db = AsyncMock()
-        db.execute = AsyncMock(side_effect=AssertionError("must not query the DB before validation"))
+        db.execute = AsyncMock(
+            side_effect=AssertionError("must not query the DB before validation")
+        )
 
         grant = PermissionGrant(role="SA", action_id="platform:contact_edit", grant_type="FULL")
-        with patch("shared.permissions.middleware.get_role_permission", new=AsyncMock(return_value=grant)):
+        with patch(
+            "shared.permissions.middleware.get_role_permission", new=AsyncMock(return_value=grant)
+        ):
             with patch("shared.permissions.audit.audit_log", new=AsyncMock()):
                 with pytest.raises(HTTPException) as exc_info:
                     await update_platform_contact(body=body, user=caller, db=db)
@@ -127,10 +135,14 @@ class TestUpdatePlatformContact:
         caller = _user("SA")
         body = ContactUpdateRequest(support_email="not-an-email", reason="fix email")
         db = AsyncMock()
-        db.execute = AsyncMock(side_effect=AssertionError("must not query the DB before validation"))
+        db.execute = AsyncMock(
+            side_effect=AssertionError("must not query the DB before validation")
+        )
 
         grant = PermissionGrant(role="SA", action_id="platform:contact_edit", grant_type="FULL")
-        with patch("shared.permissions.middleware.get_role_permission", new=AsyncMock(return_value=grant)):
+        with patch(
+            "shared.permissions.middleware.get_role_permission", new=AsyncMock(return_value=grant)
+        ):
             with patch("shared.permissions.audit.audit_log", new=AsyncMock()):
                 with pytest.raises(HTTPException) as exc_info:
                     await update_platform_contact(body=body, user=caller, db=db)
@@ -156,7 +168,9 @@ class TestUpdatePlatformContact:
         db.execute = AsyncMock(side_effect=AssertionError("must not query the DB when forbidden"))
 
         grant = PermissionGrant(role="TA", action_id="platform:contact_edit", grant_type="FULL")
-        with patch("shared.permissions.middleware.get_role_permission", new=AsyncMock(return_value=grant)):
+        with patch(
+            "shared.permissions.middleware.get_role_permission", new=AsyncMock(return_value=grant)
+        ):
             with patch("shared.permissions.audit.audit_log", new=AsyncMock()):
                 with pytest.raises(HTTPException) as exc_info:
                     await update_platform_contact(body=body, user=caller, db=db)
@@ -189,12 +203,20 @@ class TestUpdatePlatformContact:
         select_after.fetchone = MagicMock(return_value=new_row)
 
         db = AsyncMock()
-        db.execute = AsyncMock(side_effect=[
-            select_before, update_result, log_result_1, log_result_2, select_after,
-        ])
+        db.execute = AsyncMock(
+            side_effect=[
+                select_before,
+                update_result,
+                log_result_1,
+                log_result_2,
+                select_after,
+            ]
+        )
 
         grant = PermissionGrant(role="SA", action_id="platform:contact_edit", grant_type="FULL")
-        with patch("shared.permissions.middleware.get_role_permission", new=AsyncMock(return_value=grant)):
+        with patch(
+            "shared.permissions.middleware.get_role_permission", new=AsyncMock(return_value=grant)
+        ):
             with patch("shared.permissions.audit.audit_log", new=AsyncMock()):
                 result = await update_platform_contact(body=body, user=caller, db=db)
 
@@ -235,7 +257,9 @@ class TestUpdatePlatformContact:
         db.execute = AsyncMock(side_effect=[select_before, update_result, select_after])
 
         grant = PermissionGrant(role="SA", action_id="platform:contact_edit", grant_type="FULL")
-        with patch("shared.permissions.middleware.get_role_permission", new=AsyncMock(return_value=grant)):
+        with patch(
+            "shared.permissions.middleware.get_role_permission", new=AsyncMock(return_value=grant)
+        ):
             with patch("shared.permissions.audit.audit_log", new=AsyncMock()):
                 result = await update_platform_contact(body=body, user=caller, db=db)
 

@@ -35,6 +35,7 @@ Tests:
 4. test_deactivated_user_cannot_login        — deactivate endpoint sets is_active=False
 5. test_primary_assignment_cannot_be_removed — DELETE on PRIMARY raises 422 CANNOT_REMOVE_PRIMARY
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -47,9 +48,9 @@ import pytest
 from fastapi import HTTPException
 
 TENANT_ID = "10000001-0000-0000-0000-000000000001"
-NODE_A    = "20000001-a000-0000-0000-000000000001"
-NODE_B    = "20000001-b000-0000-0000-000000000002"
-USER_ID   = "bbbbbbbb-0000-0000-0000-000000000001"
+NODE_A = "20000001-a000-0000-0000-000000000001"
+NODE_B = "20000001-b000-0000-0000-000000000002"
+USER_ID = "bbbbbbbb-0000-0000-0000-000000000001"
 ASSIGN_ID = "cccccccc-0000-0000-0000-000000000001"
 
 
@@ -63,9 +64,9 @@ class _Caller:
 
 # ── Test 1: Org node tree structure ──────────────────────────────────────────
 
+
 @pytest.mark.unit
 class TestOrgNodeCreateAndTree:
-
     def test_tree_nesting_algorithm(self) -> None:
         """Nodes with parent_node_id are nested inside their parent's children list.
 
@@ -73,6 +74,7 @@ class TestOrgNodeCreateAndTree:
         flat list of (id, parent_node_id, ...) rows. This test verifies the algorithm
         produces the correct nested structure without requiring a DB connection.
         """
+
         @dataclass
         class _Row:
             id: str
@@ -84,15 +86,17 @@ class TestOrgNodeCreateAndTree:
             is_active: bool
 
         rows = [
-            _Row(NODE_A, "Main Factory",  None,   "MAIN", 1, True, True),
-            _Row(NODE_B, "Addis WH",      NODE_A, "WH-A", 2, True, True),
+            _Row(NODE_A, "Main Factory", None, "MAIN", 1, True, True),
+            _Row(NODE_B, "Addis WH", NODE_A, "WH-A", 2, True, True),
         ]
 
         # Replicate the _build_tree algorithm from routers/hierarchy.py
         id_map: dict[str, dict[str, Any]] = {}
         for r in rows:
             id_map[r.id] = {
-                "id": r.id, "name": r.name, "code": r.code,
+                "id": r.id,
+                "name": r.name,
+                "code": r.code,
                 "hierarchy_level": r.hierarchy_level,
                 "is_stock_holding": r.is_stock_holding,
                 "is_active": r.is_active,
@@ -122,7 +126,7 @@ class TestOrgNodeCreateAndTree:
     def test_node_without_parent_is_root(self) -> None:
         """A node with parent_node_id=None is a root node (appears at top level)."""
         nodes = [
-            {"id": NODE_A, "parent_node_id": None,   "name": "Root",  "children": []},
+            {"id": NODE_A, "parent_node_id": None, "name": "Root", "children": []},
             {"id": NODE_B, "parent_node_id": NODE_A, "name": "Child", "children": []},
         ]
         roots = [n for n in nodes if n["parent_node_id"] is None]
@@ -132,18 +136,27 @@ class TestOrgNodeCreateAndTree:
 
 # ── Test 2: Role ceiling enforcement ─────────────────────────────────────────
 
+
 @pytest.mark.unit
 class TestUserCreateRoleBelowCallerOnly:
-
     def _call(self, caller: str, target: str) -> None:
         from services.tenant_service.routers.personnel import _check_role_ceiling  # type: ignore[import]
+
         _check_role_ceiling(caller, target)
 
     def _check_role_ceiling_local(self, caller: str, target: str) -> None:
         """Local copy of _check_role_ceiling to avoid import path issues in unit tests."""
         ROLE_LEVELS: dict[str, int] = {
-            "SYS": 1, "AU": 2, "RT": 3, "SA_GT": 4,
-            "LM": 6, "WM": 6, "RM": 7, "NM": 8, "TA": 9, "SA": 10,
+            "SYS": 1,
+            "AU": 2,
+            "RT": 3,
+            "SA_GT": 4,
+            "LM": 6,
+            "WM": 6,
+            "RM": 7,
+            "NM": 8,
+            "TA": 9,
+            "SA": 10,
         }
         caller_level = ROLE_LEVELS.get(caller, 0)
         target_level = ROLE_LEVELS.get(target, 0)
@@ -208,9 +221,9 @@ class TestUserCreateRoleBelowCallerOnly:
 
 # ── Test 3: Acting assignment is time-bounded ─────────────────────────────────
 
+
 @pytest.mark.unit
 class TestActingAssignmentTimeBounded:
-
     def test_acting_assignment_requires_valid_until(self) -> None:
         """ACTING assignments must carry a valid_until timestamp.
 
@@ -225,7 +238,7 @@ class TestActingAssignmentTimeBounded:
             assignment_type: str
             role_code: Optional[str] = None
             valid_from: Optional[datetime] = None
-            valid_until: datetime   # required — no default
+            valid_until: datetime  # required — no default
 
         with pytest.raises(ValidationError):
             _AssignmentCreateRequest(
@@ -247,7 +260,7 @@ class TestActingAssignmentTimeBounded:
             valid_from: Optional[datetime] = None
             valid_until: datetime
 
-        now   = datetime.now(timezone.utc)
+        now = datetime.now(timezone.utc)
         later = now + timedelta(days=30)
         req = _AssignmentCreateRequest(
             facility_id=UUID(NODE_A),
@@ -258,14 +271,14 @@ class TestActingAssignmentTimeBounded:
         )
         assert req.assignment_type == "ACTING"
         assert req.valid_until == later
-        assert req.valid_from  == now
+        assert req.valid_from == now
 
     def test_acting_assignment_end_must_be_after_start(self) -> None:
         """valid_until must be strictly after valid_from (enforced in endpoint logic)."""
         now = datetime.now(timezone.utc)
 
         start = now + timedelta(days=5)
-        end   = now + timedelta(days=1)   # before start
+        end = now + timedelta(days=1)  # before start
 
         assert end < start, (
             "Test invariant: end must be before start to trigger the validation error"
@@ -273,14 +286,15 @@ class TestActingAssignmentTimeBounded:
         # The endpoint validates: if valid_until <= valid_from → HTTP 422
         # This test confirms the expected ordering check is necessary.
         from datetime import timezone as tz
+
         assert end.astimezone(tz.utc) < start.astimezone(tz.utc)
 
 
 # ── Test 4: Deactivated user cannot login ─────────────────────────────────────
 
+
 @pytest.mark.unit
 class TestDeactivatedUserCannotLogin:
-
     async def test_deactivate_sets_is_active_false(self) -> None:
         """deactivate endpoint issues UPDATE users SET is_active=false."""
         session = AsyncMock()
@@ -289,11 +303,13 @@ class TestDeactivatedUserCannotLogin:
         user_row.is_active = True
         user_row.id = USER_ID
 
-        session.execute = AsyncMock(side_effect=[
-            MagicMock(fetchone=MagicMock(return_value=user_row)),    # SELECT user
-            MagicMock(),                                               # UPDATE is_active=false
-            MagicMock(),                                               # UPDATE assignments
-        ])
+        session.execute = AsyncMock(
+            side_effect=[
+                MagicMock(fetchone=MagicMock(return_value=user_row)),  # SELECT user
+                MagicMock(),  # UPDATE is_active=false
+                MagicMock(),  # UPDATE assignments
+            ]
+        )
 
         # Verify that the SQL issued contains SET is_active = false
         call_args: list[Any] = []
@@ -304,11 +320,13 @@ class TestDeactivatedUserCannotLogin:
             return await original_execute(query, params)
 
         session.execute.side_effect = None
-        session.execute = AsyncMock(side_effect=[
-            MagicMock(fetchone=MagicMock(return_value=user_row)),
-            MagicMock(),
-            MagicMock(),
-        ])
+        session.execute = AsyncMock(
+            side_effect=[
+                MagicMock(fetchone=MagicMock(return_value=user_row)),
+                MagicMock(),
+                MagicMock(),
+            ]
+        )
 
         # Verify the deactivate SQL pattern would set is_active=false
         deactivate_sql = (
@@ -332,9 +350,7 @@ class TestDeactivatedUserCannotLogin:
         def would_grant_token(record: Any) -> bool:
             return bool(record.is_active)
 
-        assert not would_grant_token(user_record), (
-            "Deactivated user must not receive a token"
-        )
+        assert not would_grant_token(user_record), "Deactivated user must not receive a token"
 
     def test_reactivated_user_can_login_again(self) -> None:
         """After reactivation, is_active=True allows token issuance."""
@@ -349,9 +365,9 @@ class TestDeactivatedUserCannotLogin:
 
 # ── Test 5: PRIMARY assignment cannot be removed ──────────────────────────────
 
+
 @pytest.mark.unit
 class TestPrimaryAssignmentCannotBeRemoved:
-
     async def test_delete_primary_assignment_raises_422(self) -> None:
         """DELETE /assignments/{id} raises 422 CANNOT_REMOVE_PRIMARY for PRIMARY type."""
         session = AsyncMock()
@@ -372,7 +388,7 @@ class TestPrimaryAssignmentCannotBeRemoved:
                     detail={
                         "code": "CANNOT_REMOVE_PRIMARY",
                         "message": "PRIMARY facility assignment cannot be removed. "
-                                   "Deactivate the user to remove all access.",
+                        "Deactivate the user to remove all access.",
                     },
                 )
 
@@ -415,17 +431,16 @@ class TestPrimaryAssignmentCannotBeRemoved:
         # At the application layer, create_user() inserts exactly one PRIMARY.
         # This test records the invariant as a specification.
         primary_assignments = [
-            {"assignment_type": "PRIMARY", "is_active": True,  "id": "a"},
+            {"assignment_type": "PRIMARY", "is_active": True, "id": "a"},
         ]
         acting_assignments = [
-            {"assignment_type": "ACTING",  "is_active": True,  "id": "b"},
-            {"assignment_type": "ACTING",  "is_active": True,  "id": "c"},
+            {"assignment_type": "ACTING", "is_active": True, "id": "b"},
+            {"assignment_type": "ACTING", "is_active": True, "id": "c"},
         ]
         all_assignments = primary_assignments + acting_assignments
 
         active_primaries = [
-            a for a in all_assignments
-            if a["assignment_type"] == "PRIMARY" and a["is_active"]
+            a for a in all_assignments if a["assignment_type"] == "PRIMARY" and a["is_active"]
         ]
         assert len(active_primaries) == 1, (
             "Exactly one active PRIMARY assignment per user — "
@@ -435,9 +450,9 @@ class TestPrimaryAssignmentCannotBeRemoved:
 
 # ── Regression: tenant creation includes TA user ─────────────────────────────
 
+
 @pytest.mark.unit
 class TestTenantCreationIncludesTAUser:
-
     def test_tenant_creation_creates_ta_user(self) -> None:
         """Wizard launch() must POST to /tenants/ then POST to /tenants/{id}/users.
 
@@ -520,7 +535,9 @@ class TestTenantCreationIncludesTAUser:
         names = [t["name"] for t in active]
 
         assert "Horizon Beverages" in names, "New tenant must appear in the list"
-        assert names[0] == "Horizon Beverages", "New tenant must be first (ordered by created_at DESC)"
+        assert names[0] == "Horizon Beverages", (
+            "New tenant must be first (ordered by created_at DESC)"
+        )
 
     def test_ta_user_can_login_after_creation(self) -> None:
         """TA user created via wizard must be findable by _lookup_user_in_db().
@@ -549,6 +566,7 @@ class TestTenantCreationIncludesTAUser:
 
 
 # ── Regression: node address persists through create and edit ─────────────────
+
 
 @pytest.mark.unit
 class TestNodeAddressPersistsThroughSaveEdit:
@@ -668,6 +686,7 @@ class TestNodeAddressPersistsThroughSaveEdit:
 
 # ── BUG 1: Analytics / lots / stock-count empty state for real tenants ────────
 
+
 @pytest.mark.unit
 class TestEmptyStateForRealTenants:
     """BUG 1 regression: pages must render a proper empty state, not common.no_data.
@@ -692,10 +711,10 @@ class TestEmptyStateForRealTenants:
         low_count = 0
 
         stats = [
-            {"label": "Total Units",    "value": str(total)},
-            {"label": "Active SKUs",    "value": str(len(products))},
-            {"label": "Locations",      "value": str(len(warehouses))},
-            {"label": "Low Stock",      "value": str(low_count)},
+            {"label": "Total Units", "value": str(total)},
+            {"label": "Active SKUs", "value": str(len(products))},
+            {"label": "Locations", "value": str(len(warehouses))},
+            {"label": "Low Stock", "value": str(low_count)},
         ]
 
         assert len(stats) == 4, "Must always render 4 stat buckets"
@@ -749,6 +768,7 @@ class TestEmptyStateForRealTenants:
 
 # ── BUG 2: Org level inputs editable on first render ─────────────────────────
 
+
 @pytest.mark.unit
 class TestOrgLevelInputsEditableOnFirstRender:
     """BUG 2 regression: level name inputs must accept text before server data arrives.
@@ -770,8 +790,7 @@ class TestOrgLevelInputsEditableOnFirstRender:
         """
         levels: list[dict] = []
         updated = [
-            {**lv, "level_name": "New Name"} if i == 0 else lv
-            for i, lv in enumerate(levels)
+            {**lv, "level_name": "New Name"} if i == 0 else lv for i, lv in enumerate(levels)
         ]
         assert updated == [], (
             "Mapping over [] returns [] — proves the bug: input was silently discarded"
@@ -783,6 +802,7 @@ class TestOrgLevelInputsEditableOnFirstRender:
         The fix initialises `levels` with a 3-element default array so the
         `prev.map(...)` in `updateLevel` actually finds an element to update.
         """
+
         def suggest_role(level_number: int) -> str:
             if level_number == 1:
                 return "NM"
@@ -796,10 +816,7 @@ class TestOrgLevelInputsEditableOnFirstRender:
         ]
 
         idx, patch = 0, {"level_name": "Main Factory"}
-        updated = [
-            {**lv, **patch} if i == idx else lv
-            for i, lv in enumerate(levels)
-        ]
+        updated = [{**lv, **patch} if i == idx else lv for i, lv in enumerate(levels)]
 
         assert updated[0]["level_name"] == "Main Factory", (
             "Input must be preserved when levels starts with a non-empty default array"
@@ -808,6 +825,7 @@ class TestOrgLevelInputsEditableOnFirstRender:
 
 
 # ── BUG 3: SA cross-tenant RLS context ───────────────────────────────────────
+
 
 @pytest.mark.unit
 class TestSACrossTenantRlsContext:
@@ -839,7 +857,7 @@ class TestSACrossTenantRlsContext:
     def test_non_sa_rls_context_uses_own_tenant_id(self) -> None:
         """Non-SA callers must keep their own tenant_id as the RLS context."""
         caller_tenant = "bbbbbbbb-0000-0000-0000-000000000003"
-        url_tenant    = "cccccccc-0000-0000-0000-000000000004"
+        url_tenant = "cccccccc-0000-0000-0000-000000000004"
 
         def resolve_rls_tenant(caller_role: str, caller_tenant_id: str, url_tenant_id: str) -> str:
             return url_tenant_id if caller_role == "SA" else caller_tenant_id
@@ -851,8 +869,8 @@ class TestSACrossTenantRlsContext:
 
     def test_sa_cannot_see_other_tenant_nodes_with_own_rls(self) -> None:
         """Simulates the bug: SA with own RLS gets zero results for another tenant."""
-        sa_rls_tenant  = "11111111-0000-0000-0000-000000000000"
-        target_tenant  = "22222222-0000-0000-0000-000000000000"
+        sa_rls_tenant = "11111111-0000-0000-0000-000000000000"
+        target_tenant = "22222222-0000-0000-0000-000000000000"
 
         # Simulated nodes table
         nodes = [
@@ -870,6 +888,7 @@ class TestSACrossTenantRlsContext:
 
 
 # ── BUG 4: Create user without facility must return 201 ──────────────────────
+
 
 @pytest.mark.unit
 class TestCreateUserWithoutFacility:
@@ -902,10 +921,12 @@ class TestCreateUserWithoutFacility:
 
         assignments_created = []
         if facility_id is not None:
-            assignments_created.append({
-                "facility_id": str(facility_id),
-                "assignment_type": "PRIMARY",
-            })
+            assignments_created.append(
+                {
+                    "facility_id": str(facility_id),
+                    "assignment_type": "PRIMARY",
+                }
+            )
 
         assert assignments_created == [], (
             "No PRIMARY assignment must be created when facility_id is None"
@@ -914,20 +935,24 @@ class TestCreateUserWithoutFacility:
     def test_valid_facility_creates_assignment(self) -> None:
         """When facility_id is a valid UUID, a PRIMARY assignment must be created."""
         import uuid
+
         facility_id = uuid.uuid4()
 
         assignments_created = []
         if facility_id is not None:
-            assignments_created.append({
-                "facility_id": str(facility_id),
-                "assignment_type": "PRIMARY",
-            })
+            assignments_created.append(
+                {
+                    "facility_id": str(facility_id),
+                    "assignment_type": "PRIMARY",
+                }
+            )
 
         assert len(assignments_created) == 1, "One PRIMARY assignment must be created"
         assert assignments_created[0]["assignment_type"] == "PRIMARY"
 
 
 # ── BUG 5: WM tenant name resolved from UUID slug ────────────────────────────
+
 
 @pytest.mark.unit
 class TestWMTenantNameResolvesFromUUID:
@@ -946,9 +971,12 @@ class TestWMTenantNameResolvesFromUUID:
     def test_uuid_shaped_tenant_name_is_filtered(self) -> None:
         """UUID-shaped tenantName must be treated as absent, not displayed."""
         import re
-        UUID_PATTERN = re.compile(r'^[0-9a-f-]{36}$', re.IGNORECASE)
 
-        def sidebar_display_name(tenant_name: str | None, user_tenant_name: str | None) -> str | None:
+        UUID_PATTERN = re.compile(r"^[0-9a-f-]{36}$", re.IGNORECASE)
+
+        def sidebar_display_name(
+            tenant_name: str | None, user_tenant_name: str | None
+        ) -> str | None:
             # mirrors the fixed Sidebar fallback logic
             if tenant_name is not None:
                 return tenant_name
@@ -964,9 +992,12 @@ class TestWMTenantNameResolvesFromUUID:
     def test_human_readable_tenant_name_is_shown(self) -> None:
         """When tenantName is a real name (not UUID), it must be displayed."""
         import re
-        UUID_PATTERN = re.compile(r'^[0-9a-f-]{36}$', re.IGNORECASE)
 
-        def sidebar_display_name(tenant_name: str | None, user_tenant_name: str | None) -> str | None:
+        UUID_PATTERN = re.compile(r"^[0-9a-f-]{36}$", re.IGNORECASE)
+
+        def sidebar_display_name(
+            tenant_name: str | None, user_tenant_name: str | None
+        ) -> str | None:
             if tenant_name is not None:
                 return tenant_name
             if user_tenant_name and not UUID_PATTERN.match(user_tenant_name):
@@ -983,7 +1014,8 @@ class TestWMTenantNameResolvesFromUUID:
 
         # Before fetch: display falls back to UUID placeholder → should show None
         import re
-        UUID_PATTERN = re.compile(r'^[0-9a-f-]{36}$', re.IGNORECASE)
+
+        UUID_PATTERN = re.compile(r"^[0-9a-f-]{36}$", re.IGNORECASE)
 
         def sidebar_display_name(resolved: str | None, fallback: str | None) -> str | None:
             if resolved is not None:
@@ -1003,6 +1035,7 @@ class TestWMTenantNameResolvesFromUUID:
 
 # ── BUG 1: Edit user ──────────────────────────────────────────────────────────
 
+
 @pytest.mark.unit
 class TestEditUser:
     """BUG 1 — UserUpdateRequest must accept name/email/must_reset_password.
@@ -1014,9 +1047,16 @@ class TestEditUser:
 
     # Local copy of the updated UserUpdateRequest schema
     class _UserUpdateRequest:
-        def __init__(self, name=None, full_name=None, email=None,
-                     role=None, role_code=None, facility_id=None,
-                     must_reset_password=None):
+        def __init__(
+            self,
+            name=None,
+            full_name=None,
+            email=None,
+            role=None,
+            role_code=None,
+            facility_id=None,
+            must_reset_password=None,
+        ):
             self.name = name
             self.full_name = full_name
             self.email = email
@@ -1026,8 +1066,16 @@ class TestEditUser:
             self.must_reset_password = must_reset_password
 
     ROLE_LEVELS: dict[str, int] = {
-        "SYS": 1, "AU": 2, "RT": 3, "SA_GT": 4,
-        "LM": 6, "WM": 6, "RM": 7, "NM": 8, "TA": 9, "SA": 10,
+        "SYS": 1,
+        "AU": 2,
+        "RT": 3,
+        "SA_GT": 4,
+        "LM": 6,
+        "WM": 6,
+        "RM": 7,
+        "NM": 8,
+        "TA": 9,
+        "SA": 10,
     }
 
     def _check_role_ceiling_local(self, caller: str, target: str) -> None:
@@ -1035,10 +1083,13 @@ class TestEditUser:
         target_level = self.ROLE_LEVELS.get(target, 0)
         if target_level >= caller_level:
             from fastapi import HTTPException
+
             raise HTTPException(
                 status_code=403,
-                detail={"code": "ROLE_CEILING_VIOLATION",
-                        "message": f"Cannot assign role '{target}'"},
+                detail={
+                    "code": "ROLE_CEILING_VIOLATION",
+                    "message": f"Cannot assign role '{target}'",
+                },
             )
 
     def test_update_request_accepts_name_alias(self):
@@ -1084,8 +1135,9 @@ class TestEditUser:
     def test_role_ceiling_check_still_enforced_on_update(self):
         """Role ceiling enforcement must run during PATCH too."""
         from fastapi import HTTPException
+
         with pytest.raises(HTTPException) as exc_info:
-            self._check_role_ceiling_local("WM", "NM")   # WM=6, NM=8 — ceiling violation
+            self._check_role_ceiling_local("WM", "NM")  # WM=6, NM=8 — ceiling violation
         assert exc_info.value.status_code == 403
 
     @pytest.mark.asyncio
@@ -1100,8 +1152,12 @@ class TestEditUser:
             execute_calls.append(sql[:60])
             mock_result = MagicMock()
             mock_result.fetchone.return_value = MagicMock(
-                id=uuid4(), email="old@test.com", full_name="Old Name",
-                role="WM", warehouse_id=uuid4(), is_active=True,
+                id=uuid4(),
+                email="old@test.com",
+                full_name="Old Name",
+                role="WM",
+                warehouse_id=uuid4(),
+                is_active=True,
             )
             mock_result.fetchall.return_value = []
             return mock_result
@@ -1115,23 +1171,32 @@ class TestEditUser:
 
         if facility_changed:
             await db.execute(
-                type("Q", (), {"text": "UPDATE user_facility_assignments SET is_active = false WHERE user_id = :uid AND assignment_type = 'PRIMARY' AND is_active = true"})(),
-                {"uid": str(uuid4())}
+                type(
+                    "Q",
+                    (),
+                    {
+                        "text": "UPDATE user_facility_assignments SET is_active = false WHERE user_id = :uid AND assignment_type = 'PRIMARY' AND is_active = true"
+                    },
+                )(),
+                {"uid": str(uuid4())},
             )
             old_primary_deactivated = any("is_active = false" in c for c in execute_calls)
 
             if new_facility_id is not None:
                 await db.execute(
                     type("Q", (), {"text": "INSERT INTO user_facility_assignments"})(),
-                    {"fid": str(new_facility_id)}
+                    {"fid": str(new_facility_id)},
                 )
-                new_primary_created = any("INSERT INTO user_facility_assignments" in c for c in execute_calls)
+                new_primary_created = any(
+                    "INSERT INTO user_facility_assignments" in c for c in execute_calls
+                )
 
         assert old_primary_deactivated, "Old PRIMARY must be deactivated when facility changes"
         assert new_primary_created, "New PRIMARY must be created for the new facility"
 
 
 # ── BUG 2: WM banner slug fallback ────────────────────────────────────────────
+
 
 @pytest.mark.unit
 class TestWMBannerSlugFallback:
@@ -1165,6 +1230,7 @@ class TestWMBannerSlugFallback:
     def test_sidebar_falls_back_to_org_when_no_name_resolves(self):
         """Sidebar sub-line must show org slug when tenantName is null and JWT name is UUID."""
         import re
+
         UUID_PATTERN = re.compile(r"^[0-9a-f-]{36}$", re.IGNORECASE)
         org = "tenant16"
         resolved_api = None
@@ -1175,13 +1241,14 @@ class TestWMBannerSlugFallback:
                 return resolved
             if jwt and not UUID_PATTERN.match(jwt):
                 return jwt
-            return fallback   # was: None (empty) — now: org slug
+            return fallback  # was: None (empty) — now: org slug
 
         result = display(resolved_api, jwt_name, org)
         assert result == "tenant16", "When both resolved and JWT name are unusable, show org slug"
 
 
 # ── BUG 3: Warehouses page uses org nodes ─────────────────────────────────────
+
 
 @pytest.mark.unit
 class TestWarehousesPageUsesOrgNodes:
@@ -1203,21 +1270,32 @@ class TestWarehousesPageUsesOrgNodes:
     def test_flat_nodes_include_nested_children(self):
         """flattenNodes must traverse children recursively to produce a flat list."""
         nodes = [
-            {"id": "A", "name": "Main WH", "hierarchy_level": 1,
-             "children": [
-                 {"id": "B", "name": "North WH", "hierarchy_level": 2, "children": []},
-                 {"id": "C", "name": "South WH", "hierarchy_level": 2, "children": [
-                     {"id": "D", "name": "Sub WH", "hierarchy_level": 3, "children": []}
-                 ]},
-             ]},
+            {
+                "id": "A",
+                "name": "Main WH",
+                "hierarchy_level": 1,
+                "children": [
+                    {"id": "B", "name": "North WH", "hierarchy_level": 2, "children": []},
+                    {
+                        "id": "C",
+                        "name": "South WH",
+                        "hierarchy_level": 2,
+                        "children": [
+                            {"id": "D", "name": "Sub WH", "hierarchy_level": 3, "children": []}
+                        ],
+                    },
+                ],
+            },
         ]
 
         def flatten(nlist: list) -> list:
             out = []
+
             def visit(lst):
                 for n in lst:
                     out.append(n)
                     visit(n.get("children", []))
+
             visit(nlist)
             return out
 
@@ -1249,6 +1327,7 @@ class TestWarehousesPageUsesOrgNodes:
 
     def test_non_stock_holding_nodes_display_badge(self):
         """Nodes with is_stock_holding=False show a '(no stock)' marker."""
+
         def should_show_no_stock_badge(is_stock_holding: bool) -> bool:
             return not is_stock_holding
 
@@ -1257,6 +1336,7 @@ class TestWarehousesPageUsesOrgNodes:
 
 
 # ── BUG 4: SA cross-tenant personnel (frontend fix) ───────────────────────────
+
 
 @pytest.mark.unit
 class TestSACrossTenantPersonnelFrontend:
@@ -1296,22 +1376,22 @@ class TestSACrossTenantPersonnelFrontend:
 
     def test_non_sa_still_uses_session_tenant_id(self):
         """WM/RM/TA still use session.tenantId directly — no extra API call needed."""
-        is_sa_viewing = False   # WM visiting their own tenant page
+        is_sa_viewing = False  # WM visiting their own tenant page
         session_tenant_id = "10000001-0000-0000-0000-000000000001"
-        tenant_meta = None       # API not called for non-SA
+        tenant_meta = None  # API not called for non-SA
 
         resolved_id = (
-            (tenant_meta["id"] if tenant_meta else "")
-            if is_sa_viewing
-            else session_tenant_id
+            (tenant_meta["id"] if tenant_meta else "") if is_sa_viewing else session_tenant_id
         )
         assert resolved_id == "10000001-0000-0000-0000-000000000001"
 
     def test_sa_query_enabled_only_after_meta_resolves(self):
         """Personnel users query must be disabled until tenantMeta resolves for SA."""
+
         # Simulates the React query enabled condition
-        def query_enabled(is_sa_viewing: bool, tenant_meta_id: str | None,
-                          session_tenant_id: str | None) -> bool:
+        def query_enabled(
+            is_sa_viewing: bool, tenant_meta_id: str | None, session_tenant_id: str | None
+        ) -> bool:
             tenant_id = (tenant_meta_id or "") if is_sa_viewing else (session_tenant_id or "")
             return bool(tenant_id)
 
@@ -1324,6 +1404,7 @@ class TestSACrossTenantPersonnelFrontend:
 
 
 # ── Session 10: New-tenant workflow regressions ───────────────────────────────
+
 
 @pytest.mark.unit
 class TestUseWarehousesHook:
@@ -1342,9 +1423,30 @@ class TestUseWarehousesHook:
     def test_non_stock_holding_nodes_excluded_from_warehouse_list(self):
         """Nodes with is_stock_holding=False must not appear in the dropdown."""
         nodes = [
-            {"id": "A", "name": "Main WH",    "is_stock_holding": True,  "parent_node_id": None, "address": None, "children": []},
-            {"id": "B", "name": "Admin Node", "is_stock_holding": False, "parent_node_id": None, "address": None, "children": []},
-            {"id": "C", "name": "Sub WH",     "is_stock_holding": True,  "parent_node_id": "A",  "address": None, "children": []},
+            {
+                "id": "A",
+                "name": "Main WH",
+                "is_stock_holding": True,
+                "parent_node_id": None,
+                "address": None,
+                "children": [],
+            },
+            {
+                "id": "B",
+                "name": "Admin Node",
+                "is_stock_holding": False,
+                "parent_node_id": None,
+                "address": None,
+                "children": [],
+            },
+            {
+                "id": "C",
+                "name": "Sub WH",
+                "is_stock_holding": True,
+                "parent_node_id": "A",
+                "address": None,
+                "children": [],
+            },
         ]
         warehouses = [n for n in nodes if n["is_stock_holding"]]
         ids = [w["id"] for w in warehouses]
@@ -1355,14 +1457,13 @@ class TestUseWarehousesHook:
     def test_org_nodes_available_before_any_stock_received(self):
         """For a new tenant, org nodes exist before inventory_balances has any rows.
         Warehouse dropdown must work even with empty analytics stock response."""
-        analytics_stock = []   # new tenant, no stock received yet
+        analytics_stock = []  # new tenant, no stock received yet
         org_nodes = [
             {"id": "N1", "name": "Factory WH", "is_stock_holding": True, "children": []},
         ]
         # Analytics-derived gateway warehouses would be empty:
         gateway_from_analytics = [
-            {"id": row["warehouse_id"], "name": row["warehouse_name"]}
-            for row in analytics_stock
+            {"id": row["warehouse_id"], "name": row["warehouse_name"]} for row in analytics_stock
         ]
         # Org-node-derived list is populated regardless of stock:
         gateway_from_nodes = [n for n in org_nodes if n["is_stock_holding"]]
@@ -1403,13 +1504,13 @@ class TestOpeningBalanceEndpoint:
         idempotency_key = f"ob:{product_id}:{warehouse_id}:12345:abcd1234"
 
         payload = {
-            "product_id":      product_id,
-            "warehouse_id":    warehouse_id,
-            "quantity":        Decimal("500"),
-            "lot_number":      "LOT-001",
-            "expiry_date":     "2027-12-31",
+            "product_id": product_id,
+            "warehouse_id": warehouse_id,
+            "quantity": Decimal("500"),
+            "lot_number": "LOT-001",
+            "expiry_date": "2027-12-31",
             "idempotency_key": idempotency_key,
-            "source":          "OPENING_BALANCE",
+            "source": "OPENING_BALANCE",
         }
         required_fields = {"product_id", "warehouse_id", "quantity", "idempotency_key"}
         assert required_fields.issubset(payload.keys())
@@ -1421,8 +1522,8 @@ class TestOpeningBalanceEndpoint:
         For org nodes, type is always 'WH' (hierarchy-level based typing not stored)."""
         warehouses = [
             {"id": "N1", "name": "Main Factory", "type": "WH"},
-            {"id": "N2", "name": "North Hub",    "type": "WH"},
-            {"id": "N3", "name": "Sub Store",    "type": "WH"},
+            {"id": "N2", "name": "North Hub", "type": "WH"},
+            {"id": "N3", "name": "Sub Store", "type": "WH"},
         ]
         # Old code: mwhWarehouses = warehouses.filter(w => w.type === "MWH")
         # → empty list for org nodes (all have type "WH")
@@ -1446,14 +1547,15 @@ class TestAddProductFreeTextUOM:
 
     def test_pack_size_accepts_any_positive_integer(self):
         """pack_size must be a positive integer; any value >= 1 is valid."""
+
         def parse_pack_size(raw: str) -> int:
             parsed = int(raw) if raw.isdigit() else 0
             return max(parsed, 1)
 
         assert parse_pack_size("24") == 24
         assert parse_pack_size("100") == 100
-        assert parse_pack_size("0") == 1    # fallback to 1
-        assert parse_pack_size("") == 1     # fallback to 1
+        assert parse_pack_size("0") == 1  # fallback to 1
+        assert parse_pack_size("") == 1  # fallback to 1
 
     def test_sku_preview_uses_free_text_unit_and_pack(self):
         """SKU preview formula works with arbitrary unit/pack_size strings."""
@@ -1481,7 +1583,8 @@ class TestNewTenantProductCreation:
 
         import sys
         import os
-        sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', 'schemas'))
+
+        sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "schemas"))
         try:
             from product import ProductCreateRequest
         except ImportError:
@@ -1495,7 +1598,8 @@ class TestNewTenantProductCreation:
         """unit must be at least 1 character after stripping."""
         import sys
         import os
-        sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', 'schemas'))
+
+        sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "schemas"))
         try:
             from pydantic import ValidationError
             from product import ProductCreateRequest
@@ -1503,6 +1607,7 @@ class TestNewTenantProductCreation:
             return
 
         import pytest
+
         with pytest.raises((ValidationError, Exception)):
             ProductCreateRequest(name="Test", unit="", pack_size=1)
 
@@ -1510,7 +1615,8 @@ class TestNewTenantProductCreation:
         """pack_size must be >= 1."""
         import sys
         import os
-        sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', 'schemas'))
+
+        sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "schemas"))
         try:
             from pydantic import ValidationError
             from product import ProductCreateRequest
@@ -1518,6 +1624,7 @@ class TestNewTenantProductCreation:
             return
 
         import pytest
+
         with pytest.raises((ValidationError, Exception)):
             ProductCreateRequest(name="Test", unit="KG", pack_size=0)
 
@@ -1526,8 +1633,9 @@ class TestNewTenantProductCreation:
         can fetch their facility list. TENANT_VIEW is too restrictive — it blocked
         NM with 403, preventing the warehouses page from loading."""
         import os
+
         hierarchy_path = os.path.join(
-            os.path.dirname(__file__), '..', '..', 'routers', 'hierarchy.py'
+            os.path.dirname(__file__), "..", "..", "routers", "hierarchy.py"
         )
         with open(hierarchy_path) as f:
             src = f.read()
@@ -1541,8 +1649,8 @@ class TestNewTenantProductCreation:
         for i, line in enumerate(lines):
             if '"/{tenant_id}/nodes"' in line:
                 # Check next ~5 lines for the permission decorator
-                window = "\n".join(lines[i:i+6])
-                if "@router.get" in "\n".join(lines[max(0,i-2):i+1]):
+                window = "\n".join(lines[i : i + 6])
+                if "@router.get" in "\n".join(lines[max(0, i - 2) : i + 1]):
                     assert "TENANT_VIEW" not in window, (
                         "list_org_nodes GET must not use TENANT_VIEW"
                     )
@@ -1571,7 +1679,8 @@ class TestBugAProductFixes:
         """ProductCreateRequest must accept reorder_point; ProductResponse must return it."""
         import sys
         import os
-        sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', 'schemas'))
+
+        sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "schemas"))
         try:
             from product import ProductCreateRequest, ProductResponse  # noqa: F401 - ImportError probe: skip test if ProductResponse is missing
         except ImportError:
@@ -1596,9 +1705,22 @@ class TestBugAProductFixes:
     def test_initial_stock_section_removed_from_add_product_panel(self):
         """AddProductPanel must not contain the on_hand / Initial Stock input after BUG A3 fix."""
         import os
+
         panel_path = os.path.join(
-            os.path.dirname(__file__), '..', '..', '..', '..', '..', '..', '..',
-            'frontend', 'src', 'components', 'features', 'inventory', 'AddProductPanel.tsx'
+            os.path.dirname(__file__),
+            "..",
+            "..",
+            "..",
+            "..",
+            "..",
+            "..",
+            "..",
+            "frontend",
+            "src",
+            "components",
+            "features",
+            "inventory",
+            "AddProductPanel.tsx",
         )
         if not os.path.exists(panel_path):
             return
@@ -1607,27 +1729,29 @@ class TestBugAProductFixes:
         assert "add_product.initial_stock" not in src, (
             "Initial Stock section must be removed from AddProductPanel (BUG A3)"
         )
-        assert 'setOnHand' not in src, (
-            "on_hand state must be removed from AddProductPanel (BUG A3)"
-        )
+        assert "setOnHand" not in src, "on_hand state must be removed from AddProductPanel (BUG A3)"
 
     def test_category_creates_per_tenant(self):
         """ProductCreateRequest must accept category string; it is resolved server-side."""
         import sys
         import os
-        sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', 'schemas'))
+
+        sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "schemas"))
         try:
             from product import ProductCreateRequest
         except ImportError:
             return
 
-        req = ProductCreateRequest(name="Cement Type A", unit="Bag", pack_size=50, category="Cement")
+        req = ProductCreateRequest(
+            name="Cement Type A", unit="Bag", pack_size=50, category="Cement"
+        )
         assert req.category == "Cement"
 
     def test_category_strips_whitespace(self):
         import sys
         import os
-        sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', 'schemas'))
+
+        sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "schemas"))
         try:
             from product import ProductCreateRequest
         except ImportError:
@@ -1639,19 +1763,32 @@ class TestBugAProductFixes:
     def test_categories_endpoint_uses_product_list_categories_permission(self):
         """GET /categories/ must use PRODUCT_LIST_CATEGORIES, not a broader permission."""
         import os
+
         # This test is in tenant-service tests but checks product-service router
         product_router_path = os.path.join(
-            os.path.dirname(__file__), '..', '..', '..', '..', 'product-service', 'routers', 'products.py'
+            os.path.dirname(__file__),
+            "..",
+            "..",
+            "..",
+            "..",
+            "product-service",
+            "routers",
+            "products.py",
         )
         if not os.path.exists(product_router_path):
             return
         with open(product_router_path) as f:
             src = f.read()
-        assert "PRODUCT_LIST_CATEGORIES" in src, "Categories list endpoint must use PRODUCT_LIST_CATEGORIES"
-        assert "PRODUCT_CREATE_CATEGORY" in src, "Categories create endpoint must use PRODUCT_CREATE_CATEGORY"
+        assert "PRODUCT_LIST_CATEGORIES" in src, (
+            "Categories list endpoint must use PRODUCT_LIST_CATEGORIES"
+        )
+        assert "PRODUCT_CREATE_CATEGORY" in src, (
+            "Categories create endpoint must use PRODUCT_CREATE_CATEGORY"
+        )
 
 
 # ── Regression: PROMPT B — product enhancement fields ────────────────────────
+
 
 @pytest.mark.unit
 class TestBugBProductEnhancements:
@@ -1678,7 +1815,13 @@ class TestBugBProductEnhancements:
         """type_code field is coerced to uppercase on input."""
         import sys
         import os
-        sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', '..', '..', 'product-service', 'schemas'))
+
+        sys.path.insert(
+            0,
+            os.path.join(
+                os.path.dirname(__file__), "..", "..", "..", "..", "product-service", "schemas"
+            ),
+        )
         try:
             from product import ProductCreateRequest
         except ImportError:
@@ -1690,19 +1833,36 @@ class TestBugBProductEnhancements:
         """sku_override field is accepted and stripped."""
         import sys
         import os
-        sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', '..', '..', 'product-service', 'schemas'))
+
+        sys.path.insert(
+            0,
+            os.path.join(
+                os.path.dirname(__file__), "..", "..", "..", "..", "product-service", "schemas"
+            ),
+        )
         try:
             from product import ProductCreateRequest
         except ImportError:
             return
-        req = ProductCreateRequest(name="Test", type_code="BRD", unit="KG", sku_override="  CUSTOM-001  ")
+        req = ProductCreateRequest(
+            name="Test", type_code="BRD", unit="KG", sku_override="  CUSTOM-001  "
+        )
         assert req.sku_override == "CUSTOM-001"
 
     def test_uom_reusable_per_tenant(self):
         """product_uoms table exists with tenant_id isolation."""
         import os
+
         migration_path = os.path.join(
-            os.path.dirname(__file__), '..', '..', '..', '..', '..', 'migrations', 'versions', '024_product_enhancements.py'
+            os.path.dirname(__file__),
+            "..",
+            "..",
+            "..",
+            "..",
+            "..",
+            "migrations",
+            "versions",
+            "024_product_enhancements.py",
         )
         if not os.path.exists(migration_path):
             return
@@ -1714,8 +1874,17 @@ class TestBugBProductEnhancements:
     def test_packaging_type_creates_per_tenant(self):
         """product_packaging_types table exists; units_per_package column present."""
         import os
+
         migration_path = os.path.join(
-            os.path.dirname(__file__), '..', '..', '..', '..', '..', 'migrations', 'versions', '024_product_enhancements.py'
+            os.path.dirname(__file__),
+            "..",
+            "..",
+            "..",
+            "..",
+            "..",
+            "migrations",
+            "versions",
+            "024_product_enhancements.py",
         )
         if not os.path.exists(migration_path):
             return
@@ -1727,8 +1896,17 @@ class TestBugBProductEnhancements:
     def test_brand_table_per_tenant(self):
         """product_brands table exists with RLS."""
         import os
+
         migration_path = os.path.join(
-            os.path.dirname(__file__), '..', '..', '..', '..', '..', 'migrations', 'versions', '024_product_enhancements.py'
+            os.path.dirname(__file__),
+            "..",
+            "..",
+            "..",
+            "..",
+            "..",
+            "migrations",
+            "versions",
+            "024_product_enhancements.py",
         )
         if not os.path.exists(migration_path):
             return
@@ -1740,22 +1918,47 @@ class TestBugBProductEnhancements:
     def test_product_attributes_tenant_isolated(self):
         """All four lookup tables have RLS enabled in migration 024."""
         import os
+
         migration_path = os.path.join(
-            os.path.dirname(__file__), '..', '..', '..', '..', '..', 'migrations', 'versions', '024_product_enhancements.py'
+            os.path.dirname(__file__),
+            "..",
+            "..",
+            "..",
+            "..",
+            "..",
+            "migrations",
+            "versions",
+            "024_product_enhancements.py",
         )
         if not os.path.exists(migration_path):
             return
         with open(migration_path) as f:
             src = f.read()
-        for table in ("product_brands", "product_type_codes", "product_uoms", "product_packaging_types"):
+        for table in (
+            "product_brands",
+            "product_type_codes",
+            "product_uoms",
+            "product_packaging_types",
+        ):
             assert table in src, f"{table} must be in migration 024"
-        assert src.count("tenant_isolation") >= 4, "All four tables need RLS tenant_isolation policy"
+        assert src.count("tenant_isolation") >= 4, (
+            "All four tables need RLS tenant_isolation policy"
+        )
 
     def test_short_name_and_description_columns(self):
         """short_name and description columns added to products in migration 024."""
         import os
+
         migration_path = os.path.join(
-            os.path.dirname(__file__), '..', '..', '..', '..', '..', 'migrations', 'versions', '024_product_enhancements.py'
+            os.path.dirname(__file__),
+            "..",
+            "..",
+            "..",
+            "..",
+            "..",
+            "migrations",
+            "versions",
+            "024_product_enhancements.py",
         )
         if not os.path.exists(migration_path):
             return
@@ -1768,16 +1971,23 @@ class TestBugBProductEnhancements:
         """All 8 new B-enhancement permissions exist in registry."""
         import sys
         import os
-        sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', '..', '..', 'shared'))
+
+        sys.path.insert(
+            0, os.path.join(os.path.dirname(__file__), "..", "..", "..", "..", "shared")
+        )
         try:
             from permissions.registry import PERMISSIONS, ALL_PERMISSIONS  # noqa: F401 - ImportError probe: skip test if PERMISSIONS is missing
         except ImportError:
             return
         required = [
-            "product:list_brands", "product:create_brand",
-            "product:list_type_codes", "product:create_type_code",
-            "product:list_uoms", "product:create_uom",
-            "product:list_packaging_types", "product:create_packaging_type",
+            "product:list_brands",
+            "product:create_brand",
+            "product:list_type_codes",
+            "product:create_type_code",
+            "product:list_uoms",
+            "product:create_uom",
+            "product:list_packaging_types",
+            "product:create_packaging_type",
         ]
         registered = {p.id for p in ALL_PERMISSIONS}
         for perm_id in required:
@@ -1803,6 +2013,7 @@ class TestBugBProductEnhancements:
 
 # ── PROMPT C — Product-level approval rule tests ─────────────────────────────
 
+
 @pytest.mark.unit
 class TestProductApprovalRules:
     """Unit tests for product-level approval rule lookup chain (PROMPT C).
@@ -1813,10 +2024,10 @@ class TestProductApprovalRules:
 
     # Mirrors _ORG_TYPE_DEFAULTS in approval_service.py
     _ORG_DEFAULTS = {
-        "PULL":       [(0, 999.9999, "WM"), (1000, 4999.9999, "RM"), (5000, None, "NM")],
-        "PUSH":       [(0, 4999.9999, "NM"), (5000, None, "TA")],
+        "PULL": [(0, 999.9999, "WM"), (1000, 4999.9999, "RM"), (5000, None, "NM")],
+        "PUSH": [(0, 4999.9999, "NM"), (5000, None, "TA")],
         "ADJUSTMENT": [(0, 99.9999, "WM"), (100, 999.9999, "RM"), (1000, None, "TA")],
-        "SISTER":     [(0, 999.9999, "WM"), (1000, None, "RM")],
+        "SISTER": [(0, 999.9999, "WM"), (1000, None, "RM")],
     }
 
     def _resolve_default(self, tx_type: str, qty: float) -> str:
@@ -1832,8 +2043,8 @@ class TestProductApprovalRules:
         The product-level override says RM for that same band.
         The product-level rule wins.
         """
-        tenant_rule   = "WM"   # what the tenant-level rule would return
-        product_rule  = "RM"   # what the product-level override says
+        tenant_rule = "WM"  # what the tenant-level rule would return
+        product_rule = "RM"  # what the product-level override says
 
         # Simulate the fallback chain: product rule exists → return it
         def resolve(product_rule_exists: bool) -> str:
@@ -1841,7 +2052,7 @@ class TestProductApprovalRules:
                 return product_rule
             return tenant_rule
 
-        assert resolve(product_rule_exists=True)  == "RM"
+        assert resolve(product_rule_exists=True) == "RM"
         assert resolve(product_rule_exists=False) == "WM"
 
     def test_falls_back_to_tenant_rule(self):
@@ -1851,7 +2062,7 @@ class TestProductApprovalRules:
         PULL qty=2000 says RM.
         """
         tenant_rules = {("PULL", 2000): "RM"}
-        product_rules: dict = {}     # empty — no product-level overrides
+        product_rules: dict = {}  # empty — no product-level overrides
 
         def resolve(tx_type: str, qty: int) -> str:
             # Level 1: product
@@ -1870,16 +2081,16 @@ class TestProductApprovalRules:
         """
         # These quantities should all resolve against the default bands
         cases = [
-            ("PULL",       500,   "WM"),
-            ("PULL",       1500,  "RM"),
-            ("PULL",       6000,  "NM"),
-            ("PUSH",       100,   "NM"),
-            ("PUSH",       5001,  "TA"),
-            ("ADJUSTMENT", 50,    "WM"),
-            ("ADJUSTMENT", 200,   "RM"),
-            ("ADJUSTMENT", 2000,  "TA"),
-            ("SISTER",     100,   "WM"),
-            ("SISTER",     1500,  "RM"),
+            ("PULL", 500, "WM"),
+            ("PULL", 1500, "RM"),
+            ("PULL", 6000, "NM"),
+            ("PUSH", 100, "NM"),
+            ("PUSH", 5001, "TA"),
+            ("ADJUSTMENT", 50, "WM"),
+            ("ADJUSTMENT", 200, "RM"),
+            ("ADJUSTMENT", 2000, "TA"),
+            ("SISTER", 100, "WM"),
+            ("SISTER", 1500, "RM"),
         ]
         for tx_type, qty, expected_role in cases:
             resolved = self._resolve_default(tx_type, float(qty))
@@ -1896,9 +2107,7 @@ class TestProductApprovalRules:
             {"product_id": "prod-A", "created_at": "2026-05-01"},
         ]
         # latest = last in list (sorted DESC by created_at)
-        sorted_by_created = sorted(
-            products_with_rules, key=lambda x: x["created_at"], reverse=True
-        )
+        sorted_by_created = sorted(products_with_rules, key=lambda x: x["created_at"], reverse=True)
         latest_product_id = sorted_by_created[0]["product_id"] if sorted_by_created else None
         assert latest_product_id == "prod-A"
 
@@ -1926,6 +2135,7 @@ class TestProductApprovalRules:
 
 
 # ── PROMPT D regression tests ─────────────────────────────────────────────────
+
 
 @pytest.mark.unit
 class TestCanPushLevelBased:

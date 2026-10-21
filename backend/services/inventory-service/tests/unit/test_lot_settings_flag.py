@@ -1,4 +1,5 @@
 """Unit tests for the FEATURE_LOT_TRACKING flag parsing (routers/lot_settings.py)."""
+
 from __future__ import annotations
 
 import pytest
@@ -6,7 +7,6 @@ import pytest
 
 @pytest.mark.unit
 class TestFeatureLotTrackingEnabled:
-
     @pytest.mark.parametrize("value", ["1", "true", "TRUE", "yes", "Yes"])
     def test_truthy_values_enable_flag(self, monkeypatch, value) -> None:
         from routers.lot_settings import feature_lot_tracking_enabled
