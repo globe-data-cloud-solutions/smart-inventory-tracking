@@ -178,7 +178,7 @@ unset RUNTIME_PW
 section "Fresh-DB migrations"
 DB_URL="postgresql+asyncpg://smoke:smoke@${PG_NAME}:5432/smart_inventory"
 if docker run --rm --network "$NETWORK" \
-    -e DATABASE_URL="$DB_URL" -e DATABASE_READ_URL="$DB_URL" \
+    -e DATABASE_URL="$DB_URL" -e DATABASE_READ_URL="$DB_URL" -e MIGRATION_DATABASE_URL="$DB_URL" \
     smart-migration:smoke; then
   log "migrations + permission seed: OK"
 else

@@ -13,6 +13,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "backend"))
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
+from migrations.migration_url import migration_database_url_or_exit
 from shared.permissions.registry import ALL_PERMISSIONS
 
 ROLE_PERMISSION_MATRIX: dict[str, dict[str, str]] = {
@@ -194,7 +195,8 @@ ROLE_PERMISSION_MATRIX: dict[str, dict[str, str]] = {
 
 
 async def seed() -> None:
-    engine = create_async_engine(os.environ["DATABASE_URL"])
+    # Owner role; DATABASE_URL fallback only with ENVIRONMENT=local.
+    engine = create_async_engine(migration_database_url_or_exit("seed_permissions"))
     Session = async_sessionmaker(bind=engine, expire_on_commit=False)
 
     async with Session() as session:

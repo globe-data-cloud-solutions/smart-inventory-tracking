@@ -139,25 +139,9 @@ aws ecs run-task \
   --profile smart-dev
 ```
 
-### stage/prod SA bootstrap — one-off task (no dev-style seed there)
+### stage/prod SA bootstrap
 
-`seed_enabled=false` in stage and prod, so `seed_dev_sample.py` never runs and a fresh RDS there has no SA account. `backend/migrations/bootstrap_sa_account.py` creates **only** the SA user (no tenants), reading its email/password from Secrets Manager by *name* at runtime (never hardcoded, never logged) — run as a one-off override of the existing migration task, same shape as the dev one-off above:
-
-```bash
-aws ecs run-task \
-  --cluster smart-<env> \
-  --task-definition smart-<env>-migrate \
-  --overrides '{"containerOverrides": [{
-    "name": "migrate",
-    "command": ["python", "/app/backend/migrations/bootstrap_sa_account.py",
-                 "--email-secret-name", "smart/<env>/sa/email",
-                 "--password-secret-name", "smart/<env>/sa/password"]
-  }]}' \
-  --launch-type FARGATE \
-  --profile smart-<env>
-```
-
-Idempotent (checks for the email first, never overwrites an existing SA). Needs two new secrets (`smart/<env>/sa/email`, `smart/<env>/sa/password`, per the naming convention below) and `secretsmanager:GetSecretValue` on them granted to the migration task's role — neither added by this change; see `docs/claude/redeploy-runbook.md` for the full writeup.
+Stage/prod SA bootstrap: not yet available (P0 item 4); do not run this step.
 
 ### Running tests locally (unit tests only — no AWS services needed)
 
@@ -210,7 +194,8 @@ smart/{env}/{category}/{name}
 
 Environment:  dev | stage | prod
 Examples:
-  smart/dev/db/primary-url              → DATABASE_URL
+  smart/dev/db/migration-url            → MIGRATION_DATABASE_URL (owner role smart_owner: migrations, seed)
+  smart/dev/db/primary-url              → DATABASE_URL (runtime role smart_runtime)
   smart/dev/db/read-replica-url         → DATABASE_READ_URL
   smart/dev/elasticache/redis-url       → REDIS_URL
   smart/dev/elasticache/celery-broker   → CELERY_BROKER_URL
@@ -223,7 +208,8 @@ Examples:
 
 ```bash
 # ── Database ────────────────────────────────────────────────────────────────
-DATABASE_URL          # RDS primary — postgresql+asyncpg://<host>:5432/smart_inventory
+MIGRATION_DATABASE_URL # RDS primary, owner role (smart_owner) — migrations and dev seed only
+DATABASE_URL          # RDS primary, runtime role (smart_runtime) — postgresql+asyncpg://<host>:5432/smart_inventory
 DATABASE_READ_URL     # RDS read replica — postgresql+asyncpg://<host>:5432/smart_inventory
 DATABASE_POOL_SIZE=20
 
@@ -470,6 +456,7 @@ jobs:
         with:
           role-to-assume: arn:aws:iam::<account>:role/smart-github-actions-ci
           aws-region: us-east-1
+      # test-backend uses the runtime role (DATABASE_URL); owner-role jobs use MIGRATION_DATABASE_URL.
       - name: Fetch dev secrets
         run: |
           echo "DATABASE_URL=$(aws secretsmanager get-secret-value \
@@ -508,8 +495,8 @@ jobs:
           aws-region: us-east-1
       - name: Fetch dev DB URL
         run: |
-          echo "DATABASE_URL=$(aws secretsmanager get-secret-value \
-            --secret-id smart/dev/db/primary-url --query SecretString --output text)" >> $GITHUB_ENV
+          echo "MIGRATION_DATABASE_URL=$(aws secretsmanager get-secret-value \
+            --secret-id smart/dev/db/migration-url --query SecretString --output text)" >> $GITHUB_ENV
       - uses: actions/setup-python@v5
         with: { python-version: '3.12' }
       - run: |

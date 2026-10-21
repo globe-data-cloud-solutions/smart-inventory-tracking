@@ -88,6 +88,7 @@ module "app_secrets" {
   read_db_host         = coalesce(module.rds.replica_address, module.rds.primary_address)
   db_name              = "smart_inventory"
   runtime_db_role      = "smart_runtime"
+  owner_db_role        = "smart_owner"
   redis_host           = module.elasticache.primary_address
   recovery_window_days = 30
 }
@@ -121,6 +122,7 @@ module "ecs" {
   secret_arns          = module.app_secrets.arns
   master_db_secret_arn = module.rds.master_secret_arn
   db_host              = module.rds.primary_address
+  owner_db_role        = "smart_owner"
 
   alb_security_group_id     = module.alb.alb_security_group_id
   gateway_target_group_arn  = module.alb.gateway_target_group_arn

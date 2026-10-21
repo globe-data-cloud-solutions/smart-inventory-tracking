@@ -226,9 +226,10 @@ resource "aws_ecs_service" "frontend" {
   }
 }
 
-# ── DB bootstrap task (runtime role) ──────────────────────────────────────
+# ── DB bootstrap task (owner and runtime roles) ───────────────────────────
 # One-off, run by the deploy workflow BEFORE migrations. Creates or updates the
-# runtime DB role (smart_runtime) that the app and migrations connect as.
+# owner DB role (smart_owner) that migrations and the dev seed connect as, and
+# the runtime DB role (smart_runtime) that the app and workers connect as.
 # The RDS master credentials are injected by ECS from the RDS-managed secret;
 # they are never written to state, logs, or any other secret. Idempotent.
 
@@ -252,11 +253,13 @@ resource "aws_ecs_task_definition" "db_bootstrap" {
         { name = "PGPORT", value = "5432" },
         { name = "PGDATABASE", value = var.db_name },
         { name = "RUNTIME_DB_ROLE", value = var.runtime_db_role },
+        { name = "OWNER_DB_ROLE", value = var.owner_db_role },
       ]
       secrets = [
         { name = "PGUSER", valueFrom = "${var.master_db_secret_arn}:username::" },
         { name = "PGPASSWORD", valueFrom = "${var.master_db_secret_arn}:password::" },
         { name = "RUNTIME_DB_PASSWORD", valueFrom = var.secret_arns["db/app-password"] },
+        { name = "OWNER_DB_PASSWORD", valueFrom = var.secret_arns["db/owner-password"] },
       ]
       logConfiguration = {
         logDriver = "awslogs"
@@ -274,7 +277,7 @@ resource "aws_ecs_task_definition" "db_bootstrap" {
 # Dev only (seed_enabled). Run by the deploy workflow after migrations, on
 # every dev deploy. It creates the SA account and the sample tenants on first
 # creation only; existing rows and passwords are never changed. Uses the
-# runtime DB role (DATABASE_URL), not the master.
+# owner DB role (MIGRATION_DATABASE_URL), not the master.
 
 resource "aws_ecs_task_definition" "seed" {
   count                    = var.seed_enabled ? 1 : 0
@@ -296,8 +299,8 @@ resource "aws_ecs_task_definition" "seed" {
         { name = "SEED_ENABLED", value = "true" },
       ]
       secrets = concat(
-        [for s in local.secret_refs : s if s.name == "DATABASE_URL"],
         [
+          { name = "MIGRATION_DATABASE_URL", valueFrom = var.secret_arns["db/migration-url"] },
           { name = "SEED_SA_PASSWORD", valueFrom = var.secret_arns["seed/sa-password"] },
           { name = "SEED_SAMPLE_PASSWORD", valueFrom = var.secret_arns["seed/sample-password"] },
         ]
@@ -332,11 +335,13 @@ resource "aws_ecs_task_definition" "migration" {
       image     = "${var.account_id}.dkr.ecr.${var.region}.amazonaws.com/smart-migration:${var.env}-latest"
       essential = true
       environment = [
-        { name = "ENVIRONMENT", value = var.env }
+        { name = "ENVIRONMENT", value = var.env },
+        # Migrations 091/092 grant table privileges to this role.
+        { name = "RUNTIME_DB_ROLE", value = var.runtime_db_role },
       ]
+      # Owner role only: migrations create and own the schema objects.
       secrets = [
-        for s in local.secret_refs : s
-        if contains(["DATABASE_URL", "DATABASE_READ_URL"], s.name)
+        { name = "MIGRATION_DATABASE_URL", valueFrom = var.secret_arns["db/migration-url"] },
       ]
       logConfiguration = {
         logDriver = "awslogs"

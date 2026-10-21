@@ -128,10 +128,37 @@ class TestBootstrap:
         assert inserted[0]["email"] == FAKE_EMAIL
 
 
+class TestDatabaseUrl:
+
+    async def test_main_prefers_migration_database_url(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("MIGRATION_DATABASE_URL", "postgresql://owner")
+        monkeypatch.setenv("DATABASE_URL", "postgresql://runtime")
+        monkeypatch.setattr(
+            bootstrap_sa_account, "parse_args",
+            lambda argv: type("Args", (), {
+                "email_secret_name": "fake/email/secret",
+                "password_secret_name": "fake/password/secret",
+            })(),
+        )
+        bootstrap_mock = AsyncMock(return_value=True)
+        with _patch_secrets(), patch.object(bootstrap_sa_account, "bootstrap", bootstrap_mock):
+            await bootstrap_sa_account.main()
+        assert bootstrap_mock.await_args.args[2] == "postgresql://owner"
+
+    async def test_main_exits_without_any_url(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.delenv("MIGRATION_DATABASE_URL", raising=False)
+        monkeypatch.delenv("DATABASE_URL", raising=False)
+        monkeypatch.setenv("SA_EMAIL_SECRET_NAME", "fake/email/secret")
+        monkeypatch.setenv("SA_PASSWORD_SECRET_NAME", "fake/password/secret")
+        monkeypatch.setattr(bootstrap_sa_account.sys, "argv", ["bootstrap_sa_account.py"])
+        with pytest.raises(SystemExit):
+            await bootstrap_sa_account.main()
+
+
 class TestNoSecretLeakageInLogs:
 
     async def test_main_never_prints_email_or_password(self, monkeypatch: pytest.MonkeyPatch, capsys) -> None:
-        monkeypatch.setenv("DATABASE_URL", "postgresql://fake")
+        monkeypatch.setenv("MIGRATION_DATABASE_URL", "postgresql://fake")
         monkeypatch.setattr(
             bootstrap_sa_account, "parse_args",
             lambda argv: type("Args", (), {

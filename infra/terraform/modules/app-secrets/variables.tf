@@ -14,7 +14,13 @@ variable "db_name" { type = string }
 
 variable "runtime_db_role" {
   type        = string
-  description = "Non-superuser role the app and migrations connect as (created by db-bootstrap)."
+  description = "Non-superuser role the app and workers connect as (created by db-bootstrap)."
+}
+
+variable "owner_db_role" {
+  type        = string
+  default     = "smart_owner"
+  description = "Non-superuser role migrations and the dev seed connect as; owns the schema objects (created by db-bootstrap)."
 }
 
 variable "redis_host" {
