@@ -1,0 +1,66 @@
+"""Regression tests for the TenantClaude18 E2E review, bugs 7 and 9.
+
+Bug 7: POST /nodes returned address=null although the address was persisted.
+Bug 9: personnel_v2 user email used a strict EmailStr that rejected .local
+       addresses, unlike signup's format check.
+"""
+
+from __future__ import annotations
+
+import os
+import sys
+import uuid
+from unittest.mock import AsyncMock, MagicMock, patch
+
+os.environ.setdefault("DATABASE_URL", "postgresql+asyncpg://u:p@localhost/db")
+os.environ.setdefault("JWT_SECRET", "x" * 40)
+_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "..", ".."))
+sys.path.insert(0, os.path.join(_ROOT, "backend"))
+
+import pytest  # noqa: E402
+from pydantic import ValidationError  # noqa: E402
+
+from routers.personnel_v2 import UserCreate, UserUpdateRequest  # noqa: E402
+
+
+class TestBug9UserEmail:
+    def test_local_domain_accepted(self) -> None:
+        u = UserCreate(name="A", email="ta@t06.local", password="x" * 8)
+        assert u.email == "ta@t06.local"
+
+    def test_plain_email_accepted_and_case_kept(self) -> None:
+        u = UserCreate(name="A", email="  Ops@Example.com ", password="x" * 8)
+        assert u.email == "Ops@Example.com"
+
+    @pytest.mark.parametrize("bad", ["not-an-email", "@nodomain.com", "a@b", "a@"])
+    def test_malformed_rejected(self, bad: str) -> None:
+        with pytest.raises(ValidationError):
+            UserCreate(name="A", email=bad, password="x" * 8)
+
+    def test_update_accepts_local_domain_and_none(self) -> None:
+        assert UserUpdateRequest(email="ta@t06.local").email == "ta@t06.local"
+        assert UserUpdateRequest(name="only name").email is None
+
+    def test_update_rejects_malformed(self) -> None:
+        with pytest.raises(ValidationError):
+            UserUpdateRequest(email="nope")
+
+
+class TestBug7NodeAddressInResponse:
+    async def test_create_node_response_carries_address(self) -> None:
+        from routers import hierarchy
+
+        body = hierarchy.OrgNodeCreate(
+            name="WHA9 Test", level_number=2, is_stock_holding=False, address="Bole Rd 12"
+        )
+        db = MagicMock()
+        db.execute = AsyncMock(return_value=MagicMock())
+        user = MagicMock(tenant_id=uuid.uuid4(), system_role="TA")
+        with (
+            patch.object(hierarchy, "_get_level_name", AsyncMock(return_value="Region")),
+            patch.object(hierarchy, "_get_manager_info", AsyncMock(return_value=(None, None))),
+            patch.object(hierarchy, "check_plan_create_warehouse", AsyncMock(), create=True),
+        ):
+            fn = getattr(hierarchy.create_org_node, "__wrapped__", hierarchy.create_org_node)
+            resp = await fn(tenant_id=user.tenant_id, body=body, user=user, db=db)
+        assert resp.data.address == "Bole Rd 12"

@@ -22,7 +22,7 @@ import asyncpg
 import bcrypt as _bcrypt
 
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel, EmailStr, field_validator
+from pydantic import BaseModel, field_validator
 from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -96,18 +96,34 @@ class UserOut(BaseModel):
     must_reset_password: bool
 
 
+def _basic_email(v: str) -> str:
+    # Same format check as public_signup.admin_email. Not EmailStr: that rejects
+    # valid internal/test domains such as .local (review bug 9). Case is kept as
+    # entered so login lookups are unchanged.
+    v = str(v).strip()
+    local_part, _, domain_part = v.partition("@")
+    if not local_part or "@" not in v or "." not in domain_part:
+        raise ValueError("email must be a valid email address")
+    return v
+
+
 class UserCreate(BaseModel):
     name: str
-    email: EmailStr
+    email: str
     password: str
     position_id: Optional[uuid.UUID] = None
     system_role: Optional[str] = None  # "TA"/"AU"/"LM" for tenant-wide accounts without a position
     role: Optional[str] = None  # Frontend compat: if "TA", maps to system_role="TA"
 
+    @field_validator("email")
+    @classmethod
+    def _check_email(cls, v: str) -> str:
+        return _basic_email(v)
+
 
 class UserUpdateRequest(BaseModel):
     name: Optional[str] = None
-    email: Optional[EmailStr] = None
+    email: Optional[str] = None
     must_reset_password: Optional[bool] = None
     system_role: Optional[str] = None
     role: Optional[str] = None  # Frontend compat: "TA" → system_role="TA"
@@ -117,6 +133,11 @@ class UserUpdateRequest(BaseModel):
     # to NULL system_role — used when switching a user from a tenant-wide role
     # (Track B) back to a position-based one (Track A).
     clear_system_role: bool = False
+
+    @field_validator("email")
+    @classmethod
+    def _check_email(cls, v: Optional[str]) -> Optional[str]:
+        return None if v is None else _basic_email(v)
 
     @field_validator("password")
     @classmethod
