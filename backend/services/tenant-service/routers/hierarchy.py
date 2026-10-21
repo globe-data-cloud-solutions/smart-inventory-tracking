@@ -1100,6 +1100,7 @@ async def create_org_node(
             manager_name=manager_name,
             manager_role=manager_role,
             is_active=True,
+            address=body.address,
         )
     )
 
