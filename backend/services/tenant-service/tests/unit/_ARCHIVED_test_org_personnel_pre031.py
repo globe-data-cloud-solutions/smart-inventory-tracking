@@ -1477,7 +1477,8 @@ class TestNewTenantProductCreation:
     def test_ta_can_create_product_for_new_tenant(self):
         """ProductCreateRequest accepts any non-empty unit string and any positive int pack_size."""
 
-        import sys, os
+        import sys
+        import os
         sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', 'schemas'))
         try:
             from product import ProductCreateRequest
@@ -1490,7 +1491,8 @@ class TestNewTenantProductCreation:
 
     def test_product_create_rejects_empty_unit(self):
         """unit must be at least 1 character after stripping."""
-        import sys, os
+        import sys
+        import os
         sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', 'schemas'))
         try:
             from pydantic import ValidationError
@@ -1504,7 +1506,8 @@ class TestNewTenantProductCreation:
 
     def test_product_create_rejects_zero_pack_size(self):
         """pack_size must be >= 1."""
-        import sys, os
+        import sys
+        import os
         sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', 'schemas'))
         try:
             from pydantic import ValidationError
@@ -1564,7 +1567,8 @@ class TestBugAProductFixes:
 
     def test_reorder_point_saves_and_returns(self):
         """ProductCreateRequest must accept reorder_point; ProductResponse must return it."""
-        import sys, os
+        import sys
+        import os
         sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', 'schemas'))
         try:
             from product import ProductCreateRequest, ProductResponse  # noqa: F401 - ImportError probe: skip test if ProductResponse is missing
@@ -1607,7 +1611,8 @@ class TestBugAProductFixes:
 
     def test_category_creates_per_tenant(self):
         """ProductCreateRequest must accept category string; it is resolved server-side."""
-        import sys, os
+        import sys
+        import os
         sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', 'schemas'))
         try:
             from product import ProductCreateRequest
@@ -1618,7 +1623,8 @@ class TestBugAProductFixes:
         assert req.category == "Cement"
 
     def test_category_strips_whitespace(self):
-        import sys, os
+        import sys
+        import os
         sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', 'schemas'))
         try:
             from product import ProductCreateRequest
@@ -1668,7 +1674,8 @@ class TestBugBProductEnhancements:
 
     def test_type_code_validator_uppercases(self):
         """type_code field is coerced to uppercase on input."""
-        import sys, os
+        import sys
+        import os
         sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', '..', '..', 'product-service', 'schemas'))
         try:
             from product import ProductCreateRequest
@@ -1679,7 +1686,8 @@ class TestBugBProductEnhancements:
 
     def test_sku_override_accepted(self):
         """sku_override field is accepted and stripped."""
-        import sys, os
+        import sys
+        import os
         sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', '..', '..', 'product-service', 'schemas'))
         try:
             from product import ProductCreateRequest
@@ -1756,7 +1764,8 @@ class TestBugBProductEnhancements:
 
     def test_new_permissions_registered(self):
         """All 8 new B-enhancement permissions exist in registry."""
-        import sys, os
+        import sys
+        import os
         sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', '..', '..', 'shared'))
         try:
             from permissions.registry import PERMISSIONS, ALL_PERMISSIONS  # noqa: F401 - ImportError probe: skip test if PERMISSIONS is missing
