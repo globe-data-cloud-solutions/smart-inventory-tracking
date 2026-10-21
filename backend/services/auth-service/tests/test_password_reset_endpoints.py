@@ -31,10 +31,10 @@ if not _was_on_path:
         pass
 # ─────────────────────────────────────────────────────────────────────────────
 
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch  # noqa: E402 - sys.path/env setup above must run first
 
-import pytest
-from fastapi.testclient import TestClient
+import pytest  # noqa: E402 - sys.path/env setup above must run first
+from fastapi.testclient import TestClient  # noqa: E402 - sys.path/env setup above must run first
 
 client = TestClient(app)
 

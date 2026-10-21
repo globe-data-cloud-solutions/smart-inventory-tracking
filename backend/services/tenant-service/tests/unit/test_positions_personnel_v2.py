@@ -35,16 +35,16 @@ if not _was_on_path:
     sys.path.insert(0, _TENANT_ROOT)
 # ─────────────────────────────────────────────────────────────────────────────
 
-import json
-from dataclasses import dataclass, field
-from typing import Any
-from unittest.mock import AsyncMock, MagicMock, patch
-from uuid import UUID
+import json  # noqa: E402 - sys.path/env setup above must run first
+from dataclasses import dataclass, field  # noqa: E402 - sys.path/env setup above must run first
+from typing import Any  # noqa: E402 - sys.path/env setup above must run first
+from unittest.mock import AsyncMock, MagicMock, patch  # noqa: E402 - sys.path/env setup above must run first
+from uuid import UUID  # noqa: E402 - sys.path/env setup above must run first
 
-import asyncpg
-import pytest
-from fastapi import HTTPException
-from sqlalchemy.exc import IntegrityError
+import asyncpg  # noqa: E402 - sys.path/env setup above must run first
+import pytest  # noqa: E402 - sys.path/env setup above must run first
+from fastapi import HTTPException  # noqa: E402 - sys.path/env setup above must run first
+from sqlalchemy.exc import IntegrityError  # noqa: E402 - sys.path/env setup above must run first
 
 TENANT_ID    = "aaaaaaaa-0000-0000-0000-000000000001"
 NODE_ID      = "bbbbbbbb-0000-0000-0000-000000000001"

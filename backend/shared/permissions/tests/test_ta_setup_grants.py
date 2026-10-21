@@ -25,8 +25,8 @@ _SCRIPTS_ROOT = os.path.normpath(os.path.join(os.path.dirname(__file__), "..", "
 if _SCRIPTS_ROOT not in sys.path:
     sys.path.insert(0, _SCRIPTS_ROOT)
 
-from shared.permissions.middleware import check_permission
-from shared.permissions.registry import PERMISSIONS
+from shared.permissions.middleware import check_permission  # noqa: E402 - sys.path/env setup above must run first
+from shared.permissions.registry import PERMISSIONS  # noqa: E402 - sys.path/env setup above must run first
 
 pytestmark = pytest.mark.asyncio
 

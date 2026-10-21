@@ -111,7 +111,7 @@ if _product_root in sys.path:
     sys.path.remove(_product_root)
 sys.path.append(_product_root)
 
-from product_test_data import (              # noqa: F401  (re-export for fixture injection)
+from product_test_data import (              # noqa: F401, E402  (re-export for fixture injection; E402 - sys.path/sys.modules setup above must run first)
     TENANT_A, TENANT_B,
     TA_USER, SA_USER, WM_USER,
     VALID_BODY,
@@ -126,7 +126,7 @@ from product_test_data import (              # noqa: F401  (re-export for fixtur
 # restored to inventory-service versions, so `from dependencies import get_db_session`
 # in test_products.py would return the wrong object.  product_test_data is a stable
 # intermediate that survives sys.modules restoration.
-import product_test_data as _ptd
+import product_test_data as _ptd  # noqa: E402 - sys.path/sys.modules setup above must run first
 _ptd.get_db_session = get_db_session  # type: ignore[attr-defined]
 _ptd.get_current_user = get_current_user  # type: ignore[attr-defined]
 

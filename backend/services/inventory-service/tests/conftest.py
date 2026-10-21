@@ -57,8 +57,8 @@ if _inventory_root in sys.path:
     sys.path.remove(_inventory_root)
 sys.path.insert(0, _inventory_root)
 
-from main import app
-from dependencies import get_current_user, get_db_session
+from main import app  # noqa: E402 - sys.path/sys.modules setup above must run first
+from dependencies import get_current_user, get_db_session  # noqa: E402 - sys.path/sys.modules setup above must run first
 
 # Collection-time guard: fail loudly (not with a mystifying 401 at test-execution
 # time) if the eviction/promotion above somehow didn't win.

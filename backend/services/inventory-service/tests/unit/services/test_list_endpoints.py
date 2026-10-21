@@ -17,9 +17,9 @@ from uuid import UUID
 
 import pytest
 
-_NOW = datetime(2026, 5, 24, 10, 0, 0, tzinfo=timezone.utc)
-
 from services.inventory_service import InventoryService
+
+_NOW = datetime(2026, 5, 24, 10, 0, 0, tzinfo=timezone.utc)
 
 
 TENANT_ID    = "10000000-0000-0000-0000-000000000001"

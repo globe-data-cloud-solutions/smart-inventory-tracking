@@ -65,6 +65,11 @@ from pydantic import BaseModel, EmailStr
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from dependencies import get_current_user, get_db_session_for_tenant
+from shared.permissions.middleware import require_permission
+from shared.permissions.registry import PERMISSIONS
+from shared.utils.responses import SuccessResponse
+
 
 def _hash_password(password: str) -> str:
     return _bcrypt.hashpw(password.encode(), _bcrypt.gensalt()).decode()
@@ -73,10 +78,6 @@ def _hash_password(password: str) -> str:
 def _verify_password(password: str, hashed: str) -> bool:
     return _bcrypt.checkpw(password.encode(), hashed.encode())
 
-from dependencies import get_current_user, get_db_session_for_tenant
-from shared.permissions.middleware import require_permission
-from shared.permissions.registry import PERMISSIONS
-from shared.utils.responses import SuccessResponse
 
 router = APIRouter()
 

@@ -29,10 +29,10 @@ _REPO_ROOT = os.path.normpath(os.path.join(os.path.dirname(__file__), "..", ".."
 if _REPO_ROOT not in sys.path:
     sys.path.insert(0, _REPO_ROOT)
 
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch  # noqa: E402 - sys.path/env setup above must run first
 
-import pytest
-from fastapi import HTTPException
+import pytest  # noqa: E402 - sys.path/env setup above must run first
+from fastapi import HTTPException  # noqa: E402 - sys.path/env setup above must run first
 
 TENANT_A = uuid.UUID("aaaaaaaa-0000-0000-0000-000000000001")
 REQUEST_ID = uuid.UUID("bbbbbbbb-0000-0000-0000-000000000001")
