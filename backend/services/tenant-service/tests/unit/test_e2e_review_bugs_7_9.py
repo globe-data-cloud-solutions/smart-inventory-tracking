@@ -20,28 +20,38 @@ sys.path.insert(0, os.path.join(_ROOT, "backend"))
 import pytest  # noqa: E402
 from pydantic import ValidationError  # noqa: E402
 
-from routers.personnel_v2 import UserCreate, UserUpdateRequest  # noqa: E402
-
 
 class TestBug9UserEmail:
+    # Imported inside each test: 'routers' is a name shared by every service.
+    @staticmethod
+    def _models():
+        from routers.personnel_v2 import UserCreate, UserUpdateRequest
+
+        return UserCreate, UserUpdateRequest
+
     def test_local_domain_accepted(self) -> None:
+        UserCreate, UserUpdateRequest = self._models()
         u = UserCreate(name="A", email="ta@t06.local", password="x" * 8)
         assert u.email == "ta@t06.local"
 
     def test_plain_email_accepted_and_case_kept(self) -> None:
+        UserCreate, UserUpdateRequest = self._models()
         u = UserCreate(name="A", email="  Ops@Example.com ", password="x" * 8)
         assert u.email == "Ops@Example.com"
 
     @pytest.mark.parametrize("bad", ["not-an-email", "@nodomain.com", "a@b", "a@"])
     def test_malformed_rejected(self, bad: str) -> None:
+        UserCreate, UserUpdateRequest = self._models()
         with pytest.raises(ValidationError):
             UserCreate(name="A", email=bad, password="x" * 8)
 
     def test_update_accepts_local_domain_and_none(self) -> None:
+        _, UserUpdateRequest = self._models()
         assert UserUpdateRequest(email="ta@t06.local").email == "ta@t06.local"
         assert UserUpdateRequest(name="only name").email is None
 
     def test_update_rejects_malformed(self) -> None:
+        _, UserUpdateRequest = self._models()
         with pytest.raises(ValidationError):
             UserUpdateRequest(email="nope")
 
