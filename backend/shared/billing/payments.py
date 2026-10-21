@@ -146,7 +146,7 @@ async def create_invoice(
             "price_id": addon_price_id, "amount": addon_amount,
         })
 
-    combined_subtotal = Decimal(price.amount) + sum((l["amount"] for l in addon_lines), Decimal("0"))
+    combined_subtotal = Decimal(price.amount) + sum((addon_line["amount"] for addon_line in addon_lines), Decimal("0"))
     breakdown = vat_breakdown(combined_subtotal)
 
     payment_id = (await db.execute(

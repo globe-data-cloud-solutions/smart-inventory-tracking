@@ -110,18 +110,18 @@ def sort_lots(lots: Iterable[CandidateLot], strategy: str) -> List[CandidateLot]
     if strategy not in STRATEGIES:
         raise ValueError(f"Unknown dispatch strategy: {strategy!r}")
 
-    by_number = sorted(lots, key=lambda l: l.lot_number)
+    by_number = sorted(lots, key=lambda lot: lot.lot_number)
     if strategy == "FEFO":
         return sorted(
             by_number,
-            key=lambda l: (
-                l.expiry_date is not None,
-                l.expiry_date or date.min,
-                l.first_received_at,
+            key=lambda lot: (
+                lot.expiry_date is not None,
+                lot.expiry_date or date.min,
+                lot.first_received_at,
             ),
         )
     # sorted() is stable (also with reverse=True), so lot_number asc survives as the tie-break.
-    return sorted(by_number, key=lambda l: l.first_received_at, reverse=(strategy == "LIFO"))
+    return sorted(by_number, key=lambda lot: lot.first_received_at, reverse=(strategy == "LIFO"))
 
 
 def _line(lot: CandidateLot, quantity: Decimal) -> AllocationLine:
@@ -392,8 +392,8 @@ async def record_override(
     lot_numbers = {str(r.id): r.lot_number for r in rows}
 
     suggested = [
-        {"lot_id": l.lot_id, "lot_number": l.lot_number, "quantity": str(l.quantity)}
-        for l in plan.lines
+        {"lot_id": line.lot_id, "lot_number": line.lot_number, "quantity": str(line.quantity)}
+        for line in plan.lines
     ]
     chosen_json = [
         {"lot_id": lot_id, "lot_number": lot_numbers.get(lot_id), "quantity": str(quantity)}

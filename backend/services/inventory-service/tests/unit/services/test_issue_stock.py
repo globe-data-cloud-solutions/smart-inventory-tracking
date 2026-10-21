@@ -424,7 +424,7 @@ def _body(
         reason_code="SALE",
         idempotency_key=key,
         lot_selections=(
-            [LotPick(lot_id=UUID(l), quantity=Decimal(q)) for l, q in picks] if picks else None
+            [LotPick(lot_id=UUID(lot_id), quantity=Decimal(q)) for lot_id, q in picks] if picks else None
         ),
         override_reason=reason,
     )
@@ -465,8 +465,8 @@ class _BatchHarness:
             )
         elif "FROM stock_lots" in sql:
             result.fetchall.return_value = [
-                SimpleNamespace(id=l.lot_id, lot_number=l.lot_number, expiry_date=l.expiry_date)
-                for l in self.lots
+                SimpleNamespace(id=lot.lot_id, lot_number=lot.lot_number, expiry_date=lot.expiry_date)
+                for lot in self.lots
             ]
         return result
 
@@ -603,7 +603,7 @@ class TestIssueBatchEngineAllocation:
         assert [r["lot_number"] for r in rows] == ["L-LATE", "L-EARLY"]
         assert [r["expiry_date"] for r in rows] == [LATE.expiry_date, EARLY.expiry_date]
 
-        assert [(str(l.lot_id), l.quantity) for l in result.lots] == [
+        assert [(str(lot.lot_id), lot.quantity) for lot in result.lots] == [
             (LOT_LATE, Decimal("10")), (LOT_EARLY, Decimal("20")),
         ]
         assert result.quantity == Decimal("30")
@@ -685,7 +685,7 @@ class TestIssueBatchManualSelection:
         assert result.is_override is True
         # The lots posted are the chosen lots, not the plan.
         assert [(r["lot_id"], r["quantity"]) for r in h.posted()] == [(LOT_LATE, Decimal("-30"))]
-        assert [(str(l.lot_id), l.quantity) for l in result.lots] == [(LOT_LATE, Decimal("30"))]
+        assert [(str(lot.lot_id), lot.quantity) for lot in result.lots] == [(LOT_LATE, Decimal("30"))]
 
     async def test_fefo_override_without_reason_is_rejected(self) -> None:
         h = _BatchHarness([EARLY, LATE])
@@ -797,6 +797,6 @@ class TestIssueBatchReplay:
 
         assert result.transaction_id == UUID(rows[0].id)
         assert result.quantity == Decimal("30")
-        assert [(str(l.lot_id), l.lot_number, l.quantity) for l in result.lots] == [
+        assert [(str(lot.lot_id), lot.lot_number, lot.quantity) for lot in result.lots] == [
             (LOT_LATE, "L-LATE", Decimal("10")), (LOT_EARLY, "L-EARLY", Decimal("20")),
         ]

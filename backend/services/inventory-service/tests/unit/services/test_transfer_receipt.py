@@ -571,13 +571,13 @@ class TestReceiptConfirmation:
         world = _World()
         result = await InventoryService(world.db()).get_transfer(DST_WM, TRANSFER_ID)
 
-        assert [(str(l.line_id), str(l.product_id), l.quantity) for l in result.lines] == [
+        assert [(str(line.line_id), str(line.product_id), line.quantity) for line in result.lines] == [
             (LINE_1, PRODUCT_ID, Decimal("100")),
             (LINE_2, PRODUCT_2, Decimal("30")),
         ]
         # every allocation points at a returned line
         assert {str(a.line_id) for a in result.lot_allocations} <= {
-            str(l.line_id) for l in result.lines
+            str(line.line_id) for line in result.lines
         }
 
 
