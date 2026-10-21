@@ -663,8 +663,8 @@ class TestOrgNodeUpdate:
         )
         level_row = _row(is_stock_holding=True)
         db = _db_seq(
-            existing_row, level_row, None, None
-        )  # existing, level check, UPDATE, _get_level_name
+            existing_row, level_row, None, None, None
+        )  # existing, level check, UPDATE, _get_level_name, node manager
 
         with (
             _GRANT_ALL,
@@ -786,7 +786,7 @@ class TestOrgNodeUpdate:
             is_active=True,
             address=None,
         )
-        db = _db_seq(existing_row, _row(cnt=0), _row(cnt=0), _row(total=0), None, None)
+        db = _db_seq(existing_row, _row(cnt=0), _row(cnt=0), _row(total=0), None, None, None)
 
         with _GRANT_ALL:
             result = await update_org_node(

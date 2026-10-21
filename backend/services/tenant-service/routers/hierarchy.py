@@ -103,14 +103,12 @@ class OrgNodeCreate(BaseModel):
     parent_node_id: Optional[uuid.UUID] = None
     is_stock_holding: bool = True
     address: Optional[str] = None
-    manager_user_id: Optional[uuid.UUID] = None
 
 
 class OrgNodeUpdate(BaseModel):
     name: Optional[str] = None
     is_stock_holding: Optional[bool] = None
     address: Optional[str] = None
-    manager_user_id: Optional[uuid.UUID] = None
 
 
 class OrgNodeOut(BaseModel):
@@ -160,18 +158,34 @@ async def _get_level_name(db: AsyncSession, tenant_id: str, level_number: int) -
     return r[0] if r else None
 
 
-async def _get_manager_info(
-    db: AsyncSession, user_id: Optional[str], tenant_id: Optional[str] = None
+async def _node_manager(
+    db: AsyncSession, node_id: str, tenant_id: str
 ) -> tuple[Optional[str], Optional[str]]:
-    if not user_id:
-        return None, None
-    # role column was dropped in migration 031 — query full_name only
+    """Manager of a node = the PRIMARY holder of its highest-authority position.
+
+    Same rule as the tree query in list_org_nodes, for one node. Nothing is
+    read from the request body (review bug 10).
+    """
     row = await db.execute(
-        text("SELECT full_name FROM users WHERE id = :uid AND tenant_id = :tid"),
-        {"uid": user_id, "tid": tenant_id},
+        text(
+            "SELECT u.full_name AS manager_name, p.role_code AS manager_role "
+            "FROM positions p "
+            "JOIN personnel_positions pp "
+            "  ON pp.position_id = p.id "
+            " AND pp.assignment_type = 'PRIMARY' "
+            " AND pp.is_active = true "
+            " AND (pp.valid_until IS NULL OR pp.valid_until >= CURRENT_DATE) "
+            "JOIN users u ON u.id = pp.user_id AND u.is_active = true "
+            "WHERE p.node_id = :nid AND p.tenant_id = :tid AND p.is_active = true "
+            "ORDER BY CASE p.role_code "
+            "  WHEN 'NM' THEN 8 WHEN 'RM' THEN 7 WHEN 'LM' THEN 6 "
+            "  WHEN 'WM' THEN 6 WHEN 'SA_GT' THEN 4 ELSE 0 END DESC "
+            "LIMIT 1"
+        ),
+        {"nid": node_id, "tid": tenant_id},
     )
     r = row.fetchone()
-    return (r[0], None) if r else (None, None)
+    return (r.manager_name, r.manager_role) if r else (None, None)
 
 
 async def _build_tree(
@@ -1083,10 +1097,6 @@ async def create_org_node(
         )
 
     level_name = await _get_level_name(db, str(tenant_id), body.level_number)
-    manager_name, manager_role = await _get_manager_info(
-        db, str(body.manager_user_id) if body.manager_user_id else None, str(tenant_id)
-    )
-
     return SuccessResponse(
         data=OrgNodeOut(
             id=node_id,
@@ -1097,8 +1107,8 @@ async def create_org_node(
             level_name=level_name,
             is_stock_holding=body.is_stock_holding,
             parent_node_id=body.parent_node_id,
-            manager_name=manager_name,
-            manager_role=manager_role,
+            manager_name=None,
+            manager_role=None,
             is_active=True,
             address=body.address,
         )
@@ -1191,9 +1201,7 @@ async def update_org_node(
     )
 
     level_name = await _get_level_name(db, str(tenant_id), existing.hierarchy_level)
-    manager_name, manager_role = await _get_manager_info(
-        db, str(body.manager_user_id) if body.manager_user_id else None, str(tenant_id)
-    )
+    manager_name, manager_role = await _node_manager(db, str(node_id), str(tenant_id))
 
     return SuccessResponse(
         data=OrgNodeOut(

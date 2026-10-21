@@ -58,9 +58,25 @@ class TestBug7NodeAddressInResponse:
         user = MagicMock(tenant_id=uuid.uuid4(), system_role="TA")
         with (
             patch.object(hierarchy, "_get_level_name", AsyncMock(return_value="Region")),
-            patch.object(hierarchy, "_get_manager_info", AsyncMock(return_value=(None, None))),
             patch.object(hierarchy, "check_plan_create_warehouse", AsyncMock(), create=True),
         ):
             fn = getattr(hierarchy.create_org_node, "__wrapped__", hierarchy.create_org_node)
             resp = await fn(tenant_id=user.tenant_id, body=body, user=user, db=db)
         assert resp.data.address == "Bole Rd 12"
+
+
+class TestBug10ManagerUserIdRemoved:
+    """Bug 10: manager_user_id was accepted and discarded. The field is gone;
+    a stale client that still sends it is ignored, not persisted or echoed."""
+
+    def test_field_removed_from_node_schemas(self) -> None:
+        from routers.hierarchy import OrgNodeCreate, OrgNodeUpdate
+
+        assert "manager_user_id" not in OrgNodeCreate.model_fields
+        assert "manager_user_id" not in OrgNodeUpdate.model_fields
+
+    def test_stale_client_payload_is_ignored(self) -> None:
+        from routers.hierarchy import OrgNodeCreate
+
+        body = OrgNodeCreate(name="X", level_number=2, manager_user_id=uuid.uuid4())
+        assert not hasattr(body, "manager_user_id")
