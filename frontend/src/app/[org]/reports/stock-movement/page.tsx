@@ -123,6 +123,7 @@ export default function StockMovementReportPage() {
         rows={rows.data ?? []}
         isLoading={rows.isLoading}
         isError={rows.isError}
+        exportName="stock-movement"
       />
     </div>
   );

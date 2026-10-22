@@ -151,7 +151,9 @@ export default function DispatchReportPage() {
           <input type="date" className={selectClass} value={dateTo} onChange={(e) => setDateTo(e.target.value)} />
         </label>
       </ReportFilterBar>
-      <ReportTable columns={COLUMNS} rows={rows.data ?? []} isLoading={rows.isLoading} isError={rows.isError} />
+      <ReportTable columns={COLUMNS} rows={rows.data ?? []} isLoading={rows.isLoading} isError={rows.isError}
+        exportName="dispatch-summary"
+      />
     </div>
   );
 }

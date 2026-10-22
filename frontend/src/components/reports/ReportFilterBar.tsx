@@ -22,7 +22,7 @@ export default function ReportFilterBar({ options, filter, onChange, children }:
       : (options?.nodes ?? []).filter((n) => n.hierarchy_level === filter.level);
 
   return (
-    <div className="flex flex-wrap items-end gap-3 mb-4">
+    <div className="flex flex-wrap items-end gap-3 mb-4 print:hidden">
       <label className="flex flex-col text-xs text-gray-600 gap-1">
         {t("report.filter_level")}
         <select

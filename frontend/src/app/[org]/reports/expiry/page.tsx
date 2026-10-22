@@ -101,6 +101,7 @@ export default function ExpiryReportPage() {
         rows={data}
         isLoading={rows.isLoading}
         isError={rows.isError}
+        exportName="expiry-alerts"
         total={data.length > 0 ? formatNumber(totalQty) : undefined}
       />
     </div>

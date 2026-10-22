@@ -207,11 +207,23 @@ export default function LotTraceReportPage() {
 
           <h3 className="text-sm font-semibold text-gray-700 mb-2">{t("report.lot_balances")}</h3>
           <div className="mb-6">
-            <ReportTable columns={BALANCE_COLUMNS} rows={data.balances} isLoading={false} isError={false} />
+            <ReportTable
+              columns={BALANCE_COLUMNS}
+              rows={data.balances}
+              isLoading={false}
+              isError={false}
+              exportName="lot-balances"
+            />
           </div>
 
           <h3 className="text-sm font-semibold text-gray-700 mb-2">{t("report.lot_history")}</h3>
-          <ReportTable columns={HISTORY_COLUMNS} rows={data.history} isLoading={false} isError={false} />
+          <ReportTable
+            columns={HISTORY_COLUMNS}
+            rows={data.history}
+            isLoading={false}
+            isError={false}
+            exportName="lot-history"
+          />
         </>
       )}
     </div>
