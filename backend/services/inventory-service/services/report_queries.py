@@ -63,11 +63,12 @@ async def get_inventory_valuation(
                     WHERE tenant_id = :tid AND unit_cost IS NOT NULL
                     ORDER BY product_id, warehouse_id, created_at DESC
                 )
-                SELECT b.product_id, p.sku, p.name, b.warehouse_id, b.on_hand,
+                SELECT b.product_id, p.sku, p.name, b.warehouse_id, wn.name AS warehouse_name, b.on_hand,
                        COALESCE(lc.unit_cost, 0) AS unit_cost,
                        b.on_hand * COALESCE(lc.unit_cost, 0) AS total_value
                 FROM balances b
                 JOIN products p ON p.id = b.product_id
+                LEFT JOIN organization_node wn ON wn.id = b.warehouse_id
                 LEFT JOIN latest_cost lc
                     ON lc.product_id = b.product_id AND lc.warehouse_id = b.warehouse_id
                 WHERE 1=1 {clause}
@@ -83,6 +84,7 @@ async def get_inventory_valuation(
             sku=r.sku,
             name=r.name,
             warehouse_id=r.warehouse_id,
+            warehouse_name=r.warehouse_name,
             on_hand=r.on_hand,
             unit_cost=r.unit_cost,
             total_value=r.total_value,
@@ -106,9 +108,10 @@ async def get_stock_movement(
                 f"""
                 SELECT it.id AS transaction_id, it.transaction_date, it.type,
                        it.product_id, p.sku, p.name, it.warehouse_id,
-                       it.quantity, it.unit_cost, it.lot_number, it.created_at
+                       wn.name AS warehouse_name, it.quantity, it.unit_cost, it.lot_number, it.created_at
                 FROM inventory_transactions it
                 JOIN products p ON p.id = it.product_id
+                LEFT JOIN organization_node wn ON wn.id = it.warehouse_id
                 WHERE it.tenant_id = :tid
                   AND it.transaction_date >= COALESCE(CAST(:date_from AS date), CURRENT_DATE - INTERVAL '30 days')
                   AND it.transaction_date <= COALESCE(CAST(:date_to AS date), CURRENT_DATE)
@@ -135,6 +138,7 @@ async def get_stock_movement(
             sku=r.sku,
             name=r.name,
             warehouse_id=r.warehouse_id,
+            warehouse_name=r.warehouse_name,
             quantity=r.quantity,
             unit_cost=r.unit_cost,
             lot_number=r.lot_number,
@@ -155,11 +159,12 @@ async def get_expiry_alerts(
         await db.execute(
             text(
                 f"""
-                SELECT ib.product_id, p.sku, p.name, ib.warehouse_id, ib.lot_number,
+                SELECT ib.product_id, p.sku, p.name, ib.warehouse_id, wn.name AS warehouse_name, ib.lot_number,
                        ib.expiry_date, ib.quantity,
                        (ib.expiry_date - CURRENT_DATE) AS days_to_expiry
                 FROM inventory_balances ib
                 JOIN products p ON p.id = ib.product_id
+                LEFT JOIN organization_node wn ON wn.id = ib.warehouse_id
                 WHERE ib.tenant_id = :tid
                   AND ib.quantity > 0
                   AND ib.expiry_date IS NOT NULL
@@ -177,6 +182,7 @@ async def get_expiry_alerts(
             sku=r.sku,
             name=r.name,
             warehouse_id=r.warehouse_id,
+            warehouse_name=r.warehouse_name,
             lot_number=r.lot_number,
             expiry_date=r.expiry_date,
             quantity=r.quantity,

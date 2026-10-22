@@ -13,6 +13,7 @@ class ValuationRow(BaseModel):
     sku: str
     name: str
     warehouse_id: uuid.UUID
+    warehouse_name: Optional[str] = None
     on_hand: Decimal
     unit_cost: Decimal
     total_value: Decimal
@@ -26,6 +27,7 @@ class MovementRow(BaseModel):
     sku: str
     name: str
     warehouse_id: uuid.UUID
+    warehouse_name: Optional[str] = None
     quantity: Decimal
     unit_cost: Optional[Decimal] = None
     lot_number: Optional[str] = None
@@ -37,6 +39,7 @@ class ExpiryAlertRow(BaseModel):
     sku: str
     name: str
     warehouse_id: uuid.UUID
+    warehouse_name: Optional[str] = None
     lot_number: Optional[str] = None
     expiry_date: date
     quantity: Decimal
