@@ -2151,7 +2151,9 @@
     "lot_first_received": "First received",
     "lot_balances": "Balance by location",
     "lot_history": "Movement history",
-    "col_balance": "Balance"
+    "col_balance": "Balance",
+    "export_csv": "Export CSV",
+    "print_pdf": "Print / save as PDF"
   },
   "warehouses": {
     "title": "Kuusaalee",

@@ -72,6 +72,7 @@ export default function ValuationReportPage() {
         rows={data}
         isLoading={rows.isLoading}
         isError={rows.isError}
+        exportName="valuation"
         total={data.length > 0 ? formatNumber(total) : undefined}
       />
     </div>
