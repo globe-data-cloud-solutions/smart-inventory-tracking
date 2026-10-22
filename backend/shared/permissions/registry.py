@@ -200,6 +200,8 @@ class PERMISSIONS:
     REPORT_LOW_STOCK = Permission("report:low_stock", ["tenant_id"])
     REPORT_LOT_TRACE = Permission("report:lot_trace", ["tenant_id"])
     REPORT_DISPATCH_SUMMARY = Permission("report:dispatch_summary", ["tenant_id"])
+    # Level names and the nodes a caller may filter reports by (2026-10-22).
+    REPORT_FILTER_OPTIONS = Permission("report:filter_options", ["tenant_id"])
 
     # ── Domain 17 — System Administration ────────────────────────────────
     SYSTEM_FEATURE_FLAG = Permission("system:feature_flag_manage", ["platform_only"])
@@ -274,7 +276,7 @@ ALL_PERMISSIONS: List[Permission] = [
     v for v in vars(PERMISSIONS).values() if isinstance(v, Permission)
 ]
 
-assert len(ALL_PERMISSIONS) == 162, (
-    f"Expected 162 permissions, found {len(ALL_PERMISSIONS)}. "
+assert len(ALL_PERMISSIONS) == 163, (
+    f"Expected 163 permissions, found {len(ALL_PERMISSIONS)}. "
     "Update registry.py and re-run seed_permissions.py."
 )

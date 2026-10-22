@@ -21,6 +21,7 @@ ROLE_PERMISSION_MATRIX: dict[str, dict[str, str]] = {
     # grant_type: FULL | CONDITIONAL | READ_ONLY
     "SA": {p.id: "FULL" for p in ALL_PERMISSIONS},  # SA gets everything
     "TA": {
+        "report:filter_options": "FULL",
         "tenant:configure": "FULL",
         "tenant:view": "FULL",
         "tenant:manage": "FULL",
@@ -91,6 +92,7 @@ ROLE_PERMISSION_MATRIX: dict[str, dict[str, str]] = {
         "tenant:view_contract_status": "FULL",
     },
     "NM": {
+        "report:filter_options": "FULL",
         "product:create": "FULL",
         "product:view": "FULL",
         "product:list": "FULL",
@@ -145,6 +147,8 @@ ROLE_PERMISSION_MATRIX: dict[str, dict[str, str]] = {
         "plan:view_usage": "FULL",
     },
     "RM": {
+        "report:inventory_valuation": "FULL",
+        "report:filter_options": "FULL",
         "product:list": "FULL",
         "product:view": "FULL",
         "inventory:receive": "FULL",
@@ -196,6 +200,9 @@ ROLE_PERMISSION_MATRIX: dict[str, dict[str, str]] = {
         "tenant:view_contract_status": "FULL",
     },
     "WM": {
+        "report:inventory_valuation": "FULL",
+        "report:stock_movement": "FULL",
+        "report:filter_options": "FULL",
         "product:list": "FULL",
         "product:view": "FULL",
         "inventory:receive": "FULL",
@@ -243,6 +250,10 @@ ROLE_PERMISSION_MATRIX: dict[str, dict[str, str]] = {
         "tenant:view_contract_status": "FULL",
     },
     "LM": {
+        "report:inventory_valuation": "FULL",
+        "report:stock_movement": "FULL",
+        "report:expiry_alerts": "FULL",
+        "report:filter_options": "FULL",
         "product:list": "FULL",
         "product:view": "FULL",
         "logistics:fleet_manage": "FULL",
@@ -270,6 +281,10 @@ ROLE_PERMISSION_MATRIX: dict[str, dict[str, str]] = {
         "tenant:view_contract_status": "FULL",
     },
     "SA_GT": {
+        "report:inventory_valuation": "FULL",
+        "report:stock_movement": "FULL",
+        "report:expiry_alerts": "FULL",
+        "report:filter_options": "FULL",
         "scan:barcode_lookup": "FULL",
         "scan:batch_receive": "FULL",
         "inventory:receive": "FULL",
@@ -282,6 +297,10 @@ ROLE_PERMISSION_MATRIX: dict[str, dict[str, str]] = {
         "tenant:view_contract_status": "FULL",
     },
     "RT": {
+        "report:inventory_valuation": "FULL",
+        "report:stock_movement": "FULL",
+        "report:expiry_alerts": "FULL",
+        "report:filter_options": "FULL",
         "inventory:view_balance": "READ_ONLY",
         "report:low_stock": "READ_ONLY",
         "scan:barcode_lookup": "FULL",
@@ -291,6 +310,7 @@ ROLE_PERMISSION_MATRIX: dict[str, dict[str, str]] = {
         "tenant:view_contract_status": "FULL",
     },
     "AU": {
+        "report:filter_options": "READ_ONLY",
         "audit:view_logs": "FULL",
         "audit:export_logs": "FULL",
         "report:inventory_valuation": "READ_ONLY",
