@@ -12,6 +12,7 @@ import {
   dash,
   fetchFilterOptions,
   reportPath,
+  useReportTenant,
   type LevelNodeFilter,
 } from "@/lib/reports";
 import ReportFilterBar from "@/components/reports/ReportFilterBar";
@@ -39,20 +40,21 @@ const COLUMNS: ReportColumn<ValuationRow>[] = [
 
 export default function ValuationReportPage() {
   const { org } = useParams() as { org: string };
+  const { tenantId, ready } = useReportTenant(org);
   const [filter, setFilter] = useState<LevelNodeFilter>({ level: null, nodeId: null });
 
   const options = useQuery({
-    queryKey: ["report-filter-options", org],
-    queryFn: fetchFilterOptions,
-    enabled: REPORTS_LIVE && org !== SA_ORG_SLUG,
+    queryKey: ["report-filter-options", org, tenantId],
+    queryFn: () => fetchFilterOptions(tenantId),
+    enabled: REPORTS_LIVE && org !== SA_ORG_SLUG && ready,
     staleTime: 60_000,
   });
 
-  const path = reportPath("/api/v1/inventory/reports/inventory-valuation", filter);
+  const path = reportPath("/api/v1/inventory/reports/inventory-valuation", filter, {}, tenantId);
   const rows = useQuery<ValuationRow[]>({
-    queryKey: ["report-valuation", org, path],
+    queryKey: ["report-valuation", org, tenantId, path],
     queryFn: () => api.get<ValuationRow[]>(path),
-    enabled: REPORTS_LIVE && org !== SA_ORG_SLUG,
+    enabled: REPORTS_LIVE && org !== SA_ORG_SLUG && ready,
   });
 
   if (org === SA_ORG_SLUG) return <p className="p-8 text-gray-500">{t("sa.select_tenant")}</p>;

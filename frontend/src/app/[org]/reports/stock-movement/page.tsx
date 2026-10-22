@@ -12,6 +12,7 @@ import {
   dash,
   fetchFilterOptions,
   reportPath,
+  useReportTenant,
   type LevelNodeFilter,
 } from "@/lib/reports";
 import ReportFilterBar from "@/components/reports/ReportFilterBar";
@@ -31,9 +32,33 @@ interface MovementRow {
   lot_number: string | null;
 }
 
+// Explicit literal keys (not a template string) so check_i18n.sh can see each one.
+const TX_TYPE_KEYS: Record<string, string> = {
+  RECEIVE: "report.tx_type_receive",
+  TRANSFER_OUT: "report.tx_type_transfer_out",
+  TRANSFER_IN: "report.tx_type_transfer_in",
+  ISSUE: "report.tx_type_issue",
+  ADJUSTMENT: "report.tx_type_adjustment",
+  RESERVE: "report.tx_type_reserve",
+  RELEASE: "report.tx_type_release",
+  RETURN: "report.tx_type_return",
+  COUNT_VARIANCE: "report.tx_type_count_variance",
+  LOT_OPENING: "report.tx_type_lot_opening",
+  TRANSIT_OUT: "report.tx_type_transit_out",
+  TRANSIT_IN: "report.tx_type_transit_in",
+  TRANSIT_CLEAR: "report.tx_type_transit_clear",
+  TRANSFER_REVERSAL: "report.tx_type_transfer_reversal",
+};
+
+/** Readable label for a transaction type code; an unknown code falls back to the raw code. */
+function txTypeLabel(code: string): string {
+  const key = TX_TYPE_KEYS[code];
+  return key ? t(key) : code;
+}
+
 const COLUMNS: ReportColumn<MovementRow>[] = [
   { labelKey: "report.col_transaction_date", render: (r) => formatDate(r.transaction_date) },
-  { labelKey: "report.col_type", render: (r) => r.type },
+  { labelKey: "report.col_type", render: (r) => txTypeLabel(r.type) },
   { labelKey: "report.col_sku", render: (r) => r.sku },
   { labelKey: "report.col_name", render: (r) => r.name },
   { labelKey: "report.col_warehouse", render: (r) => dash(r.warehouse_name) },
@@ -43,25 +68,28 @@ const COLUMNS: ReportColumn<MovementRow>[] = [
 
 export default function StockMovementReportPage() {
   const { org } = useParams() as { org: string };
+  const { tenantId, ready } = useReportTenant(org);
   const [filter, setFilter] = useState<LevelNodeFilter>({ level: null, nodeId: null });
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
 
   const options = useQuery({
-    queryKey: ["report-filter-options", org],
-    queryFn: fetchFilterOptions,
-    enabled: REPORTS_LIVE && org !== SA_ORG_SLUG,
+    queryKey: ["report-filter-options", org, tenantId],
+    queryFn: () => fetchFilterOptions(tenantId),
+    enabled: REPORTS_LIVE && org !== SA_ORG_SLUG && ready,
     staleTime: 60_000,
   });
 
-  const path = reportPath("/api/v1/inventory/reports/stock-movement", filter, {
-    date_from: dateFrom || null,
-    date_to: dateTo || null,
-  });
+  const path = reportPath(
+    "/api/v1/inventory/reports/stock-movement",
+    filter,
+    { date_from: dateFrom || null, date_to: dateTo || null },
+    tenantId,
+  );
   const rows = useQuery<MovementRow[]>({
-    queryKey: ["report-movement", org, path],
+    queryKey: ["report-movement", org, tenantId, path],
     queryFn: () => api.get<MovementRow[]>(path),
-    enabled: REPORTS_LIVE && org !== SA_ORG_SLUG,
+    enabled: REPORTS_LIVE && org !== SA_ORG_SLUG && ready,
   });
 
   if (org === SA_ORG_SLUG) return <p className="p-8 text-gray-500">{t("sa.select_tenant")}</p>;

@@ -2,6 +2,7 @@
 // caller's level; these helpers only build the optional filter query.
 
 import { api } from "@/lib/api";
+import { useViewedTenantId } from "@/hooks/useViewedTenantId";
 
 export const REPORTS_LIVE = !!process.env.NEXT_PUBLIC_API_URL;
 
@@ -28,14 +29,28 @@ export interface LevelNodeFilter {
   nodeId: string | null;
 }
 
-/** Builds `base?level=..&node_id=..&...`. Level and node go together: the
- *  server rejects a node without its level, so both are sent or neither. */
+/**
+ * The tenant id a report request must carry. SA's token has no tenant, so on a
+ * tenant's page the id is resolved from the org slug and sent as ?tenant_id=;
+ * every other role gets `undefined` (the server uses their token's tenant), so
+ * their requests are unchanged. `ready` is false until an SA's id is known.
+ */
+export function useReportTenant(org: string): { tenantId: string | undefined; ready: boolean } {
+  const viewed = useViewedTenantId(org);
+  return { tenantId: viewed.isSA ? viewed.tenantId : undefined, ready: viewed.ready };
+}
+
+/** Builds `base?level=..&node_id=..&tenant_id=..&...`. Level and node go together:
+ *  the server rejects a node without its level, so both are sent or neither.
+ *  `tenantId` is the SA-only tenant from useReportTenant. */
 export function reportPath(
   base: string,
   filter: LevelNodeFilter,
   extra: Record<string, string | null | undefined> = {},
+  tenantId?: string,
 ): string {
   const params = new URLSearchParams();
+  if (tenantId) params.set("tenant_id", tenantId);
   if (filter.nodeId && filter.level != null) {
     params.set("level", String(filter.level));
     params.set("node_id", filter.nodeId);
@@ -47,8 +62,10 @@ export function reportPath(
   return qs ? `${base}?${qs}` : base;
 }
 
-export function fetchFilterOptions(): Promise<ReportFilterOptions> {
-  return api.get<ReportFilterOptions>("/api/v1/inventory/reports/filter-options");
+export function fetchFilterOptions(tenantId?: string): Promise<ReportFilterOptions> {
+  return api.get<ReportFilterOptions>(
+    reportPath("/api/v1/inventory/reports/filter-options", { level: null, nodeId: null }, {}, tenantId),
+  );
 }
 
 /** A null or empty value shows as a dash, never as a raw id. */

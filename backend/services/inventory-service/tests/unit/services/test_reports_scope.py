@@ -41,6 +41,11 @@ def _user(role: str, node: str | None = NODE):
     return SimpleNamespace(role=role, tenant_id=str(TENANT), warehouse_id=node)
 
 
+def _req(tenant_id: str | None = None) -> SimpleNamespace:
+    """Just enough of a Request for _rls_tenant_for: the query string."""
+    return SimpleNamespace(query_params={"tenant_id": tenant_id} if tenant_id else {})
+
+
 def _db() -> MagicMock:
     db = MagicMock()
     db.execute = AsyncMock()
@@ -57,7 +62,7 @@ async def test_valuation_route_passes_resolved_scope() -> None:
         patch.object(reports, "get_inventory_valuation", new=AsyncMock(return_value=[])) as q,
     ):
         await reports.inventory_valuation.__wrapped__(
-            level=None, node_id=None, warehouse_id=None, user=_user("RM"), db=_db()
+            level=None, node_id=None, warehouse_id=None, request=_req(), user=_user("RM"), db=_db()
         )
     assert q.await_args.args[2] == scope
 
@@ -76,6 +81,7 @@ async def test_movement_route_parses_dates() -> None:
             level=None,
             node_id=None,
             warehouse_id=None,
+            request=_req(),
             user=_user("TA"),
             db=_db(),
         )
@@ -94,6 +100,7 @@ async def test_movement_route_rejects_bad_date() -> None:
             level=None,
             node_id=None,
             warehouse_id=None,
+            request=_req(),
             user=_user("TA"),
             db=_db(),
         )
@@ -111,7 +118,13 @@ async def test_expiry_route_passes_window_and_scope() -> None:
         patch.object(reports, "get_expiry_alerts", new=AsyncMock(return_value=[])) as q,
     ):
         await reports.expiry_alerts.__wrapped__(
-            window_days=45, level=None, node_id=None, warehouse_id=None, user=_user("WM"), db=_db()
+            window_days=45,
+            level=None,
+            node_id=None,
+            warehouse_id=None,
+            request=_req(),
+            user=_user("WM"),
+            db=_db(),
         )
     assert q.await_args.args[2] == scope
     assert q.await_args.kwargs["window_days"] == 45
@@ -202,7 +215,12 @@ async def test_route_narrows_caller_scope_by_filter() -> None:
         patch.object(reports, "get_inventory_valuation", new=AsyncMock(return_value=[])) as q,
     ):
         await reports.inventory_valuation.__wrapped__(
-            level=None, node_id=NODE_B, warehouse_id=None, user=_user("RM"), db=_db()
+            level=None,
+            node_id=NODE_B,
+            warehouse_id=None,
+            request=_req(),
+            user=_user("RM"),
+            db=_db(),
         )
     assert q.await_args.args[2] == {NODE_B}
 
@@ -221,6 +239,7 @@ async def test_route_filter_cannot_widen_a_scoped_caller() -> None:
             level=None,
             node_id=NODE_C,
             warehouse_id=None,
+            request=_req(),
             user=_user("WM"),
             db=_db(),
         )
@@ -257,7 +276,163 @@ async def test_filter_options_returns_levels_and_only_in_scope_nodes() -> None:
     db.execute = AsyncMock(side_effect=[lvl_result, node_result])
 
     with patch.object(reports, "resolve_node_scope", new=AsyncMock(return_value={NODE, NODE_C})):
-        out = await reports.report_filter_options.__wrapped__(user=_user("RM"), db=db)
+        out = await reports.report_filter_options.__wrapped__(
+            request=_req(), user=_user("RM"), db=db
+        )
 
     assert [lv.level_name for lv in out.data.levels] == ["National", "Region"]
     assert {str(n.id) for n in out.data.nodes} == {NODE, NODE_C}
+
+
+# ── Tenant resolution: SA scopes with ?tenant_id, everyone else the token ───
+
+OTHER_TENANT = uuid.UUID("10000000-0000-0000-0000-000000000002")
+
+
+def _sa() -> SimpleNamespace:
+    return SimpleNamespace(role="SA", tenant_id=None, warehouse_id=None)
+
+
+@pytest.mark.asyncio
+async def test_sa_with_tenant_query_resolves_that_tenant_for_valuation() -> None:
+    from routers import reports
+
+    with (
+        patch.object(reports, "resolve_node_scope", new=AsyncMock(return_value=None)),
+        patch.object(reports, "get_inventory_valuation", new=AsyncMock(return_value=[])) as q,
+    ):
+        await reports.inventory_valuation.__wrapped__(
+            request=_req(str(OTHER_TENANT)),
+            level=None,
+            node_id=None,
+            warehouse_id=None,
+            user=_sa(),
+            db=_db(),
+        )
+    assert q.await_args.args[1] == OTHER_TENANT
+
+
+@pytest.mark.asyncio
+async def test_sa_with_tenant_query_resolves_that_tenant_for_movement_and_expiry() -> None:
+    from routers import reports
+
+    with (
+        patch.object(reports, "resolve_node_scope", new=AsyncMock(return_value=None)),
+        patch.object(reports, "get_stock_movement", new=AsyncMock(return_value=[])) as mv,
+        patch.object(reports, "get_expiry_alerts", new=AsyncMock(return_value=[])) as ex,
+    ):
+        await reports.stock_movement.__wrapped__(
+            request=_req(str(OTHER_TENANT)),
+            date_from=None,
+            date_to=None,
+            level=None,
+            node_id=None,
+            warehouse_id=None,
+            user=_sa(),
+            db=_db(),
+        )
+        await reports.expiry_alerts.__wrapped__(
+            request=_req(str(OTHER_TENANT)),
+            window_days=30,
+            level=None,
+            node_id=None,
+            warehouse_id=None,
+            user=_sa(),
+            db=_db(),
+        )
+    assert mv.await_args.args[1] == OTHER_TENANT
+    assert ex.await_args.args[1] == OTHER_TENANT
+
+
+@pytest.mark.asyncio
+async def test_sa_with_tenant_query_resolves_that_tenant_for_filter_options() -> None:
+    from routers import reports
+
+    with (
+        patch.object(reports, "resolve_node_scope", new=AsyncMock(return_value=None)),
+        patch.object(
+            reports,
+            "filter_options",
+            new=AsyncMock(return_value=SimpleNamespace(levels=[], nodes=[])),
+        ) as fo,
+    ):
+        await reports.report_filter_options.__wrapped__(
+            request=_req(str(OTHER_TENANT)), user=_sa(), db=_db()
+        )
+    assert fo.await_args.args[1] == str(OTHER_TENANT)
+
+
+@pytest.mark.asyncio
+async def test_sa_tenant_query_is_used_for_the_filter_scope_lookup() -> None:
+    """The level/node/warehouse filter is looked up in the viewed tenant."""
+    from routers import reports
+
+    with (
+        patch.object(reports, "resolve_node_scope", new=AsyncMock(return_value=None)),
+        patch.object(reports, "filter_scope", new=AsyncMock(return_value=None)) as fs,
+        patch.object(reports, "get_inventory_valuation", new=AsyncMock(return_value=[])),
+    ):
+        await reports.inventory_valuation.__wrapped__(
+            request=_req(str(OTHER_TENANT)),
+            level=2,
+            node_id=NODE,
+            warehouse_id=None,
+            user=_sa(),
+            db=_db(),
+        )
+    assert fs.await_args.args[1] == str(OTHER_TENANT)
+
+
+async def _call_route(name: str, request: SimpleNamespace, user) -> object:
+    from routers import reports
+
+    route = getattr(reports, name).__wrapped__
+    if name == "report_filter_options":
+        return await route(request=request, user=user, db=_db())
+    extra = {
+        "inventory_valuation": {},
+        "stock_movement": {"date_from": None, "date_to": None},
+        "expiry_alerts": {"window_days": 30},
+    }[name]
+    return await route(
+        request=request, level=None, node_id=None, warehouse_id=None, user=user, db=_db(), **extra
+    )
+
+
+_ALL_ROUTES = ["report_filter_options", "inventory_valuation", "stock_movement", "expiry_alerts"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("route", _ALL_ROUTES)
+async def test_sa_without_tenant_query_is_422_tenant_required(route: str) -> None:
+    with pytest.raises(HTTPException) as exc:
+        await _call_route(route, _req(), _sa())
+    assert exc.value.status_code == 422
+    assert exc.value.detail == {"code": "TENANT_REQUIRED"}
+
+
+@pytest.mark.asyncio
+async def test_sa_with_malformed_tenant_query_is_422_tenant_required() -> None:
+    with pytest.raises(HTTPException) as exc:
+        await _call_route("inventory_valuation", _req("not-a-uuid"), _sa())
+    assert exc.value.status_code == 422
+    assert exc.value.detail == {"code": "TENANT_REQUIRED"}
+
+
+@pytest.mark.asyncio
+async def test_ta_ignores_a_different_tenant_in_the_query() -> None:
+    from routers import reports
+
+    with (
+        patch.object(reports, "resolve_node_scope", new=AsyncMock(return_value=None)),
+        patch.object(reports, "get_inventory_valuation", new=AsyncMock(return_value=[])) as q,
+    ):
+        await reports.inventory_valuation.__wrapped__(
+            request=_req(str(OTHER_TENANT)),
+            level=None,
+            node_id=None,
+            warehouse_id=None,
+            user=_user("TA"),
+            db=_db(),
+        )
+    assert q.await_args.args[1] == TENANT
