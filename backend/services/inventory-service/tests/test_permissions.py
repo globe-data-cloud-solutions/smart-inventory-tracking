@@ -234,12 +234,11 @@ class TestInventoryReceivePermissions:
             )
         assert result.allowed
 
-    async def test_05d_lm_without_node_is_denied_fail_closed(self) -> None:
+    async def test_05d_lm_without_node_is_tenant_wide_track_b(self) -> None:
         """A system_role='LM' account with no position has warehouse_id=None.
-        RB-2 G1 (2026-10-22): a facility-scoped user with no node fails closed,
-        so warehouse-scoped resources are denied. Previously this account type
-        was tenant-wide. Changing it back is a decision, not a fix: see
-        claude/backlog-completion-plan.md."""
+        Business rule 25 (LM Track B, decided by Alex 2026-10-22): an LM with no
+        node is tenant-wide, so warehouse-scoped resources are allowed. Other
+        facility-scoped roles with no node still fail closed (RB-2 G1)."""
         from shared.permissions.middleware import check_permission
         from shared.permissions.registry import PERMISSIONS
 
@@ -255,8 +254,7 @@ class TestInventoryReceivePermissions:
                 PERMISSIONS.INVENTORY_RECEIVE,
                 {"tenant_id": TENANT_A, "warehouse_id": WAREHOUSE_A},
             )
-        assert not result.allowed
-        assert "warehouse" in result.reason
+        assert result.allowed
 
     async def test_06_abac_cross_tenant_ownership(self) -> None:
         """SA role can access any tenant; non-SA role blocked by tenant mismatch."""

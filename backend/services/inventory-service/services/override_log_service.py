@@ -41,7 +41,12 @@ from schemas.inventory import (
     OverrideSummaryOut,
     OverrideWarehouseOut,
 )
-from services.transfer_discrepancies import _FACILITY_SCOPED_ROLES, _inside, _subtree
+from services.transfer_discrepancies import (
+    _FACILITY_SCOPED_ROLES,
+    _NO_NODE_TENANT_WIDE,
+    _inside,
+    _subtree,
+)
 
 DEFAULT_PERIOD_DAYS = 30
 MAX_PERIOD_DAYS = 366
@@ -93,6 +98,8 @@ async def _scope(
     role = getattr(user, "role", None)
     node_id = getattr(user, "warehouse_id", None)
     if role in _FACILITY_SCOPED_ROLES and not node_id:
+        if role in _NO_NODE_TENANT_WIDE:
+            return False, None
         return True, None
     if node_id and role in _FACILITY_SCOPED_ROLES:
         subtree = await _subtree(db, tenant_id, node_id)

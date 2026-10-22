@@ -145,7 +145,13 @@ class TestScope:
         await list_overrides(s, _user("RM", NODE_ID), TENANT_ID, warehouse_id=NODE_ID)
         assert _statements(s)[0][1]["wh"] == NODE_ID.lower()
 
-    @pytest.mark.parametrize("role", ["WM", "LM", "SA_GT", "RT"])
+    async def test_lm_without_node_is_tenant_wide(self, subtree) -> None:
+        """LM Track B (business rule 25): no node means no subtree filter."""
+        s = _session()
+        await list_overrides(s, _user("LM"), TENANT_ID)
+        assert "subtree" not in _statements(s)[0][1]
+
+    @pytest.mark.parametrize("role", ["WM", "SA_GT", "RT"])
     async def test_facility_role_without_node_is_empty(self, role, subtree) -> None:
         s = _session()
         out = await list_overrides(s, _user(role), TENANT_ID)
