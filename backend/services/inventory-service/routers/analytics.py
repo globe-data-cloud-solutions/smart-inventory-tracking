@@ -14,6 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from dependencies import get_read_db_session
 from dependencies import get_current_user
+from shared.permissions.hierarchy_service import resolve_node_scope
 from shared.permissions.middleware import require_permission
 from shared.permissions.registry import PERMISSIONS
 from shared.utils.responses import SuccessResponse
@@ -60,7 +61,8 @@ async def reorder_alerts(
 ) -> SuccessResponse[List[ReorderAlertOut]]:
     """All product/warehouse pairs at or below their reorder point, sorted by shortfall."""
     tid = effective_tenant_id(user, tenant_id)
-    data = await get_alerts(db, tid)
+    scope = await resolve_node_scope(db, user)
+    data = await get_alerts(db, tid, scope=scope)
     return SuccessResponse(data=data)
 
 
@@ -75,7 +77,8 @@ async def demand_forecast(
 ) -> SuccessResponse[List[ForecastOut]]:
     """Average daily consumption and estimated days until stockout per location."""
     tid = effective_tenant_id(user, tenant_id)
-    data = await get_forecast(db, tid, product_id=product_id, days=days)
+    scope = await resolve_node_scope(db, user)
+    data = await get_forecast(db, tid, product_id=product_id, days=days, scope=scope)
     return SuccessResponse(data=data)
 
 
@@ -89,7 +92,8 @@ async def cross_warehouse_stock(
 ) -> SuccessResponse[CrossWarehouseStockOut]:
     """Stock of a single product across all warehouses."""
     tid = effective_tenant_id(user, tenant_id)
-    data = await get_cross_warehouse_stock(db, tid, product_id)
+    scope = await resolve_node_scope(db, user)
+    data = await get_cross_warehouse_stock(db, tid, product_id, scope=scope)
     return SuccessResponse(data=data)
 
 

@@ -3159,15 +3159,14 @@ class InventoryService:
     async def _transfer_scope(self, user: Any) -> Optional[set[str]]:
         """The lowercased node subtree whose transfers the caller sees; None means
         the whole tenant. Same rules as transfer_discrepancies.list_discrepancies:
-          WM / LM / SA_GT / RT  their subtree; no node -> empty set (nothing)
-          RM                    its subtree; no node -> the whole tenant
-          TA / NM / SA / AU     the whole tenant
+          WM / LM / SA_GT / RT / RM  their subtree; no node -> empty set (nothing)
+          TA / NM / SA / AU          the whole tenant
         """
         role = getattr(user, "role", None)
         node_id = getattr(user, "warehouse_id", None)
         if role in _FACILITY_SCOPED_ROLES and not node_id:
             return set()
-        if node_id and (role in _FACILITY_SCOPED_ROLES or role == "RM"):
+        if node_id and role in _FACILITY_SCOPED_ROLES:
             return await _subtree(self.db, str(user.tenant_id), node_id)
         return None
 

@@ -17,6 +17,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from dependencies import get_current_user, get_db_session, get_read_db_session
+from shared.permissions.hierarchy_service import resolve_node_scope
 from shared.permissions.middleware import require_permission
 from shared.permissions.registry import PERMISSIONS
 from shared.utils.responses import SuccessResponse
@@ -184,5 +185,23 @@ async def patch_lot_expiry(
     """Set an expiry once on a lot that has none. Metadata only - no ledger write."""
     if not feature_lot_tracking_enabled():
         raise HTTPException(status_code=403, detail={"code": "FEATURE_NOT_ENABLED"})
+    # RB-2 G4: product:update is tenant-wide, so check the lot's warehouses here.
+    # Every warehouse holding the lot must be inside the caller's node scope.
+    scope = await resolve_node_scope(db, user)
+    if scope is not None:
+        from sqlalchemy import text
+
+        rows = (
+            await db.execute(
+                text(
+                    "SELECT DISTINCT warehouse_id FROM lot_balances "
+                    "WHERE lot_id = :lid AND tenant_id = :tid"
+                ),
+                {"lid": str(lot_id), "tid": str(user.tenant_id)},
+            )
+        ).fetchall()
+        lot_whs = {str(r.warehouse_id).lower() for r in rows}
+        if not lot_whs or not lot_whs.issubset(scope):
+            raise HTTPException(status_code=403, detail={"code": "ABAC_DENIED"})
     result = await set_lot_expiry(db, str(user.tenant_id), str(lot_id), body.expiry_date, user)
     return SuccessResponse(data=SetLotExpiryOut(**result))

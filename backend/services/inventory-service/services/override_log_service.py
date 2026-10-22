@@ -94,7 +94,7 @@ async def _scope(
     node_id = getattr(user, "warehouse_id", None)
     if role in _FACILITY_SCOPED_ROLES and not node_id:
         return True, None
-    if node_id and (role in _FACILITY_SCOPED_ROLES or role == "RM"):
+    if node_id and role in _FACILITY_SCOPED_ROLES:
         subtree = await _subtree(db, tenant_id, node_id)
         if warehouse_id is not None and not _inside(subtree, [warehouse_id]):
             raise HTTPException(status_code=403, detail={"code": "WAREHOUSE_OUT_OF_SCOPE"})
