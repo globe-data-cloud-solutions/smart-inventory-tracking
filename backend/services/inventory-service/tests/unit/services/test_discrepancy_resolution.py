@@ -883,13 +883,12 @@ class TestListDiscrepancies:
     @pytest.mark.parametrize(
         "user",
         [
-            RM_NO_NODE,
             TA,
             NM,
             _user("SA"),
             _user("AU", WH_C),
         ],
-        ids=["RM-no-node", "TA", "NM", "SA", "AU"],
+        ids=["TA", "NM", "SA", "AU"],
     )
     async def test_tenant_wide_callers(self, user: Any) -> None:
         world = _World()
@@ -925,8 +924,13 @@ class TestListDiscrepancies:
 
     async def test_tenant_wide_caller_may_name_any_warehouse(self) -> None:
         world = _World()
-        rows = await _list(world, RM_NO_NODE, warehouse_id=UUID(WH_C))
+        rows = await _list(world, TA, warehouse_id=UUID(WH_C))
         assert [str(r.id) for r in rows] == [D_T3, D_T2]
+
+    async def test_rm_without_node_sees_no_rows(self) -> None:
+        # RB-2 G3: an RM is limited to its region; with no node there is no region.
+        world = _World()
+        assert await _list(world, RM_NO_NODE) == []
 
     async def test_another_tenant_sees_only_its_rows(self) -> None:
         world = _World()

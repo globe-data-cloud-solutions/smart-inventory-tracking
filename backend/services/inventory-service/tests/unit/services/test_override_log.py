@@ -160,11 +160,13 @@ class TestScope:
         await list_overrides(s, _user("WM", NODE_ID), TENANT_ID)
         assert "subtree" in _statements(s)[0][1]
 
-    async def test_rm_without_node_is_tenant_wide(self, subtree) -> None:
+    async def test_rm_without_node_fails_closed(self, subtree) -> None:
+        # RB-2 G3: no node means no region, so the RM sees nothing (fail closed).
+        from services.override_log_service import _scope
+
         s = _session()
-        await list_overrides(s, _user("RM"), TENANT_ID)
+        assert await _scope(s, _user("RM"), TENANT_ID, None) == (True, None)
         subtree.assert_not_awaited()
-        assert "subtree" not in _statements(s)[0][1]
 
     @pytest.mark.parametrize("role", ["TA", "NM", "AU", "SA"])
     async def test_tenant_wide_roles_have_no_subtree_filter(self, role, subtree) -> None:

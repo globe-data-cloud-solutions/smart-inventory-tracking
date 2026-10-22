@@ -234,13 +234,12 @@ class TestInventoryReceivePermissions:
             )
         assert result.allowed
 
-    async def test_05d_lm_without_node_keeps_tenant_wide_access(self) -> None:
-        """A tenant-wide LM (system_role='LM', created without a position) has
-        warehouse_id=None in its JWT. Documented/correct behavior: the warehouse
-        check is skipped entirely (user_wh is falsy), so this account type keeps
-        unrestricted tenant-wide read access — there's no node to scope it to.
-        This is graceful handling, not a bug: tenant-wide LM is a deliberate,
-        distinct account type from a node-assigned LM position."""
+    async def test_05d_lm_without_node_is_denied_fail_closed(self) -> None:
+        """A system_role='LM' account with no position has warehouse_id=None.
+        RB-2 G1 (2026-10-22): a facility-scoped user with no node fails closed,
+        so warehouse-scoped resources are denied. Previously this account type
+        was tenant-wide. Changing it back is a decision, not a fix: see
+        claude/backlog-completion-plan.md."""
         from shared.permissions.middleware import check_permission
         from shared.permissions.registry import PERMISSIONS
 
@@ -256,7 +255,8 @@ class TestInventoryReceivePermissions:
                 PERMISSIONS.INVENTORY_RECEIVE,
                 {"tenant_id": TENANT_A, "warehouse_id": WAREHOUSE_A},
             )
-        assert result.allowed
+        assert not result.allowed
+        assert "warehouse" in result.reason
 
     async def test_06_abac_cross_tenant_ownership(self) -> None:
         """SA role can access any tenant; non-SA role blocked by tenant mismatch."""

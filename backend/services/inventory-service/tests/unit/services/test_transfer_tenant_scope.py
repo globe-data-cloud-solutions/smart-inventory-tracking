@@ -296,8 +296,9 @@ class TestTransferListScope:
     async def test_rm_sees_its_subtree(self, scoped) -> None:
         assert await _list_ids(scoped, RM_REGION) == {T_AB, T_CA}
 
-    async def test_rm_without_node_sees_tenant(self, scoped) -> None:
-        assert await _list_ids(scoped, RM_NONODE) == {T_AB, T_CA, T_CD}
+    async def test_rm_without_node_sees_nothing(self, scoped) -> None:
+        # RB-2 G3: an RM is limited to its region; with no node it sees nothing.
+        assert await _list_ids(scoped, RM_NONODE) == set()
 
     @pytest.mark.parametrize("user", [TA_A, NM_AT_WH], ids=["TA", "NM-with-node"])
     async def test_tenant_wide_roles_see_tenant(self, scoped, user) -> None:
@@ -333,8 +334,8 @@ class TestTransferDetailScope:
     async def test_rm_outside_its_subtree_is_403(self, scoped) -> None:
         assert await _get(scoped, RM_REGION, T_CD) == _OUT_OF_SCOPE
 
-    async def test_rm_without_node_gets_any_tenant_transfer(self, scoped) -> None:
-        assert (await _get(scoped, RM_NONODE, T_CD)).transfer_id == T_CD
+    async def test_rm_without_node_is_refused_detail(self, scoped) -> None:
+        assert await _get(scoped, RM_NONODE, T_CD) == _OUT_OF_SCOPE
 
     async def test_ta_gets_any_tenant_transfer(self, scoped) -> None:
         assert (await _get(scoped, TA_A, T_CD)).transfer_id == T_CD

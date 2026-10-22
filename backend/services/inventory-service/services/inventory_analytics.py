@@ -197,12 +197,23 @@ async def get_stock(
 # ── Reorder alerts ─────────────────────────────────────────────────────────────
 
 
+def _filter_scope(stock_items, scope: Optional[set]):
+    """Keep rows whose warehouse is in the caller's node scope (None = all)."""
+    if scope is None:
+        return stock_items
+    return [s for s in stock_items if str(s.warehouse_id).lower() in scope]
+
+
 async def get_alerts(
     session: AsyncSession,
     tenant_id: Optional[uuid.UUID],
+    scope: Optional[set] = None,
 ) -> List[ReorderAlertOut]:
-    """Return all product/warehouse pairs where current_stock <= reorder_point."""
-    stock_items = await get_stock(session, tenant_id)
+    """Return all product/warehouse pairs where current_stock <= reorder_point.
+
+    scope: lowercased node ids the caller may see (resolve_node_scope); None = all.
+    """
+    stock_items = _filter_scope(await get_stock(session, tenant_id), scope)
     if not stock_items:
         return []
 
@@ -244,13 +255,14 @@ async def get_forecast(
     tenant_id: Optional[uuid.UUID],
     product_id: Optional[uuid.UUID] = None,
     days: int = 30,
+    scope: Optional[set] = None,
 ) -> List[ForecastOut]:
     """Compute average daily consumption and estimated days until stockout.
 
     Consumption is derived from negative inventory_transactions
     (TRANSFER_OUT, ISSUE, ADJUSTMENT with quantity < 0).
     """
-    stock_items = await get_stock(session, tenant_id)
+    stock_items = _filter_scope(await get_stock(session, tenant_id), scope)
     if product_id:
         stock_items = [s for s in stock_items if s.product_id == product_id]
 
@@ -308,8 +320,9 @@ async def get_cross_warehouse_stock(
     session: AsyncSession,
     tenant_id: Optional[uuid.UUID],
     product_id: uuid.UUID,
+    scope: Optional[set] = None,
 ) -> CrossWarehouseStockOut:
-    """Return stock of one product across all warehouses for this tenant."""
+    """Stock of one product across the warehouses the caller may see (scope; None = all)."""
     tid_clause = "AND tenant_id = :tid" if tenant_id else ""
     check_sql = text(f"SELECT id, name, sku FROM products WHERE id = :pid {tid_clause}")
     params: dict = {"pid": str(product_id)}
@@ -320,7 +333,7 @@ async def get_cross_warehouse_stock(
     if not product_row:
         raise HTTPException(status_code=404, detail="Product not found")
 
-    all_stock = await get_stock(session, tenant_id)
+    all_stock = _filter_scope(await get_stock(session, tenant_id), scope)
     product_rows = [s for s in all_stock if s.product_id == product_id]
     total = sum(s.current_stock for s in product_rows)
 

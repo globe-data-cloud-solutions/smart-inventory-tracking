@@ -244,8 +244,8 @@ _RESOLUTIONS_BY_REASON: dict[str, tuple[str, ...]] = {
 # Roles that resolve tenant-wide; RM is limited to its node subtree.
 _TENANT_WIDE_ROLES = frozenset({"TA", "NM", "SA"})
 
-# Roles scoped to their node subtree by check_permission() (middleware.py).
-_FACILITY_SCOPED_ROLES = frozenset({"WM", "LM", "SA_GT", "RT"})
+# Roles scoped to their node subtree (shared with check_permission(); RM included, RB-2 G3).
+from shared.permissions.hierarchy_service import FACILITY_SCOPED_ROLES as _FACILITY_SCOPED_ROLES  # noqa: E402
 
 # Outcomes that move stock at the source, so the source must be in the RM's scope too.
 _SOURCE_RESOLUTIONS = frozenset({"RETURNED", "RECEIVED_AS_LOT"})
@@ -522,9 +522,8 @@ async def list_discrepancies(
 
     Scope is the caller's node subtree (get_descendant_node_ids), matched
     against either end of the transfer:
-      WM / LM / SA_GT / RT  their subtree; no node -> no rows
-      RM                    its subtree; no node -> the whole tenant
-      TA / NM / SA / AU     the whole tenant
+      WM / LM / SA_GT / RT / RM  their subtree; no node -> no rows
+      TA / NM / SA / AU          the whole tenant
 
     warehouse_id narrows to rows where either end equals it. For a
     subtree-scoped caller it must lie inside the subtree, else
@@ -541,7 +540,7 @@ async def list_discrepancies(
     if status is not None:
         filters += " AND d.status = :status"
         params["status"] = status
-    if node_id and (role in _FACILITY_SCOPED_ROLES or role == "RM"):
+    if node_id and role in _FACILITY_SCOPED_ROLES:
         subtree = await _subtree(db, tenant_id, node_id)
         if warehouse_id is not None and not _inside(subtree, [warehouse_id]):
             raise HTTPException(status_code=403, detail={"code": "WAREHOUSE_OUT_OF_SCOPE"})

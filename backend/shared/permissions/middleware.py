@@ -7,7 +7,7 @@ from fastapi import HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from shared.permissions.audit import audit_log
-from shared.permissions.hierarchy_service import get_descendant_node_ids
+from shared.permissions.hierarchy_service import FACILITY_SCOPED_ROLES, get_descendant_node_ids
 from shared.permissions.registry import Permission
 from shared.permissions.store import get_role_permission
 
@@ -93,18 +93,21 @@ async def check_permission(
             await audit_log(user, action.id, resource, "DENIED", "ABAC_DENIED: region scope")
             return PermissionResult(allowed=False, reason="ABAC_DENIED: region scope")
 
-    # 4. Warehouse scope — node + descendant traversal for FACILITY_SCOPED_ROLES
-    FACILITY_SCOPED_ROLES = {"WM", "LM", "SA_GT", "RT"}
-    if user.role in FACILITY_SCOPED_ROLES and user.warehouse_id:
+    # 4. Warehouse scope — node + descendant traversal for FACILITY_SCOPED_ROLES.
+    # Fail closed (RB-2 G1): a facility-scoped user with no node gets an empty
+    # scope, so any warehouse-scoped resource is denied.
+    if user.role in FACILITY_SCOPED_ROLES:
         resource_wh = resource.get("warehouse_id")
         if resource_wh and "warehouse_id" in action.abac:
             resource_wh_str = str(resource_wh).lower()
-            user_wh_str = str(user.warehouse_id).lower()
+            user_wh_str = str(user.warehouse_id or "").lower()
             # Check scope cache first
             if scope_cache is None:
                 scope_cache = {}
             if user_wh_str not in scope_cache:
-                if db is not None:
+                if not user.warehouse_id:
+                    scope_cache[user_wh_str] = set()
+                elif db is not None:
                     scope_cache[user_wh_str] = {
                         n.lower()
                         for n in await get_descendant_node_ids(

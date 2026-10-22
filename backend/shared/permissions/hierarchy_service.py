@@ -6,8 +6,16 @@ Source of truth: organization_node.parent_node_id (flat FK, not org_node_hierarc
 
 from __future__ import annotations
 
+from typing import Any, Optional
+
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import text
+
+# Roles limited to their own node and the subtree below it (RB-2, 2026-10-22).
+# RM is here: an RM is limited to its region for views and for warehouse actions.
+FACILITY_SCOPED_ROLES = frozenset({"WM", "LM", "SA_GT", "RT", "RM"})
+# Roles that see the whole tenant regardless of node.
+TENANT_WIDE_ROLES = frozenset({"TA", "NM", "SA", "AU"})
 
 
 async def get_descendant_node_ids(
@@ -56,3 +64,24 @@ async def get_descendant_node_ids(
         # Fail open to exact-match — never block a user due to a
         # traversal error. Logged separately by the caller.
         return {str(node_id)}
+
+
+async def resolve_node_scope(db: AsyncSession, user: Any) -> Optional[set[str]]:
+    """Node ids a read should be filtered to, for the caller's level.
+
+    None      tenant-wide (TA, NM, SA, AU): no filter.
+    set[str]  lowercased node ids: the caller's node and its active descendants
+              for FACILITY_SCOPED_ROLES; the node itself for any other role that
+              has one.
+    set()     fail closed: a facility-scoped caller with no node sees nothing.
+    """
+    role = getattr(user, "role", None)
+    warehouse_id = getattr(user, "warehouse_id", None)
+    if role in TENANT_WIDE_ROLES:
+        return None
+    if not warehouse_id:
+        return set()
+    if role in FACILITY_SCOPED_ROLES:
+        nodes = await get_descendant_node_ids(db, str(user.tenant_id), str(warehouse_id))
+        return {n.lower() for n in nodes}
+    return {str(warehouse_id).lower()}
