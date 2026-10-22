@@ -56,7 +56,9 @@ async def test_valuation_route_passes_resolved_scope() -> None:
         patch.object(reports, "resolve_node_scope", new=AsyncMock(return_value=scope)),
         patch.object(reports, "get_inventory_valuation", new=AsyncMock(return_value=[])) as q,
     ):
-        await reports.inventory_valuation.__wrapped__(user=_user("RM"), db=_db())
+        await reports.inventory_valuation.__wrapped__(
+            level=None, node_id=None, warehouse_id=None, user=_user("RM"), db=_db()
+        )
     assert q.await_args.args[2] == scope
 
 
@@ -69,7 +71,13 @@ async def test_movement_route_parses_dates() -> None:
         patch.object(reports, "get_stock_movement", new=AsyncMock(return_value=[])) as q,
     ):
         await reports.stock_movement.__wrapped__(
-            date_from="2026-01-02", date_to="2026-02-03", user=_user("TA"), db=_db()
+            date_from="2026-01-02",
+            date_to="2026-02-03",
+            level=None,
+            node_id=None,
+            warehouse_id=None,
+            user=_user("TA"),
+            db=_db(),
         )
     assert q.await_args.kwargs["date_from"] == date(2026, 1, 2)
     assert q.await_args.kwargs["date_to"] == date(2026, 2, 3)
@@ -81,7 +89,13 @@ async def test_movement_route_rejects_bad_date() -> None:
 
     with pytest.raises(HTTPException) as exc:
         await reports.stock_movement.__wrapped__(
-            date_from="02/01/2026", date_to=None, user=_user("TA"), db=_db()
+            date_from="02/01/2026",
+            date_to=None,
+            level=None,
+            node_id=None,
+            warehouse_id=None,
+            user=_user("TA"),
+            db=_db(),
         )
     assert exc.value.status_code == 422
     assert exc.value.detail == {"code": "INVALID_DATE", "field": "date_from"}
@@ -96,6 +110,154 @@ async def test_expiry_route_passes_window_and_scope() -> None:
         patch.object(reports, "resolve_node_scope", new=AsyncMock(return_value=scope)),
         patch.object(reports, "get_expiry_alerts", new=AsyncMock(return_value=[])) as q,
     ):
-        await reports.expiry_alerts.__wrapped__(window_days=45, user=_user("WM"), db=_db())
+        await reports.expiry_alerts.__wrapped__(
+            window_days=45, level=None, node_id=None, warehouse_id=None, user=_user("WM"), db=_db()
+        )
     assert q.await_args.args[2] == scope
     assert q.await_args.kwargs["window_days"] == 45
+
+
+# ── Filters by level, node and warehouse (2026-10-22) ───────────────────────
+
+from services import report_filters as rf  # noqa: E402
+
+NODE_B = "20000000-0000-0000-0000-00000000000b"
+NODE_C = "20000000-0000-0000-0000-00000000000c"
+WH_1 = "30000000-0000-0000-0000-000000000001"
+
+
+def test_intersect_scopes_only_narrows() -> None:
+    assert rf.intersect_scopes(None, None) is None
+    assert rf.intersect_scopes(None, {NODE}) == {NODE}
+    assert rf.intersect_scopes({NODE}, None) == {NODE}
+    assert rf.intersect_scopes({NODE, NODE_B}, {NODE_B, NODE_C}) == {NODE_B}
+    assert rf.intersect_scopes(set(), {NODE}) == set()
+
+
+def _level_db(at_level: bool = True) -> MagicMock:
+    db = MagicMock()
+    row = MagicMock() if at_level else None
+    result = MagicMock()
+    result.first.return_value = row
+    db.execute = AsyncMock(return_value=result)
+    return db
+
+
+@pytest.mark.asyncio
+async def test_filter_scope_none_when_no_filter_given() -> None:
+    db = _level_db()
+    assert await rf.filter_scope(db, str(TENANT), None, None, None) is None
+    db.execute.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_filter_scope_node_selects_its_subtree_lowercased() -> None:
+    with patch.object(
+        rf,
+        "get_descendant_node_ids",
+        new=AsyncMock(return_value={NODE.upper(), NODE_C.upper()}),
+    ):
+        out = await rf.filter_scope(_level_db(), str(TENANT), None, NODE, None)
+    assert out == {NODE, NODE_C}
+
+
+@pytest.mark.asyncio
+async def test_filter_scope_level_requires_node() -> None:
+    with pytest.raises(HTTPException) as exc:
+        await rf.filter_scope(_level_db(), str(TENANT), 2, None, None)
+    assert exc.value.detail == {"code": "INVALID_FILTER", "field": "level"}
+
+
+@pytest.mark.asyncio
+async def test_filter_scope_rejects_node_not_at_level() -> None:
+    with pytest.raises(HTTPException) as exc:
+        await rf.filter_scope(_level_db(at_level=False), str(TENANT), 2, NODE, None)
+    assert exc.value.detail == {"code": "INVALID_FILTER", "field": "node_id"}
+
+
+@pytest.mark.asyncio
+async def test_filter_scope_rejects_malformed_uuid() -> None:
+    with pytest.raises(HTTPException) as exc:
+        await rf.filter_scope(_level_db(), str(TENANT), None, "not-a-uuid", None)
+    assert exc.value.detail == {"code": "INVALID_FILTER", "field": "node_id"}
+
+
+@pytest.mark.asyncio
+async def test_filter_scope_warehouse_and_node_intersect() -> None:
+    with patch.object(rf, "get_descendant_node_ids", new=AsyncMock(return_value={NODE, NODE_B})):
+        out = await rf.filter_scope(_level_db(), str(TENANT), None, NODE, WH_1)
+    assert out == set()
+
+
+@pytest.mark.asyncio
+async def test_route_narrows_caller_scope_by_filter() -> None:
+    """A RM whose region is {NODE, NODE_B} filters to NODE_B and gets only that."""
+    from routers import reports
+
+    caller = {NODE, NODE_B}
+    chosen = {NODE_B, NODE_C}
+    with (
+        patch.object(reports, "resolve_node_scope", new=AsyncMock(return_value=caller)),
+        patch.object(reports, "filter_scope", new=AsyncMock(return_value=chosen)),
+        patch.object(reports, "get_inventory_valuation", new=AsyncMock(return_value=[])) as q,
+    ):
+        await reports.inventory_valuation.__wrapped__(
+            level=None, node_id=NODE_B, warehouse_id=None, user=_user("RM"), db=_db()
+        )
+    assert q.await_args.args[2] == {NODE_B}
+
+
+@pytest.mark.asyncio
+async def test_route_filter_cannot_widen_a_scoped_caller() -> None:
+    from routers import reports
+
+    with (
+        patch.object(reports, "resolve_node_scope", new=AsyncMock(return_value={NODE})),
+        patch.object(reports, "filter_scope", new=AsyncMock(return_value={NODE_C})),
+        patch.object(reports, "get_expiry_alerts", new=AsyncMock(return_value=[])) as q,
+    ):
+        await reports.expiry_alerts.__wrapped__(
+            window_days=30,
+            level=None,
+            node_id=NODE_C,
+            warehouse_id=None,
+            user=_user("WM"),
+            db=_db(),
+        )
+    assert q.await_args.args[2] == set()
+
+
+@pytest.mark.asyncio
+async def test_filter_options_returns_levels_and_only_in_scope_nodes() -> None:
+    from routers import reports
+
+    levels = [
+        SimpleNamespace(level_number=1, level_name="National"),
+        SimpleNamespace(level_number=2, level_name="Region"),
+    ]
+    nodes = [
+        SimpleNamespace(
+            id=uuid.UUID(NODE), name="North", code="N", hierarchy_level=2, parent_node_id=None
+        ),
+        SimpleNamespace(
+            id=uuid.UUID(NODE_C),
+            name="Depot",
+            code="D",
+            hierarchy_level=3,
+            parent_node_id=uuid.UUID(NODE),
+        ),
+        SimpleNamespace(
+            id=uuid.UUID(NODE_B), name="South", code="S", hierarchy_level=2, parent_node_id=None
+        ),
+    ]
+    db = MagicMock()
+    lvl_result, node_result = MagicMock(), MagicMock()
+    lvl_result.all.return_value = levels
+    node_result.all.return_value = nodes
+    db.execute = AsyncMock(side_effect=[lvl_result, node_result])
+
+    with patch.object(reports, "resolve_node_scope", new=AsyncMock(return_value={NODE, NODE_C})):
+        out = await reports.report_filter_options.__wrapped__(user=_user("RM"), db=db)
+
+    assert [lv.level_name for lv in out.data.levels] == ["National", "Region"]
+    assert {str(n.id) for n in out.data.nodes} == {NODE, NODE_C}

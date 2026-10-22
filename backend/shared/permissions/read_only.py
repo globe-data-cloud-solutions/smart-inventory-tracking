@@ -64,6 +64,7 @@ READ_ACTIONS: frozenset[str] = frozenset(
         "report:low_stock",
         "report:lot_trace",
         "report:dispatch_summary",
+        "report:filter_options",
         "position:view",
         "transfer_type:view",
         "tenant:self_approval_view",

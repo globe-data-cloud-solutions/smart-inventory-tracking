@@ -675,7 +675,8 @@
       "warehouse_deactivate": "Kuusaan Dhaabame",
       "warehouse_list": "Kuusaaleen Tarreeffaman",
       "warehouse_update": "Kuusaan Haaromfame",
-      "warehouse_view": "Kuusaan Ilaalame"
+      "warehouse_view": "Kuusaan Ilaalame",
+      "report_filter_options": "Report filter options viewed"
     },
     "resources": {
       "adjustment": "Sirreeffama",
@@ -1121,7 +1122,8 @@
     "ZERO_QUANTITY": "Hangi sun zeeroo ol ta'uu qaba.",
     "VALIDATION": "Dirreewwan tokko tokko hin guutamne yookaan sirrii miti. Maaloo foormii ilaalaa.",
     "UNKNOWN": "Wanti tokko dogoggoraan ta'eera. Maaloo irra deebi'ii yaali.",
-    "NETWORK": "Sarvara qunnamuun hin danda'amne. Walitti hidhaa kee mirkaneeffadhuu irra deebi'ii yaali."
+    "NETWORK": "Sarvara qunnamuun hin danda'amne. Walitti hidhaa kee mirkaneeffadhuu irra deebi'ii yaali.",
+    "INVALID_FILTER": "That report filter is not valid. Choose a location at the selected level."
   },
   "demo": {
     "mode_banner": "Haala demo — jijjiiramni marsariitii haaromsamte haqama. Daataa dhaabbataa argachuuf backend waliin wal qabii."
@@ -2093,7 +2095,30 @@
     "format": "Haala",
     "pdf": "PDF",
     "csv": "CSV",
-    "excel": "Excel"
+    "excel": "Excel",
+    "filter_level": "Level",
+    "filter_node": "Location",
+    "all_levels": "All levels",
+    "all_nodes": "All locations",
+    "filter_window": "Expiring within",
+    "window_30": "30 days",
+    "window_60": "60 days",
+    "window_90": "90 days",
+    "col_sku": "SKU",
+    "col_name": "Product",
+    "col_warehouse": "Location",
+    "col_on_hand": "On hand",
+    "col_unit_cost": "Unit cost",
+    "col_total_value": "Total value",
+    "col_transaction_date": "Date",
+    "col_type": "Type",
+    "col_quantity": "Quantity",
+    "col_lot": "Lot",
+    "col_expiry_date": "Expiry date",
+    "col_days_to_expiry": "Days to expiry",
+    "total": "Total",
+    "empty": "No rows match these filters",
+    "error_load": "Could not load this report. Try again or change the filters."
   },
   "warehouses": {
     "title": "Kuusaalee",

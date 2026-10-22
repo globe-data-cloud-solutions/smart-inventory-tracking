@@ -44,3 +44,21 @@ class ExpiryAlertRow(BaseModel):
     expiry_date: date
     quantity: Decimal
     days_to_expiry: int
+
+
+class LevelOption(BaseModel):
+    level_number: int
+    level_name: str
+
+
+class NodeOption(BaseModel):
+    id: uuid.UUID
+    name: str
+    code: str
+    hierarchy_level: int
+    parent_node_id: Optional[uuid.UUID] = None
+
+
+class ReportFilterOptions(BaseModel):
+    levels: list[LevelOption]
+    nodes: list[NodeOption]
