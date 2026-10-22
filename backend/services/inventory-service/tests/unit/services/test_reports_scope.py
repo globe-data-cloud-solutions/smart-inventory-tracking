@@ -488,3 +488,53 @@ async def test_dispatch_route_rejects_malformed_product_filter() -> None:
         )
     assert exc.value.status_code == 422
     assert exc.value.detail == {"code": "INVALID_FILTER", "field": "product_id"}
+
+
+# ── Lot trace (2026-10-22) ──────────────────────────────────────────────────
+
+PRODUCT_ID = "50000000-0000-0000-0000-00000000000e"
+
+
+@pytest.mark.asyncio
+async def test_lot_trace_unknown_lot_is_404() -> None:
+    from routers import reports
+
+    with (
+        patch.object(reports, "get_lot_header", new=AsyncMock(return_value=None)),
+        pytest.raises(HTTPException) as exc,
+    ):
+        await reports.lot_trace.__wrapped__(
+            request=_req(),
+            product_id=PRODUCT_ID,
+            lot_number="NOPE",
+            date_from=None,
+            date_to=None,
+            level=None,
+            node_id=None,
+            warehouse_id=None,
+            user=_user("TA"),
+            db=_db(),
+        )
+    assert exc.value.status_code == 404
+    assert exc.value.detail == {"code": "LOT_NOT_FOUND"}
+
+
+@pytest.mark.asyncio
+async def test_lot_trace_requires_a_valid_product() -> None:
+    from routers import reports
+
+    with pytest.raises(HTTPException) as exc:
+        await reports.lot_trace.__wrapped__(
+            request=_req(),
+            product_id=None,
+            lot_number="LOT-1",
+            date_from=None,
+            date_to=None,
+            level=None,
+            node_id=None,
+            warehouse_id=None,
+            user=_user("TA"),
+            db=_db(),
+        )
+    assert exc.value.status_code == 422
+    assert exc.value.detail == {"code": "INVALID_FILTER", "field": "product_id"}
