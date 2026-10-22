@@ -21,6 +21,7 @@ ROLE_PERMISSION_MATRIX: dict[str, dict[str, str]] = {
     # grant_type: FULL | CONDITIONAL | READ_ONLY
     "SA": {p.id: "FULL" for p in ALL_PERMISSIONS},  # SA gets everything
     "TA": {
+        "report:lot_trace": "FULL",
         "report:filter_options": "FULL",
         "tenant:configure": "FULL",
         "tenant:view": "FULL",
@@ -147,6 +148,7 @@ ROLE_PERMISSION_MATRIX: dict[str, dict[str, str]] = {
         "plan:view_usage": "FULL",
     },
     "RM": {
+        "report:lot_trace": "FULL",
         "report:inventory_valuation": "FULL",
         "report:filter_options": "FULL",
         "product:list": "FULL",
@@ -200,6 +202,7 @@ ROLE_PERMISSION_MATRIX: dict[str, dict[str, str]] = {
         "tenant:view_contract_status": "FULL",
     },
     "WM": {
+        "report:lot_trace": "FULL",
         "report:dispatch_summary": "FULL",
         "report:inventory_valuation": "FULL",
         "report:stock_movement": "FULL",
@@ -251,6 +254,7 @@ ROLE_PERMISSION_MATRIX: dict[str, dict[str, str]] = {
         "tenant:view_contract_status": "FULL",
     },
     "LM": {
+        "report:lot_trace": "FULL",
         "report:dispatch_summary": "FULL",
         "report:inventory_valuation": "FULL",
         "report:stock_movement": "FULL",
@@ -283,6 +287,7 @@ ROLE_PERMISSION_MATRIX: dict[str, dict[str, str]] = {
         "tenant:view_contract_status": "FULL",
     },
     "SA_GT": {
+        "report:lot_trace": "FULL",
         "report:dispatch_summary": "FULL",
         "report:inventory_valuation": "FULL",
         "report:stock_movement": "FULL",
@@ -300,6 +305,7 @@ ROLE_PERMISSION_MATRIX: dict[str, dict[str, str]] = {
         "tenant:view_contract_status": "FULL",
     },
     "RT": {
+        "report:lot_trace": "FULL",
         "report:dispatch_summary": "FULL",
         "report:inventory_valuation": "FULL",
         "report:stock_movement": "FULL",

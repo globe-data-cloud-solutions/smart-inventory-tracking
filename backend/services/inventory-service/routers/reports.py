@@ -21,6 +21,8 @@ from dependencies import _rls_tenant_for, get_current_user, get_read_db_session
 from schemas.reports import (
     DispatchRow,
     ExpiryAlertRow,
+    LotHeader,
+    LotTraceOut,
     MovementRow,
     ReportFilterOptions,
     ValuationRow,
@@ -30,6 +32,9 @@ from services.report_queries import (
     get_dispatch_summary,
     get_expiry_alerts,
     get_inventory_valuation,
+    get_lot_balances,
+    get_lot_header,
+    get_lot_history,
     get_stock_movement,
 )
 from shared.permissions.hierarchy_service import resolve_node_scope
@@ -191,3 +196,55 @@ async def dispatch_summary(
         transfer_order_id=_uuid_filter(transfer_order_id, "transfer_order_id"),
     )
     return SuccessResponse(data=data)
+
+
+@router.get("/lot-trace", response_model=SuccessResponse[LotTraceOut])
+@require_permission(PERMISSIONS.REPORT_LOT_TRACE)
+async def lot_trace(
+    request: Request,
+    product_id: Optional[str] = Query(None, description="Required"),
+    lot_number: str = Query(..., min_length=1, max_length=100),
+    date_from: Optional[str] = Query(
+        None, description="YYYY-MM-DD; default: from the first movement"
+    ),
+    date_to: Optional[str] = Query(None, description="YYYY-MM-DD; default: no end"),
+    level: Optional[int] = Query(None, ge=1, le=5, description=_FILTER_QUERY_DOC),
+    node_id: Optional[str] = Query(None),
+    warehouse_id: Optional[str] = Query(None),
+    user=Depends(get_current_user),
+    db: AsyncSession = Depends(get_read_db_session),
+) -> SuccessResponse[LotTraceOut]:
+    tenant_id = _report_tenant(user, request)
+    pid = _uuid_filter(product_id, "product_id")
+    if pid is None:
+        raise HTTPException(
+            status_code=422, detail={"code": "INVALID_FILTER", "field": "product_id"}
+        )
+    header = await get_lot_header(db, tenant_id, pid, lot_number)
+    if header is None:
+        raise HTTPException(status_code=404, detail={"code": "LOT_NOT_FOUND"})
+    scope = await _report_scope(db, user, tenant_id, level, node_id, warehouse_id)
+    balances = await get_lot_balances(db, tenant_id, pid, lot_number, scope)
+    history = await get_lot_history(
+        db,
+        tenant_id,
+        pid,
+        lot_number,
+        scope,
+        date_from=_parse_day(date_from, "date_from"),
+        date_to=_parse_day(date_to, "date_to"),
+    )
+    return SuccessResponse(
+        data=LotTraceOut(
+            lot=LotHeader(
+                lot_number=header.lot_number,
+                product_id=header.product_id,
+                sku=header.sku,
+                name=header.name,
+                expiry_date=header.expiry_date,
+                first_received_at=header.first_received_at,
+            ),
+            balances=balances,
+            history=history,
+        )
+    )

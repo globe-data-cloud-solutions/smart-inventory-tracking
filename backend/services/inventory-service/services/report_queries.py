@@ -24,7 +24,14 @@ from typing import Optional
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from schemas.reports import DispatchRow, ExpiryAlertRow, MovementRow, ValuationRow
+from schemas.reports import (
+    DispatchRow,
+    ExpiryAlertRow,
+    LotBalanceRow,
+    LotHistoryRow,
+    MovementRow,
+    ValuationRow,
+)
 
 
 def _scope_clause(column: str, scope: Optional[set[str]]) -> tuple[str, dict]:
@@ -278,6 +285,116 @@ async def get_dispatch_summary(
             quantity_dispatched=r.quantity_dispatched,
             lots_used=r.lots_used,
             overrides=r.overrides,
+        )
+        for r in rows
+    ]
+
+
+async def get_lot_header(db: AsyncSession, tenant_id: uuid.UUID, product_id: str, lot_number: str):
+    """The lot's own record (stock_lots). None when the product has no such lot."""
+    return (
+        await db.execute(
+            text(
+                """
+                SELECT sl.lot_number, sl.product_id, p.sku, p.name,
+                       sl.expiry_date, sl.first_received_at
+                FROM stock_lots sl
+                JOIN products p ON p.id = sl.product_id
+                WHERE sl.tenant_id = :tid
+                  AND sl.product_id = CAST(:pid AS uuid)
+                  AND sl.lot_number = :lot
+                """
+            ),
+            {"tid": str(tenant_id), "pid": product_id, "lot": lot_number},
+        )
+    ).first()
+
+
+async def get_lot_balances(
+    db: AsyncSession,
+    tenant_id: uuid.UUID,
+    product_id: str,
+    lot_number: str,
+    scope: Optional[set[str]],
+) -> list[LotBalanceRow]:
+    clause, scope_params = _scope_clause("ib.warehouse_id", scope)
+    rows = (
+        await db.execute(
+            text(
+                f"""
+                SELECT ib.warehouse_id, wn.name AS warehouse_name, SUM(ib.quantity) AS quantity
+                FROM inventory_balances ib
+                LEFT JOIN organization_node wn ON wn.id = ib.warehouse_id
+                WHERE ib.tenant_id = :tid
+                  AND ib.product_id = CAST(:pid AS uuid)
+                  AND ib.lot_number = :lot
+                  {clause}
+                GROUP BY ib.warehouse_id, wn.name
+                HAVING SUM(ib.quantity) <> 0
+                ORDER BY wn.name NULLS LAST
+                """
+            ),
+            {"tid": str(tenant_id), "pid": product_id, "lot": lot_number, **scope_params},
+        )
+    ).fetchall()
+    return [
+        LotBalanceRow(
+            warehouse_id=r.warehouse_id, warehouse_name=r.warehouse_name, quantity=r.quantity
+        )
+        for r in rows
+    ]
+
+
+async def get_lot_history(
+    db: AsyncSession,
+    tenant_id: uuid.UUID,
+    product_id: str,
+    lot_number: str,
+    scope: Optional[set[str]],
+    date_from: Optional[date] = None,
+    date_to: Optional[date] = None,
+    limit: int = 1000,
+) -> list[LotHistoryRow]:
+    clause, scope_params = _scope_clause("it.warehouse_id", scope)
+    rows = (
+        await db.execute(
+            text(
+                f"""
+                SELECT it.id AS transaction_id, it.transaction_date, it.type,
+                       it.warehouse_id, wn.name AS warehouse_name,
+                       it.quantity, it.created_at
+                FROM inventory_transactions it
+                LEFT JOIN organization_node wn ON wn.id = it.warehouse_id
+                WHERE it.tenant_id = :tid
+                  AND it.product_id = CAST(:pid AS uuid)
+                  AND it.lot_number = :lot
+                  AND (CAST(:date_from AS date) IS NULL OR it.transaction_date >= CAST(:date_from AS date))
+                  AND (CAST(:date_to AS date) IS NULL OR it.transaction_date <= CAST(:date_to AS date))
+                  {clause}
+                ORDER BY it.transaction_date, it.created_at
+                LIMIT :limit
+                """
+            ),
+            {
+                "tid": str(tenant_id),
+                "pid": product_id,
+                "lot": lot_number,
+                "date_from": date_from,
+                "date_to": date_to,
+                "limit": limit,
+                **scope_params,
+            },
+        )
+    ).fetchall()
+    return [
+        LotHistoryRow(
+            transaction_id=r.transaction_id,
+            transaction_date=r.transaction_date,
+            type=r.type,
+            warehouse_id=r.warehouse_id,
+            warehouse_name=r.warehouse_name,
+            quantity=r.quantity,
+            created_at=r.created_at,
         )
         for r in rows
     ]

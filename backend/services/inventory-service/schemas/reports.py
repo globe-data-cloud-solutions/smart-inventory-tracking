@@ -80,3 +80,34 @@ class DispatchRow(BaseModel):
     quantity_dispatched: Decimal
     lots_used: int
     overrides: int
+
+
+class LotHeader(BaseModel):
+    lot_number: str
+    product_id: uuid.UUID
+    sku: str
+    name: str
+    expiry_date: Optional[date] = None
+    first_received_at: datetime
+
+
+class LotBalanceRow(BaseModel):
+    warehouse_id: uuid.UUID
+    warehouse_name: Optional[str] = None
+    quantity: Decimal
+
+
+class LotHistoryRow(BaseModel):
+    transaction_id: uuid.UUID
+    transaction_date: date
+    type: str
+    warehouse_id: uuid.UUID
+    warehouse_name: Optional[str] = None
+    quantity: Decimal
+    created_at: datetime
+
+
+class LotTraceOut(BaseModel):
+    lot: LotHeader
+    balances: list[LotBalanceRow]
+    history: list[LotHistoryRow]

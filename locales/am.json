@@ -2216,7 +2216,15 @@
     "col_to": "To",
     "col_quantity_dispatched": "Quantity dispatched",
     "col_lots_used": "Lots used",
-    "col_overrides": "Lot overrides"
+    "col_overrides": "Lot overrides",
+    "choose_product": "Choose a product",
+    "filter_lot_number": "Lot number",
+    "lot_prompt": "Choose a product and enter a lot number to trace it.",
+    "lot_expiry": "Expiry",
+    "lot_first_received": "First received",
+    "lot_balances": "Balance by location",
+    "lot_history": "Movement history",
+    "col_balance": "Balance"
   },
   "warehouses": {
     "title": "መጋዘኖች",
