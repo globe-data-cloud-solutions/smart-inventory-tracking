@@ -103,6 +103,7 @@ jobs:
         working-directory: backend/migrations
       - run: python scripts/seed_permissions.py
       - run: python scripts/create_partitions.py --months 3
+      - run: python scripts/check_rls_coverage.py
       - run: pytest backend/ -v --tb=short --cov=backend -m "unit or integration"
 
   test-frontend:

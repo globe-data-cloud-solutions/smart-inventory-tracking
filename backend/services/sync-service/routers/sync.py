@@ -34,7 +34,9 @@ async def sync_batch(
 ) -> SuccessResponse[List[SyncResult]]:
     results = []
     for item in items:
-        if await idempotency_key_exists(db, item.idempotency_key):
+        # sync-service has no authenticated tenant yet (stub, see RB-1 notes).
+        # With tenant None the lookup is False, never an unscoped read.
+        if await idempotency_key_exists(db, None, item.idempotency_key):
             results.append(
                 SyncResult(
                     idempotency_key=item.idempotency_key,
