@@ -17,6 +17,7 @@ from routers import (
     lot_settings,
     lots,
     receive,
+    reports,
     transfer,
     transfer_requests,
 )
@@ -57,6 +58,7 @@ app.include_router(
 )
 app.include_router(lot_settings.router, prefix="/api/v1/inventory", tags=["lot-settings"])
 app.include_router(lots.router, prefix="/api/v1/inventory/lots", tags=["lots"])
+app.include_router(reports.router, prefix="/api/v1/inventory/reports", tags=["reports"])
 app.include_router(dispatch.router, prefix="/api/v1/inventory/dispatch", tags=["dispatch"])
 
 
