@@ -246,6 +246,7 @@ _TENANT_WIDE_ROLES = frozenset({"TA", "NM", "SA"})
 
 # Roles scoped to their node subtree (shared with check_permission(); RM included, RB-2 G3).
 from shared.permissions.hierarchy_service import FACILITY_SCOPED_ROLES as _FACILITY_SCOPED_ROLES  # noqa: E402
+from shared.permissions.hierarchy_service import NO_NODE_TENANT_WIDE_ROLES as _NO_NODE_TENANT_WIDE  # noqa: E402
 
 # Outcomes that move stock at the source, so the source must be in the RM's scope too.
 _SOURCE_RESOLUTIONS = frozenset({"RETURNED", "RECEIVED_AS_LOT"})
@@ -532,7 +533,7 @@ async def list_discrepancies(
     tenant_id = str(user.tenant_id)
     role = getattr(user, "role", None)
     node_id = getattr(user, "warehouse_id", None)
-    if role in _FACILITY_SCOPED_ROLES and not node_id:
+    if role in _FACILITY_SCOPED_ROLES and not node_id and role not in _NO_NODE_TENANT_WIDE:
         return []
 
     params: dict[str, Any] = {"tid": tenant_id}

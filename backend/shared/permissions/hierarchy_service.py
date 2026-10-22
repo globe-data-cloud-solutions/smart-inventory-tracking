@@ -14,6 +14,9 @@ from sqlalchemy import text
 # Roles limited to their own node and the subtree below it (RB-2, 2026-10-22).
 # RM is here: an RM is limited to its region for views and for warehouse actions.
 FACILITY_SCOPED_ROLES = frozenset({"WM", "LM", "SA_GT", "RT", "RM"})
+# LM Track B (business rule 25): an LM with no node assigned is tenant-wide.
+# Every other facility-scoped role with no node fails closed.
+NO_NODE_TENANT_WIDE_ROLES = frozenset({"LM"})
 # Roles that see the whole tenant regardless of node.
 TENANT_WIDE_ROLES = frozenset({"TA", "NM", "SA", "AU"})
 
@@ -80,7 +83,7 @@ async def resolve_node_scope(db: AsyncSession, user: Any) -> Optional[set[str]]:
     if role in TENANT_WIDE_ROLES:
         return None
     if not warehouse_id:
-        return set()
+        return None if role in NO_NODE_TENANT_WIDE_ROLES else set()
     if role in FACILITY_SCOPED_ROLES:
         nodes = await get_descendant_node_ids(db, str(user.tenant_id), str(warehouse_id))
         return {n.lower() for n in nodes}

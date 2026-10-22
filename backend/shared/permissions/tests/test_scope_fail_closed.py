@@ -63,11 +63,18 @@ async def _check(user: _User, resource_wh: str):
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("role", ["WM", "LM", "SA_GT", "RT", "RM"])
+@pytest.mark.parametrize("role", ["WM", "SA_GT", "RT", "RM"])
 async def test_facility_role_without_node_is_denied(role: str) -> None:
     result = await _check(_User("u", TENANT, None, None, role), NODE_A)
     assert not result.allowed
     assert "warehouse" in result.reason
+
+
+@pytest.mark.asyncio
+async def test_lm_without_node_is_tenant_wide_track_b() -> None:
+    """Business rule 25 (LM Track B): an LM with no node sees the tenant."""
+    result = await _check(_User("u", TENANT, None, None, "LM"), NODE_A)
+    assert result.allowed
 
 
 # ── G3: RM is limited to its region ─────────────────────────────────────────

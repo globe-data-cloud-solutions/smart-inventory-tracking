@@ -45,7 +45,12 @@ from schemas.inventory import (
     TransferOrderResponse,
 )
 from services import transfer_discrepancies, transfer_lots
-from services.transfer_discrepancies import _FACILITY_SCOPED_ROLES, _inside, _subtree
+from services.transfer_discrepancies import (
+    _FACILITY_SCOPED_ROLES,
+    _NO_NODE_TENANT_WIDE,
+    _inside,
+    _subtree,
+)
 from services.dispatch_service import (
     DispatchError,
     InsufficientStockError,
@@ -3159,13 +3164,14 @@ class InventoryService:
     async def _transfer_scope(self, user: Any) -> Optional[set[str]]:
         """The lowercased node subtree whose transfers the caller sees; None means
         the whole tenant. Same rules as transfer_discrepancies.list_discrepancies:
-          WM / LM / SA_GT / RT / RM  their subtree; no node -> empty set (nothing)
+          WM / SA_GT / RT / RM       their subtree; no node -> empty set (nothing)
+          LM                         their subtree; no node -> tenant-wide (Track B)
           TA / NM / SA / AU          the whole tenant
         """
         role = getattr(user, "role", None)
         node_id = getattr(user, "warehouse_id", None)
         if role in _FACILITY_SCOPED_ROLES and not node_id:
-            return set()
+            return None if role in _NO_NODE_TENANT_WIDE else set()
         if node_id and role in _FACILITY_SCOPED_ROLES:
             return await _subtree(self.db, str(user.tenant_id), node_id)
         return None

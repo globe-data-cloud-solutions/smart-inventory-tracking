@@ -37,7 +37,8 @@ PRs that violate these rules do not merge.
     check_permission() in middleware.py. Authority is never inferred from role alone and never
     assumed from org_node_hierarchy (that table is used for supply network topology, not scope
     resolution). LM Track B (no node assigned, warehouse_id=None in JWT) bypasses this check
-    entirely and has tenant-wide visibility.
+    entirely and has tenant-wide visibility (NO_NODE_TENANT_WIDE_ROLES in hierarchy_service.py,
+    decided by Alex 2026-10-22). Every other FACILITY_SCOPED_ROLE with no node fails closed.
 26. warehouse_stock is a computed read model. Application code never issues
     UPDATE warehouse_stock SET … directly. The only permitted writer is update_running_balance()
     inside ledger_repo.py, called within the same DB transaction as the ledger INSERT.

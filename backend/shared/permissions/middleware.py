@@ -7,7 +7,11 @@ from fastapi import HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from shared.permissions.audit import audit_log
-from shared.permissions.hierarchy_service import FACILITY_SCOPED_ROLES, get_descendant_node_ids
+from shared.permissions.hierarchy_service import (
+    FACILITY_SCOPED_ROLES,
+    NO_NODE_TENANT_WIDE_ROLES,
+    get_descendant_node_ids,
+)
 from shared.permissions.registry import Permission
 from shared.permissions.store import get_role_permission
 
@@ -95,8 +99,10 @@ async def check_permission(
 
     # 4. Warehouse scope — node + descendant traversal for FACILITY_SCOPED_ROLES.
     # Fail closed (RB-2 G1): a facility-scoped user with no node gets an empty
-    # scope, so any warehouse-scoped resource is denied.
-    if user.role in FACILITY_SCOPED_ROLES:
+    # scope, so any warehouse-scoped resource is denied. LM Track B is the
+    # exception (business rule 25): no node means tenant-wide, so no check.
+    lm_track_b = not user.warehouse_id and user.role in NO_NODE_TENANT_WIDE_ROLES
+    if user.role in FACILITY_SCOPED_ROLES and not lm_track_b:
         resource_wh = resource.get("warehouse_id")
         if resource_wh and "warehouse_id" in action.abac:
             resource_wh_str = str(resource_wh).lower()

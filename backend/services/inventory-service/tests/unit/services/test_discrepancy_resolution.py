@@ -858,11 +858,18 @@ class TestListDiscrepancies:
         rows = await _list(world, _user("WM", WH_A))
         assert [str(r.id) for r in rows] == [D_T2, *T1_ROWS]
 
-    @pytest.mark.parametrize("role", ["WM", "LM", "SA_GT", "RT"])
+    @pytest.mark.parametrize("role", ["WM", "SA_GT", "RT"])
     async def test_facility_role_without_a_node_sees_nothing(self, role: str) -> None:
         world = _World()
         assert await _list(world, _user(role, None)) == []
         assert world.sql == []
+
+    async def test_lm_without_a_node_is_tenant_wide(self) -> None:
+        """LM Track B (business rule 25): no node means no subtree filter."""
+        world = _World()
+        rows = await _list(world, _user("LM", None))
+        assert len(rows) > 0
+        assert "subtree" not in world.sql[0][1]
 
     async def test_rm_with_a_node_sees_its_subtree(self) -> None:
         """REGION_B's subtree is {REGION_B, WH_B}: T1 and T3 touch WH_B, T2 does not."""
