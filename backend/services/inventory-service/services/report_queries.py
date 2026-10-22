@@ -24,7 +24,7 @@ from typing import Optional
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from schemas.reports import ExpiryAlertRow, MovementRow, ValuationRow
+from schemas.reports import DispatchRow, ExpiryAlertRow, MovementRow, ValuationRow
 
 
 def _scope_clause(column: str, scope: Optional[set[str]]) -> tuple[str, dict]:
@@ -187,6 +187,97 @@ async def get_expiry_alerts(
             expiry_date=r.expiry_date,
             quantity=r.quantity,
             days_to_expiry=r.days_to_expiry,
+        )
+        for r in rows
+    ]
+
+
+async def get_dispatch_summary(
+    db: AsyncSession,
+    tenant_id: uuid.UUID,
+    scope: Optional[set[str]],
+    date_from: Optional[date] = None,
+    date_to: Optional[date] = None,
+    product_id: Optional[str] = None,
+    transfer_order_id: Optional[str] = None,
+    limit: int = 500,
+) -> list[DispatchRow]:
+    """Dispatches (TRANSIT_OUT transfer ledger rows) grouped to one row per product.
+
+    A dispatch is in scope when its source or destination warehouse is in the
+    caller's scope (None = tenant-wide, set() = nothing).
+    """
+    if scope is None:
+        scope_clause, scope_params = "", {}
+    else:
+        scope_clause = (
+            "AND (it.warehouse_id = ANY(CAST(:scope_ids AS uuid[])) "
+            "OR tor.to_warehouse_id = ANY(CAST(:scope_ids AS uuid[])))"
+        )
+        scope_params = {"scope_ids": sorted(scope)}
+    rows = (
+        await db.execute(
+            text(
+                f"""
+                SELECT it.reference_id AS transfer_order_id,
+                       MAX(it.transaction_date) AS dispatched_on,
+                       it.warehouse_id AS from_warehouse_id,
+                       wf.name AS from_warehouse_name,
+                       tor.to_warehouse_id,
+                       wt.name AS to_warehouse_name,
+                       it.product_id, p.sku, p.name,
+                       SUM(it.quantity) AS quantity_dispatched,
+                       COUNT(DISTINCT it.lot_number) AS lots_used,
+                       (SELECT COUNT(*) FROM transfer_line_allocations a
+                         WHERE a.tenant_id = it.tenant_id
+                           AND a.transfer_order_id = it.reference_id
+                           AND a.product_id = it.product_id
+                           AND a.is_override) AS overrides
+                FROM inventory_transactions it
+                JOIN transfer_orders tor
+                  ON tor.id = it.reference_id AND tor.tenant_id = it.tenant_id
+                JOIN products p ON p.id = it.product_id
+                LEFT JOIN organization_node wf ON wf.id = it.warehouse_id
+                LEFT JOIN organization_node wt ON wt.id = tor.to_warehouse_id
+                WHERE it.tenant_id = :tid
+                  AND it.type = 'TRANSIT_OUT'
+                  AND it.transaction_date >= COALESCE(CAST(:date_from AS date), CURRENT_DATE - INTERVAL '30 days')
+                  AND it.transaction_date <= COALESCE(CAST(:date_to AS date), CURRENT_DATE)
+                  AND (CAST(:product_id AS uuid) IS NULL OR it.product_id = CAST(:product_id AS uuid))
+                  AND (CAST(:transfer_order_id AS uuid) IS NULL
+                       OR it.reference_id = CAST(:transfer_order_id AS uuid))
+                  {scope_clause}
+                GROUP BY it.tenant_id, it.reference_id, it.warehouse_id, wf.name,
+                         tor.to_warehouse_id, wt.name, it.product_id, p.sku, p.name
+                ORDER BY dispatched_on DESC, p.sku
+                LIMIT :limit
+                """
+            ),
+            {
+                "tid": str(tenant_id),
+                "date_from": date_from,
+                "date_to": date_to,
+                "product_id": product_id,
+                "transfer_order_id": transfer_order_id,
+                "limit": limit,
+                **scope_params,
+            },
+        )
+    ).fetchall()
+    return [
+        DispatchRow(
+            transfer_order_id=r.transfer_order_id,
+            dispatched_on=r.dispatched_on,
+            from_warehouse_id=r.from_warehouse_id,
+            from_warehouse_name=r.from_warehouse_name,
+            to_warehouse_id=r.to_warehouse_id,
+            to_warehouse_name=r.to_warehouse_name,
+            product_id=r.product_id,
+            sku=r.sku,
+            name=r.name,
+            quantity_dispatched=r.quantity_dispatched,
+            lots_used=r.lots_used,
+            overrides=r.overrides,
         )
         for r in rows
     ]

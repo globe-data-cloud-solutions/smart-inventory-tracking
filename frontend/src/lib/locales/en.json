@@ -1561,7 +1561,17 @@
     "tx_type_transit_out": "Transit out",
     "tx_type_transit_in": "Transit in",
     "tx_type_transit_clear": "Transit cleared",
-    "tx_type_transfer_reversal": "Transfer reversal"
+    "tx_type_transfer_reversal": "Transfer reversal",
+    "filter_product": "Product",
+    "all_products": "All products",
+    "filter_dispatch": "Dispatch",
+    "all_dispatches": "All dispatches",
+    "col_dispatched_on": "Dispatched",
+    "col_from": "From",
+    "col_to": "To",
+    "col_quantity_dispatched": "Quantity dispatched",
+    "col_lots_used": "Lots used",
+    "col_overrides": "Lot overrides"
   },
   "warehouses": {
     "no_stock_badge": "(no stock)",

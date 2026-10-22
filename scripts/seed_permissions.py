@@ -200,6 +200,7 @@ ROLE_PERMISSION_MATRIX: dict[str, dict[str, str]] = {
         "tenant:view_contract_status": "FULL",
     },
     "WM": {
+        "report:dispatch_summary": "FULL",
         "report:inventory_valuation": "FULL",
         "report:stock_movement": "FULL",
         "report:filter_options": "FULL",
@@ -250,6 +251,7 @@ ROLE_PERMISSION_MATRIX: dict[str, dict[str, str]] = {
         "tenant:view_contract_status": "FULL",
     },
     "LM": {
+        "report:dispatch_summary": "FULL",
         "report:inventory_valuation": "FULL",
         "report:stock_movement": "FULL",
         "report:expiry_alerts": "FULL",
@@ -281,6 +283,7 @@ ROLE_PERMISSION_MATRIX: dict[str, dict[str, str]] = {
         "tenant:view_contract_status": "FULL",
     },
     "SA_GT": {
+        "report:dispatch_summary": "FULL",
         "report:inventory_valuation": "FULL",
         "report:stock_movement": "FULL",
         "report:expiry_alerts": "FULL",
@@ -297,6 +300,7 @@ ROLE_PERMISSION_MATRIX: dict[str, dict[str, str]] = {
         "tenant:view_contract_status": "FULL",
     },
     "RT": {
+        "report:dispatch_summary": "FULL",
         "report:inventory_valuation": "FULL",
         "report:stock_movement": "FULL",
         "report:expiry_alerts": "FULL",
