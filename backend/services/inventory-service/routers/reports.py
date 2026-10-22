@@ -18,9 +18,20 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from dependencies import _rls_tenant_for, get_current_user, get_read_db_session
-from schemas.reports import ExpiryAlertRow, MovementRow, ReportFilterOptions, ValuationRow
+from schemas.reports import (
+    DispatchRow,
+    ExpiryAlertRow,
+    MovementRow,
+    ReportFilterOptions,
+    ValuationRow,
+)
 from services.report_filters import filter_options, filter_scope, intersect_scopes
-from services.report_queries import get_expiry_alerts, get_inventory_valuation, get_stock_movement
+from services.report_queries import (
+    get_dispatch_summary,
+    get_expiry_alerts,
+    get_inventory_valuation,
+    get_stock_movement,
+)
 from shared.permissions.hierarchy_service import resolve_node_scope
 from shared.permissions.middleware import require_permission
 from shared.permissions.registry import PERMISSIONS
@@ -140,4 +151,43 @@ async def expiry_alerts(
     tenant_id = _report_tenant(user, request)
     scope = await _report_scope(db, user, tenant_id, level, node_id, warehouse_id)
     data = await get_expiry_alerts(db, tenant_id, scope, window_days=window_days)
+    return SuccessResponse(data=data)
+
+
+def _uuid_filter(value: Optional[str], field: str) -> Optional[str]:
+    if value is None:
+        return None
+    try:
+        return str(uuid.UUID(value))
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=422, detail={"code": "INVALID_FILTER", "field": field}
+        ) from exc
+
+
+@router.get("/dispatch-summary", response_model=SuccessResponse[list[DispatchRow]])
+@require_permission(PERMISSIONS.REPORT_DISPATCH_SUMMARY)
+async def dispatch_summary(
+    request: Request,
+    date_from: Optional[str] = Query(None, description="YYYY-MM-DD; default 30 days back"),
+    date_to: Optional[str] = Query(None, description="YYYY-MM-DD; default today"),
+    product_id: Optional[str] = Query(None),
+    transfer_order_id: Optional[str] = Query(None, description="One dispatch"),
+    level: Optional[int] = Query(None, ge=1, le=5, description=_FILTER_QUERY_DOC),
+    node_id: Optional[str] = Query(None),
+    warehouse_id: Optional[str] = Query(None),
+    user=Depends(get_current_user),
+    db: AsyncSession = Depends(get_read_db_session),
+) -> SuccessResponse[list[DispatchRow]]:
+    tenant_id = _report_tenant(user, request)
+    scope = await _report_scope(db, user, tenant_id, level, node_id, warehouse_id)
+    data = await get_dispatch_summary(
+        db,
+        tenant_id,
+        scope,
+        date_from=_parse_day(date_from, "date_from"),
+        date_to=_parse_day(date_to, "date_to"),
+        product_id=_uuid_filter(product_id, "product_id"),
+        transfer_order_id=_uuid_filter(transfer_order_id, "transfer_order_id"),
+    )
     return SuccessResponse(data=data)

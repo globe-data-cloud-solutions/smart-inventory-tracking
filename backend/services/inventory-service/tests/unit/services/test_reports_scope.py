@@ -436,3 +436,55 @@ async def test_ta_ignores_a_different_tenant_in_the_query() -> None:
             db=_db(),
         )
     assert q.await_args.args[1] == TENANT
+
+
+# ── Dispatch summary (2026-10-22) ───────────────────────────────────────────
+
+TO_ID = "40000000-0000-0000-0000-00000000000d"
+
+
+@pytest.mark.asyncio
+async def test_dispatch_route_passes_scope_product_and_one_dispatch() -> None:
+    from routers import reports
+
+    with (
+        patch.object(reports, "resolve_node_scope", new=AsyncMock(return_value={NODE})),
+        patch.object(reports, "filter_scope", new=AsyncMock(return_value=None)),
+        patch.object(reports, "get_dispatch_summary", new=AsyncMock(return_value=[])) as q,
+    ):
+        await reports.dispatch_summary.__wrapped__(
+            request=_req(),
+            date_from=None,
+            date_to=None,
+            product_id=NODE,
+            transfer_order_id=TO_ID,
+            level=None,
+            node_id=None,
+            warehouse_id=None,
+            user=_user("WM"),
+            db=_db(),
+        )
+    assert q.await_args.args[2] == {NODE}
+    assert q.await_args.kwargs["product_id"] == NODE
+    assert q.await_args.kwargs["transfer_order_id"] == TO_ID
+
+
+@pytest.mark.asyncio
+async def test_dispatch_route_rejects_malformed_product_filter() -> None:
+    from routers import reports
+
+    with pytest.raises(HTTPException) as exc:
+        await reports.dispatch_summary.__wrapped__(
+            request=_req(),
+            date_from=None,
+            date_to=None,
+            product_id="not-a-uuid",
+            transfer_order_id=None,
+            level=None,
+            node_id=None,
+            warehouse_id=None,
+            user=_user("TA"),
+            db=_db(),
+        )
+    assert exc.value.status_code == 422
+    assert exc.value.detail == {"code": "INVALID_FILTER", "field": "product_id"}

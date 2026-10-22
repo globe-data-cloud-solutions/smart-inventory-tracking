@@ -62,3 +62,21 @@ class NodeOption(BaseModel):
 class ReportFilterOptions(BaseModel):
     levels: list[LevelOption]
     nodes: list[NodeOption]
+
+
+class DispatchRow(BaseModel):
+    """One product on one dispatch (transfer order). A dispatch is in scope when
+    its source or its destination warehouse is in the caller's scope."""
+
+    transfer_order_id: uuid.UUID
+    dispatched_on: date
+    from_warehouse_id: uuid.UUID
+    from_warehouse_name: Optional[str] = None
+    to_warehouse_id: uuid.UUID
+    to_warehouse_name: Optional[str] = None
+    product_id: uuid.UUID
+    sku: str
+    name: str
+    quantity_dispatched: Decimal
+    lots_used: int
+    overrides: int
