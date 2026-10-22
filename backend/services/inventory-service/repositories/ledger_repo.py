@@ -162,7 +162,7 @@ async def record_transaction(
 
     # Step 1 — idempotency: 409 on replay
     try:
-        await check_and_register_idempotency_key(session, idempotency_key, tx_id)
+        await check_and_register_idempotency_key(session, tenant_id, idempotency_key, tx_id)
     except DuplicateTransactionError as exc:
         raise HTTPException(
             status_code=409,

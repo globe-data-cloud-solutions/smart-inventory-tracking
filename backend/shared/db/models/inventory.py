@@ -77,6 +77,9 @@ class InventoryBalance(Base, TimestampMixin):
 class InventoryTransactionKey(Base):
     __tablename__ = "inventory_transaction_keys"
 
+    tenant_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, nullable=False
+    )
     idempotency_key: Mapped[str] = mapped_column(String(255), primary_key=True)
     transaction_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
     created_at: Mapped[datetime] = mapped_column(
