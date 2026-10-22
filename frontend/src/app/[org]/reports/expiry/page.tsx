@@ -12,6 +12,7 @@ import {
   dash,
   fetchFilterOptions,
   reportPath,
+  useReportTenant,
   type LevelNodeFilter,
 } from "@/lib/reports";
 import ReportFilterBar from "@/components/reports/ReportFilterBar";
@@ -47,23 +48,27 @@ const COLUMNS: ReportColumn<ExpiryRow>[] = [
 
 export default function ExpiryReportPage() {
   const { org } = useParams() as { org: string };
+  const { tenantId, ready } = useReportTenant(org);
   const [filter, setFilter] = useState<LevelNodeFilter>({ level: null, nodeId: null });
   const [windowDays, setWindowDays] = useState<number>(30);
 
   const options = useQuery({
-    queryKey: ["report-filter-options", org],
-    queryFn: fetchFilterOptions,
-    enabled: REPORTS_LIVE && org !== SA_ORG_SLUG,
+    queryKey: ["report-filter-options", org, tenantId],
+    queryFn: () => fetchFilterOptions(tenantId),
+    enabled: REPORTS_LIVE && org !== SA_ORG_SLUG && ready,
     staleTime: 60_000,
   });
 
-  const path = reportPath("/api/v1/inventory/reports/expiry-alerts", filter, {
-    window_days: String(windowDays),
-  });
+  const path = reportPath(
+    "/api/v1/inventory/reports/expiry-alerts",
+    filter,
+    { window_days: String(windowDays) },
+    tenantId,
+  );
   const rows = useQuery<ExpiryRow[]>({
-    queryKey: ["report-expiry", org, path],
+    queryKey: ["report-expiry", org, tenantId, path],
     queryFn: () => api.get<ExpiryRow[]>(path),
-    enabled: REPORTS_LIVE && org !== SA_ORG_SLUG,
+    enabled: REPORTS_LIVE && org !== SA_ORG_SLUG && ready,
   });
 
   if (org === SA_ORG_SLUG) return <p className="p-8 text-gray-500">{t("sa.select_tenant")}</p>;
