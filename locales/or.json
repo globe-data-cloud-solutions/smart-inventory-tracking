@@ -676,7 +676,8 @@
       "warehouse_list": "Kuusaaleen Tarreeffaman",
       "warehouse_update": "Kuusaan Haaromfame",
       "warehouse_view": "Kuusaan Ilaalame",
-      "report_filter_options": "Report filter options viewed"
+      "report_filter_options": "Report filter options viewed",
+      "hierarchy_level_role_changed": "Hierarchy level role changed"
     },
     "resources": {
       "adjustment": "Sirreeffama",
@@ -1112,6 +1113,9 @@
     "TERMS_VERSION_MISMATCH": "Haalawwan tajaajilaa haaromfameera. Maaloo kan dhiyoo ilaalaatii fudhadhaa.",
     "TOO_MANY_ATTEMPTS": "Yaalii seensaa kufaa baay'ee taʼe. Maaloo irra deebitee utuu hin yaalin daqiiqaa 15 eegi, yookaan ginbii kee haaromsuuf bulchaa kee quunnami.",
     "TRANSFER_OUT_OF_SCOPE": "Dabarsaa kanaaf mirga hin qabdan.",
+    "LEVEL_ROLE_REQUIRED": "Every level needs a role before the levels can be saved.",
+    "LEVEL_ROLE_LOCKED": "This level's role cannot change while locations exist at it.",
+    "LEVEL_ROLE_INVALID": "That role cannot be used for an organisation level.",
     "UNKNOWN_FEATURE_FLAG": "Alaabaan amalaa tokko yookaan sanaa ol hin beekamu.",
     "UNKNOWN_TRANSFER_TYPE": "Gosti dabarsaa kun hin beekamu.",
     "UPSTREAM_TIMEOUT": "Tajaajilli deebii kennuuf yeroo dheeraa fudhate. Maaloo irra deebi'ii yaali.",
@@ -1155,6 +1159,12 @@
     "level_count_hint": "2 fi 5 gidduu",
     "level_rename_hint": "Yeroo barbaadde sadarkaa kana maqaa jijjiiruu dandeessa.",
     "role_not_set": "Hin Qindaa'amne",
+    "role_locked": "This level's role cannot change while locations exist at it. Remove or move those locations first.",
+    "role_locked_hint": "{count} locations use this level, so its role is locked.",
+    "role_required_hint": "No role set. A Tenant Admin must set one before this level can be used.",
+    "role_required_all": "Choose a role for every level before saving.",
+    "role_override_hint": "{count} locations use this level. As SA you can change its role; the change is recorded in the audit log.",
+    "save_role": "Save role",
     "deactivate_node": "Dhaabi",
     "reactivate_node": "Irra Deebi'ii Hojiirra Oolchi",
     "deactivate_confirm": "{name} dhaabuu barbaadduu? Kun dabarsaa haaraa irraa dhoksa. Booda irra deebitee hojiirra oolchuu dandeessa.",

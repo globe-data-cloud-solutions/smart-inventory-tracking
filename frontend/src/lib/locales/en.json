@@ -684,7 +684,8 @@
       "warehouse_list": "Warehouses listed",
       "warehouse_update": "Warehouse updated",
       "warehouse_view": "Warehouse viewed",
-      "report_filter_options": "Report filter options viewed"
+      "report_filter_options": "Report filter options viewed",
+      "hierarchy_level_role_changed": "Hierarchy level role changed"
     },
     "resources": {
       "adjustment": "Adjustment",
@@ -1120,6 +1121,9 @@
     "TERMS_VERSION_MISMATCH": "The terms of service have been updated. Please review and accept the latest version.",
     "TOO_MANY_ATTEMPTS": "Too many failed login attempts. Please wait 15 minutes before trying again, or contact your administrator to reset your account.",
     "TRANSFER_OUT_OF_SCOPE": "You don't have access to this transfer.",
+    "LEVEL_ROLE_REQUIRED": "Every level needs a role before the levels can be saved.",
+    "LEVEL_ROLE_LOCKED": "This level's role cannot change while locations exist at it.",
+    "LEVEL_ROLE_INVALID": "That role cannot be used for an organisation level.",
     "UNKNOWN_FEATURE_FLAG": "One or more feature flags are not recognised.",
     "UNKNOWN_TRANSFER_TYPE": "This transfer type is not recognised.",
     "UPSTREAM_TIMEOUT": "The service took too long to respond. Please try again.",
@@ -1692,6 +1696,12 @@
     "level_count_hint": "Between 2 and 5",
     "level_rename_hint": "You can rename this level at any time.",
     "role_not_set": "Not set",
+    "role_locked": "This level's role cannot change while locations exist at it. Remove or move those locations first.",
+    "role_locked_hint": "{count} locations use this level, so its role is locked.",
+    "role_required_hint": "No role set. A Tenant Admin must set one before this level can be used.",
+    "role_required_all": "Choose a role for every level before saving.",
+    "role_override_hint": "{count} locations use this level. As SA you can change its role; the change is recorded in the audit log.",
+    "save_role": "Save role",
     "deactivate_node": "Deactivate",
     "reactivate_node": "Reactivate",
     "deactivate_confirm": "Are you sure you want to deactivate {name}? This will hide it from new transfers. You can reactivate it later.",

@@ -24,6 +24,8 @@ interface HierarchyLevel {
   default_role_code: string;
   role_display_label: string;
   is_stock_holding: boolean;
+  // Active organisation nodes at this level (from GET hierarchy/config).
+  active_node_count?: number;
 }
 
 interface OrgNode {
@@ -77,6 +79,89 @@ function flattenNodes(nodes: OrgNode[]): OrgNode[] {
   return out;
 }
 
+/* ── Level role editor (saved levels) ─────────────────────────────────────── */
+
+// A saved level's role. TA and SA can set it while no active node exists at the
+// level. Once nodes exist it is locked (the server answers 409 LEVEL_ROLE_LOCKED).
+function LevelRoleEditor({
+  role,
+  nodeCount,
+  canEdit,
+  canOverride,
+  disabled,
+  pending,
+  onSave,
+}: {
+  role: string;
+  nodeCount: number;
+  canEdit: boolean;
+  canOverride: boolean;
+  disabled: boolean;
+  pending: boolean;
+  onSave: (role: string) => void;
+}) {
+  const [draft, setDraft] = useState(role);
+  useEffect(() => setDraft(role), [role]);
+
+  const locked = role !== "" && nodeCount > 0;
+  // A locked role can be changed by SA only; the change is recorded in the audit log.
+  const editable = canEdit && (!locked || canOverride);
+
+  if (!editable) {
+    if (role === "") {
+      return (
+        <div>
+          <span className="text-xs text-amber-600 bg-amber-50 px-2 py-0.5 rounded">
+            {t("org_setup.role_not_set")}
+          </span>
+          <p className="text-xs text-gray-400 mt-1">{t("org_setup.role_required_hint")}</p>
+        </div>
+      );
+    }
+    return (
+      <div>
+        <span className="text-sm text-gray-600">{role}</span>
+        {locked && (
+          <p className="text-xs text-gray-400 mt-1">
+            {t("org_setup.role_locked_hint").replace("{count}", String(nodeCount))}
+          </p>
+        )}
+      </div>
+    );
+  }
+
+  return (
+    <div>
+    <div className="flex items-center gap-2">
+      <select
+        value={draft}
+        onChange={(e) => setDraft(e.target.value)}
+        disabled={disabled || pending}
+        className="border border-gray-300 rounded px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
+      >
+        <option value="">{t("org_setup.select_role_placeholder")}</option>
+        {ROLE_OPTIONS.map((r) => (
+          <option key={r.code} value={r.code}>{r.code} — {t(`roles.${r.code}`)}</option>
+        ))}
+      </select>
+      <button
+        type="button"
+        onClick={() => onSave(draft)}
+        disabled={!draft || draft === role || disabled || pending}
+        className="px-2 py-1 text-xs font-semibold rounded bg-emerald-700 text-white hover:bg-emerald-800 disabled:opacity-50"
+      >
+        {pending ? t("common.saving") : t("org_setup.save_role")}
+      </button>
+    </div>
+    {locked && (
+      <p className="text-xs text-gray-400 mt-1">
+        {t("org_setup.role_override_hint").replace("{count}", String(nodeCount))}
+      </p>
+    )}
+    </div>
+  );
+}
+
 /* ── Tab 1: Organisation Levels ───────────────────────────────────────────── */
 
 function LevelsTab({
@@ -99,6 +184,7 @@ function LevelsTab({
     staleTime: 30_000,
   });
 
+  const canEditRole = session?.role === "TA" || session?.role === "SA";
   const [renamedIdx, setRenamedIdx] = useState<number | null>(null);
   const [renameError, setRenameError] = useState<string | null>(null);
   const [stockToggleConfirm, setStockToggleConfirm] = useState<{ levelId: string; idx: number } | null>(null);
@@ -187,6 +273,33 @@ function LevelsTab({
   const allowedNewRoleOptions = aboveRoleRank === -1
     ? ROLE_OPTIONS
     : ROLE_OPTIONS.filter((_, i) => i > aboveRoleRank);
+
+  const [roleError, setRoleError] = useState<string | null>(null);
+
+  const roleMutation = useMutation({
+    mutationFn: ({ levelId, role }: { levelId: string; role: string }) =>
+      api.patch(`/api/v1/tenants/${tenantId}/hierarchy/config/${levelId}/role`, {
+        default_role_code: role,
+      }),
+    onSuccess: (_data, vars) => {
+      // Local levels are only copied from the server once (on first load), so
+      // update the saved row here; otherwise the role editor keeps comparing
+      // against the old role and Save stays enabled.
+      setLevels((prev) =>
+        prev.map((l) => (l.id === vars.levelId ? { ...l, default_role_code: vars.role } : l))
+      );
+      void qc.invalidateQueries({ queryKey: ["hierarchy-config", tenantId] });
+      setRoleError(null);
+    },
+    onError: (e: unknown) => {
+      const code = (e as { code?: string })?.code;
+      setRoleError(
+        code === "LEVEL_ROLE_LOCKED"
+          ? t("org_setup.role_locked")
+          : e instanceof Error ? e.message : t("common.error")
+      );
+    },
+  });
 
   const addLevelMutation = useMutation({
     mutationFn: () => {
@@ -458,7 +571,7 @@ function LevelsTab({
               <div className="flex gap-2">
                 <button
                   type="button"
-                  disabled={newLevel.level_name.trim().length < 2 || addLevelMutation.isPending}
+                  disabled={newLevel.level_name.trim().length < 2 || !newLevel.default_role_code || addLevelMutation.isPending}
                   onClick={() => setShowAddConfirm(true)}
                   className="px-4 py-1.5 bg-emerald-700 text-white text-sm font-semibold rounded hover:bg-emerald-800 disabled:opacity-50"
                 >
@@ -609,13 +722,15 @@ function LevelsTab({
                   </td>
                   <td className="px-3 py-2">
                     {persisted ? (
-                      lv.default_role_code ? (
-                        <span className="text-sm text-gray-600">{lv.default_role_code}</span>
-                      ) : (
-                        <span className="text-xs text-amber-600 bg-amber-50 px-2 py-0.5 rounded">
-                          {t("org_setup.role_not_set")}
-                        </span>
-                      )
+                      <LevelRoleEditor
+                        role={lv.default_role_code}
+                        nodeCount={lv.active_node_count ?? 0}
+                        canEdit={canEditRole}
+                        canOverride={session?.role === "SA"}
+                        disabled={gp.disabled}
+                        pending={roleMutation.isPending}
+                        onSave={(role) => roleMutation.mutate({ levelId: lv.id ?? "", role })}
+                      />
                     ) : (
                       <select
                         value={lv.default_role_code}
@@ -699,6 +814,7 @@ function LevelsTab({
       <p className="text-xs text-gray-400 mt-2">* {t("org_setup.level_rename_hint")}</p>
 
       {renameError && <p className="text-sm text-red-600">{renameError}</p>}
+      {roleError && <p className="text-sm text-red-600">{roleError}</p>}
       {saveError && <p className="text-sm text-red-600">{saveError}</p>}
       {saveOk && <p className="text-sm text-emerald-600 font-medium">{t("org_setup.levels_saved")}</p>}
 
@@ -737,11 +853,15 @@ function LevelsTab({
         </div>
       )}
 
+      {!levelsAlreadySaved && levels.some((l) => !l.default_role_code) && (
+        <p className="text-xs text-amber-700">{t("org_setup.role_required_all")}</p>
+      )}
+
       {!levelsAlreadySaved && (
         <button
           type="button"
           onClick={() => setShowSaveConfirm(true)}
-          disabled={saveMutation.isPending || gp.disabled}
+          disabled={saveMutation.isPending || gp.disabled || levels.some((l) => !l.default_role_code)}
           title={gp.title}
           className="px-5 py-2 bg-emerald-700 text-white text-sm font-semibold rounded-lg hover:bg-emerald-800 disabled:opacity-50"
         >
