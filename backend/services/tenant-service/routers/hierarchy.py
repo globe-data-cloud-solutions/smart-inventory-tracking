@@ -67,6 +67,51 @@ class HierarchyLevelOut(BaseModel):
     role_display_label: Optional[str]
     is_stock_holding: bool
     is_active: bool
+    # Active organisation nodes at this level. A saved level's role is locked
+    # while this is above zero (see set_hierarchy_level_role).
+    active_node_count: int = 0
+
+
+class HierarchyLevelRoleIn(BaseModel):
+    default_role_code: str
+
+
+# Roles a level can carry. Never SA or TA (CLAUDE.md §28). Required on every
+# level: nodes are created from the level's role.
+LEVEL_ROLE_CODES = ("NM", "RM", "LM", "WM", "AU")
+
+_ACTIVE_NODE_COUNT_SQL = (
+    "(SELECT count(*) FROM organization_node n "
+    "WHERE n.tenant_id = tenant_hierarchy_config.tenant_id "
+    "AND n.hierarchy_level = tenant_hierarchy_config.level_number "
+    "AND n.is_active = true)"
+)
+
+
+async def _active_node_count(db: AsyncSession, tenant_id: uuid.UUID, level_number: int) -> int:
+    row = await db.execute(
+        text(
+            "SELECT count(*) AS n FROM organization_node "
+            "WHERE tenant_id = :tid AND hierarchy_level = :lvl AND is_active = true"
+        ),
+        {"tid": str(tenant_id), "lvl": level_number},
+    )
+    return int(row.fetchone().n)
+
+
+def _role_locked_http_exception(level_number: int, node_count: int) -> HTTPException:
+    return HTTPException(
+        status_code=409,
+        detail={
+            "code": "LEVEL_ROLE_LOCKED",
+            "level_number": level_number,
+            "node_count": node_count,
+            "message": (
+                "This level's role cannot change while locations exist at it. "
+                "Remove or move those locations first."
+            ),
+        },
+    )
 
 
 class HierarchyLevelRename(BaseModel):
@@ -310,7 +355,8 @@ async def get_hierarchy_config(
     rows = await db.execute(
         text(
             "SELECT id, tenant_id, level_number, level_name, default_role_code, "
-            "role_display_label, is_stock_holding, is_active "
+            "role_display_label, is_stock_holding, is_active, "
+            f"{_ACTIVE_NODE_COUNT_SQL} AS active_node_count "
             "FROM tenant_hierarchy_config "
             "WHERE tenant_id = :tid AND is_active = true ORDER BY level_number"
         ),
@@ -326,6 +372,7 @@ async def get_hierarchy_config(
             role_display_label=r.role_display_label,
             is_stock_holding=r.is_stock_holding,
             is_active=r.is_active,
+            active_node_count=r.active_node_count,
         )
         for r in rows.fetchall()
     ]
@@ -453,6 +500,31 @@ async def upsert_hierarchy_config(
                         },
                     )
 
+    # Roles are required on every level, and a saved level's role is locked
+    # while active nodes exist at that level.
+    for level in body:
+        if level.default_role_code not in LEVEL_ROLE_CODES:
+            raise HTTPException(
+                status_code=422,
+                detail={"code": "LEVEL_ROLE_REQUIRED", "level_number": level.level_number},
+            )
+    saved_role_rows = (
+        await db.execute(
+            text(
+                "SELECT level_number, default_role_code FROM tenant_hierarchy_config "
+                "WHERE tenant_id = :tid AND is_active = true"
+            ),
+            {"tid": str(tenant_id)},
+        )
+    ).fetchall()
+    saved_role_by_level = {r.level_number: r.default_role_code for r in saved_role_rows}
+    for level in body:
+        previous_role = saved_role_by_level.get(level.level_number)
+        if previous_role and previous_role != level.default_role_code:
+            node_count = await _active_node_count(db, tenant_id, level.level_number)
+            if node_count:
+                raise _role_locked_http_exception(level.level_number, node_count)
+
     try:
         for level in body:
             await db.execute(
@@ -505,7 +577,8 @@ async def upsert_hierarchy_config(
     rows = await db.execute(
         text(
             "SELECT id, tenant_id, level_number, level_name, default_role_code, "
-            "role_display_label, is_stock_holding, is_active "
+            "role_display_label, is_stock_holding, is_active, "
+            f"{_ACTIVE_NODE_COUNT_SQL} AS active_node_count "
             "FROM tenant_hierarchy_config "
             "WHERE tenant_id = :tid AND is_active = true ORDER BY level_number"
         ),
@@ -521,10 +594,97 @@ async def upsert_hierarchy_config(
             role_display_label=r.role_display_label,
             is_stock_holding=r.is_stock_holding,
             is_active=r.is_active,
+            active_node_count=r.active_node_count,
         )
         for r in rows.fetchall()
     ]
     return SuccessResponse(data=levels)
+
+
+@router.patch(
+    "/{tenant_id}/hierarchy/config/{level_id}/role",
+    response_model=SuccessResponse[HierarchyLevelOut],
+)
+@require_permission(PERMISSIONS.TENANT_MANAGE)
+async def set_hierarchy_level_role(
+    tenant_id: uuid.UUID,
+    level_id: uuid.UUID,
+    body: HierarchyLevelRoleIn,
+    user=Depends(get_current_user),
+    db: AsyncSession = Depends(get_db_session_for_tenant),
+) -> SuccessResponse[HierarchyLevelOut]:
+    """Set or change a level's role (TA and SA).
+
+    Allowed while no active node exists at the level. A level that has no role
+    yet (saved before roles were required) can always be given one. Once nodes
+    exist, the role is locked (409 LEVEL_ROLE_LOCKED); removing or moving those
+    nodes unlocks it again.
+    """
+    if body.default_role_code not in LEVEL_ROLE_CODES:
+        raise HTTPException(status_code=422, detail={"code": "LEVEL_ROLE_INVALID"})
+
+    current = (
+        await db.execute(
+            text(
+                "SELECT id, level_number, default_role_code FROM tenant_hierarchy_config "
+                "WHERE id = :id AND tenant_id = :tid AND is_active = true"
+            ),
+            {"id": str(level_id), "tid": str(tenant_id)},
+        )
+    ).fetchone()
+    if not current:
+        raise HTTPException(status_code=404, detail="Hierarchy level not found")
+
+    node_count = await _active_node_count(db, tenant_id, current.level_number)
+    if current.default_role_code != body.default_role_code:
+        if current.default_role_code and node_count:
+            raise _role_locked_http_exception(current.level_number, node_count)
+
+        await db.execute(
+            text(
+                "UPDATE tenant_hierarchy_config SET default_role_code = :role, updated_at = now() "
+                "WHERE id = :id AND tenant_id = :tid"
+            ),
+            {"role": body.default_role_code, "id": str(level_id), "tid": str(tenant_id)},
+        )
+        await audit_log(
+            user,
+            "hierarchy:level_role_changed",
+            {
+                "resource_type": "hierarchy_level",
+                "resource_id": str(level_id),
+                "level_number": current.level_number,
+                "from_role": current.default_role_code,
+                "to_role": body.default_role_code,
+            },
+            "SUCCESS",
+            f"role {current.default_role_code or 'unset'} -> {body.default_role_code}",
+            db=db,
+        )
+
+    row = (
+        await db.execute(
+            text(
+                "SELECT id, tenant_id, level_number, level_name, default_role_code, "
+                "role_display_label, is_stock_holding, is_active "
+                "FROM tenant_hierarchy_config WHERE id = :id AND tenant_id = :tid"
+            ),
+            {"id": str(level_id), "tid": str(tenant_id)},
+        )
+    ).fetchone()
+    return SuccessResponse(
+        data=HierarchyLevelOut(
+            id=row.id,
+            tenant_id=row.tenant_id,
+            level_number=row.level_number,
+            level_name=row.level_name,
+            default_role_code=row.default_role_code,
+            role_display_label=row.role_display_label,
+            is_stock_holding=row.is_stock_holding,
+            is_active=row.is_active,
+            active_node_count=node_count,
+        )
+    )
 
 
 @router.patch(
@@ -540,7 +700,7 @@ async def rename_hierarchy_level(
     db: AsyncSession = Depends(get_db_session_for_tenant),
 ) -> SuccessResponse[HierarchyLevelOut]:
     """Rename a level, set its role_display_label, and/or toggle is_stock_holding.
-    level_number and default_role_code stay immutable once a level exists."""
+    level_number is immutable. The role is changed through set_hierarchy_level_role."""
     fields_set = body.model_fields_set
     set_clauses: list[str] = []
     params: dict[str, object] = {"id": str(level_id), "tid": str(tenant_id)}
