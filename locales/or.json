@@ -1112,6 +1112,7 @@
     "TERMS_VERSION_MISMATCH": "Haalawwan tajaajilaa haaromfameera. Maaloo kan dhiyoo ilaalaatii fudhadhaa.",
     "TOO_MANY_ATTEMPTS": "Yaalii seensaa kufaa baay'ee taʼe. Maaloo irra deebitee utuu hin yaalin daqiiqaa 15 eegi, yookaan ginbii kee haaromsuuf bulchaa kee quunnami.",
     "TRANSFER_OUT_OF_SCOPE": "Dabarsaa kanaaf mirga hin qabdan.",
+    "ADJUSTMENT_OUT_OF_SCOPE": "You can only act on adjustments in your own area.",
     "UNKNOWN_FEATURE_FLAG": "Alaabaan amalaa tokko yookaan sanaa ol hin beekamu.",
     "UNKNOWN_TRANSFER_TYPE": "Gosti dabarsaa kun hin beekamu.",
     "UPSTREAM_TIMEOUT": "Tajaajilli deebii kennuuf yeroo dheeraa fudhate. Maaloo irra deebi'ii yaali.",

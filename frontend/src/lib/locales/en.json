@@ -1120,6 +1120,7 @@
     "TERMS_VERSION_MISMATCH": "The terms of service have been updated. Please review and accept the latest version.",
     "TOO_MANY_ATTEMPTS": "Too many failed login attempts. Please wait 15 minutes before trying again, or contact your administrator to reset your account.",
     "TRANSFER_OUT_OF_SCOPE": "You don't have access to this transfer.",
+    "ADJUSTMENT_OUT_OF_SCOPE": "You can only act on adjustments in your own area.",
     "UNKNOWN_FEATURE_FLAG": "One or more feature flags are not recognised.",
     "UNKNOWN_TRANSFER_TYPE": "This transfer type is not recognised.",
     "UPSTREAM_TIMEOUT": "The service took too long to respond. Please try again.",
@@ -1502,7 +1503,7 @@
   },
   "report": {
     "inv_valuation_desc": "Current stock value across all locations",
-    "stock_movement_desc": "All RECEIVE / TRANSFER / ISSUE transactions",
+    "stock_movement_desc": "All stock movements in the selected period, across every transaction type",
     "expiry_alerts_desc": "Products approaching or past expiry date",
     "low_stock_desc": "Products at or below reorder point",
     "lot_trace_desc": "Full batch-to-location tracing",

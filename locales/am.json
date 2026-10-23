@@ -1122,6 +1122,7 @@
     "TERMS_VERSION_MISMATCH": "የአገልግሎት ውሎች ተሻሽለዋል። እባክዎ የቅርብ ጊዜውን ያረጋግጡና ይቀበሉ።",
     "TOO_MANY_ATTEMPTS": "በጣም ብዙ ያልተሳኩ የመግቢያ ሙከራዎች። እባክዎ ከመሞከርዎ በፊት 15 ደቂቃ ይጠብቁ ወይም መለያዎን ዳግም ለማስጀመር አስተዳዳሪዎን ያግኙ።",
     "TRANSFER_OUT_OF_SCOPE": "ለዚህ ዝውውር መዳረሻ የለዎትም።",
+    "ADJUSTMENT_OUT_OF_SCOPE": "You can only act on adjustments in your own area.",
     "UNKNOWN_FEATURE_FLAG": "አንድ ወይም ከዚያ በላይ ባህሪ ባንዲራዎች አይታወቁም።",
     "UNKNOWN_TRANSFER_TYPE": "ይህ የዝውውር አይነት አይታወቅም።",
     "UPSTREAM_TIMEOUT": "አገልግሎቱ ምላሽ ለመስጠት በጣም ረጅም ጊዜ ወስዷል። እባክዎ እንደገና ይሞክሩ።",

@@ -2694,6 +2694,18 @@ class InventoryService:
         )
         return lot_id, lot_number, row.expiry_date
 
+    async def _adjustment_in_scope(self, user: Any, row: Any) -> bool:
+        """True when the caller may act on this adjustment: its warehouse is in the
+        caller's node scope (_transfer_scope), or the caller is its named override
+        approver (who may always act on their own routed adjustment)."""
+        named = row.required_approver_user_id
+        if named and str(named).lower() == str(user.user_id).lower():
+            return True
+        scope = await self._transfer_scope(user)
+        if scope is None:
+            return True
+        return str(row.warehouse_id).lower() in scope
+
     async def transition_adjustment(
         self, user: Any, adjustment_id: UUID, next_state: str
     ) -> AdjustmentResponse:
@@ -2706,6 +2718,14 @@ class InventoryService:
             from fastapi import HTTPException
 
             raise HTTPException(status_code=404, detail="Adjustment not found")
+
+        # RB-2: a reviewer approves or rejects only adjustments in its node scope.
+        if next_state in ("APPROVED", "REJECTED") and not await self._adjustment_in_scope(
+            user, row
+        ):
+            from fastapi import HTTPException
+
+            raise HTTPException(status_code=403, detail={"code": "ADJUSTMENT_OUT_OF_SCOPE"})
 
         try:
             validate_transition("ADJUSTMENT", row.status, next_state)
@@ -3019,6 +3039,7 @@ class InventoryService:
             await self.db.execute(
                 text(
                     "SELECT ao.id, ao.status, ao.created_by, ao.product_override_applied, "
+                    "       ao.warehouse_id, "
                     "       ao.required_approver_user_id, ao.required_approver_name, "
                     "       ao.approver_escalated, ao.lot_id, ao.auto_lot, "
                     "       CASE WHEN ao.lot_id IS NOT NULL THEN sl.lot_number "
@@ -3065,6 +3086,10 @@ class InventoryService:
             )
             can_approve = bool(result.allowed) and not is_own
             step_label = None
+
+        # RB-2: out-of-scope reviewers see the adjustment but cannot act on it.
+        if can_approve and not await self._adjustment_in_scope(user, row):
+            can_approve = False
 
         return AdjustmentApprovalInfoResponse(
             adjustment_id=adjustment_id,
@@ -3266,18 +3291,27 @@ class InventoryService:
     async def list_adjustments(
         self, user: Any, page: int = 1, limit: int = 50
     ) -> list[AdjustmentListItem]:
-        """List adjustment orders scoped by role.
+        """List adjustment orders in the caller's node scope (RB-2).
 
-        WM: sees only adjustments at their assigned warehouse.
-        All other roles: see all adjustments for the tenant.
+        Same scope as transfers (_transfer_scope): the caller's subtree for
+        WM / LM / SA_GT / RT / RM, the whole tenant for TA / NM / SA / AU.
+        A named override approver also sees the adjustment.
         """
+        scope = await self._transfer_scope(user)
+        if scope is not None and not scope:
+            return []
+
         offset = (page - 1) * limit
         params: dict = {"tid": str(user.tenant_id), "offset": offset, "limit": limit}
 
         wh_filter = ""
-        if user.role == "WM" and user.warehouse_id:
-            wh_filter = "AND ao.warehouse_id = :wid"
-            params["wid"] = str(user.warehouse_id)
+        if scope is not None:
+            wh_filter = (
+                "AND (ao.warehouse_id = ANY(CAST(:subtree AS uuid[])) "
+                "OR ao.required_approver_user_id = CAST(:uid AS uuid))"
+            )
+            params["subtree"] = sorted(scope)
+            params["uid"] = str(user.user_id)
 
         sql = text(f"""
             SELECT
