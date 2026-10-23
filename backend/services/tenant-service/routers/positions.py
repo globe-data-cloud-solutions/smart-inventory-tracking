@@ -330,6 +330,8 @@ async def create_position(
             status_code=422,
             detail={
                 "code": "INVALID_ROLE_CODE",
+                "role_code": body.role_code,
+                "allowed": ", ".join(sorted(ALLOWED_POSITION_ROLE_CODES)),
                 "message": f"role_code '{body.role_code}' is not permitted for positions. "
                 f"Allowed: {sorted(ALLOWED_POSITION_ROLE_CODES)}",
             },
@@ -424,6 +426,8 @@ async def update_position(
             status_code=422,
             detail={
                 "code": "INVALID_ROLE_CODE",
+                "role_code": body.role_code,
+                "allowed": ", ".join(sorted(ALLOWED_POSITION_ROLE_CODES)),
                 "message": f"role_code '{body.role_code}' is not permitted for positions. "
                 f"Allowed: {sorted(ALLOWED_POSITION_ROLE_CODES)}",
             },
@@ -550,6 +554,7 @@ async def delete_position(
             status_code=422,
             detail={
                 "code": "POSITION_HAS_ACTIVE_PERSONNEL",
+                "count": active_count,
                 "message": f"Position has {active_count} active assignment(s). "
                 "Deactivate or reassign them before deleting this position.",
             },

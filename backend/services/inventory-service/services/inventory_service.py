@@ -943,6 +943,7 @@ class InventoryService:
                     status_code=422,
                     detail={
                         "code": "NODE_INACTIVE",
+                        "side": side,
                         "message": f"Cannot create transfer — the {side} warehouse is inactive. "
                         "Reactivate it first or choose a different warehouse.",
                     },
@@ -979,6 +980,8 @@ class InventoryService:
                         status_code=422,
                         detail={
                             "code": "INVALID_SOURCE_FACTORY",
+                            "sku": product_row.sku,
+                            "factory_name": factory_name,
                             "message": f"Product {product_row.sku} can only be sourced from {factory_name}",
                         },
                     )

@@ -1635,6 +1635,7 @@ async def create_tenant(
                 status_code=422,
                 detail={
                     "code": "INVALID_CONTRACT_DATES",
+                    "field": field,
                     "message": f"'{field}' must be a valid ISO date (YYYY-MM-DD).",
                 },
             )
@@ -1650,6 +1651,7 @@ async def create_tenant(
             status_code=422,
             detail={
                 "code": "INVALID_CONTRACT_DATES",
+                "field": "contract_end",
                 "message": "contract_end must be after contract_start.",
             },
         )
@@ -1665,6 +1667,7 @@ async def create_tenant(
             status_code=422,
             detail={
                 "code": "INVALID_CONTRACT_DATES",
+                "field": "contract_end",
                 "message": "contract_end must be after today when contract_start is not given.",
             },
         )
@@ -2135,6 +2138,7 @@ async def update_my_profile(
             status_code=422,
             detail={
                 "code": "INVALID_LOCALE",
+                "allowed": ", ".join(sorted(VALID_LOCALES)),
                 "message": f"default_locale must be one of {sorted(VALID_LOCALES)}",
             },
         )
@@ -2204,7 +2208,7 @@ async def update_my_contract(
     if not row:
         raise HTTPException(status_code=404, detail="Tenant not found")
 
-    def _parse_date(s: Optional[str]) -> Optional[_date]:
+    def _parse_date(s: Optional[str], field: str) -> Optional[_date]:
         if s is None:
             return None
         try:
@@ -2214,12 +2218,13 @@ async def update_my_contract(
                 status_code=422,
                 detail={
                     "code": "INVALID_DATE",
+                    "field": field,
                     "message": f"'{s}' is not a valid ISO date (YYYY-MM-DD).",
                 },
             )
 
-    new_start = _parse_date(body.contract_start)
-    new_end = _parse_date(body.contract_end)
+    new_start = _parse_date(body.contract_start, "contract_start")
+    new_end = _parse_date(body.contract_end, "contract_end")
 
     old_start = str(row.contract_start) if row.contract_start else None
     old_end = str(row.contract_end) if row.contract_end else None
@@ -2982,6 +2987,7 @@ async def update_tenant_profile(
             status_code=422,
             detail={
                 "code": "INVALID_LOCALE",
+                "allowed": ", ".join(sorted(VALID_LOCALES)),
                 "message": f"default_locale must be one of {sorted(VALID_LOCALES)}",
             },
         )
@@ -3626,7 +3632,7 @@ async def update_tenant_contract(
         raise HTTPException(status_code=404, detail="Tenant not found")
 
     # Validate date strings and convert to datetime.date for asyncpg
-    def _parse_date(s: Optional[str]) -> Optional[_date]:
+    def _parse_date(s: Optional[str], field: str) -> Optional[_date]:
         if s is None:
             return None
         try:
@@ -3636,12 +3642,13 @@ async def update_tenant_contract(
                 status_code=422,
                 detail={
                     "code": "INVALID_DATE",
+                    "field": field,
                     "message": f"'{s}' is not a valid ISO date (YYYY-MM-DD).",
                 },
             )
 
-    new_start = _parse_date(body.contract_start)
-    new_end = _parse_date(body.contract_end)
+    new_start = _parse_date(body.contract_start, "contract_start")
+    new_end = _parse_date(body.contract_end, "contract_end")
 
     old_start = str(row.contract_start) if row.contract_start else None
     old_end = str(row.contract_end) if row.contract_end else None

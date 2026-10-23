@@ -175,6 +175,7 @@ async def update_platform_contact(
                 status_code=422,
                 detail={
                     "code": "INVALID_PHONE",
+                    "field": field,
                     "message": f"{field} must match {_PHONE_RE.pattern}.",
                 },
             )
@@ -188,6 +189,8 @@ async def update_platform_contact(
                 status_code=422,
                 detail={
                     "code": "FIELD_TOO_LONG",
+                    "field": field,
+                    "limit": limit,
                     "message": f"{field} must be at most {limit} characters.",
                 },
             )

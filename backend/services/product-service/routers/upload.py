@@ -41,6 +41,7 @@ def _validate_image(file: UploadFile, max_bytes: int) -> None:
             status_code=422,
             detail={
                 "code": "IMAGE_TOO_LARGE",
+                "max_mb": max_bytes // (1024 * 1024),
                 "message": f"File must be under {max_bytes // (1024 * 1024)} MB",
             },
         )
@@ -58,7 +59,11 @@ async def upload_product_image(
     if len(data) > _MAX_PRODUCT_IMAGE_BYTES:
         raise HTTPException(
             status_code=422,
-            detail={"code": "IMAGE_TOO_LARGE", "message": "Image must be under 2 MB"},
+            detail={
+                "code": "IMAGE_TOO_LARGE",
+                "max_mb": 2,
+                "message": "Image must be under 2 MB",
+            },
         )
     url = await _storage.save(
         file_bytes=data,
@@ -81,7 +86,11 @@ async def upload_tenant_logo(
     if len(data) > _MAX_LOGO_BYTES:
         raise HTTPException(
             status_code=422,
-            detail={"code": "IMAGE_TOO_LARGE", "message": "Logo must be under 1 MB"},
+            detail={
+                "code": "IMAGE_TOO_LARGE",
+                "max_mb": 1,
+                "message": "Logo must be under 1 MB",
+            },
         )
     url = await _storage.save(
         file_bytes=data,
@@ -109,7 +118,11 @@ async def upload_tenant_banner(
     if len(data) > _MAX_BANNER_BYTES:
         raise HTTPException(
             status_code=422,
-            detail={"code": "IMAGE_TOO_LARGE", "message": "Banner must be under 3 MB"},
+            detail={
+                "code": "IMAGE_TOO_LARGE",
+                "max_mb": 3,
+                "message": "Banner must be under 3 MB",
+            },
         )
     url = await _storage.save(
         file_bytes=data,

@@ -297,6 +297,7 @@ async def _node_stock_activity_blocker(
         if transfer_count and transfer_count.cnt > 0:
             return {
                 "code": "NODE_HAS_OPEN_TRANSFERS",
+                "count": transfer_count.cnt,
                 "message": f"Cannot deactivate — this location has {transfer_count.cnt} "
                 "open transfer(s). Complete or cancel them first.",
             }
@@ -315,6 +316,7 @@ async def _node_stock_activity_blocker(
         if adj_count and adj_count.cnt > 0:
             return {
                 "code": "NODE_HAS_PENDING_ADJUSTMENTS",
+                "count": adj_count.cnt,
                 "message": f"Cannot deactivate — this location has {adj_count.cnt} "
                 "pending adjustment(s).",
             }
@@ -453,6 +455,7 @@ async def upsert_hierarchy_config(
                 status_code=422,
                 detail={
                     "code": "LEVEL_COUNT_LOCKED",
+                    "level": max_used_level,
                     "message": (
                         f"Cannot remove level {max_used_level} — active org nodes "
                         f"exist at that level. Remove or move those nodes first."
@@ -1538,6 +1541,7 @@ async def deactivate_org_node(
             status_code=422,
             detail={
                 "code": "NODE_HAS_SOLE_USERS",
+                "count": sole_count.cnt,
                 "message": f"Cannot deactivate — {sole_count.cnt} staff member(s) have "
                 "this as their only position. Reassign them to another "
                 "position first.",
