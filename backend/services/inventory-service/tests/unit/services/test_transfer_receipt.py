@@ -752,6 +752,7 @@ class TestReceiptEndpoints:
         allow, active = _allow_all()
         with allow, active, patch("routers.transfer.InventoryService") as svc_cls:
             svc_cls.return_value.receive_transfer = AsyncMock(return_value=MagicMock())
+            svc_cls.return_value.read_transfer_after_write = AsyncMock(return_value=MagicMock())
             await transition_transfer(
                 transfer_id=TRANSFER_ID,
                 body=TransferTransitionRequest(next_status="RECEIVED"),
@@ -777,6 +778,7 @@ class TestReceiptEndpoints:
             patch("routers.transfer.InventoryService") as svc_cls,
         ):
             svc_cls.return_value.receive_transfer = AsyncMock(return_value=MagicMock())
+            svc_cls.return_value.read_transfer_after_write = AsyncMock(return_value=MagicMock())
             await receive_transfer(transfer_id=TRANSFER_ID, body=body, user=wm_user, db=AsyncMock())
             await receive_transfer(transfer_id=TRANSFER_ID, body=None, user=wm_user, db=AsyncMock())
 

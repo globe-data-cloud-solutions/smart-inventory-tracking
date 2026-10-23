@@ -69,6 +69,7 @@ async def test_grace_tenant_allowed_through_to_service() -> None:
     ):
         mock_svc = mock_svc_cls.return_value
         mock_svc.receive_transfer = AsyncMock(return_value=MagicMock())
+        mock_svc.read_transfer_after_write = AsyncMock(return_value=MagicMock())
         await transition_transfer(transfer_id=uuid4(), body=body, user=_user(), db=db)
 
     mock_svc_cls.assert_called_once_with(db)
