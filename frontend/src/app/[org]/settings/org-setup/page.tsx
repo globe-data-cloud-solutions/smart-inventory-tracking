@@ -281,7 +281,13 @@ function LevelsTab({
       api.patch(`/api/v1/tenants/${tenantId}/hierarchy/config/${levelId}/role`, {
         default_role_code: role,
       }),
-    onSuccess: () => {
+    onSuccess: (_data, vars) => {
+      // Local levels are only copied from the server once (on first load), so
+      // update the saved row here; otherwise the role editor keeps comparing
+      // against the old role and Save stays enabled.
+      setLevels((prev) =>
+        prev.map((l) => (l.id === vars.levelId ? { ...l, default_role_code: vars.role } : l))
+      );
       void qc.invalidateQueries({ queryKey: ["hierarchy-config", tenantId] });
       setRoleError(null);
     },
