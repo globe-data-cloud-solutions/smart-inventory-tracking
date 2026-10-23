@@ -2534,6 +2534,13 @@ class InventoryService:
 
         if effective_negative:
             if body.lot_id is None:
+                # E2E finding F7: a lot number names a new lot, so it cannot reduce stock.
+                # Say which field is needed instead of a bare LOT_REQUIRED.
+                if has_number:
+                    raise HTTPException(
+                        status_code=422,
+                        detail={"code": "LOT_ID_REQUIRED", "lot_number": body.lot_number},
+                    )
                 raise HTTPException(status_code=422, detail={"code": "LOT_REQUIRED"})
             if has_number or body.expiry_date is not None or body.auto_lot:
                 raise HTTPException(status_code=422, detail={"code": "LOT_INPUT_CONFLICT"})

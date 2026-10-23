@@ -39,6 +39,8 @@ class ProductCreateRequest(BaseModel):
     """
 
     name: str = Field(min_length=1, max_length=255)
+    # E2E finding F5: factory-specific product. The node must exist in this tenant.
+    source_factory_id: Optional[uuid.UUID] = None
     short_name: Optional[str] = Field(default=None, max_length=50)
     description: Optional[str] = Field(default=None)
     category: Optional[str] = Field(default=None, max_length=255)
@@ -116,9 +118,11 @@ class ProductUpdateRequest(BaseModel):
 
     All fields optional — only supplied (non-None) fields are updated.
     SKU is never editable here; it is fixed at creation time.
+    source_factory_id: set or change the home factory (E2E finding F5).
     """
 
     name: Optional[str] = Field(default=None, min_length=1, max_length=255)
+    source_factory_id: Optional[uuid.UUID] = None
     short_name: Optional[str] = Field(default=None, max_length=50)
     description: Optional[str] = Field(default=None)
     category: Optional[str] = Field(default=None, max_length=255)
@@ -194,6 +198,7 @@ class ProductResponse(BaseModel):
     batch_tracking: bool = False
     expiry_tracking: bool = False
     dispatch_strategy: Optional[str] = None
+    source_factory_id: Optional[uuid.UUID] = None
     tenant_id: uuid.UUID
     created_at: datetime
     created_by: Optional[uuid.UUID] = None
