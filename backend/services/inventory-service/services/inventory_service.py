@@ -2274,8 +2274,8 @@ class InventoryService:
             discrepancies=_discrepancies,
         )
 
-    async def get_transfer(self, user: Any, transfer_id: UUID) -> TransferOrderResponse:
-        # Facility names: same COALESCE(warehouses, organization_node) as list_transfers.
+    async def _load_transfer_row(self, tenant_id: Any, transfer_id: UUID) -> Any:
+        """One transfer row with facility names (same COALESCE as list_transfers). None if absent."""
         result = await self.db.execute(
             text("""
                 SELECT
@@ -2289,29 +2289,17 @@ class InventoryService:
                 LEFT JOIN organization_node tw_n ON tw_n.id    = to_.to_warehouse_id
                 WHERE to_.id = :id AND to_.tenant_id = :tid
             """),
-            {"id": str(transfer_id), "tid": str(user.tenant_id)},
+            {"id": str(transfer_id), "tid": str(tenant_id)},
         )
-        row = result.fetchone()
-        if not row:
-            from fastapi import HTTPException
+        return result.fetchone()
 
-            raise HTTPException(status_code=404, detail="Transfer not found")
-
-        scope = await self._transfer_scope(user)
-        if scope is not None and not (
-            _inside(scope, [row.from_warehouse_id])
-            or _inside(scope, [row.to_warehouse_id])
-            or _on_approval_steps(scope, user.user_id, row.resolved_approval_steps)
-        ):
-            from fastapi import HTTPException
-
-            raise HTTPException(status_code=403, detail={"code": "TRANSFER_OUT_OF_SCOPE"})
-
+    async def _build_transfer_response(self, row: Any, transfer_id: UUID) -> TransferOrderResponse:
+        """The full transfer shape (lines, lots, discrepancies, approval state). GET and the
+        mutation responses both use it, so a write returns exactly what a read returns."""
         _allocs = await transfer_lots.load_allocations(self.db, row.tenant_id, transfer_id)
         _discrepancies = await transfer_discrepancies.load_discrepancies(
             self.db, row.tenant_id, transfer_id
         )
-
         return TransferOrderResponse(
             transfer_id=transfer_id,
             transfer_type=row.transfer_type,
@@ -2325,6 +2313,9 @@ class InventoryService:
             total_value=row.total_value,
             currency=row.currency,
             is_self_approved=bool(row.is_self_approved),
+            transfer_type_config_id=row.transfer_type_config_id,
+            current_approval_step=row.current_approval_step,
+            resolved_approval_steps=row.resolved_approval_steps,
             lines=await self._transfer_line_items(transfer_id),
             lot_allocations=[
                 TransferLotAllocation(
@@ -2341,6 +2332,36 @@ class InventoryService:
             ],
             discrepancies=_discrepancies,
         )
+
+    async def read_transfer_after_write(
+        self, user: Any, transfer_id: UUID
+    ) -> TransferOrderResponse:
+        """Response for a transfer mutation (RB-8 bug 8). Re-reads the row the mutation just
+        wrote, in the same transaction. No scope check: the mutation has already passed its
+        own permission and scope checks, and a sender must still see the transfer it sent."""
+        from fastapi import HTTPException
+
+        row = await self._load_transfer_row(user.tenant_id, transfer_id)
+        if row is None:
+            raise HTTPException(status_code=404, detail="Transfer not found")
+        return await self._build_transfer_response(row, transfer_id)
+
+    async def get_transfer(self, user: Any, transfer_id: UUID) -> TransferOrderResponse:
+        from fastapi import HTTPException
+
+        row = await self._load_transfer_row(user.tenant_id, transfer_id)
+        if not row:
+            raise HTTPException(status_code=404, detail="Transfer not found")
+
+        scope = await self._transfer_scope(user)
+        if scope is not None and not (
+            _inside(scope, [row.from_warehouse_id])
+            or _inside(scope, [row.to_warehouse_id])
+            or _on_approval_steps(scope, user.user_id, row.resolved_approval_steps)
+        ):
+            raise HTTPException(status_code=403, detail={"code": "TRANSFER_OUT_OF_SCOPE"})
+
+        return await self._build_transfer_response(row, transfer_id)
 
     async def create_adjustment(self, user: Any, body: AdjustmentRequest) -> AdjustmentResponse:
         from datetime import datetime, timezone

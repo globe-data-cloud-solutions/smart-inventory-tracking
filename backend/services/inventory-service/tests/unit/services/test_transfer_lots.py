@@ -66,6 +66,7 @@ def _transfer_row(status: str, steps: Optional[list] = None, step: int = 1) -> S
         created_by_authority_level=4,
         resolved_approval_steps=steps,
         current_approval_step=step,
+        transfer_type_config_id=None,
         total_value=None,
         currency="ETB",
         product_override_applied=False,
@@ -865,6 +866,7 @@ class TestApproveEndpoint:
             patch("routers.transfer.InventoryService") as svc_cls,
         ):
             svc_cls.return_value.transition_transfer = AsyncMock(return_value=self._response())
+            svc_cls.return_value.read_transfer_after_write = AsyncMock(return_value=self._response())
             resp = await client.post(f"/api/v1/inventory/transfers/{TRANSFER_ID}/approve")
 
         assert resp.status_code == 200, resp.text
@@ -910,6 +912,7 @@ class TestApproveEndpoint:
             patch("routers.transfer.InventoryService") as svc_cls,
         ):
             svc_cls.return_value.transition_transfer = AsyncMock(return_value=self._response())
+            svc_cls.return_value.read_transfer_after_write = AsyncMock(return_value=self._response())
             await approve_transfer(transfer_id=TRANSFER_ID, body=body, user=wm_user, db=db)
 
         svc_cls.return_value.transition_transfer.assert_awaited_once_with(

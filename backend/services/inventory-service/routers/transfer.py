@@ -83,7 +83,7 @@ async def create_transfer(
         await check_plan(user, "transfer:sister", db)
     svc = InventoryService(db)
     result = await svc.create_transfer(user, body)
-    return SuccessResponse(data=result)
+    return SuccessResponse(data=await svc.read_transfer_after_write(user, result.transfer_id))
 
 
 @router.post("/{transfer_id}/submit", response_model=SuccessResponse[TransferOrderResponse])
@@ -104,8 +104,8 @@ async def submit_transfer(
                 "message": f"Unknown transfer type: {transfer.transfer_type}",
             },
         )
-    result = await svc.transition_transfer(user, transfer_id, next_status)
-    return SuccessResponse(data=result)
+    await svc.transition_transfer(user, transfer_id, next_status)
+    return SuccessResponse(data=await svc.read_transfer_after_write(user, transfer_id))
 
 
 @router.post("/{transfer_id}/review", response_model=SuccessResponse[TransferOrderResponse])
@@ -131,8 +131,8 @@ async def review_transfer(
                 "message": "/review is only valid for PULL transfers. PUSH and SISTER transfers have no PENDING_REVIEW state.",
             },
         )
-    result = await svc.transition_transfer(user, transfer_id, "PENDING_APPROVAL")
-    return SuccessResponse(data=result)
+    await svc.transition_transfer(user, transfer_id, "PENDING_APPROVAL")
+    return SuccessResponse(data=await svc.read_transfer_after_write(user, transfer_id))
 
 
 @router.post("/{transfer_id}/approve", response_model=SuccessResponse[TransferOrderResponse])
@@ -151,8 +151,8 @@ async def approve_transfer(
     """
     svc = InventoryService(db)
     if body is None or not body.lot_selections:
-        result = await svc.transition_transfer(user, transfer_id, "APPROVED")
-        return SuccessResponse(data=result)
+        await svc.transition_transfer(user, transfer_id, "APPROVED")
+        return SuccessResponse(data=await svc.read_transfer_after_write(user, transfer_id))
 
     tid = str(user.tenant_id)
     transfer_row = (
@@ -181,7 +181,7 @@ async def approve_transfer(
         )
     ).allowed
 
-    result = await svc.transition_transfer(
+    await svc.transition_transfer(
         user,
         transfer_id,
         "APPROVED",
@@ -190,7 +190,7 @@ async def approve_transfer(
         can_fefo_override=can_fefo_override,
         can_lot_select=can_lot_select,
     )
-    return SuccessResponse(data=result)
+    return SuccessResponse(data=await svc.read_transfer_after_write(user, transfer_id))
 
 
 @router.post("/{transfer_id}/dispatch", response_model=SuccessResponse[TransferOrderResponse])
@@ -205,8 +205,8 @@ async def dispatch_transfer(
     In-transit tracking uses transfer_orders.status in analytics queries, not ledger entries.
     """
     svc = InventoryService(db)
-    result = await svc.dispatch_transfer(user, transfer_id)
-    return SuccessResponse(data=result)
+    await svc.dispatch_transfer(user, transfer_id)
+    return SuccessResponse(data=await svc.read_transfer_after_write(user, transfer_id))
 
 
 @router.post("/{transfer_id}/receive", response_model=SuccessResponse[TransferOrderResponse])
@@ -229,8 +229,8 @@ async def receive_transfer(
     ends in RECEIVED either way.
     """
     svc = InventoryService(db)
-    result = await svc.receive_transfer(user, transfer_id, body)
-    return SuccessResponse(data=result)
+    await svc.receive_transfer(user, transfer_id, body)
+    return SuccessResponse(data=await svc.read_transfer_after_write(user, transfer_id))
 
 
 @router.post(
@@ -310,7 +310,7 @@ async def transition_transfer(
         result = await svc.receive_transfer(user, transfer_id)
     else:
         result = await svc.transition_transfer(user, transfer_id, body.next_status)
-    return SuccessResponse(data=result)
+    return SuccessResponse(data=await svc.read_transfer_after_write(user, transfer_id))
 
 
 @router.get("/{transfer_id}/approval-info", response_model=SuccessResponse[ApprovalInfoResponse])
