@@ -1,0 +1,21 @@
+const { chromium } = require(process.env.E2E_PLAYWRIGHT_MODULE || 'playwright');
+const CHROME = process.env.E2E_CHROMIUM;
+const WEB = process.env.E2E_WEB_BASE || 'http://localhost:3000';
+(async () => {
+  const b = await chromium.launch({ ...(CHROME ? { executablePath: CHROME } : {}), headless: true });
+  const p = await b.newPage();
+  const errs = []; p.on('pageerror', e => errs.push(e.message));
+  await p.goto(`${WEB}/login`, { waitUntil: 'networkidle', timeout: 90000 });
+  await p.locator('input[type=email], input[name=email]').first().fill('admin@tc01.com');
+  await p.locator('input[type=password]').first().fill('smart1026');
+  await p.locator('button[type=submit]').first().click();
+  await p.waitForURL(/dashboard/, { timeout: 60000 });
+  await p.goto(`${WEB}/tenantc01/inventory`, { waitUntil: 'networkidle', timeout: 90000 });
+  await p.waitForTimeout(3000);
+  const txt = (await p.innerText('body')).replace(/\s+/g,' ');
+  console.log('HAS Yoghurt:', txt.includes('Yoghurt'), ' Sugar:', txt.includes('Sugar'), ' Out of Stock:', txt.includes('Out of Stock'));
+  console.log('SAMPLE', txt.slice(0, 400));
+  console.log('PAGE ERRORS', JSON.stringify(errs.slice(0,3)));
+  await p.screenshot({ path: `${process.argv[2]}`, fullPage: true });
+  await b.close();
+})().catch(e => { console.error('UI FAIL', e.message); process.exit(1); });
