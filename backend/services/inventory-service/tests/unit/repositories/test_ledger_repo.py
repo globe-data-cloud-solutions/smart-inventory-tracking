@@ -1090,3 +1090,39 @@ class TestWriteTransferLedgerEntry:
                     performed_by=USER_ID,
                     status_transition="APPROVED",
                 )
+
+
+class TestBalanceWriterGuardFlag:
+    """Migration 098 rejects UPDATE/DELETE on inventory_balances unless the
+    transaction-local flag app.balance_writer is 'on'. _update_running_balance
+    must set that flag before its upsert, in the same transaction."""
+
+    @pytest.mark.asyncio
+    async def test_sets_balance_writer_flag_before_upsert(self) -> None:
+        from repositories.ledger_repo import _update_running_balance
+
+        session = AsyncMock()
+        session.execute = AsyncMock(return_value=MagicMock())
+
+        await _update_running_balance(session, TENANT_ID, PRODUCT_ID, WAREHOUSE_ID, Decimal("5"))
+
+        sql = [str(c.args[0]) for c in session.execute.call_args_list]
+        assert len(sql) == 2
+        assert "set_config('app.balance_writer', 'on', true)" in sql[0]
+        assert "INSERT INTO inventory_balances" in sql[1]
+
+    @pytest.mark.asyncio
+    async def test_no_other_balance_writer_sets_flag(self) -> None:
+        """Only the single writer may enable the flag; guard against spreading it."""
+        import pathlib
+
+        repo_root = pathlib.Path(__file__).resolve().parents[5]
+        offenders = []
+        for path in (repo_root / "backend").rglob("*.py"):
+            if "tests" in path.parts or "_ARCHIVED" in path.name:
+                continue
+            if path.name == "ledger_repo.py" and "inventory-service" in path.parts:
+                continue
+            if "app.balance_writer" in path.read_text(encoding="utf-8"):
+                offenders.append(str(path.relative_to(repo_root)))
+        assert offenders == [], f"app.balance_writer set outside ledger_repo: {offenders}"

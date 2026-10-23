@@ -69,6 +69,9 @@ async def _update_running_balance(
     Must always be called inside the same DB transaction as the
     inventory_transactions INSERT — never after commit.
     """
+    # Migration 098 rejects UPDATE/DELETE on inventory_balances unless this
+    # transaction-local flag is set. Only this function sets it.
+    await session.execute(text("SELECT set_config('app.balance_writer', 'on', true)"))
     await session.execute(
         text(
             "INSERT INTO inventory_balances (tenant_id, product_id, warehouse_id, quantity) "
