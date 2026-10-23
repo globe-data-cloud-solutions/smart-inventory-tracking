@@ -686,7 +686,8 @@
       "warehouse_list": "መጋዘኖች ተዘርዝረዋል",
       "warehouse_update": "መጋዘን ተሻሽሏል",
       "warehouse_view": "መጋዘን ታይቷል",
-      "report_filter_options": "Report filter options viewed"
+      "report_filter_options": "Report filter options viewed",
+      "hierarchy_level_role_changed": "Hierarchy level role changed"
     },
     "resources": {
       "adjustment": "ማስተካከያ",
@@ -1123,6 +1124,9 @@
     "TOO_MANY_ATTEMPTS": "በጣም ብዙ ያልተሳኩ የመግቢያ ሙከራዎች። እባክዎ ከመሞከርዎ በፊት 15 ደቂቃ ይጠብቁ ወይም መለያዎን ዳግም ለማስጀመር አስተዳዳሪዎን ያግኙ።",
     "TRANSFER_OUT_OF_SCOPE": "ለዚህ ዝውውር መዳረሻ የለዎትም።",
     "ADJUSTMENT_OUT_OF_SCOPE": "You can only act on adjustments in your own area.",
+    "LEVEL_ROLE_REQUIRED": "Every level needs a role before the levels can be saved.",
+    "LEVEL_ROLE_LOCKED": "This level's role cannot change while locations exist at it.",
+    "LEVEL_ROLE_INVALID": "That role cannot be used for an organisation level.",
     "UNKNOWN_FEATURE_FLAG": "አንድ ወይም ከዚያ በላይ ባህሪ ባንዲራዎች አይታወቁም።",
     "UNKNOWN_TRANSFER_TYPE": "ይህ የዝውውር አይነት አይታወቅም።",
     "UPSTREAM_TIMEOUT": "አገልግሎቱ ምላሽ ለመስጠት በጣም ረጅም ጊዜ ወስዷል። እባክዎ እንደገና ይሞክሩ።",
@@ -1473,6 +1477,12 @@
     "level_count_hint": "ከ2 እስከ 5",
     "level_rename_hint": "ይህን ደረጃ በማንኛውም ጊዜ ስም መቀየር ይችላሉ።",
     "role_not_set": "አልተዘጋጀም",
+    "role_locked": "This level's role cannot change while locations exist at it. Remove or move those locations first.",
+    "role_locked_hint": "{count} locations use this level, so its role is locked.",
+    "role_required_hint": "No role set. A Tenant Admin must set one before this level can be used.",
+    "role_required_all": "Choose a role for every level before saving.",
+    "role_override_hint": "{count} locations use this level. As SA you can change its role; the change is recorded in the audit log.",
+    "save_role": "Save role",
     "deactivate_node": "አቦዝን",
     "reactivate_node": "ዳግም አንቃ",
     "deactivate_confirm": "እርስዎ {name}ን ማቦዘን ይፈልጋሉ? ይህ ከአዲስ ዝውውሮች ይደብቀዋል። ኋላ ላይ ዳግም ማንቃት ይችላሉ።",

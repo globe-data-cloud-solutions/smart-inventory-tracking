@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import os
 import sys
+from types import SimpleNamespace
 
 os.environ.setdefault("DATABASE_URL", "postgresql+asyncpg://test:x@localhost/test")
 os.environ.setdefault("DATABASE_READ_URL", "postgresql+asyncpg://test:x@localhost/test")
@@ -228,8 +229,10 @@ class TestHierarchyConfigUpsert:
             await upsert_hierarchy_config(
                 tenant_id=UUID(TENANT_ID),
                 body=[
-                    HierarchyLevelIn(level_number=1, level_name="Factory"),
-                    HierarchyLevelIn(level_number=2, level_name="Factory"),  # duplicate name
+                    HierarchyLevelIn(level_number=1, default_role_code="NM", level_name="Factory"),
+                    HierarchyLevelIn(
+                        level_number=2, default_role_code="RM", level_name="Factory"
+                    ),  # duplicate name
                 ],
                 user=_Caller(),
                 db=db,
@@ -248,8 +251,10 @@ class TestHierarchyConfigUpsert:
             await upsert_hierarchy_config(
                 tenant_id=UUID(TENANT_ID),
                 body=[
-                    HierarchyLevelIn(level_number=1, level_name="Factory"),
-                    HierarchyLevelIn(level_number=1, level_name="Factory Duplicate"),
+                    HierarchyLevelIn(level_number=1, default_role_code="NM", level_name="Factory"),
+                    HierarchyLevelIn(
+                        level_number=1, default_role_code="NM", level_name="Factory Duplicate"
+                    ),
                 ],
                 user=_Caller(),
                 db=db,
@@ -275,11 +280,21 @@ class TestHierarchyConfigUpsert:
                 await upsert_hierarchy_config(
                     tenant_id=UUID(TENANT_ID),
                     body=[
-                        HierarchyLevelIn(level_number=1, level_name="Factory"),
-                        HierarchyLevelIn(level_number=2, level_name="Region"),
-                        HierarchyLevelIn(level_number=3, level_name="Warehouse"),
-                        HierarchyLevelIn(level_number=4, level_name="Satellite"),
-                        HierarchyLevelIn(level_number=5, level_name="Outpost"),
+                        HierarchyLevelIn(
+                            level_number=1, default_role_code="NM", level_name="Factory"
+                        ),
+                        HierarchyLevelIn(
+                            level_number=2, default_role_code="RM", level_name="Region"
+                        ),
+                        HierarchyLevelIn(
+                            level_number=3, default_role_code="WM", level_name="Warehouse"
+                        ),
+                        HierarchyLevelIn(
+                            level_number=4, default_role_code="LM", level_name="Satellite"
+                        ),
+                        HierarchyLevelIn(
+                            level_number=5, default_role_code="AU", level_name="Outpost"
+                        ),
                     ],
                     user=_Caller(),
                     db=db,
@@ -323,10 +338,16 @@ class TestHierarchyConfigUpsert:
             result = await upsert_hierarchy_config(
                 tenant_id=UUID(TENANT_ID),
                 body=[
-                    HierarchyLevelIn(level_number=1, level_name="Factory Renamed"),
-                    HierarchyLevelIn(level_number=2, level_name="Region"),
-                    HierarchyLevelIn(level_number=3, level_name="Warehouse"),
-                    HierarchyLevelIn(level_number=4, level_name="Satellite"),
+                    HierarchyLevelIn(
+                        level_number=1, default_role_code="NM", level_name="Factory Renamed"
+                    ),
+                    HierarchyLevelIn(level_number=2, default_role_code="RM", level_name="Region"),
+                    HierarchyLevelIn(
+                        level_number=3, default_role_code="WM", level_name="Warehouse"
+                    ),
+                    HierarchyLevelIn(
+                        level_number=4, default_role_code="LM", level_name="Satellite"
+                    ),
                 ],
                 user=_Caller(),
                 db=db,
@@ -956,9 +977,17 @@ class TestHierarchyConfigPutStockGuard:
             await upsert_hierarchy_config(
                 tenant_id=UUID(TENANT_ID),
                 body=[
-                    HierarchyLevelIn(level_number=1, level_name="Factory", is_stock_holding=True),
                     HierarchyLevelIn(
-                        level_number=2, level_name="Warehouse", is_stock_holding=False
+                        level_number=1,
+                        default_role_code="NM",
+                        level_name="Factory",
+                        is_stock_holding=True,
+                    ),
+                    HierarchyLevelIn(
+                        level_number=2,
+                        default_role_code="RM",
+                        level_name="Warehouse",
+                        is_stock_holding=False,
                     ),
                 ],
                 user=_Caller(),
@@ -1035,9 +1064,17 @@ class TestHierarchyConfigPutStockGuard:
             result = await upsert_hierarchy_config(
                 tenant_id=UUID(TENANT_ID),
                 body=[
-                    HierarchyLevelIn(level_number=1, level_name="Factory", is_stock_holding=True),
                     HierarchyLevelIn(
-                        level_number=2, level_name="Warehouse", is_stock_holding=False
+                        level_number=1,
+                        default_role_code="NM",
+                        level_name="Factory",
+                        is_stock_holding=True,
+                    ),
+                    HierarchyLevelIn(
+                        level_number=2,
+                        default_role_code="RM",
+                        level_name="Warehouse",
+                        is_stock_holding=False,
                     ),
                 ],
                 user=_Caller(),
@@ -1072,7 +1109,10 @@ class TestHierarchyConfigPutStockGuard:
                     tenant_id=UUID(TENANT_ID),
                     body=[
                         HierarchyLevelIn(
-                            level_number=1, level_name="Factory", is_stock_holding=False
+                            level_number=1,
+                            default_role_code="NM",
+                            level_name="Factory",
+                            is_stock_holding=False,
                         )
                     ],
                     user=_Caller(),
@@ -1080,3 +1120,355 @@ class TestHierarchyConfigPutStockGuard:
                 )
             except HTTPException as exc:
                 pytest.fail(f"New level should never trigger the stock guard, got {exc.detail}")
+
+
+# ── Level roles: required on save, locked while nodes exist (Option B) ───────
+
+
+def _role_db(responses: dict[str, object]) -> AsyncMock:
+    """Fake session: the first response whose key appears in the SQL wins."""
+
+    async def _execute(stmt, params=None, **kw):
+        sql = str(stmt)
+        for key, res in responses.items():
+            if key in sql:
+                return res
+        res = MagicMock()
+        res.scalar = MagicMock(return_value=0)
+        res.fetchall = MagicMock(return_value=[])
+        return res
+
+    db = AsyncMock()
+    db.execute = AsyncMock(side_effect=_execute)
+    db.commit = AsyncMock()
+    return db
+
+
+def _result(**fields) -> MagicMock:
+    res = MagicMock()
+    res.fetchone = MagicMock(return_value=_row(**fields))
+    res.fetchall = MagicMock(return_value=[_row(**fields)])
+    return res
+
+
+@pytest.mark.unit
+class TestLevelRoleRequired:
+    async def test_save_without_role_is_rejected(self) -> None:
+        from routers.hierarchy import HierarchyLevelIn, upsert_hierarchy_config
+
+        db = _role_db({})
+        with _GRANT_ALL, pytest.raises(HTTPException) as exc:
+            await upsert_hierarchy_config(
+                tenant_id=UUID(TENANT_ID),
+                body=[
+                    HierarchyLevelIn(level_number=1, level_name="NM level", default_role_code="NM"),
+                    HierarchyLevelIn(level_number=2, level_name="Region", default_role_code=None),
+                ],
+                user=_Caller(),
+                db=db,
+            )
+        assert exc.value.status_code == 422
+        assert exc.value.detail["code"] == "LEVEL_ROLE_REQUIRED"
+        assert exc.value.detail["level_number"] == 2
+
+    async def test_sa_and_ta_codes_are_not_level_roles(self) -> None:
+        from routers.hierarchy import HierarchyLevelIn, upsert_hierarchy_config
+
+        db = _role_db({})
+        with _GRANT_ALL, pytest.raises(HTTPException) as exc:
+            await upsert_hierarchy_config(
+                tenant_id=UUID(TENANT_ID),
+                body=[HierarchyLevelIn(level_number=1, level_name="Top", default_role_code="TA")],
+                user=_Caller(),
+                db=db,
+            )
+        assert exc.value.detail["code"] == "LEVEL_ROLE_REQUIRED"
+
+
+@pytest.mark.unit
+class TestLevelRoleLockedOnSave:
+    async def test_changing_role_with_nodes_at_level_is_locked(self) -> None:
+        from routers.hierarchy import HierarchyLevelIn, upsert_hierarchy_config
+
+        db = _role_db(
+            {
+                "SELECT level_number, default_role_code FROM tenant_hierarchy_config": _saved_roles(
+                    {2: "RM"}
+                ),
+                "AS n FROM organization_node": _count(3),
+            }
+        )
+        with _GRANT_ALL, pytest.raises(HTTPException) as exc:
+            await upsert_hierarchy_config(
+                tenant_id=UUID(TENANT_ID),
+                body=[
+                    HierarchyLevelIn(level_number=1, level_name="Top", default_role_code="NM"),
+                    HierarchyLevelIn(level_number=2, level_name="Region", default_role_code="LM"),
+                ],
+                user=_Caller(),
+                db=db,
+            )
+        assert exc.value.status_code == 409
+        assert exc.value.detail["code"] == "LEVEL_ROLE_LOCKED"
+
+    async def test_changing_role_without_nodes_is_allowed(self) -> None:
+        from routers.hierarchy import HierarchyLevelIn, upsert_hierarchy_config
+
+        db = _role_db(
+            {
+                "SELECT level_number, default_role_code FROM tenant_hierarchy_config": _saved_roles(
+                    {2: "RM"}
+                ),
+                "AS n FROM organization_node": _count(0),
+                "SELECT id, tenant_id, level_number": _rows_for_levels({2: "LM"}),
+            }
+        )
+        with _GRANT_ALL:
+            result = await upsert_hierarchy_config(
+                tenant_id=UUID(TENANT_ID),
+                body=[
+                    HierarchyLevelIn(level_number=1, level_name="Top", default_role_code="NM"),
+                    HierarchyLevelIn(level_number=2, level_name="Region", default_role_code="LM"),
+                ],
+                user=_Caller(),
+                db=db,
+            )
+        assert result.data is not None
+
+
+@pytest.mark.unit
+class TestSetLevelRoleEndpoint:
+    async def _call(self, db, role: str, level_id: str = LEVEL_ID, caller: _Caller | None = None):
+        from routers.hierarchy import HierarchyLevelRoleIn, set_hierarchy_level_role
+
+        with _GRANT_ALL, patch("routers.hierarchy.audit_log", new=AsyncMock()) as audit:
+            result = await set_hierarchy_level_role(
+                tenant_id=UUID(TENANT_ID),
+                level_id=UUID(level_id),
+                body=HierarchyLevelRoleIn(default_role_code=role),
+                user=caller or _Caller(),
+                db=db,
+            )
+        return result, audit
+
+    async def test_invalid_role_code_rejected(self) -> None:
+        db = _role_db({})
+        with pytest.raises(HTTPException) as exc:
+            await self._call(db, "SA")
+        assert exc.value.status_code == 422
+        assert exc.value.detail["code"] == "LEVEL_ROLE_INVALID"
+
+    async def test_unknown_level_is_404(self) -> None:
+        db = _role_db({"SELECT id, level_number, default_role_code": _none()})
+        with pytest.raises(HTTPException) as exc:
+            await self._call(db, "WM")
+        assert exc.value.status_code == 404
+
+    async def test_unset_role_can_be_repaired_even_with_nodes(self) -> None:
+        db = _role_db(
+            {
+                "SELECT id, level_number, default_role_code": _result(
+                    id=UUID(LEVEL_ID), level_number=3, default_role_code=None
+                ),
+                "AS n FROM organization_node": _count(2),
+                "SELECT id, tenant_id, level_number": _result(
+                    id=UUID(LEVEL_ID),
+                    tenant_id=UUID(TENANT_ID),
+                    level_number=3,
+                    level_name="Warehouse",
+                    default_role_code="WM",
+                    role_display_label=None,
+                    is_stock_holding=True,
+                    is_active=True,
+                ),
+            }
+        )
+        result, audit = await self._call(db, "WM")
+        assert result.data.default_role_code == "WM"
+        assert result.data.active_node_count == 2
+        audit.assert_awaited_once()
+
+    async def test_changing_role_with_nodes_is_locked(self) -> None:
+        db = _role_db(
+            {
+                "SELECT id, level_number, default_role_code": _result(
+                    id=UUID(LEVEL_ID), level_number=3, default_role_code="WM"
+                ),
+                "AS n FROM organization_node": _count(1),
+            }
+        )
+        with pytest.raises(HTTPException) as exc:
+            await self._call(db, "LM")
+        assert exc.value.status_code == 409
+        assert exc.value.detail["code"] == "LEVEL_ROLE_LOCKED"
+
+    async def test_changing_role_after_nodes_removed_is_allowed(self) -> None:
+        db = _role_db(
+            {
+                "SELECT id, level_number, default_role_code": _result(
+                    id=UUID(LEVEL_ID), level_number=3, default_role_code="WM"
+                ),
+                "AS n FROM organization_node": _count(0),
+                "SELECT id, tenant_id, level_number": _result(
+                    id=UUID(LEVEL_ID),
+                    tenant_id=UUID(TENANT_ID),
+                    level_number=3,
+                    level_name="Warehouse",
+                    default_role_code="LM",
+                    role_display_label=None,
+                    is_stock_holding=True,
+                    is_active=True,
+                ),
+            }
+        )
+        result, audit = await self._call(db, "LM")
+        assert result.data.default_role_code == "LM"
+        audit.assert_awaited_once()
+
+    async def test_same_role_is_a_no_op(self) -> None:
+        db = _role_db(
+            {
+                "SELECT id, level_number, default_role_code": _result(
+                    id=UUID(LEVEL_ID), level_number=3, default_role_code="WM"
+                ),
+                "AS n FROM organization_node": _count(4),
+                "SELECT id, tenant_id, level_number": _result(
+                    id=UUID(LEVEL_ID),
+                    tenant_id=UUID(TENANT_ID),
+                    level_number=3,
+                    level_name="Warehouse",
+                    default_role_code="WM",
+                    role_display_label=None,
+                    is_stock_holding=True,
+                    is_active=True,
+                ),
+            }
+        )
+        result, audit = await self._call(db, "WM")
+        assert result.data.default_role_code == "WM"
+        audit.assert_not_awaited()
+
+
+def _count(n: int) -> MagicMock:
+    res = MagicMock()
+    res.fetchone = MagicMock(return_value=SimpleNamespace(n=n))
+    return res
+
+
+def _none() -> MagicMock:
+    res = MagicMock()
+    res.fetchone = MagicMock(return_value=None)
+    return res
+
+
+def _saved_roles(roles: dict[int, str]) -> MagicMock:
+    res = MagicMock()
+    res.fetchall = MagicMock(
+        return_value=[
+            SimpleNamespace(level_number=n, default_role_code=r) for n, r in roles.items()
+        ]
+    )
+    return res
+
+
+def _rows_for_levels(roles: dict[int, str]) -> MagicMock:
+    res = MagicMock()
+    res.fetchall = MagicMock(
+        return_value=[
+            _row(
+                id=uuid4(),
+                tenant_id=UUID(TENANT_ID),
+                level_number=n,
+                level_name=f"Level {n}",
+                default_role_code=r,
+                role_display_label=None,
+                is_stock_holding=True,
+                is_active=True,
+            )
+            for n, r in roles.items()
+        ]
+    )
+    return res
+
+
+@pytest.mark.unit
+class TestSaOverridesLockedRole:
+    async def test_sa_may_change_locked_role_and_it_is_audited(self) -> None:
+        from routers.hierarchy import HierarchyLevelRoleIn, set_hierarchy_level_role
+
+        db = _role_db(
+            {
+                "SELECT id, level_number, default_role_code": _result(
+                    id=UUID(LEVEL_ID), level_number=3, default_role_code="WM"
+                ),
+                "AS n FROM organization_node": _count(5),
+                "SELECT id, tenant_id, level_number": _result(
+                    id=UUID(LEVEL_ID),
+                    tenant_id=UUID(TENANT_ID),
+                    level_number=3,
+                    level_name="Warehouse",
+                    default_role_code="LM",
+                    role_display_label=None,
+                    is_stock_holding=True,
+                    is_active=True,
+                ),
+            }
+        )
+        with _GRANT_ALL, patch("routers.hierarchy.audit_log", new=AsyncMock()) as audit:
+            result = await set_hierarchy_level_role(
+                tenant_id=UUID(TENANT_ID),
+                level_id=UUID(LEVEL_ID),
+                body=HierarchyLevelRoleIn(default_role_code="LM"),
+                user=_Caller(role="SA"),
+                db=db,
+            )
+        assert result.data.default_role_code == "LM"
+        audit.assert_awaited_once()
+        assert audit.await_args.args[2]["override"] is True
+        assert audit.await_args.args[2]["active_node_count"] == 5
+
+    async def test_ta_still_locked_out(self) -> None:
+        from routers.hierarchy import HierarchyLevelRoleIn, set_hierarchy_level_role
+
+        db = _role_db(
+            {
+                "SELECT id, level_number, default_role_code": _result(
+                    id=UUID(LEVEL_ID), level_number=3, default_role_code="WM"
+                ),
+                "AS n FROM organization_node": _count(5),
+            }
+        )
+        with _GRANT_ALL, pytest.raises(HTTPException) as exc:
+            await set_hierarchy_level_role(
+                tenant_id=UUID(TENANT_ID),
+                level_id=UUID(LEVEL_ID),
+                body=HierarchyLevelRoleIn(default_role_code="LM"),
+                user=_Caller(role="TA"),
+                db=db,
+            )
+        assert exc.value.detail["code"] == "LEVEL_ROLE_LOCKED"
+
+    async def test_sa_whole_list_save_overrides_and_audits(self) -> None:
+        from routers.hierarchy import HierarchyLevelIn, upsert_hierarchy_config
+
+        db = _role_db(
+            {
+                "SELECT level_number, default_role_code FROM tenant_hierarchy_config": _saved_roles(
+                    {2: "RM"}
+                ),
+                "AS n FROM organization_node": _count(3),
+                "SELECT id, tenant_id, level_number": _rows_for_levels({2: "LM"}),
+            }
+        )
+        with _GRANT_ALL, patch("routers.hierarchy.audit_log", new=AsyncMock()) as audit:
+            await upsert_hierarchy_config(
+                tenant_id=UUID(TENANT_ID),
+                body=[
+                    HierarchyLevelIn(level_number=1, level_name="Top", default_role_code="NM"),
+                    HierarchyLevelIn(level_number=2, level_name="Region", default_role_code="LM"),
+                ],
+                user=_Caller(role="SA"),
+                db=db,
+            )
+        audit.assert_awaited_once()
+        assert audit.await_args.args[2]["override"] is True
