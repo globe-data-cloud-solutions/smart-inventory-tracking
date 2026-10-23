@@ -362,7 +362,9 @@ def _set_tenant_context(conn, tid: str) -> None:
     conn.execute(
         text(
             "SELECT set_config('app.current_tenant_id', :tid, true),"
-            "       set_config('app.current_user_id',   :tid, true)"
+            "       set_config('app.current_user_id',   :tid, true),"
+            # Purge deletes balance rows on purpose; migration 098 guards UPDATE/DELETE.
+            "       set_config('app.balance_writer',    'on', true)"
         ),
         {"tid": tid},
     )
