@@ -1,10 +1,14 @@
-"""Sync Service — offline queue drain and conflict resolution."""
+"""Sync Service — retired (RB-10).
+
+The offline queue drain moved to inventory-service (POST /api/v1/inventory/sync/batch),
+where it posts through the same service methods as the online screens. This service
+no longer serves any route. Kept only until the AWS deployment is retired by Alex.
+"""
 
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 
-from routers import sync
 from shared.utils.env_guard import assert_safe_environment
 
 
@@ -15,7 +19,6 @@ async def lifespan(app: FastAPI):  # type: ignore[type-arg]
 
 
 app = FastAPI(title="SMART Sync Service", version="1.0.0", lifespan=lifespan)
-app.include_router(sync.router, prefix="/api/v1/sync", tags=["sync"])
 
 
 @app.get("/health")

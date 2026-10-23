@@ -11,6 +11,7 @@ import { usePermission } from "@/hooks/usePermission";
 import { AddProductPanel } from "@/components/features/inventory/AddProductPanel";
 import { ReceiveStockPanel } from "@/components/features/inventory/ReceiveStockPanel";
 import { IssueStockPanel } from "@/components/features/inventory/IssueStockPanel";
+import { OfflineQueuePanel } from "@/components/features/inventory/OfflineQueuePanel";
 import { OpeningBalancePanel } from "@/components/features/inventory/OpeningBalancePanel";
 import { BulkImportPanel } from "@/components/features/inventory/BulkImportPanel";
 import { useInventoryStore } from "@/lib/inventory-state";
@@ -665,6 +666,7 @@ export default function InventoryPage() {
           </p>
         </div>
         <div className="flex gap-2 flex-wrap">
+          <OfflineQueuePanel products={mergedProducts} />
           {isMWH && <OpeningBalancePanel products={mergedProducts.filter((p) => !p.is_discontinued)} warehouses={displayWarehouses} orgSlug={org} />}
           {isMWH && <BulkImportPanel     products={mergedProducts.filter((p) => !p.is_discontinued)} warehouses={displayWarehouses} orgSlug={org} />}
           {/* RB-5: the panel posts to user.warehouseId — a user without one cannot receive. */}

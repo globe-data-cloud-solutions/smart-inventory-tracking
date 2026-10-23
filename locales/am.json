@@ -1139,7 +1139,9 @@
     "VALIDATION": "አንዳንድ መስኮች ጎድለዋል ወይም ልክ አይደሉም። እባክዎ ቅጹን ያረጋግጡ።",
     "UNKNOWN": "የሆነ ስህተት ተፈጥሯል። እባክዎ እንደገና ይሞክሩ።",
     "NETWORK": "አገልጋዩን ማግኘት አልተቻለም። ግንኙነትዎን ያረጋግጡና እንደገና ይሞክሩ።",
-    "INVALID_FILTER": "That report filter is not valid. Choose a location at the selected level."
+    "INVALID_FILTER": "That report filter is not valid. Choose a location at the selected level.",
+    "SERVER_ERROR": "The server could not save this movement. It will be retried.",
+    "UNKNOWN_ACTION": "This type of movement cannot be synced."
   },
   "layout": {
     "sign_out": "ውጣ",
@@ -2992,5 +2994,19 @@
       "INVALID_EMAIL": "ትክክለኛ የኢሜይል አድራሻ ያስገቡ።",
       "FIELD_TOO_LONG": "ያ መስክ በጣም ረጅም ነው።"
     }
+  },
+  "offline_queue": {
+    "waiting": "{count} movement(s) waiting to sync",
+    "not_connected": "You are not connected. Items will sync when the connection returns.",
+    "syncing": "Syncing…",
+    "conflict_title": "Not saved — the server rejected these. Retry or discard them.",
+    "conflict_generic": "The server could not save this movement.",
+    "retry": "Retry",
+    "discard": "Discard",
+    "confirm_discard": "Confirm discard",
+    "discard_hint": "Discard removes the movement from this device only. Nothing is recorded on the server.",
+    "action_receive": "Receive",
+    "action_issue": "Issue",
+    "unknown_product": "Unknown product"
   }
 }

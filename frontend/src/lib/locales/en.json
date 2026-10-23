@@ -962,7 +962,7 @@
     "RBAC_DENIED": "You do not have permission to perform this action.",
     "ABAC_DENIED": "Access denied — resource outside your scope.",
     "INTERNAL_ERROR": "An unexpected error occurred. Please try again.",
-    "OFFLINE": "You are offline. This action has been queued.",
+    "OFFLINE": "You are offline. Connect to save this.",
     "DUPLICATE_TRANSACTION": "This transaction was already submitted.",
     "LOT_NUMBER_REQUIRED": "A lot number is required.",
     "LOT_EXPIRY_MISMATCH": "This lot number already exists with a different expiry date.",
@@ -1137,7 +1137,9 @@
     "VALIDATION": "Some fields are missing or invalid. Please check the form.",
     "UNKNOWN": "Something went wrong. Please try again.",
     "NETWORK": "Cannot reach the server. Check your connection and try again.",
-    "INVALID_FILTER": "That report filter is not valid. Choose a location at the selected level."
+    "INVALID_FILTER": "That report filter is not valid. Choose a location at the selected level.",
+    "SERVER_ERROR": "The server could not save this movement. It will be retried.",
+    "UNKNOWN_ACTION": "This type of movement cannot be synced."
   },
   "transfers": {
     "transfers_heading": "Transfers",
@@ -2978,5 +2980,19 @@
       "INVALID_EMAIL": "Enter a valid email address.",
       "FIELD_TOO_LONG": "That field is too long."
     }
+  },
+  "offline_queue": {
+    "waiting": "{count} movement(s) waiting to sync",
+    "not_connected": "You are not connected. Items will sync when the connection returns.",
+    "syncing": "Syncing…",
+    "conflict_title": "Not saved — the server rejected these. Retry or discard them.",
+    "conflict_generic": "The server could not save this movement.",
+    "retry": "Retry",
+    "discard": "Discard",
+    "confirm_discard": "Confirm discard",
+    "discard_hint": "Discard removes the movement from this device only. Nothing is recorded on the server.",
+    "action_receive": "Receive",
+    "action_issue": "Issue",
+    "unknown_product": "Unknown product"
   }
 }
