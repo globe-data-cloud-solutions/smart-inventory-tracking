@@ -87,6 +87,7 @@ function LevelRoleEditor({
   role,
   nodeCount,
   canEdit,
+  canOverride,
   disabled,
   pending,
   onSave,
@@ -94,6 +95,7 @@ function LevelRoleEditor({
   role: string;
   nodeCount: number;
   canEdit: boolean;
+  canOverride: boolean;
   disabled: boolean;
   pending: boolean;
   onSave: (role: string) => void;
@@ -102,8 +104,10 @@ function LevelRoleEditor({
   useEffect(() => setDraft(role), [role]);
 
   const locked = role !== "" && nodeCount > 0;
+  // A locked role can be changed by SA only; the change is recorded in the audit log.
+  const editable = canEdit && (!locked || canOverride);
 
-  if (!canEdit || locked) {
+  if (!editable) {
     if (role === "") {
       return (
         <div>
@@ -127,6 +131,7 @@ function LevelRoleEditor({
   }
 
   return (
+    <div>
     <div className="flex items-center gap-2">
       <select
         value={draft}
@@ -147,6 +152,12 @@ function LevelRoleEditor({
       >
         {pending ? t("common.saving") : t("org_setup.save_role")}
       </button>
+    </div>
+    {locked && (
+      <p className="text-xs text-gray-400 mt-1">
+        {t("org_setup.role_override_hint").replace("{count}", String(nodeCount))}
+      </p>
+    )}
     </div>
   );
 }
@@ -709,6 +720,7 @@ function LevelsTab({
                         role={lv.default_role_code}
                         nodeCount={lv.active_node_count ?? 0}
                         canEdit={canEditRole}
+                        canOverride={session?.role === "SA"}
                         disabled={gp.disabled}
                         pending={roleMutation.isPending}
                         onSave={(role) => roleMutation.mutate({ levelId: lv.id ?? "", role })}

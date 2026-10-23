@@ -1389,3 +1389,86 @@ def _rows_for_levels(roles: dict[int, str]) -> MagicMock:
         ]
     )
     return res
+
+
+@pytest.mark.unit
+class TestSaOverridesLockedRole:
+    async def test_sa_may_change_locked_role_and_it_is_audited(self) -> None:
+        from routers.hierarchy import HierarchyLevelRoleIn, set_hierarchy_level_role
+
+        db = _role_db(
+            {
+                "SELECT id, level_number, default_role_code": _result(
+                    id=UUID(LEVEL_ID), level_number=3, default_role_code="WM"
+                ),
+                "AS n FROM organization_node": _count(5),
+                "SELECT id, tenant_id, level_number": _result(
+                    id=UUID(LEVEL_ID),
+                    tenant_id=UUID(TENANT_ID),
+                    level_number=3,
+                    level_name="Warehouse",
+                    default_role_code="LM",
+                    role_display_label=None,
+                    is_stock_holding=True,
+                    is_active=True,
+                ),
+            }
+        )
+        with _GRANT_ALL, patch("routers.hierarchy.audit_log", new=AsyncMock()) as audit:
+            result = await set_hierarchy_level_role(
+                tenant_id=UUID(TENANT_ID),
+                level_id=UUID(LEVEL_ID),
+                body=HierarchyLevelRoleIn(default_role_code="LM"),
+                user=_Caller(role="SA"),
+                db=db,
+            )
+        assert result.data.default_role_code == "LM"
+        audit.assert_awaited_once()
+        assert audit.await_args.args[2]["override"] is True
+        assert audit.await_args.args[2]["active_node_count"] == 5
+
+    async def test_ta_still_locked_out(self) -> None:
+        from routers.hierarchy import HierarchyLevelRoleIn, set_hierarchy_level_role
+
+        db = _role_db(
+            {
+                "SELECT id, level_number, default_role_code": _result(
+                    id=UUID(LEVEL_ID), level_number=3, default_role_code="WM"
+                ),
+                "AS n FROM organization_node": _count(5),
+            }
+        )
+        with _GRANT_ALL, pytest.raises(HTTPException) as exc:
+            await set_hierarchy_level_role(
+                tenant_id=UUID(TENANT_ID),
+                level_id=UUID(LEVEL_ID),
+                body=HierarchyLevelRoleIn(default_role_code="LM"),
+                user=_Caller(role="TA"),
+                db=db,
+            )
+        assert exc.value.detail["code"] == "LEVEL_ROLE_LOCKED"
+
+    async def test_sa_whole_list_save_overrides_and_audits(self) -> None:
+        from routers.hierarchy import HierarchyLevelIn, upsert_hierarchy_config
+
+        db = _role_db(
+            {
+                "SELECT level_number, default_role_code FROM tenant_hierarchy_config": _saved_roles(
+                    {2: "RM"}
+                ),
+                "AS n FROM organization_node": _count(3),
+                "SELECT id, tenant_id, level_number": _rows_for_levels({2: "LM"}),
+            }
+        )
+        with _GRANT_ALL, patch("routers.hierarchy.audit_log", new=AsyncMock()) as audit:
+            await upsert_hierarchy_config(
+                tenant_id=UUID(TENANT_ID),
+                body=[
+                    HierarchyLevelIn(level_number=1, level_name="Top", default_role_code="NM"),
+                    HierarchyLevelIn(level_number=2, level_name="Region", default_role_code="LM"),
+                ],
+                user=_Caller(role="SA"),
+                db=db,
+            )
+        audit.assert_awaited_once()
+        assert audit.await_args.args[2]["override"] is True

@@ -518,12 +518,17 @@ async def upsert_hierarchy_config(
         )
     ).fetchall()
     saved_role_by_level = {r.level_number: r.default_role_code for r in saved_role_rows}
+    role_overrides: list[tuple[int, str | None, str, int]] = []
     for level in body:
         previous_role = saved_role_by_level.get(level.level_number)
         if previous_role and previous_role != level.default_role_code:
             node_count = await _active_node_count(db, tenant_id, level.level_number)
             if node_count:
-                raise _role_locked_http_exception(level.level_number, node_count)
+                if getattr(user, "role", "") != "SA":
+                    raise _role_locked_http_exception(level.level_number, node_count)
+                role_overrides.append(
+                    (level.level_number, previous_role, level.default_role_code, node_count)
+                )
 
     try:
         for level in body:
@@ -556,6 +561,23 @@ async def upsert_hierarchy_config(
         if _is_duplicate_level_name_violation(exc):
             raise _duplicate_level_name_http_exception() from exc
         raise
+
+    for level_number, from_role, to_role, node_count in role_overrides:
+        await audit_log(
+            user,
+            "hierarchy:level_role_changed",
+            {
+                "resource_type": "hierarchy_level",
+                "level_number": level_number,
+                "from_role": from_role,
+                "to_role": to_role,
+                "override": True,
+                "active_node_count": node_count,
+            },
+            "SUCCESS",
+            f"SA override of locked role ({node_count} nodes): {from_role} -> {to_role}",
+            db=db,
+        )
 
     # Deactivate any levels in the DB that are NOT in the submitted body.
     # This makes PUT a full replace, not an additive upsert.
@@ -637,7 +659,8 @@ async def set_hierarchy_level_role(
 
     node_count = await _active_node_count(db, tenant_id, current.level_number)
     if current.default_role_code != body.default_role_code:
-        if current.default_role_code and node_count:
+        overridden = bool(current.default_role_code and node_count)
+        if overridden and getattr(user, "role", "") != "SA":
             raise _role_locked_http_exception(current.level_number, node_count)
 
         await db.execute(
@@ -656,9 +679,16 @@ async def set_hierarchy_level_role(
                 "level_number": current.level_number,
                 "from_role": current.default_role_code,
                 "to_role": body.default_role_code,
+                "override": overridden,
+                "active_node_count": node_count,
             },
             "SUCCESS",
-            f"role {current.default_role_code or 'unset'} -> {body.default_role_code}",
+            (
+                f"SA override of locked role ({node_count} nodes): "
+                f"{current.default_role_code} -> {body.default_role_code}"
+                if overridden
+                else f"role {current.default_role_code or 'unset'} -> {body.default_role_code}"
+            ),
             db=db,
         )
 

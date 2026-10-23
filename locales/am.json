@@ -1480,6 +1480,7 @@
     "role_locked_hint": "{count} locations use this level, so its role is locked.",
     "role_required_hint": "No role set. A Tenant Admin must set one before this level can be used.",
     "role_required_all": "Choose a role for every level before saving.",
+    "role_override_hint": "{count} locations use this level. As SA you can change its role; the change is recorded in the audit log.",
     "save_role": "Save role",
     "deactivate_node": "አቦዝን",
     "reactivate_node": "ዳግም አንቃ",
