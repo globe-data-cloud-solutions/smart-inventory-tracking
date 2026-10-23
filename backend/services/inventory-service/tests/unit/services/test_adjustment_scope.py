@@ -74,3 +74,25 @@ async def test_named_override_approver_may_act_outside_region():
 async def test_other_named_approver_does_not_bypass_scope():
     svc = _svc({WH_IN})
     assert await svc._adjustment_in_scope(_user(), _row(WH_OUT, approver=OTHER)) is False
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_discrepancy_list_adds_named_approver_clause_for_facility_role():
+    """RB-2: a facility-scoped reviewer's discrepancy query also matches transfers
+    whose approval steps name them, not just transfers in the subtree."""
+    from unittest.mock import MagicMock, patch
+
+    from services import transfer_discrepancies as td
+
+    db = AsyncMock()
+    db.execute = AsyncMock(return_value=MagicMock(fetchall=MagicMock(return_value=[])))
+    user = SimpleNamespace(role="RM", user_id=ME, tenant_id="t-1", warehouse_id=WH_IN)
+
+    with patch.object(td, "_subtree", AsyncMock(return_value={WH_IN.lower()})):
+        await td.list_discrepancies(db, user)
+
+    sql_arg, params = db.execute.call_args.args[0], db.execute.call_args.args[1]
+    assert "resolved_approval_steps" in str(sql_arg)
+    assert params["uid"] == ME.lower()
+    assert params["step_nodes"] == [WH_IN.lower()]

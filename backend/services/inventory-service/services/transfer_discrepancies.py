@@ -513,6 +513,28 @@ async def resolve_discrepancy(
 # ── list ─────────────────────────────────────────────────────────────────────
 
 
+# Approver visibility for subtree-scoped callers (RB-2). Same rule as
+# inventory_service._APPROVER_SCOPE_SQL, written against the alias `t`.
+# Change the two together.
+_APPROVER_NAMED_SQL = """EXISTS (
+            SELECT 1
+            FROM jsonb_array_elements(
+                CASE WHEN jsonb_typeof(t.resolved_approval_steps) = 'array'
+                     THEN t.resolved_approval_steps ELSE '[]'::jsonb END
+            ) AS step
+            WHERE lower(step->>'node_id') = ANY(:step_nodes)
+               OR lower(step->>'assigned_to_user_id') = :uid
+               OR EXISTS (
+                   SELECT 1
+                   FROM jsonb_array_elements(
+                       CASE WHEN jsonb_typeof(step->'all_holders') = 'array'
+                            THEN step->'all_holders' ELSE '[]'::jsonb END
+                   ) AS holder
+                   WHERE lower(holder->>'user_id') = :uid
+               )
+          )"""
+
+
 async def list_discrepancies(
     db: AsyncSession,
     user: Any,
@@ -523,7 +545,8 @@ async def list_discrepancies(
 
     Scope is the caller's node subtree (get_descendant_node_ids), matched
     against either end of the transfer:
-      WM / LM / SA_GT / RT / RM  their subtree; no node -> no rows
+      WM / LM / SA_GT / RT / RM  their subtree, plus any transfer whose
+                                 approval steps name the caller; no node -> no rows
       TA / NM / SA / AU          the whole tenant
 
     warehouse_id narrows to rows where either end equals it. For a
@@ -545,8 +568,15 @@ async def list_discrepancies(
         subtree = await _subtree(db, tenant_id, node_id)
         if warehouse_id is not None and not _inside(subtree, [warehouse_id]):
             raise HTTPException(status_code=403, detail={"code": "WAREHOUSE_OUT_OF_SCOPE"})
-        filters += " AND (t.from_warehouse_id = ANY(:subtree) OR t.to_warehouse_id = ANY(:subtree))"
+        # RB-2: a subtree-scoped caller also sees a discrepancy whose transfer
+        # names them on an approval step (same rule as InventoryService.list_transfers).
+        filters += (
+            " AND (t.from_warehouse_id = ANY(:subtree) OR t.to_warehouse_id = ANY(:subtree)"
+            f" OR {_APPROVER_NAMED_SQL})"
+        )
         params["subtree"] = sorted(subtree)
+        params["step_nodes"] = sorted(subtree)
+        params["uid"] = str(user.user_id).lower()
     if warehouse_id is not None:
         filters += " AND (t.from_warehouse_id = :wh OR t.to_warehouse_id = :wh)"
         params["wh"] = str(warehouse_id).lower()
