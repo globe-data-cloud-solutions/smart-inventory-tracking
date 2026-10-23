@@ -396,6 +396,48 @@ async def list_approval_rules(
     return SuccessResponse(data=result)
 
 
+async def check_approver_positions(
+    db: AsyncSession, tenant_id: uuid.UUID, rules: List[ApprovalRuleIn]
+) -> None:
+    """E2E finding F3: every approver step must name a position whose role holds
+    transfer:approve. A step on a role without it (e.g. LM) can never be signed off,
+    so it is rejected at save time, before any existing rule is deleted."""
+    for rule in rules:
+        for step in rule.approval_steps:
+            if not step.position_id:
+                continue
+            pos = (
+                await db.execute(
+                    text(
+                        "SELECT p.role_code FROM positions p "
+                        "WHERE p.id = :pid AND p.tenant_id = :tid AND p.is_active = true"
+                    ),
+                    {"pid": step.position_id, "tid": str(tenant_id)},
+                )
+            ).fetchone()
+            role_code = pos[0] if pos else None
+            granted = None
+            if role_code is not None:
+                granted = (
+                    await db.execute(
+                        text(
+                            "SELECT 1 FROM role_permissions "
+                            "WHERE role_code = :role AND action_id = :action AND is_active = true"
+                        ),
+                        {"role": role_code, "action": PERMISSIONS.TRANSFER_APPROVE.id},
+                    )
+                ).fetchone()
+            if granted is None:
+                raise HTTPException(
+                    status_code=422,
+                    detail={
+                        "code": "APPROVER_ROLE_CANNOT_APPROVE",
+                        "position_id": step.position_id,
+                        "role_code": role_code,
+                    },
+                )
+
+
 @router.put(
     "/{tenant_id}/transfer-approval-rules", response_model=SuccessResponse[List[ApprovalRuleOut]]
 )
@@ -413,6 +455,7 @@ async def upsert_approval_rules(
                 status_code=422,
                 detail=f"threshold_type must be one of {sorted(THRESHOLD_TYPES)}",
             )
+    await check_approver_positions(db, tenant_id, body)
 
     # Delete all existing rules and re-insert
     await db.execute(

@@ -352,6 +352,32 @@ async def reactivate_product(
 # ── POST / ───────────────────────────────────────────────────────────────────
 
 
+async def _validate_source_factory(
+    db: AsyncSession, tid: str, factory_id: Optional[uuid.UUID]
+) -> None:
+    """E2E finding F5: a factory binding must name an active node of this tenant.
+
+    Without this check the product create endpoint silently dropped the field, and
+    a bad id would fail later on the foreign key with a raw database error.
+    """
+    if factory_id is None:
+        return
+    row = (
+        await db.execute(
+            text(
+                "SELECT 1 FROM organization_node "
+                "WHERE id = :nid AND tenant_id = :tid AND is_active = true"
+            ),
+            {"nid": str(factory_id), "tid": tid},
+        )
+    ).fetchone()
+    if row is None:
+        raise HTTPException(
+            status_code=422,
+            detail={"code": "SOURCE_FACTORY_NOT_FOUND", "source_factory_id": str(factory_id)},
+        )
+
+
 @router.post("/", status_code=201, response_model=SuccessResponse[ProductResponse])
 @require_permission(PERMISSIONS.PRODUCT_CREATE)
 async def create_product(
@@ -580,6 +606,7 @@ async def create_product(
     # 10. INSERT product.
     product_id = str(uuid.uuid4())
     now = datetime.now(timezone.utc)
+    await _validate_source_factory(db, tid, body.source_factory_id)
 
     await db.execute(
         text(
@@ -587,18 +614,19 @@ async def create_product(
             "  (id, tenant_id, sku, name, short_name, description, "
             "   unit_of_measure, unit, pack_size, "
             "   category_id, brand_id, type_code_id, packaging_type_id, "
-            "   reorder_point, unit_price, currency, is_active, created_by) "
+            "   reorder_point, unit_price, currency, is_active, created_by, source_factory_id) "
             "VALUES "
             "  (:id, :tid, :sku, :name, :short_name, :description, "
             "   :uom, :unit, :pack_size, "
             "   :cat_id, :brand_id, :tc_id, :pt_id, "
-            "   :reorder_point, :unit_price, :currency, true, :uid)"
+            "   :reorder_point, :unit_price, :currency, true, :uid, :factory_id)"
         ),
         {
             "id": product_id,
             "tid": tid,
             "sku": sku,
             "name": body.name,
+            "factory_id": str(body.source_factory_id) if body.source_factory_id else None,
             "short_name": body.short_name,
             "description": body.description,
             "uom": uom_name,
@@ -681,6 +709,7 @@ async def create_product(
             batch_tracking=False,
             expiry_tracking=False,
             dispatch_strategy=None,
+            source_factory_id=body.source_factory_id,
             tenant_id=uuid.UUID(tid),
             created_at=now,
             created_by=uuid.UUID(uid) if uid else None,
@@ -719,6 +748,7 @@ async def update_product(
                 "p.image_url, "
                 "p.batch_tracking, p.expiry_tracking, p.dispatch_strategy, "
                 "p.category_id, p.brand_id, p.type_code_id, p.packaging_type_id, "
+                "p.source_factory_id, "
                 "p.tenant_id, p.created_at, p.created_by, "
                 "pc.name AS category, pb.name AS brand, ptc.code AS type_code, "
                 "ppt.name AS packaging_type, ppt.units_per_package "
@@ -917,6 +947,14 @@ async def update_product(
         set_clauses.append("packaging_type_id = :packaging_type_id")
         params["packaging_type_id"] = packaging_type_id
 
+    # Factory binding (E2E finding F5). Omitted means unchanged, like every other field.
+    factory_id = row.source_factory_id
+    if body.source_factory_id is not None:
+        await _validate_source_factory(db, tid, body.source_factory_id)
+        set_clauses.append("source_factory_id = :source_factory_id")
+        params["source_factory_id"] = str(body.source_factory_id)
+        factory_id = body.source_factory_id
+
     await db.execute(
         text(f"UPDATE products SET {', '.join(set_clauses)} WHERE id = :pid AND tenant_id = :tid"),
         params,
@@ -982,6 +1020,7 @@ async def update_product(
             batch_tracking=bool(row.batch_tracking),
             expiry_tracking=bool(row.expiry_tracking),
             dispatch_strategy=row.dispatch_strategy,
+            source_factory_id=factory_id,
             tenant_id=uuid.UUID(tid),
             created_at=row.created_at,
             created_by=row.created_by,

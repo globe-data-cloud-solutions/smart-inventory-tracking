@@ -55,6 +55,24 @@ Final state per tenant: 5 transfers RECEIVED, 3 posted adjustments, 3 adjustment
    - SISTER transfers skip review and go through source and destination confirmation.
    - `review` requires `transfer:approve`, so only TA, NM and RM can review.
 
+## Retest and fix status
+
+Each finding was re-run against the live services before any change was made. The fix PR
+(`fix/e2e-findings-f1-f7`) addresses the ones that reproduced.
+
+| # | Retest result | Status |
+|---|---|---|
+| 1 | Receive overflow returned raw SQL and INSERT text | Fixed: generic 500 message, detail logged server-side (inventory and tenant services) |
+| 2 | Fresh database rejected receipts until partitions were created by hand | Fixed: migration 099 creates the current and next two months. Verified by running all migrations on an empty database |
+| 3 | Approval rule saved a Logistics Manager step | Fixed: save rejects approver positions whose role lacks `transfer:approve` (`APPROVER_ROLE_CANNOT_APPROVE`), before existing rules are replaced |
+| 4 | Approval info named the wrong approver | Not reproduced on the current data (this PULL routes to Regional Manager and reports it correctly). Needs an open PULL in PENDING_APPROVAL to re-check; not changed |
+| 5 | Factory-specific products could not be set | Fixed on the API: create and PATCH accept `source_factory_id`, which must name an active node of the same tenant. The product form has no factory field yet, so this is API-only |
+| 6 | Receive with `{}` returned 422 | Fixed: `{}` is a full receipt, as the router documents |
+| 7 | Negative lot adjustment with `lot_number` returned a bare `LOT_REQUIRED` | Fixed: the error is now `LOT_ID_REQUIRED` and echoes the lot number. The rule itself is unchanged: a reduction needs an existing `lot_id` |
+| 8 | Login rate limit blocks scripted runs | Note only: local runs set `RATE_LIMIT_LOGIN` |
+
+Findings 1, 3, 5, 6 and 7 were reproduced live before the fix and rechecked live after it. Finding 2 was confirmed in code (no migration called the partition function) and verified by running every migration on an empty database after the fix.
+
 ## Not covered yet: outlines for future runs
 
 - **Personnel lifecycle:** deactivate and reactivate users; ACTING and DELEGATE assignments with expiry; one PRIMARY per user; deactivating the only holder of a position.

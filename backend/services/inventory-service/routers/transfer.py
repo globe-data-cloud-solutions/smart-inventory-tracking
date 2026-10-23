@@ -229,6 +229,9 @@ async def receive_transfer(
     ends in RECEIVED either way.
     """
     svc = InventoryService(db)
+    # `{}` (no lines) is a full receipt, the same as no body (E2E finding F6).
+    if body is not None and body.lines is None:
+        body = None
     await svc.receive_transfer(user, transfer_id, body)
     return SuccessResponse(data=await svc.read_transfer_after_write(user, transfer_id))
 

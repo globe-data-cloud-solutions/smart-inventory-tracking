@@ -1,3 +1,4 @@
+import logging
 import os
 from contextlib import asynccontextmanager
 
@@ -23,6 +24,8 @@ from routers import (
     transfer_requests,
 )
 from shared.utils.env_guard import assert_safe_environment
+
+logger = logging.getLogger(__name__)
 
 
 @asynccontextmanager
@@ -66,10 +69,12 @@ app.include_router(dispatch.router, prefix="/api/v1/inventory/dispatch", tags=["
 
 @app.exception_handler(Exception)
 async def global_exception_handler(request: Request, exc: Exception) -> JSONResponse:
+    # The raw exception (SQL text, driver messages) stays in the server log only.
+    logger.exception("unhandled error on %s %s", request.method, request.url.path, exc_info=exc)
     return JSONResponse(
         status_code=500,
         content=ErrorResponse(
-            error=ErrorDetail(code="INTERNAL_ERROR", message=str(exc))
+            error=ErrorDetail(code="INTERNAL_ERROR", message="An unexpected error occurred.")
         ).model_dump(),
     )
 

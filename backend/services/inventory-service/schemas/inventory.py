@@ -228,7 +228,10 @@ class ReceiptLineIn(BaseModel):
 
 
 class ReceiveTransferRequest(BaseModel):
-    lines: List[ReceiptLineIn] = Field(min_length=1)
+    """Optional receipt confirmation. `lines` omitted (or an empty body `{}`) means
+    full receipt, the same as sending no body at all (E2E finding F6)."""
+
+    lines: Optional[List[ReceiptLineIn]] = Field(default=None, min_length=1)
 
 
 class TransferDiscrepancyOut(BaseModel):

@@ -209,6 +209,7 @@ def _make_product_row(**overrides: object) -> MagicMock:
         batch_tracking=False,
         expiry_tracking=False,
         dispatch_strategy=None,
+        source_factory_id=None,  # F5: the PATCH SELECT now returns this column
     )
     defaults.update(overrides)
     row = MagicMock()

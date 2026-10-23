@@ -791,6 +791,14 @@ class TestAdjustmentLotBatchNegative:
         assert err.status_code == 422
         assert err.detail["code"] == "LOT_REQUIRED"
 
+    async def test_negative_with_lot_number_only_names_the_missing_lot_id(self) -> None:
+        """E2E finding F7: a lot number cannot reduce stock. The error must say that
+        a lot id is needed, not just that a lot is required."""
+        db = _lot_db(product=_product())
+        err = await _create_error(db, lot_number="LOT-A1")
+        assert err.status_code == 422
+        assert err.detail == {"code": "LOT_ID_REQUIRED", "lot_number": "LOT-A1"}
+
     @pytest.mark.parametrize(
         "extra",
         [{"lot_number": "LOT-NEW"}, {"auto_lot": True}, {"expiry_date": _FUTURE}],
