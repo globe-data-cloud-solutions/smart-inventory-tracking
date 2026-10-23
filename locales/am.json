@@ -1123,6 +1123,7 @@
     "TERMS_VERSION_MISMATCH": "የአገልግሎት ውሎች ተሻሽለዋል። እባክዎ የቅርብ ጊዜውን ያረጋግጡና ይቀበሉ።",
     "TOO_MANY_ATTEMPTS": "በጣም ብዙ ያልተሳኩ የመግቢያ ሙከራዎች። እባክዎ ከመሞከርዎ በፊት 15 ደቂቃ ይጠብቁ ወይም መለያዎን ዳግም ለማስጀመር አስተዳዳሪዎን ያግኙ።",
     "TRANSFER_OUT_OF_SCOPE": "ለዚህ ዝውውር መዳረሻ የለዎትም።",
+    "ADJUSTMENT_OUT_OF_SCOPE": "You can only act on adjustments in your own area.",
     "LEVEL_ROLE_REQUIRED": "Every level needs a role before the levels can be saved.",
     "LEVEL_ROLE_LOCKED": "This level's role cannot change while locations exist at it.",
     "LEVEL_ROLE_INVALID": "That role cannot be used for an organisation level.",

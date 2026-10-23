@@ -277,20 +277,24 @@ class TestListTransfersScopedByRole:
 
 @pytest.mark.unit
 class TestListAdjustmentsScopedByRole:
-    async def test_wm_list_includes_warehouse_filter_in_params(self) -> None:
-        """list_adjustments() for WM must pass warehouse_id into SQL params."""
+    async def test_wm_list_is_limited_to_node_subtree(self) -> None:
+        """RB-2: list_adjustments() for WM passes its node subtree (same scope as
+        transfers), not a single warehouse id."""
         session = AsyncMock()
         session.execute = AsyncMock(
             return_value=MagicMock(fetchall=MagicMock(return_value=[_make_adj_row()]))
         )
 
         svc = InventoryService(session)
-        await svc.list_adjustments(WM_USER)
+        with patch.object(
+            InventoryService, "_transfer_scope", AsyncMock(return_value={WAREHOUSE_A.lower()})
+        ):
+            await svc.list_adjustments(WM_USER)
 
-        list_call = session.execute.call_args_list[0]
+        list_call = session.execute.call_args_list[-1]
         params = list_call.args[1] if len(list_call.args) > 1 else {}
-        assert "wid" in params, "WM list_adjustments must include 'wid' in SQL params"
-        assert params["wid"] == WAREHOUSE_A
+        assert params["subtree"] == [WAREHOUSE_A.lower()]
+        assert "wid" not in params
 
     async def test_nm_list_does_not_filter_by_warehouse(self) -> None:
         """NM list_adjustments must NOT include warehouse_id filter."""

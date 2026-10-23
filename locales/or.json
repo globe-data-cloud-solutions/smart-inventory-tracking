@@ -1113,6 +1113,7 @@
     "TERMS_VERSION_MISMATCH": "Haalawwan tajaajilaa haaromfameera. Maaloo kan dhiyoo ilaalaatii fudhadhaa.",
     "TOO_MANY_ATTEMPTS": "Yaalii seensaa kufaa baay'ee taʼe. Maaloo irra deebitee utuu hin yaalin daqiiqaa 15 eegi, yookaan ginbii kee haaromsuuf bulchaa kee quunnami.",
     "TRANSFER_OUT_OF_SCOPE": "Dabarsaa kanaaf mirga hin qabdan.",
+    "ADJUSTMENT_OUT_OF_SCOPE": "You can only act on adjustments in your own area.",
     "LEVEL_ROLE_REQUIRED": "Every level needs a role before the levels can be saved.",
     "LEVEL_ROLE_LOCKED": "This level's role cannot change while locations exist at it.",
     "LEVEL_ROLE_INVALID": "That role cannot be used for an organisation level.",
