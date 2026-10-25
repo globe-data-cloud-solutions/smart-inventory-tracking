@@ -234,6 +234,36 @@ async def upsert_transfer_types(
     if len(underlying_types_in_payload) != len(set(underlying_types_in_payload)):
         raise _duplicate_transfer_type_code_http_exception()
 
+    # Deny-by-default levels: every current level must carry a permission row
+    # for each transfer type saved. A missing row would otherwise let a level
+    # initiate/receive silently, so the save is refused before any write.
+    level_rows = (
+        await db.execute(
+            text(
+                "SELECT level_number FROM tenant_hierarchy_config "
+                "WHERE tenant_id = :tid AND is_active = true"
+            ),
+            {"tid": str(tenant_id)},
+        )
+    ).fetchall()
+    current_levels = {int(r.level_number) for r in level_rows}
+    for item in body:
+        sent_levels = {lp.level_number for lp in item.level_permissions}
+        missing = sorted(current_levels - sent_levels)
+        if missing:
+            raise HTTPException(
+                status_code=422,
+                detail={
+                    "code": "LEVEL_PERMISSION_MISSING",
+                    "transfer_type": item.underlying_type,
+                    "missing_levels": missing,
+                    "message": (
+                        f"Set can_initiate and can_receive for every level before saving "
+                        f"{item.underlying_type}. Missing: {missing}."
+                    ),
+                },
+            )
+
     result_ids: List[uuid.UUID] = []
     for item in body:
         existing = (

@@ -954,6 +954,8 @@
     "RBAC_DENIED": "Hojii kana raawwachuuf hayyamni hin jiru.",
     "ABAC_DENIED": "Heeyyama dhorkaame — qabeenya daangaa keessan alatti.",
     "INTERNAL_ERROR": "Dogoggorri hin eegamne uumame. Maaloo irra deebi'ii yaali.",
+    "LEVEL_NOT_CONFIGURED": "Level {level_number} has no permissions set for {transfer_type}. Ask your Tenant Admin to configure it.",
+    "LEVEL_PERMISSION_MISSING": "Set permissions for every level before saving {transfer_type}.",
     "OFFLINE": "Sarara alatti jirta. Hojiin kun iddoo eeggaatti galcha.",
     "DUPLICATE_TRANSACTION": "Walitti dhufeenyi kun duraan galfameera.",
     "LOT_NUMBER_REQUIRED": "Lakkoofsi koora barbaachisaadha.",

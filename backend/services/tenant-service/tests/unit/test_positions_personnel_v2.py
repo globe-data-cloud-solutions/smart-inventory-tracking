@@ -1477,3 +1477,101 @@ class TestTransferTypeConfig:
         assert steps[0]["sequence"] == 1
         assert steps[0]["position_title"] == "Regional Manager"
         assert steps[0]["sla_hours"] == 24
+
+
+# ── Test 5: level permissions are deny-by-default on save ─────────
+
+
+@pytest.mark.unit
+class TestLevelPermissionSaveRequiresEveryLevel:
+    async def test_save_missing_a_current_level_is_refused_before_any_write(self) -> None:
+        """LEVEL_PERMISSION_MISSING: a transfer-type save that omits an active
+        level is refused before any DELETE/INSERT, so the gap cannot be created."""
+        from fastapi import HTTPException
+        from routers.transfer_types import (
+            upsert_transfer_types,
+            TransferTypeConfigIn,
+            LevelPermissionIn,
+        )
+
+        executed: list[str] = []
+
+        async def _capture(stmt, params=None, **kw) -> MagicMock:
+            executed.append(str(stmt))
+            res = MagicMock()
+            res.fetchall = MagicMock(return_value=[MagicMock(level_number=n) for n in (1, 2, 3)])
+            res.fetchone = MagicMock(return_value=None)
+            return res
+
+        db = AsyncMock()
+        db.execute = AsyncMock(side_effect=_capture)
+        db.commit = AsyncMock()
+
+        with _GRANT_ALL, pytest.raises(HTTPException) as exc_info:
+            await upsert_transfer_types(
+                tenant_id=UUID(TENANT_ID),
+                body=[
+                    TransferTypeConfigIn(
+                        underlying_type="PULL",
+                        display_name="Pull Request",
+                        level_permissions=[
+                            LevelPermissionIn(level_number=1, can_initiate=True, can_receive=True),
+                            LevelPermissionIn(level_number=2, can_initiate=True, can_receive=True),
+                        ],
+                    )
+                ],
+                user=_Caller(),
+                db=db,
+            )
+
+        assert exc_info.value.status_code == 422
+        assert exc_info.value.detail["code"] == "LEVEL_PERMISSION_MISSING"
+        assert exc_info.value.detail["missing_levels"] == [3]
+        assert not any("INSERT" in s or "DELETE" in s for s in executed), (
+            "validation must run before any write"
+        )
+
+    async def test_save_with_every_current_level_passes_validation(self) -> None:
+        """A complete payload gets past the check and reaches the level-permission DELETE."""
+        import contextlib
+
+        from routers.transfer_types import (
+            upsert_transfer_types,
+            TransferTypeConfigIn,
+            LevelPermissionIn,
+        )
+
+        executed: list[str] = []
+
+        async def _capture(stmt, params=None, **kw) -> MagicMock:
+            executed.append(str(stmt))
+            res = MagicMock()
+            res.fetchall = MagicMock(return_value=[MagicMock(level_number=n) for n in (1, 2)])
+            res.fetchone = MagicMock(return_value=None)
+            return res
+
+        db = AsyncMock()
+        db.execute = AsyncMock(side_effect=_capture)
+        db.commit = AsyncMock()
+
+        with _GRANT_ALL, contextlib.suppress(Exception):
+            await upsert_transfer_types(
+                tenant_id=UUID(TENANT_ID),
+                body=[
+                    TransferTypeConfigIn(
+                        underlying_type="PULL",
+                        display_name="Pull Request",
+                        level_permissions=[
+                            LevelPermissionIn(level_number=1, can_initiate=True, can_receive=True),
+                            LevelPermissionIn(level_number=2, can_initiate=True, can_receive=True),
+                        ],
+                    )
+                ],
+                user=_Caller(),
+                db=db,
+            )
+            # the minimal mock may fail later in the save; validation has passed
+
+        assert any("DELETE FROM transfer_type_level_permissions" in s for s in executed), (
+            "a complete payload must get past validation"
+        )
