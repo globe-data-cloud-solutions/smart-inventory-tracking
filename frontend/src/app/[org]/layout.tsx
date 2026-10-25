@@ -279,7 +279,7 @@ function Sidebar({ user, org, tenantName, plan, onClose, isOpen }: {
   const renewalsOpenCount = openRenewalRequests?.length ?? 0;
 
   return (
-    <aside className={`fixed top-[60px] left-0 bottom-0 w-60 bg-[#0f2d1f] flex flex-col z-40 border-r border-white/[0.06] overflow-hidden transition-transform duration-200 ${
+    <aside className={`print:hidden fixed top-[60px] left-0 bottom-0 w-60 bg-[#0f2d1f] flex flex-col z-40 border-r border-white/[0.06] overflow-hidden transition-transform duration-200 ${
       isOpen ? "translate-x-0" : "-translate-x-full md:translate-x-0"
     }`}>
       {/* User identity */}
@@ -645,7 +645,7 @@ export default function OrgLayout({ children }: { children: React.ReactNode }) {
       {org !== SA_ORG_SLUG && <PlanResolver onPlan={setPlan} />}
       <div className="min-h-screen bg-gray-100">
         {/* ── Top banner ── */}
-        <header className="fixed top-0 left-0 right-0 z-[60] h-14 bg-[#0f2d1f] flex items-center px-6 gap-4 shadow-[0_2px_12px_rgba(0,0,0,0.35)]">
+        <header className="print:hidden fixed top-0 left-0 right-0 z-[60] h-14 bg-[#0f2d1f] flex items-center px-6 gap-4 shadow-[0_2px_12px_rgba(0,0,0,0.35)]">
           {/* Hamburger — mobile only */}
           <button
             onClick={() => setSidebarOpen(prev => !prev)}
@@ -711,12 +711,12 @@ export default function OrgLayout({ children }: { children: React.ReactNode }) {
 
         {/* Ethiopian stripe */}
         <div
-          className="fixed top-14 left-0 right-0 z-[59] h-1"
+          className="print:hidden fixed top-14 left-0 right-0 z-[59] h-1"
           style={{ background: "linear-gradient(to right,#078930 0% 33.33%,#FCDD09 33.33% 66.66%,#DA121A 66.66% 100%)" }}
         />
 
         {/* Body */}
-        <div className="w-full pt-[60px]">
+        <div className="w-full pt-[60px] print:pt-0">
           {/* Mobile overlay — closes sidebar on tap */}
           {sidebarOpen && (
             <div
@@ -725,7 +725,14 @@ export default function OrgLayout({ children }: { children: React.ReactNode }) {
             />
           )}
           <Sidebar user={user} org={org} tenantName={apiTenantName ?? undefined} plan={plan} onClose={() => setSidebarOpen(false)} isOpen={sidebarOpen} />
-          <main className="w-full md:w-[calc(100%-240px)] md:ml-60 min-h-[calc(100vh-60px)] overflow-auto bg-gray-100">
+          <main className="w-full md:w-[calc(100%-240px)] md:ml-60 min-h-[calc(100vh-60px)] overflow-auto bg-gray-100 print:ml-0 print:w-full print:min-h-0 print:overflow-visible print:bg-white">
+            {/* Print-only title block: logo and tenant name. The report name is the page heading below. */}
+            <div className="hidden print:flex items-center gap-3 pb-2 mb-4 border-b border-gray-400">
+              <Logo />
+              {/* i18n-ignore: brand name */}
+              <span className="font-bold text-black">SMART Inventory</span>
+              {viewingTenant && <span className="font-semibold text-black">{viewingTenant.name}</span>}
+            </div>
             {process.env.NODE_ENV !== "production" && !process.env.NEXT_PUBLIC_API_URL && !bannerDismissed && (
               <div className="bg-amber-50 border-b border-amber-200 px-4 py-2 flex items-center justify-between gap-3">
                 <p className="text-xs text-amber-800 font-medium m-0">⚠ {t("demo.mode_banner")}</p>
