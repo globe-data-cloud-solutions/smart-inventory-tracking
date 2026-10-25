@@ -15,7 +15,11 @@ from sqlalchemy import text
 
 from shared.db.rls import set_system_rls_context
 from shared.db.session import AsyncSessionLocal
-from shared.outbox.schemas import PAYLOAD_TYPES, ContractExpiryAlertPayload
+from shared.outbox.schemas import (
+    PAYLOAD_TYPES,
+    ApprovalStepEscalatedPayload,
+    ContractExpiryAlertPayload,
+)
 from shared.utils.env_guard import assert_safe_environment
 
 logger = logging.getLogger(__name__)
@@ -75,6 +79,10 @@ app.conf.beat_schedule = {
         "task": "shared.outbox.worker.ensure_future_partitions",
         "schedule": crontab(hour=7, minute=0),  # daily at 07:00 UTC
     },
+    "escalate-overdue-approvals": {
+        "task": "shared.outbox.worker.escalate_overdue_approvals",
+        "schedule": 300,  # every 5 minutes; sla_hours is whole hours
+    },
 }
 app.conf.timezone = "UTC"
 
@@ -114,6 +122,27 @@ async def handle_contract_expiry_alert(payload: ContractExpiryAlertPayload, tena
         payload.tenant_name,
         payload.contract_end,
         label,
+    )
+
+
+@register_handler("ApprovalStepEscalated")
+async def handle_approval_step_escalated(
+    payload: ApprovalStepEscalatedPayload, tenant_id: str
+) -> None:
+    """Log approval escalations so they are not silently dropped.
+
+    In-app, the step already shows in the new holders' and the TA's approvals
+    lists (escalate_overdue_approvals reassigned it). Email/push delivery is
+    Phase 3, same as ContractExpiryAlert.
+    """
+    logger.warning(
+        "ApprovalStepEscalated: tenant_id=%s transfer=%s step=%s to=%s ta_notified=%s to_ta=%s",
+        tenant_id,
+        payload.transfer_order_id,
+        payload.step,
+        payload.to_position_title,
+        ",".join(payload.ta_user_ids),
+        payload.escalated_to_ta,
     )
 
 
@@ -427,3 +456,29 @@ async def _ensure_future_partitions() -> None:
             "Partition maintenance: nothing to create (current + %d future month(s) already exist)",
             PARTITION_FUTURE_MONTHS,
         )
+
+
+@app.task
+def escalate_overdue_approvals() -> None:
+    """Every 5 minutes: move transfer approval steps that passed sla_hours.
+
+    See shared/approvals/sla_escalation.py for the rules. Errors are logged,
+    not raised; the next run retries.
+    """
+    try:
+        moved = _run(_escalate_overdue_approvals())
+    except Exception:
+        logger.exception("escalate_overdue_approvals failed")
+        return
+    if moved:
+        logger.info("escalate_overdue_approvals: %s step(s) escalated", moved)
+
+
+async def _escalate_overdue_approvals() -> int:
+    from shared.approvals.sla_escalation import escalate_overdue_steps
+
+    async with AsyncSessionLocal() as session:
+        await set_system_rls_context(session, "escalate_overdue_approvals")
+        moved = await escalate_overdue_steps(session)
+        await session.commit()
+    return moved

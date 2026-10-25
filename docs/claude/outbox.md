@@ -105,8 +105,22 @@ class FefoOverrideAppliedPayload(BasePayload):
     event_type: Literal["FefoOverrideApplied"] = "FefoOverrideApplied"
     override_log_id: str
 
+class ApprovalStepEscalatedPayload(BasePayload):
+    event_type: Literal["ApprovalStepEscalated"] = "ApprovalStepEscalated"
+    transfer_order_id: str
+    step: int
+    sla_hours: int
+    due_at: str
+    from_position_title: str | None
+    to_position_title: str
+    to_user_ids: list[str]
+    ta_user_ids: list[str]   # every active TA: the TA is told on every escalation
+    escalated_to_ta: bool
+
 # All event types: InventoryUpdated, StockTransferred, OrderCreated, ShipmentDispatched,
-#                  AdjustmentApplied, StockCountCompleted, TenantOrgTypeChanged, FefoOverrideApplied
+#                  AdjustmentApplied, StockCountCompleted, TenantOrgTypeChanged, FefoOverrideApplied,
+#                  TransferRequested, ProductCreated, AutoApprovalNotice, ContractExpiryAlert,
+#                  ApprovalStepEscalated
 ```
 
 ### Alerting thresholds
@@ -158,10 +172,23 @@ still `>= days_left` fires once, and every larger milestone key is marked
 notified at the same time — so a missed day can never double-fire once the
 gap closes.
 
+**Approval SLA escalation** (decided by Alex, 2026-10-25): the
+`escalate_overdue_approvals` beat task runs every 5 minutes
+(`shared/approvals/sla_escalation.py`). A transfer's current approval step is
+overdue once `created_at + sla_hours` has passed (after an escalation:
+`sla_escalated_at + sla_hours`). It moves to the holders of the next position
+up the `reports_to` chain, skipping the transfer's creator; with nothing above,
+it goes to the TA. A step on a TA never escalates further. Each escalation
+writes the step change, an `audit_logs` row (`transfer:approval_escalated`,
+role `SYS`) and an `ApprovalStepEscalated` event in one SAVEPOINT per transfer;
+the event's handler in `worker.py` logs it (email/push is Phase 3). In-app, the
+step shows in the new holders' and the TA's approvals lists.
+
 **Known gap:** event handlers registered via `@register_handler` in each
 service's `main.py` (e.g. inventory-service's handlers) are not imported by
 the standalone `shared.outbox.worker` Celery process — only handlers defined
-in `worker.py` itself (currently `ContractExpiryAlert`) actually run. Wiring
+in `worker.py` itself (currently `ContractExpiryAlert` and
+`ApprovalStepEscalated`) actually run. Wiring
 service-level handlers into the worker process is unresolved; events for
 other types still reach `PROCESSED` (no handler = no-op), they just don't
 trigger any side effect yet.
