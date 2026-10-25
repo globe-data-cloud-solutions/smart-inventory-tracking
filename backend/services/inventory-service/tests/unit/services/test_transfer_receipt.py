@@ -806,3 +806,51 @@ class TestReceiptEndpoints:
         ):
             with pytest.raises(ValidationError):
                 ReceiveTransferRequest(**bad)
+
+
+class TestReceiveAuthorisationExcludesNM:
+    """NM is not tenant-level for receive: only the destination warehouse receives.
+
+    Route-level RBAC grants receive to RM/WM/LM (and TA/SA); the service ABAC
+    must not let an NM receive into a warehouse that is not the destination.
+    """
+
+    async def _receive_as(self, world: _World, user: _User) -> Any:
+        from schemas.inventory import ReceiveTransferRequest
+        from services.inventory_service import InventoryService
+
+        with (
+            patch("services.transfer_lots.record_transaction", new=world.record_transaction),
+            patch(
+                "services.transfer_lots.write_transfer_ledger_entry",
+                new=world.write_transfer_ledger_entry,
+            ),
+            patch("services.inventory_service.record_transaction", new=world.record_transaction),
+            patch(
+                "services.inventory_service.write_transfer_ledger_entry",
+                new=world.write_transfer_ledger_entry,
+            ),
+            patch("services.inventory_service.write_to_outbox", new=world.outbox),
+            patch("services.inventory_service.audit_log", new=world.audit_log),
+        ):
+            svc = InventoryService(world.db())
+            receipt = ReceiveTransferRequest(lines=_body())
+            return await svc.receive_transfer(user, TRANSFER_ID, receipt)
+
+    async def test_nm_at_another_warehouse_is_refused(self) -> None:
+        world = _World()
+        nm = _User(USER_ID, TENANT_ID, WAREHOUSE_A, None, "NM")
+
+        with pytest.raises(HTTPException) as exc:
+            await self._receive_as(world, nm)
+
+        assert exc.value.status_code == 403
+        assert "destination warehouse" in exc.value.detail
+        assert world.audit_rows == []
+
+    async def test_wm_at_destination_is_accepted(self) -> None:
+        world = _World()
+
+        await self._receive_as(world, DST_WM)
+
+        assert len(world.audit_rows) == 1

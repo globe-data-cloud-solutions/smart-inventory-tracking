@@ -2048,10 +2048,11 @@ class InventoryService:
             raise HTTPException(status_code=404, detail="Transfer not found")
 
         # ABAC: caller must be the destination warehouse.
-        # NM/TA/SA have tenant-wide authority — check role FIRST regardless of warehouse_id.
-        # Facility-bound roles (WM/RM/LM) must match warehouse_id to to_warehouse_id.
+        # TA/SA have tenant-wide authority — check role FIRST regardless of warehouse_id.
+        # Every other role (NM/WM/RM/LM) must match warehouse_id to to_warehouse_id.
+        # NM is deliberately not tenant-level here: receiving is a warehouse action.
         # Fallback: RM who created the PULL (no warehouse_id) is the logical dest manager.
-        _TENANT_LEVEL_ROLES = {"NM", "TA", "SA"}
+        _TENANT_LEVEL_ROLES = {"TA", "SA"}
         user_role = getattr(user, "role", None)
         if user_role in _TENANT_LEVEL_ROLES:
             can_receive = True
