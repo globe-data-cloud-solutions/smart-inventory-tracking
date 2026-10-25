@@ -34,20 +34,16 @@ if not _was_on_path:
     sys.path.insert(0, _TENANT_ROOT)
 # ─────────────────────────────────────────────────────────────────────────────
 
-import json
-from dataclasses import dataclass, field
-from typing import Any
-from unittest.mock import (
-    AsyncMock,
-    MagicMock,
-    patch,
-)
-from uuid import UUID
+import json  # noqa: E402 - sys.path/env setup above must run first
+from dataclasses import dataclass, field  # noqa: E402 - sys.path/env setup above must run first
+from typing import Any  # noqa: E402 - sys.path/env setup above must run first
+from unittest.mock import AsyncMock, MagicMock, patch  # noqa: E402 - sys.path/env setup above must run first
+from uuid import UUID  # noqa: E402 - sys.path/env setup above must run first
 
-import asyncpg
-import pytest
-from fastapi import HTTPException
-from sqlalchemy.exc import IntegrityError
+import asyncpg  # noqa: E402 - sys.path/env setup above must run first
+import pytest  # noqa: E402 - sys.path/env setup above must run first
+from fastapi import HTTPException  # noqa: E402 - sys.path/env setup above must run first
+from sqlalchemy.exc import IntegrityError  # noqa: E402 - sys.path/env setup above must run first
 
 TENANT_ID = "aaaaaaaa-0000-0000-0000-000000000001"
 NODE_ID = "bbbbbbbb-0000-0000-0000-000000000001"
@@ -141,7 +137,7 @@ def _db_seq_raising(*returns: Any, raises: Exception) -> AsyncMock:
 class TestPositionCreate:
     async def test_position_create_at_node(self) -> None:
         """POST /nodes/{node_id}/positions succeeds for a valid role_code (WM)."""
-        from routers.positions import PositionCreate, create_position
+        from routers.positions import create_position, PositionCreate
 
         node_row = _row(id=NODE_ID)
         db = _db_seq(node_row, None)  # node found, no reports_to lookup needed
@@ -161,7 +157,7 @@ class TestPositionCreate:
 
     async def test_position_sa_ta_role_blocked(self) -> None:
         """POST /positions raises 422 when role_code is SA or TA (not facility-level roles)."""
-        from routers.positions import ALLOWED_POSITION_ROLE_CODES, PositionCreate, create_position
+        from routers.positions import create_position, PositionCreate, ALLOWED_POSITION_ROLE_CODES
 
         assert "SA" not in ALLOWED_POSITION_ROLE_CODES
         assert "TA" not in ALLOWED_POSITION_ROLE_CODES
@@ -182,7 +178,7 @@ class TestPositionCreate:
     async def test_position_create_duplicate_title_returns_409(self) -> None:
         """POST /nodes/{node_id}/positions converts the uq_positions_node_title_active
         IntegrityError into a clean 409 DUPLICATE_POSITION_TITLE instead of a raw 500."""
-        from routers.positions import PositionCreate, create_position
+        from routers.positions import create_position, PositionCreate
 
         node_row = _row(id=NODE_ID)
         db = _db_seq_raising(node_row, raises=_unique_violation("uq_positions_node_title_active"))
@@ -201,7 +197,7 @@ class TestPositionCreate:
     async def test_position_update_duplicate_title_returns_409(self) -> None:
         """PATCH /positions/{id} renaming to an existing title at the same node hits
         the same constraint — also converted to a clean 409, not a raw 500."""
-        from routers.positions import PositionUpdate, update_position
+        from routers.positions import update_position, PositionUpdate
 
         existing_row = _row(
             id=POSITION_ID,
@@ -231,7 +227,7 @@ class TestPositionCreate:
         PATCH), would create a 2-node cycle — _would_create_cycle() walks A's
         chain, finds B (the position being updated), and rejects with 422
         CIRCULAR_REPORTS_TO instead of silently saving a broken ancestry chain."""
-        from routers.positions import PositionUpdate, update_position
+        from routers.positions import update_position, PositionUpdate
 
         b_row = _row(
             id=POSITION_B_ID,
@@ -261,7 +257,7 @@ class TestPositionCreate:
         """PATCH a position to report to itself is the degenerate 1-node cycle —
         caught on the first iteration of _would_create_cycle() with no DB lookup
         needed, since current (== new_reports_to_id) equals position_id immediately."""
-        from routers.positions import PositionUpdate, update_position
+        from routers.positions import update_position, PositionUpdate
 
         existing_row = _row(
             id=POSITION_ID,
@@ -310,7 +306,7 @@ class TestPersonnelV2:
     async def test_create_user_with_position(self) -> None:
         """POST /users creates the user AND the PRIMARY personnel_position atomically —
         a single call into create_user, with no separate POST .../positions needed."""
-        from routers.personnel_v2 import UserCreate, create_user
+        from routers.personnel_v2 import create_user, UserCreate
 
         pos_row = _row(
             id=POSITION_ID,
@@ -369,7 +365,7 @@ class TestPersonnelV2:
         """POST /users/{id}/positions with assignment_type=PRIMARY deactivates the user's
         existing PRIMARY row and inserts the new one, instead of rejecting the request —
         the Edit User UI confirms the swap with the caller before calling this endpoint."""
-        from routers.personnel_v2 import AssignPositionRequest, assign_position
+        from routers.personnel_v2 import assign_position, AssignPositionRequest
 
         user_row = _row(id=USER_ID)
         pos_row = _row(
@@ -430,7 +426,7 @@ class TestPersonnelV2:
         not a 422. (The frontend already avoids calling this endpoint at all when
         the selected position matches the current one — see isPositionChange in
         settings/personnel/page.tsx — so this path is reachable only via direct API use.)"""
-        from routers.personnel_v2 import AssignPositionRequest, assign_position
+        from routers.personnel_v2 import assign_position, AssignPositionRequest
 
         user_row = _row(id=USER_ID)
         pos_row = _row(
@@ -619,7 +615,7 @@ class TestPersonnelV2:
         must_reset_password=True, even if must_reset_password wasn't explicitly set —
         the user must change the admin-issued temporary password on next login.
         Also clears the user's Redis login-lockout counter immediately."""
-        from routers.personnel_v2 import UserUpdateRequest, update_user
+        from routers.personnel_v2 import update_user, UserUpdateRequest
 
         user_row = _row(id=USER_ID, email="locked-out@test.com")
         execute_calls: list[tuple[str, dict]] = []
@@ -664,7 +660,7 @@ class TestPersonnelV2:
     ) -> None:
         """PATCH /users/{id} with password also revokes the target user's tokens,
         but only when password_hash is actually being set."""
-        from routers.personnel_v2 import UserUpdateRequest, update_user
+        from routers.personnel_v2 import update_user, UserUpdateRequest
 
         user_row = _row(id=USER_ID, email="locked-out@test.com")
 
@@ -697,7 +693,7 @@ class TestPersonnelV2:
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         """PATCH /users/{id} with no password field never touches token revocation."""
-        from routers.personnel_v2 import UserUpdateRequest, update_user
+        from routers.personnel_v2 import update_user, UserUpdateRequest
 
         user_row = _row(id=USER_ID, email="user@test.com")
 
@@ -728,9 +724,8 @@ class TestPersonnelV2:
     async def test_reset_password_requires_min_length(self) -> None:
         """UserUpdateRequest rejects passwords under 8 characters at the schema
         level — FastAPI turns this into a 422 before update_user() ever runs."""
-        from pydantic import ValidationError
-
         from routers.personnel_v2 import UserUpdateRequest
+        from pydantic import ValidationError
 
         with pytest.raises(ValidationError):
             UserUpdateRequest(password="short1")
@@ -836,7 +831,7 @@ class TestPersonnelV2:
     async def test_create_user_accepts_au_system_role(self) -> None:
         """POST /users accepts system_role='AU' for the tenant-wide Auditor
         track (Track B in the Add User form) — no position_id required."""
-        from routers.personnel_v2 import UserCreate, create_user
+        from routers.personnel_v2 import create_user, UserCreate
 
         db = _db_seq(
             None,  # no duplicate email
@@ -862,7 +857,7 @@ class TestPersonnelV2:
     async def test_create_user_accepts_lm_system_role(self) -> None:
         """POST /users accepts system_role='LM' for the tenant-wide Logistics
         Manager track."""
-        from routers.personnel_v2 import UserCreate, create_user
+        from routers.personnel_v2 import create_user, UserCreate
 
         db = _db_seq(None, None)
 
@@ -885,7 +880,7 @@ class TestPersonnelV2:
     async def test_create_user_rejects_invalid_system_role(self) -> None:
         """POST /users still rejects system_role values outside {TA, AU, LM} —
         e.g. a facility role like WM must come from position_id, never directly."""
-        from routers.personnel_v2 import UserCreate, create_user
+        from routers.personnel_v2 import create_user, UserCreate
 
         db = _db_seq(None)  # no duplicate email — should not get further
 
@@ -908,7 +903,7 @@ class TestPersonnelV2:
     async def test_ta_cannot_create_ta(self) -> None:
         """POST /users with system_role='TA' is rejected for a TA caller — only
         a platform admin (SA) may create another Tenant Admin account."""
-        from routers.personnel_v2 import UserCreate, create_user
+        from routers.personnel_v2 import create_user, UserCreate
 
         db = _db_seq(None)  # no duplicate email — should not get further
 
@@ -931,7 +926,7 @@ class TestPersonnelV2:
     async def test_sa_can_create_ta(self) -> None:
         """POST /users with system_role='TA' succeeds for an SA (platform admin)
         caller — the role ceiling only blocks TA-creating-TA, not SA."""
-        from routers.personnel_v2 import UserCreate, create_user
+        from routers.personnel_v2 import create_user, UserCreate
 
         db = _db_seq(
             None,  # no duplicate email
@@ -960,7 +955,7 @@ class TestPersonnelV2:
         of admin access with no recovery path short of SA intervention. Other
         fields (name, email, password) on the caller's own record remain
         editable through this same endpoint."""
-        from routers.personnel_v2 import UserUpdateRequest, update_user
+        from routers.personnel_v2 import update_user, UserUpdateRequest
 
         db = _db_seq()  # no DB calls should be needed — guard fires first
 
@@ -981,7 +976,7 @@ class TestPersonnelV2:
         used when switching a user from a tenant-wide role (Track B) back to a
         position-based one (Track A), so role then comes from the new position
         instead of the stale system_role value."""
-        from routers.personnel_v2 import UserUpdateRequest, update_user
+        from routers.personnel_v2 import update_user, UserUpdateRequest
 
         user_row = _row(id=USER_ID)
         execute_calls: list[tuple[str, dict]] = []
@@ -1014,7 +1009,7 @@ class TestPersonnelV2:
         """PATCH /users/{id} rejects a TA caller setting system_role='TA' on a
         DIFFERENT user — not just the self-lockout case. Only SA may create a
         peer/superior TA account, whether via POST (create_user) or PATCH."""
-        from routers.personnel_v2 import UserUpdateRequest, update_user
+        from routers.personnel_v2 import update_user, UserUpdateRequest
 
         target_row = _row(id=USER_ID, email="target@test.com", system_role="AU")
         db = _db_seq(
@@ -1036,7 +1031,7 @@ class TestPersonnelV2:
     async def test_sa_can_promote_another_user_to_ta_via_update(self) -> None:
         """PATCH /users/{id} setting system_role='TA' succeeds for an SA caller —
         the role ceiling only blocks a non-SA caller, not SA."""
-        from routers.personnel_v2 import UserUpdateRequest, update_user
+        from routers.personnel_v2 import update_user, UserUpdateRequest
 
         target_row = _row(id=USER_ID, email="target@test.com", system_role="AU")
         db = _db_seq(target_row, None)  # SELECT, then UPDATE
@@ -1057,7 +1052,7 @@ class TestPersonnelV2:
         DIFFERENT user who is already TA — covers both reassigning it to
         something else and clearing it. Demoting/editing a peer TA is a
         privilege-escalation-adjacent path just like promoting one is."""
-        from routers.personnel_v2 import UserUpdateRequest, update_user
+        from routers.personnel_v2 import update_user, UserUpdateRequest
 
         target_row = _row(id=USER_ID, email="target@test.com", system_role="TA")
         db = _db_seq(target_row)
@@ -1077,7 +1072,7 @@ class TestPersonnelV2:
     async def test_sa_can_modify_another_tas_role(self) -> None:
         """PATCH /users/{id} clearing an existing TA's system_role succeeds for
         an SA caller — the ceiling only blocks non-SA callers."""
-        from routers.personnel_v2 import UserUpdateRequest, update_user
+        from routers.personnel_v2 import update_user, UserUpdateRequest
 
         target_row = _row(id=USER_ID, email="target@test.com", system_role="TA")
         db = _db_seq(target_row, None)
@@ -1099,7 +1094,7 @@ class TestPersonnelV2:
         """POST /users' duplicate-email check is GLOBAL (not per-tenant) — an
         email already used by a user in a DIFFERENT tenant also returns 409,
         and the message never reveals which tenant owns it."""
-        from routers.personnel_v2 import UserCreate, create_user
+        from routers.personnel_v2 import create_user, UserCreate
 
         existing_in_other_tenant = _row(id="zzzzzzzz-0000-0000-0000-000000000099")
         db = _db_seq(existing_in_other_tenant)  # dup-email check finds a match
@@ -1124,7 +1119,7 @@ class TestPersonnelV2:
         """A race (two concurrent creates) that slips past the pre-check and
         hits uq_users_email_lower on the INSERT itself is still converted to
         a clean 409, not a raw 500."""
-        from routers.personnel_v2 import UserCreate, create_user
+        from routers.personnel_v2 import create_user, UserCreate
 
         db = _db_seq_raising(None, raises=_unique_violation("uq_users_email_lower"))
 
@@ -1148,7 +1143,7 @@ class TestPersonnelV2:
     ) -> None:
         """PATCH /users/{id} changing email to one already used by someone else,
         even with different casing, returns 409 instead of a raw 500."""
-        from routers.personnel_v2 import UserUpdateRequest, update_user
+        from routers.personnel_v2 import update_user, UserUpdateRequest
 
         current_row = _row(id=USER_ID, email="old@test.com")
         clash_row = _row(id="zzzzzzzz-0000-0000-0000-000000000099")
@@ -1169,7 +1164,7 @@ class TestPersonnelV2:
     async def test_update_user_email_to_own_email_returns_200_no_dup_check(self) -> None:
         """PATCH /users/{id} with the caller's own current email (any casing)
         is a no-op on email — it must not run the duplicate check at all."""
-        from routers.personnel_v2 import UserUpdateRequest, update_user
+        from routers.personnel_v2 import update_user, UserUpdateRequest
 
         current_row = _row(id=USER_ID, email="same@test.com")
         db = _db_seq(current_row, None)  # SELECT, then UPDATE — no dup-check SELECT
@@ -1189,7 +1184,7 @@ class TestPersonnelV2:
     async def test_update_user_email_integrity_error_backstop_returns_409(self) -> None:
         """A race that slips past update_user's pre-check and hits
         uq_users_email_lower on the UPDATE itself is still a clean 409."""
-        from routers.personnel_v2 import UserUpdateRequest, update_user
+        from routers.personnel_v2 import update_user, UserUpdateRequest
 
         current_row = _row(id=USER_ID, email="old@test.com")
         db = _db_seq_raising(current_row, None, raises=_unique_violation("uq_users_email_lower"))
@@ -1352,9 +1347,9 @@ class TestTransferTypeConfig:
     async def test_transfer_type_config_upsert(self) -> None:
         """PUT /transfer-types inserts a new config and stores level permissions."""
         from routers.transfer_types import (
-            LevelPermissionIn,
-            TransferTypeConfigIn,
             upsert_transfer_types,
+            TransferTypeConfigIn,
+            LevelPermissionIn,
         )
 
         execute_calls: list[tuple[str, dict]] = []
@@ -1404,7 +1399,7 @@ class TestTransferTypeConfig:
         previously the check-then-act loop would SELECT the row just inserted
         by the first duplicate and UPDATE it for the second, silently letting
         the last write win."""
-        from routers.transfer_types import TransferTypeConfigIn, upsert_transfer_types
+        from routers.transfer_types import upsert_transfer_types, TransferTypeConfigIn
 
         db = _db_seq()  # no DB calls should be needed — validation fires first
 
@@ -1423,7 +1418,7 @@ class TestTransferTypeConfig:
 
     async def test_approval_rule_upsert(self) -> None:
         """PUT /transfer-approval-rules stores approval_steps as JSONB."""
-        from routers.transfer_types import ApprovalRuleIn, ApprovalStepIn, upsert_approval_rules
+        from routers.transfer_types import upsert_approval_rules, ApprovalRuleIn, ApprovalStepIn
 
         execute_calls: list[tuple[str, dict]] = []
 
