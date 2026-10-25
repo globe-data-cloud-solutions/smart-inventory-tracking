@@ -31,6 +31,7 @@ ROLE_PERMISSION_MATRIX: dict[str, dict[str, str]] = {
         "transfer_approval_rule:manage": "FULL",
         "transfer_approval_rule:view": "FULL",
         "position:manage": "FULL",
+        "position:view": "FULL",
         "user:create": "FULL",
         "user:view": "FULL",
         "user:list": "FULL",
