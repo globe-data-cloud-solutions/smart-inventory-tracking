@@ -1756,6 +1756,13 @@
     "SYS": "Sirna"
   },
   "transfers": {
+    "escalation": {
+      "escalated_from": "Escalated from {position}: time limit passed",
+      "escalated_to_ta": "Escalated to Tenant Admin from {position}: time limit passed",
+      "escalated": "Escalated: time limit passed",
+      "overdue": "Overdue",
+      "overdue_hint": "Waiting longer than the {hours} h set for this step"
+    },
     "transfers_heading": "Dabarsaalee",
     "active_label": "hojiirra jiru",
     "archived": "galmaa'e",

@@ -1146,6 +1146,13 @@
     "UNKNOWN_ACTION": "This type of movement cannot be synced."
   },
   "transfers": {
+    "escalation": {
+      "escalated_from": "Escalated from {position}: time limit passed",
+      "escalated_to_ta": "Escalated to Tenant Admin from {position}: time limit passed",
+      "escalated": "Escalated: time limit passed",
+      "overdue": "Overdue",
+      "overdue_hint": "Waiting longer than the {hours} h set for this step"
+    },
     "transfers_heading": "Transfers",
     "active_label": "active",
     "archived": "archived",

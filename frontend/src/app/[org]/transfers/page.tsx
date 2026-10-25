@@ -553,6 +553,20 @@ interface ApprovalInfoResponse {
   all_holders?: { user_id: string; name: string }[];
   status_label?: string | null;
   step_label?: string | null;
+  // SLA escalation (backend: shared/approvals/sla_escalation.py)
+  sla_escalated?: boolean;
+  escalated_from_position_title?: string | null;
+  escalated_to_ta?: boolean;
+  sla_due_at?: string | null;
+  is_overdue?: boolean;
+}
+
+/** "Escalated from <position>" line for a step the SLA timer moved. */
+function escalationLabel(info: ApprovalInfoResponse): string | null {
+  if (!info.sla_escalated) return null;
+  const position = info.escalated_from_position_title;
+  if (!position) return t("transfers.escalation.escalated");
+  return tf(info.escalated_to_ta ? "transfers.escalation.escalated_to_ta" : "transfers.escalation.escalated_from", { position });
 }
 
 /**
@@ -1360,6 +1374,19 @@ export default function TransfersPage() {
                         <p className="text-[10px] font-semibold text-blue-600 mt-0.5">
                           {cachedApprInfo.step_label}
                         </p>
+                      )}
+                      {txn.status === "PENDING_APPROVAL" && cachedApprInfo && escalationLabel(cachedApprInfo) && (
+                        <p className="text-[10px] font-semibold text-amber-700 mt-0.5 leading-tight max-w-[160px]">
+                          {escalationLabel(cachedApprInfo)}
+                        </p>
+                      )}
+                      {txn.status === "PENDING_APPROVAL" && cachedApprInfo?.is_overdue && (
+                        <span
+                          title={tf("transfers.escalation.overdue_hint", { hours: cachedApprInfo.sla_hours ?? "" })}
+                          className="mt-0.5 inline-block text-[10px] font-semibold px-1.5 py-0.5 rounded bg-red-100 text-red-700 whitespace-nowrap"
+                        >
+                          {t("transfers.escalation.overdue")}
+                        </span>
                       )}
                     </td>
                     <td className="px-3 py-2.5 text-gray-400 text-xs whitespace-nowrap">

@@ -1205,6 +1205,13 @@
     "SUB_WH": "ንዑስ መጋዘን"
   },
   "transfers": {
+    "escalation": {
+      "escalated_from": "ከ{position} ወደ ላይ ተላልፏል፤ የጊዜ ገደቡ አልፏል",
+      "escalated_to_ta": "ከ{position} ወደ ተከራይ አስተዳዳሪ ተላልፏል፤ የጊዜ ገደቡ አልፏል",
+      "escalated": "ወደ ላይ ተላልፏል፤ የጊዜ ገደቡ አልፏል",
+      "overdue": "ጊዜው ያለፈበት",
+      "overdue_hint": "ለዚህ ደረጃ ከተሰጠው {hours} ሰዓት በላይ እየጠበቀ ነው"
+    },
     "transfers_heading": "ዝውውሮች",
     "active_label": "ንቁ",
     "archived": "የተቀመጠ",

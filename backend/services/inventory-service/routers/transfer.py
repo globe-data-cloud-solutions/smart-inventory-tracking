@@ -1,3 +1,4 @@
+from datetime import UTC, datetime
 from typing import List, Literal, Optional
 from uuid import UUID
 
@@ -7,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from dependencies import get_db_session
 from dependencies import get_current_user
+from shared.approvals.sla_escalation import step_due_at
 from shared.permissions.middleware import require_permission
 from shared.permissions.plan_middleware import check_plan
 from shared.permissions.registry import PERMISSIONS
@@ -338,7 +340,7 @@ async def get_approval_info(
         await db.execute(
             text(
                 "SELECT transfer_type, created_by, created_by_authority_level, "
-                "resolved_approval_steps, current_approval_step "
+                "resolved_approval_steps, current_approval_step, created_at "
                 "FROM transfer_orders WHERE id = :id AND tenant_id = :tid"
             ),
             {"id": str(transfer_id), "tid": str(user.tenant_id)},
@@ -402,11 +404,28 @@ async def get_approval_info(
         is_vacant = cur_step.get("is_vacant", False)
         escalated = cur_step.get("escalated", False)
         esc_name = cur_step.get("assigned_to_name") or "an escalated approver"
+
+        # SLA escalation (timer-driven). sla_escalation_history is only written by
+        # shared/approvals/sla_escalation.py; its first entry names the position the
+        # step started at, which is what "Escalated from …" shows.
+        sla_history = cur_step.get("sla_escalation_history") or []
+        sla_escalated = bool(sla_history)
+        escalated_from = sla_history[0].get("from_position_title") if sla_escalated else None
+        sla_due = step_due_at(cur_step, getattr(transfer_row, "created_at", None))
+        is_overdue = (
+            sla_due is not None
+            and (cur_step.get("status") or "pending") == "pending"
+            and datetime.now(UTC) >= sla_due
+        )
+
         # BUG 4: distinguish "position vacant → escalating" from "self-approval → escalating".
         # is_vacant=True means the position had no holder at all.
-        # escalated=True with is_vacant=False means the original holder was the creator.
-        if is_vacant and escalated:
-            status_label: str | None = f"Position vacant — escalating to {esc_name}"
+        # escalated=True with is_vacant=False means the original holder was the creator,
+        # unless the step was moved by the SLA timer (checked first).
+        if sla_escalated:
+            status_label: str | None = f"Awaiting {esc_name} approval"
+        elif is_vacant and escalated:
+            status_label = f"Position vacant — escalating to {esc_name}"
         elif is_vacant:
             status_label = "Position vacant — no available approver"
         elif escalated:
@@ -450,6 +469,11 @@ async def get_approval_info(
                 all_holders=all_holders,
                 status_label=status_label,
                 step_label=f"Step {_cur_seq} of {_total}" if _total > 1 else None,
+                sla_escalated=sla_escalated,
+                escalated_from_position_title=escalated_from,
+                escalated_to_ta=bool(cur_step.get("escalated_to_ta")),
+                sla_due_at=sla_due,
+                is_overdue=is_overdue,
             )
         )
 

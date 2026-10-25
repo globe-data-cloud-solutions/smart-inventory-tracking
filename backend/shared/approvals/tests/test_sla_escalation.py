@@ -233,6 +233,16 @@ async def test_nothing_above_routes_to_ta() -> None:
     assert json.loads(session.inserts("outbox")[0]["payload"])["escalated_to_ta"] is True
 
 
+async def test_step_without_a_position_routes_to_ta() -> None:
+    """No position defined on the step: nothing to climb from, so the TA gets it."""
+    session = _FakeSession([_transfer([_step(position_id=None)])], chain={})
+    assert await escalate_overdue_steps(session, now=NOW) == 1
+    step = _updated_step(session)
+    assert step["assigned_to_user_id"] == TA_USER
+    assert step["escalated_to_ta"] is True
+    assert not any("reports_to_position_id" in s for s, _ in session.executed)
+
+
 async def test_step_already_on_ta_stops() -> None:
     step = _step(escalated_to_ta=True, assigned_to_user_id=TA_USER)
     session = _FakeSession([_transfer([step], created_hours_ago=500)])
