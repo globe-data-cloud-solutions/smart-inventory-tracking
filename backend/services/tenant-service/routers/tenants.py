@@ -3208,8 +3208,9 @@ async def update_organisation_type(
 ) -> SuccessResponse[dict]:
     """TA: set the tenant's organisation type (PRODUCER / RETAILER / HYBRID).
 
-    Changing the type resets approval_thresholds to that type's defaults, the
-    same rule the SA profile route applies. Feature flags are not touched.
+    Changing the type keeps any approval_thresholds the tenant already has and
+    fills in the new type's defaults only when none are stored. Feature flags
+    are not touched.
     The change is recorded in the tenant activity log, which SA can read.
     """
     if body.organisation_type not in VALID_ORGANISATION_TYPES:
@@ -3234,10 +3235,16 @@ async def update_organisation_type(
     if old_org == body.organisation_type:
         return SuccessResponse(data={"changes": 0, "organisation_type": old_org})
 
+    # Thresholds the tenant has already set are kept. Type defaults fill in only
+    # when none are stored yet (NULL or empty). One statement, so the check and
+    # the write cannot race.
     await db.execute(
         text(
             "UPDATE tenants SET organisation_type = CAST(:org_type AS organisation_type), "
-            "approval_thresholds = CAST(:thresholds AS jsonb), updated_at = now() "
+            "approval_thresholds = CASE "
+            "WHEN approval_thresholds IS NULL OR approval_thresholds = '{}'::jsonb "
+            "THEN CAST(:thresholds AS jsonb) ELSE approval_thresholds END, "
+            "updated_at = now() "
             "WHERE id = :tid"
         ),
         {
@@ -3256,9 +3263,7 @@ async def update_organisation_type(
         old_value=old_org,
         new_value=body.organisation_type,
     )
-    return SuccessResponse(
-        data={"changes": 1, "organisation_type": body.organisation_type}
-    )
+    return SuccessResponse(data={"changes": 1, "organisation_type": body.organisation_type})
 
 
 @router.patch("/{tenant_id}/branding", response_model=SuccessResponse[dict])
