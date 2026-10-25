@@ -144,4 +144,5 @@ async def test_sa_terms_acceptance_denied_for_non_sa() -> None:
             await get_tenant_terms_acceptance(tenant_id=TENANT_A, user=ta, db=AsyncMock())
 
     assert exc_info.value.status_code == 403
-    assert exc_info.value.detail["code"] == "FORBIDDEN"
+    # Refused by the permission layer (platform_only action), before the handler.
+    assert exc_info.value.detail["code"] == "ABAC_DENIED: platform_only"

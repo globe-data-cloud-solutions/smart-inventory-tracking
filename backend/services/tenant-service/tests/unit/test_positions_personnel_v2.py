@@ -1477,3 +1477,77 @@ class TestTransferTypeConfig:
         assert steps[0]["sequence"] == 1
         assert steps[0]["position_title"] == "Regional Manager"
         assert steps[0]["sla_hours"] == 24
+
+
+# ── Test 6: TA sets the organisation type ─────────────────────────
+
+
+@pytest.mark.unit
+class TestTaOrganisationType:
+    def _db(self, current: str | None):
+        executed: list[tuple[str, dict]] = []
+
+        async def _capture(stmt, params=None, **kw) -> MagicMock:
+            executed.append((str(stmt), params or {}))
+            res = MagicMock()
+            res.fetchone = MagicMock(
+                return_value=MagicMock(organisation_type=current, email="ta@tc01.com")
+            )
+            return res
+
+        db = AsyncMock()
+        db.execute = AsyncMock(side_effect=_capture)
+        db.commit = AsyncMock()
+        return db, executed
+
+    async def test_ta_changes_org_type_and_thresholds_reset(self) -> None:
+        from routers.tenants import OrganisationTypeUpdateRequest, update_organisation_type
+
+        db, executed = self._db(current="PRODUCER")
+        with _GRANT_ALL:
+            resp = await update_organisation_type(
+                tenant_id=UUID(TENANT_ID),
+                body=OrganisationTypeUpdateRequest(organisation_type="RETAILER"),
+                user=_Caller(),
+                db=db,
+            )
+
+        updates = [(s, p) for s, p in executed if s.lstrip().startswith("UPDATE tenants")]
+        assert len(updates) == 1
+        assert updates[0][1]["org_type"] == "RETAILER"
+        assert "approval_thresholds" in updates[0][0]
+        assert resp.data["changes"] == 1
+        assert resp.data["organisation_type"] == "RETAILER"
+
+    async def test_unknown_org_type_is_422_and_nothing_written(self) -> None:
+        from fastapi import HTTPException
+
+        from routers.tenants import OrganisationTypeUpdateRequest, update_organisation_type
+
+        db, executed = self._db(current="PRODUCER")
+        with _GRANT_ALL, pytest.raises(HTTPException) as exc_info:
+            await update_organisation_type(
+                tenant_id=UUID(TENANT_ID),
+                body=OrganisationTypeUpdateRequest(organisation_type="WHOLESALER"),
+                user=_Caller(),
+                db=db,
+            )
+
+        assert exc_info.value.status_code == 422
+        assert exc_info.value.detail["code"] == "INVALID_ORGANISATION_TYPE"
+        assert not any(s.lstrip().startswith("UPDATE") for s, _ in executed)
+
+    async def test_same_org_type_is_a_no_op(self) -> None:
+        from routers.tenants import OrganisationTypeUpdateRequest, update_organisation_type
+
+        db, executed = self._db(current="HYBRID")
+        with _GRANT_ALL:
+            resp = await update_organisation_type(
+                tenant_id=UUID(TENANT_ID),
+                body=OrganisationTypeUpdateRequest(organisation_type="HYBRID"),
+                user=_Caller(),
+                db=db,
+            )
+
+        assert not any(s.lstrip().startswith("UPDATE") for s, _ in executed)
+        assert resp.data["changes"] == 0

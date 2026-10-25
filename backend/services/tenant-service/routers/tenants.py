@@ -2643,7 +2643,7 @@ async def delete_my_contact(
 
 
 @router.get("/{tenant_id}/plan", response_model=SuccessResponse[dict])
-@require_permission(PERMISSIONS.TENANT_MANAGE, read_only_exempt=True)
+@require_permission(PERMISSIONS.BILLING_VIEW, read_only_exempt=True)
 async def get_tenant_plan(
     tenant_id: uuid.UUID,
     user=Depends(get_current_user),
@@ -2656,7 +2656,7 @@ async def get_tenant_plan(
 
 
 @router.get("/{tenant_id}/terms-acceptance", response_model=SuccessResponse[TermsAcceptanceOut])
-@require_permission(PERMISSIONS.TENANT_MANAGE, read_only_exempt=True)
+@require_permission(PERMISSIONS.BILLING_VIEW, read_only_exempt=True)
 async def get_tenant_terms_acceptance(
     tenant_id: uuid.UUID,
     user=Depends(get_current_user),
@@ -2669,7 +2669,7 @@ async def get_tenant_terms_acceptance(
 
 
 @router.get("/{tenant_id}/proration-preview", response_model=SuccessResponse[dict])
-@require_permission(PERMISSIONS.TENANT_MANAGE, read_only_exempt=True)
+@require_permission(PERMISSIONS.BILLING_VIEW, read_only_exempt=True)
 async def get_tenant_proration_preview(
     tenant_id: uuid.UUID,
     tier: Optional[str] = None,
@@ -2694,7 +2694,7 @@ async def get_tenant_proration_preview(
 
 
 @router.patch("/{tenant_id}/plan", response_model=SuccessResponse[dict])
-@require_permission(PERMISSIONS.TENANT_MANAGE)
+@require_permission(PERMISSIONS.PLAN_CHANGE)
 async def update_tenant_plan(
     tenant_id: uuid.UUID,
     body: PlanUpdateRequest,
@@ -2832,7 +2832,7 @@ async def update_tenant_plan(
 
 
 @router.delete("/{tenant_id}/plan/scheduled", response_model=SuccessResponse[dict])
-@require_permission(PERMISSIONS.TENANT_MANAGE)
+@require_permission(PERMISSIONS.PLAN_CHANGE)
 async def cancel_tenant_scheduled_downgrade(
     tenant_id: uuid.UUID,
     user=Depends(get_current_user),
@@ -3194,6 +3194,73 @@ class BrandingUpdateRequest(BaseModel):
     banner_url: Optional[str] = None
 
 
+class OrganisationTypeUpdateRequest(BaseModel):
+    organisation_type: str
+
+
+@router.patch("/{tenant_id}/organisation-type", response_model=SuccessResponse[dict])
+@require_permission(PERMISSIONS.TENANT_SET_ORG_TYPE)
+async def update_organisation_type(
+    tenant_id: uuid.UUID,
+    body: OrganisationTypeUpdateRequest,
+    user=Depends(get_current_user),
+    db: AsyncSession = Depends(get_db_session),
+) -> SuccessResponse[dict]:
+    """TA: set the tenant's organisation type (PRODUCER / RETAILER / HYBRID).
+
+    Changing the type resets approval_thresholds to that type's defaults, the
+    same rule the SA profile route applies. Feature flags are not touched.
+    The change is recorded in the tenant activity log, which SA can read.
+    """
+    if body.organisation_type not in VALID_ORGANISATION_TYPES:
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "code": "INVALID_ORGANISATION_TYPE",
+                "message": f"organisation_type must be one of {sorted(VALID_ORGANISATION_TYPES)}",
+            },
+        )
+
+    row = (
+        await db.execute(
+            text("SELECT organisation_type FROM tenants WHERE id = :tid"),
+            {"tid": str(tenant_id)},
+        )
+    ).fetchone()
+    if row is None:
+        raise HTTPException(status_code=404, detail="Tenant not found")
+
+    old_org = str(row.organisation_type) if row.organisation_type else None
+    if old_org == body.organisation_type:
+        return SuccessResponse(data={"changes": 0, "organisation_type": old_org})
+
+    await db.execute(
+        text(
+            "UPDATE tenants SET organisation_type = CAST(:org_type AS organisation_type), "
+            "approval_thresholds = CAST(:thresholds AS jsonb), updated_at = now() "
+            "WHERE id = :tid"
+        ),
+        {
+            "tid": str(tenant_id),
+            "org_type": body.organisation_type,
+            "thresholds": json.dumps(APPROVAL_DEFAULTS.get(body.organisation_type, {})),
+        },
+    )
+    # No swallowed exception here: if the activity log cannot be written the
+    # request fails and the type change rolls back, so no unlogged change lands.
+    await _log_tenant_activity(
+        db,
+        tenant_id,
+        str(user.user_id),
+        action="PROFILE_UPDATE_ORGANISATION_TYPE",
+        old_value=old_org,
+        new_value=body.organisation_type,
+    )
+    return SuccessResponse(
+        data={"changes": 1, "organisation_type": body.organisation_type}
+    )
+
+
 @router.patch("/{tenant_id}/branding", response_model=SuccessResponse[dict])
 @require_permission(PERMISSIONS.TENANT_UPLOAD_BRANDING)
 async def update_tenant_branding(
@@ -3538,7 +3605,7 @@ async def list_tenant_contacts(
 @router.post(
     "/{tenant_id}/contacts", status_code=201, response_model=SuccessResponse[TenantContactOut]
 )
-@require_permission(PERMISSIONS.TENANT_MANAGE)
+@require_permission(PERMISSIONS.PLATFORM_CONTACT_EDIT)
 async def create_tenant_contact(
     tenant_id: uuid.UUID,
     body: TenantContactIn,
@@ -3565,7 +3632,7 @@ async def create_tenant_contact(
 @router.patch(
     "/{tenant_id}/contacts/{contact_id}", response_model=SuccessResponse[TenantContactOut]
 )
-@require_permission(PERMISSIONS.TENANT_MANAGE)
+@require_permission(PERMISSIONS.PLATFORM_CONTACT_EDIT)
 async def update_tenant_contact(
     tenant_id: uuid.UUID,
     contact_id: uuid.UUID,

@@ -34,18 +34,38 @@ from seed_permissions import ROLE_PERMISSION_MATRIX  # noqa: E402 - sys.path/env
 BRANDING_ACTION = "tenant:upload_branding"
 
 
-def test_no_non_sa_role_holds_branding_upload_permission() -> None:
-    """SA holding it is safe (SA bypasses tenant-ownership checks by design) —
-    only a non-SA grant would make HOLE 8 exploitable."""
-    holders = [
+def test_only_tenant_admin_and_sa_hold_branding_upload_permission() -> None:
+    """HOLE 8 (update_tenant_branding path tenant) is now closed centrally: the
+    permission middleware denies any non-SA/SYS caller whose required path
+    {tenant_id} is another tenant (TENANT_ACCESS_DENIED). So TA may hold the
+    grant for its own tenant. Any other non-SA role still needs review."""
+    holders = sorted(
         role
         for role, grants in ROLE_PERMISSION_MATRIX.items()
         if role != "SA" and BRANDING_ACTION in grants
-    ]
-    assert holders == [], (
-        f"{BRANDING_ACTION} is now granted to non-SA role(s) {holders}, but "
-        "tenants.py:update_tenant_branding (HOLE 8, docs/reviews/2026-10-19-rb1-sweep.md) "
-        "still has no tenant-ownership check on its path tenant_id. Add that check "
-        "(same pattern as _resolve_and_authorize_tenant_id in tenants.py) before "
-        "shipping this grant."
     )
+    assert holders in ([], ["TA"]), (
+        f"{BRANDING_ACTION} is held by non-SA role(s) {holders}. TA is covered by the "
+        "path-tenant check in shared/permissions/middleware.py; any other role "
+        "needs its own review before this grant."
+    )
+
+
+def test_branding_route_is_keyed_on_required_tenant_path() -> None:
+    """The middleware path check only applies to a route with a required {tenant_id}
+    path segment. Pin that for the branding route in the source, so the grant above
+    stays safe if the route is ever re-declared."""
+    tenants_src = os.path.join(
+        os.path.dirname(__file__),
+        "..",
+        "..",
+        "..",
+        "services",
+        "tenant-service",
+        "routers",
+        "tenants.py",
+    )
+    with open(tenants_src, encoding="utf-8") as fh:
+        src = fh.read()
+    assert '@router.patch("/{tenant_id}/branding"' in src
+    assert "@require_permission(PERMISSIONS.TENANT_UPLOAD_BRANDING)" in src
