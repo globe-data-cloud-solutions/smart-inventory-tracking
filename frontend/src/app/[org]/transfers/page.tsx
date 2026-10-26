@@ -331,9 +331,11 @@ function getImmediateReviewerLevel(
  *
  * Authority-level rules (replace all hardcoded role === 'X' checks):
  *
- *   isTenantMgr  = userLevel <= 1          SA/TA/NM — tenant-wide authority
- *   isSrcManager = isTenantMgr || isSrcWH  dispatch / issue authority
- *   isDstManager = isTenantMgr || isDstWH || isCreator   receive authority
+ *   isTenantAdmin = role TA or SA           completes any movement (no node of its own)
+ *   isSrcManager  = isTenantAdmin || isSrcWH   issue / dispatch authority
+ *   Receive: isTenantAdmin || the destination node's holder (PULL also the creator).
+ *   Mirrors dispatch_transfer / receive_transfer (Alex, 2026-10-26): NM is not
+ *   tenant-wide for issue/dispatch; an approval-only node holds no stock.
  *
  *   canReview    = !isCreator && userLevel === immediateReviewerLevel
  *                  immediateReviewerLevel = max(1, creatorAuthorityLevel - 1)
@@ -371,11 +373,9 @@ function getAvailableActions(
   const isDstWH = !!uWH && uWH === toWH?.toLowerCase();
   const isCreator = !!userId && userId === createdBy;
 
-  // Tenant-level managers (NM/TA/SA, level ≤ 1) have authority over any transfer.
-  // Facility-bound roles (RM/LM/WM) need their warehouse_id to match.
-  const isTenantMgr  = userLevel <= 1;
-  const isSrcManager = isTenantMgr || isSrcWH;
-  const isDstManager = isTenantMgr || isDstWH || isCreator;
+  // TA/SA complete any movement; everyone else acts on their own node only.
+  const isTenantAdmin = role === "TA" || role === "SA";
+  const isSrcManager  = isTenantAdmin || isSrcWH;
 
   // PENDING_REVIEW — only the IMMEDIATE superior of the creator reviews.
   // immediateReviewerLevel is derived from the creator's stored (global-scale)
@@ -419,10 +419,7 @@ function getAvailableActions(
   //   Creator/requester (RM at Region)  = destination side
   //   Source manager (NM at Main)       = supply side
   //
-  // isTenantMgr (NM/TA/SA) intentionally excluded from destination actions:
-  // NM is the *source* for a PULL, so they must see supply-side buttons
-  // (issue, dispatch) and NOT destination buttons (receive, complete).
-  // Using isDstManager (which includes isTenantMgr) would give NM both sides.
+  // Destination actions: the destination node's holder, the creator, or TA/SA.
   if (type === "PULL") {
     const map: Partial<Record<TransferStatus, Action[]>> = {};
 
@@ -442,9 +439,8 @@ function getAvailableActions(
       map.ISSUED   = [dispatch];
     }
 
-    // IN_TRANSIT/RECEIVED: strictly destination-side.
-    // pullDst excludes isTenantMgr so NM (source) never gets receive/complete.
-    const pullDst = isDstWH || isCreator;
+    // IN_TRANSIT/RECEIVED: destination side, or TA/SA completing it.
+    const pullDst = isTenantAdmin || isDstWH || isCreator;
     if (pullDst) {
       map.IN_TRANSIT         = [receive];
       map.PARTIALLY_RECEIVED = [receive];
@@ -456,11 +452,8 @@ function getAvailableActions(
 
   // ── PUSH: source proactively sends stock to destination ───────────────────
   //
-  // PUSH originates at the source; the destination only receives.
-  // isTenantMgr excluded from destination actions for PUSH:
-  // NM/TA are typically the *source* of a PUSH, so giving them
-  // receive authority via isTenantMgr would let the source receive their
-  // own shipment. pushDst uses exact warehouse match only.
+  // PUSH originates at the source; the destination receives. TA/SA can
+  // complete either side (Alex, 2026-10-25: TA completes suspended movements).
   if (type === "PUSH") {
     const map: Partial<Record<TransferStatus, Action[]>> = {};
 
@@ -480,8 +473,8 @@ function getAvailableActions(
       map.ISSUED   = [dispatch];
     }
 
-    // IN_TRANSIT/RECEIVED: strictly destination-side — exact warehouse match only
-    const pushDst = isDstWH;
+    // IN_TRANSIT/RECEIVED: destination node's holder, or TA/SA.
+    const pushDst = isTenantAdmin || isDstWH;
     if (pushDst) {
       map.IN_TRANSIT         = [receive];
       map.PARTIALLY_RECEIVED = [receive];
@@ -493,10 +486,10 @@ function getAvailableActions(
 
   // ── SISTER: lateral WH ↔ WH transfer ─────────────────────────────────────
   //
-  // SISTER is strictly peer-to-peer between two WH facilities at the same level.
-  // Higher-level managers (NM/TA) may approve the escalated request but must NOT
-  // see confirm/issue/receive buttons — those belong to the two peer WMs only.
-  // isSrcWH and isDstWH use exact warehouse match (never isTenantMgr).
+  // SISTER is lateral: two nodes at the same level, not under each other
+  // (e.g. Factory A -> Factory B). The confirm steps belong to the two peers
+  // only. Issue/dispatch and receive also allow TA/SA, who complete suspended
+  // movements; the backend allows the same.
   // canApprove (level ≤ 2, !isCreator) correctly gives NM the PENDING_APPROVAL
   // buttons since the transfer is escalated to NM for approval.
   if (type === "SISTER") {
@@ -514,14 +507,14 @@ function getAvailableActions(
     // PENDING_APPROVAL: escalated to NM/TA (canApprove handles level gate)
     if (canApprove) map.PENDING_APPROVAL = [approve, reject, cancel];
 
-    // APPROVED/ISSUED: source WM issues and dispatches — exact warehouse match only
-    if (isSrcWH) {
+    // APPROVED/ISSUED: source node's holder, or TA/SA
+    if (isSrcWH || isTenantAdmin) {
       map.APPROVED = [issue, cancel];
       map.ISSUED   = [dispatch];
     }
 
-    // IN_TRANSIT/RECEIVED: destination WM receives — exact warehouse match only
-    if (isDstWH) {
+    // IN_TRANSIT/RECEIVED: destination node's holder, or TA/SA
+    if (isDstWH || isTenantAdmin) {
       map.IN_TRANSIT         = [receive];
       map.PARTIALLY_RECEIVED = [receive];
       map.RECEIVED           = [complete];

@@ -1026,18 +1026,16 @@ class TestInventoryServiceTransfers:
         assert tin["warehouse_id"] == WAREHOUSE_B, "TRANSFER_IN must target destination"
         assert tin["quantity"] == qty, "TRANSFER_IN must be positive (credit)"
 
-    async def test_nm_can_dispatch_as_tenant_manager(self) -> None:
-        """NM without warehouse_id must be ALLOWED to dispatch APPROVED transfers.
+    async def test_nm_without_a_node_cannot_dispatch(self) -> None:
+        """Dispatch is a source-node action (Alex, 2026-10-26): TA/SA, or the
+        holder of the source node. An NM with no node of its own is refused.
 
-        NM manages at tenant/organisation level — their warehouse_id may be None because
-        they oversee the source facility without being assigned to a specific node.
-        dispatch_transfer() allows NM (and TA/SA) when warehouse_id is absent, mirroring
-        the frontend isSrcManager = !uWH || uWH === fromWH logic.
-
-        Regression: previously the ABAC check denied ALL users with warehouse_id = None.
-        This caused 403 errors when an NM (General Manager) tried to issue a PULL from
-        their facility after approving it — the transfer was stuck at APPROVED with no actor.
+        This replaces the earlier rule that NM was tenant-wide for dispatch
+        (Critical Bug 3). A transfer whose source has no active holder is
+        completed by the TA instead (see test_ta_can_dispatch_any_source).
         """
+        from fastapi import HTTPException
+
         from services.inventory_service import InventoryService
 
         NM_USER = _User("u-nm", TENANT_ID, None, None, "NM")
@@ -1046,24 +1044,27 @@ class TestInventoryServiceTransfers:
         xfer_row = _make_transfer_row("APPROVED", transfer_type="PULL")
         session = _session_for_dispatch(xfer_row, [line])
 
+        with pytest.raises(HTTPException) as exc_info:
+            await InventoryService(session).dispatch_transfer(NM_USER, TRANSFER_ID)
+        assert exc_info.value.status_code == 403
+
+    async def test_ta_can_dispatch_any_source(self) -> None:
+        """TA has no node and completes any approved transfer (Alex, 2026-10-25)."""
+        from services.inventory_service import InventoryService
+
+        TA_USER = _User("u-ta", TENANT_ID, None, None, "TA")
+
+        line = _make_line(quantity=60.0)
+        xfer_row = _make_transfer_row("APPROVED", transfer_type="PULL")
+        session = _session_for_dispatch(xfer_row, [line])
+
         with (
-            patch(
-                "services.inventory_service.record_transaction",
-                new=AsyncMock(return_value="tx-nm-dispatch"),
-            ),
-            patch(
-                "services.inventory_service.write_transfer_ledger_entry",
-                new=AsyncMock(),
-            ),
+            patch("services.inventory_service.record_transaction", new=AsyncMock()),
+            patch("services.inventory_service.write_transfer_ledger_entry", new=AsyncMock()),
             patch("services.inventory_service.audit_log", new=AsyncMock()),
         ):
-            result = await InventoryService(session).dispatch_transfer(NM_USER, TRANSFER_ID)
-
-        assert result.status == "ISSUED", (
-            "NM with no warehouse_id must be able to dispatch — they have tenant-level authority"
-        )
-        # No ledger entries at dispatch — source on_hand was deducted at APPROVED
-        # (this is verified by test_dispatch_writes_no_ledger_entries)
+            result = await InventoryService(session).dispatch_transfer(TA_USER, TRANSFER_ID)
+        assert result.status == "ISSUED"
 
     async def test_rm_cannot_issue_non_source_transfer(self) -> None:
         """RM whose warehouse does not match the source must be denied with 403.
@@ -1616,19 +1617,30 @@ class TestGap4SimpleModeWiring:
         )
         assert exc_info.value.detail["code"] == "INVALID_STATE_TRANSITION"
 
-    async def test_nm_can_dispatch_with_warehouse_id(self) -> None:
-        """NM with a specific warehouse_id assigned must still dispatch transfers
-        from ANY source warehouse — NM has tenant-level authority (Critical Bug 3).
+    async def test_nm_at_another_node_cannot_dispatch(self) -> None:
+        """An NM whose node is not the source is refused, like any other role
+        (Alex, 2026-10-26). Replaces Critical Bug 3's tenant-wide NM dispatch."""
+        from fastapi import HTTPException
 
-        Root cause: dispatch_transfer() checked warehouse_id BEFORE role.
-        An NM with warehouse_id="facility-X" was treated like a WM and blocked
-        from dispatching transfers from "facility-Y".
-
-        Fix: role check runs FIRST — NM/TA/SA always get can_dispatch=True.
-        """
         from services.inventory_service import InventoryService
 
         NM_WITH_WH = _User("u-nm-wh", TENANT_ID, WAREHOUSE_B, None, "NM")
+
+        line = _make_line(quantity=60.0)
+        xfer_row = _make_transfer_row(
+            "APPROVED", transfer_type="PULL", from_wh=WAREHOUSE_A, to_wh=WAREHOUSE_B
+        )
+        session = _session_for_dispatch(xfer_row, [line])
+
+        with pytest.raises(HTTPException) as exc_info:
+            await InventoryService(session).dispatch_transfer(NM_WITH_WH, TRANSFER_ID)
+        assert exc_info.value.status_code == 403
+
+    async def test_nm_at_the_source_node_can_dispatch(self) -> None:
+        """An NM who holds the source node dispatches like any source holder."""
+        from services.inventory_service import InventoryService
+
+        NM_AT_SOURCE = _User("u-nm-src", TENANT_ID, WAREHOUSE_A, None, "NM")
 
         line = _make_line(quantity=60.0)
         xfer_row = _make_transfer_row(
@@ -1641,16 +1653,13 @@ class TestGap4SimpleModeWiring:
             patch("services.inventory_service.write_transfer_ledger_entry", new=AsyncMock()),
             patch("services.inventory_service.audit_log", new=AsyncMock()),
         ):
-            result = await InventoryService(session).dispatch_transfer(NM_WITH_WH, TRANSFER_ID)
+            result = await InventoryService(session).dispatch_transfer(NM_AT_SOURCE, TRANSFER_ID)
+        assert result.status == "ISSUED"
 
-        assert result.status == "ISSUED", (
-            "NM with warehouse_id=WAREHOUSE_B must dispatch a transfer from WAREHOUSE_A — "
-            "NM authority is tenant-wide, not facility-scoped"
-        )
-
-    async def test_nm_issue_sets_acted_on_behalf_of(self) -> None:
-        """NM (warehouse_id=None — the documented normal case for tenant-level
-        roles) issues a transfer whose source is L2's warehouse (WAREHOUSE_A).
+    async def test_ta_issue_sets_acted_on_behalf_of(self) -> None:
+        """TA (warehouse_id=None — tenant-level, no node) issues a transfer whose
+        source is L2's warehouse (WAREHOUSE_A). Was NM before NM lost
+        tenant-wide dispatch (Alex, 2026-10-26).
 
         Bug 2 fix: the old guard `if user.warehouse_id and ...` short-circuited
         to False when user.warehouse_id is None, so acted_on_behalf_of was never
@@ -1660,7 +1669,7 @@ class TestGap4SimpleModeWiring:
         """
         from services.inventory_service import InventoryService
 
-        NM_NO_WH = _User("u-nm", TENANT_ID, None, None, "NM")
+        TA_NO_WH = _User("u-ta", TENANT_ID, None, None, "TA")
 
         line = _make_line(quantity=60.0)
         xfer_row = _make_transfer_row(
@@ -1673,7 +1682,7 @@ class TestGap4SimpleModeWiring:
             patch("services.inventory_service.write_transfer_ledger_entry", new=AsyncMock()),
             patch("services.inventory_service.audit_log", new=AsyncMock()) as mock_audit,
         ):
-            result = await InventoryService(session).dispatch_transfer(NM_NO_WH, TRANSFER_ID)
+            result = await InventoryService(session).dispatch_transfer(TA_NO_WH, TRANSFER_ID)
 
         assert result.status == "ISSUED"
         issue_calls = [
@@ -1681,7 +1690,7 @@ class TestGap4SimpleModeWiring:
         ]
         assert len(issue_calls) == 1
         assert "acted_on_behalf_of" in issue_calls[0].kwargs["resource"], (
-            "NM (warehouse_id=None) issuing from L2's warehouse must record "
+            "TA (warehouse_id=None) issuing from L2's warehouse must record "
             "acted_on_behalf_of in the audit trail"
         )
 
