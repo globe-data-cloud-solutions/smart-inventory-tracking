@@ -272,8 +272,9 @@ class TestSelfApprovalEscalates:
 @pytest.mark.unit
 class TestNoRuleRoutesToNM:
     async def test_no_rule_routes_to_nm(self) -> None:
-        """When no transfer_approval_rules row matches, resolve_transfer_approvers
-        falls back to any NM-role position holder and sets missing_rule=True."""
+        """When no transfer_approval_rules row matches and the hierarchy walk finds
+        nobody above the requesting node, resolve_transfer_approvers falls back to
+        any NM-role position holder and sets missing_rule=True."""
         from services.approval_service import resolve_transfer_approvers
 
         nm_holder_row = _row(
@@ -288,6 +289,7 @@ class TestNoRuleRoutesToNM:
             _row(hierarchy_level=3),  # src level
             _row(hierarchy_level=2),  # dst level
             [],  # _find_matching_rule → empty list
+            [],  # hierarchy walk → nobody above the requesting node
             nm_holder_row,  # NM fallback query
         )
 
@@ -504,3 +506,183 @@ class TestProductAuditLog:
         assert audit_log_pos > products_insert_pos, (
             "audit_logs INSERT must follow the products INSERT (same transaction)"
         )
+
+
+# ── Decision 5 (Alex, 2026-10-25): no rule → hierarchy walk, NM last ────────
+
+PARENT_NODE = "bbbbbbbb-0000-0000-0000-0000000000aa"
+GRAND_NODE = "bbbbbbbb-0000-0000-0000-0000000000bb"
+RM_UID = "eeeeeeee-0000-0000-0000-0000000000a1"
+RM2_UID = "eeeeeeee-0000-0000-0000-0000000000a2"
+
+
+def _walk_row(depth: int, user_id: str, name: str, title: str, node: str) -> MagicMock:
+    return _row(
+        depth=depth,
+        pos_id=f"pos-{node[-2:]}",
+        title=title,
+        node_id=node,
+        user_id=user_id,
+        full_name=name,
+    )
+
+
+async def _resolve(db, transfer_type: str | None = "PULL", created_by: str = CREATOR_UID):
+    from services.approval_service import resolve_transfer_approvers
+
+    return await resolve_transfer_approvers(
+        session=db,
+        tenant_id=TENANT_ID,
+        transfer_type_config_id=CONFIG_ID,
+        from_warehouse_id=SRC_NODE,
+        to_warehouse_id=DST_NODE,
+        quantity=Decimal(10),
+        total_value=None,
+        created_by=created_by,
+        transfer_type=transfer_type,
+    )
+
+
+def _walk_params(db) -> dict:
+    calls = [c for c in db.execute.await_args_list if "WITH RECURSIVE up" in str(c.args[0])]
+    assert len(calls) == 1
+    return calls[0].args[1]
+
+
+@pytest.mark.unit
+class TestHierarchyWalkDefault:
+    async def test_first_node_above_with_an_approver_gets_the_step(self) -> None:
+        db = _db_seq(
+            _row(hierarchy_level=1),
+            _row(hierarchy_level=3),
+            [],
+            [
+                _walk_row(1, RM_UID, "RM One", "Regional Manager", PARENT_NODE),
+                _walk_row(1, RM2_UID, "RM Two", "Regional Manager", PARENT_NODE),
+                _walk_row(2, HOLDER_UID, "NM User", "National Manager", GRAND_NODE),
+            ],
+        )
+        res = await _resolve(db)
+        assert res.missing_rule is True
+        (step,) = res.steps
+        assert step.position_title == "Regional Manager"
+        assert step.node_id == PARENT_NODE
+        assert step.execution_mode == "any"
+        assert [h["user_id"] for h in step.all_holders] == [RM_UID, RM2_UID]
+        assert step.assigned_to_user_id == RM_UID
+        # The walk answered, so the NM fallback query never ran.
+        assert db.execute.await_count == 4
+
+    async def test_creator_is_skipped_for_the_next_level_up(self) -> None:
+        db = _db_seq(
+            _row(hierarchy_level=1),
+            _row(hierarchy_level=3),
+            [],
+            [
+                _walk_row(1, CREATOR_UID, "Creator", "Regional Manager", PARENT_NODE),
+                _walk_row(2, HOLDER_UID, "NM User", "National Manager", GRAND_NODE),
+            ],
+        )
+        res = await _resolve(db)
+        assert res.steps[0].assigned_to_user_id == HOLDER_UID
+        assert res.steps[0].node_id == GRAND_NODE
+
+    @pytest.mark.parametrize(
+        ("transfer_type", "start"),
+        [("PULL", DST_NODE), ("SISTER", DST_NODE), ("PUSH", SRC_NODE), (None, DST_NODE)],
+    )
+    async def test_walk_starts_at_the_requesting_node(
+        self, transfer_type: str | None, start: str
+    ) -> None:
+        db = _db_seq(
+            _row(hierarchy_level=1),
+            _row(hierarchy_level=3),
+            [],
+            [_walk_row(1, RM_UID, "RM One", "Regional Manager", PARENT_NODE)],
+        )
+        await _resolve(db, transfer_type=transfer_type)
+        assert _walk_params(db) == {"start": start, "tid": TENANT_ID}
+
+    async def test_walk_query_requires_an_approving_role_and_active_holder(self) -> None:
+        from services.approval_service import _HIERARCHY_WALK_SQL
+
+        sql = str(_HIERARCHY_WALK_SQL)
+        assert "rp.action_id = 'transfer:approve'" in sql
+        assert "pp.assignment_type = 'PRIMARY'" in sql
+        assert "u.is_active = true" in sql
+        assert "parent_node_id" in sql
+
+
+# ── Decision 6 (Alex, 2026-10-25): a step without a position defaults to the
+#    next higher level (from the previous step's node), TA last ──────────────
+
+
+def _rule(*steps: dict) -> MagicMock:
+    return _row(
+        id=CONFIG_ID,
+        approval_steps=list(steps),
+        threshold_type="QUANTITY",
+        quantity_min=Decimal(0),
+        quantity_max=None,
+        value_min=Decimal(0),
+        value_max=None,
+        source_level=None,
+        destination_level=None,
+        priority=0,
+    )
+
+
+@pytest.mark.unit
+class TestStepWithoutPositionDefaults:
+    async def test_first_step_without_position_walks_up_from_the_requesting_node(self) -> None:
+        db = _db_seq(
+            _row(hierarchy_level=1),
+            _row(hierarchy_level=3),
+            [_rule({"sequence": 1, "position_id": "", "position_title": "", "sla_hours": 12})],
+            [_walk_row(1, RM_UID, "RM One", "Regional Manager", PARENT_NODE)],
+        )
+        res = await _resolve(db, transfer_type="PULL")
+        assert res.missing_rule is False
+        (step,) = res.steps
+        assert step.assigned_to_user_id == RM_UID
+        assert step.position_title == "Regional Manager"
+        assert step.sla_hours == 12
+        assert _walk_params(db) == {"start": DST_NODE, "tid": TENANT_ID}
+
+    async def test_later_step_without_position_walks_up_from_the_previous_step(self) -> None:
+        first = {"sequence": 1, "position_id": POSITION_ID, "position_title": "Warehouse Manager"}
+        second = {"sequence": 2, "position_id": None, "position_title": None}
+        db = _db_seq(
+            _row(hierarchy_level=1),
+            _row(hierarchy_level=3),
+            [_rule(first, second)],
+            # step 1: direct position lookup
+            _row(
+                pos_id=POSITION_ID,
+                user_id=HOLDER_UID,
+                full_name="WM Person",
+                node_id=PARENT_NODE,
+                title="Warehouse Manager",
+            ),
+            # step 2: walk from step 1's node
+            [_walk_row(1, RM_UID, "RM One", "Regional Manager", GRAND_NODE)],
+        )
+        res = await _resolve(db)
+        assert [s.sequence for s in res.steps] == [1, 2]
+        assert res.steps[1].assigned_to_user_id == RM_UID
+        assert res.steps[1].node_id == GRAND_NODE
+        assert _walk_params(db) == {"start": PARENT_NODE, "tid": TENANT_ID}
+
+    async def test_nobody_above_goes_to_the_ta(self) -> None:
+        db = _db_seq(
+            _row(hierarchy_level=1),
+            _row(hierarchy_level=3),
+            [_rule({"sequence": 1})],
+            [],  # walk finds nobody
+            _row(id="ta-1", full_name="Tenant Admin User"),  # _find_tenant_ta
+        )
+        res = await _resolve(db)
+        (step,) = res.steps
+        assert step.position_title == "Tenant Admin"
+        assert step.assigned_to_user_id == "ta-1"
+        assert step.escalated is True

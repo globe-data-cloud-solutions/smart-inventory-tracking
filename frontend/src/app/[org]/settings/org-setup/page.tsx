@@ -2926,6 +2926,10 @@ function ApprovalRulesV2Tab({ tenantId, prefillLevel }: { tenantId: string; pref
                         className="w-16 border border-gray-300 rounded px-2 py-1 text-xs" />
                       <button type="button" onClick={() => removeStep(activeType, rIdx, sIdx)}
                         className="w-5 h-5 flex items-center justify-center text-xs rounded border border-red-200 text-red-400 hover:bg-red-50">×</button>
+                      {/* Decision 6: a step without a position falls back to the next higher level. */}
+                      {!step.position_id && (
+                        <p className="basis-full text-[11px] text-amber-700">{t("approval_rule.no_position_default")}</p>
+                      )}
                       {slaOrderConflict(rule.steps, sIdx) != null && (
                         <p className="basis-full text-[11px] text-amber-700">
                           {t("approval_rule.sla_order_warning").replace("{hours}", String(slaOrderConflict(rule.steps, sIdx)))}

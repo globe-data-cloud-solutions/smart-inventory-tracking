@@ -101,6 +101,15 @@ Approval is different: a request stuck at a node's approval step moves to the
   next higher position in the chain, which approves on that node's behalf, with
   the TA as the last stop (SLA escalation, shared/approvals/sla_escalation.py).
   This covers approval only, never issue, dispatch or receive.
+Default approver when no TA rule matches (2026-10-26): walk up parent_node_id
+  from the requesting node (destination for PULL/SISTER, source for PUSH),
+  approval-only nodes included. The first node above with an active PRIMARY
+  holder whose role holds transfer:approve gets the step (ANY mode, every such
+  holder at that node). The creator is skipped. Nobody found -> any NM -> TA.
+  (approval_service._hierarchy_walk_approvers)
+A rule step saved without a position defaults to the next higher level: the
+  same walk, from the previous step's node (first step: the requesting node),
+  TA last. The rule editor warns on such steps; saving is still allowed.
 Authority scope is always resolved via get_descendant_node_ids()
   (organization_node.parent_node_id) — never inferred from role code alone (§24 Rule 25).
 ```

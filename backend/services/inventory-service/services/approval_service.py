@@ -697,6 +697,86 @@ async def _escalate_vacant(
     return None, None, True
 
 
+_HIERARCHY_WALK_SQL = text("""
+    WITH RECURSIVE up AS (
+        SELECT n.parent_node_id AS node_id, 1 AS depth
+        FROM   organization_node n
+        WHERE  n.id = :start AND n.tenant_id = :tid
+        UNION ALL
+        SELECT n.parent_node_id, up.depth + 1
+        FROM   organization_node n
+        JOIN   up ON n.id = up.node_id
+        WHERE  n.tenant_id = :tid AND up.depth < 10
+    )
+    SELECT up.depth, p.id AS pos_id, p.title, p.node_id, pp.user_id, u.full_name
+    FROM   up
+    JOIN   positions p
+           ON p.node_id = up.node_id AND p.tenant_id = :tid AND p.is_active = true
+    JOIN   personnel_positions pp
+           ON pp.position_id = p.id AND pp.is_active = true
+           AND pp.assignment_type = 'PRIMARY'
+           AND (pp.valid_until IS NULL OR pp.valid_until >= CURRENT_DATE)
+    JOIN   users u ON u.id = pp.user_id AND u.is_active = true
+    WHERE  up.node_id IS NOT NULL
+    AND    EXISTS (
+               SELECT 1 FROM role_permissions rp
+               WHERE  rp.role_code::text = p.role_code::text
+               AND    rp.action_id = 'transfer:approve' AND rp.is_active = true
+           )
+    ORDER  BY up.depth, p.title, u.full_name
+""")
+
+
+async def _hierarchy_walk_approvers(
+    session: AsyncSession,
+    tenant_id: str,
+    start_node_id: str | None,
+    exclude_user_id: str | None,
+) -> ResolvedStep | None:
+    """Default approver when no rule matches (Alex, 2026-10-25, decision 5).
+
+    Walks up organization_node.parent_node_id from the node that raised the
+    request, approval-only nodes included (that is what they are for). The
+    first node above with an active PRIMARY holder whose role holds
+    transfer:approve becomes the step; every such holder at that node can
+    approve (ANY mode). The creator is skipped. None when nobody is found,
+    and the caller falls back to NM, then TA.
+    """
+    if not start_node_id:
+        return None
+    rows = (
+        await session.execute(_HIERARCHY_WALK_SQL, {"start": start_node_id, "tid": tenant_id})
+    ).fetchall()
+    exclude = str(exclude_user_id) if exclude_user_id else None
+    by_depth: dict[int, list[Any]] = {}
+    for r in rows:
+        if r.user_id is None or str(r.user_id) == exclude:
+            continue
+        by_depth.setdefault(int(r.depth), []).append(r)
+    if not by_depth:
+        return None
+    first = by_depth[min(by_depth)]
+    holders: list[dict[str, str]] = []
+    seen: set[str] = set()
+    for r in first:
+        uid = str(r.user_id)
+        if uid not in seen:
+            seen.add(uid)
+            holders.append({"user_id": uid, "name": str(r.full_name or "")})
+    lead = first[0]
+    return ResolvedStep(
+        sequence=1,
+        position_title=str(lead.title),
+        position_id=str(lead.pos_id),
+        node_id=str(lead.node_id),
+        assigned_to_user_id=holders[0]["user_id"],
+        assigned_to_name=holders[0]["name"],
+        execution_mode="any",
+        all_holders=holders,
+        holder_count=len(holders),
+    )
+
+
 # ── Main entry point: resolve_transfer_approvers ─────────────────────────────
 
 
@@ -711,6 +791,7 @@ async def resolve_transfer_approvers(
     created_by: Optional[str],
     src_level: Optional[int] = None,
     dst_level: Optional[int] = None,
+    transfer_type: str | None = None,
 ) -> ApprovalResolution:
     """Dynamic approval routing using transfer_approval_rules + positions.
 
@@ -742,7 +823,9 @@ async def resolve_transfer_approvers(
       4. Find the current PRIMARY holder
       5. If vacant → escalate up reports_to chain
       6. If holder == creator → escalate up reports_to chain
-      7. No rule → fall back to any NM-role position holder
+      7. No rule → walk up the hierarchy from the requesting node (destination
+         for PULL/SISTER, source for PUSH; transfer_type None = destination);
+         nobody found → any NM-role position holder → TA
 
     Stores the full resolution on the transfer order so approval-info
     queries don't re-run the logic on every call.
@@ -787,8 +870,13 @@ async def resolve_transfer_approvers(
         if candidate and candidate.get("approval_steps"):
             rule = candidate
 
-    # No rule (or rule had no steps) → NM fallback
+    # No rule (or rule had no steps) → hierarchy walk, then NM, then TA
     if not rule:
+        start_node = from_warehouse_id if transfer_type == "PUSH" else to_warehouse_id
+        walked = await _hierarchy_walk_approvers(session, tenant_id, start_node, created_by)
+        if walked is not None:
+            return ApprovalResolution(missing_rule=True, steps=[walked])
+
         nm_row = (
             await session.execute(
                 text("""
@@ -881,6 +969,34 @@ async def resolve_transfer_approvers(
                     None,
                     None,
                 )
+        elif not title:
+            # Decision 6 (Alex, 2026-10-25): a step saved without a position
+            # defaults to the next higher level: walk up from the previous
+            # step's node (or, for the first step, from the requesting node),
+            # with the TA as the last stop. The rule editor warns about this.
+            prev_node = resolved_steps[-1].node_id if resolved_steps else None
+            start_node = prev_node or (
+                from_warehouse_id if transfer_type == "PUSH" else to_warehouse_id
+            )
+            default_step = await _hierarchy_walk_approvers(
+                session, tenant_id, start_node, created_by
+            )
+            if default_step is None:
+                ta_uid, ta_name = await _find_tenant_ta(session, tenant_id)
+                default_step = ResolvedStep(
+                    sequence=seq,
+                    position_title="Tenant Admin",
+                    position_id=None,
+                    node_id=None,
+                    assigned_to_user_id=ta_uid,
+                    assigned_to_name=ta_name,
+                    is_vacant=ta_uid is None,
+                    escalated=True,
+                )
+            default_step.sequence = seq
+            default_step.sla_hours = int(sla) if sla is not None else None
+            resolved_steps.append(default_step)
+            continue
         else:
             # Legacy: title-based resolution (existing behaviour)
             node = await _resolve_node_for_step(
