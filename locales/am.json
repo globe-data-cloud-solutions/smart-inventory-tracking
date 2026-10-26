@@ -967,6 +967,8 @@
     "INTERNAL_ERROR": "ያልተጠበቀ ስህተት ተከስቷል። እባክዎ እንደገና ይሞክሩ።",
     "LEVEL_NOT_CONFIGURED": "Level {level_number} has no permissions set for {transfer_type}. Ask your Tenant Admin to configure it.",
     "LEVEL_PERMISSION_MISSING": "Set permissions for every level before saving {transfer_type}.",
+    "NODE_NOT_STOCK_HOLDING": "ይህ ቦታ ክምችት አይይዝም፤ ለማጽደቅ ብቻ ያገለግላል።",
+    "SISTER_LEVEL_MISMATCH": "የእህት ዝውውር ሁለቱም ቦታዎች በአንድ ደረጃ ላይ እንዲሆኑ ይጠይቃል (ከደረጃ {from_level} ወደ ደረጃ {to_level})።",
     "OFFLINE": "ከመስመር ውጪ ነዎት። ይህ ድርጊት ወደ ጠብቅ ተጨምሯል።",
     "DUPLICATE_TRANSACTION": "ይህ ግብይት አስቀድሞ ቀርቧል።",
     "LOT_NUMBER_REQUIRED": "የሎት ቁጥር ያስፈልጋል።",
@@ -2046,6 +2048,7 @@
     "units_suffix": "ክፍሎች"
   },
   "transfer_panel": {
+    "no_eligible_locations": "ለዚህ የዝውውር አይነት የሚመጥን ቦታ የለም። ለደረጃዎቹ የተሰጡትን ፈቃዶች ያረጋግጡ።",
     "estimated_value": "ግምታዊ ዋጋ",
     "level_cannot_initiate": "ከቦታዎ አይፈቀድም",
     "title": "አዲስ ክምችት ዝውውር",

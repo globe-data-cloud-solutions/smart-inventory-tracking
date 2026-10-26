@@ -167,17 +167,30 @@ export function NewTransferPanel({ products, warehouses, orgSlug }: Props) {
         { id: "", underlying_type: "SISTER", display_name: t("transfer_panel.sister_desc"), is_active: true, level_permissions: [] },
       ];
 
-  // Check whether the current user's level can initiate a given transfer type
-  const userLevel = user?.levelNumber ?? 99;
-  function canUserInitiate(cfg: ApiTransferType): boolean {
-    if (!cfg.level_permissions.length) return true;  // no restrictions configured
-    const perm = cfg.level_permissions.find((p) => p.level_number === userLevel);
-    if (!perm) return true;  // level not in config → allowed by default
-    return perm.can_initiate;
-  }
-
   const lockedWH     = user?.warehouseId;
   const userWH       = warehouses.find((w) => w.id === lockedWH);
+
+  // Level permissions mirror InventoryService.create_transfer: the initiating
+  // node (destination for PULL/SISTER, source for PUSH) needs can_initiate, the
+  // destination needs can_receive, and a level with no row is NOT allowed
+  // (backend LEVEL_NOT_CONFIGURED since PR #52). The static fallback types
+  // (no config id, BFF mode) carry no restrictions.
+  function levelAllows(cfg: ApiTransferType | undefined, level: number | undefined, what: "initiate" | "receive"): boolean {
+    if (!cfg || !cfg.id) return true;
+    const perm = cfg.level_permissions.find((p) => p.level_number === level);
+    if (!perm) return false;
+    return what === "initiate" ? perm.can_initiate : perm.can_receive;
+  }
+
+  // Whether the user's own node may start this type. A user with no node (TA)
+  // can start any type; the location pickers then apply the level rules.
+  function canUserInitiate(cfg: ApiTransferType): boolean {
+    if (!lockedWH) return true;
+    const level = userWH?.level_number ?? user?.levelNumber;
+    if (!levelAllows(cfg, level, "initiate")) return false;
+    // For PULL and SISTER the user's node is also the destination.
+    return cfg.underlying_type === "PUSH" || levelAllows(cfg, level, "receive");
+  }
   const lockedWHName = user?.warehouseName ?? userWH?.name ?? lockedWH ?? "";
   // canPush: facility hierarchy level_number <= 2 (L1 = Main WH, L2 = Regional WH only).
   // NEVER derive this from warehouse type string — type strings are display labels, not authority.
@@ -230,15 +243,27 @@ export function NewTransferPanel({ products, warehouses, orgSlug }: Props) {
   const ancestorIds   = lockedWH ? getAncestorScope(lockedWH, warehouses)   : null;
   const descendantIds = lockedWH ? getDescendantScope(lockedWH, warehouses) : null;
 
+  const currentCfg = activeTypes.find((tt) => tt.underlying_type === form.transferType);
+  const fromLevel  = warehouses.find((w) => w.id === effectiveFrom)?.level_number;
+  const toLevel    = warehouses.find((w) => w.id === effectiveTo)?.level_number;
+
   const fromOptions = warehouses.filter((w) => {
     if (w.id === effectiveTo)          return false;
     if (lockedWH && w.id === lockedWH) return false;
+    // PUSH: the source starts the transfer.
+    if (isPush && !levelAllows(currentCfg, w.level_number, "initiate")) return false;
+    // SISTER: lateral, both locations at the same level (e.g. Factory A -> Factory B).
+    if (isSister && toLevel !== undefined && w.level_number !== toLevel) return false;
     if (isPull && lockedWH && ancestorIds && ancestorIds.length > 0) return ancestorIds.includes(w.id);
     return true;
   });
   const toOptions = warehouses.filter((w) => {
     if (w.id === effectiveFrom)        return false;
     if (lockedWH && w.id === lockedWH) return false;
+    if (!levelAllows(currentCfg, w.level_number, "receive")) return false;
+    // PULL and SISTER: the destination starts the transfer.
+    if ((isPull || isSister) && !levelAllows(currentCfg, w.level_number, "initiate")) return false;
+    if (isSister && fromLevel !== undefined && w.level_number !== fromLevel) return false;
     if (isPush && lockedWH && descendantIds && descendantIds.length > 0) return descendantIds.includes(w.id);
     return true;
   });
@@ -354,7 +379,9 @@ export function NewTransferPanel({ products, warehouses, orgSlug }: Props) {
               className={selectCls}
             >
               {activeTypes
-                .filter((tt) => tt.underlying_type !== "PUSH" || canPush)
+                // With a tenant config the level permissions decide PUSH; the
+                // level <= 2 shortcut only applies to the static fallback types.
+                .filter((tt) => tt.underlying_type !== "PUSH" || canPush || !!tt.id)
                 .map((tt) => {
                   const blocked = !canUserInitiate(tt);
                   return (
@@ -393,6 +420,9 @@ export function NewTransferPanel({ products, warehouses, orgSlug }: Props) {
                 {fromOptions.map((w) => <option key={w.id} value={w.id}>{w.name}</option>)}
               </select>
             )}
+            {!fromIsLocked && fromOptions.length === 0 && (
+              <p className="text-[11px] text-amber-700 mt-1">{t("transfer_panel.no_eligible_locations")}</p>
+            )}
           </Field>
 
           <Field label={isPull || isSister ? t("transfer_panel.to_your_wh") : t("inventory.transfer.to_warehouse")} hint={toIsLocked ? t("transfer_panel.locked") : undefined}>
@@ -403,6 +433,9 @@ export function NewTransferPanel({ products, warehouses, orgSlug }: Props) {
                 <option value="">— {t("transfer_panel.destination")} —</option>
                 {toOptions.map((w) => <option key={w.id} value={w.id}>{w.name}</option>)}
               </select>
+            )}
+            {!toIsLocked && toOptions.length === 0 && (
+              <p className="text-[11px] text-amber-700 mt-1">{t("transfer_panel.no_eligible_locations")}</p>
             )}
           </Field>
 

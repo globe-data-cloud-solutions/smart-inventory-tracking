@@ -661,7 +661,7 @@ def _lot_db(
             return _result(rows[0] if rows else None, rows)
         if "SELECT batch_tracking, expiry_tracking FROM products" in stmt:
             return _result(product)
-        if "SELECT 1 FROM warehouses WHERE id = :wid" in stmt:
+        if "SELECT true AS stock_holding FROM warehouses WHERE id = :wid" in stmt:
             # _validate_adjustment_warehouse — these tests are about lot handling,
             # not warehouse ownership, so the warehouse always exists by default.
             return _result(MagicMock())
@@ -730,7 +730,7 @@ class TestAdjustmentWarehouseTenantValidation:
                 return MagicMock(fetchone=MagicMock(return_value=None))  # not idempotent-replayed
             if "SELECT batch_tracking, expiry_tracking FROM products" in stmt:
                 return MagicMock(fetchone=MagicMock(return_value=_product(batch=False)))
-            if stmt.startswith("SELECT 1 FROM warehouses WHERE id = :wid"):
+            if stmt.startswith("SELECT true AS stock_holding FROM warehouses WHERE id = :wid"):
                 return MagicMock(fetchone=MagicMock(return_value=None))  # not found in this tenant
             return MagicMock(fetchone=MagicMock(return_value=None))
 

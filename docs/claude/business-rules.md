@@ -79,7 +79,20 @@ Multiple root nodes are allowed (e.g. two separate factories under one tenant).
 Every organization_node has is_stock_holding BOOLEAN.
   is_stock_holding=false nodes participate in the approval chain only —
   they hold no inventory, appear in no balance queries, and cannot be a
-  PULL/PUSH source or destination.
+  PULL/PUSH/SISTER source or destination. Enforced (2026-10-26) in
+  InventoryService: create_transfer (either side), receive (goods receipt)
+  and create_adjustment refuse them with 422 NODE_NOT_STOCK_HOLDING. With
+  no way in, such a node never has stock to issue or dispatch. Acting on
+  behalf of a stock node is separate work (parked).
+SISTER is a lateral transfer between two nodes at the SAME level that are
+  not under each other, e.g. Factory A -> Factory B (both level 1, separate
+  roots). Different levels -> 422 SISTER_LEVEL_MISMATCH. Same level already
+  implies neither node is the other's ancestor.
+Issue/dispatch: TA/SA, or the holder of the source node (any role).
+Receive: TA/SA, or the holder of the destination node (any role).
+  NM is not tenant-wide for either (2026-10-26); the TA completes a movement
+  whose node has no active holder. The transfers list buttons
+  (getAvailableActions) follow the same rule.
 Authority scope is always resolved via get_descendant_node_ids()
   (organization_node.parent_node_id) — never inferred from role code alone (§24 Rule 25).
 ```
