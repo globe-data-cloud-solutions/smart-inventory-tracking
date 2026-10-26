@@ -964,6 +964,8 @@
     "RBAC_DENIED": "ይህን ድርጊት ለማከናወን ፈቃድ የለዎትም።",
     "ABAC_DENIED": "መዳረሻ ተከልክሏል — ሀብቱ ከወሰንዎ ውጪ ነው።",
     "INTERNAL_ERROR": "ያልተጠበቀ ስህተት ተከስቷል። እባክዎ እንደገና ይሞክሩ።",
+    "LEVEL_NOT_CONFIGURED": "Level {level_number} has no permissions set for {transfer_type}. Ask your Tenant Admin to configure it.",
+    "LEVEL_PERMISSION_MISSING": "Set permissions for every level before saving {transfer_type}.",
     "OFFLINE": "ከመስመር ውጪ ነዎት። ይህ ድርጊት ወደ ጠብቅ ተጨምሯል።",
     "DUPLICATE_TRANSACTION": "ይህ ግብይት አስቀድሞ ቀርቧል።",
     "LOT_NUMBER_REQUIRED": "የሎት ቁጥር ያስፈልጋል።",
