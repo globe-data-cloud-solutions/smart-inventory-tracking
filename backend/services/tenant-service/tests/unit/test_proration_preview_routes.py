@@ -108,4 +108,5 @@ async def test_sa_proration_preview_denied_for_non_sa() -> None:
             )
 
     assert exc_info.value.status_code == 403
-    assert exc_info.value.detail["code"] == "FORBIDDEN"
+    # Refused by the permission layer (platform_only action), before the handler.
+    assert exc_info.value.detail["code"] == "ABAC_DENIED: platform_only"
