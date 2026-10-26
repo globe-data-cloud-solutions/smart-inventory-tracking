@@ -2902,8 +2902,10 @@ def _build_profile_update_set_clause(
     """Pure: build the SET clause + params for update_tenant_profile from the
     already-computed `changes` map — everything EXCEPT plan_tier, which needs
     an async package lookup via apply_package_to_tenant and is handled by the
-    caller. Org-type change sets approval_thresholds only — feature flags are
-    owned by the plan/package (CLAUDE.md §15) and are never touched here.
+    caller. Org-type change touches approval_thresholds only — feature flags are
+    owned by the plan/package (CLAUDE.md §15) and are never touched here. Like
+    the TA route (update_organisation_type), thresholds the tenant has already
+    set are kept; the new type's defaults fill in only when none are stored.
     """
     set_parts: list[str] = ["updated_at = now()"]
     params: dict = {}
@@ -2916,7 +2918,11 @@ def _build_profile_update_set_clause(
         new_org = changes["organisation_type"][1]
         set_parts.append("organisation_type = CAST(:org_type AS organisation_type)")
         params["org_type"] = new_org
-        set_parts.append("approval_thresholds = CAST(:thresholds AS jsonb)")
+        set_parts.append(
+            "approval_thresholds = CASE "
+            "WHEN approval_thresholds IS NULL OR approval_thresholds = '{}'::jsonb "
+            "THEN CAST(:thresholds AS jsonb) ELSE approval_thresholds END"
+        )
         params["thresholds"] = json.dumps(APPROVAL_DEFAULTS.get(new_org, {}))
 
     if "default_locale" in changes:
@@ -3931,7 +3937,7 @@ class TaUserUpdateRequest(BaseModel):
 
 
 @router.get("/{tenant_id}/admin-user", response_model=SuccessResponse[TaUserOut])
-@require_permission(PERMISSIONS.TENANT_MANAGE, read_only_exempt=True)
+@require_permission(PERMISSIONS.TENANT_REGISTRY_VIEW, read_only_exempt=True)
 async def get_tenant_admin_user(
     tenant_id: uuid.UUID,
     user=Depends(get_current_user),
@@ -3956,7 +3962,7 @@ async def get_tenant_admin_user(
 
 
 @router.patch("/{tenant_id}/admin-user", response_model=SuccessResponse[dict])
-@require_permission(PERMISSIONS.TENANT_MANAGE)
+@require_permission(PERMISSIONS.TENANT_PROFILE_EDIT)
 async def update_tenant_admin_user(
     tenant_id: uuid.UUID,
     body: TaUserUpdateRequest,

@@ -13,6 +13,7 @@ import { usePermission } from "@/hooks/usePermission";
 import { t } from "@/lib/i18n";
 import { notify } from "@/lib/notify";
 import { PanelError } from "@/components/ui/PanelError";
+import { knownErrorMessage } from "@/lib/errorMessage";
 import { PositionsLoadError } from "@/components/ui/PositionsLoadError";
 
 const LOT_SETTINGS_ERROR_CODES = new Set([
@@ -629,7 +630,7 @@ export function AddProductPanel({
           const le = lotErr as Error & { code?: string };
           failedSteps.push({
             step:   t("product.add.step_lot_settings"),
-            detail: le.code && LOT_SETTINGS_ERROR_CODES.has(le.code) ? t(`errors.${le.code}`) : t("errors.INTERNAL_ERROR"),
+            detail: le.code && LOT_SETTINGS_ERROR_CODES.has(le.code) ? t(`errors.${le.code}`) : (knownErrorMessage(le) ?? t("errors.INTERNAL_ERROR")),
           });
         }
       }
@@ -727,7 +728,7 @@ export function AddProductPanel({
       else if (e.status === 402 && e.code === "PLAN_LIMIT_REACHED") setPanelError(t("product.add.error.sku_cap_reached"));
       else if (e.status === 429) setPanelError(t("common.rate_limited"));
       else if (e.status === 403 && e.code === "PRODUCT_CONTROLLED") setPanelError(t("product.controlled_edit_denied"));
-      else setPanelError(t("product.add.error.generic"));
+      else setPanelError(knownErrorMessage(e) ?? t("product.add.error.generic"));
     } finally { setSub(false); }
   };
 

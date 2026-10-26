@@ -59,3 +59,38 @@ def test_moved_plan_and_contact_routes_use_platform_actions() -> None:
     for action in ("plan:change", "billing:view", "platform:contact_edit"):
         assert "platform_only" in _scope(by_id[action]), action
         assert action not in TA_GRANTS, action
+
+
+def test_tenant_admin_user_routes_use_platform_only_permissions() -> None:
+    """GET/PATCH /{tenant_id}/admin-user are SA-only. They sat on TENANT_MANAGE,
+    a tenant-scoped action TA holds, with only the in-handler SA check in the
+    way. They now use platform_only actions, so the permission layer refuses a
+    TA before the handler runs (the handler check stays as a second layer)."""
+    from shared.permissions.registry import PERMISSIONS
+
+    src_path = os.path.join(
+        os.path.dirname(__file__),
+        "..",
+        "..",
+        "..",
+        "services",
+        "tenant-service",
+        "routers",
+        "tenants.py",
+    )
+    with open(src_path, encoding="utf-8") as fh:
+        src = fh.read()
+
+    get_route = '@router.get("/{tenant_id}/admin-user"'
+    patch_route = '@router.patch("/{tenant_id}/admin-user"'
+    for route, perm in (
+        (get_route, "@require_permission(PERMISSIONS.TENANT_REGISTRY_VIEW"),
+        (patch_route, "@require_permission(PERMISSIONS.TENANT_PROFILE_EDIT"),
+    ):
+        i = src.index(route)
+        decorator_line = src[i:].split("\n")[1]
+        assert decorator_line.startswith(perm), (route, decorator_line)
+
+    for action in (PERMISSIONS.TENANT_REGISTRY_VIEW, PERMISSIONS.TENANT_PROFILE_EDIT):
+        assert "platform_only" in _scope(action), action.id
+        assert action.id not in TA_GRANTS

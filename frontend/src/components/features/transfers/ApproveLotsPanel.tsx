@@ -5,6 +5,7 @@ import { useQueries } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import { t } from "@/lib/i18n";
 import { apiErrorCode, lotErrorMessage } from "@/lib/lotErrors";
+import { knownErrorMessage } from "@/lib/errorMessage";
 import { formatQty } from "@/lib/utils";
 import { useOfflineSync } from "@/hooks/useOfflineSync";
 import { useWriteGuard, guardProps } from "@/hooks/useWriteGuard";
@@ -42,11 +43,12 @@ export interface ApproveFailure {
 }
 
 /** Translated message for a failed approval; never a raw code or id. Lot
- *  errors and INSUFFICIENT_STOCK are translated; anything else gets the
+ *  errors and INSUFFICIENT_STOCK are translated, then any other code with an
+ *  errors.<CODE> entry (e.g. RBAC_DENIED); only unknown codes get the
  *  generic message. */
 export function approveFailure(err: unknown): ApproveFailure {
   if (apiErrorCode(err) !== "INSUFFICIENT_STOCK") {
-    return { message: lotErrorMessage(err) ?? t("errors.INTERNAL_ERROR") };
+    return { message: lotErrorMessage(err) ?? knownErrorMessage(err) ?? t("errors.INTERNAL_ERROR") };
   }
   const detail = (err as { detail?: Record<string, unknown> }).detail;
   const failure: ApproveFailure = { message: t("errors.INSUFFICIENT_STOCK") };
