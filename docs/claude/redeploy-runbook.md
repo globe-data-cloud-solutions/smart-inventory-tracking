@@ -29,6 +29,12 @@ Dev stack: `smart-dev` cluster, `https://smart.hplink.io`, Terraform in `infra/t
 
 **Stage/prod SA bootstrap: not yet available (P0 item 4); do not run this step.**
 
+**Clean cycle, 2026-10-26 (from scratch, all from `main`, no failures):** apply 10m18s, then deploy ~11m (image builds ~3m, bootstrap/migrate/seed/rollout ~8m), then delete 6m50s. No state-lock problem on the delete this time, and no manual environment approval was needed for `infra-dev` / `deploy-dev`. Dispatching from `main` works, so a feature branch isn't required once merged.
+- **Expected deploy warnings:** the rollout step logs `not found or inactive — skipped` for sync, notification, analytics, logistics and order. Dev only enables `api-gateway`, `auth-service`, `tenant-service`, `product-service`, `inventory-service` (`enabled_services` in `envs/dev/main.tf`). Not a failure.
+- **Verify without `aws`/`terraform`:** public HTTP is enough: `/` = 200 and the unknown-email login = 401 `INVALID_CREDENTIALS`. After a delete, `https://smart.hplink.io/` gives no connection (curl code 000).
+- **Waiting on runs:** `gh run watch` gets killed by the 10-minute tool limit (exit 143) and a leading `sleep` is blocked. Use a foreground poll loop on `gh run view <id> --json status,conclusion` (`sleep 20` between checks, under ~570s per call) and repeat the call until `completed`.
+- Before "go", read-only prep is enough: `git rev-list --left-right --count main...<remote>/main` on both remotes, `gh variable list` / `gh secret list -R globe...` (names only), `gh run list` for active runs. The `hplink.io` hosted zone can't be checked without `aws`; the apply's ACM step surfaces it.
+
 **Failure modes hit and their fixes:**
 - Private subnets had no route to the NAT: networking module needed route tables.
 - ECS secrets given as bare names resolved as SSM: use full Secrets Manager ARNs (`app-secrets` outputs).
