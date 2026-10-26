@@ -1666,6 +1666,7 @@
     "sla": "SLA (sa'aatii)",
     "sla_help": "Hours count from when the request is created. If a step is still waiting after its hours, it moves to the next level up and the Tenant Admin is notified to move it forward. A step with the Tenant Admin does not move further.",
     "sla_order_warning": "Hours count from when the request is created, so this step needs more hours than the step before it ({hours} h).",
+    "no_position_default": "No position selected. Select one, otherwise the next higher level approves this step.",
     "save": "Seerota Olkaa'i",
     "any_level": "Sadarkaa Kamiyyuu",
     "sequential": "Tartiibaan",
