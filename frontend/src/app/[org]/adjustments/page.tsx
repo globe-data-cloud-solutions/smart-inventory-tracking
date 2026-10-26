@@ -17,6 +17,7 @@ import { formatDate } from "@/lib/format";
 import { useTenantName } from "@/hooks/useTenantName";
 import { useWarehouses } from "@/hooks/useWarehouses";
 import { useTenantPositions } from "@/hooks/useTenantPositions";
+import { PositionsLoadError } from "@/components/ui/PositionsLoadError";
 import { useWriteGuard, guardProps } from "@/hooks/useWriteGuard";
 import { formatExpiry, type TransferDiscrepancyListItemApi } from "@/components/features/transfers/TransferLotDetails";
 import { openDiscrepanciesKey } from "@/components/features/transfers/transferQueryKeys";
@@ -204,7 +205,7 @@ export default function AdjustmentsPage() {
     staleTime: 300_000,
   });
 
-  const { positions: tenantPositions } = useTenantPositions(tid);
+  const { positions: tenantPositions, isError: positionsError, refetch: refetchPositions } = useTenantPositions(tid);
 
   const ruleSummary = useMemo(() => {
     return adjApprovalRules
@@ -363,6 +364,7 @@ export default function AdjustmentsPage() {
   return (
     <div className="p-8">
       {/* Header */}
+      {positionsError && <PositionsLoadError onRetry={refetchPositions} />}
       <div className="mb-4 flex items-start justify-between flex-wrap gap-3">
         <div>
           <h2 className="text-2xl font-bold text-[#0f2d1f] m-0">{t("adjustment.title")}</h2>

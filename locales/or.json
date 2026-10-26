@@ -1,4 +1,8 @@
 {
+  "positions": {
+    "load_error": "Positions could not be loaded, so lists on this page may be incomplete.",
+    "retry": "Retry"
+  },
   "_note": "Oromifa (Afaan Oromoo) pack — must be reviewed by a native Afaan Oromoo-speaking domain expert before Phase 1 go-live. Status as of 2026-10-19: 547 entries are an earlier draft pending that expert review; the remaining ~1886 entries were LLM-drafted on 2026-10-19 and have NOT been reviewed by a native speaker at all. Do not enable the 'or' locale for real users until a native speaker has reviewed both groups.",
   "nav": {
     "inventory": "Kuusaa",
@@ -960,6 +964,7 @@
     "NODE_NOT_STOCK_HOLDING": "This location does not hold stock. It is used for approvals only.",
     "SISTER_LEVEL_MISMATCH": "A sister transfer needs both locations at the same level (from level {from_level}, to level {to_level}).",
     "NOT_YOUR_NODE": "Stock can only be handled at your own location.",
+    "AUTH_SERVICE_UNAVAILABLE": "Sign-in is temporarily unavailable. Please try again later.",
     "OFFLINE": "Sarara alatti jirta. Hojiin kun iddoo eeggaatti galcha.",
     "DUPLICATE_TRANSACTION": "Walitti dhufeenyi kun duraan galfameera.",
     "LOT_NUMBER_REQUIRED": "Lakkoofsi koora barbaachisaadha.",
@@ -1666,6 +1671,7 @@
     "sla": "SLA (sa'aatii)",
     "sla_help": "Hours count from when the request is created. If a step is still waiting after its hours, it moves to the next level up and the Tenant Admin is notified to move it forward. A step with the Tenant Admin does not move further.",
     "sla_order_warning": "Hours count from when the request is created, so this step needs more hours than the step before it ({hours} h).",
+    "no_position_default": "No position selected. Select one, otherwise the next higher level approves this step.",
     "save": "Seerota Olkaa'i",
     "any_level": "Sadarkaa Kamiyyuu",
     "sequential": "Tartiibaan",

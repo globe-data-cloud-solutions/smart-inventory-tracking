@@ -135,6 +135,20 @@ async def check_permission(
     return PermissionResult(allowed=True)
 
 
+def _denial_detail(reason: str | None, action_id: str) -> dict[str, Any]:
+    """403 body for a refused permission check.
+
+    check_permission() reasons look like "ABAC_DENIED: warehouse scope". The
+    code is the part before the colon so clients can map it to errors.<CODE>;
+    the qualifier goes in its own field. The audit log keeps the full reason.
+    """
+    code, _, qualifier = (reason or "FORBIDDEN").partition(":")
+    detail: dict[str, Any] = {"code": code.strip(), "action": action_id}
+    if qualifier.strip():
+        detail["reason"] = qualifier.strip()
+    return detail
+
+
 def require_permission(
     action: Permission,
     read_only_exempt: bool = False,
@@ -200,8 +214,7 @@ def require_permission(
 
             if not result.allowed:
                 raise HTTPException(
-                    status_code=403,
-                    detail={"code": result.reason, "action": action.id},
+                    status_code=403, detail=_denial_detail(result.reason, action.id)
                 )
 
             if user.role not in ("SA", "SYS") and getattr(user, "tenant_id", None):

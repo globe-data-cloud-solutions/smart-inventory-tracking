@@ -1677,6 +1677,7 @@ class InventoryService:
                     quantity=total_qty,
                     total_value=tv_for_res,
                     created_by=created_by_for_res,
+                    transfer_type=getattr(row, "transfer_type", None),
                 )
                 resolved_steps = _json.loads(resolution.steps_as_json())
 
