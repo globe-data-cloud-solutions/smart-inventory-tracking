@@ -145,4 +145,5 @@ async def test_sa_terms_acceptance_denied_for_non_sa() -> None:
 
     assert exc_info.value.status_code == 403
     # Refused by the permission layer (platform_only action), before the handler.
-    assert exc_info.value.detail["code"] == "ABAC_DENIED: platform_only"
+    assert exc_info.value.detail["code"] == "ABAC_DENIED"
+    assert exc_info.value.detail["reason"] == "platform_only"

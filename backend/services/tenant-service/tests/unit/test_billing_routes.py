@@ -135,7 +135,8 @@ async def test_ta_with_billing_view_grant_still_denied_platform_only() -> None:
             await get_tenant_subscription(tenant_id=TENANT_A, user=ta, db=AsyncMock())
 
     assert exc_info.value.status_code == 403
-    assert "platform_only" in exc_info.value.detail["code"]
+    assert exc_info.value.detail["code"] == "ABAC_DENIED"
+    assert exc_info.value.detail["reason"] == "platform_only"
 
 
 # ── TA /me/subscription (billing:view_own) ────────────────────────────────────

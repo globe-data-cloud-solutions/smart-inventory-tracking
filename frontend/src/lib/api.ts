@@ -193,7 +193,7 @@ async function request<T>(
     const isValidationArray = Array.isArray(raw.detail);
     const det   = !isValidationArray && typeof raw.detail === "object" ? (raw.detail as DetObj | null) : null;
     const detMsg = det?.message ?? det?.detail ?? (typeof raw.detail === "string" ? raw.detail : "");
-    const detCode = det?.code ?? "";
+    const detCode = baseCode(det?.code);
 
     // Friendly, translated messages for the read-only / plan-limit / rate-limit
     // codes — computed here so every screen benefits without a per-screen change.
@@ -267,6 +267,16 @@ export const api = {
  * check or login redirect, so it is safe on /login and other auth routes even with a
  * stale stored session.
  */
+
+/**
+ * Error code without a ": qualifier" suffix. Permission denials used to send
+ * "ABAC_DENIED: warehouse scope" as the code, which matched no errors.<CODE>
+ * key; the backend now splits it, and this keeps any such code mappable.
+ */
+export function baseCode(code?: string | null): string {
+  return (code ?? "").split(":")[0]?.trim() ?? "";
+}
+
 export async function publicGet<T>(path: string): Promise<T> {
   let res: Response;
   try {
@@ -284,7 +294,7 @@ export async function publicGet<T>(path: string): Promise<T> {
     const raw = json as unknown as { error?: { code?: string; message?: string }; detail?: { code?: string; message?: string } | string | unknown[] } | null;
     const isValidationArray = Array.isArray(raw?.detail);
     const det = !isValidationArray && typeof raw?.detail === "object" ? raw?.detail as { code?: string; message?: string } | null : null;
-    const code = raw?.error?.code ?? det?.code ?? "";
+    const code = baseCode(raw?.error?.code ?? det?.code);
     let msg = raw?.error?.message ?? det?.message ?? (typeof raw?.detail === "string" ? raw?.detail : `HTTP ${res.status}`);
     if (res.status === 422 && isValidationArray) {
       msg = t("errors.VALIDATION");
@@ -325,7 +335,7 @@ export async function rawPost<T>(path: string, body: unknown): Promise<T> {
     const det = json?.detail;
     const isValidationArray = Array.isArray(det);
     const detObj = !isValidationArray && typeof det === "object" ? det as { code?: string; message?: string } | null : null;
-    const code = detObj?.code;
+    const code = detObj?.code ? baseCode(detObj.code) : undefined;
     let message = detObj?.message ?? (typeof det === "string" ? det : `HTTP ${res.status}`);
     if (res.status === 422 && isValidationArray) {
       message = t("errors.VALIDATION");
