@@ -41,13 +41,32 @@ export function useWarehouses(tenantId?: string): { warehouses: DemoWarehouse[];
     return { warehouses: [], isLoading: false };
   }
 
-  const warehouses: DemoWarehouse[] = flattenNodes(orgNodes)
+  const all = flattenNodes(orgNodes);
+  const byId = new Map(all.map((n) => [String(n.id), n]));
+  // Approval-only nodes (is_stock_holding = false) are left out of the list,
+  // so a node's parent link points at its nearest stock-holding ancestor.
+  // Without this, ancestor/descendant scopes (PULL sources, PUSH targets)
+  // stop at an approval-only node in between.
+  function stockParent(n: OrgNodeRow): string | null {
+    const seen = new Set<string>();
+    let pid = n.parent_node_id ? String(n.parent_node_id) : null;
+    while (pid && !seen.has(pid)) {
+      seen.add(pid);
+      const p = byId.get(pid);
+      if (!p) return null;
+      if (p.is_stock_holding) return pid;
+      pid = p.parent_node_id ? String(p.parent_node_id) : null;
+    }
+    return null;
+  }
+
+  const warehouses: DemoWarehouse[] = all
     .filter((n) => n.is_stock_holding)
     .map((n) => ({
       id:           String(n.id),
       name:         n.name,
       type:         "WH" as DemoWarehouse["type"],
-      parentId:     n.parent_node_id ? String(n.parent_node_id) : null,
+      parentId:     stockParent(n),
       location:     n.address ?? undefined,
       level_number: n.hierarchy_level,
     }));

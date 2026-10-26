@@ -68,6 +68,30 @@ from shared.permissions.audit import audit_log
 # Reason codes that always deduct stock — service forces negative quantity regardless of input sign
 _FORCE_NEGATIVE_REASONS: frozenset[str] = frozenset({"DAMAGE", "EXPIRY", "SUPPLIER_RETURN"})
 
+
+# Stock at a node is at the disposal of that node's holder only (Alex, 2026-10-26).
+# TA/SA have no node and complete movements tenant-wide. The permission layer
+# cannot check this: these routes carry the node in the body, not the path.
+_TENANT_ADMIN_ROLES: frozenset[str] = frozenset({"TA", "SA"})
+
+
+def _require_own_node(user: Any, warehouse_id: Any, action: str) -> None:
+    """403 NOT_YOUR_NODE unless the caller holds warehouse_id (or is TA/SA)."""
+    from fastapi import HTTPException
+
+    if getattr(user, "role", None) in _TENANT_ADMIN_ROLES:
+        return
+    if str(getattr(user, "warehouse_id", None) or "").lower() != str(warehouse_id).lower():
+        raise HTTPException(
+            status_code=403,
+            detail={
+                "code": "NOT_YOUR_NODE",
+                "action": action,
+                "message": "Stock can only be handled at your own location.",
+            },
+        )
+
+
 # A subtree-scoped caller also sees a transfer whose approval chain names them:
 # a step whose node_id is in their subtree, whose assigned_to_user_id is them,
 # or whose all_holders lists them (approval_service.ResolvedStep.to_dict).
@@ -420,23 +444,39 @@ class InventoryService:
 
         from schemas.inventory import ALLOWED_RECEIVE_SOURCES
 
+        _require_own_node(user, body.warehouse_id, "receive")
+
         if body.source not in ALLOWED_RECEIVE_SOURCES:
             raise HTTPException(
                 status_code=422,
                 detail={"code": "INVALID_SOURCE", "source": body.source},
             )
 
+        # The node's stock flag rides on the product lookup (LEFT JOIN, so a
+        # warehouse id that is not an organization_node still passes).
         product_row = (
             await self.db.execute(
                 text(
-                    "SELECT batch_tracking, expiry_tracking FROM products "
-                    "WHERE id = :pid AND tenant_id = :tid"
+                    "SELECT p.batch_tracking, p.expiry_tracking, "
+                    "       n.is_stock_holding AS node_stock_holding "
+                    "FROM products p "
+                    "LEFT JOIN organization_node n ON n.id = :wid AND n.tenant_id = :tid "
+                    "WHERE p.id = :pid AND p.tenant_id = :tid"
                 ),
-                {"pid": str(body.product_id), "tid": str(user.tenant_id)},
+                {
+                    "pid": str(body.product_id),
+                    "tid": str(user.tenant_id),
+                    "wid": str(body.warehouse_id),
+                },
             )
         ).fetchone()
         if product_row is None:
             raise HTTPException(status_code=404, detail={"code": "PRODUCT_NOT_FOUND"})
+        if getattr(product_row, "node_stock_holding", None) is False:
+            raise HTTPException(
+                status_code=422,
+                detail={"code": "NODE_NOT_STOCK_HOLDING", "side": "receive"},
+            )
 
         lot_id: Optional[str] = None
         lot_number = body.lot_number
@@ -593,6 +633,7 @@ class InventoryService:
 
         tenant_id, user_id = str(user.tenant_id), str(user.user_id)
         product_id, warehouse_id = str(body.product_id), str(body.warehouse_id)
+        _require_own_node(user, warehouse_id, "issue")
         qty = abs(body.quantity)
 
         product = await load_product(self.db, tenant_id, product_id)
@@ -929,11 +970,13 @@ class InventoryService:
         # Reject inactive (deactivated) warehouses on either side — otherwise a
         # transfer can be created against a node that has been closed/deactivated,
         # defeating the deactivation feature's purpose.
+        node_levels: dict[str, Any] = {}
         for side, wid in (("from", body.from_warehouse_id), ("to", body.to_warehouse_id)):
             node_row = (
                 await self.db.execute(
                     text(
-                        "SELECT is_active FROM organization_node WHERE id = :nid AND tenant_id = :tid"
+                        "SELECT is_active, is_stock_holding, hierarchy_level "
+                        "FROM organization_node WHERE id = :nid AND tenant_id = :tid"
                     ),
                     {"nid": str(wid), "tid": str(user.tenant_id)},
                 )
@@ -948,6 +991,41 @@ class InventoryService:
                         "Reactivate it first or choose a different warehouse.",
                     },
                 )
+            # Approval-only nodes (is_stock_holding = false) never hold stock, so
+            # they can be neither the source nor the destination of a transfer
+            # (Alex, 2026-10-26). They take part in approval chains only.
+            if node_row is not None and getattr(node_row, "is_stock_holding", None) is False:
+                raise HTTPException(
+                    status_code=422,
+                    detail={
+                        "code": "NODE_NOT_STOCK_HOLDING",
+                        "side": side,
+                        "message": f"The {side} node does not hold stock; it is used for approvals only.",
+                    },
+                )
+            if node_row is not None:
+                node_levels[side] = getattr(node_row, "hierarchy_level", None)
+
+        # SISTER is a lateral transfer between nodes at the same level that are
+        # not under each other, e.g. Factory A -> Factory B (Alex, 2026-10-26).
+        # Two nodes at the same level can never be ancestor and descendant, so
+        # the same-level check is the whole rule.
+        from_level, to_level = node_levels.get("from"), node_levels.get("to")
+        if (
+            body.transfer_type == "SISTER"
+            and isinstance(from_level, int)
+            and isinstance(to_level, int)
+            and from_level != to_level
+        ):
+            raise HTTPException(
+                status_code=422,
+                detail={
+                    "code": "SISTER_LEVEL_MISMATCH",
+                    "from_level": from_level,
+                    "to_level": to_level,
+                    "message": "A sister transfer needs both nodes at the same level.",
+                },
+            )
 
         # Validate factory-specific products before any INSERT.
         for line in body.lines:
@@ -1911,10 +1989,12 @@ class InventoryService:
     async def dispatch_transfer(self, user: Any, transfer_id: UUID) -> TransferOrderResponse:
         """Advance an APPROVED transfer to ISSUED.
 
-        Source manager ABAC — allowed when either:
-          (a) user.warehouse_id == transfer.from_warehouse_id (WM/RM/LM at source facility), OR
-          (b) user has no warehouse_id AND role is NM/TA/SA (tenant-level authority, no single
-              facility assignment — e.g. General Manager overseeing the source warehouse).
+        Source ABAC — mirrors receive_transfer (Alex, 2026-10-26):
+          (a) TA/SA — tenant-wide, so a TA can complete a suspended transfer; or
+          (b) the holder of the source node, any role: user.warehouse_id ==
+              transfer.from_warehouse_id.
+        NM is no longer tenant-wide here: an NM at an approval-only node has no
+        stock to dispatch, and an NM at a stock-holding node dispatches its own.
         Writes NO ledger entries — source on_hand was already deducted at APPROVED.
         """
         result = await self.db.execute(
@@ -1927,12 +2007,8 @@ class InventoryService:
 
             raise HTTPException(status_code=404, detail="Transfer not found")
 
-        # ABAC: the caller must manage the source warehouse.
-        # NM/TA/SA have tenant-wide authority — check role FIRST regardless of warehouse_id.
-        # An NM with a specific facility assignment can still dispatch from any source because
-        # their authority is organisation-wide, not facility-scoped (CLAUDE.md §13).
-        # Facility-bound roles (WM/RM/LM) must match warehouse_id to from_warehouse_id.
-        _TENANT_LEVEL_ROLES = {"NM", "TA", "SA"}
+        # ABAC: TA/SA, or the holder of the source node (any role).
+        _TENANT_LEVEL_ROLES = {"TA", "SA"}
         user_role = getattr(user, "role", None)
         if user_role in _TENANT_LEVEL_ROLES:
             can_dispatch = True
@@ -2477,15 +2553,23 @@ class InventoryService:
         row = (
             await self.db.execute(
                 text(
-                    "SELECT 1 FROM warehouses WHERE id = :wid AND tenant_id = :tid "
+                    "SELECT true AS stock_holding FROM warehouses "
+                    "WHERE id = :wid AND tenant_id = :tid "
                     "UNION ALL "
-                    "SELECT 1 FROM organization_node WHERE id = :wid AND tenant_id = :tid"
+                    "SELECT is_stock_holding FROM organization_node "
+                    "WHERE id = :wid AND tenant_id = :tid"
                 ),
                 {"wid": str(body.warehouse_id), "tid": str(user.tenant_id)},
             )
         ).fetchone()
         if row is None:
             raise HTTPException(status_code=404, detail={"code": "WAREHOUSE_NOT_FOUND"})
+        # Approval-only nodes hold no stock, so nothing can be adjusted there.
+        if getattr(row, "stock_holding", None) is False:
+            raise HTTPException(
+                status_code=422,
+                detail={"code": "NODE_NOT_STOCK_HOLDING", "side": "adjustment"},
+            )
 
     async def _validate_adjustment_lot(self, user: Any, body: AdjustmentRequest) -> dict[str, Any]:
         """Check the lot input of a new adjustment against the product's tracking.

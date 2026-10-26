@@ -965,6 +965,9 @@
     "INTERNAL_ERROR": "An unexpected error occurred. Please try again.",
     "LEVEL_NOT_CONFIGURED": "Level {level_number} has no permissions set for {transfer_type}. Ask your Tenant Admin to configure it.",
     "LEVEL_PERMISSION_MISSING": "Set permissions for every level before saving {transfer_type}.",
+    "NODE_NOT_STOCK_HOLDING": "This location does not hold stock. It is used for approvals only.",
+    "SISTER_LEVEL_MISMATCH": "A sister transfer needs both locations at the same level (from level {from_level}, to level {to_level}).",
+    "NOT_YOUR_NODE": "Stock can only be handled at your own location.",
     "AUTH_SERVICE_UNAVAILABLE": "Sign-in is temporarily unavailable. Please try again later.",
     "OFFLINE": "You are offline. Connect to save this.",
     "DUPLICATE_TRANSACTION": "This transaction was already submitted.",
@@ -1477,6 +1480,7 @@
     "your_wh": "your warehouse"
   },
   "transfer_panel": {
+    "no_eligible_locations": "No eligible locations for this transfer type. Check the level permissions set for it.",
     "title": "New Stock Transfer",
     "subtitle": "Creates a DRAFT transfer order",
     "type_label": "Transfer Type",
