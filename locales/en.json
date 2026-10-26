@@ -525,6 +525,7 @@
       "transfer_cancel": "Transfer Cancelled",
       "transfer_self_approved": "Transfer Self-Approved",
       "transfer_step_approved": "Transfer Approval Step Completed",
+      "transfer_approval_escalated": "Transfer Approval Escalated (Time Limit Passed)",
       "adjustment_create": "Adjustment Created",
       "adjustment_submit": "Adjustment Submitted",
       "adjustment_approve": "Adjustment Approved",
@@ -1147,6 +1148,13 @@
     "UNKNOWN_ACTION": "This type of movement cannot be synced."
   },
   "transfers": {
+    "escalation": {
+      "escalated_from": "Escalated from {position}: time limit passed",
+      "escalated_to_ta": "Escalated to Tenant Admin from {position}: time limit passed",
+      "escalated": "Escalated: time limit passed",
+      "overdue": "Overdue",
+      "overdue_hint": "Waiting longer than the {hours} h set for this step"
+    },
     "transfers_heading": "Transfers",
     "active_label": "active",
     "archived": "archived",
@@ -2194,6 +2202,8 @@
     "location": "Resolution Scope",
     "mode": "Mode",
     "sla": "SLA (hours)",
+    "sla_help": "Hours count from when the request is created. If a step is still waiting after its hours, it moves to the next level up and the Tenant Admin is notified to move it forward. A step with the Tenant Admin does not move further.",
+    "sla_order_warning": "Hours count from when the request is created, so this step needs more hours than the step before it ({hours} h).",
     "save": "Save Rules",
     "any_level": "Any level",
     "sequential": "Sequential",

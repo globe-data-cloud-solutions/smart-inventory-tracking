@@ -2515,6 +2515,15 @@ function AdjustmentRulesSection({ tenantId, onRuleCountChange }: { tenantId: str
 }
 
 interface ApprovalStepLocal { sequence: number; position_id: string; position_title: string; location: string; mode: string; sla_hours: number | null }
+
+/** Step hours run from request creation, so a later step must allow more hours
+ *  than the step before it. Returns the previous step's hours when this step's
+ *  hours are not larger (the editor shows a warning), otherwise null. */
+function slaOrderConflict(steps: ApprovalStepLocal[], idx: number): number | null {
+  const prev = idx > 0 ? steps[idx - 1]?.sla_hours : null;
+  const cur = steps[idx]?.sla_hours;
+  return prev != null && cur != null && cur <= prev ? prev : null;
+}
 interface ApprovalRuleLocal {
   id: string;
   source_level: number | null; destination_level: number | null;
@@ -2913,13 +2922,19 @@ function ApprovalRulesV2Tab({ tenantId, prefillLevel }: { tenantId: string; pref
                         className="border border-gray-300 rounded px-2 py-1 text-xs bg-white">
                         {MODE_OPTIONS.map((o) => <option key={o.v} value={o.v}>{t(o.l)}</option>)}
                       </select>
-                      <input type="number" min={1} value={step.sla_hours ?? ""} placeholder={t("approval_rule.sla")} onChange={(e) => updateStep(activeType, rIdx, sIdx, { sla_hours: e.target.value ? Number(e.target.value) : null })}
+                      <input type="number" min={1} value={step.sla_hours ?? ""} placeholder={t("approval_rule.sla")} title={t("approval_rule.sla_help")} onChange={(e) => updateStep(activeType, rIdx, sIdx, { sla_hours: e.target.value ? Number(e.target.value) : null })}
                         className="w-16 border border-gray-300 rounded px-2 py-1 text-xs" />
                       <button type="button" onClick={() => removeStep(activeType, rIdx, sIdx)}
                         className="w-5 h-5 flex items-center justify-center text-xs rounded border border-red-200 text-red-400 hover:bg-red-50">×</button>
+                      {slaOrderConflict(rule.steps, sIdx) != null && (
+                        <p className="basis-full text-[11px] text-amber-700">
+                          {t("approval_rule.sla_order_warning").replace("{hours}", String(slaOrderConflict(rule.steps, sIdx)))}
+                        </p>
+                      )}
                     </div>
                   ))}
                 </div>
+                <p className="mt-2 text-[11px] text-gray-500 leading-snug">{t("approval_rule.sla_help")}</p>
                 <button type="button" onClick={() => addStep(activeType, rIdx)}
                   className="mt-2 px-2 py-1 text-xs border border-dashed border-emerald-400 text-emerald-700 rounded hover:bg-emerald-50">
                   + {t("approval_rule.add_step")}

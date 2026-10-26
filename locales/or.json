@@ -517,6 +517,7 @@
       "transfer_cancel": "Dabarsaan Haqameera",
       "transfer_self_approved": "Dabarsaan Ofiin Mirkanaa'eera",
       "transfer_step_approved": "Tarkaanfiin Mirkaneessa Dabarsaa Xumurameera",
+      "transfer_approval_escalated": "Transfer Approval Escalated (Time Limit Passed)",
       "adjustment_create": "Sirreeffamni Uumameera",
       "adjustment_submit": "Sirreeffamni Dhihaateera",
       "adjustment_approve": "Sirreeffamni Mirkanaa'eera",
@@ -1660,6 +1661,8 @@
     "location": "Daangaa Furmaataa",
     "mode": "Haala",
     "sla": "SLA (sa'aatii)",
+    "sla_help": "Hours count from when the request is created. If a step is still waiting after its hours, it moves to the next level up and the Tenant Admin is notified to move it forward. A step with the Tenant Admin does not move further.",
+    "sla_order_warning": "Hours count from when the request is created, so this step needs more hours than the step before it ({hours} h).",
     "save": "Seerota Olkaa'i",
     "any_level": "Sadarkaa Kamiyyuu",
     "sequential": "Tartiibaan",
@@ -1755,6 +1758,13 @@
     "SYS": "Sirna"
   },
   "transfers": {
+    "escalation": {
+      "escalated_from": "Escalated from {position}: time limit passed",
+      "escalated_to_ta": "Escalated to Tenant Admin from {position}: time limit passed",
+      "escalated": "Escalated: time limit passed",
+      "overdue": "Overdue",
+      "overdue_hint": "Waiting longer than the {hours} h set for this step"
+    },
     "transfers_heading": "Dabarsaalee",
     "active_label": "hojiirra jiru",
     "archived": "galmaa'e",

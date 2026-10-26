@@ -133,6 +133,27 @@ class ContractExpiryAlertPayload(BasePayload):
     days_remaining: int  # 0 = expired today or earlier
 
 
+class ApprovalStepEscalatedPayload(BasePayload):
+    """Fired by the escalate_overdue_approvals beat task when a transfer
+    approval step passes its sla_hours with no action.
+
+    to_user_ids: the new holder(s) of the step. ta_user_ids: every active TA of
+    the tenant — the TA is notified on every escalation, not only when the step
+    lands on the TA (escalated_to_ta=True).
+    """
+
+    event_type: Literal["ApprovalStepEscalated"] = "ApprovalStepEscalated"
+    transfer_order_id: str
+    step: int
+    sla_hours: int
+    due_at: str  # ISO timestamp the step became overdue
+    from_position_title: str | None
+    to_position_title: str
+    to_user_ids: list[str]
+    ta_user_ids: list[str]
+    escalated_to_ta: bool
+
+
 PAYLOAD_TYPES = {
     "InventoryUpdated": InventoryUpdatedPayload,
     "StockTransferred": StockTransferredPayload,
@@ -146,4 +167,5 @@ PAYLOAD_TYPES = {
     "ProductCreated": ProductCreatedPayload,
     "AutoApprovalNotice": AutoApprovalNoticePayload,
     "ContractExpiryAlert": ContractExpiryAlertPayload,
+    "ApprovalStepEscalated": ApprovalStepEscalatedPayload,
 }

@@ -575,6 +575,16 @@ class ApprovalInfoResponse(BaseModel):
     holder_count: int = 1
     all_holders: list[dict] = []
     status_label: Optional[str] = None
+    # "Step 2 of 3". The router always set this, but the field was missing here,
+    # so Pydantic dropped it and the transfers list never showed it.
+    step_label: Optional[str] = None
+    # SLA escalation (shared/approvals/sla_escalation.py). The frontend renders
+    # these through i18n keys; no display text is built here.
+    sla_escalated: bool = False
+    escalated_from_position_title: Optional[str] = None
+    escalated_to_ta: bool = False
+    sla_due_at: Optional[datetime] = None
+    is_overdue: bool = False
 
 
 class AdjustmentApprovalInfoResponse(BaseModel):
