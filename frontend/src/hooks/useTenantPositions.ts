@@ -26,13 +26,16 @@ export interface TenantPosition {
 export function useTenantPositions(tenantId: string): {
   positions: TenantPosition[];
   isLoading: boolean;
+  /** True when the request failed; callers show <PositionsLoadError />. */
+  isError: boolean;
+  refetch: () => void;
 } {
-  const { data: positions = [], isLoading } = useQuery<TenantPosition[]>({
+  const { data: positions = [], isLoading, isError, refetch } = useQuery<TenantPosition[]>({
     queryKey: ["tenant-positions-flat", tenantId],
     queryFn: () => api.get<TenantPosition[]>(`/api/v1/tenants/${tenantId}/positions/flat`),
     staleTime: 30_000,
     enabled: !!tenantId,
   });
 
-  return { positions, isLoading };
+  return { positions, isLoading, isError, refetch: () => { void refetch(); } };
 }

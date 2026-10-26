@@ -1,4 +1,8 @@
 {
+  "positions": {
+    "load_error": "Positions could not be loaded, so lists on this page may be incomplete.",
+    "retry": "Retry"
+  },
   "nav": {
     "inventory": "Inventory",
     "products": "Products",
