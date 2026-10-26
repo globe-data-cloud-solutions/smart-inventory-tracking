@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import { t } from "@/lib/i18n";
+import { knownErrorMessage } from "@/lib/errorMessage";
 import { PanelError } from "@/components/ui/PanelError";
 import { formatQty } from "@/lib/utils";
 import { useOfflineSync } from "@/hooks/useOfflineSync";
@@ -159,7 +160,7 @@ export function ReceiveTransferPanel({
       onReceived(receivedTotal, result.discrepancies?.length ?? 0);
     } catch (err: unknown) {
       const code = (err as { code?: string }).code ?? "";
-      setFormError(RECEIPT_ERROR_CODES.has(code) ? t(`errors.${code}`) : t("errors.INTERNAL_ERROR"));
+      setFormError(RECEIPT_ERROR_CODES.has(code) ? t(`errors.${code}`) : (knownErrorMessage(err) ?? t("errors.INTERNAL_ERROR")));
     } finally {
       setSubmitting(false);
     }

@@ -165,6 +165,10 @@ class TestProfileOrgTypeFlags:
         assert "approval_thresholds" in joined
         assert "feature_flags" not in joined
         assert params["org_type"] == "RETAILER"
+        # Same rule as the TA route: existing thresholds are kept, defaults
+        # fill in only when none are stored.
+        assert "WHEN approval_thresholds IS NULL OR approval_thresholds = '{}'::jsonb" in joined
+        assert "ELSE approval_thresholds END" in joined
 
     def test_name_change_only_touches_name(self):
         from routers.tenants import _build_profile_update_set_clause
