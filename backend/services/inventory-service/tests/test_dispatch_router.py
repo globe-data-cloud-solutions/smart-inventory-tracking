@@ -224,7 +224,8 @@ class TestDispatchPreview:
                 resp = await client.get(URL, params=_params(warehouse_id=WAREHOUSE_B))
 
         assert resp.status_code == 403
-        assert "warehouse" in resp.json()["detail"]["code"]
+        assert resp.json()["detail"]["code"] == "ABAC_DENIED"
+        assert resp.json()["detail"]["reason"] == "warehouse scope"
         assert not any("FROM lot_balances" in str(c.args[0]) for c in db.execute.call_args_list)
 
     async def test_facility_scoped_user_inside_subtree_allowed(self, make_client, wm_user) -> None:
