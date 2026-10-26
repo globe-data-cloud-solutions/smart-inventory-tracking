@@ -1041,7 +1041,17 @@ class InventoryService:
                         {"cid": config_id, "ln": initiator_node.hierarchy_level},
                     )
                 ).fetchone()
-                if init_perm is not None and not init_perm.can_initiate:
+                if init_perm is None:
+                    raise _HTTPException(
+                        status_code=422,
+                        detail={
+                            "code": "LEVEL_NOT_CONFIGURED",
+                            "level_number": initiator_node.hierarchy_level,
+                            "transfer_type": body.transfer_type,
+                            "message": f"Level {initiator_node.hierarchy_level} has no permissions set for {body.transfer_type}.",
+                        },
+                    )
+                if not init_perm.can_initiate:
                     raise _HTTPException(
                         status_code=422,
                         detail={
@@ -1068,7 +1078,17 @@ class InventoryService:
                         {"cid": config_id, "ln": dst_node.hierarchy_level},
                     )
                 ).fetchone()
-                if dst_perm is not None and not dst_perm.can_receive:
+                if dst_perm is None:
+                    raise _HTTPException(
+                        status_code=422,
+                        detail={
+                            "code": "LEVEL_NOT_CONFIGURED",
+                            "level_number": dst_node.hierarchy_level,
+                            "transfer_type": body.transfer_type,
+                            "message": f"Level {dst_node.hierarchy_level} has no permissions set for {body.transfer_type}.",
+                        },
+                    )
+                if not dst_perm.can_receive:
                     raise _HTTPException(
                         status_code=422,
                         detail={
