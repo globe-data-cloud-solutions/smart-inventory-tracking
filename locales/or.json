@@ -1,4 +1,8 @@
 {
+  "positions": {
+    "load_error": "Positions could not be loaded, so lists on this page may be incomplete.",
+    "retry": "Retry"
+  },
   "_note": "Oromifa (Afaan Oromoo) pack — must be reviewed by a native Afaan Oromoo-speaking domain expert before Phase 1 go-live. Status as of 2026-10-19: 547 entries are an earlier draft pending that expert review; the remaining ~1886 entries were LLM-drafted on 2026-10-19 and have NOT been reviewed by a native speaker at all. Do not enable the 'or' locale for real users until a native speaker has reviewed both groups.",
   "nav": {
     "inventory": "Kuusaa",

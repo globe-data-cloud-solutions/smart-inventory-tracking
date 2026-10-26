@@ -7,6 +7,7 @@ import { api, IS_GATEWAY_MODE } from "@/lib/api";
 import { t } from "@/lib/i18n";
 import { useTenantName } from "@/hooks/useTenantName";
 import { useTenantPositions, type TenantPosition } from "@/hooks/useTenantPositions";
+import { PositionsLoadError } from "@/components/ui/PositionsLoadError";
 import { formatQty } from "@/lib/utils";
 
 const TA_SA_ROLES = new Set(["TA", "SA"]);
@@ -247,7 +248,7 @@ export default function ApprovalPoliciesPage() {
 
   const enabled = IS_GATEWAY_MODE && org !== SA_ORG_SLUG && !!tenantId;
 
-  const { positions, isLoading: positionsLoading } = useTenantPositions(tenantId);
+  const { positions, isLoading: positionsLoading, isError: positionsError, refetch: refetchPositions } = useTenantPositions(tenantId);
 
   const { data: transferTypes = [] } = useQuery<ApiTransferType[]>({
     queryKey: ["approval-policies-transfer-types", tenantId],
@@ -355,6 +356,7 @@ export default function ApprovalPoliciesPage() {
           {tenantName ?? org} · {t("approval_policies.subtitle")}
         </p>
       </div>
+      {positionsError && <PositionsLoadError onRetry={refetchPositions} />}
 
       {/* ── Section 1 — Your Approval Limits (not shown to TA/SA) ───────── */}
       {!isTaSa && (

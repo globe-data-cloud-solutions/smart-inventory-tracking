@@ -13,6 +13,7 @@ import { usePermission } from "@/hooks/usePermission";
 import { t } from "@/lib/i18n";
 import { notify } from "@/lib/notify";
 import { PanelError } from "@/components/ui/PanelError";
+import { PositionsLoadError } from "@/components/ui/PositionsLoadError";
 
 const LOT_SETTINGS_ERROR_CODES = new Set([
   "FEATURE_NOT_ENABLED", "EXPIRY_NEEDS_BATCH", "INVALID_DISPATCH_STRATEGY",
@@ -229,7 +230,7 @@ export function AddProductPanel({
   // backend route /tenants/{tenant_id}/positions/flat requires a UUID and
   // 422s on a slug, leaving `positions` permanently empty (matches the
   // working pattern in adjustments/page.tsx).
-  const { positions } = useTenantPositions(session?.tenantId ?? "");
+  const { positions, isError: positionsError, refetch: refetchPositions } = useTenantPositions(session?.tenantId ?? "");
   // Create counts against the SKU cap; editing an existing product never does.
   const writeGuard = useWriteGuard();
   const gp = guardProps(writeGuard, isEdit ? undefined : "skus");
@@ -1198,6 +1199,7 @@ export function AddProductPanel({
                                 </option>
                               ))}
                             </select>
+                            {positionsError && <div className="mt-1"><PositionsLoadError onRetry={refetchPositions} /></div>}
                           </div>
 
                           <input

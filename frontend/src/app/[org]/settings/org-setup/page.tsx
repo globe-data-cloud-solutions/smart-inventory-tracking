@@ -11,6 +11,7 @@ import { planFeatureErrorMessage, PLAN_UPGRADE_TO, tierLabel } from "@/lib/planE
 import { useWriteGuard, guardProps } from "@/hooks/useWriteGuard";
 import { usePlanUsage } from "@/hooks/usePlanUsage";
 import { useTenantPositions, type TenantPosition } from "@/hooks/useTenantPositions";
+import { PositionsLoadError } from "@/components/ui/PositionsLoadError";
 import { TabHelpBanner } from "@/components/ui/TabHelpBanner";
 import { PlanComparisonModal } from "@/components/features/billing/PlanComparisonModal";
 import { RequestUpgradeSection } from "@/components/features/billing/RequestUpgradeSection";
@@ -1648,7 +1649,7 @@ function PositionsTab({ tenantId }: { tenantId: string }) {
     queryFn:  () => api.get<OrgNode[]>(`/api/v1/tenants/${tenantId}/nodes`),
     staleTime: 0,
   });
-  const { data: posGroups = [], isLoading: posLoading } = useQuery<NodePositionGroup[]>({
+  const { data: posGroups = [], isLoading: posLoading, isError: posError, refetch: refetchPos } = useQuery<NodePositionGroup[]>({
     queryKey: ["positions", tenantId],
     queryFn:  () => api.get<NodePositionGroup[]>(`/api/v1/tenants/${tenantId}/positions`),
     staleTime: 0,
@@ -1786,6 +1787,7 @@ function PositionsTab({ tenantId }: { tenantId: string }) {
 
   return (
     <div>
+      {posError && <PositionsLoadError onRetry={() => { void refetchPos(); }} />}
       <TabHelpBanner
         storageKey="positions"
         message={t("org_setup.help.positions_message")}
@@ -2202,7 +2204,7 @@ function AdjustmentRulesSection({ tenantId, onRuleCountChange }: { tenantId: str
     staleTime: 30_000,
   });
 
-  const { positions: allPositions } = useTenantPositions(tenantId);
+  const { positions: allPositions, isError: positionsError, refetch: refetchPositions } = useTenantPositions(tenantId);
 
   const { data: savedRules = [], isLoading } = useQuery<Array<{
     id: string; role_code: string; level_number: number; mode: string;
@@ -2297,6 +2299,7 @@ function AdjustmentRulesSection({ tenantId, onRuleCountChange }: { tenantId: str
 
   return (
     <div className="space-y-4">
+      {positionsError && <PositionsLoadError onRetry={refetchPositions} />}
       {/* Warning banner when no rules configured */}
       {currentList.length === 0 && (
         <div className="flex items-start gap-2 rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-800">
@@ -2641,7 +2644,7 @@ function ApprovalRulesV2Tab({ tenantId, prefillLevel }: { tenantId: string; pref
     staleTime: 0,
     enabled:  !!tenantId,
   });
-  const { positions: allPositions } = useTenantPositions(tenantId);
+  const { positions: allPositions, isError: positionsError, refetch: refetchPositions } = useTenantPositions(tenantId);
   const { data: savedRules = [], isLoading: rulesLoading } = useQuery<Array<{ id: string; transfer_type_config_id: string; source_level: number | null; destination_level: number | null; quantity_min: number; quantity_max: number | null; value_min: number; value_max: number | null; threshold_type: string; approval_steps: ApprovalStepLocal[]; priority: number; is_active: boolean }>>({
     queryKey: ["transfer-approval-rules", tenantId],
     queryFn:  () => api.get(`/api/v1/tenants/${tenantId}/transfer-approval-rules`),
@@ -2771,6 +2774,7 @@ function ApprovalRulesV2Tab({ tenantId, prefillLevel }: { tenantId: string; pref
 
   return (
     <div className="space-y-4">
+      {positionsError && <PositionsLoadError onRetry={refetchPositions} />}
       <TabHelpBanner
         storageKey="approval-rules"
         message={t("org_setup.help.approval_rules_message")}
@@ -3155,7 +3159,7 @@ function PersonnelV2Tab({ tenantId }: { tenantId: string }) {
     staleTime: 0,
     enabled:  !!tenantId,
   });
-  const { data: posGroups = [] } = useQuery<NodePositionGroup[]>({
+  const { data: posGroups = [], isError: posError, refetch: refetchPos } = useQuery<NodePositionGroup[]>({
     queryKey: ["positions", tenantId],
     queryFn:  () => api.get<NodePositionGroup[]>(`/api/v1/tenants/${tenantId}/positions`),
     staleTime: 30_000,
@@ -3193,6 +3197,7 @@ function PersonnelV2Tab({ tenantId }: { tenantId: string }) {
 
   return (
     <div className="space-y-4">
+      {posError && <PositionsLoadError onRetry={() => { void refetchPos(); }} />}
       <TabHelpBanner
         storageKey="personnel"
         message={t("org_setup.help.personnel_message")}
