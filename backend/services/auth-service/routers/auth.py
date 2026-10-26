@@ -10,6 +10,7 @@ hardcoded SA claim set.
 """
 
 import asyncio
+import logging
 import os
 from datetime import datetime, timedelta, timezone
 from typing import Optional
@@ -300,8 +301,20 @@ async def _lookup_user_with_position(
 
     except HTTPException:
         raise
-    except Exception:
-        return None
+    except Exception as exc:
+        # A database or code failure is not a bad password. Before, this returned
+        # None, so the caller answered 401 INVALID_CREDENTIALS and even counted a
+        # failed attempt toward the lockout. Log it and answer 503 instead. The
+        # password is verified before any per-user query, so this does not reveal
+        # whether an account exists.
+        logging.getLogger(__name__).exception("Login lookup failed")
+        raise HTTPException(
+            status_code=503,
+            detail={
+                "code": "AUTH_SERVICE_UNAVAILABLE",
+                "message": "Sign-in is temporarily unavailable. Please try again later.",
+            },
+        ) from exc
 
 
 class TokenRequest(BaseModel):

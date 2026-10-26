@@ -965,6 +965,7 @@
     "INTERNAL_ERROR": "An unexpected error occurred. Please try again.",
     "LEVEL_NOT_CONFIGURED": "Level {level_number} has no permissions set for {transfer_type}. Ask your Tenant Admin to configure it.",
     "LEVEL_PERMISSION_MISSING": "Set permissions for every level before saving {transfer_type}.",
+    "AUTH_SERVICE_UNAVAILABLE": "Sign-in is temporarily unavailable. Please try again later.",
     "OFFLINE": "You are offline. Connect to save this.",
     "DUPLICATE_TRANSACTION": "This transaction was already submitted.",
     "LOT_NUMBER_REQUIRED": "A lot number is required.",

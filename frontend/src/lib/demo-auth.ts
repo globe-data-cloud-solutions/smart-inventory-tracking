@@ -69,6 +69,7 @@ function decodeJwtPayload(token: string): Record<string, unknown> | null {
  *   429 (lockout)                          → throws Error (status=429), message is user-facing
  *   403 TENANT_SUSPENDED/DEACTIVATED/
  *       EMAIL_NOT_VERIFIED                 → throws Error (status=403, code=<code>)
+ *   5xx AUTH_SERVICE_UNAVAILABLE           → throws Error (status=5xx, code=AUTH_SERVICE_UNAVAILABLE)
  *   401 INVALID_CREDENTIALS / 422 PASSWORD_REQUIRED / anything else → null (generic message on the form)
  *
  * Throws an Error with code=AUTH_NOT_CONFIGURED if no auth base URL is set —
@@ -123,6 +124,13 @@ export async function loginWithPassword(email: string, password: string): Promis
           err.code = code;
           throw err;
         }
+      }
+      // 5xx (AUTH_SERVICE_UNAVAILABLE): the service failed, not the credentials.
+      if (res.status >= 500) {
+        const err = new Error(t("login.auth_unavailable")) as Error & { status?: number; code?: string };
+        err.status = res.status;
+        err.code = "AUTH_SERVICE_UNAVAILABLE";
+        throw err;
       }
       return null;
     }
@@ -186,7 +194,7 @@ export async function loginWithPassword(email: string, password: string): Promis
     // null as before.
     if (err instanceof Error) {
       const status = (err as Error & { status?: number }).status;
-      if (status === 429 || status === 403) {
+      if (status === 429 || status === 403 || (status !== undefined && status >= 500)) {
         throw err;
       }
     }
