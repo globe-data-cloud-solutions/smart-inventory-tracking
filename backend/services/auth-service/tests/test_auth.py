@@ -62,6 +62,10 @@ def _bearer_for(sub: str) -> dict[str, str]:
     return {"Authorization": f"Bearer {token}"}
 
 
+async def _user_not_found(email: str, password: object = None) -> None:
+    """Stand-in for _lookup_user_with_position when the email is unknown."""
+
+
 class _FakeRedis:
     """In-memory stand-in for redis.asyncio.Redis — just enough of GET/INCR/
     EXPIRE/DELETE to exercise the login-lockout logic without a real server."""
@@ -292,9 +296,12 @@ class TestLocalDevAuth:
         assert payload["position_id"] is None
         assert payload["positions"] == []
 
-    def test_dev_email_unknown_returns_401(self) -> None:
+    def test_dev_email_unknown_returns_401(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """Unknown dev_email returns 401 (was 404 before FIX A2).
-        Using 401 avoids leaking whether an email exists in the system."""
+        Using 401 avoids leaking whether an email exists in the system.
+        The lookup is stubbed to "not found": with no database, a real lookup
+        now fails as 503 (see TestLoginDatabaseFailure) instead of passing as 401."""
+        monkeypatch.setattr(auth_module, "_lookup_user_with_position", _user_not_found)
         resp = client.post(
             "/api/v1/auth/token",
             json={"dev_email": "nobody@unknown.com"},
@@ -371,9 +378,13 @@ class TestLocalDevAuth:
         assert resp.status_code == 401
         assert resp.json()["detail"]["code"] == "INVALID_CREDENTIALS"
 
-    def test_email_unknown_returns_invalid_credentials(self) -> None:
+    def test_email_unknown_returns_invalid_credentials(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         """Unknown email on the email path returns the same generic 401
-        INVALID_CREDENTIALS as a wrong password — no account enumeration."""
+        INVALID_CREDENTIALS as a wrong password — no account enumeration.
+        Lookup stubbed to "not found" (see test_dev_email_unknown_returns_401)."""
+        monkeypatch.setattr(auth_module, "_lookup_user_with_position", _user_not_found)
         resp = client.post(
             "/api/v1/auth/token",
             json={"email": "nobody@unknown.com", "password": "whatever"},
@@ -879,3 +890,48 @@ class TestSuspendedTenantPasswordOrdering:
         )
         assert resp.status_code == 403
         assert resp.json()["detail"]["code"] == "TENANT_SUSPENDED"
+
+
+class TestLoginDatabaseFailure:
+    """A database failure during login is a 503, not a wrong password.
+
+    Before, _lookup_user_with_position swallowed every exception and returned
+    None, so login answered 401 INVALID_CREDENTIALS and counted a failed attempt
+    toward the lockout. Found while debugging an SA login on a local database.
+    """
+
+    def test_db_error_returns_503_and_is_not_a_failed_attempt(
+        self, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        import shared.db.session as session_module
+
+        def _broken_session(*args: object, **kwargs: object) -> object:
+            raise RuntimeError("function auth_user_by_email(text) does not exist")
+
+        failed: list[str] = []
+
+        async def _record(email: str) -> None:
+            failed.append(email)
+
+        monkeypatch.setattr(session_module, "AsyncSessionLocal", _broken_session)
+        monkeypatch.setattr(auth_module, "_record_failed_login", _record)
+
+        with caplog.at_level("ERROR"):
+            resp = client.post(
+                "/api/v1/auth/token",
+                json={"email": "sa@example.com", "password": "Whatever@2026"},
+            )
+
+        assert resp.status_code == 503, resp.text
+        assert resp.json()["detail"]["code"] == "AUTH_SERVICE_UNAVAILABLE"
+        assert failed == []
+        assert any("Login lookup failed" in r.getMessage() for r in caplog.records)
+
+    def test_unknown_user_is_still_401(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setattr(auth_module, "_lookup_user_with_position", _user_not_found)
+        resp = client.post(
+            "/api/v1/auth/token",
+            json={"email": "nobody@example.com", "password": "Whatever@2026"},
+        )
+        assert resp.status_code == 401
+        assert resp.json()["detail"]["code"] == "INVALID_CREDENTIALS"

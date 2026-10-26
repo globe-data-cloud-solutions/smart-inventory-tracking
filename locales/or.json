@@ -960,6 +960,7 @@
     "NODE_NOT_STOCK_HOLDING": "This location does not hold stock. It is used for approvals only.",
     "SISTER_LEVEL_MISMATCH": "A sister transfer needs both locations at the same level (from level {from_level}, to level {to_level}).",
     "NOT_YOUR_NODE": "Stock can only be handled at your own location.",
+    "AUTH_SERVICE_UNAVAILABLE": "Sign-in is temporarily unavailable. Please try again later.",
     "OFFLINE": "Sarara alatti jirta. Hojiin kun iddoo eeggaatti galcha.",
     "DUPLICATE_TRANSACTION": "Walitti dhufeenyi kun duraan galfameera.",
     "LOT_NUMBER_REQUIRED": "Lakkoofsi koora barbaachisaadha.",

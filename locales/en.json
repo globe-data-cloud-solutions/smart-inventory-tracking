@@ -968,6 +968,7 @@
     "NODE_NOT_STOCK_HOLDING": "This location does not hold stock. It is used for approvals only.",
     "SISTER_LEVEL_MISMATCH": "A sister transfer needs both locations at the same level (from level {from_level}, to level {to_level}).",
     "NOT_YOUR_NODE": "Stock can only be handled at your own location.",
+    "AUTH_SERVICE_UNAVAILABLE": "Sign-in is temporarily unavailable. Please try again later.",
     "OFFLINE": "You are offline. Connect to save this.",
     "DUPLICATE_TRANSACTION": "This transaction was already submitted.",
     "LOT_NUMBER_REQUIRED": "A lot number is required.",

@@ -970,6 +970,7 @@
     "NODE_NOT_STOCK_HOLDING": "ይህ ቦታ ክምችት አይይዝም፤ ለማጽደቅ ብቻ ያገለግላል።",
     "SISTER_LEVEL_MISMATCH": "የእህት ዝውውር ሁለቱም ቦታዎች በአንድ ደረጃ ላይ እንዲሆኑ ይጠይቃል (ከደረጃ {from_level} ወደ ደረጃ {to_level})።",
     "NOT_YOUR_NODE": "ክምችት የሚስተናገደው በራስዎ ቦታ ብቻ ነው።",
+    "AUTH_SERVICE_UNAVAILABLE": "ይግባ ለጊዜው አይገኝም። እባክዎ ትንሽ ቆይተው ይሞክሩ።",
     "OFFLINE": "ከመስመር ውጪ ነዎት። ይህ ድርጊት ወደ ጠብቅ ተጨምሯል።",
     "DUPLICATE_TRANSACTION": "ይህ ግብይት አስቀድሞ ቀርቧል።",
     "LOT_NUMBER_REQUIRED": "የሎት ቁጥር ያስፈልጋል።",

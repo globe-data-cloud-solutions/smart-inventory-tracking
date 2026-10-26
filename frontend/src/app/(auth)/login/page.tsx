@@ -57,7 +57,7 @@ export default function LoginPage() {
       if (err instanceof Error) {
         const status = (err as Error & { status?: number }).status;
         const code   = (err as Error & { code?: string }).code;
-        if (code === "AUTH_NOT_CONFIGURED") {
+        if (code === "AUTH_NOT_CONFIGURED" || code === "AUTH_SERVICE_UNAVAILABLE") {
           setError(t("login.auth_unavailable"));
           setLoading(false);
           return;
