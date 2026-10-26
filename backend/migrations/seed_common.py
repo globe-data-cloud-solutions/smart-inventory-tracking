@@ -8,14 +8,40 @@ there, so nothing else ever creates the SA account in those environments).
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
-from urllib.parse import unquote, urlsplit
+from urllib.parse import parse_qs, unquote, urlsplit
 
 import asyncpg
 import bcrypt
 
 FIXTURE = Path(__file__).resolve().parent / "seed" / "dev_sample_tenants.json"
 SA_EMAIL = "smartadmin@smart-inventory.com"
+
+
+_SSL_ALIASES = {
+    "true": "require",
+    "1": "require",
+    "on": "require",
+    "false": "disable",
+    "0": "disable",
+    "off": "disable",
+}
+
+
+def _ssl_mode(query: str) -> str:
+    """SSL mode for asyncpg, taken from the URL's ?ssl= or ?sslmode= query.
+
+    An explicit value in the URL wins (the AWS URLs carry ?ssl=require). With
+    no value, a local developer database gets "prefer" (SSL if the server
+    offers it, plain otherwise); every other environment gets "require", so a
+    URL that loses its query still refuses a non-SSL connection.
+    """
+    params = parse_qs(query)
+    raw = (params.get("ssl") or params.get("sslmode") or [""])[0].strip().lower()
+    if raw:
+        return _SSL_ALIASES.get(raw, raw)
+    return "prefer" if os.environ.get("ENVIRONMENT") == "local" else "require"
 
 
 def connect_kwargs(url: str) -> dict:
@@ -29,7 +55,7 @@ def connect_kwargs(url: str) -> dict:
         "user": unquote(parts.username or ""),
         "password": unquote(parts.password or ""),
         "database": parts.path.lstrip("/"),
-        "ssl": "require",
+        "ssl": _ssl_mode(parts.query),
     }
 
 
