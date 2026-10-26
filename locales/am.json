@@ -969,6 +969,7 @@
     "LEVEL_PERMISSION_MISSING": "Set permissions for every level before saving {transfer_type}.",
     "NODE_NOT_STOCK_HOLDING": "ይህ ቦታ ክምችት አይይዝም፤ ለማጽደቅ ብቻ ያገለግላል።",
     "SISTER_LEVEL_MISMATCH": "የእህት ዝውውር ሁለቱም ቦታዎች በአንድ ደረጃ ላይ እንዲሆኑ ይጠይቃል (ከደረጃ {from_level} ወደ ደረጃ {to_level})።",
+    "NOT_YOUR_NODE": "ክምችት የሚስተናገደው በራስዎ ቦታ ብቻ ነው።",
     "OFFLINE": "ከመስመር ውጪ ነዎት። ይህ ድርጊት ወደ ጠብቅ ተጨምሯል።",
     "DUPLICATE_TRANSACTION": "ይህ ግብይት አስቀድሞ ቀርቧል።",
     "LOT_NUMBER_REQUIRED": "የሎት ቁጥር ያስፈልጋል።",

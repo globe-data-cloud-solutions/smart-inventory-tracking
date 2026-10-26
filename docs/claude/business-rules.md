@@ -88,11 +88,19 @@ SISTER is a lateral transfer between two nodes at the SAME level that are
   not under each other, e.g. Factory A -> Factory B (both level 1, separate
   roots). Different levels -> 422 SISTER_LEVEL_MISMATCH. Same level already
   implies neither node is the other's ancestor.
-Issue/dispatch: TA/SA, or the holder of the source node (any role).
-Receive: TA/SA, or the holder of the destination node (any role).
-  NM is not tenant-wide for either (2026-10-26); the TA completes a movement
-  whose node has no active holder. The transfers list buttons
-  (getAvailableActions) follow the same rule.
+Stock at a node is at the disposal of that node's holder only (Alex, 2026-10-26):
+  Transfer issue/dispatch: TA/SA, or the holder of the source node (any role).
+  Transfer receive: TA/SA, or the holder of the destination node (any role).
+  Goods receipt and stock issue: the caller's own node only (TA/SA excepted),
+    403 NOT_YOUR_NODE (_require_own_node in inventory_service.py). These routes
+    carry the node in the body, which the permission layer does not scope.
+  NM is not tenant-wide for any of these; an NM never issues or dispatches
+  another node's stock. The TA completes a movement whose node has no holder.
+  The transfers list buttons (getAvailableActions) follow the same rule.
+Approval is different: a request stuck at a node's approval step moves to the
+  next higher position in the chain, which approves on that node's behalf, with
+  the TA as the last stop (SLA escalation, shared/approvals/sla_escalation.py).
+  This covers approval only, never issue, dispatch or receive.
 Authority scope is always resolved via get_descendant_node_ids()
   (organization_node.parent_node_id) — never inferred from role code alone (§24 Rule 25).
 ```

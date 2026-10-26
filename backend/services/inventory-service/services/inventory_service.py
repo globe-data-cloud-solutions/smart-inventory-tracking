@@ -68,6 +68,30 @@ from shared.permissions.audit import audit_log
 # Reason codes that always deduct stock — service forces negative quantity regardless of input sign
 _FORCE_NEGATIVE_REASONS: frozenset[str] = frozenset({"DAMAGE", "EXPIRY", "SUPPLIER_RETURN"})
 
+
+# Stock at a node is at the disposal of that node's holder only (Alex, 2026-10-26).
+# TA/SA have no node and complete movements tenant-wide. The permission layer
+# cannot check this: these routes carry the node in the body, not the path.
+_TENANT_ADMIN_ROLES: frozenset[str] = frozenset({"TA", "SA"})
+
+
+def _require_own_node(user: Any, warehouse_id: Any, action: str) -> None:
+    """403 NOT_YOUR_NODE unless the caller holds warehouse_id (or is TA/SA)."""
+    from fastapi import HTTPException
+
+    if getattr(user, "role", None) in _TENANT_ADMIN_ROLES:
+        return
+    if str(getattr(user, "warehouse_id", None) or "").lower() != str(warehouse_id).lower():
+        raise HTTPException(
+            status_code=403,
+            detail={
+                "code": "NOT_YOUR_NODE",
+                "action": action,
+                "message": "Stock can only be handled at your own location.",
+            },
+        )
+
+
 # A subtree-scoped caller also sees a transfer whose approval chain names them:
 # a step whose node_id is in their subtree, whose assigned_to_user_id is them,
 # or whose all_holders lists them (approval_service.ResolvedStep.to_dict).
@@ -420,6 +444,8 @@ class InventoryService:
 
         from schemas.inventory import ALLOWED_RECEIVE_SOURCES
 
+        _require_own_node(user, body.warehouse_id, "receive")
+
         if body.source not in ALLOWED_RECEIVE_SOURCES:
             raise HTTPException(
                 status_code=422,
@@ -607,6 +633,7 @@ class InventoryService:
 
         tenant_id, user_id = str(user.tenant_id), str(user.user_id)
         product_id, warehouse_id = str(body.product_id), str(body.warehouse_id)
+        _require_own_node(user, warehouse_id, "issue")
         qty = abs(body.quantity)
 
         product = await load_product(self.db, tenant_id, product_id)

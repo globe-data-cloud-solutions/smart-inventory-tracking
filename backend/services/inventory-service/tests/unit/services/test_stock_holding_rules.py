@@ -1,7 +1,9 @@
-"""Stock-holding and SISTER rules (Alex, 2026-10-26).
+"""Stock-holding, own-node and SISTER rules (Alex, 2026-10-26).
 
 - Approval-only nodes (is_stock_holding = false) never hold stock: they cannot
   be the source or destination of a transfer, receive goods, or be adjusted.
+- Stock at a node is at the disposal of that node's holder only: goods receipt
+  and issue need the caller's own node (TA/SA excepted), 403 NOT_YOUR_NODE.
 - SISTER is a lateral transfer between nodes at the same level that are not
   under each other (e.g. Factory A -> Factory B); different levels are refused.
 """
@@ -122,7 +124,7 @@ async def test_goods_receipt_at_an_approval_only_node_is_refused() -> None:
     body = SimpleNamespace(
         source=min(ALLOWED_RECEIVE_SOURCES),
         product_id=PRODUCT,
-        warehouse_id=NODE_A,
+        warehouse_id=NODE_B,  # the caller's own node
     )
     with pytest.raises(HTTPException) as exc_info:
         await InventoryService(db).receive(_user(), body)
@@ -149,3 +151,44 @@ async def test_adjustment_at_a_stock_holding_node_passes() -> None:
     await InventoryService(db)._validate_adjustment_warehouse(
         _user(), SimpleNamespace(warehouse_id=NODE_A)
     )
+
+
+@pytest.mark.parametrize("role", ["NM", "WM", "RM"])
+async def test_goods_receipt_at_another_node_is_refused(role: str) -> None:
+    """The node comes from the request body, so the permission layer cannot
+    check it; the service does. An NM is no exception."""
+    from services.inventory_service import InventoryService
+
+    db = _db()
+    body = SimpleNamespace(source="PURCHASE", product_id=PRODUCT, warehouse_id=NODE_A)
+    with pytest.raises(HTTPException) as exc_info:
+        await InventoryService(db).receive(_user(role), body)
+    assert exc_info.value.status_code == 403
+    assert exc_info.value.detail["code"] == "NOT_YOUR_NODE"
+    db.execute.assert_not_awaited()
+
+
+@pytest.mark.parametrize("role", ["NM", "WM"])
+async def test_issue_at_another_node_is_refused(role: str) -> None:
+    from services.inventory_service import InventoryService
+
+    db = _db()
+    body = SimpleNamespace(product_id=PRODUCT, warehouse_id=NODE_A, quantity=5)
+    with pytest.raises(HTTPException) as exc_info:
+        await InventoryService(db).issue_stock(_user(role), body)
+    assert exc_info.value.status_code == 403
+    assert exc_info.value.detail == {
+        "code": "NOT_YOUR_NODE",
+        "action": "issue",
+        "message": "Stock can only be handled at your own location.",
+    }
+    db.execute.assert_not_awaited()
+
+
+def test_own_node_check_ignores_uuid_case_and_lets_ta_through() -> None:
+    from services.inventory_service import _require_own_node
+
+    user = SimpleNamespace(role="WM", warehouse_id=str(NODE_A).upper())
+    _require_own_node(user, NODE_A, "issue")  # same node, different case
+    _require_own_node(SimpleNamespace(role="TA", warehouse_id=None), NODE_A, "issue")
+    _require_own_node(SimpleNamespace(role="SA", warehouse_id=None), NODE_B, "receive")
